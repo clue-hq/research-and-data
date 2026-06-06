@@ -1,0 +1,12 @@
+package
+.DS_Store
+target/
+node_modules/
+dist/
+.env
+.env.*
+!.env.example
+reference_docs/*
+!reference_docs/
+!reference_docs/ABM-Design-Engine-Temporary-Spec.md
+!reference_docs/Brilliant-Reverse-Engineering-Report.md
