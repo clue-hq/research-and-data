@@ -1,13 +1,14 @@
-use crate::diagnostics::DiagnosticSeverity;
+use crate::diagnostics::{Diagnostic, DiagnosticSeverity};
 use crate::export_contract::ExportProfile;
 use crate::ids::{BrandKitId, NodeId, PageId, SlotId, TemplateRevisionId};
 use crate::scene::{
     AutoLayoutProps, BrandKitRef, ComputedGeometry, CornerRadii, DocumentStatus, Fill, Medium,
-    Node, NodeKind, PageSize, Rect, Scene, SizeSpec, Stroke, Transform,
+    Node, NodeKind, PageSize, ParentRef, Rect, Scene, SizeSpec, Stroke, Transform,
 };
 use crate::slots::Slot;
 use crate::validation::validate_scene;
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeSet;
 use std::error::Error;
 use std::fmt;
 
@@ -17,14 +18,21 @@ pub type OperationResult<T> = Result<T, OperationError>;
 pub struct OperationError {
     pub code: &'static str,
     pub message: String,
+    pub diagnostics: Vec<Diagnostic>,
 }
 
 impl OperationError {
-    fn new(code: &'static str, message: impl Into<String>) -> Self {
+    pub fn new(code: &'static str, message: impl Into<String>) -> Self {
         Self {
             code,
             message: message.into(),
+            diagnostics: Vec::new(),
         }
+    }
+
+    pub fn with_diagnostics(mut self, diagnostics: Vec<Diagnostic>) -> Self {
+        self.diagnostics = diagnostics;
+        self
     }
 }
 
@@ -36,11 +44,10 @@ impl fmt::Display for OperationError {
 
 impl Error for OperationError {}
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(tag = "kind", content = "id", rename_all = "snake_case")]
-pub enum ParentRef {
-    Page(PageId),
-    Node(NodeId),
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OperationReport {
+    pub applied_operations: usize,
+    pub diagnostics: Vec<Diagnostic>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -173,6 +180,63 @@ impl Operation {
 
 impl Scene {
     pub fn apply_operation(&mut self, operation: Operation) -> OperationResult<()> {
+        let mut draft = self.clone();
+        draft.apply_operation_in_place(operation)?;
+        *self = draft;
+        Ok(())
+    }
+
+    pub fn apply_operations(
+        &mut self,
+        operations: impl IntoIterator<Item = Operation>,
+    ) -> OperationResult<()> {
+        let mut draft = self.clone();
+        for operation in operations {
+            draft.apply_operation_in_place(operation)?;
+        }
+        *self = draft;
+        Ok(())
+    }
+
+    pub fn apply_operation_checked(
+        &mut self,
+        operation: Operation,
+    ) -> OperationResult<OperationReport> {
+        self.apply_operations_checked([operation])
+    }
+
+    pub fn apply_operations_checked(
+        &mut self,
+        operations: impl IntoIterator<Item = Operation>,
+    ) -> OperationResult<OperationReport> {
+        let mut draft = self.clone();
+        let mut applied_operations = 0;
+
+        for operation in operations {
+            draft.apply_operation_in_place(operation)?;
+            applied_operations += 1;
+        }
+
+        let diagnostics = validate_scene(&draft);
+        if diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.severity == DiagnosticSeverity::Error)
+        {
+            return Err(OperationError::new(
+                "op.validation_failed",
+                "operation batch produced an invalid scene",
+            )
+            .with_diagnostics(diagnostics));
+        }
+
+        *self = draft;
+        Ok(OperationReport {
+            applied_operations,
+            diagnostics,
+        })
+    }
+
+    fn apply_operation_in_place(&mut self, operation: Operation) -> OperationResult<()> {
         if self.is_finalized() && !operation.is_finalization() {
             return Err(OperationError::new(
                 "op.finalized_scene",
@@ -271,20 +335,6 @@ impl Scene {
         }
     }
 
-    pub fn apply_operations(
-        &mut self,
-        operations: impl IntoIterator<Item = Operation>,
-    ) -> OperationResult<()> {
-        for operation in operations {
-            self.apply_operation(operation)?;
-        }
-        Ok(())
-    }
-
-    pub fn is_finalized(&self) -> bool {
-        matches!(self.meta.status, DocumentStatus::Finalized { .. })
-    }
-
     fn add_page(&mut self, page: crate::scene::Page) -> OperationResult<()> {
         if self.pages.contains_key(&page.id) {
             return Err(OperationError::new(
@@ -341,7 +391,14 @@ impl Scene {
             ));
         }
 
+        let mut seen_children = BTreeSet::new();
         for child_id in &node.children {
+            if !seen_children.insert(child_id) {
+                return Err(OperationError::new(
+                    "op.duplicate_child",
+                    format!("inserted node {} duplicates child {}", node.id, child_id),
+                ));
+            }
             if !self.nodes.contains_key(child_id) {
                 return Err(OperationError::new(
                     "op.child_missing",
@@ -351,7 +408,7 @@ impl Scene {
                     ),
                 ));
             }
-            if self.find_parent_of(child_id).is_some() {
+            if self.parent_of(child_id).is_some() {
                 return Err(OperationError::new(
                     "op.child_already_parented",
                     format!("child node {} is already parented", child_id),
@@ -408,7 +465,7 @@ impl Scene {
             }
         }
 
-        let old_parent = self.find_parent_of(node_id);
+        let old_parent = self.parent_of(node_id);
         {
             let children = self.children_for_parent(&new_parent)?;
             if index > children.len() {
@@ -498,6 +555,7 @@ impl Scene {
         if let Some(error) = diagnostics
             .iter()
             .find(|diagnostic| diagnostic.severity == DiagnosticSeverity::Error)
+            .cloned()
         {
             return Err(OperationError::new(
                 "op.finalize_invalid_scene",
@@ -505,12 +563,14 @@ impl Scene {
                     "cannot finalize invalid scene: {} {}",
                     error.code, error.message
                 ),
-            ));
+            )
+            .with_diagnostics(diagnostics));
         }
 
         if let Some(required_placeholder) = diagnostics
             .iter()
             .find(|diagnostic| diagnostic.code == "LUMV0501")
+            .cloned()
         {
             return Err(OperationError::new(
                 "op.finalize_missing_required_slot_placeholder",
@@ -518,7 +578,8 @@ impl Scene {
                     "cannot finalize scene with incomplete required slot: {}",
                     required_placeholder.message
                 ),
-            ));
+            )
+            .with_diagnostics(diagnostics));
         }
 
         self.meta.status = DocumentStatus::Finalized {
@@ -587,20 +648,6 @@ impl Scene {
         }
     }
 
-    fn find_parent_of(&self, node_id: &NodeId) -> Option<ParentRef> {
-        for page in self.pages.values() {
-            if page.children.contains(node_id) {
-                return Some(ParentRef::Page(page.id.clone()));
-            }
-        }
-        for node in self.nodes.values() {
-            if node.children.contains(node_id) {
-                return Some(ParentRef::Node(node.id.clone()));
-            }
-        }
-        None
-    }
-
     fn detach_node_from_parents(&mut self, node_id: &NodeId) {
         for page in self.pages.values_mut() {
             page.children.retain(|id| id != node_id);
@@ -625,15 +672,23 @@ impl Scene {
     }
 
     fn is_descendant_of(&self, possible_descendant: &NodeId, ancestor: &NodeId) -> bool {
-        let Some(node) = self.nodes.get(ancestor) else {
-            return false;
-        };
+        let mut pending = vec![ancestor.clone()];
+        let mut seen = BTreeSet::new();
 
-        for child_id in &node.children {
-            if child_id == possible_descendant
-                || self.is_descendant_of(possible_descendant, child_id)
-            {
-                return true;
+        while let Some(current_id) = pending.pop() {
+            if !seen.insert(current_id.clone()) {
+                continue;
+            }
+
+            let Some(node) = self.nodes.get(&current_id) else {
+                continue;
+            };
+
+            for child_id in &node.children {
+                if child_id == possible_descendant {
+                    return true;
+                }
+                pending.push(child_id.clone());
             }
         }
 
