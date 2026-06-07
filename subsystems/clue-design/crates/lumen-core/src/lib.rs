@@ -10,6 +10,7 @@ pub mod operations;
 pub mod render_contract;
 pub mod scene;
 pub mod slots;
+pub mod snapshot;
 pub mod validation;
 
 pub use diagnostics::{Diagnostic, DiagnosticSeverity, DiagnosticSubject, Phase};
@@ -22,8 +23,8 @@ pub use ids::{
     SlotKey, TemplateRevisionId,
 };
 pub use operations::{
-    DocumentPatch, FieldPatch, NodePatch, Operation, OperationError, OperationResult,
-    OptionalFieldPatch, PagePatch, ParentRef,
+    DocumentPatch, FieldPatch, NodePatch, Operation, OperationError, OperationReport,
+    OperationResult, OptionalFieldPatch, PagePatch,
 };
 pub use render_contract::{
     RenderIntent, RenderManifest, RenderTarget, RendererAdapter, RendererError,
@@ -31,13 +32,14 @@ pub use render_contract::{
 pub use scene::{
     AutoLayoutDirection, AutoLayoutNode, AutoLayoutProps, BrandKitRef, Color, ComputedGeometry,
     CornerRadii, Dimension, DocumentMeta, DocumentStatus, Fill, ImageNode, LineNode, Medium, Node,
-    NodeKind, Orientation, Page, PagePreset, PageSize, Paint, Rect, Scene, SizeSpec, Stroke,
-    TextAlign, TextNode, Transform, Unit, VectorNode,
+    NodeKind, Orientation, Page, PagePreset, PageSize, Paint, ParentRef, Rect, Scene, SizeSpec,
+    Stroke, TextAlign, TextNode, Transform, Unit, VectorNode,
 };
 pub use slots::{
     BindingHint, Cardinality, ConditionalRule, ContentType, Editability, EmptyBehavior, FocalPoint,
     FormattingConstraints, ImageFitMode, ImagePolicy, OverflowPolicy, ReflowPolicy, RepeaterRule,
     Slot, SlotScope, ValidationFixtures,
 };
+pub use snapshot::{SnapshotError, SnapshotResult};
 
 pub const SCHEMA_VERSION: u32 = 1;

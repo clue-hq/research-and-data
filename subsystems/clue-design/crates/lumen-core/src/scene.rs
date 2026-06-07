@@ -1,9 +1,11 @@
 use crate::export_contract::ExportProfile;
-use crate::ids::{AssetId, BrandKitId, DocumentId, NodeId, PageId, PaintId, TemplateRevisionId};
+use crate::ids::{
+    AssetId, BrandKitId, DocumentId, NodeId, PageId, PaintId, SlotId, SlotKey, TemplateRevisionId,
+};
 use crate::slots::Slot;
 use crate::SCHEMA_VERSION;
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Scene {
@@ -40,6 +42,98 @@ impl Scene {
             .map(|node| node.kind.can_have_children())
             .unwrap_or(false)
     }
+
+    pub fn is_finalized(&self) -> bool {
+        matches!(self.meta.status, DocumentStatus::Finalized { .. })
+    }
+
+    pub fn page(&self, page_id: &PageId) -> Option<&Page> {
+        self.pages.get(page_id)
+    }
+
+    pub fn node(&self, node_id: &NodeId) -> Option<&Node> {
+        self.nodes.get(node_id)
+    }
+
+    pub fn slot(&self, slot_id: &SlotId) -> Option<&Slot> {
+        self.slots.get(slot_id)
+    }
+
+    pub fn slot_by_key(&self, slot_key: &SlotKey) -> Option<&Slot> {
+        self.slots.values().find(|slot| &slot.key == slot_key)
+    }
+
+    pub fn export_profile(&self, name: &str) -> Option<&ExportProfile> {
+        self.export_profiles
+            .iter()
+            .find(|profile| profile.name == name)
+    }
+
+    pub fn parent_of(&self, node_id: &NodeId) -> Option<ParentRef> {
+        for page in self.pages.values() {
+            if page.children.contains(node_id) {
+                return Some(ParentRef::Page(page.id.clone()));
+            }
+        }
+
+        for node in self.nodes.values() {
+            if node.children.contains(node_id) {
+                return Some(ParentRef::Node(node.id.clone()));
+            }
+        }
+
+        None
+    }
+
+    pub fn descendants_of(&self, node_id: &NodeId) -> Vec<NodeId> {
+        let mut descendants = Vec::new();
+        let mut seen = BTreeSet::new();
+        self.collect_descendants(node_id, &mut seen, &mut descendants);
+        descendants
+    }
+
+    pub fn slots_for_node(&self, node_id: &NodeId) -> Vec<&Slot> {
+        self.slots
+            .values()
+            .filter(|slot| slot.bound_nodes.contains(node_id))
+            .collect()
+    }
+
+    pub fn bound_nodes_for_slot(&self, slot_id: &SlotId) -> Vec<&Node> {
+        let Some(slot) = self.slots.get(slot_id) else {
+            return Vec::new();
+        };
+
+        slot.bound_nodes
+            .iter()
+            .filter_map(|node_id| self.nodes.get(node_id))
+            .collect()
+    }
+
+    fn collect_descendants(
+        &self,
+        node_id: &NodeId,
+        seen: &mut BTreeSet<NodeId>,
+        descendants: &mut Vec<NodeId>,
+    ) {
+        let Some(node) = self.nodes.get(node_id) else {
+            return;
+        };
+
+        for child_id in &node.children {
+            if seen.insert(child_id.clone()) {
+                descendants.push(child_id.clone());
+                self.collect_descendants(child_id, seen, descendants);
+            }
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", content = "id", rename_all = "snake_case")]
+pub enum ParentRef {
+    Page(PageId),
+    Node(NodeId),
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
