@@ -56,7 +56,9 @@ fn auto_layout(
     node.size = SizeSpec { width, height };
     node.layout = Some(AutoLayoutProps {
         gap,
+        gap_token: None,
         padding,
+        padding_token: None,
         grow: 0.0,
     });
     node
@@ -77,6 +79,7 @@ fn text_node(id: &str, content: &str, x: f64, y: f64, width: f64, height: f64) -
             font_size: 12.0,
             font_weight: 600,
             align: TextAlign::Left,
+            style_token: None,
         }),
     );
     node.transform.x = x;
@@ -567,6 +570,31 @@ fn text_fixture_that_fits_has_no_text_fit_error() {
     assert!(diagnostics
         .iter()
         .all(|diagnostic| diagnostic.severity != DiagnosticSeverity::Error));
+}
+
+#[test]
+fn unresolved_token_dimensions_warn_and_use_natural_size() {
+    let mut scene = scene_with_page(300.0, 200.0);
+    let mut headline = text_node("headline", "Token sized headline", 0.0, 0.0, 100.0, 24.0);
+    headline.size.width = Dimension::Token {
+        token: "size.heading.width".to_owned(),
+    };
+    insert(&mut scene, ParentRef::Page(PageId::from("page")), headline);
+
+    let result = layout_scene(
+        &scene,
+        lumen_core::LayoutOptions {
+            validate_slots: false,
+        },
+    );
+
+    assert!(has_code(&result.diagnostics, "LUMV0702"));
+    assert!(
+        result.geometry[&NodeId::from("headline")]
+            .layout_bounds
+            .width
+            > 0.0
+    );
 }
 
 #[test]

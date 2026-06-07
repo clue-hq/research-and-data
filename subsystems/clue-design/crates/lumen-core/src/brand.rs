@@ -129,18 +129,10 @@ impl Default for BrandModeSpec {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 pub struct BrandMode {
     #[serde(default)]
     pub values: BTreeMap<String, String>,
-}
-
-impl Default for BrandMode {
-    fn default() -> Self {
-        Self {
-            values: BTreeMap::new(),
-        }
-    }
 }
 
 impl BrandMode {
@@ -1452,17 +1444,16 @@ fn validate_token_values(brand_kit: &BrandKit, diagnostics: &mut Vec<Diagnostic>
                         format!("color token {} has invalid hex value {}", path, value),
                     ))
                 }
-                ColorTokenValue::Oklch { l, c, h, alpha } => {
+                ColorTokenValue::Oklch { l, c, h, alpha }
                     if !finite_in_range(*l, 0.0, 1.0)
                         || !finite_in_range(*c, 0.0, 1.0)
                         || !h.is_finite()
-                        || !finite_in_range(*alpha, 0.0, 1.0)
-                    {
-                        diagnostics.push(brand_error(
-                            "LUMB0211",
-                            format!("color token {} has invalid OKLCH components", path),
-                        ));
-                    }
+                        || !finite_in_range(*alpha, 0.0, 1.0) =>
+                {
+                    diagnostics.push(brand_error(
+                        "LUMB0211",
+                        format!("color token {} has invalid OKLCH components", path),
+                    ));
                 }
                 _ => {}
             }

@@ -107,14 +107,24 @@ impl<'a> LayoutEngine<'a> {
         parent_size: Size2,
         page_id: &PageId,
     ) {
-        let Some(node) = self.scene.nodes.get(node_id) else {
+        let Some(is_auto_layout) = self
+            .scene
+            .nodes
+            .get(node_id)
+            .map(|node| matches!(node.kind, NodeKind::AutoLayout(_)))
+        else {
             return;
         };
 
-        if matches!(node.kind, NodeKind::AutoLayout(_)) {
+        if is_auto_layout {
             self.layout_auto_node(node_id, origin, parent_size, page_id);
             return;
         }
+
+        self.warn_unresolved_dimension_tokens(node_id);
+        let Some(node) = self.scene.nodes.get(node_id) else {
+            return;
+        };
 
         let size = self.resolve_manual_size(node, parent_size);
         self.write_geometry(node, origin, size);
@@ -191,6 +201,7 @@ impl<'a> LayoutEngine<'a> {
         parent_size: Option<Size2>,
         parent_flow: Option<&FlowContext>,
     ) -> Result<TaffyNodeId, taffy::TaffyError> {
+        self.warn_unresolved_dimension_tokens(node_id);
         let node = self.scene.nodes.get(node_id).expect("node exists");
         let style = self.style_for_node(node, parent_size, parent_flow);
 
@@ -314,6 +325,48 @@ impl<'a> LayoutEngine<'a> {
         }
     }
 
+    fn warn_unresolved_dimension_tokens(&mut self, node_id: &NodeId) {
+        let tokens = self
+            .scene
+            .nodes
+            .get(node_id)
+            .map(|node| {
+                [
+                    (Axis::Horizontal, &node.size.width),
+                    (Axis::Vertical, &node.size.height),
+                ]
+                .into_iter()
+                .filter_map(|(axis, dimension)| {
+                    if let Dimension::Token { token } = dimension {
+                        Some((axis, token.clone()))
+                    } else {
+                        None
+                    }
+                })
+                .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+
+        for (axis, token) in tokens {
+            self.diagnostics.push(
+                Diagnostic::warning(
+                    Phase::Layout,
+                    "LUMV0702",
+                    format!(
+                        "node {} uses unresolved brand token {} for {} size",
+                        node_id,
+                        token,
+                        axis.label()
+                    ),
+                    Some(DiagnosticSubject::Node(node_id.clone())),
+                )
+                .with_hint(
+                    "Run brand token resolution before layout for tokenized dimensions; unresolved token dimensions are laid out as hug/natural size.",
+                ),
+            );
+        }
+    }
+
     fn style_for_node(
         &self,
         node: &Node,
@@ -417,6 +470,7 @@ impl<'a> LayoutEngine<'a> {
                     auto()
                 }
             }
+            Dimension::Token { .. } => auto(),
         }
     }
 
@@ -496,7 +550,7 @@ impl<'a> LayoutEngine<'a> {
         let outer = match axis.dimension(&node.size) {
             Dimension::Fixed(value) => Some(*value),
             Dimension::Fill { .. } => parent_size.map(|size| axis.value(size)),
-            Dimension::Hug => None,
+            Dimension::Hug | Dimension::Token { .. } => None,
         }?;
 
         let padding_sum = match axis {
@@ -509,21 +563,23 @@ impl<'a> LayoutEngine<'a> {
     fn natural_size_for_axis(&self, node: &Node, axis: Axis) -> f64 {
         match axis.dimension(&node.size) {
             Dimension::Fixed(value) => *value,
-            Dimension::Hug | Dimension::Fill { .. } => axis.value(self.natural_size(node)),
+            Dimension::Hug | Dimension::Fill { .. } | Dimension::Token { .. } => {
+                axis.value(self.natural_size(node))
+            }
         }
     }
 
     fn resolve_manual_size(&self, node: &Node, parent_size: Size2) -> Size2 {
         Size2 {
-            width: match node.size.width {
-                Dimension::Fixed(value) => value,
+            width: match &node.size.width {
+                Dimension::Fixed(value) => *value,
                 Dimension::Fill { .. } => parent_size.width,
-                Dimension::Hug => self.natural_size(node).width,
+                Dimension::Hug | Dimension::Token { .. } => self.natural_size(node).width,
             },
-            height: match node.size.height {
-                Dimension::Fixed(value) => value,
+            height: match &node.size.height {
+                Dimension::Fixed(value) => *value,
                 Dimension::Fill { .. } => parent_size.height,
-                Dimension::Hug => self.natural_size(node).height,
+                Dimension::Hug | Dimension::Token { .. } => self.natural_size(node).height,
             },
         }
     }
@@ -961,10 +1017,17 @@ impl Axis {
         }
     }
 
-    fn dimension<'a>(self, size: &'a SizeSpec) -> &'a Dimension {
+    fn dimension(self, size: &SizeSpec) -> &Dimension {
         match self {
             Self::Horizontal => &size.width,
             Self::Vertical => &size.height,
+        }
+    }
+
+    fn label(self) -> &'static str {
+        match self {
+            Self::Horizontal => "width",
+            Self::Vertical => "height",
         }
     }
 }
@@ -1028,13 +1091,13 @@ fn available_width(available: AvailableSpace) -> Option<f64> {
 
 fn fixed_or_zero(size: &SizeSpec) -> Size2 {
     Size2 {
-        width: match size.width {
-            Dimension::Fixed(value) => value,
-            Dimension::Hug | Dimension::Fill { .. } => 0.0,
+        width: match &size.width {
+            Dimension::Fixed(value) => *value,
+            Dimension::Hug | Dimension::Fill { .. } | Dimension::Token { .. } => 0.0,
         },
-        height: match size.height {
-            Dimension::Fixed(value) => value,
-            Dimension::Hug | Dimension::Fill { .. } => 0.0,
+        height: match &size.height {
+            Dimension::Fixed(value) => *value,
+            Dimension::Hug | Dimension::Fill { .. } | Dimension::Token { .. } => 0.0,
         },
     }
 }

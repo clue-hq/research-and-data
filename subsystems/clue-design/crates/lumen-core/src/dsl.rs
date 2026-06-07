@@ -1664,6 +1664,7 @@ fn node_from_element(element: &DslElement, line_number: usize) -> Result<Node, D
             font_size: 16.0,
             font_weight: 400,
             align: TextAlign::Left,
+            style_token: None,
         }),
         DslElementKind::Image { asset_id } => NodeKind::Image(ImageNode {
             asset_id: asset_id
@@ -1807,6 +1808,7 @@ fn apply_properties(
                         id,
                         paint: stroke.paint.clone(),
                         width,
+                        width_token: None,
                     });
                 }
             }
@@ -1954,7 +1956,9 @@ fn apply_properties(
 fn ensure_layout(node: &mut Node) -> &mut AutoLayoutProps {
     node.layout.get_or_insert(AutoLayoutProps {
         gap: 0.0,
+        gap_token: None,
         padding: [0.0; 4],
+        padding_token: None,
         grow: 0.0,
     })
 }
