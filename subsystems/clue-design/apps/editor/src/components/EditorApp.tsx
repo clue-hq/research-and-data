@@ -11,10 +11,18 @@ import type { Diagnostic, NodeId, Operation, PageId, Scene } from "@/engine/cont
 import { localEditorEngine } from "@/engine/editorEngine";
 import { firstPageId, getNode } from "@/engine/sceneQueries";
 
-export default function EditorApp() {
-  const [scene, setScene] = useState<Scene>(minimalScene);
-  const [activePageId, setActivePageId] = useState<PageId | null>(() => firstPageId(minimalScene));
-  const [selectedNodeId, setSelectedNodeId] = useState<NodeId | null>("node_contact_name");
+export interface EditorAppProps {
+  initialScene?: Scene;
+  initialSelectedNodeId?: NodeId | null;
+}
+
+export default function EditorApp({
+  initialScene = minimalScene,
+  initialSelectedNodeId = "node_contact_name"
+}: EditorAppProps = {}) {
+  const [scene, setScene] = useState<Scene>(initialScene);
+  const [activePageId, setActivePageId] = useState<PageId | null>(() => firstPageId(initialScene));
+  const [selectedNodeId, setSelectedNodeId] = useState<NodeId | null>(initialSelectedNodeId);
   const [diagnostics, setDiagnostics] = useState<Diagnostic[]>([]);
   const [lastOperation, setLastOperation] = useState<Operation | null>(null);
   const selectedNode = useMemo(() => getNode(scene, selectedNodeId), [scene, selectedNodeId]);
@@ -60,6 +68,11 @@ export default function EditorApp() {
     ]);
   };
 
+  const selectPage = (pageId: PageId) => {
+    setActivePageId(pageId);
+    setSelectedNodeId(null);
+  };
+
   return (
     <main className="editor-shell">
       <header className="topbar">
@@ -87,7 +100,7 @@ export default function EditorApp() {
         </div>
       </header>
       <div className="workspace-grid">
-        <PageRail scene={scene} activePageId={activePageId} onSelectPage={setActivePageId} />
+        <PageRail scene={scene} activePageId={activePageId} onSelectPage={selectPage} />
         <CanvasSurface
           scene={scene}
           activePageId={activePageId}

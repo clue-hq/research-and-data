@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { Color } from "../contracts";
+import type { Color, Node, Scene } from "../contracts";
 import { minimalScene } from "@/fixtures/minimalScene";
 import { colorToCss, nodeDescriptor, pageDescriptor, sceneUnitFromCanvas, sizeFromCanvas } from "../renderAdapter";
 
@@ -21,6 +21,69 @@ describe("render adapter", () => {
     expect(descriptor.kind).toBe("text");
     expect(descriptor.text?.content).toBe("Dr. Priya Sharma");
     expect(descriptor.x).toBeCloseTo(90.7, 1);
+  });
+
+  it("uses computed layout bounds for hug/fill-sized nodes", () => {
+    const scene = cloneScene();
+    const page = scene.pages.page_a4;
+    const node: Node = {
+      ...scene.nodes.node_contact_name,
+      kind: {
+        kind: "auto_layout",
+        direction: "row",
+        wrap: false
+      },
+      size: {
+        width: {
+          kind: "hug"
+        },
+        height: {
+          kind: "fill",
+          value: {
+            weight: 1
+          }
+        }
+      },
+      computed: {
+        layout_bounds: {
+          x: 24,
+          y: 40,
+          width: 120,
+          height: 32
+        },
+        render_bounds: {
+          x: 24,
+          y: 40,
+          width: 124,
+          height: 36
+        }
+      }
+    };
+    scene.nodes[node.id] = node;
+
+    const descriptor = nodeDescriptor(scene, node, page);
+
+    expect(descriptor.width).toBeCloseTo(453.5, 1);
+    expect(descriptor.height).toBeCloseTo(120.9, 1);
+  });
+
+  it("keeps logical groups non-visual when they have no fills", () => {
+    const scene = cloneScene();
+    const page = scene.pages.page_a4;
+    const node: Node = {
+      ...scene.nodes.node_contact_name,
+      kind: {
+        kind: "group"
+      },
+      fills: [],
+      strokes: []
+    };
+    scene.nodes[node.id] = node;
+
+    const descriptor = nodeDescriptor(scene, node, page);
+
+    expect(descriptor.fill).toBe("transparent");
+    expect(descriptor.stroke).toBeNull();
   });
 
   it("converts Flutter-style alpha-first hex to CSS rgba", () => {
@@ -48,3 +111,7 @@ describe("render adapter", () => {
     });
   });
 });
+
+function cloneScene(): Scene {
+  return JSON.parse(JSON.stringify(minimalScene)) as Scene;
+}

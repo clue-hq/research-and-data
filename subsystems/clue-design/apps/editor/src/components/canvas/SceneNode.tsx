@@ -4,13 +4,7 @@ import { Fragment } from "react";
 import { Group, Line, Path, Rect, Text } from "react-konva";
 import type Konva from "konva";
 import type { NodeId, Operation, Page, Scene, Transform } from "@/engine/contracts";
-import {
-  fixedSize,
-  nodeDescriptor,
-  pageDescriptor,
-  sceneUnitFromCanvas,
-  sizeFromCanvas
-} from "@/engine/renderAdapter";
+import { nodeDescriptor, nodeSizeForRender, sceneUnitFromCanvas, sizeFromCanvas } from "@/engine/renderAdapter";
 import { updateNodeTransform, updateNodeTransformAndSize } from "@/engine/operations";
 
 interface SceneNodeProps {
@@ -58,7 +52,7 @@ export function SceneNode({
     target.scaleX(1);
     target.scaleY(1);
 
-    const baseSize = fixedSize(node.size, pageDescriptor(page).unitScale);
+    const baseSize = nodeSizeForRender(node, page);
     const nextWidth = Math.max(2, baseSize.width * scaleX);
     const nextHeight = Math.max(2, baseSize.height * scaleY);
     const nextTransform: Transform = {

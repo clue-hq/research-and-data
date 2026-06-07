@@ -60,7 +60,7 @@ export function pageDescriptor(page: Page): RenderPageDescriptor {
 
 export function nodeDescriptor(scene: Scene, node: Node, page: Page): RenderNodeDescriptor {
   const scale = unitScale(page.size.unit);
-  const size = fixedSize(node.size, scale);
+  const size = nodeSizeForRender(node, page);
   const stroke = node.strokes[0] ? strokeDescriptor(node.strokes[0]) : null;
   const descriptor: RenderNodeDescriptor = {
     id: node.id,
@@ -187,10 +187,21 @@ function defaultFillForNode(node: Node): string {
   if (node.kind.kind === "image") {
     return "#ddd7cc";
   }
-  if (node.kind.kind === "frame" || node.kind.kind === "auto_layout") {
+  if (node.kind.kind === "frame" || node.kind.kind === "group" || node.kind.kind === "auto_layout") {
     return "transparent";
   }
   return "#f5f1e9";
+}
+
+export function nodeSizeForRender(node: Node, page: Page): { width: number; height: number } {
+  const scale = unitScale(page.size.unit);
+  if (node.computed) {
+    return {
+      width: node.computed.layout_bounds.width * scale,
+      height: node.computed.layout_bounds.height * scale
+    };
+  }
+  return fixedSize(node.size, scale);
 }
 
 function normalizeHexForCss(value: string): string {
