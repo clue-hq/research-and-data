@@ -67,6 +67,35 @@ describe("render adapter", () => {
     expect(descriptor.height).toBeCloseTo(120.9, 1);
   });
 
+  it("accepts Rust-serialized token dimensions as unresolved editor sizes", () => {
+    const scene = cloneScene();
+    const page = scene.pages.page_a4;
+    const node: Node = {
+      ...scene.nodes.node_contact_name,
+      size: {
+        width: {
+          kind: "token",
+          value: {
+            token: "space.xl"
+          }
+        },
+        height: {
+          kind: "token",
+          value: {
+            token: "space.md"
+          }
+        }
+      },
+      computed: null
+    };
+    scene.nodes[node.id] = node;
+
+    const descriptor = nodeDescriptor(scene, node, page);
+
+    expect(descriptor.width).toBe(0);
+    expect(descriptor.height).toBe(0);
+  });
+
   it("keeps logical groups non-visual when they have no fills", () => {
     const scene = cloneScene();
     const page = scene.pages.page_a4;
@@ -86,10 +115,10 @@ describe("render adapter", () => {
     expect(descriptor.stroke).toBeNull();
   });
 
-  it("converts Flutter-style alpha-first hex to CSS rgba", () => {
+  it("converts CSS alpha-last hex to CSS rgba", () => {
     const color: Color = {
       kind: "hex",
-      value: "#80ff0000"
+      value: "#ff000080"
     };
 
     expect(colorToCss(color)).toBe("rgba(255, 0, 0, 0.502)");

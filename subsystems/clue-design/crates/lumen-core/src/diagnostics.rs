@@ -15,6 +15,7 @@ pub enum Phase {
     Contract,
     Operation,
     Validation,
+    Brand,
     Dsl,
     Layout,
     Export,

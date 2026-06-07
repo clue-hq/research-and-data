@@ -1,0 +1,304 @@
+{
+  "id": "brand_kit_acme",
+  "version": 1,
+  "name": "Acme Health",
+  "description": "Healthcare ABM demo brand",
+  "sources": [
+    {
+      "kind": "manual",
+      "label": "manual",
+      "confidence": 1.0
+    }
+  ],
+  "provenance": null,
+  "modes": {
+    "axes": {
+      "accessibility": [
+        "standard",
+        "high_contrast",
+        "large_text"
+      ],
+      "density": [
+        "comfortable",
+        "compact"
+      ],
+      "theme": [
+        "light",
+        "dark"
+      ]
+    },
+    "defaults": {
+      "accessibility": "standard",
+      "density": "comfortable",
+      "theme": "light"
+    }
+  },
+  "tokens": {
+    "colors": {
+      "surface.brand": {
+        "value": {
+          "default": {
+            "kind": "hex",
+            "value": "#004D5A"
+          },
+          "modes": {
+            "theme.dark": {
+              "kind": "hex",
+              "value": "#D9F7FB"
+            }
+          }
+        },
+        "role": "surface",
+        "description": "Primary branded surface",
+        "provenance": {
+          "source": "manual",
+          "confidence": 1.0
+        }
+      },
+      "text.inverse": {
+        "value": {
+          "default": {
+            "kind": "hex",
+            "value": "#FFFFFF"
+          },
+          "modes": {}
+        },
+        "role": "text",
+        "description": "Text on dark brand surfaces",
+        "provenance": null
+      },
+      "text.primary": {
+        "value": {
+          "default": {
+            "kind": "hex",
+            "value": "#152326"
+          },
+          "modes": {}
+        },
+        "role": "text",
+        "description": "Primary text",
+        "provenance": null
+      }
+    },
+    "typography": {
+      "type.headline": {
+        "value": {
+          "default": {
+            "kind": "style",
+            "font_family": "Inter",
+            "font_size": 32.0,
+            "font_weight": 800,
+            "line_height": 1.1,
+            "letter_spacing": 0.0,
+            "color": "text.inverse",
+            "font_asset": "brand"
+          },
+          "modes": {
+            "accessibility.large_text": {
+              "kind": "style",
+              "font_family": "Inter",
+              "font_size": 36.0,
+              "font_weight": 800,
+              "line_height": 1.15,
+              "letter_spacing": 0.0,
+              "color": "text.inverse",
+              "font_asset": "brand"
+            }
+          }
+        },
+        "role": "headline",
+        "description": "Primary artifact headline",
+        "provenance": null
+      }
+    },
+    "numbers": {},
+    "spacing": {
+      "space.sm": {
+        "value": {
+          "default": {
+            "kind": "number",
+            "value": 8.0,
+            "unit": "px"
+          },
+          "modes": {
+            "density.compact": {
+              "kind": "number",
+              "value": 6.0,
+              "unit": "px"
+            }
+          }
+        },
+        "role": "spacing",
+        "description": null,
+        "provenance": null
+      },
+      "space.md": {
+        "value": {
+          "default": {
+            "kind": "number",
+            "value": 12.0,
+            "unit": "px"
+          },
+          "modes": {}
+        },
+        "role": "spacing",
+        "description": null,
+        "provenance": null
+      },
+      "space.xl": {
+        "value": {
+          "default": {
+            "kind": "number",
+            "value": 24.0,
+            "unit": "px"
+          },
+          "modes": {}
+        },
+        "role": "spacing",
+        "description": null,
+        "provenance": null
+      }
+    },
+    "radii": {
+      "radius.md": {
+        "value": {
+          "default": {
+            "kind": "number",
+            "value": 8.0,
+            "unit": "px"
+          },
+          "modes": {}
+        },
+        "role": "radius",
+        "description": null,
+        "provenance": null
+      }
+    },
+    "stroke_widths": {
+      "stroke.width.firm": {
+        "value": {
+          "default": {
+            "kind": "number",
+            "value": 2.0,
+            "unit": "px"
+          },
+          "modes": {}
+        },
+        "role": "stroke",
+        "description": null,
+        "provenance": null
+      }
+    },
+    "opacity": {
+      "opacity.subtle": {
+        "value": {
+          "default": {
+            "kind": "number",
+            "value": 0.72,
+            "unit": "ratio"
+          },
+          "modes": {}
+        },
+        "role": "visibility",
+        "description": null,
+        "provenance": null
+      }
+    },
+    "shadows": {},
+    "effects": {},
+    "assets": {},
+    "aliases": {
+      "color.surface": {
+        "token": "surface.brand",
+        "description": "Chrome alias for default surface"
+      }
+    }
+  },
+  "assets": {
+    "fonts": {
+      "brand": {
+        "family": "Inter",
+        "source": {
+          "kind": "system",
+          "family": "Inter"
+        },
+        "faces": [
+          {
+            "weight": 800,
+            "style": "normal",
+            "asset_id": null,
+            "source_url": null
+          }
+        ],
+        "fallback_stack": [
+          "Arial",
+          "sans-serif"
+        ],
+        "scripts": [
+          "latin"
+        ],
+        "license": {
+          "name": "open_font_license",
+          "embeddable": true,
+          "subsettable": true,
+          "source_url": null,
+          "restrictions": []
+        },
+        "provenance": null
+      }
+    },
+    "logos": {
+      "primary": {
+        "variants": [
+          {
+            "name": "full_color",
+            "asset_id": "asset_logo_primary",
+            "color_mode": "full_color",
+            "width": 120.0,
+            "height": 32.0
+          }
+        ],
+        "usage": "primary",
+        "min_size": 64.0,
+        "clearspace": 12.0,
+        "allowed_backgrounds": [
+          "surface.brand"
+        ],
+        "license": {
+          "name": "client_owned",
+          "allow_export": true,
+          "allow_modification": false,
+          "restrictions": []
+        },
+        "provenance": null
+      }
+    },
+    "images": {}
+  },
+  "constraints": {
+    "allow_gradients": false,
+    "tone": [
+      "calm",
+      "clinical"
+    ],
+    "imagery": [
+      "people-first"
+    ],
+    "iconography": [
+      "line icons"
+    ],
+    "accessibility_notes": [
+      "Prefer AA contrast"
+    ],
+    "print_constraints": [
+      "Avoid unlicensed font embedding"
+    ],
+    "contrast_pairs": [
+      {
+        "foreground": "text.inverse",
+        "background": "surface.brand",
+        "min_ratio": 4.5
+      }
+    ]
+  }
+}

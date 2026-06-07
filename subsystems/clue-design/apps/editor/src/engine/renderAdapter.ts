@@ -207,10 +207,10 @@ export function nodeSizeForRender(node: Node, page: Page): { width: number; heig
 function normalizeHexForCss(value: string): string {
   const hex = value.trim();
   if (/^#[0-9a-fA-F]{8}$/.test(hex)) {
-    const alpha = parseInt(hex.slice(1, 3), 16) / 255;
-    const red = parseInt(hex.slice(3, 5), 16);
-    const green = parseInt(hex.slice(5, 7), 16);
-    const blue = parseInt(hex.slice(7, 9), 16);
+    const red = parseInt(hex.slice(1, 3), 16);
+    const green = parseInt(hex.slice(3, 5), 16);
+    const blue = parseInt(hex.slice(5, 7), 16);
+    const alpha = parseInt(hex.slice(7, 9), 16) / 255;
     return `rgba(${red}, ${green}, ${blue}, ${Number(alpha.toFixed(3))})`;
   }
   return hex;

@@ -104,6 +104,8 @@ pub struct NodePatch {
     pub strokes: FieldPatch<Vec<Stroke>>,
     pub corner: FieldPatch<CornerRadii>,
     pub opacity: FieldPatch<f64>,
+    #[serde(default)]
+    pub opacity_token: OptionalFieldPatch<String>,
     pub clip: FieldPatch<bool>,
     pub layout: OptionalFieldPatch<AutoLayoutProps>,
     pub computed: OptionalFieldPatch<ComputedGeometry>,
@@ -525,6 +527,7 @@ impl Scene {
         apply_field_patch(&mut node.strokes, patch.strokes);
         apply_field_patch(&mut node.corner, patch.corner);
         apply_field_patch(&mut node.opacity, patch.opacity);
+        apply_optional_patch(&mut node.opacity_token, patch.opacity_token);
         apply_field_patch(&mut node.clip, patch.clip);
         apply_optional_patch(&mut node.layout, patch.layout);
         apply_optional_patch(&mut node.computed, patch.computed);

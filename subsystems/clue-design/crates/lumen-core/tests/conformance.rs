@@ -207,6 +207,7 @@ fn mock_agent_boundary_consumes_scene_operations_and_diagnostics() {
                     font_size: 54.0,
                     font_weight: 800,
                     align: TextAlign::Left,
+                    style_token: None,
                 })),
                 ..NodePatch::default()
             },
@@ -464,6 +465,7 @@ fn phase_name(phase: &Phase) -> &'static str {
         Phase::Contract => "contract",
         Phase::Operation => "operation",
         Phase::Validation => "validation",
+        Phase::Brand => "brand",
         Phase::Dsl => "dsl",
         Phase::Layout => "layout",
         Phase::Export => "export",
@@ -671,6 +673,7 @@ fn header_frame() -> Node {
             },
         },
         width: 0.4,
+        width_token: None,
     }];
     node.corner = corner(6.0);
     node
@@ -772,6 +775,7 @@ fn text_node(
             font_size,
             font_weight,
             align,
+            style_token: None,
         }),
     );
     node.name = Some(name.to_owned());
@@ -920,6 +924,7 @@ fn corner(value: f64) -> CornerRadii {
         top_right: value,
         bottom_right: value,
         bottom_left: value,
+        token: None,
     }
 }
 

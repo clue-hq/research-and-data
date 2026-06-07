@@ -77,6 +77,7 @@ export interface Node {
   strokes: Stroke[];
   corner: CornerRadii;
   opacity: number;
+  opacity_token?: string | null;
   clip: boolean;
   layout: AutoLayoutProps | null;
   computed: ComputedGeometry | null;
@@ -122,6 +123,7 @@ export interface TextNode {
   font_size: number;
   font_weight: number;
   align: TextAlign;
+  style_token?: string | null;
 }
 
 export type TextAlign = "left" | "center" | "right" | "justify";
@@ -147,7 +149,9 @@ export interface AutoLayoutNode {
 
 export interface AutoLayoutProps {
   gap: number;
+  gap_token?: string | null;
   padding: [number, number, number, number];
+  padding_token?: string | null;
   grow: number;
 }
 
@@ -179,6 +183,12 @@ export type Dimension =
       value: {
         weight: number;
       };
+    }
+  | {
+      kind: "token";
+      value: {
+        token: string;
+      };
     };
 
 export interface Fill {
@@ -190,6 +200,7 @@ export interface Stroke {
   id: PaintId;
   paint: Paint;
   width: number;
+  width_token?: string | null;
 }
 
 export type Paint =
@@ -238,6 +249,7 @@ export interface CornerRadii {
   top_right: number;
   bottom_right: number;
   bottom_left: number;
+  token?: string | null;
 }
 
 export interface ComputedGeometry {
@@ -436,6 +448,7 @@ export interface NodePatch {
   strokes: FieldPatch<Stroke[]>;
   corner: FieldPatch<CornerRadii>;
   opacity: FieldPatch<number>;
+  opacity_token: OptionalFieldPatch<string>;
   clip: FieldPatch<boolean>;
   layout: OptionalFieldPatch<AutoLayoutProps>;
   computed: OptionalFieldPatch<ComputedGeometry>;

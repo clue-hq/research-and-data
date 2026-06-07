@@ -44,6 +44,7 @@ fn text_node(id: &str, content: &str) -> Node {
             font_size: 18.0,
             font_weight: 600,
             align: TextAlign::Left,
+            style_token: None,
         }),
     );
     node.size = SizeSpec::fixed(160.0, 28.0);
@@ -153,6 +154,7 @@ fn update_operations_keep_edits_in_operation_log() {
                     font_size: 18.0,
                     font_weight: 600,
                     align: TextAlign::Left,
+                    style_token: None,
                 })),
                 ..NodePatch::default()
             },
@@ -165,6 +167,37 @@ fn update_operations_keep_edits_in_operation_log() {
         NodeKind::Text(text) => assert_eq!(text.content, "Dr. James Wilson"),
         other => panic!("expected text node, got {other:?}"),
     }
+}
+
+#[test]
+fn old_update_node_operations_without_opacity_token_still_deserialize() {
+    let json = r#"
+    {
+      "kind": "update_node",
+      "node_id": "node_contact_name",
+      "patch": {
+        "name": { "kind": "unchanged" },
+        "kind": { "kind": "unchanged" },
+        "transform": { "kind": "unchanged" },
+        "size": { "kind": "unchanged" },
+        "fills": { "kind": "unchanged" },
+        "strokes": { "kind": "unchanged" },
+        "corner": { "kind": "unchanged" },
+        "opacity": { "kind": "unchanged" },
+        "clip": { "kind": "unchanged" },
+        "layout": { "kind": "unchanged" },
+        "computed": { "kind": "unchanged" },
+        "locked": { "kind": "unchanged" }
+      }
+    }
+    "#;
+
+    let operation: Operation = serde_json::from_str(json).unwrap();
+
+    let Operation::UpdateNode { patch, .. } = operation else {
+        panic!("expected update_node operation");
+    };
+    assert!(matches!(patch.opacity_token, OptionalFieldPatch::Unchanged));
 }
 
 #[test]
