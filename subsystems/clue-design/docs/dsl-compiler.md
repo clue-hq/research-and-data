@@ -37,6 +37,7 @@ The exposed entry points are:
 - `parse_dsl(source)` for AST and diagnostics without operation lowering.
 - `compile_dsl(source)` for AST plus operations.
 - `compile_dsl_into_scene(source, scene)` for checked application through the core operation engine.
+- `DslCompileSession::compile_block(source)` for stateful agent repair loops that continue from the last successfully lowered indentation context.
 
 The pipeline follows the Brilliant-derived shape:
 
@@ -50,6 +51,15 @@ source text
 ```
 
 Diagnostics use `Phase::Dsl`, stable `LUMD...` codes, and one failing line span. Unsupported constructs are errors, not silent ignores.
+
+The one-shot compile helpers are backed by `DslCompileSession`. A session owns:
+
+- a draft `Scene`
+- parser context, including seen node IDs and the last valid structural indentation
+- the current parent stack
+- emitted slot-key to slot-id mappings
+
+Successful lines mutate the draft scene immediately through core operations. If parsing or lowering halts, the session preserves only the state from lines that succeeded before the failing line. This lets an agent repair block resume inside the same container without treating the failed line as a committed node or indentation context.
 
 ## Grammar Contract
 
@@ -136,6 +146,24 @@ fill(weight)
 fill:weight
 ```
 
+Style scalar fields that can reasonably come from a brand kit accept either a finite number or a token reference:
+
+```text
+g($spacing.4)
+rd($radius.md)
+o($opacity.subtle)
+pad($spacing.2)
+grow($layout.grow.card)
+stroke(#111827,$stroke.width.thin)
+st[(outline,#111827,w($stroke.width.thin))]
+font("Inter",$type.size.heading,700,left)
+text("Title","Inter",$type.size.heading,700,left)
+```
+
+The AST stores these as typed scalar tokens. This branch does not resolve them into scene numeric values; lowering emits `LUMD0705` warnings and leaves the corresponding numeric scene field unchanged. Token catalogs and resolution belong to `brand-kit/tokens-v0`.
+
+Geometry and page dimensions remain numeric in this branch. Numeric literals must be finite; `NaN`, `inf`, and `-inf` halt with `LUMD0249`.
+
 Supported paints:
 
 ```text
@@ -156,6 +184,10 @@ $token.path
 oklch(l,c,h)
 oklch(l,c,h,a)
 ```
+
+Eight-digit DSL hex follows the Brilliant/Flutter convention `#AARRGGBB`.
+During parsing it is normalized into the scene/export convention
+`#RRGGBBAA`, so exporters can interpret the stored color consistently.
 
 Supported directives:
 
@@ -178,6 +210,7 @@ redo(...)
 ds(...)
 #target property...
 svg(icon:name)
+x(anchor) / y(anchor)
 solid(color,o(opacity))
 stroke cap/position tuple extras
 ```
@@ -203,11 +236,25 @@ These are represented in the AST or parser and produce explicit DSL diagnostics 
 
 Creation lines lower directly into `Operation::InsertNode` under the parent implied by indentation. Page lines lower into `Operation::AddPage`.
 
-Slot annotations derive deterministic slot IDs using `slot_` plus a stable sanitized suffix from the slot key. Example:
+Lowering applies each emitted operation to a draft scene immediately. Insert indexes are derived from the draft scene's current parent children, not from a separate counter. This keeps supported directive sequences such as `delete(...)` and `parent(...)` synchronized with later sibling creation and ensures operation failures surface as DSL diagnostics (`LUMD0800`) before an invalid batch is handed to downstream consumers.
+
+Slot annotations lower immediately after the node insert. This means valid slotted nodes before a later cascade halt still produce complete `UpsertSlot` and `BindNodeToSlot` operations.
+
+Slot annotations derive deterministic collision-resistant slot IDs using:
 
 ```text
-slot(campaign.headline) -> slot_campaign_headline
+slot_ + sanitized readable slot-key slug + "_" + stable 64-bit hex hash of the full slot key
 ```
+
+The readable slug is not unique by itself. Consumers must use the actual `Slot.id` or resolve by `SlotKey`; they must not assume a sanitized key-only ID.
+
+Example shape:
+
+```text
+slot(campaign.headline) -> slot_campaign_headline_<stable_hash>
+```
+
+This prevents valid keys such as `account.name` and `account_name` from colliding.
 
 Image, vector, and instance required references may come from either kind-call arguments or properties:
 
@@ -217,7 +264,9 @@ icon vector path("M0 0L16 16Z")
 copy instance source(card)
 ```
 
-Token syntax is parsed but unresolved. The compiler emits warnings for design-system token declarations/properties because actual token resolution belongs to `brand-kit/tokens-v0`.
+Token syntax is parsed but unresolved. The compiler emits warnings for design-system token declarations/properties and tokenized style scalars because actual token resolution belongs to `brand-kit/tokens-v0`.
+
+Auto-layout anchors `x(...)` and `y(...)` are typed DSL AST properties. The current scene contract cannot store alignment anchors yet, so lowering emits `LUMD0704` warnings instead of treating anchors as unresolved design-system tokens.
 
 ## Fixtures
 
@@ -242,4 +291,4 @@ Current fixture coverage includes:
 
 `brand-kit/tokens-v0` should consume parsed token syntax and scene paint/style tokens but should own token catalogs and resolution.
 
-`agents/design-loop-v0` can use `compile_dsl` for agent-authored create blocks and can rely on precise line diagnostics plus partial operation preservation for repair loops.
+`agents/design-loop-v0` can use `compile_dsl` for one-shot agent-authored create blocks. For multi-turn repair flows it should keep a `DslCompileSession` and call `compile_block(...)` so the repaired block resumes from the last successfully lowered parent stack and seen-ID set.

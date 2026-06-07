@@ -23,13 +23,13 @@ pub fn parse_dsl(source: &str) -> DslParseOutput {
 }
 
 pub fn compile_dsl(source: &str) -> DslCompileOutput {
-    let parse = parse_dsl(source);
-    let mut compile = DslCompiler::new(parse.document.clone(), parse.diagnostics.clone());
-    compile.compile(parse.halted_at.clone())
+    let mut session = DslCompileSession::empty();
+    session.compile_block(source)
 }
 
 pub fn compile_dsl_into_scene(source: &str, scene: &mut Scene) -> DslSceneCompileOutput {
-    let compile_output = compile_dsl(source);
+    let mut session = DslCompileSession::new(scene.clone());
+    let compile_output = session.compile_block(source);
 
     if compile_output.has_errors() {
         return DslSceneCompileOutput {
@@ -50,6 +50,69 @@ pub fn compile_dsl_into_scene(source: &str, scene: &mut Scene) -> DslSceneCompil
             operation_report: None,
             operation_error: Some(error),
         },
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct DslCompileSession {
+    scene: Scene,
+    parser_context: DslParserContext,
+    parent_stack: Vec<ParentFrame>,
+    emitted_slots: BTreeMap<SlotKey, SlotId>,
+}
+
+impl DslCompileSession {
+    pub fn empty() -> Self {
+        Self::new(Scene::new(
+            crate::DocumentId::from("doc_dsl_compile"),
+            "DSL Compile",
+        ))
+    }
+
+    pub fn new(scene: Scene) -> Self {
+        let emitted_slots = scene
+            .slots
+            .values()
+            .map(|slot| (slot.key.clone(), slot.id.clone()))
+            .collect();
+        Self {
+            parser_context: DslParserContext::from_scene(&scene),
+            scene,
+            parent_stack: Vec::new(),
+            emitted_slots,
+        }
+    }
+
+    pub fn compile_block(&mut self, source: &str) -> DslCompileOutput {
+        let starting_context = self.parser_context.clone();
+        let (parse, parsed_context) =
+            DslParser::new_with_context(source, starting_context.clone()).parse_with_context();
+        let mut compiler = DslCompiler::new(
+            parse.document.clone(),
+            parse.diagnostics.clone(),
+            &mut self.scene,
+            &mut self.parent_stack,
+            &mut self.emitted_slots,
+        );
+        let output = compiler.compile(parse.halted_at.clone());
+
+        self.parser_context = if let Some(halt) =
+            lower_halt_before_parse_halt(output.halted_at.as_ref(), parse.halted_at.as_ref())
+        {
+            parser_context_after_lines(&starting_context, &parse.document.lines, halt.line)
+        } else {
+            parsed_context
+        };
+
+        output
+    }
+
+    pub fn scene(&self) -> &Scene {
+        &self.scene
+    }
+
+    pub fn into_scene(self) -> Scene {
+        self.scene
     }
 }
 
@@ -157,19 +220,46 @@ pub enum DslProperty {
     Asset(AssetId),
     Path(String),
     Source(NodeId),
-    Radius(f64),
-    Opacity(f64),
+    Radius(DslScalar),
+    Opacity(DslScalar),
     Rotation(f64),
     Skew(f64, f64),
-    Flip { x: bool, y: bool },
+    Flip {
+        x: bool,
+        y: bool,
+    },
     Clip(bool),
-    Gap(f64),
-    Padding([f64; 4]),
+    Gap(DslScalar),
+    Padding([DslScalar; 4]),
     Wrap(bool),
-    Grow(f64),
+    Grow(DslScalar),
+    LayoutAnchor {
+        axis: DslLayoutAxis,
+        anchor: DslLayoutAnchor,
+    },
     LineTo(f64, f64),
     Name(String),
     Token(String),
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum DslScalar {
+    Number(f64),
+    Token(String),
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum DslLayoutAxis {
+    X,
+    Y,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum DslLayoutAnchor {
+    Start,
+    Center,
+    End,
+    SpaceBetween,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -189,13 +279,13 @@ pub struct DslFill {
 pub struct DslStroke {
     pub id: Option<PaintId>,
     pub paint: Paint,
-    pub width: f64,
+    pub width: DslScalar,
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct DslFont {
     pub family: String,
-    pub size: f64,
+    pub size: DslScalar,
     pub weight: u16,
     pub align: TextAlign,
 }
@@ -272,27 +362,75 @@ struct NormalizedLine {
     text: String,
 }
 
+#[derive(Clone, Debug, PartialEq)]
+struct DslParserContext {
+    seen_node_ids: BTreeSet<NodeId>,
+    previous_structural_depth: Option<usize>,
+    previous_can_have_children: bool,
+}
+
+impl Default for DslParserContext {
+    fn default() -> Self {
+        Self {
+            seen_node_ids: BTreeSet::new(),
+            previous_structural_depth: None,
+            previous_can_have_children: true,
+        }
+    }
+}
+
+impl DslParserContext {
+    fn from_scene(scene: &Scene) -> Self {
+        Self {
+            seen_node_ids: scene.nodes.keys().cloned().collect(),
+            previous_structural_depth: None,
+            previous_can_have_children: true,
+        }
+    }
+
+    fn advance_with_line(&mut self, line: &DslLine) {
+        match &line.kind {
+            DslLineKind::Page(_) => {
+                self.previous_structural_depth = Some(line.indent);
+                self.previous_can_have_children = true;
+            }
+            DslLineKind::Element(element) => {
+                self.seen_node_ids.insert(element.id.clone());
+                self.previous_structural_depth = Some(line.indent);
+                self.previous_can_have_children = element.kind.can_have_children();
+            }
+            _ => {}
+        }
+    }
+}
+
 struct DslParser {
     lines: Vec<NormalizedLine>,
     diagnostics: Vec<DslDiagnostic>,
     halted_at: Option<DslHalt>,
-    seen_node_ids: BTreeSet<NodeId>,
+    context: DslParserContext,
 }
 
 impl DslParser {
     fn new(source: &str) -> Self {
+        Self::new_with_context(source, DslParserContext::default())
+    }
+
+    fn new_with_context(source: &str, context: DslParserContext) -> Self {
         Self {
             lines: normalized_lines(source),
             diagnostics: Vec::new(),
             halted_at: None,
-            seen_node_ids: BTreeSet::new(),
+            context,
         }
     }
 
-    fn parse(mut self) -> DslParseOutput {
+    fn parse(self) -> DslParseOutput {
+        self.parse_with_context().0
+    }
+
+    fn parse_with_context(mut self) -> (DslParseOutput, DslParserContext) {
         let mut document = DslDocument::default();
-        let mut previous_structural_depth: Option<usize> = None;
-        let mut previous_can_have_children = true;
 
         for line in self.lines.clone() {
             let Some((indent, trimmed)) = self.parse_indent(&line) else {
@@ -309,7 +447,7 @@ impl DslParser {
 
             let is_structural = matches!(parsed, DslLineKind::Page(_) | DslLineKind::Element(_));
             if is_structural {
-                if let Some(previous_depth) = previous_structural_depth {
+                if let Some(previous_depth) = self.context.previous_structural_depth {
                     if indent > previous_depth + 1 {
                         self.halt(error_diag(
                             line.line_number,
@@ -321,7 +459,7 @@ impl DslParser {
                         ));
                         break;
                     }
-                    if indent > previous_depth && !previous_can_have_children {
+                    if indent > previous_depth && !self.context.previous_can_have_children {
                         self.halt(error_diag(
                             line.line_number,
                             1,
@@ -334,27 +472,39 @@ impl DslParser {
                     }
                 }
 
-                previous_structural_depth = Some(indent);
-                previous_can_have_children = match &parsed {
-                    DslLineKind::Page(_) => true,
-                    DslLineKind::Element(element) => element.kind.can_have_children(),
-                    _ => true,
-                };
+                if let DslLineKind::Element(element) = &parsed {
+                    if self.context.seen_node_ids.contains(&element.id) {
+                        self.halt(error_diag(
+                            line.line_number,
+                            1,
+                            element.id.as_str().len(),
+                            "LUMD0401",
+                            format!("duplicate node id {}", element.id),
+                            "Every DSL element must have a stable unique id.",
+                        ));
+                        break;
+                    }
+                }
             }
 
-            document.lines.push(DslLine {
+            let parsed_line = DslLine {
                 line_number: line.line_number,
                 indent,
                 raw: line.text,
                 kind: parsed,
-            });
+            };
+            self.context.advance_with_line(&parsed_line);
+            document.lines.push(parsed_line);
         }
 
-        DslParseOutput {
-            document,
-            diagnostics: self.diagnostics,
-            halted_at: self.halted_at,
-        }
+        (
+            DslParseOutput {
+                document,
+                diagnostics: self.diagnostics,
+                halted_at: self.halted_at,
+            },
+            self.context,
+        )
     }
 
     fn parse_indent<'a>(&mut self, line: &'a NormalizedLine) -> Option<(usize, &'a str)> {
@@ -492,17 +642,6 @@ impl DslParser {
         };
 
         let id = parse_node_id(id_token, line_number, 1)?;
-        if !self.seen_node_ids.insert(id.clone()) {
-            return Err(error_diag(
-                line_number,
-                1,
-                id_token.len(),
-                "LUMD0401",
-                format!("duplicate node id {id}"),
-                "Every DSL element must have a stable unique id.",
-            ));
-        }
-
         let mut properties = parse_kind_call_properties(kind_token, line_number)?;
         let mut kind = parse_element_kind(kind_token, line_number)?;
 
@@ -663,26 +802,32 @@ impl DslParser {
     }
 }
 
-struct DslCompiler {
+struct DslCompiler<'a> {
     document: DslDocument,
     operations: Vec<Operation>,
     diagnostics: Vec<DslDiagnostic>,
     halted_at: Option<DslHalt>,
-    parent_stack: Vec<ParentFrame>,
-    child_counts: BTreeMap<String, usize>,
-    slots: BTreeMap<SlotKey, PendingSlot>,
+    scene: &'a mut Scene,
+    parent_stack: &'a mut Vec<ParentFrame>,
+    emitted_slots: &'a mut BTreeMap<SlotKey, SlotId>,
 }
 
-impl DslCompiler {
-    fn new(document: DslDocument, diagnostics: Vec<DslDiagnostic>) -> Self {
+impl<'a> DslCompiler<'a> {
+    fn new(
+        document: DslDocument,
+        diagnostics: Vec<DslDiagnostic>,
+        scene: &'a mut Scene,
+        parent_stack: &'a mut Vec<ParentFrame>,
+        emitted_slots: &'a mut BTreeMap<SlotKey, SlotId>,
+    ) -> Self {
         Self {
             document,
             operations: Vec::new(),
             diagnostics,
             halted_at: None,
-            parent_stack: Vec::new(),
-            child_counts: BTreeMap::new(),
-            slots: BTreeMap::new(),
+            scene,
+            parent_stack,
+            emitted_slots,
         }
     }
 
@@ -703,10 +848,6 @@ impl DslCompiler {
                 self.diagnostics.push(diagnostic);
                 break;
             }
-        }
-
-        if self.halted_at.is_none() {
-            self.flush_slots();
         }
 
         DslCompileOutput {
@@ -746,18 +887,12 @@ impl DslCompiler {
             ));
         }
 
-        let preset = page.preset.clone().unwrap_or(DslPagePreset {
+        let preset = page.preset.clone().unwrap_or_else(|| DslPagePreset {
             preset: PagePreset::A4,
-            orientation: Orientation::Portrait,
+            orientation: default_orientation_for_preset(&PagePreset::A4),
         });
 
-        let (width, height, unit) = match preset.preset {
-            PagePreset::A4 => (210.0, 297.0, Unit::Mm),
-            PagePreset::UsLetter => (8.5, 11.0, Unit::In),
-            PagePreset::LinkedinAd => (1200.0, 627.0, Unit::Px),
-            PagePreset::EnvelopeDl => (220.0, 110.0, Unit::Mm),
-            PagePreset::Custom => (210.0, 297.0, Unit::Mm),
-        };
+        let (width, height, unit) = page_size_for_preset(&preset.preset, &preset.orientation);
 
         let page_model = Page {
             id: page.id.clone(),
@@ -775,8 +910,7 @@ impl DslCompiler {
             background: Vec::new(),
         };
 
-        self.operations
-            .push(Operation::AddPage { page: page_model });
+        self.emit_operation(line, Operation::AddPage { page: page_model })?;
         self.parent_stack.clear();
         self.parent_stack.push(ParentFrame {
             indent: line.indent,
@@ -810,37 +944,35 @@ impl DslCompiler {
             })?;
 
         let mut node = node_from_element(element, line.line_number)?;
+        let mut property_diagnostics = Vec::new();
         apply_properties(
             &mut node,
             &element.properties,
             line.line_number,
-            &mut self.diagnostics,
+            &mut property_diagnostics,
         );
 
-        let parent_key = parent_key(&parent);
-        let index = *self.child_counts.get(&parent_key).unwrap_or(&0);
-        self.child_counts.insert(parent_key, index + 1);
+        let index = children_len_for_parent(self.scene, &parent, line)?;
 
-        self.operations.push(Operation::InsertNode {
-            parent,
-            index,
-            node: node.clone(),
-        });
+        self.emit_operation(
+            line,
+            Operation::InsertNode {
+                parent,
+                index,
+                node: node.clone(),
+            },
+        )?;
 
+        let mut seen_slot_keys = BTreeSet::new();
         for property in &element.properties {
             if let DslProperty::Slot(slot_key) = property {
-                let pending = self
-                    .slots
-                    .entry(slot_key.clone())
-                    .or_insert_with(|| PendingSlot::new(slot_key.clone(), &node));
-                pending.bound_nodes.push(node.id.clone());
-                if pending.placeholder.is_none() {
-                    if let NodeKind::Text(text) = &node.kind {
-                        pending.placeholder = Some(text.content.clone());
-                    }
+                if seen_slot_keys.insert(slot_key.clone()) {
+                    self.emit_slot_binding(line, slot_key, &node)?;
                 }
             }
         }
+
+        self.diagnostics.extend(property_diagnostics);
 
         if element.kind.can_have_children() {
             self.parent_stack.push(ParentFrame {
@@ -859,9 +991,13 @@ impl DslCompiler {
     ) -> Result<(), DslDiagnostic> {
         match directive {
             DslDirective::Delete { target } => {
-                self.operations.push(Operation::RemoveNode {
-                    node_id: target.clone(),
-                });
+                self.emit_operation(
+                    line,
+                    Operation::RemoveNode {
+                        node_id: target.clone(),
+                    },
+                )?;
+                self.prune_parent_stack();
                 Ok(())
             }
             DslDirective::Parent {
@@ -869,11 +1005,15 @@ impl DslCompiler {
                 new_parent,
                 index,
             } => {
-                self.operations.push(Operation::MoveNode {
-                    node_id: target.clone(),
-                    new_parent: new_parent.clone(),
-                    index: *index,
-                });
+                self.emit_operation(
+                    line,
+                    Operation::MoveNode {
+                        node_id: target.clone(),
+                        new_parent: new_parent.clone(),
+                        index: *index,
+                    },
+                )?;
+                self.prune_parent_stack();
                 Ok(())
             }
             DslDirective::Before { .. }
@@ -895,61 +1035,154 @@ impl DslCompiler {
         }
     }
 
-    fn flush_slots(&mut self) {
-        for pending in self.slots.values() {
+    fn emit_slot_binding(
+        &mut self,
+        line: &DslLine,
+        slot_key: &SlotKey,
+        node: &Node,
+    ) -> Result<(), DslDiagnostic> {
+        let slot_id = if let Some(slot_id) = self.emitted_slots.get(slot_key) {
+            slot_id.clone()
+        } else {
+            let slot_id = slot_id_for_key(slot_key);
             let mut slot =
-                Slot::text_short(pending.id.clone(), pending.key.clone(), &pending.label);
-            slot.content_type = pending.content_type.clone();
-            slot.placeholder = pending.placeholder.clone();
-            self.operations.push(Operation::UpsertSlot { slot });
-            for node_id in &pending.bound_nodes {
-                self.operations.push(Operation::BindNodeToSlot {
-                    slot_id: pending.id.clone(),
-                    node_id: node_id.clone(),
-                });
+                Slot::text_short(slot_id.clone(), slot_key.clone(), slot_key.to_string());
+            slot.content_type = match node.kind {
+                NodeKind::Image(_) => crate::ContentType::Image,
+                NodeKind::Text(_) => crate::ContentType::TextShort,
+                _ => crate::ContentType::TextShort,
+            };
+            if let NodeKind::Text(text) = &node.kind {
+                slot.placeholder = Some(text.content.clone());
             }
-        }
+            self.emit_operation(line, Operation::UpsertSlot { slot })?;
+            self.emitted_slots.insert(slot_key.clone(), slot_id.clone());
+            slot_id
+        };
+
+        self.emit_operation(
+            line,
+            Operation::BindNodeToSlot {
+                slot_id,
+                node_id: node.id.clone(),
+            },
+        )
+    }
+
+    fn emit_operation(
+        &mut self,
+        line: &DslLine,
+        operation: Operation,
+    ) -> Result<(), DslDiagnostic> {
+        self.scene
+            .apply_operation(operation.clone())
+            .map_err(|error| operation_error_diag(line, &error))?;
+        self.operations.push(operation);
+        Ok(())
+    }
+
+    fn prune_parent_stack(&mut self) {
+        let scene = &*self.scene;
+        self.parent_stack
+            .retain(|frame| parent_can_receive_children(scene, &frame.parent));
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 struct ParentFrame {
     indent: usize,
     parent: ParentRef,
 }
 
-#[derive(Clone, Debug)]
-struct PendingSlot {
-    id: SlotId,
-    key: SlotKey,
-    label: String,
-    content_type: crate::ContentType,
-    placeholder: Option<String>,
-    bound_nodes: Vec<NodeId>,
+fn lower_halt_before_parse_halt<'a>(
+    output_halt: Option<&'a DslHalt>,
+    parse_halt: Option<&DslHalt>,
+) -> Option<&'a DslHalt> {
+    output_halt.filter(|halt| {
+        parse_halt
+            .map(|parse_halt| halt.line < parse_halt.line || halt.code != parse_halt.code)
+            .unwrap_or(true)
+    })
 }
 
-impl PendingSlot {
-    fn new(key: SlotKey, node: &Node) -> Self {
-        let content_type = match node.kind {
-            NodeKind::Image(_) => crate::ContentType::Image,
-            NodeKind::Text(_) => crate::ContentType::TextShort,
-            _ => crate::ContentType::TextShort,
-        };
+fn parser_context_after_lines(
+    starting_context: &DslParserContext,
+    lines: &[DslLine],
+    halt_line: usize,
+) -> DslParserContext {
+    let mut context = starting_context.clone();
+    for line in lines {
+        if line.line_number >= halt_line {
+            break;
+        }
+        context.advance_with_line(line);
+    }
+    context
+}
 
-        let placeholder = match &node.kind {
-            NodeKind::Text(text) => Some(text.content.clone()),
-            _ => None,
-        };
-
-        Self {
-            id: SlotId::from(format!("slot_{}", stable_suffix(key.as_str()))),
-            key: key.clone(),
-            label: key.to_string(),
-            content_type,
-            placeholder,
-            bound_nodes: Vec::new(),
+fn children_len_for_parent(
+    scene: &Scene,
+    parent: &ParentRef,
+    line: &DslLine,
+) -> Result<usize, DslDiagnostic> {
+    match parent {
+        ParentRef::Page(page_id) => scene
+            .pages
+            .get(page_id)
+            .map(|page| page.children.len())
+            .ok_or_else(|| {
+                operation_error_diag(
+                    line,
+                    &OperationError::new(
+                        "op.page_missing",
+                        format!("parent page {} does not exist", page_id),
+                    ),
+                )
+            }),
+        ParentRef::Node(node_id) => {
+            let node = scene.nodes.get(node_id).ok_or_else(|| {
+                operation_error_diag(
+                    line,
+                    &OperationError::new(
+                        "op.node_missing",
+                        format!("parent node {} does not exist", node_id),
+                    ),
+                )
+            })?;
+            if !node.kind.can_have_children() {
+                return Err(operation_error_diag(
+                    line,
+                    &OperationError::new(
+                        "op.leaf_parent",
+                        format!("node {} cannot have children", node_id),
+                    ),
+                ));
+            }
+            Ok(node.children.len())
         }
     }
+}
+
+fn parent_can_receive_children(scene: &Scene, parent: &ParentRef) -> bool {
+    match parent {
+        ParentRef::Page(page_id) => scene.pages.contains_key(page_id),
+        ParentRef::Node(node_id) => scene
+            .nodes
+            .get(node_id)
+            .map(|node| node.kind.can_have_children())
+            .unwrap_or(false),
+    }
+}
+
+fn operation_error_diag(line: &DslLine, error: &OperationError) -> DslDiagnostic {
+    error_diag(
+        line.line_number,
+        1,
+        line.raw.len().max(1),
+        "LUMD0800",
+        format!("operation {} failed during DSL lowering: {}", error.code, error.message),
+        "The DSL line parsed, but applying the corresponding structured operation failed against the current draft scene.",
+    )
 }
 
 fn normalized_lines(source: &str) -> Vec<NormalizedLine> {
@@ -1165,7 +1398,7 @@ fn parse_kind_call_properties(
     match call.name.as_str() {
         "t" | "text" if call.args.len() == 5 => Ok(vec![DslProperty::Font(DslFont {
             family: unquote(&call.args[1], line_number, 1)?,
-            size: parse_f64(&call.args[2], line_number, 1)?,
+            size: parse_scalar(&call.args[2], line_number, 1)?,
             weight: parse_u16(&call.args[3], line_number, 1)?,
             align: parse_text_align(&call.args[4], line_number, 1)?,
         })]),
@@ -1256,7 +1489,7 @@ fn parse_property_token(
             vec![DslProperty::Stroke(DslStroke {
                 id: None,
                 paint: parse_paint(&call.args[0], line_number, column)?,
-                width: parse_f64(&call.args[1], line_number, column)?,
+                width: parse_scalar(&call.args[1], line_number, column)?,
             })]
         }
         "st" => parse_stroke_list(&call.args.join(","), line_number, column)?
@@ -1303,7 +1536,7 @@ fn parse_property_token(
         }
         "rd" | "radius" => {
             expect_arg_count(&call, 1, line_number)?;
-            vec![DslProperty::Radius(parse_f64(
+            vec![DslProperty::Radius(parse_scalar(
                 &call.args[0],
                 line_number,
                 column,
@@ -1311,7 +1544,7 @@ fn parse_property_token(
         }
         "o" | "opacity" => {
             expect_arg_count(&call, 1, line_number)?;
-            vec![DslProperty::Opacity(parse_f64(
+            vec![DslProperty::Opacity(parse_scalar(
                 &call.args[0],
                 line_number,
                 column,
@@ -1346,7 +1579,7 @@ fn parse_property_token(
         }
         "g" | "gap" => {
             expect_arg_count(&call, 1, line_number)?;
-            vec![DslProperty::Gap(parse_f64(
+            vec![DslProperty::Gap(parse_scalar(
                 &call.args[0],
                 line_number,
                 column,
@@ -1367,11 +1600,25 @@ fn parse_property_token(
         }
         "grow" => {
             expect_arg_count(&call, 1, line_number)?;
-            vec![DslProperty::Grow(parse_f64(
+            vec![DslProperty::Grow(parse_scalar(
                 &call.args[0],
                 line_number,
                 column,
             )?)]
+        }
+        "x" => {
+            expect_arg_count(&call, 1, line_number)?;
+            vec![DslProperty::LayoutAnchor {
+                axis: DslLayoutAxis::X,
+                anchor: parse_layout_anchor(&call.args[0], line_number, column)?,
+            }]
+        }
+        "y" => {
+            expect_arg_count(&call, 1, line_number)?;
+            vec![DslProperty::LayoutAnchor {
+                axis: DslLayoutAxis::Y,
+                anchor: parse_layout_anchor(&call.args[0], line_number, column)?,
+            }]
         }
         "to" => {
             expect_arg_count(&call, 2, line_number)?;
@@ -1388,7 +1635,7 @@ fn parse_property_token(
                 column,
             )?)]
         }
-        "x" | "y" | "token" | "ds" | "color" => vec![DslProperty::Token(token.to_owned())],
+        "token" | "ds" | "color" => vec![DslProperty::Token(token.to_owned())],
         _ => {
             return Err(error_diag(
                 line_number,
@@ -1545,20 +1792,36 @@ fn apply_properties(
                 });
             }
             DslProperty::Stroke(stroke) => {
-                let id = stroke.id.clone().unwrap_or_else(|| {
-                    stroke_index += 1;
-                    PaintId::from(format!("paint_{}_stroke_{}", node.id, stroke_index))
-                });
-                node.strokes.push(Stroke {
-                    id,
-                    paint: stroke.paint.clone(),
-                    width: stroke.width,
-                });
+                if let Some(width) = scalar_to_number(
+                    &stroke.width,
+                    line_number,
+                    node.id.as_str().len(),
+                    "stroke width",
+                    diagnostics,
+                ) {
+                    let id = stroke.id.clone().unwrap_or_else(|| {
+                        stroke_index += 1;
+                        PaintId::from(format!("paint_{}_stroke_{}", node.id, stroke_index))
+                    });
+                    node.strokes.push(Stroke {
+                        id,
+                        paint: stroke.paint.clone(),
+                        width,
+                    });
+                }
             }
             DslProperty::Font(font) => {
                 if let NodeKind::Text(text) = &mut node.kind {
                     text.font_family = font.family.clone();
-                    text.font_size = font.size;
+                    if let Some(size) = scalar_to_number(
+                        &font.size,
+                        line_number,
+                        node.id.as_str().len(),
+                        "font size",
+                        diagnostics,
+                    ) {
+                        text.font_size = size;
+                    }
                     text.font_weight = font.weight;
                     text.align = font.align.clone();
                 } else {
@@ -1588,12 +1851,30 @@ fn apply_properties(
                 }
             }
             DslProperty::Radius(radius) => {
-                node.corner.top_left = *radius;
-                node.corner.top_right = *radius;
-                node.corner.bottom_right = *radius;
-                node.corner.bottom_left = *radius;
+                if let Some(radius) = scalar_to_number(
+                    radius,
+                    line_number,
+                    node.id.as_str().len(),
+                    "corner radius",
+                    diagnostics,
+                ) {
+                    node.corner.top_left = radius;
+                    node.corner.top_right = radius;
+                    node.corner.bottom_right = radius;
+                    node.corner.bottom_left = radius;
+                }
             }
-            DslProperty::Opacity(opacity) => node.opacity = *opacity,
+            DslProperty::Opacity(opacity) => {
+                if let Some(opacity) = scalar_to_number(
+                    opacity,
+                    line_number,
+                    node.id.as_str().len(),
+                    "opacity",
+                    diagnostics,
+                ) {
+                    node.opacity = opacity;
+                }
+            }
             DslProperty::Rotation(rotation) => node.transform.rotation = *rotation,
             DslProperty::Skew(skew_x, skew_y) => {
                 node.transform.skew_x = *skew_x;
@@ -1605,10 +1886,22 @@ fn apply_properties(
             }
             DslProperty::Clip(clip) => node.clip = *clip,
             DslProperty::Gap(gap) => {
-                ensure_layout(node).gap = *gap;
+                if let Some(gap) =
+                    scalar_to_number(gap, line_number, node.id.as_str().len(), "gap", diagnostics)
+                {
+                    ensure_layout(node).gap = gap;
+                }
             }
             DslProperty::Padding(padding) => {
-                ensure_layout(node).padding = *padding;
+                if let Some(padding) = scalar_quad_to_numbers(
+                    padding,
+                    line_number,
+                    node.id.as_str().len(),
+                    "padding",
+                    diagnostics,
+                ) {
+                    ensure_layout(node).padding = padding;
+                }
             }
             DslProperty::Wrap(wrap) => {
                 if let NodeKind::AutoLayout(auto_layout) = &mut node.kind {
@@ -1616,7 +1909,25 @@ fn apply_properties(
                 }
             }
             DslProperty::Grow(grow) => {
-                ensure_layout(node).grow = *grow;
+                if let Some(grow) = scalar_to_number(
+                    grow,
+                    line_number,
+                    node.id.as_str().len(),
+                    "grow",
+                    diagnostics,
+                ) {
+                    ensure_layout(node).grow = grow;
+                }
+            }
+            DslProperty::LayoutAnchor { .. } => {
+                diagnostics.push(warning_diag(
+                    line_number,
+                    1,
+                    node.id.as_str().len(),
+                    "LUMD0704",
+                    "layout anchors are parsed but not lowered in this workstream",
+                    "Center/end/space-between alignment belongs to engine/slots-layout once the scene contract stores alignment.",
+                ));
             }
             DslProperty::LineTo(x, y) => {
                 if let NodeKind::Line(line) = &mut node.kind {
@@ -1648,6 +1959,68 @@ fn ensure_layout(node: &mut Node) -> &mut AutoLayoutProps {
     })
 }
 
+fn scalar_to_number(
+    scalar: &DslScalar,
+    line_number: usize,
+    length: usize,
+    field_name: &str,
+    diagnostics: &mut Vec<DslDiagnostic>,
+) -> Option<f64> {
+    match scalar {
+        DslScalar::Number(value) => Some(*value),
+        DslScalar::Token(token) => {
+            diagnostics.push(unresolved_scalar_token_warning(
+                line_number,
+                length,
+                field_name,
+                token,
+            ));
+            None
+        }
+    }
+}
+
+fn scalar_quad_to_numbers(
+    scalars: &[DslScalar; 4],
+    line_number: usize,
+    length: usize,
+    field_name: &str,
+    diagnostics: &mut Vec<DslDiagnostic>,
+) -> Option<[f64; 4]> {
+    let mut values = [0.0; 4];
+    for (index, scalar) in scalars.iter().enumerate() {
+        match scalar {
+            DslScalar::Number(value) => values[index] = *value,
+            DslScalar::Token(token) => {
+                diagnostics.push(unresolved_scalar_token_warning(
+                    line_number,
+                    length,
+                    field_name,
+                    token,
+                ));
+                return None;
+            }
+        }
+    }
+    Some(values)
+}
+
+fn unresolved_scalar_token_warning(
+    line_number: usize,
+    length: usize,
+    field_name: &str,
+    token: &str,
+) -> DslDiagnostic {
+    warning_diag(
+        line_number,
+        1,
+        length.max(1),
+        "LUMD0705",
+        format!("{field_name} token ${token} is parsed but not resolved in this workstream"),
+        "Token model and numeric/style resolution belong to brand-kit/tokens-v0.",
+    )
+}
+
 fn dimension_to_scene(dimension: &DslDimension) -> crate::Dimension {
     match dimension {
         DslDimension::Fixed(value) => crate::Dimension::Fixed(*value),
@@ -1663,7 +2036,7 @@ fn parse_fill_list(
     line_number: usize,
     column: usize,
 ) -> Result<Vec<DslFill>, DslDiagnostic> {
-    parse_tuple_groups(source)
+    parse_tuple_groups(source, line_number, column)?
         .into_iter()
         .map(|group| {
             let args = split_top_level_commas(&group);
@@ -1705,7 +2078,7 @@ fn parse_stroke_list(
     line_number: usize,
     column: usize,
 ) -> Result<Vec<DslStroke>, DslDiagnostic> {
-    parse_tuple_groups(source)
+    parse_tuple_groups(source, line_number, column)?
         .into_iter()
         .map(|group| {
             let args = split_top_level_commas(&group);
@@ -1721,12 +2094,12 @@ fn parse_stroke_list(
             }
             let width = if let Some(call) = parse_call(&args[2]) {
                 if call.name == "w" && call.args.len() == 1 {
-                    parse_f64(&call.args[0], line_number, column)?
+                    parse_scalar(&call.args[0], line_number, column)?
                 } else {
-                    parse_f64(&args[2], line_number, column)?
+                    parse_scalar(&args[2], line_number, column)?
                 }
             } else {
-                parse_f64(&args[2], line_number, column)?
+                parse_scalar(&args[2], line_number, column)?
             };
             Ok(DslStroke {
                 id: Some(parse_paint_id(&args[0], line_number, column)?),
@@ -1737,53 +2110,139 @@ fn parse_stroke_list(
         .collect()
 }
 
-fn parse_tuple_groups(source: &str) -> Vec<String> {
-    let mut groups = Vec::new();
-    let mut start = None;
-    let mut depth = 0usize;
-    let mut in_string = false;
-    let mut escape = false;
+fn parse_tuple_groups(
+    source: &str,
+    line_number: usize,
+    column: usize,
+) -> Result<Vec<String>, DslDiagnostic> {
+    let trimmed = source.trim();
+    if trimmed.is_empty() {
+        return Ok(Vec::new());
+    }
 
-    for (index, ch) in source.char_indices() {
-        if escape {
-            escape = false;
-            continue;
+    if !trimmed.starts_with('(') {
+        if trimmed.contains('(') || trimmed.contains(')') {
+            return Err(error_diag(
+                line_number,
+                column,
+                source.len().max(1),
+                "LUMD0247",
+                "malformed paint tuple list",
+                "Use f[(fill_id,#ffffff)] or st[(stroke_id,#111827,w(2))]; tuple lists must consume the full source.",
+            ));
         }
-        if ch == '\\' && in_string {
-            escape = true;
-            continue;
+        return Ok(split_top_level_commas(trimmed));
+    }
+
+    let mut groups = Vec::new();
+    let mut cursor = 0usize;
+
+    while cursor < trimmed.len() {
+        cursor = skip_ascii_whitespace(trimmed, cursor);
+        if cursor >= trimmed.len() {
+            break;
         }
-        if ch == '"' {
-            in_string = !in_string;
-            continue;
+
+        if trimmed.as_bytes()[cursor] != b'(' {
+            return Err(error_diag(
+                line_number,
+                column + cursor,
+                source.len().saturating_sub(cursor).max(1),
+                "LUMD0247",
+                "malformed paint tuple list",
+                "Only commas and complete tuple groups are allowed after the first paint tuple.",
+            ));
         }
-        if in_string {
-            continue;
-        }
-        match ch {
-            '(' => {
-                if depth == 0 {
-                    start = Some(index + 1);
-                }
-                depth += 1;
+
+        let group_start = cursor + 1;
+        let mut depth = 0usize;
+        let mut in_string = false;
+        let mut escape = false;
+        let mut end = None;
+
+        for (relative_index, ch) in trimmed[cursor..].char_indices() {
+            let index = cursor + relative_index;
+            if escape {
+                escape = false;
+                continue;
             }
-            ')' => {
-                depth = depth.saturating_sub(1);
-                if depth == 0 {
-                    if let Some(start_index) = start.take() {
-                        groups.push(source[start_index..index].to_owned());
+            if ch == '\\' && in_string {
+                escape = true;
+                continue;
+            }
+            if ch == '"' {
+                in_string = !in_string;
+                continue;
+            }
+            if in_string {
+                continue;
+            }
+            match ch {
+                '(' => depth += 1,
+                ')' => {
+                    if depth == 0 {
+                        return Err(error_diag(
+                            line_number,
+                            column + index,
+                            1,
+                            "LUMD0247",
+                            "malformed paint tuple list",
+                            "Check tuple parentheses.",
+                        ));
+                    }
+                    depth -= 1;
+                    if depth == 0 {
+                        end = Some(index);
+                        break;
                     }
                 }
+                _ => {}
             }
-            _ => {}
+        }
+
+        let Some(group_end) = end else {
+            return Err(error_diag(
+                line_number,
+                column + cursor,
+                source.len().saturating_sub(cursor).max(1),
+                "LUMD0247",
+                "malformed paint tuple list",
+                "Close every paint tuple and avoid trailing malformed text.",
+            ));
+        };
+
+        groups.push(trimmed[group_start..group_end].trim().to_owned());
+        cursor = skip_ascii_whitespace(trimmed, group_end + 1);
+
+        if cursor >= trimmed.len() {
+            break;
+        }
+
+        if trimmed.as_bytes()[cursor] != b',' {
+            return Err(error_diag(
+                line_number,
+                column + cursor,
+                1,
+                "LUMD0247",
+                "malformed paint tuple list",
+                "Separate paint tuples with commas and remove trailing junk.",
+            ));
+        }
+        cursor += 1;
+        cursor = skip_ascii_whitespace(trimmed, cursor);
+        if cursor >= trimmed.len() {
+            return Err(error_diag(
+                line_number,
+                column + cursor.saturating_sub(1),
+                1,
+                "LUMD0247",
+                "malformed paint tuple list",
+                "Remove the trailing comma or add the next tuple.",
+            ));
         }
     }
 
-    if groups.is_empty() {
-        split_top_level_commas(source)
-    } else {
-        groups
-    }
+    Ok(groups)
 }
 
 fn parse_paint(source: &str, line_number: usize, column: usize) -> Result<Paint, DslDiagnostic> {
@@ -1949,13 +2408,9 @@ fn parse_color(source: &str, line_number: usize, column: usize) -> Result<Color,
             },
         });
     }
-    if source.starts_with('#') && (source.len() == 7 || source.len() == 9) {
-        if source.len() == 9 {
-            // Brilliant reads 8-digit hex as AARRGGBB. We preserve that
-            // convention and keep the warning at parse/lint level.
-        }
+    if source.starts_with('#') {
         return Ok(Color::Hex {
-            value: source.to_owned(),
+            value: normalize_dsl_hex_color(source, line_number, column)?,
         });
     }
     Err(error_diag(
@@ -1982,7 +2437,7 @@ fn parse_font(call: &Call, line_number: usize, column: usize) -> Result<DslFont,
 
     Ok(DslFont {
         family: unquote(&call.args[0], line_number, column)?,
-        size: parse_f64(&call.args[1], line_number, column)?,
+        size: parse_scalar(&call.args[1], line_number, column)?,
         weight: parse_u16(&call.args[2], line_number, column)?,
         align: parse_text_align(&call.args[3], line_number, column)?,
     })
@@ -2012,22 +2467,22 @@ fn parse_padding(
     call: &Call,
     line_number: usize,
     column: usize,
-) -> Result<[f64; 4], DslDiagnostic> {
+) -> Result<[DslScalar; 4], DslDiagnostic> {
     match call.args.len() {
         1 => {
-            let value = parse_f64(&call.args[0], line_number, column)?;
-            Ok([value, value, value, value])
+            let value = parse_scalar(&call.args[0], line_number, column)?;
+            Ok([value.clone(), value.clone(), value.clone(), value])
         }
         2 => {
-            let vertical = parse_f64(&call.args[0], line_number, column)?;
-            let horizontal = parse_f64(&call.args[1], line_number, column)?;
-            Ok([vertical, horizontal, vertical, horizontal])
+            let vertical = parse_scalar(&call.args[0], line_number, column)?;
+            let horizontal = parse_scalar(&call.args[1], line_number, column)?;
+            Ok([vertical.clone(), horizontal.clone(), vertical, horizontal])
         }
         4 => Ok([
-            parse_f64(&call.args[0], line_number, column)?,
-            parse_f64(&call.args[1], line_number, column)?,
-            parse_f64(&call.args[2], line_number, column)?,
-            parse_f64(&call.args[3], line_number, column)?,
+            parse_scalar(&call.args[0], line_number, column)?,
+            parse_scalar(&call.args[1], line_number, column)?,
+            parse_scalar(&call.args[2], line_number, column)?,
+            parse_scalar(&call.args[3], line_number, column)?,
         ]),
         _ => Err(error_diag(
             line_number,
@@ -2036,6 +2491,27 @@ fn parse_padding(
             "LUMD0222",
             "padding expects 1, 2, or 4 numeric values",
             "Use pad(12), pad(8,12), or pad(8,12,8,12).",
+        )),
+    }
+}
+
+fn parse_layout_anchor(
+    source: &str,
+    line_number: usize,
+    column: usize,
+) -> Result<DslLayoutAnchor, DslDiagnostic> {
+    match source.trim() {
+        "s" | "start" => Ok(DslLayoutAnchor::Start),
+        "c" | "center" => Ok(DslLayoutAnchor::Center),
+        "e" | "end" => Ok(DslLayoutAnchor::End),
+        "sb" | "space_between" | "space-between" => Ok(DslLayoutAnchor::SpaceBetween),
+        other => Err(error_diag(
+            line_number,
+            column,
+            other.len().max(1),
+            "LUMD0248",
+            format!("unknown layout anchor {other}"),
+            "Use s/start, c/center, e/end, or sb/space_between.",
         )),
     }
 }
@@ -2074,12 +2550,36 @@ fn parse_page_preset(call: &Call, line_number: usize) -> Result<DslPagePreset, D
             )),
         })
         .transpose()?
-        .unwrap_or(Orientation::Portrait);
+        .unwrap_or_else(|| default_orientation_for_preset(&preset));
 
     Ok(DslPagePreset {
         preset,
         orientation,
     })
+}
+
+fn default_orientation_for_preset(preset: &PagePreset) -> Orientation {
+    match preset {
+        PagePreset::LinkedinAd | PagePreset::EnvelopeDl => Orientation::Landscape,
+        PagePreset::A4 | PagePreset::UsLetter | PagePreset::Custom => Orientation::Portrait,
+    }
+}
+
+fn page_size_for_preset(preset: &PagePreset, orientation: &Orientation) -> (f64, f64, Unit) {
+    let (base_width, base_height, unit): (f64, f64, Unit) = match preset {
+        PagePreset::A4 => (210.0, 297.0, Unit::Mm),
+        PagePreset::UsLetter => (8.5, 11.0, Unit::In),
+        PagePreset::LinkedinAd => (1200.0, 627.0, Unit::Px),
+        PagePreset::EnvelopeDl => (220.0, 110.0, Unit::Mm),
+        PagePreset::Custom => (210.0, 297.0, Unit::Mm),
+    };
+    let short_side = base_width.min(base_height);
+    let long_side = base_width.max(base_height);
+
+    match orientation {
+        Orientation::Portrait => (short_side, long_side, unit),
+        Orientation::Landscape => (long_side, short_side, unit),
+    }
 }
 
 fn parse_dimension(
@@ -2334,7 +2834,7 @@ fn parse_asset_id(
 }
 
 fn parse_f64(source: &str, line_number: usize, column: usize) -> Result<f64, DslDiagnostic> {
-    source.trim().parse::<f64>().map_err(|_| {
+    let value = source.trim().parse::<f64>().map_err(|_| {
         error_diag(
             line_number,
             column,
@@ -2343,7 +2843,45 @@ fn parse_f64(source: &str, line_number: usize, column: usize) -> Result<f64, Dsl
             format!("expected numeric value, got {source}"),
             "Use decimal numerics such as 24 or 24.5.",
         )
-    })
+    })?;
+    if !value.is_finite() {
+        return Err(error_diag(
+            line_number,
+            column,
+            source.len().max(1),
+            "LUMD0249",
+            format!("numeric value must be finite, got {source}"),
+            "Use finite decimal numerics; NaN and infinity are not valid design geometry.",
+        ));
+    }
+    Ok(value)
+}
+
+fn parse_scalar(
+    source: &str,
+    line_number: usize,
+    column: usize,
+) -> Result<DslScalar, DslDiagnostic> {
+    let trimmed = source.trim();
+    if let Some(token) = trimmed.strip_prefix('$') {
+        if token.is_empty()
+            || !token
+                .chars()
+                .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '_' | '-' | '.'))
+        {
+            return Err(error_diag(
+                line_number,
+                column,
+                source.len().max(1),
+                "LUMD0411",
+                format!("invalid token reference {source}"),
+                "Use token references like $spacing.4 or $type.size.heading.",
+            ));
+        }
+        Ok(DslScalar::Token(token.to_owned()))
+    } else {
+        Ok(DslScalar::Number(parse_f64(source, line_number, column)?))
+    }
 }
 
 fn parse_u16(source: &str, line_number: usize, column: usize) -> Result<u16, DslDiagnostic> {
@@ -2473,18 +3011,80 @@ fn unquote_lossy(source: &str) -> String {
     unquote(source, 1, 1).unwrap_or_else(|_| source.trim_matches('"').to_owned())
 }
 
-fn parent_key(parent: &ParentRef) -> String {
-    match parent {
-        ParentRef::Page(page_id) => format!("page:{page_id}"),
-        ParentRef::Node(node_id) => format!("node:{node_id}"),
+fn slot_id_for_key(key: &SlotKey) -> SlotId {
+    SlotId::from(format!(
+        "slot_{}_{:016x}",
+        stable_slug(key.as_str()),
+        stable_hash64(key.as_str())
+    ))
+}
+
+fn stable_slug(source: &str) -> String {
+    let slug: String = source
+        .chars()
+        .map(|ch| if ch.is_ascii_alphanumeric() { ch } else { '_' })
+        .collect();
+    if slug.is_empty() {
+        "slot".to_owned()
+    } else {
+        slug
     }
 }
 
-fn stable_suffix(source: &str) -> String {
-    source
-        .chars()
-        .map(|ch| if ch.is_ascii_alphanumeric() { ch } else { '_' })
-        .collect()
+fn stable_hash64(source: &str) -> u64 {
+    const FNV_OFFSET: u64 = 0xcbf29ce484222325;
+    const FNV_PRIME: u64 = 0x100000001b3;
+
+    let mut hash = FNV_OFFSET;
+    for byte in source.as_bytes() {
+        hash ^= *byte as u64;
+        hash = hash.wrapping_mul(FNV_PRIME);
+    }
+    hash
+}
+
+fn normalize_dsl_hex_color(
+    source: &str,
+    line_number: usize,
+    column: usize,
+) -> Result<String, DslDiagnostic> {
+    let hex = source.trim();
+    let digits = hex.strip_prefix('#').unwrap_or(hex);
+    if digits.len() != 6 && digits.len() != 8 {
+        return Err(invalid_color_diag(hex, line_number, column));
+    }
+    if !digits.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        return Err(invalid_color_diag(hex, line_number, column));
+    }
+
+    let normalized = digits.to_ascii_lowercase();
+    if normalized.len() == 6 {
+        Ok(format!("#{normalized}"))
+    } else {
+        let alpha = &normalized[0..2];
+        let red = &normalized[2..4];
+        let green = &normalized[4..6];
+        let blue = &normalized[6..8];
+        Ok(format!("#{red}{green}{blue}{alpha}"))
+    }
+}
+
+fn invalid_color_diag(source: &str, line_number: usize, column: usize) -> DslDiagnostic {
+    error_diag(
+        line_number,
+        column,
+        source.len().max(1),
+        "LUMD0219",
+        format!("invalid color {source}"),
+        "Use #RRGGBB, #AARRGGBB, $token, or oklch(l,c,h,a).",
+    )
+}
+
+fn skip_ascii_whitespace(source: &str, mut cursor: usize) -> usize {
+    while cursor < source.len() && source.as_bytes()[cursor].is_ascii_whitespace() {
+        cursor += 1;
+    }
+    cursor
 }
 
 fn error_diag(

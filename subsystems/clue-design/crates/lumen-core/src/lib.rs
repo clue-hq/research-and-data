@@ -16,9 +16,10 @@ pub mod validation;
 
 pub use diagnostics::{Diagnostic, DiagnosticSeverity, DiagnosticSubject, Phase};
 pub use dsl::{
-    compile_dsl, compile_dsl_into_scene, normalize_dsl, parse_dsl, DslCompileOutput, DslDiagnostic,
-    DslDimension, DslDirective, DslDocument, DslElement, DslElementKind, DslFill, DslFont, DslHalt,
-    DslLine, DslLineKind, DslModification, DslPage, DslPagePreset, DslParseOutput, DslProperty,
+    compile_dsl, compile_dsl_into_scene, normalize_dsl, parse_dsl, DslCompileOutput,
+    DslCompileSession, DslDiagnostic, DslDimension, DslDirective, DslDocument, DslElement,
+    DslElementKind, DslFill, DslFont, DslHalt, DslLayoutAnchor, DslLayoutAxis, DslLine,
+    DslLineKind, DslModification, DslPage, DslPagePreset, DslParseOutput, DslProperty, DslScalar,
     DslSceneCompileOutput, DslStroke, SourceSpan,
 };
 pub use export_contract::{
