@@ -149,20 +149,33 @@ fill:weight
 Style scalar fields that can reasonably come from a brand kit accept either a finite number or a token reference:
 
 ```text
-g($spacing.4)
+g($space.md)
 rd($radius.md)
 o($opacity.subtle)
-pad($spacing.2)
-grow($layout.grow.card)
-stroke(#111827,$stroke.width.thin)
+pad($space.md)
+stroke(#111827,$stroke.width.firm)
 st[(outline,#111827,w($stroke.width.thin))]
-font("Inter",$type.size.heading,700,left)
-text("Title","Inter",$type.size.heading,700,left)
+s($space.xl,hug)
+style($type.headline)
+font($type.headline)
 ```
 
-The AST stores these as typed scalar tokens. This branch does not resolve them into scene numeric values; lowering emits `LUMD0705` warnings and leaves the corresponding numeric scene field unchanged. Token catalogs and resolution belong to `brand-kit/tokens-v0`.
+The DSL compiler does not resolve token values itself. It lowers token references into scene token carriers where the shared contract has a precise field:
 
-Geometry and page dimensions remain numeric in this branch. Numeric literals must be finite; `NaN`, `inf`, and `-inf` halt with `LUMD0249`.
+- `s($token,...)` lowers to `Dimension::Token`.
+- `fill($token)` and gradient stops lower to token paints/colors.
+- `stroke(...,$token)` lowers to `Stroke.width_token`.
+- `rd($token)` lowers to `CornerRadii.token`.
+- `o($token)` lowers to `Node.opacity_token`.
+- `g($token)` lowers to `AutoLayoutProps.gap_token`.
+- `pad($token)` lowers to `AutoLayoutProps.padding_token`.
+- `style($token)` and `font($token)` lower to `TextNode.style_token`.
+
+Actual catalog lookup, mode selection, fallback behavior, and materialization into concrete numbers/colors/type styles belong to the brand-kit resolver. Token forms without a precise scene carrier, such as `font("Inter",$type.size.heading,700,left)`, still emit `LUMD0705` instead of being guessed into an ambiguous field.
+
+If callers compile tokenized DSL and no uploaded/generated/client brand kit exists, they should pass the platform default brand kit into the canonical preflight pipeline. Preflight rejects tokenized scenes with `LUMP0300` when no brand kit is supplied, while concrete non-token scenes may preflight without one.
+
+Position and page dimensions remain numeric in this branch. Numeric literals must be finite; `NaN`, `inf`, and `-inf` halt with `LUMD0249`.
 
 Supported paints:
 
@@ -264,7 +277,7 @@ icon vector path("M0 0L16 16Z")
 copy instance source(card)
 ```
 
-Token syntax is parsed but unresolved. The compiler emits warnings for design-system token declarations/properties and tokenized style scalars because actual token resolution belongs to `brand-kit/tokens-v0`.
+Token syntax is parsed but unresolved by the DSL compiler. Lowering preserves supported token references in scene carriers for the brand-kit resolver. Design-system declarations/properties that are not attached to a concrete scene carrier still emit explicit warnings.
 
 Auto-layout anchors `x(...)` and `y(...)` are typed DSL AST properties. The current scene contract cannot store alignment anchors yet, so lowering emits `LUMD0704` warnings instead of treating anchors as unresolved design-system tokens.
 
@@ -289,6 +302,6 @@ Current fixture coverage includes:
 
 `engine/slots-layout` can consume the slot annotations and scene output but should own fit, overflow, conditionals, repeaters, and layout behavior.
 
-`brand-kit/tokens-v0` should consume parsed token syntax and scene paint/style tokens but should own token catalogs and resolution.
+`brand-kit/tokens-v0` should consume scene token carriers but should own token catalogs and resolution. Callers that need an end-to-end authoring pass should use the canonical preflight pipeline documented in `docs/preflight-pipeline.md`.
 
 `agents/design-loop-v0` can use `compile_dsl` for one-shot agent-authored create blocks. For multi-turn repair flows it should keep a `DslCompileSession` and call `compile_block(...)` so the repaired block resumes from the last successfully lowered parent stack and seen-ID set.

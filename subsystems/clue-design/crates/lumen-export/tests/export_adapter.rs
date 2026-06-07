@@ -1,8 +1,9 @@
 use lumen_core::{
-    AutoLayoutProps, Color, ContentType, DiagnosticSeverity, Dimension, DocumentId, ExportAdapter,
-    ExportFormat, ExportProfile, ExportPurpose, ExportRequest, Fill, Node, NodeId, NodeKind, Page,
-    PageId, PagePreset, PageSize, Paint, PaintId, PdfIntent, RasterScale, Rect, Scene, SizeSpec,
-    Slot, SlotId, SlotKey, Stroke, TextAlign, TextNode, Transform, Unit,
+    compile_dsl_into_scene, preflight_scene, AutoLayoutProps, BrandKit, Color, ContentType,
+    DiagnosticSeverity, Dimension, DocumentId, ExportAdapter, ExportFormat, ExportProfile,
+    ExportPurpose, ExportRequest, Fill, Node, NodeId, NodeKind, Page, PageId, PagePreset, PageSize,
+    Paint, PaintId, PdfIntent, PreflightOptions, RasterScale, Rect, Scene, SizeSpec, Slot, SlotId,
+    SlotKey, Stroke, TextAlign, TextNode, Transform, Unit,
 };
 use lumen_export::LumenExportAdapter;
 use serde_json::Value;
@@ -207,6 +208,70 @@ fn svg_export_renders_page_and_preserves_semantic_metadata() {
     assert!(sidecar.contains("\"document_id\": \"doc_export\""));
     assert!(sidecar.contains("\"slot_key\": \"contact.full_name\""));
     assert!(sidecar.contains("\"node_id\": \"node_name\""));
+}
+
+#[test]
+fn golden_dsl_brand_slot_layout_exports_svg_preview() {
+    let brand_kit: BrandKit = serde_json::from_str(include_str!(
+        "../../lumen-core/fixtures/brand_kits/acme_full.json"
+    ))
+    .unwrap();
+    let mut scene = Scene::new(DocumentId::from("doc_preflight_export"), "Preflight Export");
+    let compile_output = compile_dsl_into_scene(
+        r#"
+page page_a4
+  hero autolayout(h) p(24,24) s(180,hug) fill($surface.brand) stroke($surface.brand,$stroke.width.firm) g($space.md) pad($space.md) rd($radius.md) o($opacity.subtle)
+    headline text "Plan" p(0,0) s(132,hug) style($type.headline)
+  slot_text text "Plan" p(24,96) s(132,48) font("Inter",16,700,left) slot(campaign.headline)
+"#,
+        &mut scene,
+    );
+
+    assert!(compile_output
+        .compile_output
+        .diagnostics
+        .iter()
+        .all(|diagnostic| diagnostic.diagnostic.severity != DiagnosticSeverity::Error));
+    assert!(compile_output.operation_error.is_none());
+
+    let preflight = preflight_scene(scene, Some(&brand_kit), PreflightOptions::default());
+    assert!(
+        preflight
+            .diagnostics
+            .iter()
+            .all(|diagnostic| diagnostic.severity != DiagnosticSeverity::Error),
+        "{:#?}",
+        preflight.diagnostics
+    );
+    assert!(!preflight.token_operations.is_empty());
+    assert!(!preflight.layout_operations.is_empty());
+
+    let result = LumenExportAdapter::new()
+        .export(
+            &preflight.scene,
+            &request(ExportFormat::Svg, vec![PageId::from("page_a4")]),
+        )
+        .unwrap();
+
+    assert_eq!(result.artifacts.len(), 1);
+    assert!(
+        result.diagnostics.iter().all(|diagnostic| !matches!(
+            diagnostic.code.as_str(),
+            "LUME0206" | "LUME0208" | "LUME0209"
+        )),
+        "{:#?}",
+        result.diagnostics
+    );
+
+    let svg = std::str::from_utf8(&result.artifacts[0].bytes).unwrap();
+    assert!(svg.contains("data-lumen-document-id=\"doc_preflight_export\""));
+    assert!(svg.contains("data-lumen-page-id=\"page_a4\""));
+    assert!(svg.contains("data-lumen-node-id=\"headline\""));
+    assert!(svg.contains("data-lumen-node-id=\"slot_text\""));
+    assert!(svg.contains("data-lumen-slot-keys=\"campaign.headline\""));
+    assert!(svg.contains("#004D5A"));
+    assert!(svg.contains("#FFFFFF"));
+    assert!(svg.contains(">Plan</text>"));
 }
 
 #[test]

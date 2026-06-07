@@ -1,8 +1,8 @@
 use lumen_core::validation::validate_scene;
 use lumen_core::{
     compile_dsl, compile_dsl_into_scene, normalize_dsl, parse_dsl, Color, DiagnosticSeverity,
-    DslCompileSession, DslLayoutAnchor, DslLayoutAxis, DslLineKind, DslProperty, DslScalar, NodeId,
-    NodeKind, Operation, PageId, Paint, ParentRef, Scene, SlotKey,
+    Dimension, DslCompileSession, DslLayoutAnchor, DslLayoutAxis, DslLineKind, DslProperty,
+    DslScalar, NodeId, NodeKind, Operation, PageId, Paint, ParentRef, Scene, SlotKey,
 };
 
 const VALID_BROCHURE: &str = include_str!("../fixtures/dsl/valid_brochure.lumen");
@@ -682,11 +682,97 @@ page page_a4
 }
 
 #[test]
-fn tokenized_numeric_styles_emit_unresolved_token_warnings() {
+fn dsl_token_scalars_lower_to_brand_carriers() {
+    let mut scene = Scene::new(lumen_core::DocumentId::from("doc_token_carriers"), "Tokens");
+    let output = compile_dsl_into_scene(
+        r#"
+page page_a4
+  card autolayout(h) p(0,0) s($size.card,hug) fill($surface.brand) stroke($surface.brand,$stroke.width.firm) g($space.md) pad($space.md) rd($radius.md) o($opacity.subtle)
+    headline text "Plan" p(0,0) s(120,20) style($type.headline) slot(campaign.headline)
+"#,
+        &mut scene,
+    );
+
+    assert_no_dsl_errors(&output.compile_output.diagnostics);
+    assert!(output.operation_error.is_none());
+
+    let card = &scene.nodes[&NodeId::from("card")];
+    assert_eq!(
+        card.size.width,
+        Dimension::Token {
+            token: "size.card".to_owned()
+        }
+    );
+    assert_eq!(
+        card.layout.as_ref().unwrap().gap_token,
+        Some("space.md".to_owned())
+    );
+    assert_eq!(
+        card.layout.as_ref().unwrap().padding_token,
+        Some("space.md".to_owned())
+    );
+    assert_eq!(card.corner.token, Some("radius.md".to_owned()));
+    assert_eq!(card.opacity_token, Some("opacity.subtle".to_owned()));
+    assert_eq!(
+        card.strokes[0].width_token,
+        Some("stroke.width.firm".to_owned())
+    );
+    assert!(matches!(
+        &card.fills[0].paint,
+        Paint::Token { token } if token == "surface.brand"
+    ));
+
+    let headline = &scene.nodes[&NodeId::from("headline")];
+    assert!(matches!(
+        &headline.kind,
+        NodeKind::Text(text) if text.style_token.as_deref() == Some("type.headline")
+    ));
+}
+
+#[test]
+fn font_style_token_lowers_to_text_style_token() {
+    let mut scene = Scene::new(lumen_core::DocumentId::from("doc_type_token"), "Type");
+    let output = compile_dsl_into_scene(
+        r#"
+page page_a4
+  headline text "Title" p(0,0) s(80,20) font($type.headline)
+"#,
+        &mut scene,
+    );
+
+    assert_no_dsl_errors(&output.compile_output.diagnostics);
+    assert!(output.operation_error.is_none());
+    assert!(matches!(
+        &scene.nodes[&NodeId::from("headline")].kind,
+        NodeKind::Text(text) if text.style_token.as_deref() == Some("type.headline")
+    ));
+}
+
+#[test]
+fn mixed_padding_tokens_warn_until_per_edge_carriers_exist() {
     let output = compile_dsl(
         r#"
 page page_a4
-  card frame p(0,0) s(100,100) g($spacing.4) rd($radius.md) pad($spacing.2)
+  card autolayout(h) p(0,0) s(100,100) pad($space.sm,$space.md)
+"#,
+    );
+
+    assert_no_dsl_errors(&output.diagnostics);
+    assert!(output.halted_at.is_none());
+    assert!(output.diagnostics.iter().any(|diagnostic| {
+        diagnostic.diagnostic.code == "LUMD0705"
+            && diagnostic
+                .diagnostic
+                .message
+                .contains("mixed padding token syntax")
+    }));
+}
+
+#[test]
+fn unsupported_font_size_token_remains_explicit_warning() {
+    let output = compile_dsl(
+        r#"
+page page_a4
   headline text "Title" p(0,0) s(80,20) font("Inter",$type.size.heading,700,left)
 "#,
     );

@@ -233,6 +233,7 @@ pub enum DslProperty {
     Padding([DslScalar; 4]),
     Wrap(bool),
     Grow(DslScalar),
+    TextStyleToken(String),
     LayoutAnchor {
         axis: DslLayoutAxis,
         anchor: DslLayoutAnchor,
@@ -267,6 +268,7 @@ pub enum DslDimension {
     Fixed(f64),
     Hug,
     Fill(Option<f64>),
+    Token(String),
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -1496,7 +1498,15 @@ fn parse_property_token(
             .into_iter()
             .map(DslProperty::Stroke)
             .collect(),
-        "font" => vec![DslProperty::Font(parse_font(&call, line_number, column)?)],
+        "font" => parse_font_property(&call, line_number, column)?,
+        "style" | "text_style" => {
+            expect_arg_count(&call, 1, line_number)?;
+            vec![DslProperty::TextStyleToken(parse_token_ref(
+                &call.args[0],
+                line_number,
+                column,
+            )?)]
+        }
         "slot" => {
             expect_arg_count(&call, 1, line_number)?;
             vec![DslProperty::Slot(parse_slot_key(
@@ -1793,24 +1803,20 @@ fn apply_properties(
                 });
             }
             DslProperty::Stroke(stroke) => {
-                if let Some(width) = scalar_to_number(
-                    &stroke.width,
-                    line_number,
-                    node.id.as_str().len(),
-                    "stroke width",
-                    diagnostics,
-                ) {
-                    let id = stroke.id.clone().unwrap_or_else(|| {
-                        stroke_index += 1;
-                        PaintId::from(format!("paint_{}_stroke_{}", node.id, stroke_index))
-                    });
-                    node.strokes.push(Stroke {
-                        id,
-                        paint: stroke.paint.clone(),
-                        width,
-                        width_token: None,
-                    });
-                }
+                let id = stroke.id.clone().unwrap_or_else(|| {
+                    stroke_index += 1;
+                    PaintId::from(format!("paint_{}_stroke_{}", node.id, stroke_index))
+                });
+                let (width, width_token) = match &stroke.width {
+                    DslScalar::Number(width) => (*width, None),
+                    DslScalar::Token(token) => (0.0, Some(token.clone())),
+                };
+                node.strokes.push(Stroke {
+                    id,
+                    paint: stroke.paint.clone(),
+                    width,
+                    width_token,
+                });
             }
             DslProperty::Font(font) => {
                 if let NodeKind::Text(text) = &mut node.kind {
@@ -1837,6 +1843,20 @@ fn apply_properties(
                     ));
                 }
             }
+            DslProperty::TextStyleToken(token) => {
+                if let NodeKind::Text(text) = &mut node.kind {
+                    text.style_token = Some(token.clone());
+                } else {
+                    diagnostics.push(warning_diag(
+                        line_number,
+                        1,
+                        node.id.as_str().len(),
+                        "LUMD0602",
+                        "style(...) only applies to text nodes",
+                        "Move style($typography.token) to a text/t element.",
+                    ));
+                }
+            }
             DslProperty::Asset(asset_id) => {
                 if let NodeKind::Image(image) = &mut node.kind {
                     image.asset_id = asset_id.clone();
@@ -1852,31 +1872,27 @@ fn apply_properties(
                     *source_node_id = source.clone();
                 }
             }
-            DslProperty::Radius(radius) => {
-                if let Some(radius) = scalar_to_number(
-                    radius,
-                    line_number,
-                    node.id.as_str().len(),
-                    "corner radius",
-                    diagnostics,
-                ) {
-                    node.corner.top_left = radius;
-                    node.corner.top_right = radius;
-                    node.corner.bottom_right = radius;
-                    node.corner.bottom_left = radius;
+            DslProperty::Radius(radius) => match radius {
+                DslScalar::Number(radius) => {
+                    node.corner.top_left = *radius;
+                    node.corner.top_right = *radius;
+                    node.corner.bottom_right = *radius;
+                    node.corner.bottom_left = *radius;
+                    node.corner.token = None;
                 }
-            }
-            DslProperty::Opacity(opacity) => {
-                if let Some(opacity) = scalar_to_number(
-                    opacity,
-                    line_number,
-                    node.id.as_str().len(),
-                    "opacity",
-                    diagnostics,
-                ) {
-                    node.opacity = opacity;
+                DslScalar::Token(token) => {
+                    node.corner.token = Some(token.clone());
                 }
-            }
+            },
+            DslProperty::Opacity(opacity) => match opacity {
+                DslScalar::Number(opacity) => {
+                    node.opacity = *opacity;
+                    node.opacity_token = None;
+                }
+                DslScalar::Token(token) => {
+                    node.opacity_token = Some(token.clone());
+                }
+            },
             DslProperty::Rotation(rotation) => node.transform.rotation = *rotation,
             DslProperty::Skew(skew_x, skew_y) => {
                 node.transform.skew_x = *skew_x;
@@ -1887,22 +1903,41 @@ fn apply_properties(
                 node.transform.flip_y = *y;
             }
             DslProperty::Clip(clip) => node.clip = *clip,
-            DslProperty::Gap(gap) => {
-                if let Some(gap) =
-                    scalar_to_number(gap, line_number, node.id.as_str().len(), "gap", diagnostics)
-                {
-                    ensure_layout(node).gap = gap;
+            DslProperty::Gap(gap) => match gap {
+                DslScalar::Number(gap) => {
+                    let layout = ensure_layout(node);
+                    layout.gap = *gap;
+                    layout.gap_token = None;
                 }
-            }
+                DslScalar::Token(token) => {
+                    ensure_layout(node).gap_token = Some(token.clone());
+                }
+            },
             DslProperty::Padding(padding) => {
-                if let Some(padding) = scalar_quad_to_numbers(
+                if let Some(token) = uniform_scalar_token(padding) {
+                    ensure_layout(node).padding_token = Some(token);
+                } else if padding
+                    .iter()
+                    .any(|scalar| matches!(scalar, DslScalar::Token(_)))
+                {
+                    diagnostics.push(warning_diag(
+                        line_number,
+                        1,
+                        node.id.as_str().len(),
+                        "LUMD0705",
+                        "mixed padding token syntax is parsed but not lowered by this workstream",
+                        "Use pad($spacing.token) for now; per-edge padding token carriers belong to a later scene contract update.",
+                    ));
+                } else if let Some(padding) = scalar_quad_to_numbers(
                     padding,
                     line_number,
                     node.id.as_str().len(),
                     "padding",
                     diagnostics,
                 ) {
-                    ensure_layout(node).padding = padding;
+                    let layout = ensure_layout(node);
+                    layout.padding = padding;
+                    layout.padding_token = None;
                 }
             }
             DslProperty::Wrap(wrap) => {
@@ -2009,6 +2044,20 @@ fn scalar_quad_to_numbers(
     Some(values)
 }
 
+fn uniform_scalar_token(scalars: &[DslScalar; 4]) -> Option<String> {
+    let DslScalar::Token(first) = &scalars[0] else {
+        return None;
+    };
+    if scalars
+        .iter()
+        .all(|scalar| matches!(scalar, DslScalar::Token(token) if token == first))
+    {
+        Some(first.clone())
+    } else {
+        None
+    }
+}
+
 fn unresolved_scalar_token_warning(
     line_number: usize,
     length: usize,
@@ -2031,6 +2080,9 @@ fn dimension_to_scene(dimension: &DslDimension) -> crate::Dimension {
         DslDimension::Hug => crate::Dimension::Hug,
         DslDimension::Fill(weight) => crate::Dimension::Fill {
             weight: weight.unwrap_or(1.0),
+        },
+        DslDimension::Token(token) => crate::Dimension::Token {
+            token: token.clone(),
         },
     }
 }
@@ -2427,6 +2479,26 @@ fn parse_color(source: &str, line_number: usize, column: usize) -> Result<Color,
     ))
 }
 
+fn parse_font_property(
+    call: &Call,
+    line_number: usize,
+    column: usize,
+) -> Result<Vec<DslProperty>, DslDiagnostic> {
+    if call.args.len() == 1 && call.args[0].trim().starts_with('$') {
+        return Ok(vec![DslProperty::TextStyleToken(parse_token_ref(
+            &call.args[0],
+            line_number,
+            column,
+        )?)]);
+    }
+
+    Ok(vec![DslProperty::Font(parse_font(
+        call,
+        line_number,
+        column,
+    )?)])
+}
+
 fn parse_font(call: &Call, line_number: usize, column: usize) -> Result<DslFont, DslDiagnostic> {
     if call.args.len() != 4 {
         return Err(error_diag(
@@ -2434,8 +2506,8 @@ fn parse_font(call: &Call, line_number: usize, column: usize) -> Result<DslFont,
             column,
             call.name.len(),
             "LUMD0220",
-            "font(...) expects family, size, weight, align",
-            "Use font(\"Inter\",16,700,left).",
+            "font(...) expects family,size,weight,align or one typography token",
+            "Use font(\"Inter\",16,700,left) or font($type.headline).",
         ));
     }
 
@@ -2591,7 +2663,16 @@ fn parse_dimension(
     line_number: usize,
     column: usize,
 ) -> Result<DslDimension, DslDiagnostic> {
-    match source.trim() {
+    let source = source.trim();
+    if source.starts_with('$') {
+        return Ok(DslDimension::Token(parse_token_ref(
+            source,
+            line_number,
+            column,
+        )?));
+    }
+
+    match source {
         "hug" => Ok(DslDimension::Hug),
         "fill" => Ok(DslDimension::Fill(None)),
         other if other.starts_with("fill(") => {
@@ -2867,25 +2948,48 @@ fn parse_scalar(
     column: usize,
 ) -> Result<DslScalar, DslDiagnostic> {
     let trimmed = source.trim();
-    if let Some(token) = trimmed.strip_prefix('$') {
-        if token.is_empty()
-            || !token
-                .chars()
-                .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '_' | '-' | '.'))
-        {
-            return Err(error_diag(
-                line_number,
-                column,
-                source.len().max(1),
-                "LUMD0411",
-                format!("invalid token reference {source}"),
-                "Use token references like $spacing.4 or $type.size.heading.",
-            ));
-        }
-        Ok(DslScalar::Token(token.to_owned()))
+    if trimmed.starts_with('$') {
+        Ok(DslScalar::Token(parse_token_ref(
+            trimmed,
+            line_number,
+            column,
+        )?))
     } else {
         Ok(DslScalar::Number(parse_f64(source, line_number, column)?))
     }
+}
+
+fn parse_token_ref(
+    source: &str,
+    line_number: usize,
+    column: usize,
+) -> Result<String, DslDiagnostic> {
+    let trimmed = source.trim();
+    let Some(token) = trimmed.strip_prefix('$') else {
+        return Err(error_diag(
+            line_number,
+            column,
+            source.len().max(1),
+            "LUMD0411",
+            format!("invalid token reference {source}"),
+            "Use token references like $space.md or $type.headline.",
+        ));
+    };
+    if token.is_empty()
+        || !token
+            .chars()
+            .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '_' | '-' | '.'))
+    {
+        return Err(error_diag(
+            line_number,
+            column,
+            source.len().max(1),
+            "LUMD0411",
+            format!("invalid token reference {source}"),
+            "Use token references like $space.md or $type.headline.",
+        ));
+    }
+    Ok(token.to_owned())
 }
 
 fn parse_u16(source: &str, line_number: usize, column: usize) -> Result<u16, DslDiagnostic> {

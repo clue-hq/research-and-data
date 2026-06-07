@@ -8,6 +8,9 @@ use crate::scene::{
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
+pub const PLATFORM_DEFAULT_BRAND_KIT_JSON: &str =
+    include_str!("../fixtures/brand_kits/platform_default.json");
+
 const COLOR_STOPS: [(&str, f64); 11] = [
     ("50", 0.97),
     ("100", 0.93),
@@ -64,6 +67,10 @@ impl BrandKit {
             version: self.version,
         }
     }
+}
+
+pub fn platform_default_brand_kit() -> Result<BrandKit, serde_json::Error> {
+    serde_json::from_str(PLATFORM_DEFAULT_BRAND_KIT_JSON)
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -561,6 +568,13 @@ pub struct TokenResolutionReport {
     pub diagnostics: Vec<Diagnostic>,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct SceneTokenReference {
+    pub token: String,
+    pub field: String,
+    pub subject: DiagnosticSubject,
+}
+
 pub fn validate_brand_kit(brand_kit: &BrandKit) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
 
@@ -591,6 +605,170 @@ pub fn validate_scene_tokens(
 ) -> Vec<Diagnostic> {
     let report = resolve_scene_tokens(scene, brand_kit, options);
     report.diagnostics
+}
+
+pub fn scene_has_token_references(scene: &Scene) -> bool {
+    !collect_scene_token_references(scene).is_empty()
+}
+
+pub fn collect_scene_token_references(scene: &Scene) -> Vec<SceneTokenReference> {
+    let mut references = Vec::new();
+
+    for page in scene.pages.values() {
+        for fill in &page.background {
+            collect_paint_token_references(
+                &mut references,
+                DiagnosticSubject::Page(page.id.clone()),
+                format!("page.background {}", fill.id),
+                &fill.paint,
+            );
+        }
+    }
+
+    for node in scene.nodes.values() {
+        let subject = DiagnosticSubject::Node(node.id.clone());
+
+        collect_dimension_token_reference(
+            &mut references,
+            subject.clone(),
+            "size.width",
+            &node.size.width,
+        );
+        collect_dimension_token_reference(
+            &mut references,
+            subject.clone(),
+            "size.height",
+            &node.size.height,
+        );
+
+        for fill in &node.fills {
+            collect_paint_token_references(
+                &mut references,
+                subject.clone(),
+                format!("fill {} paint", fill.id),
+                &fill.paint,
+            );
+        }
+
+        for stroke in &node.strokes {
+            collect_paint_token_references(
+                &mut references,
+                subject.clone(),
+                format!("stroke {} paint", stroke.id),
+                &stroke.paint,
+            );
+            if let Some(token) = &stroke.width_token {
+                push_scene_token_reference(
+                    &mut references,
+                    subject.clone(),
+                    format!("stroke {} width", stroke.id),
+                    token,
+                );
+            }
+        }
+
+        if let Some(token) = &node.corner.token {
+            push_scene_token_reference(&mut references, subject.clone(), "corner radius", token);
+        }
+        if let Some(token) = &node.opacity_token {
+            push_scene_token_reference(&mut references, subject.clone(), "opacity", token);
+        }
+
+        if let Some(layout) = &node.layout {
+            if let Some(token) = &layout.gap_token {
+                push_scene_token_reference(&mut references, subject.clone(), "layout gap", token);
+            }
+            if let Some(token) = &layout.padding_token {
+                push_scene_token_reference(
+                    &mut references,
+                    subject.clone(),
+                    "layout padding",
+                    token,
+                );
+            }
+        }
+
+        if let NodeKind::Text(text) = &node.kind {
+            if let Some(token) = &text.style_token {
+                push_scene_token_reference(&mut references, subject.clone(), "text style", token);
+            }
+            if looks_like_token_ref(&text.font_family) {
+                push_scene_token_reference(
+                    &mut references,
+                    subject.clone(),
+                    "text font family",
+                    &text.font_family,
+                );
+            }
+        }
+    }
+
+    references
+}
+
+fn collect_dimension_token_reference(
+    references: &mut Vec<SceneTokenReference>,
+    subject: DiagnosticSubject,
+    field: impl Into<String>,
+    dimension: &Dimension,
+) {
+    if let Dimension::Token { token } = dimension {
+        push_scene_token_reference(references, subject, field, token);
+    }
+}
+
+fn collect_paint_token_references(
+    references: &mut Vec<SceneTokenReference>,
+    subject: DiagnosticSubject,
+    field: impl Into<String>,
+    paint: &Paint,
+) {
+    let field = field.into();
+    match paint {
+        Paint::Token { token } => {
+            push_scene_token_reference(references, subject, field, token);
+        }
+        Paint::Solid { color } => {
+            collect_color_token_reference(references, subject, field, color);
+        }
+        Paint::LinearGradient { stops, .. } | Paint::RadialGradient { stops } => {
+            for stop in stops {
+                collect_color_token_reference(
+                    references,
+                    subject.clone(),
+                    format!("{} stop {}", field, stop.position),
+                    &stop.color,
+                );
+            }
+        }
+    }
+}
+
+fn collect_color_token_reference(
+    references: &mut Vec<SceneTokenReference>,
+    subject: DiagnosticSubject,
+    field: impl Into<String>,
+    color: &Color,
+) {
+    if let Color::Token { token } = color {
+        push_scene_token_reference(references, subject, field, token);
+    }
+}
+
+fn push_scene_token_reference(
+    references: &mut Vec<SceneTokenReference>,
+    subject: DiagnosticSubject,
+    field: impl Into<String>,
+    token: impl AsRef<str>,
+) {
+    let reference = SceneTokenReference {
+        token: token.as_ref().to_owned(),
+        field: field.into(),
+        subject,
+    };
+    if !references.contains(&reference) {
+        references.push(reference);
+    }
 }
 
 pub fn resolve_scene_tokens(

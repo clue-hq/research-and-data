@@ -10,6 +10,7 @@ pub mod export_contract;
 pub mod ids;
 pub mod layout;
 pub mod operations;
+pub mod preflight;
 pub mod render_contract;
 pub mod scene;
 pub mod slots;
@@ -17,14 +18,15 @@ pub mod snapshot;
 pub mod validation;
 
 pub use brand::{
-    compile_styles_brand_kit, resolve_scene_tokens, validate_brand_kit, validate_scene_tokens,
+    collect_scene_token_references, compile_styles_brand_kit, platform_default_brand_kit,
+    resolve_scene_tokens, scene_has_token_references, validate_brand_kit, validate_scene_tokens,
     AssetLicense, AssetSource, AssetToken, AssetTokenValue, BrandAsset, BrandAssets,
     BrandConstraints, BrandKit, BrandMode, BrandModeSpec, BrandProvenance, BrandSource, ColorToken,
     ColorTokenValue, ContrastPair, EffectToken, EffectValue, FontAsset, FontFace, FontLicense,
     FontStyle, LogoAsset, LogoColorMode, LogoUsage, LogoVariant, ModeValue, NumberToken,
-    NumberTokenValue, NumberUnit, ShadowToken, ShadowValue, TokenAlias, TokenCatalog,
-    TokenFallbackPolicy, TokenProvenance, TokenResolutionOptions, TokenResolutionReport,
-    TokenStrictness, TypographyToken, TypographyTokenValue,
+    NumberTokenValue, NumberUnit, SceneTokenReference, ShadowToken, ShadowValue, TokenAlias,
+    TokenCatalog, TokenFallbackPolicy, TokenProvenance, TokenResolutionOptions,
+    TokenResolutionReport, TokenStrictness, TypographyToken, TypographyTokenValue,
 };
 pub use diagnostics::{Diagnostic, DiagnosticSeverity, DiagnosticSubject, Phase};
 pub use dsl::{
@@ -47,6 +49,7 @@ pub use operations::{
     DocumentPatch, FieldPatch, NodePatch, Operation, OperationError, OperationReport,
     OperationResult, OptionalFieldPatch, PagePatch,
 };
+pub use preflight::{preflight_scene, PreflightOptions, PreflightResult};
 pub use render_contract::{
     RenderIntent, RenderManifest, RenderTarget, RendererAdapter, RendererError,
 };
