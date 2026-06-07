@@ -1,0 +1,77 @@
+//! Export adapters for the ABM Design Engine scene contract.
+//!
+//! This crate consumes `lumen-core` scene/export contracts. It intentionally
+//! does not own design semantics, editor behavior, persistence, or asset
+//! storage.
+
+pub mod pdf;
+pub mod png;
+pub mod sidecar;
+pub mod svg;
+
+pub use pdf::PdfExportAdapter;
+pub use png::PngExportAdapter;
+pub use svg::SvgExportAdapter;
+
+use lumen_core::{
+    DiagnosticSeverity, ExportAdapter, ExportArtifact, ExportError, ExportFormat, ExportRequest,
+    ExportResult, Scene,
+};
+
+#[derive(Clone, Debug, Default)]
+pub struct LumenExportAdapter {
+    svg: SvgExportAdapter,
+    png: PngExportAdapter,
+    pdf: PdfExportAdapter,
+}
+
+impl LumenExportAdapter {
+    pub fn new() -> Self {
+        Self::default()
+    }
+}
+
+impl ExportAdapter for LumenExportAdapter {
+    fn export(&self, scene: &Scene, request: &ExportRequest) -> Result<ExportResult, ExportError> {
+        match request.profile.format {
+            ExportFormat::Svg => self.svg.export(scene, request),
+            ExportFormat::Pdf => self.pdf.export(scene, request),
+            ExportFormat::Png => self.png.export(scene, request),
+            ExportFormat::FigmaManifest => figma_manifest_export(scene, request),
+        }
+    }
+}
+
+fn figma_manifest_export(
+    scene: &Scene,
+    request: &ExportRequest,
+) -> Result<ExportResult, ExportError> {
+    let page_ids = svg::resolve_page_ids(scene, &request.page_ids);
+    if page_ids
+        .diagnostics
+        .iter()
+        .any(|diagnostic| diagnostic.severity == DiagnosticSeverity::Error)
+    {
+        return Err(ExportError::new(
+            "export.invalid_pages",
+            "export request references missing pages",
+        )
+        .with_diagnostics(page_ids.diagnostics));
+    }
+
+    let diagnostics = page_ids.diagnostics;
+    let sidecar = sidecar::build_sidecar(scene, &page_ids.page_ids, &request.profile.name);
+    let bytes = serde_json::to_vec_pretty(&sidecar).unwrap_or_default();
+
+    Ok(ExportResult {
+        artifacts: vec![ExportArtifact {
+            format: ExportFormat::FigmaManifest,
+            page_id: None,
+            asset_id: None,
+            mime_type: "application/json".to_owned(),
+            bytes,
+            sidecar_json: None,
+        }],
+        diagnostics,
+    })
+}
