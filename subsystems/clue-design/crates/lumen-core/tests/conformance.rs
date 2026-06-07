@@ -755,6 +755,7 @@ fn ad_headline_node() -> Node {
     node
 }
 
+#[allow(clippy::too_many_arguments)]
 fn text_node(
     id: &str,
     name: &str,

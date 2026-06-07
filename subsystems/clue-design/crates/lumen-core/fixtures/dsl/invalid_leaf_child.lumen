@@ -1,0 +1,4 @@
+page page_a4
+  cta_bg rect p(0,0) s(220,48)
+    cta text "Schedule a consultation" p(12,12) s(180,24)
+

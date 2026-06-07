@@ -50,31 +50,21 @@ pub struct OperationReport {
     pub diagnostics: Vec<Diagnostic>,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", content = "value", rename_all = "snake_case")]
 pub enum FieldPatch<T> {
+    #[default]
     Unchanged,
     Set(T),
 }
 
-impl<T> Default for FieldPatch<T> {
-    fn default() -> Self {
-        Self::Unchanged
-    }
-}
-
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", content = "value", rename_all = "snake_case")]
 pub enum OptionalFieldPatch<T> {
+    #[default]
     Unchanged,
     Set(T),
     Clear,
-}
-
-impl<T> Default for OptionalFieldPatch<T> {
-    fn default() -> Self {
-        Self::Unchanged
-    }
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]

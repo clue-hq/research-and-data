@@ -1,0 +1,8 @@
+// brochure draft
+page page_a4 preset(a4,portrait)
+  hero fr p(24,24) s(480,220) f[(fill_hero,#ffffff)] st[(stroke_hero,#111827,w(1))]
+    headline t("A sharper plan for patient acquisition") p(0,0) s(420,80) font("Inter",54,800,left) slot(campaign.headline)
+    cta_bg r p(0,160) s(220,48) f[(fill_cta,#111827)] rd(8)
+    cta text "Schedule a consultation" p(24,174) s(180,24) font("Inter",16,700,center) slot(campaign.cta)
+  logo img asset(account_logo) p(24,260) s(96,48) slot(account.logo)
+
