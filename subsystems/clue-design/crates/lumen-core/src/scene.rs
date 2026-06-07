@@ -228,6 +228,8 @@ pub struct Node {
     pub strokes: Vec<Stroke>,
     pub corner: CornerRadii,
     pub opacity: f64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub opacity_token: Option<String>,
     pub clip: bool,
     pub layout: Option<AutoLayoutProps>,
     pub computed: Option<ComputedGeometry>,
@@ -247,6 +249,7 @@ impl Node {
             strokes: Vec::new(),
             corner: CornerRadii::default(),
             opacity: 1.0,
+            opacity_token: None,
             clip: false,
             layout: None,
             computed: None,
@@ -283,6 +286,8 @@ pub struct TextNode {
     pub font_size: f64,
     pub font_weight: u16,
     pub align: TextAlign,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub style_token: Option<String>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -327,7 +332,11 @@ pub enum AutoLayoutDirection {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct AutoLayoutProps {
     pub gap: f64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub gap_token: Option<String>,
     pub padding: [f64; 4],
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub padding_token: Option<String>,
     pub grow: f64,
 }
 
@@ -377,6 +386,7 @@ pub enum Dimension {
     Fixed(f64),
     Hug,
     Fill { weight: f64 },
+    Token { token: String },
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -390,6 +400,8 @@ pub struct Stroke {
     pub id: PaintId,
     pub paint: Paint,
     pub width: f64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub width_token: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -421,6 +433,8 @@ pub struct CornerRadii {
     pub top_right: f64,
     pub bottom_right: f64,
     pub bottom_left: f64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub token: Option<String>,
 }
 
 impl Default for CornerRadii {
@@ -430,6 +444,7 @@ impl Default for CornerRadii {
             top_right: 0.0,
             bottom_right: 0.0,
             bottom_left: 0.0,
+            token: None,
         }
     }
 }

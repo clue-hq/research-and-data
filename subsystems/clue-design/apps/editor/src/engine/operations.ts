@@ -34,6 +34,7 @@ export function nodePatch(patch: Partial<NodePatch>): NodePatch {
     strokes: patch.strokes ?? unchanged(),
     corner: patch.corner ?? unchanged(),
     opacity: patch.opacity ?? unchanged(),
+    opacity_token: patch.opacity_token ?? unchanged(),
     clip: patch.clip ?? unchanged(),
     layout: patch.layout ?? unchanged(),
     computed: patch.computed ?? unchanged(),

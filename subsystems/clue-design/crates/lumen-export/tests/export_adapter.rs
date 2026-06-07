@@ -1,8 +1,8 @@
 use lumen_core::{
-    Color, ContentType, DiagnosticSeverity, DocumentId, ExportAdapter, ExportFormat, ExportProfile,
-    ExportPurpose, ExportRequest, Fill, Node, NodeId, NodeKind, Page, PageId, PagePreset, PageSize,
-    Paint, PaintId, PdfIntent, RasterScale, Rect, Scene, SizeSpec, Slot, SlotId, SlotKey, Stroke,
-    TextAlign, TextNode, Transform, Unit,
+    AutoLayoutProps, Color, ContentType, DiagnosticSeverity, Dimension, DocumentId, ExportAdapter,
+    ExportFormat, ExportProfile, ExportPurpose, ExportRequest, Fill, Node, NodeId, NodeKind, Page,
+    PageId, PagePreset, PageSize, Paint, PaintId, PdfIntent, RasterScale, Rect, Scene, SizeSpec,
+    Slot, SlotId, SlotKey, Stroke, TextAlign, TextNode, Transform, Unit,
 };
 use lumen_export::LumenExportAdapter;
 use serde_json::Value;
@@ -79,6 +79,7 @@ fn text_node(id: &str, content: &str) -> Node {
             font_size: 18.0,
             font_weight: 600,
             align: TextAlign::Left,
+            style_token: None,
         }),
     );
     node.transform = Transform {
@@ -122,6 +123,7 @@ fn rect_node(id: &str) -> Node {
             },
         },
         width: 1.0,
+        width_token: None,
     }];
     node
 }
@@ -302,6 +304,69 @@ fn token_paints_emit_export_diagnostics_instead_of_guessing_resolution() {
     assert!(result.diagnostics.iter().any(|diagnostic| {
         diagnostic.code == "LUME0206" && diagnostic.severity == DiagnosticSeverity::Warning
     }));
+}
+
+#[test]
+fn svg_export_warns_on_all_unresolved_brand_token_carriers() {
+    let adapter = LumenExportAdapter::new();
+    let mut scene = scene_with_slot();
+
+    let badge = scene.nodes.get_mut(&NodeId::from("node_badge")).unwrap();
+    badge.size = SizeSpec {
+        width: Dimension::Token {
+            token: "space.xl".to_owned(),
+        },
+        height: Dimension::Token {
+            token: "space.md".to_owned(),
+        },
+    };
+    badge.strokes[0].width_token = Some("stroke.width.firm".to_owned());
+    badge.corner.token = Some("radius.md".to_owned());
+    badge.opacity_token = Some("opacity.subtle".to_owned());
+    badge.layout = Some(AutoLayoutProps {
+        gap: 0.0,
+        gap_token: Some("space.gap".to_owned()),
+        padding: [0.0; 4],
+        padding_token: Some("space.padding".to_owned()),
+        grow: 0.0,
+    });
+
+    let name = scene.nodes.get_mut(&NodeId::from("node_name")).unwrap();
+    if let NodeKind::Text(text) = &mut name.kind {
+        text.style_token = Some("type.headline".to_owned());
+    } else {
+        panic!("expected text node");
+    }
+
+    let result = adapter
+        .export(
+            &scene,
+            &request(ExportFormat::Svg, vec![PageId::from("page_a")]),
+        )
+        .unwrap();
+
+    let messages = result
+        .diagnostics
+        .iter()
+        .filter(|diagnostic| diagnostic.code == "LUME0209")
+        .map(|diagnostic| diagnostic.message.as_str())
+        .collect::<Vec<_>>();
+
+    for expected in [
+        "size.width",
+        "size.height",
+        "stroke paint_rect_stroke width",
+        "corner radius",
+        "opacity",
+        "layout gap",
+        "layout padding",
+        "text style",
+    ] {
+        assert!(
+            messages.iter().any(|message| message.contains(expected)),
+            "missing unresolved-token export warning for {expected}: {messages:#?}"
+        );
+    }
 }
 
 #[test]

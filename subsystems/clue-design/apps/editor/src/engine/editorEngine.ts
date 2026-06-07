@@ -99,6 +99,7 @@ function applyNodePatch(node: Node, patch: NodePatch): void {
   applyFieldPatch(node, "strokes", patch.strokes);
   applyFieldPatch(node, "corner", patch.corner);
   applyFieldPatch(node, "opacity", patch.opacity);
+  applyOptionalPatch(node, "opacity_token", patch.opacity_token);
   applyFieldPatch(node, "clip", patch.clip);
   applyOptionalPatch(node, "layout", patch.layout);
   applyOptionalPatch(node, "computed", patch.computed);
@@ -164,6 +165,7 @@ function isLockedOnlyPatch(patch: NodePatch): boolean {
     patch.strokes.kind === "unchanged" &&
     patch.corner.kind === "unchanged" &&
     patch.opacity.kind === "unchanged" &&
+    patch.opacity_token.kind === "unchanged" &&
     patch.clip.kind === "unchanged" &&
     patch.layout.kind === "unchanged" &&
     patch.computed.kind === "unchanged"

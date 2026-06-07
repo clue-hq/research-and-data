@@ -171,7 +171,7 @@ impl<'a> SvgPageRenderer<'a> {
             return;
         };
 
-        self.warn_if_unresolved_size(node);
+        self.warn_if_unresolved_brand_tokens(node);
         let (width, height) = node_size(node);
         let id_attrs = self.node_attrs(node);
         let transform = transform_attr(&node.transform);
@@ -515,7 +515,7 @@ impl<'a> SvgPageRenderer<'a> {
         }
     }
 
-    fn warn_if_unresolved_size(&mut self, node: &Node) {
+    fn warn_if_unresolved_brand_tokens(&mut self, node: &Node) {
         if matches!(node.size.width, Dimension::Hug | Dimension::Fill { .. })
             || matches!(node.size.height, Dimension::Hug | Dimension::Fill { .. })
         {
@@ -532,6 +532,56 @@ impl<'a> SvgPageRenderer<'a> {
                 .with_hint("Run layout before export or provide fixed/computed dimensions."),
             );
         }
+
+        if let Some(token) = dimension_token(&node.size.width) {
+            self.warn_unresolved_node_brand_token(node, "size.width", token);
+        }
+        if let Some(token) = dimension_token(&node.size.height) {
+            self.warn_unresolved_node_brand_token(node, "size.height", token);
+        }
+        for stroke in &node.strokes {
+            if let Some(token) = &stroke.width_token {
+                self.warn_unresolved_node_brand_token(
+                    node,
+                    &format!("stroke {} width", stroke.id),
+                    token,
+                );
+            }
+        }
+        if let Some(token) = &node.corner.token {
+            self.warn_unresolved_node_brand_token(node, "corner radius", token);
+        }
+        if let Some(token) = &node.opacity_token {
+            self.warn_unresolved_node_brand_token(node, "opacity", token);
+        }
+        if let Some(layout) = &node.layout {
+            if let Some(token) = &layout.gap_token {
+                self.warn_unresolved_node_brand_token(node, "layout gap", token);
+            }
+            if let Some(token) = &layout.padding_token {
+                self.warn_unresolved_node_brand_token(node, "layout padding", token);
+            }
+        }
+        if let NodeKind::Text(text) = &node.kind {
+            if let Some(token) = &text.style_token {
+                self.warn_unresolved_node_brand_token(node, "text style", token);
+            }
+        }
+    }
+
+    fn warn_unresolved_node_brand_token(&mut self, node: &Node, field: &str, token: &str) {
+        self.diagnostics.push(
+            Diagnostic::warning(
+                Phase::Export,
+                "LUME0209",
+                format!(
+                    "node {} uses unresolved brand token {} for {}",
+                    node.id, token, field
+                ),
+                Some(DiagnosticSubject::Node(node.id.clone())),
+            )
+            .with_hint("Run the brand/token resolver before exporting tokenized scene fields."),
+        );
     }
 
     fn clip_rect(&mut self, node: &Node, width: f64, height: f64) -> String {
@@ -570,7 +620,14 @@ pub fn node_size(node: &Node) -> (f64, f64) {
 fn dimension_value(dimension: &Dimension) -> f64 {
     match dimension {
         Dimension::Fixed(value) => *value,
-        Dimension::Hug | Dimension::Fill { .. } => 0.0,
+        Dimension::Hug | Dimension::Fill { .. } | Dimension::Token { .. } => 0.0,
+    }
+}
+
+fn dimension_token(dimension: &Dimension) -> Option<&str> {
+    match dimension {
+        Dimension::Token { token } => Some(token),
+        Dimension::Fixed(_) | Dimension::Hug | Dimension::Fill { .. } => None,
     }
 }
 

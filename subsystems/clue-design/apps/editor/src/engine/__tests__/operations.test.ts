@@ -38,6 +38,7 @@ describe("local editor engine", () => {
       strokes: { kind: "unchanged" },
       corner: { kind: "unchanged" },
       opacity: { kind: "unchanged" },
+      opacity_token: { kind: "unchanged" },
       clip: { kind: "unchanged" },
       layout: { kind: "unchanged" },
       computed: { kind: "unchanged" },

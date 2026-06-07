@@ -3,6 +3,7 @@
 //! This crate owns design semantics. It intentionally does not know about
 //! React, Konva, FastAPI, databases, object storage, browser APIs, or WebGPU.
 
+pub mod brand;
 pub mod diagnostics;
 pub mod export_contract;
 pub mod ids;
@@ -13,6 +14,16 @@ pub mod slots;
 pub mod snapshot;
 pub mod validation;
 
+pub use brand::{
+    compile_styles_brand_kit, resolve_scene_tokens, validate_brand_kit, validate_scene_tokens,
+    AssetLicense, AssetSource, AssetToken, AssetTokenValue, BrandAsset, BrandAssets,
+    BrandConstraints, BrandKit, BrandMode, BrandModeSpec, BrandProvenance, BrandSource, ColorToken,
+    ColorTokenValue, ContrastPair, EffectToken, EffectValue, FontAsset, FontFace, FontLicense,
+    FontStyle, LogoAsset, LogoColorMode, LogoUsage, LogoVariant, ModeValue, NumberToken,
+    NumberTokenValue, NumberUnit, ShadowToken, ShadowValue, TokenAlias, TokenCatalog,
+    TokenFallbackPolicy, TokenProvenance, TokenResolutionOptions, TokenResolutionReport,
+    TokenStrictness, TypographyToken, TypographyTokenValue,
+};
 pub use diagnostics::{Diagnostic, DiagnosticSeverity, DiagnosticSubject, Phase};
 pub use export_contract::{
     ExportAdapter, ExportArtifact, ExportError, ExportFormat, ExportProfile, ExportPurpose,
