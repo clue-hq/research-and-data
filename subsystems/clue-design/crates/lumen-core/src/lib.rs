@@ -4,6 +4,7 @@
 //! React, Konva, FastAPI, databases, object storage, browser APIs, or WebGPU.
 
 pub mod diagnostics;
+pub mod dsl;
 pub mod export_contract;
 pub mod ids;
 pub mod operations;
@@ -14,6 +15,12 @@ pub mod snapshot;
 pub mod validation;
 
 pub use diagnostics::{Diagnostic, DiagnosticSeverity, DiagnosticSubject, Phase};
+pub use dsl::{
+    compile_dsl, compile_dsl_into_scene, normalize_dsl, parse_dsl, DslCompileOutput, DslDiagnostic,
+    DslDimension, DslDirective, DslDocument, DslElement, DslElementKind, DslFill, DslFont, DslHalt,
+    DslLine, DslLineKind, DslModification, DslPage, DslPagePreset, DslParseOutput, DslProperty,
+    DslSceneCompileOutput, DslStroke, SourceSpan,
+};
 pub use export_contract::{
     ExportAdapter, ExportArtifact, ExportError, ExportFormat, ExportProfile, ExportPurpose,
     ExportRequest, ExportResult, PdfIntent, RasterScale,

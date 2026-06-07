@@ -45,7 +45,8 @@ impl ExportAdapter for SvgExportAdapter {
             let svg = renderer.render_page();
             diagnostics.extend(renderer.diagnostics);
 
-            let sidecar = build_sidecar(scene, &[page_id.clone()], &request.profile.name);
+            let sidecar =
+                build_sidecar(scene, std::slice::from_ref(page_id), &request.profile.name);
             let sidecar_json = serde_json::to_string_pretty(&sidecar).ok();
 
             artifacts.push(ExportArtifact {
