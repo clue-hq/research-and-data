@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "description": "Visual regression skeleton for export workstreams. Cases are pending until a concrete renderer/export adapter lands.",
+  "cases": [
+    {
+      "id": "valid_multi_page_slots_agent_png_linkedin_ad",
+      "scene_fixture": "crates/lumen-core/fixtures/conformance/valid_multi_page_slots.json",
+      "profile": "agent_png",
+      "format": "png",
+      "page_id": "page_linkedin_ad",
+      "purpose": "agent_critique",
+      "baseline": "crates/lumen-core/fixtures/visual_regression/baselines/valid_multi_page_slots_agent_png_linkedin_ad.pending.txt",
+      "status": "pending_renderer"
+    }
+  ]
+}

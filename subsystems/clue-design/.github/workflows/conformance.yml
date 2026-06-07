@@ -1,0 +1,36 @@
+name: Conformance
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - "contracts/**"
+      - "qa/**"
+      - "engine/**"
+      - "editor/**"
+      - "export/**"
+
+jobs:
+  rust-contract:
+    name: Rust Contract Conformance
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install wasm target
+        run: rustup target add wasm32-unknown-unknown
+
+      - name: Check formatting
+        run: cargo fmt --check
+
+      - name: Run native tests
+        run: cargo test
+
+      - name: Run visual regression skeleton
+        run: cargo test --test visual_regression -- --ignored
+
+      - name: Check wasm compile
+        run: cargo check --target wasm32-unknown-unknown

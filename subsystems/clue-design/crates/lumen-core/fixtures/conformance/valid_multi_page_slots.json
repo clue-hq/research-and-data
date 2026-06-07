@@ -1,0 +1,569 @@
+{
+  "schema_version": 1,
+  "meta": {
+    "id": "doc_conformance_slots",
+    "title": "Conformance Slots",
+    "artifact_type": "letter_and_ad",
+    "medium": "print",
+    "brand_kit": {
+      "id": "brand_kit_acme",
+      "version": 1
+    },
+    "status": {
+      "kind": "draft"
+    }
+  },
+  "pages": {
+    "page_a4": {
+      "id": "page_a4",
+      "name": "A4 Letter",
+      "size": {
+        "width": 210.0,
+        "height": 297.0,
+        "unit": "mm",
+        "preset": "a4",
+        "orientation": "portrait"
+      },
+      "children": [
+        "node_header_frame",
+        "node_cta"
+      ],
+      "bleed": {
+        "x": 0.0,
+        "y": 0.0,
+        "width": 210.0,
+        "height": 297.0
+      },
+      "safe_area": {
+        "x": 12.0,
+        "y": 12.0,
+        "width": 186.0,
+        "height": 273.0
+      },
+      "background": [
+        {
+          "id": "paint_page_surface",
+          "paint": {
+            "kind": "solid",
+            "color": {
+              "kind": "hex",
+              "value": "#fffaf2"
+            }
+          }
+        }
+      ]
+    },
+    "page_linkedin_ad": {
+      "id": "page_linkedin_ad",
+      "name": "LinkedIn Ad",
+      "size": {
+        "width": 1200.0,
+        "height": 627.0,
+        "unit": "px",
+        "preset": "linkedin_ad",
+        "orientation": "landscape"
+      },
+      "children": [
+        "node_ad_headline"
+      ],
+      "bleed": null,
+      "safe_area": {
+        "x": 48.0,
+        "y": 48.0,
+        "width": 1104.0,
+        "height": 531.0
+      },
+      "background": [
+        {
+          "id": "paint_ad_surface",
+          "paint": {
+            "kind": "token",
+            "token": "surface.brand"
+          }
+        }
+      ]
+    }
+  },
+  "nodes": {
+    "node_account_logo": {
+      "id": "node_account_logo",
+      "name": "Account Logo",
+      "kind": {
+        "kind": "image",
+        "asset_id": "asset_logo_demo",
+        "alt": "Account logo"
+      },
+      "transform": {
+        "x": 0.0,
+        "y": 0.0,
+        "rotation": 0.0,
+        "skew_x": 0.0,
+        "skew_y": 0.0,
+        "flip_x": false,
+        "flip_y": false
+      },
+      "size": {
+        "width": {
+          "kind": "fixed",
+          "value": 32.0
+        },
+        "height": {
+          "kind": "fixed",
+          "value": 32.0
+        }
+      },
+      "children": [],
+      "fills": [],
+      "strokes": [],
+      "corner": {
+        "top_left": 4.0,
+        "top_right": 4.0,
+        "bottom_right": 4.0,
+        "bottom_left": 4.0
+      },
+      "opacity": 1.0,
+      "clip": true,
+      "layout": null,
+      "computed": null,
+      "locked": false
+    },
+    "node_account_name": {
+      "id": "node_account_name",
+      "name": "Account Name",
+      "kind": {
+        "kind": "text",
+        "content": "Apollo Neuroscience Center",
+        "font_family": "Inter",
+        "font_size": 14.0,
+        "font_weight": 700,
+        "align": "left"
+      },
+      "transform": {
+        "x": 40.0,
+        "y": 3.0,
+        "rotation": 0.0,
+        "skew_x": 0.0,
+        "skew_y": 0.0,
+        "flip_x": false,
+        "flip_y": false
+      },
+      "size": {
+        "width": {
+          "kind": "fixed",
+          "value": 126.0
+        },
+        "height": {
+          "kind": "fixed",
+          "value": 30.0
+        }
+      },
+      "children": [],
+      "fills": [
+        {
+          "id": "paint_account_text",
+          "paint": {
+            "kind": "token",
+            "token": "text.primary"
+          }
+        }
+      ],
+      "strokes": [],
+      "corner": {
+        "top_left": 0.0,
+        "top_right": 0.0,
+        "bottom_right": 0.0,
+        "bottom_left": 0.0
+      },
+      "opacity": 1.0,
+      "clip": false,
+      "layout": null,
+      "computed": null,
+      "locked": false
+    },
+    "node_ad_headline": {
+      "id": "node_ad_headline",
+      "name": "Ad Headline",
+      "kind": {
+        "kind": "text",
+        "content": "A sharper plan for patient acquisition",
+        "font_family": "Inter",
+        "font_size": 54.0,
+        "font_weight": 800,
+        "align": "left"
+      },
+      "transform": {
+        "x": 64.0,
+        "y": 88.0,
+        "rotation": 0.0,
+        "skew_x": 0.0,
+        "skew_y": 0.0,
+        "flip_x": false,
+        "flip_y": false
+      },
+      "size": {
+        "width": {
+          "kind": "fixed",
+          "value": 720.0
+        },
+        "height": {
+          "kind": "fixed",
+          "value": 136.0
+        }
+      },
+      "children": [],
+      "fills": [
+        {
+          "id": "paint_ad_headline",
+          "paint": {
+            "kind": "solid",
+            "color": {
+              "kind": "hex",
+              "value": "#193235"
+            }
+          }
+        }
+      ],
+      "strokes": [],
+      "corner": {
+        "top_left": 0.0,
+        "top_right": 0.0,
+        "bottom_right": 0.0,
+        "bottom_left": 0.0
+      },
+      "opacity": 1.0,
+      "clip": false,
+      "layout": null,
+      "computed": null,
+      "locked": false
+    },
+    "node_cta": {
+      "id": "node_cta",
+      "name": "CTA",
+      "kind": {
+        "kind": "text",
+        "content": "Schedule a consultation",
+        "font_family": "Inter",
+        "font_size": 12.0,
+        "font_weight": 700,
+        "align": "center"
+      },
+      "transform": {
+        "x": 24.0,
+        "y": 240.0,
+        "rotation": 0.0,
+        "skew_x": 0.0,
+        "skew_y": 0.0,
+        "flip_x": false,
+        "flip_y": false
+      },
+      "size": {
+        "width": {
+          "kind": "fixed",
+          "value": 88.0
+        },
+        "height": {
+          "kind": "fixed",
+          "value": 14.0
+        }
+      },
+      "children": [],
+      "fills": [
+        {
+          "id": "paint_cta_text",
+          "paint": {
+            "kind": "token",
+            "token": "text.inverse"
+          }
+        }
+      ],
+      "strokes": [],
+      "corner": {
+        "top_left": 0.0,
+        "top_right": 0.0,
+        "bottom_right": 0.0,
+        "bottom_left": 0.0
+      },
+      "opacity": 1.0,
+      "clip": false,
+      "layout": null,
+      "computed": null,
+      "locked": false
+    },
+    "node_header_frame": {
+      "id": "node_header_frame",
+      "name": "Header Slot Group",
+      "kind": {
+        "kind": "frame"
+      },
+      "transform": {
+        "x": 16.0,
+        "y": 18.0,
+        "rotation": 0.0,
+        "skew_x": 0.0,
+        "skew_y": 0.0,
+        "flip_x": false,
+        "flip_y": false
+      },
+      "size": {
+        "width": {
+          "kind": "fixed",
+          "value": 178.0
+        },
+        "height": {
+          "kind": "fixed",
+          "value": 44.0
+        }
+      },
+      "children": [
+        "node_account_logo",
+        "node_account_name"
+      ],
+      "fills": [
+        {
+          "id": "paint_header_surface",
+          "paint": {
+            "kind": "solid",
+            "color": {
+              "kind": "hex",
+              "value": "#ffffff"
+            }
+          }
+        }
+      ],
+      "strokes": [
+        {
+          "id": "paint_header_stroke",
+          "paint": {
+            "kind": "solid",
+            "color": {
+              "kind": "hex",
+              "value": "#e6ded0"
+            }
+          },
+          "width": 0.4
+        }
+      ],
+      "corner": {
+        "top_left": 6.0,
+        "top_right": 6.0,
+        "bottom_right": 6.0,
+        "bottom_left": 6.0
+      },
+      "opacity": 1.0,
+      "clip": false,
+      "layout": null,
+      "computed": null,
+      "locked": false
+    }
+  },
+  "slots": {
+    "slot_account_logo": {
+      "id": "slot_account_logo",
+      "key": "account.logo",
+      "label": "Account logo",
+      "content_type": "logo",
+      "scope": {
+        "kind": "group",
+        "id": "node_header_frame"
+      },
+      "bound_nodes": [
+        "node_account_logo"
+      ],
+      "required": true,
+      "placeholder": "Demo account logo",
+      "overflow": {
+        "kind": "clip"
+      },
+      "formatting": {
+        "max_length": null,
+        "allowed_pattern": null,
+        "preserve_case": true
+      },
+      "cardinality": {
+        "min_items": 1,
+        "max_items": 1
+      },
+      "conditional": null,
+      "repeater": null,
+      "validation": {
+        "samples": [],
+        "worst_case": null,
+        "max_length": null
+      },
+      "image_policy": {
+        "fit": "contain",
+        "focal_point": {
+          "x": 0.5,
+          "y": 0.5
+        },
+        "min_dpi": 144,
+        "preserve_transparency": true,
+        "aspect_ratio": 1.0
+      },
+      "editability": "template_and_instance",
+      "binding_hints": [
+        {
+          "source_path": "account.logo",
+          "confidence": 0.9
+        }
+      ]
+    },
+    "slot_account_name": {
+      "id": "slot_account_name",
+      "key": "account.name",
+      "label": "Account name",
+      "content_type": "text_short",
+      "scope": {
+        "kind": "group",
+        "id": "node_header_frame"
+      },
+      "bound_nodes": [
+        "node_account_name"
+      ],
+      "required": true,
+      "placeholder": "Apollo Neuroscience Center",
+      "overflow": {
+        "kind": "wrap",
+        "max_lines": 2
+      },
+      "formatting": {
+        "max_length": 96,
+        "allowed_pattern": null,
+        "preserve_case": true
+      },
+      "cardinality": {
+        "min_items": 1,
+        "max_items": 1
+      },
+      "conditional": null,
+      "repeater": null,
+      "validation": {
+        "samples": [
+          "Apollo Neuroscience Center",
+          "Northwestern Memorial Healthcare Partners"
+        ],
+        "worst_case": "The University of Texas MD Anderson Cancer Center",
+        "max_length": 96
+      },
+      "image_policy": null,
+      "editability": "template_and_instance",
+      "binding_hints": [
+        {
+          "source_path": "account.name",
+          "confidence": 1.0
+        }
+      ]
+    },
+    "slot_ad_headline": {
+      "id": "slot_ad_headline",
+      "key": "campaign.headline",
+      "label": "Campaign headline",
+      "content_type": "text_long",
+      "scope": {
+        "kind": "page",
+        "id": "page_linkedin_ad"
+      },
+      "bound_nodes": [
+        "node_ad_headline"
+      ],
+      "required": true,
+      "placeholder": "A sharper plan for patient acquisition",
+      "overflow": {
+        "kind": "shrink_font",
+        "min_font_size": 36.0,
+        "max_font_size": 54.0
+      },
+      "formatting": {
+        "max_length": 120,
+        "allowed_pattern": null,
+        "preserve_case": true
+      },
+      "cardinality": {
+        "min_items": 1,
+        "max_items": 1
+      },
+      "conditional": null,
+      "repeater": null,
+      "validation": {
+        "samples": [
+          "A sharper plan for patient acquisition"
+        ],
+        "worst_case": "How leading health systems identify higher-fit patient demand earlier",
+        "max_length": 120
+      },
+      "image_policy": null,
+      "editability": "template_and_instance",
+      "binding_hints": [
+        {
+          "source_path": "campaign.headline",
+          "confidence": 0.8
+        }
+      ]
+    },
+    "slot_campaign_cta": {
+      "id": "slot_campaign_cta",
+      "key": "campaign.cta",
+      "label": "Campaign CTA",
+      "content_type": "text_short",
+      "scope": {
+        "kind": "document"
+      },
+      "bound_nodes": [
+        "node_cta"
+      ],
+      "required": true,
+      "placeholder": "Schedule a consultation",
+      "overflow": {
+        "kind": "ellipsis"
+      },
+      "formatting": {
+        "max_length": 48,
+        "allowed_pattern": null,
+        "preserve_case": true
+      },
+      "cardinality": {
+        "min_items": 1,
+        "max_items": 1
+      },
+      "conditional": null,
+      "repeater": null,
+      "validation": {
+        "samples": [
+          "Schedule a consultation",
+          "Download the care pathway"
+        ],
+        "worst_case": null,
+        "max_length": 48
+      },
+      "image_policy": null,
+      "editability": "template_and_instance",
+      "binding_hints": [
+        {
+          "source_path": "campaign.cta",
+          "confidence": 0.8
+        }
+      ]
+    }
+  },
+  "export_profiles": [
+    {
+      "name": "print_pdf",
+      "format": "pdf",
+      "pdf_intent": "print",
+      "raster": null,
+      "include_bleed": true,
+      "embed_fonts": true
+    },
+    {
+      "name": "agent_png",
+      "format": "png",
+      "pdf_intent": null,
+      "raster": {
+        "scale": 2.0,
+        "dpi": 144
+      },
+      "include_bleed": false,
+      "embed_fonts": false
+    }
+  ]
+}
