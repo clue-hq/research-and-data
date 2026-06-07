@@ -1794,7 +1794,7 @@ fn parse_paint(source: &str, line_number: usize, column: usize) -> Result<Paint,
         });
     }
     if source.starts_with("linear(") {
-        let call = parse_call(source).expect("linear starts as call");
+        let call = parse_required_call(source, "linear", line_number, column)?;
         let angle = call
             .args
             .first()
@@ -1820,7 +1820,7 @@ fn parse_paint(source: &str, line_number: usize, column: usize) -> Result<Paint,
         return Ok(Paint::LinearGradient { angle, stops });
     }
     if source.starts_with("radial(") {
-        let call = parse_call(source).expect("radial starts as call");
+        let call = parse_required_call(source, "radial", line_number, column)?;
         let stops = call
             .args
             .iter()
@@ -1839,7 +1839,7 @@ fn parse_paint(source: &str, line_number: usize, column: usize) -> Result<Paint,
         return Ok(Paint::RadialGradient { stops });
     }
     if source.starts_with("solid(") {
-        let call = parse_call(source).expect("solid starts as call");
+        let call = parse_required_call(source, "solid", line_number, column)?;
         if call.args.is_empty() {
             return Err(error_diag(
                 line_number,
@@ -1927,7 +1927,7 @@ fn parse_color(source: &str, line_number: usize, column: usize) -> Result<Color,
         });
     }
     if source.starts_with("oklch(") {
-        let call = parse_call(source).expect("oklch starts as call");
+        let call = parse_required_call(source, "oklch", line_number, column)?;
         if !(3..=4).contains(&call.args.len()) {
             return Err(error_diag(
                 line_number,
@@ -2091,7 +2091,7 @@ fn parse_dimension(
         "hug" => Ok(DslDimension::Hug),
         "fill" => Ok(DslDimension::Fill(None)),
         other if other.starts_with("fill(") => {
-            let call = parse_call(other).expect("fill starts as call");
+            let call = parse_required_call(other, "fill", line_number, column)?;
             expect_arg_count(&call, 1, line_number)?;
             Ok(DslDimension::Fill(Some(parse_f64(
                 &call.args[0],
@@ -2171,6 +2171,37 @@ fn parse_call(token: &str) -> Option<Call> {
         name,
         args: split_top_level_commas(inner),
     })
+}
+
+fn parse_required_call(
+    token: &str,
+    expected_name: &str,
+    line_number: usize,
+    column: usize,
+) -> Result<Call, DslDiagnostic> {
+    let call = parse_call(token).ok_or_else(|| {
+        error_diag(
+            line_number,
+            column,
+            token.len().max(1),
+            "LUMD0245",
+            format!("malformed {expected_name}(...) call"),
+            "Check that the call has balanced parentheses and valid comma-separated arguments.",
+        )
+    })?;
+
+    if call.name == expected_name {
+        Ok(call)
+    } else {
+        Err(error_diag(
+            line_number,
+            column,
+            token.len().max(1),
+            "LUMD0246",
+            format!("expected {expected_name}(...), got {}(...)", call.name),
+            "Use the expected property function name.",
+        ))
+    }
 }
 
 fn split_top_level_whitespace(source: &str) -> Vec<String> {

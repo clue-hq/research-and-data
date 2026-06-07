@@ -293,6 +293,54 @@ page page_a4
     assert_eq!(output.halted_at.as_ref().unwrap().code, "LUMD0241");
 }
 
+#[test]
+fn malformed_nested_paint_calls_return_diagnostics_instead_of_panicking() {
+    for source in [
+        r#"
+page page_a4
+  card frame p(0,0) s(100,100) fill(linear(90)
+"#,
+        r#"
+page page_a4
+  card frame p(0,0) s(100,100) fill(radial(stop(#ffffff,0)
+"#,
+        r#"
+page page_a4
+  card frame p(0,0) s(100,100) fill(solid(#ffffff)
+"#,
+        r#"
+page page_a4
+  card frame p(0,0) s(100,100) fill(oklch(0.7,0.1)
+"#,
+    ] {
+        let output = std::panic::catch_unwind(|| parse_dsl(source))
+            .expect("malformed DSL should return diagnostics, not panic");
+
+        assert_eq!(output.halted_at.as_ref().unwrap().line, 3);
+        assert_eq!(output.halted_at.as_ref().unwrap().code, "LUMD0245");
+        assert!(output.diagnostics[0]
+            .diagnostic
+            .message
+            .contains("malformed"));
+    }
+}
+
+#[test]
+fn malformed_fill_dimension_returns_diagnostic_instead_of_panicking() {
+    let output = std::panic::catch_unwind(|| {
+        parse_dsl(
+            r#"
+page page_a4
+  card frame p(0,0) s(fill(2],100)
+"#,
+        )
+    })
+    .expect("malformed fill dimension should return diagnostics, not panic");
+
+    assert_eq!(output.halted_at.as_ref().unwrap().line, 3);
+    assert_eq!(output.halted_at.as_ref().unwrap().code, "LUMD0245");
+}
+
 fn assert_no_dsl_errors(diagnostics: &[lumen_core::DslDiagnostic]) {
     assert!(
         diagnostics
