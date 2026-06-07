@@ -1,0 +1,78 @@
+{
+  "schema_version": 1,
+  "meta": {
+    "id": "doc_invalid_tree",
+    "title": "Invalid Tree",
+    "artifact_type": "letter",
+    "medium": "print",
+    "brand_kit": null,
+    "status": {
+      "kind": "draft"
+    }
+  },
+  "pages": {
+    "page_a4": {
+      "id": "page_a4",
+      "name": "A4 Letter",
+      "size": {
+        "width": 210.0,
+        "height": 297.0,
+        "unit": "mm",
+        "preset": "a4",
+        "orientation": "portrait"
+      },
+      "children": [
+        "node_rect"
+      ],
+      "bleed": null,
+      "safe_area": null,
+      "background": []
+    }
+  },
+  "nodes": {
+    "node_rect": {
+      "id": "node_rect",
+      "name": "Leaf With Bad Child",
+      "kind": {
+        "kind": "rect"
+      },
+      "transform": {
+        "x": 24.0,
+        "y": 24.0,
+        "rotation": 0.0,
+        "skew_x": 0.0,
+        "skew_y": 0.0,
+        "flip_x": false,
+        "flip_y": false
+      },
+      "size": {
+        "width": {
+          "kind": "fixed",
+          "value": 80.0
+        },
+        "height": {
+          "kind": "fixed",
+          "value": 40.0
+        }
+      },
+      "children": [
+        "node_missing"
+      ],
+      "fills": [],
+      "strokes": [],
+      "corner": {
+        "top_left": 0.0,
+        "top_right": 0.0,
+        "bottom_right": 0.0,
+        "bottom_left": 0.0
+      },
+      "opacity": 1.0,
+      "clip": false,
+      "layout": null,
+      "computed": null,
+      "locked": false
+    }
+  },
+  "slots": {},
+  "export_profiles": []
+}
