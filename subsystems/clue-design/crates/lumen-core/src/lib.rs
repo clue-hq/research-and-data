@@ -7,6 +7,7 @@ pub mod brand;
 pub mod diagnostics;
 pub mod export_contract;
 pub mod ids;
+pub mod layout;
 pub mod operations;
 pub mod render_contract;
 pub mod scene;
@@ -33,6 +34,7 @@ pub use ids::{
     AssetId, BrandKitId, DocumentId, IdError, NodeId, OperationId, PageId, PaintId, SlotId,
     SlotKey, TemplateRevisionId,
 };
+pub use layout::{layout_operations, layout_scene, validate_layout, LayoutOptions, LayoutResult};
 pub use operations::{
     DocumentPatch, FieldPatch, NodePatch, Operation, OperationError, OperationReport,
     OperationResult, OptionalFieldPatch, PagePatch,
