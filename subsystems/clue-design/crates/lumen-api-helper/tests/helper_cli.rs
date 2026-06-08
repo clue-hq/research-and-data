@@ -1,0 +1,157 @@
+use serde_json::{json, Value};
+use std::io::Write;
+use std::process::{Command, Stdio};
+
+const MINIMAL_SCENE: &str = include_str!("../../lumen-core/fixtures/minimal_scene.json");
+
+fn helper(request: Value) -> Value {
+    let mut child = Command::new(env!("CARGO_BIN_EXE_lumen-api-helper"))
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .spawn()
+        .expect("helper binary should spawn");
+
+    child
+        .stdin
+        .as_mut()
+        .expect("stdin should be available")
+        .write_all(request.to_string().as_bytes())
+        .expect("request should write");
+
+    let output = child.wait_with_output().expect("helper should exit");
+    assert!(output.status.success(), "{output:?}");
+    serde_json::from_slice(&output.stdout).expect("helper response should be JSON")
+}
+
+fn minimal_scene() -> Value {
+    serde_json::from_str(MINIMAL_SCENE).unwrap()
+}
+
+fn tokenized_scene() -> Value {
+    let mut scene = minimal_scene();
+    scene["nodes"]["node_contact_name"]["kind"]["style_token"] = json!("type.body");
+    scene["slots"] = json!({});
+    scene
+}
+
+#[test]
+fn validates_scene_through_cli() {
+    let response = helper(json!({
+        "action": "validate_scene",
+        "scene": minimal_scene()
+    }));
+
+    assert_eq!(response["ok"], true);
+    assert!(response
+        .get("diagnostics")
+        .and_then(Value::as_array)
+        .unwrap_or(&Vec::new())
+        .iter()
+        .all(|diagnostic| diagnostic["severity"] != "error"));
+}
+
+#[test]
+fn applies_operation_batch_through_checked_core() {
+    let response = helper(json!({
+        "action": "apply_operations",
+        "scene": minimal_scene(),
+        "operations": [{
+            "kind": "update_document",
+            "patch": {
+                "title": { "kind": "set", "value": "Updated letter" },
+                "artifact_type": { "kind": "unchanged" },
+                "medium": { "kind": "unchanged" },
+                "brand_kit": { "kind": "unchanged" }
+            }
+        }]
+    }));
+
+    assert_eq!(response["ok"], true);
+    assert_eq!(response["applied_operations"], 1);
+    assert_eq!(response["scene"]["meta"]["title"], "Updated letter");
+}
+
+#[test]
+fn rejects_invalid_operation_batch_without_scene() {
+    let response = helper(json!({
+        "action": "apply_operations",
+        "scene": minimal_scene(),
+        "operations": [{
+            "kind": "insert_node",
+            "parent": { "kind": "page", "id": "missing_page" },
+            "index": 0,
+            "node": {
+                "id": "node_orphan",
+                "name": null,
+                "kind": { "kind": "rect" },
+                "transform": {
+                    "x": 0.0,
+                    "y": 0.0,
+                    "rotation": 0.0,
+                    "skew_x": 0.0,
+                    "skew_y": 0.0,
+                    "flip_x": false,
+                    "flip_y": false
+                },
+                "size": {
+                    "width": { "kind": "fixed", "value": 10.0 },
+                    "height": { "kind": "fixed", "value": 10.0 }
+                },
+                "children": [],
+                "fills": [],
+                "strokes": [],
+                "corner": {
+                    "top_left": 0.0,
+                    "top_right": 0.0,
+                    "bottom_right": 0.0,
+                    "bottom_left": 0.0
+                },
+                "opacity": 1.0,
+                "clip": false,
+                "layout": null,
+                "computed": null,
+                "locked": false
+            }
+        }]
+    }));
+
+    assert_eq!(response["ok"], false);
+    assert_eq!(response["error"]["code"], "op.page_missing");
+    assert!(response.get("scene").is_none());
+}
+
+#[test]
+fn preflights_with_platform_default_brand_kit() {
+    let brand = helper(json!({ "action": "platform_default_brand_kit" }));
+    assert_eq!(brand["ok"], true);
+
+    let response = helper(json!({
+        "action": "preflight_scene",
+        "scene": tokenized_scene(),
+        "brand_kit": brand["brand_kit"]
+    }));
+
+    assert_eq!(response["ok"], true);
+    assert_eq!(response["preflight"]["has_errors"], false);
+    assert!(response["preflight"]["layout_operations"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|operation| operation["kind"] == "update_node"));
+}
+
+#[test]
+fn finalizes_template_through_core_operation() {
+    let response = helper(json!({
+        "action": "finalize_template",
+        "scene": minimal_scene(),
+        "template_revision_id": "tmpl_test"
+    }));
+
+    assert_eq!(response["ok"], true);
+    assert_eq!(response["scene"]["meta"]["status"]["kind"], "finalized");
+    assert_eq!(
+        response["scene"]["meta"]["status"]["template_revision_id"],
+        "tmpl_test"
+    );
+}

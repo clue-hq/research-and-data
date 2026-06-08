@@ -6,6 +6,7 @@ dist/
 .env
 .env.*
 !.env.example
+apps/api/*.sqlite3
 reference_docs/*
 !reference_docs/
 !reference_docs/ABM-Design-Engine-Temporary-Spec.md
