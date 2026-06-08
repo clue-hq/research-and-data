@@ -1716,6 +1716,10 @@ fn operation_kind(operation: &Operation) -> &'static str {
         Operation::SetBrandKitRef { .. } => "set_brand_kit_ref",
         Operation::UpsertExportProfile { .. } => "upsert_export_profile",
         Operation::RemoveExportProfile { .. } => "remove_export_profile",
+        Operation::UpsertAsset { .. } => "upsert_asset",
+        Operation::RemoveAsset { .. } => "remove_asset",
+        Operation::PlaceAssetInNode { .. } => "place_asset_in_node",
+        Operation::PlaceAssetInSlot { .. } => "place_asset_in_slot",
         Operation::FinalizeTemplate { .. } => "finalize_template",
     }
 }
