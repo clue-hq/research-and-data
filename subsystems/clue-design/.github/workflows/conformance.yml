@@ -10,6 +10,7 @@ on:
       - "engine/**"
       - "editor/**"
       - "export/**"
+      - "api/**"
 
 jobs:
   rust-contract:
@@ -34,3 +35,25 @@ jobs:
 
       - name: Check wasm compile
         run: cargo check --target wasm32-unknown-unknown
+
+  api-persistence:
+    name: API Persistence
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install API test dependencies
+        run: python -m pip install -r apps/api/requirements-dev.txt
+
+      - name: Build Rust API helper
+        run: cargo build -p lumen-api-helper
+
+      - name: Run API tests
+        run: pytest apps/api/tests

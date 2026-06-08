@@ -26,3 +26,5 @@ Detailed workstream docs:
 - `docs/qa-conformance.md`
 - `docs/dsl-compiler.md`
 - `docs/slots-layout.md`
+- `docs/preflight-pipeline.md`
+- `docs/api-persistence.md`
