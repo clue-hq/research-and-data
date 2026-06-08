@@ -226,6 +226,7 @@ def scene_counts(scene: JsonObject) -> JsonObject:
         "pages": len(scene.get("pages", {})),
         "nodes": len(scene.get("nodes", {})),
         "slots": len(scene.get("slots", {})),
+        "assets": len(scene.get("assets", {})),
         "export_profiles": len(scene.get("export_profiles", [])),
     }
 

@@ -3,6 +3,8 @@ use std::io::Write;
 use std::process::{Command, Stdio};
 
 const MINIMAL_SCENE: &str = include_str!("../../lumen-core/fixtures/minimal_scene.json");
+const GENERATED_RASTER: &str =
+    include_str!("../../lumen-core/fixtures/assets/generated_raster_asset.json");
 
 fn helper(request: Value) -> Value {
     let mut child = Command::new(env!("CARGO_BIN_EXE_lumen-api-helper"))
@@ -27,11 +29,119 @@ fn minimal_scene() -> Value {
     serde_json::from_str(MINIMAL_SCENE).unwrap()
 }
 
+fn generated_asset() -> Value {
+    serde_json::from_str(GENERATED_RASTER).unwrap()
+}
+
 fn tokenized_scene() -> Value {
     let mut scene = minimal_scene();
     scene["nodes"]["node_contact_name"]["kind"]["style_token"] = json!("type.body");
     scene["slots"] = json!({});
     scene
+}
+
+fn asset_placeholder_node() -> Value {
+    json!({
+        "id": "node_hero_image",
+        "name": "Hero image",
+        "kind": { "kind": "rect" },
+        "transform": {
+            "x": 24.0,
+            "y": 76.0,
+            "rotation": 0.0,
+            "skew_x": 0.0,
+            "skew_y": 0.0,
+            "flip_x": false,
+            "flip_y": false
+        },
+        "size": {
+            "width": { "kind": "fixed", "value": 120.0 },
+            "height": { "kind": "fixed", "value": 67.5 }
+        },
+        "children": [],
+        "fills": [],
+        "strokes": [],
+        "corner": {
+            "top_left": 0.0,
+            "top_right": 0.0,
+            "bottom_right": 0.0,
+            "bottom_left": 0.0
+        },
+        "opacity": 1.0,
+        "clip": false,
+        "layout": null,
+        "computed": null,
+        "locked": false
+    })
+}
+
+fn image_slot() -> Value {
+    json!({
+        "id": "slot_campaign_hero_image",
+        "key": "campaign.hero_image",
+        "label": "Hero image",
+        "content_type": "image",
+        "scope": { "kind": "document" },
+        "bound_nodes": ["node_hero_image"],
+        "required": false,
+        "placeholder": "Generated clinic hero",
+        "overflow": { "kind": "error" },
+        "formatting": {
+            "max_length": null,
+            "allowed_pattern": null,
+            "preserve_case": true
+        },
+        "cardinality": {
+            "min_items": 1,
+            "max_items": 1
+        },
+        "conditional": null,
+        "repeater": null,
+        "validation": {
+            "samples": [],
+            "worst_case": null,
+            "max_length": null
+        },
+        "image_policy": {
+            "fit": "cover",
+            "focal_point": { "x": 0.5, "y": 0.42 },
+            "min_dpi": 72,
+            "preserve_transparency": false,
+            "aspect_ratio": 1.7777777777777777
+        },
+        "editability": "template_and_instance",
+        "binding_hints": []
+    })
+}
+
+fn asset_operations() -> Vec<Value> {
+    vec![
+        json!({
+            "kind": "insert_node",
+            "parent": { "kind": "page", "id": "page_a4" },
+            "index": 1,
+            "node": asset_placeholder_node()
+        }),
+        json!({
+            "kind": "upsert_slot",
+            "slot": image_slot()
+        }),
+        json!({
+            "kind": "upsert_asset",
+            "asset": generated_asset()
+        }),
+        json!({
+            "kind": "place_asset_in_slot",
+            "slot_id": "slot_campaign_hero_image",
+            "asset_id": "asset_generated_hero",
+            "placement": {
+                "fit": "cover",
+                "focal_point": { "x": 0.5, "y": 0.42 },
+                "preserve_transparency": false,
+                "alt_text": "Generated clinic hero"
+            }
+        }),
+    ]
 }
 
 #[test]
@@ -69,6 +179,34 @@ fn applies_operation_batch_through_checked_core() {
     assert_eq!(response["ok"], true);
     assert_eq!(response["applied_operations"], 1);
     assert_eq!(response["scene"]["meta"]["title"], "Updated letter");
+}
+
+#[test]
+fn applies_asset_operations_through_checked_core_bridge() {
+    let response = helper(json!({
+        "action": "apply_operations",
+        "scene": minimal_scene(),
+        "operations": asset_operations()
+    }));
+
+    assert_eq!(response["ok"], true, "{response:#?}");
+    assert_eq!(response["applied_operations"], 4);
+    assert_eq!(
+        response["scene"]["assets"]["asset_generated_hero"]["kind"],
+        "raster_image"
+    );
+    assert_eq!(
+        response["scene"]["nodes"]["node_hero_image"]["kind"],
+        json!({
+            "kind": "image",
+            "asset_id": "asset_generated_hero",
+            "alt": "Generated clinic hero"
+        })
+    );
+    assert_eq!(
+        response["scene"]["nodes"]["node_hero_image"]["asset_placement"]["fit"],
+        "cover"
+    );
 }
 
 #[test]

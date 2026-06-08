@@ -13,6 +13,9 @@ from lumen_api.main import create_app
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 MINIMAL_SCENE_PATH = REPO_ROOT / "crates/lumen-core/fixtures/minimal_scene.json"
+GENERATED_RASTER_ASSET_PATH = (
+    REPO_ROOT / "crates/lumen-core/fixtures/assets/generated_raster_asset.json"
+)
 
 
 @pytest.fixture()
@@ -23,6 +26,10 @@ def client(tmp_path: Path) -> TestClient:
 
 def minimal_scene() -> dict:
     return json.loads(MINIMAL_SCENE_PATH.read_text())
+
+
+def generated_raster_asset() -> dict:
+    return json.loads(GENERATED_RASTER_ASSET_PATH.read_text())
 
 
 def preflightable_scene() -> dict:
@@ -97,6 +104,110 @@ def invalid_insert_operation() -> dict:
             "locked": False,
         },
     }
+
+
+def asset_placeholder_node() -> dict:
+    return {
+        "id": "node_hero_image",
+        "name": "Hero image",
+        "kind": {"kind": "rect"},
+        "transform": {
+            "x": 24.0,
+            "y": 76.0,
+            "rotation": 0.0,
+            "skew_x": 0.0,
+            "skew_y": 0.0,
+            "flip_x": False,
+            "flip_y": False,
+        },
+        "size": {
+            "width": {"kind": "fixed", "value": 120.0},
+            "height": {"kind": "fixed", "value": 67.5},
+        },
+        "children": [],
+        "fills": [],
+        "strokes": [],
+        "corner": {
+            "top_left": 0.0,
+            "top_right": 0.0,
+            "bottom_right": 0.0,
+            "bottom_left": 0.0,
+        },
+        "opacity": 1.0,
+        "clip": False,
+        "layout": None,
+        "computed": None,
+        "locked": False,
+    }
+
+
+def image_slot() -> dict:
+    return {
+        "id": "slot_campaign_hero_image",
+        "key": "campaign.hero_image",
+        "label": "Hero image",
+        "content_type": "image",
+        "scope": {"kind": "document"},
+        "bound_nodes": ["node_hero_image"],
+        "required": False,
+        "placeholder": "Generated clinic hero",
+        "overflow": {"kind": "error"},
+        "formatting": {
+            "max_length": None,
+            "allowed_pattern": None,
+            "preserve_case": True,
+        },
+        "cardinality": {
+            "min_items": 1,
+            "max_items": 1,
+        },
+        "conditional": None,
+        "repeater": None,
+        "validation": {
+            "samples": [],
+            "worst_case": None,
+            "max_length": None,
+        },
+        "image_policy": {
+            "fit": "cover",
+            "focal_point": {"x": 0.5, "y": 0.42},
+            "min_dpi": 72,
+            "preserve_transparency": False,
+            "aspect_ratio": 1.7777777777777777,
+        },
+        "editability": "template_and_instance",
+        "binding_hints": [],
+    }
+
+
+def asset_operations() -> list[dict]:
+    return [
+        {
+            "kind": "insert_node",
+            "parent": {"kind": "page", "id": "page_a4"},
+            "index": 1,
+            "node": asset_placeholder_node(),
+        },
+        {
+            "kind": "upsert_slot",
+            "slot": image_slot(),
+        },
+        {
+            "kind": "upsert_asset",
+            "asset": generated_raster_asset(),
+        },
+        {
+            "kind": "place_asset_in_slot",
+            "slot_id": "slot_campaign_hero_image",
+            "asset_id": "asset_generated_hero",
+            "placement": {
+                "fit": "cover",
+                "focal_point": {"x": 0.5, "y": 0.42},
+                "preserve_transparency": False,
+                "alt_text": "Generated clinic hero",
+            },
+        },
+    ]
 
 
 def test_create_and_load_document_preserves_canonical_scene(client: TestClient) -> None:
@@ -278,6 +389,88 @@ def test_asset_metadata_round_trip_stores_references_only(client: TestClient) ->
     loaded = client.get("/asset-metadata/asset_logo").json()
     assert loaded["source_uri"] == "s3://example/logo.svg"
     assert loaded["provenance"] == {"source": "uploaded"}
+
+
+def test_asset_scene_operations_persist_history_snapshot_and_template(
+    client: TestClient,
+) -> None:
+    document = create_document(client)
+
+    metadata = client.post(
+        "/asset-metadata",
+        json={
+            "asset_id": "asset_generated_hero",
+            "document_id": document["id"],
+            "kind": "raster_image",
+            "filename": "generated-clinic-hero.png",
+            "source_uri": "s3://example/generated-clinic-hero.png",
+            "mime_type": "image/png",
+            "width": 1600,
+            "height": 900,
+            "provenance": {"source": "agent_generated"},
+            "licensing": {"usage": "generated_commercial_use"},
+        },
+    )
+    assert metadata.status_code == 200, metadata.text
+
+    response = client.post(
+        f"/documents/{document['id']}/operations",
+        json={
+            "operations": asset_operations(),
+            "actor": {"kind": "agent", "id": "agent_design"},
+            "source": "agent",
+            "snapshot_reason": "after asset placement",
+        },
+    )
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["operation_application"]["applied_operations"] == 4
+    assert payload["document"]["counts"]["assets"] == 1
+    assert [operation["kind"] for operation in payload["operations"]] == [
+        "insert_node",
+        "upsert_slot",
+        "upsert_asset",
+        "place_asset_in_slot",
+    ]
+
+    loaded = client.get(f"/documents/{document['id']}").json()
+    scene = loaded["scene"]
+    assert scene["assets"]["asset_generated_hero"]["kind"] == "raster_image"
+    assert scene["nodes"]["node_hero_image"]["kind"] == {
+        "kind": "image",
+        "asset_id": "asset_generated_hero",
+        "alt": "Generated clinic hero",
+    }
+    assert scene["nodes"]["node_hero_image"]["asset_placement"]["fit"] == "cover"
+
+    history = client.get(f"/documents/{document['id']}/operations").json()
+    assert [entry["operation"]["kind"] for entry in history] == [
+        "insert_node",
+        "upsert_slot",
+        "upsert_asset",
+        "place_asset_in_slot",
+    ]
+
+    snapshot_id = payload["snapshot"]["snapshot_id"]
+    snapshot = client.get(
+        f"/documents/{document['id']}/snapshots/{snapshot_id}"
+    ).json()
+    assert "asset_generated_hero" in snapshot["scene"]["assets"]
+
+    finalized = client.post(
+        f"/documents/{document['id']}/finalize",
+        json={"template_revision_id": "tmpl_asset_scene"},
+    )
+    assert finalized.status_code == 200, finalized.text
+    revision = client.get("/template-revisions/tmpl_asset_scene").json()
+    assert "asset_generated_hero" in revision["scene"]["assets"]
+    assert (
+        revision["scene"]["nodes"]["node_hero_image"]["kind"]["asset_id"]
+        == "asset_generated_hero"
+    )
+
+    metadata_loaded = client.get("/asset-metadata/asset_generated_hero").json()
+    assert metadata_loaded["source_uri"] == "s3://example/generated-clinic-hero.png"
 
 
 def test_agent_read_surfaces_return_slots_geometry_and_summary(client: TestClient) -> None:
