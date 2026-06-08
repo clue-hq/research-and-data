@@ -1,3 +1,4 @@
+use crate::assets::{AssetLicense, AssetSource};
 use crate::diagnostics::{Diagnostic, DiagnosticSubject, Phase};
 use crate::ids::{AssetId, BrandKitId, NodeId, PaintId};
 use crate::operations::{FieldPatch, NodePatch, Operation, OptionalFieldPatch, PagePatch};
@@ -422,16 +423,6 @@ pub struct FontLicense {
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "snake_case")]
-pub enum AssetSource {
-    Uploaded { asset_id: AssetId },
-    Url { url: String },
-    System { family: String },
-    Generated { model: String },
-    Unknown,
-}
-
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct LogoAsset {
     #[serde(default)]
     pub variants: Vec<LogoVariant>,
@@ -480,15 +471,6 @@ pub struct BrandAsset {
     pub mime_type: Option<String>,
     pub license: Option<AssetLicense>,
     pub provenance: Option<TokenProvenance>,
-}
-
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub struct AssetLicense {
-    pub name: String,
-    pub allow_export: bool,
-    pub allow_modification: bool,
-    #[serde(default)]
-    pub restrictions: Vec<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
