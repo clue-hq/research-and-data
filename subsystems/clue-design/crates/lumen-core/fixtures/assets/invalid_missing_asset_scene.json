@@ -1,0 +1,125 @@
+{
+  "schema_version": 1,
+  "meta": {
+    "id": "doc_invalid_asset_ref",
+    "title": "Invalid Asset Reference",
+    "artifact_type": "ad",
+    "medium": "print",
+    "brand_kit": null,
+    "status": {
+      "kind": "draft"
+    }
+  },
+  "pages": {
+    "page": {
+      "id": "page",
+      "name": "Page",
+      "size": {
+        "width": 400.0,
+        "height": 300.0,
+        "unit": "px",
+        "preset": "custom",
+        "orientation": "landscape"
+      },
+      "children": [
+        "node_logo"
+      ],
+      "bleed": null,
+      "safe_area": null,
+      "background": []
+    }
+  },
+  "nodes": {
+    "node_logo": {
+      "id": "node_logo",
+      "name": "Logo",
+      "kind": {
+        "kind": "image",
+        "asset_id": "asset_missing_logo",
+        "alt": "Missing logo"
+      },
+      "transform": {
+        "x": 24.0,
+        "y": 24.0,
+        "rotation": 0.0,
+        "skew_x": 0.0,
+        "skew_y": 0.0,
+        "flip_x": false,
+        "flip_y": false
+      },
+      "size": {
+        "width": {
+          "kind": "fixed",
+          "value": 64.0
+        },
+        "height": {
+          "kind": "fixed",
+          "value": 64.0
+        }
+      },
+      "children": [],
+      "fills": [],
+      "strokes": [],
+      "corner": {
+        "top_left": 0.0,
+        "top_right": 0.0,
+        "bottom_right": 0.0,
+        "bottom_left": 0.0
+      },
+      "opacity": 1.0,
+      "clip": false,
+      "layout": null,
+      "computed": null,
+      "locked": false
+    }
+  },
+  "slots": {
+    "slot_logo": {
+      "id": "slot_logo",
+      "key": "account.logo",
+      "label": "Account logo",
+      "content_type": "logo",
+      "scope": {
+        "kind": "document"
+      },
+      "bound_nodes": [
+        "node_logo"
+      ],
+      "required": true,
+      "placeholder": "Logo",
+      "overflow": {
+        "kind": "error"
+      },
+      "formatting": {
+        "max_length": null,
+        "allowed_pattern": null,
+        "preserve_case": true
+      },
+      "cardinality": {
+        "min_items": 1,
+        "max_items": 1
+      },
+      "conditional": null,
+      "repeater": null,
+      "validation": {
+        "samples": [],
+        "worst_case": null,
+        "max_length": null
+      },
+      "image_policy": {
+        "fit": "contain",
+        "focal_point": {
+          "x": 0.5,
+          "y": 0.5
+        },
+        "min_dpi": 144,
+        "preserve_transparency": true,
+        "aspect_ratio": 1.0
+      },
+      "editability": "template_and_instance",
+      "binding_hints": []
+    }
+  },
+  "assets": {},
+  "export_profiles": []
+}

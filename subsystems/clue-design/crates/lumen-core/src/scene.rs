@@ -1,3 +1,4 @@
+use crate::assets::{AssetPlacement, AssetRecord};
 use crate::export_contract::ExportProfile;
 use crate::ids::{
     AssetId, BrandKitId, DocumentId, NodeId, PageId, PaintId, SlotId, SlotKey, TemplateRevisionId,
@@ -14,6 +15,8 @@ pub struct Scene {
     pub pages: BTreeMap<PageId, Page>,
     pub nodes: BTreeMap<NodeId, Node>,
     pub slots: BTreeMap<crate::ids::SlotId, Slot>,
+    #[serde(default)]
+    pub assets: BTreeMap<AssetId, AssetRecord>,
     pub export_profiles: Vec<ExportProfile>,
 }
 
@@ -32,6 +35,7 @@ impl Scene {
             pages: BTreeMap::new(),
             nodes: BTreeMap::new(),
             slots: BTreeMap::new(),
+            assets: BTreeMap::new(),
             export_profiles: Vec::new(),
         }
     }
@@ -57,6 +61,10 @@ impl Scene {
 
     pub fn slot(&self, slot_id: &SlotId) -> Option<&Slot> {
         self.slots.get(slot_id)
+    }
+
+    pub fn asset(&self, asset_id: &AssetId) -> Option<&AssetRecord> {
+        self.assets.get(asset_id)
     }
 
     pub fn slot_by_key(&self, slot_key: &SlotKey) -> Option<&Slot> {
@@ -230,6 +238,10 @@ pub struct Node {
     pub opacity: f64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub opacity_token: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_asset_id: Option<AssetId>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub asset_placement: Option<AssetPlacement>,
     pub clip: bool,
     pub layout: Option<AutoLayoutProps>,
     pub computed: Option<ComputedGeometry>,
@@ -250,6 +262,8 @@ impl Node {
             corner: CornerRadii::default(),
             opacity: 1.0,
             opacity_token: None,
+            source_asset_id: None,
+            asset_placement: None,
             clip: false,
             layout: None,
             computed: None,

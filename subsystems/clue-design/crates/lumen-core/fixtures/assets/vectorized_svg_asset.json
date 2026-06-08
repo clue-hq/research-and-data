@@ -1,0 +1,62 @@
+{
+  "id": "asset_vectorized_logo",
+  "label": "Vectorized Acme logo",
+  "kind": "vector",
+  "status": "ready",
+  "source": {
+    "kind": "vectorized",
+    "source_asset_id": "asset_uploaded_logo",
+    "tool": "mock-vectorizer"
+  },
+  "media": {
+    "mime_type": "image/svg+xml",
+    "filename": "acme-logo.svg",
+    "byte_length": 2048,
+    "digest": {
+      "algorithm": "sha256",
+      "value": "9f245af3fb0f09026886583c486f7d94e1e2e8ca0d6dfd6da79f13b03f81f4f1"
+    },
+    "location": {
+      "provider": "opaque_asset_store",
+      "opaque_ref": "workspace/acme/logo-vector",
+      "url": null
+    }
+  },
+  "raster": null,
+  "vector": {
+    "width": 120.0,
+    "height": 120.0,
+    "view_box": [
+      0.0,
+      0.0,
+      120.0,
+      120.0
+    ],
+    "has_transparency": true,
+    "path_data": "M10 10 H110 V110 H10 Z"
+  },
+  "font": null,
+  "logo": null,
+  "license": {
+    "name": "client_owned",
+    "allow_export": true,
+    "allow_modification": true,
+    "allow_embedding": true,
+    "allow_subsetting": false,
+    "source_url": null,
+    "restrictions": []
+  },
+  "provenance": {
+    "created_by": "agent",
+    "created_at": "2026-06-08T00:00:00Z",
+    "source_label": "vectorization",
+    "confidence": 0.9,
+    "notes": [
+      "Derived from uploaded logo."
+    ]
+  },
+  "tags": [
+    "logo",
+    "vectorized"
+  ]
+}

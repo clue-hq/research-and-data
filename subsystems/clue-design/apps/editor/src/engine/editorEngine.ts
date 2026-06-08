@@ -1,4 +1,7 @@
 import type {
+  AssetPlacement,
+  AssetKind,
+  ContentType,
   FieldPatch,
   Node,
   NodePatch,
@@ -68,6 +71,47 @@ function applyLocalOperation(scene: Scene, operation: Operation): void {
       delete scene.slots[operation.slot_id];
       return;
     }
+    case "upsert_asset": {
+      assetRegistry(scene)[operation.asset.id] = operation.asset;
+      return;
+    }
+    case "remove_asset": {
+      const reference = assetReference(scene, operation.asset_id);
+      if (reference) {
+        throw new Error(`Cannot remove asset ${operation.asset_id} while referenced by ${reference}`);
+      }
+      delete assetRegistry(scene)[operation.asset_id];
+      return;
+    }
+    case "place_asset_in_node": {
+      placeAssetInNode(scene, operation.node_id, operation.asset_id, operation.placement);
+      return;
+    }
+    case "place_asset_in_slot": {
+      const slot = scene.slots[operation.slot_id];
+      if (!slot) {
+        throw new Error(`Missing slot ${operation.slot_id}`);
+      }
+      const asset = assetRegistry(scene)[operation.asset_id];
+      if (!asset) {
+        throw new Error(`Missing asset ${operation.asset_id}`);
+      }
+      if (!slotAcceptsAssetKind(slot.content_type, asset.kind)) {
+        throw new Error(
+          `Asset ${operation.asset_id} with kind ${asset.kind} is not compatible with ${slot.content_type} slot ${slot.key}`
+        );
+      }
+      if (slot.content_type === "logo" && !isLogoCompatible(asset.kind)) {
+        throw new Error(`Asset ${operation.asset_id} is not compatible with logo slot ${slot.key}`);
+      }
+      if (slot.bound_nodes.length === 0) {
+        throw new Error(`Slot ${operation.slot_id} has no bound nodes`);
+      }
+      for (const nodeId of slot.bound_nodes) {
+        placeAssetInNode(scene, nodeId, operation.asset_id, operation.placement);
+      }
+      return;
+    }
     case "bind_node_to_slot": {
       getNode(scene, operation.node_id);
       const slot = scene.slots[operation.slot_id];
@@ -100,10 +144,91 @@ function applyNodePatch(node: Node, patch: NodePatch): void {
   applyFieldPatch(node, "corner", patch.corner);
   applyFieldPatch(node, "opacity", patch.opacity);
   applyOptionalPatch(node, "opacity_token", patch.opacity_token);
+  applyOptionalPatch(node, "source_asset_id", patch.source_asset_id);
+  applyOptionalPatch(node, "asset_placement", patch.asset_placement);
   applyFieldPatch(node, "clip", patch.clip);
   applyOptionalPatch(node, "layout", patch.layout);
   applyOptionalPatch(node, "computed", patch.computed);
   applyFieldPatch(node, "locked", patch.locked);
+}
+
+function assetRegistry(scene: Scene): Scene["assets"] {
+  scene.assets ??= {};
+  return scene.assets;
+}
+
+function placeAssetInNode(
+  scene: Scene,
+  nodeId: string,
+  assetId: string,
+  placement: AssetPlacement
+): void {
+  const asset = assetRegistry(scene)[assetId];
+  if (!asset) {
+    throw new Error(`Missing asset ${assetId}`);
+  }
+  const node = getNode(scene, nodeId);
+
+  if (asset.kind === "font") {
+    if (node.kind.kind !== "text") {
+      throw new Error(`Font asset ${assetId} can only be placed into text nodes`);
+    }
+    node.source_asset_id = assetId;
+    node.asset_placement = placement;
+    return;
+  }
+
+  if (asset.kind !== "raster_image" && asset.kind !== "logo" && asset.kind !== "vector") {
+    throw new Error(`Asset ${assetId} cannot be placed into a scene node`);
+  }
+  if (node.children.length > 0) {
+    throw new Error(`Node ${node.id} cannot become an asset leaf while it still has children`);
+  }
+
+  if (asset.kind === "vector" && asset.vector?.path_data) {
+    node.kind = {
+      kind: "vector",
+      path_data: asset.vector.path_data
+    };
+  } else {
+    node.kind = {
+      kind: "image",
+      asset_id: assetId,
+      alt: placement.alt_text ?? asset.label
+    };
+  }
+  node.source_asset_id = assetId;
+  node.asset_placement = placement;
+}
+
+function assetReference(scene: Scene, assetId: string): string | null {
+  for (const node of Object.values(scene.nodes)) {
+    if (node.kind.kind === "image" && node.kind.asset_id === assetId) {
+      return `image node ${node.id}`;
+    }
+    if (node.source_asset_id === assetId) {
+      return `node ${node.id} source_asset_id`;
+    }
+  }
+  return null;
+}
+
+function slotAcceptsAssetKind(contentType: ContentType, assetKind: AssetKind): boolean {
+  switch (contentType) {
+    case "image":
+    case "logo":
+      return assetKind === "raster_image" || assetKind === "vector" || assetKind === "logo";
+    case "text_short":
+    case "text_long":
+    case "rich_text_limited":
+      return assetKind === "font";
+    default:
+      return false;
+  }
+}
+
+function isLogoCompatible(assetKind: AssetKind): boolean {
+  return assetKind === "logo" || assetKind === "vector" || assetKind === "raster_image";
 }
 
 function applyFieldPatch<T extends object, K extends keyof T>(
@@ -166,6 +291,8 @@ function isLockedOnlyPatch(patch: NodePatch): boolean {
     patch.corner.kind === "unchanged" &&
     patch.opacity.kind === "unchanged" &&
     patch.opacity_token.kind === "unchanged" &&
+    patch.source_asset_id.kind === "unchanged" &&
+    patch.asset_placement.kind === "unchanged" &&
     patch.clip.kind === "unchanged" &&
     patch.layout.kind === "unchanged" &&
     patch.computed.kind === "unchanged"

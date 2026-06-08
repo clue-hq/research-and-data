@@ -1,3 +1,4 @@
+use crate::assets::{validate_scene_assets, AssetValidationOptions};
 use crate::diagnostics::{Diagnostic, DiagnosticSubject, Phase};
 use crate::ids::{SlotId, SlotKey};
 use crate::scene::{NodeKind, Scene};
@@ -40,6 +41,10 @@ pub fn validate_scene(scene: &Scene) -> Vec<Diagnostic> {
     validate_orphans(scene, &mut diagnostics);
     validate_slots(scene, &mut diagnostics);
     validate_export_profiles(scene, &mut diagnostics);
+    diagnostics.extend(validate_scene_assets(
+        scene,
+        AssetValidationOptions::default(),
+    ));
 
     diagnostics
 }
@@ -316,6 +321,26 @@ fn validate_slots(scene: &Scene, diagnostics: &mut Vec<Diagnostic>) {
                     Phase::Validation,
                     "LUMV0502",
                     format!("slot {} binds missing node {}", slot.key, node_id),
+                    Some(DiagnosticSubject::Slot(slot.id.clone())),
+                ));
+                continue;
+            }
+
+            let Some(node) = scene.nodes.get(node_id) else {
+                continue;
+            };
+            if matches!(
+                slot.content_type,
+                ContentType::TextShort | ContentType::TextLong | ContentType::RichTextLimited
+            ) && !matches!(node.kind, NodeKind::Text(_))
+            {
+                diagnostics.push(Diagnostic::error(
+                    Phase::Validation,
+                    "LUMV0520",
+                    format!(
+                        "text-like slot {} binds non-text node {}",
+                        slot.key, node_id
+                    ),
                     Some(DiagnosticSubject::Slot(slot.id.clone())),
                 ));
             }

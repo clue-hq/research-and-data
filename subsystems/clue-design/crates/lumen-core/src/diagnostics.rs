@@ -1,4 +1,4 @@
-use crate::ids::{NodeId, PageId, SlotId};
+use crate::ids::{AssetId, NodeId, PageId, SlotId};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -28,6 +28,7 @@ pub enum DiagnosticSubject {
     Page(PageId),
     Node(NodeId),
     Slot(SlotId),
+    Asset(AssetId),
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]

@@ -39,6 +39,8 @@ describe("local editor engine", () => {
       corner: { kind: "unchanged" },
       opacity: { kind: "unchanged" },
       opacity_token: { kind: "unchanged" },
+      source_asset_id: { kind: "unchanged" },
+      asset_placement: { kind: "unchanged" },
       clip: { kind: "unchanged" },
       layout: { kind: "unchanged" },
       computed: { kind: "unchanged" },

@@ -1,0 +1,68 @@
+{
+  "id": "asset_font_inter",
+  "label": "Inter brand font",
+  "kind": "font",
+  "status": "ready",
+  "source": {
+    "kind": "uploaded",
+    "filename": "Inter-Variable.woff2",
+    "uploaded_by": "designer"
+  },
+  "media": {
+    "mime_type": "font/woff2",
+    "filename": "Inter-Variable.woff2",
+    "byte_length": 32768,
+    "digest": {
+      "algorithm": "sha256",
+      "value": "be75ee80f7c3ad26f0ff28b5c55b245a7aa2fb82c8597fb8daa5d4b6f4ff7651"
+    },
+    "location": {
+      "provider": "opaque_asset_store",
+      "opaque_ref": "workspace/acme/fonts/inter-variable",
+      "url": null
+    }
+  },
+  "raster": null,
+  "vector": null,
+  "font": {
+    "family": "Inter",
+    "postscript_name": "InterVariable",
+    "weights": [
+      400,
+      600,
+      700,
+      800
+    ],
+    "styles": [
+      "normal"
+    ],
+    "scripts": [
+      "latin"
+    ],
+    "embeddable": true,
+    "subsettable": true
+  },
+  "logo": null,
+  "license": {
+    "name": "open_font_license",
+    "allow_export": true,
+    "allow_modification": true,
+    "allow_embedding": true,
+    "allow_subsetting": true,
+    "source_url": "https://openfontlicense.org",
+    "restrictions": []
+  },
+  "provenance": {
+    "created_by": "designer",
+    "created_at": "2026-06-08T00:00:00Z",
+    "source_label": "uploaded font",
+    "confidence": 1.0,
+    "notes": [
+      "Embeddable and subsettable for export."
+    ]
+  },
+  "tags": [
+    "font",
+    "brand"
+  ]
+}

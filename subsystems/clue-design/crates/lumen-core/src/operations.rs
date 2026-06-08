@@ -1,10 +1,13 @@
+use crate::assets::{AssetKind, AssetPlacement, AssetRecord};
 use crate::diagnostics::{Diagnostic, DiagnosticSeverity};
 use crate::export_contract::ExportProfile;
-use crate::ids::{BrandKitId, NodeId, PageId, SlotId, TemplateRevisionId};
+use crate::ids::{AssetId, BrandKitId, NodeId, PageId, SlotId, TemplateRevisionId};
 use crate::scene::{
-    AutoLayoutProps, BrandKitRef, ComputedGeometry, CornerRadii, DocumentStatus, Fill, Medium,
-    Node, NodeKind, PageSize, ParentRef, Rect, Scene, SizeSpec, Stroke, Transform,
+    AutoLayoutProps, BrandKitRef, ComputedGeometry, CornerRadii, DocumentStatus, Fill, ImageNode,
+    Medium, Node, NodeKind, PageSize, ParentRef, Rect, Scene, SizeSpec, Stroke, Transform,
+    VectorNode,
 };
+use crate::slots::ContentType;
 use crate::slots::Slot;
 use crate::validation::validate_scene;
 use serde::{Deserialize, Serialize};
@@ -96,6 +99,10 @@ pub struct NodePatch {
     pub opacity: FieldPatch<f64>,
     #[serde(default)]
     pub opacity_token: OptionalFieldPatch<String>,
+    #[serde(default)]
+    pub source_asset_id: OptionalFieldPatch<AssetId>,
+    #[serde(default)]
+    pub asset_placement: OptionalFieldPatch<AssetPlacement>,
     pub clip: FieldPatch<bool>,
     pub layout: OptionalFieldPatch<AutoLayoutProps>,
     pub computed: OptionalFieldPatch<ComputedGeometry>,
@@ -104,6 +111,7 @@ pub struct NodePatch {
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
+#[allow(clippy::large_enum_variant)]
 pub enum Operation {
     AddPage {
         page: crate::scene::Page,
@@ -140,6 +148,22 @@ pub enum Operation {
     },
     RemoveSlot {
         slot_id: SlotId,
+    },
+    UpsertAsset {
+        asset: AssetRecord,
+    },
+    RemoveAsset {
+        asset_id: AssetId,
+    },
+    PlaceAssetInNode {
+        node_id: NodeId,
+        asset_id: AssetId,
+        placement: AssetPlacement,
+    },
+    PlaceAssetInSlot {
+        slot_id: SlotId,
+        asset_id: AssetId,
+        placement: AssetPlacement,
     },
     BindNodeToSlot {
         slot_id: SlotId,
@@ -267,6 +291,33 @@ impl Scene {
                 self.slots.remove(&slot_id);
                 Ok(())
             }
+            Operation::UpsertAsset { asset } => {
+                self.assets.insert(asset.id.clone(), asset);
+                Ok(())
+            }
+            Operation::RemoveAsset { asset_id } => {
+                if let Some(reference) = self.asset_reference(&asset_id) {
+                    return Err(OperationError::new(
+                        "op.asset_in_use",
+                        format!(
+                            "cannot remove asset {} while it is referenced by {}",
+                            asset_id, reference
+                        ),
+                    ));
+                }
+                self.assets.remove(&asset_id);
+                Ok(())
+            }
+            Operation::PlaceAssetInNode {
+                node_id,
+                asset_id,
+                placement,
+            } => self.place_asset_in_node(&node_id, &asset_id, &placement),
+            Operation::PlaceAssetInSlot {
+                slot_id,
+                asset_id,
+                placement,
+            } => self.place_asset_in_slot(&slot_id, &asset_id, &placement),
             Operation::BindNodeToSlot { slot_id, node_id } => {
                 if !self.nodes.contains_key(&node_id) {
                     return Err(OperationError::new(
@@ -518,12 +569,164 @@ impl Scene {
         apply_field_patch(&mut node.corner, patch.corner);
         apply_field_patch(&mut node.opacity, patch.opacity);
         apply_optional_patch(&mut node.opacity_token, patch.opacity_token);
+        apply_optional_patch(&mut node.source_asset_id, patch.source_asset_id);
+        apply_optional_patch(&mut node.asset_placement, patch.asset_placement);
         apply_field_patch(&mut node.clip, patch.clip);
         apply_optional_patch(&mut node.layout, patch.layout);
         apply_optional_patch(&mut node.computed, patch.computed);
         apply_field_patch(&mut node.locked, patch.locked);
 
         Ok(())
+    }
+
+    fn place_asset_in_node(
+        &mut self,
+        node_id: &NodeId,
+        asset_id: &AssetId,
+        placement: &AssetPlacement,
+    ) -> OperationResult<()> {
+        let asset = self.assets.get(asset_id).cloned().ok_or_else(|| {
+            OperationError::new(
+                "op.asset_missing",
+                format!("cannot place missing asset {}", asset_id),
+            )
+        })?;
+
+        let node = self.nodes.get_mut(node_id).ok_or_else(|| {
+            OperationError::new(
+                "op.node_missing",
+                format!("cannot place asset into missing node {}", node_id),
+            )
+        })?;
+
+        match &asset.kind {
+            AssetKind::RasterImage | AssetKind::Logo => {
+                ensure_leaf_asset_target(node)?;
+                node.kind = NodeKind::Image(ImageNode {
+                    asset_id: asset_id.clone(),
+                    alt: placement
+                        .alt_text
+                        .clone()
+                        .or_else(|| Some(asset.label.clone())),
+                });
+                node.source_asset_id = Some(asset_id.clone());
+                node.asset_placement = Some(placement.clone());
+                Ok(())
+            }
+            AssetKind::Vector => {
+                ensure_leaf_asset_target(node)?;
+                if let Some(path_data) = asset
+                    .vector
+                    .as_ref()
+                    .and_then(|metadata| metadata.path_data.clone())
+                {
+                    node.kind = NodeKind::Vector(VectorNode { path_data });
+                } else {
+                    node.kind = NodeKind::Image(ImageNode {
+                        asset_id: asset_id.clone(),
+                        alt: placement
+                            .alt_text
+                            .clone()
+                            .or_else(|| Some(asset.label.clone())),
+                    });
+                }
+                node.source_asset_id = Some(asset_id.clone());
+                node.asset_placement = Some(placement.clone());
+                Ok(())
+            }
+            AssetKind::Font => {
+                if !matches!(node.kind, NodeKind::Text(_)) {
+                    return Err(OperationError::new(
+                        "op.asset_incompatible",
+                        format!("font asset {} can only be placed into text nodes", asset_id),
+                    ));
+                }
+                node.source_asset_id = Some(asset_id.clone());
+                node.asset_placement = Some(placement.clone());
+                Ok(())
+            }
+            AssetKind::Document | AssetKind::Other => Err(OperationError::new(
+                "op.asset_incompatible",
+                format!("asset {} cannot be placed into a scene node", asset_id),
+            )),
+        }
+    }
+
+    fn place_asset_in_slot(
+        &mut self,
+        slot_id: &SlotId,
+        asset_id: &AssetId,
+        placement: &AssetPlacement,
+    ) -> OperationResult<()> {
+        let asset = self.assets.get(asset_id).ok_or_else(|| {
+            OperationError::new(
+                "op.asset_missing",
+                format!("cannot place missing asset {}", asset_id),
+            )
+        })?;
+        let slot = self.slots.get(slot_id).cloned().ok_or_else(|| {
+            OperationError::new(
+                "op.slot_missing",
+                format!("cannot place asset into missing slot {}", slot_id),
+            )
+        })?;
+
+        if slot.bound_nodes.is_empty() {
+            return Err(OperationError::new(
+                "op.slot_unbound",
+                format!("cannot place asset into unbound slot {}", slot_id),
+            ));
+        }
+
+        if !slot_accepts_asset_kind(&slot.content_type, &asset.kind) {
+            return Err(OperationError::new(
+                "op.asset_incompatible",
+                format!(
+                    "asset {} with kind {:?} is not compatible with {:?} slot {}",
+                    asset_id, asset.kind, slot.content_type, slot.key
+                ),
+            ));
+        }
+
+        if matches!(slot.content_type, ContentType::Image) && !asset.is_image_compatible() {
+            return Err(OperationError::new(
+                "op.asset_incompatible",
+                format!(
+                    "asset {} is not compatible with image slot {}",
+                    asset_id, slot.key
+                ),
+            ));
+        }
+
+        if matches!(slot.content_type, ContentType::Logo) && !asset.is_logo_compatible() {
+            return Err(OperationError::new(
+                "op.asset_incompatible",
+                format!(
+                    "asset {} is not compatible with logo slot {}",
+                    asset_id, slot.key
+                ),
+            ));
+        }
+
+        for node_id in slot.bound_nodes {
+            self.place_asset_in_node(&node_id, asset_id, placement)?;
+        }
+
+        Ok(())
+    }
+
+    fn asset_reference(&self, asset_id: &AssetId) -> Option<String> {
+        for node in self.nodes.values() {
+            if let NodeKind::Image(image) = &node.kind {
+                if &image.asset_id == asset_id {
+                    return Some(format!("image node {}", node.id));
+                }
+            }
+            if node.source_asset_id.as_ref() == Some(asset_id) {
+                return Some(format!("node {} source_asset_id", node.id));
+            }
+        }
+        None
     }
 
     fn finalize_template(
@@ -700,5 +903,37 @@ fn apply_optional_patch<T>(target: &mut Option<T>, patch: OptionalFieldPatch<T>)
         OptionalFieldPatch::Unchanged => {}
         OptionalFieldPatch::Set(value) => *target = Some(value),
         OptionalFieldPatch::Clear => *target = None,
+    }
+}
+
+fn ensure_leaf_asset_target(node: &Node) -> OperationResult<()> {
+    if node.children.is_empty() {
+        Ok(())
+    } else {
+        Err(OperationError::new(
+            "op.leaf_parent",
+            format!(
+                "node {} cannot become an asset leaf while it still has children",
+                node.id
+            ),
+        ))
+    }
+}
+
+fn slot_accepts_asset_kind(content_type: &ContentType, asset_kind: &AssetKind) -> bool {
+    match content_type {
+        ContentType::Image | ContentType::Logo => matches!(
+            asset_kind,
+            AssetKind::RasterImage | AssetKind::Vector | AssetKind::Logo
+        ),
+        ContentType::TextShort | ContentType::TextLong | ContentType::RichTextLimited => {
+            matches!(asset_kind, AssetKind::Font)
+        }
+        ContentType::NumberStat
+        | ContentType::Date
+        | ContentType::UrlQr
+        | ContentType::List
+        | ContentType::RepeaterGroup
+        | ContentType::TableLike => false,
     }
 }
