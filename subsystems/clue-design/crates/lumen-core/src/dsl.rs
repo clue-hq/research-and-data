@@ -107,6 +107,17 @@ impl DslCompileSession {
         output
     }
 
+    pub fn sync_scene_preserving_context(&mut self, scene: Scene) {
+        self.emitted_slots = scene
+            .slots
+            .values()
+            .map(|slot| (slot.key.clone(), slot.id.clone()))
+            .collect();
+        self.scene = scene;
+        self.parent_stack
+            .retain(|frame| parent_can_receive_children(&self.scene, &frame.parent));
+    }
+
     pub fn scene(&self) -> &Scene {
         &self.scene
     }
