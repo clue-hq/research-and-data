@@ -210,6 +210,56 @@ fn applies_asset_operations_through_checked_core_bridge() {
 }
 
 #[test]
+fn compiles_dsl_into_scene_through_core_bridge() {
+    let response = helper(json!({
+        "action": "compile_dsl_into_scene",
+        "scene": minimal_scene(),
+        "source": r#"
+page page_agent
+  helper_headline text "Surgery-first scheduling" p(24,96) s(240,40) font("Inter",20,700,left) fill(#111827)
+"#
+    }));
+
+    assert_eq!(response["ok"], true, "{response:#?}");
+    assert_eq!(response["applied_operations"], 2);
+    assert_eq!(
+        response["scene"]["nodes"]["helper_headline"]["kind"]["content"],
+        "Surgery-first scheduling"
+    );
+    assert_eq!(
+        response["dsl"]["compile_output"]["operations"]
+            .as_array()
+            .unwrap()
+            .len(),
+        2
+    );
+}
+
+#[test]
+fn exports_svg_preview_through_core_bridge() {
+    let response = helper(json!({
+        "action": "export_preview",
+        "scene": minimal_scene(),
+        "format": "svg",
+        "page_ids": ["page_a4"]
+    }));
+
+    assert_eq!(response["ok"], true, "{response:#?}");
+    assert_eq!(response["export"]["artifacts"][0]["format"], "svg");
+    assert_eq!(
+        response["export"]["artifacts"][0]["mime_type"],
+        "image/svg+xml"
+    );
+    assert!(
+        response["export"]["artifacts"][0]["bytes"]
+            .as_array()
+            .unwrap()
+            .len()
+            > 20
+    );
+}
+
+#[test]
 fn rejects_invalid_operation_batch_without_scene() {
     let response = helper(json!({
         "action": "apply_operations",

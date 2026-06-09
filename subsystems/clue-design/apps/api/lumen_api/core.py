@@ -53,11 +53,31 @@ class CoreClient:
             {"action": "apply_operations", "scene": scene, "operations": operations}
         )
 
+    def compile_dsl_into_scene(self, scene: JsonObject, source: str) -> JsonObject:
+        return self._run(
+            {"action": "compile_dsl_into_scene", "scene": scene, "source": source}
+        )
+
     def preflight_scene(
         self, scene: JsonObject, brand_kit: Optional[JsonObject]
     ) -> JsonObject:
         return self._run(
             {"action": "preflight_scene", "scene": scene, "brand_kit": brand_kit}
+        )
+
+    def export_preview(
+        self,
+        scene: JsonObject,
+        export_format: str = "svg",
+        page_ids: Optional[List[str]] = None,
+    ) -> JsonObject:
+        return self._run(
+            {
+                "action": "export_preview",
+                "scene": scene,
+                "format": export_format,
+                "page_ids": page_ids or [],
+            }
         )
 
     def finalize_template(
@@ -123,4 +143,3 @@ class CoreClient:
 
 def has_error_diagnostics(diagnostics: List[JsonObject]) -> bool:
     return any(diagnostic.get("severity") == "error" for diagnostic in diagnostics)
-
