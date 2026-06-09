@@ -3,9 +3,13 @@ package
 target/
 node_modules/
 dist/
+__pycache__/
+*.py[cod]
 .env
 .env.*
 !.env.example
+.lumen-runs/
+apps/api/*.sqlite3
 reference_docs/*
 !reference_docs/
 !reference_docs/ABM-Design-Engine-Temporary-Spec.md

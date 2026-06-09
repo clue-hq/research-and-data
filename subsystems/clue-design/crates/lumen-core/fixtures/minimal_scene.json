@@ -128,6 +128,7 @@
       ]
     }
   },
+  "assets": {},
   "export_profiles": [
     {
       "name": "print_pdf",

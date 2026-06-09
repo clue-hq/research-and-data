@@ -3,6 +3,7 @@
 //! This crate owns design semantics. It intentionally does not know about
 //! React, Konva, FastAPI, databases, object storage, browser APIs, or WebGPU.
 
+pub mod assets;
 pub mod brand;
 pub mod diagnostics;
 pub mod dsl;
@@ -17,24 +18,33 @@ pub mod slots;
 pub mod snapshot;
 pub mod validation;
 
+pub use assets::{
+    validate_asset_manifest, validate_brand_asset_references, validate_scene_assets, AssetDigest,
+    AssetGenerationConstraints, AssetGenerationRequest, AssetGenerationResult, AssetKind,
+    AssetLicense, AssetLocation, AssetManifest, AssetMediaMetadata, AssetPlacement,
+    AssetProvenance, AssetRecord, AssetSource, AssetStatus, AssetValidationOptions,
+    AssetVectorizationRequest, AssetVectorizationResult, FontAssetMetadata, LogoAssetMetadata,
+    RasterAssetMetadata, VectorAssetMetadata,
+};
 pub use brand::{
     collect_scene_token_references, compile_styles_brand_kit, platform_default_brand_kit,
     resolve_scene_tokens, scene_has_token_references, validate_brand_kit, validate_scene_tokens,
-    AssetLicense, AssetSource, AssetToken, AssetTokenValue, BrandAsset, BrandAssets,
-    BrandConstraints, BrandKit, BrandMode, BrandModeSpec, BrandProvenance, BrandSource, ColorToken,
-    ColorTokenValue, ContrastPair, EffectToken, EffectValue, FontAsset, FontFace, FontLicense,
-    FontStyle, LogoAsset, LogoColorMode, LogoUsage, LogoVariant, ModeValue, NumberToken,
-    NumberTokenValue, NumberUnit, SceneTokenReference, ShadowToken, ShadowValue, TokenAlias,
-    TokenCatalog, TokenFallbackPolicy, TokenProvenance, TokenResolutionOptions,
-    TokenResolutionReport, TokenStrictness, TypographyToken, TypographyTokenValue,
+    AssetToken, AssetTokenValue, BrandAsset, BrandAssets, BrandConstraints, BrandKit, BrandMode,
+    BrandModeSpec, BrandProvenance, BrandSource, ColorToken, ColorTokenValue, ContrastPair,
+    EffectToken, EffectValue, FontAsset, FontFace, FontLicense, FontStyle, LogoAsset,
+    LogoColorMode, LogoUsage, LogoVariant, ModeValue, NumberToken, NumberTokenValue, NumberUnit,
+    SceneTokenReference, ShadowToken, ShadowValue, TokenAlias, TokenCatalog, TokenFallbackPolicy,
+    TokenProvenance, TokenResolutionOptions, TokenResolutionReport, TokenStrictness,
+    TypographyToken, TypographyTokenValue,
 };
 pub use diagnostics::{Diagnostic, DiagnosticSeverity, DiagnosticSubject, Phase};
 pub use dsl::{
-    compile_dsl, compile_dsl_into_scene, normalize_dsl, parse_dsl, DslCompileOutput,
-    DslCompileSession, DslDiagnostic, DslDimension, DslDirective, DslDocument, DslElement,
-    DslElementKind, DslFill, DslFont, DslHalt, DslLayoutAnchor, DslLayoutAxis, DslLine,
-    DslLineKind, DslModification, DslPage, DslPagePreset, DslParseOutput, DslProperty, DslScalar,
-    DslSceneCompileOutput, DslStroke, SourceSpan,
+    compile_dsl, compile_dsl_into_scene, compile_dsl_into_scene_with_session, normalize_dsl,
+    parse_dsl, DslCompileOutput, DslCompileSession, DslCompileSessionSnapshot, DslDiagnostic,
+    DslDimension, DslDirective, DslDocument, DslElement, DslElementKind, DslFill, DslFont, DslHalt,
+    DslLayoutAnchor, DslLayoutAxis, DslLine, DslLineKind, DslModification, DslPage, DslPagePreset,
+    DslParentFrameSnapshot, DslParseOutput, DslProperty, DslScalar, DslSceneCompileOutput,
+    DslStroke, SourceSpan,
 };
 pub use export_contract::{
     ExportAdapter, ExportArtifact, ExportError, ExportFormat, ExportProfile, ExportPurpose,

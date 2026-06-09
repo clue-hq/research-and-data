@@ -1,0 +1,13 @@
+[package]
+name = "lumen-agent"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+lumen-core = { path = "../lumen-core" }
+serde.workspace = true
+
+[dev-dependencies]
+lumen-export = { path = "../lumen-export" }
+serde_json.workspace = true

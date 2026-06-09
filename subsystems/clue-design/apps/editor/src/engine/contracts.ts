@@ -16,6 +16,7 @@ export interface Scene {
   pages: Record<PageId, Page>;
   nodes: Record<NodeId, Node>;
   slots: Record<SlotId, Slot>;
+  assets: Record<AssetId, AssetRecord>;
   export_profiles: ExportProfile[];
 }
 
@@ -78,6 +79,8 @@ export interface Node {
   corner: CornerRadii;
   opacity: number;
   opacity_token?: string | null;
+  source_asset_id?: AssetId | null;
+  asset_placement?: AssetPlacement | null;
   clip: boolean;
   layout: AutoLayoutProps | null;
   computed: ComputedGeometry | null;
@@ -135,6 +138,121 @@ export interface ImageNode {
 
 export interface VectorNode {
   path_data: string;
+}
+
+export interface AssetRecord {
+  id: AssetId;
+  label: string;
+  kind: AssetKind;
+  status: AssetStatus;
+  source: AssetSource;
+  media?: AssetMediaMetadata;
+  raster?: RasterAssetMetadata | null;
+  vector?: VectorAssetMetadata | null;
+  font?: FontAssetMetadata | null;
+  logo?: LogoAssetMetadata | null;
+  license?: AssetLicense | null;
+  provenance?: AssetProvenance;
+  tags?: string[];
+}
+
+export type AssetKind = "raster_image" | "vector" | "font" | "logo" | "document" | "other";
+export type AssetStatus = "pending" | "ready" | "failed" | "archived";
+
+export type AssetSource =
+  | { kind: "uploaded"; asset_id?: AssetId | null; filename: string | null; uploaded_by: string | null }
+  | { kind: "generated"; request_id: string | null; model: string }
+  | { kind: "vectorized"; source_asset_id: AssetId; tool: string | null }
+  | { kind: "website"; url: string; captured_at: string | null }
+  | { kind: "brand_guide"; source_asset_id: AssetId | null; label: string }
+  | { kind: "manual"; label: string }
+  | { kind: "workspace"; asset_id: AssetId }
+  | { kind: "url"; url: string }
+  | { kind: "system"; family: string }
+  | { kind: "unknown" };
+
+export interface AssetMediaMetadata {
+  mime_type?: string | null;
+  filename?: string | null;
+  byte_length?: number | null;
+  digest?: AssetDigest | null;
+  location?: AssetLocation | null;
+}
+
+export interface AssetDigest {
+  algorithm: string;
+  value: string;
+}
+
+export interface AssetLocation {
+  provider: string;
+  opaque_ref: string;
+  url: string | null;
+}
+
+export interface RasterAssetMetadata {
+  pixel_width: number;
+  pixel_height: number;
+  dpi_x: number | null;
+  dpi_y: number | null;
+  has_alpha: boolean | null;
+  color_profile: string | null;
+  aspect_ratio: number | null;
+}
+
+export interface VectorAssetMetadata {
+  width: number | null;
+  height: number | null;
+  view_box: [number, number, number, number] | null;
+  has_transparency: boolean | null;
+  path_data: string | null;
+}
+
+export interface FontAssetMetadata {
+  family: string;
+  postscript_name: string | null;
+  weights: number[];
+  styles: string[];
+  scripts: string[];
+  embeddable: boolean;
+  subsettable: boolean;
+}
+
+export interface LogoAssetMetadata {
+  pixel_width: number | null;
+  pixel_height: number | null;
+  width: number | null;
+  height: number | null;
+  dpi_x: number | null;
+  dpi_y: number | null;
+  has_transparency: boolean | null;
+  color_mode: string | null;
+  clearspace: number | null;
+}
+
+export interface AssetLicense {
+  name: string;
+  allow_export: boolean;
+  allow_modification: boolean;
+  allow_embedding?: boolean;
+  allow_subsetting?: boolean;
+  source_url?: string | null;
+  restrictions?: string[];
+}
+
+export interface AssetProvenance {
+  created_by?: string | null;
+  created_at?: string | null;
+  source_label?: string | null;
+  confidence?: number | null;
+  notes?: string[];
+}
+
+export interface AssetPlacement {
+  fit?: ImageFitMode | null;
+  focal_point?: FocalPoint | null;
+  preserve_transparency?: boolean | null;
+  alt_text?: string | null;
 }
 
 export interface LineNode {
@@ -449,6 +567,8 @@ export interface NodePatch {
   corner: FieldPatch<CornerRadii>;
   opacity: FieldPatch<number>;
   opacity_token: OptionalFieldPatch<string>;
+  source_asset_id: OptionalFieldPatch<AssetId>;
+  asset_placement: OptionalFieldPatch<AssetPlacement>;
   clip: FieldPatch<boolean>;
   layout: OptionalFieldPatch<AutoLayoutProps>;
   computed: OptionalFieldPatch<ComputedGeometry>;
@@ -486,6 +606,26 @@ export type Operation =
       slot_id: SlotId;
     }
   | {
+      kind: "upsert_asset";
+      asset: AssetRecord;
+    }
+  | {
+      kind: "remove_asset";
+      asset_id: AssetId;
+    }
+  | {
+      kind: "place_asset_in_node";
+      node_id: NodeId;
+      asset_id: AssetId;
+      placement: AssetPlacement;
+    }
+  | {
+      kind: "place_asset_in_slot";
+      slot_id: SlotId;
+      asset_id: AssetId;
+      placement: AssetPlacement;
+    }
+  | {
       kind: "bind_node_to_slot";
       slot_id: SlotId;
       node_id: NodeId;
@@ -498,7 +638,7 @@ export type Operation =
 
 export interface Diagnostic {
   severity: "error" | "warning" | "advice";
-  phase: "contract" | "operation" | "validation" | "dsl" | "layout" | "export";
+  phase: "contract" | "operation" | "validation" | "brand" | "dsl" | "layout" | "export";
   code: string;
   message: string;
   subject: DiagnosticSubject | null;
@@ -520,4 +660,8 @@ export type DiagnosticSubject =
   | {
       kind: "slot";
       id: SlotId;
+    }
+  | {
+      kind: "asset";
+      id: AssetId;
     };

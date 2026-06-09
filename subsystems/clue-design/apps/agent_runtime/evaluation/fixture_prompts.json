@@ -1,0 +1,33 @@
+[
+  {
+    "id": "square_linkedin_neurosurgery",
+    "artifact": "linkedin_ad_square",
+    "prompt": "Create a 1:1 LinkedIn ad for a neurosurgery practice. Insight Health provides AI phone agents that handle calls, scheduling, and routing so neurosurgeons can focus on surgery."
+  },
+  {
+    "id": "a4_one_pager_healthcare",
+    "artifact": "a4_one_pager_section",
+    "prompt": "Create an A4 one-pager hero section for Insight Health aimed at specialty clinics that want fewer missed calls and cleaner patient routing."
+  },
+  {
+    "id": "email_hero_specialty_clinic",
+    "artifact": "email_hero",
+    "prompt": "Create an email hero for a specialty clinic operations director. The message should emphasize faster patient response and less admin burden."
+  },
+  {
+    "id": "direct_mail_letter_header",
+    "artifact": "direct_mail_header",
+    "prompt": "Create a direct-mail letter header for a hospital administrator. It should feel clinical, trustworthy, and personalized to the account."
+  },
+  {
+    "id": "brand_token_card",
+    "artifact": "brand_token_card",
+    "prompt": "Create a compact brand-token-heavy card using surface, type, radius, and spacing tokens. Include campaign headline and CTA slots."
+  },
+  {
+    "id": "intentional_repair_trigger",
+    "artifact": "repair_trigger",
+    "prompt": "Create a compact ad with a long headline and CTA. The first pass should be checked carefully for clipping, overflow, and hierarchy problems."
+  }
+]
+

@@ -1,8 +1,10 @@
 [workspace]
 resolver = "2"
 members = [
+  "crates/lumen-api-helper",
   "crates/lumen-core",
   "crates/lumen-export",
+  "crates/lumen-agent",
 ]
 
 [workspace.package]

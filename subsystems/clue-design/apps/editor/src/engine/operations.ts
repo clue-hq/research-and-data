@@ -35,6 +35,8 @@ export function nodePatch(patch: Partial<NodePatch>): NodePatch {
     corner: patch.corner ?? unchanged(),
     opacity: patch.opacity ?? unchanged(),
     opacity_token: patch.opacity_token ?? unchanged(),
+    source_asset_id: patch.source_asset_id ?? unchanged(),
+    asset_placement: patch.asset_placement ?? unchanged(),
     clip: patch.clip ?? unchanged(),
     layout: patch.layout ?? unchanged(),
     computed: patch.computed ?? unchanged(),
