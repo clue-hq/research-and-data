@@ -39,11 +39,12 @@ pub use brand::{
 };
 pub use diagnostics::{Diagnostic, DiagnosticSeverity, DiagnosticSubject, Phase};
 pub use dsl::{
-    compile_dsl, compile_dsl_into_scene, normalize_dsl, parse_dsl, DslCompileOutput,
-    DslCompileSession, DslDiagnostic, DslDimension, DslDirective, DslDocument, DslElement,
-    DslElementKind, DslFill, DslFont, DslHalt, DslLayoutAnchor, DslLayoutAxis, DslLine,
-    DslLineKind, DslModification, DslPage, DslPagePreset, DslParseOutput, DslProperty, DslScalar,
-    DslSceneCompileOutput, DslStroke, SourceSpan,
+    compile_dsl, compile_dsl_into_scene, compile_dsl_into_scene_with_session, normalize_dsl,
+    parse_dsl, DslCompileOutput, DslCompileSession, DslCompileSessionSnapshot, DslDiagnostic,
+    DslDimension, DslDirective, DslDocument, DslElement, DslElementKind, DslFill, DslFont, DslHalt,
+    DslLayoutAnchor, DslLayoutAxis, DslLine, DslLineKind, DslModification, DslPage, DslPagePreset,
+    DslParentFrameSnapshot, DslParseOutput, DslProperty, DslScalar, DslSceneCompileOutput,
+    DslStroke, SourceSpan,
 };
 pub use export_contract::{
     ExportAdapter, ExportArtifact, ExportError, ExportFormat, ExportProfile, ExportPurpose,

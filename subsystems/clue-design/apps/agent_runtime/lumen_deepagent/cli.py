@@ -6,11 +6,21 @@ from pathlib import Path
 
 from .config import AgentRuntimeConfig
 from .factory import create_lumen_design_agent
+from .providers import create_provider_quality_loop
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Run the Lumen Phase A DeepAgent.")
     parser.add_argument("prompt", help="User design request")
+    parser.add_argument(
+        "--mode",
+        choices=["deepagent", "quality-loop"],
+        default="deepagent",
+        help=(
+            "deepagent runs the DeepAgents coordinator. quality-loop runs the "
+            "typed Phase A loop with model-backed author/reviewer adapters."
+        ),
+    )
     parser.add_argument(
         "--repo-root",
         type=Path,
@@ -21,11 +31,15 @@ def main() -> None:
 
     load_dotenv_if_available(args.repo_root)
     config = AgentRuntimeConfig.from_env(args.repo_root)
-    agent, tools = create_lumen_design_agent(args.prompt, config)
-    result = agent.invoke(
-        {"messages": [{"role": "user", "content": args.prompt}]},
-        config={"configurable": {"thread_id": tools.run_id}},
-    )
+    if args.mode == "quality-loop":
+        loop, tools = create_provider_quality_loop(args.prompt, config)
+        result = loop.run(args.prompt)
+    else:
+        agent, tools = create_lumen_design_agent(args.prompt, config)
+        result = agent.invoke(
+            {"messages": [{"role": "user", "content": args.prompt}]},
+            config={"configurable": {"thread_id": tools.run_id}},
+        )
     print(json.dumps({"run_id": tools.run_id, "result": stringify(result)}, indent=2))
 
 

@@ -233,6 +233,38 @@ page page_agent
             .len(),
         2
     );
+    assert!(response["dsl"]["session_snapshot"].is_object());
+}
+
+#[test]
+fn preserves_dsl_session_across_helper_compile_blocks() {
+    let first = helper(json!({
+        "action": "compile_dsl_into_scene",
+        "scene": minimal_scene(),
+        "source": r#"
+page page_agent
+  hero frame p(24,24) s(400,200)
+"#
+    }));
+
+    assert_eq!(first["ok"], true, "{first:#?}");
+    let second = helper(json!({
+        "action": "compile_dsl_into_scene",
+        "scene": first["scene"].clone(),
+        "dsl_session": first["dsl"]["session_snapshot"].clone(),
+        "source": "    helper_body text \"Session child\" p(16,16) s(200,40) font(\"Inter\",16,500,left) fill(#111827)"
+    }));
+
+    assert_eq!(second["ok"], true, "{second:#?}");
+    assert_eq!(second["applied_operations"], 1);
+    assert_eq!(
+        second["scene"]["nodes"]["hero"]["children"],
+        json!(["helper_body"])
+    );
+    assert_eq!(
+        second["scene"]["nodes"]["helper_body"]["kind"]["content"],
+        "Session child"
+    );
 }
 
 #[test]

@@ -53,9 +53,19 @@ class CoreClient:
             {"action": "apply_operations", "scene": scene, "operations": operations}
         )
 
-    def compile_dsl_into_scene(self, scene: JsonObject, source: str) -> JsonObject:
+    def compile_dsl_into_scene(
+        self,
+        scene: JsonObject,
+        source: str,
+        dsl_session: Optional[JsonObject] = None,
+    ) -> JsonObject:
         return self._run(
-            {"action": "compile_dsl_into_scene", "scene": scene, "source": source}
+            {
+                "action": "compile_dsl_into_scene",
+                "scene": scene,
+                "source": source,
+                "dsl_session": dsl_session,
+            }
         )
 
     def preflight_scene(

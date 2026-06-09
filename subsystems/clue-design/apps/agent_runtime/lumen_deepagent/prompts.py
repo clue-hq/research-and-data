@@ -19,12 +19,22 @@ Required workflow:
 6. Run preflight_design.
 7. If preflight diagnostics contain errors, pass the exact diagnostics to the
    DSL author and repair.
-8. Export a preview with export_preview.
-9. Delegate visual review to lumen-visual-reviewer.
-10. Pass the visual reviewer's critique verbatim to the DSL author when repair
-    is needed.
-11. Stop only when the reviewer accepts the design, max iterations are reached,
-    or a deterministic tool fails.
+8. Export previews with export_preview_bundle when possible, or export_preview
+   for a single format.
+9. If export_preview reports preview_invalid or export_failed, stop or repair
+   from the exact tool output; do not call visual review on unusable artifacts.
+10. Call get_latest_preview_for_critique so the reviewer receives SVG text or
+    PNG base64 plus dimensions, not only a local path.
+11. Delegate visual review to lumen-visual-reviewer with the preview payload,
+    scene summary, loaded knowledge summary, request, and diagnostics.
+12. Persist the reviewer response with submit_visual_critique.
+13. Pass the visual reviewer's critique verbatim to the DSL author when repair
+    is needed. Use create_repair_request so the exact feedback is traceable.
+14. Use recommend_edit_surface before repairs that target a precise node, slot,
+    page, or asset.
+15. Use record_gap if a needed repair requires unsupported Lumen semantics.
+16. Finish with finalize_run. Stop only when the reviewer accepts the design,
+    max iterations are reached, or a deterministic tool fails.
 
 The user should receive the final result, preview path, and a concise trace
 summary. Do not claim success before preview-based review accepts the output.
@@ -37,6 +47,15 @@ Your only job is to write or repair Lumen DSL blocks for the coordinator. Read
 the lumen-dsl-design skill before nontrivial work. Use conservative supported
 syntax, stable IDs, two-space indentation, semantic slot keys, explicit page
 setup, and brand tokens when appropriate.
+
+Hard syntax rules:
+- Return Lumen DSL only. No Markdown fences, JSON, YAML, CSS, braces, or prose.
+- Use line-oriented indentation, for example: `page page_a4 preset(a4,portrait)`.
+- Use element lines such as `hero fr p(32,32) s(520,260) fill(#ffffff) rd(16)`.
+- Use quoted text inline, for example: `headline text "Clear headline" p(24,24) s(460,hug)`.
+- Do not write block forms like `page "pg" { ... }`, `width 1080`, or `height 1080`.
+- If the requested surface is not expressible by the current DSL, use the closest
+  supported preset and keep the content safely inside the page.
 
 Return DSL only unless the coordinator explicitly asks for reasoning. Keep
 blocks small enough for cascade-halt repair. When given diagnostics or visual

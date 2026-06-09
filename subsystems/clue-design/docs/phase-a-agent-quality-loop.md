@@ -404,18 +404,77 @@ The branch currently has the first scaffold for Phase A:
 - `create_lumen_design_agent(...)` creates a coordinator with DSL-author and
   visual-reviewer subagents.
 - `lumen-dsl-design` and `lumen-visual-review` skills exist.
-- Local knowledge retrieval exists, but it is still a simple keyword/snippet
-  loader over a small doc list.
+- Local knowledge retrieval now prioritizes a Lumen-authored knowledge tree and
+  keeps product/reference docs as secondary context.
 - Python tools call the Rust/API bridge for DSL compile, preflight, SVG/PNG
   export preview, scene summary, and JSONL trace writing.
 - `lumen-api-helper` exposes `compile_dsl_into_scene` and `export_preview`.
-- Tests prove the scaffold, helper bridge, and local tool state without using a
-  live model provider.
+- Runtime tools now return stable DTO-shaped JSON for knowledge, compile,
+  operations, preflight, export, critique, repair, summaries, and gaps.
+- The runtime defines `AgentRunState`, `AgentIteration`,
+  `AuthoringBlockRequest`, `AuthoringBlockResult`, `CompileRepairContext`,
+  `PreviewTarget`, `QualityGateResult`, and `StopReason` DTOs for typed
+  orchestration state.
+- Preview export validates SVG/PNG byte shape before critique can proceed.
+- The typed loop also compares square/aspect-ratio requests against actual
+  exported page dimensions when the request is known.
+- `get_latest_preview_for_critique` returns reviewer-ready preview payloads:
+  SVG text for SVG artifacts and base64 for PNG artifacts, with page/dimension
+  metadata.
+- `export_preview_bundle` stores canonical SVG and, when configured, a separate
+  raster/PNG critic preview beside it.
+- `LumenQualityLoop` provides a deterministic block-by-block loop over author
+  and reviewer protocols so Phase A behavior can be tested without live model
+  calls.
+- `LangChainDslAuthor` and `LangChainVisualReviewer` can plug live model calls
+  into the typed loop. The CLI supports:
 
-This is not yet production-grade Phase A. It proves the runtime can be wired,
-but it does not yet enforce the complete product loop. The remaining work is to
-turn the scaffold into a quality gate that actually prevents visually broken
-designs from being accepted.
+```text
+python -m lumen_deepagent.cli --mode quality-loop "<prompt>"
+```
+
+The original DeepAgents coordinator path remains available with:
+
+```text
+python -m lumen_deepagent.cli --mode deepagent "<prompt>"
+```
+
+- `lumen-core` and `lumen-api-helper` now expose a serializable
+  `DslCompileSessionSnapshot`, so separate Python/helper calls can preserve
+  parser context and parent-stack continuation across successful DSL blocks.
+- Run traces now write `input.json`, `knowledge.json`, per-iteration files,
+  `gaps.json`, and `final.json`.
+- Phase A fixture prompts live at
+  `apps/agent_runtime/evaluation/fixture_prompts.json`.
+- `python -m lumen_deepagent.eval_traces --trace-root .lumen-runs` summarizes
+  accepted/failed counts, stop reasons, issue/gap categories, and preview
+  paths.
+- Tests prove the scaffold, DeepAgents factory wiring, helper bridge, local
+  tool state, compile repair, preflight repair, preview validation, critic
+  preview payload loading, visual rejection/repair, invalid-preview fail-closed
+  behavior, requested-aspect-ratio mismatch, trace evaluation, and
+  max-iteration stop without using a live model provider.
+
+Phase A A0-A9 is implemented in this branch. The deterministic runtime now
+enforces the production quality gate, and the provider path has been smoke
+tested with a live Anthropic model when `.env` enables it.
+
+Current implementation notes:
+
+- Session snapshots intentionally advance only after successful checked
+  application. If a block halts or produces an operation error, the helper
+  returns the previous session snapshot so the runtime does not believe
+  unapplied partial lines exist in the canonical scene. Agents should repair
+  the failed block rather than continue from unapplied partial state.
+- Authoring requests include selected knowledge excerpts, not only document
+  paths. This is required because provider models otherwise guess unsupported
+  brace-based DSL syntax.
+- PNG/raster previews are passed to vision-capable reviewers as image content
+  blocks with compact text metadata. Base64 bytes must not be embedded in the
+  JSON text prompt.
+- Normal deterministic verification should set `LUMEN_AGENT_RUN_LIVE=0`. The
+  live provider smoke is gated by `LUMEN_AGENT_RUN_LIVE=1` and
+  `ANTHROPIC_API_KEY`.
 
 ## Production Implementation Plan
 
@@ -881,19 +940,19 @@ Done when:
 9. Add A8 evaluation fixtures and optional live smoke path.
 10. Use A9 gap records to drive Phase B and later product work.
 
-Some scaffold items already exist from the first implementation pass. Treat
-them as starting points, not proof that the corresponding plan item is complete.
-For example, skills exist, but the full Lumen knowledge tree does not; trace
-events exist, but full run directories and final summaries do not; a visual
-reviewer subagent exists, but a real preview-backed critic gate is not yet
-enforced.
+All A0-A9 items above are implemented for the Phase A product loop. Later
+product phases should improve the engine capabilities surfaced by the traces,
+for example richer DSL edit directives, stronger text/layout behavior, custom
+page dimensions, deeper design-system authoring, and production asset runtime.
+Those are downstream product gaps, not unfinished Phase A orchestration work.
 
 ## Known Risks
 
 - The current DSL still lacks some product-grade layout/text affordances. Phase
   A should surface these as structured failures, not hide them.
-- A visual reviewer without true image input is not enough. The runtime must
-  send rendered SVG/PNG to a vision-capable model or a provider equivalent.
+- Provider-specific multimodal transport can regress. The runtime must keep
+  rendered SVG/PNG preview input available to the reviewer without embedding
+  large raster bytes in ordinary text prompts.
 - Knowledge loading can bloat prompts. Retrieval should be selective and
   provenance-backed.
 - DeepAgents orchestration must not become a second source of scene truth.

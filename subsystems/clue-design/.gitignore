@@ -8,6 +8,7 @@ __pycache__/
 .env
 .env.*
 !.env.example
+.lumen-runs/
 apps/api/*.sqlite3
 reference_docs/*
 !reference_docs/

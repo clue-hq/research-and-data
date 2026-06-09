@@ -1,9 +1,9 @@
 use lumen_core::validation::validate_scene;
 use lumen_core::{
-    compile_dsl_into_scene, layout_scene, platform_default_brand_kit, preflight_scene, BrandKit,
-    Diagnostic, DocumentId, ExportAdapter, ExportFormat, ExportProfile, ExportPurpose,
-    ExportRequest, Medium, Operation, PageId, PdfIntent, PreflightOptions, RasterScale, Scene,
-    TemplateRevisionId,
+    compile_dsl_into_scene_with_session, layout_scene, platform_default_brand_kit, preflight_scene,
+    BrandKit, Diagnostic, DocumentId, DslCompileSessionSnapshot, ExportAdapter, ExportFormat,
+    ExportProfile, ExportPurpose, ExportRequest, Medium, Operation, PageId, PdfIntent,
+    PreflightOptions, RasterScale, Scene, TemplateRevisionId,
 };
 use lumen_export::LumenExportAdapter;
 use serde::{Deserialize, Serialize};
@@ -29,6 +29,8 @@ enum CoreRequest {
     CompileDslIntoScene {
         scene: Value,
         source: String,
+        #[serde(default)]
+        dsl_session: Option<Value>,
     },
     PreflightScene {
         scene: Value,
@@ -161,9 +163,17 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                 }),
             }
         }
-        CoreRequest::CompileDslIntoScene { scene, source } => {
+        CoreRequest::CompileDslIntoScene {
+            scene,
+            source,
+            dsl_session,
+        } => {
             let mut scene = parse_scene(scene)?;
-            let result = compile_dsl_into_scene(&source, &mut scene);
+            let session = dsl_session
+                .map(serde_json::from_value::<DslCompileSessionSnapshot>)
+                .transpose()
+                .map_err(|error| core_error("helper.dsl_session", error.to_string()))?;
+            let result = compile_dsl_into_scene_with_session(&source, &mut scene, session);
             let applied_operations = result
                 .operation_report
                 .as_ref()
@@ -181,6 +191,7 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                     "compile_output": dsl_compile_output_value(&result.compile_output)?,
                     "operation_report": operation_report_value(&result.operation_report),
                     "operation_error": operation_error_value(&result.operation_error),
+                    "session_snapshot": to_value(result.session_snapshot)?,
                 })),
                 export: None,
             })

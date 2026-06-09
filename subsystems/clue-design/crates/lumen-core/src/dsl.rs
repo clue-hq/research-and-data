@@ -8,6 +8,7 @@ use crate::{
     PaintId, ParentRef, Phase, Scene, SizeSpec, Slot, SlotId, SlotKey, Stroke, TextAlign, TextNode,
     Unit, VectorNode,
 };
+use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 
 pub fn normalize_dsl(source: &str) -> String {
@@ -28,7 +29,18 @@ pub fn compile_dsl(source: &str) -> DslCompileOutput {
 }
 
 pub fn compile_dsl_into_scene(source: &str, scene: &mut Scene) -> DslSceneCompileOutput {
-    let mut session = DslCompileSession::new(scene.clone());
+    compile_dsl_into_scene_with_session(source, scene, None)
+}
+
+pub fn compile_dsl_into_scene_with_session(
+    source: &str,
+    scene: &mut Scene,
+    session_snapshot: Option<DslCompileSessionSnapshot>,
+) -> DslSceneCompileOutput {
+    let mut session = session_snapshot
+        .map(|snapshot| DslCompileSession::from_snapshot(scene.clone(), snapshot))
+        .unwrap_or_else(|| DslCompileSession::new(scene.clone()));
+    let previous_snapshot = session.snapshot();
     let compile_output = session.compile_block(source);
 
     if compile_output.has_errors() {
@@ -36,19 +48,25 @@ pub fn compile_dsl_into_scene(source: &str, scene: &mut Scene) -> DslSceneCompil
             compile_output,
             operation_report: None,
             operation_error: None,
+            session_snapshot: previous_snapshot,
         };
     }
 
     match scene.apply_operations_checked(compile_output.operations.clone()) {
-        Ok(report) => DslSceneCompileOutput {
-            compile_output,
-            operation_report: Some(report),
-            operation_error: None,
-        },
+        Ok(report) => {
+            session.sync_scene_preserving_context(scene.clone());
+            DslSceneCompileOutput {
+                compile_output,
+                operation_report: Some(report),
+                operation_error: None,
+                session_snapshot: session.snapshot(),
+            }
+        }
         Err(error) => DslSceneCompileOutput {
             compile_output,
             operation_report: None,
             operation_error: Some(error),
+            session_snapshot: previous_snapshot,
         },
     }
 }
@@ -83,6 +101,37 @@ impl DslCompileSession {
         }
     }
 
+    pub fn from_snapshot(scene: Scene, snapshot: DslCompileSessionSnapshot) -> Self {
+        let mut emitted_slots: BTreeMap<SlotKey, SlotId> = scene
+            .slots
+            .values()
+            .map(|slot| (slot.key.clone(), slot.id.clone()))
+            .collect();
+        emitted_slots.extend(snapshot.emitted_slots);
+        let mut session = Self {
+            parser_context: DslParserContext {
+                seen_node_ids: snapshot.seen_node_ids,
+                previous_structural_depth: snapshot.previous_structural_depth,
+                previous_can_have_children: snapshot.previous_can_have_children,
+            },
+            scene,
+            parent_stack: snapshot
+                .parent_stack
+                .into_iter()
+                .map(|frame| ParentFrame {
+                    indent: frame.indent,
+                    parent: frame.parent,
+                })
+                .collect(),
+            emitted_slots,
+        };
+        let scene = &session.scene;
+        session
+            .parent_stack
+            .retain(|frame| parent_can_receive_children(scene, &frame.parent));
+        session
+    }
+
     pub fn compile_block(&mut self, source: &str) -> DslCompileOutput {
         let starting_context = self.parser_context.clone();
         let (parse, parsed_context) =
@@ -105,6 +154,23 @@ impl DslCompileSession {
         };
 
         output
+    }
+
+    pub fn snapshot(&self) -> DslCompileSessionSnapshot {
+        DslCompileSessionSnapshot {
+            seen_node_ids: self.parser_context.seen_node_ids.clone(),
+            previous_structural_depth: self.parser_context.previous_structural_depth,
+            previous_can_have_children: self.parser_context.previous_can_have_children,
+            parent_stack: self
+                .parent_stack
+                .iter()
+                .map(|frame| DslParentFrameSnapshot {
+                    indent: frame.indent,
+                    parent: frame.parent.clone(),
+                })
+                .collect(),
+            emitted_slots: self.emitted_slots.clone(),
+        }
     }
 
     pub fn sync_scene_preserving_context(&mut self, scene: Scene) {
@@ -132,6 +198,22 @@ pub struct DslSceneCompileOutput {
     pub compile_output: DslCompileOutput,
     pub operation_report: Option<OperationReport>,
     pub operation_error: Option<OperationError>,
+    pub session_snapshot: DslCompileSessionSnapshot,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct DslCompileSessionSnapshot {
+    pub seen_node_ids: BTreeSet<NodeId>,
+    pub previous_structural_depth: Option<usize>,
+    pub previous_can_have_children: bool,
+    pub parent_stack: Vec<DslParentFrameSnapshot>,
+    pub emitted_slots: BTreeMap<SlotKey, SlotId>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct DslParentFrameSnapshot {
+    pub indent: usize,
+    pub parent: ParentRef,
 }
 
 #[derive(Clone, Debug, PartialEq)]
