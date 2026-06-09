@@ -279,6 +279,16 @@ class ScriptedReviewer:
         return self.critiques[index]
 
 
+class BrokenReviewer:
+    def __init__(self, message: str = "malformed reviewer response") -> None:
+        self.message = message
+        self.calls = []
+
+    def review(self, **kwargs):
+        self.calls.append(kwargs)
+        raise ValueError(self.message)
+
+
 def runtime_config(tmp_path: Path, max_iterations: int = 3) -> AgentRuntimeConfig:
     return AgentRuntimeConfig(
         repo_root=tmp_path,
@@ -508,6 +518,20 @@ def test_preview_validation_rejects_unusable_artifacts():
     ]
 
 
+def test_invalid_preview_is_not_exposed_to_critic_payload(tmp_path: Path, monkeypatch):
+    monkeypatch.setattr("lumen_deepagent.tools.CoreClient", FakeInvalidPreviewCoreClient)
+    tools = LumenDesignTools(runtime_config(tmp_path), "Create a square ad")
+    tools.compile_dsl_block("page page_test")
+
+    preview_result = json.loads(tools.export_preview())
+    critic_payload = json.loads(tools.get_latest_preview_for_critique())
+
+    assert preview_result["export"]["status"] == "error"
+    assert preview_result["export"]["artifacts"][0]["valid"] is False
+    assert critic_payload["status"] == "error"
+    assert "invalid" in critic_payload["message"]
+
+
 def test_critic_preview_payload_requires_export_first(tmp_path: Path, monkeypatch):
     monkeypatch.setattr("lumen_deepagent.tools.CoreClient", FakeCoreClient)
     tools = LumenDesignTools(runtime_config(tmp_path), "Create a square ad")
@@ -539,8 +563,12 @@ def test_preview_bundle_stores_canonical_svg_and_png_critic_preview(
     assert bundle["canonical"]["artifacts"][0]["format"] == "svg"
     assert bundle["critic"]["artifacts"][0]["format"] == "png"
     assert bundle["critic"]["artifacts"][0]["valid"] is True
-    assert critic_payload["artifacts"][0]["format"] == "png"
-    assert critic_payload["artifacts"][0]["encoding"] == "base64"
+    assert [artifact["format"] for artifact in critic_payload["artifacts"]] == [
+        "svg",
+        "png",
+    ]
+    assert critic_payload["artifacts"][0]["svg_text"].startswith("<svg")
+    assert critic_payload["artifacts"][1]["encoding"] == "base64"
     assert (config.trace_dir / tools.run_id / "iterations" / "001" / "preview_bundle.json").exists()
 
 
@@ -648,6 +676,11 @@ def test_quality_loop_repairs_after_visual_rejection(tmp_path: Path, monkeypatch
     assert len(author.requests) == 2
     assert author.requests[0].preview_target.requested_aspect_ratio == 1.0
     assert len(reviewer.calls) == 2
+    repair_payload = json.loads(
+        (config.trace_dir / tools.run_id / "iterations" / "001" / "repair_request.json")
+        .read_text(encoding="utf-8")
+    )
+    assert repair_payload["repair_request"]["allowed_edit_surface"] == "structured_ops"
     events = [
         json.loads(line)["event"]
         for line in (config.trace_dir / tools.run_id / "trace.jsonl")
@@ -656,6 +689,28 @@ def test_quality_loop_repairs_after_visual_rejection(tmp_path: Path, monkeypatch
     ]
     assert "repair_requested" in events
     assert events[-1] == "run_finalized"
+
+
+def test_quality_loop_persists_reviewer_failures_as_critic_failed(
+    tmp_path: Path, monkeypatch
+):
+    monkeypatch.setattr("lumen_deepagent.tools.CoreClient", FakeCoreClient)
+    config = runtime_config(tmp_path, max_iterations=3)
+    tools = LumenDesignTools(config, "Create a square LinkedIn ad")
+    author = ScriptedAuthor(["page page_test"])
+    reviewer = BrokenReviewer("reviewer returned malformed content")
+
+    result = LumenQualityLoop(tools, author, reviewer).run("Create a square LinkedIn ad")
+
+    assert result["status"] == "failed"
+    assert result["stop_reason"] == "critic_failed"
+    critique_path = config.trace_dir / tools.run_id / "iterations" / "001" / "critique.json"
+    assert critique_path.exists()
+    critique_payload = json.loads(critique_path.read_text(encoding="utf-8"))
+    assert critique_payload["status"] == "error"
+    assert critique_payload["stop_reason"] == "critic_failed"
+    assert "reviewer returned malformed content" in critique_payload["message"]
+    assert (config.trace_dir / tools.run_id / "final.json").exists()
 
 
 def test_quality_loop_repairs_after_compile_failure(tmp_path: Path, monkeypatch):

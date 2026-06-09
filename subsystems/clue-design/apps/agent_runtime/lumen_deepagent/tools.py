@@ -52,6 +52,7 @@ class LumenDesignTools:
         self.scene_update_sources: list[str] = []
         self.dsl_session: Optional[JsonObject] = None
         self.latest_export_summary: Optional[JsonObject] = None
+        self.latest_preview_bundle: Optional[JsonObject] = None
         self._write_json(
             self.trace_dir / "input.json",
             {"run_id": self.run_id, "prompt": prompt},
@@ -262,6 +263,8 @@ class LumenDesignTools:
         try:
             response = self.core.export_preview(self.scene, preview_format)
         except CoreError as error:
+            self.latest_export_summary = None
+            self.latest_preview_bundle = None
             summary = ExportSummary(
                 status=ToolStatus.error,
                 requested_format=preview_format,
@@ -298,7 +301,12 @@ class LumenDesignTools:
             validation_errors=validation_errors,
         )
         payload = {"export": _dump(summary)}
-        self.latest_export_summary = payload["export"]
+        if status == ToolStatus.ok:
+            self.latest_export_summary = payload["export"]
+            self.latest_preview_bundle = None
+        else:
+            self.latest_export_summary = None
+            self.latest_preview_bundle = None
         self._write_json(iteration_dir / "export.json", payload)
         self.record(
             "coordinator",
@@ -324,10 +332,38 @@ class LumenDesignTools:
         critic = canonical
         if desired_critic_format != "svg":
             critic = json.loads(self.export_preview(desired_critic_format))
+        canonical_summary = canonical.get("export", canonical)
+        critic_summary = critic.get("export", critic)
+        bundle_artifacts = combined_preview_artifacts(
+            canonical_summary,
+            critic_summary,
+            desired_critic_format,
+        )
         payload = {
-            "canonical": canonical.get("export", canonical),
-            "critic": critic.get("export", critic),
+            "canonical": canonical_summary,
+            "critic": critic_summary,
+            "reviewer": {
+                "status": reviewer_bundle_status(canonical_summary, critic_summary),
+                "requested_format": desired_critic_format,
+                "artifacts": bundle_artifacts,
+                "validation_errors": bundle_validation_errors(
+                    canonical_summary,
+                    critic_summary,
+                ),
+                "diagnostics": (
+                    canonical_summary.get("diagnostics", [])
+                    + critic_summary.get("diagnostics", [])
+                    if critic_summary is not canonical_summary
+                    else canonical_summary.get("diagnostics", [])
+                ),
+            },
         }
+        if payload["reviewer"]["status"] == ToolStatus.ok.value:
+            self.latest_preview_bundle = payload["reviewer"]
+            self.latest_export_summary = payload["reviewer"]
+        else:
+            self.latest_preview_bundle = None
+            self.latest_export_summary = None
         self._write_json(self._iteration_dir() / "preview_bundle.json", payload)
         self.record(
             "coordinator",
@@ -341,6 +377,11 @@ class LumenDesignTools:
                 "critic_format": desired_critic_format,
                 "canonical_status": payload["canonical"].get("status"),
                 "critic_status": payload["critic"].get("status"),
+                "reviewer_status": payload["reviewer"].get("status"),
+                "reviewer_artifact_formats": [
+                    artifact.get("format")
+                    for artifact in payload["reviewer"].get("artifacts", [])
+                ],
             },
         )
         return json.dumps(payload, indent=2)
@@ -352,10 +393,11 @@ class LumenDesignTools:
         geometry directly. PNG artifacts are returned as base64 so a
         vision-capable provider adapter can turn them into an image message.
         """
-        if not self.latest_export_summary:
+        latest_preview = self.latest_preview_bundle or self.latest_export_summary
+        if not latest_preview:
             payload = {
                 "status": ToolStatus.error.value,
-                "message": "no preview has been exported for this run",
+                "message": "no preview is available; latest preview is invalid or no valid preview has been exported for this run",
             }
             self.record(
                 "coordinator",
@@ -364,20 +406,38 @@ class LumenDesignTools:
                 payload=payload,
             )
             return json.dumps(payload, indent=2)
+        if latest_preview.get("status") != ToolStatus.ok.value:
+            payload = {
+                "status": ToolStatus.error.value,
+                "message": "latest preview is invalid and cannot be sent to the critic",
+                "preview": latest_preview,
+            }
+            self.record(
+                "coordinator",
+                "critic_preview_invalid",
+                output_summary=payload["message"],
+                payload=payload,
+            )
+            return json.dumps(payload, indent=2)
 
         artifacts = []
-        for artifact in self.latest_export_summary.get("artifacts", []):
+        content_errors: list[str] = []
+        for artifact in latest_preview.get("artifacts", []):
+            if artifact.get("valid") is False or artifact.get("validation_errors"):
+                content_errors.extend(
+                    artifact.get("validation_errors")
+                    or [f"artifact {artifact.get('format')} is marked invalid"]
+                )
+                continue
             path_value = artifact.get("path")
             if not path_value:
+                content_errors.append(
+                    f"artifact {artifact.get('format')} does not include a path"
+                )
                 continue
             path = Path(path_value)
             if not path.exists():
-                artifacts.append(
-                    {
-                        **artifact,
-                        "content_error": f"artifact path {path} does not exist",
-                    }
-                )
+                content_errors.append(f"artifact path {path} does not exist")
                 continue
             item = dict(artifact)
             if artifact.get("format") == "svg":
@@ -389,8 +449,31 @@ class LumenDesignTools:
                 item["base64"] = base64.b64encode(raw).decode("ascii")
                 item["encoding"] = "base64"
             else:
-                item["content_error"] = f"unsupported critic payload format {artifact.get('format')}"
+                content_errors.append(
+                    f"unsupported critic payload format {artifact.get('format')}"
+                )
+                continue
             artifacts.append(item)
+
+        if content_errors or not artifacts:
+            message = (
+                "latest preview is invalid and cannot be sent to the critic"
+                if content_errors
+                else "latest preview has no critic-readable artifacts"
+            )
+            payload = {
+                "status": ToolStatus.error.value,
+                "message": message,
+                "content_errors": content_errors,
+                "preview": latest_preview,
+            }
+            self.record(
+                "coordinator",
+                "critic_preview_invalid",
+                output_summary=message,
+                payload=payload,
+            )
+            return json.dumps(payload, indent=2)
 
         payload = {
             "status": ToolStatus.ok.value,
@@ -415,10 +498,17 @@ class LumenDesignTools:
         try:
             critique = VisualCritique.model_validate_json(critique_json)
         except Exception as error:  # pydantic raises provider/version-specific errors.
+            raw_payload = parse_json_object(critique_json)
+            message = (
+                str(raw_payload.get("provider_error"))
+                if isinstance(raw_payload, dict) and raw_payload.get("provider_error")
+                else str(error)
+            )
             payload = {
                 "status": ToolStatus.error.value,
                 "stop_reason": StopReason.critic_failed.value,
-                "message": str(error),
+                "message": message,
+                "validation_error": str(error),
                 "raw": critique_json,
             }
             self._write_json(iteration_dir / "critique.json", payload)
@@ -855,6 +945,48 @@ def validate_preview_bytes(
     return errors
 
 
+def combined_preview_artifacts(
+    canonical_summary: JsonObject,
+    critic_summary: JsonObject,
+    critic_format: str,
+) -> list[JsonObject]:
+    canonical_artifacts = list(canonical_summary.get("artifacts", []))
+    if critic_format == "svg":
+        return canonical_artifacts
+    return canonical_artifacts + list(critic_summary.get("artifacts", []))
+
+
+def bundle_validation_errors(
+    canonical_summary: JsonObject,
+    critic_summary: JsonObject,
+) -> list[str]:
+    errors: list[str] = []
+    for label, summary in (("canonical", canonical_summary), ("critic", critic_summary)):
+        if summary.get("status") != ToolStatus.ok.value:
+            errors.append(f"{label} preview status is {summary.get('status')}")
+        errors.extend(
+            f"{label}: {error}"
+            for error in summary.get("validation_errors", [])
+        )
+        for artifact in summary.get("artifacts", []):
+            errors.extend(
+                f"{label} {artifact.get('format')}: {error}"
+                for error in artifact.get("validation_errors", [])
+            )
+    return errors
+
+
+def reviewer_bundle_status(
+    canonical_summary: JsonObject,
+    critic_summary: JsonObject,
+) -> str:
+    return (
+        ToolStatus.error.value
+        if bundle_validation_errors(canonical_summary, critic_summary)
+        else ToolStatus.ok.value
+    )
+
+
 def normalize_halt_location(raw_halt: Any) -> Optional[JsonObject]:
     if raw_halt is None:
         return None
@@ -867,6 +999,14 @@ def normalize_halt_location(raw_halt: Any) -> Optional[JsonObject]:
     if isinstance(raw_halt, int):
         return {"line": raw_halt}
     return {"value": str(raw_halt)}
+
+
+def parse_json_object(source: str) -> Optional[JsonObject]:
+    try:
+        parsed = json.loads(source)
+    except json.JSONDecodeError:
+        return None
+    return parsed if isinstance(parsed, dict) else None
 
 
 def diagnostics_from(raw_diagnostics: Any) -> list[DiagnosticSummary]:

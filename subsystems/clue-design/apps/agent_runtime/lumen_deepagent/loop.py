@@ -201,14 +201,32 @@ class LumenQualityLoop:
                     )
                 )
 
-            critique = self.reviewer.review(
-                user_request=user_request,
-                scene_summary=json.loads(self.tools.summarize_scene()),
-                export_summary=export_summary,
-                preview_payload=preview_payload,
-                knowledge=knowledge.get("snippets", []),
-                previous_feedback=self.previous_feedback,
-            )
+            try:
+                critique = self.reviewer.review(
+                    user_request=user_request,
+                    scene_summary=json.loads(self.tools.summarize_scene()),
+                    export_summary=export_summary,
+                    preview_payload=preview_payload,
+                    knowledge=knowledge.get("snippets", []),
+                    previous_feedback=self.previous_feedback,
+                )
+            except Exception as error:
+                critique_failure = json.loads(
+                    self.tools.submit_visual_critique(
+                        json.dumps({"provider_error": str(error)})
+                    )
+                )
+                iteration_record.stop_reason = StopReason.critic_failed
+                self.state.status = "failed"
+                self.state.stop_reason = StopReason.critic_failed
+                return json.loads(
+                    self.tools.finalize_run(
+                        "failed",
+                        StopReason.critic_failed.value,
+                        f"Visual reviewer failed: {error}",
+                        critique_json=json.dumps(critique_failure),
+                    )
+                )
             self.tools.submit_visual_critique(critique.model_dump_json())
             iteration_record.critique = critique
             if critique.accepted:
@@ -230,10 +248,16 @@ class LumenQualityLoop:
             }
             self.previous_feedback.append(feedback)
             target = first_issue_target(critique)
+            recommendation = json.loads(
+                self.tools.recommend_edit_surface(
+                    critique.repair_instruction or critique.summary,
+                    json.dumps(target),
+                )
+            ).get("recommendation", "dsl")
             self.tools.create_repair_request(
                 exact_feedback=json.dumps(feedback, indent=2),
                 target_json=json.dumps(target),
-                allowed_edit_surface="dsl",
+                allowed_edit_surface=recommendation,
                 forbidden_changes_json=json.dumps(["do not remove unrelated existing nodes"]),
             )
             iteration_record.stop_reason = StopReason.reviewer_rejected
