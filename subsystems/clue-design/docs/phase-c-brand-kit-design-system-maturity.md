@@ -1016,14 +1016,18 @@ Current implementation:
 - The editor exposes a Brand Kit panel showing effective id/version,
   product-ready/approval state, medium selection, compact token counts, and a
   brand-governance action port.
+- The editor now defines an injectable `BrandGovernanceRunner` plus
+  `createApiBrandGovernanceRunner` for `POST /documents/{id}/brand-governance`,
+  so product shells can run real API/core governance and display normalized
+  diagnostics without redefining BrandKit semantics in React.
 - The editor local operation engine supports `update_document` for BrandKit and
   medium changes, matching the canonical operation surface.
 - The node inspector provides token pickers for current scene fields with stable
   token carriers: text style token, layout gap/padding token, corner-radius
   token, and opacity token.
-- The current editor still uses a local placeholder for live brand-governance
-  execution. Wiring the panel to the HTTP API is integration/product work once
-  the editor runs against the API server.
+- The current editor still does not own document loading from the API server;
+  wiring stored BrandKit lists, compatibility warnings, and document persistence
+  into an API-backed shell remains product integration work.
 
 ### C8. Conformance And Evaluation
 
@@ -1947,8 +1951,8 @@ Still outside this core branch:
 
 - website/style-guide extraction into `BrandSeed`;
 - approval workflows and user review UI;
-- API-backed editor BrandKit loading, live governance execution, compatibility
-  warning fetches, and apply-suggested-token actions;
+- API-backed editor BrandKit loading, compatibility warning fetches, document
+  persistence, and apply-suggested-token actions;
 - full visual conformance across multiple artifacts and Brand Kits.
 
 ## Deferred Work

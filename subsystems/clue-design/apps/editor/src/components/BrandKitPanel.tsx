@@ -17,6 +17,7 @@ interface BrandKitPanelProps {
   diagnostics: Diagnostic[];
   onOperation: (operation: Operation) => void;
   onRunBrandGovernance: () => void;
+  isRunningBrandGovernance?: boolean;
 }
 
 const mediumOptions: Medium[] = ["digital", "ad", "email", "print", "direct_mail"];
@@ -26,7 +27,8 @@ export function BrandKitPanel({
   availableBrandKits,
   diagnostics,
   onOperation,
-  onRunBrandGovernance
+  onRunBrandGovernance,
+  isRunningBrandGovernance = false
 }: BrandKitPanelProps) {
   const currentRef = scene.meta.brand_kit;
   const selected = currentRef
@@ -95,9 +97,14 @@ export function BrandKitPanel({
         <span className="status-pill">{selected?.approval_status ?? "no approval state"}</span>
       </div>
       {tokenCatalog ? <TokenSummary tokens={tokenCatalog} /> : null}
-      <button type="button" className="brand-check-button" onClick={onRunBrandGovernance}>
+      <button
+        type="button"
+        className="brand-check-button"
+        onClick={onRunBrandGovernance}
+        disabled={isRunningBrandGovernance}
+      >
         <ShieldCheck aria-hidden size={15} />
-        Brand check
+        {isRunningBrandGovernance ? "Checking brand" : "Brand check"}
       </button>
       {diagnostics.length > 0 ? (
         <ul className="diagnostic-list brand-diagnostics">

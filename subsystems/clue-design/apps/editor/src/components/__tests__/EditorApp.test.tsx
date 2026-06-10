@@ -44,6 +44,55 @@ describe("EditorApp", () => {
     expect(screen.getByText("brand_kit_insight_health v4")).toBeInTheDocument();
     expect(screen.getByText(/update_document/)).toBeInTheDocument();
   });
+
+  it("runs injected Brand Kit governance and displays returned diagnostics", async () => {
+    const scene = twoPageScene();
+    scene.meta.brand_kit = {
+      id: "brand_kit_insight_health",
+      version: 4
+    };
+    const brandKit = brandKitSummary();
+    const brandGovernanceRunner = vi.fn().mockResolvedValue({
+      diagnostics: [
+        {
+          severity: "error",
+          phase: "brand",
+          code: "LUMB0807",
+          message: "node headline text contrast $text.inverse on $surface.page is 1.00, below required 4.50",
+          subject: {
+            kind: "node",
+            id: "node_contact_name"
+          },
+          hint: "Use a Brand Kit text token with sufficient contrast."
+        }
+      ]
+    });
+
+    render(
+      <EditorApp
+        initialScene={scene}
+        initialSelectedNodeId={null}
+        initialAvailableBrandKits={[brandKit]}
+        brandGovernanceRunner={brandGovernanceRunner}
+      />
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /brand check/i }));
+
+    expect(await screen.findAllByText("LUMB0807")).toHaveLength(2);
+    expect(screen.getAllByText(/text contrast/)).toHaveLength(2);
+    expect(brandGovernanceRunner).toHaveBeenCalledWith({
+      scene: expect.objectContaining({
+        meta: expect.objectContaining({
+          brand_kit: {
+            id: "brand_kit_insight_health",
+            version: 4
+          }
+        })
+      }),
+      brandKit
+    });
+  });
 });
 
 function brandKitSummary(): BrandKitSummary {

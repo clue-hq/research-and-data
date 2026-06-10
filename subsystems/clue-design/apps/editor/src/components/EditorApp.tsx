@@ -8,6 +8,7 @@ import { InspectorPanel } from "./InspectorPanel";
 import { PageRail } from "./PageRail";
 import { ValidationPanel } from "./ValidationPanel";
 import { minimalScene } from "@/fixtures/minimalScene";
+import type { BrandGovernanceRunner } from "@/engine/brandGovernance";
 import type { BrandKitSummary, Diagnostic, NodeId, Operation, PageId, Scene } from "@/engine/contracts";
 import { localEditorEngine } from "@/engine/editorEngine";
 import { firstPageId, getNode } from "@/engine/sceneQueries";
@@ -16,12 +17,14 @@ export interface EditorAppProps {
   initialScene?: Scene;
   initialSelectedNodeId?: NodeId | null;
   initialAvailableBrandKits?: BrandKitSummary[];
+  brandGovernanceRunner?: BrandGovernanceRunner;
 }
 
 export default function EditorApp({
   initialScene = minimalScene,
   initialSelectedNodeId = "node_contact_name",
-  initialAvailableBrandKits = []
+  initialAvailableBrandKits = [],
+  brandGovernanceRunner
 }: EditorAppProps = {}) {
   const [scene, setScene] = useState<Scene>(initialScene);
   const [activePageId, setActivePageId] = useState<PageId | null>(() => firstPageId(initialScene));
@@ -29,6 +32,7 @@ export default function EditorApp({
   const [diagnostics, setDiagnostics] = useState<Diagnostic[]>([]);
   const [lastOperation, setLastOperation] = useState<Operation | null>(null);
   const [undoStack, setUndoStack] = useState<Scene[]>([]);
+  const [isBrandGovernanceRunning, setIsBrandGovernanceRunning] = useState(false);
   const selectedNode = useMemo(() => getNode(scene, selectedNodeId), [scene, selectedNodeId]);
   const activePage = activePageId ? scene.pages[activePageId] ?? null : null;
   const effectiveBrandKit = useMemo(
@@ -99,7 +103,7 @@ export default function EditorApp({
     ]);
   };
 
-  const runBrandGovernancePlaceholder = () => {
+  const runBrandGovernance = async () => {
     if (!scene.meta.brand_kit) {
       setDiagnostics([
         {
@@ -113,16 +117,66 @@ export default function EditorApp({
       ]);
       return;
     }
+
+    if (!brandGovernanceRunner) {
+      setDiagnostics([
+        {
+          severity: "advice",
+          phase: "brand",
+          code: "EDITOR_BRAND_GOVERNANCE_PORT",
+          message: "Brand governance UI is wired; provide a BrandGovernanceRunner to call the API/core validator.",
+          subject: { kind: "document" },
+          hint: "Use createApiBrandGovernanceRunner against POST /documents/{id}/brand-governance."
+        }
+      ]);
+      return;
+    }
+
+    setIsBrandGovernanceRunning(true);
     setDiagnostics([
       {
         severity: "advice",
         phase: "brand",
-        code: "EDITOR_BRAND_GOVERNANCE_PORT",
-        message: "Brand governance UI is wired; API/core diagnostics plug into this panel.",
+        code: "EDITOR_BRAND_GOVERNANCE_RUNNING",
+        message: "Running Brand Kit governance checks.",
         subject: { kind: "document" },
-        hint: "Use POST /documents/{id}/brand-governance for strict Brand Kit validation."
+        hint: null
       }
     ]);
+
+    try {
+      const result = await brandGovernanceRunner({
+        scene,
+        brandKit: effectiveBrandKit ?? null
+      });
+      setDiagnostics(
+        result.diagnostics.length > 0
+          ? result.diagnostics
+          : [
+              {
+                severity: "advice",
+                phase: "brand",
+                code: "EDITOR_BRAND_GOVERNANCE_OK",
+                message: "Brand Kit governance passed with no diagnostics.",
+                subject: { kind: "document" },
+                hint: null
+              }
+            ]
+      );
+    } catch (error) {
+      setDiagnostics([
+        {
+          severity: "error",
+          phase: "brand",
+          code: "EDITOR_BRAND_GOVERNANCE_FAILED",
+          message: error instanceof Error ? error.message : "Brand governance request failed.",
+          subject: { kind: "document" },
+          hint: "Check the editor API connection and retry the Brand Kit check."
+        }
+      ]);
+    } finally {
+      setIsBrandGovernanceRunning(false);
+    }
   };
 
   const selectPage = (pageId: PageId) => {
@@ -183,7 +237,8 @@ export default function EditorApp({
             availableBrandKits={initialAvailableBrandKits}
             diagnostics={brandDiagnostics}
             onOperation={applyOperation}
-            onRunBrandGovernance={runBrandGovernancePlaceholder}
+            onRunBrandGovernance={runBrandGovernance}
+            isRunningBrandGovernance={isBrandGovernanceRunning}
           />
           <ValidationPanel diagnostics={diagnostics} lastOperation={lastOperation} />
         </aside>
