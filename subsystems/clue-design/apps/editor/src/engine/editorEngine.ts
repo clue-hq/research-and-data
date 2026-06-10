@@ -7,6 +7,7 @@ import type {
   NodePatch,
   Operation,
   OptionalFieldPatch,
+  PagePatch,
   ParentRef,
   Scene
 } from "./contracts";
@@ -46,6 +47,14 @@ function applyLocalOperation(scene: Scene, operation: Operation): void {
   }
 
   switch (operation.kind) {
+    case "update_page": {
+      const page = scene.pages[operation.page_id];
+      if (!page) {
+        throw new Error(`Missing page ${operation.page_id}`);
+      }
+      applyPagePatch(page, operation.patch);
+      return;
+    }
     case "update_node": {
       const node = getNode(scene, operation.node_id);
       if (node.locked && !isLockedOnlyPatch(operation.patch)) {
@@ -132,6 +141,14 @@ function applyLocalOperation(scene: Scene, operation: Operation): void {
       return;
     }
   }
+}
+
+function applyPagePatch(page: Scene["pages"][string], patch: PagePatch): void {
+  applyFieldPatch(page, "name", patch.name);
+  applyFieldPatch(page, "size", patch.size);
+  applyOptionalPatch(page, "bleed", patch.bleed);
+  applyOptionalPatch(page, "safe_area", patch.safe_area);
+  applyFieldPatch(page, "background", patch.background);
 }
 
 function applyNodePatch(node: Node, patch: NodePatch): void {

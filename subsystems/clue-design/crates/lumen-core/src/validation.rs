@@ -34,6 +34,7 @@ pub fn validate_scene(scene: &Scene) -> Vec<Diagnostic> {
     }
 
     validate_map_identity(scene, &mut diagnostics);
+    validate_page_sizes(scene, &mut diagnostics);
     validate_page_children(scene, &mut diagnostics);
     validate_node_children(scene, &mut diagnostics);
     validate_tree_parentage(scene, &mut diagnostics);
@@ -47,6 +48,38 @@ pub fn validate_scene(scene: &Scene) -> Vec<Diagnostic> {
     ));
 
     diagnostics
+}
+
+fn validate_page_sizes(scene: &Scene, diagnostics: &mut Vec<Diagnostic>) {
+    for page in scene.pages.values() {
+        if !page.size.width.is_finite() || !page.size.height.is_finite() {
+            diagnostics.push(
+                Diagnostic::error(
+                    Phase::Validation,
+                    "LUMV0120",
+                    format!("page {} has non-finite dimensions", page.id),
+                    Some(DiagnosticSubject::Page(page.id.clone())),
+                )
+                .with_hint("Use finite page dimensions before layout or export."),
+            );
+            continue;
+        }
+
+        if page.size.width <= 0.0 || page.size.height <= 0.0 {
+            diagnostics.push(
+                Diagnostic::error(
+                    Phase::Validation,
+                    "LUMV0121",
+                    format!(
+                        "page {} dimensions must be positive, got {} x {}",
+                        page.id, page.size.width, page.size.height
+                    ),
+                    Some(DiagnosticSubject::Page(page.id.clone())),
+                )
+                .with_hint("Use positive custom dimensions, for example size(1080,1080,px)."),
+            );
+        }
+    }
 }
 
 fn validate_map_identity(scene: &Scene, diagnostics: &mut Vec<Diagnostic>) {

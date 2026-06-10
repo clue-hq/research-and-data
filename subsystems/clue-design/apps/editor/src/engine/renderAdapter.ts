@@ -38,6 +38,11 @@ export interface RenderNodeDescriptor {
     fontSize: number;
     fontWeight: number;
     align: "left" | "center" | "right" | "justify";
+    lineHeight: number;
+    letterSpacing: number;
+    maxLines: number | null;
+    wrap: "no_wrap" | "wrap";
+    direction: "ltr" | "rtl" | "auto";
   };
   line?: {
     points: number[];
@@ -61,12 +66,13 @@ export function pageDescriptor(page: Page): RenderPageDescriptor {
 export function nodeDescriptor(scene: Scene, node: Node, page: Page): RenderNodeDescriptor {
   const scale = unitScale(page.size.unit);
   const size = nodeSizeForRender(node, page);
+  const position = nodePositionForRender(node, page);
   const stroke = node.strokes[0] ? strokeDescriptor(node.strokes[0]) : null;
   const descriptor: RenderNodeDescriptor = {
     id: node.id,
     kind: node.kind.kind,
-    x: node.transform.x * scale,
-    y: node.transform.y * scale,
+    x: position.x,
+    y: position.y,
     width: size.width,
     height: size.height,
     rotation: node.transform.rotation,
@@ -88,7 +94,12 @@ export function nodeDescriptor(scene: Scene, node: Node, page: Page): RenderNode
       fontFamily: node.kind.font_family,
       fontSize: node.kind.font_size * scale,
       fontWeight: node.kind.font_weight,
-      align: node.kind.align
+      align: node.kind.align,
+      lineHeight: node.kind.line_height ?? 1.2,
+      letterSpacing: (node.kind.letter_spacing ?? 0) * scale,
+      maxLines: node.kind.max_lines ?? null,
+      wrap: node.kind.wrap ?? "no_wrap",
+      direction: node.kind.direction ?? "ltr"
     };
   }
 
@@ -202,6 +213,20 @@ export function nodeSizeForRender(node: Node, page: Page): { width: number; heig
     };
   }
   return fixedSize(node.size, scale);
+}
+
+export function nodePositionForRender(node: Node, page: Page): { x: number; y: number } {
+  const scale = unitScale(page.size.unit);
+  if (node.computed) {
+    return {
+      x: node.computed.layout_bounds.x * scale,
+      y: node.computed.layout_bounds.y * scale
+    };
+  }
+  return {
+    x: node.transform.x * scale,
+    y: node.transform.y * scale
+  };
 }
 
 function normalizeHexForCss(value: string): string {

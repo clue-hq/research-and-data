@@ -25,13 +25,16 @@ export default function EditorApp({
   const [selectedNodeId, setSelectedNodeId] = useState<NodeId | null>(initialSelectedNodeId);
   const [diagnostics, setDiagnostics] = useState<Diagnostic[]>([]);
   const [lastOperation, setLastOperation] = useState<Operation | null>(null);
+  const [undoStack, setUndoStack] = useState<Scene[]>([]);
   const selectedNode = useMemo(() => getNode(scene, selectedNodeId), [scene, selectedNodeId]);
+  const activePage = activePageId ? scene.pages[activePageId] ?? null : null;
 
   const applyOperation = (operation: Operation) => {
     setLastOperation(operation);
     setScene((currentScene) => {
       const result = localEditorEngine.applyOperation(currentScene, operation);
       if (result.accepted) {
+        setUndoStack((stack) => [...stack.slice(-49), currentScene]);
         setDiagnostics([]);
         return result.scene;
       }
@@ -52,6 +55,19 @@ export default function EditorApp({
         }
       ]);
       return currentScene;
+    });
+  };
+
+  const undoLastOperation = () => {
+    setUndoStack((stack) => {
+      const previousScene = stack[stack.length - 1];
+      if (!previousScene) {
+        return stack;
+      }
+      setScene(previousScene);
+      setLastOperation(null);
+      setDiagnostics([]);
+      return stack.slice(0, -1);
     });
   };
 
@@ -93,7 +109,7 @@ export default function EditorApp({
             <Download aria-hidden size={16} />
             Export
           </button>
-          <button type="button" disabled>
+          <button type="button" onClick={undoLastOperation} disabled={undoStack.length === 0}>
             <RotateCcw aria-hidden size={16} />
             Undo
           </button>
@@ -115,6 +131,7 @@ export default function EditorApp({
           </div>
           <InspectorPanel
             scene={scene}
+            activePage={activePage}
             selectedNode={selectedNode}
             selectedNodeId={selectedNodeId}
             onOperation={applyOperation}

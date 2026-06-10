@@ -1,9 +1,15 @@
 import type {
+  AutoLayoutProps,
+  LayoutAnchor,
   Node,
   NodeId,
   NodePatch,
   Operation,
   OverflowPolicy,
+  Page,
+  PagePatch,
+  PageSize,
+  ParentRef,
   SizeSpec,
   Slot,
   SlotId,
@@ -44,6 +50,26 @@ export function nodePatch(patch: Partial<NodePatch>): NodePatch {
   };
 }
 
+export function pagePatch(patch: Partial<PagePatch>): PagePatch {
+  return {
+    name: patch.name ?? unchanged(),
+    size: patch.size ?? unchanged(),
+    bleed: patch.bleed ?? unchanged(),
+    safe_area: patch.safe_area ?? unchanged(),
+    background: patch.background ?? unchanged()
+  };
+}
+
+export function updatePageSize(page: Page, size: PageSize): Operation {
+  return {
+    kind: "update_page",
+    page_id: page.id,
+    patch: pagePatch({
+      size: set(size)
+    })
+  };
+}
+
 export function updateNodeTransform(node: Node, transform: Transform): Operation {
   return {
     kind: "update_node",
@@ -75,6 +101,25 @@ export function updateNodeTransformAndSize(node: Node, transform: Transform, siz
   };
 }
 
+export function updateNodeLayout(node: Node, layout: AutoLayoutProps | null): Operation {
+  return {
+    kind: "update_node",
+    node_id: node.id,
+    patch: nodePatch({
+      layout: layout ? set(layout) : clear()
+    })
+  };
+}
+
+export function updateAutoLayoutAlignment(node: Node, alignX: LayoutAnchor, alignY: LayoutAnchor): Operation {
+  const layout = node.layout ?? defaultLayoutProps();
+  return updateNodeLayout(node, {
+    ...layout,
+    align_x: alignX,
+    align_y: alignY
+  });
+}
+
 export function updateTextNode(node: Node, text: Partial<TextNode>): Operation {
   if (node.kind.kind !== "text") {
     throw new Error(`Cannot update text fields on non-text node ${node.id}`);
@@ -88,6 +133,15 @@ export function updateTextNode(node: Node, text: Partial<TextNode>): Operation {
         ...text
       })
     })
+  };
+}
+
+export function moveNodeToParent(nodeId: NodeId, newParent: ParentRef, index: number): Operation {
+  return {
+    kind: "move_node",
+    node_id: nodeId,
+    new_parent: newParent,
+    index
   };
 }
 
@@ -111,6 +165,16 @@ export function fixedSize(width: number, height: number): SizeSpec {
       kind: "fixed",
       value: height
     }
+  };
+}
+
+export function defaultLayoutProps(): AutoLayoutProps {
+  return {
+    gap: 0,
+    padding: [0, 0, 0, 0],
+    grow: 0,
+    align_x: "start",
+    align_y: "start"
   };
 }
 

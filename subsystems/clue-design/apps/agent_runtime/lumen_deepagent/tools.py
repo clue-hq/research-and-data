@@ -87,6 +87,41 @@ class LumenDesignTools:
         iteration_dir = self._iteration_dir()
         (iteration_dir / "dsl.lumen").write_text(source, encoding="utf-8")
 
+        duplicate_page = first_existing_page_declaration(source, self.scene)
+        if duplicate_page:
+            summary = CompileSummary(
+                status=ToolStatus.error,
+                diagnostics=[
+                    DiagnosticSummary(
+                        severity=DiagnosticSeverity.error,
+                        code="LUMA0200",
+                        message=(
+                            "repair block tries to recreate existing page "
+                            f"{duplicate_page['page_id']}"
+                        ),
+                        line=duplicate_page["line"],
+                        target_page_id=duplicate_page["page_id"],
+                        suggested_repair=(
+                            "Do not emit an existing page line during repair. "
+                            "Use checked structured operations for targeted changes, "
+                            "or emit only a non-duplicating DSL continuation."
+                        ),
+                    )
+                ],
+                halted_at={"code": "LUMA0200", "line": duplicate_page["line"]},
+            )
+            payload = {"compile": _dump(summary)}
+            self._write_json(iteration_dir / "compile.json", payload)
+            self.record(
+                "dsl-author",
+                "dsl_compile_rejected",
+                input_summary=source[:500],
+                output_summary=summary.diagnostics[0].message,
+                diagnostics=[diag.model_dump(mode="json") for diag in summary.diagnostics],
+                payload=payload,
+            )
+            return json.dumps(payload, indent=2)
+
         try:
             response = self.core.compile_dsl_into_scene(
                 self.scene,
@@ -320,12 +355,23 @@ class LumenDesignTools:
         )
         return json.dumps(payload, indent=2)
 
-    def export_preview_bundle(self, critic_format: Optional[str] = None) -> str:
+    def export_preview_bundle(
+        self,
+        critic_format: Optional[str] = None,
+        *,
+        debug_only: bool = False,
+        debug_reason: Optional[str] = None,
+    ) -> str:
         """Export canonical SVG plus the configured critic preview artifact.
 
         SVG remains the canonical preview contract. When the critic format is
         PNG, this stores a raster preview beside the SVG so the reviewer or
         provider adapter can inspect rendered pixels as well as vector source.
+
+        When `debug_only` is true, artifacts are still written to disk, but the
+        bundle is intentionally not exposed as a valid critic/final preview.
+        Use this after preflight errors so humans and agents can inspect the
+        broken visual without weakening the acceptance gate.
         """
         canonical = json.loads(self.export_preview("svg"))
         desired_critic_format = (critic_format or self.config.preview_format).lower()
@@ -339,17 +385,30 @@ class LumenDesignTools:
             critic_summary,
             desired_critic_format,
         )
+        validation_errors = bundle_validation_errors(
+            canonical_summary,
+            critic_summary,
+        )
+        if debug_only:
+            validation_errors.append(
+                debug_reason
+                or "debug preview exported from a non-accepted intermediate scene"
+            )
+
         payload = {
+            "debug_only": debug_only,
+            "debug_reason": debug_reason,
             "canonical": canonical_summary,
             "critic": critic_summary,
             "reviewer": {
-                "status": reviewer_bundle_status(canonical_summary, critic_summary),
+                "status": (
+                    ToolStatus.error.value
+                    if validation_errors
+                    else ToolStatus.ok.value
+                ),
                 "requested_format": desired_critic_format,
                 "artifacts": bundle_artifacts,
-                "validation_errors": bundle_validation_errors(
-                    canonical_summary,
-                    critic_summary,
-                ),
+                "validation_errors": validation_errors,
                 "diagnostics": (
                     canonical_summary.get("diagnostics", [])
                     + critic_summary.get("diagnostics", [])
@@ -358,7 +417,7 @@ class LumenDesignTools:
                 ),
             },
         }
-        if payload["reviewer"]["status"] == ToolStatus.ok.value:
+        if not debug_only and payload["reviewer"]["status"] == ToolStatus.ok.value:
             self.latest_preview_bundle = payload["reviewer"]
             self.latest_export_summary = payload["reviewer"]
         else:
@@ -367,14 +426,22 @@ class LumenDesignTools:
         self._write_json(self._iteration_dir() / "preview_bundle.json", payload)
         self.record(
             "coordinator",
-            "preview_bundle_exported",
+            "debug_preview_exported" if debug_only else "preview_bundle_exported",
             output_summary=(
-                "exported canonical svg"
-                if desired_critic_format == "svg"
-                else f"exported canonical svg and {desired_critic_format} critic preview"
+                (
+                    f"exported debug preview after {debug_reason}"
+                    if debug_only
+                    else (
+                        "exported canonical svg"
+                        if desired_critic_format == "svg"
+                        else f"exported canonical svg and {desired_critic_format} critic preview"
+                    )
+                )
             ),
             payload={
                 "critic_format": desired_critic_format,
+                "debug_only": debug_only,
+                "debug_reason": debug_reason,
                 "canonical_status": payload["canonical"].get("status"),
                 "critic_status": payload["critic"].get("status"),
                 "reviewer_status": payload["reviewer"].get("status"),
@@ -1030,6 +1097,9 @@ def diagnostics_from(raw_diagnostics: Any) -> list[DiagnosticSummary]:
                 target_node_id = value
             elif kind == "slot":
                 target_slot_id = value
+        target_page_id = target_page_id or raw.get("target_page_id")
+        target_node_id = target_node_id or raw.get("target_node_id")
+        target_slot_id = target_slot_id or raw.get("target_slot_id")
         severity = str(raw.get("severity") or "info").lower()
         if severity not in {item.value for item in DiagnosticSeverity}:
             severity = "info"
@@ -1048,6 +1118,32 @@ def diagnostics_from(raw_diagnostics: Any) -> list[DiagnosticSummary]:
             )
         )
     return diagnostics
+
+
+def first_existing_page_declaration(source: str, scene: JsonObject) -> Optional[JsonObject]:
+    existing_pages = set((scene.get("pages") or {}).keys())
+    if not existing_pages:
+        return None
+    for line_number, line in enumerate(source.splitlines(), start=1):
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#") or stripped.startswith("//"):
+            continue
+        page_id = declared_page_id(stripped)
+        if page_id and page_id in existing_pages:
+            return {"page_id": page_id, "line": line_number}
+    return None
+
+
+def declared_page_id(stripped_line: str) -> Optional[str]:
+    if stripped_line.startswith("page("):
+        close = stripped_line.find(")")
+        if close == -1:
+            return None
+        return stripped_line[len("page(") : close].strip() or None
+    if stripped_line == "page" or not stripped_line.startswith("page "):
+        return None
+    parts = stripped_line.split()
+    return parts[1] if len(parts) > 1 else None
 
 
 def _dump(model: Any) -> JsonObject:

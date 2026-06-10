@@ -2,7 +2,8 @@ use lumen_core::validation::validate_scene;
 use lumen_core::{
     compile_dsl, compile_dsl_into_scene, normalize_dsl, parse_dsl, Color, DiagnosticSeverity,
     Dimension, DslCompileSession, DslLayoutAnchor, DslLayoutAxis, DslLineKind, DslProperty,
-    DslScalar, NodeId, NodeKind, Operation, PageId, Paint, ParentRef, Scene, SlotKey,
+    DslScalar, LayoutAnchor, NodeId, NodeKind, Operation, Orientation, PageId, PagePreset, Paint,
+    ParentRef, Scene, SlotKey, TextDirection, TextWrap, Unit,
 };
 
 const VALID_BROCHURE: &str = include_str!("../fixtures/dsl/valid_brochure.lumen");
@@ -123,6 +124,91 @@ fn compiled_dsl_applies_through_checked_core_operations() {
         scene.bound_nodes_for_slot(&headline_slot_id)[0].id,
         NodeId::from("headline")
     );
+}
+
+#[test]
+fn dsl_custom_page_size_lowers_to_scene_page_size() {
+    let mut scene = Scene::new(lumen_core::DocumentId::from("doc_square"), "Square");
+    let output = compile_dsl_into_scene("page page_square size(1080,1080,px)", &mut scene);
+
+    assert_no_dsl_errors(&output.compile_output.diagnostics);
+    assert!(output.operation_error.is_none());
+
+    let page = &scene.pages[&PageId::from("page_square")];
+    assert_eq!(page.size.width, 1080.0);
+    assert_eq!(page.size.height, 1080.0);
+    assert_eq!(page.size.unit, Unit::Px);
+    assert_eq!(page.size.preset, Some(PagePreset::Custom));
+    assert_eq!(page.size.orientation, Orientation::Landscape);
+}
+
+#[test]
+fn dsl_autolayout_anchors_lower_to_scene_alignment() {
+    let mut scene = Scene::new(lumen_core::DocumentId::from("doc_align"), "Align");
+    let output = compile_dsl_into_scene(
+        r#"
+page page_square size(400,300,px)
+  nav al(h,x(sb),y(c)) p(0,0) s(360,80) g(16) pad(20)
+"#,
+        &mut scene,
+    );
+
+    assert_no_dsl_errors(&output.compile_output.diagnostics);
+    assert!(output.operation_error.is_none());
+
+    let layout = scene.nodes[&NodeId::from("nav")].layout.as_ref().unwrap();
+    assert_eq!(layout.align_x, LayoutAnchor::SpaceBetween);
+    assert_eq!(layout.align_y, LayoutAnchor::Center);
+}
+
+#[test]
+fn dsl_text_typography_fields_lower_to_text_node() {
+    let mut scene = Scene::new(lumen_core::DocumentId::from("doc_type"), "Type");
+    let output = compile_dsl_into_scene(
+        r#"
+page page_square size(400,400,px)
+  headline text "Reliable copy fit" p(24,24) s(240,80) font("Inter",32,800,left) lh(1.08) ls(0.4) max_lines(2) wrap_text(true) dir(ltr)
+"#,
+        &mut scene,
+    );
+
+    assert_no_dsl_errors(&output.compile_output.diagnostics);
+    assert!(output.operation_error.is_none());
+
+    let NodeKind::Text(text) = &scene.nodes[&NodeId::from("headline")].kind else {
+        panic!("expected text node");
+    };
+    assert_eq!(text.line_height, 1.08);
+    assert_eq!(text.letter_spacing, 0.4);
+    assert_eq!(text.max_lines, Some(2));
+    assert_eq!(text.wrap, TextWrap::Wrap);
+    assert_eq!(text.direction, TextDirection::Ltr);
+}
+
+#[test]
+fn dsl_accepts_safe_typography_aliases_models_commonly_emit() {
+    let mut scene = Scene::new(
+        lumen_core::DocumentId::from("doc_type_aliases"),
+        "Type Aliases",
+    );
+    let output = compile_dsl_into_scene(
+        r#"
+page page_square size(400,400,px)
+  label text "INSIGHT HEALTH" p(24,24) s(240,hug) font_size(18) font_weight(700) tracking(200) wrap_text(false)
+"#,
+        &mut scene,
+    );
+
+    assert_no_dsl_errors(&output.compile_output.diagnostics);
+    assert!(output.operation_error.is_none());
+
+    let NodeKind::Text(text) = &scene.nodes[&NodeId::from("label")].kind else {
+        panic!("expected text node");
+    };
+    assert_eq!(text.font_size, 18.0);
+    assert_eq!(text.font_weight, 700);
+    assert!((text.letter_spacing - 3.6).abs() < 0.001);
+    assert_eq!(text.wrap, TextWrap::NoWrap);
 }
 
 #[test]
@@ -509,7 +595,7 @@ page page_a4
     );
 
     assert!(compiled.halted_at.is_none());
-    assert!(compiled
+    assert!(!compiled
         .diagnostics
         .iter()
         .any(|diagnostic| diagnostic.diagnostic.code == "LUMD0704"));

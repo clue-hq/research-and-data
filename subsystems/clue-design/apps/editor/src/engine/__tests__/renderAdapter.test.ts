@@ -12,6 +12,23 @@ describe("render adapter", () => {
     expect(descriptor.height).toBeCloseTo(1122.5, 1);
   });
 
+  it("projects custom px page dimensions without preset coercion", () => {
+    const page = {
+      ...minimalScene.pages.page_a4,
+      size: {
+        width: 1080,
+        height: 1080,
+        unit: "px" as const,
+        preset: "custom" as const,
+        orientation: "landscape" as const
+      }
+    };
+    const descriptor = pageDescriptor(page);
+
+    expect(descriptor.width).toBe(1080);
+    expect(descriptor.height).toBe(1080);
+  });
+
   it("maps a text node to an editor render descriptor", () => {
     const page = minimalScene.pages.page_a4;
     const node = minimalScene.nodes.node_contact_name;
@@ -65,6 +82,8 @@ describe("render adapter", () => {
 
     expect(descriptor.width).toBeCloseTo(453.5, 1);
     expect(descriptor.height).toBeCloseTo(120.9, 1);
+    expect(descriptor.x).toBeCloseTo(90.7, 1);
+    expect(descriptor.y).toBeCloseTo(151.2, 1);
   });
 
   it("accepts Rust-serialized token dimensions as unresolved editor sizes", () => {

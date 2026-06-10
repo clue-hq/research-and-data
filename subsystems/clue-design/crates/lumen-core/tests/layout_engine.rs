@@ -1,10 +1,10 @@
 use lumen_core::{
     layout_operations, layout_scene, validate_layout, AssetId, AutoLayoutDirection, AutoLayoutNode,
     AutoLayoutProps, Cardinality, ConditionalRule, ContentType, Diagnostic, DiagnosticSeverity,
-    Dimension, DocumentId, EmptyBehavior, FocalPoint, ImageFitMode, ImageNode, ImagePolicy, Node,
-    NodeId, NodeKind, Operation, Orientation, OverflowPolicy, Page, PageId, PagePreset, PageSize,
-    ParentRef, Rect, ReflowPolicy, RepeaterRule, Scene, SizeSpec, Slot, SlotId, SlotKey, TextAlign,
-    TextNode, Unit, ValidationFixtures,
+    Dimension, DocumentId, EmptyBehavior, FocalPoint, ImageFitMode, ImageNode, ImagePolicy,
+    LayoutAnchor, Node, NodeId, NodeKind, Operation, Orientation, OverflowPolicy, Page, PageId,
+    PagePreset, PageSize, ParentRef, Rect, ReflowPolicy, RepeaterRule, Scene, SizeSpec, Slot,
+    SlotId, SlotKey, TextAlign, TextNode, Unit, ValidationFixtures,
 };
 
 fn page(width: f64, height: f64) -> Page {
@@ -60,6 +60,7 @@ fn auto_layout(
         padding,
         padding_token: None,
         grow: 0.0,
+        ..AutoLayoutProps::default()
     });
     node
 }
@@ -80,6 +81,7 @@ fn text_node(id: &str, content: &str, x: f64, y: f64, width: f64, height: f64) -
             font_weight: 600,
             align: TextAlign::Left,
             style_token: None,
+            ..TextNode::default()
         }),
     );
     node.transform.x = x;
@@ -199,6 +201,33 @@ fn row_layout_positions_fixed_children() {
 }
 
 #[test]
+fn plain_text_overflow_is_diagnosed_without_slot() {
+    let mut scene = scene_with_page(400.0, 300.0);
+    insert(
+        &mut scene,
+        ParentRef::Page(PageId::from("page")),
+        text_node_with_font(
+            "headline",
+            "A very long neurosurgery practice headline that cannot fit",
+            24.0,
+            24.0,
+            120.0,
+            24.0,
+            24.0,
+        ),
+    );
+
+    let result = layout_scene(
+        &scene,
+        lumen_core::LayoutOptions {
+            validate_slots: false,
+        },
+    );
+
+    assert!(has_code(&result.diagnostics, "LUMV0902"));
+}
+
+#[test]
 fn column_layout_positions_fixed_children() {
     let mut scene = scene_with_page(400.0, 300.0);
     insert(
@@ -233,6 +262,105 @@ fn column_layout_positions_fixed_children() {
     );
     assert_close(result.geometry[&NodeId::from("a")].layout_bounds.y, 0.0);
     assert_close(result.geometry[&NodeId::from("b")].layout_bounds.y, 40.0);
+}
+
+#[test]
+fn autolayout_row_x_center_positions_children() {
+    let mut scene = scene_with_page(400.0, 300.0);
+    let mut row = auto_layout(
+        "row",
+        AutoLayoutDirection::Row,
+        Dimension::Fixed(200.0),
+        Dimension::Fixed(80.0),
+        0.0,
+        [0.0; 4],
+        false,
+    );
+    row.layout.as_mut().unwrap().align_x = LayoutAnchor::Center;
+    insert(&mut scene, ParentRef::Page(PageId::from("page")), row);
+    insert(
+        &mut scene,
+        ParentRef::Node(NodeId::from("row")),
+        rect("a", Dimension::Fixed(50.0), Dimension::Fixed(20.0)),
+    );
+    insert(
+        &mut scene,
+        ParentRef::Node(NodeId::from("row")),
+        rect("b", Dimension::Fixed(30.0), Dimension::Fixed(20.0)),
+    );
+
+    let result = layout_scene(
+        &scene,
+        lumen_core::LayoutOptions {
+            validate_slots: false,
+        },
+    );
+    assert_close(result.geometry[&NodeId::from("a")].layout_bounds.x, 60.0);
+    assert_close(result.geometry[&NodeId::from("b")].layout_bounds.x, 110.0);
+}
+
+#[test]
+fn autolayout_row_x_space_between_distributes_children() {
+    let mut scene = scene_with_page(400.0, 300.0);
+    let mut row = auto_layout(
+        "row",
+        AutoLayoutDirection::Row,
+        Dimension::Fixed(200.0),
+        Dimension::Fixed(80.0),
+        0.0,
+        [0.0; 4],
+        false,
+    );
+    row.layout.as_mut().unwrap().align_x = LayoutAnchor::SpaceBetween;
+    insert(&mut scene, ParentRef::Page(PageId::from("page")), row);
+    insert(
+        &mut scene,
+        ParentRef::Node(NodeId::from("row")),
+        rect("a", Dimension::Fixed(50.0), Dimension::Fixed(20.0)),
+    );
+    insert(
+        &mut scene,
+        ParentRef::Node(NodeId::from("row")),
+        rect("b", Dimension::Fixed(30.0), Dimension::Fixed(20.0)),
+    );
+
+    let result = layout_scene(
+        &scene,
+        lumen_core::LayoutOptions {
+            validate_slots: false,
+        },
+    );
+    assert_close(result.geometry[&NodeId::from("a")].layout_bounds.x, 0.0);
+    assert_close(result.geometry[&NodeId::from("b")].layout_bounds.x, 170.0);
+}
+
+#[test]
+fn autolayout_row_y_center_cross_aligns_children() {
+    let mut scene = scene_with_page(400.0, 300.0);
+    let mut row = auto_layout(
+        "row",
+        AutoLayoutDirection::Row,
+        Dimension::Fixed(200.0),
+        Dimension::Fixed(80.0),
+        0.0,
+        [0.0; 4],
+        false,
+    );
+    row.layout.as_mut().unwrap().align_y = LayoutAnchor::Center;
+    insert(&mut scene, ParentRef::Page(PageId::from("page")), row);
+    insert(
+        &mut scene,
+        ParentRef::Node(NodeId::from("row")),
+        rect("a", Dimension::Fixed(50.0), Dimension::Fixed(20.0)),
+    );
+
+    let result = layout_scene(
+        &scene,
+        lumen_core::LayoutOptions {
+            validate_slots: false,
+        },
+    );
+    assert_close(result.geometry[&NodeId::from("a")].layout_bounds.y, 30.0);
 }
 
 #[test]

@@ -208,6 +208,7 @@ fn mock_agent_boundary_consumes_scene_operations_and_diagnostics() {
                     font_weight: 800,
                     align: TextAlign::Left,
                     style_token: None,
+                    ..TextNode::default()
                 })),
                 ..NodePatch::default()
             },
@@ -777,6 +778,7 @@ fn text_node(
             font_weight,
             align,
             style_token: None,
+            ..TextNode::default()
         }),
     );
     node.name = Some(name.to_owned());

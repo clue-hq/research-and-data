@@ -1070,10 +1070,35 @@ impl<'a> TokenResolver<'a> {
         }
 
         if let NodeKind::Text(text) = &mut node.kind {
+            if let Some(token) = text.line_height_token.clone() {
+                if let Some(line_height) =
+                    self.resolve_number_ref(&token, NumberDomain::Dimension, subject.clone())
+                {
+                    text.line_height = line_height;
+                    text.line_height_token = None;
+                }
+            }
+            if let Some(token) = text.letter_spacing_token.clone() {
+                if let Some(letter_spacing) =
+                    self.resolve_number_ref(&token, NumberDomain::LayoutSpacing, subject.clone())
+                {
+                    text.letter_spacing = letter_spacing;
+                    text.letter_spacing_token = None;
+                }
+            }
+
             if let Some(style) = self.resolve_text_style(text, subject.clone()) {
                 text.font_family = style.font_family;
                 text.font_size = style.font_size;
                 text.font_weight = style.font_weight;
+                if let Some(line_height) = style.line_height {
+                    text.line_height = line_height;
+                    text.line_height_token = None;
+                }
+                if let Some(letter_spacing) = style.letter_spacing {
+                    text.letter_spacing = letter_spacing;
+                    text.letter_spacing_token = None;
+                }
                 text.style_token = None;
 
                 if let Some(color_token) = style.color {
@@ -1440,6 +1465,8 @@ impl<'a> TokenResolver<'a> {
                     font_family,
                     font_size: 16.0,
                     font_weight: 400,
+                    line_height: None,
+                    letter_spacing: None,
                     color: None,
                 });
             }
@@ -1460,6 +1487,8 @@ impl<'a> TokenResolver<'a> {
                 font_family,
                 font_size,
                 font_weight,
+                line_height,
+                letter_spacing,
                 color,
                 font_asset,
                 ..
@@ -1487,6 +1516,8 @@ impl<'a> TokenResolver<'a> {
                     font_family,
                     font_size,
                     font_weight,
+                    line_height,
+                    letter_spacing,
                     color,
                 })
             }
@@ -1528,6 +1559,8 @@ struct ResolvedTypographyStyle {
     font_family: String,
     font_size: f64,
     font_weight: u16,
+    line_height: Option<f64>,
+    letter_spacing: Option<f64>,
     color: Option<String>,
 }
 

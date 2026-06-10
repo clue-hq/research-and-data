@@ -300,8 +300,42 @@ pub struct TextNode {
     pub font_size: f64,
     pub font_weight: u16,
     pub align: TextAlign,
+    #[serde(default = "default_text_line_height")]
+    pub line_height: f64,
+    #[serde(default)]
+    pub letter_spacing: f64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_lines: Option<u16>,
+    #[serde(default = "default_text_wrap")]
+    pub wrap: TextWrap,
+    #[serde(default = "default_text_direction")]
+    pub direction: TextDirection,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub style_token: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub line_height_token: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub letter_spacing_token: Option<String>,
+}
+
+impl Default for TextNode {
+    fn default() -> Self {
+        Self {
+            content: String::new(),
+            font_family: "Inter".to_owned(),
+            font_size: 16.0,
+            font_weight: 400,
+            align: TextAlign::Left,
+            line_height: default_text_line_height(),
+            letter_spacing: 0.0,
+            max_lines: None,
+            wrap: TextWrap::NoWrap,
+            direction: TextDirection::Ltr,
+            style_token: None,
+            line_height_token: None,
+            letter_spacing_token: None,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -311,6 +345,33 @@ pub enum TextAlign {
     Center,
     Right,
     Justify,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TextWrap {
+    NoWrap,
+    Wrap,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TextDirection {
+    Ltr,
+    Rtl,
+    Auto,
+}
+
+fn default_text_line_height() -> f64 {
+    1.2
+}
+
+fn default_text_wrap() -> TextWrap {
+    TextWrap::NoWrap
+}
+
+fn default_text_direction() -> TextDirection {
+    TextDirection::Ltr
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -343,6 +404,16 @@ pub enum AutoLayoutDirection {
     Column,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum LayoutAnchor {
+    Start,
+    Center,
+    End,
+    SpaceBetween,
+    Stretch,
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct AutoLayoutProps {
     pub gap: f64,
@@ -352,6 +423,28 @@ pub struct AutoLayoutProps {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub padding_token: Option<String>,
     pub grow: f64,
+    #[serde(default = "default_layout_anchor_start")]
+    pub align_x: LayoutAnchor,
+    #[serde(default = "default_layout_anchor_start")]
+    pub align_y: LayoutAnchor,
+}
+
+impl Default for AutoLayoutProps {
+    fn default() -> Self {
+        Self {
+            gap: 0.0,
+            gap_token: None,
+            padding: [0.0; 4],
+            padding_token: None,
+            grow: 0.0,
+            align_x: LayoutAnchor::Start,
+            align_y: LayoutAnchor::Start,
+        }
+    }
+}
+
+fn default_layout_anchor_start() -> LayoutAnchor {
+    LayoutAnchor::Start
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]

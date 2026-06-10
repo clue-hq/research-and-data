@@ -3,10 +3,10 @@
 use crate::scene::ColorStop;
 use crate::{
     AssetId, AutoLayoutDirection, AutoLayoutNode, AutoLayoutProps, Color, Diagnostic,
-    DiagnosticSeverity, Fill, ImageNode, LineNode, Node, NodeId, NodeKind, Operation,
+    DiagnosticSeverity, Fill, ImageNode, LayoutAnchor, LineNode, Node, NodeId, NodeKind, Operation,
     OperationError, OperationReport, Orientation, Page, PageId, PagePreset, PageSize, Paint,
-    PaintId, ParentRef, Phase, Scene, SizeSpec, Slot, SlotId, SlotKey, Stroke, TextAlign, TextNode,
-    Unit, VectorNode,
+    PaintId, ParentRef, Phase, Scene, SizeSpec, Slot, SlotId, SlotKey, Stroke, TextAlign,
+    TextDirection, TextNode, TextWrap, Unit, VectorNode,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
@@ -266,12 +266,20 @@ pub enum DslLineKind {
 pub struct DslPage {
     pub id: PageId,
     pub preset: Option<DslPagePreset>,
+    pub size: Option<DslPageSize>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct DslPagePreset {
     pub preset: PagePreset,
     pub orientation: Orientation,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct DslPageSize {
+    pub width: f64,
+    pub height: f64,
+    pub unit: Unit,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -309,6 +317,8 @@ pub enum DslProperty {
     Fill(DslFill),
     Stroke(DslStroke),
     Font(DslFont),
+    FontSize(DslScalar),
+    FontWeight(u16),
     Slot(SlotKey),
     Asset(AssetId),
     Path(String),
@@ -325,6 +335,12 @@ pub enum DslProperty {
     Gap(DslScalar),
     Padding([DslScalar; 4]),
     Wrap(bool),
+    TextWrap(bool),
+    LineHeight(DslScalar),
+    LetterSpacing(DslScalar),
+    Tracking(DslScalar),
+    MaxLines(u16),
+    TextDirection(TextDirection),
     Grow(DslScalar),
     TextStyleToken(String),
     LayoutAnchor {
@@ -354,6 +370,7 @@ pub enum DslLayoutAnchor {
     Center,
     End,
     SpaceBetween,
+    Stretch,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -675,6 +692,7 @@ impl DslParser {
 
         let id = parse_page_id(&id_token, line_number, 1)?;
         let mut preset = None;
+        let mut size = None;
         for token in property_tokens {
             let call = parse_call(&token).ok_or_else(|| {
                 error_diag(
@@ -683,23 +701,30 @@ impl DslParser {
                     token.len(),
                     "LUMD0203",
                     format!("unsupported page property {token}"),
-                    "Only preset(name,orientation) is supported in DSL; keep rich page config in scene metadata.",
+                    "Use preset(name,orientation), size(width,height,unit), or keep richer page config in scene metadata.",
                 )
             })?;
-            if call.name != "preset" || call.args.is_empty() {
-                return Err(error_diag(
-                    line_number,
-                    1,
-                    token.len(),
-                    "LUMD0204",
-                    format!("unsupported page property {}", call.name),
-                    "Use preset(a4,portrait) or omit page metadata from DSL.",
-                ));
+            match call.name.as_str() {
+                "preset" if !call.args.is_empty() => {
+                    preset = Some(parse_page_preset(&call, line_number)?);
+                }
+                "size" => {
+                    size = Some(parse_page_size(&call, line_number)?);
+                }
+                _ => {
+                    return Err(error_diag(
+                        line_number,
+                        1,
+                        token.len(),
+                        "LUMD0204",
+                        format!("unsupported page property {}", call.name),
+                        "Use preset(a4,portrait), size(1080,1080,px), or omit page metadata from DSL.",
+                    ));
+                }
             }
-            preset = Some(parse_page_preset(&call, line_number)?);
         }
 
-        Ok(DslPage { id, preset })
+        Ok(DslPage { id, preset, size })
     }
 
     fn parse_element(
@@ -982,12 +1007,33 @@ impl<'a> DslCompiler<'a> {
             ));
         }
 
-        let preset = page.preset.clone().unwrap_or_else(|| DslPagePreset {
+        let fallback_preset = page.preset.clone().unwrap_or_else(|| DslPagePreset {
             preset: PagePreset::A4,
             orientation: default_orientation_for_preset(&PagePreset::A4),
         });
 
-        let (width, height, unit) = page_size_for_preset(&preset.preset, &preset.orientation);
+        let (width, height, unit, preset, orientation) = if let Some(size) = &page.size {
+            (
+                size.width,
+                size.height,
+                size.unit.clone(),
+                page.preset
+                    .as_ref()
+                    .map(|preset| preset.preset.clone())
+                    .or(Some(PagePreset::Custom)),
+                orientation_for_dimensions(size.width, size.height),
+            )
+        } else {
+            let (width, height, unit) =
+                page_size_for_preset(&fallback_preset.preset, &fallback_preset.orientation);
+            (
+                width,
+                height,
+                unit,
+                Some(fallback_preset.preset),
+                fallback_preset.orientation,
+            )
+        };
 
         let page_model = Page {
             id: page.id.clone(),
@@ -996,8 +1042,8 @@ impl<'a> DslCompiler<'a> {
                 width,
                 height,
                 unit,
-                preset: Some(preset.preset),
-                orientation: preset.orientation,
+                preset,
+                orientation,
             },
             children: Vec::new(),
             bleed: None,
@@ -1592,9 +1638,75 @@ fn parse_property_token(
             .map(DslProperty::Stroke)
             .collect(),
         "font" => parse_font_property(&call, line_number, column)?,
+        "font_size" | "font-size" => {
+            expect_arg_count(&call, 1, line_number)?;
+            vec![DslProperty::FontSize(parse_positive_scalar(
+                &call.args[0],
+                line_number,
+                column,
+                "font size",
+            )?)]
+        }
+        "font_weight" | "font-weight" => {
+            expect_arg_count(&call, 1, line_number)?;
+            vec![DslProperty::FontWeight(parse_u16(
+                &call.args[0],
+                line_number,
+                column,
+            )?)]
+        }
         "style" | "text_style" => {
             expect_arg_count(&call, 1, line_number)?;
             vec![DslProperty::TextStyleToken(parse_token_ref(
+                &call.args[0],
+                line_number,
+                column,
+            )?)]
+        }
+        "lh" | "line_height" | "line-height" => {
+            expect_arg_count(&call, 1, line_number)?;
+            vec![DslProperty::LineHeight(parse_positive_scalar(
+                &call.args[0],
+                line_number,
+                column,
+                "line height",
+            )?)]
+        }
+        "ls" | "letter_spacing" | "letter-spacing" => {
+            expect_arg_count(&call, 1, line_number)?;
+            vec![DslProperty::LetterSpacing(parse_scalar(
+                &call.args[0],
+                line_number,
+                column,
+            )?)]
+        }
+        "tracking" => {
+            expect_arg_count(&call, 1, line_number)?;
+            vec![DslProperty::Tracking(parse_scalar(
+                &call.args[0],
+                line_number,
+                column,
+            )?)]
+        }
+        "max_lines" | "max" => {
+            expect_arg_count(&call, 1, line_number)?;
+            vec![DslProperty::MaxLines(parse_positive_u16(
+                &call.args[0],
+                line_number,
+                column,
+            )?)]
+        }
+        "wrap_text" | "text_wrap" => {
+            expect_arg_count(&call, 1, line_number)?;
+            vec![DslProperty::TextWrap(parse_bool(
+                &call.args[0],
+                line_number,
+                column,
+            )?)]
+        }
+        "dir" | "direction" => {
+            expect_arg_count(&call, 1, line_number)?;
+            vec![DslProperty::TextDirection(parse_text_direction(
                 &call.args[0],
                 line_number,
                 column,
@@ -1767,7 +1879,14 @@ fn node_from_element(element: &DslElement, line_number: usize) -> Result<Node, D
             font_size: 16.0,
             font_weight: 400,
             align: TextAlign::Left,
+            line_height: 1.2,
+            letter_spacing: 0.0,
+            max_lines: None,
+            wrap: TextWrap::NoWrap,
+            direction: TextDirection::Ltr,
             style_token: None,
+            line_height_token: None,
+            letter_spacing_token: None,
         }),
         DslElementKind::Image { asset_id } => NodeKind::Image(ImageNode {
             asset_id: asset_id
@@ -1936,6 +2055,42 @@ fn apply_properties(
                     ));
                 }
             }
+            DslProperty::FontSize(font_size) => {
+                if let NodeKind::Text(text) = &mut node.kind {
+                    if let Some(size) = scalar_to_number(
+                        font_size,
+                        line_number,
+                        node.id.as_str().len(),
+                        "font size",
+                        diagnostics,
+                    ) {
+                        text.font_size = size;
+                    }
+                } else {
+                    diagnostics.push(warning_diag(
+                        line_number,
+                        1,
+                        node.id.as_str().len(),
+                        "LUMD0605",
+                        "font_size(...) only applies to text nodes",
+                        "Move font_size(...) to a text/t element.",
+                    ));
+                }
+            }
+            DslProperty::FontWeight(font_weight) => {
+                if let NodeKind::Text(text) = &mut node.kind {
+                    text.font_weight = *font_weight;
+                } else {
+                    diagnostics.push(warning_diag(
+                        line_number,
+                        1,
+                        node.id.as_str().len(),
+                        "LUMD0606",
+                        "font_weight(...) only applies to text nodes",
+                        "Move font_weight(...) to a text/t element.",
+                    ));
+                }
+            }
             DslProperty::TextStyleToken(token) => {
                 if let NodeKind::Text(text) = &mut node.kind {
                     text.style_token = Some(token.clone());
@@ -2038,6 +2193,83 @@ fn apply_properties(
                     auto_layout.wrap = *wrap;
                 }
             }
+            DslProperty::TextWrap(wrap) => {
+                if let NodeKind::Text(text) = &mut node.kind {
+                    text.wrap = if *wrap {
+                        TextWrap::Wrap
+                    } else {
+                        TextWrap::NoWrap
+                    };
+                } else {
+                    diagnostics.push(warning_diag(
+                        line_number,
+                        1,
+                        node.id.as_str().len(),
+                        "LUMD0604",
+                        "wrap_text(...) only applies to text nodes",
+                        "Use wrap_text(true) on text nodes, or wrap(true) on auto-layout nodes.",
+                    ));
+                }
+            }
+            DslProperty::LineHeight(line_height) => {
+                if let NodeKind::Text(text) = &mut node.kind {
+                    match line_height {
+                        DslScalar::Number(line_height) => {
+                            text.line_height = *line_height;
+                            text.line_height_token = None;
+                        }
+                        DslScalar::Token(token) => {
+                            text.line_height_token = Some(token.clone());
+                        }
+                    }
+                }
+            }
+            DslProperty::LetterSpacing(letter_spacing) => {
+                if let NodeKind::Text(text) = &mut node.kind {
+                    match letter_spacing {
+                        DslScalar::Number(letter_spacing) => {
+                            text.letter_spacing = *letter_spacing;
+                            text.letter_spacing_token = None;
+                        }
+                        DslScalar::Token(token) => {
+                            text.letter_spacing_token = Some(token.clone());
+                        }
+                    }
+                }
+            }
+            DslProperty::Tracking(tracking) => {
+                if let NodeKind::Text(text) = &mut node.kind {
+                    match tracking {
+                        DslScalar::Number(tracking) => {
+                            text.letter_spacing =
+                                design_tracking_to_letter_spacing(*tracking, text.font_size);
+                            text.letter_spacing_token = None;
+                        }
+                        DslScalar::Token(token) => {
+                            text.letter_spacing_token = Some(token.clone());
+                        }
+                    }
+                } else {
+                    diagnostics.push(warning_diag(
+                        line_number,
+                        1,
+                        node.id.as_str().len(),
+                        "LUMD0607",
+                        "tracking(...) only applies to text nodes",
+                        "Move tracking(...) to a text/t element, or use ls(...) for explicit letter spacing.",
+                    ));
+                }
+            }
+            DslProperty::MaxLines(max_lines) => {
+                if let NodeKind::Text(text) = &mut node.kind {
+                    text.max_lines = Some(*max_lines);
+                }
+            }
+            DslProperty::TextDirection(direction) => {
+                if let NodeKind::Text(text) = &mut node.kind {
+                    text.direction = direction.clone();
+                }
+            }
             DslProperty::Grow(grow) => {
                 if let Some(grow) = scalar_to_number(
                     grow,
@@ -2050,14 +2282,26 @@ fn apply_properties(
                 }
             }
             DslProperty::LayoutAnchor { .. } => {
-                diagnostics.push(warning_diag(
-                    line_number,
-                    1,
-                    node.id.as_str().len(),
-                    "LUMD0704",
-                    "layout anchors are parsed but not lowered in this workstream",
-                    "Center/end/space-between alignment belongs to engine/slots-layout once the scene contract stores alignment.",
-                ));
+                if matches!(node.kind, NodeKind::AutoLayout(_)) {
+                    let DslProperty::LayoutAnchor { axis, anchor } = property else {
+                        unreachable!("matched layout anchor");
+                    };
+                    let anchor = layout_anchor_to_scene(anchor);
+                    let layout = ensure_layout(node);
+                    match axis {
+                        DslLayoutAxis::X => layout.align_x = anchor,
+                        DslLayoutAxis::Y => layout.align_y = anchor,
+                    }
+                } else {
+                    diagnostics.push(warning_diag(
+                        line_number,
+                        1,
+                        node.id.as_str().len(),
+                        "LUMD0603",
+                        "x(...)/y(...) only apply to auto-layout nodes",
+                        "Move layout anchors to an autolayout/al element.",
+                    ));
+                }
             }
             DslProperty::LineTo(x, y) => {
                 if let NodeKind::Line(line) = &mut node.kind {
@@ -2082,13 +2326,25 @@ fn apply_properties(
 }
 
 fn ensure_layout(node: &mut Node) -> &mut AutoLayoutProps {
-    node.layout.get_or_insert(AutoLayoutProps {
-        gap: 0.0,
-        gap_token: None,
-        padding: [0.0; 4],
-        padding_token: None,
-        grow: 0.0,
-    })
+    node.layout.get_or_insert_with(AutoLayoutProps::default)
+}
+
+fn layout_anchor_to_scene(anchor: &DslLayoutAnchor) -> LayoutAnchor {
+    match anchor {
+        DslLayoutAnchor::Start => LayoutAnchor::Start,
+        DslLayoutAnchor::Center => LayoutAnchor::Center,
+        DslLayoutAnchor::End => LayoutAnchor::End,
+        DslLayoutAnchor::SpaceBetween => LayoutAnchor::SpaceBetween,
+        DslLayoutAnchor::Stretch => LayoutAnchor::Stretch,
+    }
+}
+
+fn design_tracking_to_letter_spacing(tracking: f64, font_size: f64) -> f64 {
+    if tracking.abs() > 20.0 {
+        font_size * tracking / 1000.0
+    } else {
+        tracking
+    }
 }
 
 fn scalar_to_number(
@@ -2674,13 +2930,62 @@ fn parse_layout_anchor(
         "c" | "center" => Ok(DslLayoutAnchor::Center),
         "e" | "end" => Ok(DslLayoutAnchor::End),
         "sb" | "space_between" | "space-between" => Ok(DslLayoutAnchor::SpaceBetween),
+        "stretch" | "st" => Ok(DslLayoutAnchor::Stretch),
         other => Err(error_diag(
             line_number,
             column,
             other.len().max(1),
             "LUMD0248",
             format!("unknown layout anchor {other}"),
-            "Use s/start, c/center, e/end, or sb/space_between.",
+            "Use s/start, c/center, e/end, sb/space_between, or stretch.",
+        )),
+    }
+}
+
+fn parse_page_size(call: &Call, line_number: usize) -> Result<DslPageSize, DslDiagnostic> {
+    if call.args.len() != 3 {
+        return Err(error_diag(
+            line_number,
+            1,
+            call.name.len(),
+            "LUMD0250",
+            "size(...) expects width, height, and unit",
+            "Use size(1080,1080,px), size(210,297,mm), or size(8.5,11,in).",
+        ));
+    }
+
+    let width = parse_f64(&call.args[0], line_number, 1)?;
+    let height = parse_f64(&call.args[1], line_number, 1)?;
+    if width <= 0.0 || height <= 0.0 {
+        return Err(error_diag(
+            line_number,
+            1,
+            call.name.len(),
+            "LUMD0251",
+            "page size dimensions must be positive",
+            "Use positive width and height values, for example size(1080,1080,px).",
+        ));
+    }
+
+    Ok(DslPageSize {
+        width,
+        height,
+        unit: parse_unit(&call.args[2], line_number)?,
+    })
+}
+
+fn parse_unit(source: &str, line_number: usize) -> Result<Unit, DslDiagnostic> {
+    match source.trim() {
+        "px" => Ok(Unit::Px),
+        "mm" => Ok(Unit::Mm),
+        "in" | "inch" | "inches" => Ok(Unit::In),
+        other => Err(error_diag(
+            line_number,
+            1,
+            other.len().max(1),
+            "LUMD0252",
+            format!("unknown page size unit {other}"),
+            "Use px, mm, or in.",
         )),
     }
 }
@@ -2731,6 +3036,14 @@ fn default_orientation_for_preset(preset: &PagePreset) -> Orientation {
     match preset {
         PagePreset::LinkedinAd | PagePreset::EnvelopeDl => Orientation::Landscape,
         PagePreset::A4 | PagePreset::UsLetter | PagePreset::Custom => Orientation::Portrait,
+    }
+}
+
+fn orientation_for_dimensions(width: f64, height: f64) -> Orientation {
+    if width >= height {
+        Orientation::Landscape
+    } else {
+        Orientation::Portrait
     }
 }
 
@@ -2819,6 +3132,26 @@ fn parse_text_align(
             "LUMD0225",
             format!("unknown text alignment {other}"),
             "Use left, center, right, or justify.",
+        )),
+    }
+}
+
+fn parse_text_direction(
+    source: &str,
+    line_number: usize,
+    column: usize,
+) -> Result<TextDirection, DslDiagnostic> {
+    match source.trim() {
+        "ltr" => Ok(TextDirection::Ltr),
+        "rtl" => Ok(TextDirection::Rtl),
+        "auto" => Ok(TextDirection::Auto),
+        other => Err(error_diag(
+            line_number,
+            column,
+            other.len().max(1),
+            "LUMD0253",
+            format!("unknown text direction {other}"),
+            "Use ltr, rtl, or auto.",
         )),
     }
 }
@@ -3052,6 +3385,30 @@ fn parse_scalar(
     }
 }
 
+fn parse_positive_scalar(
+    source: &str,
+    line_number: usize,
+    column: usize,
+    label: &str,
+) -> Result<DslScalar, DslDiagnostic> {
+    let scalar = parse_scalar(source, line_number, column)?;
+    if let DslScalar::Number(value) = scalar {
+        if value <= 0.0 {
+            return Err(error_diag(
+                line_number,
+                column,
+                source.len().max(1),
+                "LUMD0254",
+                format!("{label} must be positive"),
+                "Use a positive numeric value or a token reference.",
+            ));
+        }
+        Ok(DslScalar::Number(value))
+    } else {
+        Ok(scalar)
+    }
+}
+
 fn parse_token_ref(
     source: &str,
     line_number: usize,
@@ -3096,6 +3453,25 @@ fn parse_u16(source: &str, line_number: usize, column: usize) -> Result<u16, Dsl
             "Use integer font weights such as 400, 600, or 700.",
         )
     })
+}
+
+fn parse_positive_u16(
+    source: &str,
+    line_number: usize,
+    column: usize,
+) -> Result<u16, DslDiagnostic> {
+    let value = parse_u16(source, line_number, column)?;
+    if value == 0 {
+        return Err(error_diag(
+            line_number,
+            column,
+            source.len().max(1),
+            "LUMD0255",
+            "max_lines must be positive",
+            "Use max_lines(1) or a larger integer.",
+        ));
+    }
+    Ok(value)
 }
 
 fn parse_usize(source: &str, line_number: usize, column: usize) -> Result<usize, DslDiagnostic> {

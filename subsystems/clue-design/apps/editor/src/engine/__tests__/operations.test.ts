@@ -6,9 +6,13 @@ import {
   defaultTextSlot,
   nodePatch,
   set,
+  updateAutoLayoutAlignment,
+  updateNodeLayout,
   updateNodeLocked,
   updateNodeTransform,
-  updateNodeTransformAndSize
+  updateNodeTransformAndSize,
+  updatePageSize,
+  updateTextNode
 } from "../operations";
 
 function cloneScene(): Scene {
@@ -247,6 +251,75 @@ describe("local editor engine", () => {
     expect(nodePatch({ computed: set(computed) }).computed).toEqual({
       kind: "set",
       value: computed
+    });
+  });
+
+  it("updates page size through the canonical page patch shape", () => {
+    const scene = cloneScene();
+    const page = scene.pages.page_a4;
+    const result = localEditorEngine.applyOperation(
+      scene,
+      updatePageSize(page, {
+        ...page.size,
+        width: 1080,
+        height: 1080,
+        unit: "px",
+        preset: "custom",
+        orientation: "landscape"
+      })
+    );
+
+    expect(result.accepted).toBe(true);
+    expect(result.scene.pages.page_a4.size).toMatchObject({
+      width: 1080,
+      height: 1080,
+      unit: "px",
+      preset: "custom"
+    });
+  });
+
+  it("emits layout alignment updates as node layout patches", () => {
+    const scene = cloneScene();
+    const node = scene.nodes.node_contact_name;
+    const result = localEditorEngine.applyOperation(
+      scene,
+      updateAutoLayoutAlignment(node, "center", "start")
+    );
+
+    expect(result.accepted).toBe(true);
+    expect(result.scene.nodes.node_contact_name.layout?.align_x).toBe("center");
+    expect(result.scene.nodes.node_contact_name.layout?.align_y).toBe("start");
+
+    const cleared = localEditorEngine.applyOperation(
+      result.scene,
+      updateNodeLayout(result.scene.nodes.node_contact_name, null)
+    );
+    expect(cleared.accepted).toBe(true);
+    expect(cleared.scene.nodes.node_contact_name.layout).toBeNull();
+  });
+
+  it("updates Phase B text metrics through the text node patch", () => {
+    const scene = cloneScene();
+    const node = scene.nodes.node_contact_name;
+    const result = localEditorEngine.applyOperation(
+      scene,
+      updateTextNode(node, {
+        line_height: 1.08,
+        letter_spacing: -0.25,
+        max_lines: 2,
+        wrap: "wrap",
+        direction: "auto"
+      })
+    );
+
+    expect(result.accepted).toBe(true);
+    expect(result.scene.nodes.node_contact_name.kind).toMatchObject({
+      kind: "text",
+      line_height: 1.08,
+      letter_spacing: -0.25,
+      max_lines: 2,
+      wrap: "wrap",
+      direction: "auto"
     });
   });
 

@@ -108,6 +108,8 @@ Leaf nodes cannot have children.
 Supported properties:
 
 ```text
+page page_id size(width,height,px|mm|in)
+page page_id preset(a4|us_letter|linkedin_ad|envelope_dl,portrait|landscape)
 p(x,y)
 s(width,height)
 fill(paint)
@@ -115,6 +117,15 @@ f[(paint_id,paint),...]
 stroke(paint,width)
 st[(stroke_id,paint,w(width)),...]
 font("family",size,weight,align)
+font_size(size)
+font_weight(weight)
+style($type.token)
+lh(value) / line_height(value)
+ls(value) / letter_spacing(value)
+tracking(value)
+max_lines(count) / max(count)
+wrap_text(true|false)
+dir(ltr|rtl|auto)
 slot(key)
 meta(slot="key")
 asset(asset_id)
@@ -170,12 +181,22 @@ The DSL compiler does not resolve token values itself. It lowers token reference
 - `g($token)` lowers to `AutoLayoutProps.gap_token`.
 - `pad($token)` lowers to `AutoLayoutProps.padding_token`.
 - `style($token)` and `font($token)` lower to `TextNode.style_token`.
+- `lh($token)` lowers to `TextNode.line_height_token`.
+- `ls($token)` lowers to `TextNode.letter_spacing_token`.
+
+`font_size(...)` and `font_weight(...)` are compatibility aliases for targeted
+repairs when model output drifts into common design-tool vocabulary. Prefer
+canonical `font("Inter",size,weight,align)` in new authored blocks.
+`tracking(...)` is a compatibility alias for design-tool tracking values; a
+large value such as `tracking(200)` is normalized to approximately `0.2em`
+letter spacing from the current font size. Prefer `ls(...)` for explicit pixel
+letter spacing.
 
 Actual catalog lookup, mode selection, fallback behavior, and materialization into concrete numbers/colors/type styles belong to the brand-kit resolver. Token forms without a precise scene carrier, such as `font("Inter",$type.size.heading,700,left)`, still emit `LUMD0705` instead of being guessed into an ambiguous field.
 
 If callers compile tokenized DSL and no uploaded/generated/client brand kit exists, they should pass the platform default brand kit into the canonical preflight pipeline. Preflight rejects tokenized scenes with `LUMP0300` when no brand kit is supplied, while concrete non-token scenes may preflight without one.
 
-Position and page dimensions remain numeric in this branch. Numeric literals must be finite; `NaN`, `inf`, and `-inf` halt with `LUMD0249`.
+Position, explicit page dimensions, and text metrics remain numeric when not tokenized. Numeric literals must be finite; `NaN`, `inf`, and `-inf` halt with `LUMD0249`. Explicit page size uses `size(width,height,unit)` and lowers into canonical `PageSize`; presets are shortcuts only.
 
 Supported paints:
 
@@ -223,7 +244,6 @@ redo(...)
 ds(...)
 #target property...
 svg(icon:name)
-x(anchor) / y(anchor)
 solid(color,o(opacity))
 stroke cap/position tuple extras
 ```
@@ -279,7 +299,7 @@ copy instance source(card)
 
 Token syntax is parsed but unresolved by the DSL compiler. Lowering preserves supported token references in scene carriers for the brand-kit resolver. Design-system declarations/properties that are not attached to a concrete scene carrier still emit explicit warnings.
 
-Auto-layout anchors `x(...)` and `y(...)` are typed DSL AST properties. The current scene contract cannot store alignment anchors yet, so lowering emits `LUMD0704` warnings instead of treating anchors as unresolved design-system tokens.
+Auto-layout anchors `x(...)` and `y(...)` lower into `AutoLayoutProps.align_x` and `AutoLayoutProps.align_y`. Layout owns invalid-axis diagnostics such as `space_between` on a cross axis; DSL should preserve the intent rather than degrading anchors into token warnings.
 
 ## Fixtures
 

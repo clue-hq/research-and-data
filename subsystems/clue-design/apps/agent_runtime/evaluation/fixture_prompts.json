@@ -2,7 +2,7 @@
   {
     "id": "square_linkedin_neurosurgery",
     "artifact": "linkedin_ad_square",
-    "prompt": "Create a 1:1 LinkedIn ad for a neurosurgery practice. Insight Health provides AI phone agents that handle calls, scheduling, and routing so neurosurgeons can focus on surgery."
+    "prompt": "Create a 1:1 LinkedIn ad for a neurosurgery practice on an explicit 1080x1080px canvas. Use robust auto-layout, wrapped text with max line limits, and a clear CTA. Insight Health provides AI phone agents that handle calls, scheduling, and routing so neurosurgeons can focus on surgery."
   },
   {
     "id": "a4_one_pager_healthcare",
@@ -27,7 +27,6 @@
   {
     "id": "intentional_repair_trigger",
     "artifact": "repair_trigger",
-    "prompt": "Create a compact ad with a long headline and CTA. The first pass should be checked carefully for clipping, overflow, and hierarchy problems."
+    "prompt": "Create a compact 900x900px ad with a deliberately long headline and CTA. Use wrap_text, max_lines, and auto-layout so the repair loop can catch or fix clipping, overflow, and hierarchy problems."
   }
 ]
-

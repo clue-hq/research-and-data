@@ -149,18 +149,6 @@ pub fn preflight_scene(
 
     let result = layout_scene(&scene, options.layout);
     extend_unique_diagnostics(&mut diagnostics, result.diagnostics.clone());
-    if has_errors(&result.diagnostics) {
-        layout_result = Some(result);
-        return PreflightResult {
-            scene,
-            diagnostics,
-            brand_report,
-            layout_result,
-            brand_ref_operations,
-            token_operations,
-            layout_operations,
-        };
-    }
 
     layout_operations = result
         .geometry
@@ -174,6 +162,10 @@ pub fn preflight_scene(
         })
         .collect();
 
+    // Layout diagnostics can include text-fit and slot-fit errors even when
+    // the solver produced useful geometry. Apply that geometry before
+    // returning so debug previews and repair agents inspect the computed
+    // layout, while `has_errors()` still blocks final acceptance.
     if !layout_operations.is_empty() {
         match scene.apply_operations_checked(layout_operations.clone()) {
             Ok(report) => extend_unique_diagnostics(&mut diagnostics, report.diagnostics),

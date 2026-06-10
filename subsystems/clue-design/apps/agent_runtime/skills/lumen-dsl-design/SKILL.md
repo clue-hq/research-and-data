@@ -87,6 +87,8 @@ instance | inst
 Use only supported properties:
 
 ```text
+page page_id size(width,height,px|mm|in)
+page page_id preset(a4|us_letter|linkedin_ad|envelope_dl,portrait|landscape)
 p(x,y)
 s(width,height)
 fill(paint)
@@ -94,7 +96,15 @@ f[(paint_id,paint),...]
 stroke(paint,width)
 st[(stroke_id,paint,w(width)),...]
 font("family",size,weight,align)
+font_size(size)
+font_weight(weight)
 style($type.token)
+lh(value)
+ls(value)
+tracking(value)
+max_lines(count)
+wrap_text(true|false)
+dir(ltr|rtl|auto)
 slot(key)
 meta(slot="key")
 asset(asset_id)
@@ -114,6 +124,12 @@ grow(value)
 to(x,y)
 name("display name")
 ```
+
+Prefer canonical `font(...)`, `lh(...)`, and `ls(...)` in new designs.
+`font_size(...)`, `font_weight(...)`, and `tracking(...)` are compatibility
+aliases for targeted repairs when a model has already drifted into common
+design-tool language. `tracking(200)` is interpreted as design-tool tracking,
+roughly `0.2em`, not `200px`.
 
 Supported dimensions:
 
@@ -222,13 +238,16 @@ hero fr p(24,24) s(480,220) fill(#ffffff) rd(16)
 Use `autolayout` / `al` when sibling spacing should be systematic:
 
 ```text
-stack al(v,g(16),pad(24),x(s)) p(24,24) s(480,hug) fill($surface.card) rd($radius.lg)
-  headline text "Pipeline-ready outreach" p(0,0) s(fill,hug) style($type.headline)
-  body text "A concise account-specific message." p(0,0) s(fill,hug) style($type.body)
+page linkedin_square size(1080,1080,px)
+  stack al(v,g(16),pad(24),x(s)) p(64,64) s(560,hug) fill($surface.card) rd($radius.lg)
+    headline text "Pipeline-ready outreach" p(0,0) s(fill,hug) style($type.headline) lh(1.08) wrap_text(true) max_lines(2)
+    body text "A concise account-specific message." p(0,0) s(fill,hug) style($type.body) lh(1.35) wrap_text(true) max_lines(3)
 ```
 
 Use `hug` for text height when content may vary. Use `fill` only when parent
-layout can resolve it. Keep text boxes wide enough for the actual copy.
+layout can resolve it. Keep text boxes wide enough for the actual copy. Use
+`x(sb)` for row distribution, `x(c),y(c)` for centered buttons, and
+`wrap_text(true)` for any text that could vary by account/contact.
 
 ## Directives
 
@@ -253,7 +272,6 @@ redo(...)
 ds(...)
 #target property...
 svg(icon:name)
-x(anchor) / y(anchor)
 solid(color,o(opacity))
 stroke cap/position tuple extras
 ```
@@ -271,6 +289,12 @@ The compiler uses cascade halt:
 - diagnostics use stable `LUMD...` codes
 - repair should continue from the failed line, not rewrite the entire design
   unless the design direction is wrong
+
+When repairing an existing scene, do not emit an existing `page ...` line again
+unless the coordinator explicitly asks for a full replacement. Do not reinsert
+existing node IDs as new elements. If diagnostics identify a target node, page,
+or slot, repair only that target or its immediate container and preserve
+unrelated nodes.
 
 When using `DslCompileSession`, preserve session context across repair blocks.
 Do not reset the session unless starting a new design or a structured operation

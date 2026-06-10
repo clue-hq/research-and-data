@@ -105,19 +105,48 @@ class LumenQualityLoop:
             compile_summary = compile_result.get("compile", {})
             iteration_record.compile_summary = CompileSummary.model_validate(compile_summary)
             if tool_has_blocking_failure(compile_summary):
+                target = first_diagnostic_target(compile_summary)
+                repair_intent = diagnostic_repair_intent(compile_summary)
+                recommendation = json.loads(
+                    self.tools.recommend_edit_surface(
+                        repair_intent,
+                        json.dumps(target),
+                    )
+                ).get("recommendation", "dsl")
                 context = CompileRepairContext(
                     reason="compile_failed",
                     compile_summary=iteration_record.compile_summary,
                     failing_source=source,
                     exact_feedback=json.dumps(compile_summary, indent=2),
                 )
-                feedback = {"kind": "compile", "feedback": context.model_dump(mode="json")}
-                self.previous_feedback.append(feedback)
-                self.tools.create_repair_request(
-                    exact_feedback=json.dumps(feedback, indent=2),
-                    diagnostics_json=json.dumps(compile_summary.get("diagnostics", [])),
-                    allowed_edit_surface="dsl",
+                feedback = {
+                    "kind": "compile",
+                    "feedback": context.model_dump(mode="json"),
+                    "target": target,
+                    "recommended_edit_surface": recommendation,
+                    "authoring_constraints": [
+                        "Do not recreate an existing page unless the coordinator explicitly requests a whole-scene replacement.",
+                        "Do not re-emit existing node IDs as new elements.",
+                        "Repair only the failing line or targeted existing object.",
+                    ],
+                }
+                repair_request = json.loads(
+                    self.tools.create_repair_request(
+                        exact_feedback=json.dumps(feedback, indent=2),
+                        diagnostics_json=json.dumps(compile_summary.get("diagnostics", [])),
+                        target_json=json.dumps(target),
+                        allowed_edit_surface=recommendation,
+                        forbidden_changes_json=json.dumps(
+                            [
+                                "do not recreate existing pages",
+                                "do not reinsert existing node IDs",
+                                "do not remove unrelated existing nodes",
+                            ]
+                        ),
+                    )
                 )
+                feedback["repair_request"] = repair_request.get("repair_request")
+                self.previous_feedback.append(feedback)
                 iteration_record.stop_reason = StopReason.compile_failed
                 continue
 
@@ -127,16 +156,56 @@ class LumenQualityLoop:
                 preflight_summary
             )
             if tool_has_blocking_failure(preflight_summary) or preflight_summary.get("has_errors"):
+                debug_preview = json.loads(
+                    self.tools.export_preview_bundle(
+                        debug_only=True,
+                        debug_reason="preflight_failed",
+                    )
+                )
+                debug_export_summary = debug_preview.get("reviewer", {})
+                if debug_export_summary:
+                    iteration_record.export_summary = ExportSummary.model_validate(
+                        debug_export_summary
+                    )
+                target = first_diagnostic_target(preflight_summary)
+                repair_intent = diagnostic_repair_intent(preflight_summary)
+                recommendation = json.loads(
+                    self.tools.recommend_edit_surface(
+                        repair_intent,
+                        json.dumps(target),
+                    )
+                ).get("recommendation", "dsl")
                 feedback = {
                     "kind": "preflight",
                     "feedback": preflight_summary,
+                    "debug_preview": debug_export_summary,
+                    "target": target,
+                    "recommended_edit_surface": recommendation,
+                    "authoring_constraints": [
+                        "Do not recreate an existing page unless full_replace is explicitly requested.",
+                        "Do not re-emit existing node IDs as new elements.",
+                        "Repair only the targeted node/page/slot when a target is present.",
+                        "If structured operations are unavailable in this authoring step, emit the smallest DSL continuation that avoids duplicate IDs.",
+                    ],
                 }
-                self.previous_feedback.append(feedback)
-                self.tools.create_repair_request(
-                    exact_feedback=json.dumps(feedback, indent=2),
-                    diagnostics_json=json.dumps(preflight_summary.get("diagnostics", [])),
-                    allowed_edit_surface="dsl",
+                repair_request = json.loads(
+                    self.tools.create_repair_request(
+                        exact_feedback=json.dumps(feedback, indent=2),
+                        diagnostics_json=json.dumps(preflight_summary.get("diagnostics", [])),
+                        target_json=json.dumps(target),
+                        allowed_edit_surface=recommendation,
+                        forbidden_changes_json=json.dumps(
+                            [
+                                "do not recreate existing pages",
+                                "do not reinsert existing node IDs",
+                                "do not remove unrelated existing nodes",
+                                "do not change page dimensions unless the diagnostic targets the page size",
+                            ]
+                        ),
+                    )
                 )
+                feedback["repair_request"] = repair_request.get("repair_request")
+                self.previous_feedback.append(feedback)
                 iteration_record.stop_reason = StopReason.preflight_failed
                 continue
 
@@ -316,3 +385,52 @@ def first_issue_target(critique: VisualCritique) -> dict:
         if issue.target is not None:
             return issue.target.model_dump(mode="json")
     return {}
+
+
+def first_diagnostic_target(summary: dict) -> dict:
+    diagnostics = summary.get("diagnostics", [])
+    ordered = [
+        *[
+            diagnostic
+            for diagnostic in diagnostics
+            if diagnostic.get("severity") in {"error", "blocker"}
+        ],
+        *[
+            diagnostic
+            for diagnostic in diagnostics
+            if diagnostic.get("severity") not in {"error", "blocker"}
+        ],
+    ]
+    for diagnostic in ordered:
+        target = {}
+        if diagnostic.get("target_page_id"):
+            target["page_id"] = diagnostic["target_page_id"]
+        if diagnostic.get("target_node_id"):
+            target["node_id"] = diagnostic["target_node_id"]
+        if diagnostic.get("target_slot_key"):
+            target["slot_key"] = diagnostic["target_slot_key"]
+        elif diagnostic.get("target_slot_id"):
+            target["slot_key"] = diagnostic["target_slot_id"]
+        if target:
+            return target
+    return {}
+
+
+def diagnostic_repair_intent(summary: dict) -> str:
+    diagnostics = summary.get("diagnostics", [])
+    if not diagnostics:
+        return "repair preflight errors"
+    parts = []
+    for diagnostic in diagnostics[:5]:
+        code = diagnostic.get("code") or "diagnostic"
+        target = (
+            diagnostic.get("target_node_id")
+            or diagnostic.get("target_page_id")
+            or diagnostic.get("target_slot_key")
+            or diagnostic.get("target_slot_id")
+            or "document"
+        )
+        message = diagnostic.get("message") or ""
+        repair = diagnostic.get("suggested_repair") or ""
+        parts.append(f"{code} on {target}: {message} {repair}".strip())
+    return "repair targeted preflight diagnostics: " + " | ".join(parts)

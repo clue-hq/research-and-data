@@ -218,6 +218,8 @@ class FakePreflightErrorOnceCoreClient(FakeCoreClient):
                         "severity": "error",
                         "code": "preflight.test",
                         "message": "simulated preflight error",
+                        "subject": {"kind": "node", "id": "headline"},
+                        "hint": "Use hug height or reduce the headline font size.",
                     }
                 ],
                 "preflight": {
@@ -572,6 +574,29 @@ def test_preview_bundle_stores_canonical_svg_and_png_critic_preview(
     assert (config.trace_dir / tools.run_id / "iterations" / "001" / "preview_bundle.json").exists()
 
 
+def test_debug_preview_bundle_writes_artifacts_without_exposing_critic_payload(
+    tmp_path: Path, monkeypatch
+):
+    monkeypatch.setattr("lumen_deepagent.tools.CoreClient", FakeCoreClient)
+    config = runtime_config(tmp_path)
+    tools = LumenDesignTools(config, "Create a square ad")
+    tools.compile_dsl_block("page page_test")
+
+    bundle = json.loads(
+        tools.export_preview_bundle(
+            debug_only=True,
+            debug_reason="preflight_failed",
+        )
+    )
+    critic_payload = json.loads(tools.get_latest_preview_for_critique())
+
+    assert bundle["debug_only"] is True
+    assert bundle["reviewer"]["status"] == "error"
+    assert Path(bundle["reviewer"]["artifacts"][0]["path"]).exists()
+    assert critic_payload["status"] == "error"
+    assert "no preview" in critic_payload["message"]
+
+
 def test_runtime_persists_critique_repair_and_gap_records(tmp_path: Path, monkeypatch):
     monkeypatch.setattr("lumen_deepagent.tools.CoreClient", FakeCoreClient)
     config = runtime_config(tmp_path)
@@ -736,6 +761,34 @@ def test_quality_loop_repairs_after_compile_failure(tmp_path: Path, monkeypatch)
     assert "repair_requested" in events
 
 
+def test_duplicate_page_repair_block_is_rejected_before_core_compile(
+    tmp_path: Path, monkeypatch
+):
+    monkeypatch.setattr("lumen_deepagent.tools.CoreClient", FakeCoreClient)
+    tools = LumenDesignTools(runtime_config(tmp_path), "Create a square LinkedIn ad")
+
+    first = json.loads(tools.compile_dsl_block("page page_test"))
+    assert first["compile"]["status"] == "ok"
+
+    second = json.loads(
+        tools.compile_dsl_block(
+            "page page_test size(1080,1080,px)\n  bg rect p(0,0) s(1080,1080)"
+        )
+    )
+
+    assert second["compile"]["status"] == "error"
+    assert second["compile"]["diagnostics"][0]["code"] == "LUMA0200"
+    assert second["compile"]["diagnostics"][0]["target_page_id"] == "page_test"
+    assert second["compile"]["halted_at"]["code"] == "LUMA0200"
+    events = [
+        json.loads(line)["event"]
+        for line in (tools.trace_dir / "trace.jsonl")
+        .read_text(encoding="utf-8")
+        .splitlines()
+    ]
+    assert "dsl_compile_rejected" in events
+
+
 def test_quality_loop_repairs_after_preflight_failure(tmp_path: Path, monkeypatch):
     monkeypatch.setattr("lumen_deepagent.tools.CoreClient", FakePreflightErrorOnceCoreClient)
     config = runtime_config(tmp_path, max_iterations=3)
@@ -750,6 +803,28 @@ def test_quality_loop_repairs_after_preflight_failure(tmp_path: Path, monkeypatc
     assert result["status"] == "accepted"
     assert len(author.requests) == 2
     assert author.requests[1].repair_context["kind"] == "preflight"
+    debug_bundle_path = config.trace_dir / tools.run_id / "iterations" / "001" / "preview_bundle.json"
+    assert debug_bundle_path.exists()
+    debug_bundle = json.loads(debug_bundle_path.read_text(encoding="utf-8"))
+    assert debug_bundle["debug_only"] is True
+    assert debug_bundle["reviewer"]["status"] == "error"
+    assert "preflight_failed" in debug_bundle["reviewer"]["validation_errors"]
+    assert Path(debug_bundle["reviewer"]["artifacts"][0]["path"]).exists()
+    repair_payload = json.loads(
+        (config.trace_dir / tools.run_id / "iterations" / "001" / "repair_request.json")
+        .read_text(encoding="utf-8")
+    )
+    assert repair_payload["repair_request"]["allowed_edit_surface"] == "structured_ops"
+    assert repair_payload["repair_request"]["target"]["node_id"] == "headline"
+    assert "do not recreate existing pages" in repair_payload["repair_request"]["forbidden_changes"]
+    assert len(reviewer.calls) == 1
+    events = [
+        json.loads(line)["event"]
+        for line in (config.trace_dir / tools.run_id / "trace.jsonl")
+        .read_text(encoding="utf-8")
+        .splitlines()
+    ]
+    assert "debug_preview_exported" in events
 
 
 def test_quality_loop_stops_before_reviewer_on_invalid_preview(tmp_path: Path, monkeypatch):

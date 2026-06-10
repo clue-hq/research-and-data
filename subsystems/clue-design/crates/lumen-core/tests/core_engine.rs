@@ -44,6 +44,7 @@ fn text_node(id: &str, content: &str) -> Node {
             font_weight: 600,
             align: TextAlign::Left,
             style_token: None,
+            ..TextNode::default()
         }),
     );
     node.size = SizeSpec::fixed(160.0, 28.0);

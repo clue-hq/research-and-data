@@ -14,7 +14,7 @@ fn tokenized_dsl() -> &'static str {
     r#"
 page page_a4
   hero autolayout(h) p(24,24) s(180,hug) fill($surface.brand) stroke($surface.brand,$stroke.width.firm) g($space.md) pad($space.md) rd($radius.md) o($opacity.subtle)
-    headline text "Plan" p(0,0) s(132,hug) style($type.headline)
+    headline text "Plan" p(0,0) s(132,44) style($type.headline)
   slot_text text "Plan" p(24,96) s(132,48) font("Inter",16,700,left) slot(campaign.headline)
 "#
 }
@@ -199,6 +199,50 @@ page page_a4
     let computed = badge.computed.as_ref().unwrap();
     assert_eq!(computed.layout_bounds.width, 24.0);
     assert_eq!(computed.layout_bounds.height, 12.0);
+}
+
+#[test]
+fn preflight_keeps_computed_geometry_when_text_validation_fails() {
+    let mut scene = Scene::new(
+        DocumentId::from("doc_text_fit_debug_preview"),
+        "Text Fit Debug Preview",
+    );
+    let compile_output = compile_dsl_into_scene(
+        r#"
+page linkedin_square size(1080,1080,px)
+  stack al(v,x(s),g(24),pad(0)) p(72,128) s(580,hug)
+    headline text "Spend less time on the phone and more time in the operating room." p(0,0) s(fill,36) font("Inter",52,700,left) lh(1.08) wrap_text(true) max_lines(2)
+    body text "Insight Health handles calls, scheduling, and patient routing for busy neurosurgery practices." p(0,0) s(fill,hug) font("Inter",18,400,left) lh(1.4) wrap_text(true) max_lines(4)
+"#,
+        &mut scene,
+    );
+
+    assert_no_dsl_errors(&compile_output.compile_output.diagnostics);
+    assert!(compile_output.operation_error.is_none());
+
+    let result = preflight_scene(scene, None, PreflightOptions::default());
+
+    assert!(result.has_errors());
+    assert!(result.diagnostics.iter().any(|diagnostic| {
+        diagnostic.code == "LUMV0903" && diagnostic.severity == DiagnosticSeverity::Error
+    }));
+    assert!(result.layout_result.is_some());
+    assert!(!result.layout_operations.is_empty());
+
+    let headline = result
+        .scene
+        .nodes
+        .get(&NodeId::from("headline"))
+        .and_then(|node| node.computed.as_ref())
+        .expect("headline should keep computed geometry for debug preview");
+    let body = result
+        .scene
+        .nodes
+        .get(&NodeId::from("body"))
+        .and_then(|node| node.computed.as_ref())
+        .expect("body should keep computed geometry for debug preview");
+
+    assert!(body.layout_bounds.y > headline.layout_bounds.y);
 }
 
 fn assert_no_dsl_errors(diagnostics: &[lumen_core::DslDiagnostic]) {

@@ -126,10 +126,19 @@ export interface TextNode {
   font_size: number;
   font_weight: number;
   align: TextAlign;
+  line_height?: number;
+  letter_spacing?: number;
+  max_lines?: number | null;
+  wrap?: TextWrap;
+  direction?: TextDirection;
   style_token?: string | null;
+  line_height_token?: string | null;
+  letter_spacing_token?: string | null;
 }
 
 export type TextAlign = "left" | "center" | "right" | "justify";
+export type TextWrap = "no_wrap" | "wrap";
+export type TextDirection = "ltr" | "rtl" | "auto";
 
 export interface ImageNode {
   asset_id: AssetId;
@@ -271,7 +280,11 @@ export interface AutoLayoutProps {
   padding: [number, number, number, number];
   padding_token?: string | null;
   grow: number;
+  align_x?: LayoutAnchor;
+  align_y?: LayoutAnchor;
 }
+
+export type LayoutAnchor = "start" | "center" | "end" | "space_between" | "stretch";
 
 export interface Transform {
   x: number;
@@ -575,6 +588,14 @@ export interface NodePatch {
   locked: FieldPatch<boolean>;
 }
 
+export interface PagePatch {
+  name: FieldPatch<string>;
+  size: FieldPatch<PageSize>;
+  bleed: OptionalFieldPatch<Rect>;
+  safe_area: OptionalFieldPatch<Rect>;
+  background: FieldPatch<Fill[]>;
+}
+
 export type ParentRef =
   | {
       kind: "page";
@@ -586,6 +607,11 @@ export type ParentRef =
     };
 
 export type Operation =
+  | {
+      kind: "update_page";
+      page_id: PageId;
+      patch: PagePatch;
+    }
   | {
       kind: "update_node";
       node_id: NodeId;

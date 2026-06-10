@@ -1,9 +1,9 @@
 use lumen_core::{
-    compile_dsl_into_scene, preflight_scene, AutoLayoutProps, BrandKit, Color, ContentType,
-    DiagnosticSeverity, Dimension, DocumentId, ExportAdapter, ExportFormat, ExportProfile,
-    ExportPurpose, ExportRequest, Fill, Node, NodeId, NodeKind, Page, PageId, PagePreset, PageSize,
-    Paint, PaintId, PdfIntent, PreflightOptions, RasterScale, Rect, Scene, SizeSpec, Slot, SlotId,
-    SlotKey, Stroke, TextAlign, TextNode, Transform, Unit,
+    compile_dsl_into_scene, preflight_scene, AutoLayoutProps, BrandKit, Color, ComputedGeometry,
+    ContentType, DiagnosticSeverity, Dimension, DocumentId, ExportAdapter, ExportFormat,
+    ExportProfile, ExportPurpose, ExportRequest, Fill, Node, NodeId, NodeKind, Page, PageId,
+    PagePreset, PageSize, Paint, PaintId, PdfIntent, PreflightOptions, RasterScale, Rect, Scene,
+    SizeSpec, Slot, SlotId, SlotKey, Stroke, TextAlign, TextNode, Transform, Unit,
 };
 use lumen_export::LumenExportAdapter;
 use serde_json::Value;
@@ -81,6 +81,7 @@ fn text_node(id: &str, content: &str) -> Node {
             font_weight: 600,
             align: TextAlign::Left,
             style_token: None,
+            ..TextNode::default()
         }),
     );
     node.transform = Transform {
@@ -127,6 +128,66 @@ fn rect_node(id: &str) -> Node {
         width_token: None,
     }];
     node
+}
+
+fn square_px_page(id: &str, children: Vec<NodeId>) -> Page {
+    Page {
+        id: PageId::from(id),
+        name: "Square".to_owned(),
+        size: PageSize {
+            width: 100.0,
+            height: 100.0,
+            unit: Unit::Px,
+            preset: Some(PagePreset::Custom),
+            orientation: lumen_core::Orientation::Portrait,
+        },
+        children,
+        bleed: None,
+        safe_area: None,
+        background: vec![Fill {
+            id: PaintId::from("paint_page_bg"),
+            paint: Paint::Solid {
+                color: Color::Hex {
+                    value: "#ffffff".to_owned(),
+                },
+            },
+        }],
+    }
+}
+
+fn scene_with_computed_rect() -> Scene {
+    let mut scene = Scene::new(DocumentId::from("doc_computed_export"), "Computed Export");
+    scene.pages.insert(
+        PageId::from("page_square"),
+        square_px_page("page_square", vec![NodeId::from("node_computed_rect")]),
+    );
+
+    let mut node = Node::new(NodeId::from("node_computed_rect"), NodeKind::Rect);
+    node.size = SizeSpec::fixed(1.0, 1.0);
+    node.computed = Some(ComputedGeometry {
+        layout_bounds: Rect {
+            x: 20.0,
+            y: 30.0,
+            width: 10.0,
+            height: 10.0,
+        },
+        render_bounds: Rect {
+            x: 20.0,
+            y: 30.0,
+            width: 10.0,
+            height: 10.0,
+        },
+    });
+    node.fills = vec![Fill {
+        id: PaintId::from("paint_computed_rect"),
+        paint: Paint::Solid {
+            color: Color::Hex {
+                value: "#ff0000".to_owned(),
+            },
+        },
+    }];
+    scene.nodes.insert(node.id.clone(), node);
+    scene
 }
 
 fn scene_with_slot() -> Scene {
@@ -201,13 +262,106 @@ fn svg_export_renders_page_and_preserves_semantic_metadata() {
     assert!(svg.contains("data-lumen-page-id=\"page_a\""));
     assert!(svg.contains("data-lumen-node-id=\"node_name\""));
     assert!(svg.contains("data-lumen-slot-keys=\"contact.full_name\""));
-    assert!(svg.contains(">Dr. Priya Sharma</text>"));
+    assert!(svg.contains(">Dr. Priya Sharma</tspan></text>"));
     assert!(svg.contains("data-lumen-fill-id=\"paint_rect_fill\""));
 
     let sidecar = result.artifacts[0].sidecar_json.as_ref().unwrap();
     assert!(sidecar.contains("\"document_id\": \"doc_export\""));
     assert!(sidecar.contains("\"slot_key\": \"contact.full_name\""));
     assert!(sidecar.contains("\"node_id\": \"node_name\""));
+}
+
+#[test]
+fn multiline_svg_text_uses_measured_line_boxes() {
+    let adapter = LumenExportAdapter::new();
+    let mut scene = Scene::new(DocumentId::from("doc_text_export"), "Text Export");
+    let compile_output = compile_dsl_into_scene(
+        r#"
+page page_square size(360,360,px)
+  headline text "AI phone agents help neurosurgeons focus on surgery" p(24,24) s(140,120) font("Inter",20,700,left) wrap_text(true) lh(1.1)
+"#,
+        &mut scene,
+    );
+
+    assert!(compile_output.operation_error.is_none());
+
+    let result = adapter
+        .export(
+            &scene,
+            &request(ExportFormat::Svg, vec![PageId::from("page_square")]),
+        )
+        .unwrap();
+    let svg = std::str::from_utf8(&result.artifacts[0].bytes).unwrap();
+
+    assert!(svg.matches("<tspan").count() > 1, "{svg}");
+    assert!(svg.contains("letter-spacing=\"0\""));
+}
+
+#[test]
+fn svg_export_honors_custom_square_page_size() {
+    let adapter = LumenExportAdapter::new();
+    let mut scene = Scene::new(DocumentId::from("doc_square_export"), "Square Export");
+    let compile_output = compile_dsl_into_scene(
+        r##"
+page page_square size(1080,1080,px)
+  bg rect p(0,0) s(1080,1080) fill(#0f172a)
+"##,
+        &mut scene,
+    );
+
+    assert!(compile_output.operation_error.is_none());
+    assert!(compile_output
+        .compile_output
+        .diagnostics
+        .iter()
+        .all(|diagnostic| diagnostic.diagnostic.severity != DiagnosticSeverity::Error));
+
+    let result = adapter
+        .export(
+            &scene,
+            &request(ExportFormat::Svg, vec![PageId::from("page_square")]),
+        )
+        .unwrap();
+    let svg = std::str::from_utf8(&result.artifacts[0].bytes).unwrap();
+
+    assert!(svg.contains("width=\"1080\""));
+    assert!(svg.contains("height=\"1080\""));
+    assert!(svg.contains("viewBox=\"0 0 1080 1080\""));
+}
+
+#[test]
+fn svg_export_uses_computed_xy_for_layouted_children() {
+    let adapter = LumenExportAdapter::new();
+    let mut scene = scene_with_slot();
+    let node = scene.nodes.get_mut(&NodeId::from("node_badge")).unwrap();
+    node.transform.x = 0.0;
+    node.transform.y = 0.0;
+    node.computed = Some(ComputedGeometry {
+        layout_bounds: Rect {
+            x: 200.0,
+            y: 40.0,
+            width: 80.0,
+            height: 32.0,
+        },
+        render_bounds: Rect {
+            x: 200.0,
+            y: 40.0,
+            width: 80.0,
+            height: 32.0,
+        },
+    });
+
+    let result = adapter
+        .export(
+            &scene,
+            &request(ExportFormat::Svg, vec![PageId::from("page_a")]),
+        )
+        .unwrap();
+    let svg = std::str::from_utf8(&result.artifacts[0].bytes).unwrap();
+
+    assert!(svg.contains("data-lumen-node-id=\"node_badge\""));
+    assert!(svg.contains("width=\"80\" height=\"32\""));
+    assert!(svg.contains("transform=\"translate(200 40)\""));
 }
 
 #[test]
@@ -221,7 +375,7 @@ fn golden_dsl_brand_slot_layout_exports_svg_preview() {
         r#"
 page page_a4
   hero autolayout(h) p(24,24) s(180,hug) fill($surface.brand) stroke($surface.brand,$stroke.width.firm) g($space.md) pad($space.md) rd($radius.md) o($opacity.subtle)
-    headline text "Plan" p(0,0) s(132,hug) style($type.headline)
+    headline text "Plan" p(0,0) s(132,44) style($type.headline)
   slot_text text "Plan" p(24,96) s(132,48) font("Inter",16,700,left) slot(campaign.headline)
 "#,
         &mut scene,
@@ -271,7 +425,7 @@ page page_a4
     assert!(svg.contains("data-lumen-slot-keys=\"campaign.headline\""));
     assert!(svg.contains("#004D5A"));
     assert!(svg.contains("#FFFFFF"));
-    assert!(svg.contains(">Plan</text>"));
+    assert!(svg.contains(">Plan</tspan></text>"));
 }
 
 #[test]
@@ -394,6 +548,7 @@ fn svg_export_warns_on_all_unresolved_brand_token_carriers() {
         padding: [0.0; 4],
         padding_token: Some("space.padding".to_owned()),
         grow: 0.0,
+        ..AutoLayoutProps::default()
     });
 
     let name = scene.nodes.get_mut(&NodeId::from("node_name")).unwrap();
@@ -457,6 +612,77 @@ fn png_export_returns_png_artifacts_for_required_preview_path() {
 }
 
 #[test]
+fn png_export_uses_computed_xy_for_layouted_nodes() {
+    let adapter = LumenExportAdapter::new();
+    let scene = scene_with_computed_rect();
+    let result = adapter
+        .export(&scene, &png_request(vec![PageId::from("page_square")]))
+        .unwrap();
+
+    let rgba = decode_png_rgba(&result.artifacts[0].bytes);
+    assert_eq!(rgba.width, 100);
+    assert_eq!(rgba.height, 100);
+    assert_eq!(rgba.pixel(25, 35), [255, 0, 0, 255]);
+    assert_eq!(rgba.pixel(5, 5), [255, 255, 255, 255]);
+}
+
+#[test]
+fn png_export_rasterizes_text_nodes_from_svg_baseline() {
+    let adapter = LumenExportAdapter::new();
+    let mut scene = Scene::new(DocumentId::from("doc_png_text"), "PNG Text");
+    scene.pages.insert(
+        PageId::from("page_square"),
+        square_px_page("page_square", vec![NodeId::from("node_text")]),
+    );
+
+    let mut node = text_node("node_text", "Readable PNG text");
+    node.transform = Transform {
+        x: 12.0,
+        y: 24.0,
+        ..Transform::default()
+    };
+    node.size = SizeSpec::fixed(180.0, 48.0);
+    if let NodeKind::Text(text) = &mut node.kind {
+        text.font_family = "Arial".to_owned();
+        text.font_size = 20.0;
+        text.line_height = 1.1;
+        text.wrap = lumen_core::TextWrap::NoWrap;
+    }
+    node.fills = vec![Fill {
+        id: PaintId::from("paint_text_dark"),
+        paint: Paint::Solid {
+            color: Color::Hex {
+                value: "#111827".to_owned(),
+            },
+        },
+    }];
+    scene.nodes.insert(NodeId::from("node_text"), node);
+
+    let result = adapter
+        .export(&scene, &png_request(vec![PageId::from("page_square")]))
+        .unwrap();
+
+    let rgba = decode_png_rgba(&result.artifacts[0].bytes);
+    let dark_pixels = rgba
+        .rgba
+        .chunks_exact(4)
+        .filter(|pixel| pixel[3] > 0 && pixel[0] < 120 && pixel[1] < 140 && pixel[2] < 160)
+        .count();
+
+    assert!(
+        dark_pixels > 20,
+        "PNG raster output should contain rendered text pixels, found {dark_pixels}"
+    );
+    assert!(
+        result
+            .diagnostics
+            .iter()
+            .all(|diagnostic| diagnostic.code != "LUME0304"),
+        "text nodes should not be reported as unsupported by PNG export"
+    );
+}
+
+#[test]
 fn early_pdf_export_returns_pdf_artifact_and_font_diagnostics() {
     let adapter = LumenExportAdapter::new();
     let scene = scene_with_slot();
@@ -479,6 +705,21 @@ fn early_pdf_export_returns_pdf_artifact_and_font_diagnostics() {
         .diagnostics
         .iter()
         .any(|diagnostic| diagnostic.code == "LUME0402"));
+}
+
+#[test]
+fn early_pdf_export_uses_computed_xy_for_layouted_nodes() {
+    let adapter = LumenExportAdapter::new();
+    let scene = scene_with_computed_rect();
+    let result = adapter
+        .export(
+            &scene,
+            &request(ExportFormat::Pdf, vec![PageId::from("page_square")]),
+        )
+        .unwrap();
+
+    let pdf = std::str::from_utf8(&result.artifacts[0].bytes).unwrap();
+    assert!(pdf.contains("20 60 10 10 re f\n"), "{pdf}");
 }
 
 #[test]
@@ -524,6 +765,37 @@ fn early_pdf_export_preserves_text_fill_color() {
 
     let pdf = std::str::from_utf8(&result.artifacts[0].bytes).unwrap();
     assert!(pdf.contains("0.0706 0.2039 0.3373 rg\nBT /F1"));
+}
+
+#[test]
+fn early_pdf_export_uses_measured_text_lines() {
+    let adapter = LumenExportAdapter::new();
+    let mut scene = Scene::new(DocumentId::from("doc_pdf_text"), "PDF Text");
+    scene.pages.insert(
+        PageId::from("page_square"),
+        square_px_page("page_square", vec![NodeId::from("node_text")]),
+    );
+    let mut node = text_node(
+        "node_text",
+        "AI phone agents help neurosurgeons focus on surgery",
+    );
+    node.size = SizeSpec::fixed(110.0, 120.0);
+    if let NodeKind::Text(text) = &mut node.kind {
+        text.font_size = 20.0;
+        text.line_height = 1.1;
+        text.wrap = lumen_core::TextWrap::Wrap;
+    }
+    scene.nodes.insert(NodeId::from("node_text"), node);
+
+    let result = adapter
+        .export(
+            &scene,
+            &request(ExportFormat::Pdf, vec![PageId::from("page_square")]),
+        )
+        .unwrap();
+
+    let pdf = std::str::from_utf8(&result.artifacts[0].bytes).unwrap();
+    assert!(pdf.matches(" Tj\n").count() > 1, "{pdf}");
 }
 
 #[test]
@@ -614,4 +886,32 @@ fn per_page_sidecar_filters_slots_to_exported_nodes() {
         .as_ref()
         .unwrap()
         .contains("contact.page_b_full_name"));
+}
+
+struct DecodedPng {
+    width: u32,
+    height: u32,
+    rgba: Vec<u8>,
+}
+
+impl DecodedPng {
+    fn pixel(&self, x: u32, y: u32) -> [u8; 4] {
+        let index = ((y * self.width + x) * 4) as usize;
+        [
+            self.rgba[index],
+            self.rgba[index + 1],
+            self.rgba[index + 2],
+            self.rgba[index + 3],
+        ]
+    }
+}
+
+fn decode_png_rgba(bytes: &[u8]) -> DecodedPng {
+    assert_eq!(&bytes[..8], b"\x89PNG\r\n\x1a\n");
+    let pixmap = resvg::tiny_skia::Pixmap::decode_png(bytes).expect("PNG decodes");
+    DecodedPng {
+        width: pixmap.width(),
+        height: pixmap.height(),
+        rgba: pixmap.data().to_vec(),
+    }
 }

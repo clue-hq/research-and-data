@@ -45,6 +45,7 @@ fn text_node(id: &str, content: &str) -> Node {
             font_weight: 600,
             align: TextAlign::Left,
             style_token: None,
+            ..TextNode::default()
         }),
     );
     node.size = SizeSpec::fixed(160.0, 28.0);
@@ -119,6 +120,18 @@ fn minimal_scene_fixture_is_valid_contract_json() {
 }
 
 #[test]
+fn validation_rejects_invalid_page_dimensions() {
+    let mut scene = Scene::new(DocumentId::from("doc_bad_page"), "Bad Page");
+    let mut page = a4_page();
+    page.size.width = 0.0;
+    page.size.height = f64::INFINITY;
+    scene.apply_operation(Operation::AddPage { page }).unwrap();
+
+    let diagnostics = validate_scene(&scene);
+    assert!(diagnostics.iter().any(|diag| diag.code == "LUMV0120"));
+}
+
+#[test]
 fn inserts_node_and_binds_slot() {
     let scene = valid_scene_with_text_slot();
     let diagnostics = validate_scene(&scene);
@@ -155,6 +168,7 @@ fn update_operations_keep_edits_in_operation_log() {
                     font_weight: 600,
                     align: TextAlign::Left,
                     style_token: None,
+                    ..TextNode::default()
                 })),
                 ..NodePatch::default()
             },

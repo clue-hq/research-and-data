@@ -301,7 +301,7 @@ For an auto-layout container:
 
 ## Taffy Style Mapping
 
-The current style mapping is deliberately conservative.
+The current style mapping is conservative but now includes Phase B alignment.
 
 Every node gets a Taffy `Style` with:
 
@@ -320,12 +320,17 @@ Auto-layout containers additionally get:
 - `padding.right = padding[1]`
 - `padding.top = padding[0]`
 - `padding.bottom = padding[2]`
-- `align_items = Start`
-- `align_content = Start`
-- `justify_content = Start`
+- row layout:
+  - `align_x` maps to main-axis `justify_content`
+  - `align_y` maps to cross-axis `align_items` / `align_content`
+- column layout:
+  - `align_y` maps to main-axis `justify_content`
+  - `align_x` maps to cross-axis `align_items` / `align_content`
 
-The engine intentionally starts with start alignment only. Center/end/space
-between behavior can be added later without changing the scene/slot contract.
+`start`, `center`, `end`, and `space_between` are valid main-axis anchors.
+`start`, `center`, `end`, and `stretch` are valid cross-axis anchors.
+Invalid axis combinations are reported as layout diagnostics and fall back to a
+safe value for measurement.
 
 ## Dimension Mapping
 
@@ -441,20 +446,22 @@ When enabled, the Taffy style uses:
 FlexWrap::Wrap
 ```
 
-The V1 engine delegates line formation to Taffy. There is no editor-level drag
-insertion or reorder behavior in this branch.
+The V1 engine delegates box layout to Taffy. Phase B adds editor operation
+helpers for reorder/move and basic undo, but polished drag insertion indicators
+remain editor follow-up work.
 
 ## Natural Size Heuristics
 
-V1 uses deterministic heuristics for natural size. These are good enough for
-layout tests and early slot-fit validation, but they are not a full text,
-image, vector, or PDF measurement engine.
+V1 uses a shared deterministic text-measurement adapter for natural size. These
+heuristics are good enough for layout tests, early slot-fit validation, and SVG
+preview line boxes, but they are not a full text, image, vector, or PDF
+measurement engine.
 
 Current natural-size behavior:
 
 | Node kind | Natural size |
 |---|---|
-| `Text` | estimated text width and one line-height |
+| `Text` | shared text measurement using content, font size, line height, letter spacing, wrap, and max lines |
 | `Image` | fixed size if present, otherwise zero |
 | `Line` | absolute `x2`, `y2` |
 | `Frame` / `Group` / `AutoLayout` with no children | fixed size if present, otherwise zero |
@@ -463,18 +470,12 @@ Current natural-size behavior:
 
 Text natural-size estimate:
 
-- whitespace character weight: `0.33`
-- ASCII uppercase character weight: `0.62`
-- other character weight: `0.52`
-- width: weighted character count multiplied by font size
-- line height: `font_size * 1.2`
-
-When Taffy asks for measured text size with a definite available width, the
-engine estimates wrapped height using:
-
-```text
-ceil(unwrapped_width / available_width) * line_height
-```
+- whitespace, punctuation, lowercase, uppercase, digit, and non-ASCII
+  characters have stable heuristic width weights.
+- line height comes from `TextNode.line_height`.
+- letter spacing is included in line width.
+- `wrap` and available width determine line formation.
+- `max_lines` truncates measured line boxes and records overflow.
 
 This is intentionally explicit and limited. It does not claim to solve shaping,
 font fallback, ligatures, hyphenation, bidi, non-Latin scripts, or real PDF
@@ -881,7 +882,6 @@ The following are explicit V1 boundaries:
 - no condition evaluation
 - no repeater cloning
 - no runtime visibility changes
-- no center/end/space-between alignment
 - no margins
 - no absolute positioning model beyond transformed-child exclusion/manual transforms
 - no component-instance expansion
@@ -895,15 +895,15 @@ The highest-priority next steps are:
 
 1. Promote `ShrinkFont` from feasibility diagnostics to applied layout
    operations when safe.
-2. Replace heuristic text measurement with a controlled text measurement
-   subsystem that can be shared by server export and browser/editor preview.
-3. Add better wrap and ellipsis behavior while preserving the existing
+2. Replace the Phase B heuristic text measurer with a font-aware backend while
+   preserving the current measurement adapter boundary.
+3. Add better ellipsis and hyphenation behavior while preserving the existing
    `OverflowPolicy` contract.
 4. Add explicit diagnostics for text slots bound to non-text nodes and image
    slots bound to non-image nodes.
 5. Define operational semantics for conditionals and repeaters before adding
    cloning, hiding, or reflow behavior.
-6. Add alignment controls if the scene contract grows explicit alignment fields.
+6. Add polished auto-layout drag insertion indicators and grouping-aware undo.
 7. Add asset metadata inputs for real image DPI/aspect validation.
 
 The important contract point is that the current slot policy model already

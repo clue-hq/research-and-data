@@ -9,6 +9,7 @@ describe("InspectorPanel", () => {
     render(
       React.createElement(InspectorPanel, {
         scene: minimalScene,
+        activePage: minimalScene.pages.page_a4,
         selectedNode: minimalScene.nodes.node_contact_name,
         selectedNodeId: "node_contact_name",
         onOperation: vi.fn()
@@ -24,6 +25,7 @@ describe("InspectorPanel", () => {
     render(
       React.createElement(InspectorPanel, {
         scene: minimalScene,
+        activePage: minimalScene.pages.page_a4,
         selectedNode: minimalScene.nodes.node_contact_name,
         selectedNodeId: "node_contact_name",
         onOperation

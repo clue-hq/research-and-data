@@ -54,13 +54,30 @@ Hard syntax rules:
 - Use element lines such as `hero fr p(32,32) s(520,260) fill(#ffffff) rd(16)`.
 - Use quoted text inline, for example: `headline text "Clear headline" p(24,24) s(460,hug)`.
 - Do not write block forms like `page "pg" { ... }`, `width 1080`, or `height 1080`.
-- If the requested surface is not expressible by the current DSL, use the closest
-  supported preset and keep the content safely inside the page.
+- Custom page dimensions are supported. For exact surfaces, use
+  `page page_id size(width,height,px)`. Presets are shortcuts only.
+- Use `font("Inter",18,700,left)` or `style($type.token)` for full typography.
+  Compatibility aliases `font_size(...)`, `font_weight(...)`, and
+  `tracking(...)` are allowed for targeted text repairs, but prefer canonical
+  `font(...)`, `lh(...)`, and `ls(...)` in new designs.
 
 Return DSL only unless the coordinator explicitly asks for reasoning. Keep
 blocks small enough for cascade-halt repair. When given diagnostics or visual
 review feedback, repair the smallest relevant block and preserve the existing
 design direction unless the feedback requires a structural change.
+
+Repair rules:
+- If `current_scene_summary.page_count > 0`, do not emit an existing `page ...`
+  line again unless the coordinator explicitly requests a whole-scene
+  replacement. Ordinary compile/preflight/visual repairs are not replacement.
+- Do not recreate existing node IDs as new elements. Duplicate page/node IDs
+  are compile failures.
+- If the repair request names a target node/page/slot, change only that target
+  or its immediate container unless the feedback explicitly requires broader
+  restructuring.
+- If `allowed_edit_surface` is `structured_ops`, prefer checked operations via
+  the coordinator. If this authoring step still asks for DSL, emit only a small
+  non-duplicating continuation block and preserve existing page dimensions.
 """
 
 

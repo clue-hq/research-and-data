@@ -1,9 +1,9 @@
 use crate::sidecar::build_sidecar;
-use crate::svg::{fmt_num, node_size, resolve_page_ids};
+use crate::svg::{fmt_num, resolve_page_ids};
 use lumen_core::{
-    Diagnostic, DiagnosticSubject, ExportAdapter, ExportArtifact, ExportError, ExportFormat,
-    ExportRequest, ExportResult, Node, NodeId, NodeKind, Page, Paint, Phase, Scene, TextAlign,
-    Unit,
+    measure_text, render_box_for_node, Diagnostic, DiagnosticSubject, ExportAdapter,
+    ExportArtifact, ExportError, ExportFormat, ExportRequest, ExportResult, Node, NodeId, NodeKind,
+    Page, Paint, Phase, Rect, Scene, TextAlign, TextMeasureInput, Unit,
 };
 
 #[derive(Clone, Debug, Default)]
@@ -104,12 +104,18 @@ impl<'a> PdfPageRenderer<'a> {
     fn render_page(&mut self) -> String {
         self.draw_page_background();
         for child_id in &self.page.children {
-            self.render_node(child_id, 0.0, 0.0);
+            self.render_node(child_id, 0.0, 0.0, None);
         }
         self.stream.clone()
     }
 
-    fn render_node(&mut self, node_id: &NodeId, parent_x: f64, parent_y: f64) {
+    fn render_node(
+        &mut self,
+        node_id: &NodeId,
+        parent_x: f64,
+        parent_y: f64,
+        parent_computed_origin: Option<(f64, f64)>,
+    ) {
         let Some(node) = self.scene.nodes.get(node_id) else {
             self.diagnostics.push(Diagnostic::error(
                 Phase::Export,
@@ -120,9 +126,21 @@ impl<'a> PdfPageRenderer<'a> {
             return;
         };
 
-        let x = parent_x + node.transform.x;
-        let y = parent_y + node.transform.y;
-        let (width, height) = node_size(node);
+        let render_box = render_box_for_node(node, parent_computed_origin);
+        let (x, y) = absolute_xy(
+            node,
+            parent_x,
+            parent_y,
+            render_box.x,
+            render_box.y,
+            parent_computed_origin,
+        );
+        let width = render_box.width;
+        let height = render_box.height;
+        let child_parent_origin = node
+            .computed
+            .as_ref()
+            .map(|computed| (computed.layout_bounds.x, computed.layout_bounds.y));
 
         if node.transform.rotation != 0.0
             || node.transform.skew_x != 0.0
@@ -147,7 +165,7 @@ impl<'a> PdfPageRenderer<'a> {
                     self.draw_rect(node, x, y, width, height);
                 }
                 for child_id in &node.children {
-                    self.render_node(child_id, x, y);
+                    self.render_node(child_id, x, y, child_parent_origin);
                 }
             }
             NodeKind::Rect => self.draw_rect(node, x, y, width, height),
@@ -175,18 +193,32 @@ impl<'a> PdfPageRenderer<'a> {
             }
             NodeKind::Text(text) => {
                 self.apply_text_fill(node);
-                let text_x = match text.align {
-                    TextAlign::Left | TextAlign::Justify => x,
-                    TextAlign::Center => x + (width / 2.0),
-                    TextAlign::Right => x + width,
-                };
+                let measured =
+                    measure_text(&TextMeasureInput::from_text_node(text).with_bounds(&Rect {
+                        x: 0.0,
+                        y: 0.0,
+                        width,
+                        height,
+                    }));
                 self.stream.push_str(&format!(
-                    "BT /F1 {} Tf {} {} Td ({}) Tj ET\n",
+                    "BT /F1 {} Tf {} Tc\n",
                     fmt_num(text.font_size * self.scale),
-                    fmt_num(text_x * self.scale),
-                    fmt_num(self.pdf_y(y + text.font_size)),
-                    escape_pdf_text(&text.content)
+                    fmt_num(text.letter_spacing * self.scale)
                 ));
+                for line in &measured.lines {
+                    let text_x = match text.align {
+                        TextAlign::Left | TextAlign::Justify => x,
+                        TextAlign::Center => x + ((width - line.width) / 2.0),
+                        TextAlign::Right => x + width - line.width,
+                    };
+                    self.stream.push_str(&format!(
+                        "1 0 0 1 {} {} Tm ({}) Tj\n",
+                        fmt_num(text_x * self.scale),
+                        fmt_num(self.pdf_y(y + line.baseline)),
+                        escape_pdf_text(&line.text)
+                    ));
+                }
+                self.stream.push_str("ET\n");
             }
             NodeKind::Vector(_) => self.warn_unsupported(node, "vector path"),
             NodeKind::Image(_) => self.warn_unsupported(node, "image"),
@@ -384,6 +416,21 @@ impl<'a> PdfPageRenderer<'a> {
     fn pdf_y(&self, y: f64) -> f64 {
         self.page_height - (y * self.scale)
     }
+}
+
+fn absolute_xy(
+    node: &Node,
+    parent_x: f64,
+    parent_y: f64,
+    local_x: f64,
+    local_y: f64,
+    parent_computed_origin: Option<(f64, f64)>,
+) -> (f64, f64) {
+    if node.computed.is_some() && parent_computed_origin.is_none() {
+        return (local_x, local_y);
+    }
+
+    (parent_x + local_x, parent_y + local_y)
 }
 
 struct PdfWriter {

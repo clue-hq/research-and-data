@@ -2,9 +2,11 @@ use crate::diagnostics::{Diagnostic, DiagnosticSeverity, DiagnosticSubject, Phas
 use crate::ids::{NodeId, PageId};
 use crate::operations::{NodePatch, Operation, OptionalFieldPatch};
 use crate::scene::{
-    AutoLayoutDirection, ComputedGeometry, Dimension, Node, NodeKind, Rect, Scene, SizeSpec,
+    AutoLayoutDirection, ComputedGeometry, Dimension, LayoutAnchor, Node, NodeKind, Rect, Scene,
+    SizeSpec, TextWrap,
 };
 use crate::slots::{ContentType, EmptyBehavior, ImagePolicy, OverflowPolicy, ReflowPolicy, Slot};
+use crate::text_measure::{measure_text, TextMeasureInput};
 use std::collections::{BTreeMap, BTreeSet};
 use taffy::geometry::{Rect as TaffyRect, Size as TaffySize};
 use taffy::prelude::{
@@ -36,6 +38,8 @@ pub struct LayoutResult {
 pub fn layout_scene(scene: &Scene, options: LayoutOptions) -> LayoutResult {
     let mut engine = LayoutEngine::new(scene);
     engine.layout_pages();
+    engine.validate_layout_anchors();
+    engine.validate_text_nodes();
 
     if options.validate_slots {
         engine.validate_slots();
@@ -432,9 +436,18 @@ impl<'a> LayoutEngine<'a> {
                 top: length(props.padding[0] as f32),
                 bottom: length(props.padding[2] as f32),
             };
-            style.align_items = Some(AlignItems::Start);
-            style.align_content = Some(AlignContent::Start);
-            style.justify_content = Some(JustifyContent::Start);
+            match auto.direction {
+                AutoLayoutDirection::Row => {
+                    style.justify_content = Some(main_axis_alignment(&props.align_x));
+                    style.align_items = Some(cross_axis_alignment(&props.align_y));
+                    style.align_content = Some(cross_axis_content_alignment(&props.align_y));
+                }
+                AutoLayoutDirection::Column => {
+                    style.justify_content = Some(main_axis_alignment(&props.align_y));
+                    style.align_items = Some(cross_axis_alignment(&props.align_x));
+                    style.align_content = Some(cross_axis_content_alignment(&props.align_x));
+                }
+            }
         }
 
         style
@@ -586,7 +599,13 @@ impl<'a> LayoutEngine<'a> {
 
     fn natural_size(&self, node: &Node) -> Size2 {
         match &node.kind {
-            NodeKind::Text(text) => estimate_text_size(&text.content, text.font_size, None),
+            NodeKind::Text(text) => {
+                let measured = measure_text(&TextMeasureInput::from_text_node(text));
+                Size2 {
+                    width: measured.width,
+                    height: measured.height,
+                }
+            }
             NodeKind::Image(_) => fixed_or_zero(&node.size),
             NodeKind::Line(line) => Size2 {
                 width: line.x2.abs(),
@@ -621,10 +640,7 @@ impl<'a> LayoutEngine<'a> {
 
     fn measure_context_for(&self, node: &Node) -> MeasureContext {
         match &node.kind {
-            NodeKind::Text(text) => MeasureContext::Text {
-                content: text.content.clone(),
-                font_size: text.font_size,
-            },
+            NodeKind::Text(text) => MeasureContext::Text(TextMeasureInput::from_text_node(text)),
             NodeKind::Image(_) => MeasureContext::Box {
                 natural: fixed_or_zero(&node.size),
             },
@@ -656,6 +672,100 @@ impl<'a> LayoutEngine<'a> {
             self.validate_slot_content(slot);
             self.validate_slot_policy_shape(slot);
             self.validate_slot_bounds(slot);
+        }
+    }
+
+    fn validate_layout_anchors(&mut self) {
+        let mut diagnostics = Vec::new();
+        for node in self.scene.nodes.values() {
+            let (NodeKind::AutoLayout(auto), Some(props)) = (&node.kind, node.layout.as_ref())
+            else {
+                continue;
+            };
+
+            match auto.direction {
+                AutoLayoutDirection::Row => {
+                    validate_main_anchor(&props.align_x, node, Axis::Horizontal, &mut diagnostics);
+                    validate_cross_anchor(&props.align_y, node, Axis::Vertical, &mut diagnostics);
+                }
+                AutoLayoutDirection::Column => {
+                    validate_main_anchor(&props.align_y, node, Axis::Vertical, &mut diagnostics);
+                    validate_cross_anchor(&props.align_x, node, Axis::Horizontal, &mut diagnostics);
+                }
+            }
+        }
+        self.diagnostics.extend(diagnostics);
+    }
+
+    fn validate_text_nodes(&mut self) {
+        for node in self.scene.nodes.values() {
+            let NodeKind::Text(text) = &node.kind else {
+                continue;
+            };
+            let Some(geometry) = self.geometry.get(&node.id) else {
+                continue;
+            };
+
+            if !text.font_size.is_finite()
+                || text.font_size <= 0.0
+                || !text.line_height.is_finite()
+                || text.line_height <= 0.0
+                || !text.letter_spacing.is_finite()
+            {
+                self.diagnostics.push(Diagnostic::error(
+                    Phase::Layout,
+                    "LUMV0900",
+                    format!("text node {} has invalid text metrics", node.id),
+                    Some(DiagnosticSubject::Node(node.id.clone())),
+                ));
+                continue;
+            }
+
+            if geometry.layout_bounds.width <= 0.0 || geometry.layout_bounds.height <= 0.0 {
+                self.diagnostics.push(Diagnostic::error(
+                    Phase::Layout,
+                    "LUMV0901",
+                    format!("text node {} has collapsed bounds", node.id),
+                    Some(DiagnosticSubject::Node(node.id.clone())),
+                ));
+                continue;
+            }
+
+            let measured = measure_text(
+                &TextMeasureInput::from_text_node(text).with_bounds(&geometry.layout_bounds),
+            );
+            if measured.exceeds_max_lines {
+                self.diagnostics.push(
+                    Diagnostic::error(
+                        Phase::Layout,
+                        "LUMV0904",
+                        format!("text node {} exceeds max_lines", node.id),
+                        Some(DiagnosticSubject::Node(node.id.clone())),
+                    )
+                    .with_hint("Increase max_lines, shorten the copy, or enlarge the text box."),
+                );
+            }
+            if measured.overflow_x && matches!(text.wrap, TextWrap::NoWrap) {
+                self.diagnostics.push(
+                    Diagnostic::error(
+                        Phase::Layout,
+                        "LUMV0902",
+                        format!("non-wrapping text node {} overflows horizontally", node.id),
+                        Some(DiagnosticSubject::Node(node.id.clone())),
+                    )
+                    .with_hint(
+                        "Use wrap(true), s(fill,hug), a smaller style, or a wider text box.",
+                    ),
+                );
+            }
+            if measured.overflow_y {
+                self.diagnostics.push(Diagnostic::error(
+                    Phase::Layout,
+                    "LUMV0903",
+                    format!("text node {} exceeds available height", node.id),
+                    Some(DiagnosticSubject::Node(node.id.clone())),
+                ).with_hint("Use hug height, increase the fixed height, reduce copy, or lower the font size."));
+            }
         }
     }
 
@@ -1032,6 +1142,80 @@ impl Axis {
     }
 }
 
+fn main_axis_alignment(anchor: &LayoutAnchor) -> JustifyContent {
+    match anchor {
+        LayoutAnchor::Start | LayoutAnchor::Stretch => JustifyContent::Start,
+        LayoutAnchor::Center => JustifyContent::Center,
+        LayoutAnchor::End => JustifyContent::End,
+        LayoutAnchor::SpaceBetween => JustifyContent::SpaceBetween,
+    }
+}
+
+fn cross_axis_alignment(anchor: &LayoutAnchor) -> AlignItems {
+    match anchor {
+        LayoutAnchor::Start => AlignItems::Start,
+        LayoutAnchor::Center => AlignItems::Center,
+        LayoutAnchor::End => AlignItems::End,
+        LayoutAnchor::Stretch => AlignItems::Stretch,
+        LayoutAnchor::SpaceBetween => AlignItems::Start,
+    }
+}
+
+fn cross_axis_content_alignment(anchor: &LayoutAnchor) -> AlignContent {
+    match anchor {
+        LayoutAnchor::Start => AlignContent::Start,
+        LayoutAnchor::Center => AlignContent::Center,
+        LayoutAnchor::End => AlignContent::End,
+        LayoutAnchor::Stretch => AlignContent::Stretch,
+        LayoutAnchor::SpaceBetween => AlignContent::Start,
+    }
+}
+
+fn validate_main_anchor(
+    anchor: &LayoutAnchor,
+    node: &Node,
+    axis: Axis,
+    diagnostics: &mut Vec<Diagnostic>,
+) {
+    if matches!(anchor, LayoutAnchor::Stretch) {
+        diagnostics.push(invalid_anchor_diagnostic(
+            node,
+            axis,
+            "stretch is a cross-axis alignment and cannot be used on the main axis",
+        ));
+    }
+}
+
+fn validate_cross_anchor(
+    anchor: &LayoutAnchor,
+    node: &Node,
+    axis: Axis,
+    diagnostics: &mut Vec<Diagnostic>,
+) {
+    if matches!(anchor, LayoutAnchor::SpaceBetween) {
+        diagnostics.push(invalid_anchor_diagnostic(
+            node,
+            axis,
+            "space-between is a main-axis alignment and cannot be used on the cross axis",
+        ));
+    }
+}
+
+fn invalid_anchor_diagnostic(node: &Node, axis: Axis, message: &str) -> Diagnostic {
+    Diagnostic::warning(
+        Phase::Layout,
+        "LUMV0710",
+        format!(
+            "auto-layout node {} has invalid {} anchor: {}",
+            node.id,
+            axis.label(),
+            message
+        ),
+        Some(DiagnosticSubject::Node(node.id.clone())),
+    )
+    .with_hint("Use x/y anchors that match the layout direction: space-between on the main axis, stretch on the cross axis.")
+}
+
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 struct Point2 {
     x: f64,
@@ -1046,7 +1230,7 @@ struct Size2 {
 
 #[derive(Clone, Debug)]
 enum MeasureContext {
-    Text { content: String, font_size: f64 },
+    Text(TextMeasureInput),
     Box { natural: Size2 },
 }
 
@@ -1064,9 +1248,13 @@ fn measure_taffy_node(
     }
 
     let natural = match context {
-        Some(MeasureContext::Text { content, font_size }) => {
-            let available_width = available_width(available_space.width);
-            estimate_text_size(content, *font_size, available_width)
+        Some(MeasureContext::Text(input)) => {
+            input.max_width = available_width(available_space.width);
+            let measured = measure_text(input);
+            Size2 {
+                width: measured.width,
+                height: measured.height,
+            }
         }
         Some(MeasureContext::Box { natural }) => *natural,
         None => Size2::default(),
@@ -1100,41 +1288,6 @@ fn fixed_or_zero(size: &SizeSpec) -> Size2 {
             Dimension::Hug | Dimension::Fill { .. } | Dimension::Token { .. } => 0.0,
         },
     }
-}
-
-fn estimate_text_size(content: &str, font_size: f64, available_width: Option<f64>) -> Size2 {
-    let line_height = text_line_height(font_size);
-    let unwrapped_width = estimate_text_width(content, font_size);
-
-    if let Some(width) = available_width.filter(|width| *width > 0.0) {
-        let lines = (unwrapped_width / width).ceil().max(1.0);
-        Size2 {
-            width: unwrapped_width.min(width),
-            height: lines * line_height,
-        }
-    } else {
-        Size2 {
-            width: unwrapped_width,
-            height: line_height,
-        }
-    }
-}
-
-fn estimate_text_width(content: &str, font_size: f64) -> f64 {
-    let weighted_chars = content.chars().fold(0.0, |acc, ch| {
-        acc + if ch.is_whitespace() {
-            0.33
-        } else if ch.is_ascii_uppercase() {
-            0.62
-        } else {
-            0.52
-        }
-    });
-    weighted_chars * font_size
-}
-
-fn text_line_height(font_size: f64) -> f64 {
-    font_size * 1.2
 }
 
 fn is_out_of_flow_transform(node: &Node) -> bool {
@@ -1235,31 +1388,25 @@ struct TextFit {
 }
 
 fn text_fit(content: &str, font_size: f64, bounds: &Rect, policy: &OverflowPolicy) -> TextFit {
-    let line_height = text_line_height(font_size);
-    let available_lines = if line_height > 0.0 {
-        (bounds.height / line_height).floor().max(1.0) as u16
-    } else {
-        1
+    let (wrap, max_lines) = match policy {
+        OverflowPolicy::Wrap { max_lines } => (TextWrap::Wrap, *max_lines),
+        _ => (TextWrap::NoWrap, None),
     };
-    let unwrapped_width = estimate_text_width(content, font_size);
+    let measured = measure_text(&TextMeasureInput {
+        content: content.to_owned(),
+        font_size,
+        line_height: 1.2,
+        letter_spacing: 0.0,
+        wrap,
+        max_lines,
+        direction: crate::TextDirection::Ltr,
+        max_width: Some(bounds.width.max(0.0)),
+        max_height: Some(bounds.height.max(0.0)),
+    });
 
-    match policy {
-        OverflowPolicy::Wrap { max_lines } => {
-            let line_count = if bounds.width > 0.0 {
-                (unwrapped_width / bounds.width).ceil().max(1.0) as u16
-            } else {
-                u16::MAX
-            };
-            let allowed_lines = max_lines.unwrap_or(available_lines).min(available_lines);
-            TextFit {
-                fits: line_count <= allowed_lines,
-                line_count,
-            }
-        }
-        _ => TextFit {
-            fits: unwrapped_width <= bounds.width && line_height <= bounds.height,
-            line_count: 1,
-        },
+    TextFit {
+        fits: !measured.overflow_x && !measured.overflow_y && !measured.exceeds_max_lines,
+        line_count: measured.line_count,
     }
 }
 

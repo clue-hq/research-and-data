@@ -23,7 +23,8 @@ describe("EditorApp", () => {
 
     fireEvent.click(screen.getByText("Second Page"));
 
-    expect(screen.getByText("Select a node on the canvas.")).toBeInTheDocument();
+    expect(screen.getByText("Page")).toBeInTheDocument();
+    expect(screen.getByText(/Page dimensions are canonical scene data/)).toBeInTheDocument();
     expect(screen.getByTestId("canvas-selection")).toHaveAttribute("data-selected-node", "");
   });
 });

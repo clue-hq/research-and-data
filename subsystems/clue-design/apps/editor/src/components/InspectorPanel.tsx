@@ -1,24 +1,74 @@
 "use client";
 
 import { Lock, Type, Unlock } from "lucide-react";
-import type { Node, NodeId, Operation, Scene, TextAlign, Transform } from "@/engine/contracts";
-import { nodePatch, set, updateNodeLocked, updateNodeSize, updateNodeTransform, updateTextNode } from "@/engine/operations";
+import type {
+  LayoutAnchor,
+  Node,
+  NodeId,
+  Operation,
+  Page,
+  Scene,
+  TextAlign,
+  TextDirection,
+  TextWrap,
+  Transform
+} from "@/engine/contracts";
+import {
+  defaultLayoutProps,
+  nodePatch,
+  set,
+  updateAutoLayoutAlignment,
+  updateNodeLayout,
+  updateNodeLocked,
+  updateNodeSize,
+  updateNodeTransform,
+  updatePageSize,
+  updateTextNode
+} from "@/engine/operations";
 import { dimensionToNumber, fixedSize } from "@/engine/renderAdapter";
 import { nodeDisplayName } from "@/engine/sceneQueries";
 import { SlotInspector } from "./SlotInspector";
 
 interface InspectorPanelProps {
   scene: Scene;
+  activePage: Page | null;
   selectedNode: Node | null;
   selectedNodeId: NodeId | null;
   onOperation: (operation: Operation) => void;
 }
 
-export function InspectorPanel({ scene, selectedNode, selectedNodeId, onOperation }: InspectorPanelProps) {
+export function InspectorPanel({ scene, activePage, selectedNode, selectedNodeId, onOperation }: InspectorPanelProps) {
   if (!selectedNode) {
     return (
       <section className="inspector-section">
-        <p className="muted">Select a node on the canvas.</p>
+        {activePage ? (
+          <>
+            <div className="section-heading">Page</div>
+            <label className="field">
+              <span>Name</span>
+              <input value={activePage.name} readOnly />
+            </label>
+            <div className="field-grid two">
+              <NumberField
+                label="W"
+                value={activePage.size.width}
+                min={1}
+                onCommit={(value) => onOperation(updatePageSize(activePage, customPageSize(activePage, { width: value })))}
+              />
+              <NumberField
+                label="H"
+                value={activePage.size.height}
+                min={1}
+                onCommit={(value) => onOperation(updatePageSize(activePage, customPageSize(activePage, { height: value })))}
+              />
+            </div>
+            <p className="muted contract-note">
+              Page dimensions are canonical scene data. Presets are shortcuts only; custom sizes export exactly as authored.
+            </p>
+          </>
+        ) : (
+          <p className="muted">Select a page or node on the canvas.</p>
+        )}
       </section>
     );
   }
@@ -86,6 +136,67 @@ export function InspectorPanel({ scene, selectedNode, selectedNodeId, onOperatio
         </p>
       </section>
 
+      {selectedNode.kind.kind === "auto_layout" || selectedNode.layout ? (
+        <section className="inspector-section">
+          <div className="section-heading">Auto Layout</div>
+          <div className="field-grid two">
+            <NumberField
+              label="Gap"
+              value={(selectedNode.layout ?? defaultLayoutProps()).gap}
+              min={0}
+              onCommit={(value) => {
+                const layout = selectedNode.layout ?? defaultLayoutProps();
+                onOperation(updateNodeLayout(selectedNode, { ...layout, gap: value }));
+              }}
+            />
+            <NumberField
+              label="Padding"
+              value={(selectedNode.layout ?? defaultLayoutProps()).padding[0]}
+              min={0}
+              onCommit={(value) => {
+                const layout = selectedNode.layout ?? defaultLayoutProps();
+                onOperation(updateNodeLayout(selectedNode, { ...layout, padding: [value, value, value, value] }));
+              }}
+            />
+            <label className="field">
+              <span>X</span>
+              <select
+                value={(selectedNode.layout ?? defaultLayoutProps()).align_x ?? "start"}
+                disabled={selectedNode.locked}
+                onChange={(event) => {
+                  const layout = selectedNode.layout ?? defaultLayoutProps();
+                  onOperation(updateAutoLayoutAlignment(selectedNode, event.target.value as LayoutAnchor, layout.align_y ?? "start"));
+                }}
+              >
+                {layoutAnchorOptions.map((anchor) => (
+                  <option key={anchor} value={anchor}>
+                    {anchorLabel(anchor)}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="field">
+              <span>Y</span>
+              <select
+                value={(selectedNode.layout ?? defaultLayoutProps()).align_y ?? "start"}
+                disabled={selectedNode.locked}
+                onChange={(event) => {
+                  const layout = selectedNode.layout ?? defaultLayoutProps();
+                  onOperation(updateAutoLayoutAlignment(selectedNode, layout.align_x ?? "start", event.target.value as LayoutAnchor));
+                }}
+              >
+                {layoutAnchorOptions.map((anchor) => (
+                  <option key={anchor} value={anchor}>
+                    {anchorLabel(anchor)}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+          <p className="muted contract-note">Alignment maps to core Taffy layout through AutoLayoutProps.</p>
+        </section>
+      ) : null}
+
       {selectedNode.kind.kind === "text" ? (
         <section className="inspector-section">
           <div className="section-heading">
@@ -143,6 +254,53 @@ export function InspectorPanel({ scene, selectedNode, selectedNodeId, onOperatio
                 <option value="justify">Justify</option>
               </select>
             </label>
+            <NumberField
+              label="Line Height"
+              value={selectedNode.kind.line_height ?? 1.2}
+              min={0.1}
+              step={0.05}
+              onCommit={(value) => onOperation(updateTextNode(selectedNode, { line_height: value }))}
+            />
+            <NumberField
+              label="Letter Spacing"
+              value={selectedNode.kind.letter_spacing ?? 0}
+              step={0.25}
+              onCommit={(value) => onOperation(updateTextNode(selectedNode, { letter_spacing: value }))}
+            />
+            <NumberField
+              label="Max Lines"
+              value={selectedNode.kind.max_lines ?? 0}
+              min={0}
+              step={1}
+              onCommit={(value) =>
+                onOperation(updateTextNode(selectedNode, { max_lines: value > 0 ? Math.round(value) : null }))
+              }
+            />
+            <label className="field">
+              <span>Wrap</span>
+              <select
+                value={selectedNode.kind.wrap ?? "wrap"}
+                disabled={selectedNode.locked}
+                onChange={(event) => onOperation(updateTextNode(selectedNode, { wrap: event.target.value as TextWrap }))}
+              >
+                <option value="wrap">Wrap</option>
+                <option value="no_wrap">No wrap</option>
+              </select>
+            </label>
+            <label className="field">
+              <span>Direction</span>
+              <select
+                value={selectedNode.kind.direction ?? "ltr"}
+                disabled={selectedNode.locked}
+                onChange={(event) =>
+                  onOperation(updateTextNode(selectedNode, { direction: event.target.value as TextDirection }))
+                }
+              >
+                <option value="ltr">LTR</option>
+                <option value="rtl">RTL</option>
+                <option value="auto">Auto</option>
+              </select>
+            </label>
           </div>
         </section>
       ) : null}
@@ -150,6 +308,35 @@ export function InspectorPanel({ scene, selectedNode, selectedNodeId, onOperatio
       <SlotInspector scene={scene} selectedNode={selectedNode} selectedNodeId={selectedNodeId} onOperation={onOperation} />
     </>
   );
+}
+
+const layoutAnchorOptions: LayoutAnchor[] = ["start", "center", "end", "space_between", "stretch"];
+
+function anchorLabel(anchor: LayoutAnchor): string {
+  switch (anchor) {
+    case "space_between":
+      return "Space between";
+    case "start":
+      return "Start";
+    case "center":
+      return "Center";
+    case "end":
+      return "End";
+    case "stretch":
+      return "Stretch";
+  }
+}
+
+function customPageSize(page: Page, patch: Partial<Pick<Page["size"], "width" | "height">>): Page["size"] {
+  const width = patch.width ?? page.size.width;
+  const height = patch.height ?? page.size.height;
+  return {
+    ...page.size,
+    width,
+    height,
+    preset: "custom",
+    orientation: width >= height ? "landscape" : "portrait"
+  };
 }
 
 function NumberField({

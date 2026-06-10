@@ -13,9 +13,11 @@ pub mod layout;
 pub mod operations;
 pub mod preflight;
 pub mod render_contract;
+pub mod render_geometry;
 pub mod scene;
 pub mod slots;
 pub mod snapshot;
+pub mod text_measure;
 pub mod validation;
 
 pub use assets::{
@@ -63,11 +65,12 @@ pub use preflight::{preflight_scene, PreflightOptions, PreflightResult};
 pub use render_contract::{
     RenderIntent, RenderManifest, RenderTarget, RendererAdapter, RendererError,
 };
+pub use render_geometry::{node_render_size, render_box_for_node, RenderBox};
 pub use scene::{
     AutoLayoutDirection, AutoLayoutNode, AutoLayoutProps, BrandKitRef, Color, ComputedGeometry,
-    CornerRadii, Dimension, DocumentMeta, DocumentStatus, Fill, ImageNode, LineNode, Medium, Node,
-    NodeKind, Orientation, Page, PagePreset, PageSize, Paint, ParentRef, Rect, Scene, SizeSpec,
-    Stroke, TextAlign, TextNode, Transform, Unit, VectorNode,
+    CornerRadii, Dimension, DocumentMeta, DocumentStatus, Fill, ImageNode, LayoutAnchor, LineNode,
+    Medium, Node, NodeKind, Orientation, Page, PagePreset, PageSize, Paint, ParentRef, Rect, Scene,
+    SizeSpec, Stroke, TextAlign, TextDirection, TextNode, TextWrap, Transform, Unit, VectorNode,
 };
 pub use slots::{
     BindingHint, Cardinality, ConditionalRule, ContentType, Editability, EmptyBehavior, FocalPoint,
@@ -75,5 +78,9 @@ pub use slots::{
     Slot, SlotScope, ValidationFixtures,
 };
 pub use snapshot::{SnapshotError, SnapshotResult};
+pub use text_measure::{
+    estimate_text_width, line_height_px, measure_text, HeuristicTextMeasurer, TextLineBox,
+    TextMeasureInput, TextMeasureOutput, TextMeasurer,
+};
 
 pub const SCHEMA_VERSION: u32 = 1;

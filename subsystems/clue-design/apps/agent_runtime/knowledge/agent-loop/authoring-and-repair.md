@@ -21,6 +21,16 @@ The coordinator must run a controlled loop:
 All scene changes must flow through DSL compilation or checked core operations.
 No Python-side direct scene mutation is allowed.
 
+Preflight and visual diagnostics with explicit node/page/slot targets should
+be treated as targeted repairs. Prefer checked structured operations for exact
+node/page changes. If a DSL repair is used, it must not recreate an existing
+page or reinsert existing node IDs. Duplicate page/node IDs are a repair
+failure, not a successful revision.
+
+Debug previews may be exported from scenes that still have preflight errors.
+Those previews are for inspection only. They must show computed layout geometry
+when the layout solver produced it, but they do not satisfy final acceptance.
+
 ## Recognized But Not Lowered
 
 The runtime can recommend edit surfaces, but the mature DSL-vs-ops policy
@@ -35,4 +45,3 @@ Future agent-loop work should add:
 - automatic gap triage
 - user approval checkpoints
 - API-persisted run traces
-

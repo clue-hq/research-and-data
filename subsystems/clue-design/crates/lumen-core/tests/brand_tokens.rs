@@ -308,6 +308,7 @@ fn strict_mode_rejects_bare_tokenizable_styles() {
             font_weight: 400,
             align: TextAlign::Left,
             style_token: None,
+            ..TextNode::default()
         }),
     );
     scene
@@ -465,6 +466,7 @@ fn tokenized_scene(brand_kit: &BrandKit) -> Scene {
         padding: [0.0; 4],
         padding_token: Some("space.sm".to_owned()),
         grow: 0.0,
+        ..lumen_core::AutoLayoutProps::default()
     });
     scene.nodes.insert(card.id.clone(), card);
 
@@ -477,6 +479,7 @@ fn tokenized_scene(brand_kit: &BrandKit) -> Scene {
             font_weight: 400,
             align: TextAlign::Left,
             style_token: Some("type.headline".to_owned()),
+            ..TextNode::default()
         }),
     );
     headline.size = SizeSpec::fixed(240.0, 48.0);
