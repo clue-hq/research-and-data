@@ -967,6 +967,9 @@ Acceptance:
 - A scene using raw colors in strict brand mode gets actionable diagnostics.
 - A scene using unknown or removed tokens fails compatibility checks.
 - A logo placed on a disallowed background gets a diagnostic where detectable.
+- Text placed on a tokenized Brand Kit surface gets a contrast diagnostic when
+  the resolved foreground/background ratio is below the Brand Kit requirement
+  or the default text AA threshold.
 - Diagnostics include suggested repairs or token alternatives.
 
 ### C6. Agent Knowledge And Brand-Aware Loop Integration
@@ -1884,6 +1887,9 @@ implements the first production-facing Brand Kit foundation:
 - logo minimum-size governance that detects Brand Kit logo variants rendered
   below their configured `min_size`, using computed geometry when available and
   fixed node dimensions otherwise;
+- tokenized text/surface contrast governance that emits `LUMB0807` for text
+  fills whose resolved contrast against the nearest Brand Kit background token
+  is below the Brand Kit contrast-pair requirement or the default AA threshold;
 - print/direct-mail governance that flags low-opacity node transparency,
   including opacity-token-driven transparency, as `LUMB0811` before print/PDF
   acceptance;

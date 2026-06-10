@@ -1797,6 +1797,15 @@ pub fn validate_scene_brand_governance(
                     )),
                 );
             }
+            validate_text_contrast_for_governance(
+                scene,
+                brand_kit,
+                node,
+                text,
+                severity_is_error,
+                subject.clone(),
+                &mut diagnostics,
+            );
         }
         if let NodeKind::Image(image) = &node.kind {
             if let Some((logo_id, logo)) = logo_for_asset(brand_kit, &image.asset_id) {
@@ -1833,7 +1842,7 @@ pub fn validate_scene_brand_governance(
                         diagnostics.push(
                             brand_governance_diag(
                                 severity_is_error,
-                                "LUMB0807",
+                                "LUMB0810",
                                 format!(
                                     "node {} places logo {} on disallowed Brand Kit background {}",
                                     node.id, logo_id, background
@@ -4421,6 +4430,169 @@ fn logo_for_asset<'a>(
             .iter()
             .any(|variant| &variant.asset_id == asset_id)
     })
+}
+
+fn validate_text_contrast_for_governance(
+    scene: &Scene,
+    brand_kit: &BrandKit,
+    node: &Node,
+    text: &TextNode,
+    severity_is_error: bool,
+    subject: Option<DiagnosticSubject>,
+    diagnostics: &mut Vec<Diagnostic>,
+) {
+    let Some(background_token) = nearest_brand_background_token(scene, &node.id) else {
+        return;
+    };
+
+    let mut resolver = TokenResolver::new(brand_kit, token_options_for_governance(scene));
+    let foreground = text_foreground_color_for_governance(node, &mut resolver, subject.clone());
+    let background = resolver.resolve_color_ref(&background_token, subject.clone());
+    diagnostics.extend(resolver.diagnostics);
+
+    let Some((foreground_label, foreground_token, foreground_color)) = foreground else {
+        return;
+    };
+    let Some(background_color) = background else {
+        return;
+    };
+    let (Some(foreground_rgb), Some(background_rgb)) = (
+        color_to_rgb(&foreground_color),
+        color_to_rgb(&background_color),
+    ) else {
+        return;
+    };
+
+    let ratio = contrast_ratio(foreground_rgb, background_rgb);
+    let required_ratio = contrast_ratio_requirement(
+        brand_kit,
+        foreground_token.as_deref(),
+        &background_token,
+        text,
+    );
+    if ratio < required_ratio {
+        diagnostics.push(
+            brand_governance_diag(
+                severity_is_error,
+                "LUMB0807",
+                format!(
+                    "node {} text contrast {} on ${} is {:.2}, below required {:.2}",
+                    node.id, foreground_label, background_token, ratio, required_ratio
+                ),
+                subject,
+            )
+            .with_hint(format!(
+                "Use a Brand Kit text token with sufficient contrast on ${}, such as $text.primary or $text.inverse.",
+                background_token
+            )),
+        );
+    }
+}
+
+fn token_options_for_governance(scene: &Scene) -> TokenResolutionOptions {
+    let mut options = TokenResolutionOptions::default();
+    if let Some(medium) = &scene.meta.medium {
+        options.mode.values.insert(
+            "medium".to_owned(),
+            brand_medium_for_scene_medium_for_governance(medium).to_owned(),
+        );
+    }
+    options
+}
+
+fn brand_medium_for_scene_medium_for_governance(medium: &crate::scene::Medium) -> &'static str {
+    match medium {
+        crate::scene::Medium::Print | crate::scene::Medium::DirectMail => "print",
+        crate::scene::Medium::Digital | crate::scene::Medium::Email | crate::scene::Medium::Ad => {
+            "digital"
+        }
+    }
+}
+
+fn text_foreground_color_for_governance(
+    node: &Node,
+    resolver: &mut TokenResolver<'_>,
+    subject: Option<DiagnosticSubject>,
+) -> Option<(String, Option<String>, Color)> {
+    node.fills
+        .iter()
+        .find_map(|fill| paint_color_for_governance(&fill.paint, resolver, subject.clone()))
+}
+
+fn paint_color_for_governance(
+    paint: &Paint,
+    resolver: &mut TokenResolver<'_>,
+    subject: Option<DiagnosticSubject>,
+) -> Option<(String, Option<String>, Color)> {
+    match paint {
+        Paint::Token { token } => {
+            let color = resolver.resolve_color_ref(token, subject)?;
+            Some((
+                format!("${}", token.trim_start_matches('$')),
+                Some(token.clone()),
+                color,
+            ))
+        }
+        Paint::Solid { color } => color_for_governance(color, resolver, subject),
+        Paint::LinearGradient { .. } | Paint::RadialGradient { .. } => None,
+    }
+}
+
+fn color_for_governance(
+    color: &Color,
+    resolver: &mut TokenResolver<'_>,
+    subject: Option<DiagnosticSubject>,
+) -> Option<(String, Option<String>, Color)> {
+    match color {
+        Color::Token { token } => {
+            let color = resolver.resolve_color_ref(token, subject)?;
+            Some((
+                format!("${}", token.trim_start_matches('$')),
+                Some(token.clone()),
+                color,
+            ))
+        }
+        Color::Hex { value } => Some((value.clone(), None, color.clone())),
+        Color::Oklch { .. } => Some(("oklch(...)".to_owned(), None, color.clone())),
+    }
+}
+
+fn contrast_ratio_requirement(
+    brand_kit: &BrandKit,
+    foreground_token: Option<&str>,
+    background_token: &str,
+    text: &TextNode,
+) -> f64 {
+    let default_ratio = if text_is_large_scale(text) { 3.0 } else { 4.5 };
+    let Some(foreground_token) = foreground_token else {
+        return default_ratio;
+    };
+    let Ok(foreground) = normalize_token_path(foreground_token) else {
+        return default_ratio;
+    };
+    let Ok(background) = normalize_token_path(background_token) else {
+        return default_ratio;
+    };
+
+    brand_kit
+        .constraints
+        .contrast_pairs
+        .iter()
+        .find_map(|pair| {
+            let pair_foreground = normalize_token_path(&pair.foreground).ok()?;
+            let pair_background = normalize_token_path(&pair.background).ok()?;
+            if pair_foreground == foreground && pair_background == background {
+                Some(pair.min_ratio)
+            } else {
+                None
+            }
+        })
+        .filter(|ratio| ratio.is_finite() && *ratio > 0.0)
+        .unwrap_or(default_ratio)
+}
+
+fn text_is_large_scale(text: &TextNode) -> bool {
+    text.font_size >= 24.0 || (text.font_size >= 18.66 && text.font_weight >= 700)
 }
 
 fn scene_is_print_medium(scene: &Scene) -> bool {

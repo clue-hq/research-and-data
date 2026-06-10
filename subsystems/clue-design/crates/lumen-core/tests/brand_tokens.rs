@@ -980,7 +980,7 @@ fn scene_brand_governance_flags_logo_on_disallowed_background() {
         validate_scene_brand_governance(&scene, &brand_kit, BrandGovernanceStrictness::Strict);
 
     assert!(diagnostics.iter().any(|diagnostic| {
-        diagnostic.code == "LUMB0807"
+        diagnostic.code == "LUMB0810"
             && diagnostic.severity == lumen_core::DiagnosticSeverity::Error
             && diagnostic.message.contains("surface.page")
             && diagnostic
@@ -992,6 +992,85 @@ fn scene_brand_governance_flags_logo_on_disallowed_background() {
     scene
         .pages
         .get_mut(&PageId::from("page_logo"))
+        .unwrap()
+        .background = vec![Fill {
+        id: PaintId::from("page_bg"),
+        paint: Paint::Token {
+            token: "surface.brand".to_owned(),
+        },
+    }];
+    let diagnostics =
+        validate_scene_brand_governance(&scene, &brand_kit, BrandGovernanceStrictness::Strict);
+
+    assert!(
+        diagnostics
+            .iter()
+            .all(|diagnostic| diagnostic.code != "LUMB0810"),
+        "{diagnostics:#?}"
+    );
+}
+
+#[test]
+fn scene_brand_governance_flags_insufficient_text_contrast() {
+    let mut brand_kit = acme_brand_kit();
+    brand_kit.tokens.colors.insert(
+        "surface.page".to_owned(),
+        color_token(ColorTokenValue::Hex {
+            value: "#FFFFFF".to_owned(),
+        }),
+    );
+    let mut scene = Scene::new(DocumentId::from("doc_text_contrast"), "Text Contrast");
+    scene.meta.brand_kit = Some(brand_kit.brand_ref());
+    scene
+        .pages
+        .insert(PageId::from("page_contrast"), page("page_contrast"));
+    scene
+        .pages
+        .get_mut(&PageId::from("page_contrast"))
+        .unwrap()
+        .background = vec![Fill {
+        id: PaintId::from("page_bg"),
+        paint: Paint::Token {
+            token: "surface.page".to_owned(),
+        },
+    }];
+
+    let mut text = Node::new(
+        NodeId::from("node_text"),
+        NodeKind::Text(TextNode {
+            content: "Book a consultation".to_owned(),
+            font_size: 18.0,
+            style_token: Some("type.body".to_owned()),
+            ..TextNode::default()
+        }),
+    );
+    text.size = SizeSpec::fixed(320.0, 48.0);
+    text.fills = vec![Fill {
+        id: PaintId::from("text_fill"),
+        paint: Paint::Token {
+            token: "text.inverse".to_owned(),
+        },
+    }];
+    scene
+        .pages
+        .get_mut(&PageId::from("page_contrast"))
+        .unwrap()
+        .children = vec![text.id.clone()];
+    scene.nodes.insert(text.id.clone(), text);
+
+    let diagnostics =
+        validate_scene_brand_governance(&scene, &brand_kit, BrandGovernanceStrictness::Strict);
+
+    assert!(diagnostics.iter().any(|diagnostic| {
+        diagnostic.code == "LUMB0807"
+            && diagnostic.severity == lumen_core::DiagnosticSeverity::Error
+            && diagnostic.message.contains("text contrast")
+            && diagnostic.message.contains("surface.page")
+    }));
+
+    scene
+        .pages
+        .get_mut(&PageId::from("page_contrast"))
         .unwrap()
         .background = vec![Fill {
         id: PaintId::from("page_bg"),
