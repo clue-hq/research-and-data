@@ -93,12 +93,83 @@ describe("EditorApp", () => {
       brandKit
     });
   });
+
+  it("runs injected Brand Kit compatibility against the latest stored version", async () => {
+    const scene = twoPageScene();
+    scene.meta.brand_kit = {
+      id: "brand_kit_insight_health",
+      version: 4
+    };
+    const currentBrandKit = brandKitSummary(4);
+    const latestBrandKit = brandKitSummary(5);
+    const brandCompatibilityRunner = vi.fn().mockResolvedValue({
+      report: {
+        from: {
+          id: "brand_kit_insight_health",
+          version: 4
+        },
+        to: {
+          id: "brand_kit_insight_health",
+          version: 5
+        },
+        status: "migration_required",
+        diagnostics: [],
+        token_changes: [
+          {
+            path: "surface.brand",
+            kind: "removed",
+            from_kind: "color",
+            to_kind: null
+          }
+        ]
+      },
+      diagnostics: [
+        {
+          severity: "error",
+          phase: "brand",
+          code: "LUMB0814",
+          message: "color token surface.brand was removed",
+          subject: {
+            kind: "document"
+          },
+          hint: "Choose a replacement Brand Kit surface token."
+        }
+      ]
+    });
+
+    render(
+      <EditorApp
+        initialScene={scene}
+        initialSelectedNodeId={null}
+        initialAvailableBrandKits={[currentBrandKit, latestBrandKit]}
+        brandCompatibilityRunner={brandCompatibilityRunner}
+      />
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /compatibility/i }));
+
+    expect(await screen.findByText("Migration required")).toBeInTheDocument();
+    expect(screen.getByText("surface.brand removed")).toBeInTheDocument();
+    expect(screen.getAllByText("LUMB0814")).toHaveLength(2);
+    expect(brandCompatibilityRunner).toHaveBeenCalledWith({
+      scene: expect.objectContaining({
+        meta: expect.objectContaining({
+          brand_kit: {
+            id: "brand_kit_insight_health",
+            version: 4
+          }
+        })
+      }),
+      currentBrandKit,
+      targetBrandKit: latestBrandKit
+    });
+  });
 });
 
-function brandKitSummary(): BrandKitSummary {
+function brandKitSummary(version = 4): BrandKitSummary {
   return {
     id: "brand_kit_insight_health",
-    version: 4,
+    version,
     name: "Insight Health",
     approval_status: "generated_unreviewed",
     product_ready: true,

@@ -389,6 +389,51 @@ textarea:disabled {
   font-weight: 650;
 }
 
+.brand-action-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.brand-check-button:disabled {
+  color: #8a8174;
+  cursor: wait;
+}
+
+.brand-compatibility-summary {
+  display: grid;
+  gap: 8px;
+  border: 1px solid #d7ccbd;
+  border-radius: 7px;
+  background: #fffaf2;
+  padding: 10px;
+}
+
+.brand-compatibility-summary strong,
+.brand-compatibility-summary span {
+  display: block;
+}
+
+.brand-compatibility-summary strong {
+  color: #3d352c;
+  font-size: 13px;
+}
+
+.brand-compatibility-summary span {
+  margin-top: 2px;
+  color: #655d51;
+  font-size: 12px;
+}
+
+.brand-compatibility-summary ul {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding-left: 16px;
+  color: #554c40;
+  font-size: 12px;
+}
+
 .brand-diagnostics {
   margin-top: 0;
 }

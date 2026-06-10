@@ -1,7 +1,8 @@
 "use client";
 
-import { BadgeCheck, Palette, ShieldCheck } from "lucide-react";
+import { BadgeCheck, GitCompareArrows, Palette, ShieldCheck } from "lucide-react";
 import type {
+  BrandCompatibilityReport,
   BrandKitSummary,
   BrandTokenCatalog,
   Diagnostic,
@@ -15,9 +16,13 @@ interface BrandKitPanelProps {
   scene: Scene;
   availableBrandKits: BrandKitSummary[];
   diagnostics: Diagnostic[];
+  compatibilityReport?: BrandCompatibilityReport | null;
+  compatibilityTarget?: BrandKitSummary | null;
   onOperation: (operation: Operation) => void;
   onRunBrandGovernance: () => void;
   isRunningBrandGovernance?: boolean;
+  onRunBrandCompatibility: () => void;
+  isRunningBrandCompatibility?: boolean;
 }
 
 const mediumOptions: Medium[] = ["digital", "ad", "email", "print", "direct_mail"];
@@ -26,9 +31,13 @@ export function BrandKitPanel({
   scene,
   availableBrandKits,
   diagnostics,
+  compatibilityReport = null,
+  compatibilityTarget = null,
   onOperation,
   onRunBrandGovernance,
-  isRunningBrandGovernance = false
+  isRunningBrandGovernance = false,
+  onRunBrandCompatibility,
+  isRunningBrandCompatibility = false
 }: BrandKitPanelProps) {
   const currentRef = scene.meta.brand_kit;
   const selected = currentRef
@@ -95,17 +104,32 @@ export function BrandKitPanel({
           {selected?.product_ready ? "Product-ready" : "Unverified"}
         </span>
         <span className="status-pill">{selected?.approval_status ?? "no approval state"}</span>
+        {compatibilityTarget ? (
+          <span className="status-pill">Latest v{compatibilityTarget.version}</span>
+        ) : null}
       </div>
       {tokenCatalog ? <TokenSummary tokens={tokenCatalog} /> : null}
-      <button
-        type="button"
-        className="brand-check-button"
-        onClick={onRunBrandGovernance}
-        disabled={isRunningBrandGovernance}
-      >
-        <ShieldCheck aria-hidden size={15} />
-        {isRunningBrandGovernance ? "Checking brand" : "Brand check"}
-      </button>
+      <div className="brand-action-row">
+        <button
+          type="button"
+          className="brand-check-button"
+          onClick={onRunBrandGovernance}
+          disabled={isRunningBrandGovernance}
+        >
+          <ShieldCheck aria-hidden size={15} />
+          {isRunningBrandGovernance ? "Checking brand" : "Brand check"}
+        </button>
+        <button
+          type="button"
+          className="brand-check-button"
+          onClick={onRunBrandCompatibility}
+          disabled={isRunningBrandCompatibility}
+        >
+          <GitCompareArrows aria-hidden size={15} />
+          {isRunningBrandCompatibility ? "Checking versions" : "Compatibility"}
+        </button>
+      </div>
+      {compatibilityReport ? <CompatibilitySummary report={compatibilityReport} /> : null}
       {diagnostics.length > 0 ? (
         <ul className="diagnostic-list brand-diagnostics">
           {diagnostics.map((diagnostic) => (
@@ -117,6 +141,30 @@ export function BrandKitPanel({
         </ul>
       ) : null}
     </section>
+  );
+}
+
+function CompatibilitySummary({ report }: { report: BrandCompatibilityReport }) {
+  return (
+    <div className="brand-compatibility-summary" aria-label="Brand compatibility summary">
+      <div>
+        <strong>{compatibilityLabel(report.status)}</strong>
+        <span>
+          {report.from.id} v{report.from.version} {"->"} v{report.to.version}
+        </span>
+      </div>
+      {report.token_changes.length > 0 ? (
+        <ul>
+          {report.token_changes.slice(0, 4).map((change) => (
+            <li key={`${change.kind}-${change.path}`}>
+              {change.path} {change.kind.replaceAll("_", " ")}
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <span>No token changes reported.</span>
+      )}
+    </div>
   );
 }
 
@@ -143,6 +191,19 @@ function TokenSummary({ tokens }: { tokens: BrandTokenCatalog }) {
 
 function brandKitOptionValue(id: string, version: number): string {
   return `${id}@${version}`;
+}
+
+function compatibilityLabel(status: BrandCompatibilityReport["status"]): string {
+  switch (status) {
+    case "compatible":
+      return "Compatible";
+    case "warning":
+      return "Compatibility warnings";
+    case "migration_required":
+      return "Migration required";
+    case "incompatible":
+      return "Incompatible";
+  }
 }
 
 function mediumLabel(medium: Medium): string {

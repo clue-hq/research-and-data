@@ -36,6 +36,36 @@ export interface BrandKitRef {
   version: number;
 }
 
+export type BrandCompatibilityStatus =
+  | "compatible"
+  | "warning"
+  | "migration_required"
+  | "incompatible";
+
+export type TokenChangeKind =
+  | "added"
+  | "removed"
+  | "type_changed"
+  | "role_changed"
+  | "mode_coverage_changed"
+  | "asset_removed"
+  | "font_license_changed";
+
+export interface TokenChange {
+  path: string;
+  kind: TokenChangeKind;
+  from_kind?: string | null;
+  to_kind?: string | null;
+}
+
+export interface BrandCompatibilityReport {
+  from: BrandKitRef;
+  to: BrandKitRef;
+  status: BrandCompatibilityStatus;
+  diagnostics: Diagnostic[];
+  token_changes: TokenChange[];
+}
+
 export interface BrandKitSummary {
   id: BrandKitId;
   version: number;
