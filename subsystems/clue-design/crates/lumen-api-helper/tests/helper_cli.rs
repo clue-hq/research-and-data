@@ -5,6 +5,10 @@ use std::process::{Command, Stdio};
 const MINIMAL_SCENE: &str = include_str!("../../lumen-core/fixtures/minimal_scene.json");
 const GENERATED_RASTER: &str =
     include_str!("../../lumen-core/fixtures/assets/generated_raster_asset.json");
+const VALID_INSIGHT_HEALTH_STYLES: &str =
+    include_str!("../../lumen-core/fixtures/styles/valid_insight_health.styles");
+const INVALID_DUPLICATE_TOKEN_STYLES: &str =
+    include_str!("../../lumen-core/fixtures/styles/invalid_duplicate_token.styles");
 
 fn helper(request: Value) -> Value {
     let mut child = Command::new(env!("CARGO_BIN_EXE_lumen-api-helper"))
@@ -31,6 +35,12 @@ fn minimal_scene() -> Value {
 
 fn generated_asset() -> Value {
     serde_json::from_str(GENERATED_RASTER).unwrap()
+}
+
+fn platform_brand_kit() -> Value {
+    let response = helper(json!({ "action": "platform_default_brand_kit" }));
+    assert_eq!(response["ok"], true, "{response:#?}");
+    response["brand_kit"].clone()
 }
 
 fn tokenized_scene() -> Value {
@@ -342,13 +352,12 @@ fn rejects_invalid_operation_batch_without_scene() {
 
 #[test]
 fn preflights_with_platform_default_brand_kit() {
-    let brand = helper(json!({ "action": "platform_default_brand_kit" }));
-    assert_eq!(brand["ok"], true);
+    let brand_kit = platform_brand_kit();
 
     let response = helper(json!({
         "action": "preflight_scene",
         "scene": tokenized_scene(),
-        "brand_kit": brand["brand_kit"]
+        "brand_kit": brand_kit
     }));
 
     assert_eq!(response["ok"], true);
@@ -358,6 +367,205 @@ fn preflights_with_platform_default_brand_kit() {
         .unwrap()
         .iter()
         .any(|operation| operation["kind"] == "update_node"));
+}
+
+#[test]
+fn validates_product_ready_brand_kit_through_core_bridge() {
+    let brand_kit = platform_brand_kit();
+
+    let response = helper(json!({
+        "action": "validate_brand_kit",
+        "brand_kit": brand_kit,
+        "product_ready": true
+    }));
+
+    assert_eq!(response["ok"], true, "{response:#?}");
+    assert!(response
+        .get("diagnostics")
+        .and_then(Value::as_array)
+        .unwrap_or(&Vec::new())
+        .iter()
+        .all(|diagnostic| diagnostic["severity"] != "error"));
+}
+
+#[test]
+fn compiles_styles_brand_kit_through_core_bridge() {
+    let response = helper(json!({
+        "action": "compile_styles_brand_kit",
+        "source": VALID_INSIGHT_HEALTH_STYLES,
+        "brand_kit_id": "brand_kit_insight_health",
+        "version": 4,
+        "name": "Insight Health"
+    }));
+
+    assert_eq!(response["ok"], true, "{response:#?}");
+    assert_eq!(response["brand_kit"]["id"], "brand_kit_insight_health");
+    assert_eq!(response["brand_summary"]["product_ready"], true);
+    assert!(response["brand_summary"]["tokens"]["surface_tokens"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|token| token == "surface.brand"));
+    assert!(response["brand_summary"]["tokens"]["typography_tokens"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|token| token == "type.headline"));
+    assert!(response["brand_summary"]["assets"]["image_asset_tokens"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|token| token == "asset.illustration.primary"));
+}
+
+#[test]
+fn rejects_invalid_styles_brand_kit_through_core_bridge() {
+    let response = helper(json!({
+        "action": "compile_styles_brand_kit",
+        "source": INVALID_DUPLICATE_TOKEN_STYLES,
+        "brand_kit_id": "brand_kit_invalid",
+        "version": 1,
+        "name": "Invalid"
+    }));
+
+    assert_eq!(response["ok"], false, "{response:#?}");
+    assert_eq!(response["error"]["code"], "helper.brand_styles");
+    assert!(response["diagnostics"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|diagnostic| diagnostic["severity"] == "error"));
+}
+
+#[test]
+fn generates_brand_kit_from_seed_through_core_bridge() {
+    let response = helper(json!({
+        "action": "generate_brand_kit",
+        "seed": {
+            "id": "brand_kit_seeded_insight",
+            "version": 2,
+            "name": "Seeded Insight Health",
+            "primary_color": "#075E68",
+            "description": "Healthcare automation brand kit generated from seed inputs.",
+            "secondary_color": "#0F766E",
+            "accent_color": "#22C55E",
+            "neutral_color": "#111827",
+            "preferred_fonts": ["Source Sans 3", "Arial"],
+            "logo_refs": [{
+                "logo_id": "primary",
+                "asset_id": "asset_logo_primary",
+                "usage": "primary",
+                "color_mode": "full_color",
+                "variant": "default",
+                "width": 160.0,
+                "height": 48.0
+            }],
+            "tone_words": ["clinical", "calm", "expert"],
+            "website_url": "https://example.test",
+            "style_guide_asset_ids": [],
+            "sources": [],
+            "default_mode": {
+                "values": {
+                    "theme": "light",
+                    "density": "comfortable",
+                    "accessibility": "standard",
+                    "medium": "digital"
+                }
+            }
+        }
+    }));
+
+    assert_eq!(response["ok"], true, "{response:#?}");
+    assert_eq!(response["brand_kit"]["id"], "brand_kit_seeded_insight");
+    assert_eq!(response["brand_summary"]["product_ready"], true);
+    assert!(response["brand_generation"]["confidence"]
+        .as_f64()
+        .is_some_and(|confidence| confidence > 0.6));
+    assert!(response["brand_summary"]["assets"]["logo_tokens"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|token| token == "logo.primary"));
+}
+
+#[test]
+fn summarizes_brand_kit_for_authoring_through_core_bridge() {
+    let brand_kit = platform_brand_kit();
+    let response = helper(json!({
+        "action": "summarize_brand_kit",
+        "brand_kit": brand_kit
+    }));
+
+    assert_eq!(response["ok"], true, "{response:#?}");
+    assert_eq!(response["brand_summary"]["product_ready"], true);
+    assert!(response["brand_summary"]["authoring_rules"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|rule| rule
+            .as_str()
+            .is_some_and(|rule| rule.contains("Use semantic tokens"))));
+}
+
+#[test]
+fn validates_scene_brand_governance_through_core_bridge() {
+    let brand_kit = platform_brand_kit();
+    let response = helper(json!({
+        "action": "validate_scene_brand_governance",
+        "scene": minimal_scene(),
+        "brand_kit": brand_kit,
+        "strictness": "strict"
+    }));
+
+    assert_eq!(response["ok"], false, "{response:#?}");
+    assert!(response["diagnostics"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|diagnostic| diagnostic["code"] == "LUMB0805"
+            && diagnostic["message"]
+                .as_str()
+                .is_some_and(|message| message.contains("raw typography"))));
+    assert!(response["diagnostics"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|diagnostic| diagnostic["hint"]
+            .as_str()
+            .is_some_and(|hint| hint.contains("style($type."))));
+}
+
+#[test]
+fn compares_brand_kit_compatibility_through_core_bridge() {
+    let from = platform_brand_kit();
+    let mut to = from.clone();
+    to["version"] = json!(2);
+    to["tokens"]["colors"]
+        .as_object_mut()
+        .unwrap()
+        .remove("surface.brand");
+
+    let response = helper(json!({
+        "action": "compare_brand_kit_compatibility",
+        "from": from,
+        "to": to
+    }));
+
+    assert_eq!(response["ok"], false, "{response:#?}");
+    assert_eq!(
+        response["brand_compatibility"]["status"],
+        "migration_required"
+    );
+    assert!(response["brand_compatibility"]["token_changes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|change| change["path"] == "surface.brand" && change["kind"] == "removed"));
+    assert!(response["diagnostics"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|diagnostic| diagnostic["code"] == "LUMB0814"));
 }
 
 #[test]

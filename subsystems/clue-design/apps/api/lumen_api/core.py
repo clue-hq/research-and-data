@@ -69,10 +69,18 @@ class CoreClient:
         )
 
     def preflight_scene(
-        self, scene: JsonObject, brand_kit: Optional[JsonObject]
+        self,
+        scene: JsonObject,
+        brand_kit: Optional[JsonObject],
+        mode: Optional[JsonObject] = None,
     ) -> JsonObject:
         return self._run(
-            {"action": "preflight_scene", "scene": scene, "brand_kit": brand_kit}
+            {
+                "action": "preflight_scene",
+                "scene": scene,
+                "brand_kit": brand_kit,
+                "mode": mode,
+            }
         )
 
     def export_preview(
@@ -105,10 +113,85 @@ class CoreClient:
         response = self._run({"action": "platform_default_brand_kit"})
         return response["brand_kit"]
 
+    def validate_brand_kit(
+        self,
+        brand_kit: JsonObject,
+        product_ready: bool = True,
+        raise_on_error: bool = True,
+    ) -> JsonObject:
+        return self._run(
+            {
+                "action": "validate_brand_kit",
+                "brand_kit": brand_kit,
+                "product_ready": product_ready,
+            },
+            raise_on_error=raise_on_error,
+        )
+
+    def compile_styles_brand_kit(
+        self,
+        source: str,
+        brand_kit_id: str,
+        version: int,
+        name: str,
+    ) -> JsonObject:
+        return self._run(
+            {
+                "action": "compile_styles_brand_kit",
+                "source": source,
+                "brand_kit_id": brand_kit_id,
+                "version": version,
+                "name": name,
+            }
+        )
+
+    def generate_brand_kit(self, seed: JsonObject) -> JsonObject:
+        return self._run({"action": "generate_brand_kit", "seed": seed})
+
+    def summarize_brand_kit(
+        self, brand_kit: JsonObject, raise_on_error: bool = True
+    ) -> JsonObject:
+        return self._run(
+            {"action": "summarize_brand_kit", "brand_kit": brand_kit},
+            raise_on_error=raise_on_error,
+        )
+
+    def validate_scene_brand_governance(
+        self,
+        scene: JsonObject,
+        brand_kit: JsonObject,
+        strictness: str = "strict",
+        raise_on_error: bool = True,
+    ) -> JsonObject:
+        return self._run(
+            {
+                "action": "validate_scene_brand_governance",
+                "scene": scene,
+                "brand_kit": brand_kit,
+                "strictness": strictness,
+            },
+            raise_on_error=raise_on_error,
+        )
+
+    def compare_brand_kit_compatibility(
+        self,
+        from_brand_kit: JsonObject,
+        to_brand_kit: JsonObject,
+        raise_on_error: bool = True,
+    ) -> JsonObject:
+        return self._run(
+            {
+                "action": "compare_brand_kit_compatibility",
+                "from": from_brand_kit,
+                "to": to_brand_kit,
+            },
+            raise_on_error=raise_on_error,
+        )
+
     def layout_geometry(self, scene: JsonObject) -> JsonObject:
         return self._run({"action": "layout_geometry", "scene": scene})
 
-    def _run(self, request: JsonObject) -> JsonObject:
+    def _run(self, request: JsonObject, raise_on_error: bool = True) -> JsonObject:
         command = self._command()
         process = subprocess.run(
             command,
@@ -127,7 +210,7 @@ class CoreClient:
         except json.JSONDecodeError as error:
             raise CoreError("helper.response", str(error)) from error
 
-        if not response.get("ok"):
+        if not response.get("ok") and raise_on_error:
             error = response.get("error") or {}
             raise CoreError(
                 error.get("code", "helper.error"),

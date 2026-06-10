@@ -5,7 +5,7 @@ use crate::brand::{
 use crate::diagnostics::{Diagnostic, DiagnosticSeverity, DiagnosticSubject, Phase};
 use crate::layout::{layout_scene, LayoutOptions, LayoutResult};
 use crate::operations::{NodePatch, Operation, OperationError, OptionalFieldPatch};
-use crate::scene::Scene;
+use crate::scene::{Medium, Scene};
 use crate::validation::validate_scene;
 use std::collections::BTreeSet;
 
@@ -128,7 +128,8 @@ pub fn preflight_scene(
             }
         }
 
-        let report = resolve_scene_tokens(&scene, brand_kit, &options.token_resolution);
+        let token_options = token_options_for_scene_medium(&scene, &options.token_resolution);
+        let report = resolve_scene_tokens(&scene, brand_kit, &token_options);
         extend_unique_diagnostics(&mut diagnostics, report.diagnostics.clone());
         token_operations = report.operations.clone();
         if has_errors(&report.diagnostics) {
@@ -197,6 +198,29 @@ fn has_errors(diagnostics: &[Diagnostic]) -> bool {
     diagnostics
         .iter()
         .any(|diagnostic| diagnostic.severity == DiagnosticSeverity::Error)
+}
+
+fn token_options_for_scene_medium(
+    scene: &Scene,
+    options: &TokenResolutionOptions,
+) -> TokenResolutionOptions {
+    let mut options = options.clone();
+    if !options.mode.values.contains_key("medium") {
+        if let Some(medium) = &scene.meta.medium {
+            options.mode.values.insert(
+                "medium".to_owned(),
+                brand_medium_for_scene_medium(medium).to_owned(),
+            );
+        }
+    }
+    options
+}
+
+fn brand_medium_for_scene_medium(medium: &Medium) -> &'static str {
+    match medium {
+        Medium::Print | Medium::DirectMail => "print",
+        Medium::Digital | Medium::Email | Medium::Ad => "digital",
+    }
 }
 
 fn extend_unique_diagnostics(target: &mut Vec<Diagnostic>, diagnostics: Vec<Diagnostic>) {

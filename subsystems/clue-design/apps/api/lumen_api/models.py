@@ -40,7 +40,10 @@ class CreateSnapshotRequest(BaseModel):
 
 class PreflightRequest(BaseModel):
     brand_kit: Optional[JsonObject] = None
+    brand_kit_id: Optional[str] = None
+    brand_kit_version: Optional[int] = None
     generated_default_brand_kit: Optional[JsonObject] = None
+    mode: Optional[JsonObject] = None
     strict_no_fallback: bool = False
     persist_effective_brand: bool = True
 
@@ -64,3 +67,58 @@ class AssetMetadataRequest(BaseModel):
     provenance: JsonObject = Field(default_factory=dict)
     licensing: JsonObject = Field(default_factory=dict)
 
+
+class BrandKitRefRequest(BaseModel):
+    brand_kit_id: str
+    version: Optional[int] = None
+
+
+class CreateBrandKitRequest(BaseModel):
+    brand_kit: JsonObject
+    source: Literal["manual", "uploaded", "generated", "styles", "platform_default", "api"] = (
+        "manual"
+    )
+    product_ready: bool = True
+
+
+class CompileStylesBrandKitRequest(BaseModel):
+    source: str
+    brand_kit_id: str
+    version: int = 1
+    name: str
+    persist: bool = True
+
+
+class GenerateBrandKitRequest(BaseModel):
+    seed: JsonObject
+    persist: bool = True
+
+
+class ValidateBrandKitRequest(BaseModel):
+    brand_kit: Optional[JsonObject] = None
+    brand_kit_id: Optional[str] = None
+    version: Optional[int] = None
+    product_ready: bool = True
+
+
+class AttachBrandKitRequest(BaseModel):
+    brand_kit_id: str
+    version: Optional[int] = None
+    mode: Optional[JsonObject] = None
+    actor: ActorEnvelope = Field(default_factory=ActorEnvelope)
+    snapshot_reason: Optional[str] = None
+
+
+class ValidateDocumentBrandGovernanceRequest(BaseModel):
+    brand_kit: Optional[JsonObject] = None
+    brand_kit_id: Optional[str] = None
+    version: Optional[int] = None
+    strictness: Literal["advisory", "strict", "finalize"] = "strict"
+
+
+class BrandCompatibilityRequest(BaseModel):
+    from_brand_kit: Optional[JsonObject] = None
+    to_brand_kit: Optional[JsonObject] = None
+    from_ref: Optional[BrandKitRefRequest] = None
+    to_ref: Optional[BrandKitRefRequest] = None
+    persist_report: bool = True

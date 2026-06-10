@@ -1,0 +1,10 @@
+// Phase C tokenized LinkedIn square ad
+page linkedin_square size(1080,1080,px)
+  canvas fr p(0,0) s(1080,1080) fill($surface.page)
+    hero al(v,g($space.stack.default),pad($space.card.padding),x(s)) p(72,72) s(936,hug) fill($surface.card) rd($radius.card)
+      eyebrow text "INSIGHT HEALTH" p(0,0) s(820,48) style($type.eyebrow) wrap_text(true) slot(campaign.eyebrow)
+      headline text "Surgery first." p(0,0) s(820,190) style($type.headline) wrap_text(true) slot(campaign.headline)
+      body text "AI phone agents handle calls." p(0,0) s(820,170) style($type.body) wrap_text(true) slot(offer.message)
+      cta text "Book a Demo" p(0,0) s(320,72) style($type.cta) wrap_text(true) slot(campaign.cta)
+    proof fr p(72,860) s(936,112) fill($surface.brand.subtle) rd($radius.badge)
+      proof_text text "Built for specialty practices." p(32,32) s(872,56) style($type.body.small) wrap_text(true) slot(research.insight)

@@ -2,23 +2,26 @@
 
 import { useMemo, useState } from "react";
 import { Download, FileCheck2, PanelRightClose, RotateCcw, Send } from "lucide-react";
+import { BrandKitPanel } from "./BrandKitPanel";
 import { CanvasSurface } from "./canvas/CanvasSurface";
 import { InspectorPanel } from "./InspectorPanel";
 import { PageRail } from "./PageRail";
 import { ValidationPanel } from "./ValidationPanel";
 import { minimalScene } from "@/fixtures/minimalScene";
-import type { Diagnostic, NodeId, Operation, PageId, Scene } from "@/engine/contracts";
+import type { BrandKitSummary, Diagnostic, NodeId, Operation, PageId, Scene } from "@/engine/contracts";
 import { localEditorEngine } from "@/engine/editorEngine";
 import { firstPageId, getNode } from "@/engine/sceneQueries";
 
 export interface EditorAppProps {
   initialScene?: Scene;
   initialSelectedNodeId?: NodeId | null;
+  initialAvailableBrandKits?: BrandKitSummary[];
 }
 
 export default function EditorApp({
   initialScene = minimalScene,
-  initialSelectedNodeId = "node_contact_name"
+  initialSelectedNodeId = "node_contact_name",
+  initialAvailableBrandKits = []
 }: EditorAppProps = {}) {
   const [scene, setScene] = useState<Scene>(initialScene);
   const [activePageId, setActivePageId] = useState<PageId | null>(() => firstPageId(initialScene));
@@ -28,6 +31,18 @@ export default function EditorApp({
   const [undoStack, setUndoStack] = useState<Scene[]>([]);
   const selectedNode = useMemo(() => getNode(scene, selectedNodeId), [scene, selectedNodeId]);
   const activePage = activePageId ? scene.pages[activePageId] ?? null : null;
+  const effectiveBrandKit = useMemo(
+    () =>
+      scene.meta.brand_kit
+        ? initialAvailableBrandKits.find(
+            (brandKit) =>
+              brandKit.id === scene.meta.brand_kit?.id &&
+              brandKit.version === scene.meta.brand_kit?.version
+          )
+        : null,
+    [initialAvailableBrandKits, scene.meta.brand_kit]
+  );
+  const brandDiagnostics = diagnostics.filter((diagnostic) => diagnostic.phase === "brand");
 
   const applyOperation = (operation: Operation) => {
     setLastOperation(operation);
@@ -84,6 +99,32 @@ export default function EditorApp({
     ]);
   };
 
+  const runBrandGovernancePlaceholder = () => {
+    if (!scene.meta.brand_kit) {
+      setDiagnostics([
+        {
+          severity: "warning",
+          phase: "brand",
+          code: "EDITOR_BRAND_KIT_REQUIRED",
+          message: "No Brand Kit is attached to this document.",
+          subject: { kind: "document" },
+          hint: "Attach a stored Brand Kit before running strict brand governance."
+        }
+      ]);
+      return;
+    }
+    setDiagnostics([
+      {
+        severity: "advice",
+        phase: "brand",
+        code: "EDITOR_BRAND_GOVERNANCE_PORT",
+        message: "Brand governance UI is wired; API/core diagnostics plug into this panel.",
+        subject: { kind: "document" },
+        hint: "Use POST /documents/{id}/brand-governance for strict Brand Kit validation."
+      }
+    ]);
+  };
+
   const selectPage = (pageId: PageId) => {
     setActivePageId(pageId);
     setSelectedNodeId(null);
@@ -134,7 +175,15 @@ export default function EditorApp({
             activePage={activePage}
             selectedNode={selectedNode}
             selectedNodeId={selectedNodeId}
+            brandTokens={effectiveBrandKit?.tokens ?? null}
             onOperation={applyOperation}
+          />
+          <BrandKitPanel
+            scene={scene}
+            availableBrandKits={initialAvailableBrandKits}
+            diagnostics={brandDiagnostics}
+            onOperation={applyOperation}
+            onRunBrandGovernance={runBrandGovernancePlaceholder}
           />
           <ValidationPanel diagnostics={diagnostics} lastOperation={lastOperation} />
         </aside>

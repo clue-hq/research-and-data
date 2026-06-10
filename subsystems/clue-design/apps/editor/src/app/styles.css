@@ -291,6 +291,108 @@ textarea:disabled {
   margin-bottom: 0;
 }
 
+.brand-kit-panel {
+  display: grid;
+  gap: 12px;
+}
+
+.brand-current {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  border: 1px solid #d7ccbd;
+  border-radius: 7px;
+  background: #ffffff;
+  padding: 10px;
+}
+
+.brand-current strong,
+.brand-current span {
+  display: block;
+}
+
+.brand-current strong {
+  font-size: 13px;
+  line-height: 1.2;
+}
+
+.brand-current span {
+  margin-top: 3px;
+  color: #655d51;
+  font-size: 12px;
+}
+
+.brand-status-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.status-pill {
+  border: 1px solid #cfc3b3;
+  border-radius: 999px;
+  background: #ffffff;
+  color: #655d51;
+  padding: 4px 8px;
+  font-size: 11px;
+  font-weight: 750;
+}
+
+.status-pill.ready {
+  border-color: #7aa99e;
+  color: #174f52;
+}
+
+.token-summary {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.token-summary div {
+  min-width: 0;
+  border: 1px solid #d7ccbd;
+  border-radius: 6px;
+  background: #ffffff;
+  padding: 7px;
+}
+
+.token-summary span,
+.token-summary strong {
+  display: block;
+  text-align: center;
+}
+
+.token-summary span {
+  color: #71695e;
+  font-size: 10px;
+  font-weight: 750;
+}
+
+.token-summary strong {
+  margin-top: 2px;
+  font-size: 14px;
+}
+
+.brand-check-button {
+  display: inline-flex;
+  min-height: 32px;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: 1px solid #bfb4a3;
+  border-radius: 6px;
+  background: #ffffff;
+  color: #24211c;
+  padding: 0 10px;
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.brand-diagnostics {
+  margin-top: 0;
+}
+
 .empty-card {
   display: grid;
   gap: 10px;
@@ -341,6 +443,11 @@ textarea:disabled {
 .diagnostic-list li.advice {
   background: #edf5f5;
   color: #174f52;
+}
+
+.diagnostic-list li.warning {
+  background: #fff7df;
+  color: #745208;
 }
 
 .operation-heading {

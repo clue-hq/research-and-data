@@ -2,6 +2,7 @@ import type {
   AssetPlacement,
   AssetKind,
   ContentType,
+  DocumentPatch,
   FieldPatch,
   Node,
   NodePatch,
@@ -47,6 +48,10 @@ function applyLocalOperation(scene: Scene, operation: Operation): void {
   }
 
   switch (operation.kind) {
+    case "update_document": {
+      applyDocumentPatch(scene, operation.patch);
+      return;
+    }
     case "update_page": {
       const page = scene.pages[operation.page_id];
       if (!page) {
@@ -141,6 +146,13 @@ function applyLocalOperation(scene: Scene, operation: Operation): void {
       return;
     }
   }
+}
+
+function applyDocumentPatch(scene: Scene, patch: DocumentPatch): void {
+  applyFieldPatch(scene.meta, "title", patch.title);
+  applyOptionalPatch(scene.meta, "artifact_type", patch.artifact_type);
+  applyOptionalPatch(scene.meta, "medium", patch.medium);
+  applyOptionalPatch(scene.meta, "brand_kit", patch.brand_kit);
 }
 
 function applyPagePatch(page: Scene["pages"][string], patch: PagePatch): void {

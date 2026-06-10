@@ -50,6 +50,7 @@ class LumenDesignTools:
         self.loaded_knowledge: list[JsonObject] = []
         self.gaps: list[JsonObject] = []
         self.scene_update_sources: list[str] = []
+        self.effective_brand_context: Optional[JsonObject] = None
         self.dsl_session: Optional[JsonObject] = None
         self.latest_export_summary: Optional[JsonObject] = None
         self.latest_preview_bundle: Optional[JsonObject] = None
@@ -242,6 +243,7 @@ class LumenDesignTools:
         iteration_dir = self._iteration_dir()
         try:
             brand_kit = self.core.platform_default_brand_kit()
+            brand_context = self._brand_context("platform_default", brand_kit)
             response = self.core.preflight_scene(self.scene, brand_kit)
         except CoreError as error:
             summary = PreflightSummary(
@@ -263,20 +265,21 @@ class LumenDesignTools:
         self._replace_scene_from_core_response(response, "preflight_design")
         diagnostics = diagnostics_from(response.get("diagnostics", []))
         preflight = response.get("preflight", {})
-        brand_ref = self.scene.get("meta", {}).get("brand_kit") or {}
+        brand_context = self._brand_context_from_scene_ref(brand_context)
+        self.effective_brand_context = brand_context
         summary = PreflightSummary(
             status=ToolStatus.ok,
             has_errors=bool(preflight.get("has_errors")),
             diagnostics=diagnostics,
-            brand_source=brand_ref.get("source"),
-            brand_kit_id=brand_ref.get("brand_kit_id") or brand_ref.get("id"),
-            brand_kit_version=(
-                str(brand_ref.get("version")) if brand_ref.get("version") is not None else None
-            ),
+            brand_source=brand_context.get("source"),
+            brand_kit_id=brand_context.get("brand_kit_id"),
+            brand_kit_version=brand_context.get("brand_kit_version"),
+            brand_mode=brand_context.get("mode"),
         )
         payload = {
             "preflight": _dump(summary),
             "raw_preflight": preflight,
+            "effective_brand": brand_context,
         }
         self._write_json(iteration_dir / "preflight.json", payload)
         self.record(
@@ -792,6 +795,7 @@ class LumenDesignTools:
             "stop_reason": stop_reason,
             "summary": summary,
             "final_scene_summary": self._scene_summary(),
+            "effective_brand": self.effective_brand_context,
             "preview_paths": self.preview_paths,
             "critique": critique,
             "gaps": self.gaps,
@@ -900,6 +904,7 @@ class LumenDesignTools:
             "title": self.scene.get("meta", {}).get("title"),
             "status": self.scene.get("meta", {}).get("status"),
             "brand_kit": self.scene.get("meta", {}).get("brand_kit"),
+            "effective_brand": self.effective_brand_context,
             "page_count": len(pages),
             "node_count": len(nodes),
             "slot_count": len(slots),
@@ -982,6 +987,46 @@ class LumenDesignTools:
         height = size.get("height")
         return _as_float(width), _as_float(height)
 
+    def _brand_context(self, source: str, brand_kit: JsonObject) -> JsonObject:
+        mode = brand_mode_from_kit(brand_kit)
+        scene_medium = scene_medium_token(self.scene)
+        if scene_medium:
+            mode["medium"] = scene_medium
+        return {
+            "source": source,
+            "brand_kit_id": brand_kit.get("id"),
+            "brand_kit_version": (
+                str(brand_kit.get("version"))
+                if brand_kit.get("version") is not None
+                else None
+            ),
+            "brand_kit_name": brand_kit.get("name"),
+            "mode": mode,
+        }
+
+    def _brand_context_from_scene_ref(self, context: JsonObject) -> JsonObject:
+        brand_ref = self.scene.get("meta", {}).get("brand_kit") or {}
+        if brand_ref.get("brand_kit_id") or brand_ref.get("id"):
+            context = {
+                **context,
+                "brand_kit_id": brand_ref.get("brand_kit_id") or brand_ref.get("id"),
+            }
+        if brand_ref.get("version") is not None:
+            context = {
+                **context,
+                "brand_kit_version": str(brand_ref.get("version")),
+            }
+        scene_medium = scene_medium_token(self.scene)
+        if scene_medium:
+            context = {
+                **context,
+                "mode": {
+                    **(context.get("mode") or {}),
+                    "medium": scene_medium,
+                },
+            }
+        return context
+
     def _write_json(self, path: Path, payload: JsonObject) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
@@ -1052,6 +1097,28 @@ def reviewer_bundle_status(
         if bundle_validation_errors(canonical_summary, critic_summary)
         else ToolStatus.ok.value
     )
+
+
+def brand_mode_from_kit(brand_kit: JsonObject) -> JsonObject:
+    modes = brand_kit.get("modes")
+    defaults = modes.get("defaults") if isinstance(modes, dict) else None
+    if isinstance(defaults, dict):
+        return {str(axis): str(value) for axis, value in defaults.items()}
+
+    default_mode = brand_kit.get("default_mode")
+    values = default_mode.get("values") if isinstance(default_mode, dict) else None
+    if isinstance(values, dict):
+        return {str(axis): str(value) for axis, value in values.items()}
+    return {}
+
+
+def scene_medium_token(scene: JsonObject) -> Optional[str]:
+    medium = scene.get("meta", {}).get("medium")
+    if medium in {"print", "direct_mail"}:
+        return "print"
+    if medium in {"digital", "email", "ad"}:
+        return "digital"
+    return None
 
 
 def normalize_halt_location(raw_halt: Any) -> Optional[JsonObject]:

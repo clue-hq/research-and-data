@@ -2,7 +2,7 @@ import React from "react";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { minimalScene } from "@/fixtures/minimalScene";
-import type { Scene } from "@/engine/contracts";
+import type { BrandKitSummary, Scene } from "@/engine/contracts";
 import EditorApp from "../EditorApp";
 
 vi.mock("../canvas/CanvasSurface", () => ({
@@ -27,7 +27,44 @@ describe("EditorApp", () => {
     expect(screen.getByText(/Page dimensions are canonical scene data/)).toBeInTheDocument();
     expect(screen.getByTestId("canvas-selection")).toHaveAttribute("data-selected-node", "");
   });
+
+  it("attaches a Brand Kit through an update_document operation", () => {
+    render(
+      <EditorApp
+        initialScene={twoPageScene()}
+        initialSelectedNodeId={null}
+        initialAvailableBrandKits={[brandKitSummary()]}
+      />
+    );
+
+    fireEvent.change(screen.getByLabelText("Brand Kit"), {
+      target: { value: "brand_kit_insight_health@4" }
+    });
+
+    expect(screen.getByText("brand_kit_insight_health v4")).toBeInTheDocument();
+    expect(screen.getByText(/update_document/)).toBeInTheDocument();
+  });
 });
+
+function brandKitSummary(): BrandKitSummary {
+  return {
+    id: "brand_kit_insight_health",
+    version: 4,
+    name: "Insight Health",
+    approval_status: "generated_unreviewed",
+    product_ready: true,
+    source: "styles",
+    tokens: {
+      surface_tokens: ["surface.brand", "surface.card"],
+      text_tokens: ["text.primary", "text.inverse"],
+      typography_tokens: ["type.headline", "type.body"],
+      spacing_tokens: ["space.md", "space.lg"],
+      radius_tokens: ["radius.card"],
+      opacity_tokens: ["opacity.subtle"]
+    },
+    authoring_rules: []
+  };
+}
 
 function twoPageScene(): Scene {
   const scene = JSON.parse(JSON.stringify(minimalScene)) as Scene;

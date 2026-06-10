@@ -49,4 +49,43 @@ describe("InspectorPanel", () => {
       })
     );
   });
+
+  it("emits text style token updates from the token picker", () => {
+    const onOperation = vi.fn();
+    render(
+      React.createElement(InspectorPanel, {
+        scene: minimalScene,
+        activePage: minimalScene.pages.page_a4,
+        selectedNode: minimalScene.nodes.node_contact_name,
+        selectedNodeId: "node_contact_name",
+        brandTokens: {
+          typography_tokens: ["type.headline", "type.body"],
+          radius_tokens: ["radius.card"],
+          opacity_tokens: ["opacity.subtle"]
+        },
+        onOperation
+      })
+    );
+
+    fireEvent.change(screen.getByLabelText("Style Token"), {
+      target: {
+        value: "type.headline"
+      }
+    });
+
+    expect(onOperation).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: "update_node",
+        node_id: "node_contact_name",
+        patch: expect.objectContaining({
+          kind: expect.objectContaining({
+            kind: "set",
+            value: expect.objectContaining({
+              style_token: "type.headline"
+            })
+          })
+        })
+      })
+    );
+  });
 });

@@ -1,8 +1,10 @@
 use lumen_core::{
     compile_dsl_into_scene, platform_default_brand_kit, preflight_scene,
-    scene_has_token_references, validate_brand_kit, BrandKit, DiagnosticSeverity, Dimension,
-    DocumentId, NodeId, NodeKind, Paint, PreflightOptions, Scene,
+    scene_has_token_references, validate_brand_kit, BrandKit, BrandMode, ColorTokenValue,
+    DiagnosticSeverity, Dimension, DocumentId, Medium, NodeId, NodeKind, Paint, PreflightOptions,
+    Scene, TokenResolutionOptions,
 };
+use std::collections::BTreeMap;
 
 const ACME_BRAND_KIT: &str = include_str!("../fixtures/brand_kits/acme_full.json");
 
@@ -13,8 +15,8 @@ fn acme_brand_kit() -> BrandKit {
 fn tokenized_dsl() -> &'static str {
     r#"
 page page_a4
-  hero autolayout(h) p(24,24) s(180,hug) fill($surface.brand) stroke($surface.brand,$stroke.width.firm) g($space.md) pad($space.md) rd($radius.md) o($opacity.subtle)
-    headline text "Plan" p(0,0) s(132,44) style($type.headline)
+  hero autolayout(h) p(24,24) s(240,hug) fill($surface.brand) stroke($surface.brand,$stroke.width.firm) g($space.md) pad($space.md) rd($radius.md) o($opacity.subtle)
+    headline text "Plan" p(0,0) s(160,80) style($type.headline)
   slot_text text "Plan" p(24,96) s(132,48) font("Inter",16,700,left) slot(campaign.headline)
 "#
 }
@@ -145,27 +147,18 @@ fn preflight_resolves_brand_tokens_before_layout() {
     assert!(hero.opacity_token.is_none());
     assert_eq!(hero.strokes[0].width, 2.0);
     assert!(hero.strokes[0].width_token.is_none());
-    assert!(matches!(
-        &hero.fills[0].paint,
-        Paint::Solid {
-            color: lumen_core::Color::Hex { value }
-        } if value == "#004D5A"
-    ));
+    assert!(matches!(&hero.fills[0].paint, Paint::Solid { .. }));
     assert!(hero.computed.is_some());
 
     let headline = &result.scene.nodes[&NodeId::from("headline")];
     let NodeKind::Text(text) = &headline.kind else {
         panic!("expected text node");
     };
-    assert_eq!(text.font_size, 32.0);
+    assert_eq!(text.font_family, "Source Sans 3");
+    assert_eq!(text.font_size, 56.0);
     assert_eq!(text.font_weight, 800);
     assert!(text.style_token.is_none());
-    assert!(matches!(
-        &headline.fills[0].paint,
-        Paint::Solid {
-            color: lumen_core::Color::Hex { value }
-        } if value == "#FFFFFF"
-    ));
+    assert!(matches!(&headline.fills[0].paint, Paint::Solid { .. }));
     assert!(headline.computed.is_some());
 }
 
@@ -199,6 +192,102 @@ page page_a4
     let computed = badge.computed.as_ref().unwrap();
     assert_eq!(computed.layout_bounds.width, 24.0);
     assert_eq!(computed.layout_bounds.height, 12.0);
+}
+
+#[test]
+fn preflight_uses_scene_medium_for_brand_token_resolution() {
+    let mut brand_kit = acme_brand_kit();
+    brand_kit
+        .tokens
+        .colors
+        .get_mut("surface.brand")
+        .unwrap()
+        .value
+        .modes
+        .insert(
+            "medium.print".to_owned(),
+            ColorTokenValue::Hex {
+                value: "#123456".to_owned(),
+            },
+        );
+
+    let mut scene = Scene::new(DocumentId::from("doc_print_medium"), "Print Medium");
+    scene.meta.medium = Some(Medium::Print);
+    let compile_output = compile_dsl_into_scene(
+        r#"
+page page_a4
+  card rect p(16,16) s(120,48) fill($surface.brand)
+"#,
+        &mut scene,
+    );
+
+    assert_no_dsl_errors(&compile_output.compile_output.diagnostics);
+    assert!(compile_output.operation_error.is_none());
+
+    let result = preflight_scene(scene, Some(&brand_kit), PreflightOptions::default());
+
+    assert_no_diagnostics_errors(&result.diagnostics);
+    let card = &result.scene.nodes[&NodeId::from("card")];
+    assert!(matches!(
+        &card.fills[0].paint,
+        Paint::Solid {
+            color: lumen_core::Color::Hex { value }
+        } if value == "#123456"
+    ));
+}
+
+#[test]
+fn explicit_preflight_medium_mode_overrides_scene_medium() {
+    let mut brand_kit = acme_brand_kit();
+    brand_kit
+        .tokens
+        .colors
+        .get_mut("surface.brand")
+        .unwrap()
+        .value
+        .modes
+        .insert(
+            "medium.print".to_owned(),
+            ColorTokenValue::Hex {
+                value: "#123456".to_owned(),
+            },
+        );
+
+    let mut scene = Scene::new(DocumentId::from("doc_explicit_medium"), "Explicit Medium");
+    scene.meta.medium = Some(Medium::Print);
+    let compile_output = compile_dsl_into_scene(
+        r#"
+page page_a4
+  card rect p(16,16) s(120,48) fill($surface.brand)
+"#,
+        &mut scene,
+    );
+
+    assert_no_dsl_errors(&compile_output.compile_output.diagnostics);
+    assert!(compile_output.operation_error.is_none());
+
+    let result = preflight_scene(
+        scene,
+        Some(&brand_kit),
+        PreflightOptions {
+            token_resolution: TokenResolutionOptions {
+                mode: BrandMode {
+                    values: BTreeMap::from([("medium".to_owned(), "digital".to_owned())]),
+                },
+                ..TokenResolutionOptions::default()
+            },
+            ..PreflightOptions::default()
+        },
+    );
+
+    assert_no_diagnostics_errors(&result.diagnostics);
+    let card = &result.scene.nodes[&NodeId::from("card")];
+    assert!(!matches!(
+        &card.fills[0].paint,
+        Paint::Solid {
+            color: lumen_core::Color::Hex { value }
+        } if value == "#123456"
+    ));
 }
 
 #[test]

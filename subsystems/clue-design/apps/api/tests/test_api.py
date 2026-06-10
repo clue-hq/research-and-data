@@ -16,6 +16,9 @@ MINIMAL_SCENE_PATH = REPO_ROOT / "crates/lumen-core/fixtures/minimal_scene.json"
 GENERATED_RASTER_ASSET_PATH = (
     REPO_ROOT / "crates/lumen-core/fixtures/assets/generated_raster_asset.json"
 )
+VALID_STYLES_PATH = (
+    REPO_ROOT / "crates/lumen-core/fixtures/styles/valid_insight_health.styles"
+)
 
 
 @pytest.fixture()
@@ -32,12 +35,28 @@ def generated_raster_asset() -> dict:
     return json.loads(GENERATED_RASTER_ASSET_PATH.read_text())
 
 
+def valid_styles_source() -> str:
+    return VALID_STYLES_PATH.read_text()
+
+
 def preflightable_scene() -> dict:
     scene = minimal_scene()
     slot = scene["slots"]["slot_contact_name"]
     slot["formatting"]["max_length"] = None
     slot["validation"]["samples"] = []
     slot["validation"]["max_length"] = None
+    return scene
+
+
+def tokenized_surface_scene(document_id: str) -> dict:
+    scene = preflightable_scene()
+    scene["meta"]["id"] = document_id
+    scene["nodes"]["node_contact_name"]["fills"] = [
+        {
+            "id": "paint_contact_name_brand",
+            "paint": {"kind": "token", "token": "surface.brand"},
+        }
+    ]
     return scene
 
 
@@ -210,6 +229,43 @@ def asset_operations() -> list[dict]:
     ]
 
 
+def brand_seed(version: int = 2) -> dict:
+    return {
+        "id": "brand_kit_api_seeded_insight",
+        "version": version,
+        "name": "Seeded Insight Health",
+        "primary_color": "#075E68",
+        "description": "Healthcare automation brand kit generated from seed inputs.",
+        "secondary_color": "#0F766E",
+        "accent_color": "#22C55E",
+        "neutral_color": "#111827",
+        "preferred_fonts": ["Source Sans 3", "Arial"],
+        "logo_refs": [
+            {
+                "logo_id": "primary",
+                "asset_id": "asset_logo_primary",
+                "usage": "primary",
+                "color_mode": "full_color",
+                "variant": "default",
+                "width": 160.0,
+                "height": 48.0,
+            }
+        ],
+        "tone_words": ["clinical", "calm", "expert"],
+        "website_url": "https://example.test",
+        "style_guide_asset_ids": [],
+        "sources": [],
+        "default_mode": {
+            "values": {
+                "theme": "light",
+                "density": "comfortable",
+                "accessibility": "standard",
+                "medium": "digital",
+            }
+        },
+    }
+
+
 def test_create_and_load_document_preserves_canonical_scene(client: TestClient) -> None:
     scene = minimal_scene()
     document = create_document(client, scene)
@@ -222,6 +278,227 @@ def test_create_and_load_document_preserves_canonical_scene(client: TestClient) 
     assert loaded["current_version"] == 0
     assert loaded["status"] == "draft"
     assert document["counts"]["nodes"] == 1
+
+
+def test_styles_brand_kit_persists_validates_and_lists_versions(
+    client: TestClient,
+) -> None:
+    response = client.post(
+        "/brand-kits/compile-styles",
+        json={
+            "source": valid_styles_source(),
+            "brand_kit_id": "brand_kit_insight_health",
+            "version": 4,
+            "name": "Insight Health",
+        },
+    )
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["schema_version"] == 1
+    assert payload["status"] == "created"
+    assert payload["brand_kit"]["id"] == "brand_kit_insight_health"
+    assert payload["brand_kit"]["product_ready"] is True
+    assert "brand_kit_json" in payload
+
+    duplicate = client.post(
+        "/brand-kits/compile-styles",
+        json={
+            "source": valid_styles_source(),
+            "brand_kit_id": "brand_kit_insight_health",
+            "version": 4,
+            "name": "Insight Health",
+        },
+    )
+    assert duplicate.status_code == 409
+    assert duplicate.json()["detail"]["code"] == "brand_kit.version_exists"
+
+    latest = client.get("/brand-kits/brand_kit_insight_health").json()
+    assert latest["brand_kit"]["version"] == 4
+    assert latest["brand_kit_json"]["approval_status"] == "generated_unreviewed"
+
+    listed = client.get("/brand-kits").json()
+    assert [brand_kit["id"] for brand_kit in listed] == ["brand_kit_insight_health"]
+
+    validation = client.post(
+        "/brand-kits/validate",
+        json={"brand_kit_id": "brand_kit_insight_health", "product_ready": True},
+    )
+    assert validation.status_code == 200, validation.text
+    assert validation.json()["status"] == "ok"
+
+
+def test_generated_brand_kit_attaches_to_document_and_reports_governance(
+    client: TestClient,
+) -> None:
+    generated = client.post(
+        "/brand-kits/generate",
+        json={"seed": brand_seed()},
+    )
+    assert generated.status_code == 200, generated.text
+    generated_payload = generated.json()
+    assert generated_payload["brand_kit"]["id"] == "brand_kit_api_seeded_insight"
+    assert generated_payload["brand_kit"]["product_ready"] is True
+
+    document = create_document(client, preflightable_scene())
+    attached = client.post(
+        f"/documents/{document['id']}/brand-kit",
+        json={
+            "brand_kit_id": "brand_kit_api_seeded_insight",
+            "version": 2,
+            "mode": {
+                "values": {
+                    "theme": "dark",
+                    "density": "comfortable",
+                    "accessibility": "standard",
+                    "medium": "digital",
+                }
+            },
+            "snapshot_reason": "attach generated brand kit",
+        },
+    )
+    assert attached.status_code == 200, attached.text
+    attach_payload = attached.json()
+    assert attach_payload["operation_application"]["applied_operations"] == 1
+    assert attach_payload["snapshot"]["snapshot_id"].startswith("snap_")
+
+    loaded = client.get(f"/documents/{document['id']}").json()
+    assert loaded["scene"]["meta"]["brand_kit"] == {
+        "id": "brand_kit_api_seeded_insight",
+        "version": 2,
+    }
+    assert loaded["effective_brand_kit_source"] == "brand_kit_library"
+    assert loaded["effective_brand_kit_id"] == "brand_kit_api_seeded_insight"
+    assert loaded["effective_brand_mode"] == {
+        "values": {
+            "accessibility": "standard",
+            "density": "comfortable",
+            "medium": "digital",
+            "theme": "dark",
+        }
+    }
+    assert loaded["scene"]["meta"]["medium"] == "digital"
+
+    preflight = client.post(f"/documents/{document['id']}/preflight", json={})
+    assert preflight.status_code == 200, preflight.text
+    assert preflight.json()["brand_kit"]["source"] == "document"
+    assert preflight.json()["brand_kit"]["mode"] == loaded["effective_brand_mode"]
+
+    governance = client.post(
+        f"/documents/{document['id']}/brand-governance",
+        json={"brand_kit_id": "brand_kit_api_seeded_insight", "version": 2},
+    )
+    assert governance.status_code == 200, governance.text
+    assert governance.json()["schema_version"] == 1
+    assert governance.json()["brand_kit"]["id"] == "brand_kit_api_seeded_insight"
+
+    diagnostics = client.get(
+        f"/documents/{document['id']}/diagnostics?kind=brand_governance"
+    ).json()
+    assert diagnostics["kind"] == "brand_governance"
+
+
+def test_preflight_uses_persisted_brand_mode_for_token_resolution(
+    client: TestClient,
+) -> None:
+    generated = client.post(
+        "/brand-kits/generate",
+        json={"seed": brand_seed()},
+    )
+    assert generated.status_code == 200, generated.text
+
+    light_document = create_document(
+        client, tokenized_surface_scene("doc_brand_mode_light")
+    )
+    dark_document = create_document(client, tokenized_surface_scene("doc_brand_mode_dark"))
+
+    for document, theme in [(light_document, "light"), (dark_document, "dark")]:
+        attach = client.post(
+            f"/documents/{document['id']}/brand-kit",
+            json={
+                "brand_kit_id": "brand_kit_api_seeded_insight",
+                "version": 2,
+                "mode": {
+                    "values": {
+                        "theme": theme,
+                        "density": "comfortable",
+                        "accessibility": "standard",
+                        "medium": "digital",
+                    }
+                },
+            },
+        )
+        assert attach.status_code == 200, attach.text
+        preflight = client.post(f"/documents/{document['id']}/preflight", json={})
+        assert preflight.status_code == 200, preflight.text
+        assert preflight.json()["brand_kit"]["mode"]["values"]["theme"] == theme
+
+    light = client.get(f"/documents/{light_document['id']}").json()
+    dark = client.get(f"/documents/{dark_document['id']}").json()
+
+    assert light["effective_brand_mode"]["values"]["theme"] == "light"
+    assert dark["effective_brand_mode"]["values"]["theme"] == "dark"
+
+    light_fill = light["scene"]["nodes"]["node_contact_name"]["fills"][0]["paint"]
+    dark_fill = dark["scene"]["nodes"]["node_contact_name"]["fills"][0]["paint"]
+
+    assert light_fill["kind"] == "solid"
+    assert dark_fill["kind"] == "solid"
+    assert light_fill["color"]["kind"] == "hex"
+    assert dark_fill["color"]["kind"] == "hex"
+    assert light_fill["color"]["value"] != dark_fill["color"]["value"]
+
+
+def test_brand_kit_compatibility_report_persists_between_stored_versions(
+    client: TestClient,
+) -> None:
+    version_four = client.post(
+        "/brand-kits/compile-styles",
+        json={
+            "source": valid_styles_source(),
+            "brand_kit_id": "brand_kit_insight_health",
+            "version": 4,
+            "name": "Insight Health",
+        },
+    )
+    assert version_four.status_code == 200, version_four.text
+
+    version_five_source = valid_styles_source().replace("version(4)", "version(5)")
+    version_five = client.post(
+        "/brand-kits/compile-styles",
+        json={
+            "source": version_five_source,
+            "brand_kit_id": "brand_kit_insight_health",
+            "version": 5,
+            "name": "Insight Health",
+        },
+    )
+    assert version_five.status_code == 200, version_five.text
+
+    response = client.post(
+        "/brand-kits/compatibility",
+        json={
+            "from_ref": {"brand_kit_id": "brand_kit_insight_health", "version": 4},
+            "to_ref": {"brand_kit_id": "brand_kit_insight_health", "version": 5},
+        },
+    )
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["schema_version"] == 1
+    assert payload["report"]["from"] == {
+        "id": "brand_kit_insight_health",
+        "version": 4,
+    }
+    assert payload["report"]["to"] == {
+        "id": "brand_kit_insight_health",
+        "version": 5,
+    }
+    assert payload["stored_report"]["report_id"].startswith("brand_report_")
+
+    stored = client.get(
+        f"/brand-compatibility-reports/{payload['stored_report']['report_id']}"
+    ).json()
+    assert stored["from_ref"] == {"id": "brand_kit_insight_health", "version": 4}
+    assert stored["to_ref"] == {"id": "brand_kit_insight_health", "version": 5}
 
 
 def test_apply_operations_updates_scene_and_ordered_history(client: TestClient) -> None:
@@ -513,6 +790,8 @@ def test_missing_resource_routes_return_404_envelopes(client: TestClient) -> Non
         "/documents/missing/diagnostics",
         "/template-revisions/missing",
         "/asset-metadata/missing",
+        "/brand-kits/missing",
+        "/brand-compatibility-reports/missing",
     ]
 
     for path in paths:

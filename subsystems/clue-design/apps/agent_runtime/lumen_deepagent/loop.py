@@ -152,6 +152,7 @@ class LumenQualityLoop:
 
             preflight_result = json.loads(self.tools.preflight_design())
             preflight_summary = preflight_result.get("preflight", {})
+            self.state.effective_brand = preflight_result.get("effective_brand")
             iteration_record.preflight_summary = PreflightSummary.model_validate(
                 preflight_summary
             )

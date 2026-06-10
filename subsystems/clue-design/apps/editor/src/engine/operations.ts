@@ -1,6 +1,9 @@
 import type {
   AutoLayoutProps,
+  BrandKitRef,
+  DocumentPatch,
   LayoutAnchor,
+  Medium,
   Node,
   NodeId,
   NodePatch,
@@ -57,6 +60,34 @@ export function pagePatch(patch: Partial<PagePatch>): PagePatch {
     bleed: patch.bleed ?? unchanged(),
     safe_area: patch.safe_area ?? unchanged(),
     background: patch.background ?? unchanged()
+  };
+}
+
+export function documentPatch(patch: Partial<DocumentPatch>): DocumentPatch {
+  return {
+    title: patch.title ?? unchanged(),
+    artifact_type: patch.artifact_type ?? unchanged(),
+    medium: patch.medium ?? unchanged(),
+    brand_kit: patch.brand_kit ?? unchanged()
+  };
+}
+
+export function updateDocumentBrand(brandKit: BrandKitRef, medium?: Medium | null): Operation {
+  return {
+    kind: "update_document",
+    patch: documentPatch({
+      brand_kit: set(brandKit),
+      medium: medium ? set(medium) : unchanged()
+    })
+  };
+}
+
+export function updateDocumentMedium(medium: Medium): Operation {
+  return {
+    kind: "update_document",
+    patch: documentPatch({
+      medium: set(medium)
+    })
   };
 }
 

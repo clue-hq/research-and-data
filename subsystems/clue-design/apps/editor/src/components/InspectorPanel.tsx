@@ -2,6 +2,7 @@
 
 import { Lock, Type, Unlock } from "lucide-react";
 import type {
+  BrandTokenCatalog,
   LayoutAnchor,
   Node,
   NodeId,
@@ -14,6 +15,7 @@ import type {
   Transform
 } from "@/engine/contracts";
 import {
+  clear,
   defaultLayoutProps,
   nodePatch,
   set,
@@ -34,10 +36,18 @@ interface InspectorPanelProps {
   activePage: Page | null;
   selectedNode: Node | null;
   selectedNodeId: NodeId | null;
+  brandTokens?: BrandTokenCatalog | null;
   onOperation: (operation: Operation) => void;
 }
 
-export function InspectorPanel({ scene, activePage, selectedNode, selectedNodeId, onOperation }: InspectorPanelProps) {
+export function InspectorPanel({
+  scene,
+  activePage,
+  selectedNode,
+  selectedNodeId,
+  brandTokens,
+  onOperation
+}: InspectorPanelProps) {
   if (!selectedNode) {
     return (
       <section className="inspector-section">
@@ -136,6 +146,46 @@ export function InspectorPanel({ scene, activePage, selectedNode, selectedNodeId
         </p>
       </section>
 
+      {brandTokens ? (
+        <section className="inspector-section">
+          <div className="section-heading">Design Tokens</div>
+          <div className="field-grid two">
+            <TokenSelect
+              label="Radius"
+              value={selectedNode.corner.token ?? ""}
+              tokens={brandTokens.radius_tokens}
+              onChange={(token) =>
+                onOperation({
+                  kind: "update_node",
+                  node_id: selectedNode.id,
+                  patch: nodePatch({
+                    corner: set({
+                      ...selectedNode.corner,
+                      token: token || null
+                    })
+                  })
+                })
+              }
+            />
+            <TokenSelect
+              label="Opacity"
+              value={selectedNode.opacity_token ?? ""}
+              tokens={brandTokens.opacity_tokens}
+              onChange={(token) =>
+                onOperation({
+                  kind: "update_node",
+                  node_id: selectedNode.id,
+                  patch: nodePatch({
+                    opacity_token: token ? set(token) : clear()
+                  })
+                })
+              }
+            />
+          </div>
+          <p className="muted contract-note">Token choices are stored on the scene and resolved by preflight.</p>
+        </section>
+      ) : null}
+
       {selectedNode.kind.kind === "auto_layout" || selectedNode.layout ? (
         <section className="inspector-section">
           <div className="section-heading">Auto Layout</div>
@@ -192,6 +242,28 @@ export function InspectorPanel({ scene, activePage, selectedNode, selectedNodeId
                 ))}
               </select>
             </label>
+            {brandTokens ? (
+              <>
+                <TokenSelect
+                  label="Gap Token"
+                  value={(selectedNode.layout ?? defaultLayoutProps()).gap_token ?? ""}
+                  tokens={brandTokens.spacing_tokens}
+                  onChange={(token) => {
+                    const layout = selectedNode.layout ?? defaultLayoutProps();
+                    onOperation(updateNodeLayout(selectedNode, { ...layout, gap_token: token || null }));
+                  }}
+                />
+                <TokenSelect
+                  label="Padding Token"
+                  value={(selectedNode.layout ?? defaultLayoutProps()).padding_token ?? ""}
+                  tokens={brandTokens.spacing_tokens}
+                  onChange={(token) => {
+                    const layout = selectedNode.layout ?? defaultLayoutProps();
+                    onOperation(updateNodeLayout(selectedNode, { ...layout, padding_token: token || null }));
+                  }}
+                />
+              </>
+            ) : null}
           </div>
           <p className="muted contract-note">Alignment maps to core Taffy layout through AutoLayoutProps.</p>
         </section>
@@ -301,6 +373,14 @@ export function InspectorPanel({ scene, activePage, selectedNode, selectedNodeId
                 <option value="auto">Auto</option>
               </select>
             </label>
+            {brandTokens ? (
+              <TokenSelect
+                label="Style Token"
+                value={selectedNode.kind.style_token ?? ""}
+                tokens={brandTokens.typography_tokens}
+                onChange={(token) => onOperation(updateTextNode(selectedNode, { style_token: token || null }))}
+              />
+            ) : null}
           </div>
         </section>
       ) : null}
@@ -337,6 +417,32 @@ function customPageSize(page: Page, patch: Partial<Pick<Page["size"], "width" | 
     preset: "custom",
     orientation: width >= height ? "landscape" : "portrait"
   };
+}
+
+function TokenSelect({
+  label,
+  value,
+  tokens,
+  onChange
+}: {
+  label: string;
+  value: string;
+  tokens?: string[];
+  onChange: (token: string) => void;
+}) {
+  return (
+    <label className="field">
+      <span>{label}</span>
+      <select value={value} disabled={!tokens?.length} onChange={(event) => onChange(event.target.value)}>
+        <option value="">Concrete value</option>
+        {(tokens ?? []).map((token) => (
+          <option key={token} value={token}>
+            ${token}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
 }
 
 function NumberField({

@@ -36,6 +36,41 @@ export interface BrandKitRef {
   version: number;
 }
 
+export interface BrandKitSummary {
+  id: BrandKitId;
+  version: number;
+  name: string;
+  approval_status?: string | null;
+  product_ready?: boolean;
+  source?: string | null;
+  description?: string | null;
+  default_mode?: BrandModeSelection | null;
+  modes?: Record<string, string[]> | null;
+  tokens?: BrandTokenCatalog | null;
+  assets?: Record<string, string[] | undefined> | null;
+  authoring_rules?: string[];
+}
+
+export interface BrandModeSelection {
+  values?: Record<string, string>;
+}
+
+export interface BrandTokenCatalog {
+  surface_tokens?: string[];
+  text_tokens?: string[];
+  border_tokens?: string[];
+  focus_tokens?: string[];
+  typography_tokens?: string[];
+  spacing_tokens?: string[];
+  radius_tokens?: string[];
+  stroke_width_tokens?: string[];
+  opacity_tokens?: string[];
+  shadow_tokens?: string[];
+  effect_tokens?: string[];
+  asset_tokens?: string[];
+  [key: string]: string[] | undefined;
+}
+
 export type DocumentStatus =
   | {
       kind: "draft";
@@ -596,6 +631,13 @@ export interface PagePatch {
   background: FieldPatch<Fill[]>;
 }
 
+export interface DocumentPatch {
+  title: FieldPatch<string>;
+  artifact_type: OptionalFieldPatch<string>;
+  medium: OptionalFieldPatch<Medium>;
+  brand_kit: OptionalFieldPatch<BrandKitRef>;
+}
+
 export type ParentRef =
   | {
       kind: "page";
@@ -607,6 +649,10 @@ export type ParentRef =
     };
 
 export type Operation =
+  | {
+      kind: "update_document";
+      patch: DocumentPatch;
+    }
   | {
       kind: "update_page";
       page_id: PageId;

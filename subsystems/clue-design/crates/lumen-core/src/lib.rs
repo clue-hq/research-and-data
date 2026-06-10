@@ -29,15 +29,24 @@ pub use assets::{
     RasterAssetMetadata, VectorAssetMetadata,
 };
 pub use brand::{
-    collect_scene_token_references, compile_styles_brand_kit, platform_default_brand_kit,
-    resolve_scene_tokens, scene_has_token_references, validate_brand_kit, validate_scene_tokens,
-    AssetToken, AssetTokenValue, BrandAsset, BrandAssets, BrandConstraints, BrandKit, BrandMode,
-    BrandModeSpec, BrandProvenance, BrandSource, ColorToken, ColorTokenValue, ContrastPair,
-    EffectToken, EffectValue, FontAsset, FontFace, FontLicense, FontStyle, LogoAsset,
-    LogoColorMode, LogoUsage, LogoVariant, ModeValue, NumberToken, NumberTokenValue, NumberUnit,
-    SceneTokenReference, ShadowToken, ShadowValue, TokenAlias, TokenCatalog, TokenFallbackPolicy,
-    TokenProvenance, TokenResolutionOptions, TokenResolutionReport, TokenStrictness,
-    TypographyToken, TypographyTokenValue,
+    collect_scene_token_references, compare_brand_kit_compatibility, compile_styles_brand_kit,
+    generate_brand_kit, platform_default_brand_kit, resolve_scene_tokens,
+    scene_has_token_references, summarize_brand_kit_for_authoring, validate_brand_kit,
+    validate_brand_kit_product_ready, validate_scene_brand_governance, validate_scene_tokens,
+    AssetToken, AssetTokenValue, BrandApprovalStatus, BrandAsset, BrandAssets,
+    BrandAuthoringAssetSummary, BrandAuthoringTokenSummary, BrandCompatibilityPolicy,
+    BrandCompatibilityReport, BrandCompatibilityStatus, BrandConstraints, BrandGenerationReport,
+    BrandGovernanceStrictness, BrandKit, BrandKitAuthoringSummary, BrandMode, BrandModeSpec,
+    BrandProvenance, BrandSeed, BrandSeedLogoRef, BrandSource, BrandValidationLevel, ColorToken,
+    ColorTokenValue, ContrastPair, EffectToken, EffectValue, FontAsset, FontFace, FontLicense,
+    FontStyle, LogoAsset, LogoColorMode, LogoUsage, LogoVariant, ModeValue, NumberToken,
+    NumberTokenValue, NumberUnit, SceneTokenReference, ShadowToken, ShadowValue, TokenAlias,
+    TokenCatalog, TokenChange, TokenChangeKind, TokenFallbackPolicy, TokenProvenance,
+    TokenResolutionOptions, TokenResolutionReport, TokenStrictness, TypographyToken,
+    TypographyTokenValue, REQUIRED_PRODUCT_READY_ASSET_TOKENS, REQUIRED_PRODUCT_READY_COLOR_TOKENS,
+    REQUIRED_PRODUCT_READY_OPACITY_TOKENS, REQUIRED_PRODUCT_READY_RADIUS_TOKENS,
+    REQUIRED_PRODUCT_READY_SPACING_TOKENS, REQUIRED_PRODUCT_READY_STROKE_WIDTH_TOKENS,
+    REQUIRED_PRODUCT_READY_TYPOGRAPHY_TOKENS,
 };
 pub use diagnostics::{Diagnostic, DiagnosticSeverity, DiagnosticSubject, Phase};
 pub use dsl::{

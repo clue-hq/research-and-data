@@ -22,6 +22,7 @@ def document_summary(document: JsonObject) -> JsonObject:
             "source": document.get("effective_brand_kit_source"),
             "id": document.get("effective_brand_kit_id"),
             "version": document.get("effective_brand_kit_version"),
+            "mode": document.get("effective_brand_mode"),
         },
         "counts": scene_counts(scene),
         "created_at": document["created_at"],
@@ -34,6 +35,147 @@ def document_created_dto(document: JsonObject) -> JsonObject:
         "schema_version": DTO_SCHEMA_VERSION,
         "status": "created",
         "document": document_summary(document),
+    }
+
+
+def brand_kit_summary(record: JsonObject) -> JsonObject:
+    brand_kit = record["brand_kit"]
+    summary = record.get("brand_summary") or {}
+    return {
+        "id": record["brand_kit_id"],
+        "version": record["version"],
+        "name": record["name"],
+        "approval_status": record.get("approval_status"),
+        "product_ready": record.get("product_ready", False),
+        "source": record.get("source"),
+        "description": brand_kit.get("description"),
+        "default_mode": brand_kit.get("default_mode"),
+        "modes": summary.get("modes"),
+        "tokens": summary.get("tokens"),
+        "assets": summary.get("assets"),
+        "authoring_rules": summary.get("authoring_rules", []),
+        "created_at": record["created_at"],
+        "updated_at": record["updated_at"],
+    }
+
+
+def brand_kit_created_dto(
+    record: JsonObject, diagnostics: List[JsonObject]
+) -> JsonObject:
+    return {
+        "schema_version": DTO_SCHEMA_VERSION,
+        "status": "created",
+        "brand_kit": brand_kit_summary(record),
+        "diagnostics": diagnostic_views(diagnostics, diagnostics),
+    }
+
+
+def brand_kit_detail_dto(record: JsonObject) -> JsonObject:
+    return {
+        "schema_version": DTO_SCHEMA_VERSION,
+        "brand_kit": brand_kit_summary(record),
+        "brand_kit_json": record["brand_kit"],
+        "diagnostics": diagnostic_views(record.get("diagnostics", [])),
+    }
+
+
+def brand_kit_validation_dto(
+    brand_kit: JsonObject,
+    diagnostics: List[JsonObject],
+    product_ready: bool,
+) -> JsonObject:
+    return {
+        "schema_version": DTO_SCHEMA_VERSION,
+        "status": "failed" if has_error_diagnostics(diagnostics) else "ok",
+        "brand_kit": {
+            "id": brand_kit.get("id"),
+            "version": brand_kit.get("version"),
+            "name": brand_kit.get("name"),
+            "approval_status": brand_kit.get("approval_status"),
+        },
+        "validation": {
+            "product_ready": product_ready,
+            "has_errors": has_error_diagnostics(diagnostics),
+        },
+        "diagnostics": diagnostic_views(diagnostics, diagnostics),
+    }
+
+
+def brand_kit_generation_dto(
+    record: Optional[JsonObject],
+    brand_kit: JsonObject,
+    brand_summary: Optional[JsonObject],
+    generation: JsonObject,
+    diagnostics: List[JsonObject],
+) -> JsonObject:
+    return {
+        "schema_version": DTO_SCHEMA_VERSION,
+        "status": "created" if record else "generated",
+        "brand_kit": brand_kit_summary(record)
+        if record
+        else generated_brand_kit_summary(brand_kit, brand_summary),
+        "brand_kit_json": brand_kit,
+        "brand_generation": generation,
+        "diagnostics": diagnostic_views(diagnostics, diagnostics),
+    }
+
+
+def brand_compatibility_dto(
+    report: JsonObject,
+    diagnostics: List[JsonObject],
+    stored_report: Optional[JsonObject] = None,
+) -> JsonObject:
+    return {
+        "schema_version": DTO_SCHEMA_VERSION,
+        "status": "failed" if has_error_diagnostics(diagnostics) else "ok",
+        "report": report,
+        "stored_report": stored_report,
+        "diagnostics": diagnostic_views(diagnostics, diagnostics),
+    }
+
+
+def brand_governance_dto(
+    document: JsonObject,
+    brand_kit: JsonObject,
+    diagnostics: List[JsonObject],
+    strictness: str,
+) -> JsonObject:
+    return {
+        "schema_version": DTO_SCHEMA_VERSION,
+        "document": document_summary(document),
+        "status": "failed" if has_error_diagnostics(diagnostics) else "ok",
+        "brand_kit": {
+            "id": brand_kit.get("id"),
+            "version": brand_kit.get("version"),
+            "name": brand_kit.get("name"),
+        },
+        "governance": {
+            "strictness": strictness,
+            "has_errors": has_error_diagnostics(diagnostics),
+        },
+        "diagnostics": diagnostic_views(diagnostics, diagnostics),
+    }
+
+
+def generated_brand_kit_summary(
+    brand_kit: JsonObject, brand_summary: Optional[JsonObject]
+) -> JsonObject:
+    summary = brand_summary or {}
+    return {
+        "id": brand_kit.get("id"),
+        "version": brand_kit.get("version"),
+        "name": brand_kit.get("name"),
+        "approval_status": brand_kit.get("approval_status"),
+        "product_ready": summary.get("product_ready", False),
+        "source": "generated",
+        "description": brand_kit.get("description"),
+        "default_mode": brand_kit.get("default_mode"),
+        "modes": summary.get("modes"),
+        "tokens": summary.get("tokens"),
+        "assets": summary.get("assets"),
+        "authoring_rules": summary.get("authoring_rules", []),
+        "created_at": None,
+        "updated_at": None,
     }
 
 
@@ -102,6 +244,7 @@ def preflight_dto(
             "id": effective_brand_kit.get("id") if effective_brand_kit else None,
             "version": effective_brand_kit.get("version") if effective_brand_kit else None,
             "name": effective_brand_kit.get("name") if effective_brand_kit else None,
+            "mode": document.get("effective_brand_mode"),
         },
     }
 

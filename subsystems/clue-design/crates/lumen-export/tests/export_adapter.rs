@@ -1,12 +1,17 @@
 use lumen_core::{
-    compile_dsl_into_scene, preflight_scene, AutoLayoutProps, BrandKit, Color, ComputedGeometry,
-    ContentType, DiagnosticSeverity, Dimension, DocumentId, ExportAdapter, ExportFormat,
-    ExportProfile, ExportPurpose, ExportRequest, Fill, Node, NodeId, NodeKind, Page, PageId,
-    PagePreset, PageSize, Paint, PaintId, PdfIntent, PreflightOptions, RasterScale, Rect, Scene,
-    SizeSpec, Slot, SlotId, SlotKey, Stroke, TextAlign, TextNode, Transform, Unit,
+    collect_scene_token_references, compile_dsl_into_scene, preflight_scene, AutoLayoutProps,
+    BrandKit, Color, ComputedGeometry, ContentType, DiagnosticSeverity, Dimension, DocumentId,
+    ExportAdapter, ExportFormat, ExportProfile, ExportPurpose, ExportRequest, Fill, Node, NodeId,
+    NodeKind, Page, PageId, PagePreset, PageSize, Paint, PaintId, PdfIntent, PreflightOptions,
+    RasterScale, Rect, Scene, SizeSpec, Slot, SlotId, SlotKey, Stroke, TextAlign, TextNode,
+    Transform, Unit,
 };
 use lumen_export::LumenExportAdapter;
 use serde_json::Value;
+
+const ACME_BRAND_KIT: &str = include_str!("../../lumen-core/fixtures/brand_kits/acme_full.json");
+const TOKENIZED_LINKEDIN_SQUARE: &str =
+    include_str!("../../lumen-core/fixtures/brand_templates/tokenized_linkedin_square.lumen");
 
 fn export_profile(format: ExportFormat) -> ExportProfile {
     ExportProfile {
@@ -366,16 +371,13 @@ fn svg_export_uses_computed_xy_for_layouted_children() {
 
 #[test]
 fn golden_dsl_brand_slot_layout_exports_svg_preview() {
-    let brand_kit: BrandKit = serde_json::from_str(include_str!(
-        "../../lumen-core/fixtures/brand_kits/acme_full.json"
-    ))
-    .unwrap();
+    let brand_kit: BrandKit = serde_json::from_str(ACME_BRAND_KIT).unwrap();
     let mut scene = Scene::new(DocumentId::from("doc_preflight_export"), "Preflight Export");
     let compile_output = compile_dsl_into_scene(
         r#"
 page page_a4
   hero autolayout(h) p(24,24) s(180,hug) fill($surface.brand) stroke($surface.brand,$stroke.width.firm) g($space.md) pad($space.md) rd($radius.md) o($opacity.subtle)
-    headline text "Plan" p(0,0) s(132,44) style($type.headline)
+    headline text "Plan" p(0,0) s(132,48) style($type.body.small)
   slot_text text "Plan" p(24,96) s(132,48) font("Inter",16,700,left) slot(campaign.headline)
 "#,
         &mut scene,
@@ -423,9 +425,71 @@ page page_a4
     assert!(svg.contains("data-lumen-node-id=\"headline\""));
     assert!(svg.contains("data-lumen-node-id=\"slot_text\""));
     assert!(svg.contains("data-lumen-slot-keys=\"campaign.headline\""));
-    assert!(svg.contains("#004D5A"));
-    assert!(svg.contains("#FFFFFF"));
+    assert!(svg.contains("fill=\"#"));
+    assert!(!svg.contains("$surface."));
+    assert!(!svg.contains("$type."));
     assert!(svg.contains(">Plan</tspan></text>"));
+}
+
+#[test]
+fn phase_c_tokenized_brand_template_exports_resolved_svg() {
+    let brand_kit: BrandKit = serde_json::from_str(ACME_BRAND_KIT).unwrap();
+    let mut scene = Scene::new(
+        DocumentId::from("doc_phase_c_linkedin_square_export"),
+        "Phase C LinkedIn Square Export",
+    );
+    let compile_output = compile_dsl_into_scene(TOKENIZED_LINKEDIN_SQUARE, &mut scene);
+
+    assert!(compile_output
+        .compile_output
+        .diagnostics
+        .iter()
+        .all(|diagnostic| diagnostic.diagnostic.severity != DiagnosticSeverity::Error));
+    assert!(compile_output.operation_error.is_none());
+
+    let preflight = preflight_scene(scene, Some(&brand_kit), PreflightOptions::default());
+    assert!(
+        preflight
+            .diagnostics
+            .iter()
+            .all(|diagnostic| diagnostic.severity != DiagnosticSeverity::Error),
+        "{:#?}",
+        preflight.diagnostics
+    );
+    assert!(
+        collect_scene_token_references(&preflight.scene).is_empty(),
+        "preflight should resolve every BrandKit token before export"
+    );
+
+    let result = LumenExportAdapter::new()
+        .export(
+            &preflight.scene,
+            &request(ExportFormat::Svg, vec![PageId::from("linkedin_square")]),
+        )
+        .unwrap();
+
+    assert_eq!(result.artifacts.len(), 1);
+    assert!(
+        result.diagnostics.iter().all(|diagnostic| !matches!(
+            diagnostic.code.as_str(),
+            "LUME0206" | "LUME0208" | "LUME0209"
+        )),
+        "{:#?}",
+        result.diagnostics
+    );
+
+    let svg = std::str::from_utf8(&result.artifacts[0].bytes).unwrap();
+    assert!(svg.contains("width=\"1080\""));
+    assert!(svg.contains("height=\"1080\""));
+    assert!(svg.contains("viewBox=\"0 0 1080 1080\""));
+    assert!(svg.contains("data-lumen-document-id=\"doc_phase_c_linkedin_square_export\""));
+    assert!(svg.contains("data-lumen-page-id=\"linkedin_square\""));
+    assert!(svg.contains("data-lumen-node-id=\"headline\""));
+    assert!(svg.contains("data-lumen-slot-keys=\"campaign.headline\""));
+    assert!(svg.contains("fill=\"#"));
+    assert!(!svg.contains("$surface."));
+    assert!(!svg.contains("$type."));
+    assert!(svg.contains(">Surgery first.</tspan></text>"));
 }
 
 #[test]
