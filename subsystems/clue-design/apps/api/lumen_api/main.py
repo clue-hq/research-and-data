@@ -12,6 +12,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from uuid import uuid4
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from .core import CoreClient, CoreError, has_error_diagnostics
@@ -61,8 +62,24 @@ from .models import (
 JsonObject = Dict[str, Any]
 
 
+def cors_origins() -> List[str]:
+    raw = os.environ.get(
+        "LUMEN_API_CORS_ORIGINS",
+        "http://127.0.0.1:3000,http://localhost:3000",
+    )
+    origins = [origin.strip() for origin in raw.split(",") if origin.strip()]
+    return origins or ["http://127.0.0.1:3000"]
+
+
 def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> FastAPI:
     app = FastAPI(title="ABM Design Engine Persistence API")
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=cors_origins(),
+        allow_credentials=False,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
     app.state.database_path = database_path or Path(
         os.environ.get("LUMEN_API_DATABASE_PATH", "apps/api/lumen-api.sqlite3")
     )
@@ -1558,7 +1575,7 @@ def run_agent_turn_preview(
             str(error),
         )
 
-    return agent_response_from_trace(result, tools.trace_dir)
+    return agent_response_from_trace(result, tools.trace_dir, tools.scene)
 
 
 def ensure_agent_runtime_path(root: Path) -> None:
@@ -1600,7 +1617,9 @@ def scene_context_summary(scene: JsonObject) -> JsonObject:
     }
 
 
-def agent_response_from_trace(result: JsonObject, trace_dir: Path) -> JsonObject:
+def agent_response_from_trace(
+    result: JsonObject, trace_dir: Path, draft_scene: Optional[JsonObject] = None
+) -> JsonObject:
     operations: List[JsonObject] = []
     dsl_blocks: List[str] = []
     diagnostics: List[JsonObject] = []
@@ -1654,6 +1673,10 @@ def agent_response_from_trace(result: JsonObject, trace_dir: Path) -> JsonObject
         "preview_paths": preview_paths,
         "dsl_blocks": dsl_blocks,
         "operations": operations if status == "proposed" else [],
+        "draft_scene": draft_scene,
+        "stop_reason": result.get("stop_reason")
+        if isinstance(result.get("stop_reason"), str)
+        else None,
         "diagnostics": diagnostics,
         "artifacts": [
             {
@@ -1684,6 +1707,8 @@ def failed_agent_turn_response(code: str, message: str, detail: str) -> JsonObje
         "preview_paths": [],
         "dsl_blocks": [],
         "operations": [],
+        "draft_scene": None,
+        "stop_reason": None,
         "diagnostics": [
             agent_diagnostic(code, message, "validation", "error", detail)
         ],

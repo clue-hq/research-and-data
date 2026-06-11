@@ -8,7 +8,7 @@ from typing import Optional
 import pytest
 from fastapi.testclient import TestClient
 
-from lumen_api.main import create_app
+from lumen_api.main import agent_response_from_trace, create_app
 
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -385,6 +385,68 @@ def test_agent_turn_preview_route_returns_editor_safe_proposal(client: TestClien
     assert captured["payload"].active_page_id == "page_a4"
     assert captured["payload"].selected_node_id == "node_contact_name"
     assert captured["root"] == REPO_ROOT
+
+
+def test_agent_turn_preview_allows_editor_cors_preflight(client: TestClient) -> None:
+    response = client.options(
+        "/agent/turn-preview",
+        headers={
+            "Origin": "http://127.0.0.1:3000",
+            "Access-Control-Request-Method": "POST",
+            "Access-Control-Request-Headers": "content-type",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.headers["access-control-allow-origin"] == "http://127.0.0.1:3000"
+    assert "POST" in response.headers["access-control-allow-methods"]
+
+
+def test_agent_trace_response_returns_unapproved_draft_scene(tmp_path: Path) -> None:
+    trace_dir = tmp_path / "run_agent_draft"
+    iteration_dir = trace_dir / "iterations" / "001"
+    iteration_dir.mkdir(parents=True)
+    (iteration_dir / "dsl.lumen").write_text(
+        "page page_square size(1080,1080,px)", encoding="utf-8"
+    )
+    (iteration_dir / "compile.json").write_text(
+        json.dumps(
+            {
+                "compile": {
+                    "status": "ok",
+                    "diagnostics": [],
+                },
+                "operations": [title_operation("Unapproved Draft")],
+            }
+        ),
+        encoding="utf-8",
+    )
+    draft_scene = minimal_scene()
+    draft_scene["pages"]["page_a4"]["size"] = {
+        "width": 1080,
+        "height": 1080,
+        "unit": "px",
+        "preset": "custom",
+        "orientation": "portrait",
+    }
+
+    payload = agent_response_from_trace(
+        {
+            "status": "failed",
+            "summary": "Maximum repair iterations reached.",
+            "run_id": "run_agent_draft",
+            "stop_reason": "max_iterations_reached",
+            "preview_paths": [],
+        },
+        trace_dir,
+        draft_scene,
+    )
+
+    assert payload["status"] == "failed"
+    assert payload["operations"] == []
+    assert payload["draft_scene"]["pages"]["page_a4"]["size"]["width"] == 1080
+    assert payload["stop_reason"] == "max_iterations_reached"
+    assert payload["dsl_blocks"] == ["page page_square size(1080,1080,px)"]
 
 
 def test_export_preview_route_returns_failed_payload_for_missing_page(

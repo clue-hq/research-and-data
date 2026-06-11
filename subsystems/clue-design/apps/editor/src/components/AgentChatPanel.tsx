@@ -105,6 +105,7 @@ function AgentProposalCard({
   onApplyProposal: () => void;
 }) {
   const canApply = proposal.status === "proposed" && proposal.operations.length > 0;
+  const hasDraftScene = Boolean(proposal.draft_scene);
   return (
     <div className={`agent-proposal ${proposal.status}`}>
       <div className="agent-proposal-heading">
@@ -113,9 +114,21 @@ function AgentProposalCard({
         ) : (
           <AlertTriangle aria-hidden size={15} />
         )}
-        <strong>{proposal.status === "proposed" ? "Proposal ready" : "Agent blocked"}</strong>
+        <strong>
+          {proposal.status === "proposed"
+            ? "Proposal ready"
+            : hasDraftScene
+              ? "Draft visible"
+              : "Agent blocked"}
+        </strong>
       </div>
       <p>{proposal.summary}</p>
+      {proposal.status === "failed" && hasDraftScene ? (
+        <p className="muted">
+          The latest unapproved draft is shown on the canvas for inspection. It has not been accepted
+          as a final proposal.
+        </p>
+      ) : null}
       {proposal.trace.run_id ? (
         <p className="muted">
           Run <code>{proposal.trace.run_id}</code>
@@ -173,7 +186,7 @@ function AgentProposalCard({
         </ul>
       ) : null}
       <button type="button" onClick={onApplyProposal} disabled={!canApply || isRunning}>
-        Apply and preview
+        {proposal.status === "failed" && hasDraftScene ? "Draft already shown" : "Apply and preview"}
       </button>
     </div>
   );

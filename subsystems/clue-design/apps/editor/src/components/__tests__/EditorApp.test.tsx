@@ -490,6 +490,8 @@ describe("EditorApp", () => {
       summary: "I proposed a tighter headline for the current page.",
       dsl_blocks: ["#node_contact_name text \"Agent authored headline\""],
       operations: [updateDocumentTitle("Agent Authored Ad")],
+      draft_scene: null,
+      stop_reason: null,
       diagnostics: [],
       trace: {
         run_id: "run_agent_editor",
@@ -536,7 +538,11 @@ describe("EditorApp", () => {
       />
     );
 
+    expect(screen.getByRole("button", { name: /^Agent$/i })).toHaveAttribute("aria-pressed", "false");
+    expect(screen.getByRole("complementary", { name: "Inspector sidebar" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /^Agent$/i }));
     expect(screen.getByRole("button", { name: /^Agent$/i })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("complementary", { name: "Agent chat sidebar" })).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText("Message the agent"), {
       target: {
         value: "Make the selected headline clearer."
@@ -594,6 +600,8 @@ describe("EditorApp", () => {
       summary: "The agent runtime could not produce valid DSL.",
       dsl_blocks: [],
       operations: [],
+      draft_scene: null,
+      stop_reason: "compiler_halt",
       diagnostics: [
         {
           severity: "error",
@@ -622,6 +630,7 @@ describe("EditorApp", () => {
       />
     );
 
+    fireEvent.click(screen.getByRole("button", { name: /^Agent$/i }));
     fireEvent.change(screen.getByLabelText("Message the agent"), {
       target: {
         value: "Try an impossible change."
@@ -633,6 +642,102 @@ describe("EditorApp", () => {
     expect(screen.getAllByText("LUMA_AGENT_COMPILE_FAILED").length).toBeGreaterThan(0);
     expect(screen.getByRole("button", { name: /^Apply and preview$/i })).toBeDisabled();
     expect(screen.getByRole("heading", { name: "Hospital Letter" })).toBeInTheDocument();
+  });
+
+  it("shows the latest unapproved agent draft on the canvas when the loop is blocked", async () => {
+    const draftScene = twoPageScene();
+    draftScene.pages.page_square = {
+      ...draftScene.pages.page_a4,
+      id: "page_square",
+      name: "Agent Square Draft",
+      size: {
+        width: 1080,
+        height: 1080,
+        unit: "px",
+        preset: "custom",
+        orientation: "portrait"
+      },
+      children: []
+    };
+    const agentRunner: EditorAgentRunner = vi.fn().mockResolvedValue({
+      status: "failed",
+      summary: "Maximum repair iterations reached, but a draft is available.",
+      dsl_blocks: ["page page_square size(1080,1080,px)"],
+      operations: [],
+      draft_scene: draftScene,
+      stop_reason: "max_iterations_reached",
+      diagnostics: [
+        {
+          severity: "error",
+          phase: "layout",
+          code: "LUMA_AGENT_MAX_ITERATIONS",
+          message: "The agent did not reach final acceptance.",
+          subject: { kind: "document" },
+          hint: "Inspect the draft and repair manually."
+        }
+      ],
+      trace: {
+        run_id: "run_agent_draft",
+        trace_dir: ".lumen-runs/run_agent_draft",
+        preview_paths: []
+      },
+      artifacts: []
+    });
+
+    render(
+      <EditorApp
+        initialScene={twoPageScene()}
+        initialSelectedNodeId={null}
+        agentRunner={agentRunner}
+      />
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /^Agent$/i }));
+    fireEvent.change(screen.getByLabelText("Message the agent"), {
+      target: {
+        value: "Make a square ad."
+      }
+    });
+    fireEvent.click(screen.getByRole("button", { name: /^Send$/i }));
+
+    expect(await screen.findByText("Draft visible")).toBeInTheDocument();
+    expect(screen.getByText(/latest unapproved draft is shown on the canvas/i)).toBeInTheDocument();
+    expect(screen.getByTestId("canvas-selection")).toHaveAttribute("data-page-width", "1080");
+    expect(screen.getByTestId("canvas-selection")).toHaveAttribute("data-page-height", "1080");
+    expect(screen.getAllByText(/latest unapproved draft is shown on the canvas/i).length).toBeGreaterThan(0);
+    expect(screen.getByRole("button", { name: /^Draft already shown$/i })).toBeDisabled();
+
+    fireEvent.click(screen.getByRole("button", { name: /^Undo$/i }));
+
+    expect(screen.getByTestId("canvas-selection")).toHaveAttribute("data-page-width", "210");
+  });
+
+  it("swaps the inspector for a resizable agent chat right sidebar", async () => {
+    render(<EditorApp initialScene={twoPageScene()} initialSelectedNodeId={null} />);
+
+    expect(screen.getByRole("complementary", { name: "Inspector sidebar" })).toBeInTheDocument();
+    expect(screen.queryByLabelText("Message the agent")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /^Agent$/i }));
+
+    const workspace = document.querySelector(".workspace-grid");
+    expect(workspace).toHaveClass("agent-open");
+    expect(workspace?.getAttribute("style")).toContain("--right-sidebar-width: 420px");
+    expect(screen.queryByText(/^Inspector$/i)).not.toBeInTheDocument();
+
+    fireEvent(
+      screen.getByRole("separator", { name: /resize agent chat sidebar/i }),
+      new MouseEvent("pointerdown", {
+        bubbles: true,
+        clientX: 900
+      })
+    );
+    window.dispatchEvent(new MouseEvent("pointermove", { clientX: 800 }));
+    window.dispatchEvent(new Event("pointerup"));
+
+    await waitFor(() =>
+      expect(workspace?.getAttribute("style")).toContain("--right-sidebar-width: 520px")
+    );
+    expect(screen.getByRole("complementary", { name: "Agent chat sidebar" })).toBeInTheDocument();
   });
 
   it("undoes and redoes accepted editor operations through scene snapshots", () => {
@@ -1163,11 +1268,31 @@ describe("EditorApp", () => {
     expect(screen.getByTestId("canvas-selection")).toHaveAttribute("data-page-height", "5000");
   });
 
-  it("blocks export when canonical preflight fails", async () => {
+  it("exports a preview for inspection when canonical preflight fails", async () => {
     const exportRunner: EditorExportRunner = vi.fn().mockResolvedValue({
       status: "ok",
       diagnostics: [],
-      artifacts: []
+      artifacts: [
+        {
+          format: "svg",
+          page_id: "page_a4",
+          asset_id: null,
+          filename: "page_a4.preview_svg.svg",
+          sidecar_filename: null,
+          mime_type: "image/svg+xml",
+          byte_length: 24,
+          dimensions: {
+            width: 210,
+            height: 297,
+            unit: "scene",
+            source: "svg_view_box"
+          },
+          data_url: "data:image/svg+xml;base64,PHN2Zy8+",
+          text: "<svg />",
+          sidecar_json: null,
+          sidecar_summary: null
+        }
+      ]
     });
     const preflightRunner: EditorPreflightRunner = vi.fn().mockResolvedValue({
       status: "failed",
@@ -1214,15 +1339,46 @@ describe("EditorApp", () => {
     expect(screen.getAllByText("Headline overflows its frame.").length).toBeGreaterThanOrEqual(1);
     fireEvent.click(screen.getAllByRole("button", { name: /show node node_contact_name/i })[0]);
     expect(screen.getByTestId("canvas-selection")).toHaveAttribute("data-selected-node", "node_contact_name");
-    expect(exportRunner).not.toHaveBeenCalled();
-    expect(screen.queryByText("Export ready")).not.toBeInTheDocument();
+    expect(await screen.findByText("Export ready")).toBeInTheDocument();
+    expect(screen.getByText("Not ready for approval")).toBeInTheDocument();
+    expect(exportRunner).toHaveBeenCalledWith({
+      scene: expect.objectContaining({
+        pages: expect.objectContaining({
+          page_a4: expect.any(Object)
+        })
+      }),
+      profile: expect.objectContaining({
+        name: "preview_svg"
+      }),
+      pageIds: ["page_a4"]
+    });
   });
 
-  it("blocks export when preflight summary reports errors even if status is applied", async () => {
+  it("exports a preview when preflight summary reports errors even if status is applied", async () => {
     const exportRunner: EditorExportRunner = vi.fn().mockResolvedValue({
       status: "ok",
       diagnostics: [],
-      artifacts: []
+      artifacts: [
+        {
+          format: "svg",
+          page_id: "page_a4",
+          asset_id: null,
+          filename: "page_a4.preview_svg.svg",
+          sidecar_filename: null,
+          mime_type: "image/svg+xml",
+          byte_length: 24,
+          dimensions: {
+            width: 210,
+            height: 297,
+            unit: "scene",
+            source: "svg_view_box"
+          },
+          data_url: "data:image/svg+xml;base64,PHN2Zy8+",
+          text: "<svg />",
+          sidecar_json: null,
+          sidecar_summary: null
+        }
+      ]
     });
     const preflightRunner: EditorPreflightRunner = vi.fn(({ scene }) =>
       Promise.resolve({
@@ -1266,10 +1422,22 @@ describe("EditorApp", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /generate preview/i }));
 
-    expect(await screen.findByText("LUMV_PREFLIGHT_HAS_ERRORS")).toBeInTheDocument();
-    expect(screen.getByText("Preflight summary reports unresolved layout errors.")).toBeInTheDocument();
-    expect(exportRunner).not.toHaveBeenCalled();
-    expect(screen.queryByText("Export ready")).not.toBeInTheDocument();
+    expect((await screen.findAllByText("LUMV_PREFLIGHT_HAS_ERRORS")).length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText("Preflight summary reports unresolved layout errors.").length).toBeGreaterThanOrEqual(1);
+    expect(await screen.findByText("Export ready")).toBeInTheDocument();
+    expect(screen.getAllByText("EDITOR_EXPORT_PREFLIGHT_HAS_ERRORS").length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByText("Not ready for approval")).toBeInTheDocument();
+    expect(exportRunner).toHaveBeenCalledWith({
+      scene: expect.objectContaining({
+        pages: expect.objectContaining({
+          page_a4: expect.any(Object)
+        })
+      }),
+      profile: expect.objectContaining({
+        name: "preview_svg"
+      }),
+      pageIds: ["page_a4"]
+    });
   });
 
   it("promotes selected-node diagnostics into a focused diagnostics section", async () => {

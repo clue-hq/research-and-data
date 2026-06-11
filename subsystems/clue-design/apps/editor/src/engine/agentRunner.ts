@@ -30,6 +30,8 @@ export interface EditorAgentResult {
   summary: string;
   dsl_blocks: string[];
   operations: Operation[];
+  draft_scene: Scene | null;
+  stop_reason: string | null;
   diagnostics: Diagnostic[];
   trace: EditorAgentTrace;
   artifacts: EditorAgentArtifactRef[];
@@ -85,6 +87,8 @@ export function agentResultFromUnknown(payload: unknown): EditorAgentResult {
     summary,
     dsl_blocks: dslBlocks,
     operations,
+    draft_scene: sceneFromUnknown(payload.draft_scene),
+    stop_reason: typeof payload.stop_reason === "string" ? payload.stop_reason : null,
     diagnostics,
     trace: traceFromUnknown(payload),
     artifacts: artifactsFromUnknown(payload)
@@ -177,6 +181,16 @@ function artifactsFromUnknown(payload: Record<string, unknown>): EditorAgentArti
   return [...directArtifacts, ...pathArtifacts];
 }
 
+function sceneFromUnknown(value: unknown): Scene | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+  if (!isRecord(value.meta) || !isRecord(value.pages) || !isRecord(value.nodes)) {
+    return null;
+  }
+  return value as unknown as Scene;
+}
+
 function artifactFromUnknown(value: unknown): EditorAgentArtifactRef[] {
   if (!isRecord(value)) {
     return [];
@@ -250,6 +264,8 @@ function failedAgentResult(code: string, message: string): EditorAgentResult {
     summary: message,
     dsl_blocks: [],
     operations: [],
+    draft_scene: null,
+    stop_reason: null,
     diagnostics: [
       {
         severity: "error",

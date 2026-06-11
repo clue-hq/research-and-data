@@ -27,6 +27,8 @@ describe("agent runner", () => {
               }
             }
           ],
+          draft_scene: null,
+          stop_reason: null,
           diagnostics: [],
           artifacts: [
             {
@@ -94,5 +96,51 @@ describe("agent runner", () => {
       severity: "error",
       code: "EDITOR_AGENT_INVALID_RESPONSE"
     });
+  });
+
+  it("keeps unapproved draft scenes visible without marking them as proposals", () => {
+    const draftScene = {
+      ...minimalScene,
+      pages: {
+        ...minimalScene.pages,
+        page_square: {
+          ...minimalScene.pages.page_a4,
+          id: "page_square",
+          name: "Square Draft",
+          size: {
+            width: 1080,
+            height: 1080,
+            unit: "px",
+            preset: "custom",
+            orientation: "portrait"
+          },
+          children: []
+        }
+      }
+    };
+
+    const result = agentResultFromUnknown({
+      status: "failed",
+      summary: "Max iterations reached.",
+      operations: [
+        {
+          kind: "update_document",
+          patch: {
+            title: { kind: "set", value: "Should not be applyable" },
+            artifact_type: { kind: "unchanged" },
+            medium: { kind: "unchanged" },
+            brand_kit: { kind: "unchanged" }
+          }
+        }
+      ],
+      draft_scene: draftScene,
+      stop_reason: "max_iterations_reached",
+      diagnostics: []
+    });
+
+    expect(result.status).toBe("failed");
+    expect(result.operations).toHaveLength(1);
+    expect(result.draft_scene?.pages.page_square.size.width).toBe(1080);
+    expect(result.stop_reason).toBe("max_iterations_reached");
   });
 });

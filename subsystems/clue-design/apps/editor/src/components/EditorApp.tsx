@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
 import { Download, FileCheck2, History, PanelRightClose, RotateCcw, RotateCw, Send } from "lucide-react";
 import { AgentChatPanel, type AgentChatMessage } from "./AgentChatPanel";
 import { BrandKitPanel } from "./BrandKitPanel";
@@ -115,7 +115,8 @@ export default function EditorApp({
   const [operationHistory, setOperationHistory] = useState<Operation[]>([]);
   const [isBrandGovernanceRunning, setIsBrandGovernanceRunning] = useState(false);
   const [isBrandCompatibilityRunning, setIsBrandCompatibilityRunning] = useState(false);
-  const [isAgentPanelOpen, setIsAgentPanelOpen] = useState(true);
+  const [isAgentPanelOpen, setIsAgentPanelOpen] = useState(false);
+  const [agentSidebarWidth, setAgentSidebarWidth] = useState(420);
   const [isAgentRunning, setIsAgentRunning] = useState(false);
   const [agentDraft, setAgentDraft] = useState("");
   const [agentMessages, setAgentMessages] = useState<AgentChatMessage[]>([]);
@@ -250,6 +251,9 @@ export default function EditorApp({
         diagnostics
       });
       setAgentProposal(result);
+      if (result.status === "failed" && result.draft_scene) {
+        showAgentDraftScene(result);
+      }
       setAgentMessages((messages) => [
         ...messages,
         {
@@ -276,6 +280,8 @@ export default function EditorApp({
         summary: message,
         dsl_blocks: [],
         operations: [],
+        draft_scene: null,
+        stop_reason: null,
         diagnostics: [diagnostic],
         trace: {
           run_id: null,
@@ -298,13 +304,51 @@ export default function EditorApp({
     }
   };
 
+  const showAgentDraftScene = (result: EditorAgentResult) => {
+    if (!result.draft_scene) {
+      return;
+    }
+    const draftScene = result.draft_scene;
+    const draftPageId = agentDraftPageId(scene, draftScene, activePageId);
+    const draftDiagnostic: Diagnostic = {
+      severity: "warning",
+      phase: "validation",
+      code: "EDITOR_AGENT_UNAPPROVED_DRAFT_VISIBLE",
+      message: "Showing the agent's latest unapproved draft on the canvas.",
+      subject: { kind: "document" },
+      hint:
+        result.stop_reason ??
+        "The draft did not pass the agent quality loop, but it is available for inspection and manual repair."
+    };
+
+    setUndoStack((stack) => [
+      ...stack.slice(-49),
+      {
+        scene,
+        operations: []
+      }
+    ]);
+    setRedoStack([]);
+    setScene(draftScene);
+    setActivePageId(draftPageId);
+    setSelectedNodeId(null);
+    setBrandCompatibilityReport(null);
+    setPreflightResult(null);
+    setExportResult(null);
+    setWorkspaceMode("canvas");
+    setDiagnostics([draftDiagnostic, ...result.diagnostics]);
+  };
+
   const undoLastOperation = () => {
     const undoFrame = undoStack[undoStack.length - 1];
     if (!undoFrame) {
       return;
     }
 
-    const nextHistory = operationHistory.slice(0, -undoFrame.operations.length);
+    const nextHistory =
+      undoFrame.operations.length > 0
+        ? operationHistory.slice(0, -undoFrame.operations.length)
+        : operationHistory;
 
     setUndoStack((stack) => stack.slice(0, -1));
     setRedoStack((stack) => [
@@ -346,6 +390,24 @@ export default function EditorApp({
     setPreflightResult(null);
     setExportResult(null);
     setWorkspaceMode("canvas");
+  };
+
+  const startAgentSidebarResize = (event: ReactPointerEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    const startX = event.clientX;
+    const startWidth = agentSidebarWidth;
+    const resize = (moveEvent: PointerEvent) => {
+      if (!Number.isFinite(moveEvent.clientX)) {
+        return;
+      }
+      const nextWidth = clampNumber(startWidth + startX - moveEvent.clientX, 320, 720);
+      setAgentSidebarWidth(nextWidth);
+    };
+    const stopResize = () => {
+      window.removeEventListener("pointermove", resize);
+    };
+    window.addEventListener("pointermove", resize);
+    window.addEventListener("pointerup", stopResize, { once: true });
   };
 
   useEffect(() => {
@@ -771,6 +833,7 @@ export default function EditorApp({
           content: `Applied ${proposedOperations.length} agent operation${proposedOperations.length === 1 ? "" : "s"} and started preflight/export preview.`
         }
       ]);
+      setIsAgentPanelOpen(false);
       setActivePageId(previewPageId);
       setSelectedNodeId((currentSelectedNodeId) =>
         currentSelectedNodeId && nextScene.nodes[currentSelectedNodeId]
@@ -822,54 +885,40 @@ export default function EditorApp({
     try {
       const preflight = await preflightRunner({ scene: sceneForExport });
       setPreflightResult(preflight);
-      if (
-        preflight.status !== "applied" ||
-        preflight.preflight.has_errors ||
-        !preflight.scene ||
-        hasErrorDiagnostics(preflight.diagnostics)
-      ) {
-        setExportResult(null);
-        setDiagnostics(
-          preflight.diagnostics.length > 0
-            ? preflight.diagnostics
-            : [
-                {
-                  severity: "error",
-                  phase: "validation",
-                  code: "EDITOR_EXPORT_PREFLIGHT_FAILED",
-                  message: "Preflight failed before export.",
-                  subject: { kind: "document" },
-                  hint: "Fix validation, layout, BrandKit, or token diagnostics before exporting."
-                }
-              ]
-        );
-        return;
+      const preflightDiagnostics = exportPreflightDiagnostics(preflight);
+      const sceneToExport = preflight.scene ?? sceneForExport;
+      if (preflight.scene) {
+        setScene(preflight.scene);
       }
-
-      const preflightedScene = preflight.scene;
-      setScene(preflightedScene);
       setDiagnostics([
         {
-          severity: "advice",
+          severity: preflightDiagnostics.length > 0 ? "warning" : "advice",
           phase: "export",
           code: "EDITOR_EXPORT_RUNNING",
-          message: `Exporting preflighted scene with ${profile.name}.`,
+          message: `Exporting ${preflightDiagnostics.length > 0 ? "with preflight diagnostics" : "preflighted scene"} using ${profile.name}.`,
           subject: { kind: "document" },
-          hint: `Preflight applied ${preflightOperationCount(preflight)} canonical operation${preflightOperationCount(preflight) === 1 ? "" : "s"}.`
+          hint:
+            preflightDiagnostics.length > 0
+              ? "Preview export continues for inspection, but approval remains blocked until preflight diagnostics are resolved."
+              : `Preflight applied ${preflightOperationCount(preflight)} canonical operation${preflightOperationCount(preflight) === 1 ? "" : "s"}.`
         }
       ]);
 
       const result = await exportRunner({
-        scene: preflightedScene,
+        scene: sceneToExport,
         profile,
         pageIds,
         ...(documentId ? { documentId } : {})
       });
-      setExportResult(result);
+      const combinedDiagnostics = [...preflightDiagnostics, ...result.diagnostics];
+      const resultWithPreflightDiagnostics: EditorExportResult = {
+        ...result,
+        diagnostics: combinedDiagnostics
+      };
+      setExportResult(resultWithPreflightDiagnostics);
       if (result.status === "ok" && result.artifacts.length > 0) {
         setWorkspaceMode("compare");
       }
-      const combinedDiagnostics = [...preflight.diagnostics, ...result.diagnostics];
       setDiagnostics(
         combinedDiagnostics.length > 0
           ? combinedDiagnostics
@@ -939,7 +988,10 @@ export default function EditorApp({
           </button>
         </div>
       </header>
-      <div className="workspace-grid">
+      <div
+        className={`workspace-grid${isAgentPanelOpen ? " agent-open" : ""}`}
+        style={{ "--right-sidebar-width": `${agentSidebarWidth}px` } as CSSProperties}
+      >
         <div className="left-sidebar">
           <PageRail
             scene={scene}
@@ -1022,11 +1074,19 @@ export default function EditorApp({
             />
           )}
         </section>
-        <aside className="inspector-shell">
-          <div className="panel-title">
-            <PanelRightClose aria-hidden size={16} />
-            Inspector
-          </div>
+        {isAgentPanelOpen ? (
+          <div
+            className="right-sidebar-resizer"
+            role="separator"
+            aria-label="Resize agent chat sidebar"
+            aria-orientation="vertical"
+            onPointerDown={startAgentSidebarResize}
+          />
+        ) : null}
+        <aside
+          className="inspector-shell"
+          aria-label={isAgentPanelOpen ? "Agent chat sidebar" : "Inspector sidebar"}
+        >
           {isAgentPanelOpen ? (
             <AgentChatPanel
               messages={agentMessages}
@@ -1040,53 +1100,60 @@ export default function EditorApp({
               onSend={(prompt) => void sendAgentPrompt(prompt)}
               onApplyProposal={applyAgentProposal}
             />
-          ) : null}
-          <InspectorPanel
-            scene={scene}
-            activePage={activePage}
-            selectedNode={selectedNode}
-            selectedNodeId={selectedNodeId}
-            brandTokens={effectiveBrandKit?.tokens ?? null}
-            diagnostics={diagnostics}
-            renderDiagnostics={renderDiagnostics}
-            onOperation={applyOperation}
-            onOperations={applyOperations}
-            onSelectSubject={selectDiagnosticSubject}
-          />
-          <BrandKitPanel
-            scene={scene}
-            availableBrandKits={initialAvailableBrandKits}
-            diagnostics={brandDiagnostics}
-            compatibilityReport={brandCompatibilityReport}
-            compatibilityTarget={compatibilityTarget}
-            onOperation={applyOperation}
-            onRunBrandGovernance={runBrandGovernance}
-            isRunningBrandGovernance={isBrandGovernanceRunning}
-            onRunBrandCompatibility={runBrandCompatibility}
-            isRunningBrandCompatibility={isBrandCompatibilityRunning}
-            onSelectSubject={selectDiagnosticSubject}
-          />
-          <ExportPanel
-            scene={scene}
-            activePageId={activePageId}
-            exportResult={exportResult}
-            isExporting={isExporting}
-            onExport={(profile, pageIds) => void runExport(profile, pageIds)}
-            onSaveProfile={(profile) => applyOperation(upsertExportProfile(profile))}
-            onRemoveProfile={(name) => applyOperation(removeExportProfile(name))}
-            onSelectSubject={selectDiagnosticSubject}
-          />
-          <OperationHistoryPanel operations={operationHistory} redoCount={redoStack.length} />
-          <ValidationPanel
-            scene={scene}
-            activePageId={activePageId}
-            selectedNodeId={selectedNodeId}
-            diagnostics={diagnostics}
-            renderDiagnostics={renderDiagnostics}
-            lastOperation={lastOperation}
-            preflightResult={preflightResult}
-            onSelectSubject={selectDiagnosticSubject}
-          />
+          ) : (
+            <>
+              <div className="panel-title">
+                <PanelRightClose aria-hidden size={16} />
+                Inspector
+              </div>
+              <InspectorPanel
+                scene={scene}
+                activePage={activePage}
+                selectedNode={selectedNode}
+                selectedNodeId={selectedNodeId}
+                brandTokens={effectiveBrandKit?.tokens ?? null}
+                diagnostics={diagnostics}
+                renderDiagnostics={renderDiagnostics}
+                onOperation={applyOperation}
+                onOperations={applyOperations}
+                onSelectSubject={selectDiagnosticSubject}
+              />
+              <BrandKitPanel
+                scene={scene}
+                availableBrandKits={initialAvailableBrandKits}
+                diagnostics={brandDiagnostics}
+                compatibilityReport={brandCompatibilityReport}
+                compatibilityTarget={compatibilityTarget}
+                onOperation={applyOperation}
+                onRunBrandGovernance={runBrandGovernance}
+                isRunningBrandGovernance={isBrandGovernanceRunning}
+                onRunBrandCompatibility={runBrandCompatibility}
+                isRunningBrandCompatibility={isBrandCompatibilityRunning}
+                onSelectSubject={selectDiagnosticSubject}
+              />
+              <ExportPanel
+                scene={scene}
+                activePageId={activePageId}
+                exportResult={exportResult}
+                isExporting={isExporting}
+                onExport={(profile, pageIds) => void runExport(profile, pageIds)}
+                onSaveProfile={(profile) => applyOperation(upsertExportProfile(profile))}
+                onRemoveProfile={(name) => applyOperation(removeExportProfile(name))}
+                onSelectSubject={selectDiagnosticSubject}
+              />
+              <OperationHistoryPanel operations={operationHistory} redoCount={redoStack.length} />
+              <ValidationPanel
+                scene={scene}
+                activePageId={activePageId}
+                selectedNodeId={selectedNodeId}
+                diagnostics={diagnostics}
+                renderDiagnostics={renderDiagnostics}
+                lastOperation={lastOperation}
+                preflightResult={preflightResult}
+                onSelectSubject={selectDiagnosticSubject}
+              />
+            </>
+          )}
         </aside>
       </div>
     </main>
@@ -1278,6 +1345,55 @@ function preflightOperationCount(result: EditorPreflightResult): number {
 
 function hasErrorDiagnostics(diagnostics: Diagnostic[]): boolean {
   return diagnostics.some((diagnostic) => diagnostic.severity === "error");
+}
+
+function exportPreflightDiagnostics(preflight: EditorPreflightResult): Diagnostic[] {
+  const diagnostics = [...preflight.diagnostics];
+  const needsSyntheticError =
+    preflight.status !== "applied" ||
+    preflight.preflight.has_errors ||
+    !preflight.scene;
+
+  if (needsSyntheticError && !hasErrorDiagnostics(diagnostics)) {
+    diagnostics.unshift({
+      severity: "error",
+      phase: "validation",
+      code:
+        preflight.status !== "applied" || !preflight.scene
+          ? "EDITOR_EXPORT_PREFLIGHT_FAILED_NONBLOCKING"
+          : "EDITOR_EXPORT_PREFLIGHT_HAS_ERRORS",
+      message:
+        preflight.status !== "applied" || !preflight.scene
+          ? "Preflight failed; exporting the current scene anyway for preview inspection."
+          : "Preflight reported unresolved errors; exporting anyway for preview inspection.",
+      subject: { kind: "document" },
+      hint:
+        "This preview is useful for inspection, but the artifact is not ready for approval until preflight diagnostics are resolved."
+    });
+  }
+
+  return diagnostics;
+}
+
+function clampNumber(value: number, minimum: number, maximum: number): number {
+  return Math.min(maximum, Math.max(minimum, value));
+}
+
+function agentDraftPageId(
+  currentScene: Scene,
+  draftScene: Scene,
+  activePageId: PageId | null
+): PageId | null {
+  const newDraftPage = Object.values(draftScene.pages).find(
+    (page) => !currentScene.pages[page.id]
+  );
+  if (newDraftPage) {
+    return newDraftPage.id;
+  }
+  if (activePageId && draftScene.pages[activePageId]) {
+    return activePageId;
+  }
+  return firstPageId(draftScene);
 }
 
 function agentPreviewPageId(

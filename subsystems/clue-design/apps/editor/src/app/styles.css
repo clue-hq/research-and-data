@@ -119,6 +119,10 @@ textarea:disabled {
   min-height: 0;
 }
 
+.workspace-grid.agent-open {
+  grid-template-columns: 220px minmax(0, 1fr) 6px var(--right-sidebar-width, 420px);
+}
+
 .left-sidebar,
 .inspector-shell {
   min-height: 0;
@@ -137,6 +141,19 @@ textarea:disabled {
 .inspector-shell {
   border-left: 1px solid #d9d1c3;
   padding: 14px;
+}
+
+.right-sidebar-resizer {
+  min-height: 0;
+  border-left: 1px solid #d9d1c3;
+  border-right: 1px solid #d9d1c3;
+  background: #e7dfd2;
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.right-sidebar-resizer:hover {
+  background: #c8deda;
 }
 
 .panel-title,
