@@ -48,6 +48,48 @@ class PreflightRequest(BaseModel):
     persist_effective_brand: bool = True
 
 
+class PreflightPreviewRequest(BaseModel):
+    scene: JsonObject
+    brand_kit: Optional[JsonObject] = None
+    brand_kit_id: Optional[str] = None
+    brand_kit_version: Optional[int] = None
+    generated_default_brand_kit: Optional[JsonObject] = None
+    mode: Optional[JsonObject] = None
+    strict_no_fallback: bool = False
+
+
+class ExportPreviewRequest(BaseModel):
+    scene: JsonObject
+    format: Literal["svg", "png", "pdf", "figma_manifest"] = "svg"
+    page_ids: List[str] = Field(default_factory=list)
+    profile: Optional[JsonObject] = None
+
+
+class ExportDocumentRequest(BaseModel):
+    format: Literal["svg", "png", "pdf", "figma_manifest"] = "svg"
+    page_ids: List[str] = Field(default_factory=list)
+    profile_name: Optional[str] = None
+    profile: Optional[JsonObject] = None
+    brand_kit: Optional[JsonObject] = None
+    brand_kit_id: Optional[str] = None
+    brand_kit_version: Optional[int] = None
+    generated_default_brand_kit: Optional[JsonObject] = None
+    mode: Optional[JsonObject] = None
+    strict_no_fallback: bool = False
+    persist_effective_brand: bool = True
+    persist_preflight: bool = True
+
+
+class AgentTurnPreviewRequest(BaseModel):
+    prompt: str
+    scene: JsonObject
+    document_id: Optional[str] = None
+    active_page_id: Optional[str] = None
+    selected_node_id: Optional[str] = None
+    diagnostics: List[JsonObject] = Field(default_factory=list)
+    max_iterations: Optional[int] = None
+
+
 class FinalizeTemplateRequest(BaseModel):
     template_revision_id: Optional[str] = None
     snapshot_id: Optional[str] = None

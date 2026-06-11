@@ -6,6 +6,7 @@ import type {
   BrandKitSummary,
   BrandTokenCatalog,
   Diagnostic,
+  DiagnosticSubject,
   Medium,
   Operation,
   Scene
@@ -23,6 +24,7 @@ interface BrandKitPanelProps {
   isRunningBrandGovernance?: boolean;
   onRunBrandCompatibility: () => void;
   isRunningBrandCompatibility?: boolean;
+  onSelectSubject?: (subject: DiagnosticSubject) => void;
 }
 
 const mediumOptions: Medium[] = ["digital", "ad", "email", "print", "direct_mail"];
@@ -37,7 +39,8 @@ export function BrandKitPanel({
   onRunBrandGovernance,
   isRunningBrandGovernance = false,
   onRunBrandCompatibility,
-  isRunningBrandCompatibility = false
+  isRunningBrandCompatibility = false,
+  onSelectSubject
 }: BrandKitPanelProps) {
   const currentRef = scene.meta.brand_kit;
   const selected = currentRef
@@ -133,15 +136,58 @@ export function BrandKitPanel({
       {diagnostics.length > 0 ? (
         <ul className="diagnostic-list brand-diagnostics">
           {diagnostics.map((diagnostic) => (
-            <li key={`${diagnostic.code}-${diagnostic.message}`} className={diagnostic.severity}>
-              <strong>{diagnostic.code}</strong>
-              <span>{diagnostic.message}</span>
-            </li>
+            <BrandDiagnosticItem
+              key={`${diagnostic.code}-${diagnostic.message}`}
+              diagnostic={diagnostic}
+              onSelectSubject={onSelectSubject}
+            />
           ))}
         </ul>
       ) : null}
     </section>
   );
+}
+
+function BrandDiagnosticItem({
+  diagnostic,
+  onSelectSubject
+}: {
+  diagnostic: Diagnostic;
+  onSelectSubject?: (subject: DiagnosticSubject) => void;
+}) {
+  const subjectLabel = diagnostic.subject ? diagnosticSubjectLabel(diagnostic.subject) : null;
+  const canSelect = Boolean(onSelectSubject && diagnostic.subject && diagnostic.subject.kind !== "document");
+  return (
+    <li className={diagnostic.severity}>
+      <strong>{diagnostic.code}</strong>
+      <span>{diagnostic.message}</span>
+      {diagnostic.subject ? (
+        <button
+          type="button"
+          className="diagnostic-subject-button"
+          disabled={!canSelect}
+          onClick={() => diagnostic.subject && onSelectSubject?.(diagnostic.subject)}
+        >
+          {canSelect ? `Show ${subjectLabel}` : subjectLabel}
+        </button>
+      ) : null}
+    </li>
+  );
+}
+
+function diagnosticSubjectLabel(subject: DiagnosticSubject): string {
+  switch (subject.kind) {
+    case "document":
+      return "document";
+    case "page":
+      return `page ${subject.id}`;
+    case "node":
+      return `node ${subject.id}`;
+    case "slot":
+      return `slot ${subject.id}`;
+    case "asset":
+      return `asset ${subject.id}`;
+  }
 }
 
 function CompatibilitySummary({ report }: { report: BrandCompatibilityReport }) {

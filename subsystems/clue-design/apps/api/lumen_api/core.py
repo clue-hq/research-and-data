@@ -88,6 +88,8 @@ class CoreClient:
         scene: JsonObject,
         export_format: str = "svg",
         page_ids: Optional[List[str]] = None,
+        profile: Optional[JsonObject] = None,
+        raise_on_error: bool = True,
     ) -> JsonObject:
         return self._run(
             {
@@ -95,7 +97,9 @@ class CoreClient:
                 "scene": scene,
                 "format": export_format,
                 "page_ids": page_ids or [],
-            }
+                "profile": profile,
+            },
+            raise_on_error=raise_on_error,
         )
 
     def finalize_template(

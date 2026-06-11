@@ -680,6 +680,14 @@ export type ParentRef =
 
 export type Operation =
   | {
+      kind: "add_page";
+      page: Page;
+    }
+  | {
+      kind: "remove_page";
+      page_id: PageId;
+    }
+  | {
       kind: "update_document";
       patch: DocumentPatch;
     }
@@ -689,9 +697,19 @@ export type Operation =
       patch: PagePatch;
     }
   | {
+      kind: "insert_node";
+      parent: ParentRef;
+      index: number;
+      node: Node;
+    }
+  | {
       kind: "update_node";
       node_id: NodeId;
       patch: NodePatch;
+    }
+  | {
+      kind: "remove_node";
+      node_id: NodeId;
     }
   | {
       kind: "move_node";
@@ -736,6 +754,14 @@ export type Operation =
       kind: "unbind_node_from_slot";
       slot_id: SlotId;
       node_id: NodeId;
+    }
+  | {
+      kind: "upsert_export_profile";
+      profile: ExportProfile;
+    }
+  | {
+      kind: "remove_export_profile";
+      name: string;
     };
 
 export interface Diagnostic {

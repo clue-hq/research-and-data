@@ -249,6 +249,65 @@ def preflight_dto(
     }
 
 
+def preflight_preview_dto(
+    scene: JsonObject,
+    diagnostics: List[JsonObject],
+    preflight: JsonObject,
+    effective_brand_source: str,
+    effective_brand_kit: Optional[JsonObject],
+    mode: Optional[JsonObject],
+) -> JsonObject:
+    preflight_operations = (
+        preflight.get("brand_ref_operations", [])
+        + preflight.get("token_operations", [])
+        + preflight.get("layout_operations", [])
+    )
+    meta = scene.get("meta", {})
+    document = {
+        "id": meta.get("id", "preview_document"),
+        "title": meta.get("title", "Preview document"),
+        "status": meta.get("status", {"kind": "draft"}),
+        "current_version": None,
+        "artifact_type": meta.get("artifact_type"),
+        "medium": meta.get("medium"),
+        "brand_kit": meta.get("brand_kit"),
+        "effective_brand_kit": {
+            "source": effective_brand_source,
+            "id": effective_brand_kit.get("id") if effective_brand_kit else None,
+            "version": effective_brand_kit.get("version") if effective_brand_kit else None,
+            "mode": mode,
+        },
+        "counts": scene_counts(scene),
+        "created_at": None,
+        "updated_at": None,
+    }
+    return {
+        "schema_version": DTO_SCHEMA_VERSION,
+        "status": "failed" if has_error_diagnostics(diagnostics) else "applied",
+        "document": document,
+        "operation_application": {
+            "applied_operations": 0,
+            "preflight_operations": len(preflight_operations),
+        },
+        "operations": operation_summaries(preflight_operations),
+        "diagnostics": diagnostic_views(diagnostics, diagnostics),
+        "preflight": {
+            "has_errors": preflight.get("has_errors", False),
+            "brand_ref_operations": len(preflight.get("brand_ref_operations", [])),
+            "token_operations": len(preflight.get("token_operations", [])),
+            "layout_operations": len(preflight.get("layout_operations", [])),
+        },
+        "brand_kit": {
+            "source": effective_brand_source,
+            "id": effective_brand_kit.get("id") if effective_brand_kit else None,
+            "version": effective_brand_kit.get("version") if effective_brand_kit else None,
+            "name": effective_brand_kit.get("name") if effective_brand_kit else None,
+            "mode": mode,
+        },
+        "scene": scene,
+    }
+
+
 def finalize_dto(
     document: JsonObject,
     revision: JsonObject,

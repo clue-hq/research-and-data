@@ -1,7 +1,10 @@
 import type {
+  AutoLayoutNode,
   AutoLayoutProps,
   BrandKitRef,
   DocumentPatch,
+  ExportProfile,
+  Fill,
   LayoutAnchor,
   Medium,
   Node,
@@ -10,13 +13,16 @@ import type {
   Operation,
   OverflowPolicy,
   Page,
+  PageId,
   PagePatch,
+  Rect,
   PageSize,
   ParentRef,
   SizeSpec,
   Slot,
   SlotId,
   SlotKey,
+  Stroke,
   TextNode,
   Transform
 } from "./contracts";
@@ -91,12 +97,108 @@ export function updateDocumentMedium(medium: Medium): Operation {
   };
 }
 
+export function updateDocumentTitle(title: string): Operation {
+  return {
+    kind: "update_document",
+    patch: documentPatch({
+      title: set(title.trim() || "Untitled design")
+    })
+  };
+}
+
+export function updateDocumentArtifactType(artifactType: string): Operation {
+  const trimmed = artifactType.trim();
+  return {
+    kind: "update_document",
+    patch: documentPatch({
+      artifact_type: trimmed ? set(trimmed) : clear()
+    })
+  };
+}
+
+export function addPage(page: Page): Operation {
+  return {
+    kind: "add_page",
+    page
+  };
+}
+
+export function removePage(pageId: PageId): Operation {
+  return {
+    kind: "remove_page",
+    page_id: pageId
+  };
+}
+
+export function insertNode(parent: ParentRef, index: number, node: Node): Operation {
+  return {
+    kind: "insert_node",
+    parent,
+    index,
+    node
+  };
+}
+
+export function upsertExportProfile(profile: ExportProfile): Operation {
+  return {
+    kind: "upsert_export_profile",
+    profile
+  };
+}
+
+export function removeExportProfile(name: string): Operation {
+  return {
+    kind: "remove_export_profile",
+    name
+  };
+}
+
 export function updatePageSize(page: Page, size: PageSize): Operation {
   return {
     kind: "update_page",
     page_id: page.id,
     patch: pagePatch({
       size: set(size)
+    })
+  };
+}
+
+export function updatePageName(page: Page, name: string): Operation {
+  return {
+    kind: "update_page",
+    page_id: page.id,
+    patch: pagePatch({
+      name: set(name.trim() || page.id)
+    })
+  };
+}
+
+export function updatePageBackground(page: Page, background: Fill[]): Operation {
+  return {
+    kind: "update_page",
+    page_id: page.id,
+    patch: pagePatch({
+      background: set(background)
+    })
+  };
+}
+
+export function updatePageBleed(page: Page, bleed: Rect | null): Operation {
+  return {
+    kind: "update_page",
+    page_id: page.id,
+    patch: pagePatch({
+      bleed: bleed ? set(bleed) : clear()
+    })
+  };
+}
+
+export function updatePageSafeArea(page: Page, safeArea: Rect | null): Operation {
+  return {
+    kind: "update_page",
+    page_id: page.id,
+    patch: pagePatch({
+      safe_area: safeArea ? set(safeArea) : clear()
     })
   };
 }
@@ -111,12 +213,50 @@ export function updateNodeTransform(node: Node, transform: Transform): Operation
   };
 }
 
+export function updateNodeName(node: Node, name: string): Operation {
+  const trimmedName = name.trim();
+  return {
+    kind: "update_node",
+    node_id: node.id,
+    patch: nodePatch({
+      name: trimmedName ? set(trimmedName) : clear()
+    })
+  };
+}
+
+export function removeNode(nodeId: NodeId): Operation {
+  return {
+    kind: "remove_node",
+    node_id: nodeId
+  };
+}
+
 export function updateNodeSize(node: Node, size: SizeSpec): Operation {
   return {
     kind: "update_node",
     node_id: node.id,
     patch: nodePatch({
       size: set(size)
+    })
+  };
+}
+
+export function updateNodeFills(node: Node, fills: Fill[]): Operation {
+  return {
+    kind: "update_node",
+    node_id: node.id,
+    patch: nodePatch({
+      fills: set(fills)
+    })
+  };
+}
+
+export function updateNodeStrokes(node: Node, strokes: Stroke[]): Operation {
+  return {
+    kind: "update_node",
+    node_id: node.id,
+    patch: nodePatch({
+      strokes: set(strokes)
     })
   };
 }
@@ -149,6 +289,22 @@ export function updateAutoLayoutAlignment(node: Node, alignX: LayoutAnchor, alig
     align_x: alignX,
     align_y: alignY
   });
+}
+
+export function updateAutoLayoutNode(node: Node, patch: Partial<AutoLayoutNode>): Operation {
+  if (node.kind.kind !== "auto_layout") {
+    throw new Error(`Cannot update auto-layout fields on non-auto-layout node ${node.id}`);
+  }
+  return {
+    kind: "update_node",
+    node_id: node.id,
+    patch: nodePatch({
+      kind: set({
+        ...node.kind,
+        ...patch
+      })
+    })
+  };
 }
 
 export function updateTextNode(node: Node, text: Partial<TextNode>): Operation {
@@ -288,5 +444,22 @@ export function removeSlot(slotId: SlotId): Operation {
 }
 
 export function slotIdFromKey(slotKey: SlotKey): SlotId {
-  return `slot_${slotKey.replaceAll(".", "_").replaceAll("-", "_")}`;
+  return `slot_${stableSlotSlug(slotKey)}_${stableHash64Hex(slotKey)}`;
+}
+
+function stableSlotSlug(source: string): string {
+  const slug = [...source].map((character) => (/[a-zA-Z0-9]/.test(character) ? character : "_")).join("");
+  return slug || "slot";
+}
+
+function stableHash64Hex(source: string): string {
+  const fnvOffset = 0xcbf29ce484222325n;
+  const fnvPrime = 0x100000001b3n;
+  const mask64 = 0xffffffffffffffffn;
+  let hash = fnvOffset;
+  for (const byte of new TextEncoder().encode(source)) {
+    hash ^= BigInt(byte);
+    hash = (hash * fnvPrime) & mask64;
+  }
+  return hash.toString(16).padStart(16, "0");
 }

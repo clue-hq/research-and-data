@@ -1,9 +1,9 @@
 use crate::sidecar::build_sidecar;
 use crate::svg::{fmt_num, resolve_page_ids};
 use lumen_core::{
-    measure_text, render_box_for_node, Diagnostic, DiagnosticSubject, ExportAdapter,
+    measure_text, render_box_for_node, AssetKind, Diagnostic, DiagnosticSubject, ExportAdapter,
     ExportArtifact, ExportError, ExportFormat, ExportRequest, ExportResult, Node, NodeId, NodeKind,
-    Page, Paint, Phase, Rect, Scene, TextAlign, TextMeasureInput, Unit,
+    Page, Paint, PdfIntent, Phase, Rect, Scene, TextAlign, TextDirection, TextMeasureInput, Unit,
 };
 
 #[derive(Clone, Debug, Default)]
@@ -46,14 +46,17 @@ impl ExportAdapter for PdfExportAdapter {
 
         let mut writer = PdfWriter::new();
         let page_ids = resolved.page_ids;
+        diagnostics.extend(print_document_guardrails(scene, &page_ids, request));
         for page_id in &page_ids {
             let Some(page) = scene.pages.get(page_id) else {
                 continue;
             };
-            let mut renderer = PdfPageRenderer::new(scene, page);
+            diagnostics.extend(print_page_guardrails(scene, page, request));
+            let page_box = PdfPageBox::for_page(page, request.profile.include_bleed);
+            let mut renderer = PdfPageRenderer::new(scene, page, page_box);
             let stream = renderer.render_page();
             diagnostics.extend(renderer.diagnostics);
-            writer.add_page(page, stream);
+            writer.add_page(page_box, stream);
         }
 
         let sidecar = build_sidecar(scene, &page_ids, &request.profile.name);
@@ -76,6 +79,7 @@ impl ExportAdapter for PdfExportAdapter {
 struct PdfPageRenderer<'a> {
     scene: &'a Scene,
     page: &'a Page,
+    page_box: PdfPageBox,
     scale: f64,
     page_height: f64,
     stream: String,
@@ -89,13 +93,14 @@ enum PaintResult<'a> {
 }
 
 impl<'a> PdfPageRenderer<'a> {
-    fn new(scene: &'a Scene, page: &'a Page) -> Self {
+    fn new(scene: &'a Scene, page: &'a Page, page_box: PdfPageBox) -> Self {
         let scale = unit_to_points(&page.size.unit);
         Self {
             scene,
             page,
+            page_box,
             scale,
-            page_height: page.size.height * scale,
+            page_height: page_box.height * scale,
             stream: String::new(),
             diagnostics: Vec::new(),
         }
@@ -174,9 +179,9 @@ impl<'a> PdfPageRenderer<'a> {
                 if self.apply_stroke(node) {
                     self.stream.push_str(&format!(
                         "{} {} m {} {} l S\n",
-                        fmt_num(x * self.scale),
+                        fmt_num(self.pdf_x(x)),
                         fmt_num(self.pdf_y(y)),
-                        fmt_num((x + line.x2) * self.scale),
+                        fmt_num(self.pdf_x(x + line.x2)),
                         fmt_num(self.pdf_y(y + line.y2))
                     ));
                 } else {
@@ -200,6 +205,25 @@ impl<'a> PdfPageRenderer<'a> {
                         width,
                         height,
                     }));
+                if measured.overflow_x || measured.overflow_y || measured.exceeds_max_lines {
+                    self.diagnostics.push(
+                        Diagnostic::warning(
+                            Phase::Export,
+                            "LUME0418",
+                            format!(
+                                "PDF text node {} overflows its render box ({})",
+                                node.id,
+                                text_overflow_reason(
+                                    measured.overflow_x,
+                                    measured.overflow_y,
+                                    measured.exceeds_max_lines
+                                )
+                            ),
+                            Some(DiagnosticSubject::Node(node.id.clone())),
+                        )
+                        .with_hint("Resize the text frame, reduce copy/font size, or run layout/text-fit repair before approving PDF output."),
+                    );
+                }
                 self.stream.push_str(&format!(
                     "BT /F1 {} Tf {} Tc\n",
                     fmt_num(text.font_size * self.scale),
@@ -213,7 +237,7 @@ impl<'a> PdfPageRenderer<'a> {
                     };
                     self.stream.push_str(&format!(
                         "1 0 0 1 {} {} Tm ({}) Tj\n",
-                        fmt_num(text_x * self.scale),
+                        fmt_num(self.pdf_x(text_x)),
                         fmt_num(self.pdf_y(y + line.baseline)),
                         escape_pdf_text(&line.text)
                     ));
@@ -232,8 +256,8 @@ impl<'a> PdfPageRenderer<'a> {
             if has_fill {
                 self.stream.push_str(&format!(
                     "0 0 {} {} re f\n",
-                    fmt_num(self.page.size.width * self.scale),
-                    fmt_num(self.page.size.height * self.scale)
+                    fmt_num(self.page_box.width * self.scale),
+                    fmt_num(self.page_box.height * self.scale)
                 ));
             }
         }
@@ -246,7 +270,7 @@ impl<'a> PdfPageRenderer<'a> {
         if has_fill || has_stroke {
             self.stream.push_str(&format!(
                 "{} {} {} {} re {}\n",
-                fmt_num(x * self.scale),
+                fmt_num(self.pdf_x(x)),
                 fmt_num(self.pdf_y(y + height)),
                 fmt_num(width * self.scale),
                 fmt_num(height * self.scale),
@@ -414,7 +438,11 @@ impl<'a> PdfPageRenderer<'a> {
     }
 
     fn pdf_y(&self, y: f64) -> f64 {
-        self.page_height - (y * self.scale)
+        self.page_height - ((y - self.page_box.y) * self.scale)
+    }
+
+    fn pdf_x(&self, x: f64) -> f64 {
+        (x - self.page_box.x) * self.scale
     }
 }
 
@@ -442,10 +470,10 @@ impl PdfWriter {
         Self { pages: Vec::new() }
     }
 
-    fn add_page(&mut self, page: &Page, stream: String) {
+    fn add_page(&mut self, page_box: PdfPageBox, stream: String) {
         self.pages.push((
-            page.size.width * unit_to_points(&page.size.unit),
-            page.size.height * unit_to_points(&page.size.unit),
+            page_box.width * page_box.scale,
+            page_box.height * page_box.scale,
             stream,
         ));
     }
@@ -510,6 +538,349 @@ impl PdfWriter {
         );
         bytes
     }
+}
+
+#[derive(Clone, Copy, Debug)]
+struct PdfPageBox {
+    x: f64,
+    y: f64,
+    width: f64,
+    height: f64,
+    scale: f64,
+}
+
+impl PdfPageBox {
+    fn for_page(page: &Page, include_bleed: bool) -> Self {
+        let scale = unit_to_points(&page.size.unit);
+        let rect = if include_bleed {
+            page.bleed.clone().unwrap_or(Rect {
+                x: 0.0,
+                y: 0.0,
+                width: page.size.width,
+                height: page.size.height,
+            })
+        } else {
+            Rect {
+                x: 0.0,
+                y: 0.0,
+                width: page.size.width,
+                height: page.size.height,
+            }
+        };
+
+        Self {
+            x: rect.x,
+            y: rect.y,
+            width: rect.width,
+            height: rect.height,
+            scale,
+        }
+    }
+}
+
+fn print_document_guardrails(
+    scene: &Scene,
+    page_ids: &[lumen_core::PageId],
+    request: &ExportRequest,
+) -> Vec<Diagnostic> {
+    let mut diagnostics = Vec::new();
+    if !matches!(request.profile.pdf_intent, Some(PdfIntent::Print)) {
+        return diagnostics;
+    }
+
+    let pages = page_ids
+        .iter()
+        .filter_map(|page_id| scene.pages.get(page_id))
+        .collect::<Vec<_>>();
+
+    if pages.len() > 1 {
+        diagnostics.push(
+            Diagnostic::warning(
+                Phase::Export,
+                "LUME0419",
+                format!(
+                    "print PDF export contains {} explicit pages; automatic flowed pagination is not performed",
+                    pages.len()
+                ),
+                Some(DiagnosticSubject::Document),
+            )
+            .with_hint("Review each page/artboard explicitly before print handoff; split or paginate flowed content upstream."),
+        );
+    }
+
+    if let Some(first_page) = pages.first() {
+        let has_mixed_sizes = pages
+            .iter()
+            .skip(1)
+            .any(|page| !same_page_size(&first_page.size, &page.size));
+
+        if has_mixed_sizes {
+            diagnostics.push(
+                Diagnostic::warning(
+                    Phase::Export,
+                    "LUME0420",
+                    "print PDF export contains mixed page sizes".to_owned(),
+                    Some(DiagnosticSubject::Document),
+                )
+                .with_hint("Many print handoffs expect a consistent trim size; verify mixed custom artboards before approving the PDF."),
+            );
+        }
+    }
+
+    diagnostics
+}
+
+fn print_page_guardrails(scene: &Scene, page: &Page, request: &ExportRequest) -> Vec<Diagnostic> {
+    let mut diagnostics = Vec::new();
+    let is_print_pdf = matches!(request.profile.pdf_intent, Some(PdfIntent::Print));
+
+    if is_print_pdf && page.safe_area.is_none() {
+        diagnostics.push(
+            Diagnostic::warning(
+                Phase::Export,
+                "LUME0411",
+                format!(
+                    "print PDF export requested page {} but the page has no safe area",
+                    page.id
+                ),
+                Some(DiagnosticSubject::Page(page.id.clone())),
+            )
+            .with_hint("Set page.safe_area before treating print output as production-ready."),
+        );
+    }
+
+    if request.profile.include_bleed && page.bleed.is_none() {
+        diagnostics.push(
+            Diagnostic::warning(
+                Phase::Export,
+                "LUME0412",
+                format!(
+                    "export profile includes bleed but page {} has no bleed rect",
+                    page.id
+                ),
+                Some(DiagnosticSubject::Page(page.id.clone())),
+            )
+            .with_hint("Set page.bleed to expand the print PDF MediaBox beyond the trim size."),
+        );
+    }
+
+    if is_print_pdf {
+        for child_id in &page.children {
+            collect_print_node_guardrails(scene, child_id, &mut diagnostics);
+        }
+        if let Some(safe_area) = &page.safe_area {
+            collect_required_slot_safe_area_guardrails(scene, page, safe_area, &mut diagnostics);
+        }
+    }
+
+    diagnostics
+}
+
+fn same_page_size(left: &lumen_core::PageSize, right: &lumen_core::PageSize) -> bool {
+    left.unit == right.unit
+        && (left.width - right.width).abs() <= f64::EPSILON
+        && (left.height - right.height).abs() <= f64::EPSILON
+}
+
+fn collect_required_slot_safe_area_guardrails(
+    scene: &Scene,
+    page: &Page,
+    safe_area: &Rect,
+    diagnostics: &mut Vec<Diagnostic>,
+) {
+    for slot in scene.slots.values().filter(|slot| slot.required) {
+        for node_id in &slot.bound_nodes {
+            let Some(bounds) = absolute_render_box_for_page_node(scene, page, node_id) else {
+                continue;
+            };
+            if !rect_contains(safe_area, &bounds) {
+                diagnostics.push(
+                    Diagnostic::warning(
+                        Phase::Export,
+                        "LUME0417",
+                        format!(
+                            "required slot {} node {} falls outside page {} safe area for print PDF export",
+                            slot.key, node_id, page.id
+                        ),
+                        Some(DiagnosticSubject::Slot(slot.id.clone())),
+                    )
+                    .with_hint("Move the slotted node inside page.safe_area before treating print output as production-ready."),
+                );
+            }
+        }
+    }
+}
+
+fn absolute_render_box_for_page_node(scene: &Scene, page: &Page, target: &NodeId) -> Option<Rect> {
+    for child_id in &page.children {
+        if let Some(bounds) = absolute_render_box_for_node(scene, child_id, target, 0.0, 0.0, None)
+        {
+            return Some(bounds);
+        }
+    }
+    None
+}
+
+fn absolute_render_box_for_node(
+    scene: &Scene,
+    node_id: &NodeId,
+    target: &NodeId,
+    parent_x: f64,
+    parent_y: f64,
+    parent_computed_origin: Option<(f64, f64)>,
+) -> Option<Rect> {
+    let node = scene.nodes.get(node_id)?;
+    let render_box = render_box_for_node(node, parent_computed_origin);
+    let (x, y) = absolute_xy(
+        node,
+        parent_x,
+        parent_y,
+        render_box.x,
+        render_box.y,
+        parent_computed_origin,
+    );
+    let bounds = Rect {
+        x,
+        y,
+        width: render_box.width,
+        height: render_box.height,
+    };
+    if node_id == target {
+        return Some(bounds);
+    }
+
+    let child_parent_origin = node
+        .computed
+        .as_ref()
+        .map(|computed| (computed.layout_bounds.x, computed.layout_bounds.y));
+    for child_id in &node.children {
+        if let Some(child_bounds) =
+            absolute_render_box_for_node(scene, child_id, target, x, y, child_parent_origin)
+        {
+            return Some(child_bounds);
+        }
+    }
+    None
+}
+
+fn rect_contains(container: &Rect, child: &Rect) -> bool {
+    child.x >= container.x
+        && child.y >= container.y
+        && child.x + child.width <= container.x + container.width
+        && child.y + child.height <= container.y + container.height
+}
+
+fn collect_print_node_guardrails(
+    scene: &Scene,
+    node_id: &NodeId,
+    diagnostics: &mut Vec<Diagnostic>,
+) {
+    let Some(node) = scene.nodes.get(node_id) else {
+        return;
+    };
+
+    match &node.kind {
+        NodeKind::Text(text) => {
+            if text.direction != TextDirection::Ltr {
+                diagnostics.push(
+                    Diagnostic::warning(
+                        Phase::Export,
+                        "LUME0413",
+                        format!(
+                            "print PDF text node {} uses {:?} direction, but early PDF export does not support bidi shaping",
+                            node.id, text.direction
+                        ),
+                        Some(DiagnosticSubject::Node(node.id.clone())),
+                    )
+                    .with_hint("Use the text-shaping/font track before treating RTL/bidi PDF output as final."),
+                );
+            }
+            if contains_non_latin_letters(&text.content) {
+                diagnostics.push(
+                    Diagnostic::warning(
+                        Phase::Export,
+                        "LUME0414",
+                        format!(
+                            "print PDF text node {} contains non-Latin text, but early PDF export uses built-in Latin PDF fonts",
+                            node.id
+                        ),
+                        Some(DiagnosticSubject::Node(node.id.clone())),
+                    )
+                    .with_hint("Use the text-shaping/font track for non-Latin glyph coverage and embedding."),
+                );
+            }
+        }
+        NodeKind::Image(image) => {
+            let Some(asset) = scene.assets.get(&image.asset_id) else {
+                diagnostics.push(
+                    Diagnostic::warning(
+                        Phase::Export,
+                        "LUME0415",
+                        format!(
+                            "print PDF image node {} references asset {} but asset metadata is missing",
+                            node.id, image.asset_id
+                        ),
+                        Some(DiagnosticSubject::Node(node.id.clone())),
+                    )
+                    .with_hint("Attach asset metadata with DPI before treating print output as production-ready."),
+                );
+                return;
+            };
+
+            if matches!(asset.kind, AssetKind::RasterImage | AssetKind::Logo) {
+                match asset.min_dpi() {
+                    Some(dpi) if dpi < 300.0 => diagnostics.push(
+                        Diagnostic::warning(
+                            Phase::Export,
+                            "LUME0416",
+                            format!(
+                                "print PDF image node {} uses asset {} at {:.0} DPI; 300 DPI is recommended for print",
+                                node.id, image.asset_id, dpi
+                            ),
+                            Some(DiagnosticSubject::Asset(image.asset_id.clone())),
+                        )
+                        .with_hint("Use a higher-resolution image asset for print export."),
+                    ),
+                    None => diagnostics.push(
+                        Diagnostic::warning(
+                            Phase::Export,
+                            "LUME0415",
+                            format!(
+                                "print PDF image node {} uses asset {} without DPI metadata",
+                                node.id, image.asset_id
+                            ),
+                            Some(DiagnosticSubject::Asset(image.asset_id.clone())),
+                        )
+                        .with_hint("Probe image DPI before treating print output as production-ready."),
+                    ),
+                    Some(_) => {}
+                }
+            }
+        }
+        _ => {}
+    }
+
+    for child_id in &node.children {
+        collect_print_node_guardrails(scene, child_id, diagnostics);
+    }
+}
+
+fn contains_non_latin_letters(value: &str) -> bool {
+    value.chars().any(|ch| ch.is_alphabetic() && !ch.is_ascii())
+}
+
+fn text_overflow_reason(overflow_x: bool, overflow_y: bool, exceeds_max_lines: bool) -> String {
+    let mut reasons = Vec::new();
+    if overflow_x {
+        reasons.push("width");
+    }
+    if overflow_y {
+        reasons.push("height");
+    }
+    if exceeds_max_lines {
+        reasons.push("max lines");
+    }
+    reasons.join(", ")
 }
 
 fn unit_to_points(unit: &Unit) -> f64 {

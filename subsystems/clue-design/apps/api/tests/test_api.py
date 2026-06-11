@@ -280,6 +280,392 @@ def test_create_and_load_document_preserves_canonical_scene(client: TestClient) 
     assert document["counts"]["nodes"] == 1
 
 
+def test_export_preview_route_returns_compact_svg_artifact(client: TestClient) -> None:
+    scene = minimal_scene()
+    scene["pages"]["page_a4"]["size"] = {
+        "width": 1080,
+        "height": 1080,
+        "unit": "px",
+        "preset": "custom",
+        "orientation": "landscape",
+    }
+
+    response = client.post(
+        "/export-preview",
+        json={
+            "scene": scene,
+            "format": "svg",
+            "page_ids": ["page_a4"],
+            "profile": {
+                "name": "custom_square_svg",
+                "format": "svg",
+                "pdf_intent": "preview",
+                "raster": None,
+                "include_bleed": False,
+                "embed_fonts": False,
+            },
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["schema_version"] == 1
+    assert payload["status"] == "ok"
+    artifact = payload["export"]["artifacts"][0]
+    assert artifact["format"] == "svg"
+    assert artifact["filename"] == "page_a4.custom_square_svg.svg"
+    assert artifact["sidecar_filename"] == "page_a4.custom_square_svg.sidecar.json"
+    assert artifact["mime_type"] == "image/svg+xml"
+    assert artifact["byte_length"] > 20
+    assert artifact["data_url"].startswith("data:image/svg+xml;base64,")
+    assert "viewBox=\"0 0 1080 1080\"" in artifact["text"]
+    assert artifact["dimensions"] == {
+        "width": 1080.0,
+        "height": 1080.0,
+        "unit": "scene",
+        "source": "svg_view_box",
+    }
+    assert '"profile_name": "custom_square_svg"' in artifact["sidecar_json"]
+    assert artifact["sidecar_summary"]["profile_name"] == "custom_square_svg"
+    assert artifact["sidecar_summary"]["page_ids"] == ["page_a4"]
+    assert artifact["sidecar_summary"]["node_count"] == 1
+    assert artifact["sidecar_summary"]["slot_keys"] == ["contact.full_name"]
+
+
+def test_agent_turn_preview_route_returns_editor_safe_proposal(client: TestClient) -> None:
+    captured = {}
+
+    def fake_agent_runner(payload, root):
+        captured["payload"] = payload
+        captured["root"] = root
+        return {
+            "schema_version": 1,
+            "status": "proposed",
+            "summary": "Agent proposed a document title update.",
+            "run_id": "run_test_agent",
+            "trace_dir": ".lumen-runs/run_test_agent",
+            "preview_paths": [".lumen-runs/run_test_agent/page_a4.svg"],
+            "dsl_blocks": ["# document title repair"],
+            "operations": [title_operation("Agent Title")],
+            "diagnostics": [],
+            "artifacts": [
+                {
+                    "format": "svg",
+                    "page_id": "page_a4",
+                    "filename": "page_a4.svg",
+                    "path": ".lumen-runs/run_test_agent/page_a4.svg",
+                    "data_url": None,
+                    "mime_type": "image/svg+xml",
+                }
+            ],
+        }
+
+    client.app.state.agent_turn_runner = fake_agent_runner
+
+    response = client.post(
+        "/agent/turn-preview",
+        json={
+            "prompt": "Repair the headline",
+            "scene": minimal_scene(),
+            "document_id": "doc_agent_route",
+            "active_page_id": "page_a4",
+            "selected_node_id": "node_contact_name",
+            "diagnostics": [],
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["status"] == "proposed"
+    assert payload["run_id"] == "run_test_agent"
+    assert payload["dsl_blocks"] == ["# document title repair"]
+    assert payload["operations"][0]["kind"] == "update_document"
+    assert payload["artifacts"][0]["format"] == "svg"
+    assert captured["payload"].prompt == "Repair the headline"
+    assert captured["payload"].active_page_id == "page_a4"
+    assert captured["payload"].selected_node_id == "node_contact_name"
+    assert captured["root"] == REPO_ROOT
+
+
+def test_export_preview_route_returns_failed_payload_for_missing_page(
+    client: TestClient,
+) -> None:
+    scene = minimal_scene()
+
+    response = client.post(
+        "/export-preview",
+        json={
+            "scene": scene,
+            "format": "svg",
+            "page_ids": ["missing_page"],
+            "profile": {
+                "name": "missing_page_svg",
+                "format": "svg",
+                "pdf_intent": "preview",
+                "raster": None,
+                "include_bleed": False,
+                "embed_fonts": False,
+            },
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["schema_version"] == 1
+    assert payload["status"] == "failed"
+    assert payload["export"]["artifacts"] == []
+    diagnostic_codes = {diagnostic["code"] for diagnostic in payload["diagnostics"]}
+    assert "LUME0101" in diagnostic_codes
+    assert all(
+        diagnostic["severity"] == "error"
+        for diagnostic in payload["diagnostics"]
+        if diagnostic["code"] == "LUME0101"
+    )
+
+
+def test_document_export_route_uses_saved_profile_and_persists_preflight(
+    client: TestClient,
+) -> None:
+    scene = preflightable_scene()
+    scene["meta"]["medium"] = "ad"
+    scene["pages"]["page_a4"]["size"] = {
+        "width": 1080,
+        "height": 1080,
+        "unit": "px",
+        "preset": "custom",
+        "orientation": "portrait",
+    }
+    scene["export_profiles"] = [
+        {
+            "name": "client_square_svg",
+            "format": "svg",
+            "pdf_intent": "preview",
+            "raster": None,
+            "include_bleed": False,
+            "embed_fonts": False,
+        }
+    ]
+    document = create_document(client, scene)
+
+    response = client.post(
+        f"/documents/{document['id']}/export",
+        json={"profile_name": "client_square_svg", "page_ids": ["page_a4"]},
+    )
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["schema_version"] == 1
+    assert payload["status"] == "ok"
+    assert payload["document"]["id"] == document["id"]
+    assert payload["profile"]["name"] == "client_square_svg"
+    assert payload["brand_kit"]["source"] == "platform_default"
+    assert payload["brand_kit"]["mode"]["values"]["medium"] == "digital"
+    assert payload["operation_application"]["preflight_operations"] > 0
+    assert all(
+        diagnostic["severity"] != "error"
+        for diagnostic in payload["diagnostics"]["current"]
+    )
+
+    artifact = payload["export"]["artifacts"][0]
+    assert artifact["format"] == "svg"
+    assert artifact["filename"] == "page_a4.client_square_svg.svg"
+    assert artifact["sidecar_filename"] == "page_a4.client_square_svg.sidecar.json"
+    assert artifact["mime_type"] == "image/svg+xml"
+    assert "viewBox=\"0 0 1080 1080\"" in artifact["text"]
+    assert artifact["dimensions"] == {
+        "width": 1080.0,
+        "height": 1080.0,
+        "unit": "scene",
+        "source": "svg_view_box",
+    }
+    assert artifact["sidecar_summary"]["profile_name"] == "client_square_svg"
+    assert artifact["sidecar_summary"]["page_ids"] == ["page_a4"]
+
+    loaded = client.get(f"/documents/{document['id']}").json()
+    assert loaded["current_version"] == payload["document"]["current_version"]
+    assert loaded["effective_brand_kit_source"] == "platform_default"
+    assert loaded["scene"]["pages"]["page_a4"]["size"] == {
+        "width": 1080.0,
+        "height": 1080.0,
+        "unit": "px",
+        "preset": "custom",
+        "orientation": "portrait",
+    }
+
+    diagnostics = client.get(
+        f"/documents/{document['id']}/diagnostics?kind=export"
+    ).json()
+    assert diagnostics["schema_version"] == 1
+    assert diagnostics["kind"] == "export"
+
+
+def test_document_export_route_fails_closed_before_export_on_preflight_errors(
+    client: TestClient,
+) -> None:
+    document = create_document(
+        client, tokenized_surface_scene("doc_export_requires_brand")
+    )
+
+    response = client.post(
+        f"/documents/{document['id']}/export",
+        json={
+            "format": "svg",
+            "page_ids": ["page_a4"],
+            "strict_no_fallback": True,
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["schema_version"] == 1
+    assert payload["status"] == "failed"
+    assert payload["brand_kit"]["source"] == "none"
+    assert payload["preflight"]["has_errors"] is True
+    assert payload["export"]["artifacts"] == []
+    assert any(
+        diagnostic["severity"] == "error"
+        for diagnostic in payload["diagnostics"]["current"]
+    )
+
+    loaded = client.get(f"/documents/{document['id']}").json()
+    assert loaded["current_version"] == document["current_version"]
+
+    diagnostics = client.get(
+        f"/documents/{document['id']}/diagnostics?kind=export"
+    ).json()
+    assert diagnostics["schema_version"] == 1
+    assert diagnostics["kind"] == "export"
+    assert diagnostics["views"]["latest"]
+
+
+def test_document_export_route_rejects_unknown_saved_profile(
+    client: TestClient,
+) -> None:
+    document = create_document(client, preflightable_scene())
+
+    response = client.post(
+        f"/documents/{document['id']}/export",
+        json={"profile_name": "missing_profile"},
+    )
+
+    assert response.status_code == 422
+    assert response.json()["detail"]["code"] == "export_profile.not_found"
+
+
+def test_preflight_preview_route_returns_preflighted_custom_scene(
+    client: TestClient,
+) -> None:
+    scene = preflightable_scene()
+    scene["meta"]["medium"] = "ad"
+    scene["pages"]["page_a4"]["size"] = {
+        "width": 1200,
+        "height": 628,
+        "unit": "px",
+        "preset": "custom",
+        "orientation": "landscape",
+    }
+
+    response = client.post(
+        "/preflight-preview",
+        json={
+            "scene": scene,
+            "mode": {
+                "values": {
+                    "theme": "light",
+                    "density": "comfortable",
+                }
+            },
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["schema_version"] == 1
+    assert payload["status"] == "applied"
+    assert payload["brand_kit"]["source"] == "platform_default"
+    assert payload["brand_kit"]["mode"]["values"]["medium"] == "digital"
+    assert payload["document"]["counts"]["pages"] == 1
+    assert payload["operation_application"]["preflight_operations"] > 0
+    assert all(
+        diagnostic["severity"] != "error"
+        for diagnostic in payload["diagnostics"]["current"]
+    )
+    assert payload["scene"]["pages"]["page_a4"]["size"] == {
+        "width": 1200.0,
+        "height": 628.0,
+        "unit": "px",
+        "preset": "custom",
+        "orientation": "landscape",
+    }
+    assert (
+        payload["scene"]["nodes"]["node_contact_name"]["computed"]["layout_bounds"][
+            "width"
+        ]
+        > 0
+    )
+
+
+def test_export_preview_route_reports_print_pdf_bleed_dimensions(
+    client: TestClient,
+) -> None:
+    scene = minimal_scene()
+    scene["pages"]["page_a4"]["size"] = {
+        "width": 1080,
+        "height": 1080,
+        "unit": "px",
+        "preset": "custom",
+        "orientation": "portrait",
+    }
+    scene["pages"]["page_a4"]["bleed"] = {
+        "x": -18,
+        "y": -18,
+        "width": 1116,
+        "height": 1116,
+    }
+    scene["pages"]["page_a4"]["safe_area"] = {
+        "x": 72,
+        "y": 72,
+        "width": 936,
+        "height": 936,
+    }
+
+    response = client.post(
+        "/export-preview",
+        json={
+            "scene": scene,
+            "format": "pdf",
+            "page_ids": ["page_a4"],
+            "profile": {
+                "name": "print_pdf_with_bleed",
+                "format": "pdf",
+                "pdf_intent": "print",
+                "raster": None,
+                "include_bleed": True,
+                "embed_fonts": True,
+            },
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    artifact = payload["export"]["artifacts"][0]
+    assert artifact["format"] == "pdf"
+    assert artifact["filename"] == "page_a4.print_pdf_with_bleed.pdf"
+    assert artifact["sidecar_filename"] == "page_a4.print_pdf_with_bleed.sidecar.json"
+    assert artifact["mime_type"] == "application/pdf"
+    assert artifact["dimensions"] == {
+        "width": 1116.0,
+        "height": 1116.0,
+        "unit": "pt",
+        "source": "pdf_media_box",
+    }
+    diagnostic_codes = {diagnostic["code"] for diagnostic in payload["diagnostics"]}
+    assert "LUME0401" in diagnostic_codes
+    assert "LUME0402" in diagnostic_codes
+    assert "LUME0411" not in diagnostic_codes
+    assert "LUME0412" not in diagnostic_codes
+
+
 def test_styles_brand_kit_persists_validates_and_lists_versions(
     client: TestClient,
 ) -> None:

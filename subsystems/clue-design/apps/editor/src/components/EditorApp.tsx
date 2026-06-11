@@ -1,51 +1,130 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { Download, FileCheck2, PanelRightClose, RotateCcw, Send } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { Download, FileCheck2, History, PanelRightClose, RotateCcw, RotateCw, Send } from "lucide-react";
+import { AgentChatPanel, type AgentChatMessage } from "./AgentChatPanel";
 import { BrandKitPanel } from "./BrandKitPanel";
 import { CanvasSurface } from "./canvas/CanvasSurface";
+import { ExportPanel } from "./ExportPanel";
+import { ExportPreviewSurface } from "./ExportPreviewSurface";
 import { InspectorPanel } from "./InspectorPanel";
+import { LayerPanel } from "./LayerPanel";
 import { PageRail } from "./PageRail";
 import { ValidationPanel } from "./ValidationPanel";
 import { minimalScene } from "@/fixtures/minimalScene";
 import type { BrandCompatibilityRunner } from "@/engine/brandCompatibility";
 import type { BrandGovernanceRunner } from "@/engine/brandGovernance";
+import {
+  createApiAgentRunner,
+  type EditorAgentResult,
+  type EditorAgentRunner
+} from "@/engine/agentRunner";
 import type {
   BrandCompatibilityReport,
   BrandKitRef,
   BrandKitSummary,
   Diagnostic,
+  DiagnosticSubject,
+  Node,
   NodeId,
   Operation,
+  Page,
   PageId,
+  ParentRef,
   Scene
 } from "@/engine/contracts";
 import { localEditorEngine } from "@/engine/editorEngine";
-import { firstPageId, getNode } from "@/engine/sceneQueries";
+import {
+  createApiExportRunner,
+  defaultEditorExportProfile,
+  type EditorExportResult,
+  type EditorExportRunner
+} from "@/engine/exportRunner";
+import {
+  createApiPreflightRunner,
+  type EditorPreflightResult,
+  type EditorPreflightRunner
+} from "@/engine/preflightRunner";
+import {
+  addPage,
+  bindNodeToSlot,
+  insertNode,
+  removeExportProfile,
+  removeNode,
+  removePage,
+  updateNodeTransform,
+  upsertExportProfile
+} from "@/engine/operations";
+import { editorRenderDiagnostics } from "@/engine/renderDiagnostics";
+import {
+  clampNodeTransformToParentBounds,
+  firstPageId,
+  getNode,
+  isNodeLayoutManaged,
+  nodeIdForAsset,
+  pageIdForNode
+} from "@/engine/sceneQueries";
 
 export interface EditorAppProps {
+  documentId?: string;
   initialScene?: Scene;
   initialSelectedNodeId?: NodeId | null;
   initialAvailableBrandKits?: BrandKitSummary[];
   brandGovernanceRunner?: BrandGovernanceRunner;
   brandCompatibilityRunner?: BrandCompatibilityRunner;
+  agentRunner?: EditorAgentRunner;
+  exportRunner?: EditorExportRunner;
+  preflightRunner?: EditorPreflightRunner;
 }
 
+interface EditorHistoryFrame {
+  scene: Scene;
+  operations: Operation[];
+}
+
+const defaultExportRunner = createApiExportRunner({
+  apiBaseUrl: process.env.NEXT_PUBLIC_LUMEN_API_BASE_URL ?? "http://localhost:8000"
+});
+
+const defaultPreflightRunner = createApiPreflightRunner({
+  apiBaseUrl: process.env.NEXT_PUBLIC_LUMEN_API_BASE_URL ?? "http://localhost:8000"
+});
+
+const defaultAgentRunner = createApiAgentRunner({
+  apiBaseUrl: process.env.NEXT_PUBLIC_LUMEN_API_BASE_URL ?? "http://localhost:8000"
+});
+
 export default function EditorApp({
+  documentId,
   initialScene = minimalScene,
   initialSelectedNodeId = "node_contact_name",
   initialAvailableBrandKits = [],
   brandGovernanceRunner,
-  brandCompatibilityRunner
+  brandCompatibilityRunner,
+  agentRunner = defaultAgentRunner,
+  exportRunner = defaultExportRunner,
+  preflightRunner = defaultPreflightRunner
 }: EditorAppProps = {}) {
   const [scene, setScene] = useState<Scene>(initialScene);
   const [activePageId, setActivePageId] = useState<PageId | null>(() => firstPageId(initialScene));
   const [selectedNodeId, setSelectedNodeId] = useState<NodeId | null>(initialSelectedNodeId);
   const [diagnostics, setDiagnostics] = useState<Diagnostic[]>([]);
   const [lastOperation, setLastOperation] = useState<Operation | null>(null);
-  const [undoStack, setUndoStack] = useState<Scene[]>([]);
+  const [undoStack, setUndoStack] = useState<EditorHistoryFrame[]>([]);
+  const [redoStack, setRedoStack] = useState<EditorHistoryFrame[]>([]);
+  const [operationHistory, setOperationHistory] = useState<Operation[]>([]);
   const [isBrandGovernanceRunning, setIsBrandGovernanceRunning] = useState(false);
   const [isBrandCompatibilityRunning, setIsBrandCompatibilityRunning] = useState(false);
+  const [isAgentPanelOpen, setIsAgentPanelOpen] = useState(true);
+  const [isAgentRunning, setIsAgentRunning] = useState(false);
+  const [agentDraft, setAgentDraft] = useState("");
+  const [agentMessages, setAgentMessages] = useState<AgentChatMessage[]>([]);
+  const [agentProposal, setAgentProposal] = useState<EditorAgentResult | null>(null);
+  const [isPreflighting, setIsPreflighting] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
+  const [exportResult, setExportResult] = useState<EditorExportResult | null>(null);
+  const [preflightResult, setPreflightResult] = useState<EditorPreflightResult | null>(null);
+  const [workspaceMode, setWorkspaceMode] = useState<"canvas" | "export" | "compare">("canvas");
   const [brandCompatibilityReport, setBrandCompatibilityReport] =
     useState<BrandCompatibilityReport | null>(null);
   const selectedNode = useMemo(() => getNode(scene, selectedNodeId), [scene, selectedNodeId]);
@@ -66,61 +145,330 @@ export default function EditorApp({
     [initialAvailableBrandKits, scene.meta.brand_kit]
   );
   const brandDiagnostics = diagnostics.filter((diagnostic) => diagnostic.phase === "brand");
+  const renderDiagnostics = useMemo(
+    () => editorRenderDiagnostics(scene, activePageId),
+    [activePageId, scene]
+  );
 
-  const applyOperation = (operation: Operation) => {
-    setLastOperation(operation);
-    setBrandCompatibilityReport(null);
+  useEffect(() => {
+    if (activePageId && !scene.pages[activePageId]) {
+      setActivePageId(firstPageId(scene));
+      setSelectedNodeId(null);
+      return;
+    }
+    if (!activePageId) {
+      setActivePageId(firstPageId(scene));
+    }
+    if (selectedNodeId && !scene.nodes[selectedNodeId]) {
+      setSelectedNodeId(null);
+    }
+  }, [activePageId, scene, selectedNodeId]);
+
+  const applyOperations = (operations: Operation[], onAccepted?: (scene: Scene) => void) => {
+    if (operations.length === 0) {
+      return;
+    }
     setScene((currentScene) => {
-      const result = localEditorEngine.applyOperation(currentScene, operation);
-      if (result.accepted) {
-        setUndoStack((stack) => [...stack.slice(-49), currentScene]);
-        setDiagnostics([]);
-        return result.scene;
+      let nextScene = currentScene;
+      for (const operation of operations) {
+        const result = localEditorEngine.applyOperation(nextScene, operation);
+        if (!result.accepted) {
+          setDiagnostics([
+            {
+              severity: "error",
+              phase: "operation",
+              code: "EDITOR_LOCAL_APPLY",
+              message: result.message ?? "Operation was rejected by the local editor engine",
+              subject: selectedNodeId
+                ? {
+                    kind: "node",
+                    id: selectedNodeId
+                  }
+                : null,
+              hint: "The editor will use checked core/WASM operation application once that workstream is available."
+            }
+          ]);
+          return currentScene;
+        }
+        nextScene = result.scene;
       }
 
-      setDiagnostics([
-        {
-          severity: "error",
-          phase: "operation",
-          code: "EDITOR_LOCAL_APPLY",
-          message: result.message ?? "Operation was rejected by the local editor engine",
-          subject: selectedNodeId
-            ? {
-                kind: "node",
-                id: selectedNodeId
-              }
-            : null,
-          hint: "The editor will use checked core/WASM operation application once that workstream is available."
-        }
-      ]);
+      const lastAcceptedOperation = operations[operations.length - 1] ?? null;
+      if (lastAcceptedOperation) {
+        setLastOperation(lastAcceptedOperation);
+        setBrandCompatibilityReport(null);
+        setPreflightResult(null);
+        setExportResult(null);
+        setWorkspaceMode("canvas");
+        setUndoStack((stack) => [
+          ...stack.slice(-49),
+          {
+            scene: currentScene,
+            operations
+          }
+        ]);
+        setRedoStack([]);
+        setOperationHistory((history) => [...history, ...operations].slice(-50));
+        setDiagnostics([]);
+        onAccepted?.(nextScene);
+        return nextScene;
+      }
+
       return currentScene;
     });
   };
 
-  const undoLastOperation = () => {
-    setUndoStack((stack) => {
-      const previousScene = stack[stack.length - 1];
-      if (!previousScene) {
-        return stack;
-      }
-      setScene(previousScene);
-      setLastOperation(null);
-      setDiagnostics([]);
-      return stack.slice(0, -1);
-    });
+  const applyOperation = (operation: Operation) => {
+    applyOperations([operation]);
   };
 
-  const runValidationPlaceholder = () => {
+  const sendAgentPrompt = async (prompt: string) => {
+    const trimmedPrompt = prompt.trim();
+    if (!trimmedPrompt || isAgentRunning) {
+      return;
+    }
+
+    setAgentDraft("");
+    setAgentProposal(null);
+    setIsAgentRunning(true);
+    setAgentMessages((messages) => [
+      ...messages,
+      {
+        id: uniqueChatMessageId("user"),
+        role: "user",
+        content: trimmedPrompt
+      }
+    ]);
+
+    try {
+      const result = await agentRunner({
+        prompt: trimmedPrompt,
+        scene,
+        documentId,
+        activePageId,
+        selectedNodeId,
+        diagnostics
+      });
+      setAgentProposal(result);
+      setAgentMessages((messages) => [
+        ...messages,
+        {
+          id: uniqueChatMessageId("agent"),
+          role: "agent",
+          content: result.summary
+        }
+      ]);
+      if (result.diagnostics.length > 0) {
+        setDiagnostics(result.diagnostics);
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Agent request failed.";
+      const diagnostic: Diagnostic = {
+        severity: "error",
+        phase: "validation",
+        code: "EDITOR_AGENT_REQUEST_FAILED",
+        message,
+        subject: { kind: "document" },
+        hint: "Check the editor API/agent runtime connection and retry."
+      };
+      setAgentProposal({
+        status: "failed",
+        summary: message,
+        dsl_blocks: [],
+        operations: [],
+        diagnostics: [diagnostic],
+        trace: {
+          run_id: null,
+          trace_dir: null,
+          preview_paths: []
+        },
+        artifacts: []
+      });
+      setDiagnostics([diagnostic]);
+      setAgentMessages((messages) => [
+        ...messages,
+        {
+          id: uniqueChatMessageId("system"),
+          role: "system",
+          content: message
+        }
+      ]);
+    } finally {
+      setIsAgentRunning(false);
+    }
+  };
+
+  const undoLastOperation = () => {
+    const undoFrame = undoStack[undoStack.length - 1];
+    if (!undoFrame) {
+      return;
+    }
+
+    const nextHistory = operationHistory.slice(0, -undoFrame.operations.length);
+
+    setUndoStack((stack) => stack.slice(0, -1));
+    setRedoStack((stack) => [
+      ...stack.slice(-49),
+      {
+        scene,
+        operations: undoFrame.operations
+      }
+    ]);
+    setOperationHistory(nextHistory);
+    setScene(undoFrame.scene);
+    setLastOperation(nextHistory[nextHistory.length - 1] ?? null);
+    setDiagnostics([]);
+    setBrandCompatibilityReport(null);
+    setPreflightResult(null);
+    setExportResult(null);
+    setWorkspaceMode("canvas");
+  };
+
+  const redoLastOperation = () => {
+    const redoFrame = redoStack[redoStack.length - 1];
+    if (!redoFrame) {
+      return;
+    }
+
+    setRedoStack((stack) => stack.slice(0, -1));
+    setUndoStack((stack) => [
+      ...stack.slice(-49),
+      {
+        scene,
+        operations: redoFrame.operations
+      }
+    ]);
+    setOperationHistory((history) => [...history, ...redoFrame.operations].slice(-50));
+    setScene(redoFrame.scene);
+    setLastOperation(redoFrame.operations[redoFrame.operations.length - 1] ?? null);
+    setDiagnostics([]);
+    setBrandCompatibilityReport(null);
+    setPreflightResult(null);
+    setExportResult(null);
+    setWorkspaceMode("canvas");
+  };
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (isEditableEventTarget(event.target)) {
+        return;
+      }
+
+      const historyAction = keyboardHistoryAction(event);
+      if (historyAction === "undo") {
+        event.preventDefault();
+        undoLastOperation();
+        return;
+      }
+      if (historyAction === "redo") {
+        event.preventDefault();
+        redoLastOperation();
+        return;
+      }
+
+      if (event.key === "Escape" && selectedNodeId) {
+        event.preventDefault();
+        setSelectedNodeId(null);
+        return;
+      }
+
+      if (!selectedNode) {
+        return;
+      }
+      if ((event.key === "Delete" || event.key === "Backspace") && !selectedNode.locked) {
+        event.preventDefault();
+        applyOperation(removeNode(selectedNode.id));
+        setSelectedNodeId(null);
+        return;
+      }
+
+      const nudge = arrowNudge(event.key);
+      if (!nudge || selectedNode.locked || isNodeLayoutManaged(scene, selectedNode.id)) {
+        return;
+      }
+      event.preventDefault();
+      const step = event.shiftKey ? 10 : 1;
+      const nextTransform = clampNodeTransformToParentBounds(scene, selectedNode, {
+        ...selectedNode.transform,
+        x: selectedNode.transform.x + nudge.x * step,
+        y: selectedNode.transform.y + nudge.y * step
+      });
+      applyOperation(
+        updateNodeTransform(selectedNode, nextTransform)
+      );
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [redoLastOperation, scene, selectedNode, selectedNodeId, undoLastOperation]);
+
+  const runPreflight = async () => {
+    setIsPreflighting(true);
     setDiagnostics([
       {
         severity: "advice",
         phase: "validation",
-        code: "EDITOR_VALIDATION_PORT",
-        message: "Validation UI is wired; checked Rust validation will plug into this port later.",
+        code: "EDITOR_PREFLIGHT_RUNNING",
+        message: "Running canonical preflight validation.",
         subject: null,
-        hint: "This branch intentionally does not redefine core validation semantics."
+        hint: "Preflight resolves BrandKit tokens, layout, text-fit diagnostics, and computed geometry before export."
       }
     ]);
+
+    try {
+      const result = await preflightRunner({ scene });
+      setPreflightResult(result);
+      setExportResult(null);
+      setWorkspaceMode("canvas");
+      if (result.status === "applied" && result.scene) {
+        setScene(result.scene);
+        setDiagnostics(
+          result.diagnostics.length > 0
+            ? result.diagnostics
+            : [
+                {
+                  severity: "advice",
+                  phase: "validation",
+                  code: "EDITOR_PREFLIGHT_OK",
+                  message: `Preflight applied ${preflightOperationCount(result)} canonical operation${preflightOperationCount(result) === 1 ? "" : "s"}.`,
+                  subject: { kind: "document" },
+                  hint: result.brand_kit.source
+                    ? `Effective Brand Kit source: ${result.brand_kit.source}.`
+                    : null
+                }
+              ]
+        );
+      } else {
+        setDiagnostics(
+          result.diagnostics.length > 0
+            ? result.diagnostics
+            : [
+                {
+                  severity: "error",
+                  phase: "validation",
+                  code: "EDITOR_PREFLIGHT_FAILED",
+                  message: "Preflight failed without returning detailed diagnostics.",
+                  subject: { kind: "document" },
+                  hint: "Inspect the API/core logs and retry after correcting the scene."
+                }
+              ]
+        );
+      }
+    } catch (error) {
+      setPreflightResult(null);
+      setDiagnostics([
+        {
+          severity: "error",
+          phase: "validation",
+          code: "EDITOR_PREFLIGHT_REQUEST_FAILED",
+          message: error instanceof Error ? error.message : "Preflight request failed.",
+          subject: { kind: "document" },
+          hint: "Check the editor API connection and retry validation."
+        }
+      ]);
+    } finally {
+      setIsPreflighting(false);
+    }
   };
 
   const runBrandGovernance = async () => {
@@ -302,6 +650,260 @@ export default function EditorApp({
     setSelectedNodeId(null);
   };
 
+  const createCustomPage = (input: { name: string; width: number; height: number; unit: Page["size"]["unit"] }) => {
+    const page: Page = {
+      id: uniquePageId(scene, input),
+      name: input.name,
+      size: {
+        width: input.width,
+        height: input.height,
+        unit: input.unit,
+        preset: "custom",
+        orientation: input.width > input.height ? "landscape" : "portrait"
+      },
+      children: [],
+      bleed: null,
+      safe_area: null,
+      background: []
+    };
+    applyOperation(addPage(page));
+    setActivePageId(page.id);
+    setSelectedNodeId(null);
+  };
+
+  const duplicatePageInEditor = (pageId: PageId) => {
+    const page = scene.pages[pageId];
+    if (!page) {
+      return;
+    }
+    const operations = duplicatePageOperations(scene, page);
+    const addPageOperation = operations.find((operation) => operation.kind === "add_page");
+    const duplicatedPageId = addPageOperation?.kind === "add_page" ? addPageOperation.page.id : null;
+    applyOperations(operations, () => {
+      if (duplicatedPageId) {
+        setActivePageId(duplicatedPageId);
+        setSelectedNodeId(null);
+      }
+    });
+  };
+
+  const removePageFromEditor = (pageId: PageId) => {
+    const selectedNodePageId = selectedNodeId ? pageIdForNode(scene, selectedNodeId) : null;
+    const remainingPageId = Object.values(scene.pages).find((page) => page.id !== pageId)?.id ?? null;
+
+    applyOperation(removePage(pageId));
+    if (activePageId === pageId) {
+      setActivePageId(remainingPageId);
+      setSelectedNodeId(null);
+    } else if (selectedNodePageId === pageId) {
+      setSelectedNodeId(null);
+    }
+  };
+
+  const selectDiagnosticSubject = (subject: DiagnosticSubject) => {
+    switch (subject.kind) {
+      case "page": {
+        if (scene.pages[subject.id]) {
+          setActivePageId(subject.id);
+          setSelectedNodeId(null);
+        }
+        return;
+      }
+      case "node": {
+        if (!scene.nodes[subject.id]) {
+          return;
+        }
+        const pageId = pageIdForNode(scene, subject.id);
+        if (pageId) {
+          setActivePageId(pageId);
+        }
+        setSelectedNodeId(subject.id);
+        return;
+      }
+      case "slot": {
+        const slot = scene.slots[subject.id];
+        const boundNodeId = slot?.bound_nodes.find((nodeId) => Boolean(scene.nodes[nodeId])) ?? null;
+        if (!boundNodeId) {
+          return;
+        }
+        const pageId = pageIdForNode(scene, boundNodeId);
+        if (pageId) {
+          setActivePageId(pageId);
+        }
+        setSelectedNodeId(boundNodeId);
+        return;
+      }
+      case "asset": {
+        const nodeId = nodeIdForAsset(scene, subject.id);
+        if (!nodeId) {
+          return;
+        }
+        const pageId = pageIdForNode(scene, nodeId);
+        if (pageId) {
+          setActivePageId(pageId);
+        }
+        setSelectedNodeId(nodeId);
+        return;
+      }
+      case "document":
+        return;
+    }
+  };
+
+  const applyAgentProposal = () => {
+    if (!agentProposal || agentProposal.operations.length === 0) {
+      return;
+    }
+
+    const proposedOperations = agentProposal.operations;
+    const proposedPageId = agentPreviewPageId(proposedOperations, activePageId, scene);
+    applyOperations(proposedOperations, (nextScene) => {
+      const previewPageId =
+        proposedPageId && nextScene.pages[proposedPageId]
+          ? proposedPageId
+          : firstPageId(nextScene);
+      setAgentProposal(null);
+      setAgentMessages((messages) => [
+        ...messages,
+        {
+          id: uniqueChatMessageId("system"),
+          role: "system",
+          content: `Applied ${proposedOperations.length} agent operation${proposedOperations.length === 1 ? "" : "s"} and started preflight/export preview.`
+        }
+      ]);
+      setActivePageId(previewPageId);
+      setSelectedNodeId((currentSelectedNodeId) =>
+        currentSelectedNodeId && nextScene.nodes[currentSelectedNodeId]
+          ? currentSelectedNodeId
+          : null
+      );
+      if (previewPageId) {
+        void runExportForScene(nextScene, defaultEditorExportProfile(), [previewPageId]);
+      }
+    });
+  };
+
+  const runExport = async (
+    profile = defaultEditorExportProfile(),
+    pageIds: PageId[] = activePageId ? [activePageId] : []
+  ) => runExportForScene(scene, profile, pageIds);
+
+  const runExportForScene = async (
+    sceneForExport: Scene,
+    profile = defaultEditorExportProfile(),
+    pageIds: PageId[] = activePageId ? [activePageId] : []
+  ) => {
+    if (pageIds.length === 0) {
+      setDiagnostics([
+        {
+          severity: "warning",
+          phase: "export",
+          code: "EDITOR_EXPORT_PAGE_REQUIRED",
+          message: "Select a page before exporting.",
+          subject: { kind: "document" },
+          hint: "Choose a page in the page rail or export all pages from the Export panel."
+        }
+      ]);
+      return;
+    }
+
+    setIsExporting(true);
+    setDiagnostics([
+      {
+        severity: "advice",
+        phase: "validation",
+        code: "EDITOR_EXPORT_PREFLIGHT_RUNNING",
+        message: `Preflighting ${pageIds.length} page${pageIds.length === 1 ? "" : "s"} before export.`,
+        subject: { kind: "document" },
+        hint: "Export always uses the preflighted scene so computed geometry and BrandKit resolution match approval output."
+      }
+    ]);
+
+    try {
+      const preflight = await preflightRunner({ scene: sceneForExport });
+      setPreflightResult(preflight);
+      if (
+        preflight.status !== "applied" ||
+        preflight.preflight.has_errors ||
+        !preflight.scene ||
+        hasErrorDiagnostics(preflight.diagnostics)
+      ) {
+        setExportResult(null);
+        setDiagnostics(
+          preflight.diagnostics.length > 0
+            ? preflight.diagnostics
+            : [
+                {
+                  severity: "error",
+                  phase: "validation",
+                  code: "EDITOR_EXPORT_PREFLIGHT_FAILED",
+                  message: "Preflight failed before export.",
+                  subject: { kind: "document" },
+                  hint: "Fix validation, layout, BrandKit, or token diagnostics before exporting."
+                }
+              ]
+        );
+        return;
+      }
+
+      const preflightedScene = preflight.scene;
+      setScene(preflightedScene);
+      setDiagnostics([
+        {
+          severity: "advice",
+          phase: "export",
+          code: "EDITOR_EXPORT_RUNNING",
+          message: `Exporting preflighted scene with ${profile.name}.`,
+          subject: { kind: "document" },
+          hint: `Preflight applied ${preflightOperationCount(preflight)} canonical operation${preflightOperationCount(preflight) === 1 ? "" : "s"}.`
+        }
+      ]);
+
+      const result = await exportRunner({
+        scene: preflightedScene,
+        profile,
+        pageIds,
+        ...(documentId ? { documentId } : {})
+      });
+      setExportResult(result);
+      if (result.status === "ok" && result.artifacts.length > 0) {
+        setWorkspaceMode("compare");
+      }
+      const combinedDiagnostics = [...preflight.diagnostics, ...result.diagnostics];
+      setDiagnostics(
+        combinedDiagnostics.length > 0
+          ? combinedDiagnostics
+          : [
+              {
+                severity: result.status === "ok" ? "advice" : "error",
+                phase: "export",
+                code: result.status === "ok" ? "EDITOR_EXPORT_OK" : "EDITOR_EXPORT_FAILED",
+                message:
+                  result.status === "ok"
+                    ? `Export produced ${result.artifacts.length} artifact${result.artifacts.length === 1 ? "" : "s"}.`
+                    : "Export failed without returning detailed diagnostics.",
+                subject: { kind: "document" },
+                hint: null
+              }
+            ]
+      );
+    } catch (error) {
+      setExportResult(null);
+      setDiagnostics([
+        {
+          severity: "error",
+          phase: "export",
+          code: "EDITOR_EXPORT_REQUEST_FAILED",
+          message: error instanceof Error ? error.message : "Export request failed.",
+          subject: { kind: "document" },
+          hint: "Check the editor API connection and retry export."
+        }
+      ]);
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
   return (
     <main className="editor-shell">
       <header className="topbar">
@@ -310,45 +912,146 @@ export default function EditorApp({
           <h1>{scene.meta.title}</h1>
         </div>
         <div className="toolbar" aria-label="Editor actions">
-          <button type="button" onClick={runValidationPlaceholder}>
+          <button type="button" onClick={() => void runPreflight()} disabled={isPreflighting}>
             <FileCheck2 aria-hidden size={16} />
-            Validate
+            {isPreflighting ? "Validating" : "Validate"}
           </button>
-          <button type="button" disabled>
+          <button
+            type="button"
+            className={isAgentPanelOpen ? "active" : ""}
+            onClick={() => setIsAgentPanelOpen((isOpen) => !isOpen)}
+            aria-pressed={isAgentPanelOpen}
+          >
             <Send aria-hidden size={16} />
             Agent
           </button>
-          <button type="button" disabled>
+          <button type="button" onClick={() => void runExport()} disabled={!activePageId || isExporting}>
             <Download aria-hidden size={16} />
-            Export
+            {isExporting ? "Exporting" : "Export"}
           </button>
           <button type="button" onClick={undoLastOperation} disabled={undoStack.length === 0}>
             <RotateCcw aria-hidden size={16} />
             Undo
           </button>
+          <button type="button" onClick={redoLastOperation} disabled={redoStack.length === 0}>
+            <RotateCw aria-hidden size={16} />
+            Redo
+          </button>
         </div>
       </header>
       <div className="workspace-grid">
-        <PageRail scene={scene} activePageId={activePageId} onSelectPage={selectPage} />
-        <CanvasSurface
-          scene={scene}
-          activePageId={activePageId}
-          selectedNodeId={selectedNodeId}
-          onSelectNode={setSelectedNodeId}
-          onOperation={applyOperation}
-        />
+        <div className="left-sidebar">
+          <PageRail
+            scene={scene}
+            activePageId={activePageId}
+            onSelectPage={selectPage}
+            onAddCustomPage={createCustomPage}
+            onDuplicatePage={duplicatePageInEditor}
+            onRemovePage={removePageFromEditor}
+          />
+          <LayerPanel
+            scene={scene}
+            activePageId={activePageId}
+            selectedNodeId={selectedNodeId}
+            onSelectNode={setSelectedNodeId}
+            onOperation={applyOperation}
+          />
+        </div>
+        <section className="center-workspace">
+          <div className="view-toggle" aria-label="Preview mode">
+            <button
+              type="button"
+              className={workspaceMode === "canvas" ? "active" : ""}
+              onClick={() => setWorkspaceMode("canvas")}
+            >
+              Canvas
+            </button>
+            <button
+              type="button"
+              className={workspaceMode === "export" ? "active" : ""}
+              disabled={!exportResult?.artifacts.length}
+              onClick={() => setWorkspaceMode("export")}
+            >
+              Export Preview
+            </button>
+            <button
+              type="button"
+              className={workspaceMode === "compare" ? "active" : ""}
+              disabled={!exportResult?.artifacts.length}
+              onClick={() => setWorkspaceMode("compare")}
+            >
+              Compare
+            </button>
+          </div>
+          {workspaceMode === "compare" ? (
+            <div className="compare-workspace">
+              <div className="compare-pane">
+                <div className="compare-heading">Canvas</div>
+                <CanvasSurface
+                  scene={scene}
+                  activePageId={activePageId}
+                  selectedNodeId={selectedNodeId}
+                  onSelectNode={setSelectedNodeId}
+                  onOperation={applyOperation}
+                />
+              </div>
+              <div className="compare-pane">
+                <div className="compare-heading">Export Preview</div>
+                <ExportPreviewSurface
+                  scene={scene}
+                  activePageId={activePageId}
+                  exportResult={exportResult}
+                  onSelectSubject={selectDiagnosticSubject}
+                />
+              </div>
+            </div>
+          ) : workspaceMode === "export" ? (
+            <ExportPreviewSurface
+              scene={scene}
+              activePageId={activePageId}
+              exportResult={exportResult}
+              onSelectSubject={selectDiagnosticSubject}
+            />
+          ) : (
+            <CanvasSurface
+              scene={scene}
+              activePageId={activePageId}
+              selectedNodeId={selectedNodeId}
+              onSelectNode={setSelectedNodeId}
+              onOperation={applyOperation}
+            />
+          )}
+        </section>
         <aside className="inspector-shell">
           <div className="panel-title">
             <PanelRightClose aria-hidden size={16} />
             Inspector
           </div>
+          {isAgentPanelOpen ? (
+            <AgentChatPanel
+              messages={agentMessages}
+              draft={agentDraft}
+              isRunning={isAgentRunning}
+              proposal={agentProposal}
+              activePageId={activePageId}
+              selectedNodeId={selectedNodeId}
+              diagnostics={diagnostics}
+              onDraftChange={setAgentDraft}
+              onSend={(prompt) => void sendAgentPrompt(prompt)}
+              onApplyProposal={applyAgentProposal}
+            />
+          ) : null}
           <InspectorPanel
             scene={scene}
             activePage={activePage}
             selectedNode={selectedNode}
             selectedNodeId={selectedNodeId}
             brandTokens={effectiveBrandKit?.tokens ?? null}
+            diagnostics={diagnostics}
+            renderDiagnostics={renderDiagnostics}
             onOperation={applyOperation}
+            onOperations={applyOperations}
+            onSelectSubject={selectDiagnosticSubject}
           />
           <BrandKitPanel
             scene={scene}
@@ -361,12 +1064,293 @@ export default function EditorApp({
             isRunningBrandGovernance={isBrandGovernanceRunning}
             onRunBrandCompatibility={runBrandCompatibility}
             isRunningBrandCompatibility={isBrandCompatibilityRunning}
+            onSelectSubject={selectDiagnosticSubject}
           />
-          <ValidationPanel diagnostics={diagnostics} lastOperation={lastOperation} />
+          <ExportPanel
+            scene={scene}
+            activePageId={activePageId}
+            exportResult={exportResult}
+            isExporting={isExporting}
+            onExport={(profile, pageIds) => void runExport(profile, pageIds)}
+            onSaveProfile={(profile) => applyOperation(upsertExportProfile(profile))}
+            onRemoveProfile={(name) => applyOperation(removeExportProfile(name))}
+            onSelectSubject={selectDiagnosticSubject}
+          />
+          <OperationHistoryPanel operations={operationHistory} redoCount={redoStack.length} />
+          <ValidationPanel
+            scene={scene}
+            activePageId={activePageId}
+            selectedNodeId={selectedNodeId}
+            diagnostics={diagnostics}
+            renderDiagnostics={renderDiagnostics}
+            lastOperation={lastOperation}
+            preflightResult={preflightResult}
+            onSelectSubject={selectDiagnosticSubject}
+          />
         </aside>
       </div>
     </main>
   );
+}
+
+function OperationHistoryPanel({
+  operations,
+  redoCount
+}: {
+  operations: Operation[];
+  redoCount: number;
+}) {
+  const recentOperations = operations.slice(-6).reverse();
+
+  return (
+    <section className="inspector-section">
+      <div className="section-heading">
+        <History aria-hidden size={15} />
+        Operation history
+      </div>
+      {operations.length === 0 ? (
+        <p className="muted">No accepted editor operations yet.</p>
+      ) : (
+        <ol className="operation-history-list">
+          {recentOperations.map((operation, index) => (
+            <li key={`${operations.length - index}-${operation.kind}`}>
+              <span>{operations.length - index}</span>
+              <code>{operationLabel(operation)}</code>
+            </li>
+          ))}
+        </ol>
+      )}
+      {redoCount > 0 ? <p className="muted">{redoCount} action{redoCount === 1 ? "" : "s"} available to redo.</p> : null}
+    </section>
+  );
+}
+
+function operationLabel(operation: Operation): string {
+  switch (operation.kind) {
+    case "add_page":
+      return `add_page ${operation.page.id}`;
+    case "remove_page":
+      return `remove_page ${operation.page_id}`;
+    case "insert_node":
+      return `insert_node ${operation.node.id}`;
+    case "update_node":
+      return `update_node ${operation.node_id}`;
+    case "remove_node":
+      return `remove_node ${operation.node_id}`;
+    case "update_page":
+      return `update_page ${operation.page_id}`;
+    case "move_node":
+      return `move_node ${operation.node_id}`;
+    case "upsert_slot":
+      return `upsert_slot ${operation.slot.key}`;
+    case "remove_slot":
+      return `remove_slot ${operation.slot_id}`;
+    case "bind_node_to_slot":
+      return `bind_node_to_slot ${operation.node_id}`;
+    case "unbind_node_from_slot":
+      return `unbind_node_from_slot ${operation.node_id}`;
+    case "upsert_asset":
+      return `upsert_asset ${operation.asset.id}`;
+    case "remove_asset":
+      return `remove_asset ${operation.asset_id}`;
+    case "place_asset_in_node":
+      return `place_asset_in_node ${operation.node_id}`;
+    case "place_asset_in_slot":
+      return `place_asset_in_slot ${operation.slot_id}`;
+    case "upsert_export_profile":
+      return `upsert_export_profile ${operation.profile.name}`;
+    case "remove_export_profile":
+      return `remove_export_profile ${operation.name}`;
+    case "update_document":
+      return "update_document";
+  }
+}
+
+function uniquePageId(scene: Scene, input: { name: string; width: number; height: number }): PageId {
+  const readable = input.name
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+  const base = readable || `custom_${input.width}x${input.height}`;
+  let candidate = `page_${base}`;
+  let index = 2;
+  while (scene.pages[candidate]) {
+    candidate = `page_${base}_${index}`;
+    index += 1;
+  }
+  return candidate;
+}
+
+function duplicatePageOperations(scene: Scene, page: Page): Operation[] {
+  const pageName = `${page.name} Copy`;
+  const pageId = uniquePageId(scene, {
+    name: pageName,
+    width: page.size.width,
+    height: page.size.height
+  });
+  const usedNodeIds = new Set(Object.keys(scene.nodes));
+  const nodeIdMap = new Map<NodeId, NodeId>();
+
+  const assignNodeIds = (nodeId: NodeId) => {
+    if (nodeIdMap.has(nodeId)) {
+      return;
+    }
+    const clonedNodeId = uniqueClonedNodeId(usedNodeIds, nodeId, pageId);
+    nodeIdMap.set(nodeId, clonedNodeId);
+    const node = scene.nodes[nodeId];
+    for (const childId of node?.children ?? []) {
+      assignNodeIds(childId);
+    }
+  };
+
+  for (const childId of page.children) {
+    assignNodeIds(childId);
+  }
+
+  const duplicatedPage: Page = {
+    ...cloneJson(page),
+    id: pageId,
+    name: pageName,
+    children: []
+  };
+  const operations: Operation[] = [addPage(duplicatedPage)];
+
+  const emitNodeTree = (sourceNodeId: NodeId, parent: ParentRef, index: number) => {
+    const sourceNode = scene.nodes[sourceNodeId];
+    const clonedNodeId = nodeIdMap.get(sourceNodeId);
+    if (!sourceNode || !clonedNodeId) {
+      return;
+    }
+    const clonedNode: Node = {
+      ...cloneJson(sourceNode),
+      id: clonedNodeId,
+      children: [],
+      computed: null
+    };
+    operations.push(insertNode(parent, index, clonedNode));
+
+    for (const slot of Object.values(scene.slots)) {
+      if (slot.bound_nodes.includes(sourceNodeId)) {
+        operations.push(bindNodeToSlot(slot.id, clonedNodeId));
+      }
+    }
+
+    sourceNode.children.forEach((childId, childIndex) =>
+      emitNodeTree(childId, { kind: "node", id: clonedNodeId }, childIndex)
+    );
+  };
+
+  page.children.forEach((childId, index) =>
+    emitNodeTree(childId, { kind: "page", id: pageId }, index)
+  );
+
+  return operations;
+}
+
+function uniqueClonedNodeId(usedNodeIds: Set<NodeId>, sourceNodeId: NodeId, pageId: PageId): NodeId {
+  const pageSuffix = pageId
+    .replace(/^page_/, "")
+    .replace(/[^a-zA-Z0-9_]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+  const base = `${sourceNodeId}_${pageSuffix || "copy"}`;
+  let candidate = base;
+  let index = 2;
+  while (usedNodeIds.has(candidate)) {
+    candidate = `${base}_${index}`;
+    index += 1;
+  }
+  usedNodeIds.add(candidate);
+  return candidate;
+}
+
+function cloneJson<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value)) as T;
+}
+
+function preflightOperationCount(result: EditorPreflightResult): number {
+  return (
+    result.preflight.brand_ref_operations +
+    result.preflight.token_operations +
+    result.preflight.layout_operations
+  );
+}
+
+function hasErrorDiagnostics(diagnostics: Diagnostic[]): boolean {
+  return diagnostics.some((diagnostic) => diagnostic.severity === "error");
+}
+
+function agentPreviewPageId(
+  operations: Operation[],
+  activePageId: PageId | null,
+  scene: Scene
+): PageId | null {
+  for (let index = operations.length - 1; index >= 0; index -= 1) {
+    const operation = operations[index];
+    if (operation.kind === "add_page") {
+      return operation.page.id;
+    }
+    if (operation.kind === "update_page") {
+      return operation.page_id;
+    }
+    if (operation.kind === "insert_node" && operation.parent.kind === "page") {
+      return operation.parent.id;
+    }
+    if (operation.kind === "move_node" && operation.new_parent.kind === "page") {
+      return operation.new_parent.id;
+    }
+  }
+  return activePageId && scene.pages[activePageId] ? activePageId : firstPageId(scene);
+}
+
+function uniqueChatMessageId(role: AgentChatMessage["role"]): string {
+  return `${role}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function isEditableEventTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) {
+    return false;
+  }
+  const tagName = target.tagName.toLowerCase();
+  return (
+    tagName === "input" ||
+    tagName === "textarea" ||
+    tagName === "select" ||
+    target.isContentEditable
+  );
+}
+
+function keyboardHistoryAction(event: KeyboardEvent): "undo" | "redo" | null {
+  const key = event.key.toLowerCase();
+  const modifier = event.metaKey || event.ctrlKey;
+  if (!modifier) {
+    return null;
+  }
+  if (key === "z" && event.shiftKey) {
+    return "redo";
+  }
+  if (key === "z") {
+    return "undo";
+  }
+  if (key === "y") {
+    return "redo";
+  }
+  return null;
+}
+
+function arrowNudge(key: string): { x: number; y: number } | null {
+  switch (key) {
+    case "ArrowLeft":
+      return { x: -1, y: 0 };
+    case "ArrowRight":
+      return { x: 1, y: 0 };
+    case "ArrowUp":
+      return { x: 0, y: -1 };
+    case "ArrowDown":
+      return { x: 0, y: 1 };
+    default:
+      return null;
+  }
 }
 
 function latestBrandKitVersion(

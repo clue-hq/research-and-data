@@ -45,6 +45,8 @@ enum CoreRequest {
         scene: Value,
         format: ExportFormat,
         page_ids: Vec<String>,
+        #[serde(default)]
+        profile: Option<Value>,
     },
     FinalizeTemplate {
         scene: Value,
@@ -280,10 +282,19 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
             scene,
             format,
             page_ids,
+            profile,
         } => {
             let scene = parse_scene(scene)?;
-            let request = ExportRequest {
-                profile: ExportProfile {
+            let profile = match profile {
+                Some(profile) => {
+                    serde_json::from_value::<ExportProfile>(profile).map_err(|error| {
+                        core_error(
+                            "profile.invalid",
+                            format!("invalid export profile payload: {error}"),
+                        )
+                    })?
+                }
+                None => ExportProfile {
                     name: "agent_critique_preview".to_owned(),
                     format,
                     pdf_intent: Some(PdfIntent::Preview),
@@ -294,6 +305,9 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                     include_bleed: false,
                     embed_fonts: true,
                 },
+            };
+            let request = ExportRequest {
+                profile,
                 page_ids: page_ids.into_iter().map(PageId::from).collect(),
                 purpose: ExportPurpose::AgentCritique,
             };

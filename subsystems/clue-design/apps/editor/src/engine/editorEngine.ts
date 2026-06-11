@@ -48,8 +48,29 @@ function applyLocalOperation(scene: Scene, operation: Operation): void {
   }
 
   switch (operation.kind) {
+    case "add_page": {
+      if (scene.pages[operation.page.id]) {
+        throw new Error(`Page ${operation.page.id} already exists`);
+      }
+      scene.pages[operation.page.id] = operation.page;
+      return;
+    }
+    case "remove_page": {
+      const page = scene.pages[operation.page_id];
+      if (!page) {
+        throw new Error(`Missing page ${operation.page_id}`);
+      }
+      delete scene.pages[operation.page_id];
+      for (const nodeId of page.children) {
+        removeNodeRecursive(scene, nodeId);
+      }
+      return;
+    }
     case "update_document": {
       applyDocumentPatch(scene, operation.patch);
+      if (documentPatchInvalidatesComputed(operation.patch)) {
+        clearAllComputed(scene);
+      }
       return;
     }
     case "update_page": {
@@ -58,6 +79,22 @@ function applyLocalOperation(scene: Scene, operation: Operation): void {
         throw new Error(`Missing page ${operation.page_id}`);
       }
       applyPagePatch(page, operation.patch);
+      if (pagePatchInvalidatesComputed(operation.patch)) {
+        clearComputedForPage(scene, operation.page_id);
+      }
+      return;
+    }
+    case "insert_node": {
+      if (scene.nodes[operation.node.id]) {
+        throw new Error(`Node ${operation.node.id} already exists`);
+      }
+      if (operation.node.children.length > 0) {
+        throw new Error(`Inserted node ${operation.node.id} must not carry pre-attached children`);
+      }
+      validateInsertDestination(scene, operation.parent, operation.index);
+      scene.nodes[operation.node.id] = operation.node;
+      insertIntoParent(scene, operation.parent, operation.node.id, operation.index);
+      clearAllComputed(scene);
       return;
     }
     case "update_node": {
@@ -65,7 +102,17 @@ function applyLocalOperation(scene: Scene, operation: Operation): void {
       if (node.locked && !isLockedOnlyPatch(operation.patch)) {
         throw new Error(`Node ${node.id} is locked`);
       }
+      const invalidateComputed = nodePatchInvalidatesComputed(operation.patch);
       applyNodePatch(node, operation.patch);
+      if (invalidateComputed) {
+        clearComputedForNodePage(scene, node.id);
+      }
+      return;
+    }
+    case "remove_node": {
+      getNode(scene, operation.node_id);
+      detachFromCurrentParent(scene, operation.node_id);
+      removeNodeRecursive(scene, operation.node_id);
       return;
     }
     case "move_node": {
@@ -73,8 +120,10 @@ function applyLocalOperation(scene: Scene, operation: Operation): void {
       if (node.locked) {
         throw new Error(`Node ${node.id} is locked`);
       }
+      validateMoveDestination(scene, operation.node_id, operation.new_parent, operation.index);
       detachFromCurrentParent(scene, operation.node_id);
       insertIntoParent(scene, operation.new_parent, operation.node_id, operation.index);
+      clearAllComputed(scene);
       return;
     }
     case "upsert_slot": {
@@ -99,6 +148,7 @@ function applyLocalOperation(scene: Scene, operation: Operation): void {
     }
     case "place_asset_in_node": {
       placeAssetInNode(scene, operation.node_id, operation.asset_id, operation.placement);
+      clearComputedForNodePage(scene, operation.node_id);
       return;
     }
     case "place_asset_in_slot": {
@@ -123,6 +173,7 @@ function applyLocalOperation(scene: Scene, operation: Operation): void {
       }
       for (const nodeId of slot.bound_nodes) {
         placeAssetInNode(scene, nodeId, operation.asset_id, operation.placement);
+        clearComputedForNodePage(scene, nodeId);
       }
       return;
     }
@@ -143,6 +194,19 @@ function applyLocalOperation(scene: Scene, operation: Operation): void {
         throw new Error(`Missing slot ${operation.slot_id}`);
       }
       slot.bound_nodes = slot.bound_nodes.filter((nodeId) => nodeId !== operation.node_id);
+      return;
+    }
+    case "upsert_export_profile": {
+      const index = scene.export_profiles.findIndex((profile) => profile.name === operation.profile.name);
+      if (index >= 0) {
+        scene.export_profiles[index] = operation.profile;
+      } else {
+        scene.export_profiles.push(operation.profile);
+      }
+      return;
+    }
+    case "remove_export_profile": {
+      scene.export_profiles = scene.export_profiles.filter((profile) => profile.name !== operation.name);
       return;
     }
   }
@@ -308,6 +372,96 @@ function insertIntoParent(scene: Scene, parent: ParentRef, nodeId: string, index
   children.splice(Math.min(index, children.length), 0, nodeId);
 }
 
+function validateMoveDestination(scene: Scene, nodeId: string, parent: ParentRef, index: number): void {
+  if (!Number.isInteger(index) || index < 0) {
+    throw new Error(`Invalid insertion index ${index}`);
+  }
+
+  const targetChildren = parent.kind === "page" ? scene.pages[parent.id]?.children : scene.nodes[parent.id]?.children;
+  if (!targetChildren) {
+    throw new Error(`Missing parent ${parent.id}`);
+  }
+  if (index > targetChildren.length) {
+    throw new Error(`Insertion index ${index} is out of bounds for parent ${parent.id}`);
+  }
+
+  if (parent.kind === "page") {
+    return;
+  }
+
+  const parentNode = getNode(scene, parent.id);
+  if (parentNode.locked) {
+    throw new Error(`Parent node ${parentNode.id} is locked`);
+  }
+  if (parent.id === nodeId || nodeContainsNode(scene, nodeId, parent.id, new Set())) {
+    throw new Error(`Cannot move node ${nodeId} into itself or its descendant ${parent.id}`);
+  }
+  if (!canNodeHaveChildren(parentNode)) {
+    throw new Error(`Node ${parentNode.id} cannot contain children`);
+  }
+}
+
+function validateInsertDestination(scene: Scene, parent: ParentRef, index: number): void {
+  if (!Number.isInteger(index) || index < 0) {
+    throw new Error(`Invalid insertion index ${index}`);
+  }
+
+  const targetChildren = parent.kind === "page" ? scene.pages[parent.id]?.children : scene.nodes[parent.id]?.children;
+  if (!targetChildren) {
+    throw new Error(`Missing parent ${parent.id}`);
+  }
+  if (index > targetChildren.length) {
+    throw new Error(`Insertion index ${index} is out of bounds for parent ${parent.id}`);
+  }
+
+  if (parent.kind === "page") {
+    return;
+  }
+
+  const parentNode = getNode(scene, parent.id);
+  if (parentNode.locked) {
+    throw new Error(`Parent node ${parentNode.id} is locked`);
+  }
+  if (!canNodeHaveChildren(parentNode)) {
+    throw new Error(`Node ${parentNode.id} cannot contain children`);
+  }
+}
+
+function canNodeHaveChildren(node: Node): boolean {
+  return node.kind.kind === "frame" || node.kind.kind === "group" || node.kind.kind === "auto_layout";
+}
+
+function nodeContainsNode(scene: Scene, rootNodeId: string, targetNodeId: string, seen: Set<string>): boolean {
+  if (seen.has(rootNodeId)) {
+    return false;
+  }
+  seen.add(rootNodeId);
+  const root = scene.nodes[rootNodeId];
+  if (!root) {
+    return false;
+  }
+  for (const childId of root.children) {
+    if (childId === targetNodeId || nodeContainsNode(scene, childId, targetNodeId, seen)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function removeNodeRecursive(scene: Scene, nodeId: string): void {
+  const node = scene.nodes[nodeId];
+  if (!node) {
+    return;
+  }
+  delete scene.nodes[nodeId];
+  for (const childId of node.children) {
+    removeNodeRecursive(scene, childId);
+  }
+  for (const slot of Object.values(scene.slots)) {
+    slot.bound_nodes = slot.bound_nodes.filter((boundNodeId) => boundNodeId !== nodeId);
+  }
+}
+
 function isLockedOnlyPatch(patch: NodePatch): boolean {
   return (
     patch.locked.kind === "set" &&
@@ -326,6 +480,89 @@ function isLockedOnlyPatch(patch: NodePatch): boolean {
     patch.layout.kind === "unchanged" &&
     patch.computed.kind === "unchanged"
   );
+}
+
+function documentPatchInvalidatesComputed(patch: DocumentPatch): boolean {
+  return patch.brand_kit.kind !== "unchanged";
+}
+
+function pagePatchInvalidatesComputed(patch: PagePatch): boolean {
+  return patch.size.kind !== "unchanged";
+}
+
+function nodePatchInvalidatesComputed(patch: NodePatch): boolean {
+  if (patch.computed.kind !== "unchanged") {
+    return false;
+  }
+  return (
+    patch.kind.kind !== "unchanged" ||
+    patch.transform.kind !== "unchanged" ||
+    patch.size.kind !== "unchanged" ||
+    patch.strokes.kind !== "unchanged" ||
+    patch.layout.kind !== "unchanged"
+  );
+}
+
+function clearComputedForNodePage(scene: Scene, nodeId: string): void {
+  const pageId = pageIdContainingNode(scene, nodeId);
+  if (pageId) {
+    clearComputedForPage(scene, pageId);
+    return;
+  }
+  clearComputedForNodeSubtree(scene, nodeId);
+}
+
+function clearComputedForPage(scene: Scene, pageId: string): void {
+  const page = scene.pages[pageId];
+  if (!page) {
+    return;
+  }
+  for (const nodeId of page.children) {
+    clearComputedForNodeSubtree(scene, nodeId);
+  }
+}
+
+function clearComputedForNodeSubtree(scene: Scene, nodeId: string): void {
+  const node = scene.nodes[nodeId];
+  if (!node) {
+    return;
+  }
+  node.computed = null;
+  for (const childId of node.children) {
+    clearComputedForNodeSubtree(scene, childId);
+  }
+}
+
+function clearAllComputed(scene: Scene): void {
+  for (const node of Object.values(scene.nodes)) {
+    node.computed = null;
+  }
+}
+
+function pageIdContainingNode(scene: Scene, nodeId: string): string | null {
+  for (const page of Object.values(scene.pages)) {
+    if (pageContainsNode(scene, page.children, nodeId, new Set())) {
+      return page.id;
+    }
+  }
+  return null;
+}
+
+function pageContainsNode(scene: Scene, children: string[], targetNodeId: string, seen: Set<string>): boolean {
+  for (const childId of children) {
+    if (childId === targetNodeId) {
+      return true;
+    }
+    if (seen.has(childId)) {
+      continue;
+    }
+    seen.add(childId);
+    const child = scene.nodes[childId];
+    if (child && pageContainsNode(scene, child.children, targetNodeId, seen)) {
+      return true;
+    }
+  }
+  return false;
 }
 
 function cloneScene(scene: Scene): Scene {

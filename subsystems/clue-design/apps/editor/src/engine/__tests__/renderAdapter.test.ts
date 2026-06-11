@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { Color, Node, Scene } from "../contracts";
+import phaseFManifest from "../../../../../crates/lumen-core/fixtures/conformance/phase_f_manifest.json";
+import type { AssetRecord, Color, Node, Page, Scene } from "../contracts";
 import { minimalScene } from "@/fixtures/minimalScene";
 import { colorToCss, nodeDescriptor, pageDescriptor, sceneUnitFromCanvas, sizeFromCanvas } from "../renderAdapter";
 
@@ -29,6 +30,28 @@ describe("render adapter", () => {
     expect(descriptor.height).toBe(1080);
   });
 
+  it("projects Phase F conformance artifact sizes and probe nodes from the shared manifest", () => {
+    for (const artifact of phaseFManifest.artifacts) {
+      if (!("page" in artifact) || !artifact.page || !("probe_node" in artifact) || !artifact.probe_node) {
+        continue;
+      }
+
+      const scene = sceneFromManifestArtifact(artifact);
+      const page = scene.pages[artifact.page.id];
+      const node = scene.nodes[artifact.probe_node.id];
+      const pageScale = unitScaleForTest(page.size.unit);
+      const pageView = pageDescriptor(page);
+      const nodeView = nodeDescriptor(scene, node, page);
+
+      expect(pageView.width, artifact.id).toBeCloseTo(artifact.page.width * pageScale, 2);
+      expect(pageView.height, artifact.id).toBeCloseTo(artifact.page.height * pageScale, 2);
+      expect(nodeView.x, artifact.id).toBeCloseTo(artifact.probe_node.x * pageScale, 2);
+      expect(nodeView.y, artifact.id).toBeCloseTo(artifact.probe_node.y * pageScale, 2);
+      expect(nodeView.width, artifact.id).toBeCloseTo(artifact.probe_node.width * pageScale, 2);
+      expect(nodeView.height, artifact.id).toBeCloseTo(artifact.probe_node.height * pageScale, 2);
+    }
+  });
+
   it("maps a text node to an editor render descriptor", () => {
     const page = minimalScene.pages.page_a4;
     const node = minimalScene.nodes.node_contact_name;
@@ -38,6 +61,102 @@ describe("render adapter", () => {
     expect(descriptor.kind).toBe("text");
     expect(descriptor.text?.content).toBe("Dr. Priya Sharma");
     expect(descriptor.x).toBeCloseTo(90.7, 1);
+    expect(descriptor.slotKeys).toEqual(["contact.full_name"]);
+  });
+
+  it("sorts all slot bindings for canvas badge rendering", () => {
+    const scene = cloneScene();
+    scene.slots.slot_contact_title = {
+      ...scene.slots.slot_contact_name,
+      id: "slot_contact_title",
+      key: "contact.title",
+      label: "Contact title",
+      bound_nodes: ["node_contact_name"]
+    };
+
+    const descriptor = nodeDescriptor(scene, scene.nodes.node_contact_name, scene.pages.page_a4);
+
+    expect(descriptor.slotKeys).toEqual(["contact.full_name", "contact.title"]);
+  });
+
+  it("preserves text layout and direction fields for Konva preview", () => {
+    const scene = cloneScene();
+    scene.nodes.node_contact_name.kind = {
+      kind: "text",
+      content: "Line one\nLine two",
+      font_family: "Inter",
+      font_size: 16,
+      font_weight: 500,
+      align: "right",
+      line_height: 1.45,
+      letter_spacing: 0.8,
+      max_lines: 2,
+      wrap: "wrap",
+      direction: "rtl"
+    };
+
+    const descriptor = nodeDescriptor(scene, scene.nodes.node_contact_name, scene.pages.page_a4);
+
+    expect(descriptor.text).toMatchObject({
+      content: "Line one\nLine two",
+      fontFamily: "Inter",
+      fontSize: expect.closeTo(60.47, 1),
+      fontWeight: 500,
+      align: "right",
+      lineHeight: 1.45,
+      letterSpacing: expect.closeTo(3.02, 1),
+      maxLines: 2,
+      wrap: "wrap",
+      direction: "rtl"
+    });
+  });
+
+  it("preserves image asset labels and IDs for canvas placeholders", () => {
+    const scene = cloneScene();
+    scene.assets.asset_logo_demo = assetRecord("asset_logo_demo", "Demo Account Logo", "logo");
+    scene.nodes.node_contact_name = {
+      ...scene.nodes.node_contact_name,
+      kind: {
+        kind: "image",
+        asset_id: "asset_logo_demo",
+        alt: "Account logo"
+      },
+      source_asset_id: "asset_logo_demo"
+    };
+
+    const descriptor = nodeDescriptor(scene, scene.nodes.node_contact_name, scene.pages.page_a4);
+
+    expect(descriptor.image).toEqual({
+      assetId: "asset_logo_demo",
+      sourceAssetId: "asset_logo_demo",
+      alt: "Account logo",
+      assetLabel: "Demo Account Logo",
+      assetKind: "logo",
+      assetStatus: "ready"
+    });
+  });
+
+  it("preserves vector source asset metadata for canvas placeholders and parity diagnostics", () => {
+    const scene = cloneScene();
+    scene.assets.asset_vector_logo = assetRecord("asset_vector_logo", "Vector Logo", "vector");
+    scene.nodes.node_contact_name = {
+      ...scene.nodes.node_contact_name,
+      kind: {
+        kind: "vector",
+        path_data: "M0 0H24V24H0Z"
+      },
+      source_asset_id: "asset_vector_logo"
+    };
+
+    const descriptor = nodeDescriptor(scene, scene.nodes.node_contact_name, scene.pages.page_a4);
+
+    expect(descriptor.vector).toEqual({
+      pathData: "M0 0H24V24H0Z",
+      sourceAssetId: "asset_vector_logo",
+      assetLabel: "Vector Logo",
+      assetKind: "vector",
+      assetStatus: "ready"
+    });
   });
 
   it("uses computed layout bounds for hug/fill-sized nodes", () => {
@@ -84,6 +203,80 @@ describe("render adapter", () => {
     expect(descriptor.height).toBeCloseTo(120.9, 1);
     expect(descriptor.x).toBeCloseTo(90.7, 1);
     expect(descriptor.y).toBeCloseTo(151.2, 1);
+  });
+
+  it("uses computed child coordinates relative to a computed parent like export", () => {
+    const scene = cloneScene();
+    const page = scene.pages.page_a4;
+    page.size = {
+      width: 1080,
+      height: 1080,
+      unit: "px",
+      preset: "custom",
+      orientation: "landscape"
+    };
+    page.children = ["parent_frame"];
+
+    const parent: Node = {
+      ...scene.nodes.node_contact_name,
+      id: "parent_frame",
+      name: "Parent frame",
+      kind: {
+        kind: "frame"
+      },
+      children: ["child_text"],
+      computed: {
+        layout_bounds: {
+          x: 100,
+          y: 60,
+          width: 400,
+          height: 180
+        },
+        render_bounds: {
+          x: 100,
+          y: 60,
+          width: 400,
+          height: 180
+        }
+      }
+    };
+    const child: Node = {
+      ...scene.nodes.node_contact_name,
+      id: "child_text",
+      name: "Child text",
+      children: [],
+      computed: {
+        layout_bounds: {
+          x: 124,
+          y: 84,
+          width: 320,
+          height: 48
+        },
+        render_bounds: {
+          x: 124,
+          y: 84,
+          width: 320,
+          height: 48
+        }
+      }
+    };
+    scene.nodes = {
+      parent_frame: parent,
+      child_text: child
+    };
+
+    const parentDescriptor = nodeDescriptor(scene, parent, page);
+    const childDescriptor = nodeDescriptor(scene, child, page, {
+      x: parent.computed!.layout_bounds.x,
+      y: parent.computed!.layout_bounds.y
+    });
+
+    expect(parentDescriptor.x).toBe(100);
+    expect(parentDescriptor.y).toBe(60);
+    expect(childDescriptor.x).toBe(24);
+    expect(childDescriptor.y).toBe(24);
+    expect(childDescriptor.width).toBe(320);
+    expect(childDescriptor.height).toBe(48);
   });
 
   it("accepts Rust-serialized token dimensions as unresolved editor sizes", () => {
@@ -162,4 +355,149 @@ describe("render adapter", () => {
 
 function cloneScene(): Scene {
   return JSON.parse(JSON.stringify(minimalScene)) as Scene;
+}
+
+function assetRecord(id: string, label: string, kind: AssetRecord["kind"]): AssetRecord {
+  return {
+    id,
+    label,
+    kind,
+    status: "ready",
+    source: {
+      kind: "workspace",
+      asset_id: id
+    },
+    raster: null,
+    vector: null,
+    font: null,
+    logo: null,
+    license: null,
+    provenance: {
+      created_by: "test",
+      created_at: "2026-06-11T00:00:00Z",
+      source_label: "test fixture",
+      confidence: 1,
+      notes: []
+    },
+    tags: []
+  };
+}
+
+type ManifestArtifact = (typeof phaseFManifest.artifacts)[number] & {
+  page: {
+    id: string;
+    width: number;
+    height: number;
+    unit: string;
+    preset: string | null;
+    orientation: string;
+  };
+  probe_node: {
+    id: string;
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  };
+};
+
+function sceneFromManifestArtifact(artifact: ManifestArtifact): Scene {
+  const scene = cloneScene();
+  scene.pages = {
+    [artifact.page.id]: {
+      id: artifact.page.id,
+      name: artifact.label,
+      size: {
+        width: artifact.page.width,
+        height: artifact.page.height,
+        unit: unitFromManifest(artifact.page.unit),
+        preset: presetFromManifest(artifact.page.preset),
+        orientation: orientationFromManifest(artifact.page.orientation)
+      },
+      children: [artifact.probe_node.id],
+      bleed: null,
+      safe_area: null,
+      background: []
+    }
+  };
+  scene.nodes = {
+    [artifact.probe_node.id]: {
+      ...scene.nodes.node_contact_name,
+      id: artifact.probe_node.id,
+      name: artifact.label,
+      kind: {
+        kind: "rect"
+      },
+      transform: {
+        x: artifact.probe_node.x,
+        y: artifact.probe_node.y,
+        rotation: 0,
+        skew_x: 0,
+        skew_y: 0,
+        flip_x: false,
+        flip_y: false
+      },
+      size: {
+        width: {
+          kind: "fixed",
+          value: artifact.probe_node.width
+        },
+        height: {
+          kind: "fixed",
+          value: artifact.probe_node.height
+        }
+      },
+      children: [],
+      fills: [],
+      strokes: [],
+      computed: null
+    }
+  };
+  return scene;
+}
+
+function unitFromManifest(unit: string): Page["size"]["unit"] {
+  switch (unit) {
+    case "px":
+    case "mm":
+    case "in":
+      return unit;
+    default:
+      throw new Error(`Unsupported Phase F manifest unit ${unit}`);
+  }
+}
+
+function presetFromManifest(preset: string | null): Page["size"]["preset"] {
+  switch (preset) {
+    case null:
+    case "a4":
+    case "us_letter":
+    case "custom":
+    case "linkedin_ad":
+    case "envelope_dl":
+      return preset;
+    default:
+      throw new Error(`Unsupported Phase F manifest preset ${preset}`);
+  }
+}
+
+function orientationFromManifest(orientation: string): Page["size"]["orientation"] {
+  switch (orientation) {
+    case "portrait":
+    case "landscape":
+      return orientation;
+    default:
+      throw new Error(`Unsupported Phase F manifest orientation ${orientation}`);
+  }
+}
+
+function unitScaleForTest(unit: Page["size"]["unit"]): number {
+  switch (unit) {
+    case "px":
+      return 1;
+    case "mm":
+      return 96 / 25.4;
+    case "in":
+      return 96;
+  }
 }
