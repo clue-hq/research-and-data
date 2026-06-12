@@ -47,9 +47,12 @@ from .models import (
     AssetMetadataRequest,
     BrandCompatibilityRequest,
     CompileStylesBrandKitRequest,
+    CreateBindingSetRequest,
     CreateDocumentRequest,
     CreateBrandKitRequest,
+    CreateInstanceBatchRequest,
     CreateSnapshotRequest,
+    DeriveInstanceRequest,
     ExportDocumentRequest,
     ExportPreviewRequest,
     FinalizeTemplateRequest,
@@ -1275,6 +1278,416 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
         template_revision_id: str, repo: Repository = Depends(repository)
     ) -> JsonObject:
         return repo.require_template_revision(template_revision_id)
+
+    # ------------------------------------------------------------------
+    # Phase G personalization runtime (slice G8)
+    # ------------------------------------------------------------------
+
+    def _sanitize_id_component(source: str) -> str:
+        return "".join(
+            ch if ch.isalnum() or ch in "_-" else "_" for ch in source
+        )
+
+    def _instance_id(template_revision_id: str, binding_set_id: str) -> str:
+        return (
+            "inst_"
+            + _sanitize_id_component(template_revision_id)
+            + "_"
+            + _sanitize_id_component(binding_set_id)
+        )
+
+    def _binding_asset_records(repo: Repository, binding: JsonObject) -> list:
+        """Resolve asset records referenced by binding values. Missing
+        records are NOT an HTTP error here: derivation reports LUMG0301
+        per slot, which is the honest per-instance verdict."""
+        records = []
+        for value in (binding.get("values") or {}).values():
+            if isinstance(value, dict) and value.get("kind") == "asset":
+                asset_id = value.get("asset_id")
+                if not asset_id:
+                    continue
+                try:
+                    records.append(repo.require_asset_record(asset_id)["asset"])
+                except NotFoundError:
+                    continue
+        return records
+
+    def _derive_and_persist_instance(
+        repo: Repository,
+        revision: JsonObject,
+        binding: JsonObject,
+        export_formats: list,
+        export_dpi: Optional[int],
+        batch_id: Optional[str] = None,
+    ) -> JsonObject:
+        revision_id = revision["template_revision_id"]
+        binding_set_id = binding.get("binding_set_id") or new_id("bind")
+        instance_id = _instance_id(revision_id, binding_set_id)
+        records = _binding_asset_records(repo, binding)
+        result = app.state.core.derive_instance(
+            scene=revision["scene"],
+            binding_set=binding,
+            asset_records=records,
+            store_root=asset_store_root(),
+            export_formats=export_formats,
+            export_dpi=export_dpi,
+            raise_on_error=False,
+        )
+
+        if not result.get("ok", False):
+            diagnostics = result.get("diagnostics", [])
+            if not diagnostics:
+                diagnostics = diagnostics_from_helper_error(result.get("error"))
+            instance = repo.upsert_instance(
+                {
+                    "instance_id": instance_id,
+                    "template_revision_id": revision_id,
+                    "binding_set_id": binding_set_id,
+                    "batch_id": batch_id,
+                    "status": "failed",
+                    "fit_status": "overflow",
+                    "derived_scene": {},
+                    "diagnostics": diagnostics,
+                    "audit": [],
+                    "fit_report": {},
+                    "artifacts": [],
+                    "generated_assets": {},
+                }
+            )
+            return instance
+
+        payload = result.get("instance") or {}
+        fit_report = payload.get("fit_report") or {}
+        status = "failed" if payload.get("has_errors") else "derived"
+        generated = payload.get("generated") or {}
+        instance = repo.upsert_instance(
+            {
+                "instance_id": instance_id,
+                "template_revision_id": revision_id,
+                "binding_set_id": binding_set_id,
+                "batch_id": batch_id,
+                "status": status,
+                "fit_status": fit_report.get("status", "overflow"),
+                "derived_scene": result.get("scene") or {},
+                "diagnostics": result.get("diagnostics", []),
+                "audit": payload.get("audit", []),
+                "fit_report": fit_report,
+                "artifacts": payload.get("artifacts", []),
+                "generated_assets": generated,
+            }
+        )
+
+        # Generated assets become first-class library records.
+        for entry in generated.values():
+            record = (entry or {}).get("record")
+            if record:
+                repo.create_asset_record(record)
+
+        # AskAgentToRepair entries land in the template-level repair queue.
+        for request_ in payload.get("repair_requests", []):
+            repair_id = "rep_" + _sanitize_id_component(
+                f"{revision_id}_{request_['slot_key']}_{binding_set_id}"
+            )
+            repo.upsert_repair_request(
+                {
+                    "repair_id": repair_id,
+                    "template_revision_id": revision_id,
+                    "slot_key": request_["slot_key"],
+                    "node_id": request_["node_id"],
+                    "binding_set_id": request_["binding_set_id"],
+                    "instance_id": instance_id,
+                    "reason": request_["reason"],
+                    "status": "open",
+                }
+            )
+
+        return instance
+
+    def _public_instance(instance: JsonObject, include_scene: bool = True) -> JsonObject:
+        public = dict(instance)
+        if not include_scene:
+            public.pop("derived_scene", None)
+        return public
+
+    @app.post("/binding-sets")
+    def create_binding_set(
+        payload: CreateBindingSetRequest,
+        repo: Repository = Depends(repository),
+    ) -> JsonObject:
+        binding = payload.binding_set
+        binding_set_id = binding.get("binding_set_id")
+        revision_id = binding.get("template_revision_id")
+        if not binding_set_id or not revision_id:
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "code": "binding_set.incomplete",
+                    "message": "binding_set_id and template_revision_id are required",
+                },
+            )
+        revision = repo.require_template_revision(revision_id)
+        try:
+            result = app.state.core.validate_binding_set(
+                revision["scene"], binding
+            )
+        except CoreError as error:
+            raise core_http_error(error) from error
+        diagnostics = result.get("diagnostics", [])
+        if not result.get("ok", False):
+            log_event(
+                api_logger,
+                logging.INFO,
+                "binding_set_rejected",
+                binding_set_id=binding_set_id,
+                template_revision_id=revision_id,
+                **diagnostic_summary(diagnostics),
+            )
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "code": "binding_set.invalid",
+                    "message": f"binding set {binding_set_id} failed validation",
+                    "diagnostics": diagnostics,
+                },
+            )
+        stored = repo.upsert_binding_set(binding, "valid", diagnostics)
+        log_event(
+            api_logger,
+            logging.INFO,
+            "binding_set_stored",
+            binding_set_id=binding_set_id,
+            template_revision_id=revision_id,
+            **diagnostic_summary(diagnostics),
+        )
+        return {"schema_version": 1, **stored}
+
+    @app.get("/binding-sets/{binding_set_id}")
+    def get_binding_set(
+        binding_set_id: str, repo: Repository = Depends(repository)
+    ) -> JsonObject:
+        return repo.require_binding_set(binding_set_id)
+
+    @app.get("/binding-sets")
+    def list_binding_sets(
+        template_revision_id: Optional[str] = Query(None),
+        repo: Repository = Depends(repository),
+    ) -> JsonObject:
+        return {
+            "binding_sets": repo.list_binding_sets(template_revision_id),
+        }
+
+    @app.delete("/binding-sets/{binding_set_id}")
+    def delete_binding_set(
+        binding_set_id: str, repo: Repository = Depends(repository)
+    ) -> JsonObject:
+        repo.delete_binding_set(binding_set_id)
+        return {"deleted": binding_set_id}
+
+    @app.post("/template-revisions/{template_revision_id}/instances")
+    def derive_instance_route(
+        template_revision_id: str,
+        payload: DeriveInstanceRequest,
+        repo: Repository = Depends(repository),
+    ) -> JsonObject:
+        revision = repo.require_template_revision(template_revision_id)
+        if payload.binding_set is not None:
+            binding = payload.binding_set
+        elif payload.binding_set_id is not None:
+            stored = repo.require_binding_set(payload.binding_set_id)
+            if stored["template_revision_id"] != template_revision_id:
+                raise HTTPException(
+                    status_code=409,
+                    detail={
+                        "code": "binding_set.revision_mismatch",
+                        "message": (
+                            f"binding set {payload.binding_set_id} targets revision "
+                            f"{stored['template_revision_id']}, not {template_revision_id}"
+                        ),
+                    },
+                )
+            binding = stored["binding_set"]
+        else:
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "code": "instance.binding_missing",
+                    "message": "provide binding_set_id or an inline binding_set",
+                },
+            )
+
+        instance = _derive_and_persist_instance(
+            repo,
+            revision,
+            binding,
+            payload.export_formats,
+            payload.export_dpi,
+        )
+        log_event(
+            api_logger,
+            logging.INFO,
+            "instance_derived",
+            instance_id=instance["instance_id"],
+            template_revision_id=template_revision_id,
+            binding_set_id=instance["binding_set_id"],
+            status=instance["status"],
+            fit_status=instance["fit_status"],
+            artifact_count=len(instance.get("artifacts", [])),
+        )
+        return {"schema_version": 1, **_public_instance(instance)}
+
+    @app.get("/instances/{instance_id}")
+    def get_instance(
+        instance_id: str,
+        include_scene: bool = Query(True),
+        repo: Repository = Depends(repository),
+    ) -> JsonObject:
+        return _public_instance(
+            repo.require_instance(instance_id), include_scene
+        )
+
+    @app.get("/template-revisions/{template_revision_id}/instances")
+    def list_revision_instances(
+        template_revision_id: str, repo: Repository = Depends(repository)
+    ) -> JsonObject:
+        repo.require_template_revision(template_revision_id)
+        return {
+            "instances": [
+                _public_instance(instance, include_scene=False)
+                for instance in repo.list_instances(template_revision_id)
+            ]
+        }
+
+    BATCH_EXPORT_DPI = 300
+
+    def _process_batch(
+        repo: Repository, revision: JsonObject, batch: JsonObject
+    ) -> JsonObject:
+        """Synchronous-chunked batch processing (Track D Decision 4):
+        the cursor persists after every chunk, so an interrupted batch
+        resumes exactly where it stopped — this job row is the seam where
+        a real queue lands later."""
+        binding_set_ids = batch["binding_set_ids"]
+        counts = batch.get("counts") or {
+            "total": len(binding_set_ids),
+            "derived": 0,
+            "failed": 0,
+            "fit": {"fits": 0, "fits_with_policy": 0, "overflow": 0},
+        }
+        manifest = list(batch.get("manifest") or [])
+        diagnostics = list(batch.get("diagnostics") or [])
+        cursor = batch["cursor"]
+
+        while cursor < len(binding_set_ids):
+            chunk_end = min(cursor + batch["chunk_size"], len(binding_set_ids))
+            for index in range(cursor, chunk_end):
+                stored = repo.require_binding_set(binding_set_ids[index])
+                instance = _derive_and_persist_instance(
+                    repo,
+                    revision,
+                    stored["binding_set"],
+                    batch["export_formats"],
+                    BATCH_EXPORT_DPI,
+                    batch_id=batch["batch_id"],
+                )
+                counts["derived" if instance["status"] == "derived" else "failed"] += 1
+                fit_status = instance["fit_status"]
+                if fit_status in counts["fit"]:
+                    counts["fit"][fit_status] += 1
+                manifest.append(
+                    {
+                        "instance_id": instance["instance_id"],
+                        "binding_set_id": instance["binding_set_id"],
+                        "status": instance["status"],
+                        "fit_status": fit_status,
+                        "artifacts": instance.get("artifacts", []),
+                    }
+                )
+            cursor = chunk_end
+            status = "completed" if cursor >= len(binding_set_ids) else "running"
+            batch = repo.update_batch_progress(
+                batch["batch_id"], cursor, status, counts, manifest, diagnostics
+            )
+        return batch
+
+    @app.post("/template-revisions/{template_revision_id}/batches")
+    def create_instance_batch(
+        template_revision_id: str,
+        payload: CreateInstanceBatchRequest,
+        repo: Repository = Depends(repository),
+    ) -> JsonObject:
+        revision = repo.require_template_revision(template_revision_id)
+        if not payload.binding_set_ids:
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "code": "batch.empty",
+                    "message": "binding_set_ids must not be empty",
+                },
+            )
+        for binding_set_id in payload.binding_set_ids:
+            stored = repo.require_binding_set(binding_set_id)
+            if stored["template_revision_id"] != template_revision_id:
+                raise HTTPException(
+                    status_code=409,
+                    detail={
+                        "code": "binding_set.revision_mismatch",
+                        "message": (
+                            f"binding set {binding_set_id} targets revision "
+                            f"{stored['template_revision_id']}, not {template_revision_id}"
+                        ),
+                    },
+                )
+        chunk_size = max(1, payload.chunk_size)
+        batch = repo.create_batch(
+            {
+                "batch_id": new_id("batch"),
+                "template_revision_id": template_revision_id,
+                "status": "running",
+                "binding_set_ids": payload.binding_set_ids,
+                "export_formats": payload.export_formats,
+                "chunk_size": chunk_size,
+                "cursor": 0,
+            }
+        )
+        batch = _process_batch(repo, revision, batch)
+        log_event(
+            api_logger,
+            logging.INFO,
+            "instance_batch_completed",
+            batch_id=batch["batch_id"],
+            template_revision_id=template_revision_id,
+            status=batch["status"],
+            counts=batch["counts"],
+        )
+        return {"schema_version": 1, **batch}
+
+    @app.post("/batches/{batch_id}/resume")
+    def resume_instance_batch(
+        batch_id: str, repo: Repository = Depends(repository)
+    ) -> JsonObject:
+        batch = repo.require_batch(batch_id)
+        if batch["status"] == "completed":
+            return {"schema_version": 1, **batch}
+        revision = repo.require_template_revision(batch["template_revision_id"])
+        batch = _process_batch(repo, revision, batch)
+        return {"schema_version": 1, **batch}
+
+    @app.get("/batches/{batch_id}")
+    def get_instance_batch(
+        batch_id: str, repo: Repository = Depends(repository)
+    ) -> JsonObject:
+        return repo.require_batch(batch_id)
+
+    @app.get("/template-revisions/{template_revision_id}/repair-queue")
+    def list_template_repair_queue(
+        template_revision_id: str,
+        status: Optional[str] = Query(None),
+        repo: Repository = Depends(repository),
+    ) -> JsonObject:
+        repo.require_template_revision(template_revision_id)
+        return {
+            "repairs": repo.list_repair_queue(template_revision_id, status),
+        }
 
     @app.post("/assets")
     def upload_asset(

@@ -2220,3 +2220,280 @@ def test_licensing_rejection_blocks_print_export_end_to_end(
     assert rejection["severity"] == "error"
     assert record["id"] in rejection["message"]
     assert "editorial_only" in rejection["message"]
+
+
+# ---------------------------------------------------------------------------
+# Phase G personalization runtime (slice G8)
+# ---------------------------------------------------------------------------
+
+MAILER_REVISION_PATH = (
+    REPO_ROOT / "crates/lumen-core/fixtures/conformance/phase_g_mailer_revision.json"
+)
+BINDING_FIXTURES_DIR = REPO_ROOT / "crates/lumen-core/fixtures/binding"
+
+
+def mailer_revision_scene_draft(document_id: str) -> dict:
+    scene = json.loads(MAILER_REVISION_PATH.read_text())
+    scene["meta"]["id"] = document_id
+    scene["meta"]["status"] = {"kind": "draft"}
+    return scene
+
+
+def binding_fixture_payload(name: str) -> dict:
+    return json.loads((BINDING_FIXTURES_DIR / f"{name}.json").read_text())
+
+
+def upload_logo_asset(client: TestClient, label: str = "Acme logo") -> dict:
+    from io import BytesIO
+
+    from PIL import Image
+
+    buffer = BytesIO()
+    # The mailer's logo slot policy demands transparency and 300 DPI.
+    # 305 DPI absorbs PNG pHYs quantization (300 DPI stores as 299.9994
+    # px/m-rounded, which the strict min_dpi check rejects).
+    Image.new("RGBA", (600, 200), (200, 30, 60, 255)).save(
+        buffer, format="PNG", dpi=(305, 305)
+    )
+    buffer.seek(0)
+    response = client.post(
+        "/assets",
+        files={"file": ("logo.png", buffer, "image/png")},
+        data={"label": label, "kind": "logo"},
+    )
+    assert response.status_code == 200, response.text
+    return response.json()["asset"]
+
+
+def finalize_mailer_revision(client: TestClient) -> str:
+    document_id = "doc_g8_mailer"
+    scene = mailer_revision_scene_draft(document_id)
+    created = client.post(
+        "/documents", json={"document_id": document_id, "scene": scene}
+    )
+    assert created.status_code == 200, created.text
+    finalized = client.post(
+        f"/documents/{document_id}/finalize",
+        json={"template_revision_id": "tmpl_mailer_v1"},
+    )
+    assert finalized.status_code == 200, finalized.text
+    return "tmpl_mailer_v1"
+
+
+def stored_binding(client: TestClient, name: str, logo_asset_id: str) -> str:
+    binding = binding_fixture_payload(name)
+    binding["values"]["account.logo"]["asset_id"] = logo_asset_id
+    response = client.post("/binding-sets", json={"binding_set": binding})
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["status"] == "valid"
+    return binding["binding_set_id"]
+
+
+def test_binding_set_crud_validates_on_write(client: TestClient) -> None:
+    revision_id = finalize_mailer_revision(client)
+    logo = upload_logo_asset(client)
+
+    binding_set_id = stored_binding(client, "nominal", logo["id"])
+    loaded = client.get(f"/binding-sets/{binding_set_id}")
+    assert loaded.status_code == 200
+    assert loaded.json()["template_revision_id"] == revision_id
+
+    listed = client.get("/binding-sets", params={"template_revision_id": revision_id})
+    assert [b["binding_set_id"] for b in listed.json()["binding_sets"]] == [
+        binding_set_id
+    ]
+
+    # Invalid binding sets are rejected on write with precise codes.
+    invalid = binding_fixture_payload("nominal")
+    invalid["binding_set_id"] = "bind_invalid"
+    invalid["values"].pop("contact.full_name")
+    rejected = client.post("/binding-sets", json={"binding_set": invalid})
+    assert rejected.status_code == 422, rejected.text
+    detail = rejected.json()["detail"]
+    assert detail["code"] == "binding_set.invalid"
+    assert any(d["code"] == "LUMG0012" for d in detail["diagnostics"])
+    assert client.get("/binding-sets/bind_invalid").status_code == 404
+
+    deleted = client.delete(f"/binding-sets/{binding_set_id}")
+    assert deleted.status_code == 200
+    assert client.get(f"/binding-sets/{binding_set_id}").status_code == 404
+
+
+def test_instance_derivation_route_persists_derived_artifacts(
+    client: TestClient,
+) -> None:
+    revision_id = finalize_mailer_revision(client)
+    logo = upload_logo_asset(client)
+    binding_set_id = stored_binding(client, "nominal", logo["id"])
+
+    response = client.post(
+        f"/template-revisions/{revision_id}/instances",
+        json={"binding_set_id": binding_set_id, "export_formats": ["svg"]},
+    )
+    assert response.status_code == 200, response.text
+    instance = response.json()
+    assert instance["status"] == "derived"
+    assert instance["fit_status"] == "fits"
+    assert instance["instance_id"] == "inst_tmpl_mailer_v1_bind_acme_dr_sharma"
+    assert instance["derived_scene"]["nodes"]["node_headline"]["kind"]["content"] == (
+        "Dr. Priya Sharma"
+    )
+    assert len(instance["artifacts"]) == 1
+    assert instance["artifacts"][0]["format"] == "svg"
+    assert instance["audit"], "audit trail persists"
+
+    # The generated QR became a first-class asset record.
+    qr_asset_id = "asset_gen_bind_acme_dr_sharma_qr_landing"
+    qr_bytes = client.get(f"/assets/{qr_asset_id}/bytes")
+    assert qr_bytes.status_code == 200, qr_bytes.text
+    assert b"<svg" in qr_bytes.content
+
+    # Readback (with and without the derived scene cache).
+    loaded = client.get(f"/instances/{instance['instance_id']}")
+    assert loaded.status_code == 200
+    slim = client.get(
+        f"/instances/{instance['instance_id']}", params={"include_scene": False}
+    )
+    assert "derived_scene" not in slim.json()
+
+    # Re-deriving upserts the same instance row (derived artifacts, not
+    # documents): identical id, identical derived scene.
+    again = client.post(
+        f"/template-revisions/{revision_id}/instances",
+        json={"binding_set_id": binding_set_id, "export_formats": ["svg"]},
+    ).json()
+    assert again["instance_id"] == instance["instance_id"]
+    assert again["derived_scene"] == instance["derived_scene"]
+    assert again["artifacts"][0]["digest_value"] == (
+        instance["artifacts"][0]["digest_value"]
+    )
+
+    listed = client.get(f"/template-revisions/{revision_id}/instances").json()
+    assert len(listed["instances"]) == 1
+
+
+def test_instance_batch_processes_chunks_with_resumable_cursor(
+    client: TestClient,
+) -> None:
+    revision_id = finalize_mailer_revision(client)
+    logo = upload_logo_asset(client)
+    ids = [
+        stored_binding(client, "nominal", logo["id"]),
+        stored_binding(client, "missing_optional", logo["id"]),
+        stored_binding(client, "worst_case", logo["id"]),
+    ]
+
+    response = client.post(
+        f"/template-revisions/{revision_id}/batches",
+        json={"binding_set_ids": ids, "export_formats": ["svg"], "chunk_size": 2},
+    )
+    assert response.status_code == 200, response.text
+    batch = response.json()
+    assert batch["status"] == "completed"
+    assert batch["cursor"] == 3
+    assert batch["counts"]["total"] == 3
+    # worst_case's headline cannot fit even at min font => failed.
+    assert batch["counts"]["derived"] == 2
+    assert batch["counts"]["failed"] == 1
+    assert batch["counts"]["fit"]["overflow"] == 1
+    assert len(batch["manifest"]) == 3
+
+    by_binding = {entry["binding_set_id"]: entry for entry in batch["manifest"]}
+    assert by_binding["bind_meridian_dr_whitmore"]["status"] == "failed"
+    assert by_binding["bind_meridian_dr_whitmore"]["artifacts"] == []
+    assert by_binding["bind_acme_dr_sharma"]["artifacts"], "derived instances export"
+
+    failed_instance = client.get(
+        f"/instances/{by_binding['bind_meridian_dr_whitmore']['instance_id']}"
+    ).json()
+    assert any(
+        d["code"] == "LUMG0321" for d in failed_instance["diagnostics"]
+    ), "the overflow is surfaced, never silent"
+
+    # Resume seam: simulate an interrupted batch (cursor persisted after
+    # chunk one, manifest truncated to the committed work).
+    import sqlite3 as _sqlite3
+
+    connection = _sqlite3.connect(str(client.app.state.database_path))
+    connection.execute(
+        """
+        UPDATE instance_batches
+        SET cursor = 1, status = 'running',
+            manifest_json = ?, counts_json = ?
+        WHERE batch_id = ?
+        """,
+        (
+            json.dumps([batch["manifest"][0]]),
+            json.dumps(
+                {
+                    "total": 3,
+                    "derived": 1,
+                    "failed": 0,
+                    "fit": {"fits": 1, "fits_with_policy": 0, "overflow": 0},
+                }
+            ),
+            batch["batch_id"],
+        ),
+    )
+    connection.commit()
+    connection.close()
+
+    resumed = client.post(f"/batches/{batch['batch_id']}/resume")
+    assert resumed.status_code == 200, resumed.text
+    resumed_batch = resumed.json()
+    assert resumed_batch["status"] == "completed"
+    assert resumed_batch["cursor"] == 3
+    assert len(resumed_batch["manifest"]) == 3
+    assert resumed_batch["counts"]["derived"] == 2
+
+    # Idempotence across the resume: re-derived instances carry the same
+    # artifact digests as the first run (only the store's deduplicated
+    # flag flips, because the bytes already exist).
+    def artifact_identity(artifacts: list) -> list:
+        return [
+            {k: v for k, v in artifact.items() if k != "deduplicated"}
+            for artifact in artifacts
+        ]
+
+    original = {
+        entry["binding_set_id"]: artifact_identity(entry["artifacts"])
+        for entry in batch["manifest"]
+    }
+    for entry in resumed_batch["manifest"]:
+        assert artifact_identity(entry["artifacts"]) == (
+            original[entry["binding_set_id"]]
+        )
+    # The re-processed entry (after the simulated crash point) re-stored
+    # its bytes and hit the content-addressed store.
+    reprocessed = next(
+        entry
+        for entry in resumed_batch["manifest"]
+        if entry["binding_set_id"] == "bind_northcare_ms_okafor"
+    )
+    for artifact in reprocessed["artifacts"]:
+        assert artifact["deduplicated"] is True, (
+            "resume must hit the content-addressed store"
+        )
+
+    loaded = client.get(f"/batches/{batch['batch_id']}")
+    assert loaded.status_code == 200
+    assert loaded.json()["status"] == "completed"
+
+
+def test_batch_rejects_unknown_or_mismatched_binding_sets(
+    client: TestClient,
+) -> None:
+    revision_id = finalize_mailer_revision(client)
+    missing = client.post(
+        f"/template-revisions/{revision_id}/batches",
+        json={"binding_set_ids": ["bind_ghost"]},
+    )
+    assert missing.status_code == 404
+
+    empty = client.post(
+        f"/template-revisions/{revision_id}/batches",
+        json={"binding_set_ids": []},
+    )
+    assert empty.status_code == 422
+    assert empty.json()["detail"]["code"] == "batch.empty"

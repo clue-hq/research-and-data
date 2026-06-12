@@ -803,6 +803,273 @@ class Repository:
         ).fetchone()
         return int(row["n"])
 
+    # ------------------------------------------------------------------
+    # Phase G personalization runtime (slice G8)
+    # ------------------------------------------------------------------
+
+    def upsert_binding_set(
+        self,
+        binding: JsonObject,
+        status: str,
+        diagnostics: List[JsonObject],
+    ) -> JsonObject:
+        now = utc_now()
+        self.connection.execute(
+            """
+            INSERT INTO binding_sets (
+              binding_set_id, template_revision_id, binding_json, status,
+              diagnostics_json, created_at, updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(binding_set_id) DO UPDATE SET
+              template_revision_id = excluded.template_revision_id,
+              binding_json = excluded.binding_json,
+              status = excluded.status,
+              diagnostics_json = excluded.diagnostics_json,
+              updated_at = excluded.updated_at
+            """,
+            (
+                binding["binding_set_id"],
+                binding["template_revision_id"],
+                encode(binding),
+                status,
+                encode(diagnostics),
+                now,
+                now,
+            ),
+        )
+        self.connection.commit()
+        return self.require_binding_set(binding["binding_set_id"])
+
+    def require_binding_set(self, binding_set_id: str) -> JsonObject:
+        row = self.connection.execute(
+            "SELECT * FROM binding_sets WHERE binding_set_id = ?",
+            (binding_set_id,),
+        ).fetchone()
+        if row is None:
+            raise NotFoundError("binding_set", binding_set_id)
+        return binding_set_from_row(row)
+
+    def list_binding_sets(
+        self, template_revision_id: Optional[str] = None
+    ) -> List[JsonObject]:
+        if template_revision_id is None:
+            rows = self.connection.execute(
+                "SELECT * FROM binding_sets ORDER BY binding_set_id"
+            ).fetchall()
+        else:
+            rows = self.connection.execute(
+                """
+                SELECT * FROM binding_sets
+                WHERE template_revision_id = ?
+                ORDER BY binding_set_id
+                """,
+                (template_revision_id,),
+            ).fetchall()
+        return [binding_set_from_row(row) for row in rows]
+
+    def delete_binding_set(self, binding_set_id: str) -> None:
+        self.require_binding_set(binding_set_id)
+        self.connection.execute(
+            "DELETE FROM binding_sets WHERE binding_set_id = ?",
+            (binding_set_id,),
+        )
+        self.connection.commit()
+
+    def upsert_instance(self, instance: JsonObject) -> JsonObject:
+        now = utc_now()
+        self.connection.execute(
+            """
+            INSERT INTO instances (
+              instance_id, template_revision_id, binding_set_id, batch_id,
+              status, fit_status, derived_scene_json, diagnostics_json,
+              audit_json, fit_report_json, artifacts_json,
+              generated_assets_json, created_at, updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(instance_id) DO UPDATE SET
+              batch_id = excluded.batch_id,
+              status = excluded.status,
+              fit_status = excluded.fit_status,
+              derived_scene_json = excluded.derived_scene_json,
+              diagnostics_json = excluded.diagnostics_json,
+              audit_json = excluded.audit_json,
+              fit_report_json = excluded.fit_report_json,
+              artifacts_json = excluded.artifacts_json,
+              generated_assets_json = excluded.generated_assets_json,
+              updated_at = excluded.updated_at
+            """,
+            (
+                instance["instance_id"],
+                instance["template_revision_id"],
+                instance["binding_set_id"],
+                instance.get("batch_id"),
+                instance["status"],
+                instance["fit_status"],
+                encode(instance["derived_scene"]),
+                encode(instance.get("diagnostics", [])),
+                encode(instance.get("audit", [])),
+                encode(instance.get("fit_report", {})),
+                encode(instance.get("artifacts", [])),
+                encode(instance.get("generated_assets", {})),
+                now,
+                now,
+            ),
+        )
+        self.connection.commit()
+        return self.require_instance(instance["instance_id"])
+
+    def require_instance(self, instance_id: str) -> JsonObject:
+        row = self.connection.execute(
+            "SELECT * FROM instances WHERE instance_id = ?", (instance_id,)
+        ).fetchone()
+        if row is None:
+            raise NotFoundError("instance", instance_id)
+        return instance_from_row(row)
+
+    def list_instances(
+        self,
+        template_revision_id: Optional[str] = None,
+        batch_id: Optional[str] = None,
+    ) -> List[JsonObject]:
+        clauses: List[str] = []
+        params: List[Any] = []
+        if template_revision_id is not None:
+            clauses.append("template_revision_id = ?")
+            params.append(template_revision_id)
+        if batch_id is not None:
+            clauses.append("batch_id = ?")
+            params.append(batch_id)
+        where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+        rows = self.connection.execute(
+            f"SELECT * FROM instances {where} ORDER BY instance_id", params
+        ).fetchall()
+        return [instance_from_row(row) for row in rows]
+
+    def create_batch(self, batch: JsonObject) -> JsonObject:
+        now = utc_now()
+        self.connection.execute(
+            """
+            INSERT INTO instance_batches (
+              batch_id, template_revision_id, status, binding_set_ids_json,
+              export_formats_json, chunk_size, cursor, counts_json,
+              manifest_json, diagnostics_json, created_at, updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                batch["batch_id"],
+                batch["template_revision_id"],
+                batch["status"],
+                encode(batch["binding_set_ids"]),
+                encode(batch["export_formats"]),
+                batch["chunk_size"],
+                batch["cursor"],
+                encode(batch.get("counts", {})),
+                encode(batch.get("manifest", [])),
+                encode(batch.get("diagnostics", [])),
+                now,
+                now,
+            ),
+        )
+        self.connection.commit()
+        return self.require_batch(batch["batch_id"])
+
+    def update_batch_progress(
+        self,
+        batch_id: str,
+        cursor: int,
+        status: str,
+        counts: JsonObject,
+        manifest: List[JsonObject],
+        diagnostics: List[JsonObject],
+    ) -> JsonObject:
+        self.connection.execute(
+            """
+            UPDATE instance_batches
+            SET cursor = ?, status = ?, counts_json = ?, manifest_json = ?,
+                diagnostics_json = ?, updated_at = ?
+            WHERE batch_id = ?
+            """,
+            (
+                cursor,
+                status,
+                encode(counts),
+                encode(manifest),
+                encode(diagnostics),
+                utc_now(),
+                batch_id,
+            ),
+        )
+        self.connection.commit()
+        return self.require_batch(batch_id)
+
+    def require_batch(self, batch_id: str) -> JsonObject:
+        row = self.connection.execute(
+            "SELECT * FROM instance_batches WHERE batch_id = ?", (batch_id,)
+        ).fetchone()
+        if row is None:
+            raise NotFoundError("instance_batch", batch_id)
+        return batch_from_row(row)
+
+    def upsert_repair_request(self, repair: JsonObject) -> JsonObject:
+        now = utc_now()
+        self.connection.execute(
+            """
+            INSERT INTO repair_queue (
+              repair_id, template_revision_id, slot_key, node_id,
+              binding_set_id, instance_id, reason, status, created_at,
+              updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(repair_id) DO UPDATE SET
+              instance_id = excluded.instance_id,
+              reason = excluded.reason,
+              updated_at = excluded.updated_at
+            """,
+            (
+                repair["repair_id"],
+                repair["template_revision_id"],
+                repair["slot_key"],
+                repair["node_id"],
+                repair["binding_set_id"],
+                repair.get("instance_id"),
+                repair["reason"],
+                repair.get("status", "open"),
+                now,
+                now,
+            ),
+        )
+        self.connection.commit()
+        row = self.connection.execute(
+            "SELECT * FROM repair_queue WHERE repair_id = ?",
+            (repair["repair_id"],),
+        ).fetchone()
+        return repair_from_row(row)
+
+    def list_repair_queue(
+        self, template_revision_id: str, status: Optional[str] = None
+    ) -> List[JsonObject]:
+        if status is None:
+            rows = self.connection.execute(
+                """
+                SELECT * FROM repair_queue
+                WHERE template_revision_id = ?
+                ORDER BY repair_id
+                """,
+                (template_revision_id,),
+            ).fetchall()
+        else:
+            rows = self.connection.execute(
+                """
+                SELECT * FROM repair_queue
+                WHERE template_revision_id = ? AND status = ?
+                ORDER BY repair_id
+                """,
+                (template_revision_id, status),
+            ).fetchall()
+        return [repair_from_row(row) for row in rows]
+
     def store_diagnostics(
         self,
         document_id: str,
@@ -993,6 +1260,69 @@ def template_revision_from_row(row: sqlite3.Row) -> JsonObject:
 def asset_record_from_row(row: sqlite3.Row) -> JsonObject:
     return {
         "asset": decode(row["record_json"]),
+        "created_at": row["created_at"],
+        "updated_at": row["updated_at"],
+    }
+
+
+def binding_set_from_row(row: sqlite3.Row) -> JsonObject:
+    return {
+        "binding_set_id": row["binding_set_id"],
+        "template_revision_id": row["template_revision_id"],
+        "binding_set": decode(row["binding_json"]),
+        "status": row["status"],
+        "diagnostics": decode(row["diagnostics_json"]),
+        "created_at": row["created_at"],
+        "updated_at": row["updated_at"],
+    }
+
+
+def instance_from_row(row: sqlite3.Row) -> JsonObject:
+    return {
+        "instance_id": row["instance_id"],
+        "template_revision_id": row["template_revision_id"],
+        "binding_set_id": row["binding_set_id"],
+        "batch_id": row["batch_id"],
+        "status": row["status"],
+        "fit_status": row["fit_status"],
+        "derived_scene": decode(row["derived_scene_json"]),
+        "diagnostics": decode(row["diagnostics_json"]),
+        "audit": decode(row["audit_json"]),
+        "fit_report": decode(row["fit_report_json"]),
+        "artifacts": decode(row["artifacts_json"]),
+        "generated_assets": decode(row["generated_assets_json"]),
+        "created_at": row["created_at"],
+        "updated_at": row["updated_at"],
+    }
+
+
+def batch_from_row(row: sqlite3.Row) -> JsonObject:
+    return {
+        "batch_id": row["batch_id"],
+        "template_revision_id": row["template_revision_id"],
+        "status": row["status"],
+        "binding_set_ids": decode(row["binding_set_ids_json"]),
+        "export_formats": decode(row["export_formats_json"]),
+        "chunk_size": row["chunk_size"],
+        "cursor": row["cursor"],
+        "counts": decode(row["counts_json"]),
+        "manifest": decode(row["manifest_json"]),
+        "diagnostics": decode(row["diagnostics_json"]),
+        "created_at": row["created_at"],
+        "updated_at": row["updated_at"],
+    }
+
+
+def repair_from_row(row: sqlite3.Row) -> JsonObject:
+    return {
+        "repair_id": row["repair_id"],
+        "template_revision_id": row["template_revision_id"],
+        "slot_key": row["slot_key"],
+        "node_id": row["node_id"],
+        "binding_set_id": row["binding_set_id"],
+        "instance_id": row["instance_id"],
+        "reason": row["reason"],
+        "status": row["status"],
         "created_at": row["created_at"],
         "updated_at": row["updated_at"],
     }

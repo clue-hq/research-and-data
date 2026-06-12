@@ -135,6 +135,23 @@ class GenerateAssetRequest(BaseModel):
     label: Optional[str] = None
 
 
+class CreateBindingSetRequest(BaseModel):
+    binding_set: JsonObject
+
+
+class DeriveInstanceRequest(BaseModel):
+    binding_set_id: Optional[str] = None
+    binding_set: Optional[JsonObject] = None
+    export_formats: List[str] = Field(default_factory=list)
+    export_dpi: Optional[int] = None
+
+
+class CreateInstanceBatchRequest(BaseModel):
+    binding_set_ids: List[str]
+    export_formats: List[str] = Field(default_factory=lambda: ["svg", "png"])
+    chunk_size: int = 10
+
+
 class AssetMetadataRequest(BaseModel):
     asset_id: Optional[str] = None
     document_id: Optional[str] = None

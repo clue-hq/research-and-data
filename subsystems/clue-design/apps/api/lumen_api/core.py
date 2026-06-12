@@ -238,6 +238,8 @@ class CoreClient:
         binding_set: JsonObject,
         asset_records: Optional[List[JsonObject]] = None,
         store_root: Optional[str] = None,
+        export_formats: Optional[List[str]] = None,
+        export_dpi: Optional[int] = None,
         raise_on_error: bool = False,
     ) -> JsonObject:
         return self._run(
@@ -247,6 +249,8 @@ class CoreClient:
                 "binding_set": binding_set,
                 "asset_records": asset_records or [],
                 "store_root": store_root,
+                "export_formats": export_formats or [],
+                "export_dpi": export_dpi,
             },
             raise_on_error=raise_on_error,
         )
