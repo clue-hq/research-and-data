@@ -1,0 +1,858 @@
+{
+  "envelopes": [
+    {
+      "step": "drag_node",
+      "kind": "operations",
+      "payload": [
+        {
+          "kind": "update_node",
+          "node_id": "node_contact_name",
+          "patch": {
+            "name": {
+              "kind": "unchanged"
+            },
+            "kind": {
+              "kind": "unchanged"
+            },
+            "transform": {
+              "kind": "set",
+              "value": {
+                "x": 15.875,
+                "y": 23.283,
+                "rotation": 0,
+                "skew_x": 0,
+                "skew_y": 0,
+                "flip_x": false,
+                "flip_y": false
+              }
+            },
+            "size": {
+              "kind": "unchanged"
+            },
+            "fills": {
+              "kind": "unchanged"
+            },
+            "strokes": {
+              "kind": "unchanged"
+            },
+            "corner": {
+              "kind": "unchanged"
+            },
+            "opacity": {
+              "kind": "unchanged"
+            },
+            "opacity_token": {
+              "kind": "unchanged"
+            },
+            "source_asset_id": {
+              "kind": "unchanged"
+            },
+            "asset_placement": {
+              "kind": "unchanged"
+            },
+            "clip": {
+              "kind": "unchanged"
+            },
+            "layout": {
+              "kind": "unchanged"
+            },
+            "computed": {
+              "kind": "unchanged"
+            },
+            "locked": {
+              "kind": "unchanged"
+            }
+          }
+        }
+      ],
+      "operations": [
+        {
+          "kind": "update_node",
+          "node_id": "node_contact_name",
+          "patch": {
+            "name": {
+              "kind": "unchanged"
+            },
+            "kind": {
+              "kind": "unchanged"
+            },
+            "transform": {
+              "kind": "set",
+              "value": {
+                "x": 15.875,
+                "y": 23.283,
+                "rotation": 0,
+                "skew_x": 0,
+                "skew_y": 0,
+                "flip_x": false,
+                "flip_y": false
+              }
+            },
+            "size": {
+              "kind": "unchanged"
+            },
+            "fills": {
+              "kind": "unchanged"
+            },
+            "strokes": {
+              "kind": "unchanged"
+            },
+            "corner": {
+              "kind": "unchanged"
+            },
+            "opacity": {
+              "kind": "unchanged"
+            },
+            "opacity_token": {
+              "kind": "unchanged"
+            },
+            "source_asset_id": {
+              "kind": "unchanged"
+            },
+            "asset_placement": {
+              "kind": "unchanged"
+            },
+            "clip": {
+              "kind": "unchanged"
+            },
+            "layout": {
+              "kind": "unchanged"
+            },
+            "computed": {
+              "kind": "unchanged"
+            },
+            "locked": {
+              "kind": "unchanged"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "step": "resize_node",
+      "kind": "operations",
+      "payload": [
+        {
+          "kind": "update_node",
+          "node_id": "node_contact_name",
+          "patch": {
+            "name": {
+              "kind": "unchanged"
+            },
+            "kind": {
+              "kind": "unchanged"
+            },
+            "transform": {
+              "kind": "set",
+              "value": {
+                "x": 15.346,
+                "y": 22.225,
+                "rotation": 0,
+                "skew_x": 0,
+                "skew_y": 0,
+                "flip_x": false,
+                "flip_y": false
+              }
+            },
+            "size": {
+              "kind": "set",
+              "value": {
+                "width": {
+                  "kind": "fixed",
+                  "value": 192
+                },
+                "height": {
+                  "kind": "fixed",
+                  "value": 30.8
+                }
+              }
+            },
+            "fills": {
+              "kind": "unchanged"
+            },
+            "strokes": {
+              "kind": "unchanged"
+            },
+            "corner": {
+              "kind": "unchanged"
+            },
+            "opacity": {
+              "kind": "unchanged"
+            },
+            "opacity_token": {
+              "kind": "unchanged"
+            },
+            "source_asset_id": {
+              "kind": "unchanged"
+            },
+            "asset_placement": {
+              "kind": "unchanged"
+            },
+            "clip": {
+              "kind": "unchanged"
+            },
+            "layout": {
+              "kind": "unchanged"
+            },
+            "computed": {
+              "kind": "unchanged"
+            },
+            "locked": {
+              "kind": "unchanged"
+            }
+          }
+        }
+      ],
+      "operations": [
+        {
+          "kind": "update_node",
+          "node_id": "node_contact_name",
+          "patch": {
+            "name": {
+              "kind": "unchanged"
+            },
+            "kind": {
+              "kind": "unchanged"
+            },
+            "transform": {
+              "kind": "set",
+              "value": {
+                "x": 15.346,
+                "y": 22.225,
+                "rotation": 0,
+                "skew_x": 0,
+                "skew_y": 0,
+                "flip_x": false,
+                "flip_y": false
+              }
+            },
+            "size": {
+              "kind": "set",
+              "value": {
+                "width": {
+                  "kind": "fixed",
+                  "value": 192
+                },
+                "height": {
+                  "kind": "fixed",
+                  "value": 30.8
+                }
+              }
+            },
+            "fills": {
+              "kind": "unchanged"
+            },
+            "strokes": {
+              "kind": "unchanged"
+            },
+            "corner": {
+              "kind": "unchanged"
+            },
+            "opacity": {
+              "kind": "unchanged"
+            },
+            "opacity_token": {
+              "kind": "unchanged"
+            },
+            "source_asset_id": {
+              "kind": "unchanged"
+            },
+            "asset_placement": {
+              "kind": "unchanged"
+            },
+            "clip": {
+              "kind": "unchanged"
+            },
+            "layout": {
+              "kind": "unchanged"
+            },
+            "computed": {
+              "kind": "unchanged"
+            },
+            "locked": {
+              "kind": "unchanged"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "step": "text_edit",
+      "kind": "operations",
+      "payload": [
+        {
+          "kind": "update_node",
+          "node_id": "node_contact_name",
+          "patch": {
+            "name": {
+              "kind": "unchanged"
+            },
+            "kind": {
+              "kind": "set",
+              "value": {
+                "kind": "text",
+                "content": "Conformance headline",
+                "font_family": "Inter",
+                "font_size": 21,
+                "font_weight": 600,
+                "align": "left",
+                "line_height": 1.2,
+                "letter_spacing": 0,
+                "wrap": "wrap",
+                "direction": "ltr"
+              }
+            },
+            "transform": {
+              "kind": "unchanged"
+            },
+            "size": {
+              "kind": "unchanged"
+            },
+            "fills": {
+              "kind": "unchanged"
+            },
+            "strokes": {
+              "kind": "unchanged"
+            },
+            "corner": {
+              "kind": "unchanged"
+            },
+            "opacity": {
+              "kind": "unchanged"
+            },
+            "opacity_token": {
+              "kind": "unchanged"
+            },
+            "source_asset_id": {
+              "kind": "unchanged"
+            },
+            "asset_placement": {
+              "kind": "unchanged"
+            },
+            "clip": {
+              "kind": "unchanged"
+            },
+            "layout": {
+              "kind": "unchanged"
+            },
+            "computed": {
+              "kind": "unchanged"
+            },
+            "locked": {
+              "kind": "unchanged"
+            }
+          }
+        }
+      ],
+      "operations": [
+        {
+          "kind": "update_node",
+          "node_id": "node_contact_name",
+          "patch": {
+            "name": {
+              "kind": "unchanged"
+            },
+            "kind": {
+              "kind": "set",
+              "value": {
+                "kind": "text",
+                "content": "Conformance headline",
+                "font_family": "Inter",
+                "font_size": 21,
+                "font_weight": 600,
+                "align": "left",
+                "line_height": 1.2,
+                "letter_spacing": 0,
+                "wrap": "wrap",
+                "direction": "ltr"
+              }
+            },
+            "transform": {
+              "kind": "unchanged"
+            },
+            "size": {
+              "kind": "unchanged"
+            },
+            "fills": {
+              "kind": "unchanged"
+            },
+            "strokes": {
+              "kind": "unchanged"
+            },
+            "corner": {
+              "kind": "unchanged"
+            },
+            "opacity": {
+              "kind": "unchanged"
+            },
+            "opacity_token": {
+              "kind": "unchanged"
+            },
+            "source_asset_id": {
+              "kind": "unchanged"
+            },
+            "asset_placement": {
+              "kind": "unchanged"
+            },
+            "clip": {
+              "kind": "unchanged"
+            },
+            "layout": {
+              "kind": "unchanged"
+            },
+            "computed": {
+              "kind": "unchanged"
+            },
+            "locked": {
+              "kind": "unchanged"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "step": "keyboard_nudge",
+      "kind": "operations",
+      "payload": [
+        {
+          "kind": "update_node",
+          "node_id": "node_contact_name",
+          "patch": {
+            "name": {
+              "kind": "unchanged"
+            },
+            "kind": {
+              "kind": "unchanged"
+            },
+            "transform": {
+              "kind": "set",
+              "value": {
+                "x": 16.346,
+                "y": 22.225,
+                "rotation": 0,
+                "skew_x": 0,
+                "skew_y": 0,
+                "flip_x": false,
+                "flip_y": false
+              }
+            },
+            "size": {
+              "kind": "unchanged"
+            },
+            "fills": {
+              "kind": "unchanged"
+            },
+            "strokes": {
+              "kind": "unchanged"
+            },
+            "corner": {
+              "kind": "unchanged"
+            },
+            "opacity": {
+              "kind": "unchanged"
+            },
+            "opacity_token": {
+              "kind": "unchanged"
+            },
+            "source_asset_id": {
+              "kind": "unchanged"
+            },
+            "asset_placement": {
+              "kind": "unchanged"
+            },
+            "clip": {
+              "kind": "unchanged"
+            },
+            "layout": {
+              "kind": "unchanged"
+            },
+            "computed": {
+              "kind": "unchanged"
+            },
+            "locked": {
+              "kind": "unchanged"
+            }
+          }
+        }
+      ],
+      "operations": [
+        {
+          "kind": "update_node",
+          "node_id": "node_contact_name",
+          "patch": {
+            "name": {
+              "kind": "unchanged"
+            },
+            "kind": {
+              "kind": "unchanged"
+            },
+            "transform": {
+              "kind": "set",
+              "value": {
+                "x": 16.346,
+                "y": 22.225,
+                "rotation": 0,
+                "skew_x": 0,
+                "skew_y": 0,
+                "flip_x": false,
+                "flip_y": false
+              }
+            },
+            "size": {
+              "kind": "unchanged"
+            },
+            "fills": {
+              "kind": "unchanged"
+            },
+            "strokes": {
+              "kind": "unchanged"
+            },
+            "corner": {
+              "kind": "unchanged"
+            },
+            "opacity": {
+              "kind": "unchanged"
+            },
+            "opacity_token": {
+              "kind": "unchanged"
+            },
+            "source_asset_id": {
+              "kind": "unchanged"
+            },
+            "asset_placement": {
+              "kind": "unchanged"
+            },
+            "clip": {
+              "kind": "unchanged"
+            },
+            "layout": {
+              "kind": "unchanged"
+            },
+            "computed": {
+              "kind": "unchanged"
+            },
+            "locked": {
+              "kind": "unchanged"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "step": "effects_add_shadow",
+      "kind": "structured_edit",
+      "payload": {
+        "kind": "modify",
+        "target": {
+          "kind": "node",
+          "id": "node_contact_name"
+        },
+        "patch": {
+          "kind": "node",
+          "value": {
+            "effect_edits": [
+              {
+                "kind": "add",
+                "entry": {
+                  "id": "shadow_soft",
+                  "kind": {
+                    "kind": "drop_shadow",
+                    "color": {
+                      "kind": "hex",
+                      "value": "#000000"
+                    },
+                    "opacity": 0.18,
+                    "x": 0,
+                    "y": 8,
+                    "blur": 24,
+                    "spread": 0
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      "operations": [
+        {
+          "kind": "update_node",
+          "node_id": "node_contact_name",
+          "patch": {
+            "name": {
+              "kind": "unchanged"
+            },
+            "kind": {
+              "kind": "unchanged"
+            },
+            "transform": {
+              "kind": "unchanged"
+            },
+            "size": {
+              "kind": "unchanged"
+            },
+            "fills": {
+              "kind": "unchanged"
+            },
+            "strokes": {
+              "kind": "unchanged"
+            },
+            "effects": {
+              "kind": "set",
+              "value": [
+                {
+                  "id": "shadow_soft",
+                  "kind": {
+                    "kind": "drop_shadow",
+                    "color": {
+                      "kind": "hex",
+                      "value": "#000000"
+                    },
+                    "opacity": 0.18,
+                    "x": 0,
+                    "y": 8,
+                    "blur": 24,
+                    "spread": 0
+                  }
+                }
+              ]
+            },
+            "corner": {
+              "kind": "unchanged"
+            },
+            "opacity": {
+              "kind": "unchanged"
+            },
+            "opacity_token": {
+              "kind": "unchanged"
+            },
+            "source_asset_id": {
+              "kind": "unchanged"
+            },
+            "asset_placement": {
+              "kind": "unchanged"
+            },
+            "clip": {
+              "kind": "unchanged"
+            },
+            "layout": {
+              "kind": "unchanged"
+            },
+            "computed": {
+              "kind": "clear"
+            },
+            "locked": {
+              "kind": "unchanged"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "step": "page_rename",
+      "kind": "structured_edit",
+      "payload": {
+        "kind": "modify",
+        "target": {
+          "kind": "page",
+          "id": "page_a4"
+        },
+        "patch": {
+          "kind": "page",
+          "value": {
+            "name": {
+              "kind": "set",
+              "value": "Conformance page"
+            }
+          }
+        }
+      },
+      "operations": [
+        {
+          "kind": "update_page",
+          "page_id": "page_a4",
+          "patch": {
+            "name": {
+              "kind": "set",
+              "value": "Conformance page"
+            },
+            "size": {
+              "kind": "unchanged"
+            },
+            "bleed": {
+              "kind": "unchanged"
+            },
+            "safe_area": {
+              "kind": "unchanged"
+            },
+            "background": {
+              "kind": "unchanged"
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "finalScene": {
+    "schema_version": 1,
+    "meta": {
+      "id": "doc_demo",
+      "title": "Hospital Letter",
+      "artifact_type": "letter",
+      "medium": "print",
+      "brand_kit": null,
+      "status": {
+        "kind": "draft"
+      }
+    },
+    "pages": {
+      "page_a4": {
+        "id": "page_a4",
+        "name": "Conformance page",
+        "size": {
+          "width": 210,
+          "height": 297,
+          "unit": "mm",
+          "preset": "a4",
+          "orientation": "portrait"
+        },
+        "children": [
+          "node_contact_name"
+        ],
+        "bleed": null,
+        "safe_area": {
+          "x": 12,
+          "y": 12,
+          "width": 186,
+          "height": 273
+        },
+        "background": []
+      }
+    },
+    "nodes": {
+      "node_contact_name": {
+        "id": "node_contact_name",
+        "name": "Contact Name",
+        "kind": {
+          "kind": "text",
+          "content": "Conformance headline",
+          "font_family": "Inter",
+          "font_size": 21,
+          "font_weight": 600,
+          "align": "left",
+          "line_height": 1.2,
+          "letter_spacing": 0,
+          "wrap": "wrap",
+          "direction": "ltr"
+        },
+        "transform": {
+          "x": 16.346,
+          "y": 22.225,
+          "rotation": 0,
+          "skew_x": 0,
+          "skew_y": 0,
+          "flip_x": false,
+          "flip_y": false
+        },
+        "size": {
+          "width": {
+            "kind": "fixed",
+            "value": 192
+          },
+          "height": {
+            "kind": "fixed",
+            "value": 30.8
+          }
+        },
+        "children": [],
+        "fills": [],
+        "strokes": [],
+        "corner": {
+          "top_left": 0,
+          "top_right": 0,
+          "bottom_right": 0,
+          "bottom_left": 0
+        },
+        "opacity": 1,
+        "clip": false,
+        "layout": null,
+        "computed": null,
+        "locked": false,
+        "effects": [
+          {
+            "id": "shadow_soft",
+            "kind": {
+              "kind": "drop_shadow",
+              "color": {
+                "kind": "hex",
+                "value": "#000000"
+              },
+              "opacity": 0.18,
+              "x": 0,
+              "y": 8,
+              "blur": 24,
+              "spread": 0
+            }
+          }
+        ]
+      }
+    },
+    "slots": {
+      "slot_contact_name": {
+        "id": "slot_contact_name",
+        "key": "contact.full_name",
+        "label": "Contact full name",
+        "content_type": "text_short",
+        "scope": {
+          "kind": "document"
+        },
+        "bound_nodes": [
+          "node_contact_name"
+        ],
+        "required": true,
+        "placeholder": "Dr. Priya Sharma",
+        "overflow": {
+          "kind": "shrink_font",
+          "min_font_size": 12,
+          "max_font_size": 18
+        },
+        "formatting": {
+          "max_length": 80,
+          "allowed_pattern": null,
+          "preserve_case": true
+        },
+        "cardinality": {
+          "min_items": 1,
+          "max_items": 1
+        },
+        "conditional": null,
+        "repeater": null,
+        "validation": {
+          "samples": [
+            "Dr. Maximilian Alexander Whitmore"
+          ],
+          "worst_case": null,
+          "max_length": 80
+        },
+        "image_policy": null,
+        "editability": "template_and_instance",
+        "binding_hints": [
+          {
+            "source_path": "contact.full_name",
+            "confidence": 1
+          }
+        ]
+      }
+    },
+    "assets": {},
+    "export_profiles": [
+      {
+        "name": "print_pdf",
+        "format": "pdf",
+        "pdf_intent": "print",
+        "raster": null,
+        "include_bleed": true,
+        "embed_fonts": true
+      }
+    ]
+  }
+}

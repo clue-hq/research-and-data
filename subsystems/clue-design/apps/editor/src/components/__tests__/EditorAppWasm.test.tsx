@@ -1,9 +1,10 @@
 import React from "react";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 import minimalSceneFixture from "../../../../../crates/lumen-core/fixtures/minimal_scene.json";
-import type { Scene } from "@/engine/contracts";
+import type { Operation, Scene } from "@/engine/contracts";
+import type { ReconcileEvent } from "@/engine/editQueue";
 import { WasmEngine } from "@/engine/wasmEngine";
 import { loadWasmModuleFromDisk, wasmArtifactPresent } from "../../test/wasmModule";
 import EditorApp from "../EditorApp";
@@ -91,6 +92,66 @@ describe.skipIf(!wasmArtifactPresent)("EditorApp on the WASM engine", () => {
     expect(engine.scene.nodes.node_contact_name.transform.x).toBe(
       scene.nodes.node_contact_name.transform.x
     );
+  });
+
+  it("enqueues accepted batches for persistence and reconciles divergence", async () => {
+    const module = await loadWasmModuleFromDisk();
+    const scene = cloneScene();
+    const engine = new WasmEngine(module, scene);
+    const enqueued: Operation[][] = [];
+    let reconcile: ((event: ReconcileEvent) => void) | null = null;
+
+    render(
+      <EditorApp
+        documentId="doc_w3"
+        initialScene={scene}
+        initialSelectedNodeId={null}
+        optimisticEngine={engine}
+        editQueueFactory={(options) => {
+          reconcile = options.onReconcile;
+          return {
+            persistedBatches: 0,
+            idle: async () => undefined,
+            enqueueOperations: (operations) => {
+              enqueued.push(operations);
+            }
+          };
+        }}
+      />
+    );
+
+    fireEvent.change(screen.getByLabelText("Document Title"), {
+      target: { value: "Persist me" }
+    });
+
+    // The locally-applied batch went to the queue (optimistic + enqueue).
+    expect(enqueued).toHaveLength(1);
+    expect(enqueued[0][0].kind).toBe("update_document");
+
+    // Simulated server divergence: the authoritative scene replaces the
+    // local one (engine included) and the diagnostic surfaces.
+    const serverScene = cloneScene();
+    serverScene.meta.title = "Server truth";
+    const event: ReconcileEvent = {
+      kind: "divergence",
+      serverScene,
+      serverVersion: 12,
+      diagnostic: {
+        severity: "error",
+        phase: "operation",
+        code: "EDITOR_WASM_RECONCILE_DIVERGENCE",
+        message: "Optimistic scene diverged from the server after reconciliation.",
+        subject: { kind: "document" },
+        hint: null
+      }
+    };
+    expect(reconcile).not.toBeNull();
+    await waitFor(() => {
+      reconcile?.(event);
+      expect(screen.getByRole("heading", { name: "Server truth" })).toBeInTheDocument();
+    });
+    expect((JSON.parse(engine.sceneJson()) as Scene).meta.title).toBe("Server truth");
+    expect(screen.getAllByText(/EDITOR_WASM_RECONCILE_DIVERGENCE/).length).toBeGreaterThan(0);
   });
 
   it("moves the selected node with arrow keys through the engine", async () => {

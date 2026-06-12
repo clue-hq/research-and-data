@@ -44,6 +44,11 @@ import type {
 } from "@/engine/contracts";
 import { createLocalEnginePort } from "@/engine/editorEngine";
 import {
+  createEditQueue,
+  type EditQueuePort,
+  type ReconcileEvent
+} from "@/engine/editQueue";
+import {
   loadWasmModule,
   wasmCoreFlagEnabled,
   WasmEngine,
@@ -96,7 +101,25 @@ export interface EditorAppProps {
    * upgrades to the WASM core once the module loads.
    */
   optimisticEngine?: OptimisticEnginePort;
+  /**
+   * Edit-persistence queue factory override (tests). The default posts
+   * operation batches to /documents/{id}/operations with base_version and
+   * reconciles the server scene at drain.
+   */
+  editQueueFactory?: EditQueueFactory;
 }
+
+export type EditQueueFactory = (options: {
+  documentId: string;
+  localScene: () => Scene;
+  onReconcile: (event: ReconcileEvent) => void;
+}) => EditQueuePort;
+
+const defaultEditQueueFactory: EditQueueFactory = (options) =>
+  createEditQueue({
+    apiBaseUrl: process.env.NEXT_PUBLIC_LUMEN_API_BASE_URL ?? "http://localhost:8000",
+    ...options
+  });
 
 interface EditorHistoryFrame {
   scene: Scene;
@@ -125,7 +148,8 @@ export default function EditorApp({
   agentRunner = defaultAgentRunner,
   exportRunner = defaultExportRunner,
   preflightRunner = defaultPreflightRunner,
-  optimisticEngine
+  optimisticEngine,
+  editQueueFactory = defaultEditQueueFactory
 }: EditorAppProps = {}) {
   const [scene, setScene] = useState<Scene>(initialScene);
   // The optimistic engine owns local edit application (Track E). It starts
@@ -232,6 +256,33 @@ export default function EditorApp({
     setScene(nextScene);
   };
 
+  // W3 optimistic pipeline: locally-applied batches persist to the
+  // document API in order; the server reconciles at drain. Divergence is a
+  // bug signal — the server scene replaces the local one and a diagnostic
+  // surfaces. Only the WASM engine enqueues (the legacy local engine keeps
+  // the pre-Track-E local-only behavior).
+  const editQueueRef = useRef<EditQueuePort | null>(null);
+  const enqueueForPersistence = (operations: Operation[]) => {
+    if (!documentId) {
+      return;
+    }
+    const engine = engineRef.current;
+    if (!engine || engine.kind !== "wasm") {
+      return;
+    }
+    editQueueRef.current ??= editQueueFactory({
+      documentId,
+      localScene: () => engineRef.current?.scene ?? sceneRef.current,
+      onReconcile: (event) => {
+        if (event.serverScene) {
+          replaceScene(event.serverScene);
+        }
+        setDiagnostics([event.diagnostic]);
+      }
+    });
+    editQueueRef.current.enqueueOperations(operations);
+  };
+
   const applyOperations = (operations: Operation[], onAccepted?: (scene: Scene) => void) => {
     if (operations.length === 0) {
       return;
@@ -282,6 +333,7 @@ export default function EditorApp({
     setOperationHistory((history) => [...history, ...operations].slice(-50));
     setDiagnostics([]);
     setScene(result.scene);
+    enqueueForPersistence(operations);
     onAccepted?.(result.scene);
   };
 

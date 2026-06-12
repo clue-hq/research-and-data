@@ -280,6 +280,13 @@ function applyNodePatch(node: Node, patch: NodePatch): void {
   applyFieldPatch(node, "size", patch.size);
   applyFieldPatch(node, "fills", patch.fills);
   applyFieldPatch(node, "strokes", patch.strokes);
+  // `effects` rides the wire only when set (Effects Contract V0); the Rust
+  // core applies it, so the mirror must too (caught by the gesture-script
+  // conformance suite: the wasm engine applied effects, this mirror
+  // silently dropped them).
+  if (patch.effects && patch.effects.kind === "set") {
+    node.effects = patch.effects.value;
+  }
   applyFieldPatch(node, "corner", patch.corner);
   applyFieldPatch(node, "opacity", patch.opacity);
   applyOptionalPatch(node, "opacity_token", patch.opacity_token);
