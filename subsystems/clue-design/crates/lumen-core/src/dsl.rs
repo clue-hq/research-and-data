@@ -500,6 +500,13 @@ pub enum DslDirective {
         replacement: NodeId,
         slot_policy: ReplaceSlotPolicy,
     },
+    /// Block form: `replace(target)` followed by an indented, inline-authored
+    /// replacement subtree with exactly one root. The subtree stages as a
+    /// sibling of the target and swaps in atomically when the block closes.
+    ReplaceBlock {
+        target: NodeId,
+        slot_policy: ReplaceSlotPolicy,
+    },
     Ungroup {
         target: NodeId,
         allow_layout: bool,
@@ -1018,15 +1025,36 @@ impl DslParser {
                 }
             }
             "replace" => {
-                if !(2..=3).contains(&call.args.len()) {
+                if call.args.is_empty() || call.args.len() > 3 {
                     return Err(error_diag(
                         line_number,
                         1,
                         trimmed.len(),
                         "LUMD0207",
-                        "replace(...) expects target and replacement node ids",
-                        "Use replace(old_node,new_node) or replace(old_node,new_node,slots:preserve).",
+                        "replace(...) expects a target and optional replacement",
+                        "Use replace(old_node,new_node[,slots:preserve]) or replace(old_node[,slots:...]) followed by an indented replacement subtree.",
                     ));
+                }
+                // Single-target form (optionally with slots:) opens a block
+                // whose indented elements author the replacement inline.
+                let block_form = call.args.len() == 1
+                    || (call.args.len() == 2 && call.args[1].trim().starts_with("slots:"));
+                if block_form {
+                    let slot_policy = call
+                        .args
+                        .get(1)
+                        .map(|arg| {
+                            parse_replace_slot_policy(
+                                arg.trim().strip_prefix("slots:").unwrap_or(""),
+                                line_number,
+                            )
+                        })
+                        .transpose()?
+                        .unwrap_or(ReplaceSlotPolicy::Detach);
+                    return Ok(Some(DslDirective::ReplaceBlock {
+                        target: parse_node_id(&call.args[0], line_number, 1)?,
+                        slot_policy,
+                    }));
                 }
                 let slot_policy = call
                     .args
@@ -1144,6 +1172,19 @@ impl DslParser {
     }
 }
 
+/// Active inline block replace: the staged subtree authors as a sibling of
+/// the target and swaps in atomically when the block closes. The snapshot
+/// makes the whole directive atomic — any failure inside the block rolls
+/// the draft scene and emitted operations back to the block start.
+struct ReplaceBlockState {
+    target: NodeId,
+    slot_policy: ReplaceSlotPolicy,
+    root: Option<NodeId>,
+    scene_snapshot: Scene,
+    ops_checkpoint: usize,
+    stack_depth: usize,
+}
+
 struct DslCompiler<'a> {
     document: DslDocument,
     operations: Vec<Operation>,
@@ -1153,6 +1194,7 @@ struct DslCompiler<'a> {
     /// Active `override(root)` patch group: indented modify lines must
     /// target the root or its descendants until a flat line ends the group.
     override_root: Option<NodeId>,
+    replace_block: Option<ReplaceBlockState>,
     history: Option<&'a dyn DslHistoryAdapter>,
     scene: &'a mut Scene,
     parent_stack: &'a mut Vec<ParentFrame>,
@@ -1175,6 +1217,7 @@ impl<'a> DslCompiler<'a> {
             halted_at: None,
             checkpoint_label: None,
             override_root: None,
+            replace_block: None,
             history,
             scene,
             parent_stack,
@@ -1183,6 +1226,7 @@ impl<'a> DslCompiler<'a> {
     }
 
     fn compile(&mut self, parse_halt: Option<DslHalt>) -> DslCompileOutput {
+        let mut last_line_number = 1;
         for line in self.document.lines.clone() {
             if parse_halt
                 .as_ref()
@@ -1190,14 +1234,26 @@ impl<'a> DslCompiler<'a> {
             {
                 break;
             }
+            last_line_number = line.line_number;
 
             if let Err(diagnostic) = self.lower_line(&line) {
+                self.rollback_replace_block();
                 self.halted_at = Some(DslHalt {
                     line: diagnostic.span.line,
                     code: diagnostic.diagnostic.code.clone(),
                 });
                 self.diagnostics.push(diagnostic);
                 break;
+            }
+        }
+
+        if self.halted_at.is_none() && parse_halt.is_none() {
+            if let Err(diagnostic) = self.finalize_replace_block(last_line_number, 1) {
+                self.halted_at = Some(DslHalt {
+                    line: diagnostic.span.line,
+                    code: diagnostic.diagnostic.code.clone(),
+                });
+                self.diagnostics.push(diagnostic);
             }
         }
 
@@ -1211,10 +1267,11 @@ impl<'a> DslCompiler<'a> {
     }
 
     fn lower_line(&mut self, line: &DslLine) -> Result<(), DslDiagnostic> {
-        // A flat (unindented) line ends any active override patch group;
-        // the override(...) directive itself re-opens one below.
+        // A flat (unindented) line ends any active override patch group or
+        // replace block; the directives themselves re-open them below.
         if line.indent == 0 {
             self.override_root = None;
+            self.finalize_replace_block(line.line_number, line.raw.len().max(1))?;
         }
         match &line.kind {
             DslLineKind::Comment(_) => Ok(()),
@@ -1297,6 +1354,27 @@ impl<'a> DslCompiler<'a> {
     }
 
     fn lower_element(&mut self, line: &DslLine, element: &DslElement) -> Result<(), DslDiagnostic> {
+        if let Some(state) = &self.replace_block {
+            // Only one root may stage inside a replace block: a second
+            // element at the root's indentation level is rejected.
+            if let Some(root) = &state.root {
+                let root_indent = self
+                    .parent_stack
+                    .iter()
+                    .find(|frame| matches!(&frame.parent, ParentRef::Node(id) if id == root))
+                    .map(|frame| frame.indent);
+                if Some(line.indent) <= root_indent || root_indent.is_none() {
+                    return Err(error_diag(
+                        line.line_number,
+                        1,
+                        line.raw.len().max(1),
+                        "LUMD0914",
+                        "block replace requires exactly one replacement root",
+                        "Nest additional elements under the single replacement root.",
+                    ));
+                }
+            }
+        }
         while self
             .parent_stack
             .last()
@@ -1356,6 +1434,12 @@ impl<'a> DslCompiler<'a> {
                 indent: line.indent,
                 parent: ParentRef::Node(element.id.clone()),
             });
+        }
+
+        if let Some(state) = &mut self.replace_block {
+            if state.root.is_none() {
+                state.root = Some(element.id.clone());
+            }
         }
 
         Ok(())
@@ -1510,6 +1594,33 @@ impl<'a> DslCompiler<'a> {
                 .map_err(|error| edit_error_diag(line, &error))?;
                 self.emit_edit_batch(line, batch.operations)?;
                 self.prune_parent_stack();
+                Ok(())
+            }
+            DslDirective::ReplaceBlock {
+                target,
+                slot_policy,
+            } => {
+                let parent = self.scene.parent_of(target).ok_or_else(|| {
+                    error_diag(
+                        line.line_number,
+                        1,
+                        line.raw.len().max(1),
+                        "LUMD0901",
+                        format!("replace target {} does not exist or has no parent", target),
+                        "Use replace(target) with an existing node inside a page.",
+                    )
+                })?;
+                self.replace_block = Some(ReplaceBlockState {
+                    target: target.clone(),
+                    slot_policy: slot_policy.clone(),
+                    root: None,
+                    scene_snapshot: self.scene.clone(),
+                    ops_checkpoint: self.operations.len(),
+                    stack_depth: self.parent_stack.len(),
+                });
+                // The staged subtree authors as a sibling inside the
+                // target's parent; the swap happens when the block closes.
+                self.parent_stack.push(ParentFrame { indent: 0, parent });
                 Ok(())
             }
             DslDirective::Ungroup {
@@ -1676,6 +1787,81 @@ impl<'a> DslCompiler<'a> {
         Ok(())
     }
 
+    /// Close an active inline replace block: validate exactly one staged
+    /// root, swap it into the target's parent/index, and remove the target.
+    /// Any failure rolls the whole block back so the directive is atomic.
+    fn finalize_replace_block(
+        &mut self,
+        line_number: usize,
+        length: usize,
+    ) -> Result<(), DslDiagnostic> {
+        let Some(state) = self.replace_block.take() else {
+            return Ok(());
+        };
+        let Some(root) = state.root.clone() else {
+            self.restore_replace_snapshot(state);
+            return Err(error_diag(
+                line_number,
+                1,
+                length,
+                "LUMD0914",
+                "block replace requires exactly one replacement root",
+                "Indent one root element (with children) under replace(target).",
+            ));
+        };
+        self.parent_stack.truncate(state.stack_depth);
+        let swap = build_replace_node(
+            self.scene,
+            ReplaceNodeRequest {
+                target: state.target.clone(),
+                replacement: root,
+                slot_policy: state.slot_policy.clone(),
+            },
+        );
+        let swap = match swap {
+            Ok(batch) => batch,
+            Err(error) => {
+                let diagnostic = error_diag(
+                    line_number,
+                    1,
+                    length,
+                    "LUMD0914",
+                    format!(
+                        "block replace of {} failed: {} {}",
+                        state.target,
+                        error.kind.code(),
+                        error.message
+                    ),
+                    "Repair the replacement subtree; the whole block was rolled back.",
+                );
+                self.restore_replace_snapshot(state);
+                return Err(diagnostic);
+            }
+        };
+        for operation in swap.operations {
+            if let Err(error) = self.scene.apply_operation(operation.clone()) {
+                let diagnostic = operation_error_diag_at(line_number, length, &error);
+                self.restore_replace_snapshot(state);
+                return Err(diagnostic);
+            }
+            self.operations.push(operation);
+        }
+        self.prune_parent_stack();
+        Ok(())
+    }
+
+    fn restore_replace_snapshot(&mut self, state: ReplaceBlockState) {
+        *self.scene = state.scene_snapshot;
+        self.operations.truncate(state.ops_checkpoint);
+        self.parent_stack.truncate(state.stack_depth);
+    }
+
+    fn rollback_replace_block(&mut self) {
+        if let Some(state) = self.replace_block.take() {
+            self.restore_replace_snapshot(state);
+        }
+    }
+
     fn prune_parent_stack(&mut self) {
         let scene = &*self.scene;
         self.parent_stack
@@ -1805,10 +1991,18 @@ fn parent_can_receive_children(scene: &Scene, parent: &ParentRef) -> bool {
 }
 
 fn operation_error_diag(line: &DslLine, error: &OperationError) -> DslDiagnostic {
+    operation_error_diag_at(line.line_number, line.raw.len().max(1), error)
+}
+
+fn operation_error_diag_at(
+    line_number: usize,
+    length: usize,
+    error: &OperationError,
+) -> DslDiagnostic {
     error_diag(
-        line.line_number,
+        line_number,
         1,
-        line.raw.len().max(1),
+        length,
         "LUMD0800",
         format!("operation {} failed during DSL lowering: {}", error.code, error.message),
         "The DSL line parsed, but applying the corresponding structured operation failed against the current draft scene.",

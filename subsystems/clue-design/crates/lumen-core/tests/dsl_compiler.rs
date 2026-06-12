@@ -1484,3 +1484,90 @@ fn undo_lowers_through_history_adapter_and_rejects_without_one() {
     let missing = session.compile_block_with_history("undo(\"nope\")", Some(&history));
     assert_eq!(missing.halted_at.as_ref().unwrap().code, "LUMD0917");
 }
+
+const REPLACE_BLOCK_SCENE: &str = "page page_a4\n  hero fr p(0,0) s(800,600)\n    visual fr p(10,10) s(200,200)\n      caption text \"Old\" p(0,0) s(100,hug)\n    cta text \"Go\" p(0,0) s(80,hug)";
+
+#[test]
+fn block_replace_swaps_inline_subtree_at_target_position() {
+    let source = format!(
+        "{REPLACE_BLOCK_SCENE}\n\nreplace(visual)\n  visual_v2 fr p(40,40) s(300,300)\n    headline text \"New hero copy\" p(0,0) s(200,hug)"
+    );
+    let mut scene = Scene::new(lumen_core::DocumentId::from("doc_blockrep"), "Doc");
+    let output = compile_dsl_into_scene(&source, &mut scene);
+
+    assert_no_dsl_errors(&output.compile_output.diagnostics);
+    assert!(!scene.nodes.contains_key(&NodeId::from("visual")));
+    assert!(!scene.nodes.contains_key(&NodeId::from("caption")));
+    // Replacement root takes the old target's parent and index.
+    assert_eq!(
+        scene.nodes[&NodeId::from("hero")].children,
+        vec![NodeId::from("visual_v2"), NodeId::from("cta")]
+    );
+    assert_eq!(
+        scene.nodes[&NodeId::from("visual_v2")].children,
+        vec![NodeId::from("headline")]
+    );
+}
+
+#[test]
+fn block_replace_preserves_slots_when_requested() {
+    let source = format!(
+        "{}\n\nreplace(caption, slots:preserve)\n  caption_v2 text \"New caption\" p(0,0) s(100,hug)",
+        REPLACE_BLOCK_SCENE.replace(
+            "caption text \"Old\" p(0,0) s(100,hug)",
+            "caption text \"Old\" p(0,0) s(100,hug) slot(campaign.caption)"
+        )
+    );
+    let mut scene = Scene::new(lumen_core::DocumentId::from("doc_blockrep2"), "Doc");
+    let output = compile_dsl_into_scene(&source, &mut scene);
+
+    assert_no_dsl_errors(&output.compile_output.diagnostics);
+    assert_eq!(
+        scene
+            .slot_by_key(&lumen_core::SlotKey::from("campaign.caption"))
+            .unwrap()
+            .bound_nodes,
+        vec![NodeId::from("caption_v2")]
+    );
+}
+
+#[test]
+fn block_replace_rejects_multiple_roots_atomically() {
+    let source = format!(
+        "{REPLACE_BLOCK_SCENE}\n\nreplace(visual)\n  first fr p(0,0) s(10,10)\n  second fr p(0,0) s(10,10)"
+    );
+    let mut scene = Scene::new(lumen_core::DocumentId::from("doc_blockrep3"), "Doc");
+    let output = compile_dsl_into_scene(&source, &mut scene);
+
+    assert_eq!(
+        output.compile_output.halted_at.as_ref().unwrap().code,
+        "LUMD0914"
+    );
+    // The whole block rolled back: no staged nodes, target untouched.
+    let ops = &output.compile_output.operations;
+    assert!(!ops.iter().any(|operation| matches!(
+        operation,
+        Operation::InsertNode { node, .. } if node.id == NodeId::from("first")
+    )));
+}
+
+#[test]
+fn block_replace_without_subtree_halts() {
+    let source = format!("{REPLACE_BLOCK_SCENE}\n\nreplace(visual)");
+    let mut scene = Scene::new(lumen_core::DocumentId::from("doc_blockrep4"), "Doc");
+    let output = compile_dsl_into_scene(&source, &mut scene);
+    assert_eq!(
+        output.compile_output.halted_at.as_ref().unwrap().code,
+        "LUMD0914"
+    );
+    // Prior creation lines survive the halt; the target is never removed.
+    let ops = &output.compile_output.operations;
+    assert!(ops.iter().any(|operation| matches!(
+        operation,
+        Operation::InsertNode { node, .. } if node.id == NodeId::from("visual")
+    )));
+    assert!(!ops.iter().any(|operation| matches!(
+        operation,
+        Operation::RemoveNode { node_id } if node_id == &NodeId::from("visual")
+    )));
+}
