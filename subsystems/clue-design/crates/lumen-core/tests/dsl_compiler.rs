@@ -1306,3 +1306,77 @@ fn delete_if_exists_skips_missing_target_with_warning() {
     let output = compile_dsl_into_scene("page page_a4\n\ndelete(ghost)", &mut scene);
     assert!(output.compile_output.halted_at.is_some());
 }
+
+#[test]
+fn append_and_prepend_extend_existing_text_content() {
+    let mut scene = Scene::new(lumen_core::DocumentId::from("doc_append"), "Doc");
+    let output = compile_dsl_into_scene(
+        "page page_a4\n  headline text \"Core promise\" p(0,0) s(400,hug)\n\n#headline append(\" - now with call routing\")\n#headline prepend(\"For neurosurgery teams: \")",
+        &mut scene,
+    );
+
+    assert_no_dsl_errors(&output.compile_output.diagnostics);
+    let NodeKind::Text(text) = &scene.nodes[&NodeId::from("headline")].kind else {
+        panic!("expected text node");
+    };
+    assert_eq!(
+        text.content,
+        "For neurosurgery teams: Core promise - now with call routing"
+    );
+}
+
+#[test]
+fn append_on_non_text_node_halts() {
+    let mut scene = Scene::new(lumen_core::DocumentId::from("doc_append2"), "Doc");
+    let output = compile_dsl_into_scene(
+        "page page_a4\n  box rect p(0,0) s(10,10)\n\n#box append(\"nope\")",
+        &mut scene,
+    );
+    assert!(output.compile_output.halted_at.is_some());
+}
+
+#[test]
+fn parent_directive_supports_relative_anchors() {
+    let source = "page page_a4\n  hero fr p(0,0) s(800,600)\n    headline text \"H\" p(0,0) s(100,hug)\n    body text \"B\" p(0,0) s(100,hug)\n  logo rect p(0,0) s(50,50)\n\nparent(logo, hero, before:body)";
+    let mut scene = Scene::new(lumen_core::DocumentId::from("doc_anchor"), "Doc");
+    let output = compile_dsl_into_scene(source, &mut scene);
+
+    assert_no_dsl_errors(&output.compile_output.diagnostics);
+    assert_eq!(
+        scene.nodes[&NodeId::from("hero")].children,
+        vec![
+            NodeId::from("headline"),
+            NodeId::from("logo"),
+            NodeId::from("body")
+        ]
+    );
+
+    let mut scene2 = Scene::new(lumen_core::DocumentId::from("doc_anchor2"), "Doc");
+    let output = compile_dsl_into_scene(&source.replace("before:body", "after:body"), &mut scene2);
+    assert_no_dsl_errors(&output.compile_output.diagnostics);
+    assert_eq!(
+        scene2.nodes[&NodeId::from("hero")].children,
+        vec![
+            NodeId::from("headline"),
+            NodeId::from("body"),
+            NodeId::from("logo")
+        ]
+    );
+
+    // Anchor outside the destination parent halts precisely.
+    let mut scene3 = Scene::new(lumen_core::DocumentId::from("doc_anchor3"), "Doc");
+    let output = compile_dsl_into_scene(&source.replace("before:body", "before:logo"), &mut scene3);
+    assert!(output.compile_output.halted_at.is_some());
+}
+
+#[test]
+fn parent_directive_keeps_index_forms() {
+    let source = "page page_a4\n  hero fr p(0,0) s(800,600)\n    headline text \"H\" p(0,0) s(100,hug)\n  logo rect p(0,0) s(50,50)\n\nparent(logo, hero, index:0)";
+    let mut scene = Scene::new(lumen_core::DocumentId::from("doc_idx"), "Doc");
+    let output = compile_dsl_into_scene(source, &mut scene);
+    assert_no_dsl_errors(&output.compile_output.diagnostics);
+    assert_eq!(
+        scene.nodes[&NodeId::from("hero")].children[0],
+        NodeId::from("logo")
+    );
+}

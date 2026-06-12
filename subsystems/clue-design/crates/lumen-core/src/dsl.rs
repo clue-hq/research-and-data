@@ -374,6 +374,8 @@ pub enum DslProperty {
     LineTo(f64, f64),
     Name(String),
     Token(String),
+    TextAppend(String),
+    TextPrepend(String),
     ArtifactType(String),
     DocumentMedium(Medium),
     DocumentBrandKit(String, u32),
@@ -453,7 +455,7 @@ pub enum DslDirective {
     Parent {
         target: NodeId,
         new_parent: ParentRef,
-        index: usize,
+        placement: DslParentPlacement,
     },
     Before {
         target: NodeId,
@@ -903,14 +905,24 @@ impl DslParser {
                         "Use parent(node_id,parent_id) or parent(node_id,page:page_a4,0).",
                     ));
                 }
+                let placement = if call.args.len() == 3 {
+                    let arg = call.args[2].trim();
+                    if let Some(anchor) = arg.strip_prefix("before:") {
+                        DslParentPlacement::Before(parse_node_id(anchor, line_number, 1)?)
+                    } else if let Some(anchor) = arg.strip_prefix("after:") {
+                        DslParentPlacement::After(parse_node_id(anchor, line_number, 1)?)
+                    } else if let Some(index) = arg.strip_prefix("index:") {
+                        DslParentPlacement::Index(parse_usize(index, line_number, 1)?)
+                    } else {
+                        DslParentPlacement::Index(parse_usize(arg, line_number, 1)?)
+                    }
+                } else {
+                    DslParentPlacement::Index(0)
+                };
                 DslDirective::Parent {
                     target: parse_node_id(&call.args[0], line_number, 1)?,
                     new_parent: parse_parent_ref(&call.args[1], line_number)?,
-                    index: if call.args.len() == 3 {
-                        parse_usize(&call.args[2], line_number, 1)?
-                    } else {
-                        0
-                    },
+                    placement,
                 }
             }
             "before" => {
@@ -1347,10 +1359,42 @@ impl<'a> DslCompiler<'a> {
             DslDirective::Parent {
                 target,
                 new_parent,
-                index,
+                placement,
             } => {
+                let index = match placement {
+                    DslParentPlacement::Index(index) => *index,
+                    DslParentPlacement::Before(anchor) | DslParentPlacement::After(anchor) => {
+                        // Resolve the anchor inside the destination parent
+                        // with detach-aware math: the target leaves its slot
+                        // before reinsertion, so it is excluded first.
+                        let mut siblings =
+                            children_ids_for_parent(self.scene, new_parent, line)?;
+                        siblings.retain(|id| id != target);
+                        let anchor_index = siblings
+                            .iter()
+                            .position(|id| id == anchor)
+                            .ok_or_else(|| {
+                                error_diag(
+                                    line.line_number,
+                                    1,
+                                    line.raw.len().max(1),
+                                    "LUMD0900",
+                                    format!(
+                                        "anchor {} is not a child of the destination parent",
+                                        anchor
+                                    ),
+                                    "Use before:/after: anchors that already live inside the destination parent.",
+                                )
+                            })?;
+                        if matches!(placement, DslParentPlacement::After(_)) {
+                            anchor_index + 1
+                        } else {
+                            anchor_index
+                        }
+                    }
+                };
                 let batch =
-                    build_move_to_parent(self.scene, target.clone(), new_parent.clone(), *index)
+                    build_move_to_parent(self.scene, target.clone(), new_parent.clone(), index)
                         .map_err(|error| edit_error_diag(line, &error))?;
                 self.emit_edit_batch(line, batch.operations)?;
                 self.prune_parent_stack();
@@ -1532,6 +1576,41 @@ fn parser_context_after_lines(
         context.advance_with_line(line);
     }
     context
+}
+
+fn children_ids_for_parent(
+    scene: &Scene,
+    parent: &ParentRef,
+    line: &DslLine,
+) -> Result<Vec<NodeId>, DslDiagnostic> {
+    match parent {
+        ParentRef::Page(page_id) => scene
+            .pages
+            .get(page_id)
+            .map(|page| page.children.clone())
+            .ok_or_else(|| {
+                operation_error_diag(
+                    line,
+                    &OperationError::new(
+                        "op.page_missing",
+                        format!("parent page {} does not exist", page_id),
+                    ),
+                )
+            }),
+        ParentRef::Node(node_id) => scene
+            .nodes
+            .get(node_id)
+            .map(|node| node.children.clone())
+            .ok_or_else(|| {
+                operation_error_diag(
+                    line,
+                    &OperationError::new(
+                        "op.node_missing",
+                        format!("parent node {} does not exist", node_id),
+                    ),
+                )
+            }),
+    }
 }
 
 fn children_len_for_parent(
@@ -1775,6 +1854,15 @@ fn export_profile_edit_patch_from_properties(
     Ok(patch)
 }
 
+/// Placement inside a `parent(...)` destination: a fixed index or a
+/// position relative to an anchor child of the destination.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum DslParentPlacement {
+    Index(usize),
+    Before(NodeId),
+    After(NodeId),
+}
+
 /// Parse a directive target argument: bare ids are nodes; prefixed forms
 /// mirror the `#`-target grammar of modify lines (page:, slot:, slot_id:,
 /// asset:, export:).
@@ -1926,6 +2014,31 @@ fn node_edit_patch_from_properties(
             }
             DslProperty::TextContent(content) => {
                 text_patch.content = FieldPatch::Set(content.clone());
+                has_text_patch = true;
+            }
+            DslProperty::TextAppend(suffix) | DslProperty::TextPrepend(suffix) => {
+                let base = match &text_patch.content {
+                    FieldPatch::Set(value) => value.clone(),
+                    FieldPatch::Unchanged => match &current.kind {
+                        NodeKind::Text(text) => text.content.clone(),
+                        _ => {
+                            return Err(error_diag(
+                                line.line_number,
+                                1,
+                                line.raw.len().max(1),
+                                "LUMD0903",
+                                "append/prepend only apply to text nodes",
+                                "Target a text node, or use text(...) to replace content.",
+                            ));
+                        }
+                    },
+                };
+                let next = if matches!(property, DslProperty::TextAppend(_)) {
+                    format!("{base}{suffix}")
+                } else {
+                    format!("{suffix}{base}")
+                };
+                text_patch.content = FieldPatch::Set(next);
                 has_text_patch = true;
             }
             DslProperty::Name(name) => {
@@ -2899,6 +3012,22 @@ fn parse_property_token(
                 column,
             )?)]
         }
+        "append" => {
+            expect_arg_count(&call, 1, line_number)?;
+            vec![DslProperty::TextAppend(unquote(
+                &call.args[0],
+                line_number,
+                column,
+            )?)]
+        }
+        "prepend" => {
+            expect_arg_count(&call, 1, line_number)?;
+            vec![DslProperty::TextPrepend(unquote(
+                &call.args[0],
+                line_number,
+                column,
+            )?)]
+        }
         "artifact_type" => {
             expect_arg_count(&call, 1, line_number)?;
             vec![DslProperty::ArtifactType(unquote(
@@ -3515,6 +3644,16 @@ fn apply_properties(
                 ));
             }
             DslProperty::Slot(_) => {}
+            DslProperty::TextAppend(_) | DslProperty::TextPrepend(_) => {
+                diagnostics.push(warning_diag(
+                    line_number,
+                    1,
+                    node.id.as_str().len(),
+                    "LUMD0615",
+                    "append/prepend only apply to modify lines targeting existing text nodes",
+                    "Author full text(...) content when creating elements.",
+                ));
+            }
             DslProperty::ArtifactType(_)
             | DslProperty::DocumentMedium(_)
             | DslProperty::DocumentBrandKit(_, _)

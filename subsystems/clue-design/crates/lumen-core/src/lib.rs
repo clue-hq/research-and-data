@@ -55,8 +55,8 @@ pub use dsl::{
     parse_dsl, DslCompileOutput, DslCompileSession, DslCompileSessionSnapshot, DslDiagnostic,
     DslDimension, DslDirective, DslDocument, DslElement, DslElementKind, DslFill, DslFont, DslHalt,
     DslLayoutAnchor, DslLayoutAxis, DslLine, DslLineKind, DslModification, DslPage, DslPagePreset,
-    DslParentFrameSnapshot, DslParseOutput, DslProperty, DslScalar, DslSceneCompileOutput,
-    DslStroke, SourceSpan,
+    DslParentFrameSnapshot, DslParentPlacement, DslParseOutput, DslProperty, DslScalar,
+    DslSceneCompileOutput, DslStroke, SourceSpan,
 };
 pub use editing::{
     batch_scope_violations, build_archive_asset, build_asset_modify, build_clone_subtree,
