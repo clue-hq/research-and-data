@@ -5,9 +5,19 @@ use serde_json::Value;
 const MANIFEST: &str = include_str!("../fixtures/visual_regression/manifest.json");
 const VALID_MULTI_PAGE_SLOTS: &str =
     include_str!("../fixtures/conformance/valid_multi_page_slots.json");
-const PENDING_BASELINE: &str = include_str!(
-    "../fixtures/visual_regression/baselines/valid_multi_page_slots_agent_png_linkedin_ad.pending.txt"
-);
+const EFFECTS_CARD: &str = include_str!("../fixtures/effects/effects_card.json");
+const PENDING_BASELINES: [(&str, &str); 2] = [
+    (
+        "valid_multi_page_slots_agent_png_linkedin_ad",
+        include_str!(
+            "../fixtures/visual_regression/baselines/valid_multi_page_slots_agent_png_linkedin_ad.pending.txt"
+        ),
+    ),
+    (
+        "effects_card_agent_png",
+        include_str!("../fixtures/visual_regression/baselines/effects_card_agent_png.pending.txt"),
+    ),
+];
 
 #[test]
 #[ignore = "run explicitly until export/svg-pdf provides concrete visual baselines"]
@@ -18,7 +28,10 @@ fn visual_regression_skeleton_manifest_is_runnable() {
     let cases = manifest["cases"]
         .as_array()
         .expect("visual manifest has cases");
-    assert!(!cases.is_empty(), "visual manifest must define cases");
+    assert!(
+        cases.len() >= 2,
+        "visual manifest must define the base and effects cases"
+    );
 
     for case in cases {
         assert_visual_case_shape(case);
@@ -41,32 +54,41 @@ fn visual_regression_skeleton_manifest_is_runnable() {
         assert_eq!(profile.format, format_for_case(case));
     }
 
-    assert!(
-        PENDING_BASELINE.contains("valid_multi_page_slots_agent_png_linkedin_ad"),
-        "pending baseline should identify its case"
-    );
+    for (case_id, baseline) in PENDING_BASELINES {
+        assert!(
+            baseline.contains(case_id),
+            "pending baseline should identify its case {case_id}"
+        );
+    }
 }
 
 fn assert_visual_case_shape(case: &Value) {
-    assert_eq!(
-        case["scene_fixture"],
-        "crates/lumen-core/fixtures/conformance/valid_multi_page_slots.json"
-    );
-    assert_eq!(case["profile"], "agent_png");
-    assert_eq!(case["format"], "png");
-    assert_eq!(case["page_id"], "page_linkedin_ad");
-    assert_eq!(case["purpose"], "agent_critique");
-    assert_eq!(
-        case["baseline"],
-        "crates/lumen-core/fixtures/visual_regression/baselines/valid_multi_page_slots_agent_png_linkedin_ad.pending.txt"
-    );
+    for field in [
+        "id",
+        "scene_fixture",
+        "profile",
+        "format",
+        "page_id",
+        "purpose",
+        "baseline",
+        "status",
+    ] {
+        assert!(
+            case[field].as_str().is_some_and(|value| !value.is_empty()),
+            "visual case {case:?} is missing {field}"
+        );
+    }
     assert_eq!(case["status"], "pending_renderer");
+    assert_eq!(case["purpose"], "agent_critique");
 }
 
 fn scene_for_case(case: &Value) -> Scene {
     match case["scene_fixture"].as_str() {
         Some("crates/lumen-core/fixtures/conformance/valid_multi_page_slots.json") => {
             serde_json::from_str(VALID_MULTI_PAGE_SLOTS).expect("scene fixture decodes")
+        }
+        Some("crates/lumen-core/fixtures/effects/effects_card.json") => {
+            serde_json::from_str(EFFECTS_CARD).expect("effects scene fixture decodes")
         }
         other => panic!("unwired visual scene fixture: {other:?}"),
     }

@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="400" height="300" viewBox="0 0 400 300" data-lumen-document-id="doc_effects_golden" data-lumen-page-id="page_card">
+<defs>
+<filter id="lumen-effect-card" x="-50%" y="-50%" width="200%" height="200%">
+<feGaussianBlur in="SourceAlpha" stdDeviation="1" result="lumen-blur-0" />
+<feOffset in="lumen-blur-0" dx="0" dy="1" result="lumen-offset-0" />
+<feFlood flood-color="#000000" flood-opacity="0.18" result="lumen-flood-0" />
+<feComposite in="lumen-flood-0" in2="lumen-offset-0" operator="in" result="lumen-shadow-0" />
+<feGaussianBlur in="SourceAlpha" stdDeviation="12" result="lumen-blur-1" />
+<feOffset in="lumen-blur-1" dx="0" dy="8" result="lumen-offset-1" />
+<feFlood flood-color="#000000" flood-opacity="0.18" result="lumen-flood-1" />
+<feComposite in="lumen-flood-1" in2="lumen-offset-1" operator="in" result="lumen-shadow-1" />
+<feMorphology in="SourceAlpha" operator="dilate" radius="4" result="lumen-spread-2" />
+<feGaussianBlur in="lumen-spread-2" stdDeviation="16" result="lumen-blur-2" />
+<feOffset in="lumen-blur-2" dx="0" dy="16" result="lumen-offset-2" />
+<feFlood flood-color="#000000" flood-opacity="0.18" result="lumen-flood-2" />
+<feComposite in="lumen-flood-2" in2="lumen-offset-2" operator="in" result="lumen-shadow-2" />
+<feMerge>
+<feMergeNode in="lumen-shadow-2" />
+<feMergeNode in="lumen-shadow-1" />
+<feMergeNode in="lumen-shadow-0" />
+<feMergeNode in="SourceGraphic" />
+</feMerge>
+</filter>
+</defs>
+<g id="lumen-page-page_card" data-lumen-page-id="page_card">
+<rect x="0" y="0" width="400" height="300" fill="#faf7f0" data-lumen-fill-id="paint_page_bg" />
+<rect id="lumen-node-card" data-lumen-node-id="card" x="0" y="0" width="200" height="120" rx="8" ry="8" transform="translate(24 24)" filter="url(#lumen-effect-card)" fill="#ffffff" data-lumen-fill-id="fill_base" />
+</g>
+</svg>

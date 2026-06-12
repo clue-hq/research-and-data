@@ -58,6 +58,22 @@ function builderFor(name: string): StructuredEdit {
           }
         ]
       });
+    case "modify_node_add_dashed_stroke_entry":
+      return modifyNodeStacksEdit("node_contact_name", {
+        strokeEdits: [
+          {
+            kind: "add",
+            entry: {
+              id: "stroke_border",
+              paint: { kind: "solid", color: { kind: "hex", value: "#111827" } },
+              width: 1.0,
+              dash: [6.0, 4.0],
+              cap: "round",
+              join: "round"
+            }
+          }
+        ]
+      });
     default:
       throw new Error(`no TS builder mapped for parity case ${name}`);
   }

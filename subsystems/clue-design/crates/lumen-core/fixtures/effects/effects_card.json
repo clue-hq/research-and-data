@@ -1,0 +1,189 @@
+{
+  "assets": {},
+  "export_profiles": [
+    {
+      "embed_fonts": false,
+      "format": "png",
+      "include_bleed": false,
+      "name": "agent_png",
+      "pdf_intent": null,
+      "raster": {
+        "dpi": 96,
+        "scale": 1.0
+      }
+    }
+  ],
+  "meta": {
+    "artifact_type": "card",
+    "brand_kit": null,
+    "id": "doc_effects_visual",
+    "medium": "digital",
+    "status": {
+      "kind": "draft"
+    },
+    "title": "Effects Visual Card"
+  },
+  "nodes": {
+    "card": {
+      "children": [],
+      "clip": false,
+      "computed": null,
+      "corner": {
+        "bottom_left": 12.0,
+        "bottom_right": 12.0,
+        "top_left": 12.0,
+        "top_right": 12.0
+      },
+      "effects": [
+        {
+          "id": "shadow_soft",
+          "kind": {
+            "blur": 24.0,
+            "color": {
+              "kind": "hex",
+              "value": "#000000"
+            },
+            "kind": "drop_shadow",
+            "opacity": 0.18,
+            "spread": 0.0,
+            "x": 0.0,
+            "y": 8.0
+          }
+        },
+        {
+          "id": "shadow_crisp",
+          "kind": {
+            "blur": 2.0,
+            "color": {
+              "kind": "hex",
+              "value": "#000000"
+            },
+            "kind": "drop_shadow",
+            "opacity": 0.1,
+            "spread": 0.0,
+            "x": 0.0,
+            "y": 1.0
+          }
+        }
+      ],
+      "fills": [
+        {
+          "id": "fill_base",
+          "paint": {
+            "color": {
+              "kind": "hex",
+              "value": "#ffffff"
+            },
+            "kind": "solid"
+          }
+        },
+        {
+          "id": "fill_tint",
+          "paint": {
+            "angle": 90.0,
+            "kind": "linear_gradient",
+            "stops": [
+              {
+                "color": {
+                  "kind": "hex",
+                  "value": "#ffffff"
+                },
+                "position": 0.0
+              },
+              {
+                "color": {
+                  "kind": "hex",
+                  "value": "#e7f0ef"
+                },
+                "position": 1.0
+              }
+            ]
+          }
+        }
+      ],
+      "id": "card",
+      "kind": {
+        "kind": "rect"
+      },
+      "layout": null,
+      "locked": false,
+      "name": null,
+      "opacity": 1.0,
+      "size": {
+        "height": {
+          "kind": "fixed",
+          "value": 180.0
+        },
+        "width": {
+          "kind": "fixed",
+          "value": 320.0
+        }
+      },
+      "strokes": [
+        {
+          "cap": "round",
+          "dash": [
+            6.0,
+            4.0
+          ],
+          "id": "stroke_border",
+          "join": "round",
+          "paint": {
+            "color": {
+              "kind": "hex",
+              "value": "#111827"
+            },
+            "kind": "solid"
+          },
+          "width": 1.5
+        }
+      ],
+      "transform": {
+        "flip_x": false,
+        "flip_y": false,
+        "rotation": 0.0,
+        "skew_x": 0.0,
+        "skew_y": 0.0,
+        "x": 40.0,
+        "y": 40.0
+      }
+    }
+  },
+  "pages": {
+    "page_effects_card": {
+      "background": [
+        {
+          "id": "paint_page_bg",
+          "paint": {
+            "color": {
+              "kind": "hex",
+              "value": "#faf7f0"
+            },
+            "kind": "solid"
+          }
+        }
+      ],
+      "bleed": null,
+      "children": [
+        "card"
+      ],
+      "id": "page_effects_card",
+      "name": "Effects Card",
+      "safe_area": {
+        "height": 276.0,
+        "width": 376.0,
+        "x": 12.0,
+        "y": 12.0
+      },
+      "size": {
+        "height": 300.0,
+        "orientation": "landscape",
+        "preset": "custom",
+        "unit": "px",
+        "width": 400.0
+      }
+    }
+  },
+  "schema_version": 1,
+  "slots": {}
+}
