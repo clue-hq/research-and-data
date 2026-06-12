@@ -11,6 +11,7 @@ pub mod dsl;
 pub mod editing;
 pub mod export_contract;
 pub mod ids;
+pub mod instance;
 pub mod layout;
 pub mod operations;
 pub mod preflight;
@@ -82,6 +83,10 @@ pub use export_contract::{
 pub use ids::{
     AssetId, BrandKitId, DocumentId, EffectId, IdError, NodeId, OperationId, PageId, PaintId,
     SlotId, SlotKey, TemplateRevisionId,
+};
+pub use instance::{
+    derive_instance, DerivationAssets, DeriveOptions, DerivedInstance, InstanceAuditEntry,
+    InstanceAuditKind,
 };
 pub use layout::{layout_operations, layout_scene, validate_layout, LayoutOptions, LayoutResult};
 pub use operations::{

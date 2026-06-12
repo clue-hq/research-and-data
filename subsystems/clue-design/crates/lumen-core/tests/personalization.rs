@@ -496,10 +496,315 @@ fn g1_draft_snapshot_and_revision_mismatch_are_errors() {
     );
 }
 
+fn logo_record(asset_id: &str) -> lumen_core::AssetRecord {
+    lumen_core::AssetRecord {
+        id: asset_id.into(),
+        label: format!("Logo {asset_id}"),
+        kind: lumen_core::AssetKind::Logo,
+        status: lumen_core::AssetStatus::Ready,
+        source: lumen_core::AssetSource::Uploaded {
+            asset_id: None,
+            filename: Some(format!("{asset_id}.png")),
+            uploaded_by: Some("ops".to_owned()),
+        },
+        media: lumen_core::AssetMediaMetadata {
+            mime_type: Some("image/png".to_owned()),
+            filename: Some(format!("{asset_id}.png")),
+            byte_length: Some(2048),
+            digest: Some(lumen_core::AssetDigest {
+                algorithm: "sha256".to_owned(),
+                value: format!("{:0<64}", asset_id.len()),
+            }),
+            location: None,
+            thumbnail: None,
+        },
+        raster: Some(lumen_core::RasterAssetMetadata {
+            pixel_width: 1200,
+            pixel_height: 400,
+            dpi_x: Some(300.0),
+            dpi_y: Some(300.0),
+            has_alpha: Some(true),
+            color_profile: Some("srgb".to_owned()),
+            aspect_ratio: Some(3.0),
+        }),
+        vector: None,
+        font: None,
+        logo: Some(lumen_core::LogoAssetMetadata {
+            pixel_width: Some(1200),
+            pixel_height: Some(400),
+            width: Some(36.0),
+            height: Some(12.0),
+            dpi_x: Some(300.0),
+            dpi_y: Some(300.0),
+            has_transparency: Some(true),
+            color_mode: Some("full_color".to_owned()),
+            clearspace: Some(2.0),
+        }),
+        license: None,
+        provenance: lumen_core::AssetProvenance::default(),
+        tags: vec!["logo".to_owned()],
+    }
+}
+
+fn qr_record(asset_id: &str) -> lumen_core::AssetRecord {
+    lumen_core::AssetRecord {
+        id: asset_id.into(),
+        label: format!("QR {asset_id}"),
+        kind: lumen_core::AssetKind::Vector,
+        status: lumen_core::AssetStatus::Ready,
+        source: lumen_core::AssetSource::Generated {
+            request_id: Some(asset_id.to_owned()),
+            model: "qr-v1".to_owned(),
+        },
+        media: lumen_core::AssetMediaMetadata {
+            mime_type: Some("image/svg+xml".to_owned()),
+            filename: Some(format!("{asset_id}.svg")),
+            byte_length: Some(1024),
+            digest: Some(lumen_core::AssetDigest {
+                algorithm: "sha256".to_owned(),
+                value: format!("{:1<64}", asset_id.len()),
+            }),
+            location: None,
+            thumbnail: None,
+        },
+        raster: None,
+        vector: Some(lumen_core::VectorAssetMetadata {
+            width: Some(33.0),
+            height: Some(33.0),
+            view_box: Some([0.0, 0.0, 33.0, 33.0]),
+            has_transparency: Some(false),
+            path_data: None,
+        }),
+        font: None,
+        logo: None,
+        license: None,
+        provenance: lumen_core::AssetProvenance::default(),
+        tags: vec!["qr".to_owned(), "generated".to_owned()],
+    }
+}
+
+fn derivation_assets(logo_asset_id: &str, binding_set_id: &str) -> lumen_core::DerivationAssets {
+    let mut assets = lumen_core::DerivationAssets::default();
+    assets
+        .records
+        .insert(logo_asset_id.into(), logo_record(logo_asset_id));
+    assets.generated.insert(
+        "qr_landing".to_owned(),
+        qr_record(&format!("asset_gen_{binding_set_id}_qr_landing")),
+    );
+    assets
+}
+
+fn derive_fixture(name: &str) -> lumen_core::DerivedInstance {
+    let scene = mailer_revision_scene();
+    let binding = binding_set(name);
+    let logo_asset_id = match binding.values.get("account.logo") {
+        Some(BoundValue::Asset { asset_id }) => asset_id.to_string(),
+        other => panic!("fixture {name} must bind account.logo, got {other:?}"),
+    };
+    let assets = derivation_assets(&logo_asset_id, &binding.binding_set_id);
+    lumen_core::derive_instance(
+        &scene,
+        &binding,
+        &assets,
+        &lumen_core::DeriveOptions::default(),
+    )
+}
+
 #[test]
-#[ignore = "G2: derive_instance(snapshot, binding_set, assets) is deterministic"]
 fn g2_derivation_is_a_pure_function_of_its_inputs() {
-    unimplemented!("lumen_core::instance::derive_instance");
+    let first = derive_fixture("nominal");
+    let second = derive_fixture("nominal");
+
+    let first_json = first
+        .scene
+        .to_canonical_json()
+        .expect("derived scene serializes");
+    let second_json = second
+        .scene
+        .to_canonical_json()
+        .expect("derived scene serializes");
+    assert_eq!(
+        first_json, second_json,
+        "same inputs must produce byte-identical derived scene JSON"
+    );
+    assert_eq!(first.audit, second.audit, "audit must be deterministic");
+    assert_eq!(
+        first.diagnostics, second.diagnostics,
+        "diagnostics must be deterministic"
+    );
+}
+
+#[test]
+fn g2_text_values_apply_through_canonical_operations() {
+    let derived = derive_fixture("missing_optional");
+    assert!(
+        !derived.has_errors(),
+        "missing_optional derivation must succeed: {:#?}",
+        derived.diagnostics
+    );
+
+    let headline = derived
+        .scene
+        .node(&"node_headline".into())
+        .expect("headline");
+    let lumen_core::NodeKind::Text(text) = &headline.kind else {
+        panic!("headline stays a text node");
+    };
+    assert_eq!(text.content, "Ms. Adaeze Okafor");
+
+    let audit_entry = derived
+        .audit
+        .iter()
+        .find(|entry| {
+            entry.kind == lumen_core::InstanceAuditKind::TextApplied
+                && entry.slot_key.as_ref().map(|key| key.as_str()) == Some("contact.full_name")
+        })
+        .expect("text application must be audited");
+    assert_eq!(audit_entry.node_ids, vec!["node_headline".into()]);
+}
+
+#[test]
+fn g2_asset_values_place_through_place_asset_in_slot() {
+    let derived = derive_fixture("nominal");
+    assert!(!derived.has_errors(), "{:#?}", derived.diagnostics);
+
+    let logo = derived.scene.node(&"node_logo".into()).expect("logo node");
+    let lumen_core::NodeKind::Image(image) = &logo.kind else {
+        panic!("logo node stays an image node");
+    };
+    assert_eq!(image.asset_id.to_string(), "asset_acme_logo");
+    assert_eq!(
+        logo.source_asset_id.as_ref().map(ToString::to_string),
+        Some("asset_acme_logo".to_owned())
+    );
+    let placement = logo.asset_placement.as_ref().expect("placement recorded");
+    assert_eq!(placement.fit, Some(lumen_core::ImageFitMode::Contain));
+    assert!(
+        derived.scene.assets.contains_key(&"asset_acme_logo".into()),
+        "asset record must be upserted into the derived scene"
+    );
+}
+
+#[test]
+fn g2_generated_qr_binds_to_the_url_qr_slot() {
+    let derived = derive_fixture("nominal");
+    assert!(!derived.has_errors(), "{:#?}", derived.diagnostics);
+
+    let qr_node = derived.scene.node(&"node_qr".into()).expect("qr node");
+    let lumen_core::NodeKind::Image(image) = &qr_node.kind else {
+        panic!("qr node stays an image node (no path_data on the record)");
+    };
+    assert_eq!(
+        image.asset_id.to_string(),
+        "asset_gen_bind_acme_dr_sharma_qr_landing"
+    );
+    assert!(derived.audit.iter().any(|entry| {
+        entry.kind == lumen_core::InstanceAuditKind::GeneratedAssetBound
+            && entry.message.contains("qr_landing")
+    }));
+}
+
+#[test]
+fn g2_missing_supplied_records_are_precise_errors() {
+    let scene = mailer_revision_scene();
+    let binding = binding_set("nominal");
+
+    // No logo record supplied.
+    let mut assets = lumen_core::DerivationAssets::default();
+    assets.generated.insert(
+        "qr_landing".to_owned(),
+        qr_record("asset_gen_bind_acme_dr_sharma_qr_landing"),
+    );
+    let derived = lumen_core::derive_instance(
+        &scene,
+        &binding,
+        &assets,
+        &lumen_core::DeriveOptions::default(),
+    );
+    assert!(
+        derived
+            .diagnostics
+            .iter()
+            .any(|d| d.code == "LUMG0301" && d.message.contains("asset_acme_logo")),
+        "missing bound asset record must be LUMG0301: {:#?}",
+        derived.diagnostics
+    );
+
+    // No generated record executed.
+    let mut assets = lumen_core::DerivationAssets::default();
+    assets
+        .records
+        .insert("asset_acme_logo".into(), logo_record("asset_acme_logo"));
+    let derived = lumen_core::derive_instance(
+        &scene,
+        &binding,
+        &assets,
+        &lumen_core::DeriveOptions::default(),
+    );
+    assert!(
+        derived
+            .diagnostics
+            .iter()
+            .any(|d| d.code == "LUMG0302" && d.message.contains("qr_landing")),
+        "missing generated record must be LUMG0302: {:#?}",
+        derived.diagnostics
+    );
+}
+
+#[test]
+fn g2_derived_scene_keeps_revision_provenance_and_validates() {
+    let derived = derive_fixture("nominal");
+    match &derived.scene.meta.status {
+        DocumentStatus::Finalized {
+            template_revision_id,
+        } => assert_eq!(template_revision_id.to_string(), "tmpl_mailer_v1"),
+        other => panic!("derived instance keeps finalized provenance, got {other:?}"),
+    }
+
+    let structural = lumen_core::validation::validate_scene(&derived.scene);
+    let errors: Vec<_> = structural
+        .iter()
+        .filter(|d| d.severity == lumen_core::DiagnosticSeverity::Error)
+        .collect();
+    assert!(
+        errors.is_empty(),
+        "derived scenes must pass full scene validation: {errors:#?}"
+    );
+
+    let geometry_present = derived
+        .scene
+        .nodes
+        .values()
+        .all(|node| node.computed.is_some());
+    assert!(
+        geometry_present,
+        "derivation must leave computed geometry on every node"
+    );
+}
+
+#[test]
+fn g2_invalid_binding_sets_refuse_derivation_without_mutation() {
+    let scene = mailer_revision_scene();
+    let mut binding = binding_set("nominal");
+    binding.values.remove("contact.full_name");
+    let assets = derivation_assets("asset_acme_logo", &binding.binding_set_id);
+    let derived = lumen_core::derive_instance(
+        &scene,
+        &binding,
+        &assets,
+        &lumen_core::DeriveOptions::default(),
+    );
+    assert!(derived.has_errors());
+    assert!(
+        derived.audit.is_empty(),
+        "refused derivations must not record applied actions"
+    );
+    assert_eq!(
+        derived.scene.to_canonical_json().unwrap(),
+        scene.to_canonical_json().unwrap(),
+        "refused derivations return the untouched snapshot"
+    );
 }
 
 #[test]
