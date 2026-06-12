@@ -1,6 +1,13 @@
 "use client";
 
-import { useEffect, useMemo, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type PointerEvent as ReactPointerEvent
+} from "react";
 import { Download, FileCheck2, History, PanelRightClose, RotateCcw, RotateCw, Send } from "lucide-react";
 import { AgentChatPanel, type AgentChatMessage } from "./AgentChatPanel";
 import { BrandKitPanel } from "./BrandKitPanel";
@@ -35,7 +42,13 @@ import type {
   ParentRef,
   Scene
 } from "@/engine/contracts";
-import { localEditorEngine } from "@/engine/editorEngine";
+import { createLocalEnginePort } from "@/engine/editorEngine";
+import {
+  loadWasmModule,
+  wasmCoreFlagEnabled,
+  WasmEngine,
+  type OptimisticEnginePort
+} from "@/engine/wasmEngine";
 import {
   createApiExportRunner,
   defaultEditorExportProfile,
@@ -77,6 +90,12 @@ export interface EditorAppProps {
   agentRunner?: EditorAgentRunner;
   exportRunner?: EditorExportRunner;
   preflightRunner?: EditorPreflightRunner;
+  /**
+   * Optimistic editing engine override. When omitted the editor uses the
+   * legacy local TS engine and, behind NEXT_PUBLIC_LUMEN_WASM_CORE,
+   * upgrades to the WASM core once the module loads.
+   */
+  optimisticEngine?: OptimisticEnginePort;
 }
 
 interface EditorHistoryFrame {
@@ -105,9 +124,20 @@ export default function EditorApp({
   brandCompatibilityRunner,
   agentRunner = defaultAgentRunner,
   exportRunner = defaultExportRunner,
-  preflightRunner = defaultPreflightRunner
+  preflightRunner = defaultPreflightRunner,
+  optimisticEngine
 }: EditorAppProps = {}) {
   const [scene, setScene] = useState<Scene>(initialScene);
+  // The optimistic engine owns local edit application (Track E). It starts
+  // as the legacy local TS engine and is upgraded to the WASM core behind
+  // the flag once the module loads; `replaceScene` keeps it in sync with
+  // every non-operation scene replacement (agent drafts, preflight, undo).
+  const engineRef = useRef<OptimisticEnginePort | null>(null);
+  if (engineRef.current === null) {
+    engineRef.current = optimisticEngine ?? createLocalEnginePort(initialScene);
+  }
+  const sceneRef = useRef<Scene>(scene);
+  sceneRef.current = scene;
   const [activePageId, setActivePageId] = useState<PageId | null>(() => firstPageId(initialScene));
   const [selectedNodeId, setSelectedNodeId] = useState<NodeId | null>(initialSelectedNodeId);
   const [diagnostics, setDiagnostics] = useState<Diagnostic[]>([]);
@@ -167,58 +197,92 @@ export default function EditorApp({
     }
   }, [activePageId, scene, selectedNodeId]);
 
+  // Upgrade the optimistic engine to the WASM core behind the flag. Load
+  // failure keeps the legacy engine (until W4 retires it); the W5 version
+  // handshake gates activation on matching API build info.
+  useEffect(() => {
+    if (optimisticEngine || !wasmCoreFlagEnabled()) {
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      const module = await loadWasmModule();
+      if (cancelled || !module) {
+        return;
+      }
+      try {
+        engineRef.current = new WasmEngine(module, sceneRef.current);
+      } catch {
+        // Keep the current engine; the editor stays functional.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [optimisticEngine]);
+
+  /**
+   * Replace the scene outside the operation path (agent drafts, preflight
+   * results, undo/redo frames). Keeps the optimistic engine's wasm-side
+   * state in sync — these are exactly the snapshot-in moments the boundary
+   * contract allows.
+   */
+  const replaceScene = (nextScene: Scene) => {
+    engineRef.current?.reset(nextScene);
+    setScene(nextScene);
+  };
+
   const applyOperations = (operations: Operation[], onAccepted?: (scene: Scene) => void) => {
     if (operations.length === 0) {
       return;
     }
-    setScene((currentScene) => {
-      let nextScene = currentScene;
-      for (const operation of operations) {
-        const result = localEditorEngine.applyOperation(nextScene, operation);
-        if (!result.accepted) {
-          setDiagnostics([
-            {
-              severity: "error",
-              phase: "operation",
-              code: "EDITOR_LOCAL_APPLY",
-              message: result.message ?? "Operation was rejected by the local editor engine",
-              subject: selectedNodeId
-                ? {
-                    kind: "node",
-                    id: selectedNodeId
-                  }
-                : null,
-              hint: "The editor will use checked core/WASM operation application once that workstream is available."
-            }
-          ]);
-          return currentScene;
+    const engine = engineRef.current;
+    if (!engine) {
+      return;
+    }
+    // The engine snapshot, not the React closure: correct even when two
+    // batches land in the same render cycle.
+    const previousScene = engine.scene;
+    const result = engine.applyOperations(operations);
+    if (!result.accepted) {
+      setDiagnostics([
+        {
+          severity: "error",
+          phase: "operation",
+          code: "EDITOR_LOCAL_APPLY",
+          message: result.message ?? "Operation was rejected by the editor engine",
+          subject: selectedNodeId
+            ? {
+                kind: "node",
+                id: selectedNodeId
+              }
+            : null,
+          hint:
+            engine.kind === "wasm"
+              ? "The operation was rejected by the lumen-core engine; the scene is unchanged."
+              : "The editor will use checked core/WASM operation application once that workstream is available."
         }
-        nextScene = result.scene;
-      }
+      ]);
+      return;
+    }
 
-      const lastAcceptedOperation = operations[operations.length - 1] ?? null;
-      if (lastAcceptedOperation) {
-        setLastOperation(lastAcceptedOperation);
-        setBrandCompatibilityReport(null);
-        setPreflightResult(null);
-        setExportResult(null);
-        setWorkspaceMode("canvas");
-        setUndoStack((stack) => [
-          ...stack.slice(-49),
-          {
-            scene: currentScene,
-            operations
-          }
-        ]);
-        setRedoStack([]);
-        setOperationHistory((history) => [...history, ...operations].slice(-50));
-        setDiagnostics([]);
-        onAccepted?.(nextScene);
-        return nextScene;
+    setLastOperation(operations[operations.length - 1] ?? null);
+    setBrandCompatibilityReport(null);
+    setPreflightResult(null);
+    setExportResult(null);
+    setWorkspaceMode("canvas");
+    setUndoStack((stack) => [
+      ...stack.slice(-49),
+      {
+        scene: previousScene,
+        operations
       }
-
-      return currentScene;
-    });
+    ]);
+    setRedoStack([]);
+    setOperationHistory((history) => [...history, ...operations].slice(-50));
+    setDiagnostics([]);
+    setScene(result.scene);
+    onAccepted?.(result.scene);
   };
 
   const applyOperation = (operation: Operation) => {
@@ -331,7 +395,7 @@ export default function EditorApp({
       }
     ]);
     setRedoStack([]);
-    setScene(draftScene);
+    replaceScene(draftScene);
     setActivePageId(draftPageId);
     setSelectedNodeId(null);
     setBrandCompatibilityReport(null);
@@ -361,7 +425,7 @@ export default function EditorApp({
       }
     ]);
     setOperationHistory(nextHistory);
-    setScene(undoFrame.scene);
+    replaceScene(undoFrame.scene);
     setLastOperation(nextHistory[nextHistory.length - 1] ?? null);
     setDiagnostics([]);
     setBrandCompatibilityReport(null);
@@ -385,7 +449,7 @@ export default function EditorApp({
       }
     ]);
     setOperationHistory((history) => [...history, ...redoFrame.operations].slice(-50));
-    setScene(redoFrame.scene);
+    replaceScene(redoFrame.scene);
     setLastOperation(redoFrame.operations[redoFrame.operations.length - 1] ?? null);
     setDiagnostics([]);
     setBrandCompatibilityReport(null);
@@ -485,7 +549,7 @@ export default function EditorApp({
       setExportResult(null);
       setWorkspaceMode("canvas");
       if (result.status === "applied" && result.scene) {
-        setScene(result.scene);
+        replaceScene(result.scene);
         setDiagnostics(
           result.diagnostics.length > 0
             ? result.diagnostics
@@ -890,7 +954,7 @@ export default function EditorApp({
       const preflightDiagnostics = exportPreflightDiagnostics(preflight);
       const sceneToExport = preflight.scene ?? sceneForExport;
       if (preflight.scene) {
-        setScene(preflight.scene);
+        replaceScene(preflight.scene);
       }
       setDiagnostics([
         {

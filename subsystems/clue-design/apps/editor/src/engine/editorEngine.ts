@@ -12,6 +12,7 @@ import type {
   ParentRef,
   Scene
 } from "./contracts";
+import type { EngineApplyOutcome, OptimisticEnginePort } from "./wasmEngine";
 
 export interface ApplyResult {
   scene: Scene;
@@ -41,6 +42,51 @@ export const localEditorEngine: EditorEnginePort = {
     }
   }
 };
+
+/**
+ * Legacy TS mirror wrapped in the optimistic-engine port the editor
+ * consumes. This adapter (and the mirror underneath it) retires at Track E
+ * W4; until then it is the flag-off path and the fallback when the WASM
+ * module is unavailable.
+ */
+export function createLocalEnginePort(initialScene: Scene): OptimisticEnginePort {
+  let scene = initialScene;
+  return {
+    kind: "local",
+    version: null,
+    get scene() {
+      return scene;
+    },
+    reset(nextScene: Scene) {
+      scene = nextScene;
+    },
+    applyOperations(operations: Operation[]): EngineApplyOutcome {
+      let nextScene = scene;
+      for (const operation of operations) {
+        const result = localEditorEngine.applyOperation(nextScene, operation);
+        if (!result.accepted) {
+          return {
+            accepted: false,
+            scene,
+            message: result.message,
+            diagnostics: [],
+            inverseOperations: null,
+            appliedOperations: 0
+          };
+        }
+        nextScene = result.scene;
+      }
+      scene = nextScene;
+      return {
+        accepted: true,
+        scene,
+        diagnostics: [],
+        inverseOperations: null,
+        appliedOperations: operations.length
+      };
+    }
+  };
+}
 
 function applyLocalOperation(scene: Scene, operation: Operation): void {
   if (scene.meta.status.kind === "finalized") {
