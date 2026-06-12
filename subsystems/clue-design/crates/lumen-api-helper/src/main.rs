@@ -4,20 +4,17 @@ use lumen_assets::{AssetStore, IngestRequest, LocalAssetStore, DEFAULT_MAX_BYTES
 use lumen_core::validation::validate_scene;
 use lumen_core::SharedTextMeasurer;
 use lumen_core::{
-    batch_scope_violations, build_archive_asset, build_clone_subtree, build_delete_export_profile,
-    build_hard_delete_asset, build_modify_operations, build_move_after, build_move_before,
-    build_move_to_parent, build_replace_node, build_safe_delete, build_safe_delete_page,
-    build_safe_delete_slot, compare_brand_kit_compatibility, compile_dsl_into_scene_with_session,
-    compile_styles_brand_kit, generate_brand_kit, layout_scene, platform_default_brand_kit,
-    preflight_scene, summarize_brand_kit_for_authoring, validate_brand_kit,
-    validate_brand_kit_product_ready, validate_scene_brand_governance, AssetDigest, AssetId,
-    AssetKind, AssetLicense, AssetLocation, AssetMediaMetadata, AssetProvenance, AssetRecord,
-    AssetSource, AssetStatus, AssetThumbnail, BrandGovernanceStrictness, BrandKit, BrandKitId,
-    BrandMode, BrandSeed, CloneSubtreeRequest, Diagnostic, DiagnosticSeverity, DocumentId,
-    DslCompileSessionSnapshot, EditBatch, EditPatch, EditScope, EditScopeMode, EditTargetRef,
-    ExportAdapter, ExportFormat, ExportProfile, ExportPurpose, ExportRequest, Medium, NodeId,
-    Operation, PageId, ParentRef, PdfIntent, PreflightOptions, RasterScale, ReplaceNodeRequest,
-    Scene, ScopeViolation, TemplateRevisionId,
+    batch_scope_violations, build_structured_edit_batch, compare_brand_kit_compatibility,
+    compile_dsl_into_scene_with_session, compile_styles_brand_kit, generate_brand_kit,
+    layout_scene, platform_default_brand_kit, preflight_scene, summarize_brand_kit_for_authoring,
+    validate_brand_kit, validate_brand_kit_product_ready, validate_scene_brand_governance,
+    AssetDigest, AssetId, AssetKind, AssetLicense, AssetLocation, AssetMediaMetadata,
+    AssetProvenance, AssetRecord, AssetSource, AssetStatus, AssetThumbnail,
+    BrandGovernanceStrictness, BrandKit, BrandKitId, BrandMode, BrandSeed, Diagnostic,
+    DiagnosticSeverity, DocumentId, DslCompileSessionSnapshot, EditScope, EditScopeMode,
+    ExportAdapter, ExportFormat, ExportProfile, ExportPurpose, ExportRequest, Medium, Operation,
+    PageId, PdfIntent, PreflightOptions, RasterScale, Scene, ScopeViolation,
+    StructuredEditInstruction, TemplateRevisionId,
 };
 use lumen_export::LumenExportAdapter;
 use lumen_skia::{FontManager, SkiaSceneRenderer, SkiaTextMeasurer};
@@ -227,49 +224,6 @@ struct PreflightSummary {
     layout_operations: Vec<Value>,
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
-#[serde(tag = "kind", rename_all = "snake_case")]
-#[allow(clippy::large_enum_variant)]
-enum StructuredEditInstruction {
-    Modify {
-        target: EditTargetRef,
-        patch: EditPatch,
-    },
-    Delete {
-        target: EditTargetRef,
-    },
-    MoveBefore {
-        node_id: NodeId,
-        anchor: NodeId,
-    },
-    MoveAfter {
-        node_id: NodeId,
-        anchor: NodeId,
-    },
-    MoveToParent {
-        node_id: NodeId,
-        parent: ParentRef,
-        index: usize,
-    },
-    CloneSubtree {
-        request: CloneSubtreeRequest,
-    },
-    ReplaceNode {
-        request: ReplaceNodeRequest,
-    },
-    ArchiveAsset {
-        asset_id: AssetId,
-    },
-    HardDeleteAsset {
-        asset_id: AssetId,
-    },
-    DeleteExportProfile {
-        name: String,
-        #[serde(default)]
-        replace_with: Option<String>,
-    },
-}
-
 fn main() {
     let start = Instant::now();
     let response = match read_request() {
@@ -390,7 +344,7 @@ fn request_log_fields(request: &CoreRequest) -> Value {
             "operation_count": operations.len(),
         }),
         CoreRequest::ApplyStructuredEdit { edit, .. } => json!({
-            "edit_kind": structured_edit_kind(edit),
+            "edit_kind": edit.kind(),
         }),
         CoreRequest::CompileDslIntoScene {
             source,
@@ -671,7 +625,7 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
         }
         CoreRequest::ApplyStructuredEdit { scene, edit, scope } => {
             let mut scene = parse_scene(scene)?;
-            let batch = structured_edit_batch(&scene, &edit).map_err(|error| CoreResponse {
+            let batch = build_structured_edit_batch(&scene, &edit).map_err(|error| CoreResponse {
                 ok: false,
                 scene: None,
                 diagnostics: vec![error.diagnostic()],
@@ -684,10 +638,7 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                 brand_compatibility: None,
                 geometry: None,
                 operations: None,
-                edit: Some(
-                    to_value(&edit)
-                        .unwrap_or_else(|_| json!({"kind": structured_edit_kind(&edit)})),
-                ),
+                edit: Some(to_value(&edit).unwrap_or_else(|_| json!({"kind": edit.kind()}))),
                 dsl: None,
                 export: None,
                 asset: None,
@@ -701,7 +652,7 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                 Ok(diagnostics) => diagnostics,
                 Err(mut response) => {
                     response.edit = Some(json!({
-                        "kind": structured_edit_kind(&edit),
+                        "kind": edit.kind(),
                         "touched_targets": batch.touched_targets,
                         "intent": batch.intent,
                     }));
@@ -727,7 +678,7 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                     geometry: None,
                     operations: Some(values(operations)?),
                     edit: Some(json!({
-                        "kind": structured_edit_kind(&edit),
+                        "kind": edit.kind(),
                         "touched_targets": batch.touched_targets,
                         "intent": batch.intent,
                         "checkpoint_label": batch.checkpoint_label,
@@ -752,7 +703,7 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                     geometry: None,
                     operations: Some(values(operations)?),
                     edit: Some(json!({
-                        "kind": structured_edit_kind(&edit),
+                        "kind": edit.kind(),
                         "touched_targets": batch.touched_targets,
                         "intent": batch.intent,
                         "checkpoint_label": batch.checkpoint_label,
@@ -1543,76 +1494,6 @@ fn parse_operations(values: Vec<Value>) -> Result<Vec<Operation>, CoreError> {
                 .map_err(|error| core_error("helper.operation", error.to_string()))
         })
         .collect()
-}
-
-fn structured_edit_kind(edit: &StructuredEditInstruction) -> &'static str {
-    match edit {
-        StructuredEditInstruction::Modify { .. } => "modify",
-        StructuredEditInstruction::Delete { .. } => "delete",
-        StructuredEditInstruction::MoveBefore { .. } => "move_before",
-        StructuredEditInstruction::MoveAfter { .. } => "move_after",
-        StructuredEditInstruction::MoveToParent { .. } => "move_to_parent",
-        StructuredEditInstruction::CloneSubtree { .. } => "clone_subtree",
-        StructuredEditInstruction::ReplaceNode { .. } => "replace_node",
-        StructuredEditInstruction::ArchiveAsset { .. } => "archive_asset",
-        StructuredEditInstruction::HardDeleteAsset { .. } => "hard_delete_asset",
-        StructuredEditInstruction::DeleteExportProfile { .. } => "delete_export_profile",
-    }
-}
-
-fn structured_edit_batch(
-    scene: &Scene,
-    edit: &StructuredEditInstruction,
-) -> Result<EditBatch, lumen_core::EditError> {
-    match edit {
-        StructuredEditInstruction::Modify { target, patch } => {
-            build_modify_operations(scene, target.clone(), patch.clone())
-        }
-        StructuredEditInstruction::Delete { target } => match target {
-            EditTargetRef::Node(node_id) => build_safe_delete(scene, node_id.clone()),
-            EditTargetRef::Page(page_id) => build_safe_delete_page(scene, page_id.clone()),
-            EditTargetRef::Slot(_) | EditTargetRef::SlotKey(_) => {
-                build_safe_delete_slot(scene, target.clone())
-            }
-            // Archive-first asset lifecycle: plain delete archives; use the
-            // hard_delete_asset instruction for an unreferenced hard delete.
-            EditTargetRef::Asset(asset_id) => build_archive_asset(scene, asset_id.clone()),
-            EditTargetRef::ExportProfile(name) => {
-                build_delete_export_profile(scene, name.clone(), None)
-            }
-            EditTargetRef::Document => Err(lumen_core::EditError::new(
-                lumen_core::EditErrorKind::UnsupportedTarget,
-                "the document itself cannot be deleted through structured edits",
-            )
-            .with_target(target.clone())),
-        },
-        StructuredEditInstruction::ArchiveAsset { asset_id } => {
-            build_archive_asset(scene, asset_id.clone())
-        }
-        StructuredEditInstruction::HardDeleteAsset { asset_id } => {
-            build_hard_delete_asset(scene, asset_id.clone())
-        }
-        StructuredEditInstruction::DeleteExportProfile { name, replace_with } => {
-            build_delete_export_profile(scene, name.clone(), replace_with.clone())
-        }
-        StructuredEditInstruction::MoveBefore { node_id, anchor } => {
-            build_move_before(scene, node_id.clone(), anchor.clone())
-        }
-        StructuredEditInstruction::MoveAfter { node_id, anchor } => {
-            build_move_after(scene, node_id.clone(), anchor.clone())
-        }
-        StructuredEditInstruction::MoveToParent {
-            node_id,
-            parent,
-            index,
-        } => build_move_to_parent(scene, node_id.clone(), parent.clone(), *index),
-        StructuredEditInstruction::CloneSubtree { request } => {
-            build_clone_subtree(scene, request.clone())
-        }
-        StructuredEditInstruction::ReplaceNode { request } => {
-            build_replace_node(scene, request.clone())
-        }
-    }
 }
 
 fn values<T: Serialize>(items: Vec<T>) -> Result<Vec<Value>, CoreError> {

@@ -64,11 +64,11 @@ pub use editing::{
     build_hard_delete_asset, build_modify_operations, build_move_after, build_move_before,
     build_move_to_parent, build_node_modify, build_page_modify, build_replace_node,
     build_safe_delete, build_safe_delete_page, build_safe_delete_slot, build_slot_modify,
-    build_ungroup, resolve_edit_target, AssetEditPatch, CloneLineage, CloneSlotPolicy,
-    CloneSubtreeRequest, ComputedClonePolicy, EditBatch, EditError, EditErrorKind, EditPatch,
-    EditScope, EditScopeMode, EditTargetRef, ExportProfileEditPatch, NodeEditPatch, PageEditPatch,
-    RelativePlacement, ReplaceNodeRequest, ReplaceSlotPolicy, ResolvedEditTarget, ScopeViolation,
-    SlotEditPatch, StackEntryEdit, TextEditPatch,
+    build_structured_edit_batch, build_ungroup, resolve_edit_target, AssetEditPatch, CloneLineage,
+    CloneSlotPolicy, CloneSubtreeRequest, ComputedClonePolicy, EditBatch, EditError, EditErrorKind,
+    EditPatch, EditScope, EditScopeMode, EditTargetRef, ExportProfileEditPatch, NodeEditPatch,
+    PageEditPatch, RelativePlacement, ReplaceNodeRequest, ReplaceSlotPolicy, ResolvedEditTarget,
+    ScopeViolation, SlotEditPatch, StackEntryEdit, StructuredEditInstruction, TextEditPatch,
 };
 pub use export_contract::{
     ExportAdapter, ExportArtifact, ExportError, ExportFormat, ExportProfile, ExportPurpose,
