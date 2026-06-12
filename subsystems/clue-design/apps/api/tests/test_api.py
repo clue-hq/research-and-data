@@ -267,6 +267,24 @@ def brand_seed(version: int = 2) -> dict:
     }
 
 
+def test_build_info_reports_engine_handshake(client: TestClient) -> None:
+    """Track E W5: the editor compares this payload against the WASM
+    module's version() and downgrades to server-only mode on mismatch."""
+    response = client.get("/build-info")
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["schema_version"] == 1
+    build_info = payload["build_info"]
+    assert build_info["schema_version"] == 1
+    assert isinstance(build_info["engine_commit"], str)
+    assert build_info["engine_commit"]
+
+    # Cached per process: a second call returns the identical payload.
+    second = client.get("/build-info")
+    assert second.status_code == 200
+    assert second.json() == payload
+
+
 def test_create_and_load_document_preserves_canonical_scene(client: TestClient) -> None:
     scene = minimal_scene()
     document = create_document(client, scene)

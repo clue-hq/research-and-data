@@ -1,13 +1,15 @@
 import React from "react";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { beforeAll, describe, expect, it, vi } from "vitest";
 import { minimalScene } from "@/fixtures/minimalScene";
 import type { BrandKitSummary, Scene } from "@/engine/contracts";
 import type { EditorAgentRunner } from "@/engine/agentRunner";
 import type { EditorExportRunner } from "@/engine/exportRunner";
 import type { EditorPreflightRunner } from "@/engine/preflightRunner";
 import { updateDocumentTitle } from "@/engine/operations";
-import EditorApp from "../EditorApp";
+import { WasmEngine, type WasmModule } from "@/engine/wasmEngine";
+import { loadWasmModuleFromDisk, wasmArtifactPresent } from "../../test/wasmModule";
+import EditorApp, { type EditorAppProps } from "../EditorApp";
 
 vi.mock("../canvas/CanvasSurface", () => ({
   CanvasSurface: ({
@@ -39,10 +41,29 @@ vi.mock("../canvas/CanvasSurface", () => ({
     })
 }));
 
-describe("EditorApp", () => {
+// W4: EditorApp requires the WASM engine for local editing (the legacy TS
+// mirror is gone). Every render gets a real engine over the same initial
+// scene; the suite skips with a notice when the artifact is not built
+// (`npm run build:wasm`).
+let wasmModule: WasmModule;
+
+function TestEditorApp(props: EditorAppProps) {
+  const engine = React.useMemo(
+    () => new WasmEngine(wasmModule, props.initialScene ?? minimalScene),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    []
+  );
+  return <EditorApp {...props} optimisticEngine={engine} />;
+}
+
+describe.skipIf(!wasmArtifactPresent)("EditorApp", () => {
+  beforeAll(async () => {
+    wasmModule = await loadWasmModuleFromDisk();
+  });
+
   it("clears stale node selection when switching pages", () => {
     const scene = twoPageScene();
-    render(<EditorApp initialScene={scene} initialSelectedNodeId="node_contact_name" />);
+    render(<TestEditorApp initialScene={scene} initialSelectedNodeId="node_contact_name" />);
 
     expect(screen.getByRole("heading", { name: "Contact Name" })).toBeInTheDocument();
     expect(screen.getByTestId("canvas-selection")).toHaveAttribute("data-selected-node", "node_contact_name");
@@ -55,7 +76,7 @@ describe("EditorApp", () => {
   });
 
   it("edits custom page dimensions through the canonical scene model", () => {
-    render(<EditorApp initialScene={twoPageScene()} initialSelectedNodeId={null} />);
+    render(<TestEditorApp initialScene={twoPageScene()} initialSelectedNodeId={null} />);
 
     fireEvent.change(screen.getByLabelText("W"), {
       target: { value: "1200" }
@@ -78,7 +99,7 @@ describe("EditorApp", () => {
   });
 
   it("edits document metadata through canonical document operations", () => {
-    render(<EditorApp initialScene={twoPageScene()} initialSelectedNodeId={null} />);
+    render(<TestEditorApp initialScene={twoPageScene()} initialSelectedNodeId={null} />);
 
     fireEvent.change(screen.getByLabelText("Document Title"), {
       target: { value: "Neurosurgery LinkedIn Ad" }
@@ -101,7 +122,7 @@ describe("EditorApp", () => {
     });
     const preflightRunner = successfulPreflightRunner();
     render(
-      <EditorApp
+      <TestEditorApp
         initialScene={twoPageScene()}
         initialSelectedNodeId={null}
         exportRunner={exportRunner}
@@ -163,7 +184,7 @@ describe("EditorApp", () => {
     });
 
     render(
-      <EditorApp
+      <TestEditorApp
         documentId="doc_editor_saved"
         initialScene={twoPageScene()}
         initialSelectedNodeId={null}
@@ -213,7 +234,7 @@ describe("EditorApp", () => {
     });
 
     render(
-      <EditorApp
+      <TestEditorApp
         initialScene={twoPageScene()}
         initialSelectedNodeId={null}
         exportRunner={exportRunner}
@@ -260,7 +281,7 @@ describe("EditorApp", () => {
     });
 
     render(
-      <EditorApp
+      <TestEditorApp
         initialScene={scene}
         initialSelectedNodeId={null}
         exportRunner={exportRunner}
@@ -336,7 +357,7 @@ describe("EditorApp", () => {
       preset: "custom",
       orientation: "portrait"
     };
-    render(<EditorApp initialScene={scene} initialSelectedNodeId="node_contact_name" />);
+    render(<TestEditorApp initialScene={scene} initialSelectedNodeId="node_contact_name" />);
 
     fireEvent.click(screen.getByText("Second Page"));
     expect(screen.getByTestId("canvas-selection")).toHaveAttribute("data-page-width", "600");
@@ -352,7 +373,7 @@ describe("EditorApp", () => {
   });
 
   it("previews slot fixture content by applying canonical text node operations", () => {
-    render(<EditorApp initialScene={twoPageScene()} initialSelectedNodeId="node_contact_name" />);
+    render(<TestEditorApp initialScene={twoPageScene()} initialSelectedNodeId="node_contact_name" />);
 
     fireEvent.click(screen.getAllByRole("button", { name: "Apply to text node" })[1]);
 
@@ -362,7 +383,7 @@ describe("EditorApp", () => {
   });
 
   it("applies multi-node slot previews as one undoable editor action", () => {
-    render(<EditorApp initialScene={sceneWithMultiBoundTextSlot()} initialSelectedNodeId="node_contact_name" />);
+    render(<TestEditorApp initialScene={sceneWithMultiBoundTextSlot()} initialSelectedNodeId="node_contact_name" />);
 
     fireEvent.click(screen.getAllByRole("button", { name: "Apply to text nodes" })[1]);
 
@@ -415,7 +436,7 @@ describe("EditorApp", () => {
       }
     ];
 
-    render(<EditorApp initialScene={scene} initialSelectedNodeId={null} />);
+    render(<TestEditorApp initialScene={scene} initialSelectedNodeId={null} />);
 
     expect(screen.getByText("No local diagnostics.")).toBeInTheDocument();
     expect(screen.getByText("Focused diagnostics")).toBeInTheDocument();
@@ -460,7 +481,7 @@ describe("EditorApp", () => {
     });
 
     render(
-      <EditorApp
+      <TestEditorApp
         initialScene={twoPageScene()}
         initialSelectedNodeId="node_contact_name"
         preflightRunner={preflightRunner}
@@ -528,7 +549,7 @@ describe("EditorApp", () => {
     const preflightRunner = successfulPreflightRunner();
 
     render(
-      <EditorApp
+      <TestEditorApp
         documentId="doc_agent_editor"
         initialScene={twoPageScene()}
         initialSelectedNodeId="node_contact_name"
@@ -623,7 +644,7 @@ describe("EditorApp", () => {
     });
 
     render(
-      <EditorApp
+      <TestEditorApp
         initialScene={twoPageScene()}
         initialSelectedNodeId={null}
         agentRunner={agentRunner}
@@ -685,7 +706,7 @@ describe("EditorApp", () => {
     });
 
     render(
-      <EditorApp
+      <TestEditorApp
         initialScene={twoPageScene()}
         initialSelectedNodeId={null}
         agentRunner={agentRunner}
@@ -713,7 +734,7 @@ describe("EditorApp", () => {
   });
 
   it("swaps the inspector for a resizable agent chat right sidebar", async () => {
-    render(<EditorApp initialScene={twoPageScene()} initialSelectedNodeId={null} />);
+    render(<TestEditorApp initialScene={twoPageScene()} initialSelectedNodeId={null} />);
 
     expect(screen.getByRole("complementary", { name: "Inspector sidebar" })).toBeInTheDocument();
     expect(screen.queryByLabelText("Message the agent")).not.toBeInTheDocument();
@@ -741,7 +762,7 @@ describe("EditorApp", () => {
   });
 
   it("undoes and redoes accepted editor operations through scene snapshots", () => {
-    render(<EditorApp initialScene={twoPageScene()} initialSelectedNodeId={null} />);
+    render(<TestEditorApp initialScene={twoPageScene()} initialSelectedNodeId={null} />);
 
     expect(screen.getByRole("button", { name: /^Undo$/i })).toBeDisabled();
     expect(screen.getByRole("button", { name: /^Redo$/i })).toBeDisabled();
@@ -767,7 +788,7 @@ describe("EditorApp", () => {
   });
 
   it("supports keyboard undo and redo without requiring a selected node", () => {
-    render(<EditorApp initialScene={twoPageScene()} initialSelectedNodeId={null} />);
+    render(<TestEditorApp initialScene={twoPageScene()} initialSelectedNodeId={null} />);
 
     fireEvent.change(screen.getByLabelText("W"), {
       target: { value: "1200" }
@@ -789,7 +810,7 @@ describe("EditorApp", () => {
   });
 
   it("clears selection with Escape without mutating the scene", () => {
-    render(<EditorApp initialScene={sceneWithTwoLayerNodes()} initialSelectedNodeId="node_contact_name" />);
+    render(<TestEditorApp initialScene={sceneWithTwoLayerNodes()} initialSelectedNodeId="node_contact_name" />);
 
     expect(screen.getByTestId("canvas-selection")).toHaveAttribute("data-selected-node", "node_contact_name");
     expect(screen.getByRole("heading", { name: "Contact Name" })).toBeInTheDocument();
@@ -802,7 +823,7 @@ describe("EditorApp", () => {
   });
 
   it("nudges and deletes the selected node with keyboard shortcuts", () => {
-    render(<EditorApp initialScene={sceneWithTwoLayerNodes()} initialSelectedNodeId="node_contact_name" />);
+    render(<TestEditorApp initialScene={sceneWithTwoLayerNodes()} initialSelectedNodeId="node_contact_name" />);
 
     expect(screen.getByLabelText("X")).toHaveValue(24);
     expect(screen.getByLabelText("Y")).toHaveValue(40);
@@ -822,7 +843,7 @@ describe("EditorApp", () => {
   });
 
   it("deletes the selected node from the inspector and clears stale selection", () => {
-    render(<EditorApp initialScene={sceneWithTwoLayerNodes()} initialSelectedNodeId="node_contact_name" />);
+    render(<TestEditorApp initialScene={sceneWithTwoLayerNodes()} initialSelectedNodeId="node_contact_name" />);
 
     expect(screen.getByRole("heading", { name: "Contact Name" })).toBeInTheDocument();
 
@@ -843,7 +864,7 @@ describe("EditorApp", () => {
       preset: "custom",
       orientation: "landscape"
     };
-    render(<EditorApp initialScene={scene} initialSelectedNodeId={null} />);
+    render(<TestEditorApp initialScene={scene} initialSelectedNodeId={null} />);
 
     fireEvent.change(screen.getByLabelText("Safe Margin"), {
       target: { value: "72" }
@@ -859,7 +880,7 @@ describe("EditorApp", () => {
   });
 
   it("selects and reorders layers through move_node operations", () => {
-    render(<EditorApp initialScene={sceneWithTwoLayerNodes()} initialSelectedNodeId={null} />);
+    render(<TestEditorApp initialScene={sceneWithTwoLayerNodes()} initialSelectedNodeId={null} />);
 
     expect(screen.getByTestId("canvas-selection")).toHaveAttribute(
       "data-page-children",
@@ -883,7 +904,7 @@ describe("EditorApp", () => {
     const scene = sceneWithTwoLayerNodes();
     scene.nodes.node_contact_name.locked = true;
 
-    render(<EditorApp initialScene={scene} initialSelectedNodeId={null} />);
+    render(<TestEditorApp initialScene={scene} initialSelectedNodeId={null} />);
 
     expect(screen.getByText(/text · locked/)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Contact Name cannot move down/i })).toBeDisabled();
@@ -893,7 +914,7 @@ describe("EditorApp", () => {
   it("labels children ordered inside auto-layout containers", () => {
     const scene = sceneWithAutoLayoutLayers();
 
-    render(<EditorApp initialScene={scene} initialSelectedNodeId={null} />);
+    render(<TestEditorApp initialScene={scene} initialSelectedNodeId={null} />);
 
     expect(screen.getByText(/text · layout order/)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Move Contact Name down/i })).toBeEnabled();
@@ -901,7 +922,7 @@ describe("EditorApp", () => {
 
   it("attaches a Brand Kit through an update_document operation", () => {
     render(
-      <EditorApp
+      <TestEditorApp
         initialScene={twoPageScene()}
         initialSelectedNodeId={null}
         initialAvailableBrandKits={[brandKitSummary()]}
@@ -981,7 +1002,7 @@ describe("EditorApp", () => {
     const preflightRunner = successfulPreflightRunner(preflightedScene);
 
     render(
-      <EditorApp
+      <TestEditorApp
         initialScene={twoPageScene()}
         initialSelectedNodeId={null}
         exportRunner={exportRunner}
@@ -1050,7 +1071,7 @@ describe("EditorApp", () => {
     const preflightRunner = successfulPreflightRunner(scene);
 
     render(
-      <EditorApp
+      <TestEditorApp
         initialScene={scene}
         initialSelectedNodeId={null}
         exportRunner={exportRunner}
@@ -1103,7 +1124,7 @@ describe("EditorApp", () => {
       };
     }
     render(
-      <EditorApp
+      <TestEditorApp
         initialScene={scene}
         initialSelectedNodeId={null}
         exportRunner={exportRunner}
@@ -1170,7 +1191,7 @@ describe("EditorApp", () => {
       height: 532
     };
 
-    render(<EditorApp initialScene={scene} initialSelectedNodeId={null} />);
+    render(<TestEditorApp initialScene={scene} initialSelectedNodeId={null} />);
 
     fireEvent.change(screen.getByLabelText("Profile"), {
       target: { value: "print_pdf" }
@@ -1194,7 +1215,7 @@ describe("EditorApp", () => {
     const scene = twoPageScene();
     scene.export_profiles = [];
     render(
-      <EditorApp
+      <TestEditorApp
         initialScene={scene}
         initialSelectedNodeId={null}
         exportRunner={exportRunner}
@@ -1255,7 +1276,7 @@ describe("EditorApp", () => {
       orientation: "portrait"
     };
 
-    render(<EditorApp initialScene={scene} initialSelectedNodeId={null} />);
+    render(<TestEditorApp initialScene={scene} initialSelectedNodeId={null} />);
 
     fireEvent.change(screen.getByLabelText("Profile"), {
       target: { value: "high_res_png" }
@@ -1325,7 +1346,7 @@ describe("EditorApp", () => {
     });
 
     render(
-      <EditorApp
+      <TestEditorApp
         initialScene={twoPageScene()}
         initialSelectedNodeId={null}
         exportRunner={exportRunner}
@@ -1412,7 +1433,7 @@ describe("EditorApp", () => {
     );
 
     render(
-      <EditorApp
+      <TestEditorApp
         initialScene={twoPageScene()}
         initialSelectedNodeId={null}
         exportRunner={exportRunner}
@@ -1483,7 +1504,7 @@ describe("EditorApp", () => {
       }
     });
 
-    render(<EditorApp initialScene={scene} initialSelectedNodeId="node_contact_name" preflightRunner={preflightRunner} />);
+    render(<TestEditorApp initialScene={scene} initialSelectedNodeId="node_contact_name" preflightRunner={preflightRunner} />);
 
     fireEvent.click(screen.getByRole("button", { name: /^Validate$/i }));
 
@@ -1528,7 +1549,7 @@ describe("EditorApp", () => {
       }
     });
 
-    render(<EditorApp initialScene={twoPageScene()} initialSelectedNodeId={null} preflightRunner={preflightRunner} />);
+    render(<TestEditorApp initialScene={twoPageScene()} initialSelectedNodeId={null} preflightRunner={preflightRunner} />);
 
     fireEvent.click(screen.getByRole("button", { name: /^Validate$/i }));
 
@@ -1578,7 +1599,7 @@ describe("EditorApp", () => {
       }
     });
 
-    render(<EditorApp initialScene={scene} initialSelectedNodeId="node_contact_name" preflightRunner={preflightRunner} />);
+    render(<TestEditorApp initialScene={scene} initialSelectedNodeId="node_contact_name" preflightRunner={preflightRunner} />);
 
     fireEvent.click(screen.getByRole("button", { name: /^Validate$/i }));
 
@@ -1625,7 +1646,7 @@ describe("EditorApp", () => {
       }
     });
 
-    render(<EditorApp initialScene={scene} initialSelectedNodeId={null} preflightRunner={preflightRunner} />);
+    render(<TestEditorApp initialScene={scene} initialSelectedNodeId={null} preflightRunner={preflightRunner} />);
 
     fireEvent.click(screen.getByRole("button", { name: /^Validate$/i }));
 
@@ -1667,7 +1688,7 @@ describe("EditorApp", () => {
     });
 
     render(
-      <EditorApp
+      <TestEditorApp
         initialScene={twoPageScene()}
         initialSelectedNodeId={null}
         exportRunner={exportRunner}
@@ -1696,7 +1717,7 @@ describe("EditorApp", () => {
   it("saves and removes selected export profiles through canonical operations", () => {
     const scene = twoPageScene();
     scene.export_profiles = [];
-    render(<EditorApp initialScene={scene} initialSelectedNodeId={null} />);
+    render(<TestEditorApp initialScene={scene} initialSelectedNodeId={null} />);
 
     expect(screen.getByText("0 document export profiles saved.")).toBeInTheDocument();
 
@@ -1737,7 +1758,7 @@ describe("EditorApp", () => {
     });
 
     render(
-      <EditorApp
+      <TestEditorApp
         initialScene={scene}
         initialSelectedNodeId={null}
         initialAvailableBrandKits={[brandKit]}
@@ -1808,7 +1829,7 @@ describe("EditorApp", () => {
     });
 
     render(
-      <EditorApp
+      <TestEditorApp
         initialScene={scene}
         initialSelectedNodeId={null}
         initialAvailableBrandKits={[currentBrandKit, latestBrandKit]}

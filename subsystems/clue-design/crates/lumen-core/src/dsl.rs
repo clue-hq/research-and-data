@@ -5777,7 +5777,10 @@ fn unquote_lossy(source: &str) -> String {
     unquote(source, 1, 1).unwrap_or_else(|_| source.trim_matches('"').to_owned())
 }
 
-fn slot_id_for_key(key: &SlotKey) -> SlotId {
+/// Deterministic slot id derivation (slug + FNV-1a 64). Public because
+/// binding surfaces (lumen-wasm) expose it so editor-side mirrors can be
+/// pinned against the engine instead of drifting silently.
+pub fn slot_id_for_key(key: &SlotKey) -> SlotId {
     SlotId::from(format!(
         "slot_{}_{:016x}",
         stable_slug(key.as_str()),

@@ -1,6 +1,13 @@
 "use client";
 
-import { useEffect, useMemo, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type PointerEvent as ReactPointerEvent
+} from "react";
 import { Download, FileCheck2, History, PanelRightClose, RotateCcw, RotateCw, Send } from "lucide-react";
 import { AgentChatPanel, type AgentChatMessage } from "./AgentChatPanel";
 import { BrandKitPanel } from "./BrandKitPanel";
@@ -35,7 +42,17 @@ import type {
   ParentRef,
   Scene
 } from "@/engine/contracts";
-import { localEditorEngine } from "@/engine/editorEngine";
+import {
+  createEditQueue,
+  type EditQueuePort,
+  type ReconcileEvent
+} from "@/engine/editQueue";
+import {
+  activateWasmCore,
+  wasmCoreFlagEnabled,
+  WasmEngine,
+  type OptimisticEnginePort
+} from "@/engine/wasmEngine";
 import {
   createApiExportRunner,
   defaultEditorExportProfile,
@@ -77,7 +94,33 @@ export interface EditorAppProps {
   agentRunner?: EditorAgentRunner;
   exportRunner?: EditorExportRunner;
   preflightRunner?: EditorPreflightRunner;
+  /**
+   * Optimistic editing engine override. When omitted, the editor loads
+   * the WASM core behind NEXT_PUBLIC_LUMEN_WASM_CORE; until it is active
+   * (flag off, module loading/failed, or version mismatch) the editor is
+   * in server-only mode — local optimistic editing is unavailable. The
+   * legacy TS mirror was retired at Track E W4.
+   */
+  optimisticEngine?: OptimisticEnginePort;
+  /**
+   * Edit-persistence queue factory override (tests). The default posts
+   * operation batches to /documents/{id}/operations with base_version and
+   * reconciles the server scene at drain.
+   */
+  editQueueFactory?: EditQueueFactory;
 }
+
+export type EditQueueFactory = (options: {
+  documentId: string;
+  localScene: () => Scene;
+  onReconcile: (event: ReconcileEvent) => void;
+}) => EditQueuePort;
+
+const defaultEditQueueFactory: EditQueueFactory = (options) =>
+  createEditQueue({
+    apiBaseUrl: process.env.NEXT_PUBLIC_LUMEN_API_BASE_URL ?? "http://localhost:8000",
+    ...options
+  });
 
 interface EditorHistoryFrame {
   scene: Scene;
@@ -105,9 +148,19 @@ export default function EditorApp({
   brandCompatibilityRunner,
   agentRunner = defaultAgentRunner,
   exportRunner = defaultExportRunner,
-  preflightRunner = defaultPreflightRunner
+  preflightRunner = defaultPreflightRunner,
+  optimisticEngine,
+  editQueueFactory = defaultEditQueueFactory
 }: EditorAppProps = {}) {
   const [scene, setScene] = useState<Scene>(initialScene);
+  // The optimistic engine owns local edit application (Track E): the WASM
+  // core, loaded behind the flag (or injected by tests). Until it is
+  // active the editor is in server-only mode. `replaceScene` keeps the
+  // engine in sync with every non-operation scene replacement (agent
+  // drafts, preflight, undo frames).
+  const engineRef = useRef<OptimisticEnginePort | null>(optimisticEngine ?? null);
+  const sceneRef = useRef<Scene>(scene);
+  sceneRef.current = scene;
   const [activePageId, setActivePageId] = useState<PageId | null>(() => firstPageId(initialScene));
   const [selectedNodeId, setSelectedNodeId] = useState<NodeId | null>(initialSelectedNodeId);
   const [diagnostics, setDiagnostics] = useState<Diagnostic[]>([]);
@@ -167,58 +220,146 @@ export default function EditorApp({
     }
   }, [activePageId, scene, selectedNodeId]);
 
+  // Activate the WASM core behind the flag, gated on the W5 version
+  // handshake: the module's { schema_version, engine_commit } must match
+  // the API's /build-info exactly — never mixed-version optimistic
+  // editing. Any failure (module missing, API unreachable, mismatch)
+  // leaves the editor in server-only mode, which stays functional: agent,
+  // preflight, export, and document history all run server-side.
+  useEffect(() => {
+    if (optimisticEngine || !wasmCoreFlagEnabled()) {
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      const activation = await activateWasmCore();
+      if (cancelled) {
+        return;
+      }
+      if (activation.status !== "active") {
+        if (activation.reason === "version_mismatch" || activation.reason === "handshake_failed") {
+          setDiagnostics([
+            {
+              severity: "warning",
+              phase: "operation",
+              code: "EDITOR_WASM_VERSION_MISMATCH",
+              message: `In-browser engine disabled: ${activation.detail}`,
+              subject: { kind: "document" },
+              hint: "The editor is in server-only mode until the editor and API run the same engine build."
+            }
+          ]);
+        }
+        return;
+      }
+      try {
+        engineRef.current = new WasmEngine(activation.module, sceneRef.current);
+      } catch {
+        // Server-only mode; the editor stays functional.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [optimisticEngine]);
+
+  /**
+   * Replace the scene outside the operation path (agent drafts, preflight
+   * results, undo/redo frames). Keeps the optimistic engine's wasm-side
+   * state in sync — these are exactly the snapshot-in moments the boundary
+   * contract allows.
+   */
+  const replaceScene = (nextScene: Scene) => {
+    engineRef.current?.reset(nextScene);
+    setScene(nextScene);
+  };
+
+  // W3 optimistic pipeline: locally-applied batches persist to the
+  // document API in order; the server reconciles at drain. Divergence is a
+  // bug signal — the server scene replaces the local one and a diagnostic
+  // surfaces.
+  const editQueueRef = useRef<EditQueuePort | null>(null);
+  const enqueueForPersistence = (operations: Operation[]) => {
+    if (!documentId) {
+      return;
+    }
+    const engine = engineRef.current;
+    if (!engine || engine.kind !== "wasm") {
+      return;
+    }
+    editQueueRef.current ??= editQueueFactory({
+      documentId,
+      localScene: () => engineRef.current?.scene ?? sceneRef.current,
+      onReconcile: (event) => {
+        if (event.serverScene) {
+          replaceScene(event.serverScene);
+        }
+        setDiagnostics([event.diagnostic]);
+      }
+    });
+    editQueueRef.current.enqueueOperations(operations);
+  };
+
   const applyOperations = (operations: Operation[], onAccepted?: (scene: Scene) => void) => {
     if (operations.length === 0) {
       return;
     }
-    setScene((currentScene) => {
-      let nextScene = currentScene;
-      for (const operation of operations) {
-        const result = localEditorEngine.applyOperation(nextScene, operation);
-        if (!result.accepted) {
-          setDiagnostics([
-            {
-              severity: "error",
-              phase: "operation",
-              code: "EDITOR_LOCAL_APPLY",
-              message: result.message ?? "Operation was rejected by the local editor engine",
-              subject: selectedNodeId
-                ? {
-                    kind: "node",
-                    id: selectedNodeId
-                  }
-                : null,
-              hint: "The editor will use checked core/WASM operation application once that workstream is available."
-            }
-          ]);
-          return currentScene;
+    const engine = engineRef.current;
+    if (!engine) {
+      setDiagnostics([
+        {
+          severity: "warning",
+          phase: "operation",
+          code: "EDITOR_SERVER_ONLY_MODE",
+          message: "Local editing requires the WASM engine; the editor is in server-only mode.",
+          subject: { kind: "document" },
+          hint: wasmCoreFlagEnabled()
+            ? "The engine module is unavailable (still loading, failed to load, or version mismatch with the API). Reload the editor or check the /wasm assets."
+            : "Enable NEXT_PUBLIC_LUMEN_WASM_CORE to activate in-browser optimistic editing."
         }
-        nextScene = result.scene;
-      }
+      ]);
+      return;
+    }
+    // The engine snapshot, not the React closure: correct even when two
+    // batches land in the same render cycle.
+    const previousScene = engine.scene;
+    const result = engine.applyOperations(operations);
+    if (!result.accepted) {
+      setDiagnostics([
+        {
+          severity: "error",
+          phase: "operation",
+          code: "EDITOR_LOCAL_APPLY",
+          message: result.message ?? "Operation was rejected by the editor engine",
+          subject: selectedNodeId
+            ? {
+                kind: "node",
+                id: selectedNodeId
+              }
+            : null,
+          hint: "The operation was rejected by the lumen-core engine; the scene is unchanged."
+        }
+      ]);
+      return;
+    }
 
-      const lastAcceptedOperation = operations[operations.length - 1] ?? null;
-      if (lastAcceptedOperation) {
-        setLastOperation(lastAcceptedOperation);
-        setBrandCompatibilityReport(null);
-        setPreflightResult(null);
-        setExportResult(null);
-        setWorkspaceMode("canvas");
-        setUndoStack((stack) => [
-          ...stack.slice(-49),
-          {
-            scene: currentScene,
-            operations
-          }
-        ]);
-        setRedoStack([]);
-        setOperationHistory((history) => [...history, ...operations].slice(-50));
-        setDiagnostics([]);
-        onAccepted?.(nextScene);
-        return nextScene;
+    setLastOperation(operations[operations.length - 1] ?? null);
+    setBrandCompatibilityReport(null);
+    setPreflightResult(null);
+    setExportResult(null);
+    setWorkspaceMode("canvas");
+    setUndoStack((stack) => [
+      ...stack.slice(-49),
+      {
+        scene: previousScene,
+        operations
       }
-
-      return currentScene;
-    });
+    ]);
+    setRedoStack([]);
+    setOperationHistory((history) => [...history, ...operations].slice(-50));
+    setDiagnostics([]);
+    setScene(result.scene);
+    enqueueForPersistence(operations);
+    onAccepted?.(result.scene);
   };
 
   const applyOperation = (operation: Operation) => {
@@ -331,7 +472,7 @@ export default function EditorApp({
       }
     ]);
     setRedoStack([]);
-    setScene(draftScene);
+    replaceScene(draftScene);
     setActivePageId(draftPageId);
     setSelectedNodeId(null);
     setBrandCompatibilityReport(null);
@@ -361,7 +502,7 @@ export default function EditorApp({
       }
     ]);
     setOperationHistory(nextHistory);
-    setScene(undoFrame.scene);
+    replaceScene(undoFrame.scene);
     setLastOperation(nextHistory[nextHistory.length - 1] ?? null);
     setDiagnostics([]);
     setBrandCompatibilityReport(null);
@@ -385,7 +526,7 @@ export default function EditorApp({
       }
     ]);
     setOperationHistory((history) => [...history, ...redoFrame.operations].slice(-50));
-    setScene(redoFrame.scene);
+    replaceScene(redoFrame.scene);
     setLastOperation(redoFrame.operations[redoFrame.operations.length - 1] ?? null);
     setDiagnostics([]);
     setBrandCompatibilityReport(null);
@@ -485,7 +626,7 @@ export default function EditorApp({
       setExportResult(null);
       setWorkspaceMode("canvas");
       if (result.status === "applied" && result.scene) {
-        setScene(result.scene);
+        replaceScene(result.scene);
         setDiagnostics(
           result.diagnostics.length > 0
             ? result.diagnostics
@@ -890,7 +1031,7 @@ export default function EditorApp({
       const preflightDiagnostics = exportPreflightDiagnostics(preflight);
       const sceneToExport = preflight.scene ?? sceneForExport;
       if (preflight.scene) {
-        setScene(preflight.scene);
+        replaceScene(preflight.scene);
       }
       setDiagnostics([
         {

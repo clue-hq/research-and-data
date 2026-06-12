@@ -1,16 +1,16 @@
-import type { Effect, Fill, Node, NodePatch, Operation, Scene, Stroke, TextNode } from "./contracts";
-import { nodePatch, pagePatch, set, unchanged, clear } from "./operations";
+import type { Effect, Fill, Node, Operation, Stroke } from "./contracts";
 
 /**
  * TypeScript wrapper for the Phase D structured-edit wire format.
  *
  * The backend `/documents/{id}/edits` route is the authority for committed
- * editor edits (Phase D Decision 8); the helpers here exist for two jobs
- * only: building the exact JSON the Rust `StructuredEditInstruction`
- * deserializes, and producing optimistic operations for instant local
- * preview that must match the Rust builders byte-for-byte. The parity
- * fixtures in `fixtures/edit-parity/cases.json` (asserted from both
- * languages in CI) keep the two implementations from drifting.
+ * editor edits (Phase D Decision 8). Since Track E W4 these helpers build
+ * wire-format JSON ONLY — optimistic application runs in the WASM engine
+ * (`WasmEngine.applyStructuredEdit`), which routes through the same
+ * `lumen_core::build_structured_edit_batch` the server uses, so byte
+ * parity is by construction. `fixtures/edit-parity/cases.json` remains the
+ * pinned smoke contract (asserted by the Rust helper test, the wasm engine
+ * tests, and the wire-format smoke test here).
  */
 
 export type EditTarget =
@@ -125,168 +125,6 @@ export function deleteExportProfileEdit(
     name,
     ...(replaceWith ? { replace_with: replaceWith } : {})
   };
-}
-
-/**
- * Optimistic local operations for an edit, mirroring the Rust builders'
- * semantics exactly: text patches merge into the node's current text kind,
- * and render-affecting changes clear stale computed geometry. Only the
- * edits the editor previews optimistically are implemented; everything
- * else waits for the server response.
- */
-export function optimisticOperations(scene: Scene, edit: StructuredEdit): Operation[] {
-  if (edit.kind === "delete") {
-    const target = edit.target as EditTarget;
-    if (target.kind === "node") {
-      return [{ kind: "remove_node", node_id: target.id } as Operation];
-    }
-    return [];
-  }
-  if (edit.kind !== "modify") {
-    return [];
-  }
-  const target = edit.target as EditTarget;
-  const patch = edit.patch as { kind: string; value: Record<string, unknown> };
-  if (target.kind === "page" && patch.kind === "page") {
-    return [
-      {
-        kind: "update_page",
-        page_id: target.id,
-        patch: pagePatch(patch.value as never)
-      } as Operation
-    ];
-  }
-  if (target.kind === "node" && patch.kind === "node") {
-    const node = scene.nodes[target.id];
-    if (!node) {
-      return [];
-    }
-    const value = patch.value as {
-      text?: Record<string, { kind: string; value?: unknown }>;
-      fills?: { kind: string; value?: Fill[] };
-      strokes?: { kind: string; value?: Stroke[] };
-      effects?: { kind: string; value?: Effect[] };
-      fill_edits?: StackEntryEdit<Fill>[];
-      stroke_edits?: StackEntryEdit<Stroke>[];
-      effect_edits?: StackEntryEdit<Effect>[];
-    };
-
-    const patchInput: Partial<NodePatch> = {};
-
-    const fills = resolveStackPatch(node.fills, value.fills, value.fill_edits);
-    const strokes = resolveStackPatch(node.strokes, value.strokes, value.stroke_edits);
-    const effects = resolveStackPatch(node.effects ?? [], value.effects, value.effect_edits);
-    if (fills === "invalid" || strokes === "invalid" || effects === "invalid") {
-      // Bad entry addressing fails closed: no optimistic preview, the
-      // server rejects the edit with the canonical error.
-      return [];
-    }
-    if (fills) {
-      patchInput.fills = set(fills);
-    }
-    if (strokes) {
-      patchInput.strokes = set(strokes);
-    }
-    if (effects) {
-      patchInput.effects = set(effects);
-    }
-
-    if (value.text && node.kind.kind === "text") {
-      const merged = { ...(node.kind as { kind: "text" } & TextNode) };
-      for (const [field, fieldPatch] of Object.entries(value.text)) {
-        if (fieldPatch.kind === "set") {
-          (merged as Record<string, unknown>)[field] = fieldPatch.value;
-        }
-      }
-      patchInput.kind = set(merged);
-    } else if (value.text) {
-      return [];
-    }
-
-    if (Object.keys(patchInput).length === 0) {
-      return [];
-    }
-    patchInput.computed = clear();
-    return [
-      {
-        kind: "update_node",
-        node_id: target.id,
-        patch: nodePatch(patchInput)
-      } as Operation
-    ];
-  }
-  return [];
-}
-
-/**
- * Mirror of the Rust `resolve_stack_patch`: per-entry edits apply in order
- * on top of the whole-stack patch (or the node's current stack). Returns
- * `null` when the field is untouched and `"invalid"` when an edit addresses
- * a missing/duplicate id or an out-of-bounds index.
- */
-function resolveStackPatch<T extends { id: string }>(
-  current: T[],
-  whole: { kind: string; value?: T[] } | undefined,
-  edits: StackEntryEdit<T>[] | undefined
-): T[] | null | "invalid" {
-  if (!edits?.length) {
-    return whole?.kind === "set" && whole.value ? whole.value : null;
-  }
-  const stack: T[] = whole?.kind === "set" && whole.value ? [...whole.value] : [...current];
-  const position = (id: string) => stack.findIndex((entry) => entry.id === id);
-
-  for (const edit of edits) {
-    switch (edit.kind) {
-      case "set": {
-        const index = position(edit.id);
-        if (index < 0) {
-          return "invalid";
-        }
-        stack[index] = edit.value;
-        break;
-      }
-      case "add": {
-        if (position(edit.entry.id) >= 0) {
-          return "invalid";
-        }
-        const index = edit.index ?? stack.length;
-        if (index > stack.length) {
-          return "invalid";
-        }
-        stack.splice(index, 0, edit.entry);
-        break;
-      }
-      case "remove": {
-        const index = position(edit.id);
-        if (index < 0) {
-          return "invalid";
-        }
-        stack.splice(index, 1);
-        break;
-      }
-      case "reorder": {
-        const index = position(edit.id);
-        if (index < 0) {
-          return "invalid";
-        }
-        const [entry] = stack.splice(index, 1);
-        if (edit.index > stack.length) {
-          return "invalid";
-        }
-        stack.splice(edit.index, 0, entry);
-        break;
-      }
-    }
-  }
-
-  const seen = new Set<string>();
-  for (const entry of stack) {
-    if (seen.has(entry.id)) {
-      return "invalid";
-    }
-    seen.add(entry.id);
-  }
-  return stack;
 }
 
 export interface ApplyEditOptions {
