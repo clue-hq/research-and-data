@@ -170,6 +170,20 @@ pub struct AssetMediaMetadata {
     pub byte_length: Option<u64>,
     pub digest: Option<AssetDigest>,
     pub location: Option<AssetLocation>,
+    /// Optional derived preview reference. Metadata only: thumbnail bytes
+    /// live in the asset store like any other bytes, never in the Scene.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub thumbnail: Option<AssetThumbnail>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct AssetThumbnail {
+    pub location: AssetLocation,
+    pub mime_type: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pixel_width: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pixel_height: Option<u32>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]

@@ -1729,7 +1729,10 @@ def test_duplicate_asset_upload_dedups_bytes(
     )
     # Two records, one stored byte object.
     assert first.json()["asset"]["id"] != second.json()["asset"]["id"]
-    assert len(store_files(tmp_path)) == 1
+    # Two stored objects per logical asset (bytes + derived thumbnail);
+    # the duplicate upload adds none.
+    files_after_both = store_files(tmp_path)
+    assert len(files_after_both) == 2
 
 
 def test_asset_upload_rejects_mime_mismatch(
@@ -1766,6 +1769,9 @@ def test_upload_resolve_export_round_trip(client: TestClient) -> None:
 
     document = create_document(client)
     operations = asset_operations()
+    # The uploaded fixture is a square logo; align the slot policy with the
+    # probed aspect ratio so placement validation passes.
+    operations[1]["slot"]["image_policy"]["aspect_ratio"] = 1.0
     operations[2] = {"kind": "upsert_asset", "asset": record}
     operations[3]["asset_id"] = record["id"]
     applied = client.post(
@@ -1792,3 +1798,68 @@ def test_upload_resolve_export_round_trip(client: TestClient) -> None:
         assert diagnostic["code"] not in {"LUME0202", "LUME0210", "LUME0211"}, (
             payload["diagnostics"]
         )
+
+
+HOSTILE_SVG = (
+    '<?xml version="1.0"?>\n'
+    '<svg xmlns="http://www.w3.org/2000/svg" width="120" height="60" viewBox="0 0 120 60">\n'
+    "  <script>alert('owned')</script>\n"
+    '  <rect width="120" height="60" fill="#0F766E" onload="alert(1)"/>\n'
+    '  <a href="javascript:alert(2)"><text x="10" y="30">x</text></a>\n'
+    '</svg>\n'
+)
+
+
+def test_svg_upload_is_sanitized_before_storage(
+    client: TestClient, tmp_path: Path
+) -> None:
+    response = client.post(
+        "/assets",
+        files={"file": ("mark.svg", HOSTILE_SVG.encode(), "image/svg+xml")},
+        data={"label": "Brand mark", "kind": "vector"},
+    )
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    record = payload["asset"]
+
+    assert record["kind"] == "vector"
+    assert record["media"]["mime_type"] == "image/svg+xml"
+    assert record["vector"]["width"] == 120.0
+    assert record["vector"]["view_box"] == [0.0, 0.0, 120.0, 60.0]
+    assert any(
+        diagnostic["code"] == "LUMA0603" for diagnostic in payload["diagnostics"]
+    )
+
+    served = client.get(f"/assets/{record['id']}/bytes")
+    stored_svg = served.content.decode()
+    assert "<script" not in stored_svg
+    assert "onload" not in stored_svg
+    assert "javascript:" not in stored_svg
+    assert "<rect" in stored_svg
+
+    # Vector thumbnails are the sanitized SVG itself.
+    thumbnail = client.get(f"/assets/{record['id']}/thumbnail")
+    assert thumbnail.status_code == 200
+    assert thumbnail.content == served.content
+
+
+def test_raster_upload_probes_metadata_and_serves_thumbnail(
+    client: TestClient,
+) -> None:
+    response = upload_logo(client)
+    assert response.status_code == 200, response.text
+    record = response.json()["asset"]
+
+    raster = record["raster"]
+    assert raster["pixel_width"] == 8
+    assert raster["pixel_height"] == 8
+    assert raster["has_alpha"] is True
+    assert abs(raster["dpi_x"] - 300.0) < 0.5
+
+    thumbnail_meta = record["media"]["thumbnail"]
+    assert thumbnail_meta["mime_type"] == "image/png"
+
+    thumbnail = client.get(f"/assets/{record['id']}/thumbnail")
+    assert thumbnail.status_code == 200
+    assert thumbnail.headers["content-type"].startswith("image/png")
+    assert thumbnail.content[:8] == b"\x89PNG\r\n\x1a\n"

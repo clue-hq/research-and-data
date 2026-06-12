@@ -11,8 +11,8 @@ use lumen_core::{
     preflight_scene, summarize_brand_kit_for_authoring, validate_brand_kit,
     validate_brand_kit_product_ready, validate_scene_brand_governance, AssetDigest, AssetId,
     AssetKind, AssetLicense, AssetLocation, AssetMediaMetadata, AssetProvenance, AssetRecord,
-    AssetSource, AssetStatus, BrandGovernanceStrictness, BrandKit, BrandKitId, BrandMode,
-    BrandSeed, CloneSubtreeRequest, Diagnostic, DiagnosticSeverity, DocumentId,
+    AssetSource, AssetStatus, AssetThumbnail, BrandGovernanceStrictness, BrandKit, BrandKitId,
+    BrandMode, BrandSeed, CloneSubtreeRequest, Diagnostic, DiagnosticSeverity, DocumentId,
     DslCompileSessionSnapshot, EditBatch, EditPatch, EditScope, EditScopeMode, EditTargetRef,
     ExportAdapter, ExportFormat, ExportProfile, ExportPurpose, ExportRequest, Medium, NodeId,
     Operation, PageId, ParentRef, PdfIntent, PreflightOptions, RasterScale, ReplaceNodeRequest,
@@ -918,6 +918,37 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                 .put(&output.bytes)
                 .map_err(|error| core_error(error.code, error.message))?;
 
+            let thumbnail = match &output.thumbnail {
+                Some(artifact) => {
+                    let stored_thumbnail = store
+                        .put(&artifact.bytes)
+                        .map_err(|error| core_error(error.code, error.message))?;
+                    Some(AssetThumbnail {
+                        location: AssetLocation {
+                            provider: LOCAL_STORE_PROVIDER.to_owned(),
+                            opaque_ref: stored_thumbnail.relative_path,
+                            url: None,
+                        },
+                        mime_type: artifact.mime_type.clone(),
+                        pixel_width: Some(artifact.pixel_width),
+                        pixel_height: Some(artifact.pixel_height),
+                    })
+                }
+                // Vector assets are their own thumbnail: the sanitized SVG
+                // scales without derivation.
+                None if output.sniffed_mime == "image/svg+xml" => Some(AssetThumbnail {
+                    location: AssetLocation {
+                        provider: LOCAL_STORE_PROVIDER.to_owned(),
+                        opaque_ref: stored.relative_path.clone(),
+                        url: None,
+                    },
+                    mime_type: output.sniffed_mime.clone(),
+                    pixel_width: None,
+                    pixel_height: None,
+                }),
+                None => None,
+            };
+
             let record = AssetRecord {
                 id: AssetId::from(asset_id),
                 label,
@@ -941,6 +972,7 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                         opaque_ref: stored.relative_path.clone(),
                         url: None,
                     }),
+                    thumbnail,
                 },
                 raster: output.raster.clone(),
                 vector: output.vector.clone(),

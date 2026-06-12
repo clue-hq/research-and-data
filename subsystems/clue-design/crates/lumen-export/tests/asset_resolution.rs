@@ -35,6 +35,7 @@ fn logo_asset_record(asset_id: &str) -> AssetRecord {
                 opaque_ref: format!("sha256/8e/{LOGO_DIGEST}"),
                 url: None,
             }),
+            thumbnail: None,
         },
         raster: Some(RasterAssetMetadata {
             pixel_width: 8,

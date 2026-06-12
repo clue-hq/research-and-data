@@ -5,7 +5,9 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp"] }
 lumen-core = { path = "../lumen-core" }
+quick-xml = "0.37"
 serde.workspace = true
 serde_json.workspace = true
 sha2 = "0.10"

@@ -720,6 +720,9 @@ fn ingest_asset_stores_bytes_and_resolver_wires_export() {
     assert_eq!(again["asset"]["deduplicated"], true, "{again:#?}");
 
     let mut operations = asset_operations();
+    // The uploaded fixture is a square logo; align the slot policy with the
+    // probed aspect ratio so placement validation passes.
+    operations[1]["slot"]["image_policy"]["aspect_ratio"] = json!(1.0);
     operations[2] = json!({ "kind": "upsert_asset", "asset": record });
     operations[3]["asset_id"] = json!("asset_uploaded_logo_live");
     let applied = helper(json!({

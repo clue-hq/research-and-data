@@ -6,7 +6,10 @@
 //! the `AssetRecord`. This keeps the pipeline reusable for uploads and for
 //! generated assets alike.
 
-use crate::mime::{default_kind_for_mime, mime_compatible, sniff_mime};
+use crate::mime::{default_kind_for_mime, mime_compatible, sniff_mime, MIME_SVG};
+use crate::probe::probe_raster;
+use crate::sanitize::sanitize_svg;
+use crate::thumbs::{derive_raster_thumbnail, ThumbnailArtifact, THUMBNAIL_MAX_DIMENSION};
 use lumen_core::{AssetKind, Diagnostic, Phase, RasterAssetMetadata, VectorAssetMetadata};
 use std::error::Error;
 use std::fmt;
@@ -43,6 +46,10 @@ pub struct IngestOutput {
     pub kind: AssetKind,
     pub raster: Option<RasterAssetMetadata>,
     pub vector: Option<VectorAssetMetadata>,
+    /// Derived raster thumbnail; the caller stores its bytes alongside the
+    /// asset bytes. Vector assets carry no derived thumbnail (the
+    /// sanitized SVG scales for free).
+    pub thumbnail: Option<ThumbnailArtifact>,
     pub diagnostics: Vec<Diagnostic>,
 }
 
@@ -154,12 +161,75 @@ pub fn ingest(request: &IngestRequest) -> Result<IngestOutput, Box<IngestError>>
         None => default_kind,
     };
 
+    let mut bytes = request.bytes.to_vec();
+    let mut raster = None;
+    let mut vector = None;
+    let mut thumbnail = None;
+
+    if sniffed_mime == MIME_SVG {
+        // Sanitize before anything else: hostile bytes must never persist.
+        let sanitized = sanitize_svg(&bytes).map_err(|error| {
+            Box::new(IngestError::new(
+                "ingest.svg_invalid",
+                "LUMA0604",
+                format!(
+                    "svg could not be sanitized and was rejected: {}",
+                    error.message
+                ),
+            ))
+        })?;
+        if !sanitized.removed.is_empty() {
+            diagnostics.push(Diagnostic::warning(
+                Phase::Validation,
+                "LUMA0603",
+                format!("svg sanitization removed: {}", sanitized.removed.join(", ")),
+                None,
+            ));
+        }
+        vector = Some(VectorAssetMetadata {
+            width: sanitized.width,
+            height: sanitized.height,
+            view_box: sanitized.view_box,
+            has_transparency: None,
+            path_data: None,
+        });
+        bytes = sanitized.bytes;
+    } else if matches!(
+        sniffed_mime.as_str(),
+        "image/png" | "image/jpeg" | "image/gif" | "image/webp"
+    ) {
+        match probe_raster(&bytes) {
+            Some(metadata) => {
+                raster = Some(metadata);
+                thumbnail = derive_raster_thumbnail(&bytes, THUMBNAIL_MAX_DIMENSION);
+                if thumbnail.is_none() {
+                    diagnostics.push(Diagnostic::warning(
+                        Phase::Validation,
+                        "LUMA0605",
+                        "thumbnail derivation failed; asset stored without a thumbnail"
+                            .to_owned(),
+                        None,
+                    ));
+                }
+            }
+            None => diagnostics.push(Diagnostic::warning(
+                Phase::Validation,
+                "LUMA0604",
+                format!(
+                    "raster bytes declared as {sniffed_mime} did not decode; stored without probe metadata"
+                ),
+                None,
+            )),
+        }
+    }
+
     Ok(IngestOutput {
-        bytes: request.bytes.to_vec(),
+        bytes,
         sniffed_mime,
         kind,
-        raster: None,
-        vector: None,
+        raster,
+        vector,
+        thumbnail,
         diagnostics,
     })
 }

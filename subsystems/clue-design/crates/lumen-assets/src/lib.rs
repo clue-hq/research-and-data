@@ -12,10 +12,16 @@
 
 pub mod ingest;
 pub mod mime;
+pub mod probe;
+pub mod sanitize;
 pub mod store;
+pub mod thumbs;
 
 pub use ingest::{ingest, IngestError, IngestOutput, IngestRequest, DEFAULT_MAX_BYTES};
 pub use mime::{default_kind_for_mime, mime_compatible, sniff_mime};
+pub use probe::{parse_jpeg_dpi, parse_png_dpi, probe_raster};
+pub use sanitize::{sanitize_svg, SanitizeError, SanitizeOutput};
 pub use store::{
     digest_relative_path, sha256_hex, AssetStore, AssetStoreError, LocalAssetStore, StoredObject,
 };
+pub use thumbs::{derive_raster_thumbnail, ThumbnailArtifact, THUMBNAIL_MAX_DIMENSION};

@@ -1366,7 +1366,7 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
             "schema_version": 1,
             "asset": stored["asset"],
             "deduplicated": asset_payload.get("deduplicated", False),
-            "diagnostics": diagnostic_views(diagnostics),
+            "diagnostics": diagnostics,
         }
 
     @app.get("/assets/{asset_id}")
@@ -1403,6 +1403,29 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
                 detail=f"asset {asset_id} bytes are missing from the store",
             )
         media_type = media.get("mime_type") or "application/octet-stream"
+        return Response(content=path.read_bytes(), media_type=media_type)
+
+    @app.get("/assets/{asset_id}/thumbnail")
+    def get_asset_thumbnail(
+        asset_id: str,
+        repo: Repository = Depends(repository),
+    ) -> Response:
+        stored = repo.require_asset_record(asset_id)
+        record = stored["asset"]
+        thumbnail = (record.get("media") or {}).get("thumbnail") or {}
+        location = thumbnail.get("location") or {}
+        if location.get("provider") != "local-store" or not location.get("opaque_ref"):
+            raise HTTPException(
+                status_code=404,
+                detail=f"asset {asset_id} has no thumbnail",
+            )
+        path = resolve_store_path(location["opaque_ref"])
+        if not path.is_file():
+            raise HTTPException(
+                status_code=404,
+                detail=f"asset {asset_id} thumbnail bytes are missing from the store",
+            )
+        media_type = thumbnail.get("mime_type") or "application/octet-stream"
         return Response(content=path.read_bytes(), media_type=media_type)
 
     def resolve_store_path(opaque_ref: str) -> Path:
