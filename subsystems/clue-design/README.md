@@ -17,6 +17,76 @@ Reference material lives in `reference_docs/`.
 
 Workstream docs live in `docs/`, including `docs/dsl-compiler.md` for the current DSL grammar and lowering contract.
 
+## Local Setup
+
+For a one-command local setup on macOS, open Terminal in the repo root and run:
+
+```bash
+./scripts/setup_local_dev.sh
+```
+
+The setup script:
+
+- creates a Python virtual environment at `.venv`
+- installs the FastAPI and agent-runtime Python packages
+- installs the editor Node packages
+- installs missing macOS prerequisites with Homebrew where possible
+- installs Rust with Homebrew if `cargo`/`rustc` are missing
+- builds the Rust `lumen-api-helper` used by the FastAPI app
+- creates `.env` from `.env.example` if `.env` does not already exist
+- runs a quick verification pass
+
+If you want setup to also start both local servers, run:
+
+```bash
+./scripts/setup_local_dev.sh --start
+```
+
+Then open:
+
+```text
+http://127.0.0.1:3000
+```
+
+### API Keys
+
+The setup script will not overwrite an existing `.env`. If `.env` is created
+from `.env.example`, add your live agent key before using DeepAgent calls:
+
+```bash
+ANTHROPIC_API_KEY=your_key_here
+```
+
+The editor and backend can still run without this key, but live agent calls will
+fail until the key is present.
+
+### Manual Run Commands
+
+If you ran setup without `--start`, start the backend API with:
+
+```bash
+set -a; source .env; set +a
+PYTHONPATH=apps/api:apps/agent_runtime .venv/bin/python -m uvicorn lumen_api.main:app --host 127.0.0.1 --port 8000
+```
+
+In a second terminal, start the frontend editor with:
+
+```bash
+NEXT_PUBLIC_LUMEN_API_BASE_URL=http://127.0.0.1:8000 npm --prefix apps/editor run dev -- --hostname 127.0.0.1 --port 3000
+```
+
+Backend URL:
+
+```text
+http://127.0.0.1:8000
+```
+
+Frontend URL:
+
+```text
+http://127.0.0.1:3000
+```
+
 The core rule is that `crates/lumen-core` remains platform-independent. It must not depend on React, Konva, FastAPI, databases, S3, filesystem I/O, browser APIs, or WebGPU.
 
 Detailed workstream docs:

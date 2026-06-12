@@ -10,10 +10,10 @@ default Brand Kit:
 ```text
 fill($surface.brand)
 fill($surface.card)
-stroke($stroke.subtle,$stroke.width.firm)
-g($space.md)
-pad($space.lg)
-rd($radius.lg)
+stroke($border.default,$stroke.width.firm)
+g($space.stack.default)
+pad($space.card.padding)
+rd($radius.card)
 style($type.headline)
 style($type.body)
 ```
@@ -39,3 +39,16 @@ Future design-system authoring should support:
 - typography scale linting
 - visual examples retrieved before authoring
 
+## Phase C Product Rules
+
+Current Phase C Brand Kits also expose:
+
+- approval status: `draft`, `generated_unreviewed`, `approved`, `deprecated`
+- `medium` mode for digital vs print behavior
+- logo and reusable brand asset rules
+- strict scene governance diagnostics
+- compatibility reports between Brand Kit versions
+
+When strict brand governance reports raw styling, repair by choosing semantic
+tokens. Do not replace one arbitrary color or size with another arbitrary
+color or size.

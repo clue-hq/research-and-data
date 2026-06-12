@@ -12,6 +12,12 @@ PRIMARY_KNOWLEDGE_PATHS = [
     "apps/agent_runtime/knowledge/design/layout-recipes.md",
     "apps/agent_runtime/knowledge/design/typography-and-composition.md",
     "apps/agent_runtime/knowledge/design-systems/brand-tokens.md",
+    "apps/agent_runtime/knowledge/design-systems/token-taxonomy.md",
+    "apps/agent_runtime/knowledge/design-systems/brand-generation.md",
+    "apps/agent_runtime/knowledge/design-systems/brand-validation.md",
+    "apps/agent_runtime/knowledge/design-systems/modes.md",
+    "apps/agent_runtime/knowledge/design-systems/logo-and-assets.md",
+    "apps/agent_runtime/knowledge/design-systems/brand-fit-critique.md",
     "apps/agent_runtime/knowledge/assets/asset-placement.md",
     "apps/agent_runtime/knowledge/export/preview-quality.md",
     "apps/agent_runtime/knowledge/agent-loop/authoring-and-repair.md",
@@ -31,7 +37,7 @@ SECONDARY_KNOWLEDGE_PATHS = [
 ]
 
 DEFAULT_KNOWLEDGE_PATHS = PRIMARY_KNOWLEDGE_PATHS + SECONDARY_KNOWLEDGE_PATHS
-REQUIRED_TASK_CATEGORIES = ["lumen-dsl", "design", "agent-loop"]
+REQUIRED_TASK_CATEGORIES = ["lumen-dsl", "design", "design-systems", "agent-loop"]
 
 
 def read_knowledge(

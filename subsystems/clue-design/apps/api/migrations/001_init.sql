@@ -9,6 +9,7 @@ CREATE TABLE IF NOT EXISTS documents (
   effective_brand_kit_source TEXT,
   effective_brand_kit_id TEXT,
   effective_brand_kit_version INTEGER,
+  effective_brand_mode_json TEXT,
   brand_kit_json TEXT,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
@@ -75,4 +76,3 @@ CREATE TABLE IF NOT EXISTS document_diagnostics (
   created_at TEXT NOT NULL,
   FOREIGN KEY (document_id) REFERENCES documents(id) ON DELETE CASCADE
 );
-

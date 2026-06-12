@@ -1,4 +1,6 @@
 import type {
+  AssetKind,
+  AssetStatus,
   Color,
   Fill,
   Node,
@@ -32,6 +34,7 @@ export interface RenderNodeDescriptor {
   stroke: string | null;
   strokeWidth: number;
   cornerRadius: number | [number, number, number, number];
+  slotKeys: string[];
   text?: {
     content: string;
     fontFamily: string;
@@ -49,7 +52,24 @@ export interface RenderNodeDescriptor {
   };
   vector?: {
     pathData: string;
+    sourceAssetId: string | null;
+    assetLabel: string | null;
+    assetKind: AssetKind | null;
+    assetStatus: AssetStatus | null;
   };
+  image?: {
+    assetId: string;
+    sourceAssetId: string | null;
+    alt: string | null;
+    assetLabel: string | null;
+    assetKind: AssetKind | null;
+    assetStatus: AssetStatus | null;
+  };
+}
+
+export interface ParentComputedOrigin {
+  x: number;
+  y: number;
 }
 
 export function pageDescriptor(page: Page): RenderPageDescriptor {
@@ -63,10 +83,15 @@ export function pageDescriptor(page: Page): RenderPageDescriptor {
   };
 }
 
-export function nodeDescriptor(scene: Scene, node: Node, page: Page): RenderNodeDescriptor {
+export function nodeDescriptor(
+  scene: Scene,
+  node: Node,
+  page: Page,
+  parentComputedOrigin: ParentComputedOrigin | null = null
+): RenderNodeDescriptor {
   const scale = unitScale(page.size.unit);
   const size = nodeSizeForRender(node, page);
-  const position = nodePositionForRender(node, page);
+  const position = nodePositionForRender(node, page, parentComputedOrigin);
   const stroke = node.strokes[0] ? strokeDescriptor(node.strokes[0]) : null;
   const descriptor: RenderNodeDescriptor = {
     id: node.id,
@@ -85,7 +110,8 @@ export function nodeDescriptor(scene: Scene, node: Node, page: Page): RenderNode
       node.corner.top_right * scale,
       node.corner.bottom_right * scale,
       node.corner.bottom_left * scale
-    ]
+    ],
+    slotKeys: slotKeysForNode(scene, node.id)
   };
 
   if (node.kind.kind === "text") {
@@ -110,12 +136,36 @@ export function nodeDescriptor(scene: Scene, node: Node, page: Page): RenderNode
   }
 
   if (node.kind.kind === "vector") {
+    const asset = node.source_asset_id ? scene.assets[node.source_asset_id] : null;
     descriptor.vector = {
-      pathData: node.kind.path_data
+      pathData: node.kind.path_data,
+      sourceAssetId: node.source_asset_id ?? null,
+      assetLabel: asset?.label ?? null,
+      assetKind: asset?.kind ?? null,
+      assetStatus: asset?.status ?? null
+    };
+  }
+
+  if (node.kind.kind === "image") {
+    const asset = scene.assets[node.kind.asset_id] ?? null;
+    descriptor.image = {
+      assetId: node.kind.asset_id,
+      sourceAssetId: node.source_asset_id ?? null,
+      alt: node.kind.alt ?? null,
+      assetLabel: asset?.label ?? null,
+      assetKind: asset?.kind ?? null,
+      assetStatus: asset?.status ?? null
     };
   }
 
   return descriptor;
+}
+
+function slotKeysForNode(scene: Scene, nodeId: string): string[] {
+  return Object.values(scene.slots)
+    .filter((slot) => slot.bound_nodes.includes(nodeId))
+    .map((slot) => slot.key)
+    .sort((left, right) => left.localeCompare(right));
 }
 
 export function sceneUnitFromCanvas(value: number, page: Page): number {
@@ -215,12 +265,18 @@ export function nodeSizeForRender(node: Node, page: Page): { width: number; heig
   return fixedSize(node.size, scale);
 }
 
-export function nodePositionForRender(node: Node, page: Page): { x: number; y: number } {
+export function nodePositionForRender(
+  node: Node,
+  page: Page,
+  parentComputedOrigin: ParentComputedOrigin | null = null
+): { x: number; y: number } {
   const scale = unitScale(page.size.unit);
   if (node.computed) {
+    const offsetX = parentComputedOrigin?.x ?? 0;
+    const offsetY = parentComputedOrigin?.y ?? 0;
     return {
-      x: node.computed.layout_bounds.x * scale,
-      y: node.computed.layout_bounds.y * scale
+      x: (node.computed.layout_bounds.x - offsetX) * scale,
+      y: (node.computed.layout_bounds.y - offsetY) * scale
     };
   }
   return {

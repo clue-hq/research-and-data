@@ -1,21 +1,41 @@
 use lumen_core::{
-    compile_styles_brand_kit, resolve_scene_tokens, validate_brand_kit, AssetId, AssetSource,
-    BrandAssets, BrandConstraints, BrandKit, BrandKitId, BrandMode, BrandModeSpec, BrandSource,
-    Color, ColorToken, ColorTokenValue, ContrastPair, Dimension, DocumentId, Fill, FontAsset,
-    FontFace, FontLicense, FontStyle, LogoAsset, LogoColorMode, LogoUsage, LogoVariant, ModeValue,
-    Node, NodeId, NodeKind, NumberToken, NumberTokenValue, NumberUnit, Operation, Orientation,
-    Page, PageId, PagePreset, PageSize, Paint, PaintId, Scene, SizeSpec, Stroke, TextAlign,
-    TextNode, TokenAlias, TokenCatalog, TokenResolutionOptions, TokenStrictness, TypographyToken,
-    TypographyTokenValue, Unit,
+    collect_scene_token_references, compare_brand_kit_compatibility, compile_dsl_into_scene,
+    compile_styles_brand_kit, generate_brand_kit, platform_default_brand_kit, preflight_scene,
+    resolve_scene_tokens, summarize_brand_kit_for_authoring, validate_brand_kit,
+    validate_brand_kit_product_ready, validate_scene_brand_governance, AssetId, AssetSource,
+    BrandApprovalStatus, BrandAssets, BrandCompatibilityPolicy, BrandCompatibilityStatus,
+    BrandConstraints, BrandGovernanceStrictness, BrandKit, BrandKitId, BrandMode, BrandModeSpec,
+    BrandSeed, BrandSeedLogoRef, BrandSource, Color, ColorToken, ColorTokenValue, ComputedGeometry,
+    ContrastPair, DiagnosticSeverity, Dimension, DocumentId, Fill, FontAsset, FontFace,
+    FontLicense, FontStyle, ImageNode, LogoAsset, LogoColorMode, LogoUsage, LogoVariant, Medium,
+    ModeValue, Node, NodeId, NodeKind, NumberToken, NumberTokenValue, NumberUnit, Operation,
+    Orientation, Page, PageId, PagePreset, PageSize, Paint, PaintId, PreflightOptions, Rect, Scene,
+    SizeSpec, Stroke, TextAlign, TextNode, TokenAlias, TokenCatalog, TokenChangeKind,
+    TokenResolutionOptions, TokenStrictness, TypographyToken, TypographyTokenValue, Unit,
 };
 use std::collections::BTreeMap;
 
 const ACME_BRAND_KIT: &str = include_str!("../fixtures/brand_kits/acme_full.json");
+const VALID_INSIGHT_HEALTH_STYLES: &str =
+    include_str!("../fixtures/styles/valid_insight_health.styles");
+const INVALID_DUPLICATE_TOKEN_STYLES: &str =
+    include_str!("../fixtures/styles/invalid_duplicate_token.styles");
+const INVALID_MODE_DEFAULT_STYLES: &str =
+    include_str!("../fixtures/styles/invalid_mode_default.styles");
+const TOKENIZED_LINKEDIN_SQUARE: &str =
+    include_str!("../fixtures/brand_templates/tokenized_linkedin_square.lumen");
+const TOKENIZED_EMAIL_HERO: &str =
+    include_str!("../fixtures/brand_templates/tokenized_email_hero.lumen");
+const TOKENIZED_ONE_PAGER_SECTION: &str =
+    include_str!("../fixtures/brand_templates/tokenized_one_pager_section.lumen");
+const TOKENIZED_REPORT_COVER: &str =
+    include_str!("../fixtures/brand_templates/tokenized_report_cover.lumen");
 
 #[test]
 fn brand_kit_fixture_round_trips_and_validates() {
     let brand_kit: BrandKit = serde_json::from_str(ACME_BRAND_KIT).unwrap();
     let diagnostics = validate_brand_kit(&brand_kit);
+    let product_ready = validate_brand_kit_product_ready(&brand_kit);
 
     assert!(
         diagnostics
@@ -23,10 +43,469 @@ fn brand_kit_fixture_round_trips_and_validates() {
             .all(|diagnostic| diagnostic.severity != lumen_core::DiagnosticSeverity::Error),
         "{diagnostics:#?}"
     );
+    assert!(
+        product_ready
+            .iter()
+            .all(|diagnostic| diagnostic.severity != lumen_core::DiagnosticSeverity::Error),
+        "{product_ready:#?}"
+    );
+    assert_eq!(brand_kit.approval_status, BrandApprovalStatus::Approved);
+    assert_eq!(brand_kit.version, 3);
+    assert_eq!(brand_kit.modes.defaults["medium"], "digital");
+    assert!(brand_kit.tokens.colors.contains_key("surface.card"));
+    assert!(brand_kit.tokens.typography.contains_key("type.cta"));
+    assert!(brand_kit.tokens.assets.contains_key("logo.primary"));
 
     let json = serde_json::to_string_pretty(&brand_kit).unwrap();
     let decoded: BrandKit = serde_json::from_str(&json).unwrap();
     assert_eq!(brand_kit, decoded);
+}
+
+#[test]
+fn platform_default_is_product_ready_for_phase_c_contract() {
+    let brand_kit = platform_default_brand_kit().unwrap();
+
+    let diagnostics = validate_brand_kit_product_ready(&brand_kit);
+
+    assert!(
+        diagnostics
+            .iter()
+            .all(|diagnostic| diagnostic.severity != lumen_core::DiagnosticSeverity::Error),
+        "{diagnostics:#?}"
+    );
+    assert!(brand_kit.modes.axes.contains_key("medium"));
+    assert_eq!(brand_kit.modes.defaults["medium"], "digital");
+    assert_eq!(brand_kit.approval_status, BrandApprovalStatus::Approved);
+}
+
+#[test]
+fn tokenized_artifact_templates_preflight_across_brand_kits() {
+    let platform = platform_default_brand_kit().unwrap();
+    let acme: BrandKit = serde_json::from_str(ACME_BRAND_KIT).unwrap();
+
+    let templates = [
+        (
+            "linkedin_square",
+            TOKENIZED_LINKEDIN_SQUARE,
+            PageId::from("linkedin_square"),
+            (1080.0, 1080.0),
+            NodeId::from("canvas"),
+        ),
+        (
+            "email_header",
+            TOKENIZED_EMAIL_HERO,
+            PageId::from("email_header"),
+            (1200.0, 520.0),
+            NodeId::from("hero"),
+        ),
+        (
+            "one_pager_section",
+            TOKENIZED_ONE_PAGER_SECTION,
+            PageId::from("one_pager_section"),
+            (1440.0, 900.0),
+            NodeId::from("section"),
+        ),
+        (
+            "report_cover",
+            TOKENIZED_REPORT_COVER,
+            PageId::from("report_cover"),
+            (816.0, 1056.0),
+            NodeId::from("cover"),
+        ),
+    ];
+
+    for (name, source, page_id, expected_size, comparison_node_id) in templates {
+        let platform_scene = compile_and_preflight_template(name, source, &platform, &page_id);
+        let acme_scene = compile_and_preflight_template(name, source, &acme, &page_id);
+
+        let page = platform_scene
+            .pages
+            .get(&page_id)
+            .unwrap_or_else(|| panic!("missing page {page_id} in {name}"));
+        assert_eq!(page.size.width, expected_size.0, "{name}");
+        assert_eq!(page.size.height, expected_size.1, "{name}");
+        assert!(collect_scene_token_references(&platform_scene).is_empty());
+        assert!(collect_scene_token_references(&acme_scene).is_empty());
+
+        let platform_fill = first_solid_fill_hex(&platform_scene, &comparison_node_id)
+            .unwrap_or_else(|| panic!("missing platform fill for {comparison_node_id}"));
+        let acme_fill = first_solid_fill_hex(&acme_scene, &comparison_node_id)
+            .unwrap_or_else(|| panic!("missing acme fill for {comparison_node_id}"));
+        assert_ne!(
+            platform_fill, acme_fill,
+            "{name} should resolve differently across Brand Kits"
+        );
+    }
+}
+
+#[test]
+fn brand_authoring_summary_exposes_product_ready_tokens_and_modes() {
+    let brand_kit = platform_default_brand_kit().unwrap();
+
+    let summary = summarize_brand_kit_for_authoring(&brand_kit);
+
+    assert_eq!(summary.id, BrandKitId::from("brand_kit_platform_default"));
+    assert!(summary.product_ready, "{:#?}", summary.diagnostics);
+    assert_eq!(summary.default_mode.values["theme"], "light");
+    assert_eq!(summary.default_mode.values["density"], "comfortable");
+    assert_eq!(summary.default_mode.values["accessibility"], "standard");
+    assert_eq!(summary.default_mode.values["medium"], "digital");
+    assert!(summary.mode_axes.contains_key("medium"));
+    assert!(summary
+        .tokens
+        .surface_tokens
+        .contains(&"surface.brand".to_owned()));
+    assert!(summary
+        .tokens
+        .text_tokens
+        .contains(&"text.primary".to_owned()));
+    assert!(summary
+        .tokens
+        .typography_tokens
+        .contains(&"type.headline".to_owned()));
+    assert!(summary
+        .tokens
+        .spacing_tokens
+        .contains(&"space.card.padding".to_owned()));
+    assert!(summary
+        .tokens
+        .radius_tokens
+        .contains(&"radius.card".to_owned()));
+    assert!(summary
+        .assets
+        .logo_tokens
+        .contains(&"logo.primary".to_owned()));
+    assert!(summary
+        .authoring_rules
+        .iter()
+        .any(|rule| rule.contains("style($type.*)")));
+}
+
+#[test]
+fn brand_seed_generator_produces_product_ready_unreviewed_brand_kit() {
+    let report = generate_brand_kit(&health_brand_seed());
+
+    assert!(
+        report.brand_kit.is_some(),
+        "expected generated brand kit, got diagnostics: {:#?}",
+        report.diagnostics
+    );
+    assert!(
+        report.confidence > 0.7,
+        "expected useful confidence for evidence-backed seed, got {}",
+        report.confidence
+    );
+    assert!(report.missing_inputs.is_empty(), "{report:#?}");
+
+    let brand_kit = report.brand_kit.unwrap();
+    let product_ready = validate_brand_kit_product_ready(&brand_kit);
+
+    assert!(
+        product_ready
+            .iter()
+            .all(|diagnostic| diagnostic.severity != lumen_core::DiagnosticSeverity::Error),
+        "{product_ready:#?}"
+    );
+    assert_eq!(
+        brand_kit.approval_status,
+        BrandApprovalStatus::GeneratedUnreviewed
+    );
+    assert!(brand_kit.compatibility_policy.require_product_ready_tokens);
+    assert!(brand_kit.tokens.colors.contains_key("surface.brand"));
+    assert!(brand_kit.tokens.colors.contains_key("text.primary"));
+    assert!(brand_kit.tokens.spacing.contains_key("space.xl"));
+    assert!(brand_kit.tokens.radii.contains_key("radius.md"));
+    assert!(brand_kit.tokens.typography.contains_key("type.headline"));
+    assert!(brand_kit.tokens.assets.contains_key("logo.primary"));
+    assert!(brand_kit.assets.logos.contains_key("primary"));
+    assert_eq!(
+        brand_kit.modes.axes.get("medium").unwrap(),
+        &vec!["digital".to_owned(), "print".to_owned()]
+    );
+}
+
+#[test]
+fn generated_brand_kit_can_drive_tokenized_preflight() {
+    let report = generate_brand_kit(&health_brand_seed());
+    let brand_kit = report.brand_kit.expect("generated kit");
+    let mut scene = tokenized_scene(&brand_kit);
+    scene
+        .nodes
+        .get_mut(&NodeId::from("node_headline"))
+        .unwrap()
+        .size = SizeSpec::fixed(640.0, 96.0);
+
+    let result = preflight_scene(scene, Some(&brand_kit), PreflightOptions::default());
+
+    assert!(
+        !result.has_errors(),
+        "expected generated brand kit to resolve tokenized scene, got {:#?}",
+        result.diagnostics
+    );
+    assert!(!result.token_operations.is_empty());
+    assert!(!result.layout_operations.is_empty());
+
+    let headline = result
+        .scene
+        .nodes
+        .get(&NodeId::from("node_headline"))
+        .unwrap();
+    let NodeKind::Text(text) = &headline.kind else {
+        panic!("expected text node");
+    };
+    assert_eq!(text.font_family, "Source Sans 3");
+    assert!(text.style_token.is_none());
+    assert!(headline.computed.is_some());
+}
+
+#[test]
+fn brand_seed_generator_reports_missing_evidence_without_blocking_draft_generation() {
+    let report = generate_brand_kit(&BrandSeed {
+        id: BrandKitId::from("brand_seed_sparse"),
+        version: 1,
+        name: "Sparse Brand".to_owned(),
+        primary_color: "#245E63".to_owned(),
+        description: None,
+        secondary_color: None,
+        accent_color: None,
+        neutral_color: None,
+        preferred_fonts: Vec::new(),
+        logo_refs: Vec::new(),
+        tone_words: Vec::new(),
+        website_url: None,
+        style_guide_asset_ids: Vec::new(),
+        sources: Vec::new(),
+        default_mode: BrandMode::default(),
+    });
+
+    assert!(report.brand_kit.is_some(), "{report:#?}");
+    assert!(report
+        .missing_inputs
+        .contains(&"preferred_fonts".to_owned()));
+    assert!(report.missing_inputs.contains(&"logo_refs".to_owned()));
+    assert!(report
+        .missing_inputs
+        .contains(&"website_or_style_guide".to_owned()));
+    assert!(report.confidence < 0.7);
+}
+
+#[test]
+fn brand_seed_generator_rejects_invalid_required_seed_fields() {
+    let mut seed = health_brand_seed();
+    seed.primary_color = "#nothex".to_owned();
+
+    let report = generate_brand_kit(&seed);
+
+    assert!(report.brand_kit.is_none());
+    assert_eq!(report.confidence, 0.0);
+    assert!(report
+        .diagnostics
+        .iter()
+        .any(|diagnostic| diagnostic.code == "LUMB0902"));
+}
+
+#[test]
+fn product_ready_validation_reports_missing_semantic_contract() {
+    let mut brand_kit = acme_brand_kit();
+    brand_kit.approval_status = BrandApprovalStatus::Approved;
+
+    let diagnostics = validate_brand_kit_product_ready(&brand_kit);
+
+    assert!(diagnostics
+        .iter()
+        .any(|diagnostic| diagnostic.code == "LUMB0800"));
+    assert!(diagnostics
+        .iter()
+        .any(|diagnostic| diagnostic.code == "LUMB0801"));
+    assert!(diagnostics
+        .iter()
+        .any(|diagnostic| diagnostic.code == "LUMB0817"));
+}
+
+#[test]
+fn scene_brand_governance_flags_raw_styles() {
+    let brand_kit = acme_brand_kit();
+    let mut scene = Scene::new(DocumentId::from("doc_governance"), "Governance");
+    scene.meta.brand_kit = Some(brand_kit.brand_ref());
+    scene
+        .pages
+        .insert(PageId::from("page_governance"), page("page_governance"));
+
+    let mut node = Node::new(NodeId::from("node_raw"), NodeKind::Rect);
+    node.fills = vec![Fill {
+        id: PaintId::from("raw_fill"),
+        paint: Paint::Solid {
+            color: Color::Hex {
+                value: "#2463EB".to_owned(),
+            },
+        },
+    }];
+    scene.nodes.insert(node.id.clone(), node);
+    scene
+        .pages
+        .get_mut(&PageId::from("page_governance"))
+        .unwrap()
+        .children
+        .push(NodeId::from("node_raw"));
+
+    let diagnostics =
+        validate_scene_brand_governance(&scene, &brand_kit, BrandGovernanceStrictness::Strict);
+
+    assert!(diagnostics.iter().any(|diagnostic| {
+        diagnostic.code == "LUMB0804"
+            && diagnostic.severity == lumen_core::DiagnosticSeverity::Error
+    }));
+}
+
+#[test]
+fn scene_brand_governance_flags_raw_layout_typography_and_hints() {
+    let brand_kit = platform_default_brand_kit().unwrap();
+    let mut scene = Scene::new(DocumentId::from("doc_governance_rich"), "Governance Rich");
+    scene.meta.brand_kit = Some(brand_kit.brand_ref());
+    scene
+        .pages
+        .insert(PageId::from("page_governance"), page("page_governance"));
+
+    let mut card = Node::new(NodeId::from("node_raw_card"), NodeKind::Rect);
+    card.fills = vec![Fill {
+        id: PaintId::from("raw_fill"),
+        paint: Paint::Solid {
+            color: Color::Hex {
+                value: "#2463EB".to_owned(),
+            },
+        },
+    }];
+    card.corner.top_left = 18.0;
+    card.corner.top_right = 18.0;
+    card.corner.bottom_right = 18.0;
+    card.corner.bottom_left = 18.0;
+    card.opacity = 0.8;
+    card.layout = Some(lumen_core::AutoLayoutProps {
+        gap: 18.0,
+        padding: [20.0, 20.0, 20.0, 20.0],
+        ..lumen_core::AutoLayoutProps::default()
+    });
+
+    let text = Node::new(
+        NodeId::from("node_raw_text"),
+        NodeKind::Text(TextNode {
+            content: "Raw typography".to_owned(),
+            font_family: "Times".to_owned(),
+            font_size: 22.0,
+            font_weight: 500,
+            align: TextAlign::Left,
+            style_token: None,
+            ..TextNode::default()
+        }),
+    );
+
+    scene
+        .pages
+        .get_mut(&PageId::from("page_governance"))
+        .unwrap()
+        .children = vec![card.id.clone(), text.id.clone()];
+    scene.nodes.insert(card.id.clone(), card);
+    scene.nodes.insert(text.id.clone(), text);
+
+    let diagnostics =
+        validate_scene_brand_governance(&scene, &brand_kit, BrandGovernanceStrictness::Strict);
+
+    assert!(diagnostics.iter().any(|diagnostic| {
+        diagnostic.code == "LUMB0804"
+            && diagnostic
+                .hint
+                .as_deref()
+                .is_some_and(|hint| hint.contains("fill($surface.card)"))
+    }));
+    assert!(diagnostics.iter().any(|diagnostic| {
+        diagnostic.code == "LUMB0805"
+            && diagnostic
+                .hint
+                .as_deref()
+                .is_some_and(|hint| hint.contains("style($type.body)"))
+    }));
+    assert!(diagnostics.iter().any(|diagnostic| {
+        diagnostic.code == "LUMB0806"
+            && diagnostic.message.contains("corner radius")
+            && diagnostic
+                .hint
+                .as_deref()
+                .is_some_and(|hint| hint.contains("rd($radius.card)"))
+    }));
+    assert!(diagnostics.iter().any(|diagnostic| {
+        diagnostic.code == "LUMB0806"
+            && diagnostic.message.contains("opacity")
+            && diagnostic
+                .hint
+                .as_deref()
+                .is_some_and(|hint| hint.contains("o($opacity.subtle)"))
+    }));
+    assert!(diagnostics.iter().any(|diagnostic| {
+        diagnostic.code == "LUMB0806"
+            && diagnostic.message.contains("layout gap")
+            && diagnostic
+                .hint
+                .as_deref()
+                .is_some_and(|hint| hint.contains("g($space.stack.default)"))
+    }));
+    assert!(diagnostics.iter().any(|diagnostic| {
+        diagnostic.code == "LUMB0806"
+            && diagnostic.message.contains("layout padding")
+            && diagnostic
+                .hint
+                .as_deref()
+                .is_some_and(|hint| hint.contains("pad($space.card.padding)"))
+    }));
+}
+
+#[test]
+fn compatibility_report_flags_removed_tokens_and_assets() {
+    let from = platform_default_brand_kit().unwrap();
+    let mut to = from.clone();
+    to.version = 2;
+    to.tokens.colors.remove("surface.brand");
+    to.tokens.typography.remove("type.headline");
+    to.assets.fonts.remove("brand");
+
+    let report = compare_brand_kit_compatibility(&from, &to);
+
+    assert_eq!(report.status, BrandCompatibilityStatus::MigrationRequired);
+    assert!(report
+        .diagnostics
+        .iter()
+        .any(|diagnostic| diagnostic.code == "LUMB0814"));
+    assert!(report
+        .token_changes
+        .iter()
+        .any(|change| change.path == "surface.brand"));
+    assert!(report
+        .token_changes
+        .iter()
+        .any(|change| change.path == "brand"));
+}
+
+#[test]
+fn compatibility_report_flags_removed_mode_values() {
+    let from = platform_default_brand_kit().unwrap();
+    let mut to = from.clone();
+    to.version = 2;
+    to.modes
+        .axes
+        .get_mut("medium")
+        .unwrap()
+        .retain(|value| value != "print");
+
+    let report = compare_brand_kit_compatibility(&from, &to);
+
+    assert_eq!(report.status, BrandCompatibilityStatus::MigrationRequired);
+    assert!(report
+        .diagnostics
+        .iter()
+        .any(|diagnostic| diagnostic.code == "LUMB0813"
+            && diagnostic.message.contains("medium.print")));
+    assert!(report.token_changes.iter().any(|change| {
+        change.path == "mode.medium.print" && change.kind == TokenChangeKind::ModeCoverageChanged
+    }));
 }
 
 #[test]
@@ -275,6 +754,463 @@ fn styles_compiler_generates_mode_ready_catalog_tokens() {
 }
 
 #[test]
+fn styles_compiler_expands_compact_program_to_product_ready_brand_kit() {
+    let brand_kit = compile_styles_brand_kit(
+        VALID_INSIGHT_HEALTH_STYLES,
+        BrandKitId::from("unused_input_id"),
+        1,
+        "Input Name",
+    )
+    .expect("product-ready styles source compiles");
+
+    assert_eq!(brand_kit.id, BrandKitId::from("brand_kit_insight_health"));
+    assert_eq!(brand_kit.version, 4);
+    assert_eq!(brand_kit.name, "Insight Health");
+    assert_eq!(
+        brand_kit.approval_status,
+        BrandApprovalStatus::GeneratedUnreviewed
+    );
+    assert!(brand_kit.compatibility_policy.require_product_ready_tokens);
+
+    let product_ready = validate_brand_kit_product_ready(&brand_kit);
+    assert!(
+        product_ready
+            .iter()
+            .all(|diagnostic| diagnostic.severity != lumen_core::DiagnosticSeverity::Error),
+        "{product_ready:#?}"
+    );
+
+    assert!(brand_kit.tokens.colors.contains_key("palette.primary.700"));
+    assert!(brand_kit.tokens.colors.contains_key("surface.brand"));
+    assert!(brand_kit.tokens.spacing.contains_key("space.16"));
+    assert!(brand_kit.tokens.radii.contains_key("radius.card"));
+    assert!(brand_kit
+        .tokens
+        .stroke_widths
+        .contains_key("stroke.width.focus"));
+    assert!(brand_kit.tokens.opacity.contains_key("opacity.scrim"));
+    assert!(brand_kit.tokens.typography.contains_key("type.headline"));
+    assert!(brand_kit.tokens.typography.contains_key("type.body"));
+    assert!(brand_kit.tokens.assets.contains_key("logo.primary"));
+    assert_eq!(
+        brand_kit.assets.fonts["brand"].family,
+        "Source Sans 3".to_owned()
+    );
+    assert_eq!(
+        brand_kit.assets.fonts["brand"].fallback_stack,
+        vec!["Arial".to_owned(), "sans-serif".to_owned()]
+    );
+    assert_eq!(brand_kit.assets.logos["primary"].min_size, Some(48.0));
+    assert_eq!(brand_kit.assets.logos["primary"].clearspace, Some(16.0));
+    assert!(brand_kit
+        .tokens
+        .assets
+        .contains_key("asset.illustration.primary"));
+    assert!(brand_kit.tokens.assets.contains_key("asset.icon.primary"));
+    assert!(brand_kit.tokens.assets.contains_key("asset.texture.subtle"));
+    let illustration = &brand_kit.assets.images["illustration.primary"];
+    assert_eq!(
+        illustration.asset_id,
+        AssetId::from("asset_healthcare_card_svg")
+    );
+    assert_eq!(illustration.role, "spot_illustration");
+    assert_eq!(illustration.mime_type.as_deref(), Some("image/svg+xml"));
+    assert!(illustration.style_tags.contains(&"healthcare".to_owned()));
+    assert!(illustration
+        .allowed_contexts
+        .contains(&"feature_card".to_owned()));
+    assert!(illustration
+        .preferred_color_tokens
+        .contains(&"palette.primary.700".to_owned()));
+    assert_eq!(illustration.recolor_allowed, Some(true));
+    assert_eq!(illustration.crop_allowed, Some(false));
+    assert_eq!(
+        illustration.license.as_ref().map(|license| &license.name),
+        Some(&"client_owned".to_owned())
+    );
+    assert_eq!(
+        brand_kit.constraints.tone,
+        vec![
+            "clinical".to_owned(),
+            "calm".to_owned(),
+            "expert".to_owned()
+        ]
+    );
+}
+
+#[test]
+fn styles_fixture_preflights_tokenized_scene_without_unresolved_tokens() {
+    let brand_kit = compile_styles_brand_kit(
+        VALID_INSIGHT_HEALTH_STYLES,
+        BrandKitId::from("unused_input_id"),
+        1,
+        "Input Name",
+    )
+    .expect("styles fixture compiles");
+    let mut scene = tokenized_scene(&brand_kit);
+    scene
+        .nodes
+        .get_mut(&NodeId::from("node_headline"))
+        .unwrap()
+        .size = SizeSpec::fixed(640.0, 96.0);
+
+    let result = preflight_scene(scene, Some(&brand_kit), PreflightOptions::default());
+
+    assert!(
+        !result.has_errors(),
+        "expected valid styles fixture to drive preflight, got {:#?}",
+        result.diagnostics
+    );
+    assert!(!result.token_operations.is_empty());
+}
+
+#[test]
+fn styles_fixture_authoring_summary_is_agent_ready() {
+    let brand_kit = compile_styles_brand_kit(
+        VALID_INSIGHT_HEALTH_STYLES,
+        BrandKitId::from("unused_input_id"),
+        1,
+        "Input Name",
+    )
+    .expect("styles fixture compiles");
+
+    let summary = summarize_brand_kit_for_authoring(&brand_kit);
+
+    assert_eq!(summary.name, "Insight Health");
+    assert_eq!(
+        summary.approval_status,
+        BrandApprovalStatus::GeneratedUnreviewed
+    );
+    assert!(summary.product_ready, "{:#?}", summary.diagnostics);
+    assert!(summary.tone.contains(&"clinical".to_owned()));
+    assert!(summary
+        .imagery
+        .iter()
+        .any(|rule| rule.contains("healthcare")));
+    assert!(summary
+        .iconography
+        .iter()
+        .any(|rule| rule.contains("icons")));
+    assert!(summary
+        .assets
+        .font_families
+        .contains(&"Source Sans 3".to_owned()));
+    assert!(summary
+        .tokens
+        .surface_tokens
+        .contains(&"surface.brand".to_owned()));
+    assert!(summary
+        .tokens
+        .typography_tokens
+        .contains(&"type.cta".to_owned()));
+    assert!(summary
+        .tokens
+        .stroke_width_tokens
+        .contains(&"stroke.width.focus".to_owned()));
+    assert!(summary
+        .tokens
+        .asset_tokens
+        .contains(&"logo.primary".to_owned()));
+    assert!(summary
+        .tokens
+        .asset_tokens
+        .contains(&"asset.illustration.primary".to_owned()));
+    assert!(summary
+        .assets
+        .image_asset_tokens
+        .contains(&"asset.texture.subtle".to_owned()));
+}
+
+#[test]
+fn styles_compiler_rejects_duplicate_generated_tokens() {
+    let diagnostics = compile_styles_brand_kit(
+        INVALID_DUPLICATE_TOKEN_STYLES,
+        BrandKitId::from("brand_kit_duplicate"),
+        1,
+        "Duplicate",
+    )
+    .expect_err("duplicate generated token should fail");
+
+    assert!(diagnostics.iter().any(|diagnostic| {
+        diagnostic.code == "LUMB0701"
+            && diagnostic.message.contains("styles line 2")
+            && diagnostic.message.contains("duplicate color token")
+    }));
+}
+
+#[test]
+fn styles_compiler_rejects_invalid_mode_defaults() {
+    let diagnostics = compile_styles_brand_kit(
+        INVALID_MODE_DEFAULT_STYLES,
+        BrandKitId::from("brand_kit_invalid_mode"),
+        1,
+        "Invalid Mode",
+    )
+    .expect_err("invalid mode default should fail");
+
+    assert!(diagnostics.iter().any(|diagnostic| {
+        diagnostic.code == "LUMB0701" && diagnostic.message.contains("default print is not listed")
+    }));
+}
+
+#[test]
+fn scene_brand_governance_flags_logo_on_disallowed_background() {
+    let brand_kit = acme_brand_kit();
+    let mut scene = Scene::new(DocumentId::from("doc_logo_background"), "Logo Background");
+    scene.meta.brand_kit = Some(brand_kit.brand_ref());
+    scene
+        .pages
+        .insert(PageId::from("page_logo"), page("page_logo"));
+
+    let logo = Node::new(
+        NodeId::from("node_logo"),
+        NodeKind::Image(ImageNode {
+            asset_id: AssetId::from("asset_logo_primary"),
+            alt: Some("Acme Health logo".to_owned()),
+        }),
+    );
+    scene
+        .pages
+        .get_mut(&PageId::from("page_logo"))
+        .unwrap()
+        .children = vec![logo.id.clone()];
+    scene.nodes.insert(logo.id.clone(), logo);
+
+    let diagnostics =
+        validate_scene_brand_governance(&scene, &brand_kit, BrandGovernanceStrictness::Strict);
+
+    assert!(diagnostics.iter().any(|diagnostic| {
+        diagnostic.code == "LUMB0810"
+            && diagnostic.severity == lumen_core::DiagnosticSeverity::Error
+            && diagnostic.message.contains("surface.page")
+            && diagnostic
+                .hint
+                .as_deref()
+                .is_some_and(|hint| hint.contains("surface.brand"))
+    }));
+
+    scene
+        .pages
+        .get_mut(&PageId::from("page_logo"))
+        .unwrap()
+        .background = vec![Fill {
+        id: PaintId::from("page_bg"),
+        paint: Paint::Token {
+            token: "surface.brand".to_owned(),
+        },
+    }];
+    let diagnostics =
+        validate_scene_brand_governance(&scene, &brand_kit, BrandGovernanceStrictness::Strict);
+
+    assert!(
+        diagnostics
+            .iter()
+            .all(|diagnostic| diagnostic.code != "LUMB0810"),
+        "{diagnostics:#?}"
+    );
+}
+
+#[test]
+fn scene_brand_governance_flags_insufficient_text_contrast() {
+    let mut brand_kit = acme_brand_kit();
+    brand_kit.tokens.colors.insert(
+        "surface.page".to_owned(),
+        color_token(ColorTokenValue::Hex {
+            value: "#FFFFFF".to_owned(),
+        }),
+    );
+    let mut scene = Scene::new(DocumentId::from("doc_text_contrast"), "Text Contrast");
+    scene.meta.brand_kit = Some(brand_kit.brand_ref());
+    scene
+        .pages
+        .insert(PageId::from("page_contrast"), page("page_contrast"));
+    scene
+        .pages
+        .get_mut(&PageId::from("page_contrast"))
+        .unwrap()
+        .background = vec![Fill {
+        id: PaintId::from("page_bg"),
+        paint: Paint::Token {
+            token: "surface.page".to_owned(),
+        },
+    }];
+
+    let mut text = Node::new(
+        NodeId::from("node_text"),
+        NodeKind::Text(TextNode {
+            content: "Book a consultation".to_owned(),
+            font_size: 18.0,
+            style_token: Some("type.body".to_owned()),
+            ..TextNode::default()
+        }),
+    );
+    text.size = SizeSpec::fixed(320.0, 48.0);
+    text.fills = vec![Fill {
+        id: PaintId::from("text_fill"),
+        paint: Paint::Token {
+            token: "text.inverse".to_owned(),
+        },
+    }];
+    scene
+        .pages
+        .get_mut(&PageId::from("page_contrast"))
+        .unwrap()
+        .children = vec![text.id.clone()];
+    scene.nodes.insert(text.id.clone(), text);
+
+    let diagnostics =
+        validate_scene_brand_governance(&scene, &brand_kit, BrandGovernanceStrictness::Strict);
+
+    assert!(diagnostics.iter().any(|diagnostic| {
+        diagnostic.code == "LUMB0807"
+            && diagnostic.severity == lumen_core::DiagnosticSeverity::Error
+            && diagnostic.message.contains("text contrast")
+            && diagnostic.message.contains("surface.page")
+    }));
+
+    scene
+        .pages
+        .get_mut(&PageId::from("page_contrast"))
+        .unwrap()
+        .background = vec![Fill {
+        id: PaintId::from("page_bg"),
+        paint: Paint::Token {
+            token: "surface.brand".to_owned(),
+        },
+    }];
+    let diagnostics =
+        validate_scene_brand_governance(&scene, &brand_kit, BrandGovernanceStrictness::Strict);
+
+    assert!(
+        diagnostics
+            .iter()
+            .all(|diagnostic| diagnostic.code != "LUMB0807"),
+        "{diagnostics:#?}"
+    );
+}
+
+#[test]
+fn scene_brand_governance_flags_logo_below_minimum_size() {
+    let brand_kit = acme_brand_kit();
+    let mut scene = logo_scene_on_allowed_background(&brand_kit);
+
+    scene
+        .nodes
+        .get_mut(&NodeId::from("node_logo"))
+        .unwrap()
+        .size = SizeSpec::fixed(32.0, 96.0);
+
+    let diagnostics =
+        validate_scene_brand_governance(&scene, &brand_kit, BrandGovernanceStrictness::Strict);
+
+    assert!(diagnostics.iter().any(|diagnostic| {
+        diagnostic.code == "LUMB0809"
+            && diagnostic.severity == lumen_core::DiagnosticSeverity::Error
+            && diagnostic
+                .message
+                .contains("below the Brand Kit minimum 64.0px")
+            && diagnostic
+                .hint
+                .as_deref()
+                .is_some_and(|hint| hint.contains("at least 64.0px"))
+    }));
+
+    scene
+        .nodes
+        .get_mut(&NodeId::from("node_logo"))
+        .unwrap()
+        .size = SizeSpec::fixed(64.0, 96.0);
+    let diagnostics =
+        validate_scene_brand_governance(&scene, &brand_kit, BrandGovernanceStrictness::Strict);
+
+    assert!(
+        diagnostics
+            .iter()
+            .all(|diagnostic| diagnostic.code != "LUMB0809"),
+        "{diagnostics:#?}"
+    );
+}
+
+#[test]
+fn scene_brand_governance_uses_computed_logo_size_when_available() {
+    let brand_kit = acme_brand_kit();
+    let mut scene = logo_scene_on_allowed_background(&brand_kit);
+    let logo = scene.nodes.get_mut(&NodeId::from("node_logo")).unwrap();
+    logo.size = SizeSpec::fixed(96.0, 96.0);
+    logo.computed = Some(ComputedGeometry {
+        layout_bounds: Rect {
+            x: 0.0,
+            y: 0.0,
+            width: 40.0,
+            height: 80.0,
+        },
+        render_bounds: Rect {
+            x: 0.0,
+            y: 0.0,
+            width: 40.0,
+            height: 80.0,
+        },
+    });
+
+    let diagnostics =
+        validate_scene_brand_governance(&scene, &brand_kit, BrandGovernanceStrictness::Strict);
+
+    assert!(
+        diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == "LUMB0809"),
+        "{diagnostics:#?}"
+    );
+}
+
+#[test]
+fn scene_brand_governance_flags_print_transparency() {
+    let brand_kit = acme_brand_kit();
+    let mut scene = Scene::new(
+        DocumentId::from("doc_print_transparency"),
+        "Print Transparency",
+    );
+    scene.meta.medium = Some(Medium::Print);
+    scene.meta.brand_kit = Some(brand_kit.brand_ref());
+    scene
+        .pages
+        .insert(PageId::from("page_print"), page("page_print"));
+
+    let mut card = Node::new(NodeId::from("node_print_card"), NodeKind::Rect);
+    card.opacity_token = Some("opacity.subtle".to_owned());
+    scene
+        .pages
+        .get_mut(&PageId::from("page_print"))
+        .unwrap()
+        .children = vec![card.id.clone()];
+    scene.nodes.insert(card.id.clone(), card);
+
+    let diagnostics =
+        validate_scene_brand_governance(&scene, &brand_kit, BrandGovernanceStrictness::Advisory);
+
+    assert!(diagnostics.iter().any(|diagnostic| {
+        diagnostic.code == "LUMB0811"
+            && diagnostic.severity == lumen_core::DiagnosticSeverity::Error
+            && diagnostic.message.contains("opacity.subtle")
+            && diagnostic
+                .hint
+                .as_deref()
+                .is_some_and(|hint| hint.contains("opacity.emphasis"))
+    }));
+
+    scene.meta.medium = Some(Medium::Digital);
+    let diagnostics =
+        validate_scene_brand_governance(&scene, &brand_kit, BrandGovernanceStrictness::Advisory);
+
+    assert!(
+        diagnostics
+            .iter()
+            .all(|diagnostic| diagnostic.code != "LUMB0811"),
+        "{diagnostics:#?}"
+    );
+}
+
+#[test]
 fn strict_mode_rejects_bare_tokenizable_styles() {
     let brand_kit = acme_brand_kit();
     let mut scene = Scene::new(DocumentId::from("doc_bare"), "Bare");
@@ -420,6 +1356,41 @@ fn brand_ref_mismatch_blocks_resolution() {
         .any(|diagnostic| diagnostic.code == "LUMB0101"));
 }
 
+fn health_brand_seed() -> BrandSeed {
+    BrandSeed {
+        id: BrandKitId::from("brand_seed_health"),
+        version: 3,
+        name: "Insight Health".to_owned(),
+        primary_color: "#075E68".to_owned(),
+        description: Some("Professional healthcare automation brand".to_owned()),
+        secondary_color: Some("#2F80ED".to_owned()),
+        accent_color: Some("#16A34A".to_owned()),
+        neutral_color: Some("#111827".to_owned()),
+        preferred_fonts: vec!["Source Sans 3".to_owned(), "Inter".to_owned()],
+        logo_refs: vec![BrandSeedLogoRef {
+            logo_id: "primary".to_owned(),
+            asset_id: AssetId::from("asset_insight_logo"),
+            usage: LogoUsage::Primary,
+            color_mode: LogoColorMode::FullColor,
+            variant: Some("full_color".to_owned()),
+            width: Some(160.0),
+            height: Some(40.0),
+        }],
+        tone_words: vec![
+            "clinical".to_owned(),
+            "calm".to_owned(),
+            "trustworthy".to_owned(),
+        ],
+        website_url: Some("https://insight.example".to_owned()),
+        style_guide_asset_ids: vec![AssetId::from("asset_style_guide")],
+        sources: vec![BrandSource::Manual {
+            label: "seeded from product onboarding".to_owned(),
+            confidence: 0.9,
+        }],
+        default_mode: BrandMode::default(),
+    }
+}
+
 fn tokenized_scene(brand_kit: &BrandKit) -> Scene {
     let mut scene = Scene::new(DocumentId::from("doc_brand"), "Brand Tokens");
     scene.meta.brand_kit = Some(brand_kit.brand_ref());
@@ -490,6 +1461,31 @@ fn tokenized_scene(brand_kit: &BrandKit) -> Scene {
         },
     }];
     scene.nodes.insert(headline.id.clone(), headline);
+    scene
+}
+
+fn logo_scene_on_allowed_background(brand_kit: &BrandKit) -> Scene {
+    let mut scene = Scene::new(DocumentId::from("doc_logo_size"), "Logo Size");
+    scene.meta.brand_kit = Some(brand_kit.brand_ref());
+    let mut page = page("page_logo");
+    page.background = vec![Fill {
+        id: PaintId::from("page_bg"),
+        paint: Paint::Token {
+            token: "surface.brand".to_owned(),
+        },
+    }];
+    page.children = vec![NodeId::from("node_logo")];
+    scene.pages.insert(page.id.clone(), page);
+
+    let mut logo = Node::new(
+        NodeId::from("node_logo"),
+        NodeKind::Image(ImageNode {
+            asset_id: AssetId::from("asset_logo_primary"),
+            alt: Some("Acme Health logo".to_owned()),
+        }),
+    );
+    logo.size = SizeSpec::fixed(96.0, 96.0);
+    scene.nodes.insert(logo.id.clone(), logo);
     scene
 }
 
@@ -670,6 +1666,8 @@ fn acme_brand_kit() -> BrandKit {
             confidence: 1.0,
         }],
         provenance: None,
+        approval_status: BrandApprovalStatus::Draft,
+        compatibility_policy: BrandCompatibilityPolicy::default(),
         modes: BrandModeSpec::default(),
         tokens: TokenCatalog {
             colors,
@@ -708,6 +1706,66 @@ fn acme_brand_kit() -> BrandKit {
                 min_ratio: 4.5,
             }],
         },
+    }
+}
+
+fn compile_and_preflight_template(
+    name: &str,
+    source: &str,
+    brand_kit: &BrandKit,
+    page_id: &PageId,
+) -> Scene {
+    let mut scene = Scene::new(
+        DocumentId::from(format!("doc_{name}_{}", brand_kit.id.as_str())),
+        format!("Phase C {name}"),
+    );
+    let output = compile_dsl_into_scene(source, &mut scene);
+    let dsl_errors = output
+        .compile_output
+        .diagnostics
+        .iter()
+        .filter(|diagnostic| diagnostic.diagnostic.severity == DiagnosticSeverity::Error)
+        .collect::<Vec<_>>();
+    assert!(
+        dsl_errors.is_empty(),
+        "{name} failed DSL compile for {}: {:#?}",
+        brand_kit.id.as_str(),
+        dsl_errors
+    );
+    assert!(
+        output.operation_error.is_none(),
+        "{name} failed operation application for {}: {:#?}",
+        brand_kit.id.as_str(),
+        output.operation_error
+    );
+    assert!(
+        scene.pages.contains_key(page_id),
+        "{name} did not create expected page {page_id}"
+    );
+
+    let result = preflight_scene(scene, Some(brand_kit), PreflightOptions::default());
+    let preflight_errors = result
+        .diagnostics
+        .iter()
+        .filter(|diagnostic| diagnostic.severity == DiagnosticSeverity::Error)
+        .collect::<Vec<_>>();
+    assert!(
+        preflight_errors.is_empty(),
+        "{name} failed preflight for {}: {:#?}",
+        brand_kit.id.as_str(),
+        preflight_errors
+    );
+    result.scene
+}
+
+fn first_solid_fill_hex(scene: &Scene, node_id: &NodeId) -> Option<String> {
+    let node = scene.nodes.get(node_id)?;
+    let fill = node.fills.first()?;
+    match &fill.paint {
+        Paint::Solid {
+            color: Color::Hex { value },
+        } => Some(value.clone()),
+        _ => None,
     }
 }
 

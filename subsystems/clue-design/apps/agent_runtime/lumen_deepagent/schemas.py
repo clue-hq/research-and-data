@@ -137,6 +137,7 @@ class PreflightSummary(BaseModel):
     brand_source: Optional[str] = None
     brand_kit_id: Optional[str] = None
     brand_kit_version: Optional[str] = None
+    brand_mode: Optional[JsonObject] = None
 
 
 class ExportSummary(BaseModel):
@@ -246,6 +247,7 @@ class AgentRunState(BaseModel):
     status: Literal["running", "accepted", "failed"] = "running"
     iterations: List[AgentIteration] = Field(default_factory=list)
     loaded_knowledge: List[KnowledgeSnippet] = Field(default_factory=list)
+    effective_brand: Optional[JsonObject] = None
     current_iteration: int = 0
     stop_reason: Optional[StopReason] = None
     gaps: List[GapRecord] = Field(default_factory=list)

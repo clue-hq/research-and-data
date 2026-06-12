@@ -1,0 +1,41 @@
+# Product-ready healthcare Brand Kit fixture for Phase C.
+# This intentionally exercises the compact Brilliant-inspired authoring surface.
+
+brand "Insight Health" id(brand_kit_insight_health) version(4)
+mode theme(light,dark) default(light)
+mode density(comfortable,compact) default(comfortable)
+mode accessibility(standard,high_contrast,large_text) default(standard)
+mode medium(digital,print) default(digital)
+
+color primary = ramp(#075E68)
+color neutral = ramp(#111827)
+color accent = ramp(oklch(0.58,0.11,154))
+
+alias surface.brand = $palette.primary.700
+alias surface.accent = $palette.accent.500
+alias text.primary = $palette.neutral.950
+alias text.secondary = $palette.neutral.700
+alias text.inverse = $palette.neutral.50
+alias text.brand = $palette.primary.800
+alias border.brand = $palette.primary.700
+alias focus.ring = $palette.accent.500
+
+spacing space = scale(0,4,8,12,16,20,24,32,40,48,64)
+radius radius = scale(0,2,4,8,12,20,999,16,10,999)
+stroke stroke.width = scale(0.5,1,1.5,2,3,1,1,2)
+opacity opacity = named(disabled:0.38,subtle:0.72,muted:0.64,overlay:0.88,scrim:0.56,emphasis:1)
+
+font brand = font("Source Sans 3", fallback("Arial","sans-serif"))
+type headline = typography($font.brand,56,800,1.05,-0.01,$text.primary)
+type body = typography($font.brand,18,450,1.42,0,$text.primary)
+type cta = typography($font.brand,16,800,1.05,0,$text.inverse)
+
+logo primary = asset(account_logo, usage(primary), min_size(48), clearspace(16))
+illustration primary = asset(asset_healthcare_card_svg, role(spot_illustration), mime(image/svg+xml), tags(healthcare,calm,clinical), context(hero,feature_card), color($palette.primary.700), recolor(true), crop(false), license(client_owned))
+icon primary = asset(asset_medical_line_icon_svg, role(line_icon), mime(image/svg+xml), tags(medical,ui), context(button,badge), color($border.brand), recolor(true), crop(false), license(client_owned))
+texture subtle = asset(asset_clinical_texture_svg, role(background_texture), mime(image/svg+xml), tags(subtle,clinical), context(background), color($surface.brand.subtle), recolor(true), crop(true), license(client_owned))
+
+constraint tone = "clinical, calm, expert"
+constraint gradients = allow
+constraint imagery = "Use clean healthcare imagery with clear human value."
+constraint iconography = "Use restrained line icons and strong contrast."

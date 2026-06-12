@@ -40,7 +40,7 @@ class FakeCoreClient:
 
     def new_scene(self, document_id: str, title: str):
         return {
-            "meta": {"id": document_id, "title": title},
+            "meta": {"id": document_id, "title": title, "medium": "ad"},
             "pages": {},
             "nodes": {},
             "slots": {},
@@ -102,11 +102,28 @@ class FakeCoreClient:
         return {"scene": updated, "applied_operations": len(operations), "diagnostics": []}
 
     def platform_default_brand_kit(self):
-        return {"id": "brand_kit_platform_default", "version": 1}
+        return {
+            "id": "brand_kit_platform_default",
+            "version": 1,
+            "name": "Platform Default",
+            "modes": {
+                "defaults": {
+                    "theme": "light",
+                    "density": "comfortable",
+                    "accessibility": "standard",
+                    "medium": "print",
+                }
+            },
+        }
 
     def preflight_scene(self, scene, brand_kit):
+        updated = json.loads(json.dumps(scene))
+        updated.setdefault("meta", {})["brand_kit"] = {
+            "id": brand_kit["id"],
+            "version": brand_kit["version"],
+        }
         return {
-            "scene": scene,
+            "scene": updated,
             "diagnostics": [],
             "preflight": {
                 "has_errors": False,
@@ -394,6 +411,7 @@ def test_task_knowledge_prioritizes_lumen_docs(tmp_path: Path):
     paths = [
         "apps/agent_runtime/knowledge/lumen-dsl/authoring.md",
         "apps/agent_runtime/knowledge/design/layout-recipes.md",
+        "apps/agent_runtime/knowledge/design-systems/brand-validation.md",
         "apps/agent_runtime/knowledge/agent-loop/authoring-and-repair.md",
         "reference_docs/Brilliant-Reverse-Engineering-Report.md",
     ]
@@ -408,8 +426,14 @@ def test_task_knowledge_prioritizes_lumen_docs(tmp_path: Path):
     snippets = read_task_knowledge(tmp_path, "Create a square ad")
 
     categories = {snippet.category for snippet in snippets[:3]}
-    assert {"lumen-dsl", "design", "agent-loop"}.issubset(categories)
-    assert all("apps/agent_runtime/knowledge" in snippet.path for snippet in snippets[:3])
+    assert {"lumen-dsl", "design", "design-systems", "agent-loop"}.issubset(
+        {snippet.category for snippet in snippets[:4]}
+    )
+    assert all("apps/agent_runtime/knowledge" in snippet.path for snippet in snippets[:4])
+    assert any(
+        snippet.path == "apps/agent_runtime/knowledge/design-systems/brand-validation.md"
+        for snippet in snippets[:4]
+    )
 
 
 def test_quality_loop_passes_knowledge_excerpts_to_author(tmp_path: Path, monkeypatch):
@@ -417,6 +441,7 @@ def test_quality_loop_passes_knowledge_excerpts_to_author(tmp_path: Path, monkey
     paths = [
         "apps/agent_runtime/knowledge/lumen-dsl/authoring.md",
         "apps/agent_runtime/knowledge/design/layout-recipes.md",
+        "apps/agent_runtime/knowledge/design-systems/token-taxonomy.md",
         "apps/agent_runtime/knowledge/agent-loop/authoring-and-repair.md",
     ]
     for rel_path in paths:
@@ -489,6 +514,47 @@ def test_runtime_tools_update_scene_export_preview_and_write_trace(
     assert (config.trace_dir / tools.run_id / "input.json").exists()
     assert (config.trace_dir / tools.run_id / "iterations" / "001" / "dsl.lumen").exists()
     assert (config.trace_dir / tools.run_id / "iterations" / "001" / "export.json").exists()
+
+
+def test_preflight_and_final_trace_record_effective_brand_context(
+    tmp_path: Path, monkeypatch
+):
+    monkeypatch.setattr("lumen_deepagent.tools.CoreClient", FakeCoreClient)
+    config = runtime_config(tmp_path)
+    tools = LumenDesignTools(config, "Create a square ad")
+    tools.compile_dsl_block("page page_test")
+
+    preflight_result = json.loads(tools.preflight_design())
+    final = json.loads(tools.finalize_run("accepted", "accepted", "Accepted."))
+
+    assert preflight_result["preflight"]["brand_source"] == "platform_default"
+    assert preflight_result["preflight"]["brand_kit_id"] == "brand_kit_platform_default"
+    assert preflight_result["preflight"]["brand_kit_version"] == "1"
+    assert preflight_result["preflight"]["brand_mode"] == {
+        "theme": "light",
+        "density": "comfortable",
+        "accessibility": "standard",
+        "medium": "digital",
+    }
+    assert preflight_result["effective_brand"] == final["effective_brand"]
+    assert final["final_scene_summary"]["effective_brand"] == final["effective_brand"]
+
+    preflight_payload = json.loads(
+        (config.trace_dir / tools.run_id / "iterations" / "001" / "preflight.json")
+        .read_text(encoding="utf-8")
+    )
+    assert preflight_payload["effective_brand"]["mode"]["medium"] == "digital"
+
+    trace_events = [
+        json.loads(line)
+        for line in (config.trace_dir / tools.run_id / "trace.jsonl")
+        .read_text(encoding="utf-8")
+        .splitlines()
+    ]
+    preflight_event = next(event for event in trace_events if event["event"] == "preflight_completed")
+    finalized_event = next(event for event in trace_events if event["event"] == "run_finalized")
+    assert preflight_event["payload"]["effective_brand"]["brand_kit_id"] == "brand_kit_platform_default"
+    assert finalized_event["payload"]["effective_brand"]["mode"]["medium"] == "digital"
 
 
 def test_compile_halt_location_is_preserved_as_repair_context(
@@ -889,6 +955,51 @@ def test_quality_loop_records_max_iteration_stop(tmp_path: Path, monkeypatch):
     assert result["stop_reason"] == "max_iterations_reached"
 
 
+def test_brand_fit_critique_blocks_acceptance_and_drives_repair(
+    tmp_path: Path, monkeypatch
+):
+    monkeypatch.setattr("lumen_deepagent.tools.CoreClient", FakeCoreClient)
+    config = runtime_config(tmp_path, max_iterations=2)
+    tools = LumenDesignTools(config, "Create a brand-aligned LinkedIn ad")
+    author = ScriptedAuthor(["page page_test", "headline text \"Branded repair\""])
+    reviewer = ScriptedReviewer(
+        [
+            VisualCritique(
+                accepted=False,
+                summary="The design is visually tidy but off-brand.",
+                issues=[
+                    VisualIssue(
+                        category=CritiqueCategory.brand_fit,
+                        target=VisualTarget(page_id="page_test", node_id="headline"),
+                        message="The headline ignores the effective Brand Kit typography and color roles.",
+                        suggested_repair="Use the Brand Kit headline style and semantic surface/text tokens.",
+                    )
+                ],
+                repair_instruction=(
+                    "Repair only headline so it uses Brand Kit semantic type and color roles."
+                ),
+            ),
+            VisualCritique(accepted=True, summary="Brand fit is acceptable."),
+        ]
+    )
+
+    result = LumenQualityLoop(tools, author, reviewer).run(
+        "Create a brand-aligned LinkedIn ad"
+    )
+
+    assert result["status"] == "accepted"
+    assert len(author.requests) == 2
+    assert len(reviewer.calls) == 2
+    assert (
+        reviewer.calls[0]["scene_summary"]["effective_brand"]["brand_kit_id"]
+        == "brand_kit_platform_default"
+    )
+    repair_context = author.requests[1].repair_context
+    assert repair_context["kind"] == "visual"
+    assert repair_context["feedback"]["issues"][0]["category"] == "brand_fit"
+    assert "Brand Kit headline style" in json.dumps(repair_context)
+
+
 def test_trace_evaluator_summarizes_final_run_outputs(tmp_path: Path):
     run_dir = tmp_path / ".lumen-runs" / "run_test"
     run_dir.mkdir(parents=True)
@@ -896,7 +1007,19 @@ def test_trace_evaluator_summarizes_final_run_outputs(tmp_path: Path):
         json.dumps(
             {
                 "status": "failed",
+                "run_id": "run_test",
                 "stop_reason": "preview_invalid",
+                "effective_brand": {
+                    "source": "platform_default",
+                    "brand_kit_id": "brand_kit_platform_default",
+                    "brand_kit_version": "1",
+                    "mode": {
+                        "theme": "light",
+                        "density": "comfortable",
+                        "accessibility": "standard",
+                        "medium": "digital",
+                    },
+                },
                 "preview_paths": ["/tmp/preview.svg"],
                 "critique": {
                     "issues": [
@@ -916,6 +1039,11 @@ def test_trace_evaluator_summarizes_final_run_outputs(tmp_path: Path):
     assert summary["accepted"] == 0
     assert summary["failed"] == 1
     assert summary["stop_reasons"] == {"preview_invalid": 1}
+    assert summary["brand_kits"] == {"brand_kit_platform_default@1": 1}
+    assert summary["brand_modes"] == {
+        "accessibility=standard,density=comfortable,medium=digital,theme=light": 1
+    }
+    assert summary["brand_contexts"][0]["brand_kit_id"] == "brand_kit_platform_default"
     assert summary["unresolved_issue_categories"]["clipping"] == 1
     assert summary["unresolved_issue_categories"]["gap:rendering_export_preview"] == 1
     assert summary["preview_paths"] == ["/tmp/preview.svg"]

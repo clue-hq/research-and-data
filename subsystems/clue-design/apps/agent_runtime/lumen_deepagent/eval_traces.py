@@ -13,7 +13,10 @@ def summarize_trace_dir(trace_root: Path) -> dict[str, Any]:
     failed = 0
     stop_reasons: Counter[str] = Counter()
     issue_categories: Counter[str] = Counter()
+    brand_kits: Counter[str] = Counter()
+    brand_modes: Counter[str] = Counter()
     preview_paths: list[str] = []
+    brand_contexts: list[dict[str, Any]] = []
 
     for final_path in finals:
         final = json.loads(final_path.read_text(encoding="utf-8"))
@@ -23,6 +26,23 @@ def summarize_trace_dir(trace_root: Path) -> dict[str, Any]:
             failed += 1
         if final.get("stop_reason"):
             stop_reasons[str(final["stop_reason"])] += 1
+        brand_context = final.get("effective_brand") or {}
+        if isinstance(brand_context, dict):
+            brand_contexts.append(
+                {
+                    "run_id": final.get("run_id") or final_path.parent.name,
+                    "source": brand_context.get("source"),
+                    "brand_kit_id": brand_context.get("brand_kit_id"),
+                    "brand_kit_version": brand_context.get("brand_kit_version"),
+                    "mode": brand_context.get("mode") or {},
+                }
+            )
+            brand_key = brand_context_key(brand_context)
+            if brand_key:
+                brand_kits[brand_key] += 1
+            mode_key = mode_context_key(brand_context.get("mode"))
+            if mode_key:
+                brand_modes[mode_key] += 1
         preview_paths.extend(final.get("preview_paths", []))
         critique = final.get("critique") or {}
         for issue in critique.get("issues", []):
@@ -40,9 +60,26 @@ def summarize_trace_dir(trace_root: Path) -> dict[str, Any]:
         "accepted": accepted,
         "failed": failed,
         "stop_reasons": dict(stop_reasons),
+        "brand_kits": dict(brand_kits),
+        "brand_modes": dict(brand_modes),
+        "brand_contexts": brand_contexts,
         "unresolved_issue_categories": dict(issue_categories),
         "preview_paths": preview_paths,
     }
+
+
+def brand_context_key(brand_context: dict[str, Any]) -> str | None:
+    brand_kit_id = brand_context.get("brand_kit_id")
+    if not brand_kit_id:
+        return None
+    version = brand_context.get("brand_kit_version")
+    return f"{brand_kit_id}@{version}" if version is not None else str(brand_kit_id)
+
+
+def mode_context_key(mode: Any) -> str | None:
+    if not isinstance(mode, dict) or not mode:
+        return None
+    return ",".join(f"{key}={mode[key]}" for key in sorted(mode))
 
 
 def main() -> None:
@@ -59,4 +96,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

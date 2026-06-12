@@ -37,6 +37,23 @@ def run_migrations(database_path: Path) -> None:
     with connect(database_path) as connection:
         for migration in sorted(MIGRATIONS_DIR.glob("*.sql")):
             connection.executescript(migration.read_text())
+        ensure_column(
+            connection,
+            "documents",
+            "effective_brand_mode_json",
+            "TEXT",
+        )
+
+
+def ensure_column(
+    connection: sqlite3.Connection, table: str, column: str, definition: str
+) -> None:
+    columns = {
+        row["name"]
+        for row in connection.execute(f"PRAGMA table_info({table})").fetchall()
+    }
+    if column not in columns:
+        connection.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
 
 
 class Repository:
@@ -48,6 +65,7 @@ class Repository:
         scene: JsonObject,
         brand_kit: Optional[JsonObject] = None,
         effective_brand_source: Optional[str] = None,
+        effective_brand_mode: Optional[JsonObject] = None,
     ) -> JsonObject:
         now = utc_now()
         document_id = scene["meta"]["id"]
@@ -67,9 +85,10 @@ class Repository:
             INSERT INTO documents (
               id, title, status, current_scene_json, current_version,
               effective_brand_kit_source, effective_brand_kit_id,
-              effective_brand_kit_version, brand_kit_json, created_at, updated_at
+              effective_brand_kit_version, effective_brand_mode_json,
+              brand_kit_json, created_at, updated_at
             )
-            VALUES (?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 document_id,
@@ -79,6 +98,7 @@ class Repository:
                 effective_source,
                 effective_id,
                 effective_version,
+                encode_optional(effective_brand_mode),
                 encode_optional(brand_kit),
                 now,
                 now,
@@ -94,6 +114,131 @@ class Repository:
         if row is None:
             raise NotFoundError("document", document_id)
         return document_from_row(row)
+
+    def create_brand_kit(
+        self,
+        brand_kit: JsonObject,
+        brand_summary: JsonObject,
+        diagnostics: List[JsonObject],
+        source: str,
+    ) -> JsonObject:
+        now = utc_now()
+        brand_kit_id = str(brand_kit["id"])
+        version = int(brand_kit["version"])
+        self.connection.execute(
+            """
+            INSERT INTO brand_kits (
+              brand_kit_id, version, name, approval_status, product_ready,
+              source, brand_kit_json, brand_summary_json, diagnostics_json,
+              created_at, updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                brand_kit_id,
+                version,
+                brand_kit["name"],
+                brand_kit.get("approval_status"),
+                1 if brand_summary.get("product_ready") else 0,
+                source,
+                encode(brand_kit),
+                encode(brand_summary),
+                encode(diagnostics),
+                now,
+                now,
+            ),
+        )
+        self.connection.commit()
+        return self.require_brand_kit(brand_kit_id, version)
+
+    def list_brand_kits(self, all_versions: bool = False) -> List[JsonObject]:
+        if all_versions:
+            rows = self.connection.execute(
+                """
+                SELECT * FROM brand_kits
+                ORDER BY brand_kit_id ASC, version DESC
+                """
+            ).fetchall()
+        else:
+            rows = self.connection.execute(
+                """
+                SELECT brand_kits.* FROM brand_kits
+                INNER JOIN (
+                  SELECT brand_kit_id, MAX(version) AS latest_version
+                  FROM brand_kits
+                  GROUP BY brand_kit_id
+                ) latest
+                ON brand_kits.brand_kit_id = latest.brand_kit_id
+                AND brand_kits.version = latest.latest_version
+                ORDER BY brand_kits.brand_kit_id ASC
+                """
+            ).fetchall()
+        return [brand_kit_from_row(row) for row in rows]
+
+    def require_brand_kit(
+        self, brand_kit_id: str, version: Optional[int] = None
+    ) -> JsonObject:
+        if version is None:
+            row = self.connection.execute(
+                """
+                SELECT * FROM brand_kits
+                WHERE brand_kit_id = ?
+                ORDER BY version DESC
+                LIMIT 1
+                """,
+                (brand_kit_id,),
+            ).fetchone()
+        else:
+            row = self.connection.execute(
+                """
+                SELECT * FROM brand_kits
+                WHERE brand_kit_id = ? AND version = ?
+                """,
+                (brand_kit_id, version),
+            ).fetchone()
+        if row is None:
+            raise NotFoundError("brand_kit", brand_kit_id)
+        return brand_kit_from_row(row)
+
+    def create_brand_compatibility_report(
+        self,
+        report_id: str,
+        from_brand_kit: JsonObject,
+        to_brand_kit: JsonObject,
+        report: JsonObject,
+        diagnostics: List[JsonObject],
+    ) -> JsonObject:
+        now = utc_now()
+        self.connection.execute(
+            """
+            INSERT INTO brand_compatibility_reports (
+              report_id, from_brand_kit_id, from_version, to_brand_kit_id,
+              to_version, report_json, diagnostics_json, created_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                report_id,
+                from_brand_kit["id"],
+                int(from_brand_kit["version"]),
+                to_brand_kit["id"],
+                int(to_brand_kit["version"]),
+                encode(report),
+                encode(diagnostics),
+                now,
+            ),
+        )
+        self.connection.commit()
+        return self.require_brand_compatibility_report(report_id)
+
+    def require_brand_compatibility_report(self, report_id: str) -> JsonObject:
+        row = self.connection.execute(
+            "SELECT * FROM brand_compatibility_reports WHERE report_id = ?",
+            (report_id,),
+        ).fetchone()
+        if row is None:
+            raise NotFoundError("brand_compatibility_report", report_id)
+        return brand_compatibility_report_from_row(row)
 
     def replace_scene(
         self,
@@ -133,7 +278,7 @@ class Repository:
         actor_kind: str,
         actor_id: Optional[str],
         diagnostic_kind: str,
-        effective_brand: Optional[Tuple[str, Optional[JsonObject]]],
+        effective_brand: Optional[Tuple[str, Optional[JsonObject], Optional[JsonObject]]],
     ) -> JsonObject:
         operations = list(operations)
         now = utc_now()
@@ -146,12 +291,17 @@ class Repository:
             brand_source = document.get("effective_brand_kit_source")
             brand_id = document.get("effective_brand_kit_id")
             brand_version = document.get("effective_brand_kit_version")
+            brand_mode = document.get("effective_brand_mode")
             brand_json = document.get("brand_kit")
             if effective_brand is not None:
-                brand_source, brand_kit = effective_brand
+                brand_source, brand_kit, brand_mode = effective_brand
                 brand_id = brand_kit.get("id") if brand_kit else None
                 brand_version = brand_kit.get("version") if brand_kit else None
-                if brand_source in {"request", "document", "generated_default"} and brand_kit:
+                if (
+                    brand_source
+                    in {"request", "document", "generated_default", "brand_kit_library"}
+                    and brand_kit
+                ):
                     brand_json = brand_kit
 
             self.connection.execute(
@@ -160,7 +310,7 @@ class Repository:
                 SET title = ?, status = ?, current_scene_json = ?,
                     current_version = ?, effective_brand_kit_source = ?,
                     effective_brand_kit_id = ?, effective_brand_kit_version = ?,
-                    brand_kit_json = ?, updated_at = ?
+                    effective_brand_mode_json = ?, brand_kit_json = ?, updated_at = ?
                 WHERE id = ?
                 """,
                 (
@@ -171,6 +321,7 @@ class Repository:
                     brand_source,
                     brand_id,
                     brand_version,
+                    encode_optional(brand_mode),
                     encode_optional(brand_json),
                     now,
                     document_id,
@@ -444,9 +595,43 @@ def document_from_row(row: sqlite3.Row) -> JsonObject:
         "effective_brand_kit_source": row["effective_brand_kit_source"],
         "effective_brand_kit_id": row["effective_brand_kit_id"],
         "effective_brand_kit_version": row["effective_brand_kit_version"],
+        "effective_brand_mode": decode_optional(row["effective_brand_mode_json"]),
         "brand_kit": decode_optional(row["brand_kit_json"]),
         "created_at": row["created_at"],
         "updated_at": row["updated_at"],
+    }
+
+
+def brand_kit_from_row(row: sqlite3.Row) -> JsonObject:
+    return {
+        "brand_kit_id": row["brand_kit_id"],
+        "version": row["version"],
+        "name": row["name"],
+        "approval_status": row["approval_status"],
+        "product_ready": bool(row["product_ready"]),
+        "source": row["source"],
+        "brand_kit": decode(row["brand_kit_json"]),
+        "brand_summary": decode(row["brand_summary_json"]),
+        "diagnostics": decode(row["diagnostics_json"]),
+        "created_at": row["created_at"],
+        "updated_at": row["updated_at"],
+    }
+
+
+def brand_compatibility_report_from_row(row: sqlite3.Row) -> JsonObject:
+    return {
+        "report_id": row["report_id"],
+        "from_ref": {
+            "id": row["from_brand_kit_id"],
+            "version": row["from_version"],
+        },
+        "to_ref": {
+            "id": row["to_brand_kit_id"],
+            "version": row["to_version"],
+        },
+        "report": decode(row["report_json"]),
+        "diagnostics": decode(row["diagnostics_json"]),
+        "created_at": row["created_at"],
     }
 
 

@@ -36,6 +36,71 @@ export interface BrandKitRef {
   version: number;
 }
 
+export type BrandCompatibilityStatus =
+  | "compatible"
+  | "warning"
+  | "migration_required"
+  | "incompatible";
+
+export type TokenChangeKind =
+  | "added"
+  | "removed"
+  | "type_changed"
+  | "role_changed"
+  | "mode_coverage_changed"
+  | "asset_removed"
+  | "font_license_changed";
+
+export interface TokenChange {
+  path: string;
+  kind: TokenChangeKind;
+  from_kind?: string | null;
+  to_kind?: string | null;
+}
+
+export interface BrandCompatibilityReport {
+  from: BrandKitRef;
+  to: BrandKitRef;
+  status: BrandCompatibilityStatus;
+  diagnostics: Diagnostic[];
+  token_changes: TokenChange[];
+}
+
+export interface BrandKitSummary {
+  id: BrandKitId;
+  version: number;
+  name: string;
+  approval_status?: string | null;
+  product_ready?: boolean;
+  source?: string | null;
+  description?: string | null;
+  default_mode?: BrandModeSelection | null;
+  modes?: Record<string, string[]> | null;
+  tokens?: BrandTokenCatalog | null;
+  assets?: Record<string, string[] | undefined> | null;
+  authoring_rules?: string[];
+}
+
+export interface BrandModeSelection {
+  values?: Record<string, string>;
+}
+
+export interface BrandTokenCatalog {
+  surface_tokens?: string[];
+  text_tokens?: string[];
+  border_tokens?: string[];
+  focus_tokens?: string[];
+  typography_tokens?: string[];
+  spacing_tokens?: string[];
+  radius_tokens?: string[];
+  stroke_width_tokens?: string[];
+  opacity_tokens?: string[];
+  shadow_tokens?: string[];
+  effect_tokens?: string[];
+  asset_tokens?: string[];
+  [key: string]: string[] | undefined;
+}
+
 export type DocumentStatus =
   | {
       kind: "draft";
@@ -596,6 +661,13 @@ export interface PagePatch {
   background: FieldPatch<Fill[]>;
 }
 
+export interface DocumentPatch {
+  title: FieldPatch<string>;
+  artifact_type: OptionalFieldPatch<string>;
+  medium: OptionalFieldPatch<Medium>;
+  brand_kit: OptionalFieldPatch<BrandKitRef>;
+}
+
 export type ParentRef =
   | {
       kind: "page";
@@ -608,14 +680,36 @@ export type ParentRef =
 
 export type Operation =
   | {
+      kind: "add_page";
+      page: Page;
+    }
+  | {
+      kind: "remove_page";
+      page_id: PageId;
+    }
+  | {
+      kind: "update_document";
+      patch: DocumentPatch;
+    }
+  | {
       kind: "update_page";
       page_id: PageId;
       patch: PagePatch;
     }
   | {
+      kind: "insert_node";
+      parent: ParentRef;
+      index: number;
+      node: Node;
+    }
+  | {
       kind: "update_node";
       node_id: NodeId;
       patch: NodePatch;
+    }
+  | {
+      kind: "remove_node";
+      node_id: NodeId;
     }
   | {
       kind: "move_node";
@@ -660,6 +754,14 @@ export type Operation =
       kind: "unbind_node_from_slot";
       slot_id: SlotId;
       node_id: NodeId;
+    }
+  | {
+      kind: "upsert_export_profile";
+      profile: ExportProfile;
+    }
+  | {
+      kind: "remove_export_profile";
+      name: string;
     };
 
 export interface Diagnostic {

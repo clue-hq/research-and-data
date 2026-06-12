@@ -1,9 +1,12 @@
 use lumen_core::validation::validate_scene;
 use lumen_core::{
-    compile_dsl_into_scene_with_session, layout_scene, platform_default_brand_kit, preflight_scene,
-    BrandKit, Diagnostic, DocumentId, DslCompileSessionSnapshot, ExportAdapter, ExportFormat,
-    ExportProfile, ExportPurpose, ExportRequest, Medium, Operation, PageId, PdfIntent,
-    PreflightOptions, RasterScale, Scene, TemplateRevisionId,
+    compare_brand_kit_compatibility, compile_dsl_into_scene_with_session, compile_styles_brand_kit,
+    generate_brand_kit, layout_scene, platform_default_brand_kit, preflight_scene,
+    summarize_brand_kit_for_authoring, validate_brand_kit, validate_brand_kit_product_ready,
+    validate_scene_brand_governance, BrandGovernanceStrictness, BrandKit, BrandKitId, BrandMode,
+    BrandSeed, Diagnostic, DiagnosticSeverity, DocumentId, DslCompileSessionSnapshot,
+    ExportAdapter, ExportFormat, ExportProfile, ExportPurpose, ExportRequest, Medium, Operation,
+    PageId, PdfIntent, PreflightOptions, RasterScale, Scene, TemplateRevisionId,
 };
 use lumen_export::LumenExportAdapter;
 use serde::{Deserialize, Serialize};
@@ -35,17 +38,47 @@ enum CoreRequest {
     PreflightScene {
         scene: Value,
         brand_kit: Option<Value>,
+        #[serde(default)]
+        mode: Option<Value>,
     },
     ExportPreview {
         scene: Value,
         format: ExportFormat,
         page_ids: Vec<String>,
+        #[serde(default)]
+        profile: Option<Value>,
     },
     FinalizeTemplate {
         scene: Value,
         template_revision_id: String,
     },
     PlatformDefaultBrandKit,
+    ValidateBrandKit {
+        brand_kit: Value,
+        #[serde(default)]
+        product_ready: bool,
+    },
+    CompileStylesBrandKit {
+        source: String,
+        brand_kit_id: String,
+        version: u32,
+        name: String,
+    },
+    GenerateBrandKit {
+        seed: Value,
+    },
+    SummarizeBrandKit {
+        brand_kit: Value,
+    },
+    ValidateSceneBrandGovernance {
+        scene: Value,
+        brand_kit: Value,
+        strictness: BrandGovernanceStrictness,
+    },
+    CompareBrandKitCompatibility {
+        from: Value,
+        to: Value,
+    },
     LayoutGeometry {
         scene: Value,
     },
@@ -66,6 +99,12 @@ struct CoreResponse {
     preflight: Option<PreflightSummary>,
     #[serde(skip_serializing_if = "Option::is_none")]
     brand_kit: Option<Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    brand_summary: Option<Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    brand_generation: Option<Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    brand_compatibility: Option<Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
     geometry: Option<Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -99,6 +138,9 @@ fn main() {
             applied_operations: None,
             preflight: None,
             brand_kit: None,
+            brand_summary: None,
+            brand_generation: None,
+            brand_compatibility: None,
             geometry: None,
             dsl: None,
             export: None,
@@ -157,6 +199,9 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                     applied_operations: None,
                     preflight: None,
                     brand_kit: None,
+                    brand_summary: None,
+                    brand_generation: None,
+                    brand_compatibility: None,
                     geometry: None,
                     dsl: None,
                     export: None,
@@ -186,6 +231,9 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                 applied_operations,
                 preflight: None,
                 brand_kit: None,
+                brand_summary: None,
+                brand_generation: None,
+                brand_compatibility: None,
                 geometry: None,
                 dsl: Some(json!({
                     "compile_output": dsl_compile_output_value(&result.compile_output)?,
@@ -196,10 +244,18 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                 export: None,
             })
         }
-        CoreRequest::PreflightScene { scene, brand_kit } => {
+        CoreRequest::PreflightScene {
+            scene,
+            brand_kit,
+            mode,
+        } => {
             let scene = parse_scene(scene)?;
             let brand_kit = brand_kit.map(parse_brand_kit).transpose()?;
-            let result = preflight_scene(scene, brand_kit.as_ref(), PreflightOptions::default());
+            let mut options = PreflightOptions::default();
+            if let Some(mode) = mode {
+                options.token_resolution.mode = parse_brand_mode(mode)?;
+            }
+            let result = preflight_scene(scene, brand_kit.as_ref(), options);
             let summary = PreflightSummary {
                 has_errors: result.has_errors(),
                 brand_ref_operations: values(result.brand_ref_operations)?,
@@ -214,6 +270,9 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                 applied_operations: None,
                 preflight: Some(summary),
                 brand_kit: None,
+                brand_summary: None,
+                brand_generation: None,
+                brand_compatibility: None,
                 geometry: None,
                 dsl: None,
                 export: None,
@@ -223,10 +282,19 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
             scene,
             format,
             page_ids,
+            profile,
         } => {
             let scene = parse_scene(scene)?;
-            let request = ExportRequest {
-                profile: ExportProfile {
+            let profile = match profile {
+                Some(profile) => {
+                    serde_json::from_value::<ExportProfile>(profile).map_err(|error| {
+                        core_error(
+                            "profile.invalid",
+                            format!("invalid export profile payload: {error}"),
+                        )
+                    })?
+                }
+                None => ExportProfile {
                     name: "agent_critique_preview".to_owned(),
                     format,
                     pdf_intent: Some(PdfIntent::Preview),
@@ -237,6 +305,9 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                     include_bleed: false,
                     embed_fonts: true,
                 },
+            };
+            let request = ExportRequest {
+                profile,
                 page_ids: page_ids.into_iter().map(PageId::from).collect(),
                 purpose: ExportPurpose::AgentCritique,
             };
@@ -249,6 +320,9 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                     applied_operations: None,
                     preflight: None,
                     brand_kit: None,
+                    brand_summary: None,
+                    brand_generation: None,
+                    brand_compatibility: None,
                     geometry: None,
                     dsl: None,
                     export: Some(to_value(result)?),
@@ -261,6 +335,9 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                     applied_operations: None,
                     preflight: None,
                     brand_kit: None,
+                    brand_summary: None,
+                    brand_generation: None,
+                    brand_compatibility: None,
                     geometry: None,
                     dsl: None,
                     export: None,
@@ -289,6 +366,9 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                     applied_operations: None,
                     preflight: None,
                     brand_kit: None,
+                    brand_summary: None,
+                    brand_generation: None,
+                    brand_compatibility: None,
                     geometry: None,
                     dsl: None,
                     export: None,
@@ -307,6 +387,179 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                 applied_operations: None,
                 preflight: None,
                 brand_kit: Some(to_value(brand_kit)?),
+                brand_summary: None,
+                brand_generation: None,
+                brand_compatibility: None,
+                geometry: None,
+                dsl: None,
+                export: None,
+            })
+        }
+        CoreRequest::ValidateBrandKit {
+            brand_kit,
+            product_ready,
+        } => {
+            let brand_kit = parse_brand_kit(brand_kit)?;
+            let diagnostics = if product_ready {
+                validate_brand_kit_product_ready(&brand_kit)
+            } else {
+                validate_brand_kit(&brand_kit)
+            };
+            Ok(CoreResponse {
+                ok: !has_error(&diagnostics),
+                scene: None,
+                diagnostics,
+                error: None,
+                applied_operations: None,
+                preflight: None,
+                brand_kit: Some(to_value(brand_kit)?),
+                brand_summary: None,
+                brand_generation: None,
+                brand_compatibility: None,
+                geometry: None,
+                dsl: None,
+                export: None,
+            })
+        }
+        CoreRequest::CompileStylesBrandKit {
+            source,
+            brand_kit_id,
+            version,
+            name,
+        } => {
+            match compile_styles_brand_kit(&source, BrandKitId::from(brand_kit_id), version, name) {
+                Ok(brand_kit) => {
+                    let summary = summarize_brand_kit_for_authoring(&brand_kit);
+                    Ok(CoreResponse {
+                        ok: true,
+                        scene: None,
+                        diagnostics: Vec::new(),
+                        error: None,
+                        applied_operations: None,
+                        preflight: None,
+                        brand_kit: Some(to_value(&brand_kit)?),
+                        brand_summary: Some(to_value(summary)?),
+                        brand_generation: None,
+                        brand_compatibility: None,
+                        geometry: None,
+                        dsl: None,
+                        export: None,
+                    })
+                }
+                Err(diagnostics) => Ok(CoreResponse {
+                    ok: false,
+                    scene: None,
+                    diagnostics,
+                    error: Some(core_error(
+                        "helper.brand_styles",
+                        "styles source did not compile into a product-ready Brand Kit",
+                    )),
+                    applied_operations: None,
+                    preflight: None,
+                    brand_kit: None,
+                    brand_summary: None,
+                    brand_generation: None,
+                    brand_compatibility: None,
+                    geometry: None,
+                    dsl: None,
+                    export: None,
+                }),
+            }
+        }
+        CoreRequest::GenerateBrandKit { seed } => {
+            let seed = parse_brand_seed(seed)?;
+            let report = generate_brand_kit(&seed);
+            let diagnostics = report.diagnostics.clone();
+            let brand_kit = report.brand_kit.as_ref().map(to_value).transpose()?;
+            let brand_summary = report
+                .brand_kit
+                .as_ref()
+                .map(summarize_brand_kit_for_authoring)
+                .map(to_value)
+                .transpose()?;
+            let ok = report.brand_kit.is_some() && !has_error(&diagnostics);
+            Ok(CoreResponse {
+                ok,
+                scene: None,
+                diagnostics,
+                error: if ok {
+                    None
+                } else {
+                    Some(core_error(
+                        "helper.brand_seed",
+                        "brand seed did not generate a usable Brand Kit",
+                    ))
+                },
+                applied_operations: None,
+                preflight: None,
+                brand_kit,
+                brand_summary,
+                brand_generation: Some(to_value(report)?),
+                brand_compatibility: None,
+                geometry: None,
+                dsl: None,
+                export: None,
+            })
+        }
+        CoreRequest::SummarizeBrandKit { brand_kit } => {
+            let brand_kit = parse_brand_kit(brand_kit)?;
+            let summary = summarize_brand_kit_for_authoring(&brand_kit);
+            Ok(CoreResponse {
+                ok: summary.product_ready,
+                scene: None,
+                diagnostics: summary.diagnostics.clone(),
+                error: None,
+                applied_operations: None,
+                preflight: None,
+                brand_kit: Some(to_value(brand_kit)?),
+                brand_summary: Some(to_value(summary)?),
+                brand_generation: None,
+                brand_compatibility: None,
+                geometry: None,
+                dsl: None,
+                export: None,
+            })
+        }
+        CoreRequest::ValidateSceneBrandGovernance {
+            scene,
+            brand_kit,
+            strictness,
+        } => {
+            let scene = parse_scene(scene)?;
+            let brand_kit = parse_brand_kit(brand_kit)?;
+            let diagnostics = validate_scene_brand_governance(&scene, &brand_kit, strictness);
+            Ok(CoreResponse {
+                ok: !has_error(&diagnostics),
+                scene: Some(to_value(scene)?),
+                diagnostics,
+                error: None,
+                applied_operations: None,
+                preflight: None,
+                brand_kit: Some(to_value(brand_kit)?),
+                brand_summary: None,
+                brand_generation: None,
+                brand_compatibility: None,
+                geometry: None,
+                dsl: None,
+                export: None,
+            })
+        }
+        CoreRequest::CompareBrandKitCompatibility { from, to } => {
+            let from = parse_brand_kit(from)?;
+            let to = parse_brand_kit(to)?;
+            let report = compare_brand_kit_compatibility(&from, &to);
+            let diagnostics = report.diagnostics.clone();
+            Ok(CoreResponse {
+                ok: !has_error(&diagnostics),
+                scene: None,
+                diagnostics,
+                error: None,
+                applied_operations: None,
+                preflight: None,
+                brand_kit: None,
+                brand_summary: None,
+                brand_generation: None,
+                brand_compatibility: Some(to_value(report)?),
                 geometry: None,
                 dsl: None,
                 export: None,
@@ -323,6 +576,9 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                 applied_operations: None,
                 preflight: None,
                 brand_kit: None,
+                brand_summary: None,
+                brand_generation: None,
+                brand_compatibility: None,
                 geometry: Some(json!(result.geometry)),
                 dsl: None,
                 export: None,
@@ -344,6 +600,9 @@ fn ok_scene(
         applied_operations,
         preflight: None,
         brand_kit: None,
+        brand_summary: None,
+        brand_generation: None,
+        brand_compatibility: None,
         geometry: None,
         dsl: None,
         export: None,
@@ -356,6 +615,16 @@ fn parse_scene(value: Value) -> Result<Scene, CoreError> {
 
 fn parse_brand_kit(value: Value) -> Result<BrandKit, CoreError> {
     serde_json::from_value(value).map_err(|error| core_error("helper.brand_kit", error.to_string()))
+}
+
+fn parse_brand_mode(value: Value) -> Result<BrandMode, CoreError> {
+    serde_json::from_value(value)
+        .map_err(|error| core_error("helper.brand_mode", error.to_string()))
+}
+
+fn parse_brand_seed(value: Value) -> Result<BrandSeed, CoreError> {
+    serde_json::from_value(value)
+        .map_err(|error| core_error("helper.brand_seed", error.to_string()))
 }
 
 fn parse_operations(values: Vec<Value>) -> Result<Vec<Operation>, CoreError> {
@@ -415,6 +684,12 @@ fn operation_error_value(error: &Option<lumen_core::OperationError>) -> Option<V
 
 fn to_value<T: Serialize>(value: T) -> Result<Value, CoreError> {
     serde_json::to_value(value).map_err(|error| core_error("helper.serialize", error.to_string()))
+}
+
+fn has_error(diagnostics: &[Diagnostic]) -> bool {
+    diagnostics
+        .iter()
+        .any(|diagnostic| diagnostic.severity == DiagnosticSeverity::Error)
 }
 
 fn core_error(code: impl Into<String>, message: impl Into<String>) -> CoreError {
