@@ -4,6 +4,7 @@
 //! React, Konva, FastAPI, databases, object storage, browser APIs, or WebGPU.
 
 pub mod assets;
+pub mod binding;
 pub mod brand;
 pub mod diagnostics;
 pub mod dsl;
@@ -28,6 +29,10 @@ pub use assets::{
     AssetProvenance, AssetRecord, AssetSource, AssetStatus, AssetThumbnail, AssetValidationOptions,
     AssetVectorizationRequest, AssetVectorizationResult, FontAssetMetadata, LogoAssetMetadata,
     RasterAssetMetadata, VectorAssetMetadata,
+};
+pub use binding::{
+    validate_binding_set, BindingAudience, BindingSet, BoundValue, ConditionalExpr,
+    GeneratedAssetInput, GeneratedAssetSpec, InstanceLink, BINDING_SCHEMA_VERSION,
 };
 pub use brand::{
     collect_scene_token_references, compare_brand_kit_compatibility, compile_styles_brand_kit,
