@@ -11,16 +11,16 @@
 //! clocks, and records audit entries in slot order.
 
 use crate::assets::AssetRecord;
-use crate::binding::{validate_binding_set, BindingSet, BoundValue};
+use crate::binding::{validate_binding_set, BindingSet, BoundValue, ConditionalExpr};
 use crate::diagnostics::{Diagnostic, DiagnosticSeverity, DiagnosticSubject, Phase};
 use crate::ids::{AssetId, NodeId, SlotKey};
 use crate::layout::{layout_scene, LayoutOptions};
 use crate::operations::{FieldPatch, NodePatch, Operation, OptionalFieldPatch};
 use crate::scene::{DocumentStatus, NodeKind, Scene};
-use crate::slots::{ImagePolicy, Slot};
+use crate::slots::{EmptyBehavior, ImagePolicy, Slot};
 use crate::text_measure::SharedTextMeasurer;
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
 /// Options for one derivation run. The measurer is injected exactly like
@@ -126,7 +126,15 @@ pub fn derive_instance(
 
     let mut audit = Vec::new();
 
-    apply_scalar_values(&mut scene, binding, assets, &mut diagnostics, &mut audit);
+    let suppressed = execute_conditionals(&mut scene, binding, &mut diagnostics, &mut audit);
+    apply_scalar_values(
+        &mut scene,
+        binding,
+        assets,
+        &suppressed,
+        &mut diagnostics,
+        &mut audit,
+    );
     bind_generated_assets(&mut scene, binding, assets, &mut diagnostics, &mut audit);
 
     relayout(&mut scene, options, &mut diagnostics);
@@ -140,14 +148,186 @@ pub fn derive_instance(
     }
 }
 
+/// Execute every conditional rule (slice G3). Returns the slot keys whose
+/// values are suppressed because their condition evaluated false — the
+/// `when_false` behavior owns those slots, not value application.
+fn execute_conditionals(
+    scene: &mut Scene,
+    binding: &BindingSet,
+    diagnostics: &mut Vec<Diagnostic>,
+    audit: &mut Vec<InstanceAuditEntry>,
+) -> BTreeSet<SlotKey> {
+    let mut suppressed = BTreeSet::new();
+
+    for slot in slots_in_order(scene) {
+        let Some(rule) = &slot.conditional else {
+            continue;
+        };
+        // validate_binding_set already rejected unparseable expressions;
+        // a parse failure here would be a validation gap, so skip safely.
+        let Ok(expression) = ConditionalExpr::parse(&rule.expression) else {
+            continue;
+        };
+
+        if expression.evaluate(binding) {
+            audit.push(InstanceAuditEntry {
+                kind: InstanceAuditKind::ConditionalSatisfied,
+                slot_key: Some(slot.key.clone()),
+                node_ids: Vec::new(),
+                message: format!(
+                    "conditional {} on slot {} evaluated true",
+                    rule.expression, slot.key
+                ),
+            });
+            continue;
+        }
+
+        suppressed.insert(slot.key.clone());
+        if binding.values.contains_key(slot.key.as_str()) {
+            audit.push(InstanceAuditEntry {
+                kind: InstanceAuditKind::ValueIgnored,
+                slot_key: Some(slot.key.clone()),
+                node_ids: Vec::new(),
+                message: format!(
+                    "bound value for slot {} ignored: conditional {} evaluated false",
+                    slot.key, rule.expression
+                ),
+            });
+        }
+
+        match rule.when_false {
+            EmptyBehavior::HideRegion => {
+                hide_region(scene, &slot, &rule.expression, diagnostics, audit);
+            }
+            EmptyBehavior::PreservePlaceholder => {
+                audit.push(InstanceAuditEntry {
+                    kind: InstanceAuditKind::ConditionalPreserved,
+                    slot_key: Some(slot.key.clone()),
+                    node_ids: slot.bound_nodes.clone(),
+                    message: format!(
+                        "slot {} keeps its placeholder content: {} evaluated false",
+                        slot.key, rule.expression
+                    ),
+                });
+            }
+            EmptyBehavior::UseFallback => {
+                apply_fallback(scene, &slot, &rule.expression, diagnostics, audit);
+            }
+            EmptyBehavior::ValidationError => {
+                diagnostics.push(Diagnostic::error(
+                    Phase::Validation,
+                    "LUMG0311",
+                    format!(
+                        "conditional slot {} evaluated false with validation_error behavior ({})",
+                        slot.key, rule.expression
+                    ),
+                    Some(DiagnosticSubject::Slot(slot.id.clone())),
+                ));
+            }
+        }
+    }
+
+    suppressed
+}
+
+/// HideRegion removes the bound subtree pre-layout (canonical RemoveNode,
+/// which clears dangling slot bindings) and drops the slot record so the
+/// derived scene stays structurally valid.
+fn hide_region(
+    scene: &mut Scene,
+    slot: &Slot,
+    expression: &str,
+    diagnostics: &mut Vec<Diagnostic>,
+    audit: &mut Vec<InstanceAuditEntry>,
+) {
+    let mut removed = Vec::new();
+    for node_id in &slot.bound_nodes {
+        if !scene.nodes.contains_key(node_id) {
+            continue;
+        }
+        match scene.apply_operation_checked(Operation::RemoveNode {
+            node_id: node_id.clone(),
+        }) {
+            Ok(report) => {
+                diagnostics.extend(report.diagnostics);
+                removed.push(node_id.clone());
+            }
+            Err(error) => diagnostics.push(operation_failure(
+                &slot.key,
+                Some(node_id),
+                "hide region",
+                error.code,
+                &error.message,
+            )),
+        }
+    }
+    match scene.apply_operation_checked(Operation::RemoveSlot {
+        slot_id: slot.id.clone(),
+    }) {
+        Ok(report) => diagnostics.extend(report.diagnostics),
+        Err(error) => diagnostics.push(operation_failure(
+            &slot.key,
+            None,
+            "hide region slot removal",
+            error.code,
+            &error.message,
+        )),
+    }
+    audit.push(InstanceAuditEntry {
+        kind: InstanceAuditKind::ConditionalHidden,
+        slot_key: Some(slot.key.clone()),
+        node_ids: removed,
+        message: format!(
+            "region for slot {} hidden: {expression} evaluated false",
+            slot.key
+        ),
+    });
+}
+
+/// UseFallback substitutes the slot placeholder into bound text nodes.
+fn apply_fallback(
+    scene: &mut Scene,
+    slot: &Slot,
+    expression: &str,
+    diagnostics: &mut Vec<Diagnostic>,
+    audit: &mut Vec<InstanceAuditEntry>,
+) {
+    let Some(placeholder) = slot.placeholder.clone().filter(|text| !text.is_empty()) else {
+        diagnostics.push(Diagnostic::warning(
+            Phase::Validation,
+            "LUMG0310",
+            format!(
+                "slot {} uses fallback behavior but has no placeholder content; nodes left unchanged",
+                slot.key
+            ),
+            Some(DiagnosticSubject::Slot(slot.id.clone())),
+        ));
+        return;
+    };
+    apply_text_to_slot(scene, slot, &placeholder, diagnostics, audit);
+    audit.push(InstanceAuditEntry {
+        kind: InstanceAuditKind::ConditionalFallback,
+        slot_key: Some(slot.key.clone()),
+        node_ids: slot.bound_nodes.clone(),
+        message: format!(
+            "slot {} fell back to placeholder content: {expression} evaluated false",
+            slot.key
+        ),
+    });
+}
+
 fn apply_scalar_values(
     scene: &mut Scene,
     binding: &BindingSet,
     assets: &DerivationAssets,
+    suppressed: &BTreeSet<SlotKey>,
     diagnostics: &mut Vec<Diagnostic>,
     audit: &mut Vec<InstanceAuditEntry>,
 ) {
     for slot in slots_in_order(scene) {
+        if suppressed.contains(&slot.key) {
+            continue;
+        }
         let Some(value) = binding.values.get(slot.key.as_str()) else {
             continue;
         };

@@ -808,9 +808,185 @@ fn g2_invalid_binding_sets_refuse_derivation_without_mutation() {
 }
 
 #[test]
-#[ignore = "G3: conditional EmptyBehavior executes with audit entries"]
-fn g3_conditionals_execute_empty_behavior() {
-    unimplemented!("HideRegion / UseFallback / ValidationError execution");
+fn g3_hide_region_removes_the_bound_subtree_pre_layout() {
+    let derived = derive_fixture("missing_optional");
+    assert!(!derived.has_errors(), "{:#?}", derived.diagnostics);
+
+    assert!(
+        derived.scene.node(&"node_quote".into()).is_none(),
+        "hidden region's bound node must be removed"
+    );
+    assert!(
+        derived
+            .scene
+            .slot_by_key(&"research.quote".into())
+            .is_none(),
+        "hidden region's slot record must be removed"
+    );
+    assert!(
+        !derived
+            .scene
+            .pages
+            .values()
+            .any(|page| page.children.contains(&"node_quote".into())),
+        "page children must not reference the hidden node"
+    );
+
+    let hidden = derived
+        .audit
+        .iter()
+        .find(|entry| entry.kind == lumen_core::InstanceAuditKind::ConditionalHidden)
+        .expect("hide region must be audited");
+    assert!(
+        hidden.message.contains("research.quote") && hidden.message.contains("has(research.quote)"),
+        "audit names the slot and the expression: {}",
+        hidden.message
+    );
+    assert_eq!(hidden.node_ids, vec!["node_quote".into()]);
+
+    // The derived scene must still be fully valid after subtree removal.
+    let errors: Vec<_> = lumen_core::validation::validate_scene(&derived.scene)
+        .into_iter()
+        .filter(|d| d.severity == lumen_core::DiagnosticSeverity::Error)
+        .collect();
+    assert!(errors.is_empty(), "{errors:#?}");
+}
+
+#[test]
+fn g3_satisfied_conditionals_apply_the_bound_value() {
+    let derived = derive_fixture("nominal");
+    assert!(!derived.has_errors(), "{:#?}", derived.diagnostics);
+
+    let quote = derived
+        .scene
+        .node(&"node_quote".into())
+        .expect("quote node");
+    let lumen_core::NodeKind::Text(text) = &quote.kind else {
+        panic!("quote stays a text node");
+    };
+    assert_eq!(
+        text.content,
+        "Their team shipped twice as fast as any vendor we have worked with."
+    );
+    assert!(derived.audit.iter().any(|entry| {
+        entry.kind == lumen_core::InstanceAuditKind::ConditionalSatisfied
+            && entry.slot_key.as_ref().map(|key| key.as_str()) == Some("research.quote")
+    }));
+}
+
+#[test]
+fn g3_use_fallback_substitutes_the_placeholder() {
+    let mut scene = mailer_revision_scene();
+    let slot = scene
+        .slots
+        .values_mut()
+        .find(|slot| slot.key.as_str() == "research.quote")
+        .expect("quote slot");
+    slot.conditional = Some(lumen_core::ConditionalRule {
+        expression: "has(research.quote)".to_owned(),
+        when_false: lumen_core::EmptyBehavior::UseFallback,
+    });
+
+    let binding = binding_set("missing_optional");
+    let assets = derivation_assets("asset_northcare_logo", &binding.binding_set_id);
+    let derived = lumen_core::derive_instance(
+        &scene,
+        &binding,
+        &assets,
+        &lumen_core::DeriveOptions::default(),
+    );
+    assert!(!derived.has_errors(), "{:#?}", derived.diagnostics);
+
+    let quote = derived
+        .scene
+        .node(&"node_quote".into())
+        .expect("quote node kept");
+    let lumen_core::NodeKind::Text(text) = &quote.kind else {
+        panic!("quote stays a text node");
+    };
+    assert_eq!(text.content, "Their team shipped twice as fast.");
+    assert!(derived
+        .audit
+        .iter()
+        .any(|entry| entry.kind == lumen_core::InstanceAuditKind::ConditionalFallback));
+}
+
+#[test]
+fn g3_validation_error_behavior_fails_the_instance() {
+    let mut scene = mailer_revision_scene();
+    let slot = scene
+        .slots
+        .values_mut()
+        .find(|slot| slot.key.as_str() == "research.quote")
+        .expect("quote slot");
+    slot.conditional = Some(lumen_core::ConditionalRule {
+        expression: "has(research.quote)".to_owned(),
+        when_false: lumen_core::EmptyBehavior::ValidationError,
+    });
+
+    let binding = binding_set("missing_optional");
+    let assets = derivation_assets("asset_northcare_logo", &binding.binding_set_id);
+    let derived = lumen_core::derive_instance(
+        &scene,
+        &binding,
+        &assets,
+        &lumen_core::DeriveOptions::default(),
+    );
+    let error = derived
+        .diagnostics
+        .iter()
+        .find(|d| d.code == "LUMG0311")
+        .expect("validation_error behavior must be LUMG0311");
+    assert!(
+        error.message.contains("research.quote"),
+        "diagnostic names the slot: {}",
+        error.message
+    );
+}
+
+#[test]
+fn g3_eq_false_suppresses_the_bound_value_with_audit() {
+    let mut scene = mailer_revision_scene();
+    let slot = scene
+        .slots
+        .values_mut()
+        .find(|slot| slot.key.as_str() == "research.quote")
+        .expect("quote slot");
+    slot.conditional = Some(lumen_core::ConditionalRule {
+        expression: "eq(campaign.cta,\"Some other CTA\")".to_owned(),
+        when_false: lumen_core::EmptyBehavior::PreservePlaceholder,
+    });
+
+    // nominal provides a quote value, but the eq() gate is false.
+    let binding = binding_set("nominal");
+    let assets = derivation_assets("asset_acme_logo", &binding.binding_set_id);
+    let derived = lumen_core::derive_instance(
+        &scene,
+        &binding,
+        &assets,
+        &lumen_core::DeriveOptions::default(),
+    );
+    assert!(!derived.has_errors(), "{:#?}", derived.diagnostics);
+
+    let quote = derived
+        .scene
+        .node(&"node_quote".into())
+        .expect("quote node kept");
+    let lumen_core::NodeKind::Text(text) = &quote.kind else {
+        panic!("quote stays a text node");
+    };
+    assert_eq!(
+        text.content, "Their team shipped twice as fast.",
+        "placeholder content preserved; bound value not applied"
+    );
+    assert!(derived
+        .audit
+        .iter()
+        .any(|entry| entry.kind == lumen_core::InstanceAuditKind::ValueIgnored));
+    assert!(derived
+        .audit
+        .iter()
+        .any(|entry| entry.kind == lumen_core::InstanceAuditKind::ConditionalPreserved));
 }
 
 #[test]
