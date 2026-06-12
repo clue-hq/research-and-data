@@ -360,6 +360,252 @@ fn clone_subtree_creates_deterministic_ids_and_clears_computed() {
     );
 }
 
+/// Round-trip identity: applying a batch and then its stored inverse must
+/// restore the original scene exactly (structural equality, not operation
+/// comparison). This is the V1.1 correctness property.
+fn assert_batch_round_trip(scene: &Scene, batch: &lumen_core::EditBatch) {
+    let mut working = scene.clone();
+    batch.apply_checked(&mut working).expect("batch applies");
+    let inverses = batch
+        .inverse_operations
+        .clone()
+        .expect("batch carries inverses");
+    working
+        .apply_operations_checked(inverses)
+        .expect("inverse batch applies");
+    assert_eq!(&working, scene, "inverse must restore the original scene");
+}
+
+#[test]
+fn inverse_round_trip_for_node_modify_restores_computed() {
+    let mut scene = scene_with_ad();
+    scene
+        .nodes
+        .get_mut(&NodeId::from("headline"))
+        .unwrap()
+        .computed = Some(lumen_core::ComputedGeometry {
+        layout_bounds: lumen_core::Rect {
+            x: 1.0,
+            y: 2.0,
+            width: 3.0,
+            height: 4.0,
+        },
+        render_bounds: lumen_core::Rect {
+            x: 1.0,
+            y: 2.0,
+            width: 3.0,
+            height: 4.0,
+        },
+    });
+
+    let batch = build_modify_operations(
+        &scene,
+        EditTargetRef::Node(NodeId::from("headline")),
+        EditPatch::Node(NodeEditPatch {
+            text: Some(TextEditPatch {
+                content: FieldPatch::Set("Repaired".to_owned()),
+                font_size: FieldPatch::Set(44.0),
+                ..TextEditPatch::default()
+            }),
+            ..NodeEditPatch::default()
+        }),
+    )
+    .unwrap();
+
+    assert_batch_round_trip(&scene, &batch);
+}
+
+#[test]
+fn inverse_round_trip_for_page_modify() {
+    let scene = scene_with_ad();
+    let batch = build_modify_operations(
+        &scene,
+        EditTargetRef::Page(PageId::from("page_square")),
+        EditPatch::Page(PageEditPatch {
+            size: FieldPatch::Set(PageSize {
+                width: 1200.0,
+                height: 628.0,
+                unit: Unit::Px,
+                preset: Some(PagePreset::Custom),
+                orientation: Orientation::Landscape,
+            }),
+            ..PageEditPatch::default()
+        }),
+    )
+    .unwrap();
+
+    assert_batch_round_trip(&scene, &batch);
+}
+
+#[test]
+fn inverse_round_trip_for_slot_modify_with_bindings() {
+    let scene = scene_with_ad();
+    let batch = build_modify_operations(
+        &scene,
+        EditTargetRef::SlotKey(SlotKey::from("campaign.headline")),
+        EditPatch::Slot(lumen_core::SlotEditPatch {
+            placeholder: OptionalFieldPatch::Set("New placeholder".to_owned()),
+            bind_nodes: vec![NodeId::from("body")],
+            unbind_nodes: vec![NodeId::from("headline")],
+            ..lumen_core::SlotEditPatch::default()
+        }),
+    )
+    .unwrap();
+
+    assert_batch_round_trip(&scene, &batch);
+}
+
+#[test]
+fn inverse_round_trip_for_asset_modify() {
+    let scene = scene_with_ad();
+    let batch = build_modify_operations(
+        &scene,
+        EditTargetRef::Asset("asset_logo".into()),
+        EditPatch::Asset(lumen_core::AssetEditPatch {
+            label: FieldPatch::Set("Renamed logo".to_owned()),
+            ..lumen_core::AssetEditPatch::default()
+        }),
+    )
+    .unwrap();
+
+    assert_batch_round_trip(&scene, &batch);
+}
+
+#[test]
+fn inverse_round_trip_for_safe_delete_restores_subtree_and_bindings() {
+    let scene = scene_with_ad();
+    let batch = build_safe_delete(&scene, NodeId::from("hero")).unwrap();
+    assert_batch_round_trip(&scene, &batch);
+}
+
+#[test]
+fn inverse_round_trip_for_moves() {
+    let scene = scene_with_ad();
+
+    let after = build_move_after(&scene, NodeId::from("headline"), NodeId::from("cta")).unwrap();
+    assert_batch_round_trip(&scene, &after);
+
+    let before = build_move_before(&scene, NodeId::from("cta"), NodeId::from("headline")).unwrap();
+    assert_batch_round_trip(&scene, &before);
+
+    let cross_parent = lumen_core::build_move_to_parent(
+        &scene,
+        NodeId::from("logo"),
+        ParentRef::Page(PageId::from("page_square")),
+        1,
+    )
+    .unwrap();
+    assert_batch_round_trip(&scene, &cross_parent);
+}
+
+#[test]
+fn inverse_round_trip_for_clone_with_copied_slots_and_lineage() {
+    let scene = scene_with_ad();
+    let batch = build_clone_subtree(
+        &scene,
+        CloneSubtreeRequest {
+            source: NodeId::from("headline"),
+            new_root_id: NodeId::from("headline_2"),
+            placement: RelativePlacement::After {
+                anchor: NodeId::from("headline"),
+            },
+            slot_policy: CloneSlotPolicy::Copy,
+            computed_policy: ComputedClonePolicy::Clear,
+        },
+    )
+    .unwrap();
+
+    let lineage = batch.lineage.as_ref().expect("clone records lineage");
+    assert_eq!(lineage.source_root, NodeId::from("headline"));
+    assert_eq!(
+        lineage.id_map,
+        vec![(NodeId::from("headline"), NodeId::from("headline_2"))]
+    );
+
+    assert_batch_round_trip(&scene, &batch);
+}
+
+#[test]
+fn inverse_round_trip_for_replace_node() {
+    let mut scene = scene_with_ad();
+    scene
+        .apply_operation(lumen_core::Operation::InsertNode {
+            parent: ParentRef::Page(PageId::from("page_square")),
+            index: 1,
+            node: text_node("headline_replacement", "Replacement"),
+        })
+        .unwrap();
+
+    let batch = build_replace_node(
+        &scene,
+        ReplaceNodeRequest {
+            target: NodeId::from("headline"),
+            replacement: NodeId::from("headline_replacement"),
+            slot_policy: ReplaceSlotPolicy::PreserveCompatible,
+        },
+    )
+    .unwrap();
+
+    assert_batch_round_trip(&scene, &batch);
+}
+
+#[test]
+fn inverse_round_trip_for_document_and_brand_kit_updates() {
+    let scene = scene_with_ad();
+    let operations = vec![
+        lumen_core::Operation::UpdateDocument {
+            patch: lumen_core::DocumentPatch {
+                title: FieldPatch::Set("Renamed".to_owned()),
+                artifact_type: OptionalFieldPatch::Set("linkedin_ad".to_owned()),
+                ..lumen_core::DocumentPatch::default()
+            },
+        },
+        lumen_core::Operation::SetBrandKitRef {
+            brand_kit_id: "brand_kit_fixture".into(),
+            version: 3,
+        },
+    ];
+
+    let inverses = scene
+        .invert_operations(&operations)
+        .expect("invertible")
+        .expect("not finalization");
+
+    let mut working = scene.clone();
+    working.apply_operations_checked(operations).unwrap();
+    working.apply_operations_checked(inverses).unwrap();
+    assert_eq!(working, scene);
+}
+
+#[test]
+fn finalize_template_is_not_invertible() {
+    let scene = scene_with_ad();
+    let result = scene
+        .invert_operations(&[lumen_core::Operation::FinalizeTemplate {
+            template_revision_id: "rev_1".into(),
+        }])
+        .expect("inversion check succeeds");
+    assert!(result.is_none(), "finalization must not be invertible");
+}
+
+#[test]
+fn insert_with_adopted_children_is_not_invertible() {
+    let scene = scene_with_ad();
+    let mut adopting = Node::new(NodeId::from("adopter"), NodeKind::Frame);
+    adopting.children = vec![NodeId::from("headline")];
+    let result = scene
+        .invert_operations(&[lumen_core::Operation::InsertNode {
+            parent: ParentRef::Page(PageId::from("page_square")),
+            index: 0,
+            node: adopting,
+        }])
+        .expect("inversion check succeeds");
+    assert!(
+        result.is_none(),
+        "insert that adopts pre-existing children must not be invertible"
+    );
+}
+
 #[test]
 fn replace_node_preserves_target_parent_index() {
     let mut scene = scene_with_ad();

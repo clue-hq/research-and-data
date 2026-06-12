@@ -62,9 +62,9 @@ pub use editing::{
     build_asset_modify, build_clone_subtree, build_modify_operations, build_move_after,
     build_move_before, build_move_to_parent, build_node_modify, build_page_modify,
     build_replace_node, build_safe_delete, build_slot_modify, resolve_edit_target, AssetEditPatch,
-    CloneSlotPolicy, CloneSubtreeRequest, ComputedClonePolicy, EditBatch, EditError, EditErrorKind,
-    EditPatch, EditTargetRef, NodeEditPatch, PageEditPatch, RelativePlacement, ReplaceNodeRequest,
-    ReplaceSlotPolicy, ResolvedEditTarget, SlotEditPatch, TextEditPatch,
+    CloneLineage, CloneSlotPolicy, CloneSubtreeRequest, ComputedClonePolicy, EditBatch, EditError,
+    EditErrorKind, EditPatch, EditTargetRef, NodeEditPatch, PageEditPatch, RelativePlacement,
+    ReplaceNodeRequest, ReplaceSlotPolicy, ResolvedEditTarget, SlotEditPatch, TextEditPatch,
 };
 pub use export_contract::{
     ExportAdapter, ExportArtifact, ExportError, ExportFormat, ExportProfile, ExportPurpose,

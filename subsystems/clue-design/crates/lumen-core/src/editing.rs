@@ -120,21 +120,39 @@ impl fmt::Display for EditError {
 
 impl Error for EditError {}
 
+/// Provenance for a cloned subtree: which source produced it and the
+/// deterministic source-to-clone ID map, in subtree order. Persisted with
+/// the edit envelope so repeater semantics (Phase G) and a future component
+/// model can recover clone ancestry without archaeology.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct CloneLineage {
+    pub source_root: NodeId,
+    pub id_map: Vec<(NodeId, NodeId)>,
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct EditBatch {
     pub operations: Vec<Operation>,
+    /// Inverse batch computed at build time against the pre-edit scene.
+    /// `None` means the batch is not invertible (e.g. finalization).
+    #[serde(default)]
+    pub inverse_operations: Option<Vec<Operation>>,
     pub touched_targets: Vec<EditTargetRef>,
     pub checkpoint_label: Option<String>,
     pub intent: Option<String>,
+    #[serde(default)]
+    pub lineage: Option<CloneLineage>,
 }
 
 impl EditBatch {
     pub fn new(operations: Vec<Operation>, touched_targets: Vec<EditTargetRef>) -> Self {
         Self {
             operations,
+            inverse_operations: None,
             touched_targets,
             checkpoint_label: None,
             intent: None,
+            lineage: None,
         }
     }
 
@@ -146,6 +164,28 @@ impl EditBatch {
     pub fn with_checkpoint(mut self, label: impl Into<String>) -> Self {
         self.checkpoint_label = Some(label.into());
         self
+    }
+
+    pub fn with_lineage(mut self, lineage: CloneLineage) -> Self {
+        self.lineage = Some(lineage);
+        self
+    }
+
+    /// Compute and attach the inverse batch against the pre-edit scene.
+    /// Must be called while the scene still reflects the state this batch
+    /// was built for; inverses are unobtainable later without replay.
+    pub fn with_inverses(mut self, scene: &Scene) -> Result<Self, EditError> {
+        let inverses = scene.invert_operations(&self.operations).map_err(|error| {
+            EditError::new(
+                EditErrorKind::OperationFailed,
+                format!(
+                    "failed to invert edit batch: {} {}",
+                    error.code, error.message
+                ),
+            )
+        })?;
+        self.inverse_operations = inverses;
+        Ok(self)
     }
 
     pub fn apply_checked(&self, scene: &mut Scene) -> Result<OperationReport, EditError> {
@@ -540,7 +580,9 @@ pub fn build_node_modify(
         ));
     }
 
-    Ok(EditBatch::new(operations, vec![EditTargetRef::Node(node_id)]).with_intent("modify_node"))
+    EditBatch::new(operations, vec![EditTargetRef::Node(node_id)])
+        .with_intent("modify_node")
+        .with_inverses(scene)
 }
 
 pub fn build_page_modify(
@@ -555,14 +597,15 @@ pub fn build_page_modify(
         )
         .with_target(EditTargetRef::Page(page_id)));
     }
-    Ok(EditBatch::new(
+    EditBatch::new(
         vec![Operation::UpdatePage {
             page_id: page_id.clone(),
             patch: patch.into(),
         }],
         vec![EditTargetRef::Page(page_id)],
     )
-    .with_intent("modify_page"))
+    .with_intent("modify_page")
+    .with_inverses(scene)
 }
 
 pub fn build_slot_modify(
@@ -623,10 +666,9 @@ pub fn build_slot_modify(
         });
     }
 
-    Ok(
-        EditBatch::new(operations, vec![EditTargetRef::Slot(next_slot.id)])
-            .with_intent("modify_slot"),
-    )
+    EditBatch::new(operations, vec![EditTargetRef::Slot(next_slot.id)])
+        .with_intent("modify_slot")
+        .with_inverses(scene)
 }
 
 pub fn build_asset_modify(
@@ -645,13 +687,14 @@ pub fn build_asset_modify(
     apply_field_patch(&mut asset.label, patch.label);
     apply_field_patch(&mut asset.status, patch.status);
 
-    Ok(EditBatch::new(
+    EditBatch::new(
         vec![Operation::UpsertAsset {
             asset: asset.clone(),
         }],
         vec![EditTargetRef::Asset(asset.id)],
     )
-    .with_intent("modify_asset"))
+    .with_intent("modify_asset")
+    .with_inverses(scene)
 }
 
 pub fn build_safe_delete(scene: &Scene, node_id: NodeId) -> Result<EditBatch, EditError> {
@@ -684,13 +727,14 @@ pub fn build_safe_delete(scene: &Scene, node_id: NodeId) -> Result<EditBatch, Ed
         }
     }
 
-    Ok(EditBatch::new(
+    EditBatch::new(
         vec![Operation::RemoveNode {
             node_id: node_id.clone(),
         }],
         vec![EditTargetRef::Node(node_id)],
     )
-    .with_intent("safe_delete"))
+    .with_intent("safe_delete")
+    .with_inverses(scene)
 }
 
 pub fn build_move_before(
@@ -716,7 +760,7 @@ pub fn build_move_to_parent(
     index: usize,
 ) -> Result<EditBatch, EditError> {
     validate_node_can_move(scene, &node_id, &new_parent)?;
-    Ok(EditBatch::new(
+    EditBatch::new(
         vec![Operation::MoveNode {
             node_id: node_id.clone(),
             new_parent,
@@ -724,7 +768,8 @@ pub fn build_move_to_parent(
         }],
         vec![EditTargetRef::Node(node_id)],
     )
-    .with_intent("move_node"))
+    .with_intent("move_node")
+    .with_inverses(scene)
 }
 
 pub fn build_clone_subtree(
@@ -798,14 +843,24 @@ pub fn build_clone_subtree(
         &mut operations,
     )?;
 
-    Ok(EditBatch::new(
+    let lineage = CloneLineage {
+        source_root: request.source.clone(),
+        id_map: source_ids
+            .iter()
+            .map(|source_id| (source_id.clone(), id_map[source_id].clone()))
+            .collect(),
+    };
+
+    EditBatch::new(
         operations,
         vec![
             EditTargetRef::Node(request.source),
             EditTargetRef::Node(request.new_root_id),
         ],
     )
-    .with_intent("clone_subtree"))
+    .with_intent("clone_subtree")
+    .with_lineage(lineage)
+    .with_inverses(scene)
 }
 
 pub fn build_replace_node(
@@ -877,14 +932,15 @@ pub fn build_replace_node(
         }
     }
 
-    Ok(EditBatch::new(
+    EditBatch::new(
         operations,
         vec![
             EditTargetRef::Node(request.target),
             EditTargetRef::Node(request.replacement),
         ],
     )
-    .with_intent("replace_node"))
+    .with_intent("replace_node")
+    .with_inverses(scene)
 }
 
 fn build_relative_move(
@@ -927,7 +983,7 @@ fn build_relative_move(
         anchor_index
     };
 
-    Ok(EditBatch::new(
+    EditBatch::new(
         vec![Operation::MoveNode {
             node_id: node_id.clone(),
             new_parent: anchor_parent,
@@ -935,7 +991,8 @@ fn build_relative_move(
         }],
         vec![EditTargetRef::Node(node_id)],
     )
-    .with_intent(if after { "move_after" } else { "move_before" }))
+    .with_intent(if after { "move_after" } else { "move_before" })
+    .with_inverses(scene)
 }
 
 fn validate_node_can_move(

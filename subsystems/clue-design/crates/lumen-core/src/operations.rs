@@ -892,6 +892,379 @@ impl Scene {
     }
 }
 
+impl Scene {
+    /// Compute the inverse operation batch for `operations` against this
+    /// scene, stepping an internal draft through each operation so every
+    /// inverse is computed against the exact intermediate state it must
+    /// undo. Returns `Ok(None)` when the batch is not invertible
+    /// (`FinalizeTemplate`, or an `InsertNode` adopting pre-existing
+    /// children, which no edit builder emits). Inverses are returned in
+    /// reverse application order, ready to apply as a single batch.
+    pub fn invert_operations(
+        &self,
+        operations: &[Operation],
+    ) -> OperationResult<Option<Vec<Operation>>> {
+        let mut draft = self.clone();
+        let mut inverse_groups: Vec<Vec<Operation>> = Vec::with_capacity(operations.len());
+
+        for operation in operations {
+            let Some(group) = draft.inverse_for_operation(operation)? else {
+                return Ok(None);
+            };
+            draft.apply_operation_in_place(operation.clone())?;
+            inverse_groups.push(group);
+        }
+
+        let mut inverses = Vec::new();
+        for group in inverse_groups.into_iter().rev() {
+            inverses.extend(group);
+        }
+        Ok(Some(inverses))
+    }
+
+    fn inverse_for_operation(
+        &self,
+        operation: &Operation,
+    ) -> OperationResult<Option<Vec<Operation>>> {
+        match operation {
+            Operation::AddPage { page } => Ok(Some(vec![Operation::RemovePage {
+                page_id: page.id.clone(),
+            }])),
+            Operation::RemovePage { page_id } => {
+                let page = self.pages.get(page_id).ok_or_else(|| {
+                    OperationError::new(
+                        "op.page_missing",
+                        format!("cannot invert removal of missing page {}", page_id),
+                    )
+                })?;
+                let mut restored_page = page.clone();
+                restored_page.children = Vec::new();
+                let mut inverse = vec![Operation::AddPage {
+                    page: restored_page,
+                }];
+                let mut removed = BTreeSet::new();
+                for (index, child_id) in page.children.iter().enumerate() {
+                    self.restore_subtree_operations(
+                        ParentRef::Page(page_id.clone()),
+                        index,
+                        child_id,
+                        &mut inverse,
+                        &mut removed,
+                    )?;
+                }
+                inverse.extend(self.slot_restore_operations(&removed));
+                Ok(Some(inverse))
+            }
+            Operation::UpdateDocument { patch } => {
+                let mut inverse = DocumentPatch::default();
+                if !matches!(patch.title, FieldPatch::Unchanged) {
+                    inverse.title = FieldPatch::Set(self.meta.title.clone());
+                }
+                if !matches!(patch.artifact_type, OptionalFieldPatch::Unchanged) {
+                    inverse.artifact_type = optional_restore(&self.meta.artifact_type);
+                }
+                if !matches!(patch.medium, OptionalFieldPatch::Unchanged) {
+                    inverse.medium = optional_restore(&self.meta.medium);
+                }
+                if !matches!(patch.brand_kit, OptionalFieldPatch::Unchanged) {
+                    inverse.brand_kit = optional_restore(&self.meta.brand_kit);
+                }
+                Ok(Some(vec![Operation::UpdateDocument { patch: inverse }]))
+            }
+            Operation::UpdatePage { page_id, patch } => {
+                let page = self.pages.get(page_id).ok_or_else(|| {
+                    OperationError::new(
+                        "op.page_missing",
+                        format!("cannot invert update of missing page {}", page_id),
+                    )
+                })?;
+                let mut inverse = PagePatch::default();
+                if !matches!(patch.name, FieldPatch::Unchanged) {
+                    inverse.name = FieldPatch::Set(page.name.clone());
+                }
+                if !matches!(patch.size, FieldPatch::Unchanged) {
+                    inverse.size = FieldPatch::Set(page.size.clone());
+                }
+                if !matches!(patch.bleed, OptionalFieldPatch::Unchanged) {
+                    inverse.bleed = optional_restore(&page.bleed);
+                }
+                if !matches!(patch.safe_area, OptionalFieldPatch::Unchanged) {
+                    inverse.safe_area = optional_restore(&page.safe_area);
+                }
+                if !matches!(patch.background, FieldPatch::Unchanged) {
+                    inverse.background = FieldPatch::Set(page.background.clone());
+                }
+                Ok(Some(vec![Operation::UpdatePage {
+                    page_id: page_id.clone(),
+                    patch: inverse,
+                }]))
+            }
+            Operation::InsertNode { node, .. } => {
+                if node.children.is_empty() {
+                    Ok(Some(vec![Operation::RemoveNode {
+                        node_id: node.id.clone(),
+                    }]))
+                } else {
+                    // Removing the inserted node would also delete the
+                    // adopted pre-existing children; there is no detach
+                    // operation, so this insert form is not invertible.
+                    Ok(None)
+                }
+            }
+            Operation::RemoveNode { node_id } => {
+                let Some(parent) = self.parent_of(node_id) else {
+                    return Ok(None);
+                };
+                let index = self
+                    .children_for_parent(&parent)?
+                    .iter()
+                    .position(|id| id == node_id)
+                    .ok_or_else(|| {
+                        OperationError::new(
+                            "op.node_missing",
+                            format!("node {} is not in its parent", node_id),
+                        )
+                    })?;
+                let mut inverse = Vec::new();
+                let mut removed = BTreeSet::new();
+                self.restore_subtree_operations(
+                    parent,
+                    index,
+                    node_id,
+                    &mut inverse,
+                    &mut removed,
+                )?;
+                inverse.extend(self.slot_restore_operations(&removed));
+                Ok(Some(inverse))
+            }
+            Operation::MoveNode { node_id, .. } => {
+                let Some(parent) = self.parent_of(node_id) else {
+                    return Ok(None);
+                };
+                let index = self
+                    .children_for_parent(&parent)?
+                    .iter()
+                    .position(|id| id == node_id)
+                    .ok_or_else(|| {
+                        OperationError::new(
+                            "op.node_missing",
+                            format!("node {} is not in its parent", node_id),
+                        )
+                    })?;
+                Ok(Some(vec![Operation::MoveNode {
+                    node_id: node_id.clone(),
+                    new_parent: parent,
+                    index,
+                }]))
+            }
+            Operation::UpdateNode { node_id, patch } => {
+                let node = self.nodes.get(node_id).ok_or_else(|| {
+                    OperationError::new(
+                        "op.node_missing",
+                        format!("cannot invert update of missing node {}", node_id),
+                    )
+                })?;
+                let mut inverse = NodePatch::default();
+                if !matches!(patch.name, OptionalFieldPatch::Unchanged) {
+                    inverse.name = optional_restore(&node.name);
+                }
+                if !matches!(patch.kind, FieldPatch::Unchanged) {
+                    inverse.kind = FieldPatch::Set(node.kind.clone());
+                }
+                if !matches!(patch.transform, FieldPatch::Unchanged) {
+                    inverse.transform = FieldPatch::Set(node.transform.clone());
+                }
+                if !matches!(patch.size, FieldPatch::Unchanged) {
+                    inverse.size = FieldPatch::Set(node.size.clone());
+                }
+                if !matches!(patch.fills, FieldPatch::Unchanged) {
+                    inverse.fills = FieldPatch::Set(node.fills.clone());
+                }
+                if !matches!(patch.strokes, FieldPatch::Unchanged) {
+                    inverse.strokes = FieldPatch::Set(node.strokes.clone());
+                }
+                if !matches!(patch.corner, FieldPatch::Unchanged) {
+                    inverse.corner = FieldPatch::Set(node.corner.clone());
+                }
+                if !matches!(patch.opacity, FieldPatch::Unchanged) {
+                    inverse.opacity = FieldPatch::Set(node.opacity);
+                }
+                if !matches!(patch.opacity_token, OptionalFieldPatch::Unchanged) {
+                    inverse.opacity_token = optional_restore(&node.opacity_token);
+                }
+                if !matches!(patch.source_asset_id, OptionalFieldPatch::Unchanged) {
+                    inverse.source_asset_id = optional_restore(&node.source_asset_id);
+                }
+                if !matches!(patch.asset_placement, OptionalFieldPatch::Unchanged) {
+                    inverse.asset_placement = optional_restore(&node.asset_placement);
+                }
+                if !matches!(patch.clip, FieldPatch::Unchanged) {
+                    inverse.clip = FieldPatch::Set(node.clip);
+                }
+                if !matches!(patch.layout, OptionalFieldPatch::Unchanged) {
+                    inverse.layout = optional_restore(&node.layout);
+                }
+                if !matches!(patch.computed, OptionalFieldPatch::Unchanged) {
+                    inverse.computed = optional_restore(&node.computed);
+                }
+                if !matches!(patch.locked, FieldPatch::Unchanged) {
+                    inverse.locked = FieldPatch::Set(node.locked);
+                }
+                Ok(Some(vec![Operation::UpdateNode {
+                    node_id: node_id.clone(),
+                    patch: inverse,
+                }]))
+            }
+            Operation::UpsertSlot { slot } => Ok(Some(match self.slots.get(&slot.id) {
+                Some(prior) => vec![Operation::UpsertSlot {
+                    slot: prior.clone(),
+                }],
+                None => vec![Operation::RemoveSlot {
+                    slot_id: slot.id.clone(),
+                }],
+            })),
+            Operation::RemoveSlot { slot_id } => Ok(Some(match self.slots.get(slot_id) {
+                Some(prior) => vec![Operation::UpsertSlot {
+                    slot: prior.clone(),
+                }],
+                None => Vec::new(),
+            })),
+            Operation::UpsertAsset { asset } => Ok(Some(match self.assets.get(&asset.id) {
+                Some(prior) => vec![Operation::UpsertAsset {
+                    asset: prior.clone(),
+                }],
+                None => vec![Operation::RemoveAsset {
+                    asset_id: asset.id.clone(),
+                }],
+            })),
+            Operation::RemoveAsset { asset_id } => Ok(Some(match self.assets.get(asset_id) {
+                Some(prior) => vec![Operation::UpsertAsset {
+                    asset: prior.clone(),
+                }],
+                None => Vec::new(),
+            })),
+            Operation::PlaceAssetInNode { node_id, .. } => {
+                let node = self.nodes.get(node_id).ok_or_else(|| {
+                    OperationError::new(
+                        "op.node_missing",
+                        format!("cannot invert placement into missing node {}", node_id),
+                    )
+                })?;
+                Ok(Some(vec![node_restore_after_placement(node)]))
+            }
+            Operation::PlaceAssetInSlot { slot_id, .. } => {
+                let slot = self.slots.get(slot_id).ok_or_else(|| {
+                    OperationError::new(
+                        "op.slot_missing",
+                        format!("cannot invert placement into missing slot {}", slot_id),
+                    )
+                })?;
+                let inverse = slot
+                    .bound_nodes
+                    .iter()
+                    .filter_map(|node_id| self.nodes.get(node_id))
+                    .map(node_restore_after_placement)
+                    .collect();
+                Ok(Some(inverse))
+            }
+            Operation::BindNodeToSlot { slot_id, .. }
+            | Operation::UnbindNodeFromSlot { slot_id, .. } => {
+                let slot = self.slots.get(slot_id).ok_or_else(|| {
+                    OperationError::new(
+                        "op.slot_missing",
+                        format!("cannot invert binding change on missing slot {}", slot_id),
+                    )
+                })?;
+                Ok(Some(vec![Operation::UpsertSlot { slot: slot.clone() }]))
+            }
+            Operation::SetBrandKitRef { .. } => Ok(Some(vec![Operation::UpdateDocument {
+                patch: DocumentPatch {
+                    brand_kit: optional_restore(&self.meta.brand_kit),
+                    ..DocumentPatch::default()
+                },
+            }])),
+            Operation::UpsertExportProfile { profile } => {
+                Ok(Some(match self.export_profile(&profile.name) {
+                    Some(prior) => vec![Operation::UpsertExportProfile {
+                        profile: prior.clone(),
+                    }],
+                    None => vec![Operation::RemoveExportProfile {
+                        name: profile.name.clone(),
+                    }],
+                }))
+            }
+            Operation::RemoveExportProfile { name } => Ok(Some(match self.export_profile(name) {
+                Some(prior) => vec![Operation::UpsertExportProfile {
+                    profile: prior.clone(),
+                }],
+                None => Vec::new(),
+            })),
+            Operation::FinalizeTemplate { .. } => Ok(None),
+        }
+    }
+
+    fn restore_subtree_operations(
+        &self,
+        parent: ParentRef,
+        index: usize,
+        node_id: &NodeId,
+        out: &mut Vec<Operation>,
+        removed: &mut BTreeSet<NodeId>,
+    ) -> OperationResult<()> {
+        let node = self.nodes.get(node_id).ok_or_else(|| {
+            OperationError::new(
+                "op.node_missing",
+                format!("cannot restore missing node {}", node_id),
+            )
+        })?;
+        removed.insert(node_id.clone());
+        let mut restored = node.clone();
+        restored.children = Vec::new();
+        out.push(Operation::InsertNode {
+            parent,
+            index,
+            node: restored,
+        });
+        for (child_index, child_id) in node.children.iter().enumerate() {
+            self.restore_subtree_operations(
+                ParentRef::Node(node_id.clone()),
+                child_index,
+                child_id,
+                out,
+                removed,
+            )?;
+        }
+        Ok(())
+    }
+
+    fn slot_restore_operations(&self, removed: &BTreeSet<NodeId>) -> Vec<Operation> {
+        self.slots
+            .values()
+            .filter(|slot| slot.bound_nodes.iter().any(|id| removed.contains(id)))
+            .map(|slot| Operation::UpsertSlot { slot: slot.clone() })
+            .collect()
+    }
+}
+
+fn node_restore_after_placement(node: &Node) -> Operation {
+    Operation::UpdateNode {
+        node_id: node.id.clone(),
+        patch: NodePatch {
+            kind: FieldPatch::Set(node.kind.clone()),
+            source_asset_id: optional_restore(&node.source_asset_id),
+            asset_placement: optional_restore(&node.asset_placement),
+            ..NodePatch::default()
+        },
+    }
+}
+
+fn optional_restore<T: Clone>(prior: &Option<T>) -> OptionalFieldPatch<T> {
+    match prior {
+        Some(value) => OptionalFieldPatch::Set(value.clone()),
+        None => OptionalFieldPatch::Clear,
+    }
+}
+
 fn apply_field_patch<T>(target: &mut T, patch: FieldPatch<T>) {
     if let FieldPatch::Set(value) = patch {
         *target = value;
