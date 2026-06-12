@@ -251,6 +251,14 @@ export interface AssetMediaMetadata {
   byte_length?: number | null;
   digest?: AssetDigest | null;
   location?: AssetLocation | null;
+  thumbnail?: AssetThumbnail | null;
+}
+
+export interface AssetThumbnail {
+  location: AssetLocation;
+  mime_type: string;
+  pixel_width?: number | null;
+  pixel_height?: number | null;
 }
 
 export interface AssetDigest {
