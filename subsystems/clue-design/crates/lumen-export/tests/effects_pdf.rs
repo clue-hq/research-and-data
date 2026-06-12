@@ -130,7 +130,9 @@ fn pdf_export_of_effect_scene_emits_lumx_verdicts_and_renders_supported_subset()
         purpose: ExportPurpose::UserDownload,
     };
 
-    let result = PdfExportAdapter.export(&scene, &request).expect("exports");
+    let result = PdfExportAdapter::new()
+        .export(&scene, &request)
+        .expect("exports");
 
     // Explicit matrix verdicts: drop shadow and gradient paint are
     // unsupported on PDF; the dash pattern is approximated.

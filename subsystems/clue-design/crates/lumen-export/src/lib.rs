@@ -7,6 +7,7 @@
 pub mod checks;
 pub mod pdf;
 pub mod png;
+pub mod raster;
 pub mod resolver;
 pub mod sidecar;
 pub mod svg;
@@ -14,14 +15,18 @@ pub mod svg;
 pub use checks::{asset_export_checks, license_enforced, MIN_EFFECTIVE_PRINT_DPI};
 pub use pdf::PdfExportAdapter;
 pub use png::PngExportAdapter;
+pub use raster::{PageRasterizer, RasterizeError, RasterizedPage};
 pub use resolver::{
     AssetByteResolver, AssetResolveError, FixtureAssetResolver, ResolvedAssetBytes,
 };
-pub use svg::SvgExportAdapter;
+pub use svg::{
+    focal_crop_geometry, page_background_token_diagnostics, unresolved_brand_token_diagnostics,
+    FocalCropGeometry, SvgExportAdapter,
+};
 
 use lumen_core::{
     DiagnosticSeverity, ExportAdapter, ExportArtifact, ExportError, ExportFormat, ExportRequest,
-    ExportResult, Scene,
+    ExportResult, Scene, SharedTextMeasurer,
 };
 use std::sync::Arc;
 
@@ -44,7 +49,27 @@ impl LumenExportAdapter {
         Self {
             svg: SvgExportAdapter::with_resolver(Arc::clone(&resolver)),
             png: PngExportAdapter::with_resolver(resolver),
-            pdf: PdfExportAdapter,
+            pdf: PdfExportAdapter::new(),
+        }
+    }
+
+    /// Inject a shaping text measurer into the markup format paths (Wave 1
+    /// Track A): SVG and PDF line breaks then share one source of truth
+    /// with the layout engine. The PNG path shapes text inside its injected
+    /// rasterizer (same SkParagraph construction) and needs no measurer.
+    pub fn with_measurer(self, measurer: SharedTextMeasurer) -> Self {
+        Self {
+            svg: self.svg.with_measurer(Arc::clone(&measurer)),
+            pdf: self.pdf.with_measurer(measurer),
+            ..self
+        }
+    }
+
+    /// Inject a direct scene rasterizer for the PNG path (slice A3).
+    pub fn with_rasterizer(self, rasterizer: Arc<dyn PageRasterizer>) -> Self {
+        Self {
+            png: self.png.with_rasterizer(rasterizer),
+            ..self
         }
     }
 }

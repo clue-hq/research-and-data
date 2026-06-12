@@ -363,36 +363,17 @@ page page_square size(1080,1080,px)
 }
 
 #[test]
-fn png_export_honors_non_preset_custom_page_dimensions() {
+fn png_export_without_rasterizer_fails_closed() {
+    // Since slice A4 the resvg SVG-string path is gone: PNG export without
+    // an injected scene rasterizer (composed from lumen-skia at the
+    // application boundary) must error, never silently degrade. The
+    // rasterizing coverage lives in lumen-skia's raster_export tests.
     let adapter = LumenExportAdapter::new();
-    let mut scene = Scene::new(
-        DocumentId::from("doc_wide_custom_export"),
-        "Wide Custom Export",
-    );
-    scene.pages.insert(
-        PageId::from("page_wide"),
-        custom_px_page("page_wide", 120.0, 63.0, vec![NodeId::from("node_bg")]),
-    );
-    scene.nodes.insert(NodeId::from("node_bg"), {
-        let mut node = rect_node("node_bg");
-        node.transform = Transform::default();
-        node.size = SizeSpec::fixed(120.0, 63.0);
-        node
-    });
-
-    let result = adapter
-        .export(&scene, &png_request(vec![PageId::from("page_wide")]))
-        .unwrap();
-    let rgba = decode_png_rgba(&result.artifacts[0].bytes);
-
-    assert_eq!(rgba.width, 120);
-    assert_eq!(rgba.height, 63);
-    assert_eq!(result.artifacts[0].page_id, Some(PageId::from("page_wide")));
-
-    let sidecar: Value =
-        serde_json::from_str(result.artifacts[0].sidecar_json.as_ref().unwrap()).unwrap();
-    assert_eq!(sidecar["profile_name"], "profile_Png");
-    assert_eq!(sidecar["pages"][0]["page_id"], "page_wide");
+    let scene = scene_with_slot();
+    let error = adapter
+        .export(&scene, &png_request(vec![PageId::from("page_a")]))
+        .expect_err("png export without rasterizer must fail");
+    assert_eq!(error.code, "export.png_rasterizer_missing");
 }
 
 #[test]
@@ -712,99 +693,6 @@ fn svg_export_warns_on_all_unresolved_brand_token_carriers() {
             "missing unresolved-token export warning for {expected}: {messages:#?}"
         );
     }
-}
-
-#[test]
-fn png_export_returns_png_artifacts_for_required_preview_path() {
-    let adapter = LumenExportAdapter::new();
-    let scene = scene_with_slot();
-    let result = adapter
-        .export(&scene, &png_request(vec![PageId::from("page_a")]))
-        .unwrap();
-
-    assert_eq!(result.artifacts.len(), 1);
-    assert_eq!(result.artifacts[0].mime_type, "image/png");
-    assert!(result.artifacts[0].bytes.starts_with(b"\x89PNG\r\n\x1a\n"));
-    assert!(result.artifacts[0]
-        .sidecar_json
-        .as_ref()
-        .unwrap()
-        .contains("\"slot_key\": \"contact.full_name\""));
-    assert!(result
-        .diagnostics
-        .iter()
-        .any(|diagnostic| diagnostic.code == "LUME0301"));
-}
-
-#[test]
-fn png_export_uses_computed_xy_for_layouted_nodes() {
-    let adapter = LumenExportAdapter::new();
-    let scene = scene_with_computed_rect();
-    let result = adapter
-        .export(&scene, &png_request(vec![PageId::from("page_square")]))
-        .unwrap();
-
-    let rgba = decode_png_rgba(&result.artifacts[0].bytes);
-    assert_eq!(rgba.width, 100);
-    assert_eq!(rgba.height, 100);
-    assert_eq!(rgba.pixel(25, 35), [255, 0, 0, 255]);
-    assert_eq!(rgba.pixel(5, 5), [255, 255, 255, 255]);
-}
-
-#[test]
-fn png_export_rasterizes_text_nodes_from_svg_baseline() {
-    let adapter = LumenExportAdapter::new();
-    let mut scene = Scene::new(DocumentId::from("doc_png_text"), "PNG Text");
-    scene.pages.insert(
-        PageId::from("page_square"),
-        square_px_page("page_square", vec![NodeId::from("node_text")]),
-    );
-
-    let mut node = text_node("node_text", "Readable PNG text");
-    node.transform = Transform {
-        x: 12.0,
-        y: 24.0,
-        ..Transform::default()
-    };
-    node.size = SizeSpec::fixed(180.0, 48.0);
-    if let NodeKind::Text(text) = &mut node.kind {
-        text.font_family = "Arial".to_owned();
-        text.font_size = 20.0;
-        text.line_height = 1.1;
-        text.wrap = lumen_core::TextWrap::NoWrap;
-    }
-    node.fills = vec![Fill {
-        id: PaintId::from("paint_text_dark"),
-        paint: Paint::Solid {
-            color: Color::Hex {
-                value: "#111827".to_owned(),
-            },
-        },
-    }];
-    scene.nodes.insert(NodeId::from("node_text"), node);
-
-    let result = adapter
-        .export(&scene, &png_request(vec![PageId::from("page_square")]))
-        .unwrap();
-
-    let rgba = decode_png_rgba(&result.artifacts[0].bytes);
-    let dark_pixels = rgba
-        .rgba
-        .chunks_exact(4)
-        .filter(|pixel| pixel[3] > 0 && pixel[0] < 120 && pixel[1] < 140 && pixel[2] < 160)
-        .count();
-
-    assert!(
-        dark_pixels > 20,
-        "PNG raster output should contain rendered text pixels, found {dark_pixels}"
-    );
-    assert!(
-        result
-            .diagnostics
-            .iter()
-            .all(|diagnostic| diagnostic.code != "LUME0304"),
-        "text nodes should not be reported as unsupported by PNG export"
-    );
 }
 
 #[test]
@@ -1460,12 +1348,6 @@ fn svg_all_pages_sidecars_preserve_profile_and_page_specific_slot_mappings() {
         .any(|slot| slot["slot_key"] == "contact.full_name"));
 }
 
-struct DecodedPng {
-    width: u32,
-    height: u32,
-    rgba: Vec<u8>,
-}
-
 #[derive(Debug)]
 struct PhaseFPageCase {
     id: String,
@@ -1674,27 +1556,5 @@ fn fmt_test(value: f64) -> String {
             .trim_end_matches('0')
             .trim_end_matches('.')
             .to_owned()
-    }
-}
-
-impl DecodedPng {
-    fn pixel(&self, x: u32, y: u32) -> [u8; 4] {
-        let index = ((y * self.width + x) * 4) as usize;
-        [
-            self.rgba[index],
-            self.rgba[index + 1],
-            self.rgba[index + 2],
-            self.rgba[index + 3],
-        ]
-    }
-}
-
-fn decode_png_rgba(bytes: &[u8]) -> DecodedPng {
-    assert_eq!(&bytes[..8], b"\x89PNG\r\n\x1a\n");
-    let pixmap = resvg::tiny_skia::Pixmap::decode_png(bytes).expect("PNG decodes");
-    DecodedPng {
-        width: pixmap.width(),
-        height: pixmap.height(),
-        rgba: pixmap.data().to_vec(),
     }
 }

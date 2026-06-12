@@ -161,7 +161,7 @@ pub fn preflight_scene(
         brand_report = Some(report);
     }
 
-    let result = layout_scene(&scene, options.layout);
+    let result = layout_scene(&scene, options.layout.clone());
     extend_unique_diagnostics(&mut diagnostics, result.diagnostics.clone());
 
     layout_operations = result

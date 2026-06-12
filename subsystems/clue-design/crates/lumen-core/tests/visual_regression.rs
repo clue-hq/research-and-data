@@ -1,3 +1,12 @@
+//! Visual-regression manifest shape checks (portable side).
+//!
+//! Since Wave 1 Track A (slice A5) the manifest cases are ACTIVE: each one
+//! pixel-diffs against a committed PNG baseline through the Skia raster
+//! pipeline. The renderer-side runner lives in
+//! `crates/lumen-skia/tests/visual_regression.rs` (lumen-core stays
+//! wasm-clean and cannot construct the native rasterizer); this test pins
+//! the manifest contract those runs depend on.
+
 use lumen_core::validation::validate_scene;
 use lumen_core::{DiagnosticSeverity, ExportFormat, PageId, Scene};
 use serde_json::Value;
@@ -6,22 +15,21 @@ const MANIFEST: &str = include_str!("../fixtures/visual_regression/manifest.json
 const VALID_MULTI_PAGE_SLOTS: &str =
     include_str!("../fixtures/conformance/valid_multi_page_slots.json");
 const EFFECTS_CARD: &str = include_str!("../fixtures/effects/effects_card.json");
-const PENDING_BASELINES: [(&str, &str); 2] = [
+const BASELINES: [(&str, &[u8]); 2] = [
     (
         "valid_multi_page_slots_agent_png_linkedin_ad",
-        include_str!(
-            "../fixtures/visual_regression/baselines/valid_multi_page_slots_agent_png_linkedin_ad.pending.txt"
+        include_bytes!(
+            "../fixtures/visual_regression/baselines/valid_multi_page_slots_agent_png_linkedin_ad.png"
         ),
     ),
     (
         "effects_card_agent_png",
-        include_str!("../fixtures/visual_regression/baselines/effects_card_agent_png.pending.txt"),
+        include_bytes!("../fixtures/visual_regression/baselines/effects_card_agent_png.png"),
     ),
 ];
 
 #[test]
-#[ignore = "run explicitly until export/svg-pdf provides concrete visual baselines"]
-fn visual_regression_skeleton_manifest_is_runnable() {
+fn visual_regression_manifest_is_runnable() {
     let manifest: Value = serde_json::from_str(MANIFEST).expect("visual manifest decodes");
 
     assert_eq!(manifest["schema_version"], 1);
@@ -54,10 +62,10 @@ fn visual_regression_skeleton_manifest_is_runnable() {
         assert_eq!(profile.format, format_for_case(case));
     }
 
-    for (case_id, baseline) in PENDING_BASELINES {
+    for (case_id, baseline) in BASELINES {
         assert!(
-            baseline.contains(case_id),
-            "pending baseline should identify its case {case_id}"
+            baseline.starts_with(b"\x89PNG\r\n\x1a\n"),
+            "baseline for {case_id} must be a PNG"
         );
     }
 }
@@ -78,8 +86,12 @@ fn assert_visual_case_shape(case: &Value) {
             "visual case {case:?} is missing {field}"
         );
     }
-    assert_eq!(case["status"], "pending_renderer");
+    assert_eq!(case["status"], "active");
     assert_eq!(case["purpose"], "agent_critique");
+    assert!(
+        case["baseline"].as_str().unwrap().ends_with(".png"),
+        "active cases pin PNG baselines"
+    );
 }
 
 fn scene_for_case(case: &Value) -> Scene {

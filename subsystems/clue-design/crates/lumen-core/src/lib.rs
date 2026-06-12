@@ -104,8 +104,8 @@ pub use slots::{
 };
 pub use snapshot::{SnapshotError, SnapshotResult};
 pub use text_measure::{
-    estimate_text_width, line_height_px, measure_text, HeuristicTextMeasurer, TextLineBox,
-    TextMeasureInput, TextMeasureOutput, TextMeasurer,
+    estimate_text_width, line_height_px, measure_text, HeuristicTextMeasurer, SharedTextMeasurer,
+    TextLineBox, TextMeasureInput, TextMeasureOutput, TextMeasurer,
 };
 
 pub const SCHEMA_VERSION: u32 = 1;

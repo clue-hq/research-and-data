@@ -7,6 +7,5 @@ license.workspace = true
 [dependencies]
 base64 = "0.22"
 lumen-core = { path = "../lumen-core" }
-resvg = "0.45"
 serde.workspace = true
 serde_json.workspace = true

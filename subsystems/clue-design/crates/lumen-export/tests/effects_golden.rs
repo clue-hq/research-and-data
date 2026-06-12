@@ -109,7 +109,9 @@ fn render_svg(scene: &Scene) -> String {
         page_ids: vec![PageId::from("page_card")],
         purpose: ExportPurpose::UserDownload,
     };
-    let result = SvgExportAdapter::new().export(scene, &request).expect("exports");
+    let result = SvgExportAdapter::new()
+        .export(scene, &request)
+        .expect("exports");
     String::from_utf8(result.artifacts[0].bytes.clone()).expect("utf8 svg")
 }
 

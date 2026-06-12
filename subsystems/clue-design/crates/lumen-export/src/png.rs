@@ -1,16 +1,25 @@
+//! PNG export through an injected direct scene rasterizer (Wave 1 Track A).
+//!
+//! Since slice A4 there is no SVG-string rasterization path: PNG pixels come
+//! from a [`PageRasterizer`] (the Skia scene renderer composed in
+//! `lumen-api-helper`) painting the scene directly from computed geometry.
+//! An adapter without a rasterizer fails closed with
+//! `export.png_rasterizer_missing` instead of silently degrading.
+
+use crate::raster::PageRasterizer;
 use crate::resolver::AssetByteResolver;
 use crate::sidecar::build_sidecar;
-use crate::svg::{render_page_svg, resolve_page_ids};
+use crate::svg::resolve_page_ids;
 use lumen_core::{
-    Diagnostic, DiagnosticSubject, ExportAdapter, ExportArtifact, ExportError, ExportFormat,
-    ExportRequest, ExportResult, Page, PageId, Phase, Scene, Unit,
+    ExportAdapter, ExportArtifact, ExportError, ExportFormat, ExportRequest, ExportResult, Page,
+    Scene, Unit,
 };
-use resvg::{tiny_skia, usvg};
 use std::sync::Arc;
 
 #[derive(Clone, Debug, Default)]
 pub struct PngExportAdapter {
     resolver: Option<Arc<dyn AssetByteResolver>>,
+    rasterizer: Option<Arc<dyn PageRasterizer>>,
 }
 
 impl PngExportAdapter {
@@ -21,7 +30,16 @@ impl PngExportAdapter {
     pub fn with_resolver(resolver: Arc<dyn AssetByteResolver>) -> Self {
         Self {
             resolver: Some(resolver),
+            rasterizer: None,
         }
+    }
+
+    /// Inject the direct scene rasterizer. Required for PNG export: the
+    /// native renderer lives outside this portable crate (lumen-skia) and
+    /// is composed at the application boundary (lumen-api-helper).
+    pub fn with_rasterizer(mut self, rasterizer: Arc<dyn PageRasterizer>) -> Self {
+        self.rasterizer = Some(rasterizer);
+        self
     }
 }
 
@@ -40,28 +58,30 @@ impl ExportAdapter for PngExportAdapter {
             .with_diagnostics(resolved.diagnostics));
         }
 
-        let mut diagnostics = resolved.diagnostics;
-        diagnostics.push(
-            Diagnostic::warning(
-                Phase::Export,
-                "LUME0301",
-                "PNG export rasterized the canonical SVG page output",
-                Some(DiagnosticSubject::Document),
-            )
-            .with_hint(
-                "SVG and PNG export now share text layout, paint, transform, and computed-geometry semantics.",
-            ),
-        );
+        let Some(rasterizer) = &self.rasterizer else {
+            return Err(ExportError::new(
+                "export.png_rasterizer_missing",
+                "PNG export requires a scene rasterizer; compose one (e.g. lumen-skia's SkiaSceneRenderer) via with_rasterizer",
+            ));
+        };
 
+        let mut diagnostics = resolved.diagnostics;
         let mut artifacts = Vec::new();
         for page_id in &resolved.page_ids {
             let Some(page) = scene.pages.get(page_id) else {
                 continue;
             };
 
-            let (svg, page_diagnostics) = render_page_svg(scene, page, self.resolver.as_deref());
-            diagnostics.extend(page_diagnostics);
-            let png = rasterize_svg_page(&svg, page, request, page_id)?;
+            let (width, height) = page_pixel_size(page, request);
+            let rasterized = rasterizer
+                .rasterize_page(scene, page_id, width, height, self.resolver.as_deref())
+                .map_err(|error| {
+                    ExportError::new(
+                        "export.png_raster_failed",
+                        format!("PNG export could not rasterize page {}: {}", page_id, error),
+                    )
+                })?;
+            diagnostics.extend(rasterized.diagnostics);
 
             let sidecar =
                 build_sidecar(scene, std::slice::from_ref(page_id), &request.profile.name);
@@ -72,7 +92,7 @@ impl ExportAdapter for PngExportAdapter {
                 page_id: Some(page_id.clone()),
                 asset_id: None,
                 mime_type: "image/png".to_owned(),
-                bytes: png,
+                bytes: rasterized.png,
                 sidecar_json,
             });
         }
@@ -84,54 +104,7 @@ impl ExportAdapter for PngExportAdapter {
     }
 }
 
-fn rasterize_svg_page(
-    svg: &str,
-    page: &Page,
-    request: &ExportRequest,
-    page_id: &PageId,
-) -> Result<Vec<u8>, ExportError> {
-    let mut options = usvg::Options::default();
-    options.fontdb_mut().load_system_fonts();
-
-    let tree = usvg::Tree::from_str(svg, &options).map_err(|error| {
-        ExportError::new(
-            "export.png_svg_parse_failed",
-            format!(
-                "PNG export could not parse SVG for page {}: {}",
-                page_id, error
-            ),
-        )
-    })?;
-
-    let (target_width, target_height) = page_pixel_size(page, request);
-    let mut pixmap = tiny_skia::Pixmap::new(target_width, target_height).ok_or_else(|| {
-        ExportError::new(
-            "export.png_pixmap_alloc_failed",
-            format!(
-                "PNG export could not allocate {}x{} raster surface for page {}",
-                target_width, target_height, page_id
-            ),
-        )
-    })?;
-
-    let intrinsic = tree.size();
-    let scale_x = target_width as f32 / intrinsic.width().max(1.0);
-    let scale_y = target_height as f32 / intrinsic.height().max(1.0);
-    let transform = tiny_skia::Transform::from_scale(scale_x, scale_y);
-    resvg::render(&tree, transform, &mut pixmap.as_mut());
-
-    pixmap.encode_png().map_err(|error| {
-        ExportError::new(
-            "export.png_encode_failed",
-            format!(
-                "PNG export could not encode raster output for page {}: {}",
-                page_id, error
-            ),
-        )
-    })
-}
-
-fn page_pixel_size(page: &Page, request: &ExportRequest) -> (u32, u32) {
+pub(crate) fn page_pixel_size(page: &Page, request: &ExportRequest) -> (u32, u32) {
     let dpi = request
         .profile
         .raster

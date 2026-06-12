@@ -121,8 +121,9 @@ pub struct RendererEffectSupport;
 impl RendererEffectSupport {
     pub fn level(target: &RenderTarget, feature: EffectFeature) -> EffectSupportLevel {
         match target {
-            // PNG raster inherits the SVG path (resvg), so it is Native
-            // wherever SVG is.
+            // PNG raster paints the scene directly through Skia (Wave 1
+            // Track A); it matches the SVG verdicts, with stroke alignment
+            // kept Approximate (native for rect/ellipse only).
             RenderTarget::Svg | RenderTarget::Png { .. } => match feature {
                 EffectFeature::StrokeAlignment => EffectSupportLevel::Approximate,
                 _ => EffectSupportLevel::Native,

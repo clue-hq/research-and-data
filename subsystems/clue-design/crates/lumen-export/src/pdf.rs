@@ -1,14 +1,29 @@
 use crate::sidecar::build_sidecar;
-use crate::svg::{fmt_num, resolve_page_ids};
+use crate::svg::{fmt_num, measurer_as_dyn, resolve_page_ids, FALLBACK_MEASURER};
 use lumen_core::{
-    effect_support_diagnostics, measure_text, render_box_for_node, AssetKind, Diagnostic,
-    DiagnosticSubject, ExportAdapter, ExportArtifact, ExportError, ExportFormat, ExportRequest,
-    ExportResult, Node, NodeId, NodeKind, Page, Paint, PdfIntent, Phase, Rect, RenderTarget, Scene,
-    TextAlign, TextDirection, TextMeasureInput, Unit,
+    effect_support_diagnostics, render_box_for_node, AssetKind, Diagnostic, DiagnosticSubject,
+    ExportAdapter, ExportArtifact, ExportError, ExportFormat, ExportRequest, ExportResult, Node,
+    NodeId, NodeKind, Page, Paint, PdfIntent, Phase, Rect, RenderTarget, Scene, SharedTextMeasurer,
+    TextAlign, TextDirection, TextMeasureInput, TextMeasurer, Unit,
 };
 
 #[derive(Clone, Debug, Default)]
-pub struct PdfExportAdapter;
+pub struct PdfExportAdapter {
+    measurer: Option<SharedTextMeasurer>,
+}
+
+impl PdfExportAdapter {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Inject a shaping text measurer (Wave 1 Track A) so PDF overflow
+    /// diagnostics and line layout agree with layout-engine measurement.
+    pub fn with_measurer(mut self, measurer: SharedTextMeasurer) -> Self {
+        self.measurer = Some(measurer);
+        self
+    }
+}
 
 impl ExportAdapter for PdfExportAdapter {
     fn export(&self, scene: &Scene, request: &ExportRequest) -> Result<ExportResult, ExportError> {
@@ -62,7 +77,12 @@ impl ExportAdapter for PdfExportAdapter {
             };
             diagnostics.extend(print_page_guardrails(scene, page, request));
             let page_box = PdfPageBox::for_page(page, request.profile.include_bleed);
-            let mut renderer = PdfPageRenderer::new(scene, page, page_box);
+            let mut renderer = PdfPageRenderer::new(
+                scene,
+                page,
+                page_box,
+                self.measurer.as_deref().map(measurer_as_dyn),
+            );
             let stream = renderer.render_page();
             diagnostics.extend(renderer.diagnostics);
             writer.add_page(page_box, stream);
@@ -91,6 +111,7 @@ struct PdfPageRenderer<'a> {
     page_box: PdfPageBox,
     scale: f64,
     page_height: f64,
+    measurer: &'a dyn TextMeasurer,
     stream: String,
     diagnostics: Vec<Diagnostic>,
 }
@@ -102,7 +123,12 @@ enum PaintResult<'a> {
 }
 
 impl<'a> PdfPageRenderer<'a> {
-    fn new(scene: &'a Scene, page: &'a Page, page_box: PdfPageBox) -> Self {
+    fn new(
+        scene: &'a Scene,
+        page: &'a Page,
+        page_box: PdfPageBox,
+        measurer: Option<&'a dyn TextMeasurer>,
+    ) -> Self {
         let scale = unit_to_points(&page.size.unit);
         Self {
             scene,
@@ -110,6 +136,7 @@ impl<'a> PdfPageRenderer<'a> {
             page_box,
             scale,
             page_height: page_box.height * scale,
+            measurer: measurer.unwrap_or(&FALLBACK_MEASURER),
             stream: String::new(),
             diagnostics: Vec::new(),
         }
@@ -208,12 +235,13 @@ impl<'a> PdfPageRenderer<'a> {
             NodeKind::Text(text) => {
                 self.apply_text_fill(node);
                 let measured =
-                    measure_text(&TextMeasureInput::from_text_node(text).with_bounds(&Rect {
-                        x: 0.0,
-                        y: 0.0,
-                        width,
-                        height,
-                    }));
+                    self.measurer
+                        .measure(&TextMeasureInput::from_text_node(text).with_bounds(&Rect {
+                            x: 0.0,
+                            y: 0.0,
+                            width,
+                            height,
+                        }));
                 if measured.overflow_x || measured.overflow_y || measured.exceeds_max_lines {
                     self.diagnostics.push(
                         Diagnostic::warning(

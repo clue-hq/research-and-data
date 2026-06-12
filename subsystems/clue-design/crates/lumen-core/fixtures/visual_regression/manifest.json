@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "description": "Visual regression skeleton for export workstreams. Cases are pending until a concrete renderer/export adapter lands.",
+  "description": "Visual regression baselines for the Skia raster pipeline (Wave 1 Track A). Cases render through the production composition (Skia measurement + direct scene rasterizer, CPU backend) and pixel-diff against committed PNG baselines.",
   "cases": [
     {
       "id": "valid_multi_page_slots_agent_png_linkedin_ad",
@@ -9,8 +9,8 @@
       "format": "png",
       "page_id": "page_linkedin_ad",
       "purpose": "agent_critique",
-      "baseline": "crates/lumen-core/fixtures/visual_regression/baselines/valid_multi_page_slots_agent_png_linkedin_ad.pending.txt",
-      "status": "pending_renderer"
+      "baseline": "crates/lumen-core/fixtures/visual_regression/baselines/valid_multi_page_slots_agent_png_linkedin_ad.png",
+      "status": "active"
     },
     {
       "id": "effects_card_agent_png",
@@ -19,8 +19,8 @@
       "format": "png",
       "page_id": "page_effects_card",
       "purpose": "agent_critique",
-      "baseline": "crates/lumen-core/fixtures/visual_regression/baselines/effects_card_agent_png.pending.txt",
-      "status": "pending_renderer"
+      "baseline": "crates/lumen-core/fixtures/visual_regression/baselines/effects_card_agent_png.png",
+      "status": "active"
     }
   ]
 }
