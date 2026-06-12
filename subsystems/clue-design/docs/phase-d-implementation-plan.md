@@ -890,3 +890,101 @@ Deferred after V0:
 - Refactoring React helpers into a TypeScript structured-edit DTO wrapper. The
   editor continues to use canonical operations, which preserves source-of-truth
   correctness for this V0.
+
+## V0 Coverage Matrix
+
+Use this matrix when deciding whether a follow-up should be treated as Phase D
+cleanup, Phase D V1, or a later product-system branch.
+
+| Plan item | Status after V0 | Notes |
+| --- | --- | --- |
+| Target-reference model | Mostly done | Shared Rust `EditTargetRef` includes document, page, node, slot, slot key, asset, and export profile targets. Not every target has modify/delete lowering yet. |
+| Core edit batch model | Done | `EditBatch` carries operations, touched targets, optional intent, and optional checkpoint label. |
+| Sparse node/page/slot/asset patches | Mostly done | Node, page, slot, and asset patch DTOs exist. Document and export-profile patches are deferred. |
+| `#node_id ...` modify lowering | Done | Supports text, style, geometry, fill/stroke, asset, layout, and related node fields that map to current contracts. |
+| `#page:page_id ...` modify lowering | Done | Supports page name, custom size, safe area, bleed, and background. |
+| `#slot:key ...` / `#slot_id:id ...` modify lowering | Done | Supports common slot metadata and bind/unbind operations. |
+| `#asset:asset_id ...` modify lowering | Partial | Supports metadata-level asset label/status changes. Runtime asset processing/storage remains outside Phase D. |
+| `#document ...` modify lowering | Not done | Requires document patch builder and clear API/history policy. |
+| `#export:name ...` modify lowering | Not done | Requires export-profile patch/delete lifecycle rules. |
+| Text/style/layout/geometry patching | Mostly done | Render-affecting patches clear stale computed geometry. |
+| Page size/background/safe-area/bleed patching | Mostly done | Implemented for page modify targets. |
+| Slot metadata and bind/unbind patches | Mostly done | Implemented for existing slots and compatible node references. |
+| Export profile patching | Not done | Deferred after V0. |
+| `delete(node_id)` safe delete | Done for nodes | Recursively removes descendants and slot bindings through canonical operations. |
+| Safe delete pages/slots/assets/export profiles | Not done | Requires lifecycle and validation policy decisions. |
+| Rich `parent(...)` move | Mostly done | Supports parent/page destination and optional index. Anchor forms remain follow-up if needed. |
+| `before(...)` / `after(...)` | Done | Uses shared relative move builders. |
+| `clone(...)` subtree clone | Done | Supports deterministic subtree clone, placement, slot policy, and computed policy. |
+| `replace(...)` existing-node replacement | Done | Supports existing replacement subtree and slot detach/preserve policy. |
+| Inline block replacement | Not done | Deferred because it touches parser context, ID policy, and slot preservation more deeply. |
+| `override(...)` | Not done | Requires component/instance or clone-lineage semantics. |
+| `ungroup(...)` | Not done | Can be implemented for simple groups after layout-destruction policy is chosen. |
+| Checkpoint metadata | Partial | `EditBatch` has the field; history-aware execution is not wired. |
+| Checkpoint execution | Not done | Requires operation history/session context. |
+| `undo(...)` / `redo(...)` | Not done | Requires history context; pure DSL compilation should continue to reject these. |
+| Structured agent patch tool | Done | DeepAgent runtime exposes `apply_structured_edit`. |
+| API structured edit route | Done | Implemented as `POST /documents/{document_id}/edits`. |
+| Persist canonical operations from structured edits | Done | API persists generated operations, not the high-level edit envelope. |
+| Strict agent target-scope enforcement | Partial | Policy exists; full enforcement against reviewer-declared target sets is deferred. |
+| Editor structured-edit DTO wrapper | Not done | Editor still emits canonical operations directly. |
+| Full conformance/live repair proof | Partial | Unit/API/agent coverage exists; complete product trace proving targeted visual repair remains follow-up. |
+
+## Phase D V1 Prerequisites (Resolved 2026-06-12)
+
+All product/architecture decisions blocking V1 were resolved on 2026-06-12.
+The durable decision records, including rationale and rejected alternatives,
+live in `docs/phase-d-targeted-editing-repair-semantics.md` under "Post-V0
+Decisions (Resolved 2026-06-12)". Summary:
+
+| Area | Decision |
+| --- | --- |
+| History persistence | Persist the full edit-batch envelope per batch: intent, checkpoint label, actor, source, touched targets, base revision, canonical operations, and inverse operations computed at apply time. Replay reads operations only. |
+| Undo/redo | Document-level linear undo/redo as inverse-batch append (revert semantics). History is never truncated. Pure DSL compile still rejects `undo`/`redo` without a history adapter. `FinalizeTemplate` batches are not undoable. |
+| Checkpoints | Named history anchors on batch envelopes; never approval states. `// label` comments become checkpoint labels. |
+| Page delete | Forbid last-page delete; cascade nodes; unbind slots but keep slot definitions so preflight flags the gap. |
+| Slot delete | Hard delete in drafts; finalized revisions immutable; unbind nodes, never delete them. |
+| Asset delete | Archive-first; reject hard delete while referenced by nodes, slots, or finalized revisions. Byte lifecycle is Phase E. |
+| Export profile delete | Default/active profile requires a named replacement; finalized-revision references force a new revision. |
+| Override | Patch group over cloned subtrees with persisted clone lineage; true component model waits. |
+| Editor edits | Backend `/edits` is authority for committed edits; TS helpers optimistic-only; Rust/TS parity fixtures asserted in CI; WASM later. |
+
+### Contract Boundaries
+
+See "Contract Boundaries (Owned Elsewhere, Not Deferred)" in the Phase D
+spec. In short: true component overrides (future component workstream), asset
+byte lifecycle (Phase E), ABM runtime execution (Phase G), print-grade
+shaping (export workstream), and the WASM editor core (post-parity follow-up)
+are explicit contract boundaries with named owners, not Phase D deferrals.
+History-aware undo/redo and checkpoints are no longer blocked: Decisions 0–2
+supply the missing history foundation, and they ship inside Phase D V1.
+
+### V1 Plan
+
+The detailed V1 implementation plan — slice designs, types, diagnostics,
+tests, and acceptance gates for everything remaining in Phase D's charter —
+is `docs/phase-d-v1-implementation-plan.md`.
+
+Branch and worktree (created from this branch after the decision/plan docs
+are committed):
+
+```text
+phase-d/targeted-editing-repair-semantics-v1
+/Users/aryankeshri/Documents/brilliant-design/phase-d-targeted-editing-repair-semantics-v1
+```
+
+Slice order:
+
+1. V1.0 Branch, baseline fixtures, failing tests.
+2. V1.1 Inverse operation batches in core.
+3. V1.2 API envelope persistence and base-revision guard.
+4. V1.3 Strict agent target-scope enforcement.
+5. V1.4 Checkpoint anchors.
+6. V1.5 Document-level undo/redo.
+7. V1.6 `#document` and `#export:name` modify lowering.
+8. V1.7 Lifecycle safe deletes (page, slot, asset, export profile).
+9. V1.8 DSL conveniences and edit authority.
+10. V1.9 Ungroup and override patch groups.
+11. V1.10 Inline block replace.
+12. V1.11 Editor structured-edit adoption and parity fixtures.
+13. V1.12 Conformance, live repair proof, and closeout.

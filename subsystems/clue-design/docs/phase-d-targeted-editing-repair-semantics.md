@@ -552,6 +552,15 @@ V0 undo/redo recommendation:
 - Reject `undo(...)` and `redo(...)` in pure `compile_dsl` unless a history
   context is supplied.
 
+Decided model (2026-06-12, see Post-V0 Decisions 0–2): document-level linear
+undo/redo over persisted edit-batch envelopes. Each applied batch stores its
+inverse operations, computed at apply time. Undo appends a new envelope that
+applies the stored inverse; redo re-applies the original operations as a new
+envelope; the history log is append-only, with mutable undo/redo cursors kept
+as separate bookkeeping. Revert-to-checkpoint composes the inverses of every
+batch after the anchor, newest first, into one envelope. Batches containing
+`FinalizeTemplate` are not invertible and reject undo with a diagnostic.
+
 Future syntax:
 
 ```text
@@ -765,7 +774,9 @@ Behavior:
 - load canonical scene
 - build canonical operations through Rust helper
 - apply checked operations atomically
-- persist operation history with patch metadata
+- persist the edit envelope as the history unit: intent, checkpoint label,
+  actor, source, touched targets, base revision, canonical operations, and
+  inverse operations (replay reads operations only)
 - persist diagnostics
 - return compact document summary and touched-target summary
 
@@ -957,36 +968,42 @@ Phase D is ready when:
 10. Unsupported advanced syntax fails with clear diagnostics rather than being
     ignored or causing full-regeneration fallback.
 
-## Open Decisions
+## Open Decisions (Resolved 2026-06-12)
+
+All five decisions are resolved. The first four are implemented in V0; the
+fifth ships as a V1 slice.
 
 1. Should `CloneNode` and `ReplaceNode` become first-class core `Operation`
-   variants, or should Phase D always expand them into low-level canonical
-   operations while preserving high-level intent in `EditBatch` metadata?
+   variants?
 
-   Recommendation: expand to low-level operations first. Add first-class
-   variants only if replay/audit/user history becomes meaningfully worse
-   without them.
+   Decision: no. Clone and replace expand into existing canonical operations,
+   with high-level intent preserved in `EditBatch` metadata and, after V1
+   envelope persistence, in stored history envelopes. Revisit only if
+   replay/audit tooling proves the expansion insufficient.
 
 2. Should block replace syntax be implemented in Phase D V0?
 
-   Recommendation: not first. Implement existing-node replace and modify-line
-   repair first; block replace is valuable but more parser-heavy.
+   Decision: not in V0. Existing-node replace shipped first. Inline block
+   replace is scheduled as a V1 slice now that V0 replacement semantics are
+   tested. See `phase-d-v1-implementation-plan.md` slice V1.10.
 
 3. Should undo/redo be available in pure DSL compilation?
 
-   Recommendation: no. Undo/redo require operation history context. Pure
-   compile should diagnose them unless a session/history adapter is supplied.
+   Decision: no. `undo(...)`/`redo(...)` lower only when a history adapter is
+   supplied (V1.5). Pure `compile_dsl` emits a precise diagnostic.
 
 4. Should clone copy slot bindings by default?
 
-   Recommendation: no. Default `slots:detach` avoids accidental duplicated ABM
-   bindings. Require explicit `slots:copy` or `slots:suffix(...)`.
+   Decision: no. Default is `slots:detach`; duplicated ABM personalization
+   bindings must be explicit through `slots:copy` or `slots:suffix(...)`.
+   Implemented in V0.
 
 5. How strict should targeted repair scope enforcement be?
 
-   Recommendation: strict for agent repairs, advisory for direct human editor
-   edits. Agent repairs should declare allowed targets and fail if the patch
-   touches unrelated targets.
+   Decision: strict fail-closed for agent repairs, advisory warnings for
+   direct human editor edits. Agent repairs declare allowed targets and the
+   whole batch is rejected before mutation if it touches targets outside the
+   declared closure. Ships as V1.3.
 
 ## V0 Implemented Contract
 
@@ -1040,15 +1057,162 @@ The structured edit helper accepts:
 ```
 
 Successful helper/API responses return the updated scene, the exact canonical
-operations that were applied, and edit metadata including touched targets. API
-persistence stores the canonical operations in operation history, not the
-high-level edit envelope.
+operations that were applied, and edit metadata including touched targets. In
+V0, API persistence stored only the canonical operations in operation history.
+V1 supersedes this: history persists the full edit envelope around the
+canonical operations (see Post-V0 Decision 0); replay still reads only the
+operations.
 
-Still deferred after V0:
+Still deferred after V0 (every item is scheduled in
+`docs/phase-d-v1-implementation-plan.md`; slice numbers in parentheses):
 
-- `#document` and `#export:name` modify lowering.
-- Safe delete for pages, slots, assets, and export profiles.
-- `ungroup`, `override`, `undo`, and `redo` lowering.
-- History-aware checkpoint execution.
+- `#document` and `#export:name` modify lowering. (V1.6)
+- Safe delete for pages, slots, assets, and export profiles. (V1.7)
+- `ungroup` and `override` lowering. (V1.9)
+- `undo` and `redo` lowering with a history adapter. (V1.5)
+- History-aware checkpoint execution. (V1.4)
+- Inline block replace. (V1.10)
+- Strict agent target-scope enforcement. (V1.3)
 - A frontend TypeScript structured-edit DTO wrapper. The current editor already
   emits canonical operations for direct manipulation and inspector controls.
+  (V1.11)
+
+## Post-V0 Decisions (Resolved 2026-06-12)
+
+The deferred items are still part of the broader Phase D product scope. They
+were not implemented in V0 because the branch first established the shared edit
+foundation: typed targets, sparse patches, checked edit batches, DSL modify
+lowering, structured API/tooling, and basic move/delete/clone/replace
+semantics.
+
+All product/architecture decisions blocking the remaining scope were resolved
+on 2026-06-12. Every item below is scheduled in
+`docs/phase-d-v1-implementation-plan.md`. The records keep the rationale and
+the rejected alternatives so future work does not re-litigate them.
+
+### Decision 0: Persist The Edit-Batch Envelope In History
+
+Decision: operation history persists the full edit envelope per batch —
+intent, checkpoint label, actor, source, touched targets, base revision, the
+canonical operations, and the inverse operation batch computed at apply time.
+Replay continues to read only the canonical operations, so `Scene` remains
+canonical state and `Operation` remains the sole mutation/replay surface.
+
+Why: without stored batch boundaries and metadata there is no document-level
+undo, no checkpoint anchors, no batch-grouped history UI, and no audit answer
+to "why did this change". Envelope data cannot be backfilled: every batch
+persisted without an envelope is permanently anonymous. Inverses are captured
+at apply time because the pre-state scene is in hand then (the inverse of
+`RemoveNode` needs the removed subtree — free at apply time, expensive later).
+
+Alternatives rejected: operations-only storage (the V0 status quo; loses
+intent and inverses forever), envelope-as-source-of-truth with derived
+operations (re-derivation drift; operations would no longer be literal
+history).
+
+### Decision 1: Undo/Redo Model
+
+Decision: document-level linear undo/redo implemented as inverse-batch
+append. Undo applies the stored inverse batch as a new history envelope
+(revert semantics, like `git revert`); history is never truncated or
+rewritten. Snapshots remain performance/integrity anchors, not the undo
+mechanism. The editor keeps a local optimistic undo stack for uncommitted
+gestures and reconciles to document history on save. Pure `compile_dsl`
+continues to reject `undo`/`redo` without a history adapter. Batches
+containing non-invertible operations (`FinalizeTemplate`) are not undoable
+and produce a precise diagnostic.
+
+Why: Lumen history backs template revisions, audit, and replay. Brilliant can
+rewind canvas state because it is a local-first desktop file tool; Lumen
+history is shared product data, and truncation would break exactly the
+guarantees the ABM lifecycle depends on.
+
+Alternatives rejected: snapshot-restore (truncates or forks history),
+event-sourced time travel (unbounded replay cost; the act of reverting is
+never itself recorded), branching history (collaboration-era complexity).
+
+### Decision 2: Checkpoints
+
+Decision: checkpoints are named operation-history anchors recorded on batch
+envelopes and surfaced in editor and agent history. They are not approval
+states; approval remains exclusively the template-revision lifecycle. The
+agent's `// label` narration comment becomes the checkpoint label of the next
+batch, so narration, undo anchor, and trace label are one artifact.
+
+### Decision 3: Page Delete
+
+Decision: deleting the last page is forbidden. Page delete cascades node
+deletion and unbinds slots bound to deleted nodes, but keeps the slot
+definitions so preflight/finalization flags newly unbound required slots —
+the personalization contract must shrink visibly, never silently. Active-page
+selection is editor state, not core semantics. In strict agent mode page
+deletion must be an explicitly targeted directive, never a side effect of a
+node-level repair.
+
+### Decision 4: Slot Delete
+
+Decision: hard delete allowed in drafts; finalized revisions are immutable
+(edits require a new revision). Deleting a slot unbinds nodes and never
+deletes nodes. Slot removals are recorded with intent in the envelope so
+Phase G can compute revision-compatibility diffs later without Phase D
+building that checker now. Document-level undo makes draft hard-deletes
+recoverable, which removes the need for slot archival machinery.
+
+### Decision 5: Asset Delete
+
+Decision: archive-first. Phase D implements the archive status and a
+reference check that rejects hard delete while the asset is referenced by any
+node, slot, or finalized revision. Byte storage lifecycle, GC, and library
+semantics remain Phase E scope; building them in Phase D would be
+speculative.
+
+### Decision 6: Export Profile Delete
+
+Decision: deleting the default/active export profile requires a named
+replacement profile. Profiles referenced by finalized revisions follow the
+same immutability rule as slots (new revision required). With lifecycle rules
+decided, `#export:name` modify lowering and profile delete ship together in
+V1.
+
+### Decision 7: Override Semantics
+
+Decision: `override(...)` is a patch group over cloned subtrees, validating
+that every inner modify target is a descendant of the override root. True
+component master/instance semantics wait for a component model. Clone lineage
+(source root plus the deterministic ID map V0 already computes) is persisted
+in the envelope so a future component model can be retrofitted without
+archaeology. Patch-group override is not a stopgap: clone-per-item plus
+per-item override is the intended Phase G repeater mechanic.
+
+### Decision 8: Editor Edit Surface
+
+Decision: backend `POST /documents/{document_id}/edits` is the authority for
+committed editor edits. TypeScript helpers survive only as optimistic
+preview. Cross-language parity fixtures — the same fixture scene plus the
+same edit must produce identical operation batches from the Rust builders and
+the TS helpers — are asserted in CI. WASM-in-browser (`lumen-wasm`) remains
+the convergence target but is not a Phase D gate; the parity fixtures
+neutralize the divergence risk until then.
+
+### Contract Boundaries (Owned Elsewhere, Not Deferred)
+
+With the decisions above, the only Phase D items that wait on other contracts
+are these. Each is an explicit boundary with an owner, not an open question:
+
+| Feature | Owning contract |
+| --- | --- |
+| True component `override` | Future component/master/instance workstream. Clone lineage metadata is persisted now (Decision 7) so it can be retrofitted. |
+| Asset byte lifecycle, storage GC, library semantics | Phase E asset runtime. Phase D ships archive status plus reference checks only (Decision 5). |
+| ABM runtime binding, conditionals, repeater execution | Phase G personalization runtime. Phase D delivers the clone/override primitive it consumes. |
+| Print-grade text shaping and export fidelity | Export/print-fidelity workstream. |
+| WASM editor core | `spike/wasm-browser-core` follow-up after parity fixtures land (Decision 8). |
+
+### V1 Scope And Sequencing
+
+The complete V1 scope — slice ordering, types, diagnostics, tests, and
+acceptance gates — lives in `docs/phase-d-v1-implementation-plan.md`.
+Everything in Phase D's charter is scheduled there to completion, including
+history-aware undo/redo and checkpoints (unblocked by Decisions 0–2), all
+lifecycle deletes, `#document`/`#export` lowering, `ungroup`, patch-group
+`override`, inline block replace, strict agent scope enforcement, and full
+editor unification. Nothing in the charter remains unowned.
