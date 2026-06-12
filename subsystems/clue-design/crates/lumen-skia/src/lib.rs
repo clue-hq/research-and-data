@@ -11,10 +11,15 @@
 //! - `SkiaTextMeasurer` (slice A2): SkParagraph-backed [`lumen_core::TextMeasurer`].
 //! - `SkiaSceneRenderer` (slice A3): direct scene→Skia PNG rasterization.
 
+//! - `raster_flattened_pdf` (slice G7): bulk print V0 per the B3 verdict —
+//!   Skia raster pages flattened into PDF, never native-PDF text or fonts.
+
 pub mod fonts;
 pub mod measure;
+pub mod pdf_flatten;
 pub mod render;
 
 pub use fonts::{FamilyResolution, FontLoadError, FontManager, DEFAULT_FONT_FAMILY};
 pub use measure::SkiaTextMeasurer;
+pub use pdf_flatten::{raster_flattened_pdf, FlattenedPdf, FlattenedPdfPage};
 pub use render::SkiaSceneRenderer;

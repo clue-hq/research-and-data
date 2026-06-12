@@ -188,6 +188,12 @@ enum CoreRequest {
         asset_records: Vec<Value>,
         #[serde(default)]
         store_root: Option<String>,
+        /// Bulk-export formats rendered after a clean derivation
+        /// ("svg" | "png" | "pdf"); artifacts store content-addressed.
+        #[serde(default)]
+        export_formats: Vec<String>,
+        #[serde(default)]
+        export_dpi: Option<u16>,
     },
 }
 
@@ -488,10 +494,12 @@ fn request_log_fields(request: &CoreRequest) -> Value {
         CoreRequest::DeriveInstance {
             asset_records,
             store_root,
+            export_formats,
             ..
         } => json!({
             "asset_record_count": asset_records.len(),
             "has_store_root": store_root.is_some(),
+            "export_formats": export_formats,
         }),
     }
 }
@@ -1571,6 +1579,8 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
             binding_set,
             asset_records,
             store_root,
+            export_formats,
+            export_dpi,
         } => {
             let scene = parse_scene(scene)?;
             let binding = parse_binding_set(binding_set)?;
@@ -1723,10 +1733,35 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                 },
             );
 
+            let mut diagnostics = derived.diagnostics.clone();
+            let mut artifacts: Vec<Value> = Vec::new();
+            let mut export_skipped = false;
+            if !export_formats.is_empty() {
+                if derived.has_errors() {
+                    // Failed instances never produce artifacts; the fit
+                    // report and diagnostics carry the why.
+                    export_skipped = true;
+                } else {
+                    let Some(store_root) = store_root.clone() else {
+                        return Err(core_error(
+                            "helper.store_root",
+                            "derive_instance with export_formats requires store_root",
+                        ));
+                    };
+                    artifacts = export_instance_artifacts(
+                        &derived.scene,
+                        &export_formats,
+                        export_dpi.unwrap_or(300),
+                        &store_root,
+                        &mut diagnostics,
+                    )?;
+                }
+            }
+
             Ok(CoreResponse {
                 ok: true,
                 scene: Some(to_value(&derived.scene)?),
-                diagnostics: derived.diagnostics.clone(),
+                diagnostics,
                 error: None,
                 applied_operations: None,
                 preflight: None,
@@ -1748,6 +1783,8 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                     "fit_report": to_value(&derived.fit_report)?,
                     "repair_requests": to_value(&derived.repair_requests)?,
                     "generated": Value::Object(generated_payloads),
+                    "artifacts": artifacts,
+                    "export_skipped": export_skipped,
                 })),
             })
         }
@@ -1771,6 +1808,158 @@ fn deterministic_generated_asset_id(binding_set_id: &str, entry: &str) -> String
             .collect::<String>()
     };
     format!("asset_gen_{}_{}", sanitize(binding_set_id), sanitize(entry))
+}
+
+/// Render one derived instance to the requested formats and store every
+/// artifact content-addressed in the Phase E asset store (slice G7).
+///
+/// SVG/PNG ride the composed Skia adapter (license/print checks included,
+/// purpose BulkRender). PDF follows the BINDING B3 verdict: license/print
+/// checks run through the adapter first, then pages raster-flatten at the
+/// requested DPI via lumen-skia — never the native vector PDF path.
+fn export_instance_artifacts(
+    scene: &Scene,
+    formats: &[String],
+    dpi: u16,
+    store_root: &str,
+    diagnostics: &mut Vec<Diagnostic>,
+) -> Result<Vec<Value>, CoreError> {
+    let store = LocalAssetStore::new(store_root);
+    let resolver = Arc::new(StoreBackedResolver::new(store_root.to_owned()));
+    let adapter = server_export_adapter(LumenExportAdapter::with_resolver(
+        Arc::clone(&resolver) as Arc<dyn lumen_export::AssetByteResolver>
+    ));
+    let page_ids: Vec<PageId> = scene.pages.keys().cloned().collect();
+    let mut artifacts = Vec::new();
+
+    let push_error = |artifacts: &mut Vec<Value>, format: &str, code: &str, message: &str| {
+        artifacts.push(json!({
+            "format": format,
+            "error": { "code": code, "message": message },
+        }));
+    };
+
+    for format in formats {
+        match format.as_str() {
+            "svg" | "png" => {
+                let profile = ExportProfile {
+                    name: format!("instance_{format}"),
+                    format: if format == "svg" {
+                        ExportFormat::Svg
+                    } else {
+                        ExportFormat::Png
+                    },
+                    pdf_intent: None,
+                    raster: (format == "png").then_some(RasterScale {
+                        scale: 1.0,
+                        dpi: Some(dpi),
+                    }),
+                    include_bleed: false,
+                    embed_fonts: false,
+                };
+                let request = ExportRequest {
+                    profile,
+                    page_ids: page_ids.clone(),
+                    purpose: ExportPurpose::BulkRender,
+                };
+                match adapter.export(scene, &request) {
+                    Ok(result) => {
+                        diagnostics.extend(result.diagnostics);
+                        for artifact in result.artifacts {
+                            let stored = store
+                                .put(&artifact.bytes)
+                                .map_err(|error| core_error(error.code, error.message))?;
+                            artifacts.push(json!({
+                                "format": format,
+                                "page_id": artifact.page_id,
+                                "mime_type": artifact.mime_type,
+                                "byte_length": stored.byte_length,
+                                "digest_value": stored.digest_value,
+                                "relative_path": stored.relative_path,
+                                "deduplicated": stored.deduplicated,
+                            }));
+                        }
+                    }
+                    Err(error) => {
+                        diagnostics.extend(error.diagnostics.clone());
+                        push_error(&mut artifacts, format, error.code, &error.message);
+                    }
+                }
+            }
+            "pdf" => {
+                // Checks first (license enforcement, print DPI, logo safe
+                // area) through the adapter; the SVG bytes are discarded.
+                let check_request = ExportRequest {
+                    profile: ExportProfile {
+                        name: "instance_pdf_checks".to_owned(),
+                        format: ExportFormat::Svg,
+                        pdf_intent: Some(PdfIntent::Print),
+                        raster: None,
+                        include_bleed: false,
+                        embed_fonts: false,
+                    },
+                    page_ids: page_ids.clone(),
+                    purpose: ExportPurpose::BulkRender,
+                };
+                match adapter.export(scene, &check_request) {
+                    Ok(check_result) => {
+                        diagnostics.extend(check_result.diagnostics);
+                        let renderer = SkiaSceneRenderer::bundled();
+                        match lumen_skia::raster_flattened_pdf(
+                            &renderer,
+                            scene,
+                            &page_ids,
+                            dpi,
+                            Some(resolver.as_ref()),
+                        ) {
+                            Ok(flattened) => {
+                                diagnostics.extend(flattened.diagnostics);
+                                let stored = store
+                                    .put(&flattened.bytes)
+                                    .map_err(|error| core_error(error.code, error.message))?;
+                                artifacts.push(json!({
+                                    "format": "pdf",
+                                    "page_id": null,
+                                    "mime_type": "application/pdf",
+                                    "byte_length": stored.byte_length,
+                                    "digest_value": stored.digest_value,
+                                    "relative_path": stored.relative_path,
+                                    "deduplicated": stored.deduplicated,
+                                    "flattened_raster_dpi": dpi,
+                                    "pages": flattened
+                                        .pages
+                                        .iter()
+                                        .map(|page| json!({
+                                            "page_id": page.page_id,
+                                            "width_pt": page.width_pt,
+                                            "height_pt": page.height_pt,
+                                            "width_px": page.width_px,
+                                            "height_px": page.height_px,
+                                        }))
+                                        .collect::<Vec<_>>(),
+                                }));
+                            }
+                            Err(error) => {
+                                push_error(&mut artifacts, "pdf", error.code, &error.message)
+                            }
+                        }
+                    }
+                    Err(error) => {
+                        diagnostics.extend(error.diagnostics.clone());
+                        push_error(&mut artifacts, "pdf", error.code, &error.message);
+                    }
+                }
+            }
+            other => push_error(
+                &mut artifacts,
+                other,
+                "export.unknown_format",
+                "instance export supports svg, png, and pdf",
+            ),
+        }
+    }
+
+    Ok(artifacts)
 }
 
 fn parse_binding_set(value: Value) -> Result<BindingSet, CoreError> {

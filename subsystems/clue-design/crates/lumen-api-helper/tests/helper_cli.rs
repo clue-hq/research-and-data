@@ -1150,3 +1150,92 @@ fn derive_instance_returns_fit_report_with_skia_truth() {
     assert_eq!(headline["verdict"]["policy"], "shrink_font");
     assert_eq!(headline["beyond_worst_case"], true);
 }
+
+#[test]
+fn derive_instance_bulk_export_stores_artifacts_per_the_b3_verdict() {
+    let store_dir = tempfile::tempdir().expect("tempdir");
+    let store_root = store_dir.path().to_string_lossy().to_string();
+
+    let mut request = derive_request(&store_root);
+    request["export_formats"] = json!(["svg", "png", "pdf"]);
+    request["export_dpi"] = json!(300);
+
+    let first = helper(request.clone());
+    assert_eq!(first["ok"], true, "{first:#?}");
+    assert_eq!(first["instance"]["export_skipped"], false);
+    let artifacts = first["instance"]["artifacts"]
+        .as_array()
+        .expect("artifacts");
+    assert_eq!(artifacts.len(), 3, "{artifacts:#?}");
+
+    for artifact in artifacts {
+        assert!(
+            artifact.get("error").is_none(),
+            "no artifact may fail: {artifact:#?}"
+        );
+        assert!(
+            artifact["digest_value"].as_str().is_some(),
+            "content-addressed storage: {artifact:#?}"
+        );
+        let relative = artifact["relative_path"].as_str().expect("relative path");
+        assert!(
+            store_dir.path().join(relative).exists(),
+            "artifact bytes must exist in the store: {relative}"
+        );
+    }
+
+    // PDF follows the B3 verdict: raster-flattened pages at 300dpi, DL
+    // mailer 210x105mm => 595.3x297.6pt => 2480x1240px.
+    let pdf = artifacts
+        .iter()
+        .find(|artifact| artifact["format"] == "pdf")
+        .expect("pdf artifact");
+    assert_eq!(pdf["flattened_raster_dpi"], 300);
+    let page = &pdf["pages"][0];
+    assert_eq!(page["width_px"], 2480, "{page:#?}");
+    assert_eq!(page["height_px"], 1240, "{page:#?}");
+    let pdf_path = store_dir
+        .path()
+        .join(pdf["relative_path"].as_str().unwrap());
+    let pdf_bytes = std::fs::read(&pdf_path).expect("pdf bytes");
+    assert!(pdf_bytes.starts_with(b"%PDF-"), "stored bytes are a PDF");
+
+    // Determinism: re-deriving and re-exporting produces identical digests
+    // for every artifact (the store reports dedup hits).
+    let second = helper(request);
+    let second_artifacts = second["instance"]["artifacts"].as_array().unwrap();
+    for (a, b) in artifacts.iter().zip(second_artifacts) {
+        assert_eq!(a["format"], b["format"]);
+        assert_eq!(
+            a["digest_value"], b["digest_value"],
+            "artifact digests must be idempotent: {} vs {}",
+            a["digest_value"], b["digest_value"]
+        );
+        assert_eq!(b["deduplicated"], true, "{b:#?}");
+    }
+}
+
+#[test]
+fn derive_instance_export_skips_failed_instances() {
+    let store_dir = tempfile::tempdir().expect("tempdir");
+    let store_root = store_dir.path().to_string_lossy().to_string();
+
+    let mut request = derive_request(&store_root);
+    // Worst-case headline cannot fit even at min font => error => no export.
+    request["binding_set"] = serde_json::from_str::<Value>(include_str!(
+        "../../lumen-core/fixtures/binding/worst_case.json"
+    ))
+    .unwrap();
+    request["asset_records"][0]["id"] = json!("asset_meridian_logo");
+    request["export_formats"] = json!(["png"]);
+
+    let response = helper(request);
+    assert_eq!(response["ok"], true, "{response:#?}");
+    assert_eq!(response["instance"]["has_errors"], true);
+    assert_eq!(response["instance"]["export_skipped"], true);
+    assert_eq!(
+        response["instance"]["artifacts"].as_array().unwrap().len(),
+        0,
+        "failed instances never produce artifacts"
+    );
+}
