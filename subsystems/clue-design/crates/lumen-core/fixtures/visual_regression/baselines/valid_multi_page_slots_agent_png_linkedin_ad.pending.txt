@@ -1,5 +1,0 @@
-visual-regression-placeholder: valid_multi_page_slots_agent_png_linkedin_ad
-
-This baseline is intentionally textual until export/svg-pdf provides a concrete renderer output.
-The skeleton test validates the case manifest, scene fixture, export profile, page target, and this
-placeholder so CI has a stable target for future visual-regression wiring.
