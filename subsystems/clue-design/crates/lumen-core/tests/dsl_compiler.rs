@@ -1163,3 +1163,79 @@ fn assert_no_dsl_errors(diagnostics: &[lumen_core::DslDiagnostic]) {
         "{diagnostics:#?}"
     );
 }
+
+#[test]
+fn document_modify_line_lowers_to_update_document() {
+    let mut scene = Scene::new(lumen_core::DocumentId::from("doc_meta"), "Before");
+    let output = compile_dsl_into_scene(
+        "page page_a4\n\n#document name(\"Renamed Artifact\") artifact_type(\"linkedin_ad\") medium(ad)",
+        &mut scene,
+    );
+
+    assert_no_dsl_errors(&output.compile_output.diagnostics);
+    assert!(output.operation_error.is_none());
+    assert_eq!(scene.meta.title, "Renamed Artifact");
+    assert_eq!(scene.meta.artifact_type.as_deref(), Some("linkedin_ad"));
+    assert_eq!(scene.meta.medium, Some(lumen_core::Medium::Ad));
+}
+
+#[test]
+fn document_modify_brand_kit_sets_versioned_ref() {
+    let mut scene = Scene::new(lumen_core::DocumentId::from("doc_brand"), "Doc");
+    let output = compile_dsl_into_scene(
+        "page page_a4\n\n#document brand_kit(brand_acme, 3)",
+        &mut scene,
+    );
+
+    assert_no_dsl_errors(&output.compile_output.diagnostics);
+    let brand_ref = scene.meta.brand_kit.as_ref().expect("brand kit ref set");
+    assert_eq!(brand_ref.version, 3);
+}
+
+#[test]
+fn export_profile_modify_line_lowers_to_upsert_profile() {
+    let mut scene = Scene::new(lumen_core::DocumentId::from("doc_export"), "Doc");
+    scene.export_profiles.push(lumen_core::ExportProfile {
+        name: "print_pdf".to_owned(),
+        format: lumen_core::ExportFormat::Svg,
+        pdf_intent: None,
+        raster: None,
+        include_bleed: false,
+        embed_fonts: false,
+    });
+
+    let output = compile_dsl_into_scene(
+        "page page_a4\n\n#export:print_pdf format(pdf) pdf_intent(print) include_bleed(true) embed_fonts(true)",
+        &mut scene,
+    );
+
+    assert_no_dsl_errors(&output.compile_output.diagnostics);
+    assert!(output.operation_error.is_none());
+    let profile = scene.export_profile("print_pdf").expect("profile exists");
+    assert_eq!(profile.format, lumen_core::ExportFormat::Pdf);
+    assert_eq!(profile.pdf_intent, Some(lumen_core::PdfIntent::Print));
+    assert!(profile.include_bleed);
+    assert!(profile.embed_fonts);
+}
+
+#[test]
+fn export_profile_modify_missing_profile_halts() {
+    let mut scene = Scene::new(lumen_core::DocumentId::from("doc_export2"), "Doc");
+    let output = compile_dsl_into_scene("#export:missing format(pdf)", &mut scene);
+    assert!(output.compile_output.halted_at.is_some());
+}
+
+#[test]
+fn checkpoint_comment_label_is_captured_in_compile_output() {
+    let mut scene = Scene::new(lumen_core::DocumentId::from("doc_ckpt"), "Doc");
+    let output = compile_dsl_into_scene(
+        "// hero spacing fix\npage page_a4\n  hero fr p(0,0) s(100,100)",
+        &mut scene,
+    );
+
+    assert_no_dsl_errors(&output.compile_output.diagnostics);
+    assert_eq!(
+        output.compile_output.checkpoint_label.as_deref(),
+        Some("hero spacing fix")
+    );
+}

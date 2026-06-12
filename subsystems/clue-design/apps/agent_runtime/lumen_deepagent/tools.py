@@ -173,6 +173,7 @@ class LumenDesignTools:
             "compile": _dump(summary),
             "operations": compile_output.get("operations", []),
             "dsl_session": self.dsl_session,
+            "checkpoint_label": compile_output.get("checkpoint_label"),
         }
         self._write_json(iteration_dir / "compile.json", payload)
         self.record(

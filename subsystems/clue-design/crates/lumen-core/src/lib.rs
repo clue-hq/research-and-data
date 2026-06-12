@@ -64,8 +64,9 @@ pub use editing::{
     build_page_modify, build_replace_node, build_safe_delete, build_slot_modify,
     resolve_edit_target, AssetEditPatch, CloneLineage, CloneSlotPolicy, CloneSubtreeRequest,
     ComputedClonePolicy, EditBatch, EditError, EditErrorKind, EditPatch, EditScope, EditScopeMode,
-    EditTargetRef, NodeEditPatch, PageEditPatch, RelativePlacement, ReplaceNodeRequest,
-    ReplaceSlotPolicy, ResolvedEditTarget, ScopeViolation, SlotEditPatch, TextEditPatch,
+    EditTargetRef, ExportProfileEditPatch, NodeEditPatch, PageEditPatch, RelativePlacement,
+    ReplaceNodeRequest, ReplaceSlotPolicy, ResolvedEditTarget, ScopeViolation, SlotEditPatch,
+    TextEditPatch,
 };
 pub use export_contract::{
     ExportAdapter, ExportArtifact, ExportError, ExportFormat, ExportProfile, ExportPurpose,

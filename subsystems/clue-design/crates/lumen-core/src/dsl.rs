@@ -1,17 +1,18 @@
 #![allow(clippy::result_large_err)]
 
-use crate::scene::ColorStop;
+use crate::editing::ExportProfileEditPatch;
+use crate::scene::{BrandKitRef, ColorStop, Medium};
 use crate::{
     build_clone_subtree, build_modify_operations, build_move_after, build_move_before,
     build_move_to_parent, build_replace_node, build_safe_delete, AssetEditPatch, AssetId,
     AutoLayoutDirection, AutoLayoutNode, AutoLayoutProps, CloneSlotPolicy, CloneSubtreeRequest,
-    Color, ComputedClonePolicy, Diagnostic, DiagnosticSeverity, EditError, EditPatch,
-    EditTargetRef, FieldPatch, Fill, ImageNode, LayoutAnchor, LineNode, Node, NodeEditPatch,
-    NodeId, NodeKind, Operation, OperationError, OperationReport, OptionalFieldPatch, Orientation,
-    Page, PageEditPatch, PageId, PagePreset, PageSize, Paint, PaintId, ParentRef, Phase, Rect,
-    RelativePlacement, ReplaceNodeRequest, ReplaceSlotPolicy, Scene, SizeSpec, Slot, SlotEditPatch,
-    SlotId, SlotKey, Stroke, TextAlign, TextDirection, TextEditPatch, TextNode, TextWrap, Unit,
-    VectorNode,
+    Color, ComputedClonePolicy, Diagnostic, DiagnosticSeverity, DocumentPatch, EditError,
+    EditPatch, EditTargetRef, ExportFormat, FieldPatch, Fill, ImageNode, LayoutAnchor, LineNode,
+    Node, NodeEditPatch, NodeId, NodeKind, Operation, OperationError, OperationReport,
+    OptionalFieldPatch, Orientation, Page, PageEditPatch, PageId, PagePreset, PageSize, Paint,
+    PaintId, ParentRef, PdfIntent, Phase, RasterScale, Rect, RelativePlacement, ReplaceNodeRequest,
+    ReplaceSlotPolicy, Scene, SizeSpec, Slot, SlotEditPatch, SlotId, SlotKey, Stroke, TextAlign,
+    TextDirection, TextEditPatch, TextNode, TextWrap, Unit, VectorNode,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
@@ -227,6 +228,10 @@ pub struct DslCompileOutput {
     pub operations: Vec<Operation>,
     pub diagnostics: Vec<DslDiagnostic>,
     pub halted_at: Option<DslHalt>,
+    /// Last `// label` checkpoint comment successfully lowered in this
+    /// block. Callers attach it to the persisted edit envelope so narration,
+    /// undo anchor, and trace label stay one artifact.
+    pub checkpoint_label: Option<String>,
 }
 
 impl DslCompileOutput {
@@ -367,6 +372,17 @@ pub enum DslProperty {
     LineTo(f64, f64),
     Name(String),
     Token(String),
+    ArtifactType(String),
+    DocumentMedium(Medium),
+    DocumentBrandKit(String, u32),
+    ExportFormatValue(ExportFormat),
+    ExportPdfIntent(PdfIntent),
+    ExportRasterScale {
+        scale: f64,
+        dpi: Option<u16>,
+    },
+    ExportIncludeBleed(bool),
+    ExportEmbedFonts(bool),
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -1027,6 +1043,7 @@ struct DslCompiler<'a> {
     operations: Vec<Operation>,
     diagnostics: Vec<DslDiagnostic>,
     halted_at: Option<DslHalt>,
+    checkpoint_label: Option<String>,
     scene: &'a mut Scene,
     parent_stack: &'a mut Vec<ParentFrame>,
     emitted_slots: &'a mut BTreeMap<SlotKey, SlotId>,
@@ -1045,6 +1062,7 @@ impl<'a> DslCompiler<'a> {
             operations: Vec::new(),
             diagnostics,
             halted_at: None,
+            checkpoint_label: None,
             scene,
             parent_stack,
             emitted_slots,
@@ -1075,12 +1093,19 @@ impl<'a> DslCompiler<'a> {
             operations: self.operations.clone(),
             diagnostics: self.diagnostics.clone(),
             halted_at: self.halted_at.clone().or(parse_halt),
+            checkpoint_label: self.checkpoint_label.clone(),
         }
     }
 
     fn lower_line(&mut self, line: &DslLine) -> Result<(), DslDiagnostic> {
         match &line.kind {
-            DslLineKind::Comment(_) | DslLineKind::Checkpoint(_) => Ok(()),
+            DslLineKind::Comment(_) => Ok(()),
+            DslLineKind::Checkpoint(label) => {
+                if !label.is_empty() {
+                    self.checkpoint_label = Some(label.clone());
+                }
+                Ok(())
+            }
             DslLineKind::Page(page) => self.lower_page(line, page),
             DslLineKind::Element(element) => self.lower_element(line, element),
             DslLineKind::Directive(directive) => self.lower_directive(line, directive),
@@ -1576,13 +1601,146 @@ fn edit_patch_from_properties(
             let patch = asset_edit_patch_from_properties(properties, line)?;
             Ok(EditPatch::Asset(patch))
         }
-        EditTargetRef::Document | EditTargetRef::ExportProfile(_) => Err(error_diag(
-            line.line_number,
-            1,
-            line.raw.len().max(1),
-            "LUMD0903",
-            "this target type is not supported by modify-line lowering yet",
-            "Use structured operations for document/export-profile edits until Phase D wires those targets.",
+        EditTargetRef::Document => {
+            let patch = document_edit_patch_from_properties(properties, line)?;
+            Ok(EditPatch::Document(patch))
+        }
+        EditTargetRef::ExportProfile(_) => {
+            let patch = export_profile_edit_patch_from_properties(properties, line)?;
+            Ok(EditPatch::ExportProfile(patch))
+        }
+    }
+}
+
+fn document_edit_patch_from_properties(
+    properties: &[DslProperty],
+    line: &DslLine,
+) -> Result<DocumentPatch, DslDiagnostic> {
+    let mut patch = DocumentPatch::default();
+    for property in properties {
+        match property {
+            DslProperty::Name(name) => patch.title = FieldPatch::Set(name.clone()),
+            DslProperty::ArtifactType(artifact_type) => {
+                patch.artifact_type = OptionalFieldPatch::Set(artifact_type.clone())
+            }
+            DslProperty::DocumentMedium(medium) => {
+                patch.medium = OptionalFieldPatch::Set(medium.clone())
+            }
+            DslProperty::DocumentBrandKit(brand_kit_id, version) => {
+                patch.brand_kit = OptionalFieldPatch::Set(BrandKitRef {
+                    id: brand_kit_id.clone().into(),
+                    version: *version,
+                })
+            }
+            _ => {
+                return Err(error_diag(
+                    line.line_number,
+                    1,
+                    line.raw.len().max(1),
+                    "LUMD0903",
+                    "property is not supported for #document modify targets",
+                    "Use name(...), artifact_type(...), medium(...), or brand_kit(id, version).",
+                ));
+            }
+        }
+    }
+    Ok(patch)
+}
+
+fn export_profile_edit_patch_from_properties(
+    properties: &[DslProperty],
+    line: &DslLine,
+) -> Result<ExportProfileEditPatch, DslDiagnostic> {
+    let mut patch = ExportProfileEditPatch::default();
+    for property in properties {
+        match property {
+            DslProperty::ExportFormatValue(format) => {
+                patch.format = FieldPatch::Set(format.clone())
+            }
+            DslProperty::ExportPdfIntent(intent) => {
+                patch.pdf_intent = OptionalFieldPatch::Set(intent.clone())
+            }
+            DslProperty::ExportRasterScale { scale, dpi } => {
+                patch.raster = OptionalFieldPatch::Set(RasterScale {
+                    scale: *scale,
+                    dpi: *dpi,
+                })
+            }
+            DslProperty::ExportIncludeBleed(include_bleed) => {
+                patch.include_bleed = FieldPatch::Set(*include_bleed)
+            }
+            DslProperty::ExportEmbedFonts(embed_fonts) => {
+                patch.embed_fonts = FieldPatch::Set(*embed_fonts)
+            }
+            _ => {
+                return Err(error_diag(
+                    line.line_number,
+                    1,
+                    line.raw.len().max(1),
+                    "LUMD0903",
+                    "property is not supported for #export:name modify targets",
+                    "Use format(...), pdf_intent(...), raster_scale(...), include_bleed(...), or embed_fonts(...).",
+                ));
+            }
+        }
+    }
+    Ok(patch)
+}
+
+fn parse_medium(source: &str, line_number: usize, column: usize) -> Result<Medium, DslDiagnostic> {
+    match source.trim() {
+        "print" => Ok(Medium::Print),
+        "digital" => Ok(Medium::Digital),
+        "email" => Ok(Medium::Email),
+        "direct_mail" => Ok(Medium::DirectMail),
+        "ad" => Ok(Medium::Ad),
+        other => Err(error_diag(
+            line_number,
+            column,
+            other.len().max(1),
+            "LUMD0211",
+            format!("unknown medium {other}"),
+            "Use medium(print|digital|email|direct_mail|ad).",
+        )),
+    }
+}
+
+fn parse_export_format(
+    source: &str,
+    line_number: usize,
+    column: usize,
+) -> Result<ExportFormat, DslDiagnostic> {
+    match source.trim() {
+        "svg" => Ok(ExportFormat::Svg),
+        "png" => Ok(ExportFormat::Png),
+        "pdf" => Ok(ExportFormat::Pdf),
+        "figma_manifest" => Ok(ExportFormat::FigmaManifest),
+        other => Err(error_diag(
+            line_number,
+            column,
+            other.len().max(1),
+            "LUMD0211",
+            format!("unknown export format {other}"),
+            "Use format(svg|png|pdf|figma_manifest).",
+        )),
+    }
+}
+
+fn parse_pdf_intent(
+    source: &str,
+    line_number: usize,
+    column: usize,
+) -> Result<PdfIntent, DslDiagnostic> {
+    match source.trim() {
+        "preview" => Ok(PdfIntent::Preview),
+        "print" => Ok(PdfIntent::Print),
+        other => Err(error_diag(
+            line_number,
+            column,
+            other.len().max(1),
+            "LUMD0211",
+            format!("unknown pdf intent {other}"),
+            "Use pdf_intent(preview|print).",
         )),
     }
 }
@@ -1844,7 +2002,15 @@ fn node_edit_patch_from_properties(
             | DslProperty::Path(_)
             | DslProperty::Source(_)
             | DslProperty::LineTo(_, _)
-            | DslProperty::Token(_) => {
+            | DslProperty::Token(_)
+            | DslProperty::ArtifactType(_)
+            | DslProperty::DocumentMedium(_)
+            | DslProperty::DocumentBrandKit(_, _)
+            | DslProperty::ExportFormatValue(_)
+            | DslProperty::ExportPdfIntent(_)
+            | DslProperty::ExportRasterScale { .. }
+            | DslProperty::ExportIncludeBleed(_)
+            | DslProperty::ExportEmbedFonts(_) => {
                 return Err(error_diag(
                     line.line_number,
                     1,
@@ -2611,6 +2777,91 @@ fn parse_property_token(
                 column,
             )?)]
         }
+        "artifact_type" => {
+            expect_arg_count(&call, 1, line_number)?;
+            vec![DslProperty::ArtifactType(unquote(
+                &call.args[0],
+                line_number,
+                column,
+            )?)]
+        }
+        "medium" => {
+            expect_arg_count(&call, 1, line_number)?;
+            vec![DslProperty::DocumentMedium(parse_medium(
+                &call.args[0],
+                line_number,
+                column,
+            )?)]
+        }
+        "brand_kit" => {
+            expect_arg_count(&call, 2, line_number)?;
+            let version = parse_f64(&call.args[1], line_number, column)?;
+            if version < 0.0 || version.fract() != 0.0 {
+                return Err(error_diag(
+                    line_number,
+                    column,
+                    token.len(),
+                    "LUMD0211",
+                    "brand_kit(...) expects a non-negative integer version",
+                    "Use brand_kit(brand_id, 3).",
+                ));
+            }
+            vec![DslProperty::DocumentBrandKit(
+                call.args[0].trim().to_owned(),
+                version as u32,
+            )]
+        }
+        "format" => {
+            expect_arg_count(&call, 1, line_number)?;
+            vec![DslProperty::ExportFormatValue(parse_export_format(
+                &call.args[0],
+                line_number,
+                column,
+            )?)]
+        }
+        "pdf_intent" => {
+            expect_arg_count(&call, 1, line_number)?;
+            vec![DslProperty::ExportPdfIntent(parse_pdf_intent(
+                &call.args[0],
+                line_number,
+                column,
+            )?)]
+        }
+        "raster_scale" => {
+            if call.args.is_empty() || call.args.len() > 2 {
+                return Err(error_diag(
+                    line_number,
+                    column,
+                    token.len(),
+                    "LUMD0211",
+                    "raster_scale(...) expects scale and optional dpi",
+                    "Use raster_scale(2) or raster_scale(2, 300).",
+                ));
+            }
+            let scale = parse_f64(&call.args[0], line_number, column)?;
+            let dpi = if call.args.len() == 2 {
+                Some(parse_f64(&call.args[1], line_number, column)? as u16)
+            } else {
+                None
+            };
+            vec![DslProperty::ExportRasterScale { scale, dpi }]
+        }
+        "include_bleed" => {
+            expect_arg_count(&call, 1, line_number)?;
+            vec![DslProperty::ExportIncludeBleed(parse_bool(
+                &call.args[0],
+                line_number,
+                column,
+            )?)]
+        }
+        "embed_fonts" => {
+            expect_arg_count(&call, 1, line_number)?;
+            vec![DslProperty::ExportEmbedFonts(parse_bool(
+                &call.args[0],
+                line_number,
+                column,
+            )?)]
+        }
         "token" | "ds" | "color" => vec![DslProperty::Token(token.to_owned())],
         _ => {
             return Err(error_diag(
@@ -3142,6 +3393,23 @@ fn apply_properties(
                 ));
             }
             DslProperty::Slot(_) => {}
+            DslProperty::ArtifactType(_)
+            | DslProperty::DocumentMedium(_)
+            | DslProperty::DocumentBrandKit(_, _)
+            | DslProperty::ExportFormatValue(_)
+            | DslProperty::ExportPdfIntent(_)
+            | DslProperty::ExportRasterScale { .. }
+            | DslProperty::ExportIncludeBleed(_)
+            | DslProperty::ExportEmbedFonts(_) => {
+                diagnostics.push(warning_diag(
+                    line_number,
+                    1,
+                    node.id.as_str().len(),
+                    "LUMD0614",
+                    "document/export-profile properties only apply to #document or #export:name modify targets",
+                    "Use these properties on #document or #export:name modify lines.",
+                ));
+            }
         }
     }
 }

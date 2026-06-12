@@ -1,9 +1,10 @@
 use crate::assets::AssetStatus;
 use crate::diagnostics::{Diagnostic, DiagnosticSubject, Phase};
+use crate::export_contract::{ExportFormat, PdfIntent, RasterScale};
 use crate::ids::{AssetId, NodeId, PageId, SlotId, SlotKey};
 use crate::operations::{
-    FieldPatch, NodePatch, Operation, OperationError, OperationReport, OptionalFieldPatch,
-    PagePatch,
+    DocumentPatch, FieldPatch, NodePatch, Operation, OperationError, OperationReport,
+    OptionalFieldPatch, PagePatch,
 };
 use crate::scene::{
     AutoLayoutProps, Color, CornerRadii, Fill, Node, NodeKind, PageSize, Paint, ParentRef, Rect,
@@ -600,6 +601,19 @@ pub struct AssetEditPatch {
     pub status: FieldPatch<AssetStatus>,
 }
 
+/// Sparse patch over an existing export profile. Missing fields default to
+/// unchanged; the patch lowers to `UpsertExportProfile` with the merged
+/// profile.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ExportProfileEditPatch {
+    pub format: FieldPatch<ExportFormat>,
+    pub pdf_intent: OptionalFieldPatch<PdfIntent>,
+    pub raster: OptionalFieldPatch<RasterScale>,
+    pub include_bleed: FieldPatch<bool>,
+    pub embed_fonts: FieldPatch<bool>,
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", content = "value", rename_all = "snake_case")]
 #[allow(clippy::large_enum_variant)]
@@ -608,6 +622,8 @@ pub enum EditPatch {
     Page(PageEditPatch),
     Slot(SlotEditPatch),
     Asset(AssetEditPatch),
+    Document(DocumentPatch),
+    ExportProfile(ExportProfileEditPatch),
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -802,12 +818,54 @@ pub fn build_modify_operations(
         (EditTargetRef::Asset(asset_id), EditPatch::Asset(patch)) => {
             build_asset_modify(scene, asset_id, patch)
         }
+        (EditTargetRef::Document, EditPatch::Document(patch)) => {
+            build_document_modify(scene, patch)
+        }
+        (EditTargetRef::ExportProfile(name), EditPatch::ExportProfile(patch)) => {
+            build_export_profile_modify(scene, name, patch)
+        }
         (target, _) => Err(EditError::new(
             EditErrorKind::UnsupportedTarget,
             format!("patch cannot be applied to target {:?}", target),
         )
         .with_target(target)),
     }
+}
+
+pub fn build_document_modify(scene: &Scene, patch: DocumentPatch) -> Result<EditBatch, EditError> {
+    EditBatch::new(
+        vec![Operation::UpdateDocument { patch }],
+        vec![EditTargetRef::Document],
+    )
+    .with_intent("modify_document")
+    .with_inverses(scene)
+}
+
+pub fn build_export_profile_modify(
+    scene: &Scene,
+    name: String,
+    patch: ExportProfileEditPatch,
+) -> Result<EditBatch, EditError> {
+    let mut profile = scene.export_profile(&name).cloned().ok_or_else(|| {
+        EditError::new(
+            EditErrorKind::TargetNotFound,
+            format!("export profile {} does not exist", name),
+        )
+        .with_target(EditTargetRef::ExportProfile(name.clone()))
+    })?;
+
+    apply_field_patch(&mut profile.format, patch.format);
+    apply_optional_patch(&mut profile.pdf_intent, patch.pdf_intent);
+    apply_optional_patch(&mut profile.raster, patch.raster);
+    apply_field_patch(&mut profile.include_bleed, patch.include_bleed);
+    apply_field_patch(&mut profile.embed_fonts, patch.embed_fonts);
+
+    EditBatch::new(
+        vec![Operation::UpsertExportProfile { profile }],
+        vec![EditTargetRef::ExportProfile(name)],
+    )
+    .with_intent("modify_export_profile")
+    .with_inverses(scene)
 }
 
 pub fn build_node_modify(

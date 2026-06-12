@@ -1150,6 +1150,7 @@ fn values<T: Serialize>(items: Vec<T>) -> Result<Vec<Value>, CoreError> {
 fn dsl_compile_output_value(output: &lumen_core::DslCompileOutput) -> Result<Value, CoreError> {
     Ok(json!({
         "operations": values(output.operations.clone())?,
+        "checkpoint_label": output.checkpoint_label,
         "diagnostics": output
             .diagnostics
             .iter()
