@@ -13,12 +13,12 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 from uuid import uuid4
 
-from fastapi import Depends, FastAPI, HTTPException, Query, Request
+from fastapi import Depends, FastAPI, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 
 from .core import CoreClient, CoreError, has_error_diagnostics
-from .database import NotFoundError, Repository, connect, run_migrations
+from .database import NotFoundError, Repository, connect, run_migrations, utc_now
 from .dto import (
     brand_compatibility_dto,
     brand_governance_dto,
@@ -99,6 +99,10 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
     app.state.database_path = database_path or Path(
         os.environ.get("LUMEN_API_DATABASE_PATH", "apps/api/lumen-api.sqlite3")
     )
+    app.state.asset_store_root = Path(
+        os.environ.get("LUMEN_ASSET_STORE_ROOT")
+        or app.state.database_path.parent / "asset-store"
+    )
     app.state.core = CoreClient()
     app.state.agent_turn_runner = None
     if migrate:
@@ -162,6 +166,9 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
                 }
             },
         )
+
+    def asset_store_root() -> str:
+        return str(app.state.asset_store_root)
 
     def repository() -> Repository:
         connection = connect(app.state.database_path)
@@ -950,6 +957,7 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
                 payload.page_ids,
                 payload.profile,
                 raise_on_error=False,
+                asset_store_root=asset_store_root(),
             )
         except CoreError as error:
             raise core_http_error(error) from error
@@ -1080,6 +1088,7 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
                 payload.page_ids,
                 profile,
                 raise_on_error=False,
+                asset_store_root=asset_store_root(),
             )
         except CoreError as error:
             raise core_http_error(error) from error
@@ -1264,6 +1273,147 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
         template_revision_id: str, repo: Repository = Depends(repository)
     ) -> JsonObject:
         return repo.require_template_revision(template_revision_id)
+
+    @app.post("/assets")
+    def upload_asset(
+        file: UploadFile = File(...),
+        label: Optional[str] = Form(None),
+        kind: Optional[str] = Form(None),
+        uploaded_by: Optional[str] = Form(None),
+        license_json: Optional[str] = Form(None),
+        tags: Optional[str] = Form(None),
+        repo: Repository = Depends(repository),
+    ) -> JsonObject:
+        data = file.file.read()
+        max_bytes = asset_max_bytes()
+        if len(data) > max_bytes:
+            raise HTTPException(
+                status_code=413,
+                detail=f"asset payload of {len(data)} bytes exceeds the {max_bytes}-byte limit",
+            )
+        try:
+            license_payload = json.loads(license_json) if license_json else None
+        except json.JSONDecodeError as error:
+            raise HTTPException(
+                status_code=400, detail=f"license_json is not valid JSON: {error}"
+            ) from error
+        tag_list = [tag.strip() for tag in (tags or "").split(",") if tag.strip()] or None
+
+        asset_id = f"asset_{uuid4().hex[:12]}"
+        try:
+            result = app.state.core.ingest_asset(
+                store_root=asset_store_root(),
+                bytes_base64=base64.b64encode(data).decode("ascii"),
+                asset_id=asset_id,
+                label=label or file.filename or asset_id,
+                declared_mime_type=file.content_type,
+                filename=file.filename,
+                kind=kind,
+                uploaded_by=uploaded_by,
+                license=license_payload,
+                provenance={
+                    "created_by": uploaded_by,
+                    "created_at": utc_now(),
+                    "source_label": "upload",
+                    "confidence": None,
+                    "notes": [],
+                },
+                tags=tag_list,
+                max_bytes=max_bytes,
+                raise_on_error=False,
+            )
+        except CoreError as error:
+            raise core_http_error(error) from error
+
+        diagnostics = result.get("diagnostics", [])
+        if not result.get("ok", False):
+            error = result.get("error") or {}
+            if not diagnostics:
+                diagnostics = diagnostics_from_helper_error(error)
+            status_code = 413 if error.get("code") == "ingest.too_large" else 400
+            log_event(
+                api_logger,
+                logging.INFO,
+                "asset_upload_completed",
+                status="rejected",
+                error_code=error.get("code"),
+                **diagnostic_summary(diagnostics),
+            )
+            raise HTTPException(
+                status_code=status_code,
+                detail={
+                    "code": error.get("code"),
+                    "message": error.get("message"),
+                    "diagnostics": diagnostics,
+                },
+            )
+
+        asset_payload = result.get("asset") or {}
+        record = asset_payload.get("record") or {}
+        stored = repo.create_asset_record(record)
+        log_event(
+            api_logger,
+            logging.INFO,
+            "asset_upload_completed",
+            status="ok",
+            asset_id=record.get("id"),
+            kind=record.get("kind"),
+            deduplicated=asset_payload.get("deduplicated", False),
+            byte_length=asset_payload.get("byte_length"),
+            **diagnostic_summary(diagnostics),
+        )
+        return {
+            "schema_version": 1,
+            "asset": stored["asset"],
+            "deduplicated": asset_payload.get("deduplicated", False),
+            "diagnostics": diagnostic_views(diagnostics),
+        }
+
+    @app.get("/assets/{asset_id}")
+    def get_asset(
+        asset_id: str,
+        repo: Repository = Depends(repository),
+    ) -> JsonObject:
+        stored = repo.require_asset_record(asset_id)
+        return {
+            "schema_version": 1,
+            "asset": stored["asset"],
+            "created_at": stored["created_at"],
+            "updated_at": stored["updated_at"],
+        }
+
+    @app.get("/assets/{asset_id}/bytes")
+    def get_asset_bytes(
+        asset_id: str,
+        repo: Repository = Depends(repository),
+    ) -> Response:
+        stored = repo.require_asset_record(asset_id)
+        record = stored["asset"]
+        media = record.get("media") or {}
+        location = media.get("location") or {}
+        if location.get("provider") != "local-store" or not location.get("opaque_ref"):
+            raise HTTPException(
+                status_code=404,
+                detail=f"asset {asset_id} has no locally stored bytes",
+            )
+        path = resolve_store_path(location["opaque_ref"])
+        if not path.is_file():
+            raise HTTPException(
+                status_code=404,
+                detail=f"asset {asset_id} bytes are missing from the store",
+            )
+        media_type = media.get("mime_type") or "application/octet-stream"
+        return Response(content=path.read_bytes(), media_type=media_type)
+
+    def resolve_store_path(opaque_ref: str) -> Path:
+        root = Path(app.state.asset_store_root).resolve()
+        candidate = (root / opaque_ref).resolve()
+        if root != candidate and root not in candidate.parents:
+            raise HTTPException(status_code=400, detail="invalid asset location")
+        return candidate
+
+    def asset_max_bytes() -> int:
+        return int(os.environ.get("LUMEN_ASSET_MAX_BYTES", str(10 * 1024 * 1024)))
 
     @app.post("/asset-metadata")
     def create_asset_metadata(

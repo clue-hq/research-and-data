@@ -120,6 +120,7 @@ class CoreClient:
         page_ids: Optional[List[str]] = None,
         profile: Optional[JsonObject] = None,
         raise_on_error: bool = True,
+        asset_store_root: Optional[str] = None,
     ) -> JsonObject:
         return self._run(
             {
@@ -128,6 +129,44 @@ class CoreClient:
                 "format": export_format,
                 "page_ids": page_ids or [],
                 "profile": profile,
+                "asset_store_root": asset_store_root,
+            },
+            raise_on_error=raise_on_error,
+        )
+
+    def ingest_asset(
+        self,
+        store_root: str,
+        bytes_base64: str,
+        asset_id: str,
+        label: str,
+        declared_mime_type: Optional[str] = None,
+        filename: Optional[str] = None,
+        kind: Optional[str] = None,
+        uploaded_by: Optional[str] = None,
+        license: Optional[JsonObject] = None,
+        provenance: Optional[JsonObject] = None,
+        source: Optional[JsonObject] = None,
+        tags: Optional[List[str]] = None,
+        max_bytes: Optional[int] = None,
+        raise_on_error: bool = True,
+    ) -> JsonObject:
+        return self._run(
+            {
+                "action": "ingest_asset",
+                "store_root": store_root,
+                "bytes_base64": bytes_base64,
+                "asset_id": asset_id,
+                "label": label,
+                "declared_mime_type": declared_mime_type,
+                "filename": filename,
+                "kind": kind,
+                "uploaded_by": uploaded_by,
+                "license": license,
+                "provenance": provenance,
+                "source": source,
+                "tags": tags,
+                "max_bytes": max_bytes,
             },
             raise_on_error=raise_on_error,
         )

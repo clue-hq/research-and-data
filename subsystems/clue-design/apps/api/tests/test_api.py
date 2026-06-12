@@ -1659,3 +1659,136 @@ def test_revert_to_checkpoint_composes_undos(client: TestClient) -> None:
         f"/documents/{document['id']}/revert", params={"checkpoint": "nope"}
     )
     assert missing.status_code == 404
+
+
+LOGO_PNG_PATH = REPO_ROOT / "crates/lumen-export/fixtures/assets/acme-logo-8x8-red.png"
+
+
+def upload_logo(client: TestClient, **form) -> "object":
+    data = {"label": "Acme logo", "kind": "logo", "uploaded_by": "designer"}
+    data.update(form)
+    return client.post(
+        "/assets",
+        files={"file": ("acme-logo.png", LOGO_PNG_PATH.read_bytes(), "image/png")},
+        data=data,
+    )
+
+
+def store_files(tmp_path: Path) -> list[Path]:
+    store_root = tmp_path / "asset-store"
+    if not store_root.exists():
+        return []
+    return [path for path in store_root.rglob("*") if path.is_file()]
+
+
+def test_asset_upload_stores_content_addressed_bytes(
+    client: TestClient, tmp_path: Path
+) -> None:
+    response = upload_logo(client)
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    record = payload["asset"]
+
+    assert record["kind"] == "logo"
+    assert record["status"] == "ready"
+    assert record["media"]["mime_type"] == "image/png"
+    digest = record["media"]["digest"]
+    assert digest["algorithm"] == "sha256"
+    opaque_ref = record["media"]["location"]["opaque_ref"]
+    assert opaque_ref == f"sha256/{digest['value'][:2]}/{digest['value']}"
+    assert record["media"]["location"]["provider"] == "local-store"
+    assert payload["deduplicated"] is False
+
+    store_path = tmp_path / "asset-store" / opaque_ref
+    assert store_path.is_file()
+    assert store_path.read_bytes() == LOGO_PNG_PATH.read_bytes()
+
+    served = client.get(f"/assets/{record['id']}/bytes")
+    assert served.status_code == 200
+    assert served.content == LOGO_PNG_PATH.read_bytes()
+    assert served.headers["content-type"].startswith("image/png")
+
+    loaded = client.get(f"/assets/{record['id']}")
+    assert loaded.status_code == 200
+    assert loaded.json()["asset"]["id"] == record["id"]
+
+
+def test_duplicate_asset_upload_dedups_bytes(
+    client: TestClient, tmp_path: Path
+) -> None:
+    first = upload_logo(client)
+    assert first.status_code == 200, first.text
+    second = upload_logo(client)
+    assert second.status_code == 200, second.text
+
+    assert first.json()["deduplicated"] is False
+    assert second.json()["deduplicated"] is True
+    assert (
+        first.json()["asset"]["media"]["digest"]
+        == second.json()["asset"]["media"]["digest"]
+    )
+    # Two records, one stored byte object.
+    assert first.json()["asset"]["id"] != second.json()["asset"]["id"]
+    assert len(store_files(tmp_path)) == 1
+
+
+def test_asset_upload_rejects_mime_mismatch(
+    client: TestClient, tmp_path: Path
+) -> None:
+    response = client.post(
+        "/assets",
+        files={"file": ("logo.jpg", LOGO_PNG_PATH.read_bytes(), "image/jpeg")},
+        data={"label": "Mislabeled"},
+    )
+
+    assert response.status_code == 400, response.text
+    detail = response.json()["detail"]
+    assert detail["code"] == "ingest.mime_mismatch"
+    assert any(
+        diagnostic["code"] == "LUMA0600" for diagnostic in detail["diagnostics"]
+    )
+    assert store_files(tmp_path) == []
+
+
+def test_asset_upload_enforces_size_limit(
+    client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("LUMEN_ASSET_MAX_BYTES", "16")
+    response = upload_logo(client)
+    assert response.status_code == 413, response.text
+    assert store_files(tmp_path) == []
+
+
+def test_upload_resolve_export_round_trip(client: TestClient) -> None:
+    uploaded = upload_logo(client)
+    assert uploaded.status_code == 200, uploaded.text
+    record = uploaded.json()["asset"]
+
+    document = create_document(client)
+    operations = asset_operations()
+    operations[2] = {"kind": "upsert_asset", "asset": record}
+    operations[3]["asset_id"] = record["id"]
+    applied = client.post(
+        f"/documents/{document['id']}/operations",
+        json={
+            "operations": operations,
+            "actor": {"kind": "user", "id": "designer"},
+            "source": "editor",
+        },
+    )
+    assert applied.status_code == 200, applied.text
+
+    scene = client.get(f"/documents/{document['id']}").json()["scene"]
+    exported = client.post(
+        "/export-preview",
+        json={"scene": scene, "format": "svg", "page_ids": ["page_a4"]},
+    )
+    assert exported.status_code == 200, exported.text
+    payload = exported.json()
+    artifact = payload["export"]["artifacts"][0]
+    assert artifact["format"] == "svg"
+    assert "data:image/png;base64," in (artifact.get("text") or "")
+    for diagnostic in payload["diagnostics"]:
+        assert diagnostic["code"] not in {"LUME0202", "LUME0210", "LUME0211"}, (
+            payload["diagnostics"]
+        )

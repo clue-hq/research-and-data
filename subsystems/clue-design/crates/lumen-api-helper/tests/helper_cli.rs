@@ -675,3 +675,110 @@ fn finalizes_template_through_core_operation() {
         "tmpl_test"
     );
 }
+
+const LOGO_PNG_BYTES: &[u8] =
+    include_bytes!("../../lumen-export/fixtures/assets/acme-logo-8x8-red.png");
+
+fn ingest_request(store_root: &str) -> Value {
+    use base64::Engine;
+    json!({
+        "action": "ingest_asset",
+        "store_root": store_root,
+        "bytes_base64": base64::engine::general_purpose::STANDARD.encode(LOGO_PNG_BYTES),
+        "asset_id": "asset_uploaded_logo_live",
+        "label": "Uploaded logo",
+        "declared_mime_type": "image/png",
+        "filename": "acme-logo.png",
+        "kind": "logo",
+        "uploaded_by": "designer",
+        "tags": ["logo"]
+    })
+}
+
+#[test]
+fn ingest_asset_stores_bytes_and_resolver_wires_export() {
+    let store_dir = tempfile::tempdir().expect("tempdir");
+    let store_root = store_dir.path().to_string_lossy().to_string();
+
+    let ingested = helper(ingest_request(&store_root));
+    assert_eq!(ingested["ok"], true, "{ingested:#?}");
+    let record = ingested["asset"]["record"].clone();
+    assert_eq!(record["kind"], "logo");
+    assert_eq!(record["media"]["mime_type"], "image/png");
+    assert_eq!(record["media"]["location"]["provider"], "local-store");
+    assert_eq!(ingested["asset"]["deduplicated"], false);
+
+    let relative_path = ingested["asset"]["relative_path"]
+        .as_str()
+        .expect("relative path");
+    assert!(
+        store_dir.path().join(relative_path).is_file(),
+        "bytes should land under the digest key"
+    );
+
+    let again = helper(ingest_request(&store_root));
+    assert_eq!(again["asset"]["deduplicated"], true, "{again:#?}");
+
+    let mut operations = asset_operations();
+    operations[2] = json!({ "kind": "upsert_asset", "asset": record });
+    operations[3]["asset_id"] = json!("asset_uploaded_logo_live");
+    let applied = helper(json!({
+        "action": "apply_operations",
+        "scene": minimal_scene(),
+        "operations": operations
+    }));
+    assert_eq!(applied["ok"], true, "{applied:#?}");
+
+    let exported = helper(json!({
+        "action": "export_preview",
+        "scene": applied["scene"].clone(),
+        "format": "svg",
+        "page_ids": ["page_a4"],
+        "asset_store_root": store_root
+    }));
+    assert_eq!(exported["ok"], true, "{exported:#?}");
+    let svg_bytes: Vec<u8> = exported["export"]["artifacts"][0]["bytes"]
+        .as_array()
+        .expect("bytes array")
+        .iter()
+        .map(|value| value.as_u64().expect("byte") as u8)
+        .collect();
+    let svg = String::from_utf8(svg_bytes).expect("utf8 svg");
+    assert!(
+        svg.contains("data:image/png;base64,"),
+        "store-backed resolver should embed real bytes: {svg}"
+    );
+    let diagnostics = exported["diagnostics"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default();
+    for code in ["LUME0202", "LUME0210", "LUME0211"] {
+        assert!(
+            !diagnostics
+                .iter()
+                .any(|diagnostic| diagnostic["code"] == code),
+            "no unresolved-asset diagnostics expected: {diagnostics:#?}"
+        );
+    }
+}
+
+#[test]
+fn ingest_asset_rejects_mime_mismatch_without_storing() {
+    let store_dir = tempfile::tempdir().expect("tempdir");
+    let store_root = store_dir.path().to_string_lossy().to_string();
+
+    let mut request = ingest_request(&store_root);
+    request["declared_mime_type"] = json!("image/jpeg");
+    let response = helper(request);
+
+    assert_eq!(response["ok"], false, "{response:#?}");
+    assert_eq!(response["error"]["code"], "ingest.mime_mismatch");
+    assert_eq!(response["diagnostics"][0]["code"], "LUMA0600");
+    assert_eq!(
+        std::fs::read_dir(store_dir.path())
+            .expect("read dir")
+            .count(),
+        0,
+        "rejected uploads must not write bytes"
+    );
+}

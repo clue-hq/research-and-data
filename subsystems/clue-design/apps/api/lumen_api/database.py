@@ -680,6 +680,58 @@ class Repository:
             raise NotFoundError("asset", asset_id)
         return asset_from_row(row)
 
+    def create_asset_record(self, record: JsonObject) -> JsonObject:
+        now = utc_now()
+        media = record.get("media") or {}
+        digest = media.get("digest") or {}
+        self.connection.execute(
+            """
+            INSERT INTO assets (
+              asset_id, label, kind, status, mime_type, digest_algorithm,
+              digest_value, byte_length, filename, tags_json, record_json,
+              created_at, updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(asset_id) DO UPDATE SET
+              label = excluded.label,
+              kind = excluded.kind,
+              status = excluded.status,
+              mime_type = excluded.mime_type,
+              digest_algorithm = excluded.digest_algorithm,
+              digest_value = excluded.digest_value,
+              byte_length = excluded.byte_length,
+              filename = excluded.filename,
+              tags_json = excluded.tags_json,
+              record_json = excluded.record_json,
+              updated_at = excluded.updated_at
+            """,
+            (
+                record["id"],
+                record.get("label") or "",
+                record.get("kind") or "other",
+                record.get("status") or "ready",
+                media.get("mime_type"),
+                digest.get("algorithm"),
+                digest.get("value"),
+                media.get("byte_length"),
+                media.get("filename"),
+                encode(record.get("tags") or []),
+                encode(record),
+                now,
+                now,
+            ),
+        )
+        self.connection.commit()
+        return self.require_asset_record(record["id"])
+
+    def require_asset_record(self, asset_id: str) -> JsonObject:
+        row = self.connection.execute(
+            "SELECT * FROM assets WHERE asset_id = ?", (asset_id,)
+        ).fetchone()
+        if row is None:
+            raise NotFoundError("asset", asset_id)
+        return asset_record_from_row(row)
+
     def store_diagnostics(
         self,
         document_id: str,
@@ -864,6 +916,14 @@ def template_revision_from_row(row: sqlite3.Row) -> JsonObject:
         "slot_summary": decode(row["slot_summary_json"]),
         "brand_ref": decode_optional(row["brand_ref_json"]),
         "created_at": row["created_at"],
+    }
+
+
+def asset_record_from_row(row: sqlite3.Row) -> JsonObject:
+    return {
+        "asset": decode(row["record_json"]),
+        "created_at": row["created_at"],
+        "updated_at": row["updated_at"],
     }
 
 
