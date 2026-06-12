@@ -30,6 +30,7 @@ from lumen_deepagent.providers import (
     parse_visual_critique,
     preview_image_blocks,
 )
+from lumen_api.core import CoreError
 from lumen_deepagent.schemas import CritiqueCategory, VisualCritique, VisualIssue, VisualTarget
 from lumen_deepagent.tools import LumenDesignTools, validate_preview_bytes
 
@@ -96,10 +97,42 @@ class FakeCoreClient:
             },
         }
 
-    def apply_operations(self, scene, operations):
+    def apply_operations(self, scene, operations, scope=None):
         updated = dict(scene)
         updated["applied_by_core"] = True
         return {"scene": updated, "applied_operations": len(operations), "diagnostics": []}
+
+    def apply_structured_edit(self, scene, edit, scope=None):
+        if scope and scope.get("mode") == "strict":
+            allowed_ids = {target.get("id") for target in scope.get("allowed", [])}
+            target_id = (edit.get("target") or {}).get("id")
+            if target_id not in allowed_ids:
+                raise CoreError(
+                    "edit.scope_violation",
+                    "1 operation(s) touch targets outside the declared scope",
+                    diagnostics=[
+                        {
+                            "severity": "error",
+                            "phase": "operation",
+                            "code": "edit.scope_violation",
+                            "message": "out of declared scope",
+                        }
+                    ],
+                )
+        updated = json.loads(json.dumps(scene))
+        updated["structured_edit_applied_by_core"] = True
+        return {
+            "scene": updated,
+            "applied_operations": 1,
+            "diagnostics": [],
+            "operations": [{"kind": "update_node", "node_id": "headline"}],
+            "edit": {
+                "kind": edit.get("kind"),
+                "touched_targets": [edit.get("target")],
+                "intent": "modify_node",
+                "checkpoint_label": None,
+            },
+        }
 
     def platform_default_brand_kit(self):
         return {
@@ -364,6 +397,7 @@ def test_deepagents_factory_wires_full_phase_a_tool_surface(tmp_path: Path, monk
         "load_knowledge",
         "compile_dsl_block",
         "apply_operations",
+        "apply_structured_edit",
         "preflight_design",
         "export_preview",
         "export_preview_bundle",
@@ -514,6 +548,107 @@ def test_runtime_tools_update_scene_export_preview_and_write_trace(
     assert (config.trace_dir / tools.run_id / "input.json").exists()
     assert (config.trace_dir / tools.run_id / "iterations" / "001" / "dsl.lumen").exists()
     assert (config.trace_dir / tools.run_id / "iterations" / "001" / "export.json").exists()
+
+
+def test_structured_edit_tool_applies_core_generated_operations(
+    tmp_path: Path, monkeypatch
+):
+    monkeypatch.setattr("lumen_deepagent.tools.CoreClient", FakeCoreClient)
+    tools = LumenDesignTools(runtime_config(tmp_path), "Move the headline down")
+    tools.compile_dsl_block('page page_test\n  headline text "Plan" p(24,24) s(400,hug)')
+
+    result = json.loads(
+        tools.apply_structured_edit(
+            json.dumps(
+                {
+                    "kind": "modify",
+                    "target": {"kind": "node", "id": "headline"},
+                    "patch": {
+                        "kind": "node",
+                        "value": {
+                            "text": {
+                                "content": {
+                                    "kind": "set",
+                                    "value": "Better repaired headline",
+                                }
+                            }
+                        },
+                    },
+                }
+            )
+        )
+    )
+
+    assert result["structured_edit"]["status"] == "ok"
+    assert result["structured_edit"]["applied_operations"] == 1
+    assert result["operations"] == [{"kind": "update_node", "node_id": "headline"}]
+    assert tools.scene["structured_edit_applied_by_core"] is True
+    assert tools.scene_update_sources[-1] == "apply_structured_edit"
+
+
+def test_structured_edit_strict_scope_rejection_records_verdict(
+    tmp_path: Path, monkeypatch
+):
+    monkeypatch.setattr("lumen_deepagent.tools.CoreClient", FakeCoreClient)
+    tools = LumenDesignTools(runtime_config(tmp_path), "Repair the headline")
+    tools.compile_dsl_block('page page_test\n  headline text "Plan" p(24,24) s(400,hug)')
+
+    result = json.loads(
+        tools.apply_structured_edit(
+            json.dumps(
+                {
+                    "kind": "modify",
+                    "target": {"kind": "node", "id": "body"},
+                    "patch": {"kind": "node", "value": {}},
+                    "scope": {
+                        "mode": "strict",
+                        "allowed": [{"kind": "node", "id": "headline"}],
+                    },
+                }
+            )
+        )
+    )
+
+    assert result["structured_edit"]["status"] == "error"
+    assert (
+        result["structured_edit"]["operation_error"]["code"] == "edit.scope_violation"
+    )
+    assert result["scope_verdict"] == "rejected"
+    assert result["scope"]["allowed"] == [{"kind": "node", "id": "headline"}]
+    assert "structured_edit_applied_by_core" not in tools.scene
+
+
+def test_structured_edit_in_scope_repair_records_scope_verdict(
+    tmp_path: Path, monkeypatch
+):
+    monkeypatch.setattr("lumen_deepagent.tools.CoreClient", FakeCoreClient)
+    tools = LumenDesignTools(runtime_config(tmp_path), "Repair the headline")
+    tools.compile_dsl_block('page page_test\n  headline text "Plan" p(24,24) s(400,hug)')
+
+    result = json.loads(
+        tools.apply_structured_edit(
+            json.dumps(
+                {
+                    "kind": "modify",
+                    "target": {"kind": "node", "id": "headline"},
+                    "patch": {
+                        "kind": "node",
+                        "value": {
+                            "text": {"content": {"kind": "set", "value": "Repaired"}}
+                        },
+                    },
+                    "scope": {
+                        "mode": "strict",
+                        "allowed": [{"kind": "node", "id": "headline"}],
+                    },
+                }
+            )
+        )
+    )
+
+    assert result["structured_edit"]["status"] == "ok"
+    assert result["scope_verdict"] == "in_scope"
+    assert tools.scene["structured_edit_applied_by_core"] is True
 
 
 def test_preflight_and_final_trace_record_effective_brand_context(

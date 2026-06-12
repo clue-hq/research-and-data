@@ -212,6 +212,221 @@ page page_square size(400,400,px)
 }
 
 #[test]
+fn dsl_modify_line_updates_existing_text_node_without_regenerating_page() {
+    let mut scene = Scene::new(lumen_core::DocumentId::from("doc_modify"), "Modify");
+    let first = compile_dsl_into_scene(
+        r#"
+page page_square size(1080,1080,px)
+  hero fr p(40,40) s(1000,hug)
+    headline text "Oversized bad headline" p(0,0) s(fill,hug) font("Inter",72,800,left)
+    body text "Keep this copy" p(0,120) s(fill,hug) font("Inter",24,500,left)
+"#,
+        &mut scene,
+    );
+    assert_no_dsl_errors(&first.compile_output.diagnostics);
+
+    let second = compile_dsl_into_scene(
+        r#"#headline text("Let surgeons focus on surgery.") font_size(44) lh(1.08) s(fill,hug)"#,
+        &mut scene,
+    );
+
+    assert_no_dsl_errors(&second.compile_output.diagnostics);
+    assert!(second.operation_error.is_none());
+    assert_eq!(scene.pages.len(), 1);
+    assert_eq!(
+        second
+            .compile_output
+            .operations
+            .iter()
+            .filter(|operation| matches!(operation, Operation::UpdateNode { .. }))
+            .count(),
+        1
+    );
+    let NodeKind::Text(headline) = &scene.nodes[&NodeId::from("headline")].kind else {
+        panic!("expected text node");
+    };
+    assert_eq!(headline.content, "Let surgeons focus on surgery.");
+    assert_eq!(headline.font_size, 44.0);
+    assert_eq!(headline.line_height, 1.08);
+}
+
+#[test]
+fn dsl_modify_line_updates_page_size_and_background() {
+    let mut scene = Scene::new(
+        lumen_core::DocumentId::from("doc_page_modify"),
+        "Page Modify",
+    );
+    let first = compile_dsl_into_scene("page page_square size(1080,1080,px)", &mut scene);
+    assert_no_dsl_errors(&first.compile_output.diagnostics);
+
+    let second = compile_dsl_into_scene(
+        r##"#page:page_square size(1200,628,px) background(#111827) name("Landscape Ad")"##,
+        &mut scene,
+    );
+
+    assert_no_dsl_errors(&second.compile_output.diagnostics);
+    assert!(second.operation_error.is_none());
+    let page = &scene.pages[&PageId::from("page_square")];
+    assert_eq!(page.name, "Landscape Ad");
+    assert_eq!(page.size.width, 1200.0);
+    assert_eq!(page.size.height, 628.0);
+    assert_eq!(page.background.len(), 1);
+}
+
+#[test]
+fn dsl_modify_line_updates_slot_metadata_and_binding() {
+    let mut scene = Scene::new(
+        lumen_core::DocumentId::from("doc_slot_modify"),
+        "Slot Modify",
+    );
+    let first = compile_dsl_into_scene(
+        r#"
+page page_square size(400,400,px)
+  headline text "Headline" p(24,24) s(300,hug) slot(campaign.headline)
+  subhead text "Subhead" p(24,96) s(300,hug)
+"#,
+        &mut scene,
+    );
+    assert_no_dsl_errors(&first.compile_output.diagnostics);
+
+    let second = compile_dsl_into_scene(
+        r#"#slot:campaign.headline placeholder("Let surgeons focus on surgery.") sample("Let Dr. Sharma focus on surgery.") bind(subhead)"#,
+        &mut scene,
+    );
+
+    assert_no_dsl_errors(&second.compile_output.diagnostics);
+    assert!(second.operation_error.is_none());
+    let slot = scene
+        .slot_by_key(&SlotKey::from("campaign.headline"))
+        .expect("slot should exist");
+    assert_eq!(
+        slot.placeholder.as_deref(),
+        Some("Let surgeons focus on surgery.")
+    );
+    assert_eq!(
+        slot.validation.samples[0],
+        "Let Dr. Sharma focus on surgery."
+    );
+    assert!(slot.bound_nodes.contains(&NodeId::from("headline")));
+    assert!(slot.bound_nodes.contains(&NodeId::from("subhead")));
+}
+
+#[test]
+fn dsl_before_after_directives_reorder_existing_nodes() {
+    let mut scene = Scene::new(lumen_core::DocumentId::from("doc_reorder"), "Reorder");
+    let first = compile_dsl_into_scene(
+        r#"
+page page_square size(400,400,px)
+  hero fr p(0,0) s(400,400)
+    headline text "Headline" p(0,0) s(fill,hug)
+    body text "Body" p(0,40) s(fill,hug)
+    cta text "CTA" p(0,80) s(fill,hug)
+"#,
+        &mut scene,
+    );
+    assert_no_dsl_errors(&first.compile_output.diagnostics);
+
+    let second = compile_dsl_into_scene("after(headline,cta)", &mut scene);
+    assert_no_dsl_errors(&second.compile_output.diagnostics);
+    assert_eq!(
+        scene.nodes[&NodeId::from("hero")].children,
+        vec![
+            NodeId::from("body"),
+            NodeId::from("cta"),
+            NodeId::from("headline")
+        ]
+    );
+
+    let third = compile_dsl_into_scene("before(headline,body)", &mut scene);
+    assert_no_dsl_errors(&third.compile_output.diagnostics);
+    assert_eq!(
+        scene.nodes[&NodeId::from("hero")].children,
+        vec![
+            NodeId::from("headline"),
+            NodeId::from("body"),
+            NodeId::from("cta")
+        ]
+    );
+}
+
+#[test]
+fn dsl_clone_directive_clones_subtree_without_regenerating_page() {
+    let mut scene = Scene::new(lumen_core::DocumentId::from("doc_clone"), "Clone");
+    let first = compile_dsl_into_scene(
+        r#"
+page page_square size(400,400,px)
+  hero fr p(0,0) s(400,160)
+    headline text "Headline" p(24,24) s(300,hug) slot(campaign.headline)
+    cta text "CTA" p(24,96) s(120,hug)
+  footer fr p(0,240) s(400,80)
+"#,
+        &mut scene,
+    );
+    assert_no_dsl_errors(&first.compile_output.diagnostics);
+
+    let second = compile_dsl_into_scene(
+        "clone(hero,hero_variant,after:footer,slots:detach,computed:clear)",
+        &mut scene,
+    );
+
+    assert_no_dsl_errors(&second.compile_output.diagnostics);
+    assert!(second.operation_error.is_none());
+    assert_eq!(scene.pages.len(), 1);
+    assert_eq!(
+        scene.pages[&PageId::from("page_square")].children,
+        vec![
+            NodeId::from("hero"),
+            NodeId::from("footer"),
+            NodeId::from("hero_variant")
+        ]
+    );
+    assert_eq!(
+        scene.nodes[&NodeId::from("hero_variant")].children,
+        vec![
+            NodeId::from("hero_variant__headline"),
+            NodeId::from("hero_variant__cta")
+        ]
+    );
+    let slot = scene
+        .slot_by_key(&SlotKey::from("campaign.headline"))
+        .expect("source slot should remain");
+    assert_eq!(slot.bound_nodes, vec![NodeId::from("headline")]);
+}
+
+#[test]
+fn dsl_replace_directive_swaps_existing_node_in_place() {
+    let mut scene = Scene::new(lumen_core::DocumentId::from("doc_replace"), "Replace");
+    let first = compile_dsl_into_scene(
+        r#"
+page page_square size(400,400,px)
+  hero fr p(0,0) s(400,200)
+    old_headline text "Old headline" p(24,24) s(300,hug) slot(campaign.headline)
+    replacement_headline text "Better headline" p(24,120) s(300,hug)
+    cta text "CTA" p(24,160) s(120,hug)
+"#,
+        &mut scene,
+    );
+    assert_no_dsl_errors(&first.compile_output.diagnostics);
+
+    let second = compile_dsl_into_scene(
+        "replace(old_headline,replacement_headline,slots:preserve)",
+        &mut scene,
+    );
+
+    assert_no_dsl_errors(&second.compile_output.diagnostics);
+    assert!(second.operation_error.is_none());
+    assert!(!scene.nodes.contains_key(&NodeId::from("old_headline")));
+    assert_eq!(
+        scene.nodes[&NodeId::from("hero")].children,
+        vec![NodeId::from("replacement_headline"), NodeId::from("cta")]
+    );
+    let slot = scene
+        .slot_by_key(&SlotKey::from("campaign.headline"))
+        .expect("slot should remain");
+    assert_eq!(slot.bound_nodes, vec![NodeId::from("replacement_headline")]);
+}
+
+#[test]
 fn language_surface_lowers_geometry_paint_text_image_vector_line_autolayout_and_instance() {
     let mut scene = Scene::new(lumen_core::DocumentId::from("doc_surface"), "Surface");
     let output = compile_dsl_into_scene(VALID_LANGUAGE_SURFACE, &mut scene);
@@ -257,7 +472,7 @@ fn language_surface_lowers_geometry_paint_text_image_vector_line_autolayout_and_
 }
 
 #[test]
-fn hash_target_lines_parse_as_future_modify_syntax_not_comments() {
+fn hash_target_lines_lower_as_modify_operations_not_comments() {
     let output = compile_dsl(
         r#"
 page page_a4
@@ -266,12 +481,16 @@ page page_a4
 "#,
     );
 
-    assert_eq!(output.halted_at.as_ref().unwrap().code, "LUMD0701");
+    assert!(output.halted_at.is_none());
     assert!(output
         .document
         .lines
         .iter()
         .any(|line| matches!(line.kind, DslLineKind::Modification(_))));
+    assert!(output
+        .operations
+        .iter()
+        .any(|operation| matches!(operation, Operation::UpdateNode { .. })));
 }
 
 #[test]
@@ -439,11 +658,13 @@ fn slot_ops_survive_later_lowering_halt() {
         r#"
 page page_a4
   headline text "A headline" p(0,0) s(200,40) slot(campaign.headline)
-clone(headline)
+ungroup(headline)
 "#,
     );
 
-    assert_eq!(output.halted_at.as_ref().unwrap().code, "LUMD0700");
+    // Ungrouping a leaf text node fails at the edit layer (LUMD0900); the
+    // earlier slot operations from the valid lines must survive the halt.
+    assert_eq!(output.halted_at.as_ref().unwrap().code, "LUMD0900");
     assert!(output
         .operations
         .iter()
@@ -721,11 +942,11 @@ delete(missing)
 "#,
     );
 
-    assert_eq!(output.halted_at.as_ref().unwrap().code, "LUMD0800");
+    assert_eq!(output.halted_at.as_ref().unwrap().code, "LUMD0900");
     assert!(output
         .diagnostics
         .iter()
-        .any(|diagnostic| diagnostic.diagnostic.message.contains("node missing")));
+        .any(|diagnostic| diagnostic.diagnostic.message.contains("does not exist")));
 }
 
 #[test]
@@ -943,4 +1164,410 @@ fn assert_no_dsl_errors(diagnostics: &[lumen_core::DslDiagnostic]) {
             .all(|diagnostic| diagnostic.diagnostic.severity != DiagnosticSeverity::Error),
         "{diagnostics:#?}"
     );
+}
+
+#[test]
+fn document_modify_line_lowers_to_update_document() {
+    let mut scene = Scene::new(lumen_core::DocumentId::from("doc_meta"), "Before");
+    let output = compile_dsl_into_scene(
+        "page page_a4\n\n#document name(\"Renamed Artifact\") artifact_type(\"linkedin_ad\") medium(ad)",
+        &mut scene,
+    );
+
+    assert_no_dsl_errors(&output.compile_output.diagnostics);
+    assert!(output.operation_error.is_none());
+    assert_eq!(scene.meta.title, "Renamed Artifact");
+    assert_eq!(scene.meta.artifact_type.as_deref(), Some("linkedin_ad"));
+    assert_eq!(scene.meta.medium, Some(lumen_core::Medium::Ad));
+}
+
+#[test]
+fn document_modify_brand_kit_sets_versioned_ref() {
+    let mut scene = Scene::new(lumen_core::DocumentId::from("doc_brand"), "Doc");
+    let output = compile_dsl_into_scene(
+        "page page_a4\n\n#document brand_kit(brand_acme, 3)",
+        &mut scene,
+    );
+
+    assert_no_dsl_errors(&output.compile_output.diagnostics);
+    let brand_ref = scene.meta.brand_kit.as_ref().expect("brand kit ref set");
+    assert_eq!(brand_ref.version, 3);
+}
+
+#[test]
+fn export_profile_modify_line_lowers_to_upsert_profile() {
+    let mut scene = Scene::new(lumen_core::DocumentId::from("doc_export"), "Doc");
+    scene.export_profiles.push(lumen_core::ExportProfile {
+        name: "print_pdf".to_owned(),
+        format: lumen_core::ExportFormat::Svg,
+        pdf_intent: None,
+        raster: None,
+        include_bleed: false,
+        embed_fonts: false,
+    });
+
+    let output = compile_dsl_into_scene(
+        "page page_a4\n\n#export:print_pdf format(pdf) pdf_intent(print) include_bleed(true) embed_fonts(true)",
+        &mut scene,
+    );
+
+    assert_no_dsl_errors(&output.compile_output.diagnostics);
+    assert!(output.operation_error.is_none());
+    let profile = scene.export_profile("print_pdf").expect("profile exists");
+    assert_eq!(profile.format, lumen_core::ExportFormat::Pdf);
+    assert_eq!(profile.pdf_intent, Some(lumen_core::PdfIntent::Print));
+    assert!(profile.include_bleed);
+    assert!(profile.embed_fonts);
+}
+
+#[test]
+fn export_profile_modify_missing_profile_halts() {
+    let mut scene = Scene::new(lumen_core::DocumentId::from("doc_export2"), "Doc");
+    let output = compile_dsl_into_scene("#export:missing format(pdf)", &mut scene);
+    assert!(output.compile_output.halted_at.is_some());
+}
+
+#[test]
+fn checkpoint_comment_label_is_captured_in_compile_output() {
+    let mut scene = Scene::new(lumen_core::DocumentId::from("doc_ckpt"), "Doc");
+    let output = compile_dsl_into_scene(
+        "// hero spacing fix\npage page_a4\n  hero fr p(0,0) s(100,100)",
+        &mut scene,
+    );
+
+    assert_no_dsl_errors(&output.compile_output.diagnostics);
+    assert_eq!(
+        output.compile_output.checkpoint_label.as_deref(),
+        Some("hero spacing fix")
+    );
+}
+
+#[test]
+fn delete_directive_supports_lifecycle_target_forms() {
+    // Slot delete by key: unbinds without deleting the node.
+    let mut scene = Scene::new(lumen_core::DocumentId::from("doc_del"), "Doc");
+    let output = compile_dsl_into_scene(
+        "page page_a4\n  headline text \"Title\" p(0,0) s(400,hug) slot(campaign.headline)\n\ndelete(slot:campaign.headline)",
+        &mut scene,
+    );
+    assert_no_dsl_errors(&output.compile_output.diagnostics);
+    assert!(scene
+        .slot_by_key(&lumen_core::SlotKey::from("campaign.headline"))
+        .is_none());
+    assert!(scene.nodes.contains_key(&NodeId::from("headline")));
+
+    // Asset delete archives by default.
+    let mut scene = Scene::new(lumen_core::DocumentId::from("doc_del2"), "Doc");
+    scene
+        .apply_operation(lumen_core::Operation::UpsertAsset {
+            asset: lumen_core::AssetRecord {
+                id: "asset_x".into(),
+                label: "X".to_owned(),
+                kind: lumen_core::AssetKind::RasterImage,
+                status: lumen_core::AssetStatus::Ready,
+                source: lumen_core::AssetSource::Manual {
+                    label: "fixture".to_owned(),
+                },
+                media: lumen_core::AssetMediaMetadata::default(),
+                raster: None,
+                vector: None,
+                font: None,
+                logo: None,
+                license: None,
+                provenance: lumen_core::AssetProvenance::default(),
+                tags: Vec::new(),
+            },
+        })
+        .unwrap();
+    let output = compile_dsl_into_scene("page page_a4\n\ndelete(asset:asset_x)", &mut scene);
+    assert_no_dsl_errors(&output.compile_output.diagnostics);
+    assert_eq!(
+        scene.assets[&lumen_core::AssetId::from("asset_x")].status,
+        lumen_core::AssetStatus::Archived
+    );
+
+    // Last-page delete halts with the lifecycle diagnostic.
+    let mut scene = Scene::new(lumen_core::DocumentId::from("doc_del3"), "Doc");
+    let output = compile_dsl_into_scene("page page_a4\n\ndelete(page:page_a4)", &mut scene);
+    assert!(output.compile_output.halted_at.is_some());
+}
+
+#[test]
+fn delete_if_exists_skips_missing_target_with_warning() {
+    let mut scene = Scene::new(lumen_core::DocumentId::from("doc_del4"), "Doc");
+    let output = compile_dsl_into_scene("page page_a4\n\ndelete(ghost, if_exists)", &mut scene);
+    assert!(output.compile_output.halted_at.is_none());
+    assert!(output
+        .compile_output
+        .diagnostics
+        .iter()
+        .any(|diagnostic| diagnostic.diagnostic.code == "LUMD0915"));
+
+    // Strict default still halts on missing targets.
+    let mut scene = Scene::new(lumen_core::DocumentId::from("doc_del5"), "Doc");
+    let output = compile_dsl_into_scene("page page_a4\n\ndelete(ghost)", &mut scene);
+    assert!(output.compile_output.halted_at.is_some());
+}
+
+#[test]
+fn append_and_prepend_extend_existing_text_content() {
+    let mut scene = Scene::new(lumen_core::DocumentId::from("doc_append"), "Doc");
+    let output = compile_dsl_into_scene(
+        "page page_a4\n  headline text \"Core promise\" p(0,0) s(400,hug)\n\n#headline append(\" - now with call routing\")\n#headline prepend(\"For neurosurgery teams: \")",
+        &mut scene,
+    );
+
+    assert_no_dsl_errors(&output.compile_output.diagnostics);
+    let NodeKind::Text(text) = &scene.nodes[&NodeId::from("headline")].kind else {
+        panic!("expected text node");
+    };
+    assert_eq!(
+        text.content,
+        "For neurosurgery teams: Core promise - now with call routing"
+    );
+}
+
+#[test]
+fn append_on_non_text_node_halts() {
+    let mut scene = Scene::new(lumen_core::DocumentId::from("doc_append2"), "Doc");
+    let output = compile_dsl_into_scene(
+        "page page_a4\n  box rect p(0,0) s(10,10)\n\n#box append(\"nope\")",
+        &mut scene,
+    );
+    assert!(output.compile_output.halted_at.is_some());
+}
+
+#[test]
+fn parent_directive_supports_relative_anchors() {
+    let source = "page page_a4\n  hero fr p(0,0) s(800,600)\n    headline text \"H\" p(0,0) s(100,hug)\n    body text \"B\" p(0,0) s(100,hug)\n  logo rect p(0,0) s(50,50)\n\nparent(logo, hero, before:body)";
+    let mut scene = Scene::new(lumen_core::DocumentId::from("doc_anchor"), "Doc");
+    let output = compile_dsl_into_scene(source, &mut scene);
+
+    assert_no_dsl_errors(&output.compile_output.diagnostics);
+    assert_eq!(
+        scene.nodes[&NodeId::from("hero")].children,
+        vec![
+            NodeId::from("headline"),
+            NodeId::from("logo"),
+            NodeId::from("body")
+        ]
+    );
+
+    let mut scene2 = Scene::new(lumen_core::DocumentId::from("doc_anchor2"), "Doc");
+    let output = compile_dsl_into_scene(&source.replace("before:body", "after:body"), &mut scene2);
+    assert_no_dsl_errors(&output.compile_output.diagnostics);
+    assert_eq!(
+        scene2.nodes[&NodeId::from("hero")].children,
+        vec![
+            NodeId::from("headline"),
+            NodeId::from("body"),
+            NodeId::from("logo")
+        ]
+    );
+
+    // Anchor outside the destination parent halts precisely.
+    let mut scene3 = Scene::new(lumen_core::DocumentId::from("doc_anchor3"), "Doc");
+    let output = compile_dsl_into_scene(&source.replace("before:body", "before:logo"), &mut scene3);
+    assert!(output.compile_output.halted_at.is_some());
+}
+
+#[test]
+fn parent_directive_keeps_index_forms() {
+    let source = "page page_a4\n  hero fr p(0,0) s(800,600)\n    headline text \"H\" p(0,0) s(100,hug)\n  logo rect p(0,0) s(50,50)\n\nparent(logo, hero, index:0)";
+    let mut scene = Scene::new(lumen_core::DocumentId::from("doc_idx"), "Doc");
+    let output = compile_dsl_into_scene(source, &mut scene);
+    assert_no_dsl_errors(&output.compile_output.diagnostics);
+    assert_eq!(
+        scene.nodes[&NodeId::from("hero")].children[0],
+        NodeId::from("logo")
+    );
+}
+
+#[test]
+fn ungroup_dissolves_group_preserving_child_order() {
+    let source = "page page_a4\n  wrap gr p(0,0) s(400,400)\n    a rect p(0,0) s(10,10)\n    b rect p(0,0) s(10,10)\n  tail rect p(0,0) s(10,10)\n\nungroup(wrap)";
+    let mut scene = Scene::new(lumen_core::DocumentId::from("doc_ungroup"), "Doc");
+    let output = compile_dsl_into_scene(source, &mut scene);
+
+    assert_no_dsl_errors(&output.compile_output.diagnostics);
+    assert!(!scene.nodes.contains_key(&NodeId::from("wrap")));
+    assert_eq!(
+        scene.pages[&lumen_core::PageId::from("page_a4")].children,
+        vec![NodeId::from("a"), NodeId::from("b"), NodeId::from("tail")]
+    );
+}
+
+#[test]
+fn ungroup_protects_auto_layout_unless_allowed() {
+    let source = "page page_a4\n  stack al(v) p(0,0) s(400,400)\n    a rect p(0,0) s(10,10)\n\nungroup(stack)";
+    let mut scene = Scene::new(lumen_core::DocumentId::from("doc_ungroup2"), "Doc");
+    let output = compile_dsl_into_scene(source, &mut scene);
+    assert!(output.compile_output.halted_at.is_some());
+
+    let mut scene = Scene::new(lumen_core::DocumentId::from("doc_ungroup3"), "Doc");
+    let output = compile_dsl_into_scene(
+        &source.replace("ungroup(stack)", "ungroup(stack, allow_layout)"),
+        &mut scene,
+    );
+    assert_no_dsl_errors(&output.compile_output.diagnostics);
+    assert!(!scene.nodes.contains_key(&NodeId::from("stack")));
+}
+
+#[test]
+fn override_group_constrains_indented_modifies_to_root_subtree() {
+    let source = "page page_a4\n  card fr p(0,0) s(200,200)\n    title text \"T\" p(0,0) s(100,hug)\n  other text \"O\" p(0,0) s(100,hug)\n\nclone(card, card_2, after:card)\noverride(card_2)\n  #card_2__title text(\"Override applied\")";
+    let mut scene = Scene::new(lumen_core::DocumentId::from("doc_override"), "Doc");
+    let output = compile_dsl_into_scene(source, &mut scene);
+
+    assert_no_dsl_errors(&output.compile_output.diagnostics);
+    let NodeKind::Text(text) = &scene.nodes[&NodeId::from("card_2__title")].kind else {
+        panic!("expected cloned title text node");
+    };
+    assert_eq!(text.content, "Override applied");
+
+    // Touching a node outside the override root halts with LUMD0913.
+    let bad = source.replace(
+        "#card_2__title text(\"Override applied\")",
+        "#other text(\"Escape\")",
+    );
+    let mut scene = Scene::new(lumen_core::DocumentId::from("doc_override2"), "Doc");
+    let output = compile_dsl_into_scene(&bad, &mut scene);
+    assert_eq!(
+        output.compile_output.halted_at.as_ref().unwrap().code,
+        "LUMD0913"
+    );
+}
+
+struct FixtureHistory {
+    undo: Vec<Operation>,
+}
+
+impl lumen_core::DslHistoryAdapter for FixtureHistory {
+    fn undo_operations(&self, label: Option<&str>) -> Option<Vec<Operation>> {
+        (label == Some("fix")).then(|| self.undo.clone())
+    }
+
+    fn redo_operations(&self, _label: Option<&str>) -> Option<Vec<Operation>> {
+        None
+    }
+}
+
+#[test]
+fn undo_lowers_through_history_adapter_and_rejects_without_one() {
+    let mut session = lumen_core::DslCompileSession::empty();
+    let setup =
+        session.compile_block("page page_a4\n  headline text \"After edit\" p(0,0) s(400,hug)");
+    assert!(setup.halted_at.is_none());
+
+    // Pure compile (no adapter) rejects undo with the precise diagnostic.
+    let rejected = session.compile_block("undo(\"fix\")");
+    assert_eq!(rejected.halted_at.as_ref().unwrap().code, "LUMD0916");
+
+    // With an adapter, undo lowers the inverse operations it supplies.
+    let history = FixtureHistory {
+        undo: vec![Operation::UpdateNode {
+            node_id: NodeId::from("headline"),
+            patch: lumen_core::NodePatch {
+                kind: lumen_core::FieldPatch::Set(NodeKind::Text(lumen_core::TextNode {
+                    content: "Before edit".to_owned(),
+                    ..lumen_core::TextNode::default()
+                })),
+                ..lumen_core::NodePatch::default()
+            },
+        }],
+    };
+    let undone = session.compile_block_with_history("undo(\"fix\")", Some(&history));
+    assert!(undone.halted_at.is_none(), "{:#?}", undone.diagnostics);
+    assert_eq!(undone.operations.len(), 1);
+
+    // Unknown label diagnoses precisely.
+    let missing = session.compile_block_with_history("undo(\"nope\")", Some(&history));
+    assert_eq!(missing.halted_at.as_ref().unwrap().code, "LUMD0917");
+}
+
+const REPLACE_BLOCK_SCENE: &str = "page page_a4\n  hero fr p(0,0) s(800,600)\n    visual fr p(10,10) s(200,200)\n      caption text \"Old\" p(0,0) s(100,hug)\n    cta text \"Go\" p(0,0) s(80,hug)";
+
+#[test]
+fn block_replace_swaps_inline_subtree_at_target_position() {
+    let source = format!(
+        "{REPLACE_BLOCK_SCENE}\n\nreplace(visual)\n  visual_v2 fr p(40,40) s(300,300)\n    headline text \"New hero copy\" p(0,0) s(200,hug)"
+    );
+    let mut scene = Scene::new(lumen_core::DocumentId::from("doc_blockrep"), "Doc");
+    let output = compile_dsl_into_scene(&source, &mut scene);
+
+    assert_no_dsl_errors(&output.compile_output.diagnostics);
+    assert!(!scene.nodes.contains_key(&NodeId::from("visual")));
+    assert!(!scene.nodes.contains_key(&NodeId::from("caption")));
+    // Replacement root takes the old target's parent and index.
+    assert_eq!(
+        scene.nodes[&NodeId::from("hero")].children,
+        vec![NodeId::from("visual_v2"), NodeId::from("cta")]
+    );
+    assert_eq!(
+        scene.nodes[&NodeId::from("visual_v2")].children,
+        vec![NodeId::from("headline")]
+    );
+}
+
+#[test]
+fn block_replace_preserves_slots_when_requested() {
+    let source = format!(
+        "{}\n\nreplace(caption, slots:preserve)\n  caption_v2 text \"New caption\" p(0,0) s(100,hug)",
+        REPLACE_BLOCK_SCENE.replace(
+            "caption text \"Old\" p(0,0) s(100,hug)",
+            "caption text \"Old\" p(0,0) s(100,hug) slot(campaign.caption)"
+        )
+    );
+    let mut scene = Scene::new(lumen_core::DocumentId::from("doc_blockrep2"), "Doc");
+    let output = compile_dsl_into_scene(&source, &mut scene);
+
+    assert_no_dsl_errors(&output.compile_output.diagnostics);
+    assert_eq!(
+        scene
+            .slot_by_key(&lumen_core::SlotKey::from("campaign.caption"))
+            .unwrap()
+            .bound_nodes,
+        vec![NodeId::from("caption_v2")]
+    );
+}
+
+#[test]
+fn block_replace_rejects_multiple_roots_atomically() {
+    let source = format!(
+        "{REPLACE_BLOCK_SCENE}\n\nreplace(visual)\n  first fr p(0,0) s(10,10)\n  second fr p(0,0) s(10,10)"
+    );
+    let mut scene = Scene::new(lumen_core::DocumentId::from("doc_blockrep3"), "Doc");
+    let output = compile_dsl_into_scene(&source, &mut scene);
+
+    assert_eq!(
+        output.compile_output.halted_at.as_ref().unwrap().code,
+        "LUMD0914"
+    );
+    // The whole block rolled back: no staged nodes, target untouched.
+    let ops = &output.compile_output.operations;
+    assert!(!ops.iter().any(|operation| matches!(
+        operation,
+        Operation::InsertNode { node, .. } if node.id == NodeId::from("first")
+    )));
+}
+
+#[test]
+fn block_replace_without_subtree_halts() {
+    let source = format!("{REPLACE_BLOCK_SCENE}\n\nreplace(visual)");
+    let mut scene = Scene::new(lumen_core::DocumentId::from("doc_blockrep4"), "Doc");
+    let output = compile_dsl_into_scene(&source, &mut scene);
+    assert_eq!(
+        output.compile_output.halted_at.as_ref().unwrap().code,
+        "LUMD0914"
+    );
+    // Prior creation lines survive the halt; the target is never removed.
+    let ops = &output.compile_output.operations;
+    assert!(ops.iter().any(|operation| matches!(
+        operation,
+        Operation::InsertNode { node, .. } if node.id == NodeId::from("visual")
+    )));
+    assert!(!ops.iter().any(|operation| matches!(
+        operation,
+        Operation::RemoveNode { node_id } if node_id == &NodeId::from("visual")
+    )));
 }

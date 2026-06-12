@@ -173,6 +173,7 @@ class LumenDesignTools:
             "compile": _dump(summary),
             "operations": compile_output.get("operations", []),
             "dsl_session": self.dsl_session,
+            "checkpoint_label": compile_output.get("checkpoint_label"),
         }
         self._write_json(iteration_dir / "compile.json", payload)
         self.record(
@@ -232,6 +233,102 @@ class LumenDesignTools:
             "coordinator",
             "operations_applied",
             input_summary=operations_json[:500],
+            output_summary=f"applied {summary.applied_operations} operation(s)",
+            diagnostics=[diag.model_dump(mode="json") for diag in diagnostics],
+            payload=payload,
+        )
+        return json.dumps(payload, indent=2)
+
+    def apply_structured_edit(self, edit_json: str) -> str:
+        """Apply a typed targeted edit through the Rust edit builder.
+
+        The input must be a JSON object matching the `apply_structured_edit`
+        helper contract, for example:
+
+        {
+          "kind": "modify",
+          "target": {"kind": "node", "id": "headline"},
+          "patch": {"kind": "node", "value": {"text": {"content": {"kind": "set", "value": "New copy"}}}}
+        }
+
+        Repairs for a concrete critic issue must declare their scope so the
+        engine can reject out-of-scope mutations before they happen:
+
+        {
+          "kind": "modify",
+          "target": {"kind": "node", "id": "headline"},
+          "patch": {...},
+          "scope": {"mode": "strict", "allowed": [{"kind": "node", "id": "headline"}]}
+        }
+        """
+        scope = None
+        try:
+            edit = json.loads(edit_json)
+            if not isinstance(edit, dict):
+                raise ValueError("edit_json must decode to an object")
+            scope = edit.pop("scope", None)
+            response = self.core.apply_structured_edit(self.scene, edit, scope=scope)
+        except (CoreError, ValueError, json.JSONDecodeError) as error:
+            diagnostics = []
+            if isinstance(error, CoreError):
+                diagnostics = diagnostics_from(error.diagnostics)
+                message = error.message
+                code = error.code
+            else:
+                message = str(error)
+                code = "structured_edit.invalid_input"
+            scope_rejected = code == "edit.scope_violation"
+            summary = OperationApplicationSummary(
+                status=ToolStatus.error,
+                diagnostics=diagnostics,
+                operation_error={"code": code, "message": message},
+            )
+            payload = {"structured_edit": _dump(summary)}
+            if scope is not None:
+                payload["scope"] = scope
+                payload["scope_verdict"] = (
+                    "rejected" if scope_rejected else "not_evaluated"
+                )
+            self.record(
+                "coordinator",
+                "structured_edit_scope_rejected"
+                if scope_rejected
+                else "structured_edit_failed",
+                input_summary=edit_json[:500],
+                output_summary=message,
+                diagnostics=[diag.model_dump(mode="json") for diag in diagnostics],
+                payload=payload,
+            )
+            return json.dumps(payload, indent=2)
+
+        self._replace_scene_from_core_response(response, "apply_structured_edit")
+        if edit.get("kind") in {
+            "delete",
+            "move_before",
+            "move_after",
+            "move_to_parent",
+            "replace_node",
+        }:
+            self.dsl_session = None
+        diagnostics = diagnostics_from(response.get("diagnostics", []))
+        operations = response.get("operations") or []
+        summary = OperationApplicationSummary(
+            applied_operations=response.get("applied_operations") or len(operations),
+            operation_count=len(operations),
+            diagnostics=diagnostics,
+        )
+        payload = {
+            "structured_edit": _dump(summary),
+            "edit": response.get("edit") or edit,
+            "operations": operations,
+        }
+        if scope is not None:
+            payload["scope"] = scope
+            payload["scope_verdict"] = "in_scope"
+        self.record(
+            "coordinator",
+            "structured_edit_applied",
+            input_summary=edit_json[:500],
             output_summary=f"applied {summary.applied_operations} operation(s)",
             diagnostics=[diag.model_dump(mode="json") for diag in diagnostics],
             payload=payload,

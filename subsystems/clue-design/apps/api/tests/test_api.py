@@ -1027,6 +1027,76 @@ def test_apply_operations_updates_scene_and_ordered_history(client: TestClient) 
     assert history[0]["operation"]["patch"]["title"]["value"] == "Updated Letter"
 
 
+def test_apply_structured_edit_persists_canonical_operations(client: TestClient) -> None:
+    document = create_document(client)
+    response = client.post(
+        f"/documents/{document['id']}/edits",
+        json={
+            "edit": {
+                "kind": "modify",
+                "target": {"kind": "node", "id": "node_contact_name"},
+                "patch": {
+                    "kind": "node",
+                    "value": {
+                        "text": {
+                            "content": {
+                                "kind": "set",
+                                "value": "Targeted API repair headline",
+                            },
+                            "font_size": {"kind": "set", "value": 16.0},
+                        }
+                    },
+                },
+            },
+            "actor": {"kind": "agent", "id": "agent_repair"},
+            "source": "agent",
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["schema_version"] == 1
+    assert payload["edit"]["kind"] == "modify"
+    assert payload["operation_application"]["applied_operations"] == 1
+    assert payload["operations"] == [{"sequence": 1, "kind": "update_node"}]
+
+    loaded = client.get(f"/documents/{document['id']}").json()
+    assert (
+        loaded["scene"]["nodes"]["node_contact_name"]["kind"]["content"]
+        == "Targeted API repair headline"
+    )
+    assert loaded["scene"]["nodes"]["node_contact_name"]["kind"]["font_size"] == 16.0
+
+    history = client.get(f"/documents/{document['id']}/operations").json()
+    assert history[0]["source"] == "agent"
+    assert history[0]["operation"]["kind"] == "update_node"
+    assert (
+        history[0]["operation"]["patch"]["kind"]["value"]["content"]
+        == "Targeted API repair headline"
+    )
+
+
+def test_apply_structured_edit_rejects_missing_target_without_history(
+    client: TestClient,
+) -> None:
+    document = create_document(client)
+    response = client.post(
+        f"/documents/{document['id']}/edits",
+        json={
+            "edit": {
+                "kind": "delete",
+                "target": {"kind": "node", "id": "missing_node"},
+            }
+        },
+    )
+
+    assert response.status_code == 422, response.text
+    detail = response.json()["detail"]
+    assert detail["code"] == "edit.target_not_found"
+    assert detail["diagnostics"][0]["code"] == "edit.target_not_found"
+    assert client.get(f"/documents/{document['id']}/operations").json() == []
+
+
 def test_invalid_operation_batch_does_not_update_scene_or_history(client: TestClient) -> None:
     document = create_document(client)
     response = client.post(
@@ -1323,3 +1393,269 @@ def test_mutation_responses_are_compact_dto_envelopes(client: TestClient) -> Non
     assert payload["snapshot"]["snapshot_id"].startswith("snap_")
     assert "scene" not in payload["document"]
     assert "scene" not in payload["snapshot"]
+
+
+def test_structured_edit_envelope_persists_intent_inverses_and_readback(
+    client: TestClient,
+) -> None:
+    document = create_document(client)
+    response = client.post(
+        f"/documents/{document['id']}/edits",
+        json={
+            "edit": {
+                "kind": "modify",
+                "target": {"kind": "node", "id": "node_contact_name"},
+                "patch": {
+                    "kind": "node",
+                    "value": {
+                        "text": {
+                            "content": {"kind": "set", "value": "Enveloped repair"}
+                        }
+                    },
+                },
+            },
+            "actor": {"kind": "agent", "id": "agent_repair"},
+            "source": "agent",
+            "checkpoint": "headline fix",
+        },
+    )
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    envelope_summary = payload["envelope"]
+    assert envelope_summary["intent"] == "modify_node"
+    assert envelope_summary["checkpoint_label"] == "headline fix"
+    assert envelope_summary["invertible"] is True
+    assert envelope_summary["base_revision"] == 0
+    assert envelope_summary["touched_targets"] == [
+        {"kind": "node", "id": "node_contact_name"}
+    ]
+
+    history = client.get(f"/documents/{document['id']}/history").json()
+    assert history["document_id"] == document["id"]
+    envelope = history["envelopes"][0]
+    assert envelope["batch_id"] == envelope_summary["batch_id"]
+    assert envelope["envelope_version"] == 1
+    assert envelope["actor"] == {"kind": "agent", "id": "agent_repair"}
+    assert envelope["source"] == "agent"
+    assert envelope["operations"][0]["kind"] == "update_node"
+    inverse = envelope["inverse_operations"]
+    assert inverse is not None and len(inverse) == 1
+    assert inverse[0]["kind"] == "update_node"
+
+    operation_rows = client.get(f"/documents/{document['id']}/operations").json()
+    assert operation_rows[0]["batch_id"] == envelope["batch_id"]
+
+
+def test_apply_operations_envelope_carries_inverse_and_intent(
+    client: TestClient,
+) -> None:
+    document = create_document(client)
+    response = client.post(
+        f"/documents/{document['id']}/operations",
+        json={
+            "operations": [title_operation("Enveloped Title")],
+            "intent": "rename_document",
+            "checkpoint": "rename",
+        },
+    )
+    assert response.status_code == 200, response.text
+    envelope_summary = response.json()["envelope"]
+    assert envelope_summary["intent"] == "rename_document"
+    assert envelope_summary["invertible"] is True
+
+    history = client.get(f"/documents/{document['id']}/history").json()
+    envelope = history["envelopes"][0]
+    assert envelope["checkpoint_label"] == "rename"
+    inverse = envelope["inverse_operations"]
+    assert inverse[0]["kind"] == "update_document"
+    assert inverse[0]["patch"]["title"]["value"] == "Hospital Letter"
+
+
+def test_base_version_mismatch_rejects_edit_before_mutation(
+    client: TestClient,
+) -> None:
+    document = create_document(client)
+    response = client.post(
+        f"/documents/{document['id']}/operations",
+        json={
+            "operations": [title_operation("Should not apply")],
+            "base_version": 7,
+        },
+    )
+    assert response.status_code == 409, response.text
+    detail = response.json()["detail"]
+    assert detail["code"] == "edits.base_version_mismatch"
+    assert detail["current_version"] == 0
+
+    loaded = client.get(f"/documents/{document['id']}").json()
+    assert loaded["title"] == "Hospital Letter"
+    assert client.get(f"/documents/{document['id']}/history").json()["envelopes"] == []
+
+
+def test_backfill_wraps_pre_envelope_operation_rows(tmp_path: Path) -> None:
+    import sqlite3
+
+    database_path = tmp_path / "api.sqlite3"
+    app = create_app(database_path)
+    client = TestClient(app)
+    document = create_document(client)
+    client.post(
+        f"/documents/{document['id']}/operations",
+        json={"operations": [title_operation("Legacy Title")]},
+    )
+
+    connection = sqlite3.connect(database_path)
+    connection.execute("UPDATE operation_log SET batch_id = NULL")
+    connection.execute("DELETE FROM edit_envelopes")
+    connection.commit()
+    connection.close()
+
+    restarted = TestClient(create_app(database_path))
+    history = restarted.get(f"/documents/{document['id']}/history").json()
+    envelope = history["envelopes"][0]
+    assert envelope["envelope_version"] == 0
+    assert envelope["batch_id"].startswith("backfill_")
+    assert envelope["intent"] is None
+    assert envelope["inverse_operations"] is None
+    assert envelope["operations"][0]["kind"] == "update_document"
+
+
+def test_strict_scope_violation_rejects_edit_fail_closed(client: TestClient) -> None:
+    document = create_document(client)
+    response = client.post(
+        f"/documents/{document['id']}/edits",
+        json={
+            "edit": {
+                "kind": "modify",
+                "target": {"kind": "node", "id": "node_contact_name"},
+                "patch": {
+                    "kind": "node",
+                    "value": {
+                        "text": {"content": {"kind": "set", "value": "Out of scope"}}
+                    },
+                },
+            },
+            "scope": {"mode": "strict", "allowed": [{"kind": "document"}]},
+            "actor": {"kind": "agent", "id": "agent_repair"},
+            "source": "agent",
+        },
+    )
+    assert response.status_code >= 400, response.text
+    assert "edit.scope_violation" in response.text
+
+    loaded = client.get(f"/documents/{document['id']}").json()
+    assert loaded["current_version"] == 0
+    assert client.get(f"/documents/{document['id']}/history").json()["envelopes"] == []
+
+
+def test_strict_scope_in_scope_edit_applies(client: TestClient) -> None:
+    document = create_document(client)
+    response = client.post(
+        f"/documents/{document['id']}/edits",
+        json={
+            "edit": {
+                "kind": "modify",
+                "target": {"kind": "node", "id": "node_contact_name"},
+                "patch": {
+                    "kind": "node",
+                    "value": {
+                        "text": {"content": {"kind": "set", "value": "In scope"}}
+                    },
+                },
+            },
+            "scope": {
+                "mode": "strict",
+                "allowed": [{"kind": "node", "id": "node_contact_name"}],
+            },
+            "actor": {"kind": "agent", "id": "agent_repair"},
+            "source": "agent",
+        },
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["envelope"]["invertible"] is True
+
+
+def test_undo_redo_round_trip_appends_history(client: TestClient) -> None:
+    document = create_document(client)
+    client.post(
+        f"/documents/{document['id']}/operations",
+        json={"operations": [title_operation("Version B")], "intent": "rename"},
+    )
+
+    undo = client.post(f"/documents/{document['id']}/undo")
+    assert undo.status_code == 200, undo.text
+    assert undo.json()["reverted_intent"] == "rename"
+    assert client.get(f"/documents/{document['id']}").json()["title"] == "Hospital Letter"
+
+    redo = client.post(f"/documents/{document['id']}/redo")
+    assert redo.status_code == 200, redo.text
+    assert client.get(f"/documents/{document['id']}").json()["title"] == "Version B"
+
+    # History is append-only: edit, undo, redo are three envelopes.
+    envelopes = client.get(f"/documents/{document['id']}/history").json()["envelopes"]
+    assert len(envelopes) == 3
+    assert envelopes[0]["intent"] == "redo:rename"
+    assert envelopes[0]["reapplies_batch_id"] == envelopes[2]["batch_id"]
+    assert envelopes[1]["intent"] == "undo:rename"
+    assert envelopes[1]["reverts_batch_id"] == envelopes[2]["batch_id"]
+
+    # Undo after redo still works (linear cursor over the appended log).
+    assert client.post(f"/documents/{document['id']}/undo").status_code == 200
+    assert client.get(f"/documents/{document['id']}").json()["title"] == "Hospital Letter"
+
+
+def test_new_edit_clears_redo_stack(client: TestClient) -> None:
+    document = create_document(client)
+    client.post(
+        f"/documents/{document['id']}/operations",
+        json={"operations": [title_operation("First")]},
+    )
+    client.post(f"/documents/{document['id']}/undo")
+    client.post(
+        f"/documents/{document['id']}/operations",
+        json={"operations": [title_operation("Second")]},
+    )
+
+    redo = client.post(f"/documents/{document['id']}/redo")
+    assert redo.status_code == 409
+    assert redo.json()["detail"]["code"] == "history.nothing_to_redo"
+
+    empty = client.post(f"/documents/{document['id']}/undo")
+    assert empty.status_code == 200
+    second_undo = client.post(f"/documents/{document['id']}/undo")
+    assert second_undo.status_code == 409
+    assert second_undo.json()["detail"]["code"] == "history.nothing_to_undo"
+
+
+def test_revert_to_checkpoint_composes_undos(client: TestClient) -> None:
+    document = create_document(client)
+    client.post(
+        f"/documents/{document['id']}/operations",
+        json={
+            "operations": [title_operation("Anchored")],
+            "checkpoint": "good state",
+        },
+    )
+    client.post(
+        f"/documents/{document['id']}/operations",
+        json={"operations": [title_operation("Drift 1")]},
+    )
+    client.post(
+        f"/documents/{document['id']}/operations",
+        json={"operations": [title_operation("Drift 2")]},
+    )
+
+    checkpoints = client.get(f"/documents/{document['id']}/checkpoints").json()
+    assert [c["label"] for c in checkpoints["checkpoints"]] == ["good state"]
+
+    revert = client.post(
+        f"/documents/{document['id']}/revert", params={"checkpoint": "good state"}
+    )
+    assert revert.status_code == 200, revert.text
+    assert len(revert.json()["reverted_batch_ids"]) == 2
+    assert client.get(f"/documents/{document['id']}").json()["title"] == "Anchored"
+
+    missing = client.post(
+        f"/documents/{document['id']}/revert", params={"checkpoint": "nope"}
+    )
+    assert missing.status_code == 404

@@ -1,0 +1,93 @@
+{
+  "description": "Cross-language edit parity: the same structured edit against crates/lumen-core/fixtures/minimal_scene.json must produce these exact canonical operations from the Rust builders (asserted by crates/lumen-api-helper/tests/edit_parity.rs) and from the TypeScript structured-edit wrapper (asserted by apps/editor/src/engine/__tests__/editParity.test.ts).",
+  "scene_fixture": "crates/lumen-core/fixtures/minimal_scene.json",
+  "cases": [
+    {
+      "name": "modify_node_text_and_font_size",
+      "edit": {
+        "kind": "modify",
+        "target": { "kind": "node", "id": "node_contact_name" },
+        "patch": {
+          "kind": "node",
+          "value": {
+            "text": {
+              "content": { "kind": "set", "value": "Parity headline" },
+              "font_size": { "kind": "set", "value": 18.0 }
+            }
+          }
+        }
+      },
+      "expected_operations": [
+        {
+          "kind": "update_node",
+          "node_id": "node_contact_name",
+          "patch": {
+            "asset_placement": { "kind": "unchanged" },
+            "clip": { "kind": "unchanged" },
+            "computed": { "kind": "clear" },
+            "corner": { "kind": "unchanged" },
+            "fills": { "kind": "unchanged" },
+            "kind": {
+              "kind": "set",
+              "value": {
+                "align": "left",
+                "content": "Parity headline",
+                "direction": "ltr",
+                "font_family": "Inter",
+                "font_size": 18.0,
+                "font_weight": 600,
+                "kind": "text",
+                "letter_spacing": 0.0,
+                "line_height": 1.2,
+                "wrap": "wrap"
+              }
+            },
+            "layout": { "kind": "unchanged" },
+            "locked": { "kind": "unchanged" },
+            "name": { "kind": "unchanged" },
+            "opacity": { "kind": "unchanged" },
+            "opacity_token": { "kind": "unchanged" },
+            "size": { "kind": "unchanged" },
+            "source_asset_id": { "kind": "unchanged" },
+            "strokes": { "kind": "unchanged" },
+            "transform": { "kind": "unchanged" }
+          }
+        }
+      ]
+    },
+    {
+      "name": "modify_page_name",
+      "edit": {
+        "kind": "modify",
+        "target": { "kind": "page", "id": "page_a4" },
+        "patch": {
+          "kind": "page",
+          "value": { "name": { "kind": "set", "value": "Renamed page" } }
+        }
+      },
+      "expected_operations": [
+        {
+          "kind": "update_page",
+          "page_id": "page_a4",
+          "patch": {
+            "background": { "kind": "unchanged" },
+            "bleed": { "kind": "unchanged" },
+            "name": { "kind": "set", "value": "Renamed page" },
+            "safe_area": { "kind": "unchanged" },
+            "size": { "kind": "unchanged" }
+          }
+        }
+      ]
+    },
+    {
+      "name": "safe_delete_node",
+      "edit": {
+        "kind": "delete",
+        "target": { "kind": "node", "id": "node_contact_name" }
+      },
+      "expected_operations": [
+        { "kind": "remove_node", "node_id": "node_contact_name" }
+      ]
+    }
+  ]
+}

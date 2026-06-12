@@ -26,11 +26,30 @@ class ReplaceSceneRequest(BaseModel):
     scene: JsonObject
 
 
+class EditScopeEnvelope(BaseModel):
+    mode: Literal["strict", "advisory"] = "strict"
+    allowed: List[JsonObject] = Field(default_factory=list)
+
+
 class ApplyOperationsRequest(BaseModel):
     operations: List[JsonObject] = Field(default_factory=list)
     actor: ActorEnvelope = Field(default_factory=ActorEnvelope)
     source: Literal["editor", "agent", "api", "system"] = "api"
     snapshot_reason: Optional[str] = None
+    base_version: Optional[int] = None
+    intent: Optional[str] = None
+    checkpoint: Optional[str] = None
+    scope: Optional[EditScopeEnvelope] = None
+
+
+class ApplyStructuredEditRequest(BaseModel):
+    edit: JsonObject
+    actor: ActorEnvelope = Field(default_factory=ActorEnvelope)
+    source: Literal["editor", "agent", "api", "system"] = "api"
+    snapshot_reason: Optional[str] = None
+    base_version: Optional[int] = None
+    checkpoint: Optional[str] = None
+    scope: Optional[EditScopeEnvelope] = None
 
 
 class CreateSnapshotRequest(BaseModel):

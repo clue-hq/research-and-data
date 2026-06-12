@@ -232,6 +232,58 @@ fn applies_operation_batch_through_checked_core() {
 }
 
 #[test]
+fn applies_sparse_structured_edit_patch_through_checked_core() {
+    let response = helper(json!({
+        "action": "apply_structured_edit",
+        "scene": minimal_scene(),
+        "edit": {
+            "kind": "modify",
+            "target": { "kind": "node", "id": "node_contact_name" },
+            "patch": {
+                "kind": "node",
+                "value": {
+                    "text": {
+                        "content": { "kind": "set", "value": "Targeted repair headline" },
+                        "font_size": { "kind": "set", "value": 16.0 }
+                    }
+                }
+            }
+        }
+    }));
+
+    assert_eq!(response["ok"], true, "{response:#?}");
+    assert_eq!(response["applied_operations"], 1);
+    assert_eq!(response["operations"].as_array().unwrap().len(), 1);
+    assert_eq!(response["operations"][0]["kind"], "update_node");
+    assert_eq!(response["edit"]["kind"], "modify");
+    assert_eq!(
+        response["scene"]["nodes"]["node_contact_name"]["kind"]["content"],
+        "Targeted repair headline"
+    );
+    assert_eq!(
+        response["scene"]["nodes"]["node_contact_name"]["kind"]["font_size"],
+        16.0
+    );
+}
+
+#[test]
+fn structured_edit_failure_returns_diagnostics_without_scene() {
+    let response = helper(json!({
+        "action": "apply_structured_edit",
+        "scene": minimal_scene(),
+        "edit": {
+            "kind": "delete",
+            "target": { "kind": "node", "id": "missing_node" }
+        }
+    }));
+
+    assert_eq!(response["ok"], false, "{response:#?}");
+    assert_eq!(response["scene"], Value::Null);
+    assert_eq!(response["error"]["code"], "edit.target_not_found");
+    assert_eq!(response["diagnostics"][0]["code"], "edit.target_not_found");
+}
+
+#[test]
 fn applies_asset_operations_through_checked_core_bridge() {
     let response = helper(json!({
         "action": "apply_operations",

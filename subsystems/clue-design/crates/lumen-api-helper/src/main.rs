@@ -1,12 +1,17 @@
 use lumen_core::validation::validate_scene;
 use lumen_core::{
-    compare_brand_kit_compatibility, compile_dsl_into_scene_with_session, compile_styles_brand_kit,
-    generate_brand_kit, layout_scene, platform_default_brand_kit, preflight_scene,
-    summarize_brand_kit_for_authoring, validate_brand_kit, validate_brand_kit_product_ready,
-    validate_scene_brand_governance, BrandGovernanceStrictness, BrandKit, BrandKitId, BrandMode,
-    BrandSeed, Diagnostic, DiagnosticSeverity, DocumentId, DslCompileSessionSnapshot,
-    ExportAdapter, ExportFormat, ExportProfile, ExportPurpose, ExportRequest, Medium, Operation,
-    PageId, PdfIntent, PreflightOptions, RasterScale, Scene, TemplateRevisionId,
+    batch_scope_violations, build_archive_asset, build_clone_subtree, build_delete_export_profile,
+    build_hard_delete_asset, build_modify_operations, build_move_after, build_move_before,
+    build_move_to_parent, build_replace_node, build_safe_delete, build_safe_delete_page,
+    build_safe_delete_slot, compare_brand_kit_compatibility, compile_dsl_into_scene_with_session,
+    compile_styles_brand_kit, generate_brand_kit, layout_scene, platform_default_brand_kit,
+    preflight_scene, summarize_brand_kit_for_authoring, validate_brand_kit,
+    validate_brand_kit_product_ready, validate_scene_brand_governance, AssetId,
+    BrandGovernanceStrictness, BrandKit, BrandKitId, BrandMode, BrandSeed, CloneSubtreeRequest,
+    Diagnostic, DiagnosticSeverity, DocumentId, DslCompileSessionSnapshot, EditBatch, EditPatch,
+    EditScope, EditScopeMode, EditTargetRef, ExportAdapter, ExportFormat, ExportProfile,
+    ExportPurpose, ExportRequest, Medium, NodeId, Operation, PageId, ParentRef, PdfIntent,
+    PreflightOptions, RasterScale, ReplaceNodeRequest, Scene, ScopeViolation, TemplateRevisionId,
 };
 use lumen_export::LumenExportAdapter;
 use serde::{Deserialize, Serialize};
@@ -17,6 +22,7 @@ use std::time::Instant;
 
 #[derive(Debug, Deserialize)]
 #[serde(tag = "action", rename_all = "snake_case")]
+#[allow(clippy::large_enum_variant)]
 enum CoreRequest {
     NewScene {
         document_id: String,
@@ -30,6 +36,14 @@ enum CoreRequest {
     ApplyOperations {
         scene: Value,
         operations: Vec<Value>,
+        #[serde(default)]
+        scope: Option<EditScope>,
+    },
+    ApplyStructuredEdit {
+        scene: Value,
+        edit: StructuredEditInstruction,
+        #[serde(default)]
+        scope: Option<EditScope>,
     },
     CompileDslIntoScene {
         scene: Value,
@@ -110,6 +124,10 @@ struct CoreResponse {
     #[serde(skip_serializing_if = "Option::is_none")]
     geometry: Option<Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    operations: Option<Vec<Value>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    edit: Option<Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     dsl: Option<Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
     export: Option<Value>,
@@ -127,6 +145,49 @@ struct PreflightSummary {
     brand_ref_operations: Vec<Value>,
     token_operations: Vec<Value>,
     layout_operations: Vec<Value>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+#[allow(clippy::large_enum_variant)]
+enum StructuredEditInstruction {
+    Modify {
+        target: EditTargetRef,
+        patch: EditPatch,
+    },
+    Delete {
+        target: EditTargetRef,
+    },
+    MoveBefore {
+        node_id: NodeId,
+        anchor: NodeId,
+    },
+    MoveAfter {
+        node_id: NodeId,
+        anchor: NodeId,
+    },
+    MoveToParent {
+        node_id: NodeId,
+        parent: ParentRef,
+        index: usize,
+    },
+    CloneSubtree {
+        request: CloneSubtreeRequest,
+    },
+    ReplaceNode {
+        request: ReplaceNodeRequest,
+    },
+    ArchiveAsset {
+        asset_id: AssetId,
+    },
+    HardDeleteAsset {
+        asset_id: AssetId,
+    },
+    DeleteExportProfile {
+        name: String,
+        #[serde(default)]
+        replace_with: Option<String>,
+    },
 }
 
 fn main() {
@@ -154,6 +215,8 @@ fn main() {
                     brand_generation: None,
                     brand_compatibility: None,
                     geometry: None,
+                    operations: None,
+                    edit: None,
                     dsl: None,
                     export: None,
                 },
@@ -190,6 +253,8 @@ fn main() {
                 brand_generation: None,
                 brand_compatibility: None,
                 geometry: None,
+                operations: None,
+                edit: None,
                 dsl: None,
                 export: None,
             }
@@ -208,6 +273,7 @@ impl CoreRequest {
             CoreRequest::NewScene { .. } => "new_scene",
             CoreRequest::ValidateScene { .. } => "validate_scene",
             CoreRequest::ApplyOperations { .. } => "apply_operations",
+            CoreRequest::ApplyStructuredEdit { .. } => "apply_structured_edit",
             CoreRequest::CompileDslIntoScene { .. } => "compile_dsl_into_scene",
             CoreRequest::PreflightScene { .. } => "preflight_scene",
             CoreRequest::ExportPreview { .. } => "export_preview",
@@ -237,6 +303,9 @@ fn request_log_fields(request: &CoreRequest) -> Value {
         CoreRequest::ValidateScene { .. } => json!({}),
         CoreRequest::ApplyOperations { operations, .. } => json!({
             "operation_count": operations.len(),
+        }),
+        CoreRequest::ApplyStructuredEdit { edit, .. } => json!({
+            "edit_kind": structured_edit_kind(edit),
         }),
         CoreRequest::CompileDslIntoScene {
             source,
@@ -345,7 +414,69 @@ fn helper_log(event: &str, level: &str, action: Option<&str>, fields: Value) {
 }
 
 fn helper_logging_enabled() -> bool {
-    env::var("LUMEN_CORE_HELPER_LOG").map_or(false, |value| value != "0")
+    env::var("LUMEN_CORE_HELPER_LOG").is_ok_and(|value| value != "0")
+}
+
+fn error_response(error: CoreError, diagnostics: Vec<Diagnostic>) -> CoreResponse {
+    CoreResponse {
+        ok: false,
+        scene: None,
+        diagnostics,
+        error: Some(error),
+        applied_operations: None,
+        preflight: None,
+        brand_kit: None,
+        brand_summary: None,
+        brand_generation: None,
+        brand_compatibility: None,
+        geometry: None,
+        operations: None,
+        edit: None,
+        dsl: None,
+        export: None,
+    }
+}
+
+/// Enforce a declared edit scope before mutation. Strict violations and
+/// unresolvable declared targets fail closed with an error response; in
+/// advisory mode violations become warning diagnostics that ride along with
+/// the applied batch.
+fn check_scope(
+    scene: &Scene,
+    operations: &[Operation],
+    scope: Option<&EditScope>,
+) -> Result<Vec<Diagnostic>, Box<CoreResponse>> {
+    let Some(scope) = scope else {
+        return Ok(Vec::new());
+    };
+    let violations = match batch_scope_violations(scene, operations, &scope.allowed) {
+        Ok(violations) => violations,
+        Err(error) => {
+            return Err(Box::new(error_response(
+                core_error(error.kind.code(), error.message.clone()),
+                vec![error.diagnostic()],
+            )));
+        }
+    };
+    if violations.is_empty() {
+        return Ok(Vec::new());
+    }
+    match scope.mode {
+        EditScopeMode::Strict => Err(Box::new(error_response(
+            core_error(
+                "edit.scope_violation",
+                format!(
+                    "{} operation(s) touch targets outside the declared scope",
+                    violations.len()
+                ),
+            ),
+            violations.iter().map(ScopeViolation::diagnostic).collect(),
+        ))),
+        EditScopeMode::Advisory => Ok(violations
+            .iter()
+            .map(ScopeViolation::advisory_diagnostic)
+            .collect()),
+    }
 }
 
 fn read_request() -> Result<CoreRequest, CoreError> {
@@ -377,15 +508,34 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
             let diagnostics = validate_scene(&scene);
             Ok(ok_scene(scene, diagnostics, None))
         }
-        CoreRequest::ApplyOperations { scene, operations } => {
+        CoreRequest::ApplyOperations {
+            scene,
+            operations,
+            scope,
+        } => {
             let mut scene = parse_scene(scene)?;
             let operations = parse_operations(operations)?;
+            let scope_diagnostics = match check_scope(&scene, &operations, scope.as_ref()) {
+                Ok(diagnostics) => diagnostics,
+                Err(response) => return Ok(*response),
+            };
+            let inverse_operations = scene
+                .invert_operations(&operations)
+                .ok()
+                .flatten()
+                .map(values)
+                .transpose()?;
             match scene.apply_operations_checked(operations) {
-                Ok(report) => Ok(ok_scene(
-                    scene,
-                    report.diagnostics,
-                    Some(report.applied_operations),
-                )),
+                Ok(report) => {
+                    let mut response =
+                        ok_scene(scene, report.diagnostics, Some(report.applied_operations));
+                    response.diagnostics.extend(scope_diagnostics);
+                    response.edit = Some(json!({
+                        "kind": "apply_operations",
+                        "inverse_operations": inverse_operations,
+                    }));
+                    Ok(response)
+                }
                 Err(error) => Ok(CoreResponse {
                     ok: false,
                     scene: None,
@@ -398,6 +548,101 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                     brand_generation: None,
                     brand_compatibility: None,
                     geometry: None,
+                    operations: None,
+                    edit: None,
+                    dsl: None,
+                    export: None,
+                }),
+            }
+        }
+        CoreRequest::ApplyStructuredEdit { scene, edit, scope } => {
+            let mut scene = parse_scene(scene)?;
+            let batch = structured_edit_batch(&scene, &edit).map_err(|error| CoreResponse {
+                ok: false,
+                scene: None,
+                diagnostics: vec![error.diagnostic()],
+                error: Some(core_error(error.kind.code(), error.message)),
+                applied_operations: None,
+                preflight: None,
+                brand_kit: None,
+                brand_summary: None,
+                brand_generation: None,
+                brand_compatibility: None,
+                geometry: None,
+                operations: None,
+                edit: Some(
+                    to_value(&edit)
+                        .unwrap_or_else(|_| json!({"kind": structured_edit_kind(&edit)})),
+                ),
+                dsl: None,
+                export: None,
+            });
+            let batch = match batch {
+                Ok(batch) => batch,
+                Err(response) => return Ok(response),
+            };
+            let operations = batch.operations.clone();
+            let scope_diagnostics = match check_scope(&scene, &operations, scope.as_ref()) {
+                Ok(diagnostics) => diagnostics,
+                Err(mut response) => {
+                    response.edit = Some(json!({
+                        "kind": structured_edit_kind(&edit),
+                        "touched_targets": batch.touched_targets,
+                        "intent": batch.intent,
+                    }));
+                    return Ok(*response);
+                }
+            };
+            match batch.apply_checked(&mut scene) {
+                Ok(report) => Ok(CoreResponse {
+                    ok: true,
+                    scene: Some(to_value(scene)?),
+                    diagnostics: {
+                        let mut diagnostics = report.diagnostics;
+                        diagnostics.extend(scope_diagnostics);
+                        diagnostics
+                    },
+                    error: None,
+                    applied_operations: Some(report.applied_operations),
+                    preflight: None,
+                    brand_kit: None,
+                    brand_summary: None,
+                    brand_generation: None,
+                    brand_compatibility: None,
+                    geometry: None,
+                    operations: Some(values(operations)?),
+                    edit: Some(json!({
+                        "kind": structured_edit_kind(&edit),
+                        "touched_targets": batch.touched_targets,
+                        "intent": batch.intent,
+                        "checkpoint_label": batch.checkpoint_label,
+                        "inverse_operations": batch.inverse_operations,
+                        "lineage": batch.lineage,
+                    })),
+                    dsl: None,
+                    export: None,
+                }),
+                Err(error) => Ok(CoreResponse {
+                    ok: false,
+                    scene: None,
+                    diagnostics: vec![error.diagnostic()],
+                    error: Some(core_error(error.kind.code(), error.message)),
+                    applied_operations: None,
+                    preflight: None,
+                    brand_kit: None,
+                    brand_summary: None,
+                    brand_generation: None,
+                    brand_compatibility: None,
+                    geometry: None,
+                    operations: Some(values(operations)?),
+                    edit: Some(json!({
+                        "kind": structured_edit_kind(&edit),
+                        "touched_targets": batch.touched_targets,
+                        "intent": batch.intent,
+                        "checkpoint_label": batch.checkpoint_label,
+                        "inverse_operations": batch.inverse_operations,
+                        "lineage": batch.lineage,
+                    })),
                     dsl: None,
                     export: None,
                 }),
@@ -430,6 +675,8 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                 brand_generation: None,
                 brand_compatibility: None,
                 geometry: None,
+                operations: None,
+                edit: None,
                 dsl: Some(json!({
                     "compile_output": dsl_compile_output_value(&result.compile_output)?,
                     "operation_report": operation_report_value(&result.operation_report),
@@ -469,6 +716,8 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                 brand_generation: None,
                 brand_compatibility: None,
                 geometry: None,
+                operations: None,
+                edit: None,
                 dsl: None,
                 export: None,
             })
@@ -519,6 +768,8 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                     brand_generation: None,
                     brand_compatibility: None,
                     geometry: None,
+                    operations: None,
+                    edit: None,
                     dsl: None,
                     export: Some(to_value(result)?),
                 }),
@@ -534,6 +785,8 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                     brand_generation: None,
                     brand_compatibility: None,
                     geometry: None,
+                    operations: None,
+                    edit: None,
                     dsl: None,
                     export: None,
                 }),
@@ -565,6 +818,8 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                     brand_generation: None,
                     brand_compatibility: None,
                     geometry: None,
+                    operations: None,
+                    edit: None,
                     dsl: None,
                     export: None,
                 }),
@@ -586,6 +841,8 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                 brand_generation: None,
                 brand_compatibility: None,
                 geometry: None,
+                operations: None,
+                edit: None,
                 dsl: None,
                 export: None,
             })
@@ -612,6 +869,8 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                 brand_generation: None,
                 brand_compatibility: None,
                 geometry: None,
+                operations: None,
+                edit: None,
                 dsl: None,
                 export: None,
             })
@@ -637,6 +896,8 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                         brand_generation: None,
                         brand_compatibility: None,
                         geometry: None,
+                        operations: None,
+                        edit: None,
                         dsl: None,
                         export: None,
                     })
@@ -656,6 +917,8 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                     brand_generation: None,
                     brand_compatibility: None,
                     geometry: None,
+                    operations: None,
+                    edit: None,
                     dsl: None,
                     export: None,
                 }),
@@ -692,6 +955,8 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                 brand_generation: Some(to_value(report)?),
                 brand_compatibility: None,
                 geometry: None,
+                operations: None,
+                edit: None,
                 dsl: None,
                 export: None,
             })
@@ -711,6 +976,8 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                 brand_generation: None,
                 brand_compatibility: None,
                 geometry: None,
+                operations: None,
+                edit: None,
                 dsl: None,
                 export: None,
             })
@@ -735,6 +1002,8 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                 brand_generation: None,
                 brand_compatibility: None,
                 geometry: None,
+                operations: None,
+                edit: None,
                 dsl: None,
                 export: None,
             })
@@ -756,6 +1025,8 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                 brand_generation: None,
                 brand_compatibility: Some(to_value(report)?),
                 geometry: None,
+                operations: None,
+                edit: None,
                 dsl: None,
                 export: None,
             })
@@ -775,6 +1046,8 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                 brand_generation: None,
                 brand_compatibility: None,
                 geometry: Some(json!(result.geometry)),
+                operations: None,
+                edit: None,
                 dsl: None,
                 export: None,
             })
@@ -799,6 +1072,8 @@ fn ok_scene(
         brand_generation: None,
         brand_compatibility: None,
         geometry: None,
+        operations: None,
+        edit: None,
         dsl: None,
         export: None,
     }
@@ -832,6 +1107,76 @@ fn parse_operations(values: Vec<Value>) -> Result<Vec<Operation>, CoreError> {
         .collect()
 }
 
+fn structured_edit_kind(edit: &StructuredEditInstruction) -> &'static str {
+    match edit {
+        StructuredEditInstruction::Modify { .. } => "modify",
+        StructuredEditInstruction::Delete { .. } => "delete",
+        StructuredEditInstruction::MoveBefore { .. } => "move_before",
+        StructuredEditInstruction::MoveAfter { .. } => "move_after",
+        StructuredEditInstruction::MoveToParent { .. } => "move_to_parent",
+        StructuredEditInstruction::CloneSubtree { .. } => "clone_subtree",
+        StructuredEditInstruction::ReplaceNode { .. } => "replace_node",
+        StructuredEditInstruction::ArchiveAsset { .. } => "archive_asset",
+        StructuredEditInstruction::HardDeleteAsset { .. } => "hard_delete_asset",
+        StructuredEditInstruction::DeleteExportProfile { .. } => "delete_export_profile",
+    }
+}
+
+fn structured_edit_batch(
+    scene: &Scene,
+    edit: &StructuredEditInstruction,
+) -> Result<EditBatch, lumen_core::EditError> {
+    match edit {
+        StructuredEditInstruction::Modify { target, patch } => {
+            build_modify_operations(scene, target.clone(), patch.clone())
+        }
+        StructuredEditInstruction::Delete { target } => match target {
+            EditTargetRef::Node(node_id) => build_safe_delete(scene, node_id.clone()),
+            EditTargetRef::Page(page_id) => build_safe_delete_page(scene, page_id.clone()),
+            EditTargetRef::Slot(_) | EditTargetRef::SlotKey(_) => {
+                build_safe_delete_slot(scene, target.clone())
+            }
+            // Archive-first asset lifecycle: plain delete archives; use the
+            // hard_delete_asset instruction for an unreferenced hard delete.
+            EditTargetRef::Asset(asset_id) => build_archive_asset(scene, asset_id.clone()),
+            EditTargetRef::ExportProfile(name) => {
+                build_delete_export_profile(scene, name.clone(), None)
+            }
+            EditTargetRef::Document => Err(lumen_core::EditError::new(
+                lumen_core::EditErrorKind::UnsupportedTarget,
+                "the document itself cannot be deleted through structured edits",
+            )
+            .with_target(target.clone())),
+        },
+        StructuredEditInstruction::ArchiveAsset { asset_id } => {
+            build_archive_asset(scene, asset_id.clone())
+        }
+        StructuredEditInstruction::HardDeleteAsset { asset_id } => {
+            build_hard_delete_asset(scene, asset_id.clone())
+        }
+        StructuredEditInstruction::DeleteExportProfile { name, replace_with } => {
+            build_delete_export_profile(scene, name.clone(), replace_with.clone())
+        }
+        StructuredEditInstruction::MoveBefore { node_id, anchor } => {
+            build_move_before(scene, node_id.clone(), anchor.clone())
+        }
+        StructuredEditInstruction::MoveAfter { node_id, anchor } => {
+            build_move_after(scene, node_id.clone(), anchor.clone())
+        }
+        StructuredEditInstruction::MoveToParent {
+            node_id,
+            parent,
+            index,
+        } => build_move_to_parent(scene, node_id.clone(), parent.clone(), *index),
+        StructuredEditInstruction::CloneSubtree { request } => {
+            build_clone_subtree(scene, request.clone())
+        }
+        StructuredEditInstruction::ReplaceNode { request } => {
+            build_replace_node(scene, request.clone())
+        }
+    }
+}
+
 fn values<T: Serialize>(items: Vec<T>) -> Result<Vec<Value>, CoreError> {
     items.into_iter().map(to_value).collect()
 }
@@ -839,6 +1184,7 @@ fn values<T: Serialize>(items: Vec<T>) -> Result<Vec<Value>, CoreError> {
 fn dsl_compile_output_value(output: &lumen_core::DslCompileOutput) -> Result<Value, CoreError> {
     Ok(json!({
         "operations": values(output.operations.clone())?,
+        "checkpoint_label": output.checkpoint_label,
         "diagnostics": output
             .diagnostics
             .iter()

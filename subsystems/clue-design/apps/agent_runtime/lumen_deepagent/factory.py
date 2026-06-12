@@ -38,6 +38,7 @@ def create_lumen_design_agent(
             tools.load_knowledge,
             tools.compile_dsl_block,
             tools.apply_operations,
+            tools.apply_structured_edit,
             tools.preflight_design,
             tools.export_preview,
             tools.export_preview_bundle,
