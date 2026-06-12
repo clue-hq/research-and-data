@@ -865,3 +865,81 @@ fn generate_qr_surfaces_print_size_and_empty_data_diagnostics() {
     assert_eq!(empty["error"]["code"], "qr.empty_data");
     assert_eq!(empty["diagnostics"][0]["code"], "LUMA0702");
 }
+
+#[test]
+fn generate_asset_normalizes_provider_output_with_provenance_and_licensing() {
+    let store_dir = tempfile::tempdir().expect("tempdir");
+    let store_root = store_dir.path().to_string_lossy().to_string();
+
+    let response = helper(json!({
+        "action": "generate_asset",
+        "store_root": store_root,
+        "provider": "stub-image-v0",
+        "asset_id": "asset_stub_hero",
+        "label": "Stub hero",
+        "request": {
+            "request_id": "req_stub_hero",
+            "prompt": "teal clinic hero",
+            "output_kind": "raster_image",
+            "target_node_id": null,
+            "target_slot_id": null,
+            "constraints": {
+                "width": 64,
+                "height": 32,
+                "mime_type": null,
+                "transparent_background": null,
+                "brand_notes": []
+            }
+        }
+    }));
+
+    assert_eq!(response["ok"], true, "{response:#?}");
+    let record = &response["asset"]["record"];
+    assert_eq!(record["kind"], "raster_image");
+    assert_eq!(record["source"]["kind"], "generated");
+    assert_eq!(record["source"]["model"], "stub-image-v0");
+    assert_eq!(record["source"]["request_id"], "req_stub_hero");
+    assert_eq!(
+        record["provenance"]["source_label"],
+        "generated:stub-image-v0"
+    );
+    assert_eq!(record["license"]["name"], "stub_generated");
+    assert_eq!(record["raster"]["pixel_width"], 64);
+    assert_eq!(record["raster"]["pixel_height"], 32);
+    assert!(record["media"]["thumbnail"].is_object());
+    assert_eq!(response["asset"]["provider"]["id"], "stub-image-v0");
+    assert!(response["asset"]["provider"]["metadata"]["prompt_digest"].is_string());
+
+    let stored = store_dir
+        .path()
+        .join(response["asset"]["relative_path"].as_str().unwrap());
+    assert!(stored.is_file(), "provider bytes should be stored");
+}
+
+#[test]
+fn generate_asset_rejects_unknown_providers() {
+    let store_dir = tempfile::tempdir().expect("tempdir");
+    let response = helper(json!({
+        "action": "generate_asset",
+        "store_root": store_dir.path().to_string_lossy(),
+        "provider": "imaginary-model-v9",
+        "asset_id": "asset_nope",
+        "request": {
+            "request_id": "req_nope",
+            "prompt": "anything",
+            "output_kind": "raster_image",
+            "target_node_id": null,
+            "target_slot_id": null,
+            "constraints": {
+                "width": null,
+                "height": null,
+                "mime_type": null,
+                "transparent_background": null,
+                "brand_notes": []
+            }
+        }
+    }));
+
+    assert_eq!(response["ok"], false);
+    assert_eq!(response["error"]["code"], "provider.unknown");
+}

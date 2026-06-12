@@ -13,6 +13,7 @@
 pub mod ingest;
 pub mod mime;
 pub mod probe;
+pub mod providers;
 pub mod qr;
 pub mod sanitize;
 pub mod store;
@@ -21,6 +22,11 @@ pub mod thumbs;
 pub use ingest::{ingest, IngestError, IngestOutput, IngestRequest, DEFAULT_MAX_BYTES};
 pub use mime::{default_kind_for_mime, mime_compatible, sniff_mime};
 pub use probe::{parse_jpeg_dpi, parse_png_dpi, probe_raster};
+pub use providers::{
+    AssetGenerationProvider, AssetVectorizationProvider, ProviderArtifact, ProviderError,
+    ProviderRegistry, ProviderSourceBytes, QrGenerationProvider, StubImageProvider,
+    StubVectorizationProvider,
+};
 pub use qr::{
     generate_qr, QrEcLevel, QrError, QrOutput, QrRequest, QR_MIN_PRINT_WIDTH_MM,
     QR_QUIET_ZONE_MODULES,

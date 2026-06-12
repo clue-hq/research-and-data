@@ -113,6 +113,14 @@ enum CoreRequest {
         #[serde(default)]
         target_width_mm: Option<f64>,
     },
+    GenerateAsset {
+        store_root: String,
+        provider: String,
+        request: Value,
+        asset_id: String,
+        #[serde(default)]
+        label: Option<String>,
+    },
     FinalizeTemplate {
         scene: Value,
         template_revision_id: String,
@@ -332,6 +340,7 @@ impl CoreRequest {
             CoreRequest::ExportPreview { .. } => "export_preview",
             CoreRequest::IngestAsset { .. } => "ingest_asset",
             CoreRequest::GenerateQr { .. } => "generate_qr",
+            CoreRequest::GenerateAsset { .. } => "generate_asset",
             CoreRequest::FinalizeTemplate { .. } => "finalize_template",
             CoreRequest::PlatformDefaultBrandKit => "platform_default_brand_kit",
             CoreRequest::ValidateBrandKit { .. } => "validate_brand_kit",
@@ -409,6 +418,9 @@ fn request_log_fields(request: &CoreRequest) -> Value {
             "ec_level": ec_level,
             "print": print,
             "has_target_width_mm": target_width_mm.is_some(),
+        }),
+        CoreRequest::GenerateAsset { provider, .. } => json!({
+            "provider": provider,
         }),
         CoreRequest::FinalizeTemplate { .. } => json!({}),
         CoreRequest::PlatformDefaultBrandKit => json!({}),
@@ -1116,6 +1128,66 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                     });
                 }
                 response.diagnostics.extend(qr_diagnostics);
+            }
+            Ok(response)
+        }
+        CoreRequest::GenerateAsset {
+            store_root,
+            provider,
+            request,
+            asset_id,
+            label,
+        } => {
+            let generation_request =
+                serde_json::from_value::<lumen_core::AssetGenerationRequest>(request)
+                    .map_err(|error| core_error("helper.generation_request", error.to_string()))?;
+            let registry = lumen_assets::ProviderRegistry::with_default_providers();
+            let artifact = match registry.generate(&provider, &generation_request) {
+                Ok(artifact) => artifact,
+                Err(error) => {
+                    return Ok(error_response(
+                        core_error(error.code, error.message.clone()),
+                        vec![error.diagnostic],
+                    ))
+                }
+            };
+            let provider_diagnostics = artifact.diagnostics.clone();
+            let provider_metadata = artifact.provider_metadata.clone();
+
+            let mut response = handle_request(CoreRequest::IngestAsset {
+                store_root,
+                bytes_base64: BASE64.encode(&artifact.bytes),
+                asset_id: asset_id.clone(),
+                label: label.unwrap_or_else(|| format!("Generated asset ({provider})")),
+                declared_mime_type: Some(artifact.mime_type.clone()),
+                filename: None,
+                kind: Some(to_value(&artifact.kind)?),
+                uploaded_by: None,
+                license: Some(to_value(&artifact.license)?),
+                provenance: Some(json!({
+                    "created_by": provider,
+                    "created_at": null,
+                    "source_label": format!("generated:{provider}"),
+                    "confidence": 1.0,
+                    "notes": artifact.provenance_notes,
+                })),
+                source: Some(json!({
+                    "kind": "generated",
+                    "request_id": generation_request.request_id,
+                    "model": provider,
+                })),
+                tags: Some(vec!["generated".to_owned()]),
+                max_bytes: None,
+            })?;
+
+            if response.ok {
+                if let Some(asset) = response.asset.as_mut() {
+                    asset["provider"] = json!({
+                        "id": provider,
+                        "metadata": provider_metadata,
+                    });
+                }
+                response.diagnostics.extend(provider_diagnostics);
             }
             Ok(response)
         }
