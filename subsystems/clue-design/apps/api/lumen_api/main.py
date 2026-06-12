@@ -464,6 +464,7 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
             )
         document = require_document(repo, document_id)
         require_draft_document(document, "apply operations")
+        require_base_version(document, payload.base_version)
         try:
             result = app.state.core.apply_operations(
                 document["scene"], payload.operations
@@ -472,6 +473,13 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
             raise core_http_error(error) from error
 
         diagnostics = result.get("diagnostics", [])
+        envelope = {
+            "intent": payload.intent or "apply_operations",
+            "checkpoint_label": payload.checkpoint,
+            "inverse_operations": (result.get("edit") or {}).get(
+                "inverse_operations"
+            ),
+        }
         updated = repo.update_document_state(
             document_id,
             result["scene"],
@@ -482,6 +490,7 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
             payload.actor.id,
             "structural",
             effective_brand=None,
+            envelope=envelope,
         )
         snapshot = None
         if payload.snapshot_reason:
@@ -500,19 +509,37 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
             snapshot_created=snapshot is not None,
             **diagnostic_summary(diagnostics),
         )
-        return operation_application_dto(
+        response = operation_application_dto(
             updated,
             result.get("applied_operations", 0),
             payload.operations,
             diagnostics,
             snapshot,
         )
+        response["envelope"] = latest_envelope_summary(repo, document_id)
+        return response
 
     @app.get("/documents/{document_id}/operations")
     def list_operations(
         document_id: str, repo: Repository = Depends(repository)
     ) -> List[JsonObject]:
         return repo.list_operations(document_id)
+
+    @app.get("/documents/{document_id}/history")
+    def list_history(
+        document_id: str,
+        limit: int = 50,
+        offset: int = 0,
+        repo: Repository = Depends(repository),
+    ) -> JsonObject:
+        envelopes = repo.list_envelopes(
+            document_id, limit=limit, offset=offset, newest_first=True
+        )
+        return {
+            "schema_version": 1,
+            "document_id": document_id,
+            "envelopes": envelopes,
+        }
 
     @app.post("/documents/{document_id}/edits")
     def apply_structured_edit(
@@ -522,6 +549,7 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
     ) -> JsonObject:
         document = require_document(repo, document_id)
         require_draft_document(document, "apply structured edit")
+        require_base_version(document, payload.base_version)
         try:
             result = app.state.core.apply_structured_edit(document["scene"], payload.edit)
         except CoreError as error:
@@ -539,6 +567,15 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
             )
 
         diagnostics = result.get("diagnostics", [])
+        edit_metadata = result.get("edit") or {}
+        envelope = {
+            "intent": edit_metadata.get("intent") or "structured_edit",
+            "checkpoint_label": payload.checkpoint
+            or edit_metadata.get("checkpoint_label"),
+            "touched_targets": edit_metadata.get("touched_targets") or [],
+            "inverse_operations": edit_metadata.get("inverse_operations"),
+            "lineage": edit_metadata.get("lineage"),
+        }
         updated = repo.update_document_state(
             document_id,
             result["scene"],
@@ -549,6 +586,7 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
             payload.actor.id,
             "structural",
             effective_brand=None,
+            envelope=envelope,
         )
         snapshot = None
         if payload.snapshot_reason:
@@ -576,6 +614,7 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
             snapshot,
         )
         response["edit"] = result.get("edit") or payload.edit
+        response["envelope"] = latest_envelope_summary(repo, document_id)
         return response
 
     @app.post("/documents/{document_id}/snapshots")
@@ -1107,6 +1146,39 @@ def require_draft_document(document: JsonObject, action: str) -> None:
                 ),
             },
         )
+
+
+def require_base_version(document: JsonObject, base_version: Optional[int]) -> None:
+    if base_version is not None and base_version != document["current_version"]:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "edits.base_version_mismatch",
+                "message": (
+                    f"base_version {base_version} does not match current document "
+                    f"version {document['current_version']}; reload the document "
+                    "and rebuild the edit"
+                ),
+                "current_version": document["current_version"],
+            },
+        )
+
+
+def latest_envelope_summary(repo: Repository, document_id: str) -> Optional[JsonObject]:
+    envelopes = repo.list_envelopes(document_id, limit=1, newest_first=True)
+    if not envelopes:
+        return None
+    envelope = envelopes[0]
+    return {
+        "batch_id": envelope["batch_id"],
+        "seq": envelope["seq"],
+        "base_revision": envelope["base_revision"],
+        "intent": envelope["intent"],
+        "checkpoint_label": envelope["checkpoint_label"],
+        "touched_targets": envelope["touched_targets"],
+        "invertible": envelope["inverse_operations"] is not None,
+        "lineage": envelope["lineage"],
+    }
 
 
 def reject_finalized_scene_status(scene: JsonObject) -> None:

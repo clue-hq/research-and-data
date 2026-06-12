@@ -1393,3 +1393,128 @@ def test_mutation_responses_are_compact_dto_envelopes(client: TestClient) -> Non
     assert payload["snapshot"]["snapshot_id"].startswith("snap_")
     assert "scene" not in payload["document"]
     assert "scene" not in payload["snapshot"]
+
+
+def test_structured_edit_envelope_persists_intent_inverses_and_readback(
+    client: TestClient,
+) -> None:
+    document = create_document(client)
+    response = client.post(
+        f"/documents/{document['id']}/edits",
+        json={
+            "edit": {
+                "kind": "modify",
+                "target": {"kind": "node", "id": "node_contact_name"},
+                "patch": {
+                    "kind": "node",
+                    "value": {
+                        "text": {
+                            "content": {"kind": "set", "value": "Enveloped repair"}
+                        }
+                    },
+                },
+            },
+            "actor": {"kind": "agent", "id": "agent_repair"},
+            "source": "agent",
+            "checkpoint": "headline fix",
+        },
+    )
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    envelope_summary = payload["envelope"]
+    assert envelope_summary["intent"] == "modify_node"
+    assert envelope_summary["checkpoint_label"] == "headline fix"
+    assert envelope_summary["invertible"] is True
+    assert envelope_summary["base_revision"] == 0
+    assert envelope_summary["touched_targets"] == [
+        {"kind": "node", "id": "node_contact_name"}
+    ]
+
+    history = client.get(f"/documents/{document['id']}/history").json()
+    assert history["document_id"] == document["id"]
+    envelope = history["envelopes"][0]
+    assert envelope["batch_id"] == envelope_summary["batch_id"]
+    assert envelope["envelope_version"] == 1
+    assert envelope["actor"] == {"kind": "agent", "id": "agent_repair"}
+    assert envelope["source"] == "agent"
+    assert envelope["operations"][0]["kind"] == "update_node"
+    inverse = envelope["inverse_operations"]
+    assert inverse is not None and len(inverse) == 1
+    assert inverse[0]["kind"] == "update_node"
+
+    operation_rows = client.get(f"/documents/{document['id']}/operations").json()
+    assert operation_rows[0]["batch_id"] == envelope["batch_id"]
+
+
+def test_apply_operations_envelope_carries_inverse_and_intent(
+    client: TestClient,
+) -> None:
+    document = create_document(client)
+    response = client.post(
+        f"/documents/{document['id']}/operations",
+        json={
+            "operations": [title_operation("Enveloped Title")],
+            "intent": "rename_document",
+            "checkpoint": "rename",
+        },
+    )
+    assert response.status_code == 200, response.text
+    envelope_summary = response.json()["envelope"]
+    assert envelope_summary["intent"] == "rename_document"
+    assert envelope_summary["invertible"] is True
+
+    history = client.get(f"/documents/{document['id']}/history").json()
+    envelope = history["envelopes"][0]
+    assert envelope["checkpoint_label"] == "rename"
+    inverse = envelope["inverse_operations"]
+    assert inverse[0]["kind"] == "update_document"
+    assert inverse[0]["patch"]["title"]["value"] == "Hospital Letter"
+
+
+def test_base_version_mismatch_rejects_edit_before_mutation(
+    client: TestClient,
+) -> None:
+    document = create_document(client)
+    response = client.post(
+        f"/documents/{document['id']}/operations",
+        json={
+            "operations": [title_operation("Should not apply")],
+            "base_version": 7,
+        },
+    )
+    assert response.status_code == 409, response.text
+    detail = response.json()["detail"]
+    assert detail["code"] == "edits.base_version_mismatch"
+    assert detail["current_version"] == 0
+
+    loaded = client.get(f"/documents/{document['id']}").json()
+    assert loaded["title"] == "Hospital Letter"
+    assert client.get(f"/documents/{document['id']}/history").json()["envelopes"] == []
+
+
+def test_backfill_wraps_pre_envelope_operation_rows(tmp_path: Path) -> None:
+    import sqlite3
+
+    database_path = tmp_path / "api.sqlite3"
+    app = create_app(database_path)
+    client = TestClient(app)
+    document = create_document(client)
+    client.post(
+        f"/documents/{document['id']}/operations",
+        json={"operations": [title_operation("Legacy Title")]},
+    )
+
+    connection = sqlite3.connect(database_path)
+    connection.execute("UPDATE operation_log SET batch_id = NULL")
+    connection.execute("DELETE FROM edit_envelopes")
+    connection.commit()
+    connection.close()
+
+    restarted = TestClient(create_app(database_path))
+    history = restarted.get(f"/documents/{document['id']}/history").json()
+    envelope = history["envelopes"][0]
+    assert envelope["envelope_version"] == 0
+    assert envelope["batch_id"].startswith("backfill_")
+    assert envelope["intent"] is None
+    assert envelope["inverse_operations"] is None
+    assert envelope["operations"][0]["kind"] == "update_document"

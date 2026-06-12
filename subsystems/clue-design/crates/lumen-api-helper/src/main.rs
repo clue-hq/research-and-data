@@ -432,12 +432,22 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
         CoreRequest::ApplyOperations { scene, operations } => {
             let mut scene = parse_scene(scene)?;
             let operations = parse_operations(operations)?;
+            let inverse_operations = scene
+                .invert_operations(&operations)
+                .ok()
+                .flatten()
+                .map(values)
+                .transpose()?;
             match scene.apply_operations_checked(operations) {
-                Ok(report) => Ok(ok_scene(
-                    scene,
-                    report.diagnostics,
-                    Some(report.applied_operations),
-                )),
+                Ok(report) => {
+                    let mut response =
+                        ok_scene(scene, report.diagnostics, Some(report.applied_operations));
+                    response.edit = Some(json!({
+                        "kind": "apply_operations",
+                        "inverse_operations": inverse_operations,
+                    }));
+                    Ok(response)
+                }
                 Err(error) => Ok(CoreResponse {
                     ok: false,
                     scene: None,
@@ -503,6 +513,8 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                         "touched_targets": batch.touched_targets,
                         "intent": batch.intent,
                         "checkpoint_label": batch.checkpoint_label,
+                        "inverse_operations": batch.inverse_operations,
+                        "lineage": batch.lineage,
                     })),
                     dsl: None,
                     export: None,
@@ -525,6 +537,8 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                         "touched_targets": batch.touched_targets,
                         "intent": batch.intent,
                         "checkpoint_label": batch.checkpoint_label,
+                        "inverse_operations": batch.inverse_operations,
+                        "lineage": batch.lineage,
                     })),
                     dsl: None,
                     export: None,

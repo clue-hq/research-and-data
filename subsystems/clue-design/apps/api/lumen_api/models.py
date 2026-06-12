@@ -31,6 +31,9 @@ class ApplyOperationsRequest(BaseModel):
     actor: ActorEnvelope = Field(default_factory=ActorEnvelope)
     source: Literal["editor", "agent", "api", "system"] = "api"
     snapshot_reason: Optional[str] = None
+    base_version: Optional[int] = None
+    intent: Optional[str] = None
+    checkpoint: Optional[str] = None
 
 
 class ApplyStructuredEditRequest(BaseModel):
@@ -38,6 +41,8 @@ class ApplyStructuredEditRequest(BaseModel):
     actor: ActorEnvelope = Field(default_factory=ActorEnvelope)
     source: Literal["editor", "agent", "api", "system"] = "api"
     snapshot_reason: Optional[str] = None
+    base_version: Optional[int] = None
+    checkpoint: Optional[str] = None
 
 
 class CreateSnapshotRequest(BaseModel):

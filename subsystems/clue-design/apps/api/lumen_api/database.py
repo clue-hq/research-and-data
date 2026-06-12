@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple
@@ -43,6 +44,40 @@ def run_migrations(database_path: Path) -> None:
             "effective_brand_mode_json",
             "TEXT",
         )
+        ensure_column(connection, "operation_log", "batch_id", "TEXT")
+        backfill_edit_envelopes(connection)
+
+
+def backfill_edit_envelopes(connection: sqlite3.Connection) -> None:
+    """Wrap pre-envelope operation rows as anonymous version-0 envelopes.
+
+    Idempotent: only operation rows that have never been stamped with a
+    batch_id are wrapped, one envelope per row, and stamping happens in the
+    same transaction so a re-run finds nothing to do. Version-0 envelopes
+    have no intent or inverse and are not undoable.
+    """
+    connection.execute(
+        """
+        INSERT OR IGNORE INTO edit_envelopes (
+          batch_id, document_id, seq, envelope_version, actor_kind, actor_id,
+          source, operations_json, created_at
+        )
+        SELECT
+          'backfill_' || document_id || '_' || sequence,
+          document_id, sequence, 0, actor_kind, actor_id, source,
+          '[' || operation_json || ']', created_at
+        FROM operation_log
+        WHERE batch_id IS NULL
+        """
+    )
+    connection.execute(
+        """
+        UPDATE operation_log
+        SET batch_id = 'backfill_' || document_id || '_' || sequence
+        WHERE batch_id IS NULL
+        """
+    )
+    connection.commit()
 
 
 def ensure_column(
@@ -279,11 +314,13 @@ class Repository:
         actor_id: Optional[str],
         diagnostic_kind: str,
         effective_brand: Optional[Tuple[str, Optional[JsonObject], Optional[JsonObject]]],
+        envelope: Optional[JsonObject] = None,
     ) -> JsonObject:
         operations = list(operations)
         now = utc_now()
         with self.connection:
             document = self.require_document(document_id)
+            base_revision = document["current_version"]
             version = document["current_version"] + len(operations)
             if not operations:
                 version = document["current_version"]
@@ -327,6 +364,22 @@ class Repository:
                     document_id,
                 ),
             )
+            batch_id = None
+            if operations:
+                batch = dict(envelope or {})
+                batch_id = batch.get("batch_id") or new_batch_id()
+                batch["batch_id"] = batch_id
+                batch.setdefault("intent", diagnostic_kind)
+                batch.setdefault("base_revision", base_revision)
+                batch["operations"] = operations
+                self.append_envelope(
+                    document_id,
+                    batch,
+                    source,
+                    actor_kind,
+                    actor_id,
+                    commit=False,
+                )
             self.append_operations(
                 document_id,
                 operations,
@@ -334,6 +387,7 @@ class Repository:
                 actor_kind,
                 actor_id,
                 diagnostics,
+                batch_id=batch_id,
                 commit=False,
             )
             self.store_diagnostics(document_id, diagnostic_kind, diagnostics, commit=False)
@@ -347,6 +401,7 @@ class Repository:
         actor_kind: str,
         actor_id: Optional[str],
         diagnostics: List[JsonObject],
+        batch_id: Optional[str] = None,
         commit: bool = True,
     ) -> None:
         next_sequence = self.next_operation_sequence(document_id)
@@ -362,6 +417,7 @@ class Repository:
                     actor_id,
                     source,
                     encode(diagnostics),
+                    batch_id,
                     now,
                 )
             )
@@ -369,14 +425,94 @@ class Repository:
             """
             INSERT INTO operation_log (
               document_id, sequence, operation_json, actor_kind, actor_id,
-              source, diagnostics_json, created_at
+              source, diagnostics_json, batch_id, created_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             rows,
         )
         if commit:
             self.connection.commit()
+
+    def append_envelope(
+        self,
+        document_id: str,
+        envelope: JsonObject,
+        source: str,
+        actor_kind: str,
+        actor_id: Optional[str],
+        commit: bool = True,
+    ) -> str:
+        batch_id = envelope.get("batch_id") or new_batch_id()
+        self.connection.execute(
+            """
+            INSERT INTO edit_envelopes (
+              batch_id, document_id, seq, envelope_version, base_revision,
+              actor_kind, actor_id, source, intent, checkpoint_label,
+              touched_targets_json, operations_json, inverse_operations_json,
+              lineage_json, reverts_batch_id, reapplies_batch_id, created_at
+            )
+            VALUES (?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                batch_id,
+                document_id,
+                self.next_envelope_sequence(document_id),
+                envelope.get("base_revision"),
+                actor_kind,
+                actor_id,
+                source,
+                envelope.get("intent"),
+                envelope.get("checkpoint_label"),
+                encode(envelope.get("touched_targets") or []),
+                encode(envelope.get("operations") or []),
+                encode_optional(envelope.get("inverse_operations")),
+                encode_optional(envelope.get("lineage")),
+                envelope.get("reverts_batch_id"),
+                envelope.get("reapplies_batch_id"),
+                utc_now(),
+            ),
+        )
+        if commit:
+            self.connection.commit()
+        return batch_id
+
+    def next_envelope_sequence(self, document_id: str) -> int:
+        row = self.connection.execute(
+            "SELECT COALESCE(MAX(seq), 0) AS max_seq FROM edit_envelopes WHERE document_id = ?",
+            (document_id,),
+        ).fetchone()
+        return int(row["max_seq"]) + 1
+
+    def list_envelopes(
+        self,
+        document_id: str,
+        limit: Optional[int] = None,
+        offset: int = 0,
+        newest_first: bool = True,
+    ) -> List[JsonObject]:
+        self.require_document(document_id)
+        order = "DESC" if newest_first else "ASC"
+        query = f"""
+            SELECT * FROM edit_envelopes
+            WHERE document_id = ?
+            ORDER BY seq {order}
+        """
+        params: List[Any] = [document_id]
+        if limit is not None:
+            query += " LIMIT ? OFFSET ?"
+            params.extend([limit, offset])
+        rows = self.connection.execute(query, params).fetchall()
+        return [envelope_from_row(row) for row in rows]
+
+    def require_envelope(self, document_id: str, batch_id: str) -> JsonObject:
+        row = self.connection.execute(
+            "SELECT * FROM edit_envelopes WHERE document_id = ? AND batch_id = ?",
+            (document_id, batch_id),
+        ).fetchone()
+        if row is None:
+            raise NotFoundError("edit_envelope", batch_id)
+        return envelope_from_row(row)
 
     def list_operations(self, document_id: str) -> List[JsonObject]:
         self.require_document(document_id)
@@ -643,8 +779,34 @@ def operation_from_row(row: sqlite3.Row) -> JsonObject:
         "actor": {"kind": row["actor_kind"], "id": row["actor_id"]},
         "source": row["source"],
         "diagnostics": decode(row["diagnostics_json"]),
+        "batch_id": row["batch_id"] if "batch_id" in row.keys() else None,
         "created_at": row["created_at"],
     }
+
+
+def envelope_from_row(row: sqlite3.Row) -> JsonObject:
+    return {
+        "batch_id": row["batch_id"],
+        "document_id": row["document_id"],
+        "seq": row["seq"],
+        "envelope_version": row["envelope_version"],
+        "base_revision": row["base_revision"],
+        "actor": {"kind": row["actor_kind"], "id": row["actor_id"]},
+        "source": row["source"],
+        "intent": row["intent"],
+        "checkpoint_label": row["checkpoint_label"],
+        "touched_targets": decode(row["touched_targets_json"]),
+        "operations": decode(row["operations_json"]),
+        "inverse_operations": decode_optional(row["inverse_operations_json"]),
+        "lineage": decode_optional(row["lineage_json"]),
+        "reverts_batch_id": row["reverts_batch_id"],
+        "reapplies_batch_id": row["reapplies_batch_id"],
+        "created_at": row["created_at"],
+    }
+
+
+def new_batch_id() -> str:
+    return f"batch_{uuid.uuid4().hex[:12]}"
 
 
 def snapshot_from_row(row: sqlite3.Row) -> JsonObject:
