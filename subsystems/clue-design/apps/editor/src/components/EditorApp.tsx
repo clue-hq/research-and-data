@@ -42,7 +42,6 @@ import type {
   ParentRef,
   Scene
 } from "@/engine/contracts";
-import { createLocalEnginePort } from "@/engine/editorEngine";
 import {
   createEditQueue,
   type EditQueuePort,
@@ -96,9 +95,11 @@ export interface EditorAppProps {
   exportRunner?: EditorExportRunner;
   preflightRunner?: EditorPreflightRunner;
   /**
-   * Optimistic editing engine override. When omitted the editor uses the
-   * legacy local TS engine and, behind NEXT_PUBLIC_LUMEN_WASM_CORE,
-   * upgrades to the WASM core once the module loads.
+   * Optimistic editing engine override. When omitted, the editor loads
+   * the WASM core behind NEXT_PUBLIC_LUMEN_WASM_CORE; until it is active
+   * (flag off, module loading/failed, or version mismatch) the editor is
+   * in server-only mode — local optimistic editing is unavailable. The
+   * legacy TS mirror was retired at Track E W4.
    */
   optimisticEngine?: OptimisticEnginePort;
   /**
@@ -152,14 +153,12 @@ export default function EditorApp({
   editQueueFactory = defaultEditQueueFactory
 }: EditorAppProps = {}) {
   const [scene, setScene] = useState<Scene>(initialScene);
-  // The optimistic engine owns local edit application (Track E). It starts
-  // as the legacy local TS engine and is upgraded to the WASM core behind
-  // the flag once the module loads; `replaceScene` keeps it in sync with
-  // every non-operation scene replacement (agent drafts, preflight, undo).
-  const engineRef = useRef<OptimisticEnginePort | null>(null);
-  if (engineRef.current === null) {
-    engineRef.current = optimisticEngine ?? createLocalEnginePort(initialScene);
-  }
+  // The optimistic engine owns local edit application (Track E): the WASM
+  // core, loaded behind the flag (or injected by tests). Until it is
+  // active the editor is in server-only mode. `replaceScene` keeps the
+  // engine in sync with every non-operation scene replacement (agent
+  // drafts, preflight, undo frames).
+  const engineRef = useRef<OptimisticEnginePort | null>(optimisticEngine ?? null);
   const sceneRef = useRef<Scene>(scene);
   sceneRef.current = scene;
   const [activePageId, setActivePageId] = useState<PageId | null>(() => firstPageId(initialScene));
@@ -221,8 +220,9 @@ export default function EditorApp({
     }
   }, [activePageId, scene, selectedNodeId]);
 
-  // Upgrade the optimistic engine to the WASM core behind the flag. Load
-  // failure keeps the legacy engine (until W4 retires it); the W5 version
+  // Activate the WASM core behind the flag. Load failure leaves the
+  // editor in server-only mode (it stays functional: agent, preflight,
+  // export, and document history all run server-side); the W5 version
   // handshake gates activation on matching API build info.
   useEffect(() => {
     if (optimisticEngine || !wasmCoreFlagEnabled()) {
@@ -237,7 +237,7 @@ export default function EditorApp({
       try {
         engineRef.current = new WasmEngine(module, sceneRef.current);
       } catch {
-        // Keep the current engine; the editor stays functional.
+        // Server-only mode; the editor stays functional.
       }
     })();
     return () => {
@@ -259,8 +259,7 @@ export default function EditorApp({
   // W3 optimistic pipeline: locally-applied batches persist to the
   // document API in order; the server reconciles at drain. Divergence is a
   // bug signal — the server scene replaces the local one and a diagnostic
-  // surfaces. Only the WASM engine enqueues (the legacy local engine keeps
-  // the pre-Track-E local-only behavior).
+  // surfaces.
   const editQueueRef = useRef<EditQueuePort | null>(null);
   const enqueueForPersistence = (operations: Operation[]) => {
     if (!documentId) {
@@ -289,6 +288,18 @@ export default function EditorApp({
     }
     const engine = engineRef.current;
     if (!engine) {
+      setDiagnostics([
+        {
+          severity: "warning",
+          phase: "operation",
+          code: "EDITOR_SERVER_ONLY_MODE",
+          message: "Local editing requires the WASM engine; the editor is in server-only mode.",
+          subject: { kind: "document" },
+          hint: wasmCoreFlagEnabled()
+            ? "The engine module is unavailable (still loading, failed to load, or version mismatch with the API). Reload the editor or check the /wasm assets."
+            : "Enable NEXT_PUBLIC_LUMEN_WASM_CORE to activate in-browser optimistic editing."
+        }
+      ]);
       return;
     }
     // The engine snapshot, not the React closure: correct even when two
@@ -308,10 +319,7 @@ export default function EditorApp({
                 id: selectedNodeId
               }
             : null,
-          hint:
-            engine.kind === "wasm"
-              ? "The operation was rejected by the lumen-core engine; the scene is unchanged."
-              : "The editor will use checked core/WASM operation application once that workstream is available."
+          hint: "The operation was rejected by the lumen-core engine; the scene is unchanged."
         }
       ]);
       return;

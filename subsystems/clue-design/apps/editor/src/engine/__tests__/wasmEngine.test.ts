@@ -123,6 +123,22 @@ describe.skipIf(!wasmArtifactPresent)("WasmEngine (real artifact)", () => {
     sceneJsonSpy.mockRestore();
   });
 
+  it("pins the TS slotIdFromKey mirror against the engine's derivation", async () => {
+    const module = await loadWasmModuleFromDisk();
+    const { slotIdFromKey } = await import("../operations");
+    for (const key of [
+      "account.name",
+      "account_name",
+      "contact.full_name",
+      "campaign.cta",
+      "research.key_insights",
+      "x",
+      "UPPER.case-key!"
+    ]) {
+      expect(slotIdFromKey(key), key).toBe(module.slotIdForKey(key));
+    }
+  });
+
   it("computes inverse operations that round-trip through reset-free undo", async () => {
     const module = await loadWasmModuleFromDisk();
     const engine = new WasmEngine(module, cloneScene(baseScene));

@@ -57,9 +57,36 @@ export function nodePatch(patch: Partial<NodePatch>): NodePatch {
     asset_placement: patch.asset_placement ?? unchanged(),
     clip: patch.clip ?? unchanged(),
     layout: patch.layout ?? unchanged(),
-    computed: patch.computed ?? unchanged(),
+    // Canonical edit semantics (lumen-core `build_node_modify` /
+    // `node_patch_affects_render`): a render-affecting patch clears stale
+    // computed geometry explicitly in the operation itself. The raw
+    // operation layer applies patches verbatim — engine and server both —
+    // so the builder is where invalidation belongs.
+    computed: patch.computed ?? (nodePatchAffectsRender(patch) ? clear() : unchanged()),
     locked: patch.locked ?? unchanged()
   };
+}
+
+/** Mirror of lumen-core editing.rs `node_patch_affects_render`, pinned by
+ * the gesture-conformance fixture and the cross-binding parity tests. */
+function nodePatchAffectsRender(patch: Partial<NodePatch>): boolean {
+  const changed = (field?: { kind: string }) =>
+    field !== undefined && field.kind !== "unchanged";
+  return (
+    changed(patch.kind) ||
+    changed(patch.transform) ||
+    changed(patch.size) ||
+    changed(patch.fills) ||
+    changed(patch.strokes) ||
+    changed(patch.effects) ||
+    changed(patch.corner) ||
+    changed(patch.opacity) ||
+    changed(patch.opacity_token) ||
+    changed(patch.source_asset_id) ||
+    changed(patch.asset_placement) ||
+    changed(patch.clip) ||
+    changed(patch.layout)
+  );
 }
 
 export function pagePatch(patch: Partial<PagePatch>): PagePatch {

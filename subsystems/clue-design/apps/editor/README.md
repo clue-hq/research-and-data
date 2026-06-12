@@ -53,9 +53,19 @@ npm run build:wasm   # builds crates/lumen-wasm into public/wasm/ and checks the
 
 The build enforces the Track E bundle budget (gzipped `.wasm` < 3MB). The
 editor loads the module at runtime from `/wasm/`, so `npm run build` never
-depends on the artifact existing; a missing or failed load degrades the
-editor (legacy TS path until W4 retires it, server-only mode after).
+depends on the artifact existing.
+
+### Server-only mode (W4)
+
+The legacy TS operation mirror was retired at Track E W4: the WASM engine
+is the only local optimistic apply path. When it is not active — flag off,
+module still loading, load failure, or version handshake mismatch — the
+editor runs in **server-only mode**: local canvas/inspector editing is
+unavailable (surfaced as the `EDITOR_SERVER_ONLY_MODE` diagnostic) while
+every server-backed flow (agent runs, preflight, export, document history
+undo/redo) keeps working.
 
 Vitest suites that exercise the real WASM artifact skip with a notice when
-`public/wasm/` has not been built. Run `npm run build:wasm` first to
-include them; the conformance gate requires them to run.
+`public/wasm/` has not been built; `npm test` builds it automatically when
+missing (pretest hook) if the Rust toolchain is available. The conformance
+gate requires those suites to run.

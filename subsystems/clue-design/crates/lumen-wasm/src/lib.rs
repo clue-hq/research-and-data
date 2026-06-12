@@ -25,6 +25,14 @@ pub fn engine_version() -> String {
     engine::version_payload().to_string()
 }
 
+/// Deterministic slot id derivation (lumen-core `slot_id_for_key`). The
+/// editor keeps a synchronous TS mirror of this hash; its test suite pins
+/// the mirror against this binding so drift fails CI.
+#[wasm_bindgen(js_name = slotIdForKey)]
+pub fn slot_id_for_key(key: &str) -> String {
+    lumen_core::slot_id_for_key(&lumen_core::SlotKey::from(key)).to_string()
+}
+
 #[wasm_bindgen]
 pub struct LumenEngine {
     inner: Engine,

@@ -77,6 +77,17 @@ fn apply_delta(scene: &mut Value, delta: &Value) {
 }
 
 #[test]
+fn slot_id_binding_matches_core_derivation() {
+    // The editor pins its synchronous TS slotIdFromKey mirror against this
+    // binding; this test pins the binding against lumen-core itself.
+    assert_eq!(
+        lumen_wasm::slot_id_for_key("account.name"),
+        lumen_core::slot_id_for_key(&lumen_core::SlotKey::from("account.name")).to_string()
+    );
+    assert!(lumen_wasm::slot_id_for_key("account.name").starts_with("slot_account_name_"));
+}
+
+#[test]
 fn version_reports_schema_commit_and_heuristic_measurement() {
     let version = version_payload();
     assert_eq!(version["schema_version"], json!(lumen_core::SCHEMA_VERSION));

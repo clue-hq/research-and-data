@@ -52,11 +52,12 @@ pub use brand::{
 pub use diagnostics::{Diagnostic, DiagnosticSeverity, DiagnosticSubject, Phase};
 pub use dsl::{
     compile_dsl, compile_dsl_into_scene, compile_dsl_into_scene_with_session, normalize_dsl,
-    parse_dsl, DslCompileOutput, DslCompileSession, DslCompileSessionSnapshot, DslDiagnostic,
-    DslDimension, DslDirective, DslDocument, DslElement, DslElementKind, DslFill, DslFont, DslHalt,
-    DslHistoryAdapter, DslLayoutAnchor, DslLayoutAxis, DslLine, DslLineKind, DslModification,
-    DslPage, DslPagePreset, DslParentFrameSnapshot, DslParentPlacement, DslParseOutput,
-    DslProperty, DslScalar, DslSceneCompileOutput, DslShadow, DslStroke, SourceSpan,
+    parse_dsl, slot_id_for_key, DslCompileOutput, DslCompileSession, DslCompileSessionSnapshot,
+    DslDiagnostic, DslDimension, DslDirective, DslDocument, DslElement, DslElementKind, DslFill,
+    DslFont, DslHalt, DslHistoryAdapter, DslLayoutAnchor, DslLayoutAxis, DslLine, DslLineKind,
+    DslModification, DslPage, DslPagePreset, DslParentFrameSnapshot, DslParentPlacement,
+    DslParseOutput, DslProperty, DslScalar, DslSceneCompileOutput, DslShadow, DslStroke,
+    SourceSpan,
 };
 pub use editing::{
     batch_scope_violations, build_archive_asset, build_asset_modify, build_clone_subtree,

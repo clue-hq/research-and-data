@@ -49,6 +49,7 @@ export interface WasmEngineInstance {
 /** Raw wasm-pack module surface (subset the editor uses). */
 export interface WasmModule {
   engineVersion(): string;
+  slotIdForKey(key: string): string;
   LumenEngine: new (sceneJson: string) => WasmEngineInstance;
 }
 
@@ -97,9 +98,10 @@ export interface EngineStructuredEditOutcome extends EngineApplyOutcome {
 }
 
 /**
- * The optimistic engine port EditorApp consumes. Implemented by
- * `WasmEngine` (the real engine) and, until W4 retires it, by the legacy
- * local TS adapter.
+ * The optimistic engine port EditorApp consumes. `WasmEngine` is the only
+ * production implementation since W4 retired the legacy local TS adapter;
+ * tests may inject fakes (the `local` kind is reserved for those — local
+ * fakes are never enqueued to the server).
  */
 export interface OptimisticEnginePort {
   readonly kind: "wasm" | "local";
@@ -258,8 +260,7 @@ export interface WasmModuleLoadOptions {
 /**
  * Runtime loader for the wasm-pack output in `public/wasm/`. The Next.js
  * build never depends on the artifact existing: a missing or failing
- * module resolves to `null` and the editor degrades (legacy path until W4,
- * server-only mode after).
+ * module resolves to `null` and the editor degrades to server-only mode.
  */
 export async function loadWasmModule(
   options: WasmModuleLoadOptions = {}
@@ -276,3 +277,4 @@ export async function loadWasmModule(
     return null;
   }
 }
+

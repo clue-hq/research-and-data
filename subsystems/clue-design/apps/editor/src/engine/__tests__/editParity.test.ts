@@ -1,22 +1,25 @@
 import { describe, expect, it } from "vitest";
 
 import parityFixture from "../../../../../fixtures/edit-parity/cases.json";
-import minimalScene from "../../../../../crates/lumen-core/fixtures/minimal_scene.json";
-import type { Scene } from "../contracts";
 import {
   deleteEdit,
   modifyNodeEdit,
   modifyNodeStacksEdit,
   modifyPageNameEdit,
-  optimisticOperations,
   type StructuredEdit
 } from "../structuredEdits";
 
 /**
- * Cross-language parity: these are the same pinned cases the Rust side
- * asserts in crates/lumen-api-helper/tests/edit_parity.rs. The TS wrapper
- * must emit the identical wire format, and the optimistic operations must
- * equal the canonical operations the Rust builders produce.
+ * W4 smoke contract: with the TS optimistic mirror retired, the same
+ * engine (lumen-core) runs on both sides of the boundary, so byte parity
+ * of operation application is tautological. What still needs pinning is
+ * the WIRE FORMAT: the TS builders must emit exactly the JSON the Rust
+ * `StructuredEditInstruction` deserializes.
+ *
+ * The full application-parity assertions live where the engines run:
+ * - crates/lumen-api-helper/tests/edit_parity.rs (server helper)
+ * - crates/lumen-api-helper/tests/wasm_helper_parity.rs (wasm vs helper)
+ * - apps/editor/src/engine/__tests__/wasmEngine.test.ts (wasm engine)
  */
 
 type ParityCase = {
@@ -26,7 +29,6 @@ type ParityCase = {
 };
 
 const cases = (parityFixture as { cases: ParityCase[] }).cases;
-const scene = minimalScene as unknown as Scene;
 
 function builderFor(name: string): StructuredEdit {
   switch (name) {
@@ -79,7 +81,7 @@ function builderFor(name: string): StructuredEdit {
   }
 }
 
-describe("edit parity with the Rust builders", () => {
+describe("structured-edit wire-format smoke (vs pinned parity fixture)", () => {
   it("covers every pinned parity case", () => {
     expect(cases.length).toBeGreaterThan(0);
     for (const parityCase of cases) {
@@ -91,14 +93,6 @@ describe("edit parity with the Rust builders", () => {
     "emits the pinned wire format for %s",
     (_name, parityCase) => {
       expect(builderFor(parityCase.name)).toEqual(parityCase.edit);
-    }
-  );
-
-  it.each(cases.map((parityCase) => [parityCase.name, parityCase] as const))(
-    "optimistic operations match the canonical Rust operations for %s",
-    (_name, parityCase) => {
-      const operations = optimisticOperations(scene, parityCase.edit);
-      expect(operations).toEqual(parityCase.expected_operations);
     }
   );
 });
