@@ -47,6 +47,9 @@ export function nodePatch(patch: Partial<NodePatch>): NodePatch {
     size: patch.size ?? unchanged(),
     fills: patch.fills ?? unchanged(),
     strokes: patch.strokes ?? unchanged(),
+    // The Rust core skips `effects` entirely when unchanged, so the wire
+    // format only carries it when set (keeps pinned parity fixtures stable).
+    ...(patch.effects ? { effects: patch.effects } : {}),
     corner: patch.corner ?? unchanged(),
     opacity: patch.opacity ?? unchanged(),
     opacity_token: patch.opacity_token ?? unchanged(),

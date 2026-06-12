@@ -88,6 +88,75 @@
       "expected_operations": [
         { "kind": "remove_node", "node_id": "node_contact_name" }
       ]
+    },
+    {
+      "name": "modify_node_add_drop_shadow_entry",
+      "edit": {
+        "kind": "modify",
+        "target": { "kind": "node", "id": "node_contact_name" },
+        "patch": {
+          "kind": "node",
+          "value": {
+            "effect_edits": [
+              {
+                "kind": "add",
+                "entry": {
+                  "id": "shadow_soft",
+                  "kind": {
+                    "kind": "drop_shadow",
+                    "color": { "kind": "hex", "value": "#000000" },
+                    "opacity": 0.18,
+                    "x": 0.0,
+                    "y": 8.0,
+                    "blur": 24.0,
+                    "spread": 0.0
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      "expected_operations": [
+        {
+          "kind": "update_node",
+          "node_id": "node_contact_name",
+          "patch": {
+            "asset_placement": { "kind": "unchanged" },
+            "clip": { "kind": "unchanged" },
+            "computed": { "kind": "clear" },
+            "corner": { "kind": "unchanged" },
+            "effects": {
+              "kind": "set",
+              "value": [
+                {
+                  "id": "shadow_soft",
+                  "kind": {
+                    "kind": "drop_shadow",
+                    "color": { "kind": "hex", "value": "#000000" },
+                    "opacity": 0.18,
+                    "x": 0.0,
+                    "y": 8.0,
+                    "blur": 24.0,
+                    "spread": 0.0
+                  }
+                }
+              ]
+            },
+            "fills": { "kind": "unchanged" },
+            "kind": { "kind": "unchanged" },
+            "layout": { "kind": "unchanged" },
+            "locked": { "kind": "unchanged" },
+            "name": { "kind": "unchanged" },
+            "opacity": { "kind": "unchanged" },
+            "opacity_token": { "kind": "unchanged" },
+            "size": { "kind": "unchanged" },
+            "source_asset_id": { "kind": "unchanged" },
+            "strokes": { "kind": "unchanged" },
+            "transform": { "kind": "unchanged" }
+          }
+        }
+      ]
     }
   ]
 }

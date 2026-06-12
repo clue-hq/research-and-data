@@ -6,6 +6,7 @@ export type NodeId = StableId;
 export type SlotId = StableId;
 export type SlotKey = string;
 export type PaintId = StableId;
+export type EffectId = StableId;
 export type AssetId = StableId;
 export type BrandKitId = StableId;
 export type TemplateRevisionId = StableId;
@@ -141,6 +142,8 @@ export interface Node {
   children: NodeId[];
   fills: Fill[];
   strokes: Stroke[];
+  /** Effects Contract V0: omitted by the Rust core when empty. */
+  effects?: Effect[];
   corner: CornerRadii;
   opacity: number;
   opacity_token?: string | null;
@@ -397,7 +400,32 @@ export interface Stroke {
   paint: Paint;
   width: number;
   width_token?: string | null;
+  /** Effects Contract V0 stroke extensions; omitted at their defaults. */
+  dash?: number[] | null;
+  cap?: StrokeCap;
+  join?: StrokeJoin;
+  align?: StrokeAlign;
 }
+
+export type StrokeCap = "butt" | "round" | "square";
+export type StrokeJoin = "miter" | "round" | "bevel";
+export type StrokeAlign = "center" | "inside" | "outside";
+
+export interface Effect {
+  id: EffectId;
+  kind: EffectKind;
+}
+
+export type EffectKind = {
+  kind: "drop_shadow";
+  color: Color;
+  opacity: number;
+  x: number;
+  y: number;
+  blur: number;
+  spread: number;
+  color_token?: string | null;
+};
 
 export type Paint =
   | {
@@ -642,6 +670,8 @@ export interface NodePatch {
   size: FieldPatch<SizeSpec>;
   fills: FieldPatch<Fill[]>;
   strokes: FieldPatch<Stroke[]>;
+  /** Skipped by the Rust core when unchanged (back-compat). */
+  effects?: FieldPatch<Effect[]>;
   corner: FieldPatch<CornerRadii>;
   opacity: FieldPatch<number>;
   opacity_token: OptionalFieldPatch<string>;

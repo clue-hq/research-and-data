@@ -68,7 +68,7 @@ pub use editing::{
     CloneSubtreeRequest, ComputedClonePolicy, EditBatch, EditError, EditErrorKind, EditPatch,
     EditScope, EditScopeMode, EditTargetRef, ExportProfileEditPatch, NodeEditPatch, PageEditPatch,
     RelativePlacement, ReplaceNodeRequest, ReplaceSlotPolicy, ResolvedEditTarget, ScopeViolation,
-    SlotEditPatch, TextEditPatch,
+    SlotEditPatch, StackEntryEdit, TextEditPatch,
 };
 pub use export_contract::{
     ExportAdapter, ExportArtifact, ExportError, ExportFormat, ExportProfile, ExportPurpose,

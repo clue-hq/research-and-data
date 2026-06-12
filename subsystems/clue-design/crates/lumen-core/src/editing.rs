@@ -1,14 +1,14 @@
 use crate::assets::AssetStatus;
 use crate::diagnostics::{Diagnostic, DiagnosticSubject, Phase};
 use crate::export_contract::{ExportFormat, PdfIntent, RasterScale};
-use crate::ids::{AssetId, NodeId, PageId, SlotId, SlotKey};
+use crate::ids::{AssetId, EffectId, NodeId, PageId, PaintId, SlotId, SlotKey};
 use crate::operations::{
     DocumentPatch, FieldPatch, NodePatch, Operation, OperationError, OperationReport,
     OptionalFieldPatch, PagePatch,
 };
 use crate::scene::{
-    AutoLayoutProps, Color, CornerRadii, Fill, Node, NodeKind, PageSize, Paint, ParentRef, Rect,
-    Scene, SizeSpec, Stroke, TextAlign, TextDirection, TextNode, TextWrap, Transform,
+    AutoLayoutProps, Color, CornerRadii, Effect, Fill, Node, NodeKind, PageSize, Paint, ParentRef,
+    Rect, Scene, SizeSpec, Stroke, TextAlign, TextDirection, TextNode, TextWrap, Transform,
 };
 use crate::slots::Slot;
 use serde::{Deserialize, Serialize};
@@ -542,6 +542,29 @@ pub struct TextEditPatch {
     pub letter_spacing_token: OptionalFieldPatch<String>,
 }
 
+/// One targeted edit against a fill/stroke/effect stack entry, addressed by
+/// the entry's stable id (Effects Contract V0 / Phase D extension). Entry
+/// edits compose: they apply in order on top of any whole-stack patch, and
+/// unrelated entries are never touched.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum StackEntryEdit<T, I> {
+    /// Replace the entry currently addressed by `id` with `value` (the
+    /// value's own id may differ to rename the entry).
+    Set { id: I, value: T },
+    /// Insert a new entry, at `index` or appended when omitted.
+    Add {
+        entry: T,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        index: Option<usize>,
+    },
+    /// Remove the entry addressed by `id`.
+    Remove { id: I },
+    /// Move the entry addressed by `id` to `index` (within the stack after
+    /// the entry is detached).
+    Reorder { id: I, index: usize },
+}
+
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct NodeEditPatch {
@@ -550,6 +573,14 @@ pub struct NodeEditPatch {
     pub size: FieldPatch<SizeSpec>,
     pub fills: FieldPatch<Vec<Fill>>,
     pub strokes: FieldPatch<Vec<Stroke>>,
+    #[serde(skip_serializing_if = "FieldPatch::is_unchanged")]
+    pub effects: FieldPatch<Vec<Effect>>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub fill_edits: Vec<StackEntryEdit<Fill, PaintId>>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub stroke_edits: Vec<StackEntryEdit<Stroke, PaintId>>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub effect_edits: Vec<StackEntryEdit<Effect, EffectId>>,
     pub corner: FieldPatch<CornerRadii>,
     pub opacity: FieldPatch<f64>,
     pub opacity_token: OptionalFieldPatch<String>,
@@ -911,12 +942,38 @@ pub fn build_node_modify(
         });
     }
 
+    let fills = resolve_stack_patch(
+        &node.fills,
+        patch.fills,
+        &patch.fill_edits,
+        |fill| &fill.id,
+        "fill",
+        &node_id,
+    )?;
+    let strokes = resolve_stack_patch(
+        &node.strokes,
+        patch.strokes,
+        &patch.stroke_edits,
+        |stroke| &stroke.id,
+        "stroke",
+        &node_id,
+    )?;
+    let effects = resolve_stack_patch(
+        &node.effects,
+        patch.effects,
+        &patch.effect_edits,
+        |effect| &effect.id,
+        "effect",
+        &node_id,
+    )?;
+
     let mut node_patch = NodePatch {
         name: patch.name,
         transform: patch.transform,
         size: patch.size,
-        fills: patch.fills,
-        strokes: patch.strokes,
+        fills,
+        strokes,
+        effects,
         corner: patch.corner,
         opacity: patch.opacity,
         opacity_token: patch.opacity_token,
@@ -1894,6 +1951,120 @@ fn sanitize_id_suffix(suffix: &str) -> String {
     } else {
         format!("_{}", sanitized)
     }
+}
+
+/// Resolve a stack field (fills/strokes/effects) from a whole-stack patch
+/// plus per-entry edits. Entry edits apply in order on top of the
+/// whole-stack value (or the node's current stack when no whole-stack patch
+/// is given), so unrelated entries always survive untouched.
+fn resolve_stack_patch<T: Clone, I: Clone + Eq + fmt::Display>(
+    current: &[T],
+    whole: FieldPatch<Vec<T>>,
+    edits: &[StackEntryEdit<T, I>],
+    id_of: impl Fn(&T) -> &I,
+    entity: &str,
+    node_id: &NodeId,
+) -> Result<FieldPatch<Vec<T>>, EditError> {
+    if edits.is_empty() {
+        return Ok(whole);
+    }
+
+    let mut stack = match whole {
+        FieldPatch::Set(value) => value,
+        FieldPatch::Unchanged => current.to_vec(),
+    };
+
+    for edit in edits {
+        apply_stack_entry_edit(&mut stack, edit, &id_of, entity, node_id)?;
+    }
+
+    let mut seen = BTreeSet::new();
+    for entry in &stack {
+        if !seen.insert(id_of(entry).to_string()) {
+            return Err(EditError::new(
+                EditErrorKind::IdCollision,
+                format!(
+                    "{} stack on node {} would contain duplicate id {}",
+                    entity,
+                    node_id,
+                    id_of(entry)
+                ),
+            )
+            .with_target(EditTargetRef::Node(node_id.clone())));
+        }
+    }
+
+    Ok(FieldPatch::Set(stack))
+}
+
+fn apply_stack_entry_edit<T: Clone, I: Clone + Eq + fmt::Display>(
+    stack: &mut Vec<T>,
+    edit: &StackEntryEdit<T, I>,
+    id_of: &impl Fn(&T) -> &I,
+    entity: &str,
+    node_id: &NodeId,
+) -> Result<(), EditError> {
+    let position = |stack: &[T], id: &I| stack.iter().position(|entry| id_of(entry) == id);
+    let missing = |id: &I| {
+        EditError::new(
+            EditErrorKind::TargetNotFound,
+            format!("{} {} does not exist on node {}", entity, id, node_id),
+        )
+        .with_target(EditTargetRef::Node(node_id.clone()))
+    };
+
+    match edit {
+        StackEntryEdit::Set { id, value } => {
+            let index = position(stack, id).ok_or_else(|| missing(id))?;
+            stack[index] = value.clone();
+        }
+        StackEntryEdit::Add { entry, index } => {
+            if position(stack, id_of(entry)).is_some() {
+                return Err(EditError::new(
+                    EditErrorKind::IdCollision,
+                    format!(
+                        "{} {} already exists on node {}",
+                        entity,
+                        id_of(entry),
+                        node_id
+                    ),
+                )
+                .with_target(EditTargetRef::Node(node_id.clone())));
+            }
+            let index = index.unwrap_or(stack.len());
+            if index > stack.len() {
+                return Err(EditError::new(
+                    EditErrorKind::AnchorNotFound,
+                    format!(
+                        "{} insert index {} is out of bounds on node {}",
+                        entity, index, node_id
+                    ),
+                )
+                .with_target(EditTargetRef::Node(node_id.clone())));
+            }
+            stack.insert(index, entry.clone());
+        }
+        StackEntryEdit::Remove { id } => {
+            let index = position(stack, id).ok_or_else(|| missing(id))?;
+            stack.remove(index);
+        }
+        StackEntryEdit::Reorder { id, index } => {
+            let current_index = position(stack, id).ok_or_else(|| missing(id))?;
+            let entry = stack.remove(current_index);
+            if *index > stack.len() {
+                return Err(EditError::new(
+                    EditErrorKind::AnchorNotFound,
+                    format!(
+                        "{} reorder index {} is out of bounds on node {}",
+                        entity, index, node_id
+                    ),
+                )
+                .with_target(EditTargetRef::Node(node_id.clone())));
+            }
+            stack.insert(*index, entry);
+        }
+    }
+    Ok(())
 }
 
 fn apply_text_edit_patch(mut text: TextNode, patch: TextEditPatch) -> TextNode {
