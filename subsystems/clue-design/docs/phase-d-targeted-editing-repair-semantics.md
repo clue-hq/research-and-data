@@ -1216,3 +1216,43 @@ history-aware undo/redo and checkpoints (unblocked by Decisions 0–2), all
 lifecycle deletes, `#document`/`#export` lowering, `ungroup`, patch-group
 `override`, inline block replace, strict agent scope enforcement, and full
 editor unification. Nothing in the charter remains unowned.
+
+## V1 Final Status (2026-06-12)
+
+Phase D is complete. Every "Not done"/"Partial" row in the V0 coverage
+matrix above shipped in V1 (commits `faa411e`..`a600472` on
+`phase-d/targeted-editing-repair-semantics-v1`):
+
+- Inverse operation batches and clone lineage on `EditBatch`; round-trip
+  identity property-tested for every builder.
+- Envelope-persisted history (intent, checkpoint, actor, touched targets,
+  base revision, operations, inverses) with version-0 backfill; replay
+  reads operations only.
+- Document-level linear undo/redo as inverse-batch append, checkpoint
+  anchors, and revert-to-checkpoint (`POST /undo`, `/redo`, `/revert`,
+  `GET /history`, `/checkpoints`).
+- Strict agent target-scope enforcement, fail-closed pre-mutation, with
+  in_scope/rejected verdicts persisted to agent traces.
+- `#document` and `#export:name` modify lowering; DSL `// label`
+  checkpoint capture threaded into envelopes and traces.
+- Lifecycle safe deletes for pages, slots, assets (archive-first), and
+  export profiles per Decisions 3-6, all undoable.
+- `append`/`prepend`, `delete(..., if_exists)`, `parent` relative anchors;
+  locked-target authority is the recorded unlock-as-edit model (supersedes
+  the bypass-flag design - strictly more auditable).
+- `ungroup` (auto-layout protected behind `allow_layout`), `override`
+  patch groups with containment enforcement, and history-adapter
+  `undo("label")`/`redo` lowering (`DslHistoryAdapter`).
+- Inline block replace with whole-directive atomic rollback - the last
+  unimplemented spec syntax.
+- Editor adoption: TypeScript structured-edit wrapper, `/edits` client
+  with scope/base_version/checkpoint, envelope HistoryPanel, and the
+  cross-language parity fixtures (`fixtures/edit-parity/cases.json`)
+  asserted byte-for-byte from Rust and Vitest in CI.
+
+Verification: 274 Rust, 71 Python, and 175 TypeScript tests pass; fmt,
+clippy (-D warnings), wasm32 check, and the editor build are clean. The
+deterministic agent repair proof is the scoped structured-edit trace
+tests: a critic-targeted repair applies through `apply_structured_edit`
+with an in_scope verdict and no page regeneration, and the out-of-scope
+variant is rejected before mutation with the scene unchanged.
