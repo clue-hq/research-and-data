@@ -1,13 +1,26 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import subprocess
+import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+from uuid import uuid4
+
+from .observability import (
+    current_request_id,
+    diagnostic_summary,
+    duration_ms,
+    helper_request_summary,
+    log_event,
+)
 
 
 JsonObject = Dict[str, Any]
+core_logger = logging.getLogger("lumen_api.core")
+helper_logger = logging.getLogger("lumen_api.core.helper")
 
 
 class CoreError(RuntimeError):
@@ -197,6 +210,21 @@ class CoreClient:
 
     def _run(self, request: JsonObject, raise_on_error: bool = True) -> JsonObject:
         command = self._command()
+        action = str(request.get("action") or "unknown")
+        helper_call_id = f"core_{uuid4().hex}"
+        start = time.perf_counter()
+        env = os.environ.copy()
+        env.setdefault("LUMEN_CORE_HELPER_LOG", "1")
+        env["LUMEN_CORE_CALL_ID"] = helper_call_id
+        if current_request_id():
+            env["LUMEN_REQUEST_ID"] = current_request_id() or ""
+        log_event(
+            core_logger,
+            logging.INFO,
+            "core_helper_started",
+            helper_call_id=helper_call_id,
+            **helper_request_summary(request),
+        )
         process = subprocess.run(
             command,
             input=json.dumps(request),
@@ -204,18 +232,52 @@ class CoreClient:
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             cwd=str(self.repo_root),
+            env=env,
             check=False,
         )
+        forward_helper_logs(process.stderr, helper_call_id, action)
         if process.returncode != 0:
+            log_event(
+                core_logger,
+                logging.ERROR,
+                "core_helper_process_failed",
+                helper_call_id=helper_call_id,
+                action=action,
+                returncode=process.returncode,
+                duration_ms=duration_ms(start),
+                stderr_line_count=len([line for line in process.stderr.splitlines() if line]),
+            )
             raise CoreError("helper.process", process.stderr.strip() or process.stdout)
 
         try:
             response = json.loads(process.stdout)
         except json.JSONDecodeError as error:
+            log_event(
+                core_logger,
+                logging.ERROR,
+                "core_helper_response_invalid",
+                helper_call_id=helper_call_id,
+                action=action,
+                duration_ms=duration_ms(start),
+                stdout_length=len(process.stdout),
+            )
             raise CoreError("helper.response", str(error)) from error
 
+        diagnostics = response.get("diagnostics") or []
+        error = response.get("error") or {}
+        log_event(
+            core_logger,
+            logging.INFO,
+            "core_helper_completed",
+            helper_call_id=helper_call_id,
+            action=action,
+            ok=bool(response.get("ok")),
+            duration_ms=duration_ms(start),
+            applied_operations=response.get("applied_operations"),
+            error_code=error.get("code") if isinstance(error, dict) else None,
+            **diagnostic_summary(diagnostics if isinstance(diagnostics, list) else []),
+        )
         if not response.get("ok") and raise_on_error:
-            error = response.get("error") or {}
             raise CoreError(
                 error.get("code", "helper.error"),
                 error.get("message", "core helper returned an error"),
@@ -236,6 +298,48 @@ class CoreClient:
             "-p",
             "lumen-api-helper",
         ]
+
+
+def forward_helper_logs(stderr: str, helper_call_id: str, action: str) -> None:
+    for line in stderr.splitlines():
+        if not line.strip():
+            continue
+        try:
+            payload = json.loads(line)
+        except json.JSONDecodeError:
+            log_event(
+                helper_logger,
+                logging.WARNING,
+                "core_helper_stderr",
+                helper_call_id=helper_call_id,
+                action=action,
+                stderr_length=len(line),
+            )
+            continue
+        if not isinstance(payload, dict):
+            continue
+        if payload.get("source") != "lumen-api-helper":
+            log_event(
+                helper_logger,
+                logging.DEBUG,
+                "core_helper_stderr_json",
+                helper_call_id=helper_call_id,
+                action=action,
+                helper_payload_keys=sorted(str(key) for key in payload.keys()),
+                helper_payload_source=payload.get("source"),
+            )
+            continue
+        event = str(payload.get("event") or "core_helper_boundary")
+        level_name = str(payload.get("level") or "info").upper()
+        level = getattr(logging, level_name, logging.INFO)
+        fields = {
+            key: value
+            for key, value in payload.items()
+            if key not in {"source", "event", "level"}
+        }
+        fields.setdefault("helper_call_id", helper_call_id)
+        fields.setdefault("action", action)
+        log_event(helper_logger, level, event, **fields)
 
 
 def has_error_diagnostics(diagnostics: List[JsonObject]) -> bool:

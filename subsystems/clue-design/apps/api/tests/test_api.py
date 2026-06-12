@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import copy
 import json
+import logging
 from pathlib import Path
 from typing import Optional
 
@@ -400,6 +401,60 @@ def test_agent_turn_preview_allows_editor_cors_preflight(client: TestClient) -> 
     assert response.status_code == 200
     assert response.headers["access-control-allow-origin"] == "http://127.0.0.1:3000"
     assert "POST" in response.headers["access-control-allow-methods"]
+
+
+def test_structured_request_logging_adds_request_id_header(
+    client: TestClient, caplog: pytest.LogCaptureFixture
+) -> None:
+    caplog.set_level(logging.INFO, logger="lumen_api.api")
+
+    response = client.get(
+        "/documents/missing_document",
+        headers={"x-request-id": "req_test_observability"},
+    )
+
+    assert response.status_code == 404
+    assert response.headers["x-request-id"] == "req_test_observability"
+    completed = [
+        record
+        for record in caplog.records
+        if getattr(record, "lumen_event", None) == "http_request_completed"
+    ]
+    assert completed
+    fields = getattr(completed[-1], "lumen_fields")
+    assert fields["request_id"] == "req_test_observability"
+    assert fields["method"] == "GET"
+    assert fields["route"] == "/documents/{document_id}"
+    assert fields["status_code"] == 404
+    assert fields["duration_ms"] >= 0
+
+
+def test_core_helper_logging_records_runtime_summary(
+    client: TestClient, caplog: pytest.LogCaptureFixture
+) -> None:
+    caplog.set_level(logging.INFO, logger="lumen_api.core")
+
+    response = client.post(
+        "/export-preview",
+        headers={"x-request-id": "req_helper_observability"},
+        json={
+            "scene": minimal_scene(),
+            "format": "svg",
+            "page_ids": ["page_a4"],
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    events = {
+        getattr(record, "lumen_event", None): getattr(record, "lumen_fields")
+        for record in caplog.records
+    }
+    assert events["core_helper_started"]["request_id"] == "req_helper_observability"
+    assert events["core_helper_started"]["action"] == "export_preview"
+    assert events["core_helper_started"]["page_id_count"] == 1
+    assert events["core_helper_completed"]["ok"] is True
+    assert events["core_helper_completed"]["action"] == "export_preview"
+    assert events["core_helper_completed"]["diagnostic_count"] >= 0
 
 
 def test_agent_trace_response_returns_unapproved_draft_scene(tmp_path: Path) -> None:

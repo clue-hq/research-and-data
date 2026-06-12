@@ -11,7 +11,9 @@ use lumen_core::{
 use lumen_export::LumenExportAdapter;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use std::env;
 use std::io::{self, Read};
+use std::time::Instant;
 
 #[derive(Debug, Deserialize)]
 #[serde(tag = "action", rename_all = "snake_case")]
@@ -128,29 +130,222 @@ struct PreflightSummary {
 }
 
 fn main() {
-    let response = match read_request().and_then(handle_request) {
-        Ok(response) => response,
-        Err(error) => CoreResponse {
-            ok: false,
-            scene: None,
-            diagnostics: Vec::new(),
-            error: Some(error),
-            applied_operations: None,
-            preflight: None,
-            brand_kit: None,
-            brand_summary: None,
-            brand_generation: None,
-            brand_compatibility: None,
-            geometry: None,
-            dsl: None,
-            export: None,
-        },
+    let start = Instant::now();
+    let response = match read_request() {
+        Ok(request) => {
+            let action = request.action_name();
+            helper_log(
+                "core_helper_started",
+                "info",
+                Some(action),
+                request_log_fields(&request),
+            );
+            let response = match handle_request(request) {
+                Ok(response) => response,
+                Err(error) => CoreResponse {
+                    ok: false,
+                    scene: None,
+                    diagnostics: Vec::new(),
+                    error: Some(error),
+                    applied_operations: None,
+                    preflight: None,
+                    brand_kit: None,
+                    brand_summary: None,
+                    brand_generation: None,
+                    brand_compatibility: None,
+                    geometry: None,
+                    dsl: None,
+                    export: None,
+                },
+            };
+            helper_log(
+                "core_helper_completed",
+                if response.ok { "info" } else { "warning" },
+                Some(action),
+                response_log_fields(&response, start),
+            );
+            response
+        }
+        Err(error) => {
+            helper_log(
+                "core_helper_completed",
+                "error",
+                None,
+                json!({
+                    "ok": false,
+                    "duration_ms": elapsed_ms(start),
+                    "diagnostic_count": 0,
+                    "error_code": error.code.as_str(),
+                }),
+            );
+            CoreResponse {
+                ok: false,
+                scene: None,
+                diagnostics: Vec::new(),
+                error: Some(error),
+                applied_operations: None,
+                preflight: None,
+                brand_kit: None,
+                brand_summary: None,
+                brand_generation: None,
+                brand_compatibility: None,
+                geometry: None,
+                dsl: None,
+                export: None,
+            }
+        }
     };
 
     println!(
         "{}",
         serde_json::to_string(&response).expect("helper response should serialize")
     );
+}
+
+impl CoreRequest {
+    fn action_name(&self) -> &'static str {
+        match self {
+            CoreRequest::NewScene { .. } => "new_scene",
+            CoreRequest::ValidateScene { .. } => "validate_scene",
+            CoreRequest::ApplyOperations { .. } => "apply_operations",
+            CoreRequest::CompileDslIntoScene { .. } => "compile_dsl_into_scene",
+            CoreRequest::PreflightScene { .. } => "preflight_scene",
+            CoreRequest::ExportPreview { .. } => "export_preview",
+            CoreRequest::FinalizeTemplate { .. } => "finalize_template",
+            CoreRequest::PlatformDefaultBrandKit => "platform_default_brand_kit",
+            CoreRequest::ValidateBrandKit { .. } => "validate_brand_kit",
+            CoreRequest::CompileStylesBrandKit { .. } => "compile_styles_brand_kit",
+            CoreRequest::GenerateBrandKit { .. } => "generate_brand_kit",
+            CoreRequest::SummarizeBrandKit { .. } => "summarize_brand_kit",
+            CoreRequest::ValidateSceneBrandGovernance { .. } => "validate_scene_brand_governance",
+            CoreRequest::CompareBrandKitCompatibility { .. } => "compare_brand_kit_compatibility",
+            CoreRequest::LayoutGeometry { .. } => "layout_geometry",
+        }
+    }
+}
+
+fn request_log_fields(request: &CoreRequest) -> Value {
+    match request {
+        CoreRequest::NewScene {
+            artifact_type,
+            medium,
+            ..
+        } => json!({
+            "has_artifact_type": artifact_type.is_some(),
+            "has_medium": medium.is_some(),
+        }),
+        CoreRequest::ValidateScene { .. } => json!({}),
+        CoreRequest::ApplyOperations { operations, .. } => json!({
+            "operation_count": operations.len(),
+        }),
+        CoreRequest::CompileDslIntoScene {
+            source,
+            dsl_session,
+            ..
+        } => json!({
+            "source_line_count": source.lines().count(),
+            "has_dsl_session": dsl_session.is_some(),
+        }),
+        CoreRequest::PreflightScene {
+            brand_kit, mode, ..
+        } => json!({
+            "has_brand_kit": brand_kit.is_some(),
+            "has_mode": mode.is_some(),
+        }),
+        CoreRequest::ExportPreview {
+            format,
+            page_ids,
+            profile,
+            ..
+        } => json!({
+            "format": format,
+            "page_id_count": page_ids.len(),
+            "has_profile": profile.is_some(),
+        }),
+        CoreRequest::FinalizeTemplate { .. } => json!({}),
+        CoreRequest::PlatformDefaultBrandKit => json!({}),
+        CoreRequest::ValidateBrandKit { product_ready, .. } => json!({
+            "product_ready": product_ready,
+        }),
+        CoreRequest::CompileStylesBrandKit {
+            source,
+            brand_kit_id,
+            version,
+            ..
+        } => json!({
+            "source_line_count": source.lines().count(),
+            "brand_kit_id": brand_kit_id,
+            "version": version,
+        }),
+        CoreRequest::GenerateBrandKit { .. } => json!({}),
+        CoreRequest::SummarizeBrandKit { .. } => json!({}),
+        CoreRequest::ValidateSceneBrandGovernance { strictness, .. } => json!({
+            "strictness": strictness,
+        }),
+        CoreRequest::CompareBrandKitCompatibility { .. } => json!({}),
+        CoreRequest::LayoutGeometry { .. } => json!({}),
+    }
+}
+
+fn response_log_fields(response: &CoreResponse, start: Instant) -> Value {
+    json!({
+        "ok": response.ok,
+        "duration_ms": elapsed_ms(start),
+        "diagnostic_count": response.diagnostics.len(),
+        "has_error_diagnostics": has_error(&response.diagnostics),
+        "applied_operations": response.applied_operations,
+        "has_scene": response.scene.is_some(),
+        "has_geometry": response.geometry.is_some(),
+        "artifact_count": export_artifact_count(response.export.as_ref()),
+        "error_code": response.error.as_ref().map(|error| error.code.as_str()),
+    })
+}
+
+fn export_artifact_count(export: Option<&Value>) -> usize {
+    export
+        .and_then(|export| export.get("artifacts"))
+        .and_then(Value::as_array)
+        .map_or(0, Vec::len)
+}
+
+fn elapsed_ms(start: Instant) -> f64 {
+    let elapsed = start.elapsed();
+    (elapsed.as_secs_f64() * 1000.0 * 1000.0).round() / 1000.0
+}
+
+fn helper_log(event: &str, level: &str, action: Option<&str>, fields: Value) {
+    if !helper_logging_enabled() {
+        return;
+    }
+    let mut payload = serde_json::Map::new();
+    payload.insert("source".to_owned(), json!("lumen-api-helper"));
+    payload.insert("event".to_owned(), json!(event));
+    payload.insert("level".to_owned(), json!(level));
+    if let Some(action) = action {
+        payload.insert("action".to_owned(), json!(action));
+    }
+    if let Ok(request_id) = env::var("LUMEN_REQUEST_ID") {
+        if !request_id.is_empty() {
+            payload.insert("request_id".to_owned(), json!(request_id));
+        }
+    }
+    if let Ok(helper_call_id) = env::var("LUMEN_CORE_CALL_ID") {
+        if !helper_call_id.is_empty() {
+            payload.insert("helper_call_id".to_owned(), json!(helper_call_id));
+        }
+    }
+    if let Some(fields) = fields.as_object() {
+        for (key, value) in fields {
+            payload.insert(key.clone(), value.clone());
+        }
+    }
+    if let Ok(line) = serde_json::to_string(&Value::Object(payload)) {
+        eprintln!("{line}");
+    }
+}
+
+fn helper_logging_enabled() -> bool {
+    env::var("LUMEN_CORE_HELPER_LOG").map_or(false, |value| value != "0")
 }
 
 fn read_request() -> Result<CoreRequest, CoreError> {

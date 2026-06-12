@@ -1,6 +1,6 @@
 use serde_json::{json, Value};
 use std::io::Write;
-use std::process::{Command, Stdio};
+use std::process::{Command, Output, Stdio};
 
 const MINIMAL_SCENE: &str = include_str!("../../lumen-core/fixtures/minimal_scene.json");
 const GENERATED_RASTER: &str =
@@ -11,9 +11,17 @@ const INVALID_DUPLICATE_TOKEN_STYLES: &str =
     include_str!("../../lumen-core/fixtures/styles/invalid_duplicate_token.styles");
 
 fn helper(request: Value) -> Value {
+    let output = helper_output(request, &[]);
+    assert!(output.status.success(), "{output:?}");
+    serde_json::from_slice(&output.stdout).expect("helper response should be JSON")
+}
+
+fn helper_output(request: Value, envs: &[(&str, &str)]) -> Output {
     let mut child = Command::new(env!("CARGO_BIN_EXE_lumen-api-helper"))
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .envs(envs.iter().copied())
         .spawn()
         .expect("helper binary should spawn");
 
@@ -24,9 +32,7 @@ fn helper(request: Value) -> Value {
         .write_all(request.to_string().as_bytes())
         .expect("request should write");
 
-    let output = child.wait_with_output().expect("helper should exit");
-    assert!(output.status.success(), "{output:?}");
-    serde_json::from_slice(&output.stdout).expect("helper response should be JSON")
+    child.wait_with_output().expect("helper should exit")
 }
 
 fn minimal_scene() -> Value {
@@ -168,6 +174,40 @@ fn validates_scene_through_cli() {
         .unwrap_or(&Vec::new())
         .iter()
         .all(|diagnostic| diagnostic["severity"] != "error"));
+}
+
+#[test]
+fn emits_boundary_logs_when_enabled() {
+    let output = helper_output(
+        json!({
+            "action": "validate_scene",
+            "scene": minimal_scene()
+        }),
+        &[
+            ("LUMEN_CORE_HELPER_LOG", "1"),
+            ("LUMEN_REQUEST_ID", "req_helper_cli_test"),
+            ("LUMEN_CORE_CALL_ID", "core_helper_cli_test"),
+        ],
+    );
+    assert!(output.status.success(), "{output:?}");
+    let response: Value =
+        serde_json::from_slice(&output.stdout).expect("helper response should be JSON");
+    assert_eq!(response["ok"], true);
+
+    let stderr = String::from_utf8(output.stderr).expect("stderr should be utf8");
+    let events = stderr
+        .lines()
+        .map(|line| serde_json::from_str::<Value>(line).expect("stderr line should be JSON"))
+        .collect::<Vec<_>>();
+    assert_eq!(events.len(), 2, "{events:#?}");
+    assert_eq!(events[0]["source"], "lumen-api-helper");
+    assert_eq!(events[0]["event"], "core_helper_started");
+    assert_eq!(events[0]["action"], "validate_scene");
+    assert_eq!(events[0]["request_id"], "req_helper_cli_test");
+    assert_eq!(events[0]["helper_call_id"], "core_helper_cli_test");
+    assert_eq!(events[1]["event"], "core_helper_completed");
+    assert_eq!(events[1]["ok"], true);
+    assert_eq!(events[1]["diagnostic_count"].as_u64(), Some(0));
 }
 
 #[test]
