@@ -152,6 +152,12 @@ class CreateInstanceBatchRequest(BaseModel):
     chunk_size: int = 10
 
 
+class InstancePreviewRequest(BaseModel):
+    scene: JsonObject
+    binding_set: JsonObject
+    format: str = "svg"
+
+
 class AssetMetadataRequest(BaseModel):
     asset_id: Optional[str] = None
     document_id: Optional[str] = None

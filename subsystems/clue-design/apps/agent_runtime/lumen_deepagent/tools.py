@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import copy
 import json
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -411,6 +412,175 @@ class LumenDesignTools:
             output_summary=(
                 f"generated QR asset {record.get('id')} "
                 f"(ec={payload['qr']['ec_level']}, modules={payload['qr']['module_count']})"
+            ),
+            diagnostics=[diag.model_dump(mode="json") for diag in diagnostics],
+            payload=payload,
+        )
+        return json.dumps(payload, indent=2)
+
+    def _finalized_snapshot_for(self, binding: JsonObject) -> JsonObject:
+        """Instances derive from finalized revisions; for agent previews the
+        working scene is treated as a snapshot of the binding's revision."""
+        snapshot = copy.deepcopy(self.scene)
+        status = (snapshot.get("meta") or {}).get("status") or {}
+        if status.get("kind") != "finalized":
+            snapshot.setdefault("meta", {})["status"] = {
+                "kind": "finalized",
+                "template_revision_id": binding.get(
+                    "template_revision_id", "tmpl_preview"
+                ),
+            }
+        return snapshot
+
+    def validate_binding_set(self, binding_set_json: str) -> str:
+        """Validate a Phase G binding set (per-recipient values, links, and
+        generated QR entries) against the current scene's slot contracts:
+        keys resolve, kinds match content types, required slots covered,
+        cardinality and max_length hold, the frozen conditional grammar
+        parses, and generated entries chain links.*.url -> qr -> UrlQr
+        slot. Returns precise LUMG diagnostics for every violation."""
+        binding = parse_json_object(binding_set_json)
+        if binding is None:
+            payload = {
+                "binding_validation": {
+                    "status": "error",
+                    "message": "binding_set_json is not a JSON object",
+                }
+            }
+            return json.dumps(payload, indent=2)
+
+        snapshot = self._finalized_snapshot_for(binding)
+        try:
+            response = self.core.validate_binding_set(snapshot, binding)
+        except CoreError as error:
+            payload = {
+                "binding_validation": {
+                    "status": "error",
+                    "error_code": error.code,
+                    "message": error.message,
+                }
+            }
+            self.record(
+                "coordinator",
+                "binding_validation_failed",
+                output_summary=error.message,
+                payload=payload,
+            )
+            return json.dumps(payload, indent=2)
+
+        diagnostics = diagnostics_from(response.get("diagnostics", []))
+        valid = bool(response.get("ok", False))
+        payload = {
+            "binding_validation": {
+                "status": "valid" if valid else "invalid",
+                "binding_set_id": binding.get("binding_set_id"),
+                "template_revision_id": binding.get("template_revision_id"),
+            },
+            "diagnostics": [diag.model_dump(mode="json") for diag in diagnostics],
+        }
+        self.record(
+            "coordinator",
+            "binding_set_validated",
+            input_summary=binding_set_json[:300],
+            output_summary=(
+                f"binding set {binding.get('binding_set_id')} is "
+                f"{'valid' if valid else 'invalid'}"
+            ),
+            diagnostics=[diag.model_dump(mode="json") for diag in diagnostics],
+            payload=payload,
+        )
+        return json.dumps(payload, indent=2)
+
+    def derive_instance_preview(
+        self, binding_set_json: str, export_format: str = "png"
+    ) -> str:
+        """Derive a personalized instance from the current scene plus a
+        binding set (text/asset application, conditionals, repeater
+        expansion, generated QR), render a preview artifact for visual
+        critique, and report the instance fit verdicts. The working scene
+        is never mutated: instances are derived artifacts."""
+        binding = parse_json_object(binding_set_json)
+        if binding is None:
+            return json.dumps(
+                {
+                    "instance_preview": {
+                        "status": "error",
+                        "message": "binding_set_json is not a JSON object",
+                    }
+                },
+                indent=2,
+            )
+
+        snapshot = self._finalized_snapshot_for(binding)
+        store_root = str(self.config.effective_asset_store_root)
+        export_format = export_format if export_format in {"svg", "png", "pdf"} else "png"
+        try:
+            response = self.core.derive_instance(
+                snapshot,
+                binding,
+                asset_records=[],
+                store_root=store_root,
+                export_formats=[export_format],
+                export_dpi=96,
+            )
+        except CoreError as error:
+            payload = {
+                "instance_preview": {
+                    "status": "error",
+                    "error_code": error.code,
+                    "message": error.message,
+                }
+            }
+            self.record(
+                "coordinator",
+                "instance_preview_failed",
+                output_summary=error.message,
+                payload=payload,
+            )
+            return json.dumps(payload, indent=2)
+
+        diagnostics = diagnostics_from(response.get("diagnostics", []))
+        instance = response.get("instance") or {}
+        fit_report = instance.get("fit_report") or {}
+        preview_paths: list[str] = []
+        if response.get("ok", False):
+            for artifact in instance.get("artifacts", []):
+                relative = artifact.get("relative_path")
+                if not relative:
+                    continue
+                source = Path(store_root) / relative
+                if not source.exists():
+                    continue
+                suffix = artifact.get("format", export_format)
+                destination = self.trace_dir / (
+                    f"instance_{binding.get('binding_set_id', 'preview')}"
+                    f"_{len(preview_paths)}.{suffix}"
+                )
+                destination.write_bytes(source.read_bytes())
+                preview_paths.append(str(destination))
+            self.preview_paths.extend(preview_paths)
+
+        payload = {
+            "instance_preview": {
+                "status": "ok" if response.get("ok", False) else "error",
+                "binding_set_id": binding.get("binding_set_id"),
+                "has_errors": instance.get("has_errors"),
+                "fit_status": fit_report.get("status"),
+                "fit_slots": fit_report.get("slots", []),
+                "repair_requests": instance.get("repair_requests", []),
+                "audit_entries": len(instance.get("audit", [])),
+                "preview_paths": preview_paths,
+            },
+            "diagnostics": [diag.model_dump(mode="json") for diag in diagnostics],
+        }
+        self.record(
+            "critic",
+            "instance_preview_derived",
+            input_summary=binding_set_json[:300],
+            output_summary=(
+                f"instance for {binding.get('binding_set_id')}: "
+                f"fit={fit_report.get('status')}, "
+                f"{len(preview_paths)} preview artifact(s)"
             ),
             diagnostics=[diag.model_dump(mode="json") for diag in diagnostics],
             payload=payload,

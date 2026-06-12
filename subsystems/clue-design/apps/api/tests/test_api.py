@@ -2497,3 +2497,44 @@ def test_batch_rejects_unknown_or_mismatched_binding_sets(
     )
     assert empty.status_code == 422
     assert empty.json()["detail"]["code"] == "batch.empty"
+
+
+def test_instance_preview_renders_worst_case_read_only(client: TestClient) -> None:
+    # The preview endpoint is stateless: a draft scene is treated as a
+    # finalized snapshot, derived, and rendered; nothing persists.
+    scene = mailer_revision_scene_draft("doc_preview")
+    binding = binding_fixture_payload("worst_case")
+    binding["values"]["account.logo"]["asset_id"] = "asset_placeholder_logo"
+
+    response = client.post(
+        "/instances/preview",
+        json={"scene": scene, "binding_set": binding, "format": "svg"},
+    )
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    # Worst-case headline cannot fit even at min font: the preview is
+    # honest about it.
+    assert payload["status"] == "failed"
+    assert payload["fit_report"]["status"] == "overflow"
+    headline = next(
+        entry
+        for entry in payload["fit_report"]["slots"]
+        if entry["slot_key"] == "contact.full_name"
+    )
+    assert headline["verdict"]["kind"] == "overflow"
+    # Failed instances skip export; no artifact is returned.
+    assert payload["artifact"] is None
+
+    # A nominal preview renders the artifact inline.
+    nominal = binding_fixture_payload("nominal")
+    nominal["values"]["account.logo"]["asset_id"] = "asset_placeholder_logo"
+    response = client.post(
+        "/instances/preview",
+        json={"scene": scene, "binding_set": nominal, "format": "svg"},
+    )
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["status"] == "ok"
+    assert payload["fit_report"]["status"] == "fits"
+    assert payload["artifact"]["format"] == "svg"
+    assert "Dr. Priya Sharma" in payload["artifact"]["content"]

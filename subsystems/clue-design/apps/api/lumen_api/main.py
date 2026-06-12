@@ -53,6 +53,7 @@ from .models import (
     CreateInstanceBatchRequest,
     CreateSnapshotRequest,
     DeriveInstanceRequest,
+    InstancePreviewRequest,
     ExportDocumentRequest,
     ExportPreviewRequest,
     FinalizeTemplateRequest,
@@ -1677,6 +1678,88 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
         batch_id: str, repo: Repository = Depends(repository)
     ) -> JsonObject:
         return repo.require_batch(batch_id)
+
+    @app.post("/instances/preview")
+    def preview_instance(payload: InstancePreviewRequest) -> JsonObject:
+        """Stateless worst-case/instance preview (slice G9): derive a
+        binding set against an inline scene (treated as a finalized
+        snapshot) and return the rendered artifact plus the fit report.
+        Nothing persists — the editor renders the result read-only."""
+        scene = payload.scene
+        status = (scene.get("meta") or {}).get("status") or {}
+        if status.get("kind") != "finalized":
+            scene = {
+                **scene,
+                "meta": {
+                    **(scene.get("meta") or {}),
+                    "status": {
+                        "kind": "finalized",
+                        "template_revision_id": payload.binding_set.get(
+                            "template_revision_id", "tmpl_preview"
+                        ),
+                    },
+                },
+            }
+        export_format = payload.format if payload.format in {"svg", "png"} else "svg"
+        try:
+            result = app.state.core.derive_instance(
+                scene=scene,
+                binding_set=payload.binding_set,
+                asset_records=[],
+                store_root=asset_store_root(),
+                export_formats=[export_format],
+                export_dpi=96,
+                raise_on_error=False,
+            )
+        except CoreError as error:
+            raise core_http_error(error) from error
+
+        diagnostics = result.get("diagnostics", [])
+        if not result.get("ok", False):
+            error = result.get("error") or {}
+            if not diagnostics:
+                diagnostics = diagnostics_from_helper_error(error)
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "code": error.get("code", "instance.preview_failed"),
+                    "message": error.get("message", "instance preview failed"),
+                    "diagnostics": diagnostics,
+                },
+            )
+
+        payload_instance = result.get("instance") or {}
+        artifact_payload: Optional[JsonObject] = None
+        for artifact in payload_instance.get("artifacts", []):
+            relative = artifact.get("relative_path")
+            if not relative:
+                continue
+            artifact_path = Path(asset_store_root()) / relative
+            if not artifact_path.exists():
+                continue
+            data = artifact_path.read_bytes()
+            if artifact.get("format") == "svg":
+                artifact_payload = {
+                    "format": "svg",
+                    "mime_type": artifact.get("mime_type"),
+                    "content": data.decode("utf-8"),
+                }
+            else:
+                artifact_payload = {
+                    "format": artifact.get("format"),
+                    "mime_type": artifact.get("mime_type"),
+                    "content_base64": base64.b64encode(data).decode("ascii"),
+                }
+            break
+
+        return {
+            "schema_version": 1,
+            "status": "failed" if payload_instance.get("has_errors") else "ok",
+            "fit_report": payload_instance.get("fit_report") or {},
+            "repair_requests": payload_instance.get("repair_requests", []),
+            "diagnostics": diagnostics,
+            "artifact": artifact_payload,
+        }
 
     @app.get("/template-revisions/{template_revision_id}/repair-queue")
     def list_template_repair_queue(
