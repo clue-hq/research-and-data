@@ -85,7 +85,9 @@ pub use operations::{
 };
 pub use preflight::{preflight_scene, PreflightOptions, PreflightResult};
 pub use render_contract::{
-    RenderIntent, RenderManifest, RenderTarget, RendererAdapter, RendererError,
+    effect_features_for_node, effect_support_diagnostics, EffectFeature, EffectSupportLevel,
+    RenderIntent, RenderManifest, RenderTarget, RendererAdapter, RendererEffectSupport,
+    RendererError,
 };
 pub use render_geometry::{node_render_size, render_box_for_node, RenderBox};
 pub use scene::{

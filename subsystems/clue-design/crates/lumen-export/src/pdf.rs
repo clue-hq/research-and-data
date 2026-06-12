@@ -1,9 +1,10 @@
 use crate::sidecar::build_sidecar;
 use crate::svg::{fmt_num, resolve_page_ids};
 use lumen_core::{
-    measure_text, render_box_for_node, AssetKind, Diagnostic, DiagnosticSubject, ExportAdapter,
-    ExportArtifact, ExportError, ExportFormat, ExportRequest, ExportResult, Node, NodeId, NodeKind,
-    Page, Paint, PdfIntent, Phase, Rect, Scene, TextAlign, TextDirection, TextMeasureInput, Unit,
+    effect_support_diagnostics, measure_text, render_box_for_node, AssetKind, Diagnostic,
+    DiagnosticSubject, ExportAdapter, ExportArtifact, ExportError, ExportFormat, ExportRequest,
+    ExportResult, Node, NodeId, NodeKind, Page, Paint, PdfIntent, Phase, Rect, RenderTarget, Scene,
+    TextAlign, TextDirection, TextMeasureInput, Unit,
 };
 
 #[derive(Clone, Debug, Default)]
@@ -46,6 +47,14 @@ impl ExportAdapter for PdfExportAdapter {
 
         let mut writer = PdfWriter::new();
         let page_ids = resolved.page_ids;
+        // Renderer support matrix (Effects Contract V0 Decision 4): PDF is
+        // solid-paint-only, so every non-native effect feature in use gets
+        // an explicit LUMX verdict before the per-node fallback warnings.
+        diagnostics.extend(effect_support_diagnostics(
+            scene,
+            &page_ids,
+            &RenderTarget::Pdf,
+        ));
         diagnostics.extend(print_document_guardrails(scene, &page_ids, request));
         for page_id in &page_ids {
             let Some(page) = scene.pages.get(page_id) else {
