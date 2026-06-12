@@ -4,12 +4,14 @@
 //! does not own design semantics, editor behavior, persistence, or asset
 //! storage.
 
+pub mod checks;
 pub mod pdf;
 pub mod png;
 pub mod resolver;
 pub mod sidecar;
 pub mod svg;
 
+pub use checks::{asset_export_checks, license_enforced, MIN_EFFECTIVE_PRINT_DPI};
 pub use pdf::PdfExportAdapter;
 pub use png::PngExportAdapter;
 pub use resolver::{
@@ -49,12 +51,30 @@ impl LumenExportAdapter {
 
 impl ExportAdapter for LumenExportAdapter {
     fn export(&self, scene: &Scene, request: &ExportRequest) -> Result<ExportResult, ExportError> {
-        match request.profile.format {
+        // Asset export checks run once at the composition point:
+        // licensing rejection (LUME0212) blocks enforced exports before
+        // any rendering; advisory findings ride along as warnings.
+        let resolved = svg::resolve_page_ids(scene, &request.page_ids);
+        let check_diagnostics = checks::asset_export_checks(scene, request, &resolved.page_ids);
+        if check_diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.severity == DiagnosticSeverity::Error)
+        {
+            return Err(ExportError::new(
+                "export.license_forbidden",
+                "export blocked: an embedded asset's license forbids this export",
+            )
+            .with_diagnostics(check_diagnostics));
+        }
+
+        let mut result = match request.profile.format {
             ExportFormat::Svg => self.svg.export(scene, request),
             ExportFormat::Pdf => self.pdf.export(scene, request),
             ExportFormat::Png => self.png.export(scene, request),
             ExportFormat::FigmaManifest => figma_manifest_export(scene, request),
-        }
+        }?;
+        result.diagnostics.extend(check_diagnostics);
+        Ok(result)
     }
 }
 

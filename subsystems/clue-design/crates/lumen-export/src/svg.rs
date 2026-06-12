@@ -410,6 +410,36 @@ impl<'a> SvgPageRenderer<'a> {
                 .as_ref()
                 .map(|alt| format!(" data-lumen-alt=\"{}\"", escape_attr(alt)))
                 .unwrap_or_default();
+
+            // Focal-point crops compute an explicit window from the asset's
+            // natural aspect ratio; plain fits map onto preserveAspectRatio.
+            let record = self.scene.assets.get(&image.asset_id);
+            if let Some(crop) = focal_crop_geometry(node, record, width, height) {
+                let clip_id = format!("lumen-image-clip-{}", escape_attr(node.id.as_str()));
+                self.defs.push(format!(
+                    "<clipPath id=\"{}\"><rect x=\"0\" y=\"0\" width=\"{}\" height=\"{}\"{} /></clipPath>\n",
+                    clip_id,
+                    fmt_num(width),
+                    fmt_num(height),
+                    corner_attrs(node)
+                ));
+                self.body.push_str(&format!(
+                    "<g{} clip-path=\"url(#{})\" data-lumen-asset-id=\"{}\" data-lumen-image-fit=\"focal-crop\"{}{}{}>\n<image x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" preserveAspectRatio=\"none\" href=\"{}\" />\n</g>\n",
+                    id_attrs,
+                    escape_attr(&clip_id),
+                    escape_attr(image.asset_id.as_str()),
+                    alt_attr,
+                    transform,
+                    opacity,
+                    fmt_num(crop.x),
+                    fmt_num(crop.y),
+                    fmt_num(crop.width),
+                    fmt_num(crop.height),
+                    escape_attr(&href)
+                ));
+                return;
+            }
+
             self.body.push_str(&format!(
                 "<image{} x=\"0\" y=\"0\" width=\"{}\" height=\"{}\" preserveAspectRatio=\"{}\" data-lumen-asset-id=\"{}\"{}{}{} href=\"{}\" />\n",
                 id_attrs,
@@ -752,9 +782,62 @@ impl<'a> SvgPageRenderer<'a> {
     }
 }
 
+/// Explicit crop window for cover/crop placements with a focal point.
+/// The drawn image covers the node box at the asset's natural aspect
+/// ratio, shifted so the focal point sits as close to the box center as
+/// the image allows.
+struct FocalCropGeometry {
+    x: f64,
+    y: f64,
+    width: f64,
+    height: f64,
+}
+
+fn focal_crop_geometry(
+    node: &Node,
+    record: Option<&lumen_core::AssetRecord>,
+    box_width: f64,
+    box_height: f64,
+) -> Option<FocalCropGeometry> {
+    let placement = node.asset_placement.as_ref()?;
+    let focal = placement.focal_point.as_ref()?;
+    if !matches!(
+        placement.fit,
+        Some(ImageFitMode::Cover) | Some(ImageFitMode::Crop)
+    ) {
+        return None;
+    }
+    if box_width <= 0.0 || box_height <= 0.0 {
+        return None;
+    }
+    let ratio = record?.natural_aspect_ratio()?;
+    if !(ratio.is_finite() && ratio > 0.0) {
+        return None;
+    }
+
+    let (drawn_width, drawn_height) = if box_width / box_height < ratio {
+        (box_height * ratio, box_height)
+    } else {
+        (box_width, box_width / ratio)
+    };
+    let focal_x = focal.x.clamp(0.0, 1.0);
+    let focal_y = focal.y.clamp(0.0, 1.0);
+    let offset_x =
+        (focal_x * drawn_width - box_width / 2.0).clamp(0.0, (drawn_width - box_width).max(0.0));
+    let offset_y = (focal_y * drawn_height - box_height / 2.0)
+        .clamp(0.0, (drawn_height - box_height).max(0.0));
+
+    Some(FocalCropGeometry {
+        x: -offset_x,
+        y: -offset_y,
+        width: drawn_width,
+        height: drawn_height,
+    })
+}
+
 /// Map the node's asset placement fit mode onto SVG preserveAspectRatio.
 /// Contain letterboxes (`meet`); cover and crop fill the box (`slice`).
-/// Focal-point-aware cropping is refined by the placement-semantics slice.
+/// Focal-point crops take the explicit window path instead.
 fn image_preserve_aspect_ratio(node: &Node) -> &'static str {
     match node
         .asset_placement
