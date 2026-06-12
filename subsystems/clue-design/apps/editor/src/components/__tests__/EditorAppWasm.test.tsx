@@ -154,6 +154,53 @@ describe.skipIf(!wasmArtifactPresent)("EditorApp on the WASM engine", () => {
     expect(screen.getAllByText(/EDITOR_WASM_RECONCILE_DIVERGENCE/).length).toBeGreaterThan(0);
   });
 
+  it("degrades to server-only mode when the module cannot load (W5)", async () => {
+    // Flag on, no injected engine: the default runtime loader cannot
+    // resolve /wasm/ in this environment, which is exactly the offline /
+    // load-failure case. Editing must surface the server-only diagnostic
+    // and leave the scene untouched, while server-backed flows keep
+    // working.
+    vi.stubEnv("NEXT_PUBLIC_LUMEN_WASM_CORE", "1");
+    try {
+      const scene = cloneScene();
+      const preflightRunner = vi.fn().mockResolvedValue({
+        status: "applied",
+        scene,
+        diagnostics: [],
+        preflight: {
+          has_errors: false,
+          brand_ref_operations: 0,
+          token_operations: 0,
+          layout_operations: 0
+        },
+        brand_kit: { source: null }
+      });
+      render(
+        <EditorApp
+          initialScene={scene}
+          initialSelectedNodeId={null}
+          preflightRunner={preflightRunner}
+        />
+      );
+
+      fireEvent.change(screen.getByLabelText("Document Title"), {
+        target: { value: "No engine" }
+      });
+
+      expect(await screen.findByText(/EDITOR_SERVER_ONLY_MODE/)).toBeInTheDocument();
+      expect(screen.queryByRole("heading", { name: "No engine" })).not.toBeInTheDocument();
+      expect(screen.getByRole("heading", { name: scene.meta.title })).toBeInTheDocument();
+
+      // Server-backed flows still work in server-only mode.
+      fireEvent.click(screen.getByRole("button", { name: /Validate/ }));
+      await waitFor(() => {
+        expect(preflightRunner).toHaveBeenCalled();
+      });
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
   it("moves the selected node with arrow keys through the engine", async () => {
     const module = await loadWasmModuleFromDisk();
     const scene = cloneScene();

@@ -173,6 +173,7 @@ enum CoreRequest {
     LayoutGeometry {
         scene: Value,
     },
+    BuildInfo,
 }
 
 #[derive(Debug, Serialize)]
@@ -208,6 +209,8 @@ struct CoreResponse {
     export: Option<Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
     asset: Option<Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    build_info: Option<Value>,
 }
 
 #[derive(Debug, Serialize)]
@@ -254,6 +257,7 @@ fn main() {
                     dsl: None,
                     export: None,
                     asset: None,
+                    build_info: None,
                 },
             };
             helper_log(
@@ -293,6 +297,7 @@ fn main() {
                 dsl: None,
                 export: None,
                 asset: None,
+                build_info: None,
             }
         }
     };
@@ -325,6 +330,7 @@ impl CoreRequest {
             CoreRequest::ValidateSceneBrandGovernance { .. } => "validate_scene_brand_governance",
             CoreRequest::CompareBrandKitCompatibility { .. } => "compare_brand_kit_compatibility",
             CoreRequest::LayoutGeometry { .. } => "layout_geometry",
+            CoreRequest::BuildInfo => "build_info",
         }
     }
 }
@@ -419,6 +425,7 @@ fn request_log_fields(request: &CoreRequest) -> Value {
         }),
         CoreRequest::CompareBrandKitCompatibility { .. } => json!({}),
         CoreRequest::LayoutGeometry { .. } => json!({}),
+        CoreRequest::BuildInfo => json!({}),
     }
 }
 
@@ -501,6 +508,7 @@ fn error_response(error: CoreError, diagnostics: Vec<Diagnostic>) -> CoreRespons
         dsl: None,
         export: None,
         asset: None,
+        build_info: None,
     }
 }
 
@@ -620,6 +628,7 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                     dsl: None,
                     export: None,
                     asset: None,
+                    build_info: None,
                 }),
             }
         }
@@ -642,6 +651,7 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                 dsl: None,
                 export: None,
                 asset: None,
+                build_info: None,
             });
             let batch = match batch {
                 Ok(batch) => batch,
@@ -688,6 +698,7 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                     dsl: None,
                     export: None,
                     asset: None,
+                    build_info: None,
                 }),
                 Err(error) => Ok(CoreResponse {
                     ok: false,
@@ -713,6 +724,7 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                     dsl: None,
                     export: None,
                     asset: None,
+                    build_info: None,
                 }),
             }
         }
@@ -753,6 +765,7 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                 })),
                 export: None,
                 asset: None,
+                build_info: None,
             })
         }
         CoreRequest::PreflightScene {
@@ -791,6 +804,7 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                 dsl: None,
                 export: None,
                 asset: None,
+                build_info: None,
             })
         }
         CoreRequest::ExportPreview {
@@ -851,6 +865,7 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                     dsl: None,
                     export: Some(to_value(result)?),
                     asset: None,
+                    build_info: None,
                 }),
                 Err(error) => Ok(CoreResponse {
                     ok: false,
@@ -869,6 +884,7 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                     dsl: None,
                     export: None,
                     asset: None,
+                    build_info: None,
                 }),
             }
         }
@@ -1018,6 +1034,7 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                     "digest_value": stored.digest_value,
                     "byte_length": stored.byte_length,
                 })),
+                build_info: None,
             })
         }
         CoreRequest::GenerateQr {
@@ -1195,6 +1212,7 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                     dsl: None,
                     export: None,
                     asset: None,
+                    build_info: None,
                 }),
             }
         }
@@ -1219,6 +1237,7 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                 dsl: None,
                 export: None,
                 asset: None,
+                build_info: None,
             })
         }
         CoreRequest::ValidateBrandKit {
@@ -1248,6 +1267,7 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                 dsl: None,
                 export: None,
                 asset: None,
+                build_info: None,
             })
         }
         CoreRequest::CompileStylesBrandKit {
@@ -1276,6 +1296,7 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                         dsl: None,
                         export: None,
                         asset: None,
+                        build_info: None,
                     })
                 }
                 Err(diagnostics) => Ok(CoreResponse {
@@ -1298,6 +1319,7 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                     dsl: None,
                     export: None,
                     asset: None,
+                    build_info: None,
                 }),
             }
         }
@@ -1337,6 +1359,7 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                 dsl: None,
                 export: None,
                 asset: None,
+                build_info: None,
             })
         }
         CoreRequest::SummarizeBrandKit { brand_kit } => {
@@ -1359,6 +1382,7 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                 dsl: None,
                 export: None,
                 asset: None,
+                build_info: None,
             })
         }
         CoreRequest::ValidateSceneBrandGovernance {
@@ -1386,6 +1410,7 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                 dsl: None,
                 export: None,
                 asset: None,
+                build_info: None,
             })
         }
         CoreRequest::CompareBrandKitCompatibility { from, to } => {
@@ -1410,6 +1435,7 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                 dsl: None,
                 export: None,
                 asset: None,
+                build_info: None,
             })
         }
         CoreRequest::LayoutGeometry { scene } => {
@@ -1438,8 +1464,34 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                 dsl: None,
                 export: None,
                 asset: None,
+                build_info: None,
             })
         }
+        // W5 version handshake: the editor compares this against the WASM
+        // module's version() and downgrades to server-only mode on any
+        // mismatch — never mixed-version optimistic editing.
+        CoreRequest::BuildInfo => Ok(CoreResponse {
+            ok: true,
+            scene: None,
+            diagnostics: Vec::new(),
+            error: None,
+            applied_operations: None,
+            preflight: None,
+            brand_kit: None,
+            brand_summary: None,
+            brand_generation: None,
+            brand_compatibility: None,
+            geometry: None,
+            operations: None,
+            edit: None,
+            dsl: None,
+            export: None,
+            asset: None,
+            build_info: Some(json!({
+                "schema_version": lumen_core::SCHEMA_VERSION,
+                "engine_commit": env!("LUMEN_ENGINE_COMMIT"),
+            })),
+        }),
     }
 }
 
@@ -1465,6 +1517,7 @@ fn ok_scene(
         dsl: None,
         export: None,
         asset: None,
+        build_info: None,
     }
 }
 

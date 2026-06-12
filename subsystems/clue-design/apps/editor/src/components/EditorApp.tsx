@@ -48,7 +48,7 @@ import {
   type ReconcileEvent
 } from "@/engine/editQueue";
 import {
-  loadWasmModule,
+  activateWasmCore,
   wasmCoreFlagEnabled,
   WasmEngine,
   type OptimisticEnginePort
@@ -220,22 +220,39 @@ export default function EditorApp({
     }
   }, [activePageId, scene, selectedNodeId]);
 
-  // Activate the WASM core behind the flag. Load failure leaves the
-  // editor in server-only mode (it stays functional: agent, preflight,
-  // export, and document history all run server-side); the W5 version
-  // handshake gates activation on matching API build info.
+  // Activate the WASM core behind the flag, gated on the W5 version
+  // handshake: the module's { schema_version, engine_commit } must match
+  // the API's /build-info exactly — never mixed-version optimistic
+  // editing. Any failure (module missing, API unreachable, mismatch)
+  // leaves the editor in server-only mode, which stays functional: agent,
+  // preflight, export, and document history all run server-side.
   useEffect(() => {
     if (optimisticEngine || !wasmCoreFlagEnabled()) {
       return;
     }
     let cancelled = false;
     void (async () => {
-      const module = await loadWasmModule();
-      if (cancelled || !module) {
+      const activation = await activateWasmCore();
+      if (cancelled) {
+        return;
+      }
+      if (activation.status !== "active") {
+        if (activation.reason === "version_mismatch" || activation.reason === "handshake_failed") {
+          setDiagnostics([
+            {
+              severity: "warning",
+              phase: "operation",
+              code: "EDITOR_WASM_VERSION_MISMATCH",
+              message: `In-browser engine disabled: ${activation.detail}`,
+              subject: { kind: "document" },
+              hint: "The editor is in server-only mode until the editor and API run the same engine build."
+            }
+          ]);
+        }
         return;
       }
       try {
-        engineRef.current = new WasmEngine(module, sceneRef.current);
+        engineRef.current = new WasmEngine(activation.module, sceneRef.current);
       } catch {
         // Server-only mode; the editor stays functional.
       }

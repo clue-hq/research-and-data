@@ -278,3 +278,90 @@ export async function loadWasmModule(
   }
 }
 
+/** W5 version handshake outcome. */
+export type WasmCoreActivation =
+  | { status: "active"; module: WasmModule }
+  | {
+      status: "unavailable";
+      reason: "load_failed" | "handshake_failed" | "version_mismatch";
+      detail: string;
+    };
+
+export interface WasmCoreActivationOptions extends WasmModuleLoadOptions {
+  apiBaseUrl?: string;
+  fetchImpl?: typeof fetch;
+  /** Test seam: replaces the runtime module loader. */
+  moduleLoader?: () => Promise<WasmModule | null>;
+}
+
+/**
+ * Load the module AND verify the version handshake against the API's
+ * /build-info (Decision E4): the module's `{ schema_version,
+ * engine_commit }` must equal the server's exactly. Any failure — module
+ * missing, API unreachable, mismatch — leaves the editor in server-only
+ * mode. There is never mixed-version optimistic editing, and an
+ * unverifiable version counts as a mismatch.
+ */
+export async function activateWasmCore(
+  options: WasmCoreActivationOptions = {}
+): Promise<WasmCoreActivation> {
+  const loadModule = options.moduleLoader ?? (() => loadWasmModule(options));
+  const fetchImpl = options.fetchImpl ?? fetch;
+  const apiBaseUrl =
+    options.apiBaseUrl ?? process.env.NEXT_PUBLIC_LUMEN_API_BASE_URL ?? "http://localhost:8000";
+
+  const module = await loadModule();
+  if (!module) {
+    return {
+      status: "unavailable",
+      reason: "load_failed",
+      detail: "the WASM module could not be loaded from /wasm/"
+    };
+  }
+
+  let moduleVersion: EngineVersionInfo;
+  try {
+    moduleVersion = JSON.parse(module.engineVersion()) as EngineVersionInfo;
+  } catch (error) {
+    return {
+      status: "unavailable",
+      reason: "load_failed",
+      detail: `the WASM module did not report a version: ${String(error)}`
+    };
+  }
+
+  try {
+    const response = await fetchImpl(`${apiBaseUrl}/build-info`);
+    if (!response.ok) {
+      return {
+        status: "unavailable",
+        reason: "handshake_failed",
+        detail: `the API build-info request failed (${response.status})`
+      };
+    }
+    const payload = (await response.json()) as {
+      build_info?: { schema_version?: number; engine_commit?: string };
+    };
+    const server = payload.build_info;
+    if (
+      !server ||
+      server.schema_version !== moduleVersion.schema_version ||
+      !server.engine_commit ||
+      server.engine_commit !== moduleVersion.engine_commit
+    ) {
+      return {
+        status: "unavailable",
+        reason: "version_mismatch",
+        detail: `editor engine ${moduleVersion.engine_commit} (schema ${moduleVersion.schema_version}) vs API engine ${server?.engine_commit ?? "unknown"} (schema ${server?.schema_version ?? "unknown"})`
+      };
+    }
+  } catch (error) {
+    return {
+      status: "unavailable",
+      reason: "handshake_failed",
+      detail: `the API build-info request failed: ${error instanceof Error ? error.message : String(error)}`
+    };
+  }
+
+  return { status: "active", module };
+}

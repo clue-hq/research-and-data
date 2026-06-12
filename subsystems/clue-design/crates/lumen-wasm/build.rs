@@ -17,17 +17,24 @@ fn main() {
         .unwrap_or_else(|| "unknown".to_owned());
     println!("cargo:rustc-env=LUMEN_ENGINE_COMMIT={commit}");
 
-    // Re-run when HEAD moves so the embedded commit cannot go stale.
-    if let Some(head_path) = Command::new("git")
-        .args(["rev-parse", "--git-path", "HEAD"])
-        .output()
-        .ok()
-        .filter(|output| output.status.success())
-        .and_then(|output| String::from_utf8(output.stdout).ok())
-    {
-        let head_path = head_path.trim();
-        if !head_path.is_empty() {
-            println!("cargo:rerun-if-changed={head_path}");
+    // Re-run when the commit changes. Watching the HEAD file alone is not
+    // enough: on a branch, HEAD's content is the branch NAME, which does
+    // not change on commit — the branch ref file does. Watch both.
+    for args in [
+        vec!["rev-parse", "--git-path", "HEAD"],
+        vec!["rev-parse", "--git-path", "refs/heads"],
+    ] {
+        if let Some(path) = Command::new("git")
+            .args(&args)
+            .output()
+            .ok()
+            .filter(|output| output.status.success())
+            .and_then(|output| String::from_utf8(output.stdout).ok())
+        {
+            let path = path.trim();
+            if !path.is_empty() {
+                println!("cargo:rerun-if-changed={path}");
+            }
         }
     }
 }
