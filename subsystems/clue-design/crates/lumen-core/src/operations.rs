@@ -1322,9 +1322,11 @@ fn slot_accepts_asset_kind(content_type: &ContentType, asset_kind: &AssetKind) -
         ContentType::TextShort | ContentType::TextLong | ContentType::RichTextLimited => {
             matches!(asset_kind, AssetKind::Font)
         }
+        // Phase G: UrlQr slots receive generated QR codes, which the QR
+        // provider always emits as sanitized vector assets.
+        ContentType::UrlQr => matches!(asset_kind, AssetKind::Vector),
         ContentType::NumberStat
         | ContentType::Date
-        | ContentType::UrlQr
         | ContentType::List
         | ContentType::RepeaterGroup
         | ContentType::TableLike => false,

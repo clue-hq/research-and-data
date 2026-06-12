@@ -1,0 +1,942 @@
+{
+  "schema_version": 1,
+  "meta": {
+    "id": "doc_mailer_acme",
+    "title": "ABM Direct Mailer",
+    "artifact_type": "mailer",
+    "medium": "direct_mail",
+    "brand_kit": null,
+    "status": {
+      "kind": "finalized",
+      "template_revision_id": "tmpl_mailer_v1"
+    }
+  },
+  "pages": {
+    "page_mailer": {
+      "id": "page_mailer",
+      "name": "DL Mailer",
+      "size": {
+        "width": 210.0,
+        "height": 105.0,
+        "unit": "mm",
+        "preset": "envelope_dl",
+        "orientation": "landscape"
+      },
+      "children": [
+        "node_headline",
+        "node_logo",
+        "node_insights",
+        "node_quote",
+        "node_cta",
+        "node_qr"
+      ],
+      "bleed": {
+        "x": -3.0,
+        "y": -3.0,
+        "width": 216.0,
+        "height": 111.0
+      },
+      "safe_area": {
+        "x": 8.0,
+        "y": 8.0,
+        "width": 194.0,
+        "height": 89.0
+      },
+      "background": [
+        {
+          "id": "paint_page_bg",
+          "paint": {
+            "kind": "solid",
+            "color": {
+              "kind": "hex",
+              "value": "#FFFFFF"
+            }
+          }
+        }
+      ]
+    }
+  },
+  "nodes": {
+    "node_headline": {
+      "id": "node_headline",
+      "name": "Recipient headline",
+      "kind": {
+        "kind": "text",
+        "content": "Dr. Priya Sharma",
+        "font_family": "Inter",
+        "font_size": 10.0,
+        "font_weight": 700,
+        "align": "left",
+        "line_height": 1.2,
+        "letter_spacing": 0.0,
+        "wrap": "no_wrap",
+        "direction": "ltr"
+      },
+      "transform": {
+        "x": 12.0,
+        "y": 10.0,
+        "rotation": 0.0,
+        "skew_x": 0.0,
+        "skew_y": 0.0,
+        "flip_x": false,
+        "flip_y": false
+      },
+      "size": {
+        "width": {
+          "kind": "fixed",
+          "value": 120.0
+        },
+        "height": {
+          "kind": "fixed",
+          "value": 14.0
+        }
+      },
+      "children": [],
+      "fills": [
+        {
+          "id": "paint_headline",
+          "paint": {
+            "kind": "solid",
+            "color": {
+              "kind": "hex",
+              "value": "#1A1A2E"
+            }
+          }
+        }
+      ],
+      "strokes": [],
+      "corner": {
+        "top_left": 0.0,
+        "top_right": 0.0,
+        "bottom_right": 0.0,
+        "bottom_left": 0.0
+      },
+      "opacity": 1.0,
+      "clip": false,
+      "layout": null,
+      "computed": null,
+      "locked": false
+    },
+    "node_logo": {
+      "id": "node_logo",
+      "name": "Account logo",
+      "kind": {
+        "kind": "image",
+        "asset_id": "asset_placeholder_logo",
+        "alt": "Account logo"
+      },
+      "transform": {
+        "x": 160.0,
+        "y": 10.0,
+        "rotation": 0.0,
+        "skew_x": 0.0,
+        "skew_y": 0.0,
+        "flip_x": false,
+        "flip_y": false
+      },
+      "size": {
+        "width": {
+          "kind": "fixed",
+          "value": 36.0
+        },
+        "height": {
+          "kind": "fixed",
+          "value": 12.0
+        }
+      },
+      "children": [],
+      "fills": [],
+      "strokes": [],
+      "corner": {
+        "top_left": 0.0,
+        "top_right": 0.0,
+        "bottom_right": 0.0,
+        "bottom_left": 0.0
+      },
+      "opacity": 1.0,
+      "clip": false,
+      "layout": null,
+      "computed": null,
+      "locked": false,
+      "source_asset_id": "asset_placeholder_logo",
+      "asset_placement": {
+        "fit": "contain",
+        "alt_text": "Account logo"
+      }
+    },
+    "node_insights": {
+      "id": "node_insights",
+      "name": "Key insights stack",
+      "kind": {
+        "kind": "auto_layout",
+        "direction": "column",
+        "wrap": false
+      },
+      "transform": {
+        "x": 12.0,
+        "y": 30.0,
+        "rotation": 0.0,
+        "skew_x": 0.0,
+        "skew_y": 0.0,
+        "flip_x": false,
+        "flip_y": false
+      },
+      "size": {
+        "width": {
+          "kind": "fixed",
+          "value": 120.0
+        },
+        "height": {
+          "kind": "hug"
+        }
+      },
+      "children": [
+        "node_insight_item"
+      ],
+      "fills": [],
+      "strokes": [],
+      "corner": {
+        "top_left": 0.0,
+        "top_right": 0.0,
+        "bottom_right": 0.0,
+        "bottom_left": 0.0
+      },
+      "opacity": 1.0,
+      "clip": false,
+      "layout": {
+        "gap": 2.0,
+        "padding": [0.0, 0.0, 0.0, 0.0],
+        "grow": 0.0
+      },
+      "computed": null,
+      "locked": false
+    },
+    "node_insight_item": {
+      "id": "node_insight_item",
+      "name": "Insight item",
+      "kind": {
+        "kind": "text",
+        "content": "Insight placeholder",
+        "font_family": "Inter",
+        "font_size": 4.5,
+        "font_weight": 400,
+        "align": "left",
+        "line_height": 1.2,
+        "letter_spacing": 0.0,
+        "max_lines": 2,
+        "wrap": "wrap",
+        "direction": "ltr"
+      },
+      "transform": {
+        "x": 0.0,
+        "y": 0.0,
+        "rotation": 0.0,
+        "skew_x": 0.0,
+        "skew_y": 0.0,
+        "flip_x": false,
+        "flip_y": false
+      },
+      "size": {
+        "width": {
+          "kind": "fixed",
+          "value": 120.0
+        },
+        "height": {
+          "kind": "fixed",
+          "value": 11.0
+        }
+      },
+      "children": [],
+      "fills": [
+        {
+          "id": "paint_insight",
+          "paint": {
+            "kind": "solid",
+            "color": {
+              "kind": "hex",
+              "value": "#2D2D44"
+            }
+          }
+        }
+      ],
+      "strokes": [],
+      "effects": [
+        {
+          "id": "fx_insight_shadow",
+          "kind": {
+            "kind": "drop_shadow",
+            "color": {
+              "kind": "hex",
+              "value": "#000000"
+            },
+            "opacity": 0.18,
+            "x": 0.0,
+            "y": 0.6,
+            "blur": 1.2,
+            "spread": 0.0
+          }
+        }
+      ],
+      "corner": {
+        "top_left": 0.0,
+        "top_right": 0.0,
+        "bottom_right": 0.0,
+        "bottom_left": 0.0
+      },
+      "opacity": 1.0,
+      "clip": false,
+      "layout": null,
+      "computed": null,
+      "locked": false
+    },
+    "node_quote": {
+      "id": "node_quote",
+      "name": "Research quote",
+      "kind": {
+        "kind": "text",
+        "content": "Their team shipped twice as fast.",
+        "font_family": "Inter",
+        "font_size": 5.0,
+        "font_weight": 600,
+        "align": "left",
+        "line_height": 1.3,
+        "letter_spacing": 0.0,
+        "max_lines": 4,
+        "wrap": "wrap",
+        "direction": "ltr"
+      },
+      "transform": {
+        "x": 140.0,
+        "y": 28.0,
+        "rotation": 0.0,
+        "skew_x": 0.0,
+        "skew_y": 0.0,
+        "flip_x": false,
+        "flip_y": false
+      },
+      "size": {
+        "width": {
+          "kind": "fixed",
+          "value": 58.0
+        },
+        "height": {
+          "kind": "fixed",
+          "value": 28.0
+        }
+      },
+      "children": [],
+      "fills": [
+        {
+          "id": "paint_quote",
+          "paint": {
+            "kind": "solid",
+            "color": {
+              "kind": "hex",
+              "value": "#3A3A55"
+            }
+          }
+        }
+      ],
+      "strokes": [],
+      "corner": {
+        "top_left": 0.0,
+        "top_right": 0.0,
+        "bottom_right": 0.0,
+        "bottom_left": 0.0
+      },
+      "opacity": 1.0,
+      "clip": false,
+      "layout": null,
+      "computed": null,
+      "locked": false
+    },
+    "node_cta": {
+      "id": "node_cta",
+      "name": "Call to action",
+      "kind": {
+        "kind": "text",
+        "content": "Book your demo",
+        "font_family": "Inter",
+        "font_size": 6.0,
+        "font_weight": 600,
+        "align": "left",
+        "line_height": 1.2,
+        "letter_spacing": 0.0,
+        "max_lines": 2,
+        "wrap": "wrap",
+        "direction": "ltr"
+      },
+      "transform": {
+        "x": 12.0,
+        "y": 80.0,
+        "rotation": 0.0,
+        "skew_x": 0.0,
+        "skew_y": 0.0,
+        "flip_x": false,
+        "flip_y": false
+      },
+      "size": {
+        "width": {
+          "kind": "fixed",
+          "value": 110.0
+        },
+        "height": {
+          "kind": "fixed",
+          "value": 16.0
+        }
+      },
+      "children": [],
+      "fills": [
+        {
+          "id": "paint_cta",
+          "paint": {
+            "kind": "solid",
+            "color": {
+              "kind": "hex",
+              "value": "#0F4C81"
+            }
+          }
+        }
+      ],
+      "strokes": [],
+      "corner": {
+        "top_left": 0.0,
+        "top_right": 0.0,
+        "bottom_right": 0.0,
+        "bottom_left": 0.0
+      },
+      "opacity": 1.0,
+      "clip": false,
+      "layout": null,
+      "computed": null,
+      "locked": false
+    },
+    "node_qr": {
+      "id": "node_qr",
+      "name": "Landing page QR",
+      "kind": {
+        "kind": "image",
+        "asset_id": "asset_placeholder_qr",
+        "alt": "Scan to visit your landing page"
+      },
+      "transform": {
+        "x": 170.0,
+        "y": 64.0,
+        "rotation": 0.0,
+        "skew_x": 0.0,
+        "skew_y": 0.0,
+        "flip_x": false,
+        "flip_y": false
+      },
+      "size": {
+        "width": {
+          "kind": "fixed",
+          "value": 28.0
+        },
+        "height": {
+          "kind": "fixed",
+          "value": 28.0
+        }
+      },
+      "children": [],
+      "fills": [],
+      "strokes": [],
+      "corner": {
+        "top_left": 0.0,
+        "top_right": 0.0,
+        "bottom_right": 0.0,
+        "bottom_left": 0.0
+      },
+      "opacity": 1.0,
+      "clip": false,
+      "layout": null,
+      "computed": null,
+      "locked": false,
+      "source_asset_id": "asset_placeholder_qr",
+      "asset_placement": {
+        "fit": "contain",
+        "alt_text": "Scan to visit your landing page"
+      }
+    }
+  },
+  "slots": {
+    "slot_contact_name": {
+      "id": "slot_contact_name",
+      "key": "contact.full_name",
+      "label": "Contact full name",
+      "content_type": "text_short",
+      "scope": {
+        "kind": "document"
+      },
+      "bound_nodes": [
+        "node_headline"
+      ],
+      "required": true,
+      "placeholder": "Dr. Priya Sharma",
+      "overflow": {
+        "kind": "shrink_font",
+        "min_font_size": 6.0,
+        "max_font_size": 10.0
+      },
+      "formatting": {
+        "max_length": null,
+        "allowed_pattern": null,
+        "preserve_case": true
+      },
+      "cardinality": {
+        "min_items": 1,
+        "max_items": 1
+      },
+      "conditional": null,
+      "repeater": null,
+      "validation": {
+        "samples": [
+          "Dr. Priya Sharma"
+        ],
+        "worst_case": "Dr. Maximilian Whitmore-Kensington",
+        "max_length": null
+      },
+      "image_policy": null,
+      "editability": "instance_only",
+      "binding_hints": [
+        {
+          "source_path": "contact.full_name",
+          "confidence": 1.0
+        }
+      ]
+    },
+    "slot_account_logo": {
+      "id": "slot_account_logo",
+      "key": "account.logo",
+      "label": "Account logo",
+      "content_type": "logo",
+      "scope": {
+        "kind": "document"
+      },
+      "bound_nodes": [
+        "node_logo"
+      ],
+      "required": true,
+      "placeholder": "Account logo",
+      "overflow": {
+        "kind": "clip"
+      },
+      "formatting": {
+        "max_length": null,
+        "allowed_pattern": null,
+        "preserve_case": true
+      },
+      "cardinality": {
+        "min_items": 1,
+        "max_items": 1
+      },
+      "conditional": null,
+      "repeater": null,
+      "validation": {
+        "samples": [],
+        "worst_case": null,
+        "max_length": null
+      },
+      "image_policy": {
+        "fit": "contain",
+        "focal_point": null,
+        "min_dpi": 300,
+        "preserve_transparency": true,
+        "aspect_ratio": null
+      },
+      "editability": "instance_only",
+      "binding_hints": [
+        {
+          "source_path": "account.logo",
+          "confidence": 1.0
+        }
+      ]
+    },
+    "slot_cta": {
+      "id": "slot_cta",
+      "key": "campaign.cta",
+      "label": "Campaign call to action",
+      "content_type": "text_short",
+      "scope": {
+        "kind": "document"
+      },
+      "bound_nodes": [
+        "node_cta"
+      ],
+      "required": true,
+      "placeholder": "Book your demo",
+      "overflow": {
+        "kind": "ask_agent_to_repair"
+      },
+      "formatting": {
+        "max_length": 60,
+        "allowed_pattern": null,
+        "preserve_case": true
+      },
+      "cardinality": {
+        "min_items": 1,
+        "max_items": 1
+      },
+      "conditional": null,
+      "repeater": null,
+      "validation": {
+        "samples": [
+          "Book your demo"
+        ],
+        "worst_case": "Reserve your personalized onboarding session",
+        "max_length": 60
+      },
+      "image_policy": null,
+      "editability": "instance_only",
+      "binding_hints": [
+        {
+          "source_path": "campaign.cta",
+          "confidence": 1.0
+        }
+      ]
+    },
+    "slot_insights": {
+      "id": "slot_insights",
+      "key": "research.key_insights",
+      "label": "Key research insights",
+      "content_type": "repeater_group",
+      "scope": {
+        "kind": "document"
+      },
+      "bound_nodes": [
+        "node_insights"
+      ],
+      "required": true,
+      "placeholder": "Insight placeholder",
+      "overflow": {
+        "kind": "error"
+      },
+      "formatting": {
+        "max_length": null,
+        "allowed_pattern": null,
+        "preserve_case": true
+      },
+      "cardinality": {
+        "min_items": 1,
+        "max_items": 4
+      },
+      "conditional": null,
+      "repeater": {
+        "template_node_id": "node_insight_item",
+        "item_slot_key": "research.key_insights.item",
+        "min_items": 1,
+        "max_items": 4,
+        "reflow": "stack"
+      },
+      "validation": {
+        "samples": [],
+        "worst_case": null,
+        "max_length": null
+      },
+      "image_policy": null,
+      "editability": "instance_only",
+      "binding_hints": [
+        {
+          "source_path": "research.key_insights",
+          "confidence": 1.0
+        }
+      ]
+    },
+    "slot_insight_item": {
+      "id": "slot_insight_item",
+      "key": "research.key_insights.item",
+      "label": "Single research insight",
+      "content_type": "text_short",
+      "scope": {
+        "kind": "node",
+        "id": "node_insight_item"
+      },
+      "bound_nodes": [
+        "node_insight_item"
+      ],
+      "required": false,
+      "placeholder": "Insight placeholder",
+      "overflow": {
+        "kind": "wrap",
+        "max_lines": 2
+      },
+      "formatting": {
+        "max_length": null,
+        "allowed_pattern": null,
+        "preserve_case": true
+      },
+      "cardinality": {
+        "min_items": 1,
+        "max_items": 1
+      },
+      "conditional": null,
+      "repeater": null,
+      "validation": {
+        "samples": [
+          "Reduced patient wait times by 38%"
+        ],
+        "worst_case": "Consolidated eleven legacy intake workflows into one branded patient journey",
+        "max_length": null
+      },
+      "image_policy": null,
+      "editability": "instance_only",
+      "binding_hints": [
+        {
+          "source_path": "research.key_insights[]",
+          "confidence": 1.0
+        }
+      ]
+    },
+    "slot_quote": {
+      "id": "slot_quote",
+      "key": "research.quote",
+      "label": "Customer research quote",
+      "content_type": "text_long",
+      "scope": {
+        "kind": "document"
+      },
+      "bound_nodes": [
+        "node_quote"
+      ],
+      "required": false,
+      "placeholder": "Their team shipped twice as fast.",
+      "overflow": {
+        "kind": "wrap",
+        "max_lines": 4
+      },
+      "formatting": {
+        "max_length": null,
+        "allowed_pattern": null,
+        "preserve_case": true
+      },
+      "cardinality": {
+        "min_items": 1,
+        "max_items": 1
+      },
+      "conditional": {
+        "expression": "has(research.quote)",
+        "when_false": "hide_region"
+      },
+      "repeater": null,
+      "validation": {
+        "samples": [
+          "Their team shipped twice as fast."
+        ],
+        "worst_case": null,
+        "max_length": null
+      },
+      "image_policy": null,
+      "editability": "instance_only",
+      "binding_hints": [
+        {
+          "source_path": "research.quote",
+          "confidence": 1.0
+        }
+      ]
+    },
+    "slot_qr": {
+      "id": "slot_qr",
+      "key": "campaign.qr",
+      "label": "Landing page QR code",
+      "content_type": "url_qr",
+      "scope": {
+        "kind": "document"
+      },
+      "bound_nodes": [
+        "node_qr"
+      ],
+      "required": true,
+      "placeholder": "https://go.example.com/landing",
+      "overflow": {
+        "kind": "clip"
+      },
+      "formatting": {
+        "max_length": null,
+        "allowed_pattern": null,
+        "preserve_case": true
+      },
+      "cardinality": {
+        "min_items": 1,
+        "max_items": 1
+      },
+      "conditional": null,
+      "repeater": null,
+      "validation": {
+        "samples": [],
+        "worst_case": null,
+        "max_length": null
+      },
+      "image_policy": {
+        "fit": "contain",
+        "focal_point": null,
+        "min_dpi": 300,
+        "preserve_transparency": false,
+        "aspect_ratio": 1.0
+      },
+      "editability": "instance_only",
+      "binding_hints": [
+        {
+          "source_path": "links.landing_page.url",
+          "confidence": 1.0
+        }
+      ]
+    }
+  },
+  "assets": {
+    "asset_placeholder_logo": {
+      "id": "asset_placeholder_logo",
+      "label": "Placeholder account logo",
+      "kind": "logo",
+      "status": "ready",
+      "source": {
+        "kind": "uploaded",
+        "filename": "placeholder-logo.png",
+        "uploaded_by": "designer"
+      },
+      "media": {
+        "mime_type": "image/png",
+        "filename": "placeholder-logo.png",
+        "byte_length": 96,
+        "digest": {
+          "algorithm": "sha256",
+          "value": "8e5491753553a973d4e82a8ae675fdfbd6c7b06c87629d365a30c7bc659d2195"
+        },
+        "location": {
+          "provider": "local-store",
+          "opaque_ref": "sha256/8e/8e5491753553a973d4e82a8ae675fdfbd6c7b06c87629d365a30c7bc659d2195",
+          "url": null
+        }
+      },
+      "raster": {
+        "pixel_width": 1200,
+        "pixel_height": 400,
+        "dpi_x": 300.0,
+        "dpi_y": 300.0,
+        "has_alpha": true,
+        "color_profile": "srgb",
+        "aspect_ratio": 3.0
+      },
+      "vector": null,
+      "font": null,
+      "logo": {
+        "pixel_width": 1200,
+        "pixel_height": 400,
+        "width": 36.0,
+        "height": 12.0,
+        "dpi_x": 300.0,
+        "dpi_y": 300.0,
+        "has_transparency": true,
+        "color_mode": "full_color",
+        "clearspace": 2.0
+      },
+      "license": {
+        "name": "client_owned",
+        "allow_export": true,
+        "allow_modification": true,
+        "allow_embedding": true,
+        "allow_subsetting": false,
+        "source_url": null,
+        "restrictions": []
+      },
+      "provenance": {
+        "created_by": "designer",
+        "created_at": "2026-06-13T00:00:00Z",
+        "source_label": "manual upload",
+        "confidence": 1.0,
+        "notes": [
+          "Template placeholder logo; replaced per instance."
+        ]
+      },
+      "tags": [
+        "logo",
+        "placeholder"
+      ]
+    },
+    "asset_placeholder_qr": {
+      "id": "asset_placeholder_qr",
+      "label": "Placeholder QR code",
+      "kind": "vector",
+      "status": "ready",
+      "source": {
+        "kind": "generated",
+        "request_id": "asset_placeholder_qr",
+        "model": "qr-v1"
+      },
+      "media": {
+        "mime_type": "image/svg+xml",
+        "filename": "placeholder-qr.svg",
+        "byte_length": 1024,
+        "digest": {
+          "algorithm": "sha256",
+          "value": "0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        "location": {
+          "provider": "local-store",
+          "opaque_ref": "sha256/00/0000000000000000000000000000000000000000000000000000000000000000",
+          "url": null
+        }
+      },
+      "raster": null,
+      "vector": {
+        "width": 33.0,
+        "height": 33.0,
+        "view_box": [0.0, 0.0, 33.0, 33.0],
+        "has_transparency": false,
+        "path_data": null
+      },
+      "font": null,
+      "logo": null,
+      "license": {
+        "name": "generated_qr",
+        "allow_export": true,
+        "allow_modification": true,
+        "allow_embedding": true,
+        "allow_subsetting": true,
+        "source_url": null,
+        "restrictions": []
+      },
+      "provenance": {
+        "created_by": "qr-v1",
+        "created_at": null,
+        "source_label": "generated:qr",
+        "confidence": 1.0,
+        "notes": [
+          "Template placeholder QR; regenerated per instance."
+        ]
+      },
+      "tags": [
+        "qr",
+        "placeholder"
+      ]
+    }
+  },
+  "export_profiles": [
+    {
+      "name": "print_pdf",
+      "format": "pdf",
+      "pdf_intent": "print",
+      "raster": null,
+      "include_bleed": true,
+      "embed_fonts": true
+    },
+    {
+      "name": "digital_png",
+      "format": "png",
+      "pdf_intent": null,
+      "raster": {
+        "scale": 1.0,
+        "dpi": 300
+      },
+      "include_bleed": false,
+      "embed_fonts": false
+    },
+    {
+      "name": "digital_svg",
+      "format": "svg",
+      "pdf_intent": null,
+      "raster": null,
+      "include_bleed": false,
+      "embed_fonts": false
+    }
+  ]
+}

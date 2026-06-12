@@ -123,6 +123,41 @@ class GenerateQrRequest(BaseModel):
     target_width_mm: Optional[float] = None
 
 
+class GenerateAssetRequest(BaseModel):
+    provider: str
+    prompt: str = ""
+    output_kind: str = "raster_image"
+    width: Optional[int] = None
+    height: Optional[int] = None
+    mime_type: Optional[str] = None
+    transparent_background: Optional[bool] = None
+    brand_notes: List[str] = Field(default_factory=list)
+    label: Optional[str] = None
+
+
+class CreateBindingSetRequest(BaseModel):
+    binding_set: JsonObject
+
+
+class DeriveInstanceRequest(BaseModel):
+    binding_set_id: Optional[str] = None
+    binding_set: Optional[JsonObject] = None
+    export_formats: List[str] = Field(default_factory=list)
+    export_dpi: Optional[int] = None
+
+
+class CreateInstanceBatchRequest(BaseModel):
+    binding_set_ids: List[str]
+    export_formats: List[str] = Field(default_factory=lambda: ["svg", "png"])
+    chunk_size: int = 10
+
+
+class InstancePreviewRequest(BaseModel):
+    scene: JsonObject
+    binding_set: JsonObject
+    format: str = "svg"
+
+
 class AssetMetadataRequest(BaseModel):
     asset_id: Optional[str] = None
     document_id: Optional[str] = None

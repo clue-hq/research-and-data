@@ -196,6 +196,65 @@ class CoreClient:
             raise_on_error=raise_on_error,
         )
 
+    def generate_asset(
+        self,
+        store_root: str,
+        provider: str,
+        request: JsonObject,
+        asset_id: str,
+        label: Optional[str] = None,
+        raise_on_error: bool = True,
+    ) -> JsonObject:
+        return self._run(
+            {
+                "action": "generate_asset",
+                "store_root": store_root,
+                "provider": provider,
+                "request": request,
+                "asset_id": asset_id,
+                "label": label,
+            },
+            raise_on_error=raise_on_error,
+        )
+
+    def validate_binding_set(
+        self,
+        scene: JsonObject,
+        binding_set: JsonObject,
+        raise_on_error: bool = False,
+    ) -> JsonObject:
+        return self._run(
+            {
+                "action": "validate_binding_set",
+                "scene": scene,
+                "binding_set": binding_set,
+            },
+            raise_on_error=raise_on_error,
+        )
+
+    def derive_instance(
+        self,
+        scene: JsonObject,
+        binding_set: JsonObject,
+        asset_records: Optional[List[JsonObject]] = None,
+        store_root: Optional[str] = None,
+        export_formats: Optional[List[str]] = None,
+        export_dpi: Optional[int] = None,
+        raise_on_error: bool = False,
+    ) -> JsonObject:
+        return self._run(
+            {
+                "action": "derive_instance",
+                "scene": scene,
+                "binding_set": binding_set,
+                "asset_records": asset_records or [],
+                "store_root": store_root,
+                "export_formats": export_formats or [],
+                "export_dpi": export_dpi,
+            },
+            raise_on_error=raise_on_error,
+        )
+
     def finalize_template(
         self, scene: JsonObject, template_revision_id: str
     ) -> JsonObject:

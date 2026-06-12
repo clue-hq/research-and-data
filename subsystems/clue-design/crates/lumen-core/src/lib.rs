@@ -4,12 +4,14 @@
 //! React, Konva, FastAPI, databases, object storage, browser APIs, or WebGPU.
 
 pub mod assets;
+pub mod binding;
 pub mod brand;
 pub mod diagnostics;
 pub mod dsl;
 pub mod editing;
 pub mod export_contract;
 pub mod ids;
+pub mod instance;
 pub mod layout;
 pub mod operations;
 pub mod preflight;
@@ -28,6 +30,10 @@ pub use assets::{
     AssetProvenance, AssetRecord, AssetSource, AssetStatus, AssetThumbnail, AssetValidationOptions,
     AssetVectorizationRequest, AssetVectorizationResult, FontAssetMetadata, LogoAssetMetadata,
     RasterAssetMetadata, VectorAssetMetadata,
+};
+pub use binding::{
+    validate_binding_set, BindingAudience, BindingSet, BoundValue, ConditionalExpr,
+    GeneratedAssetInput, GeneratedAssetSpec, InstanceLink, BINDING_SCHEMA_VERSION,
 };
 pub use brand::{
     collect_scene_token_references, compare_brand_kit_compatibility, compile_styles_brand_kit,
@@ -78,6 +84,11 @@ pub use export_contract::{
 pub use ids::{
     AssetId, BrandKitId, DocumentId, EffectId, IdError, NodeId, OperationId, PageId, PaintId,
     SlotId, SlotKey, TemplateRevisionId,
+};
+pub use instance::{
+    derive_instance, DerivationAssets, DeriveOptions, DerivedInstance, InstanceAuditEntry,
+    InstanceAuditKind, InstanceFitReport, InstanceFitStatus, SlotFitEntry, SlotFitVerdict,
+    TemplateRepairRequest,
 };
 pub use layout::{layout_operations, layout_scene, validate_layout, LayoutOptions, LayoutResult};
 pub use operations::{

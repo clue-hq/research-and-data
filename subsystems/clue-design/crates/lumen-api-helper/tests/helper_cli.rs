@@ -943,3 +943,299 @@ fn generate_asset_rejects_unknown_providers() {
     assert_eq!(response["ok"], false);
     assert_eq!(response["error"]["code"], "provider.unknown");
 }
+
+// ---------------------------------------------------------------------------
+// Phase G: derive_instance / validate_binding_set (slice G5)
+// ---------------------------------------------------------------------------
+
+const MAILER_REVISION: &str =
+    include_str!("../../lumen-core/fixtures/conformance/phase_g_mailer_revision.json");
+const NOMINAL_BINDING: &str = include_str!("../../lumen-core/fixtures/binding/nominal.json");
+
+fn mailer_revision() -> Value {
+    serde_json::from_str(MAILER_REVISION).unwrap()
+}
+
+fn nominal_binding() -> Value {
+    serde_json::from_str(NOMINAL_BINDING).unwrap()
+}
+
+fn binding_logo_record() -> Value {
+    json!({
+        "id": "asset_acme_logo",
+        "label": "Acme logo",
+        "kind": "logo",
+        "status": "ready",
+        "source": { "kind": "uploaded", "asset_id": null, "filename": "acme.png", "uploaded_by": "ops" },
+        "media": {
+            "mime_type": "image/png",
+            "filename": "acme.png",
+            "byte_length": 2048,
+            "digest": { "algorithm": "sha256", "value": "ab".repeat(32) },
+            "location": null
+        },
+        "raster": {
+            "pixel_width": 1200, "pixel_height": 400,
+            "dpi_x": 300.0, "dpi_y": 300.0,
+            "has_alpha": true, "color_profile": "srgb", "aspect_ratio": 3.0
+        },
+        "vector": null,
+        "font": null,
+        "logo": {
+            "pixel_width": 1200, "pixel_height": 400,
+            "width": 36.0, "height": 12.0,
+            "dpi_x": 300.0, "dpi_y": 300.0,
+            "has_transparency": true, "color_mode": "full_color", "clearspace": 2.0
+        },
+        "license": null,
+        "provenance": { "created_by": null, "created_at": null, "source_label": null, "confidence": null, "notes": [] },
+        "tags": ["logo"]
+    })
+}
+
+fn derive_request(store_root: &str) -> Value {
+    json!({
+        "action": "derive_instance",
+        "scene": mailer_revision(),
+        "binding_set": nominal_binding(),
+        "asset_records": [binding_logo_record()],
+        "store_root": store_root
+    })
+}
+
+#[test]
+fn validate_binding_set_action_reports_precise_codes() {
+    let response = helper(json!({
+        "action": "validate_binding_set",
+        "scene": mailer_revision(),
+        "binding_set": nominal_binding(),
+    }));
+    assert_eq!(response["ok"], true, "{response:#?}");
+    assert_eq!(response["instance"]["valid"], true);
+
+    let mut invalid = nominal_binding();
+    invalid["values"]
+        .as_object_mut()
+        .unwrap()
+        .remove("contact.full_name");
+    let response = helper(json!({
+        "action": "validate_binding_set",
+        "scene": mailer_revision(),
+        "binding_set": invalid,
+    }));
+    assert_eq!(response["ok"], false, "{response:#?}");
+    let codes: Vec<&str> = response["diagnostics"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|d| d["code"].as_str())
+        .collect();
+    assert!(codes.contains(&"LUMG0012"), "{codes:?}");
+}
+
+#[test]
+fn derive_instance_executes_the_qr_chain_with_digest_stability() {
+    let store_dir = tempfile::tempdir().expect("tempdir");
+    let store_root = store_dir.path().to_string_lossy().to_string();
+
+    let first = helper(derive_request(&store_root));
+    assert_eq!(first["ok"], true, "{first:#?}");
+    assert_eq!(first["instance"]["has_errors"], false, "{first:#?}");
+
+    let generated = &first["instance"]["generated"]["qr_landing"];
+    assert_eq!(
+        generated["record"]["id"], "asset_gen_bind_acme_dr_sharma_qr_landing",
+        "generated asset ids are a pure function of (binding_set_id, entry)"
+    );
+    let digest = generated["digest_value"].as_str().expect("digest");
+    let notes = generated["record"]["provenance"]["notes"]
+        .as_array()
+        .expect("notes");
+    assert!(
+        notes
+            .iter()
+            .any(|note| note.as_str() == Some("binding_set:bind_acme_dr_sharma")),
+        "provenance must record the binding set: {notes:?}"
+    );
+
+    // The derived scene binds the generated QR to the UrlQr slot's node.
+    let qr_node = &first["scene"]["nodes"]["node_qr"];
+    assert_eq!(
+        qr_node["kind"]["asset_id"], "asset_gen_bind_acme_dr_sharma_qr_landing",
+        "{qr_node:#?}"
+    );
+
+    // Re-derivation: byte-identical derived scene and the same QR digest
+    // (content-addressed store deduplicates the bytes).
+    let second = helper(derive_request(&store_root));
+    assert_eq!(
+        serde_json::to_string(&first["scene"]).unwrap(),
+        serde_json::to_string(&second["scene"]).unwrap(),
+        "re-derivation must be byte-identical"
+    );
+    assert_eq!(
+        second["instance"]["generated"]["qr_landing"]["digest_value"]
+            .as_str()
+            .unwrap(),
+        digest,
+        "same URL must produce the same QR digest"
+    );
+    assert_eq!(
+        second["instance"]["generated"]["qr_landing"]["deduplicated"], true,
+        "second run must hit the content-addressed store"
+    );
+}
+
+#[test]
+fn derive_instance_refuses_invalid_bindings_before_provider_execution() {
+    let store_dir = tempfile::tempdir().expect("tempdir");
+    let store_root = store_dir.path().to_string_lossy().to_string();
+
+    let mut request = derive_request(&store_root);
+    request["binding_set"]["values"]["campaign.cta"] = json!({
+        "kind": "text",
+        "value": "X".repeat(61)
+    });
+    let response = helper(request);
+    assert_eq!(response["ok"], false, "{response:#?}");
+    assert_eq!(response["error"]["code"], "instance.binding_invalid");
+    let codes: Vec<&str> = response["diagnostics"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|d| d["code"].as_str())
+        .collect();
+    assert!(codes.contains(&"LUMG0014"), "{codes:?}");
+    // No provider executed: the store stays empty.
+    assert!(
+        std::fs::read_dir(store_dir.path())
+            .unwrap()
+            .next()
+            .is_none(),
+        "no bytes may be stored for refused derivations"
+    );
+}
+
+#[test]
+fn derive_instance_returns_fit_report_with_skia_truth() {
+    let store_dir = tempfile::tempdir().expect("tempdir");
+    let store_root = store_dir.path().to_string_lossy().to_string();
+
+    // Nominal content fits cleanly under real shaping.
+    let nominal = helper(derive_request(&store_root));
+    assert_eq!(nominal["ok"], true, "{nominal:#?}");
+    let report = &nominal["instance"]["fit_report"];
+    assert_eq!(report["status"], "fits", "{report:#?}");
+    assert_eq!(report["binding_set_id"], "bind_acme_dr_sharma");
+
+    // The worst-case headline overflows even at min font under Skia
+    // measurement: the fit report surfaces it (zero silent overflows).
+    let mut request = derive_request(&store_root);
+    request["binding_set"] = serde_json::from_str::<Value>(include_str!(
+        "../../lumen-core/fixtures/binding/worst_case.json"
+    ))
+    .unwrap();
+    request["asset_records"][0]["id"] = json!("asset_meridian_logo");
+    let worst = helper(request);
+    assert_eq!(worst["ok"], true, "{worst:#?}");
+    let report = &worst["instance"]["fit_report"];
+    assert_eq!(report["status"], "overflow", "{report:#?}");
+    let headline = report["slots"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|entry| entry["slot_key"] == "contact.full_name")
+        .expect("headline entry");
+    assert_eq!(headline["verdict"]["kind"], "overflow", "{headline:#?}");
+    assert_eq!(headline["verdict"]["policy"], "shrink_font");
+    assert_eq!(headline["beyond_worst_case"], true);
+}
+
+#[test]
+fn derive_instance_bulk_export_stores_artifacts_per_the_b3_verdict() {
+    let store_dir = tempfile::tempdir().expect("tempdir");
+    let store_root = store_dir.path().to_string_lossy().to_string();
+
+    let mut request = derive_request(&store_root);
+    request["export_formats"] = json!(["svg", "png", "pdf"]);
+    request["export_dpi"] = json!(300);
+
+    let first = helper(request.clone());
+    assert_eq!(first["ok"], true, "{first:#?}");
+    assert_eq!(first["instance"]["export_skipped"], false);
+    let artifacts = first["instance"]["artifacts"]
+        .as_array()
+        .expect("artifacts");
+    assert_eq!(artifacts.len(), 3, "{artifacts:#?}");
+
+    for artifact in artifacts {
+        assert!(
+            artifact.get("error").is_none(),
+            "no artifact may fail: {artifact:#?}"
+        );
+        assert!(
+            artifact["digest_value"].as_str().is_some(),
+            "content-addressed storage: {artifact:#?}"
+        );
+        let relative = artifact["relative_path"].as_str().expect("relative path");
+        assert!(
+            store_dir.path().join(relative).exists(),
+            "artifact bytes must exist in the store: {relative}"
+        );
+    }
+
+    // PDF follows the B3 verdict: raster-flattened pages at 300dpi, DL
+    // mailer 210x105mm => 595.3x297.6pt => 2480x1240px.
+    let pdf = artifacts
+        .iter()
+        .find(|artifact| artifact["format"] == "pdf")
+        .expect("pdf artifact");
+    assert_eq!(pdf["flattened_raster_dpi"], 300);
+    let page = &pdf["pages"][0];
+    assert_eq!(page["width_px"], 2480, "{page:#?}");
+    assert_eq!(page["height_px"], 1240, "{page:#?}");
+    let pdf_path = store_dir
+        .path()
+        .join(pdf["relative_path"].as_str().unwrap());
+    let pdf_bytes = std::fs::read(&pdf_path).expect("pdf bytes");
+    assert!(pdf_bytes.starts_with(b"%PDF-"), "stored bytes are a PDF");
+
+    // Determinism: re-deriving and re-exporting produces identical digests
+    // for every artifact (the store reports dedup hits).
+    let second = helper(request);
+    let second_artifacts = second["instance"]["artifacts"].as_array().unwrap();
+    for (a, b) in artifacts.iter().zip(second_artifacts) {
+        assert_eq!(a["format"], b["format"]);
+        assert_eq!(
+            a["digest_value"], b["digest_value"],
+            "artifact digests must be idempotent: {} vs {}",
+            a["digest_value"], b["digest_value"]
+        );
+        assert_eq!(b["deduplicated"], true, "{b:#?}");
+    }
+}
+
+#[test]
+fn derive_instance_export_skips_failed_instances() {
+    let store_dir = tempfile::tempdir().expect("tempdir");
+    let store_root = store_dir.path().to_string_lossy().to_string();
+
+    let mut request = derive_request(&store_root);
+    // Worst-case headline cannot fit even at min font => error => no export.
+    request["binding_set"] = serde_json::from_str::<Value>(include_str!(
+        "../../lumen-core/fixtures/binding/worst_case.json"
+    ))
+    .unwrap();
+    request["asset_records"][0]["id"] = json!("asset_meridian_logo");
+    request["export_formats"] = json!(["png"]);
+
+    let response = helper(request);
+    assert_eq!(response["ok"], true, "{response:#?}");
+    assert_eq!(response["instance"]["has_errors"], true);
+    assert_eq!(response["instance"]["export_skipped"], true);
+    assert_eq!(
+        response["instance"]["artifacts"].as_array().unwrap().len(),
+        0,
+        "failed instances never produce artifacts"
+    );
+}

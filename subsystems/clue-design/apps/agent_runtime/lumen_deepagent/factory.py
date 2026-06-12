@@ -40,6 +40,8 @@ def create_lumen_design_agent(
             tools.apply_operations,
             tools.apply_structured_edit,
             tools.generate_qr,
+            tools.validate_binding_set,
+            tools.derive_instance_preview,
             tools.preflight_design,
             tools.export_preview,
             tools.export_preview_bundle,

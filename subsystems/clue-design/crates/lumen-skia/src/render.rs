@@ -540,7 +540,19 @@ impl<'a> PagePainter<'a> {
                 Ok(mut dom) => {
                     canvas.save();
                     canvas.translate((dest.left, dest.top));
-                    dom.set_container_size((dest.width(), dest.height()));
+                    // Roots with absolute width/height render at their
+                    // intrinsic size and ignore the container size; scale
+                    // the canvas so the SVG always fills the dest box
+                    // (Phase G: generated QR codes carry width/height).
+                    let intrinsic = dom.root().intrinsic_size();
+                    if intrinsic.width > 0.0 && intrinsic.height > 0.0 {
+                        canvas.scale((
+                            dest.width() / intrinsic.width,
+                            dest.height() / intrinsic.height,
+                        ));
+                    } else {
+                        dom.set_container_size((dest.width(), dest.height()));
+                    }
                     dom.render(canvas);
                     canvas.restore();
                 }

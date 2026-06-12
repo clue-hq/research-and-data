@@ -5,12 +5,13 @@ use lumen_core::validation::validate_scene;
 use lumen_core::SharedTextMeasurer;
 use lumen_core::{
     batch_scope_violations, build_structured_edit_batch, compare_brand_kit_compatibility,
-    compile_dsl_into_scene_with_session, compile_styles_brand_kit, generate_brand_kit,
-    layout_scene, platform_default_brand_kit, preflight_scene, summarize_brand_kit_for_authoring,
-    validate_brand_kit, validate_brand_kit_product_ready, validate_scene_brand_governance,
-    AssetDigest, AssetId, AssetKind, AssetLicense, AssetLocation, AssetMediaMetadata,
-    AssetProvenance, AssetRecord, AssetSource, AssetStatus, AssetThumbnail,
-    BrandGovernanceStrictness, BrandKit, BrandKitId, BrandMode, BrandSeed, Diagnostic,
+    compile_dsl_into_scene_with_session, compile_styles_brand_kit, derive_instance,
+    generate_brand_kit, layout_scene, platform_default_brand_kit, preflight_scene,
+    summarize_brand_kit_for_authoring, validate_binding_set, validate_brand_kit,
+    validate_brand_kit_product_ready, validate_scene_brand_governance, AssetDigest, AssetId,
+    AssetKind, AssetLicense, AssetLocation, AssetMediaMetadata, AssetProvenance, AssetRecord,
+    AssetSource, AssetStatus, AssetThumbnail, BindingSet, BrandGovernanceStrictness, BrandKit,
+    BrandKitId, BrandMode, BrandSeed, DerivationAssets, DeriveOptions, Diagnostic,
     DiagnosticSeverity, DocumentId, DslCompileSessionSnapshot, EditScope, EditScopeMode,
     ExportAdapter, ExportFormat, ExportProfile, ExportPurpose, ExportRequest, Medium, Operation,
     PageId, PdfIntent, PreflightOptions, RasterScale, Scene, ScopeViolation,
@@ -173,6 +174,24 @@ enum CoreRequest {
     LayoutGeometry {
         scene: Value,
     },
+    ValidateBindingSet {
+        scene: Value,
+        binding_set: Value,
+    },
+    DeriveInstance {
+        scene: Value,
+        binding_set: Value,
+        #[serde(default)]
+        asset_records: Vec<Value>,
+        #[serde(default)]
+        store_root: Option<String>,
+        /// Bulk-export formats rendered after a clean derivation
+        /// ("svg" | "png" | "pdf"); artifacts store content-addressed.
+        #[serde(default)]
+        export_formats: Vec<String>,
+        #[serde(default)]
+        export_dpi: Option<u16>,
+    },
     BuildInfo,
 }
 
@@ -210,6 +229,7 @@ struct CoreResponse {
     #[serde(skip_serializing_if = "Option::is_none")]
     asset: Option<Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    instance: Option<Value>,
     build_info: Option<Value>,
 }
 
@@ -257,6 +277,7 @@ fn main() {
                     dsl: None,
                     export: None,
                     asset: None,
+                    instance: None,
                     build_info: None,
                 },
             };
@@ -297,6 +318,7 @@ fn main() {
                 dsl: None,
                 export: None,
                 asset: None,
+                instance: None,
                 build_info: None,
             }
         }
@@ -330,6 +352,8 @@ impl CoreRequest {
             CoreRequest::ValidateSceneBrandGovernance { .. } => "validate_scene_brand_governance",
             CoreRequest::CompareBrandKitCompatibility { .. } => "compare_brand_kit_compatibility",
             CoreRequest::LayoutGeometry { .. } => "layout_geometry",
+            CoreRequest::ValidateBindingSet { .. } => "validate_binding_set",
+            CoreRequest::DeriveInstance { .. } => "derive_instance",
             CoreRequest::BuildInfo => "build_info",
         }
     }
@@ -425,6 +449,17 @@ fn request_log_fields(request: &CoreRequest) -> Value {
         }),
         CoreRequest::CompareBrandKitCompatibility { .. } => json!({}),
         CoreRequest::LayoutGeometry { .. } => json!({}),
+        CoreRequest::ValidateBindingSet { .. } => json!({}),
+        CoreRequest::DeriveInstance {
+            asset_records,
+            store_root,
+            export_formats,
+            ..
+        } => json!({
+            "asset_record_count": asset_records.len(),
+            "has_store_root": store_root.is_some(),
+            "export_formats": export_formats,
+        }),
         CoreRequest::BuildInfo => json!({}),
     }
 }
@@ -508,6 +543,7 @@ fn error_response(error: CoreError, diagnostics: Vec<Diagnostic>) -> CoreRespons
         dsl: None,
         export: None,
         asset: None,
+        instance: None,
         build_info: None,
     }
 }
@@ -628,6 +664,7 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                     dsl: None,
                     export: None,
                     asset: None,
+                    instance: None,
                     build_info: None,
                 }),
             }
@@ -651,6 +688,7 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                 dsl: None,
                 export: None,
                 asset: None,
+                instance: None,
                 build_info: None,
             });
             let batch = match batch {
@@ -698,6 +736,7 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                     dsl: None,
                     export: None,
                     asset: None,
+                    instance: None,
                     build_info: None,
                 }),
                 Err(error) => Ok(CoreResponse {
@@ -724,6 +763,7 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                     dsl: None,
                     export: None,
                     asset: None,
+                    instance: None,
                     build_info: None,
                 }),
             }
@@ -765,6 +805,7 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                 })),
                 export: None,
                 asset: None,
+                instance: None,
                 build_info: None,
             })
         }
@@ -804,6 +845,7 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                 dsl: None,
                 export: None,
                 asset: None,
+                instance: None,
                 build_info: None,
             })
         }
@@ -865,6 +907,7 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                     dsl: None,
                     export: Some(to_value(result)?),
                     asset: None,
+                    instance: None,
                     build_info: None,
                 }),
                 Err(error) => Ok(CoreResponse {
@@ -884,6 +927,7 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                     dsl: None,
                     export: None,
                     asset: None,
+                    instance: None,
                     build_info: None,
                 }),
             }
@@ -1034,6 +1078,7 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                     "digest_value": stored.digest_value,
                     "byte_length": stored.byte_length,
                 })),
+                instance: None,
                 build_info: None,
             })
         }
@@ -1212,6 +1257,7 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                     dsl: None,
                     export: None,
                     asset: None,
+                    instance: None,
                     build_info: None,
                 }),
             }
@@ -1237,6 +1283,7 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                 dsl: None,
                 export: None,
                 asset: None,
+                instance: None,
                 build_info: None,
             })
         }
@@ -1267,6 +1314,7 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                 dsl: None,
                 export: None,
                 asset: None,
+                instance: None,
                 build_info: None,
             })
         }
@@ -1296,6 +1344,7 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                         dsl: None,
                         export: None,
                         asset: None,
+                        instance: None,
                         build_info: None,
                     })
                 }
@@ -1319,6 +1368,7 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                     dsl: None,
                     export: None,
                     asset: None,
+                    instance: None,
                     build_info: None,
                 }),
             }
@@ -1359,6 +1409,7 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                 dsl: None,
                 export: None,
                 asset: None,
+                instance: None,
                 build_info: None,
             })
         }
@@ -1382,6 +1433,7 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                 dsl: None,
                 export: None,
                 asset: None,
+                instance: None,
                 build_info: None,
             })
         }
@@ -1410,6 +1462,7 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                 dsl: None,
                 export: None,
                 asset: None,
+                instance: None,
                 build_info: None,
             })
         }
@@ -1435,6 +1488,7 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                 dsl: None,
                 export: None,
                 asset: None,
+                instance: None,
                 build_info: None,
             })
         }
@@ -1464,6 +1518,252 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                 dsl: None,
                 export: None,
                 asset: None,
+                instance: None,
+                build_info: None,
+            })
+        }
+        CoreRequest::ValidateBindingSet { scene, binding_set } => {
+            let scene = parse_scene(scene)?;
+            let binding = parse_binding_set(binding_set)?;
+            let diagnostics = validate_binding_set(&scene, &binding);
+            let ok = !has_error(&diagnostics);
+            Ok(CoreResponse {
+                ok,
+                scene: None,
+                diagnostics,
+                error: None,
+                applied_operations: None,
+                preflight: None,
+                brand_kit: None,
+                brand_summary: None,
+                brand_generation: None,
+                brand_compatibility: None,
+                geometry: None,
+                operations: None,
+                edit: None,
+                dsl: None,
+                export: None,
+                asset: None,
+                instance: Some(json!({
+                    "binding_set_id": binding.binding_set_id,
+                    "template_revision_id": binding.template_revision_id,
+                    "valid": ok,
+                })),
+                build_info: None,
+            })
+        }
+        CoreRequest::DeriveInstance {
+            scene,
+            binding_set,
+            asset_records,
+            store_root,
+            export_formats,
+            export_dpi,
+        } => {
+            let scene = parse_scene(scene)?;
+            let binding = parse_binding_set(binding_set)?;
+
+            let mut assets = DerivationAssets::default();
+            for value in asset_records {
+                let record: AssetRecord = serde_json::from_value(value)
+                    .map_err(|error| core_error("helper.asset_record", error.to_string()))?;
+                assets.records.insert(record.id.clone(), record);
+            }
+
+            // Refuse early on invalid bindings so providers never execute
+            // for inputs that cannot derive.
+            let validation = validate_binding_set(&scene, &binding);
+            if has_error(&validation) {
+                return Ok(error_response(
+                    core_error(
+                        "instance.binding_invalid",
+                        format!(
+                            "binding set {} failed validation against the revision snapshot",
+                            binding.binding_set_id
+                        ),
+                    ),
+                    validation,
+                ));
+            }
+
+            // Execute every generated.* spec through the Phase E surfaces
+            // (QR through the dedicated deterministic encoder, everything
+            // else through the provider registry), normalizing via the
+            // shared ingest path. Asset ids are a pure function of
+            // (binding_set_id, entry name) so re-derivation is idempotent.
+            let mut generated_payloads = serde_json::Map::new();
+            for (name, spec) in &binding.generated {
+                let Some(store_root) = store_root.clone() else {
+                    return Err(core_error(
+                        "helper.store_root",
+                        "derive_instance with generated entries requires store_root",
+                    ));
+                };
+                let asset_id = deterministic_generated_asset_id(&binding.binding_set_id, name);
+                let response = match spec.provider.as_str() {
+                    "qr" => {
+                        let url = spec
+                            .input
+                            .url_from
+                            .as_deref()
+                            .and_then(|path| binding.resolve_link_path(path))
+                            .ok_or_else(|| {
+                                core_error(
+                                    "instance.generated_url",
+                                    format!(
+                                        "generated entry {name:?}: url_from did not resolve to a link"
+                                    ),
+                                )
+                            })?
+                            .to_owned();
+                        handle_request(CoreRequest::GenerateQr {
+                            store_root,
+                            data: url.clone(),
+                            asset_id: asset_id.clone(),
+                            label: Some(format!("QR code ({url})")),
+                            ec_level: spec.input.ec_level.clone(),
+                            print: false,
+                            target_width_mm: None,
+                        })?
+                    }
+                    provider => handle_request(CoreRequest::GenerateAsset {
+                        store_root,
+                        provider: provider.to_owned(),
+                        request: json!({
+                            "request_id": asset_id.clone(),
+                            "prompt": spec
+                                .input
+                                .prompt
+                                .clone()
+                                .or_else(|| spec
+                                    .input
+                                    .url_from
+                                    .as_deref()
+                                    .and_then(|path| binding.resolve_link_path(path))
+                                    .map(str::to_owned))
+                                .unwrap_or_default(),
+                            "output_kind": "raster_image",
+                            "target_node_id": null,
+                            "target_slot_id": null,
+                            "constraints": {
+                                "width": null,
+                                "height": null,
+                                "mime_type": null,
+                                "transparent_background": null,
+                                "brand_notes": []
+                            }
+                        }),
+                        asset_id: asset_id.clone(),
+                        label: None,
+                    })?,
+                };
+
+                if !response.ok {
+                    let mut diagnostics = response.diagnostics;
+                    let error = response.error.unwrap_or_else(|| {
+                        core_error("instance.generated_failed", "provider execution failed")
+                    });
+                    return Ok(error_response(
+                        core_error(
+                            "instance.generated_failed",
+                            format!(
+                                "generated entry {name:?} (provider {}) failed: {} {}",
+                                spec.provider, error.code, error.message
+                            ),
+                        ),
+                        std::mem::take(&mut diagnostics),
+                    ));
+                }
+
+                let record_value = response
+                    .asset
+                    .as_ref()
+                    .and_then(|asset| asset.get("record"))
+                    .cloned()
+                    .ok_or_else(|| {
+                        core_error(
+                            "instance.generated_failed",
+                            format!("generated entry {name:?} returned no asset record"),
+                        )
+                    })?;
+                let mut record: AssetRecord = serde_json::from_value(record_value)
+                    .map_err(|error| core_error("helper.asset_record", error.to_string()))?;
+                // Provenance records which binding set produced this asset.
+                record
+                    .provenance
+                    .notes
+                    .push(format!("binding_set:{}", binding.binding_set_id));
+
+                let mut payload = response.asset.clone().unwrap_or_else(|| json!({}));
+                payload["record"] = to_value(&record)?;
+                payload["provider_id"] = json!(spec.provider);
+                generated_payloads.insert(name.clone(), payload);
+
+                assets.generated.insert(name.clone(), record);
+            }
+
+            let derived = derive_instance(
+                &scene,
+                &binding,
+                &assets,
+                &DeriveOptions {
+                    measurer: Some(server_measurer()),
+                },
+            );
+
+            let mut diagnostics = derived.diagnostics.clone();
+            let mut artifacts: Vec<Value> = Vec::new();
+            let mut export_skipped = false;
+            if !export_formats.is_empty() {
+                if derived.has_errors() {
+                    // Failed instances never produce artifacts; the fit
+                    // report and diagnostics carry the why.
+                    export_skipped = true;
+                } else {
+                    let Some(store_root) = store_root.clone() else {
+                        return Err(core_error(
+                            "helper.store_root",
+                            "derive_instance with export_formats requires store_root",
+                        ));
+                    };
+                    artifacts = export_instance_artifacts(
+                        &derived.scene,
+                        &export_formats,
+                        export_dpi.unwrap_or(300),
+                        &store_root,
+                        &mut diagnostics,
+                    )?;
+                }
+            }
+
+            Ok(CoreResponse {
+                ok: true,
+                scene: Some(to_value(&derived.scene)?),
+                diagnostics,
+                error: None,
+                applied_operations: None,
+                preflight: None,
+                brand_kit: None,
+                brand_summary: None,
+                brand_generation: None,
+                brand_compatibility: None,
+                geometry: None,
+                operations: None,
+                edit: None,
+                dsl: None,
+                export: None,
+                asset: None,
+                instance: Some(json!({
+                    "binding_set_id": binding.binding_set_id,
+                    "template_revision_id": binding.template_revision_id,
+                    "has_errors": derived.has_errors(),
+                    "audit": to_value(&derived.audit)?,
+                    "fit_report": to_value(&derived.fit_report)?,
+                    "repair_requests": to_value(&derived.repair_requests)?,
+                    "generated": Value::Object(generated_payloads),
+                    "artifacts": artifacts,
+                    "export_skipped": export_skipped,
+                })),
                 build_info: None,
             })
         }
@@ -1487,12 +1787,189 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
             dsl: None,
             export: None,
             asset: None,
+            instance: None,
             build_info: Some(json!({
                 "schema_version": lumen_core::SCHEMA_VERSION,
                 "engine_commit": env!("LUMEN_ENGINE_COMMIT"),
             })),
         }),
     }
+}
+
+/// Deterministic per-instance generated asset id: a pure function of
+/// (binding_set_id, generated entry name) so re-derivation produces the
+/// same record and the content-addressed store deduplicates the bytes.
+fn deterministic_generated_asset_id(binding_set_id: &str, entry: &str) -> String {
+    let sanitize = |source: &str| {
+        source
+            .chars()
+            .map(|ch| {
+                if ch.is_ascii_alphanumeric() || ch == '_' || ch == '-' {
+                    ch
+                } else {
+                    '_'
+                }
+            })
+            .collect::<String>()
+    };
+    format!("asset_gen_{}_{}", sanitize(binding_set_id), sanitize(entry))
+}
+
+/// Render one derived instance to the requested formats and store every
+/// artifact content-addressed in the Phase E asset store (slice G7).
+///
+/// SVG/PNG ride the composed Skia adapter (license/print checks included,
+/// purpose BulkRender). PDF follows the BINDING B3 verdict: license/print
+/// checks run through the adapter first, then pages raster-flatten at the
+/// requested DPI via lumen-skia — never the native vector PDF path.
+fn export_instance_artifacts(
+    scene: &Scene,
+    formats: &[String],
+    dpi: u16,
+    store_root: &str,
+    diagnostics: &mut Vec<Diagnostic>,
+) -> Result<Vec<Value>, CoreError> {
+    let store = LocalAssetStore::new(store_root);
+    let resolver = Arc::new(StoreBackedResolver::new(store_root.to_owned()));
+    let adapter = server_export_adapter(LumenExportAdapter::with_resolver(
+        Arc::clone(&resolver) as Arc<dyn lumen_export::AssetByteResolver>
+    ));
+    let page_ids: Vec<PageId> = scene.pages.keys().cloned().collect();
+    let mut artifacts = Vec::new();
+
+    let push_error = |artifacts: &mut Vec<Value>, format: &str, code: &str, message: &str| {
+        artifacts.push(json!({
+            "format": format,
+            "error": { "code": code, "message": message },
+        }));
+    };
+
+    for format in formats {
+        match format.as_str() {
+            "svg" | "png" => {
+                let profile = ExportProfile {
+                    name: format!("instance_{format}"),
+                    format: if format == "svg" {
+                        ExportFormat::Svg
+                    } else {
+                        ExportFormat::Png
+                    },
+                    pdf_intent: None,
+                    raster: (format == "png").then_some(RasterScale {
+                        scale: 1.0,
+                        dpi: Some(dpi),
+                    }),
+                    include_bleed: false,
+                    embed_fonts: false,
+                };
+                let request = ExportRequest {
+                    profile,
+                    page_ids: page_ids.clone(),
+                    purpose: ExportPurpose::BulkRender,
+                };
+                match adapter.export(scene, &request) {
+                    Ok(result) => {
+                        diagnostics.extend(result.diagnostics);
+                        for artifact in result.artifacts {
+                            let stored = store
+                                .put(&artifact.bytes)
+                                .map_err(|error| core_error(error.code, error.message))?;
+                            artifacts.push(json!({
+                                "format": format,
+                                "page_id": artifact.page_id,
+                                "mime_type": artifact.mime_type,
+                                "byte_length": stored.byte_length,
+                                "digest_value": stored.digest_value,
+                                "relative_path": stored.relative_path,
+                                "deduplicated": stored.deduplicated,
+                            }));
+                        }
+                    }
+                    Err(error) => {
+                        diagnostics.extend(error.diagnostics.clone());
+                        push_error(&mut artifacts, format, error.code, &error.message);
+                    }
+                }
+            }
+            "pdf" => {
+                // Checks first (license enforcement, print DPI, logo safe
+                // area) through the adapter; the SVG bytes are discarded.
+                let check_request = ExportRequest {
+                    profile: ExportProfile {
+                        name: "instance_pdf_checks".to_owned(),
+                        format: ExportFormat::Svg,
+                        pdf_intent: Some(PdfIntent::Print),
+                        raster: None,
+                        include_bleed: false,
+                        embed_fonts: false,
+                    },
+                    page_ids: page_ids.clone(),
+                    purpose: ExportPurpose::BulkRender,
+                };
+                match adapter.export(scene, &check_request) {
+                    Ok(check_result) => {
+                        diagnostics.extend(check_result.diagnostics);
+                        let renderer = SkiaSceneRenderer::bundled();
+                        match lumen_skia::raster_flattened_pdf(
+                            &renderer,
+                            scene,
+                            &page_ids,
+                            dpi,
+                            Some(resolver.as_ref()),
+                        ) {
+                            Ok(flattened) => {
+                                diagnostics.extend(flattened.diagnostics);
+                                let stored = store
+                                    .put(&flattened.bytes)
+                                    .map_err(|error| core_error(error.code, error.message))?;
+                                artifacts.push(json!({
+                                    "format": "pdf",
+                                    "page_id": null,
+                                    "mime_type": "application/pdf",
+                                    "byte_length": stored.byte_length,
+                                    "digest_value": stored.digest_value,
+                                    "relative_path": stored.relative_path,
+                                    "deduplicated": stored.deduplicated,
+                                    "flattened_raster_dpi": dpi,
+                                    "pages": flattened
+                                        .pages
+                                        .iter()
+                                        .map(|page| json!({
+                                            "page_id": page.page_id,
+                                            "width_pt": page.width_pt,
+                                            "height_pt": page.height_pt,
+                                            "width_px": page.width_px,
+                                            "height_px": page.height_px,
+                                        }))
+                                        .collect::<Vec<_>>(),
+                                }));
+                            }
+                            Err(error) => {
+                                push_error(&mut artifacts, "pdf", error.code, &error.message)
+                            }
+                        }
+                    }
+                    Err(error) => {
+                        diagnostics.extend(error.diagnostics.clone());
+                        push_error(&mut artifacts, "pdf", error.code, &error.message);
+                    }
+                }
+            }
+            other => push_error(
+                &mut artifacts,
+                other,
+                "export.unknown_format",
+                "instance export supports svg, png, and pdf",
+            ),
+        }
+    }
+
+    Ok(artifacts)
+}
+
+fn parse_binding_set(value: Value) -> Result<BindingSet, CoreError> {
+    serde_json::from_value(value)
+        .map_err(|error| core_error("helper.binding_set", error.to_string()))
 }
 
 fn ok_scene(
@@ -1517,6 +1994,7 @@ fn ok_scene(
         dsl: None,
         export: None,
         asset: None,
+        instance: None,
         build_info: None,
     }
 }

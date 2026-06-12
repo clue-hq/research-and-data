@@ -16,6 +16,7 @@ import { ExportPanel } from "./ExportPanel";
 import { ExportPreviewSurface } from "./ExportPreviewSurface";
 import { AssetBrowserPanel } from "./AssetBrowserPanel";
 import { HistoryPanel } from "./HistoryPanel";
+import { WorstCasePreviewPanel } from "./WorstCasePreviewPanel";
 import { InspectorPanel } from "./InspectorPanel";
 import { LayerPanel } from "./LayerPanel";
 import { PageRail } from "./PageRail";
@@ -1289,6 +1290,10 @@ export default function EditorApp({
                 apiBaseUrl={process.env.NEXT_PUBLIC_LUMEN_API_BASE_URL ?? "http://localhost:8000"}
                 selectedNodeId={selectedNodeId}
                 onOperations={applyOperations}
+              />
+              <WorstCasePreviewPanel
+                apiBaseUrl={process.env.NEXT_PUBLIC_LUMEN_API_BASE_URL ?? "http://localhost:8000"}
+                scene={scene}
               />
               {documentId ? (
                 <HistoryPanel

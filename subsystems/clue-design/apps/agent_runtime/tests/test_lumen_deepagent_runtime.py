@@ -1379,3 +1379,69 @@ def test_critic_preview_export_passes_asset_store_root(tmp_path: Path, monkeypat
     expected = str(tools.config.effective_asset_store_root)
     assert captured["asset_store_root"] == expected
     assert expected.endswith("asset-store")
+
+
+# ---------------------------------------------------------------------------
+# Phase G agent surfaces (slice G9)
+# ---------------------------------------------------------------------------
+
+PHASE_G_REPO_ROOT = Path(__file__).resolve().parents[3]
+PHASE_G_MAILER_FIXTURE = (
+    PHASE_G_REPO_ROOT
+    / "crates/lumen-core/fixtures/conformance/phase_g_mailer_revision.json"
+)
+PHASE_G_NOMINAL_BINDING = (
+    PHASE_G_REPO_ROOT / "crates/lumen-core/fixtures/binding/nominal.json"
+)
+
+
+@pytest.mark.skipif(
+    not os.environ.get("LUMEN_CORE_HELPER"),
+    reason="requires the real core helper binary",
+)
+def test_phase_g_agent_tools_validate_and_preview_instances(tmp_path: Path):
+    tools = LumenDesignTools(runtime_config(tmp_path), "Personalize the mailer")
+    tools.scene = json.loads(PHASE_G_MAILER_FIXTURE.read_text())
+    binding = json.loads(PHASE_G_NOMINAL_BINDING.read_text())
+    # Bind the logo to the asset record the template already carries so the
+    # preview derivation resolves it from the scene.
+    binding["values"]["account.logo"]["asset_id"] = "asset_placeholder_logo"
+
+    # validate_binding_set: the critic can check a recipient's data.
+    valid = json.loads(tools.validate_binding_set(json.dumps(binding)))
+    assert valid["binding_validation"]["status"] == "valid", valid
+
+    broken = json.loads(PHASE_G_NOMINAL_BINDING.read_text())
+    broken["values"].pop("contact.full_name")
+    invalid = json.loads(tools.validate_binding_set(json.dumps(broken)))
+    assert invalid["binding_validation"]["status"] == "invalid"
+    assert any(
+        diag["code"] == "LUMG0012" for diag in invalid["diagnostics"]
+    ), invalid
+
+    # derive_instance_preview: a personalized instance the critic can see.
+    preview = json.loads(
+        tools.derive_instance_preview(json.dumps(binding), export_format="svg")
+    )
+    assert preview["instance_preview"]["status"] == "ok", preview
+    assert preview["instance_preview"]["has_errors"] is False
+    assert preview["instance_preview"]["fit_status"] == "fits"
+    paths = preview["instance_preview"]["preview_paths"]
+    assert paths, "preview artifact must be written for critique"
+    svg = Path(paths[0]).read_text()
+    assert "Dr. Priya Sharma" in svg, "the preview carries the bound content"
+    assert paths[0] in tools.preview_paths
+
+    # The working scene was never mutated: instances are derived artifacts.
+    assert (
+        tools.scene["nodes"]["node_qr"]["kind"]["asset_id"]
+        == "asset_placeholder_qr"
+    )
+
+    # Trace records both tool runs.
+    events = [
+        json.loads(line)
+        for line in (tools.trace_dir / "trace.jsonl").read_text().splitlines()
+    ]
+    assert any(event["event"] == "binding_set_validated" for event in events)
+    assert any(event["event"] == "instance_preview_derived" for event in events)

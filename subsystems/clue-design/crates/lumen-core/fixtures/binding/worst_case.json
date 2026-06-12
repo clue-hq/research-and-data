@@ -1,0 +1,63 @@
+{
+  "schema_version": 1,
+  "binding_set_id": "bind_meridian_dr_whitmore",
+  "template_revision_id": "tmpl_mailer_v1",
+  "audience": {
+    "account_id": "acct_meridian",
+    "contact_id": "ct_whitmore"
+  },
+  "values": {
+    "contact.full_name": {
+      "kind": "text",
+      "value": "Dr. Maximiliana Alexandra Whitmore-Kensington of Bartholomew"
+    },
+    "account.logo": {
+      "kind": "asset",
+      "asset_id": "asset_meridian_logo"
+    },
+    "campaign.cta": {
+      "kind": "text",
+      "value": "Reserve your comprehensive personalized onboarding"
+    },
+    "research.key_insights": {
+      "kind": "list",
+      "items": [
+        {
+          "kind": "text",
+          "value": "Consolidated eleven legacy intake workflows into one branded patient journey"
+        },
+        {
+          "kind": "text",
+          "value": "Recovered four thousand staff hours annually across regional clinics"
+        },
+        {
+          "kind": "text",
+          "value": "Raised patient satisfaction scores by twenty-two points in two quarters"
+        },
+        {
+          "kind": "text",
+          "value": "Unified nineteen scheduling systems without a single day of downtime"
+        }
+      ]
+    },
+    "research.quote": {
+      "kind": "text",
+      "value": "We evaluated every major vendor in the space over eighteen months and none of them came close to the speed, polish, and clinical empathy this team delivered in their very first release."
+    }
+  },
+  "links": {
+    "landing_page": {
+      "url": "https://go.example.com/meridian/dr-whitmore-kensington"
+    }
+  },
+  "generated": {
+    "qr_landing": {
+      "provider": "qr",
+      "input": {
+        "url_from": "links.landing_page.url",
+        "ec_level": "h"
+      },
+      "bind_to_slot": "campaign.qr"
+    }
+  }
+}
