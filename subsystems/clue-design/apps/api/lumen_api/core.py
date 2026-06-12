@@ -61,15 +61,27 @@ class CoreClient:
     def validate_scene(self, scene: JsonObject) -> JsonObject:
         return self._run({"action": "validate_scene", "scene": scene})
 
-    def apply_operations(self, scene: JsonObject, operations: List[JsonObject]) -> JsonObject:
-        return self._run(
-            {"action": "apply_operations", "scene": scene, "operations": operations}
-        )
+    def apply_operations(
+        self,
+        scene: JsonObject,
+        operations: List[JsonObject],
+        scope: Optional[JsonObject] = None,
+    ) -> JsonObject:
+        request = {"action": "apply_operations", "scene": scene, "operations": operations}
+        if scope is not None:
+            request["scope"] = scope
+        return self._run(request)
 
-    def apply_structured_edit(self, scene: JsonObject, edit: JsonObject) -> JsonObject:
-        return self._run(
-            {"action": "apply_structured_edit", "scene": scene, "edit": edit}
-        )
+    def apply_structured_edit(
+        self,
+        scene: JsonObject,
+        edit: JsonObject,
+        scope: Optional[JsonObject] = None,
+    ) -> JsonObject:
+        request = {"action": "apply_structured_edit", "scene": scene, "edit": edit}
+        if scope is not None:
+            request["scope"] = scope
+        return self._run(request)
 
     def compile_dsl_into_scene(
         self,

@@ -1518,3 +1518,58 @@ def test_backfill_wraps_pre_envelope_operation_rows(tmp_path: Path) -> None:
     assert envelope["intent"] is None
     assert envelope["inverse_operations"] is None
     assert envelope["operations"][0]["kind"] == "update_document"
+
+
+def test_strict_scope_violation_rejects_edit_fail_closed(client: TestClient) -> None:
+    document = create_document(client)
+    response = client.post(
+        f"/documents/{document['id']}/edits",
+        json={
+            "edit": {
+                "kind": "modify",
+                "target": {"kind": "node", "id": "node_contact_name"},
+                "patch": {
+                    "kind": "node",
+                    "value": {
+                        "text": {"content": {"kind": "set", "value": "Out of scope"}}
+                    },
+                },
+            },
+            "scope": {"mode": "strict", "allowed": [{"kind": "document"}]},
+            "actor": {"kind": "agent", "id": "agent_repair"},
+            "source": "agent",
+        },
+    )
+    assert response.status_code >= 400, response.text
+    assert "edit.scope_violation" in response.text
+
+    loaded = client.get(f"/documents/{document['id']}").json()
+    assert loaded["current_version"] == 0
+    assert client.get(f"/documents/{document['id']}/history").json()["envelopes"] == []
+
+
+def test_strict_scope_in_scope_edit_applies(client: TestClient) -> None:
+    document = create_document(client)
+    response = client.post(
+        f"/documents/{document['id']}/edits",
+        json={
+            "edit": {
+                "kind": "modify",
+                "target": {"kind": "node", "id": "node_contact_name"},
+                "patch": {
+                    "kind": "node",
+                    "value": {
+                        "text": {"content": {"kind": "set", "value": "In scope"}}
+                    },
+                },
+            },
+            "scope": {
+                "mode": "strict",
+                "allowed": [{"kind": "node", "id": "node_contact_name"}],
+            },
+            "actor": {"kind": "agent", "id": "agent_repair"},
+            "source": "agent",
+        },
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["envelope"]["invertible"] is True

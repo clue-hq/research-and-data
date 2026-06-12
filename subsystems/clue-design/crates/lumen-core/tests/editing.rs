@@ -607,6 +607,176 @@ fn insert_with_adopted_children_is_not_invertible() {
 }
 
 #[test]
+fn scope_allows_declared_node_descendants_and_in_place_reorder() {
+    let scene = scene_with_ad();
+
+    // Modify within declared closure: hero is declared, headline is a child.
+    let batch = build_modify_operations(
+        &scene,
+        EditTargetRef::Node(NodeId::from("headline")),
+        EditPatch::Node(NodeEditPatch {
+            text: Some(TextEditPatch {
+                content: FieldPatch::Set("In scope".to_owned()),
+                ..TextEditPatch::default()
+            }),
+            ..NodeEditPatch::default()
+        }),
+    )
+    .unwrap();
+    let violations = lumen_core::batch_scope_violations(
+        &scene,
+        &batch.operations,
+        &[EditTargetRef::Node(NodeId::from("hero"))],
+    )
+    .unwrap();
+    assert!(violations.is_empty());
+
+    // Same-parent reorder of a declared node is in scope even though the
+    // structural parent (hero) is not declared.
+    let reorder = build_move_after(&scene, NodeId::from("headline"), NodeId::from("cta")).unwrap();
+    let violations = lumen_core::batch_scope_violations(
+        &scene,
+        &reorder.operations,
+        &[EditTargetRef::Node(NodeId::from("headline"))],
+    )
+    .unwrap();
+    assert!(violations.is_empty());
+
+    // Clone under a declared anchor stays in scope: inserted nodes join the
+    // closure when their parent is allowed.
+    let clone = build_clone_subtree(
+        &scene,
+        CloneSubtreeRequest {
+            source: NodeId::from("headline"),
+            new_root_id: NodeId::from("headline_2"),
+            placement: RelativePlacement::After {
+                anchor: NodeId::from("headline"),
+            },
+            slot_policy: CloneSlotPolicy::Detach,
+            computed_policy: ComputedClonePolicy::Clear,
+        },
+    )
+    .unwrap();
+    let violations = lumen_core::batch_scope_violations(
+        &scene,
+        &clone.operations,
+        &[EditTargetRef::Node(NodeId::from("hero"))],
+    )
+    .unwrap();
+    assert!(violations.is_empty());
+}
+
+#[test]
+fn scope_rejects_undeclared_targets_fail_closed() {
+    let scene = scene_with_ad();
+
+    // Editing the body while only the headline is declared is a violation.
+    let batch = build_modify_operations(
+        &scene,
+        EditTargetRef::Node(NodeId::from("body")),
+        EditPatch::Node(NodeEditPatch {
+            text: Some(TextEditPatch {
+                content: FieldPatch::Set("Out of scope".to_owned()),
+                ..TextEditPatch::default()
+            }),
+            ..NodeEditPatch::default()
+        }),
+    )
+    .unwrap();
+    let violations = lumen_core::batch_scope_violations(
+        &scene,
+        &batch.operations,
+        &[EditTargetRef::Node(NodeId::from("headline"))],
+    )
+    .unwrap();
+    assert_eq!(violations.len(), 1);
+    assert_eq!(
+        violations[0].target,
+        EditTargetRef::Node(NodeId::from("body"))
+    );
+
+    // Page edits require the page itself to be declared.
+    let page_batch = build_modify_operations(
+        &scene,
+        EditTargetRef::Page(PageId::from("page_square")),
+        EditPatch::Page(PageEditPatch {
+            name: FieldPatch::Set("Renamed".to_owned()),
+            ..PageEditPatch::default()
+        }),
+    )
+    .unwrap();
+    let violations = lumen_core::batch_scope_violations(
+        &scene,
+        &page_batch.operations,
+        &[EditTargetRef::Node(NodeId::from("headline"))],
+    )
+    .unwrap();
+    assert_eq!(violations.len(), 1);
+
+    // Finalization is never a scoped repair.
+    let violations = lumen_core::batch_scope_violations(
+        &scene,
+        &[lumen_core::Operation::FinalizeTemplate {
+            template_revision_id: "rev_1".into(),
+        }],
+        &[EditTargetRef::Document],
+    )
+    .unwrap();
+    assert_eq!(violations.len(), 1);
+
+    // Declared targets must resolve.
+    assert!(lumen_core::batch_scope_violations(
+        &scene,
+        &[],
+        &[EditTargetRef::Node(NodeId::from("missing"))],
+    )
+    .is_err());
+}
+
+#[test]
+fn scope_allows_slot_bindings_through_declared_nodes() {
+    let scene = scene_with_ad();
+
+    // Safe delete of a declared node clears its slot binding; the slot is in
+    // scope because it binds the declared node.
+    let batch = build_safe_delete(&scene, NodeId::from("headline")).unwrap();
+    let violations = lumen_core::batch_scope_violations(
+        &scene,
+        &batch.operations,
+        &[EditTargetRef::Node(NodeId::from("headline"))],
+    )
+    .unwrap();
+    assert!(violations.is_empty());
+
+    // Slot metadata edits without any declared node binding require the slot
+    // itself to be declared.
+    let slot_batch = build_modify_operations(
+        &scene,
+        EditTargetRef::SlotKey(SlotKey::from("campaign.headline")),
+        EditPatch::Slot(lumen_core::SlotEditPatch {
+            placeholder: OptionalFieldPatch::Set("New".to_owned()),
+            ..lumen_core::SlotEditPatch::default()
+        }),
+    )
+    .unwrap();
+    let violations = lumen_core::batch_scope_violations(
+        &scene,
+        &slot_batch.operations,
+        &[EditTargetRef::Node(NodeId::from("cta"))],
+    )
+    .unwrap();
+    assert_eq!(violations.len(), 1);
+
+    let violations = lumen_core::batch_scope_violations(
+        &scene,
+        &slot_batch.operations,
+        &[EditTargetRef::SlotKey(SlotKey::from("campaign.headline"))],
+    )
+    .unwrap();
+    assert!(violations.is_empty());
+}
+
+#[test]
 fn replace_node_preserves_target_parent_index() {
     let mut scene = scene_with_ad();
     scene

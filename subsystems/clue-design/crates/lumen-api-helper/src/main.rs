@@ -1,15 +1,16 @@
 use lumen_core::validation::validate_scene;
 use lumen_core::{
-    build_clone_subtree, build_modify_operations, build_move_after, build_move_before,
-    build_move_to_parent, build_replace_node, build_safe_delete, compare_brand_kit_compatibility,
-    compile_dsl_into_scene_with_session, compile_styles_brand_kit, generate_brand_kit,
-    layout_scene, platform_default_brand_kit, preflight_scene, summarize_brand_kit_for_authoring,
-    validate_brand_kit, validate_brand_kit_product_ready, validate_scene_brand_governance,
-    BrandGovernanceStrictness, BrandKit, BrandKitId, BrandMode, BrandSeed, CloneSubtreeRequest,
-    Diagnostic, DiagnosticSeverity, DocumentId, DslCompileSessionSnapshot, EditBatch, EditPatch,
-    EditTargetRef, ExportAdapter, ExportFormat, ExportProfile, ExportPurpose, ExportRequest,
-    Medium, NodeId, Operation, PageId, ParentRef, PdfIntent, PreflightOptions, RasterScale,
-    ReplaceNodeRequest, Scene, TemplateRevisionId,
+    batch_scope_violations, build_clone_subtree, build_modify_operations, build_move_after,
+    build_move_before, build_move_to_parent, build_replace_node, build_safe_delete,
+    compare_brand_kit_compatibility, compile_dsl_into_scene_with_session, compile_styles_brand_kit,
+    generate_brand_kit, layout_scene, platform_default_brand_kit, preflight_scene,
+    summarize_brand_kit_for_authoring, validate_brand_kit, validate_brand_kit_product_ready,
+    validate_scene_brand_governance, BrandGovernanceStrictness, BrandKit, BrandKitId, BrandMode,
+    BrandSeed, CloneSubtreeRequest, Diagnostic, DiagnosticSeverity, DocumentId,
+    DslCompileSessionSnapshot, EditBatch, EditPatch, EditScope, EditScopeMode, EditTargetRef,
+    ExportAdapter, ExportFormat, ExportProfile, ExportPurpose, ExportRequest, Medium, NodeId,
+    Operation, PageId, ParentRef, PdfIntent, PreflightOptions, RasterScale, ReplaceNodeRequest,
+    Scene, ScopeViolation, TemplateRevisionId,
 };
 use lumen_export::LumenExportAdapter;
 use serde::{Deserialize, Serialize};
@@ -34,10 +35,14 @@ enum CoreRequest {
     ApplyOperations {
         scene: Value,
         operations: Vec<Value>,
+        #[serde(default)]
+        scope: Option<EditScope>,
     },
     ApplyStructuredEdit {
         scene: Value,
         edit: StructuredEditInstruction,
+        #[serde(default)]
+        scope: Option<EditScope>,
     },
     CompileDslIntoScene {
         scene: Value,
@@ -400,6 +405,68 @@ fn helper_logging_enabled() -> bool {
     env::var("LUMEN_CORE_HELPER_LOG").is_ok_and(|value| value != "0")
 }
 
+fn error_response(error: CoreError, diagnostics: Vec<Diagnostic>) -> CoreResponse {
+    CoreResponse {
+        ok: false,
+        scene: None,
+        diagnostics,
+        error: Some(error),
+        applied_operations: None,
+        preflight: None,
+        brand_kit: None,
+        brand_summary: None,
+        brand_generation: None,
+        brand_compatibility: None,
+        geometry: None,
+        operations: None,
+        edit: None,
+        dsl: None,
+        export: None,
+    }
+}
+
+/// Enforce a declared edit scope before mutation. Strict violations and
+/// unresolvable declared targets fail closed with an error response; in
+/// advisory mode violations become warning diagnostics that ride along with
+/// the applied batch.
+fn check_scope(
+    scene: &Scene,
+    operations: &[Operation],
+    scope: Option<&EditScope>,
+) -> Result<Vec<Diagnostic>, Box<CoreResponse>> {
+    let Some(scope) = scope else {
+        return Ok(Vec::new());
+    };
+    let violations = match batch_scope_violations(scene, operations, &scope.allowed) {
+        Ok(violations) => violations,
+        Err(error) => {
+            return Err(Box::new(error_response(
+                core_error(error.kind.code(), error.message.clone()),
+                vec![error.diagnostic()],
+            )));
+        }
+    };
+    if violations.is_empty() {
+        return Ok(Vec::new());
+    }
+    match scope.mode {
+        EditScopeMode::Strict => Err(Box::new(error_response(
+            core_error(
+                "edit.scope_violation",
+                format!(
+                    "{} operation(s) touch targets outside the declared scope",
+                    violations.len()
+                ),
+            ),
+            violations.iter().map(ScopeViolation::diagnostic).collect(),
+        ))),
+        EditScopeMode::Advisory => Ok(violations
+            .iter()
+            .map(ScopeViolation::advisory_diagnostic)
+            .collect()),
+    }
+}
+
 fn read_request() -> Result<CoreRequest, CoreError> {
     let mut input = String::new();
     io::stdin()
@@ -429,9 +496,17 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
             let diagnostics = validate_scene(&scene);
             Ok(ok_scene(scene, diagnostics, None))
         }
-        CoreRequest::ApplyOperations { scene, operations } => {
+        CoreRequest::ApplyOperations {
+            scene,
+            operations,
+            scope,
+        } => {
             let mut scene = parse_scene(scene)?;
             let operations = parse_operations(operations)?;
+            let scope_diagnostics = match check_scope(&scene, &operations, scope.as_ref()) {
+                Ok(diagnostics) => diagnostics,
+                Err(response) => return Ok(*response),
+            };
             let inverse_operations = scene
                 .invert_operations(&operations)
                 .ok()
@@ -442,6 +517,7 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                 Ok(report) => {
                     let mut response =
                         ok_scene(scene, report.diagnostics, Some(report.applied_operations));
+                    response.diagnostics.extend(scope_diagnostics);
                     response.edit = Some(json!({
                         "kind": "apply_operations",
                         "inverse_operations": inverse_operations,
@@ -467,7 +543,7 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                 }),
             }
         }
-        CoreRequest::ApplyStructuredEdit { scene, edit } => {
+        CoreRequest::ApplyStructuredEdit { scene, edit, scope } => {
             let mut scene = parse_scene(scene)?;
             let batch = structured_edit_batch(&scene, &edit).map_err(|error| CoreResponse {
                 ok: false,
@@ -494,11 +570,26 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                 Err(response) => return Ok(response),
             };
             let operations = batch.operations.clone();
+            let scope_diagnostics = match check_scope(&scene, &operations, scope.as_ref()) {
+                Ok(diagnostics) => diagnostics,
+                Err(mut response) => {
+                    response.edit = Some(json!({
+                        "kind": structured_edit_kind(&edit),
+                        "touched_targets": batch.touched_targets,
+                        "intent": batch.intent,
+                    }));
+                    return Ok(*response);
+                }
+            };
             match batch.apply_checked(&mut scene) {
                 Ok(report) => Ok(CoreResponse {
                     ok: true,
                     scene: Some(to_value(scene)?),
-                    diagnostics: report.diagnostics,
+                    diagnostics: {
+                        let mut diagnostics = report.diagnostics;
+                        diagnostics.extend(scope_diagnostics);
+                        diagnostics
+                    },
                     error: None,
                     applied_operations: Some(report.applied_operations),
                     preflight: None,

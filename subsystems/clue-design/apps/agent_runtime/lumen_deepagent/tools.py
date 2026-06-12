@@ -249,12 +249,24 @@ class LumenDesignTools:
           "target": {"kind": "node", "id": "headline"},
           "patch": {"kind": "node", "value": {"text": {"content": {"kind": "set", "value": "New copy"}}}}
         }
+
+        Repairs for a concrete critic issue must declare their scope so the
+        engine can reject out-of-scope mutations before they happen:
+
+        {
+          "kind": "modify",
+          "target": {"kind": "node", "id": "headline"},
+          "patch": {...},
+          "scope": {"mode": "strict", "allowed": [{"kind": "node", "id": "headline"}]}
+        }
         """
+        scope = None
         try:
             edit = json.loads(edit_json)
             if not isinstance(edit, dict):
                 raise ValueError("edit_json must decode to an object")
-            response = self.core.apply_structured_edit(self.scene, edit)
+            scope = edit.pop("scope", None)
+            response = self.core.apply_structured_edit(self.scene, edit, scope=scope)
         except (CoreError, ValueError, json.JSONDecodeError) as error:
             diagnostics = []
             if isinstance(error, CoreError):
@@ -264,15 +276,23 @@ class LumenDesignTools:
             else:
                 message = str(error)
                 code = "structured_edit.invalid_input"
+            scope_rejected = code == "edit.scope_violation"
             summary = OperationApplicationSummary(
                 status=ToolStatus.error,
                 diagnostics=diagnostics,
                 operation_error={"code": code, "message": message},
             )
             payload = {"structured_edit": _dump(summary)}
+            if scope is not None:
+                payload["scope"] = scope
+                payload["scope_verdict"] = (
+                    "rejected" if scope_rejected else "not_evaluated"
+                )
             self.record(
                 "coordinator",
-                "structured_edit_failed",
+                "structured_edit_scope_rejected"
+                if scope_rejected
+                else "structured_edit_failed",
                 input_summary=edit_json[:500],
                 output_summary=message,
                 diagnostics=[diag.model_dump(mode="json") for diag in diagnostics],
@@ -301,6 +321,9 @@ class LumenDesignTools:
             "edit": response.get("edit") or edit,
             "operations": operations,
         }
+        if scope is not None:
+            payload["scope"] = scope
+            payload["scope_verdict"] = "in_scope"
         self.record(
             "coordinator",
             "structured_edit_applied",

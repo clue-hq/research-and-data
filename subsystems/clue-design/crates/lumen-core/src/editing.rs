@@ -52,6 +52,7 @@ pub enum EditErrorKind {
     ProtectedSlot,
     RevisionMismatch,
     OperationFailed,
+    ScopeViolation,
 }
 
 impl EditErrorKind {
@@ -69,6 +70,7 @@ impl EditErrorKind {
             Self::ProtectedSlot => "edit.protected_slot",
             Self::RevisionMismatch => "edit.revision_mismatch",
             Self::OperationFailed => "edit.operation_failed",
+            Self::ScopeViolation => "edit.scope_violation",
         }
     }
 }
@@ -198,6 +200,325 @@ impl EditBatch {
                 )
             })
     }
+}
+
+/// Declared edit scope for fail-closed agent repairs (Phase D decision:
+/// strict for agents, advisory for humans).
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum EditScopeMode {
+    Strict,
+    Advisory,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct EditScope {
+    pub mode: EditScopeMode,
+    pub allowed: Vec<EditTargetRef>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct ScopeViolation {
+    pub operation_index: usize,
+    pub target: EditTargetRef,
+    pub reason: String,
+}
+
+impl ScopeViolation {
+    pub fn diagnostic(&self) -> Diagnostic {
+        Diagnostic::error(
+            Phase::Operation,
+            "edit.scope_violation",
+            self.message(),
+            edit_target_subject(&self.target),
+        )
+        .with_hint(
+            "Declare every target the repair may touch, or narrow the patch to the declared targets.",
+        )
+    }
+
+    pub fn advisory_diagnostic(&self) -> Diagnostic {
+        Diagnostic::warning(
+            Phase::Operation,
+            "edit.scope_violation",
+            self.message(),
+            edit_target_subject(&self.target),
+        )
+        .with_hint("This edit touches targets outside the declared scope.")
+    }
+
+    fn message(&self) -> String {
+        format!(
+            "operation {} touches {:?} outside the declared edit scope: {}",
+            self.operation_index, self.target, self.reason
+        )
+    }
+}
+
+/// Compute scope violations for an operation batch against declared allowed
+/// targets. The allowed closure is:
+///
+/// - the declared targets themselves;
+/// - descendants of every declared node (and nodes inserted under them
+///   during this batch, which covers clone subtrees);
+/// - child-list adjustments on the structural parent of a moved, inserted,
+///   or removed node that is itself in closure — a same-parent reorder of an
+///   allowed node is in scope, but moving it into an unrelated container is
+///   not;
+/// - slots whose bindings reference an allowed node (safe delete clears
+///   bindings; clone may bind or derive slots for cloned nodes).
+///
+/// Declared targets must resolve; a missing declared target is an error,
+/// not an empty scope.
+pub fn batch_scope_violations(
+    scene: &Scene,
+    operations: &[Operation],
+    allowed: &[EditTargetRef],
+) -> Result<Vec<ScopeViolation>, EditError> {
+    let mut allowed_nodes: BTreeSet<NodeId> = BTreeSet::new();
+    let mut allowed_pages: BTreeSet<PageId> = BTreeSet::new();
+    let mut allowed_slots: BTreeSet<SlotId> = BTreeSet::new();
+    let mut allowed_assets: BTreeSet<AssetId> = BTreeSet::new();
+    let mut allowed_profiles: BTreeSet<String> = BTreeSet::new();
+    let mut document_allowed = false;
+
+    for target in allowed {
+        let resolved = resolve_edit_target(scene, target)?;
+        match &resolved.target {
+            EditTargetRef::Document => document_allowed = true,
+            EditTargetRef::Page(page_id) => {
+                allowed_pages.insert(page_id.clone());
+            }
+            EditTargetRef::Node(node_id) => {
+                allowed_nodes.insert(node_id.clone());
+                for descendant in scene.descendants_of(node_id) {
+                    allowed_nodes.insert(descendant);
+                }
+            }
+            EditTargetRef::Slot(slot_id) => {
+                allowed_slots.insert(slot_id.clone());
+            }
+            EditTargetRef::SlotKey(_) => unreachable!("slot keys resolve to slot ids"),
+            EditTargetRef::Asset(asset_id) => {
+                allowed_assets.insert(asset_id.clone());
+            }
+            EditTargetRef::ExportProfile(name) => {
+                allowed_profiles.insert(name.clone());
+            }
+        }
+    }
+
+    let node_allowed = |nodes: &BTreeSet<NodeId>, node_id: &NodeId| nodes.contains(node_id);
+    let parent_allowed = |nodes: &BTreeSet<NodeId>, parent: &ParentRef| match parent {
+        ParentRef::Page(page_id) => allowed_pages.contains(page_id),
+        ParentRef::Node(node_id) => nodes.contains(node_id),
+    };
+    let slot_allowed = |nodes: &BTreeSet<NodeId>, slot_id: &SlotId| {
+        if allowed_slots.contains(slot_id) {
+            return true;
+        }
+        scene
+            .slots
+            .get(slot_id)
+            .map(|slot| slot.bound_nodes.iter().any(|id| nodes.contains(id)))
+            .unwrap_or(false)
+    };
+
+    let mut violations = Vec::new();
+    let mut violation = |index: usize, target: EditTargetRef, reason: &str| {
+        violations.push(ScopeViolation {
+            operation_index: index,
+            target,
+            reason: reason.to_owned(),
+        });
+    };
+
+    for (index, operation) in operations.iter().enumerate() {
+        match operation {
+            Operation::UpdateNode { node_id, .. } | Operation::RemoveNode { node_id } => {
+                if !node_allowed(&allowed_nodes, node_id) {
+                    violation(
+                        index,
+                        EditTargetRef::Node(node_id.clone()),
+                        "node is not a declared target or descendant",
+                    );
+                }
+            }
+            Operation::InsertNode { parent, node, .. } => {
+                if parent_allowed(&allowed_nodes, parent) {
+                    allowed_nodes.insert(node.id.clone());
+                } else {
+                    violation(
+                        index,
+                        EditTargetRef::Node(node.id.clone()),
+                        "insert parent is outside the declared scope",
+                    );
+                }
+            }
+            Operation::MoveNode {
+                node_id,
+                new_parent,
+                ..
+            } => {
+                if !node_allowed(&allowed_nodes, node_id) {
+                    violation(
+                        index,
+                        EditTargetRef::Node(node_id.clone()),
+                        "moved node is not a declared target or descendant",
+                    );
+                } else {
+                    let reorder_in_place = scene.parent_of(node_id).as_ref() == Some(new_parent);
+                    if !reorder_in_place && !parent_allowed(&allowed_nodes, new_parent) {
+                        violation(
+                            index,
+                            EditTargetRef::Node(node_id.clone()),
+                            "move destination is outside the declared scope",
+                        );
+                    }
+                }
+            }
+            Operation::UpdatePage { page_id, .. } => {
+                if !allowed_pages.contains(page_id) {
+                    violation(
+                        index,
+                        EditTargetRef::Page(page_id.clone()),
+                        "page is not a declared target",
+                    );
+                }
+            }
+            Operation::AddPage { page } => {
+                if !allowed_pages.contains(&page.id) {
+                    violation(
+                        index,
+                        EditTargetRef::Page(page.id.clone()),
+                        "page creation must be declared explicitly",
+                    );
+                }
+            }
+            Operation::RemovePage { page_id } => {
+                if !allowed_pages.contains(page_id) {
+                    violation(
+                        index,
+                        EditTargetRef::Page(page_id.clone()),
+                        "page deletion must be declared explicitly",
+                    );
+                }
+            }
+            Operation::UpdateDocument { .. } | Operation::SetBrandKitRef { .. } => {
+                if !document_allowed {
+                    violation(
+                        index,
+                        EditTargetRef::Document,
+                        "document-level changes must declare the document target",
+                    );
+                }
+            }
+            Operation::UpsertSlot { slot } => {
+                let existing = scene.slots.contains_key(&slot.id);
+                let bindings_in_scope = slot
+                    .bound_nodes
+                    .iter()
+                    .all(|id| node_allowed(&allowed_nodes, id));
+                let permitted = if existing {
+                    slot_allowed(&allowed_nodes, &slot.id)
+                } else {
+                    // New slots (e.g. clone slots:suffix) are in scope when
+                    // they bind only nodes inside the closure.
+                    !slot.bound_nodes.is_empty() && bindings_in_scope
+                };
+                if !permitted {
+                    violation(
+                        index,
+                        EditTargetRef::Slot(slot.id.clone()),
+                        "slot is not declared and not bound to declared nodes",
+                    );
+                }
+            }
+            Operation::RemoveSlot { slot_id } => {
+                if !slot_allowed(&allowed_nodes, slot_id) {
+                    violation(
+                        index,
+                        EditTargetRef::Slot(slot_id.clone()),
+                        "slot deletion must be declared or bound to declared nodes",
+                    );
+                }
+            }
+            Operation::BindNodeToSlot { slot_id, node_id }
+            | Operation::UnbindNodeFromSlot { slot_id, node_id } => {
+                if !slot_allowed(&allowed_nodes, slot_id) && !node_allowed(&allowed_nodes, node_id)
+                {
+                    violation(
+                        index,
+                        EditTargetRef::Slot(slot_id.clone()),
+                        "binding change touches neither a declared slot nor a declared node",
+                    );
+                }
+            }
+            Operation::UpsertAsset { asset } => {
+                if !allowed_assets.contains(&asset.id) {
+                    violation(
+                        index,
+                        EditTargetRef::Asset(asset.id.clone()),
+                        "asset is not a declared target",
+                    );
+                }
+            }
+            Operation::RemoveAsset { asset_id } => {
+                if !allowed_assets.contains(asset_id) {
+                    violation(
+                        index,
+                        EditTargetRef::Asset(asset_id.clone()),
+                        "asset deletion must be declared explicitly",
+                    );
+                }
+            }
+            Operation::PlaceAssetInNode { node_id, .. } => {
+                if !node_allowed(&allowed_nodes, node_id) {
+                    violation(
+                        index,
+                        EditTargetRef::Node(node_id.clone()),
+                        "asset placement target is not a declared node",
+                    );
+                }
+            }
+            Operation::PlaceAssetInSlot { slot_id, .. } => {
+                if !slot_allowed(&allowed_nodes, slot_id) {
+                    violation(
+                        index,
+                        EditTargetRef::Slot(slot_id.clone()),
+                        "asset placement slot is not declared",
+                    );
+                }
+            }
+            Operation::UpsertExportProfile { profile } => {
+                if !allowed_profiles.contains(&profile.name) {
+                    violation(
+                        index,
+                        EditTargetRef::ExportProfile(profile.name.clone()),
+                        "export profile is not a declared target",
+                    );
+                }
+            }
+            Operation::RemoveExportProfile { name } => {
+                if !allowed_profiles.contains(name) {
+                    violation(
+                        index,
+                        EditTargetRef::ExportProfile(name.clone()),
+                        "export profile deletion must be declared explicitly",
+                    );
+                }
+            }
+            Operation::FinalizeTemplate { .. } => {
+                violation(
+                    index,
+                    EditTargetRef::Document,
+                    "finalization is a lifecycle action, never a scoped repair",
+                );
+            }
+        }
+    }
+
+    Ok(violations)
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]

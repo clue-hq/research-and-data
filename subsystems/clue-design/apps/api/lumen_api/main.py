@@ -467,7 +467,9 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
         require_base_version(document, payload.base_version)
         try:
             result = app.state.core.apply_operations(
-                document["scene"], payload.operations
+                document["scene"],
+                payload.operations,
+                scope=payload.scope.model_dump() if payload.scope else None,
             )
         except CoreError as error:
             raise core_http_error(error) from error
@@ -551,7 +553,11 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
         require_draft_document(document, "apply structured edit")
         require_base_version(document, payload.base_version)
         try:
-            result = app.state.core.apply_structured_edit(document["scene"], payload.edit)
+            result = app.state.core.apply_structured_edit(
+                document["scene"],
+                payload.edit,
+                scope=payload.scope.model_dump() if payload.scope else None,
+            )
         except CoreError as error:
             raise core_http_error(error) from error
 
