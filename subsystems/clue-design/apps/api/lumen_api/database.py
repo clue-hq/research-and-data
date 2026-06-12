@@ -45,6 +45,8 @@ def run_migrations(database_path: Path) -> None:
             "TEXT",
         )
         ensure_column(connection, "operation_log", "batch_id", "TEXT")
+        ensure_column(connection, "documents", "undo_stack_json", "TEXT")
+        ensure_column(connection, "documents", "redo_stack_json", "TEXT")
         backfill_edit_envelopes(connection)
 
 
@@ -341,13 +343,42 @@ class Repository:
                 ):
                     brand_json = brand_kit
 
+            batch_id = None
+            batch = None
+            undo_stack = list(document.get("undo_stack") or [])
+            redo_stack = list(document.get("redo_stack") or [])
+            if operations:
+                batch = dict(envelope or {})
+                batch_id = batch.get("batch_id") or new_batch_id()
+                batch["batch_id"] = batch_id
+                batch.setdefault("intent", diagnostic_kind)
+                batch.setdefault("base_revision", base_revision)
+                batch["operations"] = operations
+                reverts = batch.get("reverts_batch_id")
+                reapplies = batch.get("reapplies_batch_id")
+                if reverts:
+                    # Undo: the reverted batch leaves the undo stack and
+                    # becomes redoable. The undo envelope itself is not
+                    # stacked; undoing an undo is redo.
+                    if reverts in undo_stack:
+                        undo_stack.remove(reverts)
+                    redo_stack.append(reverts)
+                elif reapplies:
+                    if reapplies in redo_stack:
+                        redo_stack.remove(reapplies)
+                    undo_stack.append(reapplies)
+                else:
+                    undo_stack.append(batch_id)
+                    redo_stack = []
+
             self.connection.execute(
                 """
                 UPDATE documents
                 SET title = ?, status = ?, current_scene_json = ?,
                     current_version = ?, effective_brand_kit_source = ?,
                     effective_brand_kit_id = ?, effective_brand_kit_version = ?,
-                    effective_brand_mode_json = ?, brand_kit_json = ?, updated_at = ?
+                    effective_brand_mode_json = ?, brand_kit_json = ?,
+                    undo_stack_json = ?, redo_stack_json = ?, updated_at = ?
                 WHERE id = ?
                 """,
                 (
@@ -360,18 +391,13 @@ class Repository:
                     brand_version,
                     encode_optional(brand_mode),
                     encode_optional(brand_json),
+                    encode(undo_stack),
+                    encode(redo_stack),
                     now,
                     document_id,
                 ),
             )
-            batch_id = None
-            if operations:
-                batch = dict(envelope or {})
-                batch_id = batch.get("batch_id") or new_batch_id()
-                batch["batch_id"] = batch_id
-                batch.setdefault("intent", diagnostic_kind)
-                batch.setdefault("base_revision", base_revision)
-                batch["operations"] = operations
+            if batch is not None:
                 self.append_envelope(
                     document_id,
                     batch,
@@ -722,6 +748,7 @@ def scene_status(scene: JsonObject) -> str:
 
 
 def document_from_row(row: sqlite3.Row) -> JsonObject:
+    columns = row.keys()
     return {
         "id": row["id"],
         "title": row["title"],
@@ -733,6 +760,12 @@ def document_from_row(row: sqlite3.Row) -> JsonObject:
         "effective_brand_kit_version": row["effective_brand_kit_version"],
         "effective_brand_mode": decode_optional(row["effective_brand_mode_json"]),
         "brand_kit": decode_optional(row["brand_kit_json"]),
+        "undo_stack": decode_optional(row["undo_stack_json"])
+        if "undo_stack_json" in columns
+        else None,
+        "redo_stack": decode_optional(row["redo_stack_json"])
+        if "redo_stack_json" in columns
+        else None,
         "created_at": row["created_at"],
         "updated_at": row["updated_at"],
     }

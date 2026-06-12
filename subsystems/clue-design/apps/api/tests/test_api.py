@@ -1573,3 +1573,89 @@ def test_strict_scope_in_scope_edit_applies(client: TestClient) -> None:
     )
     assert response.status_code == 200, response.text
     assert response.json()["envelope"]["invertible"] is True
+
+
+def test_undo_redo_round_trip_appends_history(client: TestClient) -> None:
+    document = create_document(client)
+    client.post(
+        f"/documents/{document['id']}/operations",
+        json={"operations": [title_operation("Version B")], "intent": "rename"},
+    )
+
+    undo = client.post(f"/documents/{document['id']}/undo")
+    assert undo.status_code == 200, undo.text
+    assert undo.json()["reverted_intent"] == "rename"
+    assert client.get(f"/documents/{document['id']}").json()["title"] == "Hospital Letter"
+
+    redo = client.post(f"/documents/{document['id']}/redo")
+    assert redo.status_code == 200, redo.text
+    assert client.get(f"/documents/{document['id']}").json()["title"] == "Version B"
+
+    # History is append-only: edit, undo, redo are three envelopes.
+    envelopes = client.get(f"/documents/{document['id']}/history").json()["envelopes"]
+    assert len(envelopes) == 3
+    assert envelopes[0]["intent"] == "redo:rename"
+    assert envelopes[0]["reapplies_batch_id"] == envelopes[2]["batch_id"]
+    assert envelopes[1]["intent"] == "undo:rename"
+    assert envelopes[1]["reverts_batch_id"] == envelopes[2]["batch_id"]
+
+    # Undo after redo still works (linear cursor over the appended log).
+    assert client.post(f"/documents/{document['id']}/undo").status_code == 200
+    assert client.get(f"/documents/{document['id']}").json()["title"] == "Hospital Letter"
+
+
+def test_new_edit_clears_redo_stack(client: TestClient) -> None:
+    document = create_document(client)
+    client.post(
+        f"/documents/{document['id']}/operations",
+        json={"operations": [title_operation("First")]},
+    )
+    client.post(f"/documents/{document['id']}/undo")
+    client.post(
+        f"/documents/{document['id']}/operations",
+        json={"operations": [title_operation("Second")]},
+    )
+
+    redo = client.post(f"/documents/{document['id']}/redo")
+    assert redo.status_code == 409
+    assert redo.json()["detail"]["code"] == "history.nothing_to_redo"
+
+    empty = client.post(f"/documents/{document['id']}/undo")
+    assert empty.status_code == 200
+    second_undo = client.post(f"/documents/{document['id']}/undo")
+    assert second_undo.status_code == 409
+    assert second_undo.json()["detail"]["code"] == "history.nothing_to_undo"
+
+
+def test_revert_to_checkpoint_composes_undos(client: TestClient) -> None:
+    document = create_document(client)
+    client.post(
+        f"/documents/{document['id']}/operations",
+        json={
+            "operations": [title_operation("Anchored")],
+            "checkpoint": "good state",
+        },
+    )
+    client.post(
+        f"/documents/{document['id']}/operations",
+        json={"operations": [title_operation("Drift 1")]},
+    )
+    client.post(
+        f"/documents/{document['id']}/operations",
+        json={"operations": [title_operation("Drift 2")]},
+    )
+
+    checkpoints = client.get(f"/documents/{document['id']}/checkpoints").json()
+    assert [c["label"] for c in checkpoints["checkpoints"]] == ["good state"]
+
+    revert = client.post(
+        f"/documents/{document['id']}/revert", params={"checkpoint": "good state"}
+    )
+    assert revert.status_code == 200, revert.text
+    assert len(revert.json()["reverted_batch_ids"]) == 2
+    assert client.get(f"/documents/{document['id']}").json()["title"] == "Anchored"
+
+    missing = client.post(
+        f"/documents/{document['id']}/revert", params={"checkpoint": "nope"}
+    )
+    assert missing.status_code == 404

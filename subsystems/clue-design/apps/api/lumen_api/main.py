@@ -543,6 +543,232 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
             "envelopes": envelopes,
         }
 
+    @app.get("/documents/{document_id}/checkpoints")
+    def list_checkpoints(
+        document_id: str, repo: Repository = Depends(repository)
+    ) -> JsonObject:
+        envelopes = repo.list_envelopes(document_id, newest_first=True)
+        checkpoints = [
+            {
+                "batch_id": envelope["batch_id"],
+                "seq": envelope["seq"],
+                "label": envelope["checkpoint_label"],
+                "intent": envelope["intent"],
+                "created_at": envelope["created_at"],
+            }
+            for envelope in envelopes
+            if envelope["checkpoint_label"]
+        ]
+        return {
+            "schema_version": 1,
+            "document_id": document_id,
+            "checkpoints": checkpoints,
+        }
+
+    def perform_undo_step(repo: Repository, document_id: str) -> JsonObject:
+        """Apply one document-level undo as a new appended envelope."""
+        document = require_document(repo, document_id)
+        require_draft_document(document, "undo")
+        undo_stack = list(document.get("undo_stack") or [])
+        if not undo_stack:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "history.nothing_to_undo",
+                    "message": "no undoable batches in document history",
+                },
+            )
+        target = repo.require_envelope(document_id, undo_stack[-1])
+        if target["inverse_operations"] is None:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "history.not_invertible",
+                    "message": (
+                        f"batch {target['batch_id']} ({target['intent'] or 'unknown'}) "
+                        "is not invertible and blocks undo"
+                    ),
+                    "batch_id": target["batch_id"],
+                },
+            )
+        try:
+            result = app.state.core.apply_operations(
+                document["scene"], target["inverse_operations"]
+            )
+        except CoreError as error:
+            raise core_http_error(error) from error
+        diagnostics = result.get("diagnostics", [])
+        repo.update_document_state(
+            document_id,
+            result["scene"],
+            diagnostics,
+            target["inverse_operations"],
+            "system",
+            "system",
+            "history",
+            "structural",
+            effective_brand=None,
+            envelope={
+                "intent": f"undo:{target['intent'] or target['batch_id']}",
+                "reverts_batch_id": target["batch_id"],
+                "touched_targets": target["touched_targets"],
+                "inverse_operations": target["operations"],
+            },
+        )
+        return target
+
+    @app.post("/documents/{document_id}/undo")
+    def undo_document(
+        document_id: str, repo: Repository = Depends(repository)
+    ) -> JsonObject:
+        reverted = perform_undo_step(repo, document_id)
+        document = require_document(repo, document_id)
+        log_event(
+            api_logger,
+            logging.INFO,
+            "document_undo_applied",
+            document_id=document_id,
+            reverted_batch_id=reverted["batch_id"],
+        )
+        return {
+            "schema_version": 1,
+            "status": "applied",
+            "reverted_batch_id": reverted["batch_id"],
+            "reverted_intent": reverted["intent"],
+            "document": document_summary(document),
+            "envelope": latest_envelope_summary(repo, document_id),
+        }
+
+    @app.post("/documents/{document_id}/redo")
+    def redo_document(
+        document_id: str, repo: Repository = Depends(repository)
+    ) -> JsonObject:
+        document = require_document(repo, document_id)
+        require_draft_document(document, "redo")
+        redo_stack = list(document.get("redo_stack") or [])
+        if not redo_stack:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "history.nothing_to_redo",
+                    "message": "no redoable batches in document history",
+                },
+            )
+        target = repo.require_envelope(document_id, redo_stack[-1])
+        try:
+            result = app.state.core.apply_operations(
+                document["scene"], target["operations"]
+            )
+        except CoreError as error:
+            raise core_http_error(error) from error
+        diagnostics = result.get("diagnostics", [])
+        repo.update_document_state(
+            document_id,
+            result["scene"],
+            diagnostics,
+            target["operations"],
+            "system",
+            "system",
+            "history",
+            "structural",
+            effective_brand=None,
+            envelope={
+                "intent": f"redo:{target['intent'] or target['batch_id']}",
+                "reapplies_batch_id": target["batch_id"],
+                "touched_targets": target["touched_targets"],
+                "inverse_operations": target["inverse_operations"],
+            },
+        )
+        document = require_document(repo, document_id)
+        log_event(
+            api_logger,
+            logging.INFO,
+            "document_redo_applied",
+            document_id=document_id,
+            reapplied_batch_id=target["batch_id"],
+        )
+        return {
+            "schema_version": 1,
+            "status": "applied",
+            "reapplied_batch_id": target["batch_id"],
+            "document": document_summary(document),
+            "envelope": latest_envelope_summary(repo, document_id),
+        }
+
+    @app.post("/documents/{document_id}/revert")
+    def revert_to_checkpoint(
+        document_id: str,
+        checkpoint: str,
+        repo: Repository = Depends(repository),
+    ) -> JsonObject:
+        document = require_document(repo, document_id)
+        require_draft_document(document, "revert")
+        envelopes = repo.list_envelopes(document_id, newest_first=False)
+        anchor = next(
+            (
+                envelope
+                for envelope in reversed(envelopes)
+                if envelope["checkpoint_label"] == checkpoint
+            ),
+            None,
+        )
+        if anchor is None:
+            raise HTTPException(
+                status_code=404,
+                detail={
+                    "code": "history.checkpoint_not_found",
+                    "message": f"no checkpoint labeled {checkpoint!r} in history",
+                },
+            )
+        undo_stack = list(document.get("undo_stack") or [])
+        if anchor["batch_id"] not in undo_stack:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "history.checkpoint_not_active",
+                    "message": (
+                        f"checkpoint {checkpoint!r} is not on the active undo path; "
+                        "it may already be reverted"
+                    ),
+                },
+            )
+        anchor_index = undo_stack.index(anchor["batch_id"])
+        pending = undo_stack[anchor_index + 1 :]
+        for batch_id in pending:
+            envelope = repo.require_envelope(document_id, batch_id)
+            if envelope["inverse_operations"] is None:
+                raise HTTPException(
+                    status_code=409,
+                    detail={
+                        "code": "history.not_invertible",
+                        "message": (
+                            f"batch {batch_id} between head and checkpoint is not "
+                            "invertible; revert is blocked"
+                        ),
+                        "batch_id": batch_id,
+                    },
+                )
+        reverted = []
+        for _ in pending:
+            reverted.append(perform_undo_step(repo, document_id)["batch_id"])
+        document = require_document(repo, document_id)
+        log_event(
+            api_logger,
+            logging.INFO,
+            "document_reverted_to_checkpoint",
+            document_id=document_id,
+            checkpoint=checkpoint,
+            reverted_count=len(reverted),
+        )
+        return {
+            "schema_version": 1,
+            "status": "applied",
+            "checkpoint": checkpoint,
+            "anchor_batch_id": anchor["batch_id"],
+            "reverted_batch_ids": reverted,
+            "document": document_summary(document),
+        }
+
     @app.post("/documents/{document_id}/edits")
     def apply_structured_edit(
         document_id: str,
