@@ -3,7 +3,7 @@ use lumen_core::{
     AssetProvenance, AssetRecord, AssetSource, AssetStatus, Color, ExportAdapter, ExportFormat,
     ExportProfile, ExportPurpose, ExportRequest, Fill, ImageFitMode, ImageNode, Node, NodeId,
     NodeKind, Page, PageId, PagePreset, PageSize, Paint, PaintId, Phase, RasterAssetMetadata,
-    RasterScale, Scene, SizeSpec, Transform, Unit,
+    Scene, SizeSpec, Transform, Unit,
 };
 use lumen_export::{FixtureAssetResolver, LumenExportAdapter, SvgExportAdapter};
 use std::sync::Arc;
@@ -126,24 +126,6 @@ fn svg_request() -> ExportRequest {
     }
 }
 
-fn png_request() -> ExportRequest {
-    ExportRequest {
-        profile: ExportProfile {
-            name: "asset_png".to_owned(),
-            format: ExportFormat::Png,
-            pdf_intent: None,
-            raster: Some(RasterScale {
-                scale: 1.0,
-                dpi: Some(96),
-            }),
-            include_bleed: false,
-            embed_fonts: true,
-        },
-        page_ids: vec![PageId::from("page_1")],
-        purpose: ExportPurpose::AgentCritique,
-    }
-}
-
 fn logo_resolver() -> Arc<FixtureAssetResolver> {
     Arc::new(FixtureAssetResolver::new().with_asset_bytes(
         "asset_logo",
@@ -252,29 +234,6 @@ fn digest_keyed_bytes_resolve_for_records_sharing_content() {
 }
 
 #[test]
-fn png_export_rasterizes_embedded_image_bytes() {
-    let scene = scene_with_image_node("asset_logo", true);
-    let adapter = LumenExportAdapter::with_resolver(logo_resolver());
-
-    let result = adapter.export(&scene, &png_request()).expect("export");
-    let png_bytes = &result.artifacts[0].bytes;
-
-    let pixmap = resvg::tiny_skia::Pixmap::decode_png(png_bytes).expect("decode png");
-    // The image node spans (20,20)-(80,80) on a 100x100 page; sample its
-    // center. The fixture is opaque red, so a real embed shows red here.
-    let center = pixmap
-        .pixel(pixmap.width() / 2, pixmap.height() / 2)
-        .expect("center pixel");
-    assert!(
-        center.red() > 200 && center.green() < 60 && center.blue() < 60,
-        "center pixel should be red, got ({}, {}, {})",
-        center.red(),
-        center.green(),
-        center.blue()
-    );
-}
-
-#[test]
 fn critic_preview_path_renders_real_logo_without_asset_warnings() {
     // Gate for slice E1: the agent-critique preview (SVG + PNG through the
     // top-level adapter) consumes real bytes instead of placeholders.
@@ -285,19 +244,18 @@ fn critic_preview_path_renders_real_logo_without_asset_warnings() {
     let svg = String::from_utf8(svg_result.artifacts[0].bytes.clone()).expect("utf8");
     assert!(svg.contains("data:image/png;base64,"));
 
-    let png_result = adapter.export(&scene, &png_request()).expect("png export");
-    assert!(!png_result.artifacts.is_empty());
-
-    for diagnostics in [&svg_result.diagnostics, &png_result.diagnostics] {
-        assert!(
-            !diagnostics
-                .iter()
-                .any(|diagnostic| diagnostic.code == "LUME0202"
-                    || diagnostic.code == "LUME0210"
-                    || diagnostic.code == "LUME0211"),
-            "critic preview should not carry unresolved-asset diagnostics: {diagnostics:?}"
-        );
-    }
+    // The PNG half of the critic preview path (real rasterizer composed)
+    // is covered in lumen-skia's raster_export tests since slice A4.
+    assert!(
+        !svg_result
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == "LUME0202"
+                || diagnostic.code == "LUME0210"
+                || diagnostic.code == "LUME0211"),
+        "critic preview should not carry unresolved-asset diagnostics: {:?}",
+        svg_result.diagnostics
+    );
 }
 
 const PHASE_E_CONFORMANCE_SCENE: &str =

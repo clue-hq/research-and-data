@@ -53,14 +53,15 @@ impl LumenExportAdapter {
         }
     }
 
-    /// Inject a shaping text measurer into every format path (Wave 1
-    /// Track A): SVG markup, PNG raster, and PDF then share one source of
-    /// truth for text line breaks with the layout engine.
+    /// Inject a shaping text measurer into the markup format paths (Wave 1
+    /// Track A): SVG and PDF line breaks then share one source of truth
+    /// with the layout engine. The PNG path shapes text inside its injected
+    /// rasterizer (same SkParagraph construction) and needs no measurer.
     pub fn with_measurer(self, measurer: SharedTextMeasurer) -> Self {
         Self {
             svg: self.svg.with_measurer(Arc::clone(&measurer)),
-            png: self.png.with_measurer(Arc::clone(&measurer)),
             pdf: self.pdf.with_measurer(measurer),
+            ..self
         }
     }
 
