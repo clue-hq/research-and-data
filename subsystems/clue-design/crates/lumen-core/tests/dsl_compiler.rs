@@ -1571,3 +1571,233 @@ fn block_replace_without_subtree_halts() {
         Operation::RemoveNode { node_id } if node_id == &NodeId::from("visual")
     )));
 }
+
+// --- Effects Contract V0, slice X3: effect-aware modify language ---
+
+#[test]
+fn dsl_creation_lowers_advanced_stroke_and_shadow() {
+    let mut scene = Scene::new(lumen_core::DocumentId::from("doc_fx"), "Effects");
+    let output = compile_dsl_into_scene(
+        r#"
+page page_square size(400,400,px)
+  card r p(24,24) s(200,120) fill(#ffffff) stroke(stroke_border,#111827,w(1),dash(6,4),cap(round),join(round),align(inside)) shadow(shadow_soft,#000000,o(0.18),x(0),y(8),blur(24),spread(0))
+"#,
+        &mut scene,
+    );
+
+    assert_no_dsl_errors(&output.compile_output.diagnostics);
+    assert!(output.operation_error.is_none());
+
+    let card = &scene.nodes[&NodeId::from("card")];
+    assert_eq!(card.strokes.len(), 1);
+    let stroke = &card.strokes[0];
+    assert_eq!(stroke.id, lumen_core::PaintId::from("stroke_border"));
+    assert_eq!(stroke.width, 1.0);
+    assert_eq!(stroke.dash, Some(vec![6.0, 4.0]));
+    assert_eq!(stroke.cap, lumen_core::StrokeCap::Round);
+    assert_eq!(stroke.join, lumen_core::StrokeJoin::Round);
+    assert_eq!(stroke.align, lumen_core::StrokeAlign::Inside);
+
+    assert_eq!(card.effects.len(), 1);
+    let effect = &card.effects[0];
+    assert_eq!(effect.id, lumen_core::EffectId::from("shadow_soft"));
+    let lumen_core::EffectKind::DropShadow {
+        color,
+        opacity,
+        x,
+        y,
+        blur,
+        spread,
+        color_token,
+    } = &effect.kind;
+    assert_eq!(
+        color,
+        &Color::Hex {
+            value: "#000000".to_owned()
+        }
+    );
+    assert_eq!(*opacity, 0.18);
+    assert_eq!(*x, 0.0);
+    assert_eq!(*y, 8.0);
+    assert_eq!(*blur, 24.0);
+    assert_eq!(*spread, 0.0);
+    assert_eq!(color_token, &None);
+}
+
+#[test]
+fn dsl_basic_stroke_form_keeps_working() {
+    let mut scene = Scene::new(lumen_core::DocumentId::from("doc_fx"), "Effects");
+    let output = compile_dsl_into_scene(
+        r#"
+page page_square size(400,400,px)
+  card r p(24,24) s(200,120) stroke(#111827,2)
+"#,
+        &mut scene,
+    );
+
+    assert_no_dsl_errors(&output.compile_output.diagnostics);
+    let stroke = &scene.nodes[&NodeId::from("card")].strokes[0];
+    assert_eq!(
+        stroke.id,
+        lumen_core::PaintId::from("paint_card_stroke_1"),
+        "id-less strokes keep the deterministic paint-id policy"
+    );
+    assert_eq!(stroke.width, 2.0);
+    assert_eq!(stroke.dash, None);
+    assert_eq!(stroke.cap, lumen_core::StrokeCap::Butt);
+}
+
+#[test]
+fn dsl_idless_shadow_gets_deterministic_effect_id() {
+    let mut scene = Scene::new(lumen_core::DocumentId::from("doc_fx"), "Effects");
+    let output = compile_dsl_into_scene(
+        r#"
+page page_square size(400,400,px)
+  card r p(24,24) s(200,120) shadow(#000000,o(0.2),y(4),blur(12)) shadow(#111827,o(0.1),y(1),blur(2))
+"#,
+        &mut scene,
+    );
+
+    assert_no_dsl_errors(&output.compile_output.diagnostics);
+    let card = &scene.nodes[&NodeId::from("card")];
+    assert_eq!(card.effects.len(), 2);
+    assert_eq!(
+        card.effects[0].id,
+        lumen_core::EffectId::from("effect_card_shadow_1")
+    );
+    assert_eq!(
+        card.effects[1].id,
+        lumen_core::EffectId::from("effect_card_shadow_2")
+    );
+}
+
+#[test]
+fn dsl_shadow_modify_upserts_by_id_and_remove_effect_removes() {
+    let mut scene = Scene::new(lumen_core::DocumentId::from("doc_fx"), "Effects");
+    let setup = compile_dsl_into_scene(
+        r#"
+page page_square size(400,400,px)
+  card r p(24,24) s(200,120) shadow(shadow_soft,#000000,o(0.18),y(8),blur(24))
+"#,
+        &mut scene,
+    );
+    assert!(setup.compile_output.halted_at.is_none());
+
+    // Same id: updates in place, preserving stack length.
+    let update = compile_dsl_into_scene(
+        "#card shadow(shadow_soft,#000000,o(0.3),y(12),blur(32))",
+        &mut scene,
+    );
+    assert_no_dsl_errors(&update.compile_output.diagnostics);
+    assert!(update.operation_error.is_none());
+    let card = &scene.nodes[&NodeId::from("card")];
+    assert_eq!(card.effects.len(), 1);
+    let lumen_core::EffectKind::DropShadow { opacity, blur, .. } = &card.effects[0].kind;
+    assert_eq!(*opacity, 0.3);
+    assert_eq!(*blur, 32.0);
+
+    // New id: appends to the stack top.
+    let add = compile_dsl_into_scene(
+        "#card shadow(shadow_crisp,#111827,o(0.08),y(1),blur(2))",
+        &mut scene,
+    );
+    assert_no_dsl_errors(&add.compile_output.diagnostics);
+    assert_eq!(scene.nodes[&NodeId::from("card")].effects.len(), 2);
+
+    // remove_effect removes only the addressed entry.
+    let remove = compile_dsl_into_scene("#card remove_effect(shadow_soft)", &mut scene);
+    assert_no_dsl_errors(&remove.compile_output.diagnostics);
+    let card = &scene.nodes[&NodeId::from("card")];
+    assert_eq!(card.effects.len(), 1);
+    assert_eq!(
+        card.effects[0].id,
+        lumen_core::EffectId::from("shadow_crisp")
+    );
+}
+
+#[test]
+fn dsl_remove_effect_of_missing_id_halts_with_edit_error() {
+    let mut scene = Scene::new(lumen_core::DocumentId::from("doc_fx"), "Effects");
+    compile_dsl_into_scene(
+        "page page_square size(400,400,px)\n  card r p(0,0) s(10,10)",
+        &mut scene,
+    );
+
+    let output = compile_dsl_into_scene("#card remove_effect(missing)", &mut scene);
+    assert!(output.compile_output.halted_at.is_some());
+    assert!(output
+        .compile_output
+        .diagnostics
+        .iter()
+        .any(|diagnostic| diagnostic.diagnostic.code == "LUMD0900"
+            && diagnostic
+                .diagnostic
+                .message
+                .contains("edit.target_not_found")));
+    assert!(scene.nodes[&NodeId::from("card")].effects.is_empty());
+}
+
+#[test]
+fn dsl_malformed_shadow_and_stroke_options_halt_with_diagnostics() {
+    let shadow = compile_dsl(
+        "page page_square size(400,400,px)\n  card r p(0,0) s(10,10) shadow(#000000,wat(3))",
+    );
+    assert_eq!(
+        shadow.halted_at.as_ref().map(|halt| halt.code.as_str()),
+        Some("LUMD0257")
+    );
+
+    let stroke = compile_dsl(
+        "page page_square size(400,400,px)\n  card r p(0,0) s(10,10) stroke(#111827,w(1),cap(diagonal))",
+    );
+    assert_eq!(
+        stroke.halted_at.as_ref().map(|halt| halt.code.as_str()),
+        Some("LUMD0256")
+    );
+
+    let negative_dash = compile_dsl(
+        "page page_square size(400,400,px)\n  card r p(0,0) s(10,10) stroke(#111827,w(1),dash(6,-4))",
+    );
+    assert_eq!(
+        negative_dash
+            .halted_at
+            .as_ref()
+            .map(|halt| halt.code.as_str()),
+        Some("LUMD0256")
+    );
+
+    let missing_width = compile_dsl(
+        "page page_square size(400,400,px)\n  card r p(0,0) s(10,10) stroke(#111827,dash(6,4))",
+    );
+    assert_eq!(
+        missing_width
+            .halted_at
+            .as_ref()
+            .map(|halt| halt.code.as_str()),
+        Some("LUMD0211")
+    );
+}
+
+#[test]
+fn dsl_tokenized_shadow_color_records_color_token() {
+    let mut scene = Scene::new(lumen_core::DocumentId::from("doc_fx"), "Effects");
+    let output = compile_dsl_into_scene(
+        r#"
+page page_square size(400,400,px)
+  card r p(24,24) s(200,120) shadow(shadow_brand,$shadow.soft,o(0.18),y(8),blur(24))
+"#,
+        &mut scene,
+    );
+
+    assert_no_dsl_errors(&output.compile_output.diagnostics);
+    let lumen_core::EffectKind::DropShadow {
+        color, color_token, ..
+    } = &scene.nodes[&NodeId::from("card")].effects[0].kind;
+    assert_eq!(
+        color,
+        &Color::Token {
+            token: "shadow.soft".to_owned()
+        }
+    );
+    assert_eq!(color_token.as_deref(), Some("shadow.soft"));
+}
