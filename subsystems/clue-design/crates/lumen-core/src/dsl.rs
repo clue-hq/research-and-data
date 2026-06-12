@@ -2,11 +2,16 @@
 
 use crate::scene::ColorStop;
 use crate::{
-    AssetId, AutoLayoutDirection, AutoLayoutNode, AutoLayoutProps, Color, Diagnostic,
-    DiagnosticSeverity, Fill, ImageNode, LayoutAnchor, LineNode, Node, NodeId, NodeKind, Operation,
-    OperationError, OperationReport, Orientation, Page, PageId, PagePreset, PageSize, Paint,
-    PaintId, ParentRef, Phase, Scene, SizeSpec, Slot, SlotId, SlotKey, Stroke, TextAlign,
-    TextDirection, TextNode, TextWrap, Unit, VectorNode,
+    build_clone_subtree, build_modify_operations, build_move_after, build_move_before,
+    build_move_to_parent, build_replace_node, build_safe_delete, AssetEditPatch, AssetId,
+    AutoLayoutDirection, AutoLayoutNode, AutoLayoutProps, CloneSlotPolicy, CloneSubtreeRequest,
+    Color, ComputedClonePolicy, Diagnostic, DiagnosticSeverity, EditError, EditPatch,
+    EditTargetRef, FieldPatch, Fill, ImageNode, LayoutAnchor, LineNode, Node, NodeEditPatch,
+    NodeId, NodeKind, Operation, OperationError, OperationReport, OptionalFieldPatch, Orientation,
+    Page, PageEditPatch, PageId, PagePreset, PageSize, Paint, PaintId, ParentRef, Phase, Rect,
+    RelativePlacement, ReplaceNodeRequest, ReplaceSlotPolicy, Scene, SizeSpec, Slot, SlotEditPatch,
+    SlotId, SlotKey, Stroke, TextAlign, TextDirection, TextEditPatch, TextNode, TextWrap, Unit,
+    VectorNode,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
@@ -314,7 +319,10 @@ impl DslElementKind {
 pub enum DslProperty {
     Position(f64, f64),
     Size(DslDimension, DslDimension),
+    PageSize(DslPageSize),
+    TextContent(String),
     Fill(DslFill),
+    PageBackground(DslFill),
     Stroke(DslStroke),
     Font(DslFont),
     FontSize(DslScalar),
@@ -347,6 +355,15 @@ pub enum DslProperty {
         axis: DslLayoutAxis,
         anchor: DslLayoutAnchor,
     },
+    SafeArea(Rect),
+    Bleed(Rect),
+    SlotLabel(String),
+    SlotRequired(bool),
+    SlotPlaceholder(String),
+    SlotSample(String),
+    SlotWorstCase(String),
+    SlotBind(NodeId),
+    SlotUnbind(NodeId),
     LineTo(f64, f64),
     Name(String),
     Token(String),
@@ -421,10 +438,16 @@ pub enum DslDirective {
         after: NodeId,
     },
     Clone {
-        target: NodeId,
+        source: NodeId,
+        new_root_id: NodeId,
+        placement: RelativePlacement,
+        slot_policy: CloneSlotPolicy,
+        computed_policy: ComputedClonePolicy,
     },
     Replace {
         target: NodeId,
+        replacement: NodeId,
+        slot_policy: ReplaceSlotPolicy,
     },
     Ungroup {
         target: NodeId,
@@ -844,15 +867,92 @@ impl DslParser {
                 }
             }
             "clone" => {
-                expect_arg_count(&call, 1, line_number)?;
+                if call.args.len() < 3 {
+                    return Err(error_diag(
+                        line_number,
+                        1,
+                        trimmed.len(),
+                        "LUMD0207",
+                        "clone(...) expects source, new root id, and placement",
+                        "Use clone(source_node,new_node,after:anchor), clone(source_node,new_node,before:anchor), or clone(source_node,new_node,parent:page_id,index:0).",
+                    ));
+                }
+                let placement = parse_relative_placement(&call.args[2], line_number)?;
+                let mut slot_policy = CloneSlotPolicy::Detach;
+                let mut computed_policy = ComputedClonePolicy::Clear;
+                let mut placement = placement;
+                for arg in call.args.iter().skip(3) {
+                    if let Some(index) = arg.strip_prefix("index:") {
+                        let RelativePlacement::ParentIndex { parent, index: _ } = placement else {
+                            return Err(error_diag(
+                                line_number,
+                                1,
+                                arg.len(),
+                                "LUMD0207",
+                                "index:... can only be used with parent clone placement",
+                                "Use clone(source,new_id,parent:page_id,index:1).",
+                            ));
+                        };
+                        placement = RelativePlacement::ParentIndex {
+                            parent,
+                            index: parse_usize(index, line_number, 1)?,
+                        };
+                    } else if let Some(policy) = arg.strip_prefix("slots:") {
+                        slot_policy = parse_clone_slot_policy(policy, line_number)?;
+                    } else if let Some(policy) = arg.strip_prefix("computed:") {
+                        computed_policy = parse_computed_clone_policy(policy, line_number)?;
+                    } else {
+                        return Err(error_diag(
+                            line_number,
+                            1,
+                            arg.len(),
+                            "LUMD0207",
+                            "clone(...) received an unsupported option",
+                            "Use slots:detach, slots:copy, slots:suffix:_variant, computed:clear, computed:preserve, or index:N.",
+                        ));
+                    }
+                }
                 DslDirective::Clone {
-                    target: parse_node_id(&call.args[0], line_number, 1)?,
+                    source: parse_node_id(&call.args[0], line_number, 1)?,
+                    new_root_id: parse_node_id(&call.args[1], line_number, 1)?,
+                    placement,
+                    slot_policy,
+                    computed_policy,
                 }
             }
             "replace" => {
-                expect_arg_count(&call, 1, line_number)?;
+                if !(2..=3).contains(&call.args.len()) {
+                    return Err(error_diag(
+                        line_number,
+                        1,
+                        trimmed.len(),
+                        "LUMD0207",
+                        "replace(...) expects target and replacement node ids",
+                        "Use replace(old_node,new_node) or replace(old_node,new_node,slots:preserve).",
+                    ));
+                }
+                let slot_policy = call
+                    .args
+                    .get(2)
+                    .map(|arg| {
+                        let Some(policy) = arg.strip_prefix("slots:") else {
+                            return Err(error_diag(
+                                line_number,
+                                1,
+                                arg.len(),
+                                "LUMD0207",
+                                "replace(...) option must be a slot policy",
+                                "Use slots:detach or slots:preserve.",
+                            ));
+                        };
+                        parse_replace_slot_policy(policy, line_number)
+                    })
+                    .transpose()?
+                    .unwrap_or(ReplaceSlotPolicy::Detach);
                 DslDirective::Replace {
                     target: parse_node_id(&call.args[0], line_number, 1)?,
+                    replacement: parse_node_id(&call.args[1], line_number, 1)?,
+                    slot_policy,
                 }
             }
             "ungroup" => {
@@ -984,14 +1084,7 @@ impl<'a> DslCompiler<'a> {
             DslLineKind::Page(page) => self.lower_page(line, page),
             DslLineKind::Element(element) => self.lower_element(line, element),
             DslLineKind::Directive(directive) => self.lower_directive(line, directive),
-            DslLineKind::Modification(_) => Err(error_diag(
-                line.line_number,
-                1,
-                line.raw.len().max(1),
-                "LUMD0701",
-                "modify lines are parsed but not lowered in this workstream",
-                "Use structured operations for complex patching until modify-line semantics are designed.",
-            )),
+            DslLineKind::Modification(modification) => self.lower_modification(line, modification),
         }
     }
 
@@ -1132,12 +1225,9 @@ impl<'a> DslCompiler<'a> {
     ) -> Result<(), DslDiagnostic> {
         match directive {
             DslDirective::Delete { target } => {
-                self.emit_operation(
-                    line,
-                    Operation::RemoveNode {
-                        node_id: target.clone(),
-                    },
-                )?;
+                let batch = build_safe_delete(self.scene, target.clone())
+                    .map_err(|error| edit_error_diag(line, &error))?;
+                self.emit_edit_batch(line, batch.operations)?;
                 self.prune_parent_stack();
                 Ok(())
             }
@@ -1146,22 +1236,68 @@ impl<'a> DslCompiler<'a> {
                 new_parent,
                 index,
             } => {
-                self.emit_operation(
-                    line,
-                    Operation::MoveNode {
-                        node_id: target.clone(),
-                        new_parent: new_parent.clone(),
-                        index: *index,
-                    },
-                )?;
+                let batch =
+                    build_move_to_parent(self.scene, target.clone(), new_parent.clone(), *index)
+                        .map_err(|error| edit_error_diag(line, &error))?;
+                self.emit_edit_batch(line, batch.operations)?;
                 self.prune_parent_stack();
                 Ok(())
             }
-            DslDirective::Before { .. }
-            | DslDirective::After { .. }
-            | DslDirective::Clone { .. }
-            | DslDirective::Replace { .. }
-            | DslDirective::Ungroup { .. }
+            DslDirective::Before { target, before } => {
+                let batch = build_move_before(self.scene, target.clone(), before.clone())
+                    .map_err(|error| edit_error_diag(line, &error))?;
+                self.emit_edit_batch(line, batch.operations)?;
+                self.prune_parent_stack();
+                Ok(())
+            }
+            DslDirective::After { target, after } => {
+                let batch = build_move_after(self.scene, target.clone(), after.clone())
+                    .map_err(|error| edit_error_diag(line, &error))?;
+                self.emit_edit_batch(line, batch.operations)?;
+                self.prune_parent_stack();
+                Ok(())
+            }
+            DslDirective::Clone {
+                source,
+                new_root_id,
+                placement,
+                slot_policy,
+                computed_policy,
+            } => {
+                let batch = build_clone_subtree(
+                    self.scene,
+                    CloneSubtreeRequest {
+                        source: source.clone(),
+                        new_root_id: new_root_id.clone(),
+                        placement: placement.clone(),
+                        slot_policy: slot_policy.clone(),
+                        computed_policy: computed_policy.clone(),
+                    },
+                )
+                .map_err(|error| edit_error_diag(line, &error))?;
+                self.emit_edit_batch(line, batch.operations)?;
+                self.prune_parent_stack();
+                Ok(())
+            }
+            DslDirective::Replace {
+                target,
+                replacement,
+                slot_policy,
+            } => {
+                let batch = build_replace_node(
+                    self.scene,
+                    ReplaceNodeRequest {
+                        target: target.clone(),
+                        replacement: replacement.clone(),
+                        slot_policy: slot_policy.clone(),
+                    },
+                )
+                .map_err(|error| edit_error_diag(line, &error))?;
+                self.emit_edit_batch(line, batch.operations)?;
+                self.prune_parent_stack();
+                Ok(())
+            }
+            DslDirective::Ungroup { .. }
             | DslDirective::Undo { .. }
             | DslDirective::Redo { .. }
             | DslDirective::Override { .. }
@@ -1174,6 +1310,19 @@ impl<'a> DslCompiler<'a> {
                 "Keep this syntax for future operation-history, clone/replace, or brand-kit workstreams.",
             )),
         }
+    }
+
+    fn lower_modification(
+        &mut self,
+        line: &DslLine,
+        modification: &DslModification,
+    ) -> Result<(), DslDiagnostic> {
+        let target = parse_edit_target_ref(&modification.target_ref, line)?;
+        let patch =
+            edit_patch_from_properties(self.scene, &target, &modification.properties, line)?;
+        let batch = build_modify_operations(self.scene, target, patch)
+            .map_err(|error| edit_error_diag(line, &error))?;
+        self.emit_edit_batch(line, batch.operations)
     }
 
     fn emit_slot_binding(
@@ -1219,6 +1368,17 @@ impl<'a> DslCompiler<'a> {
             .apply_operation(operation.clone())
             .map_err(|error| operation_error_diag(line, &error))?;
         self.operations.push(operation);
+        Ok(())
+    }
+
+    fn emit_edit_batch(
+        &mut self,
+        line: &DslLine,
+        operations: Vec<Operation>,
+    ) -> Result<(), DslDiagnostic> {
+        for operation in operations {
+            self.emit_operation(line, operation)?;
+        }
         Ok(())
     }
 
@@ -1324,6 +1484,514 @@ fn operation_error_diag(line: &DslLine, error: &OperationError) -> DslDiagnostic
         format!("operation {} failed during DSL lowering: {}", error.code, error.message),
         "The DSL line parsed, but applying the corresponding structured operation failed against the current draft scene.",
     )
+}
+
+fn edit_error_diag(line: &DslLine, error: &EditError) -> DslDiagnostic {
+    error_diag(
+        line.line_number,
+        1,
+        line.raw.len().max(1),
+        "LUMD0900",
+        format!(
+            "targeted edit {} failed: {}",
+            error.kind.code(),
+            error.message
+        ),
+        "Repair the target reference or use properties compatible with the target kind.",
+    )
+}
+
+fn parse_edit_target_ref(source: &str, line: &DslLine) -> Result<EditTargetRef, DslDiagnostic> {
+    let Some(target) = source.strip_prefix('#') else {
+        return Err(error_diag(
+            line.line_number,
+            1,
+            source.len().max(1),
+            "LUMD0901",
+            "modify target must start with #",
+            "Use #node_id, #page:page_id, #slot:key, #slot_id:id, #asset:id, or #document.",
+        ));
+    };
+    if target == "document" {
+        return Ok(EditTargetRef::Document);
+    }
+    if let Some(page_id) = target.strip_prefix("page:") {
+        return Ok(EditTargetRef::Page(parse_page_id(
+            page_id,
+            line.line_number,
+            1,
+        )?));
+    }
+    if let Some(slot_key) = target.strip_prefix("slot:") {
+        return Ok(EditTargetRef::SlotKey(parse_slot_key(
+            slot_key,
+            line.line_number,
+            1,
+        )?));
+    }
+    if let Some(slot_id) = target.strip_prefix("slot_id:") {
+        return Ok(EditTargetRef::Slot(parse_slot_id(
+            slot_id,
+            line.line_number,
+            1,
+        )?));
+    }
+    if let Some(asset_id) = target.strip_prefix("asset:") {
+        return Ok(EditTargetRef::Asset(parse_asset_id(
+            asset_id,
+            line.line_number,
+            1,
+        )?));
+    }
+    if let Some(name) = target.strip_prefix("export:") {
+        return Ok(EditTargetRef::ExportProfile(name.to_owned()));
+    }
+    Ok(EditTargetRef::Node(parse_node_id(
+        target,
+        line.line_number,
+        1,
+    )?))
+}
+
+fn edit_patch_from_properties(
+    scene: &Scene,
+    target: &EditTargetRef,
+    properties: &[DslProperty],
+    line: &DslLine,
+) -> Result<EditPatch, DslDiagnostic> {
+    match target {
+        EditTargetRef::Node(node_id) => {
+            let patch = node_edit_patch_from_properties(scene, node_id, properties, line)?;
+            Ok(EditPatch::Node(patch))
+        }
+        EditTargetRef::Page(_) => {
+            let patch = page_edit_patch_from_properties(properties, line)?;
+            Ok(EditPatch::Page(patch))
+        }
+        EditTargetRef::Slot(_) | EditTargetRef::SlotKey(_) => {
+            let patch = slot_edit_patch_from_properties(properties, line)?;
+            Ok(EditPatch::Slot(patch))
+        }
+        EditTargetRef::Asset(_) => {
+            let patch = asset_edit_patch_from_properties(properties, line)?;
+            Ok(EditPatch::Asset(patch))
+        }
+        EditTargetRef::Document | EditTargetRef::ExportProfile(_) => Err(error_diag(
+            line.line_number,
+            1,
+            line.raw.len().max(1),
+            "LUMD0903",
+            "this target type is not supported by modify-line lowering yet",
+            "Use structured operations for document/export-profile edits until Phase D wires those targets.",
+        )),
+    }
+}
+
+fn node_edit_patch_from_properties(
+    scene: &Scene,
+    node_id: &NodeId,
+    properties: &[DslProperty],
+    line: &DslLine,
+) -> Result<NodeEditPatch, DslDiagnostic> {
+    let current = scene.nodes.get(node_id).ok_or_else(|| {
+        error_diag(
+            line.line_number,
+            1,
+            node_id.as_str().len(),
+            "LUMD0901",
+            format!("target node {} does not exist", node_id),
+            "Use a node id from the current scene.",
+        )
+    })?;
+    let mut patch = NodeEditPatch::default();
+    let mut next_transform = current.transform.clone();
+    let mut transform_changed = false;
+    let mut next_corner = current.corner.clone();
+    let mut corner_changed = false;
+    let mut next_layout = current.layout.clone().unwrap_or_default();
+    let mut layout_changed = false;
+    let mut fills = Vec::new();
+    let mut strokes = Vec::new();
+    let mut fill_index = 0;
+    let mut stroke_index = 0;
+    let mut text_patch = TextEditPatch::default();
+    let mut has_text_patch = false;
+
+    for property in properties {
+        match property {
+            DslProperty::Position(x, y) => {
+                next_transform.x = *x;
+                next_transform.y = *y;
+                transform_changed = true;
+            }
+            DslProperty::Rotation(rotation) => {
+                next_transform.rotation = *rotation;
+                transform_changed = true;
+            }
+            DslProperty::Skew(skew_x, skew_y) => {
+                next_transform.skew_x = *skew_x;
+                next_transform.skew_y = *skew_y;
+                transform_changed = true;
+            }
+            DslProperty::Flip { x, y } => {
+                next_transform.flip_x = *x;
+                next_transform.flip_y = *y;
+                transform_changed = true;
+            }
+            DslProperty::Size(width, height) => {
+                patch.size = FieldPatch::Set(SizeSpec {
+                    width: dimension_to_scene(width),
+                    height: dimension_to_scene(height),
+                });
+            }
+            DslProperty::TextContent(content) => {
+                text_patch.content = FieldPatch::Set(content.clone());
+                has_text_patch = true;
+            }
+            DslProperty::Name(name) => {
+                patch.name = OptionalFieldPatch::Set(name.clone());
+            }
+            DslProperty::Fill(fill) => {
+                let id = fill.id.clone().unwrap_or_else(|| {
+                    fill_index += 1;
+                    PaintId::from(format!("paint_{}_fill_{}", node_id, fill_index))
+                });
+                fills.push(Fill {
+                    id,
+                    paint: fill.paint.clone(),
+                });
+            }
+            DslProperty::Stroke(stroke) => {
+                let id = stroke.id.clone().unwrap_or_else(|| {
+                    stroke_index += 1;
+                    PaintId::from(format!("paint_{}_stroke_{}", node_id, stroke_index))
+                });
+                let (width, width_token) = match &stroke.width {
+                    DslScalar::Number(width) => (*width, None),
+                    DslScalar::Token(token) => (0.0, Some(token.clone())),
+                };
+                strokes.push(Stroke {
+                    id,
+                    paint: stroke.paint.clone(),
+                    width,
+                    width_token,
+                });
+            }
+            DslProperty::Font(font) => {
+                text_patch.font_family = FieldPatch::Set(font.family.clone());
+                match &font.size {
+                    DslScalar::Number(size) => text_patch.font_size = FieldPatch::Set(*size),
+                    DslScalar::Token(token) => {
+                        text_patch.style_token = OptionalFieldPatch::Set(token.clone())
+                    }
+                }
+                text_patch.font_weight = FieldPatch::Set(font.weight);
+                text_patch.align = FieldPatch::Set(font.align.clone());
+                has_text_patch = true;
+            }
+            DslProperty::FontSize(size) => {
+                if let DslScalar::Number(size) = size {
+                    text_patch.font_size = FieldPatch::Set(*size);
+                    has_text_patch = true;
+                }
+            }
+            DslProperty::FontWeight(weight) => {
+                text_patch.font_weight = FieldPatch::Set(*weight);
+                has_text_patch = true;
+            }
+            DslProperty::TextStyleToken(token) => {
+                text_patch.style_token = OptionalFieldPatch::Set(token.clone());
+                has_text_patch = true;
+            }
+            DslProperty::LineHeight(line_height) => {
+                match line_height {
+                    DslScalar::Number(line_height) => {
+                        text_patch.line_height = FieldPatch::Set(*line_height)
+                    }
+                    DslScalar::Token(token) => {
+                        text_patch.line_height_token = OptionalFieldPatch::Set(token.clone())
+                    }
+                }
+                has_text_patch = true;
+            }
+            DslProperty::LetterSpacing(letter_spacing) => {
+                match letter_spacing {
+                    DslScalar::Number(letter_spacing) => {
+                        text_patch.letter_spacing = FieldPatch::Set(*letter_spacing)
+                    }
+                    DslScalar::Token(token) => {
+                        text_patch.letter_spacing_token = OptionalFieldPatch::Set(token.clone())
+                    }
+                }
+                has_text_patch = true;
+            }
+            DslProperty::Tracking(tracking) => {
+                if let DslScalar::Number(tracking) = tracking {
+                    let font_size = match &current.kind {
+                        NodeKind::Text(text) => text.font_size,
+                        _ => 16.0,
+                    };
+                    text_patch.letter_spacing =
+                        FieldPatch::Set(design_tracking_to_letter_spacing(*tracking, font_size));
+                    has_text_patch = true;
+                }
+            }
+            DslProperty::MaxLines(max_lines) => {
+                text_patch.max_lines = OptionalFieldPatch::Set(*max_lines);
+                has_text_patch = true;
+            }
+            DslProperty::TextWrap(wrap) => {
+                text_patch.wrap = FieldPatch::Set(if *wrap {
+                    TextWrap::Wrap
+                } else {
+                    TextWrap::NoWrap
+                });
+                has_text_patch = true;
+            }
+            DslProperty::TextDirection(direction) => {
+                text_patch.direction = FieldPatch::Set(direction.clone());
+                has_text_patch = true;
+            }
+            DslProperty::Asset(asset_id) => {
+                patch.image_asset_id = OptionalFieldPatch::Set(asset_id.clone());
+            }
+            DslProperty::Radius(radius) => {
+                match radius {
+                    DslScalar::Number(radius) => {
+                        next_corner.top_left = *radius;
+                        next_corner.top_right = *radius;
+                        next_corner.bottom_right = *radius;
+                        next_corner.bottom_left = *radius;
+                        next_corner.token = None;
+                    }
+                    DslScalar::Token(token) => next_corner.token = Some(token.clone()),
+                }
+                corner_changed = true;
+            }
+            DslProperty::Opacity(opacity) => match opacity {
+                DslScalar::Number(opacity) => {
+                    patch.opacity = FieldPatch::Set(*opacity);
+                    patch.opacity_token = OptionalFieldPatch::Clear;
+                }
+                DslScalar::Token(token) => {
+                    patch.opacity_token = OptionalFieldPatch::Set(token.clone());
+                }
+            },
+            DslProperty::Clip(clip) => patch.clip = FieldPatch::Set(*clip),
+            DslProperty::Gap(gap) => {
+                match gap {
+                    DslScalar::Number(gap) => {
+                        next_layout.gap = *gap;
+                        next_layout.gap_token = None;
+                    }
+                    DslScalar::Token(token) => next_layout.gap_token = Some(token.clone()),
+                }
+                layout_changed = true;
+            }
+            DslProperty::Padding(padding) => {
+                if let Some(token) = uniform_scalar_token(padding) {
+                    next_layout.padding_token = Some(token);
+                    layout_changed = true;
+                } else if let Some(padding) = scalar_quad_to_numbers(
+                    padding,
+                    line.line_number,
+                    node_id.as_str().len(),
+                    "padding",
+                    &mut Vec::new(),
+                ) {
+                    next_layout.padding = padding;
+                    next_layout.padding_token = None;
+                    layout_changed = true;
+                }
+            }
+            DslProperty::Wrap(wrap) => {
+                let _ = wrap;
+                return Err(error_diag(
+                    line.line_number,
+                    1,
+                    line.raw.len().max(1),
+                    "LUMD0903",
+                    "wrap(...) modify lowering for auto-layout kind is not supported yet",
+                    "Use structured operations for auto-layout kind changes until Phase D adds a kind patch.",
+                ));
+            }
+            DslProperty::Grow(grow) => {
+                if let DslScalar::Number(grow) = grow {
+                    next_layout.grow = *grow;
+                    layout_changed = true;
+                }
+            }
+            DslProperty::LayoutAnchor { axis, anchor } => {
+                let anchor = layout_anchor_to_scene(anchor);
+                match axis {
+                    DslLayoutAxis::X => next_layout.align_x = anchor,
+                    DslLayoutAxis::Y => next_layout.align_y = anchor,
+                }
+                layout_changed = true;
+            }
+            DslProperty::PageSize(_)
+            | DslProperty::PageBackground(_)
+            | DslProperty::SafeArea(_)
+            | DslProperty::Bleed(_)
+            | DslProperty::Slot(_)
+            | DslProperty::SlotLabel(_)
+            | DslProperty::SlotRequired(_)
+            | DslProperty::SlotPlaceholder(_)
+            | DslProperty::SlotSample(_)
+            | DslProperty::SlotWorstCase(_)
+            | DslProperty::SlotBind(_)
+            | DslProperty::SlotUnbind(_)
+            | DslProperty::Path(_)
+            | DslProperty::Source(_)
+            | DslProperty::LineTo(_, _)
+            | DslProperty::Token(_) => {
+                return Err(error_diag(
+                    line.line_number,
+                    1,
+                    line.raw.len().max(1),
+                    "LUMD0903",
+                    "property is not supported for node modify targets",
+                    "Use properties compatible with node targets, or use a page/slot/asset target prefix.",
+                ));
+            }
+        }
+    }
+
+    if transform_changed {
+        patch.transform = FieldPatch::Set(next_transform);
+    }
+    if corner_changed {
+        patch.corner = FieldPatch::Set(next_corner);
+    }
+    if layout_changed {
+        patch.layout = OptionalFieldPatch::Set(next_layout);
+    }
+    if !fills.is_empty() {
+        patch.fills = FieldPatch::Set(fills);
+    }
+    if !strokes.is_empty() {
+        patch.strokes = FieldPatch::Set(strokes);
+    }
+    if has_text_patch {
+        patch.text = Some(text_patch);
+    }
+    Ok(patch)
+}
+
+fn page_edit_patch_from_properties(
+    properties: &[DslProperty],
+    line: &DslLine,
+) -> Result<PageEditPatch, DslDiagnostic> {
+    let mut patch = PageEditPatch::default();
+    let mut backgrounds = Vec::new();
+    for property in properties {
+        match property {
+            DslProperty::Name(name) => patch.name = FieldPatch::Set(name.clone()),
+            DslProperty::PageSize(size) => {
+                patch.size = FieldPatch::Set(PageSize {
+                    width: size.width,
+                    height: size.height,
+                    unit: size.unit.clone(),
+                    preset: Some(PagePreset::Custom),
+                    orientation: orientation_for_dimensions(size.width, size.height),
+                });
+            }
+            DslProperty::PageBackground(fill) => {
+                let id = fill
+                    .id
+                    .clone()
+                    .unwrap_or_else(|| PaintId::from("paint_page_background"));
+                backgrounds.push(Fill {
+                    id,
+                    paint: fill.paint.clone(),
+                });
+            }
+            DslProperty::SafeArea(rect) => patch.safe_area = OptionalFieldPatch::Set(rect.clone()),
+            DslProperty::Bleed(rect) => patch.bleed = OptionalFieldPatch::Set(rect.clone()),
+            _ => {
+                return Err(error_diag(
+                    line.line_number,
+                    1,
+                    line.raw.len().max(1),
+                    "LUMD0903",
+                    "property is not supported for page modify targets",
+                    "Use name(...), size(width,height,unit), background(...), safe_area(...), or bleed(...).",
+                ));
+            }
+        }
+    }
+    if !backgrounds.is_empty() {
+        patch.background = FieldPatch::Set(backgrounds);
+    }
+    Ok(patch)
+}
+
+fn slot_edit_patch_from_properties(
+    properties: &[DslProperty],
+    line: &DslLine,
+) -> Result<SlotEditPatch, DslDiagnostic> {
+    let mut patch = SlotEditPatch::default();
+    for property in properties {
+        match property {
+            DslProperty::SlotLabel(label) | DslProperty::Name(label) => {
+                patch.label = FieldPatch::Set(label.clone())
+            }
+            DslProperty::SlotRequired(required) => {
+                patch.required = FieldPatch::Set(*required);
+            }
+            DslProperty::SlotPlaceholder(placeholder) => {
+                patch.placeholder = OptionalFieldPatch::Set(placeholder.clone());
+            }
+            DslProperty::SlotSample(sample) => {
+                patch.sample = OptionalFieldPatch::Set(sample.clone());
+            }
+            DslProperty::SlotWorstCase(worst_case) => {
+                patch.worst_case = OptionalFieldPatch::Set(worst_case.clone());
+            }
+            DslProperty::SlotBind(node_id) => {
+                patch.bind_nodes.push(node_id.clone());
+            }
+            DslProperty::SlotUnbind(node_id) => {
+                patch.unbind_nodes.push(node_id.clone());
+            }
+            _ => {
+                return Err(error_diag(
+                    line.line_number,
+                    1,
+                    line.raw.len().max(1),
+                    "LUMD0903",
+                    "property is not supported for slot modify targets",
+                    "Use label(...), required(...), placeholder(...), sample(...), worst_case(...), bind(...), or unbind(...).",
+                ));
+            }
+        }
+    }
+    Ok(patch)
+}
+
+fn asset_edit_patch_from_properties(
+    properties: &[DslProperty],
+    line: &DslLine,
+) -> Result<AssetEditPatch, DslDiagnostic> {
+    let mut patch = AssetEditPatch::default();
+    for property in properties {
+        match property {
+            DslProperty::Name(name) | DslProperty::SlotLabel(name) => {
+                patch.label = FieldPatch::Set(name.clone())
+            }
+            _ => {
+                return Err(error_diag(
+                    line.line_number,
+                    1,
+                    line.raw.len().max(1),
+                    "LUMD0903",
+                    "property is not supported for asset modify targets",
+                    "Use name(...) for metadata-only asset edits in Phase D.",
+                ));
+            }
+        }
+    }
+    Ok(patch)
 }
 
 fn normalized_lines(source: &str) -> Vec<NormalizedLine> {
@@ -1599,15 +2267,34 @@ fn parse_property_token(
             )]
         }
         "s" | "size" => {
-            expect_arg_count(&call, 2, line_number)?;
-            vec![DslProperty::Size(
-                parse_dimension(&call.args[0], line_number, column)?,
-                parse_dimension(&call.args[1], line_number, column)?,
-            )]
+            if call.args.len() == 3 {
+                vec![DslProperty::PageSize(parse_page_size(&call, line_number)?)]
+            } else {
+                expect_arg_count(&call, 2, line_number)?;
+                vec![DslProperty::Size(
+                    parse_dimension(&call.args[0], line_number, column)?,
+                    parse_dimension(&call.args[1], line_number, column)?,
+                )]
+            }
+        }
+        "text" | "content" => {
+            expect_arg_count(&call, 1, line_number)?;
+            vec![DslProperty::TextContent(unquote(
+                &call.args[0],
+                line_number,
+                column,
+            )?)]
         }
         "fill" => {
             expect_arg_count(&call, 1, line_number)?;
             vec![DslProperty::Fill(DslFill {
+                id: None,
+                paint: parse_paint(&call.args[0], line_number, column)?,
+            })]
+        }
+        "background" | "bg" => {
+            expect_arg_count(&call, 1, line_number)?;
+            vec![DslProperty::PageBackground(DslFill {
                 id: None,
                 paint: parse_paint(&call.args[0], line_number, column)?,
             })]
@@ -1725,6 +2412,62 @@ fn parse_property_token(
             line_number,
             column,
         )?)],
+        "label" => {
+            expect_arg_count(&call, 1, line_number)?;
+            vec![DslProperty::SlotLabel(unquote(
+                &call.args[0],
+                line_number,
+                column,
+            )?)]
+        }
+        "required" => {
+            expect_arg_count(&call, 1, line_number)?;
+            vec![DslProperty::SlotRequired(parse_bool(
+                &call.args[0],
+                line_number,
+                column,
+            )?)]
+        }
+        "placeholder" => {
+            expect_arg_count(&call, 1, line_number)?;
+            vec![DslProperty::SlotPlaceholder(unquote(
+                &call.args[0],
+                line_number,
+                column,
+            )?)]
+        }
+        "sample" => {
+            expect_arg_count(&call, 1, line_number)?;
+            vec![DslProperty::SlotSample(unquote(
+                &call.args[0],
+                line_number,
+                column,
+            )?)]
+        }
+        "worst_case" | "worst-case" => {
+            expect_arg_count(&call, 1, line_number)?;
+            vec![DslProperty::SlotWorstCase(unquote(
+                &call.args[0],
+                line_number,
+                column,
+            )?)]
+        }
+        "bind" => {
+            expect_arg_count(&call, 1, line_number)?;
+            vec![DslProperty::SlotBind(parse_node_id(
+                &call.args[0],
+                line_number,
+                column,
+            )?)]
+        }
+        "unbind" => {
+            expect_arg_count(&call, 1, line_number)?;
+            vec![DslProperty::SlotUnbind(parse_node_id(
+                &call.args[0],
+                line_number,
+                column,
+            )?)]
+        }
         "asset" => {
             expect_arg_count(&call, 1, line_number)?;
             vec![DslProperty::Asset(parse_asset_id(
@@ -1791,6 +2534,24 @@ fn parse_property_token(
                 line_number,
                 column,
             )?)]
+        }
+        "safe_area" | "safe-area" => {
+            expect_arg_count(&call, 4, line_number)?;
+            vec![DslProperty::SafeArea(Rect {
+                x: parse_f64(&call.args[0], line_number, column)?,
+                y: parse_f64(&call.args[1], line_number, column)?,
+                width: parse_positive_f64(&call.args[2], line_number, column)?,
+                height: parse_positive_f64(&call.args[3], line_number, column)?,
+            })]
+        }
+        "bleed" => {
+            expect_arg_count(&call, 4, line_number)?;
+            vec![DslProperty::Bleed(Rect {
+                x: parse_f64(&call.args[0], line_number, column)?,
+                y: parse_f64(&call.args[1], line_number, column)?,
+                width: parse_positive_f64(&call.args[2], line_number, column)?,
+                height: parse_positive_f64(&call.args[3], line_number, column)?,
+            })]
         }
         "g" | "gap" => {
             expect_arg_count(&call, 1, line_number)?;
@@ -2004,6 +2765,30 @@ fn apply_properties(
                     height: dimension_to_scene(height),
                 };
             }
+            DslProperty::PageSize(_) => {
+                diagnostics.push(warning_diag(
+                    line_number,
+                    1,
+                    node.id.as_str().len(),
+                    "LUMD0610",
+                    "size(width,height,unit) only applies to page modify targets",
+                    "Use size(width,height) on nodes, or use size(width,height,unit) on #page:page_id modify lines.",
+                ));
+            }
+            DslProperty::TextContent(content) => {
+                if let NodeKind::Text(text) = &mut node.kind {
+                    text.content = content.clone();
+                } else {
+                    diagnostics.push(warning_diag(
+                        line_number,
+                        1,
+                        node.id.as_str().len(),
+                        "LUMD0608",
+                        "text(...)/content(...) only applies to text nodes",
+                        "Move text(\"...\") to a text/t element or #text_node modify line.",
+                    ));
+                }
+            }
             DslProperty::Fill(fill) => {
                 let id = fill.id.clone().unwrap_or_else(|| {
                     fill_index += 1;
@@ -2013,6 +2798,16 @@ fn apply_properties(
                     id,
                     paint: fill.paint.clone(),
                 });
+            }
+            DslProperty::PageBackground(_) => {
+                diagnostics.push(warning_diag(
+                    line_number,
+                    1,
+                    node.id.as_str().len(),
+                    "LUMD0611",
+                    "background(...) only applies to page modify targets",
+                    "Use background(...) on #page:page_id modify lines.",
+                ));
             }
             DslProperty::Stroke(stroke) => {
                 let id = stroke.id.clone().unwrap_or_else(|| {
@@ -2151,6 +2946,16 @@ fn apply_properties(
                 node.transform.flip_y = *y;
             }
             DslProperty::Clip(clip) => node.clip = *clip,
+            DslProperty::SafeArea(_) | DslProperty::Bleed(_) => {
+                diagnostics.push(warning_diag(
+                    line_number,
+                    1,
+                    node.id.as_str().len(),
+                    "LUMD0612",
+                    "safe_area(...)/bleed(...) only apply to page modify targets",
+                    "Use these properties on #page:page_id modify lines.",
+                ));
+            }
             DslProperty::Gap(gap) => match gap {
                 DslScalar::Number(gap) => {
                     let layout = ensure_layout(node);
@@ -2308,6 +3113,22 @@ fn apply_properties(
                     line.x2 = *x;
                     line.y2 = *y;
                 }
+            }
+            DslProperty::SlotLabel(_)
+            | DslProperty::SlotRequired(_)
+            | DslProperty::SlotPlaceholder(_)
+            | DslProperty::SlotSample(_)
+            | DslProperty::SlotWorstCase(_)
+            | DslProperty::SlotBind(_)
+            | DslProperty::SlotUnbind(_) => {
+                diagnostics.push(warning_diag(
+                    line_number,
+                    1,
+                    node.id.as_str().len(),
+                    "LUMD0613",
+                    "slot metadata properties only apply to slot modify targets",
+                    "Use these properties on #slot:key or #slot_id:id modify lines.",
+                ));
             }
             DslProperty::Name(name) => node.name = Some(name.clone()),
             DslProperty::Token(token) => {
@@ -2749,7 +3570,7 @@ fn is_modification_line(trimmed: &str) -> bool {
 
     reference
         .chars()
-        .all(|ch| ch.is_ascii_alphanumeric() || ch == '_' || ch == '-' || ch == '.')
+        .all(|ch| ch.is_ascii_alphanumeric() || ch == '_' || ch == '-' || ch == '.' || ch == ':')
 }
 
 fn parse_color_stop(
@@ -3107,6 +3928,94 @@ fn parse_parent_ref(source: &str, line_number: usize) -> Result<ParentRef, DslDi
     }
 }
 
+fn parse_relative_placement(
+    source: &str,
+    line_number: usize,
+) -> Result<RelativePlacement, DslDiagnostic> {
+    let trimmed = source.trim();
+    if let Some(anchor) = trimmed.strip_prefix("before:") {
+        return Ok(RelativePlacement::Before {
+            anchor: parse_node_id(anchor, line_number, 1)?,
+        });
+    }
+    if let Some(anchor) = trimmed.strip_prefix("after:") {
+        return Ok(RelativePlacement::After {
+            anchor: parse_node_id(anchor, line_number, 1)?,
+        });
+    }
+    if let Some(parent) = trimmed.strip_prefix("parent:") {
+        return Ok(RelativePlacement::ParentIndex {
+            parent: parse_parent_ref(parent, line_number)?,
+            index: 0,
+        });
+    }
+    Err(error_diag(
+        line_number,
+        1,
+        trimmed.len().max(1),
+        "LUMD0207",
+        "clone placement must be before:node, after:node, or parent:node/page:page_id",
+        "Use clone(source,new_id,after:anchor), clone(source,new_id,before:anchor), or clone(source,new_id,parent:page:page_a4,index:0).",
+    ))
+}
+
+fn parse_clone_slot_policy(
+    source: &str,
+    line_number: usize,
+) -> Result<CloneSlotPolicy, DslDiagnostic> {
+    match source.trim() {
+        "detach" => Ok(CloneSlotPolicy::Detach),
+        "copy" => Ok(CloneSlotPolicy::Copy),
+        suffix if suffix.starts_with("suffix:") => Ok(CloneSlotPolicy::Suffix(
+            suffix.trim_start_matches("suffix:").to_owned(),
+        )),
+        other => Err(error_diag(
+            line_number,
+            1,
+            other.len().max(1),
+            "LUMD0207",
+            format!("unknown clone slot policy {other}"),
+            "Use slots:detach, slots:copy, or slots:suffix:_variant.",
+        )),
+    }
+}
+
+fn parse_computed_clone_policy(
+    source: &str,
+    line_number: usize,
+) -> Result<ComputedClonePolicy, DslDiagnostic> {
+    match source.trim() {
+        "clear" => Ok(ComputedClonePolicy::Clear),
+        "preserve" => Ok(ComputedClonePolicy::Preserve),
+        other => Err(error_diag(
+            line_number,
+            1,
+            other.len().max(1),
+            "LUMD0207",
+            format!("unknown clone computed policy {other}"),
+            "Use computed:clear or computed:preserve.",
+        )),
+    }
+}
+
+fn parse_replace_slot_policy(
+    source: &str,
+    line_number: usize,
+) -> Result<ReplaceSlotPolicy, DslDiagnostic> {
+    match source.trim() {
+        "detach" => Ok(ReplaceSlotPolicy::Detach),
+        "preserve" | "preserve_compatible" => Ok(ReplaceSlotPolicy::PreserveCompatible),
+        other => Err(error_diag(
+            line_number,
+            1,
+            other.len().max(1),
+            "LUMD0207",
+            format!("unknown replace slot policy {other}"),
+            "Use slots:detach or slots:preserve.",
+        )),
+    }
+}
+
 fn parse_direction(source: &str) -> Option<AutoLayoutDirection> {
     match source {
         "row" | "h" | "horizontal" => Some(AutoLayoutDirection::Row),
@@ -3310,6 +4219,19 @@ fn parse_slot_key(
     })
 }
 
+fn parse_slot_id(source: &str, line_number: usize, column: usize) -> Result<SlotId, DslDiagnostic> {
+    SlotId::new(source.trim()).map_err(|_| {
+        error_diag(
+            line_number,
+            column,
+            source.len().max(1),
+            "LUMD0408",
+            format!("invalid slot id {}", source.trim()),
+            "Slot IDs may use ASCII letters, numbers, dashes, or underscores.",
+        )
+    })
+}
+
 fn parse_paint_id(
     source: &str,
     line_number: usize,
@@ -3363,6 +4285,25 @@ fn parse_f64(source: &str, line_number: usize, column: usize) -> Result<f64, Dsl
             "LUMD0249",
             format!("numeric value must be finite, got {source}"),
             "Use finite decimal numerics; NaN and infinity are not valid design geometry.",
+        ));
+    }
+    Ok(value)
+}
+
+fn parse_positive_f64(
+    source: &str,
+    line_number: usize,
+    column: usize,
+) -> Result<f64, DslDiagnostic> {
+    let value = parse_f64(source, line_number, column)?;
+    if value <= 0.0 {
+        return Err(error_diag(
+            line_number,
+            column,
+            source.len().max(1),
+            "LUMD0255",
+            "numeric value must be positive",
+            "Use a positive decimal numeric value.",
         ));
     }
     Ok(value)

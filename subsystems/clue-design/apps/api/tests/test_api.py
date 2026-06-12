@@ -1027,6 +1027,76 @@ def test_apply_operations_updates_scene_and_ordered_history(client: TestClient) 
     assert history[0]["operation"]["patch"]["title"]["value"] == "Updated Letter"
 
 
+def test_apply_structured_edit_persists_canonical_operations(client: TestClient) -> None:
+    document = create_document(client)
+    response = client.post(
+        f"/documents/{document['id']}/edits",
+        json={
+            "edit": {
+                "kind": "modify",
+                "target": {"kind": "node", "id": "node_contact_name"},
+                "patch": {
+                    "kind": "node",
+                    "value": {
+                        "text": {
+                            "content": {
+                                "kind": "set",
+                                "value": "Targeted API repair headline",
+                            },
+                            "font_size": {"kind": "set", "value": 16.0},
+                        }
+                    },
+                },
+            },
+            "actor": {"kind": "agent", "id": "agent_repair"},
+            "source": "agent",
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["schema_version"] == 1
+    assert payload["edit"]["kind"] == "modify"
+    assert payload["operation_application"]["applied_operations"] == 1
+    assert payload["operations"] == [{"sequence": 1, "kind": "update_node"}]
+
+    loaded = client.get(f"/documents/{document['id']}").json()
+    assert (
+        loaded["scene"]["nodes"]["node_contact_name"]["kind"]["content"]
+        == "Targeted API repair headline"
+    )
+    assert loaded["scene"]["nodes"]["node_contact_name"]["kind"]["font_size"] == 16.0
+
+    history = client.get(f"/documents/{document['id']}/operations").json()
+    assert history[0]["source"] == "agent"
+    assert history[0]["operation"]["kind"] == "update_node"
+    assert (
+        history[0]["operation"]["patch"]["kind"]["value"]["content"]
+        == "Targeted API repair headline"
+    )
+
+
+def test_apply_structured_edit_rejects_missing_target_without_history(
+    client: TestClient,
+) -> None:
+    document = create_document(client)
+    response = client.post(
+        f"/documents/{document['id']}/edits",
+        json={
+            "edit": {
+                "kind": "delete",
+                "target": {"kind": "node", "id": "missing_node"},
+            }
+        },
+    )
+
+    assert response.status_code == 422, response.text
+    detail = response.json()["detail"]
+    assert detail["code"] == "edit.target_not_found"
+    assert detail["diagnostics"][0]["code"] == "edit.target_not_found"
+    assert client.get(f"/documents/{document['id']}/operations").json() == []
+
+
 def test_invalid_operation_batch_does_not_update_scene_or_history(client: TestClient) -> None:
     document = create_document(client)
     response = client.post(

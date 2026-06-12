@@ -43,6 +43,7 @@ from .models import (
     AgentTurnPreviewRequest,
     AttachBrandKitRequest,
     ApplyOperationsRequest,
+    ApplyStructuredEditRequest,
     AssetMetadataRequest,
     BrandCompatibilityRequest,
     CompileStylesBrandKitRequest,
@@ -512,6 +513,70 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
         document_id: str, repo: Repository = Depends(repository)
     ) -> List[JsonObject]:
         return repo.list_operations(document_id)
+
+    @app.post("/documents/{document_id}/edits")
+    def apply_structured_edit(
+        document_id: str,
+        payload: ApplyStructuredEditRequest,
+        repo: Repository = Depends(repository),
+    ) -> JsonObject:
+        document = require_document(repo, document_id)
+        require_draft_document(document, "apply structured edit")
+        try:
+            result = app.state.core.apply_structured_edit(document["scene"], payload.edit)
+        except CoreError as error:
+            raise core_http_error(error) from error
+
+        operations = result.get("operations") or []
+        if not operations:
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "code": "edits.no_operations",
+                    "message": "structured edit did not produce canonical operations",
+                    "edit": result.get("edit") or payload.edit,
+                },
+            )
+
+        diagnostics = result.get("diagnostics", [])
+        updated = repo.update_document_state(
+            document_id,
+            result["scene"],
+            diagnostics,
+            operations,
+            payload.source,
+            payload.actor.kind,
+            payload.actor.id,
+            "structural",
+            effective_brand=None,
+        )
+        snapshot = None
+        if payload.snapshot_reason:
+            snapshot = repo.create_snapshot(
+                document_id, new_id("snap"), payload.snapshot_reason
+            )
+        log_event(
+            api_logger,
+            logging.INFO,
+            "structured_edit_applied",
+            document_id=document_id,
+            edit_kind=(result.get("edit") or {}).get("kind"),
+            operation_count=len(operations),
+            applied_operations=result.get("applied_operations", 0),
+            source=payload.source,
+            actor_kind=payload.actor.kind,
+            snapshot_created=snapshot is not None,
+            **diagnostic_summary(diagnostics),
+        )
+        response = operation_application_dto(
+            updated,
+            result.get("applied_operations", 0),
+            operations,
+            diagnostics,
+            snapshot,
+        )
+        response["edit"] = result.get("edit") or payload.edit
+        return response
 
     @app.post("/documents/{document_id}/snapshots")
     def create_snapshot(

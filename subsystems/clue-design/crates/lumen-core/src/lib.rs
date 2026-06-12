@@ -7,6 +7,7 @@ pub mod assets;
 pub mod brand;
 pub mod diagnostics;
 pub mod dsl;
+pub mod editing;
 pub mod export_contract;
 pub mod ids;
 pub mod layout;
@@ -56,6 +57,14 @@ pub use dsl::{
     DslLayoutAnchor, DslLayoutAxis, DslLine, DslLineKind, DslModification, DslPage, DslPagePreset,
     DslParentFrameSnapshot, DslParseOutput, DslProperty, DslScalar, DslSceneCompileOutput,
     DslStroke, SourceSpan,
+};
+pub use editing::{
+    build_asset_modify, build_clone_subtree, build_modify_operations, build_move_after,
+    build_move_before, build_move_to_parent, build_node_modify, build_page_modify,
+    build_replace_node, build_safe_delete, build_slot_modify, resolve_edit_target, AssetEditPatch,
+    CloneSlotPolicy, CloneSubtreeRequest, ComputedClonePolicy, EditBatch, EditError, EditErrorKind,
+    EditPatch, EditTargetRef, NodeEditPatch, PageEditPatch, RelativePlacement, ReplaceNodeRequest,
+    ReplaceSlotPolicy, ResolvedEditTarget, SlotEditPatch, TextEditPatch,
 };
 pub use export_contract::{
     ExportAdapter, ExportArtifact, ExportError, ExportFormat, ExportProfile, ExportPurpose,

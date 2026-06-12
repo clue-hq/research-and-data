@@ -212,6 +212,221 @@ page page_square size(400,400,px)
 }
 
 #[test]
+fn dsl_modify_line_updates_existing_text_node_without_regenerating_page() {
+    let mut scene = Scene::new(lumen_core::DocumentId::from("doc_modify"), "Modify");
+    let first = compile_dsl_into_scene(
+        r#"
+page page_square size(1080,1080,px)
+  hero fr p(40,40) s(1000,hug)
+    headline text "Oversized bad headline" p(0,0) s(fill,hug) font("Inter",72,800,left)
+    body text "Keep this copy" p(0,120) s(fill,hug) font("Inter",24,500,left)
+"#,
+        &mut scene,
+    );
+    assert_no_dsl_errors(&first.compile_output.diagnostics);
+
+    let second = compile_dsl_into_scene(
+        r#"#headline text("Let surgeons focus on surgery.") font_size(44) lh(1.08) s(fill,hug)"#,
+        &mut scene,
+    );
+
+    assert_no_dsl_errors(&second.compile_output.diagnostics);
+    assert!(second.operation_error.is_none());
+    assert_eq!(scene.pages.len(), 1);
+    assert_eq!(
+        second
+            .compile_output
+            .operations
+            .iter()
+            .filter(|operation| matches!(operation, Operation::UpdateNode { .. }))
+            .count(),
+        1
+    );
+    let NodeKind::Text(headline) = &scene.nodes[&NodeId::from("headline")].kind else {
+        panic!("expected text node");
+    };
+    assert_eq!(headline.content, "Let surgeons focus on surgery.");
+    assert_eq!(headline.font_size, 44.0);
+    assert_eq!(headline.line_height, 1.08);
+}
+
+#[test]
+fn dsl_modify_line_updates_page_size_and_background() {
+    let mut scene = Scene::new(
+        lumen_core::DocumentId::from("doc_page_modify"),
+        "Page Modify",
+    );
+    let first = compile_dsl_into_scene("page page_square size(1080,1080,px)", &mut scene);
+    assert_no_dsl_errors(&first.compile_output.diagnostics);
+
+    let second = compile_dsl_into_scene(
+        r##"#page:page_square size(1200,628,px) background(#111827) name("Landscape Ad")"##,
+        &mut scene,
+    );
+
+    assert_no_dsl_errors(&second.compile_output.diagnostics);
+    assert!(second.operation_error.is_none());
+    let page = &scene.pages[&PageId::from("page_square")];
+    assert_eq!(page.name, "Landscape Ad");
+    assert_eq!(page.size.width, 1200.0);
+    assert_eq!(page.size.height, 628.0);
+    assert_eq!(page.background.len(), 1);
+}
+
+#[test]
+fn dsl_modify_line_updates_slot_metadata_and_binding() {
+    let mut scene = Scene::new(
+        lumen_core::DocumentId::from("doc_slot_modify"),
+        "Slot Modify",
+    );
+    let first = compile_dsl_into_scene(
+        r#"
+page page_square size(400,400,px)
+  headline text "Headline" p(24,24) s(300,hug) slot(campaign.headline)
+  subhead text "Subhead" p(24,96) s(300,hug)
+"#,
+        &mut scene,
+    );
+    assert_no_dsl_errors(&first.compile_output.diagnostics);
+
+    let second = compile_dsl_into_scene(
+        r#"#slot:campaign.headline placeholder("Let surgeons focus on surgery.") sample("Let Dr. Sharma focus on surgery.") bind(subhead)"#,
+        &mut scene,
+    );
+
+    assert_no_dsl_errors(&second.compile_output.diagnostics);
+    assert!(second.operation_error.is_none());
+    let slot = scene
+        .slot_by_key(&SlotKey::from("campaign.headline"))
+        .expect("slot should exist");
+    assert_eq!(
+        slot.placeholder.as_deref(),
+        Some("Let surgeons focus on surgery.")
+    );
+    assert_eq!(
+        slot.validation.samples[0],
+        "Let Dr. Sharma focus on surgery."
+    );
+    assert!(slot.bound_nodes.contains(&NodeId::from("headline")));
+    assert!(slot.bound_nodes.contains(&NodeId::from("subhead")));
+}
+
+#[test]
+fn dsl_before_after_directives_reorder_existing_nodes() {
+    let mut scene = Scene::new(lumen_core::DocumentId::from("doc_reorder"), "Reorder");
+    let first = compile_dsl_into_scene(
+        r#"
+page page_square size(400,400,px)
+  hero fr p(0,0) s(400,400)
+    headline text "Headline" p(0,0) s(fill,hug)
+    body text "Body" p(0,40) s(fill,hug)
+    cta text "CTA" p(0,80) s(fill,hug)
+"#,
+        &mut scene,
+    );
+    assert_no_dsl_errors(&first.compile_output.diagnostics);
+
+    let second = compile_dsl_into_scene("after(headline,cta)", &mut scene);
+    assert_no_dsl_errors(&second.compile_output.diagnostics);
+    assert_eq!(
+        scene.nodes[&NodeId::from("hero")].children,
+        vec![
+            NodeId::from("body"),
+            NodeId::from("cta"),
+            NodeId::from("headline")
+        ]
+    );
+
+    let third = compile_dsl_into_scene("before(headline,body)", &mut scene);
+    assert_no_dsl_errors(&third.compile_output.diagnostics);
+    assert_eq!(
+        scene.nodes[&NodeId::from("hero")].children,
+        vec![
+            NodeId::from("headline"),
+            NodeId::from("body"),
+            NodeId::from("cta")
+        ]
+    );
+}
+
+#[test]
+fn dsl_clone_directive_clones_subtree_without_regenerating_page() {
+    let mut scene = Scene::new(lumen_core::DocumentId::from("doc_clone"), "Clone");
+    let first = compile_dsl_into_scene(
+        r#"
+page page_square size(400,400,px)
+  hero fr p(0,0) s(400,160)
+    headline text "Headline" p(24,24) s(300,hug) slot(campaign.headline)
+    cta text "CTA" p(24,96) s(120,hug)
+  footer fr p(0,240) s(400,80)
+"#,
+        &mut scene,
+    );
+    assert_no_dsl_errors(&first.compile_output.diagnostics);
+
+    let second = compile_dsl_into_scene(
+        "clone(hero,hero_variant,after:footer,slots:detach,computed:clear)",
+        &mut scene,
+    );
+
+    assert_no_dsl_errors(&second.compile_output.diagnostics);
+    assert!(second.operation_error.is_none());
+    assert_eq!(scene.pages.len(), 1);
+    assert_eq!(
+        scene.pages[&PageId::from("page_square")].children,
+        vec![
+            NodeId::from("hero"),
+            NodeId::from("footer"),
+            NodeId::from("hero_variant")
+        ]
+    );
+    assert_eq!(
+        scene.nodes[&NodeId::from("hero_variant")].children,
+        vec![
+            NodeId::from("hero_variant__headline"),
+            NodeId::from("hero_variant__cta")
+        ]
+    );
+    let slot = scene
+        .slot_by_key(&SlotKey::from("campaign.headline"))
+        .expect("source slot should remain");
+    assert_eq!(slot.bound_nodes, vec![NodeId::from("headline")]);
+}
+
+#[test]
+fn dsl_replace_directive_swaps_existing_node_in_place() {
+    let mut scene = Scene::new(lumen_core::DocumentId::from("doc_replace"), "Replace");
+    let first = compile_dsl_into_scene(
+        r#"
+page page_square size(400,400,px)
+  hero fr p(0,0) s(400,200)
+    old_headline text "Old headline" p(24,24) s(300,hug) slot(campaign.headline)
+    replacement_headline text "Better headline" p(24,120) s(300,hug)
+    cta text "CTA" p(24,160) s(120,hug)
+"#,
+        &mut scene,
+    );
+    assert_no_dsl_errors(&first.compile_output.diagnostics);
+
+    let second = compile_dsl_into_scene(
+        "replace(old_headline,replacement_headline,slots:preserve)",
+        &mut scene,
+    );
+
+    assert_no_dsl_errors(&second.compile_output.diagnostics);
+    assert!(second.operation_error.is_none());
+    assert!(!scene.nodes.contains_key(&NodeId::from("old_headline")));
+    assert_eq!(
+        scene.nodes[&NodeId::from("hero")].children,
+        vec![NodeId::from("replacement_headline"), NodeId::from("cta")]
+    );
+    let slot = scene
+        .slot_by_key(&SlotKey::from("campaign.headline"))
+        .expect("slot should remain");
+    assert_eq!(slot.bound_nodes, vec![NodeId::from("replacement_headline")]);
+}
+
+#[test]
 fn language_surface_lowers_geometry_paint_text_image_vector_line_autolayout_and_instance() {
     let mut scene = Scene::new(lumen_core::DocumentId::from("doc_surface"), "Surface");
     let output = compile_dsl_into_scene(VALID_LANGUAGE_SURFACE, &mut scene);
@@ -257,7 +472,7 @@ fn language_surface_lowers_geometry_paint_text_image_vector_line_autolayout_and_
 }
 
 #[test]
-fn hash_target_lines_parse_as_future_modify_syntax_not_comments() {
+fn hash_target_lines_lower_as_modify_operations_not_comments() {
     let output = compile_dsl(
         r#"
 page page_a4
@@ -266,12 +481,16 @@ page page_a4
 "#,
     );
 
-    assert_eq!(output.halted_at.as_ref().unwrap().code, "LUMD0701");
+    assert!(output.halted_at.is_none());
     assert!(output
         .document
         .lines
         .iter()
         .any(|line| matches!(line.kind, DslLineKind::Modification(_))));
+    assert!(output
+        .operations
+        .iter()
+        .any(|operation| matches!(operation, Operation::UpdateNode { .. })));
 }
 
 #[test]
@@ -439,7 +658,7 @@ fn slot_ops_survive_later_lowering_halt() {
         r#"
 page page_a4
   headline text "A headline" p(0,0) s(200,40) slot(campaign.headline)
-clone(headline)
+ungroup(headline)
 "#,
     );
 
@@ -721,11 +940,11 @@ delete(missing)
 "#,
     );
 
-    assert_eq!(output.halted_at.as_ref().unwrap().code, "LUMD0800");
+    assert_eq!(output.halted_at.as_ref().unwrap().code, "LUMD0900");
     assert!(output
         .diagnostics
         .iter()
-        .any(|diagnostic| diagnostic.diagnostic.message.contains("node missing")));
+        .any(|diagnostic| diagnostic.diagnostic.message.contains("does not exist")));
 }
 
 #[test]

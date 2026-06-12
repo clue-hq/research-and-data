@@ -66,6 +66,11 @@ class CoreClient:
             {"action": "apply_operations", "scene": scene, "operations": operations}
         )
 
+    def apply_structured_edit(self, scene: JsonObject, edit: JsonObject) -> JsonObject:
+        return self._run(
+            {"action": "apply_structured_edit", "scene": scene, "edit": edit}
+        )
+
     def compile_dsl_into_scene(
         self,
         scene: JsonObject,

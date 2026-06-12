@@ -1,4 +1,3 @@
 page page_a4
   hero frame p(24,24) s(480,220)
-clone(hero)
-
+ungroup(hero)

@@ -33,6 +33,13 @@ class ApplyOperationsRequest(BaseModel):
     snapshot_reason: Optional[str] = None
 
 
+class ApplyStructuredEditRequest(BaseModel):
+    edit: JsonObject
+    actor: ActorEnvelope = Field(default_factory=ActorEnvelope)
+    source: Literal["editor", "agent", "api", "system"] = "api"
+    snapshot_reason: Optional[str] = None
+
+
 class CreateSnapshotRequest(BaseModel):
     snapshot_id: Optional[str] = None
     reason: str = "manual"

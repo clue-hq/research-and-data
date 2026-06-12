@@ -238,6 +238,79 @@ class LumenDesignTools:
         )
         return json.dumps(payload, indent=2)
 
+    def apply_structured_edit(self, edit_json: str) -> str:
+        """Apply a typed targeted edit through the Rust edit builder.
+
+        The input must be a JSON object matching the `apply_structured_edit`
+        helper contract, for example:
+
+        {
+          "kind": "modify",
+          "target": {"kind": "node", "id": "headline"},
+          "patch": {"kind": "node", "value": {"text": {"content": {"kind": "set", "value": "New copy"}}}}
+        }
+        """
+        try:
+            edit = json.loads(edit_json)
+            if not isinstance(edit, dict):
+                raise ValueError("edit_json must decode to an object")
+            response = self.core.apply_structured_edit(self.scene, edit)
+        except (CoreError, ValueError, json.JSONDecodeError) as error:
+            diagnostics = []
+            if isinstance(error, CoreError):
+                diagnostics = diagnostics_from(error.diagnostics)
+                message = error.message
+                code = error.code
+            else:
+                message = str(error)
+                code = "structured_edit.invalid_input"
+            summary = OperationApplicationSummary(
+                status=ToolStatus.error,
+                diagnostics=diagnostics,
+                operation_error={"code": code, "message": message},
+            )
+            payload = {"structured_edit": _dump(summary)}
+            self.record(
+                "coordinator",
+                "structured_edit_failed",
+                input_summary=edit_json[:500],
+                output_summary=message,
+                diagnostics=[diag.model_dump(mode="json") for diag in diagnostics],
+                payload=payload,
+            )
+            return json.dumps(payload, indent=2)
+
+        self._replace_scene_from_core_response(response, "apply_structured_edit")
+        if edit.get("kind") in {
+            "delete",
+            "move_before",
+            "move_after",
+            "move_to_parent",
+            "replace_node",
+        }:
+            self.dsl_session = None
+        diagnostics = diagnostics_from(response.get("diagnostics", []))
+        operations = response.get("operations") or []
+        summary = OperationApplicationSummary(
+            applied_operations=response.get("applied_operations") or len(operations),
+            operation_count=len(operations),
+            diagnostics=diagnostics,
+        )
+        payload = {
+            "structured_edit": _dump(summary),
+            "edit": response.get("edit") or edit,
+            "operations": operations,
+        }
+        self.record(
+            "coordinator",
+            "structured_edit_applied",
+            input_summary=edit_json[:500],
+            output_summary=f"applied {summary.applied_operations} operation(s)",
+            diagnostics=[diag.model_dump(mode="json") for diag in diagnostics],
+            payload=payload,
+        )
+        return json.dumps(payload, indent=2)
+
     def preflight_design(self) -> str:
         """Run canonical brand/token/layout preflight using the platform default Brand Kit."""
         iteration_dir = self._iteration_dir()

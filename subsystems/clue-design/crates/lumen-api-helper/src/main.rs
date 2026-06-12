@@ -1,12 +1,15 @@
 use lumen_core::validation::validate_scene;
 use lumen_core::{
-    compare_brand_kit_compatibility, compile_dsl_into_scene_with_session, compile_styles_brand_kit,
-    generate_brand_kit, layout_scene, platform_default_brand_kit, preflight_scene,
-    summarize_brand_kit_for_authoring, validate_brand_kit, validate_brand_kit_product_ready,
-    validate_scene_brand_governance, BrandGovernanceStrictness, BrandKit, BrandKitId, BrandMode,
-    BrandSeed, Diagnostic, DiagnosticSeverity, DocumentId, DslCompileSessionSnapshot,
-    ExportAdapter, ExportFormat, ExportProfile, ExportPurpose, ExportRequest, Medium, Operation,
-    PageId, PdfIntent, PreflightOptions, RasterScale, Scene, TemplateRevisionId,
+    build_clone_subtree, build_modify_operations, build_move_after, build_move_before,
+    build_move_to_parent, build_replace_node, build_safe_delete, compare_brand_kit_compatibility,
+    compile_dsl_into_scene_with_session, compile_styles_brand_kit, generate_brand_kit,
+    layout_scene, platform_default_brand_kit, preflight_scene, summarize_brand_kit_for_authoring,
+    validate_brand_kit, validate_brand_kit_product_ready, validate_scene_brand_governance,
+    BrandGovernanceStrictness, BrandKit, BrandKitId, BrandMode, BrandSeed, CloneSubtreeRequest,
+    Diagnostic, DiagnosticSeverity, DocumentId, DslCompileSessionSnapshot, EditBatch, EditPatch,
+    EditTargetRef, ExportAdapter, ExportFormat, ExportProfile, ExportPurpose, ExportRequest,
+    Medium, NodeId, Operation, PageId, ParentRef, PdfIntent, PreflightOptions, RasterScale,
+    ReplaceNodeRequest, Scene, TemplateRevisionId,
 };
 use lumen_export::LumenExportAdapter;
 use serde::{Deserialize, Serialize};
@@ -17,6 +20,7 @@ use std::time::Instant;
 
 #[derive(Debug, Deserialize)]
 #[serde(tag = "action", rename_all = "snake_case")]
+#[allow(clippy::large_enum_variant)]
 enum CoreRequest {
     NewScene {
         document_id: String,
@@ -30,6 +34,10 @@ enum CoreRequest {
     ApplyOperations {
         scene: Value,
         operations: Vec<Value>,
+    },
+    ApplyStructuredEdit {
+        scene: Value,
+        edit: StructuredEditInstruction,
     },
     CompileDslIntoScene {
         scene: Value,
@@ -110,6 +118,10 @@ struct CoreResponse {
     #[serde(skip_serializing_if = "Option::is_none")]
     geometry: Option<Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    operations: Option<Vec<Value>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    edit: Option<Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     dsl: Option<Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
     export: Option<Value>,
@@ -127,6 +139,38 @@ struct PreflightSummary {
     brand_ref_operations: Vec<Value>,
     token_operations: Vec<Value>,
     layout_operations: Vec<Value>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+#[allow(clippy::large_enum_variant)]
+enum StructuredEditInstruction {
+    Modify {
+        target: EditTargetRef,
+        patch: EditPatch,
+    },
+    Delete {
+        target: EditTargetRef,
+    },
+    MoveBefore {
+        node_id: NodeId,
+        anchor: NodeId,
+    },
+    MoveAfter {
+        node_id: NodeId,
+        anchor: NodeId,
+    },
+    MoveToParent {
+        node_id: NodeId,
+        parent: ParentRef,
+        index: usize,
+    },
+    CloneSubtree {
+        request: CloneSubtreeRequest,
+    },
+    ReplaceNode {
+        request: ReplaceNodeRequest,
+    },
 }
 
 fn main() {
@@ -154,6 +198,8 @@ fn main() {
                     brand_generation: None,
                     brand_compatibility: None,
                     geometry: None,
+                    operations: None,
+                    edit: None,
                     dsl: None,
                     export: None,
                 },
@@ -190,6 +236,8 @@ fn main() {
                 brand_generation: None,
                 brand_compatibility: None,
                 geometry: None,
+                operations: None,
+                edit: None,
                 dsl: None,
                 export: None,
             }
@@ -208,6 +256,7 @@ impl CoreRequest {
             CoreRequest::NewScene { .. } => "new_scene",
             CoreRequest::ValidateScene { .. } => "validate_scene",
             CoreRequest::ApplyOperations { .. } => "apply_operations",
+            CoreRequest::ApplyStructuredEdit { .. } => "apply_structured_edit",
             CoreRequest::CompileDslIntoScene { .. } => "compile_dsl_into_scene",
             CoreRequest::PreflightScene { .. } => "preflight_scene",
             CoreRequest::ExportPreview { .. } => "export_preview",
@@ -237,6 +286,9 @@ fn request_log_fields(request: &CoreRequest) -> Value {
         CoreRequest::ValidateScene { .. } => json!({}),
         CoreRequest::ApplyOperations { operations, .. } => json!({
             "operation_count": operations.len(),
+        }),
+        CoreRequest::ApplyStructuredEdit { edit, .. } => json!({
+            "edit_kind": structured_edit_kind(edit),
         }),
         CoreRequest::CompileDslIntoScene {
             source,
@@ -345,7 +397,7 @@ fn helper_log(event: &str, level: &str, action: Option<&str>, fields: Value) {
 }
 
 fn helper_logging_enabled() -> bool {
-    env::var("LUMEN_CORE_HELPER_LOG").map_or(false, |value| value != "0")
+    env::var("LUMEN_CORE_HELPER_LOG").is_ok_and(|value| value != "0")
 }
 
 fn read_request() -> Result<CoreRequest, CoreError> {
@@ -398,6 +450,82 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                     brand_generation: None,
                     brand_compatibility: None,
                     geometry: None,
+                    operations: None,
+                    edit: None,
+                    dsl: None,
+                    export: None,
+                }),
+            }
+        }
+        CoreRequest::ApplyStructuredEdit { scene, edit } => {
+            let mut scene = parse_scene(scene)?;
+            let batch = structured_edit_batch(&scene, &edit).map_err(|error| CoreResponse {
+                ok: false,
+                scene: None,
+                diagnostics: vec![error.diagnostic()],
+                error: Some(core_error(error.kind.code(), error.message)),
+                applied_operations: None,
+                preflight: None,
+                brand_kit: None,
+                brand_summary: None,
+                brand_generation: None,
+                brand_compatibility: None,
+                geometry: None,
+                operations: None,
+                edit: Some(
+                    to_value(&edit)
+                        .unwrap_or_else(|_| json!({"kind": structured_edit_kind(&edit)})),
+                ),
+                dsl: None,
+                export: None,
+            });
+            let batch = match batch {
+                Ok(batch) => batch,
+                Err(response) => return Ok(response),
+            };
+            let operations = batch.operations.clone();
+            match batch.apply_checked(&mut scene) {
+                Ok(report) => Ok(CoreResponse {
+                    ok: true,
+                    scene: Some(to_value(scene)?),
+                    diagnostics: report.diagnostics,
+                    error: None,
+                    applied_operations: Some(report.applied_operations),
+                    preflight: None,
+                    brand_kit: None,
+                    brand_summary: None,
+                    brand_generation: None,
+                    brand_compatibility: None,
+                    geometry: None,
+                    operations: Some(values(operations)?),
+                    edit: Some(json!({
+                        "kind": structured_edit_kind(&edit),
+                        "touched_targets": batch.touched_targets,
+                        "intent": batch.intent,
+                        "checkpoint_label": batch.checkpoint_label,
+                    })),
+                    dsl: None,
+                    export: None,
+                }),
+                Err(error) => Ok(CoreResponse {
+                    ok: false,
+                    scene: None,
+                    diagnostics: vec![error.diagnostic()],
+                    error: Some(core_error(error.kind.code(), error.message)),
+                    applied_operations: None,
+                    preflight: None,
+                    brand_kit: None,
+                    brand_summary: None,
+                    brand_generation: None,
+                    brand_compatibility: None,
+                    geometry: None,
+                    operations: Some(values(operations)?),
+                    edit: Some(json!({
+                        "kind": structured_edit_kind(&edit),
+                        "touched_targets": batch.touched_targets,
+                        "intent": batch.intent,
+                        "checkpoint_label": batch.checkpoint_label,
+                    })),
                     dsl: None,
                     export: None,
                 }),
@@ -430,6 +558,8 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                 brand_generation: None,
                 brand_compatibility: None,
                 geometry: None,
+                operations: None,
+                edit: None,
                 dsl: Some(json!({
                     "compile_output": dsl_compile_output_value(&result.compile_output)?,
                     "operation_report": operation_report_value(&result.operation_report),
@@ -469,6 +599,8 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                 brand_generation: None,
                 brand_compatibility: None,
                 geometry: None,
+                operations: None,
+                edit: None,
                 dsl: None,
                 export: None,
             })
@@ -519,6 +651,8 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                     brand_generation: None,
                     brand_compatibility: None,
                     geometry: None,
+                    operations: None,
+                    edit: None,
                     dsl: None,
                     export: Some(to_value(result)?),
                 }),
@@ -534,6 +668,8 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                     brand_generation: None,
                     brand_compatibility: None,
                     geometry: None,
+                    operations: None,
+                    edit: None,
                     dsl: None,
                     export: None,
                 }),
@@ -565,6 +701,8 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                     brand_generation: None,
                     brand_compatibility: None,
                     geometry: None,
+                    operations: None,
+                    edit: None,
                     dsl: None,
                     export: None,
                 }),
@@ -586,6 +724,8 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                 brand_generation: None,
                 brand_compatibility: None,
                 geometry: None,
+                operations: None,
+                edit: None,
                 dsl: None,
                 export: None,
             })
@@ -612,6 +752,8 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                 brand_generation: None,
                 brand_compatibility: None,
                 geometry: None,
+                operations: None,
+                edit: None,
                 dsl: None,
                 export: None,
             })
@@ -637,6 +779,8 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                         brand_generation: None,
                         brand_compatibility: None,
                         geometry: None,
+                        operations: None,
+                        edit: None,
                         dsl: None,
                         export: None,
                     })
@@ -656,6 +800,8 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                     brand_generation: None,
                     brand_compatibility: None,
                     geometry: None,
+                    operations: None,
+                    edit: None,
                     dsl: None,
                     export: None,
                 }),
@@ -692,6 +838,8 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                 brand_generation: Some(to_value(report)?),
                 brand_compatibility: None,
                 geometry: None,
+                operations: None,
+                edit: None,
                 dsl: None,
                 export: None,
             })
@@ -711,6 +859,8 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                 brand_generation: None,
                 brand_compatibility: None,
                 geometry: None,
+                operations: None,
+                edit: None,
                 dsl: None,
                 export: None,
             })
@@ -735,6 +885,8 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                 brand_generation: None,
                 brand_compatibility: None,
                 geometry: None,
+                operations: None,
+                edit: None,
                 dsl: None,
                 export: None,
             })
@@ -756,6 +908,8 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                 brand_generation: None,
                 brand_compatibility: Some(to_value(report)?),
                 geometry: None,
+                operations: None,
+                edit: None,
                 dsl: None,
                 export: None,
             })
@@ -775,6 +929,8 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                 brand_generation: None,
                 brand_compatibility: None,
                 geometry: Some(json!(result.geometry)),
+                operations: None,
+                edit: None,
                 dsl: None,
                 export: None,
             })
@@ -799,6 +955,8 @@ fn ok_scene(
         brand_generation: None,
         brand_compatibility: None,
         geometry: None,
+        operations: None,
+        edit: None,
         dsl: None,
         export: None,
     }
@@ -830,6 +988,54 @@ fn parse_operations(values: Vec<Value>) -> Result<Vec<Operation>, CoreError> {
                 .map_err(|error| core_error("helper.operation", error.to_string()))
         })
         .collect()
+}
+
+fn structured_edit_kind(edit: &StructuredEditInstruction) -> &'static str {
+    match edit {
+        StructuredEditInstruction::Modify { .. } => "modify",
+        StructuredEditInstruction::Delete { .. } => "delete",
+        StructuredEditInstruction::MoveBefore { .. } => "move_before",
+        StructuredEditInstruction::MoveAfter { .. } => "move_after",
+        StructuredEditInstruction::MoveToParent { .. } => "move_to_parent",
+        StructuredEditInstruction::CloneSubtree { .. } => "clone_subtree",
+        StructuredEditInstruction::ReplaceNode { .. } => "replace_node",
+    }
+}
+
+fn structured_edit_batch(
+    scene: &Scene,
+    edit: &StructuredEditInstruction,
+) -> Result<EditBatch, lumen_core::EditError> {
+    match edit {
+        StructuredEditInstruction::Modify { target, patch } => {
+            build_modify_operations(scene, target.clone(), patch.clone())
+        }
+        StructuredEditInstruction::Delete { target } => match target {
+            EditTargetRef::Node(node_id) => build_safe_delete(scene, node_id.clone()),
+            _ => Err(lumen_core::EditError::new(
+                lumen_core::EditErrorKind::UnsupportedTarget,
+                "safe delete currently supports node targets only; use canonical remove operations for other target types",
+            )
+            .with_target(target.clone())),
+        },
+        StructuredEditInstruction::MoveBefore { node_id, anchor } => {
+            build_move_before(scene, node_id.clone(), anchor.clone())
+        }
+        StructuredEditInstruction::MoveAfter { node_id, anchor } => {
+            build_move_after(scene, node_id.clone(), anchor.clone())
+        }
+        StructuredEditInstruction::MoveToParent {
+            node_id,
+            parent,
+            index,
+        } => build_move_to_parent(scene, node_id.clone(), parent.clone(), *index),
+        StructuredEditInstruction::CloneSubtree { request } => {
+            build_clone_subtree(scene, request.clone())
+        }
+        StructuredEditInstruction::ReplaceNode { request } => {
+            build_replace_node(scene, request.clone())
+        }
+    }
 }
 
 fn values<T: Serialize>(items: Vec<T>) -> Result<Vec<Value>, CoreError> {
