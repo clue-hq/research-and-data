@@ -58,11 +58,12 @@ pub use brand::{
 pub use diagnostics::{Diagnostic, DiagnosticSeverity, DiagnosticSubject, Phase};
 pub use dsl::{
     compile_dsl, compile_dsl_into_scene, compile_dsl_into_scene_with_session, normalize_dsl,
-    parse_dsl, DslCompileOutput, DslCompileSession, DslCompileSessionSnapshot, DslDiagnostic,
-    DslDimension, DslDirective, DslDocument, DslElement, DslElementKind, DslFill, DslFont, DslHalt,
-    DslHistoryAdapter, DslLayoutAnchor, DslLayoutAxis, DslLine, DslLineKind, DslModification,
-    DslPage, DslPagePreset, DslParentFrameSnapshot, DslParentPlacement, DslParseOutput,
-    DslProperty, DslScalar, DslSceneCompileOutput, DslShadow, DslStroke, SourceSpan,
+    parse_dsl, slot_id_for_key, DslCompileOutput, DslCompileSession, DslCompileSessionSnapshot,
+    DslDiagnostic, DslDimension, DslDirective, DslDocument, DslElement, DslElementKind, DslFill,
+    DslFont, DslHalt, DslHistoryAdapter, DslLayoutAnchor, DslLayoutAxis, DslLine, DslLineKind,
+    DslModification, DslPage, DslPagePreset, DslParentFrameSnapshot, DslParentPlacement,
+    DslParseOutput, DslProperty, DslScalar, DslSceneCompileOutput, DslShadow, DslStroke,
+    SourceSpan,
 };
 pub use editing::{
     batch_scope_violations, build_archive_asset, build_asset_modify, build_clone_subtree,
@@ -70,11 +71,11 @@ pub use editing::{
     build_hard_delete_asset, build_modify_operations, build_move_after, build_move_before,
     build_move_to_parent, build_node_modify, build_page_modify, build_replace_node,
     build_safe_delete, build_safe_delete_page, build_safe_delete_slot, build_slot_modify,
-    build_ungroup, resolve_edit_target, AssetEditPatch, CloneLineage, CloneSlotPolicy,
-    CloneSubtreeRequest, ComputedClonePolicy, EditBatch, EditError, EditErrorKind, EditPatch,
-    EditScope, EditScopeMode, EditTargetRef, ExportProfileEditPatch, NodeEditPatch, PageEditPatch,
-    RelativePlacement, ReplaceNodeRequest, ReplaceSlotPolicy, ResolvedEditTarget, ScopeViolation,
-    SlotEditPatch, StackEntryEdit, TextEditPatch,
+    build_structured_edit_batch, build_ungroup, resolve_edit_target, AssetEditPatch, CloneLineage,
+    CloneSlotPolicy, CloneSubtreeRequest, ComputedClonePolicy, EditBatch, EditError, EditErrorKind,
+    EditPatch, EditScope, EditScopeMode, EditTargetRef, ExportProfileEditPatch, NodeEditPatch,
+    PageEditPatch, RelativePlacement, ReplaceNodeRequest, ReplaceSlotPolicy, ResolvedEditTarget,
+    ScopeViolation, SlotEditPatch, StackEntryEdit, StructuredEditInstruction, TextEditPatch,
 };
 pub use export_contract::{
     ExportAdapter, ExportArtifact, ExportError, ExportFormat, ExportProfile, ExportPurpose,

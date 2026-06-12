@@ -2194,3 +2194,125 @@ pub fn solid_fill(id: impl Into<String>, value: impl Into<String>) -> Fill {
         },
     }
 }
+
+/// Wire-format structured edit instruction shared by every Lumen binding
+/// surface (the API helper binary and the browser WASM core). This enum is
+/// routing only: each variant maps to exactly one checked edit builder via
+/// [`build_structured_edit_batch`]; the builders own all semantics. Keeping
+/// the dispatch here means bindings cannot drift from each other.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+#[allow(clippy::large_enum_variant)]
+pub enum StructuredEditInstruction {
+    Modify {
+        target: EditTargetRef,
+        patch: EditPatch,
+    },
+    Delete {
+        target: EditTargetRef,
+    },
+    MoveBefore {
+        node_id: NodeId,
+        anchor: NodeId,
+    },
+    MoveAfter {
+        node_id: NodeId,
+        anchor: NodeId,
+    },
+    MoveToParent {
+        node_id: NodeId,
+        parent: ParentRef,
+        index: usize,
+    },
+    CloneSubtree {
+        request: CloneSubtreeRequest,
+    },
+    ReplaceNode {
+        request: ReplaceNodeRequest,
+    },
+    ArchiveAsset {
+        asset_id: AssetId,
+    },
+    HardDeleteAsset {
+        asset_id: AssetId,
+    },
+    DeleteExportProfile {
+        name: String,
+        #[serde(default)]
+        replace_with: Option<String>,
+    },
+}
+
+impl StructuredEditInstruction {
+    pub fn kind(&self) -> &'static str {
+        match self {
+            Self::Modify { .. } => "modify",
+            Self::Delete { .. } => "delete",
+            Self::MoveBefore { .. } => "move_before",
+            Self::MoveAfter { .. } => "move_after",
+            Self::MoveToParent { .. } => "move_to_parent",
+            Self::CloneSubtree { .. } => "clone_subtree",
+            Self::ReplaceNode { .. } => "replace_node",
+            Self::ArchiveAsset { .. } => "archive_asset",
+            Self::HardDeleteAsset { .. } => "hard_delete_asset",
+            Self::DeleteExportProfile { .. } => "delete_export_profile",
+        }
+    }
+}
+
+/// Lower a structured edit instruction to a checked [`EditBatch`] against
+/// the current scene. Asset deletes follow the archive-first lifecycle:
+/// a plain `delete` on an asset target archives; `hard_delete_asset` is the
+/// explicit unreferenced hard delete.
+pub fn build_structured_edit_batch(
+    scene: &Scene,
+    edit: &StructuredEditInstruction,
+) -> Result<EditBatch, EditError> {
+    match edit {
+        StructuredEditInstruction::Modify { target, patch } => {
+            build_modify_operations(scene, target.clone(), patch.clone())
+        }
+        StructuredEditInstruction::Delete { target } => match target {
+            EditTargetRef::Node(node_id) => build_safe_delete(scene, node_id.clone()),
+            EditTargetRef::Page(page_id) => build_safe_delete_page(scene, page_id.clone()),
+            EditTargetRef::Slot(_) | EditTargetRef::SlotKey(_) => {
+                build_safe_delete_slot(scene, target.clone())
+            }
+            EditTargetRef::Asset(asset_id) => build_archive_asset(scene, asset_id.clone()),
+            EditTargetRef::ExportProfile(name) => {
+                build_delete_export_profile(scene, name.clone(), None)
+            }
+            EditTargetRef::Document => Err(EditError::new(
+                EditErrorKind::UnsupportedTarget,
+                "the document itself cannot be deleted through structured edits",
+            )
+            .with_target(target.clone())),
+        },
+        StructuredEditInstruction::ArchiveAsset { asset_id } => {
+            build_archive_asset(scene, asset_id.clone())
+        }
+        StructuredEditInstruction::HardDeleteAsset { asset_id } => {
+            build_hard_delete_asset(scene, asset_id.clone())
+        }
+        StructuredEditInstruction::DeleteExportProfile { name, replace_with } => {
+            build_delete_export_profile(scene, name.clone(), replace_with.clone())
+        }
+        StructuredEditInstruction::MoveBefore { node_id, anchor } => {
+            build_move_before(scene, node_id.clone(), anchor.clone())
+        }
+        StructuredEditInstruction::MoveAfter { node_id, anchor } => {
+            build_move_after(scene, node_id.clone(), anchor.clone())
+        }
+        StructuredEditInstruction::MoveToParent {
+            node_id,
+            parent,
+            index,
+        } => build_move_to_parent(scene, node_id.clone(), parent.clone(), *index),
+        StructuredEditInstruction::CloneSubtree { request } => {
+            build_clone_subtree(scene, request.clone())
+        }
+        StructuredEditInstruction::ReplaceNode { request } => {
+            build_replace_node(scene, request.clone())
+        }
+    }
+}

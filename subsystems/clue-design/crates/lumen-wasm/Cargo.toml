@@ -1,0 +1,19 @@
+[package]
+name = "lumen-wasm"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+# cdylib for the wasm-bindgen module the editor loads; rlib so native
+# `cargo test -p lumen-wasm` can link the engine logic directly.
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+lumen-core = { path = "../lumen-core" }
+serde.workspace = true
+serde_json.workspace = true
+wasm-bindgen = "0.2"
+
+[dev-dependencies]
+serde_json.workspace = true

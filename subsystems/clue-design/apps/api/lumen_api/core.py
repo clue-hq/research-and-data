@@ -348,6 +348,11 @@ class CoreClient:
     def layout_geometry(self, scene: JsonObject) -> JsonObject:
         return self._run({"action": "layout_geometry", "scene": scene})
 
+    def build_info(self) -> JsonObject:
+        """Engine build info for the Track E version handshake."""
+        response = self._run({"action": "build_info"})
+        return response["build_info"]
+
     def _run(self, request: JsonObject, raise_on_error: bool = True) -> JsonObject:
         command = self._command()
         action = str(request.get("action") or "unknown")

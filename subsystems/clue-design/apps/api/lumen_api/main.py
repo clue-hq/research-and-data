@@ -183,6 +183,25 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
         finally:
             connection.close()
 
+    @app.get("/build-info")
+    def build_info() -> JsonObject:
+        """Engine build info for the Track E version handshake.
+
+        The editor compares this against the WASM module's version() and
+        downgrades to server-only mode on any mismatch — never
+        mixed-version optimistic editing. Cached per process: the helper
+        binary's embedded commit cannot change while the API is running.
+        """
+        if getattr(app.state, "build_info", None) is None:
+            try:
+                app.state.build_info = app.state.core.build_info()
+            except CoreError as error:
+                raise core_http_error(error) from error
+        return {
+            "schema_version": 1,
+            "build_info": app.state.build_info,
+        }
+
     @app.post("/brand-kits")
     def create_brand_kit(
         payload: CreateBrandKitRequest, repo: Repository = Depends(repository)

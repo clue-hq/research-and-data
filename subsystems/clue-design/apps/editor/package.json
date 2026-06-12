@@ -5,7 +5,9 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
+    "build:wasm": "bash ../../scripts/build_wasm_core.sh",
     "lint": "tsc --noEmit -p tsconfig.lint.json",
+    "pretest": "bash ../../scripts/build_wasm_core.sh --if-missing",
     "test": "vitest run",
     "test:watch": "vitest"
   },
@@ -28,6 +30,7 @@
     "eslint-config-next": "^15.3.3",
     "jsdom": "^26.1.0",
     "typescript": "^5.8.3",
-    "vitest": "^4.1.8"
+    "vitest": "^4.1.8",
+    "wasm-pack": "^0.13.1"
   }
 }

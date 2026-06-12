@@ -33,8 +33,43 @@ jobs:
       - name: Run visual regression skeleton
         run: cargo test --test visual_regression -- --ignored
 
+      # Scoped to the wasm-clean crates: lumen-skia binds native C++ Skia
+      # and can never target wasm32 (Wave 1 Track A Decision 1).
       - name: Check wasm compile
-        run: cargo check --target wasm32-unknown-unknown
+        run: cargo check --target wasm32-unknown-unknown -p lumen-core -p lumen-wasm
+
+  browser-wasm-core:
+    name: Browser WASM Core
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install wasm target
+        run: rustup target add wasm32-unknown-unknown
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install editor dependencies
+        run: npm --prefix apps/editor ci
+
+      # Builds crates/lumen-wasm via wasm-pack and asserts the Track E
+      # bundle budget: gzipped .wasm < 3MB.
+      - name: Build wasm module and assert size budget
+        run: npm --prefix apps/editor run build:wasm
+
+      - name: Run editor tests (real wasm engine)
+        run: npm --prefix apps/editor test -- --run
+
+      - name: Type-check editor
+        run: npm --prefix apps/editor run lint
+
+      - name: Build editor (flag on)
+        run: NEXT_PUBLIC_LUMEN_WASM_CORE=1 npm --prefix apps/editor run build
 
   api-persistence:
     name: API Persistence
