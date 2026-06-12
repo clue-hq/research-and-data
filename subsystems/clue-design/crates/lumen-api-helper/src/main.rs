@@ -1745,6 +1745,8 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                     "template_revision_id": binding.template_revision_id,
                     "has_errors": derived.has_errors(),
                     "audit": to_value(&derived.audit)?,
+                    "fit_report": to_value(&derived.fit_report)?,
+                    "repair_requests": to_value(&derived.repair_requests)?,
                     "generated": Value::Object(generated_payloads),
                 })),
             })

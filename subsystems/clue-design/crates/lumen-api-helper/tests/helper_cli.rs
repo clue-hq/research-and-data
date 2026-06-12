@@ -1115,3 +1115,38 @@ fn derive_instance_refuses_invalid_bindings_before_provider_execution() {
         "no bytes may be stored for refused derivations"
     );
 }
+
+#[test]
+fn derive_instance_returns_fit_report_with_skia_truth() {
+    let store_dir = tempfile::tempdir().expect("tempdir");
+    let store_root = store_dir.path().to_string_lossy().to_string();
+
+    // Nominal content fits cleanly under real shaping.
+    let nominal = helper(derive_request(&store_root));
+    assert_eq!(nominal["ok"], true, "{nominal:#?}");
+    let report = &nominal["instance"]["fit_report"];
+    assert_eq!(report["status"], "fits", "{report:#?}");
+    assert_eq!(report["binding_set_id"], "bind_acme_dr_sharma");
+
+    // The worst-case headline overflows even at min font under Skia
+    // measurement: the fit report surfaces it (zero silent overflows).
+    let mut request = derive_request(&store_root);
+    request["binding_set"] = serde_json::from_str::<Value>(include_str!(
+        "../../lumen-core/fixtures/binding/worst_case.json"
+    ))
+    .unwrap();
+    request["asset_records"][0]["id"] = json!("asset_meridian_logo");
+    let worst = helper(request);
+    assert_eq!(worst["ok"], true, "{worst:#?}");
+    let report = &worst["instance"]["fit_report"];
+    assert_eq!(report["status"], "overflow", "{report:#?}");
+    let headline = report["slots"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|entry| entry["slot_key"] == "contact.full_name")
+        .expect("headline entry");
+    assert_eq!(headline["verdict"]["kind"], "overflow", "{headline:#?}");
+    assert_eq!(headline["verdict"]["policy"], "shrink_font");
+    assert_eq!(headline["beyond_worst_case"], true);
+}

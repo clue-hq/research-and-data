@@ -18,7 +18,7 @@ use crate::ids::{AssetId, NodeId, SlotKey};
 use crate::layout::{layout_scene, LayoutOptions};
 use crate::operations::{FieldPatch, NodePatch, Operation, OptionalFieldPatch};
 use crate::scene::{DocumentStatus, NodeKind, Scene};
-use crate::slots::{EmptyBehavior, ImagePolicy, Slot};
+use crate::slots::{EmptyBehavior, ImagePolicy, OverflowPolicy, Slot};
 use crate::text_measure::SharedTextMeasurer;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
@@ -102,11 +102,98 @@ impl InstanceAuditEntry {
     }
 }
 
+/// Slot-level fit verdict for one derived instance (slice G6). This is the
+/// honest-fit promise: every overflow surfaces here — nothing renders
+/// silently broken.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum SlotFitVerdict {
+    /// Content fits the bound geometry as-is.
+    Fits,
+    /// Content fits after the slot's declared overflow policy executed
+    /// (e.g. ShrinkFont applied a smaller size).
+    FitsWithPolicy {
+        policy: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        adjusted_font_size: Option<f64>,
+    },
+    /// Content overflows; `policy` names the declared response that was
+    /// executed or exhausted.
+    Overflow { policy: String, reason: String },
+    /// The slot's region was hidden by a conditional or empty repeater.
+    Hidden,
+}
+
+impl SlotFitVerdict {
+    fn rank(&self) -> u8 {
+        match self {
+            Self::Fits | Self::Hidden => 0,
+            Self::FitsWithPolicy { .. } => 1,
+            Self::Overflow { .. } => 2,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum InstanceFitStatus {
+    Fits,
+    FitsWithPolicy,
+    Overflow,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct SlotFitEntry {
+    pub slot_key: SlotKey,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub node_id: Option<NodeId>,
+    pub verdict: SlotFitVerdict,
+    /// Diagnostic codes attached to this slot's fit evaluation.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub diagnostics: Vec<String>,
+    /// True when the bound content exceeds the template's declared
+    /// worst-case fixture — the instance carries content the template was
+    /// never validated against.
+    #[serde(default)]
+    pub beyond_worst_case: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct InstanceFitReport {
+    pub binding_set_id: String,
+    pub status: InstanceFitStatus,
+    pub slots: Vec<SlotFitEntry>,
+}
+
+impl InstanceFitReport {
+    pub fn overflow_slots(&self) -> Vec<&SlotFitEntry> {
+        self.slots
+            .iter()
+            .filter(|entry| matches!(entry.verdict, SlotFitVerdict::Overflow { .. }))
+            .collect()
+    }
+}
+
+/// A template-level repair request produced by `AskAgentToRepair`. Never an
+/// instance mutation: the repair queue points agents at the template (a new
+/// draft revision) or the binding values.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct TemplateRepairRequest {
+    pub template_revision_id: crate::ids::TemplateRevisionId,
+    pub slot_key: SlotKey,
+    pub node_id: NodeId,
+    pub binding_set_id: String,
+    pub reason: String,
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct DerivedInstance {
     pub scene: Scene,
     pub diagnostics: Vec<Diagnostic>,
     pub audit: Vec<InstanceAuditEntry>,
+    pub fit_report: InstanceFitReport,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub repair_requests: Vec<TemplateRepairRequest>,
 }
 
 impl DerivedInstance {
@@ -135,6 +222,12 @@ pub fn derive_instance(
             scene: snapshot.clone(),
             diagnostics,
             audit: Vec::new(),
+            fit_report: InstanceFitReport {
+                binding_set_id: binding.binding_set_id.clone(),
+                status: InstanceFitStatus::Overflow,
+                slots: Vec::new(),
+            },
+            repair_requests: Vec::new(),
         };
     }
 
@@ -146,6 +239,7 @@ pub fn derive_instance(
     scene.meta.status = DocumentStatus::Draft;
 
     let mut audit = Vec::new();
+    let mut repair_requests = Vec::new();
 
     let suppressed = execute_conditionals(&mut scene, binding, &mut diagnostics, &mut audit);
     apply_scalar_values(
@@ -158,7 +252,28 @@ pub fn derive_instance(
     );
     bind_generated_assets(&mut scene, binding, assets, &mut diagnostics, &mut audit);
 
-    relayout(&mut scene, options, &mut diagnostics);
+    // Pass 1: geometry for policy execution. Text-fit diagnostics are
+    // withheld here — overflow policies have not executed yet, so pass-1
+    // overflow signals would be false alarms.
+    relayout_filtered(&mut scene, options, &mut diagnostics);
+
+    // Execute declared overflow policies (Decision 5): ShrinkFont mutates
+    // bounded by min/max under the injected measurer; AskAgentToRepair
+    // queues template-level repairs.
+    let applications = execute_overflow_policies(
+        &mut scene,
+        binding,
+        options,
+        &mut diagnostics,
+        &mut audit,
+        &mut repair_requests,
+    );
+
+    // Pass 2 (final): geometry plus full text-fit diagnostics, with
+    // severity downgraded for sanctioned-content-loss policies.
+    relayout_final(&mut scene, options, &mut diagnostics);
+
+    let fit_report = build_fit_report(snapshot, &scene, binding, options, &applications);
 
     scene.meta.status = finalized_status;
 
@@ -166,6 +281,8 @@ pub fn derive_instance(
         scene,
         diagnostics,
         audit,
+        fit_report,
+        repair_requests,
     }
 }
 
@@ -816,7 +933,53 @@ fn placement_from_policy(slot: &Slot, record: &AssetRecord) -> crate::assets::As
 /// Slot fixture validation stays OFF here: fit verdicts for an instance
 /// judge the actual bound content (the layout text checks), not the
 /// template's authoring fixtures.
-fn relayout(scene: &mut Scene, options: &DeriveOptions, diagnostics: &mut Vec<Diagnostic>) {
+const TEXT_FIT_CODES: [&str; 3] = ["LUMV0902", "LUMV0903", "LUMV0904"];
+
+/// Geometry pass without text-fit verdicts (pre-policy execution).
+fn relayout_filtered(
+    scene: &mut Scene,
+    options: &DeriveOptions,
+    diagnostics: &mut Vec<Diagnostic>,
+) {
+    run_layout(scene, options, diagnostics, |diagnostic| {
+        !TEXT_FIT_CODES.contains(&diagnostic.code.as_str())
+    });
+}
+
+/// Final geometry pass: text-fit verdicts included, with severity
+/// downgraded to warning for nodes whose slot policy sanctions content
+/// loss (Clip/Ellipsis) or defers to the repair queue (AskAgentToRepair) —
+/// surfaced loudly in the fit report, but not instance-fatal.
+fn relayout_final(scene: &mut Scene, options: &DeriveOptions, diagnostics: &mut Vec<Diagnostic>) {
+    let mut staged = Vec::new();
+    run_layout(scene, options, &mut staged, |_| true);
+    for mut diagnostic in staged {
+        if TEXT_FIT_CODES.contains(&diagnostic.code.as_str()) {
+            if let Some(DiagnosticSubject::Node(node_id)) = &diagnostic.subject {
+                if let Some(policy) = slot_policy_for_node(scene, node_id) {
+                    if matches!(
+                        policy,
+                        OverflowPolicy::Clip
+                            | OverflowPolicy::Ellipsis
+                            | OverflowPolicy::AskAgentToRepair
+                    ) {
+                        diagnostic.severity = DiagnosticSeverity::Warning;
+                    }
+                }
+            }
+        }
+        if !diagnostics.contains(&diagnostic) {
+            diagnostics.push(diagnostic);
+        }
+    }
+}
+
+fn run_layout(
+    scene: &mut Scene,
+    options: &DeriveOptions,
+    diagnostics: &mut Vec<Diagnostic>,
+    keep: impl Fn(&Diagnostic) -> bool,
+) {
     let layout = layout_scene(
         scene,
         LayoutOptions {
@@ -825,7 +988,7 @@ fn relayout(scene: &mut Scene, options: &DeriveOptions, diagnostics: &mut Vec<Di
         },
     );
     for diagnostic in layout.diagnostics {
-        if !diagnostics.contains(&diagnostic) {
+        if keep(&diagnostic) && !diagnostics.contains(&diagnostic) {
             diagnostics.push(diagnostic);
         }
     }
@@ -851,6 +1014,415 @@ fn relayout(scene: &mut Scene, options: &DeriveOptions, diagnostics: &mut Vec<Di
             Some(DiagnosticSubject::Document),
         ));
     }
+}
+
+fn slot_policy_for_node(scene: &Scene, node_id: &NodeId) -> Option<OverflowPolicy> {
+    scene
+        .slots
+        .values()
+        .find(|slot| slot.bound_nodes.contains(node_id))
+        .map(|slot| slot.overflow.clone())
+}
+
+/// Whether a slot's content type carries text fit semantics.
+fn is_text_slot(slot: &Slot) -> bool {
+    matches!(
+        slot.content_type,
+        crate::slots::ContentType::TextShort
+            | crate::slots::ContentType::TextLong
+            | crate::slots::ContentType::RichTextLimited
+            | crate::slots::ContentType::NumberStat
+            | crate::slots::ContentType::Date
+    )
+}
+
+#[derive(Clone, Debug)]
+struct PolicyApplication {
+    policy: String,
+    adjusted_font_size: Option<f64>,
+    exhausted: bool,
+}
+
+/// Measure one text node's actual content against its computed bounds.
+fn node_fits(scene: &Scene, node_id: &NodeId, options: &DeriveOptions) -> Option<bool> {
+    let node = scene.nodes.get(node_id)?;
+    let NodeKind::Text(text) = &node.kind else {
+        return None;
+    };
+    let bounds = node.computed.as_ref()?.layout_bounds.clone();
+    let measurer: &dyn crate::text_measure::TextMeasurer = options
+        .measurer
+        .as_deref()
+        .map(|measurer| measurer as &dyn crate::text_measure::TextMeasurer)
+        .unwrap_or(&crate::text_measure::HeuristicTextMeasurer);
+    let measured = measurer
+        .measure(&crate::text_measure::TextMeasureInput::from_text_node(text).with_bounds(&bounds));
+    let overflow_x = measured.overflow_x && matches!(text.wrap, crate::scene::TextWrap::NoWrap);
+    Some(!overflow_x && !measured.overflow_y && !measured.exceeds_max_lines)
+}
+
+/// Execute the declared overflow policy for every text slot whose bound
+/// content overflows after pass-1 layout. Only ShrinkFont mutates; all
+/// other policies resolve at verdict time. Returns the applications for
+/// the fit report.
+fn execute_overflow_policies(
+    scene: &mut Scene,
+    binding: &BindingSet,
+    options: &DeriveOptions,
+    diagnostics: &mut Vec<Diagnostic>,
+    audit: &mut Vec<InstanceAuditEntry>,
+    repair_requests: &mut Vec<TemplateRepairRequest>,
+) -> BTreeMap<SlotKey, PolicyApplication> {
+    let mut applications = BTreeMap::new();
+    let mut mutated = false;
+
+    for slot in slots_in_order(scene) {
+        if !is_text_slot(&slot) {
+            continue;
+        }
+        for node_id in &slot.bound_nodes {
+            let Some(fits) = node_fits(scene, node_id, options) else {
+                continue;
+            };
+            if fits {
+                continue;
+            }
+
+            match &slot.overflow {
+                OverflowPolicy::ShrinkFont {
+                    min_font_size,
+                    max_font_size,
+                } => {
+                    let Some(node) = scene.nodes.get(node_id) else {
+                        continue;
+                    };
+                    let NodeKind::Text(current) = &node.kind else {
+                        continue;
+                    };
+                    let start = max_font_size
+                        .map(|max| current.font_size.min(max))
+                        .unwrap_or(current.font_size);
+                    let outcome = shrink_to_fit(
+                        scene,
+                        node_id,
+                        &slot,
+                        start,
+                        *min_font_size,
+                        options,
+                        diagnostics,
+                        audit,
+                    );
+                    mutated = true;
+                    applications.insert(slot.key.clone(), outcome);
+                }
+                OverflowPolicy::AskAgentToRepair => {
+                    let reason = format!(
+                        "slot {} content overflows node {}; template repair requested",
+                        slot.key, node_id
+                    );
+                    diagnostics.push(Diagnostic::warning(
+                        Phase::Layout,
+                        "LUMG0325",
+                        reason.clone(),
+                        Some(DiagnosticSubject::Slot(slot.id.clone())),
+                    ));
+                    repair_requests.push(TemplateRepairRequest {
+                        template_revision_id: binding.template_revision_id.clone(),
+                        slot_key: slot.key.clone(),
+                        node_id: node_id.clone(),
+                        binding_set_id: binding.binding_set_id.clone(),
+                        reason: reason.clone(),
+                    });
+                    audit.push(InstanceAuditEntry::new(
+                        InstanceAuditKind::RepairRequested,
+                        Some(slot.key.clone()),
+                        vec![node_id.clone()],
+                        reason,
+                    ));
+                }
+                // Error / Wrap / Clip / Ellipsis / ExpandContainer resolve
+                // at verdict time against final geometry.
+                _ => {}
+            }
+        }
+    }
+
+    if mutated {
+        relayout_filtered(scene, options, diagnostics);
+    }
+
+    applications
+}
+
+/// Deterministically step the font size down by 0.5 from `start` to
+/// `min_font_size` until the content fits the node's pass-1 bounds.
+/// Candidates are measured without mutating the scene; the fitting size is
+/// applied once. Exhaustion applies the minimum (least-bad artifact) and
+/// reports LUMG0321.
+#[allow(clippy::too_many_arguments)]
+fn shrink_to_fit(
+    scene: &mut Scene,
+    node_id: &NodeId,
+    slot: &Slot,
+    start: f64,
+    min_font_size: f64,
+    options: &DeriveOptions,
+    diagnostics: &mut Vec<Diagnostic>,
+    audit: &mut Vec<InstanceAuditEntry>,
+) -> PolicyApplication {
+    let (text, bounds) = {
+        let node = scene.nodes.get(node_id).expect("caller checked the node");
+        let NodeKind::Text(text) = &node.kind else {
+            unreachable!("caller checked the node is text");
+        };
+        (
+            text.clone(),
+            node.computed
+                .as_ref()
+                .expect("pass-1 layout left geometry")
+                .layout_bounds
+                .clone(),
+        )
+    };
+    let measurer: &dyn crate::text_measure::TextMeasurer = options
+        .measurer
+        .as_deref()
+        .map(|measurer| measurer as &dyn crate::text_measure::TextMeasurer)
+        .unwrap_or(&crate::text_measure::HeuristicTextMeasurer);
+    let candidate_fits = |font_size: f64| {
+        let mut input =
+            crate::text_measure::TextMeasureInput::from_text_node(&text).with_bounds(&bounds);
+        input.font_size = font_size;
+        let measured = measurer.measure(&input);
+        let overflow_x = measured.overflow_x && matches!(text.wrap, crate::scene::TextWrap::NoWrap);
+        !overflow_x && !measured.overflow_y && !measured.exceeds_max_lines
+    };
+
+    let mut candidate = start;
+    loop {
+        candidate = (candidate - 0.5).max(min_font_size);
+        if candidate_fits(candidate) {
+            apply_font_size(scene, node_id, candidate, diagnostics);
+            audit.push(InstanceAuditEntry::new(
+                InstanceAuditKind::OverflowPolicyApplied,
+                Some(slot.key.clone()),
+                vec![node_id.clone()],
+                format!(
+                    "shrink_font fit slot {} at {candidate} (policy min {min_font_size})",
+                    slot.key
+                ),
+            ));
+            return PolicyApplication {
+                policy: "shrink_font".to_owned(),
+                adjusted_font_size: Some(candidate),
+                exhausted: false,
+            };
+        }
+        if candidate <= min_font_size {
+            apply_font_size(scene, node_id, min_font_size, diagnostics);
+            diagnostics.push(Diagnostic::error(
+                Phase::Layout,
+                "LUMG0321",
+                format!(
+                    "slot {} content does not fit node {} even at min font size {min_font_size}",
+                    slot.key, node_id
+                ),
+                Some(DiagnosticSubject::Slot(slot.id.clone())),
+            ));
+            audit.push(InstanceAuditEntry::new(
+                InstanceAuditKind::OverflowPolicyApplied,
+                Some(slot.key.clone()),
+                vec![node_id.clone()],
+                format!(
+                    "shrink_font exhausted on slot {}: applied min font size {min_font_size}, content still overflows",
+                    slot.key
+                ),
+            ));
+            return PolicyApplication {
+                policy: "shrink_font".to_owned(),
+                adjusted_font_size: Some(min_font_size),
+                exhausted: true,
+            };
+        }
+    }
+}
+
+fn apply_font_size(
+    scene: &mut Scene,
+    node_id: &NodeId,
+    font_size: f64,
+    diagnostics: &mut Vec<Diagnostic>,
+) {
+    let Some(node) = scene.nodes.get(node_id) else {
+        return;
+    };
+    let NodeKind::Text(current) = &node.kind else {
+        return;
+    };
+    let mut next = current.clone();
+    next.font_size = font_size;
+    let operation = Operation::UpdateNode {
+        node_id: node_id.clone(),
+        patch: NodePatch {
+            kind: FieldPatch::Set(NodeKind::Text(next)),
+            computed: OptionalFieldPatch::Clear,
+            ..NodePatch::default()
+        },
+    };
+    if let Err(error) = scene.apply_operation_checked(operation) {
+        diagnostics.push(Diagnostic::error(
+            Phase::Operation,
+            "LUMG0304",
+            format!(
+                "font shrink for node {node_id} failed: {} {}",
+                error.code, error.message
+            ),
+            Some(DiagnosticSubject::Node(node_id.clone())),
+        ));
+    }
+}
+
+/// Build the per-slot fit report from final geometry. Every slot on the
+/// derived scene gets an entry; slots removed during derivation (hidden
+/// regions, empty repeaters) report `Hidden`.
+fn build_fit_report(
+    snapshot: &Scene,
+    scene: &Scene,
+    binding: &BindingSet,
+    options: &DeriveOptions,
+    applications: &BTreeMap<SlotKey, PolicyApplication>,
+) -> InstanceFitReport {
+    let mut entries = Vec::new();
+
+    for slot in slots_in_order(scene) {
+        if !is_text_slot(&slot) {
+            entries.push(SlotFitEntry {
+                slot_key: slot.key.clone(),
+                node_id: slot.bound_nodes.first().cloned(),
+                verdict: SlotFitVerdict::Fits,
+                diagnostics: Vec::new(),
+                beyond_worst_case: false,
+            });
+            continue;
+        }
+
+        for node_id in &slot.bound_nodes {
+            let Some(fits) = node_fits(scene, node_id, options) else {
+                continue;
+            };
+            let application = applications.get(&slot.key);
+            let policy_name = overflow_policy_name(&slot.overflow);
+            let (verdict, codes) = if fits {
+                match application {
+                    Some(application) if !application.exhausted => (
+                        SlotFitVerdict::FitsWithPolicy {
+                            policy: application.policy.clone(),
+                            adjusted_font_size: application.adjusted_font_size,
+                        },
+                        Vec::new(),
+                    ),
+                    _ => (SlotFitVerdict::Fits, Vec::new()),
+                }
+            } else {
+                let (reason, codes) = match &slot.overflow {
+                    OverflowPolicy::ShrinkFont { min_font_size, .. } => (
+                        format!("content does not fit even at min font size {min_font_size}"),
+                        vec!["LUMG0321".to_owned()],
+                    ),
+                    OverflowPolicy::Wrap { max_lines } => (
+                        format!("content exceeds the wrap envelope (max_lines {max_lines:?})"),
+                        vec!["LUMV0904".to_owned()],
+                    ),
+                    OverflowPolicy::Clip | OverflowPolicy::Ellipsis => (
+                        "content overflows; policy clips it (sanctioned content loss)".to_owned(),
+                        vec!["LUMG0322".to_owned()],
+                    ),
+                    OverflowPolicy::ExpandContainer => (
+                        "content requires container expansion, which V0 does not execute"
+                            .to_owned(),
+                        vec!["LUMG0323".to_owned()],
+                    ),
+                    OverflowPolicy::Error => (
+                        "content overflows and the slot policy is error".to_owned(),
+                        vec!["LUMG0320".to_owned()],
+                    ),
+                    OverflowPolicy::AskAgentToRepair => (
+                        "content overflows; template repair requested".to_owned(),
+                        vec!["LUMG0325".to_owned()],
+                    ),
+                };
+                (
+                    SlotFitVerdict::Overflow {
+                        policy: policy_name.clone(),
+                        reason,
+                    },
+                    codes,
+                )
+            };
+
+            entries.push(SlotFitEntry {
+                slot_key: slot.key.clone(),
+                node_id: Some(node_id.clone()),
+                verdict,
+                diagnostics: codes,
+                beyond_worst_case: beyond_worst_case(scene, &slot, node_id),
+            });
+        }
+    }
+
+    // Slots present on the snapshot but absent from the derived scene were
+    // hidden (conditional HideRegion, empty repeaters, suffix-free clones).
+    for slot in snapshot.slots.values() {
+        if scene.slot_by_key(&slot.key).is_none() {
+            entries.push(SlotFitEntry {
+                slot_key: slot.key.clone(),
+                node_id: None,
+                verdict: SlotFitVerdict::Hidden,
+                diagnostics: Vec::new(),
+                beyond_worst_case: false,
+            });
+        }
+    }
+
+    let status = match entries.iter().map(|entry| entry.verdict.rank()).max() {
+        Some(2) => InstanceFitStatus::Overflow,
+        Some(1) => InstanceFitStatus::FitsWithPolicy,
+        _ => InstanceFitStatus::Fits,
+    };
+
+    InstanceFitReport {
+        binding_set_id: binding.binding_set_id.clone(),
+        status,
+        slots: entries,
+    }
+}
+
+fn overflow_policy_name(policy: &OverflowPolicy) -> String {
+    match policy {
+        OverflowPolicy::ShrinkFont { .. } => "shrink_font",
+        OverflowPolicy::Wrap { .. } => "wrap",
+        OverflowPolicy::Clip => "clip",
+        OverflowPolicy::Ellipsis => "ellipsis",
+        OverflowPolicy::ExpandContainer => "expand_container",
+        OverflowPolicy::Error => "error",
+        OverflowPolicy::AskAgentToRepair => "ask_agent_to_repair",
+    }
+    .to_owned()
+}
+
+/// Content beyond the template's declared worst-case fixture means the
+/// instance carries text the template was never validated against.
+fn beyond_worst_case(scene: &Scene, slot: &Slot, node_id: &NodeId) -> bool {
+    let Some(worst_case) = &slot.validation.worst_case else {
+        return false;
+    };
+    let Some(node) = scene.nodes.get(node_id) else {
+        return false;
+    };
+    let NodeKind::Text(text) = &node.kind else {
+        return false;
+    };
+    text.content.chars().count() > worst_case.chars().count()
 }
 
 fn slots_in_order(scene: &Scene) -> Vec<Slot> {

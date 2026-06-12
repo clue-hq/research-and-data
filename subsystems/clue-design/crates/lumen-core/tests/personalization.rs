@@ -1218,7 +1218,265 @@ fn g4_repeater_outside_auto_layout_warns_lumg0315() {
 }
 
 #[test]
-#[ignore = "G6: InstanceFitReport surfaces every overflow, no silent failures"]
 fn g6_fit_reports_catch_the_worst_case_overflow() {
-    unimplemented!("worst_case binding set must produce an overflow verdict");
+    let derived = derive_fixture("worst_case");
+
+    // The deliberately overlong headline cannot fit even at min font:
+    // the fit report must surface it — never a silent overflow.
+    let headline_entry = derived
+        .fit_report
+        .slots
+        .iter()
+        .find(|entry| entry.slot_key.as_str() == "contact.full_name")
+        .expect("headline fit entry");
+    let lumen_core::SlotFitVerdict::Overflow { policy, reason } = &headline_entry.verdict else {
+        panic!(
+            "worst-case headline must be an overflow verdict, got {:?}",
+            headline_entry.verdict
+        );
+    };
+    assert_eq!(policy, "shrink_font");
+    assert!(
+        reason.contains("min font size"),
+        "reason explains exhaustion: {reason}"
+    );
+    assert!(
+        headline_entry.diagnostics.contains(&"LUMG0321".to_owned()),
+        "{headline_entry:?}"
+    );
+    assert!(
+        headline_entry.beyond_worst_case,
+        "60-char name exceeds the template's 34-char worst-case fixture"
+    );
+    assert_eq!(
+        derived.fit_report.status,
+        lumen_core::InstanceFitStatus::Overflow
+    );
+
+    // The exhausted shrink still applied the min font (least-bad artifact)
+    // and the error diagnostic is present.
+    let headline = derived
+        .scene
+        .node(&"node_headline".into())
+        .expect("headline");
+    let lumen_core::NodeKind::Text(text) = &headline.kind else {
+        panic!("headline stays text");
+    };
+    assert_eq!(text.font_size, 6.0, "min font size applied");
+    assert!(
+        derived
+            .diagnostics
+            .iter()
+            .any(|d| d.code == "LUMG0321" && d.severity == lumen_core::DiagnosticSeverity::Error),
+        "exhausted shrink must be an error diagnostic"
+    );
+}
+
+#[test]
+fn g6_shrink_font_resolves_near_overflows_and_records_the_policy() {
+    let scene = mailer_revision_scene();
+    let mut binding = binding_set("nominal");
+    // 31 chars: overflows at font 10 (~161mm heuristic) but fits before
+    // the 6mm floor.
+    binding.values.insert(
+        "contact.full_name".to_owned(),
+        BoundValue::Text {
+            value: "Dr. Alexandra Montgomery-Hayes".to_owned(),
+        },
+    );
+    let assets = derivation_assets("asset_acme_logo", &binding.binding_set_id);
+    let derived = lumen_core::derive_instance(
+        &scene,
+        &binding,
+        &assets,
+        &lumen_core::DeriveOptions::default(),
+    );
+    assert!(
+        !derived.has_errors(),
+        "resolved shrink must not error: {:#?}",
+        derived.diagnostics
+    );
+
+    let entry = derived
+        .fit_report
+        .slots
+        .iter()
+        .find(|entry| entry.slot_key.as_str() == "contact.full_name")
+        .expect("headline fit entry");
+    let lumen_core::SlotFitVerdict::FitsWithPolicy {
+        policy,
+        adjusted_font_size,
+    } = &entry.verdict
+    else {
+        panic!("expected FitsWithPolicy, got {:?}", entry.verdict);
+    };
+    assert_eq!(policy, "shrink_font");
+    let adjusted = adjusted_font_size.expect("adjusted size recorded");
+    assert!(
+        (6.0..10.0).contains(&adjusted),
+        "adjusted size {adjusted} must sit between min and the original"
+    );
+
+    // The derived scene actually carries the executed policy.
+    let headline = derived
+        .scene
+        .node(&"node_headline".into())
+        .expect("headline");
+    let lumen_core::NodeKind::Text(text) = &headline.kind else {
+        panic!("headline stays text");
+    };
+    assert_eq!(text.font_size, adjusted);
+    assert!(derived
+        .audit
+        .iter()
+        .any(|entry| entry.kind == lumen_core::InstanceAuditKind::OverflowPolicyApplied));
+    assert_eq!(
+        derived.fit_report.status,
+        lumen_core::InstanceFitStatus::FitsWithPolicy
+    );
+}
+
+#[test]
+fn g6_ask_agent_to_repair_queues_template_repairs_not_instance_edits() {
+    let mut scene = mailer_revision_scene();
+    // Squeeze the CTA box so the worst-case CTA wraps past its height.
+    {
+        let node = scene.nodes.get_mut(&"node_cta".into()).expect("cta node");
+        node.size = lumen_core::SizeSpec::fixed(110.0, 8.0);
+    }
+    let binding = binding_set("worst_case");
+    let assets = derivation_assets("asset_meridian_logo", &binding.binding_set_id);
+    let derived = lumen_core::derive_instance(
+        &scene,
+        &binding,
+        &assets,
+        &lumen_core::DeriveOptions::default(),
+    );
+
+    let request = derived
+        .repair_requests
+        .iter()
+        .find(|request| request.slot_key.as_str() == "campaign.cta")
+        .expect("CTA overflow must queue a template repair");
+    assert_eq!(request.template_revision_id.to_string(), "tmpl_mailer_v1");
+    assert_eq!(request.binding_set_id, "bind_meridian_dr_whitmore");
+    assert_eq!(request.node_id.to_string(), "node_cta");
+
+    // Never an instance mutation: the CTA text and box are untouched.
+    let cta = derived.scene.node(&"node_cta".into()).expect("cta node");
+    let lumen_core::NodeKind::Text(text) = &cta.kind else {
+        panic!("cta stays text");
+    };
+    assert_eq!(text.font_size, 6.0, "AskAgentToRepair must not mutate");
+    assert!(
+        derived
+            .diagnostics
+            .iter()
+            .any(|d| d.code == "LUMG0325" && d.severity == lumen_core::DiagnosticSeverity::Warning),
+        "repair request surfaces as a warning: {:#?}",
+        derived.diagnostics
+    );
+
+    let entry = derived
+        .fit_report
+        .slots
+        .iter()
+        .find(|entry| entry.slot_key.as_str() == "campaign.cta")
+        .expect("cta fit entry");
+    assert!(
+        matches!(&entry.verdict, lumen_core::SlotFitVerdict::Overflow { policy, .. } if policy == "ask_agent_to_repair"),
+        "{entry:?}"
+    );
+}
+
+#[test]
+fn g6_hidden_slots_report_hidden_verdicts() {
+    let derived = derive_fixture("missing_optional");
+    let entry = derived
+        .fit_report
+        .slots
+        .iter()
+        .find(|entry| entry.slot_key.as_str() == "research.quote")
+        .expect("hidden quote entry");
+    assert_eq!(entry.verdict, lumen_core::SlotFitVerdict::Hidden);
+}
+
+#[test]
+fn g6_nominal_instances_fit_with_clean_reports() {
+    let derived = derive_fixture("nominal");
+    assert!(!derived.has_errors(), "{:#?}", derived.diagnostics);
+    assert_eq!(
+        derived.fit_report.status,
+        lumen_core::InstanceFitStatus::Fits
+    );
+    assert!(derived.fit_report.overflow_slots().is_empty());
+    assert!(derived.repair_requests.is_empty());
+
+    // The report covers the per-item suffixed slots from the repeater.
+    let keys: Vec<&str> = derived
+        .fit_report
+        .slots
+        .iter()
+        .map(|entry| entry.slot_key.as_str())
+        .collect();
+    for expected in [
+        "contact.full_name",
+        "campaign.cta",
+        "research.quote",
+        "research.key_insights.item",
+        "research.key_insights.item_item_1",
+        "research.key_insights.item_item_2",
+    ] {
+        assert!(
+            keys.contains(&expected),
+            "missing fit entry {expected}: {keys:?}"
+        );
+    }
+}
+
+#[test]
+fn g6_clip_policy_overflows_surface_as_warnings_not_instance_failures() {
+    let mut scene = mailer_revision_scene();
+    {
+        let slot = scene
+            .slots
+            .values_mut()
+            .find(|slot| slot.key.as_str() == "campaign.cta")
+            .expect("cta slot");
+        slot.overflow = lumen_core::OverflowPolicy::Clip;
+        let node = scene.nodes.get_mut(&"node_cta".into()).expect("cta node");
+        node.size = lumen_core::SizeSpec::fixed(110.0, 8.0);
+    }
+    let binding = binding_set("worst_case");
+    let assets = derivation_assets("asset_meridian_logo", &binding.binding_set_id);
+    let derived = lumen_core::derive_instance(
+        &scene,
+        &binding,
+        &assets,
+        &lumen_core::DeriveOptions::default(),
+    );
+
+    let entry = derived
+        .fit_report
+        .slots
+        .iter()
+        .find(|entry| entry.slot_key.as_str() == "campaign.cta")
+        .expect("cta entry");
+    assert!(
+        matches!(&entry.verdict, lumen_core::SlotFitVerdict::Overflow { policy, .. } if policy == "clip"),
+        "{entry:?}"
+    );
+    // Sanctioned content loss: surfaced, but not an instance-fatal error.
+    let cta_text_errors: Vec<_> = derived
+        .diagnostics
+        .iter()
+        .filter(|d| {
+            d.severity == lumen_core::DiagnosticSeverity::Error
+                && matches!(&d.subject, Some(lumen_core::DiagnosticSubject::Node(node)) if node.as_str() == "node_cta")
+        })
+        .collect();
+    assert!(
+        cta_text_errors.is_empty(),
+        "clip overflow must not be instance-fatal: {cta_text_errors:#?}"
+    );
 }
