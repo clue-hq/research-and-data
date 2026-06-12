@@ -2,6 +2,7 @@ package
 .DS_Store
 target/
 node_modules/
+.venv/
 dist/
 __pycache__/
 *.py[cod]
