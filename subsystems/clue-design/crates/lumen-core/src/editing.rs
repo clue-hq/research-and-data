@@ -1919,6 +1919,7 @@ fn node_patch_affects_render(patch: &NodePatch) -> bool {
         || !matches!(patch.size, FieldPatch::Unchanged)
         || !matches!(patch.fills, FieldPatch::Unchanged)
         || !matches!(patch.strokes, FieldPatch::Unchanged)
+        || !matches!(patch.effects, FieldPatch::Unchanged)
         || !matches!(patch.corner, FieldPatch::Unchanged)
         || !matches!(patch.opacity, FieldPatch::Unchanged)
         || !matches!(patch.opacity_token, OptionalFieldPatch::Unchanged)

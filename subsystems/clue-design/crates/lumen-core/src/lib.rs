@@ -75,8 +75,8 @@ pub use export_contract::{
     ExportRequest, ExportResult, PdfIntent, RasterScale,
 };
 pub use ids::{
-    AssetId, BrandKitId, DocumentId, IdError, NodeId, OperationId, PageId, PaintId, SlotId,
-    SlotKey, TemplateRevisionId,
+    AssetId, BrandKitId, DocumentId, EffectId, IdError, NodeId, OperationId, PageId, PaintId,
+    SlotId, SlotKey, TemplateRevisionId,
 };
 pub use layout::{layout_operations, layout_scene, validate_layout, LayoutOptions, LayoutResult};
 pub use operations::{
@@ -90,9 +90,10 @@ pub use render_contract::{
 pub use render_geometry::{node_render_size, render_box_for_node, RenderBox};
 pub use scene::{
     AutoLayoutDirection, AutoLayoutNode, AutoLayoutProps, BrandKitRef, Color, ComputedGeometry,
-    CornerRadii, Dimension, DocumentMeta, DocumentStatus, Fill, ImageNode, LayoutAnchor, LineNode,
-    Medium, Node, NodeKind, Orientation, Page, PagePreset, PageSize, Paint, ParentRef, Rect, Scene,
-    SizeSpec, Stroke, TextAlign, TextDirection, TextNode, TextWrap, Transform, Unit, VectorNode,
+    CornerRadii, Dimension, DocumentMeta, DocumentStatus, Effect, EffectKind, Fill, ImageNode,
+    LayoutAnchor, LineNode, Medium, Node, NodeKind, Orientation, Page, PagePreset, PageSize, Paint,
+    ParentRef, Rect, Scene, SizeSpec, Stroke, StrokeAlign, StrokeCap, StrokeJoin, TextAlign,
+    TextDirection, TextNode, TextWrap, Transform, Unit, VectorNode,
 };
 pub use slots::{
     BindingHint, Cardinality, ConditionalRule, ContentType, Editability, EmptyBehavior, FocalPoint,

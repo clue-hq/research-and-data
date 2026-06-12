@@ -2395,10 +2395,8 @@ fn node_edit_patch_from_properties(
                     DslScalar::Token(token) => (0.0, Some(token.clone())),
                 };
                 strokes.push(Stroke {
-                    id,
-                    paint: stroke.paint.clone(),
-                    width,
                     width_token,
+                    ..Stroke::solid(id, stroke.paint.clone(), width)
                 });
             }
             DslProperty::Font(font) => {
@@ -3652,10 +3650,8 @@ fn apply_properties(
                     DslScalar::Token(token) => (0.0, Some(token.clone())),
                 };
                 node.strokes.push(Stroke {
-                    id,
-                    paint: stroke.paint.clone(),
-                    width,
                     width_token,
+                    ..Stroke::solid(id, stroke.paint.clone(), width)
                 });
             }
             DslProperty::Font(font) => {

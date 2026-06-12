@@ -126,16 +126,15 @@ fn rect_node(id: &str) -> Node {
             },
         },
     }];
-    node.strokes = vec![Stroke {
-        id: PaintId::from("paint_rect_stroke"),
-        paint: Paint::Solid {
+    node.strokes = vec![Stroke::solid(
+        PaintId::from("paint_rect_stroke"),
+        Paint::Solid {
             color: Color::Hex {
                 value: "#000000".to_owned(),
             },
         },
-        width: 1.0,
-        width_token: None,
-    }];
+        1.0,
+    )];
     node
 }
 

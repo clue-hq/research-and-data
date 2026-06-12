@@ -1,7 +1,7 @@
 use crate::assets::{validate_scene_assets, AssetValidationOptions};
 use crate::diagnostics::{Diagnostic, DiagnosticSubject, Phase};
 use crate::ids::{SlotId, SlotKey};
-use crate::scene::{NodeKind, Scene};
+use crate::scene::{EffectKind, Node, NodeKind, Scene, Stroke};
 use crate::slots::{ContentType, EmptyBehavior, SlotScope};
 use crate::SCHEMA_VERSION;
 use std::collections::{BTreeMap, BTreeSet};
@@ -41,6 +41,7 @@ pub fn validate_scene(scene: &Scene) -> Vec<Diagnostic> {
     validate_cycles(scene, &mut diagnostics);
     validate_orphans(scene, &mut diagnostics);
     validate_slots(scene, &mut diagnostics);
+    validate_node_paint_stacks(scene, &mut diagnostics);
     validate_export_profiles(scene, &mut diagnostics);
     diagnostics.extend(validate_scene_assets(
         scene,
@@ -519,6 +520,95 @@ fn validate_slots(scene: &Scene, diagnostics: &mut Vec<Diagnostic>) {
                 Some(DiagnosticSubject::Slot(slot.id.clone())),
             ));
         }
+    }
+}
+
+/// Effects Contract V0: paint/effect stacks are edit-addressable by stable
+/// IDs, so duplicate IDs within a stack and non-finite numeric fields are
+/// scene errors, not renderer surprises.
+fn validate_node_paint_stacks(scene: &Scene, diagnostics: &mut Vec<Diagnostic>) {
+    for node in scene.nodes.values() {
+        let mut fill_ids = BTreeSet::new();
+        for fill in &node.fills {
+            if !fill_ids.insert(&fill.id) {
+                diagnostics.push(Diagnostic::error(
+                    Phase::Validation,
+                    "LUMV0703",
+                    format!("node {} has duplicate fill id {}", node.id, fill.id),
+                    Some(DiagnosticSubject::Node(node.id.clone())),
+                ));
+            }
+        }
+
+        let mut stroke_ids = BTreeSet::new();
+        for stroke in &node.strokes {
+            if !stroke_ids.insert(&stroke.id) {
+                diagnostics.push(Diagnostic::error(
+                    Phase::Validation,
+                    "LUMV0703",
+                    format!("node {} has duplicate stroke id {}", node.id, stroke.id),
+                    Some(DiagnosticSubject::Node(node.id.clone())),
+                ));
+            }
+            validate_stroke_dash(node, stroke, diagnostics);
+        }
+
+        let mut effect_ids = BTreeSet::new();
+        for effect in &node.effects {
+            if !effect_ids.insert(&effect.id) {
+                diagnostics.push(Diagnostic::error(
+                    Phase::Validation,
+                    "LUMV0700",
+                    format!("node {} has duplicate effect id {}", node.id, effect.id),
+                    Some(DiagnosticSubject::Node(node.id.clone())),
+                ));
+            }
+            let EffectKind::DropShadow {
+                opacity,
+                x,
+                y,
+                blur,
+                spread,
+                ..
+            } = &effect.kind;
+            let fields = [
+                ("opacity", *opacity),
+                ("x", *x),
+                ("y", *y),
+                ("blur", *blur),
+                ("spread", *spread),
+            ];
+            for (field, value) in fields {
+                if !value.is_finite() {
+                    diagnostics.push(Diagnostic::error(
+                        Phase::Validation,
+                        "LUMV0701",
+                        format!(
+                            "node {} effect {} has non-finite {} value",
+                            node.id, effect.id, field
+                        ),
+                        Some(DiagnosticSubject::Node(node.id.clone())),
+                    ));
+                }
+            }
+        }
+    }
+}
+
+fn validate_stroke_dash(node: &Node, stroke: &Stroke, diagnostics: &mut Vec<Diagnostic>) {
+    let Some(dash) = &stroke.dash else {
+        return;
+    };
+    if dash.iter().any(|value| !value.is_finite() || *value < 0.0) {
+        diagnostics.push(Diagnostic::error(
+            Phase::Validation,
+            "LUMV0702",
+            format!(
+                "node {} stroke {} has a dash pattern with non-finite or negative values",
+                node.id, stroke.id
+            ),
+            Some(DiagnosticSubject::Node(node.id.clone())),
+        ));
     }
 }
 

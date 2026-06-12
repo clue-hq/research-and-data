@@ -3,9 +3,9 @@ use crate::diagnostics::{Diagnostic, DiagnosticSeverity};
 use crate::export_contract::ExportProfile;
 use crate::ids::{AssetId, BrandKitId, NodeId, PageId, SlotId, TemplateRevisionId};
 use crate::scene::{
-    AutoLayoutProps, BrandKitRef, ComputedGeometry, CornerRadii, DocumentStatus, Fill, ImageNode,
-    Medium, Node, NodeKind, PageSize, ParentRef, Rect, Scene, SizeSpec, Stroke, Transform,
-    VectorNode,
+    AutoLayoutProps, BrandKitRef, ComputedGeometry, CornerRadii, DocumentStatus, Effect, Fill,
+    ImageNode, Medium, Node, NodeKind, PageSize, ParentRef, Rect, Scene, SizeSpec, Stroke,
+    Transform, VectorNode,
 };
 use crate::slots::ContentType;
 use crate::slots::Slot;
@@ -61,6 +61,12 @@ pub enum FieldPatch<T> {
     Set(T),
 }
 
+impl<T> FieldPatch<T> {
+    pub fn is_unchanged(&self) -> bool {
+        matches!(self, Self::Unchanged)
+    }
+}
+
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", content = "value", rename_all = "snake_case")]
 pub enum OptionalFieldPatch<T> {
@@ -68,6 +74,12 @@ pub enum OptionalFieldPatch<T> {
     Unchanged,
     Set(T),
     Clear,
+}
+
+impl<T> OptionalFieldPatch<T> {
+    pub fn is_unchanged(&self) -> bool {
+        matches!(self, Self::Unchanged)
+    }
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -95,6 +107,10 @@ pub struct NodePatch {
     pub size: FieldPatch<SizeSpec>,
     pub fills: FieldPatch<Vec<Fill>>,
     pub strokes: FieldPatch<Vec<Stroke>>,
+    /// Effects Contract V0 addition. Skipped when unchanged so pinned
+    /// pre-effects operation fixtures stay byte-identical.
+    #[serde(default, skip_serializing_if = "FieldPatch::is_unchanged")]
+    pub effects: FieldPatch<Vec<Effect>>,
     pub corner: FieldPatch<CornerRadii>,
     pub opacity: FieldPatch<f64>,
     #[serde(default)]
@@ -566,6 +582,7 @@ impl Scene {
         apply_field_patch(&mut node.size, patch.size);
         apply_field_patch(&mut node.fills, patch.fills);
         apply_field_patch(&mut node.strokes, patch.strokes);
+        apply_field_patch(&mut node.effects, patch.effects);
         apply_field_patch(&mut node.corner, patch.corner);
         apply_field_patch(&mut node.opacity, patch.opacity);
         apply_optional_patch(&mut node.opacity_token, patch.opacity_token);
@@ -1082,6 +1099,9 @@ impl Scene {
                 }
                 if !matches!(patch.strokes, FieldPatch::Unchanged) {
                     inverse.strokes = FieldPatch::Set(node.strokes.clone());
+                }
+                if !matches!(patch.effects, FieldPatch::Unchanged) {
+                    inverse.effects = FieldPatch::Set(node.effects.clone());
                 }
                 if !matches!(patch.corner, FieldPatch::Unchanged) {
                     inverse.corner = FieldPatch::Set(node.corner.clone());
