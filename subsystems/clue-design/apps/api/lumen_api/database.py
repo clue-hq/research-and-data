@@ -732,6 +732,77 @@ class Repository:
             raise NotFoundError("asset", asset_id)
         return asset_record_from_row(row)
 
+    def list_asset_records(
+        self,
+        kind: Optional[str] = None,
+        q: Optional[str] = None,
+        include_archived: bool = False,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> List[JsonObject]:
+        clauses: List[str] = []
+        params: List[Any] = []
+        if not include_archived:
+            clauses.append("status != 'archived'")
+        if kind:
+            clauses.append("kind = ?")
+            params.append(kind)
+        if q:
+            like = f"%{q.lower()}%"
+            clauses.append(
+                "(LOWER(label) LIKE ? OR LOWER(COALESCE(filename, '')) LIKE ?"
+                " OR LOWER(tags_json) LIKE ?)"
+            )
+            params.extend([like, like, like])
+        where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+        rows = self.connection.execute(
+            f"""
+            SELECT * FROM assets {where}
+            ORDER BY updated_at DESC, asset_id
+            LIMIT ? OFFSET ?
+            """,
+            (*params, limit, offset),
+        ).fetchall()
+        return [asset_record_from_row(row) for row in rows]
+
+    def update_asset_status(self, asset_id: str, status: str) -> JsonObject:
+        stored = self.require_asset_record(asset_id)
+        record = stored["asset"]
+        record["status"] = status
+        self.connection.execute(
+            "UPDATE assets SET status = ?, record_json = ?, updated_at = ? WHERE asset_id = ?",
+            (status, encode(record), utc_now(), asset_id),
+        )
+        self.connection.commit()
+        return self.require_asset_record(asset_id)
+
+    def delete_asset_record(self, asset_id: str) -> None:
+        self.require_asset_record(asset_id)
+        self.connection.execute("DELETE FROM assets WHERE asset_id = ?", (asset_id,))
+        self.connection.commit()
+
+    def count_assets_with_digest(
+        self, digest_value: str, exclude_asset_id: Optional[str] = None
+    ) -> int:
+        # record_json LIKE keeps thumbnail digests visible too: any record
+        # whose canonical JSON mentions the digest still references it.
+        params: List[Any] = [f"%{digest_value}%"]
+        clause = "record_json LIKE ?"
+        if exclude_asset_id:
+            clause += " AND asset_id != ?"
+            params.append(exclude_asset_id)
+        row = self.connection.execute(
+            f"SELECT COUNT(*) AS n FROM assets WHERE {clause}", params
+        ).fetchone()
+        return int(row["n"])
+
+    def count_documents_referencing(self, needle: str) -> int:
+        row = self.connection.execute(
+            "SELECT COUNT(*) AS n FROM documents WHERE current_scene_json LIKE ?",
+            (f"%{needle}%",),
+        ).fetchone()
+        return int(row["n"])
+
     def store_diagnostics(
         self,
         document_id: str,

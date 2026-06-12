@@ -1434,6 +1434,126 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
             "diagnostics": diagnostics,
         }
 
+    @app.get("/assets")
+    def list_assets(
+        kind: Optional[str] = Query(None),
+        q: Optional[str] = Query(None),
+        include_archived: bool = Query(False),
+        limit: int = Query(50, ge=1, le=200),
+        offset: int = Query(0, ge=0),
+        repo: Repository = Depends(repository),
+    ) -> JsonObject:
+        rows = repo.list_asset_records(
+            kind=kind,
+            q=q,
+            include_archived=include_archived,
+            limit=limit,
+            offset=offset,
+        )
+        return {
+            "schema_version": 1,
+            "assets": [row["asset"] for row in rows],
+            "count": len(rows),
+            "limit": limit,
+            "offset": offset,
+        }
+
+    @app.post("/assets/{asset_id}/archive")
+    def archive_asset(
+        asset_id: str,
+        repo: Repository = Depends(repository),
+    ) -> JsonObject:
+        stored = repo.update_asset_status(asset_id, "archived")
+        log_event(
+            api_logger,
+            logging.INFO,
+            "asset_archived",
+            asset_id=asset_id,
+        )
+        return {"schema_version": 1, "asset": stored["asset"]}
+
+    @app.post("/assets/{asset_id}/restore")
+    def restore_asset(
+        asset_id: str,
+        repo: Repository = Depends(repository),
+    ) -> JsonObject:
+        stored = repo.update_asset_status(asset_id, "ready")
+        log_event(
+            api_logger,
+            logging.INFO,
+            "asset_restored",
+            asset_id=asset_id,
+        )
+        return {"schema_version": 1, "asset": stored["asset"]}
+
+    @app.delete("/assets/{asset_id}")
+    def hard_delete_asset(
+        asset_id: str,
+        repo: Repository = Depends(repository),
+    ) -> JsonObject:
+        stored = repo.require_asset_record(asset_id)
+        record = stored["asset"]
+
+        # Record-level reference check (archive-first lifecycle): a hard
+        # delete is refused while any document scene references the asset.
+        referencing = repo.count_documents_referencing(f'"{asset_id}"')
+        if referencing:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    f"asset {asset_id} is referenced by {referencing} document(s); "
+                    "archive it instead or remove the references first"
+                ),
+            )
+
+        repo.delete_asset_record(asset_id)
+
+        # Byte-level lifecycle (Decision 4): bytes leave the store only
+        # when no remaining record or document references their digest.
+        removed_digests: List[str] = []
+        for digest_value in record_digest_values(record):
+            if repo.count_assets_with_digest(digest_value):
+                continue
+            if repo.count_documents_referencing(digest_value):
+                continue
+            if delete_stored_digest(digest_value):
+                removed_digests.append(digest_value)
+
+        log_event(
+            api_logger,
+            logging.INFO,
+            "asset_hard_deleted",
+            asset_id=asset_id,
+            removed_digest_count=len(removed_digests),
+        )
+        return {
+            "schema_version": 1,
+            "deleted": asset_id,
+            "removed_digests": removed_digests,
+        }
+
+    def record_digest_values(record: JsonObject) -> List[str]:
+        values: List[str] = []
+        media = record.get("media") or {}
+        digest = media.get("digest") or {}
+        if digest.get("value"):
+            values.append(digest["value"])
+        thumbnail = media.get("thumbnail") or {}
+        thumbnail_ref = (thumbnail.get("location") or {}).get("opaque_ref") or ""
+        if thumbnail_ref.startswith("sha256/"):
+            thumbnail_digest = thumbnail_ref.rsplit("/", 1)[-1]
+            if thumbnail_digest and thumbnail_digest not in values:
+                values.append(thumbnail_digest)
+        return values
+
+    def delete_stored_digest(digest_value: str) -> bool:
+        relative = f"sha256/{digest_value[:2]}/{digest_value}"
+        path = resolve_store_path(relative)
+        if not path.is_file():
+            return False
+        path.unlink()
+        return True
+
     @app.get("/assets/{asset_id}")
     def get_asset(
         asset_id: str,

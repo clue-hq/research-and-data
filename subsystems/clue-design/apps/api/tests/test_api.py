@@ -1977,3 +1977,98 @@ def test_mailer_carries_scannable_qr_through_export(client: TestClient) -> None:
     assert "data:image/svg+xml;base64," in svg_text
     for diagnostic in payload["diagnostics"]:
         assert diagnostic["code"] not in {"LUME0202", "LUME0210", "LUME0211"}
+
+
+def test_asset_library_list_search_and_filter(client: TestClient) -> None:
+    uploaded = upload_logo(client).json()["asset"]
+    generated = client.post(
+        "/assets/generate/qr",
+        json={"data": "https://lumen.example/a/acme-health", "label": "Acme QR"},
+    ).json()["asset"]
+
+    listed = client.get("/assets").json()
+    listed_ids = {asset["id"] for asset in listed["assets"]}
+    assert {uploaded["id"], generated["id"]} <= listed_ids
+
+    vectors = client.get("/assets", params={"kind": "vector"}).json()
+    assert {asset["id"] for asset in vectors["assets"]} == {generated["id"]}
+
+    by_label = client.get("/assets", params={"q": "acme logo"}).json()
+    assert {asset["id"] for asset in by_label["assets"]} == {uploaded["id"]}
+
+    by_tag = client.get("/assets", params={"q": "qr"}).json()
+    assert generated["id"] in {asset["id"] for asset in by_tag["assets"]}
+
+    nothing = client.get("/assets", params={"q": "no-such-asset"}).json()
+    assert nothing["assets"] == []
+
+
+def test_archived_assets_are_excluded_by_default(client: TestClient) -> None:
+    record = upload_logo(client).json()["asset"]
+
+    archived = client.post(f"/assets/{record['id']}/archive")
+    assert archived.status_code == 200
+    assert archived.json()["asset"]["status"] == "archived"
+
+    default_list = client.get("/assets").json()
+    assert record["id"] not in {asset["id"] for asset in default_list["assets"]}
+
+    with_archived = client.get("/assets", params={"include_archived": True}).json()
+    assert record["id"] in {asset["id"] for asset in with_archived["assets"]}
+
+    restored = client.post(f"/assets/{record['id']}/restore")
+    assert restored.json()["asset"]["status"] == "ready"
+    assert record["id"] in {
+        asset["id"] for asset in client.get("/assets").json()["assets"]
+    }
+
+
+def test_hard_delete_refuses_while_documents_reference_the_asset(
+    client: TestClient,
+) -> None:
+    record = upload_logo(client).json()["asset"]
+    document = create_document(client)
+    operations = asset_operations()
+    operations[1]["slot"]["image_policy"]["aspect_ratio"] = 1.0
+    operations[2] = {"kind": "upsert_asset", "asset": record}
+    operations[3]["asset_id"] = record["id"]
+    applied = client.post(
+        f"/documents/{document['id']}/operations",
+        json={
+            "operations": operations,
+            "actor": {"kind": "user", "id": "designer"},
+            "source": "editor",
+        },
+    )
+    assert applied.status_code == 200, applied.text
+
+    refused = client.delete(f"/assets/{record['id']}")
+    assert refused.status_code == 409
+    assert "referenced" in refused.json()["detail"]
+
+    # The record and bytes survive the refusal.
+    assert client.get(f"/assets/{record['id']}").status_code == 200
+    assert client.get(f"/assets/{record['id']}/bytes").status_code == 200
+
+
+def test_hard_delete_byte_lifecycle_respects_digest_references(
+    client: TestClient, tmp_path: Path
+) -> None:
+    first = upload_logo(client).json()["asset"]
+    second = upload_logo(client).json()["asset"]
+    assert first["media"]["digest"] == second["media"]["digest"]
+    assert len(store_files(tmp_path)) == 2  # shared bytes + shared thumbnail
+
+    # Deleting one record keeps the bytes: the digest is still referenced.
+    deleted = client.delete(f"/assets/{first['id']}")
+    assert deleted.status_code == 200, deleted.text
+    assert deleted.json()["removed_digests"] == []
+    assert len(store_files(tmp_path)) == 2
+    assert client.get(f"/assets/{first['id']}").status_code == 404
+    assert client.get(f"/assets/{second['id']}/bytes").status_code == 200
+
+    # Deleting the last record garbage-collects bytes and thumbnail.
+    deleted = client.delete(f"/assets/{second['id']}")
+    assert deleted.status_code == 200, deleted.text
+    assert len(deleted.json()["removed_digests"]) == 2
+    assert store_files(tmp_path) == []
