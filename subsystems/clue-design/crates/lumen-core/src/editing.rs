@@ -54,6 +54,7 @@ pub enum EditErrorKind {
     RevisionMismatch,
     OperationFailed,
     ScopeViolation,
+    LifecycleProtected,
 }
 
 impl EditErrorKind {
@@ -72,6 +73,7 @@ impl EditErrorKind {
             Self::RevisionMismatch => "edit.revision_mismatch",
             Self::OperationFailed => "edit.operation_failed",
             Self::ScopeViolation => "edit.scope_violation",
+            Self::LifecycleProtected => "edit.lifecycle_protected",
         }
     }
 }
@@ -1113,6 +1115,192 @@ pub fn build_safe_delete(scene: &Scene, node_id: NodeId) -> Result<EditBatch, Ed
         vec![EditTargetRef::Node(node_id)],
     )
     .with_intent("safe_delete")
+    .with_inverses(scene)
+}
+
+/// Safe page delete (Phase D Decision 3): the last page is protected, node
+/// subtrees cascade through the canonical RemovePage, slot bindings to
+/// deleted nodes clear, and slot definitions survive so preflight flags the
+/// personalization-contract gap visibly.
+pub fn build_safe_delete_page(scene: &Scene, page_id: PageId) -> Result<EditBatch, EditError> {
+    let page = scene.pages.get(&page_id).ok_or_else(|| {
+        EditError::new(
+            EditErrorKind::TargetNotFound,
+            format!("page {} does not exist", page_id),
+        )
+        .with_target(EditTargetRef::Page(page_id.clone()))
+    })?;
+    if scene.pages.len() <= 1 {
+        return Err(EditError::new(
+            EditErrorKind::LifecycleProtected,
+            "cannot delete the last page of a document",
+        )
+        .with_target(EditTargetRef::Page(page_id)));
+    }
+    for child_id in &page.children {
+        let mut subtree = vec![child_id.clone()];
+        subtree.extend(scene.descendants_of(child_id));
+        for node_id in subtree {
+            if scene
+                .nodes
+                .get(&node_id)
+                .map(|node| node.locked)
+                .unwrap_or(false)
+            {
+                return Err(EditError::new(
+                    EditErrorKind::LockedTarget,
+                    format!("page contains locked node {}", node_id),
+                )
+                .with_target(EditTargetRef::Node(node_id)));
+            }
+        }
+    }
+
+    EditBatch::new(
+        vec![Operation::RemovePage {
+            page_id: page_id.clone(),
+        }],
+        vec![EditTargetRef::Page(page_id)],
+    )
+    .with_intent("delete_page")
+    .with_inverses(scene)
+}
+
+/// Safe slot delete (Phase D Decision 4): hard delete in drafts (finalized
+/// revisions reject all mutation), unbinds nodes by removing the slot
+/// record, and never deletes the bound nodes themselves.
+pub fn build_safe_delete_slot(
+    scene: &Scene,
+    target: EditTargetRef,
+) -> Result<EditBatch, EditError> {
+    let slot = match &target {
+        EditTargetRef::Slot(slot_id) => scene.slots.get(slot_id),
+        EditTargetRef::SlotKey(slot_key) => scene.slot_by_key(slot_key),
+        _ => {
+            return Err(EditError::new(
+                EditErrorKind::UnsupportedTarget,
+                "slot delete requires a slot or slot-key target",
+            )
+            .with_target(target));
+        }
+    }
+    .ok_or_else(|| {
+        EditError::new(
+            EditErrorKind::TargetNotFound,
+            format!("slot target {:?} does not exist", target),
+        )
+        .with_target(target.clone())
+    })?;
+
+    EditBatch::new(
+        vec![Operation::RemoveSlot {
+            slot_id: slot.id.clone(),
+        }],
+        vec![EditTargetRef::Slot(slot.id.clone())],
+    )
+    .with_intent("delete_slot")
+    .with_inverses(scene)
+}
+
+/// Archive-first asset lifecycle (Phase D Decision 5). Archiving is a
+/// metadata status change; bytes and storage lifecycle belong to Phase E.
+pub fn build_archive_asset(scene: &Scene, asset_id: AssetId) -> Result<EditBatch, EditError> {
+    let mut asset = scene.assets.get(&asset_id).cloned().ok_or_else(|| {
+        EditError::new(
+            EditErrorKind::TargetNotFound,
+            format!("asset {} does not exist", asset_id),
+        )
+        .with_target(EditTargetRef::Asset(asset_id.clone()))
+    })?;
+    asset.status = AssetStatus::Archived;
+
+    EditBatch::new(
+        vec![Operation::UpsertAsset { asset }],
+        vec![EditTargetRef::Asset(asset_id)],
+    )
+    .with_intent("archive_asset")
+    .with_inverses(scene)
+}
+
+/// Hard asset delete rejects while the asset is referenced by any node
+/// (image source or placement source). Archive is the default lifecycle.
+pub fn build_hard_delete_asset(scene: &Scene, asset_id: AssetId) -> Result<EditBatch, EditError> {
+    if !scene.assets.contains_key(&asset_id) {
+        return Err(EditError::new(
+            EditErrorKind::TargetNotFound,
+            format!("asset {} does not exist", asset_id),
+        )
+        .with_target(EditTargetRef::Asset(asset_id)));
+    }
+    let referencing_node = scene.nodes.values().find(|node| {
+        node.source_asset_id.as_ref() == Some(&asset_id)
+            || matches!(&node.kind, NodeKind::Image(image) if image.asset_id == asset_id)
+    });
+    if let Some(node) = referencing_node {
+        return Err(EditError::new(
+            EditErrorKind::LifecycleProtected,
+            format!(
+                "asset {} is referenced by node {}; archive it instead of hard deleting",
+                asset_id, node.id
+            ),
+        )
+        .with_target(EditTargetRef::Asset(asset_id)));
+    }
+
+    EditBatch::new(
+        vec![Operation::RemoveAsset {
+            asset_id: asset_id.clone(),
+        }],
+        vec![EditTargetRef::Asset(asset_id)],
+    )
+    .with_intent("delete_asset")
+    .with_inverses(scene)
+}
+
+/// Export-profile delete (Phase D Decision 6): the only remaining profile is
+/// protected, and an explicit replacement must name a different existing
+/// profile so the document never loses its export contract.
+pub fn build_delete_export_profile(
+    scene: &Scene,
+    name: String,
+    replace_with: Option<String>,
+) -> Result<EditBatch, EditError> {
+    if scene.export_profile(&name).is_none() {
+        return Err(EditError::new(
+            EditErrorKind::TargetNotFound,
+            format!("export profile {} does not exist", name),
+        )
+        .with_target(EditTargetRef::ExportProfile(name)));
+    }
+    if scene.export_profiles.len() <= 1 {
+        return Err(EditError::new(
+            EditErrorKind::LifecycleProtected,
+            "cannot delete the only export profile; add a replacement profile first",
+        )
+        .with_target(EditTargetRef::ExportProfile(name)));
+    }
+    if let Some(replacement) = &replace_with {
+        if replacement == &name {
+            return Err(EditError::new(
+                EditErrorKind::IncompatibleReplacement,
+                "replacement profile must differ from the deleted profile",
+            )
+            .with_target(EditTargetRef::ExportProfile(name)));
+        }
+        if scene.export_profile(replacement).is_none() {
+            return Err(EditError::new(
+                EditErrorKind::TargetNotFound,
+                format!("replacement export profile {} does not exist", replacement),
+            )
+            .with_target(EditTargetRef::ExportProfile(replacement.clone())));
+        }
+    }
+
+    EditBatch::new(
+        vec![Operation::RemoveExportProfile { name: name.clone() }],
+        vec![EditTargetRef::ExportProfile(name)],
+    )
+    .with_intent("delete_export_profile")
     .with_inverses(scene)
 }
 

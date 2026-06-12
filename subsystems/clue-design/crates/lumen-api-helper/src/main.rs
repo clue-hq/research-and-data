@@ -1,16 +1,17 @@
 use lumen_core::validation::validate_scene;
 use lumen_core::{
-    batch_scope_violations, build_clone_subtree, build_modify_operations, build_move_after,
-    build_move_before, build_move_to_parent, build_replace_node, build_safe_delete,
-    compare_brand_kit_compatibility, compile_dsl_into_scene_with_session, compile_styles_brand_kit,
-    generate_brand_kit, layout_scene, platform_default_brand_kit, preflight_scene,
-    summarize_brand_kit_for_authoring, validate_brand_kit, validate_brand_kit_product_ready,
-    validate_scene_brand_governance, BrandGovernanceStrictness, BrandKit, BrandKitId, BrandMode,
-    BrandSeed, CloneSubtreeRequest, Diagnostic, DiagnosticSeverity, DocumentId,
-    DslCompileSessionSnapshot, EditBatch, EditPatch, EditScope, EditScopeMode, EditTargetRef,
-    ExportAdapter, ExportFormat, ExportProfile, ExportPurpose, ExportRequest, Medium, NodeId,
-    Operation, PageId, ParentRef, PdfIntent, PreflightOptions, RasterScale, ReplaceNodeRequest,
-    Scene, ScopeViolation, TemplateRevisionId,
+    batch_scope_violations, build_archive_asset, build_clone_subtree, build_delete_export_profile,
+    build_hard_delete_asset, build_modify_operations, build_move_after, build_move_before,
+    build_move_to_parent, build_replace_node, build_safe_delete, build_safe_delete_page,
+    build_safe_delete_slot, compare_brand_kit_compatibility, compile_dsl_into_scene_with_session,
+    compile_styles_brand_kit, generate_brand_kit, layout_scene, platform_default_brand_kit,
+    preflight_scene, summarize_brand_kit_for_authoring, validate_brand_kit,
+    validate_brand_kit_product_ready, validate_scene_brand_governance, AssetId,
+    BrandGovernanceStrictness, BrandKit, BrandKitId, BrandMode, BrandSeed, CloneSubtreeRequest,
+    Diagnostic, DiagnosticSeverity, DocumentId, DslCompileSessionSnapshot, EditBatch, EditPatch,
+    EditScope, EditScopeMode, EditTargetRef, ExportAdapter, ExportFormat, ExportProfile,
+    ExportPurpose, ExportRequest, Medium, NodeId, Operation, PageId, ParentRef, PdfIntent,
+    PreflightOptions, RasterScale, ReplaceNodeRequest, Scene, ScopeViolation, TemplateRevisionId,
 };
 use lumen_export::LumenExportAdapter;
 use serde::{Deserialize, Serialize};
@@ -175,6 +176,17 @@ enum StructuredEditInstruction {
     },
     ReplaceNode {
         request: ReplaceNodeRequest,
+    },
+    ArchiveAsset {
+        asset_id: AssetId,
+    },
+    HardDeleteAsset {
+        asset_id: AssetId,
+    },
+    DeleteExportProfile {
+        name: String,
+        #[serde(default)]
+        replace_with: Option<String>,
     },
 }
 
@@ -1104,6 +1116,9 @@ fn structured_edit_kind(edit: &StructuredEditInstruction) -> &'static str {
         StructuredEditInstruction::MoveToParent { .. } => "move_to_parent",
         StructuredEditInstruction::CloneSubtree { .. } => "clone_subtree",
         StructuredEditInstruction::ReplaceNode { .. } => "replace_node",
+        StructuredEditInstruction::ArchiveAsset { .. } => "archive_asset",
+        StructuredEditInstruction::HardDeleteAsset { .. } => "hard_delete_asset",
+        StructuredEditInstruction::DeleteExportProfile { .. } => "delete_export_profile",
     }
 }
 
@@ -1117,12 +1132,31 @@ fn structured_edit_batch(
         }
         StructuredEditInstruction::Delete { target } => match target {
             EditTargetRef::Node(node_id) => build_safe_delete(scene, node_id.clone()),
-            _ => Err(lumen_core::EditError::new(
+            EditTargetRef::Page(page_id) => build_safe_delete_page(scene, page_id.clone()),
+            EditTargetRef::Slot(_) | EditTargetRef::SlotKey(_) => {
+                build_safe_delete_slot(scene, target.clone())
+            }
+            // Archive-first asset lifecycle: plain delete archives; use the
+            // hard_delete_asset instruction for an unreferenced hard delete.
+            EditTargetRef::Asset(asset_id) => build_archive_asset(scene, asset_id.clone()),
+            EditTargetRef::ExportProfile(name) => {
+                build_delete_export_profile(scene, name.clone(), None)
+            }
+            EditTargetRef::Document => Err(lumen_core::EditError::new(
                 lumen_core::EditErrorKind::UnsupportedTarget,
-                "safe delete currently supports node targets only; use canonical remove operations for other target types",
+                "the document itself cannot be deleted through structured edits",
             )
             .with_target(target.clone())),
         },
+        StructuredEditInstruction::ArchiveAsset { asset_id } => {
+            build_archive_asset(scene, asset_id.clone())
+        }
+        StructuredEditInstruction::HardDeleteAsset { asset_id } => {
+            build_hard_delete_asset(scene, asset_id.clone())
+        }
+        StructuredEditInstruction::DeleteExportProfile { name, replace_with } => {
+            build_delete_export_profile(scene, name.clone(), replace_with.clone())
+        }
         StructuredEditInstruction::MoveBefore { node_id, anchor } => {
             build_move_before(scene, node_id.clone(), anchor.clone())
         }

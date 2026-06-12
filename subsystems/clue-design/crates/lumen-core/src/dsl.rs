@@ -3,16 +3,18 @@
 use crate::editing::ExportProfileEditPatch;
 use crate::scene::{BrandKitRef, ColorStop, Medium};
 use crate::{
-    build_clone_subtree, build_modify_operations, build_move_after, build_move_before,
-    build_move_to_parent, build_replace_node, build_safe_delete, AssetEditPatch, AssetId,
-    AutoLayoutDirection, AutoLayoutNode, AutoLayoutProps, CloneSlotPolicy, CloneSubtreeRequest,
-    Color, ComputedClonePolicy, Diagnostic, DiagnosticSeverity, DocumentPatch, EditError,
-    EditPatch, EditTargetRef, ExportFormat, FieldPatch, Fill, ImageNode, LayoutAnchor, LineNode,
-    Node, NodeEditPatch, NodeId, NodeKind, Operation, OperationError, OperationReport,
-    OptionalFieldPatch, Orientation, Page, PageEditPatch, PageId, PagePreset, PageSize, Paint,
-    PaintId, ParentRef, PdfIntent, Phase, RasterScale, Rect, RelativePlacement, ReplaceNodeRequest,
-    ReplaceSlotPolicy, Scene, SizeSpec, Slot, SlotEditPatch, SlotId, SlotKey, Stroke, TextAlign,
-    TextDirection, TextEditPatch, TextNode, TextWrap, Unit, VectorNode,
+    build_archive_asset, build_clone_subtree, build_delete_export_profile, build_hard_delete_asset,
+    build_modify_operations, build_move_after, build_move_before, build_move_to_parent,
+    build_replace_node, build_safe_delete, build_safe_delete_page, build_safe_delete_slot,
+    resolve_edit_target, AssetEditPatch, AssetId, AutoLayoutDirection, AutoLayoutNode,
+    AutoLayoutProps, CloneSlotPolicy, CloneSubtreeRequest, Color, ComputedClonePolicy, Diagnostic,
+    DiagnosticSeverity, DocumentPatch, EditError, EditPatch, EditTargetRef, ExportFormat,
+    FieldPatch, Fill, ImageNode, LayoutAnchor, LineNode, Node, NodeEditPatch, NodeId, NodeKind,
+    Operation, OperationError, OperationReport, OptionalFieldPatch, Orientation, Page,
+    PageEditPatch, PageId, PagePreset, PageSize, Paint, PaintId, ParentRef, PdfIntent, Phase,
+    RasterScale, Rect, RelativePlacement, ReplaceNodeRequest, ReplaceSlotPolicy, Scene, SizeSpec,
+    Slot, SlotEditPatch, SlotId, SlotKey, Stroke, TextAlign, TextDirection, TextEditPatch,
+    TextNode, TextWrap, Unit, VectorNode,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
@@ -438,7 +440,15 @@ pub struct DslFont {
 #[derive(Clone, Debug, PartialEq)]
 pub enum DslDirective {
     Delete {
-        target: NodeId,
+        target: EditTargetRef,
+        /// Assets archive by default; `hard` requests an unreferenced hard
+        /// delete. Ignored for non-asset targets.
+        hard: bool,
+        /// Export-profile deletes may name the surviving profile.
+        replace_with: Option<String>,
+        /// `if_exists` turns a missing target into an info diagnostic
+        /// instead of a halt.
+        if_exists: bool,
     },
     Parent {
         target: NodeId,
@@ -842,9 +852,44 @@ impl DslParser {
 
         let directive = match call.name.as_str() {
             "delete" => {
-                expect_arg_count(&call, 1, line_number)?;
+                if call.args.is_empty() || call.args.len() > 3 {
+                    return Err(error_diag(
+                        line_number,
+                        1,
+                        trimmed.len(),
+                        "LUMD0207",
+                        "delete(...) expects a target and optional flags",
+                        "Use delete(node_id), delete(page:id), delete(slot:key), delete(asset:id[, hard]), delete(export:name[, replace_with:other]), with optional if_exists.",
+                    ));
+                }
+                let target = parse_directive_target(&call.args[0], line_number)?;
+                let mut hard = false;
+                let mut replace_with = None;
+                let mut if_exists = false;
+                for flag in call.args.iter().skip(1) {
+                    let flag = flag.trim();
+                    if flag == "hard" {
+                        hard = true;
+                    } else if flag == "if_exists" {
+                        if_exists = true;
+                    } else if let Some(name) = flag.strip_prefix("replace_with:") {
+                        replace_with = Some(name.trim().to_owned());
+                    } else {
+                        return Err(error_diag(
+                            line_number,
+                            1,
+                            trimmed.len(),
+                            "LUMD0207",
+                            format!("unknown delete flag {flag}"),
+                            "Supported flags: hard, if_exists, replace_with:profile_name.",
+                        ));
+                    }
+                }
                 DslDirective::Delete {
-                    target: parse_node_id(&call.args[0], line_number, 1)?,
+                    target,
+                    hard,
+                    replace_with,
+                    if_exists,
                 }
             }
             "parent" => {
@@ -1249,9 +1294,52 @@ impl<'a> DslCompiler<'a> {
         directive: &DslDirective,
     ) -> Result<(), DslDiagnostic> {
         match directive {
-            DslDirective::Delete { target } => {
-                let batch = build_safe_delete(self.scene, target.clone())
-                    .map_err(|error| edit_error_diag(line, &error))?;
+            DslDirective::Delete {
+                target,
+                hard,
+                replace_with,
+                if_exists,
+            } => {
+                if *if_exists && resolve_edit_target(self.scene, target).is_err() {
+                    self.diagnostics.push(warning_diag(
+                        line.line_number,
+                        1,
+                        line.raw.len().max(1),
+                        "LUMD0915",
+                        format!(
+                            "delete target {:?} does not exist; skipped (if_exists)",
+                            target
+                        ),
+                        "Remove if_exists to make a missing target a hard error.",
+                    ));
+                    return Ok(());
+                }
+                let batch = match target {
+                    EditTargetRef::Node(node_id) => build_safe_delete(self.scene, node_id.clone()),
+                    EditTargetRef::Page(page_id) => {
+                        build_safe_delete_page(self.scene, page_id.clone())
+                    }
+                    EditTargetRef::Slot(_) | EditTargetRef::SlotKey(_) => {
+                        build_safe_delete_slot(self.scene, target.clone())
+                    }
+                    EditTargetRef::Asset(asset_id) => {
+                        if *hard {
+                            build_hard_delete_asset(self.scene, asset_id.clone())
+                        } else {
+                            build_archive_asset(self.scene, asset_id.clone())
+                        }
+                    }
+                    EditTargetRef::ExportProfile(name) => build_delete_export_profile(
+                        self.scene,
+                        name.clone(),
+                        replace_with.clone(),
+                    ),
+                    EditTargetRef::Document => Err(EditError::new(
+                        crate::EditErrorKind::UnsupportedTarget,
+                        "the document itself cannot be deleted through DSL",
+                    )),
+                }
+                .map_err(|error| edit_error_diag(line, &error))?;
                 self.emit_edit_batch(line, batch.operations)?;
                 self.prune_parent_stack();
                 Ok(())
@@ -1685,6 +1773,40 @@ fn export_profile_edit_patch_from_properties(
         }
     }
     Ok(patch)
+}
+
+/// Parse a directive target argument: bare ids are nodes; prefixed forms
+/// mirror the `#`-target grammar of modify lines (page:, slot:, slot_id:,
+/// asset:, export:).
+fn parse_directive_target(
+    source: &str,
+    line_number: usize,
+) -> Result<EditTargetRef, DslDiagnostic> {
+    let target = source.trim();
+    if let Some(page_id) = target.strip_prefix("page:") {
+        return Ok(EditTargetRef::Page(parse_page_id(page_id, line_number, 1)?));
+    }
+    if let Some(slot_key) = target.strip_prefix("slot:") {
+        return Ok(EditTargetRef::SlotKey(parse_slot_key(
+            slot_key,
+            line_number,
+            1,
+        )?));
+    }
+    if let Some(slot_id) = target.strip_prefix("slot_id:") {
+        return Ok(EditTargetRef::Slot(parse_slot_id(slot_id, line_number, 1)?));
+    }
+    if let Some(asset_id) = target.strip_prefix("asset:") {
+        return Ok(EditTargetRef::Asset(parse_asset_id(
+            asset_id,
+            line_number,
+            1,
+        )?));
+    }
+    if let Some(name) = target.strip_prefix("export:") {
+        return Ok(EditTargetRef::ExportProfile(name.to_owned()));
+    }
+    Ok(EditTargetRef::Node(parse_node_id(target, line_number, 1)?))
 }
 
 fn parse_medium(source: &str, line_number: usize, column: usize) -> Result<Medium, DslDiagnostic> {

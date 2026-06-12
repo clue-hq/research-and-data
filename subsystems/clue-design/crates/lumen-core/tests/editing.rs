@@ -812,3 +812,140 @@ fn replace_node_preserves_target_parent_index() {
         vec![NodeId::from("headline_replacement")]
     );
 }
+
+#[test]
+fn page_delete_protects_last_page_and_keeps_slot_definitions() {
+    let scene = scene_with_ad();
+
+    // The fixture has one page: deletion is lifecycle-protected.
+    let error =
+        lumen_core::build_safe_delete_page(&scene, PageId::from("page_square")).unwrap_err();
+    assert_eq!(error.kind.code(), "edit.lifecycle_protected");
+
+    // With a second page the delete cascades nodes, unbinds the slot, and
+    // keeps the slot definition so preflight can flag the gap.
+    let mut scene = scene;
+    scene
+        .apply_operation(lumen_core::Operation::AddPage {
+            page: Page {
+                id: PageId::from("page_two"),
+                name: "Two".to_owned(),
+                size: PageSize {
+                    width: 1080.0,
+                    height: 1080.0,
+                    unit: Unit::Px,
+                    preset: Some(PagePreset::Custom),
+                    orientation: Orientation::Landscape,
+                },
+                children: Vec::new(),
+                bleed: None,
+                safe_area: None,
+                background: Vec::new(),
+            },
+        })
+        .unwrap();
+
+    let batch = lumen_core::build_safe_delete_page(&scene, PageId::from("page_square")).unwrap();
+    assert_batch_round_trip(&scene, &batch);
+
+    let mut working = scene.clone();
+    batch.apply_checked(&mut working).unwrap();
+    assert!(!working.pages.contains_key(&PageId::from("page_square")));
+    assert!(!working.nodes.contains_key(&NodeId::from("headline")));
+    let slot = working
+        .slot_by_key(&SlotKey::from("campaign.headline"))
+        .expect("slot definition survives page delete");
+    assert!(slot.bound_nodes.is_empty());
+}
+
+#[test]
+fn slot_delete_unbinds_without_deleting_nodes() {
+    let scene = scene_with_ad();
+    let batch = lumen_core::build_safe_delete_slot(
+        &scene,
+        EditTargetRef::SlotKey(SlotKey::from("campaign.headline")),
+    )
+    .unwrap();
+    assert_batch_round_trip(&scene, &batch);
+
+    let mut working = scene.clone();
+    batch.apply_checked(&mut working).unwrap();
+    assert!(working
+        .slot_by_key(&SlotKey::from("campaign.headline"))
+        .is_none());
+    assert!(working.nodes.contains_key(&NodeId::from("headline")));
+}
+
+#[test]
+fn asset_lifecycle_archives_by_default_and_protects_referenced_hard_delete() {
+    let scene = scene_with_ad();
+
+    let archive = lumen_core::build_archive_asset(&scene, "asset_logo".into()).unwrap();
+    assert_batch_round_trip(&scene, &archive);
+    let mut working = scene.clone();
+    archive.apply_checked(&mut working).unwrap();
+    assert_eq!(
+        working.assets[&lumen_core::AssetId::from("asset_logo")].status,
+        AssetStatus::Archived
+    );
+
+    // asset_logo backs the logo image node: hard delete is protected.
+    let error = lumen_core::build_hard_delete_asset(&scene, "asset_logo".into()).unwrap_err();
+    assert_eq!(error.kind.code(), "edit.lifecycle_protected");
+
+    // The unused alternate asset hard-deletes cleanly and round-trips.
+    let hard = lumen_core::build_hard_delete_asset(&scene, "asset_logo_alt".into()).unwrap();
+    assert_batch_round_trip(&scene, &hard);
+}
+
+#[test]
+fn export_profile_delete_requires_a_surviving_profile() {
+    let mut scene = scene_with_ad();
+    scene.export_profiles.push(lumen_core::ExportProfile {
+        name: "print_pdf".to_owned(),
+        format: lumen_core::ExportFormat::Pdf,
+        pdf_intent: Some(lumen_core::PdfIntent::Print),
+        raster: None,
+        include_bleed: true,
+        embed_fonts: true,
+    });
+
+    // Only profile: protected.
+    let error =
+        lumen_core::build_delete_export_profile(&scene, "print_pdf".to_owned(), None).unwrap_err();
+    assert_eq!(error.kind.code(), "edit.lifecycle_protected");
+
+    scene.export_profiles.push(lumen_core::ExportProfile {
+        name: "web_png".to_owned(),
+        format: lumen_core::ExportFormat::Png,
+        pdf_intent: None,
+        raster: None,
+        include_bleed: false,
+        embed_fonts: false,
+    });
+
+    // Replacement must exist and differ.
+    assert!(lumen_core::build_delete_export_profile(
+        &scene,
+        "print_pdf".to_owned(),
+        Some("print_pdf".to_owned()),
+    )
+    .is_err());
+    assert!(lumen_core::build_delete_export_profile(
+        &scene,
+        "print_pdf".to_owned(),
+        Some("missing".to_owned()),
+    )
+    .is_err());
+
+    let batch = lumen_core::build_delete_export_profile(
+        &scene,
+        "web_png".to_owned(),
+        Some("print_pdf".to_owned()),
+    )
+    .unwrap();
+    let mut working = scene.clone();
+    batch.apply_checked(&mut working).unwrap();
+    assert!(working.export_profile("web_png").is_none());
+    assert!(working.export_profile("print_pdf").is_some());
+}

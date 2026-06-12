@@ -59,9 +59,11 @@ pub use dsl::{
     DslStroke, SourceSpan,
 };
 pub use editing::{
-    batch_scope_violations, build_asset_modify, build_clone_subtree, build_modify_operations,
-    build_move_after, build_move_before, build_move_to_parent, build_node_modify,
-    build_page_modify, build_replace_node, build_safe_delete, build_slot_modify,
+    batch_scope_violations, build_archive_asset, build_asset_modify, build_clone_subtree,
+    build_delete_export_profile, build_document_modify, build_export_profile_modify,
+    build_hard_delete_asset, build_modify_operations, build_move_after, build_move_before,
+    build_move_to_parent, build_node_modify, build_page_modify, build_replace_node,
+    build_safe_delete, build_safe_delete_page, build_safe_delete_slot, build_slot_modify,
     resolve_edit_target, AssetEditPatch, CloneLineage, CloneSlotPolicy, CloneSubtreeRequest,
     ComputedClonePolicy, EditBatch, EditError, EditErrorKind, EditPatch, EditScope, EditScopeMode,
     EditTargetRef, ExportProfileEditPatch, NodeEditPatch, PageEditPatch, RelativePlacement,

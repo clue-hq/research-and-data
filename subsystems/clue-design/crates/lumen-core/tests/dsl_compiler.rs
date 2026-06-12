@@ -1239,3 +1239,70 @@ fn checkpoint_comment_label_is_captured_in_compile_output() {
         Some("hero spacing fix")
     );
 }
+
+#[test]
+fn delete_directive_supports_lifecycle_target_forms() {
+    // Slot delete by key: unbinds without deleting the node.
+    let mut scene = Scene::new(lumen_core::DocumentId::from("doc_del"), "Doc");
+    let output = compile_dsl_into_scene(
+        "page page_a4\n  headline text \"Title\" p(0,0) s(400,hug) slot(campaign.headline)\n\ndelete(slot:campaign.headline)",
+        &mut scene,
+    );
+    assert_no_dsl_errors(&output.compile_output.diagnostics);
+    assert!(scene
+        .slot_by_key(&lumen_core::SlotKey::from("campaign.headline"))
+        .is_none());
+    assert!(scene.nodes.contains_key(&NodeId::from("headline")));
+
+    // Asset delete archives by default.
+    let mut scene = Scene::new(lumen_core::DocumentId::from("doc_del2"), "Doc");
+    scene
+        .apply_operation(lumen_core::Operation::UpsertAsset {
+            asset: lumen_core::AssetRecord {
+                id: "asset_x".into(),
+                label: "X".to_owned(),
+                kind: lumen_core::AssetKind::RasterImage,
+                status: lumen_core::AssetStatus::Ready,
+                source: lumen_core::AssetSource::Manual {
+                    label: "fixture".to_owned(),
+                },
+                media: lumen_core::AssetMediaMetadata::default(),
+                raster: None,
+                vector: None,
+                font: None,
+                logo: None,
+                license: None,
+                provenance: lumen_core::AssetProvenance::default(),
+                tags: Vec::new(),
+            },
+        })
+        .unwrap();
+    let output = compile_dsl_into_scene("page page_a4\n\ndelete(asset:asset_x)", &mut scene);
+    assert_no_dsl_errors(&output.compile_output.diagnostics);
+    assert_eq!(
+        scene.assets[&lumen_core::AssetId::from("asset_x")].status,
+        lumen_core::AssetStatus::Archived
+    );
+
+    // Last-page delete halts with the lifecycle diagnostic.
+    let mut scene = Scene::new(lumen_core::DocumentId::from("doc_del3"), "Doc");
+    let output = compile_dsl_into_scene("page page_a4\n\ndelete(page:page_a4)", &mut scene);
+    assert!(output.compile_output.halted_at.is_some());
+}
+
+#[test]
+fn delete_if_exists_skips_missing_target_with_warning() {
+    let mut scene = Scene::new(lumen_core::DocumentId::from("doc_del4"), "Doc");
+    let output = compile_dsl_into_scene("page page_a4\n\ndelete(ghost, if_exists)", &mut scene);
+    assert!(output.compile_output.halted_at.is_none());
+    assert!(output
+        .compile_output
+        .diagnostics
+        .iter()
+        .any(|diagnostic| diagnostic.diagnostic.code == "LUMD0915"));
+
+    // Strict default still halts on missing targets.
+    let mut scene = Scene::new(lumen_core::DocumentId::from("doc_del5"), "Doc");
+    let output = compile_dsl_into_scene("page page_a4\n\ndelete(ghost)", &mut scene);
+    assert!(output.compile_output.halted_at.is_some());
+}
