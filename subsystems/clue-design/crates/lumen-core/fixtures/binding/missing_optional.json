@@ -1,0 +1,47 @@
+{
+  "schema_version": 1,
+  "binding_set_id": "bind_northcare_ms_okafor",
+  "template_revision_id": "tmpl_mailer_v1",
+  "audience": {
+    "account_id": "acct_northcare",
+    "contact_id": "ct_okafor"
+  },
+  "values": {
+    "contact.full_name": {
+      "kind": "text",
+      "value": "Ms. Adaeze Okafor"
+    },
+    "account.logo": {
+      "kind": "asset",
+      "asset_id": "asset_northcare_logo"
+    },
+    "campaign.cta": {
+      "kind": "text",
+      "value": "See the platform live"
+    },
+    "research.key_insights": {
+      "kind": "list",
+      "items": [
+        {
+          "kind": "text",
+          "value": "Cut referral processing time from days to minutes"
+        }
+      ]
+    }
+  },
+  "links": {
+    "landing_page": {
+      "url": "https://go.example.com/northcare/ms-okafor"
+    }
+  },
+  "generated": {
+    "qr_landing": {
+      "provider": "qr",
+      "input": {
+        "url_from": "links.landing_page.url",
+        "ec_level": "h"
+      },
+      "bind_to_slot": "campaign.qr"
+    }
+  }
+}
