@@ -1,11 +1,13 @@
+use lumen_core::editing::solid_fill;
 use lumen_core::{
     build_clone_subtree, build_modify_operations, build_move_after, build_move_before,
     build_replace_node, build_safe_delete, resolve_edit_target, AssetKind, AssetMediaMetadata,
     AssetPlacement, AssetProvenance, AssetRecord, AssetSource, AssetStatus, CloneSlotPolicy,
-    CloneSubtreeRequest, ComputedClonePolicy, Dimension, DocumentId, EditPatch, EditTargetRef,
-    FieldPatch, ImageNode, Node, NodeEditPatch, NodeId, NodeKind, OptionalFieldPatch, Orientation,
-    Page, PageEditPatch, PageId, PagePreset, PageSize, ParentRef, RelativePlacement,
-    ReplaceNodeRequest, ReplaceSlotPolicy, Scene, SizeSpec, Slot, SlotId, SlotKey, TextAlign,
+    CloneSubtreeRequest, Color, ComputedClonePolicy, Dimension, DocumentId, EditPatch,
+    EditTargetRef, Effect, EffectId, EffectKind, FieldPatch, ImageNode, Node, NodeEditPatch,
+    NodeId, NodeKind, OptionalFieldPatch, Orientation, Page, PageEditPatch, PageId, PagePreset,
+    PageSize, Paint, PaintId, ParentRef, RelativePlacement, ReplaceNodeRequest, ReplaceSlotPolicy,
+    Scene, SizeSpec, Slot, SlotId, SlotKey, StackEntryEdit, Stroke, StrokeCap, TextAlign,
     TextEditPatch, TextNode, Unit,
 };
 
@@ -948,4 +950,321 @@ fn export_profile_delete_requires_a_surviving_profile() {
     batch.apply_checked(&mut working).unwrap();
     assert!(working.export_profile("web_png").is_none());
     assert!(working.export_profile("print_pdf").is_some());
+}
+
+// --- Effects Contract V0, slice X2: per-entry stack edits ---
+
+fn shadow(id: &str, blur: f64) -> Effect {
+    Effect {
+        id: EffectId::from(id),
+        kind: EffectKind::DropShadow {
+            color: Color::Hex {
+                value: "#000000".to_owned(),
+            },
+            opacity: 0.18,
+            x: 0.0,
+            y: 8.0,
+            blur,
+            spread: 0.0,
+            color_token: None,
+        },
+    }
+}
+
+fn scene_with_styled_hero() -> Scene {
+    let mut scene = scene_with_ad();
+    let hero = scene.nodes.get_mut(&NodeId::from("hero")).unwrap();
+    hero.fills = vec![
+        solid_fill("fill_a", "#ffffff"),
+        solid_fill("fill_b", "#f5f1e9"),
+    ];
+    hero.strokes = vec![Stroke::solid(
+        PaintId::from("stroke_a"),
+        Paint::Solid {
+            color: Color::Hex {
+                value: "#111827".to_owned(),
+            },
+        },
+        1.0,
+    )];
+    hero.effects = vec![shadow("shadow_a", 8.0), shadow("shadow_b", 24.0)];
+    scene
+}
+
+#[test]
+fn effect_entry_set_preserves_unrelated_entries_and_round_trips() {
+    let scene = scene_with_styled_hero();
+    let batch = build_modify_operations(
+        &scene,
+        EditTargetRef::Node(NodeId::from("hero")),
+        EditPatch::Node(NodeEditPatch {
+            effect_edits: vec![StackEntryEdit::Set {
+                id: EffectId::from("shadow_b"),
+                value: shadow("shadow_b", 40.0),
+            }],
+            ..NodeEditPatch::default()
+        }),
+    )
+    .unwrap();
+
+    assert_batch_round_trip(&scene, &batch);
+
+    let mut working = scene.clone();
+    batch.apply_checked(&mut working).unwrap();
+    let hero = &working.nodes[&NodeId::from("hero")];
+    assert_eq!(
+        hero.effects[0],
+        shadow("shadow_a", 8.0),
+        "unrelated effect entries must be preserved"
+    );
+    assert_eq!(hero.effects[1], shadow("shadow_b", 40.0));
+    assert_eq!(
+        hero.fills,
+        vec![
+            solid_fill("fill_a", "#ffffff"),
+            solid_fill("fill_b", "#f5f1e9")
+        ],
+        "effect edits must not touch fills"
+    );
+}
+
+#[test]
+fn stack_add_remove_reorder_compose_in_order() {
+    let scene = scene_with_styled_hero();
+    let batch = build_modify_operations(
+        &scene,
+        EditTargetRef::Node(NodeId::from("hero")),
+        EditPatch::Node(NodeEditPatch {
+            fill_edits: vec![
+                StackEntryEdit::Add {
+                    entry: solid_fill("fill_c", "#256c70"),
+                    index: Some(0),
+                },
+                StackEntryEdit::Remove {
+                    id: PaintId::from("fill_b"),
+                },
+                StackEntryEdit::Reorder {
+                    id: PaintId::from("fill_a"),
+                    index: 0,
+                },
+            ],
+            ..NodeEditPatch::default()
+        }),
+    )
+    .unwrap();
+
+    assert_batch_round_trip(&scene, &batch);
+
+    let mut working = scene.clone();
+    batch.apply_checked(&mut working).unwrap();
+    assert_eq!(
+        working.nodes[&NodeId::from("hero")].fills,
+        vec![
+            solid_fill("fill_a", "#ffffff"),
+            solid_fill("fill_c", "#256c70")
+        ]
+    );
+}
+
+#[test]
+fn stroke_entry_set_updates_advanced_fields_and_round_trips() {
+    let scene = scene_with_styled_hero();
+    let next_stroke = Stroke {
+        dash: Some(vec![6.0, 4.0]),
+        cap: StrokeCap::Round,
+        ..Stroke::solid(
+            PaintId::from("stroke_a"),
+            Paint::Solid {
+                color: Color::Hex {
+                    value: "#111827".to_owned(),
+                },
+            },
+            2.0,
+        )
+    };
+    let batch = build_modify_operations(
+        &scene,
+        EditTargetRef::Node(NodeId::from("hero")),
+        EditPatch::Node(NodeEditPatch {
+            stroke_edits: vec![StackEntryEdit::Set {
+                id: PaintId::from("stroke_a"),
+                value: next_stroke.clone(),
+            }],
+            ..NodeEditPatch::default()
+        }),
+    )
+    .unwrap();
+
+    assert_batch_round_trip(&scene, &batch);
+
+    let mut working = scene.clone();
+    batch.apply_checked(&mut working).unwrap();
+    assert_eq!(
+        working.nodes[&NodeId::from("hero")].strokes,
+        vec![next_stroke]
+    );
+}
+
+#[test]
+fn stack_entry_edits_fail_closed_on_bad_addressing() {
+    let scene = scene_with_styled_hero();
+
+    let missing = build_modify_operations(
+        &scene,
+        EditTargetRef::Node(NodeId::from("hero")),
+        EditPatch::Node(NodeEditPatch {
+            effect_edits: vec![StackEntryEdit::Remove {
+                id: EffectId::from("missing"),
+            }],
+            ..NodeEditPatch::default()
+        }),
+    )
+    .unwrap_err();
+    assert_eq!(missing.kind.code(), "edit.target_not_found");
+
+    let duplicate = build_modify_operations(
+        &scene,
+        EditTargetRef::Node(NodeId::from("hero")),
+        EditPatch::Node(NodeEditPatch {
+            effect_edits: vec![StackEntryEdit::Add {
+                entry: shadow("shadow_a", 4.0),
+                index: None,
+            }],
+            ..NodeEditPatch::default()
+        }),
+    )
+    .unwrap_err();
+    assert_eq!(duplicate.kind.code(), "edit.id_collision");
+
+    let out_of_bounds = build_modify_operations(
+        &scene,
+        EditTargetRef::Node(NodeId::from("hero")),
+        EditPatch::Node(NodeEditPatch {
+            effect_edits: vec![StackEntryEdit::Reorder {
+                id: EffectId::from("shadow_a"),
+                index: 9,
+            }],
+            ..NodeEditPatch::default()
+        }),
+    )
+    .unwrap_err();
+    assert_eq!(out_of_bounds.kind.code(), "edit.anchor_not_found");
+
+    let rename_collision = build_modify_operations(
+        &scene,
+        EditTargetRef::Node(NodeId::from("hero")),
+        EditPatch::Node(NodeEditPatch {
+            effect_edits: vec![StackEntryEdit::Set {
+                id: EffectId::from("shadow_a"),
+                value: shadow("shadow_b", 4.0),
+            }],
+            ..NodeEditPatch::default()
+        }),
+    )
+    .unwrap_err();
+    assert_eq!(rename_collision.kind.code(), "edit.id_collision");
+}
+
+#[test]
+fn entry_edits_apply_on_top_of_whole_stack_patch() {
+    let scene = scene_with_styled_hero();
+    let batch = build_modify_operations(
+        &scene,
+        EditTargetRef::Node(NodeId::from("hero")),
+        EditPatch::Node(NodeEditPatch {
+            effects: FieldPatch::Set(vec![shadow("shadow_new", 12.0)]),
+            effect_edits: vec![StackEntryEdit::Add {
+                entry: shadow("shadow_extra", 2.0),
+                index: None,
+            }],
+            ..NodeEditPatch::default()
+        }),
+    )
+    .unwrap();
+
+    assert_batch_round_trip(&scene, &batch);
+
+    let mut working = scene.clone();
+    batch.apply_checked(&mut working).unwrap();
+    assert_eq!(
+        working.nodes[&NodeId::from("hero")].effects,
+        vec![shadow("shadow_new", 12.0), shadow("shadow_extra", 2.0)]
+    );
+}
+
+#[test]
+fn effect_entry_edits_are_scope_checked_as_node_edits() {
+    let scene = scene_with_styled_hero();
+    let batch = build_modify_operations(
+        &scene,
+        EditTargetRef::Node(NodeId::from("hero")),
+        EditPatch::Node(NodeEditPatch {
+            effect_edits: vec![StackEntryEdit::Remove {
+                id: EffectId::from("shadow_a"),
+            }],
+            ..NodeEditPatch::default()
+        }),
+    )
+    .unwrap();
+
+    assert!(matches!(
+        batch.operations.as_slice(),
+        [lumen_core::Operation::UpdateNode { .. }]
+    ));
+
+    let in_scope = lumen_core::batch_scope_violations(
+        &scene,
+        &batch.operations,
+        &[EditTargetRef::Node(NodeId::from("hero"))],
+    )
+    .unwrap();
+    assert!(in_scope.is_empty());
+
+    let out_of_scope = lumen_core::batch_scope_violations(
+        &scene,
+        &batch.operations,
+        &[EditTargetRef::Node(NodeId::from("headline"))],
+    )
+    .unwrap();
+    assert_eq!(out_of_scope.len(), 1);
+    assert_eq!(
+        out_of_scope[0].target,
+        EditTargetRef::Node(NodeId::from("hero"))
+    );
+}
+
+#[test]
+fn stack_entry_edit_wire_format_parses_snake_case() {
+    let patch: NodeEditPatch = serde_json::from_value(serde_json::json!({
+        "effect_edits": [
+            { "kind": "add", "entry": {
+                "id": "shadow_soft",
+                "kind": {
+                    "kind": "drop_shadow",
+                    "color": { "kind": "hex", "value": "#000000" },
+                    "opacity": 0.18, "x": 0.0, "y": 8.0, "blur": 24.0, "spread": 0.0
+                }
+            }},
+            { "kind": "remove", "id": "shadow_old" },
+            { "kind": "reorder", "id": "shadow_soft", "index": 0 },
+            { "kind": "set", "id": "shadow_soft", "value": {
+                "id": "shadow_soft",
+                "kind": {
+                    "kind": "drop_shadow",
+                    "color": { "kind": "hex", "value": "#000000" },
+                    "opacity": 0.3, "x": 0.0, "y": 8.0, "blur": 24.0, "spread": 0.0
+                }
+            }}
+        ]
+    }))
+    .expect("wire format parses");
+    assert_eq!(patch.effect_edits.len(), 4);
+
+    // Pre-effects sparse node patches must still parse.
+    let legacy: NodeEditPatch = serde_json::from_value(serde_json::json!({
+        "text": { "content": { "kind": "set", "value": "Hi" } }
+    }))
+    .expect("legacy patch parses");
+    assert!(legacy.effect_edits.is_empty());
+    assert!(legacy.effects.is_unchanged());
 }

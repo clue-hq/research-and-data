@@ -666,16 +666,15 @@ fn header_frame() -> Node {
     node.transform = transform(16.0, 18.0);
     node.size = SizeSpec::fixed(178.0, 44.0);
     node.fills = vec![solid_fill("paint_header_surface", "#ffffff")];
-    node.strokes = vec![Stroke {
-        id: PaintId::from("paint_header_stroke"),
-        paint: Paint::Solid {
+    node.strokes = vec![Stroke::solid(
+        PaintId::from("paint_header_stroke"),
+        Paint::Solid {
             color: Color::Hex {
                 value: "#e6ded0".to_owned(),
             },
         },
-        width: 0.4,
-        width_token: None,
-    }];
+        0.4,
+    )];
     node.corner = corner(6.0);
     node
 }

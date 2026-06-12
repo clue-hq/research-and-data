@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="400" height="300" viewBox="0 0 400 300" data-lumen-document-id="doc_effects_golden" data-lumen-page-id="page_card">
+<defs>
+<filter id="lumen-effect-card" x="-50%" y="-50%" width="200%" height="200%">
+<feDropShadow dx="0" dy="8" stdDeviation="12" flood-color="#000000" flood-opacity="0.18" />
+</filter>
+<linearGradient id="lumen-gradient-fill_gradient" gradientTransform="rotate(90)">
+<stop offset="0%" stop-color="#ffffff" />
+<stop offset="100%" stop-color="#256c70" />
+</linearGradient>
+</defs>
+<g id="lumen-page-page_card" data-lumen-page-id="page_card">
+<rect x="0" y="0" width="400" height="300" fill="#faf7f0" data-lumen-fill-id="paint_page_bg" />
+<rect id="lumen-node-card" data-lumen-node-id="card" x="0" y="0" width="200" height="120" rx="8" ry="8" transform="translate(24 24)" filter="url(#lumen-effect-card)" fill="url(#lumen-gradient-fill_gradient)" data-lumen-fill-id="fill_gradient" />
+</g>
+</svg>

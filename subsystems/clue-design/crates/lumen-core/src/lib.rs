@@ -56,7 +56,7 @@ pub use dsl::{
     DslDimension, DslDirective, DslDocument, DslElement, DslElementKind, DslFill, DslFont, DslHalt,
     DslHistoryAdapter, DslLayoutAnchor, DslLayoutAxis, DslLine, DslLineKind, DslModification,
     DslPage, DslPagePreset, DslParentFrameSnapshot, DslParentPlacement, DslParseOutput,
-    DslProperty, DslScalar, DslSceneCompileOutput, DslStroke, SourceSpan,
+    DslProperty, DslScalar, DslSceneCompileOutput, DslShadow, DslStroke, SourceSpan,
 };
 pub use editing::{
     batch_scope_violations, build_archive_asset, build_asset_modify, build_clone_subtree,
@@ -68,15 +68,15 @@ pub use editing::{
     CloneSubtreeRequest, ComputedClonePolicy, EditBatch, EditError, EditErrorKind, EditPatch,
     EditScope, EditScopeMode, EditTargetRef, ExportProfileEditPatch, NodeEditPatch, PageEditPatch,
     RelativePlacement, ReplaceNodeRequest, ReplaceSlotPolicy, ResolvedEditTarget, ScopeViolation,
-    SlotEditPatch, TextEditPatch,
+    SlotEditPatch, StackEntryEdit, TextEditPatch,
 };
 pub use export_contract::{
     ExportAdapter, ExportArtifact, ExportError, ExportFormat, ExportProfile, ExportPurpose,
     ExportRequest, ExportResult, PdfIntent, RasterScale,
 };
 pub use ids::{
-    AssetId, BrandKitId, DocumentId, IdError, NodeId, OperationId, PageId, PaintId, SlotId,
-    SlotKey, TemplateRevisionId,
+    AssetId, BrandKitId, DocumentId, EffectId, IdError, NodeId, OperationId, PageId, PaintId,
+    SlotId, SlotKey, TemplateRevisionId,
 };
 pub use layout::{layout_operations, layout_scene, validate_layout, LayoutOptions, LayoutResult};
 pub use operations::{
@@ -85,14 +85,17 @@ pub use operations::{
 };
 pub use preflight::{preflight_scene, PreflightOptions, PreflightResult};
 pub use render_contract::{
-    RenderIntent, RenderManifest, RenderTarget, RendererAdapter, RendererError,
+    effect_features_for_node, effect_support_diagnostics, EffectFeature, EffectSupportLevel,
+    RenderIntent, RenderManifest, RenderTarget, RendererAdapter, RendererEffectSupport,
+    RendererError,
 };
 pub use render_geometry::{node_render_size, render_box_for_node, RenderBox};
 pub use scene::{
     AutoLayoutDirection, AutoLayoutNode, AutoLayoutProps, BrandKitRef, Color, ComputedGeometry,
-    CornerRadii, Dimension, DocumentMeta, DocumentStatus, Fill, ImageNode, LayoutAnchor, LineNode,
-    Medium, Node, NodeKind, Orientation, Page, PagePreset, PageSize, Paint, ParentRef, Rect, Scene,
-    SizeSpec, Stroke, TextAlign, TextDirection, TextNode, TextWrap, Transform, Unit, VectorNode,
+    CornerRadii, Dimension, DocumentMeta, DocumentStatus, Effect, EffectKind, Fill, ImageNode,
+    LayoutAnchor, LineNode, Medium, Node, NodeKind, Orientation, Page, PagePreset, PageSize, Paint,
+    ParentRef, Rect, Scene, SizeSpec, Stroke, StrokeAlign, StrokeCap, StrokeJoin, TextAlign,
+    TextDirection, TextNode, TextWrap, Transform, Unit, VectorNode,
 };
 pub use slots::{
     BindingHint, Cardinality, ConditionalRule, ContentType, Editability, EmptyBehavior, FocalPoint,

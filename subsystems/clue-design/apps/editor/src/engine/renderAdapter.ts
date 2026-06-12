@@ -2,6 +2,7 @@ import type {
   AssetKind,
   AssetStatus,
   Color,
+  Effect,
   Fill,
   Node,
   Page,
@@ -9,8 +10,56 @@ import type {
   Scene,
   SizeSpec,
   Stroke,
+  StrokeCap,
+  StrokeJoin,
   Unit
 } from "./contracts";
+
+/**
+ * Konva-ready paint description (Effects Contract V0). Gradients carry the
+ * full stop list — no first-stop flattening — using the same geometry the
+ * SVG exporter emits: linear gradients rotate the unit vector about the
+ * box origin, radial gradients fill from the box center.
+ */
+export type PaintDescriptor =
+  | { kind: "solid"; color: string }
+  | {
+      kind: "linear_gradient";
+      start: { x: number; y: number };
+      end: { x: number; y: number };
+      colorStops: (number | string)[];
+    }
+  | {
+      kind: "radial_gradient";
+      center: { x: number; y: number };
+      startRadius: number;
+      endRadius: number;
+      colorStops: (number | string)[];
+    };
+
+export interface FillLayerDescriptor {
+  id: string;
+  paint: PaintDescriptor;
+}
+
+export interface StrokeLayerDescriptor {
+  id: string;
+  paint: PaintDescriptor;
+  width: number;
+  dash: number[] | null;
+  lineCap: StrokeCap;
+  lineJoin: StrokeJoin;
+}
+
+export interface ShadowDescriptor {
+  color: string;
+  opacity: number;
+  offsetX: number;
+  offsetY: number;
+  blur: number;
+  /** Konva has no shadow spread; non-zero spreads are approximated. */
+  spreadApproximated: boolean;
+}
 
 export interface RenderPageDescriptor {
   id: string;
@@ -33,6 +82,13 @@ export interface RenderNodeDescriptor {
   fill: string;
   stroke: string | null;
   strokeWidth: number;
+  /** Full paint stacks in painting order (fills bottom-to-top, then strokes). */
+  fills: FillLayerDescriptor[];
+  strokes: StrokeLayerDescriptor[];
+  /** First effect entry (topmost shadow); Konva renders one shadow per shape. */
+  shadow: ShadowDescriptor | null;
+  /** Effects beyond the first are not previewed by Konva (approximation). */
+  extraShadowCount: number;
   cornerRadius: number | [number, number, number, number];
   slotKeys: string[];
   text?: {
@@ -93,6 +149,7 @@ export function nodeDescriptor(
   const size = nodeSizeForRender(node, page);
   const position = nodePositionForRender(node, page, parentComputedOrigin);
   const stroke = node.strokes[0] ? strokeDescriptor(node.strokes[0]) : null;
+  const shadows = shadowDescriptors(node.effects ?? [], scale);
   const descriptor: RenderNodeDescriptor = {
     id: node.id,
     kind: node.kind.kind,
@@ -105,6 +162,12 @@ export function nodeDescriptor(
     fill: paintFromFill(node.fills[0]) ?? defaultFillForNode(node),
     stroke: stroke?.color ?? null,
     strokeWidth: (stroke?.width ?? 0) * scale,
+    fills: node.fills.map((fill) => fillLayerDescriptor(fill, size.width, size.height)),
+    strokes: node.strokes.map((nodeStroke) =>
+      strokeLayerDescriptor(nodeStroke, size.width, size.height, scale)
+    ),
+    shadow: shadows[0] ?? null,
+    extraShadowCount: Math.max(0, shadows.length - 1),
     cornerRadius: [
       node.corner.top_left * scale,
       node.corner.top_right * scale,
@@ -239,6 +302,142 @@ function strokeDescriptor(stroke: Stroke): { color: string; width: number } {
     color: paintToCss(stroke.paint),
     width: stroke.width
   };
+}
+
+export function fillLayerDescriptor(fill: Fill, width: number, height: number): FillLayerDescriptor {
+  return {
+    id: fill.id,
+    paint: paintDescriptor(fill.paint, width, height)
+  };
+}
+
+export function strokeLayerDescriptor(
+  stroke: Stroke,
+  width: number,
+  height: number,
+  scale: number
+): StrokeLayerDescriptor {
+  return {
+    id: stroke.id,
+    paint: paintDescriptor(stroke.paint, width, height),
+    width: stroke.width * scale,
+    dash: stroke.dash?.length ? stroke.dash.map((value) => value * scale) : null,
+    lineCap: stroke.cap ?? "butt",
+    lineJoin: stroke.join ?? "miter"
+  };
+}
+
+/**
+ * Real gradient preview: the same stop list the SVG exporter emits, mapped
+ * to Konva gradient geometry. Linear gradients rotate the unit vector about
+ * the box origin (mirroring SVG's gradientTransform=rotate(angle) on the
+ * default 0,0 -> 1,0 objectBoundingBox line); radial gradients fill from
+ * the box center out to half the larger dimension.
+ */
+export function paintDescriptor(paint: Paint, width: number, height: number): PaintDescriptor {
+  switch (paint.kind) {
+    case "solid":
+      return { kind: "solid", color: colorToCss(paint.color) };
+    case "linear_gradient": {
+      const radians = (paint.angle * Math.PI) / 180;
+      return {
+        kind: "linear_gradient",
+        start: { x: 0, y: 0 },
+        end: {
+          x: roundForScene(Math.cos(radians) * width),
+          y: roundForScene(Math.sin(radians) * height)
+        },
+        colorStops: paint.stops.flatMap((stop) => [stop.position, colorToCss(stop.color)])
+      };
+    }
+    case "radial_gradient":
+      return {
+        kind: "radial_gradient",
+        center: { x: width / 2, y: height / 2 },
+        startRadius: 0,
+        endRadius: Math.max(width, height) / 2,
+        colorStops: paint.stops.flatMap((stop) => [stop.position, colorToCss(stop.color)])
+      };
+    case "token":
+      return { kind: "solid", color: tokenFallback(paint.token) };
+  }
+}
+
+/** Konva fill props for a paint layer (solid, linear, or radial gradient). */
+export function konvaFillProps(paint: PaintDescriptor): Record<string, unknown> {
+  switch (paint.kind) {
+    case "solid":
+      return { fill: paint.color };
+    case "linear_gradient":
+      return {
+        fillLinearGradientStartPoint: paint.start,
+        fillLinearGradientEndPoint: paint.end,
+        fillLinearGradientColorStops: paint.colorStops
+      };
+    case "radial_gradient":
+      return {
+        fillRadialGradientStartPoint: paint.center,
+        fillRadialGradientEndPoint: paint.center,
+        fillRadialGradientStartRadius: paint.startRadius,
+        fillRadialGradientEndRadius: paint.endRadius,
+        fillRadialGradientColorStops: paint.colorStops
+      };
+  }
+}
+
+/**
+ * Konva stroke props for a stroke layer. Konva has no radial stroke
+ * gradient; it falls back to the first stop color.
+ */
+export function konvaStrokeProps(layer: StrokeLayerDescriptor): Record<string, unknown> {
+  const base: Record<string, unknown> = {
+    strokeWidth: layer.width,
+    lineCap: layer.lineCap,
+    lineJoin: layer.lineJoin,
+    ...(layer.dash ? { dash: layer.dash } : {})
+  };
+  switch (layer.paint.kind) {
+    case "solid":
+      return { ...base, stroke: layer.paint.color };
+    case "linear_gradient":
+      return {
+        ...base,
+        strokeLinearGradientStartPoint: layer.paint.start,
+        strokeLinearGradientEndPoint: layer.paint.end,
+        strokeLinearGradientColorStops: layer.paint.colorStops
+      };
+    case "radial_gradient":
+      return {
+        ...base,
+        stroke: typeof layer.paint.colorStops[1] === "string" ? layer.paint.colorStops[1] : "#000000"
+      };
+  }
+}
+
+/** Konva shadow props for the node's topmost shadow. */
+export function konvaShadowProps(shadow: ShadowDescriptor | null): Record<string, unknown> {
+  if (!shadow) {
+    return {};
+  }
+  return {
+    shadowEnabled: true,
+    shadowColor: shadow.color,
+    shadowOpacity: shadow.opacity,
+    shadowOffsetX: shadow.offsetX,
+    shadowOffsetY: shadow.offsetY,
+    shadowBlur: shadow.blur
+  };
+}
+
+function shadowDescriptors(effects: Effect[], scale: number): ShadowDescriptor[] {
+  return effects.map((effect) => ({
+    color: colorToCss(effect.kind.color),
+    opacity: effect.kind.opacity,
+    offsetX: effect.kind.x * scale,
+    offsetY: effect.kind.y * scale,
+    blur: effect.kind.blur * scale,
+    spreadApproximated: effect.kind.spread !== 0
+  }));
 }
 
 function defaultFillForNode(node: Node): string {

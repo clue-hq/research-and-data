@@ -1,4 +1,4 @@
-import type { Node, NodePatch, Operation, Scene, TextNode } from "./contracts";
+import type { Effect, Fill, Node, NodePatch, Operation, Scene, Stroke, TextNode } from "./contracts";
 import { nodePatch, pagePatch, set, unchanged, clear } from "./operations";
 
 /**
@@ -37,6 +37,23 @@ export interface NodeModifyInput {
   text?: TextEditPatchInput;
 }
 
+/**
+ * Per-entry stack edit (Effects Contract V0): the exact wire shape of the
+ * Rust `StackEntryEdit<T, I>` enum. Entries are addressed by stable
+ * PaintId/EffectId so unrelated entries are never touched.
+ */
+export type StackEntryEdit<T> =
+  | { kind: "set"; id: string; value: T }
+  | { kind: "add"; entry: T; index?: number }
+  | { kind: "remove"; id: string }
+  | { kind: "reorder"; id: string; index: number };
+
+export interface NodeStackEditsInput {
+  fillEdits?: StackEntryEdit<Fill>[];
+  strokeEdits?: StackEntryEdit<Stroke>[];
+  effectEdits?: StackEntryEdit<Effect>[];
+}
+
 export type StructuredEdit = Record<string, unknown> & { kind: string };
 
 export function modifyNodeEdit(nodeId: string, input: NodeModifyInput): StructuredEdit {
@@ -54,6 +71,24 @@ export function modifyNodeEdit(nodeId: string, input: NodeModifyInput): Structur
     kind: "modify",
     target: { kind: "node", id: nodeId },
     patch: { kind: "node", value: { text } }
+  };
+}
+
+export function modifyNodeStacksEdit(nodeId: string, input: NodeStackEditsInput): StructuredEdit {
+  const value: Record<string, unknown> = {};
+  if (input.fillEdits?.length) {
+    value.fill_edits = input.fillEdits;
+  }
+  if (input.strokeEdits?.length) {
+    value.stroke_edits = input.strokeEdits;
+  }
+  if (input.effectEdits?.length) {
+    value.effect_edits = input.effectEdits;
+  }
+  return {
+    kind: "modify",
+    target: { kind: "node", id: nodeId },
+    patch: { kind: "node", value }
   };
 }
 
@@ -126,30 +161,132 @@ export function optimisticOperations(scene: Scene, edit: StructuredEdit): Operat
     if (!node) {
       return [];
     }
-    const textInput = (patch.value as { text?: Record<string, { kind: string; value?: unknown }> })
-      .text;
-    if (!textInput || node.kind.kind !== "text") {
+    const value = patch.value as {
+      text?: Record<string, { kind: string; value?: unknown }>;
+      fills?: { kind: string; value?: Fill[] };
+      strokes?: { kind: string; value?: Stroke[] };
+      effects?: { kind: string; value?: Effect[] };
+      fill_edits?: StackEntryEdit<Fill>[];
+      stroke_edits?: StackEntryEdit<Stroke>[];
+      effect_edits?: StackEntryEdit<Effect>[];
+    };
+
+    const patchInput: Partial<NodePatch> = {};
+
+    const fills = resolveStackPatch(node.fills, value.fills, value.fill_edits);
+    const strokes = resolveStackPatch(node.strokes, value.strokes, value.stroke_edits);
+    const effects = resolveStackPatch(node.effects ?? [], value.effects, value.effect_edits);
+    if (fills === "invalid" || strokes === "invalid" || effects === "invalid") {
+      // Bad entry addressing fails closed: no optimistic preview, the
+      // server rejects the edit with the canonical error.
       return [];
     }
-    const merged = { ...(node.kind as { kind: "text" } & TextNode) };
-    for (const [field, fieldPatch] of Object.entries(textInput)) {
-      if (fieldPatch.kind === "set") {
-        (merged as Record<string, unknown>)[field] = fieldPatch.value;
-      }
+    if (fills) {
+      patchInput.fills = set(fills);
     }
-    const operationPatch: NodePatch = nodePatch({
-      kind: set(merged),
-      computed: clear()
-    });
+    if (strokes) {
+      patchInput.strokes = set(strokes);
+    }
+    if (effects) {
+      patchInput.effects = set(effects);
+    }
+
+    if (value.text && node.kind.kind === "text") {
+      const merged = { ...(node.kind as { kind: "text" } & TextNode) };
+      for (const [field, fieldPatch] of Object.entries(value.text)) {
+        if (fieldPatch.kind === "set") {
+          (merged as Record<string, unknown>)[field] = fieldPatch.value;
+        }
+      }
+      patchInput.kind = set(merged);
+    } else if (value.text) {
+      return [];
+    }
+
+    if (Object.keys(patchInput).length === 0) {
+      return [];
+    }
+    patchInput.computed = clear();
     return [
       {
         kind: "update_node",
         node_id: target.id,
-        patch: operationPatch
+        patch: nodePatch(patchInput)
       } as Operation
     ];
   }
   return [];
+}
+
+/**
+ * Mirror of the Rust `resolve_stack_patch`: per-entry edits apply in order
+ * on top of the whole-stack patch (or the node's current stack). Returns
+ * `null` when the field is untouched and `"invalid"` when an edit addresses
+ * a missing/duplicate id or an out-of-bounds index.
+ */
+function resolveStackPatch<T extends { id: string }>(
+  current: T[],
+  whole: { kind: string; value?: T[] } | undefined,
+  edits: StackEntryEdit<T>[] | undefined
+): T[] | null | "invalid" {
+  if (!edits?.length) {
+    return whole?.kind === "set" && whole.value ? whole.value : null;
+  }
+  const stack: T[] = whole?.kind === "set" && whole.value ? [...whole.value] : [...current];
+  const position = (id: string) => stack.findIndex((entry) => entry.id === id);
+
+  for (const edit of edits) {
+    switch (edit.kind) {
+      case "set": {
+        const index = position(edit.id);
+        if (index < 0) {
+          return "invalid";
+        }
+        stack[index] = edit.value;
+        break;
+      }
+      case "add": {
+        if (position(edit.entry.id) >= 0) {
+          return "invalid";
+        }
+        const index = edit.index ?? stack.length;
+        if (index > stack.length) {
+          return "invalid";
+        }
+        stack.splice(index, 0, edit.entry);
+        break;
+      }
+      case "remove": {
+        const index = position(edit.id);
+        if (index < 0) {
+          return "invalid";
+        }
+        stack.splice(index, 1);
+        break;
+      }
+      case "reorder": {
+        const index = position(edit.id);
+        if (index < 0) {
+          return "invalid";
+        }
+        const [entry] = stack.splice(index, 1);
+        if (edit.index > stack.length) {
+          return "invalid";
+        }
+        stack.splice(edit.index, 0, entry);
+        break;
+      }
+    }
+  }
+
+  const seen = new Set<string>();
+  for (const entry of stack) {
+    if (seen.has(entry.id)) {
+      return "invalid";
+    }
+    seen.add(entry.id);
+  }
+  return stack;
 }
 
 export interface ApplyEditOptions {

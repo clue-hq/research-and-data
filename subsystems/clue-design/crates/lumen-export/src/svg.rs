@@ -6,9 +6,9 @@ use lumen_core::scene::ColorStop;
 use lumen_core::{measure_text, TextMeasureInput};
 use lumen_core::{
     node_render_size, render_box_for_node, Color, Diagnostic, DiagnosticSubject, Dimension,
-    ExportAdapter, ExportArtifact, ExportError, ExportFormat, ExportRequest, ExportResult, Fill,
-    ImageFitMode, ImageNode, Node, NodeId, NodeKind, Page, PageId, Paint, Phase, Rect, Scene,
-    Stroke, TextAlign, TextDirection, Unit,
+    EffectKind, ExportAdapter, ExportArtifact, ExportError, ExportFormat, ExportRequest,
+    ExportResult, Fill, ImageFitMode, ImageNode, Node, NodeId, NodeKind, Page, PageId, Paint,
+    Phase, Rect, Scene, Stroke, StrokeAlign, StrokeCap, StrokeJoin, TextAlign, TextDirection, Unit,
 };
 use std::sync::Arc;
 
@@ -154,7 +154,18 @@ impl<'a> SvgPageRenderer<'a> {
             escape_attr(self.page.id.as_str())
         ));
 
-        if !self.page.background.is_empty() {
+        if self.page.background.len() > 1 {
+            for fill in &self.page.background.clone() {
+                self.warn_page_paint_tokens(&fill.paint);
+                let attrs = self.fill_attrs(fill, None);
+                self.body.push_str(&format!(
+                    "<rect x=\"0\" y=\"0\" width=\"{}\" height=\"{}\"{} />\n",
+                    fmt_num(width),
+                    fmt_num(height),
+                    attrs
+                ));
+            }
+        } else if !self.page.background.is_empty() {
             let attrs = self.page_paint_attrs(&self.page.background);
             self.body.push_str(&format!(
                 "<rect x=\"0\" y=\"0\" width=\"{}\" height=\"{}\"{} />\n",
@@ -219,6 +230,9 @@ impl<'a> SvgPageRenderer<'a> {
             .as_ref()
             .map(|computed| (computed.layout_bounds.x, computed.layout_bounds.y));
 
+        let filter = self.effect_filter_attr(node);
+        let stacked = node.fills.len() > 1 || node.strokes.len() > 1;
+
         match &node.kind {
             NodeKind::Frame | NodeKind::AutoLayout(_) => {
                 if matches!(node.kind, NodeKind::AutoLayout(_)) && node.computed.is_none() {
@@ -235,17 +249,25 @@ impl<'a> SvgPageRenderer<'a> {
                 } else {
                     None
                 };
-                self.body
-                    .push_str(&format!("<g{}{}{}>\n", id_attrs, transform, opacity));
-                let fill_attrs = self.paint_attrs(&node.fills, &node.strokes, Some(&node.id));
-                if !node.fills.is_empty() || !node.strokes.is_empty() {
-                    self.body.push_str(&format!(
-                        "<rect x=\"0\" y=\"0\" width=\"{}\" height=\"{}\"{}{} />\n",
-                        fmt_num(width),
-                        fmt_num(height),
-                        corner_attrs(node),
-                        fill_attrs
-                    ));
+                self.body.push_str(&format!(
+                    "<g{}{}{}{}>\n",
+                    id_attrs, transform, opacity, filter
+                ));
+                let geometry = format!(
+                    "x=\"0\" y=\"0\" width=\"{}\" height=\"{}\"{}",
+                    fmt_num(width),
+                    fmt_num(height),
+                    corner_attrs(node)
+                );
+                if stacked {
+                    for layer in self.paint_layer_attrs(&node.fills, &node.strokes, Some(&node.id))
+                    {
+                        self.body.push_str(&format!("<rect {geometry}{layer} />\n"));
+                    }
+                } else if !node.fills.is_empty() || !node.strokes.is_empty() {
+                    let fill_attrs = self.paint_attrs(&node.fills, &node.strokes, Some(&node.id));
+                    self.body
+                        .push_str(&format!("<rect {geometry}{fill_attrs} />\n"));
                 }
                 if let Some(clip_id) = clip_id {
                     self.body.push_str(&format!(
@@ -262,48 +284,101 @@ impl<'a> SvgPageRenderer<'a> {
                 self.body.push_str("</g>\n");
             }
             NodeKind::Group => {
-                self.body
-                    .push_str(&format!("<g{}{}{}>\n", id_attrs, transform, opacity));
+                self.body.push_str(&format!(
+                    "<g{}{}{}{}>\n",
+                    id_attrs, transform, opacity, filter
+                ));
                 for child_id in &node.children {
                     self.render_node(child_id, child_parent_origin);
                 }
                 self.body.push_str("</g>\n");
             }
             NodeKind::Rect => {
-                let paint_attrs = self.paint_attrs(&node.fills, &node.strokes, Some(&node.id));
-                self.body.push_str(&format!(
-                    "<rect{} x=\"0\" y=\"0\" width=\"{}\" height=\"{}\"{}{}{} />\n",
-                    id_attrs,
+                let geometry = format!(
+                    "x=\"0\" y=\"0\" width=\"{}\" height=\"{}\"{}",
                     fmt_num(width),
                     fmt_num(height),
-                    corner_attrs(node),
-                    transform,
-                    opacity_with_paint(opacity, paint_attrs)
-                ));
+                    corner_attrs(node)
+                );
+                if stacked {
+                    self.body.push_str(&format!(
+                        "<g{}{}{}{}>\n",
+                        id_attrs, transform, opacity, filter
+                    ));
+                    for layer in self.paint_layer_attrs(&node.fills, &node.strokes, Some(&node.id))
+                    {
+                        self.body.push_str(&format!("<rect {geometry}{layer} />\n"));
+                    }
+                    self.body.push_str("</g>\n");
+                } else {
+                    let paint_attrs = self.paint_attrs(&node.fills, &node.strokes, Some(&node.id));
+                    self.body.push_str(&format!(
+                        "<rect{} {}{}{}{} />\n",
+                        id_attrs,
+                        geometry,
+                        transform,
+                        filter,
+                        opacity_with_paint(opacity, paint_attrs)
+                    ));
+                }
             }
             NodeKind::Ellipse => {
-                let paint_attrs = self.paint_attrs(&node.fills, &node.strokes, Some(&node.id));
-                self.body.push_str(&format!(
-                    "<ellipse{} cx=\"{}\" cy=\"{}\" rx=\"{}\" ry=\"{}\"{}{} />\n",
-                    id_attrs,
+                let geometry = format!(
+                    "cx=\"{}\" cy=\"{}\" rx=\"{}\" ry=\"{}\"",
                     fmt_num(width / 2.0),
                     fmt_num(height / 2.0),
                     fmt_num(width / 2.0),
-                    fmt_num(height / 2.0),
-                    transform,
-                    opacity_with_paint(opacity, paint_attrs)
-                ));
+                    fmt_num(height / 2.0)
+                );
+                if stacked {
+                    self.body.push_str(&format!(
+                        "<g{}{}{}{}>\n",
+                        id_attrs, transform, opacity, filter
+                    ));
+                    for layer in self.paint_layer_attrs(&node.fills, &node.strokes, Some(&node.id))
+                    {
+                        self.body
+                            .push_str(&format!("<ellipse {geometry}{layer} />\n"));
+                    }
+                    self.body.push_str("</g>\n");
+                } else {
+                    let paint_attrs = self.paint_attrs(&node.fills, &node.strokes, Some(&node.id));
+                    self.body.push_str(&format!(
+                        "<ellipse{} {}{}{}{} />\n",
+                        id_attrs,
+                        geometry,
+                        transform,
+                        filter,
+                        opacity_with_paint(opacity, paint_attrs)
+                    ));
+                }
             }
             NodeKind::Line(line) => {
-                let paint_attrs = self.paint_attrs(&[], &node.strokes, Some(&node.id));
-                self.body.push_str(&format!(
-                    "<line{} x1=\"0\" y1=\"0\" x2=\"{}\" y2=\"{}\"{}{} />\n",
-                    id_attrs,
+                let geometry = format!(
+                    "x1=\"0\" y1=\"0\" x2=\"{}\" y2=\"{}\"",
                     fmt_num(line.x2),
-                    fmt_num(line.y2),
-                    transform,
-                    opacity_with_paint(opacity, paint_attrs)
-                ));
+                    fmt_num(line.y2)
+                );
+                if node.strokes.len() > 1 {
+                    self.body.push_str(&format!(
+                        "<g{}{}{}{}>\n",
+                        id_attrs, transform, opacity, filter
+                    ));
+                    for layer in self.paint_layer_attrs(&[], &node.strokes, Some(&node.id)) {
+                        self.body.push_str(&format!("<line {geometry}{layer} />\n"));
+                    }
+                    self.body.push_str("</g>\n");
+                } else {
+                    let paint_attrs = self.paint_attrs(&[], &node.strokes, Some(&node.id));
+                    self.body.push_str(&format!(
+                        "<line{} {}{}{}{} />\n",
+                        id_attrs,
+                        geometry,
+                        transform,
+                        filter,
+                        opacity_with_paint(opacity, paint_attrs)
+                    ));
+                }
             }
             NodeKind::Text(text) => {
                 let paint_attrs = self.text_paint_attrs(node);
@@ -341,8 +416,22 @@ impl<'a> SvgPageRenderer<'a> {
                         )
                     })
                     .collect::<String>();
+                if node.fills.len() > 1 {
+                    self.diagnostics.push(
+                        Diagnostic::advice(
+                            Phase::Export,
+                            "LUME0211",
+                            format!(
+                                "text node {} has multiple fills; SVG export renders the first fill only for text",
+                                node.id
+                            ),
+                            Some(DiagnosticSubject::Node(node.id.clone())),
+                        )
+                        .with_hint("Stacked text fills are out of V0 scope; use a single text fill."),
+                    );
+                }
                 self.body.push_str(&format!(
-                    "<text{} x=\"{}\" y=\"{}\" font-family=\"{}\" font-size=\"{}\" font-weight=\"{}\" text-anchor=\"{}\" letter-spacing=\"{}\" direction=\"{}\"{}{}>{}</text>\n",
+                    "<text{} x=\"{}\" y=\"{}\" font-family=\"{}\" font-size=\"{}\" font-weight=\"{}\" text-anchor=\"{}\" letter-spacing=\"{}\" direction=\"{}\"{}{}{}>{}</text>\n",
                     id_attrs,
                     fmt_num(x),
                     fmt_num(text.font_size),
@@ -353,19 +442,34 @@ impl<'a> SvgPageRenderer<'a> {
                     fmt_num(text.letter_spacing),
                     direction,
                     transform,
+                    filter,
                     opacity_with_paint(opacity, paint_attrs),
                     tspans
                 ));
             }
             NodeKind::Vector(vector) => {
-                let paint_attrs = self.paint_attrs(&node.fills, &node.strokes, Some(&node.id));
-                self.body.push_str(&format!(
-                    "<path{} d=\"{}\"{}{} />\n",
-                    id_attrs,
-                    escape_attr(&vector.path_data),
-                    transform,
-                    opacity_with_paint(opacity, paint_attrs)
-                ));
+                let geometry = format!("d=\"{}\"", escape_attr(&vector.path_data));
+                if stacked {
+                    self.body.push_str(&format!(
+                        "<g{}{}{}{}>\n",
+                        id_attrs, transform, opacity, filter
+                    ));
+                    for layer in self.paint_layer_attrs(&node.fills, &node.strokes, Some(&node.id))
+                    {
+                        self.body.push_str(&format!("<path {geometry}{layer} />\n"));
+                    }
+                    self.body.push_str("</g>\n");
+                } else {
+                    let paint_attrs = self.paint_attrs(&node.fills, &node.strokes, Some(&node.id));
+                    self.body.push_str(&format!(
+                        "<path{} {}{}{}{} />\n",
+                        id_attrs,
+                        geometry,
+                        transform,
+                        filter,
+                        opacity_with_paint(opacity, paint_attrs)
+                    ));
+                }
             }
             NodeKind::Image(image) => {
                 self.render_image_node(node, image, width, height, &id_attrs, &transform, &opacity);
@@ -579,6 +683,8 @@ impl<'a> SvgPageRenderer<'a> {
         " fill=\"#000000\" data-lumen-default-fill=\"text\"".to_owned()
     }
 
+    /// Combined attrs for the single-layer fast path (at most one fill and
+    /// one stroke). Stacked paints go through `paint_layer_attrs`.
     fn paint_attrs(
         &mut self,
         fills: &[Fill],
@@ -587,42 +693,201 @@ impl<'a> SvgPageRenderer<'a> {
     ) -> String {
         let mut attrs = String::new();
         if let Some(fill) = fills.first() {
-            attrs.push_str(&format!(
-                " fill=\"{}\"",
-                self.paint_ref(&fill.paint, &fill.id.to_string(), node_id)
-            ));
-            attrs.push_str(&format!(
-                " data-lumen-fill-id=\"{}\"",
-                escape_attr(fill.id.as_str())
-            ));
+            attrs.push_str(&self.fill_attrs(fill, node_id));
         } else {
             attrs.push_str(" fill=\"none\"");
         }
 
         if let Some(stroke) = strokes.first() {
-            attrs.push_str(&format!(
-                " stroke=\"{}\"",
-                self.paint_ref(&stroke.paint, &stroke.id.to_string(), node_id)
-            ));
-            attrs.push_str(&format!(" stroke-width=\"{}\"", fmt_num(stroke.width)));
-            attrs.push_str(&format!(
-                " data-lumen-stroke-id=\"{}\"",
-                escape_attr(stroke.id.as_str())
-            ));
-        }
-
-        if fills.len() > 1 || strokes.len() > 1 {
-            if let Some(node_id) = node_id {
-                self.diagnostics.push(Diagnostic::warning(
-                    Phase::Export,
-                    "LUME0204",
-                    format!("node {} has multiple fills or strokes; SVG baseline uses the first fill and first stroke", node_id),
-                    Some(DiagnosticSubject::Node(node_id.clone())),
-                ));
-            }
+            attrs.push_str(&self.stroke_attrs(stroke, node_id));
         }
 
         attrs
+    }
+
+    /// One attrs string per geometry copy, painting the full stacks in
+    /// order: fills bottom-to-top, then strokes on top.
+    fn paint_layer_attrs(
+        &mut self,
+        fills: &[Fill],
+        strokes: &[Stroke],
+        node_id: Option<&NodeId>,
+    ) -> Vec<String> {
+        let mut layers = Vec::new();
+        for fill in fills {
+            layers.push(self.fill_attrs(fill, node_id));
+        }
+        for stroke in strokes {
+            layers.push(format!(
+                " fill=\"none\"{}",
+                self.stroke_attrs(stroke, node_id)
+            ));
+        }
+        layers
+    }
+
+    fn fill_attrs(&mut self, fill: &Fill, node_id: Option<&NodeId>) -> String {
+        format!(
+            " fill=\"{}\" data-lumen-fill-id=\"{}\"",
+            self.paint_ref(&fill.paint, &fill.id.to_string(), node_id),
+            escape_attr(fill.id.as_str())
+        )
+    }
+
+    fn stroke_attrs(&mut self, stroke: &Stroke, node_id: Option<&NodeId>) -> String {
+        let mut attrs = format!(
+            " stroke=\"{}\" stroke-width=\"{}\"",
+            self.paint_ref(&stroke.paint, &stroke.id.to_string(), node_id),
+            fmt_num(stroke.width)
+        );
+        if let Some(dash) = &stroke.dash {
+            if !dash.is_empty() {
+                attrs.push_str(&format!(
+                    " stroke-dasharray=\"{}\"",
+                    dash.iter()
+                        .map(|value| fmt_num(*value))
+                        .collect::<Vec<_>>()
+                        .join(" ")
+                ));
+            }
+        }
+        match stroke.cap {
+            StrokeCap::Butt => {}
+            StrokeCap::Round => attrs.push_str(" stroke-linecap=\"round\""),
+            StrokeCap::Square => attrs.push_str(" stroke-linecap=\"square\""),
+        }
+        match stroke.join {
+            StrokeJoin::Miter => {}
+            StrokeJoin::Round => attrs.push_str(" stroke-linejoin=\"round\""),
+            StrokeJoin::Bevel => attrs.push_str(" stroke-linejoin=\"bevel\""),
+        }
+        if stroke.align != StrokeAlign::Center {
+            if let Some(node_id) = node_id {
+                self.diagnostics.push(
+                    Diagnostic::advice(
+                        Phase::Export,
+                        "LUME0210",
+                        format!(
+                            "node {} stroke {} requests {:?} alignment; SVG has no native stroke alignment so it renders centered",
+                            node_id, stroke.id, stroke.align
+                        ),
+                        Some(DiagnosticSubject::Node(node_id.clone())),
+                    )
+                    .with_hint("Path-offset approximation is out of V0 scope; adjust geometry if exact alignment matters."),
+                );
+            }
+        }
+        attrs.push_str(&format!(
+            " data-lumen-stroke-id=\"{}\"",
+            escape_attr(stroke.id.as_str())
+        ));
+        attrs
+    }
+
+    /// Register a deterministic `<filter>` for the node's drop-shadow stack
+    /// and return the `filter` attribute. The first effect in the stack
+    /// renders as the topmost shadow (CSS box-shadow convention).
+    fn effect_filter_attr(&mut self, node: &Node) -> String {
+        if node.effects.is_empty() {
+            return String::new();
+        }
+
+        struct ResolvedShadow {
+            color: String,
+            opacity: f64,
+            x: f64,
+            y: f64,
+            blur: f64,
+            spread: f64,
+        }
+
+        let mut shadows = Vec::new();
+        for effect in &node.effects {
+            let EffectKind::DropShadow {
+                color,
+                opacity,
+                x,
+                y,
+                blur,
+                spread,
+                ..
+            } = &effect.kind;
+            if let Color::Token { token } = color {
+                self.diagnostics
+                    .push(unresolved_token_diag(&node.id, token));
+                continue;
+            }
+            shadows.push(ResolvedShadow {
+                color: self.color_ref(color, Some(&node.id)),
+                opacity: *opacity,
+                x: *x,
+                y: *y,
+                blur: *blur,
+                spread: *spread,
+            });
+        }
+        if shadows.is_empty() {
+            return String::new();
+        }
+
+        let filter_id = format!("lumen-effect-{}", escape_attr(node.id.as_str()));
+        let mut body = String::new();
+        if shadows.iter().all(|shadow| shadow.spread == 0.0) {
+            // Chained feDropShadow keeps each later shadow underneath the
+            // accumulated result, so stack order is preserved.
+            for shadow in &shadows {
+                body.push_str(&format!(
+                    "<feDropShadow dx=\"{}\" dy=\"{}\" stdDeviation=\"{}\" flood-color=\"{}\" flood-opacity=\"{}\" />\n",
+                    fmt_num(shadow.x),
+                    fmt_num(shadow.y),
+                    fmt_num(shadow.blur / 2.0),
+                    shadow.color,
+                    fmt_num(shadow.opacity)
+                ));
+            }
+        } else {
+            // Spread needs a morphology composite per shadow, merged with
+            // the source on top.
+            for (index, shadow) in shadows.iter().enumerate() {
+                let blur_input = if shadow.spread != 0.0 {
+                    body.push_str(&format!(
+                        "<feMorphology in=\"SourceAlpha\" operator=\"{}\" radius=\"{}\" result=\"lumen-spread-{index}\" />\n",
+                        if shadow.spread > 0.0 { "dilate" } else { "erode" },
+                        fmt_num(shadow.spread.abs())
+                    ));
+                    format!("lumen-spread-{index}")
+                } else {
+                    "SourceAlpha".to_owned()
+                };
+                body.push_str(&format!(
+                    "<feGaussianBlur in=\"{blur_input}\" stdDeviation=\"{}\" result=\"lumen-blur-{index}\" />\n",
+                    fmt_num(shadow.blur / 2.0)
+                ));
+                body.push_str(&format!(
+                    "<feOffset in=\"lumen-blur-{index}\" dx=\"{}\" dy=\"{}\" result=\"lumen-offset-{index}\" />\n",
+                    fmt_num(shadow.x),
+                    fmt_num(shadow.y)
+                ));
+                body.push_str(&format!(
+                    "<feFlood flood-color=\"{}\" flood-opacity=\"{}\" result=\"lumen-flood-{index}\" />\n",
+                    shadow.color,
+                    fmt_num(shadow.opacity)
+                ));
+                body.push_str(&format!(
+                    "<feComposite in=\"lumen-flood-{index}\" in2=\"lumen-offset-{index}\" operator=\"in\" result=\"lumen-shadow-{index}\" />\n"
+                ));
+            }
+            body.push_str("<feMerge>\n");
+            for index in (0..shadows.len()).rev() {
+                body.push_str(&format!("<feMergeNode in=\"lumen-shadow-{index}\" />\n"));
+            }
+            body.push_str("<feMergeNode in=\"SourceGraphic\" />\n</feMerge>\n");
+        }
+
+        self.defs.push(format!(
+            "<filter id=\"{filter_id}\" x=\"-50%\" y=\"-50%\" width=\"200%\" height=\"200%\">\n{body}</filter>\n"
+        ));
+        format!(" filter=\"url(#{filter_id})\"")
     }
 
     fn paint_ref(&mut self, paint: &Paint, paint_id: &str, node_id: Option<&NodeId>) -> String {

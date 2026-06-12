@@ -1422,12 +1422,14 @@ fn tokenized_scene(brand_kit: &BrandKit) -> Scene {
         },
     }];
     card.strokes = vec![Stroke {
-        id: PaintId::from("paint_card_stroke"),
-        paint: Paint::Token {
-            token: "text.inverse".to_owned(),
-        },
-        width: 0.0,
         width_token: Some("stroke.width.firm".to_owned()),
+        ..Stroke::solid(
+            PaintId::from("paint_card_stroke"),
+            Paint::Token {
+                token: "text.inverse".to_owned(),
+            },
+            0.0,
+        )
     }];
     card.corner.token = Some("radius.md".to_owned());
     card.opacity_token = Some("opacity.subtle".to_owned());

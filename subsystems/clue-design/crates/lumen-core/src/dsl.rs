@@ -1,6 +1,6 @@
 #![allow(clippy::result_large_err)]
 
-use crate::editing::ExportProfileEditPatch;
+use crate::editing::{ExportProfileEditPatch, StackEntryEdit};
 use crate::scene::{BrandKitRef, ColorStop, Medium};
 use crate::{
     build_archive_asset, build_clone_subtree, build_delete_export_profile, build_hard_delete_asset,
@@ -9,12 +9,13 @@ use crate::{
     build_ungroup, resolve_edit_target, AssetEditPatch, AssetId, AutoLayoutDirection,
     AutoLayoutNode, AutoLayoutProps, CloneSlotPolicy, CloneSubtreeRequest, Color,
     ComputedClonePolicy, Diagnostic, DiagnosticSeverity, DocumentPatch, EditError, EditPatch,
-    EditTargetRef, ExportFormat, FieldPatch, Fill, ImageNode, LayoutAnchor, LineNode, Node,
-    NodeEditPatch, NodeId, NodeKind, Operation, OperationError, OperationReport,
-    OptionalFieldPatch, Orientation, Page, PageEditPatch, PageId, PagePreset, PageSize, Paint,
-    PaintId, ParentRef, PdfIntent, Phase, RasterScale, Rect, RelativePlacement, ReplaceNodeRequest,
-    ReplaceSlotPolicy, Scene, SizeSpec, Slot, SlotEditPatch, SlotId, SlotKey, Stroke, TextAlign,
-    TextDirection, TextEditPatch, TextNode, TextWrap, Unit, VectorNode,
+    EditTargetRef, Effect, EffectId, EffectKind, ExportFormat, FieldPatch, Fill, ImageNode,
+    LayoutAnchor, LineNode, Node, NodeEditPatch, NodeId, NodeKind, Operation, OperationError,
+    OperationReport, OptionalFieldPatch, Orientation, Page, PageEditPatch, PageId, PagePreset,
+    PageSize, Paint, PaintId, ParentRef, PdfIntent, Phase, RasterScale, Rect, RelativePlacement,
+    ReplaceNodeRequest, ReplaceSlotPolicy, Scene, SizeSpec, Slot, SlotEditPatch, SlotId, SlotKey,
+    Stroke, StrokeAlign, StrokeCap, StrokeJoin, TextAlign, TextDirection, TextEditPatch, TextNode,
+    TextWrap, Unit, VectorNode,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
@@ -354,6 +355,8 @@ pub enum DslProperty {
     Fill(DslFill),
     PageBackground(DslFill),
     Stroke(DslStroke),
+    Shadow(DslShadow),
+    RemoveEffect(EffectId),
     Font(DslFont),
     FontSize(DslScalar),
     FontWeight(u16),
@@ -452,6 +455,37 @@ pub struct DslStroke {
     pub id: Option<PaintId>,
     pub paint: Paint,
     pub width: DslScalar,
+    pub dash: Option<Vec<f64>>,
+    pub cap: Option<StrokeCap>,
+    pub join: Option<StrokeJoin>,
+    pub align: Option<StrokeAlign>,
+}
+
+impl DslStroke {
+    fn basic(id: Option<PaintId>, paint: Paint, width: DslScalar) -> Self {
+        Self {
+            id,
+            paint,
+            width,
+            dash: None,
+            cap: None,
+            join: None,
+            align: None,
+        }
+    }
+}
+
+/// Drop-shadow surface of the modify/creation grammar:
+/// `shadow(id?,#color,o(0.18),x(0),y(8),blur(24),spread(0))`.
+#[derive(Clone, Debug, PartialEq)]
+pub struct DslShadow {
+    pub id: Option<EffectId>,
+    pub color: Color,
+    pub opacity: f64,
+    pub x: f64,
+    pub y: f64,
+    pub blur: f64,
+    pub spread: f64,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -2311,8 +2345,10 @@ fn node_edit_patch_from_properties(
     let mut layout_changed = false;
     let mut fills = Vec::new();
     let mut strokes = Vec::new();
+    let mut effect_edits = Vec::new();
     let mut fill_index = 0;
     let mut stroke_index = 0;
+    let mut shadow_index = 0;
     let mut text_patch = TextEditPatch::default();
     let mut has_text_patch = false;
 
@@ -2390,15 +2426,28 @@ fn node_edit_patch_from_properties(
                     stroke_index += 1;
                     PaintId::from(format!("paint_{}_stroke_{}", node_id, stroke_index))
                 });
-                let (width, width_token) = match &stroke.width {
-                    DslScalar::Number(width) => (*width, None),
-                    DslScalar::Token(token) => (0.0, Some(token.clone())),
-                };
-                strokes.push(Stroke {
-                    id,
-                    paint: stroke.paint.clone(),
-                    width,
-                    width_token,
+                strokes.push(stroke_from_dsl(id, stroke));
+            }
+            DslProperty::Shadow(shadow) => {
+                let id = shadow.id.clone().unwrap_or_else(|| {
+                    shadow_index += 1;
+                    EffectId::from(format!("effect_{}_shadow_{}", node_id, shadow_index))
+                });
+                let effect = effect_from_dsl_shadow(id.clone(), shadow);
+                // Upsert semantics: an existing effect id updates in place,
+                // a new id appends to the top of the stack.
+                if current.effects.iter().any(|existing| existing.id == id) {
+                    effect_edits.push(StackEntryEdit::Set { id, value: effect });
+                } else {
+                    effect_edits.push(StackEntryEdit::Add {
+                        entry: effect,
+                        index: None,
+                    });
+                }
+            }
+            DslProperty::RemoveEffect(effect_id) => {
+                effect_edits.push(StackEntryEdit::Remove {
+                    id: effect_id.clone(),
                 });
             }
             DslProperty::Font(font) => {
@@ -2604,10 +2653,49 @@ fn node_edit_patch_from_properties(
     if !strokes.is_empty() {
         patch.strokes = FieldPatch::Set(strokes);
     }
+    if !effect_edits.is_empty() {
+        patch.effect_edits = effect_edits;
+    }
     if has_text_patch {
         patch.text = Some(text_patch);
     }
     Ok(patch)
+}
+
+fn stroke_from_dsl(id: PaintId, stroke: &DslStroke) -> Stroke {
+    let (width, width_token) = match &stroke.width {
+        DslScalar::Number(width) => (*width, None),
+        DslScalar::Token(token) => (0.0, Some(token.clone())),
+    };
+    Stroke {
+        id,
+        paint: stroke.paint.clone(),
+        width,
+        width_token,
+        dash: stroke.dash.clone(),
+        cap: stroke.cap.unwrap_or_default(),
+        join: stroke.join.unwrap_or_default(),
+        align: stroke.align.unwrap_or_default(),
+    }
+}
+
+fn effect_from_dsl_shadow(id: EffectId, shadow: &DslShadow) -> Effect {
+    let color_token = match &shadow.color {
+        Color::Token { token } => Some(token.clone()),
+        _ => None,
+    };
+    Effect {
+        id,
+        kind: EffectKind::DropShadow {
+            color: shadow.color.clone(),
+            opacity: shadow.opacity,
+            x: shadow.x,
+            y: shadow.y,
+            blur: shadow.blur,
+            spread: shadow.spread,
+            color_token,
+        },
+    }
 }
 
 fn page_edit_patch_from_properties(
@@ -3036,21 +3124,28 @@ fn parse_property_token(
             .map(DslProperty::Fill)
             .collect(),
         "stroke" => {
-            if call.args.len() != 2 {
-                return Err(error_diag(
-                    line_number,
-                    column,
-                    token.len(),
-                    "LUMD0211",
-                    "stroke(...) expects color and width",
-                    "Use stroke(#111827,2).",
-                ));
-            }
-            vec![DslProperty::Stroke(DslStroke {
-                id: None,
-                paint: parse_paint(&call.args[0], line_number, column)?,
-                width: parse_scalar(&call.args[1], line_number, column)?,
-            })]
+            vec![DslProperty::Stroke(parse_stroke_property(
+                &call,
+                token,
+                line_number,
+                column,
+            )?)]
+        }
+        "shadow" => {
+            vec![DslProperty::Shadow(parse_shadow_property(
+                &call,
+                token,
+                line_number,
+                column,
+            )?)]
+        }
+        "remove_effect" => {
+            expect_arg_count(&call, 1, line_number)?;
+            vec![DslProperty::RemoveEffect(parse_effect_id(
+                &call.args[0],
+                line_number,
+                column,
+            )?)]
         }
         "st" => parse_stroke_list(&call.args.join(","), line_number, column)?
             .into_iter()
@@ -3585,6 +3680,7 @@ fn apply_properties(
 ) {
     let mut fill_index = 0;
     let mut stroke_index = 0;
+    let mut shadow_index = 0;
 
     for property in properties {
         match property {
@@ -3647,16 +3743,24 @@ fn apply_properties(
                     stroke_index += 1;
                     PaintId::from(format!("paint_{}_stroke_{}", node.id, stroke_index))
                 });
-                let (width, width_token) = match &stroke.width {
-                    DslScalar::Number(width) => (*width, None),
-                    DslScalar::Token(token) => (0.0, Some(token.clone())),
-                };
-                node.strokes.push(Stroke {
-                    id,
-                    paint: stroke.paint.clone(),
-                    width,
-                    width_token,
+                node.strokes.push(stroke_from_dsl(id, stroke));
+            }
+            DslProperty::Shadow(shadow) => {
+                let id = shadow.id.clone().unwrap_or_else(|| {
+                    shadow_index += 1;
+                    EffectId::from(format!("effect_{}_shadow_{}", node.id, shadow_index))
                 });
+                node.effects.push(effect_from_dsl_shadow(id, shadow));
+            }
+            DslProperty::RemoveEffect(_) => {
+                diagnostics.push(warning_diag(
+                    line_number,
+                    1,
+                    node.id.as_str().len(),
+                    "LUMD0616",
+                    "remove_effect(...) only applies to modify lines targeting existing nodes",
+                    "Author the effect stack directly when creating elements; remove effects with #node remove_effect(id).",
+                ));
             }
             DslProperty::Font(font) => {
                 if let NodeKind::Text(text) = &mut node.kind {
@@ -4187,11 +4291,11 @@ fn parse_stroke_list(
             } else {
                 parse_scalar(&args[2], line_number, column)?
             };
-            Ok(DslStroke {
-                id: Some(parse_paint_id(&args[0], line_number, column)?),
-                paint: parse_paint(&args[1], line_number, column)?,
+            Ok(DslStroke::basic(
+                Some(parse_paint_id(&args[0], line_number, column)?),
+                parse_paint(&args[1], line_number, column)?,
                 width,
-            })
+            ))
         })
         .collect()
 }
@@ -5107,6 +5211,290 @@ fn parse_paint_id(
             "Paint IDs may use ASCII letters, numbers, dashes, or underscores.",
         )
     })
+}
+
+fn parse_effect_id(
+    source: &str,
+    line_number: usize,
+    column: usize,
+) -> Result<EffectId, DslDiagnostic> {
+    EffectId::new(source.trim()).map_err(|_| {
+        error_diag(
+            line_number,
+            column,
+            source.len().max(1),
+            "LUMD0258",
+            format!("invalid effect id {}", source.trim()),
+            "Effect IDs may use ASCII letters, numbers, dashes, or underscores.",
+        )
+    })
+}
+
+/// `true` when the argument can only be a paint/color literal, which
+/// disambiguates the optional leading stable id in `stroke(...)` and
+/// `shadow(...)` forms.
+fn paint_like(source: &str) -> bool {
+    let trimmed = source.trim();
+    trimmed.starts_with('#')
+        || trimmed.starts_with('$')
+        || trimmed.starts_with("oklch(")
+        || trimmed.starts_with("linear(")
+        || trimmed.starts_with("radial(")
+        || trimmed.starts_with("solid(")
+}
+
+/// Extended stroke grammar (Effects Contract V0):
+/// `stroke(id?,paint,w(1)|1,dash(6,4),cap(round),join(round),align(inside))`.
+/// The pre-effects `stroke(#111827,2)` form keeps working unchanged.
+fn parse_stroke_property(
+    call: &Call,
+    token: &str,
+    line_number: usize,
+    column: usize,
+) -> Result<DslStroke, DslDiagnostic> {
+    let stroke_error = |code: &'static str, message: String| {
+        error_diag(
+            line_number,
+            column,
+            token.len(),
+            code,
+            message,
+            "Use stroke(#111827,2) or stroke(stroke_border,#111827,w(1),dash(6,4),cap(round),join(round),align(inside)).",
+        )
+    };
+    if call.args.len() < 2 {
+        return Err(stroke_error(
+            "LUMD0211",
+            "stroke(...) expects color and width".to_owned(),
+        ));
+    }
+
+    let mut args = call.args.iter();
+    let first = args.next().expect("len checked above");
+    let (id, paint) = if paint_like(first) {
+        (None, parse_paint(first, line_number, column)?)
+    } else {
+        let id = parse_paint_id(first, line_number, column)?;
+        let color = args.next().ok_or_else(|| {
+            stroke_error(
+                "LUMD0211",
+                "stroke(...) with an id still expects color and width".to_owned(),
+            )
+        })?;
+        (Some(id), parse_paint(color, line_number, column)?)
+    };
+
+    let mut width: Option<DslScalar> = None;
+    let mut stroke = DslStroke::basic(id, paint, DslScalar::Number(0.0));
+    for arg in args {
+        let trimmed = arg.trim();
+        match parse_call(trimmed) {
+            Some(option) => match option.name.as_str() {
+                "w" | "width" => {
+                    if option.args.len() != 1 {
+                        return Err(stroke_error(
+                            "LUMD0256",
+                            "w(...) expects exactly one width value".to_owned(),
+                        ));
+                    }
+                    width = Some(parse_scalar(&option.args[0], line_number, column)?);
+                }
+                "dash" => {
+                    if option.args.is_empty() {
+                        return Err(stroke_error(
+                            "LUMD0256",
+                            "dash(...) expects at least one segment length".to_owned(),
+                        ));
+                    }
+                    let mut pattern = Vec::with_capacity(option.args.len());
+                    for value in &option.args {
+                        let value = parse_f64(value, line_number, column)?;
+                        if value < 0.0 {
+                            return Err(stroke_error(
+                                "LUMD0256",
+                                "dash(...) segment lengths must be non-negative".to_owned(),
+                            ));
+                        }
+                        pattern.push(value);
+                    }
+                    stroke.dash = Some(pattern);
+                }
+                "cap" => {
+                    if option.args.len() != 1 {
+                        return Err(stroke_error(
+                            "LUMD0256",
+                            "cap(...) expects butt, round, or square".to_owned(),
+                        ));
+                    }
+                    stroke.cap = Some(parse_stroke_cap(&option.args[0], line_number, column)?);
+                }
+                "join" => {
+                    if option.args.len() != 1 {
+                        return Err(stroke_error(
+                            "LUMD0256",
+                            "join(...) expects miter, round, or bevel".to_owned(),
+                        ));
+                    }
+                    stroke.join = Some(parse_stroke_join(&option.args[0], line_number, column)?);
+                }
+                "align" => {
+                    if option.args.len() != 1 {
+                        return Err(stroke_error(
+                            "LUMD0256",
+                            "align(...) expects center, inside, or outside".to_owned(),
+                        ));
+                    }
+                    stroke.align = Some(parse_stroke_align(&option.args[0], line_number, column)?);
+                }
+                other => {
+                    return Err(stroke_error(
+                        "LUMD0256",
+                        format!("unknown stroke option {other}(...)"),
+                    ));
+                }
+            },
+            None => {
+                width = Some(parse_scalar(trimmed, line_number, column)?);
+            }
+        }
+    }
+
+    let Some(width) = width else {
+        return Err(stroke_error(
+            "LUMD0211",
+            "stroke(...) requires a width: a bare number or w(...)".to_owned(),
+        ));
+    };
+    stroke.width = width;
+    Ok(stroke)
+}
+
+fn parse_stroke_cap(
+    source: &str,
+    line_number: usize,
+    column: usize,
+) -> Result<StrokeCap, DslDiagnostic> {
+    match source.trim() {
+        "butt" => Ok(StrokeCap::Butt),
+        "round" => Ok(StrokeCap::Round),
+        "square" => Ok(StrokeCap::Square),
+        other => Err(error_diag(
+            line_number,
+            column,
+            other.len().max(1),
+            "LUMD0256",
+            format!("unknown stroke cap {other}"),
+            "Use cap(butt|round|square).",
+        )),
+    }
+}
+
+fn parse_stroke_join(
+    source: &str,
+    line_number: usize,
+    column: usize,
+) -> Result<StrokeJoin, DslDiagnostic> {
+    match source.trim() {
+        "miter" => Ok(StrokeJoin::Miter),
+        "round" => Ok(StrokeJoin::Round),
+        "bevel" => Ok(StrokeJoin::Bevel),
+        other => Err(error_diag(
+            line_number,
+            column,
+            other.len().max(1),
+            "LUMD0256",
+            format!("unknown stroke join {other}"),
+            "Use join(miter|round|bevel).",
+        )),
+    }
+}
+
+fn parse_stroke_align(
+    source: &str,
+    line_number: usize,
+    column: usize,
+) -> Result<StrokeAlign, DslDiagnostic> {
+    match source.trim() {
+        "center" => Ok(StrokeAlign::Center),
+        "inside" => Ok(StrokeAlign::Inside),
+        "outside" => Ok(StrokeAlign::Outside),
+        other => Err(error_diag(
+            line_number,
+            column,
+            other.len().max(1),
+            "LUMD0256",
+            format!("unknown stroke alignment {other}"),
+            "Use align(center|inside|outside).",
+        )),
+    }
+}
+
+/// `shadow(id?,#color,o(0.18),x(0),y(8),blur(24),spread(0))`. Omitted
+/// channels keep their defaults (opacity 1, offsets/blur/spread 0).
+fn parse_shadow_property(
+    call: &Call,
+    token: &str,
+    line_number: usize,
+    column: usize,
+) -> Result<DslShadow, DslDiagnostic> {
+    let shadow_error = |message: String| {
+        error_diag(
+            line_number,
+            column,
+            token.len(),
+            "LUMD0257",
+            message,
+            "Use shadow(shadow_soft,#000000,o(0.18),x(0),y(8),blur(24),spread(0)).",
+        )
+    };
+    if call.args.is_empty() {
+        return Err(shadow_error("shadow(...) expects a color".to_owned()));
+    }
+
+    let mut args = call.args.iter();
+    let first = args.next().expect("non-empty checked above");
+    let (id, color) = if paint_like(first) {
+        (None, parse_color(first, line_number, column)?)
+    } else {
+        let id = parse_effect_id(first, line_number, column)?;
+        let color = args.next().ok_or_else(|| {
+            shadow_error("shadow(...) with an id still expects a color".to_owned())
+        })?;
+        (Some(id), parse_color(color, line_number, column)?)
+    };
+
+    let mut shadow = DslShadow {
+        id,
+        color,
+        opacity: 1.0,
+        x: 0.0,
+        y: 0.0,
+        blur: 0.0,
+        spread: 0.0,
+    };
+    for arg in args {
+        let Some(option) = parse_call(arg.trim()) else {
+            return Err(shadow_error(format!("unknown shadow argument {arg}")));
+        };
+        if option.args.len() != 1 {
+            return Err(shadow_error(format!(
+                "{}(...) expects exactly one numeric value",
+                option.name
+            )));
+        }
+        let value = parse_f64(&option.args[0], line_number, column)?;
+        match option.name.as_str() {
+            "o" | "opacity" => shadow.opacity = value,
+            "x" => shadow.x = value,
+            "y" => shadow.y = value,
+            "blur" => shadow.blur = value,
+            "spread" => shadow.spread = value,
+            other => {
+                return Err(shadow_error(format!("unknown shadow option {other}(...)")));
+            }
+        }
+    }
+    Ok(shadow)
 }
 
 fn parse_asset_id(

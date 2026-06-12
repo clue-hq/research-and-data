@@ -82,6 +82,7 @@ stable_id_type!(PageId);
 stable_id_type!(NodeId);
 stable_id_type!(SlotId);
 stable_id_type!(PaintId);
+stable_id_type!(EffectId);
 stable_id_type!(AssetId);
 stable_id_type!(BrandKitId);
 stable_id_type!(TemplateRevisionId);
