@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import base64
 import json
+import logging
 import os
 import re
 import sqlite3
 import sys
+import time
 from dataclasses import replace
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -57,9 +59,21 @@ from .models import (
     ValidateBrandKitRequest,
     ValidateDocumentBrandGovernanceRequest,
 )
+from .observability import (
+    REQUEST_ID_HEADER,
+    artifact_summary,
+    bind_request_id,
+    configure_structured_logging,
+    diagnostic_summary,
+    duration_ms,
+    log_event,
+    new_request_id,
+    reset_request_id,
+)
 
 
 JsonObject = Dict[str, Any]
+api_logger = logging.getLogger("lumen_api.api")
 
 
 def cors_origins() -> List[str]:
@@ -72,6 +86,7 @@ def cors_origins() -> List[str]:
 
 
 def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> FastAPI:
+    configure_structured_logging()
     app = FastAPI(title="ABM Design Engine Persistence API")
     app.add_middleware(
         CORSMiddleware,
@@ -88,9 +103,64 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
     if migrate:
         run_migrations(app.state.database_path)
 
+    @app.middleware("http")
+    async def structured_request_logging(request: Request, call_next):
+        request_id = request.headers.get(REQUEST_ID_HEADER) or new_request_id()
+        request.state.request_id = request_id
+        token = bind_request_id(request_id)
+        start = time.perf_counter()
+        try:
+            response = await call_next(request)
+        except Exception:
+            log_event(
+                api_logger,
+                logging.ERROR,
+                "http_request_failed",
+                method=request.method,
+                path=request.url.path,
+                duration_ms=duration_ms(start),
+                client_host=request.client.host if request.client else None,
+            )
+            reset_request_id(token)
+            raise
+
+        response.headers[REQUEST_ID_HEADER] = request_id
+        route = request.scope.get("route")
+        log_event(
+            api_logger,
+            logging.INFO,
+            "http_request_completed",
+            method=request.method,
+            path=request.url.path,
+            route=getattr(route, "path", None),
+            status_code=response.status_code,
+            duration_ms=duration_ms(start),
+            client_host=request.client.host if request.client else None,
+        )
+        reset_request_id(token)
+        return response
+
     @app.exception_handler(NotFoundError)
     def not_found_handler(_request: Request, error: NotFoundError) -> JSONResponse:
         return JSONResponse(status_code=404, content={"detail": not_found_detail(error)})
+
+    @app.exception_handler(sqlite3.Error)
+    def database_error_handler(_request: Request, error: sqlite3.Error) -> JSONResponse:
+        log_event(
+            api_logger,
+            logging.ERROR,
+            "database_error",
+            error_type=type(error).__name__,
+        )
+        return JSONResponse(
+            status_code=500,
+            content={
+                "detail": {
+                    "code": "database.error",
+                    "message": "database operation failed",
+                }
+            },
+        )
 
     def repository() -> Repository:
         connection = connect(app.state.database_path)
@@ -317,6 +387,15 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
                 brand_kit=payload.brand_kit,
                 effective_brand_source="document" if payload.brand_kit else None,
             )
+            log_event(
+                api_logger,
+                logging.INFO,
+                "document_created",
+                document_id=document["id"],
+                title=document["title"],
+                version=document["current_version"],
+                has_brand_kit=payload.brand_kit is not None,
+            )
             return document_created_dto(document)
         except CoreError as error:
             raise core_http_error(error) from error
@@ -361,6 +440,14 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
                 },
             )
         document = repo.replace_scene(document_id, scene, diagnostics)
+        log_event(
+            api_logger,
+            logging.INFO,
+            "document_scene_replaced",
+            document_id=document_id,
+            version=document["current_version"],
+            **diagnostic_summary(diagnostics),
+        )
         return scene_replaced_dto(document, diagnostics)
 
     @app.post("/documents/{document_id}/operations")
@@ -400,6 +487,18 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
             snapshot = repo.create_snapshot(
                 document_id, new_id("snap"), payload.snapshot_reason
             )
+        log_event(
+            api_logger,
+            logging.INFO,
+            "operation_batch_applied",
+            document_id=document_id,
+            operation_count=len(payload.operations),
+            applied_operations=result.get("applied_operations", 0),
+            source=payload.source,
+            actor_kind=payload.actor.kind,
+            snapshot_created=snapshot is not None,
+            **diagnostic_summary(diagnostics),
+        )
         return operation_application_dto(
             updated,
             result.get("applied_operations", 0),
@@ -485,6 +584,19 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
         else:
             repo.store_diagnostics(document_id, "preflight", diagnostics)
 
+        log_event(
+            api_logger,
+            logging.INFO,
+            "preflight_completed",
+            document_id=document_id,
+            status="failed" if has_error_diagnostics(diagnostics) else "ok",
+            effective_brand_source=source,
+            brand_kit_id=brand_kit.get("id") if brand_kit else None,
+            brand_ref_operations=len(preflight.get("brand_ref_operations", [])),
+            token_operations=len(preflight.get("token_operations", [])),
+            layout_operations=len(preflight.get("layout_operations", [])),
+            **diagnostic_summary(diagnostics),
+        )
         return preflight_dto(
             updated_document,
             diagnostics,
@@ -510,11 +622,24 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
         diagnostics = result.get("diagnostics", [])
         if not result.get("ok", False) and not diagnostics:
             diagnostics = diagnostics_from_helper_error(result.get("error"))
+        status = (
+            "failed"
+            if not result.get("ok", False) or has_error_diagnostics(diagnostics)
+            else "ok"
+        )
+        log_event(
+            api_logger,
+            logging.INFO,
+            "export_preview_completed",
+            status=status,
+            format=payload.format,
+            page_id_count=len(payload.page_ids or []),
+            **artifact_summary(export),
+            **diagnostic_summary(diagnostics),
+        )
         return {
             "schema_version": 1,
-            "status": "failed"
-            if not result.get("ok", False) or has_error_diagnostics(diagnostics)
-            else "ok",
+            "status": status,
             "diagnostics": diagnostics,
             "export": compact_export_result(export),
         }
@@ -522,7 +647,25 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
     @app.post("/agent/turn-preview")
     def agent_turn_preview(payload: AgentTurnPreviewRequest) -> JsonObject:
         runner = app.state.agent_turn_runner or run_agent_turn_preview
-        return runner(payload, repo_root())
+        result = runner(payload, repo_root())
+        log_event(
+            api_logger,
+            logging.INFO,
+            "agent_turn_preview_completed",
+            document_id=payload.document_id,
+            active_page_id=payload.active_page_id,
+            selected_node_id=payload.selected_node_id,
+            status=result.get("status"),
+            run_id=result.get("run_id"),
+            operation_count=len(result.get("operations", []))
+            if isinstance(result.get("operations"), list)
+            else 0,
+            artifact_count=len(result.get("artifacts", []))
+            if isinstance(result.get("artifacts"), list)
+            else 0,
+            **diagnostic_summary(result.get("diagnostics", [])),
+        )
+        return result
 
     @app.post("/documents/{document_id}/export")
     def export_document(
@@ -548,6 +691,18 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
         preflight_operations = preflight_operation_list(preflight)
         if preflight.get("has_errors") or has_error_diagnostics(preflight_diagnostics):
             repo.store_diagnostics(document_id, "export", preflight_diagnostics)
+            log_event(
+                api_logger,
+                logging.INFO,
+                "document_export_completed",
+                document_id=document_id,
+                status="failed",
+                format=export_format,
+                effective_brand_source=source,
+                profile_name=profile.get("name"),
+                preflight_blocked=True,
+                **diagnostic_summary(preflight_diagnostics),
+            )
             return document_export_response(
                 document,
                 "failed",
@@ -603,6 +758,19 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
             "failed"
             if not export_result.get("ok", False) or has_error_diagnostics(diagnostics)
             else "ok"
+        )
+        log_event(
+            api_logger,
+            logging.INFO,
+            "document_export_completed",
+            document_id=document_id,
+            status=status,
+            format=export_format,
+            effective_brand_source=source,
+            profile_name=profile.get("name"),
+            preflight_blocked=False,
+            **artifact_summary(export),
+            **diagnostic_summary(diagnostics),
         )
         return document_export_response(
             updated_document,

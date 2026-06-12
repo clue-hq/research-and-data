@@ -98,3 +98,5 @@ Detailed workstream docs:
 - `docs/slots-layout.md`
 - `docs/preflight-pipeline.md`
 - `docs/api-persistence.md`
+- `docs/observability-structured-logging.md`
+- `docs/phase-f-editor-export-productization.md`
