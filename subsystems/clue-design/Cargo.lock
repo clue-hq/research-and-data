@@ -514,6 +514,7 @@ dependencies = [
  "lumen-assets",
  "lumen-core",
  "lumen-export",
+ "lumen-skia",
  "serde",
  "serde_json",
  "tempfile",

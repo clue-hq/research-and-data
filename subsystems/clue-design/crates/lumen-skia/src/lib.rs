@@ -12,5 +12,7 @@
 //! - `SkiaSceneRenderer` (slice A3): direct scene→Skia PNG rasterization.
 
 pub mod fonts;
+pub mod measure;
 
 pub use fonts::{FamilyResolution, FontLoadError, FontManager, DEFAULT_FONT_FAMILY};
+pub use measure::SkiaTextMeasurer;

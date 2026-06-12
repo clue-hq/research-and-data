@@ -1,9 +1,16 @@
 use crate::{Rect, TextDirection, TextNode, TextWrap};
+use std::sync::Arc;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct TextMeasureInput {
     pub content: String,
+    /// Requested font family. The heuristic measurer ignores it; shaping
+    /// measurers resolve it against their loaded font set (missing families
+    /// fall back to the measurer's default family policy).
+    pub font_family: String,
     pub font_size: f64,
+    /// Requested font weight (CSS-style 100..900).
+    pub font_weight: u16,
     pub line_height: f64,
     pub letter_spacing: f64,
     pub wrap: TextWrap,
@@ -35,9 +42,14 @@ pub struct TextLineBox {
     pub baseline: f64,
 }
 
-pub trait TextMeasurer {
+pub trait TextMeasurer: std::fmt::Debug {
     fn measure(&self, input: &TextMeasureInput) -> TextMeasureOutput;
 }
+
+/// Shared handle for injected measurers (Decision 5, Wave 1 Track A).
+/// `None` at the injection points means the heuristic fallback, which keeps
+/// wasm builds and pre-injection tests bit-identical.
+pub type SharedTextMeasurer = Arc<dyn TextMeasurer + Send + Sync>;
 
 #[derive(Clone, Debug, Default)]
 pub struct HeuristicTextMeasurer;
@@ -46,7 +58,9 @@ impl TextMeasureInput {
     pub fn from_text_node(text: &TextNode) -> Self {
         Self {
             content: text.content.clone(),
+            font_family: text.font_family.clone(),
             font_size: text.font_size,
+            font_weight: text.font_weight,
             line_height: text.line_height,
             letter_spacing: text.letter_spacing,
             wrap: text.wrap.clone(),

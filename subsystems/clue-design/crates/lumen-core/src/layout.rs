@@ -6,8 +6,11 @@ use crate::scene::{
     SizeSpec, TextWrap,
 };
 use crate::slots::{ContentType, EmptyBehavior, ImagePolicy, OverflowPolicy, ReflowPolicy, Slot};
-use crate::text_measure::{measure_text, TextMeasureInput};
+use crate::text_measure::{
+    HeuristicTextMeasurer, SharedTextMeasurer, TextMeasureInput, TextMeasurer,
+};
 use std::collections::{BTreeMap, BTreeSet};
+use std::sync::Arc;
 use taffy::geometry::{Rect as TaffyRect, Size as TaffySize};
 use taffy::prelude::{
     auto, length, percent, AlignContent, AlignItems, AvailableSpace, Display,
@@ -16,18 +19,48 @@ use taffy::prelude::{
 use taffy::style::Dimension as TaffyDimension;
 use taffy::tree::NodeId as TaffyNodeId;
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone)]
 pub struct LayoutOptions {
     pub validate_slots: bool,
+    /// Injected text measurer (Decision 5, Wave 1 Track A). `None` falls
+    /// back to [`HeuristicTextMeasurer`], preserving wasm builds and
+    /// pre-injection behavior. Server paths inject the Skia measurer here
+    /// through the api helper.
+    pub measurer: Option<SharedTextMeasurer>,
 }
 
 impl Default for LayoutOptions {
     fn default() -> Self {
         Self {
             validate_slots: true,
+            measurer: None,
         }
     }
 }
+
+impl std::fmt::Debug for LayoutOptions {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("LayoutOptions")
+            .field("validate_slots", &self.validate_slots)
+            .field("has_measurer", &self.measurer.is_some())
+            .finish()
+    }
+}
+
+impl PartialEq for LayoutOptions {
+    fn eq(&self, other: &Self) -> bool {
+        // Measurers compare by identity: equal when both are absent or both
+        // point at the same injected instance.
+        self.validate_slots == other.validate_slots
+            && match (&self.measurer, &other.measurer) {
+                (None, None) => true,
+                (Some(left), Some(right)) => Arc::ptr_eq(left, right),
+                _ => false,
+            }
+    }
+}
+
+static FALLBACK_MEASURER: HeuristicTextMeasurer = HeuristicTextMeasurer;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct LayoutResult {
@@ -36,7 +69,12 @@ pub struct LayoutResult {
 }
 
 pub fn layout_scene(scene: &Scene, options: LayoutOptions) -> LayoutResult {
-    let mut engine = LayoutEngine::new(scene);
+    let measurer: &dyn TextMeasurer = options
+        .measurer
+        .as_deref()
+        .map(|measurer| measurer as &dyn TextMeasurer)
+        .unwrap_or(&FALLBACK_MEASURER);
+    let mut engine = LayoutEngine::new(scene, measurer);
     engine.layout_pages();
     engine.validate_layout_anchors();
     engine.validate_text_nodes();
@@ -71,14 +109,16 @@ pub fn layout_operations(scene: &Scene, options: LayoutOptions) -> Vec<Operation
 
 struct LayoutEngine<'a> {
     scene: &'a Scene,
+    measurer: &'a dyn TextMeasurer,
     geometry: BTreeMap<NodeId, ComputedGeometry>,
     diagnostics: Vec<Diagnostic>,
 }
 
 impl<'a> LayoutEngine<'a> {
-    fn new(scene: &'a Scene) -> Self {
+    fn new(scene: &'a Scene, measurer: &'a dyn TextMeasurer) -> Self {
         Self {
             scene,
+            measurer,
             geometry: BTreeMap::new(),
             diagnostics: Vec::new(),
         }
@@ -178,11 +218,12 @@ impl<'a> LayoutEngine<'a> {
             height: AvailableSpace::Definite(parent_size.height as f32),
         };
 
+        let measurer = self.measurer;
         if let Err(error) = tree.compute_layout_with_measure(
             root,
             available_space,
             |known_dimensions, available_space, _node_id, context, _style| {
-                measure_taffy_node(known_dimensions, available_space, context)
+                measure_taffy_node(known_dimensions, available_space, context, measurer)
             },
         ) {
             self.diagnostics.push(Diagnostic::error(
@@ -600,7 +641,9 @@ impl<'a> LayoutEngine<'a> {
     fn natural_size(&self, node: &Node) -> Size2 {
         match &node.kind {
             NodeKind::Text(text) => {
-                let measured = measure_text(&TextMeasureInput::from_text_node(text));
+                let measured = self
+                    .measurer
+                    .measure(&TextMeasureInput::from_text_node(text));
                 Size2 {
                     width: measured.width,
                     height: measured.height,
@@ -731,7 +774,7 @@ impl<'a> LayoutEngine<'a> {
                 continue;
             }
 
-            let measured = measure_text(
+            let measured = self.measurer.measure(
                 &TextMeasureInput::from_text_node(text).with_bounds(&geometry.layout_bounds),
             );
             if measured.exceeds_max_lines {
@@ -817,13 +860,7 @@ impl<'a> LayoutEngine<'a> {
                 ContentType::TextShort | ContentType::TextLong | ContentType::RichTextLimited
             ) {
                 if let NodeKind::Text(text) = &node.kind {
-                    self.validate_text_slot_fit(
-                        slot,
-                        node_id,
-                        text.font_size,
-                        &geometry,
-                        &fixtures,
-                    );
+                    self.validate_text_slot_fit(slot, node_id, text, &geometry, &fixtures);
                 }
             }
         }
@@ -833,12 +870,19 @@ impl<'a> LayoutEngine<'a> {
         &mut self,
         slot: &Slot,
         node_id: &NodeId,
-        font_size: f64,
+        text: &crate::scene::TextNode,
         geometry: &ComputedGeometry,
         fixtures: &[String],
     ) {
         for fixture in fixtures {
-            let fit = text_fit(fixture, font_size, &geometry.layout_bounds, &slot.overflow);
+            let fit = text_fit(
+                self.measurer,
+                fixture,
+                text,
+                text.font_size,
+                &geometry.layout_bounds,
+                &slot.overflow,
+            );
             if fit.fits {
                 continue;
             }
@@ -854,7 +898,9 @@ impl<'a> LayoutEngine<'a> {
                 }
                 OverflowPolicy::ShrinkFont { min_font_size, .. } => {
                     let shrink_fit = text_fit(
+                        self.measurer,
                         fixture,
+                        text,
                         *min_font_size,
                         &geometry.layout_bounds,
                         &OverflowPolicy::Error,
@@ -1238,6 +1284,7 @@ fn measure_taffy_node(
     known_dimensions: TaffySize<Option<f32>>,
     available_space: TaffySize<AvailableSpace>,
     context: Option<&mut MeasureContext>,
+    measurer: &dyn TextMeasurer,
 ) -> TaffySize<f32> {
     if let TaffySize {
         width: Some(width),
@@ -1250,7 +1297,7 @@ fn measure_taffy_node(
     let natural = match context {
         Some(MeasureContext::Text(input)) => {
             input.max_width = available_width(available_space.width);
-            let measured = measure_text(input);
+            let measured = measurer.measure(input);
             Size2 {
                 width: measured.width,
                 height: measured.height,
@@ -1387,14 +1434,23 @@ struct TextFit {
     line_count: u16,
 }
 
-fn text_fit(content: &str, font_size: f64, bounds: &Rect, policy: &OverflowPolicy) -> TextFit {
+fn text_fit(
+    measurer: &dyn TextMeasurer,
+    content: &str,
+    text: &crate::scene::TextNode,
+    font_size: f64,
+    bounds: &Rect,
+    policy: &OverflowPolicy,
+) -> TextFit {
     let (wrap, max_lines) = match policy {
         OverflowPolicy::Wrap { max_lines } => (TextWrap::Wrap, *max_lines),
         _ => (TextWrap::NoWrap, None),
     };
-    let measured = measure_text(&TextMeasureInput {
+    let measured = measurer.measure(&TextMeasureInput {
         content: content.to_owned(),
+        font_family: text.font_family.clone(),
         font_size,
+        font_weight: text.font_weight,
         line_height: 1.2,
         letter_spacing: 0.0,
         wrap,

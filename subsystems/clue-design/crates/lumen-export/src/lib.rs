@@ -21,7 +21,7 @@ pub use svg::SvgExportAdapter;
 
 use lumen_core::{
     DiagnosticSeverity, ExportAdapter, ExportArtifact, ExportError, ExportFormat, ExportRequest,
-    ExportResult, Scene,
+    ExportResult, Scene, SharedTextMeasurer,
 };
 use std::sync::Arc;
 
@@ -44,7 +44,18 @@ impl LumenExportAdapter {
         Self {
             svg: SvgExportAdapter::with_resolver(Arc::clone(&resolver)),
             png: PngExportAdapter::with_resolver(resolver),
-            pdf: PdfExportAdapter,
+            pdf: PdfExportAdapter::new(),
+        }
+    }
+
+    /// Inject a shaping text measurer into every format path (Wave 1
+    /// Track A): SVG markup, PNG raster, and PDF then share one source of
+    /// truth for text line breaks with the layout engine.
+    pub fn with_measurer(self, measurer: SharedTextMeasurer) -> Self {
+        Self {
+            svg: self.svg.with_measurer(Arc::clone(&measurer)),
+            png: self.png.with_measurer(Arc::clone(&measurer)),
+            pdf: self.pdf.with_measurer(measurer),
         }
     }
 }

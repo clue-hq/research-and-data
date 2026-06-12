@@ -1,9 +1,9 @@
 use crate::resolver::AssetByteResolver;
 use crate::sidecar::build_sidecar;
-use crate::svg::{render_page_svg, resolve_page_ids};
+use crate::svg::{measurer_as_dyn, render_page_svg, resolve_page_ids};
 use lumen_core::{
     Diagnostic, DiagnosticSubject, ExportAdapter, ExportArtifact, ExportError, ExportFormat,
-    ExportRequest, ExportResult, Page, PageId, Phase, Scene, Unit,
+    ExportRequest, ExportResult, Page, PageId, Phase, Scene, SharedTextMeasurer, Unit,
 };
 use resvg::{tiny_skia, usvg};
 use std::sync::Arc;
@@ -11,6 +11,7 @@ use std::sync::Arc;
 #[derive(Clone, Debug, Default)]
 pub struct PngExportAdapter {
     resolver: Option<Arc<dyn AssetByteResolver>>,
+    measurer: Option<SharedTextMeasurer>,
 }
 
 impl PngExportAdapter {
@@ -21,7 +22,15 @@ impl PngExportAdapter {
     pub fn with_resolver(resolver: Arc<dyn AssetByteResolver>) -> Self {
         Self {
             resolver: Some(resolver),
+            measurer: None,
         }
+    }
+
+    /// Inject a shaping text measurer (Wave 1 Track A) so rasterized text
+    /// line breaks match layout-engine measurement.
+    pub fn with_measurer(mut self, measurer: SharedTextMeasurer) -> Self {
+        self.measurer = Some(measurer);
+        self
     }
 }
 
@@ -59,7 +68,12 @@ impl ExportAdapter for PngExportAdapter {
                 continue;
             };
 
-            let (svg, page_diagnostics) = render_page_svg(scene, page, self.resolver.as_deref());
+            let (svg, page_diagnostics) = render_page_svg(
+                scene,
+                page,
+                self.resolver.as_deref(),
+                self.measurer.as_deref().map(measurer_as_dyn),
+            );
             diagnostics.extend(page_diagnostics);
             let png = rasterize_svg_page(&svg, page, request, page_id)?;
 

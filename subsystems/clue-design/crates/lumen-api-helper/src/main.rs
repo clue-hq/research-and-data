@@ -2,6 +2,7 @@ use base64::engine::general_purpose::STANDARD as BASE64;
 use base64::Engine;
 use lumen_assets::{AssetStore, IngestRequest, LocalAssetStore, DEFAULT_MAX_BYTES};
 use lumen_core::validation::validate_scene;
+use lumen_core::SharedTextMeasurer;
 use lumen_core::{
     batch_scope_violations, build_archive_asset, build_clone_subtree, build_delete_export_profile,
     build_hard_delete_asset, build_modify_operations, build_move_after, build_move_before,
@@ -19,6 +20,7 @@ use lumen_core::{
     Scene, ScopeViolation, TemplateRevisionId,
 };
 use lumen_export::LumenExportAdapter;
+use lumen_skia::SkiaTextMeasurer;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::env;
@@ -29,6 +31,14 @@ use std::time::Instant;
 mod store_resolver;
 
 use store_resolver::{StoreBackedResolver, LOCAL_STORE_PROVIDER};
+
+/// The server-side text measurer: SkParagraph shaping over the bundled
+/// deterministic font set (Wave 1 Track A, Decision 5). Every helper path
+/// that measures text — preflight, layout geometry, export — injects this;
+/// the heuristic remains only as the wasm fallback inside lumen-core.
+fn server_measurer() -> SharedTextMeasurer {
+    Arc::new(SkiaTextMeasurer::bundled())
+}
 
 #[derive(Debug, Deserialize)]
 #[serde(tag = "action", rename_all = "snake_case")]
@@ -791,6 +801,7 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
             let scene = parse_scene(scene)?;
             let brand_kit = brand_kit.map(parse_brand_kit).transpose()?;
             let mut options = PreflightOptions::default();
+            options.layout.measurer = Some(server_measurer());
             if let Some(mode) = mode {
                 options.token_resolution.mode = parse_brand_mode(mode)?;
             }
@@ -859,7 +870,8 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                     LumenExportAdapter::with_resolver(Arc::new(StoreBackedResolver::new(root)))
                 }
                 None => LumenExportAdapter::new(),
-            };
+            }
+            .with_measurer(server_measurer());
             match adapter.export(&scene, &request) {
                 Ok(result) => Ok(CoreResponse {
                     ok: true,
@@ -1441,7 +1453,13 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
         }
         CoreRequest::LayoutGeometry { scene } => {
             let scene = parse_scene(scene)?;
-            let result = layout_scene(&scene, Default::default());
+            let result = layout_scene(
+                &scene,
+                lumen_core::LayoutOptions {
+                    measurer: Some(server_measurer()),
+                    ..Default::default()
+                },
+            );
             Ok(CoreResponse {
                 ok: true,
                 scene: None,

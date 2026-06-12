@@ -194,6 +194,7 @@ fn row_layout_positions_fixed_children() {
         &scene,
         lumen_core::LayoutOptions {
             validate_slots: false,
+            ..Default::default()
         },
     );
     assert_close(result.geometry[&NodeId::from("a")].layout_bounds.x, 0.0);
@@ -221,6 +222,7 @@ fn plain_text_overflow_is_diagnosed_without_slot() {
         &scene,
         lumen_core::LayoutOptions {
             validate_slots: false,
+            ..Default::default()
         },
     );
 
@@ -258,6 +260,7 @@ fn column_layout_positions_fixed_children() {
         &scene,
         lumen_core::LayoutOptions {
             validate_slots: false,
+            ..Default::default()
         },
     );
     assert_close(result.geometry[&NodeId::from("a")].layout_bounds.y, 0.0);
@@ -293,6 +296,7 @@ fn autolayout_row_x_center_positions_children() {
         &scene,
         lumen_core::LayoutOptions {
             validate_slots: false,
+            ..Default::default()
         },
     );
     assert_close(result.geometry[&NodeId::from("a")].layout_bounds.x, 60.0);
@@ -328,6 +332,7 @@ fn autolayout_row_x_space_between_distributes_children() {
         &scene,
         lumen_core::LayoutOptions {
             validate_slots: false,
+            ..Default::default()
         },
     );
     assert_close(result.geometry[&NodeId::from("a")].layout_bounds.x, 0.0);
@@ -358,6 +363,7 @@ fn autolayout_row_y_center_cross_aligns_children() {
         &scene,
         lumen_core::LayoutOptions {
             validate_slots: false,
+            ..Default::default()
         },
     );
     assert_close(result.geometry[&NodeId::from("a")].layout_bounds.y, 30.0);
@@ -393,6 +399,7 @@ fn gap_and_padding_offset_children() {
         &scene,
         lumen_core::LayoutOptions {
             validate_slots: false,
+            ..Default::default()
         },
     );
     assert_close(result.geometry[&NodeId::from("a")].layout_bounds.x, 50.0);
@@ -444,6 +451,7 @@ fn weighted_fill_distributes_free_space() {
         &scene,
         lumen_core::LayoutOptions {
             validate_slots: false,
+            ..Default::default()
         },
     );
     assert_close(
@@ -491,6 +499,7 @@ fn hug_parent_sizes_to_children_gap_and_padding() {
         &scene,
         lumen_core::LayoutOptions {
             validate_slots: false,
+            ..Default::default()
         },
     );
     assert_close(
@@ -530,6 +539,7 @@ fn fill_child_falls_back_to_hug_when_parent_has_no_free_space() {
         &scene,
         lumen_core::LayoutOptions {
             validate_slots: false,
+            ..Default::default()
         },
     );
     let child_width = result.geometry[&NodeId::from("headline")]
@@ -570,6 +580,7 @@ fn wrapping_flows_children_to_multiple_lines() {
         &scene,
         lumen_core::LayoutOptions {
             validate_slots: false,
+            ..Default::default()
         },
     );
     assert_close(result.geometry[&NodeId::from("c")].layout_bounds.y, 20.0);
@@ -615,6 +626,7 @@ fn transformed_child_is_excluded_from_auto_layout_flow() {
         &scene,
         lumen_core::LayoutOptions {
             validate_slots: false,
+            ..Default::default()
         },
     );
     assert!(has_code(&result.diagnostics, "LUMV0701"));
@@ -657,6 +669,7 @@ fn layout_operations_persist_computed_geometry() {
         &scene,
         lumen_core::LayoutOptions {
             validate_slots: false,
+            ..Default::default()
         },
     );
     scene.apply_operations(operations).unwrap();
@@ -713,6 +726,7 @@ fn unresolved_token_dimensions_warn_and_use_natural_size() {
         &scene,
         lumen_core::LayoutOptions {
             validate_slots: false,
+            ..Default::default()
         },
     );
 
