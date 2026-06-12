@@ -299,3 +299,71 @@ fn critic_preview_path_renders_real_logo_without_asset_warnings() {
         );
     }
 }
+
+const PHASE_E_CONFORMANCE_SCENE: &str =
+    include_str!("../../lumen-core/fixtures/conformance/phase_e_asset_scene.json");
+
+/// Conformance for slice E9: the committed fixture scene exports with a
+/// stable placeholder baseline when bytes are unavailable, and with real
+/// embedded bytes when they are — the fixture-first guarantee from the
+/// gap analysis ("preserve fixture assets for deterministic tests")
+/// alongside the production path.
+#[test]
+fn conformance_fixture_exports_placeholder_baseline_and_real_bytes() {
+    let scene: Scene = serde_json::from_str(PHASE_E_CONFORMANCE_SCENE).expect("fixture parses");
+    let request = ExportRequest {
+        profile: ExportProfile {
+            name: "phase_e_conformance".to_owned(),
+            format: ExportFormat::Svg,
+            pdf_intent: None,
+            raster: None,
+            include_bleed: false,
+            embed_fonts: true,
+        },
+        page_ids: vec![PageId::from("page_a4")],
+        purpose: ExportPurpose::AgentCritique,
+    };
+
+    // Fixture baseline: no resolver, deterministic placeholder markup.
+    let baseline = LumenExportAdapter::new()
+        .export(&scene, &request)
+        .expect("baseline export");
+    let baseline_svg = String::from_utf8(baseline.artifacts[0].bytes.clone()).expect("utf8");
+    assert!(baseline_svg.contains("data-lumen-unsupported=\"image\""));
+    assert!(baseline
+        .diagnostics
+        .iter()
+        .any(|diagnostic| diagnostic.code == "LUME0202"));
+
+    // Real-byte path: digest-keyed resolution embeds the focal crop.
+    let resolver = Arc::new(FixtureAssetResolver::new().with_digest_bytes(
+        LOGO_DIGEST,
+        "image/png",
+        LOGO_PNG.to_vec(),
+    ));
+    let real = LumenExportAdapter::with_resolver(resolver)
+        .export(&scene, &request)
+        .expect("real export");
+    let real_svg = String::from_utf8(real.artifacts[0].bytes.clone()).expect("utf8");
+    assert!(real_svg.contains("data:image/png;base64,"));
+    assert!(real_svg.contains("data-lumen-image-fit=\"focal-crop\""));
+    assert!(!real_svg.contains("data-lumen-unsupported=\"image\""));
+    assert!(!real
+        .diagnostics
+        .iter()
+        .any(|diagnostic| diagnostic.code == "LUME0202"
+            || diagnostic.code == "LUME0210"
+            || diagnostic.code == "LUME0211"));
+
+    // Unrelated markup is byte-identical across the two paths: asset
+    // resolution must not perturb sibling nodes or the page envelope.
+    let text_line = |svg: &str| -> String {
+        svg.lines()
+            .find(|line| line.contains("node_contact_name"))
+            .expect("text node line")
+            .to_owned()
+    };
+    assert_eq!(text_line(&baseline_svg), text_line(&real_svg));
+    let svg_open = |svg: &str| -> String { svg.lines().next().expect("svg open tag").to_owned() };
+    assert_eq!(svg_open(&baseline_svg), svg_open(&real_svg));
+}

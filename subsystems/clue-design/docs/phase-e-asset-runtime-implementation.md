@@ -624,3 +624,34 @@ generators E provides).
   print diagnostics for batch validation.
 - **Brand kit ingestion** (gap area 9) gets its missing primitive: brand
   logo/font assets can now be real uploaded bytes with provenance.
+
+## 12. Final Status (2026-06-12)
+
+All nine slices are implemented and green on the full matrix.
+
+| Slice | Commit | Delivered |
+|---|---|---|
+| E1 | `8097603` | Byte resolver trait, fixture resolver, real-byte SVG/PNG embedding, LUME0210/0211 |
+| E2 | `5e32284` | lumen-assets crate: content-addressed store, MIME sniffing, ingest; helper ingest_asset + store-backed resolver; POST /assets, byte serving |
+| E3 | `b73bde8` | Probing (dims/DPI/alpha), SVG sanitization, thumbnails, AssetThumbnail metadata, thumbnail route |
+| E4 | `5ee8a0c` | Deterministic QR provider (pinned digest), helper/API/agent surfaces, zxing-cpp scan check |
+| E5 | `1ff5cda` | Asset library list/search/filter, archive/restore, reference-checked hard delete with digest-level byte GC |
+| E6 | `64b7255` | Focal-point crops, contain/cover mapping, LUME0212 licensing enforcement, LUME0220 print DPI, LUME0221 logo safe area |
+| E7 | `6e5e284` | Editor asset browser + library client emitting canonical operations |
+| E8 | `e57ce8c` | Generation/vectorization provider traits, registry, QR adapter, stub providers, helper generate_asset |
+| E9 | (this commit) | Conformance fixture (placeholder baseline vs real bytes), end-to-end licensing rejection, critic store-root wiring test |
+
+Verification (final run): `cargo fmt --check`; `cargo clippy
+--all-targets -- -D warnings`; `cargo test` (324 passed);
+`cargo check --target wasm32-unknown-unknown -p lumen-core`;
+`pytest apps/api/tests apps/agent_runtime/tests` (88 passed, 1
+skipped); `npm --prefix apps/editor test -- --run` (182 passed, 19
+files); editor lint + build; `git diff --check`.
+
+Recorded scope cuts (workstream memory has details): PDF byte
+embedding rides the export-fidelity follow-up (print preflight remains
+metadata-driven); `generate_asset` has helper + tests but no public
+API route or agent tool yet (Phase G consumes the seam); SVG assets
+serve their own bytes as thumbnails; the editor panel places into
+nodes (slot placement builder shipped and tested, SlotInspector
+integration is Phase F polish).

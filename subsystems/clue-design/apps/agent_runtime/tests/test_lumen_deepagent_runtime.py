@@ -1355,3 +1355,27 @@ def test_generate_qr_tool_registers_asset_and_traces_provenance(
     payload = qr_events[0]["payload"]
     assert payload["qr"]["provenance"]["source_label"] == "generated:qr"
     assert payload["qr"]["asset_id"].startswith("asset_qr_")
+
+
+def test_critic_preview_export_passes_asset_store_root(tmp_path: Path, monkeypatch):
+    captured: dict = {}
+
+    class RecordingCoreClient(FakeCoreClient):
+        def export_preview(
+            self, scene, export_format="svg", page_ids=None, asset_store_root=None
+        ):
+            captured["asset_store_root"] = asset_store_root
+            return super().export_preview(
+                scene, export_format, page_ids, asset_store_root=asset_store_root
+            )
+
+    monkeypatch.setattr("lumen_deepagent.tools.CoreClient", RecordingCoreClient)
+    tools = LumenDesignTools(runtime_config(tmp_path), "Create a square ad")
+    tools.compile_dsl_block('page page_test\n  headline text "Plan" p(24,24) s(400,hug)')
+    tools.export_preview()
+
+    # The critic preview resolves real bytes: the agent's store root is
+    # wired into every preview export rather than rendering placeholders.
+    expected = str(tools.config.effective_asset_store_root)
+    assert captured["asset_store_root"] == expected
+    assert expected.endswith("asset-store")

@@ -2072,3 +2072,104 @@ def test_hard_delete_byte_lifecycle_respects_digest_references(
     assert deleted.status_code == 200, deleted.text
     assert len(deleted.json()["removed_digests"]) == 2
     assert store_files(tmp_path) == []
+
+
+def test_licensing_rejection_blocks_print_export_end_to_end(
+    client: TestClient,
+) -> None:
+    # Conformance for slice E9 (Decision 5): licensing recorded at ingest
+    # is enforced at export with a precise diagnostic.
+    uploaded = client.post(
+        "/assets",
+        files={"file": ("editorial.png", LOGO_PNG_PATH.read_bytes(), "image/png")},
+        data={
+            "label": "Editorial photo",
+            "license_json": json.dumps(
+                {
+                    "name": "editorial_only",
+                    "allow_export": False,
+                    "allow_modification": False,
+                    "allow_embedding": False,
+                    "allow_subsetting": False,
+                    "source_url": None,
+                    "restrictions": ["no commercial export"],
+                }
+            ),
+        },
+    )
+    assert uploaded.status_code == 200, uploaded.text
+    record = uploaded.json()["asset"]
+    assert record["license"]["allow_export"] is False
+
+    # Place into a node directly: slot placement already rejects
+    # non-exportable assets at operation time (LUMA0400); the node path
+    # exercises export-time enforcement.
+    document = create_document(client)
+    operations = [
+        {
+            "kind": "insert_node",
+            "parent": {"kind": "page", "id": "page_a4"},
+            "index": 1,
+            "node": asset_placeholder_node(),
+        },
+        {"kind": "upsert_asset", "asset": record},
+        {
+            "kind": "place_asset_in_node",
+            "node_id": "node_hero_image",
+            "asset_id": record["id"],
+            "placement": {"fit": "cover", "alt_text": "Editorial photo"},
+        },
+    ]
+    applied = client.post(
+        f"/documents/{document['id']}/operations",
+        json={
+            "operations": operations,
+            "actor": {"kind": "user", "id": "designer"},
+            "source": "editor",
+        },
+    )
+    assert applied.status_code == 200, applied.text
+    scene = client.get(f"/documents/{document['id']}").json()["scene"]
+
+    # Critic-style preview still renders, carrying the LUME0212 warning.
+    preview = client.post(
+        "/export-preview",
+        json={"scene": scene, "format": "svg", "page_ids": ["page_a4"]},
+    )
+    assert preview.status_code == 200, preview.text
+    preview_payload = preview.json()
+    warning = next(
+        diagnostic
+        for diagnostic in preview_payload["diagnostics"]
+        if diagnostic["code"] == "LUME0212"
+    )
+    assert warning["severity"] == "warning"
+
+    # A print-intent export is rejected, naming the asset and license.
+    rejected = client.post(
+        "/export-preview",
+        json={
+            "scene": scene,
+            "format": "svg",
+            "page_ids": ["page_a4"],
+            "profile": {
+                "name": "print_letter",
+                "format": "svg",
+                "pdf_intent": "print",
+                "raster": None,
+                "include_bleed": False,
+                "embed_fonts": True,
+            },
+        },
+    )
+    assert rejected.status_code == 200, rejected.text
+    rejected_payload = rejected.json()
+    assert rejected_payload["status"] == "failed"
+    rejection = next(
+        diagnostic
+        for diagnostic in rejected_payload["diagnostics"]
+        if diagnostic["code"] == "LUME0212"
+    )
+    assert rejection["severity"] == "error"
+    assert record["id"] in rejection["message"]
+    assert "editorial_only" in rejection["message"]
