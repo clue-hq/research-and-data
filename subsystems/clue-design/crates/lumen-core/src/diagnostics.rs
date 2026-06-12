@@ -74,6 +74,22 @@ impl Diagnostic {
         }
     }
 
+    pub fn advice(
+        phase: Phase,
+        code: impl Into<String>,
+        message: impl Into<String>,
+        subject: Option<DiagnosticSubject>,
+    ) -> Self {
+        Self {
+            severity: DiagnosticSeverity::Advice,
+            phase,
+            code: code.into(),
+            message: message.into(),
+            subject,
+            hint: None,
+        }
+    }
+
     pub fn with_hint(mut self, hint: impl Into<String>) -> Self {
         self.hint = Some(hint.into());
         self

@@ -1,7 +1,8 @@
 use crate::assets::{AssetPlacement, AssetRecord};
 use crate::export_contract::ExportProfile;
 use crate::ids::{
-    AssetId, BrandKitId, DocumentId, NodeId, PageId, PaintId, SlotId, SlotKey, TemplateRevisionId,
+    AssetId, BrandKitId, DocumentId, EffectId, NodeId, PageId, PaintId, SlotId, SlotKey,
+    TemplateRevisionId,
 };
 use crate::slots::Slot;
 use crate::SCHEMA_VERSION;
@@ -234,6 +235,11 @@ pub struct Node {
     pub children: Vec<NodeId>,
     pub fills: Vec<Fill>,
     pub strokes: Vec<Stroke>,
+    /// Stacked, individually addressable effects (Effects Contract V0).
+    /// Serde-defaulted and omitted when empty so pre-effects scene JSON
+    /// round-trips byte-identically.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub effects: Vec<Effect>,
     pub corner: CornerRadii,
     pub opacity: f64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -259,6 +265,7 @@ impl Node {
             children: Vec::new(),
             fills: Vec::new(),
             strokes: Vec::new(),
+            effects: Vec::new(),
             corner: CornerRadii::default(),
             opacity: 1.0,
             opacity_token: None,
@@ -509,6 +516,90 @@ pub struct Stroke {
     pub width: f64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub width_token: Option<String>,
+    /// Dash pattern in scene units; `None` renders a solid stroke.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dash: Option<Vec<f64>>,
+    #[serde(default, skip_serializing_if = "is_enum_default")]
+    pub cap: StrokeCap,
+    #[serde(default, skip_serializing_if = "is_enum_default")]
+    pub join: StrokeJoin,
+    #[serde(default, skip_serializing_if = "is_enum_default")]
+    pub align: StrokeAlign,
+}
+
+impl Stroke {
+    pub fn solid(id: impl Into<PaintId>, paint: Paint, width: f64) -> Self {
+        Self {
+            id: id.into(),
+            paint,
+            width,
+            width_token: None,
+            dash: None,
+            cap: StrokeCap::default(),
+            join: StrokeJoin::default(),
+            align: StrokeAlign::default(),
+        }
+    }
+}
+
+/// Serde helper: skip serializing enum fields that still hold their default
+/// so pre-effects JSON fixtures and pinned parity operations stay
+/// byte-identical.
+fn is_enum_default<T: Default + PartialEq>(value: &T) -> bool {
+    value == &T::default()
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum StrokeCap {
+    #[default]
+    Butt,
+    Round,
+    Square,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum StrokeJoin {
+    #[default]
+    Miter,
+    Round,
+    Bevel,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum StrokeAlign {
+    #[default]
+    Center,
+    Inside,
+    Outside,
+}
+
+/// A single entry in a node's effect stack. The id is the edit contract:
+/// every entry is individually addressable by Phase D per-entry patches.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Effect {
+    pub id: EffectId,
+    pub kind: EffectKind,
+}
+
+/// V0 effect vocabulary: one outer drop shadow. The enum is deliberately
+/// open for later kinds (inner shadow, glow, blur, ...) which belong to
+/// effects-v1+.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum EffectKind {
+    DropShadow {
+        color: Color,
+        opacity: f64,
+        x: f64,
+        y: f64,
+        blur: f64,
+        spread: f64,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        color_token: Option<String>,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]

@@ -3,8 +3,10 @@ use crate::brand::{
     SceneTokenReference, TokenResolutionOptions,
 };
 use crate::diagnostics::{Diagnostic, DiagnosticSeverity, DiagnosticSubject, Phase};
+use crate::export_contract::ExportFormat;
 use crate::layout::{layout_scene, LayoutOptions, LayoutResult};
 use crate::operations::{NodePatch, Operation, OperationError, OptionalFieldPatch};
+use crate::render_contract::{effect_support_diagnostics, RenderTarget};
 use crate::scene::{Medium, Scene};
 use crate::validation::validate_scene;
 use std::collections::BTreeSet;
@@ -65,6 +67,17 @@ pub fn preflight_scene(
             token_operations,
             layout_operations,
         };
+    }
+
+    // Renderer support matrix verdicts (Effects Contract V0): surface the
+    // Approximate/Unsupported effect features per export profile before
+    // export, so degradation is never a surprise at download time.
+    for profile in &scene.export_profiles {
+        let target = render_target_for_format(&profile.format);
+        extend_unique_diagnostics(
+            &mut diagnostics,
+            effect_support_diagnostics(&scene, &[], &target),
+        );
     }
 
     if brand_kit.is_none() {
@@ -191,6 +204,15 @@ pub fn preflight_scene(
         brand_ref_operations,
         token_operations,
         layout_operations,
+    }
+}
+
+fn render_target_for_format(format: &ExportFormat) -> RenderTarget {
+    match format {
+        ExportFormat::Svg => RenderTarget::Svg,
+        ExportFormat::Png => RenderTarget::Png { scale: 1.0 },
+        ExportFormat::Pdf => RenderTarget::Pdf,
+        ExportFormat::FigmaManifest => RenderTarget::FigmaManifest,
     }
 }
 

@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="400" height="300" viewBox="0 0 400 300" data-lumen-document-id="doc_effects_golden" data-lumen-page-id="page_card">
+<g id="lumen-page-page_card" data-lumen-page-id="page_card">
+<rect x="0" y="0" width="400" height="300" fill="#faf7f0" data-lumen-fill-id="paint_page_bg" />
+<g id="lumen-node-card" data-lumen-node-id="card" transform="translate(24 24)">
+<rect x="0" y="0" width="200" height="120" rx="8" ry="8" fill="#ffffff" data-lumen-fill-id="fill_base" />
+<rect x="0" y="0" width="200" height="120" rx="8" ry="8" fill="#f5f1e9" data-lumen-fill-id="fill_tint" />
+<rect x="0" y="0" width="200" height="120" rx="8" ry="8" fill="none" stroke="#111827" stroke-width="2" data-lumen-stroke-id="stroke_outer" />
+<rect x="0" y="0" width="200" height="120" rx="8" ry="8" fill="none" stroke="#256c70" stroke-width="1" data-lumen-stroke-id="stroke_inner" />
+</g>
+</g>
+</svg>

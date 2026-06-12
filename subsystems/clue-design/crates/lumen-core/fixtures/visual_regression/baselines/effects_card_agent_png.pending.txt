@@ -1,0 +1,6 @@
+visual-regression-placeholder: effects_card_agent_png
+
+This baseline is intentionally textual until export/svg-pdf provides a concrete raster baseline.
+The effects card fixture exercises the Effects Contract V0 surface (multi-fill with gradient,
+dashed round-cap stroke, layered drop shadows) so a future visual-regression run pins the rendered
+output of the full effect stack, not just markup.

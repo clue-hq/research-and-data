@@ -6,6 +6,7 @@ import type { Scene } from "../contracts";
 import {
   deleteEdit,
   modifyNodeEdit,
+  modifyNodeStacksEdit,
   modifyPageNameEdit,
   optimisticOperations,
   type StructuredEdit
@@ -37,6 +38,42 @@ function builderFor(name: string): StructuredEdit {
       return modifyPageNameEdit("page_a4", "Renamed page");
     case "safe_delete_node":
       return deleteEdit({ kind: "node", id: "node_contact_name" });
+    case "modify_node_add_drop_shadow_entry":
+      return modifyNodeStacksEdit("node_contact_name", {
+        effectEdits: [
+          {
+            kind: "add",
+            entry: {
+              id: "shadow_soft",
+              kind: {
+                kind: "drop_shadow",
+                color: { kind: "hex", value: "#000000" },
+                opacity: 0.18,
+                x: 0.0,
+                y: 8.0,
+                blur: 24.0,
+                spread: 0.0
+              }
+            }
+          }
+        ]
+      });
+    case "modify_node_add_dashed_stroke_entry":
+      return modifyNodeStacksEdit("node_contact_name", {
+        strokeEdits: [
+          {
+            kind: "add",
+            entry: {
+              id: "stroke_border",
+              paint: { kind: "solid", color: { kind: "hex", value: "#111827" } },
+              width: 1.0,
+              dash: [6.0, 4.0],
+              cap: "round",
+              join: "round"
+            }
+          }
+        ]
+      });
     default:
       throw new Error(`no TS builder mapped for parity case ${name}`);
   }

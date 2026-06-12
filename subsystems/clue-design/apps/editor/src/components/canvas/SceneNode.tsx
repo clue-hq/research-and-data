@@ -6,7 +6,12 @@ import type Konva from "konva";
 import type { NodeId, Operation, Page, Scene } from "@/engine/contracts";
 import { canvasDragOperation, canvasResizeOperation } from "@/engine/canvasOperations";
 import type { ParentComputedOrigin } from "@/engine/renderAdapter";
-import { nodeDescriptor } from "@/engine/renderAdapter";
+import {
+  konvaFillProps,
+  konvaShadowProps,
+  konvaStrokeProps,
+  nodeDescriptor
+} from "@/engine/renderAdapter";
 import { isNodeDirectGeometryEditable } from "@/engine/sceneQueries";
 
 interface SceneNodeProps {
@@ -182,6 +187,8 @@ function NodeBody({
 }) {
   const selectionStroke = selected ? "#256c70" : locked ? "#9b6b5f" : descriptor.stroke;
   const selectionDash = selected || locked ? [5, 4] : undefined;
+  const fillLayer = descriptor.fills[0] ?? null;
+  const strokeLayer = descriptor.strokes[0] ?? null;
 
   if (descriptor.kind === "text" && descriptor.text) {
     return (
@@ -189,7 +196,8 @@ function NodeBody({
         text={descriptor.text.content}
         width={descriptor.width}
         height={textHeightForRender(descriptor)}
-        fill={descriptor.fill}
+        {...(fillLayer ? konvaFillProps(fillLayer.paint) : { fill: descriptor.fill })}
+        {...konvaShadowProps(descriptor.shadow)}
         fontFamily={descriptor.text.fontFamily}
         fontSize={descriptor.text.fontSize}
         fontStyle={fontStyleFromWeight(descriptor.text.fontWeight)}
@@ -212,7 +220,10 @@ function NodeBody({
         points={descriptor.line.points}
         stroke={selectionStroke ?? descriptor.fill}
         strokeWidth={Math.max(1, descriptor.strokeWidth || 1)}
-        dash={selectionDash}
+        dash={selectionDash ?? strokeLayer?.dash ?? undefined}
+        lineCap={strokeLayer?.lineCap}
+        lineJoin={strokeLayer?.lineJoin}
+        {...konvaShadowProps(descriptor.shadow)}
       />
     );
   }
@@ -221,10 +232,13 @@ function NodeBody({
     return (
       <Path
         data={descriptor.vector.pathData}
-        fill={descriptor.fill}
+        {...(fillLayer ? konvaFillProps(fillLayer.paint) : { fill: descriptor.fill })}
+        {...konvaShadowProps(descriptor.shadow)}
         stroke={selectionStroke ?? undefined}
         strokeWidth={descriptor.strokeWidth}
-        dash={selectionDash}
+        dash={selectionDash ?? strokeLayer?.dash ?? undefined}
+        lineCap={strokeLayer?.lineCap}
+        lineJoin={strokeLayer?.lineJoin}
       />
     );
   }
@@ -237,6 +251,7 @@ function NodeBody({
           width={descriptor.width}
           height={descriptor.height}
           fill={descriptor.fill}
+          {...konvaShadowProps(descriptor.shadow)}
           stroke={selectionStroke ?? "#a79c8a"}
           strokeWidth={selected ? 1.5 : 1}
           dash={selectionDash}
@@ -257,14 +272,63 @@ function NodeBody({
     );
   }
 
+  // Stacked paints render one geometry copy per layer, matching the SVG
+  // exporter's painting order: fills bottom-to-top, then strokes on top.
+  if (descriptor.fills.length > 1 || descriptor.strokes.length > 1) {
+    return (
+      <Fragment>
+        {descriptor.fills.map((layer, index) => (
+          <Rect
+            key={`fill-${layer.id}`}
+            width={descriptor.width}
+            height={descriptor.height}
+            cornerRadius={descriptor.cornerRadius}
+            {...konvaFillProps(layer.paint)}
+            {...(index === 0 ? konvaShadowProps(descriptor.shadow) : {})}
+          />
+        ))}
+        {descriptor.strokes.map((layer) => (
+          <Rect
+            key={`stroke-${layer.id}`}
+            width={descriptor.width}
+            height={descriptor.height}
+            cornerRadius={descriptor.cornerRadius}
+            {...konvaStrokeProps(layer)}
+          />
+        ))}
+        {selected || locked ? (
+          <Rect
+            width={descriptor.width}
+            height={descriptor.height}
+            cornerRadius={descriptor.cornerRadius}
+            stroke={selectionStroke ?? "#256c70"}
+            strokeWidth={1}
+            dash={selectionDash}
+            listening={false}
+          />
+        ) : null}
+      </Fragment>
+    );
+  }
+
+  const singleStrokeProps =
+    selected || locked
+      ? {
+          stroke: selectionStroke ?? undefined,
+          strokeWidth: selected ? Math.max(1, descriptor.strokeWidth) : descriptor.strokeWidth,
+          dash: selectionDash
+        }
+      : strokeLayer
+        ? konvaStrokeProps(strokeLayer)
+        : { stroke: undefined, strokeWidth: descriptor.strokeWidth };
+
   return (
     <Rect
       width={descriptor.width}
       height={descriptor.height}
-      fill={descriptor.fill}
-      stroke={selectionStroke ?? undefined}
-      strokeWidth={selected ? Math.max(1, descriptor.strokeWidth) : descriptor.strokeWidth}
-      dash={selectionDash}
+      {...(fillLayer ? konvaFillProps(fillLayer.paint) : { fill: descriptor.fill })}
+      {...konvaShadowProps(descriptor.shadow)}
+      {...singleStrokeProps}
       cornerRadius={descriptor.cornerRadius}
     />
   );

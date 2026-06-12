@@ -11,6 +11,16 @@
       "purpose": "agent_critique",
       "baseline": "crates/lumen-core/fixtures/visual_regression/baselines/valid_multi_page_slots_agent_png_linkedin_ad.pending.txt",
       "status": "pending_renderer"
+    },
+    {
+      "id": "effects_card_agent_png",
+      "scene_fixture": "crates/lumen-core/fixtures/effects/effects_card.json",
+      "profile": "agent_png",
+      "format": "png",
+      "page_id": "page_effects_card",
+      "purpose": "agent_critique",
+      "baseline": "crates/lumen-core/fixtures/visual_regression/baselines/effects_card_agent_png.pending.txt",
+      "status": "pending_renderer"
     }
   ]
 }
