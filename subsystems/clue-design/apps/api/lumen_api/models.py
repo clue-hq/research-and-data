@@ -123,6 +123,18 @@ class GenerateQrRequest(BaseModel):
     target_width_mm: Optional[float] = None
 
 
+class GenerateAssetRequest(BaseModel):
+    provider: str
+    prompt: str = ""
+    output_kind: str = "raster_image"
+    width: Optional[int] = None
+    height: Optional[int] = None
+    mime_type: Optional[str] = None
+    transparent_background: Optional[bool] = None
+    brand_notes: List[str] = Field(default_factory=list)
+    label: Optional[str] = None
+
+
 class AssetMetadataRequest(BaseModel):
     asset_id: Optional[str] = None
     document_id: Optional[str] = None

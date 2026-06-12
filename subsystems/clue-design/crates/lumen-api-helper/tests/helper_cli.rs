@@ -943,3 +943,175 @@ fn generate_asset_rejects_unknown_providers() {
     assert_eq!(response["ok"], false);
     assert_eq!(response["error"]["code"], "provider.unknown");
 }
+
+// ---------------------------------------------------------------------------
+// Phase G: derive_instance / validate_binding_set (slice G5)
+// ---------------------------------------------------------------------------
+
+const MAILER_REVISION: &str =
+    include_str!("../../lumen-core/fixtures/conformance/phase_g_mailer_revision.json");
+const NOMINAL_BINDING: &str = include_str!("../../lumen-core/fixtures/binding/nominal.json");
+
+fn mailer_revision() -> Value {
+    serde_json::from_str(MAILER_REVISION).unwrap()
+}
+
+fn nominal_binding() -> Value {
+    serde_json::from_str(NOMINAL_BINDING).unwrap()
+}
+
+fn binding_logo_record() -> Value {
+    json!({
+        "id": "asset_acme_logo",
+        "label": "Acme logo",
+        "kind": "logo",
+        "status": "ready",
+        "source": { "kind": "uploaded", "asset_id": null, "filename": "acme.png", "uploaded_by": "ops" },
+        "media": {
+            "mime_type": "image/png",
+            "filename": "acme.png",
+            "byte_length": 2048,
+            "digest": { "algorithm": "sha256", "value": "ab".repeat(32) },
+            "location": null
+        },
+        "raster": {
+            "pixel_width": 1200, "pixel_height": 400,
+            "dpi_x": 300.0, "dpi_y": 300.0,
+            "has_alpha": true, "color_profile": "srgb", "aspect_ratio": 3.0
+        },
+        "vector": null,
+        "font": null,
+        "logo": {
+            "pixel_width": 1200, "pixel_height": 400,
+            "width": 36.0, "height": 12.0,
+            "dpi_x": 300.0, "dpi_y": 300.0,
+            "has_transparency": true, "color_mode": "full_color", "clearspace": 2.0
+        },
+        "license": null,
+        "provenance": { "created_by": null, "created_at": null, "source_label": null, "confidence": null, "notes": [] },
+        "tags": ["logo"]
+    })
+}
+
+fn derive_request(store_root: &str) -> Value {
+    json!({
+        "action": "derive_instance",
+        "scene": mailer_revision(),
+        "binding_set": nominal_binding(),
+        "asset_records": [binding_logo_record()],
+        "store_root": store_root
+    })
+}
+
+#[test]
+fn validate_binding_set_action_reports_precise_codes() {
+    let response = helper(json!({
+        "action": "validate_binding_set",
+        "scene": mailer_revision(),
+        "binding_set": nominal_binding(),
+    }));
+    assert_eq!(response["ok"], true, "{response:#?}");
+    assert_eq!(response["instance"]["valid"], true);
+
+    let mut invalid = nominal_binding();
+    invalid["values"]
+        .as_object_mut()
+        .unwrap()
+        .remove("contact.full_name");
+    let response = helper(json!({
+        "action": "validate_binding_set",
+        "scene": mailer_revision(),
+        "binding_set": invalid,
+    }));
+    assert_eq!(response["ok"], false, "{response:#?}");
+    let codes: Vec<&str> = response["diagnostics"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|d| d["code"].as_str())
+        .collect();
+    assert!(codes.contains(&"LUMG0012"), "{codes:?}");
+}
+
+#[test]
+fn derive_instance_executes_the_qr_chain_with_digest_stability() {
+    let store_dir = tempfile::tempdir().expect("tempdir");
+    let store_root = store_dir.path().to_string_lossy().to_string();
+
+    let first = helper(derive_request(&store_root));
+    assert_eq!(first["ok"], true, "{first:#?}");
+    assert_eq!(first["instance"]["has_errors"], false, "{first:#?}");
+
+    let generated = &first["instance"]["generated"]["qr_landing"];
+    assert_eq!(
+        generated["record"]["id"], "asset_gen_bind_acme_dr_sharma_qr_landing",
+        "generated asset ids are a pure function of (binding_set_id, entry)"
+    );
+    let digest = generated["digest_value"].as_str().expect("digest");
+    let notes = generated["record"]["provenance"]["notes"]
+        .as_array()
+        .expect("notes");
+    assert!(
+        notes
+            .iter()
+            .any(|note| note.as_str() == Some("binding_set:bind_acme_dr_sharma")),
+        "provenance must record the binding set: {notes:?}"
+    );
+
+    // The derived scene binds the generated QR to the UrlQr slot's node.
+    let qr_node = &first["scene"]["nodes"]["node_qr"];
+    assert_eq!(
+        qr_node["kind"]["asset_id"], "asset_gen_bind_acme_dr_sharma_qr_landing",
+        "{qr_node:#?}"
+    );
+
+    // Re-derivation: byte-identical derived scene and the same QR digest
+    // (content-addressed store deduplicates the bytes).
+    let second = helper(derive_request(&store_root));
+    assert_eq!(
+        serde_json::to_string(&first["scene"]).unwrap(),
+        serde_json::to_string(&second["scene"]).unwrap(),
+        "re-derivation must be byte-identical"
+    );
+    assert_eq!(
+        second["instance"]["generated"]["qr_landing"]["digest_value"]
+            .as_str()
+            .unwrap(),
+        digest,
+        "same URL must produce the same QR digest"
+    );
+    assert_eq!(
+        second["instance"]["generated"]["qr_landing"]["deduplicated"], true,
+        "second run must hit the content-addressed store"
+    );
+}
+
+#[test]
+fn derive_instance_refuses_invalid_bindings_before_provider_execution() {
+    let store_dir = tempfile::tempdir().expect("tempdir");
+    let store_root = store_dir.path().to_string_lossy().to_string();
+
+    let mut request = derive_request(&store_root);
+    request["binding_set"]["values"]["campaign.cta"] = json!({
+        "kind": "text",
+        "value": "X".repeat(61)
+    });
+    let response = helper(request);
+    assert_eq!(response["ok"], false, "{response:#?}");
+    assert_eq!(response["error"]["code"], "instance.binding_invalid");
+    let codes: Vec<&str> = response["diagnostics"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|d| d["code"].as_str())
+        .collect();
+    assert!(codes.contains(&"LUMG0014"), "{codes:?}");
+    // No provider executed: the store stays empty.
+    assert!(
+        std::fs::read_dir(store_dir.path())
+            .unwrap()
+            .next()
+            .is_none(),
+        "no bytes may be stored for refused derivations"
+    );
+}

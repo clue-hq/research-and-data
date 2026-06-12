@@ -53,6 +53,7 @@ from .models import (
     ExportDocumentRequest,
     ExportPreviewRequest,
     FinalizeTemplateRequest,
+    GenerateAssetRequest,
     GenerateQrRequest,
     GenerateBrandKitRequest,
     PreflightRequest,
@@ -1430,6 +1431,85 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
             "schema_version": 1,
             "asset": stored["asset"],
             "qr": asset_payload.get("qr") or {},
+            "deduplicated": asset_payload.get("deduplicated", False),
+            "diagnostics": diagnostics,
+        }
+
+    @app.post("/assets/generate")
+    def generate_asset(
+        payload: GenerateAssetRequest,
+        repo: Repository = Depends(repository),
+    ) -> JsonObject:
+        """Public Phase E provider-registry surface (lands with Phase G):
+        run any registered generation provider and persist the normalized
+        asset record."""
+        asset_id = f"asset_gen_{uuid4().hex[:12]}"
+        request = {
+            "request_id": asset_id,
+            "prompt": payload.prompt,
+            "output_kind": payload.output_kind,
+            "target_node_id": None,
+            "target_slot_id": None,
+            "constraints": {
+                "width": payload.width,
+                "height": payload.height,
+                "mime_type": payload.mime_type,
+                "transparent_background": payload.transparent_background,
+                "brand_notes": payload.brand_notes,
+            },
+        }
+        try:
+            result = app.state.core.generate_asset(
+                store_root=asset_store_root(),
+                provider=payload.provider,
+                request=request,
+                asset_id=asset_id,
+                label=payload.label,
+                raise_on_error=False,
+            )
+        except CoreError as error:
+            raise core_http_error(error) from error
+
+        diagnostics = result.get("diagnostics", [])
+        if not result.get("ok", False):
+            error = result.get("error") or {}
+            if not diagnostics:
+                diagnostics = diagnostics_from_helper_error(error)
+            log_event(
+                api_logger,
+                logging.INFO,
+                "asset_generation_completed",
+                status="rejected",
+                provider=payload.provider,
+                error_code=error.get("code"),
+                **diagnostic_summary(diagnostics),
+            )
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "code": error.get("code"),
+                    "message": error.get("message"),
+                    "diagnostics": diagnostics,
+                },
+            )
+
+        asset_payload = result.get("asset") or {}
+        record = asset_payload.get("record") or {}
+        stored = repo.create_asset_record(record)
+        log_event(
+            api_logger,
+            logging.INFO,
+            "asset_generation_completed",
+            status="ok",
+            provider=payload.provider,
+            asset_id=record.get("id"),
+            deduplicated=asset_payload.get("deduplicated", False),
+            **diagnostic_summary(diagnostics),
+        )
+        return {
+            "schema_version": 1,
+            "asset": stored["asset"],
+            "provider": asset_payload.get("provider") or {"id": payload.provider},
             "deduplicated": asset_payload.get("deduplicated", False),
             "diagnostics": diagnostics,
         }

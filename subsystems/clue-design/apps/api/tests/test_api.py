@@ -1934,6 +1934,53 @@ def test_generate_qr_route_surfaces_diagnostics_and_rejections(
     )
 
 
+def test_generate_asset_route_runs_registry_providers(client: TestClient) -> None:
+    # Public provider-registry surface (Phase G slice G5): qr-v1 through
+    # the generation trait produces a persisted vector record.
+    qr = client.post(
+        "/assets/generate",
+        json={
+            "provider": "qr-v1",
+            "prompt": "https://go.example.com/acme/dr-sharma",
+            "output_kind": "vector",
+            "label": "Landing QR",
+        },
+    )
+    assert qr.status_code == 200, qr.text
+    payload = qr.json()
+    record = payload["asset"]
+    assert record["kind"] == "vector"
+    assert record["provenance"]["source_label"] == "generated:qr-v1"
+    assert payload["provider"]["id"] == "qr-v1"
+    served = client.get(f"/assets/{record['id']}/bytes")
+    assert served.status_code == 200
+    assert b"<svg" in served.content
+
+    # Deterministic stub image provider persists a raster record.
+    image = client.post(
+        "/assets/generate",
+        json={
+            "provider": "stub-image-v0",
+            "prompt": "calm clinical hero image",
+            "width": 64,
+            "height": 32,
+        },
+    )
+    assert image.status_code == 200, image.text
+    image_record = image.json()["asset"]
+    assert image_record["kind"] == "raster_image"
+    assert image_record["raster"]["pixel_width"] == 64
+    assert image_record["raster"]["pixel_height"] == 32
+
+    # Unknown providers are typed rejections, never 500s.
+    unknown = client.post(
+        "/assets/generate",
+        json={"provider": "imaginary-v9", "prompt": "anything"},
+    )
+    assert unknown.status_code == 400
+    assert unknown.json()["detail"]["code"] == "provider.unknown"
+
+
 def test_mailer_carries_scannable_qr_through_export(client: TestClient) -> None:
     # Gate for slice E4: a mailer-style document carries a generated QR
     # that survives placement and export with real bytes.

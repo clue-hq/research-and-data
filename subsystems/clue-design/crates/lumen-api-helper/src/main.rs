@@ -8,16 +8,17 @@ use lumen_core::{
     build_hard_delete_asset, build_modify_operations, build_move_after, build_move_before,
     build_move_to_parent, build_replace_node, build_safe_delete, build_safe_delete_page,
     build_safe_delete_slot, compare_brand_kit_compatibility, compile_dsl_into_scene_with_session,
-    compile_styles_brand_kit, generate_brand_kit, layout_scene, platform_default_brand_kit,
-    preflight_scene, summarize_brand_kit_for_authoring, validate_brand_kit,
-    validate_brand_kit_product_ready, validate_scene_brand_governance, AssetDigest, AssetId,
-    AssetKind, AssetLicense, AssetLocation, AssetMediaMetadata, AssetProvenance, AssetRecord,
-    AssetSource, AssetStatus, AssetThumbnail, BrandGovernanceStrictness, BrandKit, BrandKitId,
-    BrandMode, BrandSeed, CloneSubtreeRequest, Diagnostic, DiagnosticSeverity, DocumentId,
-    DslCompileSessionSnapshot, EditBatch, EditPatch, EditScope, EditScopeMode, EditTargetRef,
-    ExportAdapter, ExportFormat, ExportProfile, ExportPurpose, ExportRequest, Medium, NodeId,
-    Operation, PageId, ParentRef, PdfIntent, PreflightOptions, RasterScale, ReplaceNodeRequest,
-    Scene, ScopeViolation, TemplateRevisionId,
+    compile_styles_brand_kit, derive_instance, generate_brand_kit, layout_scene,
+    platform_default_brand_kit, preflight_scene, summarize_brand_kit_for_authoring,
+    validate_binding_set, validate_brand_kit, validate_brand_kit_product_ready,
+    validate_scene_brand_governance, AssetDigest, AssetId, AssetKind, AssetLicense, AssetLocation,
+    AssetMediaMetadata, AssetProvenance, AssetRecord, AssetSource, AssetStatus, AssetThumbnail,
+    BindingSet, BrandGovernanceStrictness, BrandKit, BrandKitId, BrandMode, BrandSeed,
+    CloneSubtreeRequest, DerivationAssets, DeriveOptions, Diagnostic, DiagnosticSeverity,
+    DocumentId, DslCompileSessionSnapshot, EditBatch, EditPatch, EditScope, EditScopeMode,
+    EditTargetRef, ExportAdapter, ExportFormat, ExportProfile, ExportPurpose, ExportRequest,
+    Medium, NodeId, Operation, PageId, ParentRef, PdfIntent, PreflightOptions, RasterScale,
+    ReplaceNodeRequest, Scene, ScopeViolation, TemplateRevisionId,
 };
 use lumen_export::LumenExportAdapter;
 use lumen_skia::{FontManager, SkiaSceneRenderer, SkiaTextMeasurer};
@@ -176,6 +177,18 @@ enum CoreRequest {
     LayoutGeometry {
         scene: Value,
     },
+    ValidateBindingSet {
+        scene: Value,
+        binding_set: Value,
+    },
+    DeriveInstance {
+        scene: Value,
+        binding_set: Value,
+        #[serde(default)]
+        asset_records: Vec<Value>,
+        #[serde(default)]
+        store_root: Option<String>,
+    },
 }
 
 #[derive(Debug, Serialize)]
@@ -211,6 +224,8 @@ struct CoreResponse {
     export: Option<Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
     asset: Option<Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    instance: Option<Value>,
 }
 
 #[derive(Debug, Serialize)]
@@ -300,6 +315,7 @@ fn main() {
                     dsl: None,
                     export: None,
                     asset: None,
+                    instance: None,
                 },
             };
             helper_log(
@@ -339,6 +355,7 @@ fn main() {
                 dsl: None,
                 export: None,
                 asset: None,
+                instance: None,
             }
         }
     };
@@ -371,6 +388,8 @@ impl CoreRequest {
             CoreRequest::ValidateSceneBrandGovernance { .. } => "validate_scene_brand_governance",
             CoreRequest::CompareBrandKitCompatibility { .. } => "compare_brand_kit_compatibility",
             CoreRequest::LayoutGeometry { .. } => "layout_geometry",
+            CoreRequest::ValidateBindingSet { .. } => "validate_binding_set",
+            CoreRequest::DeriveInstance { .. } => "derive_instance",
         }
     }
 }
@@ -465,6 +484,15 @@ fn request_log_fields(request: &CoreRequest) -> Value {
         }),
         CoreRequest::CompareBrandKitCompatibility { .. } => json!({}),
         CoreRequest::LayoutGeometry { .. } => json!({}),
+        CoreRequest::ValidateBindingSet { .. } => json!({}),
+        CoreRequest::DeriveInstance {
+            asset_records,
+            store_root,
+            ..
+        } => json!({
+            "asset_record_count": asset_records.len(),
+            "has_store_root": store_root.is_some(),
+        }),
     }
 }
 
@@ -547,6 +575,7 @@ fn error_response(error: CoreError, diagnostics: Vec<Diagnostic>) -> CoreRespons
         dsl: None,
         export: None,
         asset: None,
+        instance: None,
     }
 }
 
@@ -666,6 +695,7 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                     dsl: None,
                     export: None,
                     asset: None,
+                    instance: None,
                 }),
             }
         }
@@ -691,6 +721,7 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                 dsl: None,
                 export: None,
                 asset: None,
+                instance: None,
             });
             let batch = match batch {
                 Ok(batch) => batch,
@@ -737,6 +768,7 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                     dsl: None,
                     export: None,
                     asset: None,
+                    instance: None,
                 }),
                 Err(error) => Ok(CoreResponse {
                     ok: false,
@@ -762,6 +794,7 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                     dsl: None,
                     export: None,
                     asset: None,
+                    instance: None,
                 }),
             }
         }
@@ -802,6 +835,7 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                 })),
                 export: None,
                 asset: None,
+                instance: None,
             })
         }
         CoreRequest::PreflightScene {
@@ -840,6 +874,7 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                 dsl: None,
                 export: None,
                 asset: None,
+                instance: None,
             })
         }
         CoreRequest::ExportPreview {
@@ -900,6 +935,7 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                     dsl: None,
                     export: Some(to_value(result)?),
                     asset: None,
+                    instance: None,
                 }),
                 Err(error) => Ok(CoreResponse {
                     ok: false,
@@ -918,6 +954,7 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                     dsl: None,
                     export: None,
                     asset: None,
+                    instance: None,
                 }),
             }
         }
@@ -1067,6 +1104,7 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                     "digest_value": stored.digest_value,
                     "byte_length": stored.byte_length,
                 })),
+                instance: None,
             })
         }
         CoreRequest::GenerateQr {
@@ -1244,6 +1282,7 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                     dsl: None,
                     export: None,
                     asset: None,
+                    instance: None,
                 }),
             }
         }
@@ -1268,6 +1307,7 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                 dsl: None,
                 export: None,
                 asset: None,
+                instance: None,
             })
         }
         CoreRequest::ValidateBrandKit {
@@ -1297,6 +1337,7 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                 dsl: None,
                 export: None,
                 asset: None,
+                instance: None,
             })
         }
         CoreRequest::CompileStylesBrandKit {
@@ -1325,6 +1366,7 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                         dsl: None,
                         export: None,
                         asset: None,
+                        instance: None,
                     })
                 }
                 Err(diagnostics) => Ok(CoreResponse {
@@ -1347,6 +1389,7 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                     dsl: None,
                     export: None,
                     asset: None,
+                    instance: None,
                 }),
             }
         }
@@ -1386,6 +1429,7 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                 dsl: None,
                 export: None,
                 asset: None,
+                instance: None,
             })
         }
         CoreRequest::SummarizeBrandKit { brand_kit } => {
@@ -1408,6 +1452,7 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                 dsl: None,
                 export: None,
                 asset: None,
+                instance: None,
             })
         }
         CoreRequest::ValidateSceneBrandGovernance {
@@ -1435,6 +1480,7 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                 dsl: None,
                 export: None,
                 asset: None,
+                instance: None,
             })
         }
         CoreRequest::CompareBrandKitCompatibility { from, to } => {
@@ -1459,6 +1505,7 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                 dsl: None,
                 export: None,
                 asset: None,
+                instance: None,
             })
         }
         CoreRequest::LayoutGeometry { scene } => {
@@ -1487,9 +1534,246 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                 dsl: None,
                 export: None,
                 asset: None,
+                instance: None,
+            })
+        }
+        CoreRequest::ValidateBindingSet { scene, binding_set } => {
+            let scene = parse_scene(scene)?;
+            let binding = parse_binding_set(binding_set)?;
+            let diagnostics = validate_binding_set(&scene, &binding);
+            let ok = !has_error(&diagnostics);
+            Ok(CoreResponse {
+                ok,
+                scene: None,
+                diagnostics,
+                error: None,
+                applied_operations: None,
+                preflight: None,
+                brand_kit: None,
+                brand_summary: None,
+                brand_generation: None,
+                brand_compatibility: None,
+                geometry: None,
+                operations: None,
+                edit: None,
+                dsl: None,
+                export: None,
+                asset: None,
+                instance: Some(json!({
+                    "binding_set_id": binding.binding_set_id,
+                    "template_revision_id": binding.template_revision_id,
+                    "valid": ok,
+                })),
+            })
+        }
+        CoreRequest::DeriveInstance {
+            scene,
+            binding_set,
+            asset_records,
+            store_root,
+        } => {
+            let scene = parse_scene(scene)?;
+            let binding = parse_binding_set(binding_set)?;
+
+            let mut assets = DerivationAssets::default();
+            for value in asset_records {
+                let record: AssetRecord = serde_json::from_value(value)
+                    .map_err(|error| core_error("helper.asset_record", error.to_string()))?;
+                assets.records.insert(record.id.clone(), record);
+            }
+
+            // Refuse early on invalid bindings so providers never execute
+            // for inputs that cannot derive.
+            let validation = validate_binding_set(&scene, &binding);
+            if has_error(&validation) {
+                return Ok(error_response(
+                    core_error(
+                        "instance.binding_invalid",
+                        format!(
+                            "binding set {} failed validation against the revision snapshot",
+                            binding.binding_set_id
+                        ),
+                    ),
+                    validation,
+                ));
+            }
+
+            // Execute every generated.* spec through the Phase E surfaces
+            // (QR through the dedicated deterministic encoder, everything
+            // else through the provider registry), normalizing via the
+            // shared ingest path. Asset ids are a pure function of
+            // (binding_set_id, entry name) so re-derivation is idempotent.
+            let mut generated_payloads = serde_json::Map::new();
+            for (name, spec) in &binding.generated {
+                let Some(store_root) = store_root.clone() else {
+                    return Err(core_error(
+                        "helper.store_root",
+                        "derive_instance with generated entries requires store_root",
+                    ));
+                };
+                let asset_id = deterministic_generated_asset_id(&binding.binding_set_id, name);
+                let response = match spec.provider.as_str() {
+                    "qr" => {
+                        let url = spec
+                            .input
+                            .url_from
+                            .as_deref()
+                            .and_then(|path| binding.resolve_link_path(path))
+                            .ok_or_else(|| {
+                                core_error(
+                                    "instance.generated_url",
+                                    format!(
+                                        "generated entry {name:?}: url_from did not resolve to a link"
+                                    ),
+                                )
+                            })?
+                            .to_owned();
+                        handle_request(CoreRequest::GenerateQr {
+                            store_root,
+                            data: url.clone(),
+                            asset_id: asset_id.clone(),
+                            label: Some(format!("QR code ({url})")),
+                            ec_level: spec.input.ec_level.clone(),
+                            print: false,
+                            target_width_mm: None,
+                        })?
+                    }
+                    provider => handle_request(CoreRequest::GenerateAsset {
+                        store_root,
+                        provider: provider.to_owned(),
+                        request: json!({
+                            "request_id": asset_id.clone(),
+                            "prompt": spec
+                                .input
+                                .prompt
+                                .clone()
+                                .or_else(|| spec
+                                    .input
+                                    .url_from
+                                    .as_deref()
+                                    .and_then(|path| binding.resolve_link_path(path))
+                                    .map(str::to_owned))
+                                .unwrap_or_default(),
+                            "output_kind": "raster_image",
+                            "target_node_id": null,
+                            "target_slot_id": null,
+                            "constraints": {
+                                "width": null,
+                                "height": null,
+                                "mime_type": null,
+                                "transparent_background": null,
+                                "brand_notes": []
+                            }
+                        }),
+                        asset_id: asset_id.clone(),
+                        label: None,
+                    })?,
+                };
+
+                if !response.ok {
+                    let mut diagnostics = response.diagnostics;
+                    let error = response.error.unwrap_or_else(|| {
+                        core_error("instance.generated_failed", "provider execution failed")
+                    });
+                    return Ok(error_response(
+                        core_error(
+                            "instance.generated_failed",
+                            format!(
+                                "generated entry {name:?} (provider {}) failed: {} {}",
+                                spec.provider, error.code, error.message
+                            ),
+                        ),
+                        std::mem::take(&mut diagnostics),
+                    ));
+                }
+
+                let record_value = response
+                    .asset
+                    .as_ref()
+                    .and_then(|asset| asset.get("record"))
+                    .cloned()
+                    .ok_or_else(|| {
+                        core_error(
+                            "instance.generated_failed",
+                            format!("generated entry {name:?} returned no asset record"),
+                        )
+                    })?;
+                let mut record: AssetRecord = serde_json::from_value(record_value)
+                    .map_err(|error| core_error("helper.asset_record", error.to_string()))?;
+                // Provenance records which binding set produced this asset.
+                record
+                    .provenance
+                    .notes
+                    .push(format!("binding_set:{}", binding.binding_set_id));
+
+                let mut payload = response.asset.clone().unwrap_or_else(|| json!({}));
+                payload["record"] = to_value(&record)?;
+                payload["provider_id"] = json!(spec.provider);
+                generated_payloads.insert(name.clone(), payload);
+
+                assets.generated.insert(name.clone(), record);
+            }
+
+            let derived = derive_instance(
+                &scene,
+                &binding,
+                &assets,
+                &DeriveOptions {
+                    measurer: Some(server_measurer()),
+                },
+            );
+
+            Ok(CoreResponse {
+                ok: true,
+                scene: Some(to_value(&derived.scene)?),
+                diagnostics: derived.diagnostics.clone(),
+                error: None,
+                applied_operations: None,
+                preflight: None,
+                brand_kit: None,
+                brand_summary: None,
+                brand_generation: None,
+                brand_compatibility: None,
+                geometry: None,
+                operations: None,
+                edit: None,
+                dsl: None,
+                export: None,
+                asset: None,
+                instance: Some(json!({
+                    "binding_set_id": binding.binding_set_id,
+                    "template_revision_id": binding.template_revision_id,
+                    "has_errors": derived.has_errors(),
+                    "audit": to_value(&derived.audit)?,
+                    "generated": Value::Object(generated_payloads),
+                })),
             })
         }
     }
+}
+
+/// Deterministic per-instance generated asset id: a pure function of
+/// (binding_set_id, generated entry name) so re-derivation produces the
+/// same record and the content-addressed store deduplicates the bytes.
+fn deterministic_generated_asset_id(binding_set_id: &str, entry: &str) -> String {
+    let sanitize = |source: &str| {
+        source
+            .chars()
+            .map(|ch| {
+                if ch.is_ascii_alphanumeric() || ch == '_' || ch == '-' {
+                    ch
+                } else {
+                    '_'
+                }
+            })
+            .collect::<String>()
+    };
+    format!("asset_gen_{}_{}", sanitize(binding_set_id), sanitize(entry))
+}
+
+fn parse_binding_set(value: Value) -> Result<BindingSet, CoreError> {
+    serde_json::from_value(value)
+        .map_err(|error| core_error("helper.binding_set", error.to_string()))
 }
 
 fn ok_scene(
@@ -1514,6 +1798,7 @@ fn ok_scene(
         dsl: None,
         export: None,
         asset: None,
+        instance: None,
     }
 }
 
