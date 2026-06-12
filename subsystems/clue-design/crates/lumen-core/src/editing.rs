@@ -1257,6 +1257,92 @@ pub fn build_hard_delete_asset(scene: &Scene, asset_id: AssetId) -> Result<EditB
     .with_inverses(scene)
 }
 
+/// Ungroup: move the group's children to its parent at the group's index
+/// (order preserved), then delete the emptied group. Auto-layout containers
+/// are protected unless explicitly allowed, because dissolving them destroys
+/// layout semantics. Moved children get stale computed geometry cleared so
+/// preflight recomputes their positions.
+pub fn build_ungroup(
+    scene: &Scene,
+    group_id: NodeId,
+    allow_layout: bool,
+) -> Result<EditBatch, EditError> {
+    let group = scene.nodes.get(&group_id).ok_or_else(|| {
+        EditError::new(
+            EditErrorKind::TargetNotFound,
+            format!("node {} does not exist", group_id),
+        )
+        .with_target(EditTargetRef::Node(group_id.clone()))
+    })?;
+    if !group.kind.can_have_children() {
+        return Err(EditError::new(
+            EditErrorKind::UnsupportedTarget,
+            format!(
+                "node {} is not a container and cannot be ungrouped",
+                group_id
+            ),
+        )
+        .with_target(EditTargetRef::Node(group_id)));
+    }
+    if matches!(group.kind, NodeKind::AutoLayout(_)) && !allow_layout {
+        return Err(EditError::new(
+            EditErrorKind::LifecycleProtected,
+            format!(
+                "node {} is an auto-layout container; ungrouping it destroys layout semantics (pass allow_layout to override)",
+                group_id
+            ),
+        )
+        .with_target(EditTargetRef::Node(group_id)));
+    }
+    if group.locked {
+        return Err(EditError::new(
+            EditErrorKind::LockedTarget,
+            format!("node {} is locked", group_id),
+        )
+        .with_target(EditTargetRef::Node(group_id)));
+    }
+    let parent = scene.parent_of(&group_id).ok_or_else(|| {
+        EditError::new(
+            EditErrorKind::TargetNotFound,
+            format!("node {} has no parent", group_id),
+        )
+        .with_target(EditTargetRef::Node(group_id.clone()))
+    })?;
+    let group_index = children_for_parent(scene, &parent)?
+        .iter()
+        .position(|id| id == &group_id)
+        .ok_or_else(|| {
+            EditError::new(
+                EditErrorKind::TargetNotFound,
+                format!("node {} is not in its parent", group_id),
+            )
+            .with_target(EditTargetRef::Node(group_id.clone()))
+        })?;
+
+    let mut operations = Vec::new();
+    for (offset, child_id) in group.children.iter().enumerate() {
+        operations.push(Operation::MoveNode {
+            node_id: child_id.clone(),
+            new_parent: parent.clone(),
+            index: group_index + offset,
+        });
+        operations.push(Operation::UpdateNode {
+            node_id: child_id.clone(),
+            patch: NodePatch {
+                computed: OptionalFieldPatch::Clear,
+                ..NodePatch::default()
+            },
+        });
+    }
+    operations.push(Operation::RemoveNode {
+        node_id: group_id.clone(),
+    });
+
+    EditBatch::new(operations, vec![EditTargetRef::Node(group_id)])
+        .with_intent("ungroup")
+        .with_inverses(scene)
+}
+
 /// Export-profile delete (Phase D Decision 6): the only remaining profile is
 /// protected, and an explicit replacement must name a different existing
 /// profile so the document never loses its export contract.

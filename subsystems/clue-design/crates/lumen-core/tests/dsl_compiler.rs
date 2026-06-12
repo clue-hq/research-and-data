@@ -662,7 +662,9 @@ ungroup(headline)
 "#,
     );
 
-    assert_eq!(output.halted_at.as_ref().unwrap().code, "LUMD0700");
+    // Ungrouping a leaf text node fails at the edit layer (LUMD0900); the
+    // earlier slot operations from the valid lines must survive the halt.
+    assert_eq!(output.halted_at.as_ref().unwrap().code, "LUMD0900");
     assert!(output
         .operations
         .iter()
@@ -1379,4 +1381,106 @@ fn parent_directive_keeps_index_forms() {
         scene.nodes[&NodeId::from("hero")].children[0],
         NodeId::from("logo")
     );
+}
+
+#[test]
+fn ungroup_dissolves_group_preserving_child_order() {
+    let source = "page page_a4\n  wrap gr p(0,0) s(400,400)\n    a rect p(0,0) s(10,10)\n    b rect p(0,0) s(10,10)\n  tail rect p(0,0) s(10,10)\n\nungroup(wrap)";
+    let mut scene = Scene::new(lumen_core::DocumentId::from("doc_ungroup"), "Doc");
+    let output = compile_dsl_into_scene(source, &mut scene);
+
+    assert_no_dsl_errors(&output.compile_output.diagnostics);
+    assert!(!scene.nodes.contains_key(&NodeId::from("wrap")));
+    assert_eq!(
+        scene.pages[&lumen_core::PageId::from("page_a4")].children,
+        vec![NodeId::from("a"), NodeId::from("b"), NodeId::from("tail")]
+    );
+}
+
+#[test]
+fn ungroup_protects_auto_layout_unless_allowed() {
+    let source = "page page_a4\n  stack al(v) p(0,0) s(400,400)\n    a rect p(0,0) s(10,10)\n\nungroup(stack)";
+    let mut scene = Scene::new(lumen_core::DocumentId::from("doc_ungroup2"), "Doc");
+    let output = compile_dsl_into_scene(source, &mut scene);
+    assert!(output.compile_output.halted_at.is_some());
+
+    let mut scene = Scene::new(lumen_core::DocumentId::from("doc_ungroup3"), "Doc");
+    let output = compile_dsl_into_scene(
+        &source.replace("ungroup(stack)", "ungroup(stack, allow_layout)"),
+        &mut scene,
+    );
+    assert_no_dsl_errors(&output.compile_output.diagnostics);
+    assert!(!scene.nodes.contains_key(&NodeId::from("stack")));
+}
+
+#[test]
+fn override_group_constrains_indented_modifies_to_root_subtree() {
+    let source = "page page_a4\n  card fr p(0,0) s(200,200)\n    title text \"T\" p(0,0) s(100,hug)\n  other text \"O\" p(0,0) s(100,hug)\n\nclone(card, card_2, after:card)\noverride(card_2)\n  #card_2__title text(\"Override applied\")";
+    let mut scene = Scene::new(lumen_core::DocumentId::from("doc_override"), "Doc");
+    let output = compile_dsl_into_scene(source, &mut scene);
+
+    assert_no_dsl_errors(&output.compile_output.diagnostics);
+    let NodeKind::Text(text) = &scene.nodes[&NodeId::from("card_2__title")].kind else {
+        panic!("expected cloned title text node");
+    };
+    assert_eq!(text.content, "Override applied");
+
+    // Touching a node outside the override root halts with LUMD0913.
+    let bad = source.replace(
+        "#card_2__title text(\"Override applied\")",
+        "#other text(\"Escape\")",
+    );
+    let mut scene = Scene::new(lumen_core::DocumentId::from("doc_override2"), "Doc");
+    let output = compile_dsl_into_scene(&bad, &mut scene);
+    assert_eq!(
+        output.compile_output.halted_at.as_ref().unwrap().code,
+        "LUMD0913"
+    );
+}
+
+struct FixtureHistory {
+    undo: Vec<Operation>,
+}
+
+impl lumen_core::DslHistoryAdapter for FixtureHistory {
+    fn undo_operations(&self, label: Option<&str>) -> Option<Vec<Operation>> {
+        (label == Some("fix")).then(|| self.undo.clone())
+    }
+
+    fn redo_operations(&self, _label: Option<&str>) -> Option<Vec<Operation>> {
+        None
+    }
+}
+
+#[test]
+fn undo_lowers_through_history_adapter_and_rejects_without_one() {
+    let mut session = lumen_core::DslCompileSession::empty();
+    let setup =
+        session.compile_block("page page_a4\n  headline text \"After edit\" p(0,0) s(400,hug)");
+    assert!(setup.halted_at.is_none());
+
+    // Pure compile (no adapter) rejects undo with the precise diagnostic.
+    let rejected = session.compile_block("undo(\"fix\")");
+    assert_eq!(rejected.halted_at.as_ref().unwrap().code, "LUMD0916");
+
+    // With an adapter, undo lowers the inverse operations it supplies.
+    let history = FixtureHistory {
+        undo: vec![Operation::UpdateNode {
+            node_id: NodeId::from("headline"),
+            patch: lumen_core::NodePatch {
+                kind: lumen_core::FieldPatch::Set(NodeKind::Text(lumen_core::TextNode {
+                    content: "Before edit".to_owned(),
+                    ..lumen_core::TextNode::default()
+                })),
+                ..lumen_core::NodePatch::default()
+            },
+        }],
+    };
+    let undone = session.compile_block_with_history("undo(\"fix\")", Some(&history));
+    assert!(undone.halted_at.is_none(), "{:#?}", undone.diagnostics);
+    assert_eq!(undone.operations.len(), 1);
+
+    // Unknown label diagnoses precisely.
+    let missing = session.compile_block_with_history("undo(\"nope\")", Some(&history));
+    assert_eq!(missing.halted_at.as_ref().unwrap().code, "LUMD0917");
 }

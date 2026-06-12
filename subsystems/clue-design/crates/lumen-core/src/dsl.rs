@@ -6,15 +6,15 @@ use crate::{
     build_archive_asset, build_clone_subtree, build_delete_export_profile, build_hard_delete_asset,
     build_modify_operations, build_move_after, build_move_before, build_move_to_parent,
     build_replace_node, build_safe_delete, build_safe_delete_page, build_safe_delete_slot,
-    resolve_edit_target, AssetEditPatch, AssetId, AutoLayoutDirection, AutoLayoutNode,
-    AutoLayoutProps, CloneSlotPolicy, CloneSubtreeRequest, Color, ComputedClonePolicy, Diagnostic,
-    DiagnosticSeverity, DocumentPatch, EditError, EditPatch, EditTargetRef, ExportFormat,
-    FieldPatch, Fill, ImageNode, LayoutAnchor, LineNode, Node, NodeEditPatch, NodeId, NodeKind,
-    Operation, OperationError, OperationReport, OptionalFieldPatch, Orientation, Page,
-    PageEditPatch, PageId, PagePreset, PageSize, Paint, PaintId, ParentRef, PdfIntent, Phase,
-    RasterScale, Rect, RelativePlacement, ReplaceNodeRequest, ReplaceSlotPolicy, Scene, SizeSpec,
-    Slot, SlotEditPatch, SlotId, SlotKey, Stroke, TextAlign, TextDirection, TextEditPatch,
-    TextNode, TextWrap, Unit, VectorNode,
+    build_ungroup, resolve_edit_target, AssetEditPatch, AssetId, AutoLayoutDirection,
+    AutoLayoutNode, AutoLayoutProps, CloneSlotPolicy, CloneSubtreeRequest, Color,
+    ComputedClonePolicy, Diagnostic, DiagnosticSeverity, DocumentPatch, EditError, EditPatch,
+    EditTargetRef, ExportFormat, FieldPatch, Fill, ImageNode, LayoutAnchor, LineNode, Node,
+    NodeEditPatch, NodeId, NodeKind, Operation, OperationError, OperationReport,
+    OptionalFieldPatch, Orientation, Page, PageEditPatch, PageId, PagePreset, PageSize, Paint,
+    PaintId, ParentRef, PdfIntent, Phase, RasterScale, Rect, RelativePlacement, ReplaceNodeRequest,
+    ReplaceSlotPolicy, Scene, SizeSpec, Slot, SlotEditPatch, SlotId, SlotKey, Stroke, TextAlign,
+    TextDirection, TextEditPatch, TextNode, TextWrap, Unit, VectorNode,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
@@ -29,6 +29,20 @@ pub fn normalize_dsl(source: &str) -> String {
 
 pub fn parse_dsl(source: &str) -> DslParseOutput {
     DslParser::new(source).parse()
+}
+
+/// Operation source for history-aware `undo(...)`/`redo(...)` lowering.
+/// The API's append-only envelope log is the canonical product
+/// implementation (POST /undo, /redo, /revert); this trait lets session
+/// hosts lower the DSL forms against the same history. Pure `compile_dsl`
+/// has no history and keeps rejecting undo/redo with a precise diagnostic.
+pub trait DslHistoryAdapter {
+    /// Inverse operations that revert the batch addressed by `label`
+    /// (or the latest undoable batch when `None`).
+    fn undo_operations(&self, label: Option<&str>) -> Option<Vec<Operation>>;
+    /// Original operations that re-apply the batch addressed by `label`
+    /// (or the latest redoable batch when `None`).
+    fn redo_operations(&self, label: Option<&str>) -> Option<Vec<Operation>>;
 }
 
 pub fn compile_dsl(source: &str) -> DslCompileOutput {
@@ -141,6 +155,14 @@ impl DslCompileSession {
     }
 
     pub fn compile_block(&mut self, source: &str) -> DslCompileOutput {
+        self.compile_block_with_history(source, None)
+    }
+
+    pub fn compile_block_with_history(
+        &mut self,
+        source: &str,
+        history: Option<&dyn DslHistoryAdapter>,
+    ) -> DslCompileOutput {
         let starting_context = self.parser_context.clone();
         let (parse, parsed_context) =
             DslParser::new_with_context(source, starting_context.clone()).parse_with_context();
@@ -150,6 +172,7 @@ impl DslCompileSession {
             &mut self.scene,
             &mut self.parent_stack,
             &mut self.emitted_slots,
+            history,
         );
         let output = compiler.compile(parse.halted_at.clone());
 
@@ -479,6 +502,7 @@ pub enum DslDirective {
     },
     Ungroup {
         target: NodeId,
+        allow_layout: bool,
     },
     Undo {
         label: Option<String>,
@@ -1029,9 +1053,34 @@ impl DslParser {
                 }
             }
             "ungroup" => {
-                expect_arg_count(&call, 1, line_number)?;
+                if call.args.is_empty() || call.args.len() > 2 {
+                    return Err(error_diag(
+                        line_number,
+                        1,
+                        trimmed.len(),
+                        "LUMD0207",
+                        "ungroup(...) expects a group id and optional allow_layout",
+                        "Use ungroup(group_id) or ungroup(stack, allow_layout).",
+                    ));
+                }
+                let allow_layout = call
+                    .args
+                    .get(1)
+                    .map(|flag| flag.trim() == "allow_layout")
+                    .unwrap_or(false);
+                if call.args.len() == 2 && !allow_layout {
+                    return Err(error_diag(
+                        line_number,
+                        1,
+                        trimmed.len(),
+                        "LUMD0207",
+                        format!("unknown ungroup flag {}", call.args[1].trim()),
+                        "The only supported flag is allow_layout.",
+                    ));
+                }
                 DslDirective::Ungroup {
                     target: parse_node_id(&call.args[0], line_number, 1)?,
+                    allow_layout,
                 }
             }
             "undo" => DslDirective::Undo {
@@ -1101,6 +1150,10 @@ struct DslCompiler<'a> {
     diagnostics: Vec<DslDiagnostic>,
     halted_at: Option<DslHalt>,
     checkpoint_label: Option<String>,
+    /// Active `override(root)` patch group: indented modify lines must
+    /// target the root or its descendants until a flat line ends the group.
+    override_root: Option<NodeId>,
+    history: Option<&'a dyn DslHistoryAdapter>,
     scene: &'a mut Scene,
     parent_stack: &'a mut Vec<ParentFrame>,
     emitted_slots: &'a mut BTreeMap<SlotKey, SlotId>,
@@ -1113,6 +1166,7 @@ impl<'a> DslCompiler<'a> {
         scene: &'a mut Scene,
         parent_stack: &'a mut Vec<ParentFrame>,
         emitted_slots: &'a mut BTreeMap<SlotKey, SlotId>,
+        history: Option<&'a dyn DslHistoryAdapter>,
     ) -> Self {
         Self {
             document,
@@ -1120,6 +1174,8 @@ impl<'a> DslCompiler<'a> {
             diagnostics,
             halted_at: None,
             checkpoint_label: None,
+            override_root: None,
+            history,
             scene,
             parent_stack,
             emitted_slots,
@@ -1155,6 +1211,11 @@ impl<'a> DslCompiler<'a> {
     }
 
     fn lower_line(&mut self, line: &DslLine) -> Result<(), DslDiagnostic> {
+        // A flat (unindented) line ends any active override patch group;
+        // the override(...) directive itself re-opens one below.
+        if line.indent == 0 {
+            self.override_root = None;
+        }
         match &line.kind {
             DslLineKind::Comment(_) => Ok(()),
             DslLineKind::Checkpoint(label) => {
@@ -1341,11 +1402,9 @@ impl<'a> DslCompiler<'a> {
                             build_archive_asset(self.scene, asset_id.clone())
                         }
                     }
-                    EditTargetRef::ExportProfile(name) => build_delete_export_profile(
-                        self.scene,
-                        name.clone(),
-                        replace_with.clone(),
-                    ),
+                    EditTargetRef::ExportProfile(name) => {
+                        build_delete_export_profile(self.scene, name.clone(), replace_with.clone())
+                    }
                     EditTargetRef::Document => Err(EditError::new(
                         crate::EditErrorKind::UnsupportedTarget,
                         "the document itself cannot be deleted through DSL",
@@ -1367,8 +1426,7 @@ impl<'a> DslCompiler<'a> {
                         // Resolve the anchor inside the destination parent
                         // with detach-aware math: the target leaves its slot
                         // before reinsertion, so it is excluded first.
-                        let mut siblings =
-                            children_ids_for_parent(self.scene, new_parent, line)?;
+                        let mut siblings = children_ids_for_parent(self.scene, new_parent, line)?;
                         siblings.retain(|id| id != target);
                         let anchor_index = siblings
                             .iter()
@@ -1454,17 +1512,75 @@ impl<'a> DslCompiler<'a> {
                 self.prune_parent_stack();
                 Ok(())
             }
-            DslDirective::Ungroup { .. }
-            | DslDirective::Undo { .. }
-            | DslDirective::Redo { .. }
-            | DslDirective::Override { .. }
-            | DslDirective::DesignSystem { .. } => Err(error_diag(
+            DslDirective::Ungroup {
+                target,
+                allow_layout,
+            } => {
+                let batch = build_ungroup(self.scene, target.clone(), *allow_layout)
+                    .map_err(|error| edit_error_diag(line, &error))?;
+                self.emit_edit_batch(line, batch.operations)?;
+                self.prune_parent_stack();
+                Ok(())
+            }
+            DslDirective::Override { target } => {
+                if !self.scene.nodes.contains_key(target) {
+                    return Err(error_diag(
+                        line.line_number,
+                        1,
+                        line.raw.len().max(1),
+                        "LUMD0901",
+                        format!("override root {} does not exist", target),
+                        "Use override(root_id) with an existing node, typically a fresh clone root.",
+                    ));
+                }
+                self.override_root = Some(target.clone());
+                Ok(())
+            }
+            DslDirective::Undo { label } | DslDirective::Redo { label } => {
+                let Some(history) = self.history else {
+                    return Err(error_diag(
+                        line.line_number,
+                        1,
+                        line.raw.len().max(1),
+                        "LUMD0916",
+                        "undo/redo require a history context",
+                        "Use the document history API (POST /undo, /redo, /revert) or compile through a session with a history adapter.",
+                    ));
+                };
+                let is_undo = matches!(
+                    &line.kind,
+                    DslLineKind::Directive(DslDirective::Undo { .. })
+                );
+                let operations = if is_undo {
+                    history.undo_operations(label.as_deref())
+                } else {
+                    history.redo_operations(label.as_deref())
+                };
+                let Some(operations) = operations else {
+                    return Err(error_diag(
+                        line.line_number,
+                        1,
+                        line.raw.len().max(1),
+                        "LUMD0917",
+                        format!(
+                            "no {} history entry matches {:?}",
+                            if is_undo { "undoable" } else { "redoable" },
+                            label
+                        ),
+                        "Check checkpoint labels with the history API before undoing.",
+                    ));
+                };
+                self.emit_edit_batch(line, operations)?;
+                self.prune_parent_stack();
+                Ok(())
+            }
+            DslDirective::DesignSystem { .. } => Err(error_diag(
                 line.line_number,
                 1,
                 line.raw.len().max(1),
                 "LUMD0700",
                 "directive is parsed but not lowered by this workstream",
-                "Keep this syntax for future operation-history, clone/replace, or brand-kit workstreams.",
+                "Design-system switching belongs to the brand-kit workstream.",
             )),
         }
     }
@@ -1475,6 +1591,27 @@ impl<'a> DslCompiler<'a> {
         modification: &DslModification,
     ) -> Result<(), DslDiagnostic> {
         let target = parse_edit_target_ref(&modification.target_ref, line)?;
+        if let (Some(root), true) = (self.override_root.clone(), line.indent > 0) {
+            let in_root = match &target {
+                EditTargetRef::Node(node_id) => {
+                    node_id == &root || self.scene.descendants_of(&root).contains(node_id)
+                }
+                _ => false,
+            };
+            if !in_root {
+                return Err(error_diag(
+                    line.line_number,
+                    1,
+                    line.raw.len().max(1),
+                    "LUMD0913",
+                    format!(
+                        "override group for {} cannot modify target {:?}",
+                        root, target
+                    ),
+                    "Inside override(root), only the root and its descendants may be modified.",
+                ));
+            }
+        }
         let patch =
             edit_patch_from_properties(self.scene, &target, &modification.properties, line)?;
         let batch = build_modify_operations(self.scene, target, patch)
