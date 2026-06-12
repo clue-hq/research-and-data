@@ -13,6 +13,7 @@
 use crate::assets::AssetRecord;
 use crate::binding::{validate_binding_set, BindingSet, BoundValue, ConditionalExpr};
 use crate::diagnostics::{Diagnostic, DiagnosticSeverity, DiagnosticSubject, Phase};
+use crate::editing::CloneLineage;
 use crate::ids::{AssetId, NodeId, SlotKey};
 use crate::layout::{layout_scene, LayoutOptions};
 use crate::operations::{FieldPatch, NodePatch, Operation, OptionalFieldPatch};
@@ -70,7 +71,8 @@ pub enum InstanceAuditKind {
 
 /// One audited derivation action. Entries are deterministic (slot order)
 /// and carry enough context to answer "why does this instance look like
-/// this" without replaying anything.
+/// this" without replaying anything. Repeater expansions record the Phase D
+/// clone lineage so clone ancestry never needs archaeology.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct InstanceAuditEntry {
     pub kind: InstanceAuditKind,
@@ -79,6 +81,25 @@ pub struct InstanceAuditEntry {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub node_ids: Vec<NodeId>,
     pub message: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lineage: Option<CloneLineage>,
+}
+
+impl InstanceAuditEntry {
+    fn new(
+        kind: InstanceAuditKind,
+        slot_key: Option<SlotKey>,
+        node_ids: Vec<NodeId>,
+        message: String,
+    ) -> Self {
+        Self {
+            kind,
+            slot_key,
+            node_ids,
+            message,
+            lineage: None,
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -178,6 +199,7 @@ fn execute_conditionals(
                     "conditional {} on slot {} evaluated true",
                     rule.expression, slot.key
                 ),
+                lineage: None,
             });
             continue;
         }
@@ -192,6 +214,7 @@ fn execute_conditionals(
                     "bound value for slot {} ignored: conditional {} evaluated false",
                     slot.key, rule.expression
                 ),
+                lineage: None,
             });
         }
 
@@ -208,6 +231,7 @@ fn execute_conditionals(
                         "slot {} keeps its placeholder content: {} evaluated false",
                         slot.key, rule.expression
                     ),
+                    lineage: None,
                 });
             }
             EmptyBehavior::UseFallback => {
@@ -281,6 +305,7 @@ fn hide_region(
             "region for slot {} hidden: {expression} evaluated false",
             slot.key
         ),
+        lineage: None,
     });
 }
 
@@ -313,6 +338,7 @@ fn apply_fallback(
             "slot {} fell back to placeholder content: {expression} evaluated false",
             slot.key
         ),
+        lineage: None,
     });
 }
 
@@ -339,11 +365,250 @@ fn apply_scalar_values(
             BoundValue::Asset { asset_id } => {
                 place_asset_in_slot(scene, &slot, asset_id, assets, diagnostics, audit);
             }
-            BoundValue::List { .. } => {
-                // Repeater expansion is slice G4.
+            BoundValue::List { items } => {
+                expand_repeater(scene, &slot, items, diagnostics, audit);
             }
         }
     }
+}
+
+/// Expand a repeater group (slice G4): the template subtree is cloned per
+/// item through Phase D clone machinery with deterministic per-item ids
+/// (`{template}_item_{n}`), per-item slots via the `_item_{n}` suffix
+/// policy, and `CloneLineage` recorded in the audit trail. Reflow happens
+/// through the derivation relayout (`Stack`/`Wrap` ride the template's
+/// auto-layout parent).
+fn expand_repeater(
+    scene: &mut Scene,
+    slot: &Slot,
+    items: &[BoundValue],
+    diagnostics: &mut Vec<Diagnostic>,
+    audit: &mut Vec<InstanceAuditEntry>,
+) {
+    let Some(repeater) = slot.repeater.clone() else {
+        diagnostics.push(Diagnostic::warning(
+            Phase::Validation,
+            "LUMG0312",
+            format!(
+                "slot {} received a list value but declares no repeater rule; items not applied",
+                slot.key
+            ),
+            Some(DiagnosticSubject::Slot(slot.id.clone())),
+        ));
+        return;
+    };
+
+    let template_node_id = repeater.template_node_id.clone();
+    if !scene.nodes.contains_key(&template_node_id) {
+        diagnostics.push(Diagnostic::error(
+            Phase::Validation,
+            "LUMG0313",
+            format!(
+                "repeater slot {} references missing template node {}",
+                slot.key, template_node_id
+            ),
+            Some(DiagnosticSubject::Slot(slot.id.clone())),
+        ));
+        return;
+    }
+
+    if scene.slot_by_key(&repeater.item_slot_key).is_none() {
+        diagnostics.push(Diagnostic::error(
+            Phase::Validation,
+            "LUMG0314",
+            format!(
+                "repeater slot {} references missing item slot key {}",
+                slot.key, repeater.item_slot_key
+            ),
+            Some(DiagnosticSubject::Slot(slot.id.clone())),
+        ));
+        return;
+    }
+
+    check_reflow_container(scene, slot, &repeater, diagnostics);
+
+    // Empty list: the template subtree is the zero-th item; remove it so
+    // the instance shows no items (cardinality validation already gated
+    // min_items).
+    if items.is_empty() {
+        hide_repeater_template(scene, slot, &repeater, diagnostics, audit);
+        return;
+    }
+
+    // Items 1..n clone the template subtree, anchored after the previous
+    // item, with per-item slot suffixes.
+    let mut clone_roots: Vec<NodeId> = Vec::new();
+    let mut lineages: Vec<CloneLineage> = Vec::new();
+    for index in 1..items.len() {
+        let new_root_id = NodeId::from(format!("{template_node_id}_item_{index}"));
+        let anchor = clone_roots
+            .last()
+            .cloned()
+            .unwrap_or_else(|| template_node_id.clone());
+        let request = crate::editing::CloneSubtreeRequest {
+            source: template_node_id.clone(),
+            new_root_id: new_root_id.clone(),
+            placement: crate::editing::RelativePlacement::After { anchor },
+            slot_policy: crate::editing::CloneSlotPolicy::Suffix(format!("_item_{index}")),
+            computed_policy: crate::editing::ComputedClonePolicy::Clear,
+        };
+        match crate::editing::build_clone_subtree(scene, request) {
+            Ok(batch) => {
+                let lineage = batch.lineage.clone();
+                match batch.apply_checked(scene) {
+                    Ok(report) => {
+                        diagnostics.extend(report.diagnostics);
+                        clone_roots.push(new_root_id);
+                        if let Some(lineage) = lineage {
+                            lineages.push(lineage);
+                        }
+                    }
+                    Err(error) => diagnostics.push(operation_failure(
+                        &slot.key,
+                        Some(&new_root_id),
+                        "repeater clone",
+                        error.kind.code(),
+                        &error.message,
+                    )),
+                }
+            }
+            Err(error) => diagnostics.push(operation_failure(
+                &slot.key,
+                Some(&new_root_id),
+                "repeater clone",
+                error.kind.code(),
+                &error.message,
+            )),
+        }
+    }
+
+    // Bind item content: item 0 through the template's item slot, item n
+    // through the suffixed clone slot.
+    for (index, item) in items.iter().enumerate() {
+        let BoundValue::Text { value: text } = item else {
+            // validate_binding_set already rejected non-text items.
+            continue;
+        };
+        let item_key = if index == 0 {
+            repeater.item_slot_key.clone()
+        } else {
+            SlotKey::from(format!("{}_item_{index}", repeater.item_slot_key))
+        };
+        let Some(item_slot) = scene.slot_by_key(&item_key).cloned() else {
+            diagnostics.push(Diagnostic::error(
+                Phase::Validation,
+                "LUMG0314",
+                format!(
+                    "repeater slot {} item {index} has no item slot {item_key}",
+                    slot.key
+                ),
+                Some(DiagnosticSubject::Slot(slot.id.clone())),
+            ));
+            continue;
+        };
+        apply_text_to_slot(scene, &item_slot, text, diagnostics, audit);
+    }
+
+    for (offset, lineage) in lineages.iter().enumerate() {
+        audit.push(InstanceAuditEntry {
+            kind: InstanceAuditKind::RepeaterExpanded,
+            slot_key: Some(slot.key.clone()),
+            node_ids: vec![lineage.id_map[0].1.clone()],
+            message: format!(
+                "cloned repeater item {} of slot {} from template {}",
+                offset + 1,
+                slot.key,
+                template_node_id
+            ),
+            lineage: Some(lineage.clone()),
+        });
+    }
+    audit.push(InstanceAuditEntry::new(
+        InstanceAuditKind::RepeaterExpanded,
+        Some(slot.key.clone()),
+        std::iter::once(template_node_id.clone())
+            .chain(clone_roots.iter().cloned())
+            .collect(),
+        format!(
+            "expanded repeater slot {} to {} item(s) with {:?} reflow",
+            slot.key,
+            items.len(),
+            repeater.reflow
+        ),
+    ));
+}
+
+/// Stack/Wrap reflow rides the template's auto-layout parent; warn when
+/// the template is not inside one, because clones would overlap instead of
+/// reflowing.
+fn check_reflow_container(
+    scene: &Scene,
+    slot: &Slot,
+    repeater: &crate::slots::RepeaterRule,
+    diagnostics: &mut Vec<Diagnostic>,
+) {
+    let parent_is_auto_layout = match scene.parent_of(&repeater.template_node_id) {
+        Some(crate::scene::ParentRef::Node(parent_id)) => scene
+            .nodes
+            .get(&parent_id)
+            .is_some_and(|parent| matches!(parent.kind, NodeKind::AutoLayout(_))),
+        _ => false,
+    };
+    if !parent_is_auto_layout {
+        diagnostics.push(Diagnostic::warning(
+            Phase::Layout,
+            "LUMG0315",
+            format!(
+                "repeater slot {} template {} is not inside an auto-layout container; {:?} reflow cannot stack the clones",
+                slot.key, repeater.template_node_id, repeater.reflow
+            ),
+            Some(DiagnosticSubject::Slot(slot.id.clone())),
+        ));
+    }
+}
+
+fn hide_repeater_template(
+    scene: &mut Scene,
+    slot: &Slot,
+    repeater: &crate::slots::RepeaterRule,
+    diagnostics: &mut Vec<Diagnostic>,
+    audit: &mut Vec<InstanceAuditEntry>,
+) {
+    // One validated batch: removing only the template node would leave the
+    // group slot's repeater rule dangling and fail scene validation.
+    let mut operations = vec![Operation::RemoveNode {
+        node_id: repeater.template_node_id.clone(),
+    }];
+    if let Some(item_slot) = scene.slot_by_key(&repeater.item_slot_key) {
+        operations.push(Operation::RemoveSlot {
+            slot_id: item_slot.id.clone(),
+        });
+    }
+    operations.push(Operation::RemoveSlot {
+        slot_id: slot.id.clone(),
+    });
+    match scene.apply_operations_checked(operations) {
+        Ok(report) => diagnostics.extend(report.diagnostics),
+        Err(error) => {
+            diagnostics.push(operation_failure(
+                &slot.key,
+                Some(&repeater.template_node_id),
+                "empty repeater removal",
+                error.code,
+                &error.message,
+            ));
+            return;
+        }
+    }
+    audit.push(InstanceAuditEntry::new(
+        InstanceAuditKind::RepeaterExpanded,
+        Some(slot.key.clone()),
+        vec![repeater.template_node_id.clone()],
+        format!(
+            "repeater slot {} received zero items; template subtree and repeater slots removed",
+            slot.key
+        ),
+    ));
 }
 
 /// Set the bound text nodes' content through the canonical UpdateNode
@@ -408,6 +673,7 @@ fn apply_text_to_slot(
                 text.chars().count(),
                 slot.key
             ),
+            lineage: None,
         });
     }
 }
@@ -459,6 +725,7 @@ fn place_asset_in_slot(
                 slot_key: Some(slot.key.clone()),
                 node_ids: slot.bound_nodes.clone(),
                 message: format!("placed asset {} into slot {}", asset_id, slot.key),
+                lineage: None,
             });
         }
         Err(error) => diagnostics.push(operation_failure(
@@ -521,6 +788,7 @@ fn bind_generated_assets(
                         "bound generated asset {} (entry {name:?}, provider {}) to slot {}",
                         asset_id, spec.provider, slot.key
                     ),
+                    lineage: None,
                 });
             }
             Err(error) => diagnostics.push(operation_failure(

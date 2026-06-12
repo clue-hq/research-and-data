@@ -990,9 +990,231 @@ fn g3_eq_false_suppresses_the_bound_value_with_audit() {
 }
 
 #[test]
-#[ignore = "G4: repeaters clone with lineage and deterministic _item_{n} ids"]
-fn g4_repeaters_ride_phase_d_clone_machinery() {
-    unimplemented!("clone-per-item, per-item slot suffix binding, stack reflow");
+fn g4_repeaters_clone_with_deterministic_item_ids_and_lineage() {
+    let derived = derive_fixture("nominal");
+    assert!(!derived.has_errors(), "{:#?}", derived.diagnostics);
+
+    // Three items: template is item 0, clones are _item_1 and _item_2,
+    // stacked in order inside the auto-layout container.
+    let container = derived
+        .scene
+        .node(&"node_insights".into())
+        .expect("insights container");
+    assert_eq!(
+        container.children,
+        vec![
+            "node_insight_item".into(),
+            "node_insight_item_item_1".into(),
+            "node_insight_item_item_2".into(),
+        ]
+    );
+
+    let contents: Vec<String> = container
+        .children
+        .iter()
+        .map(|id| {
+            let node = derived.scene.node(id).expect("item node");
+            match &node.kind {
+                lumen_core::NodeKind::Text(text) => text.content.clone(),
+                other => panic!("items stay text nodes, got {other:?}"),
+            }
+        })
+        .collect();
+    assert_eq!(
+        contents,
+        vec![
+            "Reduced patient wait times by 38%",
+            "Cut intake admin workload in half",
+            "Integrated with Epic in two weeks",
+        ]
+    );
+
+    // Per-item slots exist via the suffix policy and bind the clones.
+    let item_1_slot = derived
+        .scene
+        .slot_by_key(&"research.key_insights.item_item_1".into())
+        .expect("suffixed item slot for clone 1");
+    assert_eq!(
+        item_1_slot.bound_nodes,
+        vec!["node_insight_item_item_1".into()]
+    );
+
+    // Clone lineage is recorded in the audit trail.
+    let lineage_entries: Vec<_> = derived
+        .audit
+        .iter()
+        .filter(|entry| {
+            entry.kind == lumen_core::InstanceAuditKind::RepeaterExpanded && entry.lineage.is_some()
+        })
+        .collect();
+    assert_eq!(lineage_entries.len(), 2, "one lineage per clone");
+    let first_lineage = lineage_entries[0].lineage.as_ref().unwrap();
+    assert_eq!(first_lineage.source_root.to_string(), "node_insight_item");
+    assert_eq!(
+        first_lineage.id_map[0].1.to_string(),
+        "node_insight_item_item_1"
+    );
+}
+
+#[test]
+fn g4_stack_reflow_lays_clones_out_below_each_other() {
+    let derived = derive_fixture("worst_case");
+
+    let container = derived
+        .scene
+        .node(&"node_insights".into())
+        .expect("insights container");
+    assert_eq!(container.children.len(), 4, "four worst-case items");
+
+    let mut last_y = f64::NEG_INFINITY;
+    for child_id in &container.children {
+        let node = derived.scene.node(child_id).expect("item node");
+        let geometry = node
+            .computed
+            .as_ref()
+            .unwrap_or_else(|| panic!("clone {child_id} must have computed geometry"));
+        assert!(
+            geometry.layout_bounds.y > last_y,
+            "items must stack downward: {child_id} at y={} after y={last_y}",
+            geometry.layout_bounds.y
+        );
+        last_y = geometry.layout_bounds.y;
+    }
+}
+
+#[test]
+fn g4_template_effects_and_fills_survive_cloning() {
+    let derived = derive_fixture("nominal");
+    let template = derived
+        .scene
+        .node(&"node_insight_item".into())
+        .expect("template item");
+    let clone = derived
+        .scene
+        .node(&"node_insight_item_item_1".into())
+        .expect("clone item");
+
+    assert_eq!(
+        template.effects, clone.effects,
+        "effect stacks must survive cloning"
+    );
+    assert!(
+        !clone.effects.is_empty(),
+        "fixture template carries a drop shadow"
+    );
+    assert_eq!(template.fills, clone.fills, "fills must survive cloning");
+    let lumen_core::NodeKind::Text(template_text) = &template.kind else {
+        panic!("template is text");
+    };
+    let lumen_core::NodeKind::Text(clone_text) = &clone.kind else {
+        panic!("clone is text");
+    };
+    assert_eq!(template_text.font_size, clone_text.font_size);
+    assert_eq!(template_text.font_weight, clone_text.font_weight);
+}
+
+#[test]
+fn g4_single_item_repeater_expands_without_clones() {
+    let derived = derive_fixture("missing_optional");
+    assert!(!derived.has_errors(), "{:#?}", derived.diagnostics);
+
+    let container = derived
+        .scene
+        .node(&"node_insights".into())
+        .expect("insights container");
+    assert_eq!(container.children, vec!["node_insight_item".into()]);
+
+    let item = derived
+        .scene
+        .node(&"node_insight_item".into())
+        .expect("item node");
+    let lumen_core::NodeKind::Text(text) = &item.kind else {
+        panic!("item stays text");
+    };
+    assert_eq!(
+        text.content,
+        "Cut referral processing time from days to minutes"
+    );
+}
+
+#[test]
+fn g4_zero_item_repeater_removes_the_template_subtree() {
+    let mut scene = mailer_revision_scene();
+    {
+        let slot = scene
+            .slots
+            .values_mut()
+            .find(|slot| slot.key.as_str() == "research.key_insights")
+            .expect("insights slot");
+        slot.cardinality.min_items = 0;
+        slot.repeater.as_mut().expect("repeater").min_items = 0;
+    }
+    let mut binding = binding_set("nominal");
+    binding.values.insert(
+        "research.key_insights".to_owned(),
+        BoundValue::List { items: vec![] },
+    );
+    // An empty list is "absent" for required coverage; drop required.
+    {
+        let slot = scene
+            .slots
+            .values_mut()
+            .find(|slot| slot.key.as_str() == "research.key_insights")
+            .expect("insights slot");
+        slot.required = false;
+    }
+    let assets = derivation_assets("asset_acme_logo", &binding.binding_set_id);
+    let derived = lumen_core::derive_instance(
+        &scene,
+        &binding,
+        &assets,
+        &lumen_core::DeriveOptions::default(),
+    );
+    assert!(!derived.has_errors(), "{:#?}", derived.diagnostics);
+    assert!(
+        derived.scene.node(&"node_insight_item".into()).is_none(),
+        "zero items removes the template subtree"
+    );
+    assert!(
+        derived
+            .scene
+            .slot_by_key(&"research.key_insights.item".into())
+            .is_none(),
+        "zero items removes the item slot"
+    );
+}
+
+#[test]
+fn g4_repeater_outside_auto_layout_warns_lumg0315() {
+    let mut scene = mailer_revision_scene();
+    // Re-anchor the template item directly under the page.
+    let page_id: lumen_core::PageId = "page_mailer".into();
+    {
+        let container = scene.nodes.get_mut(&"node_insights".into()).unwrap();
+        container.children.clear();
+    }
+    {
+        let page = scene.pages.get_mut(&page_id).unwrap();
+        page.children.push("node_insight_item".into());
+    }
+    let binding = binding_set("nominal");
+    let assets = derivation_assets("asset_acme_logo", &binding.binding_set_id);
+    let derived = lumen_core::derive_instance(
+        &scene,
+        &binding,
+        &assets,
+        &lumen_core::DeriveOptions::default(),
+    );
+    let warning = derived
+        .diagnostics
+        .iter()
+        .find(|d| d.code == "LUMG0315")
+        .expect("non-auto-layout repeater parent must warn LUMG0315");
+    assert!(
+        warning.message.contains("auto-layout"),
+        "warning explains the reflow constraint: {}",
+        warning.message
+    );
 }
 
 #[test]
