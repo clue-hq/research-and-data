@@ -1863,3 +1863,117 @@ def test_raster_upload_probes_metadata_and_serves_thumbnail(
     assert thumbnail.status_code == 200
     assert thumbnail.headers["content-type"].startswith("image/png")
     assert thumbnail.content[:8] == b"\x89PNG\r\n\x1a\n"
+
+
+def test_generate_qr_route_is_deterministic_and_persists_record(
+    client: TestClient,
+) -> None:
+    body = {
+        "data": "https://lumen.example/a/acme-health",
+        "label": "Acme landing QR",
+        "print_media": True,
+        "target_width_mm": 24.0,
+    }
+    first = client.post("/assets/generate/qr", json=body)
+    assert first.status_code == 200, first.text
+    payload = first.json()
+    record = payload["asset"]
+
+    assert record["kind"] == "vector"
+    assert record["source"] == {
+        "kind": "generated",
+        "request_id": record["id"],
+        "model": "qr-v1",
+    }
+    assert record["provenance"]["source_label"] == "generated:qr"
+    assert record["license"]["allow_export"] is True
+    assert payload["qr"]["ec_level"] == "h"
+    assert payload["qr"]["quiet_zone_modules"] == 4
+    assert payload["deduplicated"] is False
+    assert payload["diagnostics"] == []
+
+    # Determinism: same data -> same digest, second generation dedups.
+    second = client.post("/assets/generate/qr", json=body).json()
+    assert second["deduplicated"] is True
+    assert (
+        second["asset"]["media"]["digest"] == record["media"]["digest"]
+    )
+
+    served = client.get(f"/assets/{record['id']}/bytes")
+    assert served.status_code == 200
+    assert served.headers["content-type"].startswith("image/svg+xml")
+    svg = served.content.decode()
+    assert "<svg" in svg and "viewBox" in svg
+
+    loaded = client.get(f"/assets/{record['id']}")
+    assert loaded.status_code == 200
+
+
+def test_generate_qr_route_surfaces_diagnostics_and_rejections(
+    client: TestClient,
+) -> None:
+    small = client.post(
+        "/assets/generate/qr",
+        json={
+            "data": "https://lumen.example/a/acme-health",
+            "print_media": True,
+            "target_width_mm": 12.0,
+        },
+    )
+    assert small.status_code == 200, small.text
+    assert any(
+        diagnostic["code"] == "LUMA0700" for diagnostic in small.json()["diagnostics"]
+    )
+
+    empty = client.post("/assets/generate/qr", json={"data": "   "})
+    assert empty.status_code == 400
+    detail = empty.json()["detail"]
+    assert detail["code"] == "qr.empty_data"
+    assert any(
+        diagnostic["code"] == "LUMA0702" for diagnostic in detail["diagnostics"]
+    )
+
+
+def test_mailer_carries_scannable_qr_through_export(client: TestClient) -> None:
+    # Gate for slice E4: a mailer-style document carries a generated QR
+    # that survives placement and export with real bytes.
+    generated = client.post(
+        "/assets/generate/qr",
+        json={
+            "data": "https://lumen.example/a/acme-health",
+            "label": "Acme landing QR",
+            "print_media": True,
+            "target_width_mm": 24.0,
+        },
+    ).json()
+    record = generated["asset"]
+
+    document = create_document(client)
+    operations = asset_operations()
+    # QR codes are square; align the slot policy and drop the DPI
+    # requirement (vector assets carry no raster DPI).
+    operations[1]["slot"]["image_policy"]["aspect_ratio"] = 1.0
+    operations[1]["slot"]["image_policy"]["min_dpi"] = None
+    operations[2] = {"kind": "upsert_asset", "asset": record}
+    operations[3]["asset_id"] = record["id"]
+    applied = client.post(
+        f"/documents/{document['id']}/operations",
+        json={
+            "operations": operations,
+            "actor": {"kind": "agent", "id": "agent_design"},
+            "source": "agent",
+        },
+    )
+    assert applied.status_code == 200, applied.text
+
+    scene = client.get(f"/documents/{document['id']}").json()["scene"]
+    exported = client.post(
+        "/export-preview",
+        json={"scene": scene, "format": "svg", "page_ids": ["page_a4"]},
+    )
+    assert exported.status_code == 200, exported.text
+    payload = exported.json()
+    svg_text = payload["export"]["artifacts"][0].get("text") or ""
+    assert "data:image/svg+xml;base64," in svg_text
+    for diagnostic in payload["diagnostics"]:
+        assert diagnostic["code"] not in {"LUME0202", "LUME0210", "LUME0211"}

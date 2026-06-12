@@ -785,3 +785,83 @@ fn ingest_asset_rejects_mime_mismatch_without_storing() {
         "rejected uploads must not write bytes"
     );
 }
+
+#[test]
+fn generate_qr_is_deterministic_and_stores_sanitized_vector_asset() {
+    let store_dir = tempfile::tempdir().expect("tempdir");
+    let store_root = store_dir.path().to_string_lossy().to_string();
+    let request = |asset_id: &str| {
+        json!({
+            "action": "generate_qr",
+            "store_root": store_root,
+            "data": "https://lumen.example/a/acme-health",
+            "asset_id": asset_id,
+            "label": "Acme landing QR",
+            "print": true,
+            "target_width_mm": 24.0
+        })
+    };
+
+    let first = helper(request("asset_qr_acme"));
+    assert_eq!(first["ok"], true, "{first:#?}");
+    let record = &first["asset"]["record"];
+    assert_eq!(record["kind"], "vector");
+    assert_eq!(record["media"]["mime_type"], "image/svg+xml");
+    assert_eq!(record["source"]["kind"], "generated");
+    assert_eq!(record["source"]["model"], "qr-v1");
+    assert_eq!(record["provenance"]["source_label"], "generated:qr");
+    assert_eq!(record["license"]["allow_export"], true);
+    assert_eq!(first["asset"]["qr"]["ec_level"], "h");
+    assert_eq!(first["asset"]["qr"]["quiet_zone_modules"], 4);
+    assert!(first["asset"]["qr"]["module_count"].as_u64().unwrap() > 0);
+    assert_eq!(first["asset"]["deduplicated"], false);
+
+    // Determinism: a second generation of the same data dedups to the
+    // same stored digest under a different asset id.
+    let second = helper(request("asset_qr_acme_again"));
+    assert_eq!(second["ok"], true, "{second:#?}");
+    assert_eq!(second["asset"]["deduplicated"], true);
+    assert_eq!(
+        first["asset"]["digest_value"],
+        second["asset"]["digest_value"]
+    );
+
+    // Stored bytes are sanitized SVG with the quiet-zone viewBox.
+    let stored = store_dir
+        .path()
+        .join(first["asset"]["relative_path"].as_str().unwrap());
+    let svg = std::fs::read_to_string(stored).expect("stored svg");
+    assert!(svg.contains("<svg"));
+    assert!(!svg.contains("<script"));
+}
+
+#[test]
+fn generate_qr_surfaces_print_size_and_empty_data_diagnostics() {
+    let store_dir = tempfile::tempdir().expect("tempdir");
+    let store_root = store_dir.path().to_string_lossy().to_string();
+
+    let small = helper(json!({
+        "action": "generate_qr",
+        "store_root": store_root,
+        "data": "https://lumen.example/a/acme-health",
+        "asset_id": "asset_qr_small",
+        "print": true,
+        "target_width_mm": 12.0
+    }));
+    assert_eq!(small["ok"], true, "{small:#?}");
+    assert!(small["diagnostics"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|diagnostic| diagnostic["code"] == "LUMA0700"));
+
+    let empty = helper(json!({
+        "action": "generate_qr",
+        "store_root": store_root,
+        "data": "   ",
+        "asset_id": "asset_qr_empty"
+    }));
+    assert_eq!(empty["ok"], false);
+    assert_eq!(empty["error"]["code"], "qr.empty_data");
+    assert_eq!(empty["diagnostics"][0]["code"], "LUMA0702");
+}

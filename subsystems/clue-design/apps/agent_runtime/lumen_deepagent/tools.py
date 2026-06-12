@@ -335,6 +335,88 @@ class LumenDesignTools:
         )
         return json.dumps(payload, indent=2)
 
+    def generate_qr(
+        self,
+        data: str,
+        ec_level: Optional[str] = None,
+        print_media: bool = False,
+        target_width_mm: Optional[float] = None,
+        label: Optional[str] = None,
+    ) -> str:
+        """Generate a deterministic QR code asset (URL/text -> sanitized SVG)
+        and register it in the scene. Use print_media=True for physical
+        artifacts (error correction H); declare target_width_mm so print
+        scannability diagnostics can fire. Place the returned asset with a
+        place_asset_in_node/place_asset_in_slot operation."""
+        asset_id = f"asset_qr_{self.run_id[:8]}_{len(self.scene.get('assets', {}))}"
+        try:
+            response = self.core.generate_qr(
+                store_root=str(self.config.effective_asset_store_root),
+                data=data,
+                asset_id=asset_id,
+                label=label,
+                ec_level=ec_level,
+                print_media=print_media,
+                target_width_mm=target_width_mm,
+            )
+        except CoreError as error:
+            payload = {
+                "qr": {
+                    "status": "error",
+                    "error_code": error.code,
+                    "message": error.message,
+                },
+                "diagnostics": [
+                    diag.model_dump(mode="json")
+                    for diag in diagnostics_from(error.diagnostics)
+                ],
+            }
+            self.record(
+                "coordinator",
+                "qr_generation_failed",
+                output_summary=error.message,
+                payload=payload,
+            )
+            return json.dumps(payload, indent=2)
+
+        asset_payload = response.get("asset") or {}
+        record = asset_payload.get("record") or {}
+        apply_response = self.core.apply_operations(
+            self.scene, [{"kind": "upsert_asset", "asset": record}]
+        )
+        self._replace_scene_from_core_response(apply_response, "generate_qr")
+
+        diagnostics = diagnostics_from(response.get("diagnostics", []))
+        payload = {
+            "qr": {
+                "status": "ok",
+                "asset_id": record.get("id"),
+                "digest": (record.get("media") or {}).get("digest"),
+                "deduplicated": asset_payload.get("deduplicated", False),
+                "ec_level": (asset_payload.get("qr") or {}).get("ec_level"),
+                "module_count": (asset_payload.get("qr") or {}).get("module_count"),
+                "quiet_zone_modules": (asset_payload.get("qr") or {}).get(
+                    "quiet_zone_modules"
+                ),
+                "provenance": record.get("provenance"),
+                "source": record.get("source"),
+                "license": (record.get("license") or {}).get("name"),
+            },
+            "diagnostics": [diag.model_dump(mode="json") for diag in diagnostics],
+        }
+        self.record(
+            "coordinator",
+            "qr_generated",
+            input_summary=data[:200],
+            output_summary=(
+                f"generated QR asset {record.get('id')} "
+                f"(ec={payload['qr']['ec_level']}, modules={payload['qr']['module_count']})"
+            ),
+            diagnostics=[diag.model_dump(mode="json") for diag in diagnostics],
+            payload=payload,
+        )
+        return json.dumps(payload, indent=2)
+
     def preflight_design(self) -> str:
         """Run canonical brand/token/layout preflight using the platform default Brand Kit."""
         iteration_dir = self._iteration_dir()
@@ -396,7 +478,11 @@ class LumenDesignTools:
         preview_format = (export_format or self.config.preview_format).lower()
         iteration_dir = self._iteration_dir()
         try:
-            response = self.core.export_preview(self.scene, preview_format)
+            response = self.core.export_preview(
+                self.scene,
+                preview_format,
+                asset_store_root=str(self.config.effective_asset_store_root),
+            )
         except CoreError as error:
             self.latest_export_summary = None
             self.latest_preview_bundle = None

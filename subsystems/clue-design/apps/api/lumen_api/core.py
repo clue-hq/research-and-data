@@ -171,6 +171,31 @@ class CoreClient:
             raise_on_error=raise_on_error,
         )
 
+    def generate_qr(
+        self,
+        store_root: str,
+        data: str,
+        asset_id: str,
+        label: Optional[str] = None,
+        ec_level: Optional[str] = None,
+        print_media: bool = False,
+        target_width_mm: Optional[float] = None,
+        raise_on_error: bool = True,
+    ) -> JsonObject:
+        return self._run(
+            {
+                "action": "generate_qr",
+                "store_root": store_root,
+                "data": data,
+                "asset_id": asset_id,
+                "label": label,
+                "ec_level": ec_level,
+                "print": print_media,
+                "target_width_mm": target_width_mm,
+            },
+            raise_on_error=raise_on_error,
+        )
+
     def finalize_template(
         self, scene: JsonObject, template_revision_id: str
     ) -> JsonObject:

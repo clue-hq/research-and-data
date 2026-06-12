@@ -100,6 +100,19 @@ enum CoreRequest {
         #[serde(default)]
         max_bytes: Option<u64>,
     },
+    GenerateQr {
+        store_root: String,
+        data: String,
+        asset_id: String,
+        #[serde(default)]
+        label: Option<String>,
+        #[serde(default)]
+        ec_level: Option<String>,
+        #[serde(default)]
+        print: bool,
+        #[serde(default)]
+        target_width_mm: Option<f64>,
+    },
     FinalizeTemplate {
         scene: Value,
         template_revision_id: String,
@@ -318,6 +331,7 @@ impl CoreRequest {
             CoreRequest::PreflightScene { .. } => "preflight_scene",
             CoreRequest::ExportPreview { .. } => "export_preview",
             CoreRequest::IngestAsset { .. } => "ingest_asset",
+            CoreRequest::GenerateQr { .. } => "generate_qr",
             CoreRequest::FinalizeTemplate { .. } => "finalize_template",
             CoreRequest::PlatformDefaultBrandKit => "platform_default_brand_kit",
             CoreRequest::ValidateBrandKit { .. } => "validate_brand_kit",
@@ -383,6 +397,18 @@ fn request_log_fields(request: &CoreRequest) -> Value {
             "base64_length": bytes_base64.len(),
             "declared_mime_type": declared_mime_type,
             "has_kind": kind.is_some(),
+        }),
+        CoreRequest::GenerateQr {
+            data,
+            ec_level,
+            print,
+            target_width_mm,
+            ..
+        } => json!({
+            "data_length": data.len(),
+            "ec_level": ec_level,
+            "print": print,
+            "has_target_width_mm": target_width_mm.is_some(),
         }),
         CoreRequest::FinalizeTemplate { .. } => json!({}),
         CoreRequest::PlatformDefaultBrandKit => json!({}),
@@ -1008,6 +1034,90 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                     "byte_length": stored.byte_length,
                 })),
             })
+        }
+        CoreRequest::GenerateQr {
+            store_root,
+            data,
+            asset_id,
+            label,
+            ec_level,
+            print,
+            target_width_mm,
+        } => {
+            let ec_level = ec_level
+                .as_deref()
+                .map(lumen_assets::QrEcLevel::parse)
+                .transpose()
+                .map_err(|message| core_error("helper.qr_ec_level", message))?;
+            let qr_request = lumen_assets::QrRequest {
+                data: data.clone(),
+                ec_level,
+                print,
+                target_width_mm,
+            };
+            let output = match lumen_assets::generate_qr(&qr_request) {
+                Ok(output) => output,
+                Err(error) => {
+                    return Ok(error_response(
+                        core_error(error.code, error.message.clone()),
+                        vec![error.diagnostic],
+                    ))
+                }
+            };
+            let qr_diagnostics = output.diagnostics.clone();
+
+            // Normalize through the shared ingest path (sanitize, store,
+            // record assembly) so generated assets are first-class assets.
+            let mut response = handle_request(CoreRequest::IngestAsset {
+                store_root,
+                bytes_base64: BASE64.encode(output.svg.as_bytes()),
+                asset_id: asset_id.clone(),
+                label: label.unwrap_or_else(|| format!("QR code ({data})")),
+                declared_mime_type: Some("image/svg+xml".to_owned()),
+                filename: Some(format!("{asset_id}.svg")),
+                kind: Some(json!("vector")),
+                uploaded_by: None,
+                license: Some(json!({
+                    "name": "generated_qr",
+                    "allow_export": true,
+                    "allow_modification": true,
+                    "allow_embedding": true,
+                    "allow_subsetting": true,
+                    "source_url": null,
+                    "restrictions": []
+                })),
+                provenance: Some(json!({
+                    "created_by": "qr-v1",
+                    "created_at": null,
+                    "source_label": "generated:qr",
+                    "confidence": 1.0,
+                    "notes": [format!(
+                        "deterministic QR encode: {} data bytes, ec level {}, {} modules",
+                        data.len(),
+                        output.ec_level.as_str(),
+                        output.module_count
+                    )]
+                })),
+                source: Some(json!({
+                    "kind": "generated",
+                    "request_id": asset_id,
+                    "model": "qr-v1"
+                })),
+                tags: Some(vec!["qr".to_owned(), "generated".to_owned()]),
+                max_bytes: None,
+            })?;
+
+            if response.ok {
+                if let Some(asset) = response.asset.as_mut() {
+                    asset["qr"] = json!({
+                        "ec_level": output.ec_level.as_str(),
+                        "module_count": output.module_count,
+                        "quiet_zone_modules": output.quiet_zone_modules,
+                    });
+                }
+                response.diagnostics.extend(qr_diagnostics);
+            }
+            Ok(response)
         }
         CoreRequest::FinalizeTemplate {
             scene,
