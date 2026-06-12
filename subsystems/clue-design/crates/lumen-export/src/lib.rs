@@ -6,17 +6,22 @@
 
 pub mod pdf;
 pub mod png;
+pub mod resolver;
 pub mod sidecar;
 pub mod svg;
 
 pub use pdf::PdfExportAdapter;
 pub use png::PngExportAdapter;
+pub use resolver::{
+    AssetByteResolver, AssetResolveError, FixtureAssetResolver, ResolvedAssetBytes,
+};
 pub use svg::SvgExportAdapter;
 
 use lumen_core::{
     DiagnosticSeverity, ExportAdapter, ExportArtifact, ExportError, ExportFormat, ExportRequest,
     ExportResult, Scene,
 };
+use std::sync::Arc;
 
 #[derive(Clone, Debug, Default)]
 pub struct LumenExportAdapter {
@@ -28,6 +33,17 @@ pub struct LumenExportAdapter {
 impl LumenExportAdapter {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Build an export adapter whose SVG and PNG paths embed real asset
+    /// bytes through the given resolver. PDF asset embedding is a
+    /// follow-up; its print preflight already validates asset metadata.
+    pub fn with_resolver(resolver: Arc<dyn AssetByteResolver>) -> Self {
+        Self {
+            svg: SvgExportAdapter::with_resolver(Arc::clone(&resolver)),
+            png: PngExportAdapter::with_resolver(resolver),
+            pdf: PdfExportAdapter,
+        }
     }
 }
 

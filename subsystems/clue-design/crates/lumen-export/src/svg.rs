@@ -1,15 +1,33 @@
+use crate::resolver::{AssetByteResolver, ResolvedAssetBytes};
 use crate::sidecar::{build_sidecar, node_output_id, page_output_id};
+use base64::engine::general_purpose::STANDARD as BASE64;
+use base64::Engine;
 use lumen_core::scene::ColorStop;
 use lumen_core::{measure_text, TextMeasureInput};
 use lumen_core::{
     node_render_size, render_box_for_node, Color, Diagnostic, DiagnosticSubject, Dimension,
     ExportAdapter, ExportArtifact, ExportError, ExportFormat, ExportRequest, ExportResult, Fill,
-    Node, NodeId, NodeKind, Page, PageId, Paint, Phase, Rect, Scene, Stroke, TextAlign,
-    TextDirection, Unit,
+    ImageFitMode, ImageNode, Node, NodeId, NodeKind, Page, PageId, Paint, Phase, Rect, Scene,
+    Stroke, TextAlign, TextDirection, Unit,
 };
+use std::sync::Arc;
 
 #[derive(Clone, Debug, Default)]
-pub struct SvgExportAdapter;
+pub struct SvgExportAdapter {
+    resolver: Option<Arc<dyn AssetByteResolver>>,
+}
+
+impl SvgExportAdapter {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn with_resolver(resolver: Arc<dyn AssetByteResolver>) -> Self {
+        Self {
+            resolver: Some(resolver),
+        }
+    }
+}
 
 #[derive(Clone, Debug)]
 pub struct PageResolution {
@@ -43,7 +61,7 @@ impl ExportAdapter for SvgExportAdapter {
                 )
             })?;
 
-            let (svg, page_diagnostics) = render_page_svg(scene, page);
+            let (svg, page_diagnostics) = render_page_svg(scene, page, self.resolver.as_deref());
             diagnostics.extend(page_diagnostics);
 
             let sidecar =
@@ -67,8 +85,12 @@ impl ExportAdapter for SvgExportAdapter {
     }
 }
 
-pub(crate) fn render_page_svg(scene: &Scene, page: &Page) -> (String, Vec<Diagnostic>) {
-    let mut renderer = SvgPageRenderer::new(scene, page);
+pub(crate) fn render_page_svg(
+    scene: &Scene,
+    page: &Page,
+    resolver: Option<&dyn AssetByteResolver>,
+) -> (String, Vec<Diagnostic>) {
+    let mut renderer = SvgPageRenderer::new(scene, page, resolver);
     let svg = renderer.render_page();
     (svg, renderer.diagnostics)
 }
@@ -105,16 +127,18 @@ pub fn resolve_page_ids(scene: &Scene, requested: &[PageId]) -> PageResolution {
 struct SvgPageRenderer<'a> {
     scene: &'a Scene,
     page: &'a Page,
+    resolver: Option<&'a dyn AssetByteResolver>,
     defs: Vec<String>,
     body: String,
     diagnostics: Vec<Diagnostic>,
 }
 
 impl<'a> SvgPageRenderer<'a> {
-    fn new(scene: &'a Scene, page: &'a Page) -> Self {
+    fn new(scene: &'a Scene, page: &'a Page, resolver: Option<&'a dyn AssetByteResolver>) -> Self {
         Self {
             scene,
             page,
+            resolver,
             defs: Vec::new(),
             body: String::new(),
             diagnostics: Vec::new(),
@@ -344,19 +368,7 @@ impl<'a> SvgPageRenderer<'a> {
                 ));
             }
             NodeKind::Image(image) => {
-                self.diagnostics.push(Diagnostic::warning(
-                    Phase::Export,
-                    "LUME0202",
-                    format!("image node {} references asset {} but no asset resolver is configured", node.id, image.asset_id),
-                    Some(DiagnosticSubject::Node(node.id.clone())),
-                ).with_hint("Add an asset resolver in the asset pipeline workstream before treating image export as complete."));
-                self.body.push_str(&format!(
-                    "<g{}{}{} data-lumen-unsupported=\"image\" data-lumen-asset-id=\"{}\" />\n",
-                    id_attrs,
-                    transform,
-                    opacity,
-                    escape_attr(image.asset_id.as_str())
-                ));
+                self.render_image_node(node, image, width, height, &id_attrs, &transform, &opacity);
             }
             NodeKind::Instance { source_node_id } => {
                 self.diagnostics.push(Diagnostic::warning(
@@ -372,6 +384,109 @@ impl<'a> SvgPageRenderer<'a> {
                     opacity,
                     escape_attr(source_node_id.as_str())
                 ));
+            }
+        }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn render_image_node(
+        &mut self,
+        node: &Node,
+        image: &ImageNode,
+        width: f64,
+        height: f64,
+        id_attrs: &str,
+        transform: &str,
+        opacity: &str,
+    ) {
+        if let Some(resolved) = self.resolve_image_bytes(node, image) {
+            let href = format!(
+                "data:{};base64,{}",
+                resolved.mime_type,
+                BASE64.encode(&resolved.bytes)
+            );
+            let alt_attr = image
+                .alt
+                .as_ref()
+                .map(|alt| format!(" data-lumen-alt=\"{}\"", escape_attr(alt)))
+                .unwrap_or_default();
+            self.body.push_str(&format!(
+                "<image{} x=\"0\" y=\"0\" width=\"{}\" height=\"{}\" preserveAspectRatio=\"{}\" data-lumen-asset-id=\"{}\"{}{}{} href=\"{}\" />\n",
+                id_attrs,
+                fmt_num(width),
+                fmt_num(height),
+                image_preserve_aspect_ratio(node),
+                escape_attr(image.asset_id.as_str()),
+                alt_attr,
+                transform,
+                opacity,
+                escape_attr(&href)
+            ));
+            return;
+        }
+
+        self.body.push_str(&format!(
+            "<g{}{}{} data-lumen-unsupported=\"image\" data-lumen-asset-id=\"{}\" />\n",
+            id_attrs,
+            transform,
+            opacity,
+            escape_attr(image.asset_id.as_str())
+        ));
+    }
+
+    /// Resolve the bytes behind an image node, emitting diagnostics instead
+    /// of failing the export when the resolver is missing, the asset record
+    /// is missing, or resolution errors.
+    fn resolve_image_bytes(
+        &mut self,
+        node: &Node,
+        image: &ImageNode,
+    ) -> Option<ResolvedAssetBytes> {
+        let Some(resolver) = self.resolver else {
+            self.diagnostics.push(Diagnostic::warning(
+                Phase::Export,
+                "LUME0202",
+                format!(
+                    "image node {} references asset {} but no asset resolver is configured",
+                    node.id, image.asset_id
+                ),
+                Some(DiagnosticSubject::Node(node.id.clone())),
+            ).with_hint("Configure an asset byte resolver on the export adapter before treating image export as complete."));
+            return None;
+        };
+
+        let Some(record) = self.scene.assets.get(&image.asset_id) else {
+            self.diagnostics.push(
+                Diagnostic::warning(
+                    Phase::Export,
+                    "LUME0211",
+                    format!(
+                        "image node {} references asset {} but the scene carries no asset record to resolve bytes from",
+                        node.id, image.asset_id
+                    ),
+                    Some(DiagnosticSubject::Node(node.id.clone())),
+                )
+                .with_hint("Upsert the asset record into the scene before export."),
+            );
+            return None;
+        };
+
+        match resolver.resolve(record) {
+            Ok(resolved) => Some(resolved),
+            Err(error) => {
+                self.diagnostics.push(
+                    Diagnostic::warning(
+                        Phase::Export,
+                        "LUME0210",
+                        format!(
+                            "image node {} could not resolve bytes for asset {}: {}",
+                            node.id, image.asset_id, error
+                        ),
+                        Some(DiagnosticSubject::Asset(image.asset_id.clone())),
+                    )
+                    .with_hint("Verify the asset bytes exist in the configured asset store."),
+                );
+                None
             }
         }
     }
@@ -634,6 +749,20 @@ impl<'a> SvgPageRenderer<'a> {
             corner_attrs(node)
         ));
         clip_id
+    }
+}
+
+/// Map the node's asset placement fit mode onto SVG preserveAspectRatio.
+/// Contain letterboxes (`meet`); cover and crop fill the box (`slice`).
+/// Focal-point-aware cropping is refined by the placement-semantics slice.
+fn image_preserve_aspect_ratio(node: &Node) -> &'static str {
+    match node
+        .asset_placement
+        .as_ref()
+        .and_then(|placement| placement.fit.as_ref())
+    {
+        Some(ImageFitMode::Cover) | Some(ImageFitMode::Crop) => "xMidYMid slice",
+        Some(ImageFitMode::Contain) | None => "xMidYMid meet",
     }
 }
 
