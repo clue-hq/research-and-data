@@ -1659,3 +1659,517 @@ def test_revert_to_checkpoint_composes_undos(client: TestClient) -> None:
         f"/documents/{document['id']}/revert", params={"checkpoint": "nope"}
     )
     assert missing.status_code == 404
+
+
+LOGO_PNG_PATH = REPO_ROOT / "crates/lumen-export/fixtures/assets/acme-logo-8x8-red.png"
+
+
+def upload_logo(client: TestClient, **form) -> "object":
+    data = {"label": "Acme logo", "kind": "logo", "uploaded_by": "designer"}
+    data.update(form)
+    return client.post(
+        "/assets",
+        files={"file": ("acme-logo.png", LOGO_PNG_PATH.read_bytes(), "image/png")},
+        data=data,
+    )
+
+
+def store_files(tmp_path: Path) -> list[Path]:
+    store_root = tmp_path / "asset-store"
+    if not store_root.exists():
+        return []
+    return [path for path in store_root.rglob("*") if path.is_file()]
+
+
+def test_asset_upload_stores_content_addressed_bytes(
+    client: TestClient, tmp_path: Path
+) -> None:
+    response = upload_logo(client)
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    record = payload["asset"]
+
+    assert record["kind"] == "logo"
+    assert record["status"] == "ready"
+    assert record["media"]["mime_type"] == "image/png"
+    digest = record["media"]["digest"]
+    assert digest["algorithm"] == "sha256"
+    opaque_ref = record["media"]["location"]["opaque_ref"]
+    assert opaque_ref == f"sha256/{digest['value'][:2]}/{digest['value']}"
+    assert record["media"]["location"]["provider"] == "local-store"
+    assert payload["deduplicated"] is False
+
+    store_path = tmp_path / "asset-store" / opaque_ref
+    assert store_path.is_file()
+    assert store_path.read_bytes() == LOGO_PNG_PATH.read_bytes()
+
+    served = client.get(f"/assets/{record['id']}/bytes")
+    assert served.status_code == 200
+    assert served.content == LOGO_PNG_PATH.read_bytes()
+    assert served.headers["content-type"].startswith("image/png")
+
+    loaded = client.get(f"/assets/{record['id']}")
+    assert loaded.status_code == 200
+    assert loaded.json()["asset"]["id"] == record["id"]
+
+
+def test_duplicate_asset_upload_dedups_bytes(
+    client: TestClient, tmp_path: Path
+) -> None:
+    first = upload_logo(client)
+    assert first.status_code == 200, first.text
+    second = upload_logo(client)
+    assert second.status_code == 200, second.text
+
+    assert first.json()["deduplicated"] is False
+    assert second.json()["deduplicated"] is True
+    assert (
+        first.json()["asset"]["media"]["digest"]
+        == second.json()["asset"]["media"]["digest"]
+    )
+    # Two records, one stored byte object.
+    assert first.json()["asset"]["id"] != second.json()["asset"]["id"]
+    # Two stored objects per logical asset (bytes + derived thumbnail);
+    # the duplicate upload adds none.
+    files_after_both = store_files(tmp_path)
+    assert len(files_after_both) == 2
+
+
+def test_asset_upload_rejects_mime_mismatch(
+    client: TestClient, tmp_path: Path
+) -> None:
+    response = client.post(
+        "/assets",
+        files={"file": ("logo.jpg", LOGO_PNG_PATH.read_bytes(), "image/jpeg")},
+        data={"label": "Mislabeled"},
+    )
+
+    assert response.status_code == 400, response.text
+    detail = response.json()["detail"]
+    assert detail["code"] == "ingest.mime_mismatch"
+    assert any(
+        diagnostic["code"] == "LUMA0600" for diagnostic in detail["diagnostics"]
+    )
+    assert store_files(tmp_path) == []
+
+
+def test_asset_upload_enforces_size_limit(
+    client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("LUMEN_ASSET_MAX_BYTES", "16")
+    response = upload_logo(client)
+    assert response.status_code == 413, response.text
+    assert store_files(tmp_path) == []
+
+
+def test_upload_resolve_export_round_trip(client: TestClient) -> None:
+    uploaded = upload_logo(client)
+    assert uploaded.status_code == 200, uploaded.text
+    record = uploaded.json()["asset"]
+
+    document = create_document(client)
+    operations = asset_operations()
+    # The uploaded fixture is a square logo; align the slot policy with the
+    # probed aspect ratio so placement validation passes.
+    operations[1]["slot"]["image_policy"]["aspect_ratio"] = 1.0
+    operations[2] = {"kind": "upsert_asset", "asset": record}
+    operations[3]["asset_id"] = record["id"]
+    applied = client.post(
+        f"/documents/{document['id']}/operations",
+        json={
+            "operations": operations,
+            "actor": {"kind": "user", "id": "designer"},
+            "source": "editor",
+        },
+    )
+    assert applied.status_code == 200, applied.text
+
+    scene = client.get(f"/documents/{document['id']}").json()["scene"]
+    exported = client.post(
+        "/export-preview",
+        json={"scene": scene, "format": "svg", "page_ids": ["page_a4"]},
+    )
+    assert exported.status_code == 200, exported.text
+    payload = exported.json()
+    artifact = payload["export"]["artifacts"][0]
+    assert artifact["format"] == "svg"
+    assert "data:image/png;base64," in (artifact.get("text") or "")
+    for diagnostic in payload["diagnostics"]:
+        assert diagnostic["code"] not in {"LUME0202", "LUME0210", "LUME0211"}, (
+            payload["diagnostics"]
+        )
+
+
+HOSTILE_SVG = (
+    '<?xml version="1.0"?>\n'
+    '<svg xmlns="http://www.w3.org/2000/svg" width="120" height="60" viewBox="0 0 120 60">\n'
+    "  <script>alert('owned')</script>\n"
+    '  <rect width="120" height="60" fill="#0F766E" onload="alert(1)"/>\n'
+    '  <a href="javascript:alert(2)"><text x="10" y="30">x</text></a>\n'
+    '</svg>\n'
+)
+
+
+def test_svg_upload_is_sanitized_before_storage(
+    client: TestClient, tmp_path: Path
+) -> None:
+    response = client.post(
+        "/assets",
+        files={"file": ("mark.svg", HOSTILE_SVG.encode(), "image/svg+xml")},
+        data={"label": "Brand mark", "kind": "vector"},
+    )
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    record = payload["asset"]
+
+    assert record["kind"] == "vector"
+    assert record["media"]["mime_type"] == "image/svg+xml"
+    assert record["vector"]["width"] == 120.0
+    assert record["vector"]["view_box"] == [0.0, 0.0, 120.0, 60.0]
+    assert any(
+        diagnostic["code"] == "LUMA0603" for diagnostic in payload["diagnostics"]
+    )
+
+    served = client.get(f"/assets/{record['id']}/bytes")
+    stored_svg = served.content.decode()
+    assert "<script" not in stored_svg
+    assert "onload" not in stored_svg
+    assert "javascript:" not in stored_svg
+    assert "<rect" in stored_svg
+
+    # Vector thumbnails are the sanitized SVG itself.
+    thumbnail = client.get(f"/assets/{record['id']}/thumbnail")
+    assert thumbnail.status_code == 200
+    assert thumbnail.content == served.content
+
+
+def test_raster_upload_probes_metadata_and_serves_thumbnail(
+    client: TestClient,
+) -> None:
+    response = upload_logo(client)
+    assert response.status_code == 200, response.text
+    record = response.json()["asset"]
+
+    raster = record["raster"]
+    assert raster["pixel_width"] == 8
+    assert raster["pixel_height"] == 8
+    assert raster["has_alpha"] is True
+    assert abs(raster["dpi_x"] - 300.0) < 0.5
+
+    thumbnail_meta = record["media"]["thumbnail"]
+    assert thumbnail_meta["mime_type"] == "image/png"
+
+    thumbnail = client.get(f"/assets/{record['id']}/thumbnail")
+    assert thumbnail.status_code == 200
+    assert thumbnail.headers["content-type"].startswith("image/png")
+    assert thumbnail.content[:8] == b"\x89PNG\r\n\x1a\n"
+
+
+def test_generate_qr_route_is_deterministic_and_persists_record(
+    client: TestClient,
+) -> None:
+    body = {
+        "data": "https://lumen.example/a/acme-health",
+        "label": "Acme landing QR",
+        "print_media": True,
+        "target_width_mm": 24.0,
+    }
+    first = client.post("/assets/generate/qr", json=body)
+    assert first.status_code == 200, first.text
+    payload = first.json()
+    record = payload["asset"]
+
+    assert record["kind"] == "vector"
+    assert record["source"] == {
+        "kind": "generated",
+        "request_id": record["id"],
+        "model": "qr-v1",
+    }
+    assert record["provenance"]["source_label"] == "generated:qr"
+    assert record["license"]["allow_export"] is True
+    assert payload["qr"]["ec_level"] == "h"
+    assert payload["qr"]["quiet_zone_modules"] == 4
+    assert payload["deduplicated"] is False
+    assert payload["diagnostics"] == []
+
+    # Determinism: same data -> same digest, second generation dedups.
+    second = client.post("/assets/generate/qr", json=body).json()
+    assert second["deduplicated"] is True
+    assert (
+        second["asset"]["media"]["digest"] == record["media"]["digest"]
+    )
+
+    served = client.get(f"/assets/{record['id']}/bytes")
+    assert served.status_code == 200
+    assert served.headers["content-type"].startswith("image/svg+xml")
+    svg = served.content.decode()
+    assert "<svg" in svg and "viewBox" in svg
+
+    loaded = client.get(f"/assets/{record['id']}")
+    assert loaded.status_code == 200
+
+
+def test_generate_qr_route_surfaces_diagnostics_and_rejections(
+    client: TestClient,
+) -> None:
+    small = client.post(
+        "/assets/generate/qr",
+        json={
+            "data": "https://lumen.example/a/acme-health",
+            "print_media": True,
+            "target_width_mm": 12.0,
+        },
+    )
+    assert small.status_code == 200, small.text
+    assert any(
+        diagnostic["code"] == "LUMA0700" for diagnostic in small.json()["diagnostics"]
+    )
+
+    empty = client.post("/assets/generate/qr", json={"data": "   "})
+    assert empty.status_code == 400
+    detail = empty.json()["detail"]
+    assert detail["code"] == "qr.empty_data"
+    assert any(
+        diagnostic["code"] == "LUMA0702" for diagnostic in detail["diagnostics"]
+    )
+
+
+def test_mailer_carries_scannable_qr_through_export(client: TestClient) -> None:
+    # Gate for slice E4: a mailer-style document carries a generated QR
+    # that survives placement and export with real bytes.
+    generated = client.post(
+        "/assets/generate/qr",
+        json={
+            "data": "https://lumen.example/a/acme-health",
+            "label": "Acme landing QR",
+            "print_media": True,
+            "target_width_mm": 24.0,
+        },
+    ).json()
+    record = generated["asset"]
+
+    document = create_document(client)
+    operations = asset_operations()
+    # QR codes are square; align the slot policy and drop the DPI
+    # requirement (vector assets carry no raster DPI).
+    operations[1]["slot"]["image_policy"]["aspect_ratio"] = 1.0
+    operations[1]["slot"]["image_policy"]["min_dpi"] = None
+    operations[2] = {"kind": "upsert_asset", "asset": record}
+    operations[3]["asset_id"] = record["id"]
+    applied = client.post(
+        f"/documents/{document['id']}/operations",
+        json={
+            "operations": operations,
+            "actor": {"kind": "agent", "id": "agent_design"},
+            "source": "agent",
+        },
+    )
+    assert applied.status_code == 200, applied.text
+
+    scene = client.get(f"/documents/{document['id']}").json()["scene"]
+    exported = client.post(
+        "/export-preview",
+        json={"scene": scene, "format": "svg", "page_ids": ["page_a4"]},
+    )
+    assert exported.status_code == 200, exported.text
+    payload = exported.json()
+    svg_text = payload["export"]["artifacts"][0].get("text") or ""
+    assert "data:image/svg+xml;base64," in svg_text
+    for diagnostic in payload["diagnostics"]:
+        assert diagnostic["code"] not in {"LUME0202", "LUME0210", "LUME0211"}
+
+
+def test_asset_library_list_search_and_filter(client: TestClient) -> None:
+    uploaded = upload_logo(client).json()["asset"]
+    generated = client.post(
+        "/assets/generate/qr",
+        json={"data": "https://lumen.example/a/acme-health", "label": "Acme QR"},
+    ).json()["asset"]
+
+    listed = client.get("/assets").json()
+    listed_ids = {asset["id"] for asset in listed["assets"]}
+    assert {uploaded["id"], generated["id"]} <= listed_ids
+
+    vectors = client.get("/assets", params={"kind": "vector"}).json()
+    assert {asset["id"] for asset in vectors["assets"]} == {generated["id"]}
+
+    by_label = client.get("/assets", params={"q": "acme logo"}).json()
+    assert {asset["id"] for asset in by_label["assets"]} == {uploaded["id"]}
+
+    by_tag = client.get("/assets", params={"q": "qr"}).json()
+    assert generated["id"] in {asset["id"] for asset in by_tag["assets"]}
+
+    nothing = client.get("/assets", params={"q": "no-such-asset"}).json()
+    assert nothing["assets"] == []
+
+
+def test_archived_assets_are_excluded_by_default(client: TestClient) -> None:
+    record = upload_logo(client).json()["asset"]
+
+    archived = client.post(f"/assets/{record['id']}/archive")
+    assert archived.status_code == 200
+    assert archived.json()["asset"]["status"] == "archived"
+
+    default_list = client.get("/assets").json()
+    assert record["id"] not in {asset["id"] for asset in default_list["assets"]}
+
+    with_archived = client.get("/assets", params={"include_archived": True}).json()
+    assert record["id"] in {asset["id"] for asset in with_archived["assets"]}
+
+    restored = client.post(f"/assets/{record['id']}/restore")
+    assert restored.json()["asset"]["status"] == "ready"
+    assert record["id"] in {
+        asset["id"] for asset in client.get("/assets").json()["assets"]
+    }
+
+
+def test_hard_delete_refuses_while_documents_reference_the_asset(
+    client: TestClient,
+) -> None:
+    record = upload_logo(client).json()["asset"]
+    document = create_document(client)
+    operations = asset_operations()
+    operations[1]["slot"]["image_policy"]["aspect_ratio"] = 1.0
+    operations[2] = {"kind": "upsert_asset", "asset": record}
+    operations[3]["asset_id"] = record["id"]
+    applied = client.post(
+        f"/documents/{document['id']}/operations",
+        json={
+            "operations": operations,
+            "actor": {"kind": "user", "id": "designer"},
+            "source": "editor",
+        },
+    )
+    assert applied.status_code == 200, applied.text
+
+    refused = client.delete(f"/assets/{record['id']}")
+    assert refused.status_code == 409
+    assert "referenced" in refused.json()["detail"]
+
+    # The record and bytes survive the refusal.
+    assert client.get(f"/assets/{record['id']}").status_code == 200
+    assert client.get(f"/assets/{record['id']}/bytes").status_code == 200
+
+
+def test_hard_delete_byte_lifecycle_respects_digest_references(
+    client: TestClient, tmp_path: Path
+) -> None:
+    first = upload_logo(client).json()["asset"]
+    second = upload_logo(client).json()["asset"]
+    assert first["media"]["digest"] == second["media"]["digest"]
+    assert len(store_files(tmp_path)) == 2  # shared bytes + shared thumbnail
+
+    # Deleting one record keeps the bytes: the digest is still referenced.
+    deleted = client.delete(f"/assets/{first['id']}")
+    assert deleted.status_code == 200, deleted.text
+    assert deleted.json()["removed_digests"] == []
+    assert len(store_files(tmp_path)) == 2
+    assert client.get(f"/assets/{first['id']}").status_code == 404
+    assert client.get(f"/assets/{second['id']}/bytes").status_code == 200
+
+    # Deleting the last record garbage-collects bytes and thumbnail.
+    deleted = client.delete(f"/assets/{second['id']}")
+    assert deleted.status_code == 200, deleted.text
+    assert len(deleted.json()["removed_digests"]) == 2
+    assert store_files(tmp_path) == []
+
+
+def test_licensing_rejection_blocks_print_export_end_to_end(
+    client: TestClient,
+) -> None:
+    # Conformance for slice E9 (Decision 5): licensing recorded at ingest
+    # is enforced at export with a precise diagnostic.
+    uploaded = client.post(
+        "/assets",
+        files={"file": ("editorial.png", LOGO_PNG_PATH.read_bytes(), "image/png")},
+        data={
+            "label": "Editorial photo",
+            "license_json": json.dumps(
+                {
+                    "name": "editorial_only",
+                    "allow_export": False,
+                    "allow_modification": False,
+                    "allow_embedding": False,
+                    "allow_subsetting": False,
+                    "source_url": None,
+                    "restrictions": ["no commercial export"],
+                }
+            ),
+        },
+    )
+    assert uploaded.status_code == 200, uploaded.text
+    record = uploaded.json()["asset"]
+    assert record["license"]["allow_export"] is False
+
+    # Place into a node directly: slot placement already rejects
+    # non-exportable assets at operation time (LUMA0400); the node path
+    # exercises export-time enforcement.
+    document = create_document(client)
+    operations = [
+        {
+            "kind": "insert_node",
+            "parent": {"kind": "page", "id": "page_a4"},
+            "index": 1,
+            "node": asset_placeholder_node(),
+        },
+        {"kind": "upsert_asset", "asset": record},
+        {
+            "kind": "place_asset_in_node",
+            "node_id": "node_hero_image",
+            "asset_id": record["id"],
+            "placement": {"fit": "cover", "alt_text": "Editorial photo"},
+        },
+    ]
+    applied = client.post(
+        f"/documents/{document['id']}/operations",
+        json={
+            "operations": operations,
+            "actor": {"kind": "user", "id": "designer"},
+            "source": "editor",
+        },
+    )
+    assert applied.status_code == 200, applied.text
+    scene = client.get(f"/documents/{document['id']}").json()["scene"]
+
+    # Critic-style preview still renders, carrying the LUME0212 warning.
+    preview = client.post(
+        "/export-preview",
+        json={"scene": scene, "format": "svg", "page_ids": ["page_a4"]},
+    )
+    assert preview.status_code == 200, preview.text
+    preview_payload = preview.json()
+    warning = next(
+        diagnostic
+        for diagnostic in preview_payload["diagnostics"]
+        if diagnostic["code"] == "LUME0212"
+    )
+    assert warning["severity"] == "warning"
+
+    # A print-intent export is rejected, naming the asset and license.
+    rejected = client.post(
+        "/export-preview",
+        json={
+            "scene": scene,
+            "format": "svg",
+            "page_ids": ["page_a4"],
+            "profile": {
+                "name": "print_letter",
+                "format": "svg",
+                "pdf_intent": "print",
+                "raster": None,
+                "include_bleed": False,
+                "embed_fonts": True,
+            },
+        },
+    )
+    assert rejected.status_code == 200, rejected.text
+    rejected_payload = rejected.json()
+    assert rejected_payload["status"] == "failed"
+    rejection = next(
+        diagnostic
+        for diagnostic in rejected_payload["diagnostics"]
+        if diagnostic["code"] == "LUME0212"
+    )
+    assert rejection["severity"] == "error"
+    assert record["id"] in rejection["message"]
+    assert "editorial_only" in rejection["message"]

@@ -102,6 +102,68 @@ class FakeCoreClient:
         updated["applied_by_core"] = True
         return {"scene": updated, "applied_operations": len(operations), "diagnostics": []}
 
+    def generate_qr(
+        self,
+        store_root,
+        data,
+        asset_id,
+        label=None,
+        ec_level=None,
+        print_media=False,
+        target_width_mm=None,
+        raise_on_error=True,
+    ):
+        effective_level = ec_level or ("h" if print_media else "m")
+        diagnostics = []
+        if target_width_mm is not None and target_width_mm < 20.0:
+            diagnostics.append(
+                {
+                    "severity": "warning",
+                    "phase": "validation",
+                    "code": "LUMA0700",
+                    "message": "QR below reliable print width",
+                }
+            )
+        digest = "f" * 64
+        return {
+            "ok": True,
+            "diagnostics": diagnostics,
+            "asset": {
+                "record": {
+                    "id": asset_id,
+                    "label": label or f"QR code ({data})",
+                    "kind": "vector",
+                    "status": "ready",
+                    "source": {
+                        "kind": "generated",
+                        "request_id": asset_id,
+                        "model": "qr-v1",
+                    },
+                    "media": {
+                        "mime_type": "image/svg+xml",
+                        "digest": {"algorithm": "sha256", "value": digest},
+                        "location": {
+                            "provider": "local-store",
+                            "opaque_ref": f"sha256/ff/{digest}",
+                            "url": None,
+                        },
+                    },
+                    "provenance": {
+                        "created_by": "qr-v1",
+                        "source_label": "generated:qr",
+                    },
+                    "license": {"name": "generated_qr", "allow_export": True},
+                    "tags": ["qr", "generated"],
+                },
+                "deduplicated": False,
+                "qr": {
+                    "ec_level": effective_level,
+                    "module_count": 29,
+                    "quiet_zone_modules": 4,
+                },
+            },
+        }
+
     def apply_structured_edit(self, scene, edit, scope=None):
         if scope and scope.get("mode") == "strict":
             allowed_ids = {target.get("id") for target in scope.get("allowed", [])}
@@ -166,7 +228,9 @@ class FakeCoreClient:
             },
         }
 
-    def export_preview(self, scene, export_format="svg", page_ids=None):
+    def export_preview(
+        self, scene, export_format="svg", page_ids=None, asset_store_root=None
+    ):
         return {
             "diagnostics": [],
             "export": {
@@ -183,7 +247,9 @@ class FakeCoreClient:
 
 
 class FakeInvalidPreviewCoreClient(FakeCoreClient):
-    def export_preview(self, scene, export_format="svg", page_ids=None):
+    def export_preview(
+        self, scene, export_format="svg", page_ids=None, asset_store_root=None
+    ):
         return {
             "diagnostics": [],
             "export": {
@@ -283,7 +349,9 @@ class FakePreflightErrorOnceCoreClient(FakeCoreClient):
 
 
 class FakePngCoreClient(FakeCoreClient):
-    def export_preview(self, scene, export_format="svg", page_ids=None):
+    def export_preview(
+        self, scene, export_format="svg", page_ids=None, asset_store_root=None
+    ):
         if export_format == "png":
             return {
                 "diagnostics": [],
@@ -1249,3 +1317,65 @@ def test_live_provider_quality_loop_smoke(tmp_path: Path):
     result = loop.run("Create a tiny one-card Lumen DSL preview with one headline.")
     assert result["status"] in {"accepted", "failed"}
     assert result["stop_reason"]
+
+
+def test_generate_qr_tool_registers_asset_and_traces_provenance(
+    tmp_path: Path, monkeypatch
+):
+    monkeypatch.setattr("lumen_deepagent.tools.CoreClient", FakeCoreClient)
+    tools = LumenDesignTools(runtime_config(tmp_path), "Create a mailer")
+
+    result = json.loads(
+        tools.generate_qr(
+            "https://lumen.example/a/acme-health",
+            print_media=True,
+            target_width_mm=14.0,
+        )
+    )
+
+    assert result["qr"]["status"] == "ok"
+    assert result["qr"]["source"]["model"] == "qr-v1"
+    assert result["qr"]["provenance"]["source_label"] == "generated:qr"
+    assert result["qr"]["ec_level"] == "h"
+    assert result["qr"]["quiet_zone_modules"] == 4
+    assert result["qr"]["license"] == "generated_qr"
+    assert any(diag["code"] == "LUMA0700" for diag in result["diagnostics"])
+
+    # The asset registered through the canonical operation path.
+    assert tools.scene["applied_by_core"] is True
+    assert tools.scene_update_sources[-1] == "generate_qr"
+
+    # The trace records provenance for the generated asset.
+    trace_lines = (
+        (tools.trace_dir / "trace.jsonl").read_text().strip().splitlines()
+    )
+    events = [json.loads(line) for line in trace_lines]
+    qr_events = [event for event in events if event["event"] == "qr_generated"]
+    assert len(qr_events) == 1
+    payload = qr_events[0]["payload"]
+    assert payload["qr"]["provenance"]["source_label"] == "generated:qr"
+    assert payload["qr"]["asset_id"].startswith("asset_qr_")
+
+
+def test_critic_preview_export_passes_asset_store_root(tmp_path: Path, monkeypatch):
+    captured: dict = {}
+
+    class RecordingCoreClient(FakeCoreClient):
+        def export_preview(
+            self, scene, export_format="svg", page_ids=None, asset_store_root=None
+        ):
+            captured["asset_store_root"] = asset_store_root
+            return super().export_preview(
+                scene, export_format, page_ids, asset_store_root=asset_store_root
+            )
+
+    monkeypatch.setattr("lumen_deepagent.tools.CoreClient", RecordingCoreClient)
+    tools = LumenDesignTools(runtime_config(tmp_path), "Create a square ad")
+    tools.compile_dsl_block('page page_test\n  headline text "Plan" p(24,24) s(400,hug)')
+    tools.export_preview()
+
+    # The critic preview resolves real bytes: the agent's store root is
+    # wired into every preview export rather than rendering placeholders.
+    expected = str(tools.config.effective_asset_store_root)
+    assert captured["asset_store_root"] == expected
+    assert expected.endswith("asset-store")

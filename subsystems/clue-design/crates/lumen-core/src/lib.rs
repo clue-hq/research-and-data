@@ -25,7 +25,7 @@ pub use assets::{
     validate_asset_manifest, validate_brand_asset_references, validate_scene_assets, AssetDigest,
     AssetGenerationConstraints, AssetGenerationRequest, AssetGenerationResult, AssetKind,
     AssetLicense, AssetLocation, AssetManifest, AssetMediaMetadata, AssetPlacement,
-    AssetProvenance, AssetRecord, AssetSource, AssetStatus, AssetValidationOptions,
+    AssetProvenance, AssetRecord, AssetSource, AssetStatus, AssetThumbnail, AssetValidationOptions,
     AssetVectorizationRequest, AssetVectorizationResult, FontAssetMetadata, LogoAssetMetadata,
     RasterAssetMetadata, VectorAssetMetadata,
 };

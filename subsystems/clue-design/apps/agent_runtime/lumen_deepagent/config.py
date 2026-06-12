@@ -12,6 +12,7 @@ class AgentRuntimeConfig:
     max_iterations: int
     preview_format: str
     trace_dir: Path
+    asset_store_root: Path | None = None
 
     @classmethod
     def from_env(cls, repo_root: Path | None = None) -> "AgentRuntimeConfig":
@@ -27,7 +28,16 @@ class AgentRuntimeConfig:
                     str(root / ".lumen-runs"),
                 )
             ),
+            asset_store_root=(
+                Path(os.environ["LUMEN_AGENT_ASSET_STORE"])
+                if os.environ.get("LUMEN_AGENT_ASSET_STORE")
+                else None
+            ),
         )
+
+    @property
+    def effective_asset_store_root(self) -> Path:
+        return self.asset_store_root or self.trace_dir / "asset-store"
 
     @property
     def skills_dir(self) -> Path:

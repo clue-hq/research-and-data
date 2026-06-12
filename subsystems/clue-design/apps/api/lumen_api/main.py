@@ -13,12 +13,12 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 from uuid import uuid4
 
-from fastapi import Depends, FastAPI, HTTPException, Query, Request
+from fastapi import Depends, FastAPI, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 
 from .core import CoreClient, CoreError, has_error_diagnostics
-from .database import NotFoundError, Repository, connect, run_migrations
+from .database import NotFoundError, Repository, connect, run_migrations, utc_now
 from .dto import (
     brand_compatibility_dto,
     brand_governance_dto,
@@ -53,6 +53,7 @@ from .models import (
     ExportDocumentRequest,
     ExportPreviewRequest,
     FinalizeTemplateRequest,
+    GenerateQrRequest,
     GenerateBrandKitRequest,
     PreflightRequest,
     PreflightPreviewRequest,
@@ -98,6 +99,10 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
     )
     app.state.database_path = database_path or Path(
         os.environ.get("LUMEN_API_DATABASE_PATH", "apps/api/lumen-api.sqlite3")
+    )
+    app.state.asset_store_root = Path(
+        os.environ.get("LUMEN_ASSET_STORE_ROOT")
+        or app.state.database_path.parent / "asset-store"
     )
     app.state.core = CoreClient()
     app.state.agent_turn_runner = None
@@ -162,6 +167,9 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
                 }
             },
         )
+
+    def asset_store_root() -> str:
+        return str(app.state.asset_store_root)
 
     def repository() -> Repository:
         connection = connect(app.state.database_path)
@@ -950,6 +958,7 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
                 payload.page_ids,
                 payload.profile,
                 raise_on_error=False,
+                asset_store_root=asset_store_root(),
             )
         except CoreError as error:
             raise core_http_error(error) from error
@@ -1080,6 +1089,7 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
                 payload.page_ids,
                 profile,
                 raise_on_error=False,
+                asset_store_root=asset_store_root(),
             )
         except CoreError as error:
             raise core_http_error(error) from error
@@ -1264,6 +1274,354 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
         template_revision_id: str, repo: Repository = Depends(repository)
     ) -> JsonObject:
         return repo.require_template_revision(template_revision_id)
+
+    @app.post("/assets")
+    def upload_asset(
+        file: UploadFile = File(...),
+        label: Optional[str] = Form(None),
+        kind: Optional[str] = Form(None),
+        uploaded_by: Optional[str] = Form(None),
+        license_json: Optional[str] = Form(None),
+        tags: Optional[str] = Form(None),
+        repo: Repository = Depends(repository),
+    ) -> JsonObject:
+        data = file.file.read()
+        max_bytes = asset_max_bytes()
+        if len(data) > max_bytes:
+            raise HTTPException(
+                status_code=413,
+                detail=f"asset payload of {len(data)} bytes exceeds the {max_bytes}-byte limit",
+            )
+        try:
+            license_payload = json.loads(license_json) if license_json else None
+        except json.JSONDecodeError as error:
+            raise HTTPException(
+                status_code=400, detail=f"license_json is not valid JSON: {error}"
+            ) from error
+        tag_list = [tag.strip() for tag in (tags or "").split(",") if tag.strip()] or None
+
+        asset_id = f"asset_{uuid4().hex[:12]}"
+        try:
+            result = app.state.core.ingest_asset(
+                store_root=asset_store_root(),
+                bytes_base64=base64.b64encode(data).decode("ascii"),
+                asset_id=asset_id,
+                label=label or file.filename or asset_id,
+                declared_mime_type=file.content_type,
+                filename=file.filename,
+                kind=kind,
+                uploaded_by=uploaded_by,
+                license=license_payload,
+                provenance={
+                    "created_by": uploaded_by,
+                    "created_at": utc_now(),
+                    "source_label": "upload",
+                    "confidence": None,
+                    "notes": [],
+                },
+                tags=tag_list,
+                max_bytes=max_bytes,
+                raise_on_error=False,
+            )
+        except CoreError as error:
+            raise core_http_error(error) from error
+
+        diagnostics = result.get("diagnostics", [])
+        if not result.get("ok", False):
+            error = result.get("error") or {}
+            if not diagnostics:
+                diagnostics = diagnostics_from_helper_error(error)
+            status_code = 413 if error.get("code") == "ingest.too_large" else 400
+            log_event(
+                api_logger,
+                logging.INFO,
+                "asset_upload_completed",
+                status="rejected",
+                error_code=error.get("code"),
+                **diagnostic_summary(diagnostics),
+            )
+            raise HTTPException(
+                status_code=status_code,
+                detail={
+                    "code": error.get("code"),
+                    "message": error.get("message"),
+                    "diagnostics": diagnostics,
+                },
+            )
+
+        asset_payload = result.get("asset") or {}
+        record = asset_payload.get("record") or {}
+        stored = repo.create_asset_record(record)
+        log_event(
+            api_logger,
+            logging.INFO,
+            "asset_upload_completed",
+            status="ok",
+            asset_id=record.get("id"),
+            kind=record.get("kind"),
+            deduplicated=asset_payload.get("deduplicated", False),
+            byte_length=asset_payload.get("byte_length"),
+            **diagnostic_summary(diagnostics),
+        )
+        return {
+            "schema_version": 1,
+            "asset": stored["asset"],
+            "deduplicated": asset_payload.get("deduplicated", False),
+            "diagnostics": diagnostics,
+        }
+
+    @app.post("/assets/generate/qr")
+    def generate_qr_asset(
+        payload: GenerateQrRequest,
+        repo: Repository = Depends(repository),
+    ) -> JsonObject:
+        asset_id = f"asset_qr_{uuid4().hex[:12]}"
+        try:
+            result = app.state.core.generate_qr(
+                store_root=asset_store_root(),
+                data=payload.data,
+                asset_id=asset_id,
+                label=payload.label,
+                ec_level=payload.ec_level,
+                print_media=payload.print_media,
+                target_width_mm=payload.target_width_mm,
+                raise_on_error=False,
+            )
+        except CoreError as error:
+            raise core_http_error(error) from error
+
+        diagnostics = result.get("diagnostics", [])
+        if not result.get("ok", False):
+            error = result.get("error") or {}
+            if not diagnostics:
+                diagnostics = diagnostics_from_helper_error(error)
+            log_event(
+                api_logger,
+                logging.INFO,
+                "qr_generation_completed",
+                status="rejected",
+                error_code=error.get("code"),
+                **diagnostic_summary(diagnostics),
+            )
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "code": error.get("code"),
+                    "message": error.get("message"),
+                    "diagnostics": diagnostics,
+                },
+            )
+
+        asset_payload = result.get("asset") or {}
+        record = asset_payload.get("record") or {}
+        stored = repo.create_asset_record(record)
+        log_event(
+            api_logger,
+            logging.INFO,
+            "qr_generation_completed",
+            status="ok",
+            asset_id=record.get("id"),
+            deduplicated=asset_payload.get("deduplicated", False),
+            ec_level=(asset_payload.get("qr") or {}).get("ec_level"),
+            module_count=(asset_payload.get("qr") or {}).get("module_count"),
+            **diagnostic_summary(diagnostics),
+        )
+        return {
+            "schema_version": 1,
+            "asset": stored["asset"],
+            "qr": asset_payload.get("qr") or {},
+            "deduplicated": asset_payload.get("deduplicated", False),
+            "diagnostics": diagnostics,
+        }
+
+    @app.get("/assets")
+    def list_assets(
+        kind: Optional[str] = Query(None),
+        q: Optional[str] = Query(None),
+        include_archived: bool = Query(False),
+        limit: int = Query(50, ge=1, le=200),
+        offset: int = Query(0, ge=0),
+        repo: Repository = Depends(repository),
+    ) -> JsonObject:
+        rows = repo.list_asset_records(
+            kind=kind,
+            q=q,
+            include_archived=include_archived,
+            limit=limit,
+            offset=offset,
+        )
+        return {
+            "schema_version": 1,
+            "assets": [row["asset"] for row in rows],
+            "count": len(rows),
+            "limit": limit,
+            "offset": offset,
+        }
+
+    @app.post("/assets/{asset_id}/archive")
+    def archive_asset(
+        asset_id: str,
+        repo: Repository = Depends(repository),
+    ) -> JsonObject:
+        stored = repo.update_asset_status(asset_id, "archived")
+        log_event(
+            api_logger,
+            logging.INFO,
+            "asset_archived",
+            asset_id=asset_id,
+        )
+        return {"schema_version": 1, "asset": stored["asset"]}
+
+    @app.post("/assets/{asset_id}/restore")
+    def restore_asset(
+        asset_id: str,
+        repo: Repository = Depends(repository),
+    ) -> JsonObject:
+        stored = repo.update_asset_status(asset_id, "ready")
+        log_event(
+            api_logger,
+            logging.INFO,
+            "asset_restored",
+            asset_id=asset_id,
+        )
+        return {"schema_version": 1, "asset": stored["asset"]}
+
+    @app.delete("/assets/{asset_id}")
+    def hard_delete_asset(
+        asset_id: str,
+        repo: Repository = Depends(repository),
+    ) -> JsonObject:
+        stored = repo.require_asset_record(asset_id)
+        record = stored["asset"]
+
+        # Record-level reference check (archive-first lifecycle): a hard
+        # delete is refused while any document scene references the asset.
+        referencing = repo.count_documents_referencing(f'"{asset_id}"')
+        if referencing:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    f"asset {asset_id} is referenced by {referencing} document(s); "
+                    "archive it instead or remove the references first"
+                ),
+            )
+
+        repo.delete_asset_record(asset_id)
+
+        # Byte-level lifecycle (Decision 4): bytes leave the store only
+        # when no remaining record or document references their digest.
+        removed_digests: List[str] = []
+        for digest_value in record_digest_values(record):
+            if repo.count_assets_with_digest(digest_value):
+                continue
+            if repo.count_documents_referencing(digest_value):
+                continue
+            if delete_stored_digest(digest_value):
+                removed_digests.append(digest_value)
+
+        log_event(
+            api_logger,
+            logging.INFO,
+            "asset_hard_deleted",
+            asset_id=asset_id,
+            removed_digest_count=len(removed_digests),
+        )
+        return {
+            "schema_version": 1,
+            "deleted": asset_id,
+            "removed_digests": removed_digests,
+        }
+
+    def record_digest_values(record: JsonObject) -> List[str]:
+        values: List[str] = []
+        media = record.get("media") or {}
+        digest = media.get("digest") or {}
+        if digest.get("value"):
+            values.append(digest["value"])
+        thumbnail = media.get("thumbnail") or {}
+        thumbnail_ref = (thumbnail.get("location") or {}).get("opaque_ref") or ""
+        if thumbnail_ref.startswith("sha256/"):
+            thumbnail_digest = thumbnail_ref.rsplit("/", 1)[-1]
+            if thumbnail_digest and thumbnail_digest not in values:
+                values.append(thumbnail_digest)
+        return values
+
+    def delete_stored_digest(digest_value: str) -> bool:
+        relative = f"sha256/{digest_value[:2]}/{digest_value}"
+        path = resolve_store_path(relative)
+        if not path.is_file():
+            return False
+        path.unlink()
+        return True
+
+    @app.get("/assets/{asset_id}")
+    def get_asset(
+        asset_id: str,
+        repo: Repository = Depends(repository),
+    ) -> JsonObject:
+        stored = repo.require_asset_record(asset_id)
+        return {
+            "schema_version": 1,
+            "asset": stored["asset"],
+            "created_at": stored["created_at"],
+            "updated_at": stored["updated_at"],
+        }
+
+    @app.get("/assets/{asset_id}/bytes")
+    def get_asset_bytes(
+        asset_id: str,
+        repo: Repository = Depends(repository),
+    ) -> Response:
+        stored = repo.require_asset_record(asset_id)
+        record = stored["asset"]
+        media = record.get("media") or {}
+        location = media.get("location") or {}
+        if location.get("provider") != "local-store" or not location.get("opaque_ref"):
+            raise HTTPException(
+                status_code=404,
+                detail=f"asset {asset_id} has no locally stored bytes",
+            )
+        path = resolve_store_path(location["opaque_ref"])
+        if not path.is_file():
+            raise HTTPException(
+                status_code=404,
+                detail=f"asset {asset_id} bytes are missing from the store",
+            )
+        media_type = media.get("mime_type") or "application/octet-stream"
+        return Response(content=path.read_bytes(), media_type=media_type)
+
+    @app.get("/assets/{asset_id}/thumbnail")
+    def get_asset_thumbnail(
+        asset_id: str,
+        repo: Repository = Depends(repository),
+    ) -> Response:
+        stored = repo.require_asset_record(asset_id)
+        record = stored["asset"]
+        thumbnail = (record.get("media") or {}).get("thumbnail") or {}
+        location = thumbnail.get("location") or {}
+        if location.get("provider") != "local-store" or not location.get("opaque_ref"):
+            raise HTTPException(
+                status_code=404,
+                detail=f"asset {asset_id} has no thumbnail",
+            )
+        path = resolve_store_path(location["opaque_ref"])
+        if not path.is_file():
+            raise HTTPException(
+                status_code=404,
+                detail=f"asset {asset_id} thumbnail bytes are missing from the store",
+            )
+        media_type = thumbnail.get("mime_type") or "application/octet-stream"
+        return Response(content=path.read_bytes(), media_type=media_type)
+
+    def resolve_store_path(opaque_ref: str) -> Path:
+        root = Path(app.state.asset_store_root).resolve()
+        candidate = (root / opaque_ref).resolve()
+        if root != candidate and root not in candidate.parents:
+            raise HTTPException(status_code=400, detail="invalid asset location")
+        return candidate
+
+    def asset_max_bytes() -> int:
+        return int(os.environ.get("LUMEN_ASSET_MAX_BYTES", str(10 * 1024 * 1024)))
 
     @app.post("/asset-metadata")
     def create_asset_metadata(

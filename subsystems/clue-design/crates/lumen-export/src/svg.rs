@@ -1,15 +1,33 @@
+use crate::resolver::{AssetByteResolver, ResolvedAssetBytes};
 use crate::sidecar::{build_sidecar, node_output_id, page_output_id};
+use base64::engine::general_purpose::STANDARD as BASE64;
+use base64::Engine;
 use lumen_core::scene::ColorStop;
 use lumen_core::{measure_text, TextMeasureInput};
 use lumen_core::{
     node_render_size, render_box_for_node, Color, Diagnostic, DiagnosticSubject, Dimension,
     EffectKind, ExportAdapter, ExportArtifact, ExportError, ExportFormat, ExportRequest,
-    ExportResult, Fill, Node, NodeId, NodeKind, Page, PageId, Paint, Phase, Rect, Scene, Stroke,
-    StrokeAlign, StrokeCap, StrokeJoin, TextAlign, TextDirection, Unit,
+    ExportResult, Fill, ImageFitMode, ImageNode, Node, NodeId, NodeKind, Page, PageId, Paint,
+    Phase, Rect, Scene, Stroke, StrokeAlign, StrokeCap, StrokeJoin, TextAlign, TextDirection, Unit,
 };
+use std::sync::Arc;
 
 #[derive(Clone, Debug, Default)]
-pub struct SvgExportAdapter;
+pub struct SvgExportAdapter {
+    resolver: Option<Arc<dyn AssetByteResolver>>,
+}
+
+impl SvgExportAdapter {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn with_resolver(resolver: Arc<dyn AssetByteResolver>) -> Self {
+        Self {
+            resolver: Some(resolver),
+        }
+    }
+}
 
 #[derive(Clone, Debug)]
 pub struct PageResolution {
@@ -43,7 +61,7 @@ impl ExportAdapter for SvgExportAdapter {
                 )
             })?;
 
-            let (svg, page_diagnostics) = render_page_svg(scene, page);
+            let (svg, page_diagnostics) = render_page_svg(scene, page, self.resolver.as_deref());
             diagnostics.extend(page_diagnostics);
 
             let sidecar =
@@ -67,8 +85,12 @@ impl ExportAdapter for SvgExportAdapter {
     }
 }
 
-pub(crate) fn render_page_svg(scene: &Scene, page: &Page) -> (String, Vec<Diagnostic>) {
-    let mut renderer = SvgPageRenderer::new(scene, page);
+pub(crate) fn render_page_svg(
+    scene: &Scene,
+    page: &Page,
+    resolver: Option<&dyn AssetByteResolver>,
+) -> (String, Vec<Diagnostic>) {
+    let mut renderer = SvgPageRenderer::new(scene, page, resolver);
     let svg = renderer.render_page();
     (svg, renderer.diagnostics)
 }
@@ -105,16 +127,18 @@ pub fn resolve_page_ids(scene: &Scene, requested: &[PageId]) -> PageResolution {
 struct SvgPageRenderer<'a> {
     scene: &'a Scene,
     page: &'a Page,
+    resolver: Option<&'a dyn AssetByteResolver>,
     defs: Vec<String>,
     body: String,
     diagnostics: Vec<Diagnostic>,
 }
 
 impl<'a> SvgPageRenderer<'a> {
-    fn new(scene: &'a Scene, page: &'a Page) -> Self {
+    fn new(scene: &'a Scene, page: &'a Page, resolver: Option<&'a dyn AssetByteResolver>) -> Self {
         Self {
             scene,
             page,
+            resolver,
             defs: Vec::new(),
             body: String::new(),
             diagnostics: Vec::new(),
@@ -448,19 +472,7 @@ impl<'a> SvgPageRenderer<'a> {
                 }
             }
             NodeKind::Image(image) => {
-                self.diagnostics.push(Diagnostic::warning(
-                    Phase::Export,
-                    "LUME0202",
-                    format!("image node {} references asset {} but no asset resolver is configured", node.id, image.asset_id),
-                    Some(DiagnosticSubject::Node(node.id.clone())),
-                ).with_hint("Add an asset resolver in the asset pipeline workstream before treating image export as complete."));
-                self.body.push_str(&format!(
-                    "<g{}{}{} data-lumen-unsupported=\"image\" data-lumen-asset-id=\"{}\" />\n",
-                    id_attrs,
-                    transform,
-                    opacity,
-                    escape_attr(image.asset_id.as_str())
-                ));
+                self.render_image_node(node, image, width, height, &id_attrs, &transform, &opacity);
             }
             NodeKind::Instance { source_node_id } => {
                 self.diagnostics.push(Diagnostic::warning(
@@ -476,6 +488,139 @@ impl<'a> SvgPageRenderer<'a> {
                     opacity,
                     escape_attr(source_node_id.as_str())
                 ));
+            }
+        }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn render_image_node(
+        &mut self,
+        node: &Node,
+        image: &ImageNode,
+        width: f64,
+        height: f64,
+        id_attrs: &str,
+        transform: &str,
+        opacity: &str,
+    ) {
+        if let Some(resolved) = self.resolve_image_bytes(node, image) {
+            let href = format!(
+                "data:{};base64,{}",
+                resolved.mime_type,
+                BASE64.encode(&resolved.bytes)
+            );
+            let alt_attr = image
+                .alt
+                .as_ref()
+                .map(|alt| format!(" data-lumen-alt=\"{}\"", escape_attr(alt)))
+                .unwrap_or_default();
+
+            // Focal-point crops compute an explicit window from the asset's
+            // natural aspect ratio; plain fits map onto preserveAspectRatio.
+            let record = self.scene.assets.get(&image.asset_id);
+            if let Some(crop) = focal_crop_geometry(node, record, width, height) {
+                let clip_id = format!("lumen-image-clip-{}", escape_attr(node.id.as_str()));
+                self.defs.push(format!(
+                    "<clipPath id=\"{}\"><rect x=\"0\" y=\"0\" width=\"{}\" height=\"{}\"{} /></clipPath>\n",
+                    clip_id,
+                    fmt_num(width),
+                    fmt_num(height),
+                    corner_attrs(node)
+                ));
+                self.body.push_str(&format!(
+                    "<g{} clip-path=\"url(#{})\" data-lumen-asset-id=\"{}\" data-lumen-image-fit=\"focal-crop\"{}{}{}>\n<image x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" preserveAspectRatio=\"none\" href=\"{}\" />\n</g>\n",
+                    id_attrs,
+                    escape_attr(&clip_id),
+                    escape_attr(image.asset_id.as_str()),
+                    alt_attr,
+                    transform,
+                    opacity,
+                    fmt_num(crop.x),
+                    fmt_num(crop.y),
+                    fmt_num(crop.width),
+                    fmt_num(crop.height),
+                    escape_attr(&href)
+                ));
+                return;
+            }
+
+            self.body.push_str(&format!(
+                "<image{} x=\"0\" y=\"0\" width=\"{}\" height=\"{}\" preserveAspectRatio=\"{}\" data-lumen-asset-id=\"{}\"{}{}{} href=\"{}\" />\n",
+                id_attrs,
+                fmt_num(width),
+                fmt_num(height),
+                image_preserve_aspect_ratio(node),
+                escape_attr(image.asset_id.as_str()),
+                alt_attr,
+                transform,
+                opacity,
+                escape_attr(&href)
+            ));
+            return;
+        }
+
+        self.body.push_str(&format!(
+            "<g{}{}{} data-lumen-unsupported=\"image\" data-lumen-asset-id=\"{}\" />\n",
+            id_attrs,
+            transform,
+            opacity,
+            escape_attr(image.asset_id.as_str())
+        ));
+    }
+
+    /// Resolve the bytes behind an image node, emitting diagnostics instead
+    /// of failing the export when the resolver is missing, the asset record
+    /// is missing, or resolution errors.
+    fn resolve_image_bytes(
+        &mut self,
+        node: &Node,
+        image: &ImageNode,
+    ) -> Option<ResolvedAssetBytes> {
+        let Some(resolver) = self.resolver else {
+            self.diagnostics.push(Diagnostic::warning(
+                Phase::Export,
+                "LUME0202",
+                format!(
+                    "image node {} references asset {} but no asset resolver is configured",
+                    node.id, image.asset_id
+                ),
+                Some(DiagnosticSubject::Node(node.id.clone())),
+            ).with_hint("Configure an asset byte resolver on the export adapter before treating image export as complete."));
+            return None;
+        };
+
+        let Some(record) = self.scene.assets.get(&image.asset_id) else {
+            self.diagnostics.push(
+                Diagnostic::warning(
+                    Phase::Export,
+                    "LUME0211",
+                    format!(
+                        "image node {} references asset {} but the scene carries no asset record to resolve bytes from",
+                        node.id, image.asset_id
+                    ),
+                    Some(DiagnosticSubject::Node(node.id.clone())),
+                )
+                .with_hint("Upsert the asset record into the scene before export."),
+            );
+            return None;
+        };
+
+        match resolver.resolve(record) {
+            Ok(resolved) => Some(resolved),
+            Err(error) => {
+                self.diagnostics.push(
+                    Diagnostic::warning(
+                        Phase::Export,
+                        "LUME0210",
+                        format!(
+                            "image node {} could not resolve bytes for asset {}: {}",
+                            node.id, image.asset_id, error
+                        ),
+                        Some(DiagnosticSubject::Asset(image.asset_id.clone())),
+                    )
+                    .with_hint("Verify the asset bytes exist in the configured asset store."),
+                );
+                None
             }
         }
     }
@@ -899,6 +1044,73 @@ impl<'a> SvgPageRenderer<'a> {
             corner_attrs(node)
         ));
         clip_id
+    }
+}
+
+/// Explicit crop window for cover/crop placements with a focal point.
+/// The drawn image covers the node box at the asset's natural aspect
+/// ratio, shifted so the focal point sits as close to the box center as
+/// the image allows.
+struct FocalCropGeometry {
+    x: f64,
+    y: f64,
+    width: f64,
+    height: f64,
+}
+
+fn focal_crop_geometry(
+    node: &Node,
+    record: Option<&lumen_core::AssetRecord>,
+    box_width: f64,
+    box_height: f64,
+) -> Option<FocalCropGeometry> {
+    let placement = node.asset_placement.as_ref()?;
+    let focal = placement.focal_point.as_ref()?;
+    if !matches!(
+        placement.fit,
+        Some(ImageFitMode::Cover) | Some(ImageFitMode::Crop)
+    ) {
+        return None;
+    }
+    if box_width <= 0.0 || box_height <= 0.0 {
+        return None;
+    }
+    let ratio = record?.natural_aspect_ratio()?;
+    if !(ratio.is_finite() && ratio > 0.0) {
+        return None;
+    }
+
+    let (drawn_width, drawn_height) = if box_width / box_height < ratio {
+        (box_height * ratio, box_height)
+    } else {
+        (box_width, box_width / ratio)
+    };
+    let focal_x = focal.x.clamp(0.0, 1.0);
+    let focal_y = focal.y.clamp(0.0, 1.0);
+    let offset_x =
+        (focal_x * drawn_width - box_width / 2.0).clamp(0.0, (drawn_width - box_width).max(0.0));
+    let offset_y = (focal_y * drawn_height - box_height / 2.0)
+        .clamp(0.0, (drawn_height - box_height).max(0.0));
+
+    Some(FocalCropGeometry {
+        x: -offset_x,
+        y: -offset_y,
+        width: drawn_width,
+        height: drawn_height,
+    })
+}
+
+/// Map the node's asset placement fit mode onto SVG preserveAspectRatio.
+/// Contain letterboxes (`meet`); cover and crop fill the box (`slice`).
+/// Focal-point crops take the explicit window path instead.
+fn image_preserve_aspect_ratio(node: &Node) -> &'static str {
+    match node
+        .asset_placement
+        .as_ref()
+        .and_then(|placement| placement.fit.as_ref())
+    {
+        Some(ImageFitMode::Cover) | Some(ImageFitMode::Crop) => "xMidYMid slice",
+        Some(ImageFitMode::Contain) | None => "xMidYMid meet",
     }
 }
 

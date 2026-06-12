@@ -7,6 +7,7 @@ import { BrandKitPanel } from "./BrandKitPanel";
 import { CanvasSurface } from "./canvas/CanvasSurface";
 import { ExportPanel } from "./ExportPanel";
 import { ExportPreviewSurface } from "./ExportPreviewSurface";
+import { AssetBrowserPanel } from "./AssetBrowserPanel";
 import { HistoryPanel } from "./HistoryPanel";
 import { InspectorPanel } from "./InspectorPanel";
 import { LayerPanel } from "./LayerPanel";
@@ -1143,6 +1144,11 @@ export default function EditorApp({
                 onSelectSubject={selectDiagnosticSubject}
               />
               <OperationHistoryPanel operations={operationHistory} redoCount={redoStack.length} />
+              <AssetBrowserPanel
+                apiBaseUrl={process.env.NEXT_PUBLIC_LUMEN_API_BASE_URL ?? "http://localhost:8000"}
+                selectedNodeId={selectedNodeId}
+                onOperations={applyOperations}
+              />
               {documentId ? (
                 <HistoryPanel
                   apiBaseUrl={

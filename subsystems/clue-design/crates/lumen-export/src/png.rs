@@ -1,3 +1,4 @@
+use crate::resolver::AssetByteResolver;
 use crate::sidecar::build_sidecar;
 use crate::svg::{render_page_svg, resolve_page_ids};
 use lumen_core::{
@@ -5,9 +6,24 @@ use lumen_core::{
     ExportRequest, ExportResult, Page, PageId, Phase, Scene, Unit,
 };
 use resvg::{tiny_skia, usvg};
+use std::sync::Arc;
 
 #[derive(Clone, Debug, Default)]
-pub struct PngExportAdapter;
+pub struct PngExportAdapter {
+    resolver: Option<Arc<dyn AssetByteResolver>>,
+}
+
+impl PngExportAdapter {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn with_resolver(resolver: Arc<dyn AssetByteResolver>) -> Self {
+        Self {
+            resolver: Some(resolver),
+        }
+    }
+}
 
 impl ExportAdapter for PngExportAdapter {
     fn export(&self, scene: &Scene, request: &ExportRequest) -> Result<ExportResult, ExportError> {
@@ -43,7 +59,7 @@ impl ExportAdapter for PngExportAdapter {
                 continue;
             };
 
-            let (svg, page_diagnostics) = render_page_svg(scene, page);
+            let (svg, page_diagnostics) = render_page_svg(scene, page, self.resolver.as_deref());
             diagnostics.extend(page_diagnostics);
             let png = rasterize_svg_page(&svg, page, request, page_id)?;
 

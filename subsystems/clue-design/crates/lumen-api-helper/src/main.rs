@@ -1,3 +1,6 @@
+use base64::engine::general_purpose::STANDARD as BASE64;
+use base64::Engine;
+use lumen_assets::{AssetStore, IngestRequest, LocalAssetStore, DEFAULT_MAX_BYTES};
 use lumen_core::validation::validate_scene;
 use lumen_core::{
     batch_scope_violations, build_archive_asset, build_clone_subtree, build_delete_export_profile,
@@ -6,19 +9,26 @@ use lumen_core::{
     build_safe_delete_slot, compare_brand_kit_compatibility, compile_dsl_into_scene_with_session,
     compile_styles_brand_kit, generate_brand_kit, layout_scene, platform_default_brand_kit,
     preflight_scene, summarize_brand_kit_for_authoring, validate_brand_kit,
-    validate_brand_kit_product_ready, validate_scene_brand_governance, AssetId,
-    BrandGovernanceStrictness, BrandKit, BrandKitId, BrandMode, BrandSeed, CloneSubtreeRequest,
-    Diagnostic, DiagnosticSeverity, DocumentId, DslCompileSessionSnapshot, EditBatch, EditPatch,
-    EditScope, EditScopeMode, EditTargetRef, ExportAdapter, ExportFormat, ExportProfile,
-    ExportPurpose, ExportRequest, Medium, NodeId, Operation, PageId, ParentRef, PdfIntent,
-    PreflightOptions, RasterScale, ReplaceNodeRequest, Scene, ScopeViolation, TemplateRevisionId,
+    validate_brand_kit_product_ready, validate_scene_brand_governance, AssetDigest, AssetId,
+    AssetKind, AssetLicense, AssetLocation, AssetMediaMetadata, AssetProvenance, AssetRecord,
+    AssetSource, AssetStatus, AssetThumbnail, BrandGovernanceStrictness, BrandKit, BrandKitId,
+    BrandMode, BrandSeed, CloneSubtreeRequest, Diagnostic, DiagnosticSeverity, DocumentId,
+    DslCompileSessionSnapshot, EditBatch, EditPatch, EditScope, EditScopeMode, EditTargetRef,
+    ExportAdapter, ExportFormat, ExportProfile, ExportPurpose, ExportRequest, Medium, NodeId,
+    Operation, PageId, ParentRef, PdfIntent, PreflightOptions, RasterScale, ReplaceNodeRequest,
+    Scene, ScopeViolation, TemplateRevisionId,
 };
 use lumen_export::LumenExportAdapter;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::env;
 use std::io::{self, Read};
+use std::sync::Arc;
 use std::time::Instant;
+
+mod store_resolver;
+
+use store_resolver::{StoreBackedResolver, LOCAL_STORE_PROVIDER};
 
 #[derive(Debug, Deserialize)]
 #[serde(tag = "action", rename_all = "snake_case")]
@@ -63,6 +73,53 @@ enum CoreRequest {
         page_ids: Vec<String>,
         #[serde(default)]
         profile: Option<Value>,
+        #[serde(default)]
+        asset_store_root: Option<String>,
+    },
+    IngestAsset {
+        store_root: String,
+        bytes_base64: String,
+        asset_id: String,
+        label: String,
+        #[serde(default)]
+        declared_mime_type: Option<String>,
+        #[serde(default)]
+        filename: Option<String>,
+        #[serde(default)]
+        kind: Option<Value>,
+        #[serde(default)]
+        uploaded_by: Option<String>,
+        #[serde(default)]
+        license: Option<Value>,
+        #[serde(default)]
+        provenance: Option<Value>,
+        #[serde(default)]
+        source: Option<Value>,
+        #[serde(default)]
+        tags: Option<Vec<String>>,
+        #[serde(default)]
+        max_bytes: Option<u64>,
+    },
+    GenerateQr {
+        store_root: String,
+        data: String,
+        asset_id: String,
+        #[serde(default)]
+        label: Option<String>,
+        #[serde(default)]
+        ec_level: Option<String>,
+        #[serde(default)]
+        print: bool,
+        #[serde(default)]
+        target_width_mm: Option<f64>,
+    },
+    GenerateAsset {
+        store_root: String,
+        provider: String,
+        request: Value,
+        asset_id: String,
+        #[serde(default)]
+        label: Option<String>,
     },
     FinalizeTemplate {
         scene: Value,
@@ -131,6 +188,8 @@ struct CoreResponse {
     dsl: Option<Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
     export: Option<Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    asset: Option<Value>,
 }
 
 #[derive(Debug, Serialize)]
@@ -219,6 +278,7 @@ fn main() {
                     edit: None,
                     dsl: None,
                     export: None,
+                    asset: None,
                 },
             };
             helper_log(
@@ -257,6 +317,7 @@ fn main() {
                 edit: None,
                 dsl: None,
                 export: None,
+                asset: None,
             }
         }
     };
@@ -277,6 +338,9 @@ impl CoreRequest {
             CoreRequest::CompileDslIntoScene { .. } => "compile_dsl_into_scene",
             CoreRequest::PreflightScene { .. } => "preflight_scene",
             CoreRequest::ExportPreview { .. } => "export_preview",
+            CoreRequest::IngestAsset { .. } => "ingest_asset",
+            CoreRequest::GenerateQr { .. } => "generate_qr",
+            CoreRequest::GenerateAsset { .. } => "generate_asset",
             CoreRequest::FinalizeTemplate { .. } => "finalize_template",
             CoreRequest::PlatformDefaultBrandKit => "platform_default_brand_kit",
             CoreRequest::ValidateBrandKit { .. } => "validate_brand_kit",
@@ -325,11 +389,38 @@ fn request_log_fields(request: &CoreRequest) -> Value {
             format,
             page_ids,
             profile,
+            asset_store_root,
             ..
         } => json!({
             "format": format,
             "page_id_count": page_ids.len(),
             "has_profile": profile.is_some(),
+            "has_asset_store_root": asset_store_root.is_some(),
+        }),
+        CoreRequest::IngestAsset {
+            bytes_base64,
+            declared_mime_type,
+            kind,
+            ..
+        } => json!({
+            "base64_length": bytes_base64.len(),
+            "declared_mime_type": declared_mime_type,
+            "has_kind": kind.is_some(),
+        }),
+        CoreRequest::GenerateQr {
+            data,
+            ec_level,
+            print,
+            target_width_mm,
+            ..
+        } => json!({
+            "data_length": data.len(),
+            "ec_level": ec_level,
+            "print": print,
+            "has_target_width_mm": target_width_mm.is_some(),
+        }),
+        CoreRequest::GenerateAsset { provider, .. } => json!({
+            "provider": provider,
         }),
         CoreRequest::FinalizeTemplate { .. } => json!({}),
         CoreRequest::PlatformDefaultBrandKit => json!({}),
@@ -434,6 +525,7 @@ fn error_response(error: CoreError, diagnostics: Vec<Diagnostic>) -> CoreRespons
         edit: None,
         dsl: None,
         export: None,
+        asset: None,
     }
 }
 
@@ -552,6 +644,7 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                     edit: None,
                     dsl: None,
                     export: None,
+                    asset: None,
                 }),
             }
         }
@@ -576,6 +669,7 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                 ),
                 dsl: None,
                 export: None,
+                asset: None,
             });
             let batch = match batch {
                 Ok(batch) => batch,
@@ -621,6 +715,7 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                     })),
                     dsl: None,
                     export: None,
+                    asset: None,
                 }),
                 Err(error) => Ok(CoreResponse {
                     ok: false,
@@ -645,6 +740,7 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                     })),
                     dsl: None,
                     export: None,
+                    asset: None,
                 }),
             }
         }
@@ -684,6 +780,7 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                     "session_snapshot": to_value(result.session_snapshot)?,
                 })),
                 export: None,
+                asset: None,
             })
         }
         CoreRequest::PreflightScene {
@@ -720,6 +817,7 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                 edit: None,
                 dsl: None,
                 export: None,
+                asset: None,
             })
         }
         CoreRequest::ExportPreview {
@@ -727,6 +825,7 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
             format,
             page_ids,
             profile,
+            asset_store_root,
         } => {
             let scene = parse_scene(scene)?;
             let profile = match profile {
@@ -755,7 +854,13 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                 page_ids: page_ids.into_iter().map(PageId::from).collect(),
                 purpose: ExportPurpose::AgentCritique,
             };
-            match LumenExportAdapter::new().export(&scene, &request) {
+            let adapter = match asset_store_root {
+                Some(root) => {
+                    LumenExportAdapter::with_resolver(Arc::new(StoreBackedResolver::new(root)))
+                }
+                None => LumenExportAdapter::new(),
+            };
+            match adapter.export(&scene, &request) {
                 Ok(result) => Ok(CoreResponse {
                     ok: true,
                     scene: None,
@@ -772,6 +877,7 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                     edit: None,
                     dsl: None,
                     export: Some(to_value(result)?),
+                    asset: None,
                 }),
                 Err(error) => Ok(CoreResponse {
                     ok: false,
@@ -789,8 +895,301 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                     edit: None,
                     dsl: None,
                     export: None,
+                    asset: None,
                 }),
             }
+        }
+        CoreRequest::IngestAsset {
+            store_root,
+            bytes_base64,
+            asset_id,
+            label,
+            declared_mime_type,
+            filename,
+            kind,
+            uploaded_by,
+            license,
+            provenance,
+            source,
+            tags,
+            max_bytes,
+        } => {
+            let bytes = BASE64
+                .decode(bytes_base64.as_bytes())
+                .map_err(|error| core_error("helper.asset_bytes", error.to_string()))?;
+            let kind_hint = kind
+                .map(serde_json::from_value::<AssetKind>)
+                .transpose()
+                .map_err(|error| core_error("helper.asset_kind", error.to_string()))?;
+            let license = license
+                .map(serde_json::from_value::<AssetLicense>)
+                .transpose()
+                .map_err(|error| core_error("helper.asset_license", error.to_string()))?;
+            let provenance = provenance
+                .map(serde_json::from_value::<AssetProvenance>)
+                .transpose()
+                .map_err(|error| core_error("helper.asset_provenance", error.to_string()))?;
+            let source = source
+                .map(serde_json::from_value::<AssetSource>)
+                .transpose()
+                .map_err(|error| core_error("helper.asset_source", error.to_string()))?;
+
+            let ingest_request = IngestRequest {
+                bytes: &bytes,
+                declared_mime: declared_mime_type.as_deref(),
+                filename: filename.as_deref(),
+                kind_hint,
+                max_bytes: max_bytes.unwrap_or(DEFAULT_MAX_BYTES),
+            };
+            let output = match lumen_assets::ingest(&ingest_request) {
+                Ok(output) => output,
+                Err(error) => {
+                    return Ok(error_response(
+                        core_error(error.code, error.message.clone()),
+                        vec![error.diagnostic],
+                    ))
+                }
+            };
+
+            let store = LocalAssetStore::new(&store_root);
+            let stored = store
+                .put(&output.bytes)
+                .map_err(|error| core_error(error.code, error.message))?;
+
+            let thumbnail = match &output.thumbnail {
+                Some(artifact) => {
+                    let stored_thumbnail = store
+                        .put(&artifact.bytes)
+                        .map_err(|error| core_error(error.code, error.message))?;
+                    Some(AssetThumbnail {
+                        location: AssetLocation {
+                            provider: LOCAL_STORE_PROVIDER.to_owned(),
+                            opaque_ref: stored_thumbnail.relative_path,
+                            url: None,
+                        },
+                        mime_type: artifact.mime_type.clone(),
+                        pixel_width: Some(artifact.pixel_width),
+                        pixel_height: Some(artifact.pixel_height),
+                    })
+                }
+                // Vector assets are their own thumbnail: the sanitized SVG
+                // scales without derivation.
+                None if output.sniffed_mime == "image/svg+xml" => Some(AssetThumbnail {
+                    location: AssetLocation {
+                        provider: LOCAL_STORE_PROVIDER.to_owned(),
+                        opaque_ref: stored.relative_path.clone(),
+                        url: None,
+                    },
+                    mime_type: output.sniffed_mime.clone(),
+                    pixel_width: None,
+                    pixel_height: None,
+                }),
+                None => None,
+            };
+
+            let record = AssetRecord {
+                id: AssetId::from(asset_id),
+                label,
+                kind: output.kind.clone(),
+                status: AssetStatus::Ready,
+                source: source.unwrap_or(AssetSource::Uploaded {
+                    asset_id: None,
+                    filename: filename.clone(),
+                    uploaded_by,
+                }),
+                media: AssetMediaMetadata {
+                    mime_type: Some(output.sniffed_mime.clone()),
+                    filename,
+                    byte_length: Some(stored.byte_length),
+                    digest: Some(AssetDigest {
+                        algorithm: "sha256".to_owned(),
+                        value: stored.digest_value.clone(),
+                    }),
+                    location: Some(AssetLocation {
+                        provider: LOCAL_STORE_PROVIDER.to_owned(),
+                        opaque_ref: stored.relative_path.clone(),
+                        url: None,
+                    }),
+                    thumbnail,
+                },
+                raster: output.raster.clone(),
+                vector: output.vector.clone(),
+                font: None,
+                logo: None,
+                license,
+                provenance: provenance.unwrap_or_default(),
+                tags: tags.unwrap_or_default(),
+            };
+
+            Ok(CoreResponse {
+                ok: true,
+                scene: None,
+                diagnostics: output.diagnostics,
+                error: None,
+                applied_operations: None,
+                preflight: None,
+                brand_kit: None,
+                brand_summary: None,
+                brand_generation: None,
+                brand_compatibility: None,
+                geometry: None,
+                operations: None,
+                edit: None,
+                dsl: None,
+                export: None,
+                asset: Some(json!({
+                    "record": to_value(record)?,
+                    "deduplicated": stored.deduplicated,
+                    "sniffed_mime": output.sniffed_mime,
+                    "relative_path": stored.relative_path,
+                    "digest_value": stored.digest_value,
+                    "byte_length": stored.byte_length,
+                })),
+            })
+        }
+        CoreRequest::GenerateQr {
+            store_root,
+            data,
+            asset_id,
+            label,
+            ec_level,
+            print,
+            target_width_mm,
+        } => {
+            let ec_level = ec_level
+                .as_deref()
+                .map(lumen_assets::QrEcLevel::parse)
+                .transpose()
+                .map_err(|message| core_error("helper.qr_ec_level", message))?;
+            let qr_request = lumen_assets::QrRequest {
+                data: data.clone(),
+                ec_level,
+                print,
+                target_width_mm,
+            };
+            let output = match lumen_assets::generate_qr(&qr_request) {
+                Ok(output) => output,
+                Err(error) => {
+                    return Ok(error_response(
+                        core_error(error.code, error.message.clone()),
+                        vec![error.diagnostic],
+                    ))
+                }
+            };
+            let qr_diagnostics = output.diagnostics.clone();
+
+            // Normalize through the shared ingest path (sanitize, store,
+            // record assembly) so generated assets are first-class assets.
+            let mut response = handle_request(CoreRequest::IngestAsset {
+                store_root,
+                bytes_base64: BASE64.encode(output.svg.as_bytes()),
+                asset_id: asset_id.clone(),
+                label: label.unwrap_or_else(|| format!("QR code ({data})")),
+                declared_mime_type: Some("image/svg+xml".to_owned()),
+                filename: Some(format!("{asset_id}.svg")),
+                kind: Some(json!("vector")),
+                uploaded_by: None,
+                license: Some(json!({
+                    "name": "generated_qr",
+                    "allow_export": true,
+                    "allow_modification": true,
+                    "allow_embedding": true,
+                    "allow_subsetting": true,
+                    "source_url": null,
+                    "restrictions": []
+                })),
+                provenance: Some(json!({
+                    "created_by": "qr-v1",
+                    "created_at": null,
+                    "source_label": "generated:qr",
+                    "confidence": 1.0,
+                    "notes": [format!(
+                        "deterministic QR encode: {} data bytes, ec level {}, {} modules",
+                        data.len(),
+                        output.ec_level.as_str(),
+                        output.module_count
+                    )]
+                })),
+                source: Some(json!({
+                    "kind": "generated",
+                    "request_id": asset_id,
+                    "model": "qr-v1"
+                })),
+                tags: Some(vec!["qr".to_owned(), "generated".to_owned()]),
+                max_bytes: None,
+            })?;
+
+            if response.ok {
+                if let Some(asset) = response.asset.as_mut() {
+                    asset["qr"] = json!({
+                        "ec_level": output.ec_level.as_str(),
+                        "module_count": output.module_count,
+                        "quiet_zone_modules": output.quiet_zone_modules,
+                    });
+                }
+                response.diagnostics.extend(qr_diagnostics);
+            }
+            Ok(response)
+        }
+        CoreRequest::GenerateAsset {
+            store_root,
+            provider,
+            request,
+            asset_id,
+            label,
+        } => {
+            let generation_request =
+                serde_json::from_value::<lumen_core::AssetGenerationRequest>(request)
+                    .map_err(|error| core_error("helper.generation_request", error.to_string()))?;
+            let registry = lumen_assets::ProviderRegistry::with_default_providers();
+            let artifact = match registry.generate(&provider, &generation_request) {
+                Ok(artifact) => artifact,
+                Err(error) => {
+                    return Ok(error_response(
+                        core_error(error.code, error.message.clone()),
+                        vec![error.diagnostic],
+                    ))
+                }
+            };
+            let provider_diagnostics = artifact.diagnostics.clone();
+            let provider_metadata = artifact.provider_metadata.clone();
+
+            let mut response = handle_request(CoreRequest::IngestAsset {
+                store_root,
+                bytes_base64: BASE64.encode(&artifact.bytes),
+                asset_id: asset_id.clone(),
+                label: label.unwrap_or_else(|| format!("Generated asset ({provider})")),
+                declared_mime_type: Some(artifact.mime_type.clone()),
+                filename: None,
+                kind: Some(to_value(&artifact.kind)?),
+                uploaded_by: None,
+                license: Some(to_value(&artifact.license)?),
+                provenance: Some(json!({
+                    "created_by": provider,
+                    "created_at": null,
+                    "source_label": format!("generated:{provider}"),
+                    "confidence": 1.0,
+                    "notes": artifact.provenance_notes,
+                })),
+                source: Some(json!({
+                    "kind": "generated",
+                    "request_id": generation_request.request_id,
+                    "model": provider,
+                })),
+                tags: Some(vec!["generated".to_owned()]),
+                max_bytes: None,
+            })?;
+
+            if response.ok {
+                if let Some(asset) = response.asset.as_mut() {
+                    asset["provider"] = json!({
+                        "id": provider,
+                        "metadata": provider_metadata,
+                    });
+                }
+                response.diagnostics.extend(provider_diagnostics);
+            }
+            Ok(response)
         }
         CoreRequest::FinalizeTemplate {
             scene,
@@ -822,6 +1221,7 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                     edit: None,
                     dsl: None,
                     export: None,
+                    asset: None,
                 }),
             }
         }
@@ -845,6 +1245,7 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                 edit: None,
                 dsl: None,
                 export: None,
+                asset: None,
             })
         }
         CoreRequest::ValidateBrandKit {
@@ -873,6 +1274,7 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                 edit: None,
                 dsl: None,
                 export: None,
+                asset: None,
             })
         }
         CoreRequest::CompileStylesBrandKit {
@@ -900,6 +1302,7 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                         edit: None,
                         dsl: None,
                         export: None,
+                        asset: None,
                     })
                 }
                 Err(diagnostics) => Ok(CoreResponse {
@@ -921,6 +1324,7 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                     edit: None,
                     dsl: None,
                     export: None,
+                    asset: None,
                 }),
             }
         }
@@ -959,6 +1363,7 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                 edit: None,
                 dsl: None,
                 export: None,
+                asset: None,
             })
         }
         CoreRequest::SummarizeBrandKit { brand_kit } => {
@@ -980,6 +1385,7 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                 edit: None,
                 dsl: None,
                 export: None,
+                asset: None,
             })
         }
         CoreRequest::ValidateSceneBrandGovernance {
@@ -1006,6 +1412,7 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                 edit: None,
                 dsl: None,
                 export: None,
+                asset: None,
             })
         }
         CoreRequest::CompareBrandKitCompatibility { from, to } => {
@@ -1029,6 +1436,7 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                 edit: None,
                 dsl: None,
                 export: None,
+                asset: None,
             })
         }
         CoreRequest::LayoutGeometry { scene } => {
@@ -1050,6 +1458,7 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                 edit: None,
                 dsl: None,
                 export: None,
+                asset: None,
             })
         }
     }
@@ -1076,6 +1485,7 @@ fn ok_scene(
         edit: None,
         dsl: None,
         export: None,
+        asset: None,
     }
 }
 

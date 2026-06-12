@@ -675,3 +675,271 @@ fn finalizes_template_through_core_operation() {
         "tmpl_test"
     );
 }
+
+const LOGO_PNG_BYTES: &[u8] =
+    include_bytes!("../../lumen-export/fixtures/assets/acme-logo-8x8-red.png");
+
+fn ingest_request(store_root: &str) -> Value {
+    use base64::Engine;
+    json!({
+        "action": "ingest_asset",
+        "store_root": store_root,
+        "bytes_base64": base64::engine::general_purpose::STANDARD.encode(LOGO_PNG_BYTES),
+        "asset_id": "asset_uploaded_logo_live",
+        "label": "Uploaded logo",
+        "declared_mime_type": "image/png",
+        "filename": "acme-logo.png",
+        "kind": "logo",
+        "uploaded_by": "designer",
+        "tags": ["logo"]
+    })
+}
+
+#[test]
+fn ingest_asset_stores_bytes_and_resolver_wires_export() {
+    let store_dir = tempfile::tempdir().expect("tempdir");
+    let store_root = store_dir.path().to_string_lossy().to_string();
+
+    let ingested = helper(ingest_request(&store_root));
+    assert_eq!(ingested["ok"], true, "{ingested:#?}");
+    let record = ingested["asset"]["record"].clone();
+    assert_eq!(record["kind"], "logo");
+    assert_eq!(record["media"]["mime_type"], "image/png");
+    assert_eq!(record["media"]["location"]["provider"], "local-store");
+    assert_eq!(ingested["asset"]["deduplicated"], false);
+
+    let relative_path = ingested["asset"]["relative_path"]
+        .as_str()
+        .expect("relative path");
+    assert!(
+        store_dir.path().join(relative_path).is_file(),
+        "bytes should land under the digest key"
+    );
+
+    let again = helper(ingest_request(&store_root));
+    assert_eq!(again["asset"]["deduplicated"], true, "{again:#?}");
+
+    let mut operations = asset_operations();
+    // The uploaded fixture is a square logo; align the slot policy with the
+    // probed aspect ratio so placement validation passes.
+    operations[1]["slot"]["image_policy"]["aspect_ratio"] = json!(1.0);
+    operations[2] = json!({ "kind": "upsert_asset", "asset": record });
+    operations[3]["asset_id"] = json!("asset_uploaded_logo_live");
+    let applied = helper(json!({
+        "action": "apply_operations",
+        "scene": minimal_scene(),
+        "operations": operations
+    }));
+    assert_eq!(applied["ok"], true, "{applied:#?}");
+
+    let exported = helper(json!({
+        "action": "export_preview",
+        "scene": applied["scene"].clone(),
+        "format": "svg",
+        "page_ids": ["page_a4"],
+        "asset_store_root": store_root
+    }));
+    assert_eq!(exported["ok"], true, "{exported:#?}");
+    let svg_bytes: Vec<u8> = exported["export"]["artifacts"][0]["bytes"]
+        .as_array()
+        .expect("bytes array")
+        .iter()
+        .map(|value| value.as_u64().expect("byte") as u8)
+        .collect();
+    let svg = String::from_utf8(svg_bytes).expect("utf8 svg");
+    assert!(
+        svg.contains("data:image/png;base64,"),
+        "store-backed resolver should embed real bytes: {svg}"
+    );
+    let diagnostics = exported["diagnostics"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default();
+    for code in ["LUME0202", "LUME0210", "LUME0211"] {
+        assert!(
+            !diagnostics
+                .iter()
+                .any(|diagnostic| diagnostic["code"] == code),
+            "no unresolved-asset diagnostics expected: {diagnostics:#?}"
+        );
+    }
+}
+
+#[test]
+fn ingest_asset_rejects_mime_mismatch_without_storing() {
+    let store_dir = tempfile::tempdir().expect("tempdir");
+    let store_root = store_dir.path().to_string_lossy().to_string();
+
+    let mut request = ingest_request(&store_root);
+    request["declared_mime_type"] = json!("image/jpeg");
+    let response = helper(request);
+
+    assert_eq!(response["ok"], false, "{response:#?}");
+    assert_eq!(response["error"]["code"], "ingest.mime_mismatch");
+    assert_eq!(response["diagnostics"][0]["code"], "LUMA0600");
+    assert_eq!(
+        std::fs::read_dir(store_dir.path())
+            .expect("read dir")
+            .count(),
+        0,
+        "rejected uploads must not write bytes"
+    );
+}
+
+#[test]
+fn generate_qr_is_deterministic_and_stores_sanitized_vector_asset() {
+    let store_dir = tempfile::tempdir().expect("tempdir");
+    let store_root = store_dir.path().to_string_lossy().to_string();
+    let request = |asset_id: &str| {
+        json!({
+            "action": "generate_qr",
+            "store_root": store_root,
+            "data": "https://lumen.example/a/acme-health",
+            "asset_id": asset_id,
+            "label": "Acme landing QR",
+            "print": true,
+            "target_width_mm": 24.0
+        })
+    };
+
+    let first = helper(request("asset_qr_acme"));
+    assert_eq!(first["ok"], true, "{first:#?}");
+    let record = &first["asset"]["record"];
+    assert_eq!(record["kind"], "vector");
+    assert_eq!(record["media"]["mime_type"], "image/svg+xml");
+    assert_eq!(record["source"]["kind"], "generated");
+    assert_eq!(record["source"]["model"], "qr-v1");
+    assert_eq!(record["provenance"]["source_label"], "generated:qr");
+    assert_eq!(record["license"]["allow_export"], true);
+    assert_eq!(first["asset"]["qr"]["ec_level"], "h");
+    assert_eq!(first["asset"]["qr"]["quiet_zone_modules"], 4);
+    assert!(first["asset"]["qr"]["module_count"].as_u64().unwrap() > 0);
+    assert_eq!(first["asset"]["deduplicated"], false);
+
+    // Determinism: a second generation of the same data dedups to the
+    // same stored digest under a different asset id.
+    let second = helper(request("asset_qr_acme_again"));
+    assert_eq!(second["ok"], true, "{second:#?}");
+    assert_eq!(second["asset"]["deduplicated"], true);
+    assert_eq!(
+        first["asset"]["digest_value"],
+        second["asset"]["digest_value"]
+    );
+
+    // Stored bytes are sanitized SVG with the quiet-zone viewBox.
+    let stored = store_dir
+        .path()
+        .join(first["asset"]["relative_path"].as_str().unwrap());
+    let svg = std::fs::read_to_string(stored).expect("stored svg");
+    assert!(svg.contains("<svg"));
+    assert!(!svg.contains("<script"));
+}
+
+#[test]
+fn generate_qr_surfaces_print_size_and_empty_data_diagnostics() {
+    let store_dir = tempfile::tempdir().expect("tempdir");
+    let store_root = store_dir.path().to_string_lossy().to_string();
+
+    let small = helper(json!({
+        "action": "generate_qr",
+        "store_root": store_root,
+        "data": "https://lumen.example/a/acme-health",
+        "asset_id": "asset_qr_small",
+        "print": true,
+        "target_width_mm": 12.0
+    }));
+    assert_eq!(small["ok"], true, "{small:#?}");
+    assert!(small["diagnostics"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|diagnostic| diagnostic["code"] == "LUMA0700"));
+
+    let empty = helper(json!({
+        "action": "generate_qr",
+        "store_root": store_root,
+        "data": "   ",
+        "asset_id": "asset_qr_empty"
+    }));
+    assert_eq!(empty["ok"], false);
+    assert_eq!(empty["error"]["code"], "qr.empty_data");
+    assert_eq!(empty["diagnostics"][0]["code"], "LUMA0702");
+}
+
+#[test]
+fn generate_asset_normalizes_provider_output_with_provenance_and_licensing() {
+    let store_dir = tempfile::tempdir().expect("tempdir");
+    let store_root = store_dir.path().to_string_lossy().to_string();
+
+    let response = helper(json!({
+        "action": "generate_asset",
+        "store_root": store_root,
+        "provider": "stub-image-v0",
+        "asset_id": "asset_stub_hero",
+        "label": "Stub hero",
+        "request": {
+            "request_id": "req_stub_hero",
+            "prompt": "teal clinic hero",
+            "output_kind": "raster_image",
+            "target_node_id": null,
+            "target_slot_id": null,
+            "constraints": {
+                "width": 64,
+                "height": 32,
+                "mime_type": null,
+                "transparent_background": null,
+                "brand_notes": []
+            }
+        }
+    }));
+
+    assert_eq!(response["ok"], true, "{response:#?}");
+    let record = &response["asset"]["record"];
+    assert_eq!(record["kind"], "raster_image");
+    assert_eq!(record["source"]["kind"], "generated");
+    assert_eq!(record["source"]["model"], "stub-image-v0");
+    assert_eq!(record["source"]["request_id"], "req_stub_hero");
+    assert_eq!(
+        record["provenance"]["source_label"],
+        "generated:stub-image-v0"
+    );
+    assert_eq!(record["license"]["name"], "stub_generated");
+    assert_eq!(record["raster"]["pixel_width"], 64);
+    assert_eq!(record["raster"]["pixel_height"], 32);
+    assert!(record["media"]["thumbnail"].is_object());
+    assert_eq!(response["asset"]["provider"]["id"], "stub-image-v0");
+    assert!(response["asset"]["provider"]["metadata"]["prompt_digest"].is_string());
+
+    let stored = store_dir
+        .path()
+        .join(response["asset"]["relative_path"].as_str().unwrap());
+    assert!(stored.is_file(), "provider bytes should be stored");
+}
+
+#[test]
+fn generate_asset_rejects_unknown_providers() {
+    let store_dir = tempfile::tempdir().expect("tempdir");
+    let response = helper(json!({
+        "action": "generate_asset",
+        "store_root": store_dir.path().to_string_lossy(),
+        "provider": "imaginary-model-v9",
+        "asset_id": "asset_nope",
+        "request": {
+            "request_id": "req_nope",
+            "prompt": "anything",
+            "output_kind": "raster_image",
+            "target_node_id": null,
+            "target_slot_id": null,
+            "constraints": {
+                "width": null,
+                "height": null,
+                "mime_type": null,
+                "transparent_background": null,
+                "brand_notes": []
+            }
+        }
+    }));
+
+    assert_eq!(response["ok"], false);
+    assert_eq!(response["error"]["code"], "provider.unknown");
+}

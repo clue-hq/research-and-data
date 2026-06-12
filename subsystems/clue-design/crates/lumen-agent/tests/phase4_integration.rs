@@ -49,7 +49,7 @@ impl VisualCritic for RecordingCritic {
 
 #[test]
 fn agent_asset_tool_operations_survive_preflight_export_and_dto_summary() {
-    let export = SvgExportAdapter;
+    let export = SvgExportAdapter::new();
     let critic = RecordingCritic::default();
     let asset_tool = FixedAssetTool {
         operations: asset_placement_operations(),

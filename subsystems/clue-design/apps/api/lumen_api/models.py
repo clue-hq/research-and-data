@@ -115,6 +115,14 @@ class FinalizeTemplateRequest(BaseModel):
     actor: ActorEnvelope = Field(default_factory=lambda: ActorEnvelope(kind="system"))
 
 
+class GenerateQrRequest(BaseModel):
+    data: str
+    label: Optional[str] = None
+    ec_level: Optional[str] = None
+    print_media: bool = False
+    target_width_mm: Optional[float] = None
+
+
 class AssetMetadataRequest(BaseModel):
     asset_id: Optional[str] = None
     document_id: Optional[str] = None

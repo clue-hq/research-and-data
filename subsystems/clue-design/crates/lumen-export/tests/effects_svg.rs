@@ -110,7 +110,7 @@ fn render(scene: &Scene) -> (String, Vec<lumen_core::Diagnostic>) {
         page_ids: vec![PageId::from("page_card")],
         purpose: ExportPurpose::UserDownload,
     };
-    let result = SvgExportAdapter.export(scene, &request).expect("exports");
+    let result = SvgExportAdapter::new().export(scene, &request).expect("exports");
     let svg = String::from_utf8(result.artifacts[0].bytes.clone()).expect("utf8 svg");
     (svg, result.diagnostics)
 }

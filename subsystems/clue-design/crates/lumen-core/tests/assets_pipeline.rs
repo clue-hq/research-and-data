@@ -413,6 +413,7 @@ fn image_slot_policy_metadata_and_license_are_validated() {
             byte_length: Some(128),
             digest: None,
             location: None,
+            thumbnail: None,
         },
         raster: Some(RasterAssetMetadata {
             pixel_width: 320,
