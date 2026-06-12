@@ -1,3 +1,4 @@
+use crate::raster::PageRasterizer;
 use crate::resolver::AssetByteResolver;
 use crate::sidecar::build_sidecar;
 use crate::svg::{measurer_as_dyn, render_page_svg, resolve_page_ids};
@@ -12,6 +13,7 @@ use std::sync::Arc;
 pub struct PngExportAdapter {
     resolver: Option<Arc<dyn AssetByteResolver>>,
     measurer: Option<SharedTextMeasurer>,
+    rasterizer: Option<Arc<dyn PageRasterizer>>,
 }
 
 impl PngExportAdapter {
@@ -23,6 +25,7 @@ impl PngExportAdapter {
         Self {
             resolver: Some(resolver),
             measurer: None,
+            rasterizer: None,
         }
     }
 
@@ -30,6 +33,15 @@ impl PngExportAdapter {
     /// line breaks match layout-engine measurement.
     pub fn with_measurer(mut self, measurer: SharedTextMeasurer) -> Self {
         self.measurer = Some(measurer);
+        self
+    }
+
+    /// Inject a direct scene rasterizer (slice A3). When present, PNG
+    /// export paints the scene natively instead of rasterizing the SVG
+    /// markup string; the temporary resvg path remains the fallback until
+    /// its removal at A4.
+    pub fn with_rasterizer(mut self, rasterizer: Arc<dyn PageRasterizer>) -> Self {
+        self.rasterizer = Some(rasterizer);
         self
     }
 }
@@ -50,17 +62,19 @@ impl ExportAdapter for PngExportAdapter {
         }
 
         let mut diagnostics = resolved.diagnostics;
-        diagnostics.push(
-            Diagnostic::warning(
-                Phase::Export,
-                "LUME0301",
-                "PNG export rasterized the canonical SVG page output",
-                Some(DiagnosticSubject::Document),
-            )
-            .with_hint(
-                "SVG and PNG export now share text layout, paint, transform, and computed-geometry semantics.",
-            ),
-        );
+        if self.rasterizer.is_none() {
+            diagnostics.push(
+                Diagnostic::warning(
+                    Phase::Export,
+                    "LUME0301",
+                    "PNG export rasterized the canonical SVG page output",
+                    Some(DiagnosticSubject::Document),
+                )
+                .with_hint(
+                    "SVG and PNG export now share text layout, paint, transform, and computed-geometry semantics.",
+                ),
+            );
+        }
 
         let mut artifacts = Vec::new();
         for page_id in &resolved.page_ids {
@@ -68,14 +82,28 @@ impl ExportAdapter for PngExportAdapter {
                 continue;
             };
 
-            let (svg, page_diagnostics) = render_page_svg(
-                scene,
-                page,
-                self.resolver.as_deref(),
-                self.measurer.as_deref().map(measurer_as_dyn),
-            );
-            diagnostics.extend(page_diagnostics);
-            let png = rasterize_svg_page(&svg, page, request, page_id)?;
+            let png = if let Some(rasterizer) = &self.rasterizer {
+                let (width, height) = page_pixel_size(page, request);
+                let rasterized = rasterizer
+                    .rasterize_page(scene, page_id, width, height, self.resolver.as_deref())
+                    .map_err(|error| {
+                        ExportError::new(
+                            "export.png_raster_failed",
+                            format!("PNG export could not rasterize page {}: {}", page_id, error),
+                        )
+                    })?;
+                diagnostics.extend(rasterized.diagnostics);
+                rasterized.png
+            } else {
+                let (svg, page_diagnostics) = render_page_svg(
+                    scene,
+                    page,
+                    self.resolver.as_deref(),
+                    self.measurer.as_deref().map(measurer_as_dyn),
+                );
+                diagnostics.extend(page_diagnostics);
+                rasterize_svg_page(&svg, page, request, page_id)?
+            };
 
             let sidecar =
                 build_sidecar(scene, std::slice::from_ref(page_id), &request.profile.name);

@@ -7,6 +7,7 @@
 pub mod checks;
 pub mod pdf;
 pub mod png;
+pub mod raster;
 pub mod resolver;
 pub mod sidecar;
 pub mod svg;
@@ -14,10 +15,14 @@ pub mod svg;
 pub use checks::{asset_export_checks, license_enforced, MIN_EFFECTIVE_PRINT_DPI};
 pub use pdf::PdfExportAdapter;
 pub use png::PngExportAdapter;
+pub use raster::{PageRasterizer, RasterizeError, RasterizedPage};
 pub use resolver::{
     AssetByteResolver, AssetResolveError, FixtureAssetResolver, ResolvedAssetBytes,
 };
-pub use svg::SvgExportAdapter;
+pub use svg::{
+    focal_crop_geometry, page_background_token_diagnostics, unresolved_brand_token_diagnostics,
+    FocalCropGeometry, SvgExportAdapter,
+};
 
 use lumen_core::{
     DiagnosticSeverity, ExportAdapter, ExportArtifact, ExportError, ExportFormat, ExportRequest,
@@ -56,6 +61,14 @@ impl LumenExportAdapter {
             svg: self.svg.with_measurer(Arc::clone(&measurer)),
             png: self.png.with_measurer(Arc::clone(&measurer)),
             pdf: self.pdf.with_measurer(measurer),
+        }
+    }
+
+    /// Inject a direct scene rasterizer for the PNG path (slice A3).
+    pub fn with_rasterizer(self, rasterizer: Arc<dyn PageRasterizer>) -> Self {
+        Self {
+            png: self.png.with_rasterizer(rasterizer),
+            ..self
         }
     }
 }

@@ -13,6 +13,8 @@
 
 pub mod fonts;
 pub mod measure;
+pub mod render;
 
 pub use fonts::{FamilyResolution, FontLoadError, FontManager, DEFAULT_FONT_FAMILY};
 pub use measure::SkiaTextMeasurer;
+pub use render::SkiaSceneRenderer;

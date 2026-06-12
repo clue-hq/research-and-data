@@ -998,72 +998,8 @@ impl<'a> SvgPageRenderer<'a> {
     }
 
     fn warn_if_unresolved_brand_tokens(&mut self, node: &Node) {
-        if matches!(node.size.width, Dimension::Hug | Dimension::Fill { .. })
-            || matches!(node.size.height, Dimension::Hug | Dimension::Fill { .. })
-        {
-            self.diagnostics.push(
-                Diagnostic::warning(
-                    Phase::Export,
-                    "LUME0205",
-                    format!(
-                        "node {} uses hug/fill sizing without resolved export geometry",
-                        node.id
-                    ),
-                    Some(DiagnosticSubject::Node(node.id.clone())),
-                )
-                .with_hint("Run layout before export or provide fixed/computed dimensions."),
-            );
-        }
-
-        if let Some(token) = dimension_token(&node.size.width) {
-            self.warn_unresolved_node_brand_token(node, "size.width", token);
-        }
-        if let Some(token) = dimension_token(&node.size.height) {
-            self.warn_unresolved_node_brand_token(node, "size.height", token);
-        }
-        for stroke in &node.strokes {
-            if let Some(token) = &stroke.width_token {
-                self.warn_unresolved_node_brand_token(
-                    node,
-                    &format!("stroke {} width", stroke.id),
-                    token,
-                );
-            }
-        }
-        if let Some(token) = &node.corner.token {
-            self.warn_unresolved_node_brand_token(node, "corner radius", token);
-        }
-        if let Some(token) = &node.opacity_token {
-            self.warn_unresolved_node_brand_token(node, "opacity", token);
-        }
-        if let Some(layout) = &node.layout {
-            if let Some(token) = &layout.gap_token {
-                self.warn_unresolved_node_brand_token(node, "layout gap", token);
-            }
-            if let Some(token) = &layout.padding_token {
-                self.warn_unresolved_node_brand_token(node, "layout padding", token);
-            }
-        }
-        if let NodeKind::Text(text) = &node.kind {
-            if let Some(token) = &text.style_token {
-                self.warn_unresolved_node_brand_token(node, "text style", token);
-            }
-        }
-    }
-
-    fn warn_unresolved_node_brand_token(&mut self, node: &Node, field: &str, token: &str) {
-        self.diagnostics.push(
-            Diagnostic::warning(
-                Phase::Export,
-                "LUME0209",
-                format!(
-                    "node {} uses unresolved brand token {} for {}",
-                    node.id, token, field
-                ),
-                Some(DiagnosticSubject::Node(node.id.clone())),
-            )
-            .with_hint("Run the brand/token resolver before exporting tokenized scene fields."),
-        );
+        self.diagnostics
+            .extend(unresolved_brand_token_diagnostics(node));
     }
 
     fn clip_rect(&mut self, node: &Node, width: f64, height: f64) -> String {
@@ -1082,15 +1018,17 @@ impl<'a> SvgPageRenderer<'a> {
 /// Explicit crop window for cover/crop placements with a focal point.
 /// The drawn image covers the node box at the asset's natural aspect
 /// ratio, shifted so the focal point sits as close to the box center as
-/// the image allows.
-struct FocalCropGeometry {
-    x: f64,
-    y: f64,
-    width: f64,
-    height: f64,
+/// the image allows. Shared with the native rasterizer (lumen-skia) so
+/// SVG and PNG focal crops can never drift apart.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct FocalCropGeometry {
+    pub x: f64,
+    pub y: f64,
+    pub width: f64,
+    pub height: f64,
 }
 
-fn focal_crop_geometry(
+pub fn focal_crop_geometry(
     node: &Node,
     record: Option<&lumen_core::AssetRecord>,
     box_width: f64,
@@ -1144,6 +1082,103 @@ fn image_preserve_aspect_ratio(node: &Node) -> &'static str {
         Some(ImageFitMode::Cover) | Some(ImageFitMode::Crop) => "xMidYMid slice",
         Some(ImageFitMode::Contain) | None => "xMidYMid meet",
     }
+}
+
+/// Per-node export warnings shared by the SVG renderer and the native
+/// rasterizer: hug/fill without computed geometry (LUME0205) and unresolved
+/// brand tokens on sizing/stroke/corner/opacity/layout/text-style fields
+/// (LUME0209).
+pub fn unresolved_brand_token_diagnostics(node: &Node) -> Vec<Diagnostic> {
+    let mut diagnostics = Vec::new();
+    if matches!(node.size.width, Dimension::Hug | Dimension::Fill { .. })
+        || matches!(node.size.height, Dimension::Hug | Dimension::Fill { .. })
+    {
+        diagnostics.push(
+            Diagnostic::warning(
+                Phase::Export,
+                "LUME0205",
+                format!(
+                    "node {} uses hug/fill sizing without resolved export geometry",
+                    node.id
+                ),
+                Some(DiagnosticSubject::Node(node.id.clone())),
+            )
+            .with_hint("Run layout before export or provide fixed/computed dimensions."),
+        );
+    }
+
+    let mut field_token = |field: &str, token: &str| {
+        diagnostics.push(
+            Diagnostic::warning(
+                Phase::Export,
+                "LUME0209",
+                format!(
+                    "node {} uses unresolved brand token {} for {}",
+                    node.id, token, field
+                ),
+                Some(DiagnosticSubject::Node(node.id.clone())),
+            )
+            .with_hint("Run the brand/token resolver before exporting tokenized scene fields."),
+        );
+    };
+
+    if let Some(token) = dimension_token(&node.size.width) {
+        field_token("size.width", token);
+    }
+    if let Some(token) = dimension_token(&node.size.height) {
+        field_token("size.height", token);
+    }
+    for stroke in &node.strokes {
+        if let Some(token) = &stroke.width_token {
+            field_token(&format!("stroke {} width", stroke.id), token);
+        }
+    }
+    if let Some(token) = &node.corner.token {
+        field_token("corner radius", token);
+    }
+    if let Some(token) = &node.opacity_token {
+        field_token("opacity", token);
+    }
+    if let Some(layout) = &node.layout {
+        if let Some(token) = &layout.gap_token {
+            field_token("layout gap", token);
+        }
+        if let Some(token) = &layout.padding_token {
+            field_token("layout padding", token);
+        }
+    }
+    if let NodeKind::Text(text) = &node.kind {
+        if let Some(token) = &text.style_token {
+            field_token("text style", token);
+        }
+    }
+    diagnostics
+}
+
+/// Page-background token warnings (LUME0208) shared by both renderers.
+pub fn page_background_token_diagnostics(page: &Page) -> Vec<Diagnostic> {
+    let mut diagnostics = Vec::new();
+    for fill in &page.background {
+        match &fill.paint {
+            Paint::Token { token } => {
+                diagnostics.push(unresolved_page_token_diag(&page.id, token));
+            }
+            Paint::Solid {
+                color: Color::Token { token },
+            } => {
+                diagnostics.push(unresolved_page_token_diag(&page.id, token));
+            }
+            Paint::LinearGradient { stops, .. } | Paint::RadialGradient { stops } => {
+                for stop in stops {
+                    if let Color::Token { token } = &stop.color {
+                        diagnostics.push(unresolved_page_token_diag(&page.id, token));
+                    }
+                }
+            }
+            Paint::Solid { .. } => {}
+        }
+    }
+    diagnostics
 }
 
 fn page_dimensions(page: &Page) -> (f64, f64, &'static str) {

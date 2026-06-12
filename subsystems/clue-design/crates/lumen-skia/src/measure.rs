@@ -30,6 +30,14 @@ use skia_safe::textlayout::{
     TextDirection as SkTextDirection, TextStyle,
 };
 use skia_safe::{Color as SkColor, FontStyle, Paint as SkPaint};
+
+/// Default measurement foreground: opaque black, anti-aliased.
+pub(crate) fn default_foreground() -> SkPaint {
+    let mut paint = SkPaint::default();
+    paint.set_color(SkColor::BLACK);
+    paint.set_anti_alias(true);
+    paint
+}
 use std::sync::Arc;
 
 /// Layout width used when no wrap constraint applies. Large enough that no
@@ -54,7 +62,9 @@ pub(crate) struct ParagraphRequest<'a> {
     pub max_lines: Option<u16>,
     pub direction: LumenTextDirection,
     pub align: SkTextAlign,
-    pub color: SkColor,
+    /// Foreground paint for the glyphs (solid color for measurement;
+    /// the renderer may pass gradient shaders).
+    pub foreground: SkPaint,
 }
 
 /// Mirror the heuristic's hard-break handling: literal `\n` sequences and
@@ -91,10 +101,7 @@ pub(crate) fn build_paragraph(request: &ParagraphRequest<'_>, fonts: &FontManage
             text_style.set_height(request.line_height as f32);
             text_style.set_height_override(true);
         }
-        let mut foreground = SkPaint::default();
-        foreground.set_color(request.color);
-        foreground.set_anti_alias(true);
-        text_style.set_foreground_paint(&foreground);
+        text_style.set_foreground_paint(&request.foreground);
 
         let mut paragraph_style = ParagraphStyle::new();
         paragraph_style.set_text_style(&text_style);
@@ -182,7 +189,7 @@ impl TextMeasurer for SkiaTextMeasurer {
                 // Measurement always lays out left-aligned: alignment moves
                 // lines inside the box but never changes break positions.
                 align: SkTextAlign::Left,
-                color: SkColor::BLACK,
+                foreground: default_foreground(),
             },
             &self.fonts,
         );
