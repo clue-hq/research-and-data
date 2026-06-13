@@ -12,7 +12,7 @@ import {
   konvaStrokeProps,
   nodeDescriptor
 } from "@/engine/renderAdapter";
-import { isNodeDirectGeometryEditable } from "@/engine/sceneQueries";
+import { isNodeDirectGeometryEditable, topLevelAncestorId } from "@/engine/sceneQueries";
 
 interface SceneNodeProps {
   scene: Scene;
@@ -50,6 +50,18 @@ export function SceneNode({
         y: node.computed.layout_bounds.y
       }
     : null;
+
+  // Deliberate container targeting: a single click selects this (deepest)
+  // node via cancelBubble; a double-click instead selects the outermost
+  // top-level container it belongs to — the whole card/group — which a click
+  // can never reach when the container's background is covered by children.
+  // No-ops to a plain re-select when the node is already top-level.
+  const handleSelectContainer = (
+    event: Konva.KonvaEventObject<MouseEvent | TouchEvent>
+  ) => {
+    event.cancelBubble = true;
+    onSelectNode(topLevelAncestorId(scene, node.id) ?? node.id);
+  };
 
   const handleDragEnd = (event: Konva.KonvaEventObject<DragEvent>) => {
     if (!directGeometryEditable) {
@@ -114,6 +126,8 @@ export function SceneNode({
         event.cancelBubble = true;
         onSelectNode(node.id);
       }}
+      onDblClick={handleSelectContainer}
+      onDblTap={handleSelectContainer}
       onDragEnd={handleDragEnd}
       onTransformEnd={handleTransformEnd}
     >

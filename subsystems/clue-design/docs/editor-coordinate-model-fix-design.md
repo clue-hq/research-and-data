@@ -152,18 +152,32 @@ deliberate way to target the child. Three additions, none renderer-specific:
 2. **Deliberate child targeting.**
    - **Layer panel** already lists the nested tree with depth indentation and
      `onSelectNode` (`LayerPanel.tsx`); clicking a nested row selects that child
-     regardless of canvas overlap. Make this the discoverable primary path
-     (and reflect canvas selection back into the panel).
-   - **Double-click to enter a container** (Figma model): a single click selects
-     the outermost container under the cursor; double-click "enters" it and
-     selects the deepest child under the cursor; `Esc` steps back out. Track an
-     "editing context" (which container you are inside) so subsequent
-     clicks/drags target within it.
-   - **Modifier click-through**: `Cmd`/`Ctrl`-click selects the deepest node
-     under the cursor directly.
-   (Note: the current `onClick` uses `cancelBubble`, so a click already selects
-   the deepest node; the gap is specifically grabbing a container's *background*
-   to drag it, which the clarity + entry model makes intentional.)
+     regardless of canvas overlap. It is the discoverable path for *any*
+     intermediate level, and CM3 reflects canvas selection back into it
+     (highlight + scroll-into-view).
+   - **Refinement to the implemented model (2026-06-13).** The original sketch
+     above borrowed Figma's "single-click selects the outermost container,
+     double-click enters it" model. But the live editor's base behavior is the
+     *opposite*: `onClick` uses `cancelBubble`, so a single click already
+     selects the **deepest** node under the cursor (precise leaf targeting
+     already works). Inverting that base to a container-first model would be a
+     large, regression-prone change for no extra capability. Instead we keep the
+     deepest-first base and add its natural inverse:
+     - **Single click → the exact leaf** under the cursor (existing).
+     - **Double-click → the outermost top-level container** that the node under
+       the cursor belongs to (a direct child of the page). This is the
+       deliberate "grab the whole card/group" gesture, and it works even when
+       the container's background is fully covered by its children — the case
+       a single click could never reach.
+     - **Layer panel → any intermediate level** (the middle granularity).
+     - **`Esc` → deselect** (unchanged; preserves the strong convention rather
+       than overloading it with "step out").
+   - **Modifier click-through is unnecessary** in this model: the deepest node
+     is already the single-click default, so there is nothing to click through
+     to. Omitted deliberately.
+   (Net: click drills to the leaf, double-click jumps to the enclosing
+   top-level container, the layer panel covers everything between, and CM3
+   chrome shows a container's extent the moment it is selected.)
 
 3. **Keep container-moves-children.** No "lock children" mode in V0; the goal is
    comprehension and precise targeting, not changing the (correct) semantics.
@@ -193,9 +207,13 @@ deliberate way to target the child. Three additions, none renderer-specific:
 - **CM3 — container selection clarity.** Distinct container selection chrome +
   child outlines; canvas↔layer-panel selection sync. Component tests.
 
-- **CM4 — child targeting.** Double-click-to-enter (+ `Esc`), modifier
-  click-through, layer-panel-driven selection. Interaction tests for each path;
-  a container drag still moves children (semantics preserved).
+- **CM4 — child targeting.** Keeps deepest-first single-click; adds
+  double-click → outermost top-level container (`topLevelAncestorId`), the
+  layer panel for intermediate levels, and CM3's panel highlight/scroll. `Esc`
+  stays "deselect". Modifier click-through omitted (deepest is already the
+  default — see the refinement note in Part 2). Helper is unit-tested across
+  leaf / nested / top-level / orphan cases; a container drag still moves
+  children (semantics preserved).
 
 - **CM5 — conformance + Wave-3 handoff.** Full matrix; a note in the Wave 3 plan
   marking this as the delivered C-slice-0 (CanvasKit builds hit-testing/drag on
