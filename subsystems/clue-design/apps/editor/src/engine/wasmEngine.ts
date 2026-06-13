@@ -44,7 +44,27 @@ export interface WasmEngineInstance {
   validate(): string;
   version(): string;
   hitTest(pageId: string, x: number, y: number): string;
+  setMeasurements(measurementsJson: string): string;
   free?(): void;
+}
+
+/** Wave 3 C4: one editor-measured (SkParagraph) text metric. The engine keys
+ * each by the measurement input it lays out with, so providing these makes
+ * text `computed` Skia-faithful (measure-then-inject). */
+export interface TextMeasurement {
+  content: string;
+  font_family: string;
+  font_size: number;
+  font_weight: number;
+  line_height: number;
+  letter_spacing: number;
+  wrap: "no_wrap" | "wrap";
+  max_lines: number | null;
+  direction: "ltr" | "rtl" | "auto";
+  max_width?: number;
+  max_height?: number;
+  width: number;
+  height: number;
 }
 
 /** Wave 3 C3a: point→node hit result in absolute page space (scene units).
@@ -201,6 +221,17 @@ export class WasmEngine implements OptimisticEnginePort {
    */
   hitTest(pageId: PageId, x: number, y: number): HitResult {
     return JSON.parse(this.instance.hitTest(pageId, x, y)) as HitResult;
+  }
+
+  /**
+   * Install editor-measured SkParagraph text metrics and relayout, so text
+   * `computed` becomes Skia-faithful (Wave 3 C4). An empty array clears the
+   * override (back to the heuristic). The relaid scene is adopted as the
+   * render snapshot.
+   */
+  setMeasurements(measurements: TextMeasurement[]): void {
+    this.instance.setMeasurements(JSON.stringify(measurements));
+    this.snapshot = JSON.parse(this.instance.sceneJson()) as Scene;
   }
 
   /**

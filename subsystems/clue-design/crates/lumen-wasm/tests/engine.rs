@@ -279,6 +279,54 @@ fn nested_engine() -> Engine {
 }
 
 #[test]
+fn set_measurements_makes_hug_text_geometry_skia_faithful() {
+    // A hug-width text node takes its width from measurement (a fixed node
+    // would not), so the editor-injected SkParagraph metrics become its
+    // computed geometry (Wave 3 C4 measure-then-inject).
+    let mut scene: Value = serde_json::from_str(MINIMAL_SCENE).expect("scene json");
+    scene["nodes"]["node_contact_name"]["size"] =
+        json!({ "width": { "kind": "hug" }, "height": { "kind": "hug" } });
+    let mut engine = Engine::from_scene_json(&scene.to_string()).expect("hug scene loads");
+
+    let before = node_computed_width(&engine, "node_contact_name");
+
+    // Provide a distinctive Skia width for the node's exact measurement input
+    // (unconstrained → max_width omitted = None, the key layout uses).
+    let measurements = json!([{
+        "content": "Dr. Priya Sharma",
+        "font_family": "Inter",
+        "font_size": 18.0,
+        "font_weight": 600,
+        "line_height": 1.2,
+        "letter_spacing": 0.0,
+        "wrap": "wrap",
+        "max_lines": null,
+        "direction": "ltr",
+        "width": 350.0,
+        "height": 40.0
+    }]);
+    let ack = parse(engine.set_measurements(&measurements.to_string()));
+    assert_eq!(ack["ok"], true, "{ack:#?}");
+    assert_eq!(ack["count"], 1);
+
+    let after = node_computed_width(&engine, "node_contact_name");
+    assert_ne!(after, before, "heuristic width should be replaced");
+    assert_eq!(after, 350.0, "computed width is the injected Skia width");
+
+    // Clearing the override returns to the heuristic width.
+    let clear = parse(engine.set_measurements("[]"));
+    assert_eq!(clear["ok"], true);
+    assert_eq!(node_computed_width(&engine, "node_contact_name"), before);
+}
+
+fn node_computed_width(engine: &Engine, node_id: &str) -> f64 {
+    let scene: Value = serde_json::from_str(&engine.scene_json()).expect("scene");
+    scene["nodes"][node_id]["computed"]["layout_bounds"]["width"]
+        .as_f64()
+        .expect("computed width")
+}
+
+#[test]
 fn hit_test_returns_topmost_node_in_page_space() {
     // The engine relaid the tree on load, so hit-testing works over fresh
     // computed geometry (Wave 3 C3a). hero(40,40,400,300) ⊃ headline(60,60,

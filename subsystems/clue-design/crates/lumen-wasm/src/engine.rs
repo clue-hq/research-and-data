@@ -11,11 +11,14 @@
 use lumen_core::validation::validate_scene;
 use lumen_core::{
     build_structured_edit_batch, compile_dsl_into_scene_with_session, hit_stack, layout_scene,
-    preflight_scene, DslCompileSessionSnapshot, LayoutOptions, Operation, PageId, PreflightOptions,
-    Scene, StructuredEditInstruction,
+    measure_key, preflight_scene, DslCompileSessionSnapshot, LayoutOptions, Operation, PageId,
+    PreflightOptions, ProvidedTextMeasurer, Scene, SharedTextMeasurer, StructuredEditInstruction,
+    TextDirection, TextMeasureInput, TextWrap,
 };
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
+use std::collections::HashMap;
+use std::sync::Arc;
 
 /// Text measurement honesty (Track E Decision 3): skia-safe cannot target
 /// wasm32, so the in-browser engine measures with the heuristic fallback.
@@ -33,9 +36,53 @@ pub fn version_payload() -> Value {
     })
 }
 
+/// One editor-supplied text measurement (Wave 3 C4): the measurement input
+/// fields plus the SkParagraph width/height the editor measured for them.
+#[derive(Deserialize)]
+struct ProvidedMeasurement {
+    content: String,
+    font_family: String,
+    font_size: f64,
+    font_weight: u16,
+    line_height: f64,
+    letter_spacing: f64,
+    wrap: TextWrap,
+    #[serde(default)]
+    max_lines: Option<u16>,
+    direction: TextDirection,
+    #[serde(default)]
+    max_width: Option<f64>,
+    #[serde(default)]
+    max_height: Option<f64>,
+    width: f64,
+    height: f64,
+}
+
+impl ProvidedMeasurement {
+    fn input(&self) -> TextMeasureInput {
+        TextMeasureInput {
+            content: self.content.clone(),
+            font_family: self.font_family.clone(),
+            font_size: self.font_size,
+            font_weight: self.font_weight,
+            line_height: self.line_height,
+            letter_spacing: self.letter_spacing,
+            wrap: self.wrap.clone(),
+            max_lines: self.max_lines,
+            direction: self.direction.clone(),
+            max_width: self.max_width,
+            max_height: self.max_height,
+        }
+    }
+}
+
 pub struct Engine {
     scene: Scene,
     dsl_session: Option<DslCompileSessionSnapshot>,
+    /// Wave 3 C4: editor-supplied SkParagraph metrics. When set, `relayout`
+    /// measures text with these (Skia-faithful), making editor `computed`
+    /// match export. `None` → the heuristic fallback.
+    measurer: Option<SharedTextMeasurer>,
 }
 
 impl Engine {
@@ -49,6 +96,7 @@ impl Engine {
         let mut engine = Self {
             scene,
             dsl_session: None,
+            measurer: None,
         };
         engine.relayout();
         Ok(engine)
@@ -79,12 +127,47 @@ impl Engine {
     /// unchanged, so an edit only moves the node it touched and that node's
     /// true layout dependents.
     fn relayout(&mut self) {
-        let result = layout_scene(&self.scene, LayoutOptions::default());
+        let options = LayoutOptions {
+            measurer: self.measurer.clone(),
+            ..LayoutOptions::default()
+        };
+        let result = layout_scene(&self.scene, options);
         for (node_id, computed) in result.geometry {
             if let Some(node) = self.scene.nodes.get_mut(&node_id) {
                 node.computed = Some(computed);
             }
         }
+    }
+
+    /// Wave 3 C4 (measure-then-inject): install editor-supplied SkParagraph
+    /// metrics and relayout, so text `computed` becomes Skia-faithful. The
+    /// payload is `[{ content, font_family, font_size, font_weight,
+    /// line_height, letter_spacing, wrap, max_lines, direction, max_width?,
+    /// max_height?, width, height }]`; the engine keys each by the same
+    /// measurement input it lays out with. An empty payload clears the
+    /// override (back to the heuristic).
+    pub fn set_measurements(&mut self, measurements_json: &str) -> String {
+        let entries: Vec<ProvidedMeasurement> = match serde_json::from_str(measurements_json) {
+            Ok(entries) => entries,
+            Err(error) => {
+                return json!({
+                    "ok": false,
+                    "error": { "code": "EDITOR_WASM_MEASUREMENTS_INVALID", "message": error.to_string() }
+                })
+                .to_string()
+            }
+        };
+        let mut overrides = HashMap::with_capacity(entries.len());
+        for entry in &entries {
+            overrides.insert(measure_key(&entry.input()), (entry.width, entry.height));
+        }
+        self.measurer = if overrides.is_empty() {
+            None
+        } else {
+            Some(Arc::new(ProvidedTextMeasurer::new(overrides)))
+        };
+        self.relayout();
+        json!({ "ok": true, "count": entries.len() }).to_string()
     }
 
     /// Full scene snapshot out. Reserved for init/reconcile/undo-frame
