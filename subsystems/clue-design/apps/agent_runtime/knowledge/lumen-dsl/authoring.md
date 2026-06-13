@@ -86,12 +86,21 @@ iteration (never re-emit it):
   container an auto-layout and use the `y(c)` anchor — for example
   `banner al(h,x(c),y(c),pad(0,24)) p(0,0) s(595,80) fill(#008080)` with the
   text as a child line — never put alignment on the text as `valign(...)`.
-- **Colors are never bare numbers.** A color must be `#RRGGBB`, `#AARRGGBB`,
-  `$token`, or `oklch(l,c,h,a)`. `fill(4)`, `fill(0)`, or a numeric gradient
-  argument is `LUMD0219 invalid color`. Gradient fills are
+- **Colors are never bare numbers, and `rgba(...)` is not a color.** A color
+  must be `#RRGGBB`, `#AARRGGBB`, `$token`, or `oklch(l,c,h,a)`. `fill(4)`,
+  `fill(0)`, `rgba(0,0,0,0.1)`, or a numeric gradient argument is `LUMD0219
+  invalid color`. For a translucent color use `#AARRGGBB` (e.g. `#19000000` is
+  ~10% black). Gradient fills are
   `fill(linear(angle, stop(#ffffff,0), stop(#e7f0ef,1)))` or
   `fill(radial(stop(...),stop(...)))` — each stop is `stop(color, position)`
   with the color in one of the forms above.
+- **`shadow(...)` takes the COLOR first, then NAMED args** — never positional
+  offsets. The form is
+  `shadow(color, o(opacity), x(dx), y(dy), blur(radius), spread(s))`, e.g.
+  `shadow(#000000, o(0.18), x(0), y(8), blur(24))`. Writing
+  `shadow(0,4,24,#000000)` makes the compiler read the offset `0`/`4` as the
+  color → `LUMD0219 invalid color`. A soft card shadow is
+  `shadow(#000000, o(0.12), y(8), blur(24))`.
 - **Only these node properties exist:** `p(x,y)`, `s(w,h)`, `fill(...)`,
   `stroke(...)`, `rd(...)` / `radius(...)`, `font(...)`, `style($type.x)`,
   `lh(...)`, `ls(...)`, `tracking(...)`, `wrap_text(true|false)`,
