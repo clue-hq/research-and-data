@@ -33,8 +33,14 @@ export function drawDescriptorTree(
   nodes: DrawNode[],
   fontProvider: TypefaceFontProvider | null
 ): void {
-  const bg = parseColor(ck, page.background);
-  canvas.clear(bg ?? ck.WHITE);
+  // Fill the page as a bounded rect (not a full-surface clear, which would
+  // erase the stage's backdrop and hide the artboard boundary).
+  const bg = parseColor(ck, page.background) ?? ck.WHITE;
+  const bgPaint = new ck.Paint();
+  bgPaint.setStyle(ck.PaintStyle.Fill);
+  bgPaint.setColor(bg);
+  canvas.drawRect(ck.LTRBRect(0, 0, page.width, page.height), bgPaint);
+  bgPaint.delete();
   for (const node of nodes) {
     drawNode(ck, canvas, node, fontProvider);
   }

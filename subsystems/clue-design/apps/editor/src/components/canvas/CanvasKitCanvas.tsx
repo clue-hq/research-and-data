@@ -397,7 +397,11 @@ export function CanvasKitCanvas({
         style={{ position: "absolute", inset: 0 }}
         onPointerDown={(event) => {
           if (editingNodeId) return; // editing: let the textarea own the pointer
-          event.currentTarget.setPointerCapture(event.pointerId);
+          try {
+            event.currentTarget.setPointerCapture(event.pointerId);
+          } catch {
+            // Pointer capture is best-effort (e.g., synthetic pointers in tests).
+          }
           dispatch({ kind: "down", point: pointerFromEvent(event), target: pressTargetFor(pointerFromEvent(event)), modifiers: modifiersFromEvent(event) });
         }}
         onPointerMove={(event) => {

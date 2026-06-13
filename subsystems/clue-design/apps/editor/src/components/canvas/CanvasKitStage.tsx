@@ -78,12 +78,17 @@ export function CanvasKitStage({ page, nodes, pageOrigin, zoom }: CanvasKitStage
     }
 
     const makeSurface = (ck: CanvasKit) => {
-      surfaceRef.current?.delete();
-      const dpr = typeof devicePixelRatio === "number" ? devicePixelRatio : 1;
-      element.width = Math.max(1, Math.floor(element.clientWidth * dpr));
-      element.height = Math.max(1, Math.floor(element.clientHeight * dpr));
-      surfaceRef.current = ck.MakeWebGLCanvasSurface(element) ?? ck.MakeSWCanvasSurface(element);
-      invalidate();
+      try {
+        surfaceRef.current?.delete();
+        const dpr = typeof devicePixelRatio === "number" ? devicePixelRatio : 1;
+        element.width = Math.max(1, Math.floor(element.clientWidth * dpr));
+        element.height = Math.max(1, Math.floor(element.clientHeight * dpr));
+        surfaceRef.current = ck.MakeWebGLCanvasSurface(element) ?? ck.MakeSWCanvasSurface(element);
+        invalidate();
+      } catch {
+        // Surface creation can fail (no GPU/context); leave the canvas blank
+        // and let the parent fall back to Konva.
+      }
     };
 
     void loadCanvasKit().then((bundle) => {
@@ -110,6 +115,10 @@ export function CanvasKitStage({ page, nodes, pageOrigin, zoom }: CanvasKitStage
       observer?.disconnect();
       if (rafRef.current) {
         cancelAnimationFrame(rafRef.current);
+        // Reset the guard: leaving the (now-cancelled) id here would make the
+        // next invalidate() skip scheduling, so a re-mount (React StrictMode
+        // double-invokes effects in dev) would never redraw.
+        rafRef.current = 0;
       }
       surfaceRef.current?.delete();
       surfaceRef.current = null;
