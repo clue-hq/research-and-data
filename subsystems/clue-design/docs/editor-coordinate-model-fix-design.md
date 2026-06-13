@@ -2,7 +2,7 @@
 
 Date: 2026-06-13
 Branch: `editor/coordinate-model-v0` (cut from `main` `154bc41`)
-Status: design; no code yet.
+Status: **delivered** (CM0–CM5). See "Delivery record" at the end.
 
 ## The bug, restated precisely
 
@@ -242,3 +242,26 @@ deliberate way to target the child. Three additions, none renderer-specific:
 - The user can see when a container is selected and can deliberately target a
   child (layer panel, double-click-enter, modifier click).
 - Full matrix green; the design is recorded as Wave 3's C-slice-0.
+
+## Delivery record
+
+Delivered on `editor/coordinate-model-v0`, 2026-06-13.
+
+| Slice | What landed | Verification |
+|---|---|---|
+| CM0 | Nested-frame repro fixture + failing tests (container drag, non-geometry edit, computed-not-in-ops) | `crates/lumen-wasm/tests/{nested_frame_scene.json,engine.rs}` |
+| CM1 | `LumenEngine::relayout()`; load/apply/structured-edit/compile-dsl all end with it; computed stays out of authored ops | 475 Rust tests green incl. wasm engine (16) |
+| CM2 | Editor renders the engine's relaid scene single-source: `WasmEngine` ctor/reset adopt relaid `sceneJson`; EditorApp mount-sync + `replaceScene`-through-engine; reconcile modulo `computed`; render-adapter `transform` fallback made layout-safe | editor suite green; `gestureConformance` strips `computed` (proves it is the only delta); preflight test pins editor-coherent heuristic geometry |
+| CM3 | Container chrome: `isContainerNode`, `containerSelectionGeometry`, `ContainerSelectionOverlay` (labeled box + child outlines); panel highlight + scroll-into-view | `canvasSelection.test.ts` (+4) |
+| CM4 | Double-click → `topLevelAncestorId` (outermost container); single-click stays deepest-first; Esc unchanged; modifier click-through omitted (deepest is default) | `sceneQueries.test.ts` (+2) |
+| CM5 | Full matrix (475 Rust + 238 editor) green; Wave-3 handoff note (this fix = C-slice-0) in `docs/remaining-roadmap-plan.md`; browser QA | see below |
+
+**Product consequence to surface (design decision A).** The editor now renders
+uniformly **local heuristic** geometry — single-source, jump-free. The server's
+Skia geometry is *not* rendered, even right after an explicit preflight; it
+governs **export** fidelity. So a text node's width in the editor (heuristic)
+can differ slightly from the exported artifact (Skia) by the constant E3
+offset. This is intentional: it is the price of a coherent, jump-free editor
+coordinate model, and **Wave 3 C4 erases it** (SkParagraph in-browser makes
+editor measurement bit-faithful to the server). Until then, export remains the
+source of truth for final geometry, and the editor is a coherent proxy.
