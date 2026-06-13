@@ -168,8 +168,11 @@ function AgentProposalCard({
       ) : null}
       {proposal.diagnostics.length > 0 ? (
         <ul className="agent-diagnostic-list" aria-label="Agent diagnostics">
-          {proposal.diagnostics.slice(0, 4).map((diagnostic) => (
-            <li key={`${diagnostic.code}-${diagnostic.message}`}>
+          {proposal.diagnostics.slice(0, 4).map((diagnostic, index) => (
+            // Index-qualified: the Phase A repair loop can emit the same
+            // diagnostic (code + message) across iterations, so code+message
+            // alone is not unique.
+            <li key={`${index}-${diagnostic.code}-${diagnostic.message}`}>
               <code>{diagnostic.code}</code>
               <span>{diagnostic.message}</span>
             </li>
@@ -179,7 +182,9 @@ function AgentProposalCard({
       {proposal.artifacts.length > 0 ? (
         <ul className="agent-artifact-list" aria-label="Agent artifacts">
           {proposal.artifacts.map((artifact, index) => (
-            <li key={`${artifact.path ?? artifact.filename ?? index}`}>
+            // Index-qualified: repair iterations emit the same artifact path
+            // (e.g. preview.svg/preview.png) more than once.
+            <li key={`${index}-${artifact.path ?? artifact.filename ?? "artifact"}`}>
               {artifact.format ?? "artifact"} {artifact.filename ?? artifact.path ?? "preview"}
             </li>
           ))}

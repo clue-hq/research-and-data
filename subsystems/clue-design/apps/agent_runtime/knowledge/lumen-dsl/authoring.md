@@ -72,6 +72,34 @@ headline text "Message" p(64,88) s(620,hug) font_size(42) font_weight(700) track
 `tracking(200)` becomes roughly `0.2em` letter spacing. Prefer `ls(...)` for
 explicit pixel letter spacing in new compositions.
 
+## Not Supported — Common Model Slips (these are hard compile errors)
+
+The compiler rejects unsupported constructs; it never silently ignores them.
+Do NOT use any of the following — they cause blocking diagnostics, and if a
+diagnostic reports one you must REMOVE or REPLACE that exact token in the next
+iteration (never re-emit it):
+
+- **There is no `valign` / vertical-align / `text_align` property.** Text
+  supports only horizontal alignment, set as the 4th argument of
+  `font(family, size, weight, align)` where align is one of `left`, `center`,
+  `right`, `justify`. To vertically center text inside a banner/frame, make the
+  container an auto-layout and use the `y(c)` anchor — for example
+  `banner al(h,x(c),y(c),pad(0,24)) p(0,0) s(595,80) fill(#008080)` with the
+  text as a child line — never put alignment on the text as `valign(...)`.
+- **Colors are never bare numbers.** A color must be `#RRGGBB`, `#AARRGGBB`,
+  `$token`, or `oklch(l,c,h,a)`. `fill(4)`, `fill(0)`, or a numeric gradient
+  argument is `LUMD0219 invalid color`. Gradient fills are
+  `fill(linear(angle, stop(#ffffff,0), stop(#e7f0ef,1)))` or
+  `fill(radial(stop(...),stop(...)))` — each stop is `stop(color, position)`
+  with the color in one of the forms above.
+- **Only these node properties exist:** `p(x,y)`, `s(w,h)`, `fill(...)`,
+  `stroke(...)`, `rd(...)` / `radius(...)`, `font(...)`, `style($type.x)`,
+  `lh(...)`, `ls(...)`, `tracking(...)`, `wrap_text(true|false)`,
+  `max_lines(n)`, `dir(ltr|rtl|auto)`, `o(...)` / `opacity(...)`, `slot(key)`,
+  `shadow(...)`, and `al(...)` with `x(...)`, `y(...)`, `g(...)`, `pad(...)`,
+  `grow(...)`. Any other property name is `LUMD0212 unknown property` — do not
+  invent property names.
+
 ## Repair Rules
 
 When repairing an existing scene:
