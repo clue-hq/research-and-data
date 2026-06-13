@@ -26,6 +26,17 @@ export function canNodeHaveChildren(node: Node): boolean {
   return ["frame", "group", "auto_layout"].includes(node.kind.kind);
 }
 
+/**
+ * A container the user can select and accidentally drag as a unit: a
+ * frame/group/auto-layout that actually holds children. Selecting one moves
+ * its contents (correct), so the canvas gives it distinct chrome — a labeled
+ * box plus child outlines — to make "I grabbed a container of N elements"
+ * legible before any drag.
+ */
+export function isContainerNode(node: Node): boolean {
+  return canNodeHaveChildren(node) && node.children.length > 0;
+}
+
 export function pageNodeTree(scene: Scene, pageId: PageId): Node[] {
   const page = scene.pages[pageId];
   if (!page) {

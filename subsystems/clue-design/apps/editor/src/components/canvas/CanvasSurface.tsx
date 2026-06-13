@@ -10,6 +10,7 @@ import { centeredPageOrigin, clampCanvasPan, clampCanvasZoom, fitZoomForPage, ty
 import { getPage } from "@/engine/sceneQueries";
 import { pageDescriptor } from "@/engine/renderAdapter";
 import { SceneNode } from "./SceneNode";
+import { ContainerSelectionOverlay } from "./ContainerSelectionOverlay";
 
 interface CanvasSurfaceProps {
   scene: Scene;
@@ -338,6 +339,12 @@ export function CanvasSurface({
               registerNode={registerNode}
             />
           ))}
+          <ContainerSelectionOverlay
+            scene={scene}
+            selectedNodeId={selectedNodeId}
+            pageOrigin={pageOrigin}
+            unitScale={descriptor.unitScale}
+          />
           <Transformer
             ref={transformerRef}
             visible={selectedNodeDirectGeometryEditable}
