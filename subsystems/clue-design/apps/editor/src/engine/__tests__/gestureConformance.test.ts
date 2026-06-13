@@ -21,6 +21,18 @@ import { loadWasmModuleFromDisk, wasmArtifactPresent } from "../../test/wasmModu
  *
  * The fixture is the legacy ground truth; it only changes via a
  * deliberate, reviewed regeneration.
+ *
+ * Coordinate-model fix (2026-06-13): the engine now relays out every scene
+ * it loads or mutates, so `finalScene` carries a fresh `computed` cache
+ * where the retired TS path emitted `computed: null`. `computed` was never
+ * part of the conformance contract — the guarantee this gate protects is
+ * that the WASM engine's WIRE payloads, canonical operations, and authored
+ * final scene are byte-identical to the legacy path. So the legacy
+ * comparison strips `computed` (mirroring `without_computed` in the Rust
+ * helper-parity test and `withoutComputed` in editQueue reconcile);
+ * `computed` coherence is covered by the engine and wasmOperations tests,
+ * and its run-to-run stability by the determinism case below (which keeps
+ * `computed` in the comparison).
  */
 
 const FIXTURE_PATH = path.resolve(
@@ -36,6 +48,30 @@ function normalize(result: GestureScriptResult): unknown {
   return JSON.parse(JSON.stringify(result));
 }
 
+/**
+ * Deep clone with every `computed` geometry field removed. `computed` is a
+ * derived render cache the engine now keeps fresh on load/mutate; the
+ * retired legacy path left it null. The conformance contract is the wire
+ * payloads, canonical operations, and authored scene — not the cache — so
+ * the legacy comparison strips it on both sides.
+ */
+function stripComputed<T>(value: T): T {
+  if (Array.isArray(value)) {
+    return value.map((entry) => stripComputed(entry)) as unknown as T;
+  }
+  if (value && typeof value === "object") {
+    const out: Record<string, unknown> = {};
+    for (const [key, entry] of Object.entries(value as Record<string, unknown>)) {
+      if (key === "computed") {
+        continue;
+      }
+      out[key] = stripComputed(entry);
+    }
+    return out as T;
+  }
+  return value;
+}
+
 describe.skipIf(!wasmArtifactPresent)("gesture-script conformance (wasm vs pinned legacy)", () => {
   it("produces envelopes byte-identical to the pinned legacy-path fixture", async () => {
     expect(existsSync(FIXTURE_PATH), "pinned legacy fixture must exist").toBe(true);
@@ -43,7 +79,10 @@ describe.skipIf(!wasmArtifactPresent)("gesture-script conformance (wasm vs pinne
     const engine = new WasmEngine(module, cloneScene());
     const result = normalize(runGestureScript(engine));
     const pinned = JSON.parse(readFileSync(FIXTURE_PATH, "utf8")) as unknown;
-    expect(result).toEqual(pinned);
+    // Compare the wire/authored contract only; `computed` is a derived cache
+    // the legacy path left null (see file header). If anything authored
+    // regressed, stripping `computed` would NOT hide it — this still fails.
+    expect(stripComputed(result)).toEqual(stripComputed(pinned));
   });
 
   it("is deterministic across runs", async () => {

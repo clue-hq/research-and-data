@@ -311,10 +311,13 @@ describe.skipIf(!wasmArtifactPresent)("engine operation application (wasm)", () 
     expect(engine.scene.nodes.node_frame.children).toEqual(["node_contact_name"]);
   });
 
-  it("invalidates stale computed geometry after local geometry edits", () => {
-    // Canonical semantics: the operation BUILDER carries the explicit
-    // `computed: clear` (lumen-core build_node_modify policy, now mirrored
-    // by nodePatch()); the raw apply layer does no implicit invalidation.
+  it("refreshes computed geometry after a local geometry edit", () => {
+    // Editor coordinate-model fix: the engine relays out after every edit,
+    // so `computed` is a coherent derived cache — never left null/stale for
+    // the renderer. A transform edit refreshes the node's computed to its
+    // new position (it does not invalidate-and-wait). The planted (320x48)
+    // computed is arbitrary; relayout replaces it with the node's real
+    // geometry (size 160x28 at the new x).
     const scene = cloneScene();
     scene.nodes.node_contact_name.computed = computedGeometry(24, 40, 320, 48);
     const engine = engineWith(scene);
@@ -328,31 +331,41 @@ describe.skipIf(!wasmArtifactPresent)("engine operation application (wasm)", () 
 
     expect(outcome.accepted).toBe(true);
     expect(engine.scene.nodes.node_contact_name.transform.x).toBe(80);
-    expect(engine.scene.nodes.node_contact_name.computed).toBeNull();
+    const computed = engine.scene.nodes.node_contact_name.computed;
+    expect(computed).not.toBeNull();
+    expect(computed?.layout_bounds.x).toBe(80);
+    expect(computed?.layout_bounds.width).toBe(160);
   });
 
-  it("keeps canonical computed geometry when a patch explicitly sets it", () => {
+  it("recomputes geometry, superseding an explicit computed patch", () => {
+    // `computed` is engine-owned (relayout) in the editor: an explicit
+    // computed patch does not stick — the relaid layout geometry wins. The
+    // server, not an optimistic patch, owns canonical (Skia) geometry.
     const scene = cloneScene();
     const engine = engineWith(scene);
-    const computed = computedGeometry(12, 18, 240, 44);
+    const arbitrary = computedGeometry(12, 18, 240, 44);
 
     const outcome = engine.applyOperations([
       {
         kind: "update_node",
         node_id: "node_contact_name",
-        patch: nodePatch({ computed: set(computed) })
+        patch: nodePatch({ computed: set(arbitrary) })
       }
     ]);
 
     expect(outcome.accepted).toBe(true);
-    expect(engine.scene.nodes.node_contact_name.computed).toEqual(computed);
+    const computed = engine.scene.nodes.node_contact_name.computed;
+    expect(computed).not.toEqual(arbitrary);
+    expect(computed?.layout_bounds.x).toBe(24);
+    expect(computed?.layout_bounds.width).toBe(160);
   });
 
-  it("pins core page-resize semantics: node computed waits for canonical preflight", () => {
-    // The deleted TS mirror invalidated every node's computed on page
-    // resize; lumen-core (and therefore the server) does not — computed
-    // geometry is recomputed by the canonical preflight/layout pass. Pin
-    // the engine behavior so optimistic and server state cannot diverge.
+  it("refreshes node computed after a page resize", () => {
+    // The fix makes the editor's render geometry single-source and always
+    // fresh: a page resize triggers a local relayout, so node computed is
+    // recomputed immediately (not left stale until server preflight). The
+    // server still owns canonical Skia geometry; this is the optimistic
+    // local render cache, reconciled modulo computed.
     const scene = cloneScene();
     scene.nodes.node_contact_name.computed = computedGeometry(24, 40, 320, 48);
     const engine = engineWith(scene);
@@ -375,9 +388,10 @@ describe.skipIf(!wasmArtifactPresent)("engine operation application (wasm)", () 
       unit: "px",
       preset: "custom"
     });
-    expect(engine.scene.nodes.node_contact_name.computed).toEqual(
-      computedGeometry(24, 40, 320, 48)
-    );
+    const computed = engine.scene.nodes.node_contact_name.computed;
+    expect(computed).not.toEqual(computedGeometry(24, 40, 320, 48));
+    expect(computed?.layout_bounds.x).toBe(24);
+    expect(computed?.layout_bounds.width).toBe(160);
   });
 
   it("adds and removes custom pages through canonical page operations", () => {

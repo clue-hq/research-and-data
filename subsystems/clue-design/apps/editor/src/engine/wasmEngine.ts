@@ -160,7 +160,11 @@ export class WasmEngine implements OptimisticEnginePort {
 
   constructor(module: WasmModule, initialScene: Scene) {
     this.instance = new module.LumenEngine(JSON.stringify(initialScene));
-    this.snapshot = initialScene;
+    // The engine relays out on load to establish a coherent whole-tree
+    // computed baseline; the render snapshot must be that relaid scene, not
+    // the raw input — otherwise the editor renders a scene whose computed
+    // geometry disagrees with the engine's (the coordinate-model desync).
+    this.snapshot = JSON.parse(this.instance.sceneJson()) as Scene;
     this.version = JSON.parse(module.engineVersion()) as EngineVersionInfo;
   }
 
@@ -170,7 +174,11 @@ export class WasmEngine implements OptimisticEnginePort {
 
   reset(scene: Scene): void {
     this.instance.loadScene(JSON.stringify(scene));
-    this.snapshot = scene;
+    // Render the engine's relaid scene (single-source local heuristic
+    // geometry), so reconcile and undo/redo frames never render the
+    // server's Skia computed directly — which would jump text on every
+    // reconcile. Geometry stays coherent and jump-free across the session.
+    this.snapshot = JSON.parse(this.instance.sceneJson()) as Scene;
   }
 
   /**

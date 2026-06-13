@@ -446,7 +446,15 @@ describe.skipIf(!wasmArtifactPresent)("EditorApp", () => {
     expect(screen.getByText(/Issues tied to the selected node, current page/)).toBeInTheDocument();
   });
 
-  it("runs canonical preflight and updates the editor scene with computed geometry", async () => {
+  it("runs canonical preflight, surfacing diagnostics while geometry stays editor-coherent", async () => {
+    // The server preflight returns authoritative Skia geometry (width 320),
+    // but the editor owns a single coherent coordinate model: the in-browser
+    // engine relays out every scene it loads with the heuristic measurer, so
+    // render and edit always agree. The Skia geometry is NOT rendered (it
+    // would jump on the next local edit — the desync this fix removes); it
+    // governs export fidelity, and the editor/export gap closes in Wave 3
+    // (Skia-in-browser). So the selected node's rendered computed stays the
+    // editor-relaid heuristic value across the preflight round-trip.
     const preflightedScene = twoPageScene();
     preflightedScene.nodes.node_contact_name.computed = {
       layout_bounds: {
@@ -488,14 +496,25 @@ describe.skipIf(!wasmArtifactPresent)("EditorApp", () => {
       />
     );
 
-    expect(screen.getByTestId("canvas-selection")).toHaveAttribute("data-selected-computed", "");
+    // At mount the engine has already relaid the scene, so the selection
+    // renders coherent heuristic geometry (width 160), never empty/stale.
+    expect(screen.getByTestId("canvas-selection")).toHaveAttribute(
+      "data-selected-computed",
+      "24,40,160,28"
+    );
 
     fireEvent.click(screen.getByRole("button", { name: /^Validate$/i }));
 
     expect(await screen.findByText("Preflight applied")).toBeInTheDocument();
     expect(screen.getByText(/6 operations · Brand platform_default/)).toBeInTheDocument();
     expect(screen.getByText(/Preflight applied 6 canonical operations/)).toBeInTheDocument();
-    expect(screen.getByTestId("canvas-selection")).toHaveAttribute("data-selected-computed", "24,40,320,48");
+    // Preflight's authoritative Skia geometry (width 320) is not adopted for
+    // render: replaceScene reloads through the engine, which relays out to the
+    // editor's heuristic, keeping the single coherent coordinate model.
+    expect(screen.getByTestId("canvas-selection")).toHaveAttribute(
+      "data-selected-computed",
+      "24,40,160,28"
+    );
     expect(preflightRunner).toHaveBeenCalledWith({
       scene: expect.objectContaining({
         pages: expect.objectContaining({
