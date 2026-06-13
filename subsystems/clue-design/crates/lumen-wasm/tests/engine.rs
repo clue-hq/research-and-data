@@ -278,6 +278,36 @@ fn nested_engine() -> Engine {
     Engine::from_scene_json(NESTED_SCENE).expect("nested scene loads")
 }
 
+#[test]
+fn hit_test_returns_topmost_node_in_page_space() {
+    // The engine relaid the tree on load, so hit-testing works over fresh
+    // computed geometry (Wave 3 C3a). hero(40,40,400,300) ⊃ headline(60,60,
+    // 200,40) and box(60,120,100,100); sibling(500,40,80,80).
+    let engine = nested_engine();
+
+    // Over the headline (a child): topmost is the child, stack is parent→child.
+    let r = parse(engine.hit_test("page_a4", 70.0, 70.0));
+    assert_eq!(r["hit"], "headline", "{r:#?}");
+    assert_eq!(
+        r["stack"],
+        serde_json::json!(["hero", "headline"]),
+        "bottom-to-top stack"
+    );
+
+    // Inside the hero frame but outside both children: the frame itself.
+    let r2 = parse(engine.hit_test("page_a4", 300.0, 280.0));
+    assert_eq!(r2["hit"], "hero");
+
+    // Over the page-level sibling.
+    let r3 = parse(engine.hit_test("page_a4", 520.0, 60.0));
+    assert_eq!(r3["hit"], "sibling");
+
+    // Empty canvas: no hit, empty stack.
+    let r4 = parse(engine.hit_test("page_a4", 700.0, 520.0));
+    assert_eq!(r4["hit"], Value::Null);
+    assert_eq!(r4["stack"], serde_json::json!([]));
+}
+
 fn computed_bounds(scene: &Value, node_id: &str) -> (f64, f64, f64, f64) {
     let b = &scene["nodes"][node_id]["computed"]["layout_bounds"];
     (

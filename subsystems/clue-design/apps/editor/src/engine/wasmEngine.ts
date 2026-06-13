@@ -43,7 +43,16 @@ export interface WasmEngineInstance {
   preflight(): string;
   validate(): string;
   version(): string;
+  hitTest(pageId: string, x: number, y: number): string;
   free?(): void;
+}
+
+/** Wave 3 C3a: point→node hit result in absolute page space (scene units).
+ * `hit` is the topmost node (single-click target); `stack` is bottom-to-top
+ * for drill-in / cycling overlapping nodes. */
+export interface HitResult {
+  hit: NodeId | null;
+  stack: NodeId[];
 }
 
 /** Raw wasm-pack module surface (subset the editor uses). */
@@ -111,6 +120,10 @@ export interface OptimisticEnginePort {
   reset(scene: Scene): void;
   applyOperations(operations: Operation[]): EngineApplyOutcome;
   applyStructuredEdit?(edit: StructuredEdit): EngineStructuredEditOutcome;
+  /** Wave 3 C3a: point→node hit-test in absolute page space. Optional so
+   * test fakes need not implement it; the CanvasKit gesture layer requires
+   * a real (wasm) engine. */
+  hitTest?(pageId: PageId, x: number, y: number): HitResult;
 }
 
 /** Immutable, structurally shared merge of an engine delta into a scene. */
@@ -179,6 +192,15 @@ export class WasmEngine implements OptimisticEnginePort {
     // server's Skia computed directly — which would jump text on every
     // reconcile. Geometry stays coherent and jump-free across the session.
     this.snapshot = JSON.parse(this.instance.sceneJson()) as Scene;
+  }
+
+  /**
+   * Point→node hit-test in absolute page space (scene units). Returns the
+   * topmost node and the bottom-to-top stack under the point. Pure read; does
+   * not touch the scene. Consumed by the CanvasKit gesture layer (C3b).
+   */
+  hitTest(pageId: PageId, x: number, y: number): HitResult {
+    return JSON.parse(this.instance.hitTest(pageId, x, y)) as HitResult;
   }
 
   /**

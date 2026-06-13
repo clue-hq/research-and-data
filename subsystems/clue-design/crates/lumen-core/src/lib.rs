@@ -10,6 +10,7 @@ pub mod diagnostics;
 pub mod dsl;
 pub mod editing;
 pub mod export_contract;
+pub mod hit_test;
 pub mod ids;
 pub mod instance;
 pub mod layout;
@@ -81,6 +82,7 @@ pub use export_contract::{
     ExportAdapter, ExportArtifact, ExportError, ExportFormat, ExportProfile, ExportPurpose,
     ExportRequest, ExportResult, PdfIntent, RasterScale,
 };
+pub use hit_test::{hit_stack, hit_test};
 pub use ids::{
     AssetId, BrandKitId, DocumentId, EffectId, IdError, NodeId, OperationId, PageId, PaintId,
     SlotId, SlotKey, TemplateRevisionId,

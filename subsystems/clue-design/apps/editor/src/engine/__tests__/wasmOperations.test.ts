@@ -612,4 +612,17 @@ describe.skipIf(!wasmArtifactPresent)("engine operation application (wasm)", () 
     expect(engine.scene.nodes.node_child).toBeUndefined();
     expect(engine.scene.slots.slot_contact_name.bound_nodes).toEqual([]);
   });
+
+  it("hit-tests a point to the topmost node in page space (Wave 3 C3a)", () => {
+    // node_contact_name relays out to computed (24,40,160,28) on page_a4.
+    const engine = engineWith(cloneScene());
+
+    const inside = engine.hitTest("page_a4", 30, 45);
+    expect(inside.hit).toBe("node_contact_name");
+    expect(inside.stack).toEqual(["node_contact_name"]);
+
+    const outside = engine.hitTest("page_a4", 5, 5);
+    expect(outside.hit).toBeNull();
+    expect(outside.stack).toEqual([]);
+  });
 });

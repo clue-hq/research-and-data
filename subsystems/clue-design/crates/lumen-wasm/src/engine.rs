@@ -10,9 +10,9 @@
 
 use lumen_core::validation::validate_scene;
 use lumen_core::{
-    build_structured_edit_batch, compile_dsl_into_scene_with_session, layout_scene,
-    preflight_scene, DslCompileSessionSnapshot, LayoutOptions, Operation, PreflightOptions, Scene,
-    StructuredEditInstruction,
+    build_structured_edit_batch, compile_dsl_into_scene_with_session, hit_stack, layout_scene,
+    preflight_scene, DslCompileSessionSnapshot, LayoutOptions, Operation, PageId, PreflightOptions,
+    Scene, StructuredEditInstruction,
 };
 use serde::Serialize;
 use serde_json::{json, Map, Value};
@@ -260,6 +260,20 @@ impl Engine {
     /// Scene validation diagnostics (structural, wasm-clean).
     pub fn validate(&self) -> String {
         json!({ "diagnostics": validate_scene(&self.scene) }).to_string()
+    }
+
+    /// Point→node hit-test in absolute page space (Wave 3 C3a). Returns
+    /// `{ "hit": <topmost node id or null>, "stack": [<bottom-to-top>] }`.
+    /// `hit` is the single-click target (deepest-first); `stack` lets the
+    /// gesture layer drill in / cycle overlapping nodes. One traversal.
+    pub fn hit_test(&self, page_id: &str, x: f64, y: f64) -> String {
+        let page = PageId::from(page_id);
+        let stack: Vec<String> = hit_stack(&self.scene, &page, x, y)
+            .iter()
+            .map(|id| id.to_string())
+            .collect();
+        let hit = stack.last().cloned();
+        json!({ "hit": hit, "stack": stack }).to_string()
     }
 }
 
