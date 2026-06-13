@@ -20,6 +20,8 @@ export interface EditorCanvasProps {
   onSelectNode: (nodeId: NodeId | null) => void;
   onOperation: (operation: Operation) => void;
   engine: OptimisticEnginePort | null;
+  /** CanvasKit-only: re-sync the host scene after the C4 measurement pass. */
+  onSceneRefresh?: () => void;
 }
 
 export function EditorCanvas(props: EditorCanvasProps) {

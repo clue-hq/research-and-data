@@ -144,6 +144,9 @@ export interface OptimisticEnginePort {
    * test fakes need not implement it; the CanvasKit gesture layer requires
    * a real (wasm) engine. */
   hitTest?(pageId: PageId, x: number, y: number): HitResult;
+  /** Wave 3 C4: install editor-measured SkParagraph metrics and relayout.
+   * Optional (test fakes need not implement it). */
+  setMeasurements?(measurements: TextMeasurement[]): void;
 }
 
 /** Immutable, structurally shared merge of an engine delta into a scene. */

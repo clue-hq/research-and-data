@@ -22,6 +22,8 @@ import {
 } from "@/engine/canvaskitGestures";
 import { getNode, getPage, nodeDisplayName, topLevelAncestorId } from "@/engine/sceneQueries";
 import { nodeDescriptor, pageDescriptor } from "@/engine/renderAdapter";
+import { loadCanvasKit } from "@/engine/canvaskit/loadCanvasKit";
+import { skiaMeasurements } from "@/engine/canvaskit/skiaMeasurements";
 import type { Box } from "@/engine/transformerMath";
 import { CanvasKitStage } from "./CanvasKitStage";
 import { SelectionOverlay } from "./SelectionOverlay";
@@ -48,6 +50,9 @@ export interface CanvasKitCanvasProps {
   onOperation: (operation: Operation) => void;
   /** The engine provides authoritative point→node hit-testing (C3a). */
   engine: OptimisticEnginePort | null;
+  /** Called after the C4 measurement pass updates the engine's `computed`
+   * (which does not emit a delta), so the host can re-sync its React scene. */
+  onSceneRefresh?: () => void;
 }
 
 interface Preview {
@@ -62,7 +67,8 @@ export function CanvasKitCanvas({
   selectedNodeId,
   onSelectNode,
   onOperation,
-  engine
+  engine,
+  onSceneRefresh
 }: CanvasKitCanvasProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const stateRef = useRef<GestureState>(initialGestureState);
@@ -109,6 +115,55 @@ export function CanvasKitCanvas({
     observer.observe(element);
     return () => observer.disconnect();
   }, []);
+
+  // A signature of every text node's measurement inputs. The C4 measurement
+  // pass keys on this, not the whole scene, so dragging/resizing non-text
+  // nodes (which change `computed` but not text inputs) does not re-measure —
+  // and the setMeasurements → relayout → refresh cycle cannot loop.
+  const textSignature = useMemo(() => {
+    const parts: string[] = [];
+    for (const node of Object.values(scene.nodes)) {
+      if (node.kind.kind !== "text") {
+        continue;
+      }
+      const t = node.kind;
+      parts.push(
+        [
+          t.content,
+          t.font_family,
+          t.font_size,
+          t.font_weight,
+          t.line_height ?? 1.2,
+          t.letter_spacing ?? 0,
+          t.wrap ?? "no_wrap",
+          t.max_lines ?? "_",
+          t.direction ?? "ltr"
+        ].join("|")
+      );
+    }
+    return parts.sort().join("\n");
+  }, [scene]);
+
+  // C4 measure-then-inject: measure every text node with SkParagraph and feed
+  // the metrics to the engine, then re-sync the host scene so the Skia-faithful
+  // geometry renders. Runs only when the text inputs change.
+  useEffect(() => {
+    if (!engine?.setMeasurements) {
+      return;
+    }
+    let cancelled = false;
+    void loadCanvasKit().then((bundle) => {
+      if (cancelled || !bundle?.fontProvider || !engine.setMeasurements) {
+        return;
+      }
+      engine.setMeasurements(skiaMeasurements(bundle.ck, bundle.fontProvider, scene));
+      onSceneRefresh?.();
+    });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [engine, textSignature]);
 
   // Descriptor tree, applying the live preview override to the dragged node.
   const nodes = useMemo<DrawNode[]>(() => {

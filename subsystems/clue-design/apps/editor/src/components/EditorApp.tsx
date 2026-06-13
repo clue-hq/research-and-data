@@ -301,6 +301,17 @@ export default function EditorApp({
     }
   };
 
+  // Wave 3 C4: the CanvasKit canvas installs SkParagraph text metrics straight
+  // on the engine (setMeasurements relays out without emitting a delta), so
+  // the React scene is re-synced from the engine to render the Skia-faithful
+  // geometry. No-op in server-only mode.
+  const refreshSceneFromEngine = () => {
+    const engine = engineRef.current;
+    if (engine) {
+      setScene(engine.scene);
+    }
+  };
+
   // W3 optimistic pipeline: locally-applied batches persist to the
   // document API in order; the server reconciles at drain. Divergence is a
   // bug signal — the server scene replaces the local one and a diagnostic
@@ -1217,6 +1228,7 @@ export default function EditorApp({
                   onSelectNode={setSelectedNodeId}
                   onOperation={applyOperation}
                   engine={engineRef.current}
+                  onSceneRefresh={refreshSceneFromEngine}
                 />
               </div>
               <div className="compare-pane">
@@ -1244,6 +1256,7 @@ export default function EditorApp({
               onSelectNode={setSelectedNodeId}
               onOperation={applyOperation}
               engine={engineRef.current}
+              onSceneRefresh={refreshSceneFromEngine}
             />
           )}
         </section>
