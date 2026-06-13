@@ -120,10 +120,15 @@ fn parity_case_deltas_reconstruct_the_engine_scene() {
     for case in fixture["cases"].as_array().expect("cases array") {
         let name = case["name"].as_str().expect("case name");
         let mut engine = engine();
+        // Baseline is the engine's relaid-out scene before the edit (the
+        // engine establishes a computed baseline on load); the delta must
+        // reconstruct the post-edit scene from THAT state, not from the raw
+        // fixture (which carries no computed geometry).
+        let mut snapshot: Value =
+            serde_json::from_str(&engine.scene_json()).expect("baseline scene parses");
         let result = parse(engine.apply_structured_edit(&case["edit"].to_string()));
         assert_eq!(result["ok"], json!(true), "case {name}");
 
-        let mut snapshot: Value = serde_json::from_str(MINIMAL_SCENE).expect("scene parses");
         apply_delta(&mut snapshot, &result["delta"]);
         let engine_scene: Value =
             serde_json::from_str(&engine.scene_json()).expect("scene serializes");
@@ -248,6 +253,167 @@ fn load_scene_replaces_state_for_reconcile_and_undo_frames() {
     );
     engine.load_scene(MINIMAL_SCENE).expect("snapshot reloads");
     let restored: Value = serde_json::from_str(&engine.scene_json()).expect("scene");
-    let original: Value = serde_json::from_str(MINIMAL_SCENE).expect("scene");
-    assert_eq!(restored, original);
+    // load_scene replaces state AND relays out, so the restored scene equals
+    // a freshly loaded (relaid-out) baseline — the editor's render geometry is
+    // single-source local heuristic, established identically on every load.
+    let baseline: Value = serde_json::from_str(
+        &Engine::from_scene_json(MINIMAL_SCENE)
+            .expect("baseline loads")
+            .scene_json(),
+    )
+    .expect("baseline scene");
+    assert_eq!(restored, baseline);
+}
+
+// --- Editor coordinate-model fix (editor/coordinate-model-v0) -------------
+// The browser engine now refreshes whole-tree `computed` geometry after every
+// mutation and on load, so the editor renders parent and children from one
+// coherent layout pass. These tests pin that behavior: a container drag keeps
+// its children coherent, an unrelated edit perturbs nothing, and the derived
+// geometry never leaks into the authored operations sent to the server.
+
+const NESTED_SCENE: &str = include_str!("nested_frame_scene.json");
+
+fn nested_engine() -> Engine {
+    Engine::from_scene_json(NESTED_SCENE).expect("nested scene loads")
+}
+
+fn computed_bounds(scene: &Value, node_id: &str) -> (f64, f64, f64, f64) {
+    let b = &scene["nodes"][node_id]["computed"]["layout_bounds"];
+    (
+        b["x"].as_f64().unwrap(),
+        b["y"].as_f64().unwrap(),
+        b["width"].as_f64().unwrap(),
+        b["height"].as_f64().unwrap(),
+    )
+}
+
+#[test]
+fn load_establishes_whole_tree_computed_baseline() {
+    let engine = nested_engine();
+    let scene: Value = serde_json::from_str(&engine.scene_json()).expect("scene");
+    // from_scene_json relaid out: every node has computed, parent-relative
+    // child transforms resolved to absolute page coordinates.
+    assert_eq!(computed_bounds(&scene, "hero").0, 40.0);
+    assert_eq!(
+        computed_bounds(&scene, "headline"),
+        (60.0, 60.0, 200.0, 40.0)
+    );
+    assert_eq!(computed_bounds(&scene, "box"), (60.0, 120.0, 100.0, 100.0));
+}
+
+#[test]
+fn container_drag_keeps_children_coherent() {
+    let mut engine = nested_engine();
+    // Drag the hero frame +100 in x (transform 40 -> 140).
+    let operations = json!([{
+        "kind": "update_node",
+        "node_id": "hero",
+        "patch": node_transform_patch(140.0, 40.0)
+    }]);
+    let result = parse(engine.apply_operations(&operations.to_string()));
+    assert_eq!(result["ok"], true, "{result:#?}");
+
+    let scene: Value = serde_json::from_str(&engine.scene_json()).expect("scene");
+    let hero = computed_bounds(&scene, "hero");
+    let headline = computed_bounds(&scene, "headline");
+    let boxn = computed_bounds(&scene, "box");
+    // Parent moved to 140; children moved by the SAME delta (+100) and keep
+    // their exact relative offset inside the frame — no stale-offset desync,
+    // no double-offset. This is the bug, fixed.
+    assert_eq!(hero.0, 140.0);
+    assert_eq!(headline.0, 160.0);
+    assert_eq!(boxn.0, 160.0);
+    assert_eq!(headline.0 - hero.0, 20.0, "relative offset preserved");
+    assert_eq!(boxn.0 - hero.0, 20.0, "relative offset preserved");
+    // y is untouched by an x-only drag.
+    assert_eq!(headline.1, 60.0);
+    assert_eq!(boxn.1, 120.0);
+}
+
+#[test]
+fn unrelated_edit_does_not_perturb_other_nodes() {
+    let mut engine = nested_engine();
+    let before: Value = serde_json::from_str(&engine.scene_json()).expect("scene");
+    let headline_before = computed_bounds(&before, "headline");
+    let sibling_before = computed_bounds(&before, "sibling");
+
+    // Move `box` (a sibling of headline inside hero). relayout is idempotent
+    // for everything else: headline and the page-level sibling must not move.
+    let operations = json!([{
+        "kind": "update_node",
+        "node_id": "box",
+        "patch": node_transform_patch(20.0, 200.0)
+    }]);
+    parse(engine.apply_operations(&operations.to_string()));
+
+    let after: Value = serde_json::from_str(&engine.scene_json()).expect("scene");
+    assert_eq!(computed_bounds(&after, "headline"), headline_before);
+    assert_eq!(computed_bounds(&after, "sibling"), sibling_before);
+    assert_eq!(computed_bounds(&after, "box").1, 240.0); // 40 + 200, moved
+}
+
+#[test]
+fn non_geometry_edit_does_not_move_a_node() {
+    let mut engine = nested_engine();
+    let before: Value = serde_json::from_str(&engine.scene_json()).expect("scene");
+    let headline_before = computed_bounds(&before, "headline");
+
+    // A pure fill change clears computed on the node in core; relayout must
+    // restore the SAME geometry (the node didn't move) — proving the broader
+    // class of the bug (any render-affecting edit) is fixed, not just drag.
+    let operations = json!([{
+        "kind": "update_node",
+        "node_id": "headline",
+        "patch": {
+            "name": { "kind": "unchanged" },
+            "kind": { "kind": "unchanged" },
+            "transform": { "kind": "unchanged" },
+            "size": { "kind": "unchanged" },
+            "fills": { "kind": "set", "value": [{
+                "id": "fill_1",
+                "paint": { "kind": "solid", "color": { "kind": "hex", "value": "#ff0000" } }
+            }]},
+            "strokes": { "kind": "unchanged" },
+            "corner": { "kind": "unchanged" },
+            "opacity": { "kind": "unchanged" },
+            "opacity_token": { "kind": "unchanged" },
+            "source_asset_id": { "kind": "unchanged" },
+            "asset_placement": { "kind": "unchanged" },
+            "clip": { "kind": "unchanged" },
+            "layout": { "kind": "unchanged" },
+            "computed": { "kind": "unchanged" },
+            "locked": { "kind": "unchanged" },
+            "effects": { "kind": "unchanged" }
+        }
+    }]);
+    let result = parse(engine.apply_operations(&operations.to_string()));
+    assert_eq!(result["ok"], true, "{result:#?}");
+
+    let after: Value = serde_json::from_str(&engine.scene_json()).expect("scene");
+    assert_eq!(computed_bounds(&after, "headline"), headline_before);
+}
+
+#[test]
+fn refreshed_computed_never_enters_authored_operations() {
+    let mut engine = nested_engine();
+    // A structured edit returns the canonical authored operations the editor
+    // persists to the server. The relayout's computed writes must NOT appear
+    // there — the server recomputes geometry canonically under Skia.
+    let edit = json!({
+        "kind": "move_after",
+        "node_id": "headline",
+        "anchor": "box"
+    });
+    let result = parse(engine.apply_structured_edit(&edit.to_string()));
+    assert_eq!(result["ok"], true, "{result:#?}");
+    let operations = result["operations"].as_array().expect("operations");
+    for op in operations {
+        // No operation may carry a computed `set` patch.
+        let computed = &op["patch"]["computed"];
+        assert_ne!(
+            computed["kind"], "set",
+            "authored op leaked a computed geometry write: {op:#?}"
+        );
+    }
 }

@@ -144,7 +144,13 @@ class ApiEditQueue implements EditQueuePort {
     const serverScene = document.scene as Scene;
     const serverVersion = (document.current_version as number | undefined) ?? null;
     const localScene = this.options.localScene();
-    if (deepEqual(serverScene, localScene)) {
+    // Compare authoritative state only. `computed` geometry is a derived
+    // cache: the server computes it under Skia, the local engine under the
+    // heuristic, so they legitimately differ. Including it here would flag a
+    // false divergence on every reconcile and replace the coherent local
+    // scene with server geometry (jumping text). True divergence is a
+    // disagreement in the authored fields.
+    if (deepEqual(withoutComputed(serverScene), withoutComputed(localScene))) {
       return;
     }
     this.options.onReconcile({
@@ -197,6 +203,28 @@ function requestFailedDiagnostic(error: unknown): Diagnostic {
 
 /** Structural deep equality: object key order must not matter (the server
  * serializes from BTreeMaps; the local snapshot preserves insertion order). */
+/**
+ * Deep clone with every `computed` geometry field removed, so reconcile
+ * compares authoritative authored state only (the server recomputes
+ * geometry canonically under Skia; the local engine uses the heuristic).
+ */
+function withoutComputed<T>(value: T): T {
+  if (Array.isArray(value)) {
+    return value.map((entry) => withoutComputed(entry)) as unknown as T;
+  }
+  if (value && typeof value === "object") {
+    const out: Record<string, unknown> = {};
+    for (const [key, entry] of Object.entries(value as Record<string, unknown>)) {
+      if (key === "computed") {
+        continue;
+      }
+      out[key] = withoutComputed(entry);
+    }
+    return out as T;
+  }
+  return value;
+}
+
 function deepEqual(left: unknown, right: unknown): boolean {
   if (Object.is(left, right)) {
     return true;

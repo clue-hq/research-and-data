@@ -301,6 +301,36 @@ extension, the immediate-mode interaction layer (Konva gave hit-testing and
 event delegation for free; CanvasKit does not), text, and a flag-gated
 cutover with Konva retained as fallback.
 
+## Delivered ahead of Wave 3: C-slice-0 — single-source coordinate model
+
+The editor coordinate-model fix (`editor/coordinate-model-v0`, design in
+`docs/editor-coordinate-model-fix-design.md`, 2026-06-13) is the **C-slice-0
+of this workstream, delivered early** against the live Konva editor to fix a
+shipped editing bug (dragging a container left children stale → "anchored,
+same distance, shifted"). It establishes the model CanvasKit inherits:
+
+- **`computed` is a derived cache the engine always keeps fresh.** The
+  in-browser `LumenEngine` relays out the whole tree on load and after every
+  mutation (`relayout()` in `lumen-wasm`), so render and edit never disagree.
+  The editor renders from `computed` and nothing else — one coordinate source,
+  renderer-agnostic.
+- **Server geometry stays authoritative for export; the editor renders local
+  (heuristic) geometry** and reconciles modulo `computed`. CanvasKit's C4
+  (SkParagraph in-browser) is what finally converges editor measurement with
+  the server — it closes the heuristic/Skia gap this slice documents (E3).
+- **Container UX primitives** already live in the renderer-agnostic layer, so
+  C3's hit-testing/selection build on them rather than reinventing Konva's
+  behavior by hand: `containerSelectionGeometry` (labeled box + child
+  outlines), `isContainerNode`, and `topLevelAncestorId` (double-click →
+  top-level container; single click → deepest leaf; layer panel → any level).
+
+**Implication for C3:** when point→node hit-testing moves to `lumen-core`, the
+selection-target rules (deepest-on-click, top-level-on-double-click) and the
+container chrome geometry should move with it — they are geometry over
+`computed`, already factored out of Konva in `canvasSelection.ts` /
+`sceneQueries.ts`. C3 wires the new event pipeline to these existing helpers;
+it does not redesign the selection model.
+
 ## Decisions
 
 1. **CanvasKit default build** (has ParagraphBuilder; the +350 KB `full`

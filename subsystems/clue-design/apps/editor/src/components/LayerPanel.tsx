@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useRef } from "react";
 import { ArrowDown, ArrowUp, Layers3 } from "lucide-react";
 import type { Node, NodeId, Operation, PageId, Scene } from "@/engine/contracts";
 import { moveNodeToParent } from "@/engine/operations";
@@ -77,9 +78,24 @@ function LayerRow({
   const canMoveDown = parentInfo && !reorderBlocked ? parentInfo.index < parentInfo.siblings.length - 1 : false;
   const name = nodeDisplayName(node);
   const detail = layerDetailLabel(node, parentNode);
+  const selected = selectedNodeId === node.id;
+  const rowRef = useRef<HTMLDivElement | null>(null);
+  // Canvas→panel sync: when selection lands on this (possibly deeply nested)
+  // row — e.g. the user clicked the node on the canvas — scroll it into view
+  // so the highlighted layer is never hidden below the fold. Guarded for
+  // jsdom, where scrollIntoView is not implemented.
+  useEffect(() => {
+    if (selected) {
+      rowRef.current?.scrollIntoView?.({ block: "nearest" });
+    }
+  }, [selected]);
   return (
     <div className="layer-row-group">
-      <div className={selectedNodeId === node.id ? "layer-row active" : "layer-row"} style={{ paddingLeft: 8 + depth * 12 }}>
+      <div
+        ref={rowRef}
+        className={selected ? "layer-row active" : "layer-row"}
+        style={{ paddingLeft: 8 + depth * 12 }}
+      >
         <button
           type="button"
           className="layer-select"

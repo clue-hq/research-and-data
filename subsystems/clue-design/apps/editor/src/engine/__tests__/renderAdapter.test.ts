@@ -351,6 +351,73 @@ describe("render adapter", () => {
       }
     });
   });
+
+  // Coordinate-model fix: the transform fallback (computed absent) must be
+  // layout-safe. For a layout-managed node (an auto-layout child) `transform`
+  // is not its real position — flow owns it — so the fallback renders it at
+  // its container origin, not at a meaningless authored transform. With the
+  // engine relaying out on load this fallback rarely fires, but it must never
+  // jump a flow-positioned node when it does.
+  it("renders an un-laid-out auto-layout child at its container origin, not its transform", () => {
+    const scene = cloneScene();
+    const page = scene.pages.page_a4;
+    const parent: Node = {
+      ...scene.nodes.node_contact_name,
+      id: "stack",
+      name: "Stack",
+      kind: { kind: "auto_layout", direction: "column", wrap: false },
+      fills: [],
+      strokes: [],
+      children: ["stack_child"],
+      computed: null
+    };
+    const child: Node = {
+      ...scene.nodes.node_contact_name,
+      id: "stack_child",
+      name: "Stack child",
+      transform: { ...scene.nodes.node_contact_name.transform, x: 999, y: 999 },
+      children: [],
+      computed: null
+    };
+    scene.nodes = { stack: parent, stack_child: child };
+    scene.pages.page_a4 = { ...page, children: ["stack"] };
+
+    const descriptor = nodeDescriptor(scene, child, scene.pages.page_a4, { x: 0, y: 0 });
+
+    expect(descriptor.x).toBe(0);
+    expect(descriptor.y).toBe(0);
+  });
+
+  it("renders an un-laid-out free child at its authored transform", () => {
+    const scene = cloneScene();
+    const page = scene.pages.page_a4;
+    const parent: Node = {
+      ...scene.nodes.node_contact_name,
+      id: "frame",
+      name: "Frame",
+      kind: { kind: "frame" },
+      fills: [],
+      strokes: [],
+      children: ["frame_child"],
+      computed: null
+    };
+    const child: Node = {
+      ...scene.nodes.node_contact_name,
+      id: "frame_child",
+      name: "Frame child",
+      transform: { ...scene.nodes.node_contact_name.transform, x: 12, y: 34 },
+      children: [],
+      computed: null
+    };
+    scene.nodes = { frame: parent, frame_child: child };
+    scene.pages.page_a4 = { ...page, children: ["frame"] };
+
+    const scale = unitScaleForTest(scene.pages.page_a4.size.unit);
+    const descriptor = nodeDescriptor(scene, child, scene.pages.page_a4, { x: 0, y: 0 });
+
+    expect(descriptor.x).toBeCloseTo(12 * scale, 3);
+    expect(descriptor.y).toBeCloseTo(34 * scale, 3);
+  });
 });
 
 function cloneScene(): Scene {

@@ -40,23 +40,51 @@ pub struct Engine {
 
 impl Engine {
     /// Initialize from a full scene snapshot (serialization in: init).
+    /// The scene is relaid-out once so the editor starts from a coherent,
+    /// whole-tree `computed` baseline (the idempotence anchor that keeps
+    /// later edits from perturbing unrelated nodes).
     pub fn from_scene_json(scene_json: &str) -> Result<Self, String> {
         let scene: Scene = serde_json::from_str(scene_json)
             .map_err(|error| format!("invalid scene JSON: {error}"))?;
-        Ok(Self {
+        let mut engine = Self {
             scene,
             dsl_session: None,
-        })
+        };
+        engine.relayout();
+        Ok(engine)
     }
 
     /// Replace the local scene (serialization in: reconcile / undo frames).
-    /// Resets the DSL session: it indexed the previous scene state.
+    /// Resets the DSL session: it indexed the previous scene state. The
+    /// reconciled scene is relaid-out so editor render geometry stays
+    /// single-source (local heuristic) and never inherits the server's Skia
+    /// `computed` directly, which would jump text on every reconcile.
     pub fn load_scene(&mut self, scene_json: &str) -> Result<(), String> {
         let scene: Scene = serde_json::from_str(scene_json)
             .map_err(|error| format!("invalid scene JSON: {error}"))?;
         self.scene = scene;
         self.dsl_session = None;
+        self.relayout();
         Ok(())
+    }
+
+    /// Refresh `computed` geometry for the whole scene from one heuristic
+    /// layout pass. `computed` is a derived render cache: the parent and its
+    /// children are always laid out together, so they can never disagree
+    /// (the fix for the drag/edit coordinate desync). This writes geometry
+    /// directly onto nodes — it does NOT emit operations, so the recomputed
+    /// geometry never enters the authored edits sent to the server (which
+    /// recomputes geometry canonically under Skia). The pass is idempotent:
+    /// re-laying out an already-laid-out scene leaves unedited nodes
+    /// unchanged, so an edit only moves the node it touched and that node's
+    /// true layout dependents.
+    fn relayout(&mut self) {
+        let result = layout_scene(&self.scene, LayoutOptions::default());
+        for (node_id, computed) in result.geometry {
+            if let Some(node) = self.scene.nodes.get_mut(&node_id) {
+                node.computed = Some(computed);
+            }
+        }
     }
 
     /// Full scene snapshot out. Reserved for init/reconcile/undo-frame
@@ -83,14 +111,20 @@ impl Engine {
         let before = self.scene.clone();
         let inverse_operations = self.scene.invert_operations(&operations).ok().flatten();
         match self.scene.apply_operations_checked(operations) {
-            Ok(report) => json!({
-                "ok": true,
-                "applied_operations": report.applied_operations,
-                "diagnostics": report.diagnostics,
-                "inverse_operations": inverse_operations,
-                "delta": scene_delta(&before, &self.scene),
-            })
-            .to_string(),
+            Ok(report) => {
+                // Refresh derived geometry so the delta carries a coherent
+                // whole-tree `computed` for the optimistic render. The
+                // authored operations the editor persists are unaffected.
+                self.relayout();
+                json!({
+                    "ok": true,
+                    "applied_operations": report.applied_operations,
+                    "diagnostics": report.diagnostics,
+                    "inverse_operations": inverse_operations,
+                    "delta": scene_delta(&before, &self.scene),
+                })
+                .to_string()
+            }
             Err(error) => error_payload("wasm.apply", error.message, error.diagnostics),
         }
     }
@@ -123,22 +157,25 @@ impl Engine {
         };
         let before = self.scene.clone();
         match batch.apply_checked(&mut self.scene) {
-            Ok(report) => json!({
-                "ok": true,
-                "applied_operations": report.applied_operations,
-                "diagnostics": report.diagnostics,
-                "operations": batch.operations,
-                "edit": {
-                    "kind": edit.kind(),
-                    "touched_targets": batch.touched_targets,
-                    "intent": batch.intent,
-                    "checkpoint_label": batch.checkpoint_label,
-                    "inverse_operations": batch.inverse_operations,
-                    "lineage": batch.lineage,
-                },
-                "delta": scene_delta(&before, &self.scene),
-            })
-            .to_string(),
+            Ok(report) => {
+                self.relayout();
+                json!({
+                    "ok": true,
+                    "applied_operations": report.applied_operations,
+                    "diagnostics": report.diagnostics,
+                    "operations": batch.operations,
+                    "edit": {
+                        "kind": edit.kind(),
+                        "touched_targets": batch.touched_targets,
+                        "intent": batch.intent,
+                        "checkpoint_label": batch.checkpoint_label,
+                        "inverse_operations": batch.inverse_operations,
+                        "lineage": batch.lineage,
+                    },
+                    "delta": scene_delta(&before, &self.scene),
+                })
+                .to_string()
+            }
             Err(error) => error_payload(
                 error.kind.code(),
                 error.message.clone(),
@@ -154,6 +191,9 @@ impl Engine {
         let result =
             compile_dsl_into_scene_with_session(source, &mut self.scene, self.dsl_session.take());
         self.dsl_session = Some(result.session_snapshot);
+        // A compiled block creates/edits nodes; refresh geometry so the
+        // editor renders the new tree from one coherent layout pass.
+        self.relayout();
         json!({
             "ok": true,
             "compile_output": {

@@ -26,6 +26,17 @@ export function canNodeHaveChildren(node: Node): boolean {
   return ["frame", "group", "auto_layout"].includes(node.kind.kind);
 }
 
+/**
+ * A container the user can select and accidentally drag as a unit: a
+ * frame/group/auto-layout that actually holds children. Selecting one moves
+ * its contents (correct), so the canvas gives it distinct chrome — a labeled
+ * box plus child outlines — to make "I grabbed a container of N elements"
+ * legible before any drag.
+ */
+export function isContainerNode(node: Node): boolean {
+  return canNodeHaveChildren(node) && node.children.length > 0;
+}
+
 export function pageNodeTree(scene: Scene, pageId: PageId): Node[] {
   const page = scene.pages[pageId];
   if (!page) {
@@ -123,6 +134,39 @@ export function parentInfoForNode(scene: Scene, nodeId: NodeId): NodeParentInfo 
   }
 
   return null;
+}
+
+/**
+ * The outermost ancestor of `nodeId` that is a direct child of a page — i.e.
+ * the top-level container the node belongs to. Walks up the parent chain
+ * until the parent is the page (or the chain ends). Returns `nodeId` itself
+ * when the node is already top-level, and `null` for a null/unknown node.
+ *
+ * Canvas double-click uses this for deliberate container targeting: a single
+ * click drills to the deepest leaf, a double-click grabs the whole top-level
+ * group it belongs to — reachable even when the container's background is
+ * fully covered by its children.
+ */
+export function topLevelAncestorId(scene: Scene, nodeId: NodeId | null): NodeId | null {
+  if (!nodeId || !scene.nodes[nodeId]) {
+    return null;
+  }
+  let current = nodeId;
+  // Bounded by the node count: each step moves strictly toward the root, and
+  // a malformed cycle is stopped by the visited guard.
+  const visited = new Set<NodeId>([current]);
+  for (;;) {
+    const parentInfo = parentInfoForNode(scene, current);
+    if (!parentInfo || parentInfo.parent.kind !== "node") {
+      return current;
+    }
+    const parentId = parentInfo.parent.id;
+    if (visited.has(parentId)) {
+      return current;
+    }
+    visited.add(parentId);
+    current = parentId;
+  }
 }
 
 export function isNodeLayoutManaged(scene: Scene, nodeId: NodeId | null): boolean {

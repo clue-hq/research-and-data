@@ -254,6 +254,12 @@ export default function EditorApp({
       }
       try {
         engineRef.current = new WasmEngine(activation.module, sceneRef.current);
+        // Adopt the engine's relaid (whole-tree computed) scene so render
+        // geometry is single-source from the moment the engine is live —
+        // otherwise the first edit's heuristic delta would merge into a
+        // scene carrying server (Skia) or no computed, re-creating the
+        // parent/child desync.
+        setScene(engineRef.current.scene);
       } catch {
         // Server-only mode; the editor stays functional.
       }
@@ -263,6 +269,17 @@ export default function EditorApp({
     };
   }, [optimisticEngine]);
 
+  // An injected engine (tests, and any pre-constructed port) is live at
+  // mount; adopt its relaid scene once so the initial render and every
+  // later edit share one coherent geometry source.
+  useEffect(() => {
+    if (optimisticEngine) {
+      setScene(optimisticEngine.scene);
+    }
+    // Only when the injected engine identity changes; setScene is stable.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [optimisticEngine]);
+
   /**
    * Replace the scene outside the operation path (agent drafts, preflight
    * results, undo/redo frames). Keeps the optimistic engine's wasm-side
@@ -270,8 +287,18 @@ export default function EditorApp({
    * contract allows.
    */
   const replaceScene = (nextScene: Scene) => {
-    engineRef.current?.reset(nextScene);
-    setScene(nextScene);
+    const engine = engineRef.current;
+    if (engine) {
+      // The engine relays out on reset; render its coherent, single-source
+      // (local heuristic) geometry rather than the raw input — so reconcile,
+      // agent drafts, and undo/redo frames never render server Skia computed
+      // directly, which would jump text. With no engine (server-only mode)
+      // the raw scene is the only geometry available.
+      engine.reset(nextScene);
+      setScene(engine.scene);
+    } else {
+      setScene(nextScene);
+    }
   };
 
   // W3 optimistic pipeline: locally-applied batches persist to the

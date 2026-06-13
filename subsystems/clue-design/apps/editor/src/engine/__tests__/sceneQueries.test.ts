@@ -1,15 +1,18 @@
 import { describe, expect, it } from "vitest";
 import { minimalScene } from "@/fixtures/minimalScene";
 import type { Scene } from "../contracts";
+import type { Node } from "../contracts";
 import {
   clampNodeTransformToParentBounds,
   firstPageId,
   flattenPageNodeIds,
+  isContainerNode,
   isNodeDirectGeometryEditable,
   nodeIdForAsset,
   pageIdForNode,
   slotBoundNodeSummaries,
-  slotByNode
+  slotByNode,
+  topLevelAncestorId
 } from "../sceneQueries";
 
 describe("scene queries", () => {
@@ -153,8 +156,72 @@ describe("scene queries", () => {
     expect(clamped.x).toBe(60);
     expect(clamped.y).toBe(60);
   });
+
+  it("resolves the top-level container ancestor for canvas double-click targeting", () => {
+    const scene = nestedScene();
+
+    // Deeply nested leaf -> outermost top-level frame.
+    expect(topLevelAncestorId(scene, "headline")).toBe("hero");
+    // Intermediate container -> still the outermost frame.
+    expect(topLevelAncestorId(scene, "inner")).toBe("hero");
+    // A node that is already top-level resolves to itself.
+    expect(topLevelAncestorId(scene, "hero")).toBe("hero");
+    expect(topLevelAncestorId(scene, "sibling")).toBe("sibling");
+    // Null / unknown selections.
+    expect(topLevelAncestorId(scene, null)).toBeNull();
+    expect(topLevelAncestorId(scene, "missing")).toBeNull();
+  });
+
+  it("identifies containers that actually hold children", () => {
+    const scene = nestedScene();
+
+    expect(isContainerNode(scene.nodes.hero)).toBe(true);
+    expect(isContainerNode(scene.nodes.inner)).toBe(true);
+    expect(isContainerNode(scene.nodes.headline)).toBe(false); // leaf text
+    expect(isContainerNode(scene.nodes.sibling)).toBe(false); // empty frame
+  });
 });
 
 function cloneScene(): Scene {
   return JSON.parse(JSON.stringify(minimalScene)) as Scene;
+}
+
+/**
+ * page -> hero(frame) -> inner(group) -> headline(text); plus an empty
+ * top-level sibling frame. Exercises multi-level ancestry resolution.
+ */
+function nestedScene(): Scene {
+  const scene = cloneScene();
+  const template = scene.nodes.node_contact_name;
+  const hero: Node = {
+    ...template,
+    id: "hero",
+    name: "Hero",
+    kind: { kind: "frame" },
+    children: ["inner"]
+  };
+  const inner: Node = {
+    ...template,
+    id: "inner",
+    name: "Inner",
+    kind: { kind: "group" },
+    children: ["headline"]
+  };
+  const headline: Node = {
+    ...template,
+    id: "headline",
+    name: "Headline",
+    kind: { ...template.kind },
+    children: []
+  };
+  const sibling: Node = {
+    ...template,
+    id: "sibling",
+    name: "Sibling",
+    kind: { kind: "frame" },
+    children: []
+  };
+  scene.nodes = { hero, inner, headline, sibling };
+  scene.pages.page_a4.children = ["hero", "sibling"];
+  return scene;
 }
