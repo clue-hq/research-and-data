@@ -87,7 +87,7 @@ function drawBody(
   ck: CanvasKit,
   canvas: Canvas,
   d: RenderNodeDescriptor,
-  _fontMgr: FontMgr | null
+  fontMgr: FontMgr | null
 ): void {
   if (d.kind === "line" && d.line) {
     drawLine(ck, canvas, d);
@@ -98,13 +98,61 @@ function drawBody(
     return;
   }
   if (d.kind === "text") {
-    // SkParagraph text is Wave 3 C4; the box-drawing path below would draw
-    // nothing useful for text, so skip until C4 wires ParagraphBuilder.
+    drawText(ck, canvas, d, fontMgr);
     return;
   }
   if (d.contourPath) {
     drawShapedPath(ck, canvas, d, d.contourPath);
   }
+}
+
+/**
+ * Wave 3 C4: SkParagraph text. Using the same Inter bytes the server uses
+ * makes line breaks and widths bit-faithful to the export (the heuristic
+ * diverged on caps/digits/hyphens). Wraps at the node width when wrap is on;
+ * otherwise lays out unbounded. The measurement-provider that feeds these
+ * metrics back into the engine's layout (closing the E3 caveat) is the
+ * remaining C4 piece. With no font registered, text is skipped.
+ */
+function drawText(ck: CanvasKit, canvas: Canvas, d: RenderNodeDescriptor, fontMgr: FontMgr | null): void {
+  if (!fontMgr || !d.text) {
+    return;
+  }
+  const color = parseColor(ck, d.fill) ?? ck.BLACK;
+  const style = new ck.ParagraphStyle({
+    textStyle: {
+      color,
+      fontFamilies: [d.text.fontFamily],
+      fontSize: d.text.fontSize,
+      fontStyle: { weight: fontWeight(ck, d.text.fontWeight) },
+      heightMultiplier: d.text.lineHeight,
+      letterSpacing: d.text.letterSpacing
+    },
+    textAlign: textAlign(ck, d.text.align),
+    maxLines: d.text.maxLines ?? undefined
+  });
+  const builder = ck.ParagraphBuilder.Make(style, fontMgr);
+  builder.addText(d.text.content);
+  const paragraph = builder.build();
+  // No-wrap text lays out on one line; give it room so it does not wrap.
+  paragraph.layout(d.text.wrap === "wrap" ? d.width : Number.MAX_SAFE_INTEGER);
+  canvas.drawParagraph(paragraph, 0, 0);
+  paragraph.delete();
+  builder.delete();
+}
+
+function textAlign(ck: CanvasKit, align: "left" | "center" | "right" | "justify") {
+  if (align === "center") return ck.TextAlign.Center;
+  if (align === "right") return ck.TextAlign.Right;
+  if (align === "justify") return ck.TextAlign.Justify;
+  return ck.TextAlign.Left;
+}
+
+function fontWeight(ck: CanvasKit, weight: number) {
+  if (weight >= 700) return ck.FontWeight.Bold;
+  if (weight >= 600) return ck.FontWeight.SemiBold;
+  if (weight >= 500) return ck.FontWeight.Medium;
+  return ck.FontWeight.Normal;
 }
 
 /** Fill + stroke a closed shape path (rect/ellipse/image box, or a vector). */

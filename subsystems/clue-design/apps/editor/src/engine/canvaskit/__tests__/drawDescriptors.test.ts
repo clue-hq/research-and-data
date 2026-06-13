@@ -1,8 +1,8 @@
 // @vitest-environment node
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { beforeAll, describe, expect, it } from "vitest";
-import type { CanvasKit, Surface } from "canvaskit-wasm";
+import type { CanvasKit, FontMgr, Surface } from "canvaskit-wasm";
 import type { Node, Scene } from "../../contracts";
 import { minimalScene } from "@/fixtures/minimalScene";
 import { nodeDescriptor, pageDescriptor, type RenderPageDescriptor } from "../../renderAdapter";
@@ -40,11 +40,17 @@ function tree(scene: Scene, pageId: string): { page: RenderPageDescriptor; nodes
   };
 }
 
-function render(scene: Scene, pageId: string, width: number, height: number): Uint8Array {
+function render(
+  scene: Scene,
+  pageId: string,
+  width: number,
+  height: number,
+  fontMgr: FontMgr | null = null
+): Uint8Array {
   const surface: Surface = ck.MakeSurface(width, height)!;
   const canvas = surface.getCanvas();
   const { page, nodes } = tree(scene, pageId);
-  drawDescriptorTree(ck, canvas, page, nodes, null);
+  drawDescriptorTree(ck, canvas, page, nodes, fontMgr);
   surface.flush();
   const image = surface.makeImageSnapshot();
   const pixels = image.readPixels(0, 0, {
@@ -142,5 +148,63 @@ describe.skipIf(!present)("CanvasKit descriptor interpreter (Wave 3 C2)", () => 
     expect(green).toBe(red);
     expect(blue).toBe(red);
     expect(alpha).toBe(255);
+  });
+});
+
+const SYSTEM_FONT = "/Library/Fonts/Arial Unicode.ttf";
+
+describe.skipIf(!present || !existsSync(SYSTEM_FONT))("CanvasKit text rendering (Wave 3 C4)", () => {
+  let fontMgr: FontMgr;
+  let family: string;
+
+  beforeAll(async () => {
+    if (!ck) {
+      ck = await loadCk();
+    }
+    const bytes = readFileSync(SYSTEM_FONT);
+    const ab = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
+    fontMgr = ck.FontMgr.FromData(ab)!;
+    family = fontMgr.getFamilyName(0);
+  });
+
+  it("draws glyphs (dark pixels) inside the text box via SkParagraph", () => {
+    const base = JSON.parse(JSON.stringify(minimalScene.nodes.node_contact_name)) as Node;
+    const text: Node = {
+      ...base,
+      id: "t",
+      kind: {
+        kind: "text",
+        content: "HELLO",
+        font_family: family,
+        font_size: 36,
+        font_weight: 700,
+        align: "left",
+        line_height: 1.2,
+        letter_spacing: 0,
+        wrap: "no_wrap",
+        direction: "ltr"
+      },
+      fills: [{ id: "t_fill", paint: { kind: "solid", color: { kind: "hex", value: "#000000" } } }],
+      strokes: [],
+      transform: { ...base.transform, x: 0, y: 0 },
+      size: { width: { kind: "fixed", value: 200 }, height: { kind: "fixed", value: 50 } },
+      computed: {
+        layout_bounds: { x: 0, y: 0, width: 200, height: 50 },
+        render_bounds: { x: 0, y: 0, width: 200, height: 50 }
+      }
+    };
+    const pixels = render(pxScene({ t: text }, ["t"]), "page_a4", 200, 50, fontMgr);
+
+    // Scan the text band for any dark (drawn-glyph) pixel.
+    let darkCount = 0;
+    for (let y = 5; y < 45; y++) {
+      for (let x = 0; x < 200; x++) {
+        const [r] = pixel(pixels, x, y, 200);
+        if (r < 80) {
+          darkCount++;
+        }
+      }
+    }
+    expect(darkCount).toBeGreaterThan(20);
   });
 });
