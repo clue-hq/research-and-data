@@ -25,8 +25,10 @@ import { nodeDescriptor, pageDescriptor } from "@/engine/renderAdapter";
 import { loadCanvasKit } from "@/engine/canvaskit/loadCanvasKit";
 import { skiaMeasurements } from "@/engine/canvaskit/skiaMeasurements";
 import type { Box } from "@/engine/transformerMath";
+import { updateTextNode } from "@/engine/operations";
 import { CanvasKitStage } from "./CanvasKitStage";
 import { SelectionOverlay } from "./SelectionOverlay";
+import { TextEditOverlay } from "./TextEditOverlay";
 import type { DrawNode } from "@/engine/canvaskit/drawDescriptors";
 
 /**
@@ -75,6 +77,7 @@ export function CanvasKitCanvas({
   const [viewport, setViewport] = useState({ width: 900, height: 720 });
   const [preview, setPreview] = useState<Preview | null>(null);
   const [marquee, setMarquee] = useState<Box | null>(null);
+  const [editingNodeId, setEditingNodeId] = useState<NodeId | null>(null);
 
   const page = getPage(scene, activePageId);
   const pageView = page ? pageDescriptor(page) : null;
@@ -320,6 +323,68 @@ export function CanvasKitCanvas({
     return screenToDescriptor({ x: sx, y: sy }, pageOrigin, zoom);
   };
 
+  // The text node being edited: its descriptor box + style for the DOM overlay.
+  const editing = useMemo(() => {
+    if (!editingNodeId || !page) {
+      return null;
+    }
+    const node = getNode(scene, editingNodeId);
+    if (!node || node.kind.kind !== "text") {
+      return null;
+    }
+    const d = nodeDescriptor(scene, node, page);
+    if (!d.text) {
+      return null;
+    }
+    return {
+      node,
+      box: { x: d.x, y: d.y, width: d.width, height: d.height } as Box,
+      rotation: d.rotation,
+      content: d.text.content,
+      style: {
+        fontFamily: d.text.fontFamily,
+        fontSize: d.text.fontSize,
+        fontWeight: d.text.fontWeight,
+        align: d.text.align,
+        lineHeight: d.text.lineHeight,
+        letterSpacing: d.text.letterSpacing,
+        color: d.fill
+      }
+    };
+  }, [scene, page, editingNodeId]);
+
+  // Double-click: edit a text node, otherwise drill to its top-level container.
+  const onDoubleClick = (event: React.MouseEvent) => {
+    const rect = containerRef.current?.getBoundingClientRect();
+    const descriptorPoint = screenToDescriptor(
+      { x: event.clientX - (rect?.left ?? 0), y: event.clientY - (rect?.top ?? 0) },
+      pageOrigin,
+      zoom
+    );
+    const scenePoint = descriptorToScene(descriptorPoint, unitScale);
+    const hit = engine?.hitTest?.(activePageId ?? "", scenePoint.x, scenePoint.y);
+    if (hit?.hit) {
+      const node = getNode(scene, hit.hit);
+      if (node?.kind.kind === "text") {
+        onSelectNode(hit.hit);
+        setEditingNodeId(hit.hit);
+        return;
+      }
+    }
+    if (selectedNodeId) {
+      onSelectNode(topLevelAncestorId(scene, selectedNodeId) ?? selectedNodeId);
+    }
+  };
+
+  const commitTextEdit = (content: string) => {
+    const node = editing?.node;
+    const original = editing?.content;
+    setEditingNodeId(null);
+    if (node && content !== original) {
+      onOperation(updateTextNode(node, { content }));
+    }
+  };
+
   const modifiersFromEvent = (event: React.PointerEvent) => ({
     shift: event.shiftKey,
     meta: event.metaKey || event.ctrlKey
@@ -331,31 +396,45 @@ export function CanvasKitCanvas({
       <div
         style={{ position: "absolute", inset: 0 }}
         onPointerDown={(event) => {
+          if (editingNodeId) return; // editing: let the textarea own the pointer
           event.currentTarget.setPointerCapture(event.pointerId);
           dispatch({ kind: "down", point: pointerFromEvent(event), target: pressTargetFor(pointerFromEvent(event)), modifiers: modifiersFromEvent(event) });
         }}
         onPointerMove={(event) => {
-          if (stateRef.current.kind === "idle") return;
+          if (editingNodeId || stateRef.current.kind === "idle") return;
           dispatch({ kind: "move", point: pointerFromEvent(event), modifiers: modifiersFromEvent(event) });
         }}
         onPointerUp={(event) => {
+          if (editingNodeId) return;
           dispatch({ kind: "up", point: pointerFromEvent(event), modifiers: modifiersFromEvent(event) });
         }}
-        onDoubleClick={() => {
-          if (selectedNodeId) {
-            onSelectNode(topLevelAncestorId(scene, selectedNodeId) ?? selectedNodeId);
-          }
-        }}
+        onDoubleClick={onDoubleClick}
       >
         <SelectionOverlay
-          selection={selectionBox ? { box: selectionBox.box, rotation: selectionBox.rotation } : null}
-          containerChildren={containerChildBoxes(scene, selectedNodeId, unitScale)}
-          containerLabel={containerLabel(scene, selectedNodeId)}
+          selection={
+            selectionBox && !editingNodeId
+              ? { box: selectionBox.box, rotation: selectionBox.rotation }
+              : null
+          }
+          containerChildren={editingNodeId ? [] : containerChildBoxes(scene, selectedNodeId, unitScale)}
+          containerLabel={editingNodeId ? undefined : containerLabel(scene, selectedNodeId)}
           marquee={marquee}
           pageOrigin={pageOrigin}
           zoom={zoom}
-          showHandles={showHandles}
+          showHandles={showHandles && !editingNodeId}
         />
+        {editing ? (
+          <TextEditOverlay
+            box={editing.box}
+            rotation={editing.rotation}
+            content={editing.content}
+            style={editing.style}
+            pageOrigin={pageOrigin}
+            zoom={zoom}
+            onCommit={commitTextEdit}
+            onCancel={() => setEditingNodeId(null)}
+          />
+        ) : null}
       </div>
     </section>
   );
