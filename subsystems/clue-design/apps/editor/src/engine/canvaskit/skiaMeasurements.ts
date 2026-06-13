@@ -1,4 +1,4 @@
-import type { CanvasKit, FontMgr } from "canvaskit-wasm";
+import type { CanvasKit, TypefaceFontProvider } from "canvaskit-wasm";
 import type { Scene } from "../contracts";
 import type { TextMeasurement } from "../wasmEngine";
 
@@ -13,7 +13,7 @@ import type { TextMeasurement } from "../wasmEngine";
  * for hug/unconstrained text; constrained (wrapped) text reuses the same
  * payload shape and is refined as the convergence matures.
  */
-export function skiaMeasurements(ck: CanvasKit, fontMgr: FontMgr, scene: Scene): TextMeasurement[] {
+export function skiaMeasurements(ck: CanvasKit, fontProvider: TypefaceFontProvider, scene: Scene): TextMeasurement[] {
   const out: TextMeasurement[] = [];
   for (const node of Object.values(scene.nodes)) {
     if (node.kind.kind !== "text") {
@@ -24,7 +24,7 @@ export function skiaMeasurements(ck: CanvasKit, fontMgr: FontMgr, scene: Scene):
     const letterSpacing = t.letter_spacing ?? 0;
     const wrap = t.wrap ?? "no_wrap";
     const direction = t.direction ?? "ltr";
-    const { width, height } = measureParagraph(ck, fontMgr, {
+    const { width, height } = measureParagraph(ck, fontProvider, {
       content: t.content,
       fontFamily: t.font_family,
       fontSize: t.font_size,
@@ -61,7 +61,7 @@ interface ParagraphInput {
 /** Unconstrained SkParagraph width/height for a text style. */
 export function measureParagraph(
   ck: CanvasKit,
-  fontMgr: FontMgr,
+  fontProvider: TypefaceFontProvider,
   input: ParagraphInput
 ): { width: number; height: number } {
   const style = new ck.ParagraphStyle({
@@ -73,7 +73,7 @@ export function measureParagraph(
       letterSpacing: input.letterSpacing
     }
   });
-  const builder = ck.ParagraphBuilder.Make(style, fontMgr);
+  const builder = ck.ParagraphBuilder.MakeFromFontProvider(style, fontProvider);
   builder.addText(input.content);
   const paragraph = builder.build();
   paragraph.layout(Number.MAX_SAFE_INTEGER);

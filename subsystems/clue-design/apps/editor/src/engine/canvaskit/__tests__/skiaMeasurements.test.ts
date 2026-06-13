@@ -2,7 +2,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { beforeAll, describe, expect, it } from "vitest";
-import type { CanvasKit, FontMgr } from "canvaskit-wasm";
+import type { CanvasKit, TypefaceFontProvider } from "canvaskit-wasm";
 import type { Node, Scene } from "../../contracts";
 import { minimalScene } from "@/fixtures/minimalScene";
 import { measureParagraph, skiaMeasurements } from "../skiaMeasurements";
@@ -18,8 +18,8 @@ const SYSTEM_FONT = "/Library/Fonts/Arial Unicode.ttf";
 const present = existsSync(path.join(CK_BIN, "canvaskit.wasm")) && existsSync(SYSTEM_FONT);
 
 let ck: CanvasKit;
-let fontMgr: FontMgr;
-let family: string;
+let fontMgr: TypefaceFontProvider;
+const family = "TestFamily";
 
 describe.skipIf(!present)("SkParagraph measurement provider (Wave 3 C4)", () => {
   beforeAll(async () => {
@@ -29,8 +29,8 @@ describe.skipIf(!present)("SkParagraph measurement provider (Wave 3 C4)", () => 
     ck = await mod.default({ locateFile: (file: string) => path.join(CK_BIN, file) });
     const bytes = readFileSync(SYSTEM_FONT);
     const ab = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
-    fontMgr = ck.FontMgr.FromData(ab)!;
-    family = fontMgr.getFamilyName(0);
+    fontMgr = ck.TypefaceFontProvider.Make();
+    fontMgr.registerFont(ab, family);
   });
 
   it("measures wider text wider and taller text taller", () => {

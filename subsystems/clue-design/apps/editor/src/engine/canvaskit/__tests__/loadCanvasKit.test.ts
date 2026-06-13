@@ -47,9 +47,9 @@ describe.skipIf(!present)("CanvasKit loader (Wave 3 C0)", () => {
     expect(ck.Path).toBeTruthy();
     expect(typeof ck.ImageFilter.MakeDropShadow).toBe("function");
     expect(ck.ParagraphBuilder).toBeTruthy();
-    expect(ck.FontMgr).toBeTruthy();
+    expect(ck.TypefaceFontProvider).toBeTruthy();
     // No fetchImpl supplied → the font is optional, not fatal.
-    expect(bundle!.fontMgr).toBeNull();
+    expect(bundle!.fontProvider).toBeNull();
   });
 
   it("caches the module so the wasm instantiates exactly once", async () => {
@@ -60,15 +60,29 @@ describe.skipIf(!present)("CanvasKit loader (Wave 3 C0)", () => {
     expect(first!.ck).toBe(second!.ck);
   });
 
-  it("registers a font when the fetch succeeds", async () => {
+  it("registers the Inter font under its alias when the fetch succeeds", async () => {
     const init = await nodeInit();
-    const fontBytes = readFileSync(CK_WASM); // any bytes; FromData tolerates non-font → may be null
+    const fontPath = path.resolve(__dirname, "../../../../public/fonts/InterVariable.ttf");
+    if (!existsSync(fontPath)) {
+      return; // font asset not fetched in this environment; skip silently
+    }
+    const fontBytes = readFileSync(fontPath);
+    const ab = fontBytes.buffer.slice(fontBytes.byteOffset, fontBytes.byteOffset + fontBytes.byteLength);
     const fetchImpl = (async () =>
-      ({ ok: true, arrayBuffer: async () => fontBytes }) as unknown as Response) as typeof fetch;
+      ({ ok: true, arrayBuffer: async () => ab }) as unknown as Response) as typeof fetch;
     const bundle = await loadCanvasKit({ init, fetchImpl });
-    // The fetch path ran without throwing; FromData returns a FontMgr or null
-    // for unparseable bytes — either way the canvas stays usable.
-    expect(bundle).not.toBeNull();
+    expect(bundle?.fontProvider).not.toBeNull();
+
+    // The provider resolves "Inter" (the alias) — a paragraph builds and lays out.
+    const ck = bundle!.ck;
+    const style = new ck.ParagraphStyle({ textStyle: { fontFamilies: ["Inter"], fontSize: 24 } });
+    const builder = ck.ParagraphBuilder.MakeFromFontProvider(style, bundle!.fontProvider!);
+    builder.addText("Inter");
+    const paragraph = builder.build();
+    paragraph.layout(1000);
+    expect(paragraph.getMaxIntrinsicWidth()).toBeGreaterThan(0);
+    paragraph.delete();
+    builder.delete();
   });
 
   it("degrades to null when CanvasKit init fails (editor stays on Konva)", async () => {

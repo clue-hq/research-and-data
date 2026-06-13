@@ -1,4 +1,4 @@
-import type { Canvas, CanvasKit, FontMgr } from "canvaskit-wasm";
+import type { Canvas, CanvasKit, TypefaceFontProvider } from "canvaskit-wasm";
 import type { RenderNodeDescriptor, RenderPageDescriptor } from "../renderAdapter";
 
 /**
@@ -31,16 +31,16 @@ export function drawDescriptorTree(
   canvas: Canvas,
   page: RenderPageDescriptor,
   nodes: DrawNode[],
-  fontMgr: FontMgr | null
+  fontProvider: TypefaceFontProvider | null
 ): void {
   const bg = parseColor(ck, page.background);
   canvas.clear(bg ?? ck.WHITE);
   for (const node of nodes) {
-    drawNode(ck, canvas, node, fontMgr);
+    drawNode(ck, canvas, node, fontProvider);
   }
 }
 
-function drawNode(ck: CanvasKit, canvas: Canvas, node: DrawNode, fontMgr: FontMgr | null): void {
+function drawNode(ck: CanvasKit, canvas: Canvas, node: DrawNode, fontProvider: TypefaceFontProvider | null): void {
   const d = node.descriptor;
   canvas.save();
   canvas.translate(d.x, d.y);
@@ -67,14 +67,14 @@ function drawNode(ck: CanvasKit, canvas: Canvas, node: DrawNode, fontMgr: FontMg
     filter.delete();
   }
 
-  drawBody(ck, canvas, d, fontMgr);
+  drawBody(ck, canvas, d, fontProvider);
 
   if (filter) {
     canvas.restore();
   }
 
   for (const child of node.children) {
-    drawNode(ck, canvas, child, fontMgr);
+    drawNode(ck, canvas, child, fontProvider);
   }
 
   if (opacityLayer) {
@@ -87,7 +87,7 @@ function drawBody(
   ck: CanvasKit,
   canvas: Canvas,
   d: RenderNodeDescriptor,
-  fontMgr: FontMgr | null
+  fontProvider: TypefaceFontProvider | null
 ): void {
   if (d.kind === "line" && d.line) {
     drawLine(ck, canvas, d);
@@ -98,7 +98,7 @@ function drawBody(
     return;
   }
   if (d.kind === "text") {
-    drawText(ck, canvas, d, fontMgr);
+    drawText(ck, canvas, d, fontProvider);
     return;
   }
   if (d.contourPath) {
@@ -114,8 +114,8 @@ function drawBody(
  * metrics back into the engine's layout (closing the E3 caveat) is the
  * remaining C4 piece. With no font registered, text is skipped.
  */
-function drawText(ck: CanvasKit, canvas: Canvas, d: RenderNodeDescriptor, fontMgr: FontMgr | null): void {
-  if (!fontMgr || !d.text) {
+function drawText(ck: CanvasKit, canvas: Canvas, d: RenderNodeDescriptor, fontProvider: TypefaceFontProvider | null): void {
+  if (!fontProvider || !d.text) {
     return;
   }
   const color = parseColor(ck, d.fill) ?? ck.BLACK;
@@ -131,7 +131,7 @@ function drawText(ck: CanvasKit, canvas: Canvas, d: RenderNodeDescriptor, fontMg
     textAlign: textAlign(ck, d.text.align),
     maxLines: d.text.maxLines ?? undefined
   });
-  const builder = ck.ParagraphBuilder.Make(style, fontMgr);
+  const builder = ck.ParagraphBuilder.MakeFromFontProvider(style, fontProvider);
   builder.addText(d.text.content);
   const paragraph = builder.build();
   // No-wrap text lays out on one line; give it room so it does not wrap.

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import type { CanvasKit, FontMgr, Surface } from "canvaskit-wasm";
+import type { CanvasKit, Surface, TypefaceFontProvider } from "canvaskit-wasm";
 import type { RenderPageDescriptor } from "@/engine/renderAdapter";
 import { drawDescriptorTree, type DrawNode } from "@/engine/canvaskit/drawDescriptors";
 import { loadCanvasKit } from "@/engine/canvaskit/loadCanvasKit";
@@ -33,7 +33,7 @@ export interface CanvasKitStageProps {
 export function CanvasKitStage({ page, nodes, pageOrigin, zoom }: CanvasKitStageProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const ckRef = useRef<CanvasKit | null>(null);
-  const fontRef = useRef<FontMgr | null>(null);
+  const fontRef = useRef<TypefaceFontProvider | null>(null);
   const surfaceRef = useRef<Surface | null>(null);
   const dirtyRef = useRef(false);
   const rafRef = useRef(0);
@@ -91,7 +91,7 @@ export function CanvasKitStage({ page, nodes, pageOrigin, zoom }: CanvasKitStage
         return;
       }
       ckRef.current = bundle.ck;
-      fontRef.current = bundle.fontMgr;
+      fontRef.current = bundle.fontProvider;
       makeSurface(bundle.ck);
     });
 

@@ -2,7 +2,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { beforeAll, describe, expect, it } from "vitest";
-import type { CanvasKit, FontMgr, Surface } from "canvaskit-wasm";
+import type { CanvasKit, Surface, TypefaceFontProvider } from "canvaskit-wasm";
 import type { Node, Scene } from "../../contracts";
 import { minimalScene } from "@/fixtures/minimalScene";
 import { nodeDescriptor, pageDescriptor, type RenderPageDescriptor } from "../../renderAdapter";
@@ -45,12 +45,12 @@ function render(
   pageId: string,
   width: number,
   height: number,
-  fontMgr: FontMgr | null = null
+  fontProvider: TypefaceFontProvider | null = null
 ): Uint8Array {
   const surface: Surface = ck.MakeSurface(width, height)!;
   const canvas = surface.getCanvas();
   const { page, nodes } = tree(scene, pageId);
-  drawDescriptorTree(ck, canvas, page, nodes, fontMgr);
+  drawDescriptorTree(ck, canvas, page, nodes, fontProvider);
   surface.flush();
   const image = surface.makeImageSnapshot();
   const pixels = image.readPixels(0, 0, {
@@ -154,8 +154,8 @@ describe.skipIf(!present)("CanvasKit descriptor interpreter (Wave 3 C2)", () => 
 const SYSTEM_FONT = "/Library/Fonts/Arial Unicode.ttf";
 
 describe.skipIf(!present || !existsSync(SYSTEM_FONT))("CanvasKit text rendering (Wave 3 C4)", () => {
-  let fontMgr: FontMgr;
-  let family: string;
+  let fontProvider: TypefaceFontProvider;
+  const family = "TestFamily";
 
   beforeAll(async () => {
     if (!ck) {
@@ -163,8 +163,8 @@ describe.skipIf(!present || !existsSync(SYSTEM_FONT))("CanvasKit text rendering 
     }
     const bytes = readFileSync(SYSTEM_FONT);
     const ab = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
-    fontMgr = ck.FontMgr.FromData(ab)!;
-    family = fontMgr.getFamilyName(0);
+    fontProvider = ck.TypefaceFontProvider.Make();
+    fontProvider.registerFont(ab, family);
   });
 
   it("draws glyphs (dark pixels) inside the text box via SkParagraph", () => {
@@ -193,7 +193,7 @@ describe.skipIf(!present || !existsSync(SYSTEM_FONT))("CanvasKit text rendering 
         render_bounds: { x: 0, y: 0, width: 200, height: 50 }
       }
     };
-    const pixels = render(pxScene({ t: text }, ["t"]), "page_a4", 200, 50, fontMgr);
+    const pixels = render(pxScene({ t: text }, ["t"]), "page_a4", 200, 50, fontProvider);
 
     // Scan the text band for any dark (drawn-glyph) pixel.
     let darkCount = 0;

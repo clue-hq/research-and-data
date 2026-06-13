@@ -1,4 +1,9 @@
-import type { CanvasKit, FontMgr } from "canvaskit-wasm";
+import type { CanvasKit, TypefaceFontProvider } from "canvaskit-wasm";
+
+/** The family scenes/the design system request; the variable Inter TTF is
+ * registered under this alias (its intrinsic name is "Inter Variable", which
+ * would otherwise not match a "Inter" request). */
+export const INTER_FAMILY = "Inter";
 
 /**
  * Wave 3 C0: load the CanvasKit (Skia/WASM) module exactly once.
@@ -17,9 +22,12 @@ import type { CanvasKit, FontMgr } from "canvaskit-wasm";
 
 export interface CanvasKitBundle {
   ck: CanvasKit;
-  /** `null` when the font could not be fetched — text falls back to the
-   * CanvasKit default face rather than failing the whole canvas. */
-  fontMgr: FontMgr | null;
+  /** A font provider with the Inter TTF registered under the `INTER_FAMILY`
+   * alias, or `null` when the font could not be fetched — text falls back to
+   * the CanvasKit default face rather than failing the whole canvas. The
+   * paragraph builders require a TypefaceFontProvider (a plain FontMgr is
+   * rejected by `MakeFromFontProvider`). */
+  fontProvider: TypefaceFontProvider | null;
 }
 
 export interface LoadCanvasKitOptions {
@@ -64,8 +72,8 @@ async function initBundle(options: LoadCanvasKitOptions): Promise<CanvasKitBundl
     return null;
   }
 
-  const fontMgr = await registerFont(ck, fontUrl, fetchImpl);
-  return { ck, fontMgr };
+  const fontProvider = await registerFont(ck, fontUrl, fetchImpl);
+  return { ck, fontProvider };
 }
 
 /** The real wasm-pack-style init, loaded only in the browser bundle. */
@@ -82,7 +90,7 @@ async function registerFont(
   ck: CanvasKit,
   fontUrl: string,
   fetchImpl: typeof fetch | undefined
-): Promise<FontMgr | null> {
+): Promise<TypefaceFontProvider | null> {
   if (!fetchImpl) {
     return null;
   }
@@ -92,7 +100,12 @@ async function registerFont(
       return null;
     }
     const bytes = await response.arrayBuffer();
-    return ck.FontMgr.FromData(bytes) ?? null;
+    const provider = ck.TypefaceFontProvider.Make();
+    // Register under the requested alias AND the font's intrinsic name so both
+    // a "Inter" request (the design system) and "Inter Variable" resolve.
+    provider.registerFont(bytes, INTER_FAMILY);
+    provider.registerFont(bytes, "Inter Variable");
+    return provider;
   } catch {
     return null;
   }
