@@ -3,15 +3,19 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
+    "predev": "bash ../../scripts/copy_canvaskit_assets.sh",
     "dev": "next dev",
+    "prebuild": "bash ../../scripts/copy_canvaskit_assets.sh",
     "build": "next build",
     "build:wasm": "bash ../../scripts/build_wasm_core.sh",
+    "build:canvaskit": "bash ../../scripts/copy_canvaskit_assets.sh",
     "lint": "tsc --noEmit -p tsconfig.lint.json",
     "pretest": "bash ../../scripts/build_wasm_core.sh --if-missing",
     "test": "vitest run",
     "test:watch": "vitest"
   },
   "dependencies": {
+    "canvaskit-wasm": "0.41.1",
     "konva": "^9.3.20",
     "lucide-react": "^0.468.0",
     "next": "^15.3.3",
