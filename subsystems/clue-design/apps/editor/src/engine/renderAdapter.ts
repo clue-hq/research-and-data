@@ -14,6 +14,7 @@ import type {
   StrokeJoin,
   Unit
 } from "./contracts";
+import { isNodeLayoutManaged } from "./sceneQueries";
 
 /**
  * Konva-ready paint description (Effects Contract V0). Gradients carry the
@@ -147,7 +148,7 @@ export function nodeDescriptor(
 ): RenderNodeDescriptor {
   const scale = unitScale(page.size.unit);
   const size = nodeSizeForRender(node, page);
-  const position = nodePositionForRender(node, page, parentComputedOrigin);
+  const position = nodePositionForRender(node, page, parentComputedOrigin, scene);
   const stroke = node.strokes[0] ? strokeDescriptor(node.strokes[0]) : null;
   const shadows = shadowDescriptors(node.effects ?? [], scale);
   const descriptor: RenderNodeDescriptor = {
@@ -467,7 +468,8 @@ export function nodeSizeForRender(node: Node, page: Page): { width: number; heig
 export function nodePositionForRender(
   node: Node,
   page: Page,
-  parentComputedOrigin: ParentComputedOrigin | null = null
+  parentComputedOrigin: ParentComputedOrigin | null = null,
+  scene: Scene | null = null
 ): { x: number; y: number } {
   const scale = unitScale(page.size.unit);
   if (node.computed) {
@@ -477,6 +479,17 @@ export function nodePositionForRender(
       x: (node.computed.layout_bounds.x - offsetX) * scale,
       y: (node.computed.layout_bounds.y - offsetY) * scale
     };
+  }
+  // Fallback for a node that has never been laid out. With the engine
+  // relaying out on load, `computed` is effectively always present, so this
+  // is a guard, not the normal path. For a layout-managed node (an
+  // auto-layout child) `transform` is NOT its real position — flow owns it —
+  // so falling back to `transform` would jump it to a meaningless spot.
+  // Render it at its container origin (0,0 relative to the parent group)
+  // instead: a stable, in-bounds default until layout runs. For all other
+  // nodes the (parent-relative) transform is the correct authored position.
+  if (scene && isNodeLayoutManaged(scene, node.id)) {
+    return { x: 0, y: 0 };
   }
   return {
     x: node.transform.x * scale,
