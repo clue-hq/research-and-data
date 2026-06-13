@@ -4603,6 +4603,9 @@ fn parse_color(source: &str, line_number: usize, column: usize) -> Result<Color,
             value: normalize_dsl_hex_color(source, line_number, column)?,
         });
     }
+    if source.starts_with("rgb(") || source.starts_with("rgba(") {
+        return parse_rgb_color(source, line_number, column);
+    }
     Err(error_diag(
         line_number,
         column,
@@ -4611,6 +4614,50 @@ fn parse_color(source: &str, line_number: usize, column: usize) -> Result<Color,
         format!("invalid color {source}"),
         "Use #RRGGBB, #AARRGGBB, $token, or oklch(l,c,h,a).",
     ))
+}
+
+/// CSS `rgb(r,g,b)` / `rgba(r,g,b,a)` compatibility alias. Models reach for it
+/// out of CSS habit; we lower it to the canonical hex color instead of failing
+/// with `LUMD0219`. Channels are 0-255 (or `NN%`); alpha is 0-1 (or `NN%`). The
+/// result is `#RRGGBB`, or `#RRGGBBAA` when alpha is below 1.
+fn parse_rgb_color(
+    source: &str,
+    line_number: usize,
+    column: usize,
+) -> Result<Color, DslDiagnostic> {
+    let name = if source.starts_with("rgba(") { "rgba" } else { "rgb" };
+    let call = parse_required_call(source, name, line_number, column)?;
+    let expected = if name == "rgba" { 4 } else { 3 };
+    if call.args.len() != expected {
+        return Err(invalid_color_diag(source, line_number, column));
+    }
+    let channel = |raw: &str| -> Result<u8, DslDiagnostic> {
+        let trimmed = raw.trim();
+        let value = match trimmed.strip_suffix('%') {
+            Some(pct) => parse_f64(pct, line_number, column)? / 100.0 * 255.0,
+            None => parse_f64(trimmed, line_number, column)?,
+        };
+        Ok(value.round().clamp(0.0, 255.0) as u8)
+    };
+    let r = channel(&call.args[0])?;
+    let g = channel(&call.args[1])?;
+    let b = channel(&call.args[2])?;
+    let alpha = if expected == 4 {
+        let trimmed = call.args[3].trim();
+        let a = match trimmed.strip_suffix('%') {
+            Some(pct) => parse_f64(pct, line_number, column)? / 100.0,
+            None => parse_f64(trimmed, line_number, column)?,
+        };
+        (a.clamp(0.0, 1.0) * 255.0).round() as u8
+    } else {
+        255
+    };
+    let value = if alpha == 255 {
+        format!("#{r:02x}{g:02x}{b:02x}")
+    } else {
+        format!("#{r:02x}{g:02x}{b:02x}{alpha:02x}")
+    };
+    Ok(Color::Hex { value })
 }
 
 fn parse_font_property(
@@ -5238,6 +5285,8 @@ fn paint_like(source: &str) -> bool {
     trimmed.starts_with('#')
         || trimmed.starts_with('$')
         || trimmed.starts_with("oklch(")
+        || trimmed.starts_with("rgb(")
+        || trimmed.starts_with("rgba(")
         || trimmed.starts_with("linear(")
         || trimmed.starts_with("radial(")
         || trimmed.starts_with("solid(")
@@ -5449,6 +5498,48 @@ fn parse_shadow_property(
     };
     if call.args.is_empty() {
         return Err(shadow_error("shadow(...) expects a color".to_owned()));
+    }
+
+    // Compatibility alias for the CSS `box-shadow` ordering models reach for out
+    // of habit: `shadow(x, y[, blur[, spread]], color)` with the color LAST and
+    // every preceding argument a bare number. We accept it rather than reject it
+    // because the model emits it persistently and the intent is unambiguous; the
+    // canonical `shadow(color, o(), x(), y(), blur(), spread())` form is still
+    // preferred. Detection is conservative — it never fires when the first arg is
+    // a color (canonical form) or when a leading non-numeric id is present
+    // (`shadow(shadow_soft, #000000, ...)`), so existing grammars are untouched.
+    let n = call.args.len();
+    let positional = n >= 2
+        && !paint_like(&call.args[0])
+        && paint_like(&call.args[n - 1])
+        && call.args[..n - 1]
+            .iter()
+            .all(|arg| parse_call(arg.trim()).is_none() && parse_f64(arg, 0, 0).is_ok());
+    if positional {
+        let color = parse_color(&call.args[n - 1], line_number, column)?;
+        let mut shadow = DslShadow {
+            id: None,
+            color,
+            opacity: 1.0,
+            x: 0.0,
+            y: 0.0,
+            blur: 0.0,
+            spread: 0.0,
+        };
+        let offsets = &call.args[..n - 1];
+        if let Some(v) = offsets.first() {
+            shadow.x = parse_f64(v, line_number, column)?;
+        }
+        if let Some(v) = offsets.get(1) {
+            shadow.y = parse_f64(v, line_number, column)?;
+        }
+        if let Some(v) = offsets.get(2) {
+            shadow.blur = parse_f64(v, line_number, column)?;
+        }
+        if let Some(v) = offsets.get(3) {
+            shadow.spread = parse_f64(v, line_number, column)?;
+        }
+        return Ok(shadow);
     }
 
     let mut args = call.args.iter();

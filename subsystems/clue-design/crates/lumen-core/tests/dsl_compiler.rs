@@ -1625,6 +1625,116 @@ page page_square size(400,400,px)
 }
 
 #[test]
+fn dsl_positional_css_shadow_alias_compiles() {
+    // Models reach for CSS `box-shadow` ordering — `shadow(x, y, blur, color)`
+    // with the color LAST — out of habit. The compiler accepts it as a
+    // compatibility alias instead of failing Phase A repair with "invalid color".
+    let mut scene = Scene::new(lumen_core::DocumentId::from("doc_fx"), "Effects");
+    let output = compile_dsl_into_scene(
+        r#"
+page page_square size(400,400,px)
+  card r p(24,24) s(200,120) fill(#ffffff) shadow(0,4,16,#19000000)
+"#,
+        &mut scene,
+    );
+
+    assert_no_dsl_errors(&output.compile_output.diagnostics);
+    assert!(output.operation_error.is_none());
+
+    let card = &scene.nodes[&NodeId::from("card")];
+    assert_eq!(card.effects.len(), 1);
+    let lumen_core::EffectKind::DropShadow {
+        color,
+        opacity,
+        x,
+        y,
+        blur,
+        spread,
+        ..
+    } = &card.effects[0].kind;
+    // The alpha rides in the color (input #AARRGGBB `#19000000` ~10% black,
+    // normalized to canonical #RRGGBBAA); opacity stays the channel default.
+    assert_eq!(
+        color,
+        &Color::Hex {
+            value: "#00000019".to_owned()
+        }
+    );
+    assert_eq!(*opacity, 1.0);
+    assert_eq!(*x, 0.0);
+    assert_eq!(*y, 4.0);
+    assert_eq!(*blur, 16.0);
+    assert_eq!(*spread, 0.0);
+}
+
+#[test]
+fn dsl_rgba_color_alias_compiles_in_fill_and_positional_shadow() {
+    // Models reach for CSS `rgb()`/`rgba()` colors out of habit. The compiler
+    // lowers them to canonical hex instead of failing with LUMD0219. This also
+    // covers the exact slip the agent emitted: a positional shadow whose trailing
+    // color is `rgba(...)` — `shadow(0,4,24,rgba(0,0,0,0.10))`.
+    let mut scene = Scene::new(lumen_core::DocumentId::from("doc_fx"), "Effects");
+    let output = compile_dsl_into_scene(
+        r#"
+page page_square size(400,400,px)
+  card r p(24,24) s(200,120) fill(rgba(0,137,123,1)) shadow(0,4,24,rgba(0,0,0,0.10))
+  plate r p(24,160) s(200,80) fill(rgb(240,244,247))
+"#,
+        &mut scene,
+    );
+
+    assert_no_dsl_errors(&output.compile_output.diagnostics);
+    assert!(output.operation_error.is_none());
+
+    let card = &scene.nodes[&NodeId::from("card")];
+    // rgba(0,137,123,1) is fully opaque -> 6-digit hex.
+    assert!(matches!(
+        &card.fills[0].paint,
+        Paint::Solid { color: Color::Hex { value } } if value == "#00897b"
+    ));
+    // The trailing rgba is recognized as the positional shadow color; 0.10 alpha
+    // -> 0x1a, lowered to #RRGGBBAA.
+    assert_eq!(card.effects.len(), 1);
+    let lumen_core::EffectKind::DropShadow {
+        color, x, y, blur, ..
+    } = &card.effects[0].kind;
+    assert_eq!(
+        color,
+        &Color::Hex {
+            value: "#0000001a".to_owned()
+        }
+    );
+    assert_eq!(*x, 0.0);
+    assert_eq!(*y, 4.0);
+    assert_eq!(*blur, 24.0);
+
+    let plate = &scene.nodes[&NodeId::from("plate")];
+    assert!(matches!(
+        &plate.fills[0].paint,
+        Paint::Solid { color: Color::Hex { value } } if value == "#f0f4f7"
+    ));
+}
+
+#[test]
+fn dsl_idful_shadow_form_is_not_confused_with_positional_alias() {
+    // `shadow(shadow_soft, #000000, ...)` keeps the leading-id grammar: the
+    // first arg is a non-numeric id, so the positional alias must not fire.
+    let mut scene = Scene::new(lumen_core::DocumentId::from("doc_fx"), "Effects");
+    let output = compile_dsl_into_scene(
+        r#"
+page page_square size(400,400,px)
+  card r p(24,24) s(200,120) shadow(shadow_soft,#000000,o(0.2),y(8),blur(24))
+"#,
+        &mut scene,
+    );
+
+    assert_no_dsl_errors(&output.compile_output.diagnostics);
+    let card = &scene.nodes[&NodeId::from("card")];
+    assert_eq!(card.effects.len(), 1);
+    assert_eq!(card.effects[0].id, lumen_core::EffectId::from("shadow_soft"));
+}
+
+#[test]
 fn dsl_basic_stroke_form_keeps_working() {
     let mut scene = Scene::new(lumen_core::DocumentId::from("doc_fx"), "Effects");
     let output = compile_dsl_into_scene(
