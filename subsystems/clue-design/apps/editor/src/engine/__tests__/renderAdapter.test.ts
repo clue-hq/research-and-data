@@ -418,7 +418,111 @@ describe("render adapter", () => {
     expect(descriptor.x).toBeCloseTo(12 * scale, 3);
     expect(descriptor.y).toBeCloseTo(34 * scale, 3);
   });
+
+  // Wave 3 C1: descriptor carries the full shadow stack and an SVG-contour
+  // outline so the CanvasKit renderer can chain shadows and stroke dashes with
+  // export-matching geometry. Konva ignores both.
+  it("carries the full drop-shadow stack in allShadows (Konva fields preserved)", () => {
+    const scene = cloneScene();
+    const page = scene.pages.page_a4;
+    const node: Node = {
+      ...scene.nodes.node_contact_name,
+      effects: [
+        dropShadow("s1", "#000000", 0.2, 0, 4, 12),
+        dropShadow("s2", "#101010", 0.1, 0, 8, 24)
+      ]
+    };
+    scene.nodes[node.id] = node;
+
+    const descriptor = nodeDescriptor(scene, node, page);
+
+    expect(descriptor.allShadows).toHaveLength(2);
+    // Konva-era fields stay: first shadow + count of the rest.
+    expect(descriptor.shadow).toEqual(descriptor.allShadows[0]);
+    expect(descriptor.extraShadowCount).toBe(1);
+    expect(descriptor.allShadows[1].offsetY).toBeCloseTo(8 * unitScaleForTest(page.size.unit), 3);
+  });
+
+  it("emits a rounded-rect contour starting at (r,0) for a uniform corner radius", () => {
+    const scene = cloneScene();
+    const page = scene.pages.page_a4;
+    const scale = unitScaleForTest(page.size.unit);
+    const node: Node = {
+      ...scene.nodes.node_contact_name,
+      kind: { kind: "rect" },
+      size: { width: { kind: "fixed", value: 100 }, height: { kind: "fixed", value: 60 } },
+      corner: { top_left: 8, top_right: 8, bottom_right: 8, bottom_left: 8 },
+      computed: null
+    };
+    scene.nodes[node.id] = node;
+
+    const path = nodeDescriptor(scene, node, page).contourPath!;
+    const r = 8 * scale;
+    // Starts at (r, 0) — the SVG <rect rx> contour start, not drawRRect's.
+    expect(path.startsWith(`M${round3(r)} 0`)).toBe(true);
+    expect(path).toContain("A"); // has corner arcs
+    expect(path.endsWith("Z")).toBe(true);
+  });
+
+  it("squares a non-uniform corner contour (export has no per-corner radii)", () => {
+    const scene = cloneScene();
+    const page = scene.pages.page_a4;
+    const scale = unitScaleForTest(page.size.unit);
+    const node: Node = {
+      ...scene.nodes.node_contact_name,
+      kind: { kind: "rect" },
+      size: { width: { kind: "fixed", value: 100 }, height: { kind: "fixed", value: 60 } },
+      corner: { top_left: 8, top_right: 0, bottom_right: 8, bottom_left: 0 },
+      computed: null
+    };
+    scene.nodes[node.id] = node;
+
+    const path = nodeDescriptor(scene, node, page).contourPath!;
+    expect(path).toBe(`M0 0H${round3(100 * scale)}V${round3(60 * scale)}H0Z`);
+    expect(path).not.toContain("A");
+  });
+
+  it("emits an ellipse contour from the rightmost point", () => {
+    const scene = cloneScene();
+    const page = scene.pages.page_a4;
+    const scale = unitScaleForTest(page.size.unit);
+    const node: Node = {
+      ...scene.nodes.node_contact_name,
+      kind: { kind: "ellipse" },
+      size: { width: { kind: "fixed", value: 80 }, height: { kind: "fixed", value: 40 } },
+      computed: null
+    };
+    scene.nodes[node.id] = node;
+
+    const path = nodeDescriptor(scene, node, page).contourPath!;
+    expect(path.startsWith(`M${round3(80 * scale)} ${round3(20 * scale)}`)).toBe(true);
+    expect(path.endsWith("Z")).toBe(true);
+  });
+
+  it("has no contour for kinds that carry their own geometry (text)", () => {
+    const scene = cloneScene();
+    const descriptor = nodeDescriptor(scene, scene.nodes.node_contact_name, scene.pages.page_a4);
+    expect(descriptor.contourPath).toBeNull();
+  });
 });
+
+function dropShadow(
+  id: string,
+  hex: string,
+  opacity: number,
+  x: number,
+  y: number,
+  blur: number
+): NonNullable<Node["effects"]>[number] {
+  return {
+    id,
+    kind: { kind: "drop_shadow", color: { kind: "hex", value: hex }, opacity, x, y, blur, spread: 0 }
+  };
+}
+
+function round3(value: number): number {
+  return Math.round(value * 1000) / 1000;
+}
 
 function cloneScene(): Scene {
   return JSON.parse(JSON.stringify(minimalScene)) as Scene;

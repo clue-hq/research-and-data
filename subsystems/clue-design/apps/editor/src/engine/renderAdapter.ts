@@ -90,7 +90,24 @@ export interface RenderNodeDescriptor {
   shadow: ShadowDescriptor | null;
   /** Effects beyond the first are not previewed by Konva (approximation). */
   extraShadowCount: number;
+  /**
+   * Wave 3 C1: the full drop-shadow stack in paint order (topmost first).
+   * `shadow`/`extraShadowCount` stay for the Konva path (one shadow/shape);
+   * CanvasKit consumes `allShadows` and chains `MakeDropShadow`. Additive —
+   * the Konva renderer ignores it.
+   */
+  allShadows: ShadowDescriptor[];
   cornerRadius: number | [number, number, number, number];
+  /**
+   * Wave 3 C1: the node's outline as SVG path data in LOCAL space (origin
+   * 0,0), following the SVG exporter's `<rect>`/`<ellipse>` contour
+   * convention — rounded rects start at `(rx, 0)`, non-uniform corners are
+   * squared (export does not support per-corner radii), ellipses start at
+   * the rightmost point. CanvasKit strokes this for dashed strokes instead
+   * of `drawRRect` (whose contour start differs from SVG's, shifting dash
+   * phase). `null` for text/line/vector, which carry their own geometry.
+   */
+  contourPath: string | null;
   slotKeys: string[];
   text?: {
     content: string;
@@ -169,12 +186,14 @@ export function nodeDescriptor(
     ),
     shadow: shadows[0] ?? null,
     extraShadowCount: Math.max(0, shadows.length - 1),
+    allShadows: shadows,
     cornerRadius: [
       node.corner.top_left * scale,
       node.corner.top_right * scale,
       node.corner.bottom_right * scale,
       node.corner.bottom_left * scale
     ],
+    contourPath: contourPathForNode(node, size.width, size.height, scale),
     slotKeys: slotKeysForNode(scene, node.id)
   };
 
@@ -495,6 +514,74 @@ export function nodePositionForRender(
     x: node.transform.x * scale,
     y: node.transform.y * scale
   };
+}
+
+/**
+ * SVG-equivalent outline for a node's box, in LOCAL space (origin 0,0), used
+ * by the CanvasKit renderer to stroke dashed strokes with the same contour
+ * start the SVG export uses. Mirrors the exporter: uniform corner radius →
+ * rounded rect starting at `(r, 0)`; non-uniform or zero → plain rect (export
+ * squares per-corner radii); ellipse → ellipse path from the rightmost point.
+ * `null` for kinds that carry their own geometry (text/line/vector).
+ */
+export function contourPathForNode(
+  node: Node,
+  width: number,
+  height: number,
+  scale: number
+): string | null {
+  switch (node.kind.kind) {
+    case "ellipse":
+      return ellipseContourPath(width, height);
+    case "rect":
+    case "frame":
+    case "group":
+    case "auto_layout":
+    case "image":
+      return rectContourPath(width, height, uniformCornerRadius(node, scale));
+    default:
+      return null;
+  }
+}
+
+/** The single corner radius (scaled) when all four are equal, else 0 — the
+ * export squares non-uniform corners, so the parity contour does too. */
+function uniformCornerRadius(node: Node, scale: number): number {
+  const { top_left, top_right, bottom_right, bottom_left } = node.corner;
+  if (top_left === top_right && top_left === bottom_right && top_left === bottom_left) {
+    return top_left * scale;
+  }
+  return 0;
+}
+
+function rectContourPath(width: number, height: number, radius: number): string {
+  const n = (value: number) => roundForScene(value);
+  const r = Math.min(radius, width / 2, height / 2);
+  if (r <= 0) {
+    return `M0 0H${n(width)}V${n(height)}H0Z`;
+  }
+  return (
+    `M${n(r)} 0` +
+    `H${n(width - r)}` +
+    `A${n(r)} ${n(r)} 0 0 1 ${n(width)} ${n(r)}` +
+    `V${n(height - r)}` +
+    `A${n(r)} ${n(r)} 0 0 1 ${n(width - r)} ${n(height)}` +
+    `H${n(r)}` +
+    `A${n(r)} ${n(r)} 0 0 1 0 ${n(height - r)}` +
+    `V${n(r)}` +
+    `A${n(r)} ${n(r)} 0 0 1 ${n(r)} 0Z`
+  );
+}
+
+function ellipseContourPath(width: number, height: number): string {
+  const n = (value: number) => roundForScene(value);
+  const rx = width / 2;
+  const ry = height / 2;
+  return (
+    `M${n(width)} ${n(ry)}` +
+    `A${n(rx)} ${n(ry)} 0 0 1 0 ${n(ry)}` +
+    `A${n(rx)} ${n(ry)} 0 0 1 ${n(width)} ${n(ry)}Z`
+  );
 }
 
 function normalizeHexForCss(value: string): string {
