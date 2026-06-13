@@ -958,18 +958,49 @@ class LumenDesignTools:
         return json.dumps(payload, indent=2)
 
     def recommend_edit_surface(self, intent: str, context_json: str = "{}") -> str:
-        """Recommend a conservative edit surface for an agent repair or creation step."""
+        """Recommend a conservative edit surface for an agent repair or creation step.
+
+        Precedence is deliberate: a concrete target (a named node/page/slot) means
+        a targeted in-place edit, so it routes to ``structured_ops`` FIRST. Only a
+        genuine asset *generation* request — signalled by an explicit verb such as
+        "generate image"/"vectorize", never the bare word "asset" — routes to the
+        asset tool. This stops an unrelated diagnostic like "font asset brand is
+        not marked embeddable" (which merely contains the substring "asset") from
+        hijacking a text-fit repair toward the image tool.
+        """
         try:
             context = json.loads(context_json)
         except json.JSONDecodeError:
             context = {}
-        lower = f"{intent} {json.dumps(context, sort_keys=True)}".lower()
+        if not isinstance(context, dict):
+            context = {}
+        intent_lower = intent.lower()
         target_keys = ("node_id", "page_id", "slot_id", "slot_key", "target")
-        if any(word in lower for word in ("generate image", "asset", "logo", "vectorize")):
-            recommendation = EditSurfaceRecommendation.asset_tool
-        elif any(key in context for key in target_keys) or any(key in lower for key in target_keys):
+        has_target = any(context.get(key) for key in target_keys)
+        asset_generation = any(
+            phrase in intent_lower
+            for phrase in (
+                "generate image",
+                "generate an image",
+                "generate a image",
+                "image generation",
+                "vectorize",
+                "vectorise",
+                "generate logo",
+                "create logo",
+                "create a logo",
+                "generate qr",
+                "qr code",
+            )
+        )
+        if has_target and not asset_generation:
             recommendation = EditSurfaceRecommendation.structured_ops
-        elif any(word in lower for word in ("create", "compose", "design", "layout", "draft")):
+        elif asset_generation:
+            recommendation = EditSurfaceRecommendation.asset_tool
+        elif any(
+            word in intent_lower
+            for word in ("create", "compose", "design", "layout", "draft")
+        ):
             recommendation = EditSurfaceRecommendation.dsl
         else:
             recommendation = EditSurfaceRecommendation.external_planner

@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+import copy
 import json
-from typing import Protocol
+from typing import Optional, Protocol
 
 from .schemas import (
     AgentIteration,
@@ -56,6 +57,13 @@ class LumenQualityLoop:
         self.reviewer = reviewer
         self.previous_feedback: list[dict] = []
         self.state = AgentRunState(run_id=tools.run_id, user_request=tools.prompt)
+        # Snapshot of the most recent scene that compiled cleanly (and is
+        # therefore renderable). A later repair iteration can author a
+        # destructive block — e.g. delete-then-recreate — whose compile halts
+        # partway, leaving `tools.scene` stripped of the good design. We restore
+        # this snapshot when the run fails so the editor always receives the best
+        # renderable draft on the canvas instead of a wiped scene.
+        self.best_scene: Optional[dict] = None
 
     def run(self, user_request: str) -> dict:
         knowledge = json.loads(self.tools.load_knowledge(user_request))
@@ -101,6 +109,33 @@ class LumenQualityLoop:
                 payload={"dsl": source},
             )
 
+            # Surgical-repair enforcement. When the previous gate asked for a
+            # targeted in-place repair, the author must return modify-only DSL
+            # (`#<id> ...` lines). A block that re-declares the page, deletes
+            # nodes, or re-authors the scene is REJECTED here — before it ever
+            # reaches the compiler — so a destructive repair can never strip the
+            # existing design from the scene. The author retries with corrective
+            # feedback; `tools.scene` is left untouched.
+            repair_context = block_request.repair_context
+            if (
+                repair_context
+                and repair_context.get("surgical_repair")
+                and not is_surgical_dsl(source)
+            ):
+                feedback = surgical_violation_feedback(repair_context, source)
+                self.previous_feedback.append(feedback)
+                iteration_record.stop_reason = StopReason.compile_failed
+                self.tools.record(
+                    "coordinator",
+                    "dsl_repair_not_surgical",
+                    input_summary=json.dumps(
+                        repair_context.get("surgical_target") or {}
+                    ),
+                    output_summary=source[:300],
+                    payload={"rejected_source": source[:2000]},
+                )
+                continue
+
             compile_result = json.loads(self.tools.compile_dsl_block(source))
             compile_summary = compile_result.get("compile", {})
             iteration_record.compile_summary = CompileSummary.model_validate(compile_summary)
@@ -119,17 +154,47 @@ class LumenQualityLoop:
                     failing_source=source,
                     exact_feedback=json.dumps(compile_summary, indent=2),
                 )
+                # Keep surgical mode CONTINUOUS: a compile error often carries no
+                # node target (its subject is the failing line, not a node), which
+                # would otherwise drop us out of surgical enforcement mid-repair.
+                # If we were already repairing surgically and the block that just
+                # failed was itself modify-only, the fix stays surgical.
+                prior_surgical = bool(
+                    block_request.repair_context
+                    and block_request.repair_context.get("surgical_repair")
+                )
+                surgical = repair_is_surgical(recommendation, target) or (
+                    prior_surgical and is_surgical_dsl(source)
+                )
+                if surgical:
+                    # A surgical repair is, by definition, a checked in-place edit.
+                    recommendation = "structured_ops"
+                if surgical and not target.get("node_id"):
+                    # Preserve the node we were repairing so enforcement + feedback
+                    # keep pointing at it.
+                    prior_target = (block_request.repair_context or {}).get(
+                        "surgical_target"
+                    ) or {}
+                    if prior_target.get("node_id"):
+                        target = prior_target
                 feedback = {
                     "kind": "compile",
                     "feedback": context.model_dump(mode="json"),
                     "target": target,
                     "recommended_edit_surface": recommendation,
-                    "authoring_constraints": [
-                        "Do not recreate an existing page unless the coordinator explicitly requests a whole-scene replacement.",
-                        "Do not re-emit existing node IDs as new elements.",
-                        "Repair only the failing line or targeted existing object.",
-                    ],
+                    "authoring_constraints": (
+                        list(SURGICAL_AUTHORING_CONSTRAINTS)
+                        if surgical
+                        else [
+                            "Do not recreate an existing page unless the coordinator explicitly requests a whole-scene replacement.",
+                            "Do not re-emit existing node IDs as new elements.",
+                            "Repair only the failing line or targeted existing object.",
+                        ]
+                    ),
                 }
+                if surgical:
+                    feedback["surgical_repair"] = True
+                    feedback["surgical_target"] = target
                 repair_request = json.loads(
                     self.tools.create_repair_request(
                         exact_feedback=json.dumps(feedback, indent=2),
@@ -149,6 +214,11 @@ class LumenQualityLoop:
                 self.previous_feedback.append(feedback)
                 iteration_record.stop_reason = StopReason.compile_failed
                 continue
+
+            # Compile succeeded: the scene is renderable even if later quality
+            # gates (preflight/critic) reject it. Remember it as the best draft
+            # so a subsequent failed repair cannot strip the design from canvas.
+            self.best_scene = copy.deepcopy(self.tools.scene)
 
             preflight_result = json.loads(self.tools.preflight_design())
             preflight_summary = preflight_result.get("preflight", {})
@@ -176,19 +246,27 @@ class LumenQualityLoop:
                         json.dumps(target),
                     )
                 ).get("recommendation", "dsl")
+                surgical = repair_is_surgical(recommendation, target)
                 feedback = {
                     "kind": "preflight",
                     "feedback": preflight_summary,
                     "debug_preview": debug_export_summary,
                     "target": target,
                     "recommended_edit_surface": recommendation,
-                    "authoring_constraints": [
-                        "Do not recreate an existing page unless full_replace is explicitly requested.",
-                        "Do not re-emit existing node IDs as new elements.",
-                        "Repair only the targeted node/page/slot when a target is present.",
-                        "If structured operations are unavailable in this authoring step, emit the smallest DSL continuation that avoids duplicate IDs.",
-                    ],
+                    "authoring_constraints": (
+                        list(SURGICAL_AUTHORING_CONSTRAINTS)
+                        if surgical
+                        else [
+                            "Do not recreate an existing page unless full_replace is explicitly requested.",
+                            "Do not re-emit existing node IDs as new elements.",
+                            "Repair only the targeted node/page/slot when a target is present.",
+                            "If structured operations are unavailable in this authoring step, emit the smallest DSL continuation that avoids duplicate IDs.",
+                        ]
+                    ),
                 }
+                if surgical:
+                    feedback["surgical_repair"] = True
+                    feedback["surgical_target"] = target
                 repair_request = json.loads(
                     self.tools.create_repair_request(
                         exact_feedback=json.dumps(feedback, indent=2),
@@ -334,6 +412,10 @@ class LumenQualityLoop:
 
         self.state.status = "failed"
         self.state.stop_reason = StopReason.max_iterations_reached
+        # A destructive final repair may have left `tools.scene` stripped. Restore
+        # the best scene that compiled this run so the editor renders that draft
+        # on the canvas for inspection instead of an empty scene.
+        self._restore_best_scene()
         return json.loads(
             self.tools.finalize_run(
                 "failed",
@@ -344,6 +426,83 @@ class LumenQualityLoop:
                 ),
             )
         )
+
+    def _restore_best_scene(self) -> None:
+        """Replace the live scene with the best clean draft, if we captured one.
+
+        Repairs can author a delete-then-recreate block whose compile halts
+        partway and leaves `tools.scene` partially mutated. Restoring keeps the
+        last renderable design available to the editor as a failed-run draft.
+        """
+        if self.best_scene is not None:
+            self.tools.scene = copy.deepcopy(self.best_scene)
+
+
+# Constraints handed to the author for a targeted, modify-only repair. They are
+# also enforced mechanically by `is_surgical_dsl` — the prose tells the model
+# what to do; the gate guarantees the scene survives if it doesn't.
+SURGICAL_AUTHORING_CONSTRAINTS = [
+    "This is a TARGETED repair. Emit ONLY `#<node_id> property(...)` modify lines "
+    "that edit existing nodes (the failing node or its immediate container).",
+    "Do NOT emit any `page` line, any `delete(...)`, `parent(...)`, `clone(...)`, "
+    "or `replace(...)` directive, and do NOT re-declare an existing node as a new "
+    "element. Re-authoring the scene is forbidden and will be rejected unapplied.",
+    "Change the smallest set of properties that clears the diagnostic. For text "
+    "overflow: enlarge the box (`#node s(w,h)`), raise `max_lines`, lower the "
+    "font size, or make the container taller (`#container s(w,h)`).",
+]
+
+
+def repair_is_surgical(recommendation: str, target: dict) -> bool:
+    """A targeted property/fit repair we enforce as modify-only: a concrete node
+    target routed to checked/structured edits."""
+    return recommendation == "structured_ops" and bool((target or {}).get("node_id"))
+
+
+def is_surgical_dsl(source: str) -> bool:
+    """True when every meaningful line is a `#<ref> ...` modify line.
+
+    Such a block edits existing objects in place and structurally cannot delete,
+    re-declare, or re-`page` the scene. Blank lines and `//` checkpoints are
+    ignored; a comment (`# text`, with a space after `#`) is not a modify ref. A
+    block with no modify line at all is not surgical.
+    """
+    saw_modify = False
+    for raw in source.splitlines():
+        line = raw.strip()
+        if not line or line.startswith("//"):
+            continue
+        if not line.startswith("#"):
+            return False  # page / element / delete / parent line → not surgical
+        if len(line) < 2 or line[1].isspace():
+            return False  # bare '#' or '# comment' → not a modify ref
+        saw_modify = True
+    return saw_modify
+
+
+def surgical_violation_feedback(prior: dict, rejected_source: str) -> dict:
+    """Feedback for a rejected non-surgical repair: tell the author exactly why
+    it was dropped and re-issue the modify-only constraints, keeping the repair
+    marked surgical so the next attempt is enforced too."""
+    target = prior.get("surgical_target") or prior.get("target") or {}
+    node_id = (target or {}).get("node_id")
+    return {
+        "kind": "surgical_violation",
+        "feedback": (
+            "Your previous repair was REJECTED and NOT applied because it was not "
+            "a modify-only edit. A targeted repair must contain ONLY "
+            "`#<node_id> property(...)` modify lines that edit existing nodes. You "
+            "emitted a page line, a delete/parent/clone/replace directive, or a new "
+            f"element declaration. Re-author nothing. Fix node `{node_id}` (or its "
+            "immediate container) using the smallest set of `#`-modify lines."
+        ),
+        "target": target,
+        "surgical_repair": True,
+        "surgical_target": target,
+        "recommended_edit_surface": "structured_ops",
+        "authoring_constraints": list(SURGICAL_AUTHORING_CONSTRAINTS),
+        "rejected_source": rejected_source[:500],
+    }
 
 
 def tool_has_blocking_failure(summary: dict) -> bool:

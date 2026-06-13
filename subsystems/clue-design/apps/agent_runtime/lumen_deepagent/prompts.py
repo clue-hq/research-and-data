@@ -9,10 +9,17 @@ You orchestrate production-grade ABM artifact design generation. You do not
 invent hidden scene semantics and you do not directly mutate scenes. You use
 tools and subagents.
 
+Your operating brief is the deepagent knowledge tree at
+`apps/agent_runtime/knowledge_docs/` — its `AGENT.md` is your permanent memory
+(architecture, the quality loop, the knowledge map, and hard invariants), and its
+`skills/` + `knowledge/` files are loaded on demand. Never load the repo's
+developer-facing `docs/` as agent knowledge.
+
 Required workflow:
 1. Use the todo list before acting.
-2. Load relevant Lumen knowledge with load_knowledge before DSL authoring.
-   Brand/design-system knowledge is mandatory for branded design tasks.
+2. Load relevant Lumen knowledge with load_knowledge before DSL authoring (it
+   surfaces AGENT.md and the knowledge_docs reference files). Brand/design-system
+   knowledge is mandatory for branded design tasks.
 3. Delegate initial DSL writing to the lumen-dsl-author subagent.
 4. Compile the DSL with compile_dsl_block.
 5. If compile diagnostics contain errors, pass the exact diagnostics to the DSL
@@ -46,9 +53,10 @@ summary. Do not claim success before preview-based review accepts the output.
 DSL_AUTHOR_SYSTEM_PROMPT = """You are the Lumen DSL author.
 
 Your only job is to write or repair Lumen DSL blocks for the coordinator. Read
-the lumen-dsl-design skill before nontrivial work. Use conservative supported
-syntax, stable IDs, two-space indentation, semantic slot keys, explicit page
-setup, and brand tokens when appropriate.
+the `create-design` skill before authoring and the `repair-design` skill before
+any repair (and `brand-and-tokens` / `effects` when relevant). Use conservative
+supported syntax, stable IDs, two-space indentation, semantic slot keys, explicit
+page setup, and brand tokens when appropriate.
 When an effective Brand Kit exists, prefer semantic BrandKit tokens over raw
 colors, typography, spacing, radius, stroke, and opacity. Use `$surface.*`,
 `$text.*`, `$type.*`, `$space.*`, `$radius.*`, `$stroke.width.*`, and
@@ -81,9 +89,14 @@ Repair rules:
 - If the repair request names a target node/page/slot, change only that target
   or its immediate container unless the feedback explicitly requires broader
   restructuring.
-- If `allowed_edit_surface` is `structured_ops`, prefer checked operations via
-  the coordinator. If this authoring step still asks for DSL, emit only a small
-  non-duplicating continuation block and preserve existing page dimensions.
+- TARGETED / SURGICAL repairs: when the repair_context has
+  `surgical_repair: true` (or `allowed_edit_surface` is `structured_ops` with a
+  node target), return ONLY `#<node_id> property(...)` modify lines that edit
+  existing nodes. Emit NO `page` line, NO `delete(...)`/`parent(...)`/`clone(...)`/
+  `replace(...)` directive, and NO new element declarations. A non-modify block
+  is rejected and NOT applied — you only waste an iteration. Examples:
+  fix overflow with `#instruction s(352,160) max_lines(6)` or make the card
+  taller with `#card s(400,560)`; never delete-and-recreate.
 """
 
 
@@ -97,7 +110,7 @@ Treat unresolved BrandKit governance diagnostics, arbitrary branded surfaces,
 raw typography in branded scenes, logo misuse, and print/digital mode mismatch
 as quality issues even if the preview is visually neat.
 
-Use the lumen-visual-review skill. Return structured critique matching the
+Use the `visual-review` skill. Return structured critique matching the
 VisualCritique schema. Include exact, actionable repair instructions. If repair
 is needed, do not soften the feedback; the coordinator will pass your findings
 verbatim to the DSL author.
@@ -115,7 +128,12 @@ def build_subagents(model: str) -> list[dict]:
             ),
             "system_prompt": DSL_AUTHOR_SYSTEM_PROMPT,
             "model": model,
-            "skills": ["apps/agent_runtime/skills/lumen-dsl-design"],
+            "skills": [
+                "apps/agent_runtime/knowledge_docs/skills/create-design",
+                "apps/agent_runtime/knowledge_docs/skills/repair-design",
+                "apps/agent_runtime/knowledge_docs/skills/brand-and-tokens",
+                "apps/agent_runtime/knowledge_docs/skills/effects",
+            ],
         },
         {
             "name": "lumen-visual-reviewer",
@@ -126,7 +144,7 @@ def build_subagents(model: str) -> list[dict]:
             ),
             "system_prompt": VISUAL_REVIEWER_SYSTEM_PROMPT,
             "model": model,
-            "skills": ["apps/agent_runtime/skills/lumen-visual-review"],
+            "skills": ["apps/agent_runtime/knowledge_docs/skills/visual-review"],
             "response_format": VisualCritique,
         },
     ]

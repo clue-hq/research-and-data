@@ -7,37 +7,43 @@ from typing import Iterable, List
 from .schemas import KnowledgeSnippet
 
 
+# The deepagent's knowledge system lives entirely under `knowledge_docs/` — a
+# self-contained tree (AGENT.md + per-skill SKILL.md + topic reference files)
+# authored for the agent. The repo's top-level `docs/` is developer/human-facing
+# and is intentionally NOT loaded here.
+KNOWLEDGE_DOCS_ROOT = "apps/agent_runtime/knowledge_docs"
+
 PRIMARY_KNOWLEDGE_PATHS = [
-    "apps/agent_runtime/knowledge/lumen-dsl/authoring.md",
-    "apps/agent_runtime/knowledge/design/layout-recipes.md",
-    "apps/agent_runtime/knowledge/design/typography-and-composition.md",
-    "apps/agent_runtime/knowledge/design-systems/brand-tokens.md",
-    "apps/agent_runtime/knowledge/design-systems/token-taxonomy.md",
-    "apps/agent_runtime/knowledge/design-systems/brand-generation.md",
-    "apps/agent_runtime/knowledge/design-systems/brand-validation.md",
-    "apps/agent_runtime/knowledge/design-systems/modes.md",
-    "apps/agent_runtime/knowledge/design-systems/logo-and-assets.md",
-    "apps/agent_runtime/knowledge/design-systems/brand-fit-critique.md",
-    "apps/agent_runtime/knowledge/assets/asset-placement.md",
-    "apps/agent_runtime/knowledge/export/preview-quality.md",
-    "apps/agent_runtime/knowledge/agent-loop/authoring-and-repair.md",
-    "apps/agent_runtime/knowledge/future/scaffolds.md",
+    f"{KNOWLEDGE_DOCS_ROOT}/AGENT.md",
+    f"{KNOWLEDGE_DOCS_ROOT}/knowledge/lumen-dsl/grammar.md",
+    f"{KNOWLEDGE_DOCS_ROOT}/knowledge/lumen-dsl/colors.md",
+    f"{KNOWLEDGE_DOCS_ROOT}/knowledge/lumen-dsl/layout.md",
+    f"{KNOWLEDGE_DOCS_ROOT}/knowledge/lumen-dsl/text.md",
+    f"{KNOWLEDGE_DOCS_ROOT}/knowledge/lumen-dsl/directives.md",
+    f"{KNOWLEDGE_DOCS_ROOT}/knowledge/lumen-dsl/diagnostics.md",
+    f"{KNOWLEDGE_DOCS_ROOT}/knowledge/design/layout-recipes.md",
+    f"{KNOWLEDGE_DOCS_ROOT}/knowledge/design/typography-and-composition.md",
+    f"{KNOWLEDGE_DOCS_ROOT}/knowledge/design-systems/token-taxonomy.md",
+    f"{KNOWLEDGE_DOCS_ROOT}/knowledge/design-systems/brand-kits.md",
+    f"{KNOWLEDGE_DOCS_ROOT}/knowledge/design-systems/brand-validation.md",
+    f"{KNOWLEDGE_DOCS_ROOT}/knowledge/design-systems/modes.md",
+    f"{KNOWLEDGE_DOCS_ROOT}/knowledge/design-systems/logo-and-assets.md",
+    f"{KNOWLEDGE_DOCS_ROOT}/knowledge/design-systems/brand-fit-critique.md",
+    f"{KNOWLEDGE_DOCS_ROOT}/knowledge/assets/asset-placement.md",
+    f"{KNOWLEDGE_DOCS_ROOT}/knowledge/export/preview-quality.md",
+    f"{KNOWLEDGE_DOCS_ROOT}/knowledge/loop/authoring-and-repair.md",
 ]
 
+# Product specs are optional background context. The forbidden `docs/` tree is
+# never listed here.
 SECONDARY_KNOWLEDGE_PATHS = [
     "reference_docs/ABM-Design-Engine-Temporary-Spec.md",
     "reference_docs/Brilliant-Reverse-Engineering-Report.md",
     "reference_docs/Brilliant-vs-Lumen-Product-Gap-Analysis.md",
-    "docs/dsl-compiler.md",
-    "docs/agents-design-loop.md",
-    "docs/preflight-pipeline.md",
-    "docs/slots-layout.md",
-    "docs/assets-pipeline.md",
-    "docs/phase4-integration.md",
 ]
 
 DEFAULT_KNOWLEDGE_PATHS = PRIMARY_KNOWLEDGE_PATHS + SECONDARY_KNOWLEDGE_PATHS
-REQUIRED_TASK_CATEGORIES = ["lumen-dsl", "design", "design-systems", "agent-loop"]
+REQUIRED_TASK_CATEGORIES = ["lumen-dsl", "design", "design-systems", "loop"]
 
 
 def read_knowledge(
@@ -123,9 +129,14 @@ def score_text(text: str, terms: list[str], rel_path: str) -> int:
 
 
 def category_for(rel_path: str) -> str:
+    if rel_path.endswith("knowledge_docs/AGENT.md"):
+        return "agent"
+    docs_marker = "apps/agent_runtime/knowledge_docs/knowledge/"
+    if docs_marker in rel_path:
+        return rel_path.split(docs_marker, 1)[1].split("/", 1)[0]
+    # Legacy layout (still recognized so explicit-path callers keep working).
     if "apps/agent_runtime/knowledge/" in rel_path:
-        after_root = rel_path.split("apps/agent_runtime/knowledge/", 1)[1]
-        return after_root.split("/", 1)[0]
+        return rel_path.split("apps/agent_runtime/knowledge/", 1)[1].split("/", 1)[0]
     if rel_path.startswith("docs/"):
         return "product-doc"
     return "reference"

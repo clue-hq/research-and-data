@@ -1,0 +1,73 @@
+# Lumen DSL — Layout, Sizing & Auto-Layout
+
+Prefer **systematic** structure (auto-layout with consistent gaps) over hand-placed
+`p(x,y)` coordinates. Hand placement is fine for a few absolute elements; it does
+not survive content that varies by account/contact.
+
+## Sizing tokens (the `s(w,h)` args)
+
+| Token | Meaning |
+|-------|---------|
+| `<number>` | fixed px |
+| `hug` | size to fit content (use for text whose copy may vary) |
+| `fill` | expand to fill the parent's available main-axis space |
+| `fill(weight)` / `fill:weight` | weighted fill among siblings |
+| `$token` | a `$space.*`/`$radius.*`-style dimension token |
+
+Rules of thumb:
+- Use `hug` height for any text that can wrap or vary.
+- Use `fill` only inside a layout context that can resolve it (an `al` container,
+  or a frame with a definite cross-axis).
+- Keep text boxes **wide enough for the real copy**; a too-narrow box forces extra
+  lines and triggers overflow (`LUMV0903`).
+
+## Auto-layout
+
+Put `al(...)` on an `autolayout`/`al` container. Children flow along the main
+axis with a uniform gap.
+
+```text
+stack al(v, x(s), g(18), pad(24)) p(64,64) s(520,hug) fill($surface.card) rd($radius.lg)
+  headline text "Pipeline-ready outreach" p(0,0) s(fill,hug) style($type.headline) wrap_text(true) max_lines(2)
+  body     text "A concise, account-specific message." p(0,0) s(fill,hug) style($type.body) wrap_text(true) max_lines(3)
+nav  al(h, x(sb), y(c), g(16), pad(24)) p(40,40) s(1000,hug)
+cta  al(h, x(c),  y(c), pad(12,24))     p(64,860) s(220,56) fill($surface.inverse) rd($radius.md)
+```
+
+Auto-layout parts:
+
+| Part | Values | Meaning |
+|------|--------|---------|
+| direction | `v` (column) · `h` (row) | main axis (unknown → `LUMD0244`) |
+| `x(anchor)` | `s`/`start`, `c`/`center`, `e`/`end`, `sb`/`space_between`, `st`/`stretch` | main-axis distribution / cross-axis |
+| `y(anchor)` | same set | the other axis |
+| `g(n)` | number / `$space.*` | gap between children |
+| `pad(a)` · `pad(v,h)` · `pad(t,r,b,l)` | 1/2/4 values | padding (other arities → `LUMD0222`) |
+| `grow(n)` | number | child grow factor inside a parent layout |
+| `wrap(bool)` | | wrap to multiple lines |
+
+Anchor cheat-sheet:
+- `x(sb)` — nav / proof rows (push items to the ends).
+- `x(c), y(c)` — centered buttons (this is how you center a label inside a button).
+- `x(s)` — left-aligned content stacks.
+- `stretch` — only on the cross axis, and only when the container has definite
+  space on that axis.
+
+## Vertical centering (there is no `valign`)
+
+Text supports only **horizontal** alignment — the 4th arg of
+`font(family,size,weight,align)` (`left`/`center`/`right`/`justify`). To vertically
+center text inside a band, make the band an auto-layout and use `y(c)`:
+
+```text
+banner al(h, x(c), y(c), pad(0,24)) p(0,0) s(595,80) fill($surface.brand)
+  title text "Appointment Reminder" p(0,0) s(fill,hug) style($type.headline) font("Inter",22,700,center)
+```
+
+`valign(...)` / `text_align(...)` do not exist (→ `LUMD0212 unknown property`).
+
+## Backgrounds
+
+Put the background **on the container frame** (`fill(...)`), not a separate
+decorative rectangle, when the background belongs to that container. Use a
+full-page background frame only for the page canvas itself.

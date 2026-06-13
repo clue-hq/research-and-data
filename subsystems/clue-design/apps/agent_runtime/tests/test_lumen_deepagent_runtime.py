@@ -22,7 +22,7 @@ if load_dotenv is not None:
 from lumen_deepagent.config import AgentRuntimeConfig
 from lumen_deepagent.eval_traces import summarize_trace_dir
 from lumen_deepagent.knowledge import read_knowledge, read_task_knowledge
-from lumen_deepagent.loop import LumenQualityLoop
+from lumen_deepagent.loop import LumenQualityLoop, is_surgical_dsl, repair_is_surgical
 from lumen_deepagent.prompts import build_subagents
 from lumen_deepagent.providers import (
     compact_preview_payload,
@@ -348,6 +348,98 @@ class FakePreflightErrorOnceCoreClient(FakeCoreClient):
         return super().preflight_scene(scene, brand_kit)
 
 
+class FakeAlwaysPreflightErrorCoreClient(FakeCoreClient):
+    """Compiles a full scene; preflight ALWAYS reports a blocking error on node
+    `headline`. Counts compile calls so a test can prove that a rejected
+    non-surgical repair never reaches the compiler."""
+
+    def __init__(self, repo_root: Path) -> None:
+        super().__init__(repo_root)
+        self.compile_calls = 0
+
+    def compile_dsl_into_scene(self, scene, source: str, dsl_session=None):
+        self.compile_calls += 1
+        return super().compile_dsl_into_scene(scene, source, dsl_session=dsl_session)
+
+    def preflight_scene(self, scene, brand_kit):
+        return {
+            "scene": scene,
+            "diagnostics": [
+                {
+                    "severity": "error",
+                    "code": "LUMV0903",
+                    "message": "text node headline exceeds available height",
+                    "subject": {"kind": "node", "id": "headline"},
+                    "hint": "Use hug height or reduce the headline font size.",
+                }
+            ],
+            "preflight": {
+                "has_errors": True,
+                "brand_ref_operations": [],
+                "token_operations": [],
+                "layout_operations": [],
+            },
+        }
+
+
+class FakeSurgicalCarryForwardCoreClient(FakeCoreClient):
+    """iter1 compiles; preflight errors once on node `headline` (→ surgical);
+    iter2's modify-only block fails to COMPILE with a node-less diagnostic. Surgical
+    mode must carry forward so a later destructive block is still rejected."""
+
+    def __init__(self, repo_root: Path) -> None:
+        super().__init__(repo_root)
+        self.compile_calls = 0
+        self.preflight_calls = 0
+
+    def compile_dsl_into_scene(self, scene, source: str, dsl_session=None):
+        self.compile_calls += 1
+        if self.compile_calls == 2:
+            return {
+                "scene": scene,
+                "applied_operations": 0,
+                "dsl": {
+                    "compile_output": {
+                        "operations": [],
+                        "diagnostics": [
+                            {
+                                "severity": "error",
+                                "code": "LUMD0230",
+                                "message": "rd(...) expects 1 argument(s), got 4",
+                            }
+                        ],
+                        "halted_at": {"code": "LUMD0230", "line": 1},
+                    },
+                    "operation_error": None,
+                    "session_snapshot": None,
+                },
+            }
+        return super().compile_dsl_into_scene(scene, source, dsl_session=dsl_session)
+
+    def preflight_scene(self, scene, brand_kit):
+        self.preflight_calls += 1
+        if self.preflight_calls == 1:
+            return {
+                "scene": scene,
+                "diagnostics": [
+                    {
+                        "severity": "error",
+                        "code": "LUMV0903",
+                        "message": "text node headline exceeds available height",
+                        "subject": {"kind": "node", "id": "headline"},
+                        "hint": "Use hug height or reduce the font size.",
+                    }
+                ],
+                "preflight": {
+                    "has_errors": True,
+                    "brand_ref_operations": [],
+                    "token_operations": [],
+                    "layout_operations": [],
+                },
+            }
+        return super().preflight_scene(scene, brand_kit)
+
+
 class FakePngCoreClient(FakeCoreClient):
     def export_preview(
         self, scene, export_format="svg", page_ids=None, asset_store_root=None
@@ -430,7 +522,17 @@ def test_subagents_have_isolated_skills_and_structured_reviewer_output():
         agent for agent in subagents if agent["name"] == "lumen-visual-reviewer"
     )
     assert reviewer["response_format"] is VisualCritique
-    assert reviewer["skills"] == ["apps/agent_runtime/skills/lumen-visual-review"]
+    assert reviewer["skills"] == [
+        "apps/agent_runtime/knowledge_docs/skills/visual-review"
+    ]
+    author = next(
+        agent for agent in subagents if agent["name"] == "lumen-dsl-author"
+    )
+    # The author's procedures are separated by concern under knowledge_docs/skills.
+    assert "apps/agent_runtime/knowledge_docs/skills/create-design" in author["skills"]
+    assert "apps/agent_runtime/knowledge_docs/skills/repair-design" in author["skills"]
+    # The deepagent must not depend on the developer-facing docs/ tree.
+    assert all("/skills/" in skill for skill in author["skills"])
 
 
 def test_deepagents_factory_wires_full_phase_a_tool_surface(tmp_path: Path, monkeypatch):
@@ -511,10 +613,10 @@ def test_knowledge_retrieval_returns_provenance(tmp_path: Path):
 
 def test_task_knowledge_prioritizes_lumen_docs(tmp_path: Path):
     paths = [
-        "apps/agent_runtime/knowledge/lumen-dsl/authoring.md",
-        "apps/agent_runtime/knowledge/design/layout-recipes.md",
-        "apps/agent_runtime/knowledge/design-systems/brand-validation.md",
-        "apps/agent_runtime/knowledge/agent-loop/authoring-and-repair.md",
+        "apps/agent_runtime/knowledge_docs/knowledge/lumen-dsl/grammar.md",
+        "apps/agent_runtime/knowledge_docs/knowledge/design/layout-recipes.md",
+        "apps/agent_runtime/knowledge_docs/knowledge/design-systems/brand-validation.md",
+        "apps/agent_runtime/knowledge_docs/knowledge/loop/authoring-and-repair.md",
         "reference_docs/Brilliant-Reverse-Engineering-Report.md",
     ]
     for rel_path in paths:
@@ -527,13 +629,16 @@ def test_task_knowledge_prioritizes_lumen_docs(tmp_path: Path):
 
     snippets = read_task_knowledge(tmp_path, "Create a square ad")
 
-    categories = {snippet.category for snippet in snippets[:3]}
-    assert {"lumen-dsl", "design", "design-systems", "agent-loop"}.issubset(
+    assert {"lumen-dsl", "design", "design-systems", "loop"}.issubset(
         {snippet.category for snippet in snippets[:4]}
     )
-    assert all("apps/agent_runtime/knowledge" in snippet.path for snippet in snippets[:4])
+    assert all(
+        "apps/agent_runtime/knowledge_docs/knowledge" in snippet.path
+        for snippet in snippets[:4]
+    )
     assert any(
-        snippet.path == "apps/agent_runtime/knowledge/design-systems/brand-validation.md"
+        snippet.path
+        == "apps/agent_runtime/knowledge_docs/knowledge/design-systems/brand-validation.md"
         for snippet in snippets[:4]
     )
 
@@ -541,10 +646,10 @@ def test_task_knowledge_prioritizes_lumen_docs(tmp_path: Path):
 def test_quality_loop_passes_knowledge_excerpts_to_author(tmp_path: Path, monkeypatch):
     monkeypatch.setattr("lumen_deepagent.tools.CoreClient", FakeCoreClient)
     paths = [
-        "apps/agent_runtime/knowledge/lumen-dsl/authoring.md",
-        "apps/agent_runtime/knowledge/design/layout-recipes.md",
-        "apps/agent_runtime/knowledge/design-systems/token-taxonomy.md",
-        "apps/agent_runtime/knowledge/agent-loop/authoring-and-repair.md",
+        "apps/agent_runtime/knowledge_docs/knowledge/lumen-dsl/grammar.md",
+        "apps/agent_runtime/knowledge_docs/knowledge/design/layout-recipes.md",
+        "apps/agent_runtime/knowledge_docs/knowledge/design-systems/token-taxonomy.md",
+        "apps/agent_runtime/knowledge_docs/knowledge/loop/authoring-and-repair.md",
     ]
     for rel_path in paths:
         path = tmp_path / rel_path
@@ -1062,7 +1167,9 @@ def test_quality_loop_repairs_after_preflight_failure(tmp_path: Path, monkeypatc
     monkeypatch.setattr("lumen_deepagent.tools.CoreClient", FakePreflightErrorOnceCoreClient)
     config = runtime_config(tmp_path, max_iterations=3)
     tools = LumenDesignTools(config, "Create a square LinkedIn ad")
-    author = ScriptedAuthor(["page page_test", "# repair"])
+    # A preflight error on a named node drives a SURGICAL repair: the author must
+    # answer with a modify-only `#<node> ...` line, not a re-author.
+    author = ScriptedAuthor(["page page_test", "#headline s(400,80)"])
     reviewer = ScriptedReviewer(
         [VisualCritique(accepted=True, summary="Preview is now acceptable.")]
     )
@@ -1094,6 +1201,122 @@ def test_quality_loop_repairs_after_preflight_failure(tmp_path: Path, monkeypatc
         .splitlines()
     ]
     assert "debug_preview_exported" in events
+
+
+def test_is_surgical_dsl_classifies_modify_only_blocks():
+    # Modify-only blocks (edit existing nodes in place) are surgical.
+    assert is_surgical_dsl("#headline s(400,80)")
+    assert is_surgical_dsl("#card s(400,560)\n#title font_size(20)")
+    assert is_surgical_dsl("// checkpoint\n#node o(0.5)")
+    # Anything that can delete / re-declare / re-page the scene is NOT surgical.
+    assert not is_surgical_dsl("page page_a4 preset(a4,portrait)")
+    assert not is_surgical_dsl("delete(card)\n#card s(1,1)")
+    assert not is_surgical_dsl("parent(card, page:page_a4)")
+    assert not is_surgical_dsl("hero fr p(0,0) s(10,10)")  # element declaration
+    assert not is_surgical_dsl("# just a comment")  # comment, not a modify ref
+    assert not is_surgical_dsl("")  # no modify line at all
+    assert repair_is_surgical("structured_ops", {"node_id": "headline"})
+    assert not repair_is_surgical("dsl", {"node_id": "headline"})
+    assert not repair_is_surgical("structured_ops", {"page_id": "page_a4"})
+
+
+def test_targeted_overflow_repair_routes_to_structured_ops_despite_font_asset_warning(
+    tmp_path: Path, monkeypatch
+):
+    # The preflight bundle for a text overflow also carries an unrelated
+    # "font asset" warning. The bare word "asset" must NOT route a node-targeted
+    # text-fit repair to the asset tool — it routes to structured_ops.
+    monkeypatch.setattr("lumen_deepagent.tools.CoreClient", FakeCoreClient)
+    tools = LumenDesignTools(runtime_config(tmp_path), "Design an appointment card")
+    intent = (
+        "repair targeted preflight diagnostics: LUMV0903 on instruction: text node "
+        "instruction exceeds available height Use hug height. | LUMB0613 on document: "
+        "font asset brand is not marked embeddable for export"
+    )
+    overflow = json.loads(
+        tools.recommend_edit_surface(intent, json.dumps({"node_id": "instruction"}))
+    )
+    assert overflow["recommendation"] == "structured_ops"
+    # A genuine asset-generation intent still routes to the asset tool.
+    gen = json.loads(tools.recommend_edit_surface("generate image for the hero panel", "{}"))
+    assert gen["recommendation"] == "asset_tool"
+    # A no-target compose intent routes to DSL authoring.
+    compose = json.loads(tools.recommend_edit_surface("design a square ad layout", "{}"))
+    assert compose["recommendation"] == "dsl"
+
+
+def test_surgical_repair_rejects_destructive_block_without_touching_scene(
+    tmp_path: Path, monkeypatch
+):
+    # A preflight error on a named node drives a surgical repair. If the author
+    # answers with a destructive re-author (delete + re-page), the loop must
+    # REJECT it before compile so the existing design is never stripped.
+    monkeypatch.setattr(
+        "lumen_deepagent.tools.CoreClient", FakeAlwaysPreflightErrorCoreClient
+    )
+    config = runtime_config(tmp_path, max_iterations=3)
+    tools = LumenDesignTools(config, "Create a square LinkedIn ad")
+    destructive = "delete(headline)\npage page_test\n  bg rect p(0,0) s(1080,1080)"
+    author = ScriptedAuthor(["page page_test", destructive])
+    reviewer = ScriptedReviewer(
+        [VisualCritique(accepted=True, summary="should not be reached")]
+    )
+
+    result = LumenQualityLoop(tools, author, reviewer).run("Create a square LinkedIn ad")
+
+    assert result["status"] == "failed"
+    assert result["stop_reason"] == "max_iterations_reached"
+    # Only the FIRST (initial) block ever reached the compiler; every destructive
+    # repair was rejected before compile.
+    assert tools.core.compile_calls == 1
+    # The scene still holds the original design — it was never wiped.
+    assert "headline" in tools.scene["nodes"]
+    # The reviewer was never reached (preflight never passed).
+    assert reviewer.calls == []
+    events = [
+        json.loads(line)["event"]
+        for line in (config.trace_dir / tools.run_id / "trace.jsonl")
+        .read_text(encoding="utf-8")
+        .splitlines()
+    ]
+    assert "dsl_repair_not_surgical" in events
+
+
+def test_surgical_mode_carries_forward_through_compile_error(tmp_path: Path, monkeypatch):
+    # A surgical repair (preflight overflow on `headline`) whose modify-only block
+    # then fails to COMPILE with a node-less diagnostic must STAY surgical: the
+    # next destructive block is still rejected, even though the compile diagnostic
+    # carried no node target.
+    monkeypatch.setattr(
+        "lumen_deepagent.tools.CoreClient", FakeSurgicalCarryForwardCoreClient
+    )
+    config = runtime_config(tmp_path, max_iterations=4)
+    tools = LumenDesignTools(config, "Create a square LinkedIn ad")
+    author = ScriptedAuthor(
+        [
+            "page page_test",  # iter1: full design, compiles
+            "#headline s(400,80)",  # iter2: modify-only, but fails COMPILE
+            "delete(headline)\npage page_test",  # iter3+: destructive — must be rejected
+        ]
+    )
+    reviewer = ScriptedReviewer(
+        [VisualCritique(accepted=True, summary="should not be reached")]
+    )
+
+    result = LumenQualityLoop(tools, author, reviewer).run("Create a square LinkedIn ad")
+
+    assert result["status"] == "failed"
+    # Only iter1 (initial) and iter2 (modify-only) reached the compiler; every
+    # destructive repair after the compile error was rejected before compile.
+    assert tools.core.compile_calls == 2
+    assert "headline" in tools.scene["nodes"]
+    events = [
+        json.loads(line)["event"]
+        for line in (config.trace_dir / tools.run_id / "trace.jsonl")
+        .read_text(encoding="utf-8")
+        .splitlines()
+    ]
+    assert "dsl_repair_not_surgical" in events
 
 
 def test_quality_loop_stops_before_reviewer_on_invalid_preview(tmp_path: Path, monkeypatch):
@@ -1156,6 +1379,87 @@ def test_quality_loop_records_max_iteration_stop(tmp_path: Path, monkeypatch):
 
     assert result["status"] == "failed"
     assert result["stop_reason"] == "max_iterations_reached"
+
+
+class FakeDestructiveRepairCoreClient(FakeCoreClient):
+    """First compile builds a full scene; the repair compile strips every node
+    and halts. This mirrors a real destructive repair that emits `delete(...)`
+    for each node (which core applies) and then halts on a bad re-creation line —
+    leaving `tools.scene` wiped before the compiler rejects the block."""
+
+    def __init__(self, repo_root: Path) -> None:
+        super().__init__(repo_root)
+        self.compile_calls = 0
+
+    def compile_dsl_into_scene(self, scene, source: str, dsl_session=None):
+        self.compile_calls += 1
+        if self.compile_calls == 1:
+            return super().compile_dsl_into_scene(scene, source, dsl_session=dsl_session)
+        wiped = dict(scene)
+        wiped["pages"] = {}
+        wiped["nodes"] = {}
+        wiped["slots"] = {}
+        return {
+            "scene": wiped,
+            "applied_operations": 0,
+            "dsl": {
+                "compile_output": {
+                    "operations": [],
+                    "diagnostics": [
+                        {
+                            "severity": "error",
+                            "code": "LUMD0207",
+                            "message": "parent(page_test) is not a valid statement",
+                        }
+                    ],
+                    "halted_at": {"code": "LUMD0207", "line": 8},
+                },
+                "operation_error": None,
+                "session_snapshot": None,
+            },
+        }
+
+
+def test_failed_run_restores_best_compiled_scene_for_canvas_draft(
+    tmp_path: Path, monkeypatch
+):
+    """A destructive final repair must not strip the design from the canvas.
+
+    Iteration 1 compiles a full scene but the reviewer rejects it; the repair
+    (iteration 2) wipes the scene and halts. The run fails, but the loop must
+    restore the best compiled scene so the editor renders it as a draft instead
+    of an empty canvas (the `draft_scene` the API surfaces is `tools.scene`)."""
+    monkeypatch.setattr(
+        "lumen_deepagent.tools.CoreClient", FakeDestructiveRepairCoreClient
+    )
+    config = runtime_config(tmp_path, max_iterations=2)
+    tools = LumenDesignTools(config, "Create a square LinkedIn ad")
+    author = ScriptedAuthor(["page page_test", "delete(headline)"])
+    reviewer = ScriptedReviewer(
+        [
+            VisualCritique(
+                accepted=False,
+                summary="Hierarchy is unclear.",
+                issues=[
+                    VisualIssue(
+                        category=CritiqueCategory.hierarchy,
+                        message="The hierarchy is unclear.",
+                        suggested_repair="Make the headline dominant.",
+                    )
+                ],
+            )
+        ]
+    )
+
+    result = LumenQualityLoop(tools, author, reviewer).run("Create a square LinkedIn ad")
+
+    assert result["status"] == "failed"
+    assert result["stop_reason"] == "max_iterations_reached"
+    # The live scene the API hands to the editor as draft_scene must still carry
+    # the best compiled design, not the wiped scene from the destructive repair.
+    assert tools.scene["nodes"], "best compiled scene was not restored after failure"
+    assert "headline" in tools.scene["nodes"]
+    assert "page_test" in tools.scene["pages"]
 
 
 def test_brand_fit_critique_blocks_acceptance_and_drives_repair(
