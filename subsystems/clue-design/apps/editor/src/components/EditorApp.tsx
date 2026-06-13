@@ -11,7 +11,7 @@ import {
 import { Download, FileCheck2, History, PanelRightClose, RotateCcw, RotateCw, Send } from "lucide-react";
 import { AgentChatPanel, type AgentChatMessage } from "./AgentChatPanel";
 import { BrandKitPanel } from "./BrandKitPanel";
-import { CanvasSurface } from "./canvas/CanvasSurface";
+import { EditorCanvas } from "./canvas/EditorCanvas";
 import { ExportPanel } from "./ExportPanel";
 import { ExportPreviewSurface } from "./ExportPreviewSurface";
 import { AssetBrowserPanel } from "./AssetBrowserPanel";
@@ -1210,12 +1210,13 @@ export default function EditorApp({
             <div className="compare-workspace">
               <div className="compare-pane">
                 <div className="compare-heading">Canvas</div>
-                <CanvasSurface
+                <EditorCanvas
                   scene={scene}
                   activePageId={activePageId}
                   selectedNodeId={selectedNodeId}
                   onSelectNode={setSelectedNodeId}
                   onOperation={applyOperation}
+                  engine={engineRef.current}
                 />
               </div>
               <div className="compare-pane">
@@ -1236,12 +1237,13 @@ export default function EditorApp({
               onSelectSubject={selectDiagnosticSubject}
             />
           ) : (
-            <CanvasSurface
+            <EditorCanvas
               scene={scene}
               activePageId={activePageId}
               selectedNodeId={selectedNodeId}
               onSelectNode={setSelectedNodeId}
               onOperation={applyOperation}
+              engine={engineRef.current}
             />
           )}
         </section>

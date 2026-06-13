@@ -282,6 +282,17 @@ export function wasmCoreFlagEnabled(): boolean {
   return flag === "1" || flag === "true";
 }
 
+/**
+ * Wave 3 C5: render the editor canvas with CanvasKit instead of Konva. Off by
+ * default — Konva stays the fallback until render parity + interaction
+ * conformance hold. Parallel to the WASM-core flag (CanvasKit also needs the
+ * in-browser engine for hit-testing).
+ */
+export function canvasKitFlagEnabled(): boolean {
+  const flag = process.env.NEXT_PUBLIC_LUMEN_CANVASKIT;
+  return flag === "1" || flag === "true";
+}
+
 export interface WasmModuleLoadOptions {
   /** Base URL the wasm-pack artifacts are served from. */
   baseUrl?: string;
