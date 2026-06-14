@@ -15,30 +15,63 @@ vi.mock("../canvas/CanvasSurface", () => ({
   CanvasSurface: ({
     scene,
     activePageId,
-    selectedNodeId
+    selectedNodeId,
+    workspaceViewport,
+    onWorkspaceViewportChange,
+    workspaceTool,
+    onWorkspaceToolChange,
+    workspaceFitTarget,
+    onWorkspaceFitTargetChange
   }: {
     scene: Scene;
     activePageId: string | null;
     selectedNodeId: string | null;
+    workspaceViewport: { zoom: number; pan: { x: number; y: number } };
+    onWorkspaceViewportChange: (next: { zoom: number; pan: { x: number; y: number } }) => void;
+    workspaceTool: string;
+    onWorkspaceToolChange: (tool: "select" | "hand") => void;
+    workspaceFitTarget: string;
+    onWorkspaceFitTargetChange: (target: "current" | "all" | "manual") => void;
   }) =>
-    React.createElement("div", {
-      "data-testid": "canvas-selection",
-      "data-selected-node": selectedNodeId ?? "",
-      "data-page-width": activePageId ? String(scene.pages[activePageId]?.size.width ?? "") : "",
-      "data-page-height": activePageId ? String(scene.pages[activePageId]?.size.height ?? "") : "",
-      "data-page-unit": activePageId ? scene.pages[activePageId]?.size.unit ?? "" : "",
-      "data-page-preset": activePageId ? scene.pages[activePageId]?.size.preset ?? "" : "",
-      "data-page-safe-area": activePageId && scene.pages[activePageId]?.safe_area
-        ? rectSummary(scene.pages[activePageId].safe_area)
-        : "",
-      "data-page-bleed": activePageId && scene.pages[activePageId]?.bleed
-        ? rectSummary(scene.pages[activePageId].bleed)
-        : "",
-      "data-page-children": activePageId ? scene.pages[activePageId]?.children.join(",") ?? "" : "",
-      "data-selected-computed": selectedNodeId && scene.nodes[selectedNodeId]?.computed
-        ? rectSummary(scene.nodes[selectedNodeId].computed.layout_bounds)
-        : ""
-    })
+    React.createElement(
+      React.Fragment,
+      null,
+      React.createElement("div", {
+        "data-testid": "canvas-selection",
+        "data-selected-node": selectedNodeId ?? "",
+        "data-page-width": activePageId ? String(scene.pages[activePageId]?.size.width ?? "") : "",
+        "data-page-height": activePageId ? String(scene.pages[activePageId]?.size.height ?? "") : "",
+        "data-page-unit": activePageId ? scene.pages[activePageId]?.size.unit ?? "" : "",
+        "data-page-preset": activePageId ? scene.pages[activePageId]?.size.preset ?? "" : "",
+        "data-page-safe-area": activePageId && scene.pages[activePageId]?.safe_area
+          ? rectSummary(scene.pages[activePageId].safe_area)
+          : "",
+        "data-page-bleed": activePageId && scene.pages[activePageId]?.bleed
+          ? rectSummary(scene.pages[activePageId].bleed)
+          : "",
+        "data-page-children": activePageId ? scene.pages[activePageId]?.children.join(",") ?? "" : "",
+        "data-selected-computed": selectedNodeId && scene.nodes[selectedNodeId]?.computed
+          ? rectSummary(scene.nodes[selectedNodeId].computed.layout_bounds)
+          : "",
+        "data-workspace-zoom": String(workspaceViewport.zoom),
+        "data-workspace-pan": `${workspaceViewport.pan.x},${workspaceViewport.pan.y}`,
+        "data-workspace-tool": workspaceTool,
+        "data-workspace-fit-target": workspaceFitTarget
+      }),
+      React.createElement("button", {
+        type: "button",
+        "data-testid": "mock-workspace-pan-tool",
+        onClick: () => onWorkspaceToolChange("hand")
+      }),
+      React.createElement("button", {
+        type: "button",
+        "data-testid": "mock-workspace-viewport",
+        onClick: () => {
+          onWorkspaceFitTargetChange("manual");
+          onWorkspaceViewportChange({ zoom: 1.75, pan: { x: 40, y: 60 } });
+        }
+      })
+    )
 }));
 
 // W4: EditorApp requires the WASM engine for local editing (the legacy TS
@@ -54,6 +87,10 @@ function TestEditorApp(props: EditorAppProps) {
     []
   );
   return <EditorApp {...props} optimisticEngine={engine} />;
+}
+
+function openInspectorPanel() {
+  fireEvent.click(screen.getByRole("button", { name: /inspector panel/i }));
 }
 
 describe.skipIf(!wasmArtifactPresent)("EditorApp", () => {
@@ -259,6 +296,7 @@ describe.skipIf(!wasmArtifactPresent)("EditorApp", () => {
     expect(screen.getByRole("button", { name: /^Compare$/i })).toHaveClass("active");
     expect(screen.getByRole("link", { name: /^download$/i })).toBeInTheDocument();
 
+    openInspectorPanel();
     fireEvent.change(screen.getByLabelText("Document Title"), {
       target: { value: "Edited After Export" }
     });
@@ -789,6 +827,72 @@ describe.skipIf(!wasmArtifactPresent)("EditorApp", () => {
       expect(workspace?.getAttribute("style")).toContain("--right-sidebar-width: 520px")
     );
     expect(screen.getByRole("complementary", { name: "Agent chat sidebar" })).toBeInTheDocument();
+  });
+
+  it("keeps workspace viewport and tool state across export preview transitions", async () => {
+    const exportRunner: EditorExportRunner = vi.fn().mockResolvedValue({
+      status: "ok",
+      diagnostics: [],
+      artifacts: [
+        {
+          format: "svg",
+          page_id: "page_a4",
+          asset_id: null,
+          filename: "page_a4.preview_svg.svg",
+          sidecar_filename: null,
+          mime_type: "image/svg+xml",
+          byte_length: 24,
+          dimensions: {
+            width: 210,
+            height: 297,
+            unit: "scene",
+            source: "svg_view_box"
+          },
+          data_url: "data:image/svg+xml;base64,PHN2Zy8+",
+          text: "<svg />",
+          sidecar_json: null,
+          sidecar_summary: null
+        }
+      ]
+    });
+
+    render(
+      <TestEditorApp
+        initialScene={twoPageScene()}
+        initialSelectedNodeId={null}
+        exportRunner={exportRunner}
+        preflightRunner={successfulPreflightRunner(twoPageScene())}
+      />
+    );
+
+    expect(screen.getByTestId("canvas-selection")).toHaveAttribute("data-workspace-tool", "select");
+    expect(screen.getByTestId("canvas-selection")).toHaveAttribute("data-workspace-fit-target", "all");
+
+    fireEvent.click(screen.getByTestId("mock-workspace-pan-tool"));
+    fireEvent.click(screen.getByTestId("mock-workspace-viewport"));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("canvas-selection")).toHaveAttribute("data-workspace-tool", "hand");
+      expect(screen.getByTestId("canvas-selection")).toHaveAttribute("data-workspace-fit-target", "manual");
+      expect(screen.getByTestId("canvas-selection")).toHaveAttribute("data-workspace-zoom", "1.75");
+      expect(screen.getByTestId("canvas-selection")).toHaveAttribute("data-workspace-pan", "40,60");
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /generate preview/i }));
+
+    expect(await screen.findByText("Export ready")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^Compare$/i })).toHaveClass("active");
+    expect(screen.getByTestId("canvas-selection")).toHaveAttribute("data-workspace-tool", "hand");
+    expect(screen.getByTestId("canvas-selection")).toHaveAttribute("data-workspace-fit-target", "manual");
+    expect(screen.getByTestId("canvas-selection")).toHaveAttribute("data-workspace-zoom", "1.75");
+    expect(screen.getByTestId("canvas-selection")).toHaveAttribute("data-workspace-pan", "40,60");
+
+    fireEvent.click(screen.getByRole("button", { name: /^Canvas$/i }));
+
+    expect(screen.getByTestId("canvas-selection")).toHaveAttribute("data-workspace-tool", "hand");
+    expect(screen.getByTestId("canvas-selection")).toHaveAttribute("data-workspace-fit-target", "manual");
+    expect(screen.getByTestId("canvas-selection")).toHaveAttribute("data-workspace-zoom", "1.75");
+    expect(screen.getByTestId("canvas-selection")).toHaveAttribute("data-workspace-pan", "40,60");
   });
 
   it("undoes and redoes accepted editor operations through scene snapshots", () => {
@@ -1388,10 +1492,10 @@ describe.skipIf(!wasmArtifactPresent)("EditorApp", () => {
 
     expect((await screen.findAllByText("LUMV_TEXT_OVERFLOW")).length).toBeGreaterThanOrEqual(1);
     expect(screen.getAllByText("Headline overflows its frame.").length).toBeGreaterThanOrEqual(1);
-    fireEvent.click(screen.getAllByRole("button", { name: /show node node_contact_name/i })[0]);
-    expect(screen.getByTestId("canvas-selection")).toHaveAttribute("data-selected-node", "node_contact_name");
     expect(await screen.findByText("Export ready")).toBeInTheDocument();
     expect(screen.getByText("Not ready for approval")).toBeInTheDocument();
+    fireEvent.click(screen.getAllByRole("button", { name: /show node node_contact_name/i })[0]);
+    expect(screen.getByTestId("canvas-selection")).toHaveAttribute("data-selected-node", "node_contact_name");
     expect(exportRunner).toHaveBeenCalledWith({
       scene: expect.objectContaining({
         pages: expect.objectContaining({
@@ -1587,6 +1691,7 @@ describe.skipIf(!wasmArtifactPresent)("EditorApp", () => {
     fireEvent.click(screen.getAllByRole("button", { name: /show slot slot_contact_name/i })[0]);
 
     expect(screen.getByTestId("canvas-selection")).toHaveAttribute("data-selected-node", "node_contact_name");
+    openInspectorPanel();
     expect(screen.getByRole("heading", { name: "Contact Name" })).toBeInTheDocument();
   });
 
@@ -1684,6 +1789,7 @@ describe.skipIf(!wasmArtifactPresent)("EditorApp", () => {
     fireEvent.click(screen.getAllByRole("button", { name: /show asset asset_hero/i })[0]);
 
     expect(screen.getByTestId("canvas-selection")).toHaveAttribute("data-selected-node", "node_hero_image");
+    openInspectorPanel();
     expect(screen.getByRole("heading", { name: "Hero Image" })).toBeInTheDocument();
   });
 

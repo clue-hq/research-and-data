@@ -78,6 +78,11 @@ import {
 import { normalizePageSize } from "@/engine/pageGeometry";
 import { editorRenderDiagnostics } from "@/engine/renderDiagnostics";
 import {
+  defaultWorkspaceViewport,
+  type WorkspaceFitTarget,
+  type WorkspaceTool
+} from "@/engine/workspaceViewport";
+import {
   clampNodeTransformToParentBounds,
   firstPageId,
   getNode,
@@ -117,6 +122,8 @@ export type EditQueueFactory = (options: {
   localScene: () => Scene;
   onReconcile: (event: ReconcileEvent) => void;
 }) => EditQueuePort;
+
+type EditorPanelMode = "inspector" | "agent" | "export" | "diagnostics";
 
 const defaultEditQueueFactory: EditQueueFactory = (options) =>
   createEditQueue({
@@ -172,7 +179,7 @@ export default function EditorApp({
   const [operationHistory, setOperationHistory] = useState<Operation[]>([]);
   const [isBrandGovernanceRunning, setIsBrandGovernanceRunning] = useState(false);
   const [isBrandCompatibilityRunning, setIsBrandCompatibilityRunning] = useState(false);
-  const [isAgentPanelOpen, setIsAgentPanelOpen] = useState(false);
+  const [editorPanelMode, setEditorPanelMode] = useState<EditorPanelMode>("inspector");
   const [agentSidebarWidth, setAgentSidebarWidth] = useState(420);
   const [isAgentRunning, setIsAgentRunning] = useState(false);
   const [agentDraft, setAgentDraft] = useState("");
@@ -183,8 +190,12 @@ export default function EditorApp({
   const [exportResult, setExportResult] = useState<EditorExportResult | null>(null);
   const [preflightResult, setPreflightResult] = useState<EditorPreflightResult | null>(null);
   const [workspaceMode, setWorkspaceMode] = useState<"canvas" | "export" | "compare">("canvas");
+  const [workspaceViewport, setWorkspaceViewport] = useState(defaultWorkspaceViewport);
+  const [workspaceTool, setWorkspaceTool] = useState<WorkspaceTool>("select");
+  const [workspaceFitTarget, setWorkspaceFitTarget] = useState<WorkspaceFitTarget>("all");
   const [brandCompatibilityReport, setBrandCompatibilityReport] =
     useState<BrandCompatibilityReport | null>(null);
+  const isAgentPanelOpen = editorPanelMode === "agent";
   const selectedNode = useMemo(() => getNode(scene, selectedNodeId), [scene, selectedNodeId]);
   const activePage = activePageId ? scene.pages[activePageId] ?? null : null;
   const effectiveBrandKit = useMemo(
@@ -649,6 +660,7 @@ export default function EditorApp({
 
   const runPreflight = async () => {
     setIsPreflighting(true);
+    setEditorPanelMode("diagnostics");
     setDiagnostics([
       {
         severity: "advice",
@@ -945,6 +957,7 @@ export default function EditorApp({
         if (scene.pages[subject.id]) {
           setActivePageId(subject.id);
           setSelectedNodeId(null);
+          setEditorPanelMode("inspector");
         }
         return;
       }
@@ -957,6 +970,7 @@ export default function EditorApp({
           setActivePageId(pageId);
         }
         setSelectedNodeId(subject.id);
+        setEditorPanelMode("inspector");
         return;
       }
       case "slot": {
@@ -970,6 +984,7 @@ export default function EditorApp({
           setActivePageId(pageId);
         }
         setSelectedNodeId(boundNodeId);
+        setEditorPanelMode("inspector");
         return;
       }
       case "asset": {
@@ -982,6 +997,7 @@ export default function EditorApp({
           setActivePageId(pageId);
         }
         setSelectedNodeId(nodeId);
+        setEditorPanelMode("inspector");
         return;
       }
       case "document":
@@ -1010,7 +1026,7 @@ export default function EditorApp({
           content: `Applied ${proposedOperations.length} agent operation${proposedOperations.length === 1 ? "" : "s"} and started preflight/export preview.`
         }
       ]);
-      setIsAgentPanelOpen(false);
+      setEditorPanelMode("inspector");
       setActivePageId(previewPageId);
       setSelectedNodeId((currentSelectedNodeId) =>
         currentSelectedNodeId && nextScene.nodes[currentSelectedNodeId]
@@ -1033,6 +1049,7 @@ export default function EditorApp({
     profile = defaultEditorExportProfile(),
     pageIds: PageId[] = activePageId ? [activePageId] : []
   ) => {
+    setEditorPanelMode("export");
     if (pageIds.length === 0) {
       setDiagnostics([
         {
@@ -1145,7 +1162,9 @@ export default function EditorApp({
           <button
             type="button"
             className={isAgentPanelOpen ? "active" : ""}
-            onClick={() => setIsAgentPanelOpen((isOpen) => !isOpen)}
+            onClick={() =>
+              setEditorPanelMode((mode) => (mode === "agent" ? "inspector" : "agent"))
+            }
             aria-pressed={isAgentPanelOpen}
           >
             <Send aria-hidden size={16} />
@@ -1226,6 +1245,12 @@ export default function EditorApp({
                   onOperation={applyOperation}
                   engine={engineRef.current}
                   diagnostics={diagnostics}
+                  workspaceViewport={workspaceViewport}
+                  onWorkspaceViewportChange={setWorkspaceViewport}
+                  workspaceTool={workspaceTool}
+                  onWorkspaceToolChange={setWorkspaceTool}
+                  workspaceFitTarget={workspaceFitTarget}
+                  onWorkspaceFitTargetChange={setWorkspaceFitTarget}
                   onSceneRefresh={refreshSceneFromEngine}
                 />
               </div>
@@ -1256,6 +1281,12 @@ export default function EditorApp({
               onOperation={applyOperation}
               engine={engineRef.current}
               diagnostics={diagnostics}
+              workspaceViewport={workspaceViewport}
+              onWorkspaceViewportChange={setWorkspaceViewport}
+              workspaceTool={workspaceTool}
+              onWorkspaceToolChange={setWorkspaceTool}
+              workspaceFitTarget={workspaceFitTarget}
+              onWorkspaceFitTargetChange={setWorkspaceFitTarget}
               onSceneRefresh={refreshSceneFromEngine}
             />
           )}
@@ -1271,9 +1302,43 @@ export default function EditorApp({
         ) : null}
         <aside
           className="inspector-shell"
-          aria-label={isAgentPanelOpen ? "Agent chat sidebar" : "Inspector sidebar"}
+          aria-label={rightSidebarLabel(editorPanelMode)}
         >
-          {isAgentPanelOpen ? (
+          <div className="right-panel-mode-switch" aria-label="Right panel mode">
+            <button
+              type="button"
+              aria-label="Inspector panel"
+              className={editorPanelMode === "inspector" ? "active" : undefined}
+              onClick={() => setEditorPanelMode("inspector")}
+            >
+              Inspect
+            </button>
+            <button
+              type="button"
+              aria-label="Agent panel"
+              className={editorPanelMode === "agent" ? "active" : undefined}
+              onClick={() => setEditorPanelMode("agent")}
+            >
+              Agent
+            </button>
+            <button
+              type="button"
+              aria-label="Export panel"
+              className={editorPanelMode === "export" ? "active" : undefined}
+              onClick={() => setEditorPanelMode("export")}
+            >
+              Export
+            </button>
+            <button
+              type="button"
+              aria-label="Diagnostics panel"
+              className={editorPanelMode === "diagnostics" ? "active" : undefined}
+              onClick={() => setEditorPanelMode("diagnostics")}
+            >
+              Diagnostics
+            </button>
+          </div>
+          {editorPanelMode === "agent" ? (
             <AgentChatPanel
               messages={agentMessages}
               draft={agentDraft}
@@ -1285,6 +1350,28 @@ export default function EditorApp({
               onDraftChange={setAgentDraft}
               onSend={(prompt) => void sendAgentPrompt(prompt)}
               onApplyProposal={applyAgentProposal}
+            />
+          ) : editorPanelMode === "export" ? (
+            <ExportPanel
+              scene={scene}
+              activePageId={activePageId}
+              exportResult={exportResult}
+              isExporting={isExporting}
+              onExport={(profile, pageIds) => void runExport(profile, pageIds)}
+              onSaveProfile={(profile) => applyOperation(upsertExportProfile(profile))}
+              onRemoveProfile={(name) => applyOperation(removeExportProfile(name))}
+              onSelectSubject={selectDiagnosticSubject}
+            />
+          ) : editorPanelMode === "diagnostics" ? (
+            <ValidationPanel
+              scene={scene}
+              activePageId={activePageId}
+              selectedNodeId={selectedNodeId}
+              diagnostics={diagnostics}
+              renderDiagnostics={renderDiagnostics}
+              lastOperation={lastOperation}
+              preflightResult={preflightResult}
+              onSelectSubject={selectDiagnosticSubject}
             />
           ) : (
             <>
@@ -1393,6 +1480,19 @@ function OperationHistoryPanel({
       {redoCount > 0 ? <p className="muted">{redoCount} action{redoCount === 1 ? "" : "s"} available to redo.</p> : null}
     </section>
   );
+}
+
+function rightSidebarLabel(mode: EditorPanelMode): string {
+  switch (mode) {
+    case "agent":
+      return "Agent chat sidebar";
+    case "export":
+      return "Export sidebar";
+    case "diagnostics":
+      return "Diagnostics sidebar";
+    case "inspector":
+      return "Inspector sidebar";
+  }
 }
 
 function operationLabel(operation: Operation): string {

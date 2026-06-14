@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { LocateFixed, Maximize2, Minus, Plus } from "lucide-react";
+import { Hand, LocateFixed, Maximize2, Minus, MousePointer2, Plus } from "lucide-react";
 import type { NodeId, Operation, PageId, Scene } from "@/engine/contracts";
 import type { OptimisticEnginePort } from "@/engine/wasmEngine";
 import { artboardAtWorkspacePoint, type WorkspaceModel } from "@/engine/workspaceLayout";
@@ -34,8 +34,11 @@ import {
   panWorkspaceViewport,
   screenToWorkspace,
   zoomWorkspaceViewportAtPoint,
+  type WorkspaceFitTarget,
+  type WorkspaceTool,
   type WorkspaceViewport
 } from "@/engine/workspaceViewport";
+import type { WorkspaceViewportUpdater } from "./EditorCanvas";
 import { CanvasKitStage } from "./CanvasKitStage";
 import { SelectionOverlay } from "./SelectionOverlay";
 import { TextEditOverlay } from "./TextEditOverlay";
@@ -50,8 +53,8 @@ import type { DrawNode } from "@/engine/canvaskit/drawDescriptors";
  * (no new mutation path). A live `preview` override shows the in-progress
  * drag/resize/rotate before the engine commits.
  *
- * V0 scope: a fit-to-page viewport (interactive pan/zoom parity with the Konva
- * canvas is a documented follow-up); the interaction layer is the C3 value.
+ * V0 scope: shared workspace pan/zoom and artboard placement parity with the
+ * Konva canvas while preserving the CanvasKit gesture interaction layer.
  */
 
 export interface CanvasKitCanvasProps {
@@ -64,6 +67,12 @@ export interface CanvasKitCanvasProps {
   /** The engine provides authoritative point→node hit-testing (C3a). */
   engine: OptimisticEnginePort | null;
   workspaceModel: WorkspaceModel;
+  workspaceViewport: WorkspaceViewport;
+  onWorkspaceViewportChange: WorkspaceViewportUpdater;
+  workspaceTool: WorkspaceTool;
+  onWorkspaceToolChange: (tool: WorkspaceTool) => void;
+  workspaceFitTarget: WorkspaceFitTarget;
+  onWorkspaceFitTargetChange: (target: WorkspaceFitTarget) => void;
   /** Called after the C4 measurement pass updates the engine's `computed`
    * (which does not emit a delta), so the host can re-sync its React scene. */
   onSceneRefresh?: () => void;
@@ -84,16 +93,18 @@ export function CanvasKitCanvas({
   onOperation,
   engine,
   workspaceModel,
+  workspaceViewport,
+  onWorkspaceViewportChange,
+  workspaceTool,
+  onWorkspaceToolChange,
+  workspaceFitTarget,
+  onWorkspaceFitTargetChange,
   onSceneRefresh
 }: CanvasKitCanvasProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const stateRef = useRef<GestureState>(initialGestureState);
+  const panDragRef = useRef<{ pointerId: number; x: number; y: number; pan: { x: number; y: number } } | null>(null);
   const [viewport, setViewport] = useState({ width: 900, height: 720 });
-  const [workspaceViewport, setWorkspaceViewport] = useState<WorkspaceViewport>({
-    zoom: 1,
-    pan: { x: 0, y: 0 }
-  });
-  const [fitTarget, setFitTarget] = useState<"current" | "all" | "manual">("all");
   const [preview, setPreview] = useState<Preview | null>(null);
   const [marquee, setMarquee] = useState<Box | null>(null);
   const [editingNodeId, setEditingNodeId] = useState<NodeId | null>(null);
@@ -113,11 +124,11 @@ export function CanvasKitCanvas({
   }, [activeArtboard, workspaceViewport.pan.x, workspaceViewport.pan.y, workspaceViewport.zoom]);
 
   const fitRect = useMemo(() => {
-    if (fitTarget === "current" && activeArtboard) {
+    if (workspaceFitTarget === "current" && activeArtboard) {
       return activeArtboard.workspaceRect;
     }
     return workspaceModel.bounds;
-  }, [activeArtboard, fitTarget, workspaceModel.bounds]);
+  }, [activeArtboard, workspaceFitTarget, workspaceModel.bounds]);
 
   useEffect(() => {
     const element = containerRef.current;
@@ -135,17 +146,17 @@ export function CanvasKitCanvas({
   }, []);
 
   useEffect(() => {
-    if (fitTarget === "manual") {
+    if (workspaceFitTarget === "manual") {
       return;
     }
-    setWorkspaceViewport(fitWorkspaceRectToViewport({ viewport, rect: fitRect }));
-  }, [fitRect, fitTarget, viewport]);
+    onWorkspaceViewportChange(fitWorkspaceRectToViewport({ viewport, rect: fitRect }));
+  }, [fitRect, onWorkspaceViewportChange, viewport, workspaceFitTarget]);
 
   useEffect(() => {
-    setWorkspaceViewport((current) =>
+    onWorkspaceViewportChange((current) =>
       clampWorkspacePanToKeepVisible(current, workspaceModel.bounds, viewport)
     );
-  }, [viewport, workspaceModel.bounds]);
+  }, [onWorkspaceViewportChange, viewport, workspaceModel.bounds]);
 
   // A signature of every text node's measurement inputs. The C4 measurement
   // pass keys on this, not the whole scene, so dragging/resizing non-text
@@ -438,13 +449,13 @@ export function CanvasKitCanvas({
 
   const fitWorkspace = (target: "current" | "all") => {
     const rect = target === "current" && activeArtboard ? activeArtboard.workspaceRect : workspaceModel.bounds;
-    setFitTarget(target);
-    setWorkspaceViewport(fitWorkspaceRectToViewport({ viewport, rect }));
+    onWorkspaceFitTargetChange(target);
+    onWorkspaceViewportChange(fitWorkspaceRectToViewport({ viewport, rect }));
   };
 
   const zoomBy = (delta: number) => {
-    setFitTarget("manual");
-    setWorkspaceViewport((current) =>
+    onWorkspaceFitTargetChange("manual");
+    onWorkspaceViewportChange((current) =>
       zoomWorkspaceViewportAtPoint(
         current,
         { x: viewport.width / 2, y: viewport.height / 2 },
@@ -462,6 +473,25 @@ export function CanvasKitCanvas({
         <span>{pageView ? `${formatDimension(pageView.width)} x ${formatDimension(pageView.height)} pt` : "No frame"}</span>
       </div>
       <div className="workspace-bottom-toolbar" aria-label="CanvasKit workspace tools">
+        <button
+          type="button"
+          className={workspaceTool === "select" ? "active" : undefined}
+          aria-label="Select tool"
+          title="Select tool"
+          onClick={() => onWorkspaceToolChange("select")}
+        >
+          <MousePointer2 aria-hidden size={16} />
+        </button>
+        <button
+          type="button"
+          className={workspaceTool === "hand" ? "active" : undefined}
+          aria-label="Pan tool"
+          title="Pan tool"
+          onClick={() => onWorkspaceToolChange("hand")}
+        >
+          <Hand aria-hidden size={16} />
+        </button>
+        <span className="workspace-toolbar-separator" />
         <button type="button" aria-label="Zoom out" title="Zoom out" onClick={() => zoomBy(-0.1)}>
           <Minus aria-hidden size={16} />
         </button>
@@ -472,7 +502,7 @@ export function CanvasKitCanvas({
         <span className="workspace-toolbar-separator" />
         <button
           type="button"
-          className={fitTarget === "current" ? "active" : undefined}
+          className={workspaceFitTarget === "current" ? "active" : undefined}
           aria-label="Fit current artboard"
           title="Fit current artboard"
           onClick={() => fitWorkspace("current")}
@@ -481,7 +511,7 @@ export function CanvasKitCanvas({
         </button>
         <button
           type="button"
-          className={fitTarget === "all" ? "active" : undefined}
+          className={workspaceFitTarget === "all" ? "active" : undefined}
           aria-label="Fit all artboards"
           title="Fit all artboards"
           onClick={() => fitWorkspace("all")}
@@ -493,14 +523,14 @@ export function CanvasKitCanvas({
         style={{ position: "absolute", inset: 0 }}
         onWheel={(event) => {
           event.preventDefault();
-          setFitTarget("manual");
+          onWorkspaceFitTargetChange("manual");
           if (event.ctrlKey || event.metaKey) {
-            setWorkspaceViewport((current) =>
+            onWorkspaceViewportChange((current) =>
               zoomWorkspaceViewportAtPoint(current, screenPointFromEvent(event), current.zoom + (event.deltaY > 0 ? -0.08 : 0.08))
             );
             return;
           }
-          setWorkspaceViewport((current) =>
+          onWorkspaceViewportChange((current) =>
             clampWorkspacePanToKeepVisible(
               panWorkspaceViewport(current, { x: -event.deltaX, y: -event.deltaY }),
               workspaceModel.bounds,
@@ -511,6 +541,21 @@ export function CanvasKitCanvas({
         onPointerDown={(event) => {
           if (editingNodeId) return; // editing: let the textarea own the pointer
           const screenPoint = screenPointFromEvent(event);
+          if (workspaceTool === "hand") {
+            panDragRef.current = {
+              pointerId: event.pointerId,
+              x: screenPoint.x,
+              y: screenPoint.y,
+              pan: workspaceViewport.pan
+            };
+            onWorkspaceFitTargetChange("manual");
+            try {
+              event.currentTarget.setPointerCapture(event.pointerId);
+            } catch {
+              // Pointer capture is best-effort (e.g., synthetic pointers in tests).
+            }
+            return;
+          }
           const workspacePoint = screenToWorkspace(screenPoint, workspaceViewport);
           const hitArtboard = artboardAtWorkspacePoint(workspaceModel, workspacePoint);
           if (!hitArtboard) {
@@ -530,12 +575,45 @@ export function CanvasKitCanvas({
           dispatch({ kind: "down", point: pointerFromEvent(event), target: pressTargetFor(pointerFromEvent(event)), modifiers: modifiersFromEvent(event) });
         }}
         onPointerMove={(event) => {
+          const activePan = panDragRef.current;
+          if (activePan && activePan.pointerId === event.pointerId) {
+            const screenPoint = screenPointFromEvent(event);
+            onWorkspaceViewportChange((current) =>
+              clampWorkspacePanToKeepVisible(
+                {
+                  ...current,
+                  pan: {
+                    x: activePan.pan.x + screenPoint.x - activePan.x,
+                    y: activePan.pan.y + screenPoint.y - activePan.y
+                  }
+                },
+                workspaceModel.bounds,
+                viewport
+              )
+            );
+            return;
+          }
           if (editingNodeId || stateRef.current.kind === "idle") return;
           dispatch({ kind: "move", point: pointerFromEvent(event), modifiers: modifiersFromEvent(event) });
         }}
         onPointerUp={(event) => {
+          if (panDragRef.current?.pointerId === event.pointerId) {
+            panDragRef.current = null;
+            try {
+              event.currentTarget.releasePointerCapture(event.pointerId);
+            } catch {
+              // Pointer capture is best-effort.
+            }
+            return;
+          }
           if (editingNodeId) return;
           dispatch({ kind: "up", point: pointerFromEvent(event), modifiers: modifiersFromEvent(event) });
+        }}
+        onPointerCancel={() => {
+          panDragRef.current = null;
+          stateRef.current = initialGestureState;
+          setPreview(null);
+          setMarquee(null);
         }}
         onDoubleClick={onDoubleClick}
       >

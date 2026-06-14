@@ -8,6 +8,9 @@ export interface WorkspaceViewport {
   pan: Point;
 }
 
+export type WorkspaceTool = "select" | "hand";
+export type WorkspaceFitTarget = "current" | "all" | "manual";
+
 export interface ViewportSize {
   width: number;
   height: number;

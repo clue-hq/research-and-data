@@ -5,8 +5,13 @@ import type { Diagnostic, NodeId, Operation, PageId, Scene } from "@/engine/cont
 import type { OptimisticEnginePort } from "@/engine/wasmEngine";
 import { canvasKitFlagEnabled } from "@/engine/wasmEngine";
 import { createWorkspaceModel } from "@/engine/workspaceLayout";
+import type { WorkspaceFitTarget, WorkspaceTool, WorkspaceViewport } from "@/engine/workspaceViewport";
 import { CanvasSurface } from "./CanvasSurface";
 import { CanvasKitCanvas } from "./CanvasKitCanvas";
+
+export type WorkspaceViewportUpdater = (
+  next: WorkspaceViewport | ((current: WorkspaceViewport) => WorkspaceViewport)
+) => void;
 
 /**
  * Wave 3 C5: the flag-gated renderer switch. With NEXT_PUBLIC_LUMEN_CANVASKIT
@@ -24,6 +29,12 @@ export interface EditorCanvasProps {
   onOperation: (operation: Operation) => void;
   engine: OptimisticEnginePort | null;
   diagnostics?: Diagnostic[];
+  workspaceViewport: WorkspaceViewport;
+  onWorkspaceViewportChange: WorkspaceViewportUpdater;
+  workspaceTool: WorkspaceTool;
+  onWorkspaceToolChange: (tool: WorkspaceTool) => void;
+  workspaceFitTarget: WorkspaceFitTarget;
+  onWorkspaceFitTargetChange: (target: WorkspaceFitTarget) => void;
   /** CanvasKit-only: re-sync the host scene after the C4 measurement pass. */
   onSceneRefresh?: () => void;
 }
@@ -45,6 +56,12 @@ export function EditorCanvas(props: EditorCanvasProps) {
       onSelectPage={props.onSelectPage}
       onOperation={props.onOperation}
       workspaceModel={workspaceModel}
+      workspaceViewport={props.workspaceViewport}
+      onWorkspaceViewportChange={props.onWorkspaceViewportChange}
+      workspaceTool={props.workspaceTool}
+      onWorkspaceToolChange={props.onWorkspaceToolChange}
+      workspaceFitTarget={props.workspaceFitTarget}
+      onWorkspaceFitTargetChange={props.onWorkspaceFitTargetChange}
     />
   );
 }

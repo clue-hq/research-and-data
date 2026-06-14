@@ -23,13 +23,13 @@ import {
   fitWorkspaceRectToViewport,
   panWorkspaceViewport,
   zoomWorkspaceViewportAtPoint,
+  type WorkspaceFitTarget,
+  type WorkspaceTool,
   type WorkspaceViewport
 } from "@/engine/workspaceViewport";
+import type { WorkspaceViewportUpdater } from "./EditorCanvas";
 import { SceneNode } from "./SceneNode";
 import { ContainerSelectionOverlay } from "./ContainerSelectionOverlay";
-
-type WorkspaceTool = "select" | "hand";
-type FitTarget = "current" | "all" | "manual";
 
 interface CanvasSurfaceProps {
   scene: Scene;
@@ -39,6 +39,12 @@ interface CanvasSurfaceProps {
   onSelectPage?: (pageId: PageId) => void;
   onOperation: (operation: Operation) => void;
   workspaceModel: WorkspaceModel;
+  workspaceViewport: WorkspaceViewport;
+  onWorkspaceViewportChange: WorkspaceViewportUpdater;
+  workspaceTool: WorkspaceTool;
+  onWorkspaceToolChange: (tool: WorkspaceTool) => void;
+  workspaceFitTarget: WorkspaceFitTarget;
+  onWorkspaceFitTargetChange: (target: WorkspaceFitTarget) => void;
 }
 
 const EMPTY_VIEWPORT = { width: 900, height: 720 };
@@ -50,19 +56,19 @@ export function CanvasSurface({
   onSelectNode,
   onSelectPage,
   onOperation,
-  workspaceModel
+  workspaceModel,
+  workspaceViewport,
+  onWorkspaceViewportChange,
+  workspaceTool,
+  onWorkspaceToolChange,
+  workspaceFitTarget,
+  onWorkspaceFitTargetChange
 }: CanvasSurfaceProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const transformerRef = useRef<Konva.Transformer | null>(null);
   const nodeRefs = useRef(new Map<NodeId, Konva.Node>());
   const dragStartRef = useRef<{ x: number; y: number; pan: { x: number; y: number } } | null>(null);
   const [viewportSize, setViewportSize] = useState(EMPTY_VIEWPORT);
-  const [workspaceViewport, setWorkspaceViewport] = useState<WorkspaceViewport>({
-    zoom: 1,
-    pan: { x: 0, y: 0 }
-  });
-  const [tool, setTool] = useState<WorkspaceTool>("select");
-  const [fitTarget, setFitTarget] = useState<FitTarget>("all");
   const selectedNodeDirectGeometryEditable = isCanvasDirectGeometryEditable(scene, selectedNodeId);
   const selectedEditNotice = canvasDirectEditNotice(scene, selectedNodeId);
   const activeArtboard = workspaceModel.activeArtboard;
@@ -70,19 +76,19 @@ export function CanvasSurface({
   const activeDescriptor = activePage ? pageDescriptor(activePage) : null;
 
   const fitRect = useMemo(() => {
-    if (fitTarget === "current" && activeArtboard) {
+    if (workspaceFitTarget === "current" && activeArtboard) {
       return activeArtboard.workspaceRect;
     }
     return workspaceModel.bounds;
-  }, [activeArtboard, fitTarget, workspaceModel.bounds]);
+  }, [activeArtboard, workspaceFitTarget, workspaceModel.bounds]);
 
   const fitWorkspace = useCallback(
-    (target: Exclude<FitTarget, "manual">) => {
+    (target: Exclude<WorkspaceFitTarget, "manual">) => {
       const rect = target === "current" && activeArtboard ? activeArtboard.workspaceRect : workspaceModel.bounds;
-      setFitTarget(target);
-      setWorkspaceViewport(fitWorkspaceRectToViewport({ viewport: viewportSize, rect }));
+      onWorkspaceFitTargetChange(target);
+      onWorkspaceViewportChange(fitWorkspaceRectToViewport({ viewport: viewportSize, rect }));
     },
-    [activeArtboard, viewportSize, workspaceModel.bounds]
+    [activeArtboard, onWorkspaceFitTargetChange, onWorkspaceViewportChange, viewportSize, workspaceModel.bounds]
   );
 
   useEffect(() => {
@@ -101,17 +107,17 @@ export function CanvasSurface({
   }, []);
 
   useEffect(() => {
-    if (fitTarget === "manual") {
+    if (workspaceFitTarget === "manual") {
       return;
     }
-    setWorkspaceViewport(fitWorkspaceRectToViewport({ viewport: viewportSize, rect: fitRect }));
-  }, [fitRect, fitTarget, viewportSize]);
+    onWorkspaceViewportChange(fitWorkspaceRectToViewport({ viewport: viewportSize, rect: fitRect }));
+  }, [fitRect, onWorkspaceViewportChange, viewportSize, workspaceFitTarget]);
 
   useEffect(() => {
-    setWorkspaceViewport((current) =>
+    onWorkspaceViewportChange((current) =>
       clampWorkspacePanToKeepVisible(current, workspaceModel.bounds, viewportSize)
     );
-  }, [viewportSize, workspaceModel.bounds]);
+  }, [onWorkspaceViewportChange, viewportSize, workspaceModel.bounds]);
 
   useEffect(() => {
     const transformer = transformerRef.current;
@@ -138,16 +144,16 @@ export function CanvasSurface({
   };
 
   const zoomBy = (delta: number) => {
-    setFitTarget("manual");
+    onWorkspaceFitTargetChange("manual");
     const center = { x: viewportSize.width / 2, y: viewportSize.height / 2 };
-    setWorkspaceViewport((current) =>
+    onWorkspaceViewportChange((current) =>
       zoomWorkspaceViewportAtPoint(current, center, clampWorkspaceZoom(current.zoom + delta))
     );
   };
 
   const panBy = (screenDeltaX: number, screenDeltaY: number) => {
-    setFitTarget("manual");
-    setWorkspaceViewport((current) =>
+    onWorkspaceFitTargetChange("manual");
+    onWorkspaceViewportChange((current) =>
       clampWorkspacePanToKeepVisible(
         panWorkspaceViewport(current, { x: screenDeltaX, y: screenDeltaY }),
         workspaceModel.bounds,
@@ -169,10 +175,10 @@ export function CanvasSurface({
       <WorkspaceChrome
         activeArtboard={activeArtboard}
         activeDescriptor={activeDescriptor}
-        fitTarget={fitTarget}
-        tool={tool}
+        fitTarget={workspaceFitTarget}
+        tool={workspaceTool}
         zoom={workspaceViewport.zoom}
-        onToolChange={setTool}
+        onToolChange={onWorkspaceToolChange}
         onZoomOut={() => zoomBy(-0.1)}
         onZoomIn={() => zoomBy(0.1)}
         onFitCurrent={() => fitWorkspace("current")}
@@ -186,9 +192,9 @@ export function CanvasSurface({
         y={workspaceViewport.pan.y}
         scaleX={workspaceViewport.zoom}
         scaleY={workspaceViewport.zoom}
-        draggable={tool === "hand"}
+        draggable={workspaceTool === "hand"}
         onDragStart={(event) => {
-          if (tool !== "hand") {
+          if (workspaceTool !== "hand") {
             return;
           }
           dragStartRef.current = {
@@ -198,12 +204,12 @@ export function CanvasSurface({
           };
         }}
         onDragEnd={(event) => {
-          if (tool !== "hand") {
+          if (workspaceTool !== "hand") {
             return;
           }
           const start = dragStartRef.current;
           dragStartRef.current = null;
-          setFitTarget("manual");
+          onWorkspaceFitTargetChange("manual");
           const nextPan = start
             ? {
                 x: start.pan.x + event.target.x() - start.x,
@@ -211,25 +217,25 @@ export function CanvasSurface({
               }
             : { x: event.target.x(), y: event.target.y() };
           event.target.position(workspaceViewport.pan);
-          setWorkspaceViewport((current) =>
+          onWorkspaceViewportChange((current) =>
             clampWorkspacePanToKeepVisible({ ...current, pan: nextPan }, workspaceModel.bounds, viewportSize)
           );
         }}
         onWheel={(event) => {
           event.evt.preventDefault();
-          setFitTarget("manual");
+          onWorkspaceFitTargetChange("manual");
           if (event.evt.ctrlKey || event.evt.metaKey) {
             const delta = event.evt.deltaY > 0 ? -0.08 : 0.08;
             const pointer = {
               x: event.evt.offsetX,
               y: event.evt.offsetY
             };
-            setWorkspaceViewport((current) =>
+            onWorkspaceViewportChange((current) =>
               zoomWorkspaceViewportAtPoint(current, pointer, current.zoom + delta)
             );
             return;
           }
-          setWorkspaceViewport((current) =>
+          onWorkspaceViewportChange((current) =>
             clampWorkspacePanToKeepVisible(
               panWorkspaceViewport(current, { x: -event.evt.deltaX, y: -event.evt.deltaY }),
               workspaceModel.bounds,
@@ -238,7 +244,7 @@ export function CanvasSurface({
           );
         }}
         onMouseDown={(event) => {
-          if (tool !== "select") {
+          if (workspaceTool !== "select") {
             return;
           }
           if (event.target === event.target.getStage()) {
@@ -472,7 +478,7 @@ function WorkspaceChrome({
 }: {
   activeArtboard: WorkspaceArtboard | null;
   activeDescriptor: ReturnType<typeof pageDescriptor> | null;
-  fitTarget: FitTarget;
+  fitTarget: WorkspaceFitTarget;
   tool: WorkspaceTool;
   zoom: number;
   onToolChange: (tool: WorkspaceTool) => void;
