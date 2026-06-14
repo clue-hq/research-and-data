@@ -22,7 +22,13 @@ if load_dotenv is not None:
 from lumen_deepagent.config import AgentRuntimeConfig
 from lumen_deepagent.eval_traces import summarize_trace_dir
 from lumen_deepagent.knowledge import read_knowledge, read_task_knowledge
-from lumen_deepagent.loop import LumenQualityLoop, is_surgical_dsl, repair_is_surgical
+from lumen_deepagent.loop import (
+    LumenQualityLoop,
+    classify_diagnostics,
+    is_layout_cluster_dsl,
+    is_surgical_dsl,
+    repair_is_surgical,
+)
 from lumen_deepagent.prompts import build_subagents
 from lumen_deepagent.providers import (
     compact_preview_payload,
@@ -31,7 +37,13 @@ from lumen_deepagent.providers import (
     preview_image_blocks,
 )
 from lumen_api.core import CoreError
-from lumen_deepagent.schemas import CritiqueCategory, VisualCritique, VisualIssue, VisualTarget
+from lumen_deepagent.schemas import (
+    CritiqueCategory,
+    RepairClass,
+    VisualCritique,
+    VisualIssue,
+    VisualTarget,
+)
 from lumen_deepagent.tools import LumenDesignTools, validate_preview_bytes
 
 
@@ -382,6 +394,47 @@ class FakeAlwaysPreflightErrorCoreClient(FakeCoreClient):
         }
 
 
+class FakeLayoutClusterPreflightCoreClient(FakeCoreClient):
+    def __init__(self, repo_root: Path) -> None:
+        super().__init__(repo_root)
+        self.compile_calls = 0
+
+    def compile_dsl_into_scene(self, scene, source: str, dsl_session=None):
+        self.compile_calls += 1
+        return {
+            "scene": layout_cluster_scene(),
+            "applied_operations": 2,
+            "dsl": {
+                "compile_output": {
+                    "operations": [{"kind": "add_page"}, {"kind": "insert_node"}],
+                    "diagnostics": [],
+                },
+                "operation_error": None,
+                "session_snapshot": dsl_session,
+            },
+        }
+
+    def preflight_scene(self, scene, brand_kit):
+        return {
+            "scene": scene,
+            "diagnostics": [
+                {
+                    "severity": "error",
+                    "code": "LUMV0801",
+                    "message": "node headline exceeds parent card bounds",
+                    "target_node_id": "headline",
+                    "hint": "Resize the card/header layout cluster.",
+                }
+            ],
+            "preflight": {
+                "has_errors": True,
+                "brand_ref_operations": [],
+                "token_operations": [],
+                "layout_operations": [],
+            },
+        }
+
+
 class FakeSurgicalCarryForwardCoreClient(FakeCoreClient):
     """iter1 compiles; preflight errors once on node `headline` (→ surgical);
     iter2's modify-only block fails to COMPILE with a node-less diagnostic. Surgical
@@ -509,6 +562,50 @@ def runtime_config(tmp_path: Path, max_iterations: int = 3) -> AgentRuntimeConfi
         preview_format="svg",
         trace_dir=tmp_path / ".lumen-runs",
     )
+
+
+def layout_cluster_scene() -> dict:
+    return {
+        "meta": {"id": "doc_test", "title": "Layout cluster"},
+        "pages": {
+            "page_a4": {
+                "id": "page_a4",
+                "children": ["artboard"],
+                "size": {"width": 595.276, "height": 841.89, "unit": "pt"},
+            }
+        },
+        "nodes": {
+            "artboard": {
+                "id": "artboard",
+                "kind": {"kind": "frame"},
+                "children": ["card"],
+                "transform": {"x": 0, "y": 0},
+            },
+            "card": {
+                "id": "card",
+                "kind": {"kind": "frame"},
+                "children": ["headline", "divider", "body"],
+                "transform": {"x": 48, "y": 96},
+            },
+            "headline": {
+                "id": "headline",
+                "kind": {"kind": "text", "content": "Headline"},
+                "children": [],
+            },
+            "divider": {
+                "id": "divider",
+                "kind": {"kind": "line"},
+                "children": [],
+            },
+            "body": {
+                "id": "body",
+                "kind": {"kind": "text", "content": "Body"},
+                "children": [],
+            },
+        },
+        "slots": {},
+        "assets": {},
+    }
 
 
 def test_subagents_have_isolated_skills_and_structured_reviewer_output():
@@ -1291,6 +1388,194 @@ def test_targeted_overflow_repair_routes_to_structured_ops_despite_font_asset_wa
     # A no-target compose intent routes to DSL authoring.
     compose = json.loads(tools.recommend_edit_surface("design a square ad layout", "{}"))
     assert compose["recommendation"] == "dsl"
+
+
+def test_lumv0800_routes_to_layout_cluster():
+    scene = layout_cluster_scene()
+    diagnostics = [
+        {
+            "severity": "error",
+            "code": "LUMV0800",
+            "message": "node artboard exceeds page bounds",
+            "target_page_id": "page_a4",
+            "target_node_id": "artboard",
+        }
+    ]
+
+    classification = classify_diagnostics(
+        diagnostics,
+        {"page_id": "page_a4", "node_id": "artboard"},
+        scene=scene,
+    )
+
+    assert classification.repair_class == RepairClass.layout_cluster
+    assert classification.allowed_edit_surface.value == "structured_ops"
+    assert classification.cluster is not None
+    assert classification.cluster.page_id == "page_a4"
+    assert classification.cluster.root_frame_id == "artboard"
+    assert "LUMV0800" in classification.cluster.diagnostic_codes
+    assert "convert_diagnosed_background" in classification.permissions
+
+
+def test_lumv0801_routes_to_layout_cluster_with_parent_and_descendants():
+    scene = layout_cluster_scene()
+    diagnostics = [
+        {
+            "severity": "error",
+            "code": "LUMV0801",
+            "message": "node headline exceeds parent card bounds",
+            "target_node_id": "headline",
+        }
+    ]
+
+    classification = classify_diagnostics(
+        diagnostics,
+        {"node_id": "headline"},
+        scene=scene,
+    )
+
+    assert classification.repair_class == RepairClass.layout_cluster
+    assert classification.cluster is not None
+    assert classification.cluster.page_id == "page_a4"
+    assert classification.cluster.parent_node_id == "card"
+    assert set(classification.cluster.descendant_node_ids) == {
+        "headline",
+        "divider",
+        "body",
+    }
+
+
+def test_single_text_fit_stays_targeted_but_siblings_escalate_to_layout_cluster():
+    scene = layout_cluster_scene()
+    single = classify_diagnostics(
+        [
+            {
+                "severity": "error",
+                "code": "LUMV0903",
+                "message": "headline exceeds available height",
+                "target_node_id": "headline",
+            }
+        ],
+        {"node_id": "headline"},
+        scene=scene,
+    )
+    assert single.repair_class == RepairClass.targeted_node
+
+    siblings = classify_diagnostics(
+        [
+            {
+                "severity": "error",
+                "code": "LUMV0903",
+                "message": "headline exceeds available height",
+                "target_node_id": "headline",
+            },
+            {
+                "severity": "error",
+                "code": "LUMV0903",
+                "message": "body exceeds available height",
+                "target_node_id": "body",
+            },
+        ],
+        {"node_id": "headline"},
+        scene=scene,
+    )
+    assert siblings.repair_class == RepairClass.layout_cluster
+    assert siblings.cluster is not None
+    assert siblings.cluster.parent_node_id == "card"
+
+
+def test_brand_and_legacy_geometry_repair_classes():
+    scene = layout_cluster_scene()
+    brand = classify_diagnostics(
+        [
+            {
+                "severity": "error",
+                "code": "LUMB0804",
+                "message": "raw color where token belongs",
+                "target_node_id": "card",
+            }
+        ],
+        {"node_id": "card"},
+        scene=scene,
+    )
+    legacy = classify_diagnostics(
+        [
+            {
+                "severity": "warning",
+                "code": "LUMV0805",
+                "message": "legacy non-pt page advice",
+                "target_page_id": "page_a4",
+            }
+        ],
+        {"page_id": "page_a4"},
+        scene=scene,
+    )
+
+    assert brand.repair_class == RepairClass.brand_token
+    assert legacy.repair_class == RepairClass.unsupported_gap
+    assert legacy.allowed_edit_surface.value == "external_planner"
+
+
+def test_layout_cluster_dsl_guard_scopes_modifies_and_background_delete():
+    context = {
+        "repair_class": "layout_cluster",
+        "cluster": {
+            "page_id": "page_a4",
+            "root_frame_id": "artboard",
+            "parent_node_id": "card",
+            "descendant_node_ids": ["headline", "divider", "body"],
+            "background_node_id": "bg",
+        },
+        "permissions": ["convert_diagnosed_background"],
+    }
+
+    assert is_layout_cluster_dsl(
+        "#page:page_a4 background($surface.page)\n#card s(fill,hug)\n#headline s(fill,hug)",
+        context,
+    )
+    assert is_layout_cluster_dsl("delete(bg)\n#artboard fill($surface.page)", context)
+    assert not is_layout_cluster_dsl("page page_a4 preset(a4,portrait)", context)
+    assert not is_layout_cluster_dsl("#unrelated s(1,1)", context)
+    assert not is_layout_cluster_dsl("delete(headline)", context)
+    assert not is_layout_cluster_dsl("#slot:campaign.headline required(false)", context)
+
+
+def test_layout_cluster_repair_request_carries_cluster_permissions_and_guard(
+    tmp_path: Path, monkeypatch
+):
+    monkeypatch.setattr(
+        "lumen_deepagent.tools.CoreClient", FakeLayoutClusterPreflightCoreClient
+    )
+    config = runtime_config(tmp_path, max_iterations=3)
+    tools = LumenDesignTools(config, "Create an A4 appointment card")
+    author = ScriptedAuthor(
+        [
+            "page page_a4 preset(a4,portrait)",
+            "page page_a4 preset(a4,portrait)",  # rejected: not cluster-scoped DSL
+            "#card s(fill,hug)\n#headline s(fill,hug)",
+        ]
+    )
+    reviewer = ScriptedReviewer(
+        [VisualCritique(accepted=True, summary="should not be reached")]
+    )
+
+    result = LumenQualityLoop(tools, author, reviewer).run(
+        "Create an A4 appointment card"
+    )
+
+    assert result["status"] == "failed"
+    assert author.requests[1].repair_context["repair_class"] == "layout_cluster"
+    assert author.requests[1].repair_context["cluster"]["parent_node_id"] == "card"
+    assert "modify_auto_layout" in author.requests[1].repair_context["permissions"]
+    assert author.requests[2].repair_context["kind"] == "layout_cluster_violation"
+    events = [
+        json.loads(line)["event"]
+        for line in (config.trace_dir / tools.run_id / "trace.jsonl")
+        .read_text(encoding="utf-8")
+        .splitlines()
+    ]
+    assert "layout_cluster_repair_rejected" in events
+    assert tools.core.compile_calls == 2
 
 
 def test_surgical_repair_rejects_destructive_block_without_touching_scene(

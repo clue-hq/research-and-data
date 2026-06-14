@@ -14,8 +14,13 @@ from .schemas import (
     PreflightSummary,
     ExportSummary,
     KnowledgeSnippet,
+    LayoutClusterTarget,
+    RepairClass,
+    RepairClassification,
+    EditSurfaceRecommendation,
     StopReason,
     VisualCritique,
+    VisualTarget,
 )
 from .tools import LumenDesignTools
 
@@ -119,6 +124,22 @@ class LumenQualityLoop:
             repair_context = block_request.repair_context
             if (
                 repair_context
+                and repair_context.get("repair_class") == RepairClass.layout_cluster.value
+                and not is_layout_cluster_dsl(source, repair_context)
+            ):
+                feedback = layout_cluster_violation_feedback(repair_context, source)
+                self.previous_feedback.append(feedback)
+                iteration_record.stop_reason = StopReason.compile_failed
+                self.tools.record(
+                    "coordinator",
+                    "layout_cluster_repair_rejected",
+                    input_summary=json.dumps(repair_context.get("cluster") or {}),
+                    output_summary=source[:300],
+                    payload={"rejected_source": source[:2000]},
+                )
+                continue
+            if (
+                repair_context
                 and repair_context.get("surgical_repair")
                 and not is_surgical_dsl(source)
             ):
@@ -148,6 +169,13 @@ class LumenQualityLoop:
                         json.dumps(target),
                     )
                 ).get("recommendation", "dsl")
+                classification = classify_diagnostics(
+                    compile_summary.get("diagnostics", []),
+                    target,
+                    scene=self.tools.scene,
+                    prior_context=block_request.repair_context,
+                )
+                recommendation = classification.allowed_edit_surface.value
                 context = CompileRepairContext(
                     reason="compile_failed",
                     compile_summary=iteration_record.compile_summary,
@@ -163,7 +191,10 @@ class LumenQualityLoop:
                     block_request.repair_context
                     and block_request.repair_context.get("surgical_repair")
                 )
-                surgical = repair_is_surgical(recommendation, target) or (
+                surgical = (
+                    classification.repair_class == RepairClass.targeted_node
+                    and repair_is_surgical(recommendation, target)
+                ) or (
                     prior_surgical and is_surgical_dsl(source)
                 )
                 if surgical:
@@ -182,15 +213,16 @@ class LumenQualityLoop:
                     "feedback": context.model_dump(mode="json"),
                     "target": target,
                     "recommended_edit_surface": recommendation,
-                    "authoring_constraints": (
-                        list(SURGICAL_AUTHORING_CONSTRAINTS)
-                        if surgical
-                        else [
+                    "authoring_constraints": authoring_constraints_for(
+                        classification,
+                        surgical,
+                        [
                             "Do not recreate an existing page unless the coordinator explicitly requests a whole-scene replacement.",
                             "Do not re-emit existing node IDs as new elements.",
                             "Repair only the failing line or targeted existing object.",
-                        ]
+                        ],
                     ),
+                    **repair_class_payload(classification),
                 }
                 if surgical:
                     feedback["surgical_repair"] = True
@@ -208,6 +240,7 @@ class LumenQualityLoop:
                                 "do not remove unrelated existing nodes",
                             ]
                         ),
+                        **repair_request_kwargs(classification),
                     )
                 )
                 feedback["repair_request"] = repair_request.get("repair_request")
@@ -246,23 +279,34 @@ class LumenQualityLoop:
                         json.dumps(target),
                     )
                 ).get("recommendation", "dsl")
-                surgical = repair_is_surgical(recommendation, target)
+                classification = classify_diagnostics(
+                    preflight_summary.get("diagnostics", []),
+                    target,
+                    scene=self.tools.scene,
+                    prior_context=block_request.repair_context,
+                )
+                recommendation = classification.allowed_edit_surface.value
+                surgical = (
+                    classification.repair_class == RepairClass.targeted_node
+                    and repair_is_surgical(recommendation, target)
+                )
                 feedback = {
                     "kind": "preflight",
                     "feedback": preflight_summary,
                     "debug_preview": debug_export_summary,
                     "target": target,
                     "recommended_edit_surface": recommendation,
-                    "authoring_constraints": (
-                        list(SURGICAL_AUTHORING_CONSTRAINTS)
-                        if surgical
-                        else [
+                    "authoring_constraints": authoring_constraints_for(
+                        classification,
+                        surgical,
+                        [
                             "Do not recreate an existing page unless full_replace is explicitly requested.",
                             "Do not re-emit existing node IDs as new elements.",
                             "Repair only the targeted node/page/slot when a target is present.",
                             "If structured operations are unavailable in this authoring step, emit the smallest DSL continuation that avoids duplicate IDs.",
-                        ]
+                        ],
                     ),
+                    **repair_class_payload(classification),
                 }
                 if surgical:
                     feedback["surgical_repair"] = True
@@ -281,6 +325,7 @@ class LumenQualityLoop:
                                 "do not change page dimensions unless the diagnostic targets the page size",
                             ]
                         ),
+                        **repair_request_kwargs(classification),
                     )
                 )
                 feedback["repair_request"] = repair_request.get("repair_request")
@@ -402,11 +447,15 @@ class LumenQualityLoop:
                     json.dumps(target),
                 )
             ).get("recommendation", "dsl")
+            classification = classify_visual_critique(critique, target, self.tools.scene)
+            recommendation = classification.allowed_edit_surface.value
+            feedback.update(repair_class_payload(classification))
             self.tools.create_repair_request(
                 exact_feedback=json.dumps(feedback, indent=2),
                 target_json=json.dumps(target),
                 allowed_edit_surface=recommendation,
                 forbidden_changes_json=json.dumps(["do not remove unrelated existing nodes"]),
+                **repair_request_kwargs(classification),
             )
             iteration_record.stop_reason = StopReason.reviewer_rejected
 
@@ -452,6 +501,429 @@ SURGICAL_AUTHORING_CONSTRAINTS = [
     "font size, or make the container taller (`#container s(w,h)`).",
 ]
 
+LAYOUT_CLUSTER_PERMISSIONS = [
+    "modify_position",
+    "modify_size",
+    "modify_sizing_mode",
+    "modify_auto_layout",
+    "modify_padding",
+    "modify_gap",
+    "modify_wrap",
+    "modify_clip",
+    "modify_page_background",
+    "convert_diagnosed_background",
+]
+
+LAYOUT_CLUSTER_PROHIBITIONS = [
+    "do not delete pages",
+    "do not re-declare existing pages",
+    "do not delete unrelated nodes",
+    "do not edit unrelated slots",
+    "do not edit unrelated Brand Kit tokens",
+    "do not replace unrelated assets",
+    "do not regenerate the whole scene",
+    "do not hide overflow with clipping unless the content also fits",
+]
+
+LAYOUT_CLUSTER_AUTHORING_CONSTRAINTS = [
+    "This is a BOUNDED LAYOUT CLUSTER repair.",
+    "Edit only the named page/root/parent/descendant IDs in the cluster.",
+    "Allowed changes: p/s, fill/hug/fixed sizing, auto-layout, padding, gap, "
+    "wrap, clip, and page background when permitted.",
+    "You may convert only the diagnosed background node into page/artboard fill.",
+    "Do not emit page declarations, unrelated node declarations, or whole-scene "
+    "replacements.",
+    "Do not delete pages, unrelated nodes, slots, Brand Kit tokens, or assets.",
+]
+
+TEXT_FIT_CODES = {"LUMV0902", "LUMV0903", "LUMV0904", "LUMV0810"}
+LAYOUT_CLUSTER_CODES = {"LUMV0800", "LUMV0801", "LUMV0803"}
+LEGACY_GEOMETRY_CODES = {"LUMV0805"}
+
+
+def classify_diagnostics(
+    diagnostics: list[dict],
+    target: dict,
+    scene: dict | None = None,
+    prior_context: dict | None = None,
+) -> RepairClassification:
+    normalized = [diagnostic_to_dict(diagnostic) for diagnostic in diagnostics]
+    codes = {str(diagnostic.get("code") or "") for diagnostic in normalized}
+    scene = scene or {}
+
+    if (
+        prior_context
+        and prior_context.get("repair_class") == RepairClass.layout_cluster.value
+        and any(code.startswith("LUMD") or code.startswith("LUMA") for code in codes)
+    ):
+        cluster = LayoutClusterTarget.model_validate(prior_context.get("cluster") or {})
+        return RepairClassification(
+            repair_class=RepairClass.layout_cluster,
+            target=VisualTarget.model_validate(target) if target else None,
+            cluster=cluster,
+            allowed_edit_surface=EditSurfaceRecommendation.structured_ops,
+            permissions=list(LAYOUT_CLUSTER_PERMISSIONS),
+            prohibitions=list(LAYOUT_CLUSTER_PROHIBITIONS),
+            reason="preserve_layout_cluster_after_compile_failure",
+        )
+
+    if codes & LAYOUT_CLUSTER_CODES:
+        return layout_cluster_classification(
+            normalized,
+            target,
+            scene,
+            reason="page_or_parent_bounds",
+        )
+
+    if codes & LEGACY_GEOMETRY_CODES:
+        return RepairClassification(
+            repair_class=RepairClass.unsupported_gap,
+            target=VisualTarget.model_validate(target) if target else None,
+            allowed_edit_surface=EditSurfaceRecommendation.external_planner,
+            reason="legacy_geometry_requires_migration_decision",
+        )
+
+    if text_fit_should_escalate(normalized, scene):
+        return layout_cluster_classification(
+            normalized,
+            target,
+            scene,
+            reason="multiple_text_fit_diagnostics_share_parent",
+        )
+
+    if any(code.startswith("LUMB") for code in codes):
+        return RepairClassification(
+            repair_class=RepairClass.brand_token,
+            target=VisualTarget.model_validate(target) if target else None,
+            allowed_edit_surface=EditSurfaceRecommendation.structured_ops,
+            reason="brand_governance_diagnostic",
+        )
+
+    if codes & TEXT_FIT_CODES and target.get("node_id"):
+        return RepairClassification(
+            repair_class=RepairClass.targeted_node,
+            target=VisualTarget.model_validate(target),
+            allowed_edit_surface=EditSurfaceRecommendation.structured_ops,
+            reason="single_text_fit_target",
+        )
+
+    if any(code.startswith("LUMD") or code.startswith("LUMA") for code in codes):
+        return RepairClassification(
+            repair_class=RepairClass.syntax_continuation,
+            target=VisualTarget.model_validate(target) if target else None,
+            allowed_edit_surface=EditSurfaceRecommendation.dsl,
+            reason="compile_or_agent_guard_diagnostic",
+        )
+
+    if target.get("node_id"):
+        return RepairClassification(
+            repair_class=RepairClass.targeted_node,
+            target=VisualTarget.model_validate(target),
+            allowed_edit_surface=EditSurfaceRecommendation.structured_ops,
+            reason="named_node_target",
+        )
+
+    return RepairClassification(
+        repair_class=RepairClass.syntax_continuation,
+        target=VisualTarget.model_validate(target) if target else None,
+        allowed_edit_surface=EditSurfaceRecommendation.dsl,
+        reason="default_repair_class",
+    )
+
+
+def layout_cluster_classification(
+    diagnostics: list[dict],
+    target: dict,
+    scene: dict,
+    reason: str,
+) -> RepairClassification:
+    cluster = resolve_layout_cluster(scene, diagnostics, target)
+    return RepairClassification(
+        repair_class=RepairClass.layout_cluster,
+        target=VisualTarget.model_validate(target) if target else None,
+        cluster=cluster,
+        allowed_edit_surface=EditSurfaceRecommendation.structured_ops,
+        permissions=list(LAYOUT_CLUSTER_PERMISSIONS),
+        prohibitions=list(LAYOUT_CLUSTER_PROHIBITIONS),
+        reason=reason,
+    )
+
+
+def resolve_layout_cluster(
+    scene: dict,
+    diagnostics: list[dict],
+    target: dict,
+) -> LayoutClusterTarget:
+    parent_by_node, page_by_node = build_parent_maps(scene)
+    target_node_ids = diagnostic_node_ids(diagnostics)
+    if target.get("node_id"):
+        target_node_ids.append(str(target["node_id"]))
+    target_node_ids = dedupe(target_node_ids)
+
+    page_id = (
+        target.get("page_id")
+        or first_diagnostic_value(diagnostics, "target_page_id")
+        or first_page_for_nodes(target_node_ids, page_by_node)
+        or single_page_id(scene)
+    )
+    target_node_id = target_node_ids[0] if target_node_ids else None
+    parent_node_id = target.get("parent_node_id") or (
+        parent_by_node.get(target_node_id) if target_node_id else None
+    )
+    root_frame_id = find_root_frame_candidate(scene, page_id) if page_id else None
+    background_node_id = find_background_candidate(
+        scene,
+        page_id,
+        target_node_ids,
+        diagnostics,
+    )
+
+    descendants: list[str] = []
+    if parent_node_id:
+        descendants.extend(node_children(scene, parent_node_id))
+    descendants.extend(target_node_ids)
+    if root_frame_id and not parent_node_id:
+        descendants.extend(node_children(scene, root_frame_id))
+    descendants = [
+        node_id
+        for node_id in dedupe(descendants)
+        if node_id not in {parent_node_id, root_frame_id, background_node_id, None}
+    ]
+
+    return LayoutClusterTarget(
+        page_id=page_id,
+        root_frame_id=root_frame_id,
+        parent_node_id=parent_node_id,
+        descendant_node_ids=descendants,
+        background_node_id=background_node_id,
+        diagnostic_codes=dedupe(
+            [
+                str(diagnostic.get("code"))
+                for diagnostic in diagnostics
+                if diagnostic.get("code")
+            ]
+        ),
+    )
+
+
+def diagnostic_to_dict(diagnostic: dict | object) -> dict:
+    if isinstance(diagnostic, dict):
+        return diagnostic
+    model_dump = getattr(diagnostic, "model_dump", None)
+    if callable(model_dump):
+        return model_dump(mode="json")
+    return {}
+
+
+def diagnostic_node_ids(diagnostics: list[dict]) -> list[str]:
+    node_ids: list[str] = []
+    for diagnostic in diagnostics:
+        node_id = diagnostic.get("target_node_id")
+        subject = diagnostic.get("subject") or {}
+        if not node_id and isinstance(subject, dict) and subject.get("kind") == "node":
+            node_id = subject.get("id") or subject.get("value")
+        if node_id:
+            node_ids.append(str(node_id))
+    return node_ids
+
+
+def first_diagnostic_value(diagnostics: list[dict], key: str) -> str | None:
+    for diagnostic in diagnostics:
+        value = diagnostic.get(key)
+        if value:
+            return str(value)
+        subject = diagnostic.get("subject") or {}
+        if (
+            key == "target_page_id"
+            and isinstance(subject, dict)
+            and subject.get("kind") == "page"
+        ):
+            return str(subject.get("id") or subject.get("value"))
+    return None
+
+
+def text_fit_should_escalate(diagnostics: list[dict], scene: dict) -> bool:
+    text_node_ids = [
+        node_id
+        for diagnostic in diagnostics
+        if diagnostic.get("code") in TEXT_FIT_CODES
+        for node_id in diagnostic_node_ids([diagnostic])
+    ]
+    if len(text_node_ids) < 2:
+        return False
+    parent_by_node, _ = build_parent_maps(scene)
+    parent_ids = {parent_by_node.get(node_id) for node_id in text_node_ids}
+    parent_ids.discard(None)
+    return len(parent_ids) == 1
+
+
+def build_parent_maps(scene: dict) -> tuple[dict[str, str], dict[str, str]]:
+    parent_by_node: dict[str, str] = {}
+    page_by_node: dict[str, str] = {}
+    for page_id, page in (scene.get("pages") or {}).items():
+        for child_id in page.get("children") or []:
+            page_by_node[str(child_id)] = str(page_id)
+            collect_node_parent_maps(
+                scene,
+                str(child_id),
+                str(page_id),
+                parent_by_node,
+                page_by_node,
+            )
+    return parent_by_node, page_by_node
+
+
+def collect_node_parent_maps(
+    scene: dict,
+    node_id: str,
+    page_id: str,
+    parent_by_node: dict[str, str],
+    page_by_node: dict[str, str],
+) -> None:
+    page_by_node[node_id] = page_id
+    for child_id in node_children(scene, node_id):
+        parent_by_node[str(child_id)] = node_id
+        collect_node_parent_maps(
+            scene,
+            str(child_id),
+            page_id,
+            parent_by_node,
+            page_by_node,
+        )
+
+
+def first_page_for_nodes(
+    node_ids: list[str],
+    page_by_node: dict[str, str],
+) -> str | None:
+    for node_id in node_ids:
+        page_id = page_by_node.get(node_id)
+        if page_id:
+            return page_id
+    return None
+
+
+def single_page_id(scene: dict) -> str | None:
+    pages = scene.get("pages") or {}
+    if len(pages) == 1:
+        return next(iter(pages.keys()))
+    return None
+
+
+def page_children(scene: dict, page_id: str | None) -> list[str]:
+    if not page_id:
+        return []
+    page = (scene.get("pages") or {}).get(page_id) or {}
+    return [str(child_id) for child_id in page.get("children") or []]
+
+
+def node_children(scene: dict, node_id: str | None) -> list[str]:
+    if not node_id:
+        return []
+    node = (scene.get("nodes") or {}).get(node_id) or {}
+    return [str(child_id) for child_id in node.get("children") or []]
+
+
+def find_root_frame_candidate(scene: dict, page_id: str | None) -> str | None:
+    direct_children = page_children(scene, page_id)
+    if len(direct_children) == 1:
+        return direct_children[0]
+    for node_id in direct_children:
+        if is_root_like_node_id(node_id):
+            return node_id
+    return None
+
+
+def find_background_candidate(
+    scene: dict,
+    page_id: str | None,
+    target_node_ids: list[str],
+    diagnostics: list[dict],
+) -> str | None:
+    message = " ".join(
+        str(diagnostic.get("message") or "") + " " + str(diagnostic.get("hint") or "")
+        for diagnostic in diagnostics
+    ).lower()
+    direct_children = set(page_children(scene, page_id))
+    for node_id in target_node_ids:
+        if node_id in direct_children and (
+            "background" in message or is_background_like_node_id(node_id)
+        ):
+            return node_id
+    for node_id in direct_children:
+        if is_background_like_node_id(node_id) and not has_slot_binding(scene, node_id):
+            return node_id
+    return None
+
+
+def is_root_like_node_id(node_id: str) -> bool:
+    lowered = node_id.lower()
+    return any(
+        term in lowered for term in ("root", "artboard", "canvas", "background", "bg")
+    )
+
+
+def is_background_like_node_id(node_id: str) -> bool:
+    lowered = node_id.lower()
+    return any(term in lowered for term in ("background", "bg", "backdrop", "canvas"))
+
+
+def has_slot_binding(scene: dict, node_id: str) -> bool:
+    for slot in (scene.get("slots") or {}).values():
+        if node_id in (slot.get("bound_nodes") or []):
+            return True
+    return False
+
+
+def dedupe(values: list[str]) -> list[str]:
+    seen: set[str] = set()
+    result: list[str] = []
+    for value in values:
+        if value in seen:
+            continue
+        seen.add(value)
+        result.append(value)
+    return result
+
+
+def repair_class_payload(classification: RepairClassification) -> dict:
+    return {
+        "repair_class": classification.repair_class.value,
+        "cluster": (
+            classification.cluster.model_dump(mode="json")
+            if classification.cluster
+            else None
+        ),
+        "permissions": list(classification.permissions),
+        "prohibitions": list(classification.prohibitions),
+        "repair_class_reason": classification.reason,
+    }
+
+
+def repair_request_kwargs(classification: RepairClassification) -> dict:
+    return {
+        "repair_class": classification.repair_class.value,
+        "cluster_json": json.dumps(
+            classification.cluster.model_dump(mode="json")
+            if classification.cluster
+            else None
+        ),
+        "permissions_json": json.dumps(classification.permissions),
+        "prohibitions_json": json.dumps(classification.prohibitions),
+    }
+
+
+def authoring_constraints_for(
+    classification: RepairClassification,
+    surgical: bool,
+    fallback: list[str],
+) -> list[str]:
+    if classification.repair_class == RepairClass.layout_cluster:
+        return list(LAYOUT_CLUSTER_AUTHORING_CONSTRAINTS)
+    if surgical:
+        return list(SURGICAL_AUTHORING_CONSTRAINTS)
+    return fallback
+
 
 def repair_is_surgical(recommendation: str, target: dict) -> bool:
     """A targeted property/fit repair we enforce as modify-only: a concrete node
@@ -480,6 +952,53 @@ def is_surgical_dsl(source: str) -> bool:
     return saw_modify
 
 
+def is_layout_cluster_dsl(source: str, context: dict) -> bool:
+    cluster = context.get("cluster") or {}
+    allowed_pages = {cluster.get("page_id")} if cluster.get("page_id") else set()
+    allowed_nodes = layout_cluster_allowed_node_ids(cluster)
+    background_node_id = cluster.get("background_node_id")
+    permissions = set(context.get("permissions") or [])
+    saw_edit = False
+
+    for raw in source.splitlines():
+        line = raw.strip()
+        if not line or line.startswith("//"):
+            continue
+        if line.startswith("#"):
+            ref = line[1:].split(None, 1)[0]
+            if ref.startswith("page:"):
+                page_id = ref.split(":", 1)[1]
+                if page_id not in allowed_pages:
+                    return False
+            elif ref.startswith(("slot:", "asset:", "document")):
+                return False
+            elif ref not in allowed_nodes:
+                return False
+            saw_edit = True
+            continue
+        if line.startswith("delete(") and line.endswith(")"):
+            deleted_id = line[len("delete(") : -1].strip()
+            if (
+                deleted_id == background_node_id
+                and "convert_diagnosed_background" in permissions
+            ):
+                saw_edit = True
+                continue
+            return False
+        return False
+
+    return saw_edit
+
+
+def layout_cluster_allowed_node_ids(cluster: dict) -> set[str]:
+    allowed = set(cluster.get("descendant_node_ids") or [])
+    for key in ("root_frame_id", "parent_node_id", "background_node_id"):
+        value = cluster.get(key)
+        if value:
+            allowed.add(str(value))
+    return allowed
+
+
 def surgical_violation_feedback(prior: dict, rejected_source: str) -> dict:
     """Feedback for a rejected non-surgical repair: tell the author exactly why
     it was dropped and re-issue the modify-only constraints, keeping the repair
@@ -501,6 +1020,29 @@ def surgical_violation_feedback(prior: dict, rejected_source: str) -> dict:
         "surgical_target": target,
         "recommended_edit_surface": "structured_ops",
         "authoring_constraints": list(SURGICAL_AUTHORING_CONSTRAINTS),
+        "rejected_source": rejected_source[:500],
+    }
+
+
+def layout_cluster_violation_feedback(prior: dict, rejected_source: str) -> dict:
+    cluster = prior.get("cluster") or {}
+    allowed_pages = [cluster.get("page_id")] if cluster.get("page_id") else []
+    allowed_nodes = sorted(layout_cluster_allowed_node_ids(cluster))
+    return {
+        "kind": "layout_cluster_violation",
+        "feedback": (
+            "Your previous layout_cluster repair was REJECTED and NOT applied "
+            "because it edited outside the allowed cluster or attempted to "
+            "re-author the page. Emit only #modify lines for allowed page/node "
+            f"IDs. Allowed pages: {allowed_pages}. Allowed nodes: {allowed_nodes}."
+        ),
+        "target": prior.get("target") or {},
+        "repair_class": RepairClass.layout_cluster.value,
+        "cluster": cluster,
+        "permissions": prior.get("permissions") or list(LAYOUT_CLUSTER_PERMISSIONS),
+        "prohibitions": prior.get("prohibitions") or list(LAYOUT_CLUSTER_PROHIBITIONS),
+        "recommended_edit_surface": EditSurfaceRecommendation.structured_ops.value,
+        "authoring_constraints": list(LAYOUT_CLUSTER_AUTHORING_CONSTRAINTS),
         "rejected_source": rejected_source[:500],
     }
 
@@ -545,6 +1087,30 @@ def first_issue_target(critique: VisualCritique) -> dict:
         if issue.target is not None:
             return issue.target.model_dump(mode="json")
     return {}
+
+
+def classify_visual_critique(
+    critique: VisualCritique,
+    target: dict,
+    scene: dict,
+) -> RepairClassification:
+    diagnostics: list[dict] = []
+    for issue in critique.issues:
+        category = str(issue.category.value if hasattr(issue.category, "value") else issue.category)
+        if category in {"clipping", "overflow", "page_dimensions"}:
+            issue_target = issue.target.model_dump(mode="json") if issue.target else target
+            code = "LUMV0800" if issue_target.get("page_id") else "LUMV0801"
+            diagnostics.append(
+                {
+                    "severity": issue.severity.value,
+                    "code": code,
+                    "message": issue.message,
+                    "target_page_id": issue_target.get("page_id"),
+                    "target_node_id": issue_target.get("node_id"),
+                    "suggested_repair": issue.suggested_repair,
+                }
+            )
+    return classify_diagnostics(diagnostics, target, scene=scene)
 
 
 def first_diagnostic_target(summary: dict) -> dict:
