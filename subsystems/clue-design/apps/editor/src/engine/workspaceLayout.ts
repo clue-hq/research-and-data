@@ -1,6 +1,6 @@
 import type { Diagnostic, PageId, Scene } from "./contracts";
 import { pageDescriptor } from "./renderAdapter";
-import { listPages, pageIdForNode } from "./sceneQueries";
+import { listPages, nodeIdForAsset, pageIdForNode } from "./sceneQueries";
 
 export interface Point {
   x: number;
@@ -228,8 +228,8 @@ function pageIdForDiagnostic(scene: Scene, diagnostic: Diagnostic): PageId | nul
       return nodeId ? pageIdForNode(scene, nodeId) : null;
     }
     case "asset": {
-      const node = Object.values(scene.nodes).find((candidate) => candidate.source_asset_id === subject.id);
-      return node ? pageIdForNode(scene, node.id) : null;
+      const nodeId = nodeIdForAsset(scene, subject.id);
+      return nodeId ? pageIdForNode(scene, nodeId) : null;
     }
     case "document":
       return null;

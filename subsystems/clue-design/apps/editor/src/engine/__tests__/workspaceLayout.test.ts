@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { minimalScene } from "@/fixtures/minimalScene";
 import type { Diagnostic, Node, Page, Scene } from "../contracts";
 import { normalizePageSize } from "../pageGeometry";
 import {
@@ -66,11 +67,30 @@ describe("workspace layout", () => {
     const scene = sceneWithPages([page("page_one", "One", 600, 400, "px"), page("page_two", "Two", 600, 400, "px")]);
     scene.nodes.node_on_page_two = node("node_on_page_two");
     scene.pages.page_two.children.push("node_on_page_two");
-    scene.nodes.node_asset = { ...node("node_asset"), source_asset_id: "asset_hero" };
+    scene.nodes.node_asset = {
+      ...node("node_asset"),
+      kind: {
+        kind: "image",
+        asset_id: "asset_hero",
+        alt: "Hero"
+      },
+      source_asset_id: null
+    };
     scene.pages.page_two.children.push("node_asset");
+    scene.slots.slot_dynamic_name = {
+      ...minimalScene.slots.slot_contact_name,
+      id: "slot_dynamic_name",
+      key: "dynamic.name",
+      scope: {
+        kind: "page",
+        id: "page_two"
+      },
+      bound_nodes: ["node_on_page_two"]
+    };
     const diagnostics: Diagnostic[] = [
       diagnostic("error", { kind: "page", id: "page_one" }),
       diagnostic("warning", { kind: "node", id: "node_on_page_two" }),
+      diagnostic("warning", { kind: "slot", id: "slot_dynamic_name" }),
       diagnostic("error", { kind: "asset", id: "asset_hero" }),
       diagnostic("advice", { kind: "node", id: "node_on_page_two" }),
       diagnostic("error", { kind: "document" })
@@ -84,7 +104,7 @@ describe("workspace layout", () => {
     });
     expect(model.artboards.find((artboard) => artboard.pageId === "page_two")?.diagnosticsSummary).toEqual({
       errorCount: 1,
-      warningCount: 1
+      warningCount: 2
     });
   });
 
