@@ -11,8 +11,9 @@ use crate::resolver::AssetByteResolver;
 use crate::sidecar::build_sidecar;
 use crate::svg::resolve_page_ids;
 use lumen_core::{
+    is_canonical_page_size, page_geometry, physical_page_size_inches, unit_to_inches,
     ExportAdapter, ExportArtifact, ExportError, ExportFormat, ExportRequest, ExportResult, Page,
-    Scene, Unit,
+    Scene,
 };
 use std::sync::Arc;
 
@@ -105,12 +106,6 @@ impl ExportAdapter for PngExportAdapter {
 }
 
 pub(crate) fn page_pixel_size(page: &Page, request: &ExportRequest) -> (u32, u32) {
-    let dpi = request
-        .profile
-        .raster
-        .as_ref()
-        .and_then(|raster| raster.dpi)
-        .unwrap_or(96) as f64;
     let scale = request
         .profile
         .raster
@@ -118,14 +113,112 @@ pub(crate) fn page_pixel_size(page: &Page, request: &ExportRequest) -> (u32, u32
         .map(|raster| raster.scale)
         .unwrap_or(1.0);
 
-    let (width_in, height_in) = match page.size.unit {
-        Unit::Px => (page.size.width / dpi, page.size.height / dpi),
-        Unit::Mm => (page.size.width / 25.4, page.size.height / 25.4),
-        Unit::In => (page.size.width, page.size.height),
-    };
+    let geometry = page_geometry(page);
+    if is_canonical_page_size(&page.size) {
+        if request.profile.raster.is_none() {
+            if let Some(raster) = geometry.raster {
+                return (raster.width_px.max(1), raster.height_px.max(1));
+            }
+        }
+
+        if let (Some(physical), Some(dpi)) = (
+            geometry.physical.as_ref(),
+            request
+                .profile
+                .raster
+                .as_ref()
+                .and_then(|raster| raster.dpi),
+        ) {
+            let dpi = f64::from(dpi);
+            let (width_in, height_in) = physical_page_size_inches(physical);
+            return (
+                (width_in * dpi * scale).round().max(1.0) as u32,
+                (height_in * dpi * scale).round().max(1.0) as u32,
+            );
+        }
+
+        return (
+            (geometry.layout.width * scale).round().max(1.0) as u32,
+            (geometry.layout.height * scale).round().max(1.0) as u32,
+        );
+    }
+
+    let dpi = request
+        .profile
+        .raster
+        .as_ref()
+        .and_then(|raster| raster.dpi)
+        .unwrap_or(96) as f64;
+    let width_in = unit_to_inches(page.size.width, &page.size.unit, dpi);
+    let height_in = unit_to_inches(page.size.height, &page.size.unit, dpi);
 
     (
         (width_in * dpi * scale).round().max(1.0) as u32,
         (height_in * dpi * scale).round().max(1.0) as u32,
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::page_pixel_size;
+    use lumen_core::{
+        normalize_page_size, ExportFormat, ExportProfile, ExportPurpose, ExportRequest,
+        Orientation, Page, PageId, PagePreset, PageSizeInput, RasterScale, Unit,
+    };
+
+    fn page(width: f64, height: f64, unit: Unit) -> Page {
+        Page {
+            id: PageId::from("page"),
+            name: "Page".to_owned(),
+            size: normalize_page_size(PageSizeInput::new(
+                width,
+                height,
+                unit,
+                Some(PagePreset::Custom),
+                Orientation::Landscape,
+            )),
+            children: Vec::new(),
+            bleed: None,
+            safe_area: None,
+            background: Vec::new(),
+        }
+    }
+
+    fn request(raster: Option<RasterScale>) -> ExportRequest {
+        ExportRequest {
+            profile: ExportProfile {
+                name: "png_test".to_owned(),
+                format: ExportFormat::Png,
+                pdf_intent: None,
+                raster,
+                include_bleed: false,
+                embed_fonts: false,
+            },
+            page_ids: vec![PageId::from("page")],
+            purpose: ExportPurpose::UserDownload,
+        }
+    }
+
+    #[test]
+    fn canonical_px_page_uses_raster_default_without_profile_override() {
+        let page = page(1080.0, 1080.0, Unit::Px);
+
+        assert_eq!(page_pixel_size(&page, &request(None)), (1080, 1080));
+    }
+
+    #[test]
+    fn canonical_physical_page_uses_dpi_from_profile() {
+        let page = page(210.0, 297.0, Unit::Mm);
+
+        assert_eq!(
+            page_pixel_size(
+                &page,
+                &request(Some(RasterScale {
+                    scale: 1.0,
+                    dpi: Some(300),
+                })),
+            ),
+            (2480, 3508)
+        );
+    }
 }

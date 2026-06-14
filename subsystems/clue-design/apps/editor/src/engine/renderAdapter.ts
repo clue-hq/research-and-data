@@ -611,6 +611,7 @@ function tokenFallback(token: string): string {
 
 function unitScale(unit: Unit): number {
   switch (unit) {
+    case "pt":
     case "px":
       return 1;
     case "mm":

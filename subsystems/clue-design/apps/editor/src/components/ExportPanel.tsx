@@ -5,6 +5,7 @@ import { Copy, Download, Eye, Save, Trash2 } from "lucide-react";
 import type { Diagnostic, DiagnosticSubject, ExportProfile, PageId, Scene } from "@/engine/contracts";
 import type { EditorExportArtifact, EditorExportResult } from "@/engine/exportRunner";
 import { exportProfilesForScene } from "@/engine/exportRunner";
+import { physicalToInches, unitToInches } from "@/engine/pageGeometry";
 
 interface ExportPanelProps {
   scene: Scene;
@@ -609,23 +610,27 @@ function pageSizeLabel(page: Scene["pages"][PageId]): string {
 function rasterPixelDimensions(page: Scene["pages"][PageId], profile: ExportProfile): { width: number; height: number } {
   const scale = profile.raster?.scale ?? 1;
   const dpi = profile.raster?.dpi ?? 96;
-  const widthIn = sceneLengthToInches(page.size.width, page.size.unit, dpi);
-  const heightIn = sceneLengthToInches(page.size.height, page.size.unit, dpi);
+  if (page.size.unit === "pt") {
+    const physical = page.size.output?.physical;
+    if (physical) {
+      const widthIn = physicalToInches(physical.width, physical.unit);
+      const heightIn = physicalToInches(physical.height, physical.unit);
+      return {
+        width: Math.max(1, Math.round(widthIn * dpi * scale)),
+        height: Math.max(1, Math.round(heightIn * dpi * scale))
+      };
+    }
+    return {
+      width: Math.max(1, Math.round(page.size.width * scale)),
+      height: Math.max(1, Math.round(page.size.height * scale))
+    };
+  }
+  const widthIn = unitToInches(page.size.width, page.size.unit, dpi);
+  const heightIn = unitToInches(page.size.height, page.size.unit, dpi);
   return {
     width: Math.max(1, Math.round(widthIn * dpi * scale)),
     height: Math.max(1, Math.round(heightIn * dpi * scale))
   };
-}
-
-function sceneLengthToInches(value: number, unit: Scene["pages"][PageId]["size"]["unit"], dpi: number): number {
-  switch (unit) {
-    case "px":
-      return value / dpi;
-    case "mm":
-      return value / 25.4;
-    case "in":
-      return value;
-  }
 }
 
 function formatMegapixels(value: number): string {

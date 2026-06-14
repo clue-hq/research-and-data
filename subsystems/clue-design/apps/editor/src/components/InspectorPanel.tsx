@@ -48,6 +48,7 @@ import {
   updateTextNode
 } from "@/engine/operations";
 import { colorToCss, dimensionToNumber, fixedSize } from "@/engine/renderAdapter";
+import { normalizePageSize } from "@/engine/pageGeometry";
 import { flattenPageNodeIds, isNodeDirectGeometryEditable, isNodeLayoutManaged, nodeDisplayName } from "@/engine/sceneQueries";
 import { SlotInspector, SlotOverview } from "./SlotInspector";
 
@@ -133,6 +134,7 @@ export function InspectorPanel({
                     onOperation(updatePageSize(activePage, customPageSize(activePage, { unit: event.target.value as Unit })))
                   }
                 >
+                  <option value="pt">pt</option>
                   <option value="px">px</option>
                   <option value="mm">mm</option>
                   <option value="in">in</option>
@@ -1056,16 +1058,15 @@ function anchorLabel(anchor: LayoutAnchor): string {
 }
 
 function customPageSize(page: Page, patch: Partial<Pick<Page["size"], "width" | "height" | "unit">>): Page["size"] {
-  const width = normalizePositiveDimension(patch.width ?? page.size.width);
-  const height = normalizePositiveDimension(patch.height ?? page.size.height);
-  return {
-    ...page.size,
+  const source = page.size.source;
+  const width = normalizePositiveDimension(patch.width ?? source?.width ?? page.size.width);
+  const height = normalizePositiveDimension(patch.height ?? source?.height ?? page.size.height);
+  return normalizePageSize({
     width,
     height,
-    unit: patch.unit ?? page.size.unit,
-    preset: "custom",
-    orientation: orientationForDimensions(width, height)
-  };
+    unit: patch.unit ?? "pt",
+    preset: "custom"
+  });
 }
 
 function safeAreaFromMargin(page: Page, rawMargin: number): Rect | null {

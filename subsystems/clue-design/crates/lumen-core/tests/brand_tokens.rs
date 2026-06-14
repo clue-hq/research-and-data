@@ -234,6 +234,17 @@ fn generated_brand_kit_can_drive_tokenized_preflight() {
         .get_mut(&NodeId::from("node_headline"))
         .unwrap()
         .size = SizeSpec::fixed(640.0, 96.0);
+    scene
+        .pages
+        .get_mut(&PageId::from("page_brand"))
+        .unwrap()
+        .size = lumen_core::normalize_page_size(lumen_core::PageSizeInput::new(
+        720.0,
+        320.0,
+        Unit::Px,
+        Some(PagePreset::Custom),
+        Orientation::Landscape,
+    ));
 
     let result = preflight_scene(scene, Some(&brand_kit), PreflightOptions::default());
 
@@ -853,6 +864,17 @@ fn styles_fixture_preflights_tokenized_scene_without_unresolved_tokens() {
         .get_mut(&NodeId::from("node_headline"))
         .unwrap()
         .size = SizeSpec::fixed(640.0, 96.0);
+    scene
+        .pages
+        .get_mut(&PageId::from("page_brand"))
+        .unwrap()
+        .size = lumen_core::normalize_page_size(lumen_core::PageSizeInput::new(
+        720.0,
+        320.0,
+        Unit::Px,
+        Some(PagePreset::Custom),
+        Orientation::Landscape,
+    ));
 
     let result = preflight_scene(scene, Some(&brand_kit), PreflightOptions::default());
 
@@ -1501,6 +1523,8 @@ fn page(id: &str) -> Page {
             unit: Unit::Px,
             preset: Some(PagePreset::Custom),
             orientation: Orientation::Landscape,
+            source: None,
+            output: None,
         },
         children: Vec::new(),
         bleed: None,

@@ -5,6 +5,17 @@ Status: approved sequencing; working spec for the four remaining workstreams.
 Baseline: `main` at `9f9ef66` (Phases A–G complete, Effects V0, Skia
 server-side, browser WASM core all merged).
 
+## 2026-06-14 Addendum: Canonical Artboard Geometry
+
+The newer artboard/workspace planning stream adds a prerequisite before the
+infinite workspace UI: canonical artboard geometry. The detailed first-slice
+implementation plan for this branch is
+`docs/canonical-artboard-geometry-implementation-plan.md`.
+
+That slice should land before `editor/infinite-workspace-v0` so bounded
+artboards, editor descriptors, preflight, and export adapters agree on one
+layout coordinate system.
+
 ## Purpose
 
 The A–G product roadmap from the Brilliant-vs-Lumen gap analysis is built

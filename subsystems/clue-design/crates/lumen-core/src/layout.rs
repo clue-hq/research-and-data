@@ -1,6 +1,7 @@
 use crate::diagnostics::{Diagnostic, DiagnosticSeverity, DiagnosticSubject, Phase};
 use crate::ids::{NodeId, PageId};
 use crate::operations::{NodePatch, Operation, OptionalFieldPatch};
+use crate::page_geometry::page_geometry;
 use crate::scene::{
     AutoLayoutDirection, ComputedGeometry, Dimension, LayoutAnchor, Node, NodeKind, Rect, Scene,
     SizeSpec, TextWrap,
@@ -76,6 +77,7 @@ pub fn layout_scene(scene: &Scene, options: LayoutOptions) -> LayoutResult {
         .unwrap_or(&FALLBACK_MEASURER);
     let mut engine = LayoutEngine::new(scene, measurer);
     engine.layout_pages();
+    engine.validate_artboard_bounds();
     engine.validate_layout_anchors();
     engine.validate_text_nodes();
 
@@ -126,9 +128,10 @@ impl<'a> LayoutEngine<'a> {
 
     fn layout_pages(&mut self) {
         for page in self.scene.pages.values() {
+            let geometry = page_geometry(page);
             let page_size = Size2 {
-                width: page.size.width,
-                height: page.size.height,
+                width: geometry.layout.width,
+                height: geometry.layout.height,
             };
 
             for child_id in &page.children {
@@ -708,6 +711,143 @@ impl<'a> LayoutEngine<'a> {
                 render_bounds,
             },
         );
+    }
+
+    fn validate_artboard_bounds(&mut self) {
+        for page in self.scene.pages.values() {
+            let page_bounds = page_geometry(page).layout;
+            if page_bounds.width <= 0.0
+                || page_bounds.height <= 0.0
+                || !page_bounds.width.is_finite()
+                || !page_bounds.height.is_finite()
+            {
+                self.diagnostics.push(
+                    Diagnostic::error(
+                        Phase::Layout,
+                        "LUMV0803",
+                        format!("page {} has invalid canonical layout bounds", page.id),
+                        Some(DiagnosticSubject::Page(page.id.clone())),
+                    )
+                    .with_hint("Normalize the page/artboard size before layout or export."),
+                );
+                continue;
+            }
+
+            for child_id in &page.children {
+                self.validate_node_against_page(child_id, page, &page_bounds);
+                self.validate_node_children_against_parent(child_id, page, &page_bounds, true);
+            }
+        }
+    }
+
+    fn validate_node_against_page(
+        &mut self,
+        node_id: &NodeId,
+        page: &crate::scene::Page,
+        page_bounds: &Rect,
+    ) {
+        let Some(bounds) = self.node_bounds(node_id, page_bounds) else {
+            return;
+        };
+        if rect_contains(page_bounds, &bounds) {
+            return;
+        }
+        if page
+            .bleed
+            .as_ref()
+            .is_some_and(|bleed| rect_contains(bleed, &bounds))
+        {
+            self.diagnostics.push(
+                Diagnostic::warning(
+                    Phase::Layout,
+                    "LUMV0802",
+                    format!(
+                        "node {} on page {} falls outside trim bounds but inside bleed",
+                        node_id, page.id
+                    ),
+                    Some(DiagnosticSubject::Node(node_id.clone())),
+                )
+                .with_hint("Review bleed-safe content before approving print export."),
+            );
+            return;
+        }
+
+        self.diagnostics.push(
+            Diagnostic::error(
+                Phase::Layout,
+                "LUMV0800",
+                format!(
+                    "node {} exceeds exportable bounds for page {}",
+                    node_id, page.id
+                ),
+                Some(DiagnosticSubject::Node(node_id.clone())),
+            )
+            .with_hint("Move or resize the node so its computed bounds fit the artboard."),
+        );
+    }
+
+    fn validate_node_children_against_parent(
+        &mut self,
+        node_id: &NodeId,
+        page: &crate::scene::Page,
+        parent_bounds: &Rect,
+        parent_is_page: bool,
+    ) {
+        let Some(node) = self.scene.nodes.get(node_id) else {
+            return;
+        };
+        let Some(node_bounds) = self.node_bounds(node_id, parent_bounds) else {
+            return;
+        };
+
+        if !parent_is_page && !rect_contains(parent_bounds, &node_bounds) {
+            let severity = if self.parent_clips(node_id) {
+                DiagnosticSeverity::Error
+            } else {
+                DiagnosticSeverity::Warning
+            };
+            let diagnostic = Diagnostic {
+                severity,
+                phase: Phase::Layout,
+                code: "LUMV0801".to_owned(),
+                message: format!("node {} exceeds parent bounds on page {}", node_id, page.id),
+                subject: Some(DiagnosticSubject::Node(node_id.clone())),
+                hint: Some(
+                    "Move, resize, wrap, or change the parent layout so the child fits.".to_owned(),
+                ),
+            };
+            self.diagnostics.push(diagnostic);
+        }
+
+        for child_id in &node.children {
+            self.validate_node_children_against_parent(child_id, page, &node_bounds, false);
+        }
+    }
+
+    fn node_bounds(&self, node_id: &NodeId, parent_bounds: &Rect) -> Option<Rect> {
+        if let Some(geometry) = self.geometry.get(node_id) {
+            return Some(geometry.layout_bounds.clone());
+        }
+        let node = self.scene.nodes.get(node_id)?;
+        let size = fixed_or_zero(&node.size);
+        Some(Rect {
+            x: parent_bounds.x + node.transform.x,
+            y: parent_bounds.y + node.transform.y,
+            width: size.width,
+            height: size.height,
+        })
+    }
+
+    fn parent_clips(&self, node_id: &NodeId) -> bool {
+        match self.scene.parent_of(node_id) {
+            Some(crate::scene::ParentRef::Node(parent_id)) => self
+                .scene
+                .nodes
+                .get(&parent_id)
+                .map(|node| node.clip)
+                .unwrap_or(false),
+            Some(crate::scene::ParentRef::Page(_)) | None => true,
+        }
     }
 
     fn validate_slots(&mut self) {

@@ -1407,7 +1407,9 @@ def test_mutation_responses_are_compact_dto_envelopes(client: TestClient) -> Non
     assert payload["schema_version"] == 1
     assert payload["status"] == "applied"
     assert payload["operations"] == [{"sequence": 1, "kind": "update_document"}]
-    assert payload["diagnostics"]["audit"] == []
+    assert [diagnostic["code"] for diagnostic in payload["diagnostics"]["audit"]] == [
+        "LUMV0805"
+    ]
     assert payload["snapshot"]["snapshot_id"].startswith("snap_")
     assert "scene" not in payload["document"]
     assert "scene" not in payload["snapshot"]

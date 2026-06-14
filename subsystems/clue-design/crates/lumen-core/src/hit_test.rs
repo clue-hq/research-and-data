@@ -70,12 +70,17 @@ fn point_in_node(node: &Node, x: f64, y: f64) -> bool {
     let (lx, ly) = to_local(x - b.x, y - b.y, node.transform.rotation);
     match &node.kind {
         NodeKind::Ellipse => point_in_ellipse(lx, ly, b.width, b.height),
-        NodeKind::Line(line) => {
-            point_near_segment(lx, ly, line.x2, line.y2, line_tolerance(node))
-        }
+        NodeKind::Line(line) => point_near_segment(lx, ly, line.x2, line.y2, line_tolerance(node)),
         // Rect/frame/group/auto-layout/text/image/vector/instance: the rotated
         // box. (Vector path-fill is a V0 follow-up — the box is the hit shape.)
-        _ => b.width > 0.0 && b.height > 0.0 && lx >= 0.0 && lx <= b.width && ly >= 0.0 && ly <= b.height,
+        _ => {
+            b.width > 0.0
+                && b.height > 0.0
+                && lx >= 0.0
+                && lx <= b.width
+                && ly >= 0.0
+                && ly <= b.height
+        }
     }
 }
 

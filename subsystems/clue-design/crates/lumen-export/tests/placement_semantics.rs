@@ -66,6 +66,8 @@ fn base_scene(unit: Unit, safe_area: Option<Rect>) -> Scene {
                 unit,
                 preset: Some(PagePreset::Custom),
                 orientation: lumen_core::Orientation::Portrait,
+                source: None,
+                output: None,
             },
             children: Vec::new(),
             bleed: None,

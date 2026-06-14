@@ -88,6 +88,8 @@ fn scene_with_image_node(asset_id: &str, register_record: bool) -> Scene {
                 unit: Unit::Px,
                 preset: Some(PagePreset::Custom),
                 orientation: lumen_core::Orientation::Portrait,
+                source: None,
+                output: None,
             },
             children: vec![NodeId::from("node_image")],
             bleed: None,

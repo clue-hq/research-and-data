@@ -198,12 +198,52 @@ pub struct PageSize {
     pub unit: Unit,
     pub preset: Option<PagePreset>,
     pub orientation: Orientation,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source: Option<PageSizeSource>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub output: Option<PageOutputSize>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct PageSizeSource {
+    pub width: f64,
+    pub height: f64,
+    pub unit: Unit,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct PageOutputSize {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub physical: Option<PhysicalPageSize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub raster: Option<RasterPageSize>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct PhysicalPageSize {
+    pub width: f64,
+    pub height: f64,
+    pub unit: PhysicalUnit,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct RasterPageSize {
+    pub width_px: u32,
+    pub height_px: u32,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Unit {
+    Pt,
     Px,
+    Mm,
+    In,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PhysicalUnit {
     Mm,
     In,
 }

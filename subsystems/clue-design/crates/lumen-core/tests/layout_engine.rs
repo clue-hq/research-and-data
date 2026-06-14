@@ -17,6 +17,8 @@ fn page(width: f64, height: f64) -> Page {
             unit: Unit::Px,
             preset: Some(PagePreset::Custom),
             orientation: Orientation::Landscape,
+            source: None,
+            output: None,
         },
         children: Vec::new(),
         bleed: None,
@@ -35,6 +37,30 @@ fn scene_with_page(width: f64, height: f64) -> Scene {
     scene
         .apply_operation(Operation::AddPage {
             page: page(width, height),
+        })
+        .unwrap();
+    scene
+}
+
+fn scene_with_canonical_page(width: f64, height: f64) -> Scene {
+    let mut scene = Scene::new(DocumentId::from("doc_canonical"), "Canonical Layout Test");
+    scene
+        .apply_operation(Operation::AddPage {
+            page: Page {
+                id: PageId::from("page"),
+                name: "Page".to_owned(),
+                size: lumen_core::normalize_page_size(lumen_core::PageSizeInput::new(
+                    width,
+                    height,
+                    Unit::Pt,
+                    Some(PagePreset::Custom),
+                    Orientation::Landscape,
+                )),
+                children: Vec::new(),
+                bleed: None,
+                safe_area: None,
+                background: Vec::new(),
+            },
         })
         .unwrap();
     scene
@@ -161,6 +187,110 @@ fn assert_close(actual: f64, expected: f64) {
 
 fn has_code(diagnostics: &[Diagnostic], code: &str) -> bool {
     diagnostics.iter().any(|diagnostic| diagnostic.code == code)
+}
+
+#[test]
+fn canonical_a4_accepts_point_sized_background_without_page_overflow() {
+    let mut scene = scene_with_canonical_page(595.275_590_551_181_2, 841.889_763_779_527_6);
+    insert(
+        &mut scene,
+        ParentRef::Page(PageId::from("page")),
+        rect(
+            "bg",
+            Dimension::Fixed(595.275_590_551_181_2),
+            Dimension::Fixed(841.889_763_779_527_6),
+        ),
+    );
+
+    let diagnostics = validate_layout(&scene, lumen_core::LayoutOptions::default());
+
+    assert!(!has_code(&diagnostics, "LUMV0800"), "{diagnostics:#?}");
+    assert!(diagnostics
+        .iter()
+        .all(|diagnostic| diagnostic.severity != DiagnosticSeverity::Error));
+}
+
+#[test]
+fn canonical_page_child_exceeding_artboard_emits_bounds_error() {
+    let mut scene = scene_with_canonical_page(595.275_590_551_181_2, 841.889_763_779_527_6);
+    insert(
+        &mut scene,
+        ParentRef::Page(PageId::from("page")),
+        rect(
+            "oversized",
+            Dimension::Fixed(700.0),
+            Dimension::Fixed(900.0),
+        ),
+    );
+
+    let diagnostics = validate_layout(&scene, lumen_core::LayoutOptions::default());
+
+    assert!(diagnostics.iter().any(|diagnostic| {
+        diagnostic.code == "LUMV0800" && diagnostic.severity == DiagnosticSeverity::Error
+    }));
+}
+
+#[test]
+fn clipped_parent_child_overflow_emits_parent_bounds_error() {
+    let mut scene = scene_with_canonical_page(300.0, 300.0);
+    let mut parent = Node::new(NodeId::from("card"), NodeKind::Frame);
+    parent.transform.x = 20.0;
+    parent.transform.y = 20.0;
+    parent.size = SizeSpec::fixed(100.0, 100.0);
+    parent.clip = true;
+    insert(&mut scene, ParentRef::Page(PageId::from("page")), parent);
+
+    insert(
+        &mut scene,
+        ParentRef::Node(NodeId::from("card")),
+        rect(
+            "wide_child",
+            Dimension::Fixed(150.0),
+            Dimension::Fixed(40.0),
+        ),
+    );
+
+    let diagnostics = validate_layout(&scene, lumen_core::LayoutOptions::default());
+
+    assert!(diagnostics.iter().any(|diagnostic| {
+        diagnostic.code == "LUMV0801" && diagnostic.severity == DiagnosticSeverity::Error
+    }));
+}
+
+#[test]
+fn child_outside_trim_inside_bleed_emits_bleed_warning() {
+    let mut scene = scene_with_canonical_page(100.0, 100.0);
+    scene.pages.get_mut(&PageId::from("page")).unwrap().bleed = Some(Rect {
+        x: -10.0,
+        y: -10.0,
+        width: 120.0,
+        height: 120.0,
+    });
+    let mut crop_mark = rect("crop_mark", Dimension::Fixed(10.0), Dimension::Fixed(10.0));
+    crop_mark.transform.x = -5.0;
+    crop_mark.transform.y = 10.0;
+    insert(&mut scene, ParentRef::Page(PageId::from("page")), crop_mark);
+
+    let diagnostics = validate_layout(&scene, lumen_core::LayoutOptions::default());
+
+    assert!(diagnostics.iter().any(|diagnostic| {
+        diagnostic.code == "LUMV0802" && diagnostic.severity == DiagnosticSeverity::Warning
+    }));
+    assert!(!has_code(&diagnostics, "LUMV0800"), "{diagnostics:#?}");
+}
+
+#[test]
+fn legacy_non_pt_page_emits_advice_without_blocking_validation() {
+    let scene = scene_with_page(210.0, 297.0);
+
+    let diagnostics = lumen_core::validation::validate_scene(&scene);
+
+    assert!(diagnostics.iter().any(|diagnostic| {
+        diagnostic.code == "LUMV0805" && diagnostic.severity == DiagnosticSeverity::Advice
+    }));
+    assert!(diagnostics
+        .iter()
+        .all(|diagnostic| diagnostic.severity != DiagnosticSeverity::Error));
 }
 
 #[test]

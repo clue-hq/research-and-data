@@ -108,7 +108,7 @@ Leaf nodes cannot have children.
 Supported properties:
 
 ```text
-page page_id size(width,height,px|mm|in)
+page page_id size(width,height,px|mm|in|pt)
 page page_id preset(a4|us_letter|linkedin_ad|envelope_dl,portrait|landscape)
 p(x,y)
 s(width,height)
@@ -196,7 +196,7 @@ Actual catalog lookup, mode selection, fallback behavior, and materialization in
 
 If callers compile tokenized DSL and no uploaded/generated/client brand kit exists, they should pass the platform default brand kit into the canonical preflight pipeline. Preflight rejects tokenized scenes with `LUMP0300` when no brand kit is supplied, while concrete non-token scenes may preflight without one.
 
-Position, explicit page dimensions, and text metrics remain numeric when not tokenized. Numeric literals must be finite; `NaN`, `inf`, and `-inf` halt with `LUMD0249`. Explicit page size uses `size(width,height,unit)` and lowers into canonical `PageSize`; presets are shortcuts only.
+Position, explicit page dimensions, and text metrics remain numeric when not tokenized. Numeric literals must be finite; `NaN`, `inf`, and `-inf` halt with `LUMD0249`. Explicit page size uses `size(width,height,unit)` with `px`, `mm`, `in`/`inch`, or `pt`; new pages lower into canonical `pt` artboard layout bounds with the requested source/export size preserved on `PageSize`. Presets are shortcuts only.
 
 Supported paints:
 

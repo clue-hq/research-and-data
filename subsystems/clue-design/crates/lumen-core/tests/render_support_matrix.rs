@@ -186,6 +186,8 @@ fn scene_with_effect_card(profile_format: ExportFormat) -> Scene {
                         unit: Unit::Px,
                         preset: Some(PagePreset::Custom),
                         orientation: Orientation::Landscape,
+                        source: None,
+                        output: None,
                     },
                     children: Vec::new(),
                     bleed: None,

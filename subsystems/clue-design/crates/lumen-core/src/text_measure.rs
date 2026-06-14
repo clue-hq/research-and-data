@@ -62,10 +62,14 @@ pub struct HeuristicTextMeasurer;
 /// the editor sends raw inputs and the engine computes the key.
 pub fn measure_key(input: &TextMeasureInput) -> String {
     fn opt_f(value: Option<f64>) -> String {
-        value.map(|v| format!("{v:.3}")).unwrap_or_else(|| "_".to_owned())
+        value
+            .map(|v| format!("{v:.3}"))
+            .unwrap_or_else(|| "_".to_owned())
     }
     fn opt_u(value: Option<u16>) -> String {
-        value.map(|v| v.to_string()).unwrap_or_else(|| "_".to_owned())
+        value
+            .map(|v| v.to_string())
+            .unwrap_or_else(|| "_".to_owned())
     }
     // Unit-separator delimited; covers every field that affects measurement.
     [
@@ -312,7 +316,10 @@ mod provided_measurer_tests {
         assert_eq!(out.width, 321.0);
         assert_eq!(out.height, 47.0);
         // Per-line detail still comes from the heuristic (not overridden).
-        assert_eq!(out.line_count, HeuristicTextMeasurer.measure(&known).line_count);
+        assert_eq!(
+            out.line_count,
+            HeuristicTextMeasurer.measure(&known).line_count
+        );
 
         // Unknown input → heuristic fallback, unchanged.
         let other = input("Different");

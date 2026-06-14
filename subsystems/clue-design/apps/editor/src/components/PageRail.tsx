@@ -82,9 +82,7 @@ export function PageRail({ scene, activePageId, onSelectPage, onAddCustomPage, o
             onClick={() => onSelectPage(page.id)}
           >
             <span>{page.name}</span>
-            <small>
-              {page.size.width} x {page.size.height} {page.size.unit}
-            </small>
+            <small>{pageSizeLabel(page)}</small>
           </button>
           <button
             type="button"
@@ -122,7 +120,7 @@ export function PageRail({ scene, activePageId, onSelectPage, onAddCustomPage, o
               aria-label="Custom page width"
               type="number"
               min={1}
-              step={unit === "px" ? 1 : 0.1}
+              step={unit === "px" || unit === "pt" ? 1 : 0.1}
               value={width}
               onChange={(event) => setWidth(Number(event.target.value))}
             />
@@ -133,7 +131,7 @@ export function PageRail({ scene, activePageId, onSelectPage, onAddCustomPage, o
               aria-label="Custom page height"
               type="number"
               min={1}
-              step={unit === "px" ? 1 : 0.1}
+              step={unit === "px" || unit === "pt" ? 1 : 0.1}
               value={height}
               onChange={(event) => setHeight(Number(event.target.value))}
             />
@@ -141,6 +139,7 @@ export function PageRail({ scene, activePageId, onSelectPage, onAddCustomPage, o
           <div className="compact-field">
             <span>Unit</span>
             <select aria-label="Custom page unit" value={unit} onChange={(event) => setUnit(event.target.value as Unit)}>
+              <option value="pt">pt</option>
               <option value="px">px</option>
               <option value="mm">mm</option>
               <option value="in">in</option>
@@ -170,4 +169,13 @@ export function PageRail({ scene, activePageId, onSelectPage, onAddCustomPage, o
       </div>
     </nav>
   );
+}
+
+function pageSizeLabel(page: Scene["pages"][PageId]): string {
+  const size = page.size.source ?? page.size;
+  return `${formatDimension(size.width)} x ${formatDimension(size.height)} ${size.unit}`;
+}
+
+function formatDimension(value: number): string {
+  return Number.isInteger(value) ? String(value) : value.toFixed(3).replace(/\.?0+$/, "");
 }

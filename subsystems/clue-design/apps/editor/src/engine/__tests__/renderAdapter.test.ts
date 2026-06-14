@@ -13,6 +13,37 @@ describe("render adapter", () => {
     expect(descriptor.height).toBeCloseTo(1122.5, 1);
   });
 
+  it("projects canonical A4 page dimensions directly in layout points", () => {
+    const page: Page = {
+      ...minimalScene.pages.page_a4,
+      size: {
+        width: 595.2755905511812,
+        height: 841.8897637795276,
+        unit: "pt",
+        preset: "a4",
+        orientation: "portrait",
+        source: {
+          width: 210,
+          height: 297,
+          unit: "mm"
+        },
+        output: {
+          physical: {
+            width: 210,
+            height: 297,
+            unit: "mm"
+          }
+        }
+      }
+    };
+
+    const descriptor = pageDescriptor(page);
+
+    expect(descriptor.width).toBeCloseTo(595.3, 1);
+    expect(descriptor.height).toBeCloseTo(841.9, 1);
+    expect(descriptor.unitScale).toBe(1);
+  });
+
   it("projects custom px page dimensions without preset coercion", () => {
     const page = {
       ...minimalScene.pages.page_a4,
@@ -629,6 +660,7 @@ function sceneFromManifestArtifact(artifact: ManifestArtifact): Scene {
 
 function unitFromManifest(unit: string): Page["size"]["unit"] {
   switch (unit) {
+    case "pt":
     case "px":
     case "mm":
     case "in":
@@ -664,6 +696,7 @@ function orientationFromManifest(orientation: string): Page["size"]["orientation
 
 function unitScaleForTest(unit: Page["size"]["unit"]): number {
   switch (unit) {
+    case "pt":
     case "px":
       return 1;
     case "mm":

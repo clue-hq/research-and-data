@@ -3,7 +3,7 @@ use lumen_core::{
     compile_dsl, compile_dsl_into_scene, normalize_dsl, parse_dsl, Color, DiagnosticSeverity,
     Dimension, DslCompileSession, DslLayoutAnchor, DslLayoutAxis, DslLineKind, DslProperty,
     DslScalar, LayoutAnchor, NodeId, NodeKind, Operation, Orientation, PageId, PagePreset, Paint,
-    ParentRef, Scene, SlotKey, TextDirection, TextWrap, Unit,
+    ParentRef, PhysicalUnit, Scene, SlotKey, TextDirection, TextWrap, Unit,
 };
 
 const VALID_BROCHURE: &str = include_str!("../fixtures/dsl/valid_brochure.lumen");
@@ -137,9 +137,89 @@ fn dsl_custom_page_size_lowers_to_scene_page_size() {
     let page = &scene.pages[&PageId::from("page_square")];
     assert_eq!(page.size.width, 1080.0);
     assert_eq!(page.size.height, 1080.0);
-    assert_eq!(page.size.unit, Unit::Px);
+    assert_eq!(page.size.unit, Unit::Pt);
     assert_eq!(page.size.preset, Some(PagePreset::Custom));
     assert_eq!(page.size.orientation, Orientation::Landscape);
+    let source = page.size.source.as_ref().unwrap();
+    assert_eq!(source.width, 1080.0);
+    assert_eq!(source.height, 1080.0);
+    assert_eq!(source.unit, Unit::Px);
+    let raster = page.size.output.as_ref().unwrap().raster.as_ref().unwrap();
+    assert_eq!(raster.width_px, 1080);
+    assert_eq!(raster.height_px, 1080);
+}
+
+#[test]
+fn dsl_custom_mm_page_size_lowers_to_pt_with_physical_metadata() {
+    let mut scene = Scene::new(lumen_core::DocumentId::from("doc_a4_custom"), "A4 Custom");
+    let output = compile_dsl_into_scene("page page_a4 size(210,297,mm)", &mut scene);
+
+    assert_no_dsl_errors(&output.compile_output.diagnostics);
+    assert!(output.operation_error.is_none());
+
+    let page = &scene.pages[&PageId::from("page_a4")];
+    assert!((page.size.width - 595.275_590_551_181_2).abs() < 0.001);
+    assert!((page.size.height - 841.889_763_779_527_6).abs() < 0.001);
+    assert_eq!(page.size.unit, Unit::Pt);
+    assert_eq!(page.size.preset, Some(PagePreset::Custom));
+    assert_eq!(page.size.orientation, Orientation::Portrait);
+    let source = page.size.source.as_ref().unwrap();
+    assert_eq!(source.width, 210.0);
+    assert_eq!(source.height, 297.0);
+    assert_eq!(source.unit, Unit::Mm);
+    let output = page.size.output.as_ref().unwrap();
+    assert!(output.raster.is_none());
+    let physical = output.physical.as_ref().unwrap();
+    assert_eq!(physical.width, 210.0);
+    assert_eq!(physical.height, 297.0);
+    assert_eq!(physical.unit, PhysicalUnit::Mm);
+}
+
+#[test]
+fn dsl_page_size_accepts_pt_without_export_metadata() {
+    let mut scene = Scene::new(lumen_core::DocumentId::from("doc_pt"), "Point Page");
+    let output = compile_dsl_into_scene("page page_pt size(595.276,841.89,pt)", &mut scene);
+
+    assert_no_dsl_errors(&output.compile_output.diagnostics);
+    assert!(output.operation_error.is_none());
+
+    let page = &scene.pages[&PageId::from("page_pt")];
+    assert_eq!(page.size.width, 595.276);
+    assert_eq!(page.size.height, 841.89);
+    assert_eq!(page.size.unit, Unit::Pt);
+    assert_eq!(page.size.source.as_ref().unwrap().unit, Unit::Pt);
+    assert!(page.size.output.is_none());
+}
+
+#[test]
+fn dsl_envelope_preset_lowers_to_canonical_pt_with_physical_metadata() {
+    let output = compile_dsl("page page_envelope preset(envelope_dl)");
+
+    assert_no_dsl_errors(&output.diagnostics);
+    let Operation::AddPage { page } = &output.operations[0] else {
+        panic!("expected add page operation");
+    };
+
+    assert_eq!(page.size.unit, Unit::Pt);
+    assert_eq!(page.size.preset, Some(PagePreset::EnvelopeDl));
+    assert_eq!(page.size.orientation, Orientation::Landscape);
+    assert!((page.size.width - 623.622_047_244_094_5).abs() < 0.001);
+    assert!((page.size.height - 311.811_023_622_047_23).abs() < 0.001);
+    let source = page.size.source.as_ref().unwrap();
+    assert_eq!(source.width, 220.0);
+    assert_eq!(source.height, 110.0);
+    assert_eq!(source.unit, Unit::Mm);
+    let physical = page
+        .size
+        .output
+        .as_ref()
+        .unwrap()
+        .physical
+        .as_ref()
+        .unwrap();
+    assert_eq!(physical.unit, PhysicalUnit::Mm);
+    assert_eq!(physical.width, 220.0);
+    assert_eq!(physical.height, 110.0);
 }
 
 #[test]
@@ -270,6 +350,8 @@ fn dsl_modify_line_updates_page_size_and_background() {
     assert_eq!(page.name, "Landscape Ad");
     assert_eq!(page.size.width, 1200.0);
     assert_eq!(page.size.height, 628.0);
+    assert_eq!(page.size.unit, Unit::Pt);
+    assert_eq!(page.size.source.as_ref().unwrap().unit, Unit::Px);
     assert_eq!(page.background.len(), 1);
 }
 
@@ -723,11 +805,15 @@ page page_letter preset(letter,landscape)
         .collect::<Vec<_>>();
 
     assert_eq!(pages[0].0, &PageId::from("page_a4"));
-    assert_eq!(pages[0].1.width, 297.0);
-    assert_eq!(pages[0].1.height, 210.0);
+    assert!((pages[0].1.width - 841.889_763_779_527_6).abs() < 0.001);
+    assert!((pages[0].1.height - 595.275_590_551_181_2).abs() < 0.001);
+    assert_eq!(pages[0].1.unit, Unit::Pt);
+    assert_eq!(pages[0].1.source.as_ref().unwrap().unit, Unit::Mm);
     assert_eq!(pages[1].0, &PageId::from("page_letter"));
-    assert_eq!(pages[1].1.width, 11.0);
-    assert_eq!(pages[1].1.height, 8.5);
+    assert_eq!(pages[1].1.width, 792.0);
+    assert_eq!(pages[1].1.height, 612.0);
+    assert_eq!(pages[1].1.unit, Unit::Pt);
+    assert_eq!(pages[1].1.source.as_ref().unwrap().unit, Unit::In);
 }
 
 #[test]
@@ -1731,7 +1817,10 @@ page page_square size(400,400,px)
     assert_no_dsl_errors(&output.compile_output.diagnostics);
     let card = &scene.nodes[&NodeId::from("card")];
     assert_eq!(card.effects.len(), 1);
-    assert_eq!(card.effects[0].id, lumen_core::EffectId::from("shadow_soft"));
+    assert_eq!(
+        card.effects[0].id,
+        lumen_core::EffectId::from("shadow_soft")
+    );
 }
 
 #[test]

@@ -30,8 +30,10 @@ page story size(1080,1920,px)             # size(width, height, unit)
 - Presets: `a4`, `us_letter`, `linkedin_ad`, `envelope_dl`, `custom`
   (unknown → `LUMD0223`). Orientation: `portrait` | `landscape` (unknown →
   `LUMD0224`); A4/Letter default portrait, ad/envelope default landscape.
-- Units: `px`, `mm`, `in`/`inch` (unknown → `LUMD0252`). Dimensions must be
-  positive (`LUMD0251`). `size(...)` needs all three args (`LUMD0250`).
+- Units: `px`, `mm`, `in`/`inch`, `pt` (unknown → `LUMD0252`). Dimensions must
+  be positive (`LUMD0251`). `size(...)` needs all three args (`LUMD0250`).
+  New page commands normalize to canonical `pt` artboard bounds while preserving
+  the requested source/export size.
 - Presets are shortcuts only. **Never fake a square ad as a square frame inside an
   A4 page** — set the page size.
 

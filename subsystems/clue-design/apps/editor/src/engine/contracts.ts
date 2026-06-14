@@ -127,9 +127,34 @@ export interface PageSize {
   unit: Unit;
   preset: PagePreset | null;
   orientation: Orientation;
+  source?: PageSizeSource | null;
+  output?: PageOutputSize | null;
 }
 
-export type Unit = "px" | "mm" | "in";
+export interface PageSizeSource {
+  width: number;
+  height: number;
+  unit: Unit;
+}
+
+export interface PageOutputSize {
+  physical?: PhysicalPageSize | null;
+  raster?: RasterPageSize | null;
+}
+
+export interface PhysicalPageSize {
+  width: number;
+  height: number;
+  unit: PhysicalUnit;
+}
+
+export interface RasterPageSize {
+  width_px: number;
+  height_px: number;
+}
+
+export type Unit = "pt" | "px" | "mm" | "in";
+export type PhysicalUnit = "mm" | "in";
 export type PagePreset = "a4" | "us_letter" | "custom" | "linkedin_ad" | "envelope_dl";
 export type Orientation = "portrait" | "landscape";
 

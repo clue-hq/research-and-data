@@ -1,4 +1,7 @@
-use lumen_core::{NodeId, PageId, Scene, SlotId, SlotKey};
+use lumen_core::{
+    page_geometry, NodeId, PageId, PageSizeSource, PhysicalPageSize, RasterPageSize, Scene, SlotId,
+    SlotKey,
+};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 
@@ -16,6 +19,26 @@ pub struct ExportSidecar {
 pub struct PageMapping {
     pub page_id: PageId,
     pub output_id: String,
+    pub geometry: PageGeometryMapping,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct PageGeometryMapping {
+    pub layout: PageLayoutMapping,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source: Option<PageSizeSource>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub physical: Option<PhysicalPageSize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub raster: Option<RasterPageSize>,
+    pub canonical: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct PageLayoutMapping {
+    pub width: f64,
+    pub height: f64,
+    pub unit: String,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -52,9 +75,24 @@ pub fn build_sidecar(scene: &Scene, page_ids: &[PageId], profile_name: &str) -> 
 
     let pages = page_ids
         .iter()
-        .map(|page_id| PageMapping {
-            page_id: page_id.clone(),
-            output_id: page_output_id(page_id),
+        .filter_map(|page_id| {
+            let page = scene.pages.get(page_id)?;
+            let geometry = page_geometry(page);
+            Some(PageMapping {
+                page_id: page_id.clone(),
+                output_id: page_output_id(page_id),
+                geometry: PageGeometryMapping {
+                    layout: PageLayoutMapping {
+                        width: geometry.layout.width,
+                        height: geometry.layout.height,
+                        unit: "pt".to_owned(),
+                    },
+                    source: geometry.source,
+                    physical: geometry.physical,
+                    raster: geometry.raster,
+                    canonical: geometry.canonical,
+                },
+            })
         })
         .collect();
 

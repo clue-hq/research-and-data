@@ -15,6 +15,7 @@ pub mod ids;
 pub mod instance;
 pub mod layout;
 pub mod operations;
+pub mod page_geometry;
 pub mod preflight;
 pub mod render_contract;
 pub mod render_geometry;
@@ -97,6 +98,12 @@ pub use operations::{
     DocumentPatch, FieldPatch, NodePatch, Operation, OperationError, OperationReport,
     OperationResult, OptionalFieldPatch, PagePatch,
 };
+pub use page_geometry::{
+    is_canonical_page_size, normalize_page_size, page_geometry, page_rect_points,
+    page_size_for_preset, page_size_points, physical_page_size_inches, physical_to_inches,
+    points_to_physical, unit_to_inches, unit_to_points, PageGeometry, PageSizeInput, MM_PER_INCH,
+    POINTS_PER_INCH,
+};
 pub use preflight::{preflight_scene, PreflightOptions, PreflightResult};
 pub use render_contract::{
     effect_features_for_node, effect_support_diagnostics, EffectFeature, EffectSupportLevel,
@@ -107,9 +114,10 @@ pub use render_geometry::{node_render_size, render_box_for_node, RenderBox};
 pub use scene::{
     AutoLayoutDirection, AutoLayoutNode, AutoLayoutProps, BrandKitRef, Color, ComputedGeometry,
     CornerRadii, Dimension, DocumentMeta, DocumentStatus, Effect, EffectKind, Fill, ImageNode,
-    LayoutAnchor, LineNode, Medium, Node, NodeKind, Orientation, Page, PagePreset, PageSize, Paint,
-    ParentRef, Rect, Scene, SizeSpec, Stroke, StrokeAlign, StrokeCap, StrokeJoin, TextAlign,
-    TextDirection, TextNode, TextWrap, Transform, Unit, VectorNode,
+    LayoutAnchor, LineNode, Medium, Node, NodeKind, Orientation, Page, PageOutputSize, PagePreset,
+    PageSize, PageSizeSource, Paint, ParentRef, PhysicalPageSize, PhysicalUnit, RasterPageSize,
+    Rect, Scene, SizeSpec, Stroke, StrokeAlign, StrokeCap, StrokeJoin, TextAlign, TextDirection,
+    TextNode, TextWrap, Transform, Unit, VectorNode,
 };
 pub use slots::{
     BindingHint, Cardinality, ConditionalRule, ContentType, Editability, EmptyBehavior, FocalPoint,

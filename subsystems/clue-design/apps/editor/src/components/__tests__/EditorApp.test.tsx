@@ -91,7 +91,7 @@ describe.skipIf(!wasmArtifactPresent)("EditorApp", () => {
     const canvas = screen.getByTestId("canvas-selection");
     expect(canvas).toHaveAttribute("data-page-width", "1200");
     expect(canvas).toHaveAttribute("data-page-height", "628");
-    expect(canvas).toHaveAttribute("data-page-unit", "px");
+    expect(canvas).toHaveAttribute("data-page-unit", "pt");
     expect(canvas).toHaveAttribute("data-page-preset", "custom");
     expect(screen.getByText(/1200 x 628 px/)).toBeInTheDocument();
     expect(screen.getAllByText(/update_page/).length).toBeGreaterThan(0);
@@ -147,7 +147,7 @@ describe.skipIf(!wasmArtifactPresent)("EditorApp", () => {
     const canvas = screen.getByTestId("canvas-selection");
     expect(canvas).toHaveAttribute("data-page-width", "1200");
     expect(canvas).toHaveAttribute("data-page-height", "628");
-    expect(canvas).toHaveAttribute("data-page-unit", "px");
+    expect(canvas).toHaveAttribute("data-page-unit", "pt");
     expect(canvas).toHaveAttribute("data-page-preset", "custom");
     expect(screen.getByText("Client Leaderboard")).toBeInTheDocument();
     expect(screen.getByText("add_page page_client_leaderboard")).toBeInTheDocument();
@@ -163,8 +163,19 @@ describe.skipIf(!wasmArtifactPresent)("EditorApp", () => {
             size: expect.objectContaining({
               width: 1200,
               height: 628,
-              unit: "px",
-              preset: "custom"
+              unit: "pt",
+              preset: "custom",
+              source: expect.objectContaining({
+                width: 1200,
+                height: 628,
+                unit: "px"
+              }),
+              output: expect.objectContaining({
+                raster: expect.objectContaining({
+                  width_px: 1200,
+                  height_px: 628
+                })
+              })
             })
           })
         })

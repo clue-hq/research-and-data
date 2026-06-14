@@ -16,6 +16,8 @@ fn a4_page() -> Page {
             unit: Unit::Mm,
             preset: Some(PagePreset::A4),
             orientation: Orientation::Portrait,
+            source: None,
+            output: None,
         },
         children: Vec::new(),
         bleed: None,

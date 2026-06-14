@@ -19,9 +19,9 @@ use crate::measure::{
     UNBOUNDED_LAYOUT_WIDTH,
 };
 use lumen_core::{
-    render_box_for_node, Color, CornerRadii, Diagnostic, DiagnosticSubject, EffectKind,
-    ImageFitMode, ImageNode, Node, NodeId, NodeKind, Page, PageId, Paint, Phase, Scene, Stroke,
-    StrokeAlign, StrokeCap, StrokeJoin, TextAlign, TextNode, TextWrap,
+    page_geometry, render_box_for_node, Color, CornerRadii, Diagnostic, DiagnosticSubject,
+    EffectKind, ImageFitMode, ImageNode, Node, NodeId, NodeKind, Page, PageId, Paint, Phase, Scene,
+    Stroke, StrokeAlign, StrokeCap, StrokeJoin, TextAlign, TextNode, TextWrap,
 };
 use lumen_export::{
     focal_crop_geometry, page_background_token_diagnostics, unresolved_brand_token_diagnostics,
@@ -97,9 +97,10 @@ impl PageRasterizer for SkiaSceneRenderer {
         {
             let canvas = surface.canvas();
             canvas.clear(skia_safe::Color::TRANSPARENT);
+            let geometry = page_geometry(page);
             canvas.scale((
-                width as f32 / page.size.width.max(1.0) as f32,
-                height as f32 / page.size.height.max(1.0) as f32,
+                width as f32 / geometry.layout.width.max(1.0) as f32,
+                height as f32 / geometry.layout.height.max(1.0) as f32,
             ));
             painter.paint_page(canvas, page);
         }
@@ -129,11 +130,16 @@ impl<'a> PagePainter<'a> {
     fn paint_page(&mut self, canvas: &Canvas, page: &Page) {
         self.diagnostics
             .extend(page_background_token_diagnostics(page));
-        let page_rect = SkRect::from_wh(page.size.width as f32, page.size.height as f32);
+        let geometry = page_geometry(page);
+        let page_rect =
+            SkRect::from_wh(geometry.layout.width as f32, geometry.layout.height as f32);
         for fill in &page.background {
-            if let Some(paint) =
-                self.fill_paint(&fill.paint, page.size.width, page.size.height, None)
-            {
+            if let Some(paint) = self.fill_paint(
+                &fill.paint,
+                geometry.layout.width,
+                geometry.layout.height,
+                None,
+            ) {
                 canvas.draw_rect(page_rect, &paint);
             }
         }

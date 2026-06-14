@@ -207,7 +207,7 @@ fn emits_boundary_logs_when_enabled() {
     assert_eq!(events[0]["helper_call_id"], "core_helper_cli_test");
     assert_eq!(events[1]["event"], "core_helper_completed");
     assert_eq!(events[1]["ok"], true);
-    assert_eq!(events[1]["diagnostic_count"].as_u64(), Some(0));
+    assert_eq!(events[1]["diagnostic_count"].as_u64(), Some(1));
 }
 
 #[test]

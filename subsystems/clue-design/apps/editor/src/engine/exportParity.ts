@@ -115,7 +115,7 @@ export function exportParityReport(
 
 function comparableArtifactSize(artifact: EditorExportArtifact, page: Page): { width: number; height: number } | null {
   if (artifact.format === "svg") {
-    return svgExportSize(artifact.text);
+    return svgExportSize(artifact.text, page);
   }
 
   const dimensions = artifact.dimensions;
@@ -497,9 +497,16 @@ function placeholderAssetIdsForPage(scene: Scene, pageId: PageId): string[] {
   return [...assetIds].sort();
 }
 
-function svgExportSize(text: string | null): { width: number; height: number } | null {
+function svgExportSize(text: string | null, page: Page): { width: number; height: number } | null {
   if (!text) {
     return null;
+  }
+
+  if (page.size.unit === "pt") {
+    const viewBox = svgViewBoxSize(text);
+    if (viewBox) {
+      return viewBox;
+    }
   }
 
   const width = svgLengthAttribute(text, "width");
@@ -508,6 +515,10 @@ function svgExportSize(text: string | null): { width: number; height: number } |
     return { width, height };
   }
 
+  return svgViewBoxSize(text);
+}
+
+function svgViewBoxSize(text: string): { width: number; height: number } | null {
   const viewBox = text.match(/\bviewBox="([^"]+)"/);
   if (viewBox) {
     const values = viewBox[1]
@@ -526,7 +537,7 @@ function svgExportSize(text: string | null): { width: number; height: number } |
 }
 
 function svgLengthAttribute(text: string, attribute: "width" | "height"): number | null {
-  const match = text.match(new RegExp(`\\b${attribute}="([0-9.]+)(px|mm|in)?`));
+  const match = text.match(new RegExp(`\\b${attribute}="([0-9.]+)(pt|px|mm|in)?`));
   if (!match) {
     return null;
   }
@@ -535,6 +546,7 @@ function svgLengthAttribute(text: string, attribute: "width" | "height"): number
     return null;
   }
   switch (match[2] ?? "px") {
+    case "pt":
     case "px":
       return value;
     case "mm":
@@ -632,6 +644,7 @@ function nearlyEqual(left: number, right: number): boolean {
 
 function pageUnitScale(page: Page): number {
   switch (page.size.unit) {
+    case "pt":
     case "px":
       return 1;
     case "mm":
@@ -642,7 +655,7 @@ function pageUnitScale(page: Page): number {
 }
 
 function pdfPointToCanvasScale(page: Page): number {
-  return page.size.unit === "px" ? 1 : 96 / 72;
+  return page.size.unit === "pt" || page.size.unit === "px" ? 1 : 96 / 72;
 }
 
 function formatSize(size: { width: number; height: number }): string {

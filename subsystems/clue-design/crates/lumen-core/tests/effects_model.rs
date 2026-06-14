@@ -23,6 +23,8 @@ fn page(id: &str) -> Page {
             unit: Unit::Px,
             preset: Some(PagePreset::Custom),
             orientation: Orientation::Landscape,
+            source: None,
+            output: None,
         },
         children: Vec::new(),
         bleed: None,

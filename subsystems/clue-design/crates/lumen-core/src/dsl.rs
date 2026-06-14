@@ -6,16 +6,16 @@ use crate::{
     build_archive_asset, build_clone_subtree, build_delete_export_profile, build_hard_delete_asset,
     build_modify_operations, build_move_after, build_move_before, build_move_to_parent,
     build_replace_node, build_safe_delete, build_safe_delete_page, build_safe_delete_slot,
-    build_ungroup, resolve_edit_target, AssetEditPatch, AssetId, AutoLayoutDirection,
-    AutoLayoutNode, AutoLayoutProps, CloneSlotPolicy, CloneSubtreeRequest, Color,
-    ComputedClonePolicy, Diagnostic, DiagnosticSeverity, DocumentPatch, EditError, EditPatch,
-    EditTargetRef, Effect, EffectId, EffectKind, ExportFormat, FieldPatch, Fill, ImageNode,
-    LayoutAnchor, LineNode, Node, NodeEditPatch, NodeId, NodeKind, Operation, OperationError,
-    OperationReport, OptionalFieldPatch, Orientation, Page, PageEditPatch, PageId, PagePreset,
-    PageSize, Paint, PaintId, ParentRef, PdfIntent, Phase, RasterScale, Rect, RelativePlacement,
-    ReplaceNodeRequest, ReplaceSlotPolicy, Scene, SizeSpec, Slot, SlotEditPatch, SlotId, SlotKey,
-    Stroke, StrokeAlign, StrokeCap, StrokeJoin, TextAlign, TextDirection, TextEditPatch, TextNode,
-    TextWrap, Unit, VectorNode,
+    build_ungroup, normalize_page_size, page_size_for_preset, resolve_edit_target, AssetEditPatch,
+    AssetId, AutoLayoutDirection, AutoLayoutNode, AutoLayoutProps, CloneSlotPolicy,
+    CloneSubtreeRequest, Color, ComputedClonePolicy, Diagnostic, DiagnosticSeverity, DocumentPatch,
+    EditError, EditPatch, EditTargetRef, Effect, EffectId, EffectKind, ExportFormat, FieldPatch,
+    Fill, ImageNode, LayoutAnchor, LineNode, Node, NodeEditPatch, NodeId, NodeKind, Operation,
+    OperationError, OperationReport, OptionalFieldPatch, Orientation, Page, PageEditPatch, PageId,
+    PagePreset, PageSizeInput, Paint, PaintId, ParentRef, PdfIntent, Phase, RasterScale, Rect,
+    RelativePlacement, ReplaceNodeRequest, ReplaceSlotPolicy, Scene, SizeSpec, Slot, SlotEditPatch,
+    SlotId, SlotKey, Stroke, StrokeAlign, StrokeCap, StrokeJoin, TextAlign, TextDirection,
+    TextEditPatch, TextNode, TextWrap, Unit, VectorNode,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
@@ -1339,8 +1339,8 @@ impl<'a> DslCompiler<'a> {
             orientation: default_orientation_for_preset(&PagePreset::A4),
         });
 
-        let (width, height, unit, preset, orientation) = if let Some(size) = &page.size {
-            (
+        let size = if let Some(size) = &page.size {
+            normalize_page_size(PageSizeInput::new(
                 size.width,
                 size.height,
                 size.unit.clone(),
@@ -1349,29 +1349,15 @@ impl<'a> DslCompiler<'a> {
                     .map(|preset| preset.preset.clone())
                     .or(Some(PagePreset::Custom)),
                 orientation_for_dimensions(size.width, size.height),
-            )
+            ))
         } else {
-            let (width, height, unit) =
-                page_size_for_preset(&fallback_preset.preset, &fallback_preset.orientation);
-            (
-                width,
-                height,
-                unit,
-                Some(fallback_preset.preset),
-                fallback_preset.orientation,
-            )
+            page_size_for_preset(&fallback_preset.preset, &fallback_preset.orientation)
         };
 
         let page_model = Page {
             id: page.id.clone(),
             name: page.id.to_string(),
-            size: PageSize {
-                width,
-                height,
-                unit,
-                preset,
-                orientation,
-            },
+            size,
             children: Vec::new(),
             bleed: None,
             safe_area: None,
@@ -2708,13 +2694,13 @@ fn page_edit_patch_from_properties(
         match property {
             DslProperty::Name(name) => patch.name = FieldPatch::Set(name.clone()),
             DslProperty::PageSize(size) => {
-                patch.size = FieldPatch::Set(PageSize {
-                    width: size.width,
-                    height: size.height,
-                    unit: size.unit.clone(),
-                    preset: Some(PagePreset::Custom),
-                    orientation: orientation_for_dimensions(size.width, size.height),
-                });
+                patch.size = FieldPatch::Set(normalize_page_size(PageSizeInput::new(
+                    size.width,
+                    size.height,
+                    size.unit.clone(),
+                    Some(PagePreset::Custom),
+                    orientation_for_dimensions(size.width, size.height),
+                )));
             }
             DslProperty::PageBackground(fill) => {
                 let id = fill
@@ -4625,7 +4611,11 @@ fn parse_rgb_color(
     line_number: usize,
     column: usize,
 ) -> Result<Color, DslDiagnostic> {
-    let name = if source.starts_with("rgba(") { "rgba" } else { "rgb" };
+    let name = if source.starts_with("rgba(") {
+        "rgba"
+    } else {
+        "rgb"
+    };
     let call = parse_required_call(source, name, line_number, column)?;
     let expected = if name == "rgba" { 4 } else { 3 };
     if call.args.len() != expected {
@@ -4782,7 +4772,7 @@ fn parse_page_size(call: &Call, line_number: usize) -> Result<DslPageSize, DslDi
             call.name.len(),
             "LUMD0250",
             "size(...) expects width, height, and unit",
-            "Use size(1080,1080,px), size(210,297,mm), or size(8.5,11,in).",
+            "Use size(1080,1080,px), size(595,842,pt), size(210,297,mm), or size(8.5,11,in).",
         ));
     }
 
@@ -4808,6 +4798,7 @@ fn parse_page_size(call: &Call, line_number: usize) -> Result<DslPageSize, DslDi
 
 fn parse_unit(source: &str, line_number: usize) -> Result<Unit, DslDiagnostic> {
     match source.trim() {
+        "pt" => Ok(Unit::Pt),
         "px" => Ok(Unit::Px),
         "mm" => Ok(Unit::Mm),
         "in" | "inch" | "inches" => Ok(Unit::In),
@@ -4817,7 +4808,7 @@ fn parse_unit(source: &str, line_number: usize) -> Result<Unit, DslDiagnostic> {
             other.len().max(1),
             "LUMD0252",
             format!("unknown page size unit {other}"),
-            "Use px, mm, or in.",
+            "Use pt, px, mm, or in.",
         )),
     }
 }
@@ -4876,23 +4867,6 @@ fn orientation_for_dimensions(width: f64, height: f64) -> Orientation {
         Orientation::Landscape
     } else {
         Orientation::Portrait
-    }
-}
-
-fn page_size_for_preset(preset: &PagePreset, orientation: &Orientation) -> (f64, f64, Unit) {
-    let (base_width, base_height, unit): (f64, f64, Unit) = match preset {
-        PagePreset::A4 => (210.0, 297.0, Unit::Mm),
-        PagePreset::UsLetter => (8.5, 11.0, Unit::In),
-        PagePreset::LinkedinAd => (1200.0, 627.0, Unit::Px),
-        PagePreset::EnvelopeDl => (220.0, 110.0, Unit::Mm),
-        PagePreset::Custom => (210.0, 297.0, Unit::Mm),
-    };
-    let short_side = base_width.min(base_height);
-    let long_side = base_width.max(base_height);
-
-    match orientation {
-        Orientation::Portrait => (short_side, long_side, unit),
-        Orientation::Landscape => (long_side, short_side, unit),
     }
 }
 

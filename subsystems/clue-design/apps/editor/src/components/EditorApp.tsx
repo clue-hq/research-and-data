@@ -75,6 +75,7 @@ import {
   updateNodeTransform,
   upsertExportProfile
 } from "@/engine/operations";
+import { normalizePageSize } from "@/engine/pageGeometry";
 import { editorRenderDiagnostics } from "@/engine/renderDiagnostics";
 import {
   clampNodeTransformToParentBounds,
@@ -898,13 +899,7 @@ export default function EditorApp({
     const page: Page = {
       id: uniquePageId(scene, input),
       name: input.name,
-      size: {
-        width: input.width,
-        height: input.height,
-        unit: input.unit,
-        preset: "custom",
-        orientation: input.width > input.height ? "landscape" : "portrait"
-      },
+      size: normalizePageSize(input),
       children: [],
       bleed: null,
       safe_area: null,

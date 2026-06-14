@@ -6,7 +6,12 @@ use lumen_core::{
 };
 
 fn bounds(x: f64, y: f64, w: f64, h: f64) -> Option<ComputedGeometry> {
-    let r = Rect { x, y, width: w, height: h };
+    let r = Rect {
+        x,
+        y,
+        width: w,
+        height: h,
+    };
     Some(ComputedGeometry {
         layout_bounds: r.clone(),
         render_bounds: r,
@@ -38,6 +43,8 @@ fn scene_with(nodes: Vec<Node>, page_children: Vec<&str>) -> Scene {
             unit: Unit::Px,
             preset: Some(PagePreset::Custom),
             orientation: Orientation::Landscape,
+            source: None,
+            output: None,
         },
         children: page_children.iter().map(|id| NodeId::from(*id)).collect(),
         bleed: None,
@@ -63,7 +70,10 @@ fn hits_topmost_of_overlapping_siblings() {
     let scene = scene_with(vec![a, b], vec!["a", "b"]);
 
     // Overlap region: topmost is `b`; the full stack is bottom-to-top.
-    assert_eq!(hit_test(&scene, &page_id(), 60.0, 60.0).unwrap().as_str(), "b");
+    assert_eq!(
+        hit_test(&scene, &page_id(), 60.0, 60.0).unwrap().as_str(),
+        "b"
+    );
     assert_eq!(
         hit_stack(&scene, &page_id(), 60.0, 60.0)
             .iter()
@@ -72,9 +82,15 @@ fn hits_topmost_of_overlapping_siblings() {
         vec!["a".to_string(), "b".to_string()]
     );
     // Only `a` here.
-    assert_eq!(hit_test(&scene, &page_id(), 10.0, 10.0).unwrap().as_str(), "a");
+    assert_eq!(
+        hit_test(&scene, &page_id(), 10.0, 10.0).unwrap().as_str(),
+        "a"
+    );
     // Only `b` here.
-    assert_eq!(hit_test(&scene, &page_id(), 140.0, 140.0).unwrap().as_str(), "b");
+    assert_eq!(
+        hit_test(&scene, &page_id(), 140.0, 140.0).unwrap().as_str(),
+        "b"
+    );
 }
 
 #[test]
@@ -156,7 +172,14 @@ fn ellipse_excludes_its_bounding_corners() {
 fn line_hits_near_its_segment_only() {
     // Horizontal line from (10,10) of length 80. No stroke → default
     // tolerance (0.5 + 2.0 slop = 2.5 scene units).
-    let line = node("l", NodeKind::Line(LineNode { x2: 80.0, y2: 0.0 }), 10.0, 10.0, 80.0, 1.0);
+    let line = node(
+        "l",
+        NodeKind::Line(LineNode { x2: 80.0, y2: 0.0 }),
+        10.0,
+        10.0,
+        80.0,
+        1.0,
+    );
     let scene = scene_with(vec![line], vec!["l"]);
     // On the segment.
     assert!(hit_test(&scene, &page_id(), 50.0, 10.0).is_some());

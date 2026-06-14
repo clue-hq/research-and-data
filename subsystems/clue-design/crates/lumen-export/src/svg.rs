@@ -2,12 +2,13 @@ use crate::resolver::{AssetByteResolver, ResolvedAssetBytes};
 use crate::sidecar::{build_sidecar, node_output_id, page_output_id};
 use base64::engine::general_purpose::STANDARD as BASE64;
 use base64::Engine;
-use lumen_core::scene::ColorStop;
+use lumen_core::scene::{ColorStop, PhysicalUnit};
 use lumen_core::{
-    node_render_size, render_box_for_node, Color, Diagnostic, DiagnosticSubject, Dimension,
-    EffectKind, ExportAdapter, ExportArtifact, ExportError, ExportFormat, ExportRequest,
-    ExportResult, Fill, ImageFitMode, ImageNode, Node, NodeId, NodeKind, Page, PageId, Paint,
-    Phase, Rect, Scene, Stroke, StrokeAlign, StrokeCap, StrokeJoin, TextAlign, TextDirection, Unit,
+    is_canonical_page_size, node_render_size, page_geometry, render_box_for_node, Color,
+    Diagnostic, DiagnosticSubject, Dimension, EffectKind, ExportAdapter, ExportArtifact,
+    ExportError, ExportFormat, ExportRequest, ExportResult, Fill, ImageFitMode, ImageNode, Node,
+    NodeId, NodeKind, Page, PageId, Paint, Phase, Rect, Scene, Stroke, StrokeAlign, StrokeCap,
+    StrokeJoin, TextAlign, TextDirection, Unit,
 };
 use lumen_core::{HeuristicTextMeasurer, SharedTextMeasurer, TextMeasureInput, TextMeasurer};
 use std::sync::Arc;
@@ -177,7 +178,7 @@ impl<'a> SvgPageRenderer<'a> {
     }
 
     fn render_page(&mut self) -> String {
-        let (width, height, unit_suffix) = page_dimensions(self.page);
+        let dimensions = page_dimensions(self.page);
 
         self.body.push_str(&format!(
             "<g id=\"{}\" data-lumen-page-id=\"{}\">\n",
@@ -191,8 +192,8 @@ impl<'a> SvgPageRenderer<'a> {
                 let attrs = self.fill_attrs(fill, None);
                 self.body.push_str(&format!(
                     "<rect x=\"0\" y=\"0\" width=\"{}\" height=\"{}\"{} />\n",
-                    fmt_num(width),
-                    fmt_num(height),
+                    fmt_num(dimensions.view_width),
+                    fmt_num(dimensions.view_height),
                     attrs
                 ));
             }
@@ -200,8 +201,8 @@ impl<'a> SvgPageRenderer<'a> {
             let attrs = self.page_paint_attrs(&self.page.background);
             self.body.push_str(&format!(
                 "<rect x=\"0\" y=\"0\" width=\"{}\" height=\"{}\"{} />\n",
-                fmt_num(width),
-                fmt_num(height),
+                fmt_num(dimensions.view_width),
+                fmt_num(dimensions.view_height),
                 attrs
             ));
         }
@@ -220,12 +221,12 @@ impl<'a> SvgPageRenderer<'a> {
 
         format!(
             "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{}{}\" height=\"{}{}\" viewBox=\"0 0 {} {}\" data-lumen-document-id=\"{}\" data-lumen-page-id=\"{}\">\n{}{}{}</svg>\n",
-            fmt_num(width),
-            unit_suffix,
-            fmt_num(height),
-            unit_suffix,
-            fmt_num(width),
-            fmt_num(height),
+            fmt_num(dimensions.attr_width),
+            dimensions.unit_suffix,
+            fmt_num(dimensions.attr_height),
+            dimensions.unit_suffix,
+            fmt_num(dimensions.view_width),
+            fmt_num(dimensions.view_height),
             escape_attr(&self.scene.meta.id.to_string()),
             escape_attr(self.page.id.as_str()),
             defs,
@@ -1181,13 +1182,53 @@ pub fn page_background_token_diagnostics(page: &Page) -> Vec<Diagnostic> {
     diagnostics
 }
 
-fn page_dimensions(page: &Page) -> (f64, f64, &'static str) {
-    let suffix = match page.size.unit {
-        Unit::Px => "",
+#[derive(Clone, Copy, Debug)]
+struct SvgPageDimensions {
+    attr_width: f64,
+    attr_height: f64,
+    view_width: f64,
+    view_height: f64,
+    unit_suffix: &'static str,
+}
+
+fn page_dimensions(page: &Page) -> SvgPageDimensions {
+    let geometry = page_geometry(page);
+    if is_canonical_page_size(&page.size) {
+        if let Some(physical) = geometry.physical {
+            let unit_suffix = match physical.unit {
+                PhysicalUnit::Mm => "mm",
+                PhysicalUnit::In => "in",
+            };
+            return SvgPageDimensions {
+                attr_width: physical.width,
+                attr_height: physical.height,
+                view_width: geometry.layout.width,
+                view_height: geometry.layout.height,
+                unit_suffix,
+            };
+        }
+
+        return SvgPageDimensions {
+            attr_width: geometry.layout.width,
+            attr_height: geometry.layout.height,
+            view_width: geometry.layout.width,
+            view_height: geometry.layout.height,
+            unit_suffix: "",
+        };
+    }
+
+    let unit_suffix = match page.size.unit {
+        Unit::Pt | Unit::Px => "",
         Unit::Mm => "mm",
         Unit::In => "in",
     };
-    (page.size.width, page.size.height, suffix)
+    SvgPageDimensions {
+        attr_width: page.size.width,
+        attr_height: page.size.height,
+        view_width: page.size.width,
+        view_height: page.size.height,
+        unit_suffix,
+    }
 }
 
 pub fn node_size(node: &Node) -> (f64, f64) {

@@ -18,7 +18,9 @@ brand-aligned artifact. This is the *first* pass only — fixing diagnostics is
    `skills/effects` for shadows/special strokes/gradients.
 2. **Pin the surface.** Match the requested artifact exactly:
    `page story size(1080,1920,px)` for a story, `preset(a4,portrait)` for a
-   one-pager. Never fake a square ad as a square frame inside an A4 page.
+   one-pager. These commands normalize to canonical artboard layout bounds;
+   keep child coordinates page-relative. Never fake a square ad as a square
+   frame inside an A4 page.
 3. **Decide branded vs neutral.** With an effective Brand Kit, use `$tokens`
    (`$surface.*`, `$type.*`, `$space.*`, `$radius.*`). Without one, concrete hex /
    `font("Inter",…)` values are fine.
