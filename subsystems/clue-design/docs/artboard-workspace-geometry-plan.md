@@ -163,9 +163,9 @@ not as decoration. It has three separable pieces:
 1. **Editor chrome / product shell**: dark left layers panel, dark right
    inspector/agent/export panel, compact top area, top artboard label, mode
    switch, and a floating bottom toolbar.
-2. **Infinite canvas workspace**: light central workspace, panning and zooming,
-   one or more bounded artboards, artboard labels, clipping, fit-to-frame, and
-   visible export target.
+2. **Infinite canvas workspace**: medium dark grey central workspace, panning
+   and zooming, one or more bounded blank white artboards, artboard labels,
+   clipping, fit-to-frame, and visible export target.
 3. **Figma/Brilliant-style interaction polish**: precise selection chrome,
    tool modes, handles, layer selection, inspector state, agent/editor modes,
    diagnostics badges, and export readiness affordances.
@@ -173,8 +173,8 @@ not as decoration. It has three separable pieces:
 The intended first product experience is:
 
 ```text
-dark left panel        light infinite workspace             dark right panel
-pages/layers           bounded artboard(s), labels          inspector/agent/export
+dark left panel        dark grey infinite workspace         dark right panel
+pages + layer tree     blank white artboard(s), labels      inspector/agent/export
                        floating bottom toolbar
                        compact mode switch / top label
 ```
@@ -188,8 +188,12 @@ explain when an artifact is not export-safe.
 ### Visual Principles
 
 - Use restrained, operational editor chrome, not a marketing-style page.
-- Keep the central canvas light and quiet so artboards and diagnostics carry the
-  attention.
+- Keep the central workspace medium dark grey; artboards themselves should be
+  blank white bounded frames.
+- Keep the left page/artboard list and size metadata, then show the layer node
+  hierarchy tree below it.
+- Keep the central canvas quiet and medium dark grey so blank white artboards
+  and diagnostics carry the attention.
 - Use dark neutral side panels for persistent product chrome: layers/pages on
   the left, inspector/agent/export/diagnostics on the right.
 - Keep artboards as real bounded surfaces with labels, subtle outlines, and
@@ -844,7 +848,8 @@ Exit gate:
 This can begin once Branch 1's DTO shape is clear. If Branch 1 is still in
 flight, start with an adapter that consumes existing `PageSize` but do not merge
 until the canonical geometry contract lands. This branch should implement both
-Slice 2 and Slice 3: the dark editor shell plus the light infinite workspace.
+Slice 2 and Slice 3: the dark editor shell plus the medium dark grey infinite
+workspace with blank white artboards.
 
 Deliver:
 
@@ -864,8 +869,8 @@ Exit gate:
 - Multiple differently sized artboards are inspectable and exportable without
   changing scene dimensions.
 - The editor visually matches the intended shell direction: dark side panels,
-  light central workspace, bounded artboards, compact labels, and floating
-  bottom toolbar.
+  medium dark grey central workspace, blank white bounded artboards, compact
+  labels, and floating bottom toolbar.
 
 ### Branch 3: `agents/artboard-frame-generation-v0`
 
@@ -971,8 +976,9 @@ This plan is complete when:
   and custom print surfaces all share one canonical point layout model.
 - The editor shows those surfaces as bounded artboards on an infinite workspace.
 - The editor chrome follows the intended product direction: dark side panels,
-  compact top artboard state, floating bottom toolbar, and a light central
-  workspace.
+  compact top artboard state, floating bottom toolbar, a medium dark grey
+  central workspace, blank white artboards, and a left panel that keeps the page
+  list with sizes above the layer hierarchy tree.
 - Exported SVG/PNG/PDF dimensions match the selected artboard's geometry and
   export profile.
 - Preflight catches page/artboard and parent containment overflow before export.
