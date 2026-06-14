@@ -1570,6 +1570,25 @@ def test_layout_cluster_dsl_guard_scopes_modifies_and_background_delete():
     assert not is_layout_cluster_dsl("#slot:campaign.headline required(false)", context)
 
 
+def test_background_conversion_delete_requires_diagnosed_background_permission():
+    context = {
+        "repair_class": "layout_cluster",
+        "cluster": {
+            "page_id": "page_a4",
+            "root_frame_id": "artboard",
+            "parent_node_id": "card",
+            "descendant_node_ids": ["headline"],
+            "background_node_id": "bg",
+        },
+        "permissions": [],
+    }
+
+    assert not is_layout_cluster_dsl("delete(bg)", context)
+    assert not is_layout_cluster_dsl("delete(backdrop)", context)
+    context["permissions"] = ["convert_diagnosed_background"]
+    assert is_layout_cluster_dsl("delete(bg)", context)
+
+
 def test_layout_cluster_repair_request_carries_cluster_permissions_and_guard(
     tmp_path: Path, monkeypatch
 ):
@@ -1606,6 +1625,33 @@ def test_layout_cluster_repair_request_carries_cluster_permissions_and_guard(
     ]
     assert "layout_cluster_repair_rejected" in events
     assert tools.core.compile_calls == 2
+
+
+def test_rejected_layout_cluster_repair_does_not_touch_scene(tmp_path: Path, monkeypatch):
+    monkeypatch.setattr(
+        "lumen_deepagent.tools.CoreClient", FakeLayoutClusterPreflightCoreClient
+    )
+    config = runtime_config(tmp_path, max_iterations=2)
+    tools = LumenDesignTools(config, "Create an A4 appointment card")
+    author = ScriptedAuthor(
+        [
+            "page page_a4 preset(a4,portrait)",
+            "page page_a4 preset(a4,portrait)",
+        ]
+    )
+    reviewer = ScriptedReviewer(
+        [VisualCritique(accepted=True, summary="should not be reached")]
+    )
+
+    result = LumenQualityLoop(tools, author, reviewer).run(
+        "Create an A4 appointment card"
+    )
+
+    assert result["status"] == "failed"
+    assert tools.core.compile_calls == 1
+    assert "card" in tools.scene["nodes"]
+    assert "headline" in tools.scene["nodes"]
+    assert author.requests[1].repair_context["repair_class"] == "layout_cluster"
 
 
 def test_surgical_repair_rejects_destructive_block_without_touching_scene(
