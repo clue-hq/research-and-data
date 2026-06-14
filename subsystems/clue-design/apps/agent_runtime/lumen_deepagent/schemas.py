@@ -187,6 +187,34 @@ class EditSurfaceRecommendation(str, Enum):
     external_planner = "external_planner"
 
 
+class RepairClass(str, Enum):
+    syntax_continuation = "syntax_continuation"
+    targeted_node = "targeted_node"
+    layout_cluster = "layout_cluster"
+    brand_token = "brand_token"
+    asset_tool = "asset_tool"
+    unsupported_gap = "unsupported_gap"
+
+
+class LayoutClusterTarget(BaseModel):
+    page_id: Optional[str] = None
+    root_frame_id: Optional[str] = None
+    parent_node_id: Optional[str] = None
+    descendant_node_ids: List[str] = Field(default_factory=list)
+    background_node_id: Optional[str] = None
+    diagnostic_codes: List[str] = Field(default_factory=list)
+
+
+class RepairClassification(BaseModel):
+    repair_class: RepairClass
+    target: Optional[VisualTarget] = None
+    cluster: Optional[LayoutClusterTarget] = None
+    allowed_edit_surface: EditSurfaceRecommendation
+    permissions: List[str] = Field(default_factory=list)
+    prohibitions: List[str] = Field(default_factory=list)
+    reason: str
+
+
 class StopReason(str, Enum):
     accepted = "accepted"
     compile_failed = "compile_failed"
@@ -205,8 +233,12 @@ class RepairRequest(BaseModel):
     exact_feedback: str
     diagnostics: List[DiagnosticSummary] = Field(default_factory=list)
     target: Optional[VisualTarget] = None
+    repair_class: Optional[RepairClass] = None
+    cluster: Optional[LayoutClusterTarget] = None
     scene_summary: JsonObject = Field(default_factory=dict)
     allowed_edit_surface: EditSurfaceRecommendation
+    permissions: List[str] = Field(default_factory=list)
+    prohibitions: List[str] = Field(default_factory=list)
     forbidden_changes: List[str] = Field(default_factory=list)
 
 

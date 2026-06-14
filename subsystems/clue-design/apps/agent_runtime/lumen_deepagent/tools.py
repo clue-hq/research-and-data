@@ -19,10 +19,12 @@ from .schemas import (
     GapArea,
     GapRecord,
     KnowledgeLoadResult,
+    LayoutClusterTarget,
     LumenRunTraceEvent,
     OperationApplicationSummary,
     PreflightSummary,
     PreviewArtifact,
+    RepairClass,
     RepairRequest,
     StopReason,
     ToolStatus,
@@ -1024,18 +1026,33 @@ class LumenDesignTools:
         target_json: str = "{}",
         allowed_edit_surface: str = "dsl",
         forbidden_changes_json: str = "[]",
+        repair_class: Optional[str] = None,
+        cluster_json: str = "null",
+        permissions_json: str = "[]",
+        prohibitions_json: str = "[]",
     ) -> str:
         """Create and persist a repair request without paraphrasing reviewer feedback."""
         diagnostics = diagnostics_from(json.loads(diagnostics_json))
         target_payload = json.loads(target_json)
         forbidden_changes = json.loads(forbidden_changes_json)
+        cluster_payload = json.loads(cluster_json)
+        permissions = json.loads(permissions_json)
+        prohibitions = json.loads(prohibitions_json)
         request = RepairRequest(
             original_user_request=self.prompt,
             exact_feedback=exact_feedback,
             diagnostics=diagnostics,
             target=VisualTarget.model_validate(target_payload) if target_payload else None,
+            repair_class=RepairClass(repair_class) if repair_class else None,
+            cluster=(
+                LayoutClusterTarget.model_validate(cluster_payload)
+                if cluster_payload
+                else None
+            ),
             scene_summary=self._scene_summary(),
             allowed_edit_surface=EditSurfaceRecommendation(allowed_edit_surface),
+            permissions=permissions,
+            prohibitions=prohibitions,
             forbidden_changes=forbidden_changes,
         )
         payload = {"repair_request": request.model_dump(mode="json")}

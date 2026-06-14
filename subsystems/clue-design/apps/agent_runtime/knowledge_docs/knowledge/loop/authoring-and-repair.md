@@ -35,6 +35,22 @@ repairs**. Fix that target (or its immediate container) and nothing else:
 
 Full guidance: `skills/repair-design` and `knowledge/lumen-dsl/directives`.
 
+## Layout cluster repairs
+
+Some geometry diagnostics cannot be fixed by touching one text node. If preflight
+names an artboard/page-bounds failure, a background-like top-level rect, a child
+that exceeds its parent, or a parent/child unit-scale mismatch, use the bounded
+`layout_cluster` policy:
+
+- target only the diagnosed page/artboard, root frame, parent, and affected
+  descendants;
+- allow p/s, fill/hug/fixed, auto-layout, padding, gap, wrap, root cluster sizing,
+  and conversion of a diagnosed background rect into the artboard/page fill;
+- prohibit page deletion, unrelated node deletion, unrelated slot/brand/asset
+  edits, and whole-scene regeneration.
+
+Load `knowledge/loop/layout-cluster-repair` before attempting this repair class.
+
 ## Don't lose a good design
 
 A run that ends without acceptance still surfaces the best scene that compiled

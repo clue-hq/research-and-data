@@ -69,9 +69,12 @@ strings.
   `target.node_id` is present, treat it as "edit that node in place" and prefer
   `apply_structured_edit` with a scope — regardless of the keyword hint.
 - **`create_repair_request(exact_feedback, diagnostics_json?, target_json?,
-  allowed_edit_surface?, forbidden_changes_json?)`** → persists the *verbatim*
-  feedback + target + forbidden changes so the author repairs the right thing.
-  Never paraphrase the feedback.
+  allowed_edit_surface?, forbidden_changes_json?, repair_class?, cluster_json?,
+  permissions_json?, prohibitions_json?)`** → persists the *verbatim* feedback,
+  target, repair class, bounded layout cluster, permissions, prohibitions, and
+  forbidden changes so the author repairs the right thing. Never paraphrase the
+  feedback. For `layout_cluster`, the cluster constrains allowed page/node IDs
+  and the permissions/prohibitions are part of the contract.
 
 ## Scene inspection (read-only)
 

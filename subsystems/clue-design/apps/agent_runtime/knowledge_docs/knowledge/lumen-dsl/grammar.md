@@ -25,6 +25,7 @@ deeper than the parent (`LUMD0302`); only containers may hold children
 ```text
 page page_a4 preset(a4,portrait)          # preset(name, orientation?)
 page story size(1080,1920,px)             # size(width, height, unit)
+page one_pager preset(a4,portrait) background($surface.page)
 ```
 
 - Presets: `a4`, `us_letter`, `linkedin_ad`, `envelope_dl`, `custom`
@@ -36,6 +37,9 @@ page story size(1080,1920,px)             # size(width, height, unit)
   the requested source/export size.
 - Presets are shortcuts only. **Never fake a square ad as a square frame inside an
   A4 page** — set the page size.
+- Child `p()`/`s()` values are authored in canonical layout points and are
+  artboard- or parent-local. Do not use physical `mm` or renderer pixels for
+  child coordinates.
 
 ## Node kinds
 
@@ -58,8 +62,8 @@ Geometry and box:
 
 | Property | Arity | Meaning |
 |----------|-------|---------|
-| `p(x,y)` | 2 | position (px) |
-| `s(w,h)` / `s(w,h,unit)` | 2–3 | size; `w`/`h` are a number, `hug`, `fill`, `fill(weight)`, `fill:weight`, or `$token` |
+| `p(x,y)` | 2 | position in canonical layout points (`pt`), local to the parent/artboard |
+| `s(w,h)` / `s(w,h,unit)` | 2–3 | size in canonical layout points; `w`/`h` are a number, `hug`, `fill`, `fill(weight)`, `fill:weight`, or `$token` |
 | `rd(r)` / `radius(r)` | **1** | uniform corner radius — **4-arg per-corner is NOT supported** (→ `LUMD0230`) |
 | `o(a)` / `opacity(a)` | 1 | node opacity |
 | `rot(deg)` / `rotation(deg)` | 1 | rotation |

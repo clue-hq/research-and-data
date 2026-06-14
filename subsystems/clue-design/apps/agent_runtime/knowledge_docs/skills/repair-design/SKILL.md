@@ -23,10 +23,18 @@ modify line or a continuation instead.
 1. **Modify line** — `#<node_id> prop(...)`. Best for changing a property on one
    existing node. `#instruction s(352,140) max_lines(6)` · `#card s(400,560)` ·
    `#headline font_size(22) lh(1.1)`.
-2. **Structural directive** — `delete`, `parent`, `before`/`after`, `clone`,
+2. **Layout cluster repair** — only when diagnostics name page/artboard bounds,
+   parent containment, oversized background, or parent/child scale mismatch.
+   Change only the diagnosed page/artboard/root/parent cluster and affected
+   descendants. Allowed: p/s, fill/hug/fixed, auto-layout, padding, gap, wrap,
+   root sizing, and converting a diagnosed background rect into page/artboard
+   fill. Forbidden: page deletion, unrelated node deletion, unrelated
+   slot/brand/asset edits, or whole-scene regeneration. See
+   `knowledge/loop/layout-cluster-repair`.
+3. **Structural directive** — `delete`, `parent`, `before`/`after`, `clone`,
    `replace`, `ungroup` (see `knowledge/lumen-dsl/directives`). For reordering,
    re-homing, duplicating, or swapping a subtree.
-3. **Checked structured edit** — the `apply_structured_edit` tool with a `scope`.
+4. **Checked structured edit** — the `apply_structured_edit` tool with a `scope`.
    Use this for a precise edit on a *named* node when you want the engine to **fail
    closed** if the edit would touch anything else:
    ```json
@@ -35,7 +43,7 @@ modify line or a continuation instead.
      "patch": { "kind": "node", "value": { "size": { "height": 140 } } },
      "scope": { "mode": "strict", "allowed": [{ "kind": "node", "id": "instruction" }] } }
    ```
-4. **Continuation DSL** — only when you are *adding* new nested elements under an
+5. **Continuation DSL** — only when you are *adding* new nested elements under an
    existing container. Indent them under the container; do not re-declare it.
 
 Re-authoring the whole scene is the **last** resort, used only when the design
@@ -57,6 +65,15 @@ fit (measurement is real). Pick the *smallest* targeted change on the named node
 - or relax the slot's overflow policy (`#slot:appointment.instruction` to
   `shrink_font`/`wrap`) so real data fits.
 Do **not** delete-and-recreate the card to do this.
+
+**Page/artboard bounds or parent containment (`LUMV09xx` with page/root/parent
+targets)** — use `layout_cluster`, not isolated text surgery. Examples:
+- convert a diagnosed full-artboard `bg` rect into page `background(...)` or root
+  artboard `fill(...)`;
+- resize/reposition the root/card and its dependent children together;
+- switch fixed child widths to `fill` inside the diagnosed parent.
+Do **not** change unrelated content or page/export dimensions unless the
+diagnostic targets page size.
 
 **Brand governance (`LUMB…`)** — replace the raw value with the right `$token`
 (`fill(#2463eb)` → `fill($surface.brand)`), not another raw value. See
@@ -83,6 +100,7 @@ closed) rather than a delete-then-recreate DSL block.
 ## Self-check before handing off
 
 - Did I avoid re-emitting `page …` and existing node ids? (If not, rewrite.)
-- Did I change only the named target (or its immediate container)?
+- Did I change only the named target, immediate container, or explicitly
+  diagnosed layout cluster?
 - Is this the smallest edit that clears the diagnostic?
 - For a precise named-node fix, did I consider `apply_structured_edit` + scope?

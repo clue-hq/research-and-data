@@ -15,7 +15,7 @@ failing line is dropped, later lines are discarded (cascade halt).
 | `LUMD04xx` | DSL lowering (ids/refs) | fix the element |
 | `LUMD06xx`/`LUMD07xx` | property applied to wrong target / not-yet-lowered | move the property or drop it |
 | `LUMD09xx` | targeted edit (modify/replace/override) | fix the modify target/scope |
-| `LUMV08xx`/`LUMV09xx` | layout & fit | resize/relayout text or slots |
+| `LUMV08xx`/`LUMV09xx` | layout & fit | resize/relayout text, slots, artboard bounds, or parent containment |
 | `LUMB06xx`/`LUMB08xx` | brand governance | use the right `$token` |
 | `LUME02xx` | export | run layout before export |
 
@@ -46,9 +46,14 @@ failing line is dropped, later lines are discarded (cascade halt).
 | `LUMV0904` | text exceeds `max_lines` | raise `max_lines`, shorten copy, or enlarge the box |
 | `LUMV0810` | slot fixture overflows its text node | same box fixes, or set the slot overflow policy to `shrink_font`/`wrap` |
 | `LUMV0509` | text slot has no fit-validation fixtures (warning) | add `sample`/`worst_case` so fit is tested against real-length data |
+| `LUMV09xx page/artboard bounds` | node exceeds or starts outside the artboard | use a bounded `layout_cluster` repair on the diagnosed artboard/root/parent cluster |
+| `LUMV09xx parent containment` | child exceeds a bounded parent or uses a different scale | resize/relayout the parent and affected descendants together |
+| `LUMV09xx background-like rect` | top-level rect/frame mostly covers the artboard | convert it to page/artboard background fill when the diagnostic targets that cluster |
 
 These are measured with real text shaping — when fit fails, it genuinely doesn't
-fit. Fix the *specific* node (see `skills/repair-design`); do not re-author.
+fit. Fix the *specific* node for ordinary text/slot overflow. For page/artboard
+bounds or parent-containment diagnostics, use `knowledge/loop/layout-cluster-repair`
+instead of repeatedly shrinking unrelated text nodes. Do not re-author the scene.
 
 ## Brand governance
 

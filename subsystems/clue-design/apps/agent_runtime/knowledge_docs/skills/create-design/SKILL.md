@@ -12,15 +12,17 @@ brand-aligned artifact. This is the *first* pass only — fixing diagnostics is
 ## Before you write
 
 1. **Load knowledge** for the task (see `AGENT.md` §4): always
-   `knowledge/lumen-dsl/grammar` + `knowledge/design/layout-recipes`; add
-   `skills/brand-and-tokens` + the design-systems files when a Brand Kit is in
+   `knowledge/lumen-dsl/grammar` + `knowledge/design/artboard-frame-authoring`
+   + `knowledge/design/layout-recipes`; add `skills/brand-and-tokens` + the
+   design-systems files when a Brand Kit is in
    play; add `knowledge/lumen-dsl/text` for text-heavy pieces;
    `skills/effects` for shadows/special strokes/gradients.
 2. **Pin the surface.** Match the requested artifact exactly:
    `page story size(1080,1920,px)` for a story, `preset(a4,portrait)` for a
-   one-pager. These commands normalize to canonical artboard layout bounds;
-   keep child coordinates page-relative. Never fake a square ad as a square
-   frame inside an A4 page.
+   one-pager. These commands normalize to canonical `pt` artboard layout bounds:
+   A4 is about `595 x 842 pt`, US Letter is `612 x 792 pt`, and a 1080 square
+   social artboard is `1080 x 1080 pt`. Keep child coordinates artboard-local
+   or parent-local. Never fake a square ad as a square frame inside an A4 page.
 3. **Decide branded vs neutral.** With an effective Brand Kit, use `$tokens`
    (`$surface.*`, `$type.*`, `$space.*`, `$radius.*`). Without one, concrete hex /
    `font("Inter",…)` values are fine.
@@ -35,6 +37,9 @@ brand-aligned artifact. This is the *first* pass only — fixing diagnostics is
   long headlines, `max_lines(…)` so overflow is caught early, boxes **wide enough**
   for the real copy. Headlines tight (`lh 1.05–1.15`), body relaxed (`1.3–1.45`).
 - **Backgrounds** belong on the container frame's `fill(...)`, not a separate rect.
+  For export-safe pages, put the background on the page/artboard/root frame:
+  `background(...)` on the page when available, or a clipped root `artboard`
+  frame with `fill(...)`. Do not draw a loose oversized `bg` rectangle.
 - **Shadows/strokes/gradients**: keep them tasteful and tokenized; see
   `skills/effects`.
 - **Mark ABM slots** on every element a campaign would personalize:
@@ -56,8 +61,8 @@ label/value pairs + a paragraph into a small fixed card **will** overflow
 
 ```text
 page linkedin_square size(1080,1080,px)
-  bg fr p(0,0) s(1080,1080) fill($surface.brand)
-    content al(v, x(s), g(28), pad(0)) p(72,88) s(560,hug)
+  artboard al(v, x(s), g(28), pad(72)) p(0,0) s(fill,fill) fill($surface.brand) clip(true)
+    content al(v, x(s), g(28), pad(0)) p(0,0) s(560,hug)
       headline text "Let neurosurgeons focus on surgery." p(0,0) s(fill,hug) style($type.headline) lh(1.08) wrap_text(true) max_lines(2) slot(campaign.headline)
       body     text "Insight Health handles calls, scheduling, and patient routing." p(0,0) s(fill,hug) style($type.body) lh(1.35) wrap_text(true) max_lines(3) slot(offer.primary_message)
       cta al(h, x(c), y(c), pad(14,28)) p(0,0) s(220,56) fill($surface.inverse) rd($radius.md)
@@ -74,6 +79,10 @@ the smallest failing piece.
 
 - IDs stable, descriptive, unique. Two-space indentation. Leaf nodes childless.
 - Page surface matches the request exactly.
+- Child `p()`/`s()` values are canonical `pt`, never `mm` and never renderer
+  pixels; physical/raster units stay in the page/export declaration.
+- Background is a page/artboard/root-frame fill, not a loose full-canvas `bg`
+  rectangle.
 - Every variable text box uses `hug`/enough space + `wrap_text` + realistic
   `max_lines`.
 - Slots are semantic and on every personalizable element.
