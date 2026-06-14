@@ -484,6 +484,30 @@ textarea:disabled {
   background: #3f4652;
 }
 
+.canvaskit-artboard-labels {
+  position: absolute;
+  z-index: 2;
+  inset: 0;
+  pointer-events: none;
+}
+
+.canvaskit-artboard-label {
+  position: absolute;
+  top: 0;
+  left: 0;
+  max-width: 240px;
+  overflow: hidden;
+  color: #c8d0d8;
+  font-size: 13px;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.canvaskit-artboard-label.active {
+  color: #ffffff;
+}
+
 .export-preview-shell {
   display: grid;
   min-height: 0;

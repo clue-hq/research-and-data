@@ -1,10 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { LocateFixed, Maximize2, Minus, Plus } from "lucide-react";
 import type { NodeId, Operation, PageId, Scene } from "@/engine/contracts";
 import type { OptimisticEnginePort } from "@/engine/wasmEngine";
-import type { WorkspaceModel } from "@/engine/workspaceLayout";
-import { centeredPageOrigin, fitZoomForPage } from "@/engine/canvasViewport";
+import { artboardAtWorkspacePoint, type WorkspaceModel } from "@/engine/workspaceLayout";
 import { containerSelectionGeometry, isCanvasDirectGeometryEditable } from "@/engine/canvasSelection";
 import {
   gestureReducer,
@@ -27,6 +27,15 @@ import { loadCanvasKit } from "@/engine/canvaskit/loadCanvasKit";
 import { skiaMeasurements } from "@/engine/canvaskit/skiaMeasurements";
 import type { Box } from "@/engine/transformerMath";
 import { updateTextNode } from "@/engine/operations";
+import {
+  clampWorkspacePanToKeepVisible,
+  clampWorkspaceZoom,
+  fitWorkspaceRectToViewport,
+  panWorkspaceViewport,
+  screenToWorkspace,
+  zoomWorkspaceViewportAtPoint,
+  type WorkspaceViewport
+} from "@/engine/workspaceViewport";
 import { CanvasKitStage } from "./CanvasKitStage";
 import { SelectionOverlay } from "./SelectionOverlay";
 import { TextEditOverlay } from "./TextEditOverlay";
@@ -50,10 +59,11 @@ export interface CanvasKitCanvasProps {
   activePageId: PageId | null;
   selectedNodeId: NodeId | null;
   onSelectNode: (nodeId: NodeId | null) => void;
+  onSelectPage?: (pageId: PageId) => void;
   onOperation: (operation: Operation) => void;
   /** The engine provides authoritative point→node hit-testing (C3a). */
   engine: OptimisticEnginePort | null;
-  workspaceModel?: WorkspaceModel;
+  workspaceModel: WorkspaceModel;
   /** Called after the C4 measurement pass updates the engine's `computed`
    * (which does not emit a delta), so the host can re-sync its React scene. */
   onSceneRefresh?: () => void;
@@ -70,41 +80,44 @@ export function CanvasKitCanvas({
   activePageId,
   selectedNodeId,
   onSelectNode,
+  onSelectPage,
   onOperation,
   engine,
+  workspaceModel,
   onSceneRefresh
 }: CanvasKitCanvasProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const stateRef = useRef<GestureState>(initialGestureState);
   const [viewport, setViewport] = useState({ width: 900, height: 720 });
+  const [workspaceViewport, setWorkspaceViewport] = useState<WorkspaceViewport>({
+    zoom: 1,
+    pan: { x: 0, y: 0 }
+  });
+  const [fitTarget, setFitTarget] = useState<"current" | "all" | "manual">("all");
   const [preview, setPreview] = useState<Preview | null>(null);
   const [marquee, setMarquee] = useState<Box | null>(null);
   const [editingNodeId, setEditingNodeId] = useState<NodeId | null>(null);
 
   const page = getPage(scene, activePageId);
   const pageView = page ? pageDescriptor(page) : null;
+  const activeArtboard = workspaceModel.activeArtboard;
   const unitScale = pageView?.unitScale ?? 1;
-
-  const zoom = useMemo(() => {
-    if (!pageView) return 1;
-    return fitZoomForPage({
-      viewportWidth: viewport.width,
-      viewportHeight: viewport.height,
-      pageWidth: pageView.width,
-      pageHeight: pageView.height
-    });
-  }, [pageView, viewport.height, viewport.width]);
+  const zoom = workspaceViewport.zoom;
 
   const pageOrigin = useMemo(() => {
-    if (!pageView) return { x: 0, y: 0 };
-    return centeredPageOrigin({
-      viewportWidth: viewport.width,
-      viewportHeight: viewport.height,
-      pageWidth: pageView.width,
-      pageHeight: pageView.height,
-      zoom
-    });
-  }, [pageView, viewport.height, viewport.width, zoom]);
+    if (!activeArtboard) return { x: 0, y: 0 };
+    return {
+      x: workspaceViewport.pan.x + activeArtboard.workspaceRect.x * workspaceViewport.zoom,
+      y: workspaceViewport.pan.y + activeArtboard.workspaceRect.y * workspaceViewport.zoom
+    };
+  }, [activeArtboard, workspaceViewport.pan.x, workspaceViewport.pan.y, workspaceViewport.zoom]);
+
+  const fitRect = useMemo(() => {
+    if (fitTarget === "current" && activeArtboard) {
+      return activeArtboard.workspaceRect;
+    }
+    return workspaceModel.bounds;
+  }, [activeArtboard, fitTarget, workspaceModel.bounds]);
 
   useEffect(() => {
     const element = containerRef.current;
@@ -120,6 +133,19 @@ export function CanvasKitCanvas({
     observer.observe(element);
     return () => observer.disconnect();
   }, []);
+
+  useEffect(() => {
+    if (fitTarget === "manual") {
+      return;
+    }
+    setWorkspaceViewport(fitWorkspaceRectToViewport({ viewport, rect: fitRect }));
+  }, [fitRect, fitTarget, viewport]);
+
+  useEffect(() => {
+    setWorkspaceViewport((current) =>
+      clampWorkspacePanToKeepVisible(current, workspaceModel.bounds, viewport)
+    );
+  }, [viewport, workspaceModel.bounds]);
 
   // A signature of every text node's measurement inputs. The C4 measurement
   // pass keys on this, not the whole scene, so dragging/resizing non-text
@@ -170,13 +196,13 @@ export function CanvasKitCanvas({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [engine, textSignature]);
 
-  // Descriptor tree, applying the live preview override to the dragged node.
-  const nodes = useMemo<DrawNode[]>(() => {
-    if (!page) return [];
-    const build = (nodeId: NodeId): DrawNode | null => {
+  // Descriptor trees, applying the live preview override to the dragged node.
+  const artboards = useMemo(() => {
+    const buildForPage = (pageId: PageId, nodeId: NodeId): DrawNode | null => {
+      const currentPage = scene.pages[pageId];
       const node = scene.nodes[nodeId];
-      if (!node) return null;
-      const descriptor = nodeDescriptor(scene, node, page);
+      if (!node || !currentPage) return null;
+      const descriptor = nodeDescriptor(scene, node, currentPage);
       if (preview && preview.nodeId === nodeId) {
         descriptor.x = preview.box.x;
         descriptor.y = preview.box.y;
@@ -184,10 +210,31 @@ export function CanvasKitCanvas({
         descriptor.height = preview.box.height;
         descriptor.rotation = preview.rotation;
       }
-      return { descriptor, children: node.children.map(build).filter(Boolean) as DrawNode[] };
+      return {
+        descriptor,
+        children: node.children.map((childId) => buildForPage(pageId, childId)).filter(Boolean) as DrawNode[]
+      };
     };
-    return page.children.map(build).filter(Boolean) as DrawNode[];
-  }, [scene, page, preview]);
+    return workspaceModel.artboards
+      .map((artboard) => {
+        const currentPage = scene.pages[artboard.pageId];
+        if (!currentPage) {
+          return null;
+        }
+        return {
+          page: pageDescriptor(currentPage),
+          workspaceRect: artboard.workspaceRect,
+          isActive: artboard.isActive,
+          nodes: currentPage.children.map((nodeId) => buildForPage(artboard.pageId, nodeId)).filter(Boolean) as DrawNode[]
+        };
+      })
+      .filter(Boolean) as Array<{
+      page: ReturnType<typeof pageDescriptor>;
+      workspaceRect: { x: number; y: number; width: number; height: number };
+      isActive: boolean;
+      nodes: DrawNode[];
+    }>;
+  }, [scene, preview, workspaceModel.artboards]);
 
   const selectionBox = useMemo<{ box: Box; rotation: number; nodeId: NodeId } | null>(() => {
     if (!selectedNodeId) return null;
@@ -319,10 +366,7 @@ export function CanvasKitCanvas({
   );
 
   const pointerFromEvent = (event: React.PointerEvent): { x: number; y: number } => {
-    const rect = containerRef.current?.getBoundingClientRect();
-    const sx = event.clientX - (rect?.left ?? 0);
-    const sy = event.clientY - (rect?.top ?? 0);
-    return screenToDescriptor({ x: sx, y: sy }, pageOrigin, zoom);
+    return screenToDescriptor(screenPointFromEvent(event), pageOrigin, zoom);
   };
 
   // The text node being edited: its descriptor box + style for the DOM overlay.
@@ -392,13 +436,92 @@ export function CanvasKitCanvas({
     meta: event.metaKey || event.ctrlKey
   });
 
+  const fitWorkspace = (target: "current" | "all") => {
+    const rect = target === "current" && activeArtboard ? activeArtboard.workspaceRect : workspaceModel.bounds;
+    setFitTarget(target);
+    setWorkspaceViewport(fitWorkspaceRectToViewport({ viewport, rect }));
+  };
+
+  const zoomBy = (delta: number) => {
+    setFitTarget("manual");
+    setWorkspaceViewport((current) =>
+      zoomWorkspaceViewportAtPoint(
+        current,
+        { x: viewport.width / 2, y: viewport.height / 2 },
+        clampWorkspaceZoom(current.zoom + delta)
+      )
+    );
+  };
+
   return (
-    <section className="canvas-shell" ref={containerRef} style={{ position: "relative" }}>
-      <CanvasKitStage page={pageView ?? EMPTY_PAGE} nodes={nodes} pageOrigin={pageOrigin} zoom={zoom} />
+    <section className="canvas-shell workspace-canvas-shell" ref={containerRef} style={{ position: "relative" }}>
+      <CanvasKitStage artboards={artboards} viewport={workspaceViewport} />
+      <CanvasKitArtboardLabels workspaceModel={workspaceModel} viewport={workspaceViewport} />
+      <div className="workspace-context-bar">
+        <span className="workspace-context-label">{activeArtboard?.label ?? "No artboard"}</span>
+        <span>{pageView ? `${formatDimension(pageView.width)} x ${formatDimension(pageView.height)} pt` : "No frame"}</span>
+      </div>
+      <div className="workspace-bottom-toolbar" aria-label="CanvasKit workspace tools">
+        <button type="button" aria-label="Zoom out" title="Zoom out" onClick={() => zoomBy(-0.1)}>
+          <Minus aria-hidden size={16} />
+        </button>
+        <strong>{Math.round(zoom * 100)}%</strong>
+        <button type="button" aria-label="Zoom in" title="Zoom in" onClick={() => zoomBy(0.1)}>
+          <Plus aria-hidden size={16} />
+        </button>
+        <span className="workspace-toolbar-separator" />
+        <button
+          type="button"
+          className={fitTarget === "current" ? "active" : undefined}
+          aria-label="Fit current artboard"
+          title="Fit current artboard"
+          onClick={() => fitWorkspace("current")}
+        >
+          <LocateFixed aria-hidden size={16} />
+        </button>
+        <button
+          type="button"
+          className={fitTarget === "all" ? "active" : undefined}
+          aria-label="Fit all artboards"
+          title="Fit all artboards"
+          onClick={() => fitWorkspace("all")}
+        >
+          <Maximize2 aria-hidden size={16} />
+        </button>
+      </div>
       <div
         style={{ position: "absolute", inset: 0 }}
+        onWheel={(event) => {
+          event.preventDefault();
+          setFitTarget("manual");
+          if (event.ctrlKey || event.metaKey) {
+            setWorkspaceViewport((current) =>
+              zoomWorkspaceViewportAtPoint(current, screenPointFromEvent(event), current.zoom + (event.deltaY > 0 ? -0.08 : 0.08))
+            );
+            return;
+          }
+          setWorkspaceViewport((current) =>
+            clampWorkspacePanToKeepVisible(
+              panWorkspaceViewport(current, { x: -event.deltaX, y: -event.deltaY }),
+              workspaceModel.bounds,
+              viewport
+            )
+          );
+        }}
         onPointerDown={(event) => {
           if (editingNodeId) return; // editing: let the textarea own the pointer
+          const screenPoint = screenPointFromEvent(event);
+          const workspacePoint = screenToWorkspace(screenPoint, workspaceViewport);
+          const hitArtboard = artboardAtWorkspacePoint(workspaceModel, workspacePoint);
+          if (!hitArtboard) {
+            onSelectNode(null);
+            return;
+          }
+          if (hitArtboard.pageId !== activePageId) {
+            onSelectPage?.(hitArtboard.pageId);
+            onSelectNode(null);
+            return;
+          }
           try {
             event.currentTarget.setPointerCapture(event.pointerId);
           } catch {
@@ -446,8 +569,6 @@ export function CanvasKitCanvas({
   );
 }
 
-const EMPTY_PAGE = { id: "", name: "", width: 0, height: 0, unitScale: 1, background: "#ffffff" };
-
 function containerChildBoxes(scene: Scene, nodeId: NodeId | null, unitScale: number): Box[] {
   const geometry = containerSelectionGeometry(scene, nodeId);
   if (!geometry) return [];
@@ -459,6 +580,44 @@ function containerChildBoxes(scene: Scene, nodeId: NodeId | null, unitScale: num
     width: c.width * unitScale,
     height: c.height * unitScale
   }));
+}
+
+function CanvasKitArtboardLabels({
+  workspaceModel,
+  viewport
+}: {
+  workspaceModel: WorkspaceModel;
+  viewport: WorkspaceViewport;
+}) {
+  return (
+    <div className="canvaskit-artboard-labels" aria-hidden>
+      {workspaceModel.artboards.map((artboard) => (
+        <span
+          key={artboard.pageId}
+          className={artboard.isActive ? "canvaskit-artboard-label active" : "canvaskit-artboard-label"}
+          style={{
+            transform: `translate(${viewport.pan.x + artboard.workspaceRect.x * viewport.zoom}px, ${
+              viewport.pan.y + artboard.workspaceRect.y * viewport.zoom - 30
+            }px)`
+          }}
+        >
+          {artboard.label}
+        </span>
+      ))}
+    </div>
+  );
+}
+
+function screenPointFromEvent(event: React.PointerEvent | React.WheelEvent | React.MouseEvent): { x: number; y: number } {
+  const rect = event.currentTarget.getBoundingClientRect();
+  return {
+    x: event.clientX - rect.left,
+    y: event.clientY - rect.top
+  };
+}
+
+function formatDimension(value: number): string {
+  return Number.isInteger(value) ? String(value) : value.toFixed(1).replace(/\.0$/, "");
 }
 
 function containerLabel(scene: Scene, nodeId: NodeId | null): string | undefined {

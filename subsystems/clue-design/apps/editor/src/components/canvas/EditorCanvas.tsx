@@ -1,10 +1,10 @@
 "use client";
 
-import type { NodeId, Operation, PageId, Scene } from "@/engine/contracts";
+import { useMemo } from "react";
+import type { Diagnostic, NodeId, Operation, PageId, Scene } from "@/engine/contracts";
 import type { OptimisticEnginePort } from "@/engine/wasmEngine";
 import { canvasKitFlagEnabled } from "@/engine/wasmEngine";
 import { createWorkspaceModel } from "@/engine/workspaceLayout";
-import type { Diagnostic } from "@/engine/contracts";
 import { CanvasSurface } from "./CanvasSurface";
 import { CanvasKitCanvas } from "./CanvasKitCanvas";
 
@@ -29,7 +29,10 @@ export interface EditorCanvasProps {
 }
 
 export function EditorCanvas(props: EditorCanvasProps) {
-  const workspaceModel = createWorkspaceModel(props.scene, props.activePageId, props.diagnostics ?? []);
+  const workspaceModel = useMemo(
+    () => createWorkspaceModel(props.scene, props.activePageId, props.diagnostics ?? []),
+    [props.activePageId, props.diagnostics, props.scene]
+  );
   if (canvasKitFlagEnabled()) {
     return <CanvasKitCanvas {...props} workspaceModel={workspaceModel} />;
   }
