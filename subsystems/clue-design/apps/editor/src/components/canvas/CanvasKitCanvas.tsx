@@ -2,10 +2,11 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Download, Hand, LocateFixed, Maximize2, Minus, MousePointer2, Plus, Scan } from "lucide-react";
-import type { NodeId, Operation, PageId, Scene } from "@/engine/contracts";
+import type { Diagnostic, NodeId, Operation, PageId, Scene } from "@/engine/contracts";
 import type { OptimisticEnginePort } from "@/engine/wasmEngine";
 import { artboardAtWorkspacePoint, type WorkspaceModel } from "@/engine/workspaceLayout";
-import { containerSelectionGeometry, isCanvasDirectGeometryEditable } from "@/engine/canvasSelection";
+import { containerSelectionGeometry } from "@/engine/canvasSelection";
+import { deriveSelectionChromeModel } from "@/engine/selectionChrome";
 import {
   gestureReducer,
   initialGestureState,
@@ -66,6 +67,7 @@ export interface CanvasKitCanvasProps {
   onOperation: (operation: Operation) => void;
   /** The engine provides authoritative point→node hit-testing (C3a). */
   engine: OptimisticEnginePort | null;
+  diagnostics?: Diagnostic[];
   workspaceModel: WorkspaceModel;
   workspaceViewport: WorkspaceViewport;
   onWorkspaceViewportChange: WorkspaceViewportUpdater;
@@ -94,6 +96,7 @@ export function CanvasKitCanvas({
   onSelectPage,
   onOperation,
   engine,
+  diagnostics = [],
   workspaceModel,
   workspaceViewport,
   onWorkspaceViewportChange,
@@ -112,6 +115,7 @@ export function CanvasKitCanvas({
   const [preview, setPreview] = useState<Preview | null>(null);
   const [marquee, setMarquee] = useState<Box | null>(null);
   const [editingNodeId, setEditingNodeId] = useState<NodeId | null>(null);
+  const [hoverNodeId, setHoverNodeId] = useState<NodeId | null>(null);
 
   const page = getPage(scene, activePageId);
   const pageView = page ? pageDescriptor(page) : null;
@@ -262,7 +266,18 @@ export function CanvasKitCanvas({
     return { box: { x: d.x, y: d.y, width: d.width, height: d.height }, rotation: d.rotation, nodeId: selectedNodeId };
   }, [scene, page, selectedNodeId, preview]);
 
-  const showHandles = isCanvasDirectGeometryEditable(scene, selectedNodeId);
+  const chromeModel = useMemo(
+    () =>
+      deriveSelectionChromeModel(scene, {
+        activePageId,
+        selectedNodeId,
+        hoverNodeId,
+        diagnostics
+      }),
+    [activePageId, diagnostics, hoverNodeId, scene, selectedNodeId]
+  );
+
+  const showHandles = chromeModel.showHandles;
 
   const boxForNode = useCallback(
     (nodeId: NodeId): { box: Box; rotation: number } | null => {
@@ -302,6 +317,35 @@ export function CanvasKitCanvas({
       return { kind: "empty" };
     },
     [selectionBox, showHandles, zoom, unitScale, engine, activePageId, boxForNode]
+  );
+
+  const updateHoverFromEvent = useCallback(
+    (event: React.PointerEvent) => {
+      if (workspaceTool !== "select" || editingNodeId || stateRef.current.kind !== "idle") {
+        setHoverNodeId(null);
+        return;
+      }
+      const workspacePoint = screenToWorkspace(screenPointFromEvent(event), workspaceViewport);
+      const hitArtboard = artboardAtWorkspacePoint(workspaceModel, workspacePoint);
+      if (!hitArtboard || hitArtboard.pageId !== activePageId) {
+        setHoverNodeId(null);
+        return;
+      }
+      const hitPage = scene.pages[hitArtboard.pageId] ?? null;
+      if (!hitPage) {
+        setHoverNodeId(null);
+        return;
+      }
+      const hitPageDescriptor = pageDescriptor(hitPage);
+      const localDescriptorPoint = {
+        x: workspacePoint.x - hitArtboard.workspaceRect.x,
+        y: workspacePoint.y - hitArtboard.workspaceRect.y
+      };
+      const scenePoint = descriptorToScene(localDescriptorPoint, hitPageDescriptor.unitScale);
+      const hit = engine?.hitTest?.(hitArtboard.pageId, scenePoint.x, scenePoint.y)?.hit ?? null;
+      setHoverNodeId((current) => (current === hit ? current : hit));
+    },
+    [activePageId, editingNodeId, engine, scene.pages, workspaceModel, workspaceTool, workspaceViewport]
   );
 
   const applyAction = useCallback(
@@ -530,6 +574,7 @@ export function CanvasKitCanvas({
         </button>
       </div>
       <div
+        data-testid="canvaskit-interaction-layer"
         style={{ position: "absolute", inset: 0 }}
         onWheel={(event) => {
           event.preventDefault();
@@ -550,6 +595,7 @@ export function CanvasKitCanvas({
         }}
         onPointerDown={(event) => {
           if (editingNodeId) return; // editing: let the textarea own the pointer
+          setHoverNodeId(null);
           const screenPoint = screenPointFromEvent(event);
           if (workspaceTool === "hand") {
             panDragRef.current = {
@@ -615,7 +661,15 @@ export function CanvasKitCanvas({
             );
             return;
           }
-          if (editingNodeId || stateRef.current.kind === "idle") return;
+          if (editingNodeId) {
+            setHoverNodeId(null);
+            return;
+          }
+          if (stateRef.current.kind === "idle") {
+            updateHoverFromEvent(event);
+            return;
+          }
+          setHoverNodeId(null);
           dispatch({ kind: "move", point: pointerFromEvent(event), modifiers: modifiersFromEvent(event) });
         }}
         onPointerUp={(event) => {
@@ -636,7 +690,9 @@ export function CanvasKitCanvas({
           stateRef.current = initialGestureState;
           setPreview(null);
           setMarquee(null);
+          setHoverNodeId(null);
         }}
+        onPointerLeave={() => setHoverNodeId(null)}
         onDoubleClick={onDoubleClick}
       >
         <SelectionOverlay
@@ -645,12 +701,20 @@ export function CanvasKitCanvas({
               ? { box: selectionBox.box, rotation: selectionBox.rotation }
               : null
           }
+          hover={
+            hoverNodeId && hoverNodeId !== selectedNodeId && !editingNodeId
+              ? boxForNode(hoverNodeId)
+              : null
+          }
           containerChildren={editingNodeId ? [] : containerChildBoxes(scene, selectedNodeId, unitScale)}
           containerLabel={editingNodeId ? undefined : containerLabel(scene, selectedNodeId)}
           marquee={marquee}
           pageOrigin={pageOrigin}
           zoom={zoom}
           showHandles={showHandles && !editingNodeId}
+          disabledReason={editingNodeId ? null : chromeModel.disabledReason}
+          slotKeys={chromeModel.slotKeys}
+          diagnosticCounts={chromeModel.diagnosticCounts}
         />
         {editing ? (
           <TextEditOverlay

@@ -36,11 +36,62 @@ describe("SelectionOverlay (Wave 3 C3d)", () => {
         pageOrigin={pageOrigin}
         zoom={1}
         showHandles={false}
+        disabledReason="Selection is managed by an auto-layout parent."
       />
     );
     expect(container.querySelectorAll('[data-role="resize-handle"]')).toHaveLength(0);
     expect(container.querySelector('[data-role="rotate-handle"]')).toBeNull();
     expect(container.querySelector('[data-role="selection-box"]')).not.toBeNull();
+    expect(container.querySelector('[data-role="disabled-handle-notice"]')?.textContent).toContain("auto-layout");
+  });
+
+  it("draws hover chrome separately from selected chrome", () => {
+    const { container } = render(
+      <SelectionOverlay
+        selection={{ box: { x: 0, y: 0, width: 50, height: 50 }, rotation: 0 }}
+        hover={{ box: { x: 80, y: 10, width: 30, height: 30 }, rotation: 0 }}
+        pageOrigin={pageOrigin}
+        zoom={1}
+      />
+    );
+    expect(container.querySelector('[data-role="selection-box"]')).not.toBeNull();
+    expect(container.querySelector('[data-role="hover-box"]')).not.toBeNull();
+  });
+
+  it("draws a subtle slot-bound accent when slot keys exist", () => {
+    const { container } = render(
+      <SelectionOverlay
+        selection={{ box: { x: 0, y: 0, width: 50, height: 50 }, rotation: 0 }}
+        pageOrigin={pageOrigin}
+        zoom={1}
+        slotKeys={["contact.full_name", "contact.title"]}
+      />
+    );
+    expect(container.querySelector('[data-role="slot-bound-accent"]')?.textContent).toContain("2 slots");
+  });
+
+  it("draws a diagnostics badge and warning/error stroke for selected issues", () => {
+    const { container, rerender } = render(
+      <SelectionOverlay
+        selection={{ box: { x: 0, y: 0, width: 50, height: 50 }, rotation: 0 }}
+        pageOrigin={pageOrigin}
+        zoom={1}
+        diagnosticCounts={{ errors: 0, warnings: 2 }}
+      />
+    );
+    expect(container.querySelector('[data-role="diagnostic-badge"]')?.textContent).toContain("2");
+    expect(container.querySelector('[data-role="selection-box"]')?.getAttribute("stroke")).toBe("#f59e0b");
+
+    rerender(
+      <SelectionOverlay
+        selection={{ box: { x: 0, y: 0, width: 50, height: 50 }, rotation: 0 }}
+        pageOrigin={pageOrigin}
+        zoom={1}
+        diagnosticCounts={{ errors: 1, warnings: 2 }}
+      />
+    );
+    expect(container.querySelector('[data-role="diagnostic-badge"]')?.textContent).toContain("3");
+    expect(container.querySelector('[data-role="selection-box"]')?.getAttribute("stroke")).toBe("#ef4444");
   });
 
   it("draws container child outlines and a label", () => {
