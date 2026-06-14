@@ -1887,6 +1887,97 @@ def test_trace_evaluator_summarizes_final_run_outputs(tmp_path: Path):
     assert summary["unresolved_issue_categories"]["clipping"] == 1
     assert summary["unresolved_issue_categories"]["gap:rendering_export_preview"] == 1
     assert summary["preview_paths"] == ["/tmp/preview.svg"]
+    assert summary["layout_cluster_repairs"] == 0
+    assert summary["remaining_parent_overflow"] == 0
+
+
+def test_trace_evaluator_counts_layout_cluster_and_geometry_failures(tmp_path: Path):
+    run_dir = tmp_path / ".lumen-runs" / "run_cluster"
+    iteration_dir = run_dir / "iterations" / "001"
+    iteration_dir.mkdir(parents=True)
+    (run_dir / "final.json").write_text(
+        json.dumps(
+            {
+                "status": "failed",
+                "run_id": "run_cluster",
+                "stop_reason": "max_iterations_reached",
+                "critique": {},
+                "gaps": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+    (iteration_dir / "repair_request.json").write_text(
+        json.dumps(
+            {
+                "repair_request": {
+                    "repair_class": "layout_cluster",
+                    "cluster": {"page_id": "page_a4", "parent_node_id": "card"},
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    (iteration_dir / "preflight.json").write_text(
+        json.dumps(
+            {
+                "preflight": {
+                    "diagnostics": [
+                        {
+                            "severity": "error",
+                            "code": "LUMV0800",
+                            "message": "background bg exceeds artboard bounds",
+                            "target_node_id": "bg",
+                        },
+                        {
+                            "severity": "error",
+                            "code": "LUMV0801",
+                            "message": "headline exceeds parent card bounds",
+                            "target_node_id": "headline",
+                        },
+                        {
+                            "severity": "error",
+                            "code": "LUMV0903",
+                            "message": "body exceeds available height",
+                            "target_node_id": "body",
+                        },
+                    ]
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    (run_dir / "trace.jsonl").write_text(
+        "\n".join(
+            [
+                json.dumps(
+                    {
+                        "event": "layout_cluster_repair_rejected",
+                        "payload": {"rejected_source": "page page_a4"},
+                    }
+                ),
+                json.dumps(
+                    {
+                        "event": "dsl_repair_not_surgical",
+                        "payload": {"rejected_source": "delete(headline)"},
+                    }
+                ),
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    summary = summarize_trace_dir(tmp_path / ".lumen-runs")
+
+    assert summary["layout_cluster_repairs"] == 1
+    assert summary["layout_cluster_rejections"] == 1
+    assert summary["destructive_repair_rejections"] == 1
+    assert summary["whole_scene_regeneration_attempts"] == 2
+    assert summary["oversized_background_rects"] == 1
+    assert summary["remaining_artboard_overflow"] == 1
+    assert summary["remaining_parent_overflow"] == 1
+    assert summary["final_lumv080x_count"] == 2
+    assert summary["final_lumv090x_count"] == 1
 
 
 def test_provider_helpers_extract_dsl_and_parse_structured_critique():
