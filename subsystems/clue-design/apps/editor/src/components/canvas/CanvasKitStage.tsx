@@ -3,7 +3,9 @@
 import { useEffect, useRef } from "react";
 import type { CanvasKit, Surface, TypefaceFontProvider } from "canvaskit-wasm";
 import type { RenderPageDescriptor } from "@/engine/renderAdapter";
-import { drawDescriptorTree, type DrawNode } from "@/engine/canvaskit/drawDescriptors";
+import type { Rect } from "@/engine/workspaceLayout";
+import type { WorkspaceViewport } from "@/engine/workspaceViewport";
+import { drawDescriptorTree, parseColor, type DrawNode } from "@/engine/canvaskit/drawDescriptors";
 import { loadCanvasKit } from "@/engine/canvaskit/loadCanvasKit";
 
 /**
@@ -22,23 +24,26 @@ import { loadCanvasKit } from "@/engine/canvaskit/loadCanvasKit";
  */
 
 export interface CanvasKitStageProps {
-  page: RenderPageDescriptor;
-  /** The page's node tree as descriptors (incl. full shadow stacks). */
-  nodes: DrawNode[];
-  /** Page-origin offset in canvas px (the centered artboard position). */
-  pageOrigin: { x: number; y: number };
-  zoom: number;
+  artboards: CanvasKitArtboard[];
+  viewport: WorkspaceViewport;
 }
 
-export function CanvasKitStage({ page, nodes, pageOrigin, zoom }: CanvasKitStageProps) {
+export interface CanvasKitArtboard {
+  page: RenderPageDescriptor;
+  nodes: DrawNode[];
+  workspaceRect: Rect;
+  isActive: boolean;
+}
+
+export function CanvasKitStage({ artboards, viewport }: CanvasKitStageProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const ckRef = useRef<CanvasKit | null>(null);
   const fontRef = useRef<TypefaceFontProvider | null>(null);
   const surfaceRef = useRef<Surface | null>(null);
   const dirtyRef = useRef(false);
   const rafRef = useRef(0);
-  const propsRef = useRef({ page, nodes, pageOrigin, zoom });
-  propsRef.current = { page, nodes, pageOrigin, zoom };
+  const propsRef = useRef({ artboards, viewport });
+  propsRef.current = { artboards, viewport };
 
   // One draw pass; scheduled at most once per frame, only while dirty.
   const flush = () => {
@@ -54,10 +59,12 @@ export function CanvasKitStage({ page, nodes, pageOrigin, zoom }: CanvasKitStage
     canvas.save();
     const dpr = typeof devicePixelRatio === "number" ? devicePixelRatio : 1;
     canvas.scale(dpr, dpr);
-    canvas.clear(ck.Color(245, 241, 233, 1)); // editor backdrop
-    canvas.translate(current.pageOrigin.x, current.pageOrigin.y);
-    canvas.scale(current.zoom, current.zoom);
-    drawDescriptorTree(ck, canvas, current.page, current.nodes, fontRef.current);
+    canvas.clear(parseColor(ck, "#3b3f46") ?? ck.Color4f(0.231, 0.247, 0.275, 1));
+    canvas.translate(current.viewport.pan.x, current.viewport.pan.y);
+    canvas.scale(current.viewport.zoom, current.viewport.zoom);
+    for (const artboard of current.artboards) {
+      drawArtboard(ck, canvas, artboard, fontRef.current);
+    }
     canvas.restore();
     surface.flush();
   };
@@ -127,7 +134,38 @@ export function CanvasKitStage({ page, nodes, pageOrigin, zoom }: CanvasKitStage
   }, []);
 
   // Descriptor / viewport changes mark dirty; drawing happens in rAF.
-  useEffect(invalidate, [page, nodes, pageOrigin, zoom]);
+  useEffect(invalidate, [artboards, viewport]);
 
   return <canvas ref={canvasRef} style={{ width: "100%", height: "100%", display: "block" }} />;
+}
+
+function drawArtboard(
+  ck: CanvasKit,
+  canvas: import("canvaskit-wasm").Canvas,
+  artboard: CanvasKitArtboard,
+  fontProvider: TypefaceFontProvider | null
+) {
+  const rect = artboard.workspaceRect;
+  const shellPaint = paint(ck, "#151920", ck.PaintStyle.Fill);
+  canvas.drawRRect(ck.RRectXY(ck.LTRBRect(rect.x - 18, rect.y - 18, rect.x + rect.width + 18, rect.y + rect.height + 18), 10, 10), shellPaint);
+  shellPaint.delete();
+
+  canvas.save();
+  canvas.translate(rect.x, rect.y);
+  canvas.clipRect(ck.LTRBRect(0, 0, artboard.page.width, artboard.page.height), ck.ClipOp.Intersect, true);
+  drawDescriptorTree(ck, canvas, artboard.page, artboard.nodes, fontProvider);
+  canvas.restore();
+
+  const borderPaint = paint(ck, artboard.isActive ? "#58c4c8" : "#858f99", ck.PaintStyle.Stroke);
+  borderPaint.setStrokeWidth(artboard.isActive ? 2 : 1);
+  canvas.drawRect(ck.LTRBRect(rect.x, rect.y, rect.x + rect.width, rect.y + rect.height), borderPaint);
+  borderPaint.delete();
+}
+
+function paint(ck: CanvasKit, color: string, style: import("canvaskit-wasm").PaintStyle) {
+  const next = new ck.Paint();
+  next.setAntiAlias(true);
+  next.setStyle(style);
+  next.setColor(parseColor(ck, color) ?? ck.BLACK);
+  return next;
 }

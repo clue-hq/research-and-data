@@ -60,15 +60,13 @@ export function ValidationPanel({
           <p className="muted">
             Issues tied to the selected node, current page, bound slots, or placed assets.
           </p>
-          <ul className="diagnostic-list compact" aria-label="Focused diagnostics">
-            {focusedDiagnostics.map((diagnostic) => (
-              <DiagnosticListItem
-                key={`focused-${diagnosticKey(diagnostic)}`}
-                diagnostic={diagnostic}
-                onSelectSubject={onSelectSubject}
-              />
-            ))}
-          </ul>
+          <DiagnosticGroupList
+            scene={scene}
+            diagnostics={focusedDiagnostics}
+            compact
+            ariaLabel="Focused diagnostics"
+            onSelectSubject={onSelectSubject}
+          />
         </>
       ) : null}
       {diagnostics.length === 0 ? (
@@ -76,15 +74,12 @@ export function ValidationPanel({
       ) : remainingDiagnostics.length === 0 ? (
         <p className="muted">No additional local diagnostics.</p>
       ) : (
-        <ul className="diagnostic-list" aria-label="Additional diagnostics">
-          {remainingDiagnostics.map((diagnostic) => (
-            <DiagnosticListItem
-              key={diagnosticKey(diagnostic)}
-              diagnostic={diagnostic}
-              onSelectSubject={onSelectSubject}
-            />
-          ))}
-        </ul>
+        <DiagnosticGroupList
+          scene={scene}
+          diagnostics={remainingDiagnostics}
+          ariaLabel="Additional diagnostics"
+          onSelectSubject={onSelectSubject}
+        />
       )}
       {remainingRenderDiagnostics.length > 0 ? (
         <>
@@ -96,15 +91,13 @@ export function ValidationPanel({
             These notes describe where the editable canvas is approximating the canonical scene. Use export preview as
             the fidelity baseline for approval.
           </p>
-          <ul className="diagnostic-list compact" aria-label="Canvas preview diagnostics">
-            {remainingRenderDiagnostics.map((diagnostic) => (
-              <DiagnosticListItem
-                key={diagnosticKey(diagnostic)}
-                diagnostic={diagnostic}
-                onSelectSubject={onSelectSubject}
-              />
-            ))}
-          </ul>
+          <DiagnosticGroupList
+            scene={scene}
+            diagnostics={remainingRenderDiagnostics}
+            compact
+            ariaLabel="Canvas preview diagnostics"
+            onSelectSubject={onSelectSubject}
+          />
         </>
       ) : null}
       <div className="section-heading operation-heading">
@@ -178,6 +171,86 @@ function diagnosticKey(diagnostic: Diagnostic): string {
   return `${diagnostic.severity}:${diagnostic.phase}:${diagnostic.code}:${diagnostic.message}:${diagnostic.subject ? diagnosticSubjectLabel(diagnostic.subject) : "none"}`;
 }
 
+function DiagnosticGroupList({
+  scene,
+  diagnostics,
+  compact = false,
+  ariaLabel,
+  onSelectSubject
+}: {
+  scene: Scene;
+  diagnostics: Diagnostic[];
+  compact?: boolean;
+  ariaLabel: string;
+  onSelectSubject?: (subject: DiagnosticSubject) => void;
+}) {
+  const groups = groupDiagnosticsByArtboard(scene, diagnostics);
+  return (
+    <ul className={`diagnostic-list grouped${compact ? " compact" : ""}`} aria-label={ariaLabel}>
+      {groups.map((group) => (
+        <li key={group.key} className="diagnostic-group">
+          <div className="diagnostic-group-heading">
+            <span>{group.label}</span>
+            <small>
+              {group.diagnostics.length} issue{group.diagnostics.length === 1 ? "" : "s"}
+            </small>
+          </div>
+          <ul aria-label={`${group.label} diagnostics`}>
+            {group.diagnostics.map((diagnostic) => (
+              <DiagnosticListItem
+                key={diagnosticKey(diagnostic)}
+                diagnostic={diagnostic}
+                onSelectSubject={onSelectSubject}
+              />
+            ))}
+          </ul>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function groupDiagnosticsByArtboard(scene: Scene, diagnostics: Diagnostic[]) {
+  const groups = new Map<string, { key: string; label: string; diagnostics: Diagnostic[] }>();
+  for (const diagnostic of diagnostics) {
+    const pageId = pageIdForDiagnostic(scene, diagnostic);
+    const key = pageId ?? (diagnostic.subject?.kind === "document" ? "document" : "unmapped");
+    const label = pageId ? `Artboard ${scene.pages[pageId]?.name ?? pageId}` : key === "document" ? "Document" : "Unmapped";
+    const group = groups.get(key) ?? {
+      key,
+      label,
+      diagnostics: []
+    };
+    group.diagnostics.push(diagnostic);
+    groups.set(key, group);
+  }
+  return [...groups.values()];
+}
+
+function pageIdForDiagnostic(scene: Scene, diagnostic: Diagnostic): PageId | null {
+  const subject = diagnostic.subject;
+  if (!subject) {
+    return null;
+  }
+  switch (subject.kind) {
+    case "page":
+      return scene.pages[subject.id] ? subject.id : null;
+    case "node":
+      return pageIdForNode(scene, subject.id);
+    case "slot": {
+      const slot = scene.slots[subject.id] ?? null;
+      const nodeId = slot?.bound_nodes.find((id) => Boolean(scene.nodes[id])) ?? null;
+      return nodeId ? pageIdForNode(scene, nodeId) : null;
+    }
+    case "asset": {
+      const node = Object.values(scene.nodes).find((candidate) => candidate.source_asset_id === subject.id);
+      return node ? pageIdForNode(scene, node.id) : null;
+    }
+    case "document":
+      return null;
+  }
+}
+
 function DiagnosticListItem({
   diagnostic,
   onSelectSubject
@@ -210,7 +283,7 @@ function diagnosticSubjectLabel(subject: DiagnosticSubject): string {
     case "document":
       return "document";
     case "page":
-      return `page ${subject.id}`;
+      return `artboard ${subject.id}`;
     case "node":
       return `node ${subject.id}`;
     case "slot":

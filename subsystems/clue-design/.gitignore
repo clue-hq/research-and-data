@@ -11,6 +11,9 @@ __pycache__/
 !.env.example
 .lumen-runs/
 apps/api/*.sqlite3
+apps/editor/public/canvaskit/
+apps/editor/public/fonts/
+apps/editor/public/wasm/
 reference_docs/*
 !reference_docs/
 !reference_docs/ABM-Design-Engine-Temporary-Spec.md

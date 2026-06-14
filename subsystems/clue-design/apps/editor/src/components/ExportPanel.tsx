@@ -15,11 +15,21 @@ interface ExportPanelProps {
   onExport: (profile: ExportProfile, pageIds: PageId[]) => void;
   onSaveProfile: (profile: ExportProfile) => void;
   onRemoveProfile: (name: string) => void;
+  panelState?: ExportPanelState;
+  onPanelStateChange?: (state: ExportPanelState) => void;
   onSelectSubject?: (subject: DiagnosticSubject) => void;
 }
 
 const RASTER_EDGE_WARNING_PX = 8192;
 const RASTER_AREA_WARNING_PX = 33_000_000;
+
+export type ExportScope = "active" | "all";
+
+export interface ExportPanelState {
+  profileName: string;
+  scope: ExportScope;
+  draftProfile: ExportProfile | null;
+}
 
 export function ExportPanel({
   scene,
@@ -29,6 +39,8 @@ export function ExportPanel({
   onExport,
   onSaveProfile,
   onRemoveProfile,
+  panelState,
+  onPanelStateChange,
   onSelectSubject
 }: ExportPanelProps) {
   const profiles = exportProfilesForScene(scene);
@@ -49,11 +61,13 @@ export function ExportPanel({
         onExport={onExport}
         onSaveProfile={onSaveProfile}
         onRemoveProfile={onRemoveProfile}
+        panelState={panelState}
+        onPanelStateChange={onPanelStateChange}
         onSelectSubject={onSelectSubject}
       />
       <p className="muted contract-note">
-        Export uses the canonical scene page size, computed geometry, and selected profile. Presets do not replace custom
-        page dimensions.
+        Export uses the selected artboard&apos;s canonical page size, computed geometry, and selected profile. Presets do not replace custom
+        artboard dimensions.
       </p>
       {exportResult ? (
         <div className="export-summary" aria-live="polite">
@@ -69,7 +83,7 @@ export function ExportPanel({
           ) : null}
         </div>
       ) : pages.length === 0 ? (
-        <p className="muted">Add a page before exporting.</p>
+        <p className="muted">Add an artboard before exporting.</p>
       ) : null}
     </section>
   );
@@ -84,6 +98,8 @@ function ExportControls({
   onExport,
   onSaveProfile,
   onRemoveProfile,
+  panelState,
+  onPanelStateChange,
   onSelectSubject
 }: {
   scene: Scene;
@@ -94,23 +110,39 @@ function ExportControls({
   onExport: (profile: ExportProfile, pageIds: PageId[]) => void;
   onSaveProfile: (profile: ExportProfile) => void;
   onRemoveProfile: (name: string) => void;
+  panelState?: ExportPanelState;
+  onPanelStateChange?: (state: ExportPanelState) => void;
   onSelectSubject?: (subject: DiagnosticSubject) => void;
 }) {
-  const [profileName, setProfileName] = useState(profiles[0]?.name ?? "");
-  const [scope, setScope] = useState<"active" | "all">("active");
+  const [uncontrolledState, setUncontrolledState] = useState<ExportPanelState>(() => ({
+    profileName: profiles[0]?.name ?? "",
+    scope: "active",
+    draftProfile: profiles[0] ?? null
+  }));
+  const state = panelState ?? uncontrolledState;
+  const updateState = (patch: Partial<ExportPanelState>) => {
+    const nextState = {
+      ...state,
+      ...patch
+    };
+    if (onPanelStateChange) {
+      onPanelStateChange(nextState);
+    } else {
+      setUncontrolledState(nextState);
+    }
+  };
   const selectedProfile = useMemo(
-    () => profiles.find((candidate) => candidate.name === profileName) ?? profiles[0],
-    [profileName, profiles]
+    () => profiles.find((candidate) => candidate.name === state.profileName) ?? profiles[0],
+    [state.profileName, profiles]
   );
-  const [draftProfile, setDraftProfile] = useState<ExportProfile | null>(() => selectedProfile ?? null);
-  const profile = draftProfile ?? selectedProfile;
+  const profile = state.draftProfile ?? selectedProfile;
   const visibleProfiles = useMemo(() => {
     if (!profile || profiles.some((candidate) => candidate.name === profile.name)) {
       return profiles;
     }
     return [...profiles, profile];
   }, [profile, profiles]);
-  const selectedPageIds = scope === "all" ? pageIds : activePageId ? [activePageId] : [];
+  const selectedPageIds = state.scope === "all" ? pageIds : activePageId ? [activePageId] : [];
   const readiness = profile ? exportReadinessNotes(scene, profile, selectedPageIds) : [];
   const isSavedProfile = profile ? scene.export_profiles.some((candidate) => candidate.name === profile.name) : false;
   const profileIsInList = profile ? profiles.some((candidate) => candidate.name === profile.name) : false;
@@ -122,8 +154,10 @@ function ExportControls({
           value={profile?.name ?? ""}
           onChange={(event) => {
             const nextProfile = visibleProfiles.find((candidate) => candidate.name === event.target.value) ?? profiles[0] ?? null;
-            setProfileName(nextProfile?.name ?? "");
-            setDraftProfile(nextProfile);
+            updateState({
+              profileName: nextProfile?.name ?? "",
+              draftProfile: nextProfile
+            });
           }}
         >
           {visibleProfiles.map((candidate) => (
@@ -134,13 +168,13 @@ function ExportControls({
         </select>
       </label>
       <label className="field">
-        <span>Pages</span>
-        <select value={scope} onChange={(event) => setScope(event.target.value as "active" | "all")}>
-          <option value="active">Active page</option>
-          <option value="all">All pages</option>
+        <span>Artboards</span>
+        <select value={state.scope} onChange={(event) => updateState({ scope: event.target.value as ExportScope })}>
+          <option value="active">Selected artboard</option>
+          <option value="all">All artboards</option>
         </select>
       </label>
-      {profile ? <ExportProfileEditor profile={profile} onChange={setDraftProfile} /> : null}
+      {profile ? <ExportProfileEditor profile={profile} onChange={(nextProfile) => updateState({ draftProfile: nextProfile })} /> : null}
       <button
         type="button"
         disabled={!profile || selectedPageIds.length === 0 || isExporting}
@@ -157,8 +191,10 @@ function ExportControls({
             if (!profile) {
               return;
             }
-            setProfileName(profile.name);
-            setDraftProfile(profile);
+            updateState({
+              profileName: profile.name,
+              draftProfile: profile
+            });
             onSaveProfile(profile);
           }}
         >
@@ -173,8 +209,10 @@ function ExportControls({
               return;
             }
             const fallbackProfile = profiles.find((candidate) => candidate.name !== profile.name) ?? null;
-            setProfileName(fallbackProfile?.name ?? "");
-            setDraftProfile(fallbackProfile);
+            updateState({
+              profileName: fallbackProfile?.name ?? "",
+              draftProfile: fallbackProfile
+            });
             onRemoveProfile(profile.name);
           }}
         >
@@ -249,7 +287,7 @@ function diagnosticSubjectLabel(subject: DiagnosticSubject): string {
     case "document":
       return "document";
     case "page":
-      return `page ${subject.id}`;
+      return `artboard ${subject.id}`;
     case "node":
       return `node ${subject.id}`;
     case "slot":
@@ -418,17 +456,17 @@ function exportReadinessNotes(scene: Scene, profile: ExportProfile, pageIds: Pag
       notes.push(exportReadinessDiagnostic(
         "warning",
         "PRINT_EXPLICIT_PAGINATION",
-        `This print PDF exports ${selectedPages.length} explicit pages. Automatic flowed pagination is not performed in Phase F.`,
+        `This print PDF exports ${selectedPages.length} explicit artboards. Automatic flowed pagination is not performed in Phase F.`,
         {
           kind: "document"
         },
-        "Review each page/artboard explicitly before print handoff."
+        "Review each artboard explicitly before print handoff."
       ));
       if (hasMixedPageSizes(selectedPages)) {
         notes.push(exportReadinessDiagnostic(
           "warning",
           "PRINT_MIXED_PAGE_SIZES",
-          `Selected print pages use mixed sizes: ${selectedPages.map((page) => `${page.name} ${pageSizeLabel(page)}`).join("; ")}.`,
+          `Selected print artboards use mixed sizes: ${selectedPages.map((page) => `${page.name} ${pageSizeLabel(page)}`).join("; ")}.`,
           {
             kind: "document"
           },
@@ -450,7 +488,7 @@ function exportReadinessNotes(scene: Scene, profile: ExportProfile, pageIds: Pag
             kind: "page",
             id: pageId
           },
-          "Use the page inspector to add safe-area metadata."
+          "Use the artboard inspector to add safe-area metadata."
         ));
       }
       if (profile.include_bleed && !page.bleed) {
@@ -462,7 +500,7 @@ function exportReadinessNotes(scene: Scene, profile: ExportProfile, pageIds: Pag
             kind: "page",
             id: pageId
           },
-          "Use the page inspector to add bleed before print handoff."
+          "Use the artboard inspector to add bleed before print handoff."
         ));
       }
       for (const nodeId of pageNodeIds(scene, pageId)) {
@@ -581,7 +619,7 @@ function exportReadinessNotes(scene: Scene, profile: ExportProfile, pageIds: Pag
             kind: "page",
             id: pageId
           },
-          "Reduce the PNG scale/DPI for preview, export this page as SVG/PDF, or split very large artifacts before raster export."
+          "Reduce the PNG scale/DPI for preview, export this artboard as SVG/PDF, or split very large artifacts before raster export."
         ));
       }
     }
@@ -704,7 +742,7 @@ function ExportArtifactRow({ artifact }: { artifact: EditorExportArtifact }) {
   return (
     <div className="export-artifact">
       <span>
-        {artifact.format.toUpperCase()} {artifact.page_id ? `page ${artifact.page_id}` : "document"}
+        {artifact.format.toUpperCase()} {artifact.page_id ? `artboard ${artifact.page_id}` : "document"}
       </span>
       <small>
         {artifact.mime_type} · {artifact.byte_length} bytes
@@ -718,11 +756,11 @@ function ExportArtifactRow({ artifact }: { artifact: EditorExportArtifact }) {
       ) : null}
       {sidecar ? (
         <small>
-          Sidecar {sidecar.profile_name ?? "unknown profile"} · {sidecar.page_count} page
+          Sidecar {sidecar.profile_name ?? "unknown profile"} · {sidecar.page_count} artboard
           {sidecar.page_count === 1 ? "" : "s"} · {sidecar.node_count} node
           {sidecar.node_count === 1 ? "" : "s"} · {sidecar.slot_count} slot
           {sidecar.slot_count === 1 ? "" : "s"}
-          {sidecar.page_ids.length > 0 ? ` · pages ${sidecar.page_ids.join(", ")}` : ""}
+          {sidecar.page_ids.length > 0 ? ` · artboards ${sidecar.page_ids.join(", ")}` : ""}
           {sidecar.slot_keys.length > 0 ? ` · slots ${sidecar.slot_keys.join(", ")}` : ""}
         </small>
       ) : null}
