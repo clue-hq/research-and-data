@@ -46,6 +46,7 @@ that exceeds its parent, or a parent/child unit-scale mismatch, use the bounded
   descendants;
 - allow p/s, fill/hug/fixed, auto-layout, padding, gap, wrap, root cluster sizing,
   and conversion of a diagnosed background rect into the artboard/page fill;
+- use `s(fill,fill)` when resizing the root artboard frame;
 - prohibit page deletion, unrelated node deletion, unrelated slot/brand/asset
   edits, and whole-scene regeneration.
 

@@ -68,9 +68,11 @@ Do **not** delete-and-recreate the card to do this.
 
 **Page/artboard bounds or parent containment (`LUMV09xx` with page/root/parent
 targets)** — use `layout_cluster`, not isolated text surgery. Examples:
-- convert a diagnosed full-artboard `bg` rect into page `background(...)` or root
-  artboard `fill(...)`;
+- convert a diagnosed full-artboard `bg` rect into the root artboard `fill(...)`
+  or a permitted `#page:page_id background(...)` modify line;
 - resize/reposition the root/card and its dependent children together;
+- use `#artboard s(fill,fill)` for root artboard frame size repairs instead of
+  numeric page dimensions like `s(595,842)`;
 - switch fixed child widths to `fill` inside the diagnosed parent.
 Do **not** change unrelated content or page/export dimensions unless the
 diagnostic targets page size.

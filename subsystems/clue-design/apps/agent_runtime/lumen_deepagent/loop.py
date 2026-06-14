@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import copy
 import json
+import re
 from typing import Optional, Protocol
 
 from .schemas import (
@@ -528,8 +529,14 @@ LAYOUT_CLUSTER_PROHIBITIONS = [
 LAYOUT_CLUSTER_AUTHORING_CONSTRAINTS = [
     "This is a BOUNDED LAYOUT CLUSTER repair.",
     "Edit only the named page/root/parent/descendant IDs in the cluster.",
-    "Allowed changes: p/s, fill/hug/fixed sizing, auto-layout, padding, gap, "
-    "wrap, clip, and page background when permitted.",
+    "Use supported modify-line properties only: `#node p(...)`, `#node s(...)`, "
+    "`#node g(...)`, `#node pad(...)`, `#node x(...)`, `#node y(...)`, "
+    "`#node clip(...)`, and text `wrap_text(...)` / `max_lines(...)`.",
+    "Do NOT write `#node al(...)` or `#node wrap(...)`: `al(...)` is creation "
+    "syntax and auto-layout `wrap(...)` is not lowered for node modify lines.",
+    "If the cluster includes the root artboard frame and you edit its size, use "
+    "`#root s(fill,fill)`. Numeric root artboard sizes such as `s(595,842)` are "
+    "rejected because they can drift from canonical artboard bounds.",
     "You may convert only the diagnosed background node into page/artboard fill.",
     "Do not emit page declarations, unrelated node declarations, or whole-scene "
     "replacements.",
@@ -539,6 +546,10 @@ LAYOUT_CLUSTER_AUTHORING_CONSTRAINTS = [
 TEXT_FIT_CODES = {"LUMV0902", "LUMV0903", "LUMV0904", "LUMV0810"}
 LAYOUT_CLUSTER_CODES = {"LUMV0800", "LUMV0801", "LUMV0803"}
 LEGACY_GEOMETRY_CODES = {"LUMV0805"}
+UNSUPPORTED_LAYOUT_CLUSTER_MODIFY_CALL_RE = re.compile(
+    r"(?:^|\s)(?:al|autolayout|wrap)\("
+)
+SIZE_CALL_RE = re.compile(r"(?:^|\s)(?:s|size)\(([^)]*)\)")
 
 
 def classify_diagnostics(
@@ -655,9 +666,15 @@ def resolve_layout_cluster(
     target: dict,
 ) -> LayoutClusterTarget:
     parent_by_node, page_by_node = build_parent_maps(scene)
-    target_node_ids = diagnostic_node_ids(diagnostics)
+    target_node_ids = diagnostic_node_ids(
+        diagnostics,
+        scene=scene,
+        include_slot_bound_nodes=True,
+    )
     if target.get("node_id"):
         target_node_ids.append(str(target["node_id"]))
+    if target.get("slot_key"):
+        target_node_ids.extend(slot_bound_node_ids(scene, str(target["slot_key"])))
     target_node_ids = dedupe(target_node_ids)
 
     page_id = (
@@ -666,11 +683,27 @@ def resolve_layout_cluster(
         or first_page_for_nodes(target_node_ids, page_by_node)
         or single_page_id(scene)
     )
-    target_node_id = target_node_ids[0] if target_node_ids else None
-    parent_node_id = target.get("parent_node_id") or (
-        parent_by_node.get(target_node_id) if target_node_id else None
-    )
+    if page_id:
+        page_target_node_ids = [
+            node_id
+            for node_id in target_node_ids
+            if page_by_node.get(node_id) == page_id
+        ]
+        if page_target_node_ids:
+            target_node_ids = dedupe(page_target_node_ids)
     root_frame_id = find_root_frame_candidate(scene, page_id) if page_id else None
+    common_parent_node_id = common_layout_cluster_parent(
+        scene,
+        target_node_ids,
+        parent_by_node,
+        root_frame_id,
+    )
+    non_root_target_count = len(
+        [node_id for node_id in target_node_ids if node_id != root_frame_id]
+    )
+    parent_node_id = common_parent_node_id
+    if parent_node_id is None and non_root_target_count <= 1:
+        parent_node_id = target.get("parent_node_id")
     background_node_id = find_background_candidate(
         scene,
         page_id,
@@ -682,6 +715,13 @@ def resolve_layout_cluster(
     if parent_node_id:
         descendants.extend(node_children(scene, parent_node_id))
     descendants.extend(target_node_ids)
+    descendants.extend(
+        affected_ancestor_ids(
+            target_node_ids,
+            parent_by_node,
+            stop_ids={parent_node_id, root_frame_id, background_node_id, None},
+        )
+    )
     if root_frame_id and not parent_node_id:
         descendants.extend(node_children(scene, root_frame_id))
     descendants = [
@@ -715,7 +755,11 @@ def diagnostic_to_dict(diagnostic: dict | object) -> dict:
     return {}
 
 
-def diagnostic_node_ids(diagnostics: list[dict]) -> list[str]:
+def diagnostic_node_ids(
+    diagnostics: list[dict],
+    scene: dict | None = None,
+    include_slot_bound_nodes: bool = False,
+) -> list[str]:
     node_ids: list[str] = []
     for diagnostic in diagnostics:
         node_id = diagnostic.get("target_node_id")
@@ -724,7 +768,59 @@ def diagnostic_node_ids(diagnostics: list[dict]) -> list[str]:
             node_id = subject.get("id") or subject.get("value")
         if node_id:
             node_ids.append(str(node_id))
+        if (
+            include_slot_bound_nodes
+            and scene is not None
+            and diagnostic.get("code") in TEXT_FIT_CODES
+        ):
+            slot_identifier = diagnostic.get("target_slot_id") or diagnostic.get(
+                "target_slot_key"
+            )
+            if slot_identifier:
+                node_ids.extend(slot_bound_node_ids(scene, str(slot_identifier)))
     return node_ids
+
+
+def slot_bound_node_ids(scene: dict, slot_identifier: str) -> list[str]:
+    """Resolve a diagnostic slot id/key to bound node IDs.
+
+    Runtime classification receives the raw Scene where `slots` is a dict of
+    slot records with `bound_nodes` as node IDs. Trace/debug summaries expose
+    `slots` as a list and each `bound_nodes` entry is a node brief. Supporting
+    both keeps the repair resolver aligned with persisted traces.
+    """
+    slots = scene.get("slots") or {}
+    if isinstance(slots, dict):
+        iterable = slots.items()
+    elif isinstance(slots, list):
+        iterable = ((slot.get("id"), slot) for slot in slots if isinstance(slot, dict))
+    else:
+        iterable = []
+
+    node_ids: list[str] = []
+    for slot_id, slot in iterable:
+        if not isinstance(slot, dict):
+            continue
+        candidates = {
+            str(value)
+            for value in (slot_id, slot.get("id"), slot.get("key"))
+            if value
+        }
+        if slot_identifier not in candidates:
+            continue
+        for bound in slot.get("bound_nodes") or []:
+            node_id = bound_node_id(bound)
+            if node_id:
+                node_ids.append(node_id)
+    return dedupe(node_ids)
+
+
+def bound_node_id(bound: object) -> str | None:
+    if isinstance(bound, str):
+        return bound
+    if isinstance(bound, dict) and bound.get("id"):
+        return str(bound["id"])
+    return None
 
 
 def first_diagnostic_value(diagnostics: list[dict], key: str) -> str | None:
@@ -747,7 +843,11 @@ def text_fit_should_escalate(diagnostics: list[dict], scene: dict) -> bool:
         node_id
         for diagnostic in diagnostics
         if diagnostic.get("code") in TEXT_FIT_CODES
-        for node_id in diagnostic_node_ids([diagnostic])
+        for node_id in diagnostic_node_ids(
+            [diagnostic],
+            scene=scene,
+            include_slot_bound_nodes=True,
+        )
     ]
     if len(text_node_ids) < 2:
         return False
@@ -801,6 +901,95 @@ def first_page_for_nodes(
         if page_id:
             return page_id
     return None
+
+
+def common_layout_cluster_parent(
+    scene: dict,
+    node_ids: list[str],
+    parent_by_node: dict[str, str],
+    root_frame_id: str | None,
+) -> str | None:
+    candidate_nodes = [
+        node_id for node_id in dedupe(node_ids) if node_id != root_frame_id
+    ]
+    if not candidate_nodes:
+        return None
+    ancestor_paths = [
+        ancestor_path_including_self(
+            scene,
+            node_id,
+            parent_by_node,
+            root_frame_id,
+        )
+        for node_id in candidate_nodes
+    ]
+    ancestor_paths = [path for path in ancestor_paths if path]
+    if not ancestor_paths:
+        return None
+
+    common = set(ancestor_paths[0])
+    for path in ancestor_paths[1:]:
+        common.intersection_update(path)
+    if not common:
+        return None
+
+    first_path = ancestor_paths[0]
+    for candidate in first_path:
+        if candidate in common and candidate != root_frame_id:
+            return candidate
+
+    return None
+
+
+def ancestor_path_including_self(
+    scene: dict,
+    node_id: str,
+    parent_by_node: dict[str, str],
+    root_frame_id: str | None,
+) -> list[str]:
+    path: list[str] = []
+    current = (
+        node_id if is_container_node(scene, node_id) else parent_by_node.get(node_id)
+    )
+    while current:
+        path.append(current)
+        if current == root_frame_id:
+            break
+        current = parent_by_node.get(current)
+    return path
+
+
+def is_container_node(scene: dict, node_id: str | None) -> bool:
+    if not node_id:
+        return False
+    node = (scene.get("nodes") or {}).get(node_id) or {}
+    kind = node.get("kind")
+    if isinstance(kind, dict):
+        kind_name = kind.get("kind")
+    else:
+        kind_name = kind
+    return str(kind_name or "").lower() in {
+        "frame",
+        "group",
+        "autolayout",
+        "auto_layout",
+        "auto-layout",
+        "al",
+    }
+
+
+def affected_ancestor_ids(
+    node_ids: list[str],
+    parent_by_node: dict[str, str],
+    stop_ids: set[str | None],
+) -> list[str]:
+    ancestors: list[str] = []
+    for node_id in node_ids:
+        parent_id = parent_by_node.get(node_id)
+        while parent_id and parent_id not in stop_ids:
+            ancestors.append(parent_id)
+            parent_id = parent_by_node.get(parent_id)
+    return dedupe(ancestors)
 
 
 def single_page_id(scene: dict) -> str | None:
@@ -869,8 +1058,15 @@ def is_background_like_node_id(node_id: str) -> bool:
 
 
 def has_slot_binding(scene: dict, node_id: str) -> bool:
-    for slot in (scene.get("slots") or {}).values():
-        if node_id in (slot.get("bound_nodes") or []):
+    slots = scene.get("slots") or {}
+    iterable = slots.values() if isinstance(slots, dict) else slots
+    for slot in iterable:
+        if not isinstance(slot, dict):
+            continue
+        bound_node_ids = [
+            bound_node_id(bound) for bound in slot.get("bound_nodes") or []
+        ]
+        if node_id in bound_node_ids:
             return True
     return False
 
@@ -956,6 +1152,7 @@ def is_layout_cluster_dsl(source: str, context: dict) -> bool:
     cluster = context.get("cluster") or {}
     allowed_pages = {cluster.get("page_id")} if cluster.get("page_id") else set()
     allowed_nodes = layout_cluster_allowed_node_ids(cluster)
+    root_frame_id = cluster.get("root_frame_id")
     background_node_id = cluster.get("background_node_id")
     permissions = set(context.get("permissions") or [])
     saw_edit = False
@@ -966,6 +1163,10 @@ def is_layout_cluster_dsl(source: str, context: dict) -> bool:
             continue
         if line.startswith("#"):
             ref = line[1:].split(None, 1)[0]
+            if not layout_cluster_modify_syntax_is_supported(line):
+                return False
+            if ref == root_frame_id and not root_artboard_size_syntax_is_supported(line):
+                return False
             if ref.startswith("page:"):
                 page_id = ref.split(":", 1)[1]
                 if page_id not in allowed_pages:
@@ -988,6 +1189,25 @@ def is_layout_cluster_dsl(source: str, context: dict) -> bool:
         return False
 
     return saw_edit
+
+
+def layout_cluster_modify_syntax_is_supported(line: str) -> bool:
+    parts = line.split(None, 1)
+    if len(parts) == 1:
+        return True
+    ref = parts[0][1:]
+    if ref.startswith(("page:", "slot:", "asset:", "document", "export:")):
+        return True
+    properties = parts[1]
+    return UNSUPPORTED_LAYOUT_CLUSTER_MODIFY_CALL_RE.search(properties) is None
+
+
+def root_artboard_size_syntax_is_supported(line: str) -> bool:
+    for match in SIZE_CALL_RE.finditer(line):
+        args = [arg.strip().lower() for arg in match.group(1).split(",")]
+        if args != ["fill", "fill"]:
+            return False
+    return True
 
 
 def layout_cluster_allowed_node_ids(cluster: dict) -> set[str]:
@@ -1028,13 +1248,16 @@ def layout_cluster_violation_feedback(prior: dict, rejected_source: str) -> dict
     cluster = prior.get("cluster") or {}
     allowed_pages = [cluster.get("page_id")] if cluster.get("page_id") else []
     allowed_nodes = sorted(layout_cluster_allowed_node_ids(cluster))
+    root_frame_id = cluster.get("root_frame_id")
     return {
         "kind": "layout_cluster_violation",
         "feedback": (
             "Your previous layout_cluster repair was REJECTED and NOT applied "
             "because it edited outside the allowed cluster or attempted to "
             "re-author the page. Emit only #modify lines for allowed page/node "
-            f"IDs. Allowed pages: {allowed_pages}. Allowed nodes: {allowed_nodes}."
+            f"IDs. Allowed pages: {allowed_pages}. Allowed nodes: {allowed_nodes}. "
+            f"If editing root artboard frame `{root_frame_id}`, use `s(fill,fill)` "
+            "instead of numeric page dimensions."
         ),
         "target": prior.get("target") or {},
         "repair_class": RepairClass.layout_cluster.value,

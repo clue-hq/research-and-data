@@ -138,13 +138,16 @@ Each skill is a procedure for one job. Read the skill before doing that job.
    `s()` values are artboard- or parent-local points; never use `mm` or renderer
    pixels for child coordinates. Physical and raster dimensions belong to
    page/export metadata.
-8. **Export-safe backgrounds belong to the page/artboard/root frame.** Prefer
-   `background(...)` on the page or `fill(...)` on a clipped root artboard frame.
-   Do not create loose oversized `bg` rectangles for the canvas background.
+8. **Export-safe backgrounds belong to the artboard/root frame.** In new DSL,
+   use `fill(...)` on a clipped root artboard frame. Do not put
+   `background(...)` on a `page ...` creation line, and do not create loose
+   oversized `bg` rectangles for the canvas background.
 9. **Parent overflow can be a cluster repair.** If diagnostics show a page/artboard
    bounds failure, background-like rect, or child larger than its parent, repair
-   the diagnosed layout cluster with bounded p/s, fill/hug/fixed, auto-layout,
-   padding, gap, wrap, and root sizing changes. Do not redesign unrelated content.
+   the diagnosed layout cluster with bounded modify lines such as p/s, g, pad,
+   x/y alignment, clip, text wrapping, and root sizing changes. For root
+   artboard frame size repairs, use `s(fill,fill)` instead of hardcoded page
+   dimensions. Do not redesign unrelated content.
 10. **Missing capability → record a gap.** Never simulate an unsupported feature in
    prose or with decorative shapes.
 

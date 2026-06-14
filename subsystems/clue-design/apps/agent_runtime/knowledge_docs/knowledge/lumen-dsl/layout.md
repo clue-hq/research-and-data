@@ -47,6 +47,9 @@ page page_a4 preset(a4,portrait)
 If a page/artboard or parent-containment diagnostic appears, fix the diagnosed
 layout cluster rather than shrinking one unrelated child. See
 `knowledge/loop/layout-cluster-repair`.
+For root artboard frame size repairs, use `s(fill,fill)` so the frame resolves
+against the canonical artboard bounds instead of rounded print or stale raster
+dimensions.
 
 ## Auto-layout
 
@@ -97,6 +100,6 @@ banner al(h, x(c), y(c), pad(0,24)) p(0,0) s(595,80) fill($surface.brand)
 
 Put the background **on the container frame** (`fill(...)`), not a separate
 decorative rectangle, when the background belongs to that container. For a page
-or artboard background, prefer page `background(...)` where available or a single
-clipped root `artboard` frame with `fill(...)`. Do not create loose oversized
-full-canvas `bg` rectangles.
+or artboard background in new DSL, use a single clipped root `artboard` frame
+with `fill(...)`. Do not put `background(...)` on a `page ...` creation line,
+and do not create loose oversized full-canvas `bg` rectangles.

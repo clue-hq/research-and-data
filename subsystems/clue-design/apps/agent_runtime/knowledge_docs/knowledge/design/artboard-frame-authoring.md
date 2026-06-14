@@ -29,14 +29,10 @@ page page_a4 preset(a4,portrait)
       ...
 ```
 
-If page-level `background(...)` is supported for the current artifact, it is
-also valid:
-
-```text
-page page_a4 preset(a4,portrait) background($surface.page)
-  card al(v,g(12),pad(18)) p(48,96) s(499,hug) fill($surface.card) rd(12)
-    ...
-```
+Do not put `background(...)` on a `page ...` creation line. Use the root
+artboard/frame `fill(...)` for first-pass backgrounds. Page background changes
+belong to explicit `#page:page_id background(...)` modify repairs when the
+repair request grants that surface.
 
 Do not create a separate top-level `bg` rectangle for the artboard background.
 Only use a separate background-like node when it is a real layered visual object
@@ -61,7 +57,9 @@ Use parent-relative layout before absolute placement:
 Avoid these patterns in generated or repaired export-safe designs:
 
 - A4 page plus child values authored as if the page were `210 x 297`.
-- A4 page plus `bg s(595,842)` when export/viewBox still uses `210 x 297`.
+- Hardcoded page-sized root/background dimensions such as `s(595,842)` or stale
+  raster dimensions after a resize. Use a clipped root frame `s(fill,fill)` and
+  `fill(...)` for export-safe artboard backgrounds.
 - `card s(170,210)` with descendants still `s(400,...)`.
 - loose top-level `bg`, `card`, or `header` nodes that exceed the artboard.
 - switching from `px` to `mm` to make a preview look smaller.

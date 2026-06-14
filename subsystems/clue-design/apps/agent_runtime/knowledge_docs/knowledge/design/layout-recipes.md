@@ -18,8 +18,7 @@ inside another page.
 Recommended structure:
 
 - `page ... size(1080,1080,px)` which lowers to `1080 x 1080 pt` layout bounds.
-- page `background(...)` when available, or one clipped root `artboard` frame
-  with `fill(...)`.
+- one clipped root `artboard` frame with `fill(...)` for the background.
 - vertical message stack using `al(v,...)`.
 - CTA button using `al(h,x(c),y(c),...)`.
 - optional right-side or lower visual panel inside the same root frame.
@@ -43,7 +42,7 @@ page linkedin_square size(1080,1080,px)
 metadata can still say `210mm x 297mm`. Author against the point layout bounds.
 Do not place children as if the artboard were `210 x 297`.
 
-Use a root frame with an artboard/page background, print-safe padding, and cards
+Use a root frame with an artboard fill, print-safe padding, and cards
 that are local to the root frame. Prefer vertical stacks with systematic gaps
 over individual manual y coordinates.
 
@@ -114,8 +113,11 @@ on cross-axis alignment when a container has definite space.
 If preflight reports an artboard-bounds or parent-containment problem, do not
 repair only the most visible text node. The correct fix is often a bounded
 `layout_cluster` repair: adjust the diagnosed parent/root frame and affected
-descendants together using p/s, fill/hug/fixed sizing, auto-layout, padding, gap,
-wrap, or conversion of a background-like rect into the page/artboard fill.
+descendants together using p/s, fill/hug/fixed sizing, g/pad/x/y auto-layout
+properties, text wrapping, or conversion of a background-like rect into the
+diagnosed artboard/root fill.
+When the root artboard frame itself needs to match the exportable surface, use
+`s(fill,fill)` rather than hardcoded page dimensions.
 
 ## Future Scaffold
 

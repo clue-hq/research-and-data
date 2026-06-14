@@ -27,6 +27,7 @@ from lumen_deepagent.loop import (
     classify_diagnostics,
     is_layout_cluster_dsl,
     is_surgical_dsl,
+    layout_cluster_allowed_node_ids,
     repair_is_surgical,
 )
 from lumen_deepagent.prompts import build_subagents
@@ -1477,6 +1478,325 @@ def test_lumv0801_routes_to_layout_cluster_with_parent_and_descendants():
     }
 
 
+def test_mixed_top_level_overflow_uses_root_cluster_not_target_parent():
+    scene = layout_cluster_scene()
+    scene["nodes"]["footer"] = {
+        "id": "footer",
+        "kind": {"kind": "frame"},
+        "children": [],
+    }
+    scene["nodes"]["artboard"]["children"] = ["card", "footer"]
+    diagnostics = [
+        {
+            "severity": "error",
+            "code": "LUMV0801",
+            "message": "node card exceeds artboard bounds",
+            "target_node_id": "card",
+        },
+        {
+            "severity": "error",
+            "code": "LUMV0801",
+            "message": "node footer exceeds artboard bounds",
+            "target_node_id": "footer",
+        },
+    ]
+
+    classification = classify_diagnostics(
+        diagnostics,
+        {"page_id": "page_a4", "node_id": "headline", "parent_node_id": "card"},
+        scene=scene,
+    )
+
+    assert classification.repair_class == RepairClass.layout_cluster
+    assert classification.cluster is not None
+    assert classification.cluster.root_frame_id == "artboard"
+    assert classification.cluster.parent_node_id is None
+    allowed = layout_cluster_allowed_node_ids(
+        classification.cluster.model_dump(mode="json")
+    )
+    assert {"artboard", "card", "footer", "headline"}.issubset(allowed)
+
+
+def test_slot_fit_nodes_join_bounds_layout_cluster():
+    scene = layout_cluster_scene()
+    scene["nodes"].update(
+        {
+            "header": {
+                "id": "header",
+                "kind": {"kind": "autolayout"},
+                "children": ["headline"],
+            },
+            "logo_mark": {
+                "id": "logo_mark",
+                "kind": {"kind": "frame"},
+                "children": ["logo_plus"],
+            },
+            "logo_plus": {
+                "id": "logo_plus",
+                "kind": {"kind": "text", "content": "+"},
+                "children": [],
+            },
+            "body_section": {
+                "id": "body_section",
+                "kind": {"kind": "autolayout"},
+                "children": ["instruction"],
+            },
+            "benefit_section": {
+                "id": "benefit_section",
+                "kind": {"kind": "autolayout"},
+                "children": ["benefit_copy", "stats_row"],
+            },
+            "stats_row": {
+                "id": "stats_row",
+                "kind": {"kind": "autolayout"},
+                "children": ["stat_one", "stat_two", "stat_three"],
+            },
+            "stat_one": {
+                "id": "stat_one",
+                "kind": {"kind": "autolayout"},
+                "children": ["stat_val_one"],
+            },
+            "stat_two": {
+                "id": "stat_two",
+                "kind": {"kind": "autolayout"},
+                "children": ["stat_lab_two"],
+            },
+            "stat_three": {
+                "id": "stat_three",
+                "kind": {"kind": "autolayout"},
+                "children": ["stat_val_three", "stat_lab_three"],
+            },
+            "cta_section": {
+                "id": "cta_section",
+                "kind": {"kind": "autolayout"},
+                "children": ["cta_label"],
+            },
+            "instruction": {
+                "id": "instruction",
+                "kind": {"kind": "text", "content": "Instruction"},
+                "children": [],
+            },
+            "benefit_copy": {
+                "id": "benefit_copy",
+                "kind": {"kind": "text", "content": "Benefit"},
+                "children": [],
+            },
+            "stat_val_one": {
+                "id": "stat_val_one",
+                "kind": {"kind": "text", "content": "40%"},
+                "children": [],
+            },
+            "stat_lab_two": {
+                "id": "stat_lab_two",
+                "kind": {"kind": "text", "content": "Patient Satisfaction"},
+                "children": [],
+            },
+            "stat_val_three": {
+                "id": "stat_val_three",
+                "kind": {"kind": "text", "content": "3 min"},
+                "children": [],
+            },
+            "stat_lab_three": {
+                "id": "stat_lab_three",
+                "kind": {"kind": "text", "content": "Avg Check-in"},
+                "children": [],
+            },
+            "cta_label": {
+                "id": "cta_label",
+                "kind": {"kind": "text", "content": "Book a Demo"},
+                "children": [],
+            },
+        }
+    )
+    scene["nodes"]["card"]["children"] = [
+        "logo_mark",
+        "header",
+        "body_section",
+        "benefit_section",
+        "cta_section",
+    ]
+    scene["slots"] = {
+        "slot_campaign_headline": {
+            "id": "slot_campaign_headline",
+            "key": "campaign.headline",
+            "bound_nodes": ["headline"],
+        },
+        "slot_offer_primary_message": {
+            "id": "slot_offer_primary_message",
+            "key": "offer.primary_message",
+            "bound_nodes": ["instruction"],
+        },
+        "slot_offer_secondary_message": {
+            "id": "slot_offer_secondary_message",
+            "key": "offer.secondary_message",
+            "bound_nodes": ["benefit_copy"],
+        },
+        "slot_cta_primary": {
+            "id": "slot_cta_primary",
+            "key": "cta.primary",
+            "bound_nodes": ["cta_label"],
+        },
+    }
+    diagnostics = [
+        {
+            "severity": "warning",
+            "code": "LUMV0509",
+            "message": "text slot cta.primary has no fit-validation fixtures",
+            "target_slot_id": "slot_cta_primary",
+        },
+        {
+            "severity": "error",
+            "code": "LUMV0800",
+            "message": "node artboard exceeds exportable bounds for page page_a4",
+            "target_node_id": "artboard",
+        },
+        {
+            "severity": "warning",
+            "code": "LUMV0801",
+            "message": "node logo_plus exceeds parent bounds on page page_a4",
+            "target_node_id": "logo_plus",
+        },
+        {
+            "severity": "error",
+            "code": "LUMV0801",
+            "message": "node cta_section exceeds parent bounds on page page_a4",
+            "target_node_id": "cta_section",
+        },
+        {
+            "severity": "error",
+            "code": "LUMV0902",
+            "message": "non-wrapping text node stat_lab_three overflows horizontally",
+            "target_node_id": "stat_lab_three",
+        },
+        {
+            "severity": "error",
+            "code": "LUMV0902",
+            "message": "non-wrapping text node stat_lab_two overflows horizontally",
+            "target_node_id": "stat_lab_two",
+        },
+        {
+            "severity": "error",
+            "code": "LUMV0902",
+            "message": "non-wrapping text node stat_val_one overflows horizontally",
+            "target_node_id": "stat_val_one",
+        },
+        {
+            "severity": "error",
+            "code": "LUMV0810",
+            "message": "slot campaign.headline fixture overflows text node headline",
+            "target_slot_id": "slot_campaign_headline",
+        },
+        {
+            "severity": "error",
+            "code": "LUMV0810",
+            "message": "slot offer.primary_message fixture overflows text node instruction",
+            "target_slot_id": "slot_offer_primary_message",
+        },
+        {
+            "severity": "error",
+            "code": "LUMV0810",
+            "message": "slot offer.secondary_message fixture overflows text node benefit_copy",
+            "target_slot_key": "offer.secondary_message",
+        },
+    ]
+
+    classification = classify_diagnostics(
+        diagnostics,
+        {
+            "page_id": "page_a4",
+            "node_id": "logo_plus",
+            "parent_node_id": "logo_mark",
+        },
+        scene=scene,
+    )
+
+    assert classification.repair_class == RepairClass.layout_cluster
+    assert classification.cluster is not None
+    assert classification.cluster.root_frame_id == "artboard"
+    assert classification.cluster.parent_node_id == "card"
+    allowed = layout_cluster_allowed_node_ids(
+        classification.cluster.model_dump(mode="json")
+    )
+    assert {
+        "artboard",
+        "card",
+        "logo_mark",
+        "logo_plus",
+        "cta_section",
+        "header",
+        "body_section",
+        "benefit_section",
+        "stats_row",
+        "stat_one",
+        "stat_two",
+        "stat_three",
+        "headline",
+        "instruction",
+        "benefit_copy",
+        "stat_lab_three",
+        "stat_lab_two",
+        "stat_val_one",
+    }.issubset(allowed)
+    assert "cta_label" not in allowed
+    assert is_layout_cluster_dsl(
+        "\n".join(
+            [
+                "#artboard s(fill,fill) g(24) pad(48)",
+                "#card s(499,hug) g(16) pad(24)",
+                "#headline s(fill,hug) wrap_text(true) max_lines(3)",
+                "#instruction s(fill,hug) wrap_text(true) max_lines(8)",
+                "#benefit_copy s(fill,hug) wrap_text(true) max_lines(6)",
+            ]
+        ),
+        {
+            "repair_class": "layout_cluster",
+            "cluster": classification.cluster.model_dump(mode="json"),
+        },
+    )
+    assert not is_layout_cluster_dsl(
+        "#artboard s(595,842) g(24) pad(48)",
+        {
+            "repair_class": "layout_cluster",
+            "cluster": classification.cluster.model_dump(mode="json"),
+        },
+    )
+
+    scene["slots"] = [
+        {
+            "id": "slot_campaign_headline",
+            "key": "campaign.headline",
+            "bound_nodes": [{"id": "headline"}],
+        },
+        {
+            "id": "slot_offer_primary_message",
+            "key": "offer.primary_message",
+            "bound_nodes": [{"id": "instruction"}],
+        },
+        {
+            "id": "slot_offer_secondary_message",
+            "key": "offer.secondary_message",
+            "bound_nodes": [{"id": "benefit_copy"}],
+        },
+    ]
+    summary_shape = classify_diagnostics(
+        diagnostics,
+        {
+            "page_id": "page_a4",
+            "node_id": "logo_plus",
+            "parent_node_id": "logo_mark",
+        },
+        scene=scene,
+    )
+    assert summary_shape.cluster is not None
+    assert {
+        "headline",
+        "instruction",
+        "benefit_copy",
+    }.issubset(
+        layout_cluster_allowed_node_ids(summary_shape.cluster.model_dump(mode="json"))
+    )
+
+
 def test_single_text_fit_stays_targeted_but_siblings_escalate_to_layout_cluster():
     scene = layout_cluster_scene()
     single = classify_diagnostics(
@@ -1565,9 +1885,13 @@ def test_layout_cluster_dsl_guard_scopes_modifies_and_background_delete():
         "#page:page_a4 background($surface.page)\n#card s(fill,hug)\n#headline s(fill,hug)",
         context,
     )
+    assert is_layout_cluster_dsl("#artboard s(fill,fill) pad(48) g(24)", context)
     assert is_layout_cluster_dsl("delete(bg)\n#artboard fill($surface.page)", context)
     assert not is_layout_cluster_dsl("page page_a4 preset(a4,portrait)", context)
+    assert not is_layout_cluster_dsl("#artboard s(595,842) pad(48) g(24)", context)
     assert not is_layout_cluster_dsl("#unrelated s(1,1)", context)
+    assert not is_layout_cluster_dsl("#card al(v,x(s),g(12),pad(24))", context)
+    assert not is_layout_cluster_dsl("#card wrap(true)", context)
     assert not is_layout_cluster_dsl("delete(headline)", context)
     assert not is_layout_cluster_dsl("#slot:campaign.headline required(false)", context)
 

@@ -72,9 +72,10 @@ Hard syntax rules:
   `page page_id size(width,height,px)`. Presets are shortcuts only. Page sizes
   normalize to canonical `pt` artboard bounds; child `p()`/`s()` values are
   artboard- or parent-local points, never `mm` or renderer pixels.
-- Prefer page `background(...)` or a clipped root artboard frame with `fill(...)`
-  for canvas backgrounds. Do not draw a loose oversized `bg` rectangle unless it
-  is a real layered visual object.
+- Use a clipped root artboard frame with `fill(...)` for canvas backgrounds in
+  new designs. Do not put `background(...)` on a `page ...` creation line unless
+  the compiler explicitly supports it in the current context, and do not draw a
+  loose oversized `bg` rectangle unless it is a real layered visual object.
 - Use `font("Inter",18,700,left)` or `style($type.token)` for full typography.
   Compatibility aliases `font_size(...)`, `font_weight(...)`, and
   `tracking(...)` are allowed for targeted text repairs, but prefer canonical
@@ -105,10 +106,15 @@ Repair rules:
 - LAYOUT CLUSTER repairs: when the repair_context explicitly marks
   `repair_class: layout_cluster`, you may modify only the diagnosed
   page/artboard/root/parent cluster and affected descendants. Allowed changes are
-  p/s, fill/hug/fixed, auto-layout, padding, gap, wrap, root sizing, and
-  conversion of a diagnosed background rect into page/artboard fill. Page
-  deletion, unrelated node deletion, unrelated slots/brand/assets, and
-  whole-scene regeneration are still forbidden.
+  supported modify-line properties: `#node p(...)`, `#node s(...)`,
+  `#node g(...)`, `#node pad(...)`, `#node x(...)`, `#node y(...)`,
+  `#node clip(...)`, and text `wrap_text(...)` / `max_lines(...)`.
+  If you edit the root artboard frame's size, use `s(fill,fill)`. Do not
+  hardcode numeric page dimensions like `s(595,842)`; those can drift from
+  canonical artboard bounds on print, raster, and custom surfaces.
+  Do not write `#node al(...)` or `#node wrap(...)`: those are not valid node
+  modify-line repairs. Page deletion, unrelated node deletion, unrelated
+  slots/brand/assets, and whole-scene regeneration are still forbidden.
 """
 
 

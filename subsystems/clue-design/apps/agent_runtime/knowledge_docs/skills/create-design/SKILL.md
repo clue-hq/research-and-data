@@ -37,9 +37,9 @@ brand-aligned artifact. This is the *first* pass only — fixing diagnostics is
   long headlines, `max_lines(…)` so overflow is caught early, boxes **wide enough**
   for the real copy. Headlines tight (`lh 1.05–1.15`), body relaxed (`1.3–1.45`).
 - **Backgrounds** belong on the container frame's `fill(...)`, not a separate rect.
-  For export-safe pages, put the background on the page/artboard/root frame:
-  `background(...)` on the page when available, or a clipped root `artboard`
-  frame with `fill(...)`. Do not draw a loose oversized `bg` rectangle.
+  For export-safe pages, put the background on a clipped root `artboard` frame
+  with `fill(...)`. Do not put `background(...)` on a `page ...` creation line,
+  and do not draw a loose oversized `bg` rectangle.
 - **Shadows/strokes/gradients**: keep them tasteful and tokenized; see
   `skills/effects`.
 - **Mark ABM slots** on every element a campaign would personalize:

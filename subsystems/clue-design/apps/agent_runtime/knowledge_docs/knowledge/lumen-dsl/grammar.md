@@ -25,7 +25,6 @@ deeper than the parent (`LUMD0302`); only containers may hold children
 ```text
 page page_a4 preset(a4,portrait)          # preset(name, orientation?)
 page story size(1080,1920,px)             # size(width, height, unit)
-page one_pager preset(a4,portrait) background($surface.page)
 ```
 
 - Presets: `a4`, `us_letter`, `linkedin_ad`, `envelope_dl`, `custom`
