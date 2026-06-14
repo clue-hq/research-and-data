@@ -525,6 +525,7 @@ export function CanvasKitCanvas({
           type="button"
           className={workspaceTool === "select" ? "active" : undefined}
           aria-label="Select tool"
+          aria-pressed={workspaceTool === "select"}
           title="Select tool"
           onClick={() => onWorkspaceToolChange("select")}
         >
@@ -534,6 +535,7 @@ export function CanvasKitCanvas({
           type="button"
           className={workspaceTool === "hand" ? "active" : undefined}
           aria-label="Pan tool"
+          aria-pressed={workspaceTool === "hand"}
           title="Pan tool"
           onClick={() => onWorkspaceToolChange("hand")}
         >
@@ -552,6 +554,7 @@ export function CanvasKitCanvas({
           type="button"
           className={workspaceFitTarget === "current" ? "active" : undefined}
           aria-label="Fit current artboard"
+          aria-pressed={workspaceFitTarget === "current"}
           title="Fit current artboard"
           onClick={() => fitWorkspace("current")}
         >
@@ -561,6 +564,7 @@ export function CanvasKitCanvas({
           type="button"
           className={workspaceFitTarget === "all" ? "active" : undefined}
           aria-label="Fit all artboards"
+          aria-pressed={workspaceFitTarget === "all"}
           title="Fit all artboards"
           onClick={() => fitWorkspace("all")}
         >

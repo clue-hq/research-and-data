@@ -84,18 +84,35 @@ describe("CanvasKitCanvas polish chrome wiring", () => {
     expect(overlay).toHaveAttribute("data-diagnostics", "1/1");
     expect(overlay).toHaveAttribute("data-disabled-reason", expect.stringMatching(/locked/i));
   });
+
+  it("exposes pressed state for workspace tool and fit controls", () => {
+    renderCanvasKit({
+      selectedNodeId: null,
+      workspaceTool: "hand",
+      workspaceFitTarget: "current"
+    });
+
+    expect(screen.getByRole("button", { name: "Select tool" })).toHaveAttribute("aria-pressed", "false");
+    expect(screen.getByRole("button", { name: "Pan tool" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: "Fit current artboard" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: "Fit all artboards" })).toHaveAttribute("aria-pressed", "false");
+  });
 });
 
 function renderCanvasKit({
   scene: canvasScene = scene,
   selectedNodeId,
   diagnostics = [],
-  engine = null
+  engine = null,
+  workspaceTool = "select",
+  workspaceFitTarget = "manual"
 }: {
   scene?: Scene;
   selectedNodeId: string | null;
   diagnostics?: Diagnostic[];
   engine?: OptimisticEnginePort | null;
+  workspaceTool?: "select" | "hand";
+  workspaceFitTarget?: "current" | "all" | "manual";
 }) {
   return render(
     <CanvasKitCanvas
@@ -110,9 +127,9 @@ function renderCanvasKit({
       workspaceModel={createWorkspaceModel(canvasScene, "page_a4", diagnostics)}
       workspaceViewport={defaultWorkspaceViewport()}
       onWorkspaceViewportChange={() => {}}
-      workspaceTool="select"
+      workspaceTool={workspaceTool}
       onWorkspaceToolChange={() => {}}
-      workspaceFitTarget="manual"
+      workspaceFitTarget={workspaceFitTarget}
       onWorkspaceFitTargetChange={() => {}}
     />
   );

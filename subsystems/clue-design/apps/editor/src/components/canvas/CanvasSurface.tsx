@@ -512,6 +512,7 @@ function WorkspaceChrome({
           type="button"
           className={tool === "select" ? "active" : undefined}
           aria-label="Select tool"
+          aria-pressed={tool === "select"}
           title="Select tool"
           onClick={() => onToolChange("select")}
         >
@@ -521,6 +522,7 @@ function WorkspaceChrome({
           type="button"
           className={tool === "hand" ? "active" : undefined}
           aria-label="Pan tool"
+          aria-pressed={tool === "hand"}
           title="Pan tool"
           onClick={() => onToolChange("hand")}
         >
@@ -539,6 +541,7 @@ function WorkspaceChrome({
           type="button"
           className={fitTarget === "current" ? "active" : undefined}
           aria-label="Fit current artboard"
+          aria-pressed={fitTarget === "current"}
           title="Fit current artboard"
           onClick={onFitCurrent}
         >
@@ -548,6 +551,7 @@ function WorkspaceChrome({
           type="button"
           className={fitTarget === "all" ? "active" : undefined}
           aria-label="Fit all artboards"
+          aria-pressed={fitTarget === "all"}
           title="Fit all artboards"
           onClick={onFitAll}
         >

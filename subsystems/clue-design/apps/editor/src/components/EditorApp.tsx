@@ -49,6 +49,11 @@ import {
   type ReconcileEvent
 } from "@/engine/editQueue";
 import {
+  EDITOR_PANEL_MODES,
+  rightSidebarLabelForMode,
+  type EditorPanelMode
+} from "@/engine/editorModes";
+import {
   activateWasmCore,
   wasmCoreFlagEnabled,
   WasmEngine,
@@ -123,8 +128,6 @@ export type EditQueueFactory = (options: {
   localScene: () => Scene;
   onReconcile: (event: ReconcileEvent) => void;
 }) => EditQueuePort;
-
-type EditorPanelMode = "inspector" | "agent" | "export" | "diagnostics";
 
 const defaultEditQueueFactory: EditQueueFactory = (options) =>
   createEditQueue({
@@ -1313,7 +1316,7 @@ export default function EditorApp({
         ) : null}
         <aside
           className="inspector-shell"
-          aria-label={rightSidebarLabel(editorPanelMode)}
+          aria-label={rightSidebarLabelForMode(editorPanelMode)}
         >
           {editorPanelMode === "agent" ? (
             <AgentChatPanel
@@ -1438,15 +1441,9 @@ function EditorModeSwitch({
   mode: EditorPanelMode;
   onModeChange: (mode: EditorPanelMode) => void;
 }) {
-  const modes: Array<{ mode: EditorPanelMode; label: string; ariaLabel?: string }> = [
-    { mode: "inspector", label: "Inspect" },
-    { mode: "agent", label: "Agent" },
-    { mode: "export", label: "Export", ariaLabel: "Export panel" },
-    { mode: "diagnostics", label: "Diagnostics", ariaLabel: "Diagnostics panel" }
-  ];
   return (
     <div className="top-mode-switch" aria-label="Editor mode">
-      {modes.map((item) => (
+      {EDITOR_PANEL_MODES.map((item) => (
         <button
           key={item.mode}
           type="button"
@@ -1501,19 +1498,6 @@ function OperationHistoryPanel({
       {redoCount > 0 ? <p className="muted">{redoCount} action{redoCount === 1 ? "" : "s"} available to redo.</p> : null}
     </section>
   );
-}
-
-function rightSidebarLabel(mode: EditorPanelMode): string {
-  switch (mode) {
-    case "agent":
-      return "Agent chat sidebar";
-    case "export":
-      return "Export sidebar";
-    case "diagnostics":
-      return "Diagnostics sidebar";
-    case "inspector":
-      return "Inspector sidebar";
-  }
 }
 
 function operationLabel(operation: Operation): string {
