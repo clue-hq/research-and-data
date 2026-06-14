@@ -929,6 +929,21 @@ describe.skipIf(!wasmArtifactPresent)("EditorApp", () => {
     expect(screen.getByRole("button", { name: /export panel/i })).toHaveAttribute("aria-pressed", "true");
   });
 
+  it("preserves active artboard and selected node across top mode switches", () => {
+    render(<TestEditorApp initialScene={twoPageScene()} initialSelectedNodeId="node_contact_name" />);
+
+    for (const modeButton of [
+      screen.getByRole("button", { name: /export panel/i }),
+      screen.getByRole("button", { name: /diagnostics panel/i }),
+      screen.getByRole("button", { name: /^Agent$/i }),
+      screen.getByRole("button", { name: /^Inspect$/i })
+    ]) {
+      fireEvent.click(modeButton);
+      expect(screen.getByTestId("canvas-selection")).toHaveAttribute("data-selected-node", "node_contact_name");
+      expect(within(screen.getByLabelText("Active artboard context")).getByText("A4 Letter")).toBeInTheDocument();
+    }
+  });
+
   it("undoes and redoes accepted editor operations through scene snapshots", () => {
     render(<TestEditorApp initialScene={twoPageScene()} initialSelectedNodeId={null} />);
 
