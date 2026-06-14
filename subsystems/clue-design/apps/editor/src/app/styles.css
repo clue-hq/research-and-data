@@ -820,6 +820,37 @@ textarea:disabled {
   text-transform: uppercase;
 }
 
+.selection-summary {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+  margin-top: 12px;
+  border: 1px solid #d7ccbd;
+  border-radius: 7px;
+  background: #fffdf8;
+  padding: 8px;
+}
+
+.selection-summary div {
+  min-width: 0;
+}
+
+.selection-summary span {
+  display: block;
+  color: #71695e;
+  font-size: 11px;
+  font-weight: 750;
+}
+
+.selection-summary strong {
+  display: block;
+  overflow: hidden;
+  color: #2f2a24;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .field-grid {
   display: grid;
   gap: 10px;

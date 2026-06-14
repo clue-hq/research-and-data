@@ -50,6 +50,7 @@ import {
 import { colorToCss, dimensionToNumber, fixedSize } from "@/engine/renderAdapter";
 import { normalizePageSize } from "@/engine/pageGeometry";
 import { flattenPageNodeIds, isNodeDirectGeometryEditable, isNodeLayoutManaged, nodeDisplayName } from "@/engine/sceneQueries";
+import { deriveSelectionChromeModel, type SelectionChromeModel } from "@/engine/selectionChrome";
 import { SlotInspector, SlotOverview } from "./SlotInspector";
 
 interface InspectorPanelProps {
@@ -99,6 +100,7 @@ export function InspectorPanel({
         {activePage ? (
           <>
             <div className="section-heading">Page</div>
+            <SelectedArtboardSummary activePage={activePage} diagnostics={pageDiagnostics} />
             <label className="field">
               <span>Name</span>
               <input value={activePage.name} onChange={(event) => onOperation(updatePageName(activePage, event.target.value))} />
@@ -192,6 +194,11 @@ export function InspectorPanel({
   const directGeometryEditable = isNodeDirectGeometryEditable(scene, selectedNode.id);
   const currentLayout = selectedNode.layout ?? defaultLayoutProps();
   const selectedDiagnostics = inspectorDiagnosticsForNode(scene, selectedNode, [...diagnostics, ...renderDiagnostics]);
+  const selectionChrome = deriveSelectionChromeModel(scene, {
+    activePageId: activePage?.id ?? null,
+    selectedNodeId,
+    diagnostics: [...diagnostics, ...renderDiagnostics]
+  });
   const emitTransform = (patch: Partial<Transform>) => {
     onOperation(updateNodeTransform(selectedNode, { ...selectedNode.transform, ...patch }));
   };
@@ -221,6 +228,7 @@ export function InspectorPanel({
             </button>
           </div>
         </div>
+        <SelectedObjectSummary model={selectionChrome} locked={selectedNode.locked} layoutManaged={layoutManaged} />
         <label className="field span">
           <span>Name</span>
           <input
@@ -889,6 +897,121 @@ function fixedDimensionValue(dimension: Dimension): number {
     return normalizePositiveDimension(dimension.value);
   }
   return 120;
+}
+
+function SelectedArtboardSummary({ activePage, diagnostics }: { activePage: Page; diagnostics: Diagnostic[] }) {
+  const counts = countDiagnostics(diagnostics);
+  return (
+    <div className="selection-summary" aria-label="Selected artboard summary">
+      <div>
+        <span>Artboard</span>
+        <strong>{activePage.name}</strong>
+      </div>
+      <div>
+        <span>Size</span>
+        <strong>
+          {formatDimension(activePage.size.width)} x {formatDimension(activePage.size.height)} {activePage.size.unit}
+        </strong>
+      </div>
+      <div>
+        <span>Issues</span>
+        <strong>{diagnosticCountLabel(counts)}</strong>
+      </div>
+    </div>
+  );
+}
+
+function SelectedObjectSummary({
+  model,
+  locked,
+  layoutManaged
+}: {
+  model: SelectionChromeModel;
+  locked: boolean;
+  layoutManaged: boolean;
+}) {
+  const objectKind =
+    model.isSlotBound && model.baseObjectKind
+      ? `slot-bound ${objectKindLabel(model.baseObjectKind)}`
+      : model.baseObjectKind
+        ? objectKindLabel(model.baseObjectKind)
+        : "unknown";
+  return (
+    <div className="selection-summary" aria-label="Selected object summary">
+      <div>
+        <span>Object</span>
+        <strong>{objectKind}</strong>
+      </div>
+      <div>
+        <span>Canvas handles</span>
+        <strong>{model.showHandles ? "Enabled" : "Disabled"}</strong>
+      </div>
+      <div>
+        <span>State</span>
+        <strong>{selectionStateLabel({ locked, layoutManaged, isSlotBound: model.isSlotBound })}</strong>
+      </div>
+      <div>
+        <span>Slots</span>
+        <strong>{model.slotKeys.length > 0 ? model.slotKeys.join(", ") : "Static"}</strong>
+      </div>
+      <div>
+        <span>Issues</span>
+        <strong>{diagnosticCountLabel(model.diagnosticCounts)}</strong>
+      </div>
+    </div>
+  );
+}
+
+function countDiagnostics(diagnostics: Diagnostic[]): { errors: number; warnings: number } {
+  let errors = 0;
+  let warnings = 0;
+  for (const diagnostic of diagnostics) {
+    if (diagnostic.severity === "error") {
+      errors += 1;
+    } else if (diagnostic.severity === "warning") {
+      warnings += 1;
+    }
+  }
+  return { errors, warnings };
+}
+
+function diagnosticCountLabel(counts: { errors: number; warnings: number }): string {
+  if (counts.errors === 0 && counts.warnings === 0) {
+    return "None";
+  }
+  const parts: string[] = [];
+  if (counts.errors > 0) {
+    parts.push(`${counts.errors} error${counts.errors === 1 ? "" : "s"}`);
+  }
+  if (counts.warnings > 0) {
+    parts.push(`${counts.warnings} warning${counts.warnings === 1 ? "" : "s"}`);
+  }
+  return parts.join(" / ");
+}
+
+function selectionStateLabel({
+  locked,
+  layoutManaged,
+  isSlotBound
+}: {
+  locked: boolean;
+  layoutManaged: boolean;
+  isSlotBound: boolean;
+}): string {
+  const states = [
+    locked ? "Locked" : null,
+    layoutManaged ? "Layout-managed child" : null,
+    isSlotBound ? "Slot-bound" : null
+  ].filter((state): state is string => Boolean(state));
+  return states.length > 0 ? states.join(" / ") : "Editable";
+}
+
+function objectKindLabel(kind: string): string {
+  return kind.replace(/_/g, " ");
+}
+
+function formatDimension(value: number): string {
+  return Number.isInteger(value) ? String(value) : value.toFixed(1).replace(/\.0$/, "");
 }
 
 interface StyleSummaryItem {
