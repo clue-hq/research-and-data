@@ -419,18 +419,26 @@ Mitigation: implement shell structure and stable controls first. Polish only eno
 
 ## Branch Completion Checklist
 
-- [ ] `WorkspaceModel` derives artboards from scene pages.
-- [ ] Workspace placement is deterministic and tested.
-- [ ] Workspace viewport transforms are shared and tested.
-- [ ] Dark left panel contains artboards and active-artboard layers.
-- [ ] Dark right panel supports inspector, agent, export, and diagnostics modes.
-- [ ] Compact top context bar shows active artboard and mode.
-- [ ] Floating bottom toolbar supports select, pan, zoom, fit current, and fit all.
-- [ ] Konva renders multiple clipped artboards.
-- [ ] CanvasKit renders multiple clipped artboards with matching transforms.
-- [ ] Active artboard selection works from panel and workspace.
-- [ ] Node selection activates its owning artboard.
-- [ ] Export selected artboard sends the correct page id.
-- [ ] Diagnostics visibly map to artboards.
-- [ ] Viewport changes do not mutate scene geometry or emit scene operations.
-- [ ] Tests and lint pass, except browser smoke explicitly deferred to the Browser plugin session.
+- [x] `WorkspaceModel` derives artboards from scene pages.
+- [x] Workspace placement is deterministic and tested.
+- [x] Workspace viewport transforms are shared and tested.
+- [x] Dark left panel contains artboards and active-artboard layers.
+- [x] Dark right panel supports inspector, agent, export, and diagnostics modes.
+- [x] Compact top context bar shows active artboard and mode.
+- [x] Floating bottom toolbar supports select, pan, zoom, fit current, and fit all.
+- [x] Konva renders multiple clipped artboards.
+- [x] CanvasKit renders multiple clipped artboards with matching transforms.
+- [x] Active artboard selection works from panel and workspace.
+- [x] Node selection activates its owning artboard.
+- [x] Export selected artboard sends the correct page id.
+- [x] Diagnostics visibly map to artboards.
+- [x] Viewport changes do not mutate scene geometry or emit scene operations.
+- [x] Tests and lint pass, except browser smoke explicitly deferred to the Browser plugin session.
+
+Completion checkpoint, 2026-06-14:
+
+- `npm --prefix apps/editor test -- --run src/components/__tests__/EditorApp.test.tsx src/components/canvas/__tests__/EditorCanvas.test.tsx src/engine/__tests__/workspaceLayout.test.ts src/engine/__tests__/workspaceViewport.test.ts src/engine/__tests__/canvaskitGestures.test.ts src/engine/__tests__/canvaskitConformance.test.ts src/engine/__tests__/gestureConformance.test.ts src/engine/__tests__/exportRunner.test.ts` passed 8 files and 71 tests.
+- `npm --prefix apps/editor run lint` passed.
+- `git diff --check` passed.
+- `npm --prefix apps/editor test -- --run` passed 43 files and 312 tests.
+- Browser-rendered smoke, screenshot comparison, and canvas-pixel checks remain deferred to the separate Codex Browser plugin session requested by the user.
