@@ -130,19 +130,19 @@ describe.skipIf(!wasmArtifactPresent)("EditorApp", () => {
       />
     );
 
-    fireEvent.change(screen.getByLabelText("Custom page name"), {
+    fireEvent.change(screen.getByLabelText("Custom artboard name"), {
       target: { value: "Client Leaderboard" }
     });
-    fireEvent.change(screen.getByLabelText("Custom page width"), {
+    fireEvent.change(screen.getByLabelText("Custom artboard width"), {
       target: { value: "1200" }
     });
-    fireEvent.change(screen.getByLabelText("Custom page height"), {
+    fireEvent.change(screen.getByLabelText("Custom artboard height"), {
       target: { value: "628" }
     });
-    fireEvent.change(screen.getByLabelText("Custom page unit"), {
+    fireEvent.change(screen.getByLabelText("Custom artboard unit"), {
       target: { value: "px" }
     });
-    fireEvent.click(screen.getByRole("button", { name: /add page/i }));
+    fireEvent.click(screen.getByRole("button", { name: /add artboard/i }));
 
     const canvas = screen.getByTestId("canvas-selection");
     expect(canvas).toHaveAttribute("data-page-width", "1200");
@@ -300,7 +300,7 @@ describe.skipIf(!wasmArtifactPresent)("EditorApp", () => {
       />
     );
 
-    fireEvent.click(screen.getByRole("button", { name: /duplicate page a4 letter/i }));
+    fireEvent.click(screen.getByRole("button", { name: /duplicate artboard a4 letter/i }));
 
     expect(await screen.findByText("A4 Letter Copy")).toBeInTheDocument();
     const canvas = screen.getByTestId("canvas-selection");
@@ -373,7 +373,7 @@ describe.skipIf(!wasmArtifactPresent)("EditorApp", () => {
     fireEvent.click(screen.getByText("Second Page"));
     expect(screen.getByTestId("canvas-selection")).toHaveAttribute("data-page-width", "600");
 
-    fireEvent.click(screen.getByRole("button", { name: /remove page second page/i }));
+    fireEvent.click(screen.getByRole("button", { name: /remove artboard second page/i }));
 
     const canvas = screen.getByTestId("canvas-selection");
     expect(canvas).toHaveAttribute("data-page-width", "210");
@@ -1045,11 +1045,11 @@ describe.skipIf(!wasmArtifactPresent)("EditorApp", () => {
     expect(await screen.findByText("Export ready")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /^Compare$/i })).toHaveClass("active");
     expect(screen.getByTestId("canvas-selection")).toHaveAttribute("data-page-width", "210");
-    expect(screen.getByText(/SVG page page_a4/)).toBeInTheDocument();
+    expect(screen.getByText(/SVG artboard page_a4/)).toBeInTheDocument();
     expect(screen.getByText(/image\/svg\+xml · 120 bytes/)).toBeInTheDocument();
     expect(screen.getByText("Filename page_a4.preview_svg.svg")).toBeInTheDocument();
     expect(screen.getByText(/Dimensions 793.70 x 1122.52 scene · svg_view_box/)).toBeInTheDocument();
-    expect(screen.getByText(/Sidecar preview_svg · 1 page · 1 node · 1 slot/)).toBeInTheDocument();
+    expect(screen.getByText(/Sidecar preview_svg · 1 artboard · 1 node · 1 slot/)).toBeInTheDocument();
     expect(screen.getByText(/slots contact.full_name/)).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /^download$/i })).toHaveAttribute("href", "data:image/svg+xml;base64,PHN2Zy8+");
     expect(screen.getByRole("link", { name: /download sidecar/i })).toHaveAttribute(
@@ -1109,7 +1109,7 @@ describe.skipIf(!wasmArtifactPresent)("EditorApp", () => {
       />
     );
 
-    fireEvent.change(screen.getByRole("combobox", { name: "Pages" }), {
+    fireEvent.change(screen.getByRole("combobox", { name: "Artboards" }), {
       target: { value: "all" }
     });
     fireEvent.click(screen.getByRole("button", { name: /generate preview/i }));
@@ -1226,12 +1226,12 @@ describe.skipIf(!wasmArtifactPresent)("EditorApp", () => {
     fireEvent.change(screen.getByLabelText("Profile"), {
       target: { value: "print_pdf" }
     });
-    fireEvent.change(screen.getAllByLabelText("Pages")[0], {
+    fireEvent.change(screen.getAllByLabelText("Artboards")[0], {
       target: { value: "all" }
     });
 
     expect(screen.getByText("PRINT_EXPLICIT_PAGINATION")).toBeInTheDocument();
-    expect(screen.getByText(/This print PDF exports 2 explicit pages/)).toBeInTheDocument();
+    expect(screen.getByText(/This print PDF exports 2 explicit artboards/)).toBeInTheDocument();
     expect(screen.getByText("PRINT_MIXED_PAGE_SIZES")).toBeInTheDocument();
     expect(screen.getByText(/Square Ad 1080 x 1080 px; Wide Header 1200 x 628 px/)).toBeInTheDocument();
   });
@@ -1314,7 +1314,7 @@ describe.skipIf(!wasmArtifactPresent)("EditorApp", () => {
 
     expect(screen.getByText("PNG_RASTER_SIZE_page_a4")).toBeInTheDocument();
     expect(screen.getByText(/Huge Square will export to 10000 x 10000 px \(100.0 MP\) with high_res_png/)).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: /show page page_a4/i }));
+    fireEvent.click(screen.getByRole("button", { name: /show artboard page_a4/i }));
     expect(screen.getByTestId("canvas-selection")).toHaveAttribute("data-page-width", "5000");
     expect(screen.getByTestId("canvas-selection")).toHaveAttribute("data-page-height", "5000");
   });
@@ -1634,7 +1634,7 @@ describe.skipIf(!wasmArtifactPresent)("EditorApp", () => {
     fireEvent.click(screen.getByRole("button", { name: /^Validate$/i }));
 
     expect(await screen.findByText("LUME_PAGE_SAFE_AREA")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: /show page page_second/i }));
+    fireEvent.click(screen.getByRole("button", { name: /show artboard page_second/i }));
 
     const canvas = screen.getByTestId("canvas-selection");
     expect(canvas).toHaveAttribute("data-page-width", "600");

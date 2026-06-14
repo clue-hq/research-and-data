@@ -210,7 +210,7 @@ function diagnosticSubjectLabel(subject: DiagnosticSubject): string {
     case "document":
       return "document";
     case "page":
-      return `page ${subject.id}`;
+      return `artboard ${subject.id}`;
     case "node":
       return `node ${subject.id}`;
     case "slot":

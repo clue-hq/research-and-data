@@ -52,8 +52,8 @@ export function ExportPanel({
         onSelectSubject={onSelectSubject}
       />
       <p className="muted contract-note">
-        Export uses the canonical scene page size, computed geometry, and selected profile. Presets do not replace custom
-        page dimensions.
+        Export uses the selected artboard&apos;s canonical page size, computed geometry, and selected profile. Presets do not replace custom
+        artboard dimensions.
       </p>
       {exportResult ? (
         <div className="export-summary" aria-live="polite">
@@ -69,7 +69,7 @@ export function ExportPanel({
           ) : null}
         </div>
       ) : pages.length === 0 ? (
-        <p className="muted">Add a page before exporting.</p>
+        <p className="muted">Add an artboard before exporting.</p>
       ) : null}
     </section>
   );
@@ -134,10 +134,10 @@ function ExportControls({
         </select>
       </label>
       <label className="field">
-        <span>Pages</span>
+        <span>Artboards</span>
         <select value={scope} onChange={(event) => setScope(event.target.value as "active" | "all")}>
-          <option value="active">Active page</option>
-          <option value="all">All pages</option>
+          <option value="active">Selected artboard</option>
+          <option value="all">All artboards</option>
         </select>
       </label>
       {profile ? <ExportProfileEditor profile={profile} onChange={setDraftProfile} /> : null}
@@ -249,7 +249,7 @@ function diagnosticSubjectLabel(subject: DiagnosticSubject): string {
     case "document":
       return "document";
     case "page":
-      return `page ${subject.id}`;
+      return `artboard ${subject.id}`;
     case "node":
       return `node ${subject.id}`;
     case "slot":
@@ -418,17 +418,17 @@ function exportReadinessNotes(scene: Scene, profile: ExportProfile, pageIds: Pag
       notes.push(exportReadinessDiagnostic(
         "warning",
         "PRINT_EXPLICIT_PAGINATION",
-        `This print PDF exports ${selectedPages.length} explicit pages. Automatic flowed pagination is not performed in Phase F.`,
+        `This print PDF exports ${selectedPages.length} explicit artboards. Automatic flowed pagination is not performed in Phase F.`,
         {
           kind: "document"
         },
-        "Review each page/artboard explicitly before print handoff."
+        "Review each artboard explicitly before print handoff."
       ));
       if (hasMixedPageSizes(selectedPages)) {
         notes.push(exportReadinessDiagnostic(
           "warning",
           "PRINT_MIXED_PAGE_SIZES",
-          `Selected print pages use mixed sizes: ${selectedPages.map((page) => `${page.name} ${pageSizeLabel(page)}`).join("; ")}.`,
+          `Selected print artboards use mixed sizes: ${selectedPages.map((page) => `${page.name} ${pageSizeLabel(page)}`).join("; ")}.`,
           {
             kind: "document"
           },
@@ -450,7 +450,7 @@ function exportReadinessNotes(scene: Scene, profile: ExportProfile, pageIds: Pag
             kind: "page",
             id: pageId
           },
-          "Use the page inspector to add safe-area metadata."
+          "Use the artboard inspector to add safe-area metadata."
         ));
       }
       if (profile.include_bleed && !page.bleed) {
@@ -462,7 +462,7 @@ function exportReadinessNotes(scene: Scene, profile: ExportProfile, pageIds: Pag
             kind: "page",
             id: pageId
           },
-          "Use the page inspector to add bleed before print handoff."
+          "Use the artboard inspector to add bleed before print handoff."
         ));
       }
       for (const nodeId of pageNodeIds(scene, pageId)) {
@@ -581,7 +581,7 @@ function exportReadinessNotes(scene: Scene, profile: ExportProfile, pageIds: Pag
             kind: "page",
             id: pageId
           },
-          "Reduce the PNG scale/DPI for preview, export this page as SVG/PDF, or split very large artifacts before raster export."
+          "Reduce the PNG scale/DPI for preview, export this artboard as SVG/PDF, or split very large artifacts before raster export."
         ));
       }
     }
@@ -704,7 +704,7 @@ function ExportArtifactRow({ artifact }: { artifact: EditorExportArtifact }) {
   return (
     <div className="export-artifact">
       <span>
-        {artifact.format.toUpperCase()} {artifact.page_id ? `page ${artifact.page_id}` : "document"}
+        {artifact.format.toUpperCase()} {artifact.page_id ? `artboard ${artifact.page_id}` : "document"}
       </span>
       <small>
         {artifact.mime_type} · {artifact.byte_length} bytes
@@ -718,11 +718,11 @@ function ExportArtifactRow({ artifact }: { artifact: EditorExportArtifact }) {
       ) : null}
       {sidecar ? (
         <small>
-          Sidecar {sidecar.profile_name ?? "unknown profile"} · {sidecar.page_count} page
+          Sidecar {sidecar.profile_name ?? "unknown profile"} · {sidecar.page_count} artboard
           {sidecar.page_count === 1 ? "" : "s"} · {sidecar.node_count} node
           {sidecar.node_count === 1 ? "" : "s"} · {sidecar.slot_count} slot
           {sidecar.slot_count === 1 ? "" : "s"}
-          {sidecar.page_ids.length > 0 ? ` · pages ${sidecar.page_ids.join(", ")}` : ""}
+          {sidecar.page_ids.length > 0 ? ` · artboards ${sidecar.page_ids.join(", ")}` : ""}
           {sidecar.slot_keys.length > 0 ? ` · slots ${sidecar.slot_keys.join(", ")}` : ""}
         </small>
       ) : null}

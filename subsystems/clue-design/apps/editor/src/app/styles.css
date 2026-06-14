@@ -197,6 +197,31 @@ textarea:disabled {
   font-weight: 750;
 }
 
+.page-row-title {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.artboard-status-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  flex: 0 0 auto;
+  border-radius: 999px;
+  background: #63c174;
+}
+
+.artboard-status-dot.warning {
+  background: #f5b84b;
+}
+
+.artboard-status-dot.error {
+  background: #ef5f5f;
+}
+
 .page-button small,
 .muted {
   color: #9ba6b2;

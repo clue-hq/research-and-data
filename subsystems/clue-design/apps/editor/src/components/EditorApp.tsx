@@ -1039,9 +1039,9 @@ export default function EditorApp({
           severity: "warning",
           phase: "export",
           code: "EDITOR_EXPORT_PAGE_REQUIRED",
-          message: "Select a page before exporting.",
+          message: "Select an artboard before exporting.",
           subject: { kind: "document" },
-          hint: "Choose a page in the page rail or export all pages from the Export panel."
+          hint: "Choose an artboard in the left rail or export all artboards from the Export panel."
         }
       ]);
       return;
@@ -1173,6 +1173,7 @@ export default function EditorApp({
           <PageRail
             scene={scene}
             activePageId={activePageId}
+            diagnostics={diagnostics}
             onSelectPage={selectPage}
             onAddCustomPage={createCustomPage}
             onDuplicatePage={duplicatePageInEditor}
