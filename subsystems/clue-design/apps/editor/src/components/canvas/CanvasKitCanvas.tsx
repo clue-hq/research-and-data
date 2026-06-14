@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { NodeId, Operation, PageId, Scene } from "@/engine/contracts";
 import type { OptimisticEnginePort } from "@/engine/wasmEngine";
+import type { WorkspaceModel } from "@/engine/workspaceLayout";
 import { centeredPageOrigin, fitZoomForPage } from "@/engine/canvasViewport";
 import { containerSelectionGeometry, isCanvasDirectGeometryEditable } from "@/engine/canvasSelection";
 import {
@@ -52,6 +53,7 @@ export interface CanvasKitCanvasProps {
   onOperation: (operation: Operation) => void;
   /** The engine provides authoritative point→node hit-testing (C3a). */
   engine: OptimisticEnginePort | null;
+  workspaceModel?: WorkspaceModel;
   /** Called after the C4 measurement pass updates the engine's `computed`
    * (which does not emit a delta), so the host can re-sync its React scene. */
   onSceneRefresh?: () => void;

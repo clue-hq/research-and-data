@@ -1221,8 +1221,10 @@ export default function EditorApp({
                   activePageId={activePageId}
                   selectedNodeId={selectedNodeId}
                   onSelectNode={setSelectedNodeId}
+                  onSelectPage={selectPage}
                   onOperation={applyOperation}
                   engine={engineRef.current}
+                  diagnostics={diagnostics}
                   onSceneRefresh={refreshSceneFromEngine}
                 />
               </div>
@@ -1249,8 +1251,10 @@ export default function EditorApp({
               activePageId={activePageId}
               selectedNodeId={selectedNodeId}
               onSelectNode={setSelectedNodeId}
+              onSelectPage={selectPage}
               onOperation={applyOperation}
               engine={engineRef.current}
+              diagnostics={diagnostics}
               onSceneRefresh={refreshSceneFromEngine}
             />
           )}

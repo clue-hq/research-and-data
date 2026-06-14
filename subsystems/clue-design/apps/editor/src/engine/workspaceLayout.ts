@@ -234,5 +234,5 @@ function pageIdForDiagnostic(scene: Scene, diagnostic: Diagnostic): PageId | nul
 }
 
 function positiveOrDefault(value: number | undefined, fallback: number): number {
-  return Number.isFinite(value) && value > 0 ? value : fallback;
+  return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : fallback;
 }
