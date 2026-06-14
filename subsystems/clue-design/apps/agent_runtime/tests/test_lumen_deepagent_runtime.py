@@ -788,6 +788,36 @@ def test_task_knowledge_surfaces_artboard_and_layout_cluster_docs():
     assert "parent containment" in excerpts
 
 
+def test_artboard_fixture_prompts_cover_required_surfaces():
+    repo_root = Path(__file__).resolve().parents[3]
+    fixture_path = repo_root / "apps/agent_runtime/evaluation/fixture_prompts.json"
+    fixtures = json.loads(fixture_path.read_text(encoding="utf-8"))
+    by_id = {fixture["id"]: fixture for fixture in fixtures}
+
+    required_ids = {
+        "a4_appointment_card_artboard_frame",
+        "letter_healthcare_one_pager",
+        "square_linkedin_neurosurgery",
+        "wide_linkedin_healthcare",
+        "parent_overflow_cluster_repair",
+    }
+
+    assert required_ids.issubset(by_id)
+    assert "595x842pt" in by_id["a4_appointment_card_artboard_frame"]["prompt"]
+    assert "612x792pt" in by_id["letter_healthcare_one_pager"]["prompt"]
+    assert "1080x1080pt" in by_id["square_linkedin_neurosurgery"]["prompt"]
+    assert "1200x628pt" in by_id["wide_linkedin_healthcare"]["prompt"]
+    assert "layout_cluster" in by_id["parent_overflow_cluster_repair"]["prompt"]
+    assert all(
+        "loose oversized bg rectangle" in by_id[fixture_id]["prompt"]
+        for fixture_id in {
+            "a4_appointment_card_artboard_frame",
+            "letter_healthcare_one_pager",
+            "parent_overflow_cluster_repair",
+        }
+    )
+
+
 def test_quality_loop_passes_knowledge_excerpts_to_author(tmp_path: Path, monkeypatch):
     monkeypatch.setattr("lumen_deepagent.tools.CoreClient", FakeCoreClient)
     paths = [

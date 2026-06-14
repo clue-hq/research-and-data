@@ -2,12 +2,32 @@
   {
     "id": "square_linkedin_neurosurgery",
     "artifact": "linkedin_ad_square",
-    "prompt": "Create a 1:1 LinkedIn ad for a neurosurgery practice on an explicit 1080x1080px canvas. Use robust auto-layout, wrapped text with max line limits, and a clear CTA. Insight Health provides AI phone agents that handle calls, scheduling, and routing so neurosurgeons can focus on surgery."
+    "prompt": "Create a 1:1 LinkedIn ad for a neurosurgery practice on an explicit 1080x1080px canvas. Author against canonical 1080x1080pt artboard-local layout bounds. Use a page/artboard background fill or bounded clipped root frame, robust auto-layout, wrapped text with max line limits, and a clear CTA. Insight Health provides AI phone agents that handle calls, scheduling, and routing so neurosurgeons can focus on surgery."
+  },
+  {
+    "id": "a4_appointment_card_artboard_frame",
+    "artifact": "a4_appointment_card",
+    "prompt": "Create an A4 portrait appointment reminder card for Insight Health. Use preset(a4,portrait), canonical A4 layout points around 595x842pt, a page/artboard background fill, one bounded clipped root frame, and auto-layout for the card contents. Do not create a loose oversized bg rectangle. Include appointment headline, patient instruction copy, clinic routing benefit, and a clear Book a Demo CTA."
   },
   {
     "id": "a4_one_pager_healthcare",
     "artifact": "a4_one_pager_section",
-    "prompt": "Create an A4 one-pager hero section for Insight Health aimed at specialty clinics that want fewer missed calls and cleaner patient routing."
+    "prompt": "Create an A4 one-pager hero section for Insight Health aimed at specialty clinics that want fewer missed calls and cleaner patient routing. Use canonical A4 layout points around 595x842pt, a page/artboard background fill or bounded clipped root frame, root-frame padding, wrapped text, and no loose oversized bg rectangle."
+  },
+  {
+    "id": "letter_healthcare_one_pager",
+    "artifact": "letter_one_pager",
+    "prompt": "Create a US Letter portrait one-pager for Insight Health. Use an explicit 8.5x11in page so the layout is 612x792pt while physical metadata stays Letter size. Use page/artboard background fill, root-frame padding, tokenized cards, wrapped text, and no loose oversized bg rectangle."
+  },
+  {
+    "id": "wide_linkedin_healthcare",
+    "artifact": "linkedin_ad_wide",
+    "prompt": "Create a 1200x628px LinkedIn wide ad for Insight Health. Author in a 1200x628pt artboard-local coordinate space with a bounded root frame, background fill, horizontal auto-layout, and no off-artboard or parent-overflow content."
+  },
+  {
+    "id": "parent_overflow_cluster_repair",
+    "artifact": "repair_trigger_layout_cluster",
+    "prompt": "Create an A4 appointment-card layout where the repair loop must keep parent and child scales consistent. Use canonical A4 points, a bounded card parent, child widths based on fill/hug rather than stale 400pt fixed widths, and no loose oversized bg rectangle. If preflight reports parent overflow, repair the diagnosed layout_cluster rather than only shrinking text."
   },
   {
     "id": "email_hero_specialty_clinic",
