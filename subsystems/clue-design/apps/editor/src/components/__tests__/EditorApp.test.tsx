@@ -1206,7 +1206,7 @@ describe.skipIf(!wasmArtifactPresent)("EditorApp", () => {
     expect(screen.getByText("Filename page_a4.preview_svg.svg")).toBeInTheDocument();
     expect(screen.getByText(/Dimensions 793.70 x 1122.52 scene · svg_view_box/)).toBeInTheDocument();
     expect(screen.getByText(/Sidecar preview_svg · 1 artboard · 1 node · 1 slot/)).toBeInTheDocument();
-    expect(screen.getByText(/slots contact.full_name/)).toBeInTheDocument();
+    expect(screen.getAllByText(/slots contact.full_name/).length).toBeGreaterThanOrEqual(2);
     expect(screen.getByRole("link", { name: /^download$/i })).toHaveAttribute("href", "data:image/svg+xml;base64,PHN2Zy8+");
     expect(screen.getByRole("link", { name: /download sidecar/i })).toHaveAttribute(
       "download",

@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { minimalScene } from "@/fixtures/minimalScene";
 import type { EditorExportResult } from "@/engine/exportRunner";
@@ -47,7 +47,10 @@ describe("ExportPreviewSurface", () => {
     expect(screen.getByText("128 bytes")).toBeInTheDocument();
     expect(screen.getByText("page_a4.preview_svg.svg")).toBeInTheDocument();
     expect(screen.getByText("793.70 x 1122.52 scene · svg_view_box")).toBeInTheDocument();
-    expect(screen.getByText("preview_svg · 1 page · 1 node")).toBeInTheDocument();
+    const scope = within(screen.getByLabelText("Export preview scope"));
+    expect(scope.getByText("A4 Letter")).toBeInTheDocument();
+    expect(scope.getByText("preview_svg")).toBeInTheDocument();
+    expect(screen.getByText("preview_svg · 1 page · 1 node · 1 slot · slots contact.full_name")).toBeInTheDocument();
     expect(screen.getByText("Ready for approval")).toBeInTheDocument();
     expect(screen.getByText(/matches the canvas page and has no blocking diagnostics/)).toBeInTheDocument();
   });
@@ -118,6 +121,7 @@ describe("ExportPreviewSurface", () => {
 
     expect(screen.getByText("Export the active page to preview the artifact.")).toBeInTheDocument();
     expect(screen.getByText("Not ready for approval")).toBeInTheDocument();
+    expect(screen.getByText("Generate a preview for the selected artboard before approving this artifact.")).toBeInTheDocument();
     expect(screen.getByText("EDITOR_EXPORT_PARITY_ARTIFACT_REQUIRED")).toBeInTheDocument();
     expect(screen.queryByTitle("Export preview artifact")).not.toBeInTheDocument();
     expect(screen.queryByLabelText("Export preview artifact details")).not.toBeInTheDocument();

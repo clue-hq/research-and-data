@@ -719,6 +719,39 @@ textarea:disabled {
   padding: 10px 12px;
 }
 
+.preview-scope-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0 0 8px;
+}
+
+.preview-scope-summary div {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 5px;
+  border: 1px solid #d7ccbd;
+  border-radius: 999px;
+  background: #fffdf8;
+  padding: 4px 8px;
+  color: #574f44;
+  font-size: 11px;
+}
+
+.preview-scope-summary dt {
+  color: #71695e;
+  font-weight: 750;
+}
+
+.preview-scope-summary dd {
+  max-width: 220px;
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .canvas-toolbar {
   position: absolute;
   z-index: 2;

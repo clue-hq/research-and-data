@@ -20,6 +20,7 @@ export function ExportPreviewSurface({
   onSelectSubject
 }: ExportPreviewSurfaceProps) {
   const artifact = artifactForPage(exportResult, activePageId);
+  const activePage = activePageId ? scene.pages[activePageId] ?? null : null;
   const report = exportParityReport(scene, activePageId, exportResult);
   const diagnostics = previewDiagnostics(report.diagnostics, exportResult?.diagnostics ?? []);
   const approval = exportPreviewApprovalState({
@@ -49,6 +50,7 @@ export function ExportPreviewSurface({
         )}
       </div>
       <div className="export-preview-diagnostics" aria-live="polite">
+        <PreviewScopeSummary activePageName={activePage?.name ?? null} activePageId={activePageId} artifact={artifact} />
         <ApprovalSummary approval={approval} />
         {report.canvas && report.export ? (
           <p className="muted">
@@ -66,6 +68,29 @@ export function ExportPreviewSurface({
         </ul>
       </div>
     </section>
+  );
+}
+
+function PreviewScopeSummary({
+  activePageName,
+  activePageId,
+  artifact
+}: {
+  activePageName: string | null;
+  activePageId: PageId | null;
+  artifact: EditorExportArtifact | null;
+}) {
+  return (
+    <dl className="preview-scope-summary" aria-label="Export preview scope">
+      <div>
+        <dt>Artboard</dt>
+        <dd>{activePageName ?? activePageId ?? "No active artboard"}</dd>
+      </div>
+      <div>
+        <dt>Profile</dt>
+        <dd>{artifact?.sidecar_summary?.profile_name ?? "No preview profile"}</dd>
+      </div>
+    </dl>
   );
 }
 
@@ -166,7 +191,9 @@ function ArtifactPreviewMeta({ artifact }: { artifact: EditorExportArtifact }) {
           <dd>
             {artifact.sidecar_summary.profile_name ?? "profile"} · {artifact.sidecar_summary.page_count}{" "}
             {artifact.sidecar_summary.page_count === 1 ? "page" : "pages"} · {artifact.sidecar_summary.node_count}{" "}
-            {artifact.sidecar_summary.node_count === 1 ? "node" : "nodes"}
+            {artifact.sidecar_summary.node_count === 1 ? "node" : "nodes"} · {artifact.sidecar_summary.slot_count}{" "}
+            {artifact.sidecar_summary.slot_count === 1 ? "slot" : "slots"}
+            {artifact.sidecar_summary.slot_keys.length > 0 ? ` · slots ${artifact.sidecar_summary.slot_keys.join(", ")}` : ""}
           </dd>
         </div>
       ) : null}

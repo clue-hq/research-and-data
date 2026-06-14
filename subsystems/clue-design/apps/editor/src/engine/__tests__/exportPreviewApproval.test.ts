@@ -36,14 +36,15 @@ describe("export preview approval", () => {
     });
   });
 
-  it("fails closed for missing artifacts, export failures, parity mismatches, and error diagnostics", () => {
+  it("fails closed with specific reasons for missing artifacts, export failures, parity mismatches, and errors", () => {
     const cases = [
       {
         label: "missing artifact",
         artifact: null,
         exportResult: result("ok"),
         parityStatus: "match" as const,
-        diagnostics: []
+        diagnostics: [],
+        message: "Generate a preview for the selected artboard before approving this artifact."
       },
       {
         label: "empty artifact payload",
@@ -53,28 +54,32 @@ describe("export preview approval", () => {
         },
         exportResult: result("ok"),
         parityStatus: "match" as const,
-        diagnostics: []
+        diagnostics: [],
+        message: "Generate a preview for the selected artboard before approving this artifact."
       },
       {
         label: "export failed",
         artifact: artifact(),
         exportResult: result("failed"),
         parityStatus: "match" as const,
-        diagnostics: []
+        diagnostics: [],
+        message: "The latest export failed. Resolve export diagnostics and generate a new preview."
       },
       {
         label: "parity mismatch",
         artifact: artifact(),
         exportResult: result("ok"),
         parityStatus: "mismatch" as const,
-        diagnostics: []
+        diagnostics: [],
+        message: "Canvas and export preview parity has not been confirmed for the selected artboard."
       },
       {
         label: "error diagnostic",
         artifact: artifact(),
         exportResult: result("ok"),
         parityStatus: "match" as const,
-        diagnostics: [diagnostic("error")]
+        diagnostics: [diagnostic("error")],
+        message: "1 blocking diagnostic must be resolved before approval."
       }
     ];
 
@@ -83,6 +88,7 @@ describe("export preview approval", () => {
 
       expect(state.status, testCase.label).toBe("blocked");
       expect(state.title, testCase.label).toBe("Not ready for approval");
+      expect(state.message, testCase.label).toBe(testCase.message);
     }
   });
 });
