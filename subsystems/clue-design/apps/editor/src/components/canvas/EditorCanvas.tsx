@@ -35,6 +35,8 @@ export interface EditorCanvasProps {
   onWorkspaceToolChange: (tool: WorkspaceTool) => void;
   workspaceFitTarget: WorkspaceFitTarget;
   onWorkspaceFitTargetChange: (target: WorkspaceFitTarget) => void;
+  onOpenDiagnostics?: () => void;
+  onOpenExport?: () => void;
   /** CanvasKit-only: re-sync the host scene after the C4 measurement pass. */
   onSceneRefresh?: () => void;
 }
@@ -62,6 +64,8 @@ export function EditorCanvas(props: EditorCanvasProps) {
       onWorkspaceToolChange={props.onWorkspaceToolChange}
       workspaceFitTarget={props.workspaceFitTarget}
       onWorkspaceFitTargetChange={props.onWorkspaceFitTargetChange}
+      onOpenDiagnostics={props.onOpenDiagnostics}
+      onOpenExport={props.onOpenExport}
     />
   );
 }

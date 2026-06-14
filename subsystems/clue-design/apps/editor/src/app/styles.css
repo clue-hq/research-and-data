@@ -57,10 +57,79 @@ textarea:disabled {
   border-bottom: 1px solid #303641;
 }
 
+.topbar-title {
+  min-width: 0;
+}
+
 .topbar h1 {
   margin: 2px 0 0;
   font-size: 18px;
   line-height: 1.15;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.topbar-context {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 12px;
+  border: 1px solid #303641;
+  border-radius: 8px;
+  background: #101318;
+  padding: 4px;
+}
+
+.topbar-artboard-label {
+  display: grid;
+  min-width: 150px;
+  max-width: 260px;
+  gap: 2px;
+  padding: 0 8px;
+}
+
+.topbar-artboard-label strong,
+.topbar-artboard-label span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.topbar-artboard-label strong {
+  color: #f3f7fb;
+  font-size: 12px;
+  line-height: 1.15;
+}
+
+.topbar-artboard-label span {
+  color: #9ba6b2;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.top-mode-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.top-mode-switch button {
+  min-width: 0;
+  min-height: 28px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #9ba6b2;
+  padding: 0 8px;
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.top-mode-switch button:hover,
+.top-mode-switch button.active {
+  background: #27303a;
+  color: #eef5f7;
 }
 
 .eyebrow {
@@ -142,34 +211,6 @@ textarea:disabled {
 .inspector-shell {
   border-left: 1px solid #303641;
   padding: 14px;
-}
-
-.right-panel-mode-switch {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 4px;
-  margin-bottom: 14px;
-  padding: 4px;
-  border: 1px solid #303641;
-  border-radius: 8px;
-  background: #101318;
-}
-
-.right-panel-mode-switch button {
-  min-width: 0;
-  border: 0;
-  border-radius: 6px;
-  background: transparent;
-  color: #9ba6b2;
-  padding: 7px 5px;
-  font-size: 12px;
-  font-weight: 700;
-}
-
-.right-panel-mode-switch button:hover,
-.right-panel-mode-switch button.active {
-  background: #27303a;
-  color: #eef5f7;
 }
 
 .right-sidebar-resizer {
@@ -1397,6 +1438,37 @@ textarea:disabled {
 .diagnostic-list li.warning {
   background: #fff7df;
   color: #745208;
+}
+
+.diagnostic-list.grouped > .diagnostic-group {
+  border: 1px solid #303641;
+  background: #151a20;
+  color: #dce4ea;
+  padding: 8px;
+}
+
+.diagnostic-group-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  color: #dce4ea;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.diagnostic-group-heading small {
+  color: #9ba6b2;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.diagnostic-list.grouped > .diagnostic-group > ul {
+  display: grid;
+  gap: 6px;
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
 }
 
 .diagnostic-subject-button {

@@ -227,7 +227,10 @@ function pageIdForDiagnostic(scene: Scene, diagnostic: Diagnostic): PageId | nul
       const nodeId = slot?.bound_nodes.find((id) => Boolean(scene.nodes[id])) ?? null;
       return nodeId ? pageIdForNode(scene, nodeId) : null;
     }
-    case "asset":
+    case "asset": {
+      const node = Object.values(scene.nodes).find((candidate) => candidate.source_asset_id === subject.id);
+      return node ? pageIdForNode(scene, node.id) : null;
+    }
     case "document":
       return null;
   }

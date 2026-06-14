@@ -66,9 +66,12 @@ describe("workspace layout", () => {
     const scene = sceneWithPages([page("page_one", "One", 600, 400, "px"), page("page_two", "Two", 600, 400, "px")]);
     scene.nodes.node_on_page_two = node("node_on_page_two");
     scene.pages.page_two.children.push("node_on_page_two");
+    scene.nodes.node_asset = { ...node("node_asset"), source_asset_id: "asset_hero" };
+    scene.pages.page_two.children.push("node_asset");
     const diagnostics: Diagnostic[] = [
       diagnostic("error", { kind: "page", id: "page_one" }),
       diagnostic("warning", { kind: "node", id: "node_on_page_two" }),
+      diagnostic("error", { kind: "asset", id: "asset_hero" }),
       diagnostic("advice", { kind: "node", id: "node_on_page_two" }),
       diagnostic("error", { kind: "document" })
     ];
@@ -80,7 +83,7 @@ describe("workspace layout", () => {
       warningCount: 0
     });
     expect(model.artboards.find((artboard) => artboard.pageId === "page_two")?.diagnosticsSummary).toEqual({
-      errorCount: 0,
+      errorCount: 1,
       warningCount: 1
     });
   });

@@ -8,6 +8,7 @@ import {
   Minus,
   MousePointer2,
   Plus,
+  Download,
   Scan
 } from "lucide-react";
 import { Group, Layer, Line, Rect, Stage, Text, Transformer } from "react-konva";
@@ -45,6 +46,8 @@ interface CanvasSurfaceProps {
   onWorkspaceToolChange: (tool: WorkspaceTool) => void;
   workspaceFitTarget: WorkspaceFitTarget;
   onWorkspaceFitTargetChange: (target: WorkspaceFitTarget) => void;
+  onOpenDiagnostics?: () => void;
+  onOpenExport?: () => void;
 }
 
 const EMPTY_VIEWPORT = { width: 900, height: 720 };
@@ -62,7 +65,9 @@ export function CanvasSurface({
   workspaceTool,
   onWorkspaceToolChange,
   workspaceFitTarget,
-  onWorkspaceFitTargetChange
+  onWorkspaceFitTargetChange,
+  onOpenDiagnostics,
+  onOpenExport
 }: CanvasSurfaceProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const transformerRef = useRef<Konva.Transformer | null>(null);
@@ -183,6 +188,8 @@ export function CanvasSurface({
         onZoomIn={() => zoomBy(0.1)}
         onFitCurrent={() => fitWorkspace("current")}
         onFitAll={() => fitWorkspace("all")}
+        onOpenDiagnostics={onOpenDiagnostics}
+        onOpenExport={onOpenExport}
       />
       {selectedEditNotice ? <p className="canvas-selection-notice">{selectedEditNotice}</p> : null}
       <Stage
@@ -474,7 +481,9 @@ function WorkspaceChrome({
   onZoomOut,
   onZoomIn,
   onFitCurrent,
-  onFitAll
+  onFitAll,
+  onOpenDiagnostics,
+  onOpenExport
 }: {
   activeArtboard: WorkspaceArtboard | null;
   activeDescriptor: ReturnType<typeof pageDescriptor> | null;
@@ -486,6 +495,8 @@ function WorkspaceChrome({
   onZoomIn: () => void;
   onFitCurrent: () => void;
   onFitAll: () => void;
+  onOpenDiagnostics?: () => void;
+  onOpenExport?: () => void;
 }) {
   const sizeLabel = activeDescriptor
     ? `${formatDimension(activeDescriptor.width)} x ${formatDimension(activeDescriptor.height)} pt`
@@ -542,8 +553,11 @@ function WorkspaceChrome({
         >
           <Maximize2 aria-hidden size={16} />
         </button>
-        <button type="button" aria-label="Diagnostics" title="Diagnostics">
+        <button type="button" aria-label="Open diagnostics panel" title="Open diagnostics panel" onClick={onOpenDiagnostics}>
           <Scan aria-hidden size={16} />
+        </button>
+        <button type="button" aria-label="Open export panel" title="Open export panel" onClick={onOpenExport}>
+          <Download aria-hidden size={16} />
         </button>
       </div>
     </>

@@ -21,7 +21,9 @@ vi.mock("../canvas/CanvasSurface", () => ({
     workspaceTool,
     onWorkspaceToolChange,
     workspaceFitTarget,
-    onWorkspaceFitTargetChange
+    onWorkspaceFitTargetChange,
+    onOpenDiagnostics,
+    onOpenExport
   }: {
     scene: Scene;
     activePageId: string | null;
@@ -32,6 +34,8 @@ vi.mock("../canvas/CanvasSurface", () => ({
     onWorkspaceToolChange: (tool: "select" | "hand") => void;
     workspaceFitTarget: string;
     onWorkspaceFitTargetChange: (target: "current" | "all" | "manual") => void;
+    onOpenDiagnostics?: () => void;
+    onOpenExport?: () => void;
   }) =>
     React.createElement(
       React.Fragment,
@@ -70,6 +74,16 @@ vi.mock("../canvas/CanvasSurface", () => ({
           onWorkspaceFitTargetChange("manual");
           onWorkspaceViewportChange({ zoom: 1.75, pan: { x: 40, y: 60 } });
         }
+      }),
+      React.createElement("button", {
+        type: "button",
+        "data-testid": "mock-open-diagnostics",
+        onClick: () => onOpenDiagnostics?.()
+      }),
+      React.createElement("button", {
+        type: "button",
+        "data-testid": "mock-open-export",
+        onClick: () => onOpenExport?.()
       })
     )
 }));
@@ -90,7 +104,7 @@ function TestEditorApp(props: EditorAppProps) {
 }
 
 function openInspectorPanel() {
-  fireEvent.click(screen.getByRole("button", { name: /inspector panel/i }));
+  fireEvent.click(screen.getByRole("button", { name: /^Inspect$/i }));
 }
 
 describe.skipIf(!wasmArtifactPresent)("EditorApp", () => {
@@ -186,7 +200,7 @@ describe.skipIf(!wasmArtifactPresent)("EditorApp", () => {
     expect(canvas).toHaveAttribute("data-page-height", "628");
     expect(canvas).toHaveAttribute("data-page-unit", "pt");
     expect(canvas).toHaveAttribute("data-page-preset", "custom");
-    expect(screen.getByText("Client Leaderboard")).toBeInTheDocument();
+    expect(screen.getAllByText("Client Leaderboard").length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText("add_page page_client_leaderboard")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: /generate preview/i }));
@@ -340,7 +354,7 @@ describe.skipIf(!wasmArtifactPresent)("EditorApp", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /duplicate artboard a4 letter/i }));
 
-    expect(await screen.findByText("A4 Letter Copy")).toBeInTheDocument();
+    expect((await screen.findAllByText("A4 Letter Copy")).length).toBeGreaterThanOrEqual(1);
     const canvas = screen.getByTestId("canvas-selection");
     expect(canvas).toHaveAttribute("data-page-width", "1200");
     expect(canvas).toHaveAttribute("data-page-height", "628");
@@ -804,9 +818,15 @@ describe.skipIf(!wasmArtifactPresent)("EditorApp", () => {
   it("swaps the inspector for a resizable agent chat right sidebar", async () => {
     render(<TestEditorApp initialScene={twoPageScene()} initialSelectedNodeId={null} />);
 
+    const topContext = screen.getByLabelText("Active artboard context");
+    expect(within(topContext).getByText("A4 Letter")).toBeInTheDocument();
+    expect(within(topContext).getByText(/793.7 x 1122.5 pt · 100%/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^Inspect$/i })).toHaveAttribute("aria-pressed", "true");
     expect(screen.getByRole("complementary", { name: "Inspector sidebar" })).toBeInTheDocument();
     expect(screen.queryByLabelText("Message the agent")).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /^Agent$/i }));
+    expect(screen.getByRole("button", { name: /^Inspect$/i })).toHaveAttribute("aria-pressed", "false");
+    expect(screen.getByRole("button", { name: /^Agent$/i })).toHaveAttribute("aria-pressed", "true");
 
     const workspace = document.querySelector(".workspace-grid");
     expect(workspace).toHaveClass("agent-open");
@@ -893,6 +913,20 @@ describe.skipIf(!wasmArtifactPresent)("EditorApp", () => {
     expect(screen.getByTestId("canvas-selection")).toHaveAttribute("data-workspace-fit-target", "manual");
     expect(screen.getByTestId("canvas-selection")).toHaveAttribute("data-workspace-zoom", "1.75");
     expect(screen.getByTestId("canvas-selection")).toHaveAttribute("data-workspace-pan", "40,60");
+  });
+
+  it("opens diagnostics and export panel modes from workspace toolbar callbacks", () => {
+    render(<TestEditorApp initialScene={twoPageScene()} initialSelectedNodeId={null} />);
+
+    fireEvent.click(screen.getByTestId("mock-open-diagnostics"));
+
+    expect(screen.getByRole("complementary", { name: "Diagnostics sidebar" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /diagnostics panel/i })).toHaveAttribute("aria-pressed", "true");
+
+    fireEvent.click(screen.getByTestId("mock-open-export"));
+
+    expect(screen.getByRole("complementary", { name: "Export sidebar" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /export panel/i })).toHaveAttribute("aria-pressed", "true");
   });
 
   it("undoes and redoes accepted editor operations through scene snapshots", () => {
@@ -1643,11 +1677,13 @@ describe.skipIf(!wasmArtifactPresent)("EditorApp", () => {
     fireEvent.click(screen.getByRole("button", { name: /^Validate$/i }));
 
     const focused = await screen.findByRole("list", { name: "Focused diagnostics" });
+    expect(within(focused).getByText("Artboard A4 Letter")).toBeInTheDocument();
     expect(within(focused).getByText("LUMV_SELECTED_TEXT_OVERFLOW")).toBeInTheDocument();
     expect(within(focused).getByText("Selected headline text exceeds its frame.")).toBeInTheDocument();
     expect(within(focused).queryByText("LUMV_UNRELATED_CTA_OVERFLOW")).not.toBeInTheDocument();
 
     const additionalDiagnostics = screen.getByRole("list", { name: "Additional diagnostics" });
+    expect(within(additionalDiagnostics).getByText("Artboard A4 Letter")).toBeInTheDocument();
     expect(within(additionalDiagnostics).queryByText("LUMV_SELECTED_TEXT_OVERFLOW")).not.toBeInTheDocument();
     expect(within(additionalDiagnostics).getByText("LUMV_UNRELATED_CTA_OVERFLOW")).toBeInTheDocument();
   });

@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Hand, LocateFixed, Maximize2, Minus, MousePointer2, Plus } from "lucide-react";
+import { Download, Hand, LocateFixed, Maximize2, Minus, MousePointer2, Plus, Scan } from "lucide-react";
 import type { NodeId, Operation, PageId, Scene } from "@/engine/contracts";
 import type { OptimisticEnginePort } from "@/engine/wasmEngine";
 import { artboardAtWorkspacePoint, type WorkspaceModel } from "@/engine/workspaceLayout";
@@ -73,6 +73,8 @@ export interface CanvasKitCanvasProps {
   onWorkspaceToolChange: (tool: WorkspaceTool) => void;
   workspaceFitTarget: WorkspaceFitTarget;
   onWorkspaceFitTargetChange: (target: WorkspaceFitTarget) => void;
+  onOpenDiagnostics?: () => void;
+  onOpenExport?: () => void;
   /** Called after the C4 measurement pass updates the engine's `computed`
    * (which does not emit a delta), so the host can re-sync its React scene. */
   onSceneRefresh?: () => void;
@@ -99,6 +101,8 @@ export function CanvasKitCanvas({
   onWorkspaceToolChange,
   workspaceFitTarget,
   onWorkspaceFitTargetChange,
+  onOpenDiagnostics,
+  onOpenExport,
   onSceneRefresh
 }: CanvasKitCanvasProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -518,6 +522,12 @@ export function CanvasKitCanvas({
         >
           <Maximize2 aria-hidden size={16} />
         </button>
+        <button type="button" aria-label="Open diagnostics panel" title="Open diagnostics panel" onClick={onOpenDiagnostics}>
+          <Scan aria-hidden size={16} />
+        </button>
+        <button type="button" aria-label="Open export panel" title="Open export panel" onClick={onOpenExport}>
+          <Download aria-hidden size={16} />
+        </button>
       </div>
       <div
         style={{ position: "absolute", inset: 0 }}
@@ -563,8 +573,20 @@ export function CanvasKitCanvas({
             return;
           }
           if (hitArtboard.pageId !== activePageId) {
+            const hitPage = scene.pages[hitArtboard.pageId] ?? null;
+            const hitDescriptor = hitPage ? pageDescriptor(hitPage) : null;
+            const localDescriptorPoint = {
+              x: workspacePoint.x - hitArtboard.workspaceRect.x,
+              y: workspacePoint.y - hitArtboard.workspaceRect.y
+            };
+            const scenePoint = hitDescriptor
+              ? descriptorToScene(localDescriptorPoint, hitDescriptor.unitScale)
+              : null;
+            const hit = scenePoint
+              ? engine?.hitTest?.(hitArtboard.pageId, scenePoint.x, scenePoint.y)
+              : null;
             onSelectPage?.(hitArtboard.pageId);
-            onSelectNode(null);
+            onSelectNode(hit?.hit ?? null);
             return;
           }
           try {

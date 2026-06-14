@@ -8,7 +8,7 @@ import {
   type CSSProperties,
   type PointerEvent as ReactPointerEvent
 } from "react";
-import { Download, FileCheck2, History, PanelRightClose, RotateCcw, RotateCw, Send } from "lucide-react";
+import { Download, FileCheck2, History, PanelRightClose, RotateCcw, RotateCw } from "lucide-react";
 import { AgentChatPanel, type AgentChatMessage } from "./AgentChatPanel";
 import { BrandKitPanel } from "./BrandKitPanel";
 import { EditorCanvas } from "./canvas/EditorCanvas";
@@ -77,6 +77,7 @@ import {
 } from "@/engine/operations";
 import { normalizePageSize } from "@/engine/pageGeometry";
 import { editorRenderDiagnostics } from "@/engine/renderDiagnostics";
+import { pageDescriptor } from "@/engine/renderAdapter";
 import {
   defaultWorkspaceViewport,
   type WorkspaceFitTarget,
@@ -1150,25 +1151,23 @@ export default function EditorApp({
   return (
     <main className="editor-shell">
       <header className="topbar">
-        <div>
+        <div className="topbar-title">
           <p className="eyebrow">ABM Design Engine</p>
           <h1>{scene.meta.title}</h1>
+        </div>
+        <div className="topbar-context" aria-label="Active artboard context">
+          <div className="topbar-artboard-label">
+            <strong>{activePage?.name ?? "No artboard"}</strong>
+            <span>
+              {activePage ? `${topArtboardSizeLabel(activePage)} · ${Math.round(workspaceViewport.zoom * 100)}%` : "No frame"}
+            </span>
+          </div>
+          <EditorModeSwitch mode={editorPanelMode} onModeChange={setEditorPanelMode} />
         </div>
         <div className="toolbar" aria-label="Editor actions">
           <button type="button" onClick={() => void runPreflight()} disabled={isPreflighting}>
             <FileCheck2 aria-hidden size={16} />
             {isPreflighting ? "Validating" : "Validate"}
-          </button>
-          <button
-            type="button"
-            className={isAgentPanelOpen ? "active" : ""}
-            onClick={() =>
-              setEditorPanelMode((mode) => (mode === "agent" ? "inspector" : "agent"))
-            }
-            aria-pressed={isAgentPanelOpen}
-          >
-            <Send aria-hidden size={16} />
-            Agent
           </button>
           <button type="button" onClick={() => void runExport()} disabled={!activePageId || isExporting}>
             <Download aria-hidden size={16} />
@@ -1251,6 +1250,8 @@ export default function EditorApp({
                   onWorkspaceToolChange={setWorkspaceTool}
                   workspaceFitTarget={workspaceFitTarget}
                   onWorkspaceFitTargetChange={setWorkspaceFitTarget}
+                  onOpenDiagnostics={() => setEditorPanelMode("diagnostics")}
+                  onOpenExport={() => setEditorPanelMode("export")}
                   onSceneRefresh={refreshSceneFromEngine}
                 />
               </div>
@@ -1287,6 +1288,8 @@ export default function EditorApp({
               onWorkspaceToolChange={setWorkspaceTool}
               workspaceFitTarget={workspaceFitTarget}
               onWorkspaceFitTargetChange={setWorkspaceFitTarget}
+              onOpenDiagnostics={() => setEditorPanelMode("diagnostics")}
+              onOpenExport={() => setEditorPanelMode("export")}
               onSceneRefresh={refreshSceneFromEngine}
             />
           )}
@@ -1304,40 +1307,6 @@ export default function EditorApp({
           className="inspector-shell"
           aria-label={rightSidebarLabel(editorPanelMode)}
         >
-          <div className="right-panel-mode-switch" aria-label="Right panel mode">
-            <button
-              type="button"
-              aria-label="Inspector panel"
-              className={editorPanelMode === "inspector" ? "active" : undefined}
-              onClick={() => setEditorPanelMode("inspector")}
-            >
-              Inspect
-            </button>
-            <button
-              type="button"
-              aria-label="Agent panel"
-              className={editorPanelMode === "agent" ? "active" : undefined}
-              onClick={() => setEditorPanelMode("agent")}
-            >
-              Agent
-            </button>
-            <button
-              type="button"
-              aria-label="Export panel"
-              className={editorPanelMode === "export" ? "active" : undefined}
-              onClick={() => setEditorPanelMode("export")}
-            >
-              Export
-            </button>
-            <button
-              type="button"
-              aria-label="Diagnostics panel"
-              className={editorPanelMode === "diagnostics" ? "active" : undefined}
-              onClick={() => setEditorPanelMode("diagnostics")}
-            >
-              Diagnostics
-            </button>
-          </div>
           {editorPanelMode === "agent" ? (
             <AgentChatPanel
               messages={agentMessages}
@@ -1448,6 +1417,46 @@ export default function EditorApp({
       </div>
     </main>
   );
+}
+
+function EditorModeSwitch({
+  mode,
+  onModeChange
+}: {
+  mode: EditorPanelMode;
+  onModeChange: (mode: EditorPanelMode) => void;
+}) {
+  const modes: Array<{ mode: EditorPanelMode; label: string; ariaLabel?: string }> = [
+    { mode: "inspector", label: "Inspect" },
+    { mode: "agent", label: "Agent" },
+    { mode: "export", label: "Export", ariaLabel: "Export panel" },
+    { mode: "diagnostics", label: "Diagnostics", ariaLabel: "Diagnostics panel" }
+  ];
+  return (
+    <div className="top-mode-switch" aria-label="Editor mode">
+      {modes.map((item) => (
+        <button
+          key={item.mode}
+          type="button"
+          className={mode === item.mode ? "active" : undefined}
+          aria-label={item.ariaLabel}
+          aria-pressed={mode === item.mode}
+          onClick={() => onModeChange(item.mode)}
+        >
+          {item.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function topArtboardSizeLabel(page: Page): string {
+  const descriptor = pageDescriptor(page);
+  return `${formatTopbarDimension(descriptor.width)} x ${formatTopbarDimension(descriptor.height)} pt`;
+}
+
+function formatTopbarDimension(value: number): string {
+  return Number.isInteger(value) ? String(value) : value.toFixed(1).replace(/\.0$/, "");
 }
 
 function OperationHistoryPanel({
