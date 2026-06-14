@@ -73,8 +73,9 @@ Over-load, never under-load. The reference files are short and precise. Load
 
 | Task | Load |
 |------|------|
-| **Any new design** | `skills/create-design` + `knowledge/lumen-dsl/grammar` + `knowledge/design/layout-recipes` |
+| **Any new design** | `skills/create-design` + `knowledge/lumen-dsl/grammar` + `knowledge/design/artboard-frame-authoring` + `knowledge/design/layout-recipes` |
 | **Any repair** (compile, preflight, or visual diagnostic) | `skills/repair-design` + `knowledge/lumen-dsl/directives` + `knowledge/lumen-dsl/diagnostics` |
+| **Page/artboard bounds or parent overflow repair** | `skills/repair-design` + `knowledge/lumen-dsl/layout` + `knowledge/loop/layout-cluster-repair` |
 | **Branded design** (a Brand Kit is in play) | `skills/brand-and-tokens` + `knowledge/design-systems/token-taxonomy` + `knowledge/design-systems/brand-kits` |
 | **Brand governance / off-brand diagnostics** | + `knowledge/design-systems/brand-validation` + `knowledge/design-systems/modes` |
 | **Logos / brand imagery** | + `knowledge/design-systems/logo-and-assets` + `knowledge/assets/asset-placement` |
@@ -89,6 +90,7 @@ Over-load, never under-load. The reference files are short and precise. Load
 ```
 WRONG:  load only knowledge/lumen-dsl/grammar  ← "I'll load more if I need it" — you won't know what you're missing
 RIGHT:  load skills/create-design + knowledge/lumen-dsl/grammar + knowledge/design/layout-recipes
+        + knowledge/design/artboard-frame-authoring
         + (branded?) skills/brand-and-tokens + knowledge/design-systems/token-taxonomy
 ```
 
@@ -131,7 +133,19 @@ Each skill is a procedure for one job. Read the skill before doing that job.
    `$surface.*`, `$text.*`, `$type.*`, `$space.*`, `$radius.*`, `$stroke.width.*`,
    `logo.*`, `asset.*`. Do not repair off-brand output by swapping one raw value
    for another.
-7. **Missing capability → record a gap.** Never simulate an unsupported feature in
+7. **Artboard geometry is canonical `pt`.** Page presets/custom sizes normalize
+   into artboard layout bounds before children are interpreted. Child `p()` and
+   `s()` values are artboard- or parent-local points; never use `mm` or renderer
+   pixels for child coordinates. Physical and raster dimensions belong to
+   page/export metadata.
+8. **Export-safe backgrounds belong to the page/artboard/root frame.** Prefer
+   `background(...)` on the page or `fill(...)` on a clipped root artboard frame.
+   Do not create loose oversized `bg` rectangles for the canvas background.
+9. **Parent overflow can be a cluster repair.** If diagnostics show a page/artboard
+   bounds failure, background-like rect, or child larger than its parent, repair
+   the diagnosed layout cluster with bounded p/s, fill/hug/fixed, auto-layout,
+   padding, gap, wrap, and root sizing changes. Do not redesign unrelated content.
+10. **Missing capability → record a gap.** Never simulate an unsupported feature in
    prose or with decorative shapes.
 
 ---
@@ -145,7 +159,7 @@ Each skill is a procedure for one job. Read the skill before doing that job.
 | `LUMD04xx` | DSL lowering | duplicate id, missing required arg, bad ref | fix the element |
 | `LUMD09xx` | DSL edit | modify/replace/override target issues | fix the modify line |
 | `LUMA0200` | Agent guard | repair re-declared an existing page | stop re-emitting the page; emit a continuation or use structured ops |
-| `LUMV08xx/09xx` | Layout/fit | text/slot overflow, max-lines, available-height | enlarge box, lower font, raise max_lines, or change slot overflow policy |
+| `LUMV08xx/09xx` | Layout/fit | text/slot overflow, page/artboard bounds, parent overflow | text fit: enlarge box, lower font, raise max_lines, or change slot overflow policy; bounds/parent overflow: use bounded `layout_cluster` repair |
 | `LUMB06xx/08xx` | Brand governance | raw/off-brand value, logo misuse, mode mismatch | replace raw value with the right `$token` |
 | `LUME02xx` | Export | unresolved geometry / hug-fill at export | run layout before export |
 

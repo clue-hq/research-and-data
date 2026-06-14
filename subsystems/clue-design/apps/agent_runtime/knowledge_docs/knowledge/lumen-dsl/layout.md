@@ -8,7 +8,7 @@ not survive content that varies by account/contact.
 
 | Token | Meaning |
 |-------|---------|
-| `<number>` | fixed px |
+| `<number>` | fixed canonical layout points (`pt`) |
 | `hug` | size to fit content (use for text whose copy may vary) |
 | `fill` | expand to fill the parent's available main-axis space |
 | `fill(weight)` / `fill:weight` | weighted fill among siblings |
@@ -20,6 +20,33 @@ Rules of thumb:
   or a frame with a definite cross-axis).
 - Keep text boxes **wide enough for the real copy**; a too-narrow box forces extra
   lines and triggers overflow (`LUMV0903`).
+- Do not put `mm` or renderer-pixel thinking into child `p()`/`s()` values.
+  Page/export declarations may use `px`, `mm`, `in`, or `pt`, but child geometry
+  is authored in canonical layout points.
+
+## Artboard-local layout
+
+Page presets and explicit page sizes normalize into artboard layout bounds before
+children are interpreted. The child coordinate space is always artboard-local or
+parent-local:
+
+- A4 portrait: about `595 x 842 pt`, with print metadata of `210mm x 297mm`.
+- US Letter: `612 x 792 pt`, with print metadata of `8.5in x 11in`.
+- `size(1080,1080,px)`: `1080 x 1080 pt`, with a `1080 x 1080 px` raster export
+  default.
+- `size(6,4,in)`: `432 x 288 pt`, with print metadata of `6in x 4in`.
+
+Prefer one bounded root frame under each page/artboard:
+
+```text
+page page_a4 preset(a4,portrait)
+  artboard al(v, x(s), g(18), pad(36)) p(0,0) s(fill,fill) fill($surface.page) clip(true)
+    card al(v, x(s), g(12), pad(18)) p(0,0) s(fill,hug) fill($surface.card) rd($radius.lg)
+```
+
+If a page/artboard or parent-containment diagnostic appears, fix the diagnosed
+layout cluster rather than shrinking one unrelated child. See
+`knowledge/loop/layout-cluster-repair`.
 
 ## Auto-layout
 
@@ -69,5 +96,7 @@ banner al(h, x(c), y(c), pad(0,24)) p(0,0) s(595,80) fill($surface.brand)
 ## Backgrounds
 
 Put the background **on the container frame** (`fill(...)`), not a separate
-decorative rectangle, when the background belongs to that container. Use a
-full-page background frame only for the page canvas itself.
+decorative rectangle, when the background belongs to that container. For a page
+or artboard background, prefer page `background(...)` where available or a single
+clipped root `artboard` frame with `fill(...)`. Do not create loose oversized
+full-canvas `bg` rectangles.

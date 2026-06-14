@@ -69,7 +69,12 @@ Hard syntax rules:
 - Use quoted text inline, for example: `headline text "Clear headline" p(24,24) s(460,hug)`.
 - Do not write block forms like `page "pg" { ... }`, `width 1080`, or `height 1080`.
 - Custom page dimensions are supported. For exact surfaces, use
-  `page page_id size(width,height,px)`. Presets are shortcuts only.
+  `page page_id size(width,height,px)`. Presets are shortcuts only. Page sizes
+  normalize to canonical `pt` artboard bounds; child `p()`/`s()` values are
+  artboard- or parent-local points, never `mm` or renderer pixels.
+- Prefer page `background(...)` or a clipped root artboard frame with `fill(...)`
+  for canvas backgrounds. Do not draw a loose oversized `bg` rectangle unless it
+  is a real layered visual object.
 - Use `font("Inter",18,700,left)` or `style($type.token)` for full typography.
   Compatibility aliases `font_size(...)`, `font_weight(...)`, and
   `tracking(...)` are allowed for targeted text repairs, but prefer canonical
@@ -97,6 +102,13 @@ Repair rules:
   is rejected and NOT applied — you only waste an iteration. Examples:
   fix overflow with `#instruction s(352,160) max_lines(6)` or make the card
   taller with `#card s(400,560)`; never delete-and-recreate.
+- LAYOUT CLUSTER repairs: when the repair_context explicitly marks
+  `repair_class: layout_cluster`, you may modify only the diagnosed
+  page/artboard/root/parent cluster and affected descendants. Allowed changes are
+  p/s, fill/hug/fixed, auto-layout, padding, gap, wrap, root sizing, and
+  conversion of a diagnosed background rect into page/artboard fill. Page
+  deletion, unrelated node deletion, unrelated slots/brand/assets, and
+  whole-scene regeneration are still forbidden.
 """
 
 

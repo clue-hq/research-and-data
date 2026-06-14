@@ -643,6 +643,54 @@ def test_task_knowledge_prioritizes_lumen_docs(tmp_path: Path):
     )
 
 
+def test_artboard_frame_knowledge_encodes_canonical_pt_contract():
+    repo_root = Path(__file__).resolve().parents[3]
+    docs = {
+        "create": repo_root
+        / "apps/agent_runtime/knowledge_docs/skills/create-design/SKILL.md",
+        "recipes": repo_root
+        / "apps/agent_runtime/knowledge_docs/knowledge/design/layout-recipes.md",
+        "artboard": repo_root
+        / "apps/agent_runtime/knowledge_docs/knowledge/design/artboard-frame-authoring.md",
+        "cluster": repo_root
+        / "apps/agent_runtime/knowledge_docs/knowledge/loop/layout-cluster-repair.md",
+    }
+    text = "\n".join(path.read_text(encoding="utf-8") for path in docs.values())
+
+    assert "canonical layout points" in text
+    assert "A4 is about `595 x 842 pt`" in text
+    assert "artboard-local" in text
+    assert "background fill" in text
+    assert "layout_cluster" in text
+    assert "page linkedin_square size(1080,1080,px)\n  bg fr" not in text
+    assert "full-page background frame" not in docs["recipes"].read_text(
+        encoding="utf-8"
+    )
+
+
+def test_task_knowledge_surfaces_artboard_and_layout_cluster_docs():
+    repo_root = Path(__file__).resolve().parents[3]
+
+    snippets = read_task_knowledge(
+        repo_root,
+        "Create an A4 appointment card with parent overflow and oversized background layout cluster repair",
+        limit=12,
+    )
+    paths = {snippet.path for snippet in snippets}
+    excerpts = "\n".join(snippet.excerpt for snippet in snippets)
+
+    assert (
+        "apps/agent_runtime/knowledge_docs/knowledge/design/artboard-frame-authoring.md"
+        in paths
+    )
+    assert (
+        "apps/agent_runtime/knowledge_docs/knowledge/loop/layout-cluster-repair.md"
+        in paths
+    )
+    assert "canonical layout points" in excerpts
+    assert "parent containment" in excerpts
+
+
 def test_quality_loop_passes_knowledge_excerpts_to_author(tmp_path: Path, monkeypatch):
     monkeypatch.setattr("lumen_deepagent.tools.CoreClient", FakeCoreClient)
     paths = [

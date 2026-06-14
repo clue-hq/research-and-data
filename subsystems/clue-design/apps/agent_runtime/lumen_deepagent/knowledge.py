@@ -21,6 +21,7 @@ PRIMARY_KNOWLEDGE_PATHS = [
     f"{KNOWLEDGE_DOCS_ROOT}/knowledge/lumen-dsl/text.md",
     f"{KNOWLEDGE_DOCS_ROOT}/knowledge/lumen-dsl/directives.md",
     f"{KNOWLEDGE_DOCS_ROOT}/knowledge/lumen-dsl/diagnostics.md",
+    f"{KNOWLEDGE_DOCS_ROOT}/knowledge/design/artboard-frame-authoring.md",
     f"{KNOWLEDGE_DOCS_ROOT}/knowledge/design/layout-recipes.md",
     f"{KNOWLEDGE_DOCS_ROOT}/knowledge/design/typography-and-composition.md",
     f"{KNOWLEDGE_DOCS_ROOT}/knowledge/design-systems/token-taxonomy.md",
@@ -32,6 +33,7 @@ PRIMARY_KNOWLEDGE_PATHS = [
     f"{KNOWLEDGE_DOCS_ROOT}/knowledge/assets/asset-placement.md",
     f"{KNOWLEDGE_DOCS_ROOT}/knowledge/export/preview-quality.md",
     f"{KNOWLEDGE_DOCS_ROOT}/knowledge/loop/authoring-and-repair.md",
+    f"{KNOWLEDGE_DOCS_ROOT}/knowledge/loop/layout-cluster-repair.md",
 ]
 
 # Product specs are optional background context. The forbidden `docs/` tree is
@@ -44,6 +46,23 @@ SECONDARY_KNOWLEDGE_PATHS = [
 
 DEFAULT_KNOWLEDGE_PATHS = PRIMARY_KNOWLEDGE_PATHS + SECONDARY_KNOWLEDGE_PATHS
 REQUIRED_TASK_CATEGORIES = ["lumen-dsl", "design", "design-systems", "loop"]
+ARTBOARD_AUTHORING_PATH = (
+    f"{KNOWLEDGE_DOCS_ROOT}/knowledge/design/artboard-frame-authoring.md"
+)
+LAYOUT_CLUSTER_REPAIR_PATH = (
+    f"{KNOWLEDGE_DOCS_ROOT}/knowledge/loop/layout-cluster-repair.md"
+)
+LAYOUT_CLUSTER_TERMS = {
+    "artboard",
+    "background",
+    "bounds",
+    "canvas",
+    "clip",
+    "containment",
+    "layout_cluster",
+    "overflow",
+    "parent",
+}
 
 
 def read_knowledge(
@@ -104,6 +123,18 @@ def read_task_knowledge(
         )
         seen_paths.add(match.path)
 
+    for rel_path in mandatory_task_paths(query):
+        match = next(
+            (snippet for snippet in candidates if snippet.path == rel_path),
+            None,
+        )
+        if match is None or match.path in seen_paths:
+            continue
+        selected.append(
+            match.model_copy(update={"selected_reason": "mandatory_task_context"})
+        )
+        seen_paths.add(match.path)
+
     for snippet in candidates:
         if snippet.path in seen_paths:
             continue
@@ -113,6 +144,14 @@ def read_task_knowledge(
             break
 
     return selected
+
+
+def mandatory_task_paths(query: str) -> list[str]:
+    paths = [ARTBOARD_AUTHORING_PATH]
+    terms = set(re.split(r"[^a-z0-9_.$-]+", query.lower()))
+    if terms & LAYOUT_CLUSTER_TERMS:
+        paths.append(LAYOUT_CLUSTER_REPAIR_PATH)
+    return paths
 
 
 def score_text(text: str, terms: list[str], rel_path: str) -> int:
