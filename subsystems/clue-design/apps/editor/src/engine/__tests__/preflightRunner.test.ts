@@ -66,6 +66,56 @@ describe("preflight runner", () => {
     ]);
   });
 
+  it("normalizes grouped preflight-preview diagnostics from the API", () => {
+    const result = preflightResultFromUnknown({
+      status: "failed",
+      diagnostics: {
+        audit: [
+          {
+            severity: "advice",
+            phase: "validation",
+            code: "LUMV0805",
+            message: "page page_a4 uses legacy non-pt geometry unit Mm"
+          }
+        ],
+        current: [
+          {
+            severity: "error",
+            phase: "layout",
+            code: "LUMV0812",
+            message: "slot contact.full_name fixture does not fit even at min font size 12",
+            subject: {
+              kind: "slot",
+              id: "slot_contact_name"
+            }
+          }
+        ]
+      },
+      preflight: {
+        has_errors: true,
+        brand_ref_operations: 0,
+        token_operations: 0,
+        layout_operations: 1
+      }
+    });
+
+    expect(result.status).toBe("failed");
+    expect(result.preflight.has_errors).toBe(true);
+    expect(result.diagnostics).toEqual([
+      {
+        severity: "error",
+        phase: "layout",
+        code: "LUMV0812",
+        message: "slot contact.full_name fixture does not fit even at min font size 12",
+        subject: {
+          kind: "slot",
+          id: "slot_contact_name"
+        },
+        hint: null
+      }
+    ]);
+  });
+
   it("fails closed on malformed payloads", () => {
     const result = preflightResultFromUnknown(null);
 

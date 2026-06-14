@@ -59,7 +59,7 @@ export function CanvasKitStage({ artboards, viewport }: CanvasKitStageProps) {
     canvas.save();
     const dpr = typeof devicePixelRatio === "number" ? devicePixelRatio : 1;
     canvas.scale(dpr, dpr);
-    canvas.clear(ck.Color(0.231, 0.247, 0.275, 1)); // medium dark grey workspace
+    canvas.clear(parseColor(ck, "#3b3f46") ?? ck.Color4f(0.231, 0.247, 0.275, 1));
     canvas.translate(current.viewport.pan.x, current.viewport.pan.y);
     canvas.scale(current.viewport.zoom, current.viewport.zoom);
     for (const artboard of current.artboards) {

@@ -100,8 +100,20 @@ function brandKitSummaryFromUnknown(value: unknown): EditorPreflightResult["bran
 }
 
 function diagnosticsFromUnknown(payload: Record<string, unknown>): Diagnostic[] {
-  const diagnostics = Array.isArray(payload.diagnostics) ? payload.diagnostics : [];
-  return diagnostics.flatMap(diagnosticFromUnknown);
+  const diagnostics = payload.diagnostics;
+  if (Array.isArray(diagnostics)) {
+    return diagnostics.flatMap(diagnosticFromUnknown);
+  }
+  if (!isRecord(diagnostics)) {
+    return [];
+  }
+  for (const key of ["current", "latest", "audit"] as const) {
+    const groupedDiagnostics = diagnostics[key];
+    if (Array.isArray(groupedDiagnostics)) {
+      return groupedDiagnostics.flatMap(diagnosticFromUnknown);
+    }
+  }
+  return [];
 }
 
 function diagnosticFromUnknown(value: unknown): Diagnostic[] {

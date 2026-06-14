@@ -330,7 +330,7 @@ textarea:disabled {
 
 .compact-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 64px;
+  grid-template-columns: repeat(2, minmax(74px, 1fr));
   gap: 6px;
 }
 
@@ -340,6 +340,10 @@ textarea:disabled {
   color: #b6c0ca;
   font-size: 12px;
   font-weight: 700;
+}
+
+.compact-grid .compact-field:nth-child(3) {
+  grid-column: 1 / -1;
 }
 
 .quick-size-list {
