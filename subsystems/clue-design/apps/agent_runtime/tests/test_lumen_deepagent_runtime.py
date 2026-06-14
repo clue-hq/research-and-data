@@ -398,9 +398,11 @@ class FakeLayoutClusterPreflightCoreClient(FakeCoreClient):
     def __init__(self, repo_root: Path) -> None:
         super().__init__(repo_root)
         self.compile_calls = 0
+        self.compile_sources = []
 
     def compile_dsl_into_scene(self, scene, source: str, dsl_session=None):
         self.compile_calls += 1
+        self.compile_sources.append(source)
         return {
             "scene": layout_cluster_scene(),
             "applied_operations": 2,
@@ -1616,7 +1618,21 @@ def test_layout_cluster_repair_request_carries_cluster_permissions_and_guard(
     assert author.requests[1].repair_context["repair_class"] == "layout_cluster"
     assert author.requests[1].repair_context["cluster"]["parent_node_id"] == "card"
     assert "modify_auto_layout" in author.requests[1].repair_context["permissions"]
+    assert (
+        "do not regenerate the whole scene"
+        in author.requests[1].repair_context["prohibitions"]
+    )
     assert author.requests[2].repair_context["kind"] == "layout_cluster_violation"
+    repair_request_path = (
+        config.trace_dir / tools.run_id / "iterations" / "001" / "repair_request.json"
+    )
+    repair_request = json.loads(repair_request_path.read_text(encoding="utf-8"))[
+        "repair_request"
+    ]
+    assert repair_request["repair_class"] == "layout_cluster"
+    assert repair_request["cluster"]["parent_node_id"] == "card"
+    assert "modify_auto_layout" in repair_request["permissions"]
+    assert "do not regenerate the whole scene" in repair_request["prohibitions"]
     events = [
         json.loads(line)["event"]
         for line in (config.trace_dir / tools.run_id / "trace.jsonl")
@@ -1625,6 +1641,10 @@ def test_layout_cluster_repair_request_carries_cluster_permissions_and_guard(
     ]
     assert "layout_cluster_repair_rejected" in events
     assert tools.core.compile_calls == 2
+    assert tools.core.compile_sources == [
+        "page page_a4 preset(a4,portrait)",
+        "#card s(fill,hug)\n#headline s(fill,hug)",
+    ]
 
 
 def test_rejected_layout_cluster_repair_does_not_touch_scene(tmp_path: Path, monkeypatch):
