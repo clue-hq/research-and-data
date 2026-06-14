@@ -897,6 +897,7 @@ describe.skipIf(!wasmArtifactPresent)("EditorApp", () => {
       expect(screen.getByTestId("canvas-selection")).toHaveAttribute("data-workspace-zoom", "1.75");
       expect(screen.getByTestId("canvas-selection")).toHaveAttribute("data-workspace-pan", "40,60");
     });
+    expect(screen.getByText("No operation emitted yet.")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: /generate preview/i }));
 
@@ -913,6 +914,8 @@ describe.skipIf(!wasmArtifactPresent)("EditorApp", () => {
     expect(screen.getByTestId("canvas-selection")).toHaveAttribute("data-workspace-fit-target", "manual");
     expect(screen.getByTestId("canvas-selection")).toHaveAttribute("data-workspace-zoom", "1.75");
     expect(screen.getByTestId("canvas-selection")).toHaveAttribute("data-workspace-pan", "40,60");
+    fireEvent.click(screen.getByRole("button", { name: /^Inspect$/i }));
+    expect(screen.getByText("No operation emitted yet.")).toBeInTheDocument();
   });
 
   it("opens diagnostics and export panel modes from workspace toolbar callbacks", () => {
@@ -1326,6 +1329,8 @@ describe.skipIf(!wasmArtifactPresent)("EditorApp", () => {
     expect(screen.getByText("PRINT_FONT_EMBEDDING")).toBeInTheDocument();
     fireEvent.click(screen.getAllByRole("button", { name: /show node node_contact_name/i })[0]);
     expect(screen.getByTestId("canvas-selection")).toHaveAttribute("data-selected-node", "node_contact_name");
+    expect(screen.getByRole("complementary", { name: "Diagnostics sidebar" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /export panel/i }));
 
     fireEvent.click(screen.getByRole("button", { name: /generate preview/i }));
 
@@ -1742,6 +1747,8 @@ describe.skipIf(!wasmArtifactPresent)("EditorApp", () => {
     fireEvent.click(screen.getAllByRole("button", { name: /show slot slot_contact_name/i })[0]);
 
     expect(screen.getByTestId("canvas-selection")).toHaveAttribute("data-selected-node", "node_contact_name");
+    expect(screen.getByRole("complementary", { name: "Diagnostics sidebar" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /diagnostics panel/i })).toHaveAttribute("aria-pressed", "true");
     openInspectorPanel();
     expect(screen.getByRole("heading", { name: "Contact Name" })).toBeInTheDocument();
   });
@@ -1798,6 +1805,8 @@ describe.skipIf(!wasmArtifactPresent)("EditorApp", () => {
     expect(canvas).toHaveAttribute("data-page-unit", "px");
     expect(canvas).toHaveAttribute("data-selected-node", "");
     expect(screen.getByText(/600 x 800 px/)).toBeInTheDocument();
+    expect(screen.getByRole("complementary", { name: "Diagnostics sidebar" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /diagnostics panel/i })).toHaveAttribute("aria-pressed", "true");
   });
 
   it("navigates from asset diagnostics to the first node using that asset", async () => {
@@ -1840,6 +1849,8 @@ describe.skipIf(!wasmArtifactPresent)("EditorApp", () => {
     fireEvent.click(screen.getAllByRole("button", { name: /show asset asset_hero/i })[0]);
 
     expect(screen.getByTestId("canvas-selection")).toHaveAttribute("data-selected-node", "node_hero_image");
+    expect(screen.getByRole("complementary", { name: "Diagnostics sidebar" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /diagnostics panel/i })).toHaveAttribute("aria-pressed", "true");
     openInspectorPanel();
     expect(screen.getByRole("heading", { name: "Hero Image" })).toBeInTheDocument();
   });

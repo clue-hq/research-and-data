@@ -15,11 +15,21 @@ interface ExportPanelProps {
   onExport: (profile: ExportProfile, pageIds: PageId[]) => void;
   onSaveProfile: (profile: ExportProfile) => void;
   onRemoveProfile: (name: string) => void;
+  panelState?: ExportPanelState;
+  onPanelStateChange?: (state: ExportPanelState) => void;
   onSelectSubject?: (subject: DiagnosticSubject) => void;
 }
 
 const RASTER_EDGE_WARNING_PX = 8192;
 const RASTER_AREA_WARNING_PX = 33_000_000;
+
+export type ExportScope = "active" | "all";
+
+export interface ExportPanelState {
+  profileName: string;
+  scope: ExportScope;
+  draftProfile: ExportProfile | null;
+}
 
 export function ExportPanel({
   scene,
@@ -29,6 +39,8 @@ export function ExportPanel({
   onExport,
   onSaveProfile,
   onRemoveProfile,
+  panelState,
+  onPanelStateChange,
   onSelectSubject
 }: ExportPanelProps) {
   const profiles = exportProfilesForScene(scene);
@@ -49,6 +61,8 @@ export function ExportPanel({
         onExport={onExport}
         onSaveProfile={onSaveProfile}
         onRemoveProfile={onRemoveProfile}
+        panelState={panelState}
+        onPanelStateChange={onPanelStateChange}
         onSelectSubject={onSelectSubject}
       />
       <p className="muted contract-note">
@@ -84,6 +98,8 @@ function ExportControls({
   onExport,
   onSaveProfile,
   onRemoveProfile,
+  panelState,
+  onPanelStateChange,
   onSelectSubject
 }: {
   scene: Scene;
@@ -94,23 +110,39 @@ function ExportControls({
   onExport: (profile: ExportProfile, pageIds: PageId[]) => void;
   onSaveProfile: (profile: ExportProfile) => void;
   onRemoveProfile: (name: string) => void;
+  panelState?: ExportPanelState;
+  onPanelStateChange?: (state: ExportPanelState) => void;
   onSelectSubject?: (subject: DiagnosticSubject) => void;
 }) {
-  const [profileName, setProfileName] = useState(profiles[0]?.name ?? "");
-  const [scope, setScope] = useState<"active" | "all">("active");
+  const [uncontrolledState, setUncontrolledState] = useState<ExportPanelState>(() => ({
+    profileName: profiles[0]?.name ?? "",
+    scope: "active",
+    draftProfile: profiles[0] ?? null
+  }));
+  const state = panelState ?? uncontrolledState;
+  const updateState = (patch: Partial<ExportPanelState>) => {
+    const nextState = {
+      ...state,
+      ...patch
+    };
+    if (onPanelStateChange) {
+      onPanelStateChange(nextState);
+    } else {
+      setUncontrolledState(nextState);
+    }
+  };
   const selectedProfile = useMemo(
-    () => profiles.find((candidate) => candidate.name === profileName) ?? profiles[0],
-    [profileName, profiles]
+    () => profiles.find((candidate) => candidate.name === state.profileName) ?? profiles[0],
+    [state.profileName, profiles]
   );
-  const [draftProfile, setDraftProfile] = useState<ExportProfile | null>(() => selectedProfile ?? null);
-  const profile = draftProfile ?? selectedProfile;
+  const profile = state.draftProfile ?? selectedProfile;
   const visibleProfiles = useMemo(() => {
     if (!profile || profiles.some((candidate) => candidate.name === profile.name)) {
       return profiles;
     }
     return [...profiles, profile];
   }, [profile, profiles]);
-  const selectedPageIds = scope === "all" ? pageIds : activePageId ? [activePageId] : [];
+  const selectedPageIds = state.scope === "all" ? pageIds : activePageId ? [activePageId] : [];
   const readiness = profile ? exportReadinessNotes(scene, profile, selectedPageIds) : [];
   const isSavedProfile = profile ? scene.export_profiles.some((candidate) => candidate.name === profile.name) : false;
   const profileIsInList = profile ? profiles.some((candidate) => candidate.name === profile.name) : false;
@@ -122,8 +154,10 @@ function ExportControls({
           value={profile?.name ?? ""}
           onChange={(event) => {
             const nextProfile = visibleProfiles.find((candidate) => candidate.name === event.target.value) ?? profiles[0] ?? null;
-            setProfileName(nextProfile?.name ?? "");
-            setDraftProfile(nextProfile);
+            updateState({
+              profileName: nextProfile?.name ?? "",
+              draftProfile: nextProfile
+            });
           }}
         >
           {visibleProfiles.map((candidate) => (
@@ -135,12 +169,12 @@ function ExportControls({
       </label>
       <label className="field">
         <span>Artboards</span>
-        <select value={scope} onChange={(event) => setScope(event.target.value as "active" | "all")}>
+        <select value={state.scope} onChange={(event) => updateState({ scope: event.target.value as ExportScope })}>
           <option value="active">Selected artboard</option>
           <option value="all">All artboards</option>
         </select>
       </label>
-      {profile ? <ExportProfileEditor profile={profile} onChange={setDraftProfile} /> : null}
+      {profile ? <ExportProfileEditor profile={profile} onChange={(nextProfile) => updateState({ draftProfile: nextProfile })} /> : null}
       <button
         type="button"
         disabled={!profile || selectedPageIds.length === 0 || isExporting}
@@ -157,8 +191,10 @@ function ExportControls({
             if (!profile) {
               return;
             }
-            setProfileName(profile.name);
-            setDraftProfile(profile);
+            updateState({
+              profileName: profile.name,
+              draftProfile: profile
+            });
             onSaveProfile(profile);
           }}
         >
@@ -173,8 +209,10 @@ function ExportControls({
               return;
             }
             const fallbackProfile = profiles.find((candidate) => candidate.name !== profile.name) ?? null;
-            setProfileName(fallbackProfile?.name ?? "");
-            setDraftProfile(fallbackProfile);
+            updateState({
+              profileName: fallbackProfile?.name ?? "",
+              draftProfile: fallbackProfile
+            });
             onRemoveProfile(profile.name);
           }}
         >

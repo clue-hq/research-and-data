@@ -12,7 +12,7 @@ import { Download, FileCheck2, History, PanelRightClose, RotateCcw, RotateCw } f
 import { AgentChatPanel, type AgentChatMessage } from "./AgentChatPanel";
 import { BrandKitPanel } from "./BrandKitPanel";
 import { EditorCanvas } from "./canvas/EditorCanvas";
-import { ExportPanel } from "./ExportPanel";
+import { ExportPanel, type ExportPanelState } from "./ExportPanel";
 import { ExportPreviewSurface } from "./ExportPreviewSurface";
 import { AssetBrowserPanel } from "./AssetBrowserPanel";
 import { HistoryPanel } from "./HistoryPanel";
@@ -189,6 +189,14 @@ export default function EditorApp({
   const [isPreflighting, setIsPreflighting] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const [exportResult, setExportResult] = useState<EditorExportResult | null>(null);
+  const [exportPanelState, setExportPanelState] = useState<ExportPanelState>(() => {
+    const profile = defaultEditorExportProfile();
+    return {
+      profileName: profile.name,
+      scope: "active",
+      draftProfile: profile
+    };
+  });
   const [preflightResult, setPreflightResult] = useState<EditorPreflightResult | null>(null);
   const [workspaceMode, setWorkspaceMode] = useState<"canvas" | "export" | "compare">("canvas");
   const [workspaceViewport, setWorkspaceViewport] = useState(defaultWorkspaceViewport);
@@ -958,7 +966,7 @@ export default function EditorApp({
         if (scene.pages[subject.id]) {
           setActivePageId(subject.id);
           setSelectedNodeId(null);
-          setEditorPanelMode("inspector");
+          setEditorPanelMode("diagnostics");
         }
         return;
       }
@@ -971,7 +979,7 @@ export default function EditorApp({
           setActivePageId(pageId);
         }
         setSelectedNodeId(subject.id);
-        setEditorPanelMode("inspector");
+        setEditorPanelMode("diagnostics");
         return;
       }
       case "slot": {
@@ -985,7 +993,7 @@ export default function EditorApp({
           setActivePageId(pageId);
         }
         setSelectedNodeId(boundNodeId);
-        setEditorPanelMode("inspector");
+        setEditorPanelMode("diagnostics");
         return;
       }
       case "asset": {
@@ -998,7 +1006,7 @@ export default function EditorApp({
           setActivePageId(pageId);
         }
         setSelectedNodeId(nodeId);
-        setEditorPanelMode("inspector");
+        setEditorPanelMode("diagnostics");
         return;
       }
       case "document":
@@ -1329,6 +1337,8 @@ export default function EditorApp({
               onExport={(profile, pageIds) => void runExport(profile, pageIds)}
               onSaveProfile={(profile) => applyOperation(upsertExportProfile(profile))}
               onRemoveProfile={(name) => applyOperation(removeExportProfile(name))}
+              panelState={exportPanelState}
+              onPanelStateChange={setExportPanelState}
               onSelectSubject={selectDiagnosticSubject}
             />
           ) : editorPanelMode === "diagnostics" ? (
@@ -1381,6 +1391,8 @@ export default function EditorApp({
                 onExport={(profile, pageIds) => void runExport(profile, pageIds)}
                 onSaveProfile={(profile) => applyOperation(upsertExportProfile(profile))}
                 onRemoveProfile={(name) => applyOperation(removeExportProfile(name))}
+                panelState={exportPanelState}
+                onPanelStateChange={setExportPanelState}
                 onSelectSubject={selectDiagnosticSubject}
               />
               <OperationHistoryPanel operations={operationHistory} redoCount={redoStack.length} />
