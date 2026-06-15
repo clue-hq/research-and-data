@@ -331,6 +331,10 @@ page page_square size(360,360,px)
     let svg = std::str::from_utf8(&result.artifacts[0].bytes).unwrap();
 
     assert!(svg.matches("<tspan").count() > 1, "{svg}");
+    assert!(
+        svg.contains("font-family=\"Inter, Arial, Helvetica, sans-serif\""),
+        "{svg}"
+    );
     assert!(svg.contains("letter-spacing=\"0\""));
 }
 

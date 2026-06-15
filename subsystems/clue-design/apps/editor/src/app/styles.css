@@ -435,6 +435,10 @@ textarea:disabled {
 .center-workspace {
   display: grid;
   min-height: 0;
+  grid-template-rows: minmax(0, 1fr);
+}
+
+.center-workspace.with-view-toggle {
   grid-template-rows: 45px minmax(0, 1fr);
 }
 
@@ -609,147 +613,53 @@ textarea:disabled {
 .export-preview-shell {
   display: grid;
   min-height: 0;
-  grid-template-rows: auto minmax(0, 1fr) auto;
-  background: #eee6d8;
-}
-
-.export-preview-toolbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  border-bottom: 1px solid #d9d1c3;
-  background: #fbf8f1;
-  padding: 8px 12px;
-}
-
-.export-preview-toolbar span {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  color: #514a40;
-  font-size: 13px;
-  font-weight: 750;
-}
-
-.parity-badge {
-  border-radius: 999px;
-  padding: 4px 8px;
-  font-size: 11px;
-}
-
-.parity-badge.match {
-  background: #e5f5ef;
-  color: #156146;
-}
-
-.parity-badge.mismatch {
-  background: #fee8e8;
-  color: #8c1d1d;
-}
-
-.parity-badge.unavailable {
-  background: #f1e7d4;
-  color: #704e16;
+  grid-template-rows: minmax(0, 1fr);
+  background: #3f444b;
 }
 
 .export-preview-body {
   display: grid;
+  height: 100%;
   min-height: 0;
   place-items: center;
-  padding: 24px;
+  padding: 32px;
 }
 
 .artifact-preview-frame {
   display: grid;
+  width: 100%;
+  height: 100%;
   max-width: 100%;
   max-height: 100%;
   min-height: 0;
   place-items: center;
-  gap: 10px;
 }
 
-.export-preview-body iframe,
-.export-preview-body img {
+.artifact-preview-media {
+  display: grid;
   max-width: 100%;
   max-height: 100%;
-  border: 1px solid #c8bda9;
-  background: #ffffff;
-  box-shadow: 0 12px 30px rgb(36 33 28 / 16%);
-}
-
-.export-preview-body iframe {
-  width: min(92%, 980px);
-  height: min(92%, 760px);
-}
-
-.artifact-preview-meta {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 6px;
-  margin: 0;
-  color: #574f44;
-  font-size: 11px;
-}
-
-.artifact-preview-meta div {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  border: 1px solid #d7ccbd;
-  border-radius: 999px;
-  background: #fffdf8;
-  padding: 4px 8px;
-}
-
-.artifact-preview-meta dt {
-  color: #71695e;
-  font-weight: 750;
-}
-
-.artifact-preview-meta dd {
-  margin: 0;
-  overflow-wrap: anywhere;
-}
-
-.export-preview-diagnostics {
-  border-top: 1px solid #d9d1c3;
-  background: #fbf8f1;
-  padding: 10px 12px;
-}
-
-.preview-scope-summary {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin: 0 0 8px;
-}
-
-.preview-scope-summary div {
-  display: inline-flex;
-  min-width: 0;
-  align-items: center;
-  gap: 5px;
-  border: 1px solid #d7ccbd;
-  border-radius: 999px;
-  background: #fffdf8;
-  padding: 4px 8px;
-  color: #574f44;
-  font-size: 11px;
-}
-
-.preview-scope-summary dt {
-  color: #71695e;
-  font-weight: 750;
-}
-
-.preview-scope-summary dd {
-  max-width: 220px;
-  margin: 0;
+  place-items: stretch;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  border: 1px solid #181c21;
+  background: #ffffff;
+  box-shadow: 0 18px 50px rgb(0 0 0 / 28%);
+}
+
+.artifact-preview-media iframe,
+.artifact-preview-media img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  max-width: 100%;
+  max-height: 100%;
+  border: 0;
+  background: #ffffff;
+  object-fit: contain;
+}
+
+.artifact-preview-media iframe {
+  border: 0;
 }
 
 .canvas-toolbar {
@@ -936,10 +846,6 @@ textarea:disabled {
   font-weight: 700;
 }
 
-.contract-note {
-  margin-bottom: 0;
-}
-
 .brand-kit-panel {
   display: grid;
   gap: 12px;
@@ -947,116 +853,73 @@ textarea:disabled {
 
 .export-controls {
   display: grid;
-  gap: 10px;
+  gap: 12px;
   margin-top: 12px;
+}
+
+.export-controls .field span {
+  color: #aeb7c2;
+}
+
+.export-controls .field select {
+  min-height: 40px;
+  border-color: #303944;
+  background: #1c232b;
+  color: #f4f7f8;
 }
 
 .export-controls button {
   display: inline-flex;
-  min-height: 34px;
+  min-height: 40px;
   align-items: center;
   justify-content: center;
   gap: 6px;
-  border: 1px solid #bfb4a3;
-  border-radius: 6px;
-  background: #ffffff;
-  color: #24211c;
+  border: 1px solid #2f8289;
+  border-radius: 7px;
+  background: #0f575e;
+  color: #ffffff;
   padding: 0 10px;
   font-size: 13px;
-  font-weight: 650;
+  font-weight: 750;
 }
 
-.profile-editor {
-  display: grid;
-  gap: 10px;
-  border: 1px solid #ddd3c4;
-  border-radius: 7px;
-  background: #fffdf8;
-  padding: 10px;
-}
-
-.checkbox-row {
-  display: grid;
-  grid-template-columns: 18px minmax(0, 1fr);
-  align-items: center;
-  gap: 7px;
-  color: #5b5348;
-  font-size: 13px;
-  font-weight: 700;
-}
-
-.checkbox-row input {
-  margin: 0;
-}
-
-.button-row {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
+.export-controls button:hover:not(:disabled) {
+  border-color: #35b5bf;
+  background: #126a72;
 }
 
 .export-summary {
   display: grid;
-  gap: 8px;
-  margin-top: 12px;
-  border: 1px solid #d7ccbd;
-  border-radius: 7px;
-  background: #ffffff;
-  padding: 10px;
+  gap: 10px;
+  margin-top: 14px;
+  border-top: 1px solid #2b333d;
+  padding-top: 14px;
 }
 
-.export-summary > span,
+.export-summary strong {
+  color: #f4f7f8;
+  font-size: 13px;
+}
+
+.export-summary > span {
+  color: #aeb7c2;
+  font-size: 12px;
+}
+
 .export-artifact small {
-  color: #71695e;
+  color: #aeb7c2;
   font-size: 12px;
 }
 
 .export-artifact {
   display: grid;
-  gap: 3px;
-  border-top: 1px solid #eee5d8;
-  padding-top: 8px;
+  gap: 7px;
 }
 
-.export-artifact a {
-  color: #256c70;
-  font-size: 12px;
-  font-weight: 750;
-}
-
-.preview-approval {
-  display: grid;
-  gap: 3px;
-  margin-bottom: 10px;
-  border: 1px solid #d7ccbd;
-  border-radius: 7px;
-  background: #fffdf8;
-  padding: 9px 10px;
-}
-
-.preview-approval strong {
+.export-artifact > span {
+  color: #f4f7f8;
   font-size: 13px;
-}
-
-.preview-approval span {
-  color: #5b5348;
-  font-size: 12px;
-  line-height: 1.35;
-}
-
-.preview-approval.ready {
-  border-color: #9dc7b5;
-  background: #f4fbf7;
-}
-
-.preview-approval.warning {
-  border-color: #dcc07b;
-  background: #fff9e8;
-}
-
-.preview-approval.blocked {
-  border-color: #d7a39c;
-  background: #fff5f3;
+  font-weight: 750;
 }
 
 .artifact-actions {
@@ -1070,6 +933,19 @@ textarea:disabled {
   min-height: 26px;
   padding: 0 8px;
   font-size: 12px;
+}
+
+.artifact-actions .primary-action {
+  min-height: 34px;
+  border-color: #1f7f86;
+  background: #0f575e;
+  color: #ffffff;
+  font-weight: 750;
+}
+
+.artifact-actions .primary-action:hover:not(:disabled) {
+  border-color: #35b5bf;
+  background: #126a72;
 }
 
 .brand-current {

@@ -14,6 +14,10 @@ import { BrandKitPanel } from "./BrandKitPanel";
 import { EditorCanvas } from "./canvas/EditorCanvas";
 import { ExportPanel, type ExportPanelState } from "./ExportPanel";
 import { ExportPreviewSurface } from "./ExportPreviewSurface";
+import {
+  openBlankArtifactPreviewWindow,
+  showArtifactInPreviewWindow
+} from "./exportArtifactActions";
 import { AssetBrowserPanel } from "./AssetBrowserPanel";
 import { HistoryPanel } from "./HistoryPanel";
 import { WorstCasePreviewPanel } from "./WorstCasePreviewPanel";
@@ -62,6 +66,7 @@ import {
 import {
   createApiExportRunner,
   defaultEditorExportProfile,
+  type EditorExportArtifact,
   type EditorExportResult,
   type EditorExportRunner
 } from "@/engine/exportRunner";
@@ -208,6 +213,9 @@ export default function EditorApp({
   const [brandCompatibilityReport, setBrandCompatibilityReport] =
     useState<BrandCompatibilityReport | null>(null);
   const isAgentPanelOpen = editorPanelMode === "agent";
+  const hasExportArtifacts = Boolean(exportResult?.artifacts.length);
+  const exportWorkspaceMode = workspaceMode === "compare" && hasExportArtifacts ? "compare" : "export";
+  const renderedWorkspaceMode = editorPanelMode === "export" ? exportWorkspaceMode : "canvas";
   const selectedNode = useMemo(() => getNode(scene, selectedNodeId), [scene, selectedNodeId]);
   const activePage = activePageId ? scene.pages[activePageId] ?? null : null;
   const effectiveBrandKit = useMemo(
@@ -1054,15 +1062,18 @@ export default function EditorApp({
   const runExport = async (
     profile = defaultEditorExportProfile(),
     pageIds: PageId[] = activePageId ? [activePageId] : []
-  ) => runExportForScene(scene, profile, pageIds);
+  ) => runExportForScene(scene, profile, pageIds, { openPreviewTab: true });
 
   const runExportForScene = async (
     sceneForExport: Scene,
     profile = defaultEditorExportProfile(),
-    pageIds: PageId[] = activePageId ? [activePageId] : []
+    pageIds: PageId[] = activePageId ? [activePageId] : [],
+    options: { openPreviewTab?: boolean } = {}
   ) => {
+    const previewWindow = options.openPreviewTab ? openBlankArtifactPreviewWindow() : null;
     setEditorPanelMode("export");
     if (pageIds.length === 0) {
+      previewWindow?.close();
       setDiagnostics([
         {
           severity: "warning",
@@ -1077,16 +1088,7 @@ export default function EditorApp({
     }
 
     setIsExporting(true);
-    setDiagnostics([
-      {
-        severity: "advice",
-        phase: "validation",
-        code: "EDITOR_EXPORT_PREFLIGHT_RUNNING",
-        message: `Preflighting ${pageIds.length} page${pageIds.length === 1 ? "" : "s"} before export.`,
-        subject: { kind: "document" },
-        hint: "Export always uses the preflighted scene so computed geometry and BrandKit resolution match approval output."
-      }
-    ]);
+    setDiagnostics([]);
 
     try {
       const preflight = await preflightRunner({ scene: sceneForExport });
@@ -1096,20 +1098,6 @@ export default function EditorApp({
       if (preflight.scene) {
         replaceScene(preflight.scene);
       }
-      setDiagnostics([
-        {
-          severity: preflightDiagnostics.length > 0 ? "warning" : "advice",
-          phase: "export",
-          code: "EDITOR_EXPORT_RUNNING",
-          message: `Exporting ${preflightDiagnostics.length > 0 ? "with preflight diagnostics" : "preflighted scene"} using ${profile.name}.`,
-          subject: { kind: "document" },
-          hint:
-            preflightDiagnostics.length > 0
-              ? "Preview export continues for inspection, but approval remains blocked until preflight diagnostics are resolved."
-              : `Preflight applied ${preflightOperationCount(preflight)} canonical operation${preflightOperationCount(preflight) === 1 ? "" : "s"}.`
-        }
-      ]);
-
       const result = await exportRunner({
         scene: sceneToExport,
         profile,
@@ -1123,26 +1111,33 @@ export default function EditorApp({
       };
       setExportResult(resultWithPreflightDiagnostics);
       if (result.status === "ok" && result.artifacts.length > 0) {
-        setWorkspaceMode("compare");
+        setWorkspaceMode("export");
+        showArtifactInPreviewWindow(
+          previewWindow,
+          artifactForExportPreview(resultWithPreflightDiagnostics, pageIds)
+        );
+      } else if (previewWindow) {
+        previewWindow.close();
       }
+      logExportDiagnostics(combinedDiagnostics);
       setDiagnostics(
-        combinedDiagnostics.length > 0
-          ? combinedDiagnostics
-          : [
-              {
-                severity: result.status === "ok" ? "advice" : "error",
-                phase: "export",
-                code: result.status === "ok" ? "EDITOR_EXPORT_OK" : "EDITOR_EXPORT_FAILED",
-                message:
-                  result.status === "ok"
-                    ? `Export produced ${result.artifacts.length} artifact${result.artifacts.length === 1 ? "" : "s"}.`
-                    : "Export failed without returning detailed diagnostics.",
-                subject: { kind: "document" },
-                hint: null
-              }
-            ]
+        result.status === "ok"
+          ? []
+          : result.diagnostics.length > 0
+            ? result.diagnostics
+            : [
+                {
+                  severity: "error",
+                  phase: "export",
+                  code: "EDITOR_EXPORT_FAILED",
+                  message: "Export failed without returning detailed diagnostics.",
+                  subject: { kind: "document" },
+                  hint: "Inspect the browser console or API logs for the export request."
+                }
+              ]
       );
     } catch (error) {
+      previewWindow?.close();
       setExportResult(null);
       setDiagnostics([
         {
@@ -1216,33 +1211,27 @@ export default function EditorApp({
             onOperation={applyOperation}
           />
         </div>
-        <section className="center-workspace">
-          <div className="view-toggle" aria-label="Preview mode">
-            <button
-              type="button"
-              className={workspaceMode === "canvas" ? "active" : ""}
-              onClick={() => setWorkspaceMode("canvas")}
-            >
-              Canvas
-            </button>
-            <button
-              type="button"
-              className={workspaceMode === "export" ? "active" : ""}
-              disabled={!exportResult?.artifacts.length}
-              onClick={() => setWorkspaceMode("export")}
-            >
-              Export Preview
-            </button>
-            <button
-              type="button"
-              className={workspaceMode === "compare" ? "active" : ""}
-              disabled={!exportResult?.artifacts.length}
-              onClick={() => setWorkspaceMode("compare")}
-            >
-              Compare
-            </button>
-          </div>
-          {workspaceMode === "compare" ? (
+        <section className={`center-workspace${editorPanelMode === "export" ? " with-view-toggle" : ""}`}>
+          {editorPanelMode === "export" ? (
+            <div className="view-toggle" aria-label="Export preview mode">
+              <button
+                type="button"
+                className={exportWorkspaceMode === "export" ? "active" : ""}
+                onClick={() => setWorkspaceMode("export")}
+              >
+                Export Preview
+              </button>
+              <button
+                type="button"
+                className={exportWorkspaceMode === "compare" ? "active" : ""}
+                disabled={!hasExportArtifacts}
+                onClick={() => setWorkspaceMode("compare")}
+              >
+                Compare
+              </button>
+            </div>
+          ) : null}
+          {renderedWorkspaceMode === "compare" ? (
             <div className="compare-workspace">
               <div className="compare-pane">
                 <div className="compare-heading">Canvas</div>
@@ -1276,7 +1265,7 @@ export default function EditorApp({
                 />
               </div>
             </div>
-          ) : workspaceMode === "export" ? (
+          ) : renderedWorkspaceMode === "export" ? (
             <ExportPreviewSurface
               scene={scene}
               activePageId={activePageId}
@@ -1342,7 +1331,6 @@ export default function EditorApp({
               onRemoveProfile={(name) => applyOperation(removeExportProfile(name))}
               panelState={exportPanelState}
               onPanelStateChange={setExportPanelState}
-              onSelectSubject={selectDiagnosticSubject}
             />
           ) : editorPanelMode === "diagnostics" ? (
             <ValidationPanel
@@ -1396,7 +1384,6 @@ export default function EditorApp({
                 onRemoveProfile={(name) => applyOperation(removeExportProfile(name))}
                 panelState={exportPanelState}
                 onPanelStateChange={setExportPanelState}
-                onSelectSubject={selectDiagnosticSubject}
               />
               <OperationHistoryPanel operations={operationHistory} redoCount={redoStack.length} />
               <AssetBrowserPanel
@@ -1648,6 +1635,32 @@ function preflightOperationCount(result: EditorPreflightResult): number {
     result.preflight.brand_ref_operations +
     result.preflight.token_operations +
     result.preflight.layout_operations
+  );
+}
+
+function artifactForExportPreview(
+  result: EditorExportResult,
+  pageIds: PageId[]
+): EditorExportArtifact | null {
+  return (
+    result.artifacts.find((artifact) => artifact.page_id && pageIds.includes(artifact.page_id)) ??
+    result.artifacts[0] ??
+    null
+  );
+}
+
+function logExportDiagnostics(diagnostics: Diagnostic[]): void {
+  if (diagnostics.length === 0 || typeof console === "undefined") {
+    return;
+  }
+  console.info(
+    "[lumen-export-preview] diagnostics",
+    diagnostics.map((diagnostic) => ({
+      severity: diagnostic.severity,
+      code: diagnostic.code,
+      message: diagnostic.message,
+      subject: diagnostic.subject
+    }))
   );
 }
 

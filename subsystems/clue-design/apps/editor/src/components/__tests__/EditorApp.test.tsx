@@ -307,8 +307,8 @@ describe.skipIf(!wasmArtifactPresent)("EditorApp", () => {
     fireEvent.click(screen.getByRole("button", { name: /generate preview/i }));
 
     expect(await screen.findByText("Export ready")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /^Compare$/i })).toHaveClass("active");
-    expect(screen.getByRole("link", { name: /^download$/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^Export Preview$/i })).toHaveClass("active");
+    expect(screen.getByRole("button", { name: /^download$/i })).toBeInTheDocument();
 
     openInspectorPanel();
     fireEvent.change(screen.getByLabelText("Document Title"), {
@@ -316,10 +316,10 @@ describe.skipIf(!wasmArtifactPresent)("EditorApp", () => {
     });
 
     expect(screen.queryByText("Export ready")).not.toBeInTheDocument();
-    expect(screen.queryByRole("link", { name: /^download$/i })).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /^Canvas$/i })).toHaveClass("active");
-    expect(screen.getByRole("button", { name: /^Compare$/i })).toBeDisabled();
-    expect(screen.getByRole("button", { name: /^Export Preview$/i })).toBeDisabled();
+    expect(screen.queryByRole("button", { name: /^download$/i })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^Inspect$/i })).toHaveClass("active");
+    expect(screen.queryByRole("button", { name: /^Compare$/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^Export Preview$/i })).not.toBeInTheDocument();
   });
 
   it("duplicates custom-sized pages with cloned content through canonical operations", async () => {
@@ -902,13 +902,12 @@ describe.skipIf(!wasmArtifactPresent)("EditorApp", () => {
     fireEvent.click(screen.getByRole("button", { name: /generate preview/i }));
 
     expect(await screen.findByText("Export ready")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /^Compare$/i })).toHaveClass("active");
+    expect(screen.getByRole("button", { name: /^Export Preview$/i })).toHaveClass("active");
+    fireEvent.click(screen.getByRole("button", { name: /^Inspect$/i }));
     expect(screen.getByTestId("canvas-selection")).toHaveAttribute("data-workspace-tool", "hand");
     expect(screen.getByTestId("canvas-selection")).toHaveAttribute("data-workspace-fit-target", "manual");
     expect(screen.getByTestId("canvas-selection")).toHaveAttribute("data-workspace-zoom", "1.75");
     expect(screen.getByTestId("canvas-selection")).toHaveAttribute("data-workspace-pan", "40,60");
-
-    fireEvent.click(screen.getByRole("button", { name: /^Canvas$/i }));
 
     expect(screen.getByTestId("canvas-selection")).toHaveAttribute("data-workspace-tool", "hand");
     expect(screen.getByTestId("canvas-selection")).toHaveAttribute("data-workspace-fit-target", "manual");
@@ -932,17 +931,20 @@ describe.skipIf(!wasmArtifactPresent)("EditorApp", () => {
     expect(screen.getByRole("button", { name: /export panel/i })).toHaveAttribute("aria-pressed", "true");
   });
 
-  it("preserves active artboard and selected node across top mode switches", () => {
+  it("preserves active artboard and selected node across top mode switches", async () => {
     render(<TestEditorApp initialScene={twoPageScene()} initialSelectedNodeId="node_contact_name" />);
 
     for (const modeButton of [
       screen.getByRole("button", { name: /export panel/i }),
       screen.getByRole("button", { name: /diagnostics panel/i }),
-      screen.getByRole("button", { name: /^Agent$/i }),
-      screen.getByRole("button", { name: /^Inspect$/i })
+      screen.getByRole("button", { name: /^Agent$/i })
     ]) {
       fireEvent.click(modeButton);
-      expect(screen.getByTestId("canvas-selection")).toHaveAttribute("data-selected-node", "node_contact_name");
+      expect(within(screen.getByLabelText("Active artboard context")).getByText("A4 Letter")).toBeInTheDocument();
+      fireEvent.click(screen.getByRole("button", { name: /^Inspect$/i }));
+      await waitFor(() => {
+        expect(screen.getByTestId("canvas-selection")).toHaveAttribute("data-selected-node", "node_contact_name");
+      });
       expect(within(screen.getByLabelText("Active artboard context")).getByText("A4 Letter")).toBeInTheDocument();
     }
   });
@@ -1131,13 +1133,6 @@ describe.skipIf(!wasmArtifactPresent)("EditorApp", () => {
       page_ids: ["page_a4"],
       node_count: 1
     });
-    const writeText = vi.fn().mockResolvedValue(undefined);
-    Object.defineProperty(navigator, "clipboard", {
-      value: {
-        writeText
-      },
-      configurable: true
-    });
     const exportRunner: EditorExportRunner = vi.fn().mockResolvedValue({
       status: "ok",
       diagnostics: [],
@@ -1199,31 +1194,20 @@ describe.skipIf(!wasmArtifactPresent)("EditorApp", () => {
     fireEvent.click(screen.getByRole("button", { name: /generate preview/i }));
 
     expect(await screen.findByText("Export ready")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /^Compare$/i })).toHaveClass("active");
+    expect(screen.getByRole("button", { name: /^Export Preview$/i })).toHaveClass("active");
+    expect(screen.getByRole("img", { name: /export preview artifact/i })).toHaveAttribute(
+      "src",
+      "data:image/svg+xml;base64,PHN2Zy8+"
+    );
+    expect(screen.queryByText("Parity OK")).not.toBeInTheDocument();
+    expect(screen.queryByText(/Canvas 793.70 x 1122.52 · Export 793.70 x 1122.52/)).not.toBeInTheDocument();
+    expect(screen.getByText("page_a4.preview_svg.svg")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^download$/i })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /download sidecar/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /copy svg/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /copy sidecar/i })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /^Inspect$/i }));
     expect(screen.getByTestId("canvas-selection")).toHaveAttribute("data-page-width", "210");
-    expect(screen.getByText(/SVG artboard page_a4/)).toBeInTheDocument();
-    expect(screen.getByText(/image\/svg\+xml · 120 bytes/)).toBeInTheDocument();
-    expect(screen.getByText("Filename page_a4.preview_svg.svg")).toBeInTheDocument();
-    expect(screen.getByText(/Dimensions 793.70 x 1122.52 scene · svg_view_box/)).toBeInTheDocument();
-    expect(screen.getByText(/Sidecar preview_svg · 1 artboard · 1 node · 1 slot/)).toBeInTheDocument();
-    expect(screen.getAllByText(/slots contact.full_name/).length).toBeGreaterThanOrEqual(2);
-    expect(screen.getByRole("link", { name: /^download$/i })).toHaveAttribute("href", "data:image/svg+xml;base64,PHN2Zy8+");
-    expect(screen.getByRole("link", { name: /download sidecar/i })).toHaveAttribute(
-      "download",
-      "page_a4.preview_svg.sidecar.json"
-    );
-    expect(screen.getByRole("link", { name: /download sidecar/i })).toHaveAttribute(
-      "href",
-      `data:application/json;charset=utf-8,${encodeURIComponent(sidecarJson)}`
-    );
-    fireEvent.click(screen.getByRole("button", { name: /copy svg/i }));
-    expect(writeText).toHaveBeenCalledWith(svgText);
-    expect(await screen.findByText("SVG copied")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: /copy sidecar/i }));
-    expect(writeText).toHaveBeenCalledWith(sidecarJson);
-    expect(await screen.findByText("Sidecar copied")).toBeInTheDocument();
-    expect(screen.getByText("Parity OK")).toBeInTheDocument();
-    expect(screen.getByText(/Canvas 793.70 x 1122.52 · Export 793.70 x 1122.52/)).toBeInTheDocument();
     expect(exportRunner).toHaveBeenCalledWith({
       scene: expect.objectContaining({
         nodes: expect.objectContaining({
@@ -1265,7 +1249,8 @@ describe.skipIf(!wasmArtifactPresent)("EditorApp", () => {
       />
     );
 
-    fireEvent.change(screen.getByRole("combobox", { name: "Artboards" }), {
+    fireEvent.click(screen.getByRole("button", { name: /export panel/i }));
+    fireEvent.change(screen.getByRole("combobox", { name: "Artboard" }), {
       target: { value: "all" }
     });
     fireEvent.click(screen.getByRole("button", { name: /generate preview/i }));
@@ -1322,15 +1307,11 @@ describe.skipIf(!wasmArtifactPresent)("EditorApp", () => {
       target: { value: "print_pdf" }
     });
 
-    expect(screen.getByText("PRINT_BLEED_page_a4")).toBeInTheDocument();
-    expect(screen.getByText("PRINT_SAFE_AREA_page_a4")).toBeInTheDocument();
-    expect(screen.getByText("PRINT_TEXT_DIRECTION_node_contact_name")).toBeInTheDocument();
-    expect(screen.getByText("PRINT_TEXT_NON_LATIN_node_contact_name")).toBeInTheDocument();
-    expect(screen.getByText("PRINT_FONT_EMBEDDING")).toBeInTheDocument();
-    fireEvent.click(screen.getAllByRole("button", { name: /show node node_contact_name/i })[0]);
-    expect(screen.getByTestId("canvas-selection")).toHaveAttribute("data-selected-node", "node_contact_name");
-    expect(screen.getByRole("complementary", { name: "Diagnostics sidebar" })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: /export panel/i }));
+    expect(screen.queryByText("PRINT_BLEED_page_a4")).not.toBeInTheDocument();
+    expect(screen.queryByText("PRINT_SAFE_AREA_page_a4")).not.toBeInTheDocument();
+    expect(screen.queryByText("PRINT_TEXT_DIRECTION_node_contact_name")).not.toBeInTheDocument();
+    expect(screen.queryByText("PRINT_TEXT_NON_LATIN_node_contact_name")).not.toBeInTheDocument();
+    expect(screen.queryByText("PRINT_FONT_EMBEDDING")).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: /generate preview/i }));
 
@@ -1381,20 +1362,21 @@ describe.skipIf(!wasmArtifactPresent)("EditorApp", () => {
 
     render(<TestEditorApp initialScene={scene} initialSelectedNodeId={null} />);
 
+    fireEvent.click(screen.getByRole("button", { name: /export panel/i }));
     fireEvent.change(screen.getByLabelText("Profile"), {
       target: { value: "print_pdf" }
     });
-    fireEvent.change(screen.getAllByLabelText("Artboards")[0], {
+    fireEvent.change(screen.getAllByLabelText("Artboard")[0], {
       target: { value: "all" }
     });
 
-    expect(screen.getByText("PRINT_EXPLICIT_PAGINATION")).toBeInTheDocument();
-    expect(screen.getByText(/This print PDF exports 2 explicit artboards/)).toBeInTheDocument();
-    expect(screen.getByText("PRINT_MIXED_PAGE_SIZES")).toBeInTheDocument();
-    expect(screen.getByText(/Square Ad 1080 x 1080 px; Wide Header 1200 x 628 px/)).toBeInTheDocument();
+    expect(screen.queryByText("PRINT_EXPLICIT_PAGINATION")).not.toBeInTheDocument();
+    expect(screen.queryByText(/This print PDF exports 2 explicit artboards/)).not.toBeInTheDocument();
+    expect(screen.queryByText("PRINT_MIXED_PAGE_SIZES")).not.toBeInTheDocument();
+    expect(screen.queryByText(/Square Ad 1080 x 1080 px; Wide Header 1200 x 628 px/)).not.toBeInTheDocument();
   });
 
-  it("edits and saves export profile settings before export", async () => {
+  it("exports with the selected built-in profile from the minimal panel", async () => {
     const exportRunner: EditorExportRunner = vi.fn().mockResolvedValue({
       status: "ok",
       diagnostics: [],
@@ -1414,24 +1396,11 @@ describe.skipIf(!wasmArtifactPresent)("EditorApp", () => {
     fireEvent.change(screen.getByLabelText("Profile"), {
       target: { value: "preview_png" }
     });
-    fireEvent.change(screen.getByLabelText("Profile name"), {
-      target: { value: "Client Social PNG" }
-    });
-    expect(screen.getByText("client_social_png (png, unsaved)")).toBeInTheDocument();
-    expect(screen.getByText(/This profile is an unsaved draft/)).toBeInTheDocument();
-    fireEvent.change(screen.getByLabelText("Scale"), {
-      target: { value: "3" }
-    });
-    fireEvent.change(screen.getByLabelText("DPI"), {
-      target: { value: "300" }
-    });
-
-    fireEvent.click(screen.getByRole("button", { name: /save profile/i }));
-
-    expect(screen.getByText("1 document export profile saved.")).toBeInTheDocument();
-    expect(screen.getByText("upsert_export_profile client_social_png")).toBeInTheDocument();
-    expect(screen.getByLabelText("Profile")).toHaveValue("client_social_png");
-    expect(screen.queryByText(/This profile is an unsaved draft/)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Profile name")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Scale")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("DPI")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /save profile/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /remove saved/i })).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: /generate preview/i }));
 
@@ -1440,12 +1409,9 @@ describe.skipIf(!wasmArtifactPresent)("EditorApp", () => {
       scene: expect.any(Object),
       pageIds: ["page_a4"],
       profile: expect.objectContaining({
-        name: "client_social_png",
+        name: "preview_png",
         format: "png",
-        raster: {
-          scale: 3,
-          dpi: 300
-        },
+        raster: expect.any(Object),
         pdf_intent: null,
         include_bleed: false,
         embed_fonts: false
@@ -1470,14 +1436,12 @@ describe.skipIf(!wasmArtifactPresent)("EditorApp", () => {
       target: { value: "high_res_png" }
     });
 
-    expect(screen.getByText("PNG_RASTER_SIZE_page_a4")).toBeInTheDocument();
-    expect(screen.getByText(/Huge Square will export to 10000 x 10000 px \(100.0 MP\) with high_res_png/)).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: /show artboard page_a4/i }));
-    expect(screen.getByTestId("canvas-selection")).toHaveAttribute("data-page-width", "5000");
-    expect(screen.getByTestId("canvas-selection")).toHaveAttribute("data-page-height", "5000");
+    expect(screen.queryByText("PNG_RASTER_SIZE_page_a4")).not.toBeInTheDocument();
+    expect(screen.queryByText(/Huge Square will export to 10000 x 10000 px \(100.0 MP\) with high_res_png/)).not.toBeInTheDocument();
   });
 
   it("exports a preview for inspection when canonical preflight fails", async () => {
+    const consoleInfo = vi.spyOn(console, "info").mockImplementation(() => {});
     const exportRunner: EditorExportRunner = vi.fn().mockResolvedValue({
       status: "ok",
       diagnostics: [],
@@ -1544,12 +1508,11 @@ describe.skipIf(!wasmArtifactPresent)("EditorApp", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /generate preview/i }));
 
-    expect((await screen.findAllByText("LUMV_TEXT_OVERFLOW")).length).toBeGreaterThanOrEqual(1);
-    expect(screen.getAllByText("Headline overflows its frame.").length).toBeGreaterThanOrEqual(1);
     expect(await screen.findByText("Export ready")).toBeInTheDocument();
-    expect(screen.getByText("Not ready for approval")).toBeInTheDocument();
-    fireEvent.click(screen.getAllByRole("button", { name: /show node node_contact_name/i })[0]);
-    expect(screen.getByTestId("canvas-selection")).toHaveAttribute("data-selected-node", "node_contact_name");
+    expect(screen.queryByText("LUMV_TEXT_OVERFLOW")).not.toBeInTheDocument();
+    expect(screen.queryByText("Headline overflows its frame.")).not.toBeInTheDocument();
+    expect(screen.queryByText("Not ready for approval")).not.toBeInTheDocument();
+    expectLoggedExportDiagnostic(consoleInfo, "LUMV_TEXT_OVERFLOW");
     expect(exportRunner).toHaveBeenCalledWith({
       scene: expect.objectContaining({
         pages: expect.objectContaining({
@@ -1564,6 +1527,7 @@ describe.skipIf(!wasmArtifactPresent)("EditorApp", () => {
   });
 
   it("exports a preview when preflight summary reports errors even if status is applied", async () => {
+    const consoleInfo = vi.spyOn(console, "info").mockImplementation(() => {});
     const exportRunner: EditorExportRunner = vi.fn().mockResolvedValue({
       status: "ok",
       diagnostics: [],
@@ -1631,11 +1595,13 @@ describe.skipIf(!wasmArtifactPresent)("EditorApp", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /generate preview/i }));
 
-    expect((await screen.findAllByText("LUMV_PREFLIGHT_HAS_ERRORS")).length).toBeGreaterThanOrEqual(1);
-    expect(screen.getAllByText("Preflight summary reports unresolved layout errors.").length).toBeGreaterThanOrEqual(1);
     expect(await screen.findByText("Export ready")).toBeInTheDocument();
-    expect(screen.getAllByText("EDITOR_EXPORT_PREFLIGHT_HAS_ERRORS").length).toBeGreaterThanOrEqual(1);
-    expect(screen.getByText("Not ready for approval")).toBeInTheDocument();
+    expect(screen.queryByText("LUMV_PREFLIGHT_HAS_ERRORS")).not.toBeInTheDocument();
+    expect(screen.queryByText("Preflight summary reports unresolved layout errors.")).not.toBeInTheDocument();
+    expect(screen.queryByText("EDITOR_EXPORT_PREFLIGHT_HAS_ERRORS")).not.toBeInTheDocument();
+    expect(screen.queryByText("Not ready for approval")).not.toBeInTheDocument();
+    expectLoggedExportDiagnostic(consoleInfo, "LUMV_PREFLIGHT_HAS_ERRORS");
+    expectLoggedExportDiagnostic(consoleInfo, "EDITOR_EXPORT_PREFLIGHT_HAS_ERRORS");
     expect(exportRunner).toHaveBeenCalledWith({
       scene: expect.objectContaining({
         pages: expect.objectContaining({
@@ -1856,6 +1822,7 @@ describe.skipIf(!wasmArtifactPresent)("EditorApp", () => {
   });
 
   it("shows structured export failures after successful preflight", async () => {
+    const consoleInfo = vi.spyOn(console, "info").mockImplementation(() => {});
     const exportRunner: EditorExportRunner = vi.fn().mockResolvedValue({
       status: "failed",
       diagnostics: [
@@ -1897,11 +1864,11 @@ describe.skipIf(!wasmArtifactPresent)("EditorApp", () => {
     fireEvent.click(screen.getByRole("button", { name: /generate preview/i }));
 
     expect(await screen.findByText("Export failed")).toBeInTheDocument();
-    expect(screen.getAllByText("LUME0101").length).toBeGreaterThanOrEqual(1);
-    expect(screen.getAllByText("export request references missing page missing_page").length).toBeGreaterThanOrEqual(1);
-    expect(screen.getAllByText("LUME0418").length).toBeGreaterThanOrEqual(1);
-    fireEvent.click(screen.getAllByRole("button", { name: /show node node_contact_name/i })[0]);
-    expect(screen.getByTestId("canvas-selection")).toHaveAttribute("data-selected-node", "node_contact_name");
+    expect(screen.queryByText("LUME0101")).not.toBeInTheDocument();
+    expect(screen.queryByText("export request references missing page missing_page")).not.toBeInTheDocument();
+    expect(screen.queryByText("LUME0418")).not.toBeInTheDocument();
+    expectLoggedExportDiagnostic(consoleInfo, "LUME0101");
+    expectLoggedExportDiagnostic(consoleInfo, "LUME0418");
     expect(screen.queryByText("Export ready")).not.toBeInTheDocument();
     expect(exportRunner).toHaveBeenCalledWith({
       scene: expect.any(Object),
@@ -1912,24 +1879,14 @@ describe.skipIf(!wasmArtifactPresent)("EditorApp", () => {
     });
   });
 
-  it("saves and removes selected export profiles through canonical operations", () => {
+  it("keeps export profile persistence controls out of the main panel", () => {
     const scene = twoPageScene();
     scene.export_profiles = [];
     render(<TestEditorApp initialScene={scene} initialSelectedNodeId={null} />);
 
-    expect(screen.getByText("0 document export profiles saved.")).toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole("button", { name: /save profile/i }));
-
-    expect(screen.getByText("1 document export profile saved.")).toBeInTheDocument();
-    expect(screen.getByText("upsert_export_profile preview_svg")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /update saved profile/i })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /remove saved/i })).toBeEnabled();
-
-    fireEvent.click(screen.getByRole("button", { name: /remove saved/i }));
-
-    expect(screen.getByText("0 document export profiles saved.")).toBeInTheDocument();
-    expect(screen.getByText("remove_export_profile preview_svg")).toBeInTheDocument();
+    expect(screen.queryByText(/document export profile/)).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /save profile/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /remove saved/i })).not.toBeInTheDocument();
   });
 
   it("runs injected Brand Kit governance and displays returned diagnostics", async () => {
@@ -2236,6 +2193,22 @@ function sceneWithAutoLayoutLayers(): Scene {
   };
   scene.pages.page_a4.children = ["node_stack"];
   return scene;
+}
+
+function expectLoggedExportDiagnostic(consoleInfo: { mock: { calls: unknown[][] } }, code: string): void {
+  const found = consoleInfo.mock.calls.some(([eventName, diagnostics]) => {
+    if (eventName !== "[lumen-export-preview] diagnostics" || !Array.isArray(diagnostics)) {
+      return false;
+    }
+    return diagnostics.some(
+      (diagnostic) =>
+        typeof diagnostic === "object" &&
+        diagnostic !== null &&
+        "code" in diagnostic &&
+        diagnostic.code === code
+    );
+  });
+  expect(found).toBe(true);
 }
 
 function sceneWithAssetNode(): Scene {

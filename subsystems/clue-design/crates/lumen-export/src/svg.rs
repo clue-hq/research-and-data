@@ -468,7 +468,7 @@ impl<'a> SvgPageRenderer<'a> {
                     id_attrs,
                     fmt_num(x),
                     fmt_num(text.font_size),
-                    escape_attr(&text.font_family),
+                    escape_attr(&svg_font_family(&text.font_family)),
                     fmt_num(text.font_size),
                     text.font_weight,
                     anchor,
@@ -1296,6 +1296,29 @@ fn corner_attrs(node: &Node) -> String {
 
 fn opacity_with_paint(opacity: String, paint_attrs: String) -> String {
     format!("{}{}", opacity, paint_attrs)
+}
+
+fn svg_font_family(family: &str) -> String {
+    let trimmed = family.trim();
+    if trimmed.is_empty() {
+        return "Arial, Helvetica, sans-serif".to_owned();
+    }
+
+    let lower = trimmed.to_ascii_lowercase();
+    if trimmed.contains(',')
+        || matches!(
+            lower.as_str(),
+            "serif" | "sans-serif" | "monospace" | "cursive" | "fantasy" | "system-ui"
+        )
+    {
+        return trimmed.to_owned();
+    }
+
+    if lower == "inter" || lower == "inter variable" {
+        return format!("{trimmed}, Arial, Helvetica, sans-serif");
+    }
+
+    trimmed.to_owned()
 }
 
 fn gradient_stops<F>(stops: &[ColorStop], mut color: F) -> String

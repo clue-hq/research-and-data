@@ -34,12 +34,13 @@ describe("ExportPanel artifact actions", () => {
     );
 
     fireEvent.click(screen.getByRole("button", { name: "Download" }));
-    fireEvent.click(screen.getByRole("button", { name: "Download sidecar" }));
 
-    expect(createObjectURL).toHaveBeenCalledTimes(2);
+    expect(screen.queryByRole("button", { name: "Download sidecar" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Copy SVG" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Copy sidecar" })).not.toBeInTheDocument();
+    expect(createObjectURL).toHaveBeenCalledTimes(1);
     expect(createObjectURL.mock.calls[0][0]).toBeInstanceOf(Blob);
-    expect(createObjectURL.mock.calls[1][0]).toBeInstanceOf(Blob);
-    expect(click).toHaveBeenCalledTimes(2);
+    expect(click).toHaveBeenCalledTimes(1);
   });
 });
 
