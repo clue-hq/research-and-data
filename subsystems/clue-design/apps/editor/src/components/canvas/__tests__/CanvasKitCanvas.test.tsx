@@ -1,14 +1,16 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { minimalScene } from "@/fixtures/minimalScene";
-import type { Diagnostic, Scene } from "@/engine/contracts";
+import type { Diagnostic, Node, Scene } from "@/engine/contracts";
 import type { OptimisticEnginePort } from "@/engine/wasmEngine";
 import { createWorkspaceModel } from "@/engine/workspaceLayout";
 import { defaultWorkspaceViewport } from "@/engine/workspaceViewport";
 import { CanvasKitCanvas } from "../CanvasKitCanvas";
 
 vi.mock("../CanvasKitStage", () => ({
-  CanvasKitStage: () => <div data-testid="canvaskit-stage" />
+  CanvasKitStage: ({ artboards }: { artboards: Array<{ nodes: DrawNodeForTest[] }> }) => (
+    <div data-testid="canvaskit-stage" data-tree={JSON.stringify(artboards.map((artboard) => artboard.nodes.map(nodeSummary)))} />
+  )
 }));
 
 vi.mock("../TextEditOverlay", () => ({
@@ -97,6 +99,48 @@ describe("CanvasKitCanvas polish chrome wiring", () => {
     expect(screen.getByRole("button", { name: "Fit current artboard" })).toHaveAttribute("aria-pressed", "true");
     expect(screen.getByRole("button", { name: "Fit all artboards" })).toHaveAttribute("aria-pressed", "false");
   });
+
+  it("passes nested CanvasKit draw descriptors in parent-local coordinates", () => {
+    const nestedScene = cloneScene();
+    const parent: Node = {
+      ...nestedScene.nodes.node_contact_name,
+      id: "parent_frame",
+      name: "Parent frame",
+      kind: { kind: "frame" },
+      fills: [],
+      strokes: [],
+      children: ["child_text"],
+      computed: {
+        layout_bounds: { x: 100, y: 60, width: 320, height: 200 },
+        render_bounds: { x: 100, y: 60, width: 320, height: 200 }
+      }
+    };
+    const child: Node = {
+      ...nestedScene.nodes.node_contact_name,
+      id: "child_text",
+      name: "Child text",
+      children: [],
+      computed: {
+        layout_bounds: { x: 124, y: 84, width: 180, height: 30 },
+        render_bounds: { x: 124, y: 84, width: 180, height: 30 }
+      }
+    };
+    nestedScene.nodes = { parent_frame: parent, child_text: child };
+    nestedScene.pages.page_a4 = { ...nestedScene.pages.page_a4, children: ["parent_frame"] };
+
+    renderCanvasKit({ scene: nestedScene, selectedNodeId: null });
+
+    const tree = JSON.parse(screen.getByTestId("canvaskit-stage").dataset.tree ?? "[]") as NodeSummaryForTest[][];
+    const parentSummary = tree[0]?.[0];
+    const childSummary = parentSummary?.children[0];
+    const scale = 96 / 25.4;
+    expect(parentSummary).toMatchObject({ id: "parent_frame" });
+    expect(parentSummary.x).toBeCloseTo(100 * scale);
+    expect(parentSummary.y).toBeCloseTo(60 * scale);
+    expect(childSummary).toMatchObject({ id: "child_text" });
+    expect(childSummary.x).toBeCloseTo(24 * scale);
+    expect(childSummary.y).toBeCloseTo(24 * scale);
+  });
 });
 
 function renderCanvasKit({
@@ -152,5 +196,30 @@ function diagnostic(severity: Diagnostic["severity"], subject: Diagnostic["subje
     message: `${severity} diagnostic`,
     subject,
     hint: null
+  };
+}
+
+interface DrawNodeForTest {
+  descriptor: {
+    id: string;
+    x: number;
+    y: number;
+  };
+  children: DrawNodeForTest[];
+}
+
+interface NodeSummaryForTest {
+  id: string;
+  x: number;
+  y: number;
+  children: NodeSummaryForTest[];
+}
+
+function nodeSummary(node: DrawNodeForTest): NodeSummaryForTest {
+  return {
+    id: node.descriptor.id,
+    x: node.descriptor.x,
+    y: node.descriptor.y,
+    children: node.children.map(nodeSummary)
   };
 }

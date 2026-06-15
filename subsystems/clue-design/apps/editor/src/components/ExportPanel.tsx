@@ -766,9 +766,9 @@ function ExportArtifactRow({ artifact }: { artifact: EditorExportArtifact }) {
       ) : null}
       {artifact.data_url ? (
         <div className="artifact-actions">
-          <a href={artifact.data_url} download={artifact.filename}>
+          <button type="button" onClick={() => downloadDataUrl(artifact.data_url, artifact.filename)}>
             Download
-          </a>
+          </button>
           {canCopySvg ? (
             <button type="button" onClick={handleCopySvg}>
               <Copy aria-hidden size={13} />
@@ -777,9 +777,12 @@ function ExportArtifactRow({ artifact }: { artifact: EditorExportArtifact }) {
           ) : null}
           {sidecarDataUrl ? (
             <>
-              <a href={sidecarDataUrl} download={artifact.sidecar_filename ?? `${artifact.filename}.sidecar.json`}>
+              <button
+                type="button"
+                onClick={() => downloadDataUrl(sidecarDataUrl, artifact.sidecar_filename ?? `${artifact.filename}.sidecar.json`)}
+              >
                 Download sidecar
-              </a>
+              </button>
               <button type="button" onClick={handleCopySidecar}>
                 <Copy aria-hidden size={13} />
                 Copy sidecar
@@ -799,6 +802,48 @@ function ExportArtifactRow({ artifact }: { artifact: EditorExportArtifact }) {
       ) : null}
     </div>
   );
+}
+
+function downloadDataUrl(dataUrl: string | null, filename: string): void {
+  if (!dataUrl || typeof document === "undefined") {
+    return;
+  }
+  const anchor = document.createElement("a");
+  anchor.download = filename;
+  anchor.rel = "noopener";
+
+  let objectUrl: string | null = null;
+  try {
+    objectUrl = URL.createObjectURL(dataUrlToBlob(dataUrl));
+    anchor.href = objectUrl;
+  } catch {
+    anchor.href = dataUrl;
+  }
+
+  document.body.append(anchor);
+  anchor.click();
+  anchor.remove();
+
+  if (objectUrl) {
+    window.setTimeout(() => URL.revokeObjectURL(objectUrl), 0);
+  }
+}
+
+function dataUrlToBlob(dataUrl: string): Blob {
+  const [metadata, payload] = dataUrl.split(",", 2);
+  if (!metadata || payload === undefined) {
+    throw new Error("Invalid data URL");
+  }
+  const mimeType = /^data:([^;,]+)/.exec(metadata)?.[1] ?? "application/octet-stream";
+  if (metadata.includes(";base64")) {
+    const binary = atob(payload);
+    const bytes = new Uint8Array(binary.length);
+    for (let index = 0; index < binary.length; index += 1) {
+      bytes[index] = binary.charCodeAt(index);
+    }
+    return new Blob([bytes], { type: mimeType });
+  }
+  return new Blob([decodeURIComponent(payload)], { type: mimeType });
 }
 
 async function copyText(text: string): Promise<boolean> {

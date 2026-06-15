@@ -23,7 +23,7 @@ import {
   screenToDescriptor
 } from "@/engine/canvaskitGestures";
 import { getNode, getPage, nodeDisplayName, topLevelAncestorId } from "@/engine/sceneQueries";
-import { nodeDescriptor, pageDescriptor } from "@/engine/renderAdapter";
+import { nodeDescriptor, pageDescriptor, type ParentComputedOrigin } from "@/engine/renderAdapter";
 import { loadCanvasKit } from "@/engine/canvaskit/loadCanvasKit";
 import { skiaMeasurements } from "@/engine/canvaskit/skiaMeasurements";
 import type { Box } from "@/engine/transformerMath";
@@ -217,21 +217,30 @@ export function CanvasKitCanvas({
 
   // Descriptor trees, applying the live preview override to the dragged node.
   const artboards = useMemo(() => {
-    const buildForPage = (pageId: PageId, nodeId: NodeId): DrawNode | null => {
+    const buildForPage = (pageId: PageId, nodeId: NodeId, parentComputedOrigin: ParentComputedOrigin | null = null): DrawNode | null => {
       const currentPage = scene.pages[pageId];
       const node = scene.nodes[nodeId];
       if (!node || !currentPage) return null;
-      const descriptor = nodeDescriptor(scene, node, currentPage);
+      const descriptor = nodeDescriptor(scene, node, currentPage, parentComputedOrigin);
       if (preview && preview.nodeId === nodeId) {
-        descriptor.x = preview.box.x;
-        descriptor.y = preview.box.y;
+        const scale = pageDescriptor(currentPage).unitScale;
+        const parentOffsetX = (parentComputedOrigin?.x ?? 0) * scale;
+        const parentOffsetY = (parentComputedOrigin?.y ?? 0) * scale;
+        descriptor.x = preview.box.x - parentOffsetX;
+        descriptor.y = preview.box.y - parentOffsetY;
         descriptor.width = preview.box.width;
         descriptor.height = preview.box.height;
         descriptor.rotation = preview.rotation;
       }
+      const childParentComputedOrigin = node.computed
+        ? {
+            x: node.computed.layout_bounds.x,
+            y: node.computed.layout_bounds.y
+          }
+        : null;
       return {
         descriptor,
-        children: node.children.map((childId) => buildForPage(pageId, childId)).filter(Boolean) as DrawNode[]
+        children: node.children.map((childId) => buildForPage(pageId, childId, childParentComputedOrigin)).filter(Boolean) as DrawNode[]
       };
     };
     return workspaceModel.artboards
@@ -425,7 +434,7 @@ export function CanvasKitCanvas({
   );
 
   const pointerFromEvent = (event: React.PointerEvent): { x: number; y: number } => {
-    return screenToDescriptor(screenPointFromEvent(event), pageOrigin, zoom);
+    return screenToDescriptor(screenPointFromEvent(event, containerRef.current), pageOrigin, zoom);
   };
 
   // The text node being edited: its descriptor box + style for the DOM overlay.
@@ -582,10 +591,11 @@ export function CanvasKitCanvas({
         style={{ position: "absolute", inset: 0 }}
         onWheel={(event) => {
           event.preventDefault();
+          const screenPoint = screenPointFromEvent(event, containerRef.current);
           onWorkspaceFitTargetChange("manual");
           if (event.ctrlKey || event.metaKey) {
             onWorkspaceViewportChange((current) =>
-              zoomWorkspaceViewportAtPoint(current, screenPointFromEvent(event), current.zoom + (event.deltaY > 0 ? -0.08 : 0.08))
+              zoomWorkspaceViewportAtPoint(current, screenPoint, current.zoom + (event.deltaY > 0 ? -0.08 : 0.08))
             );
             return;
           }
@@ -776,11 +786,15 @@ function CanvasKitArtboardLabels({
   );
 }
 
-function screenPointFromEvent(event: React.PointerEvent | React.WheelEvent | React.MouseEvent): { x: number; y: number } {
-  const rect = event.currentTarget.getBoundingClientRect();
+function screenPointFromEvent(
+  event: React.PointerEvent | React.WheelEvent | React.MouseEvent,
+  fallbackElement?: Element | null
+): { x: number; y: number } {
+  const currentTarget = event.currentTarget as Element | null;
+  const rect = (currentTarget ?? fallbackElement)?.getBoundingClientRect();
   return {
-    x: event.clientX - rect.left,
-    y: event.clientY - rect.top
+    x: event.clientX - (rect?.left ?? 0),
+    y: event.clientY - (rect?.top ?? 0)
   };
 }
 
