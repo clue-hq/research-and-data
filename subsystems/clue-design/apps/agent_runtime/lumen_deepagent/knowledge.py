@@ -24,6 +24,11 @@ PRIMARY_KNOWLEDGE_PATHS = [
     f"{KNOWLEDGE_DOCS_ROOT}/knowledge/design/artboard-frame-authoring.md",
     f"{KNOWLEDGE_DOCS_ROOT}/knowledge/design/layout-recipes.md",
     f"{KNOWLEDGE_DOCS_ROOT}/knowledge/design/typography-and-composition.md",
+    f"{KNOWLEDGE_DOCS_ROOT}/knowledge/design/blocks/README.md",
+    f"{KNOWLEDGE_DOCS_ROOT}/knowledge/design/blocks/patterns.md",
+    f"{KNOWLEDGE_DOCS_ROOT}/knowledge/design/blocks/layout.md",
+    f"{KNOWLEDGE_DOCS_ROOT}/knowledge/design/blocks/actions.md",
+    f"{KNOWLEDGE_DOCS_ROOT}/knowledge/design/blocks/data-display.md",
     f"{KNOWLEDGE_DOCS_ROOT}/knowledge/design-systems/token-taxonomy.md",
     f"{KNOWLEDGE_DOCS_ROOT}/knowledge/design-systems/brand-kits.md",
     f"{KNOWLEDGE_DOCS_ROOT}/knowledge/design-systems/brand-validation.md",
@@ -56,6 +61,24 @@ LAYOUT_CLUSTER_REPAIR_PATH = (
 # (horizontal-only align — there is NO valign/text_align — plus wrap/max_lines).
 GRAMMAR_PATH = f"{KNOWLEDGE_DOCS_ROOT}/knowledge/lumen-dsl/grammar.md"
 TEXT_PATH = f"{KNOWLEDGE_DOCS_ROOT}/knowledge/lumen-dsl/text.md"
+
+# The vetted block catalog: pre-proportioned, compile+preflight-validated blocks
+# the author ASSEMBLES (README index + full-artifact patterns + component blocks).
+# Pinned for every design task so the author composes vetted blocks instead of
+# inventing proportions (the cause of the LUMV0810/0903/0904 overcrowding failures).
+BLOCKS_DIR = f"{KNOWLEDGE_DOCS_ROOT}/knowledge/design/blocks"
+BLOCK_CATALOG_PATHS = [
+    f"{BLOCKS_DIR}/README.md",
+    f"{BLOCKS_DIR}/patterns.md",
+    f"{BLOCKS_DIR}/layout.md",
+    f"{BLOCKS_DIR}/actions.md",
+    f"{BLOCKS_DIR}/data-display.md",
+]
+
+# Docs delivered to the author IN FULL (not windowed to a best_excerpt). The block
+# examples and the grammar/text references must arrive intact — a 1600-char window
+# slices a full page+artboard+block example in half and teaches broken syntax.
+FULL_DELIVERY_PATHS = {GRAMMAR_PATH, TEXT_PATH, *BLOCK_CATALOG_PATHS}
 LAYOUT_CLUSTER_TERMS = {
     "artboard",
     "background",
@@ -87,7 +110,7 @@ def read_knowledge(
         score = score_text(text, terms, rel_path)
         if score == 0 and snippets and rel_path not in PRIMARY_KNOWLEDGE_PATHS:
             continue
-        excerpt = best_excerpt(text, terms)
+        excerpt = text if rel_path in FULL_DELIVERY_PATHS else best_excerpt(text, terms)
         snippets.append(
             KnowledgeSnippet(
                 path=rel_path,
@@ -109,7 +132,10 @@ def read_task_knowledge(
     paths: Iterable[str] = DEFAULT_KNOWLEDGE_PATHS,
 ) -> List[KnowledgeSnippet]:
     """Return task knowledge with mandatory Lumen docs before reference docs."""
-    candidates = read_knowledge(repo_root, query, limit=max(limit * 3, 20), paths=paths)
+    # The candidate pool must cover every pinned/mandatory path — the mandatory
+    # force-select below reads from it — so keep it wide enough to include all
+    # default paths even though only `limit` are ultimately selected.
+    candidates = read_knowledge(repo_root, query, limit=max(limit * 4, 64), paths=paths)
     selected: list[KnowledgeSnippet] = []
     seen_paths: set[str] = set()
 
@@ -158,7 +184,7 @@ def mandatory_task_paths(query: str) -> list[str]:
     # hallucinates unsupported syntax — `va(center)` (LUMD0212), a `divider` node
     # kind (LUMD0206) — and wastes the first iteration. Both are PRIMARY paths, so
     # they are always among the candidates this force-selects from.
-    paths = [GRAMMAR_PATH, TEXT_PATH, ARTBOARD_AUTHORING_PATH]
+    paths = [GRAMMAR_PATH, TEXT_PATH, ARTBOARD_AUTHORING_PATH, *BLOCK_CATALOG_PATHS]
     terms = set(re.split(r"[^a-z0-9_.$-]+", query.lower()))
     if terms & LAYOUT_CLUSTER_TERMS:
         paths.append(LAYOUT_CLUSTER_REPAIR_PATH)

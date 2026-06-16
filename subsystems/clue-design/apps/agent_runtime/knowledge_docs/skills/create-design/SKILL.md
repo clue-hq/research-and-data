@@ -12,10 +12,10 @@ brand-aligned artifact. This is the *first* pass only — fixing diagnostics is
 ## Before you write
 
 1. **Load knowledge** for the task (see `AGENT.md` §4): always
-   `knowledge/lumen-dsl/grammar` + `knowledge/design/artboard-frame-authoring`
-   + `knowledge/design/layout-recipes`; add `skills/brand-and-tokens` + the
-   design-systems files when a Brand Kit is in
-   play; add `knowledge/lumen-dsl/text` for text-heavy pieces;
+   `knowledge/lumen-dsl/grammar` + `knowledge/lumen-dsl/text`
+   + `knowledge/design/artboard-frame-authoring` + the **vetted block catalog**
+   (`knowledge/design/blocks/*` — pinned automatically); add `skills/brand-and-tokens`
+   + the design-systems files when a Brand Kit is in play;
    `skills/effects` for shadows/special strokes/gradients.
 2. **Pin the surface.** Match the requested artifact exactly:
    `page story size(1080,1920,px)` for a story, `preset(a4,portrait)` for a
@@ -29,6 +29,19 @@ brand-aligned artifact. This is the *first* pass only — fixing diagnostics is
 
 ## How to compose
 
+- **Start from the vetted block catalog** (`knowledge/design/blocks/`, loaded for
+  every design task). Pick the full-artifact composition in `blocks/patterns.md`
+  that matches the requested surface (social square / A4 / landscape / postcard) —
+  it is already correctly proportioned, spaced, and validator-passed. Swap copy
+  through its `#slot:` lines, and swap in component blocks (`layout.md`,
+  `actions.md`, `data-display.md`) as needed. **Do not invent proportions from
+  primitives** — that is what overcrowds layouts and fails preflight. See
+  `blocks/README.md` for the index, the shared token choices, and the content budget.
+- **Respect the content budget** (`blocks/README.md`): headline 4–8 words /
+  `max_lines(2)`, body 12–25 words / `max_lines(3)`, benefit title ≤4 words,
+  benefit description ≤12 words; one CTA per section; never more than 3 benefits in
+  a row, and never 3 across on a portrait page. If content exceeds the budget, drop
+  it or stack vertically — never shrink type or cram more in.
 - **Structure with auto-layout**, not hand coordinates, whenever spacing should be
   systematic. A vertical `al(v, x(s), g(…), pad(…))` stack for content; a
   horizontal `al(h, x(c), y(c), …)` for buttons and proof rows.

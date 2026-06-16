@@ -827,6 +827,28 @@ def test_grammar_and_text_refs_are_pinned_for_authoring():
     assert "apps/agent_runtime/knowledge_docs/knowledge/lumen-dsl/text.md" in paths
 
 
+def test_block_catalog_is_pinned_and_delivered_full():
+    # P0.2: the vetted block catalog must be pinned for any authoring task AND
+    # delivered in FULL (not windowed to a best_excerpt) — a truncated block
+    # example teaches the author broken/partial syntax.
+    repo_root = Path(__file__).resolve().parents[3]
+
+    snippets = read_task_knowledge(
+        repo_root,
+        "Create a patient appointment card with a clear headline and a Book a Demo button",
+    )
+    by_path = {snippet.path: snippet for snippet in snippets}
+    base = "apps/agent_runtime/knowledge_docs/knowledge/design/blocks/"
+
+    for name in ("README.md", "patterns.md", "layout.md", "actions.md", "data-display.md"):
+        rel = base + name
+        assert rel in by_path, f"block doc {name} not pinned for authoring"
+        on_disk = (repo_root / rel).read_text(encoding="utf-8")
+        assert by_path[rel].excerpt == on_disk, (
+            f"block doc {name} was windowed/truncated, not delivered in full"
+        )
+
+
 def test_artboard_fixture_prompts_cover_required_surfaces():
     repo_root = Path(__file__).resolve().parents[3]
     fixture_path = repo_root / "apps/agent_runtime/evaluation/fixture_prompts.json"
