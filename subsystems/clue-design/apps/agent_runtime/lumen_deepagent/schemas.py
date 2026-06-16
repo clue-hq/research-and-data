@@ -297,7 +297,7 @@ class AgentIteration(BaseModel):
 class AgentRunState(BaseModel):
     run_id: str
     user_request: str
-    status: Literal["running", "accepted", "failed"] = "running"
+    status: Literal["running", "accepted", "completed_with_warnings", "failed"] = "running"
     iterations: List[AgentIteration] = Field(default_factory=list)
     loaded_knowledge: List[KnowledgeSnippet] = Field(default_factory=list)
     effective_brand: Optional[JsonObject] = None

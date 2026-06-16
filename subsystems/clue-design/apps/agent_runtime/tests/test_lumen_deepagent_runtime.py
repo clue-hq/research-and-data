@@ -2363,8 +2363,12 @@ def test_quality_loop_records_max_iteration_stop(tmp_path: Path, monkeypatch):
 
     result = LumenQualityLoop(tools, author, reviewer).run("Create a square LinkedIn ad")
 
-    assert result["status"] == "failed"
+    # The draft is preflight-clean (valid) but the reviewer never accepted within
+    # the budget: the run completes WITH WARNINGS rather than failing, and the best
+    # draft stays on the canvas instead of being surfaced to the user as an error.
+    assert result["status"] == "completed_with_warnings"
     assert result["stop_reason"] == "max_iterations_reached"
+    assert tools.scene["nodes"], "best preflight-clean draft must remain on the canvas"
 
 
 class FakeDestructiveRepairCoreClient(FakeCoreClient):
@@ -2411,10 +2415,11 @@ def test_failed_run_restores_best_compiled_scene_for_canvas_draft(
 ):
     """A destructive final repair must not strip the design from the canvas.
 
-    Iteration 1 compiles a full scene but the reviewer rejects it; the repair
-    (iteration 2) wipes the scene and halts. The run fails, but the loop must
-    restore the best compiled scene so the editor renders it as a draft instead
-    of an empty canvas (the `draft_scene` the API surfaces is `tools.scene`)."""
+    Iteration 1 compiles a full scene (preflight-clean) but the reviewer rejects
+    it; the repair (iteration 2) wipes the scene and halts. The run completes with
+    warnings (a clean draft existed), and the loop must restore the best compiled
+    scene so the editor renders it as a draft instead of an empty canvas (the
+    `draft_scene` the API surfaces is `tools.scene`)."""
     monkeypatch.setattr(
         "lumen_deepagent.tools.CoreClient", FakeDestructiveRepairCoreClient
     )
@@ -2439,7 +2444,7 @@ def test_failed_run_restores_best_compiled_scene_for_canvas_draft(
 
     result = LumenQualityLoop(tools, author, reviewer).run("Create a square LinkedIn ad")
 
-    assert result["status"] == "failed"
+    assert result["status"] == "completed_with_warnings"
     assert result["stop_reason"] == "max_iterations_reached"
     # The live scene the API hands to the editor as draft_scene must still carry
     # the best compiled design, not the wiped scene from the destructive repair.
@@ -2539,6 +2544,9 @@ def test_trace_evaluator_summarizes_final_run_outputs(tmp_path: Path):
     assert summary["brand_contexts"][0]["brand_kit_id"] == "brand_kit_platform_default"
     assert summary["unresolved_issue_categories"]["clipping"] == 1
     assert summary["unresolved_issue_categories"]["gap:rendering_export_preview"] == 1
+    assert summary["failure_attribution"] == {"renderer_export_preview": 1}
+    assert summary["run_attributions"][0]["primary"] == "renderer_export_preview"
+    assert summary["run_attributions"][0]["confidence"] == "high"
     assert summary["preview_paths"] == ["/tmp/preview.svg"]
     assert summary["layout_cluster_repairs"] == 0
     assert summary["remaining_parent_overflow"] == 0
@@ -2626,6 +2634,9 @@ def test_trace_evaluator_counts_layout_cluster_and_geometry_failures(tmp_path: P
     assert summary["layout_cluster_rejections"] == 1
     assert summary["destructive_repair_rejections"] == 1
     assert summary["whole_scene_regeneration_attempts"] == 2
+    assert summary["failure_attribution"] == {"agent_authoring": 1}
+    assert summary["run_attributions"][0]["primary"] == "agent_authoring"
+    assert "LUMV0800" in summary["run_attributions"][0]["diagnostic_codes"]
     assert summary["oversized_background_rects"] == 1
     assert summary["remaining_artboard_overflow"] == 1
     assert summary["remaining_parent_overflow"] == 1

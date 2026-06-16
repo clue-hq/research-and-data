@@ -633,14 +633,32 @@ class LumenQualityLoop:
             feedback["repair_request"] = repair_request.get("repair_request")
             iteration_record.stop_reason = StopReason.reviewer_rejected
 
-        self.state.status = "failed"
+        # Repair budget exhausted. If we captured a preflight-clean draft — a valid
+        # design that simply never won an explicit visual acceptance within the
+        # budget — hand it back as `completed_with_warnings` rather than a hard
+        # failure: the editor should surface the best draft, not an error state.
+        # Only a run that never reached a clean draft is a genuine failure. Either
+        # way the best renderable scene is restored so the canvas is never wiped.
         self.state.stop_reason = StopReason.max_iterations_reached
+        last_feedback = self.previous_feedback[-1] if self.previous_feedback else {}
+        best_is_preflight_clean = bool(self.best_rank and self.best_rank[0] == 1)
+        if best_is_preflight_clean:
+            self._restore_best_scene()
+            self.state.status = "completed_with_warnings"
+            return json.loads(
+                self.tools.finalize_run(
+                    "completed_with_warnings",
+                    StopReason.max_iterations_reached.value,
+                    "Repair budget reached. Returned the best preflight-clean draft, "
+                    "which was not explicitly accepted by the visual reviewer.",
+                    critique_json=json.dumps(last_feedback),
+                )
+            )
+        self.state.status = "failed"
         return self._finalize_failed(
             StopReason.max_iterations_reached.value,
-            "Maximum Phase A repair iterations reached.",
-            critique_json=json.dumps(
-                self.previous_feedback[-1] if self.previous_feedback else {}
-            ),
+            "Maximum Phase A repair iterations reached without a clean draft.",
+            critique_json=json.dumps(last_feedback),
         )
 
     def _consider_best(

@@ -749,7 +749,7 @@ impl<'a> LayoutEngine<'a> {
         let Some(bounds) = self.node_bounds(node_id, page_bounds) else {
             return;
         };
-        if rect_contains(page_bounds, &bounds) {
+        if rect_contains_within(page_bounds, &bounds, PAGE_BOUNDS_TOLERANCE_PT) {
             return;
         }
         if page
@@ -1621,6 +1621,27 @@ fn rect_contains(container: &Rect, child: &Rect) -> bool {
         && child.y >= container.y
         && child.x + child.width <= container.x + container.width
         && child.y + child.height <= container.y + container.height
+}
+
+/// Sub-point tolerance for page-bounds containment.
+///
+/// A `fill,fill` root artboard resolves to the rounded preset height (A4 portrait
+/// → 842.0pt) while the canonical exportable page height is 841.889…pt. A strict
+/// containment check then reports a permanent ~0.11pt overflow (`LUMV0800`) on the
+/// root frame that NO authoring repair can clear — the repair loop is forced to
+/// re-assert `s(fill,fill)`, which reproduces the same rounding. One point is far
+/// below rendering significance (≈4px even at 300 DPI, on the page edge only) and
+/// far below any genuine overflow (the smallest real-overflow fixtures exceed
+/// bounds by tens of points), so forgiving it here removes the phantom without
+/// masking real out-of-bounds content. Parent-bounds checks (`LUMV0801`) keep the
+/// strict `rect_contains`.
+const PAGE_BOUNDS_TOLERANCE_PT: f64 = 1.0;
+
+fn rect_contains_within(container: &Rect, child: &Rect, tolerance: f64) -> bool {
+    child.x >= container.x - tolerance
+        && child.y >= container.y - tolerance
+        && child.x + child.width <= container.x + container.width + tolerance
+        && child.y + child.height <= container.y + container.height + tolerance
 }
 
 fn advice(

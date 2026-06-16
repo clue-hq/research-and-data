@@ -211,6 +211,28 @@ fn canonical_a4_accepts_point_sized_background_without_page_overflow() {
 }
 
 #[test]
+fn fill_artboard_rounding_does_not_emit_page_bounds_error() {
+    // A4 portrait exportable height is 841.889…pt, but a `fill,fill` root artboard
+    // resolves to the rounded 842.0pt preset height. The ~0.11pt difference is a
+    // float-rounding artifact, not a real overflow, and must NOT emit a hard
+    // LUMV0800 that the repair loop can never clear.
+    let mut scene = scene_with_canonical_page(595.275_590_551_181_2, 841.889_763_779_527_6);
+    insert(
+        &mut scene,
+        ParentRef::Page(PageId::from("page")),
+        rect(
+            "artboard",
+            Dimension::Fixed(595.275_590_551_181_2),
+            Dimension::Fixed(842.0),
+        ),
+    );
+
+    let diagnostics = validate_layout(&scene, lumen_core::LayoutOptions::default());
+
+    assert!(!has_code(&diagnostics, "LUMV0800"), "{diagnostics:#?}");
+}
+
+#[test]
 fn canonical_page_child_exceeding_artboard_emits_bounds_error() {
     let mut scene = scene_with_canonical_page(595.275_590_551_181_2, 841.889_763_779_527_6);
     insert(
