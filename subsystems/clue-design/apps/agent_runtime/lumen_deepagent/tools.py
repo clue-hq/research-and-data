@@ -37,6 +37,88 @@ from .schemas import (
 JsonObject = Dict[str, Any]
 
 
+# Hard caps for the curated, windowed per-iteration context (P1). They keep the
+# director/author/reviewer prompt bounded no matter how many repair iterations
+# run. The context is rebuilt fresh each iteration from canonical in-memory
+# state and is NEVER written back into the trace, so it cannot self-nest or grow
+# unboundedly across iterations (the failure mode that exploded the old
+# `full_activity_context` past the token limit).
+CONTEXT_MAX_DIAGNOSTICS = 12
+CONTEXT_MAX_SUBTREE_NODES = 24
+CONTEXT_MAX_VISIBLE_TEXT = 40
+CONTEXT_MAX_ATTEMPTS = 6
+CONTEXT_MAX_KNOWLEDGE = 6
+CONTEXT_MAX_KNOWLEDGE_EXCERPT = 800
+CONTEXT_MAX_CRITIQUE_ISSUES = 12
+CONTEXT_MAX_SVG_SNIPPET = 4000
+CONTEXT_MAX_TEXT_LEN = 120
+
+# Diagnostic codes that indicate content does not fit its frame (text overflow)
+# or a layout cluster is mis-sized — surfaced as `overflow` in the preview
+# summary so the director sees them without the raw scene.
+CONTEXT_OVERFLOW_CODES = {
+    "LUMV0902",
+    "LUMV0903",
+    "LUMV0904",
+    "LUMV0810",
+    "LUMV0800",
+    "LUMV0801",
+    "LUMV0803",
+    "LUMV0805",
+}
+
+
+def _extract_diagnostics(entry: JsonObject) -> list:
+    """Pull the diagnostics list out of a feedback entry, whatever its kind."""
+    if not isinstance(entry, dict):
+        return []
+    inner = entry.get("feedback")
+    if isinstance(inner, dict):
+        diags = inner.get("diagnostics")
+        if isinstance(diags, list):
+            return diags
+        compile_summary = inner.get("compile_summary")
+        if isinstance(compile_summary, dict) and isinstance(
+            compile_summary.get("diagnostics"), list
+        ):
+            return compile_summary["diagnostics"]
+    repair_request = entry.get("repair_request")
+    if isinstance(repair_request, dict) and isinstance(
+        repair_request.get("diagnostics"), list
+    ):
+        return repair_request["diagnostics"]
+    return []
+
+
+def _feedback_one_liner(entry: JsonObject) -> str:
+    """One short human line describing what an attempt produced/why it failed."""
+    if not isinstance(entry, dict):
+        return ""
+    if entry.get("kind") == "visual":
+        critique = entry.get("feedback") or {}
+        return str(critique.get("summary") or "")[:200]
+    for diagnostic in _extract_diagnostics(entry):
+        if isinstance(diagnostic, dict) and diagnostic.get("message"):
+            return str(diagnostic["message"])[:200]
+    for key in ("reason", "violation", "message", "summary"):
+        value = entry.get(key)
+        if isinstance(value, str) and value:
+            return value[:200]
+    return str(entry.get("recommended_edit_surface") or "")[:200]
+
+
+def _is_render_export_issue(diagnostics: list, previous_feedback: list) -> bool:
+    """True only when the raw vector/export output is the subject of repair."""
+    for diagnostic in diagnostics or []:
+        if not isinstance(diagnostic, dict):
+            continue
+        code = diagnostic.get("code") or ""
+        message = (diagnostic.get("message") or "").lower()
+        if code.startswith("LUME") or "export" in message or "render" in message:
+            return True
+    return False
+
+
 class LumenDesignTools:
     def __init__(self, config: AgentRuntimeConfig, prompt: str) -> None:
         self.config = config
@@ -1126,6 +1208,306 @@ class LumenDesignTools:
             indent=2,
         )
 
+    def curated_context(
+        self,
+        *,
+        user_request: str,
+        previous_feedback: list[JsonObject],
+        director_decisions: list[JsonObject],
+    ) -> JsonObject:
+        """Build a small, capped situation report from canonical state.
+
+        This is the P1 replacement for the old `full_activity_context`. It is
+        rebuilt fresh every iteration and NEVER embeds the whole scene, raw trace
+        events, iteration files, base64 PNGs, or full SVG text. Every field is
+        hard-capped, so the director/author/reviewer prompt stays bounded no
+        matter how many repair iterations run. The latest preview image is sent
+        separately as one image block (see providers), not inlined here.
+        """
+        diagnostics = self._latest_diagnostics_ranked(previous_feedback)
+        target_ids = self._diagnostic_target_ids(diagnostics)
+        return {
+            "run_id": self.run_id,
+            "iteration": self.iteration,
+            "user_request": user_request,
+            "original_prompt": self.prompt,
+            "conversation_context": extract_editor_conversation_context(self.prompt),
+            "scene_summary": self._scene_summary(),
+            "scene_subtree": self._scene_subtree_for_targets(target_ids),
+            "diagnostics": diagnostics,
+            "latest_feedback": self._latest_feedback_brief(previous_feedback),
+            "latest_critique": self._latest_critique(previous_feedback),
+            "attempt_history": self._attempt_history(
+                director_decisions, previous_feedback
+            ),
+            "preview_summary": self._preview_summary(
+                diagnostics, previous_feedback
+            ),
+            "loaded_knowledge": self._capped_knowledge(),
+            "effective_brand_context": copy.deepcopy(self.effective_brand_context),
+            "gaps": copy.deepcopy(self.gaps[-CONTEXT_MAX_ATTEMPTS:]),
+        }
+
+    # -- Curated-context helpers (all bounded; no file re-reads, no nesting) --
+
+    def _latest_diagnostics_ranked(
+        self, previous_feedback: list[JsonObject]
+    ) -> list[JsonObject]:
+        """Most-recent compile/preflight diagnostics, errors first, capped."""
+        raw: list[JsonObject] = []
+        for entry in reversed(previous_feedback or []):
+            raw = _extract_diagnostics(entry)
+            if raw:
+                break
+        severity_rank = {"blocker": 0, "error": 1, "warning": 2, "info": 3}
+        compact: list[JsonObject] = []
+        for diagnostic in raw:
+            if not isinstance(diagnostic, dict):
+                continue
+            compact.append(
+                {
+                    "severity": diagnostic.get("severity"),
+                    "code": diagnostic.get("code"),
+                    "message": str(diagnostic.get("message") or "")[:300],
+                    "target_node_id": diagnostic.get("target_node_id"),
+                    "target_page_id": diagnostic.get("target_page_id"),
+                    "target_slot_id": diagnostic.get("target_slot_id"),
+                    "target_slot_key": diagnostic.get("target_slot_key"),
+                }
+            )
+        compact.sort(key=lambda d: severity_rank.get(d.get("severity") or "info", 4))
+        return compact[:CONTEXT_MAX_DIAGNOSTICS]
+
+    def _diagnostic_target_ids(self, diagnostics: list[JsonObject]) -> list[str]:
+        slots = self.scene.get("slots", {})
+        ids: list[str] = []
+        for diagnostic in diagnostics:
+            node_id = diagnostic.get("target_node_id")
+            if node_id:
+                ids.append(node_id)
+            slot_ref = diagnostic.get("target_slot_id") or diagnostic.get(
+                "target_slot_key"
+            )
+            if slot_ref:
+                for slot_id, slot in slots.items():
+                    if slot_id == slot_ref or slot.get("key") == slot_ref:
+                        ids.extend(slot.get("bound_nodes", []))
+        seen: set[str] = set()
+        ordered: list[str] = []
+        for node_id in ids:
+            if node_id not in seen:
+                seen.add(node_id)
+                ordered.append(node_id)
+        return ordered
+
+    def _scene_subtree_for_targets(self, target_ids: list[str]) -> list[JsonObject]:
+        """Briefs for the diagnosed nodes plus their parent and children only."""
+        nodes = self.scene.get("nodes", {})
+        if not target_ids or not nodes:
+            return []
+        parent_of: dict[str, str] = {}
+        for parent_id, node in nodes.items():
+            for child_id in node.get("children", []) or []:
+                parent_of[child_id] = parent_id
+        selected: list[JsonObject] = []
+        seen: set[str] = set()
+
+        def add(node_id: str) -> None:
+            if node_id in seen or node_id not in nodes:
+                return
+            if len(selected) >= CONTEXT_MAX_SUBTREE_NODES:
+                return
+            seen.add(node_id)
+            selected.append(self._node_brief(node_id))
+
+        for node_id in target_ids:
+            parent_id = parent_of.get(node_id)
+            if parent_id:
+                add(parent_id)
+            add(node_id)
+            for child_id in nodes.get(node_id, {}).get("children", []) or []:
+                add(child_id)
+        return selected
+
+    def _latest_feedback_brief(
+        self, previous_feedback: list[JsonObject]
+    ) -> Optional[JsonObject]:
+        """The single most-recent feedback entry, trimmed to its decision-relevant
+        structure. Keeps `kind`/`repair_class`/`target`/`cluster` (what the
+        deterministic director routes on) and visual issue categories, but drops
+        the giant `exact_feedback`/`repair_request` strings so it stays bounded
+        and never accumulates across iterations.
+        """
+        if not previous_feedback:
+            return None
+        latest = previous_feedback[-1]
+        if not isinstance(latest, dict):
+            return None
+        brief: JsonObject = {
+            "kind": latest.get("kind"),
+            "repair_class": latest.get("repair_class"),
+            "recommended_edit_surface": latest.get("recommended_edit_surface"),
+            "target": latest.get("target"),
+            "cluster": latest.get("cluster"),
+            "surgical_repair": latest.get("surgical_repair"),
+        }
+        inner = latest.get("feedback")
+        if isinstance(inner, dict) and latest.get("kind") == "visual":
+            issues = inner.get("issues") or []
+            brief["feedback"] = {
+                "issues": [
+                    {
+                        "category": issue.get("category"),
+                        "severity": issue.get("severity"),
+                        "target": issue.get("target"),
+                        "detail": str(issue.get("detail") or "")[:300],
+                    }
+                    for issue in issues[:CONTEXT_MAX_CRITIQUE_ISSUES]
+                    if isinstance(issue, dict)
+                ]
+            }
+        return brief
+
+    def _latest_critique(
+        self, previous_feedback: list[JsonObject]
+    ) -> Optional[JsonObject]:
+        for entry in reversed(previous_feedback or []):
+            if isinstance(entry, dict) and entry.get("kind") == "visual":
+                critique = entry.get("feedback") or {}
+                issues = critique.get("issues") or []
+                return {
+                    "accepted": critique.get("accepted"),
+                    "summary": str(critique.get("summary") or "")[:600],
+                    "repair_instruction": str(
+                        critique.get("repair_instruction") or ""
+                    )[:600]
+                    or None,
+                    "confidence": critique.get("confidence"),
+                    "issues": [
+                        {
+                            "category": issue.get("category"),
+                            "severity": issue.get("severity"),
+                            "detail": str(issue.get("detail") or "")[:300],
+                            "target": issue.get("target"),
+                        }
+                        for issue in issues[:CONTEXT_MAX_CRITIQUE_ISSUES]
+                        if isinstance(issue, dict)
+                    ],
+                }
+        return None
+
+    def _attempt_history(
+        self,
+        director_decisions: list[JsonObject],
+        previous_feedback: list[JsonObject],
+    ) -> JsonObject:
+        """Short rolling summary of what was tried and how it was rejected."""
+        decisions = [
+            {
+                "iteration": index + 1,
+                "action_mode": decision.get("action_mode"),
+                "rationale": str(decision.get("rationale") or "")[:200],
+            }
+            for index, decision in enumerate(director_decisions or [])
+            if isinstance(decision, dict)
+        ]
+        outcomes = [
+            {
+                "kind": entry.get("kind"),
+                "repair_class": entry.get("repair_class"),
+                "recommended_edit_surface": entry.get("recommended_edit_surface"),
+                "summary": _feedback_one_liner(entry),
+            }
+            for entry in (previous_feedback or [])
+            if isinstance(entry, dict)
+        ]
+        return {
+            "decisions": decisions[-CONTEXT_MAX_ATTEMPTS:],
+            "outcomes": outcomes[-CONTEXT_MAX_ATTEMPTS:],
+        }
+
+    def _preview_summary(
+        self,
+        diagnostics: list[JsonObject],
+        previous_feedback: list[JsonObject],
+    ) -> JsonObject:
+        """Image-pointer + structural digest of the latest preview (no raw SVG)."""
+        latest = self.latest_preview_bundle or self.latest_export_summary or {}
+        artifacts = latest.get("artifacts", []) if isinstance(latest, dict) else []
+        svg = next(
+            (a for a in artifacts if isinstance(a, dict) and a.get("format") == "svg"),
+            {},
+        )
+        png = next(
+            (a for a in artifacts if isinstance(a, dict) and a.get("format") == "png"),
+            {},
+        )
+        pages = self.scene.get("pages", {})
+        first_page = next(iter(pages.values()), {}) if pages else {}
+        size = first_page.get("size") or {}
+        width, height = size.get("width"), size.get("height")
+        visible_text: list[str] = []
+        for node in self.scene.get("nodes", {}).values():
+            kind = node.get("kind", {})
+            if isinstance(kind, dict) and kind.get("kind") == "text":
+                content = kind.get("content")
+                if content:
+                    visible_text.append(str(content)[:CONTEXT_MAX_TEXT_LEN])
+        overflow = [
+            {
+                "code": diagnostic.get("code"),
+                "message": diagnostic.get("message"),
+                "target_node_id": diagnostic.get("target_node_id"),
+            }
+            for diagnostic in diagnostics
+            if (diagnostic.get("code") or "") in CONTEXT_OVERFLOW_CODES
+        ]
+        summary: JsonObject = {
+            "view_box": f"0 0 {width} {height}" if width and height else None,
+            "width": width,
+            "height": height,
+            "element_count": len(self.scene.get("nodes", {})),
+            "visible_text": visible_text[:CONTEXT_MAX_VISIBLE_TEXT],
+            "overflow": overflow,
+            "png_path": png.get("path") or png.get("critic_input_path"),
+            "svg_path": svg.get("path") or svg.get("critic_input_path"),
+            "svg_byte_len": svg.get("byte_len"),
+        }
+        # Inline a capped SVG snippet ONLY for renderer/export problems, where the
+        # raw vector output is the actual subject of repair. For everything else
+        # the image block + structural digest above is higher-value per token.
+        if _is_render_export_issue(diagnostics, previous_feedback):
+            svg_path = summary["svg_path"]
+            if svg_path and Path(svg_path).exists():
+                text = Path(svg_path).read_text(encoding="utf-8", errors="replace")
+                summary["svg_snippet"] = text[:CONTEXT_MAX_SVG_SNIPPET]
+                summary["svg_snippet_truncated"] = len(text) > CONTEXT_MAX_SVG_SNIPPET
+        return summary
+
+    def _capped_knowledge(self) -> list[JsonObject]:
+        capped: list[JsonObject] = []
+        for snippet in (self.loaded_knowledge or [])[:CONTEXT_MAX_KNOWLEDGE]:
+            if not isinstance(snippet, dict):
+                continue
+            item = dict(snippet)
+            if isinstance(item.get("excerpt"), str):
+                item["excerpt"] = item["excerpt"][:CONTEXT_MAX_KNOWLEDGE_EXCERPT]
+            capped.append(item)
+        return capped
+
+    def start_fresh_rewrite_scene(self, reason: str) -> None:
+        """Reset the live authoring scene for a director-approved rewrite."""
+        self.scene = self.core.new_scene(self.run_id, "Agent-authored design")
+        self.dsl_session = None
+        self.scene_update_sources.append("director_fresh_rewrite")
+        self.record(
+            "director",
+            "fresh_rewrite_scene_started",
+            input_summary=reason[:500],
+            output_summary="reset live scene for bounded structural rewrite",
+            payload={"reason": reason},
+        )
+
     def query_geometry(self, node_id: str) -> str:
         """Return stored computed geometry and declared transform/size for a node."""
         node = self.scene.get("nodes", {}).get(node_id)
@@ -1542,6 +1924,20 @@ def parse_json_object(source: str) -> Optional[JsonObject]:
     except json.JSONDecodeError:
         return None
     return parsed if isinstance(parsed, dict) else None
+
+
+def extract_editor_conversation_context(prompt: str) -> JsonObject:
+    marker = "Editor context JSON:"
+    if marker not in prompt:
+        return {"raw_prompt": prompt}
+    _, context_text = prompt.split(marker, 1)
+    context = parse_json_object(context_text.strip()) or {}
+    conversation = context.get("conversation_context")
+    if isinstance(conversation, dict):
+        return conversation
+    if isinstance(conversation, list):
+        return {"messages": conversation}
+    return {"raw_prompt": prompt}
 
 
 def diagnostics_from(raw_diagnostics: Any) -> list[DiagnosticSummary]:

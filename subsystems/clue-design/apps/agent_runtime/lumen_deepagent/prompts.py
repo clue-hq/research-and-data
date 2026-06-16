@@ -81,10 +81,13 @@ Hard syntax rules:
   `tracking(...)` are allowed for targeted text repairs, but prefer canonical
   `font(...)`, `lh(...)`, and `ls(...)` in new designs.
 
-Return DSL only unless the coordinator explicitly asks for reasoning. Keep
-blocks small enough for cascade-halt repair. When given diagnostics or visual
-review feedback, repair the smallest relevant block and preserve the existing
-design direction unless the feedback requires a structural change.
+Return DSL only unless the coordinator explicitly asks for reasoning. You will
+receive a `director_decision` and a full unfiltered context envelope. Use that
+decision. If the director chooses `new_artifact`, `full_page_rewrite`,
+`replace_artboard_subtree`, or `layout_cluster_rewrite`, you may author a broad
+coherent layout block instead of a tiny local patch. When the decision is
+`targeted_patch`, repair the smallest relevant block and preserve the existing
+design direction.
 
 Repair rules:
 - If `current_scene_summary.page_count > 0`, do not emit an existing `page ...`
@@ -95,6 +98,13 @@ Repair rules:
 - If the repair request names a target node/page/slot, change only that target
   or its immediate container unless the feedback explicitly requires broader
   restructuring.
+- DIRECTOR-AUTHORIZED STRUCTURAL REWRITES: when `director_decision.action_mode`
+  is `new_artifact`, `full_page_rewrite`, `replace_artboard_subtree`, or
+  `layout_cluster_rewrite`, solve the actual design problem rather than trying
+  to satisfy diagnostics one node at a time. You may recompose the page/artboard
+  as a coherent generated artifact. Keep stable semantic IDs and slots where
+  useful, but prioritize an approvable design that compiles, preflights, and
+  passes visual review.
 - TARGETED / SURGICAL repairs: when the repair_context has
   `surgical_repair: true` (or `allowed_edit_surface` is `structured_ops` with a
   node target), return ONLY `#<node_id> property(...)` modify lines that edit

@@ -25,6 +25,7 @@ from lumen_deepagent.knowledge import read_knowledge, read_task_knowledge
 from lumen_deepagent.loop import (
     LumenQualityLoop,
     classify_diagnostics,
+    classify_visual_critique,
     is_layout_cluster_dsl,
     is_surgical_dsl,
     layout_cluster_allowed_node_ids,
@@ -34,11 +35,14 @@ from lumen_deepagent.prompts import build_subagents
 from lumen_deepagent.providers import (
     compact_preview_payload,
     extract_dsl,
+    parse_director_decision,
     parse_visual_critique,
     preview_image_blocks,
 )
 from lumen_api.core import CoreError
 from lumen_deepagent.schemas import (
+    AgentActionMode,
+    AgentDirectorDecision,
     CritiqueCategory,
     RepairClass,
     VisualCritique,
@@ -547,6 +551,17 @@ class ScriptedReviewer:
         return self.critiques[index]
 
 
+class ScriptedDirector:
+    def __init__(self, decisions: list[AgentDirectorDecision]) -> None:
+        self.decisions = decisions
+        self.calls = []
+
+    def decide(self, *, full_context: dict):
+        self.calls.append(full_context)
+        index = min(len(self.calls) - 1, len(self.decisions) - 1)
+        return self.decisions[index]
+
+
 class BrokenReviewer:
     def __init__(self, message: str = "malformed reviewer response") -> None:
         self.message = message
@@ -848,6 +863,70 @@ def test_quality_loop_passes_knowledge_excerpts_to_author(tmp_path: Path, monkey
     assert author.requests[0].knowledge_paths
     assert author.requests[0].knowledge_snippets
     assert "line-oriented Lumen DSL" in author.requests[0].knowledge_snippets[0].excerpt
+
+
+def test_director_author_and_reviewer_receive_full_context(tmp_path: Path, monkeypatch):
+    monkeypatch.setattr("lumen_deepagent.tools.CoreClient", FakeCoreClient)
+    tools = LumenDesignTools(
+        runtime_config(tmp_path),
+        'Create a square ad\n\nEditor context JSON:\n{"conversation_context":{"messages":[{"role":"user","content":"previous ask"}]}}',
+    )
+    author = ScriptedAuthor(["page page_test"])
+    reviewer = ScriptedReviewer(
+        [VisualCritique(accepted=True, summary="Preview is acceptable.")]
+    )
+    director = ScriptedDirector(
+        [
+            AgentDirectorDecision(
+                action_mode=AgentActionMode.new_artifact,
+                rationale="Create a fresh artifact.",
+                instructions_to_author="Create the full page.",
+            )
+        ]
+    )
+
+    result = LumenQualityLoop(tools, author, reviewer, director=director).run(
+        "Create a square ad"
+    )
+
+    assert result["status"] == "accepted"
+    director_context = director.calls[0]
+    # Curated/windowed shape (P1): a compact situation report, never the raw
+    # scene / trace events / base64 previews that previously self-nested.
+    for key in (
+        "scene_summary",
+        "scene_subtree",
+        "diagnostics",
+        "attempt_history",
+        "preview_summary",
+    ):
+        assert key in director_context, key
+    for banned in ("current_scene", "trace_events", "iteration_files", "preview_activity"):
+        assert banned not in director_context, banned
+    assert director_context["conversation_context"]["messages"][0]["content"] == "previous ask"
+
+    author_request = author.requests[0]
+    assert author_request.director_decision is not None
+    assert author_request.director_decision.action_mode == AgentActionMode.new_artifact
+    # Author and director share the same curated context object.
+    assert author_request.full_context["scene_summary"] == director_context["scene_summary"]
+    assert author_request.full_context["loaded_knowledge"] == director_context["loaded_knowledge"]
+
+    reviewer_context = reviewer.calls[0]["full_context"]
+    assert "preview_activity" not in reviewer_context
+    assert "scene_summary" in reviewer_context
+    # The reviewer still gets the real preview artifacts via its own kwarg.
+    assert reviewer.calls[0]["preview_payload"]["artifacts"]
+
+    # The defining P1 invariant: nothing context-shaped is ever written to the
+    # trace, so the trace can never be re-inflated into a later prompt.
+    trace_text = (
+        (tools.config.trace_dir / tools.run_id / "trace.jsonl").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert '"full_context":' not in trace_text
+    assert '"preview_activity":' not in trace_text
 
 
 def test_runtime_tools_update_scene_export_preview_and_write_trace(
@@ -1423,6 +1502,31 @@ def test_targeted_overflow_repair_routes_to_structured_ops_despite_font_asset_wa
     assert compose["recommendation"] == "dsl"
 
 
+def test_classifier_prioritizes_blocking_text_error_over_brand_warning():
+    diagnostics = [
+        {
+            "severity": "warning",
+            "code": "LUMB0613",
+            "message": "font asset brand is not marked embeddable for export",
+        },
+        {
+            "severity": "error",
+            "code": "LUMV0903",
+            "message": "text node subhead exceeds available height",
+            "target_node_id": "subhead",
+        },
+    ]
+
+    classification = classify_diagnostics(
+        diagnostics,
+        {"node_id": "subhead"},
+        scene=layout_cluster_scene(),
+    )
+
+    assert classification.repair_class == RepairClass.targeted_node
+    assert classification.reason == "single_text_fit_target"
+
+
 def test_lumv0800_routes_to_layout_cluster():
     scene = layout_cluster_scene()
     diagnostics = [
@@ -1448,6 +1552,32 @@ def test_lumv0800_routes_to_layout_cluster():
     assert classification.cluster.root_frame_id == "artboard"
     assert "LUMV0800" in classification.cluster.diagnostic_codes
     assert "convert_diagnosed_background" in classification.permissions
+
+
+def test_visual_balance_critique_routes_to_layout_cluster():
+    critique = VisualCritique(
+        accepted=False,
+        summary="The composition has a large dead zone.",
+        issues=[
+            VisualIssue(
+                severity="error",
+                category=CritiqueCategory.visual_balance,
+                target=VisualTarget(page_id="page_a4", node_id="headline"),
+                message="Dead space makes the page feel unfinished.",
+                suggested_repair="Rebuild the affected artboard layout.",
+            )
+        ],
+        repair_instruction="Use a structural layout repair, not a tiny node patch.",
+    )
+
+    classification = classify_visual_critique(
+        critique,
+        {"page_id": "page_a4", "node_id": "headline"},
+        layout_cluster_scene(),
+    )
+
+    assert classification.repair_class == RepairClass.layout_cluster
+    assert classification.reason == "visual_critique_requires_structural_layout_repair"
 
 
 def test_lumv0801_routes_to_layout_cluster_with_parent_and_descendants():
@@ -2072,6 +2202,109 @@ def test_surgical_mode_carries_forward_through_compile_error(tmp_path: Path, mon
     assert "dsl_repair_not_surgical" in events
 
 
+def test_director_structural_rewrite_overrides_stale_surgical_gate(
+    tmp_path: Path, monkeypatch
+):
+    # Regression for the repair-loop deadlock: prior feedback demanded a SURGICAL
+    # (modify-only) repair, but the director then explicitly orders a full-page
+    # rewrite. The rewrite must NOT be rejected by the stale surgical gate as
+    # `dsl_repair_not_surgical`. Before the fix, the surgical gate ignored the
+    # director's authority, rejected every authored rewrite before compile, and
+    # spun the loop to max_iterations without ever attempting the structural fix.
+    monkeypatch.setattr(
+        "lumen_deepagent.tools.CoreClient", FakeAlwaysPreflightErrorCoreClient
+    )
+    config = runtime_config(tmp_path, max_iterations=2)
+    tools = LumenDesignTools(config, "Create a square LinkedIn ad")
+    author = ScriptedAuthor(
+        [
+            "page page_test",  # iter0: initial design; compiles, preflight errors → surgical feedback
+            "delete(headline)\npage page_test\n  bg rect p(0,0) s(1080,1080)",  # iter1: full rewrite
+        ]
+    )
+    reviewer = ScriptedReviewer(
+        [VisualCritique(accepted=False, summary="never reached; preflight blocks")]
+    )
+    director = ScriptedDirector(
+        [
+            AgentDirectorDecision(
+                action_mode=AgentActionMode.new_artifact,
+                rationale="Author the initial artifact.",
+            ),
+            AgentDirectorDecision(
+                action_mode=AgentActionMode.full_page_rewrite,
+                rationale="Composition is structurally weak; rewrite the whole page.",
+            ),
+        ]
+    )
+
+    result = LumenQualityLoop(tools, author, reviewer, director=director).run(
+        "Create a square LinkedIn ad"
+    )
+
+    events = [
+        json.loads(line)["event"]
+        for line in (config.trace_dir / tools.run_id / "trace.jsonl")
+        .read_text(encoding="utf-8")
+        .splitlines()
+    ]
+    # The director-authorised rewrite is NOT rejected by the stale surgical gate.
+    assert "dsl_repair_not_surgical" not in events
+    # Both the initial block AND the rewrite reached the compiler (no deadlock).
+    assert tools.core.compile_calls == 2
+    # The run still fails (preflight never clears) but the best draft is preserved
+    # on the canvas rather than a wiped scene.
+    assert result["status"] == "failed"
+    assert "headline" in tools.scene["nodes"]
+
+
+def test_curated_context_stays_bounded_across_iterations(tmp_path: Path, monkeypatch):
+    # P1: the per-iteration context must NOT accumulate. Across several failing
+    # repair iterations the director-observed context stays bounded — no scene
+    # deepcopy, no append-only previews, and crucially no `full_context` written
+    # to the trace and read back in. The old `full_activity_context` grew ~17x per
+    # iteration via recursive self-nesting; this asserts that growth is gone.
+    monkeypatch.setattr(
+        "lumen_deepagent.tools.CoreClient", FakeAlwaysPreflightErrorCoreClient
+    )
+    config = runtime_config(tmp_path, max_iterations=5)
+    tools = LumenDesignTools(config, "Create a square LinkedIn ad")
+    author = ScriptedAuthor(["page page_test", "#headline s(400,80)"])
+    reviewer = ScriptedReviewer(
+        [VisualCritique(accepted=False, summary="never reached; preflight blocks")]
+    )
+
+    class RecordingDirector:
+        def __init__(self) -> None:
+            self.sizes: list[int] = []
+
+        def decide(self, *, full_context):
+            self.sizes.append(len(json.dumps(full_context)))
+            return AgentDirectorDecision(
+                action_mode=AgentActionMode.targeted_patch,
+                rationale="Apply the smallest patch for the preflight error.",
+            )
+
+    director = RecordingDirector()
+    LumenQualityLoop(tools, author, reviewer, director=director).run(
+        "Create a square LinkedIn ad"
+    )
+
+    # The loop ran multiple repair iterations.
+    assert len(director.sizes) >= 4
+    # Bounded growth: the final iteration's context is no larger than ~2x the
+    # first feedback-bearing iteration. (The old design was ~17x PER step.)
+    assert director.sizes[-1] <= director.sizes[1] * 2
+    # And it stays small in absolute terms regardless of iteration count.
+    assert max(director.sizes) < 200_000
+    # The trace never carries a context envelope, so it cannot be re-inflated.
+    trace_text = (
+        (config.trace_dir / tools.run_id / "trace.jsonl").read_text(encoding="utf-8")
+    )
+    assert '"full_context":' not in trace_text
+    assert '"preview_activity":' not in trace_text
+
+
 def test_quality_loop_stops_before_reviewer_on_invalid_preview(tmp_path: Path, monkeypatch):
     monkeypatch.setattr("lumen_deepagent.tools.CoreClient", FakeInvalidPreviewCoreClient)
     config = runtime_config(tmp_path, max_iterations=3)
@@ -2403,6 +2636,22 @@ def test_trace_evaluator_counts_layout_cluster_and_geometry_failures(tmp_path: P
 def test_provider_helpers_extract_dsl_and_parse_structured_critique():
     assert extract_dsl("```lumen\npage page_a4\n```") == "page page_a4"
     assert extract_dsl("```lumen-dsl\npage page_a4\n```") == "page page_a4"
+    decision = parse_director_decision(
+        """
+```json
+{
+  "action_mode": "replace_artboard_subtree",
+  "rationale": "The page composition is structurally weak.",
+  "target": {"page_id": "page_a4"},
+  "allowed_scope": {"page_id": "page_a4", "mode": "replace_root_subtree"},
+  "instructions_to_author": "Rebuild the page with a coherent hierarchy.",
+  "uses_full_context": true
+}
+```
+"""
+    )
+    assert decision.action_mode == AgentActionMode.replace_artboard_subtree
+    assert decision.uses_full_context is True
     critique = parse_visual_critique(
         """
 ```json

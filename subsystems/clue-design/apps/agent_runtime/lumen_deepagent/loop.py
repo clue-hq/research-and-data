@@ -6,6 +6,8 @@ import re
 from typing import Optional, Protocol
 
 from .schemas import (
+    AgentActionMode,
+    AgentDirectorDecision,
     AgentIteration,
     AgentRunState,
     AuthoringBlockRequest,
@@ -38,10 +40,83 @@ class VisualReviewer(Protocol):
         user_request: str,
         scene_summary: dict,
         export_summary: dict,
+        preview_payload: dict,
         knowledge: list[dict],
         previous_feedback: list[dict],
+        full_context: dict,
     ) -> VisualCritique:
         """Review the current preview and return a structured critique."""
+
+
+class AgentDirector(Protocol):
+    def decide(self, *, full_context: dict) -> AgentDirectorDecision:
+        """Choose the next authoring/repair strategy from the complete context."""
+
+
+class HeuristicAgentDirector:
+    """Deterministic fallback director used by tests and non-provider callers."""
+
+    def decide(self, *, full_context: dict) -> AgentDirectorDecision:
+        latest = full_context.get("latest_feedback")
+        if not isinstance(latest, dict):
+            return AgentDirectorDecision(
+                action_mode=AgentActionMode.new_artifact,
+                rationale="No previous feedback exists; author a new artifact.",
+                instructions_to_author=(
+                    "Create the requested artifact from the user request. "
+                    "Ignore unrelated seed editor selections unless the user asks to edit them."
+                ),
+            )
+
+        repair_class = latest.get("repair_class")
+        if repair_class == RepairClass.layout_cluster.value:
+            return AgentDirectorDecision(
+                action_mode=AgentActionMode.layout_cluster_rewrite,
+                rationale="Previous feedback requires a layout-cluster repair.",
+                target=VisualTarget.model_validate(latest.get("target") or {})
+                if latest.get("target")
+                else None,
+                allowed_scope=latest.get("cluster") or {},
+                instructions_to_author=(
+                    "Repair the affected layout cluster as a structural layout problem. "
+                    "Prefer a coherent bounded rewrite over many tiny local patches."
+                ),
+            )
+
+        if latest.get("kind") == "visual":
+            feedback = latest.get("feedback") or {}
+            issues = feedback.get("issues") or []
+            categories = {
+                str(issue.get("category"))
+                for issue in issues
+                if isinstance(issue, dict) and issue.get("category")
+            }
+            if categories & {"visual_balance", "alignment", "compiler_repair", "spacing"}:
+                return AgentDirectorDecision(
+                    action_mode=AgentActionMode.replace_artboard_subtree,
+                    rationale=(
+                        "Visual critique identified composition/layout quality issues "
+                        "that need structural repair."
+                    ),
+                    target=VisualTarget.model_validate(first_issue_target_from_payload(feedback))
+                    if first_issue_target_from_payload(feedback)
+                    else None,
+                    allowed_scope={"visual_issue_categories": sorted(categories)},
+                    instructions_to_author=(
+                        "Use the full visual critique verbatim. Rebuild the affected artboard "
+                        "composition if that is the clearest way to satisfy the critique."
+                    ),
+                )
+
+        target = latest.get("target") if isinstance(latest.get("target"), dict) else {}
+        return AgentDirectorDecision(
+            action_mode=AgentActionMode.targeted_patch,
+            rationale="Latest feedback is narrow enough for a targeted patch.",
+            target=VisualTarget.model_validate(target) if target else None,
+            instructions_to_author=(
+                "Apply the smallest patch that resolves the latest compiler/preflight feedback."
+            ),
+        )
 
 
 class LumenQualityLoop:
@@ -57,11 +132,14 @@ class LumenQualityLoop:
         tools: LumenDesignTools,
         author: DslAuthor,
         reviewer: VisualReviewer,
+        director: AgentDirector | None = None,
     ) -> None:
         self.tools = tools
         self.author = author
         self.reviewer = reviewer
+        self.director = director or HeuristicAgentDirector()
         self.previous_feedback: list[dict] = []
+        self.director_decisions: list[dict] = []
         self.state = AgentRunState(run_id=tools.run_id, user_request=tools.prompt)
         # Snapshot of the most recent scene that compiled cleanly (and is
         # therefore renderable). A later repair iteration can author a
@@ -69,7 +147,16 @@ class LumenQualityLoop:
         # partway, leaving `tools.scene` stripped of the good design. We restore
         # this snapshot when the run fails so the editor always receives the best
         # renderable draft on the canvas instead of a wiped scene.
+        #
+        # `best_scene` is the BEST draft seen this run, not merely the last one
+        # that compiled. We rank candidates by `best_rank` (preflight-clean beats
+        # compile-only; among those, accepted beats rejected, then fewer critic
+        # issues, then higher critic confidence) so a later, worse iteration can
+        # never clobber an earlier, better design. This is what the editor gets
+        # back when no iteration is ever `accepted`.
         self.best_scene: Optional[dict] = None
+        self.best_rank: Optional[tuple] = None
+        self.best_iteration: Optional[int] = None
 
     def run(self, user_request: str) -> dict:
         knowledge = json.loads(self.tools.load_knowledge(user_request))
@@ -82,6 +169,48 @@ class LumenQualityLoop:
             for snippet in knowledge.get("snippets", [])
         ]
         for _ in range(self.tools.config.max_iterations):
+            full_context = self.tools.curated_context(
+                user_request=user_request,
+                previous_feedback=self.previous_feedback,
+                director_decisions=self.director_decisions,
+            )
+            decision = self.director.decide(full_context=full_context)
+            decision_payload = decision.model_dump(mode="json")
+            self.director_decisions.append(decision_payload)
+            # Record ONLY the decision — never the context. Writing `full_context`
+            # into the trace and then reading the trace back into the next
+            # iteration's context is what made the prompt nest into itself and
+            # explode past the token limit. The curated context is rebuilt fresh
+            # from canonical state each iteration instead.
+            self.tools.record(
+                "director",
+                "director_decision",
+                input_summary=user_request[:500],
+                output_summary=f"{decision.action_mode.value}: {decision.rationale[:300]}",
+                payload={"decision": decision_payload},
+            )
+            if decision.action_mode == AgentActionMode.accept:
+                self.state.status = "accepted"
+                self.state.stop_reason = StopReason.accepted
+                return json.loads(
+                    self.tools.finalize_run(
+                        "accepted",
+                        StopReason.accepted.value,
+                        decision.rationale,
+                    )
+                )
+            if decision.action_mode == AgentActionMode.stop_with_gap:
+                self.tools.record_gap(
+                    "agent_protocol",
+                    "director stopped with a gap",
+                    decision.rationale,
+                    "agentic-director-v0",
+                )
+                return self._finalize_failed(
+                    StopReason.unsupported_capability.value,
+                    decision.rationale,
+                )
+
             block_request = AuthoringBlockRequest(
                 iteration=self.tools.iteration + 1,
                 user_request=user_request,
@@ -92,13 +221,20 @@ class LumenQualityLoop:
                 knowledge_snippets=knowledge_snippets,
                 current_scene_summary=json.loads(self.tools.summarize_scene()),
                 repair_context=self.previous_feedback[-1] if self.previous_feedback else None,
+                full_context=full_context,
+                director_decision=decision,
             )
+            # Strip the curated context out of the recorded author request for the
+            # same reason as the director event: nothing context-shaped goes into
+            # the trace, so the trace can never be re-inflated into a later prompt.
+            recorded_request = block_request.model_dump(mode="json")
+            recorded_request.pop("full_context", None)
             self.tools.record(
                 "coordinator",
                 "dsl_block_requested",
                 input_summary=user_request[:500],
                 output_summary=f"iteration {block_request.iteration}",
-                payload={"author_request": block_request.model_dump(mode="json")},
+                payload={"author_request": recorded_request},
             )
             source = self.author.write_block(block_request)
             iteration_record = AgentIteration(
@@ -123,9 +259,15 @@ class LumenQualityLoop:
             # existing design from the scene. The author retries with corrective
             # feedback; `tools.scene` is left untouched.
             repair_context = block_request.repair_context
+            director_allows_structural_rewrite = decision.action_mode in {
+                AgentActionMode.new_artifact,
+                AgentActionMode.full_page_rewrite,
+                AgentActionMode.replace_artboard_subtree,
+            }
             if (
                 repair_context
                 and repair_context.get("repair_class") == RepairClass.layout_cluster.value
+                and not director_allows_structural_rewrite
                 and not is_layout_cluster_dsl(source, repair_context)
             ):
                 feedback = layout_cluster_violation_feedback(repair_context, source)
@@ -142,6 +284,7 @@ class LumenQualityLoop:
             if (
                 repair_context
                 and repair_context.get("surgical_repair")
+                and not director_allows_structural_rewrite
                 and not is_surgical_dsl(source)
             ):
                 feedback = surgical_violation_feedback(repair_context, source)
@@ -158,8 +301,32 @@ class LumenQualityLoop:
                 )
                 continue
 
+            rewrite_scene_backup: Optional[dict] = None
+            if (
+                decision.action_mode
+                in {
+                    AgentActionMode.full_page_rewrite,
+                    AgentActionMode.replace_artboard_subtree,
+                }
+                and self.tools.scene.get("pages")
+            ):
+                rewrite_scene_backup = copy.deepcopy(self.tools.scene)
+                self.tools.start_fresh_rewrite_scene(decision.rationale)
+
             compile_result = json.loads(self.tools.compile_dsl_block(source))
             compile_summary = compile_result.get("compile", {})
+            if rewrite_scene_backup is not None and tool_has_blocking_failure(
+                compile_summary
+            ):
+                self.tools.scene = rewrite_scene_backup
+                self.tools.dsl_session = None
+                self.tools.record(
+                    "director",
+                    "fresh_rewrite_scene_restored",
+                    input_summary=decision.rationale[:500],
+                    output_summary="restored prior scene after failed rewrite compile",
+                    payload={"decision": decision_payload},
+                )
             iteration_record.compile_summary = CompileSummary.model_validate(compile_summary)
             if tool_has_blocking_failure(compile_summary):
                 target = first_diagnostic_target(compile_summary)
@@ -250,9 +417,10 @@ class LumenQualityLoop:
                 continue
 
             # Compile succeeded: the scene is renderable even if later quality
-            # gates (preflight/critic) reject it. Remember it as the best draft
-            # so a subsequent failed repair cannot strip the design from canvas.
-            self.best_scene = copy.deepcopy(self.tools.scene)
+            # gates (preflight/critic) reject it. Record it as a (weak) keep-best
+            # candidate so a subsequent failed repair cannot strip the design from
+            # canvas. Preflight-clean / reviewed drafts outrank it below.
+            self._consider_best(stage="compiled", critique=None)
 
             preflight_result = json.loads(self.tools.preflight_design())
             preflight_summary = preflight_result.get("preflight", {})
@@ -334,6 +502,10 @@ class LumenQualityLoop:
                 iteration_record.stop_reason = StopReason.preflight_failed
                 continue
 
+            # Preflight passed: this draft is renderable AND valid — a strictly
+            # better keep-best candidate than a compile-only draft.
+            self._consider_best(stage="preflight_clean", critique=None)
+
             export_result = json.loads(self.tools.export_preview_bundle())
             export_summary = export_result.get("critic", {})
             iteration_record.export_summary = ExportSummary.model_validate(export_summary)
@@ -341,14 +513,10 @@ class LumenQualityLoop:
                 iteration_record.stop_reason = StopReason.preview_invalid
                 self.state.status = "failed"
                 self.state.stop_reason = StopReason.preview_invalid
-                final = json.loads(
-                    self.tools.finalize_run(
-                        "failed",
-                        StopReason.preview_invalid.value,
-                        "Preview export failed validation.",
-                    )
+                return self._finalize_failed(
+                    StopReason.preview_invalid.value,
+                    "Preview export failed validation.",
                 )
-                return final
             target_errors = preview_target_errors(
                 export_summary,
                 block_request.preview_target or PreviewTarget(),
@@ -377,25 +545,24 @@ class LumenQualityLoop:
                 iteration_record.stop_reason = StopReason.preview_invalid
                 self.state.status = "failed"
                 self.state.stop_reason = StopReason.preview_invalid
-                return json.loads(
-                    self.tools.finalize_run(
-                        "failed",
-                        StopReason.preview_invalid.value,
-                        "Preview dimensions did not match requested artifact constraints.",
-                    )
+                return self._finalize_failed(
+                    StopReason.preview_invalid.value,
+                    "Preview dimensions did not match requested artifact constraints.",
                 )
 
             preview_payload = json.loads(self.tools.get_latest_preview_for_critique())
             if preview_payload.get("status") == "error":
-                return json.loads(
-                    self.tools.finalize_run(
-                        "failed",
-                        StopReason.preview_invalid.value,
-                        preview_payload.get("message", "Preview payload unavailable."),
-                    )
+                return self._finalize_failed(
+                    StopReason.preview_invalid.value,
+                    preview_payload.get("message", "Preview payload unavailable."),
                 )
 
             try:
+                reviewer_full_context = self.tools.curated_context(
+                    user_request=user_request,
+                    previous_feedback=self.previous_feedback,
+                    director_decisions=self.director_decisions,
+                )
                 critique = self.reviewer.review(
                     user_request=user_request,
                     scene_summary=json.loads(self.tools.summarize_scene()),
@@ -403,6 +570,7 @@ class LumenQualityLoop:
                     preview_payload=preview_payload,
                     knowledge=knowledge.get("snippets", []),
                     previous_feedback=self.previous_feedback,
+                    full_context=reviewer_full_context,
                 )
             except Exception as error:
                 critique_failure = json.loads(
@@ -413,16 +581,16 @@ class LumenQualityLoop:
                 iteration_record.stop_reason = StopReason.critic_failed
                 self.state.status = "failed"
                 self.state.stop_reason = StopReason.critic_failed
-                return json.loads(
-                    self.tools.finalize_run(
-                        "failed",
-                        StopReason.critic_failed.value,
-                        f"Visual reviewer failed: {error}",
-                        critique_json=json.dumps(critique_failure),
-                    )
+                return self._finalize_failed(
+                    StopReason.critic_failed.value,
+                    f"Visual reviewer failed: {error}",
+                    critique_json=json.dumps(critique_failure),
                 )
             self.tools.submit_visual_critique(critique.model_dump_json())
             iteration_record.critique = critique
+            # Rank this fully-reviewed draft. The highest-scoring one is what we
+            # hand back if no iteration is ever accepted.
+            self._consider_best(stage="preflight_clean", critique=critique)
             if critique.accepted:
                 iteration_record.stop_reason = StopReason.accepted
                 self.state.status = "accepted"
@@ -451,30 +619,66 @@ class LumenQualityLoop:
             classification = classify_visual_critique(critique, target, self.tools.scene)
             recommendation = classification.allowed_edit_surface.value
             feedback.update(repair_class_payload(classification))
-            self.tools.create_repair_request(
-                exact_feedback=json.dumps(feedback, indent=2),
-                target_json=json.dumps(target),
-                allowed_edit_surface=recommendation,
-                forbidden_changes_json=json.dumps(["do not remove unrelated existing nodes"]),
-                **repair_request_kwargs(classification),
+            repair_request = json.loads(
+                self.tools.create_repair_request(
+                    exact_feedback=json.dumps(feedback, indent=2),
+                    target_json=json.dumps(target),
+                    allowed_edit_surface=recommendation,
+                    forbidden_changes_json=json.dumps(
+                        ["do not remove unrelated existing nodes"]
+                    ),
+                    **repair_request_kwargs(classification),
+                )
             )
+            feedback["repair_request"] = repair_request.get("repair_request")
             iteration_record.stop_reason = StopReason.reviewer_rejected
 
         self.state.status = "failed"
         self.state.stop_reason = StopReason.max_iterations_reached
-        # A destructive final repair may have left `tools.scene` stripped. Restore
-        # the best scene that compiled this run so the editor renders that draft
-        # on the canvas for inspection instead of an empty scene.
+        return self._finalize_failed(
+            StopReason.max_iterations_reached.value,
+            "Maximum Phase A repair iterations reached.",
+            critique_json=json.dumps(
+                self.previous_feedback[-1] if self.previous_feedback else {}
+            ),
+        )
+
+    def _consider_best(
+        self, *, stage: str, critique: Optional[VisualCritique]
+    ) -> None:
+        """Update the keep-best snapshot if the live scene beats the incumbent.
+
+        Ranking (higher wins): preflight-clean drafts dominate compile-only ones;
+        among equals, an accepted critique beats a rejected one, then fewer critic
+        issues, then higher critic confidence. The scene is unchanged across the
+        compile/preflight/critique stages of one iteration, so re-ranking the same
+        iteration as more signal arrives simply upgrades its tier.
+        """
+        preflight_clean = stage == "preflight_clean"
+        accepted = bool(critique and critique.accepted)
+        issue_count = len(critique.issues) if critique is not None else None
+        confidence = critique.confidence if critique is not None else 0.0
+        rank = (
+            1 if preflight_clean else 0,
+            1 if accepted else 0,
+            -(issue_count if issue_count is not None else 999),
+            confidence,
+        )
+        if self.best_rank is None or rank > self.best_rank:
+            self.best_rank = rank
+            self.best_scene = copy.deepcopy(self.tools.scene)
+            self.best_iteration = self.state.current_iteration
+
+    def _finalize_failed(self, stop_reason: str, message: str, **kwargs) -> dict:
+        """Finalize a failed run, always leaving the editor the best draft.
+
+        Every failed exit routes through here so the canvas shows the
+        highest-ranked renderable design we produced — never a half-mutated or
+        rejected scene from the last repair attempt.
+        """
         self._restore_best_scene()
         return json.loads(
-            self.tools.finalize_run(
-                "failed",
-                StopReason.max_iterations_reached.value,
-                "Maximum Phase A repair iterations reached.",
-                critique_json=json.dumps(
-                    self.previous_feedback[-1] if self.previous_feedback else {}
-                ),
-            )
+            self.tools.finalize_run("failed", stop_reason, message, **kwargs)
         )
 
     def _restore_best_scene(self) -> None:
@@ -560,12 +764,18 @@ def classify_diagnostics(
 ) -> RepairClassification:
     normalized = [diagnostic_to_dict(diagnostic) for diagnostic in diagnostics]
     codes = {str(diagnostic.get("code") or "") for diagnostic in normalized}
+    blocking_codes = {
+        str(diagnostic.get("code") or "")
+        for diagnostic in normalized
+        if diagnostic.get("severity") in {"error", "blocker"}
+    }
+    priority_codes = blocking_codes or codes
     scene = scene or {}
 
     if (
         prior_context
         and prior_context.get("repair_class") == RepairClass.layout_cluster.value
-        and any(code.startswith("LUMD") or code.startswith("LUMA") for code in codes)
+        and any(code.startswith("LUMD") or code.startswith("LUMA") for code in priority_codes)
     ):
         cluster = LayoutClusterTarget.model_validate(prior_context.get("cluster") or {})
         return RepairClassification(
@@ -578,7 +788,7 @@ def classify_diagnostics(
             reason="preserve_layout_cluster_after_compile_failure",
         )
 
-    if codes & LAYOUT_CLUSTER_CODES:
+    if priority_codes & LAYOUT_CLUSTER_CODES:
         return layout_cluster_classification(
             normalized,
             target,
@@ -586,7 +796,7 @@ def classify_diagnostics(
             reason="page_or_parent_bounds",
         )
 
-    if codes & LEGACY_GEOMETRY_CODES:
+    if priority_codes & LEGACY_GEOMETRY_CODES:
         return RepairClassification(
             repair_class=RepairClass.unsupported_gap,
             target=VisualTarget.model_validate(target) if target else None,
@@ -602,15 +812,7 @@ def classify_diagnostics(
             reason="multiple_text_fit_diagnostics_share_parent",
         )
 
-    if any(code.startswith("LUMB") for code in codes):
-        return RepairClassification(
-            repair_class=RepairClass.brand_token,
-            target=VisualTarget.model_validate(target) if target else None,
-            allowed_edit_surface=EditSurfaceRecommendation.structured_ops,
-            reason="brand_governance_diagnostic",
-        )
-
-    if codes & TEXT_FIT_CODES and target.get("node_id"):
+    if priority_codes & TEXT_FIT_CODES and target.get("node_id"):
         return RepairClassification(
             repair_class=RepairClass.targeted_node,
             target=VisualTarget.model_validate(target),
@@ -618,7 +820,15 @@ def classify_diagnostics(
             reason="single_text_fit_target",
         )
 
-    if any(code.startswith("LUMD") or code.startswith("LUMA") for code in codes):
+    if any(code.startswith("LUMB") for code in priority_codes):
+        return RepairClassification(
+            repair_class=RepairClass.brand_token,
+            target=VisualTarget.model_validate(target) if target else None,
+            allowed_edit_surface=EditSurfaceRecommendation.structured_ops,
+            reason="brand_governance_diagnostic",
+        )
+
+    if any(code.startswith("LUMD") or code.startswith("LUMA") for code in priority_codes):
         return RepairClassification(
             repair_class=RepairClass.syntax_continuation,
             target=VisualTarget.model_validate(target) if target else None,
@@ -1312,15 +1522,36 @@ def first_issue_target(critique: VisualCritique) -> dict:
     return {}
 
 
+def first_issue_target_from_payload(feedback: dict) -> dict:
+    for issue in feedback.get("issues") or []:
+        if not isinstance(issue, dict):
+            continue
+        target = issue.get("target")
+        if isinstance(target, dict) and target:
+            return target
+    return {}
+
+
 def classify_visual_critique(
     critique: VisualCritique,
     target: dict,
     scene: dict,
 ) -> RepairClassification:
     diagnostics: list[dict] = []
+    layout_categories = {
+        "visual_balance",
+        "alignment",
+        "spacing",
+        "compiler_repair",
+        "clipping",
+        "overflow",
+        "page_dimensions",
+    }
+    categories: set[str] = set()
     for issue in critique.issues:
         category = str(issue.category.value if hasattr(issue.category, "value") else issue.category)
-        if category in {"clipping", "overflow", "page_dimensions"}:
+        categories.add(category)
+        if category in layout_categories:
             issue_target = issue.target.model_dump(mode="json") if issue.target else target
             code = "LUMV0800" if issue_target.get("page_id") else "LUMV0801"
             diagnostics.append(
@@ -1333,7 +1564,15 @@ def classify_visual_critique(
                     "suggested_repair": issue.suggested_repair,
                 }
             )
-    return classify_diagnostics(diagnostics, target, scene=scene)
+    classification = classify_diagnostics(diagnostics, target, scene=scene)
+    if categories & {"visual_balance", "alignment", "spacing", "compiler_repair"}:
+        return layout_cluster_classification(
+            diagnostics,
+            target,
+            scene,
+            reason="visual_critique_requires_structural_layout_repair",
+        )
+    return classification
 
 
 def first_diagnostic_target(summary: dict) -> dict:

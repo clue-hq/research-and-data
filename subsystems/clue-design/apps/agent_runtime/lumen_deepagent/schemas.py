@@ -157,6 +157,25 @@ class PreviewTarget(BaseModel):
     purpose: str = "visual_critique"
 
 
+class AgentActionMode(str, Enum):
+    new_artifact = "new_artifact"
+    full_page_rewrite = "full_page_rewrite"
+    replace_artboard_subtree = "replace_artboard_subtree"
+    layout_cluster_rewrite = "layout_cluster_rewrite"
+    targeted_patch = "targeted_patch"
+    accept = "accept"
+    stop_with_gap = "stop_with_gap"
+
+
+class AgentDirectorDecision(BaseModel):
+    action_mode: AgentActionMode
+    rationale: str
+    target: Optional[VisualTarget] = None
+    allowed_scope: JsonObject = Field(default_factory=dict)
+    instructions_to_author: str = ""
+    uses_full_context: bool = True
+
+
 class AuthoringBlockRequest(BaseModel):
     iteration: int
     user_request: str
@@ -165,6 +184,8 @@ class AuthoringBlockRequest(BaseModel):
     knowledge_snippets: List[KnowledgeSnippet] = Field(default_factory=list)
     current_scene_summary: JsonObject = Field(default_factory=dict)
     repair_context: Optional[JsonObject] = None
+    full_context: JsonObject = Field(default_factory=dict)
+    director_decision: Optional[AgentDirectorDecision] = None
 
 
 class AuthoringBlockResult(BaseModel):
