@@ -248,15 +248,21 @@ class FakeCoreClient:
     def export_preview(
         self, scene, export_format="svg", page_ids=None, asset_store_root=None
     ):
+        # The critic now always requests a PNG (judge on pixels); return valid PNG
+        # magic bytes for png and SVG otherwise so the bundle validates.
+        if export_format == "png":
+            mime_type, raw = "image/png", b"\x89PNG\r\n\x1a\nfake"
+        else:
+            mime_type, raw = "image/svg+xml", b"<svg></svg>"
         return {
             "diagnostics": [],
             "export": {
                 "artifacts": [
                     {
                         "format": export_format,
-                        "mime_type": "image/svg+xml",
+                        "mime_type": mime_type,
                         "page_id": "page_test",
-                        "bytes": list(b"<svg></svg>"),
+                        "bytes": list(raw),
                     }
                 ]
             },

@@ -554,7 +554,12 @@ class LumenQualityLoop:
             # better keep-best candidate than a compile-only draft.
             self._consider_best(stage="preflight_clean", critique=None)
 
-            export_result = json.loads(self.tools.export_preview_bundle())
+            # Quality is judged on PIXELS: always render a PNG for the critic so the
+            # visual reviewer inspects the rendered image, not SVG geometry, even
+            # when the configured preview format is SVG.
+            export_result = json.loads(
+                self.tools.export_preview_bundle(critic_format="png")
+            )
             export_summary = export_result.get("critic", {})
             iteration_record.export_summary = ExportSummary.model_validate(export_summary)
             if tool_has_blocking_failure(export_summary):
