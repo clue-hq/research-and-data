@@ -2128,6 +2128,58 @@ def test_rejected_layout_cluster_repair_does_not_touch_scene(tmp_path: Path, mon
     assert author.requests[1].repair_context["repair_class"] == "layout_cluster"
 
 
+def test_partial_layout_cluster_repair_applies_valid_refs_and_skips_strays(
+    tmp_path: Path, monkeypatch
+):
+    # NON-ATOMIC cluster repair: a block that mixes a valid in-cluster modify with
+    # an out-of-cluster ref must NOT be zero-applied. The in-cluster edit compiles
+    # and the stray line is skipped, so the iteration makes progress instead of
+    # being wasted (the old behavior rejected the whole block before compile).
+    monkeypatch.setattr(
+        "lumen_deepagent.tools.CoreClient", FakeLayoutClusterPreflightCoreClient
+    )
+    config = runtime_config(tmp_path, max_iterations=2)
+    tools = LumenDesignTools(config, "Create an A4 appointment card")
+    author = ScriptedAuthor(
+        [
+            "page page_a4 preset(a4,portrait)",      # iter0: initial design, compiles
+            "#card s(fill,hug)\n#unrelated s(1,1)",  # iter1: keep #card, drop #unrelated
+        ]
+    )
+    reviewer = ScriptedReviewer(
+        [VisualCritique(accepted=True, summary="should not be reached")]
+    )
+
+    result = LumenQualityLoop(tools, author, reviewer).run(
+        "Create an A4 appointment card"
+    )
+
+    # Preflight never clears (the fake always returns LUMV0801), so the run still
+    # ends without acceptance — the point is HOW the mixed repair was handled.
+    assert result["status"] == "failed"
+    trace_lines = (
+        (config.trace_dir / tools.run_id / "trace.jsonl")
+        .read_text(encoding="utf-8")
+        .splitlines()
+    )
+    events = [json.loads(line)["event"] for line in trace_lines]
+    # The mixed block was applied PARTIALLY, not rejected wholesale.
+    assert "layout_cluster_repair_partial" in events
+    assert "layout_cluster_repair_rejected" not in events
+    # Both the initial block and the kept subset of the repair reached the compiler.
+    assert tools.core.compile_calls == 2
+    # The stray #unrelated line was stripped; only the in-cluster #card edit compiled.
+    assert tools.core.compile_sources[1] == "#card s(fill,hug)"
+    # The dropped line is recorded for observability.
+    partial = next(
+        json.loads(line)
+        for line in trace_lines
+        if json.loads(line)["event"] == "layout_cluster_repair_partial"
+    )
+    dropped = partial["payload"]["dropped_lines"]
+    assert any("#unrelated" in entry["line"] for entry in dropped)
+
+
 def test_surgical_repair_rejects_destructive_block_without_touching_scene(
     tmp_path: Path, monkeypatch
 ):

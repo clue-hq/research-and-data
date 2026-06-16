@@ -268,19 +268,45 @@ class LumenQualityLoop:
                 repair_context
                 and repair_context.get("repair_class") == RepairClass.layout_cluster.value
                 and not director_allows_structural_rewrite
-                and not is_layout_cluster_dsl(source, repair_context)
             ):
-                feedback = layout_cluster_violation_feedback(repair_context, source)
-                self.previous_feedback.append(feedback)
-                iteration_record.stop_reason = StopReason.compile_failed
-                self.tools.record(
-                    "coordinator",
-                    "layout_cluster_repair_rejected",
-                    input_summary=json.dumps(repair_context.get("cluster") or {}),
-                    output_summary=source[:300],
-                    payload={"rejected_source": source[:2000]},
+                # NON-ATOMIC cluster repair: keep the valid in-cluster modify lines
+                # and drop only the out-of-cluster / unsupported ones, instead of
+                # zero-applying the whole patch when a single line strays out of the
+                # cluster. The iteration is wasted (fully rejected) only when NOTHING
+                # in the block is a valid in-cluster edit — otherwise the valid edits
+                # are applied and any still-unresolved diagnostics resurface naturally
+                # on the next preflight.
+                kept_source, dropped_lines = filter_layout_cluster_dsl(
+                    source, repair_context
                 )
-                continue
+                if not is_layout_cluster_dsl(kept_source, repair_context):
+                    feedback = layout_cluster_violation_feedback(repair_context, source)
+                    self.previous_feedback.append(feedback)
+                    iteration_record.stop_reason = StopReason.compile_failed
+                    self.tools.record(
+                        "coordinator",
+                        "layout_cluster_repair_rejected",
+                        input_summary=json.dumps(repair_context.get("cluster") or {}),
+                        output_summary=source[:300],
+                        payload={"rejected_source": source[:2000]},
+                    )
+                    continue
+                if dropped_lines:
+                    self.tools.record(
+                        "coordinator",
+                        "layout_cluster_repair_partial",
+                        input_summary=json.dumps(repair_context.get("cluster") or {}),
+                        output_summary=(
+                            "applied in-cluster edits; skipped "
+                            f"{len(dropped_lines)} out-of-cluster line(s)"
+                        ),
+                        payload={
+                            "applied_source": kept_source[:2000],
+                            "dropped_lines": dropped_lines[:20],
+                            "original_source": source[:2000],
+                        },
+                    )
+                    source = kept_source
             if (
                 repair_context
                 and repair_context.get("surgical_repair")
@@ -1417,6 +1443,89 @@ def is_layout_cluster_dsl(source: str, context: dict) -> bool:
         return False
 
     return saw_edit
+
+
+def filter_layout_cluster_dsl(source: str, context: dict) -> tuple[str, list[dict]]:
+    """Split a layout_cluster repair block into the lines safe to apply and the
+    out-of-cluster lines to skip.
+
+    Returns ``(kept_source, dropped)`` where ``dropped`` is a list of
+    ``{"line", "reason"}``. This is what makes cluster repair NON-ATOMIC: the
+    per-line rules are identical to :func:`is_layout_cluster_dsl`, but instead of
+    rejecting the whole block on the first stray line, the valid in-cluster
+    modifies are kept and only the offending lines are dropped — so a mostly-valid
+    patch is applied rather than zero-applied and the iteration is not wasted.
+    Blank lines, ``//`` checkpoints, and comments are preserved verbatim.
+    """
+    cluster = context.get("cluster") or {}
+    allowed_pages = {cluster.get("page_id")} if cluster.get("page_id") else set()
+    allowed_nodes = layout_cluster_allowed_node_ids(cluster)
+    root_frame_id = cluster.get("root_frame_id")
+    background_node_id = cluster.get("background_node_id")
+    permissions = set(context.get("permissions") or [])
+    kept: list[str] = []
+    dropped: list[dict] = []
+
+    for raw in source.splitlines():
+        line = raw.strip()
+        if not line or line.startswith("//"):
+            kept.append(raw)
+            continue
+        if line.startswith("#"):
+            ref = line[1:].split(None, 1)[0]
+            if not layout_cluster_modify_syntax_is_supported(line):
+                dropped.append({
+                    "line": line,
+                    "reason": "unsupported modify syntax (al()/wrap() are not lowered for node modify lines)",
+                })
+                continue
+            if ref == root_frame_id and not root_artboard_size_syntax_is_supported(line):
+                dropped.append({
+                    "line": line,
+                    "reason": "root artboard frame must use s(fill,fill), not numeric dimensions",
+                })
+                continue
+            if ref.startswith("page:"):
+                page_id = ref.split(":", 1)[1]
+                if page_id not in allowed_pages:
+                    dropped.append({
+                        "line": line,
+                        "reason": f"page {page_id} is outside the allowed cluster",
+                    })
+                    continue
+            elif ref.startswith(("slot:", "asset:", "document")):
+                dropped.append({
+                    "line": line,
+                    "reason": f"{ref} is not editable in a layout_cluster repair",
+                })
+                continue
+            elif ref not in allowed_nodes:
+                dropped.append({
+                    "line": line,
+                    "reason": f"node {ref} is outside the allowed cluster",
+                })
+                continue
+            kept.append(raw)
+            continue
+        if line.startswith("delete(") and line.endswith(")"):
+            deleted_id = line[len("delete(") : -1].strip()
+            if (
+                deleted_id == background_node_id
+                and "convert_diagnosed_background" in permissions
+            ):
+                kept.append(raw)
+                continue
+            dropped.append({
+                "line": line,
+                "reason": "delete is not permitted in a layout_cluster repair",
+            })
+            continue
+        dropped.append({
+            "line": line,
+            "reason": "only #modify lines (and an allowed background delete) are permitted in a layout_cluster repair",
+        })
+
+    return "\n".join(kept), dropped
 
 
 def layout_cluster_modify_syntax_is_supported(line: str) -> bool:
