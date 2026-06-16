@@ -1513,6 +1513,76 @@ fn logo_scene_on_allowed_background(brand_kit: &BrandKit) -> Scene {
     scene
 }
 
+#[test]
+fn text_color_is_corrected_for_surface_contrast() {
+    // P1.1: type.headline bakes in text.inverse (white), for a hero on a dark/brand
+    // surface. On a LIGHT surface that is invisible, so resolution must flip it to a
+    // dark, legible color; on a DARK surface it must stay light.
+    let brand_kit = platform_default_brand_kit().unwrap();
+
+    fn hex_rgb(value: &str) -> (f64, f64, f64) {
+        let v = value.trim_start_matches('#');
+        let parse = |s: &str| u8::from_str_radix(s, 16).unwrap() as f64 / 255.0;
+        (parse(&v[0..2]), parse(&v[2..4]), parse(&v[4..6]))
+    }
+    fn brightness((r, g, b): (f64, f64, f64)) -> f64 {
+        0.299 * r + 0.587 * g + 0.114 * b
+    }
+
+    let headline_color_on = |surface_hex: &str| -> (f64, f64, f64) {
+        let mut scene = Scene::new(DocumentId::from("doc_contrast"), "Contrast");
+        scene.meta.brand_kit = Some(brand_kit.brand_ref());
+        scene.pages.insert(PageId::from("page"), page("page"));
+        let mut artboard = Node::new(NodeId::from("artboard"), NodeKind::Frame);
+        artboard.fills = vec![Fill {
+            id: PaintId::from("bg"),
+            paint: Paint::Solid {
+                color: Color::Hex {
+                    value: surface_hex.to_owned(),
+                },
+            },
+        }];
+        let headline = Node::new(
+            NodeId::from("headline"),
+            NodeKind::Text(TextNode {
+                content: "Your visit is confirmed.".to_owned(),
+                style_token: Some("type.headline".to_owned()),
+                ..TextNode::default()
+            }),
+        );
+        artboard.children = vec![headline.id.clone()];
+        scene
+            .pages
+            .get_mut(&PageId::from("page"))
+            .unwrap()
+            .children = vec![artboard.id.clone()];
+        scene.nodes.insert(headline.id.clone(), headline);
+        scene.nodes.insert(artboard.id.clone(), artboard);
+
+        let report = resolve_scene_tokens(&scene, &brand_kit, &TokenResolutionOptions::default());
+        let headline = report.scene.nodes.get(&NodeId::from("headline")).unwrap();
+        let Paint::Solid {
+            color: Color::Hex { value },
+        } = &headline.fills[0].paint
+        else {
+            panic!("expected a resolved solid hex text fill, got {:?}", headline.fills);
+        };
+        hex_rgb(value)
+    };
+
+    let on_light = headline_color_on("#FFFFFF");
+    assert!(
+        brightness(on_light) < 0.5,
+        "headline on a light surface must resolve to a dark color, got {on_light:?}"
+    );
+
+    let on_dark = headline_color_on("#0B1220");
+    assert!(
+        brightness(on_dark) > 0.5,
+        "headline on a dark surface must resolve to a light color, got {on_dark:?}"
+    );
+}
+
 fn page(id: &str) -> Page {
     Page {
         id: PageId::from(id),

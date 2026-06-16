@@ -2333,6 +2333,8 @@ pub fn resolve_scene_tokens(
         }
     }
 
+    resolver.node_surface = build_node_surface_map(&resolved);
+
     for node in resolved.nodes.values_mut() {
         resolver.resolve_node(node);
     }
@@ -3159,6 +3161,10 @@ struct TokenResolver<'a> {
     resolving_numbers: Vec<String>,
     resolving_typography: Vec<String>,
     resolving_assets: Vec<String>,
+    // Maps each node to the surface color it sits ON (nearest ancestor's solid
+    // fill, else the page background). Used to keep resolved text colors legible
+    // against their background — see `contrast_corrected_text_color`.
+    node_surface: BTreeMap<NodeId, Color>,
 }
 
 impl<'a> TokenResolver<'a> {
@@ -3173,6 +3179,7 @@ impl<'a> TokenResolver<'a> {
             resolving_numbers: Vec::new(),
             resolving_typography: Vec::new(),
             resolving_assets: Vec::new(),
+            node_surface: BTreeMap::new(),
         }
     }
 
@@ -3309,6 +3316,61 @@ impl<'a> TokenResolver<'a> {
         }
     }
 
+    /// If a resolved text `color` contrasts poorly with the node's effective
+    /// surface, return whichever canonical text color (`text.primary` /
+    /// `text.inverse`) contrasts best with that surface; otherwise return `color`
+    /// unchanged, so deliberate, readable colors (accents, brand text) are kept.
+    fn contrast_corrected_text_color(
+        &mut self,
+        node_id: &NodeId,
+        color: Color,
+        subject: Option<DiagnosticSubject>,
+    ) -> Color {
+        // WCAG AA threshold for large text; below this a text/surface pair reads as
+        // unreadable-to-invisible (white-on-white is 1.0).
+        const MIN_TEXT_CONTRAST: f64 = 3.0;
+        let Some(surface) = self.node_surface.get(node_id).cloned() else {
+            return color;
+        };
+        let Some(surface_rgb) = self.color_to_rgb_resolved(&surface, subject.clone()) else {
+            return color;
+        };
+        let Some(text_rgb) = color_to_rgb(&color) else {
+            return color;
+        };
+        let mut best = color;
+        let mut best_contrast = contrast_ratio(text_rgb, surface_rgb);
+        if best_contrast >= MIN_TEXT_CONTRAST {
+            return best;
+        }
+        for candidate in ["text.primary", "text.inverse"] {
+            if let Some(candidate_color) = self.resolve_color_ref(candidate, subject.clone()) {
+                if let Some(candidate_rgb) = color_to_rgb(&candidate_color) {
+                    let ratio = contrast_ratio(candidate_rgb, surface_rgb);
+                    if ratio > best_contrast {
+                        best = candidate_color;
+                        best_contrast = ratio;
+                    }
+                }
+            }
+        }
+        best
+    }
+
+    /// Resolve a surface color (literal hex or token) to RGB for contrast math.
+    fn color_to_rgb_resolved(
+        &mut self,
+        color: &Color,
+        subject: Option<DiagnosticSubject>,
+    ) -> Option<(f64, f64, f64)> {
+        match color {
+            Color::Token { token } => self
+                .resolve_color_ref(token, subject)
+                .and_then(|resolved| color_to_rgb(&resolved)),
+            other => color_to_rgb(other),
+        }
+    }
+
     fn resolve_node(&mut self, node: &mut Node) {
         let subject = Some(DiagnosticSubject::Node(node.id.clone()));
 
@@ -3403,7 +3465,15 @@ impl<'a> TokenResolver<'a> {
                 text.style_token = None;
 
                 if let Some(color_token) = style.color {
-                    if let Some(color) = self.resolve_color_ref(&color_token, subject) {
+                    if let Some(color) = self.resolve_color_ref(&color_token, subject.clone()) {
+                        // P1.1: keep the resolved text color legible against the
+                        // surface it sits on. A type role bakes in one color (e.g.
+                        // type.headline -> text.inverse, white), which is invisible on
+                        // the opposite surface (a white headline on a light page). If
+                        // contrast is poor, flip to the better-contrasting default text
+                        // color; otherwise the author's color is preserved.
+                        let color =
+                            self.contrast_corrected_text_color(&node.id, color, subject.clone());
                         let paint = Paint::Solid { color };
                         if let Some(fill) = node.fills.first_mut() {
                             fill.paint = paint;
@@ -6042,6 +6112,56 @@ fn number_token_iter(tokens: &TokenCatalog) -> Vec<(String, &NumberToken)> {
             .map(|(key, token)| (key.clone(), token)),
     );
     result
+}
+
+/// Map every node to the surface color it sits ON: the nearest ancestor's solid
+/// fill, falling back to the page background. A container's own solid fill becomes
+/// the surface for its children (not itself). Surfaces stay as their authored
+/// `Color` (token or hex) and are resolved on demand.
+fn build_node_surface_map(scene: &Scene) -> BTreeMap<NodeId, Color> {
+    let mut map = BTreeMap::new();
+    for page in scene.pages.values() {
+        let page_surface = page
+            .background
+            .iter()
+            .find_map(|fill| paint_solid_color(&fill.paint));
+        for child in &page.children {
+            walk_node_surface(scene, child, page_surface.clone(), &mut map);
+        }
+    }
+    map
+}
+
+fn walk_node_surface(
+    scene: &Scene,
+    node_id: &NodeId,
+    surface: Option<Color>,
+    map: &mut BTreeMap<NodeId, Color>,
+) {
+    let Some(node) = scene.nodes.get(node_id) else {
+        return;
+    };
+    if let Some(surface) = surface.clone() {
+        map.insert(node_id.clone(), surface);
+    }
+    let child_surface = node
+        .fills
+        .iter()
+        .find_map(|fill| paint_solid_color(&fill.paint))
+        .or(surface);
+    for child in &node.children {
+        walk_node_surface(scene, child, child_surface.clone(), map);
+    }
+}
+
+fn paint_solid_color(paint: &Paint) -> Option<Color> {
+    match paint {
+        Paint::Solid { color } => Some(color.clone()),
+        Paint::Token { token } => Some(Color::Token {
+            token: token.clone(),
+        }),
+        _ => None,
+    }
 }
 
 fn color_to_rgb(color: &Color) -> Option<(f64, f64, f64)> {
