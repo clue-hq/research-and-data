@@ -309,6 +309,28 @@ class LumenQualityLoop:
                     source = kept_source
             if (
                 repair_context
+                and repair_context.get("repair_class") == RepairClass.slot_fixture.value
+                and not director_allows_structural_rewrite
+                and not is_surgical_dsl(source)
+            ):
+                # A slot-fixture repair must be modify-only (`#slot:<key> ...` or
+                # `#<node> ...`). is_surgical_dsl permits those and rejects any
+                # page/delete/re-author block, so the scene survives — while the
+                # `#slot:` fixture edit the layout-cluster gate used to forbid is now
+                # allowed through.
+                feedback = slot_fixture_violation_feedback(repair_context, source)
+                self.previous_feedback.append(feedback)
+                iteration_record.stop_reason = StopReason.compile_failed
+                self.tools.record(
+                    "coordinator",
+                    "slot_fixture_repair_rejected",
+                    input_summary=json.dumps(repair_context.get("target") or {}),
+                    output_summary=source[:300],
+                    payload={"rejected_source": source[:2000]},
+                )
+                continue
+            if (
+                repair_context
                 and repair_context.get("surgical_repair")
                 and not director_allows_structural_rewrite
                 and not is_surgical_dsl(source)
@@ -791,13 +813,68 @@ LAYOUT_CLUSTER_AUTHORING_CONSTRAINTS = [
     "Do not delete pages, unrelated nodes, slots, Brand Kit tokens, or assets.",
 ]
 
+SLOT_FIXTURE_PERMISSIONS = [
+    "set_slot_sample",
+    "set_slot_worst_case",
+    "set_slot_placeholder",
+    "rebind_slot",
+]
+
+SLOT_FIXTURE_PROHIBITIONS = [
+    "do not re-declare existing pages",
+    "do not delete or re-author nodes",
+    "do not edit unrelated slots",
+    "do not change page dimensions",
+]
+
+SLOT_FIXTURE_AUTHORING_CONSTRAINTS = [
+    "This is a SLOT-FIXTURE repair. Fix the diagnosed slot in place with "
+    "`#slot:<key> ...` modify lines.",
+    "For a slot with no fit-validation fixture, add realistic fixtures: "
+    '`#slot:<key> sample("…") worst_case("…")` (and `placeholder("…")` if the '
+    "slot is required). Use worst-case copy so fit validation tests real-length "
+    "data.",
+    "For a slot that binds a missing node, `#slot:<key> unbind(<node>)` or rebind "
+    "to an existing node.",
+    "Emit ONLY `#slot:<key> ...` (or `#<node_id> ...`) modify lines. Do NOT emit "
+    "any `page` line, `delete(...)`, or whole-scene re-author — that is rejected "
+    "unapplied.",
+]
+
 TEXT_FIT_CODES = {"LUMV0902", "LUMV0903", "LUMV0904", "LUMV0810"}
 LAYOUT_CLUSTER_CODES = {"LUMV0800", "LUMV0801", "LUMV0803"}
 LEGACY_GEOMETRY_CODES = {"LUMV0805"}
+# Slot-fixture / slot-binding diagnostics whose fix is a `#slot:` edit (add a
+# sample/worst_case/placeholder fixture, or rebind a missing node) — NOT a
+# page/parent-bounds geometry repair. Routed to RepairClass.slot_fixture only when
+# the diagnostic's SUBJECT is the slot itself; the same codes with a NODE subject
+# (e.g. the root artboard exceeding page bounds) stay layout_cluster.
+SLOT_REPAIR_CODES = {"LUMV0800", "LUMV0801", "LUMV0509"}
 UNSUPPORTED_LAYOUT_CLUSTER_MODIFY_CALL_RE = re.compile(
     r"(?:^|\s)(?:al|autolayout|wrap)\("
 )
 SIZE_CALL_RE = re.compile(r"(?:^|\s)(?:s|size)\(([^)]*)\)")
+
+
+def primary_diagnostic(diagnostics: list[dict]) -> dict | None:
+    """The diagnostic ``first_diagnostic_target`` keys on: the first error/blocker
+    that carries a target, else the first non-error that does. Used to classify a
+    repair by the SUBJECT (node vs slot vs page) of the diagnostic actually being
+    targeted, so it stays consistent with the ``target`` passed to
+    :func:`classify_diagnostics`."""
+    ordered = [
+        *[d for d in diagnostics if d.get("severity") in {"error", "blocker"}],
+        *[d for d in diagnostics if d.get("severity") not in {"error", "blocker"}],
+    ]
+    for diagnostic in ordered:
+        if (
+            diagnostic.get("target_page_id")
+            or diagnostic.get("target_node_id")
+            or diagnostic.get("target_slot_key")
+            or diagnostic.get("target_slot_id")
+        ):
+            return diagnostic
+    return None
 
 
 def classify_diagnostics(
@@ -830,6 +907,27 @@ def classify_diagnostics(
             permissions=list(LAYOUT_CLUSTER_PERMISSIONS),
             prohibitions=list(LAYOUT_CLUSTER_PROHIBITIONS),
             reason="preserve_layout_cluster_after_compile_failure",
+        )
+
+    # A slot-SUBJECT LUMV0800/LUMV0801 (required slot needs a fixture / slot binds a
+    # missing node) or LUMV0509 (no fit-validation fixtures) is NOT page/parent-bounds
+    # geometry — its fix is a `#slot:` edit, which the layout-cluster gate forbids.
+    # Route it to a slot-fixture repair instead. The SAME codes with a NODE subject
+    # (e.g. the root artboard exceeding page bounds) fall through to layout_cluster.
+    primary = primary_diagnostic(normalized)
+    if (
+        primary
+        and str(primary.get("code") or "") in SLOT_REPAIR_CODES
+        and (primary.get("target_slot_id") or primary.get("target_slot_key"))
+        and not primary.get("target_node_id")
+    ):
+        return RepairClassification(
+            repair_class=RepairClass.slot_fixture,
+            target=VisualTarget.model_validate(target) if target else None,
+            allowed_edit_surface=EditSurfaceRecommendation.structured_ops,
+            permissions=list(SLOT_FIXTURE_PERMISSIONS),
+            prohibitions=list(SLOT_FIXTURE_PROHIBITIONS),
+            reason="slot_fixture_or_binding",
         )
 
     if priority_codes & LAYOUT_CLUSTER_CODES:
@@ -1370,6 +1468,8 @@ def authoring_constraints_for(
 ) -> list[str]:
     if classification.repair_class == RepairClass.layout_cluster:
         return list(LAYOUT_CLUSTER_AUTHORING_CONSTRAINTS)
+    if classification.repair_class == RepairClass.slot_fixture:
+        return list(SLOT_FIXTURE_AUTHORING_CONSTRAINTS)
     if surgical:
         return list(SURGICAL_AUTHORING_CONSTRAINTS)
     return fallback
@@ -1603,6 +1703,32 @@ def layout_cluster_violation_feedback(prior: dict, rejected_source: str) -> dict
         "prohibitions": prior.get("prohibitions") or list(LAYOUT_CLUSTER_PROHIBITIONS),
         "recommended_edit_surface": EditSurfaceRecommendation.structured_ops.value,
         "authoring_constraints": list(LAYOUT_CLUSTER_AUTHORING_CONSTRAINTS),
+        "rejected_source": rejected_source[:500],
+    }
+
+
+def slot_fixture_violation_feedback(prior: dict, rejected_source: str) -> dict:
+    """Feedback for a rejected slot-fixture repair: it must be modify-only. Re-issue
+    the slot-fixture constraints so the next attempt edits the slot in place rather
+    than re-authoring the scene."""
+    target = prior.get("target") or {}
+    slot_key = (target or {}).get("slot_key")
+    return {
+        "kind": "slot_fixture_violation",
+        "feedback": (
+            "Your previous slot-fixture repair was REJECTED and NOT applied because "
+            "it was not modify-only. Fix the diagnosed slot in place: add fixtures "
+            f'with `#slot:{slot_key or "<key>"} sample("…") worst_case("…")` (and '
+            "`placeholder(\"…\")` if required), or rebind a missing node with "
+            f"`#slot:{slot_key or '<key>'} unbind(<node>)`. Do NOT emit any `page` "
+            "line, `delete(...)`, or new element declaration."
+        ),
+        "target": target,
+        "repair_class": RepairClass.slot_fixture.value,
+        "permissions": prior.get("permissions") or list(SLOT_FIXTURE_PERMISSIONS),
+        "prohibitions": prior.get("prohibitions") or list(SLOT_FIXTURE_PROHIBITIONS),
+        "recommended_edit_surface": EditSurfaceRecommendation.structured_ops.value,
+        "authoring_constraints": list(SLOT_FIXTURE_AUTHORING_CONSTRAINTS),
         "rejected_source": rejected_source[:500],
     }
 

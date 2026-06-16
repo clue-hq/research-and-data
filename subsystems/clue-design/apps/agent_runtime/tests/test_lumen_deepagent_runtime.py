@@ -1554,6 +1554,52 @@ def test_lumv0800_routes_to_layout_cluster():
     assert "convert_diagnosed_background" in classification.permissions
 
 
+def test_slot_subject_lumv0800_routes_to_slot_fixture_not_cluster():
+    # A slot-SUBJECT LUMV0800 ("required slot needs a fixture") must route to a
+    # slot-fixture repair (which permits #slot: edits), NOT the layout-cluster gate
+    # (which bans #slot: refs). The node-subject LUMV0800 (artboard bounds) stays
+    # layout_cluster — see test_lumv0800_routes_to_layout_cluster.
+    diagnostics = [
+        {
+            "severity": "error",
+            "code": "LUMV0800",
+            "message": "required slot campaign.headline needs a placeholder or validation fixture",
+            "target_slot_id": "slot_campaign_headline",
+            "target_slot_key": "campaign.headline",
+        }
+    ]
+
+    classification = classify_diagnostics(
+        diagnostics,
+        {"slot_key": "campaign.headline"},
+        scene=layout_cluster_scene(),
+    )
+
+    assert classification.repair_class == RepairClass.slot_fixture
+    assert classification.allowed_edit_surface.value == "structured_ops"
+    assert "set_slot_worst_case" in classification.permissions
+
+
+def test_slot_subject_lumv0801_binding_routes_to_slot_fixture():
+    diagnostics = [
+        {
+            "severity": "error",
+            "code": "LUMV0801",
+            "message": "slot offer.primary_message binds missing node body_copy",
+            "target_slot_id": "slot_offer_primary_message",
+            "target_slot_key": "offer.primary_message",
+        }
+    ]
+
+    classification = classify_diagnostics(
+        diagnostics,
+        {"slot_key": "offer.primary_message"},
+        scene=layout_cluster_scene(),
+    )
+
+    assert classification.repair_class == RepairClass.slot_fixture
+
+
 def test_visual_balance_critique_routes_to_layout_cluster():
     critique = VisualCritique(
         accepted=False,
@@ -2178,6 +2224,118 @@ def test_partial_layout_cluster_repair_applies_valid_refs_and_skips_strays(
     )
     dropped = partial["payload"]["dropped_lines"]
     assert any("#unrelated" in entry["line"] for entry in dropped)
+
+
+class FakeSlotFixturePreflightCoreClient(FakeCoreClient):
+    """Preflight always reports a slot-SUBJECT LUMV0800 (required slot needs a
+    fixture), which must route to a slot_fixture repair so the #slot: fix is
+    permitted rather than banned by the layout-cluster gate."""
+
+    def __init__(self, repo_root: Path) -> None:
+        super().__init__(repo_root)
+        self.compile_calls = 0
+        self.compile_sources = []
+
+    def compile_dsl_into_scene(self, scene, source: str, dsl_session=None):
+        self.compile_calls += 1
+        self.compile_sources.append(source)
+        return {
+            "scene": layout_cluster_scene(),
+            "applied_operations": 1,
+            "dsl": {
+                "compile_output": {
+                    "operations": [{"kind": "set_slot_fixture"}],
+                    "diagnostics": [],
+                },
+                "operation_error": None,
+                "session_snapshot": dsl_session,
+            },
+        }
+
+    def preflight_scene(self, scene, brand_kit):
+        return {
+            "scene": scene,
+            "diagnostics": [
+                {
+                    "severity": "error",
+                    "code": "LUMV0800",
+                    "message": "required slot campaign.headline needs a placeholder or validation fixture",
+                    "target_slot_id": "slot_campaign_headline",
+                    "target_slot_key": "campaign.headline",
+                }
+            ],
+            "preflight": {
+                "has_errors": True,
+                "brand_ref_operations": [],
+                "token_operations": [],
+                "layout_operations": [],
+            },
+        }
+
+
+def test_slot_fixture_repair_permits_slot_modify_lines(tmp_path: Path, monkeypatch):
+    # A slot-subject LUMV0800 routes to a slot_fixture repair; the #slot: fixture
+    # edit (which the layout-cluster gate used to ban) is accepted and compiles.
+    monkeypatch.setattr(
+        "lumen_deepagent.tools.CoreClient", FakeSlotFixturePreflightCoreClient
+    )
+    config = runtime_config(tmp_path, max_iterations=2)
+    tools = LumenDesignTools(config, "Create an A4 appointment card")
+    author = ScriptedAuthor(
+        [
+            "page page_a4 preset(a4,portrait)",  # iter0: initial design, compiles
+            '#slot:campaign.headline sample("Short") worst_case("A very long headline for fit")',
+        ]
+    )
+    reviewer = ScriptedReviewer(
+        [VisualCritique(accepted=True, summary="should not be reached")]
+    )
+
+    LumenQualityLoop(tools, author, reviewer).run("Create an A4 appointment card")
+
+    # The slot-subject LUMV0800 routed to slot_fixture, not layout_cluster.
+    assert author.requests[1].repair_context["repair_class"] == "slot_fixture"
+    events = [
+        json.loads(line)["event"]
+        for line in (config.trace_dir / tools.run_id / "trace.jsonl")
+        .read_text(encoding="utf-8")
+        .splitlines()
+    ]
+    # The #slot: fixture edit was NOT rejected and DID reach the compiler.
+    assert "slot_fixture_repair_rejected" not in events
+    assert tools.core.compile_calls == 2
+    assert "slot:campaign.headline" in tools.core.compile_sources[1]
+
+
+def test_slot_fixture_repair_rejects_destructive_block(tmp_path: Path, monkeypatch):
+    # The slot_fixture gate is modify-only: a destructive reply (delete + re-page)
+    # is rejected before compile, so the scene is never stripped.
+    monkeypatch.setattr(
+        "lumen_deepagent.tools.CoreClient", FakeSlotFixturePreflightCoreClient
+    )
+    config = runtime_config(tmp_path, max_iterations=2)
+    tools = LumenDesignTools(config, "Create an A4 appointment card")
+    author = ScriptedAuthor(
+        [
+            "page page_a4 preset(a4,portrait)",
+            "delete(headline)\npage page_a4 preset(a4,portrait)",  # destructive → rejected
+        ]
+    )
+    reviewer = ScriptedReviewer(
+        [VisualCritique(accepted=True, summary="should not be reached")]
+    )
+
+    LumenQualityLoop(tools, author, reviewer).run("Create an A4 appointment card")
+
+    events = [
+        json.loads(line)["event"]
+        for line in (config.trace_dir / tools.run_id / "trace.jsonl")
+        .read_text(encoding="utf-8")
+        .splitlines()
+    ]
+    assert "slot_fixture_repair_rejected" in events
+    assert tools.core.compile_calls == 1
+    assert "headline" in tools.scene["nodes"]
 
 
 def test_surgical_repair_rejects_destructive_block_without_touching_scene(
