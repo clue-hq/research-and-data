@@ -149,10 +149,16 @@ over-wide word; the headline height hugs to the actual lines). Lead uses
 **`$type.body.small`** at `s(499,hug) max_lines(3)` (height hugs) because `$type.body`
 overflows a 499pt column. Tight single-line labels hug their height too (eyebrow
 `s(499,hug)`, logo `s(230,hug)`); the tag/contact captions hug (`s(209,hug)`/`s(219,hug)`).
-The whole page is gapped with `$space.stack.loose` (not `$space.section`) between regions so
-header + hero + 3 rows + footer all fit the 842pt height. (`LUMV0801` may appear as a
-non-fatal *warning* here — it does not fail the block; content fits within bounds.) Centered
-labels use align(center) + hug height; text heights hug.
+**Distribution (no truncated bottom):** hero + benefit list are wrapped in a
+**`fill`-height `main` (`s(499,fill) y(s)`)** between a hug `header` and a hug `footer`.
+`main` absorbs the vertical slack and flows its content from the top, so the **footer
+is pinned to the page bottom** (verified: footer bottom = 794 = page − pad) — the page
+reads as a complete framed layout, NOT content stopping at 60% with an empty lower half.
+Use `y(s)` (top-flow) for a multi-section sell-sheet like this; for a SPARSE single-block
+portrait card, center the block instead (`main … y(c)`). The whole page is gapped with
+`$space.stack.loose` between regions. (`LUMV0801` may appear as a non-fatal *warning* —
+it does not fail the block; content fits within bounds.) Centered labels use align(center)
++ hug height; text heights hug.
 
 ```text
 page onepager_a4 preset(a4,portrait)
@@ -162,29 +168,30 @@ page onepager_a4 preset(a4,portrait)
         mark r p(0,0) s(32,32) fill($surface.brand) rd($radius.badge)
         logo text "Insight Health" p(0,0) s(230,hug) style($type.label) wrap_text(true) max_lines(1) slot(account.name)
       tag text "Intake, automated" p(0,0) s(209,hug) style($type.caption) wrap_text(true) max_lines(1) slot(account.tagline)
-    hero al(v, x(s), g($space.stack.tight), pad(0)) p(0,0) s(499,hug)
-      eyebrow text "FOR SPECIALTY CLINICS" p(0,0) s(499,hug) style($type.eyebrow) wrap_text(true) max_lines(1) slot(campaign.eyebrow)
-      headline text "Recover missed patient calls." p(0,0) s(499,hug) style($type.headline) lh(1.12) wrap_text(true) max_lines(2) slot(campaign.headline)
-      subtitle text "Insight Health answers, qualifies, and books visits for your front desk." p(0,0) s(499,hug) style($type.body.small) lh(1.4) wrap_text(true) max_lines(3) slot(offer.primary_message)
-    list al(v, x(s), g($space.stack.default), pad(0)) p(0,0) s(499,hug)
-      r1 al(h, x(s), y(s), g(20), pad(0)) p(0,0) s(499,hug)
-        n1 al(h, x(c), y(c), pad(0)) p(0,0) s(56,56) fill($surface.brand.subtle) rd($radius.full)
-          n1t text "1" p(0,0) s(fill,hug) style($type.subtitle) align(center) max_lines(1)
-        t1 al(v, x(s), g(6), pad(0)) p(0,0) s(423,hug)
-          t1t text "Faster intake" p(0,0) s(423,hug) style($type.subtitle) lh(1.15) wrap_text(true) max_lines(1) slot(benefit.1.title)
-          t1d text "Answer and route every patient call in seconds, day or night." p(0,0) s(423,hug) style($type.body.small) lh(1.4) wrap_text(true) max_lines(2) slot(benefit.1.desc)
-      r2 al(h, x(s), y(s), g(20), pad(0)) p(0,0) s(499,hug)
-        n2 al(h, x(c), y(c), pad(0)) p(0,0) s(56,56) fill($surface.brand.subtle) rd($radius.full)
-          n2t text "2" p(0,0) s(fill,hug) style($type.subtitle) align(center) max_lines(1)
-        t2 al(v, x(s), g(6), pad(0)) p(0,0) s(423,hug)
-          t2t text "Less busywork" p(0,0) s(423,hug) style($type.subtitle) lh(1.15) wrap_text(true) max_lines(1) slot(benefit.2.title)
-          t2d text "Scheduling and follow-up reminders happen automatically." p(0,0) s(423,hug) style($type.body.small) lh(1.4) wrap_text(true) max_lines(2) slot(benefit.2.desc)
-      r3 al(h, x(s), y(s), g(20), pad(0)) p(0,0) s(499,hug)
-        n3 al(h, x(c), y(c), pad(0)) p(0,0) s(56,56) fill($surface.brand.subtle) rd($radius.full)
-          n3t text "3" p(0,0) s(fill,hug) style($type.subtitle) align(center) max_lines(1)
-        t3 al(v, x(s), g(6), pad(0)) p(0,0) s(423,hug)
-          t3t text "Happier patients" p(0,0) s(423,hug) style($type.subtitle) lh(1.15) wrap_text(true) max_lines(1) slot(benefit.3.title)
-          t3d text "Shorter waits and a clear next step on every call." p(0,0) s(423,hug) style($type.body.small) lh(1.4) wrap_text(true) max_lines(2) slot(benefit.3.desc)
+    main al(v, x(s), y(s), g($space.stack.loose), pad(0)) p(0,0) s(499,fill)
+      hero al(v, x(s), g($space.stack.tight), pad(0)) p(0,0) s(499,hug)
+        eyebrow text "FOR SPECIALTY CLINICS" p(0,0) s(499,hug) style($type.eyebrow) wrap_text(true) max_lines(1) slot(campaign.eyebrow)
+        headline text "Recover missed patient calls." p(0,0) s(499,hug) style($type.headline) lh(1.12) wrap_text(true) max_lines(2) slot(campaign.headline)
+        subtitle text "Insight Health answers, qualifies, and books visits for your front desk." p(0,0) s(499,hug) style($type.body.small) lh(1.4) wrap_text(true) max_lines(3) slot(offer.primary_message)
+      list al(v, x(s), g($space.stack.default), pad(0)) p(0,0) s(499,hug)
+        r1 al(h, x(s), y(s), g(20), pad(0)) p(0,0) s(499,hug)
+          n1 al(h, x(c), y(c), pad(0)) p(0,0) s(56,56) fill($surface.brand.subtle) rd($radius.full)
+            n1t text "1" p(0,0) s(fill,hug) style($type.subtitle) align(center) max_lines(1)
+          t1 al(v, x(s), g(6), pad(0)) p(0,0) s(423,hug)
+            t1t text "Faster intake" p(0,0) s(423,hug) style($type.subtitle) lh(1.15) wrap_text(true) max_lines(1) slot(benefit.1.title)
+            t1d text "Answer and route every patient call in seconds, day or night." p(0,0) s(423,hug) style($type.body.small) lh(1.4) wrap_text(true) max_lines(2) slot(benefit.1.desc)
+        r2 al(h, x(s), y(s), g(20), pad(0)) p(0,0) s(499,hug)
+          n2 al(h, x(c), y(c), pad(0)) p(0,0) s(56,56) fill($surface.brand.subtle) rd($radius.full)
+            n2t text "2" p(0,0) s(fill,hug) style($type.subtitle) align(center) max_lines(1)
+          t2 al(v, x(s), g(6), pad(0)) p(0,0) s(423,hug)
+            t2t text "Less busywork" p(0,0) s(423,hug) style($type.subtitle) lh(1.15) wrap_text(true) max_lines(1) slot(benefit.2.title)
+            t2d text "Scheduling and follow-up reminders happen automatically." p(0,0) s(423,hug) style($type.body.small) lh(1.4) wrap_text(true) max_lines(2) slot(benefit.2.desc)
+        r3 al(h, x(s), y(s), g(20), pad(0)) p(0,0) s(499,hug)
+          n3 al(h, x(c), y(c), pad(0)) p(0,0) s(56,56) fill($surface.brand.subtle) rd($radius.full)
+            n3t text "3" p(0,0) s(fill,hug) style($type.subtitle) align(center) max_lines(1)
+          t3 al(v, x(s), g(6), pad(0)) p(0,0) s(423,hug)
+            t3t text "Happier patients" p(0,0) s(423,hug) style($type.subtitle) lh(1.15) wrap_text(true) max_lines(1) slot(benefit.3.title)
+            t3d text "Shorter waits and a clear next step on every call." p(0,0) s(423,hug) style($type.body.small) lh(1.4) wrap_text(true) max_lines(2) slot(benefit.3.desc)
     footer al(h, x(sb), y(c), g($space.md), pad(0)) p(0,0) s(499,hug)
       cta al(h, x(c), y(c), pad(16,32)) p(0,0) s(260,64) fill($surface.inverse) rd($radius.button)
         cta_text text "Book a Demo" p(0,0) s(fill,hug) style($type.cta) align(center) max_lines(1) slot(campaign.cta)

@@ -72,6 +72,13 @@ filler element.
   `fill`-height region (stretch) or center it with `y(c)`. If the artifact genuinely
   lacks content for its surface (e.g. an appointment card with no date/time/location),
   add the real missing content — that is the honest fill, not a spacer.
+- **Portrait pages (A4, posters) use the SAME idiom.** Wrap the body in a `s(W,fill)`
+  `main` between a hug header and a hug footer so the footer pins to the page bottom
+  and the page reads complete (not "truncated at 60%"). Use `y(s)` on `main` for a
+  multi-section sell-sheet (content flows from the top, slack sits above the pinned
+  footer); use `y(c)` for a sparse single-block card (content centers, slack becomes
+  symmetric margin). The failure to avoid: a top-stacked column with the footer (and
+  half the page) floating empty below it.
 
 ## Color & contrast
 
