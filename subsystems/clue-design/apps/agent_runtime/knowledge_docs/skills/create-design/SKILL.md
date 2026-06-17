@@ -55,6 +55,16 @@ brand-aligned artifact. This is the *first* pass only — fixing diagnostics is
   centers the glyph horizontally; never use a hug WIDTH for this (it trips `LUMV0902`).
   `style($type.x)` carries no alignment, so always pair it with `align(...)` when
   the text must be centered.
+- **Width inside a padded container: use `fill`, don't hand-compute.** A text or
+  child box inside a frame with `pad(P)` has only `parentWidth − 2·P` available, so
+  a hand-typed fixed width (e.g. `s(467,…)` inside a `s(499,…) pad(24)` card → only
+  451 available) overflows the padding and wraps wrong. Give such text `s(fill,hug)`
+  and let the layout size it to the real available width.
+- **Slotted text reserves its worst case.** A slot-bound text node is fit-checked
+  against its `worst_case` fixture, so give it `wrap_text(true)` + a realistic
+  `max_lines(N)` and a `hug` height (the engine reserves the wrapped worst-case
+  height). Set `sample`/`worst_case` to real-length copy; if the worst case can't
+  fit in `max_lines`, raise `max_lines` or widen the box — don't shrink the font.
 - **Backgrounds** belong on the container frame's `fill(...)`, not a separate rect.
   For export-safe pages, put the background on a clipped root `artboard` frame
   with `fill(...)`. Do not put `background(...)` on a `page ...` creation line,

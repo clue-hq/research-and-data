@@ -686,7 +686,21 @@ impl<'a> LayoutEngine<'a> {
 
     fn measure_context_for(&self, node: &Node) -> MeasureContext {
         match &node.kind {
-            NodeKind::Text(text) => MeasureContext::Text(TextMeasureInput::from_text_node(text)),
+            NodeKind::Text(text) => {
+                let mut input = TextMeasureInput::from_text_node(text);
+                // A slot-bound text node must hug to the WORST-CASE fixture (the
+                // largest data it will ever hold), not just its placeholder/sample.
+                // Otherwise a hug height sized to the sample under-reserves and the
+                // worst_case overflows (LUMV0810) — and a hug box cannot be enlarged
+                // by a repair, so the run deadlocks. Reserving worst_case here keeps
+                // hug heights both legible (no dead zone beyond worst_case) and safe.
+                if let Some(worst_case) = self.worst_case_fixture_for(&node.id) {
+                    if worst_case.chars().count() > input.content.chars().count() {
+                        input.content = worst_case;
+                    }
+                }
+                MeasureContext::Text(input)
+            }
             NodeKind::Image(_) => MeasureContext::Box {
                 natural: fixed_or_zero(&node.size),
             },
@@ -694,6 +708,20 @@ impl<'a> LayoutEngine<'a> {
                 natural: self.natural_size(node),
             },
         }
+    }
+
+    /// The longest fixture (placeholder / sample / worst_case) of the slot bound to
+    /// `node_id`, if any. Used so a slot-bound text node reserves room for its
+    /// worst-case data when hugging.
+    fn worst_case_fixture_for(&self, node_id: &NodeId) -> Option<String> {
+        let slot = self
+            .scene
+            .slots
+            .values()
+            .find(|slot| slot.bound_nodes.contains(node_id))?;
+        slot_fixtures(slot)
+            .into_iter()
+            .max_by_key(|fixture| fixture.chars().count())
     }
 
     fn write_geometry(&mut self, node: &Node, origin: Point2, size: Size2) {
@@ -1582,9 +1610,18 @@ fn text_fit(
     bounds: &Rect,
     policy: &OverflowPolicy,
 ) -> TextFit {
+    // Measure the fixture the way the NODE actually renders — its own wrap +
+    // max_lines — NOT the slot's overflow policy. The DSL cannot set a slot's
+    // overflow policy (it is always Error), so deriving wrap from the policy
+    // measured every slotted fixture as a single no-wrap line and reported a false
+    // LUMV0810 for any wrapping body whose worst_case spans more than one line. The
+    // slot.overflow policy still governs the RESPONSE to a genuine overflow
+    // (Error → diagnostic, ShrinkFont → shrink, Clip/Ellipsis → lossy advice) in the
+    // caller; here we only reflect how the text flows. An explicit Wrap policy still
+    // wins (it can raise max_lines beyond the node's own cap).
     let (wrap, max_lines) = match policy {
         OverflowPolicy::Wrap { max_lines } => (TextWrap::Wrap, *max_lines),
-        _ => (TextWrap::NoWrap, None),
+        _ => (text.wrap.clone(), text.max_lines),
     };
     let measured = measurer.measure(&TextMeasureInput {
         content: content.to_owned(),
