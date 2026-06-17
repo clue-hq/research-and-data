@@ -384,6 +384,7 @@ pub enum DslProperty {
     TextDirection(TextDirection),
     Grow(DslScalar),
     TextStyleToken(String),
+    TextAlignment(TextAlign),
     LayoutAnchor {
         axis: DslLayoutAxis,
         anchor: DslLayoutAnchor,
@@ -2462,6 +2463,10 @@ fn node_edit_patch_from_properties(
                 text_patch.style_token = OptionalFieldPatch::Set(token.clone());
                 has_text_patch = true;
             }
+            DslProperty::TextAlignment(align) => {
+                text_patch.align = FieldPatch::Set(align.clone());
+                has_text_patch = true;
+            }
             DslProperty::LineHeight(line_height) => {
                 match line_height {
                     DslScalar::Number(line_height) => {
@@ -3163,6 +3168,17 @@ fn parse_property_token(
                 column,
             )?)]
         }
+        "align" | "text_align" => {
+            // Standalone horizontal text alignment, usable alongside style($type.x)
+            // (which carries no align). Centers a label in any box without forcing a
+            // hug width — the robust way to center glyphs in chips/buttons/cells.
+            expect_arg_count(&call, 1, line_number)?;
+            vec![DslProperty::TextAlignment(parse_text_align(
+                &call.args[0],
+                line_number,
+                column,
+            )?)]
+        }
         "lh" | "line_height" | "line-height" => {
             expect_arg_count(&call, 1, line_number)?;
             vec![DslProperty::LineHeight(parse_positive_scalar(
@@ -3806,6 +3822,20 @@ fn apply_properties(
                         "LUMD0606",
                         "font_weight(...) only applies to text nodes",
                         "Move font_weight(...) to a text/t element.",
+                    ));
+                }
+            }
+            DslProperty::TextAlignment(align) => {
+                if let NodeKind::Text(text) = &mut node.kind {
+                    text.align = align.clone();
+                } else {
+                    diagnostics.push(warning_diag(
+                        line_number,
+                        1,
+                        node.id.as_str().len(),
+                        "LUMD0607",
+                        "align(...) only applies to text nodes",
+                        "Move align(left|center|right|justify) to a text/t element.",
                     ));
                 }
             }

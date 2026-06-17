@@ -1591,7 +1591,16 @@ fn text_fit(
         font_family: text.font_family.clone(),
         font_size,
         font_weight: text.font_weight,
-        line_height: 1.2,
+        // Measure the fixture with the node's OWN line height, not a hardcoded 1.2.
+        // The hardcode made a hug-height (or any lh < 1.2) slotted text node report a
+        // false LUMV0810 overflow — the fixture was measured taller than the box the
+        // node actually reserves — which blocked legible hug heights and tight
+        // headlines. Fall back to 1.2 only when the node carries no line height.
+        line_height: if text.line_height > 0.0 {
+            text.line_height
+        } else {
+            1.2
+        },
         letter_spacing: 0.0,
         wrap,
         max_lines,

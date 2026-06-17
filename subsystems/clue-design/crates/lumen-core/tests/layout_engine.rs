@@ -866,6 +866,27 @@ fn text_fixture_that_fits_has_no_text_fit_error() {
 }
 
 #[test]
+fn slot_fit_uses_node_line_height_not_hardcoded_1_2() {
+    // A slotted single-line node with a sub-1.2 line height and a tight box must NOT
+    // report a false LUMV0810. The fixture-fit check must measure with the node's OWN
+    // lh (1.0 here → ~20pt), not a hardcoded 1.2 (→ ~24pt, which falsely overflowed
+    // the 23pt box and blocked legible hug heights and tight headlines).
+    let mut scene = scene_with_page(200.0, 200.0);
+    let mut node = text_node_with_font("name", "Short", 20.0, 20.0, 160.0, 23.0, 20.0);
+    if let NodeKind::Text(text) = &mut node.kind {
+        text.line_height = 1.0;
+    }
+    insert(&mut scene, ParentRef::Page(PageId::from("page")), node);
+    let mut slot = text_slot("slot_name");
+    slot.placeholder = Some("Short".to_owned());
+    slot.validation.samples = vec!["Short".to_owned()];
+    bind_slot(&mut scene, slot, "name");
+
+    let diagnostics = validate_layout(&scene, lumen_core::LayoutOptions::default());
+    assert!(!has_code(&diagnostics, "LUMV0810"), "{diagnostics:#?}");
+}
+
+#[test]
 fn unresolved_token_dimensions_warn_and_use_natural_size() {
     let mut scene = scene_with_page(300.0, 200.0);
     let mut headline = text_node("headline", "Token sized headline", 0.0, 0.0, 100.0, 24.0);
