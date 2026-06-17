@@ -21,6 +21,7 @@ PRIMARY_KNOWLEDGE_PATHS = [
     f"{KNOWLEDGE_DOCS_ROOT}/knowledge/lumen-dsl/text.md",
     f"{KNOWLEDGE_DOCS_ROOT}/knowledge/lumen-dsl/directives.md",
     f"{KNOWLEDGE_DOCS_ROOT}/knowledge/lumen-dsl/diagnostics.md",
+    f"{KNOWLEDGE_DOCS_ROOT}/knowledge/design/foundations.md",
     f"{KNOWLEDGE_DOCS_ROOT}/knowledge/design/artboard-frame-authoring.md",
     f"{KNOWLEDGE_DOCS_ROOT}/knowledge/design/layout-recipes.md",
     f"{KNOWLEDGE_DOCS_ROOT}/knowledge/design/typography-and-composition.md",
@@ -61,6 +62,11 @@ LAYOUT_CLUSTER_REPAIR_PATH = (
 # (horizontal-only align — there is NO valign/text_align — plus wrap/max_lines).
 GRAMMAR_PATH = f"{KNOWLEDGE_DOCS_ROOT}/knowledge/lumen-dsl/grammar.md"
 TEXT_PATH = f"{KNOWLEDGE_DOCS_ROOT}/knowledge/lumen-dsl/text.md"
+# The art-direction taste rubric the visual critic scores against (one-dominant /
+# squint test, hero-size-per-surface, jump rule, whitespace-as-margin, 60-30-10,
+# WCAG contrast, single alignment spine, eyebrow/anti-cliche). Pinned + delivered
+# in full so the priors arrive intact, not windowed to a half-rule.
+FOUNDATIONS_PATH = f"{KNOWLEDGE_DOCS_ROOT}/knowledge/design/foundations.md"
 
 # The vetted block catalog: pre-proportioned, compile+preflight-validated blocks
 # the author ASSEMBLES (README index + full-artifact patterns + component blocks).
@@ -78,7 +84,7 @@ BLOCK_CATALOG_PATHS = [
 # Docs delivered to the author IN FULL (not windowed to a best_excerpt). The block
 # examples and the grammar/text references must arrive intact — a 1600-char window
 # slices a full page+artboard+block example in half and teaches broken syntax.
-FULL_DELIVERY_PATHS = {GRAMMAR_PATH, TEXT_PATH, *BLOCK_CATALOG_PATHS}
+FULL_DELIVERY_PATHS = {GRAMMAR_PATH, TEXT_PATH, FOUNDATIONS_PATH, *BLOCK_CATALOG_PATHS}
 LAYOUT_CLUSTER_TERMS = {
     "artboard",
     "background",
@@ -184,7 +190,13 @@ def mandatory_task_paths(query: str) -> list[str]:
     # hallucinates unsupported syntax — `va(center)` (LUMD0212), a `divider` node
     # kind (LUMD0206) — and wastes the first iteration. Both are PRIMARY paths, so
     # they are always among the candidates this force-selects from.
-    paths = [GRAMMAR_PATH, TEXT_PATH, ARTBOARD_AUTHORING_PATH, *BLOCK_CATALOG_PATHS]
+    paths = [
+        GRAMMAR_PATH,
+        TEXT_PATH,
+        FOUNDATIONS_PATH,
+        ARTBOARD_AUTHORING_PATH,
+        *BLOCK_CATALOG_PATHS,
+    ]
     terms = set(re.split(r"[^a-z0-9_.$-]+", query.lower()))
     if terms & LAYOUT_CLUSTER_TERMS:
         paths.append(LAYOUT_CLUSTER_REPAIR_PATH)

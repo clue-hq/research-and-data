@@ -13,7 +13,7 @@ too small genuinely is.
 | `font($type.x)` | — | one typography token (preferred when branded) |
 | `style($type.x)` | `text_style` | typography role token (preferred when branded) |
 | `align(left\|center\|right\|justify)` | `text_align` | horizontal alignment, standalone — pairs with `style($type.x)` (which carries no align) |
-| `font_size(n)` | `font-size` | alias — size only |
+| `font_size(n)` / `font_size($type.size.x)` | `font-size` | size only — a raw number OR a size-step token (the token form is preferred; see below) |
 | `font_weight(n)` | `font-weight` | alias — weight only |
 | `lh(n)` | `line_height` | line height multiplier |
 | `ls(n)` | `letter_spacing` | pixel letter spacing |
@@ -34,6 +34,35 @@ a label in a chip/button, the box does NOT need to hug the glyph — `align(cent
 centers the glyph within whatever width the box has. Vertical centering is an
 auto-layout `y(c)` on the parent plus a hug height on the label (see `layout.md`);
 there is no `valign`.
+
+## Type-size scale — pick the step for the surface
+
+A role (`style($type.headline)`) bakes in **one** size, tuned for a document-scale
+page (A4 ≈ 595pt wide). On a much larger canvas (a 1080² social square, a wide
+flyer) that same size is too small to dominate — the headline reads at the same
+weight as a stat and the squint test fails. Fix it at the source: keep the role
+for weight/color/line-height and **override the size with a step token**:
+
+```
+$type.size.xs=12  sm=14  md=16  lg=20  xl=24  2xl=32  3xl=36
+$type.size.4xl=40 (hero)  5xl=48 (large hero)  6xl=64 (display)
+$type.size.7xl=80  8xl=96  9xl=128  (oversize / display)
+```
+
+```text
+# A4 / document scale — the role default is right, no override needed
+headline text "Your appointment is confirmed." s(fill,hug) style($type.headline) lh(1.08) wrap_text(true) max_lines(2)
+
+# 1080² social hero — same role, but step the size up so it dominates
+headline text "Meet Magic-Doc." s(fill,hug) style($type.headline) font_size($type.size.7xl) lh(1.08) wrap_text(true) max_lines(2)
+```
+
+The step token resolves to a fixed value regardless of canvas (no auto-scaling —
+a human editor can resize it freely), and it wins over the role's default size.
+**Rules of thumb** (canvas-independent): one element dominates per artifact; the
+hero is ~2–3× body; a stat/secondary value must read *visibly smaller* than the
+hero (don't let `$type.stat`, 48, rival a 56 headline — step the headline to
+64–80 on a big canvas). See `knowledge/design/foundations`.
 
 ## Patterns that fit
 

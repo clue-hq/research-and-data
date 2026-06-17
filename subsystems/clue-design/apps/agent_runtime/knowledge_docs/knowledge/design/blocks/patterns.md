@@ -24,15 +24,18 @@ focal message with three proof stats and one CTA.
 
 **When to use / Content budget:** `size(1080,1080,px)` → 1080×1080pt; `pad(96)` ⇒ 888pt
 content column (~65% whitespace). Logo label + eyebrow in the header; hero headline 4-8
-words `max_lines(2)` via `$type.headline` at `s(888,hug)` (NOT `$type.display` — it
-overflows a 4-word line even at 888 wide; the headline height hugs to the actual lines);
-subtitle ≤8 words `$type.body` `s(820,hug)` `max_lines(3)` (height hugs to the actual
-lines); three stats each a `$type.stat` numeral `s(fill,hug)` + a ≤2-word `$type.body.small`
-label `s(270,hug)`; one inverse-fill CTA `s(340,72)` whose fill-width label centers its
-glyph with `align(center)` + a hug height (`s(fill,hug)`). The URL caption hugs its height
-(`s(360,hug)`). `y(sb)` on the root spreads the four bands top to bottom. Stat columns are
-fixed `s(270,…)` (270×3 + 2 gaps < 888), well above the ~160pt 2-word floor. Centered
-labels use align(center) + hug height; text heights hug.
+words `max_lines(2)` via `$type.headline` **stepped up to `font_size($type.size.7xl)` (80pt)**
+at `s(888,hug)` — a 1080² canvas is far larger than A4, so the role's default 56 does NOT
+dominate; the 7xl step makes the headline the clear focal point (80 vs the 48pt stats) while
+the role still supplies weight/color (height hugs to the actual lines, `lh(1.04)` for the big
+size). Subtitle ≤8 words `$type.body` `s(820,hug)` `max_lines(3)` (height hugs); three stats
+each a `$type.stat` numeral `s(fill,hug)` + a ≤2-word `$type.body.small` label `s(270,hug)`;
+one inverse-fill CTA `s(340,72)` whose fill-width label centers its glyph with `align(center)`
++ a hug height (`s(fill,hug)`). The URL caption hugs its height (`s(360,hug)`). **Hero + stats
+are grouped in one `main` block** so the root's `y(sb)` reads as header-top / centered-content /
+footer-bottom (intentional margins) instead of four thin bands scattered with dead gaps. Stat
+columns are fixed `s(270,…)` (270×3 + 2 gaps < 888), well above the ~160pt 2-word floor.
+Centered labels use align(center) + hug height; text heights hug.
 
 ```text
 page social_square size(1080,1080,px)
@@ -42,19 +45,20 @@ page social_square size(1080,1080,px)
         mark r p(0,0) s(40,40) fill($surface.inverse) rd($radius.badge)
         logo text "Insight Health" p(0,0) s(300,40) style($type.label) wrap_text(true) max_lines(1) slot(account.name)
       eyebrow text "FOR SPECIALTY CLINICS" p(0,0) s(420,36) style($type.eyebrow) wrap_text(true) max_lines(1) slot(campaign.eyebrow)
-    hero al(v, x(s), g($space.stack.default), pad(0)) p(0,0) s(888,hug)
-      headline text "Answer every patient call." p(0,0) s(888,hug) style($type.headline) lh(1.08) wrap_text(true) max_lines(2) slot(campaign.headline)
-      subtitle text "Insight Health answers, qualifies, and books visits." p(0,0) s(820,hug) style($type.body) lh(1.4) wrap_text(true) max_lines(3) slot(offer.primary_message)
-    stats al(h, x(sb), y(s), g($space.lg), pad(0)) p(0,0) s(888,hug)
-      s1 al(v, x(s), g(4), pad(0)) p(0,0) s(270,hug)
-        s1v text "92%" p(0,0) s(fill,hug) style($type.stat) max_lines(1)
-        s1l text "calls answered" p(0,0) s(270,hug) style($type.body.small) lh(1.3) wrap_text(true) max_lines(2) slot(stat.1.label)
-      s2 al(v, x(s), g(4), pad(0)) p(0,0) s(270,hug)
-        s2v text "3x" p(0,0) s(fill,hug) style($type.stat) max_lines(1)
-        s2l text "faster booking" p(0,0) s(270,hug) style($type.body.small) lh(1.3) wrap_text(true) max_lines(2) slot(stat.2.label)
-      s3 al(v, x(s), g(4), pad(0)) p(0,0) s(270,hug)
-        s3v text "24/7" p(0,0) s(fill,hug) style($type.stat) max_lines(1)
-        s3l text "live coverage" p(0,0) s(270,hug) style($type.body.small) lh(1.3) wrap_text(true) max_lines(2) slot(stat.3.label)
+    main al(v, x(s), g($space.section), pad(0)) p(0,0) s(888,hug)
+      hero al(v, x(s), g($space.stack.default), pad(0)) p(0,0) s(888,hug)
+        headline text "Answer every patient call." p(0,0) s(888,hug) style($type.headline) font_size($type.size.7xl) lh(1.04) wrap_text(true) max_lines(2) slot(campaign.headline)
+        subtitle text "Insight Health answers, qualifies, and books visits." p(0,0) s(820,hug) style($type.body) lh(1.4) wrap_text(true) max_lines(3) slot(offer.primary_message)
+      stats al(h, x(sb), y(s), g($space.lg), pad(0)) p(0,0) s(888,hug)
+        s1 al(v, x(s), g(4), pad(0)) p(0,0) s(270,hug)
+          s1v text "92%" p(0,0) s(fill,hug) style($type.stat) max_lines(1)
+          s1l text "calls answered" p(0,0) s(270,hug) style($type.body.small) lh(1.3) wrap_text(true) max_lines(2) slot(stat.1.label)
+        s2 al(v, x(s), g(4), pad(0)) p(0,0) s(270,hug)
+          s2v text "3x" p(0,0) s(fill,hug) style($type.stat) max_lines(1)
+          s2l text "faster booking" p(0,0) s(270,hug) style($type.body.small) lh(1.3) wrap_text(true) max_lines(2) slot(stat.2.label)
+        s3 al(v, x(s), g(4), pad(0)) p(0,0) s(270,hug)
+          s3v text "24/7" p(0,0) s(fill,hug) style($type.stat) max_lines(1)
+          s3l text "live coverage" p(0,0) s(270,hug) style($type.body.small) lh(1.3) wrap_text(true) max_lines(2) slot(stat.3.label)
     footer al(h, x(sb), y(c), g($space.md), pad(0)) p(0,0) s(888,hug)
       cta al(h, x(c), y(c), pad(18,36)) p(0,0) s(340,72) fill($surface.inverse) rd($radius.button)
         cta_text text "Book a Demo" p(0,0) s(fill,hug) style($type.cta) align(center) max_lines(1) slot(campaign.cta)
@@ -165,8 +169,10 @@ A horizontal split: the message and CTA on the left, a proof-stat card on the ri
 **When to use / Content budget:** `size(1200,628,px)` → 1200×628pt; `pad(64,72)` (top/bottom
 64, left/right 72). The root is a **row** (`al(h, x(sb), y(c))`) that vertically centers
 two regions and pushes them to the ends. Left `message` column is `s(620,hug)`: eyebrow
-(single-line `s(620,hug)`, height hugs) + headline (`$type.headline` `s(620,hug) max_lines(2)`,
-height hugs to the actual lines) + lead (`$type.body.small` `s(620,hug) max_lines(3)`, height
+(single-line `s(620,hug)`, height hugs) + headline (`$type.headline` **stepped to
+`font_size($type.size.6xl)` (64pt)** `s(620,hug) max_lines(2)`, so it dominates the 48pt
+panel stats; the wide-but-short 628 canvas wants a display-scale hero, height hugs to the
+actual lines) + lead (`$type.body.small` `s(620,hug) max_lines(3)`, height
 hugs — `$type.body` would overflow even this width at print scale) + CTA (fill-width label that
 centers its glyph with `align(center)` + a hug height `s(fill,hug)`). Right `panel` is
 a fixed `s(372,500)` `$surface.card` holding three stacked stats (`$type.stat` numeral
@@ -179,7 +185,7 @@ page flyer_wide size(1200,628,px)
   artboard al(h, x(sb), y(c), g($space.section), pad(64,72)) p(0,0) s(fill,fill) fill($surface.brand) clip(true)
     message al(v, x(s), g($space.stack.default), pad(0)) p(0,0) s(620,hug)
       eyebrow text "FOR SPECIALTY CLINICS" p(0,0) s(620,hug) style($type.eyebrow) wrap_text(true) max_lines(1) slot(campaign.eyebrow)
-      headline text "Answer every patient call." p(0,0) s(620,hug) style($type.headline) lh(1.08) wrap_text(true) max_lines(2) slot(campaign.headline)
+      headline text "Answer every patient call." p(0,0) s(620,hug) style($type.headline) font_size($type.size.6xl) lh(1.06) wrap_text(true) max_lines(2) slot(campaign.headline)
       subtitle text "Insight Health answers, qualifies, and books visits for your front desk." p(0,0) s(620,hug) style($type.body.small) lh(1.4) wrap_text(true) max_lines(3) slot(offer.primary_message)
       cta al(h, x(c), y(c), pad(16,32)) p(0,0) s(300,68) fill($surface.inverse) rd($radius.button)
         cta_text text "Book a Demo" p(0,0) s(fill,hug) style($type.cta) align(center) max_lines(1) slot(campaign.cta)
@@ -270,8 +276,14 @@ Validator proof:
   headline (fewer/shorter words), do not just add height or `max_lines`.
 - **Body copy at print widths uses `$type.body.small`, not `$type.body`.** `$type.body`
   overflows columns ≤ ~620pt. Reserve `$type.body` for the wide square hero (`s(820,…)`).
-- **Hero headlines use `$type.headline`, never `$type.display`.** `$type.display` cannot
-  fit even a 4-word line at 888pt wide / `max_lines(4)`.
+- **Hero headlines use `$type.headline`; step the SIZE per surface.** The role's default
+  size (56) is tuned for A4 — keep it on A4/postcard. On a large canvas it does not
+  dominate, so step the size with a token: `font_size($type.size.6xl)` (64) for a landscape
+  flyer, `font_size($type.size.7xl)` (80) for a 1080² square. The role still gives
+  weight/color; only the size changes, and it stays a fixed value (editor-safe). Do NOT
+  switch to `$type.display` for this — it carries display *styling* and still can't fit a
+  4-word line at 888 wide. The rule: **one element dominates; the hero reads visibly larger
+  than any stat/secondary value** (see `knowledge/design/foundations`).
 - **Do not add a third tier of content to the postcard or flyer.** They are short
   surfaces; the validator's `LUMV0801` bounds check will reject an extra band. Stay with
   one focal message + one secondary region + one CTA.

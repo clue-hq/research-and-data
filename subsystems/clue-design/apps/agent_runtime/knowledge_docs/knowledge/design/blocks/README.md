@@ -93,6 +93,13 @@ one-pager. Use these as the ground truth for correct Lumen DSL syntax + token us
 - Brand name in a header/footer band → `$type.label`; standalone hero identity →
   `$type.title` (Logo lockup). Eyebrow → `$type.eyebrow` `max_lines(1)`. Hero/section
   header (5–6 words) → `$type.headline` (not `$type.title`, which won't wrap).
+- **Step the hero size to the surface.** `$type.headline` defaults to 56 (right for A4).
+  On a large canvas keep the role but override the size with a step token so the headline
+  dominates: `style($type.headline) font_size($type.size.6xl)` (64) on a landscape flyer,
+  `font_size($type.size.7xl)` (80) on a 1080² square. Steps run `$type.size.xs`(12) →
+  `9xl`(128); the role still supplies weight/color, and the size is a fixed value (no
+  auto-scaling, so a human editor can resize freely). One element dominates per artifact;
+  the hero must read visibly larger than any `$type.stat` (48) value.
 - Body copy at print/narrow widths (≤~620pt) → `$type.body.small`; reserve
   `$type.body` for the wide square hero column.
 - Divider rule = a `rect` `r s(fill,2) fill($border.subtle)` (numeric thickness —

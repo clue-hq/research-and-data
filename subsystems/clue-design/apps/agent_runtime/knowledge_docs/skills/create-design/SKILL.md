@@ -13,6 +13,8 @@ brand-aligned artifact. This is the *first* pass only — fixing diagnostics is
 
 1. **Load knowledge** for the task (see `AGENT.md` §4): always
    `knowledge/lumen-dsl/grammar` + `knowledge/lumen-dsl/text`
+   + `knowledge/design/foundations` (the taste rubric — one dominant element,
+   hero-size-per-surface, whitespace-as-margin, anti-cliché)
    + `knowledge/design/artboard-frame-authoring` + the **vetted block catalog**
    (`knowledge/design/blocks/*` — pinned automatically); add `skills/brand-and-tokens`
    + the design-systems files when a Brand Kit is in play;
@@ -55,6 +57,14 @@ brand-aligned artifact. This is the *first* pass only — fixing diagnostics is
   centers the glyph horizontally; never use a hug WIDTH for this (it trips `LUMV0902`).
   `style($type.x)` carries no alignment, so always pair it with `align(...)` when
   the text must be centered.
+- **Step the hero size to the surface (one element must dominate).** `$type.headline`
+  bakes in 56pt, tuned for A4 — keep it on A4/postcard. A large canvas is much bigger, so
+  the same 56 won't dominate and the headline ends up rivaling a `$type.stat` (48). Keep the
+  role for weight/color but step the SIZE with a token: `style($type.headline)
+  font_size($type.size.6xl)` (64) on a landscape flyer, `font_size($type.size.7xl)` (80) on
+  a 1080² square. Steps run `$type.size.xs`(12)…`9xl`(128); the size is fixed (no
+  auto-scaling — editor-safe). The hero should read visibly larger than any stat/secondary
+  value (squint test: one thing dominates). See `knowledge/design/foundations`.
 - **Width inside a padded container: use `fill`, don't hand-compute.** A text or
   child box inside a frame with `pad(P)` has only `parentWidth − 2·P` available, so
   a hand-typed fixed width (e.g. `s(467,…)` inside a `s(499,…) pad(24)` card → only
@@ -92,7 +102,7 @@ label/value pairs + a paragraph into a small fixed card **will** overflow
 page linkedin_square size(1080,1080,px)
   artboard al(v, x(s), g(28), pad(72)) p(0,0) s(fill,fill) fill($surface.brand) clip(true)
     content al(v, x(s), g(28), pad(0)) p(0,0) s(560,hug)
-      headline text "Let neurosurgeons focus on surgery." p(0,0) s(fill,hug) style($type.headline) lh(1.08) wrap_text(true) max_lines(2) slot(campaign.headline)
+      headline text "Let neurosurgeons focus on surgery." p(0,0) s(fill,hug) style($type.headline) font_size($type.size.7xl) lh(1.04) wrap_text(true) max_lines(2) slot(campaign.headline)
       body     text "Insight Health handles calls, scheduling, and patient routing." p(0,0) s(fill,hug) style($type.body) lh(1.35) wrap_text(true) max_lines(3) slot(offer.primary_message)
       cta al(h, x(c), y(c), pad(14,28)) p(0,0) s(220,56) fill($surface.inverse) rd($radius.md)
         cta_text text "Book a Demo" p(0,0) s(fill,hug) style($type.cta) max_lines(1) slot(campaign.cta)
