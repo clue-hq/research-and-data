@@ -49,6 +49,12 @@ brand-aligned artifact. This is the *first* pass only — fixing diagnostics is
 - **Text**: `hug` height for anything that can vary, `wrap_text(true)` on body and
   long headlines, `max_lines(…)` so overflow is caught early, boxes **wide enough**
   for the real copy. Headlines tight (`lh 1.05–1.15`), body relaxed (`1.3–1.45`).
+- **Center a label in a button/chip/circle** by adding `align(center)` to the text
+  and a hug height: `... text "Book a Demo" s(fill,hug) style($type.cta) align(center)`,
+  inside a both-axes-centered container `al(h, x(c), y(c), …)`. `align(center)`
+  centers the glyph horizontally; never use a hug WIDTH for this (it trips `LUMV0902`).
+  `style($type.x)` carries no alignment, so always pair it with `align(...)` when
+  the text must be centered.
 - **Backgrounds** belong on the container frame's `fill(...)`, not a separate rect.
   For export-safe pages, put the background on a clipped root `artboard` frame
   with `fill(...)`. Do not put `background(...)` on a `page ...` creation line,

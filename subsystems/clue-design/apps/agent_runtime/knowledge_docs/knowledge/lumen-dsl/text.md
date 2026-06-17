@@ -12,6 +12,7 @@ too small genuinely is.
 | `font("family",size,weight,align)` | — | full type spec; align ∈ `left`/`center`/`right`/`justify` |
 | `font($type.x)` | — | one typography token (preferred when branded) |
 | `style($type.x)` | `text_style` | typography role token (preferred when branded) |
+| `align(left\|center\|right\|justify)` | `text_align` | horizontal alignment, standalone — pairs with `style($type.x)` (which carries no align) |
 | `font_size(n)` | `font-size` | alias — size only |
 | `font_weight(n)` | `font-weight` | alias — weight only |
 | `lh(n)` | `line_height` | line height multiplier |
@@ -25,8 +26,14 @@ Canonical vs alias: prefer `font(...)` / `style($type.x)` / `lh(...)` / `ls(...)
 in new designs. `font_size`/`font_weight`/`tracking` are compatibility aliases for
 *targeted text repairs* when a model has drifted into CSS/design-tool language.
 
-`align` is the **only** alignment knob and it is horizontal. Vertical centering is
-an auto-layout `y(c)` on the parent (see `layout.md`). There is no `valign`.
+`align(...)` is the horizontal alignment knob. Use it **standalone** alongside
+`style($type.x)` — the style token carries no alignment — to center a label without
+resizing its box: e.g. a numeral in a circle chip or a CTA label is
+`style($type.cta) align(center)`. (It is also the 4th arg of `font(...)`.) To center
+a label in a chip/button, the box does NOT need to hug the glyph — `align(center)`
+centers the glyph within whatever width the box has. Vertical centering is an
+auto-layout `y(c)` on the parent plus a hug height on the label (see `layout.md`);
+there is no `valign`.
 
 ## Patterns that fit
 

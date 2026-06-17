@@ -14,15 +14,22 @@ environmental and never fail a block.
 
 Universal rules these blocks bake in:
 
-- **Slotted text node ⇒ fixed `s(W,H)`** (definite width AND height) sized for the
-  `worst_case` copy. `hug`/`s(fill,hug)` on a slotted node fails `LUMV0810`. Plain
-  containers may stay `hug`; only the slotted leaf text needs a fixed box.
+- **Slotted text node ⇒ definite width + HUG height** sized for the `worst_case`
+  copy: `s(W,hug)`. `text_fit` uses the node's own line height, so hug heights
+  validate for slotted nodes too — a fixed pixel height just reserves dead space.
+  Keep the width definite and `wrap_text(true) + max_lines(N)`; let the height hug.
 - Fixtures attach **only** via a `#slot:<key> sample("…") worst_case("…")` modify
   line indented one level under the `page` (never under the artboard, never as a
   node property).
 - Tokens only — `$surface.*`, `$text.*`, `$type.*`, `$space.*`, `$radius.*`,
   `$border.*`. Colors are never bare numbers; `rd()` is one uniform radius.
-- Center a label by wrapping it in `al(x(c), y(c))` — there is no `valign`/`align`.
+- Center a *label's glyph* with `align(center)` (alias `text_align(center)`) on the
+  text node — it sets horizontal text alignment independently of `style($type.x)`
+  and renders the glyph centered (no hug-width needed). When the label sits in a
+  taller centered container (`al(…, x(c), y(c))`), pair `align(center)` with a
+  **hug height** (`s(fill,hug) align(center)`) so the container's `y(c)` centers
+  the glyph-tall box. Do **not** use hug WIDTH for centering (trips `LUMV0902`).
+  Leave left-aligned body/title text alone (keep it left / `x(s)`).
 
 ---
 
@@ -37,15 +44,18 @@ loose on the page. One card is a secondary region; do not tile a page with cards
 wraps where `$type.title` will not); body 12-25 words `max_lines(3)`
 (`$type.body`). The 752pt body column clears the `$type.body` width floor — a
 14-word `worst_case` fits in 3 lines at this width; do not push past ~15 words at
-`max_lines(3)` or the fixture overflows (`LUMV0810`). Card is `pad($space.card.padding)`
-inside `rd($radius.card)`; title→body gap is `$space.stack.default`.
+`max_lines(3)` or the fixture overflows (`LUMV0810`). Title and body are
+left-aligned (`x(s)`), so they keep their definite width with **hug heights**
+(`s(752,hug)`) — text heights hug, no dead space reserved. Card is
+`pad($space.card.padding)` inside `rd($radius.card)`; title→body gap is
+`$space.stack.default`.
 
 ```text
 page card_demo size(1080,1080,px)
   artboard al(v, x(s), y(c), g($space.section), pad(96)) p(0,0) s(fill,fill) fill($surface.page) clip(true)
     card al(v, x(s), g($space.stack.default), pad($space.card.padding)) p(0,0) s(840,hug) fill($surface.card) rd($radius.card)
-      card_title text "Automated patient intake" p(0,0) s(752,120) style($type.headline) lh(1.12) wrap_text(true) max_lines(2) slot(card.title)
-      card_body text "Insight Health answers, qualifies, and books the visit." p(0,0) s(752,200) style($type.body) lh(1.4) wrap_text(true) max_lines(3) slot(card.body)
+      card_title text "Automated patient intake" p(0,0) s(752,hug) style($type.headline) lh(1.12) wrap_text(true) max_lines(2) slot(card.title)
+      card_body text "Insight Health answers, qualifies, and books the visit." p(0,0) s(752,hug) style($type.body) lh(1.4) wrap_text(true) max_lines(3) slot(card.body)
   #slot:card.title sample("Automated patient intake") worst_case("Automated patient intake")
   #slot:card.body sample("Insight Health answers, qualifies, and books the visit.") worst_case("Insight Health answers, qualifies, books the visit, and routes the rest to your team.")
 ```
@@ -64,18 +74,21 @@ it. Use 1-3 of these in a row for social proof / outcomes; stop at three.
 
 **When to use / Content budget:** value 1 short numeral/token `max_lines(1)`
 (`$type.stat`); label ≤5 words `max_lines(2)` (`$type.caption`,
-`$text.secondary` by default). The value box is fixed (`356×120`) so a `worst_case`
-like `"12,480"` (a count, not just a percentage) still fits at `$type.stat` —
-slot the value as `stat.value` and size for the *longest* realistic number. The
-tile is `pad($space.card.padding)`; value→label gap is `$space.stack.tight` (the
-label reads as a caption *belonging to* the number, so keep them tight).
+`$text.secondary` by default). The value box keeps a definite **356pt width**
+with a **hug height** (`s(356,hug)`) so a `worst_case` like `"12,480"` (a count,
+not just a percentage) still fits at `$type.stat` — slot the value as `stat.value`
+and size the *width* for the *longest* realistic number; the height hugs (no dead
+zone). Value and label are left-aligned (`x(s)`), so they stay left — no
+`align(center)` here. The tile is `pad($space.card.padding)`; value→label gap is
+`$space.stack.tight` (the label reads as a caption *belonging to* the number, so
+keep them tight).
 
 ```text
 page stat_demo size(1080,1080,px)
   artboard al(v, x(s), y(c), g($space.section), pad(96)) p(0,0) s(fill,fill) fill($surface.page) clip(true)
     tile al(v, x(s), g($space.stack.tight), pad($space.card.padding)) p(0,0) s(420,hug) fill($surface.card) rd($radius.card)
-      stat_value text "98%" p(0,0) s(356,120) style($type.stat) lh(1.0) wrap_text(true) max_lines(1) slot(stat.value)
-      stat_label text "of calls answered in seconds" p(0,0) s(356,80) style($type.caption) lh(1.3) wrap_text(true) max_lines(2) slot(stat.label)
+      stat_value text "98%" p(0,0) s(356,hug) style($type.stat) lh(1.0) wrap_text(true) max_lines(1) slot(stat.value)
+      stat_label text "of calls answered in seconds" p(0,0) s(356,hug) style($type.caption) lh(1.3) wrap_text(true) max_lines(2) slot(stat.label)
   #slot:stat.value sample("98%") worst_case("12,480")
   #slot:stat.label sample("of calls answered in seconds") worst_case("of calls answered in seconds")
 ```
@@ -101,22 +114,24 @@ the key discipline encoded here: at the narrow ~280pt column width of a 3-up,
 descriptions MUST be terse — a 10-word description overflows `LUMV0810` even at
 `max_lines(6)`. Keep them to a single short phrase. Geometry: 1080 square,
 `pad(96)` ⇒ 888pt content; three `s(280,…)` cells + two `g(24)` gaps = 888 exactly.
-Title→desc gap is `$space.stack.tight`. If you need richer descriptions, switch to
-a stacked layout of **Benefit item** rows (wide columns fit long copy).
+Titles and descriptions are left-aligned (`x(s)`) and keep their 280pt width with
+**hug heights** (`s(280,hug)`) — text heights hug, no dead space. Title→desc gap
+is `$space.stack.tight`. If you need richer descriptions, switch to a stacked
+layout of **Benefit item** rows (wide columns fit long copy).
 
 ```text
 page benefit_row_demo size(1080,1080,px)
   artboard al(v, x(s), y(c), g($space.section), pad(96)) p(0,0) s(fill,fill) fill($surface.page) clip(true)
     row al(h, x(s), y(s), g(24), pad(0)) p(0,0) s(888,hug)
       c1 al(v, x(s), g($space.stack.tight), pad(0)) p(0,0) s(280,hug)
-        c1t text "Faster intake" p(0,0) s(280,40) style($type.subtitle) lh(1.15) wrap_text(true) max_lines(1) slot(benefit.1.title)
-        c1d text "Route every call in seconds." p(0,0) s(280,90) style($type.body.small) lh(1.4) wrap_text(true) max_lines(3) slot(benefit.1.desc)
+        c1t text "Faster intake" p(0,0) s(280,hug) style($type.subtitle) lh(1.15) wrap_text(true) max_lines(1) slot(benefit.1.title)
+        c1d text "Route every call in seconds." p(0,0) s(280,hug) style($type.body.small) lh(1.4) wrap_text(true) max_lines(3) slot(benefit.1.desc)
       c2 al(v, x(s), g($space.stack.tight), pad(0)) p(0,0) s(280,hug)
-        c2t text "Less busywork" p(0,0) s(280,40) style($type.subtitle) lh(1.15) wrap_text(true) max_lines(1) slot(benefit.2.title)
-        c2d text "Reminders sent automatically." p(0,0) s(280,90) style($type.body.small) lh(1.4) wrap_text(true) max_lines(3) slot(benefit.2.desc)
+        c2t text "Less busywork" p(0,0) s(280,hug) style($type.subtitle) lh(1.15) wrap_text(true) max_lines(1) slot(benefit.2.title)
+        c2d text "Reminders sent automatically." p(0,0) s(280,hug) style($type.body.small) lh(1.4) wrap_text(true) max_lines(3) slot(benefit.2.desc)
       c3 al(v, x(s), g($space.stack.tight), pad(0)) p(0,0) s(280,hug)
-        c3t text "Happier patients" p(0,0) s(280,40) style($type.subtitle) lh(1.15) wrap_text(true) max_lines(1) slot(benefit.3.title)
-        c3d text "Shorter waits, clearer steps." p(0,0) s(280,90) style($type.body.small) lh(1.4) wrap_text(true) max_lines(3) slot(benefit.3.desc)
+        c3t text "Happier patients" p(0,0) s(280,hug) style($type.subtitle) lh(1.15) wrap_text(true) max_lines(1) slot(benefit.3.title)
+        c3d text "Shorter waits, clearer steps." p(0,0) s(280,hug) style($type.body.small) lh(1.4) wrap_text(true) max_lines(3) slot(benefit.3.desc)
   #slot:benefit.1.title sample("Faster intake") worst_case("Faster intake")
   #slot:benefit.1.desc sample("Route every call in seconds.") worst_case("Route every call in seconds.")
   #slot:benefit.2.title sample("Less busywork") worst_case("Less busywork")
@@ -143,20 +158,23 @@ fit body text — see Benefit row above). Repeat it inside a
 **When to use / Content budget:** title ≤4 words `max_lines(1)` (`$type.subtitle`);
 description ≤16 words `max_lines(3)` (`$type.body.small`). Because the copy column
 is full-width (792pt here), it clears the body-text floor with room to spare — so
-descriptions can be a full sentence, unlike the cramped 3-up. The leading chip is
-a fixed `s(72,72)` `rd($radius.full)` on `$surface.brand.subtle` with a centered
-glyph (swap the `"1"` for a number, initial, or a `vector`/`svg` icon). Chip→copy
-gap is `$space.md`; title→desc gap is `$space.stack.tight`.
+descriptions can be a full sentence, unlike the cramped 3-up. Title and
+description are left-aligned (`x(s)`) with **hug heights** (`s(792,hug)`) — text
+heights hug, no dead space. The leading chip is a fixed `s(72,72)` `rd($radius.full)`
+on `$surface.brand.subtle`; its glyph is centered with `align(center)` + a hug
+height (`s(fill,hug) align(center)`) so the chip's `x(c), y(c)` centers the
+glyph-tall box (swap the `"1"` for a number, initial, or a `vector`/`svg` icon).
+Chip→copy gap is `$space.md`; title→desc gap is `$space.stack.tight`.
 
 ```text
 page benefit_item_demo size(1080,1080,px)
   artboard al(v, x(s), y(c), g($space.section), pad(96)) p(0,0) s(fill,fill) fill($surface.page) clip(true)
     item al(h, x(s), y(s), g($space.md), pad(0)) p(0,0) s(888,hug)
       icon al(h, x(c), y(c), pad(0)) p(0,0) s(72,72) fill($surface.brand.subtle) rd($radius.full)
-        glyph text "1" p(0,0) s(48,52) style($type.title) max_lines(1)
+        glyph text "1" p(0,0) s(fill,hug) style($type.title) align(center) max_lines(1)
       copy al(v, x(s), g($space.stack.tight), pad(0)) p(0,0) s(792,hug)
-        item_title text "Answer every call" p(0,0) s(792,48) style($type.subtitle) lh(1.15) wrap_text(true) max_lines(1) slot(benefit.title)
-        item_desc text "Insight Health picks up day or night, qualifies the patient, and books the visit automatically." p(0,0) s(792,120) style($type.body.small) lh(1.4) wrap_text(true) max_lines(3) slot(benefit.desc)
+        item_title text "Answer every call" p(0,0) s(792,hug) style($type.subtitle) lh(1.15) wrap_text(true) max_lines(1) slot(benefit.title)
+        item_desc text "Insight Health picks up day or night, qualifies the patient, and books the visit automatically." p(0,0) s(792,hug) style($type.body.small) lh(1.4) wrap_text(true) max_lines(3) slot(benefit.desc)
   #slot:benefit.title sample("Answer every call") worst_case("Answer every call")
   #slot:benefit.desc sample("Insight Health picks up day or night, qualifies the patient, and books the visit automatically.") worst_case("Insight Health picks up day or night, qualifies the patient, and books the visit automatically.")
 ```
@@ -177,19 +195,22 @@ name.
 **When to use / Content budget:** wordmark ≤3 words `max_lines(1)` (`$type.title`,
 *not* `$type.headline` — title is the right scale for a wordmark and stays robust
 for longer account names: a 23-char `worst_case` like `"Riverside Medical Group"`
-fits at the 480pt box). The mark is a fixed `s(64,64)` chip on `$surface.brand`
-with `rd($radius.md)` and a centered glyph (swap `"IH"` for an `image asset(...)`
-logo or a `vector`/`svg` mark). The row is `y(c)` so mark and wordmark are
-vertically centered; mark→wordmark gap is `$space.sm` (a lockup reads as one unit,
-so keep the gap tight).
+fits at the 480pt-wide box). The wordmark is left-aligned (`x(s)`) and keeps its
+480pt width with a **hug height** (`s(480,hug)`) — text height hugs, no dead space.
+The mark is a fixed `s(64,64)` chip on `$surface.brand` with `rd($radius.md)`; its
+glyph is centered with `align(center)` + a hug height (`s(fill,hug) align(center)`)
+so the chip's `x(c), y(c)` centers the glyph-tall box (swap `"IH"` for an
+`image asset(...)` logo or a `vector`/`svg` mark). The row is `y(c)` so mark and
+wordmark are vertically centered; mark→wordmark gap is `$space.sm` (a lockup reads
+as one unit, so keep the gap tight).
 
 ```text
 page logo_demo size(1080,1080,px)
   artboard al(v, x(s), y(c), g($space.section), pad(96)) p(0,0) s(fill,fill) fill($surface.page) clip(true)
     lockup al(h, x(s), y(c), g($space.sm), pad(0)) p(0,0) s(560,hug)
       mark al(h, x(c), y(c), pad(0)) p(0,0) s(64,64) fill($surface.brand) rd($radius.md)
-        mark_glyph text "IH" p(0,0) s(48,52) style($type.subtitle) max_lines(1)
-      wordmark text "Insight Health" p(0,0) s(480,56) style($type.title) lh(1.0) wrap_text(true) max_lines(1) slot(account.name)
+        mark_glyph text "IH" p(0,0) s(fill,hug) style($type.subtitle) align(center) max_lines(1)
+      wordmark text "Insight Health" p(0,0) s(480,hug) style($type.title) lh(1.0) wrap_text(true) max_lines(1) slot(account.name)
   #slot:account.name sample("Insight Health") worst_case("Riverside Medical Group")
 ```
 

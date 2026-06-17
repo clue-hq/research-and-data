@@ -80,10 +80,16 @@ one-pager. Use these as the ground truth for correct Lumen DSL syntax + token us
 ### Shared token choices (use the same token for the same role)
 - Page/one-pager background `$surface.page`; bold hero `$surface.brand`; soft
   tint/chip `$surface.brand.subtle`; card `$surface.card`; quiet band `$surface.muted`.
-- CTA button: `fill($surface.inverse)` + `rd($radius.button)`, a fixed-width
-  `al(h, x(c), y(c), pad(...))` with an `s(fill,H)` label (the only way to center).
-- Number/initial chip: `$surface.brand.subtle` + `rd($radius.full)`, glyph centered
-  via the chip's own `al(x(c), y(c))`.
+- **Centering a label (CTA, numeral, monogram, badge):** put it in a container that
+  centers on both axes (`al(h, x(c), y(c), ...)`) AND give the LABEL
+  `align(center)` + a hug height: `... text "…" s(fill,hug) style($type.x) align(center)`.
+  `align(center)` centers the glyph horizontally (the box need NOT hug the glyph);
+  the hug height + the container's `y(c)` center it vertically. Do NOT use a hug
+  WIDTH (`s(hug,…)`) — it trips a `LUMV0902` re-measure false-overflow.
+- CTA button: `fill($surface.inverse)` + `rd($radius.button)`, a fixed-size
+  `al(h, x(c), y(c), pad(...))` pill with an `s(fill,hug) align(center)` label.
+- Number/initial chip: `$surface.brand.subtle` + `rd($radius.full)` on a fixed-size
+  `al(x(c), y(c))` circle, with an `s(fill,hug) align(center)` glyph.
 - Brand name in a header/footer band → `$type.label`; standalone hero identity →
   `$type.title` (Logo lockup). Eyebrow → `$type.eyebrow` `max_lines(1)`. Hero/section
   header (5–6 words) → `$type.headline` (not `$type.title`, which won't wrap).
