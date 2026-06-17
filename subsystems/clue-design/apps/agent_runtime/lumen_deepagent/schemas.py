@@ -212,6 +212,7 @@ class RepairClass(str, Enum):
     syntax_continuation = "syntax_continuation"
     targeted_node = "targeted_node"
     layout_cluster = "layout_cluster"
+    slot_fixture = "slot_fixture"
     brand_token = "brand_token"
     asset_tool = "asset_tool"
     unsupported_gap = "unsupported_gap"
@@ -297,7 +298,7 @@ class AgentIteration(BaseModel):
 class AgentRunState(BaseModel):
     run_id: str
     user_request: str
-    status: Literal["running", "accepted", "failed"] = "running"
+    status: Literal["running", "accepted", "completed_with_warnings", "failed"] = "running"
     iterations: List[AgentIteration] = Field(default_factory=list)
     loaded_knowledge: List[KnowledgeSnippet] = Field(default_factory=list)
     effective_brand: Optional[JsonObject] = None

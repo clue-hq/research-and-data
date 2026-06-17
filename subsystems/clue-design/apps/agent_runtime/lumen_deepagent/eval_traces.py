@@ -13,10 +13,12 @@ def summarize_trace_dir(trace_root: Path) -> dict[str, Any]:
     failed = 0
     stop_reasons: Counter[str] = Counter()
     issue_categories: Counter[str] = Counter()
+    failure_attribution: Counter[str] = Counter()
     brand_kits: Counter[str] = Counter()
     brand_modes: Counter[str] = Counter()
     preview_paths: list[str] = []
     brand_contexts: list[dict[str, Any]] = []
+    run_attributions: list[dict[str, Any]] = []
     trace_metrics: Counter[str] = Counter()
 
     for final_path in finals:
@@ -56,6 +58,9 @@ def summarize_trace_dir(trace_root: Path) -> dict[str, Any]:
             if area:
                 issue_categories[f"gap:{area}"] += 1
         trace_metrics.update(summarize_run_trace(run_dir))
+        attribution = attribute_run_failure(run_dir, final)
+        run_attributions.append(attribution)
+        failure_attribution[attribution["primary"]] += 1
 
     return {
         "trace_root": str(trace_root),
@@ -67,6 +72,8 @@ def summarize_trace_dir(trace_root: Path) -> dict[str, Any]:
         "brand_modes": dict(brand_modes),
         "brand_contexts": brand_contexts,
         "unresolved_issue_categories": dict(issue_categories),
+        "failure_attribution": dict(failure_attribution),
+        "run_attributions": run_attributions,
         "preview_paths": preview_paths,
         "layout_cluster_repairs": trace_metrics["layout_cluster_repairs"],
         "layout_cluster_rejections": trace_metrics["layout_cluster_rejections"],
@@ -81,6 +88,226 @@ def summarize_trace_dir(trace_root: Path) -> dict[str, Any]:
         "remaining_parent_overflow": trace_metrics["remaining_parent_overflow"],
         "final_lumv080x_count": trace_metrics["final_lumv080x_count"],
         "final_lumv090x_count": trace_metrics["final_lumv090x_count"],
+    }
+
+
+def attribute_run_failure(run_dir: Path, final: dict[str, Any]) -> dict[str, Any]:
+    """Classify the likely blocker using only persisted trace evidence.
+
+    The label is an audit starting point, not a proof. It lets the team separate
+    agent protocol failures from deterministic layout/export/reviewer blockers
+    before opening individual trace files.
+    """
+    run_id = str(final.get("run_id") or run_dir.name)
+    status = str(final.get("status") or "")
+    stop_reason = str(final.get("stop_reason") or "")
+    evidence: list[str] = []
+    signals = summarize_run_trace(run_dir)
+    diagnostic_codes = collect_iteration_diagnostic_codes(run_dir)
+    trace_events = collect_trace_events(run_dir)
+    gap_areas = [
+        str(gap.get("area"))
+        for gap in final.get("gaps", [])
+        if isinstance(gap, dict) and gap.get("area")
+    ]
+
+    if status == "accepted":
+        return {
+            "run_id": run_id,
+            "status": status,
+            "stop_reason": stop_reason,
+            "primary": "accepted",
+            "confidence": "high",
+            "evidence": ["final status is accepted"],
+            "diagnostic_codes": diagnostic_codes,
+            "gap_areas": gap_areas,
+        }
+
+    if stop_reason in {"export_failed", "preview_invalid"} or (
+        "rendering_export_preview" in gap_areas
+    ):
+        evidence.append(f"stop_reason={stop_reason}")
+        if "rendering_export_preview" in gap_areas:
+            evidence.append("gap:rendering_export_preview")
+        return attribution_payload(
+            run_id,
+            status,
+            stop_reason,
+            "renderer_export_preview",
+            "high",
+            evidence,
+            diagnostic_codes,
+            gap_areas,
+            trace_events,
+        )
+
+    if stop_reason == "critic_failed":
+        return attribution_payload(
+            run_id,
+            status,
+            stop_reason,
+            "visual_reviewer",
+            "high",
+            ["visual reviewer/provider failed before a usable critique"],
+            diagnostic_codes,
+            gap_areas,
+            trace_events,
+        )
+
+    if stop_reason == "unsupported_capability" or gap_areas:
+        evidence.extend(f"gap:{area}" for area in gap_areas)
+        return attribution_payload(
+            run_id,
+            status,
+            stop_reason,
+            "unsupported_capability",
+            "high" if stop_reason == "unsupported_capability" else "medium",
+            evidence or [f"stop_reason={stop_reason}"],
+            diagnostic_codes,
+            gap_areas,
+            trace_events,
+        )
+
+    if (
+        signals["destructive_repair_rejections"]
+        or signals["whole_scene_regeneration_attempts"]
+        or signals["layout_cluster_rejections"]
+        or any(code.startswith(("LUMA", "LUMD")) for code in diagnostic_codes)
+    ):
+        if signals["destructive_repair_rejections"]:
+            evidence.append(
+                f"{signals['destructive_repair_rejections']} destructive repair rejection(s)"
+            )
+        if signals["whole_scene_regeneration_attempts"]:
+            evidence.append(
+                f"{signals['whole_scene_regeneration_attempts']} whole-scene rewrite attempt(s)"
+            )
+        if signals["layout_cluster_rejections"]:
+            evidence.append(
+                f"{signals['layout_cluster_rejections']} layout-cluster guard rejection(s)"
+            )
+        compile_codes = [
+            code for code in diagnostic_codes if code.startswith(("LUMA", "LUMD"))
+        ]
+        if compile_codes:
+            evidence.append(f"compile/authoring diagnostic codes: {', '.join(compile_codes)}")
+        return attribution_payload(
+            run_id,
+            status,
+            stop_reason,
+            "agent_authoring",
+            "high",
+            evidence,
+            diagnostic_codes,
+            gap_areas,
+            trace_events,
+        )
+
+    if (
+        signals["layout_cluster_repairs"]
+        or signals["remaining_artboard_overflow"]
+        or signals["remaining_parent_overflow"]
+        or any(code.startswith(("LUMV08", "LUMV09")) for code in diagnostic_codes)
+    ):
+        if signals["layout_cluster_repairs"]:
+            evidence.append(
+                f"{signals['layout_cluster_repairs']} layout-cluster repair request(s)"
+            )
+        if signals["remaining_artboard_overflow"]:
+            evidence.append(
+                f"{signals['remaining_artboard_overflow']} artboard overflow diagnostic(s)"
+            )
+        if signals["remaining_parent_overflow"]:
+            evidence.append(
+                f"{signals['remaining_parent_overflow']} parent overflow diagnostic(s)"
+            )
+        geometry_codes = [
+            code for code in diagnostic_codes if code.startswith(("LUMV08", "LUMV09"))
+        ]
+        if geometry_codes:
+            evidence.append(f"layout/fit diagnostic codes: {', '.join(geometry_codes)}")
+        return attribution_payload(
+            run_id,
+            status,
+            stop_reason,
+            "layout_contract",
+            "medium",
+            evidence,
+            diagnostic_codes,
+            gap_areas,
+            trace_events,
+        )
+
+    critique = final.get("critique") or {}
+    if stop_reason in {"reviewer_rejected", "max_iterations_reached"} and critique:
+        issues = critique.get("issues") if isinstance(critique, dict) else []
+        categories = sorted(
+            {
+                str(issue.get("category"))
+                for issue in issues or []
+                if isinstance(issue, dict) and issue.get("category")
+            }
+        )
+        if categories:
+            evidence.append(f"unresolved reviewer categories: {', '.join(categories)}")
+        return attribution_payload(
+            run_id,
+            status,
+            stop_reason,
+            "visual_quality",
+            "medium",
+            evidence or [f"stop_reason={stop_reason}"],
+            diagnostic_codes,
+            gap_areas,
+            trace_events,
+        )
+
+    return attribution_payload(
+        run_id,
+        status,
+        stop_reason,
+        "unknown",
+        "low",
+        [f"stop_reason={stop_reason}" if stop_reason else "no stop reason"],
+        diagnostic_codes,
+        gap_areas,
+        trace_events,
+    )
+
+
+def attribution_payload(
+    run_id: str,
+    status: str,
+    stop_reason: str,
+    primary: str,
+    confidence: str,
+    evidence: list[str],
+    diagnostic_codes: list[str],
+    gap_areas: list[str],
+    trace_events: Counter[str],
+) -> dict[str, Any]:
+    return {
+        "run_id": run_id,
+        "status": status,
+        "stop_reason": stop_reason,
+        "primary": primary,
+        "confidence": confidence,
+        "evidence": evidence[:8],
+        "diagnostic_codes": diagnostic_codes,
+        "gap_areas": gap_areas,
+        "notable_events": {
+            key: trace_events[key]
+            for key in sorted(trace_events)
+            if key
+            in {
+                "dsl_repair_not_surgical",
+                "layout_cluster_repair_rejected",
+                "preview_invalid",
+                "export_failed",
+                "critique_failed",
+                "gap_recorded",
+            }
+        },
     }
 
 
@@ -114,6 +341,33 @@ def summarize_run_trace(run_dir: Path) -> Counter[str]:
                 if looks_like_whole_scene_rewrite(event):
                     metrics["whole_scene_regeneration_attempts"] += 1
     return metrics
+
+
+def collect_iteration_diagnostic_codes(run_dir: Path) -> list[str]:
+    codes = {
+        str(diagnostic.get("code"))
+        for diagnostic in iter_iteration_diagnostics(run_dir)
+        if diagnostic.get("code")
+    }
+    return sorted(codes)
+
+
+def collect_trace_events(run_dir: Path) -> Counter[str]:
+    events: Counter[str] = Counter()
+    trace_path = run_dir / "trace.jsonl"
+    if not trace_path.exists():
+        return events
+    for line in trace_path.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        try:
+            event = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        name = event.get("event")
+        if name:
+            events[str(name)] += 1
+    return events
 
 
 def iter_iteration_diagnostics(run_dir: Path) -> list[dict[str, Any]]:

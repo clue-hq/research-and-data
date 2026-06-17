@@ -73,7 +73,7 @@ Over-load, never under-load. The reference files are short and precise. Load
 
 | Task | Load |
 |------|------|
-| **Any new design** | `skills/create-design` + `knowledge/lumen-dsl/grammar` + `knowledge/design/artboard-frame-authoring` + `knowledge/design/layout-recipes` |
+| **Any new design** | `skills/create-design` + `knowledge/lumen-dsl/grammar` + `knowledge/lumen-dsl/text` + `knowledge/design/foundations` (taste rubric — one dominant element, hero-size-per-surface, whitespace-as-margin, anti-cliché) + `knowledge/design/artboard-frame-authoring` + the **vetted block catalog** `knowledge/design/blocks/*` (README + patterns + layout + actions + data-display — pinned automatically; ASSEMBLE from these, don't invent proportions) |
 | **Any repair** (compile, preflight, or visual diagnostic) | `skills/repair-design` + `knowledge/lumen-dsl/directives` + `knowledge/lumen-dsl/diagnostics` |
 | **Page/artboard bounds or parent overflow repair** | `skills/repair-design` + `knowledge/lumen-dsl/layout` + `knowledge/loop/layout-cluster-repair` |
 | **Branded design** (a Brand Kit is in play) | `skills/brand-and-tokens` + `knowledge/design-systems/token-taxonomy` + `knowledge/design-systems/brand-kits` |

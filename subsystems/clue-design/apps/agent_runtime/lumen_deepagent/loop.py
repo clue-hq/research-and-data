@@ -25,7 +25,31 @@ from .schemas import (
     VisualCritique,
     VisualTarget,
 )
+from .prompts import POSTER_RECOMPOSE_RECIPE
 from .tools import LumenDesignTools
+
+
+# Visual-critique categories that signal a vertical-distribution / dead-band
+# problem the poster idiom fixes. When the latest critique carries one of these,
+# the loop hands the rebuild the exact poster recipe (P1.5#2a) so the LLM
+# recompose converges on the fixed structure instead of re-stranding content.
+RECOMPOSE_CATEGORIES = {"visual_balance", "spacing"}
+
+
+def recompose_recipe_for_feedback(feedback: Optional[dict]) -> Optional[str]:
+    """Return the poster-idiom recipe when the latest visual critique flags a
+    vertical-distribution problem (dead bands / imbalance), else None."""
+    if not isinstance(feedback, dict) or feedback.get("kind") != "visual":
+        return None
+    payload = feedback.get("feedback") or {}
+    categories = {
+        str(issue.get("category"))
+        for issue in (payload.get("issues") or [])
+        if isinstance(issue, dict) and issue.get("category")
+    }
+    if categories & RECOMPOSE_CATEGORIES:
+        return POSTER_RECOMPOSE_RECIPE
+    return None
 
 
 class DslAuthor(Protocol):
@@ -105,6 +129,11 @@ class HeuristicAgentDirector:
                     instructions_to_author=(
                         "Use the full visual critique verbatim. Rebuild the affected artboard "
                         "composition if that is the clearest way to satisfy the critique."
+                        + (
+                            f"\n\n{POSTER_RECOMPOSE_RECIPE}"
+                            if categories & RECOMPOSE_CATEGORIES
+                            else ""
+                        )
                     ),
                 )
 
@@ -175,6 +204,27 @@ class LumenQualityLoop:
                 director_decisions=self.director_decisions,
             )
             decision = self.director.decide(full_context=full_context)
+            # P1.5#2a: when the latest critique flags a vertical-distribution
+            # problem (dead bands / visual_balance / spacing), deterministically
+            # hand the rebuild the exact poster-idiom recipe — regardless of what
+            # the LLM director wrote — so the recompose converges on the fixed
+            # structure instead of re-stranding content. Skip terminal modes.
+            recompose_recipe = recompose_recipe_for_feedback(
+                self.previous_feedback[-1] if self.previous_feedback else None
+            )
+            if recompose_recipe and decision.action_mode not in {
+                AgentActionMode.accept,
+                AgentActionMode.stop_with_gap,
+            } and POSTER_RECOMPOSE_RECIPE not in (decision.instructions_to_author or ""):
+                decision = decision.model_copy(
+                    update={
+                        "instructions_to_author": (
+                            f"{decision.instructions_to_author}\n\n{recompose_recipe}"
+                            if decision.instructions_to_author
+                            else recompose_recipe
+                        )
+                    }
+                )
             decision_payload = decision.model_dump(mode="json")
             self.director_decisions.append(decision_payload)
             # Record ONLY the decision — never the context. Writing `full_context`
@@ -268,15 +318,63 @@ class LumenQualityLoop:
                 repair_context
                 and repair_context.get("repair_class") == RepairClass.layout_cluster.value
                 and not director_allows_structural_rewrite
-                and not is_layout_cluster_dsl(source, repair_context)
             ):
-                feedback = layout_cluster_violation_feedback(repair_context, source)
+                # NON-ATOMIC cluster repair: keep the valid in-cluster modify lines
+                # and drop only the out-of-cluster / unsupported ones, instead of
+                # zero-applying the whole patch when a single line strays out of the
+                # cluster. The iteration is wasted (fully rejected) only when NOTHING
+                # in the block is a valid in-cluster edit — otherwise the valid edits
+                # are applied and any still-unresolved diagnostics resurface naturally
+                # on the next preflight.
+                kept_source, dropped_lines = filter_layout_cluster_dsl(
+                    source, repair_context
+                )
+                if not is_layout_cluster_dsl(kept_source, repair_context):
+                    feedback = layout_cluster_violation_feedback(repair_context, source)
+                    self.previous_feedback.append(feedback)
+                    iteration_record.stop_reason = StopReason.compile_failed
+                    self.tools.record(
+                        "coordinator",
+                        "layout_cluster_repair_rejected",
+                        input_summary=json.dumps(repair_context.get("cluster") or {}),
+                        output_summary=source[:300],
+                        payload={"rejected_source": source[:2000]},
+                    )
+                    continue
+                if dropped_lines:
+                    self.tools.record(
+                        "coordinator",
+                        "layout_cluster_repair_partial",
+                        input_summary=json.dumps(repair_context.get("cluster") or {}),
+                        output_summary=(
+                            "applied in-cluster edits; skipped "
+                            f"{len(dropped_lines)} out-of-cluster line(s)"
+                        ),
+                        payload={
+                            "applied_source": kept_source[:2000],
+                            "dropped_lines": dropped_lines[:20],
+                            "original_source": source[:2000],
+                        },
+                    )
+                    source = kept_source
+            if (
+                repair_context
+                and repair_context.get("repair_class") == RepairClass.slot_fixture.value
+                and not director_allows_structural_rewrite
+                and not is_surgical_dsl(source)
+            ):
+                # A slot-fixture repair must be modify-only (`#slot:<key> ...` or
+                # `#<node> ...`). is_surgical_dsl permits those and rejects any
+                # page/delete/re-author block, so the scene survives — while the
+                # `#slot:` fixture edit the layout-cluster gate used to forbid is now
+                # allowed through.
+                feedback = slot_fixture_violation_feedback(repair_context, source)
                 self.previous_feedback.append(feedback)
                 iteration_record.stop_reason = StopReason.compile_failed
                 self.tools.record(
                     "coordinator",
-                    "layout_cluster_repair_rejected",
-                    input_summary=json.dumps(repair_context.get("cluster") or {}),
+                    "slot_fixture_repair_rejected",
+                    input_summary=json.dumps(repair_context.get("target") or {}),
                     output_summary=source[:300],
                     payload={"rejected_source": source[:2000]},
                 )
@@ -506,7 +604,12 @@ class LumenQualityLoop:
             # better keep-best candidate than a compile-only draft.
             self._consider_best(stage="preflight_clean", critique=None)
 
-            export_result = json.loads(self.tools.export_preview_bundle())
+            # Quality is judged on PIXELS: always render a PNG for the critic so the
+            # visual reviewer inspects the rendered image, not SVG geometry, even
+            # when the configured preview format is SVG.
+            export_result = json.loads(
+                self.tools.export_preview_bundle(critic_format="png")
+            )
             export_summary = export_result.get("critic", {})
             iteration_record.export_summary = ExportSummary.model_validate(export_summary)
             if tool_has_blocking_failure(export_summary):
@@ -633,14 +736,32 @@ class LumenQualityLoop:
             feedback["repair_request"] = repair_request.get("repair_request")
             iteration_record.stop_reason = StopReason.reviewer_rejected
 
-        self.state.status = "failed"
+        # Repair budget exhausted. If we captured a preflight-clean draft — a valid
+        # design that simply never won an explicit visual acceptance within the
+        # budget — hand it back as `completed_with_warnings` rather than a hard
+        # failure: the editor should surface the best draft, not an error state.
+        # Only a run that never reached a clean draft is a genuine failure. Either
+        # way the best renderable scene is restored so the canvas is never wiped.
         self.state.stop_reason = StopReason.max_iterations_reached
+        last_feedback = self.previous_feedback[-1] if self.previous_feedback else {}
+        best_is_preflight_clean = bool(self.best_rank and self.best_rank[0] == 1)
+        if best_is_preflight_clean:
+            self._restore_best_scene()
+            self.state.status = "completed_with_warnings"
+            return json.loads(
+                self.tools.finalize_run(
+                    "completed_with_warnings",
+                    StopReason.max_iterations_reached.value,
+                    "Repair budget reached. Returned the best preflight-clean draft, "
+                    "which was not explicitly accepted by the visual reviewer.",
+                    critique_json=json.dumps(last_feedback),
+                )
+            )
+        self.state.status = "failed"
         return self._finalize_failed(
             StopReason.max_iterations_reached.value,
-            "Maximum Phase A repair iterations reached.",
-            critique_json=json.dumps(
-                self.previous_feedback[-1] if self.previous_feedback else {}
-            ),
+            "Maximum Phase A repair iterations reached without a clean draft.",
+            critique_json=json.dumps(last_feedback),
         )
 
     def _consider_best(
@@ -747,13 +868,68 @@ LAYOUT_CLUSTER_AUTHORING_CONSTRAINTS = [
     "Do not delete pages, unrelated nodes, slots, Brand Kit tokens, or assets.",
 ]
 
+SLOT_FIXTURE_PERMISSIONS = [
+    "set_slot_sample",
+    "set_slot_worst_case",
+    "set_slot_placeholder",
+    "rebind_slot",
+]
+
+SLOT_FIXTURE_PROHIBITIONS = [
+    "do not re-declare existing pages",
+    "do not delete or re-author nodes",
+    "do not edit unrelated slots",
+    "do not change page dimensions",
+]
+
+SLOT_FIXTURE_AUTHORING_CONSTRAINTS = [
+    "This is a SLOT-FIXTURE repair. Fix the diagnosed slot in place with "
+    "`#slot:<key> ...` modify lines.",
+    "For a slot with no fit-validation fixture, add realistic fixtures: "
+    '`#slot:<key> sample("…") worst_case("…")` (and `placeholder("…")` if the '
+    "slot is required). Use worst-case copy so fit validation tests real-length "
+    "data.",
+    "For a slot that binds a missing node, `#slot:<key> unbind(<node>)` or rebind "
+    "to an existing node.",
+    "Emit ONLY `#slot:<key> ...` (or `#<node_id> ...`) modify lines. Do NOT emit "
+    "any `page` line, `delete(...)`, or whole-scene re-author — that is rejected "
+    "unapplied.",
+]
+
 TEXT_FIT_CODES = {"LUMV0902", "LUMV0903", "LUMV0904", "LUMV0810"}
 LAYOUT_CLUSTER_CODES = {"LUMV0800", "LUMV0801", "LUMV0803"}
 LEGACY_GEOMETRY_CODES = {"LUMV0805"}
+# Slot-fixture / slot-binding diagnostics whose fix is a `#slot:` edit (add a
+# sample/worst_case/placeholder fixture, or rebind a missing node) — NOT a
+# page/parent-bounds geometry repair. Routed to RepairClass.slot_fixture only when
+# the diagnostic's SUBJECT is the slot itself; the same codes with a NODE subject
+# (e.g. the root artboard exceeding page bounds) stay layout_cluster.
+SLOT_REPAIR_CODES = {"LUMV0800", "LUMV0801", "LUMV0509"}
 UNSUPPORTED_LAYOUT_CLUSTER_MODIFY_CALL_RE = re.compile(
     r"(?:^|\s)(?:al|autolayout|wrap)\("
 )
 SIZE_CALL_RE = re.compile(r"(?:^|\s)(?:s|size)\(([^)]*)\)")
+
+
+def primary_diagnostic(diagnostics: list[dict]) -> dict | None:
+    """The diagnostic ``first_diagnostic_target`` keys on: the first error/blocker
+    that carries a target, else the first non-error that does. Used to classify a
+    repair by the SUBJECT (node vs slot vs page) of the diagnostic actually being
+    targeted, so it stays consistent with the ``target`` passed to
+    :func:`classify_diagnostics`."""
+    ordered = [
+        *[d for d in diagnostics if d.get("severity") in {"error", "blocker"}],
+        *[d for d in diagnostics if d.get("severity") not in {"error", "blocker"}],
+    ]
+    for diagnostic in ordered:
+        if (
+            diagnostic.get("target_page_id")
+            or diagnostic.get("target_node_id")
+            or diagnostic.get("target_slot_key")
+            or diagnostic.get("target_slot_id")
+        ):
+            return diagnostic
+    return None
 
 
 def classify_diagnostics(
@@ -786,6 +962,27 @@ def classify_diagnostics(
             permissions=list(LAYOUT_CLUSTER_PERMISSIONS),
             prohibitions=list(LAYOUT_CLUSTER_PROHIBITIONS),
             reason="preserve_layout_cluster_after_compile_failure",
+        )
+
+    # A slot-SUBJECT LUMV0800/LUMV0801 (required slot needs a fixture / slot binds a
+    # missing node) or LUMV0509 (no fit-validation fixtures) is NOT page/parent-bounds
+    # geometry — its fix is a `#slot:` edit, which the layout-cluster gate forbids.
+    # Route it to a slot-fixture repair instead. The SAME codes with a NODE subject
+    # (e.g. the root artboard exceeding page bounds) fall through to layout_cluster.
+    primary = primary_diagnostic(normalized)
+    if (
+        primary
+        and str(primary.get("code") or "") in SLOT_REPAIR_CODES
+        and (primary.get("target_slot_id") or primary.get("target_slot_key"))
+        and not primary.get("target_node_id")
+    ):
+        return RepairClassification(
+            repair_class=RepairClass.slot_fixture,
+            target=VisualTarget.model_validate(target) if target else None,
+            allowed_edit_surface=EditSurfaceRecommendation.structured_ops,
+            permissions=list(SLOT_FIXTURE_PERMISSIONS),
+            prohibitions=list(SLOT_FIXTURE_PROHIBITIONS),
+            reason="slot_fixture_or_binding",
         )
 
     if priority_codes & LAYOUT_CLUSTER_CODES:
@@ -1326,6 +1523,8 @@ def authoring_constraints_for(
 ) -> list[str]:
     if classification.repair_class == RepairClass.layout_cluster:
         return list(LAYOUT_CLUSTER_AUTHORING_CONSTRAINTS)
+    if classification.repair_class == RepairClass.slot_fixture:
+        return list(SLOT_FIXTURE_AUTHORING_CONSTRAINTS)
     if surgical:
         return list(SURGICAL_AUTHORING_CONSTRAINTS)
     return fallback
@@ -1399,6 +1598,89 @@ def is_layout_cluster_dsl(source: str, context: dict) -> bool:
         return False
 
     return saw_edit
+
+
+def filter_layout_cluster_dsl(source: str, context: dict) -> tuple[str, list[dict]]:
+    """Split a layout_cluster repair block into the lines safe to apply and the
+    out-of-cluster lines to skip.
+
+    Returns ``(kept_source, dropped)`` where ``dropped`` is a list of
+    ``{"line", "reason"}``. This is what makes cluster repair NON-ATOMIC: the
+    per-line rules are identical to :func:`is_layout_cluster_dsl`, but instead of
+    rejecting the whole block on the first stray line, the valid in-cluster
+    modifies are kept and only the offending lines are dropped — so a mostly-valid
+    patch is applied rather than zero-applied and the iteration is not wasted.
+    Blank lines, ``//`` checkpoints, and comments are preserved verbatim.
+    """
+    cluster = context.get("cluster") or {}
+    allowed_pages = {cluster.get("page_id")} if cluster.get("page_id") else set()
+    allowed_nodes = layout_cluster_allowed_node_ids(cluster)
+    root_frame_id = cluster.get("root_frame_id")
+    background_node_id = cluster.get("background_node_id")
+    permissions = set(context.get("permissions") or [])
+    kept: list[str] = []
+    dropped: list[dict] = []
+
+    for raw in source.splitlines():
+        line = raw.strip()
+        if not line or line.startswith("//"):
+            kept.append(raw)
+            continue
+        if line.startswith("#"):
+            ref = line[1:].split(None, 1)[0]
+            if not layout_cluster_modify_syntax_is_supported(line):
+                dropped.append({
+                    "line": line,
+                    "reason": "unsupported modify syntax (al()/wrap() are not lowered for node modify lines)",
+                })
+                continue
+            if ref == root_frame_id and not root_artboard_size_syntax_is_supported(line):
+                dropped.append({
+                    "line": line,
+                    "reason": "root artboard frame must use s(fill,fill), not numeric dimensions",
+                })
+                continue
+            if ref.startswith("page:"):
+                page_id = ref.split(":", 1)[1]
+                if page_id not in allowed_pages:
+                    dropped.append({
+                        "line": line,
+                        "reason": f"page {page_id} is outside the allowed cluster",
+                    })
+                    continue
+            elif ref.startswith(("slot:", "asset:", "document")):
+                dropped.append({
+                    "line": line,
+                    "reason": f"{ref} is not editable in a layout_cluster repair",
+                })
+                continue
+            elif ref not in allowed_nodes:
+                dropped.append({
+                    "line": line,
+                    "reason": f"node {ref} is outside the allowed cluster",
+                })
+                continue
+            kept.append(raw)
+            continue
+        if line.startswith("delete(") and line.endswith(")"):
+            deleted_id = line[len("delete(") : -1].strip()
+            if (
+                deleted_id == background_node_id
+                and "convert_diagnosed_background" in permissions
+            ):
+                kept.append(raw)
+                continue
+            dropped.append({
+                "line": line,
+                "reason": "delete is not permitted in a layout_cluster repair",
+            })
+            continue
+        dropped.append({
+            "line": line,
+            "reason": "only #modify lines (and an allowed background delete) are permitted in a layout_cluster repair",
+        })
+
+    return "\n".join(kept), dropped
 
 
 def layout_cluster_modify_syntax_is_supported(line: str) -> bool:
@@ -1476,6 +1758,32 @@ def layout_cluster_violation_feedback(prior: dict, rejected_source: str) -> dict
         "prohibitions": prior.get("prohibitions") or list(LAYOUT_CLUSTER_PROHIBITIONS),
         "recommended_edit_surface": EditSurfaceRecommendation.structured_ops.value,
         "authoring_constraints": list(LAYOUT_CLUSTER_AUTHORING_CONSTRAINTS),
+        "rejected_source": rejected_source[:500],
+    }
+
+
+def slot_fixture_violation_feedback(prior: dict, rejected_source: str) -> dict:
+    """Feedback for a rejected slot-fixture repair: it must be modify-only. Re-issue
+    the slot-fixture constraints so the next attempt edits the slot in place rather
+    than re-authoring the scene."""
+    target = prior.get("target") or {}
+    slot_key = (target or {}).get("slot_key")
+    return {
+        "kind": "slot_fixture_violation",
+        "feedback": (
+            "Your previous slot-fixture repair was REJECTED and NOT applied because "
+            "it was not modify-only. Fix the diagnosed slot in place: add fixtures "
+            f'with `#slot:{slot_key or "<key>"} sample("…") worst_case("…")` (and '
+            "`placeholder(\"…\")` if required), or rebind a missing node with "
+            f"`#slot:{slot_key or '<key>'} unbind(<node>)`. Do NOT emit any `page` "
+            "line, `delete(...)`, or new element declaration."
+        ),
+        "target": target,
+        "repair_class": RepairClass.slot_fixture.value,
+        "permissions": prior.get("permissions") or list(SLOT_FIXTURE_PERMISSIONS),
+        "prohibitions": prior.get("prohibitions") or list(SLOT_FIXTURE_PROHIBITIONS),
+        "recommended_edit_surface": EditSurfaceRecommendation.structured_ops.value,
+        "authoring_constraints": list(SLOT_FIXTURE_AUTHORING_CONSTRAINTS),
         "rejected_source": rejected_source[:500],
     }
 

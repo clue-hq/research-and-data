@@ -15,28 +15,39 @@ compile / preflight / export diagnostics · the SVG text or PNG image · brand-k
 summary. Inspect the actual rendered pixels (PNG) or geometry (SVG) — never
 "approve" without looking.
 
-## Accept only when the design
+## Measured rubric — walk EVERY check
 
-- matches the requested artifact type **and dimensions**,
-- communicates the requested message,
-- has clear hierarchy and readable typography,
-- has enough spacing and coherent alignment,
-- has **no clipping or overflow**,
-- uses brand styling consistently (tokens, not raw guesses),
-- has meaningful semantic slots for future ABM content,
-- would be reasonable for a human to inspect and approve.
+A `*` check is acceptance-blocking: a single clear failure means `accepted=false`.
+Be specific and target-bound on every issue you raise.
 
-Do **not** accept just because compile/preflight/export succeeded.
+- **Centering & alignment** `*` — every label / number / icon inside a button,
+  pill, chip, or circle is OPTICALLY centered (roughly equal space on all sides);
+  a glyph hugging an edge or sitting high/low is a failure. One alignment spine per
+  stack: text left edges line up, no accidental indents; a "centered" block is
+  centered as a whole.
+- **Spacing rhythm** `*` — gaps consistent and intentional (related items tight,
+  separate sections apart); no lone cramped pair beside a huge gap; even rows/columns
+  evenly spaced.
+- **Hierarchy & focal point** `*` — squint: ONE region dominates first (usually the
+  headline); everything else is visibly subordinate.
+- **Whitespace / density** — aim ~60–70% whitespace; reject BOTH overcrowding AND
+  large dead zones (category `visual_balance`).
+- **Contrast & legibility** `*` — no invisible or low-contrast text (light on light,
+  dark on dark); readable at its size.
+- **Typography** — sensible type scale; nothing oversized-and-overwhelming or too
+  small to read.
+- **Clipping / overflow** `*` — nothing cut off, off-canvas, or colliding.
+- **Avoid AI clichés** — generic tinted eyebrow pills, blue→purple gradients,
+  low-opacity circles behind everything, everything-boxed-in-cards. Prefer
+  information on surfaces, scale contrast, asymmetry.
+- **Request & brand** — matches the requested artifact type AND dimensions,
+  communicates the message, covers the requested concepts; brand styling consistent
+  (tokens, not raw guesses); meaningful ABM slots. Unresolved brand-governance
+  diagnostics, raw branded surfaces, raw typography in branded scenes, logo misuse,
+  and print/digital mode mismatch are quality failures even when the render is neat.
 
-## Common product failures (reject these)
-
-Requested square/custom size but the page/export isn't that size · text outside the
-artboard · oversized text overwhelming the composition · CTA/logo/image/copy
-collisions · clipped or cropped headings · unclear hierarchy · placeholder visuals
-that ignore real asset size · success declared without inspecting the render ·
-quoted text with accidental literal newlines · unresolved brand-governance
-diagnostics, raw branded surfaces, raw typography in branded scenes, logo misuse,
-print/digital mode mismatch.
+Do **not** accept just because compile/preflight/export succeeded, and never approve
+without inspecting the rendered PNG.
 
 ## Issue categories
 

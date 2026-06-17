@@ -686,7 +686,21 @@ impl<'a> LayoutEngine<'a> {
 
     fn measure_context_for(&self, node: &Node) -> MeasureContext {
         match &node.kind {
-            NodeKind::Text(text) => MeasureContext::Text(TextMeasureInput::from_text_node(text)),
+            NodeKind::Text(text) => {
+                let mut input = TextMeasureInput::from_text_node(text);
+                // A slot-bound text node must hug to the WORST-CASE fixture (the
+                // largest data it will ever hold), not just its placeholder/sample.
+                // Otherwise a hug height sized to the sample under-reserves and the
+                // worst_case overflows (LUMV0810) — and a hug box cannot be enlarged
+                // by a repair, so the run deadlocks. Reserving worst_case here keeps
+                // hug heights both legible (no dead zone beyond worst_case) and safe.
+                if let Some(worst_case) = self.worst_case_fixture_for(&node.id) {
+                    if worst_case.chars().count() > input.content.chars().count() {
+                        input.content = worst_case;
+                    }
+                }
+                MeasureContext::Text(input)
+            }
             NodeKind::Image(_) => MeasureContext::Box {
                 natural: fixed_or_zero(&node.size),
             },
@@ -694,6 +708,20 @@ impl<'a> LayoutEngine<'a> {
                 natural: self.natural_size(node),
             },
         }
+    }
+
+    /// The longest fixture (placeholder / sample / worst_case) of the slot bound to
+    /// `node_id`, if any. Used so a slot-bound text node reserves room for its
+    /// worst-case data when hugging.
+    fn worst_case_fixture_for(&self, node_id: &NodeId) -> Option<String> {
+        let slot = self
+            .scene
+            .slots
+            .values()
+            .find(|slot| slot.bound_nodes.contains(node_id))?;
+        slot_fixtures(slot)
+            .into_iter()
+            .max_by_key(|fixture| fixture.chars().count())
     }
 
     fn write_geometry(&mut self, node: &Node, origin: Point2, size: Size2) {
@@ -749,7 +777,7 @@ impl<'a> LayoutEngine<'a> {
         let Some(bounds) = self.node_bounds(node_id, page_bounds) else {
             return;
         };
-        if rect_contains(page_bounds, &bounds) {
+        if rect_contains_within(page_bounds, &bounds, PAGE_BOUNDS_TOLERANCE_PT) {
             return;
         }
         if page
@@ -1582,16 +1610,34 @@ fn text_fit(
     bounds: &Rect,
     policy: &OverflowPolicy,
 ) -> TextFit {
+    // Measure the fixture the way the NODE actually renders — its own wrap +
+    // max_lines — NOT the slot's overflow policy. The DSL cannot set a slot's
+    // overflow policy (it is always Error), so deriving wrap from the policy
+    // measured every slotted fixture as a single no-wrap line and reported a false
+    // LUMV0810 for any wrapping body whose worst_case spans more than one line. The
+    // slot.overflow policy still governs the RESPONSE to a genuine overflow
+    // (Error → diagnostic, ShrinkFont → shrink, Clip/Ellipsis → lossy advice) in the
+    // caller; here we only reflect how the text flows. An explicit Wrap policy still
+    // wins (it can raise max_lines beyond the node's own cap).
     let (wrap, max_lines) = match policy {
         OverflowPolicy::Wrap { max_lines } => (TextWrap::Wrap, *max_lines),
-        _ => (TextWrap::NoWrap, None),
+        _ => (text.wrap.clone(), text.max_lines),
     };
     let measured = measurer.measure(&TextMeasureInput {
         content: content.to_owned(),
         font_family: text.font_family.clone(),
         font_size,
         font_weight: text.font_weight,
-        line_height: 1.2,
+        // Measure the fixture with the node's OWN line height, not a hardcoded 1.2.
+        // The hardcode made a hug-height (or any lh < 1.2) slotted text node report a
+        // false LUMV0810 overflow — the fixture was measured taller than the box the
+        // node actually reserves — which blocked legible hug heights and tight
+        // headlines. Fall back to 1.2 only when the node carries no line height.
+        line_height: if text.line_height > 0.0 {
+            text.line_height
+        } else {
+            1.2
+        },
         letter_spacing: 0.0,
         wrap,
         max_lines,
@@ -1621,6 +1667,27 @@ fn rect_contains(container: &Rect, child: &Rect) -> bool {
         && child.y >= container.y
         && child.x + child.width <= container.x + container.width
         && child.y + child.height <= container.y + container.height
+}
+
+/// Sub-point tolerance for page-bounds containment.
+///
+/// A `fill,fill` root artboard resolves to the rounded preset height (A4 portrait
+/// → 842.0pt) while the canonical exportable page height is 841.889…pt. A strict
+/// containment check then reports a permanent ~0.11pt overflow (`LUMV0800`) on the
+/// root frame that NO authoring repair can clear — the repair loop is forced to
+/// re-assert `s(fill,fill)`, which reproduces the same rounding. One point is far
+/// below rendering significance (≈4px even at 300 DPI, on the page edge only) and
+/// far below any genuine overflow (the smallest real-overflow fixtures exceed
+/// bounds by tens of points), so forgiving it here removes the phantom without
+/// masking real out-of-bounds content. Parent-bounds checks (`LUMV0801`) keep the
+/// strict `rect_contains`.
+const PAGE_BOUNDS_TOLERANCE_PT: f64 = 1.0;
+
+fn rect_contains_within(container: &Rect, child: &Rect, tolerance: f64) -> bool {
+    child.x >= container.x - tolerance
+        && child.y >= container.y - tolerance
+        && child.x + child.width <= container.x + container.width + tolerance
+        && child.y + child.height <= container.y + container.height + tolerance
 }
 
 fn advice(

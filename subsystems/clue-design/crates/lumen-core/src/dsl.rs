@@ -384,6 +384,7 @@ pub enum DslProperty {
     TextDirection(TextDirection),
     Grow(DslScalar),
     TextStyleToken(String),
+    TextAlignment(TextAlign),
     LayoutAnchor {
         axis: DslLayoutAxis,
         anchor: DslLayoutAnchor,
@@ -2449,10 +2450,15 @@ fn node_edit_patch_from_properties(
                 has_text_patch = true;
             }
             DslProperty::FontSize(size) => {
-                if let DslScalar::Number(size) = size {
-                    text_patch.font_size = FieldPatch::Set(*size);
-                    has_text_patch = true;
+                match size {
+                    DslScalar::Number(size) => {
+                        text_patch.font_size = FieldPatch::Set(*size);
+                    }
+                    DslScalar::Token(token) => {
+                        text_patch.font_size_token = OptionalFieldPatch::Set(token.clone());
+                    }
                 }
+                has_text_patch = true;
             }
             DslProperty::FontWeight(weight) => {
                 text_patch.font_weight = FieldPatch::Set(*weight);
@@ -2460,6 +2466,10 @@ fn node_edit_patch_from_properties(
             }
             DslProperty::TextStyleToken(token) => {
                 text_patch.style_token = OptionalFieldPatch::Set(token.clone());
+                has_text_patch = true;
+            }
+            DslProperty::TextAlignment(align) => {
+                text_patch.align = FieldPatch::Set(align.clone());
                 has_text_patch = true;
             }
             DslProperty::LineHeight(line_height) => {
@@ -3163,6 +3173,17 @@ fn parse_property_token(
                 column,
             )?)]
         }
+        "align" | "text_align" => {
+            // Standalone horizontal text alignment, usable alongside style($type.x)
+            // (which carries no align). Centers a label in any box without forcing a
+            // hug width — the robust way to center glyphs in chips/buttons/cells.
+            expect_arg_count(&call, 1, line_number)?;
+            vec![DslProperty::TextAlignment(parse_text_align(
+                &call.args[0],
+                line_number,
+                column,
+            )?)]
+        }
         "lh" | "line_height" | "line-height" => {
             expect_arg_count(&call, 1, line_number)?;
             vec![DslProperty::LineHeight(parse_positive_scalar(
@@ -3560,6 +3581,7 @@ fn node_from_element(element: &DslElement, line_number: usize) -> Result<Node, D
             wrap: TextWrap::NoWrap,
             direction: TextDirection::Ltr,
             style_token: None,
+            font_size_token: None,
             line_height_token: None,
             letter_spacing_token: None,
         }),
@@ -3775,14 +3797,17 @@ fn apply_properties(
             }
             DslProperty::FontSize(font_size) => {
                 if let NodeKind::Text(text) = &mut node.kind {
-                    if let Some(size) = scalar_to_number(
-                        font_size,
-                        line_number,
-                        node.id.as_str().len(),
-                        "font size",
-                        diagnostics,
-                    ) {
-                        text.font_size = size;
+                    match font_size {
+                        DslScalar::Number(size) => {
+                            text.font_size = *size;
+                            text.font_size_token = None;
+                        }
+                        // A size-step token (e.g. `$type.size.7xl`) overrides the
+                        // role's default size at brand-resolution, after the role
+                        // is applied — so a per-surface hero size wins.
+                        DslScalar::Token(token) => {
+                            text.font_size_token = Some(token.clone());
+                        }
                     }
                 } else {
                     diagnostics.push(warning_diag(
@@ -3806,6 +3831,20 @@ fn apply_properties(
                         "LUMD0606",
                         "font_weight(...) only applies to text nodes",
                         "Move font_weight(...) to a text/t element.",
+                    ));
+                }
+            }
+            DslProperty::TextAlignment(align) => {
+                if let NodeKind::Text(text) = &mut node.kind {
+                    text.align = align.clone();
+                } else {
+                    diagnostics.push(warning_diag(
+                        line_number,
+                        1,
+                        node.id.as_str().len(),
+                        "LUMD0607",
+                        "align(...) only applies to text nodes",
+                        "Move align(left|center|right|justify) to a text/t element.",
                     ));
                 }
             }

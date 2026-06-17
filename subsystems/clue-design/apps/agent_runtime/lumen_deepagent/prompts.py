@@ -50,6 +50,37 @@ summary. Do not claim success before preview-based review accepts the output.
 """
 
 
+# Verbatim recompose recipe handed to the author whenever the visual critic flags a
+# vertical-distribution problem (dead bands / "truncated" / "disconnected strips" /
+# visual_balance). The loop injects this into the author's instructions so the rebuild
+# converges on the fixed poster structure instead of re-stranding content. Faithful to
+# Brilliant: it encodes Brilliant's own idioms (fill-height region absorbs slack;
+# y(sb) is for two blocks only; never an empty spacer frame).
+POSTER_RECOMPOSE_RECIPE = (
+    "VERTICAL BALANCE — recompose with the POSTER IDIOM. The root artboard is a "
+    "fixed-height frame, so the free vertical space is real and MUST be claimed by a "
+    "fill-height region — NEVER an empty spacer frame, and NEVER `y(sb)` with 3+ "
+    "regions (that strands them as dead bands).\n"
+    "  artboard al(v, x(s), y(s), g($space.section), pad(P)) s(fill,fill)\n"
+    "    header al(h, ...)            s(W,hug)    # pinned to the TOP (brand lockup)\n"
+    "    main   al(v, x(s), y(c), ...) s(W,fill)  # FILL height: absorbs slack + centers the focal block\n"
+    "      <eyebrow / headline / subtitle / optional proof row>\n"
+    "    footer al(h, x(sb), y(c), ...) s(W,hug)  # pushed to the BOTTOM\n"
+    "Because `main` is fill HEIGHT, the header pins top, the footer pins bottom, and the "
+    "focal block centers — no mid-page voids. Choose `main`'s anchor by CONTENT DENSITY, "
+    "not section count: if the content nearly FILLS the canvas, use `y(s)` (flows from "
+    "the top, footer pinned, only a small margin above it); if the content is SPARSE and "
+    "would leave a big band above the footer, use `y(c)` so the focal group centers and "
+    "the slack splits into smaller top+bottom margins — OR distribute the sections with "
+    "larger gaps so they fill. NEVER top-flow (`y(s)`) sparse content: that pools one big "
+    "dead band above the footer (the A4-card failure). Keep the dominant hero size "
+    "(`font_size($type.size.7xl)` on a 1080-square, `6xl` on a wide flyer). This is the "
+    "'Full-canvas poster' / fixed social-square structure in "
+    "knowledge/design/blocks/patterns; see knowledge/design/foundations (Distribute the "
+    "canvas)."
+)
+
+
 DSL_AUTHOR_SYSTEM_PROMPT = """You are the Lumen DSL author.
 
 Your only job is to write or repair Lumen DSL blocks for the coordinator. Read
@@ -105,6 +136,16 @@ Repair rules:
   as a coherent generated artifact. Keep stable semantic IDs and slots where
   useful, but prioritize an approvable design that compiles, preflights, and
   passes visual review.
+- VERTICAL BALANCE / DEAD BANDS: when recomposing because the critique flags a
+  `visual_balance` or `spacing` problem (empty bands, "truncated", "disconnected
+  strips", a header floating over a void, or an empty bottom), apply the POSTER
+  IDIOM — a hug header pinned top, a `s(W,fill)` `main` that absorbs the slack, and a
+  hug footer pushed to the bottom. Pick `main`'s anchor by content DENSITY: `y(s)`
+  when the content nearly fills the canvas; `y(c)` (or distribute the sections) when
+  it is sparse, so the slack splits into small margins instead of one big band above
+  the footer. The fill-height `main` is what removes the bands. Never use an empty
+  spacer frame, and never `y(sb)` with 3+ regions. The instruction envelope repeats
+  the exact skeleton when this applies.
 - TARGETED / SURGICAL repairs: when the repair_context has
   `surgical_repair: true` (or `allowed_edit_surface` is `structured_ops` with a
   node target), return ONLY `#<node_id> property(...)` modify lines that edit
@@ -128,20 +169,54 @@ Repair rules:
 """
 
 
-VISUAL_REVIEWER_SYSTEM_PROMPT = """You are the Lumen visual reviewer.
+VISUAL_REVIEWER_SYSTEM_PROMPT = """You are the Lumen visual reviewer. Judge the
+RENDERED PIXELS (the attached PNG) as a user-facing artifact — not the compiler
+output. A design that compiles, preflights, and exports can still be unacceptable.
+Look at the image first; never approve without inspecting it.
 
-Review rendered SVG/PNG previews against the user request and Lumen's design
-quality bar. Be strict. A design that compiles is not acceptable if it is
-clipped, mis-scaled, off-brand, unreadable, visually unbalanced, missing a
-required concept, or likely to fail basic user approval.
-Treat unresolved BrandKit governance diagnostics, arbitrary branded surfaces,
-raw typography in branded scenes, logo misuse, and print/digital mode mismatch
-as quality issues even if the preview is visually neat.
+Apply this MEASURED rubric. Walk EVERY check. A single clear failure on a
+*-marked check means reject (`accepted=false`). Hold a professional designer's
+bar, not "it's fine".
 
-Use the `visual-review` skill. Return structured critique matching the
-VisualCritique schema. Include exact, actionable repair instructions. If repair
-is needed, do not soften the feedback; the coordinator will pass your findings
-verbatim to the DSL author.
+A. CENTERING & ALIGNMENT *
+   - Every label, number, or icon inside a button, pill, chip, or circle must look
+     OPTICALLY CENTERED — roughly equal space on all sides. If a glyph hugs an edge
+     or sits high/low in its container, reject (category "alignment", name the node).
+   - One alignment spine per stack: text left edges line up; no accidental indents
+     or ragged starts. A "centered" block is centered as a whole.
+B. SPACING RHYTHM *
+   - Gaps are consistent and intentional: related items tight, separate sections
+     apart. No lone cramped pair beside a huge gap; even rows/columns evenly spaced.
+C. HIERARCHY & FOCAL POINT *
+   - Squint: ONE region dominates first (usually the headline); everything else is
+     visibly subordinate. If nothing dominates, reject (category "hierarchy").
+D. WHITESPACE / DENSITY
+   - Aim ~60-70% whitespace. Reject BOTH overcrowding AND large dead zones (a big
+     empty band that makes the page feel unfinished) — category "visual_balance".
+E. CONTRAST & LEGIBILITY *
+   - No invisible or low-contrast text (light text on a light surface, dark on
+     dark). Every text must be clearly readable at its size. Reject "contrast".
+F. TYPOGRAPHY
+   - Sensible type scale; nothing oversized-and-overwhelming or too small to read.
+G. CLIPPING / OVERFLOW *
+   - Nothing cut off, off-canvas, or colliding. Reject "clipping"/"overflow".
+H. AVOID AI CLICHES
+   - Generic tinted eyebrow pills, blue-to-purple gradients, low-opacity circles
+     behind everything, everything-boxed-in-cards. Prefer information on surfaces,
+     scale contrast, and asymmetry.
+I. REQUEST & BRAND
+   - Matches the requested artifact type AND dimensions, communicates the message,
+     covers the requested concepts; brand styling consistent (tokens, not raw
+     guesses); meaningful ABM slots. Unresolved BrandKit governance diagnostics,
+     raw branded surfaces, raw typography in branded scenes, logo misuse, and
+     print/digital mode mismatch are quality failures even if the render looks neat.
+
+Return a VisualCritique. For each issue: set the category, target the exact
+node/page/slot, and give the SMALLEST actionable repair (the coordinator passes it
+verbatim to the author for a surgical fix) — never "make it better". Set a
+calibrated `confidence`. If you accept, give concise `acceptance_notes` naming why
+it clears every *-check. Do not soften feedback; do not accept on "it compiles".
+The `visual-review` skill has worked examples.
 """
 
 

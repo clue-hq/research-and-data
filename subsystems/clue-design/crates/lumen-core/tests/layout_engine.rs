@@ -211,6 +211,28 @@ fn canonical_a4_accepts_point_sized_background_without_page_overflow() {
 }
 
 #[test]
+fn fill_artboard_rounding_does_not_emit_page_bounds_error() {
+    // A4 portrait exportable height is 841.889…pt, but a `fill,fill` root artboard
+    // resolves to the rounded 842.0pt preset height. The ~0.11pt difference is a
+    // float-rounding artifact, not a real overflow, and must NOT emit a hard
+    // LUMV0800 that the repair loop can never clear.
+    let mut scene = scene_with_canonical_page(595.275_590_551_181_2, 841.889_763_779_527_6);
+    insert(
+        &mut scene,
+        ParentRef::Page(PageId::from("page")),
+        rect(
+            "artboard",
+            Dimension::Fixed(595.275_590_551_181_2),
+            Dimension::Fixed(842.0),
+        ),
+    );
+
+    let diagnostics = validate_layout(&scene, lumen_core::LayoutOptions::default());
+
+    assert!(!has_code(&diagnostics, "LUMV0800"), "{diagnostics:#?}");
+}
+
+#[test]
 fn canonical_page_child_exceeding_artboard_emits_bounds_error() {
     let mut scene = scene_with_canonical_page(595.275_590_551_181_2, 841.889_763_779_527_6);
     insert(
@@ -841,6 +863,27 @@ fn text_fixture_that_fits_has_no_text_fit_error() {
     assert!(diagnostics
         .iter()
         .all(|diagnostic| diagnostic.severity != DiagnosticSeverity::Error));
+}
+
+#[test]
+fn slot_fit_uses_node_line_height_not_hardcoded_1_2() {
+    // A slotted single-line node with a sub-1.2 line height and a tight box must NOT
+    // report a false LUMV0810. The fixture-fit check must measure with the node's OWN
+    // lh (1.0 here → ~20pt), not a hardcoded 1.2 (→ ~24pt, which falsely overflowed
+    // the 23pt box and blocked legible hug heights and tight headlines).
+    let mut scene = scene_with_page(200.0, 200.0);
+    let mut node = text_node_with_font("name", "Short", 20.0, 20.0, 160.0, 23.0, 20.0);
+    if let NodeKind::Text(text) = &mut node.kind {
+        text.line_height = 1.0;
+    }
+    insert(&mut scene, ParentRef::Page(PageId::from("page")), node);
+    let mut slot = text_slot("slot_name");
+    slot.placeholder = Some("Short".to_owned());
+    slot.validation.samples = vec!["Short".to_owned()];
+    bind_slot(&mut scene, slot, "name");
+
+    let diagnostics = validate_layout(&scene, lumen_core::LayoutOptions::default());
+    assert!(!has_code(&diagnostics, "LUMV0810"), "{diagnostics:#?}");
 }
 
 #[test]

@@ -359,6 +359,11 @@ pub struct TextNode {
     pub direction: TextDirection,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub style_token: Option<String>,
+    /// Explicit size-step token (e.g. `$type.size.7xl`) that overrides the
+    /// `style_token` role's default size. Resolved AFTER the role so an author's
+    /// per-surface size choice wins — the role still supplies weight/color/lh.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub font_size_token: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub line_height_token: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -379,6 +384,7 @@ impl Default for TextNode {
             wrap: TextWrap::NoWrap,
             direction: TextDirection::Ltr,
             style_token: None,
+            font_size_token: None,
             line_height_token: None,
             letter_spacing_token: None,
         }

@@ -83,7 +83,10 @@ Paint and effects (see `colors.md` and `skills/effects`):
 Text (see `text.md`):
 
 `text("…")`/`content`, `font("family",size,weight,align)` or `font($type.x)`,
-`font_size`, `font_weight`, `style($type.x)`, `lh`, `ls`, `tracking`,
+`font_size(n)` or `font_size($type.size.x)` (step token overrides the role's
+default size for big canvases — see `text.md`), `font_weight`, `style($type.x)`,
+`align(left|center|right|justify)`
+(standalone horizontal align; pairs with `style($type.x)`), `lh`, `ls`, `tracking`,
 `wrap_text(bool)`, `max_lines(n)`, `dir(ltr|rtl|auto)`.
 
 Auto-layout (on `al` containers; see `layout.md`):
