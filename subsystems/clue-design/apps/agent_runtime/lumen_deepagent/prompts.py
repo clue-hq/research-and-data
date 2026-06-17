@@ -50,6 +50,33 @@ summary. Do not claim success before preview-based review accepts the output.
 """
 
 
+# Verbatim recompose recipe handed to the author whenever the visual critic flags a
+# vertical-distribution problem (dead bands / "truncated" / "disconnected strips" /
+# visual_balance). The loop injects this into the author's instructions so the rebuild
+# converges on the fixed poster structure instead of re-stranding content. Faithful to
+# Brilliant: it encodes Brilliant's own idioms (fill-height region absorbs slack;
+# y(sb) is for two blocks only; never an empty spacer frame).
+POSTER_RECOMPOSE_RECIPE = (
+    "VERTICAL BALANCE — recompose with the POSTER IDIOM. The root artboard is a "
+    "fixed-height frame, so the free vertical space is real and MUST be claimed by a "
+    "fill-height region — NEVER an empty spacer frame, and NEVER `y(sb)` with 3+ "
+    "regions (that strands them as dead bands).\n"
+    "  artboard al(v, x(s), y(s), g($space.section), pad(P)) s(fill,fill)\n"
+    "    header al(h, ...)            s(W,hug)    # pinned to the TOP (brand lockup)\n"
+    "    main   al(v, x(s), y(c), ...) s(W,fill)  # FILL height: absorbs slack + centers the focal block\n"
+    "      <eyebrow / headline / subtitle / optional proof row>\n"
+    "    footer al(h, x(sb), y(c), ...) s(W,hug)  # pushed to the BOTTOM\n"
+    "Because `main` is fill HEIGHT, the header pins top, the footer pins bottom, and the "
+    "focal block centers — no mid-page voids. Use `y(c)` on `main` for a sparse "
+    "single-block ad/card; use `y(s)` for a multi-section portrait sell-sheet (content "
+    "flows from the top, the slack sits above the pinned footer). Keep the dominant hero "
+    "size (`font_size($type.size.7xl)` on a 1080-square, `6xl` on a wide flyer). This is "
+    "the 'Full-canvas poster' / fixed social-square structure in "
+    "knowledge/design/blocks/patterns; see knowledge/design/foundations (Distribute the "
+    "canvas)."
+)
+
+
 DSL_AUTHOR_SYSTEM_PROMPT = """You are the Lumen DSL author.
 
 Your only job is to write or repair Lumen DSL blocks for the coordinator. Read
@@ -105,6 +132,14 @@ Repair rules:
   as a coherent generated artifact. Keep stable semantic IDs and slots where
   useful, but prioritize an approvable design that compiles, preflights, and
   passes visual review.
+- VERTICAL BALANCE / DEAD BANDS: when recomposing because the critique flags a
+  `visual_balance` or `spacing` problem (empty bands, "truncated", "disconnected
+  strips", a header floating over a void, or an empty bottom), apply the POSTER
+  IDIOM — a hug header pinned top, a `s(W,fill)` `main` that absorbs the slack and
+  centers the focal block (`y(c)`, or `y(s)` to flow a multi-section portrait from
+  the top), and a hug footer pushed to the bottom. The fill-height `main` is what
+  removes the bands. Never use an empty spacer frame, and never `y(sb)` with 3+
+  regions. The instruction envelope repeats the exact skeleton when this applies.
 - TARGETED / SURGICAL repairs: when the repair_context has
   `surgical_repair: true` (or `allowed_edit_surface` is `structured_ops` with a
   node target), return ONLY `#<node_id> property(...)` modify lines that edit

@@ -23,15 +23,17 @@ from lumen_deepagent.config import AgentRuntimeConfig
 from lumen_deepagent.eval_traces import summarize_trace_dir
 from lumen_deepagent.knowledge import read_knowledge, read_task_knowledge
 from lumen_deepagent.loop import (
+    HeuristicAgentDirector,
     LumenQualityLoop,
     classify_diagnostics,
     classify_visual_critique,
     is_layout_cluster_dsl,
     is_surgical_dsl,
     layout_cluster_allowed_node_ids,
+    recompose_recipe_for_feedback,
     repair_is_surgical,
 )
-from lumen_deepagent.prompts import build_subagents
+from lumen_deepagent.prompts import POSTER_RECOMPOSE_RECIPE, build_subagents
 from lumen_deepagent.providers import (
     compact_preview_payload,
     extract_dsl,
@@ -1673,6 +1675,43 @@ def test_visual_balance_critique_routes_to_layout_cluster():
 
     assert classification.repair_class == RepairClass.layout_cluster
     assert classification.reason == "visual_critique_requires_structural_layout_repair"
+
+
+def test_recompose_recipe_triggers_only_on_dead_band_categories():
+    # P1.5#2a: a visual critique flagging visual_balance/spacing hands the
+    # rebuild the verbatim poster idiom; anything else does not.
+    for category in ("visual_balance", "spacing"):
+        feedback = {
+            "kind": "visual",
+            "feedback": {"issues": [{"category": category, "message": "dead band"}]},
+        }
+        assert recompose_recipe_for_feedback(feedback) == POSTER_RECOMPOSE_RECIPE
+    # Unrelated category, non-visual kind, and None all yield no recipe.
+    assert (
+        recompose_recipe_for_feedback(
+            {"kind": "visual", "feedback": {"issues": [{"category": "typography"}]}}
+        )
+        is None
+    )
+    assert recompose_recipe_for_feedback({"kind": "preflight", "feedback": {}}) is None
+    assert recompose_recipe_for_feedback(None) is None
+
+
+def test_heuristic_director_hands_poster_recipe_for_visual_balance():
+    decision = HeuristicAgentDirector().decide(
+        full_context={
+            "latest_feedback": {
+                "kind": "visual",
+                "feedback": {
+                    "issues": [
+                        {"category": "visual_balance", "message": "two dead bands"}
+                    ]
+                },
+            }
+        }
+    )
+    assert decision.action_mode == AgentActionMode.replace_artboard_subtree
+    assert POSTER_RECOMPOSE_RECIPE in decision.instructions_to_author
 
 
 def test_lumv0801_routes_to_layout_cluster_with_parent_and_descendants():

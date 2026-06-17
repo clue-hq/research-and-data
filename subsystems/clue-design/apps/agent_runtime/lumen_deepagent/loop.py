@@ -25,7 +25,31 @@ from .schemas import (
     VisualCritique,
     VisualTarget,
 )
+from .prompts import POSTER_RECOMPOSE_RECIPE
 from .tools import LumenDesignTools
+
+
+# Visual-critique categories that signal a vertical-distribution / dead-band
+# problem the poster idiom fixes. When the latest critique carries one of these,
+# the loop hands the rebuild the exact poster recipe (P1.5#2a) so the LLM
+# recompose converges on the fixed structure instead of re-stranding content.
+RECOMPOSE_CATEGORIES = {"visual_balance", "spacing"}
+
+
+def recompose_recipe_for_feedback(feedback: Optional[dict]) -> Optional[str]:
+    """Return the poster-idiom recipe when the latest visual critique flags a
+    vertical-distribution problem (dead bands / imbalance), else None."""
+    if not isinstance(feedback, dict) or feedback.get("kind") != "visual":
+        return None
+    payload = feedback.get("feedback") or {}
+    categories = {
+        str(issue.get("category"))
+        for issue in (payload.get("issues") or [])
+        if isinstance(issue, dict) and issue.get("category")
+    }
+    if categories & RECOMPOSE_CATEGORIES:
+        return POSTER_RECOMPOSE_RECIPE
+    return None
 
 
 class DslAuthor(Protocol):
@@ -105,6 +129,11 @@ class HeuristicAgentDirector:
                     instructions_to_author=(
                         "Use the full visual critique verbatim. Rebuild the affected artboard "
                         "composition if that is the clearest way to satisfy the critique."
+                        + (
+                            f"\n\n{POSTER_RECOMPOSE_RECIPE}"
+                            if categories & RECOMPOSE_CATEGORIES
+                            else ""
+                        )
                     ),
                 )
 
@@ -175,6 +204,27 @@ class LumenQualityLoop:
                 director_decisions=self.director_decisions,
             )
             decision = self.director.decide(full_context=full_context)
+            # P1.5#2a: when the latest critique flags a vertical-distribution
+            # problem (dead bands / visual_balance / spacing), deterministically
+            # hand the rebuild the exact poster-idiom recipe — regardless of what
+            # the LLM director wrote — so the recompose converges on the fixed
+            # structure instead of re-stranding content. Skip terminal modes.
+            recompose_recipe = recompose_recipe_for_feedback(
+                self.previous_feedback[-1] if self.previous_feedback else None
+            )
+            if recompose_recipe and decision.action_mode not in {
+                AgentActionMode.accept,
+                AgentActionMode.stop_with_gap,
+            } and POSTER_RECOMPOSE_RECIPE not in (decision.instructions_to_author or ""):
+                decision = decision.model_copy(
+                    update={
+                        "instructions_to_author": (
+                            f"{decision.instructions_to_author}\n\n{recompose_recipe}"
+                            if decision.instructions_to_author
+                            else recompose_recipe
+                        )
+                    }
+                )
             decision_payload = decision.model_dump(mode="json")
             self.director_decisions.append(decision_payload)
             # Record ONLY the decision — never the context. Writing `full_context`
