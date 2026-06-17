@@ -67,11 +67,15 @@ POSTER_RECOMPOSE_RECIPE = (
     "      <eyebrow / headline / subtitle / optional proof row>\n"
     "    footer al(h, x(sb), y(c), ...) s(W,hug)  # pushed to the BOTTOM\n"
     "Because `main` is fill HEIGHT, the header pins top, the footer pins bottom, and the "
-    "focal block centers — no mid-page voids. Use `y(c)` on `main` for a sparse "
-    "single-block ad/card; use `y(s)` for a multi-section portrait sell-sheet (content "
-    "flows from the top, the slack sits above the pinned footer). Keep the dominant hero "
-    "size (`font_size($type.size.7xl)` on a 1080-square, `6xl` on a wide flyer). This is "
-    "the 'Full-canvas poster' / fixed social-square structure in "
+    "focal block centers — no mid-page voids. Choose `main`'s anchor by CONTENT DENSITY, "
+    "not section count: if the content nearly FILLS the canvas, use `y(s)` (flows from "
+    "the top, footer pinned, only a small margin above it); if the content is SPARSE and "
+    "would leave a big band above the footer, use `y(c)` so the focal group centers and "
+    "the slack splits into smaller top+bottom margins — OR distribute the sections with "
+    "larger gaps so they fill. NEVER top-flow (`y(s)`) sparse content: that pools one big "
+    "dead band above the footer (the A4-card failure). Keep the dominant hero size "
+    "(`font_size($type.size.7xl)` on a 1080-square, `6xl` on a wide flyer). This is the "
+    "'Full-canvas poster' / fixed social-square structure in "
     "knowledge/design/blocks/patterns; see knowledge/design/foundations (Distribute the "
     "canvas)."
 )
@@ -135,11 +139,13 @@ Repair rules:
 - VERTICAL BALANCE / DEAD BANDS: when recomposing because the critique flags a
   `visual_balance` or `spacing` problem (empty bands, "truncated", "disconnected
   strips", a header floating over a void, or an empty bottom), apply the POSTER
-  IDIOM — a hug header pinned top, a `s(W,fill)` `main` that absorbs the slack and
-  centers the focal block (`y(c)`, or `y(s)` to flow a multi-section portrait from
-  the top), and a hug footer pushed to the bottom. The fill-height `main` is what
-  removes the bands. Never use an empty spacer frame, and never `y(sb)` with 3+
-  regions. The instruction envelope repeats the exact skeleton when this applies.
+  IDIOM — a hug header pinned top, a `s(W,fill)` `main` that absorbs the slack, and a
+  hug footer pushed to the bottom. Pick `main`'s anchor by content DENSITY: `y(s)`
+  when the content nearly fills the canvas; `y(c)` (or distribute the sections) when
+  it is sparse, so the slack splits into small margins instead of one big band above
+  the footer. The fill-height `main` is what removes the bands. Never use an empty
+  spacer frame, and never `y(sb)` with 3+ regions. The instruction envelope repeats
+  the exact skeleton when this applies.
 - TARGETED / SURGICAL repairs: when the repair_context has
   `surgical_repair: true` (or `allowed_edit_surface` is `structured_ops` with a
   node target), return ONLY `#<node_id> property(...)` modify lines that edit

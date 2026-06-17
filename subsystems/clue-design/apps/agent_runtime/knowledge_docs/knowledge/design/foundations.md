@@ -74,11 +74,13 @@ filler element.
   add the real missing content — that is the honest fill, not a spacer.
 - **Portrait pages (A4, posters) use the SAME idiom.** Wrap the body in a `s(W,fill)`
   `main` between a hug header and a hug footer so the footer pins to the page bottom
-  and the page reads complete (not "truncated at 60%"). Use `y(s)` on `main` for a
-  multi-section sell-sheet (content flows from the top, slack sits above the pinned
-  footer); use `y(c)` for a sparse single-block card (content centers, slack becomes
-  symmetric margin). The failure to avoid: a top-stacked column with the footer (and
-  half the page) floating empty below it.
+  and the page reads complete (not "truncated at 60%"). Pick `main`'s anchor by content
+  DENSITY, not section count: use `y(s)` only when the content nearly **fills** the
+  page (flows from the top, just a small margin above the pinned footer); use `y(c)`
+  when the content is **sparse** so the focal group centers and the slack splits into
+  small top+bottom margins — or distribute the sections with larger gaps so they fill.
+  The failure to avoid: top-flowing sparse content so the footer (and a large band)
+  floats empty below it — a sparse multi-section card still needs `y(c)`, not `y(s)`.
 
 ## Color & contrast
 
