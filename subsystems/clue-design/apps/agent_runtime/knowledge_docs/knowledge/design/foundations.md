@@ -29,14 +29,49 @@ the personality. Assemble from `blocks/` — don't invent proportions per run.
   hierarchy with **size + weight + color together**, not one alone.
 - **Whitespace is margin, not gaps.** Aim for ~60–70% empty space, but it must
   read as generous margin *around a coherent block* — not as dead bands trapped
-  *between* scattered elements. On a tall, sparse canvas, group related regions
-  (hero + proof) into one block and let the outer padding carry the air; don't
-  spread four thin bands with `y(sb)` so each floats alone. Then ask what to remove.
+  *between* scattered elements. Then ask what to remove.
 - **One alignment spine.** Pick a left (or center) edge and align everything to it;
   a single consistent spine reads as intentional. Don't mix left- and center-
   alignment in the same column. One CTA per section.
 - **Information on surfaces over boxes.** Favor type/color hierarchy over boxing
   everything in cards; favor asymmetry and scale contrast over grid-like sameness.
+
+## Distribute the canvas — no dead bands
+
+A tall canvas with light content fails when the agent **start-stacks** everything
+(empty bottom, "reads truncated") or spreads it with `y(sb)` so each region floats
+alone (two empty bands, "disconnected strips"). Free space must read as *margin
+around an anchored block*, never as gaps *between* stranded strips. The root
+`artboard` is already a fixed-height frame (`s(fill,fill)`), so free vertical space
+is real and must be claimed — by **alignment + a `fill`-height region**, never a
+filler element.
+
+- **Never make an empty spacer frame.** Express free space with sizing/alignment.
+- **`y(sb)` (space-between) is for exactly TWO anchored blocks** (header top + footer
+  bottom). With 3+ light blocks it scatters the slack into dead bands — don't.
+- **The poster idiom (one focal block on a big canvas):** a `fill`-height content
+  region absorbs the slack and centers its content; the header pins top and the
+  footer is pushed to the bottom. Verified: header `y=96`, footer `y=944`, hero
+  centered `y=500` on a 1080² canvas.
+  ```text
+  artboard al(v, x(s), y(s), g($space.section), pad(96)) s(fill,fill)
+    header ...                       s(888,hug)          # pins top
+    main   al(v, x(s), y(c), ...)    s(888,fill)         # ABSORBS slack, centers
+      <eyebrow / headline / subtitle / proof — the focal block>
+    footer al(h, x(sb), y(c), ...)   s(888,hug)          # pushed to bottom
+  ```
+- **Decision rule for light content on a big canvas** — choose by block count, never
+  by manufacturing filler copy:
+  - **One focal block** → put it in a `s(W,fill)` / `s(fill,fill)` region with `y(c)`;
+    the empty area becomes symmetric margin.
+  - **Two anchored blocks** (header/footer) → `y(sb)` on the fixed-height parent.
+  - **A genuinely long page** → stack sections with a small inter-section gap and let
+    each section own its vertical `pad()`; a focal middle region can still be `fill`.
+- **Never strand a header alone over a void, and never leave the bottom of a
+  fixed-height page empty.** If the body doesn't reach the page bottom, give it a
+  `fill`-height region (stretch) or center it with `y(c)`. If the artifact genuinely
+  lacks content for its surface (e.g. an appointment card with no date/time/location),
+  add the real missing content — that is the honest fill, not a spacer.
 
 ## Color & contrast
 

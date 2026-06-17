@@ -48,6 +48,14 @@ brand-aligned artifact. This is the *first* pass only — fixing diagnostics is
   systematic. A vertical `al(v, x(s), g(…), pad(…))` stack for content; a
   horizontal `al(h, x(c), y(c), …)` for buttons and proof rows.
 - **One clear message, one CTA, generous margins.** Keep text off the edges.
+- **Distribute the canvas — no dead bands.** The root artboard is fixed-height
+  (`s(fill,fill)`), so claim the vertical space: put the focal block in a
+  `fill`-height region that centers it (`main al(v, x(s), y(c), …) s(W,fill)`) with a
+  hug header above and a hug footer below — the region absorbs the slack so header
+  pins top, footer bottom, content centers. Use `y(sb)` ONLY for two anchored blocks;
+  with 3+ light regions it scatters into dead bands. Never start-stack everything and
+  leave the bottom empty, and never add an empty spacer frame. See
+  `knowledge/design/foundations` (Distribute the canvas).
 - **Text**: `hug` height for anything that can vary, `wrap_text(true)` on body and
   long headlines, `max_lines(…)` so overflow is caught early, boxes **wide enough**
   for the real copy. Headlines tight (`lh 1.05–1.15`), body relaxed (`1.3–1.45`).
@@ -98,14 +106,28 @@ label/value pairs + a paragraph into a small fixed card **will** overflow
 
 ## Skeleton
 
+The poster idiom: fixed-height root, hug header pinned top, a **`fill`-height `main`
+that centers the focal block**, hug footer pushed to the bottom — no dead bands.
+
 ```text
 page linkedin_square size(1080,1080,px)
-  artboard al(v, x(s), g(28), pad(72)) p(0,0) s(fill,fill) fill($surface.brand) clip(true)
-    content al(v, x(s), g(28), pad(0)) p(0,0) s(560,hug)
-      headline text "Let neurosurgeons focus on surgery." p(0,0) s(fill,hug) style($type.headline) font_size($type.size.7xl) lh(1.04) wrap_text(true) max_lines(2) slot(campaign.headline)
-      body     text "Insight Health handles calls, scheduling, and patient routing." p(0,0) s(fill,hug) style($type.body) lh(1.35) wrap_text(true) max_lines(3) slot(offer.primary_message)
-      cta al(h, x(c), y(c), pad(14,28)) p(0,0) s(220,56) fill($surface.inverse) rd($radius.md)
-        cta_text text "Book a Demo" p(0,0) s(fill,hug) style($type.cta) max_lines(1) slot(campaign.cta)
+  artboard al(v, x(s), y(s), g(40), pad(96)) p(0,0) s(fill,fill) fill($surface.page) clip(true)
+    header al(h, x(s), y(c), g(12), pad(0)) p(0,0) s(888,hug)
+      logo text "Insight Health" p(0,0) s(400,hug) style($type.label) wrap_text(true) max_lines(1) slot(account.name)
+    main al(v, x(s), y(c), g(20), pad(0)) p(0,0) s(888,fill)
+      kicker   text "PRODUCT LAUNCH" p(0,0) s(888,hug) style($type.eyebrow) wrap_text(true) max_lines(1) slot(campaign.eyebrow)
+      headline text "Answer every call." p(0,0) s(888,hug) style($type.headline) font_size($type.size.7xl) lh(1.04) wrap_text(true) max_lines(2) slot(campaign.headline)
+      body     text "Insight Health answers, qualifies, and books visits for your front desk." p(0,0) s(820,hug) style($type.body) lh(1.4) wrap_text(true) max_lines(3) slot(offer.primary_message)
+    footer al(h, x(sb), y(c), g(16), pad(0)) p(0,0) s(888,hug)
+      cta al(h, x(c), y(c), pad(18,36)) p(0,0) s(300,72) fill($surface.brand) rd($radius.button)
+        cta_text text "Book a Demo" p(0,0) s(fill,hug) align(center) style($type.cta) max_lines(1) slot(campaign.cta)
+      url text "insighthealth.ai" p(0,0) s(320,hug) style($type.caption) align(right) wrap_text(true) max_lines(1) slot(account.url)
+  #slot:account.name sample("Insight Health") worst_case("Insight Health Systems")
+  #slot:campaign.eyebrow sample("PRODUCT LAUNCH") worst_case("PRODUCT LAUNCH")
+  #slot:campaign.headline sample("Answer every call.") worst_case("Answer every call.")
+  #slot:offer.primary_message sample("Insight Health answers, qualifies, and books visits for your front desk.") worst_case("Insight Health answers, qualifies, and books visits for your front desk.")
+  #slot:campaign.cta sample("Book a Demo") worst_case("Book a Demo")
+  #slot:account.url sample("insighthealth.ai") worst_case("insighthealth.ai")
 ```
 
 ## Finish

@@ -31,21 +31,24 @@ the role still supplies weight/color (height hugs to the actual lines, `lh(1.04)
 size). Subtitle ≤8 words `$type.body` `s(820,hug)` `max_lines(3)` (height hugs); three stats
 each a `$type.stat` numeral `s(fill,hug)` + a ≤2-word `$type.body.small` label `s(270,hug)`;
 one inverse-fill CTA `s(340,72)` whose fill-width label centers its glyph with `align(center)`
-+ a hug height (`s(fill,hug)`). The URL caption hugs its height (`s(360,hug)`). **Hero + stats
-are grouped in one `main` block** so the root's `y(sb)` reads as header-top / centered-content /
-footer-bottom (intentional margins) instead of four thin bands scattered with dead gaps. Stat
-columns are fixed `s(270,…)` (270×3 + 2 gaps < 888), well above the ~160pt 2-word floor.
-Centered labels use align(center) + hug height; text heights hug.
++ a hug height (`s(fill,hug)`). The URL caption hugs its height (`s(360,hug)`). **Distribution
+(no dead bands):** the root is top-anchored (`y(s)`) with three children — a hug `header`, a
+**`fill`-height `main` (`s(888,fill) y(c)`)** holding hero + stats, and a hug `footer`. `main`
+absorbs all the vertical slack and centers hero + stats, so the header pins top, the footer is
+pushed to the bottom, and the content sits centered in generous margin — NOT `y(sb)` with three
+sparse bands (which strands each as a thin strip). Stat columns are fixed `s(270,…)` (270×3 + 2
+gaps < 888), well above the ~160pt 2-word floor. Centered labels use align(center) + hug height;
+text heights hug.
 
 ```text
 page social_square size(1080,1080,px)
-  artboard al(v, x(s), y(sb), g($space.section), pad(96)) p(0,0) s(fill,fill) fill($surface.brand) clip(true)
+  artboard al(v, x(s), y(s), g($space.section), pad(96)) p(0,0) s(fill,fill) fill($surface.brand) clip(true)
     header al(h, x(sb), y(c), g($space.md), pad(0)) p(0,0) s(888,hug)
       brand al(h, x(s), y(c), g(12), pad(0)) p(0,0) s(360,hug)
         mark r p(0,0) s(40,40) fill($surface.inverse) rd($radius.badge)
         logo text "Insight Health" p(0,0) s(300,40) style($type.label) wrap_text(true) max_lines(1) slot(account.name)
       eyebrow text "FOR SPECIALTY CLINICS" p(0,0) s(420,36) style($type.eyebrow) wrap_text(true) max_lines(1) slot(campaign.eyebrow)
-    main al(v, x(s), g($space.section), pad(0)) p(0,0) s(888,hug)
+    main al(v, x(s), y(c), g($space.section), pad(0)) p(0,0) s(888,fill)
       hero al(v, x(s), g($space.stack.default), pad(0)) p(0,0) s(888,hug)
         headline text "Answer every patient call." p(0,0) s(888,hug) style($type.headline) font_size($type.size.7xl) lh(1.04) wrap_text(true) max_lines(2) slot(campaign.headline)
         subtitle text "Insight Health answers, qualifies, and books visits." p(0,0) s(820,hug) style($type.body) lh(1.4) wrap_text(true) max_lines(3) slot(offer.primary_message)
@@ -70,6 +73,53 @@ page social_square size(1080,1080,px)
   #slot:stat.1.label sample("calls answered") worst_case("calls answered")
   #slot:stat.2.label sample("faster booking") worst_case("faster booking")
   #slot:stat.3.label sample("live coverage") worst_case("live coverage")
+  #slot:campaign.cta sample("Book a Demo") worst_case("Book a Demo")
+  #slot:account.url sample("insighthealth.ai") worst_case("insighthealth.ai")
+```
+
+Validator proof:
+```json
+{ "ok": true, "stage": "preflight", "errors": [], "warnings": ["LUMB0613", "LUMB0614"] }
+```
+
+---
+
+## Full-canvas poster — sparse big-canvas ad, distributed (1080×1080)
+
+**When to use:** a LIGHT-content big-canvas ad — one focal message + CTA, no proof
+stats. This is the template to reach for whenever content is sparse on a tall/large
+canvas, so it does NOT end up as three stranded strips with dead bands. It is the
+"poster idiom" from `knowledge/design/foundations` made concrete.
+
+**Distribution (the whole point):** the root is **top-anchored** (`y(s)`), NOT `y(sb)`,
+with three children — a hug `header` (brand lockup), a **`fill`-height `main`
+(`s(888,fill) y(c)`)** carrying the focal block (kicker + big headline + subtitle), and
+a hug `footer` (CTA + url). `main` absorbs ALL the vertical slack and centers its
+content, so the header pins to the top, the footer is pushed to the bottom, and the
+message sits centered in generous margin — no mid-page voids. Hero headline stepped to
+`font_size($type.size.7xl)` (80) so it dominates the 1080 canvas (the role default 56
+would not). `$type.body` subtitle at `s(820,hug)` (wide square hero column). Add a proof
+row inside `main` only if you genuinely have stats — otherwise keep it sparse.
+
+```text
+page poster_square size(1080,1080,px)
+  artboard al(v, x(s), y(s), g($space.section), pad(96)) p(0,0) s(fill,fill) fill($surface.page) clip(true)
+    header al(h, x(s), y(c), g(12), pad(0)) p(0,0) s(888,hug)
+      mark al(h, x(c), y(c), pad(0)) p(0,0) s(44,44) fill($surface.brand) rd($radius.badge)
+        markt text "IH" p(0,0) s(fill,hug) align(center) style($type.eyebrow) max_lines(1)
+      logo text "Insight Health AI" p(0,0) s(400,hug) style($type.label) wrap_text(true) max_lines(1) slot(account.name)
+    main al(v, x(s), y(c), g($space.stack.default), pad(0)) p(0,0) s(888,fill)
+      kicker text "PRODUCT LAUNCH" p(0,0) s(888,hug) style($type.eyebrow) wrap_text(true) max_lines(1) slot(campaign.eyebrow)
+      headline text "Meet Magic-Doc." p(0,0) s(888,hug) style($type.headline) font_size($type.size.7xl) lh(1.04) wrap_text(true) max_lines(2) slot(campaign.headline)
+      subtitle text "Automate healthcare document processing at one-tenth the cost." p(0,0) s(820,hug) style($type.body) lh(1.4) wrap_text(true) max_lines(3) slot(offer.primary_message)
+    footer al(h, x(sb), y(c), g($space.md), pad(0)) p(0,0) s(888,hug)
+      cta al(h, x(c), y(c), pad(18,36)) p(0,0) s(300,72) fill($surface.brand) rd($radius.button)
+        cta_text text "Book a Demo" p(0,0) s(fill,hug) align(center) style($type.cta) max_lines(1) slot(campaign.cta)
+      url text "insighthealth.ai" p(0,0) s(320,hug) style($type.caption) align(right) wrap_text(true) max_lines(1) slot(account.url)
+  #slot:account.name sample("Insight Health AI") worst_case("Insight Health Systems")
+  #slot:campaign.eyebrow sample("PRODUCT LAUNCH") worst_case("PRODUCT LAUNCH")
+  #slot:campaign.headline sample("Meet Magic-Doc.") worst_case("Introducing Magic-Doc.")
+  #slot:offer.primary_message sample("Automate healthcare document processing at one-tenth the cost.") worst_case("Automate healthcare document processing for clinics and hospitals at one-tenth the cost.")
   #slot:campaign.cta sample("Book a Demo") worst_case("Book a Demo")
   #slot:account.url sample("insighthealth.ai") worst_case("insighthealth.ai")
 ```
