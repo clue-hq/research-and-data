@@ -2450,10 +2450,15 @@ fn node_edit_patch_from_properties(
                 has_text_patch = true;
             }
             DslProperty::FontSize(size) => {
-                if let DslScalar::Number(size) = size {
-                    text_patch.font_size = FieldPatch::Set(*size);
-                    has_text_patch = true;
+                match size {
+                    DslScalar::Number(size) => {
+                        text_patch.font_size = FieldPatch::Set(*size);
+                    }
+                    DslScalar::Token(token) => {
+                        text_patch.font_size_token = OptionalFieldPatch::Set(token.clone());
+                    }
                 }
+                has_text_patch = true;
             }
             DslProperty::FontWeight(weight) => {
                 text_patch.font_weight = FieldPatch::Set(*weight);
@@ -3576,6 +3581,7 @@ fn node_from_element(element: &DslElement, line_number: usize) -> Result<Node, D
             wrap: TextWrap::NoWrap,
             direction: TextDirection::Ltr,
             style_token: None,
+            font_size_token: None,
             line_height_token: None,
             letter_spacing_token: None,
         }),
@@ -3791,14 +3797,17 @@ fn apply_properties(
             }
             DslProperty::FontSize(font_size) => {
                 if let NodeKind::Text(text) = &mut node.kind {
-                    if let Some(size) = scalar_to_number(
-                        font_size,
-                        line_number,
-                        node.id.as_str().len(),
-                        "font size",
-                        diagnostics,
-                    ) {
-                        text.font_size = size;
+                    match font_size {
+                        DslScalar::Number(size) => {
+                            text.font_size = *size;
+                            text.font_size_token = None;
+                        }
+                        // A size-step token (e.g. `$type.size.7xl`) overrides the
+                        // role's default size at brand-resolution, after the role
+                        // is applied — so a per-surface hero size wins.
+                        DslScalar::Token(token) => {
+                            text.font_size_token = Some(token.clone());
+                        }
                     }
                 } else {
                     diagnostics.push(warning_diag(

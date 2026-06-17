@@ -565,6 +565,36 @@ fn ensure_platform_number_tokens(brand_kit: &mut BrandKit) {
             "visibility",
         );
     }
+
+    // Decoupled type-size step ladder (mirrors Brilliant's $font.size.*). These
+    // are pure scalars an author/block reaches for to pick a surface-appropriate
+    // size — e.g. a 1080² social hero uses `font_size($type.size.7xl)` (80) so it
+    // dominates, while an A4 heading keeps the role default. Resolution is
+    // identity (no canvas coupling) → safe for human editor resizing.
+    for (path, value) in [
+        ("type.size.xs", 12.0),
+        ("type.size.sm", 14.0),
+        ("type.size.md", 16.0),
+        ("type.size.lg", 20.0),
+        ("type.size.xl", 24.0),
+        ("type.size.2xl", 32.0),
+        ("type.size.3xl", 36.0),
+        ("type.size.4xl", 40.0),
+        ("type.size.5xl", 48.0),
+        ("type.size.6xl", 64.0),
+        ("type.size.7xl", 80.0),
+        ("type.size.8xl", 96.0),
+        ("type.size.9xl", 128.0),
+    ] {
+        ensure_number(
+            &mut brand_kit.tokens.numbers,
+            path,
+            value,
+            NumberUnit::Px,
+            None,
+            "font_size",
+        );
+    }
 }
 
 fn ensure_platform_typography_tokens(brand_kit: &mut BrandKit) {
@@ -3151,6 +3181,7 @@ enum NumberDomain {
     Radius,
     StrokeWidth,
     Opacity,
+    FontSize,
 }
 
 struct TokenResolver<'a> {
@@ -3486,6 +3517,19 @@ impl<'a> TokenResolver<'a> {
                     }
                 }
             }
+
+            // A size-step token (`$type.size.*`) overrides the role's default
+            // size. Resolved AFTER the role above so the author's per-surface
+            // size choice wins; the role still supplied weight / color /
+            // line-height. Resolution is identity (no canvas coupling).
+            if let Some(token) = text.font_size_token.clone() {
+                if let Some(size) =
+                    self.resolve_number_ref(&token, NumberDomain::FontSize, subject.clone())
+                {
+                    text.font_size = size;
+                    text.font_size_token = None;
+                }
+            }
         }
     }
 
@@ -3689,7 +3733,8 @@ impl<'a> TokenResolver<'a> {
             NumberDomain::Dimension
             | NumberDomain::LayoutSpacing
             | NumberDomain::Radius
-            | NumberDomain::StrokeWidth => match unit {
+            | NumberDomain::StrokeWidth
+            | NumberDomain::FontSize => match unit {
                 NumberUnit::Unitless | NumberUnit::Px | NumberUnit::Mm => Some(value),
                 NumberUnit::Percent | NumberUnit::Ratio => {
                     self.diagnostics.push(brand_diag(
@@ -3756,6 +3801,16 @@ impl<'a> TokenResolver<'a> {
                     if let Some(token) = self.brand_kit.tokens.opacity.get(&candidate) {
                         return Some((candidate, token));
                     }
+                    if let Some(token) = self.brand_kit.tokens.numbers.get(&candidate) {
+                        return Some((candidate, token));
+                    }
+                }
+            }
+            NumberDomain::FontSize => {
+                candidates.extend(token_lookup_candidates(path, "type"));
+                candidates.extend(token_lookup_candidates(path, "font"));
+                candidates.extend(token_lookup_candidates(path, "number"));
+                for candidate in candidates {
                     if let Some(token) = self.brand_kit.tokens.numbers.get(&candidate) {
                         return Some((candidate, token));
                     }

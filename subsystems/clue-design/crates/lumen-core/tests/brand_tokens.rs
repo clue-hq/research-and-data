@@ -1892,3 +1892,72 @@ fn number_with_unit(value: f64, unit: NumberUnit) -> NumberToken {
         provenance: None,
     }
 }
+
+#[test]
+fn font_size_step_token_overrides_role_default_size() {
+    // P1.4: a `$type.size.*` step token overrides the role's baked-in size, while
+    // the role still supplies weight / color / line-height. This is how a 1080²
+    // social hero gets a dominant size without abandoning the headline role.
+    let brand_kit = platform_default_brand_kit().unwrap();
+    let mut scene = Scene::new(DocumentId::from("doc_typesize"), "TypeSize");
+    scene.meta.brand_kit = Some(brand_kit.brand_ref());
+    scene
+        .pages
+        .insert(PageId::from("page_ts"), page("page_ts"));
+
+    // Role headline (default 56, weight 800) + explicit 7xl (80) size override.
+    let hero = Node::new(
+        NodeId::from("node_hero"),
+        NodeKind::Text(TextNode {
+            content: "Meet Magic-Doc.".to_owned(),
+            style_token: Some("type.headline".to_owned()),
+            font_size_token: Some("type.size.7xl".to_owned()),
+            ..TextNode::default()
+        }),
+    );
+    // No role, just a size step (6xl = 64) — resolves with no style_token present.
+    let bare = Node::new(
+        NodeId::from("node_bare"),
+        NodeKind::Text(TextNode {
+            content: "64".to_owned(),
+            font_size_token: Some("type.size.6xl".to_owned()),
+            ..TextNode::default()
+        }),
+    );
+    scene.nodes.insert(hero.id.clone(), hero);
+    scene.nodes.insert(bare.id.clone(), bare);
+    scene
+        .pages
+        .get_mut(&PageId::from("page_ts"))
+        .unwrap()
+        .children = vec![NodeId::from("node_hero"), NodeId::from("node_bare")];
+
+    let report = resolve_scene_tokens(&scene, &brand_kit, &TokenResolutionOptions::default());
+    assert!(
+        report
+            .diagnostics
+            .iter()
+            .all(|d| d.severity != lumen_core::DiagnosticSeverity::Error),
+        "{:#?}",
+        report.diagnostics
+    );
+
+    let hero = report.scene.nodes.get(&NodeId::from("node_hero")).unwrap();
+    let NodeKind::Text(text) = &hero.kind else {
+        panic!("expected text node");
+    };
+    // Override wins over the role's default 56pt.
+    assert_eq!(text.font_size, 80.0);
+    // Role still supplied the weight (headline = 800), proving it's a superset,
+    // not a replacement.
+    assert_eq!(text.font_weight, 800);
+    assert!(text.style_token.is_none());
+    assert!(text.font_size_token.is_none());
+
+    let bare = report.scene.nodes.get(&NodeId::from("node_bare")).unwrap();
+    let NodeKind::Text(text) = &bare.kind else {
+        panic!("expected text node");
+    };
+    assert_eq!(text.font_size, 64.0);
+    assert!(text.font_size_token.is_none());
+}
