@@ -30,6 +30,101 @@ describe("InspectorPanel", () => {
     expect(screen.getAllByText("80").length).toBeGreaterThan(0);
   });
 
+  it("summarizes slot-bound selected objects without hiding ordinary controls", () => {
+    const diagnostics: Diagnostic[] = [
+      {
+        severity: "error",
+        phase: "layout",
+        code: "LUMV_TEXT_OVERFLOW",
+        message: "Contact name overflows its text box.",
+        subject: {
+          kind: "node",
+          id: "node_contact_name"
+        },
+        hint: null
+      },
+      {
+        severity: "warning",
+        phase: "validation",
+        code: "SLOT_REQUIRED_NO_FIXTURE",
+        message: "Contact name needs a worst-case fixture.",
+        subject: {
+          kind: "slot",
+          id: "slot_contact_name"
+        },
+        hint: null
+      }
+    ];
+
+    render(
+      React.createElement(InspectorPanel, {
+        scene: minimalScene,
+        activePage: minimalScene.pages.page_a4,
+        selectedNode: minimalScene.nodes.node_contact_name,
+        selectedNodeId: "node_contact_name",
+        diagnostics,
+        onOperation: vi.fn()
+      })
+    );
+
+    const summary = within(screen.getByLabelText("Selected object summary"));
+
+    expect(summary.getByText("slot-bound text")).toBeInTheDocument();
+    expect(summary.getByText("Enabled")).toBeInTheDocument();
+    expect(summary.getByText("Slot-bound")).toBeInTheDocument();
+    expect(summary.getByText("contact.full_name")).toBeInTheDocument();
+    expect(summary.getByText("1 error / 1 warning")).toBeInTheDocument();
+    expect(screen.getByLabelText("Content")).toBeInTheDocument();
+    expect(screen.getByLabelText("Slot summary")).toBeInTheDocument();
+  });
+
+  it("summarizes active artboard diagnostics while page controls remain available", () => {
+    const diagnostics: Diagnostic[] = [
+      {
+        severity: "warning",
+        phase: "layout",
+        code: "LUMV_SAFE_AREA",
+        message: "Contact name is outside the safe area.",
+        subject: {
+          kind: "node",
+          id: "node_contact_name"
+        },
+        hint: null
+      },
+      {
+        severity: "error",
+        phase: "layout",
+        code: "LUMV_OTHER_PAGE",
+        message: "Another page has a layout issue.",
+        subject: {
+          kind: "page",
+          id: "missing_page"
+        },
+        hint: null
+      }
+    ];
+
+    render(
+      React.createElement(InspectorPanel, {
+        scene: minimalScene,
+        activePage: minimalScene.pages.page_a4,
+        selectedNode: null,
+        selectedNodeId: null,
+        diagnostics,
+        onOperation: vi.fn()
+      })
+    );
+
+    const summary = within(screen.getByLabelText("Selected artboard summary"));
+
+    expect(summary.getByText("A4 Letter")).toBeInTheDocument();
+    expect(summary.getByText("210 x 297 mm")).toBeInTheDocument();
+    expect(summary.getByText("1 warning")).toBeInTheDocument();
+    expect(screen.getByLabelText("Name")).toHaveValue("A4 Letter");
+    expect(screen.getByLabelText("W")).toHaveValue(210);
+    expect(screen.getByLabelText("H")).toHaveValue(297);
+  });
+
   it("emits an upsert slot operation when slot metadata changes", () => {
     const onOperation = vi.fn();
     render(
@@ -1026,6 +1121,9 @@ describe("InspectorPanel", () => {
     );
 
     expect(screen.getByText(/managed by an auto-layout parent/)).toBeInTheDocument();
+    const summary = within(screen.getByLabelText("Selected object summary"));
+    expect(summary.getByText("Disabled")).toBeInTheDocument();
+    expect(summary.getByText("Layout-managed child")).toBeInTheDocument();
     expect(screen.getAllByLabelText("X")[0]).toBeDisabled();
     expect(screen.getAllByLabelText("Y")[0]).toBeDisabled();
     expect(screen.getByLabelText("W")).toBeDisabled();
@@ -1163,6 +1261,9 @@ describe("InspectorPanel", () => {
     );
 
     expect(screen.getByText(/Unlock it before moving, resizing, or rotating it/)).toBeInTheDocument();
+    const summary = within(screen.getByLabelText("Selected object summary"));
+    expect(summary.getByText("Disabled")).toBeInTheDocument();
+    expect(summary.getByText("Locked / Slot-bound")).toBeInTheDocument();
     expect(screen.getAllByLabelText("X")[0]).toBeDisabled();
     expect(screen.getAllByLabelText("Y")[0]).toBeDisabled();
     expect(screen.getByLabelText("W")).toBeDisabled();

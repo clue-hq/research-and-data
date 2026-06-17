@@ -8,14 +8,14 @@
 //! critic can see and report it without blocking iteration.
 
 use lumen_core::{
-    render_box_for_node, AssetRecord, Diagnostic, DiagnosticSubject, ExportPurpose, ExportRequest,
-    Node, NodeId, NodeKind, Page, PdfIntent, Phase, Scene, Unit,
+    is_canonical_page_size, page_geometry, physical_to_inches, render_box_for_node, unit_to_inches,
+    AssetRecord, Diagnostic, DiagnosticSubject, ExportPurpose, ExportRequest, Node, NodeId,
+    NodeKind, Page, PdfIntent, Phase, Scene, Unit,
 };
 
 /// Effective DPI below this threshold on a print export is flagged.
 pub const MIN_EFFECTIVE_PRINT_DPI: f64 = 150.0;
 const CSS_PX_PER_INCH: f64 = 96.0;
-const MM_PER_INCH: f64 = 25.4;
 
 /// Run asset export checks over every page in the request scope.
 /// Returns diagnostics; LUME0212 entries are errors when the request is
@@ -146,11 +146,7 @@ impl CheckWalker<'_> {
         if raster.pixel_width == 0 || rendered_width <= 0.0 {
             return;
         }
-        let rendered_inches = match self.page.size.unit {
-            Unit::Mm => rendered_width / MM_PER_INCH,
-            Unit::In => rendered_width,
-            Unit::Px => rendered_width / CSS_PX_PER_INCH,
-        };
+        let rendered_inches = rendered_inches_for_page_width(self.page, rendered_width);
         if rendered_inches <= 0.0 {
             return;
         }
@@ -236,10 +232,25 @@ impl CheckWalker<'_> {
 
 fn unit_suffix(unit: Unit) -> &'static str {
     match unit {
+        Unit::Pt => "pt",
         Unit::Px => "px",
         Unit::Mm => "mm",
         Unit::In => "in",
     }
+}
+
+fn rendered_inches_for_page_width(page: &Page, rendered_width: f64) -> f64 {
+    if is_canonical_page_size(&page.size) {
+        let geometry = page_geometry(page);
+        if let Some(physical) = geometry.physical {
+            let page_width_inches = physical_to_inches(physical.width, &physical.unit);
+            if geometry.layout.width > 0.0 {
+                return rendered_width / geometry.layout.width * page_width_inches;
+            }
+        }
+    }
+
+    unit_to_inches(rendered_width, &page.size.unit, CSS_PX_PER_INCH)
 }
 
 fn node_asset_record<'a>(scene: &'a Scene, node: &Node) -> Option<&'a AssetRecord> {

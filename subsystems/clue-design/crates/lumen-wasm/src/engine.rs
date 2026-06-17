@@ -10,12 +10,15 @@
 
 use lumen_core::validation::validate_scene;
 use lumen_core::{
-    build_structured_edit_batch, compile_dsl_into_scene_with_session, layout_scene,
-    preflight_scene, DslCompileSessionSnapshot, LayoutOptions, Operation, PreflightOptions, Scene,
-    StructuredEditInstruction,
+    build_structured_edit_batch, compile_dsl_into_scene_with_session, hit_stack, layout_scene,
+    measure_key, preflight_scene, DslCompileSessionSnapshot, LayoutOptions, Operation, PageId,
+    PreflightOptions, ProvidedTextMeasurer, Scene, SharedTextMeasurer, StructuredEditInstruction,
+    TextDirection, TextMeasureInput, TextWrap,
 };
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
+use std::collections::HashMap;
+use std::sync::Arc;
 
 /// Text measurement honesty (Track E Decision 3): skia-safe cannot target
 /// wasm32, so the in-browser engine measures with the heuristic fallback.
@@ -33,30 +36,138 @@ pub fn version_payload() -> Value {
     })
 }
 
+/// One editor-supplied text measurement (Wave 3 C4): the measurement input
+/// fields plus the SkParagraph width/height the editor measured for them.
+#[derive(Deserialize)]
+struct ProvidedMeasurement {
+    content: String,
+    font_family: String,
+    font_size: f64,
+    font_weight: u16,
+    line_height: f64,
+    letter_spacing: f64,
+    wrap: TextWrap,
+    #[serde(default)]
+    max_lines: Option<u16>,
+    direction: TextDirection,
+    #[serde(default)]
+    max_width: Option<f64>,
+    #[serde(default)]
+    max_height: Option<f64>,
+    width: f64,
+    height: f64,
+}
+
+impl ProvidedMeasurement {
+    fn input(&self) -> TextMeasureInput {
+        TextMeasureInput {
+            content: self.content.clone(),
+            font_family: self.font_family.clone(),
+            font_size: self.font_size,
+            font_weight: self.font_weight,
+            line_height: self.line_height,
+            letter_spacing: self.letter_spacing,
+            wrap: self.wrap.clone(),
+            max_lines: self.max_lines,
+            direction: self.direction.clone(),
+            max_width: self.max_width,
+            max_height: self.max_height,
+        }
+    }
+}
+
 pub struct Engine {
     scene: Scene,
     dsl_session: Option<DslCompileSessionSnapshot>,
+    /// Wave 3 C4: editor-supplied SkParagraph metrics. When set, `relayout`
+    /// measures text with these (Skia-faithful), making editor `computed`
+    /// match export. `None` → the heuristic fallback.
+    measurer: Option<SharedTextMeasurer>,
 }
 
 impl Engine {
     /// Initialize from a full scene snapshot (serialization in: init).
+    /// The scene is relaid-out once so the editor starts from a coherent,
+    /// whole-tree `computed` baseline (the idempotence anchor that keeps
+    /// later edits from perturbing unrelated nodes).
     pub fn from_scene_json(scene_json: &str) -> Result<Self, String> {
         let scene: Scene = serde_json::from_str(scene_json)
             .map_err(|error| format!("invalid scene JSON: {error}"))?;
-        Ok(Self {
+        let mut engine = Self {
             scene,
             dsl_session: None,
-        })
+            measurer: None,
+        };
+        engine.relayout();
+        Ok(engine)
     }
 
     /// Replace the local scene (serialization in: reconcile / undo frames).
-    /// Resets the DSL session: it indexed the previous scene state.
+    /// Resets the DSL session: it indexed the previous scene state. The
+    /// reconciled scene is relaid-out so editor render geometry stays
+    /// single-source (local heuristic) and never inherits the server's Skia
+    /// `computed` directly, which would jump text on every reconcile.
     pub fn load_scene(&mut self, scene_json: &str) -> Result<(), String> {
         let scene: Scene = serde_json::from_str(scene_json)
             .map_err(|error| format!("invalid scene JSON: {error}"))?;
         self.scene = scene;
         self.dsl_session = None;
+        self.relayout();
         Ok(())
+    }
+
+    /// Refresh `computed` geometry for the whole scene from one heuristic
+    /// layout pass. `computed` is a derived render cache: the parent and its
+    /// children are always laid out together, so they can never disagree
+    /// (the fix for the drag/edit coordinate desync). This writes geometry
+    /// directly onto nodes — it does NOT emit operations, so the recomputed
+    /// geometry never enters the authored edits sent to the server (which
+    /// recomputes geometry canonically under Skia). The pass is idempotent:
+    /// re-laying out an already-laid-out scene leaves unedited nodes
+    /// unchanged, so an edit only moves the node it touched and that node's
+    /// true layout dependents.
+    fn relayout(&mut self) {
+        let options = LayoutOptions {
+            measurer: self.measurer.clone(),
+            ..LayoutOptions::default()
+        };
+        let result = layout_scene(&self.scene, options);
+        for (node_id, computed) in result.geometry {
+            if let Some(node) = self.scene.nodes.get_mut(&node_id) {
+                node.computed = Some(computed);
+            }
+        }
+    }
+
+    /// Wave 3 C4 (measure-then-inject): install editor-supplied SkParagraph
+    /// metrics and relayout, so text `computed` becomes Skia-faithful. The
+    /// payload is `[{ content, font_family, font_size, font_weight,
+    /// line_height, letter_spacing, wrap, max_lines, direction, max_width?,
+    /// max_height?, width, height }]`; the engine keys each by the same
+    /// measurement input it lays out with. An empty payload clears the
+    /// override (back to the heuristic).
+    pub fn set_measurements(&mut self, measurements_json: &str) -> String {
+        let entries: Vec<ProvidedMeasurement> = match serde_json::from_str(measurements_json) {
+            Ok(entries) => entries,
+            Err(error) => {
+                return json!({
+                    "ok": false,
+                    "error": { "code": "EDITOR_WASM_MEASUREMENTS_INVALID", "message": error.to_string() }
+                })
+                .to_string()
+            }
+        };
+        let mut overrides = HashMap::with_capacity(entries.len());
+        for entry in &entries {
+            overrides.insert(measure_key(&entry.input()), (entry.width, entry.height));
+        }
+        self.measurer = if overrides.is_empty() {
+            None
+        } else {
+            Some(Arc::new(ProvidedTextMeasurer::new(overrides)))
+        };
+        self.relayout();
+        json!({ "ok": true, "count": entries.len() }).to_string()
     }
 
     /// Full scene snapshot out. Reserved for init/reconcile/undo-frame
@@ -83,14 +194,20 @@ impl Engine {
         let before = self.scene.clone();
         let inverse_operations = self.scene.invert_operations(&operations).ok().flatten();
         match self.scene.apply_operations_checked(operations) {
-            Ok(report) => json!({
-                "ok": true,
-                "applied_operations": report.applied_operations,
-                "diagnostics": report.diagnostics,
-                "inverse_operations": inverse_operations,
-                "delta": scene_delta(&before, &self.scene),
-            })
-            .to_string(),
+            Ok(report) => {
+                // Refresh derived geometry so the delta carries a coherent
+                // whole-tree `computed` for the optimistic render. The
+                // authored operations the editor persists are unaffected.
+                self.relayout();
+                json!({
+                    "ok": true,
+                    "applied_operations": report.applied_operations,
+                    "diagnostics": report.diagnostics,
+                    "inverse_operations": inverse_operations,
+                    "delta": scene_delta(&before, &self.scene),
+                })
+                .to_string()
+            }
             Err(error) => error_payload("wasm.apply", error.message, error.diagnostics),
         }
     }
@@ -123,22 +240,25 @@ impl Engine {
         };
         let before = self.scene.clone();
         match batch.apply_checked(&mut self.scene) {
-            Ok(report) => json!({
-                "ok": true,
-                "applied_operations": report.applied_operations,
-                "diagnostics": report.diagnostics,
-                "operations": batch.operations,
-                "edit": {
-                    "kind": edit.kind(),
-                    "touched_targets": batch.touched_targets,
-                    "intent": batch.intent,
-                    "checkpoint_label": batch.checkpoint_label,
-                    "inverse_operations": batch.inverse_operations,
-                    "lineage": batch.lineage,
-                },
-                "delta": scene_delta(&before, &self.scene),
-            })
-            .to_string(),
+            Ok(report) => {
+                self.relayout();
+                json!({
+                    "ok": true,
+                    "applied_operations": report.applied_operations,
+                    "diagnostics": report.diagnostics,
+                    "operations": batch.operations,
+                    "edit": {
+                        "kind": edit.kind(),
+                        "touched_targets": batch.touched_targets,
+                        "intent": batch.intent,
+                        "checkpoint_label": batch.checkpoint_label,
+                        "inverse_operations": batch.inverse_operations,
+                        "lineage": batch.lineage,
+                    },
+                    "delta": scene_delta(&before, &self.scene),
+                })
+                .to_string()
+            }
             Err(error) => error_payload(
                 error.kind.code(),
                 error.message.clone(),
@@ -154,6 +274,9 @@ impl Engine {
         let result =
             compile_dsl_into_scene_with_session(source, &mut self.scene, self.dsl_session.take());
         self.dsl_session = Some(result.session_snapshot);
+        // A compiled block creates/edits nodes; refresh geometry so the
+        // editor renders the new tree from one coherent layout pass.
+        self.relayout();
         json!({
             "ok": true,
             "compile_output": {
@@ -220,6 +343,20 @@ impl Engine {
     /// Scene validation diagnostics (structural, wasm-clean).
     pub fn validate(&self) -> String {
         json!({ "diagnostics": validate_scene(&self.scene) }).to_string()
+    }
+
+    /// Point→node hit-test in absolute page space (Wave 3 C3a). Returns
+    /// `{ "hit": <topmost node id or null>, "stack": [<bottom-to-top>] }`.
+    /// `hit` is the single-click target (deepest-first); `stack` lets the
+    /// gesture layer drill in / cycle overlapping nodes. One traversal.
+    pub fn hit_test(&self, page_id: &str, x: f64, y: f64) -> String {
+        let page = PageId::from(page_id);
+        let stack: Vec<String> = hit_stack(&self.scene, &page, x, y)
+            .iter()
+            .map(|id| id.to_string())
+            .collect();
+        let hit = stack.last().cloned();
+        json!({ "hit": hit, "stack": stack }).to_string()
     }
 }
 

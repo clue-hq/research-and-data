@@ -22,6 +22,8 @@ fn page(id: &str, children: Vec<NodeId>) -> Page {
             unit: Unit::Px,
             preset: Some(PagePreset::Custom),
             orientation: Orientation::Landscape,
+            source: None,
+            output: None,
         },
         children,
         bleed: None,

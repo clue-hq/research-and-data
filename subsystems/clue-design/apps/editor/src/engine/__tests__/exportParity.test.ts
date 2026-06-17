@@ -16,6 +16,25 @@ describe("export parity", () => {
     expect(report.diagnostics[0].code).toBe("EDITOR_EXPORT_PARITY_OK");
   });
 
+  it("matches canonical print SVG viewBox even when physical attributes are present", () => {
+    const scene = canonicalA4Scene();
+    const report = exportParityReport(
+      scene,
+      "page_a4",
+      exportResult(
+        "page_a4",
+        "0 0 595.2755905511812 841.8897637795276",
+        '<svg width="210mm" height="297mm" viewBox="0 0 595.2755905511812 841.8897637795276"><text data-lumen-node-id="node_contact_name">Dr. Priya Sharma</text></svg>'
+      )
+    );
+
+    expect(report.status).toBe("match");
+    expect(report.canvas?.width).toBeCloseTo(595.3, 1);
+    expect(report.export?.width).toBeCloseTo(595.3, 1);
+    expect(report.export?.height).toBeCloseTo(841.9, 1);
+    expect(report.diagnostics[0].code).toBe("EDITOR_EXPORT_PARITY_OK");
+  });
+
   it("does not reuse another page's artifact for active-page parity", () => {
     const scene = customSquareScene();
     scene.pages.page_second = {
@@ -309,6 +328,20 @@ describe("export parity", () => {
     );
   });
 
+  it("matches canonical PDF MediaBox point dimensions directly", () => {
+    const scene = canonicalA4Scene();
+    const report = exportParityReport(
+      scene,
+      "page_a4",
+      pdfExportResult("page_a4", 595.2755905511812, 841.8897637795276)
+    );
+
+    expect(report.status).toBe("match");
+    expect(report.canvas?.width).toBeCloseTo(595.3, 1);
+    expect(report.export?.width).toBeCloseTo(595.3, 1);
+    expect(report.export?.height).toBeCloseTo(841.9, 1);
+  });
+
   it("converts non-px PDF MediaBox dimensions into canvas pixels for comparison", () => {
     const report = exportParityReport(minimalScene, "page_a4", pdfExportResult("page_a4", 595.2756, 841.8898));
 
@@ -321,6 +354,30 @@ describe("export parity", () => {
 
 function customSquareScene(): Scene {
   return customPxScene(1080, 1080);
+}
+
+function canonicalA4Scene(): Scene {
+  const scene = JSON.parse(JSON.stringify(minimalScene)) as Scene;
+  scene.pages.page_a4.size = {
+    width: 595.2755905511812,
+    height: 841.8897637795276,
+    unit: "pt",
+    preset: "a4",
+    orientation: "portrait",
+    source: {
+      width: 210,
+      height: 297,
+      unit: "mm"
+    },
+    output: {
+      physical: {
+        width: 210,
+        height: 297,
+        unit: "mm"
+      }
+    }
+  };
+  return scene;
 }
 
 function customPxScene(width: number, height: number): Scene {
@@ -530,6 +587,7 @@ function sceneFromPhaseFCase(pageCase: PhaseFPageCase): Scene {
 
 function unitFromManifest(value: string): Unit {
   switch (value) {
+    case "pt":
     case "px":
     case "mm":
     case "in":
@@ -561,6 +619,7 @@ function orientationFromManifest(value: string): Orientation {
 
 function unitScaleForTest(unit: Unit): number {
   switch (unit) {
+    case "pt":
     case "px":
       return 1;
     case "mm":

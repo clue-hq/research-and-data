@@ -7,37 +7,95 @@ from typing import Iterable, List
 from .schemas import KnowledgeSnippet
 
 
+# The deepagent's knowledge system lives entirely under `knowledge_docs/` — a
+# self-contained tree (AGENT.md + per-skill SKILL.md + topic reference files)
+# authored for the agent. The repo's top-level `docs/` is developer/human-facing
+# and is intentionally NOT loaded here.
+KNOWLEDGE_DOCS_ROOT = "apps/agent_runtime/knowledge_docs"
+
 PRIMARY_KNOWLEDGE_PATHS = [
-    "apps/agent_runtime/knowledge/lumen-dsl/authoring.md",
-    "apps/agent_runtime/knowledge/design/layout-recipes.md",
-    "apps/agent_runtime/knowledge/design/typography-and-composition.md",
-    "apps/agent_runtime/knowledge/design-systems/brand-tokens.md",
-    "apps/agent_runtime/knowledge/design-systems/token-taxonomy.md",
-    "apps/agent_runtime/knowledge/design-systems/brand-generation.md",
-    "apps/agent_runtime/knowledge/design-systems/brand-validation.md",
-    "apps/agent_runtime/knowledge/design-systems/modes.md",
-    "apps/agent_runtime/knowledge/design-systems/logo-and-assets.md",
-    "apps/agent_runtime/knowledge/design-systems/brand-fit-critique.md",
-    "apps/agent_runtime/knowledge/assets/asset-placement.md",
-    "apps/agent_runtime/knowledge/export/preview-quality.md",
-    "apps/agent_runtime/knowledge/agent-loop/authoring-and-repair.md",
-    "apps/agent_runtime/knowledge/future/scaffolds.md",
+    f"{KNOWLEDGE_DOCS_ROOT}/AGENT.md",
+    f"{KNOWLEDGE_DOCS_ROOT}/knowledge/lumen-dsl/grammar.md",
+    f"{KNOWLEDGE_DOCS_ROOT}/knowledge/lumen-dsl/colors.md",
+    f"{KNOWLEDGE_DOCS_ROOT}/knowledge/lumen-dsl/layout.md",
+    f"{KNOWLEDGE_DOCS_ROOT}/knowledge/lumen-dsl/text.md",
+    f"{KNOWLEDGE_DOCS_ROOT}/knowledge/lumen-dsl/directives.md",
+    f"{KNOWLEDGE_DOCS_ROOT}/knowledge/lumen-dsl/diagnostics.md",
+    f"{KNOWLEDGE_DOCS_ROOT}/knowledge/design/foundations.md",
+    f"{KNOWLEDGE_DOCS_ROOT}/knowledge/design/artboard-frame-authoring.md",
+    f"{KNOWLEDGE_DOCS_ROOT}/knowledge/design/layout-recipes.md",
+    f"{KNOWLEDGE_DOCS_ROOT}/knowledge/design/typography-and-composition.md",
+    f"{KNOWLEDGE_DOCS_ROOT}/knowledge/design/blocks/README.md",
+    f"{KNOWLEDGE_DOCS_ROOT}/knowledge/design/blocks/patterns.md",
+    f"{KNOWLEDGE_DOCS_ROOT}/knowledge/design/blocks/layout.md",
+    f"{KNOWLEDGE_DOCS_ROOT}/knowledge/design/blocks/actions.md",
+    f"{KNOWLEDGE_DOCS_ROOT}/knowledge/design/blocks/data-display.md",
+    f"{KNOWLEDGE_DOCS_ROOT}/knowledge/design-systems/token-taxonomy.md",
+    f"{KNOWLEDGE_DOCS_ROOT}/knowledge/design-systems/brand-kits.md",
+    f"{KNOWLEDGE_DOCS_ROOT}/knowledge/design-systems/brand-validation.md",
+    f"{KNOWLEDGE_DOCS_ROOT}/knowledge/design-systems/modes.md",
+    f"{KNOWLEDGE_DOCS_ROOT}/knowledge/design-systems/logo-and-assets.md",
+    f"{KNOWLEDGE_DOCS_ROOT}/knowledge/design-systems/brand-fit-critique.md",
+    f"{KNOWLEDGE_DOCS_ROOT}/knowledge/assets/asset-placement.md",
+    f"{KNOWLEDGE_DOCS_ROOT}/knowledge/export/preview-quality.md",
+    f"{KNOWLEDGE_DOCS_ROOT}/knowledge/loop/authoring-and-repair.md",
+    f"{KNOWLEDGE_DOCS_ROOT}/knowledge/loop/layout-cluster-repair.md",
 ]
 
+# Product specs are optional background context. The forbidden `docs/` tree is
+# never listed here.
 SECONDARY_KNOWLEDGE_PATHS = [
     "reference_docs/ABM-Design-Engine-Temporary-Spec.md",
     "reference_docs/Brilliant-Reverse-Engineering-Report.md",
     "reference_docs/Brilliant-vs-Lumen-Product-Gap-Analysis.md",
-    "docs/dsl-compiler.md",
-    "docs/agents-design-loop.md",
-    "docs/preflight-pipeline.md",
-    "docs/slots-layout.md",
-    "docs/assets-pipeline.md",
-    "docs/phase4-integration.md",
 ]
 
 DEFAULT_KNOWLEDGE_PATHS = PRIMARY_KNOWLEDGE_PATHS + SECONDARY_KNOWLEDGE_PATHS
-REQUIRED_TASK_CATEGORIES = ["lumen-dsl", "design", "design-systems", "agent-loop"]
+REQUIRED_TASK_CATEGORIES = ["lumen-dsl", "design", "design-systems", "loop"]
+ARTBOARD_AUTHORING_PATH = (
+    f"{KNOWLEDGE_DOCS_ROOT}/knowledge/design/artboard-frame-authoring.md"
+)
+LAYOUT_CLUSTER_REPAIR_PATH = (
+    f"{KNOWLEDGE_DOCS_ROOT}/knowledge/loop/layout-cluster-repair.md"
+)
+# The DSL grammar (valid node kinds + property catalogue) and the text reference
+# (horizontal-only align — there is NO valign/text_align — plus wrap/max_lines).
+GRAMMAR_PATH = f"{KNOWLEDGE_DOCS_ROOT}/knowledge/lumen-dsl/grammar.md"
+TEXT_PATH = f"{KNOWLEDGE_DOCS_ROOT}/knowledge/lumen-dsl/text.md"
+# The art-direction taste rubric the visual critic scores against (one-dominant /
+# squint test, hero-size-per-surface, jump rule, whitespace-as-margin, 60-30-10,
+# WCAG contrast, single alignment spine, eyebrow/anti-cliche). Pinned + delivered
+# in full so the priors arrive intact, not windowed to a half-rule.
+FOUNDATIONS_PATH = f"{KNOWLEDGE_DOCS_ROOT}/knowledge/design/foundations.md"
+
+# The vetted block catalog: pre-proportioned, compile+preflight-validated blocks
+# the author ASSEMBLES (README index + full-artifact patterns + component blocks).
+# Pinned for every design task so the author composes vetted blocks instead of
+# inventing proportions (the cause of the LUMV0810/0903/0904 overcrowding failures).
+BLOCKS_DIR = f"{KNOWLEDGE_DOCS_ROOT}/knowledge/design/blocks"
+BLOCK_CATALOG_PATHS = [
+    f"{BLOCKS_DIR}/README.md",
+    f"{BLOCKS_DIR}/patterns.md",
+    f"{BLOCKS_DIR}/layout.md",
+    f"{BLOCKS_DIR}/actions.md",
+    f"{BLOCKS_DIR}/data-display.md",
+]
+
+# Docs delivered to the author IN FULL (not windowed to a best_excerpt). The block
+# examples and the grammar/text references must arrive intact — a 1600-char window
+# slices a full page+artboard+block example in half and teaches broken syntax.
+FULL_DELIVERY_PATHS = {GRAMMAR_PATH, TEXT_PATH, FOUNDATIONS_PATH, *BLOCK_CATALOG_PATHS}
+LAYOUT_CLUSTER_TERMS = {
+    "artboard",
+    "background",
+    "bounds",
+    "canvas",
+    "clip",
+    "containment",
+    "layout_cluster",
+    "overflow",
+    "parent",
+}
 
 
 def read_knowledge(
@@ -58,7 +116,7 @@ def read_knowledge(
         score = score_text(text, terms, rel_path)
         if score == 0 and snippets and rel_path not in PRIMARY_KNOWLEDGE_PATHS:
             continue
-        excerpt = best_excerpt(text, terms)
+        excerpt = text if rel_path in FULL_DELIVERY_PATHS else best_excerpt(text, terms)
         snippets.append(
             KnowledgeSnippet(
                 path=rel_path,
@@ -80,7 +138,10 @@ def read_task_knowledge(
     paths: Iterable[str] = DEFAULT_KNOWLEDGE_PATHS,
 ) -> List[KnowledgeSnippet]:
     """Return task knowledge with mandatory Lumen docs before reference docs."""
-    candidates = read_knowledge(repo_root, query, limit=max(limit * 3, 20), paths=paths)
+    # The candidate pool must cover every pinned/mandatory path — the mandatory
+    # force-select below reads from it — so keep it wide enough to include all
+    # default paths even though only `limit` are ultimately selected.
+    candidates = read_knowledge(repo_root, query, limit=max(limit * 4, 64), paths=paths)
     selected: list[KnowledgeSnippet] = []
     seen_paths: set[str] = set()
 
@@ -98,6 +159,18 @@ def read_task_knowledge(
         )
         seen_paths.add(match.path)
 
+    for rel_path in mandatory_task_paths(query):
+        match = next(
+            (snippet for snippet in candidates if snippet.path == rel_path),
+            None,
+        )
+        if match is None or match.path in seen_paths:
+            continue
+        selected.append(
+            match.model_copy(update={"selected_reason": "mandatory_task_context"})
+        )
+        seen_paths.add(match.path)
+
     for snippet in candidates:
         if snippet.path in seen_paths:
             continue
@@ -107,6 +180,27 @@ def read_task_knowledge(
             break
 
     return selected
+
+
+def mandatory_task_paths(query: str) -> list[str]:
+    # Pin the grammar + text references for EVERY task. The category-based
+    # selection only guarantees a single highest-scored lumen-dsl doc, and for
+    # prompts whose words don't overlap the grammar (e.g. "patient appointment
+    # card") the ranker drops grammar/text below the limit. Without them the author
+    # hallucinates unsupported syntax — `va(center)` (LUMD0212), a `divider` node
+    # kind (LUMD0206) — and wastes the first iteration. Both are PRIMARY paths, so
+    # they are always among the candidates this force-selects from.
+    paths = [
+        GRAMMAR_PATH,
+        TEXT_PATH,
+        FOUNDATIONS_PATH,
+        ARTBOARD_AUTHORING_PATH,
+        *BLOCK_CATALOG_PATHS,
+    ]
+    terms = set(re.split(r"[^a-z0-9_.$-]+", query.lower()))
+    if terms & LAYOUT_CLUSTER_TERMS:
+        paths.append(LAYOUT_CLUSTER_REPAIR_PATH)
+    return paths
 
 
 def score_text(text: str, terms: list[str], rel_path: str) -> int:
@@ -123,9 +217,14 @@ def score_text(text: str, terms: list[str], rel_path: str) -> int:
 
 
 def category_for(rel_path: str) -> str:
+    if rel_path.endswith("knowledge_docs/AGENT.md"):
+        return "agent"
+    docs_marker = "apps/agent_runtime/knowledge_docs/knowledge/"
+    if docs_marker in rel_path:
+        return rel_path.split(docs_marker, 1)[1].split("/", 1)[0]
+    # Legacy layout (still recognized so explicit-path callers keep working).
     if "apps/agent_runtime/knowledge/" in rel_path:
-        after_root = rel_path.split("apps/agent_runtime/knowledge/", 1)[1]
-        return after_root.split("/", 1)[0]
+        return rel_path.split("apps/agent_runtime/knowledge/", 1)[1].split("/", 1)[0]
     if rel_path.startswith("docs/"):
         return "product-doc"
     return "reference"

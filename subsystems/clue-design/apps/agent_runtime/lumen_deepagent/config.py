@@ -20,7 +20,7 @@ class AgentRuntimeConfig:
         return cls(
             repo_root=root,
             model=os.environ.get("LUMEN_AGENT_MODEL", "anthropic:claude-opus-4-6"),
-            max_iterations=int(os.environ.get("LUMEN_AGENT_MAX_ITERATIONS", "3")),
+            max_iterations=int(os.environ.get("LUMEN_AGENT_MAX_ITERATIONS", "5")),
             preview_format=os.environ.get("LUMEN_AGENT_PREVIEW_FORMAT", "svg"),
             trace_dir=Path(
                 os.environ.get(

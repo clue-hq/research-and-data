@@ -5,10 +5,47 @@
 //! `lumen_core::build_structured_edit_batch`. This is the Track E
 //! optimistic-path honesty check: if these ever diverge, optimistic editing
 //! is lying about what the server will do.
+//!
+//! Parity is asserted MODULO the derived `computed` geometry cache. Since
+//! the editor coordinate-model fix (editor/coordinate-model-v0), the wasm
+//! engine refreshes whole-tree `computed` after every edit and on load so
+//! the editor renders parent and children from one coherent layout pass;
+//! the helper leaves geometry to the server's canonical (Skia) preflight.
+//! `computed` is therefore a wasm-side render cache the server recomputes —
+//! not authoritative shared state — so it is normalized out before the
+//! scene and inverse comparisons. Everything authoritative (authored
+//! operations, touched targets, intent, applied counts, diagnostics, and
+//! the scene's authored fields) is still compared byte-for-byte.
 
 use serde_json::{json, Value};
 use std::io::Write;
 use std::process::{Command, Stdio};
+
+/// Recursively remove every `computed` field (node geometry cache and any
+/// operation patch's computed entry) so parity is asserted over
+/// authoritative data only. See the module note above.
+fn strip_computed(value: &mut Value) {
+    match value {
+        Value::Object(map) => {
+            map.remove("computed");
+            for child in map.values_mut() {
+                strip_computed(child);
+            }
+        }
+        Value::Array(items) => {
+            for item in items {
+                strip_computed(item);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn without_computed(value: &Value) -> Value {
+    let mut cloned = value.clone();
+    strip_computed(&mut cloned);
+    cloned
+}
 
 const CASES: &str = include_str!("../../../fixtures/edit-parity/cases.json");
 const MINIMAL_SCENE: &str = include_str!("../../lumen-core/fixtures/minimal_scene.json");
@@ -60,9 +97,11 @@ fn wasm_engine_and_helper_binary_agree_byte_for_byte_on_structured_edits() {
             "case {name}: operations diverged between wasm engine and helper"
         );
         // Edit metadata (kind, touched targets, intent, checkpoint,
-        // inverse operations, lineage): identical, no field skipped.
+        // inverse operations, lineage): identical modulo the derived
+        // computed cache in inverse operations.
         assert_eq!(
-            wasm_response["edit"], helper_response["edit"],
+            without_computed(&wasm_response["edit"]),
+            without_computed(&helper_response["edit"]),
             "case {name}: edit envelope metadata diverged"
         );
         // Applied counts and diagnostics: identical.
@@ -84,8 +123,9 @@ fn wasm_engine_and_helper_binary_agree_byte_for_byte_on_structured_edits() {
         let wasm_scene: Value =
             serde_json::from_str(&engine.scene_json()).expect("wasm scene serializes");
         assert_eq!(
-            wasm_scene, helper_response["scene"],
-            "case {name}: resulting scenes diverged"
+            without_computed(&wasm_scene),
+            without_computed(&helper_response["scene"]),
+            "case {name}: resulting scenes diverged (authoritative fields)"
         );
     }
 }
@@ -117,14 +157,16 @@ fn wasm_engine_and_helper_binary_agree_on_apply_operations() {
         assert_eq!(wasm_response["ok"], json!(true), "case {name}");
 
         assert_eq!(
-            wasm_response["inverse_operations"], helper_response["edit"]["inverse_operations"],
-            "case {name}: inverse operations diverged"
+            without_computed(&wasm_response["inverse_operations"]),
+            without_computed(&helper_response["edit"]["inverse_operations"]),
+            "case {name}: inverse operations diverged (authoritative fields)"
         );
         let wasm_scene: Value =
             serde_json::from_str(&engine.scene_json()).expect("wasm scene serializes");
         assert_eq!(
-            wasm_scene, helper_response["scene"],
-            "case {name}: resulting scenes diverged"
+            without_computed(&wasm_scene),
+            without_computed(&helper_response["scene"]),
+            "case {name}: resulting scenes diverged (authoritative fields)"
         );
     }
 }

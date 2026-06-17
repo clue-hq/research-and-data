@@ -1,12 +1,65 @@
 from __future__ import annotations
 
+import base64
 import json
 import re
+from pathlib import Path
 from typing import Any
 
-from .loop import DslAuthor, VisualReviewer
+from .loop import AgentDirector, DslAuthor, VisualReviewer
 from .prompts import DSL_AUTHOR_SYSTEM_PROMPT, VISUAL_REVIEWER_SYSTEM_PROMPT
-from .schemas import AuthoringBlockRequest, VisualCritique
+from .schemas import AgentDirectorDecision, AuthoringBlockRequest, VisualCritique
+
+
+DIRECTOR_SYSTEM_PROMPT = """You are the Lumen agentic design director.
+
+You receive a curated situation report for the CURRENT iteration: user request,
+editor conversation, a compact scene summary, the scene subtree for the nodes
+named by the top diagnostics, errors-first ranked diagnostics, the latest visual
+critique, a short history of what was already tried and rejected, and a preview
+summary. The latest rendered preview is attached as an image. This is a fresh
+snapshot, not an accumulating transcript — judge the situation as it is now.
+
+Your job is to choose the next action mode. Use your judgment. Do not blindly
+follow a static diagnostic classifier. Errors outrank warnings. If the issue is
+composition, visual balance, parent/artboard overflow, or repeated failed local
+patches (see attempt_history), choose a structural rewrite mode instead of a tiny
+targeted patch.
+
+Return only a structured AgentDirectorDecision.
+"""
+
+
+class LangChainAgentDirector(AgentDirector):
+    def __init__(self, model: str) -> None:
+        raw_model = init_model(model)
+        self.structured_model = try_structured_model(raw_model, AgentDirectorDecision)
+        self.raw_model = raw_model
+
+    def decide(self, *, full_context: dict) -> AgentDirectorDecision:
+        user_content = [
+            {
+                "type": "text",
+                "text": (
+                    "Choose the next Lumen design action mode from this curated "
+                    "situation report. The latest preview is attached as an image. "
+                    "Return AgentDirectorDecision JSON only.\n\n"
+                    f"{json.dumps(full_context, indent=2)}"
+                ),
+            },
+            *image_blocks_from_context(full_context),
+        ]
+        response = self.structured_model.invoke(
+            [
+                {"role": "system", "content": DIRECTOR_SYSTEM_PROMPT},
+                {"role": "user", "content": user_content},
+            ]
+        )
+        if isinstance(response, AgentDirectorDecision):
+            return response
+        if isinstance(response, dict):
+            return AgentDirectorDecision.model_validate(response)
+        return parse_director_decision(response_content(response))
 
 
 class LangChainDslAuthor(DslAuthor):
@@ -14,17 +67,25 @@ class LangChainDslAuthor(DslAuthor):
         self.model = init_model(model)
 
     def write_block(self, request: AuthoringBlockRequest) -> str:
+        payload = request.model_dump(mode="json")
+        user_content = [
+            {
+                "type": "text",
+                "text": (
+                    "Write one Lumen DSL block for this authoring request. "
+                    "Return DSL only. You are receiving the complete context; "
+                    "use the director_decision to decide whether this should be "
+                    "a new artifact, structural rewrite, layout-cluster rewrite, "
+                    "or targeted patch.\n\n"
+                    f"{json.dumps(payload, indent=2)}"
+                ),
+            },
+            *image_blocks_from_context(request.full_context),
+        ]
         response = self.model.invoke(
             [
                 {"role": "system", "content": DSL_AUTHOR_SYSTEM_PROMPT},
-                {
-                    "role": "user",
-                    "content": (
-                        "Write one Lumen DSL block for this authoring request. "
-                        "Return DSL only.\n\n"
-                        f"{json.dumps(request.model_dump(mode='json'), indent=2)}"
-                    ),
-                },
+                {"role": "user", "content": user_content},
             ]
         )
         return extract_dsl(response_content(response))
@@ -45,14 +106,21 @@ class LangChainVisualReviewer(VisualReviewer):
         knowledge: list[dict],
         previous_feedback: list[dict],
         preview_payload: dict,
+        full_context: dict,
     ) -> VisualCritique:
+        # The real preview image is attached below as an image block. In the JSON
+        # text we send the COMPACT payload (base64 stripped, SVG capped) so the
+        # token-heavy raw artifacts are never duplicated into the prompt text.
         payload = {
             "user_request": user_request,
             "scene_summary": scene_summary,
             "export_summary": export_summary,
             "preview_payload": compact_preview_payload(preview_payload),
             "knowledge": knowledge,
-            "previous_feedback": previous_feedback,
+            # `previous_feedback` is intentionally NOT dumped raw — it accumulates
+            # every iteration. The curated `full_context` already carries the
+            # windowed `attempt_history` and `latest_critique`.
+            "full_context": full_context,
             "required_schema": VisualCritique.model_json_schema(),
         }
         user_content = [
@@ -90,6 +158,7 @@ def create_provider_quality_loop(prompt: str, config):
             tools=tools,
             author=LangChainDslAuthor(config.model),
             reviewer=LangChainVisualReviewer(config.model),
+            director=LangChainAgentDirector(config.model),
         ),
         tools,
     )
@@ -161,6 +230,30 @@ def preview_image_blocks(preview_payload: dict) -> list[dict]:
     return blocks
 
 
+def image_blocks_from_context(full_context: dict) -> list[dict]:
+    """Read the LATEST preview PNG pointed to by the curated context and return it
+    as a single image block. The base64 is produced here, at the model boundary,
+    and never stored in the context dict — so it is sent exactly once per call and
+    cannot pile up across iterations the way the old `preview_activity` list did.
+    """
+    summary = (full_context or {}).get("preview_summary") or {}
+    path = summary.get("png_path")
+    if not path:
+        return []
+    try:
+        data = base64.b64encode(Path(path).read_bytes()).decode("ascii")
+    except OSError:
+        return []
+    return [
+        {
+            "type": "image",
+            "source_type": "base64",
+            "mime_type": "image/png",
+            "data": data,
+        }
+    ]
+
+
 def extract_dsl(text: str) -> str:
     fenced = re.search(r"```[^\n\r]*[\n\r]+(.*?)```", text, flags=re.DOTALL)
     if fenced:
@@ -172,3 +265,9 @@ def parse_visual_critique(text: str) -> VisualCritique:
     fenced = re.search(r"```(?:json)?\s*(.*?)```", text, flags=re.DOTALL)
     candidate = fenced.group(1) if fenced else text
     return VisualCritique.model_validate_json(candidate.strip())
+
+
+def parse_director_decision(text: str) -> AgentDirectorDecision:
+    fenced = re.search(r"```(?:json)?\s*(.*?)```", text, flags=re.DOTALL)
+    candidate = fenced.group(1) if fenced else text
+    return AgentDirectorDecision.model_validate_json(candidate.strip())

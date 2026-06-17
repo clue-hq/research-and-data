@@ -538,6 +538,7 @@ pub struct TextEditPatch {
     pub wrap: FieldPatch<TextWrap>,
     pub direction: FieldPatch<TextDirection>,
     pub style_token: OptionalFieldPatch<String>,
+    pub font_size_token: OptionalFieldPatch<String>,
     pub line_height_token: OptionalFieldPatch<String>,
     pub letter_spacing_token: OptionalFieldPatch<String>,
 }
@@ -2079,6 +2080,7 @@ fn apply_text_edit_patch(mut text: TextNode, patch: TextEditPatch) -> TextNode {
     apply_field_patch(&mut text.wrap, patch.wrap);
     apply_field_patch(&mut text.direction, patch.direction);
     apply_optional_patch(&mut text.style_token, patch.style_token);
+    apply_optional_patch(&mut text.font_size_token, patch.font_size_token);
     apply_optional_patch(&mut text.line_height_token, patch.line_height_token);
     apply_optional_patch(&mut text.letter_spacing_token, patch.letter_spacing_token);
     text

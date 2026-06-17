@@ -1,10 +1,11 @@
 use crate::sidecar::build_sidecar;
 use crate::svg::{fmt_num, measurer_as_dyn, resolve_page_ids, FALLBACK_MEASURER};
 use lumen_core::{
-    effect_support_diagnostics, render_box_for_node, AssetKind, Diagnostic, DiagnosticSubject,
-    ExportAdapter, ExportArtifact, ExportError, ExportFormat, ExportRequest, ExportResult, Node,
-    NodeId, NodeKind, Page, Paint, PdfIntent, Phase, Rect, RenderTarget, Scene, SharedTextMeasurer,
-    TextAlign, TextDirection, TextMeasureInput, TextMeasurer, Unit,
+    effect_support_diagnostics, page_size_points, render_box_for_node, unit_to_points, AssetKind,
+    Diagnostic, DiagnosticSubject, ExportAdapter, ExportArtifact, ExportError, ExportFormat,
+    ExportRequest, ExportResult, Node, NodeId, NodeKind, Page, Paint, PdfIntent, Phase, Rect,
+    RenderTarget, Scene, SharedTextMeasurer, TextAlign, TextDirection, TextMeasureInput,
+    TextMeasurer,
 };
 
 #[derive(Clone, Debug, Default)]
@@ -129,7 +130,7 @@ impl<'a> PdfPageRenderer<'a> {
         page_box: PdfPageBox,
         measurer: Option<&'a dyn TextMeasurer>,
     ) -> Self {
-        let scale = unit_to_points(&page.size.unit);
+        let scale = unit_to_points(1.0, &page.size.unit);
         Self {
             scene,
             page,
@@ -588,7 +589,7 @@ struct PdfPageBox {
 
 impl PdfPageBox {
     fn for_page(page: &Page, include_bleed: bool) -> Self {
-        let scale = unit_to_points(&page.size.unit);
+        let scale = unit_to_points(1.0, &page.size.unit);
         let rect = if include_bleed {
             page.bleed.clone().unwrap_or(Rect {
                 x: 0.0,
@@ -649,7 +650,7 @@ fn print_document_guardrails(
         let has_mixed_sizes = pages
             .iter()
             .skip(1)
-            .any(|page| !same_page_size(&first_page.size, &page.size));
+            .any(|page| !same_page_size(first_page, page));
 
         if has_mixed_sizes {
             diagnostics.push(
@@ -713,10 +714,11 @@ fn print_page_guardrails(scene: &Scene, page: &Page, request: &ExportRequest) ->
     diagnostics
 }
 
-fn same_page_size(left: &lumen_core::PageSize, right: &lumen_core::PageSize) -> bool {
-    left.unit == right.unit
-        && (left.width - right.width).abs() <= f64::EPSILON
-        && (left.height - right.height).abs() <= f64::EPSILON
+fn same_page_size(left: &Page, right: &Page) -> bool {
+    let (left_width, left_height) = page_size_points(left);
+    let (right_width, right_height) = page_size_points(right);
+    (left_width - right_width).abs() <= f64::EPSILON
+        && (left_height - right_height).abs() <= f64::EPSILON
 }
 
 fn collect_required_slot_safe_area_guardrails(
@@ -918,14 +920,6 @@ fn text_overflow_reason(overflow_x: bool, overflow_y: bool, exceeds_max_lines: b
         reasons.push("max lines");
     }
     reasons.join(", ")
-}
-
-fn unit_to_points(unit: &Unit) -> f64 {
-    match unit {
-        Unit::Px => 1.0,
-        Unit::Mm => 72.0 / 25.4,
-        Unit::In => 72.0,
-    }
 }
 
 fn pdf_rgb(color: &lumen_core::Color) -> Option<(String, String, String)> {

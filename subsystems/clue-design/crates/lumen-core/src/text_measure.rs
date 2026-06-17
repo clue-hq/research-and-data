@@ -54,6 +54,74 @@ pub type SharedTextMeasurer = Arc<dyn TextMeasurer + Send + Sync>;
 #[derive(Clone, Debug, Default)]
 pub struct HeuristicTextMeasurer;
 
+/// A stable key for a measurement input, shared by the editor's
+/// measure-then-inject convergence (Wave 3 C4). The editor supplies SkParagraph
+/// width/height keyed by the same input fields the engine lays out with, so
+/// editor `computed` geometry becomes Skia-faithful (closing the E3 caveat)
+/// without a wasm→JS callback during layout. The key logic lives only here;
+/// the editor sends raw inputs and the engine computes the key.
+pub fn measure_key(input: &TextMeasureInput) -> String {
+    fn opt_f(value: Option<f64>) -> String {
+        value
+            .map(|v| format!("{v:.3}"))
+            .unwrap_or_else(|| "_".to_owned())
+    }
+    fn opt_u(value: Option<u16>) -> String {
+        value
+            .map(|v| v.to_string())
+            .unwrap_or_else(|| "_".to_owned())
+    }
+    // Unit-separator delimited; covers every field that affects measurement.
+    [
+        input.content.clone(),
+        input.font_family.clone(),
+        format!("{:.3}", input.font_size),
+        input.font_weight.to_string(),
+        format!("{:.3}", input.line_height),
+        format!("{:.3}", input.letter_spacing),
+        format!("{:?}", input.wrap),
+        opt_u(input.max_lines),
+        format!("{:?}", input.direction),
+        opt_f(input.max_width),
+        opt_f(input.max_height),
+    ]
+    .join("\u{1f}")
+}
+
+/// A measurer that overrides width/height for known inputs with editor-supplied
+/// (SkParagraph) metrics, delegating everything else — including per-line boxes
+/// — to the heuristic. Send+Sync because it holds only data (a JS-callback
+/// measurer would be !Send), which is why measure-then-inject is the V0 path.
+#[derive(Debug, Default)]
+pub struct ProvidedTextMeasurer {
+    overrides: std::collections::HashMap<String, (f64, f64)>,
+    fallback: HeuristicTextMeasurer,
+}
+
+impl ProvidedTextMeasurer {
+    pub fn new(overrides: std::collections::HashMap<String, (f64, f64)>) -> Self {
+        Self {
+            overrides,
+            fallback: HeuristicTextMeasurer,
+        }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.overrides.is_empty()
+    }
+}
+
+impl TextMeasurer for ProvidedTextMeasurer {
+    fn measure(&self, input: &TextMeasureInput) -> TextMeasureOutput {
+        let mut output = self.fallback.measure(input);
+        if let Some(&(width, height)) = self.overrides.get(&measure_key(input)) {
+            output.width = width;
+            output.height = height;
+        }
+        output
+    }
+}
+
 impl TextMeasureInput {
     pub fn from_text_node(text: &TextNode) -> Self {
         Self {
@@ -213,5 +281,65 @@ fn line_box(
         y,
         height: line_height_px,
         baseline: y + input.font_size,
+    }
+}
+
+#[cfg(test)]
+mod provided_measurer_tests {
+    use super::*;
+
+    fn input(content: &str) -> TextMeasureInput {
+        TextMeasureInput {
+            content: content.to_owned(),
+            font_family: "Inter".to_owned(),
+            font_size: 18.0,
+            font_weight: 600,
+            line_height: 1.2,
+            letter_spacing: 0.0,
+            wrap: TextWrap::NoWrap,
+            max_lines: None,
+            direction: TextDirection::Ltr,
+            max_width: None,
+            max_height: None,
+        }
+    }
+
+    #[test]
+    fn overrides_width_height_for_a_known_input_only() {
+        let known = input("Hello");
+        let mut overrides = std::collections::HashMap::new();
+        overrides.insert(measure_key(&known), (321.0, 47.0));
+        let measurer = ProvidedTextMeasurer::new(overrides);
+
+        // Known input → the editor's Skia-faithful override.
+        let out = measurer.measure(&known);
+        assert_eq!(out.width, 321.0);
+        assert_eq!(out.height, 47.0);
+        // Per-line detail still comes from the heuristic (not overridden).
+        assert_eq!(
+            out.line_count,
+            HeuristicTextMeasurer.measure(&known).line_count
+        );
+
+        // Unknown input → heuristic fallback, unchanged.
+        let other = input("Different");
+        let fallback = HeuristicTextMeasurer.measure(&other);
+        let provided = measurer.measure(&other);
+        assert_eq!(provided.width, fallback.width);
+        assert_eq!(provided.height, fallback.height);
+    }
+
+    #[test]
+    fn key_distinguishes_inputs_that_change_measurement() {
+        let base = input("Hello");
+        assert_eq!(measure_key(&base), measure_key(&input("Hello")));
+
+        let mut bigger = input("Hello");
+        bigger.font_size = 24.0;
+        assert_ne!(measure_key(&base), measure_key(&bigger));
+
+        let mut bounded = input("Hello");
+        bounded.max_width = Some(120.0);
+        assert_ne!(measure_key(&base), measure_key(&bounded));
     }
 }

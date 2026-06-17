@@ -71,6 +71,8 @@ fn custom_px_page(id: &str, width: f64, height: f64, children: Vec<NodeId>) -> P
             } else {
                 Orientation::Portrait
             },
+            source: None,
+            output: None,
         },
         children,
         bleed: None,

@@ -99,6 +99,21 @@ impl LumenEngine {
         self.inner.validate()
     }
 
+    /// Point→node hit-test in absolute page space (Wave 3 C3a). Returns
+    /// `{ hit: string|null, stack: string[] }` (stack is bottom-to-top).
+    #[wasm_bindgen(js_name = hitTest)]
+    pub fn hit_test(&self, page_id: &str, x: f64, y: f64) -> String {
+        self.inner.hit_test(page_id, x, y)
+    }
+
+    /// Install editor-supplied SkParagraph text metrics and relayout, so text
+    /// `computed` becomes Skia-faithful (Wave 3 C4 measure-then-inject). Empty
+    /// payload clears the override. Returns `{ ok, count }` or an error object.
+    #[wasm_bindgen(js_name = setMeasurements)]
+    pub fn set_measurements(&mut self, measurements_json: &str) -> String {
+        self.inner.set_measurements(measurements_json)
+    }
+
     /// Handshake payload, also exposed on the instance for convenience.
     pub fn version(&self) -> String {
         engine::version_payload().to_string()

@@ -30,6 +30,7 @@ fn invalid_tree_fixture_exposes_expected_contract_diagnostics() {
     let scene = decode_scene("invalid_tree_reference", INVALID_TREE_REFERENCE);
     let signatures = diagnostic_signatures(&scene);
     let expected = sorted_signatures(vec![
+        signature("advice", "validation", "LUMV0805"),
         signature("error", "validation", "LUMV0300"),
         signature("error", "validation", "LUMV0301"),
     ]);
@@ -43,6 +44,7 @@ fn invalid_slot_export_fixture_exposes_expected_contract_diagnostics() {
     let scene = decode_scene("invalid_slot_export", INVALID_SLOT_EXPORT);
     let signatures = diagnostic_signatures(&scene);
     let expected = sorted_signatures(vec![
+        signature("advice", "validation", "LUMV0805"),
         signature("error", "validation", "LUMV0500"),
         signature("warning", "validation", "LUMV0501"),
         signature("error", "validation", "LUMV0502"),
@@ -614,6 +616,8 @@ fn a4_page() -> Page {
             unit: Unit::Mm,
             preset: Some(PagePreset::A4),
             orientation: Orientation::Portrait,
+            source: None,
+            output: None,
         },
         children: Vec::new(),
         bleed: Some(lumen_core::Rect {
@@ -642,6 +646,8 @@ fn linkedin_ad_page() -> Page {
             unit: Unit::Px,
             preset: Some(PagePreset::LinkedinAd),
             orientation: Orientation::Landscape,
+            source: None,
+            output: None,
         },
         children: Vec::new(),
         bleed: None,

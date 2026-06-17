@@ -1,6 +1,7 @@
 use crate::diagnostics::{Diagnostic, DiagnosticSeverity, DiagnosticSubject, Phase};
 use crate::ids::{NodeId, PageId};
 use crate::operations::{NodePatch, Operation, OptionalFieldPatch};
+use crate::page_geometry::page_geometry;
 use crate::scene::{
     AutoLayoutDirection, ComputedGeometry, Dimension, LayoutAnchor, Node, NodeKind, Rect, Scene,
     SizeSpec, TextWrap,
@@ -76,6 +77,7 @@ pub fn layout_scene(scene: &Scene, options: LayoutOptions) -> LayoutResult {
         .unwrap_or(&FALLBACK_MEASURER);
     let mut engine = LayoutEngine::new(scene, measurer);
     engine.layout_pages();
+    engine.validate_artboard_bounds();
     engine.validate_layout_anchors();
     engine.validate_text_nodes();
 
@@ -126,9 +128,10 @@ impl<'a> LayoutEngine<'a> {
 
     fn layout_pages(&mut self) {
         for page in self.scene.pages.values() {
+            let geometry = page_geometry(page);
             let page_size = Size2 {
-                width: page.size.width,
-                height: page.size.height,
+                width: geometry.layout.width,
+                height: geometry.layout.height,
             };
 
             for child_id in &page.children {
@@ -683,7 +686,21 @@ impl<'a> LayoutEngine<'a> {
 
     fn measure_context_for(&self, node: &Node) -> MeasureContext {
         match &node.kind {
-            NodeKind::Text(text) => MeasureContext::Text(TextMeasureInput::from_text_node(text)),
+            NodeKind::Text(text) => {
+                let mut input = TextMeasureInput::from_text_node(text);
+                // A slot-bound text node must hug to the WORST-CASE fixture (the
+                // largest data it will ever hold), not just its placeholder/sample.
+                // Otherwise a hug height sized to the sample under-reserves and the
+                // worst_case overflows (LUMV0810) — and a hug box cannot be enlarged
+                // by a repair, so the run deadlocks. Reserving worst_case here keeps
+                // hug heights both legible (no dead zone beyond worst_case) and safe.
+                if let Some(worst_case) = self.worst_case_fixture_for(&node.id) {
+                    if worst_case.chars().count() > input.content.chars().count() {
+                        input.content = worst_case;
+                    }
+                }
+                MeasureContext::Text(input)
+            }
             NodeKind::Image(_) => MeasureContext::Box {
                 natural: fixed_or_zero(&node.size),
             },
@@ -691,6 +708,20 @@ impl<'a> LayoutEngine<'a> {
                 natural: self.natural_size(node),
             },
         }
+    }
+
+    /// The longest fixture (placeholder / sample / worst_case) of the slot bound to
+    /// `node_id`, if any. Used so a slot-bound text node reserves room for its
+    /// worst-case data when hugging.
+    fn worst_case_fixture_for(&self, node_id: &NodeId) -> Option<String> {
+        let slot = self
+            .scene
+            .slots
+            .values()
+            .find(|slot| slot.bound_nodes.contains(node_id))?;
+        slot_fixtures(slot)
+            .into_iter()
+            .max_by_key(|fixture| fixture.chars().count())
     }
 
     fn write_geometry(&mut self, node: &Node, origin: Point2, size: Size2) {
@@ -708,6 +739,143 @@ impl<'a> LayoutEngine<'a> {
                 render_bounds,
             },
         );
+    }
+
+    fn validate_artboard_bounds(&mut self) {
+        for page in self.scene.pages.values() {
+            let page_bounds = page_geometry(page).layout;
+            if page_bounds.width <= 0.0
+                || page_bounds.height <= 0.0
+                || !page_bounds.width.is_finite()
+                || !page_bounds.height.is_finite()
+            {
+                self.diagnostics.push(
+                    Diagnostic::error(
+                        Phase::Layout,
+                        "LUMV0803",
+                        format!("page {} has invalid canonical layout bounds", page.id),
+                        Some(DiagnosticSubject::Page(page.id.clone())),
+                    )
+                    .with_hint("Normalize the page/artboard size before layout or export."),
+                );
+                continue;
+            }
+
+            for child_id in &page.children {
+                self.validate_node_against_page(child_id, page, &page_bounds);
+                self.validate_node_children_against_parent(child_id, page, &page_bounds, true);
+            }
+        }
+    }
+
+    fn validate_node_against_page(
+        &mut self,
+        node_id: &NodeId,
+        page: &crate::scene::Page,
+        page_bounds: &Rect,
+    ) {
+        let Some(bounds) = self.node_bounds(node_id, page_bounds) else {
+            return;
+        };
+        if rect_contains_within(page_bounds, &bounds, PAGE_BOUNDS_TOLERANCE_PT) {
+            return;
+        }
+        if page
+            .bleed
+            .as_ref()
+            .is_some_and(|bleed| rect_contains(bleed, &bounds))
+        {
+            self.diagnostics.push(
+                Diagnostic::warning(
+                    Phase::Layout,
+                    "LUMV0802",
+                    format!(
+                        "node {} on page {} falls outside trim bounds but inside bleed",
+                        node_id, page.id
+                    ),
+                    Some(DiagnosticSubject::Node(node_id.clone())),
+                )
+                .with_hint("Review bleed-safe content before approving print export."),
+            );
+            return;
+        }
+
+        self.diagnostics.push(
+            Diagnostic::error(
+                Phase::Layout,
+                "LUMV0800",
+                format!(
+                    "node {} exceeds exportable bounds for page {}",
+                    node_id, page.id
+                ),
+                Some(DiagnosticSubject::Node(node_id.clone())),
+            )
+            .with_hint("Move or resize the node so its computed bounds fit the artboard."),
+        );
+    }
+
+    fn validate_node_children_against_parent(
+        &mut self,
+        node_id: &NodeId,
+        page: &crate::scene::Page,
+        parent_bounds: &Rect,
+        parent_is_page: bool,
+    ) {
+        let Some(node) = self.scene.nodes.get(node_id) else {
+            return;
+        };
+        let Some(node_bounds) = self.node_bounds(node_id, parent_bounds) else {
+            return;
+        };
+
+        if !parent_is_page && !rect_contains(parent_bounds, &node_bounds) {
+            let severity = if self.parent_clips(node_id) {
+                DiagnosticSeverity::Error
+            } else {
+                DiagnosticSeverity::Warning
+            };
+            let diagnostic = Diagnostic {
+                severity,
+                phase: Phase::Layout,
+                code: "LUMV0801".to_owned(),
+                message: format!("node {} exceeds parent bounds on page {}", node_id, page.id),
+                subject: Some(DiagnosticSubject::Node(node_id.clone())),
+                hint: Some(
+                    "Move, resize, wrap, or change the parent layout so the child fits.".to_owned(),
+                ),
+            };
+            self.diagnostics.push(diagnostic);
+        }
+
+        for child_id in &node.children {
+            self.validate_node_children_against_parent(child_id, page, &node_bounds, false);
+        }
+    }
+
+    fn node_bounds(&self, node_id: &NodeId, parent_bounds: &Rect) -> Option<Rect> {
+        if let Some(geometry) = self.geometry.get(node_id) {
+            return Some(geometry.layout_bounds.clone());
+        }
+        let node = self.scene.nodes.get(node_id)?;
+        let size = fixed_or_zero(&node.size);
+        Some(Rect {
+            x: parent_bounds.x + node.transform.x,
+            y: parent_bounds.y + node.transform.y,
+            width: size.width,
+            height: size.height,
+        })
+    }
+
+    fn parent_clips(&self, node_id: &NodeId) -> bool {
+        match self.scene.parent_of(node_id) {
+            Some(crate::scene::ParentRef::Node(parent_id)) => self
+                .scene
+                .nodes
+                .get(&parent_id)
+                .map(|node| node.clip)
+                .unwrap_or(false),
+            Some(crate::scene::ParentRef::Page(_)) | None => true,
+        }
     }
 
     fn validate_slots(&mut self) {
@@ -1442,16 +1610,34 @@ fn text_fit(
     bounds: &Rect,
     policy: &OverflowPolicy,
 ) -> TextFit {
+    // Measure the fixture the way the NODE actually renders — its own wrap +
+    // max_lines — NOT the slot's overflow policy. The DSL cannot set a slot's
+    // overflow policy (it is always Error), so deriving wrap from the policy
+    // measured every slotted fixture as a single no-wrap line and reported a false
+    // LUMV0810 for any wrapping body whose worst_case spans more than one line. The
+    // slot.overflow policy still governs the RESPONSE to a genuine overflow
+    // (Error → diagnostic, ShrinkFont → shrink, Clip/Ellipsis → lossy advice) in the
+    // caller; here we only reflect how the text flows. An explicit Wrap policy still
+    // wins (it can raise max_lines beyond the node's own cap).
     let (wrap, max_lines) = match policy {
         OverflowPolicy::Wrap { max_lines } => (TextWrap::Wrap, *max_lines),
-        _ => (TextWrap::NoWrap, None),
+        _ => (text.wrap.clone(), text.max_lines),
     };
     let measured = measurer.measure(&TextMeasureInput {
         content: content.to_owned(),
         font_family: text.font_family.clone(),
         font_size,
         font_weight: text.font_weight,
-        line_height: 1.2,
+        // Measure the fixture with the node's OWN line height, not a hardcoded 1.2.
+        // The hardcode made a hug-height (or any lh < 1.2) slotted text node report a
+        // false LUMV0810 overflow — the fixture was measured taller than the box the
+        // node actually reserves — which blocked legible hug heights and tight
+        // headlines. Fall back to 1.2 only when the node carries no line height.
+        line_height: if text.line_height > 0.0 {
+            text.line_height
+        } else {
+            1.2
+        },
         letter_spacing: 0.0,
         wrap,
         max_lines,
@@ -1481,6 +1667,27 @@ fn rect_contains(container: &Rect, child: &Rect) -> bool {
         && child.y >= container.y
         && child.x + child.width <= container.x + container.width
         && child.y + child.height <= container.y + container.height
+}
+
+/// Sub-point tolerance for page-bounds containment.
+///
+/// A `fill,fill` root artboard resolves to the rounded preset height (A4 portrait
+/// → 842.0pt) while the canonical exportable page height is 841.889…pt. A strict
+/// containment check then reports a permanent ~0.11pt overflow (`LUMV0800`) on the
+/// root frame that NO authoring repair can clear — the repair loop is forced to
+/// re-assert `s(fill,fill)`, which reproduces the same rounding. One point is far
+/// below rendering significance (≈4px even at 300 DPI, on the page edge only) and
+/// far below any genuine overflow (the smallest real-overflow fixtures exceed
+/// bounds by tens of points), so forgiving it here removes the phantom without
+/// masking real out-of-bounds content. Parent-bounds checks (`LUMV0801`) keep the
+/// strict `rect_contains`.
+const PAGE_BOUNDS_TOLERANCE_PT: f64 = 1.0;
+
+fn rect_contains_within(container: &Rect, child: &Rect, tolerance: f64) -> bool {
+    child.x >= container.x - tolerance
+        && child.y >= container.y - tolerance
+        && child.x + child.width <= container.x + container.width + tolerance
+        && child.y + child.height <= container.y + container.height + tolerance
 }
 
 fn advice(

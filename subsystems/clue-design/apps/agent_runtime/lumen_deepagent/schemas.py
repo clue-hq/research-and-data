@@ -157,6 +157,25 @@ class PreviewTarget(BaseModel):
     purpose: str = "visual_critique"
 
 
+class AgentActionMode(str, Enum):
+    new_artifact = "new_artifact"
+    full_page_rewrite = "full_page_rewrite"
+    replace_artboard_subtree = "replace_artboard_subtree"
+    layout_cluster_rewrite = "layout_cluster_rewrite"
+    targeted_patch = "targeted_patch"
+    accept = "accept"
+    stop_with_gap = "stop_with_gap"
+
+
+class AgentDirectorDecision(BaseModel):
+    action_mode: AgentActionMode
+    rationale: str
+    target: Optional[VisualTarget] = None
+    allowed_scope: JsonObject = Field(default_factory=dict)
+    instructions_to_author: str = ""
+    uses_full_context: bool = True
+
+
 class AuthoringBlockRequest(BaseModel):
     iteration: int
     user_request: str
@@ -165,6 +184,8 @@ class AuthoringBlockRequest(BaseModel):
     knowledge_snippets: List[KnowledgeSnippet] = Field(default_factory=list)
     current_scene_summary: JsonObject = Field(default_factory=dict)
     repair_context: Optional[JsonObject] = None
+    full_context: JsonObject = Field(default_factory=dict)
+    director_decision: Optional[AgentDirectorDecision] = None
 
 
 class AuthoringBlockResult(BaseModel):
@@ -187,6 +208,35 @@ class EditSurfaceRecommendation(str, Enum):
     external_planner = "external_planner"
 
 
+class RepairClass(str, Enum):
+    syntax_continuation = "syntax_continuation"
+    targeted_node = "targeted_node"
+    layout_cluster = "layout_cluster"
+    slot_fixture = "slot_fixture"
+    brand_token = "brand_token"
+    asset_tool = "asset_tool"
+    unsupported_gap = "unsupported_gap"
+
+
+class LayoutClusterTarget(BaseModel):
+    page_id: Optional[str] = None
+    root_frame_id: Optional[str] = None
+    parent_node_id: Optional[str] = None
+    descendant_node_ids: List[str] = Field(default_factory=list)
+    background_node_id: Optional[str] = None
+    diagnostic_codes: List[str] = Field(default_factory=list)
+
+
+class RepairClassification(BaseModel):
+    repair_class: RepairClass
+    target: Optional[VisualTarget] = None
+    cluster: Optional[LayoutClusterTarget] = None
+    allowed_edit_surface: EditSurfaceRecommendation
+    permissions: List[str] = Field(default_factory=list)
+    prohibitions: List[str] = Field(default_factory=list)
+    reason: str
+
+
 class StopReason(str, Enum):
     accepted = "accepted"
     compile_failed = "compile_failed"
@@ -205,8 +255,12 @@ class RepairRequest(BaseModel):
     exact_feedback: str
     diagnostics: List[DiagnosticSummary] = Field(default_factory=list)
     target: Optional[VisualTarget] = None
+    repair_class: Optional[RepairClass] = None
+    cluster: Optional[LayoutClusterTarget] = None
     scene_summary: JsonObject = Field(default_factory=dict)
     allowed_edit_surface: EditSurfaceRecommendation
+    permissions: List[str] = Field(default_factory=list)
+    prohibitions: List[str] = Field(default_factory=list)
     forbidden_changes: List[str] = Field(default_factory=list)
 
 
@@ -244,7 +298,7 @@ class AgentIteration(BaseModel):
 class AgentRunState(BaseModel):
     run_id: str
     user_request: str
-    status: Literal["running", "accepted", "failed"] = "running"
+    status: Literal["running", "accepted", "completed_with_warnings", "failed"] = "running"
     iterations: List[AgentIteration] = Field(default_factory=list)
     loaded_knowledge: List[KnowledgeSnippet] = Field(default_factory=list)
     effective_brand: Optional[JsonObject] = None

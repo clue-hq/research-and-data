@@ -13,6 +13,37 @@ describe("render adapter", () => {
     expect(descriptor.height).toBeCloseTo(1122.5, 1);
   });
 
+  it("projects canonical A4 page dimensions directly in layout points", () => {
+    const page: Page = {
+      ...minimalScene.pages.page_a4,
+      size: {
+        width: 595.2755905511812,
+        height: 841.8897637795276,
+        unit: "pt",
+        preset: "a4",
+        orientation: "portrait",
+        source: {
+          width: 210,
+          height: 297,
+          unit: "mm"
+        },
+        output: {
+          physical: {
+            width: 210,
+            height: 297,
+            unit: "mm"
+          }
+        }
+      }
+    };
+
+    const descriptor = pageDescriptor(page);
+
+    expect(descriptor.width).toBeCloseTo(595.3, 1);
+    expect(descriptor.height).toBeCloseTo(841.9, 1);
+    expect(descriptor.unitScale).toBe(1);
+  });
+
   it("projects custom px page dimensions without preset coercion", () => {
     const page = {
       ...minimalScene.pages.page_a4,
@@ -351,7 +382,178 @@ describe("render adapter", () => {
       }
     });
   });
+
+  // Coordinate-model fix: the transform fallback (computed absent) must be
+  // layout-safe. For a layout-managed node (an auto-layout child) `transform`
+  // is not its real position — flow owns it — so the fallback renders it at
+  // its container origin, not at a meaningless authored transform. With the
+  // engine relaying out on load this fallback rarely fires, but it must never
+  // jump a flow-positioned node when it does.
+  it("renders an un-laid-out auto-layout child at its container origin, not its transform", () => {
+    const scene = cloneScene();
+    const page = scene.pages.page_a4;
+    const parent: Node = {
+      ...scene.nodes.node_contact_name,
+      id: "stack",
+      name: "Stack",
+      kind: { kind: "auto_layout", direction: "column", wrap: false },
+      fills: [],
+      strokes: [],
+      children: ["stack_child"],
+      computed: null
+    };
+    const child: Node = {
+      ...scene.nodes.node_contact_name,
+      id: "stack_child",
+      name: "Stack child",
+      transform: { ...scene.nodes.node_contact_name.transform, x: 999, y: 999 },
+      children: [],
+      computed: null
+    };
+    scene.nodes = { stack: parent, stack_child: child };
+    scene.pages.page_a4 = { ...page, children: ["stack"] };
+
+    const descriptor = nodeDescriptor(scene, child, scene.pages.page_a4, { x: 0, y: 0 });
+
+    expect(descriptor.x).toBe(0);
+    expect(descriptor.y).toBe(0);
+  });
+
+  it("renders an un-laid-out free child at its authored transform", () => {
+    const scene = cloneScene();
+    const page = scene.pages.page_a4;
+    const parent: Node = {
+      ...scene.nodes.node_contact_name,
+      id: "frame",
+      name: "Frame",
+      kind: { kind: "frame" },
+      fills: [],
+      strokes: [],
+      children: ["frame_child"],
+      computed: null
+    };
+    const child: Node = {
+      ...scene.nodes.node_contact_name,
+      id: "frame_child",
+      name: "Frame child",
+      transform: { ...scene.nodes.node_contact_name.transform, x: 12, y: 34 },
+      children: [],
+      computed: null
+    };
+    scene.nodes = { frame: parent, frame_child: child };
+    scene.pages.page_a4 = { ...page, children: ["frame"] };
+
+    const scale = unitScaleForTest(scene.pages.page_a4.size.unit);
+    const descriptor = nodeDescriptor(scene, child, scene.pages.page_a4, { x: 0, y: 0 });
+
+    expect(descriptor.x).toBeCloseTo(12 * scale, 3);
+    expect(descriptor.y).toBeCloseTo(34 * scale, 3);
+  });
+
+  // Wave 3 C1: descriptor carries the full shadow stack and an SVG-contour
+  // outline so the CanvasKit renderer can chain shadows and stroke dashes with
+  // export-matching geometry. Konva ignores both.
+  it("carries the full drop-shadow stack in allShadows (Konva fields preserved)", () => {
+    const scene = cloneScene();
+    const page = scene.pages.page_a4;
+    const node: Node = {
+      ...scene.nodes.node_contact_name,
+      effects: [
+        dropShadow("s1", "#000000", 0.2, 0, 4, 12),
+        dropShadow("s2", "#101010", 0.1, 0, 8, 24)
+      ]
+    };
+    scene.nodes[node.id] = node;
+
+    const descriptor = nodeDescriptor(scene, node, page);
+
+    expect(descriptor.allShadows).toHaveLength(2);
+    // Konva-era fields stay: first shadow + count of the rest.
+    expect(descriptor.shadow).toEqual(descriptor.allShadows[0]);
+    expect(descriptor.extraShadowCount).toBe(1);
+    expect(descriptor.allShadows[1].offsetY).toBeCloseTo(8 * unitScaleForTest(page.size.unit), 3);
+  });
+
+  it("emits a rounded-rect contour starting at (r,0) for a uniform corner radius", () => {
+    const scene = cloneScene();
+    const page = scene.pages.page_a4;
+    const scale = unitScaleForTest(page.size.unit);
+    const node: Node = {
+      ...scene.nodes.node_contact_name,
+      kind: { kind: "rect" },
+      size: { width: { kind: "fixed", value: 100 }, height: { kind: "fixed", value: 60 } },
+      corner: { top_left: 8, top_right: 8, bottom_right: 8, bottom_left: 8 },
+      computed: null
+    };
+    scene.nodes[node.id] = node;
+
+    const path = nodeDescriptor(scene, node, page).contourPath!;
+    const r = 8 * scale;
+    // Starts at (r, 0) — the SVG <rect rx> contour start, not drawRRect's.
+    expect(path.startsWith(`M${round3(r)} 0`)).toBe(true);
+    expect(path).toContain("A"); // has corner arcs
+    expect(path.endsWith("Z")).toBe(true);
+  });
+
+  it("squares a non-uniform corner contour (export has no per-corner radii)", () => {
+    const scene = cloneScene();
+    const page = scene.pages.page_a4;
+    const scale = unitScaleForTest(page.size.unit);
+    const node: Node = {
+      ...scene.nodes.node_contact_name,
+      kind: { kind: "rect" },
+      size: { width: { kind: "fixed", value: 100 }, height: { kind: "fixed", value: 60 } },
+      corner: { top_left: 8, top_right: 0, bottom_right: 8, bottom_left: 0 },
+      computed: null
+    };
+    scene.nodes[node.id] = node;
+
+    const path = nodeDescriptor(scene, node, page).contourPath!;
+    expect(path).toBe(`M0 0H${round3(100 * scale)}V${round3(60 * scale)}H0Z`);
+    expect(path).not.toContain("A");
+  });
+
+  it("emits an ellipse contour from the rightmost point", () => {
+    const scene = cloneScene();
+    const page = scene.pages.page_a4;
+    const scale = unitScaleForTest(page.size.unit);
+    const node: Node = {
+      ...scene.nodes.node_contact_name,
+      kind: { kind: "ellipse" },
+      size: { width: { kind: "fixed", value: 80 }, height: { kind: "fixed", value: 40 } },
+      computed: null
+    };
+    scene.nodes[node.id] = node;
+
+    const path = nodeDescriptor(scene, node, page).contourPath!;
+    expect(path.startsWith(`M${round3(80 * scale)} ${round3(20 * scale)}`)).toBe(true);
+    expect(path.endsWith("Z")).toBe(true);
+  });
+
+  it("has no contour for kinds that carry their own geometry (text)", () => {
+    const scene = cloneScene();
+    const descriptor = nodeDescriptor(scene, scene.nodes.node_contact_name, scene.pages.page_a4);
+    expect(descriptor.contourPath).toBeNull();
+  });
 });
+
+function dropShadow(
+  id: string,
+  hex: string,
+  opacity: number,
+  x: number,
+  y: number,
+  blur: number
+): NonNullable<Node["effects"]>[number] {
+  return {
+    id,
+    kind: { kind: "drop_shadow", color: { kind: "hex", value: hex }, opacity, x, y, blur, spread: 0 }
+  };
+}
+
+function round3(value: number): number {
+  return Math.round(value * 1000) / 1000;
+}
 
 function cloneScene(): Scene {
   return JSON.parse(JSON.stringify(minimalScene)) as Scene;
@@ -458,6 +660,7 @@ function sceneFromManifestArtifact(artifact: ManifestArtifact): Scene {
 
 function unitFromManifest(unit: string): Page["size"]["unit"] {
   switch (unit) {
+    case "pt":
     case "px":
     case "mm":
     case "in":
@@ -493,6 +696,7 @@ function orientationFromManifest(orientation: string): Page["size"]["orientation
 
 function unitScaleForTest(unit: Page["size"]["unit"]): number {
   switch (unit) {
+    case "pt":
     case "px":
       return 1;
     case "mm":

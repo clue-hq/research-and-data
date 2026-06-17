@@ -22,16 +22,35 @@ if load_dotenv is not None:
 from lumen_deepagent.config import AgentRuntimeConfig
 from lumen_deepagent.eval_traces import summarize_trace_dir
 from lumen_deepagent.knowledge import read_knowledge, read_task_knowledge
-from lumen_deepagent.loop import LumenQualityLoop
-from lumen_deepagent.prompts import build_subagents
+from lumen_deepagent.loop import (
+    HeuristicAgentDirector,
+    LumenQualityLoop,
+    classify_diagnostics,
+    classify_visual_critique,
+    is_layout_cluster_dsl,
+    is_surgical_dsl,
+    layout_cluster_allowed_node_ids,
+    recompose_recipe_for_feedback,
+    repair_is_surgical,
+)
+from lumen_deepagent.prompts import POSTER_RECOMPOSE_RECIPE, build_subagents
 from lumen_deepagent.providers import (
     compact_preview_payload,
     extract_dsl,
+    parse_director_decision,
     parse_visual_critique,
     preview_image_blocks,
 )
 from lumen_api.core import CoreError
-from lumen_deepagent.schemas import CritiqueCategory, VisualCritique, VisualIssue, VisualTarget
+from lumen_deepagent.schemas import (
+    AgentActionMode,
+    AgentDirectorDecision,
+    CritiqueCategory,
+    RepairClass,
+    VisualCritique,
+    VisualIssue,
+    VisualTarget,
+)
 from lumen_deepagent.tools import LumenDesignTools, validate_preview_bytes
 
 
@@ -231,15 +250,21 @@ class FakeCoreClient:
     def export_preview(
         self, scene, export_format="svg", page_ids=None, asset_store_root=None
     ):
+        # The critic now always requests a PNG (judge on pixels); return valid PNG
+        # magic bytes for png and SVG otherwise so the bundle validates.
+        if export_format == "png":
+            mime_type, raw = "image/png", b"\x89PNG\r\n\x1a\nfake"
+        else:
+            mime_type, raw = "image/svg+xml", b"<svg></svg>"
         return {
             "diagnostics": [],
             "export": {
                 "artifacts": [
                     {
                         "format": export_format,
-                        "mime_type": "image/svg+xml",
+                        "mime_type": mime_type,
                         "page_id": "page_test",
-                        "bytes": list(b"<svg></svg>"),
+                        "bytes": list(raw),
                     }
                 ]
             },
@@ -348,6 +373,141 @@ class FakePreflightErrorOnceCoreClient(FakeCoreClient):
         return super().preflight_scene(scene, brand_kit)
 
 
+class FakeAlwaysPreflightErrorCoreClient(FakeCoreClient):
+    """Compiles a full scene; preflight ALWAYS reports a blocking error on node
+    `headline`. Counts compile calls so a test can prove that a rejected
+    non-surgical repair never reaches the compiler."""
+
+    def __init__(self, repo_root: Path) -> None:
+        super().__init__(repo_root)
+        self.compile_calls = 0
+
+    def compile_dsl_into_scene(self, scene, source: str, dsl_session=None):
+        self.compile_calls += 1
+        return super().compile_dsl_into_scene(scene, source, dsl_session=dsl_session)
+
+    def preflight_scene(self, scene, brand_kit):
+        return {
+            "scene": scene,
+            "diagnostics": [
+                {
+                    "severity": "error",
+                    "code": "LUMV0903",
+                    "message": "text node headline exceeds available height",
+                    "subject": {"kind": "node", "id": "headline"},
+                    "hint": "Use hug height or reduce the headline font size.",
+                }
+            ],
+            "preflight": {
+                "has_errors": True,
+                "brand_ref_operations": [],
+                "token_operations": [],
+                "layout_operations": [],
+            },
+        }
+
+
+class FakeLayoutClusterPreflightCoreClient(FakeCoreClient):
+    def __init__(self, repo_root: Path) -> None:
+        super().__init__(repo_root)
+        self.compile_calls = 0
+        self.compile_sources = []
+
+    def compile_dsl_into_scene(self, scene, source: str, dsl_session=None):
+        self.compile_calls += 1
+        self.compile_sources.append(source)
+        return {
+            "scene": layout_cluster_scene(),
+            "applied_operations": 2,
+            "dsl": {
+                "compile_output": {
+                    "operations": [{"kind": "add_page"}, {"kind": "insert_node"}],
+                    "diagnostics": [],
+                },
+                "operation_error": None,
+                "session_snapshot": dsl_session,
+            },
+        }
+
+    def preflight_scene(self, scene, brand_kit):
+        return {
+            "scene": scene,
+            "diagnostics": [
+                {
+                    "severity": "error",
+                    "code": "LUMV0801",
+                    "message": "node headline exceeds parent card bounds",
+                    "target_node_id": "headline",
+                    "hint": "Resize the card/header layout cluster.",
+                }
+            ],
+            "preflight": {
+                "has_errors": True,
+                "brand_ref_operations": [],
+                "token_operations": [],
+                "layout_operations": [],
+            },
+        }
+
+
+class FakeSurgicalCarryForwardCoreClient(FakeCoreClient):
+    """iter1 compiles; preflight errors once on node `headline` (→ surgical);
+    iter2's modify-only block fails to COMPILE with a node-less diagnostic. Surgical
+    mode must carry forward so a later destructive block is still rejected."""
+
+    def __init__(self, repo_root: Path) -> None:
+        super().__init__(repo_root)
+        self.compile_calls = 0
+        self.preflight_calls = 0
+
+    def compile_dsl_into_scene(self, scene, source: str, dsl_session=None):
+        self.compile_calls += 1
+        if self.compile_calls == 2:
+            return {
+                "scene": scene,
+                "applied_operations": 0,
+                "dsl": {
+                    "compile_output": {
+                        "operations": [],
+                        "diagnostics": [
+                            {
+                                "severity": "error",
+                                "code": "LUMD0230",
+                                "message": "rd(...) expects 1 argument(s), got 4",
+                            }
+                        ],
+                        "halted_at": {"code": "LUMD0230", "line": 1},
+                    },
+                    "operation_error": None,
+                    "session_snapshot": None,
+                },
+            }
+        return super().compile_dsl_into_scene(scene, source, dsl_session=dsl_session)
+
+    def preflight_scene(self, scene, brand_kit):
+        self.preflight_calls += 1
+        if self.preflight_calls == 1:
+            return {
+                "scene": scene,
+                "diagnostics": [
+                    {
+                        "severity": "error",
+                        "code": "LUMV0903",
+                        "message": "text node headline exceeds available height",
+                        "subject": {"kind": "node", "id": "headline"},
+                        "hint": "Use hug height or reduce the font size.",
+                    }
+                ],
+                "preflight": {
+                    "has_errors": True,
+                    "brand_ref_operations": [],
+                    "token_operations": [],
+                    "layout_operations": [],
+                },
+            }
+        return super().preflight_scene(scene, brand_kit)
+
+
 class FakePngCoreClient(FakeCoreClient):
     def export_preview(
         self, scene, export_format="svg", page_ids=None, asset_store_root=None
@@ -399,6 +559,17 @@ class ScriptedReviewer:
         return self.critiques[index]
 
 
+class ScriptedDirector:
+    def __init__(self, decisions: list[AgentDirectorDecision]) -> None:
+        self.decisions = decisions
+        self.calls = []
+
+    def decide(self, *, full_context: dict):
+        self.calls.append(full_context)
+        index = min(len(self.calls) - 1, len(self.decisions) - 1)
+        return self.decisions[index]
+
+
 class BrokenReviewer:
     def __init__(self, message: str = "malformed reviewer response") -> None:
         self.message = message
@@ -419,6 +590,50 @@ def runtime_config(tmp_path: Path, max_iterations: int = 3) -> AgentRuntimeConfi
     )
 
 
+def layout_cluster_scene() -> dict:
+    return {
+        "meta": {"id": "doc_test", "title": "Layout cluster"},
+        "pages": {
+            "page_a4": {
+                "id": "page_a4",
+                "children": ["artboard"],
+                "size": {"width": 595.276, "height": 841.89, "unit": "pt"},
+            }
+        },
+        "nodes": {
+            "artboard": {
+                "id": "artboard",
+                "kind": {"kind": "frame"},
+                "children": ["card"],
+                "transform": {"x": 0, "y": 0},
+            },
+            "card": {
+                "id": "card",
+                "kind": {"kind": "frame"},
+                "children": ["headline", "divider", "body"],
+                "transform": {"x": 48, "y": 96},
+            },
+            "headline": {
+                "id": "headline",
+                "kind": {"kind": "text", "content": "Headline"},
+                "children": [],
+            },
+            "divider": {
+                "id": "divider",
+                "kind": {"kind": "line"},
+                "children": [],
+            },
+            "body": {
+                "id": "body",
+                "kind": {"kind": "text", "content": "Body"},
+                "children": [],
+            },
+        },
+        "slots": {},
+        "assets": {},
+    }
+
+
 def test_subagents_have_isolated_skills_and_structured_reviewer_output():
     subagents = build_subagents("anthropic:claude-opus-4-6")
 
@@ -430,7 +645,17 @@ def test_subagents_have_isolated_skills_and_structured_reviewer_output():
         agent for agent in subagents if agent["name"] == "lumen-visual-reviewer"
     )
     assert reviewer["response_format"] is VisualCritique
-    assert reviewer["skills"] == ["apps/agent_runtime/skills/lumen-visual-review"]
+    assert reviewer["skills"] == [
+        "apps/agent_runtime/knowledge_docs/skills/visual-review"
+    ]
+    author = next(
+        agent for agent in subagents if agent["name"] == "lumen-dsl-author"
+    )
+    # The author's procedures are separated by concern under knowledge_docs/skills.
+    assert "apps/agent_runtime/knowledge_docs/skills/create-design" in author["skills"]
+    assert "apps/agent_runtime/knowledge_docs/skills/repair-design" in author["skills"]
+    # The deepagent must not depend on the developer-facing docs/ tree.
+    assert all("/skills/" in skill for skill in author["skills"])
 
 
 def test_deepagents_factory_wires_full_phase_a_tool_surface(tmp_path: Path, monkeypatch):
@@ -511,10 +736,10 @@ def test_knowledge_retrieval_returns_provenance(tmp_path: Path):
 
 def test_task_knowledge_prioritizes_lumen_docs(tmp_path: Path):
     paths = [
-        "apps/agent_runtime/knowledge/lumen-dsl/authoring.md",
-        "apps/agent_runtime/knowledge/design/layout-recipes.md",
-        "apps/agent_runtime/knowledge/design-systems/brand-validation.md",
-        "apps/agent_runtime/knowledge/agent-loop/authoring-and-repair.md",
+        "apps/agent_runtime/knowledge_docs/knowledge/lumen-dsl/grammar.md",
+        "apps/agent_runtime/knowledge_docs/knowledge/design/layout-recipes.md",
+        "apps/agent_runtime/knowledge_docs/knowledge/design-systems/brand-validation.md",
+        "apps/agent_runtime/knowledge_docs/knowledge/loop/authoring-and-repair.md",
         "reference_docs/Brilliant-Reverse-Engineering-Report.md",
     ]
     for rel_path in paths:
@@ -527,24 +752,148 @@ def test_task_knowledge_prioritizes_lumen_docs(tmp_path: Path):
 
     snippets = read_task_knowledge(tmp_path, "Create a square ad")
 
-    categories = {snippet.category for snippet in snippets[:3]}
-    assert {"lumen-dsl", "design", "design-systems", "agent-loop"}.issubset(
+    assert {"lumen-dsl", "design", "design-systems", "loop"}.issubset(
         {snippet.category for snippet in snippets[:4]}
     )
-    assert all("apps/agent_runtime/knowledge" in snippet.path for snippet in snippets[:4])
-    assert any(
-        snippet.path == "apps/agent_runtime/knowledge/design-systems/brand-validation.md"
+    assert all(
+        "apps/agent_runtime/knowledge_docs/knowledge" in snippet.path
         for snippet in snippets[:4]
+    )
+    assert any(
+        snippet.path
+        == "apps/agent_runtime/knowledge_docs/knowledge/design-systems/brand-validation.md"
+        for snippet in snippets[:4]
+    )
+
+
+def test_artboard_frame_knowledge_encodes_canonical_pt_contract():
+    repo_root = Path(__file__).resolve().parents[3]
+    docs = {
+        "create": repo_root
+        / "apps/agent_runtime/knowledge_docs/skills/create-design/SKILL.md",
+        "recipes": repo_root
+        / "apps/agent_runtime/knowledge_docs/knowledge/design/layout-recipes.md",
+        "artboard": repo_root
+        / "apps/agent_runtime/knowledge_docs/knowledge/design/artboard-frame-authoring.md",
+        "cluster": repo_root
+        / "apps/agent_runtime/knowledge_docs/knowledge/loop/layout-cluster-repair.md",
+    }
+    text = "\n".join(path.read_text(encoding="utf-8") for path in docs.values())
+
+    assert "canonical layout points" in text
+    assert "A4 is about `595 x 842 pt`" in text
+    assert "artboard-local" in text
+    assert "background fill" in text
+    assert "layout_cluster" in text
+    assert "page linkedin_square size(1080,1080,px)\n  bg fr" not in text
+    assert "full-page background frame" not in docs["recipes"].read_text(
+        encoding="utf-8"
+    )
+
+
+def test_task_knowledge_surfaces_artboard_and_layout_cluster_docs():
+    repo_root = Path(__file__).resolve().parents[3]
+
+    snippets = read_task_knowledge(
+        repo_root,
+        "Create an A4 appointment card with parent overflow and oversized background layout cluster repair",
+        limit=12,
+    )
+    paths = {snippet.path for snippet in snippets}
+    excerpts = "\n".join(snippet.excerpt for snippet in snippets)
+
+    assert (
+        "apps/agent_runtime/knowledge_docs/knowledge/design/artboard-frame-authoring.md"
+        in paths
+    )
+    assert (
+        "apps/agent_runtime/knowledge_docs/knowledge/loop/layout-cluster-repair.md"
+        in paths
+    )
+    assert "canonical layout points" in excerpts
+    assert "parent containment" in excerpts
+
+
+def test_grammar_and_text_refs_are_pinned_for_authoring():
+    # Regression for the va()/divider hallucinations: a prompt whose words do NOT
+    # overlap the grammar/text references (no "valign", "grammar", "node kind")
+    # must still retrieve them. They are pinned regardless of ranker score, even at
+    # the default limit, so the author always has the valid node kinds and the
+    # "there is no valign" rule in context.
+    repo_root = Path(__file__).resolve().parents[3]
+
+    snippets = read_task_knowledge(
+        repo_root,
+        "Create a patient appointment card with a clear headline and a Book a Demo button",
+        limit=8,
+    )
+    paths = {snippet.path for snippet in snippets}
+
+    assert (
+        "apps/agent_runtime/knowledge_docs/knowledge/lumen-dsl/grammar.md" in paths
+    )
+    assert "apps/agent_runtime/knowledge_docs/knowledge/lumen-dsl/text.md" in paths
+
+
+def test_block_catalog_is_pinned_and_delivered_full():
+    # P0.2: the vetted block catalog must be pinned for any authoring task AND
+    # delivered in FULL (not windowed to a best_excerpt) — a truncated block
+    # example teaches the author broken/partial syntax.
+    repo_root = Path(__file__).resolve().parents[3]
+
+    snippets = read_task_knowledge(
+        repo_root,
+        "Create a patient appointment card with a clear headline and a Book a Demo button",
+    )
+    by_path = {snippet.path: snippet for snippet in snippets}
+    base = "apps/agent_runtime/knowledge_docs/knowledge/design/blocks/"
+
+    for name in ("README.md", "patterns.md", "layout.md", "actions.md", "data-display.md"):
+        rel = base + name
+        assert rel in by_path, f"block doc {name} not pinned for authoring"
+        on_disk = (repo_root / rel).read_text(encoding="utf-8")
+        assert by_path[rel].excerpt == on_disk, (
+            f"block doc {name} was windowed/truncated, not delivered in full"
+        )
+
+
+def test_artboard_fixture_prompts_cover_required_surfaces():
+    repo_root = Path(__file__).resolve().parents[3]
+    fixture_path = repo_root / "apps/agent_runtime/evaluation/fixture_prompts.json"
+    fixtures = json.loads(fixture_path.read_text(encoding="utf-8"))
+    by_id = {fixture["id"]: fixture for fixture in fixtures}
+
+    required_ids = {
+        "a4_appointment_card_artboard_frame",
+        "letter_healthcare_one_pager",
+        "square_linkedin_neurosurgery",
+        "wide_linkedin_healthcare",
+        "parent_overflow_cluster_repair",
+    }
+
+    assert required_ids.issubset(by_id)
+    assert "595x842pt" in by_id["a4_appointment_card_artboard_frame"]["prompt"]
+    assert "612x792pt" in by_id["letter_healthcare_one_pager"]["prompt"]
+    assert "1080x1080pt" in by_id["square_linkedin_neurosurgery"]["prompt"]
+    assert "1200x628pt" in by_id["wide_linkedin_healthcare"]["prompt"]
+    assert "layout_cluster" in by_id["parent_overflow_cluster_repair"]["prompt"]
+    assert all(
+        "loose oversized bg rectangle" in by_id[fixture_id]["prompt"]
+        for fixture_id in {
+            "a4_appointment_card_artboard_frame",
+            "letter_healthcare_one_pager",
+            "parent_overflow_cluster_repair",
+        }
     )
 
 
 def test_quality_loop_passes_knowledge_excerpts_to_author(tmp_path: Path, monkeypatch):
     monkeypatch.setattr("lumen_deepagent.tools.CoreClient", FakeCoreClient)
     paths = [
-        "apps/agent_runtime/knowledge/lumen-dsl/authoring.md",
-        "apps/agent_runtime/knowledge/design/layout-recipes.md",
-        "apps/agent_runtime/knowledge/design-systems/token-taxonomy.md",
-        "apps/agent_runtime/knowledge/agent-loop/authoring-and-repair.md",
+        "apps/agent_runtime/knowledge_docs/knowledge/lumen-dsl/grammar.md",
+        "apps/agent_runtime/knowledge_docs/knowledge/design/layout-recipes.md",
+        "apps/agent_runtime/knowledge_docs/knowledge/design-systems/token-taxonomy.md",
+        "apps/agent_runtime/knowledge_docs/knowledge/loop/authoring-and-repair.md",
     ]
     for rel_path in paths:
         path = tmp_path / rel_path
@@ -565,6 +914,70 @@ def test_quality_loop_passes_knowledge_excerpts_to_author(tmp_path: Path, monkey
     assert author.requests[0].knowledge_paths
     assert author.requests[0].knowledge_snippets
     assert "line-oriented Lumen DSL" in author.requests[0].knowledge_snippets[0].excerpt
+
+
+def test_director_author_and_reviewer_receive_full_context(tmp_path: Path, monkeypatch):
+    monkeypatch.setattr("lumen_deepagent.tools.CoreClient", FakeCoreClient)
+    tools = LumenDesignTools(
+        runtime_config(tmp_path),
+        'Create a square ad\n\nEditor context JSON:\n{"conversation_context":{"messages":[{"role":"user","content":"previous ask"}]}}',
+    )
+    author = ScriptedAuthor(["page page_test"])
+    reviewer = ScriptedReviewer(
+        [VisualCritique(accepted=True, summary="Preview is acceptable.")]
+    )
+    director = ScriptedDirector(
+        [
+            AgentDirectorDecision(
+                action_mode=AgentActionMode.new_artifact,
+                rationale="Create a fresh artifact.",
+                instructions_to_author="Create the full page.",
+            )
+        ]
+    )
+
+    result = LumenQualityLoop(tools, author, reviewer, director=director).run(
+        "Create a square ad"
+    )
+
+    assert result["status"] == "accepted"
+    director_context = director.calls[0]
+    # Curated/windowed shape (P1): a compact situation report, never the raw
+    # scene / trace events / base64 previews that previously self-nested.
+    for key in (
+        "scene_summary",
+        "scene_subtree",
+        "diagnostics",
+        "attempt_history",
+        "preview_summary",
+    ):
+        assert key in director_context, key
+    for banned in ("current_scene", "trace_events", "iteration_files", "preview_activity"):
+        assert banned not in director_context, banned
+    assert director_context["conversation_context"]["messages"][0]["content"] == "previous ask"
+
+    author_request = author.requests[0]
+    assert author_request.director_decision is not None
+    assert author_request.director_decision.action_mode == AgentActionMode.new_artifact
+    # Author and director share the same curated context object.
+    assert author_request.full_context["scene_summary"] == director_context["scene_summary"]
+    assert author_request.full_context["loaded_knowledge"] == director_context["loaded_knowledge"]
+
+    reviewer_context = reviewer.calls[0]["full_context"]
+    assert "preview_activity" not in reviewer_context
+    assert "scene_summary" in reviewer_context
+    # The reviewer still gets the real preview artifacts via its own kwarg.
+    assert reviewer.calls[0]["preview_payload"]["artifacts"]
+
+    # The defining P1 invariant: nothing context-shaped is ever written to the
+    # trace, so the trace can never be re-inflated into a later prompt.
+    trace_text = (
+        (tools.config.trace_dir / tools.run_id / "trace.jsonl").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert '"full_context":' not in trace_text
+    assert '"preview_activity":' not in trace_text
 
 
 def test_runtime_tools_update_scene_export_preview_and_write_trace(
@@ -1062,7 +1475,9 @@ def test_quality_loop_repairs_after_preflight_failure(tmp_path: Path, monkeypatc
     monkeypatch.setattr("lumen_deepagent.tools.CoreClient", FakePreflightErrorOnceCoreClient)
     config = runtime_config(tmp_path, max_iterations=3)
     tools = LumenDesignTools(config, "Create a square LinkedIn ad")
-    author = ScriptedAuthor(["page page_test", "# repair"])
+    # A preflight error on a named node drives a SURGICAL repair: the author must
+    # answer with a modify-only `#<node> ...` line, not a re-author.
+    author = ScriptedAuthor(["page page_test", "#headline s(400,80)"])
     reviewer = ScriptedReviewer(
         [VisualCritique(accepted=True, summary="Preview is now acceptable.")]
     )
@@ -1094,6 +1509,1098 @@ def test_quality_loop_repairs_after_preflight_failure(tmp_path: Path, monkeypatc
         .splitlines()
     ]
     assert "debug_preview_exported" in events
+
+
+def test_is_surgical_dsl_classifies_modify_only_blocks():
+    # Modify-only blocks (edit existing nodes in place) are surgical.
+    assert is_surgical_dsl("#headline s(400,80)")
+    assert is_surgical_dsl("#card s(400,560)\n#title font_size(20)")
+    assert is_surgical_dsl("// checkpoint\n#node o(0.5)")
+    # Anything that can delete / re-declare / re-page the scene is NOT surgical.
+    assert not is_surgical_dsl("page page_a4 preset(a4,portrait)")
+    assert not is_surgical_dsl("delete(card)\n#card s(1,1)")
+    assert not is_surgical_dsl("parent(card, page:page_a4)")
+    assert not is_surgical_dsl("hero fr p(0,0) s(10,10)")  # element declaration
+    assert not is_surgical_dsl("# just a comment")  # comment, not a modify ref
+    assert not is_surgical_dsl("")  # no modify line at all
+    assert repair_is_surgical("structured_ops", {"node_id": "headline"})
+    assert not repair_is_surgical("dsl", {"node_id": "headline"})
+    assert not repair_is_surgical("structured_ops", {"page_id": "page_a4"})
+
+
+def test_targeted_overflow_repair_routes_to_structured_ops_despite_font_asset_warning(
+    tmp_path: Path, monkeypatch
+):
+    # The preflight bundle for a text overflow also carries an unrelated
+    # "font asset" warning. The bare word "asset" must NOT route a node-targeted
+    # text-fit repair to the asset tool — it routes to structured_ops.
+    monkeypatch.setattr("lumen_deepagent.tools.CoreClient", FakeCoreClient)
+    tools = LumenDesignTools(runtime_config(tmp_path), "Design an appointment card")
+    intent = (
+        "repair targeted preflight diagnostics: LUMV0903 on instruction: text node "
+        "instruction exceeds available height Use hug height. | LUMB0613 on document: "
+        "font asset brand is not marked embeddable for export"
+    )
+    overflow = json.loads(
+        tools.recommend_edit_surface(intent, json.dumps({"node_id": "instruction"}))
+    )
+    assert overflow["recommendation"] == "structured_ops"
+    # A genuine asset-generation intent still routes to the asset tool.
+    gen = json.loads(tools.recommend_edit_surface("generate image for the hero panel", "{}"))
+    assert gen["recommendation"] == "asset_tool"
+    # A no-target compose intent routes to DSL authoring.
+    compose = json.loads(tools.recommend_edit_surface("design a square ad layout", "{}"))
+    assert compose["recommendation"] == "dsl"
+
+
+def test_classifier_prioritizes_blocking_text_error_over_brand_warning():
+    diagnostics = [
+        {
+            "severity": "warning",
+            "code": "LUMB0613",
+            "message": "font asset brand is not marked embeddable for export",
+        },
+        {
+            "severity": "error",
+            "code": "LUMV0903",
+            "message": "text node subhead exceeds available height",
+            "target_node_id": "subhead",
+        },
+    ]
+
+    classification = classify_diagnostics(
+        diagnostics,
+        {"node_id": "subhead"},
+        scene=layout_cluster_scene(),
+    )
+
+    assert classification.repair_class == RepairClass.targeted_node
+    assert classification.reason == "single_text_fit_target"
+
+
+def test_lumv0800_routes_to_layout_cluster():
+    scene = layout_cluster_scene()
+    diagnostics = [
+        {
+            "severity": "error",
+            "code": "LUMV0800",
+            "message": "node artboard exceeds page bounds",
+            "target_page_id": "page_a4",
+            "target_node_id": "artboard",
+        }
+    ]
+
+    classification = classify_diagnostics(
+        diagnostics,
+        {"page_id": "page_a4", "node_id": "artboard"},
+        scene=scene,
+    )
+
+    assert classification.repair_class == RepairClass.layout_cluster
+    assert classification.allowed_edit_surface.value == "structured_ops"
+    assert classification.cluster is not None
+    assert classification.cluster.page_id == "page_a4"
+    assert classification.cluster.root_frame_id == "artboard"
+    assert "LUMV0800" in classification.cluster.diagnostic_codes
+    assert "convert_diagnosed_background" in classification.permissions
+
+
+def test_slot_subject_lumv0800_routes_to_slot_fixture_not_cluster():
+    # A slot-SUBJECT LUMV0800 ("required slot needs a fixture") must route to a
+    # slot-fixture repair (which permits #slot: edits), NOT the layout-cluster gate
+    # (which bans #slot: refs). The node-subject LUMV0800 (artboard bounds) stays
+    # layout_cluster — see test_lumv0800_routes_to_layout_cluster.
+    diagnostics = [
+        {
+            "severity": "error",
+            "code": "LUMV0800",
+            "message": "required slot campaign.headline needs a placeholder or validation fixture",
+            "target_slot_id": "slot_campaign_headline",
+            "target_slot_key": "campaign.headline",
+        }
+    ]
+
+    classification = classify_diagnostics(
+        diagnostics,
+        {"slot_key": "campaign.headline"},
+        scene=layout_cluster_scene(),
+    )
+
+    assert classification.repair_class == RepairClass.slot_fixture
+    assert classification.allowed_edit_surface.value == "structured_ops"
+    assert "set_slot_worst_case" in classification.permissions
+
+
+def test_slot_subject_lumv0801_binding_routes_to_slot_fixture():
+    diagnostics = [
+        {
+            "severity": "error",
+            "code": "LUMV0801",
+            "message": "slot offer.primary_message binds missing node body_copy",
+            "target_slot_id": "slot_offer_primary_message",
+            "target_slot_key": "offer.primary_message",
+        }
+    ]
+
+    classification = classify_diagnostics(
+        diagnostics,
+        {"slot_key": "offer.primary_message"},
+        scene=layout_cluster_scene(),
+    )
+
+    assert classification.repair_class == RepairClass.slot_fixture
+
+
+def test_visual_balance_critique_routes_to_layout_cluster():
+    critique = VisualCritique(
+        accepted=False,
+        summary="The composition has a large dead zone.",
+        issues=[
+            VisualIssue(
+                severity="error",
+                category=CritiqueCategory.visual_balance,
+                target=VisualTarget(page_id="page_a4", node_id="headline"),
+                message="Dead space makes the page feel unfinished.",
+                suggested_repair="Rebuild the affected artboard layout.",
+            )
+        ],
+        repair_instruction="Use a structural layout repair, not a tiny node patch.",
+    )
+
+    classification = classify_visual_critique(
+        critique,
+        {"page_id": "page_a4", "node_id": "headline"},
+        layout_cluster_scene(),
+    )
+
+    assert classification.repair_class == RepairClass.layout_cluster
+    assert classification.reason == "visual_critique_requires_structural_layout_repair"
+
+
+def test_recompose_recipe_triggers_only_on_dead_band_categories():
+    # P1.5#2a: a visual critique flagging visual_balance/spacing hands the
+    # rebuild the verbatim poster idiom; anything else does not.
+    for category in ("visual_balance", "spacing"):
+        feedback = {
+            "kind": "visual",
+            "feedback": {"issues": [{"category": category, "message": "dead band"}]},
+        }
+        assert recompose_recipe_for_feedback(feedback) == POSTER_RECOMPOSE_RECIPE
+    # Unrelated category, non-visual kind, and None all yield no recipe.
+    assert (
+        recompose_recipe_for_feedback(
+            {"kind": "visual", "feedback": {"issues": [{"category": "typography"}]}}
+        )
+        is None
+    )
+    assert recompose_recipe_for_feedback({"kind": "preflight", "feedback": {}}) is None
+    assert recompose_recipe_for_feedback(None) is None
+
+
+def test_heuristic_director_hands_poster_recipe_for_visual_balance():
+    decision = HeuristicAgentDirector().decide(
+        full_context={
+            "latest_feedback": {
+                "kind": "visual",
+                "feedback": {
+                    "issues": [
+                        {"category": "visual_balance", "message": "two dead bands"}
+                    ]
+                },
+            }
+        }
+    )
+    assert decision.action_mode == AgentActionMode.replace_artboard_subtree
+    assert POSTER_RECOMPOSE_RECIPE in decision.instructions_to_author
+
+
+def test_lumv0801_routes_to_layout_cluster_with_parent_and_descendants():
+    scene = layout_cluster_scene()
+    diagnostics = [
+        {
+            "severity": "error",
+            "code": "LUMV0801",
+            "message": "node headline exceeds parent card bounds",
+            "target_node_id": "headline",
+        }
+    ]
+
+    classification = classify_diagnostics(
+        diagnostics,
+        {"node_id": "headline"},
+        scene=scene,
+    )
+
+    assert classification.repair_class == RepairClass.layout_cluster
+    assert classification.cluster is not None
+    assert classification.cluster.page_id == "page_a4"
+    assert classification.cluster.parent_node_id == "card"
+    assert set(classification.cluster.descendant_node_ids) == {
+        "headline",
+        "divider",
+        "body",
+    }
+
+
+def test_mixed_top_level_overflow_uses_root_cluster_not_target_parent():
+    scene = layout_cluster_scene()
+    scene["nodes"]["footer"] = {
+        "id": "footer",
+        "kind": {"kind": "frame"},
+        "children": [],
+    }
+    scene["nodes"]["artboard"]["children"] = ["card", "footer"]
+    diagnostics = [
+        {
+            "severity": "error",
+            "code": "LUMV0801",
+            "message": "node card exceeds artboard bounds",
+            "target_node_id": "card",
+        },
+        {
+            "severity": "error",
+            "code": "LUMV0801",
+            "message": "node footer exceeds artboard bounds",
+            "target_node_id": "footer",
+        },
+    ]
+
+    classification = classify_diagnostics(
+        diagnostics,
+        {"page_id": "page_a4", "node_id": "headline", "parent_node_id": "card"},
+        scene=scene,
+    )
+
+    assert classification.repair_class == RepairClass.layout_cluster
+    assert classification.cluster is not None
+    assert classification.cluster.root_frame_id == "artboard"
+    assert classification.cluster.parent_node_id is None
+    allowed = layout_cluster_allowed_node_ids(
+        classification.cluster.model_dump(mode="json")
+    )
+    assert {"artboard", "card", "footer", "headline"}.issubset(allowed)
+
+
+def test_slot_fit_nodes_join_bounds_layout_cluster():
+    scene = layout_cluster_scene()
+    scene["nodes"].update(
+        {
+            "header": {
+                "id": "header",
+                "kind": {"kind": "autolayout"},
+                "children": ["headline"],
+            },
+            "logo_mark": {
+                "id": "logo_mark",
+                "kind": {"kind": "frame"},
+                "children": ["logo_plus"],
+            },
+            "logo_plus": {
+                "id": "logo_plus",
+                "kind": {"kind": "text", "content": "+"},
+                "children": [],
+            },
+            "body_section": {
+                "id": "body_section",
+                "kind": {"kind": "autolayout"},
+                "children": ["instruction"],
+            },
+            "benefit_section": {
+                "id": "benefit_section",
+                "kind": {"kind": "autolayout"},
+                "children": ["benefit_copy", "stats_row"],
+            },
+            "stats_row": {
+                "id": "stats_row",
+                "kind": {"kind": "autolayout"},
+                "children": ["stat_one", "stat_two", "stat_three"],
+            },
+            "stat_one": {
+                "id": "stat_one",
+                "kind": {"kind": "autolayout"},
+                "children": ["stat_val_one"],
+            },
+            "stat_two": {
+                "id": "stat_two",
+                "kind": {"kind": "autolayout"},
+                "children": ["stat_lab_two"],
+            },
+            "stat_three": {
+                "id": "stat_three",
+                "kind": {"kind": "autolayout"},
+                "children": ["stat_val_three", "stat_lab_three"],
+            },
+            "cta_section": {
+                "id": "cta_section",
+                "kind": {"kind": "autolayout"},
+                "children": ["cta_label"],
+            },
+            "instruction": {
+                "id": "instruction",
+                "kind": {"kind": "text", "content": "Instruction"},
+                "children": [],
+            },
+            "benefit_copy": {
+                "id": "benefit_copy",
+                "kind": {"kind": "text", "content": "Benefit"},
+                "children": [],
+            },
+            "stat_val_one": {
+                "id": "stat_val_one",
+                "kind": {"kind": "text", "content": "40%"},
+                "children": [],
+            },
+            "stat_lab_two": {
+                "id": "stat_lab_two",
+                "kind": {"kind": "text", "content": "Patient Satisfaction"},
+                "children": [],
+            },
+            "stat_val_three": {
+                "id": "stat_val_three",
+                "kind": {"kind": "text", "content": "3 min"},
+                "children": [],
+            },
+            "stat_lab_three": {
+                "id": "stat_lab_three",
+                "kind": {"kind": "text", "content": "Avg Check-in"},
+                "children": [],
+            },
+            "cta_label": {
+                "id": "cta_label",
+                "kind": {"kind": "text", "content": "Book a Demo"},
+                "children": [],
+            },
+        }
+    )
+    scene["nodes"]["card"]["children"] = [
+        "logo_mark",
+        "header",
+        "body_section",
+        "benefit_section",
+        "cta_section",
+    ]
+    scene["slots"] = {
+        "slot_campaign_headline": {
+            "id": "slot_campaign_headline",
+            "key": "campaign.headline",
+            "bound_nodes": ["headline"],
+        },
+        "slot_offer_primary_message": {
+            "id": "slot_offer_primary_message",
+            "key": "offer.primary_message",
+            "bound_nodes": ["instruction"],
+        },
+        "slot_offer_secondary_message": {
+            "id": "slot_offer_secondary_message",
+            "key": "offer.secondary_message",
+            "bound_nodes": ["benefit_copy"],
+        },
+        "slot_cta_primary": {
+            "id": "slot_cta_primary",
+            "key": "cta.primary",
+            "bound_nodes": ["cta_label"],
+        },
+    }
+    diagnostics = [
+        {
+            "severity": "warning",
+            "code": "LUMV0509",
+            "message": "text slot cta.primary has no fit-validation fixtures",
+            "target_slot_id": "slot_cta_primary",
+        },
+        {
+            "severity": "error",
+            "code": "LUMV0800",
+            "message": "node artboard exceeds exportable bounds for page page_a4",
+            "target_node_id": "artboard",
+        },
+        {
+            "severity": "warning",
+            "code": "LUMV0801",
+            "message": "node logo_plus exceeds parent bounds on page page_a4",
+            "target_node_id": "logo_plus",
+        },
+        {
+            "severity": "error",
+            "code": "LUMV0801",
+            "message": "node cta_section exceeds parent bounds on page page_a4",
+            "target_node_id": "cta_section",
+        },
+        {
+            "severity": "error",
+            "code": "LUMV0902",
+            "message": "non-wrapping text node stat_lab_three overflows horizontally",
+            "target_node_id": "stat_lab_three",
+        },
+        {
+            "severity": "error",
+            "code": "LUMV0902",
+            "message": "non-wrapping text node stat_lab_two overflows horizontally",
+            "target_node_id": "stat_lab_two",
+        },
+        {
+            "severity": "error",
+            "code": "LUMV0902",
+            "message": "non-wrapping text node stat_val_one overflows horizontally",
+            "target_node_id": "stat_val_one",
+        },
+        {
+            "severity": "error",
+            "code": "LUMV0810",
+            "message": "slot campaign.headline fixture overflows text node headline",
+            "target_slot_id": "slot_campaign_headline",
+        },
+        {
+            "severity": "error",
+            "code": "LUMV0810",
+            "message": "slot offer.primary_message fixture overflows text node instruction",
+            "target_slot_id": "slot_offer_primary_message",
+        },
+        {
+            "severity": "error",
+            "code": "LUMV0810",
+            "message": "slot offer.secondary_message fixture overflows text node benefit_copy",
+            "target_slot_key": "offer.secondary_message",
+        },
+    ]
+
+    classification = classify_diagnostics(
+        diagnostics,
+        {
+            "page_id": "page_a4",
+            "node_id": "logo_plus",
+            "parent_node_id": "logo_mark",
+        },
+        scene=scene,
+    )
+
+    assert classification.repair_class == RepairClass.layout_cluster
+    assert classification.cluster is not None
+    assert classification.cluster.root_frame_id == "artboard"
+    assert classification.cluster.parent_node_id == "card"
+    allowed = layout_cluster_allowed_node_ids(
+        classification.cluster.model_dump(mode="json")
+    )
+    assert {
+        "artboard",
+        "card",
+        "logo_mark",
+        "logo_plus",
+        "cta_section",
+        "header",
+        "body_section",
+        "benefit_section",
+        "stats_row",
+        "stat_one",
+        "stat_two",
+        "stat_three",
+        "headline",
+        "instruction",
+        "benefit_copy",
+        "stat_lab_three",
+        "stat_lab_two",
+        "stat_val_one",
+    }.issubset(allowed)
+    assert "cta_label" not in allowed
+    assert is_layout_cluster_dsl(
+        "\n".join(
+            [
+                "#artboard s(fill,fill) g(24) pad(48)",
+                "#card s(499,hug) g(16) pad(24)",
+                "#headline s(fill,hug) wrap_text(true) max_lines(3)",
+                "#instruction s(fill,hug) wrap_text(true) max_lines(8)",
+                "#benefit_copy s(fill,hug) wrap_text(true) max_lines(6)",
+            ]
+        ),
+        {
+            "repair_class": "layout_cluster",
+            "cluster": classification.cluster.model_dump(mode="json"),
+        },
+    )
+    assert not is_layout_cluster_dsl(
+        "#artboard s(595,842) g(24) pad(48)",
+        {
+            "repair_class": "layout_cluster",
+            "cluster": classification.cluster.model_dump(mode="json"),
+        },
+    )
+
+    scene["slots"] = [
+        {
+            "id": "slot_campaign_headline",
+            "key": "campaign.headline",
+            "bound_nodes": [{"id": "headline"}],
+        },
+        {
+            "id": "slot_offer_primary_message",
+            "key": "offer.primary_message",
+            "bound_nodes": [{"id": "instruction"}],
+        },
+        {
+            "id": "slot_offer_secondary_message",
+            "key": "offer.secondary_message",
+            "bound_nodes": [{"id": "benefit_copy"}],
+        },
+    ]
+    summary_shape = classify_diagnostics(
+        diagnostics,
+        {
+            "page_id": "page_a4",
+            "node_id": "logo_plus",
+            "parent_node_id": "logo_mark",
+        },
+        scene=scene,
+    )
+    assert summary_shape.cluster is not None
+    assert {
+        "headline",
+        "instruction",
+        "benefit_copy",
+    }.issubset(
+        layout_cluster_allowed_node_ids(summary_shape.cluster.model_dump(mode="json"))
+    )
+
+
+def test_single_text_fit_stays_targeted_but_siblings_escalate_to_layout_cluster():
+    scene = layout_cluster_scene()
+    single = classify_diagnostics(
+        [
+            {
+                "severity": "error",
+                "code": "LUMV0903",
+                "message": "headline exceeds available height",
+                "target_node_id": "headline",
+            }
+        ],
+        {"node_id": "headline"},
+        scene=scene,
+    )
+    assert single.repair_class == RepairClass.targeted_node
+
+    siblings = classify_diagnostics(
+        [
+            {
+                "severity": "error",
+                "code": "LUMV0903",
+                "message": "headline exceeds available height",
+                "target_node_id": "headline",
+            },
+            {
+                "severity": "error",
+                "code": "LUMV0903",
+                "message": "body exceeds available height",
+                "target_node_id": "body",
+            },
+        ],
+        {"node_id": "headline"},
+        scene=scene,
+    )
+    assert siblings.repair_class == RepairClass.layout_cluster
+    assert siblings.cluster is not None
+    assert siblings.cluster.parent_node_id == "card"
+
+
+def test_brand_and_legacy_geometry_repair_classes():
+    scene = layout_cluster_scene()
+    brand = classify_diagnostics(
+        [
+            {
+                "severity": "error",
+                "code": "LUMB0804",
+                "message": "raw color where token belongs",
+                "target_node_id": "card",
+            }
+        ],
+        {"node_id": "card"},
+        scene=scene,
+    )
+    legacy = classify_diagnostics(
+        [
+            {
+                "severity": "warning",
+                "code": "LUMV0805",
+                "message": "legacy non-pt page advice",
+                "target_page_id": "page_a4",
+            }
+        ],
+        {"page_id": "page_a4"},
+        scene=scene,
+    )
+
+    assert brand.repair_class == RepairClass.brand_token
+    assert legacy.repair_class == RepairClass.unsupported_gap
+    assert legacy.allowed_edit_surface.value == "external_planner"
+
+
+def test_layout_cluster_dsl_guard_scopes_modifies_and_background_delete():
+    context = {
+        "repair_class": "layout_cluster",
+        "cluster": {
+            "page_id": "page_a4",
+            "root_frame_id": "artboard",
+            "parent_node_id": "card",
+            "descendant_node_ids": ["headline", "divider", "body"],
+            "background_node_id": "bg",
+        },
+        "permissions": ["convert_diagnosed_background"],
+    }
+
+    assert is_layout_cluster_dsl(
+        "#page:page_a4 background($surface.page)\n#card s(fill,hug)\n#headline s(fill,hug)",
+        context,
+    )
+    assert is_layout_cluster_dsl("#artboard s(fill,fill) pad(48) g(24)", context)
+    assert is_layout_cluster_dsl("delete(bg)\n#artboard fill($surface.page)", context)
+    assert not is_layout_cluster_dsl("page page_a4 preset(a4,portrait)", context)
+    assert not is_layout_cluster_dsl("#artboard s(595,842) pad(48) g(24)", context)
+    assert not is_layout_cluster_dsl("#unrelated s(1,1)", context)
+    assert not is_layout_cluster_dsl("#card al(v,x(s),g(12),pad(24))", context)
+    assert not is_layout_cluster_dsl("#card wrap(true)", context)
+    assert not is_layout_cluster_dsl("delete(headline)", context)
+    assert not is_layout_cluster_dsl("#slot:campaign.headline required(false)", context)
+
+
+def test_background_conversion_delete_requires_diagnosed_background_permission():
+    context = {
+        "repair_class": "layout_cluster",
+        "cluster": {
+            "page_id": "page_a4",
+            "root_frame_id": "artboard",
+            "parent_node_id": "card",
+            "descendant_node_ids": ["headline"],
+            "background_node_id": "bg",
+        },
+        "permissions": [],
+    }
+
+    assert not is_layout_cluster_dsl("delete(bg)", context)
+    assert not is_layout_cluster_dsl("delete(backdrop)", context)
+    context["permissions"] = ["convert_diagnosed_background"]
+    assert is_layout_cluster_dsl("delete(bg)", context)
+
+
+def test_layout_cluster_repair_request_carries_cluster_permissions_and_guard(
+    tmp_path: Path, monkeypatch
+):
+    monkeypatch.setattr(
+        "lumen_deepagent.tools.CoreClient", FakeLayoutClusterPreflightCoreClient
+    )
+    config = runtime_config(tmp_path, max_iterations=3)
+    tools = LumenDesignTools(config, "Create an A4 appointment card")
+    author = ScriptedAuthor(
+        [
+            "page page_a4 preset(a4,portrait)",
+            "page page_a4 preset(a4,portrait)",  # rejected: not cluster-scoped DSL
+            "#card s(fill,hug)\n#headline s(fill,hug)",
+        ]
+    )
+    reviewer = ScriptedReviewer(
+        [VisualCritique(accepted=True, summary="should not be reached")]
+    )
+
+    result = LumenQualityLoop(tools, author, reviewer).run(
+        "Create an A4 appointment card"
+    )
+
+    assert result["status"] == "failed"
+    assert author.requests[1].repair_context["repair_class"] == "layout_cluster"
+    assert author.requests[1].repair_context["cluster"]["parent_node_id"] == "card"
+    assert "modify_auto_layout" in author.requests[1].repair_context["permissions"]
+    assert (
+        "do not regenerate the whole scene"
+        in author.requests[1].repair_context["prohibitions"]
+    )
+    assert author.requests[2].repair_context["kind"] == "layout_cluster_violation"
+    repair_request_path = (
+        config.trace_dir / tools.run_id / "iterations" / "001" / "repair_request.json"
+    )
+    repair_request = json.loads(repair_request_path.read_text(encoding="utf-8"))[
+        "repair_request"
+    ]
+    assert repair_request["repair_class"] == "layout_cluster"
+    assert repair_request["cluster"]["parent_node_id"] == "card"
+    assert "modify_auto_layout" in repair_request["permissions"]
+    assert "do not regenerate the whole scene" in repair_request["prohibitions"]
+    events = [
+        json.loads(line)["event"]
+        for line in (config.trace_dir / tools.run_id / "trace.jsonl")
+        .read_text(encoding="utf-8")
+        .splitlines()
+    ]
+    assert "layout_cluster_repair_rejected" in events
+    assert tools.core.compile_calls == 2
+    assert tools.core.compile_sources == [
+        "page page_a4 preset(a4,portrait)",
+        "#card s(fill,hug)\n#headline s(fill,hug)",
+    ]
+
+
+def test_rejected_layout_cluster_repair_does_not_touch_scene(tmp_path: Path, monkeypatch):
+    monkeypatch.setattr(
+        "lumen_deepagent.tools.CoreClient", FakeLayoutClusterPreflightCoreClient
+    )
+    config = runtime_config(tmp_path, max_iterations=2)
+    tools = LumenDesignTools(config, "Create an A4 appointment card")
+    author = ScriptedAuthor(
+        [
+            "page page_a4 preset(a4,portrait)",
+            "page page_a4 preset(a4,portrait)",
+        ]
+    )
+    reviewer = ScriptedReviewer(
+        [VisualCritique(accepted=True, summary="should not be reached")]
+    )
+
+    result = LumenQualityLoop(tools, author, reviewer).run(
+        "Create an A4 appointment card"
+    )
+
+    assert result["status"] == "failed"
+    assert tools.core.compile_calls == 1
+    assert "card" in tools.scene["nodes"]
+    assert "headline" in tools.scene["nodes"]
+    assert author.requests[1].repair_context["repair_class"] == "layout_cluster"
+
+
+def test_partial_layout_cluster_repair_applies_valid_refs_and_skips_strays(
+    tmp_path: Path, monkeypatch
+):
+    # NON-ATOMIC cluster repair: a block that mixes a valid in-cluster modify with
+    # an out-of-cluster ref must NOT be zero-applied. The in-cluster edit compiles
+    # and the stray line is skipped, so the iteration makes progress instead of
+    # being wasted (the old behavior rejected the whole block before compile).
+    monkeypatch.setattr(
+        "lumen_deepagent.tools.CoreClient", FakeLayoutClusterPreflightCoreClient
+    )
+    config = runtime_config(tmp_path, max_iterations=2)
+    tools = LumenDesignTools(config, "Create an A4 appointment card")
+    author = ScriptedAuthor(
+        [
+            "page page_a4 preset(a4,portrait)",      # iter0: initial design, compiles
+            "#card s(fill,hug)\n#unrelated s(1,1)",  # iter1: keep #card, drop #unrelated
+        ]
+    )
+    reviewer = ScriptedReviewer(
+        [VisualCritique(accepted=True, summary="should not be reached")]
+    )
+
+    result = LumenQualityLoop(tools, author, reviewer).run(
+        "Create an A4 appointment card"
+    )
+
+    # Preflight never clears (the fake always returns LUMV0801), so the run still
+    # ends without acceptance — the point is HOW the mixed repair was handled.
+    assert result["status"] == "failed"
+    trace_lines = (
+        (config.trace_dir / tools.run_id / "trace.jsonl")
+        .read_text(encoding="utf-8")
+        .splitlines()
+    )
+    events = [json.loads(line)["event"] for line in trace_lines]
+    # The mixed block was applied PARTIALLY, not rejected wholesale.
+    assert "layout_cluster_repair_partial" in events
+    assert "layout_cluster_repair_rejected" not in events
+    # Both the initial block and the kept subset of the repair reached the compiler.
+    assert tools.core.compile_calls == 2
+    # The stray #unrelated line was stripped; only the in-cluster #card edit compiled.
+    assert tools.core.compile_sources[1] == "#card s(fill,hug)"
+    # The dropped line is recorded for observability.
+    partial = next(
+        json.loads(line)
+        for line in trace_lines
+        if json.loads(line)["event"] == "layout_cluster_repair_partial"
+    )
+    dropped = partial["payload"]["dropped_lines"]
+    assert any("#unrelated" in entry["line"] for entry in dropped)
+
+
+class FakeSlotFixturePreflightCoreClient(FakeCoreClient):
+    """Preflight always reports a slot-SUBJECT LUMV0800 (required slot needs a
+    fixture), which must route to a slot_fixture repair so the #slot: fix is
+    permitted rather than banned by the layout-cluster gate."""
+
+    def __init__(self, repo_root: Path) -> None:
+        super().__init__(repo_root)
+        self.compile_calls = 0
+        self.compile_sources = []
+
+    def compile_dsl_into_scene(self, scene, source: str, dsl_session=None):
+        self.compile_calls += 1
+        self.compile_sources.append(source)
+        return {
+            "scene": layout_cluster_scene(),
+            "applied_operations": 1,
+            "dsl": {
+                "compile_output": {
+                    "operations": [{"kind": "set_slot_fixture"}],
+                    "diagnostics": [],
+                },
+                "operation_error": None,
+                "session_snapshot": dsl_session,
+            },
+        }
+
+    def preflight_scene(self, scene, brand_kit):
+        return {
+            "scene": scene,
+            "diagnostics": [
+                {
+                    "severity": "error",
+                    "code": "LUMV0800",
+                    "message": "required slot campaign.headline needs a placeholder or validation fixture",
+                    "target_slot_id": "slot_campaign_headline",
+                    "target_slot_key": "campaign.headline",
+                }
+            ],
+            "preflight": {
+                "has_errors": True,
+                "brand_ref_operations": [],
+                "token_operations": [],
+                "layout_operations": [],
+            },
+        }
+
+
+def test_slot_fixture_repair_permits_slot_modify_lines(tmp_path: Path, monkeypatch):
+    # A slot-subject LUMV0800 routes to a slot_fixture repair; the #slot: fixture
+    # edit (which the layout-cluster gate used to ban) is accepted and compiles.
+    monkeypatch.setattr(
+        "lumen_deepagent.tools.CoreClient", FakeSlotFixturePreflightCoreClient
+    )
+    config = runtime_config(tmp_path, max_iterations=2)
+    tools = LumenDesignTools(config, "Create an A4 appointment card")
+    author = ScriptedAuthor(
+        [
+            "page page_a4 preset(a4,portrait)",  # iter0: initial design, compiles
+            '#slot:campaign.headline sample("Short") worst_case("A very long headline for fit")',
+        ]
+    )
+    reviewer = ScriptedReviewer(
+        [VisualCritique(accepted=True, summary="should not be reached")]
+    )
+
+    LumenQualityLoop(tools, author, reviewer).run("Create an A4 appointment card")
+
+    # The slot-subject LUMV0800 routed to slot_fixture, not layout_cluster.
+    assert author.requests[1].repair_context["repair_class"] == "slot_fixture"
+    events = [
+        json.loads(line)["event"]
+        for line in (config.trace_dir / tools.run_id / "trace.jsonl")
+        .read_text(encoding="utf-8")
+        .splitlines()
+    ]
+    # The #slot: fixture edit was NOT rejected and DID reach the compiler.
+    assert "slot_fixture_repair_rejected" not in events
+    assert tools.core.compile_calls == 2
+    assert "slot:campaign.headline" in tools.core.compile_sources[1]
+
+
+def test_slot_fixture_repair_rejects_destructive_block(tmp_path: Path, monkeypatch):
+    # The slot_fixture gate is modify-only: a destructive reply (delete + re-page)
+    # is rejected before compile, so the scene is never stripped.
+    monkeypatch.setattr(
+        "lumen_deepagent.tools.CoreClient", FakeSlotFixturePreflightCoreClient
+    )
+    config = runtime_config(tmp_path, max_iterations=2)
+    tools = LumenDesignTools(config, "Create an A4 appointment card")
+    author = ScriptedAuthor(
+        [
+            "page page_a4 preset(a4,portrait)",
+            "delete(headline)\npage page_a4 preset(a4,portrait)",  # destructive → rejected
+        ]
+    )
+    reviewer = ScriptedReviewer(
+        [VisualCritique(accepted=True, summary="should not be reached")]
+    )
+
+    LumenQualityLoop(tools, author, reviewer).run("Create an A4 appointment card")
+
+    events = [
+        json.loads(line)["event"]
+        for line in (config.trace_dir / tools.run_id / "trace.jsonl")
+        .read_text(encoding="utf-8")
+        .splitlines()
+    ]
+    assert "slot_fixture_repair_rejected" in events
+    assert tools.core.compile_calls == 1
+    assert "headline" in tools.scene["nodes"]
+
+
+def test_surgical_repair_rejects_destructive_block_without_touching_scene(
+    tmp_path: Path, monkeypatch
+):
+    # A preflight error on a named node drives a surgical repair. If the author
+    # answers with a destructive re-author (delete + re-page), the loop must
+    # REJECT it before compile so the existing design is never stripped.
+    monkeypatch.setattr(
+        "lumen_deepagent.tools.CoreClient", FakeAlwaysPreflightErrorCoreClient
+    )
+    config = runtime_config(tmp_path, max_iterations=3)
+    tools = LumenDesignTools(config, "Create a square LinkedIn ad")
+    destructive = "delete(headline)\npage page_test\n  bg rect p(0,0) s(1080,1080)"
+    author = ScriptedAuthor(["page page_test", destructive])
+    reviewer = ScriptedReviewer(
+        [VisualCritique(accepted=True, summary="should not be reached")]
+    )
+
+    result = LumenQualityLoop(tools, author, reviewer).run("Create a square LinkedIn ad")
+
+    assert result["status"] == "failed"
+    assert result["stop_reason"] == "max_iterations_reached"
+    # Only the FIRST (initial) block ever reached the compiler; every destructive
+    # repair was rejected before compile.
+    assert tools.core.compile_calls == 1
+    # The scene still holds the original design — it was never wiped.
+    assert "headline" in tools.scene["nodes"]
+    # The reviewer was never reached (preflight never passed).
+    assert reviewer.calls == []
+    events = [
+        json.loads(line)["event"]
+        for line in (config.trace_dir / tools.run_id / "trace.jsonl")
+        .read_text(encoding="utf-8")
+        .splitlines()
+    ]
+    assert "dsl_repair_not_surgical" in events
+
+
+def test_surgical_mode_carries_forward_through_compile_error(tmp_path: Path, monkeypatch):
+    # A surgical repair (preflight overflow on `headline`) whose modify-only block
+    # then fails to COMPILE with a node-less diagnostic must STAY surgical: the
+    # next destructive block is still rejected, even though the compile diagnostic
+    # carried no node target.
+    monkeypatch.setattr(
+        "lumen_deepagent.tools.CoreClient", FakeSurgicalCarryForwardCoreClient
+    )
+    config = runtime_config(tmp_path, max_iterations=4)
+    tools = LumenDesignTools(config, "Create a square LinkedIn ad")
+    author = ScriptedAuthor(
+        [
+            "page page_test",  # iter1: full design, compiles
+            "#headline s(400,80)",  # iter2: modify-only, but fails COMPILE
+            "delete(headline)\npage page_test",  # iter3+: destructive — must be rejected
+        ]
+    )
+    reviewer = ScriptedReviewer(
+        [VisualCritique(accepted=True, summary="should not be reached")]
+    )
+
+    result = LumenQualityLoop(tools, author, reviewer).run("Create a square LinkedIn ad")
+
+    assert result["status"] == "failed"
+    # Only iter1 (initial) and iter2 (modify-only) reached the compiler; every
+    # destructive repair after the compile error was rejected before compile.
+    assert tools.core.compile_calls == 2
+    assert "headline" in tools.scene["nodes"]
+    events = [
+        json.loads(line)["event"]
+        for line in (config.trace_dir / tools.run_id / "trace.jsonl")
+        .read_text(encoding="utf-8")
+        .splitlines()
+    ]
+    assert "dsl_repair_not_surgical" in events
+
+
+def test_director_structural_rewrite_overrides_stale_surgical_gate(
+    tmp_path: Path, monkeypatch
+):
+    # Regression for the repair-loop deadlock: prior feedback demanded a SURGICAL
+    # (modify-only) repair, but the director then explicitly orders a full-page
+    # rewrite. The rewrite must NOT be rejected by the stale surgical gate as
+    # `dsl_repair_not_surgical`. Before the fix, the surgical gate ignored the
+    # director's authority, rejected every authored rewrite before compile, and
+    # spun the loop to max_iterations without ever attempting the structural fix.
+    monkeypatch.setattr(
+        "lumen_deepagent.tools.CoreClient", FakeAlwaysPreflightErrorCoreClient
+    )
+    config = runtime_config(tmp_path, max_iterations=2)
+    tools = LumenDesignTools(config, "Create a square LinkedIn ad")
+    author = ScriptedAuthor(
+        [
+            "page page_test",  # iter0: initial design; compiles, preflight errors → surgical feedback
+            "delete(headline)\npage page_test\n  bg rect p(0,0) s(1080,1080)",  # iter1: full rewrite
+        ]
+    )
+    reviewer = ScriptedReviewer(
+        [VisualCritique(accepted=False, summary="never reached; preflight blocks")]
+    )
+    director = ScriptedDirector(
+        [
+            AgentDirectorDecision(
+                action_mode=AgentActionMode.new_artifact,
+                rationale="Author the initial artifact.",
+            ),
+            AgentDirectorDecision(
+                action_mode=AgentActionMode.full_page_rewrite,
+                rationale="Composition is structurally weak; rewrite the whole page.",
+            ),
+        ]
+    )
+
+    result = LumenQualityLoop(tools, author, reviewer, director=director).run(
+        "Create a square LinkedIn ad"
+    )
+
+    events = [
+        json.loads(line)["event"]
+        for line in (config.trace_dir / tools.run_id / "trace.jsonl")
+        .read_text(encoding="utf-8")
+        .splitlines()
+    ]
+    # The director-authorised rewrite is NOT rejected by the stale surgical gate.
+    assert "dsl_repair_not_surgical" not in events
+    # Both the initial block AND the rewrite reached the compiler (no deadlock).
+    assert tools.core.compile_calls == 2
+    # The run still fails (preflight never clears) but the best draft is preserved
+    # on the canvas rather than a wiped scene.
+    assert result["status"] == "failed"
+    assert "headline" in tools.scene["nodes"]
+
+
+def test_curated_context_stays_bounded_across_iterations(tmp_path: Path, monkeypatch):
+    # P1: the per-iteration context must NOT accumulate. Across several failing
+    # repair iterations the director-observed context stays bounded — no scene
+    # deepcopy, no append-only previews, and crucially no `full_context` written
+    # to the trace and read back in. The old `full_activity_context` grew ~17x per
+    # iteration via recursive self-nesting; this asserts that growth is gone.
+    monkeypatch.setattr(
+        "lumen_deepagent.tools.CoreClient", FakeAlwaysPreflightErrorCoreClient
+    )
+    config = runtime_config(tmp_path, max_iterations=5)
+    tools = LumenDesignTools(config, "Create a square LinkedIn ad")
+    author = ScriptedAuthor(["page page_test", "#headline s(400,80)"])
+    reviewer = ScriptedReviewer(
+        [VisualCritique(accepted=False, summary="never reached; preflight blocks")]
+    )
+
+    class RecordingDirector:
+        def __init__(self) -> None:
+            self.sizes: list[int] = []
+
+        def decide(self, *, full_context):
+            self.sizes.append(len(json.dumps(full_context)))
+            return AgentDirectorDecision(
+                action_mode=AgentActionMode.targeted_patch,
+                rationale="Apply the smallest patch for the preflight error.",
+            )
+
+    director = RecordingDirector()
+    LumenQualityLoop(tools, author, reviewer, director=director).run(
+        "Create a square LinkedIn ad"
+    )
+
+    # The loop ran multiple repair iterations.
+    assert len(director.sizes) >= 4
+    # Bounded growth: the final iteration's context is no larger than ~2x the
+    # first feedback-bearing iteration. (The old design was ~17x PER step.)
+    assert director.sizes[-1] <= director.sizes[1] * 2
+    # And it stays small in absolute terms regardless of iteration count.
+    assert max(director.sizes) < 200_000
+    # The trace never carries a context envelope, so it cannot be re-inflated.
+    trace_text = (
+        (config.trace_dir / tools.run_id / "trace.jsonl").read_text(encoding="utf-8")
+    )
+    assert '"full_context":' not in trace_text
+    assert '"preview_activity":' not in trace_text
 
 
 def test_quality_loop_stops_before_reviewer_on_invalid_preview(tmp_path: Path, monkeypatch):
@@ -1154,8 +2661,94 @@ def test_quality_loop_records_max_iteration_stop(tmp_path: Path, monkeypatch):
 
     result = LumenQualityLoop(tools, author, reviewer).run("Create a square LinkedIn ad")
 
-    assert result["status"] == "failed"
+    # The draft is preflight-clean (valid) but the reviewer never accepted within
+    # the budget: the run completes WITH WARNINGS rather than failing, and the best
+    # draft stays on the canvas instead of being surfaced to the user as an error.
+    assert result["status"] == "completed_with_warnings"
     assert result["stop_reason"] == "max_iterations_reached"
+    assert tools.scene["nodes"], "best preflight-clean draft must remain on the canvas"
+
+
+class FakeDestructiveRepairCoreClient(FakeCoreClient):
+    """First compile builds a full scene; the repair compile strips every node
+    and halts. This mirrors a real destructive repair that emits `delete(...)`
+    for each node (which core applies) and then halts on a bad re-creation line —
+    leaving `tools.scene` wiped before the compiler rejects the block."""
+
+    def __init__(self, repo_root: Path) -> None:
+        super().__init__(repo_root)
+        self.compile_calls = 0
+
+    def compile_dsl_into_scene(self, scene, source: str, dsl_session=None):
+        self.compile_calls += 1
+        if self.compile_calls == 1:
+            return super().compile_dsl_into_scene(scene, source, dsl_session=dsl_session)
+        wiped = dict(scene)
+        wiped["pages"] = {}
+        wiped["nodes"] = {}
+        wiped["slots"] = {}
+        return {
+            "scene": wiped,
+            "applied_operations": 0,
+            "dsl": {
+                "compile_output": {
+                    "operations": [],
+                    "diagnostics": [
+                        {
+                            "severity": "error",
+                            "code": "LUMD0207",
+                            "message": "parent(page_test) is not a valid statement",
+                        }
+                    ],
+                    "halted_at": {"code": "LUMD0207", "line": 8},
+                },
+                "operation_error": None,
+                "session_snapshot": None,
+            },
+        }
+
+
+def test_failed_run_restores_best_compiled_scene_for_canvas_draft(
+    tmp_path: Path, monkeypatch
+):
+    """A destructive final repair must not strip the design from the canvas.
+
+    Iteration 1 compiles a full scene (preflight-clean) but the reviewer rejects
+    it; the repair (iteration 2) wipes the scene and halts. The run completes with
+    warnings (a clean draft existed), and the loop must restore the best compiled
+    scene so the editor renders it as a draft instead of an empty canvas (the
+    `draft_scene` the API surfaces is `tools.scene`)."""
+    monkeypatch.setattr(
+        "lumen_deepagent.tools.CoreClient", FakeDestructiveRepairCoreClient
+    )
+    config = runtime_config(tmp_path, max_iterations=2)
+    tools = LumenDesignTools(config, "Create a square LinkedIn ad")
+    author = ScriptedAuthor(["page page_test", "delete(headline)"])
+    reviewer = ScriptedReviewer(
+        [
+            VisualCritique(
+                accepted=False,
+                summary="Hierarchy is unclear.",
+                issues=[
+                    VisualIssue(
+                        category=CritiqueCategory.hierarchy,
+                        message="The hierarchy is unclear.",
+                        suggested_repair="Make the headline dominant.",
+                    )
+                ],
+            )
+        ]
+    )
+
+    result = LumenQualityLoop(tools, author, reviewer).run("Create a square LinkedIn ad")
+
+    assert result["status"] == "completed_with_warnings"
+    assert result["stop_reason"] == "max_iterations_reached"
+    # The live scene the API hands to the editor as draft_scene must still carry
+    # the best compiled design, not the wiped scene from the destructive repair.
+    assert tools.scene["nodes"], "best compiled scene was not restored after failure"
+    assert "headline" in tools.scene["nodes"]
+    assert "page_test" in tools.scene["pages"]
 
 
 def test_brand_fit_critique_blocks_acceptance_and_drives_repair(
@@ -1249,12 +2842,125 @@ def test_trace_evaluator_summarizes_final_run_outputs(tmp_path: Path):
     assert summary["brand_contexts"][0]["brand_kit_id"] == "brand_kit_platform_default"
     assert summary["unresolved_issue_categories"]["clipping"] == 1
     assert summary["unresolved_issue_categories"]["gap:rendering_export_preview"] == 1
+    assert summary["failure_attribution"] == {"renderer_export_preview": 1}
+    assert summary["run_attributions"][0]["primary"] == "renderer_export_preview"
+    assert summary["run_attributions"][0]["confidence"] == "high"
     assert summary["preview_paths"] == ["/tmp/preview.svg"]
+    assert summary["layout_cluster_repairs"] == 0
+    assert summary["remaining_parent_overflow"] == 0
+
+
+def test_trace_evaluator_counts_layout_cluster_and_geometry_failures(tmp_path: Path):
+    run_dir = tmp_path / ".lumen-runs" / "run_cluster"
+    iteration_dir = run_dir / "iterations" / "001"
+    iteration_dir.mkdir(parents=True)
+    (run_dir / "final.json").write_text(
+        json.dumps(
+            {
+                "status": "failed",
+                "run_id": "run_cluster",
+                "stop_reason": "max_iterations_reached",
+                "critique": {},
+                "gaps": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+    (iteration_dir / "repair_request.json").write_text(
+        json.dumps(
+            {
+                "repair_request": {
+                    "repair_class": "layout_cluster",
+                    "cluster": {"page_id": "page_a4", "parent_node_id": "card"},
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    (iteration_dir / "preflight.json").write_text(
+        json.dumps(
+            {
+                "preflight": {
+                    "diagnostics": [
+                        {
+                            "severity": "error",
+                            "code": "LUMV0800",
+                            "message": "background bg exceeds artboard bounds",
+                            "target_node_id": "bg",
+                        },
+                        {
+                            "severity": "error",
+                            "code": "LUMV0801",
+                            "message": "headline exceeds parent card bounds",
+                            "target_node_id": "headline",
+                        },
+                        {
+                            "severity": "error",
+                            "code": "LUMV0903",
+                            "message": "body exceeds available height",
+                            "target_node_id": "body",
+                        },
+                    ]
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    (run_dir / "trace.jsonl").write_text(
+        "\n".join(
+            [
+                json.dumps(
+                    {
+                        "event": "layout_cluster_repair_rejected",
+                        "payload": {"rejected_source": "page page_a4"},
+                    }
+                ),
+                json.dumps(
+                    {
+                        "event": "dsl_repair_not_surgical",
+                        "payload": {"rejected_source": "delete(headline)"},
+                    }
+                ),
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    summary = summarize_trace_dir(tmp_path / ".lumen-runs")
+
+    assert summary["layout_cluster_repairs"] == 1
+    assert summary["layout_cluster_rejections"] == 1
+    assert summary["destructive_repair_rejections"] == 1
+    assert summary["whole_scene_regeneration_attempts"] == 2
+    assert summary["failure_attribution"] == {"agent_authoring": 1}
+    assert summary["run_attributions"][0]["primary"] == "agent_authoring"
+    assert "LUMV0800" in summary["run_attributions"][0]["diagnostic_codes"]
+    assert summary["oversized_background_rects"] == 1
+    assert summary["remaining_artboard_overflow"] == 1
+    assert summary["remaining_parent_overflow"] == 1
+    assert summary["final_lumv080x_count"] == 2
+    assert summary["final_lumv090x_count"] == 1
 
 
 def test_provider_helpers_extract_dsl_and_parse_structured_critique():
     assert extract_dsl("```lumen\npage page_a4\n```") == "page page_a4"
     assert extract_dsl("```lumen-dsl\npage page_a4\n```") == "page page_a4"
+    decision = parse_director_decision(
+        """
+```json
+{
+  "action_mode": "replace_artboard_subtree",
+  "rationale": "The page composition is structurally weak.",
+  "target": {"page_id": "page_a4"},
+  "allowed_scope": {"page_id": "page_a4", "mode": "replace_root_subtree"},
+  "instructions_to_author": "Rebuild the page with a coherent hierarchy.",
+  "uses_full_context": true
+}
+```
+"""
+    )
+    assert decision.action_mode == AgentActionMode.replace_artboard_subtree
+    assert decision.uses_full_context is True
     critique = parse_visual_critique(
         """
 ```json

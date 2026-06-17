@@ -6,16 +6,16 @@ use crate::{
     build_archive_asset, build_clone_subtree, build_delete_export_profile, build_hard_delete_asset,
     build_modify_operations, build_move_after, build_move_before, build_move_to_parent,
     build_replace_node, build_safe_delete, build_safe_delete_page, build_safe_delete_slot,
-    build_ungroup, resolve_edit_target, AssetEditPatch, AssetId, AutoLayoutDirection,
-    AutoLayoutNode, AutoLayoutProps, CloneSlotPolicy, CloneSubtreeRequest, Color,
-    ComputedClonePolicy, Diagnostic, DiagnosticSeverity, DocumentPatch, EditError, EditPatch,
-    EditTargetRef, Effect, EffectId, EffectKind, ExportFormat, FieldPatch, Fill, ImageNode,
-    LayoutAnchor, LineNode, Node, NodeEditPatch, NodeId, NodeKind, Operation, OperationError,
-    OperationReport, OptionalFieldPatch, Orientation, Page, PageEditPatch, PageId, PagePreset,
-    PageSize, Paint, PaintId, ParentRef, PdfIntent, Phase, RasterScale, Rect, RelativePlacement,
-    ReplaceNodeRequest, ReplaceSlotPolicy, Scene, SizeSpec, Slot, SlotEditPatch, SlotId, SlotKey,
-    Stroke, StrokeAlign, StrokeCap, StrokeJoin, TextAlign, TextDirection, TextEditPatch, TextNode,
-    TextWrap, Unit, VectorNode,
+    build_ungroup, normalize_page_size, page_size_for_preset, resolve_edit_target, AssetEditPatch,
+    AssetId, AutoLayoutDirection, AutoLayoutNode, AutoLayoutProps, CloneSlotPolicy,
+    CloneSubtreeRequest, Color, ComputedClonePolicy, Diagnostic, DiagnosticSeverity, DocumentPatch,
+    EditError, EditPatch, EditTargetRef, Effect, EffectId, EffectKind, ExportFormat, FieldPatch,
+    Fill, ImageNode, LayoutAnchor, LineNode, Node, NodeEditPatch, NodeId, NodeKind, Operation,
+    OperationError, OperationReport, OptionalFieldPatch, Orientation, Page, PageEditPatch, PageId,
+    PagePreset, PageSizeInput, Paint, PaintId, ParentRef, PdfIntent, Phase, RasterScale, Rect,
+    RelativePlacement, ReplaceNodeRequest, ReplaceSlotPolicy, Scene, SizeSpec, Slot, SlotEditPatch,
+    SlotId, SlotKey, Stroke, StrokeAlign, StrokeCap, StrokeJoin, TextAlign, TextDirection,
+    TextEditPatch, TextNode, TextWrap, Unit, VectorNode,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
@@ -384,6 +384,7 @@ pub enum DslProperty {
     TextDirection(TextDirection),
     Grow(DslScalar),
     TextStyleToken(String),
+    TextAlignment(TextAlign),
     LayoutAnchor {
         axis: DslLayoutAxis,
         anchor: DslLayoutAnchor,
@@ -1339,8 +1340,8 @@ impl<'a> DslCompiler<'a> {
             orientation: default_orientation_for_preset(&PagePreset::A4),
         });
 
-        let (width, height, unit, preset, orientation) = if let Some(size) = &page.size {
-            (
+        let size = if let Some(size) = &page.size {
+            normalize_page_size(PageSizeInput::new(
                 size.width,
                 size.height,
                 size.unit.clone(),
@@ -1349,29 +1350,15 @@ impl<'a> DslCompiler<'a> {
                     .map(|preset| preset.preset.clone())
                     .or(Some(PagePreset::Custom)),
                 orientation_for_dimensions(size.width, size.height),
-            )
+            ))
         } else {
-            let (width, height, unit) =
-                page_size_for_preset(&fallback_preset.preset, &fallback_preset.orientation);
-            (
-                width,
-                height,
-                unit,
-                Some(fallback_preset.preset),
-                fallback_preset.orientation,
-            )
+            page_size_for_preset(&fallback_preset.preset, &fallback_preset.orientation)
         };
 
         let page_model = Page {
             id: page.id.clone(),
             name: page.id.to_string(),
-            size: PageSize {
-                width,
-                height,
-                unit,
-                preset,
-                orientation,
-            },
+            size,
             children: Vec::new(),
             bleed: None,
             safe_area: None,
@@ -2463,10 +2450,15 @@ fn node_edit_patch_from_properties(
                 has_text_patch = true;
             }
             DslProperty::FontSize(size) => {
-                if let DslScalar::Number(size) = size {
-                    text_patch.font_size = FieldPatch::Set(*size);
-                    has_text_patch = true;
+                match size {
+                    DslScalar::Number(size) => {
+                        text_patch.font_size = FieldPatch::Set(*size);
+                    }
+                    DslScalar::Token(token) => {
+                        text_patch.font_size_token = OptionalFieldPatch::Set(token.clone());
+                    }
                 }
+                has_text_patch = true;
             }
             DslProperty::FontWeight(weight) => {
                 text_patch.font_weight = FieldPatch::Set(*weight);
@@ -2474,6 +2466,10 @@ fn node_edit_patch_from_properties(
             }
             DslProperty::TextStyleToken(token) => {
                 text_patch.style_token = OptionalFieldPatch::Set(token.clone());
+                has_text_patch = true;
+            }
+            DslProperty::TextAlignment(align) => {
+                text_patch.align = FieldPatch::Set(align.clone());
                 has_text_patch = true;
             }
             DslProperty::LineHeight(line_height) => {
@@ -2708,13 +2704,13 @@ fn page_edit_patch_from_properties(
         match property {
             DslProperty::Name(name) => patch.name = FieldPatch::Set(name.clone()),
             DslProperty::PageSize(size) => {
-                patch.size = FieldPatch::Set(PageSize {
-                    width: size.width,
-                    height: size.height,
-                    unit: size.unit.clone(),
-                    preset: Some(PagePreset::Custom),
-                    orientation: orientation_for_dimensions(size.width, size.height),
-                });
+                patch.size = FieldPatch::Set(normalize_page_size(PageSizeInput::new(
+                    size.width,
+                    size.height,
+                    size.unit.clone(),
+                    Some(PagePreset::Custom),
+                    orientation_for_dimensions(size.width, size.height),
+                )));
             }
             DslProperty::PageBackground(fill) => {
                 let id = fill
@@ -3177,6 +3173,17 @@ fn parse_property_token(
                 column,
             )?)]
         }
+        "align" | "text_align" => {
+            // Standalone horizontal text alignment, usable alongside style($type.x)
+            // (which carries no align). Centers a label in any box without forcing a
+            // hug width — the robust way to center glyphs in chips/buttons/cells.
+            expect_arg_count(&call, 1, line_number)?;
+            vec![DslProperty::TextAlignment(parse_text_align(
+                &call.args[0],
+                line_number,
+                column,
+            )?)]
+        }
         "lh" | "line_height" | "line-height" => {
             expect_arg_count(&call, 1, line_number)?;
             vec![DslProperty::LineHeight(parse_positive_scalar(
@@ -3574,6 +3581,7 @@ fn node_from_element(element: &DslElement, line_number: usize) -> Result<Node, D
             wrap: TextWrap::NoWrap,
             direction: TextDirection::Ltr,
             style_token: None,
+            font_size_token: None,
             line_height_token: None,
             letter_spacing_token: None,
         }),
@@ -3789,14 +3797,17 @@ fn apply_properties(
             }
             DslProperty::FontSize(font_size) => {
                 if let NodeKind::Text(text) = &mut node.kind {
-                    if let Some(size) = scalar_to_number(
-                        font_size,
-                        line_number,
-                        node.id.as_str().len(),
-                        "font size",
-                        diagnostics,
-                    ) {
-                        text.font_size = size;
+                    match font_size {
+                        DslScalar::Number(size) => {
+                            text.font_size = *size;
+                            text.font_size_token = None;
+                        }
+                        // A size-step token (e.g. `$type.size.7xl`) overrides the
+                        // role's default size at brand-resolution, after the role
+                        // is applied — so a per-surface hero size wins.
+                        DslScalar::Token(token) => {
+                            text.font_size_token = Some(token.clone());
+                        }
                     }
                 } else {
                     diagnostics.push(warning_diag(
@@ -3820,6 +3831,20 @@ fn apply_properties(
                         "LUMD0606",
                         "font_weight(...) only applies to text nodes",
                         "Move font_weight(...) to a text/t element.",
+                    ));
+                }
+            }
+            DslProperty::TextAlignment(align) => {
+                if let NodeKind::Text(text) = &mut node.kind {
+                    text.align = align.clone();
+                } else {
+                    diagnostics.push(warning_diag(
+                        line_number,
+                        1,
+                        node.id.as_str().len(),
+                        "LUMD0607",
+                        "align(...) only applies to text nodes",
+                        "Move align(left|center|right|justify) to a text/t element.",
                     ));
                 }
             }
@@ -4603,6 +4628,9 @@ fn parse_color(source: &str, line_number: usize, column: usize) -> Result<Color,
             value: normalize_dsl_hex_color(source, line_number, column)?,
         });
     }
+    if source.starts_with("rgb(") || source.starts_with("rgba(") {
+        return parse_rgb_color(source, line_number, column);
+    }
     Err(error_diag(
         line_number,
         column,
@@ -4611,6 +4639,54 @@ fn parse_color(source: &str, line_number: usize, column: usize) -> Result<Color,
         format!("invalid color {source}"),
         "Use #RRGGBB, #AARRGGBB, $token, or oklch(l,c,h,a).",
     ))
+}
+
+/// CSS `rgb(r,g,b)` / `rgba(r,g,b,a)` compatibility alias. Models reach for it
+/// out of CSS habit; we lower it to the canonical hex color instead of failing
+/// with `LUMD0219`. Channels are 0-255 (or `NN%`); alpha is 0-1 (or `NN%`). The
+/// result is `#RRGGBB`, or `#RRGGBBAA` when alpha is below 1.
+fn parse_rgb_color(
+    source: &str,
+    line_number: usize,
+    column: usize,
+) -> Result<Color, DslDiagnostic> {
+    let name = if source.starts_with("rgba(") {
+        "rgba"
+    } else {
+        "rgb"
+    };
+    let call = parse_required_call(source, name, line_number, column)?;
+    let expected = if name == "rgba" { 4 } else { 3 };
+    if call.args.len() != expected {
+        return Err(invalid_color_diag(source, line_number, column));
+    }
+    let channel = |raw: &str| -> Result<u8, DslDiagnostic> {
+        let trimmed = raw.trim();
+        let value = match trimmed.strip_suffix('%') {
+            Some(pct) => parse_f64(pct, line_number, column)? / 100.0 * 255.0,
+            None => parse_f64(trimmed, line_number, column)?,
+        };
+        Ok(value.round().clamp(0.0, 255.0) as u8)
+    };
+    let r = channel(&call.args[0])?;
+    let g = channel(&call.args[1])?;
+    let b = channel(&call.args[2])?;
+    let alpha = if expected == 4 {
+        let trimmed = call.args[3].trim();
+        let a = match trimmed.strip_suffix('%') {
+            Some(pct) => parse_f64(pct, line_number, column)? / 100.0,
+            None => parse_f64(trimmed, line_number, column)?,
+        };
+        (a.clamp(0.0, 1.0) * 255.0).round() as u8
+    } else {
+        255
+    };
+    let value = if alpha == 255 {
+        format!("#{r:02x}{g:02x}{b:02x}")
+    } else {
+        format!("#{r:02x}{g:02x}{b:02x}{alpha:02x}")
+    };
+    Ok(Color::Hex { value })
 }
 
 fn parse_font_property(
@@ -4735,7 +4811,7 @@ fn parse_page_size(call: &Call, line_number: usize) -> Result<DslPageSize, DslDi
             call.name.len(),
             "LUMD0250",
             "size(...) expects width, height, and unit",
-            "Use size(1080,1080,px), size(210,297,mm), or size(8.5,11,in).",
+            "Use size(1080,1080,px), size(595,842,pt), size(210,297,mm), or size(8.5,11,in).",
         ));
     }
 
@@ -4761,6 +4837,7 @@ fn parse_page_size(call: &Call, line_number: usize) -> Result<DslPageSize, DslDi
 
 fn parse_unit(source: &str, line_number: usize) -> Result<Unit, DslDiagnostic> {
     match source.trim() {
+        "pt" => Ok(Unit::Pt),
         "px" => Ok(Unit::Px),
         "mm" => Ok(Unit::Mm),
         "in" | "inch" | "inches" => Ok(Unit::In),
@@ -4770,7 +4847,7 @@ fn parse_unit(source: &str, line_number: usize) -> Result<Unit, DslDiagnostic> {
             other.len().max(1),
             "LUMD0252",
             format!("unknown page size unit {other}"),
-            "Use px, mm, or in.",
+            "Use pt, px, mm, or in.",
         )),
     }
 }
@@ -4829,23 +4906,6 @@ fn orientation_for_dimensions(width: f64, height: f64) -> Orientation {
         Orientation::Landscape
     } else {
         Orientation::Portrait
-    }
-}
-
-fn page_size_for_preset(preset: &PagePreset, orientation: &Orientation) -> (f64, f64, Unit) {
-    let (base_width, base_height, unit): (f64, f64, Unit) = match preset {
-        PagePreset::A4 => (210.0, 297.0, Unit::Mm),
-        PagePreset::UsLetter => (8.5, 11.0, Unit::In),
-        PagePreset::LinkedinAd => (1200.0, 627.0, Unit::Px),
-        PagePreset::EnvelopeDl => (220.0, 110.0, Unit::Mm),
-        PagePreset::Custom => (210.0, 297.0, Unit::Mm),
-    };
-    let short_side = base_width.min(base_height);
-    let long_side = base_width.max(base_height);
-
-    match orientation {
-        Orientation::Portrait => (short_side, long_side, unit),
-        Orientation::Landscape => (long_side, short_side, unit),
     }
 }
 
@@ -5238,6 +5298,8 @@ fn paint_like(source: &str) -> bool {
     trimmed.starts_with('#')
         || trimmed.starts_with('$')
         || trimmed.starts_with("oklch(")
+        || trimmed.starts_with("rgb(")
+        || trimmed.starts_with("rgba(")
         || trimmed.starts_with("linear(")
         || trimmed.starts_with("radial(")
         || trimmed.starts_with("solid(")
@@ -5449,6 +5511,48 @@ fn parse_shadow_property(
     };
     if call.args.is_empty() {
         return Err(shadow_error("shadow(...) expects a color".to_owned()));
+    }
+
+    // Compatibility alias for the CSS `box-shadow` ordering models reach for out
+    // of habit: `shadow(x, y[, blur[, spread]], color)` with the color LAST and
+    // every preceding argument a bare number. We accept it rather than reject it
+    // because the model emits it persistently and the intent is unambiguous; the
+    // canonical `shadow(color, o(), x(), y(), blur(), spread())` form is still
+    // preferred. Detection is conservative — it never fires when the first arg is
+    // a color (canonical form) or when a leading non-numeric id is present
+    // (`shadow(shadow_soft, #000000, ...)`), so existing grammars are untouched.
+    let n = call.args.len();
+    let positional = n >= 2
+        && !paint_like(&call.args[0])
+        && paint_like(&call.args[n - 1])
+        && call.args[..n - 1]
+            .iter()
+            .all(|arg| parse_call(arg.trim()).is_none() && parse_f64(arg, 0, 0).is_ok());
+    if positional {
+        let color = parse_color(&call.args[n - 1], line_number, column)?;
+        let mut shadow = DslShadow {
+            id: None,
+            color,
+            opacity: 1.0,
+            x: 0.0,
+            y: 0.0,
+            blur: 0.0,
+            spread: 0.0,
+        };
+        let offsets = &call.args[..n - 1];
+        if let Some(v) = offsets.first() {
+            shadow.x = parse_f64(v, line_number, column)?;
+        }
+        if let Some(v) = offsets.get(1) {
+            shadow.y = parse_f64(v, line_number, column)?;
+        }
+        if let Some(v) = offsets.get(2) {
+            shadow.blur = parse_f64(v, line_number, column)?;
+        }
+        if let Some(v) = offsets.get(3) {
+            shadow.spread = parse_f64(v, line_number, column)?;
+        }
+        return Ok(shadow);
     }
 
     let mut args = call.args.iter();

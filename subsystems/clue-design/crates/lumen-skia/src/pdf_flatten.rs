@@ -10,7 +10,7 @@
 //! fonts, or vector content.
 
 use crate::render::SkiaSceneRenderer;
-use lumen_core::{Diagnostic, PageId, Scene, Unit};
+use lumen_core::{page_size_points, Diagnostic, PageId, Scene};
 use lumen_export::{AssetByteResolver, PageRasterizer, RasterizeError};
 use skia_safe::{pdf, Data, Image, Paint as SkPaint, Rect as SkRect};
 
@@ -69,13 +69,9 @@ pub fn raster_flattened_pdf(
                     format!("page {page_id} is not in the scene"),
                 )
             })?;
-            let unit_to_pt = match page.size.unit {
-                Unit::Px => 1.0,
-                Unit::Mm => 72.0 / 25.4,
-                Unit::In => 72.0,
-            };
-            let width_pt = (page.size.width * unit_to_pt).max(1.0);
-            let height_pt = (page.size.height * unit_to_pt).max(1.0);
+            let (width_pt, height_pt) = page_size_points(page);
+            let width_pt = width_pt.max(1.0);
+            let height_pt = height_pt.max(1.0);
             let width_px = (width_pt / 72.0 * dpi).round().max(1.0) as u32;
             let height_px = (height_pt / 72.0 * dpi).round().max(1.0) as u32;
 

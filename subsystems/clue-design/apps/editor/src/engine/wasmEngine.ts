@@ -43,7 +43,36 @@ export interface WasmEngineInstance {
   preflight(): string;
   validate(): string;
   version(): string;
+  hitTest(pageId: string, x: number, y: number): string;
+  setMeasurements(measurementsJson: string): string;
   free?(): void;
+}
+
+/** Wave 3 C4: one editor-measured (SkParagraph) text metric. The engine keys
+ * each by the measurement input it lays out with, so providing these makes
+ * text `computed` Skia-faithful (measure-then-inject). */
+export interface TextMeasurement {
+  content: string;
+  font_family: string;
+  font_size: number;
+  font_weight: number;
+  line_height: number;
+  letter_spacing: number;
+  wrap: "no_wrap" | "wrap";
+  max_lines: number | null;
+  direction: "ltr" | "rtl" | "auto";
+  max_width?: number;
+  max_height?: number;
+  width: number;
+  height: number;
+}
+
+/** Wave 3 C3a: point→node hit result in absolute page space (scene units).
+ * `hit` is the topmost node (single-click target); `stack` is bottom-to-top
+ * for drill-in / cycling overlapping nodes. */
+export interface HitResult {
+  hit: NodeId | null;
+  stack: NodeId[];
 }
 
 /** Raw wasm-pack module surface (subset the editor uses). */
@@ -111,6 +140,13 @@ export interface OptimisticEnginePort {
   reset(scene: Scene): void;
   applyOperations(operations: Operation[]): EngineApplyOutcome;
   applyStructuredEdit?(edit: StructuredEdit): EngineStructuredEditOutcome;
+  /** Wave 3 C3a: point→node hit-test in absolute page space. Optional so
+   * test fakes need not implement it; the CanvasKit gesture layer requires
+   * a real (wasm) engine. */
+  hitTest?(pageId: PageId, x: number, y: number): HitResult;
+  /** Wave 3 C4: install editor-measured SkParagraph metrics and relayout.
+   * Optional (test fakes need not implement it). */
+  setMeasurements?(measurements: TextMeasurement[]): void;
 }
 
 /** Immutable, structurally shared merge of an engine delta into a scene. */
@@ -160,7 +196,11 @@ export class WasmEngine implements OptimisticEnginePort {
 
   constructor(module: WasmModule, initialScene: Scene) {
     this.instance = new module.LumenEngine(JSON.stringify(initialScene));
-    this.snapshot = initialScene;
+    // The engine relays out on load to establish a coherent whole-tree
+    // computed baseline; the render snapshot must be that relaid scene, not
+    // the raw input — otherwise the editor renders a scene whose computed
+    // geometry disagrees with the engine's (the coordinate-model desync).
+    this.snapshot = JSON.parse(this.instance.sceneJson()) as Scene;
     this.version = JSON.parse(module.engineVersion()) as EngineVersionInfo;
   }
 
@@ -170,7 +210,31 @@ export class WasmEngine implements OptimisticEnginePort {
 
   reset(scene: Scene): void {
     this.instance.loadScene(JSON.stringify(scene));
-    this.snapshot = scene;
+    // Render the engine's relaid scene (single-source local heuristic
+    // geometry), so reconcile and undo/redo frames never render the
+    // server's Skia computed directly — which would jump text on every
+    // reconcile. Geometry stays coherent and jump-free across the session.
+    this.snapshot = JSON.parse(this.instance.sceneJson()) as Scene;
+  }
+
+  /**
+   * Point→node hit-test in absolute page space (scene units). Returns the
+   * topmost node and the bottom-to-top stack under the point. Pure read; does
+   * not touch the scene. Consumed by the CanvasKit gesture layer (C3b).
+   */
+  hitTest(pageId: PageId, x: number, y: number): HitResult {
+    return JSON.parse(this.instance.hitTest(pageId, x, y)) as HitResult;
+  }
+
+  /**
+   * Install editor-measured SkParagraph text metrics and relayout, so text
+   * `computed` becomes Skia-faithful (Wave 3 C4). An empty array clears the
+   * override (back to the heuristic). The relaid scene is adopted as the
+   * render snapshot.
+   */
+  setMeasurements(measurements: TextMeasurement[]): void {
+    this.instance.setMeasurements(JSON.stringify(measurements));
+    this.snapshot = JSON.parse(this.instance.sceneJson()) as Scene;
   }
 
   /**
@@ -249,6 +313,17 @@ export class WasmEngine implements OptimisticEnginePort {
 
 export function wasmCoreFlagEnabled(): boolean {
   const flag = process.env.NEXT_PUBLIC_LUMEN_WASM_CORE;
+  return flag === "1" || flag === "true";
+}
+
+/**
+ * Wave 3 C5: render the editor canvas with CanvasKit instead of Konva. Off by
+ * default — Konva stays the fallback until render parity + interaction
+ * conformance hold. Parallel to the WASM-core flag (CanvasKit also needs the
+ * in-browser engine for hit-testing).
+ */
+export function canvasKitFlagEnabled(): boolean {
+  const flag = process.env.NEXT_PUBLIC_LUMEN_CANVASKIT;
   return flag === "1" || flag === "true";
 }
 

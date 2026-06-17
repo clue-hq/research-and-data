@@ -60,6 +60,8 @@ fn a4_page(id: &str, children: Vec<NodeId>) -> Page {
             unit: Unit::Mm,
             preset: Some(PagePreset::A4),
             orientation: lumen_core::Orientation::Portrait,
+            source: None,
+            output: None,
         },
         children,
         bleed: None,
@@ -173,6 +175,8 @@ fn custom_px_page(id: &str, width: f64, height: f64, children: Vec<NodeId>) -> P
             } else {
                 lumen_core::Orientation::Portrait
             },
+            source: None,
+            output: None,
         },
         children,
         bleed: None,
@@ -327,6 +331,10 @@ page page_square size(360,360,px)
     let svg = std::str::from_utf8(&result.artifacts[0].bytes).unwrap();
 
     assert!(svg.matches("<tspan").count() > 1, "{svg}");
+    assert!(
+        svg.contains("font-family=\"Inter, Arial, Helvetica, sans-serif\""),
+        "{svg}"
+    );
     assert!(svg.contains("letter-spacing=\"0\""));
 }
 
@@ -360,6 +368,38 @@ page page_square size(1080,1080,px)
     assert!(svg.contains("width=\"1080\""));
     assert!(svg.contains("height=\"1080\""));
     assert!(svg.contains("viewBox=\"0 0 1080 1080\""));
+}
+
+#[test]
+fn svg_export_a4_uses_physical_size_and_pt_viewbox() {
+    let adapter = LumenExportAdapter::new();
+    let mut scene = Scene::new(DocumentId::from("doc_a4_export"), "A4 Export");
+    let compile_output = compile_dsl_into_scene(
+        r##"
+page page_a4
+  bg rect p(0,0) s(595.2756,841.8898) fill(#ffffff)
+"##,
+        &mut scene,
+    );
+
+    assert!(compile_output.operation_error.is_none());
+    assert!(compile_output
+        .compile_output
+        .diagnostics
+        .iter()
+        .all(|diagnostic| diagnostic.diagnostic.severity != DiagnosticSeverity::Error));
+
+    let result = adapter
+        .export(
+            &scene,
+            &request(ExportFormat::Svg, vec![PageId::from("page_a4")]),
+        )
+        .unwrap();
+    let svg = std::str::from_utf8(&result.artifacts[0].bytes).unwrap();
+
+    assert!(svg.contains("width=\"210mm\""), "{svg}");
+    assert!(svg.contains("height=\"297mm\""), "{svg}");
+    assert!(svg.contains("viewBox=\"0 0 595.2756 841.8898\""), "{svg}");
 }
 
 #[test]
@@ -1459,6 +1499,8 @@ fn scene_for_phase_f_case(case: &PhaseFPageCase) -> Scene {
                 unit: case.unit.clone(),
                 preset: Some(case.preset.clone()),
                 orientation: case.orientation.clone(),
+                source: None,
+                output: None,
             },
             children: vec![case.node_id.clone()],
             bleed: None,
@@ -1535,6 +1577,7 @@ fn parse_pdf_media_box(pdf: &str) -> [f64; 4] {
 
 fn unit_to_points_for_test(unit: &Unit) -> f64 {
     match unit {
+        Unit::Pt => 1.0,
         Unit::Px => 1.0,
         Unit::Mm => 72.0 / 25.4,
         Unit::In => 72.0,

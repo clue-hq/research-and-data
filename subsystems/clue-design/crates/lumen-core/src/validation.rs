@@ -1,6 +1,7 @@
 use crate::assets::{validate_scene_assets, AssetValidationOptions};
 use crate::diagnostics::{Diagnostic, DiagnosticSubject, Phase};
 use crate::ids::{SlotId, SlotKey};
+use crate::page_geometry::is_canonical_page_size;
 use crate::scene::{EffectKind, Node, NodeKind, Scene, Stroke};
 use crate::slots::{ContentType, EmptyBehavior, SlotScope};
 use crate::SCHEMA_VERSION;
@@ -79,6 +80,41 @@ fn validate_page_sizes(scene: &Scene, diagnostics: &mut Vec<Diagnostic>) {
                 )
                 .with_hint("Use positive custom dimensions, for example size(1080,1080,px)."),
             );
+        }
+
+        if !is_canonical_page_size(&page.size) {
+            diagnostics.push(
+                Diagnostic::advice(
+                    Phase::Validation,
+                    "LUMV0805",
+                    format!(
+                        "page {} uses legacy non-pt geometry unit {:?}",
+                        page.id, page.size.unit
+                    ),
+                    Some(DiagnosticSubject::Page(page.id.clone())),
+                )
+                .with_hint(
+                    "New pages should use canonical pt layout geometry with source/output metadata.",
+                ),
+            );
+        }
+
+        if let Some(source) = &page.size.source {
+            if !source.width.is_finite()
+                || !source.height.is_finite()
+                || source.width <= 0.0
+                || source.height <= 0.0
+            {
+                diagnostics.push(
+                    Diagnostic::error(
+                        Phase::Validation,
+                        "LUMV0803",
+                        format!("page {} has invalid source size metadata", page.id),
+                        Some(DiagnosticSubject::Page(page.id.clone())),
+                    )
+                    .with_hint("Source page size metadata must be finite and positive."),
+                );
+            }
         }
     }
 }

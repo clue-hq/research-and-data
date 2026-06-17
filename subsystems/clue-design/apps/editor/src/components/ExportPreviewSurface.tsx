@@ -1,10 +1,10 @@
 "use client";
 
-import { FileWarning, Image as ImageIcon } from "lucide-react";
-import type { Diagnostic, DiagnosticSubject, PageId, Scene } from "@/engine/contracts";
+import { useEffect, useRef, useState } from "react";
+import { FileWarning } from "lucide-react";
+import type { DiagnosticSubject, PageId, Scene } from "@/engine/contracts";
 import type { EditorExportArtifact, EditorExportResult } from "@/engine/exportRunner";
-import { artifactForPage, exportParityReport } from "@/engine/exportParity";
-import { exportPreviewApprovalState, type ExportPreviewApprovalState } from "@/engine/exportPreviewApproval";
+import { artifactForPage } from "@/engine/exportParity";
 
 interface ExportPreviewSurfaceProps {
   scene: Scene;
@@ -20,165 +20,94 @@ export function ExportPreviewSurface({
   onSelectSubject
 }: ExportPreviewSurfaceProps) {
   const artifact = artifactForPage(exportResult, activePageId);
-  const report = exportParityReport(scene, activePageId, exportResult);
-  const diagnostics = previewDiagnostics(report.diagnostics, exportResult?.diagnostics ?? []);
-  const approval = exportPreviewApprovalState({
-    artifact,
-    exportResult,
-    parityStatus: report.status,
-    diagnostics
-  });
+  void scene;
+  void onSelectSubject;
 
   return (
     <section className="export-preview-shell">
-      <div className="export-preview-toolbar">
-        <span>
-          <ImageIcon aria-hidden size={15} />
-          Export Preview
-        </span>
-        <ParityBadge status={report.status} />
-      </div>
       <div className="export-preview-body">
         {artifact?.data_url ? (
-          <div className="artifact-preview-frame">
-            <ArtifactPreview artifact={artifact} />
-            <ArtifactPreviewMeta artifact={artifact} />
-          </div>
+          <ArtifactPreview artifact={artifact} />
         ) : (
           <EmptyPreview />
         )}
-      </div>
-      <div className="export-preview-diagnostics" aria-live="polite">
-        <ApprovalSummary approval={approval} />
-        {report.canvas && report.export ? (
-          <p className="muted">
-            Canvas {formatSize(report.canvas)} · Export {formatSize(report.export)}
-          </p>
-        ) : null}
-        <ul className="diagnostic-list">
-          {diagnostics.map((diagnostic) => (
-            <DiagnosticItem
-              key={`${diagnostic.code}-${diagnostic.message}`}
-              diagnostic={diagnostic}
-              onSelectSubject={onSelectSubject}
-            />
-          ))}
-        </ul>
       </div>
     </section>
   );
 }
 
-function ApprovalSummary({ approval }: { approval: ExportPreviewApprovalState }) {
+function ArtifactPreview({ artifact }: { artifact: EditorExportArtifact }) {
+  const frameRef = useRef<HTMLDivElement | null>(null);
+  const [frameSize, setFrameSize] = useState<{ width: number; height: number } | null>(null);
+  const aspectRatio = artifactPreviewAspectRatio(artifact);
+  const previewSize = previewMediaSize(artifact, frameSize);
+  const previewStyle = {
+    aspectRatio,
+    ...(previewSize ? { width: `${previewSize.width}px`, height: `${previewSize.height}px` } : {})
+  };
+
+  useEffect(() => {
+    const frame = frameRef.current;
+    if (!frame || typeof ResizeObserver === "undefined") {
+      return;
+    }
+    const updateFrameSize = () => {
+      const rect = frame.getBoundingClientRect();
+      setFrameSize({ width: rect.width, height: rect.height });
+    };
+    updateFrameSize();
+    const observer = new ResizeObserver(updateFrameSize);
+    observer.observe(frame);
+    return () => observer.disconnect();
+  }, []);
+
+  if (artifact.format === "pdf") {
+    return (
+      <div ref={frameRef} className="artifact-preview-frame">
+        <div className="artifact-preview-media" style={previewStyle}>
+          <iframe title="Export preview artifact" src={artifact.data_url ?? undefined} />
+        </div>
+      </div>
+    );
+  }
   return (
-    <div className={`preview-approval ${approval.status}`}>
-      <strong>{approval.title}</strong>
-      <span>{approval.message}</span>
+    <div ref={frameRef} className="artifact-preview-frame">
+      <div className="artifact-preview-media" style={previewStyle}>
+        <img src={artifact.data_url ?? undefined} alt="Export preview artifact" />
+      </div>
     </div>
   );
 }
 
-function DiagnosticItem({
-  diagnostic,
-  onSelectSubject
-}: {
-  diagnostic: Diagnostic;
-  onSelectSubject?: (subject: DiagnosticSubject) => void;
-}) {
-  const subjectLabel = diagnostic.subject ? diagnosticSubjectLabel(diagnostic.subject) : null;
-  const canSelect = Boolean(onSelectSubject && diagnostic.subject && diagnostic.subject.kind !== "document");
-  return (
-    <li className={diagnostic.severity}>
-      <strong>{diagnostic.code}</strong>
-      <span>{diagnostic.message}</span>
-      {diagnostic.subject ? (
-        <button
-          type="button"
-          className="diagnostic-subject-button"
-          disabled={!canSelect}
-          onClick={() => diagnostic.subject && onSelectSubject?.(diagnostic.subject)}
-        >
-          {canSelect ? `Show ${subjectLabel}` : subjectLabel}
-        </button>
-      ) : null}
-    </li>
-  );
-}
-
-function diagnosticSubjectLabel(subject: DiagnosticSubject): string {
-  switch (subject.kind) {
-    case "document":
-      return "document";
-    case "page":
-      return `page ${subject.id}`;
-    case "node":
-      return `node ${subject.id}`;
-    case "slot":
-      return `slot ${subject.id}`;
-    case "asset":
-      return `asset ${subject.id}`;
+function previewMediaSize(
+  artifact: EditorExportArtifact,
+  frameSize: { width: number; height: number } | null
+): { width: number; height: number } | null {
+  const artifactWidth = artifact.dimensions?.width;
+  const artifactHeight = artifact.dimensions?.height;
+  if (!frameSize || !artifactWidth || !artifactHeight || artifactWidth <= 0 || artifactHeight <= 0) {
+    return null;
   }
-}
-
-function previewDiagnostics(parityDiagnostics: Diagnostic[], exportDiagnostics: Diagnostic[]): Diagnostic[] {
-  const seen = new Set<string>();
-  return [...parityDiagnostics, ...exportDiagnostics].filter((diagnostic) => {
-    const key = `${diagnostic.code}:${diagnostic.message}`;
-    if (seen.has(key)) {
-      return false;
-    }
-    seen.add(key);
-    return true;
-  });
-}
-
-function ArtifactPreview({ artifact }: { artifact: EditorExportArtifact }) {
-  if (artifact.format === "svg" || artifact.format === "pdf") {
-    return <iframe title="Export preview artifact" src={artifact.data_url ?? undefined} />;
+  const ratio = artifactWidth / artifactHeight;
+  let width = frameSize.width;
+  let height = width / ratio;
+  if (height > frameSize.height) {
+    height = frameSize.height;
+    width = height * ratio;
   }
-  return <img src={artifact.data_url ?? undefined} alt="Export preview artifact" />;
+  return {
+    width: Math.max(1, Math.floor(width)),
+    height: Math.max(1, Math.floor(height))
+  };
 }
 
-function ArtifactPreviewMeta({ artifact }: { artifact: EditorExportArtifact }) {
-  return (
-    <dl className="artifact-preview-meta" aria-label="Export preview artifact details">
-      <div>
-        <dt>Artifact</dt>
-        <dd>
-          {artifact.format.toUpperCase()} · {artifact.page_id ? `page ${artifact.page_id}` : "document"}
-        </dd>
-      </div>
-      <div>
-        <dt>Size</dt>
-        <dd>{artifact.byte_length} bytes</dd>
-      </div>
-      <div>
-        <dt>Filename</dt>
-        <dd>{artifact.filename}</dd>
-      </div>
-      <div>
-        <dt>Dimensions</dt>
-        <dd>{artifact.dimensions ? artifactDimensionLabel(artifact) : "unavailable"}</dd>
-      </div>
-      {artifact.sidecar_summary ? (
-        <div>
-          <dt>Sidecar</dt>
-          <dd>
-            {artifact.sidecar_summary.profile_name ?? "profile"} · {artifact.sidecar_summary.page_count}{" "}
-            {artifact.sidecar_summary.page_count === 1 ? "page" : "pages"} · {artifact.sidecar_summary.node_count}{" "}
-            {artifact.sidecar_summary.node_count === 1 ? "node" : "nodes"}
-          </dd>
-        </div>
-      ) : null}
-    </dl>
-  );
-}
-
-function artifactDimensionLabel(artifact: EditorExportArtifact): string {
-  if (!artifact.dimensions) {
-    return "unavailable";
+function artifactPreviewAspectRatio(artifact: EditorExportArtifact): string {
+  const width = artifact.dimensions?.width;
+  const height = artifact.dimensions?.height;
+  if (!width || !height || width <= 0 || height <= 0) {
+    return "1 / 1";
   }
-  return `${formatNumber(artifact.dimensions.width)} x ${formatNumber(artifact.dimensions.height)} ${artifact.dimensions.unit} · ${artifact.dimensions.source}`;
+  return `${width} / ${height}`;
 }
 
 function EmptyPreview() {
@@ -188,16 +117,4 @@ function EmptyPreview() {
       Export the active page to preview the artifact.
     </div>
   );
-}
-
-function ParityBadge({ status }: { status: "match" | "mismatch" | "unavailable" }) {
-  return <strong className={`parity-badge ${status}`}>{status === "match" ? "Parity OK" : status === "mismatch" ? "Mismatch" : "No export"}</strong>;
-}
-
-function formatSize(size: { width: number; height: number }): string {
-  return `${formatNumber(size.width)} x ${formatNumber(size.height)}`;
-}
-
-function formatNumber(value: number): string {
-  return Number.isInteger(value) ? String(value) : value.toFixed(2);
 }

@@ -767,6 +767,8 @@ fn asset_scene_operations() -> Vec<Operation> {
                     unit: Unit::Px,
                     preset: Some(PagePreset::Custom),
                     orientation: Orientation::Landscape,
+                    source: None,
+                    output: None,
                 },
                 children: Vec::new(),
                 bleed: None,
