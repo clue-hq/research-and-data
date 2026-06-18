@@ -1,0 +1,29 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# M0.1 CI: format + lint + static types + the modular dependency contracts + structure tests.
+# M0.6 extends this with a Postgres+pgvector service, the migration up/down/up smoke test, the
+# span-emission smoke test, and the eval harness. No live provider API keys are ever required.
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Set up Python (from .python-version)
+        run: uv python install
+
+      - name: Install dependencies (frozen)
+        run: uv sync --frozen
+
+      - name: Lint, type-check, dependency contracts, tests
+        run: make check

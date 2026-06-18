@@ -1,0 +1,184 @@
+[project]
+name = "clue-research"
+version = "0.0.0"
+description = "Clue-HQ Research & Data subsystem — trustworthy claim-with-provenance data layer for ABM."
+readme = "readme.md"
+requires-python = ">=3.12"
+license = { text = "Proprietary" }
+# Runtime stack lands per-milestone. pydantic is declared now (M0.1) because it is the
+# runtime-validation library the core domain models (M0.2 / core/) are built on: it enforces
+# claim invariants (source_tier in 1..4, confidence in 0..1, "no evidence_span -> not promotable")
+# at runtime, where mypy (static) cannot. See readme.md "Type checking & validation".
+dependencies = [
+    "pydantic>=2.7",
+]
+
+[dependency-groups]
+# Dev toolchain — the M0.1 enforcement baseline. Pinned loosely; uv.lock pins exact versions.
+dev = [
+    "ruff>=0.6",          # formatter + linter (replaces black/flake8/isort)
+    "mypy>=1.11",         # static ("compile-time") type checker
+    "import-linter>=2.0", # machine-enforced modular dependency rules (the M0.1 seam contracts)
+    "pytest>=8.2",        # structure + contract tests (M0.6 grows this into the full harness)
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/clue_research"]
+
+# --- ruff: format + lint ----------------------------------------------------
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "C4"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["clue_research"]
+
+# --- mypy: static type checking (with the pydantic plugin) ------------------
+[tool.mypy]
+python_version = "3.12"
+files = ["src/clue_research"]
+mypy_path = "src"
+explicit_package_bases = true
+namespace_packages = true
+strict = true
+warn_unused_configs = true
+plugins = ["pydantic.mypy"]
+
+[tool.pydantic-mypy]
+init_forbid_extra = true
+init_typed = true
+warn_required_dynamic_aliases = true
+
+# --- pytest -----------------------------------------------------------------
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+# --- import-linter: the executable form of the modular-boundary rules -------
+# These five contracts ARE the M0.1 deliverable: they make "any component is replaceable without
+# breaking its neighbours" a machine-checked fact. Run via `make contracts` (and in CI).
+[tool.importlinter]
+root_package = "clue_research"
+include_external_packages = true  # required so provider-SDK (external) imports can be forbidden
+
+# Rule 2 — core/ is the shared kernel: it imports nothing else inside clue_research.
+[[tool.importlinter.contracts]]
+name = "core is the shared kernel (imports nothing internal)"
+type = "forbidden"
+source_modules = ["clue_research.core"]
+forbidden_modules = [
+    "clue_research.config",
+    "clue_research.obs",
+    "clue_research.db",
+    "clue_research.claimstore",
+    "clue_research.identity",
+    "clue_research.icp",
+    "clue_research.sources",
+    "clue_research.resolvers",
+    "clue_research.adapters",
+    "clue_research.stage0",
+    "clue_research.discovery_scoring",
+    "clue_research.durable",
+    "clue_research.profiling",
+    "clue_research.verification",
+    "clue_research.compliance",
+    "clue_research.synthesis",
+    "clue_research.narrative",
+    "clue_research.review",
+    "clue_research.api",
+]
+
+# Rule 1 (shape) — the shared base is layered obs -> config -> core; no upward imports.
+# Everything else may freely import this trio (that is the default, not constrained here).
+[[tool.importlinter.contracts]]
+name = "shared base is layered: obs -> config -> core"
+type = "layers"
+containers = ["clue_research"]
+layers = ["obs", "config", "core"]
+
+# Rule 3 — workers never import each other (resolvers / adapters / judges / scorers).
+# Judges live in verification/; scorers live in discovery_scoring/. Per the architecture, workers
+# coordinate through the claim store, never by importing a sibling worker.
+[[tool.importlinter.contracts]]
+name = "workers are independent (resolvers / adapters / judges / scorers)"
+type = "independence"
+modules = [
+    "clue_research.resolvers",
+    "clue_research.adapters",
+    "clue_research.verification",
+    "clue_research.discovery_scoring",
+]
+
+# Rule 4 — provider SDKs live only behind resolvers/<provider> and adapters/<source>.
+# Every package EXCEPT resolvers/ and adapters/ is forbidden from importing a provider SDK, so the
+# provider name never leaks downstream (swapping Clay -> direct APIs stays a config/registry change).
+# The SDK list is illustrative; M4 finalizes the exact import names as providers are chosen.
+[[tool.importlinter.contracts]]
+name = "provider SDKs only behind resolvers/<provider> and adapters/<source>"
+type = "forbidden"
+source_modules = [
+    "clue_research.core",
+    "clue_research.config",
+    "clue_research.obs",
+    "clue_research.db",
+    "clue_research.claimstore",
+    "clue_research.identity",
+    "clue_research.icp",
+    "clue_research.sources",
+    "clue_research.stage0",
+    "clue_research.discovery_scoring",
+    "clue_research.durable",
+    "clue_research.profiling",
+    "clue_research.verification",
+    "clue_research.compliance",
+    "clue_research.synthesis",
+    "clue_research.narrative",
+    "clue_research.review",
+    "clue_research.api",
+]
+forbidden_modules = [
+    "clay",
+    "apollo",
+    "zoominfo",
+    "builtwith",
+    "exa_py",
+    "parallel",
+    "firecrawl",
+    "simple_salesforce",
+    "hubspot",
+]
+
+# Rule 5 — nothing imports the FastAPI app layer (api/). Dependencies point inward only.
+[[tool.importlinter.contracts]]
+name = "nothing imports the api app layer"
+type = "forbidden"
+source_modules = [
+    "clue_research.core",
+    "clue_research.config",
+    "clue_research.obs",
+    "clue_research.db",
+    "clue_research.claimstore",
+    "clue_research.identity",
+    "clue_research.icp",
+    "clue_research.sources",
+    "clue_research.resolvers",
+    "clue_research.adapters",
+    "clue_research.stage0",
+    "clue_research.discovery_scoring",
+    "clue_research.durable",
+    "clue_research.profiling",
+    "clue_research.verification",
+    "clue_research.compliance",
+    "clue_research.synthesis",
+    "clue_research.narrative",
+    "clue_research.review",
+]
+forbidden_modules = ["clue_research.api"]
