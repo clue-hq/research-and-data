@@ -20,6 +20,12 @@ During every coding session or goal session, keep `_memory/` updated as work pro
 
 Do not store secrets, private credentials, API keys, customer data, or raw proprietary source excerpts in `_memory/`. Keep entries concise and operational so another agent can continue the work without re-deriving context.
 
+## Commits & version control
+- **Commit locally, proactively and strategically.** Commit at natural checkpoints — a completed issue, a coherent unit of work, a green `make check` — rather than waiting to be asked. Keep each commit well-scoped and logically grouped (don't bundle unrelated changes), and write a clear, descriptive message that states *what* changed and *why*. You do **not** need to show or confirm a commit before making it.
+- **Never push.** Do not `git push`, and do not open or update pull requests or otherwise publish to any remote, without an explicit instruction to do so. **Local commits only** — the user reviews the history and decides when, what, and where to push.
+- Don't commit directly to the default branch (`main`); do the work on a feature branch.
+- **No Claude / AI attribution.** Never credit Claude (or any AI assistant/tool) as a co-author or author. Do **not** add a `Co-Authored-By: Claude …` trailer (or any similar attribution) to commit messages, and do not add an AI-generated/"Generated with" footer to pull request descriptions. Commits and PRs are authored under the human committer only.
+
 ## What it does
 End to end: reverse-profile the client from near-zero input (worst case: just name + website) into a versioned Client Knowledge Base → synthesize and co-confirm one or more versioned ICP specs → bring accounts in via either entry scenario (we discover them, or the client imports a list — or both) → cheaply score every account and assign tiers → run deep, source-grounded research only on high-tier accounts → resolve each account's buying committee → emit explainable fit/intent scores and a persona-keyed, fully-sourced claim bundle plus a grounded value narrative, with a human review surface over high-value accounts.
 
