@@ -54,9 +54,9 @@ What is explicitly **NOT** here: the `claim`/`account_entity` tables and merge p
 - **Dependencies:** Depends on M0.1 (package exists). Blocks M0.3 (migrations encode these shapes), M0.5 (spans annotate operations over these types), M0.6 (contract tests target these), and every M1–M13 component.
 - **Acceptance criteria:**
   - Constructing a `Claim` without the provenance required for its tier raises a validation error; constructing one with `source_tier` outside 1..4 or `confidence` outside 0..1 raises.
-  - The promotion predicate returns false for a tier-4 claim with empty `evidence_span` and true for an otherwise-valid corroborated claim (unit-tested both directions).
+  - The promotion predicate returns false for a tier-4 claim with empty `evidence_span` *and* for a weakly identity-bound contact claim (staged-flow §6), and true for an otherwise-valid corroborated claim (unit-tested in each direction).
   - A no-op/example resolver that satisfies the `Resolver` Protocol type-checks; a class missing `tier` or `resolve` fails the type-checker (contract test).
-  - `SourceManifest` round-trips all five modalities and both `entity_scope` extremes; `account.resonance.*` and `contact.facet.*` field-keys validate against the namespace helper.
+  - `SourceManifest` round-trips all five modalities and both `entity_scope` extremes; `account.resonance.*` and `contact.facet.*` field-keys validate against the namespace helper, and `SourceManifest.yields` entries are validated as field-keys or field-classes.
   - Contact `Claim`s expose `identity_binding` and `use_class`; account `Claim`s do not require them — verified by tests.
   - `AccountHandoff` type includes `account_entity_id`, `fit_score`, `intent_score`, `account_profile_claims`, `committee[]` (with per-contact `persona`, `role_on_committee`, `identity_binding`, `use_class`), `value_narrative[]`, and `provenance_index` fields matching overview §3.
 - **Out of scope:** The `current_value` merge *algorithm* (M1); identity *resolution* logic (M2); the ICP *compiler* (M3); resolver *implementations* and the source registry *rows/adapters* (M4); narrative *generation* and handoff *assembly* (M12); the use-gate and faithfulness-judge *logic* (M9/M10). The `lawful_basis` claim-provenance field (Doc D §4) is added with M10, not here. M0.2 ships the shapes and invariants only.
