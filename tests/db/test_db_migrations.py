@@ -48,10 +48,16 @@ def test_up_down_up_is_clean() -> None:
 
 
 @pytest.mark.usefixtures("require_db")
-def test_only_alembic_version_table_and_vector_after_head() -> None:
-    """After migrating to head, only `alembic_version` exists — no domain tables — plus `vector`."""
+def test_no_domain_tables_at_m0_head() -> None:
+    """At M0's head (revision 0001) only `alembic_version` exists — no domain tables — plus
+    `vector`. (M1+ adds domain tables at later revisions; this guards the M0 = substrate-only
+    invariant without coupling to every future migration.)"""
     cfg = _alembic_config()
+    # Reach 0001 regardless of the DB's current revision (it may already be at head), so the
+    # assertion observes M0's head exactly. `upgrade` only moves forward; `downgrade` brings a
+    # head DB back down to 0001 (dropping the M1 `claim` table).
     command.upgrade(cfg, "head")
+    command.downgrade(cfg, "0001")
 
     async def _run() -> None:
         async with db_lifespan() as engine, engine.connect() as conn:
@@ -73,12 +79,14 @@ def test_only_alembic_version_table_and_vector_after_head() -> None:
                 .all()
             )
 
-        # Exactly one table — Alembic's bookkeeping table — and no domain tables.
-        assert tables == ["alembic_version"], f"unexpected tables after M0 head: {tables}"
+        # Exactly one table — Alembic's bookkeeping table — and no domain tables at M0 head.
+        assert tables == ["alembic_version"], f"unexpected tables at M0 head (0001): {tables}"
         # The vector extension is enabled; the rest are Postgres built-ins (e.g. plpgsql).
         assert "vector" in exts
 
     run_async(_run())
+    # Restore head so following tests / a live `make db-smoke` see the full schema.
+    command.upgrade(cfg, "head")
 
 
 @pytest.mark.usefixtures("require_db")
