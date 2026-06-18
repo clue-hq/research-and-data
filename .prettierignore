@@ -1,0 +1,5 @@
+# Defense-in-depth: if Prettier is ever invoked (extension "Format Document", CLI, a pre-commit),
+# never let it reflow the hand-authored docs — it has corrupted **`code`** spans, tables, and ASCII
+# diagrams in these files. The editor setting in .vscode/settings.json disables format-on-save for
+# Markdown; this covers the other invocation paths.
+docs/
