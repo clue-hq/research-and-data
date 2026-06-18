@@ -1,0 +1,138 @@
+"""Metric emission points for the Doc C §6 surfaces (M0.5).
+
+The four live surfaces — per-source yield, verification health, cost burn-down, phase progress — are
+*derived from claim provenance* (M0.2), which is the same data the source-intelligence learning loop
+consumes (staged-flow §7e). Defining them off the claim store means observability and the learning
+loop share one source of truth rather than a parallel pipeline.
+
+M0.5 ships the emission **hooks** and a swappable :class:`MetricSink` (an in-memory default for
+dev/CI/tests; an OTel-metrics sink plugs in for production without touching callers). The values
+populate as later milestones actually produce and verify claims.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Iterable, Mapping
+from decimal import Decimal
+from typing import Protocol
+
+from clue_research.core import Claim, EntityType, IdentityBinding, VerificationStatus
+from clue_research.obs.spans import CAMPAIGN_PHASES
+
+# --- metric names -----------------------------------------------------------
+METRIC_CLAIMS_TOTAL = "research.claims.total"  # by source
+METRIC_CLAIMS_SURVIVING = "research.claims.surviving"  # by source (verified)
+METRIC_TIER4_TOTAL = "research.verification.tier4.total"
+METRIC_TIER4_PASSED = "research.verification.tier4.passed"
+METRIC_CONTACT_CLAIMS_TOTAL = "research.verification.contact.total"
+METRIC_CONTACT_STRONG_BINDING = "research.verification.contact.strong_binding"
+METRIC_COST_CENTS = "research.cost.cents"
+METRIC_COST_CAP_CENTS = "research.cost.cap_cents"
+METRIC_PHASE_PROGRESS = "research.phase.progress"
+
+
+class MetricSink(Protocol):
+    """The swappable metrics backend. Production wires an OTel-metrics implementation; the default
+    is in-memory (collects for tests/dev). Callers depend on this Protocol, not a concrete sink."""
+
+    def add(self, name: str, value: float, attributes: Mapping[str, str]) -> None: ...
+    def gauge(self, name: str, value: float, attributes: Mapping[str, str]) -> None: ...
+
+
+def _key(name: str, attributes: Mapping[str, str]) -> tuple[str, tuple[tuple[str, str], ...]]:
+    return name, tuple(sorted(attributes.items()))
+
+
+class InMemorySink:
+    """Default sink: accumulates counters and last-value gauges in memory (what tests read)."""
+
+    def __init__(self) -> None:
+        self.counters: dict[tuple[str, tuple[tuple[str, str], ...]], float] = {}
+        self.gauges: dict[tuple[str, tuple[tuple[str, str], ...]], float] = {}
+
+    def add(self, name: str, value: float, attributes: Mapping[str, str]) -> None:
+        self.counters[_key(name, attributes)] = (
+            self.counters.get(_key(name, attributes), 0.0) + value
+        )
+
+    def gauge(self, name: str, value: float, attributes: Mapping[str, str]) -> None:
+        self.gauges[_key(name, attributes)] = value
+
+    def counter(self, name: str, **attributes: str) -> float:
+        return self.counters.get(_key(name, attributes), 0.0)
+
+    def gauge_value(self, name: str, **attributes: str) -> float:
+        return self.gauges.get(_key(name, attributes), 0.0)
+
+
+_default_sink: MetricSink = InMemorySink()
+
+
+def get_metric_sink() -> MetricSink:
+    return _default_sink
+
+
+def set_metric_sink(sink: MetricSink) -> None:
+    """Swap the metrics backend (e.g. install an OTel-metrics sink in production, or a fresh
+    in-memory sink per test)."""
+    global _default_sink
+    _default_sink = sink
+
+
+def _source_label(claim: Claim) -> str:
+    """A per-source key read from claim provenance. M4 normalizes resolver output to a registry
+    ``source_key``; until then the claim carries its ``source_url`` (or, lacking one, its tier)."""
+    return claim.source_url or f"tier-{claim.source_tier}"
+
+
+def record_source_yield(claims: Iterable[Claim], *, sink: MetricSink | None = None) -> None:
+    """Per-source yield: how many claims survive verification, bucketed by source (Doc C §6).
+
+    M4 transition: the spec keys this "by source_key", but M0.2 claims carry ``source_url``, not a
+    registry ``source_key`` — so M0.5 buckets by :func:`_source_label` (source_url, else tier).
+    When M4 adds ``source_key`` to claims, prefer it here (fall back to source_url); dashboards and
+    the learning loop (M13, staged-flow §7e) must treat that as a re-keying, not a new source set.
+    """
+    sink = sink or get_metric_sink()
+    for claim in claims:
+        label = {"source": _source_label(claim)}
+        sink.add(METRIC_CLAIMS_TOTAL, 1, label)
+        if claim.verification_status is VerificationStatus.VERIFIED:
+            sink.add(METRIC_CLAIMS_SURVIVING, 1, label)
+
+
+def record_verification_health(claims: Iterable[Claim], *, sink: MetricSink | None = None) -> None:
+    """Verification health: tier-4 faithfulness-judge pass-rate + strong-binding share of personal
+    claims (Doc C §6 — the early warning that a model/resolver swap regressed quality)."""
+    sink = sink or get_metric_sink()
+    for claim in claims:
+        if claim.source_tier == 4:
+            sink.add(METRIC_TIER4_TOTAL, 1, {})
+            if claim.verification_status is VerificationStatus.VERIFIED:
+                sink.add(METRIC_TIER4_PASSED, 1, {})
+        if claim.entity_type is EntityType.CONTACT:
+            sink.add(METRIC_CONTACT_CLAIMS_TOTAL, 1, {})
+            if claim.identity_binding is IdentityBinding.STRONG:
+                sink.add(METRIC_CONTACT_STRONG_BINDING, 1, {})
+
+
+def record_cost_burndown(
+    claims: Iterable[Claim], *, cap_cents: Decimal | None = None, sink: MetricSink | None = None
+) -> None:
+    """Cost burn-down: spend so far vs. the cap (Doc C §6 / D7)."""
+    sink = sink or get_metric_sink()
+    spent = sum((claim.cost_cents for claim in claims), Decimal(0))
+    sink.gauge(METRIC_COST_CENTS, float(spent), {})
+    if cap_cents is not None:
+        sink.gauge(METRIC_COST_CAP_CENTS, float(cap_cents), {})
+
+
+def record_phase_progress(
+    phase: str, *, completed: int, total: int, sink: MetricSink | None = None
+) -> None:
+    """Phase progress 0..1 for a campaign-run phase (Doc C §6). M7 supplies the counts."""
+    if phase not in CAMPAIGN_PHASES:
+        raise ValueError(f"unknown campaign phase {phase!r}; expected one of {CAMPAIGN_PHASES}")
+    sink = sink or get_metric_sink()
+    fraction = completed / total if total else 0.0
+    sink.gauge(METRIC_PHASE_PROGRESS, fraction, {"phase": phase})

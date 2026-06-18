@@ -1,0 +1,123 @@
+"""`clue_research.obs` — Observability & tracing skeleton (M0.5).
+
+The shared tracing/metrics/logging seam every pipeline component emits through. Spans are
+OpenTelemetry-shaped behind the ``traced_step`` wrapper (the backend/exporter is swappable);
+the canonical span names and standard attributes are the stable *observability contract* — the
+faithfulness judge (accuracy) and the use gate (appropriateness) are deliberately **distinct**
+spans (Doc D §5). Metric emission points derive the Doc C §6 surfaces from claim provenance, the
+same data the source-intelligence learning loop reads. All of it routes secrets through the M0.4
+redaction helper so none reaches a span or log.
+
+`obs` imports only `core` and `config` (the shared base; `obs → config → core`, M0.1). Implements
+ENG-125 (docs/specs/M00-foundations-and-shared-contracts.md §M0.5).
+"""
+
+from __future__ import annotations
+
+from clue_research.obs.attributes import (
+    ATTR_CAMPAIGN_RUN_ID,
+    ATTR_CLIENT_ID,
+    ATTR_COST_CENTS,
+    ATTR_ENTITY_ID,
+    ATTR_ENTITY_TYPE,
+    ATTR_FIELD_KEY,
+    ATTR_ICP_ID,
+    ATTR_RESEARCH_MODE,
+    ATTR_RUN_ID,
+    ATTR_SOURCE_KEY,
+    ATTR_SOURCE_TIER,
+    STANDARD_ATTRIBUTES,
+    SpanAttributes,
+    safe_attributes,
+    to_otel_value,
+)
+from clue_research.obs.logging import RedactingFilter, configure_logging, get_logger
+from clue_research.obs.metrics import (
+    METRIC_CLAIMS_SURVIVING,
+    METRIC_CLAIMS_TOTAL,
+    METRIC_CONTACT_CLAIMS_TOTAL,
+    METRIC_CONTACT_STRONG_BINDING,
+    METRIC_COST_CAP_CENTS,
+    METRIC_COST_CENTS,
+    METRIC_PHASE_PROGRESS,
+    METRIC_TIER4_PASSED,
+    METRIC_TIER4_TOTAL,
+    InMemorySink,
+    MetricSink,
+    get_metric_sink,
+    record_cost_burndown,
+    record_phase_progress,
+    record_source_yield,
+    record_verification_health,
+    set_metric_sink,
+)
+from clue_research.obs.spans import (
+    CAMPAIGN_PHASES,
+    SPAN_COMPLIANCE_USE_GATE,
+    SPAN_MERGE_CURRENT_VALUE,
+    SPAN_RESOLVE,
+    SPAN_VERIFICATION_CORROBORATION,
+    SPAN_VERIFICATION_FAITHFULNESS_JUDGE,
+    SPAN_VERIFICATION_IDENTITY_BINDING,
+    phase_span,
+    resolve_span,
+)
+from clue_research.obs.testing import collect_spans
+from clue_research.obs.tracing import configure_tracing, traced, traced_step
+
+__all__ = [
+    # tracing
+    "traced_step",
+    "traced",
+    "configure_tracing",
+    # span names
+    "SPAN_RESOLVE",
+    "resolve_span",
+    "SPAN_MERGE_CURRENT_VALUE",
+    "SPAN_VERIFICATION_CORROBORATION",
+    "SPAN_VERIFICATION_FAITHFULNESS_JUDGE",
+    "SPAN_VERIFICATION_IDENTITY_BINDING",
+    "SPAN_COMPLIANCE_USE_GATE",
+    "CAMPAIGN_PHASES",
+    "phase_span",
+    # attributes
+    "ATTR_ENTITY_ID",
+    "ATTR_ENTITY_TYPE",
+    "ATTR_FIELD_KEY",
+    "ATTR_SOURCE_TIER",
+    "ATTR_SOURCE_KEY",
+    "ATTR_RESEARCH_MODE",
+    "ATTR_RUN_ID",
+    "ATTR_COST_CENTS",
+    "ATTR_CLIENT_ID",
+    "ATTR_ICP_ID",
+    "ATTR_CAMPAIGN_RUN_ID",
+    "STANDARD_ATTRIBUTES",
+    "SpanAttributes",
+    "safe_attributes",
+    "to_otel_value",
+    # metrics
+    "MetricSink",
+    "InMemorySink",
+    "get_metric_sink",
+    "set_metric_sink",
+    "record_source_yield",
+    "record_verification_health",
+    "record_cost_burndown",
+    "record_phase_progress",
+    "METRIC_CLAIMS_TOTAL",
+    "METRIC_CLAIMS_SURVIVING",
+    "METRIC_TIER4_TOTAL",
+    "METRIC_TIER4_PASSED",
+    "METRIC_CONTACT_CLAIMS_TOTAL",
+    "METRIC_CONTACT_STRONG_BINDING",
+    "METRIC_COST_CENTS",
+    "METRIC_COST_CAP_CENTS",
+    "METRIC_PHASE_PROGRESS",
+    # logging
+    "RedactingFilter",
+    "configure_logging",
+    "get_logger",
+    # testing
+    "collect_spans",
+]
