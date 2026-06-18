@@ -1,0 +1,22 @@
+# Shared Conductor settings for this repo (committed; applies to every workspace).
+# Each Conductor workspace is its own git worktree/branch off `main`. On creation we:
+#   1. install deps with uv, and
+#   2. stand up a PRIVATE Postgres+pgvector for that workspace on its own port,
+# so parallel workspaces never collide on the host :5432 Postgres (or each other) and
+# each has isolated claim-store data. The DB tests read CLUE_DATABASE_URL; point it at
+# this workspace's DB with:
+#   export CLUE_DATABASE_URL="postgresql+asyncpg://clue:clue@localhost:$CONDUCTOR_PORT/clue"
+#   uv run alembic upgrade head && make check
+# (Without it, `make check` still passes — the DB-backed tests skip.)
+"$schema" = "https://conductor.build/schemas/settings.repo.schema.json"
+
+[scripts]
+setup = """
+uv sync
+docker rm -f "clue-pg-$CONDUCTOR_WORKSPACE_NAME" >/dev/null 2>&1 || true
+docker run -d --name "clue-pg-$CONDUCTOR_WORKSPACE_NAME" \
+  -e POSTGRES_USER=clue -e POSTGRES_PASSWORD=clue -e POSTGRES_DB=clue \
+  -p "$CONDUCTOR_PORT:5432" pgvector/pgvector:pg16 >/dev/null
+"""
+archive = "docker rm -f \"clue-pg-$CONDUCTOR_WORKSPACE_NAME\" >/dev/null 2>&1 || true"
+run_mode = "concurrent"
