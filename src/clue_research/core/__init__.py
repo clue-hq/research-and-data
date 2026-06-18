@@ -16,9 +16,11 @@ from clue_research.core.claim import Claim, DiscoveryProvenance, can_be_promoted
 from clue_research.core.entity import AccountEntity, Entity
 from clue_research.core.enums import (
     AccountStatus,
+    ClaimFlavor,
     EntityScope,
     EntityType,
     ExtractionMethod,
+    FreshnessState,
     IdentityBinding,
     Modality,
     PassKind,
@@ -32,6 +34,9 @@ from clue_research.core.factories import (
     account_claim,
     by_tier_ascending,
     contact_claim,
+    contact_field_claim,
+    discovery_claim,
+    field_claim,
     first_confident_claim,
     parse_value_json,
     serialize_value_json,
@@ -103,6 +108,8 @@ __all__ = [
     "ExtractionMethod",
     "ResearchMode",
     "VerificationStatus",
+    "FreshnessState",
+    "ClaimFlavor",
     "Modality",
     "EntityScope",
     "UseClass",
@@ -157,4 +164,7 @@ __all__ = [
     "first_confident_claim",
     "account_claim",
     "contact_claim",
+    "discovery_claim",
+    "field_claim",
+    "contact_field_claim",
 ]

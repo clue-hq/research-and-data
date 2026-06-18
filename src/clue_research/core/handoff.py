@@ -21,7 +21,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, JsonValue
 
-from clue_research.core.enums import IdentityBinding, Persona, UseClass
+from clue_research.core.enums import FreshnessState, IdentityBinding, Persona, UseClass
 from clue_research.core.field import FieldKey
 from clue_research.core.primitives import (
     ClaimId,
@@ -50,8 +50,10 @@ class WinningProvenance(BaseModel):
 class CurrentValue(BaseModel):
     """``current_value(entity, field)`` result: value + winning provenance + conflict flag.
 
-    The *policy* that computes it (highest tier satisfying freshness, tie-break on
-    corroborations/confidence/recency, conflict flag when two tier<=2 sources disagree) is M1.
+    The *policy* that computes it (highest-trust tier satisfying freshness, tie-break on
+    corroborations/confidence/recency, conflict flag when two tier<=2 sources disagree) is M1.2.
+    A merge that finds no eligible claim returns ``None`` (an empty field is a correct output —
+    conventions §5), not a ``CurrentValue`` with a null value.
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
@@ -60,7 +62,11 @@ class CurrentValue(BaseModel):
     field_key: FieldKey
     value_json: JsonValue
     provenance: WinningProvenance
+    freshness_state: FreshnessState  # whether the winning claim is within its field's TTL
     conflict: bool = False  # set when two tier<=2 sources disagree
+    conflicting_claim_ids: tuple[
+        ClaimId, ...
+    ] = ()  # the disagreeing tier<=2 claims (review surface)
 
 
 class ICPSpec(BaseModel):
