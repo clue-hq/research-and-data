@@ -1,0 +1,7 @@
+{
+  // Recommended extensions for this repo (Cursor / VS Code prompt to install these).
+  "recommendations": [
+    "charliermarsh.ruff", // formatter + linter (matches `make format` / CI)
+    "ms-python.mypy-type-checker" // static type checking (matches `make typecheck`)
+  ]
+}
