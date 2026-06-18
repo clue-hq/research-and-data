@@ -1,0 +1,109 @@
+"""Closed taxonomies shared across the subsystem (M0.2).
+
+These are the *fixed* enums of conventions §3 — entity types, source extraction
+methods, research modes, the use-class and identity-binding taxonomies, etc. They are
+closed by design (unlike field-keys, which are an open registry — see ``field.py``).
+``StrEnum`` is used so each member serializes to its canonical string in ``value_json``,
+JSON, and the DB.
+"""
+
+from __future__ import annotations
+
+from enum import StrEnum
+
+
+class EntityType(StrEnum):
+    """What a claim/entity is about (substrate §1). Contacts resolve under accounts."""
+
+    ACCOUNT = "account"
+    CONTACT = "contact"
+
+
+class ExtractionMethod(StrEnum):
+    """How a claim's value was obtained (substrate §1)."""
+
+    API = "api"
+    SCRAPE = "scrape"
+    LLM_SYNTHESIS = "llm_synthesis"
+    HUMAN = "human"
+    CRM_IMPORT = "crm_import"
+
+
+class ResearchMode(StrEnum):
+    """The 2x2 of research modes (staged-flow §1). Discovery modes (M1/M3) attach
+    discovery-provenance; profiling modes (M2/M4) produce field claims."""
+
+    ACCOUNT_DISCOVERY = "account_discovery"  # mode M1
+    ACCOUNT_PROFILING = "account_profiling"  # mode M2
+    COMMITTEE_DISCOVERY = "committee_discovery"  # mode M3
+    CONTACT_PROFILING = "contact_profiling"  # mode M4
+
+
+class VerificationStatus(StrEnum):
+    """Promotion state of a claim (additive starting-point type, not a conventions §4
+    contract). The faithfulness/corroboration layer (M9) drives transitions; a tier-4
+    claim with no evidence span cannot leave ``UNVERIFIED`` (see ``claim.can_be_promoted``)."""
+
+    UNVERIFIED = "unverified"
+    VERIFIED = "verified"
+    REJECTED = "rejected"
+
+
+class Modality(StrEnum):
+    """The shape of a source's content (staged-flow §7a)."""
+
+    TEXT = "text"
+    VIDEO = "video"
+    AUDIO = "audio"
+    PDF = "pdf"
+    STRUCTURED = "structured"
+
+
+class EntityScope(StrEnum):
+    """Which entity kinds a source can populate (staged-flow §7a)."""
+
+    ACCOUNT = "account"
+    CONTACT = "contact"
+    BOTH = "both"
+
+
+class UseClass(StrEnum):
+    """Use-class taxonomy for personal data (Doc D §2). ``SENSITIVE`` (special-category)
+    is excluded from outreach by default; the appropriateness/use gate (M10) reads this."""
+
+    PROFESSIONAL_PUBLIC = "professional-public"
+    PERSONAL_PUBLIC_NON_SENSITIVE = "personal-public-non-sensitive"
+    SENSITIVE = "sensitive"
+
+
+class IdentityBinding(StrEnum):
+    """How tightly a personal claim is bound to *this* person (staged-flow §6).
+    A ``WEAK`` (same-name-only) binding never promotes and never drives outreach."""
+
+    STRONG = "strong"
+    WEAK = "weak"
+
+
+class PassKind(StrEnum):
+    """Two-pass economics (substrate §3): cheap ``SCORING`` on every account vs
+    expensive ``DEEP`` synthesis only after tiering."""
+
+    SCORING = "scoring"
+    DEEP = "deep"
+
+
+class AccountStatus(StrEnum):
+    """Lifecycle of a resolved account entity (substrate §2)."""
+
+    CANDIDATE = "candidate"
+    ACTIVE = "active"
+    MERGED = "merged"
+
+
+class Persona(StrEnum):
+    """Buying-committee personas/roles (conventions §3)."""
+
+    CHAMPION = "champion"
+    ECONOMIC_BUYER = "economic_buyer"
+    TECHNICAL_EVALUATOR = "technical_evaluator"
+    BLOCKER = "blocker"

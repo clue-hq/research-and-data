@@ -1,0 +1,18 @@
+# Optional local pre-commit hooks — the same checks CI enforces, run before each commit.
+# Install once with: uv run pre-commit install   (pre-commit itself is not a project dep yet.)
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.6.9
+    hooks:
+      - id: ruff
+        args: [--fix]
+      - id: ruff-format
+
+  - repo: local
+    hooks:
+      - id: import-linter
+        name: import-linter (modular dependency rules)
+        entry: uv run lint-imports
+        language: system
+        pass_filenames: false
+        always_run: true

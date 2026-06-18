@@ -1,0 +1,27 @@
+# Project Memory
+
+This directory is the durable collaboration log for agents working on this repository.
+
+At the start of each session:
+
+1. Read this file.
+2. Read the newest session note(s).
+3. Read any topic note that matches the current task.
+4. Verify memory-derived facts against the current workspace before editing.
+
+During and at the end of each coding or goal session, update `_memory/` with:
+
+- progress made;
+- files changed;
+- decisions and accepted assumptions;
+- failures, blocked attempts, or commands/tests that did not work;
+- verification performed;
+- unresolved follow-ups.
+
+Keep notes concise and operational. Do not store secrets, API keys, credentials, customer data, or raw proprietary source excerpts here.
+
+## Repository Role
+
+This repository is the data and research subsystem for the larger AI-native ABM orchestration platform. Its job is to turn client ICPs and client knowledge into canonical account/contact entities, typed claims with provenance, explainable fit/intent scores, and persona-keyed buying-committee research that downstream content and design systems can trust.
+
+The central architecture bet is that verification must be modeled at the claim/data layer. LLM research is a last-resort tier-4 source, not the foundation. The product should prefer empty, flagged fields over fabricated fields.
