@@ -5,7 +5,7 @@
 
 .DEFAULT_GOAL := help
 .PHONY: help install format lint typecheck contracts test check \
-	db-up db-down migrate migrate-down db-smoke
+	db-up db-down migrate migrate-down db-smoke eval
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
@@ -54,3 +54,7 @@ db-smoke: ## Migration smoke: up to head -> down to base -> up to head (reversib
 	uv run alembic upgrade head
 	uv run alembic downgrade base
 	uv run alembic upgrade head
+
+# --- evals (M0.6) -----------------------------------------------------------
+eval: ## Run the eval harness against the stub gold set (regression-on-swap demo; no live calls)
+	uv run python -m clue_research.evals

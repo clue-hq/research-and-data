@@ -5,12 +5,34 @@ on:
     branches: [main]
   pull_request:
 
-# M0.1 CI: format + lint + static types + the modular dependency contracts + structure tests.
-# M0.6 extends this with a Postgres+pgvector service, the migration up/down/up smoke test, the
-# span-emission smoke test, and the eval harness. No live provider API keys are ever required.
+# The full M0 gate (M0.6). Runs on every PR with a Postgres+pgvector service and NO live provider
+# API keys (the only secret-shaped env var is the DB DSN, which points at the ephemeral service):
+#   format -> lint -> type-check -> dependency-rule contracts -> unit/contract tests
+#   -> span-emission smoke -> eval harness (all via `make check`),
+#   then the migration up/down/up smoke, then an explicit eval-harness run.
 jobs:
   check:
     runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: clue
+          POSTGRES_PASSWORD: clue
+          POSTGRES_DB: clue
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U clue -d clue"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+
+    env:
+      # Points at the ephemeral service above. NOT a real secret; no provider keys are set anywhere.
+      CLUE_DATABASE_URL: postgresql+asyncpg://clue:clue@localhost:5432/clue
+
     steps:
       - uses: actions/checkout@v4
 
@@ -25,5 +47,11 @@ jobs:
       - name: Install dependencies (frozen)
         run: uv sync --frozen
 
-      - name: Lint, type-check, dependency contracts, tests
+      - name: Lint, type-check, dependency contracts, unit/contract tests, span smoke, eval harness
         run: make check
+
+      - name: Migration smoke (up -> down -> up)
+        run: make db-smoke
+
+      - name: Eval harness against the stub gold set (regression-on-swap demo)
+        run: make eval

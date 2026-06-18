@@ -51,3 +51,23 @@ def test_import_contracts_currently_pass() -> None:
         pytest.skip("import-linter not installed in this environment")
     result = subprocess.run([exe], cwd=REPO, capture_output=True, text=True)
     assert result.returncode == 0, f"import-linter failed:\n{result.stdout}\n{result.stderr}"
+
+
+def test_provider_sdk_import_outside_resolvers_breaks_the_build() -> None:
+    """Negative test (M0.6): a provider-SDK import in a NON-resolver package must fail contracts.
+
+    Injects ``import firecrawl`` into ``claimstore/`` (which is in the no-provider-SDK source set),
+    runs import-linter, asserts it reports a broken contract, and always removes the temp module.
+    """
+    exe = shutil.which("lint-imports")
+    if exe is None:
+        pytest.skip("import-linter not installed in this environment")
+    victim = REPO / "src" / "clue_research" / "claimstore" / "_neg_sdk_violation.py"
+    victim.write_text("import firecrawl  # deliberate violation for the negative contract test\n")
+    try:
+        result = subprocess.run([exe], cwd=REPO, capture_output=True, text=True)
+        combined = (result.stdout + result.stderr).lower()
+        assert result.returncode != 0, "import-linter should fail on a provider-SDK leak"
+        assert "broken" in combined, f"expected a broken contract, got:\n{result.stdout}"
+    finally:
+        victim.unlink(missing_ok=True)
