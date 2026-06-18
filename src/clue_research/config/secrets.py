@@ -22,6 +22,7 @@ names with placeholders; ``.env`` (the real values) is git-ignored and never com
 from __future__ import annotations
 
 import re
+from collections.abc import Mapping
 from typing import Final
 
 from pydantic import SecretStr
@@ -102,13 +103,19 @@ def is_secret_name(name: str) -> bool:
 def redact(value: object) -> str:
     """Redact a single value to a safe string for a log line or trace attribute.
 
-    A :class:`~pydantic.SecretStr` is always fully masked. Any other value is stringified and
-    masked if it *looks* secret-bearing (a long opaque token, a DSN with credentials, or an
-    obvious key prefix); otherwise it is returned as-is. The obs layer (M0.5) calls this on every
-    attribute it is about to emit, so "no secret ever reaches a span/log" is enforced in one place.
+    A :class:`~pydantic.SecretStr` is always fully masked. Containers (mappings, sequences) are
+    redacted **element-wise** — otherwise ``str(["x", "sk-secret"])`` would hide the embedded
+    secret from the anchored value-shape patterns and it could leak. Any scalar is stringified and
+    masked if it *looks* secret-bearing (a long opaque token, a DSN with credentials, or an obvious
+    key prefix); otherwise it is returned as-is. The obs layer (M0.5) calls this on every attribute
+    it is about to emit, so "no secret ever reaches a span/log" is enforced in one place.
     """
     if isinstance(value, SecretStr):
         return _REDACTED
+    if isinstance(value, Mapping):
+        return str(redact_mapping({str(k): v for k, v in value.items()}))
+    if isinstance(value, list | tuple | set):
+        return "[" + ", ".join(redact(item) for item in value) + "]"
     text = value if isinstance(value, str) else str(value)
     return _REDACTED if _looks_secret(text) else text
 

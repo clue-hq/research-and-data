@@ -18,6 +18,10 @@ dependencies = [
     "pgvector",
     # M0.4 — env-based settings/secrets (config/)
     "pydantic-settings>=2",
+    # M0.5 — observability/tracing skeleton (obs/). Console exporter ships with the SDK; an OTLP
+    # exporter is added when a collector is wired (the exporter sits behind the traced_step wrapper).
+    "opentelemetry-api>=1.20",
+    "opentelemetry-sdk>=1.20",
 ]
 
 [dependency-groups]

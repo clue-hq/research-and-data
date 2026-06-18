@@ -91,6 +91,23 @@ def test_redact_passes_through_non_secret() -> None:
     assert redact(42) == "42"
 
 
+def test_redact_recurses_into_containers() -> None:
+    """A secret embedded in a list/dict must be masked element-wise, not hidden by str()."""
+    out_list = redact(["safe", "sk-live-secret-abcdef0123", 7])
+    assert "sk-live-secret" not in out_list
+    assert "***REDACTED***" in out_list
+    assert "safe" in out_list  # benign elements survive
+
+    out_map = redact({"token": "anything", "label": "ok"})
+    assert "***REDACTED***" in out_map  # 'token' masked by name
+    assert "ok" in out_map  # benign value survives
+
+    # nested: secret buried two levels deep is still caught
+    nested = redact({"payload": ["a", "ghp_aBcDeFgHiJkLmNoPqRsTuVwXyZ012345"]})
+    assert "ghp_" not in nested
+    assert "***REDACTED***" in nested
+
+
 def test_is_secret_name() -> None:
     assert is_secret_name("CLUE_DATABASE_URL")
     assert is_secret_name("apollo_api_key")
