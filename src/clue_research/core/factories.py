@@ -19,8 +19,9 @@ from decimal import Decimal
 
 from pydantic import JsonValue, TypeAdapter
 
-from clue_research.core.claim import Claim
+from clue_research.core.claim import Claim, DiscoveryProvenance
 from clue_research.core.enums import (
+    ClaimFlavor,
     EntityType,
     ExtractionMethod,
     IdentityBinding,
@@ -147,3 +148,61 @@ def contact_claim(
         identity_binding=identity_binding,
         use_class=use_class,
     )
+
+
+def discovery_claim(
+    *,
+    entity_id: EntityId,
+    entity_type: EntityType,
+    field_key: str,
+    value_json: JsonValue,
+    source_tier: SourceTier,
+    extraction_method: ExtractionMethod,
+    confidence: Confidence,
+    run_id: RunId,
+    research_mode: ResearchMode,
+    found_via: str,
+    matched_signal: str,
+    discovery_confidence: Confidence,
+    source_url: str | None = None,
+    evidence_span: str | None = None,
+    corroborations: int = 0,
+    observed_at: UtcDatetime | None = None,
+    cost_cents: CostCents = Decimal(0),
+) -> Claim:
+    """Construct a **discovery-provenance** claim (modes M1/M3): records *where* an entity was found
+    and *why* it matched the ICP. ``research_mode`` must be a discovery mode (the constructor builds
+    a matching :class:`DiscoveryProvenance` envelope and the model enforces coherence)."""
+    return Claim(
+        entity_id=entity_id,
+        entity_type=entity_type,
+        field_key=field_key,
+        value_json=value_json,
+        source_url=source_url,
+        source_tier=source_tier,
+        extraction_method=extraction_method,
+        evidence_span=evidence_span,
+        confidence=confidence,
+        corroborations=corroborations,
+        observed_at=observed_at,
+        cost_cents=cost_cents,
+        run_id=run_id,
+        research_mode=research_mode,
+        claim_flavor=ClaimFlavor.DISCOVERY,
+        discovery_provenance=DiscoveryProvenance(
+            entity_id=entity_id,
+            found_via=found_via,
+            matched_signal=matched_signal,
+            discovery_confidence=discovery_confidence,
+            source_url=source_url,
+            run_id=run_id,
+            research_mode=research_mode,
+        ),
+    )
+
+
+# Spec-named field-claim constructors (staged-flow §9 / §M1.4). The existing builders above *are*
+# the field-claim-provenance constructors (claim_flavor defaults to FIELD_CLAIM); these aliases give
+# them the names the spec uses, without a second implementation (DRY).
+field_claim = account_claim
+contact_field_claim = contact_claim

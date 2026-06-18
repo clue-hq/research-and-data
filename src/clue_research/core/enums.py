@@ -40,13 +40,17 @@ class ResearchMode(StrEnum):
 
 
 class VerificationStatus(StrEnum):
-    """Promotion state of a claim (additive starting-point type, not a conventions §4
-    contract). The faithfulness/corroboration layer (M9) drives transitions; a tier-4
-    claim with no evidence span cannot leave ``UNVERIFIED`` (see ``claim.can_be_promoted``)."""
+    """Promotion-state lifecycle of a claim (the M1.1 ``claim.verification_status`` column;
+    conventions §4 extension). The faithfulness/corroboration layer (M9) and the use gate
+    (M10) drive transitions; a tier-4 claim with no evidence span cannot leave ``UNVERIFIED``
+    (see ``claim.can_be_promoted``). ``FLAGGED`` marks a claim the verification/merge layer
+    surfaced for human review (e.g. a conflict between authoritative sources) rather than
+    silently resolving it (substrate §1/§6)."""
 
     UNVERIFIED = "unverified"
     VERIFIED = "verified"
     REJECTED = "rejected"
+    FLAGGED = "flagged"
 
 
 class Modality(StrEnum):
@@ -82,6 +86,28 @@ class IdentityBinding(StrEnum):
 
     STRONG = "strong"
     WEAK = "weak"
+
+
+class ClaimFlavor(StrEnum):
+    """The two structurally different kinds of provenance one substrate carries (staged-flow §9).
+
+    * ``DISCOVERY`` — *discovery-provenance* (modes M1/M3): where an entity was found and why it
+      matched (the existence-gate evidence). Carries a :class:`DiscoveryProvenance` envelope; it is
+      admission evidence, not a field value, so the merge view (M1.2) never treats it as truth.
+    * ``FIELD_CLAIM`` — *field-claim provenance* (modes M2/M4): a value + span + tier (plus
+      ``identity_binding`` + ``use_class`` for contacts). The default flavor."""
+
+    DISCOVERY = "discovery"
+    FIELD_CLAIM = "field_claim"
+
+
+class FreshnessState(StrEnum):
+    """Whether the claim that won a merge satisfies its field's freshness TTL (substrate §1/§6).
+    Stale winners are never dropped — they are returned ``STALE`` so the scoring layer can discount
+    them and a refresh can be scheduled (the merge surfaces, never silently drops, staleness)."""
+
+    FRESH = "fresh"
+    STALE = "stale"
 
 
 class PassKind(StrEnum):
