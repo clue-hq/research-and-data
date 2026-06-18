@@ -13,7 +13,7 @@ Implements ENG-108 (docs/specs/M00-foundations-and-shared-contracts.md §M0.2).
 from __future__ import annotations
 
 from clue_research.core.claim import Claim, DiscoveryProvenance, can_be_promoted
-from clue_research.core.entity import AccountEntity, Entity
+from clue_research.core.entity import AccountEntity, ContactEntity, Entity
 from clue_research.core.enums import (
     AccountStatus,
     ClaimFlavor,
@@ -136,6 +136,7 @@ __all__ = [
     # entities
     "Entity",
     "AccountEntity",
+    "ContactEntity",
     # claims
     "Claim",
     "DiscoveryProvenance",
