@@ -16,6 +16,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from decimal import Decimal
+from typing import Any
 
 from pydantic import JsonValue, TypeAdapter
 
@@ -56,6 +57,22 @@ def serialize_value_json(value: object) -> str:
 def parse_value_json(raw: str | bytes) -> JsonValue:
     """Parse a JSON string/bytes back into a ``value_json`` payload."""
     return _VALUE_JSON.validate_json(raw)
+
+
+def decode_jsonb(raw: object) -> Any:
+    """Decode a value read from a *structured* jsonb column (always an object/array).
+
+    asyncpg returns jsonb already decoded to Python objects, but a text/parameter round-trip can
+    hand back a raw ``str``/``bytes``; parse only that case (``None`` passes through). The one
+    decode guard every reader of an object/array jsonb column shares — e.g. ``field_definition``
+    validation / tier_plan / value_schema, or ``source_profile`` weighted_sources.
+
+    NOT for a column that may hold a bare JSON *scalar* string value (e.g. ``claim.value_json``,
+    where a decoded ``"x"`` is the value, not JSON text) — that needs a bytes-only guard instead.
+    """
+    if raw is None:
+        return None
+    return parse_value_json(raw) if isinstance(raw, (str, bytes)) else raw
 
 
 def by_tier_ascending(claims: Iterable[Claim]) -> list[Claim]:

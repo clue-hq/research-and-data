@@ -34,8 +34,8 @@ from clue_research.core import (
     FieldDef,
     PassKind,
     classify_field_key,
+    decode_jsonb,
     field_namespace,
-    parse_value_json,
     serialize_value_json,
 )
 from clue_research.core.field import FieldKey
@@ -104,18 +104,12 @@ _SELECT = (
 )
 
 
-def _parse_jsonb(raw: object) -> Any:
-    if raw is None:
-        return None
-    return parse_value_json(raw) if isinstance(raw, (str, bytes)) else raw
-
-
 def _row_to_field_def(row: Mapping[str, Any]) -> FieldDef:
     return FieldDef(
         field_key=row["field_key"],
         value_type=row["value_type"],
-        validation=_parse_jsonb(row["validation"]),
-        tier_plan=tuple(_parse_jsonb(row["tier_plan"]) or ()),
+        validation=decode_jsonb(row["validation"]),
+        tier_plan=tuple(decode_jsonb(row["tier_plan"]) or ()),
         freshness_ttl=row["freshness_ttl"],
         pass_kind=row["pass_kind"],
         gate=row["gate"],
@@ -226,13 +220,13 @@ async def register_field(
     if existing is not None:
         current = _comparable(
             value_type=existing["value_type"],
-            validation=_parse_jsonb(existing["validation"]),
-            tier_plan=_parse_jsonb(existing["tier_plan"]) or [],
+            validation=decode_jsonb(existing["validation"]),
+            tier_plan=decode_jsonb(existing["tier_plan"]) or [],
             freshness_ttl=existing["freshness_ttl"],
             pass_kind=existing["pass_kind"],
             gate=existing["gate"],
             field_class=existing["field_class"],
-            value_schema=_parse_jsonb(existing["value_schema"]),
+            value_schema=decode_jsonb(existing["value_schema"]),
             corroboration_min=existing["corroboration_min"],
             description=existing["description"],
             active=existing["active"],
@@ -333,7 +327,7 @@ async def validate_value(
             f"field_key {field_key!r} is not registered; register it before writing claims "
             "(the registry is the single source of valid field_keys — conventions §2)"
         )
-    schema = _parse_jsonb(row["value_schema"])
+    schema = decode_jsonb(row["value_schema"])
     if schema is None:
         return
     _validate_payload(value_json, schema)
