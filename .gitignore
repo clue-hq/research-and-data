@@ -20,7 +20,11 @@ htmlcov/
 # Editors / OS
 .DS_Store
 .idea/
-.vscode/
+# Ignore personal editor state, but track the shared workspace settings (VS Code / Cursor) — they
+# protect the hand-authored docs from format-on-save corruption and align Python formatting with ruff.
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
 
 # Local env / secrets — never commit (M0.4 owns secrets handling)
 .env

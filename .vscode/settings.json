@@ -1,0 +1,20 @@
+{
+  // The architecture/spec docs under docs/ are hand-authored prose with tables and ASCII diagrams.
+  // A markdown formatter running on save repeatedly corrupted them (scrambled **`code`** spans,
+  // reflowed tables, misaligned diagrams). Never auto-format Markdown in this repo; format it by hand.
+  // Trailing whitespace is left intact too — it can be meaningful (hard breaks / diagram alignment).
+  "[markdown]": {
+    "editor.formatOnSave": false,
+    "editor.defaultFormatter": null,
+    "files.trimTrailingWhitespace": false
+  },
+  // Python is formatted/linted by ruff (see `make format` / `make check` / CI). Use ruff in-editor
+  // too so on-save formatting matches the repo's toolchain instead of a different formatter.
+  "[python]": {
+    "editor.defaultFormatter": "charliermarsh.ruff",
+    "editor.formatOnSave": true
+  },
+  // Whitespace hygiene for code/config matches what ruff + the repo expect.
+  "files.insertFinalNewline": true,
+  "files.trimTrailingWhitespace": true
+}
