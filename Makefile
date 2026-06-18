@@ -4,7 +4,8 @@
 # span smoke, eval harness).
 
 .DEFAULT_GOAL := help
-.PHONY: help install format lint typecheck contracts test check
+.PHONY: help install format lint typecheck contracts test check \
+	db-up db-down migrate migrate-down db-smoke
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
@@ -31,3 +32,25 @@ test: ## Run the test suite
 	uv run pytest
 
 check: lint typecheck contracts test ## Run the full local gate (what CI runs)
+
+# --- database (M0.3) --------------------------------------------------------
+# Postgres + pgvector lifecycle and the reviewed-migration workflow. The DB DSN is read from
+# CLUE_DATABASE_URL (the shared seam), defaulting to the local docker-compose database
+# (postgresql+asyncpg://clue:clue@localhost:5432/clue). See src/clue_research/db/README.md.
+
+db-up: ## Start local Postgres+pgvector (waits for healthcheck)
+	docker compose up -d --wait db
+
+db-down: ## Stop local Postgres+pgvector and remove its volume
+	docker compose down -v
+
+migrate: ## Apply all migrations up to head
+	uv run alembic upgrade head
+
+migrate-down: ## Roll back one migration
+	uv run alembic downgrade -1
+
+db-smoke: ## Migration smoke: up to head -> down to base -> up to head (reversibility check)
+	uv run alembic upgrade head
+	uv run alembic downgrade base
+	uv run alembic upgrade head

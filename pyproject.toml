@@ -11,6 +11,13 @@ license = { text = "Proprietary" }
 # at runtime, where mypy (static) cannot. See readme.md "Type checking & validation".
 dependencies = [
     "pydantic>=2.7",
+    # M0.3 — Postgres + pgvector + async migrations (db/)
+    "sqlalchemy[asyncio]>=2.0",
+    "asyncpg",
+    "alembic",
+    "pgvector",
+    # M0.4 — env-based settings/secrets (config/)
+    "pydantic-settings>=2",
 ]
 
 [dependency-groups]

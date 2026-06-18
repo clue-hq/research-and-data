@@ -1,0 +1,36 @@
+# Local Postgres + pgvector for development and the migration smoke (M0.3 / ENG-114).
+#
+# Postgres is the only source of truth (substrate §12; conventions §6). The image is a pinned
+# Postgres 16 with the `vector` extension already available to be enabled by the initial migration
+# (alembic/versions/0001_enable_pgvector.py runs `CREATE EXTENSION IF NOT EXISTS vector`).
+#
+# The credentials below match the documented local default DSN read by clue_research.db:
+#   CLUE_DATABASE_URL=postgresql+asyncpg://clue:clue@localhost:5432/clue
+# (asyncpg driver at runtime; Postgres itself just sees user=clue / db=clue.) The DSN seam is
+# CLUE_DATABASE_URL; a parallel agent (M0.4) documents it in .env.example — db/ only READS it.
+#
+# Bring up / tear down via the Makefile: `make db-up` / `make db-down`. `make db-up` waits for the
+# healthcheck before returning.
+
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    container_name: clue-postgres
+    environment:
+      POSTGRES_USER: clue
+      POSTGRES_PASSWORD: clue
+      POSTGRES_DB: clue
+    ports:
+      # host:container — exposes the DB on localhost:5432 so the default DSN reaches it.
+      - "5432:5432"
+    volumes:
+      - clue_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      # `make db-up` blocks until this passes, so `make migrate` / `make db-smoke` never race startup.
+      test: ["CMD-SHELL", "pg_isready -U clue -d clue"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+volumes:
+  clue_pgdata:
