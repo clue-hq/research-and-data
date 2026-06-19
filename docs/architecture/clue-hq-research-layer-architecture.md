@@ -301,8 +301,9 @@ Steps 1–4 produce a genuinely useful, *trustworthy* account list before a sing
 | Durable execution | V1: **Postgres-backed state machine**, idempotency keys on `(account, field, tier)`, per-account/run budget caps. Design it **Temporal-shaped** for a clean later migration. |
 | Locks / ephemeral state | **Redis** for in-flight account locks and rate-limit coordination. |
 | Search / synthesis (tier 4) | **Exa Deep** (field-level grounding) and/or **Parallel Task API** (Basis: citations + reasoning + confidence) as pluggable resolvers; **Firecrawl** for tier-2 official-site scraping with livecrawl freshness. |
+| LLM gateway (direct model calls) | **OpenRouter** (OpenAI-compatible) as the single egress for *all direct* LLM calls — the faithfulness judge, discovery query-planning, ICP synthesis, committee role-inference, and value-narrative positioning. One `OPENROUTER_API_KEY`; the model is config per call site (a model-id string); deterministic stub in CI. **Exa Deep / Parallel Task above are research-product resolvers, not gateway calls.** |
 | Deterministic (tiers 1–3) | Apollo / ZoomInfo / BuiltWith / Places / registries / **client CRM**, each behind the uniform `Resolver` interface. |
-| Verification | Separate **LLM-as-judge** faithfulness step with its own trace span; eval harness over a hand-verified account set. |
+| Verification | Separate **LLM-as-judge** faithfulness step (the model call routed through the OpenRouter gateway below) with its own trace span; eval harness over a hand-verified account set. |
 | Human checkpoints | `interrupt()`-based pause/resume (your secure-input pattern) for Tier-1 review. |
 | API | **FastAPI** with the lifespan/`asynccontextmanager` pattern you're already using for pools and clients. |
 
