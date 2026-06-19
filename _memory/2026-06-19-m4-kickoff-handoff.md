@@ -65,36 +65,64 @@ Local commits only; no push/PR without explicit instruction; no AI co-author tra
    `manifest.provider`. Also the late-bound `catalog.validate_pack(known_source_keys=...)` join M3.3
    left open.
 
-## OPEN DECISIONS — resolve with the user before/while coding (the real handoff value)
-1. **confidence_threshold GAP (blocks M4.1 stop-rule):** spec reads `field.confidence_threshold` but
-   FieldDef has no such attr/column (zero occurrences in src/ & alembic/). Recommend: engine-side
-   **versioned config keyed by field_class** (D7 = thresholds are config), NOT a FieldDef/core edit
-   (that touches a frozen contract + plan_hash).
-2. **SourceManifest extend-vs-redefine (blocks M4.2):** wrapper vs optional fields on the frozen
-   model (see above). Recommend wrapper.
-3. **Stub-vs-live providers:** CI hermetic — recorded fixtures/doubles ONLY, no live
-   Clay/Apollo/ZoomInfo/BuiltWith/CRM/Firecrawl calls; live keys via `CLUE_*_API_KEY` behind
-   `auth_ref`; a stub/live toggle is required for the Clay↔Apollo swap call-counter test + cost
-   tests. (Firecrawl MCP exists in this env — wrap a config-selected backend behind the Resolver
-   seam, NOT the MCP tools directly.)
-3.b **Shared-helper GAP (blocks M4.4 first resolver):** no generic HTTP/SDK client wrapper, no typed
-   `RetryableResolverError`, no `auth_ref`→credential resolver exist yet. Decide where they land
-   (recommend a resolvers-shared helper module or core/config) BEFORE the first resolver, else each
-   provider re-implements HTTP+retry (the DRY violation the seam forbids).
-4. **M0.4 LLMGateway is UNIMPLEMENTED (blocks M4.6 planner):** no LLMGateway/openrouter class in
-   src/. Either land M0.4 first or code M4.6 against the documented OpenRouter seam + a deterministic
-   CI stub. (Exa Deep / Parallel Task stay separate tier-4 resolvers in M11, NOT via the gateway.)
-5. **M3.3↔M4.6 boundary:** M4.6 REUSES `get_source_profile`/`get_pack_source_profile`/
-   `ResolvedSourceProfile.for_field_class` (migration 0009) + adds ONLY registry-intersection +
-   planner + `source_yield` table. Must NOT duplicate the source_profile store.
-6. **reuse_scope stamping (ENG-165 coordination):** public firmographic/technographic → default
-   `public_footprint`; CRM (M4.5) + any ICP-derived/scoring claims → `tenant_private` (via
-   `identity.stamp_reuse`; `extraction_method=crm_import`→private). Decide whether M4 wires the guard
-   now or leaves the seam for M6's ENG-165 (which makes it fail-closed). See
+## DECISIONS — LOCKED by the user (2026-06-19) — STRICTLY FOLLOW
+1. **confidence_threshold (M4.1):** carry it **engine-side as versioned config keyed by field_class**
+   (e.g. firmographic 0.8, fuzzy resonance 0.6) that the waterfall reads. **Do NOT** add it to
+   FieldDef / the field table / plan_hash. (D7: thresholds are config the engine reads.)
+2. **SourceManifest (M4.2):** **wrapper** — a thin registry-row type wrapping the frozen
+   `core.source.SourceManifest` + operational metadata (active/provider/auth_ref/rate_limit/
+   requires_adapter/version/created_at). Extend, not redefine; keep the core concept clean.
+3. **Stub-vs-live (every resolver):** CI is **hermetic** — recorded fixtures / fake doubles ONLY, no
+   live Clay/Apollo/ZoomInfo/BuiltWith/CRM/Firecrawl calls. Live keys via `CLUE_*_API_KEY` referenced
+   through `auth_ref` (**never** stored in the DB). A clean **stub/live toggle behind the Resolver
+   seam** is required (the Clay↔Apollo swap call-counter test + cost tests depend on it). Firecrawl:
+   wrap a config-selected backend behind the Resolver seam, **NOT** the MCP tools directly.
+3b. **Shared-helper (before M4.4):** build the shared HTTP/SDK client wrapper + a typed
+   `RetryableResolverError` + the `auth_ref`→credential resolver **ONCE**, in a **shared
+   resolver-helpers module (or core/config)**, BEFORE the first concrete resolver. No per-provider
+   re-implementation of HTTP/retry/auth.
+4. **M0.4 LLMGateway (before M4.6):** **build M0.4's gateway FIRST** — do not stub-and-defer. M4.6's
+   planner codes against the real gateway. (Exa Deep / Parallel Task remain separate tier-4 resolvers
+   in M11 — NOT routed through the gateway.) → This adds an **M0.4 (LLMGateway) task at the FRONT of
+   the M4 plan**; coordinate with the OpenRouter-gateway *docs* already on this branch (commit
+   `088a067`) — that was documentation only; the client class still needs building.
+5. **M3.3↔M4.6 (M4.6):** **reuse** M3.3's `get_source_profile`/`get_pack_source_profile`/
+   `ResolvedSourceProfile.for_field_class` (migration 0009). Add ONLY: the **registry-intersection**
+   (allowed set = profile ∩ what's actually registered — can't plan a source that doesn't exist), the
+   **planner** logic, and a new **`source_yield` telemetry table**. **Never** duplicate the
+   source_profile store.
+6. **reuse_scope (M4.5 now + ENG-165 for M6):** public firmographic/technographic → `public_footprint`;
+   **CRM (M4.5) + any ICP-derived/scoring claims → `tenant_private`** (via `identity.stamp_reuse`;
+   `extraction_method=crm_import` → private). **M4 wires the minimal stamping NOW** so CRM/client data
+   never leaks into the shared pool.
+   **REMAINING WORK FOR M6 (ENG-165) — explicitly deferred, NOT M4's job:** the *broader, structural,
+   fail-closed* foundation stays M6's first step — W1 declared `reuse_scope` on every field row; W2 the
+   shared `core (FieldClass, pass_kind, signal_class) → ReuseScope` mapping both M2+M3 import; W3
+   surfacing scope on the compiled `FieldPlan`; W4 reserving the score field-keys as `tenant_private`;
+   W5 fail-closed authoring + a require-explicit-scope write guard (no silent public default); W6
+   `client_id ↔ tenant_id` harmonization. **M4.5's stamping is the interim, per-writer guard; ENG-165
+   makes it structural and fail-closed across all writers (M6/M8/M11/M12).** See
    `2026-06-19-reuse-scope-classification-foundation.md`.
-7. **import-linter `sources→icp`:** the M4.6 planner imports `icp/` (M3) for profile serving —
-   confirm import-linter permits `sources → icp` (M3.3 deliberately does NOT import M4, to avoid a
-   cycle). If forbidden, move/re-export the serving wrapper.
+7. **import-linter `sources → icp` (M4.6):** **permitted** — add an explicit allow for a one-way
+   `sources → icp` import (M3.3 must keep NOT importing M4, so no cycle is created). If a rule blocks
+   it, move/re-export the profile-serving wrapper rather than inverting the dependency.
+
+## USER IMPLEMENTATION DIRECTIVES (apply to EVERY M4 submodule)
+- **Strictly follow the locked decisions above** and the M4 spec; achieve the documented target state.
+- **Thoroughly verify correctness AND completeness** of each submodule — well-planned and robust, not
+  merely green. Run `make check` + `make db-smoke` on a **fresh per-branch DB** at every checkpoint.
+- **Keep the Linear issues updated as you proceed** — Todo → In Progress → Done + a completion comment
+  per submodule (mirror M3 hygiene).
+- **Critically self-review when done** (ultracode: adversarial find→verify Workflow), then make the
+  necessary fixes before calling a submodule complete.
+- **Refer to the user ONLY for genuinely crucial decisions**; otherwise proceed.
+- **Base branch:** M4 branches off **`main` AFTER PR #6 is merged** (so `main` carries M0–M3). Use the
+  M3-style stacked branches; Alembic hash ids off head `0011`; never push without explicit instruction.
+- (Ultracode is ON → use the Workflow tool for substantive M4 tasks.)
+
+## REVISED build order (decision #4 adds M0.4 to the front)
+**M0.4 (LLMGateway, build first)** → M4.2 → M4.1 → M4.3 → M4.5 ; M4.4 parallel off M4.1+M4.2 ;
+M4.6 last (now unblocked because M0.4 is built first, not stubbed).
 
 ## INVARIANTS to enforce structurally (not just by prompt)
 - **M4 ships TIERS 1–3 ONLY.** Tier-4 (Exa Deep / Parallel Task) are registered resolver-ABSENT
