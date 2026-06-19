@@ -78,3 +78,33 @@ class ResolutionPolicy(BaseModel):
 
 
 DEFAULT_RESOLUTION_POLICY = ResolutionPolicy()
+
+
+class DispositionPolicy(BaseModel):
+    """Versioned disposition bands (M2.3) — the auto-merge / review / new-entity thresholds as data.
+
+    Substrate §2: high-confidence (≈≥0.95) auto-merges; the mid-band routes to human review; below
+    the low threshold a fresh ``candidate`` entity is admitted. The thresholds are config, so tuning
+    auto-merge aggressiveness (e.g. a more conservative posture in a higher-risk vertical, D8) is a
+    data change, not a code change — and a borderline pair moves between auto-merge and review by a
+    ``version`` bump alone. By M2.2's construction a fuzzy-only match caps at 0.85, so with the
+    default 0.95 ceiling only a *deterministic* strong-key hit (score 1.0) ever auto-merges.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    version: int = 1
+    auto_merge_threshold: float = Field(default=0.95, ge=0.0, le=1.0)
+    review_low_threshold: float = Field(default=0.70, ge=0.0, le=1.0)
+
+    @model_validator(mode="after")
+    def _check_band_order(self) -> DispositionPolicy:
+        if self.review_low_threshold > self.auto_merge_threshold:
+            raise ValueError(
+                "review_low_threshold must be <= auto_merge_threshold "
+                f"(got {self.review_low_threshold} > {self.auto_merge_threshold})"
+            )
+        return self
+
+
+DEFAULT_DISPOSITION_POLICY = DispositionPolicy()

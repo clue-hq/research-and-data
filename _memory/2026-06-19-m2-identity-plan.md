@@ -127,6 +127,28 @@ workflow (7 agents: 5 issue analyses → order + adversarial). User approved ord
   widened to rate=2/cap=1 (~0.5s refill margin).
 - make check GREEN with DB+Redis: 296 passed (11 lock). import-linter 5/0, mypy 64 files.
 
+## M2.3 — DONE & verified (ENG-112 → In Progress; commit pending push)
+- Migration 0007: identity_review_task + identity_disposition (audit), enums review_status/
+  review_resolution/disposition_kind (parity-tested vs identity/review.py enums; reuse entity_type).
+  tenant_id text (forward-compat with M2.5, decision 3). open-task partial index.
+- identity/policy.py: DispositionPolicy (auto_merge_threshold=0.95, review_low=0.70; bands as data).
+- identity/review.py: disposition() band entry → {AUTO_MERGED|ENQUEUED|NEW_ENTITY}. auto_merge()
+  executor (locks both via M2.4 multi_lock when redis given; plan_merge canonicalize survivor;
+  mark_merged; idempotent; audit). Review queue: enqueue_review_task/get_task/list_open_tasks +
+  resolve_merge_into/create_new_entity/not_a_match/split_merge. current_value_resolved (reads claims
+  across the merged-member set via recursive CTE + M1 merge_claims; claims NEVER UPDATEd).
+- KEY ER FIX (bug caught by tests): a merged loser must RELINQUISH its strong keys (primary_domain/
+  registry_ids; contact linkedin/email) BEFORE the survivor absorbs them, else the partial-unique
+  constraint rejects the canonicalization (two rows can't hold one domain). _relinquish_strong_keys.
+  Loser becomes a pure redirect (id + merged_into).
+- DESIGN: auto-merge only fires on score >= 0.95 = deterministic strong-key hits (probabilistic caps
+  at 0.85 by M2.2's strong-key budget) → fuzzy matches always route to review (never silently
+  collapse). disposition AUTO with no pre-admitted subject = "resolve to existing" (no new entity).
+- Tests: tests/identity/test_review.py — 13 tests, all §M2.3 criteria (executor union+idempotent,
+  3 bands, merge_into/not_a_match/create_new/split, claims-under-survivor-no-UPDATE row-version
+  assert, config moves borderline pair, audit, enum parity, redis lock integration skip-gated).
+- make check GREEN: 309 passed, mypy 65 files, import-linter 5/0; chain 0001-0007 round-trips base↔head.
+
 ## Standing rules
 - Commit locally at green checkpoints; NEVER push; no AI attribution; feature branch only.
 - Implement sequentially (shared migration chain + identity pkg + core → parallel worktrees conflict).
