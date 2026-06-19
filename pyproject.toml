@@ -22,6 +22,9 @@ dependencies = [
     # exporter is added when a collector is wired (the exporter sits behind the traced_step wrapper).
     "opentelemetry-api>=1.20",
     "opentelemetry-sdk>=1.20",
+    # M2.4 — distributed in-flight locks + rate-limit coordination (locks/). Redis is the
+    # ephemeral-state half of the stack (conventions §6); Postgres remains the only source of truth.
+    "redis>=5",
 ]
 
 [dependency-groups]
@@ -31,6 +34,7 @@ dev = [
     "mypy>=1.11",         # static ("compile-time") type checker
     "import-linter>=2.0", # machine-enforced modular dependency rules (the M0.1 seam contracts)
     "pytest>=8.2",        # structure + contract tests (M0.6 grows this into the full harness)
+    "fakeredis>=2.20",    # M2.4 — in-process Redis fake for the lock tests when no Redis is reachable
 ]
 
 [build-system]
@@ -92,6 +96,7 @@ forbidden_modules = [
     "clue_research.evals",
     "clue_research.claimstore",
     "clue_research.identity",
+    "clue_research.locks",
     "clue_research.icp",
     "clue_research.sources",
     "clue_research.resolvers",
@@ -144,6 +149,7 @@ source_modules = [
     "clue_research.evals",
     "clue_research.claimstore",
     "clue_research.identity",
+    "clue_research.locks",
     "clue_research.icp",
     "clue_research.sources",
     "clue_research.stage0",
@@ -169,6 +175,15 @@ forbidden_modules = [
     "hubspot",
 ]
 
+# Rule 6 — the claim store stays the shared substrate: it must NOT import identity or locks, so the
+# M2.5 reuse classifier can never invert the dependency (claimstore persists pre-stamped fields and
+# scopes reads; the classifier lives in identity, which imports claimstore — never the reverse).
+[[tool.importlinter.contracts]]
+name = "claim store does not import identity / locks (no inversion)"
+type = "forbidden"
+source_modules = ["clue_research.claimstore"]
+forbidden_modules = ["clue_research.identity", "clue_research.locks"]
+
 # Rule 5 — nothing imports the FastAPI app layer (api/). Dependencies point inward only.
 [[tool.importlinter.contracts]]
 name = "nothing imports the api app layer"
@@ -181,6 +196,7 @@ source_modules = [
     "clue_research.evals",
     "clue_research.claimstore",
     "clue_research.identity",
+    "clue_research.locks",
     "clue_research.icp",
     "clue_research.sources",
     "clue_research.resolvers",

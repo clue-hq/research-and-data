@@ -31,6 +31,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_research.claimstore.registry import validate_value
+from clue_research.claimstore.tenancy import TenantScope
 from clue_research.core import (
     Claim,
     ClaimFlavor,
@@ -49,7 +50,7 @@ _INSERT_SQL = text(
         id, entity_id, entity_type, field_key, value_json, source_url, source_tier,
         extraction_method, evidence_span, confidence, corroborations, observed_at,
         collected_at, cost_cents, run_id, research_mode, superseded_by, verification_status,
-        identity_binding, use_class, discovery_provenance, claim_flavor
+        identity_binding, use_class, discovery_provenance, claim_flavor, reuse_scope, tenant_id
     ) VALUES (
         :id, :entity_id, CAST(:entity_type AS entity_type), :field_key,
         CAST(:value_json AS jsonb), :source_url, :source_tier,
@@ -58,7 +59,8 @@ _INSERT_SQL = text(
         CAST(:research_mode AS research_mode), :superseded_by,
         CAST(:verification_status AS verification_status),
         CAST(:identity_binding AS identity_binding), CAST(:use_class AS use_class),
-        CAST(:discovery_provenance AS jsonb), CAST(:claim_flavor AS claim_flavor)
+        CAST(:discovery_provenance AS jsonb), CAST(:claim_flavor AS claim_flavor),
+        CAST(:reuse_scope AS reuse_scope), :tenant_id
     )
     RETURNING id
     """
@@ -70,7 +72,7 @@ _SELECT_COLUMNS = (
     "id, entity_id, entity_type, field_key, value_json, source_url, source_tier, "
     "extraction_method, evidence_span, confidence, corroborations, observed_at, collected_at, "
     "cost_cents, run_id, research_mode, superseded_by, verification_status, "
-    "identity_binding, use_class, discovery_provenance, claim_flavor"
+    "identity_binding, use_class, discovery_provenance, claim_flavor, reuse_scope, tenant_id"
 )
 
 
@@ -104,6 +106,8 @@ def _insert_params(claim: Claim) -> dict[str, object]:
             else None
         ),
         "claim_flavor": claim.claim_flavor.value,
+        "reuse_scope": claim.reuse_scope.value,
+        "tenant_id": claim.tenant_id,
     }
 
 
@@ -151,6 +155,8 @@ def _row_to_claim(row: dict[str, object]) -> Claim:
             "use_class": row.get("use_class"),
             "claim_flavor": row.get("claim_flavor", ClaimFlavor.FIELD_CLAIM),
             "discovery_provenance": discovery,
+            "reuse_scope": row.get("reuse_scope", "public_footprint"),
+            "tenant_id": row.get("tenant_id"),
         }
     )
 
@@ -208,14 +214,18 @@ async def claims_for(
     field_key: FieldKey | str | None = None,
     *,
     include_superseded: bool = False,
+    scope: TenantScope,
 ) -> Sequence[Claim]:
     """Raw claim history for an entity (audit / time-travel / provenance index).
 
     Returns the live claims by default (``superseded_by IS NULL``); pass
     ``include_superseded=True`` for the full append-only history. This is the *raw* reader — the
     deterministic "current truth" merge is :func:`clue_research.claimstore.current_value` (M1.2),
-    not here.
+    not here. ``scope`` is **required** (M2.5 — fail-closed): there is no fail-open default, so no
+    read path can accidentally cross tenants. An operator/audit caller passes
+    :data:`ALL_TENANTS` explicitly; a tenant-facing caller passes its own scope.
     """
+    scope_sql, scope_params = scope.predicate()
     stmt = text(
         f"""
         SELECT {_SELECT_COLUMNS}
@@ -223,6 +233,7 @@ async def claims_for(
         WHERE entity_id = :entity_id
           AND (CAST(:field_key AS text) IS NULL OR field_key = :field_key)
           AND (CAST(:include_superseded AS boolean) OR superseded_by IS NULL)
+          AND {scope_sql}
         ORDER BY collected_at DESC, id
         """
     )
@@ -232,6 +243,7 @@ async def claims_for(
             "entity_id": entity_id,
             "field_key": field_key,
             "include_superseded": include_superseded,
+            **scope_params,
         },
     )
     return [_row_to_claim(dict(row)) for row in result.mappings().all()]

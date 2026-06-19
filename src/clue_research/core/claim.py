@@ -29,6 +29,7 @@ from clue_research.core.enums import (
     ExtractionMethod,
     IdentityBinding,
     ResearchMode,
+    ReuseScope,
     UseClass,
     VerificationStatus,
 )
@@ -117,6 +118,12 @@ class Claim(BaseModel):
     # --- provenance flavor (staged-flow §9): discovery vs field-claim ---
     claim_flavor: ClaimFlavor = ClaimFlavor.FIELD_CLAIM
     discovery_provenance: DiscoveryProvenance | None = None
+    # --- cross-tenant reuse class (M2.5; substrate §2) ---
+    # Public-footprint by default (firmographic/technographic facts amortize across clients);
+    # tenant-private claims (scoring, CRM-import, personal/facet/resonance) carry a tenant_id. The
+    # classifier (identity.classify_reuse_scope) stamps these at write; the merge read scopes on it.
+    reuse_scope: ReuseScope = ReuseScope.PUBLIC_FOOTPRINT
+    tenant_id: str | None = None
     # --- promotion state (additive; driven by M9, not a conventions §4 field) ---
     verification_status: VerificationStatus = VerificationStatus.UNVERIFIED
 
@@ -172,6 +179,14 @@ class Claim(BaseModel):
                 )
         elif self.discovery_provenance is not None:
             raise ValueError("a field-claim-flavored claim must not carry discovery_provenance")
+
+        # Reuse-class ⟺ tenant binding (M2.5, substrate §2): a tenant-private claim is always
+        # attributed to a tenant; a public-footprint claim never is (so it amortizes across
+        # clients). Mirrors the DB CHECK; "a private claim is never silently shared" is invariant.
+        if self.reuse_scope is ReuseScope.TENANT_PRIVATE and self.tenant_id is None:
+            raise ValueError("a tenant_private claim must carry a tenant_id")
+        if self.reuse_scope is ReuseScope.PUBLIC_FOOTPRINT and self.tenant_id is not None:
+            raise ValueError("a public_footprint claim must not carry a tenant_id")
         return self
 
     @property

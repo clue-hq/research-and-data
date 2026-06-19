@@ -14,6 +14,7 @@ import pytest
 from sqlalchemy import text
 
 from clue_research.claimstore import (
+    ALL_TENANTS,
     current_value,
     current_values,
     insert_claim,
@@ -45,7 +46,7 @@ def test_current_value_picks_lowest_tier(make_account: Callable[..., Claim]) -> 
         async with rollback_conn() as conn:
             for claim in (t3, t4, t1):
                 await insert_claim(conn, claim)
-            result = await current_value(conn, t1.entity_id, _FIELD)
+            result = await current_value(conn, t1.entity_id, _FIELD, scope=ALL_TENANTS)
         assert result is not None
         assert result.value_json == {"amount_usd": 10}
         assert result.provenance.source_tier == 1
@@ -63,9 +64,13 @@ def test_empty_when_no_eligible_claim(make_account: Callable[..., Claim]) -> Non
             extraction_method=ExtractionMethod.LLM_SYNTHESIS,
         )
         async with rollback_conn() as conn:
-            assert await current_value(conn, new_entity_id(), _FIELD) is None  # no claims
+            assert (
+                await current_value(conn, new_entity_id(), _FIELD, scope=ALL_TENANTS) is None
+            )  # no claims
             await insert_claim(conn, lone_tier4)
-            assert await current_value(conn, lone_tier4.entity_id, _FIELD) is None  # only tier-4
+            assert (
+                await current_value(conn, lone_tier4.entity_id, _FIELD, scope=ALL_TENANTS) is None
+            )  # only tier-4
 
     run_async(_run())
 
@@ -79,7 +84,7 @@ def test_superseded_claim_is_not_the_current_value(make_account: Callable[..., C
         async with rollback_conn() as conn:
             old_id = await insert_claim(conn, old)
             await supersede_claim(conn, old_id, new)
-            result = await current_value(conn, old.entity_id, _FIELD)
+            result = await current_value(conn, old.entity_id, _FIELD, scope=ALL_TENANTS)
         assert result is not None
         assert result.value_json == {"amount_usd": 2}
 
@@ -96,9 +101,9 @@ def test_batch_matches_per_entity(make_account: Callable[..., Claim]) -> None:
                 await insert_claim(
                     conn, make_account(entity_id=entity_id, value_json={"amount_usd": index})
                 )
-            batch = await current_values(conn, entities, [_FIELD])
+            batch = await current_values(conn, entities, [_FIELD], scope=ALL_TENANTS)
             per_entity = {
-                (entity_id, _FIELD): await current_value(conn, entity_id, _FIELD)
+                (entity_id, _FIELD): await current_value(conn, entity_id, _FIELD, scope=ALL_TENANTS)
                 for entity_id in entities
             }
         assert len(batch) == len(entities)
@@ -117,7 +122,7 @@ def test_provenance_index_covers_each_field(make_account: Callable[..., Claim]) 
         async with rollback_conn() as conn:
             await insert_claim(conn, funding)
             await insert_claim(conn, headcount)
-            index = await provenance_index(conn, funding.entity_id)
+            index = await provenance_index(conn, funding.entity_id, scope=ALL_TENANTS)
         assert set(index) == {"account.recent_funding", "core.employee_count"}
         assert index["core.employee_count"].source_tier == 1
 
@@ -155,12 +160,14 @@ def test_batch_scales_to_1k_entities() -> None:
             assert len(entity_ids) == 1000
 
             started = time.perf_counter()
-            batch = await current_values(conn, entity_ids, [_FIELD])
+            batch = await current_values(conn, entity_ids, [_FIELD], scope=ALL_TENANTS)
             elapsed = time.perf_counter() - started
 
             # a sample matches the per-entity call exactly
             for entity_id in entity_ids[:5]:
-                assert batch[(entity_id, _FIELD)] == await current_value(conn, entity_id, _FIELD)
+                assert batch[(entity_id, _FIELD)] == await current_value(
+                    conn, entity_id, _FIELD, scope=ALL_TENANTS
+                )
 
         assert len(batch) == 1000
         assert elapsed < 5.0, f"1k batch merge took {elapsed:.2f}s (budget 5s)"

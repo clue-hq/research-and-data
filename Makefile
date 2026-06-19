@@ -5,7 +5,7 @@
 
 .DEFAULT_GOAL := help
 .PHONY: help install format lint typecheck contracts test check \
-	db-up db-down migrate migrate-down db-smoke eval
+	db-up db-down migrate migrate-down db-smoke eval redis-up redis-down
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
@@ -54,6 +54,16 @@ db-smoke: ## Migration smoke: up to head -> down to base -> up to head (reversib
 	uv run alembic upgrade head
 	uv run alembic downgrade base
 	uv run alembic upgrade head
+
+# --- redis (M2.4) -----------------------------------------------------------
+# Ephemeral state for in-flight locks + rate-limit coordination (conventions §6). The DSN seam is
+# CLUE_REDIS_URL, defaulting to redis://localhost:6379/0. The lock tests skip gracefully without it.
+
+redis-up: ## Start local Redis (waits for healthcheck)
+	docker compose up -d --wait redis
+
+redis-down: ## Stop local Redis
+	docker compose stop redis
 
 # --- evals (M0.6) -----------------------------------------------------------
 eval: ## Run the eval harness against the stub gold set (regression-on-swap demo; no live calls)

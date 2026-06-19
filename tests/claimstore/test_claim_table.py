@@ -14,7 +14,7 @@ import pytest
 from sqlalchemy import text
 from sqlalchemy.exc import DBAPIError
 
-from clue_research.claimstore import claims_for, insert_claim, supersede_claim
+from clue_research.claimstore import ALL_TENANTS, claims_for, insert_claim, supersede_claim
 from clue_research.core import (
     Claim,
     EntityType,
@@ -140,7 +140,7 @@ def test_insert_persists_provenance_and_autostamps(make_account: Callable[..., C
         )
         async with rollback_conn() as conn:
             claim_id = await insert_claim(conn, claim)
-            (stored,) = await claims_for(conn, claim.entity_id)
+            (stored,) = await claims_for(conn, claim.entity_id, scope=ALL_TENANTS)
         assert stored.id == claim_id
         assert stored.value_json == {"amount_usd": 5_000_000}
         assert stored.confidence == pytest.approx(0.77)
@@ -189,7 +189,7 @@ def test_allowed_columns_can_be_updated(make_account: Callable[..., Claim]) -> N
                 ),
                 {"id": claim_id},
             )
-            (row,) = await claims_for(conn, claim.entity_id)
+            (row,) = await claims_for(conn, claim.entity_id, scope=ALL_TENANTS)
         assert row.id == claim_id
         assert row.verification_status is VerificationStatus.VERIFIED
         assert row.corroborations == 3
@@ -220,8 +220,8 @@ def test_supersede_links_old_and_keeps_history(make_account: Callable[..., Claim
             old_id = await insert_claim(conn, old)
             new_id = await supersede_claim(conn, old_id, new)
 
-            live = await claims_for(conn, old.entity_id)
-            full = await claims_for(conn, old.entity_id, include_superseded=True)
+            live = await claims_for(conn, old.entity_id, scope=ALL_TENANTS)
+            full = await claims_for(conn, old.entity_id, include_superseded=True, scope=ALL_TENANTS)
             old_superseded_by = (
                 await conn.execute(
                     text("SELECT superseded_by FROM claim WHERE id = :id"), {"id": old_id}
@@ -328,7 +328,11 @@ def test_live_claims_partial_index_is_used(make_account: Callable[..., Claim]) -
                 .all()
             )
         plan = "\n".join(plan_rows)
-        assert "claim_live_entity_field" in plan, plan
+        # A partial live-claims index must cover the read (not a seq scan). Either the M1.1
+        # (entity_id, field_key) index or the M2.5 scoped superset (entity_id, field_key,
+        # reuse_scope, tenant_id) — both are partial on `superseded_by IS NULL` — is acceptable;
+        # the planner may prefer the scoped index once it exists (it covers the same prefix).
+        assert ("claim_live_entity_field" in plan) or ("claim_scoped_read" in plan), plan
 
     run_async(_run())
 
@@ -341,7 +345,7 @@ def test_observed_at_roundtrips_utc(make_account: Callable[..., Claim]) -> None:
         claim = make_account(observed_at=observed)
         async with rollback_conn() as conn:
             await insert_claim(conn, claim)
-            (stored,) = await claims_for(conn, claim.entity_id)
+            (stored,) = await claims_for(conn, claim.entity_id, scope=ALL_TENANTS)
         assert stored.observed_at is not None
         assert stored.observed_at.tzinfo is not None
         assert stored.observed_at == observed
