@@ -56,7 +56,9 @@ from clue_research.identity.normalize import (
     strip_legal_suffix,
 )
 from clue_research.identity.policy import (
+    DEFAULT_DISPOSITION_POLICY,
     DEFAULT_RESOLUTION_POLICY,
+    DispositionPolicy,
     ResolutionPolicy,
     ScorerWeights,
 )
@@ -67,6 +69,27 @@ from clue_research.identity.resolve import (
     ResolutionResult,
     resolve,
     resolve_many,
+)
+from clue_research.identity.review import (
+    Disposition,
+    DispositionKind,
+    DispositionOutcome,
+    ReviewResolution,
+    ReviewStatus,
+    ReviewTask,
+    auto_merge,
+    current_value_resolved,
+    disposition,
+    enqueue_review_task,
+    get_dispositions,
+    get_task,
+    list_open_tasks,
+    merged_member_ids,
+    record_disposition,
+    resolve_create_new_entity,
+    resolve_merge_into,
+    resolve_not_a_match,
+    split_merge,
 )
 
 __all__ = [
@@ -101,6 +124,28 @@ __all__ = [
     "ResolutionPolicy",
     "ScorerWeights",
     "DEFAULT_RESOLUTION_POLICY",
+    # auto-merge + review queue (M2.3)
+    "disposition",
+    "Disposition",
+    "DispositionOutcome",
+    "DispositionKind",
+    "DispositionPolicy",
+    "DEFAULT_DISPOSITION_POLICY",
+    "auto_merge",
+    "enqueue_review_task",
+    "get_task",
+    "list_open_tasks",
+    "resolve_merge_into",
+    "resolve_create_new_entity",
+    "resolve_not_a_match",
+    "split_merge",
+    "record_disposition",
+    "get_dispositions",
+    "merged_member_ids",
+    "current_value_resolved",
+    "ReviewTask",
+    "ReviewStatus",
+    "ReviewResolution",
     # embedding (M2.2)
     "Embedder",
     "HashingEmbedder",
