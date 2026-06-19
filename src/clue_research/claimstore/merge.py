@@ -41,6 +41,7 @@ from sqlalchemy import bindparam, text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_research.claimstore.claims import _SELECT_COLUMNS, _row_to_claim, claims_for
+from clue_research.claimstore.tenancy import TenantScope
 from clue_research.core import (
     Claim,
     ClaimFlavor,
@@ -263,10 +264,17 @@ async def current_value(
     entity_id: EntityId,
     field_key: FieldKey | str,
     *,
+    scope: TenantScope,
     policy: MergePolicy = DEFAULT_MERGE_POLICY,
 ) -> CurrentValue | None:
-    """The current truth for one ``(entity, field)``, or ``None`` if there is no eligible claim."""
-    claims = await claims_for(conn, entity_id, field_key)
+    """The current truth for one ``(entity, field)``, or ``None`` if there is no eligible claim.
+
+    ``scope`` is **required** (M2.5 — fail-closed): the caller must state whose view this is — a
+    tenant (:meth:`TenantScope.for_tenant`, returning public ∪ that tenant's private), the shared
+    public base (:meth:`TenantScope.public_only`), or the operator (``TenantScope.all_tenants``).
+    A tenant scope never returns another tenant's private claim.
+    """
+    claims = await claims_for(conn, entity_id, field_key, scope=scope)
     ttl = await _freshness_ttl(conn, str(field_key))
     return merge_claims(list(claims), ttl, policy, _now())
 
@@ -276,26 +284,34 @@ async def current_values(
     entity_ids: Iterable[EntityId],
     field_keys: Iterable[FieldKey | str],
     *,
+    scope: TenantScope,
     policy: MergePolicy = DEFAULT_MERGE_POLICY,
 ) -> dict[tuple[EntityId, str], CurrentValue]:
     """Batch merge over the ``entity_ids × field_keys`` cross-product in a single live-claims query.
 
     Returns a dict keyed by ``(entity_id, field_key)`` containing only the pairs with a current
     truth — identical to calling :func:`current_value` per pair (the empty pairs are omitted). One
-    query for the claims and one for the TTLs, so it scales to Pass A's 1k–10k accounts.
+    query for the claims and one for the TTLs, so it scales to Pass A's 1k–10k accounts. ``scope``
+    is required and applied in the live-claims query (M2.5).
     """
     entities = list(entity_ids)
     fields = [str(f) for f in field_keys]
     if not entities or not fields:
         return {}
 
+    scope_sql, scope_params = scope.predicate()
     stmt = text(
         f"""
         SELECT {_SELECT_COLUMNS} FROM claim
         WHERE entity_id IN :eids AND field_key IN :fkeys AND superseded_by IS NULL
+          AND {scope_sql}
         """
     ).bindparams(bindparam("eids", expanding=True), bindparam("fkeys", expanding=True))
-    rows = (await conn.execute(stmt, {"eids": entities, "fkeys": fields})).mappings().all()
+    rows = (
+        (await conn.execute(stmt, {"eids": entities, "fkeys": fields, **scope_params}))
+        .mappings()
+        .all()
+    )
 
     grouped: dict[tuple[EntityId, str], list[Claim]] = defaultdict(list)
     for row in rows:
@@ -316,16 +332,22 @@ async def provenance_index(
     conn: AsyncConnection,
     entity_id: EntityId,
     *,
+    scope: TenantScope,
     policy: MergePolicy = DEFAULT_MERGE_POLICY,
 ) -> dict[str, WinningProvenance]:
     """The winning provenance per field for an entity — ``{field_key: winning_provenance}``
-    (overview §3). Present for every field with at least one eligible claim; absent otherwise."""
+    (overview §3). Present for every field with at least one eligible claim; absent otherwise.
+    ``scope`` is required and applied to both the field discovery and the merge (M2.5)."""
+    scope_sql, scope_params = scope.predicate()
     field_rows = await conn.execute(
-        text("SELECT DISTINCT field_key FROM claim WHERE entity_id = :e AND superseded_by IS NULL"),
-        {"e": entity_id},
+        text(
+            "SELECT DISTINCT field_key FROM claim "
+            f"WHERE entity_id = :e AND superseded_by IS NULL AND {scope_sql}"
+        ),
+        {"e": entity_id, **scope_params},
     )
     fields = list(field_rows.scalars().all())
     if not fields:
         return {}
-    merged = await current_values(conn, [entity_id], fields, policy=policy)
+    merged = await current_values(conn, [entity_id], fields, scope=scope, policy=policy)
     return {field_key: cv.provenance for (_entity, field_key), cv in merged.items()}

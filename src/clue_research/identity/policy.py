@@ -108,3 +108,29 @@ class DispositionPolicy(BaseModel):
 
 
 DEFAULT_DISPOSITION_POLICY = DispositionPolicy()
+
+
+class ReusePolicy(BaseModel):
+    """Versioned cross-tenant reuse classification (M2.5) — which claims are public-footprint
+    (shared, amortized across clients) vs tenant-private (substrate §2). **Policy is data**: adding
+    a vertical pack's public fields, or tightening a client's posture (D3), is a config change
+    behind the classifier seam — no caller hardcodes the boundary.
+
+    Defaults follow substrate §2: ``core.*`` / ``account.*`` firmographic / technographic / funding
+    facts are public-footprint; ``crm_import`` facts, contact / personal / facet data, and
+    ``account.resonance.*`` (client/ICP-shaped consumption) are tenant-private. Setting
+    ``enabled=False`` is the **safe-degradation** switch — the classifier then marks *every* claim
+    tenant-private, so cross-tenant reuse is off and isolation holds by construction.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    version: int = 1
+    enabled: bool = True  # False ⇒ everything tenant-private (disable reuse, safe degradation)
+    # Field-key namespace prefixes whose claims are tenant-private (personal / client-shaped).
+    tenant_private_prefixes: tuple[str, ...] = ("contact.", "account.resonance.")
+    # Extraction methods whose claims are inherently tenant-private (CRM-imported = client data).
+    tenant_private_methods: tuple[str, ...] = ("crm_import",)
+
+
+DEFAULT_REUSE_POLICY = ReusePolicy()

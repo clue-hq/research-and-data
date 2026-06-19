@@ -26,6 +26,7 @@ from clue_research.core.enums import (
     PassKind,
     Persona,
     ResearchMode,
+    ReuseScope,
     UseClass,
     VerificationStatus,
 )
@@ -116,6 +117,7 @@ __all__ = [
     "IdentityBinding",
     "PassKind",
     "AccountStatus",
+    "ReuseScope",
     "Persona",
     # fields
     "FieldClass",

@@ -9,7 +9,7 @@ import pytest
 from sqlalchemy import bindparam, text
 from sqlalchemy.exc import DBAPIError
 
-from clue_research.claimstore import claims_for, current_value, insert_claim
+from clue_research.claimstore import ALL_TENANTS, claims_for, current_value, insert_claim
 from clue_research.core import (
     Claim,
     ClaimFlavor,
@@ -251,8 +251,12 @@ def test_weak_binding_contact_claim_excluded_from_current_value() -> None:
             await insert_claim(conn, _weak_contact(weak_entity, binding=IdentityBinding.WEAK))
             await insert_claim(conn, _weak_contact(strong_entity, binding=IdentityBinding.STRONG))
 
-            weak_cv = await current_value(conn, weak_entity, "contact.facet.recent_post")
-            strong_cv = await current_value(conn, strong_entity, "contact.facet.recent_post")
+            weak_cv = await current_value(
+                conn, weak_entity, "contact.facet.recent_post", scope=ALL_TENANTS
+            )
+            strong_cv = await current_value(
+                conn, strong_entity, "contact.facet.recent_post", scope=ALL_TENANTS
+            )
 
             # the weak claim is still stored / queryable, just not the current truth
             weak_rows = await claims_for(conn, weak_entity)

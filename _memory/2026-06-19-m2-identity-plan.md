@@ -149,6 +149,34 @@ workflow (7 agents: 5 issue analyses → order + adversarial). User approved ord
   assert, config moves borderline pair, audit, enum parity, redis lock integration skip-gated).
 - make check GREEN: 309 passed, mypy 65 files, import-linter 5/0; chain 0001-0007 round-trips base↔head.
 
+## M2.5 — DONE & verified (ENG-124 → In Progress; commit pending push)
+- Migration 0008: ALTER claim ADD tenant_id text + reuse_scope enum (DEFAULT 'public_footprint' so
+  existing rows backfill to public — correct at M2: no tenant-private writers exist yet). scope↔tenant
+  CHECK (public⟺NULL tenant, private⟺tenant set). Scoped partial index (entity,field,reuse_scope,
+  tenant_id) WHERE superseded_by IS NULL. CREATE OR REPLACE the append-only guard adding the 2 cols
+  (the M1.4 gotcha) + downgrade restores the 0007-era guard before dropping cols. Round-trips verified.
+- core: ReuseScope enum + Claim.reuse_scope/tenant_id fields + validator (private⟺tenant_id).
+- claimstore: claims.py INSERT/SELECT/_row_to_claim include the 2 cols. tenancy.py TenantScope
+  (public_only/for_tenant/all_tenants/private_only → SQL predicate). merge.py: current_value/
+  current_values/provenance_index now REQUIRE `scope` (fail-closed, decision 2); claims_for optional
+  scope defaults ALL_TENANTS (audit/DSAR reader). Updated M1 tests to pass scope=ALL_TENANTS.
+- identity: ReusePolicy (config-as-data; enabled=False = safe degradation → all private).
+  reuse.py classify_reuse_scope (substrate §2 defaults: core.*/account.* public; crm_import +
+  contact.*/account.resonance.* private) + stamp_reuse (writer stamps before insert; claimstore stays
+  config-free — no inversion) + reusable_public_value (amortization hook) + dsar_private_claims (DSAR).
+- TENANT_ID TYPE = text (decision 3, aligns with config.client_id). RLS NOT used (query predicate;
+  db/engine.py has no per-tx GUC). Classifier in identity; TenantScope in claimstore.
+- GOTCHA: the new claim_scoped_read index supersedes claim_live_entity_field in the planner's choice
+  (it's a superset prefix). Updated test_live_claims_partial_index to accept either.
+- Tests: tests/claimstore/test_tenant_isolation.py (enum parity, public-reuse-cross-tenant,
+  ZERO private leakage to tenant B on every read path, scope↔tenant CHECK both ways, append-only
+  guard rejects UPDATE of the 2 cols, model validator) + tests/identity/test_reuse.py (classifier
+  maps §2 examples, disable-reuse degradation, stamp, amortization FRESH, isolation, DSAR selector).
+- make check GREEN: 326 passed, mypy 67 files, import-linter 5/0; full chain 0001-0008 round-trips.
+
+## M2 COMPLETE — all 5 issues done + verified. Next: adversarial review workflow (M1 pattern), then
+## offer the commit batch to the user. NOT pushed (local commits only).
+
 ## Standing rules
 - Commit locally at green checkpoints; NEVER push; no AI attribution; feature branch only.
 - Implement sequentially (shared migration chain + identity pkg + core → parallel worktrees conflict).
