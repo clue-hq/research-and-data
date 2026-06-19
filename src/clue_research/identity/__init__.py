@@ -22,6 +22,16 @@ style: callers pass an ``AsyncConnection``; no business SQL lives in ``db/``.
 
 from __future__ import annotations
 
+from clue_research.identity.canonicalize import CanonicalPlan, plan_merge
+from clue_research.identity.embedding import (
+    DEFAULT_EMBEDDER,
+    DEFAULT_MODEL_VERSION,
+    EMBEDDING_DIM,
+    Embedder,
+    HashingEmbedder,
+    embed_account,
+    vector_literal,
+)
 from clue_research.identity.entities import (
     MergeCycleError,
     UnknownEntityTypeError,
@@ -44,6 +54,19 @@ from clue_research.identity.normalize import (
     normalize_name,
     registrable_domain,
     strip_legal_suffix,
+)
+from clue_research.identity.policy import (
+    DEFAULT_RESOLUTION_POLICY,
+    ResolutionPolicy,
+    ScorerWeights,
+)
+from clue_research.identity.resolve import (
+    Candidate,
+    Observation,
+    ResolutionMethod,
+    ResolutionResult,
+    resolve,
+    resolve_many,
 )
 
 __all__ = [
@@ -68,4 +91,25 @@ __all__ = [
     "canonical_registry_id",
     "fold_unicode",
     "NORMALIZER_VERSION",
+    # resolution engine (M2.2)
+    "resolve",
+    "resolve_many",
+    "Observation",
+    "Candidate",
+    "ResolutionResult",
+    "ResolutionMethod",
+    "ResolutionPolicy",
+    "ScorerWeights",
+    "DEFAULT_RESOLUTION_POLICY",
+    # embedding (M2.2)
+    "Embedder",
+    "HashingEmbedder",
+    "DEFAULT_EMBEDDER",
+    "DEFAULT_MODEL_VERSION",
+    "EMBEDDING_DIM",
+    "embed_account",
+    "vector_literal",
+    # canonicalization (M2.2; M2.3 applies the write)
+    "CanonicalPlan",
+    "plan_merge",
 ]

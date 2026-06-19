@@ -28,7 +28,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 
-from sqlalchemy import ARRAY, String, bindparam, text
+from sqlalchemy import ARRAY, String, Text, bindparam, text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_research.core import (
@@ -262,7 +262,8 @@ async def update_account(
         params["add_registry"] = serialize_value_json(reg)
     stmt = text(f"UPDATE account_entity SET {', '.join(sets)} WHERE id = :id")
     if needs_array:
-        stmt = stmt.bindparams(bindparam("new_keys", type_=ARRAY(String())))
+        # text[] || text[] requires matching element types (varchar[] would not match the column).
+        stmt = stmt.bindparams(bindparam("new_keys", type_=ARRAY(Text())))
     await conn.execute(stmt, params)
 
 
