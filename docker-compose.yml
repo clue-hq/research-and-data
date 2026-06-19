@@ -32,5 +32,19 @@ services:
       timeout: 3s
       retries: 30
 
+  # Redis — the ephemeral-state half of the stack (conventions §6): in-flight entity locks (M2.4)
+  # and rate-limit coordination. NOT a source of truth (Postgres is). The DSN seam is CLUE_REDIS_URL;
+  # the documented local default read by clue_research.locks is redis://localhost:6379/0.
+  redis:
+    image: redis:7-alpine
+    container_name: clue-redis
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
 volumes:
   clue_pgdata:

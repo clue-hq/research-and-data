@@ -105,6 +105,28 @@ workflow (7 agents: 5 issue analyses → order + adversarial). User approved ord
   bounded top_k, bulk garbage-safe, policy/embedder swap, dimension parity). make check GREEN: mypy
   60 files, import-linter 5/0, 285 passed; chain 0001-0006 round-trips base↔head on :5434.
 
+## M2.4 — DONE & verified (ENG-118 → In Progress; commit pending push)
+- NEW package `src/clue_research/locks/` (shared concurrency infra, conventions §6). NO Postgres
+  migration. Added to import-linter source lists (core-forbidden, no-SDK, no-api) for completeness.
+- deps: added `redis>=5` (runtime) + `fakeredis>=2.20` (dev) to pyproject; `uv sync` (redis-py 8.0.0).
+- client.py: CLUE_REDIS_URL seam (mirror CLUE_DATABASE_URL; read from env, NOT config — locks carries
+  no config dep). create_redis(decode_responses=True)/redis_lifespan/get_redis.
+- entity_lock.py: EntityLock (SET NX PX atomic acquire; owner-safe release+renew via Lua
+  compare-and-act with a uuid4 fencing token; TTL auto-expiry; blocking/non-blocking acquire;
+  async-with). multi_lock/MultiLock (sorted-key order → deadlock-free). Metrics via obs sink
+  (research.lock.acquired/contended/released/renewed) + traced_step span.
+- rate_limit.py: RateLimiter token bucket via atomic Lua (refill+consume); now passed from client.
+- Infra: docker-compose `redis` service (:6379) + Make redis-up/redis-down + .env.example CLUE_REDIS_URL.
+- Verification container: throwaway `clue-redis-m2` on **:6380** (`docker run -d --name clue-redis-m2
+  -p 6380:6379 redis:7-alpine`). CLUE_REDIS_URL=redis://localhost:6380/0.
+- Tests: tests/locks/{conftest,test_entity_lock,test_rate_limit}.py — all §M2.4 lock criteria
+  (mutual exclusion, TTL expiry vs renewal-not-preempted, owner-safe release, deadlock-free
+  multi-lock cross-contention, context-manager, metrics) + rate limiter (burst cap, independent
+  source keys, refill, 20-concurrent-respects-budget). Skip-when-no-redis verified (11 skip).
+- GOTCHA: rate-limit refill test was timing-flaky at rate=20/cap=1 (50ms refill < call overhead);
+  widened to rate=2/cap=1 (~0.5s refill margin).
+- make check GREEN with DB+Redis: 296 passed (11 lock). import-linter 5/0, mypy 64 files.
+
 ## Standing rules
 - Commit locally at green checkpoints; NEVER push; no AI attribution; feature branch only.
 - Implement sequentially (shared migration chain + identity pkg + core → parallel worktrees conflict).
