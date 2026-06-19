@@ -141,6 +141,11 @@ class FieldDef(BaseModel):
     freshness_ttl: timedelta | None = None
     pass_kind: PassKind  # (contract: `pass`) scoring vs deep
     gate: str | None = None  # gate expression, e.g. "tier>=1" | "committee-gated"
+    # The two-tier signal model (Doc C §1): fields sharing a `signal_class` are the cheap `scoring`
+    # proxy and the `deep` narrative of one signal — the research-schema compiler (M3.2) links them.
+    # An extension of the field_definition contract (registered, optional); the merge/source layers
+    # ignore it.
+    signal_class: str | None = None
 
     @property
     def field_class(self) -> FieldClass:

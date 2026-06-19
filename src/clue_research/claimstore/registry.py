@@ -99,8 +99,8 @@ def _validate_payload(value: Any, schema: Mapping[str, Any], path: str = "value"
 
 # --- row <-> FieldDef helpers ----------------------------------------------
 _SELECT = (
-    "field_key, value_type, validation, tier_plan, freshness_ttl, pass_kind, gate, field_class, "
-    "value_schema, corroboration_min, description, active, pack, version, created_at"
+    "field_key, value_type, validation, tier_plan, freshness_ttl, pass_kind, gate, signal_class, "
+    "field_class, value_schema, corroboration_min, description, active, pack, version, created_at"
 )
 
 
@@ -113,18 +113,20 @@ def _row_to_field_def(row: Mapping[str, Any]) -> FieldDef:
         freshness_ttl=row["freshness_ttl"],
         pass_kind=row["pass_kind"],
         gate=row["gate"],
+        signal_class=row["signal_class"],
     )
 
 
 _INSERT = text(
     """
     INSERT INTO field_definition (
-        field_key, value_type, validation, tier_plan, freshness_ttl, pass_kind, gate,
+        field_key, value_type, validation, tier_plan, freshness_ttl, pass_kind, gate, signal_class,
         field_class, value_schema, corroboration_min, description, active, pack, version
     ) VALUES (
         :field_key, :value_type, CAST(:validation AS jsonb), CAST(:tier_plan AS jsonb),
-        :freshness_ttl, CAST(:pass_kind AS field_pass), :gate, CAST(:field_class AS field_class),
-        CAST(:value_schema AS jsonb), :corroboration_min, :description, :active, :pack, :version
+        :freshness_ttl, CAST(:pass_kind AS field_pass), :gate, :signal_class,
+        CAST(:field_class AS field_class), CAST(:value_schema AS jsonb), :corroboration_min,
+        :description, :active, :pack, :version
     )
     """
 )
@@ -147,6 +149,7 @@ def _comparable(
     freshness_ttl: timedelta | None,
     pass_kind: str,
     gate: str | None,
+    signal_class: str | None,
     field_class: str,
     value_schema: Mapping[str, Any] | None,
     corroboration_min: int,
@@ -163,6 +166,7 @@ def _comparable(
         "freshness_ttl": freshness_ttl,
         "pass_kind": pass_kind,
         "gate": gate,
+        "signal_class": signal_class,
         "field_class": field_class,
         "value_schema": dict(value_schema) if value_schema is not None else None,
         "corroboration_min": corroboration_min,
@@ -208,6 +212,7 @@ async def register_field(
         freshness_ttl=field_def.freshness_ttl,
         pass_kind=field_def.pass_kind.value,
         gate=field_def.gate,
+        signal_class=field_def.signal_class,
         field_class=field_class.value,
         value_schema=value_schema,
         corroboration_min=corroboration_min,
@@ -225,6 +230,7 @@ async def register_field(
             freshness_ttl=existing["freshness_ttl"],
             pass_kind=existing["pass_kind"],
             gate=existing["gate"],
+            signal_class=existing["signal_class"],
             field_class=existing["field_class"],
             value_schema=decode_jsonb(existing["value_schema"]),
             corroboration_min=existing["corroboration_min"],
@@ -253,6 +259,7 @@ async def register_field(
             "freshness_ttl": field_def.freshness_ttl,
             "pass_kind": field_def.pass_kind.value,
             "gate": field_def.gate,
+            "signal_class": field_def.signal_class,
             "field_class": field_class.value,
             "value_schema": (
                 serialize_value_json(value_schema) if value_schema is not None else None

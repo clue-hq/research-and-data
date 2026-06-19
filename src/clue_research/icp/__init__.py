@@ -6,9 +6,11 @@ Package scaffolded by M0.1 (ENG-101); scope and the modular-boundary rules live 
 * **M3.1 — ICP spec data model** (``spec.py``): durable, append-only storage + read/write API for
   the versioned ``ICPSpec`` contract (keyed ``(client_id, icp_key, version)``), validating
   field-keys against the M1.3 registry and packs against the M3.3 catalog.
+* **M3.2 — research-schema compiler** (``compiler.py``): pure ``compile_field_plan(icp_spec)`` →
+  typed ``FieldPlan`` (scoring/deep partition, signal-class links, gates, per-ICP overrides).
 * **M3.3 — industry packs framework** (``catalog`` / ``source_profile`` / ``packs``): the pack
   catalog + the two prior sets of a pack (field set in M1.3; source profile as versioned config).
-* M3.2 (research-schema compiler), M3.4 (scoring rubric) — to follow.
+* M3.4 (scoring rubric) — to follow.
 
 M3.3 reuses the claim-store substrate (M1) to author field rows and stores source profiles as its
 own config tables; it references M4's ``source_key`` namespace by string only and imports no
@@ -30,6 +32,15 @@ from clue_research.icp.catalog import (
     list_packs,
     register_pack_catalog,
     validate_pack,
+)
+from clue_research.icp.compiler import (
+    CompileError,
+    FieldOverride,
+    FieldPlan,
+    FieldPlanEntry,
+    SignalClassLink,
+    compile_active_icp,
+    compile_field_plan,
 )
 from clue_research.icp.packs import (
     DATA_INFRA,
@@ -103,4 +114,12 @@ __all__ = [
     "ICPSpecDiff",
     "ICPSpecValidationError",
     "UnknownICPSpecError",
+    # research-schema compiler (M3.2)
+    "compile_field_plan",
+    "compile_active_icp",
+    "FieldPlan",
+    "FieldPlanEntry",
+    "SignalClassLink",
+    "FieldOverride",
+    "CompileError",
 ]
