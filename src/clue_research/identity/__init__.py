@@ -58,8 +58,10 @@ from clue_research.identity.normalize import (
 from clue_research.identity.policy import (
     DEFAULT_DISPOSITION_POLICY,
     DEFAULT_RESOLUTION_POLICY,
+    DEFAULT_REUSE_POLICY,
     DispositionPolicy,
     ResolutionPolicy,
+    ReusePolicy,
     ScorerWeights,
 )
 from clue_research.identity.resolve import (
@@ -69,6 +71,12 @@ from clue_research.identity.resolve import (
     ResolutionResult,
     resolve,
     resolve_many,
+)
+from clue_research.identity.reuse import (
+    classify_reuse_scope,
+    dsar_private_claims,
+    reusable_public_value,
+    stamp_reuse,
 )
 from clue_research.identity.review import (
     Disposition,
@@ -146,6 +154,13 @@ __all__ = [
     "ReviewTask",
     "ReviewStatus",
     "ReviewResolution",
+    # cross-tenant reuse + isolation (M2.5)
+    "classify_reuse_scope",
+    "stamp_reuse",
+    "reusable_public_value",
+    "dsar_private_claims",
+    "ReusePolicy",
+    "DEFAULT_REUSE_POLICY",
     # embedding (M2.2)
     "Embedder",
     "HashingEmbedder",

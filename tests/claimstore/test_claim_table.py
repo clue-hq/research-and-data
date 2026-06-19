@@ -328,7 +328,11 @@ def test_live_claims_partial_index_is_used(make_account: Callable[..., Claim]) -
                 .all()
             )
         plan = "\n".join(plan_rows)
-        assert "claim_live_entity_field" in plan, plan
+        # A partial live-claims index must cover the read (not a seq scan). Either the M1.1
+        # (entity_id, field_key) index or the M2.5 scoped superset (entity_id, field_key,
+        # reuse_scope, tenant_id) — both are partial on `superseded_by IS NULL` — is acceptable;
+        # the planner may prefer the scoped index once it exists (it covers the same prefix).
+        assert ("claim_live_entity_field" in plan) or ("claim_scoped_read" in plan), plan
 
     run_async(_run())
 
