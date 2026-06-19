@@ -1,0 +1,434 @@
+"""The canonical entity store — the ``entity_id`` seam (M2.1).
+
+This is the thin read/write API over ``account_entity`` / ``contact_entity`` that the *entire*
+subsystem keys on (conventions §2: everything keys on a resolved ``entity_id``, never a free-text
+name). Resolution logic (M2.2 fuzzy matching, M2.3 merge decisioning) is built *on top of* this
+store; everything else (claim store, discovery, profiling, scoring, handoff) consumes ids from here
+and never re-implements entity persistence. Swapping the persistence engine stays behind this API —
+nothing downstream queries the tables directly.
+
+What lives here (M2.1):
+
+* **writes** — :func:`insert_account_entity`, :func:`insert_contact_entity` (normalizing strong
+  keys + building the normalized match-key index), :func:`update_account` (the canonicalization
+  write M2.2/M2.3 drive), :func:`set_status`, :func:`mark_merged`.
+* **reads** — :func:`get_account`, :func:`get_contact`, :func:`get_entity`, and
+  :func:`resolve_alias` (exact strong-key / normalized-alias lookup — *fuzzy is M2.2*).
+* **merge-chain** — :func:`surviving_id` follows a ``merged_into`` chain to the live survivor in one
+  call and **errors on a cycle** (never infinite-loops), per the §M2.1 acceptance criteria.
+
+Normal forms come from :mod:`clue_research.identity.normalize` (the one folding path, shared with
+M2.2). ``aliases`` is stored as the *normalized match index* — the set of name-keys an exact lookup
+can hit — so ``resolve_alias`` is an indexed equality check, not a scan. Persistence follows the
+claim store's seam style: callers pass an :class:`~sqlalchemy.ext.asyncio.AsyncConnection`; no
+business SQL lives in ``db/``.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Mapping, Sequence
+
+from sqlalchemy import ARRAY, String, Text, bindparam, text
+from sqlalchemy.ext.asyncio import AsyncConnection
+
+from clue_research.core import (
+    AccountEntity,
+    AccountStatus,
+    ContactEntity,
+    EntityId,
+    EntityType,
+    parse_value_json,
+    serialize_value_json,
+)
+from clue_research.identity.normalize import (
+    canonical_registry_id,
+    name_key,
+    normalize_name,
+    registrable_domain,
+)
+
+# A safety cap on the merged_into walk, independent of the cycle guard — a defensive bound so a
+# pathologically long (but acyclic) chain can never hang a read either.
+_MAX_MERGE_HOPS = 64
+
+
+class MergeCycleError(ValueError):
+    """Raised when a ``merged_into`` chain forms a cycle (detected, never infinite-looped)."""
+
+
+class UnknownEntityTypeError(ValueError):
+    """Raised when an ``entity_type`` has no entity table (only account/contact exist)."""
+
+
+def _table(entity_type: EntityType) -> str:
+    if entity_type is EntityType.ACCOUNT:
+        return "account_entity"
+    if entity_type is EntityType.CONTACT:
+        return "contact_entity"
+    raise UnknownEntityTypeError(f"no entity table for entity_type {entity_type!r}")
+
+
+def _decode_jsonb(raw: object) -> object:
+    """asyncpg returns jsonb already-decoded; only parse if a driver hands back raw bytes/text."""
+    if isinstance(raw, (bytes, bytearray)):
+        return parse_value_json(bytes(raw))
+    if isinstance(raw, str):
+        return parse_value_json(raw)
+    return raw
+
+
+def _match_keys(canonical_name: str, aliases: Sequence[str]) -> list[str]:
+    """The normalized match index stored in ``aliases``: every name-key an exact lookup can hit.
+
+    Includes both the suffix-stripped key (``name_key``) and the plain normalized form of the
+    canonical name and each supplied alias, de-duplicated, empties dropped. So ``resolve_alias``
+    can match ``"Acme Inc"`` against a stored ``"Acme"`` (and vice-versa) by equality alone.
+    """
+    keys: set[str] = set()
+    for raw in (canonical_name, *aliases):
+        for folded in (normalize_name(raw), name_key(raw)):
+            if folded:
+                keys.add(folded)
+    return sorted(keys)
+
+
+def _registry_map(registry_ids: Mapping[str, str] | None) -> dict[str, str]:
+    """Canonicalize a registry map to ``{NAMESPACE_UPPER: compact_value}`` (dropping empties)."""
+    out: dict[str, str] = {}
+    for ns, value in (registry_ids or {}).items():
+        norm_ns, norm_value = canonical_registry_id(ns, value)
+        if norm_value:
+            out[norm_ns] = norm_value
+    return out
+
+
+def _normalize_strong_text(value: str | None) -> str | None:
+    """Lower-case + trim a strong-key string column (linkedin_url / verified_email); ``None`` stays
+    ``None``. A trailing slash on a profile URL is dropped so it folds with the un-slashed form."""
+    if value is None:
+        return None
+    folded = value.strip().rstrip("/").lower()
+    return folded or None
+
+
+_ACCOUNT_COLUMNS = (
+    "id, canonical_name, primary_domain, aliases, hq_geo, registry_ids, status, merged_into"
+)
+_CONTACT_COLUMNS = (
+    "id, account_entity_id, full_name, linkedin_url, verified_email, aliases, geo, "
+    "jurisdiction, status, merged_into"
+)
+
+
+def _row_to_account(row: Mapping[str, object]) -> AccountEntity:
+    # Column names match AccountEntity field names exactly; pydantic coerces list→tuple, validates
+    # the uuid/enum fields, and re-runs the model invariants (defense in depth on read).
+    return AccountEntity.model_validate(
+        {
+            **row,
+            "hq_geo": _decode_jsonb(row["hq_geo"]),
+            "registry_ids": _decode_jsonb(row["registry_ids"]) or {},
+        }
+    )
+
+
+def _row_to_contact(row: Mapping[str, object]) -> ContactEntity:
+    return ContactEntity.model_validate({**row, "geo": _decode_jsonb(row["geo"])})
+
+
+# --- writes -----------------------------------------------------------------
+_INSERT_ACCOUNT = text(
+    """
+    INSERT INTO account_entity (canonical_name, primary_domain, aliases, hq_geo, registry_ids,
+                                status)
+    VALUES (:canonical_name, :primary_domain, :aliases, CAST(:hq_geo AS jsonb),
+            CAST(:registry_ids AS jsonb), CAST(:status AS entity_status))
+    RETURNING id
+    """
+).bindparams(bindparam("aliases", type_=ARRAY(String())))
+
+
+async def insert_account_entity(
+    conn: AsyncConnection,
+    *,
+    canonical_name: str,
+    primary_domain: str | None = None,
+    aliases: Sequence[str] = (),
+    hq_geo: Mapping[str, object] | None = None,
+    registry_ids: Mapping[str, str] | None = None,
+    status: AccountStatus = AccountStatus.CANDIDATE,
+) -> EntityId:
+    """Insert a canonical account entity, normalizing its strong keys + match index; return its id.
+
+    ``primary_domain`` is folded to its registrable form; ``registry_ids`` keys/values are
+    canonicalized; ``aliases`` is stored as the normalized match index (see :func:`_match_keys`).
+    Strong-key collisions raise (the partial-unique constraints) — that is the deterministic dedup
+    guard, surfaced to the caller (M2.3 turns it into a merge).
+    """
+    result = await conn.execute(
+        _INSERT_ACCOUNT,
+        {
+            "canonical_name": canonical_name,
+            "primary_domain": registrable_domain(primary_domain) if primary_domain else None,
+            "aliases": _match_keys(canonical_name, aliases),
+            "hq_geo": serialize_value_json(dict(hq_geo)) if hq_geo is not None else None,
+            "registry_ids": serialize_value_json(_registry_map(registry_ids)),
+            "status": status.value,
+        },
+    )
+    return EntityId(result.scalar_one())
+
+
+_INSERT_CONTACT = text(
+    """
+    INSERT INTO contact_entity (account_entity_id, full_name, linkedin_url, verified_email,
+                                aliases, geo, jurisdiction, status)
+    VALUES (:account_entity_id, :full_name, :linkedin_url, :verified_email, :aliases,
+            CAST(:geo AS jsonb), :jurisdiction, CAST(:status AS entity_status))
+    RETURNING id
+    """
+).bindparams(bindparam("aliases", type_=ARRAY(String())))
+
+
+async def insert_contact_entity(
+    conn: AsyncConnection,
+    *,
+    account_entity_id: EntityId,
+    full_name: str | None = None,
+    linkedin_url: str | None = None,
+    verified_email: str | None = None,
+    aliases: Sequence[str] = (),
+    geo: Mapping[str, object] | None = None,
+    jurisdiction: str | None = None,
+    status: AccountStatus = AccountStatus.CANDIDATE,
+) -> EntityId:
+    """Insert a contact under an account (the FK is required — contacts resolve under accounts).
+
+    ``linkedin_url`` / ``verified_email`` are folded (lower-cased, trailing slash dropped); the
+    match index is built from ``full_name`` + ``aliases``. A duplicate strong key raises.
+    """
+    result = await conn.execute(
+        _INSERT_CONTACT,
+        {
+            "account_entity_id": account_entity_id,
+            "full_name": full_name,
+            "linkedin_url": _normalize_strong_text(linkedin_url),
+            "verified_email": _normalize_strong_text(verified_email),
+            "aliases": _match_keys(full_name or "", aliases),
+            "geo": serialize_value_json(dict(geo)) if geo is not None else None,
+            "jurisdiction": jurisdiction,
+            "status": status.value,
+        },
+    )
+    return EntityId(result.scalar_one())
+
+
+async def update_account(
+    conn: AsyncConnection,
+    entity_id: EntityId,
+    *,
+    canonical_name: str | None = None,
+    primary_domain: str | None = None,
+    add_aliases: Sequence[str] = (),
+    add_registry_ids: Mapping[str, str] | None = None,
+) -> None:
+    """The canonicalization write (M2.2 chooses, M2.3 applies): union new aliases / registry ids and
+    optionally set a better canonical_name / primary_domain on the *survivor*.
+
+    Aliases are unioned into the normalized match index; registry ids are canonicalized and merged
+    (the survivor's existing values win on key collision — its already-resolved id is
+    authoritative). ``updated_at`` is bumped. Entity rows are mutable (unlike append-only claims);
+    this is the sanctioned mutation path.
+    """
+    sets = ["updated_at = now()"]
+    params: dict[str, object] = {"id": entity_id}
+    needs_array = False
+    if canonical_name is not None:
+        sets.append("canonical_name = :canonical_name")
+        params["canonical_name"] = canonical_name
+    if primary_domain is not None:
+        sets.append("primary_domain = :primary_domain")
+        params["primary_domain"] = registrable_domain(primary_domain)
+    new_keys = _match_keys("", add_aliases) if add_aliases else []
+    if new_keys:
+        # Append only the keys not already present (array union, de-duplicated).
+        sets.append("aliases = ARRAY(SELECT DISTINCT unnest(aliases || :new_keys))")
+        params["new_keys"] = new_keys
+        needs_array = True
+    reg = _registry_map(add_registry_ids)
+    if reg:
+        # Incoming keys fill only gaps: existing registry_ids (right) wins on collision (|| order).
+        sets.append("registry_ids = CAST(:add_registry AS jsonb) || registry_ids")
+        params["add_registry"] = serialize_value_json(reg)
+    stmt = text(f"UPDATE account_entity SET {', '.join(sets)} WHERE id = :id")
+    if needs_array:
+        # text[] || text[] requires matching element types (varchar[] would not match the column).
+        stmt = stmt.bindparams(bindparam("new_keys", type_=ARRAY(Text())))
+    await conn.execute(stmt, params)
+
+
+async def set_status(
+    conn: AsyncConnection, entity_type: EntityType, entity_id: EntityId, status: AccountStatus
+) -> None:
+    """Advance an entity's lifecycle status (candidate → active → merged). Merging uses
+    :func:`mark_merged` (which sets ``merged_into`` atomically with the status)."""
+    table = _table(entity_type)
+    await conn.execute(
+        text(
+            f"UPDATE {table} SET status = CAST(:status AS entity_status), updated_at = now() "
+            "WHERE id = :id"
+        ),
+        {"status": status.value, "id": entity_id},
+    )
+
+
+async def mark_merged(
+    conn: AsyncConnection, entity_type: EntityType, loser_id: EntityId, survivor_id: EntityId
+) -> None:
+    """Point ``loser`` at ``survivor``: set ``status='merged'`` and ``merged_into`` in one UPDATE
+    (the ``merged ⟺ merged_into`` CHECK is satisfied atomically). Idempotent on the pair."""
+    if loser_id == survivor_id:
+        raise MergeCycleError("an entity cannot be merged into itself")
+    table = _table(entity_type)
+    await conn.execute(
+        text(
+            f"UPDATE {table} SET status = 'merged', merged_into = :survivor, updated_at = now() "
+            "WHERE id = :loser"
+        ),
+        {"survivor": survivor_id, "loser": loser_id},
+    )
+
+
+# --- reads ------------------------------------------------------------------
+async def get_account(conn: AsyncConnection, entity_id: EntityId) -> AccountEntity | None:
+    """Return the full typed :class:`AccountEntity`, or ``None``. A merged entity surfaces its
+    ``merged_into`` pointer (the read does not silently follow it — use :func:`surviving_id`)."""
+    row = (
+        (
+            await conn.execute(
+                text(f"SELECT {_ACCOUNT_COLUMNS} FROM account_entity WHERE id = :id"),
+                {"id": entity_id},
+            )
+        )
+        .mappings()
+        .first()
+    )
+    return _row_to_account(dict(row)) if row is not None else None
+
+
+async def get_contact(conn: AsyncConnection, entity_id: EntityId) -> ContactEntity | None:
+    """Return the full typed :class:`ContactEntity`, or ``None`` (merged surfaces its pointer)."""
+    row = (
+        (
+            await conn.execute(
+                text(f"SELECT {_CONTACT_COLUMNS} FROM contact_entity WHERE id = :id"),
+                {"id": entity_id},
+            )
+        )
+        .mappings()
+        .first()
+    )
+    return _row_to_contact(dict(row)) if row is not None else None
+
+
+async def get_entity(
+    conn: AsyncConnection, entity_id: EntityId, entity_type: EntityType
+) -> AccountEntity | ContactEntity | None:
+    """The typed entity record for ``(id, entity_type)`` — dispatches to account/contact."""
+    if entity_type is EntityType.ACCOUNT:
+        return await get_account(conn, entity_id)
+    if entity_type is EntityType.CONTACT:
+        return await get_contact(conn, entity_id)
+    raise UnknownEntityTypeError(f"no entity table for entity_type {entity_type!r}")
+
+
+async def resolve_alias(
+    conn: AsyncConnection, key: str, entity_type: EntityType
+) -> EntityId | None:
+    """Exact strong-key / normalized-alias lookup → the **surviving** ``entity_id``, or ``None``.
+
+    *Deterministic only* (substrate §2 stage 1): no fuzzy fallback (that is M2.2). For an account,
+    ``key`` is tried as a registrable domain (against ``primary_domain``) and as a name-key (against
+    the normalized ``aliases`` index); a domain hit wins. For a contact, ``key`` is tried against
+    ``linkedin_url`` / ``verified_email`` and the alias index. A hit on a *merged* entity resolves
+    through :func:`surviving_id` to the live survivor.
+    """
+    if entity_type is EntityType.ACCOUNT:
+        domain = registrable_domain(key)
+        if domain is not None:
+            hit = (
+                await conn.execute(
+                    text("SELECT id FROM account_entity WHERE primary_domain = :d LIMIT 1"),
+                    {"d": domain},
+                )
+            ).scalar()
+            if hit is not None:
+                return await surviving_id(conn, EntityId(hit), entity_type)
+        nk = name_key(key)
+        if nk:
+            hit = (
+                await conn.execute(
+                    text("SELECT id FROM account_entity WHERE :k = ANY(aliases) LIMIT 1"),
+                    {"k": nk},
+                )
+            ).scalar()
+            if hit is not None:
+                return await surviving_id(conn, EntityId(hit), entity_type)
+        return None
+
+    if entity_type is EntityType.CONTACT:
+        strong = _normalize_strong_text(key)
+        if strong is not None:
+            hit = (
+                await conn.execute(
+                    text(
+                        "SELECT id FROM contact_entity "
+                        "WHERE linkedin_url = :s OR verified_email = :s LIMIT 1"
+                    ),
+                    {"s": strong},
+                )
+            ).scalar()
+            if hit is not None:
+                return await surviving_id(conn, EntityId(hit), entity_type)
+        nk = name_key(key)
+        if nk:
+            hit = (
+                await conn.execute(
+                    text("SELECT id FROM contact_entity WHERE :k = ANY(aliases) LIMIT 1"),
+                    {"k": nk},
+                )
+            ).scalar()
+            if hit is not None:
+                return await surviving_id(conn, EntityId(hit), entity_type)
+        return None
+
+    raise UnknownEntityTypeError(f"no entity table for entity_type {entity_type!r}")
+
+
+async def surviving_id(
+    conn: AsyncConnection, entity_id: EntityId, entity_type: EntityType
+) -> EntityId:
+    """Follow the ``merged_into`` chain to the live survivor in one call (union-find read).
+
+    Returns ``entity_id`` itself when it is not merged (or unknown — a dangling id resolves to
+    itself, not an error). Raises :class:`MergeCycleError` if the chain revisits an id (a cycle the
+    no-self-merge CHECK cannot catch beyond one hop), so a corrupt chain errors rather than hangs.
+    """
+    table = _table(entity_type)
+    stmt = text(f"SELECT merged_into FROM {table} WHERE id = :id")
+    current = entity_id
+    seen: set[EntityId] = {current}
+    for _ in range(_MAX_MERGE_HOPS):
+        nxt = (await conn.execute(stmt, {"id": current})).scalar()
+        if nxt is None:
+            return current
+        nxt_id = EntityId(nxt)
+        if nxt_id in seen:
+            raise MergeCycleError(
+                f"merged_into chain for {entity_type.value} {entity_id} cycles at {nxt_id}"
+            )
+        seen.add(nxt_id)
+        current = nxt_id
+    raise MergeCycleError(
+        f"merged_into chain for {entity_type.value} {entity_id} exceeds {_MAX_MERGE_HOPS} hops"
+    )

@@ -13,7 +13,7 @@ Implements ENG-108 (docs/specs/M00-foundations-and-shared-contracts.md §M0.2).
 from __future__ import annotations
 
 from clue_research.core.claim import Claim, DiscoveryProvenance, can_be_promoted
-from clue_research.core.entity import AccountEntity, Entity
+from clue_research.core.entity import AccountEntity, ContactEntity, Entity
 from clue_research.core.enums import (
     AccountStatus,
     ClaimFlavor,
@@ -21,11 +21,14 @@ from clue_research.core.enums import (
     EntityType,
     ExtractionMethod,
     FreshnessState,
+    ICPCreatedFrom,
+    ICPStatus,
     IdentityBinding,
     Modality,
     PassKind,
     Persona,
     ResearchMode,
+    ReuseScope,
     UseClass,
     VerificationStatus,
 )
@@ -35,6 +38,7 @@ from clue_research.core.factories import (
     by_tier_ascending,
     contact_claim,
     contact_field_claim,
+    decode_jsonb,
     discovery_claim,
     field_claim,
     first_confident_claim,
@@ -116,7 +120,10 @@ __all__ = [
     "IdentityBinding",
     "PassKind",
     "AccountStatus",
+    "ReuseScope",
     "Persona",
+    "ICPStatus",
+    "ICPCreatedFrom",
     # fields
     "FieldClass",
     "FieldKey",
@@ -136,6 +143,7 @@ __all__ = [
     # entities
     "Entity",
     "AccountEntity",
+    "ContactEntity",
     # claims
     "Claim",
     "DiscoveryProvenance",
@@ -160,6 +168,7 @@ __all__ = [
     "to_value_json",
     "serialize_value_json",
     "parse_value_json",
+    "decode_jsonb",
     "by_tier_ascending",
     "first_confident_claim",
     "account_claim",

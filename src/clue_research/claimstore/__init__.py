@@ -49,6 +49,7 @@ from clue_research.claimstore.registry import (
     register_field,
     validate_value,
 )
+from clue_research.claimstore.tenancy import ALL_TENANTS, PUBLIC_ONLY, TenantScope
 
 __all__ = [
     # write contract (M1.1)
@@ -63,6 +64,10 @@ __all__ = [
     "MergePolicy",
     "FreshnessMode",
     "DEFAULT_MERGE_POLICY",
+    # tenant scoping (M2.5)
+    "TenantScope",
+    "PUBLIC_ONLY",
+    "ALL_TENANTS",
     # field registry (M1.3)
     "register_field",
     "get_field",

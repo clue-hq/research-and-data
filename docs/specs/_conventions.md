@@ -46,6 +46,16 @@ neighbours. We achieve this with **stable seams** — narrow contracts that hide
 - **DRY:** shared domain types, the `Resolver` protocol, provenance/claim helpers, the tracing wrapper,
   and config loaders live in one shared package (M0.2). Resolvers/adapters/judges/scorers import them;
   they never re-implement them.
+- **One LLM gateway egress — OpenRouter.** Every *direct* LLM call (chat/completion + embedding) goes
+  through one shared **LLM gateway client** that wraps **OpenRouter** (OpenAI-compatible). The known
+  call sites are the faithfulness judge (M9.3), the eval rubric scorers (M9.6), discovery query-planning
+  (M6.1), ICP synthesis (M5.2), committee role-inference (M8.3), and the value-narrative positioning step
+  (M12.1). The provider/model is **config, not code** — a model-id string per call site (e.g.
+  `judge_policy.judge_model`), one `OPENROUTER_API_KEY`, with retry/timeout/fallback as versioned config —
+  so swapping a model is a config change. No component constructs a model-vendor SDK client directly: the
+  gateway is to models what the `Resolver` is to data sources. **Carve-out:** Exa Deep and Parallel Task
+  (M11) are tier-4 *research-product* resolvers, **not** chat/completion endpoints — they are not routed
+  through the gateway; they stay behind the `Resolver` protocol with their own provider clients/keys.
 
 Each issue spec carries an **Interface / seam** section stating exactly what contract it exposes and
 what it consumes, so the replaceability boundary is explicit.
@@ -109,6 +119,16 @@ class Resolver(Protocol):
     # returns claims with value, source_url, evidence_span, confidence, cost
 ```
 
+**`LLMGateway` protocol** (shared egress for direct model calls — owned by M0.4, the model analogue of the `Resolver` seam):
+```python
+class LLMGateway(Protocol):
+    def complete(self, *, model: str, messages: list[Message], **opts) -> Completion: ...
+    def embed(self, *, model: str, inputs: list[str]) -> list[Vector]: ...
+    # wraps OpenRouter (OpenAI-compatible); `model` is a config-supplied id (e.g. "anthropic/claude-…");
+    # one OPENROUTER_API_KEY; every call emits the M0.5 trace span with token/cost; deterministic stub in CI.
+    # Exa Deep / Parallel Task are research-product resolvers, NOT gateway calls (see §2 carve-out).
+```
+
 **`field_definition`** (substrate §1/§3): `field_key, type, validation, tier_plan (ordered resolvers),
 freshness_ttl, pass{scoring|deep}, gate`.
 
@@ -146,8 +166,10 @@ Postgres (system of record; JSONB for per-vertical payloads) · pgvector (dedup 
 client-knowledge retrieval) · LangGraph + `AsyncPostgresSaver` (per-account graphs) · Postgres-backed
 state machine, Temporal-shaped (durable execution) · Redis (in-flight locks, rate-limit coordination) ·
 Firecrawl (tier-2 scrape) · Exa Deep / Parallel Task (tier-4 synthesis, pluggable) · FastAPI
-(`lifespan`/`asynccontextmanager`) · LLM-as-judge with its own trace span (verification). **No Airtable
-or any external tool in the write path; Postgres is the only source of truth.**
+(`lifespan`/`asynccontextmanager`) · **OpenRouter** as the single gateway for all *direct* LLM calls
+(OpenAI-compatible; model = config; one `OPENROUTER_API_KEY`; deterministic stub in CI), the faithfulness
+judge keeping its own trace span (verification) — Exa Deep / Parallel Task stay research-product resolvers,
+not gateway calls. **No Airtable or any external tool in the write path; Postgres is the only source of truth.**
 
 ---
 

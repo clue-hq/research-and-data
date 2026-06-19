@@ -32,7 +32,7 @@ class Entity(BaseModel):
 
 class AccountEntity(BaseModel):
     """``account_entity`` (substrate §2). Contacts resolve *under* accounts (M2), keyed on
-    LinkedIn URL / verified email; that contact record is added by M2, not here."""
+    LinkedIn URL / verified email — modelled by :class:`ContactEntity` (added by M2.1)."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
@@ -48,3 +48,31 @@ class AccountEntity(BaseModel):
     def as_entity(self) -> Entity:
         """The resolved reference for this account (its ``id`` is the claim ``entity_id``)."""
         return Entity(entity_id=self.id, entity_type=EntityType.ACCOUNT)
+
+
+class ContactEntity(BaseModel):
+    """``contact_entity`` (substrate §2/§7) — a contact resolved *under* an account (M2.1).
+
+    Keyed on its own strong identifiers (``linkedin_url`` / ``verified_email``) with an
+    ``account_entity_id`` parent, this is the structural basis for the ``(account, persona)``
+    committee graph everything downstream reads. ``jurisdiction`` (Doc D §1, D4 mixed/global) is
+    carried from day one so the strict-case machinery has its hook; it stays ``None`` until a
+    location claim resolves it (M10). ``AccountStatus`` is the shared candidate→active→merged
+    entity lifecycle (it is the *entity* lifecycle, not account-only)."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    id: EntityId
+    account_entity_id: EntityId  # contacts resolve under accounts — the parent is required
+    full_name: str | None = None
+    linkedin_url: str | None = None  # strong key (unique-when-present)
+    verified_email: str | None = None  # strong key (unique-when-present)
+    aliases: tuple[str, ...] = ()
+    geo: dict[str, JsonValue] | None = None
+    jurisdiction: str | None = None  # resolved per Doc D §1; nullable until a location claim lands
+    status: AccountStatus = AccountStatus.CANDIDATE
+    merged_into: EntityId | None = None  # set when status == MERGED
+
+    def as_entity(self) -> Entity:
+        """The resolved reference for this contact (its ``id`` is the claim ``entity_id``)."""
+        return Entity(entity_id=self.id, entity_type=EntityType.CONTACT)
