@@ -9,6 +9,7 @@ from typing import Optional
 import pytest
 from fastapi.testclient import TestClient
 
+from lumen_api import image_provider
 from lumen_api.main import agent_response_from_trace, create_app
 
 
@@ -1999,6 +2000,108 @@ def test_generate_asset_route_runs_registry_providers(client: TestClient) -> Non
     )
     assert unknown.status_code == 400
     assert unknown.json()["detail"]["code"] == "provider.unknown"
+
+
+def _tiny_png(width: int = 8, height: int = 8, rgba=(64, 120, 200, 255)) -> bytes:
+    """A minimal but valid RGBA PNG the Rust asset probe can decode."""
+    import struct
+    import zlib
+
+    def chunk(tag: bytes, data: bytes) -> bytes:
+        body = tag + data
+        return (
+            struct.pack(">I", len(data))
+            + body
+            + struct.pack(">I", zlib.crc32(body) & 0xFFFFFFFF)
+        )
+
+    sig = b"\x89PNG\r\n\x1a\n"
+    ihdr = struct.pack(">IIBBBBB", width, height, 8, 6, 0, 0, 0)  # 8-bit RGBA
+    raw = (b"\x00" + bytes(rgba) * width) * height  # filter byte 0 + pixels per row
+    idat = zlib.compress(raw)
+    return sig + chunk(b"IHDR", ihdr) + chunk(b"IDAT", idat) + chunk(b"IEND", b"")
+
+
+def test_generate_asset_image_model_persists_generated_raster(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Slice 0 / Step 1: the Python T2I provider path. A mocked model returns real
+    # PNG bytes that are persisted through the SAME ingest pipeline as uploads,
+    # stamped with a `generated` source — no live API key required.
+    png = _tiny_png(8, 8)
+
+    def fake_generate(**kwargs) -> image_provider.ImageGenerationResult:
+        assert kwargs["prompt"], "prompt must thread through to the provider"
+        # brand_notes flow through for conditioning
+        assert kwargs.get("brand_notes") == ["warm palette", "trustworthy"]
+        return image_provider.ImageGenerationResult(
+            image_bytes=png,
+            mime_type="image/png",
+            model="mock-image-model",
+            provenance={
+                "created_by": "agent",
+                "created_at": "2026-06-19T00:00:00Z",
+                "source_label": "image generation",
+                "confidence": None,
+                "notes": ["model=mock-image-model"],
+            },
+            license={
+                "name": "generated_commercial_use",
+                "allow_export": True,
+                "allow_modification": True,
+                "allow_embedding": True,
+                "allow_subsetting": False,
+                "source_url": None,
+                "restrictions": [],
+            },
+        )
+
+    monkeypatch.setattr(image_provider, "generate", fake_generate)
+
+    response = client.post(
+        "/assets/generate",
+        json={
+            "provider": "image-gen-v1",
+            "prompt": "a calm, sunlit clinic waiting room, editorial photography",
+            "width": 8,
+            "height": 8,
+            "brand_notes": ["warm palette", "trustworthy"],
+        },
+    )
+    assert response.status_code == 200, response.text
+    body = response.json()
+    record = body["asset"]
+    assert record["kind"] == "raster_image"
+    assert record["source"]["kind"] == "generated"
+    assert record["source"]["model"] == "mock-image-model"
+    assert record["raster"]["pixel_width"] == 8
+    assert record["raster"]["pixel_height"] == 8
+    assert record["license"]["allow_export"] is True
+    assert body["provider"]["id"] == "image-gen-v1"
+
+    served = client.get(f"/assets/{record['id']}/bytes")
+    assert served.status_code == 200
+    assert served.content == png
+
+
+def test_generate_asset_image_model_not_configured_returns_clean_error(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # With no model configured and no mock, the provider raises a typed error
+    # that surfaces as a clean 503 (never a 500).
+    for var in (
+        "IMAGE_MODEL_BASE_URL",
+        "IMAGE_MODEL_API_KEY",
+        "IMAGE_MODEL_ID",
+        "IMAGE_MODEL_PROVIDER_ID",
+    ):
+        monkeypatch.delenv(var, raising=False)
+    response = client.post(
+        "/assets/generate",
+        json={"provider": "image-gen-v1", "prompt": "anything"},
+    )
+    assert response.status_code == 503, response.text
+    assert response.json()["detail"]["code"] == "image_model.not_configured"
 
 
 def test_mailer_carries_scannable_qr_through_export(client: TestClient) -> None:

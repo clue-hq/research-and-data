@@ -17,6 +17,7 @@ from fastapi import Depends, FastAPI, File, Form, HTTPException, Query, Request,
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
 
+from . import image_provider
 from .core import CoreClient, CoreError, has_error_diagnostics
 from .database import NotFoundError, Repository, connect, run_migrations, utc_now
 from .dto import (
@@ -1959,31 +1960,79 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
         run any registered generation provider and persist the normalized
         asset record."""
         asset_id = f"asset_gen_{uuid4().hex[:12]}"
-        request = {
-            "request_id": asset_id,
-            "prompt": payload.prompt,
-            "output_kind": payload.output_kind,
-            "target_node_id": None,
-            "target_slot_id": None,
-            "constraints": {
-                "width": payload.width,
-                "height": payload.height,
-                "mime_type": payload.mime_type,
-                "transparent_background": payload.transparent_background,
-                "brand_notes": payload.brand_notes,
-            },
-        }
-        try:
-            result = app.state.core.generate_asset(
-                store_root=asset_store_root(),
-                provider=payload.provider,
-                request=request,
-                asset_id=asset_id,
-                label=payload.label,
-                raise_on_error=False,
-            )
-        except CoreError as error:
-            raise core_http_error(error) from error
+        if image_provider.is_image_model_provider(payload.provider):
+            # Real text-to-image generation runs here in the async-capable Python
+            # layer; the returned bytes are persisted through the SAME ingest
+            # pipeline as uploads, stamped with a `generated` source, so the rest
+            # of the stack (placement/render/export/validation) is unchanged.
+            try:
+                generated = image_provider.generate(
+                    prompt=payload.prompt,
+                    width=payload.width,
+                    height=payload.height,
+                    brand_notes=payload.brand_notes,
+                    transparent_background=payload.transparent_background,
+                    request_id=asset_id,
+                )
+            except image_provider.ImageGenerationError as error:
+                log_event(
+                    api_logger,
+                    logging.INFO,
+                    "asset_generation_completed",
+                    status="rejected",
+                    provider=payload.provider,
+                    error_code=error.code,
+                )
+                raise HTTPException(
+                    status_code=error.status_code,
+                    detail={"code": error.code, "message": str(error), "diagnostics": []},
+                ) from error
+            try:
+                result = app.state.core.ingest_asset(
+                    store_root=asset_store_root(),
+                    bytes_base64=base64.b64encode(generated.image_bytes).decode("ascii"),
+                    asset_id=asset_id,
+                    label=payload.label or (payload.prompt[:60].strip() or asset_id),
+                    declared_mime_type=generated.mime_type,
+                    kind=payload.output_kind,
+                    license=generated.license,
+                    provenance=generated.provenance,
+                    source={
+                        "kind": "generated",
+                        "request_id": asset_id,
+                        "model": generated.model,
+                    },
+                    max_bytes=asset_max_bytes(),
+                    raise_on_error=False,
+                )
+            except CoreError as error:
+                raise core_http_error(error) from error
+        else:
+            request = {
+                "request_id": asset_id,
+                "prompt": payload.prompt,
+                "output_kind": payload.output_kind,
+                "target_node_id": None,
+                "target_slot_id": None,
+                "constraints": {
+                    "width": payload.width,
+                    "height": payload.height,
+                    "mime_type": payload.mime_type,
+                    "transparent_background": payload.transparent_background,
+                    "brand_notes": payload.brand_notes,
+                },
+            }
+            try:
+                result = app.state.core.generate_asset(
+                    store_root=asset_store_root(),
+                    provider=payload.provider,
+                    request=request,
+                    asset_id=asset_id,
+                    label=payload.label,
+                    raise_on_error=False,
+                )
+            except CoreError as error:
+                raise core_http_error(error) from error
 
         diagnostics = result.get("diagnostics", [])
         if not result.get("ok", False):
