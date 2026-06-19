@@ -10,7 +10,9 @@ Package scaffolded by M0.1 (ENG-101); scope and the modular-boundary rules live 
   typed ``FieldPlan`` (scoring/deep partition, signal-class links, gates, per-ICP overrides).
 * **M3.3 — industry packs framework** (``catalog`` / ``source_profile`` / ``packs``): the pack
   catalog + the two prior sets of a pack (field set in M1.3; source profile as versioned config).
-* M3.4 (scoring rubric) — to follow.
+* **M3.4 — scoring rubric model** (``rubric.py``): the versioned fit + intent ``ScoringRubric`` (a
+  slot of the ICP spec) + the pure, provenance-aware ``score(rubric, current_values)`` whose output
+  decomposes into distinct fit/intent sub-scores, each contribution linked to its ``claim_id``.
 
 M3.3 reuses the claim-store substrate (M1) to author field rows and stores source profiles as its
 own config tables; it references M4's ``source_key`` namespace by string only and imports no
@@ -48,6 +50,29 @@ from clue_research.icp.packs import (
     HEALTHCARE_PRACTICE,
     STARTER_PACKS,
     load_starter_packs,
+)
+from clue_research.icp.rubric import (
+    Contribution,
+    ContributionFlag,
+    MissingValueRule,
+    RubricEntry,
+    RubricValidationError,
+    ScoreDimension,
+    ScoreResult,
+    ScoringRubric,
+    ScoringTransform,
+    SubRubric,
+    TierBand,
+    TierCutoffs,
+    assign_tier,
+    get_active_rubric,
+    get_rubric_version,
+    reweighted,
+    rubric_from_slot,
+    rubric_to_slot,
+    score,
+    score_entity,
+    validate_rubric,
 )
 from clue_research.icp.source_profile import (
     ResolvedSourceProfile,
@@ -122,4 +147,26 @@ __all__ = [
     "SignalClassLink",
     "FieldOverride",
     "CompileError",
+    # scoring rubric model (M3.4)
+    "ScoringRubric",
+    "SubRubric",
+    "RubricEntry",
+    "ScoringTransform",
+    "MissingValueRule",
+    "TierBand",
+    "TierCutoffs",
+    "ScoreDimension",
+    "Contribution",
+    "ContributionFlag",
+    "ScoreResult",
+    "RubricValidationError",
+    "score",
+    "score_entity",
+    "validate_rubric",
+    "assign_tier",
+    "reweighted",
+    "rubric_to_slot",
+    "rubric_from_slot",
+    "get_active_rubric",
+    "get_rubric_version",
 ]
