@@ -190,76 +190,110 @@ def _invoke_model(
     aspect_ratio: Optional[str],
     transparent_background: Optional[bool],
 ) -> Tuple[bytes, str]:
-    """ADAPTER SEAM — the only provider-specific code.
+    """ADAPTER SEAM — OpenRouter (raw HTTP).
 
-    Default shape: HTTP POST `{base_url}` with a Bearer key and a JSON body, and a
-    response that is either raw image bytes (Content-Type image/*) or JSON
-    carrying base64 in one of the common keys. Replace/extend this body for a
-    specific vendor; everything above is vendor-neutral.
+    OpenRouter runs image generation through the OpenAI-compatible
+    chat-completions endpoint with an image modality: POST
+    `{base_url}/chat/completions` with `modalities: ["image", "text"]`; the
+    generated image comes back as a base64 `data:` URL in
+    `choices[0].message.images[*].image_url.url`.
 
-    `httpx` is imported lazily so this module imports cleanly even where httpx is
-    not installed (e.g. test environments that patch `generate`).
+    Output dimensions are model-determined (the chat image modality has no
+    width/height knob), so `aspect_ratio` is passed as a prompt hint and exact
+    frame dimensions come from cover-fit placement, not the model. `httpx` is
+    imported lazily so the module loads without it (tests patch `generate`).
     """
     import httpx  # lazy: only the real network path needs it
 
+    hints = []
+    if aspect_ratio:
+        hints.append(f"aspect ratio {aspect_ratio}")
+    if transparent_background:
+        hints.append("transparent background")
+    user_prompt = prompt if not hints else f"{prompt}\n\n(Render with " + ", ".join(hints) + ".)"
+
     body = {
         "model": config.model_id,
-        "prompt": prompt,
-        "width": width,
-        "height": height,
-        "aspect_ratio": aspect_ratio,
-        "transparent_background": transparent_background,
-        "response_format": "b64_json",
+        "messages": [{"role": "user", "content": user_prompt}],
+        "modalities": ["image", "text"],
     }
-    body = {key: value for key, value in body.items() if value is not None}
     headers = {
         "Authorization": f"Bearer {config.api_key}",
         "Content-Type": "application/json",
     }
-    response = httpx.post(
-        config.base_url, json=body, headers=headers, timeout=config.timeout_s
-    )
+    # Optional OpenRouter attribution headers (ranking only; harmless if unset).
+    referer = os.environ.get("IMAGE_MODEL_HTTP_REFERER")
+    title = os.environ.get("IMAGE_MODEL_APP_TITLE")
+    if referer:
+        headers["HTTP-Referer"] = referer
+    if title:
+        headers["X-Title"] = title
+
+    url = config.base_url.rstrip("/") + "/chat/completions"
+    response = httpx.post(url, json=body, headers=headers, timeout=config.timeout_s)
     if response.status_code >= 400:
         raise ImageGenerationError(
             "image_model.http_error",
             f"image model returned HTTP {response.status_code}: {response.text[:300]}",
             status_code=502,
         )
-    content_type = response.headers.get("content-type", "")
-    if content_type.startswith("image/"):
-        return response.content, content_type.split(";", 1)[0].strip()
-    return _decode_json_image(response.json())
+    return _decode_openrouter_image(response.json())
 
 
-def _decode_json_image(payload: object) -> Tuple[bytes, str]:
-    """Extract base64 image bytes from common JSON response shapes."""
-    import base64
+def _decode_openrouter_image(payload: object) -> Tuple[bytes, str]:
+    """Pull the generated image out of an OpenRouter chat-completion response.
 
-    b64: Optional[str] = None
-    mime = DEFAULT_MIME
+    Primary: `choices[0].message.images[*].image_url.url` (a base64 data: URL).
+    Fallback: top-level `data[0].b64_json` (OpenAI Images compat).
+    """
+    message: dict = {}
     if isinstance(payload, dict):
-        if isinstance(payload.get("image_base64"), str):
-            b64 = payload["image_base64"]
-        elif isinstance(payload.get("b64_json"), str):
-            b64 = payload["b64_json"]
-        else:
-            data = payload.get("data") or payload.get("images")
-            if isinstance(data, list) and data and isinstance(data[0], dict):
-                first = data[0]
-                b64 = first.get("b64_json") or first.get("image_base64") or first.get("b64")
-                mime = first.get("mime_type") or first.get("mime") or mime
-    if not isinstance(b64, str) or not b64:
+        choices = payload.get("choices")
+        if isinstance(choices, list) and choices and isinstance(choices[0], dict):
+            message = choices[0].get("message") or {}
+
+    images = message.get("images") if isinstance(message, dict) else None
+    if isinstance(images, list) and images and isinstance(images[0], dict):
+        image_url = images[0].get("image_url")
+        url = image_url.get("url") if isinstance(image_url, dict) else image_url
+        if isinstance(url, str) and url:
+            return _decode_data_url(url)
+
+    if isinstance(payload, dict):  # OpenAI Images-style fallback
+        data = payload.get("data")
+        if isinstance(data, list) and data and isinstance(data[0], dict):
+            b64 = data[0].get("b64_json") or data[0].get("image_base64")
+            if isinstance(b64, str) and b64:
+                return _decode_b64(b64, data[0].get("mime_type") or DEFAULT_MIME)
+
+    # No image — surface the model's text (often a refusal/error) for debugging.
+    text = message.get("content") if isinstance(message, dict) else None
+    detail = f"; model said: {str(text)[:200]}" if text else ""
+    raise ImageGenerationError(
+        "image_model.no_image",
+        f"OpenRouter response contained no image{detail}",
+        status_code=502,
+    )
+
+
+def _decode_data_url(url: str) -> Tuple[bytes, str]:
+    if not url.startswith("data:"):
+        # Some models return a plain https URL; Slice 0 does not fetch those.
         raise ImageGenerationError(
             "image_model.bad_response",
-            "image model response did not contain a base64 image (adapt _decode_json_image for this vendor)",
+            "expected a base64 data: URL image from the model",
             status_code=502,
         )
-    if b64.startswith("data:"):  # tolerate data URLs
-        head, _, tail = b64.partition(",")
-        mime = head[5:].split(";", 1)[0] or mime
-        b64 = tail
+    head, _, b64 = url.partition(",")
+    mime = head[5:].split(";", 1)[0] or DEFAULT_MIME
+    return _decode_b64(b64, mime)
+
+
+def _decode_b64(b64: str, mime: str) -> Tuple[bytes, str]:
+    import base64
+
     try:
-        return base64.b64decode(b64), mime
+        return base64.b64decode(b64), (mime or DEFAULT_MIME)
     except Exception as error:
         raise ImageGenerationError(
             "image_model.bad_response",

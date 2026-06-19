@@ -2104,6 +2104,71 @@ def test_generate_asset_image_model_not_configured_returns_clean_error(
     assert response.json()["detail"]["code"] == "image_model.not_configured"
 
 
+def test_image_provider_openrouter_chat_completion_shape(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Raw-HTTP OpenRouter adapter: POST {base}/chat/completions with an image
+    # modality; decode the data: URL from choices[0].message.images[0].
+    import base64
+
+    monkeypatch.setenv("IMAGE_MODEL_BASE_URL", "https://openrouter.ai/api/v1")
+    monkeypatch.setenv("IMAGE_MODEL_API_KEY", "test-key")
+    monkeypatch.setenv("IMAGE_MODEL_ID", "test/image-model")
+
+    png = _tiny_png(8, 8)
+    data_url = "data:image/png;base64," + base64.b64encode(png).decode("ascii")
+    captured: dict = {}
+
+    class _FakeResponse:
+        status_code = 200
+        headers = {"content-type": "application/json"}
+
+        def json(self) -> dict:
+            return {"choices": [{"message": {"images": [{"image_url": {"url": data_url}}]}}]}
+
+    def fake_post(url, json=None, headers=None, timeout=None):
+        captured.update(url=url, json=json, headers=headers)
+        return _FakeResponse()
+
+    monkeypatch.setattr("httpx.post", fake_post)
+
+    result = image_provider.generate(
+        prompt="a calm clinic waiting room",
+        aspect_ratio="16:9",
+        brand_notes=["warm palette"],
+    )
+    assert result.image_bytes == png
+    assert result.mime_type == "image/png"
+    assert result.model == "test/image-model"
+    # request shape: chat-completions + image modality, brand/aspect threaded in
+    assert captured["url"].endswith("/chat/completions")
+    assert captured["json"]["model"] == "test/image-model"
+    assert captured["json"]["modalities"] == ["image", "text"]
+    content = captured["json"]["messages"][0]["content"]
+    assert "16:9" in content and "warm palette" in content
+    assert captured["headers"]["Authorization"] == "Bearer test-key"
+
+
+def test_image_provider_surfaces_no_image_response(monkeypatch: pytest.MonkeyPatch) -> None:
+    # A text-only chat response (model refused / no image) -> typed error.
+    monkeypatch.setenv("IMAGE_MODEL_BASE_URL", "https://openrouter.ai/api/v1")
+    monkeypatch.setenv("IMAGE_MODEL_API_KEY", "test-key")
+    monkeypatch.setenv("IMAGE_MODEL_ID", "test/image-model")
+
+    class _FakeResponse:
+        status_code = 200
+        headers = {"content-type": "application/json"}
+
+        def json(self) -> dict:
+            return {"choices": [{"message": {"content": "I can't make that image."}}]}
+
+    monkeypatch.setattr("httpx.post", lambda *a, **k: _FakeResponse())
+
+    with pytest.raises(image_provider.ImageGenerationError) as excinfo:
+        image_provider.generate(prompt="anything")
+    assert excinfo.value.code == "image_model.no_image"
+
+
 def test_mailer_carries_scannable_qr_through_export(client: TestClient) -> None:
     # Gate for slice E4: a mailer-style document carries a generated QR
     # that survives placement and export with real bytes.
