@@ -103,7 +103,12 @@ DEFAULT_EMBEDDER: Embedder = HashingEmbedder()
 
 
 def vector_literal(vector: list[float]) -> str:
-    """Render a vector in pgvector's text format (``[1,2,3]``) for a ``CAST(:v AS vector)``."""
+    """Render a vector in pgvector's text format (``[1,2,3]``) for a ``CAST(:v AS vector)``.
+
+    Guards non-finite components up front so a misbehaving embedder fails with a clear Python error
+    at this seam, not with an opaque DB cast error deep in a query."""
+    if not all(math.isfinite(x) for x in vector):
+        raise ValueError("embedding has non-finite components (NaN/Inf)")
     return "[" + ",".join(repr(x) for x in vector) + "]"
 
 

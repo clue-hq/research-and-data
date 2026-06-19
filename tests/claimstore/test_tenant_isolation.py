@@ -18,7 +18,9 @@ from clue_research.claimstore import (
     TenantScope,
     claims_for,
     current_value,
+    current_values,
     insert_claim,
+    provenance_index,
 )
 from clue_research.core import (
     Claim,
@@ -104,9 +106,12 @@ def test_tenant_private_claim_never_leaks_to_another_tenant() -> None:
             private = _private(_claim(entity, "account.scoring_fit", {"score": 0.8}), "tenant-a")
             await insert_claim(conn, private, validate_field=False)
 
-            # Tenant B: zero cross-tenant private leakage, on every read path.
+            # Tenant B: zero cross-tenant private leakage, on EVERY read path (each is a distinct
+            # SQL builder — current_value, current_values, provenance_index, claims_for).
             b = TenantScope.for_tenant("tenant-b")
             assert await current_value(conn, entity, "account.scoring_fit", scope=b) is None
+            assert await current_values(conn, [entity], ["account.scoring_fit"], scope=b) == {}
+            assert await provenance_index(conn, entity, scope=b) == {}
             assert list(await claims_for(conn, entity, scope=b)) == []
             assert list(await claims_for(conn, entity, scope=TenantScope.public_only())) == []
 

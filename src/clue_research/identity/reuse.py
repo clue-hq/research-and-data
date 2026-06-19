@@ -85,10 +85,18 @@ async def reusable_public_value(
     )
 
 
-async def dsar_private_claims(conn: AsyncConnection, entity_id: EntityId) -> Sequence[Claim]:
-    """The DSAR/erasure selector: exactly the tenant-private claims for an entity (the data
-    subject's set), leaving shared non-personal company facts intact (Doc D §4). M2.5 ships it; the
-    actual tombstoning is M10.5. Includes superseded rows — erasure must reach the full history."""
+async def dsar_private_claims(
+    conn: AsyncConnection, entity_id: EntityId, tenant_id: str
+) -> Sequence[Claim]:
+    """The DSAR/erasure selector: exactly **this tenant's** tenant-private claims for an entity (the
+    data subject's set for one controller), leaving shared non-personal company facts — and *other*
+    tenants' private claims — intact (Doc D §4). A DSAR is always scoped to the requesting tenant;
+    ``tenant_id`` is required so the selector can never return another tenant's private data. M2.5
+    ships the selector; the tombstoning is M10.5. Includes superseded rows — erasure reaches the
+    full history."""
     return await claims_for(
-        conn, entity_id, include_superseded=True, scope=TenantScope.private_only()
+        conn,
+        entity_id,
+        include_superseded=True,
+        scope=TenantScope.private_for_tenant(tenant_id),
     )

@@ -175,6 +175,15 @@ forbidden_modules = [
     "hubspot",
 ]
 
+# Rule 6 — the claim store stays the shared substrate: it must NOT import identity or locks, so the
+# M2.5 reuse classifier can never invert the dependency (claimstore persists pre-stamped fields and
+# scopes reads; the classifier lives in identity, which imports claimstore — never the reverse).
+[[tool.importlinter.contracts]]
+name = "claim store does not import identity / locks (no inversion)"
+type = "forbidden"
+source_modules = ["clue_research.claimstore"]
+forbidden_modules = ["clue_research.identity", "clue_research.locks"]
+
 # Rule 5 — nothing imports the FastAPI app layer (api/). Dependencies point inward only.
 [[tool.importlinter.contracts]]
 name = "nothing imports the api app layer"

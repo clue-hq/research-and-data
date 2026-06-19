@@ -110,6 +110,31 @@ class DispositionPolicy(BaseModel):
 DEFAULT_DISPOSITION_POLICY = DispositionPolicy()
 
 
+def max_fuzzy_score(resolution: ResolutionPolicy) -> float:
+    """The highest match score a candidate with **no confirmed strong key** can reach — the
+    strong-key weight budget is unearnable in the probabilistic path (M2.2)."""
+    return round(1.0 - resolution.weights.strong_key_budget, 6)
+
+
+def assert_fuzzy_cannot_auto_merge(
+    resolution: ResolutionPolicy = DEFAULT_RESOLUTION_POLICY,
+    disposition: DispositionPolicy = DEFAULT_DISPOSITION_POLICY,
+) -> None:
+    """Bind the architecture's invariant to the data (substrate §2 — never silently collapse two
+    real companies): a strong-key-free fuzzy match must NOT be able to reach the auto-merge band, so
+    only a *deterministic* strong-key hit (score 1.0) auto-merges. Raises on a policy combination
+    that would let fuzzy auto-merge — call it after loading both policies (a config gate), instead
+    of trusting the prose. ``max_fuzzy_score`` must stay strictly below ``auto_merge_threshold``.
+    """
+    ceiling = max_fuzzy_score(resolution)
+    if ceiling >= disposition.auto_merge_threshold:
+        raise ValueError(
+            "policy misconfiguration: a strong-key-free match can reach the auto-merge band "
+            f"(max fuzzy {ceiling} >= auto_merge_threshold {disposition.auto_merge_threshold}); "
+            "raise the strong-key weight budget (domain+registry) or the auto_merge_threshold"
+        )
+
+
 class ReusePolicy(BaseModel):
     """Versioned cross-tenant reuse classification (M2.5) — which claims are public-footprint
     (shared, amortized across clients) vs tenant-private (substrate §2). **Policy is data**: adding
@@ -127,8 +152,14 @@ class ReusePolicy(BaseModel):
 
     version: int = 1
     enabled: bool = True  # False ⇒ everything tenant-private (disable reuse, safe degradation)
-    # Field-key namespace prefixes whose claims are tenant-private (personal / client-shaped).
-    tenant_private_prefixes: tuple[str, ...] = ("contact.", "account.resonance.")
+    # Field-key namespace prefixes whose claims are tenant-private (personal / client-shaped):
+    # contacts/personal, the resonance layer, and per-client/ICP scoring outputs (fit/intent
+    # scores are computed against one client's ICP — substrate §2/§9, M2.5 criterion).
+    tenant_private_prefixes: tuple[str, ...] = (
+        "contact.",
+        "account.resonance.",
+        "account.scoring.",
+    )
     # Extraction methods whose claims are inherently tenant-private (CRM-imported = client data).
     tenant_private_methods: tuple[str, ...] = ("crm_import",)
 

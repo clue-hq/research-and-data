@@ -29,6 +29,7 @@ class _ScopeMode(StrEnum):
     TENANT = "tenant"
     ALL = "all"
     PRIVATE_ONLY = "private_only"
+    PRIVATE_FOR_TENANT = "private_for_tenant"
 
 
 class TenantScope(BaseModel):
@@ -57,9 +58,16 @@ class TenantScope(BaseModel):
 
     @classmethod
     def private_only(cls) -> TenantScope:
-        """Only ``tenant_private`` claims — the DSAR/erasure selector (the data subject's set; M2.5
-        ships the selector, M10.5 owns the tombstoning)."""
+        """Only ``tenant_private`` claims (across *all* tenants) — an operator/maintenance scope.
+        A DSAR/erasure request is for one data controller, so use :meth:`private_for_tenant`."""
         return cls(mode=_ScopeMode.PRIVATE_ONLY)
+
+    @classmethod
+    def private_for_tenant(cls, tenant_id: str) -> TenantScope:
+        """Only *this tenant's* ``tenant_private`` claims — the DSAR/erasure selector (the data
+        subject's set for one controller; never another tenant's private data). M2.5 ships the
+        selector, M10.5 owns the tombstoning."""
+        return cls(mode=_ScopeMode.PRIVATE_FOR_TENANT, tenant_id=tenant_id)
 
     def predicate(self) -> tuple[str, dict[str, object]]:
         """Render to a ``(sql_fragment, params)`` pair (``sql_fragment`` is always a boolean expr).
@@ -72,6 +80,11 @@ class TenantScope(BaseModel):
             return "reuse_scope = 'public_footprint'", {}
         if self.mode is _ScopeMode.PRIVATE_ONLY:
             return "reuse_scope = 'tenant_private'", {}
+        if self.mode is _ScopeMode.PRIVATE_FOR_TENANT:
+            return (
+                "(reuse_scope = 'tenant_private' AND tenant_id = :scope_tenant)",
+                {"scope_tenant": self.tenant_id},
+            )
         return (
             "(reuse_scope = 'public_footprint' OR tenant_id = :scope_tenant)",
             {"scope_tenant": self.tenant_id},

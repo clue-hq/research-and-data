@@ -54,6 +54,8 @@ def _claim(entity: object, field: str, value: object, method: ExtractionMethod) 
         # personal / facet and resonance are tenant-private.
         ("contact.facet.recent_post", ExtractionMethod.API, ReuseScope.TENANT_PRIVATE),
         ("account.resonance.culture", ExtractionMethod.LLM_SYNTHESIS, ReuseScope.TENANT_PRIVATE),
+        # per-client/ICP scoring outputs are tenant-private (M2.5 acceptance criterion).
+        ("account.scoring.fit", ExtractionMethod.API, ReuseScope.TENANT_PRIVATE),
     ],
 )
 def test_classifier_maps_substrate_examples(
@@ -142,15 +144,22 @@ def test_dsar_selects_only_tenant_private_claims() -> None:
                 _claim(entity, "core.employee_count", 250, ExtractionMethod.API),  # type: ignore[arg-type]
                 tenant_id="tenant-a",
             )
-            private = stamp_reuse(
+            private_a = stamp_reuse(
                 _claim(entity, "account.crm_note", {"note": "x"}, ExtractionMethod.CRM_IMPORT),  # type: ignore[arg-type]
                 tenant_id="tenant-a",
             )
+            # Another tenant's private claim on the SAME entity must stay out of A's DSAR set.
+            private_b = stamp_reuse(
+                _claim(entity, "account.crm_note", {"note": "y"}, ExtractionMethod.CRM_IMPORT),  # type: ignore[arg-type]
+                tenant_id="tenant-b",
+            )
             await insert_claim(conn, public, validate_field=False)
-            await insert_claim(conn, private, validate_field=False)
-            dsar = list(await dsar_private_claims(conn, entity))
-            assert len(dsar) == 1
+            await insert_claim(conn, private_a, validate_field=False)
+            await insert_claim(conn, private_b, validate_field=False)
+            dsar = list(await dsar_private_claims(conn, entity, "tenant-a"))
+            assert len(dsar) == 1  # only tenant A's private claim — not the public, not tenant B's
             assert dsar[0].reuse_scope is ReuseScope.TENANT_PRIVATE
-            assert dsar[0].field_key == "account.crm_note"
+            assert dsar[0].tenant_id == "tenant-a"
+            assert dsar[0].value_json == {"note": "x"}
 
     run_async(_run())

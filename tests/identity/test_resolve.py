@@ -13,6 +13,7 @@ from sqlalchemy import text
 from clue_research.core import EntityType
 from clue_research.identity import (
     DEFAULT_EMBEDDER,
+    DEFAULT_RESOLUTION_POLICY,
     EMBEDDING_DIM,
     HashingEmbedder,
     Observation,
@@ -22,6 +23,7 @@ from clue_research.identity import (
     embed_account,
     insert_account_entity,
     mark_merged,
+    max_fuzzy_score,
     resolve,
     resolve_many,
 )
@@ -151,7 +153,10 @@ def test_same_name_different_geo_do_not_collapse() -> None:
             result = await resolve(conn, Observation(name="Apex Logistics", geo={"country": "US"}))
             ids = {c.entity_id for c in result.candidates}
             assert {us, de} <= ids  # both surfaced, neither collapsed away
-            assert result.top_score < 0.95  # no strong key → cannot reach the auto-merge band
+            # No strong key → the top score is structurally capped below the auto-merge band, at the
+            # scorer's strong-key-free ceiling (not just "< 0.95", which any fuzzy match satisfies).
+            assert result.top_score <= max_fuzzy_score(DEFAULT_RESOLUTION_POLICY)
+            assert max_fuzzy_score(DEFAULT_RESOLUTION_POLICY) < 0.95
             assert result.top is not None and result.top.entity_id == us  # geo breaks the tie
 
     run_async(_run())

@@ -32,12 +32,13 @@ from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict, JsonValue
 from redis.asyncio import Redis
-from sqlalchemy import text
+from sqlalchemy import ARRAY, Text, bindparam, text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_research.claimstore import (
     DEFAULT_MERGE_POLICY,
     MergePolicy,
+    TenantScope,
     claims_for,
     merge_claims,
 )
@@ -61,6 +62,11 @@ from clue_research.identity.entities import (
 from clue_research.identity.policy import DEFAULT_DISPOSITION_POLICY, DispositionPolicy
 from clue_research.identity.resolve import Observation, ResolutionResult
 from clue_research.locks import multi_lock
+
+
+class MergeConflictError(ValueError):
+    """Raised when an auto-merge would re-point a loser already merged into a *different* survivor
+    (identity corruption) — the prior merge must be ``split`` first."""
 
 
 # --- enums (mirrored by migration 0007; parity-tested) ----------------------
@@ -165,8 +171,13 @@ async def record_disposition(
     top_score: float | None = None,
     observation: Observation | None = None,
     result: ResolutionResult | None = None,
+    payload: dict[str, JsonValue] | None = None,
 ) -> EntityId:
-    """Append one disposition audit row (every merge / admission / resolution is recorded)."""
+    """Append one disposition audit row (every merge / admission / resolution is recorded).
+
+    ``payload`` stores an arbitrary jsonb provenance blob in ``observation_json`` (used by an
+    auto-merge to record the loser's relinquished strong keys, so a later ``split`` can restore
+    them); it takes precedence over ``observation``."""
     row = await conn.execute(
         text(
             """
@@ -190,7 +201,9 @@ async def record_disposition(
             "decided_by": decided_by,
             "config_version": config_version,
             "observation_json": (
-                serialize_value_json(observation.model_dump(mode="json"))
+                serialize_value_json(payload)
+                if payload is not None
+                else serialize_value_json(observation.model_dump(mode="json"))
                 if observation is not None
                 else None
             ),
@@ -247,8 +260,9 @@ async def auto_merge(
         return survivor_id  # nothing to do
 
     async def _do() -> EntityId:
-        # Idempotency: if the loser already resolves to this survivor, this is a no-op.
-        if await surviving_id(conn, loser_id, entity_type) == survivor_id:
+        # Idempotency / safety: where does the loser already resolve?
+        current = await surviving_id(conn, loser_id, entity_type)
+        if current == survivor_id:
             already_merged = (
                 await conn.execute(
                     text(
@@ -259,11 +273,26 @@ async def auto_merge(
                 )
             ).first()
             if already_merged is not None:
-                return survivor_id
+                return survivor_id  # no-op: the loser is already merged into this survivor
+        elif current != loser_id:
+            # The loser is already merged into a DIFFERENT survivor. Silently re-pointing it would
+            # corrupt identity history; a genuine re-merge must `split` the prior merge first.
+            raise MergeConflictError(
+                f"{entity_type.value} {loser_id} is already merged into {current}, "
+                f"not {survivor_id}; split the prior merge before re-merging"
+            )
+        # Record the loser's relinquished strong keys so a later `split` can restore them.
+        relinquished: dict[str, JsonValue] = {}
         if entity_type is EntityType.ACCOUNT:
             survivor = await get_account(conn, survivor_id)
             loser = await get_account(conn, loser_id)
             if survivor is not None and loser is not None:
+                relinquished = {
+                    "primary_domain": loser.primary_domain,
+                    "registry_ids": dict(loser.registry_ids),
+                    "domain_absorbed": survivor.primary_domain is None
+                    and loser.primary_domain is not None,
+                }
                 plan = plan_merge(survivor, loser)
                 # The loser relinquishes its strong keys BEFORE the survivor absorbs them, so the
                 # transfer never trips the partial-unique constraints (two rows can't hold one
@@ -290,6 +319,7 @@ async def auto_merge(
             survivor_id=survivor_id,
             loser_id=loser_id,
             top_score=top_score,
+            payload={"relinquished_strong_keys": relinquished} if relinquished else None,
         )
         return survivor_id
 
@@ -378,6 +408,13 @@ async def disposition(
             primary_domain=observation.domain,
             aliases=observation.aliases,
             registry_ids=observation.registry_ids,
+        )
+    if new_id is None:
+        # A contact resolves *under* an account (M2.1), so it cannot be admitted standalone here;
+        # the caller must pre-admit it (pass subject_entity_id). Fail loudly, never return None.
+        raise NotImplementedError(
+            "cannot admit a new contact entity without an account_entity_id — pass "
+            "subject_entity_id (committee contact creation is M8)"
         )
     await record_disposition(
         conn,
@@ -591,6 +628,11 @@ async def resolve_create_new_entity(
             aliases=obs.aliases,
             registry_ids=obs.registry_ids,
         )
+    if new_id is None:
+        raise NotImplementedError(
+            "cannot admit a new contact entity without an account_entity_id — the task must carry "
+            "a subject_entity_id (committee contact creation is M8)"
+        )
     await _close_task(
         conn,
         task_id,
@@ -607,7 +649,7 @@ async def resolve_create_new_entity(
         survivor_id=new_id,
         review_task_id=task_id,
     )
-    return new_id  # type: ignore[return-value]
+    return new_id
 
 
 async def resolve_not_a_match(
@@ -636,6 +678,31 @@ async def resolve_not_a_match(
     )
 
 
+async def _latest_auto_merge(
+    conn: AsyncConnection, loser_id: EntityId
+) -> tuple[EntityId, dict[str, JsonValue]] | None:
+    """Survivor + recorded relinquished strong keys of the most recent auto-merge of ``loser``."""
+    row = (
+        (
+            await conn.execute(
+                text(
+                    "SELECT survivor_id, observation_json FROM identity_disposition "
+                    "WHERE loser_id = :loser AND kind = 'auto_merge' "
+                    "ORDER BY created_at DESC, id DESC LIMIT 1"
+                ),
+                {"loser": loser_id},
+            )
+        )
+        .mappings()
+        .first()
+    )
+    if row is None or row["survivor_id"] is None:
+        return None
+    payload = row["observation_json"] or {}
+    relinquished = payload.get("relinquished_strong_keys", {}) if isinstance(payload, dict) else {}
+    return EntityId(row["survivor_id"]), relinquished
+
+
 async def split_merge(
     conn: AsyncConnection,
     loser_id: EntityId,
@@ -644,17 +711,62 @@ async def split_merge(
     resolved_by: str,
     config_version: int = 1,
 ) -> None:
-    """Reverse an erroneous prior merge: un-point ``loser``'s ``merged_into`` and re-activate it, so
-    its claims resolve to the corrected (its own) entity again. Append-only claims are untouched —
-    only the entity's merge pointer changes."""
+    """Reverse an erroneous prior merge: un-point ``loser``'s ``merged_into``, re-activate it, and
+    **restore the strong keys it relinquished** to the survivor at merge time — so the un-merged
+    entity is whole again, not a domain-less husk. Append-only claims are untouched; only the entity
+    rows' merge pointer + strong keys change (a true inverse of the auto-merge canonicalization).
+
+    Restoration is for the common case (a single merge, reversed before the survivor changed); it
+    clears the absorbed keys from the survivor first so the partial-unique constraints permit the
+    loser to take them back. If no auto-merge audit is found, only the pointer is un-set."""
     table = _entity_table(entity_type)
-    await conn.execute(
-        text(
-            f"UPDATE {table} SET status = 'active', merged_into = NULL, updated_at = now() "
-            "WHERE id = :id"
-        ),
-        {"id": loser_id},
-    )
+    prior = await _latest_auto_merge(conn, loser_id)
+
+    if prior is not None and entity_type is EntityType.ACCOUNT:
+        survivor_id, relinquished = prior
+        domain = relinquished.get("primary_domain")
+        registry = relinquished.get("registry_ids") or {}
+        absorbed = bool(relinquished.get("domain_absorbed"))
+        # Free the absorbed keys from the survivor so the loser can take them back (no clash).
+        if absorbed and isinstance(domain, str):
+            await conn.execute(
+                text(
+                    "UPDATE account_entity SET primary_domain = NULL, updated_at = now() "
+                    "WHERE id = :s AND primary_domain = :d"
+                ),
+                {"s": survivor_id, "d": domain},
+            )
+        if isinstance(registry, dict) and registry:
+            # Remove the loser-originated registry ids from the survivor (only where they match).
+            await conn.execute(
+                text(
+                    "UPDATE account_entity "
+                    "SET registry_ids = registry_ids - CAST(:keys AS text[]), updated_at = now() "
+                    "WHERE id = :s"
+                ).bindparams(bindparam("keys", type_=ARRAY(Text()))),
+                {"s": survivor_id, "keys": list(registry.keys())},
+            )
+        # Restore the loser's strong keys and re-activate it.
+        await conn.execute(
+            text(
+                "UPDATE account_entity SET status = 'active', merged_into = NULL, "
+                "primary_domain = :d, registry_ids = CAST(:r AS jsonb), updated_at = now() "
+                "WHERE id = :id"
+            ),
+            {
+                "id": loser_id,
+                "d": domain if isinstance(domain, str) else None,
+                "r": serialize_value_json(registry if isinstance(registry, dict) else {}),
+            },
+        )
+    else:
+        await conn.execute(
+            text(
+                f"UPDATE {table} SET status = 'active', merged_into = NULL, updated_at = now() "
+                "WHERE id = :id"
+            ),
+            {"id": loser_id},
+        )
     await record_disposition(
         conn,
         entity_type=entity_type,
@@ -709,16 +821,22 @@ async def current_value_resolved(
     entity_id: EntityId,
     field_key: str,
     *,
+    scope: TenantScope,
     entity_type: EntityType = EntityType.ACCOUNT,
     policy: MergePolicy = DEFAULT_MERGE_POLICY,
 ) -> CurrentValue | None:
     """The current truth for a field, **resolved across a merge**: claims attached to any entity
     that merged into the survivor are read under the survivor (substrate §2). Reuses M1's pure
-    ``merge_claims`` over the combined live-claim set; **no claim row is UPDATEd** (append-only)."""
+    ``merge_claims`` over the combined live-claim set; **no claim row is UPDATEd** (append-only).
+
+    ``scope`` is **required** (M2.5 — fail-closed), exactly like :func:`current_value`: the
+    merge-resolved read crosses *entities*, not *tenants*, so the tenant filter is applied to every
+    member's claims — a tenant scope never surfaces another tenant's private claim under the merge.
+    """
     survivor = await surviving_id(conn, entity_id, entity_type)
     members = await merged_member_ids(conn, survivor, entity_type)
     claims: list[Claim] = []
     for member in members:
-        claims.extend(await claims_for(conn, member, field_key))
+        claims.extend(await claims_for(conn, member, field_key, scope=scope))
     ttl = await _field_ttl(conn, field_key)
     return merge_claims(claims, ttl, policy, _now())  # type: ignore[arg-type]

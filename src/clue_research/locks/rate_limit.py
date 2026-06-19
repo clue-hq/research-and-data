@@ -12,19 +12,20 @@ until it refills. The source layer (M4) consumes this helper; M2.4 only provides
 
 from __future__ import annotations
 
-import time
-
 from redis.asyncio import Redis
 
-# Atomic token-bucket refill+consume. now is passed from the caller (single-coordinator clock); the
-# stored state is (tokens, last_refill_ms). Returns 1 if allowed (tokens consumed), else 0.
+# Atomic token-bucket refill+consume. The clock is read **server-side** via Redis ``TIME`` so it is
+# a single monotonic source across all worker processes — caller wall-clocks (which can skew under
+# NTP) can never over-credit tokens and let the fleet exceed the budget. State is (tokens,
+# last_refill_ms). Returns 1 if allowed (tokens consumed), else 0.
 _TOKEN_BUCKET = """
 local key = KEYS[1]
-local now = tonumber(ARGV[1])
-local rate = tonumber(ARGV[2])
-local capacity = tonumber(ARGV[3])
-local requested = tonumber(ARGV[4])
-local ttl = tonumber(ARGV[5])
+local rate = tonumber(ARGV[1])
+local capacity = tonumber(ARGV[2])
+local requested = tonumber(ARGV[3])
+local ttl = tonumber(ARGV[4])
+local t = redis.call('TIME')
+local now = (tonumber(t[1]) * 1000) + (tonumber(t[2]) / 1000)
 local state = redis.call('hmget', key, 'tokens', 'ts')
 local tokens = tonumber(state[1])
 local ts = tonumber(state[2])
@@ -54,13 +55,12 @@ class RateLimiter:
         )
 
     async def acquire(self, source_key: str, *, tokens: int = 1) -> bool:
-        """Try to consume ``tokens`` from ``source_key``'s bucket — ``True`` if allowed."""
-        now_ms = time.time() * 1000.0
+        """Try to consume ``tokens`` from ``source_key``'s bucket — ``True`` if allowed. The refill
+        clock is read inside the script (Redis ``TIME``), so no caller wall-clock is involved."""
         result = await self._redis.eval(
             _TOKEN_BUCKET,
             1,
             f"ratelimit:{source_key}",
-            now_ms,
             self._rate,
             self._capacity,
             tokens,
