@@ -17,11 +17,16 @@ Open decisions: **D1** the handoff stops at the value narrative (recommended def
 
 from __future__ import annotations
 
-from uuid import UUID
-
 from pydantic import BaseModel, ConfigDict, JsonValue
 
-from clue_research.core.enums import FreshnessState, IdentityBinding, Persona, UseClass
+from clue_research.core.enums import (
+    FreshnessState,
+    ICPCreatedFrom,
+    ICPStatus,
+    IdentityBinding,
+    Persona,
+    UseClass,
+)
 from clue_research.core.field import FieldKey
 from clue_research.core.primitives import (
     ClaimId,
@@ -70,17 +75,37 @@ class CurrentValue(BaseModel):
 
 
 class ICPSpec(BaseModel):
-    """Versioned ICP compiler output (staged-flow §2 / Doc B). Stub: M3 enriches the
-    discovery strategy / source profile / scoring rubric into typed structures."""
+    """The versioned ICP spec (staged-flow §2 / Doc B; conventions §4) — the single contract M3.2 /
+    M3.4 read and M5 writes, keyed ``(client_id, icp_key, version)``.
+
+    M3.1 owns its durable, append-only storage (an ``active`` spec is immutable; an edit appends a
+    new ``version`` with ``parent_version`` and activating it archives the prior). M3.2 compiles
+    ``field_keys`` ∪ ``enabled_packs`` into a field plan; the rubric / discovery / source-profile
+    slots are stored here as opaque config whose internals are owned by M3.4 / M6 / M4 respectively
+    (the slots are referenced by name so each evolves independently)."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    id: UUID
+    # identity & versioning (M3.1)
+    client_id: str
+    icp_key: str  # distinguishes segments under one client (D5: multi-ICP)
+    created_from: ICPCreatedFrom
     version: int = 1
-    field_keys: tuple[FieldKey, ...] = ()  # the active field set (core + packs)
-    discovery_strategy: dict[str, JsonValue] = {}  # mode-M1 strategy
-    source_profile: dict[str, JsonValue] = {}  # per-pack source weights (M2/M4)
-    scoring_rubric: dict[str, JsonValue] = {}  # fit + intent weights (M3.4/M6)
+    parent_version: int | None = None  # the version this was derived from (append-only lineage)
+    status: ICPStatus = ICPStatus.DRAFT
+    label: str | None = None
+    description: str | None = None
+    created_by: str | None = None
+    created_at: UtcDatetime | None = None  # set by the store on write
+
+    # the four sub-contract slots (conventions §4), referenced by name
+    field_keys: tuple[FieldKey, ...] = ()  # active field set (core + packs)
+    enabled_packs: tuple[str, ...] = ()  # M3.3 packs enabled for this ICP
+    discovery_strategy: dict[str, JsonValue] = {}  # mode-M1 strategy (M6 interprets)
+    source_profile_ref: dict[
+        str, JsonValue
+    ] = {}  # per-ICP source-profile config ref (M4 interprets)
+    scoring_rubric: dict[str, JsonValue] = {}  # fit + intent weights (M3.4 interprets)
 
 
 class ScoreComponent(BaseModel):
