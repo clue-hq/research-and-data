@@ -133,3 +133,21 @@ class Persona(StrEnum):
     ECONOMIC_BUYER = "economic_buyer"
     TECHNICAL_EVALUATOR = "technical_evaluator"
     BLOCKER = "blocker"
+
+
+class ICPStatus(StrEnum):
+    """Lifecycle of a versioned ICP spec (M3.1; staged-flow §2). An ``ACTIVE`` spec is immutable;
+    an edit appends a new version and activating it ``ARCHIVED``s the prior — never deletes."""
+
+    DRAFT = "draft"
+    ACTIVE = "active"
+    ARCHIVED = "archived"
+
+
+class ICPCreatedFrom(StrEnum):
+    """Provenance of an ICP-spec version (M3.1). ``IMPORT_REDERIVE`` is the optional D6 hook — a
+    re-derive of the ICP from an imported list (the default flag-and-proceed adds no spec)."""
+
+    SYNTHESIS = "synthesis"
+    CLIENT_EDIT = "client_edit"
+    IMPORT_REDERIVE = "import_rederive"

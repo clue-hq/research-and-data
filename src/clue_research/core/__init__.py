@@ -21,6 +21,8 @@ from clue_research.core.enums import (
     EntityType,
     ExtractionMethod,
     FreshnessState,
+    ICPCreatedFrom,
+    ICPStatus,
     IdentityBinding,
     Modality,
     PassKind,
@@ -118,6 +120,8 @@ __all__ = [
     "PassKind",
     "AccountStatus",
     "Persona",
+    "ICPStatus",
+    "ICPCreatedFrom",
     # fields
     "FieldClass",
     "FieldKey",
