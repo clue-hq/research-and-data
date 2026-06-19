@@ -174,8 +174,31 @@ workflow (7 agents: 5 issue analyses → order + adversarial). User approved ord
   maps §2 examples, disable-reuse degradation, stamp, amortization FRESH, isolation, DSAR selector).
 - make check GREEN: 326 passed, mypy 67 files, import-linter 5/0; full chain 0001-0008 round-trips.
 
-## M2 COMPLETE — all 5 issues done + verified. Next: adversarial review workflow (M1 pattern), then
-## offer the commit batch to the user. NOT pushed (local commits only).
+## M2 COMPLETE — all 5 issues done + verified. NOT pushed (local commits only).
+
+## Adversarial review (workflow wjdqk2i5q: 6 lenses → per-finding verify, 38 agents) — 28 confirmed,
+## 3 refuted. ALL confirmed findings FIXED in a follow-up commit. Highlights:
+- **BLOCKER (real cross-tenant leak):** `current_value_resolved` (M2.3 merge-aware read) + DSAR
+  selector read merged-member claims WITHOUT a tenant scope → would leak tenant_private across
+  tenants. M2.5 hardened current_value/current_values/provenance_index but missed these two (added
+  in M2.3, before scoping existed). FIX: `claims_for.scope` now REQUIRED (no fail-open default);
+  `current_value_resolved` takes required `scope`; `dsar_private_claims(entity, tenant_id)` uses a new
+  `TenantScope.private_for_tenant`. + regression tests proving zero leak on the merge + DSAR paths.
+- MAJOR: `split_merge` left the loser domain-less (auto_merge relinquishes strong keys). FIX: record
+  relinquished keys in the AUTO_MERGE disposition (observation_json payload); split restores them +
+  frees them from the survivor. MAJOR: `auto_merge` silently re-pointed an already-merged loser →
+  now raises `MergeConflictError`. MAJOR: scoring outputs were public → added `account.scoring.` to
+  ReusePolicy private prefixes. MAJOR: "fuzzy can't auto-merge" was prose → `assert_fuzzy_cannot_auto_merge`
+  binds it (max_fuzzy_score < auto_merge_threshold). MAJOR: rate limiter now reads the clock
+  server-side (redis TIME, no NTP skew). MAJOR: EntityLock `async with` now auto-renews (heartbeat at
+  ⅓ TTL) so a long holder isn't preempted.
+- MINOR: contact new-entity now raises NotImplementedError (not None); import-linter Rule 6 forbids
+  claimstore→identity/locks (no inversion, CI-enforced); blocking-acquire off-by-one fixed; vector_literal
+  NaN guard; test gaps closed (current_values/provenance_index isolation, idempotency no-op count,
+  concurrent lock mutual-exclusion, non-vacuous score-ceiling assertion).
+- REFUTED (correctly): 3 (incl. a wall-clock-test flakiness nit that doesn't run in CI).
+- Post-fix make check GREEN: mypy 67 files, import-linter **6**/0, **333 passed**; chain 0001-0008
+  still round-trips. Review fixes committed separately on top of the 5 issue commits.
 
 ## Standing rules
 - Commit locally at green checkpoints; NEVER push; no AI attribution; feature branch only.

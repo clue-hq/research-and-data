@@ -25,6 +25,7 @@ to corrupted Postgres truth.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import uuid
 from collections.abc import Sequence
 from types import TracebackType
@@ -86,6 +87,7 @@ class EntityLock:
         self._token = token or uuid.uuid4().hex  # the fencing token (this holder's identity)
         self._attrs = attributes or {}
         self._held = False
+        self._heartbeat: asyncio.Task[None] | None = None
 
     @property
     def held(self) -> bool:
@@ -115,9 +117,15 @@ class EntityLock:
                 get_metric_sink().add(METRIC_LOCK_CONTENDED, 1, self._attrs)
                 if not blocking:
                     return False
-                if deadline is not None and loop.time() + poll_interval >= deadline:
+                if deadline is None:
+                    await asyncio.sleep(poll_interval)
+                    continue
+                # Sleep only up to the deadline, so the final attempt lands *at* it (not one poll
+                # short) — then give up if we've run out of time.
+                remaining = deadline - loop.time()
+                if remaining <= 0:
                     return False
-                await asyncio.sleep(poll_interval)
+                await asyncio.sleep(min(poll_interval, remaining))
 
     async def release(self) -> bool:
         """Release the lock **iff** we still own it (owner-safe). ``True`` if we deleted it."""
@@ -136,9 +144,21 @@ class EntityLock:
             get_metric_sink().add(METRIC_LOCK_RENEWED, 1, self._attrs)
         return renewed
 
+    async def _run_heartbeat(self) -> None:
+        """Renew the lease at ⅓-TTL cadence while held, so a holder outrunning its TTL is never
+        preempted. Stops as soon as a renewal fails (the lease was lost / taken over)."""
+        interval = max(0.01, self._ttl_ms / 1000.0 / 3.0)
+        while True:
+            await asyncio.sleep(interval)
+            if not await self.renew():
+                break
+
     async def __aenter__(self) -> EntityLock:
         if not await self.acquire(blocking=True, timeout=self._ttl_ms / 1000.0):
             raise LockTimeout(f"could not acquire {self._key} within its lease window")
+        # Auto-renew for the duration of the held block (manual acquire() keeps the no-heartbeat
+        # contract — the caller renews). So `async with` long work is never silently preempted.
+        self._heartbeat = asyncio.create_task(self._run_heartbeat())
         return self
 
     async def __aexit__(
@@ -147,6 +167,11 @@ class EntityLock:
         exc: BaseException | None,
         tb: TracebackType | None,
     ) -> None:
+        if self._heartbeat is not None:
+            self._heartbeat.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await self._heartbeat
+            self._heartbeat = None
         await self.release()
 
 

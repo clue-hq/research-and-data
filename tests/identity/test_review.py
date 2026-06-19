@@ -11,7 +11,7 @@ from __future__ import annotations
 import pytest
 from sqlalchemy import text
 
-from clue_research.claimstore import insert_claim
+from clue_research.claimstore import ALL_TENANTS, TenantScope, insert_claim
 from clue_research.core import (
     AccountStatus,
     EntityType,
@@ -23,6 +23,7 @@ from clue_research.core import (
 from clue_research.identity import (
     DispositionOutcome,
     DispositionPolicy,
+    MergeConflictError,
     Observation,
     ReviewStatus,
     auto_merge,
@@ -116,8 +117,56 @@ def test_auto_merge_executor_unions_and_is_idempotent() -> None:
             assert "acme labs" in surv.aliases  # loser alias absorbed
             assert surv.primary_domain == "acme.com"  # gap filled from loser
 
-            # Idempotent: a repeat merge changes nothing and still returns the survivor.
+            # Idempotent: a repeat merge is a true no-op — it records NO second disposition.
             assert await auto_merge(conn, loser, survivor) == survivor
+            merges = [
+                r
+                for r in await get_dispositions(conn, survivor)
+                if r["kind"] == DispositionKind.AUTO_MERGE.value
+            ]
+            assert len(merges) == 1
+
+    run_async(_run())
+
+
+def test_auto_merge_refuses_to_repoint_an_already_merged_loser() -> None:
+    """Re-pointing a loser already merged into a different survivor raises (no corruption)."""
+
+    async def _run() -> None:
+        async with rollback_conn() as conn:
+            survivor1 = await insert_account_entity(conn, canonical_name="Acme One")
+            survivor2 = await insert_account_entity(conn, canonical_name="Acme Two")
+            loser = await insert_account_entity(conn, canonical_name="Acme Loser")
+            await auto_merge(conn, loser, survivor1)
+            with pytest.raises(MergeConflictError):
+                await auto_merge(conn, loser, survivor2)
+            # The original merge is intact.
+            assert await surviving_id(conn, loser, EntityType.ACCOUNT) == survivor1
+
+    run_async(_run())
+
+
+def test_split_restores_relinquished_strong_keys() -> None:
+    """split is a true inverse: the loser gets its domain back and the survivor releases it."""
+
+    async def _run() -> None:
+        async with rollback_conn() as conn:
+            survivor = await insert_account_entity(conn, canonical_name="Acme")  # no domain
+            loser = await insert_account_entity(
+                conn, canonical_name="Acme Two", primary_domain="acme.com"
+            )
+            await auto_merge(conn, loser, survivor)
+            # After merge: survivor absorbed the domain; loser relinquished it.
+            assert (await get_account(conn, survivor)).primary_domain == "acme.com"  # type: ignore[union-attr]
+            assert (await get_account(conn, loser)).primary_domain is None  # type: ignore[union-attr]
+
+            await split_merge(conn, loser, resolved_by="reviewer-x")
+            # After split: loser whole again with its domain; survivor released it (no clash).
+            loser_rec = await get_account(conn, loser)
+            assert loser_rec is not None
+            assert loser_rec.primary_domain == "acme.com"
+            assert loser_rec.merged_into is None
+            assert (await get_account(conn, survivor)).primary_domain is None  # type: ignore[union-attr]
 
     run_async(_run())
 
@@ -293,7 +342,9 @@ def test_claims_readable_under_survivor_with_no_claim_update() -> None:
             claim_id = await insert_claim(conn, claim, validate_field=False)
             await auto_merge(conn, loser, survivor)
 
-            cv = await current_value_resolved(conn, survivor, "account.recent_funding")
+            cv = await current_value_resolved(
+                conn, survivor, "account.recent_funding", scope=ALL_TENANTS
+            )
             assert cv is not None and cv.value_json == {"round": "B"}
 
             # The claim row is untouched: still entity_id=loser, never superseded.
@@ -305,6 +356,49 @@ def test_claims_readable_under_survivor_with_no_claim_update() -> None:
             ).first()
             assert row is not None
             assert row[0] == loser and row[1] is None
+
+    run_async(_run())
+
+
+def test_merge_resolved_read_does_not_leak_across_tenants() -> None:
+    """REGRESSION: current_value_resolved is tenant-scoped — a loser's tenant_private claim is read
+    under the survivor for its OWN tenant, but never surfaces to another tenant (M2.5)."""
+
+    async def _run() -> None:
+        from clue_research.core import ReuseScope
+
+        async with rollback_conn() as conn:
+            survivor = await insert_account_entity(conn, canonical_name="Acme")
+            loser = await insert_account_entity(conn, canonical_name="Acme Two")
+            private = account_claim(
+                entity_id=loser,
+                field_key="account.scoring_fit",
+                value_json={"score": 0.9},
+                source_tier=1,
+                extraction_method=ExtractionMethod.CRM_IMPORT,
+                confidence=0.9,
+                run_id=new_run_id(),
+                research_mode=ResearchMode.ACCOUNT_PROFILING,
+            ).model_copy(update={"reuse_scope": ReuseScope.TENANT_PRIVATE, "tenant_id": "tenant-a"})
+            await insert_claim(conn, private, validate_field=False)
+            await auto_merge(conn, loser, survivor)
+
+            field = "account.scoring_fit"
+            # Tenant B: the loser's private claim must NOT be visible under the merge.
+            b = await current_value_resolved(
+                conn, survivor, field, scope=TenantScope.for_tenant("tenant-b")
+            )
+            assert b is None
+            # Tenant A: its own private claim IS visible under the survivor.
+            a = await current_value_resolved(
+                conn, survivor, field, scope=TenantScope.for_tenant("tenant-a")
+            )
+            assert a is not None and a.value_json == {"score": 0.9}
+            # Public-only view: nothing (it is private).
+            assert (
+                await current_value_resolved(conn, survivor, field, scope=TenantScope.public_only())
+                is None
+            )
 
     run_async(_run())
 

@@ -6,9 +6,13 @@ import pytest
 from pydantic import ValidationError
 
 from clue_research.identity.policy import (
+    DEFAULT_DISPOSITION_POLICY,
     DEFAULT_RESOLUTION_POLICY,
+    DispositionPolicy,
     ResolutionPolicy,
     ScorerWeights,
+    assert_fuzzy_cannot_auto_merge,
+    max_fuzzy_score,
 )
 
 
@@ -56,3 +60,20 @@ def test_policy_is_versioned_and_swappable() -> None:
 def test_policy_is_frozen() -> None:
     with pytest.raises(ValidationError):
         DEFAULT_RESOLUTION_POLICY.top_k = 99  # type: ignore[misc]
+
+
+def test_fuzzy_cannot_reach_auto_merge_under_defaults() -> None:
+    """The default policies satisfy the invariant: a strong-key-free match can't auto-merge."""
+    assert (
+        max_fuzzy_score(DEFAULT_RESOLUTION_POLICY) < DEFAULT_DISPOSITION_POLICY.auto_merge_threshold
+    )
+    assert_fuzzy_cannot_auto_merge()  # does not raise
+
+
+def test_assert_fuzzy_rejects_a_misconfigured_pair() -> None:
+    """A disposition threshold at/below the fuzzy ceiling is caught (the invariant is enforced, not
+    prose) — here lowering auto_merge to 0.70 would let a 0.85-capped fuzzy match auto-merge."""
+    with pytest.raises(ValueError, match="auto-merge band"):
+        assert_fuzzy_cannot_auto_merge(
+            DEFAULT_RESOLUTION_POLICY, DispositionPolicy(auto_merge_threshold=0.70)
+        )

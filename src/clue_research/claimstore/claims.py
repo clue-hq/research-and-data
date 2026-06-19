@@ -31,7 +31,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_research.claimstore.registry import validate_value
-from clue_research.claimstore.tenancy import ALL_TENANTS, TenantScope
+from clue_research.claimstore.tenancy import TenantScope
 from clue_research.core import (
     Claim,
     ClaimFlavor,
@@ -214,15 +214,16 @@ async def claims_for(
     field_key: FieldKey | str | None = None,
     *,
     include_superseded: bool = False,
-    scope: TenantScope = ALL_TENANTS,
+    scope: TenantScope,
 ) -> Sequence[Claim]:
     """Raw claim history for an entity (audit / time-travel / provenance index).
 
     Returns the live claims by default (``superseded_by IS NULL``); pass
     ``include_superseded=True`` for the full append-only history. This is the *raw* reader — the
     deterministic "current truth" merge is :func:`clue_research.claimstore.current_value` (M1.2),
-    not here. ``scope`` defaults to :data:`ALL_TENANTS` — this is the privileged audit/DSAR path,
-    so it sees every tenant unless a narrower scope is passed (M2.5).
+    not here. ``scope`` is **required** (M2.5 — fail-closed): there is no fail-open default, so no
+    read path can accidentally cross tenants. An operator/audit caller passes
+    :data:`ALL_TENANTS` explicitly; a tenant-facing caller passes its own scope.
     """
     scope_sql, scope_params = scope.predicate()
     stmt = text(

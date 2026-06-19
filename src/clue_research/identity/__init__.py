@@ -63,6 +63,8 @@ from clue_research.identity.policy import (
     ResolutionPolicy,
     ReusePolicy,
     ScorerWeights,
+    assert_fuzzy_cannot_auto_merge,
+    max_fuzzy_score,
 )
 from clue_research.identity.resolve import (
     Candidate,
@@ -82,6 +84,7 @@ from clue_research.identity.review import (
     Disposition,
     DispositionKind,
     DispositionOutcome,
+    MergeConflictError,
     ReviewResolution,
     ReviewStatus,
     ReviewTask,
@@ -139,6 +142,8 @@ __all__ = [
     "DispositionKind",
     "DispositionPolicy",
     "DEFAULT_DISPOSITION_POLICY",
+    "assert_fuzzy_cannot_auto_merge",
+    "max_fuzzy_score",
     "auto_merge",
     "enqueue_review_task",
     "get_task",
@@ -154,6 +159,7 @@ __all__ = [
     "ReviewTask",
     "ReviewStatus",
     "ReviewResolution",
+    "MergeConflictError",
     # cross-tenant reuse + isolation (M2.5)
     "classify_reuse_scope",
     "stamp_reuse",

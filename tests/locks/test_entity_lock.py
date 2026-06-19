@@ -43,6 +43,22 @@ def test_acquire_is_mutually_exclusive() -> None:
     run_async(_run())
 
 
+def test_acquire_is_mutually_exclusive_under_concurrency() -> None:
+    """Under N truly-concurrent acquirers of one free lock, exactly one wins (atomic SET NX)."""
+
+    async def _run() -> None:
+        async with redis_conn() as redis:
+            eid = new_entity_id()
+            locks = [entity_lock(redis, EntityType.ACCOUNT, eid) for _ in range(12)]
+            results = await asyncio.gather(*(lk.acquire() for lk in locks))
+            assert results.count(True) == 1  # never two holders at once
+            for lk in locks:
+                if lk.held:
+                    await lk.release()
+
+    run_async(_run())
+
+
 def test_lock_auto_expires_at_ttl() -> None:
     """A holder that dies without releasing has its lock auto-expire (no permanent deadlock)."""
 
