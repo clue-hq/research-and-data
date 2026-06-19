@@ -81,6 +81,30 @@ workflow (7 agents: 5 issue analyses → order + adversarial). User approved ord
 - GOTCHA: a `verified` `api` claim needs source_url (model rule); account_claim test must pass it.
 - GOTCHA: registrable_domain returns None for a dotless bare word (it's a name, not a domain).
 
+## M2.2 — DONE & verified (ENG-106 → In Progress; commit pending push)
+- Migration 0006: account_entity_embedding sidecar `vector(128)` + HNSW(vector_cosine_ops) + pg_trgm
+  GIN trgm index on canonical_name. Migration imports EMBEDDING_DIM (parity-tested).
+- identity/embedding.py: HashingEmbedder (deterministic blake2b feature-hash of char-trigrams+token
+  unigrams → unit vector; offline). Embedder Protocol. embed_account (upsert). EMBEDDING_DIM=128.
+- identity/policy.py: ResolutionPolicy + ScorerWeights (sum=1.0; strong-key budget domain+registry
+  =0.15 → fuzzy caps at 0.85 < 0.95 auto-merge = the "never silently collapse" rule AS DATA).
+  Operational policy lives LOCAL to identity (mirrors claimstore/merge.py MergePolicy precedent;
+  NOT in config/schema.py — avoids M0.4 churn; satisfies "swap config, no code change" via param).
+- identity/resolve.py: Observation/Candidate/ResolutionResult/ResolutionMethod. resolve() =
+  deterministic-first (domain+registry exact for accounts; linkedin/email for contacts → score 1.0,
+  ZERO embed calls) then probabilistic (pgvector ANN ∪ alias-array overlap ∪ trigram → top_k →
+  feature scorer). resolve_many = bulk, per-row savepoint so a garbage row never aborts the batch.
+  DELIBERATE: name is NOT a deterministic key (names collide) → only domain/registry short-circuit;
+  name matches go through the scorer (so two same-name-different-geo surface as 2 candidates, no collapse).
+- identity/canonicalize.py: plan_merge (pure) → CanonicalPlan; M2.3 applies via update_account.
+- GOTCHA (real bug caught by tests): pg array operators are type-strict. `text[] && varchar[]` and
+  `text[] || varchar[]` FAIL. Fix: bind array params as ARRAY(Text()) (not String) for `&&`/`||`;
+  use expanding `IN :ids` (not `ANY(varchar[])`) for the uuid fetch. Fixed in resolve.py + entities.py.
+- Tests: test_embedding/test_resolution_policy/test_canonicalize (unit) + test_resolve (DB, all 10
+  §M2.2 criteria incl. zero-embed-call assertion via SpyEmbedder, IBM example, Apex no-collapse,
+  bounded top_k, bulk garbage-safe, policy/embedder swap, dimension parity). make check GREEN: mypy
+  60 files, import-linter 5/0, 285 passed; chain 0001-0006 round-trips base↔head on :5434.
+
 ## Standing rules
 - Commit locally at green checkpoints; NEVER push; no AI attribution; feature branch only.
 - Implement sequentially (shared migration chain + identity pkg + core → parallel worktrees conflict).
