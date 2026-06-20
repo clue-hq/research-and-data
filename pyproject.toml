@@ -29,6 +29,11 @@ dependencies = [
     # M2.4 — distributed in-flight locks + rate-limit coordination (locks/). Redis is the
     # ephemeral-state half of the stack (conventions §6); Postgres remains the only source of truth.
     "redis>=5",
+    # M4.3 — PDF text extraction for the modality-adapter framework (adapters/). Used ONLY behind the
+    # adapters/ PdfTextExtractor seam (import-linter Rule 4 exempts adapters/); lazy-imported in the
+    # default extractor so CI's double-driven path never needs it. A PDF library was anticipated for
+    # M4.3 (the M4 kickoff "pyproject Rule 4 ... + a PDF library for M4.3").
+    "pypdf>=6",
 ]
 
 [dependency-groups]
@@ -81,6 +86,16 @@ warn_required_dynamic_aliases = true
 # so the gateway is decoupled from the SDK's exact typed signature (a version-drift hazard).
 [[tool.mypy.overrides]]
 module = ["openai"]
+follow_imports = "skip"
+ignore_missing_imports = true
+
+# M4.3 — the PDF (pypdf) and scrape (firecrawl) libraries are external boundaries used ONLY behind
+# the adapters/ provider seams (PdfTextExtractor / ScrapeBackend), lazy-imported and duck-typed. The
+# firecrawl SDK is not a declared dependency (M4.5 wires the live scrape backend + key); its live
+# default is exercised in M4.5, not CI's double-driven path. Ignore missing stubs so the adapter
+# framework is decoupled from each SDK's exact typed signature.
+[[tool.mypy.overrides]]
+module = ["pypdf", "firecrawl"]
 follow_imports = "skip"
 ignore_missing_imports = true
 

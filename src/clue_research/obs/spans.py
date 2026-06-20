@@ -17,6 +17,28 @@ def resolve_span(source_key: str) -> str:
     return f"{SPAN_RESOLVE}.{source_key}"
 
 
+# --- modality adapters (M4.3) -----------------------------------------------
+# Each of fetch / adapt / extract is its own span (with cost + latency) so the per-stage cost — in
+# particular *transcription* (the ``adapt`` span for audio/video) — is a distinct, queryable cost
+# for the M7.5/M13 surfaces (staged-flow §7e). ``pipeline`` wraps the whole fetch→adapt→extract run
+# for one source/ref and carries the cost estimate + gate decision + cache-hit.
+SPAN_ADAPTER_PIPELINE = "adapter.pipeline"
+SPAN_ADAPTER_FETCH = "adapter.fetch"  # transport stage
+SPAN_ADAPTER_ADAPT = "adapter.adapt"  # normalization (transcription / OCR / parse) — distinct cost
+SPAN_ADAPTER_EXTRACT = "adapter.extract"  # claim-extraction stage
+
+_ADAPTER_STAGES: frozenset[str] = frozenset({"pipeline", "fetch", "adapt", "extract"})
+
+
+def adapter_span(stage: str, source_key: str) -> str:
+    """Span name for one modality-adapter stage (M4.3), e.g. ``adapter.adapt.firecrawl_site``."""
+    if stage not in _ADAPTER_STAGES:
+        raise ValueError(
+            f"unknown adapter stage {stage!r}; expected one of {sorted(_ADAPTER_STAGES)}"
+        )
+    return f"adapter.{stage}.{source_key}"
+
+
 # --- llm gateway (M0.4) -----------------------------------------------------
 # Every *direct* LLM call through the shared OpenRouter gateway (conventions §2/§4) emits this one
 # span, carrying ``model``, token usage, and ``cost_cents`` — so per-call-site model spend is

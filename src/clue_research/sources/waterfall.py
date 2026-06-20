@@ -43,6 +43,7 @@ from clue_research.core import (
     ResearchMode,
     RunId,
     first_confident_claim,
+    revalidate_with,
 )
 from clue_research.obs import (
     ATTR_COST_CENTS,
@@ -143,8 +144,9 @@ def _finalize(
     }
     if claim.entity_type is EntityType.CONTACT and identity_binding is not None:
         update["identity_binding"] = identity_binding
-    updated = claim.model_copy(update=update)
-    return Claim.model_validate(updated.model_dump(mode="python"))
+    # ``model_copy`` skips validators; the shared ``revalidate_with`` round-trips through validation
+    # so the stamp can never silently break an invariant (conventions §2 DRY).
+    return revalidate_with(claim, **update)
 
 
 async def _existing_step_claims(
