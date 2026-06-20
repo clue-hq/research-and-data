@@ -40,11 +40,12 @@ def generation_key(
     height: Optional[int] = None,
     brand_notes: Optional[List[str]] = None,
     aspect_ratio: Optional[str] = None,
+    image_size: Optional[str] = None,
     transparent_background: Optional[bool] = None,
     reference_asset_ids: Optional[List[str]] = None,
 ) -> str:
     """Stable hash of the generation request — the cache key. Anything that
-    changes the produced image (prompt, brand conditioning, size, model,
+    changes the produced image (prompt, brand conditioning, size, aspect, model,
     references) participates; ordering of notes/refs does not."""
     payload = {
         "prompt": _normalize_text(prompt),
@@ -53,6 +54,7 @@ def generation_key(
         "height": height,
         "brand_notes": sorted(_normalize_text(note) for note in (brand_notes or []) if (note or "").strip()),
         "aspect_ratio": aspect_ratio,
+        "image_size": image_size,
         "transparent_background": bool(transparent_background) if transparent_background is not None else None,
         "reference_asset_ids": sorted(reference_asset_ids or []),
     }

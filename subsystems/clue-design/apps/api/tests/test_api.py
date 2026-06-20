@@ -2216,6 +2216,51 @@ def test_image_generation_cache_dedups_identical_requests(
     assert calls["n"] == 2
 
 
+def test_resolve_dimensions_translates_aspect_ratio_and_size_tier() -> None:
+    # Step 7 (G0.2): aspect_ratio + image_size → concrete dimensions; explicit dims win.
+    resolve = image_provider.resolve_dimensions
+    assert resolve(1080, 1350, "16:9", "2k") == (1080, 1350)  # explicit w+h win
+    assert resolve(None, None, "16:9", None) == (1024, 576)  # default 1k long edge
+    assert resolve(None, None, "16:9", "2k") == (2048, 1152)
+    assert resolve(None, None, "4:5", "1k") == (819, 1024)  # portrait
+    assert resolve(None, None, "3x2", None) == (1024, 683)  # 'WxH' form
+    assert resolve(None, None, None, "4k") == (4096, 4096)  # no aspect → square at tier
+    assert resolve(None, None, "1:1", "unknown") == (1024, 1024)  # unknown tier → 1k
+
+
+def test_generate_asset_image_model_forwards_aspect_size_and_references(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Step 7: the route threads aspect_ratio / image_size / reference_asset_ids to the provider.
+    captured: dict = {}
+
+    def fake_generate(**kwargs) -> image_provider.ImageGenerationResult:
+        captured.update(kwargs)
+        return image_provider.ImageGenerationResult(
+            image_bytes=_tiny_png(8, 8),
+            mime_type="image/png",
+            model="mock-image-model",
+            provenance={"created_by": "agent", "source_label": "image generation", "notes": []},
+            license={"name": "generated_commercial_use", "allow_export": True},
+        )
+
+    monkeypatch.setattr(image_provider, "generate", fake_generate)
+    response = client.post(
+        "/assets/generate",
+        json={
+            "provider": "image-gen-v1",
+            "prompt": "a hero photograph",
+            "aspect_ratio": "16:9",
+            "image_size": "2k",
+            "reference_asset_ids": ["asset_ref_a"],
+        },
+    )
+    assert response.status_code == 200, response.text
+    assert captured["aspect_ratio"] == "16:9"
+    assert captured["image_size"] == "2k"
+    assert captured["reference_asset_ids"] == ["asset_ref_a"]
+
+
 def test_mailer_carries_scannable_qr_through_export(client: TestClient) -> None:
     # Gate for slice E4: a mailer-style document carries a generated QR
     # that survives placement and export with real bytes.

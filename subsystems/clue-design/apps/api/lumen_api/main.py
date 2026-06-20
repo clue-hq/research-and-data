@@ -1972,7 +1972,10 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
                 width=payload.width,
                 height=payload.height,
                 brand_notes=payload.brand_notes,
+                aspect_ratio=payload.aspect_ratio,
+                image_size=payload.image_size,
                 transparent_background=payload.transparent_background,
+                reference_asset_ids=payload.reference_asset_ids,
             )
             cached_record = image_cache.lookup(asset_store_root(), cache_key)
             if cached_record:
@@ -2003,7 +2006,10 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
                     width=payload.width,
                     height=payload.height,
                     brand_notes=payload.brand_notes,
+                    aspect_ratio=payload.aspect_ratio,
+                    image_size=payload.image_size,
                     transparent_background=payload.transparent_background,
+                    reference_asset_ids=payload.reference_asset_ids,
                     request_id=asset_id,
                 )
             except image_provider.ImageGenerationError as error:
@@ -2052,6 +2058,9 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
                     "mime_type": payload.mime_type,
                     "transparent_background": payload.transparent_background,
                     "brand_notes": payload.brand_notes,
+                    "aspect_ratio": payload.aspect_ratio,
+                    "image_size": payload.image_size,
+                    "reference_asset_ids": payload.reference_asset_ids,
                 },
             }
             try:

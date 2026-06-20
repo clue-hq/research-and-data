@@ -355,6 +355,20 @@ pub struct AssetGenerationConstraints {
     pub transparent_background: Option<bool>,
     #[serde(default)]
     pub brand_notes: Vec<String>,
+    /// Target aspect ratio hint matched to the frame (e.g. "16:9"); the provider
+    /// translates it to width/height when explicit dimensions are absent, so a
+    /// 1:1 frame is never stretched into 16:9. Mirrors Brilliant `aspectRatio`.
+    #[serde(default)]
+    pub aspect_ratio: Option<String>,
+    /// Role-appropriate resolution tier ("1k"/"2k"/"4k"); the provider maps it to a
+    /// long-edge pixel size. Mirrors Brilliant `imageSize`.
+    #[serde(default)]
+    pub image_size: Option<String>,
+    /// Reference assets to condition generation on (style/subject). The field lands
+    /// now for forward-compat; reference-image *use* is Slice 1. Mirrors Brilliant
+    /// `referenceElementIds`.
+    #[serde(default)]
+    pub reference_asset_ids: Vec<AssetId>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -907,4 +921,34 @@ enum AssetNodeExpectation {
     Image,
     Vector,
     Font,
+}
+
+#[cfg(test)]
+mod generation_constraints_tests {
+    use super::AssetGenerationConstraints;
+
+    #[test]
+    fn back_compat_defaults_for_missing_step7_fields() {
+        // Pre-Step-7 payloads lack the new fields → serde-default (None / empty).
+        let old = r#"{"width":1024,"height":768,"brand_notes":["navy"]}"#;
+        let parsed: AssetGenerationConstraints = serde_json::from_str(old).unwrap();
+        assert_eq!(parsed.width, Some(1024));
+        assert_eq!(parsed.brand_notes, vec!["navy".to_owned()]);
+        assert_eq!(parsed.aspect_ratio, None);
+        assert_eq!(parsed.image_size, None);
+        assert!(parsed.reference_asset_ids.is_empty());
+    }
+
+    #[test]
+    fn round_trip_preserves_aspect_size_and_references() {
+        let json = r#"{"aspect_ratio":"16:9","image_size":"2k","reference_asset_ids":["asset_ref_a","asset_ref_b"]}"#;
+        let parsed: AssetGenerationConstraints = serde_json::from_str(json).unwrap();
+        assert_eq!(parsed.aspect_ratio.as_deref(), Some("16:9"));
+        assert_eq!(parsed.image_size.as_deref(), Some("2k"));
+        assert_eq!(parsed.reference_asset_ids.len(), 2);
+
+        let reserialized = serde_json::to_string(&parsed).unwrap();
+        let again: AssetGenerationConstraints = serde_json::from_str(&reserialized).unwrap();
+        assert_eq!(parsed, again);
+    }
 }

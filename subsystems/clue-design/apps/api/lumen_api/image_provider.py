@@ -112,14 +112,20 @@ def generate(
     height: Optional[int] = None,
     brand_notes: Optional[List[str]] = None,
     aspect_ratio: Optional[str] = None,
+    image_size: Optional[str] = None,
     transparent_background: Optional[bool] = None,
+    reference_asset_ids: Optional[List[str]] = None,
     request_id: Optional[str] = None,
 ) -> ImageGenerationResult:
     """Generate one raster image. Provider-agnostic orchestration:
-    config → prompt assembly → retrying HTTP adapter → normalized result.
+    config → dimension resolution → prompt assembly → retrying HTTP adapter →
+    normalized result.
 
-    Raises `ImageGenerationError` (typed) on misconfiguration or provider failure.
-    This is the function the route calls and tests patch.
+    `aspect_ratio` ("16:9") + `image_size` ("1k"/"2k"/"4k") translate to concrete
+    width/height when explicit dimensions are absent (a 1:1 frame is never stretched
+    into 16:9). `reference_asset_ids` lands now for forward-compat; reference-image
+    *use* is Slice 1. Raises `ImageGenerationError` (typed) on misconfiguration or
+    provider failure. This is the function the route calls and tests patch.
     """
     if not (prompt or "").strip():
         raise ImageGenerationError(
@@ -128,6 +134,7 @@ def generate(
             status_code=400,
         )
     config = ImageModelConfig.from_env()
+    width, height = resolve_dimensions(width, height, aspect_ratio, image_size)
     full_prompt = _compose_prompt(prompt, brand_notes or [])
     image_bytes, mime_type = _invoke_with_retries(
         config,
@@ -135,6 +142,7 @@ def generate(
         width=width,
         height=height,
         aspect_ratio=aspect_ratio,
+        image_size=image_size,
         transparent_background=transparent_background,
     )
     return ImageGenerationResult(
@@ -144,6 +152,54 @@ def generate(
         provenance=_generated_provenance(config.model_id, request_id),
         license=_generated_license(),
     )
+
+
+# --- dimension resolution (aspect ratio + size tier → width/height) ---------
+
+# Role-appropriate resolution tiers (Brilliant `imageSize`): long-edge pixels.
+_SIZE_TIERS = {"1k": 1024, "2k": 2048, "4k": 4096}
+_DEFAULT_LONG_EDGE = 1024
+
+
+def _parse_aspect_ratio(value: Optional[str]) -> Optional[Tuple[float, float]]:
+    """Parse '16:9' / '16x9' / '1.78' / '1.78:1' into (w, h) ratio parts, or None."""
+    if not value:
+        return None
+    text = value.strip().lower().replace("x", ":")
+    parts = text.split(":") if ":" in text else [text, "1"]
+    try:
+        ratio_w = float(parts[0])
+        ratio_h = float(parts[1]) if len(parts) > 1 and parts[1].strip() else 1.0
+    except (ValueError, IndexError):
+        return None
+    if ratio_w <= 0 or ratio_h <= 0:
+        return None
+    return ratio_w, ratio_h
+
+
+def resolve_dimensions(
+    width: Optional[int],
+    height: Optional[int],
+    aspect_ratio: Optional[str] = None,
+    image_size: Optional[str] = None,
+) -> Tuple[Optional[int], Optional[int]]:
+    """Translate an aspect ratio + size tier into concrete (width, height). Explicit
+    width AND height always win. With only an aspect ratio, the long edge comes from
+    the size tier (default 1k); the short edge is derived from the ratio."""
+    if width and height:
+        return width, height
+    long_edge = _SIZE_TIERS.get((image_size or "").strip().lower(), _DEFAULT_LONG_EDGE)
+    parsed = _parse_aspect_ratio(aspect_ratio)
+    if parsed:
+        ratio_w, ratio_h = parsed
+        if ratio_w >= ratio_h:
+            return long_edge, max(1, round(long_edge * ratio_h / ratio_w))
+        return max(1, round(long_edge * ratio_w / ratio_h)), long_edge
+    if width:
+        return width, width
+    if height:
+        return height, height
+    return long_edge, long_edge
 
 
 # --- prompt assembly -------------------------------------------------------
@@ -167,6 +223,7 @@ def _invoke_with_retries(
     width: Optional[int],
     height: Optional[int],
     aspect_ratio: Optional[str],
+    image_size: Optional[str],
     transparent_background: Optional[bool],
 ) -> Tuple[bytes, str]:
     last_error: Optional[Exception] = None
@@ -178,6 +235,7 @@ def _invoke_with_retries(
                 width=width,
                 height=height,
                 aspect_ratio=aspect_ratio,
+                image_size=image_size,
                 transparent_background=transparent_background,
             )
         except ImageGenerationError:
@@ -198,6 +256,7 @@ def _invoke_model(
     width: Optional[int],
     height: Optional[int],
     aspect_ratio: Optional[str],
+    image_size: Optional[str],
     transparent_background: Optional[bool],
 ) -> Tuple[bytes, str]:
     """ADAPTER SEAM — OpenRouter (raw HTTP).
@@ -218,6 +277,8 @@ def _invoke_model(
     hints = []
     if aspect_ratio:
         hints.append(f"aspect ratio {aspect_ratio}")
+    if image_size:
+        hints.append(f"{image_size} resolution")
     if transparent_background:
         hints.append("transparent background")
     user_prompt = prompt if not hints else f"{prompt}\n\n(Render with " + ", ".join(hints) + ".)"

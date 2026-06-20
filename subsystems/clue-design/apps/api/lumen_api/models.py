@@ -132,6 +132,9 @@ class GenerateAssetRequest(BaseModel):
     mime_type: Optional[str] = None
     transparent_background: Optional[bool] = None
     brand_notes: List[str] = Field(default_factory=list)
+    aspect_ratio: Optional[str] = None
+    image_size: Optional[str] = None
+    reference_asset_ids: List[str] = Field(default_factory=list)
     label: Optional[str] = None
 
 
