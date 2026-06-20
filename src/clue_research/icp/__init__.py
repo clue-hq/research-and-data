@@ -83,6 +83,7 @@ from clue_research.icp.source_profile import (
     is_valid_source_key,
     register_source_profile,
     register_source_profile_override,
+    slot_for,
 )
 from clue_research.icp.spec import (
     ICPSpecDiff,
@@ -116,6 +117,7 @@ __all__ = [
     "SourceWeight",
     "WeightedSource",
     "ResolvedSourceProfile",
+    "slot_for",
     "register_source_profile",
     "register_source_profile_override",
     "get_source_profile",

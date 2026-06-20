@@ -89,6 +89,7 @@ from clue_research.core.handoff import (
 from clue_research.core.modality import (
     AdaptContext,
     ClaimDraft,
+    GateDecision,
     ModalityAdapter,
     NormalizedText,
     RawArtifact,
@@ -176,6 +177,7 @@ __all__ = [
     "NormalizedText",
     "ClaimDraft",
     "AdaptContext",
+    "GateDecision",
     # llm gateway (model-egress seam)
     "LLMGateway",
     "Message",
