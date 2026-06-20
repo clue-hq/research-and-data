@@ -87,6 +87,21 @@ class WeightedSource(BaseModel):
         return value
 
 
+def slot_for(
+    default: tuple[WeightedSource, ...],
+    by_field_class: dict[FieldClass, tuple[WeightedSource, ...]],
+    field_class: FieldClass | None,
+) -> tuple[WeightedSource, ...]:
+    """The effective weighted sources for ``field_class``: the specific slot, else the pack-wide
+    default. The single definition of the slot-fallback rule, shared by the M3.3 pack-level
+    :class:`ResolvedSourceProfile` and the M4.6 ICP-level ServedSourceProfile (DRY — one rule)."""
+    if field_class is not None:
+        specific = by_field_class.get(field_class)
+        if specific is not None:
+            return specific
+    return default
+
+
 class ResolvedSourceProfile(BaseModel):
     """A pack's source profile after pack-default ⊕ client/ICP override resolution.
 
@@ -103,11 +118,7 @@ class ResolvedSourceProfile(BaseModel):
 
     def for_field_class(self, field_class: FieldClass | None) -> tuple[WeightedSource, ...]:
         """The effective weighted sources for ``field_class`` (specific slot, else pack-wide)."""
-        if field_class is not None:
-            specific = self.by_field_class.get(field_class)
-            if specific is not None:
-                return specific
-        return self.default
+        return slot_for(self.default, self.by_field_class, field_class)
 
 
 class SourceProfileRedefinitionError(ValueError):

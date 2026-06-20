@@ -11,6 +11,11 @@ from __future__ import annotations
 # --- source layer (M4) ------------------------------------------------------
 SPAN_RESOLVE = "resolve"  # base name; resolve spans are tagged by source_tier + source_key
 
+# The config-bounded Source Planner (M4.6): one span per `plan_sources` call, tagged with the ICP,
+# the field, the research mode, and how many sources the plan selected — the per-plan substrate the
+# cost surface (M7.5) and the learning loop (M13) read alongside the per-source `resolve` spans.
+SPAN_SOURCE_PLAN = "source.plan"
+
 
 def resolve_span(source_key: str) -> str:
     """Span name for a single resolver call (M4), e.g. ``resolve.apollo``."""
