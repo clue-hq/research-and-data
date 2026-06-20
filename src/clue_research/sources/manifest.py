@@ -17,7 +17,7 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue
 
-from clue_research.core import EntityScope, IdentityBinding, Modality, SourceManifest
+from clue_research.core import CostCents, EntityScope, IdentityBinding, Modality, SourceManifest
 
 
 class RegistrySourceManifest(BaseModel):
@@ -60,3 +60,19 @@ class RegistrySourceManifest(BaseModel):
     @property
     def identity_binding_strength(self) -> IdentityBinding | None:
         return self.manifest.identity_binding_strength
+
+    @property
+    def cost_cents(self) -> CostCents:
+        return self.manifest.cost_cents
+
+    @property
+    def latency_ms(self) -> int | None:
+        return self.manifest.latency_ms
+
+    @property
+    def geo_coverage(self) -> tuple[str, ...]:
+        return self.manifest.geo_coverage
+
+    @property
+    def freshness_profile(self) -> str | None:
+        return self.manifest.freshness_profile

@@ -17,8 +17,10 @@ Two seams live here:
   (e.g. the tier-4 Exa/Parallel placeholders before M11) raises :class:`NoResolverBoundError`, which
   M4.1 maps to ``stop_reason=no_resolver`` — a correct empty result, never a crash.
 
-This package never imports a resolver or a provider SDK (the binding is populated by resolvers
-calling :func:`bind_resolver`; ``sources`` does not import ``resolvers`` — import-linter Rule 3/4).
+This package never imports a resolver or a provider SDK: the binding is populated by resolvers
+calling :func:`bind_resolver`, and ``sources`` → ``resolvers`` is forbidden by a dedicated one-way
+import-linter contract ("source registry does not import resolvers"), so the seam cannot silently
+invert. (``sources`` → ``icp`` stays permitted — decision #7, for the M4.6 planner.)
 """
 
 from __future__ import annotations
@@ -285,6 +287,11 @@ async def register_source(conn: AsyncConnection, entry: RegistrySourceManifest) 
     identical re-registration at the same version is a no-op; a *changed* manifest at the same
     version raises :class:`SourceManifestRedefinitionError` (bump the version); a manifest at a
     *higher* version performs a versioned update of the row. Run inside a transaction.
+
+    Assumes a **single concurrent writer per ``source_key``** (the seed/admin path is serial) — like
+    the sibling registries, the read-then-write is not race-hardened, so two concurrent inserts of
+    the same new key surface the PK violation rather than the typed error. Harden with
+    ``INSERT … ON CONFLICT`` / an advisory lock if that ever changes.
     """
     await _validate_yields_exist(conn, entry.manifest.yields)
     existing = await get_source(conn, entry.source_key)

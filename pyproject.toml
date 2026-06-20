@@ -221,6 +221,18 @@ source_modules = [
 ]
 forbidden_modules = ["openai"]
 
+# Rule 3c — the source registry's binding seam is one-directional. Resolvers register THEMSELVES
+# into the registry (resolvers -> sources via bind_resolver), so sources must NOT import resolvers —
+# that would invert the seam and let the registry learn a concrete provider exists. This is a
+# dedicated one-way forbidden contract, NOT the independence rule (which would also forbid
+# resolvers -> sources and break bind_resolver). sources -> icp stays PERMITTED (the M4.6 planner
+# reuses M3.3's source-profile serving — locked decision #7; M3.3 must keep NOT importing M4).
+[[tool.importlinter.contracts]]
+name = "source registry does not import resolvers (one-way binding seam)"
+type = "forbidden"
+source_modules = ["clue_research.sources"]
+forbidden_modules = ["clue_research.resolvers"]
+
 # Rule 6 — the claim store stays the shared substrate: it must NOT import identity or locks, so the
 # M2.5 reuse classifier can never invert the dependency (claimstore persists pre-stamped fields and
 # scopes reads; the classifier lives in identity, which imports claimstore — never the reverse).
