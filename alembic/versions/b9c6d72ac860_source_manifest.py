@@ -90,8 +90,10 @@ def upgrade() -> None:
         "a credential-store reference, never the secret. Open by registration, not enumeration.'"
     )
 
-    # read-path indexes: sources_for filters by yields-membership (GIN), tier, and active.
-    op.execute("CREATE INDEX source_manifest_yields_gin ON source_manifest USING gin (yields)")
+    # read-path indexes for the SQL filters list_sources / sources_for actually use (tier + active).
+    # NB: yields/class matching is done in the app layer (registry._yields_match — it needs
+    # classify_field_key's widening, which a jsonb @> containment cannot express), so a GIN index on
+    # yields would have no consumer; it is intentionally omitted at registry scale.
     op.execute("CREATE INDEX source_manifest_tier ON source_manifest (tier)")
     op.execute("CREATE INDEX source_manifest_active ON source_manifest (source_key) WHERE active")
 
@@ -99,7 +101,6 @@ def upgrade() -> None:
 def downgrade() -> None:
     op.execute("DROP INDEX IF EXISTS source_manifest_active")
     op.execute("DROP INDEX IF EXISTS source_manifest_tier")
-    op.execute("DROP INDEX IF EXISTS source_manifest_yields_gin")
     op.execute("DROP TABLE IF EXISTS source_manifest")
     # modality / entity_scope are owned here; identity_binding is shared (0004) — leave it.
     op.execute("DROP TYPE IF EXISTS entity_scope")

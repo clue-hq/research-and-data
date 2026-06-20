@@ -9,7 +9,9 @@ registers one. The Source Registry (M4.2) holds the rows; M0.2 defines the shape
 from __future__ import annotations
 
 from decimal import Decimal
+from typing import Annotated
 
+from annotated_types import Ge
 from pydantic import BaseModel, ConfigDict, model_validator
 
 from clue_research.core.enums import EntityScope, IdentityBinding, Modality
@@ -28,7 +30,9 @@ class SourceManifest(BaseModel):
     yields: tuple[str, ...] = ()  # field_keys / field-classes it can populate
     tier: SourceTier
     cost_cents: CostCents = Decimal(0)
-    latency_ms: int | None = None
+    # Non-negative, matching the M4.2 source_manifest CHECK (so a bad value fails at construction
+    # with a typed ValidationError, consistent with tier/cost_cents — not a raw IntegrityError).
+    latency_ms: Annotated[int, Ge(0)] | None = None
     geo_coverage: tuple[str, ...] = ()  # region codes, or empty == unspecified/global
     freshness_profile: str | None = None  # e.g. "realtime" | "daily" | "quarterly"
     identity_binding_strength: IdentityBinding | None = None  # how tightly data ties to an entity

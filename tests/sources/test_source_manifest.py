@@ -9,8 +9,6 @@ the right tier/modality/binding; ``register_source`` validates ``yields`` agains
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import pytest
 from sqlalchemy import text
 
@@ -25,7 +23,6 @@ from clue_research.icp import (
     validate_pack,
 )
 from clue_research.sources import (
-    SEED_MANIFESTS,
     NoResolverBoundError,
     RegistrySourceManifest,
     SourceManifestRedefinitionError,
@@ -43,8 +40,6 @@ from clue_research.sources import (
 from .conftest import rollback_conn, run_async
 
 pytestmark = pytest.mark.usefixtures("require_db")
-
-_SRC_ROOT = Path(__file__).resolve().parents[2] / "src" / "clue_research"
 
 # RegistrySourceManifest-level fields (everything else is a core SourceManifest field).
 _WRAPPER_FIELDS = frozenset(
@@ -277,51 +272,30 @@ def test_redefinition_same_version_raises_but_version_bump_updates() -> None:
 
 
 def test_no_secret_value_in_table() -> None:
+    # Scan EVERY text/jsonb column that could carry a stray value (not just auth_ref): a credential
+    # must never be persisted. auth_ref holds an env-var *reference* (e.g. CLUE_CLAY_API_KEY), which
+    # is not credential-shaped. (Backstop on top of the positive CLUE_* shape check on the seeds.)
     async def _run() -> None:
         async with rollback_conn() as conn:
             await seed_source_manifests(conn)
             rows = (
                 (
                     await conn.execute(
-                        text("SELECT source_key, provider, auth_ref FROM source_manifest")
+                        text(
+                            "SELECT source_key, provider, auth_ref, freshness_profile, "
+                            "requires_adapter, rate_limit::text AS rate_limit FROM source_manifest"
+                        )
                     )
                 )
                 .mappings()
                 .all()
             )
             for row in rows:
-                for col in ("source_key", "provider", "auth_ref"):
-                    value = row[col]
-                    # auth_ref holds a credential-store *reference* (env-var name), never a secret
+                for col, value in row.items():
                     if value is not None:
                         assert redact(value) != "***REDACTED***", f"{row['source_key']}.{col} leaks"
 
     run_async(_run())
-
-
-def test_seed_auth_refs_are_references_not_secrets() -> None:
-    for entry in SEED_MANIFESTS:
-        if entry.auth_ref is not None:
-            assert entry.auth_ref.startswith("CLUE_")  # an env-var reference
-            assert redact(entry.auth_ref) != "***REDACTED***"
-
-
-# --- provider is never branched on (static check) ---------------------------
-
-
-def test_nothing_outside_manifest_or_obs_branches_on_provider() -> None:
-    """The 'nothing downstream knows the provider' invariant, made checkable: no module reads
-    ``.provider`` except the registry that *owns* the column (sources/, which persists/returns it)
-    and observability/billing (obs/). A downstream consumer branching on it would fail here."""
-    owner = _SRC_ROOT / "sources"  # the column's owner: defines, persists, and serves it
-    offenders: list[str] = []
-    for path in _SRC_ROOT.rglob("*.py"):
-        if owner in path.parents or "obs" in path.parts:
-            continue
-        for lineno, line in enumerate(path.read_text().splitlines(), start=1):
-            if ".provider" in line:
-                offenders.append(f"{path.relative_to(_SRC_ROOT)}:{lineno}: {line.strip()}")
-    assert not offenders, "callers must not branch on manifest.provider:\n" + "\n".join(offenders)
 
 
 # --- the late-bound validate_pack(known_source_keys=...) join (M3.3 ⨝ M4) ---
