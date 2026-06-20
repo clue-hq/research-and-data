@@ -3256,6 +3256,44 @@ def test_generate_image_derives_aspect_from_target_node(tmp_path: Path, monkeypa
     assert tools.core.last_generate_asset["request"]["constraints"]["height"] == 864
 
 
+def test_generate_image_caches_identical_model_requests(tmp_path: Path, monkeypatch):
+    # Step 6: across loop iterations the same hero is requested repeatedly; the
+    # cache re-uses the asset instead of re-paying the model.
+    monkeypatch.setattr("lumen_deepagent.tools.CoreClient", FakeCoreClient)
+    calls = {"n": 0}
+
+    def fake_generate(**kwargs):
+        calls["n"] += 1
+        return types.SimpleNamespace(
+            image_bytes=b"\x89PNG fake-image-bytes",
+            mime_type="image/png",
+            model="test/image-model",
+            provenance={"created_by": "agent", "source_label": "image generation", "notes": []},
+            license={"name": "generated_commercial_use", "allow_export": True},
+        )
+
+    stub = types.SimpleNamespace(
+        is_configured=lambda: True,
+        generate=fake_generate,
+        configured_model_id=lambda: "test/image-model",
+    )
+    monkeypatch.setattr("lumen_deepagent.tools.image_provider", stub)
+
+    tools = LumenDesignTools(runtime_config(tmp_path), "Create a clinic ad")
+
+    first = json.loads(tools.generate_image("editorial photo of a calm clinic reception", brand_notes=["deep navy"]))
+    assert first["image"]["status"] == "ok"
+    assert first["image"]["mode"] == "model"
+    assert calls["n"] == 1
+
+    # Identical re-request (next iteration) → cache hit: model not called again.
+    second = json.loads(tools.generate_image("editorial photo of a calm clinic reception", brand_notes=["deep navy"]))
+    assert second["image"]["status"] == "ok"
+    assert second["image"]["mode"] == "cached"
+    assert calls["n"] == 1
+    assert second["image"]["asset_id"] == first["image"]["asset_id"]
+
+
 def test_place_asset_in_node_emits_reversible_placement_op(tmp_path: Path, monkeypatch):
     monkeypatch.setattr("lumen_deepagent.tools.CoreClient", FakeCoreClient)
     tools = LumenDesignTools(runtime_config(tmp_path), "Place a hero image")

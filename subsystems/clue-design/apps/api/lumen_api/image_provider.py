@@ -95,6 +95,16 @@ def is_configured() -> bool:
     )
 
 
+def configured_model_id() -> str:
+    """The text-to-image model id used for generation. Exposed for the generation
+    cache key + provenance without constructing the full config. Tolerates stray
+    surrounding quotes in a `.env` value."""
+    value = os.environ.get("IMAGE_MODEL_ID", "default").strip()
+    if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
+        value = value[1:-1]
+    return value or "default"
+
+
 def generate(
     *,
     prompt: str,

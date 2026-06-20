@@ -13,6 +13,11 @@ try:  # the real Python text-to-image seam, shared with the /assets/generate rou
 except Exception:  # pragma: no cover - keeps the runtime importable without the API package
     image_provider = None  # type: ignore[assignment]
 
+try:  # generation cache (request -> asset), so the loop doesn't re-pay per iteration
+    from lumen_api import image_cache
+except Exception:  # pragma: no cover
+    image_cache = None  # type: ignore[assignment]
+
 from .config import AgentRuntimeConfig
 from .knowledge import read_task_knowledge
 from .schemas import (
@@ -617,6 +622,30 @@ class LumenDesignTools:
 
         # 1) Real text-to-image model, when configured.
         if image_provider is not None and image_provider.is_configured():
+            store_root = str(self.config.effective_asset_store_root)
+            # Generation cache: re-use the asset an identical earlier request
+            # produced (the loop re-requests the same hero each iteration) instead
+            # of re-paying the model. Checked BEFORE the provider call.
+            cache_key = None
+            model_id = getattr(image_provider, "configured_model_id", None)
+            if image_cache is not None and callable(model_id):
+                cache_key = image_cache.generation_key(
+                    prompt=prompt,
+                    model=model_id(),
+                    width=width,
+                    height=height,
+                    brand_notes=brand_notes,
+                    aspect_ratio=aspect_ratio,
+                    transparent_background=transparent_background or None,
+                )
+                cached = image_cache.lookup(store_root, cache_key)
+                if cached:
+                    return (
+                        cached,
+                        {"mode": "cached", "model": (cached.get("source") or {}).get("model")},
+                        diagnostics,
+                        None,
+                    )
             try:
                 result = image_provider.generate(
                     prompt=prompt,
@@ -628,7 +657,7 @@ class LumenDesignTools:
                     request_id=asset_id,
                 )
                 ingest = self.core.ingest_asset(
-                    store_root=str(self.config.effective_asset_store_root),
+                    store_root=store_root,
                     bytes_base64=base64.b64encode(result.image_bytes).decode("ascii"),
                     asset_id=asset_id,
                     label=label,
@@ -642,6 +671,8 @@ class LumenDesignTools:
                 if ingest.get("ok"):
                     record = (ingest.get("asset") or {}).get("record") or {}
                     diagnostics.extend(_as_diag_list(ingest.get("diagnostics")))
+                    if cache_key is not None and image_cache is not None:
+                        image_cache.store(store_root, cache_key, record)
                     return record, {"mode": "model", "model": result.model}, diagnostics, None
                 detail = (ingest.get("error") or {}).get("message", "unknown error")
                 diagnostics.append(

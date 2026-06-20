@@ -17,7 +17,7 @@ from fastapi import Depends, FastAPI, File, Form, HTTPException, Query, Request,
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
 
-from . import image_provider
+from . import image_cache, image_provider
 from .core import CoreClient, CoreError, has_error_diagnostics
 from .database import NotFoundError, Repository, connect, run_migrations, utc_now
 from .dto import (
@@ -1960,7 +1960,39 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
         run any registered generation provider and persist the normalized
         asset record."""
         asset_id = f"asset_gen_{uuid4().hex[:12]}"
+        cache_key: Optional[str] = None
         if image_provider.is_image_model_provider(payload.provider):
+            # Generation cache: re-use the asset produced by an identical earlier
+            # request instead of re-paying the model (the byte-digest store dedup
+            # only fires AFTER the paid, non-deterministic call). Checked BEFORE the
+            # provider; the cache lives in the same store the assets do.
+            cache_key = image_cache.generation_key(
+                prompt=payload.prompt,
+                model=image_provider.configured_model_id(),
+                width=payload.width,
+                height=payload.height,
+                brand_notes=payload.brand_notes,
+                transparent_background=payload.transparent_background,
+            )
+            cached_record = image_cache.lookup(asset_store_root(), cache_key)
+            if cached_record:
+                log_event(
+                    api_logger,
+                    logging.INFO,
+                    "asset_generation_completed",
+                    status="ok",
+                    provider=payload.provider,
+                    asset_id=cached_record.get("id"),
+                    deduplicated=True,
+                    cached=True,
+                )
+                return {
+                    "schema_version": 1,
+                    "asset": cached_record,
+                    "provider": {"id": payload.provider},
+                    "deduplicated": True,
+                    "diagnostics": [],
+                }
             # Real text-to-image generation runs here in the async-capable Python
             # layer; the returned bytes are persisted through the SAME ingest
             # pipeline as uploads, stamped with a `generated` source, so the rest
@@ -2060,6 +2092,10 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
         asset_payload = result.get("asset") or {}
         record = asset_payload.get("record") or {}
         stored = repo.create_asset_record(record)
+        if cache_key is not None:
+            # Record the request → asset mapping so an identical repeat re-uses
+            # this asset instead of re-paying the model.
+            image_cache.store(asset_store_root(), cache_key, stored["asset"])
         log_event(
             api_logger,
             logging.INFO,

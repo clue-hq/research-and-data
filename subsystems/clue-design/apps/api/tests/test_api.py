@@ -2169,6 +2169,53 @@ def test_image_provider_surfaces_no_image_response(monkeypatch: pytest.MonkeyPat
     assert excinfo.value.code == "image_model.no_image"
 
 
+def test_image_generation_cache_dedups_identical_requests(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Slice 0 / Step 6: an identical repeat request re-uses the cached asset instead
+    # of re-paying the (paid, non-deterministic) model. The byte-digest store dedup
+    # only fires AFTER the call — too late; this cache fires BEFORE the provider.
+    png = _tiny_png(8, 8)
+    calls = {"n": 0}
+
+    def fake_generate(**kwargs) -> image_provider.ImageGenerationResult:
+        calls["n"] += 1
+        return image_provider.ImageGenerationResult(
+            image_bytes=png,
+            mime_type="image/png",
+            model="mock-image-model",
+            provenance={"created_by": "agent", "source_label": "image generation", "notes": []},
+            license={"name": "generated_commercial_use", "allow_export": True},
+        )
+
+    monkeypatch.setattr(image_provider, "generate", fake_generate)
+    body = {
+        "provider": "image-gen-v1",
+        "prompt": "a calm sunlit clinic reception, editorial photography",
+        "width": 1024,
+        "height": 768,
+        "brand_notes": ["deep navy", "premium"],
+    }
+
+    first = client.post("/assets/generate", json=body)
+    assert first.status_code == 200, first.text
+    first_id = first.json()["asset"]["id"]
+    assert calls["n"] == 1
+    assert first.json()["deduplicated"] is False
+
+    # Identical request → cache hit: the model is NOT called again, same asset id.
+    second = client.post("/assets/generate", json=body)
+    assert second.status_code == 200, second.text
+    assert calls["n"] == 1, "the cached request must not re-call the model"
+    assert second.json()["deduplicated"] is True
+    assert second.json()["asset"]["id"] == first_id
+
+    # A different prompt is a cache miss → the model runs again.
+    third = client.post("/assets/generate", json={**body, "prompt": "a wholly different scene"})
+    assert third.status_code == 200, third.text
+    assert calls["n"] == 2
+
+
 def test_mailer_carries_scannable_qr_through_export(client: TestClient) -> None:
     # Gate for slice E4: a mailer-style document carries a generated QR
     # that survives placement and export with real bytes.
