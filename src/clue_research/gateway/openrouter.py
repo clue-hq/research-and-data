@@ -23,6 +23,16 @@ from clue_research.core.gateway import Completion, EmbeddingResult, Message, Tok
 ClientFactory = Callable[[], Any]
 
 
+class GatewayError(RuntimeError):
+    """A gateway call returned a malformed response (e.g. a successful HTTP body with no choices).
+
+    OpenRouter can surface an upstream-provider failure as an HTTP-200 body carrying an ``error``
+    and an empty ``choices`` list. Raising a typed error (rather than letting ``choices[0]`` throw a
+    raw ``IndexError``) lets the fallback loop treat it like any other failure and gives the caller
+    a clear message instead of an opaque index error.
+    """
+
+
 class OpenRouterGateway:
     """Live :class:`~clue_research.core.gateway.LLMGateway` backed by OpenRouter."""
 
@@ -57,17 +67,29 @@ class OpenRouterGateway:
 
     def complete(self, *, model: str, messages: list[Message], **opts: object) -> Completion:
         payload = [{"role": m.role.value, "content": m.content} for m in messages]
+        first_exc: Exception | None = None
         last_exc: Exception | None = None
         for candidate in self._candidates(model):
             try:
                 resp = self._client_().chat.completions.create(
                     model=candidate, messages=payload, **opts
                 )
-            except Exception as exc:  # normalize SDK errors → try fallback, else re-raise
+                # A successful-but-empty response (upstream error surfaced as HTTP 200) must not
+                # crash with a raw IndexError on choices[0]; treat it as a failure so the fallback
+                # model is tried and the caller gets a clear, typed error.
+                if not getattr(resp, "choices", None):
+                    raise GatewayError(f"gateway returned no choices for model {candidate!r}")
+                return self._to_completion(resp, candidate)
+            # normalize SDK / empty-response errors → try the fallback model, else re-raise below.
+            except Exception as exc:
+                first_exc = first_exc or exc
                 last_exc = exc
                 continue
-            return self._to_completion(resp, candidate)
         assert last_exc is not None  # the loop always runs ≥ once, so a failure set last_exc
+        # Re-raise the fallback's error but chain the primary's so the first (more diagnostic)
+        # failure is not lost when both candidates fail.
+        if first_exc is not None and first_exc is not last_exc:
+            raise last_exc from first_exc
         raise last_exc
 
     def embed(self, *, model: str, inputs: list[str]) -> EmbeddingResult:

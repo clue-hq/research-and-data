@@ -5,13 +5,15 @@ so every *direct* LLM call emits the M0.5 ``llm.gateway_call`` span carrying ``m
 + ``cost_cents`` (conventions §4) regardless of backend. This decorator is why the stub path is
 observable in CI exactly like production. It sits in ``gateway/`` (above ``obs → config → core``),
 so importing ``obs`` here is allowed — ``core``/``config`` may not.
+
+Post-call attributes (known only after the inner call returns) are set through the single
+:func:`~clue_research.obs.apply_attributes` redaction seam — never an ad-hoc ``set_attribute`` — so
+every gateway-span attribute passes the one redaction chokepoint.
 """
 
 from __future__ import annotations
 
 from decimal import Decimal
-
-from opentelemetry.trace import Span
 
 from clue_research.core.gateway import Completion, EmbeddingResult, LLMGateway, Message, TokenUsage
 from clue_research.obs import (
@@ -21,7 +23,7 @@ from clue_research.obs import (
     ATTR_PROMPT_TOKENS,
     ATTR_TOTAL_TOKENS,
     SPAN_LLM_GATEWAY_CALL,
-    to_otel_value,
+    apply_attributes,
     traced_step,
 )
 
@@ -35,26 +37,24 @@ class TracingGateway:
     def complete(self, *, model: str, messages: list[Message], **opts: object) -> Completion:
         with traced_step(SPAN_LLM_GATEWAY_CALL, **{ATTR_MODEL: model}) as span:
             completion = self._inner.complete(model=model, messages=messages, **opts)
-            _annotate(span, completion.model, completion.usage, completion.cost_cents)
+            apply_attributes(
+                span, _result_attrs(completion.model, completion.usage, completion.cost_cents)
+            )
             return completion
 
     def embed(self, *, model: str, inputs: list[str]) -> EmbeddingResult:
         with traced_step(SPAN_LLM_GATEWAY_CALL, **{ATTR_MODEL: model}) as span:
             result = self._inner.embed(model=model, inputs=inputs)
-            _annotate(span, result.model, result.usage, result.cost_cents)
+            apply_attributes(span, _result_attrs(result.model, result.usage, result.cost_cents))
             return result
 
 
-def _annotate(span: Span, model: str, usage: TokenUsage, cost_cents: Decimal) -> None:
-    """Set the post-call attributes (the result is known only after the inner call returns)."""
-    attrs: dict[str, object] = {
+def _result_attrs(model: str, usage: TokenUsage, cost_cents: Decimal) -> dict[str, object]:
+    """The post-call span attributes (the result is known only after the inner call returns)."""
+    return {
         ATTR_MODEL: model,
         ATTR_PROMPT_TOKENS: usage.prompt_tokens,
         ATTR_COMPLETION_TOKENS: usage.completion_tokens,
         ATTR_TOTAL_TOKENS: usage.total_tokens,
         ATTR_COST_CENTS: cost_cents,
     }
-    for key, value in attrs.items():
-        coerced = to_otel_value(value)
-        if coerced is not None:
-            span.set_attribute(key, coerced)
