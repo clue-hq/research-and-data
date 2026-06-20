@@ -20,7 +20,7 @@ from enum import Enum
 from typing import TypedDict
 from uuid import UUID
 
-from clue_research.config import is_secret_name, redact_mapping
+from clue_research.config import redact_mapping
 from clue_research.core import EntityType, ResearchMode, SourceTier
 
 # --- canonical attribute keys (the observability contract) ------------------
@@ -35,6 +35,12 @@ ATTR_COST_CENTS = "cost_cents"
 ATTR_CLIENT_ID = "client_id"
 ATTR_ICP_ID = "icp_id"
 ATTR_CAMPAIGN_RUN_ID = "campaign_run_id"
+# LLM gateway (M0.4) — the llm.gateway_call span tags these. `model` is the id that answered;
+# token counts feed the cost surface (Doc C §6). None are secrets (a model id is public).
+ATTR_MODEL = "model"
+ATTR_PROMPT_TOKENS = "prompt_tokens"
+ATTR_COMPLETION_TOKENS = "completion_tokens"
+ATTR_TOTAL_TOKENS = "total_tokens"
 
 # Known-safe dimensions: identifiers/enums/numbers, never secrets. Passed through (type-coerced)
 # without value-shape redaction so a UUID id is not mistaken for an opaque-token credential.
@@ -51,6 +57,10 @@ STANDARD_ATTRIBUTES: frozenset[str] = frozenset(
         ATTR_CLIENT_ID,
         ATTR_ICP_ID,
         ATTR_CAMPAIGN_RUN_ID,
+        ATTR_MODEL,
+        ATTR_PROMPT_TOKENS,
+        ATTR_COMPLETION_TOKENS,
+        ATTR_TOTAL_TOKENS,
     }
 )
 
@@ -72,6 +82,10 @@ class SpanAttributes(TypedDict, total=False):
     client_id: UUID | str
     icp_id: UUID | str
     campaign_run_id: UUID | str
+    model: str
+    prompt_tokens: int
+    completion_tokens: int
+    total_tokens: int
 
 
 def to_otel_value(value: object) -> OtelValue | None:
@@ -103,7 +117,11 @@ def safe_attributes(attrs: Mapping[str, object]) -> dict[str, OtelValue]:
     for key, value in attrs.items():
         if value is None:
             continue
-        if key in STANDARD_ATTRIBUTES and not is_secret_name(key):
+        # STANDARD_ATTRIBUTES is a curated, code-defined allowlist of known-safe dimensions — it is
+        # the trust boundary, so its keys are coerced natively without name/value redaction. (This
+        # lets count attributes like ``*_tokens`` through, which the secret-name heuristic would
+        # otherwise mask on the ``token`` substring.) Everything else is name+value redacted.
+        if key in STANDARD_ATTRIBUTES:
             coerced = to_otel_value(value)
             if coerced is not None:
                 out[key] = coerced

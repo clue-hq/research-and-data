@@ -18,6 +18,7 @@ from __future__ import annotations
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from clue_research.config.gateway import GatewayConfig
 from clue_research.config.policy import JurisdictionPolicy
 from clue_research.config.schema import (
     BudgetCaps,
@@ -62,6 +63,7 @@ class ConfigOverlay(BaseModel):
     source_profiles: tuple[SourceProfile, ...] | None = None
     budget_caps: BudgetCaps | None = None
     freshness_ttls: FreshnessTtls | None = None
+    gateway: GatewayConfig | None = None
 
 
 class Config(BaseModel):
@@ -82,5 +84,6 @@ class Config(BaseModel):
     source_profiles: tuple[SourceProfile, ...] = ()
     budget_caps: BudgetCaps = BudgetCaps()
     freshness_ttls: FreshnessTtls = FreshnessTtls()
+    gateway: GatewayConfig = GatewayConfig()
     # The layer versions that produced this object, base-first (defaults → client → icp).
     applied_versions: tuple[ConfigVersion, ...] = Field(default_factory=tuple)

@@ -118,6 +118,8 @@ def _merge(base: Config, overlay: ConfigOverlay, version: ConfigVersion) -> Conf
         updates["budget_caps"] = overlay.budget_caps
     if overlay.freshness_ttls is not None:
         updates["freshness_ttls"] = overlay.freshness_ttls
+    if overlay.gateway is not None:
+        updates["gateway"] = overlay.gateway
     applied = (*base.applied_versions, version)
     return base.model_copy(update={**updates, "applied_versions": applied})
 
