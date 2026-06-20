@@ -154,13 +154,30 @@ layers = ["obs", "config", "core"]
 # `resolvers -> adapters` is the ONE permitted worker→worker edge — expressed DIRECTIONALLY below
 # (independence would also forbid it). The adapter framework stays a pure leaf: it never imports a
 # resolver (the seam is one-way, exactly like `sources -> resolvers`, Rule 3c).
+#
+# Beat-0 (M5–M9 parallelisation) widens this to EVERY milestone worker package: stage0 (M5),
+# discovery_scoring (M6), durable (M7), profiling (M8), verification (M9), narrative (M12),
+# compliance (M10), synthesis (M11), review (M13) are all mutually independent. This is what makes
+# the milestones safe to build on parallel branches: a branch literally cannot import another
+# milestone's package. Cross-milestone contracts live in `core` (e.g. the `PhaseHandler` /
+# `AspectWorker` / `BudgetEngine` execution seams and the verification gate protocols) and concrete
+# implementations are wired together only at the `api` composition root (which is exempt — nothing
+# imports api, Rule 5). Each still imports the shared base (core/config/obs) and the M1–M4 services
+# (claimstore/identity/icp/sources) freely; the ban is strictly worker→sibling-worker.
 [[tool.importlinter.contracts]]
-name = "workers are independent (adapters / judges / scorers)"
+name = "workers are independent (adapters / judges / scorers / milestone packages)"
 type = "independence"
 modules = [
     "clue_research.adapters",
     "clue_research.verification",
     "clue_research.discovery_scoring",
+    "clue_research.stage0",
+    "clue_research.durable",
+    "clue_research.profiling",
+    "clue_research.narrative",
+    "clue_research.compliance",
+    "clue_research.synthesis",
+    "clue_research.review",
 ]
 
 # Rule 3a — resolvers import no sibling worker EXCEPT the adapter framework (the M4.5 carve-out): a
@@ -174,6 +191,13 @@ source_modules = ["clue_research.resolvers"]
 forbidden_modules = [
     "clue_research.verification",
     "clue_research.discovery_scoring",
+    "clue_research.stage0",
+    "clue_research.durable",
+    "clue_research.profiling",
+    "clue_research.narrative",
+    "clue_research.compliance",
+    "clue_research.synthesis",
+    "clue_research.review",
 ]
 
 # Rule 3b — the worker leaves never import resolvers (the one-way worker seam): a resolver registers
@@ -187,6 +211,13 @@ source_modules = [
     "clue_research.adapters",
     "clue_research.verification",
     "clue_research.discovery_scoring",
+    "clue_research.stage0",
+    "clue_research.durable",
+    "clue_research.profiling",
+    "clue_research.narrative",
+    "clue_research.compliance",
+    "clue_research.synthesis",
+    "clue_research.review",
 ]
 forbidden_modules = ["clue_research.resolvers"]
 
