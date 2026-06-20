@@ -43,6 +43,7 @@ from clue_research.core.factories import (
     field_claim,
     first_confident_claim,
     parse_value_json,
+    revalidate_with,
     serialize_value_json,
     to_value_json,
 )
@@ -84,6 +85,13 @@ from clue_research.core.handoff import (
     ScoreComponent,
     ValueNarrativeItem,
     WinningProvenance,
+)
+from clue_research.core.modality import (
+    AdaptContext,
+    ClaimDraft,
+    ModalityAdapter,
+    NormalizedText,
+    RawArtifact,
 )
 from clue_research.core.primitives import (
     ClaimId,
@@ -160,6 +168,12 @@ __all__ = [
     # source / resolver
     "SourceManifest",
     "Resolver",
+    # modality adapters (the fetch→adapt→extract seam; framework in clue_research.adapters)
+    "ModalityAdapter",
+    "RawArtifact",
+    "NormalizedText",
+    "ClaimDraft",
+    "AdaptContext",
     # llm gateway (model-egress seam)
     "LLMGateway",
     "Message",
@@ -188,6 +202,7 @@ __all__ = [
     "decode_jsonb",
     "by_tier_ascending",
     "first_confident_claim",
+    "revalidate_with",
     "account_claim",
     "contact_claim",
     "discovery_claim",

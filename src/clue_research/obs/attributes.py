@@ -41,6 +41,14 @@ ATTR_MODEL = "model"
 ATTR_PROMPT_TOKENS = "prompt_tokens"
 ATTR_COMPLETION_TOKENS = "completion_tokens"
 ATTR_TOTAL_TOKENS = "total_tokens"
+# Modality adapters (M4.3) — the fetch/adapt/extract + pipeline spans tag these. All known-safe:
+# a latency/cost number, a bool cache-hit, a modality / gate-decision enum string, a claim count.
+ATTR_LATENCY_MS = "latency_ms"
+ATTR_COST_ESTIMATE_CENTS = "cost_estimate_cents"  # the pre-spend gate estimate (D7)
+ATTR_CACHE_HIT = "cache_hit"
+ATTR_GATE_DECISION = "gate_decision"  # "run" | "skip"
+ATTR_MODALITY = "modality"  # text | video | audio | pdf | structured
+ATTR_N_CLAIMS = "n_claims"
 
 # Known-safe dimensions: identifiers/enums/numbers, never secrets. Passed through (type-coerced)
 # without value-shape redaction so a UUID id is not mistaken for an opaque-token credential.
@@ -61,6 +69,12 @@ STANDARD_ATTRIBUTES: frozenset[str] = frozenset(
         ATTR_PROMPT_TOKENS,
         ATTR_COMPLETION_TOKENS,
         ATTR_TOTAL_TOKENS,
+        ATTR_LATENCY_MS,
+        ATTR_COST_ESTIMATE_CENTS,
+        ATTR_CACHE_HIT,
+        ATTR_GATE_DECISION,
+        ATTR_MODALITY,
+        ATTR_N_CLAIMS,
     }
 )
 
@@ -86,6 +100,12 @@ class SpanAttributes(TypedDict, total=False):
     prompt_tokens: int
     completion_tokens: int
     total_tokens: int
+    latency_ms: float
+    cost_estimate_cents: Decimal | float
+    cache_hit: bool
+    gate_decision: str
+    modality: str
+    n_claims: int
 
 
 def to_otel_value(value: object) -> OtelValue | None:
