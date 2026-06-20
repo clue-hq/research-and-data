@@ -57,6 +57,9 @@ from lumen_deepagent.tools import LumenDesignTools, validate_preview_bytes
 class FakeCoreClient:
     def __init__(self, repo_root: Path) -> None:
         self.repo_root = repo_root
+        # Every operation list passed through apply_operations, in order, so tests
+        # can assert on the exact placement/upsert ops the tools emit.
+        self.applied_operations: list = []
 
     def new_scene(self, document_id: str, title: str):
         return {
@@ -117,9 +120,73 @@ class FakeCoreClient:
         }
 
     def apply_operations(self, scene, operations, scope=None):
+        self.applied_operations.extend(operations)
         updated = dict(scene)
         updated["applied_by_core"] = True
         return {"scene": updated, "applied_operations": len(operations), "diagnostics": []}
+
+    def ingest_asset(
+        self,
+        store_root,
+        bytes_base64,
+        asset_id,
+        label,
+        declared_mime_type=None,
+        filename=None,
+        kind=None,
+        uploaded_by=None,
+        license=None,
+        provenance=None,
+        source=None,
+        tags=None,
+        max_bytes=None,
+        raise_on_error=True,
+    ):
+        self.last_ingest = {
+            "asset_id": asset_id,
+            "mime": declared_mime_type,
+            "kind": kind,
+            "source": source,
+            "bytes_base64": bytes_base64,
+        }
+        return {
+            "ok": True,
+            "diagnostics": [],
+            "asset": {
+                "record": {
+                    "id": asset_id,
+                    "label": label,
+                    "kind": kind or "raster_image",
+                    "status": "ready",
+                    "source": source or {"kind": "generated", "request_id": asset_id, "model": "model"},
+                    "media": {"mime_type": declared_mime_type or "image/png"},
+                    "provenance": provenance,
+                    "license": license,
+                    "tags": tags or ["generated"],
+                }
+            },
+        }
+
+    def generate_asset(self, store_root, provider, request, asset_id, label=None, raise_on_error=True):
+        self.last_generate_asset = {"provider": provider, "request": request, "asset_id": asset_id}
+        return {
+            "ok": True,
+            "diagnostics": [],
+            "asset": {
+                "record": {
+                    "id": asset_id,
+                    "label": label or asset_id,
+                    "kind": "raster_image",
+                    "status": "ready",
+                    "source": {"kind": "generated", "request_id": request.get("request_id"), "model": provider},
+                    "media": {"mime_type": "image/png"},
+                    "provenance": {"created_by": provider, "source_label": f"generated:{provider}"},
+                    "license": {"name": "stub_generated", "allow_export": True},
+                    "tags": ["generated"],
+                },
+                "provider": {"id": provider, "metadata": {}},
+            },
+        }
 
     def generate_qr(
         self,
@@ -3061,6 +3128,128 @@ def test_generate_qr_tool_registers_asset_and_traces_provenance(
     payload = qr_events[0]["payload"]
     assert payload["qr"]["provenance"]["source_label"] == "generated:qr"
     assert payload["qr"]["asset_id"].startswith("asset_qr_")
+
+
+def test_generate_image_uses_configured_model_and_upserts_generated_asset(
+    tmp_path: Path, monkeypatch
+):
+    monkeypatch.setattr("lumen_deepagent.tools.CoreClient", FakeCoreClient)
+    captured: dict = {}
+
+    def fake_generate(**kwargs):
+        captured.update(kwargs)
+        return types.SimpleNamespace(
+            image_bytes=b"\x89PNG fake-image-bytes",
+            mime_type="image/png",
+            model="test/image-model",
+            provenance={"created_by": "agent", "source_label": "image generation", "notes": []},
+            license={"name": "generated_commercial_use", "allow_export": True},
+        )
+
+    stub = types.SimpleNamespace(is_configured=lambda: True, generate=fake_generate)
+    monkeypatch.setattr("lumen_deepagent.tools.image_provider", stub)
+
+    tools = LumenDesignTools(runtime_config(tmp_path), "Create a clinic ad")
+    result = json.loads(
+        tools.generate_image("editorial photo of a calm clinic reception", brand_notes=["deep navy"])
+    )
+
+    assert result["image"]["status"] == "ok"
+    assert result["image"]["mode"] == "model"
+    assert result["image"]["model"] == "test/image-model"
+    assert result["image"]["asset_id"].startswith("asset_img_")
+    assert result["image"]["source"]["kind"] == "generated"
+    assert result["image"]["source"]["model"] == "test/image-model"
+
+    # The prompt + brand notes reached the model; bytes were ingested as Generated.
+    assert captured["prompt"].startswith("editorial photo")
+    assert captured["brand_notes"] == ["deep navy"]
+    assert tools.core.last_ingest["source"]["model"] == "test/image-model"
+    assert tools.core.last_ingest["kind"] == "raster_image"
+
+    # Registered through the canonical upsert_asset op path.
+    assert any(op.get("kind") == "upsert_asset" for op in tools.core.applied_operations)
+    assert tools.scene_update_sources[-1] == "generate_image"
+
+
+def test_generate_image_falls_back_to_placeholder_when_model_unconfigured(
+    tmp_path: Path, monkeypatch
+):
+    monkeypatch.setattr("lumen_deepagent.tools.CoreClient", FakeCoreClient)
+
+    def fail_generate(**kwargs):  # must not be called when unconfigured
+        raise AssertionError("model should not be called when unconfigured")
+
+    stub = types.SimpleNamespace(is_configured=lambda: False, generate=fail_generate)
+    monkeypatch.setattr("lumen_deepagent.tools.image_provider", stub)
+
+    tools = LumenDesignTools(runtime_config(tmp_path), "Create a poster")
+    result = json.loads(tools.generate_image("a serene mountain lake at dawn"))
+
+    assert result["image"]["status"] == "ok"
+    assert result["image"]["mode"] == "placeholder"
+    assert result["image"]["model"] == "stub-image-v0"
+    assert any(diag["code"] == "LUMA0711" for diag in result["diagnostics"])
+    assert tools.core.last_generate_asset["provider"] == "stub-image-v0"
+    assert tools.scene_update_sources[-1] == "generate_image"
+
+
+def test_generate_image_derives_aspect_from_target_node(tmp_path: Path, monkeypatch):
+    monkeypatch.setattr("lumen_deepagent.tools.CoreClient", FakeCoreClient)
+    stub = types.SimpleNamespace(is_configured=lambda: False, generate=lambda **k: None)
+    monkeypatch.setattr("lumen_deepagent.tools.image_provider", stub)
+
+    tools = LumenDesignTools(runtime_config(tmp_path), "Create a landscape hero")
+    tools.scene["nodes"]["hero"] = {
+        "id": "hero",
+        "kind": {"kind": "image", "asset_id": "placeholder", "alt": None},
+        "computed": {"layout_bounds": {"x": 0.0, "y": 0.0, "width": 1600.0, "height": 900.0}},
+    }
+
+    result = json.loads(tools.generate_image("a coastal city skyline", target_node_id="hero"))
+
+    # 1600x900 -> nearest common aspect 16:9, long-edge 1536 -> 1536x864.
+    assert result["image"]["aspect_ratio"] == "16:9"
+    assert result["image"]["width"] == 1536
+    assert result["image"]["height"] == 864
+    assert tools.core.last_generate_asset["request"]["constraints"]["width"] == 1536
+    assert tools.core.last_generate_asset["request"]["constraints"]["height"] == 864
+
+
+def test_place_asset_in_node_emits_reversible_placement_op(tmp_path: Path, monkeypatch):
+    monkeypatch.setattr("lumen_deepagent.tools.CoreClient", FakeCoreClient)
+    tools = LumenDesignTools(runtime_config(tmp_path), "Place a hero image")
+
+    result = json.loads(
+        tools.place_asset_in_node(
+            "hero", "asset_img_abc", fit="cover", focal_x=0.5, focal_y=0.42, alt="clinic hero"
+        )
+    )
+
+    assert result["placement"]["status"] == "ok"
+    place_ops = [op for op in tools.core.applied_operations if op.get("kind") == "place_asset_in_node"]
+    assert len(place_ops) == 1
+    op = place_ops[0]
+    assert op["node_id"] == "hero"
+    assert op["asset_id"] == "asset_img_abc"
+    assert op["placement"]["fit"] == "cover"
+    assert op["placement"]["focal_point"] == {"x": 0.5, "y": 0.42}
+    assert op["placement"]["alt_text"] == "clinic hero"
+    assert tools.scene_update_sources[-1] == "place_asset_in_node"
+
+
+def test_place_asset_in_slot_targets_the_slot(tmp_path: Path, monkeypatch):
+    monkeypatch.setattr("lumen_deepagent.tools.CoreClient", FakeCoreClient)
+    tools = LumenDesignTools(runtime_config(tmp_path), "Place into a slot")
+
+    result = json.loads(tools.place_asset_in_slot("slot_campaign_hero_image", "asset_img_abc"))
+
+    assert result["placement"]["status"] == "ok"
+    op = [op for op in tools.core.applied_operations if op.get("kind") == "place_asset_in_slot"][-1]
+    assert op["slot_id"] == "slot_campaign_hero_image"
+    assert op["asset_id"] == "asset_img_abc"
+    assert op["placement"]["fit"] == "cover"
+    assert op["placement"]["focal_point"] == {"x": 0.5, "y": 0.5}
 
 
 def test_critic_preview_export_passes_asset_store_root(tmp_path: Path, monkeypatch):

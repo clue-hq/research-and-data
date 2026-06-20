@@ -8,6 +8,11 @@ from typing import Any, Dict, List, Optional
 
 from lumen_api.core import CoreClient, CoreError
 
+try:  # the real Python text-to-image seam, shared with the /assets/generate route
+    from lumen_api import image_provider
+except Exception:  # pragma: no cover - keeps the runtime importable without the API package
+    image_provider = None  # type: ignore[assignment]
+
 from .config import AgentRuntimeConfig
 from .knowledge import read_task_knowledge
 from .schemas import (
@@ -497,6 +502,338 @@ class LumenDesignTools:
                 f"generated QR asset {record.get('id')} "
                 f"(ec={payload['qr']['ec_level']}, modules={payload['qr']['module_count']})"
             ),
+            diagnostics=[diag.model_dump(mode="json") for diag in diagnostics],
+            payload=payload,
+        )
+        return json.dumps(payload, indent=2)
+
+    def generate_image(
+        self,
+        prompt: str,
+        target_node_id: Optional[str] = None,
+        target_slot_id: Optional[str] = None,
+        aspect_ratio: Optional[str] = None,
+        width: Optional[int] = None,
+        height: Optional[int] = None,
+        brand_notes: Optional[List[str]] = None,
+        transparent_background: bool = False,
+        label: Optional[str] = None,
+    ) -> str:
+        """Generate a raster image asset from a text prompt and register it in the
+        scene. Pass target_node_id (or target_slot_id) so the aspect ratio is
+        derived from that frame's geometry — generated images are cropped to fill,
+        never stretched. Uses the configured text-to-image model (image-gen-v1)
+        when available, otherwise a deterministic placeholder so the design still
+        composes offline. Returns the asset_id; place it with place_asset_in_node /
+        place_asset_in_slot (a generated image is not auto-placed)."""
+        asset_id = f"asset_img_{self.run_id[:8]}_{len(self.scene.get('assets', {}))}"
+        width, height, aspect_ratio = self._image_constraints(
+            target_node_id, target_slot_id, width, height, aspect_ratio
+        )
+        notes = [note for note in (brand_notes or []) if note and note.strip()]
+        resolved_label = label or (prompt[:60].strip() or asset_id)
+
+        record, meta, raw_diagnostics, error = self._produce_image_asset(
+            asset_id=asset_id,
+            prompt=prompt,
+            label=resolved_label,
+            width=width,
+            height=height,
+            aspect_ratio=aspect_ratio,
+            brand_notes=notes,
+            transparent_background=transparent_background,
+        )
+        diagnostics = diagnostics_from(raw_diagnostics)
+        if record is None:
+            payload = {
+                "image": {
+                    "status": "error",
+                    "error_code": error[0] if error else "image.error",
+                    "message": error[1] if error else "image generation failed",
+                },
+                "diagnostics": [diag.model_dump(mode="json") for diag in diagnostics],
+            }
+            self.record(
+                "coordinator",
+                "image_generation_failed",
+                input_summary=prompt[:200],
+                output_summary=payload["image"]["message"],
+                diagnostics=[diag.model_dump(mode="json") for diag in diagnostics],
+                payload=payload,
+            )
+            return json.dumps(payload, indent=2)
+
+        apply_response = self.core.apply_operations(
+            self.scene, [{"kind": "upsert_asset", "asset": record}]
+        )
+        self._replace_scene_from_core_response(apply_response, "generate_image")
+
+        payload = {
+            "image": {
+                "status": "ok",
+                "asset_id": record.get("id"),
+                "mode": meta.get("mode"),
+                "model": meta.get("model"),
+                "mime_type": (record.get("media") or {}).get("mime_type"),
+                "aspect_ratio": aspect_ratio,
+                "width": width,
+                "height": height,
+                "provenance": record.get("provenance"),
+                "source": record.get("source"),
+                "license": (record.get("license") or {}).get("name"),
+            },
+            "diagnostics": [diag.model_dump(mode="json") for diag in diagnostics],
+        }
+        self.record(
+            "coordinator",
+            "image_generated",
+            input_summary=prompt[:200],
+            output_summary=(
+                f"generated image asset {record.get('id')} "
+                f"(mode={meta.get('mode')}, model={meta.get('model')}, aspect={aspect_ratio})"
+            ),
+            diagnostics=[diag.model_dump(mode="json") for diag in diagnostics],
+            payload=payload,
+        )
+        return json.dumps(payload, indent=2)
+
+    def _produce_image_asset(
+        self,
+        *,
+        asset_id: str,
+        prompt: str,
+        label: str,
+        width: Optional[int],
+        height: Optional[int],
+        aspect_ratio: Optional[str],
+        brand_notes: List[str],
+        transparent_background: bool,
+    ) -> tuple[Optional[JsonObject], JsonObject, List[JsonObject], Optional[tuple]]:
+        """Produce + ingest one image asset record. Prefers the configured T2I
+        model; on a missing config or any model/ingest failure it falls back to the
+        deterministic stub provider (with a warning) so the design loop never
+        dead-ends on imagery. Returns (record, meta, raw_diagnostics, error)."""
+        diagnostics: List[JsonObject] = []
+
+        # 1) Real text-to-image model, when configured.
+        if image_provider is not None and image_provider.is_configured():
+            try:
+                result = image_provider.generate(
+                    prompt=prompt,
+                    width=width,
+                    height=height,
+                    brand_notes=brand_notes,
+                    aspect_ratio=aspect_ratio,
+                    transparent_background=transparent_background or None,
+                    request_id=asset_id,
+                )
+                ingest = self.core.ingest_asset(
+                    store_root=str(self.config.effective_asset_store_root),
+                    bytes_base64=base64.b64encode(result.image_bytes).decode("ascii"),
+                    asset_id=asset_id,
+                    label=label,
+                    declared_mime_type=result.mime_type,
+                    kind="raster_image",
+                    license=result.license,
+                    provenance=result.provenance,
+                    source={"kind": "generated", "request_id": asset_id, "model": result.model},
+                    raise_on_error=False,
+                )
+                if ingest.get("ok"):
+                    record = (ingest.get("asset") or {}).get("record") or {}
+                    diagnostics.extend(_as_diag_list(ingest.get("diagnostics")))
+                    return record, {"mode": "model", "model": result.model}, diagnostics, None
+                detail = (ingest.get("error") or {}).get("message", "unknown error")
+                diagnostics.append(
+                    _image_warning(
+                        "LUMA0710",
+                        f"generated image could not be ingested ({detail}); used a placeholder",
+                    )
+                )
+            except Exception as error:  # noqa: BLE001 - degrade to a placeholder, never crash the loop
+                code = getattr(error, "code", error.__class__.__name__)
+                diagnostics.append(
+                    _image_warning(
+                        "LUMA0710",
+                        f"text-to-image model unavailable ({code}); used a placeholder image",
+                    )
+                )
+        elif image_provider is not None:
+            diagnostics.append(
+                _image_warning(
+                    "LUMA0711",
+                    "text-to-image model is not configured (set IMAGE_MODEL_*); used a placeholder image",
+                )
+            )
+
+        # 2) Deterministic stub fallback through the Rust provider registry.
+        request = {
+            "request_id": asset_id,
+            "prompt": prompt,
+            "output_kind": "raster_image",
+            "target_node_id": None,
+            "target_slot_id": None,
+            "constraints": {
+                "width": width,
+                "height": height,
+                "transparent_background": transparent_background or None,
+                "brand_notes": brand_notes,
+            },
+        }
+        try:
+            response = self.core.generate_asset(
+                store_root=str(self.config.effective_asset_store_root),
+                provider="stub-image-v0",
+                request=request,
+                asset_id=asset_id,
+                label=label,
+            )
+        except CoreError as error:
+            diagnostics.extend(_as_diag_list(error.diagnostics))
+            return None, {}, diagnostics, (error.code, error.message)
+        record = (response.get("asset") or {}).get("record") or {}
+        diagnostics.extend(_as_diag_list(response.get("diagnostics")))
+        return record, {"mode": "placeholder", "model": "stub-image-v0"}, diagnostics, None
+
+    def _image_constraints(
+        self,
+        target_node_id: Optional[str],
+        target_slot_id: Optional[str],
+        width: Optional[int],
+        height: Optional[int],
+        aspect_ratio: Optional[str],
+    ) -> tuple[Optional[int], Optional[int], Optional[str]]:
+        """Derive aspect_ratio (and a role-appropriate resolution) from the target
+        frame's geometry so generated images match the frame they fill."""
+        bounds = self._target_bounds(target_node_id, target_slot_id)
+        if bounds:
+            box_width, box_height = bounds
+            if aspect_ratio is None:
+                aspect_ratio = _nearest_aspect_label(box_width, box_height)
+            if width is None and height is None:
+                width, height = _resolution_for_aspect(box_width, box_height)
+        return width, height, aspect_ratio
+
+    def _target_bounds(
+        self, target_node_id: Optional[str], target_slot_id: Optional[str]
+    ) -> Optional[tuple]:
+        """Resolve a target node's (width, height) from computed geometry, falling
+        back to its declared fixed size. Slots resolve to their first bound node."""
+        node_id = target_node_id
+        if node_id is None and target_slot_id:
+            slot = self.scene.get("slots", {}).get(target_slot_id) or {}
+            bound = slot.get("bound_nodes") or []
+            node_id = bound[0] if bound else None
+        if not node_id:
+            return None
+        node = self.scene.get("nodes", {}).get(node_id) or {}
+        bounds = (node.get("computed") or {}).get("layout_bounds") or {}
+        box_width = bounds.get("width")
+        box_height = bounds.get("height")
+        if not box_width or not box_height:
+            size = node.get("size") or {}
+            box_width = _fixed_dim(size.get("width"))
+            box_height = _fixed_dim(size.get("height"))
+        if box_width and box_height and box_width > 0 and box_height > 0:
+            return float(box_width), float(box_height)
+        return None
+
+    def place_asset_in_node(
+        self,
+        node_id: str,
+        asset_id: str,
+        fit: str = "cover",
+        focal_x: float = 0.5,
+        focal_y: float = 0.5,
+        alt: Optional[str] = None,
+        preserve_transparency: Optional[bool] = None,
+    ) -> str:
+        """Place an existing asset (generated or library) into an image node with a
+        fit mode (default cover, so the frame fills without stretching), a
+        normalized focal point (0..1, default centered) that controls the cover
+        crop, and alt text. Reversible — re-place or remove to change it."""
+        return self._place_asset(
+            "place_asset_in_node", "node_id", node_id, asset_id, fit, focal_x, focal_y, alt, preserve_transparency
+        )
+
+    def place_asset_in_slot(
+        self,
+        slot_id: str,
+        asset_id: str,
+        fit: str = "cover",
+        focal_x: float = 0.5,
+        focal_y: float = 0.5,
+        alt: Optional[str] = None,
+        preserve_transparency: Optional[bool] = None,
+    ) -> str:
+        """Place an existing asset into an image slot's bound node — same placement
+        semantics as place_asset_in_node, preserving the slot binding. Reversible."""
+        return self._place_asset(
+            "place_asset_in_slot", "slot_id", slot_id, asset_id, fit, focal_x, focal_y, alt, preserve_transparency
+        )
+
+    def _place_asset(
+        self,
+        kind: str,
+        target_key: str,
+        target_id: str,
+        asset_id: str,
+        fit: str,
+        focal_x: float,
+        focal_y: float,
+        alt: Optional[str],
+        preserve_transparency: Optional[bool],
+    ) -> str:
+        placement: JsonObject = {
+            "fit": fit,
+            "focal_point": {"x": float(focal_x), "y": float(focal_y)},
+        }
+        if alt is not None:
+            placement["alt_text"] = alt
+        if preserve_transparency is not None:
+            placement["preserve_transparency"] = bool(preserve_transparency)
+        operation = {"kind": kind, target_key: target_id, "asset_id": asset_id, "placement": placement}
+        try:
+            apply_response = self.core.apply_operations(self.scene, [operation])
+        except CoreError as error:
+            payload = {
+                "placement": {
+                    "status": "error",
+                    "error_code": error.code,
+                    "message": error.message,
+                },
+                "diagnostics": [
+                    diag.model_dump(mode="json") for diag in diagnostics_from(error.diagnostics)
+                ],
+            }
+            self.record(
+                "coordinator",
+                "asset_placement_failed",
+                input_summary=f"{kind} {target_id} <- {asset_id}",
+                output_summary=error.message,
+                payload=payload,
+            )
+            return json.dumps(payload, indent=2)
+
+        self._replace_scene_from_core_response(apply_response, kind)
+        diagnostics = diagnostics_from(apply_response.get("diagnostics", []))
+        payload = {
+            "placement": {
+                "status": "ok",
+                "operation": kind,
+                target_key: target_id,
+                "asset_id": asset_id,
+                "fit": fit,
+                "focal_point": {"x": float(focal_x), "y": float(focal_y)},
+                "alt": alt,
+            },
+            "diagnostics": [diag.model_dump(mode="json") for diag in diagnostics],
+        }
+        self.record(
+            "coordinator",
+            "asset_placed",
+            input_summary=f"{kind} {target_id} <- {asset_id}",
+            output_summary=f"placed {asset_id} into {target_id} (fit={fit})",
             diagnostics=[diag.model_dump(mode="json") for diag in diagnostics],
             payload=payload,
         )
@@ -1938,6 +2275,56 @@ def extract_editor_conversation_context(prompt: str) -> JsonObject:
     if isinstance(conversation, list):
         return {"messages": conversation}
     return {"raw_prompt": prompt}
+
+
+# Common print/social aspect ratios; a generated image is snapped to the nearest
+# one of these so the frame is filled cleanly without an odd model ratio.
+_COMMON_ASPECTS: list[tuple[str, float]] = [
+    ("1:1", 1.0),
+    ("4:5", 4 / 5),
+    ("5:4", 5 / 4),
+    ("3:4", 3 / 4),
+    ("4:3", 4 / 3),
+    ("2:3", 2 / 3),
+    ("3:2", 3 / 2),
+    ("9:16", 9 / 16),
+    ("16:9", 16 / 9),
+    ("21:9", 21 / 9),
+]
+# Slice-0 hardcodes a sensible long-edge resolution by frame aspect; the explicit
+# image_size tier (1K/2K/4K) lands in Step 7 (G0.2).
+_IMAGE_LONG_EDGE = 1536
+
+
+def _fixed_dim(spec: Any) -> Optional[float]:
+    if isinstance(spec, dict) and spec.get("kind") == "fixed":
+        value = spec.get("value")
+        if isinstance(value, (int, float)):
+            return float(value)
+    return None
+
+
+def _nearest_aspect_label(box_width: float, box_height: float) -> str:
+    target = box_width / box_height
+    return min(_COMMON_ASPECTS, key=lambda entry: abs(entry[1] - target))[0]
+
+
+def _resolution_for_aspect(box_width: float, box_height: float) -> tuple[int, int]:
+    if box_width >= box_height:
+        width = _IMAGE_LONG_EDGE
+        height = max(1, round(_IMAGE_LONG_EDGE * box_height / box_width))
+    else:
+        height = _IMAGE_LONG_EDGE
+        width = max(1, round(_IMAGE_LONG_EDGE * box_width / box_height))
+    return int(width), int(height)
+
+
+def _image_warning(code: str, message: str) -> JsonObject:
+    return {"severity": "warning", "phase": "validation", "code": code, "message": message}
+
+
+def _as_diag_list(raw: Any) -> list[JsonObject]:
+    return [item for item in raw if isinstance(item, dict)] if isinstance(raw, list) else []
 
 
 def diagnostics_from(raw_diagnostics: Any) -> list[DiagnosticSummary]:
