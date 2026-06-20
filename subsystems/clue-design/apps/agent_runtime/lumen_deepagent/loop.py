@@ -25,7 +25,7 @@ from .schemas import (
     VisualCritique,
     VisualTarget,
 )
-from .prompts import POSTER_RECOMPOSE_RECIPE
+from .prompts import IMAGERY_REPAIR_RECIPE, POSTER_RECOMPOSE_RECIPE
 from .tools import LumenDesignTools
 
 
@@ -34,6 +34,17 @@ from .tools import LumenDesignTools
 # the loop hands the rebuild the exact poster recipe (P1.5#2a) so the LLM
 # recompose converges on the fixed structure instead of re-stranding content.
 RECOMPOSE_CATEGORIES = {"visual_balance", "spacing"}
+
+# Visual-critique categories that signal an IMAGERY-quality problem (Step 9). An
+# image defect is repaired as an image — regenerate / recrop / scrim / replace /
+# remove — NOT as a layout-geometry patch, so the loop routes these to the
+# asset-tool surface and hands the rebuild IMAGERY_REPAIR_RECIPE.
+IMAGERY_CATEGORIES = {"imagery"}
+
+# Structural layout categories take precedence over an imagery defect: a clipped or
+# unbalanced page is fixed by geometry first, then the imagery axis is revisited next
+# iteration. (Mirrors the layout-cluster forcing set in classify_visual_critique.)
+_STRUCTURAL_LAYOUT_CATEGORIES = {"visual_balance", "alignment", "spacing", "compiler_repair"}
 
 
 def recompose_recipe_for_feedback(feedback: Optional[dict]) -> Optional[str]:
@@ -49,6 +60,23 @@ def recompose_recipe_for_feedback(feedback: Optional[dict]) -> Optional[str]:
     }
     if categories & RECOMPOSE_CATEGORIES:
         return POSTER_RECOMPOSE_RECIPE
+    return None
+
+
+def imagery_recipe_for_feedback(feedback: Optional[dict]) -> Optional[str]:
+    """Return the imagery-repair recipe when the latest visual critique flags an
+    imagery-quality problem (and not a structural layout problem that must be fixed
+    first), else None. Mirrors ``recompose_recipe_for_feedback`` (Step 9)."""
+    if not isinstance(feedback, dict) or feedback.get("kind") != "visual":
+        return None
+    payload = feedback.get("feedback") or {}
+    categories = {
+        str(issue.get("category"))
+        for issue in (payload.get("issues") or [])
+        if isinstance(issue, dict) and issue.get("category")
+    }
+    if categories & IMAGERY_CATEGORIES and not (categories & _STRUCTURAL_LAYOUT_CATEGORIES):
+        return IMAGERY_REPAIR_RECIPE
     return None
 
 
@@ -134,6 +162,26 @@ class HeuristicAgentDirector:
                             if categories & RECOMPOSE_CATEGORIES
                             else ""
                         )
+                    ),
+                )
+            # Step 9: a pure imagery-quality critique is an asset repair, not a layout
+            # rewrite — fix the image (regenerate/recrop/scrim/replace/remove).
+            if categories & IMAGERY_CATEGORIES:
+                imagery_target = first_issue_target_from_payload(feedback)
+                return AgentDirectorDecision(
+                    action_mode=AgentActionMode.targeted_patch,
+                    rationale=(
+                        "Visual critique flagged an imagery-quality problem; repair the "
+                        "image as an asset, not the layout."
+                    ),
+                    target=VisualTarget.model_validate(imagery_target)
+                    if imagery_target
+                    else None,
+                    allowed_scope={"visual_issue_categories": sorted(categories)},
+                    instructions_to_author=(
+                        "Use the full visual critique verbatim. Fix the IMAGE as an image — "
+                        "do not patch layout geometry."
+                        f"\n\n{IMAGERY_REPAIR_RECIPE}"
                     ),
                 )
 
@@ -222,6 +270,25 @@ class LumenQualityLoop:
                             f"{decision.instructions_to_author}\n\n{recompose_recipe}"
                             if decision.instructions_to_author
                             else recompose_recipe
+                        )
+                    }
+                )
+            # Step 9: when the latest critique flags an IMAGERY axis, deterministically
+            # hand the rebuild the imagery-repair recipe so the fix is an asset operation
+            # (regenerate / recrop / scrim / replace / remove), not a layout patch.
+            imagery_recipe = imagery_recipe_for_feedback(
+                self.previous_feedback[-1] if self.previous_feedback else None
+            )
+            if imagery_recipe and decision.action_mode not in {
+                AgentActionMode.accept,
+                AgentActionMode.stop_with_gap,
+            } and IMAGERY_REPAIR_RECIPE not in (decision.instructions_to_author or ""):
+                decision = decision.model_copy(
+                    update={
+                        "instructions_to_author": (
+                            f"{decision.instructions_to_author}\n\n{imagery_recipe}"
+                            if decision.instructions_to_author
+                            else imagery_recipe
                         )
                     }
                 )
@@ -1879,6 +1946,28 @@ def classify_visual_critique(
             target,
             scene,
             reason="visual_critique_requires_structural_layout_repair",
+        )
+    # Step 9: an imagery-quality failure is repaired as an IMAGE (regenerate / recrop /
+    # scrim / replace / remove) on the asset-tool surface — never a layout-geometry patch.
+    # A co-occurring structural layout failure already returned above (fixed first).
+    if categories & IMAGERY_CATEGORIES:
+        return RepairClassification(
+            repair_class=RepairClass.asset_tool,
+            target=VisualTarget.model_validate(target) if target else None,
+            allowed_edit_surface=EditSurfaceRecommendation.asset_tool,
+            permissions=[
+                "regenerate_asset",
+                "recrop_focal_point",
+                "add_or_fix_scrim",
+                "replace_asset",
+                "remove_asset",
+            ],
+            prohibitions=[
+                "do not patch layout geometry to fix an image problem",
+                "do not delete unrelated nodes",
+                "do not replace a real image with a placeholder",
+            ],
+            reason="imagery_quality_requires_asset_repair",
         )
     return classification
 

@@ -19,30 +19,63 @@ Required workflow:
 1. Use the todo list before acting.
 2. Load relevant Lumen knowledge with load_knowledge before DSL authoring (it
    surfaces AGENT.md and the knowledge_docs reference files). Brand/design-system
-   knowledge is mandatory for branded design tasks.
-3. Delegate initial DSL writing to the lumen-dsl-author subagent.
-4. Compile the DSL with compile_dsl_block.
-5. If compile diagnostics contain errors, pass the exact diagnostics to the DSL
+   knowledge is mandatory for branded design tasks. `knowledge/images/decide` is
+   always loaded — read it before deciding on imagery.
+3. DECIDE IMAGERY (before authoring). Using the brief and `knowledge/images/decide`,
+   decide whether this surface needs a hero IMAGE and what role it serves. Default to
+   NO: most enterprise cards, one-pagers, and social posts are stronger as clean
+   typographic layouts, and an unearned photo fails visual review. Choose an image
+   only when it does real work the words can't — sets human/emotional tone, shows a
+   product/place/person that must be seen, or gives editorial credibility. Icons,
+   flat illustrations, logos, abstract accents, and data are NOT this tool; they are
+   library/shape/layout work the author does in DSL. Record the decision in a todo.
+4. GENERATE (only if step 3 chose an image). First call load_knowledge with an
+   imagery query (e.g. "hero image photo prompt craft placement scrim") so the
+   prompt-craft and placement docs are in context — they are auto-pinned only for
+   briefs whose wording already signals imagery, so a brief like "GTM poster" needs
+   this explicit re-load. Then craft the prompt per `knowledge/images/prompts` (5
+   components — subject, medium, composition, lighting, quality; NO text baked into
+   the image; brand tone via brand_notes). Call generate_image with an aspect_ratio
+   (or width/height) matching the target surface — for a full-bleed hero that is the
+   page's own ratio. This registers the asset and returns its asset_id; note it.
+   Generate at most ONE hero image per surface.
+5. Delegate initial DSL writing to the lumen-dsl-author subagent. If you generated a
+   hero image in step 4, give the author its EXACT asset_id and require the scrim
+   idiom from `knowledge/images/placement` — full-bleed `image asset(<asset_id>)`
+   with a scrim rect beneath any overlaid text and light `$text.inverse` copy, or the
+   split image/band idiom. If step 3 chose no image, instruct a clean typographic
+   layout. The author returns DSL only; it does not generate or place assets.
+6. Compile the DSL with compile_dsl_block.
+7. If compile diagnostics contain errors, pass the exact diagnostics to the DSL
    author and repair the smallest failing block.
-6. Run preflight_design.
-7. If preflight diagnostics contain errors, pass the exact diagnostics to the
+8. Run preflight_design.
+9. If preflight diagnostics contain errors, pass the exact diagnostics to the
    DSL author and repair.
-8. Export previews with export_preview_bundle when possible, or export_preview
-   for a single format.
-9. If export_preview reports preview_invalid or export_failed, stop or repair
-   from the exact tool output; do not call visual review on unusable artifacts.
-10. Call get_latest_preview_for_critique so the reviewer receives SVG text or
+10. PLACE (only if you generated a hero image). Once the image node exists in the
+    scene, call place_asset_in_node with the image node id and the step-4 asset_id —
+    fit:cover, a focal point (0..1; raise it for faces/upper subjects), and alt text —
+    so the crop is deliberate and the binding is authoritative. Use summarize_node_tree
+    / recommend_edit_surface to find the image node id.
+11. Export previews with export_preview_bundle when possible, or export_preview
+    for a single format.
+12. If export_preview reports preview_invalid or export_failed, stop or repair
+    from the exact tool output; do not call visual review on unusable artifacts.
+13. Call get_latest_preview_for_critique so the reviewer receives SVG text or
     PNG base64 plus dimensions, not only a local path.
-11. Delegate visual review to lumen-visual-reviewer with the preview payload,
-    scene summary, loaded knowledge summary, effective Brand Kit context,
-    request, and diagnostics.
-12. Persist the reviewer response with submit_visual_critique.
-13. Pass the visual reviewer's critique verbatim to the DSL author when repair
-    is needed. Use create_repair_request so the exact feedback is traceable.
-14. Use recommend_edit_surface before repairs that target a precise node, slot,
+14. Delegate visual review to lumen-visual-reviewer with the preview payload,
+    scene summary, loaded knowledge summary, effective Brand Kit context, request,
+    and diagnostics. Imagery must earn its place, and any text over an image must sit
+    on a scrim (or its own surface) — illegible text on a photo is a rejection.
+15. Persist the reviewer response with submit_visual_critique.
+16. Pass the visual reviewer's critique verbatim to the DSL author when repair is
+    needed. Use create_repair_request so the exact feedback is traceable. If the
+    critique rejects the imagery itself (gratuitous, wrong crop, illegible), either
+    regenerate with a better prompt/focal point or drop the image and recompose as a
+    clean typographic layout.
+17. Use recommend_edit_surface before repairs that target a precise node, slot,
     page, or asset.
-15. Use record_gap if a needed repair requires unsupported Lumen semantics.
-16. Finish with finalize_run. Stop only when the reviewer accepts the design,
+18. Use record_gap if a needed repair requires unsupported Lumen semantics.
+19. Finish with finalize_run. Stop only when the reviewer accepts the design,
     max iterations are reached, or a deterministic tool fails.
 
 The user should receive the final result, preview path, and a concise trace
@@ -93,14 +126,18 @@ colors, typography, spacing, radius, stroke, and opacity. Use `$surface.*`,
 `$text.*`, `$type.*`, `$space.*`, `$radius.*`, `$stroke.width.*`, and
 approved `logo.*` / `asset.*` roles rather than guessed values.
 
-Imagery: decide whether the surface needs an image before adding one (see
-`knowledge/images/decide` — photo → `generate_image`; icon / flat illustration →
-library; abstract → shapes; often: none). Place an image by filling a frame with
-`fit:cover` + a focal point (aspect from the frame, never stretched). Whenever text
-sits over an image, emit a scrim rect BENEATH the text — a `r`/`fr` with
+Imagery: you do NOT generate or place images — the coordinator owns that. When the
+coordinator's instructions include a generated hero image asset_id, compose the
+frame that holds it: a full-bleed `image asset(<that_exact_id>)` filling its frame
+(`fit:cover`, aspect from the frame, never stretched). Whenever text sits over the
+image, emit a scrim rect BENEATH the text — a `r`/`fr` with
 `fill($surface.inverse) o($opacity.scrim)` and light `$text.inverse` text — or move
-the text onto its own surface. See `knowledge/images/placement` for the two vetted
-idioms.
+the text onto its own surface (the split image/band idiom). Use the EXACT asset_id
+the coordinator gives you; never invent one and never call `generate_image`. If no
+asset_id is provided, the surface is typographic — do not add an image. Icons / flat
+illustrations come from the library (`svg(icon:name)` / `asset.icon.*`), abstract
+accents from shapes + gradients. See `knowledge/images/placement` for the two vetted
+idioms and `knowledge/images/decide` for what earns an image.
 
 Hard syntax rules:
 - Return Lumen DSL only. No Markdown fences, JSON, YAML, CSS, braces, or prose.
@@ -178,6 +215,59 @@ Repair rules:
 """
 
 
+# THE SHARED IMAGERY RUBRIC — single source of truth for both the in-loop visual
+# reviewer (Step 9) and the offline imagery LLM judge (Phase 2). The reviewer frames
+# it as a reject-on-failure gate; the judge frames it as a 0–3 score per axis. Keep the
+# AXES here so the two never drift. Condensed from the imagery-quality fixture-set spec
+# (the multi-iteration cache/no-churn axis lives in the runner, not a single critique).
+IMAGERY_RUBRIC = """\
+Imagery axes (a `*` axis is a hard gate — a clear failure means the design is not shippable):
+1. RELEVANCE / DECIDE * — an image is placed ONLY when it earns its place (sets human/emotional
+   tone, shows a product/place/person that must be seen, or gives editorial credibility). A
+   gratuitous photo on a data/type brief, or a stock cliché (handshake, lightbulb, blue-brain
+   "AI", hoodie-hacker, generic "business meeting"), fails. Icons / flat illustrations / logos /
+   abstract accents must use the library or shapes, NEVER a generated photo.
+2. PLACEHOLDER-vs-REAL * — the rendered image is a real, credible picture, not a gray/solid
+   placeholder or an unready / missing asset.
+3. ASPECT-FIT * — the image fills its frame with NO stretch (faces/lines undistorted) and NO
+   letterbox/pillarbox dead bands; the focal point keeps the subject in-frame.
+4. PLACEMENT — one hero image, bound to a coherent role (full-bleed / band / accent), edge- or
+   grid-aligned, clipped/rounded when intended, with alt text. No floating at hand-tuned x/y, no
+   over-placement (a second competing image).
+5. LEGIBILITY-OVER-IMAGE * — text over an image sits on its OWN surface OR on a scrim that fully
+   covers the text box at sufficient opacity (~4.5:1 body / ~3:1 display contrast). Illegible text
+   on a busy photo is a hard failure — the single most common imagery defect.
+6. RESOLUTION / DPI — sharp at the rendered size; no visible upscale blur.
+7. NO IN-IMAGE TEXT — no rendered words/letters/logos/watermarks baked into the image itself.
+8. THEME-COHERENCE / ON-BRAND * — subject, style, and palette read on-brief and on-brand, and the
+   image does not fight a display headline (one element dominates — the squint test still holds).
+"""
+
+
+# Verbatim recipe handed to the rebuild whenever the visual critic flags an IMAGERY axis.
+# Mirrors POSTER_RECOMPOSE_RECIPE: it tells the loop to fix the IMAGE as an image (regenerate /
+# recrop / scrim / replace / remove) rather than patch layout geometry — the wrong surface for an
+# image defect. In deepagent mode the coordinator owns the asset tools and acts on this directly;
+# in the quality loop the author does the DSL-expressible part (add/fix scrim, or remove the image).
+IMAGERY_REPAIR_RECIPE = (
+    "IMAGERY REPAIR — fix the IMAGE as an image, NOT with layout geometry. Pick the move that "
+    "matches the failing axis:\n"
+    "  • Gratuitous / cliché / wrong image (relevance) → REMOVE it and recompose as a clean "
+    "typographic layout, or REPLACE it with the right mechanism (a library icon / shapes for "
+    "iconographic content).\n"
+    "  • Off-subject crop, stretched, or letterboxed (aspect-fit) → RECROP via the focal point "
+    "(place the asset fit:cover with a focal that lands on the subject); never `fill`-stretch, "
+    "never letterbox a hero.\n"
+    "  • Illegible text over the image (legibility) → add or enlarge a SCRIM rect BENEATH the text "
+    "(`fill($surface.inverse) o($opacity.scrim)`, covering the full text box) or move the text onto "
+    "its own surface.\n"
+    "  • Placeholder / off-brand / wrong subject → REGENERATE with a revised, more specific prompt "
+    "(5-component, brand tone via brand_notes, NO in-image text).\n"
+    "Do NOT resize or reposition the frame to 'fix' an image problem — that is the wrong surface, "
+    "and never replace a real image with a gray placeholder."
+)
+
+
 VISUAL_REVIEWER_SYSTEM_PROMPT = """You are the Lumen visual reviewer. Judge the
 RENDERED PIXELS (the attached PNG) as a user-facing artifact — not the compiler
 output. A design that compiles, preflights, and exports can still be unacceptable.
@@ -216,14 +306,22 @@ H. AVOID AI CLICHES (not imagery itself)
      purpose. Prefer scale contrast, asymmetry, and information on surfaces.
    - Imagery that serves the message IS welcome — a purposeful hero photo, a relevant
      product/portrait, a recolorable library icon. Judge whether the image EARNS its
-     place, not that it exists. Text over an image MUST sit on a scrim (or its own
-     surface); illegible text on a busy photo is a "contrast" failure.
+     place under the IMAGERY axis (J) below, with category `imagery` — not here.
 I. REQUEST & BRAND
    - Matches the requested artifact type AND dimensions, communicates the message,
      covers the requested concepts; brand styling consistent (tokens, not raw
      guesses); meaningful ABM slots. Unresolved BrandKit governance diagnostics,
      raw branded surfaces, raw typography in branded scenes, logo misuse, and
      print/digital mode mismatch are quality failures even if the render looks neat.
+
+J. IMAGERY (apply ONLY when the design uses — or a brief like this should use — an
+   image / illustration / icon)
+   - A clear failure on a `*` axis below is a reject (`accepted=false`). Use category
+     `imagery`, name the exact node/asset, and give the SMALLEST repair that fixes the
+     IMAGE — regenerate / recrop via the focal point / add or fix the scrim / replace /
+     remove — NEVER a layout-geometry edit. A correct typographic design that needed no
+     image is fine; do NOT invent an imagery issue where none is warranted.
+""" + IMAGERY_RUBRIC + """
 
 Return a VisualCritique. For each issue: set the category, target the exact
 node/page/slot, and give the SMALLEST actionable repair (the coordinator passes it
@@ -235,6 +333,21 @@ The `visual-review` skill has worked examples.
 
 
 def build_subagents(model: str) -> list[dict]:
+    # IMPORTANT — each subagent declares an explicit (empty) `tools` list.
+    #
+    # In deepagents a subagent with no `tools` key INHERITS the coordinator's full
+    # tool set (all ~25 explicit tools), and each subagent additionally gets the
+    # built-in filesystem/todo tools from its middleware stack. For the
+    # `lumen-visual-reviewer` that inheritance is fatal: its `response_format`
+    # (VisualCritique) makes langchain bind tools via the Anthropic provider
+    # strategy with strict=True, and Anthropic caps STRICT tools at 20 — the
+    # inherited ~33-tool surface raises `BadRequestError: Too many strict tools`,
+    # which blocked the entire deepagent loop. An empty `tools` list overrides the
+    # inheritance (deepagents keys off the presence of "tools", not its truthiness),
+    # so the reviewer binds only its built-ins + the VisualCritique tool — well
+    # under the cap. The author likewise needs no tools: it returns DSL text (the
+    # coordinator owns compile/generate/place). Skills still load — they are read
+    # through the filesystem middleware, not the `tools` list.
     return [
         {
             "name": "lumen-dsl-author",
@@ -245,6 +358,7 @@ def build_subagents(model: str) -> list[dict]:
             ),
             "system_prompt": DSL_AUTHOR_SYSTEM_PROMPT,
             "model": model,
+            "tools": [],
             "skills": [
                 "apps/agent_runtime/knowledge_docs/skills/create-design",
                 "apps/agent_runtime/knowledge_docs/skills/repair-design",
@@ -261,6 +375,7 @@ def build_subagents(model: str) -> list[dict]:
             ),
             "system_prompt": VISUAL_REVIEWER_SYSTEM_PROMPT,
             "model": model,
+            "tools": [],
             "skills": ["apps/agent_runtime/knowledge_docs/skills/visual-review"],
             "response_format": VisualCritique,
         },

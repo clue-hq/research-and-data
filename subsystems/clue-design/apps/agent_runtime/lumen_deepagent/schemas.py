@@ -22,6 +22,11 @@ class CritiqueCategory(str, Enum):
     typography = "typography"
     brand_fit = "brand_fit"
     asset_use = "asset_use"
+    # Imagery-quality failures (relevance/decide, aspect-fit, legibility-over-image,
+    # placeholder-vs-real, theme-coherence). Distinct from `asset_use` so the loop can
+    # route it to an asset-tool repair (regenerate/recrop/scrim/replace/remove) rather
+    # than a layout-geometry patch, and so the eval harness can aggregate it.
+    imagery = "imagery"
     visual_balance = "visual_balance"
     semantic_slot_coverage = "semantic_slot_coverage"
     request_satisfaction = "request_satisfaction"

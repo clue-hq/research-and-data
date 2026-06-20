@@ -35,13 +35,22 @@ from lumen_deepagent.loop import (
     LumenQualityLoop,
     classify_diagnostics,
     classify_visual_critique,
+    imagery_recipe_for_feedback,
     is_layout_cluster_dsl,
     is_surgical_dsl,
     layout_cluster_allowed_node_ids,
     recompose_recipe_for_feedback,
     repair_is_surgical,
 )
-from lumen_deepagent.prompts import POSTER_RECOMPOSE_RECIPE, build_subagents
+from lumen_deepagent.prompts import (
+    COORDINATOR_SYSTEM_PROMPT,
+    DSL_AUTHOR_SYSTEM_PROMPT,
+    IMAGERY_REPAIR_RECIPE,
+    IMAGERY_RUBRIC,
+    POSTER_RECOMPOSE_RECIPE,
+    VISUAL_REVIEWER_SYSTEM_PROMPT,
+    build_subagents,
+)
 from lumen_deepagent.providers import (
     compact_preview_payload,
     extract_dsl,
@@ -54,6 +63,7 @@ from lumen_deepagent.schemas import (
     AgentActionMode,
     AgentDirectorDecision,
     CritiqueCategory,
+    EditSurfaceRecommendation,
     RepairClass,
     VisualCritique,
     VisualIssue,
@@ -733,6 +743,48 @@ def test_subagents_have_isolated_skills_and_structured_reviewer_output():
     assert all("/skills/" in skill for skill in author["skills"])
 
 
+def test_subagents_declare_empty_tools_to_stay_under_strict_tool_cap():
+    # Regression guard for the deepagent-loop blocker: a subagent with NO `tools`
+    # key inherits the coordinator's full tool surface, and the visual reviewer's
+    # `response_format` forces Anthropic's strict provider strategy — together they
+    # exceed Anthropic's 20 STRICT-tool cap ("Too many strict tools (33)"), which
+    # killed every deepagent run. Each subagent must therefore declare an explicit
+    # (empty) tool list so deepagents does NOT inherit the coordinator's tools.
+    # Skills still load via the filesystem middleware, independent of `tools`.
+    subagents = build_subagents("anthropic:claude-opus-4-6")
+    for agent in subagents:
+        assert "tools" in agent, f"{agent['name']} must declare tools explicitly"
+        assert agent["tools"] == [], f"{agent['name']} must not inherit coordinator tools"
+
+
+def test_coordinator_prompt_wires_the_imagery_decide_generate_place_chain():
+    # The coordinator must actively drive the imagery chain (decide -> generate ->
+    # place -> scrim) rather than leave it to chance — otherwise the loop only ever
+    # produces typographic designs even when a brief warrants a hero image.
+    prompt = COORDINATOR_SYSTEM_PROMPT
+    # Decide first, defaulting to no image.
+    assert "DECIDE IMAGERY" in prompt
+    assert "knowledge/images/decide" in prompt
+    # Generate, then place, are explicit coordinator-owned tool steps.
+    assert "generate_image" in prompt
+    assert "place_asset_in_node" in prompt
+    # The author is handed the exact asset id and the placement/scrim idiom.
+    assert "asset_id" in prompt
+    assert "knowledge/images/placement" in prompt
+    # Ordering invariant: decide before generate before place.
+    assert prompt.index("DECIDE IMAGERY") < prompt.index("generate_image")
+    assert prompt.index("generate_image") < prompt.index("place_asset_in_node")
+
+
+def test_author_prompt_defers_image_generation_to_the_coordinator():
+    # The author has no tools (see the strict-tool-cap fix) and must not be told to
+    # call generate_image; it composes the frame around the coordinator's asset_id.
+    prompt = DSL_AUTHOR_SYSTEM_PROMPT
+    assert "never call `generate_image`" in prompt
+    assert "coordinator" in prompt
+    assert "scrim" in prompt
+
+
 def test_deepagents_factory_wires_full_phase_a_tool_surface(tmp_path: Path, monkeypatch):
     calls = {}
 
@@ -1089,6 +1141,196 @@ def test_imagery_checks_gate_on_placeholder_text_over_image_and_gratuitous():
                                  "computed": {"layout_bounds": {"x": 80, "y": 80, "width": 920, "height": 400}}}}}
     clean = score_scene(type_only, expected_decision="none")
     assert clean["accept"] is True and clean["dimensions"]["decision"]["score"] == 3
+
+
+class _FakeJudgeModel:
+    """A stand-in for the structured-output LLM judge: .invoke returns a canned verdict
+    and records that a vision call happened (so we can assert when the judge is skipped)."""
+
+    def __init__(self, verdict):
+        self.verdict = verdict
+        self.calls = 0
+
+    def invoke(self, messages):
+        self.calls += 1
+        return self.verdict
+
+
+def _perfect_verdict():
+    from lumen_deepagent.imagery_judge import ImageryJudgeVerdict
+
+    return ImageryJudgeVerdict(
+        relevance=3, placeholder_real=3, aspect_fit=3, placement=3, legibility=3,
+        resolution_dpi=3, no_in_image_text=3, theme_coherence=3, reasoning="clean",
+    )
+
+
+def test_imagery_judge_ships_a_clean_scrimmed_poster_with_a_good_verdict():
+    from lumen_deepagent.imagery_judge import judge_imagery
+
+    model = _FakeJudgeModel(_perfect_verdict())
+    result = judge_imagery(
+        _poster_scene(),
+        b"\x89PNG fake-bytes",
+        {"id": "GTM-01", "expected_decision": "photo", "role": "full_bleed_hero", "risks": []},
+        model=model,
+    )
+    assert model.calls == 1  # an image is present → the judge runs
+    assert result["judge_ran"] is True
+    assert result["accept"] is True and result["tier"] == "ship"
+    assert result["per_axis"]["theme_coherence"]["final"] == 3
+    assert result["weighted_mean"] >= 2.3
+
+
+def test_imagery_judge_skips_the_vision_call_on_a_correct_typographic_none_design():
+    from lumen_deepagent.imagery_judge import judge_imagery
+
+    type_only = {
+        "pages": {"p": {"size": {"width": 1080, "height": 1080}}},
+        "assets": {},
+        "nodes": {"h": {"kind": {"kind": "text"},
+                        "computed": {"layout_bounds": {"x": 80, "y": 80, "width": 920, "height": 400}}}},
+    }
+    model = _FakeJudgeModel(_perfect_verdict())
+    result = judge_imagery(type_only, None, {"id": "NO-01", "expected_decision": "none"}, model=model)
+    # No image and none expected → deterministic accept, no paid vision call.
+    assert model.calls == 0 and result["judge_ran"] is False
+    assert result["accept"] is True and result["tier"] == "ship"
+    assert result["per_axis"]["relevance"]["final"] == 3
+
+
+def test_imagery_judge_det_gate_caps_a_perfect_verdict_to_redo():
+    from lumen_deepagent.imagery_judge import judge_imagery
+
+    # A perfect verdict cannot rescue a design whose text is unscrimmed over the image:
+    # the DET legibility gate caps the axis at 1 and forces a redo.
+    model = _FakeJudgeModel(_perfect_verdict())
+    result = judge_imagery(
+        _poster_scene(with_scrim=False),
+        b"\x89PNG",
+        {"id": "GTM-01", "expected_decision": "photo"},
+        model=model,
+    )
+    assert result["gate_failed"] is True
+    assert result["per_axis"]["legibility"]["final"] == 1
+    assert result["accept"] is False and result["tier"] == "redo"
+
+
+def test_imagery_judge_final_is_min_of_det_cap_and_judge():
+    from lumen_deepagent.imagery_judge import ImageryJudgeVerdict, judge_imagery
+
+    # DET passes every gate (score 3), but the judge dislikes the theme (1) and the
+    # composition/placement (2) → final theme is the judge's 1 → redo.
+    verdict = ImageryJudgeVerdict(
+        relevance=3, placeholder_real=3, aspect_fit=3, placement=2, legibility=3,
+        resolution_dpi=2, no_in_image_text=3, theme_coherence=1, reasoning="off-brand stock cliché",
+    )
+    result = judge_imagery(
+        _poster_scene(),
+        b"\x89PNG",
+        {"id": "GTM-01", "expected_decision": "photo"},
+        model=_FakeJudgeModel(verdict),
+    )
+    assert result["per_axis"]["theme_coherence"]["final"] == 1  # judge below DET cap
+    assert result["per_axis"]["placement"]["final"] == 2        # min(2 judge, 3 det)
+    assert result["accept"] is False and result["tier"] == "redo"
+
+
+def _load_imagery_runner():
+    import importlib.util
+
+    path = Path(__file__).resolve().parents[1] / "evaluation" / "run_imagery_evals.py"
+    spec = importlib.util.spec_from_file_location("run_imagery_evals", path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def _write_synthetic_run_dir(run_dir: Path, scene: dict) -> Path:
+    run_dir.mkdir(parents=True, exist_ok=True)
+    (run_dir / "final_scene.json").write_text(json.dumps(scene), encoding="utf-8")
+    png = run_dir / "iterations" / "001" / "preview.png"
+    png.parent.mkdir(parents=True, exist_ok=True)
+    png.write_bytes(b"\x89PNG synthetic")
+    (run_dir / "final.json").write_text(
+        json.dumps({"run_id": "run_synthetic", "status": "accepted", "preview_paths": [str(png)]}),
+        encoding="utf-8",
+    )
+    return run_dir
+
+
+def test_imagery_runner_merge_briefs_joins_sidecar_and_prompt():
+    runner = _load_imagery_runner()
+    merged = runner.merge_briefs(runner.DEFAULT_BRIEFS, runner.DEFAULT_PROMPTS)
+    assert len(merged) == 16
+    by_id = {b["id"]: b for b in merged}
+    gtm = by_id["gtm_conf_poster_photo"]
+    assert gtm["expected_decision"] == "photo" and gtm["prompt"] and gtm["risks"]
+    decisions = Counter(b["expected_decision"] for b in merged)
+    assert decisions == Counter({"photo": 6, "none": 6, "icon": 4})
+
+
+def test_imagery_runner_scores_and_captures_a_run_dir(tmp_path: Path):
+    runner = _load_imagery_runner()
+    run_dir = _write_synthetic_run_dir(tmp_path / "run", _poster_scene())
+    brief = {"id": "GTM-01", "artifact": "event_poster_9x16", "prompt": "p",
+             "expected_decision": "photo", "role": "full_bleed_hero", "risks": []}
+
+    scores = runner.score_run_dir(run_dir, brief, model=_FakeJudgeModel(_perfect_verdict()))
+    assert scores["tier"] == "ship" and scores["accept"] is True
+    assert scores["run_id"] == "run_synthetic"
+
+    capture = runner.write_capture(tmp_path / "out", brief, scores, tag="baseline-pre-step9", model="fake-model")
+    for name in ("brief.json", "scores.json", "asset_provenance.json", "run_meta.json", "render.png"):
+        assert (capture / name).exists(), name
+    prov = json.loads((capture / "asset_provenance.json").read_text())
+    assert prov["asset_id"] == "hero" and prov["source_kind"] == "generated"
+
+
+def test_imagery_runner_summarize_aggregates_accept_and_tiers():
+    runner = _load_imagery_runner()
+    results = [
+        {"brief": {"expected_decision": "photo"}, "scores": {"tier": "ship", "accept": True}},
+        {"brief": {"expected_decision": "photo"}, "scores": {"tier": "redo", "accept": False}},
+        {"brief": {"expected_decision": "none"}, "scores": {"tier": "ship", "accept": True}},
+        {"brief": {"expected_decision": "icon"}, "scores": None},  # unscored — ignored
+    ]
+    summary = runner.summarize(results)
+    assert summary["briefs_scored"] == 3
+    assert summary["accept_rate"] == round(2 / 3, 3)
+    assert summary["tiers"]["ship"] == 2 and summary["tiers"]["redo"] == 1
+    assert summary["by_decision"]["photo"] == {"n": 2, "accept": 1}
+
+
+def test_imagery_runner_diff_tags_reports_axis_and_tier_transition(tmp_path: Path):
+    runner = _load_imagery_runner()
+    brief_dir = tmp_path / "GTM-01"
+    (brief_dir / "a").mkdir(parents=True)
+    (brief_dir / "b").mkdir(parents=True)
+    (brief_dir / "a" / "scores.json").write_text(
+        json.dumps({"tier": "ship", "weighted_mean": 2.6, "per_axis": {"legibility": {"final": 3}}})
+    )
+    (brief_dir / "b" / "scores.json").write_text(
+        json.dumps({"tier": "redo", "weighted_mean": 1.8, "per_axis": {"legibility": {"final": 1}}})
+    )
+    diff = runner.diff_tags(brief_dir, "a", "b")
+    assert diff["tier"] == {"from": "ship", "to": "redo", "regressed_from_ship": True}
+    assert diff["axis_delta"]["legibility"] == -2
+
+
+def test_finalize_run_persists_the_full_final_scene_for_offline_scoring(tmp_path: Path, monkeypatch):
+    # The imagery eval runner reads final_scene.json (the FULL scene, not just the
+    # summary) to deterministically score imagery without re-running the agent.
+    monkeypatch.setattr("lumen_deepagent.tools.CoreClient", FakeCoreClient)
+    config = runtime_config(tmp_path)
+    tools = LumenDesignTools(config, "Create a square ad")
+    tools.compile_dsl_block("page page_test")
+    tools.finalize_run("accepted", "accepted", "Accepted.")
+
+    final_scene_path = config.trace_dir / tools.run_id / "final_scene.json"
+    assert final_scene_path.exists()
+    scene = json.loads(final_scene_path.read_text(encoding="utf-8"))
+    assert "nodes" in scene and "pages" in scene  # the full scene, round-trippable
 
 
 def test_quality_loop_passes_knowledge_excerpts_to_author(tmp_path: Path, monkeypatch):
@@ -1899,6 +2141,113 @@ def test_recompose_recipe_triggers_only_on_dead_band_categories():
     )
     assert recompose_recipe_for_feedback({"kind": "preflight", "feedback": {}}) is None
     assert recompose_recipe_for_feedback(None) is None
+
+
+def test_imagery_critique_routes_to_asset_tool_repair():
+    # Step 9: a pure imagery-quality critique must be repaired as an ASSET (regenerate /
+    # recrop / scrim / replace / remove) on the asset-tool surface — never as a layout
+    # patch. (asset_use / contrast / clipping etc. keep their existing routing.)
+    critique = VisualCritique(
+        accepted=False,
+        summary="The hero photo is a generic stock cliché and the headline is illegible.",
+        issues=[
+            VisualIssue(
+                severity="error",
+                category=CritiqueCategory.imagery,
+                target=VisualTarget(page_id="page_hero", node_id="hero_img"),
+                message="Gratuitous stock-feel photo; headline has no scrim.",
+                suggested_repair="Regenerate a relevant hero and add a covering scrim.",
+            )
+        ],
+        repair_instruction="Fix the image, not the layout.",
+    )
+
+    classification = classify_visual_critique(
+        critique,
+        {"page_id": "page_hero", "node_id": "hero_img"},
+        {},
+    )
+
+    assert classification.repair_class == RepairClass.asset_tool
+    assert classification.allowed_edit_surface == EditSurfaceRecommendation.asset_tool
+    assert classification.reason == "imagery_quality_requires_asset_repair"
+    assert "regenerate_asset" in classification.permissions
+
+
+def test_imagery_critique_with_structural_failure_defers_to_layout_repair():
+    # If a critique carries BOTH an imagery defect AND a structural layout failure, the
+    # geometry repair wins this iteration (the imagery axis is revisited next).
+    critique = VisualCritique(
+        accepted=False,
+        summary="Dead band above the footer, and the hero photo is off-crop.",
+        issues=[
+            VisualIssue(
+                severity="error",
+                category=CritiqueCategory.visual_balance,
+                target=VisualTarget(page_id="page_a4", node_id="main"),
+                message="Large empty band above the footer.",
+                suggested_repair="Recompose with the poster idiom.",
+            ),
+            VisualIssue(
+                severity="warning",
+                category=CritiqueCategory.imagery,
+                target=VisualTarget(page_id="page_a4", node_id="hero_img"),
+                message="Hero crop cuts off the subject.",
+                suggested_repair="Recrop via focal point.",
+            ),
+        ],
+        repair_instruction="Fix the dead band first.",
+    )
+
+    classification = classify_visual_critique(
+        critique,
+        {"page_id": "page_a4", "node_id": "main"},
+        layout_cluster_scene(),
+    )
+
+    assert classification.repair_class == RepairClass.layout_cluster
+
+
+def test_imagery_recipe_triggers_only_on_imagery_categories():
+    # Step 9 mirror of the recompose-recipe trigger: a visual critique flagging the
+    # `imagery` category hands the rebuild the verbatim imagery-repair recipe.
+    feedback = {
+        "kind": "visual",
+        "feedback": {"issues": [{"category": "imagery", "message": "cliché hero"}]},
+    }
+    assert imagery_recipe_for_feedback(feedback) == IMAGERY_REPAIR_RECIPE
+    # A structural layout co-failure suppresses the imagery recipe (layout fixed first).
+    mixed = {
+        "kind": "visual",
+        "feedback": {
+            "issues": [
+                {"category": "imagery", "message": "off-crop"},
+                {"category": "visual_balance", "message": "dead band"},
+            ]
+        },
+    }
+    assert imagery_recipe_for_feedback(mixed) is None
+    # Unrelated category, non-visual kind, and None all yield no recipe.
+    assert (
+        imagery_recipe_for_feedback(
+            {"kind": "visual", "feedback": {"issues": [{"category": "typography"}]}}
+        )
+        is None
+    )
+    assert imagery_recipe_for_feedback({"kind": "preflight", "feedback": {}}) is None
+    assert imagery_recipe_for_feedback(None) is None
+
+
+def test_reviewer_prompt_carries_the_shared_imagery_rubric():
+    # Step 9 / Phase-2 pairing: the in-loop reviewer applies the SAME imagery rubric the
+    # offline judge uses, framed as a reject gate with category `imagery`.
+    prompt = VISUAL_REVIEWER_SYSTEM_PROMPT
+    assert "J. IMAGERY" in prompt
+    assert "category" in prompt and "imagery" in prompt
+    # The shared rubric constant is spliced in verbatim (single source of truth).
+    assert IMAGERY_RUBRIC in prompt
+    assert "LEGIBILITY-OVER-IMAGE" in prompt
+    assert "RELEVANCE / DECIDE" in prompt
 
 
 def test_heuristic_director_hands_poster_recipe_for_visual_balance():

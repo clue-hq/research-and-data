@@ -1953,6 +1953,12 @@ class LumenDesignTools:
             "scene_update_sources": self.scene_update_sources,
         }
         self._write_json(self.trace_dir / "final.json", payload)
+        # Persist the FULL final scene (not just the summary) so offline tooling — the
+        # imagery-quality eval runner in particular — can deterministically score the
+        # design's use of imagery (node kinds, asset_placement, asset records, page
+        # sizes) without re-running the agent or recompiling the DSL.
+        if isinstance(self.scene, dict):
+            self._write_json(self.trace_dir / "final_scene.json", self.scene)
         self.record(
             "coordinator",
             "run_finalized",
