@@ -22,6 +22,7 @@ from alembic import command
 from alembic.config import Config
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from clue_research.adapters import clear_adapters
 from clue_research.claimstore import load_core_pack
 from clue_research.core import Entity, FieldDef, RetryableResolverError
 from clue_research.db import db_lifespan
@@ -62,10 +63,13 @@ def require_db(migrated_db: bool) -> None:
 
 @pytest.fixture(autouse=True)
 def _isolate_resolver_bindings() -> Iterator[None]:
-    """Clear the in-process resolver-binding map around every test (it is module-global)."""
+    """Clear the in-process resolver-binding AND adapter-registry maps around every test (both are
+    module-global; M4.5's ``register_scrape_resolver`` registers the ``firecrawl_html`` adapter)."""
     clear_resolver_bindings()
+    clear_adapters()
     yield
     clear_resolver_bindings()
+    clear_adapters()
 
 
 @asynccontextmanager

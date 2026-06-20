@@ -27,6 +27,7 @@ from clue_research.adapters import (
     UnknownSourceError,
     cost_estimate,
     register_adapter,
+    run_chain,
     run_pipeline,
     span_for,
 )
@@ -46,13 +47,14 @@ from clue_research.core import (
     PassKind,
     RawArtifact,
     ResearchMode,
+    ReuseScope,
     SourceManifest,
     UseClass,
     new_entity_id,
     new_run_id,
 )
 from clue_research.obs import collect_spans
-from clue_research.sources import RegistrySourceManifest, register_source
+from clue_research.sources import RegistrySourceManifest, get_source, register_source
 
 from .conftest import rollback_conn, run_async
 
@@ -752,6 +754,98 @@ def test_persist_false_returns_unwritten_claims() -> None:
     run_async(_run())
 
 
+def test_persist_true_fails_loud_on_a_tenant_private_claim_with_no_tenant() -> None:
+    # run_pipeline(persist=True) is a writer, so it tenant-stamps (decision #6). A contact.facet.*
+    # claim classifies tenant_private — persisting it with NO tenant_id must fail loud, never write
+    # the personal claim public (the M8/run_pipeline footgun the M4.5 review flagged).
+    async def _run() -> None:
+        async with rollback_conn() as conn:
+            await _register(
+                conn,
+                "linkedin",
+                modality=Modality.TEXT,
+                tier=3,
+                requires_adapter="li_posts2",
+                yields=("contact.facet",),
+                entity_scope=EntityScope.BOTH,
+                identity_binding=IdentityBinding.STRONG,
+            )
+            register_adapter(
+                "li_posts2",
+                PassthroughAdapter(
+                    _extractor(
+                        "contact.facet.recent_post",
+                        "spoke at KubeCon",
+                        "spoke at KubeCon",
+                        source_url="https://linkedin.com/in/x",
+                        use_class=UseClass.PROFESSIONAL_PUBLIC,
+                    ),
+                    modality=Modality.TEXT,
+                ),
+            )
+            with pytest.raises(ValueError, match="tenant_private"):
+                await run_pipeline(
+                    conn,
+                    "linkedin",
+                    "he spoke at KubeCon last week",
+                    _contact(),
+                    _field("contact.facet.recent_post", "str"),
+                    run_id=new_run_id(),
+                    research_mode=ResearchMode.CONTACT_PROFILING,
+                    # no tenant_id → the writer refuses to persist the private claim
+                )
+
+    run_async(_run())
+
+
+def test_run_chain_matches_run_pipeline_persist_false() -> None:
+    # run_pipeline = get_source + run_chain + persist. ``run_chain`` is the SYNC seam M4.5's
+    # Firecrawl resolver calls from inside the connection-less Resolver protocol; over the same
+    # manifest it must yield the same unwritten claims as run_pipeline(persist=False).
+    async def _run() -> None:
+        async with rollback_conn() as conn:
+            await _register(conn, "blog", modality=Modality.TEXT, tier=3)
+            manifest = await get_source(conn, "blog")
+            assert manifest is not None
+            entity, run_id = _account(), new_run_id()
+            ext = _extractor("account.operational_pain", "data silos", "data silos")
+            via_pipeline = await run_pipeline(
+                conn,
+                "blog",
+                "data silos everywhere",
+                entity,
+                _field("account.operational_pain", "str"),
+                run_id=run_id,
+                research_mode=_MODE,
+                extractor=ext,
+                persist=False,
+            )
+            via_chain = run_chain(
+                manifest,
+                "data silos everywhere",
+                entity,
+                _field("account.operational_pain", "str"),
+                run_id=run_id,
+                research_mode=_MODE,
+                extractor=ext,
+            )
+
+            def _key(c: object) -> tuple[object, ...]:
+                return (
+                    c.field_key,  # type: ignore[attr-defined]
+                    c.value_json,  # type: ignore[attr-defined]
+                    c.source_tier,  # type: ignore[attr-defined]
+                    c.extraction_method,  # type: ignore[attr-defined]
+                    c.source_key,  # type: ignore[attr-defined]
+                    c.evidence_span,  # type: ignore[attr-defined]
+                )
+
+            assert [_key(c) for c in via_chain] == [_key(c) for c in via_pipeline]
+            assert via_chain and via_chain[0].source_tier == 3 and via_chain[0].source_key == "blog"
+
+    run_async(_run())
+
+
 def test_unknown_source_raises() -> None:
     async def _run() -> None:
         async with rollback_conn() as conn:
@@ -882,12 +976,17 @@ def test_contact_claim_carries_binding_from_manifest_and_use_class_from_draft() 
                     field,
                     run_id=new_run_id(),
                     research_mode=ResearchMode.CONTACT_PROFILING,
+                    # a contact.facet.* claim classifies tenant_private (decision #6); run_pipeline,
+                    # as the writer, stamps it and so requires the run's tenant_id.
+                    tenant_id="tenant-a",
                 )
             )[0]
             assert claim.entity_type is EntityType.CONTACT
             assert claim.identity_binding is IdentityBinding.STRONG  # stamped from the manifest
             assert claim.use_class is UseClass.PROFESSIONAL_PUBLIC  # carried from the draft
             assert claim.source_tier == 3
+            # the writer stamped the personal claim tenant-private and bound it to the run tenant.
+            assert claim.reuse_scope is ReuseScope.TENANT_PRIVATE and claim.tenant_id == "tenant-a"
 
     run_async(_run())
 

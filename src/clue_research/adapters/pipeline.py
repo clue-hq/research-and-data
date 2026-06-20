@@ -19,9 +19,14 @@ Invariants enforced (substrate §4 / D7 / the M4.3 acceptance criteria):
 * **Per-stage observability.** fetch / adapt / extract each emit their own cost+latency span; the
   transcription cost is the ``adapt`` span for audio/video (a distinct, queryable cost — M7.5/M13).
 
-Reuse-scope note (M4.5): claims are written with the default ``public_footprint`` scope, exactly as
-the M4.1 waterfall does. CRM / resonance / personal claims that must be ``tenant_private`` get the
-tenant-stamping seam in M4.5 (locked decision #6); deferred here because no such writer exists yet.
+Reuse-scope note (M4.5, decision #6): when ``persist=True`` this function is a *composer* (it writes
+claims), so — exactly like the M4.1 waterfall — it **tenant-stamps every claim** via
+``identity.stamp_reuse`` before insert: public-footprint facts amortize; ``crm_import`` / resonance
+/ personal / scoring claims become ``tenant_private`` bound to the supplied ``tenant_id`` (and a
+private-classifying claim with no ``tenant_id`` fails loud — no silent public leak). A resolver that
+wants the waterfall to be the sole writer (M4.5's Firecrawl) calls :func:`run_chain` with
+``persist=False`` instead; the waterfall then stamps. (ENG-165 makes this stamping structural and
+fail-closed across *all* writers; this is M4's per-writer wiring.)
 """
 
 from __future__ import annotations
@@ -70,6 +75,7 @@ from clue_research.core import (
     revalidate_with,
     to_value_json,
 )
+from clue_research.identity import DEFAULT_REUSE_POLICY, ReusePolicy, stamp_reuse
 from clue_research.obs import (
     ATTR_CACHE_HIT,
     ATTR_COST_CENTS,
@@ -146,6 +152,8 @@ async def run_pipeline(
     cache: ArtifactCache | None = None,
     clock: Callable[[], datetime] = utc_now,
     persist: bool = True,
+    tenant_id: str | None = None,
+    reuse_policy: ReusePolicy = DEFAULT_REUSE_POLICY,
     params: dict[str, JsonValue] | None = None,
 ) -> list[Claim]:
     """Run ``source_key``'s ``fetch → adapt → extract`` for ``ref`` and return the resulting claims.
@@ -166,7 +174,12 @@ async def run_pipeline(
         clock: the time source (injected for deterministic freshness-TTL tests).
         persist: write the claims through M1.1 (default). ``False`` returns unwritten claims — the
             seam M4.5's Firecrawl resolver uses to return claims to the waterfall without a
-            double-write.
+            double-write (the waterfall is then the sole writer + tenant-stamper).
+        tenant_id: the run's tenant. When ``persist`` (this function is the writer), every claim is
+            tenant-stamped before insert (decision #6): public facts amortize; a private-classifying
+            claim (crm_import / resonance / personal / scoring) is bound to ``tenant_id`` — and a
+            private claim with **no** ``tenant_id`` fails loud, never silently written public.
+        reuse_policy: the versioned reuse-classification policy the stamping reads.
         params: free-form fetch params handed to the adapter via the :class:`AdaptContext`.
 
     Returns the claims (written, with persisted ids, when ``persist``). Adding a brand-new modality
@@ -175,6 +188,65 @@ async def run_pipeline(
     manifest = await get_source(conn, source_key)
     if manifest is None:
         raise UnknownSourceError(f"source {source_key!r} is not registered (M4.2)")
+    claims = run_chain(
+        manifest,
+        ref,
+        entity,
+        field,
+        run_id=run_id,
+        research_mode=research_mode,
+        extractor=extractor,
+        gate_decision=gate_decision,
+        cache=cache,
+        clock=clock,
+        params=params,
+    )
+    if persist:
+        # As a composer (the writer), stamp the cross-tenant reuse scope on every claim before
+        # insert — identical to the M4.1 waterfall (decision #6), so an adapter-backed
+        # tenant-private claim (M8 resonance/facet) is never written public_footprint by default.
+        return [
+            await _persist(conn, stamp_reuse(c, tenant_id=tenant_id, policy=reuse_policy))
+            for c in claims
+        ]
+    return claims
+
+
+async def _persist(conn: AsyncConnection, claim: Claim) -> Claim:
+    """Write one (already tenant-stamped) claim through M1.1 and return it (ids are
+    client-generated, so the returned object is the one the caller gets back)."""
+    await insert_claim(conn, claim)
+    return claim
+
+
+def run_chain(
+    manifest: RegistrySourceManifest,
+    ref: str,
+    entity: Entity,
+    field: FieldDef,
+    *,
+    run_id: RunId,
+    research_mode: ResearchMode,
+    extractor: ClaimExtractor | None = None,
+    gate_decision: GateDecision = GateDecision.RUN,
+    cache: ArtifactCache | None = None,
+    clock: Callable[[], datetime] = utc_now,
+    params: dict[str, JsonValue] | None = None,
+) -> list[Claim]:
+    """The **synchronous** ``fetch → adapt → extract → materialize`` core of :func:`run_pipeline`,
+    over an already-loaded ``manifest`` and **without** persistence — the seam a *resolver* uses.
+
+    The ``Resolver`` protocol is synchronous and connection-less (the waterfall calls ``resolve``
+    sync and writes the returned claims), but the adapter chain itself is pure/sync — only
+    ``get_source`` and ``insert_claim`` are async DB work. So M4.5's Firecrawl resolver, given the
+    seed manifest, calls this from inside ``resolve`` to run the M4.3 HTML→markdown adapter (it does
+    **not** hand-roll fetch/parse) and returns the materialized-but-unwritten claims to the
+    waterfall, which persists them and stamps the engine-owned ``run_id``/``source_key``. The
+    relationship is exactly ``run_pipeline = get_source + run_chain + (persist)`` — one chain, one
+    materialize, no duplication (conventions §2 DRY). ``run_id``/``research_mode`` may be the
+    resolver's placeholders; the waterfall overwrites them (adaptation never owns run provenance).
+    """
+    source_key = manifest.source_key
     estimate = _estimate(manifest, ref)
     ctx = AdaptContext(
         source_key=source_key,
@@ -217,9 +289,6 @@ async def run_pipeline(
             entity=entity,
             realized_cost=realized_cost,
         )
-        if persist:
-            for claim in claims:
-                await insert_claim(conn, claim)
         # The realized cost lives on the fetch/adapt *stage* span (a child of this one), not here:
         # emitting it on both levels would double-count a span-tree SUM of cost_cents. The parent
         # carries only the cost ESTIMATE (set at open) + the outcome counters.
