@@ -80,10 +80,15 @@ class Secrets(BaseSettings):
     database_url: SecretStr | None = None
 
     # --- provider API keys (CLUE_<PROVIDER>_API_KEY) ---
+    # One field per credentialed source manifest's auth_ref: ``extra="ignore"`` silently drops any
+    # CLUE_* env var with no matching field, so a manifest auth_ref without a field here would never
+    # resolve (it would look unset even when set). The M4.4 ``test_every_seeded_auth_ref_resolves``
+    # drift guard enforces this 1:1 mapping.
     clay_api_key: SecretStr | None = None
     apollo_api_key: SecretStr | None = None
     zoominfo_api_key: SecretStr | None = None
     builtwith_api_key: SecretStr | None = None
+    duns_api_key: SecretStr | None = None
     exa_api_key: SecretStr | None = None
     parallel_api_key: SecretStr | None = None
     firecrawl_api_key: SecretStr | None = None
@@ -94,6 +99,21 @@ class Secrets(BaseSettings):
     # then runs in deterministic stub mode (no live call). Exa/Parallel above are tier-4 research
     # *resolvers* with their own keys — NOT gateway calls (conventions §2 carve-out).
     openrouter_api_key: SecretStr | None = None
+
+    def for_auth_ref(self, auth_ref: str) -> SecretStr | None:
+        """Resolve a ``source_manifest.auth_ref`` (a ``CLUE_*`` env-var *name*) to its secret value.
+
+        The **credential-reference resolver** (M0.2): an ``auth_ref`` stored on a source manifest is
+        a *reference* (the env-var name), never the secret itself (the no-secret-in-the-table
+        invariant, M4.2). A resolver/adapter calls this at *call time* to obtain the live key. The
+        ``CLUE_`` env-prefix is stripped and the remainder lower-cased to find the matching field
+        (``CLUE_CLAY_API_KEY`` → :attr:`clay_api_key`). Returns ``None`` when the referenced key is
+        unset (normal in dev/CI with no live integration) or when ``auth_ref`` names no field —
+        the caller raises a clear "no credential" error rather than calling a provider with no key.
+        One place owns the name→field mapping so resolvers never re-implement it (conventions §2).
+        """
+        value = getattr(self, auth_ref.lower().removeprefix("clue_"), None)
+        return value if isinstance(value, SecretStr) else None
 
 
 def is_secret_name(name: str) -> bool:

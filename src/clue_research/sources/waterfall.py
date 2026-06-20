@@ -278,6 +278,13 @@ async def resolve_field(
                 )
                 refs.append(await insert_claim(conn, final))
                 step_cost += final.cost_cents
+            # A *paid* call that hard-misses (returns no claims) still cost its price — but with no
+            # claim to carry it, the per-claim sum would record 0 and the spend/per-source economics
+            # the source layer exists to measure would silently under-count. Fall back to the
+            # manifest's per-call cost for an empty result (substrate §4 / D7; M4.4 cost AC). A
+            # claim-bearing result already carries that cost on its first claim, so the sum stands.
+            if not claims:
+                step_cost = manifest.cost_cents
             best = first_confident_claim(claims, threshold)
             apply_attributes(
                 span, {ATTR_COST_CENTS: step_cost, "best_confidence": _max_confidence(claims)}
