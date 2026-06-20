@@ -123,6 +123,34 @@ describe("AssetBrowserPanel", () => {
     expect(placement.placement.alt_text).toBe("Acme logo");
   });
 
+  it("carries the selected node's placement forward when replacing an image", async () => {
+    mockFetch([libraryRecord("asset_logo", "Acme logo", "logo")]);
+    const received: Operation[][] = [];
+
+    render(
+      <AssetBrowserPanel
+        apiBaseUrl={API_BASE}
+        selectedNodeId="node_hero_image"
+        selectedNodePlacement={{ fit: "cover", focal_point: { x: 0.3, y: 0.7 }, alt_text: "Existing hero" }}
+        onOperations={(operations) => received.push(operations)}
+      />
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId("asset-asset_logo")).toBeTruthy();
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Place" }));
+
+    const placement = received[0][1];
+    if (placement.kind !== "place_asset_in_node") {
+      throw new Error("expected place_asset_in_node");
+    }
+    // Replacing swaps the asset but preserves fit + focal (not reset to {}).
+    expect(placement.placement.fit).toBe("cover");
+    expect(placement.placement.focal_point).toEqual({ x: 0.3, y: 0.7 });
+    expect(placement.placement.alt_text).toBe("Existing hero");
+  });
+
   it("disables placement without a selected node", async () => {
     mockFetch([libraryRecord("asset_logo", "Acme logo", "logo")]);
 

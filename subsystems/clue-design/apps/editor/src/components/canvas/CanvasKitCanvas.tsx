@@ -27,7 +27,7 @@ import { nodeDescriptor, pageDescriptor, type ParentComputedOrigin } from "@/eng
 import { loadCanvasKit } from "@/engine/canvaskit/loadCanvasKit";
 import { skiaMeasurements } from "@/engine/canvaskit/skiaMeasurements";
 import type { Box } from "@/engine/transformerMath";
-import { updateTextNode } from "@/engine/operations";
+import { nodePatch, set, updateTextNode } from "@/engine/operations";
 import {
   clampWorkspacePanToKeepVisible,
   clampWorkspaceZoom,
@@ -274,6 +274,29 @@ export function CanvasKitCanvas({
     const d = nodeDescriptor(scene, node, page);
     return { box: { x: d.x, y: d.y, width: d.width, height: d.height }, rotation: d.rotation, nodeId: selectedNodeId };
   }, [scene, page, selectedNodeId, preview]);
+
+  // Step 5 (E0.2): a draggable focal-point dot for the selected image node.
+  const focalPoint = useMemo(() => {
+    if (!selectionBox) return null;
+    const node = getNode(scene, selectionBox.nodeId);
+    if (!node || node.kind.kind !== "image") return null;
+    return node.asset_placement?.focal_point ?? { x: 0.5, y: 0.5 };
+  }, [scene, selectionBox]);
+
+  const commitFocalPoint = useCallback(
+    (focal: { x: number; y: number }) => {
+      if (!selectionBox) return;
+      const node = getNode(scene, selectionBox.nodeId);
+      if (!node || node.kind.kind !== "image") return;
+      const placement = {
+        ...(node.asset_placement ?? {}),
+        fit: node.asset_placement?.fit ?? "cover",
+        focal_point: focal
+      };
+      onOperation({ kind: "update_node", node_id: node.id, patch: nodePatch({ asset_placement: set(placement) }) });
+    },
+    [scene, selectionBox, onOperation]
+  );
 
   const chromeModel = useMemo(
     () =>
@@ -729,6 +752,8 @@ export function CanvasKitCanvas({
           disabledReason={editingNodeId ? null : chromeModel.disabledReason}
           slotKeys={chromeModel.slotKeys}
           diagnosticCounts={chromeModel.diagnosticCounts}
+          focal={editingNodeId ? null : focalPoint}
+          onFocalChange={commitFocalPoint}
         />
         {editing ? (
           <TextEditOverlay

@@ -52,6 +52,7 @@ import { normalizePageSize } from "@/engine/pageGeometry";
 import { flattenPageNodeIds, isNodeDirectGeometryEditable, isNodeLayoutManaged, nodeDisplayName } from "@/engine/sceneQueries";
 import { deriveSelectionChromeModel, type SelectionChromeModel } from "@/engine/selectionChrome";
 import { SlotInspector, SlotOverview } from "./SlotInspector";
+import { ImageInspectorSection } from "./ImageInspectorSection";
 
 interface InspectorPanelProps {
   scene: Scene;
@@ -61,6 +62,7 @@ interface InspectorPanelProps {
   brandTokens?: BrandTokenCatalog | null;
   diagnostics?: Diagnostic[];
   renderDiagnostics?: Diagnostic[];
+  apiBaseUrl?: string;
   onOperation: (operation: Operation) => void;
   onOperations?: (operations: Operation[]) => void;
   onSelectSubject?: (subject: DiagnosticSubject) => void;
@@ -74,10 +76,13 @@ export function InspectorPanel({
   brandTokens,
   diagnostics = [],
   renderDiagnostics = [],
+  apiBaseUrl,
   onOperation,
   onOperations,
   onSelectSubject
 }: InspectorPanelProps) {
+  const emitOperations =
+    onOperations ?? ((operations: Operation[]) => operations.forEach(onOperation));
   if (!selectedNode) {
     const pageDiagnostics = activePage
       ? inspectorDiagnosticsForPage(scene, activePage.id, [...diagnostics, ...renderDiagnostics])
@@ -304,6 +309,16 @@ export function InspectorPanel({
             : `Dimensions use the active page unit. Non-fixed dimensions currently show as ${dimensionToNumber(selectedNode.size.width)}.`}
         </p>
       </section>
+
+      {selectedNode.kind.kind === "image" ? (
+        <ImageInspectorSection
+          node={selectedNode}
+          asset={scene.assets[selectedNode.kind.asset_id] ?? null}
+          apiBaseUrl={apiBaseUrl ?? "http://localhost:8000"}
+          disabled={selectedNode.locked}
+          onOperations={emitOperations}
+        />
+      ) : null}
 
       <section className="inspector-section">
         <div className="section-heading">Sizing</div>

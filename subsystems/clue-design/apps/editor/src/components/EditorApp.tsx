@@ -1357,6 +1357,7 @@ export default function EditorApp({
                 brandTokens={effectiveBrandKit?.tokens ?? null}
                 diagnostics={diagnostics}
                 renderDiagnostics={renderDiagnostics}
+                apiBaseUrl={process.env.NEXT_PUBLIC_LUMEN_API_BASE_URL ?? "http://localhost:8000"}
                 onOperation={applyOperation}
                 onOperations={applyOperations}
                 onSelectSubject={selectDiagnosticSubject}
@@ -1389,6 +1390,7 @@ export default function EditorApp({
               <AssetBrowserPanel
                 apiBaseUrl={process.env.NEXT_PUBLIC_LUMEN_API_BASE_URL ?? "http://localhost:8000"}
                 selectedNodeId={selectedNodeId}
+                selectedNodePlacement={selectedNode?.asset_placement ?? null}
                 onOperations={applyOperations}
               />
               <WorstCasePreviewPanel
