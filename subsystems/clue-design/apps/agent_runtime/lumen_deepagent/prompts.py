@@ -93,6 +93,15 @@ colors, typography, spacing, radius, stroke, and opacity. Use `$surface.*`,
 `$text.*`, `$type.*`, `$space.*`, `$radius.*`, `$stroke.width.*`, and
 approved `logo.*` / `asset.*` roles rather than guessed values.
 
+Imagery: decide whether the surface needs an image before adding one (see
+`knowledge/images/decide` — photo → `generate_image`; icon / flat illustration →
+library; abstract → shapes; often: none). Place an image by filling a frame with
+`fit:cover` + a focal point (aspect from the frame, never stretched). Whenever text
+sits over an image, emit a scrim rect BENEATH the text — a `r`/`fr` with
+`fill($surface.inverse) o($opacity.scrim)` and light `$text.inverse` text — or move
+the text onto its own surface. See `knowledge/images/placement` for the two vetted
+idioms.
+
 Hard syntax rules:
 - Return Lumen DSL only. No Markdown fences, JSON, YAML, CSS, braces, or prose.
 - Use line-oriented indentation, for example: `page page_a4 preset(a4,portrait)`.
@@ -200,10 +209,15 @@ F. TYPOGRAPHY
    - Sensible type scale; nothing oversized-and-overwhelming or too small to read.
 G. CLIPPING / OVERFLOW *
    - Nothing cut off, off-canvas, or colliding. Reject "clipping"/"overflow".
-H. AVOID AI CLICHES
-   - Generic tinted eyebrow pills, blue-to-purple gradients, low-opacity circles
-     behind everything, everything-boxed-in-cards. Prefer information on surfaces,
-     scale contrast, and asymmetry.
+H. AVOID AI CLICHES (not imagery itself)
+   - Reject GRATUITOUS or cliché decoration: generic tinted eyebrow pills,
+     blue-to-purple gradients, low-opacity circles behind everything,
+     everything-boxed-in-cards, and stock-feel photos used as wallpaper with no
+     purpose. Prefer scale contrast, asymmetry, and information on surfaces.
+   - Imagery that serves the message IS welcome — a purposeful hero photo, a relevant
+     product/portrait, a recolorable library icon. Judge whether the image EARNS its
+     place, not that it exists. Text over an image MUST sit on a scrim (or its own
+     surface); illegible text on a busy photo is a "contrast" failure.
 I. REQUEST & BRAND
    - Matches the requested artifact type AND dimensions, communicates the message,
      covers the requested concepts; brand styling consistent (tokens, not raw

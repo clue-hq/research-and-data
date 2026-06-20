@@ -21,7 +21,14 @@ if load_dotenv is not None:
 
 from lumen_deepagent.config import AgentRuntimeConfig
 from lumen_deepagent.eval_traces import summarize_trace_dir
-from lumen_deepagent.knowledge import read_knowledge, read_task_knowledge
+from lumen_deepagent.knowledge import (
+    IMAGES_DECIDE_PATH,
+    IMAGES_PLACEMENT_PATH,
+    IMAGES_PROMPTS_PATH,
+    mandatory_task_paths,
+    read_knowledge,
+    read_task_knowledge,
+)
 from lumen_deepagent.loop import (
     HeuristicAgentDirector,
     LumenQualityLoop,
@@ -922,6 +929,39 @@ def test_block_catalog_is_pinned_and_delivered_full():
         assert by_path[rel].excerpt == on_disk, (
             f"block doc {name} was windowed/truncated, not delivered in full"
         )
+
+
+def test_images_decide_is_pinned_and_delivered_full():
+    # Step 4 (A0.1): the imagery DECIDE guardrail must be pinned for any authoring
+    # task AND delivered in FULL — the author always decides whether a surface needs
+    # imagery (and which mechanism) before composing.
+    repo_root = Path(__file__).resolve().parents[3]
+
+    snippets = read_task_knowledge(
+        repo_root,
+        "Create a patient appointment card with a clear headline and a Book a Demo button",
+    )
+    by_path = {snippet.path: snippet for snippet in snippets}
+
+    assert IMAGES_DECIDE_PATH in by_path, "images/decide not pinned for authoring"
+    on_disk = (repo_root / IMAGES_DECIDE_PATH).read_text(encoding="utf-8")
+    assert by_path[IMAGES_DECIDE_PATH].excerpt == on_disk, (
+        "images/decide was windowed/truncated, not delivered in full"
+    )
+
+
+def test_imagery_prompt_and_placement_docs_pin_by_relevance():
+    # decide is always pinned (cheap guardrail); the prompt-craft + placement/scrim
+    # docs pin only for image-bearing tasks, so a pure-typographic card is not bloated.
+    generic = mandatory_task_paths("a patient appointment card with a headline and a button")
+    assert IMAGES_DECIDE_PATH in generic
+    assert IMAGES_PROMPTS_PATH not in generic
+    assert IMAGES_PLACEMENT_PATH not in generic
+
+    imagery = mandatory_task_paths("a social ad with a hero photo and headline overlay")
+    assert IMAGES_DECIDE_PATH in imagery
+    assert IMAGES_PROMPTS_PATH in imagery
+    assert IMAGES_PLACEMENT_PATH in imagery
 
 
 def test_artboard_fixture_prompts_cover_required_surfaces():

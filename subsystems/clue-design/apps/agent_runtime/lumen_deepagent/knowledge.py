@@ -22,6 +22,9 @@ PRIMARY_KNOWLEDGE_PATHS = [
     f"{KNOWLEDGE_DOCS_ROOT}/knowledge/lumen-dsl/directives.md",
     f"{KNOWLEDGE_DOCS_ROOT}/knowledge/lumen-dsl/diagnostics.md",
     f"{KNOWLEDGE_DOCS_ROOT}/knowledge/design/foundations.md",
+    f"{KNOWLEDGE_DOCS_ROOT}/knowledge/images/decide.md",
+    f"{KNOWLEDGE_DOCS_ROOT}/knowledge/images/prompts.md",
+    f"{KNOWLEDGE_DOCS_ROOT}/knowledge/images/placement.md",
     f"{KNOWLEDGE_DOCS_ROOT}/knowledge/design/artboard-frame-authoring.md",
     f"{KNOWLEDGE_DOCS_ROOT}/knowledge/design/layout-recipes.md",
     f"{KNOWLEDGE_DOCS_ROOT}/knowledge/design/typography-and-composition.md",
@@ -68,6 +71,16 @@ TEXT_PATH = f"{KNOWLEDGE_DOCS_ROOT}/knowledge/lumen-dsl/text.md"
 # in full so the priors arrive intact, not windowed to a half-rule.
 FOUNDATIONS_PATH = f"{KNOWLEDGE_DOCS_ROOT}/knowledge/design/foundations.md"
 
+# Imagery knowledge. `decide` is the cheap guardrail (generate only what you can't
+# build) and is pinned for EVERY task so the author always considers whether imagery
+# is warranted. `prompts` (5-component prompt craft) and `placement` (cover/focal +
+# the text-over-image scrim rule) are pinned only when the task is image-bearing, so
+# they don't bloat the context for a pure-typographic card. All three are delivered
+# in full when present — a windowed prompt template or half a scrim example misleads.
+IMAGES_DECIDE_PATH = f"{KNOWLEDGE_DOCS_ROOT}/knowledge/images/decide.md"
+IMAGES_PROMPTS_PATH = f"{KNOWLEDGE_DOCS_ROOT}/knowledge/images/prompts.md"
+IMAGES_PLACEMENT_PATH = f"{KNOWLEDGE_DOCS_ROOT}/knowledge/images/placement.md"
+
 # The vetted block catalog: pre-proportioned, compile+preflight-validated blocks
 # the author ASSEMBLES (README index + full-artifact patterns + component blocks).
 # Pinned for every design task so the author composes vetted blocks instead of
@@ -84,7 +97,35 @@ BLOCK_CATALOG_PATHS = [
 # Docs delivered to the author IN FULL (not windowed to a best_excerpt). The block
 # examples and the grammar/text references must arrive intact — a 1600-char window
 # slices a full page+artboard+block example in half and teaches broken syntax.
-FULL_DELIVERY_PATHS = {GRAMMAR_PATH, TEXT_PATH, FOUNDATIONS_PATH, *BLOCK_CATALOG_PATHS}
+FULL_DELIVERY_PATHS = {
+    GRAMMAR_PATH,
+    TEXT_PATH,
+    FOUNDATIONS_PATH,
+    IMAGES_DECIDE_PATH,
+    IMAGES_PROMPTS_PATH,
+    IMAGES_PLACEMENT_PATH,
+    *BLOCK_CATALOG_PATHS,
+}
+# Query terms that mark an image-bearing task; when present, the imagery prompt-craft
+# and placement docs are force-pinned alongside the always-pinned decide guardrail.
+IMAGERY_TERMS = {
+    "image",
+    "images",
+    "imagery",
+    "photo",
+    "photograph",
+    "photography",
+    "picture",
+    "portrait",
+    "hero",
+    "background",
+    "illustration",
+    "illustrations",
+    "texture",
+    "banner",
+    "visual",
+    "product shot",
+}
 LAYOUT_CLUSTER_TERMS = {
     "artboard",
     "background",
@@ -194,12 +235,20 @@ def mandatory_task_paths(query: str) -> list[str]:
         GRAMMAR_PATH,
         TEXT_PATH,
         FOUNDATIONS_PATH,
+        # The imagery guardrail is cheap and always relevant: the author must decide
+        # whether a surface needs an image (and route icon/shape/none correctly)
+        # before composing — so it is pinned for every task.
+        IMAGES_DECIDE_PATH,
         ARTBOARD_AUTHORING_PATH,
         *BLOCK_CATALOG_PATHS,
     ]
     terms = set(re.split(r"[^a-z0-9_.$-]+", query.lower()))
     if terms & LAYOUT_CLUSTER_TERMS:
         paths.append(LAYOUT_CLUSTER_REPAIR_PATH)
+    # Pin the prompt-craft + placement/scrim docs only for image-bearing tasks.
+    if terms & IMAGERY_TERMS:
+        paths.append(IMAGES_PROMPTS_PATH)
+        paths.append(IMAGES_PLACEMENT_PATH)
     return paths
 
 

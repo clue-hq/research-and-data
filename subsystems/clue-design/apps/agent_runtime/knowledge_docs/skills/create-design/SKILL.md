@@ -16,9 +16,11 @@ brand-aligned artifact. This is the *first* pass only — fixing diagnostics is
    + `knowledge/design/foundations` (the taste rubric — one dominant element,
    hero-size-per-surface, whitespace-as-margin, anti-cliché)
    + `knowledge/design/artboard-frame-authoring` + the **vetted block catalog**
-   (`knowledge/design/blocks/*` — pinned automatically); add `skills/brand-and-tokens`
-   + the design-systems files when a Brand Kit is in play;
-   `skills/effects` for shadows/special strokes/gradients.
+   (`knowledge/design/blocks/*` — pinned automatically)
+   + `knowledge/images/decide` (whether the surface needs an image at all, and which
+   mechanism); add `skills/brand-and-tokens` + the design-systems files when a Brand
+   Kit is in play; `knowledge/images/prompts` + `knowledge/images/placement` when the
+   design uses imagery; `skills/effects` for shadows/special strokes/gradients.
 2. **Pin the surface.** Match the requested artifact exactly:
    `page story size(1080,1920,px)` for a story, `preset(a4,portrait)` for a
    one-pager. These commands normalize to canonical `pt` artboard layout bounds:
@@ -87,6 +89,11 @@ brand-aligned artifact. This is the *first* pass only — fixing diagnostics is
   For export-safe pages, put the background on a clipped root `artboard` frame
   with `fill(...)`. Do not put `background(...)` on a `page ...` creation line,
   and do not draw a loose oversized `bg` rectangle.
+- **Imagery + scrim.** Only add an image if the surface needs one (`knowledge/images/decide`).
+  Place it by filling a frame with `fit:cover` + a focal point (aspect from the frame,
+  never stretched). When text sits over an image, emit a scrim BENEATH the text — a
+  `r`/`fr` with `fill($surface.inverse) o($opacity.scrim)` and light `$text.inverse`
+  text — or move the text onto its own surface. See `knowledge/images/placement`.
 - **Shadows/strokes/gradients**: keep them tasteful and tokenized; see
   `skills/effects`.
 - **Mark ABM slots** on every element a campaign would personalize:
