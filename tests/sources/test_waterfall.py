@@ -238,6 +238,7 @@ def test_written_claims_are_unverified_with_correct_provenance() -> None:
             # confidence-stop is a pre-spend heuristic, NOT a verdict (M9 owns 'verified').
             assert claim.verification_status is VerificationStatus.UNVERIFIED
             assert claim.source_tier == 1
+            assert claim.source_key == "t1"  # the producing source, stamped by the engine
             assert claim.research_mode is _MODE  # stamped by the engine from the run mode
             assert claim.run_id == run_id  # stamped by the engine
             assert claim.evidence_span == "from the 10-K"  # resolver's span preserved
@@ -478,5 +479,101 @@ def test_contact_claim_identity_binding_from_manifest() -> None:
             assert len(written) == 1
             # the manifest's binding strength is authoritative — the engine stamped STRONG.
             assert written[0].identity_binding is IdentityBinding.STRONG
+
+    run_async(_run())
+
+
+# --- review regressions -----------------------------------------------------
+
+
+def test_same_tier_retry_attributes_per_source() -> None:
+    # Two sources at the SAME tier (apollo misses, clay hits): on retry, idempotency keyed on
+    # source_key (not tier) must re-attribute each step to its own source — not credit clay's claim
+    # to apollo. Guards the per-source yield substrate.
+    async def _run() -> None:
+        async with rollback_conn() as conn:
+            await _register(conn, "apollo", tier=1, cost=Decimal(3))
+            await _register(conn, "clay", tier=1, cost=Decimal(5))
+            bind_resolver("apollo", _Fake([]))  # miss
+            bind_resolver("clay", _Fake([_claim(100, tier=1, confidence=_HI, cost=Decimal(5))]))
+            entity, run_id, field = _entity(), new_run_id(), _field(("apollo", "clay"))
+
+            first = await resolve_field(conn, entity, field, mode=_MODE, run_id=run_id)
+            second = await resolve_field(conn, entity, field, mode=_MODE, run_id=run_id)
+
+            for result in (first, second):
+                by_source = {s.source_key: s for s in result.per_tier}
+                assert by_source["apollo"].n_claims == 0  # apollo genuinely produced nothing
+                assert not by_source["apollo"].confident
+                assert by_source["clay"].confident  # clay's confident claim stays clay's
+                assert by_source["clay"].n_claims == 1
+            assert first.claim_refs == second.claim_refs  # no double-write on retry
+            written = await claims_for(
+                conn, entity.entity_id, "core.employee_count", scope=ALL_TENANTS
+            )
+            assert len(written) == 1 and written[0].source_key == "clay"
+
+    run_async(_run())
+
+
+def test_idempotent_reuse_not_blocked_by_tightened_budget() -> None:
+    # A reused step spends nothing, so a retry with a budget too small to *re-run* it must still
+    # reuse the persisted claim (idempotency runs before the budget gate).
+    async def _run() -> None:
+        async with rollback_conn() as conn:
+            await _register(conn, "t1", tier=1, cost=Decimal(5))
+            bind_resolver("t1", _Fake([_claim(100, tier=1, confidence=_HI, cost=Decimal(5))]))
+            entity, run_id, field = _entity(), new_run_id(), _field(("t1",))
+            first = await resolve_field(conn, entity, field, mode=_MODE, run_id=run_id)
+            # retry with a budget smaller than the step's estimated cost — reuse must NOT be gated.
+            second = await resolve_field(
+                conn, entity, field, mode=_MODE, run_id=run_id, budget_envelope=Decimal(1)
+            )
+            assert second.stop_reason is StopReason.CONFIDENT_HIT
+            assert second.claim_refs == first.claim_refs
+            assert second.per_tier[0].outcome is StepOutcome.IDEMPOTENT_SKIP
+
+    run_async(_run())
+
+
+def test_all_inactive_plan_is_no_resolver() -> None:
+    async def _run() -> None:
+        async with rollback_conn() as conn:
+            await _register(conn, "t1", tier=1, active=False)
+            await _register(conn, "t2", tier=2, active=False)
+            result = await resolve_field(
+                conn, _entity(), _field(("t1", "t2")), mode=_MODE, run_id=new_run_id()
+            )
+            assert result.stop_reason is StopReason.NO_RESOLVER  # nothing could run
+            assert result.claim_refs == ()
+
+    run_async(_run())
+
+
+def test_empty_tier_plan_is_no_resolver() -> None:
+    async def _run() -> None:
+        async with rollback_conn() as conn:
+            result = await resolve_field(
+                conn, _entity(), _field(()), mode=_MODE, run_id=new_run_id()
+            )
+            assert result.stop_reason is StopReason.NO_RESOLVER
+            assert result.claim_refs == () and result.per_tier == ()
+
+    run_async(_run())
+
+
+def test_resolver_tier_mismatch_is_rejected() -> None:
+    # A resolver returning a claim whose tier contradicts its manifest tier corrupts the merge
+    # trust order — the engine fails loud rather than writing it.
+    async def _run() -> None:
+        async with rollback_conn() as conn:
+            await _register(conn, "t1", tier=1)
+            bind_resolver(
+                "t1", _Fake([_claim(100, tier=2, confidence=_HI)])
+            )  # tier 2 vs manifest 1
+            with pytest.raises(ValueError, match="must match the manifest"):
+                await resolve_field(
+                    conn, _entity(), _field(("t1",)), mode=_MODE, run_id=new_run_id()
+                )
 
     run_async(_run())
