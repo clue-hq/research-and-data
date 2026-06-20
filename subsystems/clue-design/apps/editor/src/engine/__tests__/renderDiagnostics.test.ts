@@ -56,7 +56,6 @@ describe("editor render diagnostics", () => {
       expect.arrayContaining([
         "EDITOR_RENDER_GRADIENT_APPROXIMATION",
         "EDITOR_RENDER_TOKEN_FALLBACK",
-        "EDITOR_RENDER_IMAGE_PLACEHOLDER",
         "EDITOR_RENDER_TEXT_CLAMP_APPROXIMATION",
         "EDITOR_RENDER_TEXT_SHAPING_APPROXIMATION"
       ])
@@ -65,9 +64,9 @@ describe("editor render diagnostics", () => {
     expect(diagnostics.some((diagnostic) => diagnostic.message.includes("line height uses unresolved token"))).toBe(true);
     expect(diagnostics.some((diagnostic) => diagnostic.message.includes("letter spacing uses unresolved token"))).toBe(true);
     expect(diagnostics.some((diagnostic) => diagnostic.message.includes("max_lines(2)"))).toBe(true);
-    expect(diagnostics.find((diagnostic) => diagnostic.code === "EDITOR_RENDER_IMAGE_PLACEHOLDER")?.severity).toBe(
-      "advice"
-    );
+    // Step 2: a ready image asset now renders real pixels, so it no longer
+    // emits the placeholder advisory.
+    expect(diagnostics.some((diagnostic) => diagnostic.code === "EDITOR_RENDER_IMAGE_PLACEHOLDER")).toBe(false);
   });
 
   it("does not warn about token dimensions after computed geometry is available", () => {

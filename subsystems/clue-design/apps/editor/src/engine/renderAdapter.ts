@@ -4,6 +4,7 @@ import type {
   Color,
   Effect,
   Fill,
+  ImageFitMode,
   Node,
   Page,
   Paint,
@@ -138,6 +139,12 @@ export interface RenderNodeDescriptor {
     assetLabel: string | null;
     assetKind: AssetKind | null;
     assetStatus: AssetStatus | null;
+    /** Placement fit; null falls back to the exporter default (contain/meet). */
+    fit: ImageFitMode | null;
+    /** Normalized 0..1 focal point for cover/crop windows; null = centered. */
+    focalPoint: { x: number; y: number } | null;
+    /** Asset's natural width/height ratio (for cover/contain/focal math). */
+    naturalAspectRatio: number | null;
   };
 }
 
@@ -231,13 +238,27 @@ export function nodeDescriptor(
 
   if (node.kind.kind === "image") {
     const asset = scene.assets[node.kind.asset_id] ?? null;
+    const placement = node.asset_placement ?? null;
+    const raster = asset?.raster ?? null;
+    const ratioCandidate =
+      raster?.aspect_ratio ??
+      (raster && raster.pixel_height > 0 ? raster.pixel_width / raster.pixel_height : null);
+    const naturalAspectRatio =
+      typeof ratioCandidate === "number" && Number.isFinite(ratioCandidate) && ratioCandidate > 0
+        ? ratioCandidate
+        : null;
     descriptor.image = {
       assetId: node.kind.asset_id,
       sourceAssetId: node.source_asset_id ?? null,
       alt: node.kind.alt ?? null,
       assetLabel: asset?.label ?? null,
       assetKind: asset?.kind ?? null,
-      assetStatus: asset?.status ?? null
+      assetStatus: asset?.status ?? null,
+      fit: placement?.fit ?? null,
+      focalPoint: placement?.focal_point
+        ? { x: placement.focal_point.x, y: placement.focal_point.y }
+        : null,
+      naturalAspectRatio
     };
   }
 

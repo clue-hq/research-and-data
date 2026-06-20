@@ -317,14 +317,15 @@ export function wasmCoreFlagEnabled(): boolean {
 }
 
 /**
- * Wave 3 C5: render the editor canvas with CanvasKit instead of Konva. Off by
- * default — Konva stays the fallback until render parity + interaction
- * conformance hold. Parallel to the WASM-core flag (CanvasKit also needs the
- * in-browser engine for hit-testing).
+ * Wave 3 C5 / Step 2: render the editor canvas with CanvasKit instead of Konva.
+ * ON by default — CanvasKit is the Skia-parity renderer and the only path that
+ * draws real image pixels (E0.1); the legacy Konva canvas is opt-out via
+ * NEXT_PUBLIC_LUMEN_CANVASKIT=0. Parallel to the WASM-core flag (CanvasKit also
+ * needs the in-browser engine for hit-testing).
  */
 export function canvasKitFlagEnabled(): boolean {
   const flag = process.env.NEXT_PUBLIC_LUMEN_CANVASKIT;
-  return flag === "1" || flag === "true";
+  return flag !== "0" && flag !== "false";
 }
 
 export interface WasmModuleLoadOptions {

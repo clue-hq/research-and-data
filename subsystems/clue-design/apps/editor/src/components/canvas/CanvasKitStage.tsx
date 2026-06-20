@@ -6,7 +6,11 @@ import type { RenderPageDescriptor } from "@/engine/renderAdapter";
 import type { Rect } from "@/engine/workspaceLayout";
 import type { WorkspaceViewport } from "@/engine/workspaceViewport";
 import { drawDescriptorTree, parseColor, type DrawNode } from "@/engine/canvaskit/drawDescriptors";
+import { CanvasKitImageCache, type CanvasKitImageSource } from "@/engine/canvaskit/imageCache";
 import { loadCanvasKit } from "@/engine/canvaskit/loadCanvasKit";
+import { assetBytesUrl } from "@/engine/assetLibrary";
+
+const API_BASE_URL = process.env.NEXT_PUBLIC_LUMEN_API_BASE_URL ?? "http://localhost:8000";
 
 /**
  * Wave 3 C2: the imperative CanvasKit render surface. Replaces react-konva's
@@ -39,6 +43,7 @@ export function CanvasKitStage({ artboards, viewport }: CanvasKitStageProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const ckRef = useRef<CanvasKit | null>(null);
   const fontRef = useRef<TypefaceFontProvider | null>(null);
+  const imagesRef = useRef<CanvasKitImageCache | null>(null);
   const surfaceRef = useRef<Surface | null>(null);
   const dirtyRef = useRef(false);
   const rafRef = useRef(0);
@@ -63,7 +68,7 @@ export function CanvasKitStage({ artboards, viewport }: CanvasKitStageProps) {
     canvas.translate(current.viewport.pan.x, current.viewport.pan.y);
     canvas.scale(current.viewport.zoom, current.viewport.zoom);
     for (const artboard of current.artboards) {
-      drawArtboard(ck, canvas, artboard, fontRef.current);
+      drawArtboard(ck, canvas, artboard, fontRef.current, imagesRef.current);
     }
     canvas.restore();
     surface.flush();
@@ -104,6 +109,12 @@ export function CanvasKitStage({ artboards, viewport }: CanvasKitStageProps) {
       }
       ckRef.current = bundle.ck;
       fontRef.current = bundle.fontProvider;
+      // Bridges async asset bytes into the synchronous draw loop: a decode
+      // landing re-renders the frame with real image pixels (Step 2 / E0.1).
+      imagesRef.current = new CanvasKitImageCache(bundle.ck, {
+        resolveUrl: (assetId) => assetBytesUrl(API_BASE_URL, assetId),
+        onLoad: invalidate
+      });
       makeSurface(bundle.ck);
     });
 
@@ -129,6 +140,8 @@ export function CanvasKitStage({ artboards, viewport }: CanvasKitStageProps) {
       }
       surfaceRef.current?.delete();
       surfaceRef.current = null;
+      imagesRef.current?.dispose();
+      imagesRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -143,7 +156,8 @@ function drawArtboard(
   ck: CanvasKit,
   canvas: import("canvaskit-wasm").Canvas,
   artboard: CanvasKitArtboard,
-  fontProvider: TypefaceFontProvider | null
+  fontProvider: TypefaceFontProvider | null,
+  images: CanvasKitImageSource | null
 ) {
   const rect = artboard.workspaceRect;
   const shellPaint = paint(ck, "#151920", ck.PaintStyle.Fill);
@@ -153,7 +167,7 @@ function drawArtboard(
   canvas.save();
   canvas.translate(rect.x, rect.y);
   canvas.clipRect(ck.LTRBRect(0, 0, artboard.page.width, artboard.page.height), ck.ClipOp.Intersect, true);
-  drawDescriptorTree(ck, canvas, artboard.page, artboard.nodes, fontProvider);
+  drawDescriptorTree(ck, canvas, artboard.page, artboard.nodes, fontProvider, images);
   canvas.restore();
 
   const borderPaint = paint(ck, artboard.isActive ? "#58c4c8" : "#858f99", ck.PaintStyle.Stroke);
