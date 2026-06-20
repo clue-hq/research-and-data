@@ -33,7 +33,7 @@ def create_lumen_design_agent(
     agent = create_deep_agent(
         model=runtime_config.model,
         backend=backend,
-        skills=["apps/agent_runtime/skills"],
+        skills=["apps/agent_runtime/knowledge_docs/skills"],
         tools=[
             tools.load_knowledge,
             tools.compile_dsl_block,

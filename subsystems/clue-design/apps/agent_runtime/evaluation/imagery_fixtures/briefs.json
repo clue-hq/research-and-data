@@ -1,0 +1,146 @@
+{
+  "gtm_conf_poster_photo": {
+    "artifact": "event_poster_9x16",
+    "expected_decision": "photo",
+    "role": "full_bleed_hero_scrim",
+    "risks": [
+      "headline illegible where scrim thins over busy skyline",
+      "generic Golden-Gate postcard cliche"
+    ]
+  },
+  "gtm_conf_social_none": {
+    "artifact": "social_square_1x1",
+    "expected_decision": "none",
+    "role": "type_led",
+    "risks": [
+      "gratuitous photo shrinks date/CTA at thumbnail",
+      "image competes with headline (two focal points)"
+    ]
+  },
+  "gtm_conf_deck_band": {
+    "artifact": "deck_title_16x9",
+    "expected_decision": "photo",
+    "role": "image_band_clean_type",
+    "risks": [
+      "full-bleed image swallows the title",
+      "square image stretched into the 16:9 band, skyline distorted"
+    ]
+  },
+  "customer_story_linkedin_photo": {
+    "artifact": "linkedin_wide_1200x627",
+    "expected_decision": "photo",
+    "role": "image_band_type_panel",
+    "risks": [
+      "diverse-people-at-laptop stock cliche",
+      "faces cropped or distorted by the 1.9:1 frame"
+    ]
+  },
+  "testimonial_portrait_photo": {
+    "artifact": "portrait_card_4x5",
+    "expected_decision": "photo",
+    "role": "portrait_frame_pull_quote",
+    "risks": [
+      "portrait stretched to 4:5 (squashed face)",
+      "quote illegible if overlaid instead of on a clean plate"
+    ]
+  },
+  "product_feature_card_photo": {
+    "artifact": "product_card_1x1",
+    "expected_decision": "photo",
+    "role": "product_on_plate_centered",
+    "risks": [
+      "low-fidelity UI shot that looks fake",
+      "product competes with headline (both centered, no entry point)"
+    ]
+  },
+  "founders_dinner_poster_photo": {
+    "artifact": "event_poster_4x5",
+    "expected_decision": "photo",
+    "role": "full_bleed_hero_scrim",
+    "risks": [
+      "illegible RSVP/date over a busy dusk image",
+      "cliche rooftop-party stock undercutting 'exclusive'"
+    ]
+  },
+  "how_it_works_onepager_icons": {
+    "artifact": "a4_one_pager_icons",
+    "expected_decision": "icon",
+    "role": "icon_row_above_steps",
+    "risks": [
+      "mismatched icon set (inconsistent stroke weights/styles)",
+      "photo wrongly chosen where icons are correct"
+    ]
+  },
+  "platform_pillars_deck_icons": {
+    "artifact": "deck_slide_16x9",
+    "expected_decision": "icon",
+    "role": "icon_row_4up",
+    "risks": [
+      "icons fight the headline or are inconsistently sized",
+      "gratuitous background photo muddying contrast"
+    ]
+  },
+  "collab_feature_social_illustration": {
+    "artifact": "social_square_1x1",
+    "expected_decision": "icon",
+    "role": "spot_illustration_type_below",
+    "risks": [
+      "off-brand illustration palette (corporate-memphis default)",
+      "illustration too detailed, steals the focal point"
+    ]
+  },
+  "security_trust_linkedin_icons": {
+    "artifact": "linkedin_wide_1200x627",
+    "expected_decision": "icon",
+    "role": "icon_row_compliance_plate",
+    "risks": [
+      "hoodie-hacker / padlock-on-binary cliche if a photo is chosen",
+      "icon row cramped in the 627px height"
+    ]
+  },
+  "qbr_business_review_none": {
+    "artifact": "a4_one_pager_data",
+    "expected_decision": "none",
+    "role": "type_table_rules",
+    "risks": [
+      "gratuitous hero/banner eating the summary third",
+      "stock 'business meeting' photo adding zero info"
+    ]
+  },
+  "pipeline_data_slide_none": {
+    "artifact": "deck_data_16x9",
+    "expected_decision": "none",
+    "role": "chart_led_takeaway",
+    "risks": [
+      "background photo killing data legibility",
+      "decorative icon clutter competing with the numbers"
+    ]
+  },
+  "hiring_role_social_none": {
+    "artifact": "social_square_1x1",
+    "expected_decision": "none",
+    "role": "oversized_type_color_field",
+    "risks": [
+      "generic office/team stock ('every company')",
+      "weak hierarchy \u2014 role title vs Apply CTA fight"
+    ]
+  },
+  "pricing_packaging_onepager_none": {
+    "artifact": "a4_one_pager_data",
+    "expected_decision": "none",
+    "role": "comparison_table_accents",
+    "risks": [
+      "decorative header image compressing the table below the fold",
+      "inconsistent column alignment / weak tier differentiation"
+    ]
+  },
+  "big_stat_slide_none": {
+    "artifact": "deck_slide_16x9",
+    "expected_decision": "none",
+    "role": "giant_numeral",
+    "risks": [
+      "gratuitous background photo diluting the stat",
+      "stat undersized / poor negative-space balance"
+    ]
+  }
+}

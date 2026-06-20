@@ -48,5 +48,85 @@
     "id": "intentional_repair_trigger",
     "artifact": "repair_trigger",
     "prompt": "Create a compact 900x900px ad with a deliberately long headline and CTA. Use wrap_text, max_lines, and auto-layout so the repair loop can catch or fix clipping, overflow, and hierarchy problems."
+  },
+  {
+    "id": "gtm_conf_poster_photo",
+    "artifact": "event_poster_9x16",
+    "prompt": "Design a 1080x1920 event poster for RevMotion '26 \u2014 the GTM conference for AI-native go-to-market. One weekend in San Francisco, Sat-Sun September 12-13, in SoMa. Two days of operators rebuilding pipeline, forecasting, and outbound with AI agents. Speakers from 20+ AI-native GTM teams. Make it feel premium and operator-grade; include the name, tagline, date, city, and a Get your pass call to action."
+  },
+  {
+    "id": "gtm_conf_social_none",
+    "artifact": "social_square_1x1",
+    "prompt": "Design a 1080x1080 social announcement square: AI-native GTM, live in SF. RevMotion '26, September 12-13. It must stop the feed at thumbnail size and read instantly; include the event name, date, city, and a Save your seat call to action."
+  },
+  {
+    "id": "gtm_conf_deck_band",
+    "artifact": "deck_title_16x9",
+    "prompt": "Design a 1920x1080 deck title slide projected before doors open at RevMotion '26 \u2014 Rebuilding GTM for the AI-native era. Include the event name, tagline, date and city, and space for a host logo. It should read clearly from the back of a room."
+  },
+  {
+    "id": "customer_story_linkedin_photo",
+    "artifact": "linkedin_wide_1200x627",
+    "prompt": "Design a 1200x627 LinkedIn post: meet the team behind Atlas Health's claims-automation rollout, which cut adjudication time 60%. Drive readers to the customer story. Make it feel human and credible."
+  },
+  {
+    "id": "testimonial_portrait_photo",
+    "artifact": "portrait_card_4x5",
+    "prompt": "Design a 1080x1350 quote card for social and sales decks: 'Lumen replaced three vendors and a week of design ops.' \u2014 Priya N., VP Brand, Northwind. Feature the quote and attribution prominently."
+  },
+  {
+    "id": "product_feature_card_photo",
+    "artifact": "product_card_1x1",
+    "prompt": "Design a 1080x1080 product announcement: New \u2014 Lumen Brand Kits. Lock fonts, colors, and logo so every asset ships on-brand. Drive a See it in action click. Show the product in context."
+  },
+  {
+    "id": "founders_dinner_poster_photo",
+    "artifact": "event_poster_4x5",
+    "prompt": "Design a 1080x1350 invitation poster: Founders Dinner \u2014 an intimate evening for 30 climate-tech founders. Rooftop, downtown Austin. Thursday 7pm. By invitation only. Make it feel exclusive and warm; include date, time, venue, and an RSVP cue."
+  },
+  {
+    "id": "how_it_works_onepager_icons",
+    "artifact": "a4_one_pager_icons",
+    "prompt": "Design an A4 portrait one-pager enablement leave-behind: How Lumen works in 3 steps. 1) Brief it. 2) It composes on-brand. 3) You approve and export. Make each step scannable and equal in weight."
+  },
+  {
+    "id": "platform_pillars_deck_icons",
+    "artifact": "deck_slide_16x9",
+    "prompt": "Design a 1920x1080 capability overview slide: our platform in four pillars \u2014 Ingest, Reason, Compose, Govern. Give each pillar equal visual weight and a one-line descriptor."
+  },
+  {
+    "id": "collab_feature_social_illustration",
+    "artifact": "social_square_1x1",
+    "prompt": "Design a 1080x1080 feature-drop announcement: real-time collaboration. Comment, resolve, and version together. Make it friendly and modern; lead with a single clear visual idea and the feature name."
+  },
+  {
+    "id": "security_trust_linkedin_icons",
+    "artifact": "linkedin_wide_1200x627",
+    "prompt": "Design a 1200x627 LinkedIn trust post: Security you can audit. SOC 2 Type II, SSO, RBAC, and field-level encryption by default. Convey rigor and trust; surface the four guarantees clearly."
+  },
+  {
+    "id": "qbr_business_review_none",
+    "artifact": "a4_one_pager_data",
+    "prompt": "Design an A4 portrait Q3 Business Review one-pager for the Northwind account: revenue, NRR, expansion pipeline, and the three risks we're managing. For the QBR packet \u2014 clarity and scannability over decoration."
+  },
+  {
+    "id": "pipeline_data_slide_none",
+    "artifact": "deck_data_16x9",
+    "prompt": "Design a 1920x1080 data slide: pipeline coverage by stage, 4.2x coverage on an $18M target. Present the figures clearly with one supporting takeaway line."
+  },
+  {
+    "id": "hiring_role_social_none",
+    "artifact": "social_square_1x1",
+    "prompt": "Design a 1080x1080 hiring announcement: Staff Design Engineer, remote US, building the rendering engine behind Lumen. Drive applications. Make it bold and typographic."
+  },
+  {
+    "id": "pricing_packaging_onepager_none",
+    "artifact": "a4_one_pager_data",
+    "prompt": "Design an A4 portrait pricing and packaging one-pager: Starter, Growth, and Enterprise tiers with a feature comparison matrix and a short FAQ. A sales leave-behind \u2014 the table is the hero."
+  },
+  {
+    "id": "big_stat_slide_none",
+    "artifact": "deck_slide_16x9",
+    "prompt": "Design a 1920x1080 statement slide built around one number: 60% faster claims adjudication. Make the number unmissable with a single supporting line."
   }
 ]

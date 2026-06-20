@@ -4,6 +4,7 @@ import json
 import os
 import sys
 import types
+from collections import Counter
 from pathlib import Path
 
 import pytest
@@ -992,6 +993,102 @@ def test_artboard_fixture_prompts_cover_required_surfaces():
             "parent_overflow_cluster_repair",
         }
     )
+
+
+def test_imagery_fixture_briefs_cover_decisions_and_match_sidecar():
+    # Imagery-quality eval set: the 16 imagery briefs exist in fixture_prompts.json,
+    # the sidecar covers each with a valid decision, and ~a third are NONE-correct
+    # (the DECIDE guardrail — a good agent declines imagery on data/type surfaces).
+    repo_root = Path(__file__).resolve().parents[3]
+    base = repo_root / "apps/agent_runtime/evaluation"
+    fixtures = json.loads((base / "fixture_prompts.json").read_text(encoding="utf-8"))
+    by_id = {fixture["id"]: fixture for fixture in fixtures}
+    sidecar = json.loads((base / "imagery_fixtures" / "briefs.json").read_text(encoding="utf-8"))
+
+    assert len(sidecar) == 16
+    for brief_id, meta in sidecar.items():
+        assert brief_id in by_id, f"imagery brief {brief_id} missing from fixture_prompts.json"
+        assert meta["expected_decision"] in {"photo", "icon", "none"}
+        assert meta["role"] and meta["risks"]
+        # The prompt must NOT pre-decide the imagery for the agent (we test the DECIDE).
+        prompt = by_id[brief_id]["prompt"].lower()
+        assert "generate_image" not in prompt and "use a scrim" not in prompt
+
+    decisions = Counter(meta["expected_decision"] for meta in sidecar.values())
+    assert decisions["photo"] == 6 and decisions["icon"] == 4 and decisions["none"] == 6
+    # The same GTM/SF theme appears with three different correct answers.
+    assert {"gtm_conf_poster_photo", "gtm_conf_social_none", "gtm_conf_deck_band"} <= set(sidecar)
+    assert sidecar["gtm_conf_poster_photo"]["expected_decision"] == "photo"
+    assert sidecar["gtm_conf_social_none"]["expected_decision"] == "none"
+
+
+def _poster_scene(*, asset_model="google/gemini-3-pro-image", with_scrim=True, asset_status="ready"):
+    nodes = {
+        "img": {
+            "kind": {"kind": "image", "asset_id": "hero"},
+            "asset_placement": {"fit": "cover", "focal_point": {"x": 0.5, "y": 0.4}},
+            "computed": {"layout_bounds": {"x": 0, "y": 0, "width": 1080, "height": 1920}},
+        },
+        "headline": {
+            "kind": {"kind": "text"},
+            "computed": {"layout_bounds": {"x": 80, "y": 1400, "width": 920, "height": 300}},
+        },
+    }
+    if with_scrim:
+        nodes["scrim"] = {
+            "kind": {"kind": "rect"},
+            "opacity_token": "opacity.scrim",
+            "computed": {"layout_bounds": {"x": 0, "y": 1100, "width": 1080, "height": 820}},
+        }
+    return {
+        "pages": {"p": {"size": {"width": 1080, "height": 1920}}},
+        "assets": {
+            "hero": {
+                "status": asset_status,
+                "kind": "raster_image",
+                "source": {"kind": "generated", "model": asset_model},
+                "raster": {"pixel_width": 1080, "pixel_height": 1920},
+            }
+        },
+        "nodes": nodes,
+    }
+
+
+def test_imagery_checks_accept_a_clean_scrimmed_poster():
+    from lumen_deepagent.imagery_checks import score_scene
+
+    result = score_scene(_poster_scene(), expected_decision="photo")
+    assert result["accept"] is True
+    assert result["gate_failed"] is False
+    d = result["dimensions"]
+    assert d["placeholder_real"]["score"] == 3
+    assert d["decision"]["score"] == 3
+    assert d["legibility"]["score"] == 3
+    assert d["hero_count"]["score"] == 3
+
+
+def test_imagery_checks_gate_on_placeholder_text_over_image_and_gratuitous():
+    from lumen_deepagent.imagery_checks import score_scene
+
+    # A solid-color stub placeholder shipped as final → hard gate.
+    stub = score_scene(_poster_scene(asset_model="stub-image-v0"), expected_decision="photo")
+    assert stub["accept"] is False and stub["dimensions"]["placeholder_real"]["gate"] is True
+
+    # Text over a busy image with no covering scrim → legibility gate.
+    no_scrim = score_scene(_poster_scene(with_scrim=False), expected_decision="photo")
+    assert no_scrim["accept"] is False and no_scrim["dimensions"]["legibility"]["gate"] is True
+
+    # The DECIDE guardrail: a photo placed on a NONE-correct brief → decision gate.
+    gratuitous = score_scene(_poster_scene(), expected_decision="none")
+    assert gratuitous["accept"] is False and gratuitous["dimensions"]["decision"]["gate"] is True
+
+    # NONE-correct brief with a clean typographic design (no image) → accepts.
+    type_only = {"pages": {"p": {"size": {"width": 1080, "height": 1080}}},
+                 "assets": {},
+                 "nodes": {"h": {"kind": {"kind": "text"},
+                                 "computed": {"layout_bounds": {"x": 80, "y": 80, "width": 920, "height": 400}}}}}
+    clean = score_scene(type_only, expected_decision="none")
+    assert clean["accept"] is True and clean["dimensions"]["decision"]["score"] == 3
 
 
 def test_quality_loop_passes_knowledge_excerpts_to_author(tmp_path: Path, monkeypatch):

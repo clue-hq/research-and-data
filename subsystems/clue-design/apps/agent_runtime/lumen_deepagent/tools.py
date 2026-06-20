@@ -1493,7 +1493,7 @@ class LumenDesignTools:
             exact_feedback=exact_feedback,
             diagnostics=diagnostics,
             target=VisualTarget.model_validate(target_payload) if target_payload else None,
-            repair_class=RepairClass(repair_class) if repair_class else None,
+            repair_class=_coerce_repair_class(repair_class),
             cluster=(
                 LayoutClusterTarget.model_validate(cluster_payload)
                 if cluster_payload
@@ -2352,6 +2352,17 @@ def _resolution_for_aspect(box_width: float, box_height: float) -> tuple[int, in
 
 def _image_warning(code: str, message: str) -> JsonObject:
     return {"severity": "warning", "phase": "validation", "code": code, "message": message}
+
+
+def _coerce_repair_class(value: Optional[str]) -> Optional[RepairClass]:
+    """Tolerate an unknown/hallucinated repair_class from the model: an invalid
+    enum value becomes None (unclassified) rather than raising and crashing the run."""
+    if not value:
+        return None
+    try:
+        return RepairClass(value)
+    except ValueError:
+        return None
 
 
 def _as_diag_list(raw: Any) -> list[JsonObject]:
