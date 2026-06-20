@@ -51,17 +51,31 @@ def classify_reuse_scope(
 
 
 def stamp_reuse(
-    claim: Claim, *, tenant_id: str, policy: ReusePolicy = DEFAULT_REUSE_POLICY
+    claim: Claim, *, tenant_id: str | None, policy: ReusePolicy = DEFAULT_REUSE_POLICY
 ) -> Claim:
     """Return a copy of ``claim`` with its ``reuse_scope`` classified and ``tenant_id`` set
     accordingly — the helper every writer (resolver, scorer, synthesizer) calls before
     :func:`insert_claim`. A public-footprint claim drops the tenant (it amortizes across clients); a
-    tenant-private claim binds to ``tenant_id`` (which is therefore required for the private case).
-    """
+    tenant-private claim binds to ``tenant_id``.
+
+    ``tenant_id`` is optional so a caller that may produce either flavor (the M4.1 waterfall, which
+    stamps every written claim — locked decision #6) can pass its run tenant through verbatim. But a
+    claim that *classifies* as ``tenant_private`` (CRM-imported, scoring, resonance, contact /
+    personal) with **no** tenant supplied is a wiring error, not a public claim: stamping it public
+    would leak client-private data into the shared pool. We **fail loud** rather than silently relax
+    the scope — the boundary is fail-closed (substrate §2; the model/DB CHECK is the backstop, but a
+    clear error at the write site beats a CHECK violation)."""
     scope = classify_reuse_scope(
         claim.field_key, claim.extraction_method, claim.source_tier, policy
     )
     if scope is ReuseScope.TENANT_PRIVATE:
+        if tenant_id is None:
+            raise ValueError(
+                f"claim for field {claim.field_key!r} (extraction_method "
+                f"{claim.extraction_method.value!r}) classifies as tenant_private, but no "
+                "tenant_id was supplied to stamp_reuse; a client-private claim must bind to a "
+                "tenant — supply the run's tenant_id (never silently written public, substrate §2)"
+            )
         return claim.model_copy(update={"reuse_scope": scope, "tenant_id": tenant_id})
     return claim.model_copy(update={"reuse_scope": scope, "tenant_id": None})
 

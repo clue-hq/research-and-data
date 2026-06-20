@@ -22,7 +22,7 @@ provider re-implements HTTP, retry, or auth.
 from __future__ import annotations
 
 from clue_research.core import ResolverError, RetryableResolverError
-from clue_research.resolvers import apollo, builtwith, clay, registries, zoominfo
+from clue_research.resolvers import apollo, builtwith, clay, crm, firecrawl, registries, zoominfo
 from clue_research.resolvers.base import (
     DeterministicResolver,
     EnrichmentBackend,
@@ -30,6 +30,24 @@ from clue_research.resolvers.base import (
     build_claim,
     normalize_record,
     resolved_field,
+)
+from clue_research.resolvers.crm import (
+    CRM_RELATIONSHIP_FIELD,
+    CrmAccountRecord,
+    CRMConnector,
+    CrmContactRecord,
+    CrmRelationship,
+    CrmResolver,
+    CrmSeed,
+    lookalike_seeds,
+    register_crm_resolver,
+    resolve_crm_seeds,
+)
+from clue_research.resolvers.firecrawl import (
+    ScrapePolicy,
+    ScrapeResolver,
+    default_surfaces,
+    register_scrape_resolver,
 )
 from clue_research.resolvers.http import (
     CredentialError,
@@ -78,14 +96,32 @@ def register_deterministic_resolvers(*, accounts: AccountLookup | None = None) -
 
 
 __all__ = [
-    # registration entry point (binds all tier-1 resolvers to their source_keys)
-    "register_deterministic_resolvers",
+    # registration entry points (bind resolvers to their source_keys)
+    "register_deterministic_resolvers",  # M4.4 tier-1 deterministic providers
+    "register_crm_resolver",  # M4.5 CRM (tier-1, tenant-private)
+    "register_scrape_resolver",  # M4.5 Firecrawl official-site scrape (tier-2)
     # provider sub-packages (referenced by tier_plan source_keys; never branched on by name)
     "clay",
     "apollo",
     "zoominfo",
     "builtwith",
     "registries",
+    "crm",
+    "firecrawl",
+    # M4.5 CRM seam (the connector + records are config; nothing downstream knows the vendor)
+    "CRMConnector",
+    "CrmResolver",
+    "CrmAccountRecord",
+    "CrmContactRecord",
+    "CrmRelationship",
+    "CrmSeed",
+    "CRM_RELATIONSHIP_FIELD",
+    "resolve_crm_seeds",
+    "lookalike_seeds",
+    # M4.5 Firecrawl scrape seam
+    "ScrapeResolver",
+    "ScrapePolicy",
+    "default_surfaces",
     # the shared resolver substrate (the seam concrete backends/tests build on)
     "DeterministicResolver",
     "EnrichmentBackend",
