@@ -8,6 +8,8 @@ something we shouldn't have" (appropriateness) must be separately measurable.
 
 from __future__ import annotations
 
+from clue_research.core.enums import CampaignPhase
+
 # --- source layer (M4) ------------------------------------------------------
 SPAN_RESOLVE = "resolve"  # base name; resolve spans are tagged by source_tier + source_key
 
@@ -64,17 +66,10 @@ SPAN_COMPLIANCE_USE_GATE = "compliance.use_gate"
 
 # --- campaign-run phases (Doc C §4) ----------------------------------------
 # Exactly the Doc C §4 / conventions §3 phase sequence (annotations like "(Pass A)"/"(human)" are
-# not part of the token). M7 owns the state machine that opens these spans.
-CAMPAIGN_PHASES: tuple[str, ...] = (
-    "reverse_profiling",
-    "icp_confirmed",
-    "discovery",
-    "scoring",
-    "tier_checkpoint",
-    "deep",
-    "verification",
-    "handoff",
-)
+# not part of the token). M7 owns the state machine that opens these spans. Derived from the
+# canonical ``core.enums.CampaignPhase`` (Beat-0) so the phase tokens have one source of truth —
+# the span names, the state-machine enum, and the M7 ``campaign_run.phase`` DB enum cannot drift.
+CAMPAIGN_PHASES: tuple[str, ...] = tuple(phase.value for phase in CampaignPhase)
 
 
 def phase_span(phase: str) -> str:

@@ -169,3 +169,107 @@ class ICPCreatedFrom(StrEnum):
     SYNTHESIS = "synthesis"
     CLIENT_EDIT = "client_edit"
     IMPORT_REDERIVE = "import_rederive"
+
+
+# ---------------------------------------------------------------------------
+# Beat-0 contract-freeze additions (M5-M9 parallelisation).
+#
+# These are the *closed taxonomies* the cross-milestone seams added in Beat-0 exchange — the
+# durable-execution contracts (``core.execution``) and the verification gates
+# (``core.verification``). They live here, with every other closed enum, because ``core`` is the
+# only package every milestone may import; an enum that crosses a package boundary cannot live in
+# the milestone that owns the behaviour (M7 ``durable`` / M9 ``verification``) without breaking
+# worker independence (the import-linter contract). The *implementations* and the mirrored DB enum
+# types land in the owning milestone branch; these Python members are the shared vocabulary the
+# branches fork against. (M7's ``campaign_run`` / ``account_run`` lifecycle enums are NOT here —
+# they are table-column taxonomies internal to ``durable``, added by the M7 branch with its tables.)
+# ---------------------------------------------------------------------------
+
+
+class CampaignPhase(StrEnum):
+    """The campaign-run phase sequence (Doc C §4 / conventions §3) — the ordered states the M7.3
+    state machine advances through. Each phase is owned by a registered ``PhaseHandler`` (M5 owns
+    ``REVERSE_PROFILING``/``ICP_CONFIRMED``; M6 ``DISCOVERY``/``SCORING``/``TIER_CHECKPOINT``; M8
+    ``DEEP``; M9 ``VERIFICATION``; M12 ``HANDOFF``). Single source of truth for the phase tokens:
+    ``obs.spans.CAMPAIGN_PHASES`` is derived from this enum, and the M7 ``campaign_run.phase`` DB
+    enum mirrors it (parity-tested in the M7 branch)."""
+
+    REVERSE_PROFILING = "reverse_profiling"
+    ICP_CONFIRMED = "icp_confirmed"
+    DISCOVERY = "discovery"
+    SCORING = "scoring"
+    TIER_CHECKPOINT = "tier_checkpoint"  # the human gate (M6.4, interrupt-style)
+    DEEP = "deep"
+    VERIFICATION = "verification"
+    HANDOFF = "handoff"
+
+
+class PhaseStatus(StrEnum):
+    """Outcome of one phase handler run (the ``PhaseResult`` status, ``core.execution``). ``PAUSED``
+    is how a phase signals a durable stop the state machine must hold at — the human
+    ``TIER_CHECKPOINT`` gate, or a budget graceful-stop (M7.5) — without failing the run."""
+
+    COMPLETED = "completed"
+    PAUSED = "paused"
+    FAILED = "failed"
+
+
+class WorkerStatus(StrEnum):
+    """Outcome of one aspect/facet worker (the ``WorkerResult`` status, ``core.execution``).
+    ``BUDGET_EXCEEDED`` is distinct from ``FAILED`` so the orchestrator can tell "we stopped on the
+    cost cap" (a correct, governed outcome) from "the worker errored" (substrate §5/§3)."""
+
+    OK = "ok"
+    PARTIAL = "partial"
+    FAILED = "failed"
+    BUDGET_EXCEEDED = "budget_exceeded"
+
+
+class IdempotencyScope(StrEnum):
+    """The two idempotency-key shapes the durable layer keys on (M7.4): a per-account research
+    *step* ``(account_run, entity, field, tier)`` and a per-campaign *phase* ``(campaign_run,
+    phase)``. See :mod:`clue_research.core.idempotency` for the pure key-derivation helpers."""
+
+    ACCOUNT_STEP = "account_step"
+    CAMPAIGN_PHASE = "campaign_phase"
+
+
+class BudgetScope(StrEnum):
+    """The scope a budget check / charge applies to (M7.5): one account, one pass (Pass A / Pass B),
+    or the whole campaign run. The cost dial is fan-out-per-account × accounts-per-pass."""
+
+    ACCOUNT = "account"
+    PASS = "pass"
+    RUN = "run"
+
+
+class BudgetVerdict(StrEnum):
+    """The result of a pre-spend budget check (M7.5, the ``BudgetDecision`` verdict).
+    ``GRACEFUL_STOP`` means a run-level cap is breached: finish the in-flight unit and stop at the
+    next checkpoint rather than hard-killing mid-account (a clean, resumable stop)."""
+
+    ALLOW = "allow"
+    DENY = "deny"
+    GRACEFUL_STOP = "graceful_stop"
+
+
+class PreSpendVerdict(StrEnum):
+    """The pre-spend gate verdict (M9.1, the ``PreSpendDecision`` verdict). The cheapest
+    verification is the one that prevents spend on a doomed claim — a request that fails
+    schema/identity checks is ``REJECT``ed *before* any resolver call. Named distinctly from
+    ``core.modality.GateDecision`` (the M4.6 adapter run/skip gate), a different decision."""
+
+    PASS = "pass"
+    REJECT = "reject"
+
+
+class JudgeVerdict(StrEnum):
+    """The faithfulness judge's claim-level entailment verdict (M9.3, the ``JudgeResult`` verdict):
+    is ``value_json`` entailed by the claim's ``evidence_span`` (not the wider document)?
+    ``UNSUPPORTED``/``CONTRADICTED`` reject the claim and signal re-retrieval; ``PARTIAL`` leaves it
+    ``UNVERIFIED`` and flagged."""
+
+    SUPPORTED = "supported"
+    PARTIAL = "partial"
+    UNSUPPORTED = "unsupported"
+    CONTRADICTED = "contradicted"
