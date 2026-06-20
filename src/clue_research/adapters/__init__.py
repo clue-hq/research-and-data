@@ -49,6 +49,7 @@ from clue_research.adapters.pipeline import (
     GateDecision,
     UnknownSourceError,
     cost_estimate,
+    run_chain,
     run_pipeline,
 )
 from clue_research.adapters.registry import (
@@ -87,6 +88,7 @@ __all__ = [
     "AdaptContext",
     # dispatch
     "run_pipeline",
+    "run_chain",
     "cost_estimate",
     "GateDecision",
     "UnknownSourceError",

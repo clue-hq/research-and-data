@@ -115,6 +115,22 @@ CORE_PACK: tuple[SeedField, ...] = (
         },
         description="Most recent funding round.",
     ),
+    # The CRM resolver's "already a customer / already in pipeline" flag (M4.5; substrate §4) — a
+    # tier-1 ``crm`` field. Its ``crm_import`` extraction_method makes every claim TENANT_PRIVATE at
+    # write (the engine's reuse stamping), so this client-asserted relationship never amortizes
+    # across tenants. The closed set mirrors ``resolvers.crm.CrmRelationship`` (drift-guarded).
+    _seed(
+        "account.crm_relationship_status",
+        "str",
+        PassKind.SCORING,
+        tier_plan=("crm",),
+        freshness_ttl=timedelta(days=30),
+        value_schema={
+            "type": "string",
+            "enum": ["customer", "open_opportunity", "prospect", "former_customer", "none"],
+        },
+        description="Client-CRM relationship (already a customer / open opportunity / …); M4.5.",
+    ),
     # substrate §3 worked example: a deep-pass signal field with a gate and a tier plan.
     _seed(
         "account.hiring_velocity_eng",
