@@ -46,7 +46,6 @@ from clue_research.adapters.concrete import (
 )
 from clue_research.adapters.extractors import CallableClaimExtractor, ExtractFn, span_for
 from clue_research.adapters.pipeline import (
-    GateDecision,
     UnknownSourceError,
     cost_estimate,
     run_pipeline,
@@ -73,6 +72,7 @@ from clue_research.adapters.seams import (
 from clue_research.core import (
     AdaptContext,
     ClaimDraft,
+    GateDecision,
     ModalityAdapter,
     NormalizedText,
     RawArtifact,

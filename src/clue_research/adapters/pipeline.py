@@ -29,7 +29,6 @@ from __future__ import annotations
 from collections.abc import Callable
 from datetime import datetime, timedelta
 from decimal import Decimal
-from enum import StrEnum
 from time import perf_counter
 
 from pydantic import JsonValue
@@ -60,6 +59,7 @@ from clue_research.core import (
     EntityType,
     ExtractionMethod,
     FieldDef,
+    GateDecision,
     Modality,
     ModalityAdapter,
     NormalizedText,
@@ -89,13 +89,6 @@ from clue_research.obs import (
     traced_step,
 )
 from clue_research.sources import RegistrySourceManifest, get_source
-
-
-class GateDecision(StrEnum):
-    """The caller's expensive-modality gate verdict (M4.6/M8/M7 decide; M4.3 only honors it)."""
-
-    RUN = "run"  # proceed with fetch → adapt → extract
-    SKIP = "skip"  # do NOT incur the costly fetch/transcription (low tier / low-weighted source)
 
 
 class UnknownSourceError(LookupError):

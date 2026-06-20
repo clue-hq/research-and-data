@@ -49,6 +49,9 @@ ATTR_CACHE_HIT = "cache_hit"
 ATTR_GATE_DECISION = "gate_decision"  # "run" | "skip"
 ATTR_MODALITY = "modality"  # text | video | audio | pdf | structured
 ATTR_N_CLAIMS = "n_claims"
+# Source Planner (M4.6) — the source.plan span tags this: how many sources the plan selected (a
+# count, never a secret).
+ATTR_N_SOURCES = "n_sources"
 
 # Known-safe dimensions: identifiers/enums/numbers, never secrets. Passed through (type-coerced)
 # without value-shape redaction so a UUID id is not mistaken for an opaque-token credential.
@@ -75,6 +78,7 @@ STANDARD_ATTRIBUTES: frozenset[str] = frozenset(
         ATTR_GATE_DECISION,
         ATTR_MODALITY,
         ATTR_N_CLAIMS,
+        ATTR_N_SOURCES,
     }
 )
 
@@ -106,6 +110,7 @@ class SpanAttributes(TypedDict, total=False):
     gate_decision: str
     modality: str
     n_claims: int
+    n_sources: int
 
 
 def to_otel_value(value: object) -> OtelValue | None:
