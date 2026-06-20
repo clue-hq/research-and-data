@@ -148,18 +148,47 @@ type = "layers"
 containers = ["clue_research"]
 layers = ["obs", "config", "core"]
 
-# Rule 3 — workers never import each other (resolvers / adapters / judges / scorers).
-# Judges live in verification/; scorers live in discovery_scoring/. Per the architecture, workers
-# coordinate through the claim store, never by importing a sibling worker.
+# Rule 3 — workers coordinate through the claim store, never by importing a sibling worker. Judges
+# live in verification/; scorers in discovery_scoring/. M4.5 carve-out: a resolver whose source needs
+# ADAPTATION (Firecrawl's tier-2 scrape) runs the M4.3 adapter framework via `adapters.run_chain`, so
+# `resolvers -> adapters` is the ONE permitted worker→worker edge — expressed DIRECTIONALLY below
+# (independence would also forbid it). The adapter framework stays a pure leaf: it never imports a
+# resolver (the seam is one-way, exactly like `sources -> resolvers`, Rule 3c).
 [[tool.importlinter.contracts]]
-name = "workers are independent (resolvers / adapters / judges / scorers)"
+name = "workers are independent (adapters / judges / scorers)"
 type = "independence"
 modules = [
-    "clue_research.resolvers",
     "clue_research.adapters",
     "clue_research.verification",
     "clue_research.discovery_scoring",
 ]
+
+# Rule 3a — resolvers import no sibling worker EXCEPT the adapter framework (the M4.5 carve-out): a
+# resolver may call `adapters.run_chain` (Firecrawl scrape → M4.3 HTML→markdown adapter), but never a
+# judge (verification/) or a scorer (discovery_scoring/). `resolvers -> adapters` is intentionally
+# omitted here, i.e. permitted; the dependency is one-way (Rule 3b keeps adapters from importing back).
+[[tool.importlinter.contracts]]
+name = "resolvers import no sibling worker except the adapter framework"
+type = "forbidden"
+source_modules = ["clue_research.resolvers"]
+forbidden_modules = [
+    "clue_research.verification",
+    "clue_research.discovery_scoring",
+]
+
+# Rule 3b — the worker leaves never import resolvers (the one-way worker seam): a resolver registers
+# itself into the source registry and calls the adapter framework, never the reverse — so an adapter,
+# judge, or scorer can never learn a concrete provider exists. Mirrors Rule 3c (`sources -> resolvers`
+# forbidden); together they make `resolvers -> adapters` a strictly one-directional dependency.
+[[tool.importlinter.contracts]]
+name = "adapters / judges / scorers do not import resolvers (one-way worker seam)"
+type = "forbidden"
+source_modules = [
+    "clue_research.adapters",
+    "clue_research.verification",
+    "clue_research.discovery_scoring",
+]
+forbidden_modules = ["clue_research.resolvers"]
 
 # Rule 4 — provider SDKs live only behind resolvers/<provider> and adapters/<source>.
 # Every package EXCEPT resolvers/ and adapters/ is forbidden from importing a provider SDK, so the

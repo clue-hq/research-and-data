@@ -89,6 +89,23 @@ def test_stamp_reuse_sets_scope_and_tenant() -> None:
     assert private.reuse_scope is ReuseScope.TENANT_PRIVATE and private.tenant_id == "tenant-a"
 
 
+def test_stamp_reuse_fails_loud_for_a_private_claim_with_no_tenant() -> None:
+    """A claim that classifies tenant_private with no tenant_id supplied is a wiring error —
+    refused, never silently written public (fail-closed, M4.5 decision #6). A public claim with no
+    tenant is fine (it is tenant-less by definition)."""
+    entity = new_entity_id()
+    with pytest.raises(ValueError, match="tenant_private"):
+        stamp_reuse(
+            _claim(entity, "core.employee_count", 1, ExtractionMethod.CRM_IMPORT),  # type: ignore[arg-type]
+            tenant_id=None,
+        )
+    public = stamp_reuse(
+        _claim(entity, "core.employee_count", 1, ExtractionMethod.API),  # type: ignore[arg-type]
+        tenant_id=None,
+    )
+    assert public.reuse_scope is ReuseScope.PUBLIC_FOOTPRINT and public.tenant_id is None
+
+
 # --- amortization / degradation / DSAR (DB) ---------------------------------
 pytestmark = pytest.mark.usefixtures("require_identity_db")
 

@@ -12,7 +12,7 @@ from decimal import Decimal
 
 import pytest
 
-from clue_research.claimstore import ALL_TENANTS, claims_for
+from clue_research.claimstore import ALL_TENANTS, TenantScope, claims_for, current_value
 from clue_research.core import (
     Claim,
     Entity,
@@ -24,6 +24,7 @@ from clue_research.core import (
     Modality,
     PassKind,
     ResearchMode,
+    ReuseScope,
     SourceManifest,
     UseClass,
     VerificationStatus,
@@ -470,8 +471,15 @@ def test_contact_claim_identity_binding_from_manifest() -> None:
                 tier_plan=("crm_t",),
                 pass_kind=PassKind.DEEP,
             )
+            # contact.facet.* + crm_import classifies tenant_private (decision #6) → the engine
+            # requires the run's tenant_id to stamp it (a private claim must bind to a tenant).
             await resolve_field(
-                conn, entity, field, mode=ResearchMode.CONTACT_PROFILING, run_id=new_run_id()
+                conn,
+                entity,
+                field,
+                mode=ResearchMode.CONTACT_PROFILING,
+                run_id=new_run_id(),
+                tenant_id="tenant-x",
             )
             written = await claims_for(
                 conn, entity.entity_id, "contact.facet.recent_post", scope=ALL_TENANTS
@@ -479,6 +487,9 @@ def test_contact_claim_identity_binding_from_manifest() -> None:
             assert len(written) == 1
             # the manifest's binding strength is authoritative — the engine stamped STRONG.
             assert written[0].identity_binding is IdentityBinding.STRONG
+            # the engine stamped the personal claim tenant-private and bound it to the run tenant.
+            assert written[0].reuse_scope is ReuseScope.TENANT_PRIVATE
+            assert written[0].tenant_id == "tenant-x"
 
     run_async(_run())
 
@@ -558,6 +569,138 @@ def test_empty_tier_plan_is_no_resolver() -> None:
             )
             assert result.stop_reason is StopReason.NO_RESOLVER
             assert result.claim_refs == () and result.per_tier == ()
+
+    run_async(_run())
+
+
+# --- tenant stamping at the engine (M4.5, decision #6) ----------------------
+
+
+def test_engine_stamps_crm_import_claim_tenant_private() -> None:
+    # The engine (the only composer) classifies a crm_import claim tenant_private and binds the run
+    # tenant — so client data never leaks into the cross-tenant public pool (substrate §2).
+    async def _run() -> None:
+        async with rollback_conn() as conn:
+            await _register(conn, "crm", tier=1)
+            bind_resolver(
+                "crm",
+                _Fake([_claim(100, tier=1, confidence=_HI, method=ExtractionMethod.CRM_IMPORT)]),
+            )
+            entity = _entity()
+            await resolve_field(
+                conn,
+                entity,
+                _field(("crm",)),
+                mode=_MODE,
+                run_id=new_run_id(),
+                tenant_id="tenant-a",
+            )
+            (claim,) = await claims_for(
+                conn, entity.entity_id, "core.employee_count", scope=ALL_TENANTS
+            )
+            assert claim.reuse_scope is ReuseScope.TENANT_PRIVATE and claim.tenant_id == "tenant-a"
+
+    run_async(_run())
+
+
+def test_engine_keeps_a_public_claim_public_even_when_a_tenant_is_supplied() -> None:
+    # A public-footprint (api) claim drops the tenant even if one is passed — it must stay reusable.
+    async def _run() -> None:
+        async with rollback_conn() as conn:
+            await _register(conn, "clay", tier=1)
+            bind_resolver("clay", _Fake([_claim(100, tier=1, confidence=_HI)]))  # api → public
+            entity = _entity()
+            await resolve_field(
+                conn,
+                entity,
+                _field(("clay",)),
+                mode=_MODE,
+                run_id=new_run_id(),
+                tenant_id="tenant-a",
+            )
+            (claim,) = await claims_for(
+                conn, entity.entity_id, "core.employee_count", scope=ALL_TENANTS
+            )
+            assert claim.reuse_scope is ReuseScope.PUBLIC_FOOTPRINT and claim.tenant_id is None
+
+    run_async(_run())
+
+
+def test_engine_fails_loud_on_a_private_claim_with_no_tenant() -> None:
+    # A crm_import claim with NO tenant_id is a wiring error — the engine refuses it rather than
+    # silently writing client data into the shared public pool (fail-closed, substrate §2).
+    async def _run() -> None:
+        async with rollback_conn() as conn:
+            await _register(conn, "crm", tier=1)
+            bind_resolver(
+                "crm",
+                _Fake([_claim(100, tier=1, confidence=_HI, method=ExtractionMethod.CRM_IMPORT)]),
+            )
+            with pytest.raises(ValueError, match="tenant_private"):
+                await resolve_field(
+                    conn, _entity(), _field(("crm",)), mode=_MODE, run_id=new_run_id()
+                )
+
+    run_async(_run())
+
+
+def test_idempotent_reuse_is_tenant_scoped_no_cross_tenant_private_leak() -> None:
+    # Defense-in-depth (substrate §2): even if two tenants shared a run_id (a caller bug — run_id is
+    # per-run-per-tenant), the idempotency reuse is tenant-scoped, so tenant-B never receives
+    # tenant-A's tenant_private CRM claim. Tenant-B re-resolves and writes its OWN private claim.
+    class _FreshCrm:
+        tier = 1
+
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def resolve(self, entity: Entity, field: FieldDef) -> list[Claim]:
+            self.calls += 1
+            return [
+                account_claim(
+                    entity_id=entity.entity_id,
+                    field_key=field.field_key,
+                    value_json="customer",
+                    source_tier=1,
+                    extraction_method=ExtractionMethod.CRM_IMPORT,
+                    confidence=1.0,
+                    run_id=new_run_id(),
+                    research_mode=ResearchMode.ACCOUNT_PROFILING,
+                    source_url="crm://record/1",
+                    evidence_span="crm:relationship_status=customer",
+                )
+            ]
+
+    async def _run() -> None:
+        async with rollback_conn() as conn:
+            await _register(conn, "crm", tier=1)
+            crm = _FreshCrm()
+            bind_resolver("crm", crm)
+            entity = _entity()
+            run_id = new_run_id()
+            field = _field(("crm",), field_key="account.crm_relationship_status")
+            a = await resolve_field(conn, entity, field, mode=_MODE, run_id=run_id, tenant_id="a")
+            b = await resolve_field(conn, entity, field, mode=_MODE, run_id=run_id, tenant_id="b")
+            assert (
+                crm.calls == 2
+            )  # tenant-b did NOT reuse tenant-a's private claim — it re-resolved
+            assert a.claim_refs != b.claim_refs  # a distinct private claim per tenant
+            # Each tenant sees ONLY its own private claim — never the other's.
+            a_claims = await claims_for(conn, entity.entity_id, scope=TenantScope.for_tenant("a"))
+            b_claims = await claims_for(conn, entity.entity_id, scope=TenantScope.for_tenant("b"))
+            assert {c.tenant_id for c in a_claims} == {"a"}
+            assert {c.tenant_id for c in b_claims} == {"b"}
+            field_key = "account.crm_relationship_status"
+            assert (
+                await current_value(
+                    conn, entity.entity_id, field_key, scope=TenantScope.for_tenant("a")
+                )
+            ) is not None
+            assert (
+                await current_value(
+                    conn, entity.entity_id, field_key, scope=TenantScope.public_only()
+                )
+            ) is None  # the private claims never surface publicly
 
     run_async(_run())
 

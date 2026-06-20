@@ -25,13 +25,21 @@ _REPO_ROOT = Path(__file__).resolve().parents[2]
 _SRC_ROOT = _REPO_ROOT / "src"
 _RES_SRC = _SRC_ROOT / "clue_research" / "resolvers"
 _RES_TESTS = _REPO_ROOT / "tests" / "resolvers"
-_PROVIDER_PKGS = ("clay", "apollo", "zoominfo", "builtwith", "registries")
+_PROVIDER_PKGS = ("clay", "apollo", "zoominfo", "builtwith", "registries", "crm", "firecrawl")
 _REDACTED = "***REDACTED***"
 
 # The only string literals that legitimately trip the runtime redactor (see the secret-scan test):
-# the redaction sentinel itself, a request param NAME, and a public symbol NAME. None is a secret;
-# every other redactor hit (a DSN-with-creds, a prefixed key, OR an opaque high-entropy token) is.
-_ALLOWED_LITERALS = frozenset({_REDACTED, "api_key", "register_deterministic_resolvers"})
+# the redaction sentinel itself, a request param NAME, and public symbol NAMES (long enough to look
+# like an opaque token). None is a secret; every other redactor hit (a DSN-with-creds, a prefixed
+# key, OR an opaque high-entropy token) is.
+_ALLOWED_LITERALS = frozenset(
+    {
+        _REDACTED,
+        "api_key",
+        "register_deterministic_resolvers",
+        "register_scrape_resolver",
+    }
+)
 
 
 def _imported_modules(path: Path) -> set[str]:
@@ -131,6 +139,18 @@ def test_every_seeded_auth_ref_resolves_to_a_secrets_field() -> None:
             assert field in Secrets.model_fields, (
                 f"{manifest.source_key}: auth_ref {manifest.auth_ref} -> no Secrets field {field!r}"
             )
+
+
+def test_crm_relationship_field_enum_matches_the_taxonomy() -> None:
+    """The ``account.crm_relationship_status`` value-schema enum (registered in the core pack) stays
+    in lock-step with the :class:`CrmRelationship` taxonomy the CRM resolver emits — so a value can
+    never be produced that ``insert_claim``'s value-schema check would reject (drift guard)."""
+    from clue_research.claimstore import CORE_PACK
+    from clue_research.resolvers import CRM_RELATIONSHIP_FIELD, CrmRelationship
+
+    seed = next(s for s in CORE_PACK if s.field_def.field_key == CRM_RELATIONSHIP_FIELD)
+    assert seed.value_schema is not None
+    assert set(seed.value_schema["enum"]) == {r.value for r in CrmRelationship}
 
 
 def test_registration_binds_all_eight_resolvers_at_tier_1() -> None:
