@@ -18,7 +18,7 @@ Implements the LLM-gateway deliverable of ENG-120
 from __future__ import annotations
 
 from clue_research.gateway.factory import build_gateway
-from clue_research.gateway.openrouter import OpenRouterGateway
+from clue_research.gateway.openrouter import GatewayError, OpenRouterGateway
 from clue_research.gateway.stub import StubGateway
 from clue_research.gateway.tracing import TracingGateway
 
@@ -27,4 +27,5 @@ __all__ = [
     "OpenRouterGateway",
     "StubGateway",
     "TracingGateway",
+    "GatewayError",
 ]

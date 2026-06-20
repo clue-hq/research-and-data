@@ -18,7 +18,13 @@ from pydantic import SecretStr
 from clue_research.config import ConfigOverlay, GatewayConfig, ModelPrice, get_config
 from clue_research.config.loader import OverlayStore
 from clue_research.core import Completion, EmbeddingResult, LLMGateway, Message, Role, TokenUsage
-from clue_research.gateway import OpenRouterGateway, StubGateway, TracingGateway, build_gateway
+from clue_research.gateway import (
+    GatewayError,
+    OpenRouterGateway,
+    StubGateway,
+    TracingGateway,
+    build_gateway,
+)
 from clue_research.obs import SPAN_LLM_GATEWAY_CALL, collect_spans
 
 # --- fixtures ---------------------------------------------------------------
@@ -151,8 +157,9 @@ def test_stub_path_does_not_import_openai() -> None:
 
 
 class _FakeChat:
-    def __init__(self, fail_models: set[str]) -> None:
+    def __init__(self, fail_models: set[str], empty_models: set[str] | None = None) -> None:
         self._fail_models = fail_models
+        self._empty_models = empty_models or set()
         self.calls: list[str] = []
 
     @property
@@ -167,6 +174,8 @@ class _FakeChat:
         self.calls.append(model)
         if model in self._fail_models:
             raise RuntimeError(f"boom: {model}")
+        if model in self._empty_models:  # successful HTTP body with no choices (upstream error)
+            return SimpleNamespace(model=model, choices=[], usage=None)
         return SimpleNamespace(
             model=model,
             choices=[
@@ -186,8 +195,12 @@ class _FakeChat:
         )
 
 
-def _live(config: GatewayConfig, fail_models: set[str] | None = None) -> OpenRouterGateway:
-    fake = _FakeChat(fail_models or set())
+def _live(
+    config: GatewayConfig,
+    fail_models: set[str] | None = None,
+    empty_models: set[str] | None = None,
+) -> OpenRouterGateway:
+    fake = _FakeChat(fail_models or set(), empty_models)
     gw = OpenRouterGateway(config, SecretStr("sk-or-test"), client_factory=lambda: fake)
     gw._fake = fake  # type: ignore[attr-defined]  # stash for assertions
     return gw
@@ -217,6 +230,22 @@ def test_live_reraises_when_no_fallback() -> None:
     gw = _live(GatewayConfig(), fail_models={"only/model"})
     with pytest.raises(RuntimeError, match="boom"):
         gw.complete(model="only/model", messages=_PROMPT)
+
+
+def test_live_empty_choices_raises_typed_error_not_indexerror() -> None:
+    # A successful HTTP-200 body with no choices (OpenRouter surfacing an upstream error) must yield
+    # a clear GatewayError, never a raw IndexError on choices[0].
+    gw = _live(GatewayConfig(), empty_models={"only/model"})
+    with pytest.raises(GatewayError, match="no choices"):
+        gw.complete(model="only/model", messages=_PROMPT)
+
+
+def test_live_empty_choices_falls_back() -> None:
+    config = GatewayConfig(fallback_model="backup/model")
+    gw = _live(config, empty_models={"primary/model"})
+    out = gw.complete(model="primary/model", messages=_PROMPT)
+    assert out.model == "backup/model"  # empty primary response routed to the fallback
+    assert gw._fake.calls == ["primary/model", "backup/model"]
 
 
 def test_live_embed_maps_vectors() -> None:

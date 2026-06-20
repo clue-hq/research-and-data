@@ -64,6 +64,10 @@ class GatewayConfig(BaseModel):
     # Force the deterministic stub (no live call). The factory ALSO stubs when no key is present.
     stub: bool = False
     # Per-model pricing (model id -> rates). Missing model -> cost 0 (measured-or-zero).
+    # NOTE: like every config sub-tree, the gateway block is overlaid by *whole-subtree replace*
+    # (ConfigOverlay semantics) — an overlay that swaps only ``judge_model`` must re-supply
+    # ``prices`` too, or the inherited price table is dropped and costs read as 0. Carry the full
+    # GatewayConfig (ids + prices) in any overlay that overrides the gateway.
     prices: dict[str, ModelPrice] = Field(default_factory=dict)
 
     def cost_cents(self, model: str, usage: TokenUsage) -> CostCents:

@@ -123,7 +123,10 @@ class Resolver(Protocol):
 ```python
 class LLMGateway(Protocol):
     def complete(self, *, model: str, messages: list[Message], **opts) -> Completion: ...
-    def embed(self, *, model: str, inputs: list[str]) -> list[Vector]: ...
+    def embed(self, *, model: str, inputs: list[str]) -> EmbeddingResult: ...
+    # both return a typed result carrying token usage + cost_cents (not a bare str / list[Vector]):
+    # every call MUST surface usage+cost for the llm.gateway_call span, exactly as `complete` returns
+    # a `Completion` rather than a `str`. `EmbeddingResult` holds `vectors: tuple[Vector, ...]` + usage.
     # wraps OpenRouter (OpenAI-compatible); `model` is a config-supplied id (e.g. "anthropic/claude-…");
     # one OPENROUTER_API_KEY; every call emits the M0.5 trace span with token/cost; deterministic stub in CI.
     # Exa Deep / Parallel Task are research-product resolvers, NOT gateway calls (see §2 carve-out).

@@ -68,12 +68,13 @@ from clue_research.obs.spans import (
     resolve_span,
 )
 from clue_research.obs.testing import collect_spans
-from clue_research.obs.tracing import configure_tracing, traced, traced_step
+from clue_research.obs.tracing import apply_attributes, configure_tracing, traced, traced_step
 
 __all__ = [
     # tracing
     "traced_step",
     "traced",
+    "apply_attributes",
     "configure_tracing",
     # span names
     "SPAN_RESOLVE",
