@@ -17,6 +17,7 @@ provider seams (``Transcriber`` / PDF extractor / scrape backend), and ``run_pip
 
 from __future__ import annotations
 
+from enum import StrEnum
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, field_validator
@@ -108,6 +109,25 @@ class AdaptContext(BaseModel):
     auth_ref: str | None = None  # a credential-store reference (e.g. "CLUE_FIRECRAWL_API_KEY")
     freshness_profile: str | None = None
     params: dict[str, JsonValue] = Field(default_factory=dict)
+
+
+class GateDecision(StrEnum):
+    """The expensive-modality gate verdict — a *shared* producer→consumer contract.
+
+    The **Source Planner (M4.6)** / a deep-pass worker (M8) / the budget engine (M7) *decide*
+    whether an expensive ``fetch → adapt → extract`` run (transcribe a 90-min podcast, OCR a filing)
+    is worth it — gated to high-tier entities and high-weighted source classes (staged-flow §7d).
+    M4.3's pipeline (:func:`clue_research.adapters.run_pipeline`) only *honors* the verdict: on
+    ``SKIP`` it incurs no fetch/transcription and returns no claims.
+
+    It lives in ``core`` (not ``adapters``) because both the producer (the planner, in
+    ``clue_research.sources``) and the consumer (``clue_research.adapters``) bind to one shape — the
+    shared-type rule (conventions §2). ``clue_research.adapters.GateDecision`` re-exports it, so a
+    caller may import it from either seam and ``run_pipeline``'s identity check still holds.
+    """
+
+    RUN = "run"  # proceed with fetch → adapt → extract
+    SKIP = "skip"  # do NOT incur the costly fetch/transcription (low tier / low-weighted source)
 
 
 @runtime_checkable
