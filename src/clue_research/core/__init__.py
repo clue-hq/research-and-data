@@ -99,7 +99,7 @@ from clue_research.core.primitives import (
     new_entity_id,
     new_run_id,
 )
-from clue_research.core.resolver import Resolver
+from clue_research.core.resolver import Resolver, ResolverError, RetryableResolverError
 from clue_research.core.source import SourceManifest
 
 __all__ = [
@@ -160,6 +160,8 @@ __all__ = [
     # source / resolver
     "SourceManifest",
     "Resolver",
+    "ResolverError",
+    "RetryableResolverError",
     # llm gateway (model-egress seam)
     "LLMGateway",
     "Message",
