@@ -118,13 +118,29 @@ def _max_confidence(claims: Sequence[Claim]) -> float | None:
 
 
 def _finalize(
-    claim: Claim, *, run_id: RunId, mode: ResearchMode, identity_binding: IdentityBinding | None
+    claim: Claim,
+    *,
+    source_key: str,
+    expected_tier: int,
+    run_id: RunId,
+    mode: ResearchMode,
+    identity_binding: IdentityBinding | None,
 ) -> Claim:
-    """Stamp the engine-owned provenance the resolver cannot know — ``run_id`` and ``research_mode``
-    (from the run's ``mode``) — and, for a contact claim, the manifest's authoritative
-    ``identity_binding_strength``. ``model_copy`` does not re-validate, so it is round-tripped
-    through validation to guarantee the written claim is coherent."""
-    update: dict[str, object] = {"run_id": run_id, "research_mode": mode}
+    """Stamp the engine-owned provenance the resolver cannot know — the producing ``source_key``,
+    ``run_id`` and ``research_mode`` (from the run's ``mode``) — and, for a contact claim, the
+    manifest's ``identity_binding_strength``. The claim's ``source_tier`` must match its
+    manifest tier (a resolver lying about its tier would corrupt the merge trust order) — fail loud.
+    ``model_copy`` does not re-validate, so the result is round-tripped through validation."""
+    if claim.source_tier != expected_tier:
+        raise ValueError(
+            f"resolver for source {source_key!r} returned a claim at tier {claim.source_tier}, "
+            f"but its manifest declares tier {expected_tier}; tier must match the manifest"
+        )
+    update: dict[str, object] = {
+        "source_key": source_key,
+        "run_id": run_id,
+        "research_mode": mode,
+    }
     if claim.entity_type is EntityType.CONTACT and identity_binding is not None:
         update["identity_binding"] = identity_binding
     updated = claim.model_copy(update=update)
@@ -132,12 +148,14 @@ def _finalize(
 
 
 async def _existing_step_claims(
-    conn: AsyncConnection, entity_id: EntityId, field_key: str, source_tier: int, run_id: RunId
+    conn: AsyncConnection, entity_id: EntityId, field_key: str, source_key: str, run_id: RunId
 ) -> list[Claim]:
-    """Live claims already written for this ``(entity, field, tier, run)`` — the idempotency key
-    Their presence means a retry; reuse them instead of re-resolving (substrate §5c)."""
+    """Live claims already written for this ``(entity, field, source_key, run)`` — the idempotency
+    key. Keyed on ``source_key``, NOT tier: a ``tier_plan`` may list >1 source at one tier
+    (``[apollo, clay]``), so tier alone would conflate them on a retry (substrate §5c). Their
+    presence means a retry of this step; reuse them instead of re-resolving."""
     live = await claims_for(conn, entity_id, field_key, scope=ALL_TENANTS)
-    return [c for c in live if c.source_tier == source_tier and c.run_id == run_id]
+    return [c for c in live if c.source_key == source_key and c.run_id == run_id]
 
 
 async def resolve_field(
@@ -157,6 +175,14 @@ async def resolve_field(
 
     ``mode`` is the run's profiling research mode (M2/M4). ``budget_envelope`` is an optional
     total-spend cap (cents) honored against ``cost_so_far`` + this call's running spend.
+
+    Call inside a caller-owned transaction (``db.transaction``): claims are inserted per step, so a
+    raising step rolls back cleanly and the per-run idempotency never sees a half-written step.
+
+    NOTE (M4.5): claims are written with the default ``public_footprint`` reuse scope. CRM /
+    resonance / scoring claims that must be ``tenant_private`` will need a tenant-stamping seam here
+    (the engine is the only composer) — added in M4.5 via ``identity.stamp_reuse`` (locked decision
+    #6); deferred now because no claim-writing resolver exists yet.
     """
     threshold = thresholds.for_field_class(field_def.field_class)
     steps: list[TierStep] = []
@@ -165,7 +191,6 @@ async def resolve_field(
         0
     )  # this call's spend (cost_so_far is the caller's prior spend, for the budget)
     ran_any = False
-    saw_unresolved = False
     stop_reason: StopReason | None = None
 
     for source_key in field_def.tier_plan:
@@ -174,33 +199,22 @@ async def resolve_field(
             steps.append(
                 TierStep(source_key=source_key, tier=None, outcome=StepOutcome.UNREGISTERED)
             )
-            saw_unresolved = True
             continue
         tier = manifest.tier
         if not manifest.active:
             steps.append(TierStep(source_key=source_key, tier=tier, outcome=StepOutcome.INACTIVE))
             continue
 
-        # Budget pre-check: the manifest cost is the pre-spend estimate (substrate §4 / D7).
-        if (
-            budget_envelope is not None
-            and cost_so_far + spent + manifest.cost_cents > budget_envelope
-        ):
-            steps.append(
-                TierStep(source_key=source_key, tier=tier, outcome=StepOutcome.BUDGET_SKIPPED)
-            )
-            stop_reason = StopReason.BUDGET_STOP
-            break
-
-        # Idempotency: a step already written this (entity, field, tier, run) is reused, not re-run.
+        # Idempotency BEFORE the budget gate: a step already written this (entity, field, source,
+        # run) is reused — that spends nothing, so it must never be blocked by the budget envelope.
         if idempotent:
             existing = await _existing_step_claims(
-                conn, entity.entity_id, field_def.field_key, tier, run_id
+                conn, entity.entity_id, field_def.field_key, source_key, run_id
             )
             if existing:
                 best = first_confident_claim(existing, threshold)
                 step_cost = sum((c.cost_cents for c in existing), Decimal(0))
-                spent += step_cost
+                spent += step_cost  # folds into the budget for *subsequent* steps, not this one
                 refs.extend(c.id for c in existing)
                 steps.append(
                     TierStep(
@@ -219,6 +233,18 @@ async def resolve_field(
                     break
                 continue
 
+        # Budget pre-check (only for a step that will actually call a resolver): the manifest cost
+        # is the pre-spend estimate (substrate §4 / D7).
+        if (
+            budget_envelope is not None
+            and cost_so_far + spent + manifest.cost_cents > budget_envelope
+        ):
+            steps.append(
+                TierStep(source_key=source_key, tier=tier, outcome=StepOutcome.BUDGET_SKIPPED)
+            )
+            stop_reason = StopReason.BUDGET_STOP
+            break
+
         # Dispatch through the registry binding ONLY (the engine never imports a resolver).
         try:
             resolver = get_resolver(source_key)
@@ -226,7 +252,6 @@ async def resolve_field(
             steps.append(
                 TierStep(source_key=source_key, tier=tier, outcome=StepOutcome.NO_RESOLVER)
             )
-            saw_unresolved = True
             continue
 
         with traced_step(
@@ -244,7 +269,12 @@ async def resolve_field(
             step_cost = Decimal(0)
             for c in claims:
                 final = _finalize(
-                    c, run_id=run_id, mode=mode, identity_binding=manifest.identity_binding_strength
+                    c,
+                    source_key=source_key,
+                    expected_tier=tier,
+                    run_id=run_id,
+                    mode=mode,
+                    identity_binding=manifest.identity_binding_strength,
                 )
                 refs.append(await insert_claim(conn, final))
                 step_cost += final.cost_cents
@@ -271,14 +301,10 @@ async def resolve_field(
             break
 
     if stop_reason is None:
-        # Walked the whole plan with no confident hit and no budget stop. If at least one resolver
-        # ran, the tiers are genuinely exhausted; if nothing ran because every step was
-        # unbound/unregistered, it is no_resolver (tier-4 placeholder pre-M11) — a correct empty.
-        stop_reason = (
-            StopReason.NO_RESOLVER
-            if (saw_unresolved and not ran_any)
-            else (StopReason.TIER_EXHAUSTED)
-        )
+        # No confident hit and no budget stop. If at least one resolver ran (or was reused), the
+        # tiers are genuinely exhausted; if NOTHING ran (empty plan, all inactive/unregistered, or
+        # only unbound tier-4 placeholders), it is no_resolver — a correct flagged-empty output.
+        stop_reason = StopReason.TIER_EXHAUSTED if ran_any else StopReason.NO_RESOLVER
 
     return WaterfallResult(
         entity_id=entity.entity_id,
