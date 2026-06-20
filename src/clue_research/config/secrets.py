@@ -89,6 +89,12 @@ class Secrets(BaseSettings):
     firecrawl_api_key: SecretStr | None = None
     crm_api_key: SecretStr | None = None
 
+    # --- LLM gateway (the single OpenRouter egress, conventions §2/§4) ---
+    # One key for every *direct* LLM call (judge / planner / synthesizers). Unset in CI: the gateway
+    # then runs in deterministic stub mode (no live call). Exa/Parallel above are tier-4 research
+    # *resolvers* with their own keys — NOT gateway calls (conventions §2 carve-out).
+    openrouter_api_key: SecretStr | None = None
+
 
 def is_secret_name(name: str) -> bool:
     """True if an attribute/key *name* looks like it names a secret (case-insensitive).

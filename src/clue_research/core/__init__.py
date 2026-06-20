@@ -63,6 +63,15 @@ from clue_research.core.field import (
     is_valid_field_key,
     register_pack,
 )
+from clue_research.core.gateway import (
+    Completion,
+    EmbeddingResult,
+    LLMGateway,
+    Message,
+    Role,
+    TokenUsage,
+    Vector,
+)
 from clue_research.core.handoff import (
     AccountHandoff,
     CommitteeMember,
@@ -151,6 +160,14 @@ __all__ = [
     # source / resolver
     "SourceManifest",
     "Resolver",
+    # llm gateway (model-egress seam)
+    "LLMGateway",
+    "Message",
+    "Role",
+    "TokenUsage",
+    "Completion",
+    "EmbeddingResult",
+    "Vector",
     # composite contracts
     "WinningProvenance",
     "CurrentValue",

@@ -18,6 +18,10 @@ dependencies = [
     "pgvector",
     # M0.4 — env-based settings/secrets (config/)
     "pydantic-settings>=2",
+    # M0.4 — the LLM gateway's OpenAI-compatible client (OpenRouter egress). Used ONLY behind the
+    # gateway/ package (import-linter Rule 4b); lazy-imported in the live client so CI's stub path
+    # never needs it. The gateway is to models what the Resolver protocol is to data sources.
+    "openai>=1.40",
     # M0.5 — observability/tracing skeleton (obs/). Console exporter ships with the SDK; an OTLP
     # exporter is added when a collector is wired (the exporter sits behind the traced_step wrapper).
     "opentelemetry-api>=1.20",
@@ -71,6 +75,14 @@ plugins = ["pydantic.mypy"]
 init_forbid_extra = true
 init_typed = true
 warn_required_dynamic_aliases = true
+
+# The OpenAI-compatible SDK is an external boundary used only behind the gateway/ seam, where the
+# client is deliberately treated as ``Any`` (duck-typed against an injectable fake). Skip its stubs
+# so the gateway is decoupled from the SDK's exact typed signature (a version-drift hazard).
+[[tool.mypy.overrides]]
+module = ["openai"]
+follow_imports = "skip"
+ignore_missing_imports = true
 
 # --- pytest -----------------------------------------------------------------
 [tool.pytest.ini_options]
@@ -174,6 +186,40 @@ forbidden_modules = [
     "simple_salesforce",
     "hubspot",
 ]
+
+# Rule 4b — the LLM-vendor SDK lives ONLY behind the gateway/ package (the model analogue of
+# Rule 4 for data-source SDKs). The gateway is the single egress for every *direct* LLM call
+# (conventions §2/§4): no component constructs an OpenAI-compatible client directly, so a model
+# swap (or OpenRouter -> another gateway) stays a config change. (Exa/Parallel are resolvers, not
+# gateway calls — their SDKs are governed by Rule 4 above.)
+[[tool.importlinter.contracts]]
+name = "the LLM-vendor SDK lives only behind the gateway/ package"
+type = "forbidden"
+source_modules = [
+    "clue_research.core",
+    "clue_research.config",
+    "clue_research.obs",
+    "clue_research.db",
+    "clue_research.evals",
+    "clue_research.claimstore",
+    "clue_research.identity",
+    "clue_research.locks",
+    "clue_research.icp",
+    "clue_research.sources",
+    "clue_research.resolvers",
+    "clue_research.adapters",
+    "clue_research.stage0",
+    "clue_research.discovery_scoring",
+    "clue_research.durable",
+    "clue_research.profiling",
+    "clue_research.verification",
+    "clue_research.compliance",
+    "clue_research.synthesis",
+    "clue_research.narrative",
+    "clue_research.review",
+    "clue_research.api",
+]
+forbidden_modules = ["openai"]
 
 # Rule 6 — the claim store stays the shared substrate: it must NOT import identity or locks, so the
 # M2.5 reuse classifier can never invert the dependency (claimstore persists pre-stamped fields and

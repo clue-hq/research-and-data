@@ -17,6 +17,13 @@ def resolve_span(source_key: str) -> str:
     return f"{SPAN_RESOLVE}.{source_key}"
 
 
+# --- llm gateway (M0.4) -----------------------------------------------------
+# Every *direct* LLM call through the shared OpenRouter gateway (conventions §2/§4) emits this one
+# span, carrying ``model``, token usage, and ``cost_cents`` — so per-call-site model spend is
+# queryable from day one. Exa Deep / Parallel Task (M11) are resolvers, NOT gateway calls.
+SPAN_LLM_GATEWAY_CALL = "llm.gateway_call"
+
+
 # --- claim store (M1) -------------------------------------------------------
 SPAN_MERGE_CURRENT_VALUE = "merge.current_value"
 
