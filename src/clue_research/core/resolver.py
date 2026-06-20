@@ -16,6 +16,27 @@ from clue_research.core.entity import Entity
 from clue_research.core.field import FieldDef
 
 
+class ResolverError(Exception):
+    """Base of the source-layer fault taxonomy — an error raised by a :class:`Resolver`.
+
+    Part of the protocol contract (so the durable scheduler can classify failures without importing
+    a concrete resolver): everything a resolver raises derives from this. The one *meaningful*
+    distinction the engine acts on is retryable-vs-not (:class:`RetryableResolverError`).
+    """
+
+
+class RetryableResolverError(ResolverError):
+    """A **transient** provider failure (timeout, 5xx, 429 rate-limit) the engine/M7 may retry.
+
+    The Resolver contract draws a hard line between two non-success outcomes (substrate §4 / §5;
+    M4.4): a **hard miss** is an empty claim list — the field simply may end empty+flagged, a
+    *correct* output the waterfall advances past; a **transient** failure raises this, so the M7
+    scheduler retries rather than treating "couldn't reach the provider" as "the fact doesn't
+    exist". A resolver MUST NOT fabricate a value or write a partial/guessed claim on a transient
+    failure — it raises this and the step is retried (its open transaction rolls back).
+    """
+
+
 @runtime_checkable
 class Resolver(Protocol):
     """Resolve a field for an entity into zero or more claims (substrate §4).
