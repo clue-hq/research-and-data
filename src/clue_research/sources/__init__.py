@@ -28,6 +28,18 @@ from clue_research.sources.registry import (
     unbind_resolver,
 )
 from clue_research.sources.seeds import SEED_MANIFESTS, seed_source_manifests
+from clue_research.sources.thresholds import (
+    DEFAULT_CONFIDENCE_THRESHOLDS,
+    ConfidenceThresholds,
+)
+from clue_research.sources.waterfall import (
+    StepOutcome,
+    StopReason,
+    TierStep,
+    WaterfallResult,
+    resolve_field,
+    resolve_fields,
+)
 
 __all__ = [
     # manifest type
@@ -51,4 +63,14 @@ __all__ = [
     # seeds
     "SEED_MANIFESTS",
     "seed_source_manifests",
+    # waterfall engine (M4.1)
+    "resolve_field",
+    "resolve_fields",
+    "WaterfallResult",
+    "TierStep",
+    "StopReason",
+    "StepOutcome",
+    # confidence thresholds (engine-side config, decision #1)
+    "ConfidenceThresholds",
+    "DEFAULT_CONFIDENCE_THRESHOLDS",
 ]
