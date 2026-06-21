@@ -22,7 +22,7 @@ from typing import Annotated
 
 from pydantic import AfterValidator, BaseModel, ConfigDict, JsonValue
 
-from clue_research.core.enums import PassKind
+from clue_research.core.enums import PassKind, ReuseScope
 
 # --- canonical field-key namespaces (conventions §3) -----------------------
 NS_CORE = "core"  # commodity facts: employee_count, primary_domain, work_email...
@@ -146,7 +146,59 @@ class FieldDef(BaseModel):
     # An extension of the field_definition contract (registered, optional); the merge/source layers
     # ignore it.
     signal_class: str | None = None
+    # Cross-tenant reuse class *declared at the field* (M2.5 / ENG-165 W1). The declaration is the
+    # source of truth for whether claims of this field amortize across clients (`public_footprint`)
+    # or are tenant-isolated (`tenant_private`); ``None`` means "fall back to the class default"
+    # (:func:`default_reuse_scope`) — except a ``PACK`` field, which has no safe default and so MUST
+    # declare one (the classifier consults this before the prefix heuristic; the write boundary is
+    # fail-closed on it). An additive extension of the field_definition contract (conventions §4).
+    reuse_scope: ReuseScope | None = None
 
     @property
     def field_class(self) -> FieldClass:
         return classify_field_key(self.field_key)
+
+
+# --- cross-tenant reuse classification (M2.5 / ENG-165 W2) ------------------
+# The canonical default reuse class per field-class, kept in ``core`` so both the M2 classifier
+# (``identity.classify_reuse_scope``) and the M3 pack/field authoring read one shared definition
+# without importing each other (the import-linter independence contract). The *declared* scope on a
+# ``FieldDef`` (W1) always overrides this default; the default only fills the gap for an undeclared
+# field — and there is deliberately **no safe default for a ``PACK`` field** (returns ``None``), so
+# a vertical pack must declare the scope of every ``<pack>.*`` field (closing the "<pack>.* silently
+# defaults public" gap; substrate §2).
+_PRIVATE_BY_DEFAULT: frozenset[FieldClass] = frozenset(
+    {FieldClass.CONTACT, FieldClass.CONTACT_FACET, FieldClass.ACCOUNT_RESONANCE}
+)
+_PUBLIC_BY_DEFAULT: frozenset[FieldClass] = frozenset({FieldClass.CORE, FieldClass.ACCOUNT})
+
+
+def default_reuse_scope(field_class: FieldClass) -> ReuseScope | None:
+    """The default cross-tenant :class:`ReuseScope` for a field-class (M2.5 / ENG-165 W2).
+
+    ``CORE`` / ``ACCOUNT`` firmographic-technographic facts amortize across clients
+    (``PUBLIC_FOOTPRINT``); ``CONTACT`` / ``CONTACT_FACET`` personal data and ``ACCOUNT_RESONANCE``
+    client-shaped consumption are ``TENANT_PRIVATE``. A ``PACK`` field has **no safe default** and
+    returns ``None`` — it must declare its own ``reuse_scope`` (fail-closed). The per-field declared
+    scope (``FieldDef.reuse_scope``) overrides this (see :func:`resolve_reuse_scope`).
+    """
+    if field_class in _PRIVATE_BY_DEFAULT:
+        return ReuseScope.TENANT_PRIVATE
+    if field_class in _PUBLIC_BY_DEFAULT:
+        return ReuseScope.PUBLIC_FOOTPRINT
+    return None  # PACK — no safe default; the field must declare its scope
+
+
+def resolve_reuse_scope(field: FieldDef) -> ReuseScope | None:
+    """The effective reuse scope of a field: its **declared** scope if set, else the class default.
+
+    Returns ``None`` only for an *undeclared* ``PACK`` field (no safe default) — callers treat that
+    as fail-closed (authoring rejects it; the claim-write boundary refuses to write it). The single
+    place "what scope does this field's claims get" is decided, so the classifier, the compiler's
+    plan partitions, and the write guard never re-derive it differently.
+    """
+    return (
+        field.reuse_scope
+        if field.reuse_scope is not None
+        else default_reuse_scope(field.field_class)
+    )
