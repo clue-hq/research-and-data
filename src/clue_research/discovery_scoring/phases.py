@@ -40,6 +40,11 @@ from clue_research.core import (
     RunId,
 )
 from clue_research.db import transaction
+from clue_research.discovery_scoring.coverage import (
+    DEFAULT_COVERAGE_CONFIG,
+    CoverageConfig,
+    coverage_report,
+)
 from clue_research.discovery_scoring.discovery import (
     DEFAULT_DISCOVERY_CONFIG,
     ChannelRegistry,
@@ -171,6 +176,9 @@ class DiscoveryPhaseHandler:
             # coverage estimator (M6.5) and the learning loop (M13) read. Discovery produces no
             # field claims, so the candidate/error/query counts go in the free-form `disposition`
             # hook (not the claim-precision columns), with only the channel's spend in cost_cents.
+            # The run-level facts coverage needs to be queryable by run_id alone — the stopping
+            # reason and the admitted-vs-seen counts (M6.2) — are denormalised onto each discovery
+            # row (they agree across rows); M6.5 reads them off the latest row per channel.
             for channel_yield in result.per_channel_yield:
                 await record_source_yield(
                     conn,
@@ -186,6 +194,10 @@ class DiscoveryPhaseHandler:
                         "new_candidates": channel_yield.new_candidates,
                         "queries_issued": channel_yield.queries_issued,
                         "errors": channel_yield.errors,
+                        "stopping_reason": result.stopping_reason.value,
+                        "admitted": admitted,
+                        "needs_review": needs_review,
+                        "rejected": rejected,
                     },
                 )
 
@@ -395,9 +407,11 @@ class TierCheckpointPhaseHandler:
         self,
         *,
         config: TieringConfig = DEFAULT_TIERING_CONFIG,
+        coverage_config: CoverageConfig = DEFAULT_COVERAGE_CONFIG,
         session_factory: SessionFactory = transaction,
     ) -> None:
         self._config = config
+        self._coverage_config = coverage_config
         self._session_factory = session_factory
 
     async def run(self, ctx: PhaseContext) -> PhaseResult:
@@ -481,6 +495,21 @@ class TierCheckpointPhaseHandler:
                     else:
                         replayed += 1
 
+            # M6.5: surface the discovery-run coverage estimate through the checkpoint payload (the
+            # M6.4 hook — the client sees "~X–Y% found via these channels" + the channels not yet
+            # searched alongside the tier/cost review). Read-only over the discovery telemetry the
+            # DISCOVERY phase wrote; ``None`` when that run has no telemetry / no source registry is
+            # seeded, so the coverage placeholder stays unpopulated — it never fails the gate.
+            coverage = await coverage_report(
+                conn,
+                run_id=_discovery_run_id(ctx),
+                spec=spec,
+                config=self._coverage_config,
+            )
+            coverage_json: JsonValue = (
+                coverage.model_dump(mode="json") if coverage is not None else None
+            )
+
             status = CheckpointStatus.RESUMED if approved else CheckpointStatus.AWAITING
             review = CheckpointReview(
                 status=status,
@@ -492,6 +521,7 @@ class TierCheckpointPhaseHandler:
                 cap_cents=effective_cap,
                 projected_over_cap=over_cap,
                 scored_count=len(views),
+                coverage=coverage_json,
             )
             payload: dict[str, JsonValue] = {
                 "checkpoint_status": status.value,
@@ -501,6 +531,7 @@ class TierCheckpointPhaseHandler:
                 "estimate": estimate.model_dump(mode="json"),
                 "projected_over_cap": over_cap,
                 "scored_count": len(views),
+                "coverage": coverage_json,
                 "review": review.model_dump(mode="json"),
             }
             if approved:
