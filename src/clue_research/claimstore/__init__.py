@@ -22,6 +22,7 @@ from __future__ import annotations
 
 from clue_research.claimstore.claims import (
     claims_for,
+    entities_with_field_claim,
     insert_claim,
     supersede_claim,
 )
@@ -58,6 +59,7 @@ __all__ = [
     "insert_claim",
     "supersede_claim",
     "claims_for",
+    "entities_with_field_claim",
     # merge / current truth (M1.2)
     "current_value",
     "current_values",
