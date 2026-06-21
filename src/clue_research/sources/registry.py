@@ -379,9 +379,24 @@ async def list_sources(
     return [_row_to_entry(dict(row)) for row in rows]
 
 
+def entity_scope_serves(scope: EntityScope, requested: EntityScope) -> bool:
+    """True if a source of ``scope`` can serve a ``requested``-scope query — an exact match, or
+    ``both`` (which serves account- *and* contact-scope queries alike). The single owner of the
+    scope-widening rule: ``list_sources``'s ``entity_scope`` filter is EXACT, so the capability
+    queries that need widening — ``sources_for`` and M6.5 coverage's account-scope universe read —
+    share this one predicate rather than re-deriving "account OR both"."""
+    return scope is requested or scope is EntityScope.BOTH
+
+
 def _entity_scope_matches(scope: EntityScope, requested: str | None) -> bool:
-    """A source serves the requested scope if it matches exactly or is ``both``."""
-    return requested is None or scope.value == requested or scope is EntityScope.BOTH
+    """The string-keyed (SQL-param path) form of :func:`entity_scope_serves`; an unknown requested
+    scope matches nothing (a lenient no-match, never a raise)."""
+    if requested is None:
+        return True
+    try:
+        return entity_scope_serves(scope, EntityScope(requested))
+    except ValueError:
+        return False
 
 
 async def sources_for(

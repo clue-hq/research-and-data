@@ -40,6 +40,7 @@ from clue_research.discovery_scoring.discovery.strategy import (
     LOOKALIKE_CHANNEL,
     DiscoveryConfig,
     DiscoveryStrategy,
+    DiscoveryStrategyError,
 )
 
 __all__ = [
@@ -52,6 +53,7 @@ __all__ = [
     "DiscoveryQuery",
     "ChannelRegistry",
     "DiscoveryStrategy",
+    "DiscoveryStrategyError",
     "DiscoveryConfig",
     "DEFAULT_DISCOVERY_CONFIG",
     "StoppingReason",

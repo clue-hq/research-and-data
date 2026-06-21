@@ -27,6 +27,19 @@ Implemented so far:
 
 from __future__ import annotations
 
+from clue_research.discovery_scoring.coverage import (
+    DEFAULT_COVERAGE_CONFIG,
+    ChannelCurvePoint,
+    ChannelObservation,
+    CoverageBand,
+    CoverageConfidence,
+    CoverageConfig,
+    CoverageReport,
+    UnsearchedChannel,
+    coverage_report,
+    estimate_coverage,
+    saturation_coverage,
+)
 from clue_research.discovery_scoring.discovery import (
     DEFAULT_DISCOVERY_CONFIG,
     LOOKALIKE_CHANNEL,
@@ -102,6 +115,18 @@ __all__ = [
     "DEFAULT_DISCOVERY_CONFIG",
     "StoppingReason",
     "LOOKALIKE_CHANNEL",
+    # M6.5 — coverage-confidence estimator
+    "estimate_coverage",
+    "saturation_coverage",
+    "coverage_report",
+    "CoverageReport",
+    "CoverageBand",
+    "CoverageConfidence",
+    "CoverageConfig",
+    "DEFAULT_COVERAGE_CONFIG",
+    "ChannelCurvePoint",
+    "ChannelObservation",
+    "UnsearchedChannel",
     # M6.2 — existence/identity gate
     "admit",
     "AdmissionResult",
