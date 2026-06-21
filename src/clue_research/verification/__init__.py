@@ -14,10 +14,24 @@ Implemented so far:
 * **M9.1** (``pre_spend``) — :class:`PreSpendGateImpl` (the ``PreSpendGate`` impl),
   :func:`assemble_target_lock`, the :class:`PreSpendPolicy`/:class:`GateSpec` policy-as-data, and
   :func:`load_pre_spend_policy`.
+* **M9.2** (``corroboration``) — :class:`Corroborator` (the deterministic ≥N-independent-tier≤3
+  promotion + conflict-flag pass), :class:`EqualityMode`/:class:`CorroborationPolicy` (policy data),
+  and the :class:`CorroborationResult`/:class:`ValueGroup` value types.
 """
 
 from __future__ import annotations
 
+from clue_research.verification.corroboration import (
+    DEFAULT_CORROBORATION_POLICY,
+    CorroborationPolicy,
+    CorroborationResult,
+    Corroborator,
+    EqualityMode,
+    ValueGroup,
+    group_by_agreement,
+    independent_source_count,
+    values_agree,
+)
 from clue_research.verification.pre_spend import (
     DEFAULT_PRE_SPEND_POLICY,
     GateSpec,
@@ -39,4 +53,14 @@ __all__ = [
     "load_pre_spend_policy",
     "assemble_target_lock",
     "run_lock_token",
+    # M9.2 — corroboration rules
+    "Corroborator",
+    "CorroborationPolicy",
+    "DEFAULT_CORROBORATION_POLICY",
+    "CorroborationResult",
+    "ValueGroup",
+    "EqualityMode",
+    "values_agree",
+    "group_by_agreement",
+    "independent_source_count",
 ]
