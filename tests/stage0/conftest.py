@@ -20,8 +20,9 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_research.claimstore import load_core_pack
 from clue_research.db import db_lifespan
+from clue_research.icp import load_starter_packs
 from clue_research.sources import clear_resolver_bindings, seed_source_manifests
-from clue_research.stage0 import load_client_knowledge_pack
+from clue_research.stage0 import load_client_knowledge_pack, load_icp_feedback_pack
 from tests.db.conftest import _db_available
 from tests.db.conftest import run_async as run_async
 
@@ -65,9 +66,11 @@ def resolver_bindings() -> Iterator[None]:
 async def rollback_conn(*, seed: bool = True) -> AsyncIterator[AsyncConnection]:
     """Yield a pooled connection inside a transaction that is always rolled back.
 
-    Seeds the core pack, the client-knowledge pack, and the source manifests (in that order — source
-    ``yields`` validate against the field registry) so the reverse-profiling waterfall has real
-    manifests to dispatch through."""
+    Seeds the core pack, the client-knowledge pack, the M3.3 starter packs (catalog + ``<pack>.*``
+    fields + source profiles, for M5.2 ICP synthesis/confirm), the ICP feedback field (M5.2 confirm
+    diff), and the source manifests (in that order — source ``yields`` validate against the field
+    registry) so the reverse-profiling waterfall and ICP synthesis have real fields/packs/manifests
+    to read."""
     async with db_lifespan() as engine:
         conn = await engine.connect()
         trans = await conn.begin()
@@ -75,6 +78,8 @@ async def rollback_conn(*, seed: bool = True) -> AsyncIterator[AsyncConnection]:
             if seed:
                 await load_core_pack(conn)
                 await load_client_knowledge_pack(conn)
+                await load_starter_packs(conn)
+                await load_icp_feedback_pack(conn)
                 await seed_source_manifests(conn)
             yield conn
         finally:
