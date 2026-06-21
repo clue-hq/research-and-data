@@ -64,7 +64,13 @@ from clue_research.core import (
     contact_claim,
     discovery_claim,
 )
-from clue_research.icp import ScoringRubric, TierCutoffs, get_rubric_version, score_entity
+from clue_research.icp import (
+    ScoringRubric,
+    TierCutoffs,
+    fit_floor,
+    get_rubric_version,
+    score_entity,
+)
 from clue_research.identity import (
     DEFAULT_DISPOSITION_POLICY,
     DEFAULT_REUSE_POLICY,
@@ -589,11 +595,11 @@ async def _back_score(
 
 
 def _fit_flag(fit_score: float, cutoffs: TierCutoffs) -> FitFlag:
-    """Flag an account ``NON_FIT`` when its fit falls below the ICP-relative fit floor — the lowest
-    ``min_fit`` across the confirmed rubric's tier bands. A rubric that sets no fit floor (``0.0``)
-    flags nothing (the client set no bar)."""
-    floors = [band.min_fit for band in cutoffs.bands]
-    floor = min(floors) if floors else 0.0
+    """Flag an account ``NON_FIT`` when its fit falls below the ICP-relative fit floor (the M3.4
+    :func:`~clue_research.icp.fit_floor` — the lowest ``min_fit`` across the rubric's tier bands;
+    the *same* threshold M5.4 lookalike seeding gates on, single-sourced there). A rubric that sets
+    no fit floor (``0.0``) flags nothing (the client set no bar)."""
+    floor = fit_floor(cutoffs)
     return FitFlag.NON_FIT if floor > 0.0 and fit_score < floor else FitFlag.FIT
 
 

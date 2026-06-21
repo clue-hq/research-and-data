@@ -22,7 +22,12 @@ tier-1 enrichment with "already a customer" detection, ICP back-scoring via the 
 Pass-A scorer, D6 non-fit flagging, governed imported-contact tagging, and the claim-native
 ``import.batch`` marker — converging into the same account-set shape discovery emits. Import is an
 entry scenario, not a campaign phase (no ``IMPORT`` phase); it runs before M6's ``SCORING`` phase,
-store-mediated.
+store-mediated. M5.4 lands hybrid lookalike seeding (``assemble_lookalike_seeds``): it ranks +
+packages resolved seed ``account_entity``s — the client's existing customers (M5.1) and high-fit
+imports (M5.3) — into a per-ICP ``SeedSet``, the input contract M6 mode-M1 lookalike expansion
+consumes. M5.4 produces the seeds, not the discovery run; seeds reach M6 store/spec-mediated through
+the confirmed spec's ``discovery_strategy.seed_account_ids`` (so a SeedSet slots straight into an
+``ICPProposal``'s ``seed_accounts``). Like import, seeding is an entry scenario, not a phase.
 """
 
 from __future__ import annotations
@@ -90,10 +95,19 @@ from clue_research.stage0.reuse import (
     CLIENT_KNOWLEDGE_REUSE_POLICY,
     ICP_REUSE_POLICY,
     IMPORT_REUSE_POLICY,
+    SEED_REUSE_POLICY,
 )
 from clue_research.stage0.reverse_profiling_handler import (
     ReverseProfilingHandler,
     reverse_profiling_run_id,
+)
+from clue_research.stage0.seeds import assemble_lookalike_seeds, seeds_run_id
+from clue_research.stage0.seeds_types import (
+    DEFAULT_SEED_POLICY,
+    SeedPolicy,
+    SeedReason,
+    SeedSet,
+    SkippedSeed,
 )
 from clue_research.stage0.types import (
     ClientInput,
@@ -172,8 +186,17 @@ __all__ = [
     "IMPORT_BATCH",
     "CONTACT_IMPORT_RECORD",
     "DISCOVERY_PROVENANCE",
-    # reuse policies (client-knowledge + icp + import are tenant-private)
+    # M5.4 — hybrid lookalike seeding (imports / existing customers → M6 seed set)
+    "assemble_lookalike_seeds",
+    "seeds_run_id",
+    "SeedSet",
+    "SkippedSeed",
+    "SeedReason",
+    "SeedPolicy",
+    "DEFAULT_SEED_POLICY",
+    # reuse policies (client-knowledge + icp + import + seed are tenant-private)
     "CLIENT_KNOWLEDGE_REUSE_POLICY",
     "ICP_REUSE_POLICY",
     "IMPORT_REUSE_POLICY",
+    "SEED_REUSE_POLICY",
 ]
