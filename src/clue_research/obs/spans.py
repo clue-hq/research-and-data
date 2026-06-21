@@ -57,9 +57,14 @@ SPAN_LLM_GATEWAY_CALL = "llm.gateway_call"
 SPAN_MERGE_CURRENT_VALUE = "merge.current_value"
 
 # --- verification (M9) — accuracy/identity ---------------------------------
+# The five M9 gate spans, in pipeline order: the pre-spend entry gate (M9.1), corroboration
+# (M9.2), the faithfulness judge (M9.3), identity-binding (M9.4), and freshness (M9.5). All
+# distinct from the M10 use-gate span below — accuracy/identity vs appropriateness (Doc D §5).
+SPAN_VERIFICATION_PRE_SPEND_GATE = "verification.pre_spend_gate"
 SPAN_VERIFICATION_CORROBORATION = "verification.corroboration"
 SPAN_VERIFICATION_FAITHFULNESS_JUDGE = "verification.faithfulness_judge"
 SPAN_VERIFICATION_IDENTITY_BINDING = "verification.identity_binding"
+SPAN_VERIFICATION_FRESHNESS = "verification.freshness"
 
 # --- compliance (M10) — appropriateness/use. DISTINCT from the judge (Doc D §5) ---
 SPAN_COMPLIANCE_USE_GATE = "compliance.use_gate"
