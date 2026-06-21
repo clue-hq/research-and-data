@@ -17,6 +17,11 @@ Implemented so far:
 * **M9.2** (``corroboration``) — :class:`Corroborator` (the deterministic ≥N-independent-tier≤3
   promotion + conflict-flag pass), :class:`EqualityMode`/:class:`CorroborationPolicy` (policy data),
   and the :class:`CorroborationResult`/:class:`ValueGroup` value types.
+* **M9.3** (``faithfulness``) — :class:`FaithfulnessJudgeImpl` (the LLM-as-judge claim-level
+  entailment gate over tier-4 synthesized claims, the ``FaithfulnessJudge`` impl),
+  :class:`JudgePolicy`/:func:`load_judge_policy` (policy data), and the pure
+  :func:`parse_judge_response`/:func:`build_judge_messages`/:func:`status_for_verdict`/
+  :func:`needs_re_retrieval` helpers.
 """
 
 from __future__ import annotations
@@ -31,6 +36,19 @@ from clue_research.verification.corroboration import (
     group_by_agreement,
     independent_source_count,
     values_agree,
+)
+from clue_research.verification.faithfulness import (
+    DEFAULT_JUDGE_POLICY,
+    PROMPT_VERSION,
+    PROMPTS,
+    FaithfulnessJudgeImpl,
+    JudgePolicy,
+    ParsedVerdict,
+    build_judge_messages,
+    load_judge_policy,
+    needs_re_retrieval,
+    parse_judge_response,
+    status_for_verdict,
 )
 from clue_research.verification.pre_spend import (
     DEFAULT_PRE_SPEND_POLICY,
@@ -63,4 +81,16 @@ __all__ = [
     "values_agree",
     "group_by_agreement",
     "independent_source_count",
+    # M9.3 — faithfulness judge
+    "FaithfulnessJudgeImpl",
+    "JudgePolicy",
+    "DEFAULT_JUDGE_POLICY",
+    "load_judge_policy",
+    "ParsedVerdict",
+    "build_judge_messages",
+    "parse_judge_response",
+    "status_for_verdict",
+    "needs_re_retrieval",
+    "PROMPT_VERSION",
+    "PROMPTS",
 ]
