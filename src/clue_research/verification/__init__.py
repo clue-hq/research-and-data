@@ -22,6 +22,11 @@ Implemented so far:
   :class:`JudgePolicy`/:func:`load_judge_policy` (policy data), and the pure
   :func:`parse_judge_response`/:func:`build_judge_messages`/:func:`status_for_verdict`/
   :func:`needs_re_retrieval` helpers.
+* **M9.4** (``identity_binding``) — :class:`IdentityBindingGateImpl` (the strong-vs-weak
+  contact-claim gate, the ``IdentityBindingGate`` impl), :class:`BindingPolicy`/
+  :func:`load_binding_policy` (policy data), and the pure
+  :func:`classify_binding`/:func:`handle_matches`/:func:`count_identifier_matches`/
+  :func:`strength_from_signals` helpers.
 """
 
 from __future__ import annotations
@@ -49,6 +54,18 @@ from clue_research.verification.faithfulness import (
     needs_re_retrieval,
     parse_judge_response,
     status_for_verdict,
+)
+from clue_research.verification.identity_binding import (
+    DEFAULT_BINDING_POLICY,
+    SUPPORTED_IDENTIFIER_KINDS,
+    BindingPolicy,
+    IdentityBindingGateImpl,
+    classify_binding,
+    count_identifier_matches,
+    handle_matches,
+    load_binding_policy,
+    normalize_url,
+    strength_from_signals,
 )
 from clue_research.verification.pre_spend import (
     DEFAULT_PRE_SPEND_POLICY,
@@ -93,4 +110,15 @@ __all__ = [
     "needs_re_retrieval",
     "PROMPT_VERSION",
     "PROMPTS",
+    # M9.4 — identity-binding gate
+    "IdentityBindingGateImpl",
+    "BindingPolicy",
+    "DEFAULT_BINDING_POLICY",
+    "SUPPORTED_IDENTIFIER_KINDS",
+    "load_binding_policy",
+    "classify_binding",
+    "handle_matches",
+    "count_identifier_matches",
+    "strength_from_signals",
+    "normalize_url",
 ]
