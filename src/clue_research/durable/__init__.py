@@ -28,6 +28,27 @@ from clue_research.durable.account_run import (
     save_references,
     set_status,
 )
+from clue_research.durable.budget import (
+    BudgetEngine,
+    BudgetError,
+    BudgetStateNotFound,
+    BudgetStore,
+    DbBudgetStore,
+    project_spend,
+)
+from clue_research.durable.budget_event import (
+    AccountBudgetState,
+    BudgetEventRow,
+    RunBudgetState,
+    add_account_spend,
+    add_run_spend,
+    get_account_budget_state,
+    get_run_budget_state,
+    insert_budget_event,
+    list_budget_events,
+    set_account_budget_cap,
+    set_estimated_cents,
+)
 from clue_research.durable.campaign import (
     PHASE_SEQUENCE,
     BudgetEngineNotConfigured,
@@ -54,6 +75,7 @@ from clue_research.durable.campaign_run import (
 )
 from clue_research.durable.enums import (
     AccountRunStatus,
+    BudgetEventKind,
     CampaignRunStatus,
     IdempotencyStatus,
     PhaseCheckpointStatus,
@@ -114,6 +136,7 @@ __all__ = [
     "CampaignRunStatus",
     "PhaseCheckpointStatus",
     "IdempotencyStatus",
+    "BudgetEventKind",
     # idempotency ledger + context manager (M7.4)
     "idempotent",
     "IdempotencyStore",
@@ -187,4 +210,23 @@ __all__ = [
     "AccountSpec",
     "LockFactory",
     "account_entity_lock_factory",
+    # budget caps & cost-governance engine (M7.5)
+    "BudgetEngine",
+    "BudgetStore",
+    "DbBudgetStore",
+    "BudgetError",
+    "BudgetStateNotFound",
+    "project_spend",
+    # budget_event / cost-accounting repository (M7.5)
+    "BudgetEventRow",
+    "RunBudgetState",
+    "AccountBudgetState",
+    "insert_budget_event",
+    "list_budget_events",
+    "get_run_budget_state",
+    "get_account_budget_state",
+    "add_run_spend",
+    "add_account_spend",
+    "set_estimated_cents",
+    "set_account_budget_cap",
 ]

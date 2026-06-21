@@ -33,6 +33,9 @@ from pydantic import JsonValue
 
 from clue_research.core import (
     BudgetEngine,
+    BudgetScope,
+    BudgetVerdict,
+    BurnDown,
     CampaignPhase,
     CampaignRunId,
     CostCents,
@@ -93,6 +96,22 @@ def next_phase(phase: CampaignPhase) -> CampaignPhase | None:
 # spurious :class:`~clue_research.durable.idempotency.IdempotencyConflict`. The ledger's job at the
 # phase level is the exactly-once *finalize* (a re-finalize replays) + the per-phase charge record.
 DEFAULT_PHASE_STALE_AFTER = timedelta(0)
+
+
+# The phases that incur resolver spend, and so are gated by the per-run budget cap (M7.5). Before
+# running one of these, the state machine asks the budget engine whether the per-run hard cap is
+# already reached and, if so, graceful-stops (Doc C §5; substrate §5c). The setup / human-gate /
+# output phases (``reverse_profiling`` / ``icp_confirmed`` / ``tier_checkpoint`` / ``handoff``) are
+# *not* gated: they spend nothing meaningful and gating them would block a run from even starting or
+# from reaching the client's raise-the-cap decision at the checkpoint.
+_BUDGET_GATED_PHASES: frozenset[CampaignPhase] = frozenset(
+    {
+        CampaignPhase.DISCOVERY,
+        CampaignPhase.SCORING,
+        CampaignPhase.DEEP,
+        CampaignPhase.VERIFICATION,
+    }
+)
 
 
 # --- errors ----------------------------------------------------------------------------------
@@ -403,6 +422,17 @@ class CampaignRun:
             # Suspended at a durable gate; the handler does not re-run until a decision arrives.
             return run
 
+        # Budget pre-gate (M7.5): before running a *fresh* spend phase, if a budget engine is wired
+        # and the per-run hard cap is already reached, graceful-stop the run at this boundary rather
+        # than spending past the cap (Doc C §5). Placed after the checkpoint short-circuits (an
+        # already-committed phase just transitions) and before the IN_PROGRESS stage (so a later
+        # resume re-enters this same phase fresh once the cap is raised).
+        if await self._budget_graceful_stop(run):
+            await self._store.mark_status(
+                campaign_run_id, status=CampaignRunStatus.PAUSED, stamp_paused=True
+            )
+            return await self.status(campaign_run_id)
+
         handler = self._registry.get(phase)
         if handler is None:
             raise NoPhaseHandlerRegistered(phase.value)
@@ -529,6 +559,13 @@ class CampaignRun:
             tier_cutoffs=tier_cutoffs,
         )
         if budget_cap_cents is not None and self._budget is not None:
+            # The campaign store owns ``campaign_run.budget_cap_cents`` + its append-only
+            # ``adjustment_journal`` row (M7.3, written atomically above). The engine's
+            # ``set_campaign_cap`` re-asserts the *same* value (an idempotent no-op on the column)
+            # and adds the M7.5 governance events (``cap_raised`` / ``breach_pending``). The
+            # redundant same-value column write is benign (single-driver precondition; the value is
+            # identical); collapsing the two writers into one when the engine is wired is a noted
+            # follow-up (cf. the account_run.cost_cents single-writer follow-up for M8).
             await self._budget.set_campaign_cap(campaign_run_id, budget_cap_cents)
         return await self.status(campaign_run_id)
 
@@ -641,7 +678,31 @@ class CampaignRun:
             campaign_run_id, discovered_count=discovered_count, tier_cutoffs=cutoffs
         )
 
+    async def burn_down(self, campaign_run_id: CampaignRunId) -> BurnDown:
+        """The live cost burn-down for the run (Doc C §5/§6) — spent vs estimate vs cap vs remaining
+        — by delegating to the injected :class:`~clue_research.core.BudgetEngine` (M7.5 owns the
+        accounting; M7.3 exposes the call the client surface / M13.4 uses). Raises
+        :class:`BudgetEngineNotConfigured` if no engine is wired."""
+        if self._budget is None:
+            raise BudgetEngineNotConfigured(str(campaign_run_id))
+        return await self._budget.burn_down(campaign_run_id)
+
     # -- internals --
+
+    async def _budget_graceful_stop(self, run: CampaignRunRow) -> bool:
+        """Whether the per-run budget cap requires a graceful stop *before* ``run``'s current phase
+        (M7.5). Only the spend phases (:data:`_BUDGET_GATED_PHASES`) are gated, and only when a
+        budget engine is wired. A ``GRACEFUL_STOP`` verdict (the per-run hard cap is reached) pauses
+        the run cooperatively — status ``PAUSED``, **no** ``AWAITING_INPUT`` checkpoint — so a later
+        :meth:`resume` re-enters the *same* phase once the cap is raised, distinct from the human
+        ``tier_checkpoint`` gate (which commits-and-advances on approve). The engine records the
+        ``graceful_stop`` ``budget_event`` as part of the check."""
+        if self._budget is None or run.phase not in _BUDGET_GATED_PHASES:
+            return False
+        decision = await self._budget.check(
+            scope=BudgetScope.RUN, projected_cents=Decimal(0), campaign_run_id=run.id
+        )
+        return decision.verdict is BudgetVerdict.GRACEFUL_STOP
 
     def _phase_context(self, run: CampaignRunRow) -> PhaseContext:
         """Build the frozen :class:`~clue_research.core.PhaseContext` for the run's current phase —

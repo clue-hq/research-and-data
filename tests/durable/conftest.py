@@ -542,3 +542,147 @@ class FakeIdempotencyStore:
     def mark_stale(self, key: str) -> None:
         """Simulate the in_progress holder having crashed long ago (the stale-recovery trigger)."""
         self._rows[key]["stale"] = True
+
+
+# --- in-memory fake for the budget engine accounting store (M7.5) ------------
+
+from clue_research.durable.budget import BudgetStateNotFound, BudgetStore  # noqa: E402
+from clue_research.durable.budget_event import (  # noqa: E402
+    AccountBudgetState,
+    BudgetEventRow,
+    RunBudgetState,
+)
+from clue_research.durable.enums import BudgetEventKind  # noqa: E402
+
+
+class FakeBudgetStore:
+    """An in-memory :class:`~clue_research.durable.budget.BudgetStore` (no DB).
+
+    Backs the M7.5 budget-engine tests so estimate / check / record / set_campaign_cap / burn_down
+    are exercised without Postgres. ``set_run`` / ``set_account`` seed the run/account cost state a
+    test needs; ``add_spend`` / ``set_*`` mutate it exactly as :class:`DbBudgetStore` mutates the
+    ``campaign_run`` / ``account_run`` columns; ``events`` records every governance event for
+    assertions (the in-memory analogue of the append-only ``budget_event`` table)."""
+
+    def __init__(self) -> None:
+        self._runs: dict[CampaignRunId, dict[str, object]] = {}
+        self._accounts: dict[RunId, dict[str, object]] = {}
+        self.events: list[BudgetEventRow] = []
+        self._seq = 0
+
+    # -- seed helpers (test setup) --
+
+    def set_run(
+        self,
+        campaign_run_id: CampaignRunId,
+        *,
+        spent: CostCents = Decimal(0),
+        cap: CostCents | None = None,
+        estimated: CostCents | None = None,
+    ) -> None:
+        self._runs[campaign_run_id] = {"spent": spent, "cap": cap, "estimated": estimated}
+
+    def set_account(
+        self,
+        account_run_id: RunId,
+        *,
+        tier: str,
+        cost: CostCents = Decimal(0),
+        cap: CostCents | None = None,
+    ) -> None:
+        self._accounts[account_run_id] = {"cost": cost, "tier": tier, "cap": cap}
+
+    # -- the BudgetStore protocol --
+
+    async def run_state(self, campaign_run_id: CampaignRunId) -> RunBudgetState | None:
+        state = self._runs.get(campaign_run_id)
+        if state is None:
+            return None
+        return RunBudgetState(
+            spent_cents=state["spent"],  # type: ignore[arg-type]
+            cap_cents=state["cap"],  # type: ignore[arg-type]
+            estimated_cents=state["estimated"],  # type: ignore[arg-type]
+        )
+
+    async def account_state(self, account_run_id: RunId) -> AccountBudgetState | None:
+        state = self._accounts.get(account_run_id)
+        if state is None:
+            return None
+        return AccountBudgetState(
+            cost_cents=state["cost"],  # type: ignore[arg-type]
+            tier=state["tier"],  # type: ignore[arg-type]
+            budget_cap_cents=state["cap"],  # type: ignore[arg-type]
+        )
+
+    async def add_spend(
+        self,
+        *,
+        campaign_run_id: CampaignRunId,
+        cost_cents: CostCents,
+        account_run_id: RunId | None = None,
+    ) -> None:
+        # Mirror DbBudgetStore.add_spend exactly: fail-loud on a missing run/account (a charge never
+        # silently vanishes), and check both rows BEFORE applying either (the DB does it in one
+        # transaction). No setdefault auto-create — that would diverge from production's no-op row.
+        if campaign_run_id not in self._runs:
+            raise BudgetStateNotFound(f"campaign_run {campaign_run_id}")
+        if account_run_id is not None and account_run_id not in self._accounts:
+            raise BudgetStateNotFound(f"account_run {account_run_id}")
+        run = self._runs[campaign_run_id]
+        run["spent"] = run["spent"] + cost_cents  # type: ignore[operator]
+        if account_run_id is not None:
+            acct = self._accounts[account_run_id]
+            acct["cost"] = acct["cost"] + cost_cents  # type: ignore[operator]
+
+    async def set_campaign_cap(self, campaign_run_id: CampaignRunId, cap_cents: CostCents) -> None:
+        run = self._runs.setdefault(
+            campaign_run_id, {"spent": Decimal(0), "cap": None, "estimated": None}
+        )
+        run["cap"] = cap_cents
+
+    async def set_account_cap(self, account_run_id: RunId, cap_cents: CostCents | None) -> None:
+        if account_run_id in self._accounts:
+            self._accounts[account_run_id]["cap"] = cap_cents
+
+    async def set_estimated(
+        self, campaign_run_id: CampaignRunId, estimated_cents: CostCents
+    ) -> None:
+        run = self._runs.get(campaign_run_id)
+        if (
+            run is not None
+        ):  # best-effort: a pre-start estimate (no run row) is a no-op, like the DB
+            run["estimated"] = estimated_cents
+
+    async def record_event(
+        self,
+        *,
+        campaign_run_id: CampaignRunId,
+        scope: BudgetScope,
+        kind: BudgetEventKind,
+        projected_cents: CostCents,
+        cap_cents: CostCents | None,
+        detail: dict[str, object] | None = None,
+    ) -> None:
+        self._seq += 1
+        self.events.append(
+            BudgetEventRow(
+                id=uuid4(),
+                seq=self._seq,
+                campaign_run_id=campaign_run_id,
+                scope=scope,
+                kind=kind,
+                projected_cents=projected_cents,
+                cap_cents=cap_cents,
+                detail=dict(detail) if detail else {},
+                created_at=_T0,
+            )
+        )
+
+    def kinds(self) -> list[BudgetEventKind]:
+        """The recorded event kinds in order (assertion helper)."""
+        return [e.kind for e in self.events]
+
+
+# A static-time conformance check: the in-memory fake must satisfy the runtime-checkable protocol,
+# so a test exercising the fake proves the same surface the production DbBudgetStore implements.
+_FAKE_BUDGET_STORE_IS_A_STORE: type[BudgetStore] = FakeBudgetStore
