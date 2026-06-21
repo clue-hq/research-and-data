@@ -22,7 +22,11 @@ from clue_research.claimstore import load_core_pack
 from clue_research.db import db_lifespan
 from clue_research.icp import load_starter_packs
 from clue_research.sources import clear_resolver_bindings, seed_source_manifests
-from clue_research.stage0 import load_client_knowledge_pack, load_icp_feedback_pack
+from clue_research.stage0 import (
+    load_client_knowledge_pack,
+    load_icp_feedback_pack,
+    load_import_pack,
+)
 from tests.db.conftest import _db_available
 from tests.db.conftest import run_async as run_async
 
@@ -80,6 +84,7 @@ async def rollback_conn(*, seed: bool = True) -> AsyncIterator[AsyncConnection]:
                 await load_client_knowledge_pack(conn)
                 await load_starter_packs(conn)
                 await load_icp_feedback_pack(conn)
+                await load_import_pack(conn)
                 await seed_source_manifests(conn)
             yield conn
         finally:

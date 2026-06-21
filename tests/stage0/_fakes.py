@@ -23,6 +23,7 @@ from clue_research.core import (
     Entity,
     ExtractionMethod,
     FieldDef,
+    ICPCreatedFrom,
     JudgeResult,
     JudgeVerdict,
     Message,
@@ -31,9 +32,20 @@ from clue_research.core import (
     new_claim_id,
     new_run_id,
 )
+from clue_research.icp import (
+    RubricEntry,
+    ScoringRubric,
+    ScoringTransform,
+    SubRubric,
+    TierBand,
+    TierCutoffs,
+    create_icp_spec,
+    rubric_to_slot,
+)
 from clue_research.stage0 import (
     ClientInput,
     ClientKnowledgeBaseRef,
+    ICPSpecRef,
     VolunteeredMaterial,
     reverse_profile,
 )
@@ -82,6 +94,75 @@ class FakeResolver:
                 cost_cents=self._cost,
             )
         ]
+
+
+class FakeCrmResolver:
+    """A tier-1 ``crm`` :class:`~clue_research.core.resolver.Resolver` (M5.3 import enrichment).
+
+    Returns a single ``account.crm_relationship_status`` claim (``extraction_method=crm_import``,
+    tier-1, no ``source_url``) for every account — modelling the client's CRM. Bound to the ``crm``
+    source_key via ``sources.bind_resolver`` (the same dispatch the production waterfall uses); the
+    waterfall stamps the claim ``tenant_private`` because ``crm_import`` is a private method."""
+
+    def __init__(self, *, relationship: str = "customer") -> None:
+        self.tier = 1
+        self._relationship = relationship
+
+    def resolve(self, entity: Entity, field: FieldDef) -> list[Claim]:
+        if field.field_key != "account.crm_relationship_status":
+            return []
+        return [
+            account_claim(
+                entity_id=entity.entity_id,
+                field_key=field.field_key,
+                value_json=self._relationship,
+                source_tier=1,
+                extraction_method=ExtractionMethod.CRM_IMPORT,
+                confidence=1.0,
+                run_id=new_run_id(),
+                research_mode=ResearchMode.ACCOUNT_PROFILING,
+                evidence_span="client CRM",
+            )
+        ]
+
+
+async def build_confirmed_icp(
+    conn: AsyncConnection,
+    *,
+    client_id: str,
+    icp_key: str = "primary",
+    fit_threshold: float = 0.5,
+) -> ICPSpecRef:
+    """Create + activate a confirmed ``ICPSpec`` whose fit rubric is the *presence* of a client-CRM
+    relationship (``account.crm_relationship_status``, BOOLEAN) with one ``min_fit`` tier band — so
+    a CRM-enriched account back-scores FIT and an un-enriched one falls below the floor (NON_FIT).
+    Returns the M5.2 :class:`ICPSpecRef` ``import_accounts`` back-scores against."""
+    rubric = ScoringRubric(
+        fit=SubRubric(
+            entries=(
+                RubricEntry(
+                    field_key="account.crm_relationship_status",
+                    weight=1.0,
+                    transform=ScoringTransform.BOOLEAN,
+                ),
+            )
+        ),
+        intent=SubRubric(entries=()),
+        tier_cutoffs=TierCutoffs(
+            bands=(TierBand(tier="high", min_fit=fit_threshold),),
+            fallback_tier="low",
+        ),
+    )
+    spec = await create_icp_spec(
+        conn,
+        client_id=client_id,
+        icp_key=icp_key,
+        created_from=ICPCreatedFrom.SYNTHESIS,
+        field_keys=("account.crm_relationship_status",),
+        scoring_rubric=rubric_to_slot(rubric),
+        activate=True,
+    )
+    return ICPSpecRef(client_id=client_id, icp_key=spec.icp_key, icp_version=spec.version)
 
 
 class RecordingJudge:
