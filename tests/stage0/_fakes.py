@@ -14,18 +14,28 @@ from __future__ import annotations
 from decimal import Decimal
 
 from pydantic import JsonValue
+from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_research.core import (
     Claim,
+    Completion,
+    EmbeddingResult,
     Entity,
     ExtractionMethod,
     FieldDef,
     JudgeResult,
     JudgeVerdict,
+    Message,
     ResearchMode,
     account_claim,
     new_claim_id,
     new_run_id,
+)
+from clue_research.stage0 import (
+    ClientInput,
+    ClientKnowledgeBaseRef,
+    VolunteeredMaterial,
+    reverse_profile,
 )
 
 
@@ -90,6 +100,59 @@ class RecordingJudge:
             score=0.9,
             rationale="fake",
         )
+
+
+class FakeGateway:
+    """A :class:`~clue_research.core.LLMGateway` returning a canned completion (M5.2 synthesis).
+
+    ``text`` is the (JSON) body ``complete`` returns; ``raise_exc`` makes ``complete`` raise so the
+    graceful-degradation-to-floor path is exercised. ``calls`` records the (model, messages) of each
+    call so a test can assert the model id / that the prompt was bounded. ``embed`` is unused by
+    M5.2 (synthesis is a completion call) — it returns an empty result."""
+
+    def __init__(self, text: str = "", *, raise_exc: bool = False) -> None:
+        self._text = text
+        self._raise = raise_exc
+        self.calls: list[tuple[str, list[Message]]] = []
+
+    def complete(self, *, model: str, messages: list[Message], **opts: object) -> Completion:
+        self.calls.append((model, messages))
+        if self._raise:
+            raise RuntimeError("synthetic gateway failure")
+        return Completion(model=model, text=self._text)
+
+    def embed(self, *, model: str, inputs: list[str]) -> EmbeddingResult:
+        return EmbeddingResult(model=model)
+
+
+async def build_client_kb(
+    conn: AsyncConnection,
+    *,
+    client_id: str,
+    suffix: str,
+    asserted: dict[str, JsonValue],
+) -> ClientKnowledgeBaseRef:
+    """Build a versioned Client Knowledge Base by reverse-profiling a fresh client whose volunteered
+    deck asserts ``asserted`` (``client.*`` field_key -> value) — high-trust tier-1 claims. A unique
+    ``suffix`` gives a brand-new client entity (no resolver needed; the waterfall simply misses the
+    un-asserted fields). Returns the M5.1 :class:`ClientKnowledgeBaseRef` M5.2 reads from."""
+    result = await reverse_profile(
+        conn,
+        ClientInput(
+            name=f"Synth Co {suffix}",
+            website=f"https://synth-{suffix}.example",
+            materials=(
+                VolunteeredMaterial(
+                    kind="deck",
+                    label="pitch deck",
+                    content="client-volunteered facts",
+                    asserted_fields=asserted,
+                ),
+            ),
+        ),
+        client_id=client_id,
+    )
+    return result.ref
 
 
 def make_tier4_claim(entity_id: object, field_key: str, *, with_span: bool) -> Claim:

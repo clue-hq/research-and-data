@@ -459,6 +459,51 @@ async def current_kb_version(
     return max(versions) if versions else None
 
 
+async def _pinned_marker(
+    conn: AsyncConnection,
+    client_entity_id: EntityId,
+    *,
+    scope: TenantScope,
+    version: int | None,
+) -> Claim | None:
+    """The ``client.kb_version`` marker pinning a KB version (latest when ``version is None``), or
+    ``None`` if the client has never been profiled / the asked-for version does not exist. The one
+    version-resolution rule shared by :func:`read_client_kb` and :func:`read_client_kb_claims`."""
+    markers = await claims_for(
+        conn, client_entity_id, CLIENT_KB_VERSION, include_superseded=True, scope=scope
+    )
+    if not markers:
+        return None
+    if version is None:
+        return max(markers, key=_marker_version)
+    return next((m for m in markers if _marker_version(m) == version), None)
+
+
+async def _pinned_field_claims(
+    conn: AsyncConnection,
+    client_entity_id: EntityId,
+    *,
+    scope: TenantScope,
+    version: int | None,
+) -> dict[str, Claim]:
+    """The Client Knowledge Base as ``{field_key: winning Claim}`` for a version (the latest claim
+    per field written by the pinned version's run). Version-scoped exactly like
+    :func:`read_client_kb` (a field the run did not (re-)derive is absent)."""
+    marker = await _pinned_marker(conn, client_entity_id, scope=scope, version=version)
+    if marker is None:
+        return {}
+    run_id = marker.run_id
+    pinned: dict[str, Claim] = {}
+    for claim in await claims_for(conn, client_entity_id, include_superseded=True, scope=scope):
+        if (
+            claim.run_id == run_id
+            and claim.field_key in CLIENT_KNOWLEDGE_FIELDS
+            and claim.field_key not in pinned
+        ):
+            pinned[claim.field_key] = claim
+    return pinned
+
+
 async def read_client_kb(
     conn: AsyncConnection,
     client_entity_id: EntityId,
@@ -477,26 +522,21 @@ async def read_client_kb(
     value forward under trust+freshness until its TTL ages it out; this read is version-correct.
     Both paths read with ``include_superseded`` so a prior version stays queryable (append-only)."""
     scope = TenantScope.for_tenant(client_id)
-    markers = await claims_for(
-        conn, client_entity_id, CLIENT_KB_VERSION, include_superseded=True, scope=scope
-    )
-    if not markers:
-        return {}
-    marker: Claim | None
-    if version is None:
-        marker = max(markers, key=_marker_version)
-    else:
-        marker = next((m for m in markers if _marker_version(m) == version), None)
-    if marker is None:
-        return {}
+    pinned = await _pinned_field_claims(conn, client_entity_id, scope=scope, version=version)
+    return {field_key: claim.value_json for field_key, claim in pinned.items()}
 
-    run_id = marker.run_id
-    pinned: dict[str, JsonValue] = {}
-    for claim in await claims_for(conn, client_entity_id, include_superseded=True, scope=scope):
-        if (
-            claim.run_id == run_id
-            and claim.field_key in CLIENT_KNOWLEDGE_FIELDS
-            and claim.field_key not in pinned
-        ):
-            pinned[claim.field_key] = claim.value_json
-    return pinned
+
+async def read_client_kb_claims(
+    conn: AsyncConnection,
+    client_entity_id: EntityId,
+    *,
+    client_id: str,
+    version: int | None = None,
+) -> dict[str, Claim]:
+    """Like :func:`read_client_kb`, but returns the underlying ``{field_key: Claim}`` for a version.
+
+    M5.2 ICP synthesis reads through this so every proposed dimension can cite the **claim_id** of
+    the client fact that justifies it (``justifying_claim_ids`` — no proposal element justified by
+    "synthesis thought it was a good idea"). Same version-scoping as :func:`read_client_kb`."""
+    scope = TenantScope.for_tenant(client_id)
+    return await _pinned_field_claims(conn, client_entity_id, scope=scope, version=version)

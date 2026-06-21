@@ -42,3 +42,19 @@ CLIENT_KNOWLEDGE_REUSE_POLICY = ReusePolicy(
     ),
     tenant_private_methods=DEFAULT_REUSE_POLICY.tenant_private_methods,
 )
+
+# The ``icp.*`` namespace carries ICP-synthesis feedback (M5.2 — the suggested-vs-confirmed confirm
+# diff, persisted claim-native; see :mod:`clue_research.stage0.icp_fields`). Like ``client.*`` it is
+# client-tuned and therefore always tenant-private; the field declaration is authoritative and this
+# policy makes the stamping path agree with it (same rationale as above).
+ICP_FIELD_PREFIX = "icp."
+
+ICP_REUSE_POLICY = ReusePolicy(
+    version=DEFAULT_REUSE_POLICY.version,
+    enabled=DEFAULT_REUSE_POLICY.enabled,
+    tenant_private_prefixes=(
+        *DEFAULT_REUSE_POLICY.tenant_private_prefixes,
+        ICP_FIELD_PREFIX,
+    ),
+    tenant_private_methods=DEFAULT_REUSE_POLICY.tenant_private_methods,
+)
