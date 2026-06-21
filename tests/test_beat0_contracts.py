@@ -178,6 +178,11 @@ def test_verification_value_types_construct() -> None:
         strength_score=0.8,
     )
     Staleness(claim_id=new_claim_id(), state=FreshnessState.STALE, age_days=400.0, ttl_days=180.0)
+    # M9.5 retention age-out: the freshness value type accepts the EXPIRED disposition (Doc D §4).
+    expired = Staleness(
+        claim_id=new_claim_id(), state=FreshnessState.EXPIRED, age_days=900.0, ttl_days=365.0
+    )
+    assert expired.state is FreshnessState.EXPIRED
     ReResearchCandidate(
         entity_id=new_entity_id(), field_key="account.recent_funding", due_at=_NOW, priority=1
     )

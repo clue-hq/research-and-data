@@ -104,10 +104,18 @@ class ClaimFlavor(StrEnum):
 class FreshnessState(StrEnum):
     """Whether the claim that won a merge satisfies its field's freshness TTL (substrate §1/§6).
     Stale winners are never dropped — they are returned ``STALE`` so the scoring layer can discount
-    them and a refresh can be scheduled (the merge surfaces, never silently drops, staleness)."""
+    them and a refresh can be scheduled (the merge surfaces, never silently drops, staleness).
+
+    ``EXPIRED`` is the *retention age-out* disposition (M9.5 / Doc D §4): a claim past its retention
+    horizon — distinct from merely past its freshness TTL — surfaced to M10.5 for personal-claim
+    age-out and never allowed to win a merge. The M1.2 merge view sets ``FRESH``/``STALE`` (the
+    winning claim's freshness relative to now); the M9.5 freshness engine is what assigns
+    ``EXPIRED``. Kept orthogonal to ``VerificationStatus`` (the accuracy verdict): going stale or
+    expired never erases a claim's accuracy verdict."""
 
     FRESH = "fresh"
     STALE = "stale"
+    EXPIRED = "expired"
 
 
 class PassKind(StrEnum):
