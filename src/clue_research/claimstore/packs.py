@@ -166,6 +166,31 @@ CORE_PACK: tuple[SeedField, ...] = (
         },
         description="Decomposed buying-intent score (Output 1; M6.3). Tenant-private (per-client).",
     ),
+    # M6.4 tier decision (ENG-146): the per-account tier the human checkpoint approved against
+    # versioned cutoffs. Reserved in the same tenant-private `account.scoring.*` family as fit/
+    # intent (so the reuse policy classifies it private — a tier is a per-client/ICP scoring
+    # decision, never amortized) with the same fail-closed write boundary. M6.4 writes value_json=
+    # {"tier": <str>, "cutoff_version": <str>, "fit_score": <0..1>, "intent_score": <0..1>,
+    # "icp_key": …, "icp_version": …, …} and stamps tenant_id=client_id; the value is the human-
+    # approved decision at the checkpoint (extraction_method=human), not a resolver fact — so there
+    # is no tier_plan.
+    _seed(
+        "account.scoring.tier",
+        "object",
+        PassKind.SCORING,
+        freshness_ttl=timedelta(days=30),
+        reuse_scope=ReuseScope.TENANT_PRIVATE,
+        value_schema={
+            "type": "object",
+            "required": ["tier", "cutoff_version"],
+            "properties": {
+                "tier": {"type": "string"},
+                "cutoff_version": {"type": "string"},
+            },
+        },
+        description="Approved tier assignment + cutoff version (Output 1 tiering; M6.4). "
+        "Tenant-private (per-client/ICP decision).",
+    ),
     # substrate §3 worked example: a deep-pass signal field with a gate and a tier plan.
     _seed(
         "account.hiring_velocity_eng",

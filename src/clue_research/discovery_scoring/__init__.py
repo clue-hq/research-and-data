@@ -19,6 +19,10 @@ Implemented so far:
 * **M6.3 (ENG-138)** — Pass A scoring engine: :func:`score_account` (fill scoring proxies via the
   tier-1–3 waterfall → pure scorer → persist the decomposed, evidence-backed fit/intent score) and
   the integrated :class:`ScoringPhaseHandler`. See :mod:`clue_research.discovery_scoring.scoring`.
+* **M6.4 (ENG-146)** — Tiering + human checkpoint: :func:`assign_tiers` (deterministic tier verdict)
+  + :func:`estimate_cost` (pre-run cost estimate) and the integrated, interrupt-based
+  :class:`TierCheckpointPhaseHandler` (durable suspend/resume before Pass-B spend). See
+  :mod:`clue_research.discovery_scoring.tiering`.
 """
 
 from __future__ import annotations
@@ -49,6 +53,7 @@ from clue_research.discovery_scoring.gate import (
 from clue_research.discovery_scoring.phases import (
     DiscoveryPhaseHandler,
     ScoringPhaseHandler,
+    TierCheckpointPhaseHandler,
 )
 from clue_research.discovery_scoring.scoring import (
     DEFAULT_SCORING_CONFIG,
@@ -62,6 +67,24 @@ from clue_research.discovery_scoring.scoring import (
     aggregate_yield,
     pass_a_fill_fields,
     score_account,
+)
+from clue_research.discovery_scoring.tiering import (
+    DEFAULT_TIERING_CONFIG,
+    TIER_FIELD,
+    AccountScoreView,
+    AccountTierView,
+    CheckpointAction,
+    CheckpointDecision,
+    CheckpointReview,
+    CheckpointStatus,
+    TierAssignment,
+    TieringConfig,
+    assign_tiers,
+    cutoff_version,
+    estimate_cost,
+    load_score_views,
+    persist_tier,
+    tier_distribution,
 )
 
 __all__ = [
@@ -98,7 +121,25 @@ __all__ = [
     "DEFAULT_SCORING_CONFIG",
     "FIT_FIELD",
     "INTENT_FIELD",
+    # M6.4 — tiering + human checkpoint
+    "assign_tiers",
+    "tier_distribution",
+    "estimate_cost",
+    "cutoff_version",
+    "load_score_views",
+    "persist_tier",
+    "TIER_FIELD",
+    "AccountScoreView",
+    "AccountTierView",
+    "TierAssignment",
+    "CheckpointReview",
+    "CheckpointDecision",
+    "CheckpointAction",
+    "CheckpointStatus",
+    "TieringConfig",
+    "DEFAULT_TIERING_CONFIG",
     # M6 phase handlers
     "DiscoveryPhaseHandler",
     "ScoringPhaseHandler",
+    "TierCheckpointPhaseHandler",
 ]
