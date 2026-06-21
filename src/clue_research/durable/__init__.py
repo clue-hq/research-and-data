@@ -28,13 +28,46 @@ from clue_research.durable.account_run import (
     save_references,
     set_status,
 )
-from clue_research.durable.enums import AccountRunStatus
+from clue_research.durable.campaign import (
+    PHASE_SEQUENCE,
+    BudgetEngineNotConfigured,
+    CampaignRun,
+    CampaignRunError,
+    CampaignRunNotFound,
+    CampaignRunStore,
+    CheckpointNotAwaiting,
+    DbCampaignRunStore,
+    NoPhaseHandlerRegistered,
+    next_phase,
+)
+from clue_research.durable.campaign_run import (
+    AdjustmentRow,
+    CampaignPhaseCheckpointRow,
+    CampaignRunRow,
+    TierCutoffs,
+    ensure_campaign_run,
+    get_campaign_run,
+    get_checkpoint,
+    insert_adjustment,
+    list_adjustments,
+    upsert_checkpoint,
+)
+from clue_research.durable.enums import (
+    AccountRunStatus,
+    CampaignRunStatus,
+    PhaseCheckpointStatus,
+)
 from clue_research.durable.graph import (
     AccountResearchGraph,
     AccountRunResult,
     AccountRunStore,
     DbAccountRunStore,
     postgres_checkpointer,
+)
+from clue_research.durable.phases import (
+    PhaseHandlerRegistry,
+    default_phase_handler_registry,
+    register_phase_handler,
 )
 from clue_research.durable.planning import (
     AspectPlan,
@@ -47,6 +80,12 @@ from clue_research.durable.recursion import (
     SpawnDenyReason,
     SpawnGuard,
 )
+from clue_research.durable.scheduler import (
+    AccountScheduler,
+    AccountSpec,
+    LockFactory,
+    account_entity_lock_factory,
+)
 from clue_research.durable.workers import (
     WorkerRegistry,
     default_worker_registry,
@@ -56,6 +95,8 @@ from clue_research.durable.workers import (
 __all__ = [
     # enums
     "AccountRunStatus",
+    "CampaignRunStatus",
+    "PhaseCheckpointStatus",
     # account_run repository
     "AccountRunRow",
     "ReferencesIndex",
@@ -78,10 +119,41 @@ __all__ = [
     "WorkerRegistry",
     "default_worker_registry",
     "register_aspect_worker",
-    # the graph
+    # the per-account graph (M7.1/M7.2)
     "AccountResearchGraph",
     "AccountRunResult",
     "AccountRunStore",
     "DbAccountRunStore",
     "postgres_checkpointer",
+    # campaign-run state machine (M7.3)
+    "CampaignRun",
+    "CampaignRunStore",
+    "DbCampaignRunStore",
+    "PHASE_SEQUENCE",
+    "next_phase",
+    "CampaignRunError",
+    "CampaignRunNotFound",
+    "NoPhaseHandlerRegistered",
+    "CheckpointNotAwaiting",
+    "BudgetEngineNotConfigured",
+    # campaign_run / checkpoint / journal repository (M7.3)
+    "CampaignRunRow",
+    "CampaignPhaseCheckpointRow",
+    "AdjustmentRow",
+    "TierCutoffs",
+    "ensure_campaign_run",
+    "get_campaign_run",
+    "get_checkpoint",
+    "upsert_checkpoint",
+    "insert_adjustment",
+    "list_adjustments",
+    # phase-handler registry (M7.3)
+    "PhaseHandlerRegistry",
+    "default_phase_handler_registry",
+    "register_phase_handler",
+    # deep-phase scheduler (M7.3)
+    "AccountScheduler",
+    "AccountSpec",
+    "LockFactory",
+    "account_entity_lock_factory",
 ]

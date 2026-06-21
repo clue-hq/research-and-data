@@ -134,6 +134,73 @@ NOTE: custom span attrs are stringified by obs redaction (depth reads back as "0
 tests coerce with int().
 M7.2 DONE: committed; Linear ENG-135 → In Review; PAUSED for user review.
 
-## Next: M7.3 (ENG-141) campaign-run state machine. NOT started.
-Reminder for M7.3: campaign_phase_checkpoint MUST carry payload_json + read-back (M6 tier-checkpoint
-writes there); no separate tier table. See 2026-06-21-m6-m7-telemetry-ownership.md.
+## M7.3 (ENG-141) — campaign-run state machine. DONE (committed; Linear → In Review; PAUSED).
+The outer durable state machine over the 8-phase sequence (reverse_profiling → … → handoff), the
+scheduler under the per-account graphs (M7.1). Honors the M6↔M7 agreement exactly: NO separate tier
+table; campaign_phase_checkpoint carries payload_json + a read-back API (CampaignRun.await_checkpoint)
+that M6.4's tier-checkpoint handler writes its review payload into.
+
+Files:
+- migration `ce08f0be1c20_campaign_run_state_machine_m7_3_eng_141` (off head 79d56a0f4425):
+  3 enums — `campaign_phase` (mirrors CORE core.CampaignPhase, parity-tested), `campaign_run_status`
+  (active|paused|completed|failed) + `phase_checkpoint_status` (in_progress|awaiting_input|committed|
+  failed) (durable-internal). Tables: `campaign_run`; `campaign_phase_checkpoint` (UNIQUE(campaign_run_id,
+  phase) = the (campaign_run,phase) idempotency shape; committed_at "iff committed" CHECK computed in SQL
+  via CASE so the upsert can't violate it); `adjustment_journal` (append-only via reject trigger +
+  **monotonic `seq` GENERATED ALWAYS AS IDENTITY** — ordered by seq, NOT created_at). NB: chose a journal
+  TABLE over the spec's illustrative `adjustments_json[]` column (one source of truth, immutable audit).
+- durable/enums.py: +CampaignRunStatus, +PhaseCheckpointStatus.
+- durable/campaign_run.py: repos + row models (campaign_run / checkpoint upsert+read-back / journal
+  append+list). upsert_checkpoint computes committed_at in SQL (no Python clock).
+- durable/phases.py: PhaseHandlerRegistry (mirrors WorkerRegistry; api-root binding; durable imports
+  no phase package).
+- durable/campaign.py: PHASE_SEQUENCE=tuple(CampaignPhase) + next_phase; CampaignRunStore protocol +
+  DbCampaignRunStore (in-memory-testable seam, like AccountRunStore); CampaignRun
+  (start/advance/run_to_completion/pause/resume/adjust/await_checkpoint/submit_checkpoint/status/
+  pre_run_estimate). Crash-resume = two durable steps per phase (COMMITTED checkpoint, then transition);
+  a COMMITTED-checkpoint re-entry short-circuits (handler NOT re-run). PAUSED→AWAITING_INPUT = durable
+  human/budget gate. pre_run_estimate delegates to an injected BudgetEngine (M7.5 owns math; raises
+  BudgetEngineNotConfigured if none).
+- durable/scheduler.py: AccountScheduler — Semaphore(max_parallel) + per-entity single-flight via an
+  injectable lock_factory (default = entity_lock M2.4). Wraps AccountResearchGraph.run for the deep phase.
+- durable/spans.py: +ATTR_PHASE, +ATTR_PHASE_STATUS (phase span name from frozen obs.phase_span).
+- durable/__init__.py: exports all M7.3 symbols.
+- tests/durable/: test_campaign_phase_sequence (pure), test_campaign_state_machine (in-memory; 27 incl.
+  review regressions), test_account_scheduler (concurrency cap + single-flight via _TrackingGraph),
+  test_campaign_run_db (DB-gated: 3 enum parities, repo round-trips, checkpoint read-back+committed_at
+  invariant, journal append+immutability). conftest: +FakeCampaignRunStore, +RecordingPhaseHandler,
+  +FakeBudgetEngine.
+
+Verification: make check green (452 passed / 319 skipped after fixes; lint+format, mypy 119, contracts
+10/0). 86 durable tests pass on clue_m7. db-smoke reversible, single head ce08f0be1c20.
+
+Adversarial review (Workflow, 4 lenses + per-finding verify): 9 confirmed of 23 raw; all addressed:
+- HIGH (×2 lenses) — `_to_cost` crashed on NaN ("Decimal('NaN') >= 0" raises InvalidOperation OUTSIDE
+  the try) and accepted "Infinity" as a cap → fixed with `is_finite()` guard (one check closes both);
+  same guard added to `_to_float_cutoffs`. Regression test over {NaN,nan,Infinity,inf,-5,notanumber}.
+- MED — submit_checkpoint partial-crash (commit + resume are separate txns) left run PAUSED+COMMITTED,
+  recoverable only via resume() → submit_checkpoint now self-heals (COMMITTED & PAUSED at current phase
+  → flip ACTIVE + replay _transition_after). Test added.
+- MED — re-submitting the same embedded adjustment duplicated the audit journal → diff-guard: apply an
+  embedded cutoff/cap edit only when it actually changes the run (no-op resubmit = no journal row).
+  Docstring softened (advance is idempotent; exactly-once bracketing of ALL effects across a crash is
+  M7.4's idempotency-ledger job). Test added.
+- LOW — added tests: unknown/garbage action fails safe (stays suspended, edits still apply),
+  run_to_completion(max_steps) + no-progress guard, fakes isinstance-conform to their runtime_checkable
+  protocols (CampaignRunStore/BudgetEngine/PhaseHandler).
+- ALSO found+fixed BEFORE the review (a flaky DB test): adjustment_journal order was nondeterministic —
+  rows in one txn share now() (transaction timestamp), so the created_at,id tiebreak was the random
+  uuid → added the monotonic seq column.
+
+## M7.3 → M7.4 follow-ups (bound to the next issue)
+- submit_checkpoint's embedded adjustments are made idempotent by a *diff guard*, which is sufficient for
+  UI-retry / no-op resubmit but does NOT bracket the crash-window between the adjust txn and the commit
+  txn perfectly. The architecture's answer is M7.4: wrap submit_checkpoint's effectful section (and
+  advance()'s phase body) in `with idempotent(phase_key(campaign_run, phase)): …` once the
+  idempotency_ledger lands. phase_key already exists (core.idempotency); campaign_phase_checkpoint is the
+  per-phase durable record M7.4 keys on (idempotency_key column already populated).
+- (refuted-but-noted) FAILED-checkpoint disposition isn't durable from its checkpoint alone (re-runs the
+  not-yet-committed phase on re-entry) and there's no same-campaign-run driver lock; both are benign /
+  M7.4-ledger + single-driver-per-run invariants, not M7.3 defects.
+
+## Next: M7.4 (ENG-147) idempotency ledger + idempotent() ctx manager. NOT started.
