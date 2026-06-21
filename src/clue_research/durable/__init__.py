@@ -55,6 +55,7 @@ from clue_research.durable.campaign_run import (
 from clue_research.durable.enums import (
     AccountRunStatus,
     CampaignRunStatus,
+    IdempotencyStatus,
     PhaseCheckpointStatus,
 )
 from clue_research.durable.graph import (
@@ -63,6 +64,21 @@ from clue_research.durable.graph import (
     AccountRunStore,
     DbAccountRunStore,
     postgres_checkpointer,
+)
+from clue_research.durable.idempotency import (
+    DEFAULT_STALE_AFTER,
+    ClaimOutcome,
+    ClaimResult,
+    DbIdempotencyStore,
+    IdempotencyConflict,
+    IdempotencyLedgerRow,
+    IdempotencyStore,
+    IdempotentStep,
+    claim_idempotency_step,
+    finish_idempotency_step,
+    get_idempotency_ledger,
+    idempotent,
+    retry_async,
 )
 from clue_research.durable.phases import (
     PhaseHandlerRegistry,
@@ -97,6 +113,21 @@ __all__ = [
     "AccountRunStatus",
     "CampaignRunStatus",
     "PhaseCheckpointStatus",
+    "IdempotencyStatus",
+    # idempotency ledger + context manager (M7.4)
+    "idempotent",
+    "IdempotencyStore",
+    "DbIdempotencyStore",
+    "IdempotencyLedgerRow",
+    "IdempotencyConflict",
+    "IdempotentStep",
+    "ClaimResult",
+    "ClaimOutcome",
+    "DEFAULT_STALE_AFTER",
+    "claim_idempotency_step",
+    "finish_idempotency_step",
+    "get_idempotency_ledger",
+    "retry_async",
     # account_run repository
     "AccountRunRow",
     "ReferencesIndex",

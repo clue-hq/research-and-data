@@ -203,4 +203,71 @@ Adversarial review (Workflow, 4 lenses + per-finding verify): 9 confirmed of 23 
   not-yet-committed phase on re-entry) and there's no same-campaign-run driver lock; both are benign /
   M7.4-ledger + single-driver-per-run invariants, not M7.3 defects.
 
-## Next: M7.4 (ENG-147) idempotency ledger + idempotent() ctx manager. NOT started.
+## Branch rename — DONE (2026-06-22)
+`m7/verification-layer` → `m7/durable-execution` (local + origin; old origin ref deleted, upstream
+reset). No open PR was disrupted (verified none). Corrects the long-standing misnomer (M7 = durable
+execution, not verification).
+
+## M7.4 (ENG-147) — idempotency ledger + idempotent() ctx manager. DONE (committed; PAUSED for review).
+The two-level exactly-once layer that makes M7.1's resumable graph + M7.3's resumable state machine
+*safe*, not merely restartable. Key shapes already in core.idempotency (account_step_key / phase_key,
+pure, Beat-0). M7.4 adds the ledger + the runtime that uses them.
+
+Files:
+- migration `df78df38b168` (off head ce08f0be1c20): enums `idempotency_scope` (mirrors CORE
+  IdempotencyScope, parity-tested) + `idempotency_status` (in_progress|succeeded|failed, durable).
+  Table `idempotency_ledger` (key PK = unique-on-(key); scope; status; result_ref jsonb;
+  cost_cents_charged; first_seen_at; completed_at; updated_at). CHECKs: result_ref object, cost
+  nonneg, completed_at-iff-succeeded (mirrors checkpoint's committed_at-iff). NOT append-only
+  (status transitions) → no reject trigger. Partial in-flight index for stale sweeps.
+- durable/enums.py: +IdempotencyStatus.
+- durable/idempotency.py (NEW): IdempotencyLedgerRow, ClaimOutcome(execute|replay|conflict),
+  ClaimResult; repo (claim_idempotency_step ATOMIC upsert + classify, finish_idempotency_step,
+  get_idempotency_ledger); IdempotencyStore Protocol + DbIdempotencyStore (own-txn/method) +
+  IdempotentStep + idempotent() async CM + IdempotencyConflict; retry_async (PEP695 generic,
+  injectable sleep). Atomic claim = INSERT…ON CONFLICT DO UPDATE…WHERE(failed OR stale)…RETURNING
+  key; empty RETURNING → classify SELECT (succeeded=REPLAY, live in_progress=CONFLICT). Stale
+  predicate uses `<=` (boundary-inclusive; aligns DB with the fake, robust at stale_after=0). Stale
+  interval passed as a real timedelta (asyncpg encodes interval natively; a string fails). idempotent()
+  catches **Exception only** — cancellation/kill propagates → row stays in_progress → staleness
+  recovery (matches the M7.1 graph convention). record() is OPTIONAL (omit = succeed empty/0).
+- durable/campaign.py: CampaignRun gains optional injected `ledger` (default None → M7.3
+  checkpoint-only path, still crash-safe; api root wires DbIdempotencyStore) + phase_stale_after
+  (DEFAULT_PHASE_STALE_AFTER=timedelta(0): single-driver runs → any in_progress on re-entry is
+  self-resume, never a live conflict). advance() COMPLETED + submit_checkpoint approve + the self-heal
+  route through `_finalize_phase` (idempotent(phase_key) brackets commit+charge-record, then
+  transition). `_commit_phase` = put_checkpoint(COMMITTED) + optional resume mark-active. CampaignRun
+  class docstring now states the **single-driver-per-run precondition** prominently.
+- durable/__init__.py: exports all M7.4 symbols.
+- tests: test_idempotency.py (12 pure), test_idempotency_db.py (7 DB-gated), test_campaign_idempotency.py
+  (7 phase-integration incl. 2 self-heal-crash-window regressions). conftest: +FakeIdempotencyStore.
+
+Adversarial review (Workflow, 5 lenses + per-finding verify, 23 agents): 18 raw → 8 confirmed. Fixed:
+- **HIGH** — submit_checkpoint self-heal only matched COMMITTED+PAUSED; a crash *after* the resume
+  mark (run already ACTIVE) before the transition fell through → CheckpointNotAwaiting. Extended the
+  self-heal to COMMITTED + {PAUSED, ACTIVE}. (advance()/run_to_completion already recovered it; submit
+  now does too.) Regression test added.
+- **MED** — _finalize_phase REPLAY branch returned without transitioning (newly reachable via the
+  ACTIVE self-heal when the ledger already succeeded) → now transitions too (idempotent). Test added.
+- **MED** — DB stale comparison `<`→`<=` (boundary-inclusive; matches the fake, robust at stale_after=0).
+- **MED×3** — record() not enforced on EXECUTE: kept OPTIONAL by design (side-effect-only steps succeed
+  empty/0) and documented the contract explicitly (record + idempotent docstrings) rather than forcing.
+- **MED** — module docstring "exactly-once" scoped: account-step is end-to-end exactly-once; phase
+  finalize is exactly-once except the narrow commit↔succeed crash window (documented, checkpoint is
+  authoritative).
+DECLINED (deliberate, documented): **MED** — stale_after=0 lets concurrent drivers both execute. This
+is the single-driver-per-run design; a non-zero window would BREAK fast crash-resume (re-entry would
+CONFLICT), and a per-run driver *lock* is the scheduler/ops layer (M7.3 already accepted "no same-run
+driver lock"). Enforcing it at runtime is out of M7.4 scope; documented as a precondition instead.
+
+## M7.4 → M7.5 / downstream follow-ups
+- The phase-scope ledger charge is best-effort across the commit↔succeed crash window (nominal phase
+  cost; checkpoint is authoritative). The airtight exactly-once *charge* is the account-step ledger —
+  M8's worker writes the claim and finishes the ledger in ONE transaction; M7.4 ships the primitive
+  (idempotent + claim/finish repo) + proves retry-after-success = one write/one charge.
+- A per-campaign-run **driver lock** (so two drivers never advance the same run) would let phases use a
+  non-zero stale window AND stay crash-resumable; left to the scheduler layer (M7.3/M7.5/ops).
+- M7.5 reads `cost_cents_charged` for burn-down (single-count). M8 worker bodies wrap their per-field
+  resolver steps in `idempotent(account_step_key(...))`.
+
+## Next: M7.5 (ENG-153) budget caps & cost-governance engine. NOT started.
