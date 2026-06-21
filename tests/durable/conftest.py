@@ -453,3 +453,92 @@ class FakeBudgetEngine:
         return BurnDown(
             spent_cents=zero, estimated_cents=zero, cap_cents=zero, remaining_cents=zero
         )
+
+
+# --- in-memory fake for the idempotency ledger (M7.4) ------------------------
+
+from datetime import timedelta  # noqa: E402
+
+from clue_research.core import IdempotencyScope  # noqa: E402
+from clue_research.durable.enums import IdempotencyStatus  # noqa: E402
+from clue_research.durable.idempotency import (  # noqa: E402
+    ClaimOutcome,
+    ClaimResult,
+    IdempotencyLedgerRow,
+)
+
+
+class FakeIdempotencyStore:
+    """An in-memory :class:`~clue_research.durable.idempotency.IdempotencyStore` (no DB).
+
+    Mirrors :class:`DbIdempotencyStore`'s claim semantics so the ``idempotent`` context manager and
+    the phase-machine wiring are exercised without Postgres: a fresh key (or a ``failed`` / stale /
+    ``stale_after<=0`` ``in_progress`` one) is re-owned and returns ``EXECUTE``; a ``succeeded`` key
+    returns ``REPLAY`` with its recorded result; a live ``in_progress`` key returns ``CONFLICT``.
+    :meth:`mark_stale` simulates a crashed holder so the stale-recovery path is purely testable."""
+
+    def __init__(self) -> None:
+        self._rows: dict[str, dict[str, object]] = {}
+
+    async def claim(
+        self, *, key: str, scope: IdempotencyScope, stale_after: timedelta
+    ) -> ClaimResult:
+        row = self._rows.get(key)
+        if row is None:
+            self._rows[key] = {
+                "scope": scope,
+                "status": IdempotencyStatus.IN_PROGRESS,
+                "result_ref": {},
+                "cost_cents_charged": Decimal(0),
+                "stale": False,
+            }
+            return ClaimResult(outcome=ClaimOutcome.EXECUTE)
+        status = row["status"]
+        if status is IdempotencyStatus.SUCCEEDED:
+            return ClaimResult(
+                outcome=ClaimOutcome.REPLAY,
+                result_ref=dict(row["result_ref"]),  # type: ignore[arg-type]
+                cost_cents_charged=row["cost_cents_charged"],  # type: ignore[arg-type]
+            )
+        if status is IdempotencyStatus.FAILED:
+            row["status"] = IdempotencyStatus.IN_PROGRESS
+            row["stale"] = False
+            return ClaimResult(outcome=ClaimOutcome.EXECUTE)
+        # in_progress: a live duplicate unless the window is zero or the holder is marked crashed.
+        if stale_after <= timedelta(0) or row["stale"]:
+            row["stale"] = False
+            return ClaimResult(outcome=ClaimOutcome.EXECUTE)
+        return ClaimResult(outcome=ClaimOutcome.CONFLICT)
+
+    async def succeed(
+        self, *, key: str, result_ref: dict[str, object], cost_cents: CostCents
+    ) -> None:
+        row = self._rows[key]
+        row["status"] = IdempotencyStatus.SUCCEEDED
+        row["result_ref"] = dict(result_ref)
+        row["cost_cents_charged"] = cost_cents
+
+    async def fail(self, *, key: str) -> None:
+        row = self._rows[key]
+        row["status"] = IdempotencyStatus.FAILED
+        row["result_ref"] = {}
+        row["cost_cents_charged"] = Decimal(0)
+
+    async def get(self, key: str) -> IdempotencyLedgerRow | None:
+        row = self._rows.get(key)
+        if row is None:
+            return None
+        return IdempotencyLedgerRow(
+            key=key,
+            scope=row["scope"],  # type: ignore[arg-type]
+            status=row["status"],  # type: ignore[arg-type]
+            result_ref=dict(row["result_ref"]),  # type: ignore[arg-type]
+            cost_cents_charged=row["cost_cents_charged"],  # type: ignore[arg-type]
+            first_seen_at=_T0,
+            completed_at=_T0 if row["status"] is IdempotencyStatus.SUCCEEDED else None,
+            updated_at=_T0,
+        )
+
+    def mark_stale(self, key: str) -> None:
+        """Simulate the in_progress holder having crashed long ago (the stale-recovery trigger)."""
+        self._rows[key]["stale"] = True

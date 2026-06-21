@@ -25,6 +25,7 @@ a re-entered already-done phase costs nothing. A phase that returns ``PAUSED`` l
 from __future__ import annotations
 
 import math
+from datetime import timedelta
 from decimal import Decimal
 from typing import Protocol, runtime_checkable
 
@@ -36,6 +37,7 @@ from clue_research.core import (
     CampaignRunId,
     CostCents,
     Estimate,
+    IdempotencyScope,
     PhaseContext,
     PhaseStatus,
     new_campaign_run_id,
@@ -58,6 +60,10 @@ from clue_research.durable.campaign_run import (
     upsert_checkpoint,
 )
 from clue_research.durable.enums import CampaignRunStatus, PhaseCheckpointStatus
+from clue_research.durable.idempotency import (
+    IdempotencyStore,
+    idempotent,
+)
 from clue_research.durable.phases import PhaseHandlerRegistry, default_phase_handler_registry
 from clue_research.durable.spans import ATTR_PHASE, ATTR_PHASE_STATUS
 from clue_research.obs import (
@@ -78,6 +84,15 @@ def next_phase(phase: CampaignPhase) -> CampaignPhase | None:
     (``HANDOFF``)."""
     idx = PHASE_SEQUENCE.index(phase)
     return PHASE_SEQUENCE[idx + 1] if idx + 1 < len(PHASE_SEQUENCE) else None
+
+
+# A campaign run has a *single driver* (M7.3 owns its phase progression), so a ledger row found
+# ``in_progress`` on re-entry is always *this* run's own crashed/partial attempt resuming — never a
+# live concurrent holder. Phase idempotency therefore claims with a zero staleness window: any
+# ``in_progress`` is immediately re-ownable (the re-entry executes), so re-entry can never raise a
+# spurious :class:`~clue_research.durable.idempotency.IdempotencyConflict`. The ledger's job at the
+# phase level is the exactly-once *finalize* (a re-finalize replays) + the per-phase charge record.
+DEFAULT_PHASE_STALE_AFTER = timedelta(0)
 
 
 # --- errors ----------------------------------------------------------------------------------
@@ -294,7 +309,20 @@ class CampaignRun:
 
     The phase handlers do the work; this class owns ordering, durable checkpointing, the human gate,
     and pause/resume/adjust. It never imports a phase package — handlers reach it only through the
-    registry (bound at the api root)."""
+    registry (bound at the api root).
+
+    **Single-driver-per-run is a precondition.** A given ``campaign_run_id`` is advanced by exactly
+    one driver at a time — :meth:`advance` / :meth:`run_to_completion` / :meth:`submit_checkpoint`
+    for the same run are never called concurrently (the run is one durable job; concurrency lives
+    *inside* the ``deep`` phase across distinct accounts, mediated by the M2.4 entity lock, not
+    across a run's own phases). This is what lets phase idempotency use a zero ``stale_after`` (an
+    ``in_progress`` ledger row on re-entry is always this run's own crashed attempt resuming, never
+    a live peer), so a crash-resume re-enters without a spurious
+    :class:`~clue_research.durable.idempotency.IdempotencyConflict`. A per-run driver lock that
+    would *enforce* this (vs. the M7.4 ledger relying on it) is left to the scheduler/ops layer,
+    as M7.3
+    recorded. The generic :func:`~clue_research.durable.idempotency.idempotent` primitive used for
+    the *account-step* scope keeps the concurrency-safe non-zero default for parallel callers."""
 
     def __init__(
         self,
@@ -302,10 +330,21 @@ class CampaignRun:
         store: CampaignRunStore | None = None,
         registry: PhaseHandlerRegistry | None = None,
         budget_engine: BudgetEngine | None = None,
+        ledger: IdempotencyStore | None = None,
+        phase_stale_after: timedelta = DEFAULT_PHASE_STALE_AFTER,
     ) -> None:
         self._store: CampaignRunStore = store if store is not None else DbCampaignRunStore()
         self._registry = registry if registry is not None else default_phase_handler_registry()
         self._budget = budget_engine
+        # The M7.4 phase-idempotency ledger. An *injected collaborator* (like ``budget_engine``):
+        # the api composition root wires a ``DbIdempotencyStore`` so a phase finalize commits its
+        # checkpoint + records its charge exactly once on the ``(campaign_run, phase)`` key. When
+        # ``None`` (e.g. an in-memory unit test that does not
+        # exercise idempotency), the phase finalize falls back to the M7.3 checkpoint-only path —
+        # which is itself crash-safe (the ``COMMITTED`` short-circuit), just without the ledger's
+        # exactly-once charge record.
+        self._ledger = ledger
+        self._phase_stale_after = phase_stale_after
 
     # -- lifecycle --
 
@@ -386,14 +425,11 @@ class CampaignRun:
             apply_attributes(span, {ATTR_PHASE_STATUS: result.status.value})
 
         if result.status == PhaseStatus.COMPLETED:
-            await self._store.put_checkpoint(
-                campaign_run_id=campaign_run_id,
-                phase=phase,
-                idempotency_key=key,
-                status=PhaseCheckpointStatus.COMMITTED,
-                payload=result.payload,
+            # Finalize through the M7.4 ledger (when wired): commit the checkpoint + record the
+            # exactly-once phase charge on phase_key, then transition. A re-finalize replays.
+            return await self._finalize_phase(
+                run, phase, payload=result.payload, cost_cents=result.cost_cents, resume=False
             )
-            return await self._transition_after(run)
         if result.status == PhaseStatus.PAUSED:
             await self._store.put_checkpoint(
                 campaign_run_id=campaign_run_id,
@@ -520,28 +556,32 @@ class CampaignRun:
         is committed (with the decision merged into its payload) and the run advances to the next
         phase (``tier_checkpoint`` → ``deep``); on ``action == "pause"`` the run stays suspended.
 
-        Idempotency: the *advance* is keyed on ``(campaign_run, phase)`` (the committed-checkpoint
-        short-circuit), so a re-submit does not re-advance; and the embedded adjustments are applied
-        only when they actually change the run, so a re-submit of the same decision does not append
-        a duplicate audit-journal row. (Exactly-once bracketing of *every* effect across a crash
-        mid-submit arrives with M7.4's idempotency ledger, which this section will wrap.) Raises
-        :class:`CheckpointNotAwaiting` if nothing is awaiting input."""
+        Idempotency: the effectful finalize (commit + resume + transition) is bracketed by M7.4's
+        idempotency ledger on ``(campaign_run, phase)`` (when a ledger is wired), so a re-submit
+        replays at the ledger instead of re-committing or double-charging; the embedded adjustments
+        are additionally diff-guarded — applied only when they actually change the run — so a
+        re-submit of the same decision does not append a duplicate audit-journal row. Together they
+        close the crash window between the adjust and the commit that the diff guard alone could
+        only partially cover. Raises :class:`CheckpointNotAwaiting` if nothing is awaiting input."""
         run = await self.status(campaign_run_id)
         phase = run.phase
         checkpoint = await self._store.get_checkpoint(campaign_run_id, phase)
-        # Self-heal a partially-applied approve: the commit and the resume are separate transactions
-        # (DbCampaignRunStore), so a crash between them leaves the run PAUSED at a COMMITTED phase.
-        # A retried submit finishes it idempotently — replaying the transition, re-running nothing —
-        # rather than raising CheckpointNotAwaiting (mirrors advance()'s committed short-circuit).
+        # Self-heal a partially-applied approve. The approve finalize is several steps (commit
+        # checkpoint → mark ACTIVE → ledger succeed → transition), each its own transaction, so a
+        # crash mid-finalize can leave the run at a COMMITTED-but-not-transitioned phase in *either*
+        # interim status: ``PAUSED`` (crash before the resume mark) or ``ACTIVE`` (crash after it,
+        # before the transition). Both are recovered by re-running the same ledger-bracketed
+        # finalize (idempotent: re-commit is an upsert, the charge records once, the transition
+        # runs exactly once) — not by raising CheckpointNotAwaiting. (A run that already
+        # transitioned is at a *different* phase, so this never fires there.)
         if (
             checkpoint is not None
             and checkpoint.status == PhaseCheckpointStatus.COMMITTED
-            and run.status == CampaignRunStatus.PAUSED
+            and (run.status in (CampaignRunStatus.PAUSED, CampaignRunStatus.ACTIVE))
         ):
-            await self._store.mark_status(
-                campaign_run_id, status=CampaignRunStatus.ACTIVE, stamp_resumed=True
+            return await self._finalize_phase(
+                run, phase, payload=checkpoint.payload, cost_cents=Decimal(0), resume=True
             )
-            return await self._transition_after(await self.status(campaign_run_id))
         if checkpoint is None or checkpoint.status != PhaseCheckpointStatus.AWAITING_INPUT:
             raise CheckpointNotAwaiting(f"{campaign_run_id}:{phase.value}")
 
@@ -560,26 +600,21 @@ class CampaignRun:
             await self.adjust(campaign_run_id, tier_cutoffs=new_cutoffs, budget_cap_cents=new_cap)
 
         merged_payload: dict[str, JsonValue] = {**checkpoint.payload, "decision": decision}
-        key = phase_key(campaign_run_id, phase)
         action = decision.get("action", "approve")
         if action == "approve":
-            await self._store.put_checkpoint(
-                campaign_run_id=campaign_run_id,
-                phase=phase,
-                idempotency_key=key,
-                status=PhaseCheckpointStatus.COMMITTED,
-                payload=merged_payload,
+            # Finalize through the M7.4 ledger (when wired): commit the checkpoint, resume the run,
+            # and record the exactly-once charge on phase_key, then advance past the gate. A
+            # re-submit of the same decision replays at the ledger (and the diff-guarded adjust
+            # above is itself a no-op), so the whole approve is exactly-once across the crash window
+            # the M7.3 diff guard could only partially cover.
+            return await self._finalize_phase(
+                run, phase, payload=merged_payload, cost_cents=Decimal(0), resume=True
             )
-            # The run was PAUSED at the gate — make it ACTIVE before advancing past the checkpoint.
-            await self._store.mark_status(
-                campaign_run_id, status=CampaignRunStatus.ACTIVE, stamp_resumed=True
-            )
-            return await self._transition_after(await self.status(campaign_run_id))
         # Any non-approve action keeps the run suspended, but records the decision on the payload.
         await self._store.put_checkpoint(
             campaign_run_id=campaign_run_id,
             phase=phase,
-            idempotency_key=key,
+            idempotency_key=phase_key(campaign_run_id, phase),
             status=PhaseCheckpointStatus.AWAITING_INPUT,
             payload=merged_payload,
         )
@@ -633,6 +668,83 @@ class CampaignRun:
         else:
             await self._store.transition(run.id, phase=nxt, status=CampaignRunStatus.ACTIVE)
         return await self.status(run.id)
+
+    async def _commit_phase(
+        self,
+        campaign_run_id: CampaignRunId,
+        phase: CampaignPhase,
+        *,
+        payload: dict[str, JsonValue],
+        resume: bool,
+    ) -> None:
+        """Commit the ``(campaign_run, phase)`` checkpoint (``COMMITTED``) and, when ``resume`` (the
+        human-gate approve path), flip the PAUSED run back to ``ACTIVE`` — the durable "this phase
+        is done" marker the transition replays off."""
+        await self._store.put_checkpoint(
+            campaign_run_id=campaign_run_id,
+            phase=phase,
+            idempotency_key=phase_key(campaign_run_id, phase),
+            status=PhaseCheckpointStatus.COMMITTED,
+            payload=payload,
+        )
+        if resume:
+            await self._store.mark_status(
+                campaign_run_id, status=CampaignRunStatus.ACTIVE, stamp_resumed=True
+            )
+
+    async def _finalize_phase(
+        self,
+        run: CampaignRunRow,
+        phase: CampaignPhase,
+        *,
+        payload: dict[str, JsonValue],
+        cost_cents: CostCents,
+        resume: bool,
+    ) -> CampaignRunRow:
+        """Commit the phase and transition past it — bracketed by the M7.4 idempotency ledger when
+        one is wired (``with idempotent(phase_key(...))``), so the commit + the per-phase charge
+        record happen **exactly once** on the ``(campaign_run, phase)`` key.
+
+        With a ledger, the outcome depends on the ledger row for this phase. If it is already
+        ``succeeded`` (a re-finalize after a prior full success that crashed before transitioning)
+        the finalize **replays** — nothing re-committed, nothing re-charged — but the idempotent
+        transition still runs, so a single call completes the phase. If it is fresh /
+        ``in_progress`` (the crash-between-commit-and-succeed window) it is re-owned
+        (phase ``stale_after`` is zero — single-driver, see the class docstring) and the commit +
+        charge-record run again *idempotently* (``put_checkpoint`` is an upsert; the charge is
+        recorded once on success), so a retry can never double-commit or double-charge. The narrow
+        residual is that a crash *between* the durable ``COMMITTED`` checkpoint and the ledger
+        ``succeed`` can leave a phase's ledger row ``in_progress`` (the ``advance`` ``COMMITTED``
+        short-circuit transitions without re-touching the ledger): the checkpoint stays the
+        authoritative "phase done" record, and the (nominal) phase charge is best-effort — the
+        airtight exactly-once charge is the *account-step* ledger (paid resolvers), whose caller
+        finishes the ledger in the claim-write transaction (M8).
+
+        Without a ledger (``ledger is None``): the M7.3 checkpoint-only path — itself crash-safe via
+        the ``COMMITTED`` short-circuit, just without the ledger's charge record. ``resume`` flips a
+        PAUSED gate back to ``ACTIVE`` (the ``submit_checkpoint`` approve path); ``cost_cents`` is
+        the phase's charge recorded in the ledger (the single record M7.5 counts once)."""
+        if self._ledger is None:
+            await self._commit_phase(run.id, phase, payload=payload, resume=resume)
+            return await self._transition_after(await self.status(run.id))
+        key = phase_key(run.id, phase)
+        async with idempotent(
+            key,
+            IdempotencyScope.CAMPAIGN_PHASE,
+            store=self._ledger,
+            stale_after=self._phase_stale_after,
+        ) as step:
+            if step.is_replay:
+                # This phase already committed + charged in a prior attempt that crashed before it
+                # transitioned (the ledger row is ``succeeded``). Do NOT re-commit or re-charge, but
+                # still replay the transition so the finalize is complete from a single call — it is
+                # idempotent (``_transition_after`` is an UPDATE, and at this point the run is still
+                # at ``phase``; a fully-finalized phase would be at the *next* phase and not
+                # re-enter here). Both finalize outcomes (execute / replay) thus end transitioned.
+                return await self._transition_after(await self.status(run.id))
+            await self._commit_phase(run.id, phase, payload=payload, resume=resume)
+            step.record(result_ref={"phase": phase.value}, cost_cents=cost_cents)
+        return await self._transition_after(await self.status(run.id))
 
 
 def _to_cost(value: object) -> CostCents | None:

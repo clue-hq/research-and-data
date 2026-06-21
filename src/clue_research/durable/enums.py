@@ -77,3 +77,24 @@ class PhaseCheckpointStatus(StrEnum):
     AWAITING_INPUT = "awaiting_input"
     COMMITTED = "committed"
     FAILED = "failed"
+
+
+class IdempotencyStatus(StrEnum):
+    """Lifecycle of one ``idempotency_ledger`` row (M7.4) — the exactly-once state of a keyed unit
+    of work (a per-account research step, or a campaign phase).
+
+    * ``IN_PROGRESS`` — a holder has claimed the key and is executing (staged before the effectful
+      body runs, so a crash mid-step leaves a resumable marker, not a silent gap). A claim found
+      ``in_progress`` and *not* stale is a live duplicate (skip/join); one older than the staleness
+      window is presumed crashed and is re-owned (the stale-recovery path).
+    * ``SUCCEEDED`` — the step completed; ``result_ref`` is the recorded output (claim ids / phase
+      payload ref) and ``cost_cents_charged`` is what it spent. A subsequent claim of the same key
+      short-circuits and returns the recorded result without re-spending (the idempotency property).
+    * ``FAILED`` — the step raised; the key is released so a retry (same key) re-executes. Distinct
+      from a *governed* budget stop, which a caller records as ``SUCCEEDED`` with a zero-cost
+      ``result_ref`` (a correct outcome, not a re-executable failure).
+    """
+
+    IN_PROGRESS = "in_progress"
+    SUCCEEDED = "succeeded"
+    FAILED = "failed"
