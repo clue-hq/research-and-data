@@ -134,6 +134,70 @@ class BudgetCaps(BaseModel):
         return self
 
 
+class TierRecursionCaps(BaseModel):
+    """The bounded-recursion caps for one tier (M7.2 / Doc C §3).
+
+    Three dials govern the per-account fan-out for accounts in this tier: ``max_depth`` (0 = no
+    facet sub-workers, 1 = one level, 2 = the full two-level dive), ``max_aspect_workers`` (the
+    level-1 breadth — how many aspect clusters fan out at once), and
+    ``max_facet_workers_per_aspect`` (the level-2 breadth — facets an eligible aspect may spawn).
+    Top tier gets depth 2;
+    lower tiers get one level or none (Doc C §3). The concrete numbers are deferred until real cost
+    data exists (Doc C §8) — these are safe, conservative defaults the dial ships with.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    max_depth: int = Field(default=0, ge=0, le=2)
+    max_aspect_workers: int = Field(default=4, ge=0)
+    max_facet_workers_per_aspect: int = Field(default=0, ge=0)
+
+
+class RecursionPolicy(BaseModel):
+    """The bounded recursion knob (M7.2 / Doc C §3) — *policy as data*, per-ICP/pack-overridable.
+
+    The two-level fan-out (orchestrator → aspect workers → facet sub-workers) is real research
+    power, but ungoverned it is the prototype's "spawn excessive subagents" blowout. This caps depth
+    and worker-count **per tier** and restricts which field-classes may recurse at all (the richest
+    aspects — ``account.resonance.*``, ``contact.facet.*``), so "be thorough" can never mean
+    unbounded spawn. The dial lives entirely in versioned config: retuning the per-tier numbers
+    (Doc C §8) is a config bump, never a code change. The M7.2 ``SpawnGuard`` reads this as the
+    single runtime chokepoint. Conservative defaults: top tier depth 2, high depth 1, any unlisted
+    tier depth 0 (no recursion — the safe floor).
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    by_tier: dict[str, TierRecursionCaps] = Field(
+        default_factory=lambda: {
+            "top": TierRecursionCaps(
+                max_depth=2, max_aspect_workers=8, max_facet_workers_per_aspect=4
+            ),
+            "high": TierRecursionCaps(
+                max_depth=1, max_aspect_workers=6, max_facet_workers_per_aspect=3
+            ),
+        }
+    )
+    # Caps for a tier with no specific entry — the conservative floor: no facet recursion at all.
+    default_caps: TierRecursionCaps = TierRecursionCaps(
+        max_depth=0, max_aspect_workers=4, max_facet_workers_per_aspect=0
+    )
+    # Field-class *prefixes* whose aspects may spawn facet sub-workers (the richest, Doc C §2/§3).
+    # Matched by prefix (see :meth:`is_eligible`): an aspect equal to a listed class OR nested under
+    # it (``account.resonance.culture`` under ``account.resonance``) is eligible. An aspect whose
+    # class is not listed never recurses, regardless of depth budget.
+    eligible_classes: tuple[str, ...] = ("account.resonance", "contact.facet")
+
+    def caps_for(self, tier: str) -> TierRecursionCaps:
+        """The recursion caps for ``tier`` — its specific entry, or the conservative default."""
+        return self.by_tier.get(tier, self.default_caps)
+
+    def is_eligible(self, aspect: str) -> bool:
+        """Whether an aspect may spawn facet sub-workers — i.e. its key is a recursion-eligible
+        field-class (or nests under one). A non-eligible aspect is denied recursion at the guard."""
+        return any(aspect == cls or aspect.startswith(cls + ".") for cls in self.eligible_classes)
+
+
 class FreshnessTtls(BaseModel):
     """Field-level freshness TTLs (M1 merge / M9 verification).
 
