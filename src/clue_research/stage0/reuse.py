@@ -28,61 +28,52 @@ from __future__ import annotations
 
 from clue_research.identity import DEFAULT_REUSE_POLICY, ReusePolicy
 
-# The ``client.*`` namespace carries client-knowledge / ICP-derived claims (M5.1). They are always
-# tenant-private. We extend — never replace — the M2 default prefixes so any future tightening
-# of the shared default is inherited automatically.
-CLIENT_FIELD_PREFIX = "client."
 
-CLIENT_KNOWLEDGE_REUSE_POLICY = ReusePolicy(
-    version=DEFAULT_REUSE_POLICY.version,
-    enabled=DEFAULT_REUSE_POLICY.enabled,
-    tenant_private_prefixes=(
-        *DEFAULT_REUSE_POLICY.tenant_private_prefixes,
-        CLIENT_FIELD_PREFIX,
-    ),
-    tenant_private_methods=DEFAULT_REUSE_POLICY.tenant_private_methods,
-)
+def _extend(*prefixes: str) -> ReusePolicy:
+    """A stage0 reuse policy = the M2 default **extended** (never replaced) with extra
+    tenant-private namespace prefixes. Copying the live default (``model_copy``; the model is
+    frozen) keeps ``version`` / ``enabled`` / ``tenant_private_methods`` a single reference, so a
+    future tightening of the shared default is inherited automatically — policy-as-data (§2)."""
+    return DEFAULT_REUSE_POLICY.model_copy(
+        update={
+            "tenant_private_prefixes": (
+                *DEFAULT_REUSE_POLICY.tenant_private_prefixes,
+                *prefixes,
+            )
+        }
+    )
+
+
+# The ``client.*`` namespace carries client-knowledge / ICP-derived claims (M5.1) — always
+# tenant-private (the field declaration is authoritative; this policy makes the stamp path agree).
+CLIENT_FIELD_PREFIX = "client."
+CLIENT_KNOWLEDGE_REUSE_POLICY = _extend(CLIENT_FIELD_PREFIX)
 
 # The ``icp.*`` namespace carries ICP-synthesis feedback (M5.2 — the suggested-vs-confirmed confirm
 # diff, persisted claim-native; see :mod:`clue_research.stage0.icp_fields`). Like ``client.*`` it is
-# client-tuned and therefore always tenant-private; the field declaration is authoritative and this
-# policy makes the stamping path agree with it (same rationale as above).
+# client-tuned and therefore always tenant-private.
 ICP_FIELD_PREFIX = "icp."
+ICP_REUSE_POLICY = _extend(ICP_FIELD_PREFIX)
 
-ICP_REUSE_POLICY = ReusePolicy(
-    version=DEFAULT_REUSE_POLICY.version,
-    enabled=DEFAULT_REUSE_POLICY.enabled,
-    tenant_private_prefixes=(
-        *DEFAULT_REUSE_POLICY.tenant_private_prefixes,
-        ICP_FIELD_PREFIX,
-    ),
-    tenant_private_methods=DEFAULT_REUSE_POLICY.tenant_private_methods,
-)
-
-# The ``import.*`` namespace carries the import-batch grouping marker (M5.3). A client's imported
-# list is tenant-private (the same reasoning as ``client.*`` / ``icp.*``): the field declaration is
-# authoritative and this policy makes the stamping path agree with it. CRM-pulled tier-1 claims
+# The ``import.*`` namespace carries the import-batch grouping marker (M5.3); a client's imported
+# list is tenant-private (same reasoning as ``client.*`` / ``icp.*``). CRM-pulled tier-1 claims
 # (``crm_import``) and ``account.scoring.*`` back-scores are already tenant-private via M2's default
-# (extraction-method / prefix), so the import scenario writes them under :data:`IMPORT_REUSE_POLICY`
-# unchanged from the default's tenant-private set.
+# (extraction-method / prefix), inherited here unchanged.
 IMPORT_FIELD_PREFIX = "import."
 
 # The import scenario's per-row resolution provenance is a *discovery*-flavored claim
 # (``discovery.provenance``, ``matched_channel='import'``) on a cross-tenant-shared account entity.
 # *Which* accounts a client imported is client-tuned, competitively-sensitive signal, so this policy
-# also privatizes the ``discovery.`` namespace — but only when written under the import scenario (a
-# Scenario-A discovery run uses its own policy, where public-footprint provenance is correct). The
-# import provenance is therefore stamped tenant-private here, while remaining shape-identical to a
-# discovered account's provenance.
+# also privatizes the ``discovery.`` namespace — but only under the import scenario (a Scenario-A
+# discovery run uses its own policy, where public-footprint provenance is correct). The provenance
+# is stamped tenant-private here while remaining shape-identical to a discovered account's.
 DISCOVERY_FIELD_PREFIX = "discovery."
+IMPORT_REUSE_POLICY = _extend(IMPORT_FIELD_PREFIX, DISCOVERY_FIELD_PREFIX)
 
-IMPORT_REUSE_POLICY = ReusePolicy(
-    version=DEFAULT_REUSE_POLICY.version,
-    enabled=DEFAULT_REUSE_POLICY.enabled,
-    tenant_private_prefixes=(
-        *DEFAULT_REUSE_POLICY.tenant_private_prefixes,
-        IMPORT_FIELD_PREFIX,
-        DISCOVERY_FIELD_PREFIX,
-    ),
-    tenant_private_methods=DEFAULT_REUSE_POLICY.tenant_private_methods,
-)
+# Hybrid lookalike seeding (M5.4) records *seed-derivation* as a discovery-flavored claim
+# (``discovery.provenance``, ``matched_channel='seed'``) on the seed's cross-tenant-shared account
+# entity. *Which* accounts a client uses as lookalike seeds for their ICP is client-tuned,
+# competitively-sensitive intent — the same class as the import provenance — so the ``discovery.``
+# namespace is privatized for the seed scenario too (it does NOT inherit ``import.``; the shared
+# seam is the M2 default, not IMPORT_REUSE_POLICY). A Scenario-A discovery run uses its own policy.
+SEED_REUSE_POLICY = _extend(DISCOVERY_FIELD_PREFIX)

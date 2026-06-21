@@ -165,6 +165,42 @@ async def build_confirmed_icp(
     return ICPSpecRef(client_id=client_id, icp_key=spec.icp_key, icp_version=spec.version)
 
 
+async def build_confirmed_icp_on_field(
+    conn: AsyncConnection,
+    *,
+    client_id: str,
+    icp_key: str,
+    fit_field: str,
+    fit_threshold: float = 0.5,
+) -> ICPSpecRef:
+    """Like :func:`build_confirmed_icp` but with the fit rubric keyed on an arbitrary registered
+    scoring ``fit_field`` (BOOLEAN presence). Used by M5.4's per-ICP partition test: two ICPs keyed
+    on different fields make the *same* entity fit one ICP and miss the other, so the seed assembler
+    partitions it to the right segment (a healthcare customer seeds only that ICP — D5)."""
+    rubric = ScoringRubric(
+        fit=SubRubric(
+            entries=(
+                RubricEntry(field_key=fit_field, weight=1.0, transform=ScoringTransform.BOOLEAN),
+            )
+        ),
+        intent=SubRubric(entries=()),
+        tier_cutoffs=TierCutoffs(
+            bands=(TierBand(tier="high", min_fit=fit_threshold),),
+            fallback_tier="low",
+        ),
+    )
+    spec = await create_icp_spec(
+        conn,
+        client_id=client_id,
+        icp_key=icp_key,
+        created_from=ICPCreatedFrom.SYNTHESIS,
+        field_keys=(fit_field,),
+        scoring_rubric=rubric_to_slot(rubric),
+        activate=True,
+    )
+    return ICPSpecRef(client_id=client_id, icp_key=spec.icp_key, icp_version=spec.version)
+
+
 class RecordingJudge:
     """A :class:`~clue_research.core.verification.FaithfulnessJudge` that records the claims it
     judged and returns a fixed verdict (default ``SUPPORTED``)."""
