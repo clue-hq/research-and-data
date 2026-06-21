@@ -119,7 +119,16 @@ class BudgetCaps(BaseModel):
     per_campaign_hard_cap_cents: CostCents | None = None
     # Per-account caps, tiered (Doc C §5 budget bands). Keyed by tier label, e.g. "top"/"high".
     per_account_cap_cents: dict[str, CostCents] = Field(default_factory=dict)
-    # Per-contact cap for deep committee/contact profiling (highest per-entity cost band).
+    # The per-account deep cap for a tier with no specific ``per_account_cap_cents`` entry — the
+    # conservative fallback (mirrors :class:`RecursionPolicy.default_caps`). ``None`` == an unlisted
+    # tier has *no* per-account cap (the per-campaign cap stays the hard backstop). The M7.5 budget
+    # engine reads :meth:`per_account_cap_for` so any tier — listed or not — resolves to one number.
+    default_per_account_cap_cents: CostCents | None = None
+    # Per-contact cap for deep committee/contact profiling (highest per-entity cost band, Doc C §5).
+    # RESERVED — not yet enforced by the M7.5 engine: deep contact/committee runs (modes M3/M4) are
+    # M8, and there is no per-contact run row to attach a distinct band to at M7. Until M8 adds a
+    # contact-scoped check, per-entity contact spend is governed by the per-account cap + the
+    # per-campaign hard cap (the backstop). M8 wires the contact band off this field.
     per_contact_cap_cents: CostCents | None = None
     # Pass A is deterministic-only and cheap; a low cents/account ceiling guards a runaway.
     pass_a_cap_cents_per_account: CostCents = Decimal("5")
@@ -132,6 +141,13 @@ class BudgetCaps(BaseModel):
             if cap < 0:
                 raise ValueError(f"per_account_cap_cents[{tier!r}] must be >= 0 (got {cap})")
         return self
+
+    def per_account_cap_for(self, tier: str) -> CostCents | None:
+        """The per-account deep cap for ``tier`` — its specific :attr:`per_account_cap_cents` band,
+        else :attr:`default_per_account_cap_cents` (the conservative fallback). ``None`` means no
+        per-account cap applies to this tier (the M7.5 engine then leaves per-account spend
+        un-denied and relies on the per-campaign hard cap as the backstop)."""
+        return self.per_account_cap_cents.get(tier, self.default_per_account_cap_cents)
 
 
 class TierRecursionCaps(BaseModel):

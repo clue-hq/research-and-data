@@ -98,3 +98,27 @@ class IdempotencyStatus(StrEnum):
     IN_PROGRESS = "in_progress"
     SUCCEEDED = "succeeded"
     FAILED = "failed"
+
+
+class BudgetEventKind(StrEnum):
+    """Kind of one ``budget_event`` row (M7.5) — the append-only governance audit of the
+    cost-governance engine's spend decisions (Doc C §5; the ``budget_event`` table).
+
+    A budget *event* records a governance action, never a charge (charges live on the M7.4 ledger's
+    ``cost_cents_charged`` + the ``spent_cents`` counters, counted once):
+
+    * ``CHECK_DENY`` — a pre-spend :meth:`check` denied a within-cap-depth resolver call / facet
+      spawn because the per-account (or per-pass) cap would be exceeded (the M7.2 spawn-denial). A
+      *governed* stop, not an error: the run continues with the aspect marked partial.
+    * ``GRACEFUL_STOP`` — a per-run :meth:`check` found the campaign hard cap reached: the run is
+      brought to a graceful stop at the next checkpoint (via M7.3), never hard-killed mid-step.
+    * ``BREACH_PENDING`` — :meth:`set_campaign_cap` set a cap *below* current spend (the run is now
+      over budget): the client must raise the cap or tighten cutoffs before it can resume.
+    * ``CAP_RAISED`` — the per-campaign hard cap was (re)set (any direction; the single
+      cap-change event kind). Paired with ``BREACH_PENDING`` when the new cap is below spend.
+    """
+
+    CHECK_DENY = "check_deny"
+    GRACEFUL_STOP = "graceful_stop"
+    BREACH_PENDING = "breach_pending"
+    CAP_RAISED = "cap_raised"

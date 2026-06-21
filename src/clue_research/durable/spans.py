@@ -44,6 +44,25 @@ ATTR_FACET_COUNT = "facet_count"
 ATTR_DEPTH_REACHED = "depth_reached"
 ATTR_CAP_HIT_REASON = "cap_hit_reason"
 
+# --- cost governance spans (M7.5 budget engine) ---------------------------------------------
+# The budget engine is the single chokepoint for spend authorisation + the live cost accounting.
+# A pre-spend ``check`` and the pre-run ``estimate`` are traced; a governance ``budget_event``
+# (deny / graceful-stop / breach-pending / cap-raised) is both a durable audit row and a span.
+SPAN_BUDGET = "budget"
+SPAN_BUDGET_CHECK = "budget.check"
+SPAN_BUDGET_ESTIMATE = "budget.estimate"
+SPAN_BUDGET_EVENT = "budget.event"
+
+# M7.5 budget attributes (ride on the budget spans; redacted/stringified like any extra attr —
+# numeric values read back as their string form, per the M7.2 obs-redaction note).
+ATTR_BUDGET_SCOPE = "budget_scope"
+ATTR_BUDGET_VERDICT = "budget_verdict"
+ATTR_BUDGET_KIND = "budget_kind"
+ATTR_PROJECTED_CENTS = "projected_cents"
+ATTR_CAP_CENTS = "cap_cents"
+ATTR_SPENT_CENTS = "spent_cents"
+ATTR_REMAINING_CENTS = "remaining_cents"
+
 
 def graph_node_span(node: str) -> str:
     """Span name for one per-account graph node, e.g. ``account.graph.plan``.
