@@ -13,6 +13,9 @@ Implemented so far:
 * **M6.1 (ENG-128)** — Account Discovery (mode M1): :func:`discover` + the grounded
   :class:`DiscoveryChannel` seam, the *expand* orchestration, in-stream dedup, and the stopping
   rule. See :mod:`clue_research.discovery_scoring.discovery`.
+* **M6.2 (ENG-133)** — Existence/identity gate + discovery-provenance: :func:`admit` (resolve →
+  M2 disposition → discovery-provenance claim) and the integrated :class:`DiscoveryPhaseHandler`.
+  See :mod:`clue_research.discovery_scoring.gate`.
 """
 
 from __future__ import annotations
@@ -32,8 +35,18 @@ from clue_research.discovery_scoring.discovery import (
     StoppingReason,
     discover,
 )
+from clue_research.discovery_scoring.gate import (
+    AdmissionResult,
+    AdmissionStatus,
+    DefaultExistenceCheck,
+    ExistenceCheck,
+    ExistenceVerdict,
+    admit,
+)
+from clue_research.discovery_scoring.phases import DiscoveryPhaseHandler
 
 __all__ = [
+    # M6.1 — discovery
     "discover",
     "DiscoveryResult",
     "ChannelYield",
@@ -47,4 +60,13 @@ __all__ = [
     "DEFAULT_DISCOVERY_CONFIG",
     "StoppingReason",
     "LOOKALIKE_CHANNEL",
+    # M6.2 — existence/identity gate
+    "admit",
+    "AdmissionResult",
+    "AdmissionStatus",
+    "ExistenceCheck",
+    "ExistenceVerdict",
+    "DefaultExistenceCheck",
+    # M6 phase handlers
+    "DiscoveryPhaseHandler",
 ]
