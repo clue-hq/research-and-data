@@ -103,10 +103,10 @@ async def compute_gap_fields(
     """Return the deep-pass fields that still need research for ``entity_id`` (M7.1).
 
     A field is a **gap** when the merge view yields no current truth for it, or yields a value that
-    is **stale** (past its freshness TTL) — both mean a fresh observation is wanted. ``field_keys``
-    narrows the schema to an ICP-active subset (the campaign layer supplies it); ``None`` uses the
-    full registered deep-pass schema (``pass_kind = deep``). Stale-but-present fields are returned
-    so a refresh is scheduled, never silently skipped (substrate §1/§6)."""
+    is not ``FRESH`` (``STALE`` past its TTL, or ``EXPIRED`` aged-out) — all mean a fresh value is
+    wanted. ``field_keys`` narrows the schema to an ICP-active subset (the campaign layer gives it);
+    ``None`` uses the full registered deep-pass schema (``pass_kind = deep``). Non-fresh-but-present
+    fields are returned so a refresh is scheduled, never silently dropped (substrate §1/§6)."""
     if field_keys is None:
         fields = await list_fields(conn, pass_kind=PassKind.DEEP)
     else:
@@ -118,6 +118,6 @@ async def compute_gap_fields(
     gaps: list[FieldDef] = []
     for field in fields:
         current = values.get((entity_id, field.field_key))
-        if current is None or current.freshness_state is FreshnessState.STALE:
+        if current is None or current.freshness_state is not FreshnessState.FRESH:
             gaps.append(field)
     return gaps

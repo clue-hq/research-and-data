@@ -1,7 +1,7 @@
 """account_run table (M7.1 / ENG-131)
 
 Revision ID: 79d56a0f4425
-Revises: eab62cbb1366
+Revises: 82831d3fa4c5
 Create Date: 2026-06-21
 
 The per-account research run (substrate §5b; M7.1) — one row per account researched by one
@@ -22,6 +22,13 @@ Soft FKs (no REFERENCES): ``campaign_run`` lands on a later M7.3 migration in th
 ``account_entity`` lives in M2 — mirroring the ``claim`` table's soft-FK convention (0002), the
 integrity is enforced in the write path, not by a constraint that would couple migration order.
 
+Chains off ``82831d3fa4c5`` (ENG-165 ``field_definition.reuse_scope``): originally authored off the
+then-head ``eab62cbb1366``, re-pointed when ``m7/verification-layer`` was rebased onto a beat-0 base
+that had grown the ENG-165 migration. Re-pointing ``down_revision`` keeps the migration graph linear
+to match the linear (rebased) git history — one head — rather than an ``alembic merge`` join, which
+would reintroduce a branch the rebase removed. The two migrations are independent (this adds
+``account_run``; ENG-165 adds a ``field_definition`` column), so the order is safe.
+
 Enum ``account_run_status`` is a **durable-internal** lifecycle enum (Beat-0: M7 owns it; it is NOT
 in ``core.enums``). It is mirrored from :class:`clue_research.durable.enums.AccountRunStatus`; the
 parity test ``tests/durable/test_account_run_db.py::test_account_run_status_enum_matches_db`` guards
@@ -36,7 +43,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "79d56a0f4425"
-down_revision: str | None = "eab62cbb1366"
+down_revision: str | None = "82831d3fa4c5"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
