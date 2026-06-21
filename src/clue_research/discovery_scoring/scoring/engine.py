@@ -36,13 +36,9 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_research.claimstore import (
     TenantScope,
-    claims_for,
     entities_with_field_claim,
-    insert_claim,
-    supersede_claim,
 )
 from clue_research.core import (
-    Claim,
     ClaimId,
     EntityId,
     EntityType,
@@ -55,6 +51,7 @@ from clue_research.core import (
     account_claim,
     classify_field_key,
 )
+from clue_research.discovery_scoring.claim_writes import write_icp_scoped_claim
 from clue_research.discovery_scoring.gate import DISCOVERY_PROVENANCE_FIELD
 from clue_research.discovery_scoring.scoring.results import (
     AccountScore,
@@ -312,16 +309,6 @@ def _intent_value_json(
     return payload
 
 
-def _claim_icp_key(claim: Claim) -> str | None:
-    """The ICP key a score claim was written under (stored in its ``value_json``), or ``None``."""
-    value_json = claim.value_json
-    if isinstance(value_json, dict):
-        key = value_json.get("icp_key")
-        if isinstance(key, str):
-            return key
-    return None
-
-
 async def _write_score_object(
     conn: AsyncConnection,
     *,
@@ -341,13 +328,10 @@ async def _write_score_object(
     one live winner per ICP (append-only history preserved); a score from a *different* ICP is left
     untouched (D5: an account may be scored under several ICPs independently). The claim is
     tenant-private (``stamp_reuse`` — the write boundary is fail-closed on these reserved fields).
-    """
-    scope = TenantScope.for_tenant(client_id)
-    existing = await claims_for(conn, entity_id, field_key, scope=scope)
-    for claim in existing:
-        if claim.run_id == run_id:
-            return claim.id, False
 
+    The read/replay/supersede-by-ICP sequence is the shared :func:`write_icp_scoped_claim` protocol
+    (M6.4's tier write uses the same); this builds only the score claim's shape + value.
+    """
     score_claim = stamp_reuse(
         account_claim(
             entity_id=entity_id,
@@ -361,12 +345,13 @@ async def _write_score_object(
         ),
         tenant_id=client_id,
     )
-    # `existing` is ordered collected_at-desc; supersede the latest live score for THIS ICP (so a
-    # re-score replaces its predecessor), leaving any other ICP's score for this account intact.
-    for prior in existing:
-        if _claim_icp_key(prior) == icp_key:
-            return await supersede_claim(conn, prior.id, score_claim), True
-    return await insert_claim(conn, score_claim), True
+    return await write_icp_scoped_claim(
+        conn,
+        score_claim,
+        run_id=run_id,
+        icp_key=icp_key,
+        scope=TenantScope.for_tenant(client_id),
+    )
 
 
 __all__ = [

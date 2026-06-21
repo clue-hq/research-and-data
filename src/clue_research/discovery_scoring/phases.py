@@ -1,17 +1,21 @@
-"""M6's campaign-run phase handlers (M6.1+M6.2 → the DISCOVERY phase; ENG-128 + ENG-133).
+"""M6's campaign-run phase handlers (M6.1+M6.2 → DISCOVERY; M6.3 → SCORING; M6.4 → TIER_CHECKPOINT).
 
 The frozen ``PhaseHandler`` seam (Beat-0, ``core.execution``) lets the M7 state machine drive a
 phase without importing this package. ``DiscoveryPhaseHandler`` is the integrated DISCOVERY phase:
 it loads the campaign's ICP spec, runs mode-M1 :func:`discover` (M6.1), and passes each grounded
 candidate through the :func:`admit` gate (M6.2) — discovery proposes, the gate admits/reviews/drops
-and stamps discovery-provenance. It persists the per-channel yield to the shared ``source_yield``
-telemetry (the substrate M6.5 coverage reads) and returns a compact summary by reference (never
-candidate blobs). The concrete handler is constructed + registered into ``CampaignRun`` at the
-``api`` composition root (Beat-0); nothing here imports ``durable``.
+and stamps discovery-provenance. ``ScoringPhaseHandler`` (M6.3) scores every admitted account.
+``TierCheckpointPhaseHandler`` (M6.4) tiers the scores and is the durable human gate: it suspends
+via ``PhaseResult(status=PAUSED)`` with a review payload + pre-run cost estimate, and resumes (into
+``deep``) only on an approved decision threaded back through the phase ``params``. Each persists the
+per-(source) yield / decision by reference (never blobs). The concrete handlers are constructed +
+registered into ``CampaignRun`` at the ``api`` composition root (Beat-0); nothing here imports
+``durable``.
 
-Idempotency (M7 replay): the discovery ``run_id`` is **derived deterministically** from the campaign
-run + ICP version, so a re-entered DISCOVERY phase reuses it and the gate's per-(entity, run)
-provenance check makes re-admission a no-op — the phase commits its effects at most once.
+Idempotency (M7 replay): every phase ``run_id`` is **derived deterministically** from the campaign
+run + ICP version (+ the cutoff version, for the checkpoint), so a re-entry reuses it and its
+effects are committed at most once — discovery re-admission, score writes, and tier writes all
+no-op on replay, and the checkpoint re-presents byte-identical state.
 """
 
 from __future__ import annotations
@@ -19,8 +23,10 @@ from __future__ import annotations
 from collections.abc import Callable
 from contextlib import AbstractAsyncContextManager
 from decimal import Decimal
+from typing import cast
 from uuid import NAMESPACE_URL, uuid5
 
+from pydantic import JsonValue
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncConnection
 
@@ -54,6 +60,21 @@ from clue_research.discovery_scoring.scoring import (
     aggregate_yield,
     pass_a_fill_fields,
     score_account,
+)
+from clue_research.discovery_scoring.tiering import (
+    DEFAULT_TIERING_CONFIG,
+    AccountTierView,
+    CheckpointAction,
+    CheckpointDecision,
+    CheckpointReview,
+    CheckpointStatus,
+    TieringConfig,
+    assign_tiers,
+    cutoff_version,
+    estimate_cost,
+    load_score_views,
+    persist_tier,
+    tier_distribution,
 )
 from clue_research.icp.compiler import compile_field_plan
 from clue_research.icp.rubric import RubricValidationError, rubric_from_slot, validate_rubric
@@ -331,4 +352,169 @@ class ScoringPhaseHandler:
         )
 
 
-__all__ = ["DiscoveryPhaseHandler", "ScoringPhaseHandler"]
+def _tier_checkpoint_run_id(ctx: PhaseContext, cversion: str) -> RunId:
+    """A deterministic tier-checkpoint run id per ``(campaign_run, icp_key, icp_version,
+    cutoff_version)``. Encoding the cutoff version is what makes the tier write idempotent on
+    ``(account, cutoff_version)``: a re-entered checkpoint with the *same* approved cutoffs reuses
+    it (the tier write no-ops), while a human cutoff adjustment yields a *new* run id whose tier
+    write supersedes the prior tier (one live winner per ICP). Distinct ns from disc/scoring."""
+    return RunId(
+        uuid5(
+            NAMESPACE_URL,
+            f"clue:tier-checkpoint:{ctx.campaign_run_id}:{ctx.icp_key}:{ctx.icp_version}"
+            f":{cversion}",
+        )
+    )
+
+
+class TierCheckpointPhaseHandler:
+    """The TIER_CHECKPOINT ``PhaseHandler`` (M6.4): tier the Pass-A scores and run the durable human
+    gate that makes the two-pass unit economics legible *before* any Pass-B spend.
+
+    Re-entrant by design (the secure-input pause/resume pattern, substrate §10): the M7 state
+    machine invokes :meth:`run` with no decision to obtain the durable suspension (``PAUSED`` + the
+    review payload — provisional fit/intent with working evidence links, the proposed cutoffs, the
+    tier distribution, and the pre-run cost estimate), then re-invokes it with the client's decision
+    in ``ctx.params`` (under ``checkpoint_decision``). On ``approve`` (within the effective budget
+    cap) the handler persists the per-account tier decision and returns ``COMPLETED`` (the run
+    advances to ``deep``); on ``pause``, an unset action, or a projected-spend-over-cap condition it
+    stays ``PAUSED`` (a cutoff/budget adjustment re-tiers and re-estimates with **no** Pass-A
+    re-spend, and an over-cap approve halts gracefully — to raise the cap or tighten cutoffs).
+
+    Idempotency on ``(campaign_run, 'tier_checkpoint')`` (Doc C §4): the review is deterministic in
+    (the stored scores × cutoffs × config), so crash re-entry re-presents identical state, and the
+    tier write is idempotent on the cutoff-derived ``run_id``, so the resume action applies at most
+    once. The durable suspend/resume primitive + the checkpoint record (``payload``) are M7's; this
+    handler only implements the phase behaviour. Registered into ``CampaignRun`` at the ``api``
+    composition root (Beat-0); nothing here imports ``durable``.
+    """
+
+    phase = CampaignPhase.TIER_CHECKPOINT
+
+    def __init__(
+        self,
+        *,
+        config: TieringConfig = DEFAULT_TIERING_CONFIG,
+        session_factory: SessionFactory = transaction,
+    ) -> None:
+        self._config = config
+        self._session_factory = session_factory
+
+    async def run(self, ctx: PhaseContext) -> PhaseResult:
+        scoring_run = _scoring_run_id(ctx)
+        async with self._session_factory() as conn:
+            spec = await get_icp_version(conn, ctx.client_id, ctx.icp_key, ctx.icp_version)
+            if spec is None:
+                return PhaseResult(
+                    status=PhaseStatus.FAILED,
+                    payload={
+                        "error": (
+                            f"no ICP spec for ({ctx.client_id!r}, {ctx.icp_key!r}, "
+                            f"v{ctx.icp_version})"
+                        )
+                    },
+                )
+            rubric = rubric_from_slot(spec.scoring_rubric)
+            if rubric is None:
+                # No rubric → no cutoffs and no scores to tier; surface it, never fabricate cutoffs.
+                return PhaseResult(
+                    status=PhaseStatus.FAILED,
+                    payload={
+                        "error": (
+                            f"ICP spec ({ctx.client_id!r}, {ctx.icp_key!r}, v{ctx.icp_version}) "
+                            "carries no scoring rubric"
+                        )
+                    },
+                )
+
+            decision = CheckpointDecision.from_params(ctx.params)
+            # Cutoffs are the client's adjustment if present, else the rubric's proposal (D7:
+            # cutoffs are data; adjusting them re-tiers without touching the rubric version).
+            cutoffs = decision.cutoffs if decision.cutoffs is not None else rubric.tier_cutoffs
+            cversion = cutoff_version(cutoffs)
+
+            views = await load_score_views(conn, scoring_run=scoring_run, client_id=ctx.client_id)
+            assignments = assign_tiers(views, cutoffs)
+            distribution = tier_distribution(assignments, cutoffs)
+            estimate = estimate_cost(distribution, self._config)
+
+            # The effective cap honours a raise/lower in the decision over the run's standing cap.
+            effective_cap = (
+                decision.budget_cap_cents
+                if decision.budget_cap_cents is not None
+                else ctx.budget_cap_cents
+            )
+            over_cap = effective_cap is not None and estimate.estimated_cost_cents > effective_cap
+
+            rows = tuple(
+                AccountTierView.from_view(view, assignments[view.account_id]) for view in views
+            )
+
+            # Approve within cap → persist the decision + advance to `deep`. Anything else (no/pause
+            # action, or a projected-over-cap approve) → stay durably suspended (graceful stop).
+            approved = decision.action is CheckpointAction.APPROVE and not over_cap
+            tier_run: RunId | None = None
+            tiered = replayed = errors = 0
+            if approved:
+                tier_run = _tier_checkpoint_run_id(ctx, cversion)
+                for view in views:
+                    savepoint = await conn.begin_nested()
+                    try:
+                        _, written = await persist_tier(
+                            conn,
+                            view=view,
+                            tier=assignments[view.account_id],
+                            cutoff_version=cversion,
+                            run_id=tier_run,
+                            client_id=ctx.client_id,
+                            icp_key=ctx.icp_key,
+                            icp_version=ctx.icp_version,
+                        )
+                    except Exception:  # noqa: BLE001 — isolate one account; continue the approve.
+                        # Commit is outside the try so a commit failure is never double-rolled-back.
+                        await savepoint.rollback()
+                        errors += 1
+                        continue
+                    await savepoint.commit()
+                    if written:
+                        tiered += 1
+                    else:
+                        replayed += 1
+
+            status = CheckpointStatus.RESUMED if approved else CheckpointStatus.AWAITING
+            review = CheckpointReview(
+                status=status,
+                proposed_cutoffs=cutoffs,
+                cutoff_version=cversion,
+                tier_distribution=distribution,
+                accounts=rows,
+                estimate=estimate,
+                cap_cents=effective_cap,
+                projected_over_cap=over_cap,
+                scored_count=len(views),
+            )
+            payload: dict[str, JsonValue] = {
+                "checkpoint_status": status.value,
+                "decision_action": decision.action.value if decision.action else None,
+                "cutoff_version": cversion,
+                "tier_distribution": cast("dict[str, JsonValue]", distribution),
+                "estimate": estimate.model_dump(mode="json"),
+                "projected_over_cap": over_cap,
+                "scored_count": len(views),
+                "review": review.model_dump(mode="json"),
+            }
+            if approved:
+                assert tier_run is not None
+                payload["tier_checkpoint_run_id"] = str(tier_run)
+                payload["tiered"] = tiered
+                payload["replayed"] = replayed
+                payload["errors"] = errors
+                return PhaseResult(
+                    status=PhaseStatus.COMPLETED,
+                    accounts_processed=tiered + replayed,
+                    payload=payload,
+                )
+            return PhaseResult(status=PhaseStatus.PAUSED, payload=payload)
+
+
+__all__ = ["DiscoveryPhaseHandler", "ScoringPhaseHandler", "TierCheckpointPhaseHandler"]
