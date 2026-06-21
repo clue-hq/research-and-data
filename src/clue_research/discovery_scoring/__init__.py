@@ -16,6 +16,9 @@ Implemented so far:
 * **M6.2 (ENG-133)** — Existence/identity gate + discovery-provenance: :func:`admit` (resolve →
   M2 disposition → discovery-provenance claim) and the integrated :class:`DiscoveryPhaseHandler`.
   See :mod:`clue_research.discovery_scoring.gate`.
+* **M6.3 (ENG-138)** — Pass A scoring engine: :func:`score_account` (fill scoring proxies via the
+  tier-1–3 waterfall → pure scorer → persist the decomposed, evidence-backed fit/intent score) and
+  the integrated :class:`ScoringPhaseHandler`. See :mod:`clue_research.discovery_scoring.scoring`.
 """
 
 from __future__ import annotations
@@ -43,7 +46,23 @@ from clue_research.discovery_scoring.gate import (
     ExistenceVerdict,
     admit,
 )
-from clue_research.discovery_scoring.phases import DiscoveryPhaseHandler
+from clue_research.discovery_scoring.phases import (
+    DiscoveryPhaseHandler,
+    ScoringPhaseHandler,
+)
+from clue_research.discovery_scoring.scoring import (
+    DEFAULT_SCORING_CONFIG,
+    FIT_FIELD,
+    INTENT_FIELD,
+    AccountScore,
+    AccountScoringOutcome,
+    ScoringConfig,
+    SourceYieldRow,
+    admitted_account_ids,
+    aggregate_yield,
+    pass_a_fill_fields,
+    score_account,
+)
 
 __all__ = [
     # M6.1 — discovery
@@ -67,6 +86,19 @@ __all__ = [
     "ExistenceCheck",
     "ExistenceVerdict",
     "DefaultExistenceCheck",
+    # M6.3 — Pass A scoring
+    "score_account",
+    "admitted_account_ids",
+    "pass_a_fill_fields",
+    "aggregate_yield",
+    "AccountScore",
+    "AccountScoringOutcome",
+    "SourceYieldRow",
+    "ScoringConfig",
+    "DEFAULT_SCORING_CONFIG",
+    "FIT_FIELD",
+    "INTENT_FIELD",
     # M6 phase handlers
     "DiscoveryPhaseHandler",
+    "ScoringPhaseHandler",
 ]

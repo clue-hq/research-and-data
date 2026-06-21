@@ -37,6 +37,7 @@ from clue_research.core import (
     ClaimFlavor,
     ClaimId,
     EntityId,
+    RunId,
     VerificationStatus,
     can_be_promoted,
     parse_value_json,
@@ -258,3 +259,46 @@ async def claims_for(
         },
     )
     return [_row_to_claim(dict(row)) for row in result.mappings().all()]
+
+
+async def entities_with_field_claim(
+    conn: AsyncConnection,
+    field_key: FieldKey | str,
+    *,
+    run_id: RunId | None = None,
+    include_superseded: bool = False,
+    scope: TenantScope,
+) -> list[EntityId]:
+    """The distinct ``entity_id``s carrying a (live) claim on ``field_key`` — optionally narrowed to
+    one ``run_id``.
+
+    The set-shaped read the membership queries need (e.g. M6.3 enumerating the accounts admitted in
+    a discovery run via ``core.discovery_provenance`` + that run's id, M6.5 the admitted-vs-seen
+    counts) without anyone hand-writing SQL against ``claim`` (conventions §2 — the table stays
+    behind this seam). ``scope`` is **required** (M2.5, fail-closed), like :func:`claims_for`; an
+    operator/cross-tenant caller passes :data:`ALL_TENANTS`. Returns the surviving-or-not ids as
+    stored — a caller that needs the merge survivor resolves each through ``identity.surviving_id``.
+    Ordered by id for a deterministic result.
+    """
+    scope_sql, scope_params = scope.predicate()
+    stmt = text(
+        f"""
+        SELECT DISTINCT entity_id
+        FROM claim
+        WHERE field_key = :field_key
+          AND (CAST(:run_id AS uuid) IS NULL OR run_id = :run_id)
+          AND (CAST(:include_superseded AS boolean) OR superseded_by IS NULL)
+          AND {scope_sql}
+        ORDER BY entity_id
+        """
+    )
+    result = await conn.execute(
+        stmt,
+        {
+            "field_key": field_key,
+            "run_id": run_id,
+            "include_superseded": include_superseded,
+            **scope_params,
+        },
+    )
+    return [EntityId(row[0]) for row in result.all()]
