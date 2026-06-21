@@ -8,4 +8,43 @@ M6's ``DISCOVERY``/``SCORING``/``TIER_CHECKPOINT`` phases *implement* ``PhaseHan
 :mod:`clue_research.core.execution` (the checkpoint pauses via ``PhaseResult(status=PAUSED)``), the
 Pass-A scorer returns ``core.Score``, and budget checks call the injected ``BudgetEngine``. Imported
 accounts (M5) converge here through the claim store, not an import — M6 imports no sibling package.
+
+Implemented so far:
+* **M6.1 (ENG-128)** — Account Discovery (mode M1): :func:`discover` + the grounded
+  :class:`DiscoveryChannel` seam, the *expand* orchestration, in-stream dedup, and the stopping
+  rule. See :mod:`clue_research.discovery_scoring.discovery`.
 """
+
+from __future__ import annotations
+
+from clue_research.discovery_scoring.discovery import (
+    DEFAULT_DISCOVERY_CONFIG,
+    LOOKALIKE_CHANNEL,
+    CandidateHypothesis,
+    CandidateRecord,
+    ChannelRegistry,
+    ChannelYield,
+    DiscoveryChannel,
+    DiscoveryConfig,
+    DiscoveryQuery,
+    DiscoveryResult,
+    DiscoveryStrategy,
+    StoppingReason,
+    discover,
+)
+
+__all__ = [
+    "discover",
+    "DiscoveryResult",
+    "ChannelYield",
+    "CandidateHypothesis",
+    "CandidateRecord",
+    "DiscoveryChannel",
+    "DiscoveryQuery",
+    "ChannelRegistry",
+    "DiscoveryStrategy",
+    "DiscoveryConfig",
+    "DEFAULT_DISCOVERY_CONFIG",
+    "StoppingReason",
+    "LOOKALIKE_CHANNEL",
+]
