@@ -140,7 +140,10 @@ class StubAspectWorker:
     """A recording :class:`~clue_research.core.AspectWorker` (no IO).
 
     Returns ``n_claims`` freshly-minted claim-id references, records each invocation, and can be
-    made to ``raise`` (to test sibling isolation) or run a ``before`` hook (to test concurrency)."""
+    made to ``raise`` (to test sibling isolation), run a ``before`` hook (to test concurrency), or
+    *request facet sub-workers* (M7.2) by emitting ``facet_requests`` on its ``WorkerResult.detail``
+    — the runtime then grants/denies them through the ``SpawnGuard``. It also records the recursion
+    caps the runtime handed it in ``ctx.params`` (the soft cap), and the depth it ran at."""
 
     def __init__(
         self,
@@ -151,6 +154,7 @@ class StubAspectWorker:
         events: list[str] | None = None,
         raise_exc: BaseException | None = None,
         before: Callable[[], Awaitable[None]] | None = None,
+        facet_requests: list[dict[str, object]] | None = None,
     ) -> None:
         self.aspect = aspect
         self._n = n_claims
@@ -159,18 +163,27 @@ class StubAspectWorker:
         self.calls = 0
         self._raise = raise_exc
         self._before = before
+        self._facet_requests = facet_requests
+        self.seen_params: list[dict[str, object]] = []
+        self.seen_depths: list[int] = []
 
     async def research(self, ctx: AspectContext) -> WorkerResult:
         self.calls += 1
         self.events.append(f"work:{self.aspect}")
+        self.seen_params.append(dict(ctx.params))
+        self.seen_depths.append(ctx.depth)
         if self._before is not None:
             await self._before()
         if self._raise is not None:
             raise self._raise
         refs = tuple(new_claim_id() for _ in range(self._n))
+        detail: dict[str, object] = {}
+        if self._facet_requests is not None:
+            detail["facet_requests"] = self._facet_requests
         return WorkerResult(
             aspect=self.aspect,
             status=WorkerStatus.OK,
             claim_refs=refs,
             cost_cents=self._cost,
+            detail=detail,
         )

@@ -99,4 +99,41 @@ Adversarial review (3 lenses + verify): 2 findings, both DOC-only (no behavioral
 PENDING/created→RUNNING; aligned docs, kept all 7 enum values (spec+DB parity, staged-lifecycle use).
 (2) AccountRunStore.fail() is forward-designed for M7.3 (a crash is resumable not terminal); clarified docstring.
 
-## Next: M7.2 (ENG-135) — bounded recursion knob. NOT started (paused per user after M7.1).
+## Rebase reconciliation (commit 0a828db) — DONE
+User rebased m7 onto updated beat0 (now includes M6 PR#9, M9 contract-delta PR#10, ENG-165 reuse_scope).
+- Two alembic heads (my 79d56a0f4425 + ENG-165's 82831d3fa4c5, both off eab62cbb1366). Re-pointed my
+  account_run migration down_revision → 82831d3fa4c5 (linear chain, matches rebase; NOT alembic merge).
+- FreshnessState now has EXPIRED (M9). Hardened gap-detection: any non-FRESH winner is a gap (was STALE-only).
+- Recreated clue_m7 FRESH (drop+create) — old one had pre-rebase schema. db-smoke reversible on linear chain.
+
+## M7.2 (ENG-135) — bounded recursion knob. IMPLEMENTED, gate-green, under review.
+- config/schema.py: TierRecursionCaps{max_depth 0..2, max_aspect_workers, max_facet_workers_per_aspect}
+  + RecursionPolicy{by_tier, default_caps(depth0), eligible_classes=(account.resonance, contact.facet)};
+  caps_for(tier)/is_eligible(aspect). Defaults: top depth2, high depth1, unlisted depth0. Wired into
+  ConfigOverlay/Config/loader._merge/__init__ like BudgetCaps (policy-as-data, per-ICP overridable).
+- durable/recursion.py: SpawnGuard (single hard chokepoint) + SpawnDecision + SpawnDenyReason
+  (not_eligible/depth_exceeded/count_exceeded/budget). may_spawn order: eligibility→depth→count→budget.
+- durable/graph.py: recursion CONTAINED INSIDE aspect_worker node via internal asyncio (NOT LangGraph
+  Send recursion) — keeps M7.1 topology/tests/resume intact. _run_worker_subtree (recursive, gathers
+  granted facets concurrently, returns (results, depth_reached)); _grant_facets (SpawnGuard chokepoint
+  + cap_hit per denial); _run_one_worker (shared aspect/facet isolation); _dispatch caps level-1 at
+  max_aspect_workers; soft cap injected via AspectContext.params["recursion"]; facet requests ride
+  WorkerResult.detail["facet_requests"]. DbAccountRunStore(recursion_policy), AccountResearchGraph(recursion_policy).
+- durable/spans.py: SPAN_CAP_HIT + ATTR_FACET_COUNT/DEPTH_REACHED/CAP_HIT_REASON.
+- build_plan(recursion_policy=) records per-tier depth allowance in plan_json.
+- Tests: test_recursion_policy (5), test_spawn_guard (7), test_account_recursion (8 graph-level).
+Verification: make check 416 passed/308 skipped/0 fail; 39 durable tests pass w/ DB on clue_m7.
+Adversarial review (3 lenses + verify): 4 findings, all fixed:
+(1) HIGH — budget not decremented across sibling facet grants in _grant_facets (two 60c facets both
+    passed a 100c envelope). Fixed: decrement `remaining` per grant; added test_budget_envelope_is_shared.
+(2) MEDIUM — _emit_fanout_summary used graph_node_span("recursion") violating that helper's
+    plan|fan_out|collect|handoff contract. Fixed: added SPAN_FANOUT_SUMMARY constant.
+(3) LOW — no test for max_aspect_workers level-1 cap. Fixed: added test_max_aspect_workers_caps.
+(4) NIT — eligible_classes prefix-matching unclear. Fixed: clarified field doc (kept the name).
+NOTE: custom span attrs are stringified by obs redaction (depth reads back as "0", not int 0) —
+tests coerce with int().
+M7.2 DONE: committed; Linear ENG-135 → In Review; PAUSED for user review.
+
+## Next: M7.3 (ENG-141) campaign-run state machine. NOT started.
+Reminder for M7.3: campaign_phase_checkpoint MUST carry payload_json + read-back (M6 tier-checkpoint
+writes there); no separate tier table. See 2026-06-21-m6-m7-telemetry-ownership.md.

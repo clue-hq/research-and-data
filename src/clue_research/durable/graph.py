@@ -33,6 +33,7 @@ the worker→store→reference contract, checkpoint-resume, and the account-run 
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import AsyncIterator, Sequence
 from contextlib import asynccontextmanager
 from decimal import Decimal
@@ -47,6 +48,7 @@ from langgraph.types import Send
 from pydantic import BaseModel, ConfigDict
 from typing_extensions import TypedDict
 
+from clue_research.config import RecursionPolicy
 from clue_research.core import (
     AspectContext,
     CampaignRunId,
@@ -68,14 +70,20 @@ from clue_research.durable.account_run import (
 )
 from clue_research.durable.enums import AccountRunStatus
 from clue_research.durable.planning import ResearchPlan, build_plan, compute_gap_fields
+from clue_research.durable.recursion import SpawnDenyReason, SpawnGuard
 from clue_research.durable.spans import (
     ATTR_ASPECT,
     ATTR_ASPECT_COUNT,
+    ATTR_CAP_HIT_REASON,
     ATTR_CLAIM_REF_COUNT,
     ATTR_DEPTH,
+    ATTR_DEPTH_REACHED,
+    ATTR_FACET_COUNT,
     ATTR_GAP_FIELD_COUNT,
     ATTR_TIER,
     ATTR_WORKER_STATUS,
+    SPAN_CAP_HIT,
+    SPAN_FANOUT_SUMMARY,
     graph_node_span,
 )
 from clue_research.durable.workers import WorkerRegistry, default_worker_registry
@@ -141,7 +149,12 @@ class DbAccountRunStore:
     Each method runs in its own ``db.transaction()`` (so ``begin``'s ensure-row + plan-persist
     commit atomically, the M7.1 "plan committed before any spawn" guarantee). Gap detection uses the
     tenant-scoped merge view: ``for_tenant(client_id)`` when a tenant is given (so the run sees this
-    client's private claims — resonance/facets are tenant-private), else the public base."""
+    client's private claims — resonance/facets are tenant-private), else the public base. A
+    ``recursion_policy`` (M7.2) makes the plan record the per-tier facet-recursion depth allowance;
+    the runtime ``SpawnGuard`` enforces the same policy."""
+
+    def __init__(self, recursion_policy: RecursionPolicy | None = None) -> None:
+        self._recursion_policy = recursion_policy
 
     async def begin(
         self,
@@ -169,7 +182,7 @@ class DbAccountRunStore:
                 tier=tier,
             )
             gaps = await compute_gap_fields(conn, entity_id, scope=scope, field_keys=field_keys)
-            plan = build_plan(gaps, tier=tier)
+            plan = build_plan(gaps, tier=tier, recursion_policy=self._recursion_policy)
             await save_plan(
                 conn,
                 account_run_id,
@@ -255,6 +268,27 @@ class _GraphState(TypedDict, total=False):
     status: str
 
 
+def _facet_requests(result: WorkerResult) -> list[dict[str, Any]]:
+    """The facet sub-worker requests a worker signalled (M7.2). A worker asks the runtime to recurse
+    by putting ``detail["facet_requests"] = [{"aspect": ..., "field_keys": [...]}, ...]`` on its
+    :class:`WorkerResult` — riding the frozen ``detail`` escape hatch, so no ``core`` change is
+    needed. Malformed entries are ignored defensively (the worker is the least-trusted input)."""
+    raw = result.detail.get("facet_requests")
+    if not isinstance(raw, list):
+        return []
+    return [req for req in raw if isinstance(req, dict) and isinstance(req.get("aspect"), str)]
+
+
+def _to_cost(value: object) -> CostCents | None:
+    """Coerce a JSON-carried estimated cost (str/number) to ``CostCents``; ``None`` if absent."""
+    if value is None:
+        return None
+    try:
+        return Decimal(str(value))
+    except (ValueError, ArithmeticError):
+        return None
+
+
 def _terminal_status(statuses: Sequence[WorkerStatus]) -> AccountRunStatus:
     """Roll per-aspect worker outcomes into the run's terminal status.
 
@@ -269,19 +303,27 @@ def _terminal_status(statuses: Sequence[WorkerStatus]) -> AccountRunStatus:
 
 
 class AccountResearchGraph:
-    """The per-account orchestrator-worker graph (M7.1).
+    """The per-account orchestrator-worker graph (M7.1) + the bounded recursion knob (M7.2).
 
-    Construct once with an :class:`AccountRunStore` and a :class:`WorkerRegistry`; call :meth:`run`
-    per account with a checkpointer. The graph definition is built once and compiled per run with
-    the supplied checkpointer, so the checkpoint backend is a runtime choice, not baked in."""
+    Construct once with an :class:`AccountRunStore`, a :class:`WorkerRegistry`, and a
+    :class:`RecursionPolicy`; call :meth:`run` per account with a checkpointer. The graph definition
+    is built once and compiled per run with the supplied checkpointer, so the checkpoint backend is
+    a runtime choice, not baked in. The ``recursion_policy`` (per-ICP config, resolved for the
+    campaign) drives the :class:`SpawnGuard` — the single hard chokepoint for facet sub-worker
+    spawns; a default policy means the conservative floor (top-tier depth 2, others ≤1)."""
 
     def __init__(
         self,
         *,
         store: AccountRunStore | None = None,
         workers: WorkerRegistry | None = None,
+        recursion_policy: RecursionPolicy | None = None,
     ) -> None:
-        self._store: AccountRunStore = store if store is not None else DbAccountRunStore()
+        policy = recursion_policy if recursion_policy is not None else RecursionPolicy()
+        self._guard = SpawnGuard(policy)
+        self._store: AccountRunStore = (
+            store if store is not None else DbAccountRunStore(recursion_policy=policy)
+        )
         self._workers = workers if workers is not None else default_worker_registry()
         self._builder = self._build()
 
@@ -330,11 +372,25 @@ class AccountResearchGraph:
         return {"plan": plan.model_dump(mode="json"), "status": AccountRunStatus.RUNNING.value}
 
     def _dispatch(self, state: _GraphState) -> list[Send] | str:
-        """Fan out: one ``Send`` per planned aspect (a parallel super-step). With no aspects (every
-        gap already filled), route straight to ``collect`` so the run still finalizes."""
+        """Fan out: one ``Send`` per planned aspect (a parallel super-step), capped at the tier's
+        ``max_aspect_workers`` level-1 breadth (M7.2). Aspects beyond the cap are dropped with a
+        logged ``cap_hit`` — the hard limit holds even if the plan has more aspects than the tier
+        allows. With no aspects (every gap already filled), route straight to ``collect``."""
         plan = state.get("plan") or {}
         aspects: list[dict[str, Any]] = plan.get("aspects", [])
         if not aspects:
+            return "collect"
+        caps = self._guard.policy.caps_for(state["tier"])
+        granted = aspects[: caps.max_aspect_workers]
+        for dropped in aspects[caps.max_aspect_workers :]:
+            self._emit_cap_hit(
+                state["entity_id"],
+                state["campaign_run_id"],
+                aspect=dropped["aspect"],
+                depth=0,
+                reason=SpawnDenyReason.COUNT_EXCEEDED,
+            )
+        if not granted:
             return "collect"
         return [
             Send(
@@ -347,38 +403,129 @@ class AccountResearchGraph:
                     "tier": state["tier"],
                 },
             )
-            for aspect in aspects
+            for aspect in granted
         ]
 
     async def _aspect_worker_node(self, state: _GraphState) -> dict[str, Any]:
         # On a ``Send``, this node's input *is* the per-aspect payload (see ``_dispatch``), carrying
-        # ``aspect_spec`` plus the shared run ids — a partial ``_GraphState``.
+        # ``aspect_spec`` plus the shared run ids — a partial ``_GraphState``. The aspect worker
+        # runs at depth 0; the bounded facet recursion (M7.2) is contained within this node.
         spec = state["aspect_spec"]
-        aspect = spec["aspect"]
         envelope = spec.get("budget_envelope_cents")
-        ctx = AspectContext(
-            entity_id=EntityId(UUID(state["entity_id"])),
-            campaign_run_id=CampaignRunId(UUID(state["campaign_run_id"])),
-            run_id=RunId(UUID(state["account_run_id"])),
-            tier=state["tier"],
-            aspect=aspect,
+        results, depth_reached = await self._run_worker_subtree(
+            aspect=spec["aspect"],
             field_keys=tuple(spec.get("field_keys", ())),
-            budget_envelope_cents=Decimal(str(envelope)) if envelope is not None else None,
-            depth=spec.get("depth", 0),
+            entity_id=state["entity_id"],
+            campaign_run_id=state["campaign_run_id"],
+            account_run_id=state["account_run_id"],
+            tier=state["tier"],
+            depth=0,
+            budget_remaining=Decimal(str(envelope)) if envelope is not None else None,
         )
-        worker = self._workers.get(aspect)
+        # Fan-out summary for this aspect: facet sub-workers spawned + deepest level reached (M7.2
+        # telemetry feeding M7.5/M13). The aspect worker itself is results[0]; the rest are facets.
+        self._emit_fanout_summary(
+            state["entity_id"],
+            state["campaign_run_id"],
+            aspect=spec["aspect"],
+            facet_count=len(results) - 1,
+            depth_reached=depth_reached,
+        )
+        return {"aspect_results": [r.model_dump(mode="json") for r in results]}
+
+    async def _run_worker_subtree(
+        self,
+        *,
+        aspect: str,
+        field_keys: tuple[str, ...],
+        entity_id: str,
+        campaign_run_id: str,
+        account_run_id: str,
+        tier: str,
+        depth: int,
+        budget_remaining: CostCents | None,
+    ) -> tuple[list[WorkerResult], int]:
+        """Run one worker (aspect at depth 0, facet at depth ≥1) and its bounded facet sub-tree.
+
+        Every facet spawn passes through the single :class:`SpawnGuard` chokepoint — denied spawns
+        are a ``cap_hit`` no-op, never an error (M7.2 dual enforcement, the hard half). Granted
+        facets run concurrently and share no state but the claim store; each returns refs only.
+        Returns the flattened result list (this worker + all descendants) and the deepest depth."""
+        caps = self._guard.policy.caps_for(tier)
+        ctx = AspectContext(
+            entity_id=EntityId(UUID(entity_id)),
+            campaign_run_id=CampaignRunId(UUID(campaign_run_id)),
+            run_id=RunId(UUID(account_run_id)),
+            tier=tier,
+            aspect=aspect,
+            field_keys=field_keys,
+            budget_envelope_cents=budget_remaining,
+            depth=depth,
+            # Soft cap (M7.2): the runtime hands the worker its recursion budget so M8 can put it in
+            # the worker's instructions/prompt (model-visible). The hard cap is the SpawnGuard.
+            params={
+                "recursion": {
+                    "current_depth": depth,
+                    "max_depth": caps.max_depth,
+                    "max_facet_workers_per_aspect": caps.max_facet_workers_per_aspect,
+                    "eligible": self._guard.policy.is_eligible(aspect),
+                }
+            },
+        )
+        result = await self._run_one_worker(ctx, entity_id, campaign_run_id)
+        results = [result]
+        deepest = depth
+
+        granted = self._grant_facets(
+            result,
+            parent_aspect=aspect,
+            child_depth=depth + 1,
+            tier=tier,
+            budget_remaining=budget_remaining,
+            entity_id=entity_id,
+            campaign_run_id=campaign_run_id,
+        )
+        if granted:
+            subtrees = await asyncio.gather(
+                *[
+                    self._run_worker_subtree(
+                        aspect=req["aspect"],
+                        field_keys=tuple(req.get("field_keys", ())),
+                        entity_id=entity_id,
+                        campaign_run_id=campaign_run_id,
+                        account_run_id=account_run_id,
+                        tier=tier,
+                        depth=depth + 1,
+                        budget_remaining=budget_remaining,
+                    )
+                    for req in granted
+                ]
+            )
+            for sub_results, sub_depth in subtrees:
+                results.extend(sub_results)
+                deepest = max(deepest, sub_depth)
+        return results, deepest
+
+    async def _run_one_worker(
+        self, ctx: AspectContext, entity_id: str, campaign_run_id: str
+    ) -> WorkerResult:
+        """Run one registered worker for ``ctx.aspect`` inside a ``fan_out`` span, isolating a
+        failing worker (its aspect is marked ``FAILED``; siblings continue — M7.1 AC). Only
+        ``Exception`` is caught; a true cancellation/kill propagates so the run resumes from the
+        last checkpoint."""
+        worker = self._workers.get(ctx.aspect)
         with traced_step(
             graph_node_span("fan_out"),
             **{
-                ATTR_CAMPAIGN_RUN_ID: state["campaign_run_id"],
-                ATTR_ENTITY_ID: state["entity_id"],
-                ATTR_ASPECT: aspect,
+                ATTR_CAMPAIGN_RUN_ID: campaign_run_id,
+                ATTR_ENTITY_ID: entity_id,
+                ATTR_ASPECT: ctx.aspect,
                 ATTR_DEPTH: ctx.depth,
             },
         ) as span:
             if worker is None:
                 result = WorkerResult(
-                    aspect=aspect,
+                    aspect=ctx.aspect,
                     status=WorkerStatus.FAILED,
                     detail={"reason": "no worker registered for aspect"},
                 )
@@ -386,11 +533,8 @@ class AccountResearchGraph:
                 try:
                     result = await worker.research(ctx)
                 except Exception as exc:  # noqa: BLE001
-                    # Isolate a failing worker: its aspect is marked FAILED, siblings continue
-                    # (M7.1 AC). Only ``Exception`` is caught — a true cancellation/kill
-                    # propagates so the run aborts and resumes from the last checkpoint.
                     result = WorkerResult(
-                        aspect=aspect,
+                        aspect=ctx.aspect,
                         status=WorkerStatus.FAILED,
                         detail={"error": type(exc).__name__},
                     )
@@ -401,7 +545,94 @@ class AccountResearchGraph:
                     ATTR_CLAIM_REF_COUNT: len(result.claim_refs),
                 },
             )
-        return {"aspect_results": [result.model_dump(mode="json")]}
+        return result
+
+    def _grant_facets(
+        self,
+        result: WorkerResult,
+        *,
+        parent_aspect: str,
+        child_depth: int,
+        tier: str,
+        budget_remaining: CostCents | None,
+        entity_id: str,
+        campaign_run_id: str,
+    ) -> list[dict[str, Any]]:
+        """Run the worker's facet requests through the SpawnGuard, returning the granted ones and
+        emitting a ``cap_hit`` for each denial. The guard's ``current_facet_count`` rises only on a
+        grant, so the per-aspect facet cap is enforced exactly; and the ``remaining`` budget is
+        *decremented* by each grant's estimated cost, so a parent aspect's facets share one envelope
+        (two facets can't each pass against the full remaining) — they run concurrently, so the
+        budget must be reserved sequentially as they are granted (the M7.5 envelope is the cap)."""
+        granted: list[dict[str, Any]] = []
+        remaining = budget_remaining
+        for req in _facet_requests(result):
+            estimated = _to_cost(req.get("estimated_cost_cents"))
+            decision = self._guard.may_spawn(
+                parent_aspect=parent_aspect,
+                depth=child_depth,
+                current_facet_count=len(granted),
+                tier=tier,
+                remaining_budget_cents=remaining,
+                estimated_cost_cents=estimated,
+            )
+            if decision.allowed:
+                granted.append(req)
+                if remaining is not None:
+                    remaining -= estimated if estimated is not None else Decimal(0)
+            else:
+                self._emit_cap_hit(
+                    entity_id,
+                    campaign_run_id,
+                    aspect=parent_aspect,
+                    depth=child_depth,
+                    reason=decision.reason,
+                )
+        return granted
+
+    def _emit_cap_hit(
+        self,
+        entity_id: str,
+        campaign_run_id: str,
+        *,
+        aspect: str,
+        depth: int,
+        reason: SpawnDenyReason | None,
+    ) -> None:
+        """Log a ``cap_hit`` span for a denied spawn (M7.2) — proof the hard limit held."""
+        with traced_step(
+            SPAN_CAP_HIT,
+            **{
+                ATTR_CAMPAIGN_RUN_ID: campaign_run_id,
+                ATTR_ENTITY_ID: entity_id,
+                ATTR_ASPECT: aspect,
+                ATTR_DEPTH: depth,
+                ATTR_CAP_HIT_REASON: reason.value if reason is not None else "unknown",
+            },
+        ):
+            pass
+
+    def _emit_fanout_summary(
+        self,
+        entity_id: str,
+        campaign_run_id: str,
+        *,
+        aspect: str,
+        facet_count: int,
+        depth_reached: int,
+    ) -> None:
+        """Emit a fan-out summary span for one aspect's sub-tree (M7.2 telemetry)."""
+        with traced_step(
+            SPAN_FANOUT_SUMMARY,
+            **{
+                ATTR_CAMPAIGN_RUN_ID: campaign_run_id,
+                ATTR_ENTITY_ID: entity_id,
+                ATTR_ASPECT: aspect,
+                ATTR_FACET_COUNT: facet_count,
+                ATTR_DEPTH_REACHED: depth_reached,
+            },
+        ):
+            pass
 
     async def _collect_node(self, state: _GraphState) -> dict[str, Any]:
         results = [WorkerResult.model_validate(r) for r in state.get("aspect_results", [])]

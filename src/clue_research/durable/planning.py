@@ -25,6 +25,7 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 from clue_research.claimstore import current_values
 from clue_research.claimstore.registry import get_field, list_fields
 from clue_research.claimstore.tenancy import TenantScope
+from clue_research.config import RecursionPolicy
 from clue_research.core import CostCents, EntityId, FreshnessState, PassKind
 from clue_research.core.field import FieldClass, FieldDef, field_namespace
 
@@ -71,22 +72,35 @@ def build_plan(
     gap_fields: Sequence[FieldDef],
     *,
     tier: str,
+    recursion_policy: RecursionPolicy | None = None,
     worker_count: int = 1,
     depth: int = 0,
 ) -> ResearchPlan:
     """Cluster gap fields into aspect plans (pure). Deterministic: aspects are ordered by key and
     field keys within an aspect are sorted, so the same gaps always yield the same plan (a stable
-    ``plan_json`` across retries). ``worker_count``/``depth`` are the effort-scaling knobs M7.2/M7.5
-    parameterize per tier; M7.1 applies the safe defaults uniformly."""
+    ``plan_json`` across retries).
+
+    When a ``recursion_policy`` is given (M7.2), each aspect's recorded ``depth`` is the tier's
+    facet-recursion allowance — ``caps_for(tier).max_depth`` for a recursion-eligible aspect, else 0
+    — so ``plan_json`` reflects the per-tier dial (the runtime ``SpawnGuard`` enforces the same
+    policy). Without one, the explicit ``worker_count``/``depth`` defaults apply (the M7.1 path)."""
     clustered: dict[str, list[str]] = defaultdict(list)
     for field in gap_fields:
         clustered[_aspect_key(field)].append(field.field_key)
+
+    def _depth_for(aspect: str) -> int:
+        if recursion_policy is None:
+            return depth
+        if not recursion_policy.is_eligible(aspect):
+            return 0
+        return recursion_policy.caps_for(tier).max_depth
+
     aspects = tuple(
         AspectPlan(
             aspect=aspect,
             field_keys=tuple(sorted(keys)),
             worker_count=worker_count,
-            depth=depth,
+            depth=_depth_for(aspect),
         )
         for aspect, keys in sorted(clustered.items())
     )

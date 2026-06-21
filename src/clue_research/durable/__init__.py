@@ -42,6 +42,11 @@ from clue_research.durable.planning import (
     build_plan,
     compute_gap_fields,
 )
+from clue_research.durable.recursion import (
+    SpawnDecision,
+    SpawnDenyReason,
+    SpawnGuard,
+)
 from clue_research.durable.workers import (
     WorkerRegistry,
     default_worker_registry,
@@ -65,6 +70,10 @@ __all__ = [
     "ResearchPlan",
     "build_plan",
     "compute_gap_fields",
+    # bounded recursion knob (M7.2)
+    "SpawnGuard",
+    "SpawnDecision",
+    "SpawnDenyReason",
     # worker registry
     "WorkerRegistry",
     "default_worker_registry",
