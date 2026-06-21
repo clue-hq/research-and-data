@@ -58,3 +58,31 @@ ICP_REUSE_POLICY = ReusePolicy(
     ),
     tenant_private_methods=DEFAULT_REUSE_POLICY.tenant_private_methods,
 )
+
+# The ``import.*`` namespace carries the import-batch grouping marker (M5.3). A client's imported
+# list is tenant-private (the same reasoning as ``client.*`` / ``icp.*``): the field declaration is
+# authoritative and this policy makes the stamping path agree with it. CRM-pulled tier-1 claims
+# (``crm_import``) and ``account.scoring.*`` back-scores are already tenant-private via M2's default
+# (extraction-method / prefix), so the import scenario writes them under :data:`IMPORT_REUSE_POLICY`
+# unchanged from the default's tenant-private set.
+IMPORT_FIELD_PREFIX = "import."
+
+# The import scenario's per-row resolution provenance is a *discovery*-flavored claim
+# (``discovery.provenance``, ``matched_channel='import'``) on a cross-tenant-shared account entity.
+# *Which* accounts a client imported is client-tuned, competitively-sensitive signal, so this policy
+# also privatizes the ``discovery.`` namespace — but only when written under the import scenario (a
+# Scenario-A discovery run uses its own policy, where public-footprint provenance is correct). The
+# import provenance is therefore stamped tenant-private here, while remaining shape-identical to a
+# discovered account's provenance.
+DISCOVERY_FIELD_PREFIX = "discovery."
+
+IMPORT_REUSE_POLICY = ReusePolicy(
+    version=DEFAULT_REUSE_POLICY.version,
+    enabled=DEFAULT_REUSE_POLICY.enabled,
+    tenant_private_prefixes=(
+        *DEFAULT_REUSE_POLICY.tenant_private_prefixes,
+        IMPORT_FIELD_PREFIX,
+        DISCOVERY_FIELD_PREFIX,
+    ),
+    tenant_private_methods=DEFAULT_REUSE_POLICY.tenant_private_methods,
+)

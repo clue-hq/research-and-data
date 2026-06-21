@@ -16,7 +16,13 @@ seeds reach M6 through the **claim store** — M5 imports no sibling milestone p
 M5.1 lands: the ``client.*`` field set, the reverse-profiling orchestration, the claim-native
 Client-KB version ledger, and the ``REVERSE_PROFILING`` phase handler. M5.2 lands: ICP synthesis
 (``synthesize_icps``), the confirm→compile→diff flow (``confirm_icp``), the pre-run cost estimate,
-and the ``ICP_CONFIRMED`` phase handler.
+and the ``ICP_CONFIRMED`` phase handler. M5.3 lands the import entry scenario (``import_accounts``):
+bulk identity resolution through M2 (auto-merge / human-review / new-entity / unresolved), CRM
+tier-1 enrichment with "already a customer" detection, ICP back-scoring via the importable M3.4
+Pass-A scorer, D6 non-fit flagging, governed imported-contact tagging, and the claim-native
+``import.batch`` marker — converging into the same account-set shape discovery emits. Import is an
+entry scenario, not a campaign phase (no ``IMPORT`` phase); it runs before M6's ``SCORING`` phase,
+store-mediated.
 """
 
 from __future__ import annotations
@@ -62,9 +68,28 @@ from clue_research.stage0.icp_types import (
     StartingSourceProfile,
     TechnographicDimension,
 )
+from clue_research.stage0.import_accounts import import_accounts, import_batch_run_id
+from clue_research.stage0.import_fields import (
+    CONTACT_IMPORT_RECORD,
+    DISCOVERY_PROVENANCE,
+    IMPORT_BATCH,
+    IMPORT_PACK,
+    load_import_pack,
+)
+from clue_research.stage0.import_types import (
+    FitFlag,
+    ImportContactResult,
+    ImportContactRow,
+    ImportResult,
+    ImportRow,
+    NeedsReviewRow,
+    ResolvedAccount,
+    UnresolvedRow,
+)
 from clue_research.stage0.reuse import (
     CLIENT_KNOWLEDGE_REUSE_POLICY,
     ICP_REUSE_POLICY,
+    IMPORT_REUSE_POLICY,
 )
 from clue_research.stage0.reverse_profiling_handler import (
     ReverseProfilingHandler,
@@ -129,7 +154,26 @@ __all__ = [
     "ICP_FEEDBACK_PACK",
     "ICP_PACK",
     "ICP_CONFIRM_DIFF",
-    # reuse policies (client-knowledge + icp are tenant-private)
+    # M5.3 — import entry scenario (bulk ID resolution + ICP back-scoring + non-fit flagging)
+    "import_accounts",
+    "import_batch_run_id",
+    # M5.3 input / output contracts
+    "ImportRow",
+    "ImportContactRow",
+    "ImportResult",
+    "ResolvedAccount",
+    "NeedsReviewRow",
+    "UnresolvedRow",
+    "ImportContactResult",
+    "FitFlag",
+    # M5.3 import field set (claim-native batch marker + governed contact record)
+    "load_import_pack",
+    "IMPORT_PACK",
+    "IMPORT_BATCH",
+    "CONTACT_IMPORT_RECORD",
+    "DISCOVERY_PROVENANCE",
+    # reuse policies (client-knowledge + icp + import are tenant-private)
     "CLIENT_KNOWLEDGE_REUSE_POLICY",
     "ICP_REUSE_POLICY",
+    "IMPORT_REUSE_POLICY",
 ]
