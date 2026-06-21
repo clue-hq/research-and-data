@@ -30,6 +30,7 @@ from clue_research.core import (
     ResearchMode,
     Resolver,
     RetryableResolverError,
+    ReuseScope,
     UseClass,
     VerificationStatus,
     new_entity_id,
@@ -160,9 +161,15 @@ def test_npi_activates_only_when_a_field_tier_plan_names_it() -> None:
     async def _run() -> None:
         async with rollback_conn() as conn:
             # A healthcare pack registers the npi field (the only ICPs whose tier_plan names npi).
+            # A <pack>.* field must declare its reuse_scope (ENG-165 W5); NPI is a public registry.
             await register_field(
                 conn,
-                FieldDef(field_key="healthcare.npi", value_type="str", pass_kind=PassKind.SCORING),
+                FieldDef(
+                    field_key="healthcare.npi",
+                    value_type="str",
+                    pass_kind=PassKind.SCORING,
+                    reuse_scope=ReuseScope.PUBLIC_FOOTPRINT,
+                ),
                 pack="healthcare",
             )
             npi = _bind("npi", [_rf("healthcare.npi", "1234567890", 0.97)], Decimal(0))

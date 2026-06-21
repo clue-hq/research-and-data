@@ -11,7 +11,7 @@ from __future__ import annotations
 import pytest
 
 from clue_research.claimstore import SeedField, get_field, list_fields
-from clue_research.core import FieldClass, FieldDef, PassKind
+from clue_research.core import FieldClass, FieldDef, PassKind, ReuseScope
 from clue_research.icp import (
     DATA_INFRA,
     FRONTIER_AI,
@@ -312,6 +312,9 @@ def test_validate_pack_names_unregistered_field() -> None:
                             field_key="ghostpack.nope",
                             value_type="str",
                             pass_kind=PassKind.SCORING,
+                            # declared so it clears the W5 reuse_scope authoring guard and the test
+                            # reaches the *unregistered-field* check it is asserting.
+                            reuse_scope=ReuseScope.PUBLIC_FOOTPRINT,
                         ),
                         pack="ghostpack",
                     ),
@@ -341,6 +344,42 @@ def test_validate_pack_names_unknown_source_key() -> None:
                 HEALTHCARE_PRACTICE,
                 known_source_keys={"npi", "cms", "google_places", "job_boards", "journals"},
             )
+
+    run_async(_run())
+
+
+def test_pack_field_must_declare_reuse_scope() -> None:
+    """ENG-165 W5: a <pack>.* field with no declared reuse_scope is rejected at authoring (no safe
+    default for a pack namespace); declaring it lets the pack register."""
+
+    def _pack(reuse_scope: ReuseScope | None) -> Pack:
+        return Pack(
+            pack_key="scopepack",
+            namespace="scopepack",
+            title="Scope pack",
+            field_set=(
+                SeedField(
+                    field_def=FieldDef(
+                        field_key="scopepack.metric",
+                        value_type="int",
+                        pass_kind=PassKind.SCORING,
+                        reuse_scope=reuse_scope,
+                    ),
+                    pack="scopepack",
+                ),
+            ),
+        )
+
+    async def _run() -> None:
+        async with rollback_conn() as conn:
+            with pytest.raises(PackValidationError, match="reuse_scope"):
+                await validate_pack(conn, _pack(None))
+            with pytest.raises(PackValidationError, match="reuse_scope"):
+                await register_pack_catalog(conn, _pack(None))
+            # declaring a scope lets it through
+            await register_pack_catalog(conn, _pack(ReuseScope.PUBLIC_FOOTPRINT))
+            stored = await get_field(conn, "scopepack.metric")
+            assert stored is not None and stored.reuse_scope is ReuseScope.PUBLIC_FOOTPRINT
 
     run_async(_run())
 

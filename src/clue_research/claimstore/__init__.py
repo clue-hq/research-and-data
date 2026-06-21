@@ -42,8 +42,10 @@ from clue_research.claimstore.packs import (
 )
 from clue_research.claimstore.registry import (
     FieldRedefinitionError,
+    ReuseScopeError,
     UnknownFieldError,
     ValueSchemaError,
+    check_claim_writable,
     get_field,
     list_fields,
     register_field,
@@ -73,6 +75,7 @@ __all__ = [
     "get_field",
     "list_fields",
     "validate_value",
+    "check_claim_writable",
     "load_pack",
     "load_core_pack",
     "CORE_PACK",
@@ -80,4 +83,5 @@ __all__ = [
     "UnknownFieldError",
     "ValueSchemaError",
     "FieldRedefinitionError",
+    "ReuseScopeError",
 ]
