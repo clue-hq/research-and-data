@@ -178,7 +178,10 @@ def test_flavor_columns_are_immutable() -> None:
     async def _run() -> None:
         claim = _weak_contact(new_entity_id(), binding=IdentityBinding.STRONG)
         async with rollback_conn() as conn:
-            claim_id = await insert_claim(conn, claim)
+            # raw insert (validate_field=False): this exercises the append-only trigger, not the
+            # field write contract — the contact.facet.* field is tenant_private, so a public stamp
+            # would (correctly) be refused by the reuse guard, which is covered elsewhere.
+            claim_id = await insert_claim(conn, claim, validate_field=False)
             for column, value in (
                 ("identity_binding", "'weak'::identity_binding"),
                 ("use_class", "'sensitive'::use_class"),
@@ -248,8 +251,16 @@ def test_weak_binding_contact_claim_excluded_from_current_value() -> None:
         weak_entity = new_entity_id()
         strong_entity = new_entity_id()
         async with rollback_conn() as conn:
-            await insert_claim(conn, _weak_contact(weak_entity, binding=IdentityBinding.WEAK))
-            await insert_claim(conn, _weak_contact(strong_entity, binding=IdentityBinding.STRONG))
+            # raw insert (validate_field=False): exercises the weak-binding merge exclusion, not the
+            # reuse contract (contact.facet.* is tenant_private; stamping is covered elsewhere).
+            await insert_claim(
+                conn, _weak_contact(weak_entity, binding=IdentityBinding.WEAK), validate_field=False
+            )
+            await insert_claim(
+                conn,
+                _weak_contact(strong_entity, binding=IdentityBinding.STRONG),
+                validate_field=False,
+            )
 
             weak_cv = await current_value(
                 conn, weak_entity, "contact.facet.recent_post", scope=ALL_TENANTS
@@ -316,8 +327,11 @@ def test_all_four_modes_persist(make_account: Callable[..., Claim]) -> None:
             contact_entity, binding=IdentityBinding.STRONG
         )  # mode M4 — contact prof.
         async with rollback_conn() as conn:
+            # raw insert (validate_field=False): this asserts all four research modes persist, not
+            # the reuse contract — m4 is a contact.facet.* (tenant_private) claim whose stamping is
+            # covered by the tenant-isolation suite.
             for claim in (m1, m2, m3, m4):
-                await insert_claim(conn, claim)
+                await insert_claim(conn, claim, validate_field=False)
             modes = (
                 (
                     await conn.execute(

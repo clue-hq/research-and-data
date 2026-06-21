@@ -15,16 +15,20 @@ from sqlalchemy.exc import DBAPIError, IntegrityError
 
 from clue_research.claimstore import (
     ALL_TENANTS,
+    ReuseScopeError,
     TenantScope,
     claims_for,
     current_value,
     current_values,
     insert_claim,
     provenance_index,
+    register_field,
 )
 from clue_research.core import (
     Claim,
     ExtractionMethod,
+    FieldDef,
+    PassKind,
     ReuseScope,
     account_claim,
     new_entity_id,
@@ -182,6 +186,82 @@ def test_append_only_guard_covers_reuse_scope_and_tenant_id() -> None:
                         {"id": claim_id},
                     )
                 await trans.rollback()
+
+    run_async(_run())
+
+
+def test_write_boundary_refuses_public_stamp_on_private_field() -> None:
+    """ENG-165 W5 (the leak guard): insert_claim refuses a public_footprint claim to a field
+    *declared* tenant_private (account.scoring.fit). The schema is satisfied, so the rejection is
+    purely the reuse-scope fail-closed check — a private field can never be written public, even if
+    a caller forgets to stamp it."""
+
+    async def _run() -> None:
+        async with rollback_conn() as conn:
+            entity = new_entity_id()
+            # account.scoring.fit is seeded reuse_scope=tenant_private (ENG-165 W4); default-stamped
+            # claims are public_footprint → the write boundary must refuse this (validate_field on).
+            public = _claim(entity, "account.scoring.fit", {"value": 0.8})
+            with pytest.raises(ReuseScopeError, match="tenant_private"):
+                await insert_claim(conn, public)
+
+    run_async(_run())
+
+
+def test_write_boundary_allows_more_private_than_field() -> None:
+    """A claim stamped *more* private than its field's class is allowed (not a leak): a
+    public-class field (core.employee_count) fetched as tenant_private (e.g. via CRM) writes
+    fine."""
+
+    async def _run() -> None:
+        async with rollback_conn() as conn:
+            entity = new_entity_id()
+            private = _private(_claim(entity, "core.employee_count", 250), "tenant-a")
+            claim_id = await insert_claim(conn, private)  # validate_field on; must NOT raise
+            assert claim_id is not None
+
+    run_async(_run())
+
+
+def test_write_boundary_refuses_undeclared_pack_field() -> None:
+    """ENG-165 fail-closed: a claim to a <pack>.* field with no resolvable reuse_scope (registered
+    via raw register_field without a declaration) is refused at the write boundary — we never
+    silently default an unclassifiable field to public."""
+
+    async def _run() -> None:
+        async with rollback_conn() as conn:
+            await register_field(
+                conn,
+                FieldDef(field_key="fintech.mrr", value_type="int", pass_kind=PassKind.SCORING),
+                pack="fintech",
+            )
+            entity = new_entity_id()
+            with pytest.raises(ReuseScopeError, match="no resolvable reuse_scope"):
+                await insert_claim(conn, _claim(entity, "fintech.mrr", 42))
+
+    run_async(_run())
+
+
+def test_reserved_scoring_claim_never_leaks_across_tenants() -> None:
+    """ENG-165 acceptance #1 (end to end, through the real write path): a tenant A score written to
+    the reserved account.scoring.fit key (validate_field on) is never returned to tenant B, on every
+    read path — but A sees it."""
+
+    async def _run() -> None:
+        async with rollback_conn() as conn:
+            entity = new_entity_id()
+            score = _private(_claim(entity, "account.scoring.fit", {"value": 0.91}), "tenant-a")
+            await insert_claim(conn, score)  # validate_field on: schema + reuse guard both pass
+
+            b = TenantScope.for_tenant("tenant-b")
+            assert await current_value(conn, entity, "account.scoring.fit", scope=b) is None
+            assert await current_values(conn, [entity], ["account.scoring.fit"], scope=b) == {}
+            assert await provenance_index(conn, entity, scope=b) == {}
+            assert list(await claims_for(conn, entity, scope=b)) == []
+
+            a = TenantScope.for_tenant("tenant-a")
+            cv = await current_value(conn, entity, "account.scoring.fit", scope=a)
+            assert cv is not None and cv.value_json == {"value": 0.91}
 
     run_async(_run())
 

@@ -21,7 +21,7 @@ from typing import Any
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_research.claimstore.registry import register_field
-from clue_research.core import FieldDef, PassKind
+from clue_research.core import FieldDef, PassKind, ReuseScope
 
 
 @dataclass(frozen=True)
@@ -43,6 +43,7 @@ def _seed(
     tier_plan: tuple[str, ...] = (),
     freshness_ttl: timedelta | None = None,
     gate: str | None = None,
+    reuse_scope: ReuseScope | None = None,
     value_schema: dict[str, Any] | None = None,
     corroboration_min: int = 1,
     description: str | None = None,
@@ -56,6 +57,7 @@ def _seed(
             freshness_ttl=freshness_ttl,
             pass_kind=pass_kind,
             gate=gate,
+            reuse_scope=reuse_scope,
         ),
         value_schema=value_schema,
         corroboration_min=corroboration_min,
@@ -130,6 +132,39 @@ CORE_PACK: tuple[SeedField, ...] = (
             "enum": ["customer", "open_opportunity", "prospect", "former_customer", "none"],
         },
         description="Client-CRM relationship (already a customer / open opportunity / …); M4.5.",
+    ),
+    # M6 Pass-A score outputs (ENG-165 W4): the decomposed fit / intent scores M6.3 writes per
+    # account. Reserved here as registered fields with reuse_scope=tenant_private so a client-tuned
+    # score is *always* tenant-isolated — closing the "ReusePolicy names account.scoring. but no
+    # field reserves it" gap (M2.5). M6 writes value_json={"value": <0..1>, "components": [...],
+    # "rubric_version": <int>, ...} and stamps tenant_id=client_id; the write boundary is
+    # fail-closed (a public stamp on these is refused). No resolver/tier_plan — the value is
+    # computed by M6.3's pure scorer over current_value (extraction_method is the scorer's).
+    _seed(
+        "account.scoring.fit",
+        "object",
+        PassKind.SCORING,
+        freshness_ttl=timedelta(days=30),
+        reuse_scope=ReuseScope.TENANT_PRIVATE,
+        value_schema={
+            "type": "object",
+            "required": ["value"],
+            "properties": {"value": {"type": "number"}},
+        },
+        description="Decomposed ICP fit score (Output 1; M6.3). Tenant-private (per-client ICP).",
+    ),
+    _seed(
+        "account.scoring.intent",
+        "object",
+        PassKind.SCORING,
+        freshness_ttl=timedelta(days=30),
+        reuse_scope=ReuseScope.TENANT_PRIVATE,
+        value_schema={
+            "type": "object",
+            "required": ["value"],
+            "properties": {"value": {"type": "number"}},
+        },
+        description="Decomposed buying-intent score (Output 1; M6.3). Tenant-private (per-client).",
     ),
     # substrate §3 worked example: a deep-pass signal field with a gate and a tier plan.
     _seed(

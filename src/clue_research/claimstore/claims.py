@@ -30,7 +30,7 @@ from collections.abc import Sequence
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_research.claimstore.registry import validate_value
+from clue_research.claimstore.registry import check_claim_writable
 from clue_research.claimstore.tenancy import TenantScope
 from clue_research.core import (
     Claim,
@@ -174,17 +174,26 @@ async def insert_claim(
 
     Two pre-checks run before the round-trip:
 
-    * **payload validation** (when ``validate_field``, the default) — a *field-claim*'s
-      ``value_json`` must match the field's ``value_schema`` in the registry (M1.3); an unregistered
-      field is rejected. The registry is the single source of valid ``field_key``s (conventions §2).
-      *Discovery* claims carry admission evidence, not a typed field value, so they skip this check.
-      Pass ``validate_field=False`` for low-level tests that exercise the table directly.
+    * **field write check** (when ``validate_field``, the default) — a *field-claim*'s
+      ``value_json`` must match the field's ``value_schema`` in the registry (M1.3), the field must
+      be registered,
+      and its declared/resolved ``reuse_scope`` must be consistent with the claim's (M2.5/ENG-165:
+      fail-closed — a ``tenant_private`` field cannot be written with a ``public_footprint`` claim,
+      and an undeclared ``<pack>.*`` field cannot be written at all). See
+      :func:`~clue_research.claimstore.registry.check_claim_writable`. *Discovery* claims carry
+      admission evidence, not a typed field value, so they skip this check. Pass
+      ``validate_field=False`` for low-level tests that exercise the table directly.
     * **structural promotability** — a ``verified`` claim that is not promotable (tier-4 with no
       span, or a weak-binding contact claim) is refused early with a clear message; the DB CHECK is
       the backstop.
     """
     if validate_field and claim.claim_flavor is not ClaimFlavor.DISCOVERY:
-        await validate_value(conn, claim.field_key, claim.value_json)
+        await check_claim_writable(
+            conn,
+            field_key=claim.field_key,
+            value_json=claim.value_json,
+            reuse_scope=claim.reuse_scope,
+        )
     if claim.verification_status is VerificationStatus.VERIFIED and not can_be_promoted(claim):
         raise ValueError(
             "cannot insert a 'verified' claim that is not promotable "

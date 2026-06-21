@@ -74,6 +74,41 @@ def test_disabling_reuse_makes_everything_private() -> None:
     )
 
 
+def test_classify_consults_declared_scope_before_prefix() -> None:
+    """ENG-165 W1/W2: the field's declared scope is authoritative over the namespace-prefix
+    heuristic (both directions), but a tenant-private *method* still escalates (source-based)."""
+    # declared private wins even for a core.* field the prefix heuristic would call public
+    assert (
+        classify_reuse_scope(
+            "core.employee_count",
+            ExtractionMethod.API,
+            1,
+            declared_scope=ReuseScope.TENANT_PRIVATE,
+        )
+        is ReuseScope.TENANT_PRIVATE
+    )
+    # declared public overrides the account.scoring. prefix (which would otherwise mark it private)
+    assert (
+        classify_reuse_scope(
+            "account.scoring.fit",
+            ExtractionMethod.API,
+            1,
+            declared_scope=ReuseScope.PUBLIC_FOOTPRINT,
+        )
+        is ReuseScope.PUBLIC_FOOTPRINT
+    )
+    # ...but a crm_import (client data) still escalates a declared-public field to private
+    assert (
+        classify_reuse_scope(
+            "account.scoring.fit",
+            ExtractionMethod.CRM_IMPORT,
+            1,
+            declared_scope=ReuseScope.PUBLIC_FOOTPRINT,
+        )
+        is ReuseScope.TENANT_PRIVATE
+    )
+
+
 def test_stamp_reuse_sets_scope_and_tenant() -> None:
     """stamp_reuse classifies + binds the tenant for private claims, and drops it for public."""
     entity = new_entity_id()

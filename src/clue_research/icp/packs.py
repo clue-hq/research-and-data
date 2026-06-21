@@ -19,7 +19,7 @@ from typing import Any
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_research.claimstore import SeedField
-from clue_research.core import FieldClass, FieldDef, PassKind
+from clue_research.core import FieldClass, FieldDef, PassKind, ReuseScope
 from clue_research.icp.catalog import Pack, PackSourceSlot, register_pack_catalog
 from clue_research.icp.source_profile import SourceWeight, WeightedSource
 
@@ -38,12 +38,17 @@ def _field(
     tier_plan: tuple[str, ...] = (),
     freshness_ttl: timedelta | None = None,
     gate: str | None = None,
+    reuse_scope: ReuseScope | None = None,
     value_schema: dict[str, Any] | None = None,
     corroboration_min: int = 1,
     description: str | None = None,
 ) -> SeedField:
     """Author one pack field. ``pack`` is the field-key namespace for a ``<pack>.*`` field, or
     ``None`` for a shared canonical contribution (e.g. an ``account.resonance.*`` field; Doc C §2).
+
+    A ``<pack>.*`` field MUST set ``reuse_scope`` (no safe default; ENG-165 W5 — enforced at
+    authoring). A canonical contribution (``pack=None``) may leave it ``None`` and inherit the
+    class default (e.g. an ``account.resonance.*`` field resolves to tenant_private).
     """
     return SeedField(
         field_def=FieldDef(
@@ -53,6 +58,7 @@ def _field(
             freshness_ttl=freshness_ttl,
             pass_kind=pass_kind,
             gate=gate,
+            reuse_scope=reuse_scope,
         ),
         value_schema=value_schema,
         corroboration_min=corroboration_min,
@@ -89,6 +95,8 @@ FRONTIER_AI = Pack(
             pack="frontier_ai",
             tier_plan=("arxiv", "semantic_scholar"),
             freshness_ttl=timedelta(days=30),
+            # Public research footprint about the company (arXiv volume) — amortizes across clients.
+            reuse_scope=ReuseScope.PUBLIC_FOOTPRINT,
             value_schema={"type": "integer"},
             description="Recent research-paper volume on arXiv / Semantic Scholar (intent proxy).",
         ),
@@ -136,6 +144,8 @@ HEALTHCARE_PRACTICE = Pack(
             # tier-1 deterministic registries (substrate §3: NPI registry resolver for healthcare).
             tier_plan=("npi", "cms"),
             freshness_ttl=timedelta(days=180),
+            # A public registry identifier (NPI) — a public-footprint fact about the provider.
+            reuse_scope=ReuseScope.PUBLIC_FOOTPRINT,
             value_schema={"type": "string"},
             description="National Provider Identifier (deterministic registry id; tier-1).",
         ),
@@ -168,6 +178,8 @@ DATA_INFRA = Pack(
             tier_plan=("engineering_blogs", "exa"),
             freshness_ttl=timedelta(days=60),
             gate="deep-pass",
+            # A technographic signal about the company's public engineering footprint — public.
+            reuse_scope=ReuseScope.PUBLIC_FOOTPRINT,
             value_schema={"type": "string"},
             description="Synthesized infra migration/architecture signal (technographic).",
         ),

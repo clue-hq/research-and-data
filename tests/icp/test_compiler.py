@@ -72,6 +72,35 @@ def test_partitions_scoring_and_deep_matching_registry_pass() -> None:
     run_async(_run())
 
 
+def test_field_plan_partitions_by_reuse_scope() -> None:
+    """ENG-165 W3: the compiled plan partitions fields by resolved reuse scope — public-footprint
+    facts (core.*/account.* defaults) vs tenant-private (the reserved account.scoring.* keys; the
+    class-default resonance field). Every field lands in exactly one partition."""
+
+    async def _run() -> None:
+        async with rollback_conn(seed_core=True) as conn:
+            plan = await compile_field_plan(
+                conn,
+                _spec(
+                    field_keys=(
+                        "core.employee_count",  # default public
+                        "account.recent_funding",  # default public
+                        "account.scoring.fit",  # declared tenant_private (W4)
+                        "account.resonance.culture",  # class default tenant_private
+                    )
+                ),
+            )
+            public = {e.field.field_key for e in plan.public_fields}
+            private = {e.field.field_key for e in plan.tenant_private_fields}
+            assert public == {"core.employee_count", "account.recent_funding"}
+            assert private == {"account.scoring.fit", "account.resonance.culture"}
+            # the two partitions are a clean cover of the plan
+            assert len(plan.public_fields) + len(plan.tenant_private_fields) == len(plan.fields)
+            assert public.isdisjoint(private)
+
+    run_async(_run())
+
+
 def test_compile_is_deterministic() -> None:
     async def _run() -> None:
         async with rollback_conn(seed_core=True) as conn:
