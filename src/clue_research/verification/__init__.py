@@ -27,6 +27,10 @@ Implemented so far:
   :func:`load_binding_policy` (policy data), and the pure
   :func:`classify_binding`/:func:`handle_matches`/:func:`count_identifier_matches`/
   :func:`strength_from_signals` helpers.
+* **M9.5** (``freshness``) — :class:`FreshnessImpl` (the freshness TTL engine + re-research cadence,
+  the ``Freshness`` impl), :class:`CadencePolicy`/:func:`load_cadence_policy` (policy data), the
+  :class:`AgeOutCandidate` value type, and the pure :func:`staleness`/:func:`reference_time`/
+  :func:`retention_horizon_for` helpers.
 """
 
 from __future__ import annotations
@@ -54,6 +58,20 @@ from clue_research.verification.faithfulness import (
     needs_re_retrieval,
     parse_judge_response,
     status_for_verdict,
+)
+from clue_research.verification.freshness import (
+    DEFAULT_CADENCE_POLICY,
+    METRIC_FRESHNESS_DUE,
+    METRIC_FRESHNESS_EXPIRED,
+    METRIC_FRESHNESS_SCANNED,
+    METRIC_FRESHNESS_STALE,
+    AgeOutCandidate,
+    CadencePolicy,
+    FreshnessImpl,
+    load_cadence_policy,
+    reference_time,
+    retention_horizon_for,
+    staleness,
 )
 from clue_research.verification.identity_binding import (
     DEFAULT_BINDING_POLICY,
@@ -121,4 +139,17 @@ __all__ = [
     "count_identifier_matches",
     "strength_from_signals",
     "normalize_url",
+    # M9.5 — freshness TTL engine + re-research cadence
+    "FreshnessImpl",
+    "CadencePolicy",
+    "DEFAULT_CADENCE_POLICY",
+    "AgeOutCandidate",
+    "load_cadence_policy",
+    "staleness",
+    "reference_time",
+    "retention_horizon_for",
+    "METRIC_FRESHNESS_SCANNED",
+    "METRIC_FRESHNESS_STALE",
+    "METRIC_FRESHNESS_EXPIRED",
+    "METRIC_FRESHNESS_DUE",
 ]
