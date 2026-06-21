@@ -105,7 +105,13 @@ skeptic verification → synthesis. 9 confirmed findings; **5 fixed in this PR, 
   and M9.4 (binding) call it with `status` only.
 - `get_corroboration_config` is the pattern for reading field-level M9 config off `field_definition`
   without importing verification into claimstore.
-- DB-test DBs: `clue_m9` (test DB) + `clue_m9_smoke` (db-smoke) on host localhost:5432. Never migrate
-  the shared `clue`.
+- DB-test DBs: the **host** localhost:5432 server proved **unreliable** — it silently wiped every
+  `clue*` database mid-session (clue/clue_m5/m6/m7/m9 all vanished), which surfaced as DB-gated tests
+  *skipping*. Per the user, switched to a **dedicated pgvector docker container** (stable, fully owned):
+  `docker run -d --name clue-m9-pg -e POSTGRES_USER=clue -e POSTGRES_PASSWORD=clue -e POSTGRES_DB=clue_m9
+  -p 5433:5432 pgvector/pgvector:pg16` (host port **5433** to avoid the host server on 5432). Test DSN:
+  `CLUE_DATABASE_URL=postgresql+asyncpg://clue:clue@localhost:5433/clue_m9`; the conftest migrates it to
+  head. db-smoke uses a sibling `clue_m9_smoke` (`CREATE DATABASE clue_m9_smoke` via `-d clue_m9`). If
+  DB tests skip, check the container is up (`docker exec clue-m9-pg pg_isready -U clue -d clue_m9`).
 - Per-(ICP, source) precision metric is only labeled by field today — thread ICP/source labels at the
   api composition root (the corroborator request carries neither). Noted in code.
