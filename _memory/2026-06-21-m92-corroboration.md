@@ -74,6 +74,21 @@ skeptic verification → synthesis. 9 confirmed findings; **5 fixed in this PR, 
   - **[M9.2×M0.4]** `conflict_tier_threshold`/`MergePolicy` shape duplicated in 3 layers; alignment only
     runtime-asserted. Pre-existing; M9.2 added the third copy. Source from `config/schema.py` seam later.
 
+## Follow-up direction confirmed by user (2026-06-21)
+- **#1 (merge↔corroborator equality) — APPROVED APPROACH, SCHEDULED (not done in M9.2).** Decided: relocate
+  `EqualityMode` + `values_agree` to **`core`** (contract-delta — the consistent home, future-proofs
+  M12/M13); teach `merge._conflict` to read `field_definition.equality_mode` (it already reads
+  `freshness_ttl`) and group with the shared `values_agree` instead of exact `canonical_json`; add the
+  `numeric_tol`/`semantic` joint-conflict test. One small **M1.2-owned** PR. Timing: **after the
+  M5/M6/M7/M9 parallel worktrees integrate; must land before M12/M13 consume conflict signals.** Recorded
+  in CLAUDE.md/AGENTS.md backlog.
+- **#2 floor — DONE in M9.2.** The DB-gated alignment test was split: `test_conflict_tier_threshold_
+  aligns_across_policies` is now a **pure no-DB** test (runs in `make check`) asserting the band matches
+  across `verification.CorroborationPolicy`, `claimstore.MergePolicy`, AND `config.MergePolicy`; the
+  behavioural tier-2-vs-tier-3 check stays DB-gated (`test_single_tier2_vs_tier3_is_not_a_conflict`).
+- **#2 step-2 — SCHEDULED (after M5/M6/M7/M9 integration):** source the `conflict_tier_threshold` default
+  from one constant in the `config/schema.py` M0.4 seam that both policies default from. Backlogged.
+
 ## Verification performed
 - `make check` (no DB) **green**: lint ✓ + typecheck ✓ (mypy 110 src files) + import-linter **10 kept /
   0 broken** + pytest **403 passed / 337 skipped**.

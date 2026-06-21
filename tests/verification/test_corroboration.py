@@ -27,6 +27,7 @@ from clue_research.claimstore import (
     record_verification,
     register_field,
 )
+from clue_research.config import MergePolicy as ConfigMergePolicy
 from clue_research.core import (
     AccountStatus,
     Claim,
@@ -195,6 +196,18 @@ def test_independent_source_count_distinct_ipv6_hosts() -> None:
 def test_default_policy_tiers() -> None:
     assert _POLICY.corroboration_tier_ceiling == 3
     assert _POLICY.conflict_tier_threshold == 2
+
+
+def test_conflict_tier_threshold_aligns_across_policies() -> None:
+    """Drift guard (pure, runs in ``make check`` — no DB): the conflict tier band must match across
+    every layer that owns a copy of it, so a conflict the corroborator raises is the same conflict
+    the merge view flags. Until the default is sourced from one M0.4 seam (backlog [M9.2×M0.4]), the
+    static check turns silent drift into a loud build failure."""
+    band = CorroborationPolicy().conflict_tier_threshold
+    assert (
+        band == MergePolicy().conflict_tier_threshold
+    )  # claimstore merge layer (the engine reads)
+    assert band == ConfigMergePolicy().conflict_tier_threshold  # config/schema.py M0.4 seam shape
 
 
 def test_corroboration_config_defaults() -> None:
@@ -777,9 +790,10 @@ def test_get_corroboration_config_reads_registered_config() -> None:
 
 
 @pytest.mark.usefixtures("require_verification_db")
-def test_merge_policy_conflict_threshold_aligns_with_corroborator() -> None:
-    """A sanity tie: the corroborator's conflict tier band matches the merge layer's default."""
-    assert CorroborationPolicy().conflict_tier_threshold == MergePolicy().conflict_tier_threshold
+def test_single_tier2_vs_tier3_is_not_a_conflict() -> None:
+    """A lone tier-2 source disagreeing with a tier-3 source is not a tier≤2 conflict (the band is
+    shared with the merge layer; the pure alignment is asserted in
+    ``test_conflict_tier_threshold_aligns_across_policies``)."""
 
     async def _run() -> None:
         async with rollback_conn() as conn:
