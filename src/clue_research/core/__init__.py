@@ -77,12 +77,14 @@ from clue_research.core.field import (
     FieldDef,
     FieldKey,
     classify_field_key,
+    default_reuse_scope,
     field_key,
     field_namespace,
     is_field_key_or_class,
     is_pack_registered,
     is_valid_field_key,
     register_pack,
+    resolve_reuse_scope,
 )
 from clue_research.core.gateway import (
     Completion,
@@ -204,6 +206,8 @@ __all__ = [
     "field_key",
     "register_pack",
     "is_pack_registered",
+    "default_reuse_scope",
+    "resolve_reuse_scope",
     "NS_CORE",
     "NS_ACCOUNT",
     "NS_ACCOUNT_RESONANCE",
