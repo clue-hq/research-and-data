@@ -29,15 +29,17 @@ from datetime import timedelta
 from decimal import Decimal
 from typing import Protocol, runtime_checkable
 
-from pydantic import BaseModel, ConfigDict, JsonValue
+from pydantic import BaseModel, ConfigDict, JsonValue, model_validator
 
 from clue_research.core.claim import Claim
 from clue_research.core.entity import AccountEntity, ContactEntity
 from clue_research.core.enums import (
     EntityType,
+    EnumerationScope,
     FreshnessState,
     IdentityBinding,
     JudgeVerdict,
+    PreSpendKind,
     PreSpendVerdict,
 )
 from clue_research.core.field import FieldDef, FieldKey
@@ -56,25 +58,49 @@ from clue_research.core.primitives import (
 
 
 class PreSpendRequest(BaseModel):
-    """A request to spend on producing one claim (M9.1) — the minimal pre-spend decision context.
-    ``value_json`` is optional: present when the value is already in hand (validate it), absent when
-    the gate is consulted *before* a resolver call. The entity must already be resolved — the gate
-    never sees a free-text name."""
+    """A request to spend on producing claims (M9.1). Two kinds (Option C):
+
+    ``FIELD`` (the default) — fill one ``(entity, field, tier)`` claim; carries ``field_key`` and
+    never a ``scope``. ``value_json`` is optional: present when the value is already in hand
+    (validate it), absent when the gate is consulted *before* a resolver call. ``ENUMERATION`` — a
+    discovery spend that fans out over a ``scope`` to enumerate members that do not yet exist as
+    entities (committee people-discovery within an account); carries ``scope`` and never a
+    ``field_key`` (there is no single field) or ``value_json``. Either kind requires an
+    already-resolved ``entity`` — the gate never sees a free-text name."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     entity_id: EntityId
     entity_type: EntityType
-    field_key: FieldKey
+    kind: PreSpendKind = PreSpendKind.FIELD
+    field_key: FieldKey | None = None
+    scope: EnumerationScope | None = None
     source_tier: SourceTier
     run_id: RunId
     value_json: JsonValue | None = None
 
+    @model_validator(mode="after")
+    def _check_kind(self) -> PreSpendRequest:
+        """Enforce the kind ⇄ field_key ⇄ scope coherence (mirrors the DB CHECK)."""
+        if self.kind is PreSpendKind.FIELD:
+            if self.field_key is None:
+                raise ValueError("a FIELD pre-spend requires a field_key")
+            if self.scope is not None:
+                raise ValueError("a FIELD pre-spend must not carry an enumeration scope")
+        else:  # ENUMERATION
+            if self.scope is None:
+                raise ValueError("an ENUMERATION pre-spend requires a scope")
+            if self.field_key is not None:
+                raise ValueError("an ENUMERATION pre-spend must not carry a field_key")
+            if self.value_json is not None:
+                raise ValueError("an ENUMERATION pre-spend has no value_json")
+        return self
+
 
 class PreSpendDecision(BaseModel):
-    """The pre-spend gate verdict (M9.1). ``REJECT`` carries the reasons (field unknown, tier not in
-    plan, value fails schema, entity unresolved/merged, lock not held) — no resolver runs, no
-    spend."""
+    """The pre-spend gate verdict (M9.1). ``REJECT`` carries the reasons (FIELD: field unknown, tier
+    not in plan, value fails schema; ENUMERATION: scope tier not sanctioned; either: entity
+    unresolved/merged, lock held by another run) — no resolver runs, no spend."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
