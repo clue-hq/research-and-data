@@ -23,6 +23,7 @@ Implements ENG-120 (docs/specs/M00-foundations-and-shared-contracts.md §M0.4).
 
 from __future__ import annotations
 
+from clue_research.config.gateway import DEFAULT_GATEWAY_CONFIG, GatewayConfig, ModelPrice
 from clue_research.config.loader import (
     ConfigError,
     OverlayStore,
@@ -47,8 +48,10 @@ from clue_research.config.schema import (
     BudgetCaps,
     FreshnessTtls,
     MergePolicy,
+    RecursionPolicy,
     ScoringRubric,
     SourceProfile,
+    TierRecursionCaps,
 )
 from clue_research.config.secrets import (
     DB_DSN_ENV_VAR,
@@ -85,7 +88,13 @@ __all__ = [
     "ScoringRubric",
     "SourceProfile",
     "BudgetCaps",
+    "RecursionPolicy",
+    "TierRecursionCaps",
     "FreshnessTtls",
+    # llm-gateway config (the model-egress policy-as-data; client in clue_research.gateway)
+    "GatewayConfig",
+    "ModelPrice",
+    "DEFAULT_GATEWAY_CONFIG",
     # secrets
     "Secrets",
     "redact",

@@ -21,7 +21,7 @@ from typing import Any
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_research.claimstore.registry import register_field
-from clue_research.core import FieldDef, PassKind
+from clue_research.core import FieldDef, PassKind, ReuseScope
 
 
 @dataclass(frozen=True)
@@ -31,6 +31,12 @@ class SeedField:
     field_def: FieldDef
     value_schema: dict[str, Any] | None = None
     corroboration_min: int = 1
+    # M9.2 corroboration config (conventions §2 — policy is data). ``single_source_sufficient`` lets
+    # a tier-1 deterministic claim verify alone (e.g. a registry ID); ``equality_mode`` picks how
+    # corroborator decides two values agree. Defaults match the field_definition column defaults, so
+    # a pack that does not care about corroboration declares nothing new.
+    single_source_sufficient: bool = False
+    equality_mode: str = "exact"
     description: str | None = None
     pack: str | None = None
 
@@ -43,8 +49,11 @@ def _seed(
     tier_plan: tuple[str, ...] = (),
     freshness_ttl: timedelta | None = None,
     gate: str | None = None,
+    reuse_scope: ReuseScope | None = None,
     value_schema: dict[str, Any] | None = None,
     corroboration_min: int = 1,
+    single_source_sufficient: bool = False,
+    equality_mode: str = "exact",
     description: str | None = None,
     pack: str | None = None,
 ) -> SeedField:
@@ -56,9 +65,12 @@ def _seed(
             freshness_ttl=freshness_ttl,
             pass_kind=pass_kind,
             gate=gate,
+            reuse_scope=reuse_scope,
         ),
         value_schema=value_schema,
         corroboration_min=corroboration_min,
+        single_source_sufficient=single_source_sufficient,
+        equality_mode=equality_mode,
         description=description,
         pack=pack,
     )
@@ -114,6 +126,80 @@ CORE_PACK: tuple[SeedField, ...] = (
             "properties": {"amount_usd": {"type": "number"}, "round": {"type": "string"}},
         },
         description="Most recent funding round.",
+    ),
+    # The CRM resolver's "already a customer / already in pipeline" flag (M4.5; substrate §4) — a
+    # tier-1 ``crm`` field. Its ``crm_import`` extraction_method makes every claim TENANT_PRIVATE at
+    # write (the engine's reuse stamping), so this client-asserted relationship never amortizes
+    # across tenants. The closed set mirrors ``resolvers.crm.CrmRelationship`` (drift-guarded).
+    _seed(
+        "account.crm_relationship_status",
+        "str",
+        PassKind.SCORING,
+        tier_plan=("crm",),
+        freshness_ttl=timedelta(days=30),
+        value_schema={
+            "type": "string",
+            "enum": ["customer", "open_opportunity", "prospect", "former_customer", "none"],
+        },
+        description="Client-CRM relationship (already a customer / open opportunity / …); M4.5.",
+    ),
+    # M6 Pass-A score outputs (ENG-165 W4): the decomposed fit / intent scores M6.3 writes per
+    # account. Reserved here as registered fields with reuse_scope=tenant_private so a client-tuned
+    # score is *always* tenant-isolated — closing the "ReusePolicy names account.scoring. but no
+    # field reserves it" gap (M2.5). M6 writes value_json={"value": <0..1>, "components": [...],
+    # "rubric_version": <int>, ...} and stamps tenant_id=client_id; the write boundary is
+    # fail-closed (a public stamp on these is refused). No resolver/tier_plan — the value is
+    # computed by M6.3's pure scorer over current_value (extraction_method is the scorer's).
+    _seed(
+        "account.scoring.fit",
+        "object",
+        PassKind.SCORING,
+        freshness_ttl=timedelta(days=30),
+        reuse_scope=ReuseScope.TENANT_PRIVATE,
+        value_schema={
+            "type": "object",
+            "required": ["value"],
+            "properties": {"value": {"type": "number"}},
+        },
+        description="Decomposed ICP fit score (Output 1; M6.3). Tenant-private (per-client ICP).",
+    ),
+    _seed(
+        "account.scoring.intent",
+        "object",
+        PassKind.SCORING,
+        freshness_ttl=timedelta(days=30),
+        reuse_scope=ReuseScope.TENANT_PRIVATE,
+        value_schema={
+            "type": "object",
+            "required": ["value"],
+            "properties": {"value": {"type": "number"}},
+        },
+        description="Decomposed buying-intent score (Output 1; M6.3). Tenant-private (per-client).",
+    ),
+    # M6.4 tier decision (ENG-146): the per-account tier the human checkpoint approved against
+    # versioned cutoffs. Reserved in the same tenant-private `account.scoring.*` family as fit/
+    # intent (so the reuse policy classifies it private — a tier is a per-client/ICP scoring
+    # decision, never amortized) with the same fail-closed write boundary. M6.4 writes value_json=
+    # {"tier": <str>, "cutoff_version": <str>, "fit_score": <0..1>, "intent_score": <0..1>,
+    # "icp_key": …, "icp_version": …, …} and stamps tenant_id=client_id; the value is the human-
+    # approved decision at the checkpoint (extraction_method=human), not a resolver fact — so there
+    # is no tier_plan.
+    _seed(
+        "account.scoring.tier",
+        "object",
+        PassKind.SCORING,
+        freshness_ttl=timedelta(days=30),
+        reuse_scope=ReuseScope.TENANT_PRIVATE,
+        value_schema={
+            "type": "object",
+            "required": ["tier", "cutoff_version"],
+            "properties": {
+                "tier": {"type": "string"},
+                "cutoff_version": {"type": "string"},
+            },
+        },
+        description="Approved tier assignment + cutoff version (Output 1 tiering; M6.4). "
+        "Tenant-private (per-client/ICP decision).",
     ),
     # substrate §3 worked example: a deep-pass signal field with a gate and a tier plan.
     _seed(
@@ -183,6 +269,8 @@ async def load_pack(conn: AsyncConnection, fields: tuple[SeedField, ...]) -> Non
             seed.field_def,
             value_schema=seed.value_schema,
             corroboration_min=seed.corroboration_min,
+            single_source_sufficient=seed.single_source_sufficient,
+            equality_mode=seed.equality_mode,
             description=seed.description,
             pack=seed.pack,
         )

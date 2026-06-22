@@ -74,6 +74,41 @@ def test_disabling_reuse_makes_everything_private() -> None:
     )
 
 
+def test_classify_consults_declared_scope_before_prefix() -> None:
+    """ENG-165 W1/W2: the field's declared scope is authoritative over the namespace-prefix
+    heuristic (both directions), but a tenant-private *method* still escalates (source-based)."""
+    # declared private wins even for a core.* field the prefix heuristic would call public
+    assert (
+        classify_reuse_scope(
+            "core.employee_count",
+            ExtractionMethod.API,
+            1,
+            declared_scope=ReuseScope.TENANT_PRIVATE,
+        )
+        is ReuseScope.TENANT_PRIVATE
+    )
+    # declared public overrides the account.scoring. prefix (which would otherwise mark it private)
+    assert (
+        classify_reuse_scope(
+            "account.scoring.fit",
+            ExtractionMethod.API,
+            1,
+            declared_scope=ReuseScope.PUBLIC_FOOTPRINT,
+        )
+        is ReuseScope.PUBLIC_FOOTPRINT
+    )
+    # ...but a crm_import (client data) still escalates a declared-public field to private
+    assert (
+        classify_reuse_scope(
+            "account.scoring.fit",
+            ExtractionMethod.CRM_IMPORT,
+            1,
+            declared_scope=ReuseScope.PUBLIC_FOOTPRINT,
+        )
+        is ReuseScope.TENANT_PRIVATE
+    )
+
+
 def test_stamp_reuse_sets_scope_and_tenant() -> None:
     """stamp_reuse classifies + binds the tenant for private claims, and drops it for public."""
     entity = new_entity_id()
@@ -87,6 +122,23 @@ def test_stamp_reuse_sets_scope_and_tenant() -> None:
         tenant_id="tenant-a",
     )
     assert private.reuse_scope is ReuseScope.TENANT_PRIVATE and private.tenant_id == "tenant-a"
+
+
+def test_stamp_reuse_fails_loud_for_a_private_claim_with_no_tenant() -> None:
+    """A claim that classifies tenant_private with no tenant_id supplied is a wiring error —
+    refused, never silently written public (fail-closed, M4.5 decision #6). A public claim with no
+    tenant is fine (it is tenant-less by definition)."""
+    entity = new_entity_id()
+    with pytest.raises(ValueError, match="tenant_private"):
+        stamp_reuse(
+            _claim(entity, "core.employee_count", 1, ExtractionMethod.CRM_IMPORT),  # type: ignore[arg-type]
+            tenant_id=None,
+        )
+    public = stamp_reuse(
+        _claim(entity, "core.employee_count", 1, ExtractionMethod.API),  # type: ignore[arg-type]
+        tenant_id=None,
+    )
+    assert public.reuse_scope is ReuseScope.PUBLIC_FOOTPRINT and public.tenant_id is None
 
 
 # --- amortization / degradation / DSAR (DB) ---------------------------------

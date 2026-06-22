@@ -80,18 +80,18 @@ def set_metric_sink(sink: MetricSink) -> None:
 
 
 def _source_label(claim: Claim) -> str:
-    """A per-source key read from claim provenance. M4 normalizes resolver output to a registry
-    ``source_key``; until then the claim carries its ``source_url`` (or, lacking one, its tier)."""
-    return claim.source_url or f"tier-{claim.source_tier}"
+    """A per-source key read from claim provenance: the registry ``source_key`` the M4.1 waterfall
+    stamps (preferred — M4 backlog invariant), falling back to ``source_url`` then tier for a
+    claim written without one (a non-resolver writer / a pre-M4 row)."""
+    return claim.source_key or claim.source_url or f"tier-{claim.source_tier}"
 
 
 def record_source_yield(claims: Iterable[Claim], *, sink: MetricSink | None = None) -> None:
     """Per-source yield: how many claims survive verification, bucketed by source (Doc C §6).
 
-    M4 transition: the spec keys this "by source_key", but M0.2 claims carry ``source_url``, not a
-    registry ``source_key`` — so M0.5 buckets by :func:`_source_label` (source_url, else tier).
-    When M4 adds ``source_key`` to claims, prefer it here (fall back to source_url); dashboards and
-    the learning loop (M13, staged-flow §7e) must treat that as a re-keying, not a new source set.
+    Keyed by :func:`_source_label`, which now prefers the registry ``source_key`` the M4.1 waterfall
+    stamps (falling back to ``source_url`` then tier for claims without one). Dashboards and the
+    learning loop (M13, staged-flow §7e) treat that as a re-keying, not a new source set.
     """
     sink = sink or get_metric_sink()
     for claim in claims:

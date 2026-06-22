@@ -12,7 +12,7 @@ reconfigured freely — notably by the test helper — without fighting OTel's s
 from __future__ import annotations
 
 import functools
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterator, Mapping
 from contextlib import contextmanager
 from typing import ParamSpec, TypeVar
 
@@ -61,9 +61,20 @@ def traced_step(name: str, **attrs: object) -> Iterator[Span]:
     """Run a pipeline step inside a named span with the standard (redacted) attributes."""
     tracer = _get_tracer()
     with tracer.start_as_current_span(name) as span:
-        for key, value in safe_attributes(attrs).items():
-            span.set_attribute(key, value)
+        apply_attributes(span, attrs)
         yield span
+
+
+def apply_attributes(span: Span, attrs: Mapping[str, object]) -> None:
+    """Set redacted, OTel-coerced attributes on an **already-open** span.
+
+    The post-hoc analogue of :func:`traced_step`'s open-time handling, for attributes only known
+    after the step runs (e.g. a gateway call's token usage / cost). Routes through
+    :func:`~clue_research.obs.attributes.safe_attributes` so *every* attribute — whenever set —
+    passes the one redaction chokepoint, never a second ad-hoc path.
+    """
+    for key, value in safe_attributes(attrs).items():
+        span.set_attribute(key, value)
 
 
 def traced(

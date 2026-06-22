@@ -101,6 +101,10 @@ class Claim(BaseModel):
     field_key: FieldKey
     value_json: JsonValue
     source_url: str | None = None
+    # The registered source that produced this claim (the M4.2 ``source_manifest.source_key``). The
+    # waterfall (M4.1) stamps it so per-source yield/idempotency keys on the source, not the tier
+    # (a tier_plan may list >1 source per tier). Nullable: non-resolver writers leave it None.
+    source_key: str | None = None
     source_tier: SourceTier
     extraction_method: ExtractionMethod
     evidence_span: str | None = None  # mandatory for tier-4 *promotion*, not construction

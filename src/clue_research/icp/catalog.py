@@ -36,6 +36,7 @@ from clue_research.core import (
     FieldDef,
     classify_field_key,
     field_namespace,
+    resolve_reuse_scope,
 )
 from clue_research.core import register_pack as register_namespace
 from clue_research.icp.source_profile import (
@@ -121,6 +122,15 @@ def _validate_pack_definition(pack: Pack) -> None:
                 raise PackValidationError(
                     f"pack {pack.pack_key!r} field {key!r} must declare pack={pack.namespace!r}, "
                     f"got pack={seed.pack!r}"
+                )
+            # Fail-closed reuse classification (M2.5 / ENG-165 W5): a <pack>.* field has no safe
+            # class default, so it MUST declare its reuse_scope or claims of it could silently
+            # default into the shared cross-tenant base (substrate §2).
+            if resolve_reuse_scope(seed.field_def) is None:
+                raise PackValidationError(
+                    f"pack {pack.pack_key!r} field {key!r} must declare a reuse_scope (a <pack>.* "
+                    "field has no safe default — set reuse_scope=public_footprint or "
+                    "tenant_private; fail-closed, ENG-165 W5)"
                 )
         elif seed.pack is not None:
             # A canonical contribution (e.g. a registered account.resonance.* field — Doc C §2) is a

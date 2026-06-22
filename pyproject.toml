@@ -18,6 +18,10 @@ dependencies = [
     "pgvector",
     # M0.4 — env-based settings/secrets (config/)
     "pydantic-settings>=2",
+    # M0.4 — the LLM gateway's OpenAI-compatible client (OpenRouter egress). Used ONLY behind the
+    # gateway/ package (import-linter Rule 4b); lazy-imported in the live client so CI's stub path
+    # never needs it. The gateway is to models what the Resolver protocol is to data sources.
+    "openai>=1.40",
     # M0.5 — observability/tracing skeleton (obs/). Console exporter ships with the SDK; an OTLP
     # exporter is added when a collector is wired (the exporter sits behind the traced_step wrapper).
     "opentelemetry-api>=1.20",
@@ -25,6 +29,13 @@ dependencies = [
     # M2.4 — distributed in-flight locks + rate-limit coordination (locks/). Redis is the
     # ephemeral-state half of the stack (conventions §6); Postgres remains the only source of truth.
     "redis>=5",
+    # M4.3 — PDF text extraction for the modality-adapter framework (adapters/). Used ONLY behind the
+    # adapters/ PdfTextExtractor seam (import-linter Rule 4 exempts adapters/); lazy-imported in the
+    # default extractor so CI's double-driven path never needs it. A PDF library was anticipated for
+    # M4.3 (the M4 kickoff "pyproject Rule 4 ... + a PDF library for M4.3").
+    "pypdf>=6",
+    "langgraph>=0.2",
+    "langgraph-checkpoint-postgres>=2",
 ]
 
 [dependency-groups]
@@ -71,6 +82,24 @@ plugins = ["pydantic.mypy"]
 init_forbid_extra = true
 init_typed = true
 warn_required_dynamic_aliases = true
+
+# The OpenAI-compatible SDK is an external boundary used only behind the gateway/ seam, where the
+# client is deliberately treated as ``Any`` (duck-typed against an injectable fake). Skip its stubs
+# so the gateway is decoupled from the SDK's exact typed signature (a version-drift hazard).
+[[tool.mypy.overrides]]
+module = ["openai"]
+follow_imports = "skip"
+ignore_missing_imports = true
+
+# M4.3 — the PDF (pypdf) and scrape (firecrawl) libraries are external boundaries used ONLY behind
+# the adapters/ provider seams (PdfTextExtractor / ScrapeBackend), lazy-imported and duck-typed. The
+# firecrawl SDK is not a declared dependency (M4.5 wires the live scrape backend + key); its live
+# default is exercised in M4.5, not CI's double-driven path. Ignore missing stubs so the adapter
+# framework is decoupled from each SDK's exact typed signature.
+[[tool.mypy.overrides]]
+module = ["pypdf", "firecrawl"]
+follow_imports = "skip"
+ignore_missing_imports = true
 
 # --- pytest -----------------------------------------------------------------
 [tool.pytest.ini_options]
@@ -121,18 +150,78 @@ type = "layers"
 containers = ["clue_research"]
 layers = ["obs", "config", "core"]
 
-# Rule 3 — workers never import each other (resolvers / adapters / judges / scorers).
-# Judges live in verification/; scorers live in discovery_scoring/. Per the architecture, workers
-# coordinate through the claim store, never by importing a sibling worker.
+# Rule 3 — workers coordinate through the claim store, never by importing a sibling worker. Judges
+# live in verification/; scorers in discovery_scoring/. M4.5 carve-out: a resolver whose source needs
+# ADAPTATION (Firecrawl's tier-2 scrape) runs the M4.3 adapter framework via `adapters.run_chain`, so
+# `resolvers -> adapters` is the ONE permitted worker→worker edge — expressed DIRECTIONALLY below
+# (independence would also forbid it). The adapter framework stays a pure leaf: it never imports a
+# resolver (the seam is one-way, exactly like `sources -> resolvers`, Rule 3c).
+#
+# Beat-0 (M5–M9 parallelisation) widens this to EVERY milestone worker package: stage0 (M5),
+# discovery_scoring (M6), durable (M7), profiling (M8), verification (M9), narrative (M12),
+# compliance (M10), synthesis (M11), review (M13) are all mutually independent. This is what makes
+# the milestones safe to build on parallel branches: a branch literally cannot import another
+# milestone's package. Cross-milestone contracts live in `core` (e.g. the `PhaseHandler` /
+# `AspectWorker` / `BudgetEngine` execution seams and the verification gate protocols) and concrete
+# implementations are wired together only at the `api` composition root (which is exempt — nothing
+# imports api, Rule 5). Each still imports the shared base (core/config/obs) and the M1–M4 services
+# (claimstore/identity/icp/sources) freely; the ban is strictly worker→sibling-worker.
 [[tool.importlinter.contracts]]
-name = "workers are independent (resolvers / adapters / judges / scorers)"
+name = "workers are independent (adapters / judges / scorers / milestone packages)"
 type = "independence"
 modules = [
-    "clue_research.resolvers",
     "clue_research.adapters",
     "clue_research.verification",
     "clue_research.discovery_scoring",
+    "clue_research.stage0",
+    "clue_research.durable",
+    "clue_research.profiling",
+    "clue_research.narrative",
+    "clue_research.compliance",
+    "clue_research.synthesis",
+    "clue_research.review",
 ]
+
+# Rule 3a — resolvers import no sibling worker EXCEPT the adapter framework (the M4.5 carve-out): a
+# resolver may call `adapters.run_chain` (Firecrawl scrape → M4.3 HTML→markdown adapter), but never a
+# judge (verification/) or a scorer (discovery_scoring/). `resolvers -> adapters` is intentionally
+# omitted here, i.e. permitted; the dependency is one-way (Rule 3b keeps adapters from importing back).
+[[tool.importlinter.contracts]]
+name = "resolvers import no sibling worker except the adapter framework"
+type = "forbidden"
+source_modules = ["clue_research.resolvers"]
+forbidden_modules = [
+    "clue_research.verification",
+    "clue_research.discovery_scoring",
+    "clue_research.stage0",
+    "clue_research.durable",
+    "clue_research.profiling",
+    "clue_research.narrative",
+    "clue_research.compliance",
+    "clue_research.synthesis",
+    "clue_research.review",
+]
+
+# Rule 3b — the worker leaves never import resolvers (the one-way worker seam): a resolver registers
+# itself into the source registry and calls the adapter framework, never the reverse — so an adapter,
+# judge, or scorer can never learn a concrete provider exists. Mirrors Rule 3c (`sources -> resolvers`
+# forbidden); together they make `resolvers -> adapters` a strictly one-directional dependency.
+[[tool.importlinter.contracts]]
+name = "adapters / judges / scorers do not import resolvers (one-way worker seam)"
+type = "forbidden"
+source_modules = [
+    "clue_research.adapters",
+    "clue_research.verification",
+    "clue_research.discovery_scoring",
+    "clue_research.stage0",
+    "clue_research.durable",
+    "clue_research.profiling",
+    "clue_research.narrative",
+    "clue_research.compliance",
+    "clue_research.synthesis",
+    "clue_research.review",
+]
+forbidden_modules = ["clue_research.resolvers"]
 
 # Rule 4 — provider SDKs live only behind resolvers/<provider> and adapters/<source>.
 # Every package EXCEPT resolvers/ and adapters/ is forbidden from importing a provider SDK, so the
@@ -175,6 +264,52 @@ forbidden_modules = [
     "hubspot",
 ]
 
+# Rule 4b — the LLM-vendor SDK lives ONLY behind the gateway/ package (the model analogue of
+# Rule 4 for data-source SDKs). The gateway is the single egress for every *direct* LLM call
+# (conventions §2/§4): no component constructs an OpenAI-compatible client directly, so a model
+# swap (or OpenRouter -> another gateway) stays a config change. (Exa/Parallel are resolvers, not
+# gateway calls — their SDKs are governed by Rule 4 above.)
+[[tool.importlinter.contracts]]
+name = "the LLM-vendor SDK lives only behind the gateway/ package"
+type = "forbidden"
+source_modules = [
+    "clue_research.core",
+    "clue_research.config",
+    "clue_research.obs",
+    "clue_research.db",
+    "clue_research.evals",
+    "clue_research.claimstore",
+    "clue_research.identity",
+    "clue_research.locks",
+    "clue_research.icp",
+    "clue_research.sources",
+    "clue_research.resolvers",
+    "clue_research.adapters",
+    "clue_research.stage0",
+    "clue_research.discovery_scoring",
+    "clue_research.durable",
+    "clue_research.profiling",
+    "clue_research.verification",
+    "clue_research.compliance",
+    "clue_research.synthesis",
+    "clue_research.narrative",
+    "clue_research.review",
+    "clue_research.api",
+]
+forbidden_modules = ["openai"]
+
+# Rule 3c — the source registry's binding seam is one-directional. Resolvers register THEMSELVES
+# into the registry (resolvers -> sources via bind_resolver), so sources must NOT import resolvers —
+# that would invert the seam and let the registry learn a concrete provider exists. This is a
+# dedicated one-way forbidden contract, NOT the independence rule (which would also forbid
+# resolvers -> sources and break bind_resolver). sources -> icp stays PERMITTED (the M4.6 planner
+# reuses M3.3's source-profile serving — locked decision #7; M3.3 must keep NOT importing M4).
+[[tool.importlinter.contracts]]
+name = "source registry does not import resolvers (one-way binding seam)"
+type = "forbidden"
+source_modules = ["clue_research.sources"]
+forbidden_modules = ["clue_research.resolvers"]
+
 # Rule 6 — the claim store stays the shared substrate: it must NOT import identity or locks, so the
 # M2.5 reuse classifier can never invert the dependency (claimstore persists pre-stamped fields and
 # scopes reads; the classifier lives in identity, which imports claimstore — never the reverse).
@@ -183,6 +318,39 @@ name = "claim store does not import identity / locks (no inversion)"
 type = "forbidden"
 source_modules = ["clue_research.claimstore"]
 forbidden_modules = ["clue_research.identity", "clue_research.locks"]
+
+# Rule 7 — the eval scaffold (evals/) is a CORE-ONLY leaf. It defines the generic gold-set / rubric /
+# report shapes every milestone's accuracy battery binds to (M9.6 fills it), so it must import only
+# the shared base (core/config/obs) — never the substrate or a worker. The whole M9.6 split rests on
+# this: the DB/LLM-backed verification battery lives in verification/ (which MAY import evals); were
+# evals to import claimstore/verification/db/gateway it would invert that dependency and create an
+# evals<->verification import cycle. The "core is the shared kernel" rule only forbids the reverse
+# edge (core->evals); this is its complement, so the invariant is enforced, not merely documented.
+[[tool.importlinter.contracts]]
+name = "the eval scaffold (evals/) is a core-only leaf"
+type = "forbidden"
+source_modules = ["clue_research.evals"]
+forbidden_modules = [
+    "clue_research.db",
+    "clue_research.claimstore",
+    "clue_research.identity",
+    "clue_research.locks",
+    "clue_research.icp",
+    "clue_research.sources",
+    "clue_research.resolvers",
+    "clue_research.adapters",
+    "clue_research.gateway",
+    "clue_research.stage0",
+    "clue_research.discovery_scoring",
+    "clue_research.durable",
+    "clue_research.profiling",
+    "clue_research.verification",
+    "clue_research.compliance",
+    "clue_research.synthesis",
+    "clue_research.narrative",
+    "clue_research.review",
+    "clue_research.api",
+]
 
 # Rule 5 — nothing imports the FastAPI app layer (api/). Dependencies point inward only.
 [[tool.importlinter.contracts]]

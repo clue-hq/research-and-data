@@ -30,13 +30,14 @@ from collections.abc import Sequence
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_research.claimstore.registry import validate_value
+from clue_research.claimstore.registry import check_claim_writable
 from clue_research.claimstore.tenancy import TenantScope
 from clue_research.core import (
     Claim,
     ClaimFlavor,
     ClaimId,
     EntityId,
+    RunId,
     VerificationStatus,
     can_be_promoted,
     parse_value_json,
@@ -47,13 +48,13 @@ from clue_research.core.field import FieldKey
 _INSERT_SQL = text(
     """
     INSERT INTO claim (
-        id, entity_id, entity_type, field_key, value_json, source_url, source_tier,
+        id, entity_id, entity_type, field_key, value_json, source_url, source_key, source_tier,
         extraction_method, evidence_span, confidence, corroborations, observed_at,
         collected_at, cost_cents, run_id, research_mode, superseded_by, verification_status,
         identity_binding, use_class, discovery_provenance, claim_flavor, reuse_scope, tenant_id
     ) VALUES (
         :id, :entity_id, CAST(:entity_type AS entity_type), :field_key,
-        CAST(:value_json AS jsonb), :source_url, :source_tier,
+        CAST(:value_json AS jsonb), :source_url, :source_key, :source_tier,
         CAST(:extraction_method AS extraction_method), :evidence_span,
         :confidence, :corroborations, :observed_at, :collected_at, :cost_cents, :run_id,
         CAST(:research_mode AS research_mode), :superseded_by,
@@ -69,7 +70,7 @@ _INSERT_SQL = text(
 # Selected columns, in a stable order, for reconstructing a Claim. One list so the reader and any
 # future column add stay in one place.
 _SELECT_COLUMNS = (
-    "id, entity_id, entity_type, field_key, value_json, source_url, source_tier, "
+    "id, entity_id, entity_type, field_key, value_json, source_url, source_key, source_tier, "
     "extraction_method, evidence_span, confidence, corroborations, observed_at, collected_at, "
     "cost_cents, run_id, research_mode, superseded_by, verification_status, "
     "identity_binding, use_class, discovery_provenance, claim_flavor, reuse_scope, tenant_id"
@@ -86,6 +87,7 @@ def _insert_params(claim: Claim) -> dict[str, object]:
         "field_key": claim.field_key,
         "value_json": serialize_value_json(claim.value_json),
         "source_url": claim.source_url,
+        "source_key": claim.source_key,
         "source_tier": claim.source_tier,
         "extraction_method": claim.extraction_method.value,
         "evidence_span": claim.evidence_span,
@@ -139,6 +141,7 @@ def _row_to_claim(row: dict[str, object]) -> Claim:
             "field_key": row["field_key"],
             "value_json": value_json,
             "source_url": row["source_url"],
+            "source_key": row.get("source_key"),
             "source_tier": row["source_tier"],
             "extraction_method": row["extraction_method"],
             "evidence_span": row["evidence_span"],
@@ -172,17 +175,26 @@ async def insert_claim(
 
     Two pre-checks run before the round-trip:
 
-    * **payload validation** (when ``validate_field``, the default) — a *field-claim*'s
-      ``value_json`` must match the field's ``value_schema`` in the registry (M1.3); an unregistered
-      field is rejected. The registry is the single source of valid ``field_key``s (conventions §2).
-      *Discovery* claims carry admission evidence, not a typed field value, so they skip this check.
-      Pass ``validate_field=False`` for low-level tests that exercise the table directly.
+    * **field write check** (when ``validate_field``, the default) — a *field-claim*'s
+      ``value_json`` must match the field's ``value_schema`` in the registry (M1.3), the field must
+      be registered,
+      and its declared/resolved ``reuse_scope`` must be consistent with the claim's (M2.5/ENG-165:
+      fail-closed — a ``tenant_private`` field cannot be written with a ``public_footprint`` claim,
+      and an undeclared ``<pack>.*`` field cannot be written at all). See
+      :func:`~clue_research.claimstore.registry.check_claim_writable`. *Discovery* claims carry
+      admission evidence, not a typed field value, so they skip this check. Pass
+      ``validate_field=False`` for low-level tests that exercise the table directly.
     * **structural promotability** — a ``verified`` claim that is not promotable (tier-4 with no
       span, or a weak-binding contact claim) is refused early with a clear message; the DB CHECK is
       the backstop.
     """
     if validate_field and claim.claim_flavor is not ClaimFlavor.DISCOVERY:
-        await validate_value(conn, claim.field_key, claim.value_json)
+        await check_claim_writable(
+            conn,
+            field_key=claim.field_key,
+            value_json=claim.value_json,
+            reuse_scope=claim.reuse_scope,
+        )
     if claim.verification_status is VerificationStatus.VERIFIED and not can_be_promoted(claim):
         raise ValueError(
             "cannot insert a 'verified' claim that is not promotable "
@@ -206,6 +218,43 @@ async def supersede_claim(conn: AsyncConnection, old_id: ClaimId, new_claim: Cla
         {"new_id": new_id, "old_id": old_id},
     )
     return new_id
+
+
+async def record_verification(
+    conn: AsyncConnection,
+    claim_id: ClaimId,
+    *,
+    status: VerificationStatus,
+    corroborations: int | None = None,
+) -> None:
+    """Apply a verification verdict to an existing claim *in place* — the only mutation of a stored
+    claim besides supersession.
+
+    ``verification_status`` and ``corroborations`` are the trigger-allowlisted mutable columns
+    (migrations 0002/0004/0008); every other provenance column (value, source, span, tier, …) stays
+    immutable and the BEFORE-UPDATE trigger rejects any change to it. M9's verification layers write
+    their verdict through this one helper so no caller hand-writes SQL against ``claim`` (substrate
+    §1): the corroborator (M9.2) sets both ``status`` and ``corroborations``; the faithfulness judge
+    (M9.3) and identity-binding gate (M9.4) set ``status`` alone (``corroborations`` omitted → left
+    untouched). The ``claim_tier4_verified_requires_span`` CHECK (0002) stays the DB backstop, so a
+    span-less tier-4 claim can never be flipped to ``verified`` even through this path.
+    """
+    if corroborations is None:
+        await conn.execute(
+            text(
+                "UPDATE claim SET verification_status = CAST(:status AS verification_status) "
+                "WHERE id = :id"
+            ),
+            {"status": status.value, "id": claim_id},
+        )
+    else:
+        await conn.execute(
+            text(
+                "UPDATE claim SET verification_status = CAST(:status AS verification_status), "
+                "corroborations = :corroborations WHERE id = :id"
+            ),
+            {"status": status.value, "corroborations": corroborations, "id": claim_id},
+        )
 
 
 async def claims_for(
@@ -247,3 +296,46 @@ async def claims_for(
         },
     )
     return [_row_to_claim(dict(row)) for row in result.mappings().all()]
+
+
+async def entities_with_field_claim(
+    conn: AsyncConnection,
+    field_key: FieldKey | str,
+    *,
+    run_id: RunId | None = None,
+    include_superseded: bool = False,
+    scope: TenantScope,
+) -> list[EntityId]:
+    """The distinct ``entity_id``s carrying a (live) claim on ``field_key`` — optionally narrowed to
+    one ``run_id``.
+
+    The set-shaped read the membership queries need (e.g. M6.3 enumerating the accounts admitted in
+    a discovery run via ``core.discovery_provenance`` + that run's id, M6.5 the admitted-vs-seen
+    counts) without anyone hand-writing SQL against ``claim`` (conventions §2 — the table stays
+    behind this seam). ``scope`` is **required** (M2.5, fail-closed), like :func:`claims_for`; an
+    operator/cross-tenant caller passes :data:`ALL_TENANTS`. Returns the surviving-or-not ids as
+    stored — a caller that needs the merge survivor resolves each through ``identity.surviving_id``.
+    Ordered by id for a deterministic result.
+    """
+    scope_sql, scope_params = scope.predicate()
+    stmt = text(
+        f"""
+        SELECT DISTINCT entity_id
+        FROM claim
+        WHERE field_key = :field_key
+          AND (CAST(:run_id AS uuid) IS NULL OR run_id = :run_id)
+          AND (CAST(:include_superseded AS boolean) OR superseded_by IS NULL)
+          AND {scope_sql}
+        ORDER BY entity_id
+        """
+    )
+    result = await conn.execute(
+        stmt,
+        {
+            "field_key": field_key,
+            "run_id": run_id,
+            "include_superseded": include_superseded,
+            **scope_params,
+        },
+    )
+    return [EntityId(row[0]) for row in result.all()]

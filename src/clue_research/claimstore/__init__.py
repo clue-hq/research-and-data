@@ -22,13 +22,16 @@ from __future__ import annotations
 
 from clue_research.claimstore.claims import (
     claims_for,
+    entities_with_field_claim,
     insert_claim,
+    record_verification,
     supersede_claim,
 )
 from clue_research.claimstore.merge import (
     DEFAULT_MERGE_POLICY,
     FreshnessMode,
     MergePolicy,
+    canonical_json,
     current_value,
     current_values,
     merge_claims,
@@ -41,9 +44,13 @@ from clue_research.claimstore.packs import (
     load_pack,
 )
 from clue_research.claimstore.registry import (
+    CorroborationConfig,
     FieldRedefinitionError,
+    ReuseScopeError,
     UnknownFieldError,
     ValueSchemaError,
+    check_claim_writable,
+    get_corroboration_config,
     get_field,
     list_fields,
     register_field,
@@ -56,6 +63,9 @@ __all__ = [
     "insert_claim",
     "supersede_claim",
     "claims_for",
+    "entities_with_field_claim",
+    # verification verdict write (M9.2 — in-place on the trigger-allowlisted columns)
+    "record_verification",
     # merge / current truth (M1.2)
     "current_value",
     "current_values",
@@ -64,6 +74,7 @@ __all__ = [
     "MergePolicy",
     "FreshnessMode",
     "DEFAULT_MERGE_POLICY",
+    "canonical_json",
     # tenant scoping (M2.5)
     "TenantScope",
     "PUBLIC_ONLY",
@@ -73,6 +84,10 @@ __all__ = [
     "get_field",
     "list_fields",
     "validate_value",
+    "check_claim_writable",
+    # corroboration config reader (M9.2)
+    "get_corroboration_config",
+    "CorroborationConfig",
     "load_pack",
     "load_core_pack",
     "CORE_PACK",
@@ -80,4 +95,5 @@ __all__ = [
     "UnknownFieldError",
     "ValueSchemaError",
     "FieldRedefinitionError",
+    "ReuseScopeError",
 ]

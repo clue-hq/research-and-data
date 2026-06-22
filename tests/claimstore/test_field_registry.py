@@ -19,7 +19,7 @@ from clue_research.claimstore import (
     register_field,
     validate_value,
 )
-from clue_research.core import Claim, FieldClass, FieldDef, PassKind
+from clue_research.core import Claim, FieldClass, FieldDef, PassKind, ReuseScope
 
 from .conftest import rollback_conn, run_async
 
@@ -99,6 +99,73 @@ def test_registry_enums_match_core() -> None:
             by_type.setdefault(typname, set()).add(label)
         assert by_type["field_pass"] == {m.value for m in PassKind}
         assert by_type["field_class"] == {m.value for m in FieldClass}
+
+    run_async(_run())
+
+
+def test_field_definition_has_reuse_scope_column() -> None:
+    """ENG-165 W1: the additive reuse_scope column is present on field_definition."""
+
+    async def _run() -> None:
+        async with rollback_conn() as conn:
+            cols = set(
+                (
+                    await conn.execute(
+                        text(
+                            "SELECT column_name FROM information_schema.columns "
+                            "WHERE table_name = 'field_definition'"
+                        )
+                    )
+                )
+                .scalars()
+                .all()
+            )
+        assert "reuse_scope" in cols
+
+    run_async(_run())
+
+
+def test_register_field_roundtrips_reuse_scope() -> None:
+    """ENG-165 W1: a declared reuse_scope round-trips; an identical re-register is a no-op; changing
+    it is a redefinition (a field's data-class is part of its contract)."""
+
+    async def _run() -> None:
+        async with rollback_conn() as conn:
+            fd = FieldDef(
+                field_key="account.test_private",
+                value_type="str",
+                pass_kind=PassKind.SCORING,
+                reuse_scope=ReuseScope.TENANT_PRIVATE,
+            )
+            await register_field(conn, fd, value_schema={"type": "string"})
+            stored = await get_field(conn, "account.test_private")
+            assert stored is not None and stored.reuse_scope is ReuseScope.TENANT_PRIVATE
+            # identical re-register is a no-op
+            await register_field(conn, fd, value_schema={"type": "string"})
+            # changing the declared scope is a redefinition (bump the version instead)
+            with pytest.raises(FieldRedefinitionError):
+                await register_field(
+                    conn,
+                    fd.model_copy(update={"reuse_scope": ReuseScope.PUBLIC_FOOTPRINT}),
+                    value_schema={"type": "string"},
+                )
+
+    run_async(_run())
+
+
+def test_scoring_output_keys_reserved_tenant_private() -> None:
+    """ENG-165 W4: account.scoring.fit / .intent are seeded as Pass-A SCORING fields declared
+    tenant_private — closing the 'ReusePolicy names account.scoring. but no field reserves it'
+    gap (M2.5)."""
+
+    async def _run() -> None:
+        async with rollback_conn() as conn:
+            for key in ("account.scoring.fit", "account.scoring.intent"):
+                fd = await get_field(conn, key)
+                assert fd is not None, f"{key} not registered"
+                assert fd.pass_kind is PassKind.SCORING
+                assert fd.reuse_scope is ReuseScope.TENANT_PRIVATE
+                assert fd.field_class is FieldClass.ACCOUNT
 
     run_async(_run())
 
