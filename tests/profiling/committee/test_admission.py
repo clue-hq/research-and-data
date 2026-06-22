@@ -1,0 +1,115 @@
+"""M8.3 committee existence gate (DB-gated).
+
+The make-or-break: a candidate resolves under the account (reuse or insert) or is dropped; a
+strong-key-less (fabricated) candidate dies at the gate with no entity and no claim.
+"""
+
+from __future__ import annotations
+
+from uuid import UUID
+
+from clue_research.claimstore import PUBLIC_ONLY, claims_for
+from clue_research.core import EntityType, ResearchMode
+from clue_research.identity import get_contact, insert_contact_entity
+from clue_research.profiling.committee.admission import (
+    DISCOVERY_PROVENANCE_FIELD,
+    AdmissionStatus,
+    admit_candidate,
+)
+
+from ..conftest import insert_test_account, make_candidate, rollback_conn, run_async
+
+_RUN = UUID("11111111-1111-1111-1111-111111111111")
+
+
+def test_fabricated_person_dropped_at_gate(require_profiling_db: None) -> None:
+    """A candidate with no strong key has nothing to resolve to → dropped, no entity, no claim."""
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            account = await insert_test_account(conn)
+            candidate = make_candidate(
+                source_url="https://acme.example/team", full_name="Ghost Person", title="CTO"
+            )
+            outcome = await admit_candidate(conn, account, candidate, run_id=_RUN)
+            assert outcome.status is AdmissionStatus.DROPPED
+            assert outcome.contact_entity_id is None
+            assert outcome.discovery_claim_id is None
+
+    run_async(scenario())
+
+
+def test_strong_key_miss_inserts_contact_under_account(require_profiling_db: None) -> None:
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            account = await insert_test_account(conn)
+            candidate = make_candidate(
+                linkedin_url="https://linkedin.com/in/jane-cfo",
+                full_name="Jane CFO",
+                title="Chief Financial Officer",
+                source_url="https://acme.example/team",
+            )
+            outcome = await admit_candidate(conn, account, candidate, run_id=_RUN)
+            assert outcome.status is AdmissionStatus.ADMITTED
+            assert outcome.reused_existing is False
+            assert outcome.contact_entity_id is not None
+            # the contact resolves UNDER the account (no orphan).
+            contact = await get_contact(conn, outcome.contact_entity_id)
+            assert contact is not None
+            assert contact.account_entity_id == account.id
+            # discovery-provenance written with the committee mode.
+            claims = await claims_for(
+                conn, outcome.contact_entity_id, DISCOVERY_PROVENANCE_FIELD, scope=PUBLIC_ONLY
+            )
+            assert len(claims) == 1
+            assert claims[0].research_mode is ResearchMode.COMMITTEE_DISCOVERY
+            assert claims[0].entity_type is EntityType.CONTACT
+            assert claims[0].discovery_provenance is not None
+            assert claims[0].discovery_provenance.found_via == candidate.source_key
+
+    run_async(scenario())
+
+
+def test_deterministic_hit_reuses_existing_contact(require_profiling_db: None) -> None:
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            account = await insert_test_account(conn)
+            existing_id = await insert_contact_entity(
+                conn,
+                account_entity_id=account.id,
+                full_name="Jane CFO",
+                linkedin_url="https://linkedin.com/in/jane-cfo",
+            )
+            candidate = make_candidate(
+                linkedin_url="https://linkedin.com/in/jane-cfo",
+                full_name="Jane CFO",
+                title="CFO",
+            )
+            outcome = await admit_candidate(conn, account, candidate, run_id=_RUN)
+            assert outcome.status is AdmissionStatus.ADMITTED
+            assert outcome.reused_existing is True
+            assert outcome.contact_entity_id == existing_id
+
+    run_async(scenario())
+
+
+def test_discovery_provenance_idempotent_in_run(require_profiling_db: None) -> None:
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            account = await insert_test_account(conn)
+            candidate = make_candidate(
+                linkedin_url="https://linkedin.com/in/jane-cfo",
+                full_name="Jane CFO",
+                title="CFO",
+                source_url="https://acme.example/team",
+            )
+            first = await admit_candidate(conn, account, candidate, run_id=_RUN)
+            second = await admit_candidate(conn, account, candidate, run_id=_RUN)
+            # reused, not double-written
+            assert first.discovery_claim_id == second.discovery_claim_id
+            claims = await claims_for(
+                conn, first.contact_entity_id, DISCOVERY_PROVENANCE_FIELD, scope=PUBLIC_ONLY
+            )
+            assert len(claims) == 1
+
+    run_async(scenario())
