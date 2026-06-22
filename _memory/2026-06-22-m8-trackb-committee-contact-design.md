@@ -54,4 +54,23 @@ Pure (no-DB) tests for binding/use-class/role-parse/plausibility/coverage/stoppi
 `load_committee_pack` + `load_deep_profiling_pack`; register M8.3/M8.4 AspectWorkers into M7 graph; inject `verification.classify_binding` as the production `BindingClassifier`; inject concrete `CommitteeSource`s + people/long-tail resolvers + the `gateway`; `PreSpendGate.check` before spend (deferred M9.1 AC-6) + `classify_binding` pre-insert stamp (deferred M9.4). Latent eval-fixture gap (golden refs unregistered keys) reconciled at M9.6 integration.
 
 ## Status
-Design locked; implementing M8.3 first (long pole, blocks M8.4), then M8.4, committing at green checkpoints, then an adversarial review over the diff.
+**DONE — all committed on `m8/track-b-committee-contact` (local only, not pushed).**
+- `b8caaef` M8.3 committee discovery (ENG-142) · `5174114` M8.4 contact profiling (ENG-149) · `9da628f` audit fixes.
+- `make check` green (771 passed / 580 skipped); 87 profiling tests pass on a fresh DB.
+
+## Adversarial audit (5-dimension review → adversarial verify → synthesize; 23/29 confirmed) — fixed in `9da628f`
+Production-code defects fixed:
+1. **committee/worker.py** — dedup admitted members on the **resolved contact id** (`seen_contact_ids`), not the strong key (two strong keys → same contact double-counted member + inflated `admitted`/coverage + re-ran role inference).
+2. **committee/worker.py `_provenance_params`** — tier-4 role-claim path now requires a non-empty title (else tier-4 + null `evidence_span` = permanently unpromotable); falls back to HUMAN/tier-1.
+3. **contact/fill.py** — implemented the tier-4 **target-lock** (Decision 13): a tier-4 WEAK (name-only) facet claim is rejected before write; lower-tier WEAK stays written-but-unpromotable.
+4. **contact/worker.py** — facet sub-worker budget now derived from `config.RecursionPolicy.caps_for(tier)` (tier-gating intrinsic, not a trusted param); account id parsed `params str → UUID EntityId`.
+5. **committee/admission.py** — clamp discovery-provenance tier to `min(tier,3)` (a tier-4 people source would violate the tier4-iff-llm_synthesis validator).
+6. **contact/use_class.py** — added the `"bible"` special-category marker.
+
+Test hardening: autouse resolver-binding cleanup (conftest); new `test_target_lock.py` + `test_facet_subworkers.py`; broadened use-class markers (political/health/value-only + parametrize over escalatable fields); committee EXHAUSTED/no-strong-key/role-fallback/persona-value/cross-run-provenance tests; contact multi-tenant-isolation + planner-gating tests; coverage MODERATE-band assertions.
+
+## Deferred follow-ups (NOT fixed here — flagged)
+- **Audit Fix #12 (CI guard for silently-skipped DB tests)** — deliberately NOT added: a `pytest_sessionfinish` that fails when CI runs without a DB is **repo-wide CI infra** (belongs in the root conftest / CI yaml owned by the platform), not a Track-B milestone conftest; adding it under `tests/profiling/` would change CI behavior for every milestone's DB tests. Recommend the platform add an "all-DB-tests-skipped under CI ⇒ fail" guard at the repo root.
+- **Audit Fix #11 (long-tail modality-adapter gating)** — partially covered by `test_planner_declines_when_spec_authorizes_no_source` (proves M8.4 routes through `plan_sources` + respects a decline). The deep video/audio→transcript modality-adapter path is M4/M11-owned (adapters absent); full exercise lands when those resolvers/adapters are bound at the `api` root.
+- **api composition-root wiring** (unchanged from the kickoff): `load_committee_pack` + `load_deep_profiling_pack`; register `CommitteeAspectWorker`/`ContactProfileAspectWorker` into the M7 graph; inject `verification.classify_binding` as the production `BindingClassifier`; bind concrete `CommitteeSource`s + facet resolvers + the `gateway`; `PreSpendGate.check` before spend. Single PR.
+- **D5 per-ICP persona filtering** — `discover_committee` defaults to all four personas (`ICPSpec` has no personas field); when a committee-persona slot is added to the ICP, thread it into `relevant_personas`.
