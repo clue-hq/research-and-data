@@ -174,6 +174,13 @@ class ScoringRubric(BaseModel):
     # A STALE winner (past its field's freshness_ttl, M1) is discounted (flagged + per the rule).
     # Stale winners are surfaced, never dropped (substrate §1) — scoring discounts them here.
     discount_stale: bool = True
+    # The ICP's **Fit floor** (D6; read by the M6.3 Pass-A engine). An account whose ``fit_score``
+    # falls below this is flagged ``non_fit`` — *flag-and-proceed* (surfaced for review with the
+    # evidence behind the low fit, never excluded), the realization of D6 for imported accounts.
+    # ``None`` = no floor (no account is flagged non-fit). It rides the ``icp_spec.scoring_rubric``
+    # slot, so it versions with the rubric (a change is a new rubric/ICP version) — policy as data,
+    # not code. ``score`` itself does not read it (the flag is applied at Pass A, not in the math).
+    fit_floor: UnitInterval | None = None
     version: int = 1
     label: str | None = None
     notes: str | None = None

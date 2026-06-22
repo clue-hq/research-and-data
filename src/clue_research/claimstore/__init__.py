@@ -22,6 +22,7 @@ from __future__ import annotations
 
 from clue_research.claimstore.claims import (
     claims_for,
+    entities_with_field_claim,
     insert_claim,
     record_verification,
     supersede_claim,
@@ -62,6 +63,7 @@ __all__ = [
     "insert_claim",
     "supersede_claim",
     "claims_for",
+    "entities_with_field_claim",
     # verification verdict write (M9.2 — in-place on the trigger-allowlisted columns)
     "record_verification",
     # merge / current truth (M1.2)

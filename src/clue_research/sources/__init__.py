@@ -25,6 +25,7 @@ from clue_research.sources.registry import (
     SourceYieldError,
     bind_resolver,
     clear_resolver_bindings,
+    entity_scope_serves,
     get_resolver,
     get_source,
     is_resolver_bound,
@@ -68,6 +69,7 @@ __all__ = [
     "list_sources",
     "sources_for",
     "registered_source_keys",
+    "entity_scope_serves",
     # resolver binding (in-process source_key -> Resolver dispatch)
     "bind_resolver",
     "unbind_resolver",
