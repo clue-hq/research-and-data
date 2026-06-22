@@ -28,11 +28,16 @@ from clue_research.core import (
     CostCents,
     EntityId,
     EntityType,
+    EnumerationScope,
     ExtractionMethod,
     ICPSpec,
     IdentityBinding,
     LLMGateway,
     Persona,
+    PreSpendGate,
+    PreSpendKind,
+    PreSpendRequest,
+    PreSpendVerdict,
     ResearchMode,
     RunId,
     SourceTier,
@@ -52,7 +57,12 @@ from clue_research.profiling.committee.results import (
     CommitteeMemberRef,
     CommitteeResult,
 )
-from clue_research.profiling.committee.roles import RoleVerdict, gate_role, infer_role
+from clue_research.profiling.committee.roles import (
+    RoleInference,
+    RoleVerdict,
+    gate_role,
+    infer_role,
+)
 from clue_research.profiling.committee.sources import (
     CommitteePersonCandidate,
     CommitteeSource,
@@ -204,6 +214,7 @@ async def discover_committee(
     relevant_personas: tuple[Persona, ...] = _ALL_PERSONAS,
     source_plan: Sequence[str] | None = None,
     budget_cap_cents: CostCents | None = None,
+    pre_spend_gate: PreSpendGate | None = None,
     config: CommitteeConfig = DEFAULT_COMMITTEE_CONFIG,
 ) -> CommitteeResult:
     """Discover the buying committee for one high-tier account (mode M3).
@@ -212,7 +223,10 @@ async def discover_committee(
     plausibility-gates each admitted member's role, writes discovery-provenance + role/persona
     claims, and bounds the walk by marginal-yield / budget. ``tenant_id`` (= client_id) binds the
     tenant-private role/persona claims. ``role_model`` (or ``config.role_model``) is the gateway
-    model id for role inference — required, fails loud (model as config, never hardcoded)."""
+    model id for role inference — required, fails loud (model as config, never hardcoded). When a
+    ``pre_spend_gate`` is injected (M9.1), each people-source enumeration is gated as an
+    ``ENUMERATION``/``COMMITTEE`` spend and each role-inference LLM call as a ``FIELD`` spend before
+    it runs (REJECT skips that spend; the committee graph is otherwise preserved)."""
     model = role_model or config.role_model
     if not model:
         raise ValueError(
@@ -239,6 +253,22 @@ async def discover_committee(
 
     for source in ordered:
         channels_searched.append(source.source_key)
+        # Pre-spend gate (M9.1 Option C): "find people AT this account" is an ENUMERATION spend (no
+        # single field) — keyed on the account + COMMITTEE scope at the people-source tier. REJECT
+        # skips this source before its external call.
+        if pre_spend_gate is not None:
+            decision = await pre_spend_gate.check(
+                PreSpendRequest(
+                    entity_id=account.id,
+                    entity_type=EntityType.ACCOUNT,
+                    kind=PreSpendKind.ENUMERATION,
+                    scope=EnumerationScope.COMMITTEE,
+                    source_tier=SourceTier(source.tier),
+                    run_id=run_id,
+                )
+            )
+            if decision.verdict is PreSpendVerdict.REJECT:
+                continue
         candidates = await source.find_candidates(account, limit=config.per_source_limit)
         new_admits = 0
         seen_this_source = 0
@@ -274,10 +304,31 @@ async def discover_committee(
                 continue
             seen_contact_ids.add(contact_entity_id)
 
-            verdict = gate_role(
-                infer_role(
+            # Pre-spend gate (M9.1): role inference is a tier-4 LLM FIELD spend on the admitted
+            # contact's ROLE_ON_COMMITTEE (empty tier_plan → no tier-in-plan reject). On REJECT skip
+            # the LLM; gate_role falls back to the heuristic role, so the committee graph survives.
+            role_gate_rejected = False
+            if pre_spend_gate is not None:
+                role_decision = await pre_spend_gate.check(
+                    PreSpendRequest(
+                        entity_id=contact_entity_id,
+                        entity_type=EntityType.CONTACT,
+                        field_key=ROLE_ON_COMMITTEE,
+                        source_tier=SourceTier(4),
+                        run_id=run_id,
+                    )
+                )
+                role_gate_rejected = role_decision.verdict is PreSpendVerdict.REJECT
+            if role_gate_rejected:
+                inference = RoleInference(
+                    role=None, confidence=0.0, rationale="role-inference gate-rejected"
+                )
+            else:
+                inference = infer_role(
                     gateway, model, candidate.title, account, relevant_personas=relevant_personas
-                ),
+                )
+            verdict = gate_role(
+                inference,
                 candidate.title,
                 implausible_confidence_ceiling=config.implausible_confidence_ceiling,
                 fallback_confidence=config.fallback_confidence,
@@ -351,12 +402,14 @@ class CommitteeAspectWorker:
         sources: Sequence[CommitteeSource],
         gateway: LLMGateway,
         role_model: str | None = None,
+        pre_spend_gate: PreSpendGate | None = None,
         config: CommitteeConfig = DEFAULT_COMMITTEE_CONFIG,
     ) -> None:
         self._session_factory = session_factory
         self._sources = sources
         self._gateway = gateway
         self._role_model = role_model
+        self._pre_spend_gate = pre_spend_gate
         self._config = config
 
     async def research(self, ctx: AspectContext) -> WorkerResult:
@@ -379,6 +432,7 @@ class CommitteeAspectWorker:
                 role_model=self._role_model,
                 source_plan=plan,
                 budget_cap_cents=ctx.budget_envelope_cents,
+                pre_spend_gate=self._pre_spend_gate,
                 config=self._config,
             )
 

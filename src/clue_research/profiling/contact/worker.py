@@ -29,6 +29,7 @@ from clue_research.core import (
     FieldClass,
     FieldDef,
     ICPSpec,
+    PreSpendGate,
     ProfileClaimView,
     RunId,
     WorkerResult,
@@ -81,6 +82,7 @@ async def profile_contact(
     field_keys: Sequence[str] | None = None,
     binding_classifier: BindingClassifier = DEFAULT_BINDING_CLASSIFIER,
     use_class_tagger: UseClassTagger = DEFAULT_USE_CLASS_TAGGER,
+    pre_spend_gate: PreSpendGate | None = None,
     config: ContactProfileConfig = DEFAULT_CONTACT_PROFILE_CONFIG,
 ) -> ContactProfileResult:
     """Profile one verified committee member (mode M4).
@@ -121,6 +123,7 @@ async def profile_contact(
             spec=spec,
             binding_classifier=binding_classifier,
             use_class_tagger=use_class_tagger,
+            pre_spend_gate=pre_spend_gate,
         )
         views.extend(fill.profile_views)
         cost += fill.cost_cents
@@ -166,12 +169,14 @@ class ContactProfileAspectWorker:
         binding_classifier: BindingClassifier = DEFAULT_BINDING_CLASSIFIER,
         use_class_tagger: UseClassTagger = DEFAULT_USE_CLASS_TAGGER,
         recursion: RecursionPolicy = _DEFAULT_RECURSION_POLICY,
+        pre_spend_gate: PreSpendGate | None = None,
         config: ContactProfileConfig = DEFAULT_CONTACT_PROFILE_CONFIG,
     ) -> None:
         self._session_factory = session_factory
         self._binding_classifier = binding_classifier
         self._use_class_tagger = use_class_tagger
         self._recursion = recursion
+        self._pre_spend_gate = pre_spend_gate
         self._config = config
 
     async def research(self, ctx: AspectContext) -> WorkerResult:
@@ -203,6 +208,7 @@ class ContactProfileAspectWorker:
                 field_keys=ctx.field_keys or None,
                 binding_classifier=self._binding_classifier,
                 use_class_tagger=self._use_class_tagger,
+                pre_spend_gate=self._pre_spend_gate,
                 config=self._config,
             )
 
