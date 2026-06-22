@@ -1,0 +1,76 @@
+# M8 Track B — Committee Discovery (M8.3/ENG-142) + Contact Profiling (M8.4/ENG-149) — locked design
+
+**Date:** 2026-06-22 · **Branch:** `m8/track-b-committee-contact` (off the seed `5922a56`, which carries [[2026-06-22-m8-tiny-seed]]) · base context [[2026-06-22-m8-kickoff-handoff]].
+Built after an 8-reader understand workflow + direct seam verification. Baseline `make check` green (722/0). Single alembic head `089dc65b5814`; **no migrations** (all M8 issues are "No new tables").
+
+## Import rule (machine-checked, `make contracts`)
+`profiling` (M8) may import: `core`, `config`, `obs`, `claimstore`, `identity`, `icp`, `sources`. **NOT** `durable`(M7), `verification`(M9), `discovery_scoring`(M6), `stage0`(M5), `compliance`(M10), `synthesis`(M11), `narrative`/`review`(M12/13). No provider SDK. → M8 codes against `core` protocols; concrete M7 graph / M9 gates are injected at the `api` composition root (deferred).
+
+## Verified seam signatures (all exact, checked against code)
+- `core.factories`: `account_claim(...)`, `contact_claim(*, ..., identity_binding, use_class)` (both REQUIRED, no default), `discovery_claim(*, ..., found_via, matched_signal, discovery_confidence)`, `revalidate_with(claim, **u)`, `first_confident_claim`, `by_tier_ascending`. **Never construct `Claim()` directly.**
+- `claimstore.insert_claim(conn, claim)`; discovery-flavor claims SKIP field-registry validation (`insert_claim`: `if validate_field and flavor is not DISCOVERY`). `current_value`, `list_fields`, `get_field`, `register_field`, `load_pack`, `SeedField`.
+- `identity.review.current_value_resolved(conn, entity_id, field_key, *, scope: TenantScope, entity_type=ACCOUNT, policy=...)` — merge-resolved, **scope required**; pass `entity_type=CONTACT`.
+- `identity.resolve(conn, Observation(entity_type=CONTACT, linkedin_url=…, verified_email=…, name=…))` → CONTACT path is **deterministic-only** (strong-key exact); miss → empty candidates, `top_score=0.0`. Contact *fuzzy* resolution is M2's, **out of scope** for M8.
+- `identity.insert_contact_entity(conn, *, account_entity_id (NOT NULL FK), full_name, linkedin_url, verified_email, …) -> EntityId`; `get_contact`, `get_account`, `surviving_id(conn, id, type)`, `set_status`. `identity.stamp_reuse(claim, *, tenant_id)` (fails loud if tenant_private w/o tenant).
+- `sources.plan_sources(conn, *, spec: ICPSpec, entity: Entity, field: str, mode: ResearchMode, tier_scope=None, entity_tier=None, entity_scope=None, budget_envelope=None, gateway=None, planner_model=None, …) -> OrderedSourcePlan` (`.tier_plan()` = RUN source_keys). `sources.resolve_field(conn, entity, field_def, *, mode, run_id, tenant_id=None, budget_envelope=None, …) -> WaterfallResult` (writes claims, idempotent on (entity,field,source,run), tier-4/people resolvers absent → `stop_reason=no_resolver` = correct empty). `bind_resolver`/`get_resolver`, `RegistrySourceManifest`, `EntityScope`.
+- `gateway.build_gateway(GatewayConfig, api_key=None) -> LLMGateway` (StubGateway when stub/no-key; CI-safe). `LLMGateway.complete(*, model, messages: list[Message], **opts) -> Completion` is **SYNCHRONOUS** (no await). `Message(role: Role, content)`, `Completion(model, text, usage, cost_cents, finish_reason)`. `GatewayConfig.synthesis_model` default, `.stub`.
+- `config.RecursionPolicy`: `caps_for(tier) -> TierRecursionCaps(max_depth 0/1/2, max_aspect_workers, max_facet_workers_per_aspect)`, `is_eligible(aspect)` (eligible prefixes `("account.resonance","contact.facet")` — so M8.4 aspect = `"contact.facet"`). `config.BudgetCaps`: `per_account_cap_for(tier)`, `per_contact_cap_cents` (RESERVED, "M8 wires the contact band off this field").
+- `core.execution`: implement `AspectWorker` (`aspect: str`, `async research(ctx: AspectContext) -> WorkerResult`). `AspectContext(entity_id, campaign_run_id, run_id, tier, aspect, field_keys, budget_envelope_cents, depth, params)`. `WorkerResult(aspect, status: WorkerStatus, claim_refs, cost_cents, detail)`.
+- `core.handoff`: `CommitteeMember(contact_entity_id, persona: Persona, role_on_committee: str, profile_claims)`, `ProfileClaimView(claim_id, value_json, evidence_span, source_tier, identity_binding, use_class)`. `Persona{CHAMPION,ECONOMIC_BUYER,TECHNICAL_EVALUATOR,BLOCKER}`.
+- `core.verification`: `Binding`, `IdentityBindingGate` (protocols, importable). `verification.classify_binding` is **NOT importable** (M9 pkg) → §M8.4 binding plan.
+- `obs`: `traced_step`, `apply_attributes`, metrics `record_source_yield`, `record_verification_health` (emits the contact strong-binding share — don't invent a parallel metric). Canonical ATTR_* names only.
+
+## DECISIONS (locked)
+1. **People-source seam does not exist → define M8-owned `CommitteeSource` Protocol + registry** in `profiling/committee/sources.py` (the core `Resolver` is field-shaped, can't enumerate people; M6's `DiscoveryChannel` is the right shape but in `discovery_scoring`, unimportable). Use `plan_sources(field="contact", mode=COMMITTEE_DISCOVERY, entity_scope=CONTACT)` to choose/order WHICH people-sources to consult, then drive the bound `CommitteeSource`. Do NOT touch frozen `core.Resolver`.
+2. **`contact.role_on_committee` + `contact.persona` are NOT registered anywhere** → new small M8.3-owned `COMMITTEE_PACK` in `profiling/committee/fields.py` + `load_committee_pack(conn)`, separate from the frozen seed `DEEP_PROFILING_PACK`. Plain `contact.*` (NOT facet → no facet DB CHECK), `pass=deep`, `reuse_scope` inherits `TENANT_PRIVATE`, **empty `tier_plan`** (not waterfall-filled — produced by M8.3). value_schema: role = object `{role: enum(4 personas) [req], confidence, plausible, rationale}`; persona = string enum(4 personas).
+3. **Admission flow per candidate (existence gate):** strong key (linkedin_url|verified_email) required else **DROP** (anti-fabrication; no fuzzy contact path). `surviving_id(account)` → `resolve(Observation CONTACT)`: `top_score==1.0` → reuse survivor (ADMIT); miss → `insert_contact_entity` under account (ADMIT new). Skip `disposition` on a clean miss (it raises `NotImplementedError` for empty CONTACT result w/o subject_entity_id). Redis in-flight lock on strong key (mirror M6 domain-lock) when redis present.
+4. **Discovery-provenance** written via `discovery_claim(entity_type=CONTACT, field_key="core.discovery_provenance", research_mode=COMMITTEE_DISCOVERY, found_via, matched_signal, discovery_confidence, …)` — reuses M6's reserved key; flavor skips field validation. Idempotent on (contact, run, channel) (merge-aware).
+5. **Role inference** via injected `gateway.complete(model=role_model, messages=[SYSTEM,USER])` (sync). Robust local JSON extractor (M8-owned `_first_json_object`; cannot import M9's). Validate role ∈ Persona, clamp confidence, **fail-safe** to low-confidence on any parse error (never raise).
+6. **Role-plausibility gate** = title-seniority vs proposed role. On implausible (junior title → economic_buyer): write the role claim **flagged-not-promoted** — `plausible=false` + confidence clamped below the field-class threshold (M9 won't promote). Persona still written. (AC: "not admitted as economic_buyer, or flagged not promoted".)
+7. **Role/persona claims** via `contact_claim(use_class=PROFESSIONAL_PUBLIC, identity_binding=STRONG if deterministic-resolution else WEAK)` + `stamp_reuse(tenant_id=client_id)` (tenant_private).
+8. **Coverage confidence** = M8-local `CommitteeCoverage` (estimate band + searched + named-unsearched people-channels; not exhaustiveness). Separate from the stopping rule.
+9. **Stopping rule** = M8-local `CommitteeStoppingRule` (marginal new-admit yield over a window OR committee budget cap). Don't import M6's.
+10. **M8.4 binding (make-or-break):** `identity_binding` is REQUIRED at `contact_claim` construction AND immutable for facet; M9.4 `classify` is post-hoc + unimportable → **M8.4 ships its own pre-construction tagger.** `BindingClassifier` Protocol + `BindingInput(contact, evidence_span, source_url, source_key, manifest_prior, account_name, account_aliases)` + `DefaultBindingClassifier` (thin: verified-handle/co-occurring-strong-identifiers ⇒ STRONG; name-only ⇒ WEAK; honor source prior). The authoritative `verification.classify_binding` is injected at the api root (deferred, per CLAUDE.md M9.4×M8.4 backlog). Tests assert default agrees with the gate verdict on the same-name/verified-handle fixtures.
+11. **M8.4 use-class tagging at extraction:** M8-owned `UseClassTagger` — start from `field_def.validation["use_class_hint"]`, escalate to SENSITIVE when evidence indicates religious/political (fields marked `validation["use_class_escalatable"]`: stated_interests, causes); professional post → professional-public; alma_mater → personal-public-non-sensitive. M8.4 *tags*; the use-*gate*/postures are M10.
+12. **M8.4 gap set** = registered DEEP fields in classes {CONTACT, CONTACT_FACET} **with a non-empty tier_plan** (waterfall-fillable) — naturally excludes role/persona (empty tier_plan). Primary = the 8 seeded facets (`FACET_FIELD_KEYS`) + CORE_PACK `contact.facet.recent_post`. Read current via `current_value_resolved(entity_type=CONTACT, scope=client)`; a no-fresh-value field is a gap. Fill via `plan_sources(field=key, mode=CONTACT_PROFILING, entity_scope=CONTACT)` → `resolve_field`. tier-4 (`exa_deep`/`parallel_task`) + long-tail resolvers absent → `no_resolver` empty (correct).
+13. **M8.4 target-lock:** every query/synthesis bound to the resolved contact; a tier-4 claim whose `evidence_span` doesn't bind to the contact is rejected before write (kept `unverified` / dropped). Reuse `core.verification.TargetLock` shape conceptually; M8.4 validates locally.
+14. **M8.4 facet sub-workers (level 2):** request via `WorkerResult.detail["facet_requests"]`; M7 `SpawnGuard` is the hard cap; M8.4 self-limits against `ctx.params["recursion"]` (only top-tier; lower tier = single-level). Sub-workers return refs, never blobs.
+15. **Workers/entrypoints:** `discover_committee(conn, *, account_entity_id, …, gateway, …) -> CommitteeResult` + `CommitteeAspectWorker(aspect="committee")`; `profile_contact(conn, *, contact_entity_id, account_entity_id, …, binding_classifier=DEFAULT, …) -> ContactProfileResult` (`profile_claims -> core.handoff.ProfileClaimView`) + `ContactProfileAspectWorker(aspect="contact.facet")`. No `PhaseHandler` here (DEEP phase = M8.1 trunk + api root). Return references only; `CostCents` is Decimal.
+
+## Package layout
+```
+src/clue_research/profiling/
+  fields.py                     # FROZEN seed — do NOT modify
+  committee/  __init__ worker.py sources.py admission.py roles.py stopping.py coverage.py fields.py results.py
+  contact/    __init__ worker.py gaps.py fill.py binding.py use_class.py results.py
+tests/profiling/
+  conftest.py (migrated_db/rollback_conn seeding core+deep_profiling+committee packs+source_manifests)
+  committee/ test_admission test_stopping test_roles test_coverage test_committee_fields test_worker
+  contact/   test_gaps test_binding test_use_class test_target_lock test_facet_subworkers test_worker
+```
+Pure (no-DB) tests for binding/use-class/role-parse/plausibility/coverage/stopping; DB-gated for admission/gaps/claim-writes (`pytest.skip` w/o `CLUE_DATABASE_URL`; local DB `postgresql+asyncpg://clue:clue@localhost:5432/clue`).
+
+## Deferred to `api` composition root (the one coordination point — flagged, NOT done here)
+`load_committee_pack` + `load_deep_profiling_pack`; register M8.3/M8.4 AspectWorkers into M7 graph; inject `verification.classify_binding` as the production `BindingClassifier`; inject concrete `CommitteeSource`s + people/long-tail resolvers + the `gateway`; `PreSpendGate.check` before spend (deferred M9.1 AC-6) + `classify_binding` pre-insert stamp (deferred M9.4). Latent eval-fixture gap (golden refs unregistered keys) reconciled at M9.6 integration.
+
+## Status
+**DONE — all committed on `m8/track-b-committee-contact` (local only, not pushed).**
+- `b8caaef` M8.3 committee discovery (ENG-142) · `5174114` M8.4 contact profiling (ENG-149) · `9da628f` audit fixes.
+- `make check` green (771 passed / 580 skipped); 87 profiling tests pass on a fresh DB.
+
+## Adversarial audit (5-dimension review → adversarial verify → synthesize; 23/29 confirmed) — fixed in `9da628f`
+Production-code defects fixed:
+1. **committee/worker.py** — dedup admitted members on the **resolved contact id** (`seen_contact_ids`), not the strong key (two strong keys → same contact double-counted member + inflated `admitted`/coverage + re-ran role inference).
+2. **committee/worker.py `_provenance_params`** — tier-4 role-claim path now requires a non-empty title (else tier-4 + null `evidence_span` = permanently unpromotable); falls back to HUMAN/tier-1.
+3. **contact/fill.py** — implemented the tier-4 **target-lock** (Decision 13): a tier-4 WEAK (name-only) facet claim is rejected before write; lower-tier WEAK stays written-but-unpromotable.
+4. **contact/worker.py** — facet sub-worker budget now derived from `config.RecursionPolicy.caps_for(tier)` (tier-gating intrinsic, not a trusted param); account id parsed `params str → UUID EntityId`.
+5. **committee/admission.py** — clamp discovery-provenance tier to `min(tier,3)` (a tier-4 people source would violate the tier4-iff-llm_synthesis validator).
+6. **contact/use_class.py** — added the `"bible"` special-category marker.
+
+Test hardening: autouse resolver-binding cleanup (conftest); new `test_target_lock.py` + `test_facet_subworkers.py`; broadened use-class markers (political/health/value-only + parametrize over escalatable fields); committee EXHAUSTED/no-strong-key/role-fallback/persona-value/cross-run-provenance tests; contact multi-tenant-isolation + planner-gating tests; coverage MODERATE-band assertions.
+
+## Deferred follow-ups (NOT fixed here — flagged)
+- **Audit Fix #12 (CI guard for silently-skipped DB tests)** — deliberately NOT added: a `pytest_sessionfinish` that fails when CI runs without a DB is **repo-wide CI infra** (belongs in the root conftest / CI yaml owned by the platform), not a Track-B milestone conftest; adding it under `tests/profiling/` would change CI behavior for every milestone's DB tests. Recommend the platform add an "all-DB-tests-skipped under CI ⇒ fail" guard at the repo root.
+- **Audit Fix #11 (long-tail modality-adapter gating)** — partially covered by `test_planner_declines_when_spec_authorizes_no_source` (proves M8.4 routes through `plan_sources` + respects a decline). The deep video/audio→transcript modality-adapter path is M4/M11-owned (adapters absent); full exercise lands when those resolvers/adapters are bound at the `api` root.
+- **api composition-root wiring** (unchanged from the kickoff): `load_committee_pack` + `load_deep_profiling_pack`; register `CommitteeAspectWorker`/`ContactProfileAspectWorker` into the M7 graph; inject `verification.classify_binding` as the production `BindingClassifier`; bind concrete `CommitteeSource`s + facet resolvers + the `gateway`; `PreSpendGate.check` before spend. Single PR.
+- **D5 per-ICP persona filtering** — `discover_committee` defaults to all four personas (`ICPSpec` has no personas field); when a committee-persona slot is added to the ICP, thread it into `relevant_personas`.
