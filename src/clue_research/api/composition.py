@@ -1,0 +1,286 @@
+"""The deep-profiling composition root — where the independent milestone packages are wired.
+
+The import-linter *independence* contract keeps the milestone worker packages (M4 ``sources``,
+M7 ``durable``, M8 ``profiling``, M9 ``verification``, …) from importing one another; they meet
+**only here** (``api`` is the exempt seam — nothing imports ``api``, Rule 5). This is the single
+coordination point the M8 kickoff/handoff calls out: it
+
+* loads every field pack + source manifest a deep run reads (:func:`load_research_packs`);
+* constructs the M8 deep-profiling :class:`~clue_research.core.execution.AspectWorker`\\s with their
+  injected dependencies and registers them into the M7
+  :class:`~clue_research.durable.WorkerRegistry`
+  (:func:`build_profiling_workers` / :func:`build_worker_registry`); the two axes carry disjoint
+  aspect keys (``account`` / ``account.resonance`` vs ``committee`` / ``contact.facet``) so they
+  compose without collision;
+* injects the M9 governance seams — the authoritative ``verification.classify_binding`` behind
+  M8.4's :class:`~clue_research.profiling.contact.binding.BindingClassifier`
+  (:class:`VerificationBindingClassifier`, the deferred M9.4×M8.4 stamp) and the
+  :class:`~clue_research.core.verification.PreSpendGate` the account-axis worker consults before
+  spend (:func:`build_pre_spend_gate`, the deferred M9.1 routing).
+
+Not yet wired here (still deferred — they need worker/M7 code changes, not pure composition, and are
+flagged in CLAUDE.md): the committee/contact pre-spend-gate call sites (no seam on those workers
+yet) and threading the campaign coordinates (``client_id`` / ``icp_key`` / ``icp_version`` /
+``account_entity_id``) into the graph-built ``AspectContext.params`` so committee/contact dispatch
+in-graph (today they are driven via their direct callables, which populate those explicitly).
+"""
+
+from __future__ import annotations
+
+from collections.abc import Callable, Sequence
+from contextlib import AbstractAsyncContextManager
+from dataclasses import dataclass
+
+from sqlalchemy.ext.asyncio import AsyncConnection
+
+from clue_research.claimstore import load_core_pack
+from clue_research.config import RecursionPolicy
+from clue_research.core import (
+    ClaimId,
+    EntityId,
+    IdentityBinding,
+    LLMGateway,
+    PreSpendGate,
+    new_claim_id,
+)
+from clue_research.core.execution import AspectWorker
+from clue_research.db import transaction
+from clue_research.durable import (
+    AccountResearchGraph,
+    WorkerRegistry,
+)
+from clue_research.profiling import (
+    account_axis_workers,
+    load_committee_pack,
+    load_deep_profiling_pack,
+)
+from clue_research.profiling.committee import CommitteeAspectWorker, CommitteeSource
+from clue_research.profiling.contact import ContactProfileAspectWorker
+from clue_research.profiling.contact.binding import BindingClassifier, BindingInput
+from clue_research.profiling.runtime import SessionFactory
+from clue_research.sources import seed_source_manifests
+from clue_research.verification import (
+    DEFAULT_BINDING_POLICY,
+    DEFAULT_PRE_SPEND_POLICY,
+    BindingPolicy,
+    PreSpendGateImpl,
+    PreSpendPolicy,
+    classify_binding,
+)
+
+__all__ = [
+    "load_research_packs",
+    "VerificationBindingClassifier",
+    "production_binding_classifier",
+    "build_pre_spend_gate",
+    "build_profiling_workers",
+    "register_profiling_workers",
+    "build_worker_registry",
+    "build_research_graph",
+]
+
+_ConnFactory = Callable[[], AbstractAsyncContextManager[AsyncConnection]]
+
+
+# --- packs + source manifests ------------------------------------------------
+
+
+async def load_research_packs(conn: AsyncConnection) -> None:
+    """Register every field pack + source manifest a deep-profiling run reads (idempotent).
+
+    The M1 core pack, the M8 tiny seed (``account.resonance.*`` / ``contact.facet.*``), the M8.3
+    committee pack (``contact.role_on_committee`` / ``contact.persona``), and the M4 source
+    manifests. Idempotent: ``register_field`` is a read-then-conditional-insert, so re-loading on an
+    already-seeded connection is a no-op.
+    """
+    await load_core_pack(conn)
+    await load_deep_profiling_pack(conn)
+    await load_committee_pack(conn)
+    await seed_source_manifests(conn)
+
+
+# --- the M9.4 binding adapter (born identity_binding == classify_binding verdict) ---
+
+
+@dataclass(frozen=True)
+class _BindingClaimView:
+    """The minimal claim-shaped carrier ``verification.classify_binding`` reads, built from a
+    *pre-claim* :class:`BindingInput` so the authoritative classifier can run before the facet claim
+    exists. ``classify_binding`` reads ONLY ``id`` / ``entity_id`` (the discarded ``Binding`` keys)
+    and ``source_url`` / ``evidence_span`` (``handle_matches`` / ``count_identifier_matches``) —
+    never ``value_json`` / ``identity_binding`` / tier — so these four fields suffice."""
+
+    id: ClaimId
+    entity_id: EntityId
+    source_url: str | None
+    evidence_span: str | None
+
+
+class VerificationBindingClassifier:
+    """Adapts the authoritative ``verification.classify_binding`` to M8.4's ``BindingClassifier``
+    protocol (the deferred-to-integration injection, CLAUDE.md M9.4×M8.4).
+
+    M8.4 must stamp ``identity_binding`` *before* a ``contact.facet.*`` claim is constructed (the
+    binding is required at construction and immutable thereafter), and ``classify_binding`` is the
+    post-hoc M9 classifier over a built ``Claim``; profiling may not import ``verification`` (worker
+    independence), so M8.4 ships a ``DefaultBindingClassifier`` placeholder. Injecting *this* at the
+    api root makes a born facet binding the authoritative M9 verdict, not the M8 default — closing
+    M9.4 AC4 / CLAUDE.md's deferred stamp. The two agree on the same-name / verified-handle
+    fixtures.
+    """
+
+    def __init__(self, *, policy: BindingPolicy = DEFAULT_BINDING_POLICY) -> None:
+        self._policy = policy
+
+    def classify(self, inp: BindingInput) -> IdentityBinding:
+        view = _BindingClaimView(
+            id=new_claim_id(),  # only the discarded Binding.claim_id; just needs to be a ClaimId
+            entity_id=inp.contact.id,
+            source_url=inp.source_url,
+            evidence_span=inp.evidence_span,
+        )
+        binding = classify_binding(
+            view,  # type: ignore[arg-type]  # duck-typed: classify_binding reads only the 4 view fields
+            inp.contact,
+            account_name=inp.account_name,
+            account_aliases=inp.account_aliases,
+            manifest_prior=inp.manifest_prior,
+            policy=self._policy,
+        )
+        return binding.strength
+
+
+def production_binding_classifier(
+    *, policy: BindingPolicy = DEFAULT_BINDING_POLICY
+) -> BindingClassifier:
+    """The api-root :class:`BindingClassifier` to inject into M8.4 (the M9 classifier)."""
+    return VerificationBindingClassifier(policy=policy)
+
+
+# --- the M9.1 pre-spend gate -------------------------------------------------
+
+
+def build_pre_spend_gate(
+    *,
+    policy: PreSpendPolicy = DEFAULT_PRE_SPEND_POLICY,
+    conn_factory: _ConnFactory | None = None,
+    record_decisions: bool = True,
+) -> PreSpendGate:
+    """The api-root :class:`~clue_research.core.verification.PreSpendGate` to inject before spend.
+
+    Records one ``gate_decision`` audit row per ``check`` (so "did this run gate this
+    ``(entity, field)`` before spending?" is a query — M9.1 AC6). ``conn_factory`` defaults to the
+    gate's own committed ``transaction`` per check; pass a rollback-scoped factory in tests. (Redis
+    cross-run lock detection — the optional ``lock_reader`` — is a caller concern: construct
+    :class:`PreSpendGateImpl` directly when a live ``redis`` client is available.)
+    """
+    if conn_factory is None:
+        return PreSpendGateImpl(policy=policy, record_decisions=record_decisions)
+    return PreSpendGateImpl(
+        policy=policy, conn_factory=conn_factory, record_decisions=record_decisions
+    )
+
+
+# --- worker construction + registration --------------------------------------
+
+
+def build_profiling_workers(
+    *,
+    gateway: LLMGateway,
+    committee_sources: Sequence[CommitteeSource],
+    session_factory: SessionFactory = transaction,
+    pre_spend_gate: PreSpendGate | None = None,
+    binding_classifier: BindingClassifier | None = None,
+    role_model: str | None = None,
+    recursion_policy: RecursionPolicy | None = None,
+    pack_namespaces: Sequence[str] = (),
+) -> list[AspectWorker]:
+    """Construct the full M8 deep-profiling worker set (both axes), dependencies injected.
+
+    Account axis (M8.1/M8.2) via :func:`account_axis_workers` — the account/core/resonance/pack
+    aspect workers, with the ``pre_spend_gate`` threaded into each (the account spend path already
+    consults it). Contact axis: the committee discoverer (``sources`` + ``gateway`` for role
+    inference) and the contact profiler (the authoritative ``binding_classifier`` — defaults to
+    :func:`production_binding_classifier`). ``recursion_policy`` is shared with the graph so the
+    contact facet sub-worker soft cap and the graph's ``SpawnGuard`` hard cap agree.
+    """
+    recursion = recursion_policy or RecursionPolicy()
+    binder = binding_classifier or production_binding_classifier()
+    workers: list[AspectWorker] = list(
+        account_axis_workers(
+            pack_namespaces=pack_namespaces,
+            session_factory=session_factory,
+            gateway=gateway,
+            pre_spend_gate=pre_spend_gate,
+        )
+    )
+    workers.append(
+        CommitteeAspectWorker(
+            session_factory=session_factory,
+            sources=committee_sources,
+            gateway=gateway,
+            role_model=role_model,
+        )
+    )
+    workers.append(
+        ContactProfileAspectWorker(
+            session_factory=session_factory,
+            binding_classifier=binder,
+            recursion=recursion,
+        )
+    )
+    return workers
+
+
+def register_profiling_workers(
+    registry: WorkerRegistry, workers: Sequence[AspectWorker]
+) -> WorkerRegistry:
+    """Register each worker into ``registry`` keyed on its ``aspect`` (last-write-wins). Returns the
+    registry for chaining. The M7 graph dispatches ``ctx.aspect`` → ``registry.get(aspect)``."""
+    for worker in workers:
+        registry.register(worker)
+    return registry
+
+
+def build_worker_registry(
+    *,
+    gateway: LLMGateway,
+    committee_sources: Sequence[CommitteeSource],
+    session_factory: SessionFactory = transaction,
+    pre_spend_gate: PreSpendGate | None = None,
+    binding_classifier: BindingClassifier | None = None,
+    role_model: str | None = None,
+    recursion_policy: RecursionPolicy | None = None,
+    pack_namespaces: Sequence[str] = (),
+) -> WorkerRegistry:
+    """Build + register the full deep-profiling worker set into a fresh :class:`WorkerRegistry`."""
+    workers = build_profiling_workers(
+        gateway=gateway,
+        committee_sources=committee_sources,
+        session_factory=session_factory,
+        pre_spend_gate=pre_spend_gate,
+        binding_classifier=binding_classifier,
+        role_model=role_model,
+        recursion_policy=recursion_policy,
+        pack_namespaces=pack_namespaces,
+    )
+    return register_profiling_workers(WorkerRegistry(), workers)
+
+
+def build_research_graph(
+    *,
+    registry: WorkerRegistry,
+    recursion_policy: RecursionPolicy | None = None,
+    store: object | None = None,
+) -> AccountResearchGraph:
+    """Build the M7 per-account research graph over a populated worker ``registry``.
+
+    Pass the SAME ``recursion_policy`` used to build the workers so the soft (prompt) and hard
+    (``SpawnGuard``) recursion caps agree. ``store`` defaults to the DB-backed run store; tests
+    inject a fake.
+    """
+    return AccountResearchGraph(
+        store=store,  # type: ignore[arg-type]  # None → DbAccountRunStore default; a fake in tests
+        workers=registry,
+        recursion_policy=recursion_policy,
+    )
