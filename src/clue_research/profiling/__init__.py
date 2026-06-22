@@ -11,8 +11,9 @@ Shipped so far:
 * **M8.3 Committee Discovery** (:mod:`clue_research.profiling.committee`):
   ``discover_committee`` / ``CommitteeAspectWorker`` + the ``contact.role_on_committee`` /
   ``contact.persona`` field pack (``load_committee_pack``).
-
-The remaining deep-profiling worker (M8.4 contact profiling) builds on top.
+* **M8.4 Contact Profiling** (:mod:`clue_research.profiling.contact`): ``profile_contact`` /
+  ``ContactProfileAspectWorker`` filling the seeded ``contact.facet.*`` class with born-correct
+  ``identity_binding`` + ``use_class`` tags.
 """
 
 from __future__ import annotations
@@ -26,6 +27,15 @@ from clue_research.profiling.committee import (
     CommitteeSource,
     discover_committee,
     load_committee_pack,
+)
+from clue_research.profiling.contact import (
+    BindingClassifier,
+    ContactProfileAspectWorker,
+    ContactProfileConfig,
+    ContactProfileResult,
+    UseClassTagger,
+    compute_contact_gap_fields,
+    profile_contact,
 )
 from clue_research.profiling.fields import (
     DEEP_PROFILING_PACK,
@@ -53,4 +63,12 @@ __all__ = [
     "COMMITTEE_PACK",
     "COMMITTEE_FIELD_KEYS",
     "load_committee_pack",
+    # M8.4 contact profiling
+    "profile_contact",
+    "ContactProfileAspectWorker",
+    "ContactProfileResult",
+    "ContactProfileConfig",
+    "compute_contact_gap_fields",
+    "BindingClassifier",
+    "UseClassTagger",
 ]

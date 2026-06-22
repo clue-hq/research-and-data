@@ -23,17 +23,32 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 from clue_research.claimstore import load_core_pack
 from clue_research.core import (
     AccountEntity,
+    Claim,
     Completion,
     Confidence,
+    ContactEntity,
     CostCents,
     EmbeddingResult,
+    Entity,
     EntityId,
+    ExtractionMethod,
+    FieldDef,
     ICPCreatedFrom,
     ICPSpec,
+    IdentityBinding,
     Message,
+    ResearchMode,
+    UseClass,
+    contact_claim,
+    new_run_id,
 )
 from clue_research.db import db_lifespan
-from clue_research.identity import get_account, insert_account_entity
+from clue_research.identity import (
+    get_account,
+    get_contact,
+    insert_account_entity,
+    insert_contact_entity,
+)
 from clue_research.profiling.committee import load_committee_pack
 from clue_research.profiling.committee.sources import CommitteePersonCandidate
 from clue_research.profiling.fields import load_deep_profiling_pack
@@ -99,6 +114,27 @@ async def insert_test_account(
     account = await get_account(conn, account_id)
     assert account is not None
     return account
+
+
+async def insert_test_contact(
+    conn: AsyncConnection,
+    account: AccountEntity,
+    *,
+    full_name: str = "Jane CFO",
+    linkedin_url: str | None = "https://linkedin.com/in/jane-cfo",
+    verified_email: str | None = None,
+) -> ContactEntity:
+    """Insert a resolved contact under an account and return its full record (M8.4's input)."""
+    contact_id = await insert_contact_entity(
+        conn,
+        account_entity_id=account.id,
+        full_name=full_name,
+        linkedin_url=linkedin_url,
+        verified_email=verified_email,
+    )
+    contact = await get_contact(conn, contact_id)
+    assert contact is not None
+    return contact
 
 
 def icp_spec() -> ICPSpec:
@@ -171,6 +207,41 @@ class FakeGateway:
         return EmbeddingResult(model=model, vectors=())
 
 
+@dataclass
+class FakeFacetResolver:
+    """A :class:`~clue_research.core.resolver.Resolver` double for M8.4's facet fill: returns tier-4
+    facet claims with *placeholder* tags (binding=WEAK, use_class=professional-public) — what a real
+    resolver must set just to construct a facet claim — so the test can assert M8.4 *re-tags* them
+    with the authoritative per-claim binding + use-class. Bind it via ``sources.bind_resolver`` and
+    clear with ``sources.clear_resolver_bindings``."""
+
+    tier: int = 4
+    # Each extraction: {"value_json", "evidence_span", "source_url", "confidence"}.
+    extractions: list[dict[str, object]] = field(default_factory=list)
+
+    def resolve(self, entity: Entity, field_def: FieldDef) -> list[Claim]:
+        method = ExtractionMethod.LLM_SYNTHESIS if self.tier == 4 else ExtractionMethod.SCRAPE
+        claims: list[Claim] = []
+        for ext in self.extractions:
+            claims.append(
+                contact_claim(
+                    entity_id=entity.entity_id,
+                    field_key=field_def.field_key,
+                    value_json=ext["value_json"],  # type: ignore[arg-type]
+                    source_tier=self.tier,
+                    extraction_method=method,
+                    confidence=float(ext.get("confidence", 0.9)),  # type: ignore[arg-type]
+                    run_id=new_run_id(),  # placeholder — M8.4 overrides via revalidate_with
+                    research_mode=ResearchMode.CONTACT_PROFILING,
+                    identity_binding=IdentityBinding.WEAK,  # placeholder — M8.4 re-tags
+                    use_class=UseClass.PROFESSIONAL_PUBLIC,  # placeholder — M8.4 re-tags
+                    source_url=ext.get("source_url"),  # type: ignore[arg-type]
+                    evidence_span=ext.get("evidence_span"),  # type: ignore[arg-type]
+                )
+            )
+        return claims
+
+
 __all__ = [
     "run_async",
     "rollback_conn",
@@ -178,9 +249,11 @@ __all__ = [
     "require_profiling_db",
     "seed_packs",
     "insert_test_account",
+    "insert_test_contact",
     "icp_spec",
     "make_candidate",
     "FakeCommitteeSource",
     "FakeGateway",
+    "FakeFacetResolver",
     "EntityId",
 ]
