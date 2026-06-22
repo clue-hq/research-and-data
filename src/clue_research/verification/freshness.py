@@ -317,6 +317,12 @@ class FreshnessImpl:
         self._conn_factory = conn_factory
         self._sink = sink
 
+    @property
+    def policy(self) -> CadencePolicy:
+        """The resolved cadence policy this engine reads (so a caller — e.g. the M9.6 eval config
+        snapshot — can record its ``version`` for regression traceability)."""
+        return self._policy
+
     def evaluate(self, claim: Claim, *, now: datetime, ttl: timedelta | None = None) -> Staleness:
         """The pure staleness verdict for one claim (``FRESH``/``STALE``/``EXPIRED``), DB-free and
         side-effect-free (no span, no metric — it is a hot function the merge/scoring read).
