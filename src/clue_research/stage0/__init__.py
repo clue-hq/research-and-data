@@ -1,11 +1,202 @@
 """`clue_research.stage0` — Stage 0 Front Edge (M5).
 
-Package scaffolded by M0.1 (ENG-101); scope and the modular-boundary rules live
-in this package's ``README.md``. Implemented by M5.
+The front edge of the subsystem (Doc B): client reverse-profiling → a versioned Client Knowledge
+Base (M5.1), ICP synthesis & proposal (M5.2), and the import + hybrid-lookalike entry scenarios
+(M5.3/M5.4). Stage 0 is the *seed of research* — every downstream direction is determined here.
 
-Beat-0 froze the cross-milestone seam in ``core`` (see ``docs/specs/_beat0-contract-freeze.md``):
-M5's ``REVERSE_PROFILING``/``ICP_CONFIRMED`` phases *implement* ``PhaseHandler`` from
-:mod:`clue_research.core.execution`, and M5.1 calls the M9 ``FaithfulnessJudge`` (the
-:mod:`clue_research.core.verification` protocol, injected) for tier-4 client claims. Imports and
-lookalike seeds reach M6 through the claim store — M5 imports no sibling milestone package.
+Beat-0 froze the cross-milestone seam in ``core`` (``docs/specs/_beat0-contract-freeze.md``): M5's
+``REVERSE_PROFILING``/``ICP_CONFIRMED`` phases *implement* ``PhaseHandler`` from
+:mod:`clue_research.core.execution`; M5.1 calls the M9 ``FaithfulnessJudge`` (injected) for tier-4
+client claims, and M5.2's synthesis calls the M0.4 ``LLMGateway`` (injected). Imports and lookalike
+seeds reach M6 through the **claim store** — M5 imports no sibling milestone package
+(machine-enforced by the import-linter independence contract); it consumes the M1–M4 services
+(claimstore/identity/icp/sources) directly. The concrete handlers/gateway are wired into the
+``CampaignRun`` at the ``api`` composition root.
+
+M5.1 lands: the ``client.*`` field set, the reverse-profiling orchestration, the claim-native
+Client-KB version ledger, and the ``REVERSE_PROFILING`` phase handler. M5.2 lands: ICP synthesis
+(``synthesize_icps``), the confirm→compile→diff flow (``confirm_icp``), the pre-run cost estimate,
+and the ``ICP_CONFIRMED`` phase handler. M5.3 lands the import entry scenario (``import_accounts``):
+bulk identity resolution through M2 (auto-merge / human-review / new-entity / unresolved), CRM
+tier-1 enrichment with "already a customer" detection, ICP back-scoring via the importable M3.4
+Pass-A scorer, D6 non-fit flagging, governed imported-contact tagging, and the claim-native
+``import.batch`` marker — converging into the same account-set shape discovery emits. Import is an
+entry scenario, not a campaign phase (no ``IMPORT`` phase); it runs before M6's ``SCORING`` phase,
+store-mediated. M5.4 lands hybrid lookalike seeding (``assemble_lookalike_seeds``): it ranks +
+packages resolved seed ``account_entity``s — the client's existing customers (M5.1) and high-fit
+imports (M5.3) — into a per-ICP ``SeedSet``, the input contract M6 mode-M1 lookalike expansion
+consumes. M5.4 produces the seeds, not the discovery run; seeds reach M6 store/spec-mediated through
+the confirmed spec's ``discovery_strategy.seed_account_ids`` (so a SeedSet slots straight into an
+``ICPProposal``'s ``seed_accounts``). Like import, seeding is an entry scenario, not a phase.
 """
+
+from __future__ import annotations
+
+from clue_research.stage0.client_kb import (
+    current_kb_version,
+    read_client_kb,
+    read_client_kb_claims,
+    reverse_profile,
+)
+from clue_research.stage0.fields import (
+    CLIENT_KB_VERSION,
+    CLIENT_KNOWLEDGE_FIELDS,
+    CLIENT_KNOWLEDGE_PACK,
+    CLIENT_PACK,
+    SURFACE_CLASS_FIELDS,
+    SurfaceClass,
+    load_client_knowledge_pack,
+)
+from clue_research.stage0.icp_confirm import confirm_icp
+from clue_research.stage0.icp_estimate import EstimateInputs, estimate_campaign
+from clue_research.stage0.icp_fields import (
+    ICP_CONFIRM_DIFF,
+    ICP_FEEDBACK_PACK,
+    ICP_PACK,
+    load_icp_feedback_pack,
+)
+from clue_research.stage0.icp_handler import IcpConfirmedHandler
+from clue_research.stage0.icp_synthesis import DEFAULT_SYNTHESIS_MODEL, synthesize_icps
+from clue_research.stage0.icp_types import (
+    CandidateSignal,
+    FirmographicDimensions,
+    ICPConfirmation,
+    ICPProposal,
+    ICPProposalDiff,
+    ICPProposalEdits,
+    ICPSpecRef,
+    ProposedRubric,
+    RubricWeight,
+    RubricWeightChange,
+    SeedAccount,
+    SourcePrior,
+    StartingSourceProfile,
+    TechnographicDimension,
+)
+from clue_research.stage0.import_accounts import import_accounts, import_batch_run_id
+from clue_research.stage0.import_fields import (
+    CONTACT_IMPORT_RECORD,
+    DISCOVERY_PROVENANCE,
+    IMPORT_BATCH,
+    IMPORT_PACK,
+    load_import_pack,
+)
+from clue_research.stage0.import_types import (
+    FitFlag,
+    ImportContactResult,
+    ImportContactRow,
+    ImportResult,
+    ImportRow,
+    NeedsReviewRow,
+    ResolvedAccount,
+    UnresolvedRow,
+)
+from clue_research.stage0.reuse import (
+    CLIENT_KNOWLEDGE_REUSE_POLICY,
+    ICP_REUSE_POLICY,
+    IMPORT_REUSE_POLICY,
+    SEED_REUSE_POLICY,
+)
+from clue_research.stage0.reverse_profiling_handler import (
+    ReverseProfilingHandler,
+    reverse_profiling_run_id,
+)
+from clue_research.stage0.seeds import assemble_lookalike_seeds, seeds_run_id
+from clue_research.stage0.seeds_types import (
+    DEFAULT_SEED_POLICY,
+    SeedPolicy,
+    SeedReason,
+    SeedSet,
+    SkippedSeed,
+)
+from clue_research.stage0.types import (
+    ClientInput,
+    ClientKnowledgeBaseRef,
+    CoverageReport,
+    ReverseProfileResult,
+    SurfaceCoverage,
+    VolunteeredMaterial,
+)
+
+__all__ = [
+    # M5.1 — reverse-profiling → versioned Client Knowledge Base
+    "reverse_profile",
+    "read_client_kb",
+    "read_client_kb_claims",
+    "current_kb_version",
+    "ReverseProfilingHandler",
+    "reverse_profiling_run_id",
+    # M5.1 input / output contracts
+    "ClientInput",
+    "VolunteeredMaterial",
+    "ClientKnowledgeBaseRef",
+    "CoverageReport",
+    "SurfaceCoverage",
+    "ReverseProfileResult",
+    # the client-knowledge field set + surface taxonomy
+    "load_client_knowledge_pack",
+    "CLIENT_KNOWLEDGE_PACK",
+    "CLIENT_KNOWLEDGE_FIELDS",
+    "CLIENT_KB_VERSION",
+    "CLIENT_PACK",
+    "SurfaceClass",
+    "SURFACE_CLASS_FIELDS",
+    # M5.2 — ICP synthesis & proposal
+    "synthesize_icps",
+    "DEFAULT_SYNTHESIS_MODEL",
+    "confirm_icp",
+    "estimate_campaign",
+    "EstimateInputs",
+    "IcpConfirmedHandler",
+    # M5.2 proposal / confirm contracts
+    "ICPProposal",
+    "FirmographicDimensions",
+    "TechnographicDimension",
+    "CandidateSignal",
+    "SeedAccount",
+    "SourcePrior",
+    "StartingSourceProfile",
+    "RubricWeight",
+    "ProposedRubric",
+    "ICPProposalEdits",
+    "ICPProposalDiff",
+    "RubricWeightChange",
+    "ICPSpecRef",
+    "ICPConfirmation",
+    # M5.2 icp.* feedback field set (claim-native confirm diff)
+    "load_icp_feedback_pack",
+    "ICP_FEEDBACK_PACK",
+    "ICP_PACK",
+    "ICP_CONFIRM_DIFF",
+    # M5.3 — import entry scenario (bulk ID resolution + ICP back-scoring + non-fit flagging)
+    "import_accounts",
+    "import_batch_run_id",
+    # M5.3 input / output contracts
+    "ImportRow",
+    "ImportContactRow",
+    "ImportResult",
+    "ResolvedAccount",
+    "NeedsReviewRow",
+    "UnresolvedRow",
+    "ImportContactResult",
+    "FitFlag",
+    # M5.3 import field set (claim-native batch marker + governed contact record)
+    "load_import_pack",
+    "IMPORT_PACK",
+    "IMPORT_BATCH",
+    "CONTACT_IMPORT_RECORD",
+    "DISCOVERY_PROVENANCE",
+    # M5.4 — hybrid lookalike seeding (imports / existing customers → M6 seed set)
+    "assemble_lookalike_seeds",
+    "seeds_run_id",
+    "SeedSet",
+    "SkippedSeed",
+    "SeedReason",
+    "SeedPolicy",
+    "DEFAULT_SEED_POLICY",
+    # reuse policies (client-knowledge + icp + import + seed are tenant-private)
+    "CLIENT_KNOWLEDGE_REUSE_POLICY",
+    "ICP_REUSE_POLICY",
+    "IMPORT_REUSE_POLICY",
+    "SEED_REUSE_POLICY",
+]

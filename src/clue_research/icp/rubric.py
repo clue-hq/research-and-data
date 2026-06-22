@@ -408,6 +408,16 @@ def _as_core_score(value: float, contributions: tuple[Contribution, ...]) -> Sco
 
 
 # --- tiering (default cutoffs; M6 runs this on live data) -------------------
+def fit_floor(cutoffs: TierCutoffs) -> float:
+    """The ICP-relative **fit floor** — the lowest ``min_fit`` across the cutoff bands, or ``0.0``
+    when no band sets one (the ICP set no bar). This is the single source for the "is this account
+    fit enough?" threshold that both M5.3 import non-fit-flagging and M5.4 lookalike seeding gate on
+    (D6: a non-fit anchor seeds non-fit lookalikes), so the two never drift. Pure; cutoffs are data
+    (conventions §2)."""
+    floors = [band.min_fit for band in cutoffs.bands]
+    return min(floors) if floors else 0.0
+
+
 def assign_tier(cutoffs: TierCutoffs, fit_score: float, intent_score: float) -> str:
     """Pure helper: the tier ``(fit_score, intent_score)`` lands in under ``cutoffs`` — the first
     band (in order) whose ``min_fit`` and ``min_intent`` are both cleared, else ``fallback_tier``.
