@@ -1,0 +1,74 @@
+"""M9 verification test harness — a migrated DB + rollback-isolated connections.
+
+The gate tests exercise the real Postgres substrate (the field registry, the entity store, the
+``source_manifest`` tier mapping, and the M9.1 ``pre_spend_policy`` / ``gate_decision`` tables), so
+they need a reachable database. Like the M0.3 / claim-store tests they ``pytest.skip`` gracefully
+when ``CLUE_DATABASE_URL`` is unset or the DB is unreachable, so ``make check`` stays green without
+a database; with ``make db-up`` + the DSN set, they run.
+
+Isolation: the schema is migrated to head once per session; each test runs inside a transaction that
+is **rolled back**, so tests neither see nor leave each other's rows. The core field pack *and* the
+seed source manifests are loaded inside the transaction (so the schema/tier checks find registered
+fields and source tiers). The M0.3 single-loop ``run_async`` and the reachable-DB probe are reused
+(DRY).
+"""
+
+from __future__ import annotations
+
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+from pathlib import Path
+
+import pytest
+from alembic import command
+from alembic.config import Config
+from sqlalchemy.ext.asyncio import AsyncConnection
+
+from clue_research.claimstore import load_core_pack
+from clue_research.db import db_lifespan
+from clue_research.sources import seed_source_manifests
+from tests.db.conftest import _db_available
+from tests.db.conftest import run_async as run_async
+
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+
+
+def _alembic_config() -> Config:
+    cfg = Config(str(_REPO_ROOT / "alembic.ini"))
+    cfg.set_main_option("script_location", str(_REPO_ROOT / "alembic"))
+    return cfg
+
+
+@pytest.fixture(scope="session")
+def migrated_db() -> bool:
+    """Migrate to head once per session when a DB is reachable; return whether it is."""
+    if not _db_available():
+        return False
+    command.upgrade(_alembic_config(), "head")
+    return True
+
+
+@pytest.fixture
+def require_verification_db(migrated_db: bool) -> None:
+    """Skip unless a migrated, reachable database is available."""
+    if not migrated_db:
+        pytest.skip(
+            "CLUE_DATABASE_URL unset or database unreachable; "
+            "set it and run `make db-up` to exercise the verification tests"
+        )
+
+
+@asynccontextmanager
+async def rollback_conn() -> AsyncIterator[AsyncConnection]:
+    """Yield a pooled connection inside an always-rolled-back transaction, with the core field pack
+    and the seed source manifests loaded so the pre-spend gate's schema/tier lookups resolve."""
+    async with db_lifespan() as engine:
+        conn = await engine.connect()
+        trans = await conn.begin()
+        try:
+            await load_core_pack(conn)
+            await seed_source_manifests(conn)
+            yield conn
+        finally:
+            await trans.rollback()
+            await conn.close()
