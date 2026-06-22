@@ -38,6 +38,8 @@ def test_names_unsearched_channels_and_never_claims_exhaustive() -> None:
     assert cov.estimate_high <= 1.0
     assert cov.estimate_point < 1.0  # never claims it found the whole committee
     assert "not a completeness guarantee" in cov.framing
+    # saturated but channels still unsearched → MODERATE (not HIGH).
+    assert cov.confidence is CommitteeCoverageConfidence.MODERATE
 
 
 def test_budget_cut_off_is_low_confidence() -> None:
@@ -73,3 +75,5 @@ def test_band_brackets_point() -> None:
     )
     assert cov.estimate_low <= cov.estimate_point <= cov.estimate_high
     assert cov.estimate_low >= 0.0 and cov.estimate_high <= 1.0
+    # exhausted the (single) channel universe → MODERATE (bounded by which channels exist).
+    assert cov.confidence is CommitteeCoverageConfidence.MODERATE

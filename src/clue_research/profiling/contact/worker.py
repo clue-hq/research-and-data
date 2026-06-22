@@ -16,10 +16,12 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from decimal import Decimal
+from uuid import UUID
 
 from pydantic import JsonValue
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from clue_research.config import RecursionPolicy
 from clue_research.core import (
     AspectContext,
     EntityId,
@@ -44,6 +46,10 @@ from clue_research.profiling.contact.results import (
 )
 from clue_research.profiling.contact.use_class import DEFAULT_USE_CLASS_TAGGER, UseClassTagger
 from clue_research.profiling.runtime import SessionFactory
+
+# The conservative default dial (top tier depth 2, lower tiers single-level) — the ``api`` root
+# injects the run's versioned :class:`RecursionPolicy`; tests use this default.
+_DEFAULT_RECURSION_POLICY = RecursionPolicy()
 
 
 def _facet_request(field_def: FieldDef) -> dict[str, JsonValue]:
@@ -143,10 +149,13 @@ class ContactProfileAspectWorker:
     """Adapts :func:`profile_contact` to the M7 ``AspectWorker`` seam (``aspect='contact.facet'``).
 
     The orchestrator hands an :class:`AspectContext` whose ``entity_id`` is the *contact* and whose
-    ``params`` carry ``account_entity_id`` + ``client_id``/``icp_key``/``icp_version`` and the
-    recursion ``max_facet_workers_per_aspect`` budget. The worker opens a connection from the
-    injected ``SessionFactory`` (the orchestrator never passes one). A level-1 worker (``depth>=1``)
-    requests no further sub-workers (single descent)."""
+    ``params`` carry ``account_entity_id`` + ``client_id``/``icp_key``/``icp_version``. The facet
+    sub-worker budget is derived from the injected :class:`~clue_research.config.RecursionPolicy`
+    (``caps_for(tier).max_facet_workers_per_aspect``, and only if the aspect is recursion-eligible)
+    — the versioned dial is the single source of truth, so a low-tier contact gets single-level
+    depth regardless of any per-call hint. The worker opens a connection from the injected
+    ``SessionFactory`` (the orchestrator never passes one). A level-1 worker (``depth>=1``) requests
+    no further sub-workers (single descent)."""
 
     aspect = "contact.facet"
 
@@ -156,24 +165,29 @@ class ContactProfileAspectWorker:
         session_factory: SessionFactory,
         binding_classifier: BindingClassifier = DEFAULT_BINDING_CLASSIFIER,
         use_class_tagger: UseClassTagger = DEFAULT_USE_CLASS_TAGGER,
+        recursion: RecursionPolicy = _DEFAULT_RECURSION_POLICY,
         config: ContactProfileConfig = DEFAULT_CONTACT_PROFILE_CONFIG,
     ) -> None:
         self._session_factory = session_factory
         self._binding_classifier = binding_classifier
         self._use_class_tagger = use_class_tagger
+        self._recursion = recursion
         self._config = config
 
     async def research(self, ctx: AspectContext) -> WorkerResult:
         params = ctx.params
-        account_entity_id = EntityId(str(params["account_entity_id"]))  # type: ignore[arg-type]
+        # params is JSON (no UUID type), so the account id arrives as a string — parse it back to a
+        # real UUID-backed EntityId (not a bare str) so it keys correctly downstream.
+        account_entity_id = EntityId(UUID(str(params["account_entity_id"])))
         client_id = str(params["client_id"])
         icp_key = str(params["icp_key"])
         icp_version = int(params["icp_version"])  # type: ignore[arg-type]
-        # A level-0 aspect worker may request facet sub-workers; a sub-worker (depth>=1) does not.
+        # The facet-recursion budget is the versioned dial, per tier — a level-0 worker on a
+        # recursion-eligible aspect at this tier; a sub-worker (depth>=1) never spawns more (single
+        # descent), and a non-eligible aspect / lower tier resolves to 0 (single-level depth).
         budget = 0
-        if ctx.depth == 0:
-            raw_budget = params.get("max_facet_workers_per_aspect", 0)
-            budget = int(raw_budget) if isinstance(raw_budget, (int, float)) else 0
+        if ctx.depth == 0 and self._recursion.is_eligible(self.aspect):
+            budget = self._recursion.caps_for(ctx.tier).max_facet_workers_per_aspect
 
         async with self._session_factory() as conn:
             spec = await get_icp_version(conn, client_id, icp_key, icp_version)

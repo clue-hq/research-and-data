@@ -9,7 +9,7 @@ real committee run depends on: a grounded :class:`CommitteeSource` and the :clas
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator, Sequence
+from collections.abc import AsyncIterator, Iterator, Sequence
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from decimal import Decimal
@@ -83,6 +83,17 @@ def require_profiling_db(migrated_db: bool) -> None:
             "CLUE_DATABASE_URL unset or database unreachable; "
             "set it and run `make db-up` to exercise the M8 profiling DB tests"
         )
+
+
+@pytest.fixture(autouse=True)
+def _clear_resolver_bindings() -> Iterator[None]:
+    """Reset the process-global resolver registry around every test (M8.4 fill tests bind fake
+    facet resolvers via ``sources.bind_resolver``; without it a binding leaks into later tests)."""
+    from clue_research.sources import clear_resolver_bindings
+
+    clear_resolver_bindings()
+    yield
+    clear_resolver_bindings()
 
 
 @asynccontextmanager

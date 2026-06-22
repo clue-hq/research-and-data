@@ -31,6 +31,7 @@ from clue_research.core import (
     EntityScope,
     FieldDef,
     ICPSpec,
+    IdentityBinding,
     ProfileClaimView,
     ResearchMode,
     RunId,
@@ -156,6 +157,14 @@ async def fill_contact_field(
                     account_aliases=account.aliases,
                 )
             )
+            # Target-lock (Decision 13): a tier-4 (LLM-synthesized) claim whose evidence does not
+            # bind to *this* person (a name-only / same-name-stranger match) is rejected BEFORE the
+            # write — the least-trusted layer must not assert an unverifiable personal fact about
+            # the contact at all. A lower-tier WEAK claim is still written-but-unpromotable
+            # (Decisions 7/10): it has a real source the M9 gate can re-judge, where a tier-4
+            # same-name claim has only the LLM's say-so.
+            if raw.source_tier >= 4 and binding is IdentityBinding.WEAK:
+                continue
             use_class = use_class_tagger.tag(field_def, raw.value_json, raw.evidence_span)
             final = revalidate_with(
                 raw,
