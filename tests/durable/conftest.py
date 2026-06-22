@@ -33,7 +33,8 @@ from clue_research.core import (
 )
 from clue_research.db import db_lifespan
 from clue_research.durable.account_run import ReferencesIndex
-from clue_research.durable.enums import AccountRunStatus
+from clue_research.durable.enums import AccountRunStatus, AccountRunSubPhase
+from clue_research.durable.graph import AccountRunStore
 from clue_research.durable.planning import ResearchPlan
 
 # Reuse the M0.3 single-loop coroutine runner + reachable-DB gate (DRY).
@@ -102,6 +103,9 @@ class FakeAccountRunStore:
         self.begin_calls = 0
         self.completed: dict[str, object] | None = None
         self.failed_status: AccountRunStatus | None = None
+        # M8A.0: the in-memory deep-orchestration sub-phase marker per run (NULL = not started). The
+        # M8A.1 orchestrator tests advance/read it through this seam without a DB.
+        self.sub_phases: dict[RunId, AccountRunSubPhase] = {}
 
     async def begin(
         self,
@@ -134,6 +138,24 @@ class FakeAccountRunStore:
 
     async def fail(self, *, account_run_id: RunId, status: AccountRunStatus) -> None:
         self.failed_status = status
+
+    async def set_account_sub_phase(
+        self, *, account_run_id: RunId, sub_phase: AccountRunSubPhase
+    ) -> None:
+        self.sub_phases[account_run_id] = sub_phase
+
+    async def get_account_sub_phase(self, *, account_run_id: RunId) -> AccountRunSubPhase | None:
+        return self.sub_phases.get(account_run_id)
+
+
+# A static-time conformance check (mirroring ``_FAKE_BUDGET_STORE_IS_A_STORE``): the in-memory fake
+# must satisfy the runtime-checkable ``AccountRunStore`` protocol — including the M8A.0 sub-phase
+# seam (``set_account_sub_phase`` / ``get_account_sub_phase``) the M8A.1 orchestrator tests reuse —
+# so the fake and the production ``DbAccountRunStore`` stay in lock-step. The static line documents
+# the contract; the runtime ``isinstance`` (tests are not mypy-checked) actively fails collection if
+# the fake ever drops a protocol method.
+_FAKE_ACCOUNT_RUN_STORE_IS_A_STORE: type[AccountRunStore] = FakeAccountRunStore
+assert isinstance(FakeAccountRunStore(ResearchPlan(tier="low", aspects=())), AccountRunStore)
 
 
 class StubAspectWorker:
