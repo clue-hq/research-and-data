@@ -18,9 +18,15 @@ work-list (the admitted member ids) is persisted with the committee boundary, so
 without re-running discovery; the gap-recompute (a re-profiled contact's FRESH fields are
 skipped) is the correctness backstop, so a double-entered stage converges to a no-op.
 
-**Out of scope (later M8A issues):** the budget-admission gate on the fan-out (M8A.3), the
-exactly-once spend transaction (M8A.4), the ``CampaignPhase.DEEP`` handler + high-tier resolution
-(M8A.2), the handoff skeleton (M8A.5), and injecting the concrete gate/classifier (M8A.6). The
+The per-contact fan-out is bounded by the four fan-out bounds at one chokepoint (M8A.3, Doc C
+§3/§5): committee-size truncation, the ``BudgetEngine.check(scope=ACCOUNT)`` admission gate before
+each contact, the contact worker's per-tier facet sub-worker budget, and the intra-account in-flight
+semaphore. A budget ``DENY`` yields a partial committee (coverage-confidence, not completeness); a
+``GRACEFUL_STOP`` is surfaced so the handler suspends the phase.
+
+**Out of scope (later M8A issues):** the exactly-once spend transaction + the concurrent-admit
+reservation (M8A.4), the ``CampaignPhase.DEEP`` handler + high-tier resolution (M8A.2), the handoff
+skeleton (M8A.5), and injecting the concrete gate/classifier (M8A.6). The
 committee/contact pre-spend gate is **not** wired here: those callables do not yet accept a gate on
 this base (that seam lands with #1 at the M8A.6 composition root) — only ``profile_account`` gates.
 """
@@ -37,6 +43,9 @@ from pydantic import BaseModel, ConfigDict
 from clue_research.api.deep.run_io import AccountRunIO
 from clue_research.config import DeepPhaseConfig, RecursionPolicy
 from clue_research.core import (
+    BudgetEngine,
+    BudgetScope,
+    BudgetVerdict,
     CampaignRunId,
     ClaimId,
     CostCents,
@@ -99,7 +108,14 @@ class AccountDeepResult(BaseModel):
     Carries the three stage results (so M8A.5 can key the handoff skeleton) + the run's cost +
     its final ``sub_phase``; :attr:`claim_refs` flattens every claim id written across the stages. A
     *resumed* run leaves the skipped stages' results ``None`` — they already live in the claim store
-    keyed by this run id, and were not re-run."""
+    keyed by this run id, and were not re-run.
+
+    :attr:`budget_stop` records the verdict that halted the contact fan-out's admission (M8A.3), or
+    ``None`` if every in-cap member was admitted: a ``DENY`` means the account's envelope was spent
+    (a *partial* committee — coverage-confidence, not completeness), a ``GRACEFUL_STOP`` means a
+    run-level cap was breached. The M8A.2 handler reads it to suspend the phase (``GRACEFUL_STOP`` →
+    ``PhaseResult(PAUSED)``) or continue the batch with partial coverage (``DENY``); either way the
+    account is **partial, never FAILED**."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
@@ -111,6 +127,7 @@ class AccountDeepResult(BaseModel):
     contacts: tuple[ContactProfileResult, ...] = ()
     cost_cents: CostCents = Decimal(0)
     sub_phase: AccountRunSubPhase | None = None
+    budget_stop: BudgetVerdict | None = None
 
     @property
     def claim_refs(self) -> tuple[ClaimId, ...]:
@@ -132,8 +149,9 @@ class AccountDeepOrchestrator:
     Construct once per campaign (the ICP spec + collaborators are campaign-scoped); call
     :meth:`run_one` per account — it is the ``run_one`` callback the M8A.0 scheduler runs inside its
     semaphore + entity-lock slot. All *behavior* is injected (the three worker callables, the run-IO
-    cursor); only types + the workers' inert default-arg sentinels are imported, never a worker
-    body — so the sequencing logic is unit-testable with fakes (no DB)."""
+    cursor, the M7.5 budget engine that admits the per-contact fan-out); only types + the workers'
+    inert default-arg sentinels are imported, never a worker body — so the sequencing logic is
+    unit-testable with fakes (no DB)."""
 
     def __init__(
         self,
@@ -145,6 +163,7 @@ class AccountDeepOrchestrator:
         session_factory: SessionFactory,
         spec: ICPSpec,
         config: DeepPhaseConfig,
+        budget: BudgetEngine,
         sources: Sequence[CommitteeSource],
         gateway: LLMGateway,
         role_model: str | None = None,
@@ -164,6 +183,7 @@ class AccountDeepOrchestrator:
         self._session_factory = session_factory
         self._spec = spec
         self._config = config
+        self._budget = budget
         self._sources = tuple(sources)
         self._gateway = gateway
         self._role_model = role_model
@@ -200,6 +220,7 @@ class AccountDeepOrchestrator:
         account_result: AccountProfileResult | None = None
         committee_result: CommitteeResult | None = None
         contact_results: tuple[ContactProfileResult, ...] = ()
+        budget_stop: BudgetVerdict | None = None
 
         # --- Stage 1: account axis (M8.1) — the direct callable carries the ICP spec + tenant_id as
         # explicit kwargs (no AspectContext / ctx.params), so the planner loads the spec and the
@@ -274,12 +295,15 @@ class AccountDeepOrchestrator:
             )
             done = AccountRunSubPhase.COMMITTEE_DISCOVERED
 
-        # --- Stage 3: contact axis (M8.4) — bounded fan-out over the admitted members: the level-1
-        # breadth is capped at committee_size_cap, the intra-account semaphore caps concurrency.
+        # --- Stage 3: contact axis (M8.4) — bounded fan-out over the admitted members (M8A.3): the
+        # level-1 breadth is capped at committee_size_cap, each contact is budget-admitted at the
+        # chokepoint, and the intra-account semaphore caps concurrency. ``budget_stop`` records the
+        # verdict (if any) that halted admission.
         if done is AccountRunSubPhase.COMMITTEE_DISCOVERED:
             contact_ids = self._committee_contact_ids(committee_result, refs)
-            contact_results = await self._profile_contacts(
+            contact_results, budget_stop = await self._profile_contacts(
                 contact_ids[: self._config.committee_size_cap],
+                campaign_run_id=campaign_run_id,
                 account_entity_id=spec.entity_id,
                 run_id=run_id,
                 tenant_id=tenant_id,
@@ -288,6 +312,12 @@ class AccountDeepOrchestrator:
             for contact in contact_results:
                 cost += contact.cost_cents
                 refs[f"contact:{contact.contact_entity_id}"] = [str(c) for c in contact.claim_refs]
+            # The contact axis is complete even when budget halted admission: a ``DENY`` exhausted
+            # the account envelope and a ``GRACEFUL_STOP`` "finishes the in-flight unit and stops at
+            # the next checkpoint" — both leave this account a *finished partial* (coverage-
+            # confidence, not completeness), so the marker advances and the run is DONE. The
+            # ``budget_stop`` verdict (surfaced on the result) is what the handler reads to suspend
+            # the *phase* (GRACEFUL_STOP) or continue the batch with partial coverage (DENY).
             await self._io.save(
                 run_id,
                 references_index=refs,
@@ -306,6 +336,7 @@ class AccountDeepOrchestrator:
             contacts=contact_results,
             cost_cents=cost,
             sub_phase=done,
+            budget_stop=budget_stop,
         )
 
     def _committee_contact_ids(
@@ -321,13 +352,36 @@ class AccountDeepOrchestrator:
         self,
         contact_ids: Sequence[EntityId],
         *,
+        campaign_run_id: CampaignRunId,
         account_entity_id: EntityId,
         run_id: RunId,
         tenant_id: str,
         tier: str,
-    ) -> tuple[ContactProfileResult, ...]:
-        """Profile each admitted member, at most ``max_contacts_in_flight`` at a time (the intra-
-        account concurrency cap), each in its own session."""
+    ) -> tuple[tuple[ContactProfileResult, ...], BudgetVerdict | None]:
+        """Admit-then-launch the contact fan-out under the four fan-out bounds (M8A.3, Doc C §3/§5).
+
+        Before each member, ask the cost dial whether the account can afford one more contact —
+        ``BudgetEngine.check(scope=ACCOUNT)`` projecting ``per_contact_estimate_cents`` — and launch
+        only an ``ALLOW``. The verdict at the chokepoint:
+
+        * ``ALLOW`` — schedule the profile under the ``max_contacts_in_flight`` semaphore.
+        * ``DENY`` — the account's envelope is spent; stop admitting and return what was admitted
+          as a **partial committee** (coverage-confidence, not completeness, Doc C §3) — not failed.
+        * ``GRACEFUL_STOP`` — a run-level cap is breached; finish the admitted in-flight contacts
+          and surface the verdict so the handler (M8A.2) suspends the phase at the next checkpoint.
+
+        Returns ``(results, budget_stop)`` where ``budget_stop`` is the verdict that halted
+        admission (``None`` if every in-cap member was admitted). The four bounds all live at this
+        one chokepoint: (a) committee-size truncation (the caller slices ``contact_ids``), (b) this
+        ``check`` admission, (c) the contact worker's per-tier ``facet_subworker_budget``, (d) the
+        in-flight semaphore — none of them hardcoded; (a)/(b)/(c)/(d) all read from
+        :class:`DeepPhaseConfig` / :class:`RecursionPolicy`.
+
+        Note: the sequential admit reads spend-so-far while already-launched peers have not yet
+        ``record``-ed, so concurrent admits can collectively overshoot the per-account cap by a
+        bounded window. Closing that window (a reservation) and the exactly-once charge are
+        **M8A.4**; this method only opens the admission seam.
+        """
         semaphore = asyncio.Semaphore(self._config.max_contacts_in_flight)
         facet_budget = (
             self._recursion_policy.caps_for(tier).max_facet_workers_per_aspect
@@ -351,4 +405,34 @@ class AccountDeepOrchestrator:
                     config=self._contact_config,
                 )
 
-        return tuple(await asyncio.gather(*(_one(cid) for cid in contact_ids)))
+        tasks: list[asyncio.Task[ContactProfileResult]] = []
+        budget_stop: BudgetVerdict | None = None
+        try:
+            for contact_id in contact_ids:
+                decision = await self._budget.check(
+                    scope=BudgetScope.ACCOUNT,
+                    projected_cents=self._config.per_contact_estimate_cents,
+                    campaign_run_id=campaign_run_id,
+                    entity_id=account_entity_id,
+                    account_run_id=run_id,
+                )
+                if decision.verdict is BudgetVerdict.ALLOW:
+                    tasks.append(asyncio.create_task(_one(contact_id)))
+                else:
+                    # DENY (partial) or GRACEFUL_STOP (pause): stop admitting; the already-launched
+                    # contacts below still finish (GRACEFUL_STOP = "finish the in-flight unit").
+                    budget_stop = decision.verdict
+                    break
+            return tuple(await asyncio.gather(*tasks)), budget_stop
+        except BaseException:
+            # Never leave an admitted contact detached. ``create_task`` schedules eagerly, so if
+            # admission itself raises (e.g. ``budget.check`` hits a DB error) — or one ``_one``
+            # raises in the gather, which does NOT cancel its in-flight siblings — cancel every
+            # launched task and drain it before propagating. The M8A.2 handler marks the account
+            # FAILED; claims already committed are idempotent on resume, so cancelling in-flight
+            # work is safe (and stops wasted spend). This also forwards a cancellation of
+            # ``_profile_contacts`` itself to its children.
+            for task in tasks:
+                task.cancel()
+            await asyncio.gather(*tasks, return_exceptions=True)
+            raise
