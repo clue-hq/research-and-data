@@ -1,0 +1,450 @@
+"""M9.1 — the pre-spend schema/identity gate (ENG-130).
+
+The cheapest verification is the one that prevents spend on a doomed claim (substrate §6(1)). Before
+any resolver runs or any synthesis dollar is spent, a claim/research request must clear a set of
+**entry gates** — the prototype's single strongest contribution: an official-domain / strong-key
+requirement, a canonical-name lock, dedup-registry membership, the in-flight lock, and a
+*target-locked prompt* ("this exact company, this domain — do not drift to similarly-named orgs").
+This module promotes those into one declarative, config-driven gate that every claim-producing path
+(the M4 waterfall, M8 workers, M11 synthesis) calls *before* it acts.
+
+It implements the Beat-0 :class:`clue_research.core.verification.PreSpendGate` protocol, so
+callers in other milestone packages depend only on the ``core`` seam (the impl is injected at the
+``api`` composition root). Two surfaces:
+
+* :class:`PreSpendGateImpl` — ``check(request)`` runs the schema gate (field registered, requested
+  tier in the field's ``tier_plan``, ``value_json`` valid), the identity gate (the ``entity_id``
+  resolves to a ``candidate``/``active`` registry row carrying a strong key — ``merged``/unresolved
+  rejected), and the in-flight-lock check (reject if a *different* run holds the entity lock). Every
+  decision is recorded as a ``gate_decision`` audit row and emits the
+  ``verification.pre_spend_gate`` span — so "claims blocked pre-spend" is measurable (Doc C §6).
+* :func:`assemble_target_lock` — builds a :class:`TargetLock` (canonical-domain ``site:`` filter +
+  no-drift instruction) from a *resolved* entity, so target-lock is constructed, not hand-prompted.
+
+The gate set is **policy-as-data** (conventions §2): :class:`PreSpendPolicy` rows live in
+``pre_spend_policy`` (per-client/ICP overridable) and per-field overrides ride in the existing
+``field_definition.gate`` column as a :class:`GateSpec`. Flipping a rule is a config change, not a
+code change. The ``Resolver`` protocol is untouched — resolvers are gated *by the caller*.
+"""
+
+from __future__ import annotations
+
+import json
+from collections.abc import Callable, Sequence
+from contextlib import AbstractAsyncContextManager
+from typing import Protocol
+
+from pydantic import BaseModel, ConfigDict, JsonValue, ValidationError
+from sqlalchemy import bindparam, text
+from sqlalchemy.ext.asyncio import AsyncConnection
+
+from clue_research.claimstore.registry import (
+    UnknownFieldError,
+    ValueSchemaError,
+    get_field,
+    validate_value,
+)
+from clue_research.core import (
+    AccountEntity,
+    AccountStatus,
+    ContactEntity,
+    FieldDef,
+    PreSpendDecision,
+    PreSpendRequest,
+    PreSpendVerdict,
+    RunId,
+    TargetLock,
+    serialize_value_json,
+)
+from clue_research.db import transaction
+from clue_research.identity import get_entity
+from clue_research.locks.entity_lock import lock_key
+from clue_research.obs import (
+    ATTR_ENTITY_ID,
+    ATTR_ENTITY_TYPE,
+    ATTR_FIELD_KEY,
+    ATTR_GATE_DECISION,
+    ATTR_RUN_ID,
+    ATTR_SOURCE_TIER,
+    SPAN_VERIFICATION_PRE_SPEND_GATE,
+    MetricSink,
+    apply_attributes,
+    get_metric_sink,
+    traced_step,
+)
+
+# Blocked-pre-spend counter (the "claims blocked pre-spend" verification-health signal, Doc C §6).
+# An M9-local metric name (metric names are plain strings the shared sink accepts) — defined here so
+# M9.1 stays self-contained and does not edit the shared obs/metrics.py.
+METRIC_PRESPEND_DECISIONS = "research.verification.prespend.decisions"
+METRIC_PRESPEND_BLOCKED = "research.verification.prespend.blocked"
+
+# The two account statuses a profiling/spend request may target. ``candidate`` is discovery-only (it
+# passed M6.2's existence gate but is not yet promoted to ``active``); ``merged`` redirects to
+# ``merged_into`` and is never spent on.
+_DEFAULT_ALLOWED_STATUSES = (AccountStatus.CANDIDATE, AccountStatus.ACTIVE)
+
+
+class _LockReader(Protocol):
+    """The minimal Redis surface the in-flight check needs: read the current holder token for a key.
+
+    Typed structurally so the gate never imports the redis client type and stays trivially testable
+    with a fake. ``redis.asyncio.Redis`` satisfies it (``await redis.get(key)``)."""
+
+    async def get(self, name: str) -> object: ...
+
+
+def run_lock_token(run_id: RunId) -> str:
+    """The fencing token a run uses for its entity locks (the convention the in-flight check reads).
+
+    A run that holds an entity's in-flight lock acquires it with ``entity_lock(..., token=
+    run_lock_token(run_id))``; the gate then recognises *this* run's lock and rejects only a lock
+    held by a *different* run (anti-double-spend). Kept a pure, stable function so the locker
+    (M7/M8) and the checker (M9.1) agree without importing each other."""
+    return str(run_id)
+
+
+class GateSpec(BaseModel):
+    """A per-field pre-spend override, carried in the existing ``field_definition.gate`` column as a
+    JSON object (same column, declared contents — no schema change; M9.1). A field can demand a
+    stricter gate than the global policy (e.g. a registry-keyed field that must carry an official
+    domain). Non-JSON / legacy ``gate`` text (``"tier>=1"``) parses to ``None`` and is ignored."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    requires_official_domain: bool | None = None
+    requires_strong_key: bool | None = None
+
+
+class PreSpendPolicy(BaseModel):
+    """The pre-spend gate rules as data (policy-as-data, conventions §2). Persisted in
+    ``pre_spend_policy`` (``rules_json``), per-client/ICP overridable; the gate reads it at
+    construction. Flipping a flag changes behaviour with no code change."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    # Identity: the entity must carry a strong key (account ``primary_domain`` — the official-domain
+    # requirement; contact LinkedIn URL / verified email). The same-name trap's structural defence.
+    requires_strong_key: bool = True
+    # The entity must resolve to a registry row in one of these statuses (``merged``/unresolved are
+    # always rejected). Discovery-only ``candidate`` is allowed (it passed the M6.2 existence gate).
+    allowed_statuses: tuple[AccountStatus, ...] = _DEFAULT_ALLOWED_STATUSES
+    # Schema: the requested ``source_tier`` must be sanctioned by the field's ``tier_plan`` (the
+    # plan must list a source registered at that tier). A field/tier mismatch fails closed.
+    enforce_tier_in_plan: bool = True
+    # Cost guard: reject if a *different* run holds the entity's in-flight Redis lock (no double
+    # spend). Checked only when a lock reader is wired (skipped in pure-unit contexts).
+    requires_in_flight_lock: bool = True
+
+
+DEFAULT_PRE_SPEND_POLICY = PreSpendPolicy()
+
+
+def parse_gate_spec(gate: str | None) -> GateSpec | None:
+    """Parse the per-field ``gate_spec`` out of ``field_definition.gate``.
+
+    Returns a :class:`GateSpec` when ``gate`` is a JSON object of known keys; ``None`` for an empty
+    column or a legacy gate expression (``"tier>=1"`` / ``"committee-gated"``) — those impose no
+    pre-spend override (lenient by design: the column is shared with other gate semantics)."""
+    if not gate:
+        return None
+    try:
+        parsed = json.loads(gate)
+    except (json.JSONDecodeError, ValueError):
+        return None
+    if not isinstance(parsed, dict):
+        return None
+    try:
+        return GateSpec.model_validate(parsed)
+    except ValidationError:
+        return None
+
+
+def _requires_strong_key(policy: PreSpendPolicy, spec: GateSpec | None) -> bool:
+    """Effective strong-key requirement: the global policy OR a per-field override demanding it."""
+    if spec is not None and (spec.requires_strong_key or spec.requires_official_domain):
+        return True
+    return policy.requires_strong_key
+
+
+def _has_strong_key(entity: AccountEntity | ContactEntity) -> bool:
+    """Whether a resolved entity carries a strong identity key (the same-name-trap defence).
+
+    Account: ``primary_domain`` (the official domain). Contact: a verified LinkedIn URL or email."""
+    if isinstance(entity, AccountEntity):
+        return entity.primary_domain is not None
+    return entity.linkedin_url is not None or entity.verified_email is not None
+
+
+def _build_target_lock(entity: AccountEntity | ContactEntity, field: FieldDef) -> TargetLock:
+    """Construct the :class:`TargetLock` for a *resolved* entity + field (no I/O — pure)."""
+    if isinstance(entity, AccountEntity):
+        domain = entity.primary_domain
+        site = f"Prefer `site:{domain}` sources. " if domain else ""
+        anchor = f" (the organization at {domain})" if domain else ""
+        instruction = (
+            f"Research ONLY {entity.canonical_name}{anchor} for field `{field.field_key}`. "
+            f"{site}Do NOT drift to similarly-named organizations; if a source is about a "
+            "different company, discard it (the same-name trap)."
+        )
+        identifiers: dict[str, JsonValue] = {
+            "canonical_name": entity.canonical_name,
+            "primary_domain": domain,
+            "hq_geo": entity.hq_geo,
+            "aliases": list(entity.aliases),
+            "registry_ids": dict(entity.registry_ids),
+        }
+        return TargetLock(
+            entity_id=entity.id,
+            no_drift_instruction=instruction,
+            canonical_domain=domain,
+            identifiers=identifiers,
+        )
+
+    # ContactEntity: lock to the specific person, never another who shares the name.
+    name = entity.full_name or f"contact:{entity.id}"
+    handle = f" (verified profile {entity.linkedin_url})" if entity.linkedin_url else ""
+    instruction = (
+        f"Research ONLY the specific person {name}{handle}, a contact under account "
+        f"{entity.account_entity_id}, for field `{field.field_key}`. Do NOT attribute facts "
+        "about a different person who shares this name (the same-name trap)."
+    )
+    contact_identifiers: dict[str, JsonValue] = {
+        "full_name": entity.full_name,
+        "linkedin_url": entity.linkedin_url,
+        "has_verified_email": entity.verified_email is not None,
+        "account_entity_id": str(entity.account_entity_id),
+        "geo": entity.geo,
+    }
+    return TargetLock(
+        entity_id=entity.id,
+        no_drift_instruction=instruction,
+        canonical_domain=None,
+        identifiers=contact_identifiers,
+    )
+
+
+def assemble_target_lock(entity: AccountEntity | ContactEntity, field: FieldDef) -> TargetLock:
+    """Public convenience: build the target-lock context for a resolved entity + field (M9.1).
+
+    Mirrors :meth:`PreSpendGateImpl.assemble_target_lock` (the protocol method) for callers that
+    already hold the resolved entity (e.g. M8.1 mode-M2 profiling) and want it without the gate."""
+    return _build_target_lock(entity, field)
+
+
+async def _covered_tiers(conn: AsyncConnection, tier_plan: Sequence[str]) -> set[int]:
+    """The set of source tiers the field's ``tier_plan`` sanctions (the tiers of its registered
+    sources). Empty when the plan is empty or none of its sources are in ``source_manifest``."""
+    keys = list(tier_plan)
+    if not keys:
+        return set()
+    stmt = text("SELECT DISTINCT tier FROM source_manifest WHERE source_key IN :keys").bindparams(
+        bindparam("keys", expanding=True)
+    )
+    rows = await conn.execute(stmt, {"keys": keys})
+    return {int(row[0]) for row in rows.all()}
+
+
+async def _record_gate_decision(
+    conn: AsyncConnection, request: PreSpendRequest, decision: PreSpendDecision
+) -> None:
+    """Append the audit row (one per ``check``). Append-only by use — no mutation path."""
+    await conn.execute(
+        text(
+            """
+            INSERT INTO gate_decision
+                (run_id, entity_id, entity_type, field_key, source_tier, decision, reasons)
+            VALUES
+                (:run_id, :entity_id, CAST(:entity_type AS entity_type), :field_key, :source_tier,
+                 CAST(:decision AS pre_spend_verdict), CAST(:reasons AS jsonb))
+            """
+        ),
+        {
+            "run_id": str(request.run_id),
+            "entity_id": str(request.entity_id),
+            "entity_type": request.entity_type.value,
+            "field_key": str(request.field_key),
+            "source_tier": int(request.source_tier),
+            "decision": decision.verdict.value,
+            "reasons": serialize_value_json(list(decision.reasons)),
+        },
+    )
+
+
+def _conn_factory_default() -> AbstractAsyncContextManager[AsyncConnection]:
+    """Default connection source: one committed transaction per ``check`` (reads + the audit row).
+
+    Indirected through a function so the process-wide engine is resolved lazily at call time (a gate
+    can be constructed before ``db_lifespan`` is entered); tests inject a rollback-bound factory."""
+    return transaction()
+
+
+class PreSpendGateImpl:
+    """The M9.1 pre-spend gate (implements :class:`clue_research.core.verification.PreSpendGate`).
+
+    Constructed with the gate :class:`PreSpendPolicy`, a connection factory (defaults to a committed
+    transaction per check), and an optional in-flight lock reader (a Redis client). Injected at the
+    ``api`` composition root; per-client/ICP policy is loaded via :func:`load_pre_spend_policy`."""
+
+    def __init__(
+        self,
+        *,
+        policy: PreSpendPolicy = DEFAULT_PRE_SPEND_POLICY,
+        conn_factory: Callable[[], AbstractAsyncContextManager[AsyncConnection]] = (
+            _conn_factory_default
+        ),
+        lock_reader: _LockReader | None = None,
+        record_decisions: bool = True,
+        sink: MetricSink | None = None,
+        lock_token_for_run: Callable[[RunId], str] = run_lock_token,
+    ) -> None:
+        self._policy = policy
+        self._conn_factory = conn_factory
+        self._lock_reader = lock_reader
+        self._record = record_decisions
+        self._sink = sink
+        self._lock_token_for_run = lock_token_for_run
+
+    async def check(self, request: PreSpendRequest) -> PreSpendDecision:
+        attrs: dict[str, object] = {
+            ATTR_ENTITY_ID: str(request.entity_id),
+            ATTR_ENTITY_TYPE: request.entity_type.value,
+            ATTR_FIELD_KEY: str(request.field_key),
+            ATTR_SOURCE_TIER: int(request.source_tier),
+            ATTR_RUN_ID: str(request.run_id),
+        }
+        with traced_step(SPAN_VERIFICATION_PRE_SPEND_GATE, **attrs) as span:
+            async with self._conn_factory() as conn:
+                reasons = await self._collect_reasons(conn, request)
+                verdict = PreSpendVerdict.REJECT if reasons else PreSpendVerdict.PASS
+                decision = PreSpendDecision(verdict=verdict, reasons=tuple(reasons))
+                if self._record:
+                    await _record_gate_decision(conn, request, decision)
+            apply_attributes(span, {ATTR_GATE_DECISION: verdict.value})
+            self._emit_metric(request, verdict)
+            return decision
+
+    async def assemble_target_lock(
+        self, entity: AccountEntity | ContactEntity, field: FieldDef
+    ) -> TargetLock:
+        return _build_target_lock(entity, field)
+
+    async def _collect_reasons(self, conn: AsyncConnection, request: PreSpendRequest) -> list[str]:
+        reasons: list[str] = []
+        field_def = await get_field(conn, str(request.field_key))
+        gate_spec = parse_gate_spec(field_def.gate) if field_def is not None else None
+
+        # --- schema gate ---
+        if field_def is None:
+            reasons.append(
+                f"field_key {request.field_key!r} is not registered in the field registry"
+            )
+        else:
+            if self._policy.enforce_tier_in_plan and field_def.tier_plan:
+                covered = await _covered_tiers(conn, field_def.tier_plan)
+                if covered and int(request.source_tier) not in covered:
+                    reasons.append(
+                        f"source_tier {request.source_tier} is not in field "
+                        f"{request.field_key!r}'s tier_plan (sanctioned tiers: {sorted(covered)})"
+                    )
+            if request.value_json is not None:
+                try:
+                    await validate_value(conn, str(request.field_key), request.value_json)
+                except (UnknownFieldError, ValueSchemaError) as exc:
+                    reasons.append(f"value_json fails the field's schema: {exc}")
+
+        # --- identity gate (keys on a resolved entity_id, never a free-text name) ---
+        reasons.extend(await self._identity_reasons(conn, request, gate_spec))
+
+        # --- in-flight lock (anti-double-spend; cost guard) ---
+        reasons.extend(await self._lock_reasons(request))
+        return reasons
+
+    async def _identity_reasons(
+        self, conn: AsyncConnection, request: PreSpendRequest, gate_spec: GateSpec | None
+    ) -> list[str]:
+        reasons: list[str] = []
+        entity = await get_entity(conn, request.entity_id, request.entity_type)
+        if entity is None:
+            reasons.append(
+                "entity_id does not resolve to a registered entity (failed the dedup-registry / "
+                "existence gate — it may be a raw discovery hypothesis or a free-text name)"
+            )
+            return reasons
+        if entity.status is AccountStatus.MERGED:
+            reasons.append(
+                f"entity {request.entity_id} is merged (redirect to merged_into "
+                f"{entity.merged_into}); a merged entity is never spent on"
+            )
+        elif entity.status not in self._policy.allowed_statuses:
+            allowed = ", ".join(s.value for s in self._policy.allowed_statuses)
+            reasons.append(
+                f"entity status {entity.status.value!r} is not in the allowed set ({allowed})"
+            )
+        if _requires_strong_key(self._policy, gate_spec) and not _has_strong_key(entity):
+            reasons.append(
+                "entity lacks a strong key (account primary_domain / contact LinkedIn URL or "
+                "verified email) — refusing spend on a weakly-keyed entity (the same-name trap)"
+            )
+        return reasons
+
+    async def _lock_reasons(self, request: PreSpendRequest) -> list[str]:
+        if not (self._policy.requires_in_flight_lock and self._lock_reader is not None):
+            return []
+        key = lock_key(request.entity_type, request.entity_id)
+        holder = await self._lock_reader.get(key)
+        if holder is None:
+            return []
+        holder_token = holder.decode() if isinstance(holder, bytes) else str(holder)
+        if holder_token != self._lock_token_for_run(request.run_id):
+            return [
+                "the entity's in-flight lock is held by a different run "
+                "(anti-double-spend — another worker owns it)"
+            ]
+        return []
+
+    def _emit_metric(self, request: PreSpendRequest, verdict: PreSpendVerdict) -> None:
+        sink = self._sink or get_metric_sink()
+        labels = {"entity_type": request.entity_type.value, "source_tier": str(request.source_tier)}
+        sink.add(METRIC_PRESPEND_DECISIONS, 1, labels)
+        if verdict is PreSpendVerdict.REJECT:
+            sink.add(METRIC_PRESPEND_BLOCKED, 1, labels)
+
+
+async def load_pre_spend_policy(
+    conn: AsyncConnection,
+    *,
+    client_id: str | None = None,
+    icp_version: int | None = None,
+) -> PreSpendPolicy:
+    """Load the most-specific :class:`PreSpendPolicy` for a scope: per-ICP → per-client → global
+    default row → :data:`DEFAULT_PRE_SPEND_POLICY`. The latest ``version`` within the matched scope
+    wins. Returns the built-in default when no row matches (policy-as-data; fail-soft)."""
+    candidates: list[tuple[str | None, int | None]] = []
+    if client_id is not None and icp_version is not None:
+        candidates.append((client_id, icp_version))
+    if client_id is not None:
+        candidates.append((client_id, None))
+    candidates.append((None, None))  # the global default row
+
+    for scope_client, scope_icp in candidates:
+        row = (
+            await conn.execute(
+                text(
+                    """
+                    SELECT rules_json FROM pre_spend_policy
+                    WHERE client_id IS NOT DISTINCT FROM :client_id
+                      AND icp_version IS NOT DISTINCT FROM :icp_version
+                    ORDER BY version DESC
+                    LIMIT 1
+                    """
+                ),
+                {"client_id": scope_client, "icp_version": scope_icp},
+            )
+        ).first()
+        if row is not None:
+            rules = row[0]
+            if isinstance(rules, str):
+                rules = json.loads(rules)
+            return PreSpendPolicy.model_validate(rules)
+    return DEFAULT_PRE_SPEND_POLICY

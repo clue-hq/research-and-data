@@ -22,9 +22,12 @@ from clue_research.evals.harness import FAITHFULNESS_RUBRIC, EvalHarness
 from clue_research.evals.judge import GroundedStubJudge, Judge, JudgeVerdict, StubJudge
 from clue_research.evals.models import (
     EvalReport,
+    FixtureKind,
     GoldClaim,
     GoldEntity,
     GoldSet,
+    MechanismMetric,
+    Regression,
     RubricScore,
 )
 from clue_research.evals.scorers import (
@@ -45,6 +48,9 @@ __all__ = [
     "GoldSet",
     "RubricScore",
     "EvalReport",
+    "FixtureKind",
+    "MechanismMetric",
+    "Regression",
     "stub_gold_set",
     # rubric scorers
     "Scorer",

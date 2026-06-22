@@ -31,6 +31,12 @@ class SeedField:
     field_def: FieldDef
     value_schema: dict[str, Any] | None = None
     corroboration_min: int = 1
+    # M9.2 corroboration config (conventions §2 — policy is data). ``single_source_sufficient`` lets
+    # a tier-1 deterministic claim verify alone (e.g. a registry ID); ``equality_mode`` picks how
+    # corroborator decides two values agree. Defaults match the field_definition column defaults, so
+    # a pack that does not care about corroboration declares nothing new.
+    single_source_sufficient: bool = False
+    equality_mode: str = "exact"
     description: str | None = None
     pack: str | None = None
 
@@ -46,6 +52,8 @@ def _seed(
     reuse_scope: ReuseScope | None = None,
     value_schema: dict[str, Any] | None = None,
     corroboration_min: int = 1,
+    single_source_sufficient: bool = False,
+    equality_mode: str = "exact",
     description: str | None = None,
     pack: str | None = None,
 ) -> SeedField:
@@ -61,6 +69,8 @@ def _seed(
         ),
         value_schema=value_schema,
         corroboration_min=corroboration_min,
+        single_source_sufficient=single_source_sufficient,
+        equality_mode=equality_mode,
         description=description,
         pack=pack,
     )
@@ -259,6 +269,8 @@ async def load_pack(conn: AsyncConnection, fields: tuple[SeedField, ...]) -> Non
             seed.field_def,
             value_schema=seed.value_schema,
             corroboration_min=seed.corroboration_min,
+            single_source_sufficient=seed.single_source_sufficient,
+            equality_mode=seed.equality_mode,
             description=seed.description,
             pack=seed.pack,
         )

@@ -24,6 +24,7 @@ from clue_research.config.schema import (
     BudgetCaps,
     FreshnessTtls,
     MergePolicy,
+    RecursionPolicy,
     ScoringRubric,
     SourceProfile,
 )
@@ -62,6 +63,7 @@ class ConfigOverlay(BaseModel):
     scoring_rubric: ScoringRubric | None = None
     source_profiles: tuple[SourceProfile, ...] | None = None
     budget_caps: BudgetCaps | None = None
+    recursion_policy: RecursionPolicy | None = None
     freshness_ttls: FreshnessTtls | None = None
     gateway: GatewayConfig | None = None
 
@@ -83,6 +85,7 @@ class Config(BaseModel):
     scoring_rubric: ScoringRubric = ScoringRubric()
     source_profiles: tuple[SourceProfile, ...] = ()
     budget_caps: BudgetCaps = BudgetCaps()
+    recursion_policy: RecursionPolicy = RecursionPolicy()
     freshness_ttls: FreshnessTtls = FreshnessTtls()
     gateway: GatewayConfig = GatewayConfig()
     # The layer versions that produced this object, base-first (defaults → client → icp).

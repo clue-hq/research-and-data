@@ -34,6 +34,8 @@ dependencies = [
     # default extractor so CI's double-driven path never needs it. A PDF library was anticipated for
     # M4.3 (the M4 kickoff "pyproject Rule 4 ... + a PDF library for M4.3").
     "pypdf>=6",
+    "langgraph>=0.2",
+    "langgraph-checkpoint-postgres>=2",
 ]
 
 [dependency-groups]
@@ -316,6 +318,39 @@ name = "claim store does not import identity / locks (no inversion)"
 type = "forbidden"
 source_modules = ["clue_research.claimstore"]
 forbidden_modules = ["clue_research.identity", "clue_research.locks"]
+
+# Rule 7 — the eval scaffold (evals/) is a CORE-ONLY leaf. It defines the generic gold-set / rubric /
+# report shapes every milestone's accuracy battery binds to (M9.6 fills it), so it must import only
+# the shared base (core/config/obs) — never the substrate or a worker. The whole M9.6 split rests on
+# this: the DB/LLM-backed verification battery lives in verification/ (which MAY import evals); were
+# evals to import claimstore/verification/db/gateway it would invert that dependency and create an
+# evals<->verification import cycle. The "core is the shared kernel" rule only forbids the reverse
+# edge (core->evals); this is its complement, so the invariant is enforced, not merely documented.
+[[tool.importlinter.contracts]]
+name = "the eval scaffold (evals/) is a core-only leaf"
+type = "forbidden"
+source_modules = ["clue_research.evals"]
+forbidden_modules = [
+    "clue_research.db",
+    "clue_research.claimstore",
+    "clue_research.identity",
+    "clue_research.locks",
+    "clue_research.icp",
+    "clue_research.sources",
+    "clue_research.resolvers",
+    "clue_research.adapters",
+    "clue_research.gateway",
+    "clue_research.stage0",
+    "clue_research.discovery_scoring",
+    "clue_research.durable",
+    "clue_research.profiling",
+    "clue_research.verification",
+    "clue_research.compliance",
+    "clue_research.synthesis",
+    "clue_research.narrative",
+    "clue_research.review",
+    "clue_research.api",
+]
 
 # Rule 5 — nothing imports the FastAPI app layer (api/). Dependencies point inward only.
 [[tool.importlinter.contracts]]

@@ -220,6 +220,43 @@ async def supersede_claim(conn: AsyncConnection, old_id: ClaimId, new_claim: Cla
     return new_id
 
 
+async def record_verification(
+    conn: AsyncConnection,
+    claim_id: ClaimId,
+    *,
+    status: VerificationStatus,
+    corroborations: int | None = None,
+) -> None:
+    """Apply a verification verdict to an existing claim *in place* — the only mutation of a stored
+    claim besides supersession.
+
+    ``verification_status`` and ``corroborations`` are the trigger-allowlisted mutable columns
+    (migrations 0002/0004/0008); every other provenance column (value, source, span, tier, …) stays
+    immutable and the BEFORE-UPDATE trigger rejects any change to it. M9's verification layers write
+    their verdict through this one helper so no caller hand-writes SQL against ``claim`` (substrate
+    §1): the corroborator (M9.2) sets both ``status`` and ``corroborations``; the faithfulness judge
+    (M9.3) and identity-binding gate (M9.4) set ``status`` alone (``corroborations`` omitted → left
+    untouched). The ``claim_tier4_verified_requires_span`` CHECK (0002) stays the DB backstop, so a
+    span-less tier-4 claim can never be flipped to ``verified`` even through this path.
+    """
+    if corroborations is None:
+        await conn.execute(
+            text(
+                "UPDATE claim SET verification_status = CAST(:status AS verification_status) "
+                "WHERE id = :id"
+            ),
+            {"status": status.value, "id": claim_id},
+        )
+    else:
+        await conn.execute(
+            text(
+                "UPDATE claim SET verification_status = CAST(:status AS verification_status), "
+                "corroborations = :corroborations WHERE id = :id"
+            ),
+            {"status": status.value, "corroborations": corroborations, "id": claim_id},
+        )
+
+
 async def claims_for(
     conn: AsyncConnection,
     entity_id: EntityId,
