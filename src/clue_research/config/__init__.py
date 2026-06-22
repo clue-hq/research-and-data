@@ -48,8 +48,10 @@ from clue_research.config.schema import (
     BudgetCaps,
     FreshnessTtls,
     MergePolicy,
+    RecursionPolicy,
     ScoringRubric,
     SourceProfile,
+    TierRecursionCaps,
 )
 from clue_research.config.secrets import (
     DB_DSN_ENV_VAR,
@@ -86,6 +88,8 @@ __all__ = [
     "ScoringRubric",
     "SourceProfile",
     "BudgetCaps",
+    "RecursionPolicy",
+    "TierRecursionCaps",
     "FreshnessTtls",
     # llm-gateway config (the model-egress policy-as-data; client in clue_research.gateway)
     "GatewayConfig",
