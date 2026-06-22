@@ -46,6 +46,7 @@ from clue_research.config.policy import (
 )
 from clue_research.config.schema import (
     BudgetCaps,
+    DeepPhaseConfig,
     FreshnessTtls,
     MergePolicy,
     RecursionPolicy,
@@ -90,6 +91,7 @@ __all__ = [
     "BudgetCaps",
     "RecursionPolicy",
     "TierRecursionCaps",
+    "DeepPhaseConfig",
     "FreshnessTtls",
     # llm-gateway config (the model-egress policy-as-data; client in clue_research.gateway)
     "GatewayConfig",

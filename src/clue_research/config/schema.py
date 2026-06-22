@@ -214,6 +214,37 @@ class RecursionPolicy(BaseModel):
         return any(aspect == cls or aspect.startswith(cls + ".") for cls in self.eligible_classes)
 
 
+class DeepPhaseConfig(BaseModel):
+    """The DEEP-phase fan-out bounds + cost dial (M8A) — *policy as data* (Doc C §3/§5).
+
+    The concrete expression of the cost dial (*fan-out-per-account × accounts-per-pass*): how many
+    committee members are profiled per account, how many contacts run at once within an account, how
+    many accounts run in parallel, and the per-contact budget-admission knobs. Versioned + per-ICP
+    overridable alongside :class:`BudgetCaps` / :class:`RecursionPolicy`; changing the dial is a
+    config edit, never a code change.
+
+    M8A.1 (the per-account orchestrator) reads ``committee_size_cap`` + ``max_contacts_in_flight``;
+    the ``per_contact_*`` budget knobs + ``max_parallel_accounts`` are the fixed interface M8A.3
+    (fan-out budget admission) and M8A.2 (the scheduler's accounts-per-pass) consume — defined once
+    here so the downstream issues build against the trunk's shape rather than inventing their own.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    # Max admitted committee members profiled per account (the level-1 fan-out): the rest are
+    # truncated, mirroring the graph's ``max_aspect_workers`` cap. Coverage-confidence, not
+    # completeness (Doc C §3).
+    committee_size_cap: int = Field(default=8, ge=1)
+    # Intra-account contact concurrency — how many ``profile_contact`` run at once for one account.
+    max_contacts_in_flight: int = Field(default=3, ge=1)
+    # Accounts-per-pass — the deep scheduler's parallelism cap (M8A.2 binds it to ``max_parallel``).
+    max_parallel_accounts: int = Field(default=4, ge=1)
+    # Per-contact pre-spend estimate the budget-admission gate (M8A.3) projects before each contact.
+    per_contact_estimate_cents: CostCents = Decimal(50)
+    # Per-contact spend sub-envelope carved from the account envelope at admission (M8A.3).
+    per_contact_cap_cents: CostCents = Decimal(200)
+
+
 class FreshnessTtls(BaseModel):
     """Field-level freshness TTLs (M1 merge / M9 verification).
 
