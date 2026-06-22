@@ -116,6 +116,8 @@ def _merge(base: Config, overlay: ConfigOverlay, version: ConfigVersion) -> Conf
         updates["source_profiles"] = overlay.source_profiles
     if overlay.budget_caps is not None:
         updates["budget_caps"] = overlay.budget_caps
+    if overlay.recursion_policy is not None:
+        updates["recursion_policy"] = overlay.recursion_policy
     if overlay.freshness_ttls is not None:
         updates["freshness_ttls"] = overlay.freshness_ttls
     if overlay.gateway is not None:

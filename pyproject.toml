@@ -34,6 +34,8 @@ dependencies = [
     # default extractor so CI's double-driven path never needs it. A PDF library was anticipated for
     # M4.3 (the M4 kickoff "pyproject Rule 4 ... + a PDF library for M4.3").
     "pypdf>=6",
+    "langgraph>=0.2",
+    "langgraph-checkpoint-postgres>=2",
 ]
 
 [dependency-groups]
