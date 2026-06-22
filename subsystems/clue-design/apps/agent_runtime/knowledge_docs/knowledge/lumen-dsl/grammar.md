@@ -105,6 +105,51 @@ Assets / vectors: `asset(id)`, `path("…")`, `source(node)`, `to(x,y)` (line en
 Any other property name → `LUMD0212 unknown property`. A property used on the
 wrong node kind warns (e.g. `font(...)` on a non-text node → `LUMD0601`).
 
+## Images, icons & the scrim idiom
+
+Three ways to put a picture on a surface — pick by content (see `knowledge/images/decide`):
+
+| Kind | DSL | Lowers to | Use for |
+|------|-----|-----------|---------|
+| raster image | `image asset(id)` / `img(id)` | `Image{asset_id,alt}` | a generated/uploaded photo, product, texture |
+| library icon | `svg(icon:name)` | `Vector` (viewBox-fit, recolorable) | iconographic marks — `knowledge/images/icons` |
+| hand vector  | `vector path("…")` / `v(…)` | `Vector` (node-local coords) | a bespoke path you author by hand |
+
+**Fit / focal / alt are placement, not DSL leaf props.** An `image` line carries only
+`asset(id)` (+ geometry/`slot`). The *cover/contain/crop fit*, the *focal point*, and the
+*alt text* live on the node's **AssetPlacement**, attached by the agent's
+`place_asset_in_node` / `place_asset_in_slot` tools (or the editor's image inspector) —
+the same canonical ops a human edit issues. So the DSL author **composes the frame +
+image + scrim structure**; the placement is set on the node, not typed as a property on
+the `image` line (`fit(...)`/`focal(...)` are not DSL properties). The default is
+**`fit:cover` + a sensible focal point**; aspect comes from the *frame*, never stretch.
+
+### The scrim idiom — text over an image is ALWAYS scrimmed
+
+The blessed pattern is a **clipped frame holding the image, a sibling scrim rect, then the
+text** — declaration order is z-order (image, scrim, text). The scrim is a semi-transparent
+rect between the image and the text so the headline stays legible on a busy photo. Use
+`$opacity.scrim` (0.56) or `$opacity.overlay` (0.88); a dark scrim (`$surface.inverse`)
+under light text (`$text.inverse`). This is the single most common imagery failure the
+critic gates — never put text on a photo without it.
+
+**Give the frame `fill($surface.inverse)` (a dark surface).** Brand tokens resolve relative
+to their container's surface, so a dark frame is what makes `$text.inverse` / the `$type.*`
+roles resolve to **light** ink over the scrim — on a light (`$surface.page`) frame the same
+tokens resolve dark and the headline vanishes against the photo. It is also the fallback
+colour if the image fails to load.
+
+```text
+frame fr p(0,0) s(1080,1350) clip(true) rd($radius.card) fill($surface.inverse)
+  photo image asset(hero_photo) p(0,0) s(1080,1350)          # cover-fit + focal set by place_asset_in_node
+  scrim r p(0,0) s(1080,1350) fill($surface.inverse) o($opacity.scrim)
+  caption text "Faster triage, calmer clinics" p(64,1120) s(936,180) style($type.headline) fill($text.inverse) wrap_text(true) max_lines(2)
+```
+
+When the text sits on its own solid band instead of on the photo, **no scrim is needed** —
+see `knowledge/images/placement` (Idiom B) and the image-bearing block in
+`knowledge/design/blocks/patterns`. For prompt-craft see `knowledge/images/prompts`.
+
 ## Two ways to change an existing scene
 
 1. **Continuation** — append new nested element lines under an existing container

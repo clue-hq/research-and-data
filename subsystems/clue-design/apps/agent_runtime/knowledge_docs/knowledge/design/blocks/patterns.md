@@ -131,6 +131,72 @@ Validator proof:
 
 ---
 
+## Image hero — full-bleed photo + scrim + headline, brand top / message bottom (1080×1350)
+
+**When to use:** an **editorial hero/poster** where a real **photo** carries the message —
+a case study, a brand story, a product-in-context shot. Reach for this **only when a photo
+does real work** (see `knowledge/images/decide`); a clean typographic layout beats a
+gratuitous stock image. The canonical "text over a hero photo" idiom.
+
+**The scrim rule (non-negotiable):** a full-bleed `image` fills the clipped artboard, a
+**dark scrim rect** (`fill($surface.inverse) o($opacity.scrim)` = 0.56) sits over it, and
+**inverse-fill text** (`fill($text.inverse)`) sits over the scrim — so the headline stays
+legible on a busy photo. **Declaration order is z-order:** image → scrim → content. Without
+the scrim, text on a photo is illegible the moment the image is busy, and the imagery critic
+gates it (legibility-over-image is a hard axis). When the copy can instead sit on its own
+solid band, the split layout needs no scrim — see `knowledge/images/placement` Idiom B.
+
+**The artboard declares `fill($surface.inverse)` — and that is load-bearing, not
+decoration.** Brand tokens resolve **relative to their container's surface**: on a dark
+artboard `$text.inverse` / `$type.*` ink resolves to **light** (white) so it reads over the
+scrim; on a light `$surface.page` artboard the *same* tokens resolve **dark** and the
+headline goes invisible against the dark photo. The dark fill is also the correct fallback
+colour if the image ever fails to load. So a full-bleed-photo surface is a **dark surface** —
+keep the artboard `$surface.inverse`.
+
+**Placement is on the node, not the DSL line.** The `image` line carries only
+`asset(hero_photo)` — its **`fit:cover` + focal point + alt** are set on the node's
+AssetPlacement by the agent's `place_asset_in_node` tool (or the editor inspector), the same
+op a human edit issues. **Aspect comes from the 1080×1350 frame**, so the photo is cropped to
+fill, never stretched. Swap `hero_photo` for the generated/uploaded asset id.
+
+**Distribution:** the `content` autolayout fills the frame at `y(sb)` (space-between) with
+two children — a hug **brand** lockup and a hug **copy** block — so the brand pins to the
+top, the message pins to the bottom, and the photo + scrim fill the band behind. Hero
+headline ≤5 words `max_lines(2)` stepped to `font_size($type.size.6xl)` (64) so it dominates
+the 1080 canvas; kicker ≤2 words; subtitle ≤8 words `max_lines(2)`; one inverse CTA whose
+fill-width label centers its glyph with `align(center)` + a hug height. Centered labels use
+align(center) + hug height; text heights hug.
+
+```text
+page hero_image size(1080,1350,px)
+  artboard fr p(0,0) s(fill,fill) clip(true) fill($surface.inverse)
+    photo image asset(hero_photo) p(0,0) s(1080,1350)
+    scrim r p(0,0) s(1080,1350) fill($surface.inverse) o($opacity.scrim)
+    content al(v, x(s), y(sb), g($space.section), pad(80)) p(0,0) s(1080,1350)
+      brand al(h, x(s), y(c), g(12), pad(0)) p(0,0) s(920,hug)
+        mark r p(0,0) s(40,40) fill($surface.accent) rd($radius.badge)
+        logo text "Insight Health" p(0,0) s(360,hug) style($type.label) fill($text.inverse) wrap_text(true) max_lines(1) slot(account.name)
+      copy al(v, x(s), g($space.stack.default), pad(0)) p(0,0) s(920,hug)
+        kicker text "CASE STUDY" p(0,0) s(920,hug) style($type.eyebrow) fill($text.inverse) wrap_text(true) max_lines(1) slot(campaign.eyebrow)
+        headline text "Faster triage, calmer clinics." p(0,0) s(920,hug) style($type.headline) font_size($type.size.6xl) lh(1.06) fill($text.inverse) wrap_text(true) max_lines(2) slot(campaign.headline)
+        subtitle text "How Northside cut missed calls to near zero." p(0,0) s(820,hug) style($type.body) lh(1.4) fill($text.inverse) wrap_text(true) max_lines(2) slot(offer.primary_message)
+        cta al(h, x(c), y(c), pad(18,36)) p(0,0) s(320,72) fill($surface.inverse) rd($radius.button)
+          cta_text text "Read the story" p(0,0) s(fill,hug) style($type.cta) align(center) max_lines(1) slot(campaign.cta)
+  #slot:account.name sample("Insight Health") worst_case("Insight Health Systems")
+  #slot:campaign.eyebrow sample("CASE STUDY") worst_case("CASE STUDY")
+  #slot:campaign.headline sample("Faster triage, calmer clinics.") worst_case("Faster triage, calmer clinics.")
+  #slot:offer.primary_message sample("How Northside cut missed calls to near zero.") worst_case("How Northside cut missed calls to near zero.")
+  #slot:campaign.cta sample("Read the story") worst_case("Read the story")
+```
+
+Validator proof:
+```json
+{ "ok": true, "stage": "preflight", "errors": [], "warnings": ["LUMB0613", "LUMB0614"] }
+```
+
+---
+
 ## A4 one-pager — header + hero + vertical 3-up benefit list + CTA footer (A4 portrait)
 
 **When to use:** a printed/PDF one-pager (sell sheet, leave-behind). Header brand row,

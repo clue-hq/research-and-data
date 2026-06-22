@@ -78,6 +78,14 @@ cta_text text "Book a Demo" p(0,0) s(fill,hug) style($type.cta) max_lines(1)
 - `max_lines(...)` so overflow is diagnosed early rather than clipping silently.
 - `lh` for hierarchy: tight headlines (`1.05`–`1.15`), relaxed body (`1.3`–`1.45`).
 
+### Text over an image
+
+A headline or label placed **over a photo** must sit on a **scrim** and use an inverse
+fill so it stays legible on a busy image: `style($type.headline) fill($text.inverse)`
+over a sibling scrim rect (`fill($surface.inverse) o($opacity.scrim)`). Declaration order
+is image → scrim → text. See the scrim idiom in `grammar.md` and
+`knowledge/images/placement`; legibility-over-image is a hard imagery-critic gate.
+
 ## Patterns that overflow
 
 ```text

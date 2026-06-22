@@ -27,6 +27,13 @@ A scrim is a semi-transparent rectangle **between the image and the text**, usin
 dark text. Without it, text on a photo is illegible the moment the photo is busy —
 this is the single most common imagery failure the critic rejects.
 
+**Make the artboard a dark surface (`fill($surface.inverse)`).** Brand tokens resolve
+*relative to their container's surface*: on a dark artboard `$text.inverse` and the
+`$type.*` roles resolve to **light** ink (legible over the scrim); on a light
+`$surface.page` artboard the *same* tokens resolve **dark** and the headline goes invisible
+against the photo. So a full-bleed-photo surface is a **dark** surface — and the dark fill
+doubles as the fallback colour if the image fails to load.
+
 ### Idiom A — full-bleed image + scrim + text (the hero)
 
 Image fills the artboard; a scrim sits on top; text is anchored at the bottom over the
@@ -34,7 +41,7 @@ scrim. Declaration order is z-order: image, then scrim, then text.
 
 ```text
 page hero size(1080,1350,px)
-  artboard fr p(0,0) s(fill,fill) fill($surface.page) clip(true)
+  artboard fr p(0,0) s(fill,fill) fill($surface.inverse) clip(true)
     photo image asset(hero_photo) p(0,0) s(1080,1350)
     scrim r p(0,0) s(1080,1350) fill($surface.inverse) o($opacity.scrim)
     content al(v,x(s),y(e),g($space.stack.tight),pad($space.card.padding)) p(0,0) s(1080,1350)
