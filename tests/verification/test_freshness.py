@@ -715,7 +715,11 @@ def test_freshness_metrics_emitted() -> None:
                 validate_field=False,
             )
             sink = InMemorySink()
-            await _engine(conn, sink=sink).due_for_refresh(now=NOW)
+            # Scope the scan to this test's entity: due_for_refresh's scan is global by default, so
+            # the emitted scanned/stale/due counts would otherwise pick up committed claims left by
+            # other tests when the whole suite shares one DB. Scoping keeps the asserted counts
+            # deterministic without depending on a pristine table.
+            await _engine(conn, sink=sink).due_for_refresh(entity_ids=(entity,), now=NOW)
             # the scan metrics carry an op="refresh" label (distinct from the age-out series).
             return (
                 int(sink.counter(METRIC_FRESHNESS_SCANNED, op="refresh")),
@@ -733,12 +737,15 @@ def test_freshness_span_emitted_with_counts() -> None:
     def _run() -> None:
         async def _inner() -> None:
             async with rollback_conn() as conn:
+                entity = new_entity_id()
                 await insert_claim(
                     conn,
-                    _claim(field_key="account.f1", observed_days_ago=300),
+                    _claim(field_key="account.f1", entity_id=entity, observed_days_ago=300),
                     validate_field=False,
                 )
-                await _engine(conn).due_for_refresh(now=NOW)
+                # Scope the scan to this test's entity so the span counts stay deterministic under a
+                # shared DB (the default scan is global; see the metrics test above).
+                await _engine(conn).due_for_refresh(entity_ids=(entity,), now=NOW)
 
         run_async(_inner())
 
