@@ -1,0 +1,97 @@
+"""`clue_research.profiling.committee` — Committee Discovery (mode M3 / M8.3).
+
+Within a known high-tier account, find the relevant people and hypothesize each one's committee role
+— producing the buying committee (Output 3) and the V1 contact graph (substrate §7). The trunk is
+:func:`discover_committee` (+ :class:`CommitteeAspectWorker` for the M7 graph); it existence-gates
+candidates through M2, infers + plausibility-gates roles via the shared LLM gateway, and reports
+committee coverage confidence. See ``docs/specs/M08-deep-profiling.md`` §M8.3.
+"""
+
+from __future__ import annotations
+
+from clue_research.profiling.committee.admission import (
+    AdmissionOutcome,
+    AdmissionStatus,
+    admit_candidate,
+)
+from clue_research.profiling.committee.coverage import (
+    CommitteeCoverage,
+    CommitteeCoverageConfidence,
+    estimate_committee_coverage,
+)
+from clue_research.profiling.committee.fields import (
+    COMMITTEE_FIELD_KEYS,
+    COMMITTEE_PACK,
+    PERSONA,
+    ROLE_ON_COMMITTEE,
+    load_committee_pack,
+)
+from clue_research.profiling.committee.results import (
+    DEFAULT_COMMITTEE_CONFIG,
+    CommitteeConfig,
+    CommitteeMemberRef,
+    CommitteeResult,
+)
+from clue_research.profiling.committee.roles import (
+    RoleInference,
+    RoleSeniority,
+    RoleVerdict,
+    gate_role,
+    infer_role,
+    role_plausible,
+    title_seniority,
+)
+from clue_research.profiling.committee.sources import (
+    CommitteePersonCandidate,
+    CommitteeSource,
+    order_committee_sources,
+)
+from clue_research.profiling.committee.stopping import (
+    DEFAULT_COMMITTEE_STOPPING_CONFIG,
+    CommitteeStoppingConfig,
+    CommitteeStoppingRule,
+    CommitteeStopReason,
+)
+from clue_research.profiling.committee.worker import CommitteeAspectWorker, discover_committee
+
+__all__ = [
+    # worker entrypoint + M7 adapter
+    "discover_committee",
+    "CommitteeAspectWorker",
+    # result / config
+    "CommitteeResult",
+    "CommitteeMemberRef",
+    "CommitteeConfig",
+    "DEFAULT_COMMITTEE_CONFIG",
+    # field-class pack (M8.3)
+    "COMMITTEE_PACK",
+    "COMMITTEE_FIELD_KEYS",
+    "ROLE_ON_COMMITTEE",
+    "PERSONA",
+    "load_committee_pack",
+    # people-source seam
+    "CommitteeSource",
+    "CommitteePersonCandidate",
+    "order_committee_sources",
+    # existence gate
+    "admit_candidate",
+    "AdmissionOutcome",
+    "AdmissionStatus",
+    # role inference + plausibility gate
+    "infer_role",
+    "gate_role",
+    "role_plausible",
+    "title_seniority",
+    "RoleInference",
+    "RoleVerdict",
+    "RoleSeniority",
+    # stopping rule
+    "CommitteeStoppingRule",
+    "CommitteeStoppingConfig",
+    "DEFAULT_COMMITTEE_STOPPING_CONFIG",
+    "CommitteeStopReason",
+    # coverage confidence
+    "estimate_committee_coverage",
+    "CommitteeCoverage",
+    "CommitteeCoverageConfidence",
+]
