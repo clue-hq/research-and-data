@@ -94,8 +94,13 @@ class MergePolicy(BaseModel):
 DEFAULT_MERGE_POLICY = MergePolicy()
 
 
-def _canonical(value: JsonValue) -> str:
-    """A canonical string for value equality / distinctness (order-independent for objects)."""
+def canonical_json(value: JsonValue) -> str:
+    """A canonical string for value equality / distinctness (order-independent for objects).
+
+    The one place exact ``value_json`` equality is decided in the substrate — the merge layer's
+    conflict/distinctness check and the M9.2 corroborator's exact-equality mode both call this, so
+    "same value" means the same thing on both surfaces (it is NOT
+    :func:`core.serialize_value_json`, whose Pydantic dump does not sort object keys)."""
     return json.dumps(value, sort_keys=True, separators=(",", ":"), default=str)
 
 
@@ -161,7 +166,7 @@ def _conflict(live: Sequence[Claim], policy: MergePolicy) -> tuple[bool, tuple[C
     ]
     representative: dict[str, ClaimId] = {}
     for claim in sorted(contenders, key=lambda c: (c.source_tier, c.collected_at.timestamp())):
-        representative.setdefault(_canonical(claim.value_json), claim.id)
+        representative.setdefault(canonical_json(claim.value_json), claim.id)
     if len(representative) >= 2:
         return True, tuple(representative.values())
     return False, ()
