@@ -31,6 +31,12 @@ Implemented so far:
   the ``Freshness`` impl), :class:`CadencePolicy`/:func:`load_cadence_policy` (policy data), the
   :class:`AgeOutCandidate` value type, and the pure :func:`staleness`/:func:`reference_time`/
   :func:`retention_horizon_for` helpers.
+* **M9.6** (``eval_harness`` + ``golden``) — the eval battery filling the M0.6 ``evals`` scaffold:
+  :class:`VerificationEvalHarness`, the five pure mechanism metrics (:func:`gate_block_metric`/
+  :func:`corroboration_metric`/:func:`faithfulness_metric`/:func:`identity_binding_metric`/
+  :func:`freshness_metric`), the :func:`check_regressions` CI gate, the :class:`GatewayJudge`
+  (M9.3-backed LLM judge), the hand-verified :func:`verification_gold_pack` + ``golden_fixture``
+  round-trip, ``eval_run`` persistence, and the human spot-check sampler.
 """
 
 from __future__ import annotations
@@ -45,6 +51,24 @@ from clue_research.verification.corroboration import (
     group_by_agreement,
     independent_source_count,
     values_agree,
+)
+from clue_research.verification.eval_harness import (
+    METRIC_EVAL_MECHANISM_RECALL,
+    METRIC_EVAL_REGRESSIONS,
+    METRIC_EVAL_RUBRIC_PASS_RATE,
+    GatewayJudge,
+    SpotCheckSample,
+    VerificationEvalHarness,
+    check_regressions,
+    corroboration_metric,
+    faithfulness_metric,
+    freshness_metric,
+    gate_block_metric,
+    identity_binding_metric,
+    ingest_spot_check,
+    record_eval_run,
+    regression_exit_code,
+    sample_promoted_claims,
 )
 from clue_research.verification.faithfulness import (
     DEFAULT_JUDGE_POLICY,
@@ -72,6 +96,14 @@ from clue_research.verification.freshness import (
     reference_time,
     retention_horizon_for,
     staleness,
+)
+from clue_research.verification.golden import (
+    GOLD_SUITE,
+    GoldPack,
+    ingest_golden_fixture,
+    load_golden_fixtures,
+    seed_golden_fixtures,
+    verification_gold_pack,
 )
 from clue_research.verification.identity_binding import (
     DEFAULT_BINDING_POLICY,
@@ -152,4 +184,27 @@ __all__ = [
     "METRIC_FRESHNESS_STALE",
     "METRIC_FRESHNESS_EXPIRED",
     "METRIC_FRESHNESS_DUE",
+    # M9.6 — eval harness + golden set + rubric scoring
+    "VerificationEvalHarness",
+    "GatewayJudge",
+    "check_regressions",
+    "regression_exit_code",
+    "gate_block_metric",
+    "corroboration_metric",
+    "faithfulness_metric",
+    "identity_binding_metric",
+    "freshness_metric",
+    "verification_gold_pack",
+    "GoldPack",
+    "GOLD_SUITE",
+    "seed_golden_fixtures",
+    "load_golden_fixtures",
+    "ingest_golden_fixture",
+    "record_eval_run",
+    "SpotCheckSample",
+    "sample_promoted_claims",
+    "ingest_spot_check",
+    "METRIC_EVAL_RUBRIC_PASS_RATE",
+    "METRIC_EVAL_MECHANISM_RECALL",
+    "METRIC_EVAL_REGRESSIONS",
 ]
