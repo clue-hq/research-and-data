@@ -482,14 +482,26 @@ impl<'a> SvgPageRenderer<'a> {
             }
             NodeKind::Vector(vector) => {
                 let geometry = format!("d=\"{}\"", escape_attr(&vector.path_data));
-                if stacked {
+                // A library icon carries a source viewBox: the node transform positions the
+                // box, and an inner group scales the path uniformly (centered) into it — so
+                // the icon renders at the node's size, not its intrinsic 24px. Hand-authored
+                // vectors (view_box None) draw at raw node-local coordinates, unchanged.
+                let fit = icon_fit_transform(vector.view_box, width, height);
+                if stacked || fit.is_some() {
                     self.body.push_str(&format!(
                         "<g{}{}{}{}>\n",
                         id_attrs, transform, opacity, filter
                     ));
+                    if let Some(fit) = &fit {
+                        self.body
+                            .push_str(&format!("<g transform=\"{fit}\">\n"));
+                    }
                     for layer in self.paint_layer_attrs(&node.fills, &node.strokes, Some(&node.id))
                     {
                         self.body.push_str(&format!("<path {geometry}{layer} />\n"));
+                    }
+                    if fit.is_some() {
+                        self.body.push_str("</g>\n");
                     }
                     self.body.push_str("</g>\n");
                 } else {
@@ -1240,6 +1252,25 @@ fn dimension_token(dimension: &Dimension) -> Option<&str> {
         Dimension::Token { token } => Some(token),
         Dimension::Fixed(_) | Dimension::Hug | Dimension::Fill { .. } => None,
     }
+}
+
+/// The inner transform that fits a vector node's source viewBox uniformly (centered)
+/// into its rendered box, so a library icon renders at the node's size. `None` when the
+/// node has no viewBox (a hand-authored vector path → draw at raw coordinates).
+fn icon_fit_transform(view_box: Option<[f64; 2]>, width: f64, height: f64) -> Option<String> {
+    let [vbw, vbh] = view_box?;
+    if vbw <= 0.0 || vbh <= 0.0 {
+        return None;
+    }
+    let scale = (width / vbw).min(height / vbh);
+    let tx = (width - vbw * scale) / 2.0;
+    let ty = (height - vbh * scale) / 2.0;
+    Some(format!(
+        "translate({} {}) scale({})",
+        fmt_num(tx),
+        fmt_num(ty),
+        fmt_num(scale)
+    ))
 }
 
 fn transform_attr(node: &Node, x: f64, y: f64) -> String {

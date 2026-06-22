@@ -5,7 +5,7 @@ answer two questions: **does this surface need imagery at all**, and **if so, wh
 role** — which decides the *mechanism*. An image must earn its place by serving the
 message; decoration that just fills space makes the design worse, not better. For how
 to prompt see `knowledge/images/prompts`; for how to place + scrim see
-`knowledge/images/placement`.
+`knowledge/images/placement`; for the available library icons see `knowledge/images/icons`.
 
 ## The decision table — content → mechanism
 

@@ -24,6 +24,7 @@ from lumen_deepagent.config import AgentRuntimeConfig
 from lumen_deepagent.eval_traces import summarize_trace_dir
 from lumen_deepagent.knowledge import (
     IMAGES_DECIDE_PATH,
+    IMAGES_ICONS_PATH,
     IMAGES_PLACEMENT_PATH,
     IMAGES_PROMPTS_PATH,
     mandatory_task_paths,
@@ -1010,11 +1011,16 @@ def test_imagery_prompt_and_placement_docs_pin_by_relevance():
     assert IMAGES_DECIDE_PATH in generic
     assert IMAGES_PROMPTS_PATH not in generic
     assert IMAGES_PLACEMENT_PATH not in generic
+    assert IMAGES_ICONS_PATH not in generic
 
     imagery = mandatory_task_paths("a social ad with a hero photo and headline overlay")
     assert IMAGES_DECIDE_PATH in imagery
     assert IMAGES_PROMPTS_PATH in imagery
     assert IMAGES_PLACEMENT_PATH in imagery
+
+    # Step 8: an icon-bearing brief pins the icon-library reference.
+    icon_task = mandatory_task_paths("a four-pillar deck slide with an icon row")
+    assert IMAGES_ICONS_PATH in icon_task
 
 
 def test_artboard_fixture_prompts_cover_required_surfaces():

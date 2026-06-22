@@ -637,7 +637,10 @@ impl Scene {
                     .as_ref()
                     .and_then(|metadata| metadata.path_data.clone())
                 {
-                    node.kind = NodeKind::Vector(VectorNode { path_data });
+                    node.kind = NodeKind::Vector(VectorNode {
+                        path_data,
+                        view_box: None,
+                    });
                 } else {
                     node.kind = NodeKind::Image(ImageNode {
                         asset_id: asset_id.clone(),

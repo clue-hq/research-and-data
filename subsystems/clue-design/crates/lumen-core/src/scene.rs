@@ -436,6 +436,12 @@ pub struct ImageNode {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct VectorNode {
     pub path_data: String,
+    /// Source viewBox `[width, height]` the path was authored against. When present
+    /// (e.g. a `svg(icon:name)` library icon at 24×24), renderers scale the path
+    /// uniformly and center it within the node's box. `None` (a hand-authored
+    /// `vector path(...)`) draws the path at its raw coordinates, unchanged.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub view_box: Option<[f64; 2]>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]

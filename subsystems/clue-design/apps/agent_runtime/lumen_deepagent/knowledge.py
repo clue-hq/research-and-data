@@ -25,6 +25,7 @@ PRIMARY_KNOWLEDGE_PATHS = [
     f"{KNOWLEDGE_DOCS_ROOT}/knowledge/images/decide.md",
     f"{KNOWLEDGE_DOCS_ROOT}/knowledge/images/prompts.md",
     f"{KNOWLEDGE_DOCS_ROOT}/knowledge/images/placement.md",
+    f"{KNOWLEDGE_DOCS_ROOT}/knowledge/images/icons.md",
     f"{KNOWLEDGE_DOCS_ROOT}/knowledge/design/artboard-frame-authoring.md",
     f"{KNOWLEDGE_DOCS_ROOT}/knowledge/design/layout-recipes.md",
     f"{KNOWLEDGE_DOCS_ROOT}/knowledge/design/typography-and-composition.md",
@@ -80,6 +81,7 @@ FOUNDATIONS_PATH = f"{KNOWLEDGE_DOCS_ROOT}/knowledge/design/foundations.md"
 IMAGES_DECIDE_PATH = f"{KNOWLEDGE_DOCS_ROOT}/knowledge/images/decide.md"
 IMAGES_PROMPTS_PATH = f"{KNOWLEDGE_DOCS_ROOT}/knowledge/images/prompts.md"
 IMAGES_PLACEMENT_PATH = f"{KNOWLEDGE_DOCS_ROOT}/knowledge/images/placement.md"
+IMAGES_ICONS_PATH = f"{KNOWLEDGE_DOCS_ROOT}/knowledge/images/icons.md"
 
 # The vetted block catalog: pre-proportioned, compile+preflight-validated blocks
 # the author ASSEMBLES (README index + full-artifact patterns + component blocks).
@@ -104,6 +106,7 @@ FULL_DELIVERY_PATHS = {
     IMAGES_DECIDE_PATH,
     IMAGES_PROMPTS_PATH,
     IMAGES_PLACEMENT_PATH,
+    IMAGES_ICONS_PATH,
     *BLOCK_CATALOG_PATHS,
 }
 # Query terms that mark an image-bearing task; when present, the imagery prompt-craft
@@ -121,6 +124,8 @@ IMAGERY_TERMS = {
     "background",
     "illustration",
     "illustrations",
+    "icon",
+    "icons",
     "texture",
     "banner",
     "visual",
@@ -249,6 +254,7 @@ def mandatory_task_paths(query: str) -> list[str]:
     if terms & IMAGERY_TERMS:
         paths.append(IMAGES_PROMPTS_PATH)
         paths.append(IMAGES_PLACEMENT_PATH)
+        paths.append(IMAGES_ICONS_PATH)
     return paths
 
 

@@ -261,6 +261,15 @@ impl<'a> PagePainter<'a> {
             }
             NodeKind::Vector(vector) => {
                 if let Some(path) = skia_safe::utils::parse_path::from_svg(&vector.path_data) {
+                    // A library icon carries its source viewBox: scale the path uniformly
+                    // and center it within the node box (so an icon renders at the node's
+                    // size, not its intrinsic 24px). Hand-authored vectors (view_box None)
+                    // draw at raw node-local coordinates, unchanged.
+                    let scaled = icon_fit_matrix(vector.view_box, width, height);
+                    if let Some(matrix) = scaled {
+                        canvas.save();
+                        canvas.concat(&matrix);
+                    }
                     for fill in &node.fills {
                         if let Some(paint) =
                             self.fill_paint(&fill.paint, width, height, Some(&node.id))
@@ -274,6 +283,9 @@ impl<'a> PagePainter<'a> {
                         {
                             canvas.draw_path(&path, &paint);
                         }
+                    }
+                    if scaled.is_some() {
+                        canvas.restore();
                     }
                 } else {
                     self.diagnostics.push(Diagnostic::warning(
@@ -932,6 +944,22 @@ fn corner_rrect(node: &Node, width: f64, height: f64) -> RRect {
         &node.corner,
         0.0,
     )
+}
+
+/// The transform that fits a vector node's source viewBox uniformly (centered) into
+/// its rendered box, so a library icon renders at the node's size. `None` when the
+/// node has no viewBox (a hand-authored vector path → draw at raw coordinates).
+fn icon_fit_matrix(view_box: Option<[f64; 2]>, width: f64, height: f64) -> Option<Matrix> {
+    let [vbw, vbh] = view_box?;
+    if vbw <= 0.0 || vbh <= 0.0 {
+        return None;
+    }
+    let scale = (width / vbw).min(height / vbh);
+    let tx = (width - vbw * scale) / 2.0;
+    let ty = (height - vbh * scale) / 2.0;
+    let mut matrix = Matrix::translate((tx as f32, ty as f32));
+    matrix.pre_scale((scale as f32, scale as f32), None);
+    Some(matrix)
 }
 
 /// Corner-radius delta for natively aligned strokes: inside strokes shrink

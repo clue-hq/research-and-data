@@ -659,11 +659,13 @@ page page_a4
 }
 
 #[test]
-fn parsed_but_unlowered_svg_icon_reports_explicit_error() {
+fn unknown_svg_icon_reports_explicit_error_listing_options() {
+    // Step 8: `svg(icon:name)` now lowers from a curated registry; an unknown name
+    // still halts with LUMD0703, but the hint lists the real options so a typo recovers.
     let output = compile_dsl(
         r#"
 page page_a4
-  icon svg(icon:calendar) p(0,0) s(24,24)
+  icon svg(icon:nonexistent-glyph) p(0,0) s(24,24)
 "#,
     );
 
@@ -671,7 +673,25 @@ page page_a4
     assert!(output
         .diagnostics
         .iter()
-        .any(|diagnostic| diagnostic.diagnostic.message.contains("svg icon")));
+        .any(|diagnostic| diagnostic.diagnostic.message.contains("unknown icon")));
+}
+
+#[test]
+fn svg_icon_lowers_to_a_vector_with_its_source_view_box() {
+    // Step 8: `svg(icon:check)` lowers to a vector node carrying the curated icon's
+    // path + its 24×24 source viewBox (which the renderers fit to the node box).
+    let mut scene = Scene::new(lumen_core::DocumentId::from("doc_icon"), "Icons");
+    let output = compile_dsl_into_scene(
+        "page page_a4\n  mark svg(icon:check) p(0,0) s(48,48) fill(#111827)",
+        &mut scene,
+    );
+
+    assert_no_dsl_errors(&output.compile_output.diagnostics);
+    let NodeKind::Vector(vector) = &scene.nodes[&NodeId::from("mark")].kind else {
+        panic!("svg(icon:check) should lower to a vector node");
+    };
+    assert!(vector.path_data.starts_with('M'), "{}", vector.path_data);
+    assert_eq!(vector.view_box, Some([24.0, 24.0]));
 }
 
 #[test]

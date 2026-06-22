@@ -11,6 +11,7 @@ pub mod dsl;
 pub mod editing;
 pub mod export_contract;
 pub mod hit_test;
+pub mod icons;
 pub mod ids;
 pub mod instance;
 pub mod layout;
