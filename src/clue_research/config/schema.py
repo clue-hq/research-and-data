@@ -119,7 +119,16 @@ class BudgetCaps(BaseModel):
     per_campaign_hard_cap_cents: CostCents | None = None
     # Per-account caps, tiered (Doc C §5 budget bands). Keyed by tier label, e.g. "top"/"high".
     per_account_cap_cents: dict[str, CostCents] = Field(default_factory=dict)
-    # Per-contact cap for deep committee/contact profiling (highest per-entity cost band).
+    # The per-account deep cap for a tier with no specific ``per_account_cap_cents`` entry — the
+    # conservative fallback (mirrors :class:`RecursionPolicy.default_caps`). ``None`` == an unlisted
+    # tier has *no* per-account cap (the per-campaign cap stays the hard backstop). The M7.5 budget
+    # engine reads :meth:`per_account_cap_for` so any tier — listed or not — resolves to one number.
+    default_per_account_cap_cents: CostCents | None = None
+    # Per-contact cap for deep committee/contact profiling (highest per-entity cost band, Doc C §5).
+    # RESERVED — not yet enforced by the M7.5 engine: deep contact/committee runs (modes M3/M4) are
+    # M8, and there is no per-contact run row to attach a distinct band to at M7. Until M8 adds a
+    # contact-scoped check, per-entity contact spend is governed by the per-account cap + the
+    # per-campaign hard cap (the backstop). M8 wires the contact band off this field.
     per_contact_cap_cents: CostCents | None = None
     # Pass A is deterministic-only and cheap; a low cents/account ceiling guards a runaway.
     pass_a_cap_cents_per_account: CostCents = Decimal("5")
@@ -132,6 +141,77 @@ class BudgetCaps(BaseModel):
             if cap < 0:
                 raise ValueError(f"per_account_cap_cents[{tier!r}] must be >= 0 (got {cap})")
         return self
+
+    def per_account_cap_for(self, tier: str) -> CostCents | None:
+        """The per-account deep cap for ``tier`` — its specific :attr:`per_account_cap_cents` band,
+        else :attr:`default_per_account_cap_cents` (the conservative fallback). ``None`` means no
+        per-account cap applies to this tier (the M7.5 engine then leaves per-account spend
+        un-denied and relies on the per-campaign hard cap as the backstop)."""
+        return self.per_account_cap_cents.get(tier, self.default_per_account_cap_cents)
+
+
+class TierRecursionCaps(BaseModel):
+    """The bounded-recursion caps for one tier (M7.2 / Doc C §3).
+
+    Three dials govern the per-account fan-out for accounts in this tier: ``max_depth`` (0 = no
+    facet sub-workers, 1 = one level, 2 = the full two-level dive), ``max_aspect_workers`` (the
+    level-1 breadth — how many aspect clusters fan out at once), and
+    ``max_facet_workers_per_aspect`` (the level-2 breadth — facets an eligible aspect may spawn).
+    Top tier gets depth 2;
+    lower tiers get one level or none (Doc C §3). The concrete numbers are deferred until real cost
+    data exists (Doc C §8) — these are safe, conservative defaults the dial ships with.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    max_depth: int = Field(default=0, ge=0, le=2)
+    max_aspect_workers: int = Field(default=4, ge=0)
+    max_facet_workers_per_aspect: int = Field(default=0, ge=0)
+
+
+class RecursionPolicy(BaseModel):
+    """The bounded recursion knob (M7.2 / Doc C §3) — *policy as data*, per-ICP/pack-overridable.
+
+    The two-level fan-out (orchestrator → aspect workers → facet sub-workers) is real research
+    power, but ungoverned it is the prototype's "spawn excessive subagents" blowout. This caps depth
+    and worker-count **per tier** and restricts which field-classes may recurse at all (the richest
+    aspects — ``account.resonance.*``, ``contact.facet.*``), so "be thorough" can never mean
+    unbounded spawn. The dial lives entirely in versioned config: retuning the per-tier numbers
+    (Doc C §8) is a config bump, never a code change. The M7.2 ``SpawnGuard`` reads this as the
+    single runtime chokepoint. Conservative defaults: top tier depth 2, high depth 1, any unlisted
+    tier depth 0 (no recursion — the safe floor).
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    by_tier: dict[str, TierRecursionCaps] = Field(
+        default_factory=lambda: {
+            "top": TierRecursionCaps(
+                max_depth=2, max_aspect_workers=8, max_facet_workers_per_aspect=4
+            ),
+            "high": TierRecursionCaps(
+                max_depth=1, max_aspect_workers=6, max_facet_workers_per_aspect=3
+            ),
+        }
+    )
+    # Caps for a tier with no specific entry — the conservative floor: no facet recursion at all.
+    default_caps: TierRecursionCaps = TierRecursionCaps(
+        max_depth=0, max_aspect_workers=4, max_facet_workers_per_aspect=0
+    )
+    # Field-class *prefixes* whose aspects may spawn facet sub-workers (the richest, Doc C §2/§3).
+    # Matched by prefix (see :meth:`is_eligible`): an aspect equal to a listed class OR nested under
+    # it (``account.resonance.culture`` under ``account.resonance``) is eligible. An aspect whose
+    # class is not listed never recurses, regardless of depth budget.
+    eligible_classes: tuple[str, ...] = ("account.resonance", "contact.facet")
+
+    def caps_for(self, tier: str) -> TierRecursionCaps:
+        """The recursion caps for ``tier`` — its specific entry, or the conservative default."""
+        return self.by_tier.get(tier, self.default_caps)
+
+    def is_eligible(self, aspect: str) -> bool:
+        """Whether an aspect may spawn facet sub-workers — i.e. its key is a recursion-eligible
+        field-class (or nests under one). A non-eligible aspect is denied recursion at the guard."""
+        return any(aspect == cls or aspect.startswith(cls + ".") for cls in self.eligible_classes)
 
 
 class FreshnessTtls(BaseModel):

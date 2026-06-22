@@ -92,6 +92,19 @@ def first_confident_claim(claims: Iterable[Claim], min_confidence: float = 0.0) 
     return None
 
 
+def revalidate_with(claim: Claim, **updates: object) -> Claim:
+    """Apply provenance ``updates`` to a frozen :class:`Claim` and **re-run validation**.
+
+    ``model_copy(update=...)`` does not re-run validators, so a copy that changes provenance must be
+    round-tripped through ``model_validate`` or an invariant could be silently bypassed. This is the
+    one shared place that subtlety lives (conventions §2 / CLAUDE.md DRY): both the M4.1 waterfall
+    (``_finalize`` — stamping ``source_key``/``run_id``/``research_mode``/``identity_binding``) and
+    the M4.3 adapter pipeline (``_stamp_source_key``) stamp engine-owned provenance onto a
+    factory-built claim through here, never re-implementing the copy-then-revalidate dance.
+    """
+    return Claim.model_validate(claim.model_copy(update=updates).model_dump(mode="python"))
+
+
 def account_claim(
     *,
     entity_id: EntityId,

@@ -16,6 +16,7 @@ PKG = REPO / "src" / "clue_research"
 RESERVED: dict[str, str] = {
     "core": "M0.2",
     "config": "M0.4",
+    "gateway": "M0.4",  # the LLM-gateway client (the model-egress seam; owned by M0.4)
     "obs": "M0.5",
     "db": "M0.3",
     "claimstore": "M1",

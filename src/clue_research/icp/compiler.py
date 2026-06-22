@@ -27,7 +27,7 @@ from pydantic import BaseModel, ConfigDict
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_research.claimstore import get_field
-from clue_research.core import FieldDef, ICPSpec, PassKind
+from clue_research.core import FieldDef, ICPSpec, PassKind, ReuseScope, resolve_reuse_scope
 from clue_research.icp.catalog import UnknownPackError, get_pack_field_set
 from clue_research.icp.spec import UnknownICPSpecError, get_active_icp
 
@@ -83,8 +83,11 @@ class FieldPlan(BaseModel):
     """The compiled research schema for one ICP-spec version — the single contract M4/M6/M8 consume.
 
     ``fields`` is the full ordered plan; ``scoring_fields`` / ``deep_fields`` are the first-class
-    two-pass subsets (the auditable statement of what runs on whom); ``signal_classes`` records the
-    proxy↔narrative links; ``plan_hash`` content-addresses it (stable per ICP-spec version).
+    two-pass subsets (the auditable statement of what runs on whom); ``public_fields`` /
+    ``tenant_private_fields`` partition the same plan by resolved cross-tenant reuse scope (M2.5 /
+    ENG-165 W3 — the auditable leak surface M6/M8 read so they never re-derive a field's
+    data-class); ``signal_classes`` records the proxy↔narrative links; ``plan_hash`` content-
+    addresses it (stable per ICP-spec version).
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
@@ -95,6 +98,8 @@ class FieldPlan(BaseModel):
     fields: tuple[FieldPlanEntry, ...] = ()
     scoring_fields: tuple[FieldPlanEntry, ...] = ()
     deep_fields: tuple[FieldPlanEntry, ...] = ()
+    public_fields: tuple[FieldPlanEntry, ...] = ()
+    tenant_private_fields: tuple[FieldPlanEntry, ...] = ()
     signal_classes: tuple[SignalClassLink, ...] = ()
     plan_hash: str = ""
 
@@ -150,6 +155,9 @@ def _plan_hash(
                 "gate": e.field.gate,
                 "pass": e.field.pass_kind.value,
                 "signal_class": e.field.signal_class,
+                "reuse_scope": (
+                    e.field.reuse_scope.value if e.field.reuse_scope is not None else None
+                ),
             }
             for e in entries
         ],
@@ -232,6 +240,12 @@ async def compile_field_plan(
         fields=frozen_entries,
         scoring_fields=tuple(e for e in frozen_entries if e.field.pass_kind is PassKind.SCORING),
         deep_fields=tuple(e for e in frozen_entries if e.field.pass_kind is PassKind.DEEP),
+        public_fields=tuple(
+            e for e in frozen_entries if resolve_reuse_scope(e.field) is ReuseScope.PUBLIC_FOOTPRINT
+        ),
+        tenant_private_fields=tuple(
+            e for e in frozen_entries if resolve_reuse_scope(e.field) is ReuseScope.TENANT_PRIVATE
+        ),
         signal_classes=_build_signal_links(frozen_entries),
         plan_hash=_plan_hash(
             icp_spec.client_id, icp_spec.icp_key, icp_spec.version, frozen_entries

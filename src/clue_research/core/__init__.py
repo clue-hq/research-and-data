@@ -16,6 +16,9 @@ from clue_research.core.claim import Claim, DiscoveryProvenance, can_be_promoted
 from clue_research.core.entity import AccountEntity, ContactEntity, Entity
 from clue_research.core.enums import (
     AccountStatus,
+    BudgetScope,
+    BudgetVerdict,
+    CampaignPhase,
     ClaimFlavor,
     EntityScope,
     EntityType,
@@ -23,14 +26,31 @@ from clue_research.core.enums import (
     FreshnessState,
     ICPCreatedFrom,
     ICPStatus,
+    IdempotencyScope,
     IdentityBinding,
+    JudgeVerdict,
     Modality,
     PassKind,
     Persona,
+    PhaseStatus,
+    PreSpendVerdict,
     ResearchMode,
     ReuseScope,
     UseClass,
     VerificationStatus,
+    WorkerStatus,
+)
+from clue_research.core.execution import (
+    AspectContext,
+    AspectWorker,
+    BudgetDecision,
+    BudgetEngine,
+    BurnDown,
+    Estimate,
+    PhaseContext,
+    PhaseHandler,
+    PhaseResult,
+    WorkerResult,
 )
 from clue_research.core.factories import (
     TIER_ORDER,
@@ -43,6 +63,7 @@ from clue_research.core.factories import (
     field_claim,
     first_confident_claim,
     parse_value_json,
+    revalidate_with,
     serialize_value_json,
     to_value_json,
 )
@@ -56,12 +77,23 @@ from clue_research.core.field import (
     FieldDef,
     FieldKey,
     classify_field_key,
+    default_reuse_scope,
     field_key,
     field_namespace,
     is_field_key_or_class,
     is_pack_registered,
     is_valid_field_key,
     register_pack,
+    resolve_reuse_scope,
+)
+from clue_research.core.gateway import (
+    Completion,
+    EmbeddingResult,
+    LLMGateway,
+    Message,
+    Role,
+    TokenUsage,
+    Vector,
 )
 from clue_research.core.handoff import (
     AccountHandoff,
@@ -76,7 +108,21 @@ from clue_research.core.handoff import (
     ValueNarrativeItem,
     WinningProvenance,
 )
+from clue_research.core.idempotency import (
+    account_step_key,
+    idempotency_key,
+    phase_key,
+)
+from clue_research.core.modality import (
+    AdaptContext,
+    ClaimDraft,
+    GateDecision,
+    ModalityAdapter,
+    NormalizedText,
+    RawArtifact,
+)
 from clue_research.core.primitives import (
+    CampaignRunId,
     ClaimId,
     Confidence,
     Corroborations,
@@ -86,21 +132,37 @@ from clue_research.core.primitives import (
     SourceTier,
     UnitInterval,
     UtcDatetime,
+    new_campaign_run_id,
     new_claim_id,
     new_entity_id,
     new_run_id,
 )
-from clue_research.core.resolver import Resolver
+from clue_research.core.resolver import Resolver, ResolverError, RetryableResolverError
 from clue_research.core.source import SourceManifest
+from clue_research.core.verification import (
+    Binding,
+    FaithfulnessJudge,
+    Freshness,
+    IdentityBindingGate,
+    JudgeResult,
+    PreSpendDecision,
+    PreSpendGate,
+    PreSpendRequest,
+    ReResearchCandidate,
+    Staleness,
+    TargetLock,
+)
 
 __all__ = [
     # primitives
     "EntityId",
     "ClaimId",
     "RunId",
+    "CampaignRunId",
     "new_entity_id",
     "new_claim_id",
     "new_run_id",
+    "new_campaign_run_id",
     "SourceTier",
     "Confidence",
     "Corroborations",
@@ -124,6 +186,15 @@ __all__ = [
     "Persona",
     "ICPStatus",
     "ICPCreatedFrom",
+    # enums — Beat-0 cross-milestone contracts (execution + verification)
+    "CampaignPhase",
+    "PhaseStatus",
+    "WorkerStatus",
+    "IdempotencyScope",
+    "BudgetScope",
+    "BudgetVerdict",
+    "PreSpendVerdict",
+    "JudgeVerdict",
     # fields
     "FieldClass",
     "FieldKey",
@@ -135,6 +206,8 @@ __all__ = [
     "field_key",
     "register_pack",
     "is_pack_registered",
+    "default_reuse_scope",
+    "resolve_reuse_scope",
     "NS_CORE",
     "NS_ACCOUNT",
     "NS_ACCOUNT_RESONANCE",
@@ -151,6 +224,23 @@ __all__ = [
     # source / resolver
     "SourceManifest",
     "Resolver",
+    "ResolverError",
+    "RetryableResolverError",
+    # modality adapters (the fetch→adapt→extract seam; framework in clue_research.adapters)
+    "ModalityAdapter",
+    "RawArtifact",
+    "NormalizedText",
+    "ClaimDraft",
+    "AdaptContext",
+    "GateDecision",
+    # llm gateway (model-egress seam)
+    "LLMGateway",
+    "Message",
+    "Role",
+    "TokenUsage",
+    "Completion",
+    "EmbeddingResult",
+    "Vector",
     # composite contracts
     "WinningProvenance",
     "CurrentValue",
@@ -171,9 +261,37 @@ __all__ = [
     "decode_jsonb",
     "by_tier_ascending",
     "first_confident_claim",
+    "revalidate_with",
     "account_claim",
     "contact_claim",
     "discovery_claim",
     "field_claim",
     "contact_field_claim",
+    # durable-execution seam (M7 contracts; impl in clue_research.durable)
+    "PhaseContext",
+    "PhaseResult",
+    "PhaseHandler",
+    "AspectContext",
+    "WorkerResult",
+    "AspectWorker",
+    "Estimate",
+    "BudgetDecision",
+    "BurnDown",
+    "BudgetEngine",
+    # idempotency key derivation (M7.4 pure helpers)
+    "idempotency_key",
+    "account_step_key",
+    "phase_key",
+    # verification gate seam (M9 contracts; impl in clue_research.verification)
+    "PreSpendRequest",
+    "PreSpendDecision",
+    "TargetLock",
+    "PreSpendGate",
+    "JudgeResult",
+    "FaithfulnessJudge",
+    "Binding",
+    "IdentityBindingGate",
+    "Staleness",
+    "ReResearchCandidate",
+    "Freshness",
 ]
