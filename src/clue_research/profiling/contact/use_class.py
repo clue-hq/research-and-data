@@ -39,6 +39,7 @@ _SENSITIVE_MARKERS: tuple[str, ...] = (
     "judaism",
     "hindu",
     "buddhist",
+    "bible",
     "evangelical",
     "ministry",
     "parish",

@@ -13,7 +13,7 @@ from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_research.claimstore import TenantScope, claims_for
+from clue_research.claimstore import TenantScope, claims_for, entities_with_field_claim
 from clue_research.core import (
     AspectContext,
     AspectWorker,
@@ -334,5 +334,100 @@ def test_aspect_worker_research_bridges_context(require_profiling_db: None) -> N
             assert result.aspect == "committee"
             assert len(result.claim_refs) == 3  # one admitted member × (discovery+role+persona)
             assert result.detail["admitted"] == 1
+            # with no ICP spec persisted the worker defaults to all personas; the persona claim is
+            # still written with a value in the canonical set.
+            scope = TenantScope.for_tenant(_TENANT)
+            persona_contacts = await entities_with_field_claim(
+                conn, PERSONA, run_id=_RUN, scope=scope
+            )
+            assert len(persona_contacts) == 1
+            persona_claim = (await claims_for(conn, persona_contacts[0], PERSONA, scope=scope))[0]
+            assert persona_claim.value_json in {p.value for p in Persona}
+
+    run_async(scenario())
+
+
+def test_exhausted_stop_reason(require_profiling_db: None) -> None:
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            await seed_packs(conn)
+            account = await insert_test_account(conn)
+            source = FakeCommitteeSource(
+                source_key="apollo_people", tier=2, candidates=[_cfo(), _vp_eng()]
+            )
+            result = await discover_committee(
+                conn,
+                account_entity_id=account.id,
+                run_id=_RUN,
+                tenant_id=_TENANT,
+                sources=[source],
+                gateway=FakeGateway(),
+                role_model="model-x",
+            )
+            # Single productive source consulted once; no budget/yield stop → tiers exhausted.
+            assert result.coverage.stopping_reason is CommitteeStopReason.EXHAUSTED
+            assert result.admitted == 2
+            assert source.calls == 1
+
+    run_async(scenario())
+
+
+def test_all_candidates_without_strong_keys_stop_gracefully(require_profiling_db: None) -> None:
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            await seed_packs(conn)
+            account = await insert_test_account(conn)
+            ghosts = [
+                make_candidate(source_url="https://acme.example/team", full_name=f"Ghost {i}")
+                for i in range(3)
+            ]
+            source = FakeCommitteeSource(source_key="apollo_people", tier=2, candidates=ghosts)
+            result = await discover_committee(
+                conn,
+                account_entity_id=account.id,
+                run_id=_RUN,
+                tenant_id=_TENANT,
+                sources=[source],
+                gateway=FakeGateway(),
+                role_model="model-x",
+            )
+            assert result.admitted == 0
+            assert result.dropped == 3
+            assert result.members == ()
+            from clue_research.profiling.committee.coverage import CommitteeCoverageConfidence
+
+            assert result.coverage.confidence is CommitteeCoverageConfidence.NONE
+
+    run_async(scenario())
+
+
+def test_role_fallback_on_unparseable_gateway(require_profiling_db: None) -> None:
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            await seed_packs(conn)
+            account = await insert_test_account(conn)
+            engineer = make_candidate(
+                source_key="apollo_people",
+                linkedin_url="https://linkedin.com/in/staff-eng",
+                full_name="Sam Engineer",
+                title="Staff Software Engineer",
+                source_url="https://acme.example/team",
+            )
+            source = FakeCommitteeSource(source_key="apollo_people", tier=2, candidates=[engineer])
+            result = await discover_committee(
+                conn,
+                account_entity_id=account.id,
+                run_id=_RUN,
+                tenant_id=_TENANT,
+                sources=[source],
+                gateway=FakeGateway(reply="stub:deadbeef not json"),  # unparseable → fail-safe
+                role_model="model-x",
+            )
+            assert result.admitted == 1
+            member = result.members[0]
+            # the title heuristic routes an engineer → technical_evaluator (plausible), low conf.
+            assert member.persona is Persona.TECHNICAL_EVALUATOR
+            assert member.role_plausible is True
+            assert member.role_confidence <= 0.2  # fallback confidence
 
     run_async(scenario())

@@ -20,6 +20,7 @@ from clue_research.profiling.committee.admission import (
 from ..conftest import insert_test_account, make_candidate, rollback_conn, run_async
 
 _RUN = UUID("11111111-1111-1111-1111-111111111111")
+_RUN2 = UUID("1a1a1a1a-1a1a-1a1a-1a1a-1a1a1a1a1a1a")
 
 
 def test_fabricated_person_dropped_at_gate(require_profiling_db: None) -> None:
@@ -111,5 +112,30 @@ def test_discovery_provenance_idempotent_in_run(require_profiling_db: None) -> N
                 conn, first.contact_entity_id, DISCOVERY_PROVENANCE_FIELD, scope=PUBLIC_ONLY
             )
             assert len(claims) == 1
+
+    run_async(scenario())
+
+
+def test_discovery_provenance_separate_across_runs(require_profiling_db: None) -> None:
+    """Idempotency is per-run: the same person admitted under two runs resolves to the same contact
+    but records a distinct discovery-provenance claim per run."""
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            account = await insert_test_account(conn)
+            candidate = make_candidate(
+                linkedin_url="https://linkedin.com/in/jane-cfo",
+                full_name="Jane CFO",
+                title="CFO",
+                source_url="https://acme.example/team",
+            )
+            first = await admit_candidate(conn, account, candidate, run_id=_RUN)
+            second = await admit_candidate(conn, account, candidate, run_id=_RUN2)
+            assert first.contact_entity_id == second.contact_entity_id  # same resolved person
+            assert first.discovery_claim_id != second.discovery_claim_id  # one provenance per run
+            claims = await claims_for(
+                conn, first.contact_entity_id, DISCOVERY_PROVENANCE_FIELD, scope=PUBLIC_ONLY
+            )
+            assert {c.run_id for c in claims} == {_RUN, _RUN2}
 
     run_async(scenario())

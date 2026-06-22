@@ -99,6 +99,12 @@ async def _write_committee_provenance(
     # construction); fall back to CRM_IMPORT (no URL required) for the rare email-only candidate.
     grounding_url = candidate.source_url or candidate.linkedin_url
     method = ExtractionMethod.API if grounding_url is not None else ExtractionMethod.CRM_IMPORT
+    # Discovery is admission evidence, never LLM synthesis — so a discovery claim can never be
+    # tier 4 (the core.claim validator requires tier-4 ⟺ llm_synthesis). A people source is tier
+    # 1-3 by nature; clamp defensively so a misconfigured tier-4 ``CommitteeSource`` degrades to
+    # tier 3 instead of raising at claim construction (the LLM can never *be* the source of a
+    # person — anti-fabrication).
+    discovery_tier = min(source_tier, 3)
 
     claim = discovery_claim(
         entity_id=contact_entity_id,
@@ -109,7 +115,7 @@ async def _write_committee_provenance(
             "matched_signal": candidate.matched_signal,
             "discovery_confidence": candidate.discovery_confidence,
         },
-        source_tier=source_tier,
+        source_tier=discovery_tier,
         extraction_method=method,
         confidence=candidate.discovery_confidence,
         run_id=run_id,

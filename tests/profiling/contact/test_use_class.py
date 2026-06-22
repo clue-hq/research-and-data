@@ -6,6 +6,8 @@ religious/political/health marker; a causes claim de-escalates only when evident
 
 from __future__ import annotations
 
+import pytest
+
 from clue_research.core import FieldDef, UseClass
 from clue_research.profiling.contact.use_class import DEFAULT_USE_CLASS_TAGGER
 from clue_research.profiling.fields import (
@@ -17,6 +19,14 @@ from clue_research.profiling.fields import (
 )
 
 _FIELDS: dict[str, FieldDef] = {s.field_def.field_key: s.field_def for s in FACET_PACK}
+
+# The escalatable facet fields — every one must escalate to sensitive on a special-category marker
+# (so a future escalatable field cannot ship without this coverage).
+_ESCALATABLE_FIELDS: list[str] = [
+    s.field_def.field_key
+    for s in FACET_PACK
+    if (s.field_def.validation or {}).get("use_class_escalatable")
+]
 
 
 def test_non_escalatable_field_tags_at_hint() -> None:
@@ -76,5 +86,44 @@ def test_causes_ambiguous_stays_sensitive() -> None:
         _FIELDS[FACET_CAUSES],
         [{"cause": "a local community group"}],
         "Supports a local community group.",
+    )
+    assert tag is UseClass.SENSITIVE
+
+
+def test_political_interest_escalates() -> None:
+    tag = DEFAULT_USE_CLASS_TAGGER.tag(
+        _FIELDS[FACET_STATED_INTERESTS],
+        ["volunteering"],
+        "Ran as a candidate in a local election campaign.",
+    )
+    assert tag is UseClass.SENSITIVE
+
+
+def test_health_interest_escalates() -> None:
+    tag = DEFAULT_USE_CLASS_TAGGER.tag(
+        _FIELDS[FACET_STATED_INTERESTS],
+        ["advocacy"],
+        "A vocal mental health advocate after a cancer diagnosis.",
+    )
+    assert tag is UseClass.SENSITIVE
+
+
+def test_marker_in_value_only_escalates() -> None:
+    # The marker is only in the value_json (not the evidence span) — _flatten must still catch it.
+    tag = DEFAULT_USE_CLASS_TAGGER.tag(
+        _FIELDS[FACET_CAUSES],
+        [{"cause": "ministry outreach"}],
+        "Supports a community group.",
+    )
+    assert tag is UseClass.SENSITIVE
+
+
+@pytest.mark.parametrize("field_key", _ESCALATABLE_FIELDS)
+def test_every_escalatable_field_escalates_on_marker(field_key: str) -> None:
+    # A political marker in the evidence escalates every escalatable field to sensitive.
+    tag = DEFAULT_USE_CLASS_TAGGER.tag(
+        _FIELDS[field_key],
+        ["x"],
+        "Backs a political campaign candidate.",
     )
     assert tag is UseClass.SENSITIVE

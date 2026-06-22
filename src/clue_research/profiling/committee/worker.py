@@ -82,14 +82,19 @@ def _provenance_params(
     """The provenance flavor for a role/persona claim derived from the LLM role inference.
 
     The role is an LLM judgment — the least-trusted layer (tier 4), grounded in the person's title
-    (the ``evidence_span``) found at a public URL (substrate §4). For the rare candidate with no
-    grounding URL (verified-email only), fall back to an internal classification
-    (``HUMAN``/tier 1, no URL) — mirroring M6.3's derived-claim convention — so the claim is always
-    writable."""
+    (the ``evidence_span``) found at a public URL (substrate §4). The tier-4 path requires BOTH a
+    grounding URL *and* a non-empty title: a tier-4 claim with a null ``evidence_span`` can never be
+    promoted (``core.can_be_promoted``), so when either is missing we fall back to an internal
+    classification (``HUMAN``/tier 1, no URL) — mirroring M6.3's derived-claim convention — so the
+    role claim is always writable *and* promotable."""
     grounding_url = candidate.source_url or candidate.linkedin_url
-    if grounding_url is not None:
-        evidence_span = f"title: {candidate.title}" if candidate.title else None
-        return ExtractionMethod.LLM_SYNTHESIS, SourceTier(4), grounding_url, evidence_span
+    if grounding_url is not None and candidate.title and candidate.title.strip():
+        return (
+            ExtractionMethod.LLM_SYNTHESIS,
+            SourceTier(4),
+            grounding_url,
+            f"title: {candidate.title}",
+        )
     return ExtractionMethod.HUMAN, SourceTier(1), None, None
 
 
@@ -225,6 +230,7 @@ async def discover_committee(
     rule = CommitteeStoppingRule(config.stopping, budget_cap_cents=budget_cap_cents)
 
     seen_keys: set[str] = set()
+    seen_contact_ids: set[EntityId] = set()  # dedup on the *resolved* contact, not the strong key
     members: list[CommitteeMemberRef] = []
     admitted = dropped = candidates_seen_total = 0
     total_cost = Decimal(0)
@@ -259,6 +265,14 @@ async def discover_committee(
             contact_entity_id = outcome.contact_entity_id
             assert contact_entity_id is not None  # ADMITTED always carries a contact id
             assert outcome.discovery_claim_id is not None
+
+            # Two different strong keys (e.g. LinkedIn + verified email) can resolve to the SAME
+            # contact (the M2 OR-match), which the strong-key dedup above misses. Dedup on the
+            # resolved contact so a person is counted/role-inferred once (the new channel's
+            # discovery-provenance was still recorded by admit_candidate above).
+            if contact_entity_id in seen_contact_ids:
+                continue
+            seen_contact_ids.add(contact_entity_id)
 
             verdict = gate_role(
                 infer_role(
