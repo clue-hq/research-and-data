@@ -32,6 +32,7 @@ from clue_research.db import db_lifespan, transaction
 from clue_research.durable import (
     AccountResearchGraph,
     AccountRunStatus,
+    AccountRunSubPhase,
     DbAccountRunStore,
     WorkerRegistry,
     compute_gap_fields,
@@ -40,6 +41,7 @@ from clue_research.durable import (
     insert_account_run,
     save_plan,
     save_references,
+    set_account_sub_phase,
     set_status,
 )
 from clue_research.durable.planning import build_plan
@@ -71,6 +73,23 @@ def test_account_run_status_enum_matches_db() -> None:
             )
             db_labels = [r[0] for r in rows.all()]
         assert db_labels == [s.value for s in AccountRunStatus]
+
+    run_async(_run())
+
+
+def test_account_run_sub_phase_enum_matches_db() -> None:
+    # M8A.0 parity: the account_run_sub_phase PG enum labels equal AccountRunSubPhase's values, in
+    # order (guards drift between the migration and the durable enum).
+    async def _run() -> None:
+        async with rollback_conn(seed_pack=False) as conn:
+            rows = await conn.execute(
+                text(
+                    "SELECT e.enumlabel FROM pg_type t JOIN pg_enum e ON e.enumtypid = t.oid "
+                    "WHERE t.typname = 'account_run_sub_phase' ORDER BY e.enumsortorder"
+                )
+            )
+            db_labels = [r[0] for r in rows.all()]
+        assert db_labels == [s.value for s in AccountRunSubPhase]
 
     run_async(_run())
 
@@ -131,6 +150,81 @@ def test_account_run_repository_round_trip() -> None:
 
             await set_status(conn, run_id, AccountRunStatus.FAILED)
             assert (await get_account_run(conn, run_id)).status is AccountRunStatus.FAILED
+
+    run_async(_run())
+
+
+def test_account_run_sub_phase_repository_round_trip() -> None:
+    # M8A.0: a fresh row's sub_phase is NULL (not started); set_account_sub_phase advances it
+    # monotonically through the three deep boundaries, leaving the coarse status untouched.
+    async def _run() -> None:
+        async with rollback_conn(seed_pack=False) as conn:
+            run_id = new_run_id()
+            await insert_account_run(
+                conn,
+                account_run_id=run_id,
+                campaign_run_id=new_campaign_run_id(),
+                entity_id=new_entity_id(),
+                tier="top",
+            )
+
+            row = await get_account_run(conn, run_id)
+            assert row is not None and row.sub_phase is None  # born NULL
+
+            for sub in (
+                AccountRunSubPhase.ACCOUNT_PROFILED,
+                AccountRunSubPhase.COMMITTEE_DISCOVERED,
+                AccountRunSubPhase.CONTACTS_COMPLETE,
+            ):
+                await set_account_sub_phase(conn, run_id, sub)
+                row = await get_account_run(conn, run_id)
+                assert row is not None and row.sub_phase is sub
+
+            # sub_phase is orthogonal to status: advancing the marker never touched the lifecycle.
+            assert row.status is AccountRunStatus.PENDING
+
+    run_async(_run())
+
+
+def test_db_store_sub_phase_round_trips_through_the_seam() -> None:
+    # M8A.0: the AccountRunStore seam (own-transaction) round-trips the marker against a committed
+    # row — the convenience path the M8A.1 orchestrator uses for the simple resume marker.
+    async def _run() -> None:
+        async with db_lifespan():
+            committed_id = new_run_id()
+            store = DbAccountRunStore()
+            try:
+                async with transaction() as conn:
+                    await insert_account_run(
+                        conn,
+                        account_run_id=committed_id,
+                        campaign_run_id=new_campaign_run_id(),
+                        entity_id=new_entity_id(),
+                        tier="top",
+                    )
+                # born NULL through the seam, then advances and reads back.
+                assert await store.get_account_sub_phase(account_run_id=committed_id) is None
+                await store.set_account_sub_phase(
+                    account_run_id=committed_id, sub_phase=AccountRunSubPhase.ACCOUNT_PROFILED
+                )
+                assert (
+                    await store.get_account_sub_phase(account_run_id=committed_id)
+                    is AccountRunSubPhase.ACCOUNT_PROFILED
+                )
+                await store.set_account_sub_phase(
+                    account_run_id=committed_id, sub_phase=AccountRunSubPhase.CONTACTS_COMPLETE
+                )
+                assert (
+                    await store.get_account_sub_phase(account_run_id=committed_id)
+                    is AccountRunSubPhase.CONTACTS_COMPLETE
+                )
+                # an unknown run resolves to None (no row), not an error.
+                assert await store.get_account_sub_phase(account_run_id=new_run_id()) is None
+            finally:
+                async with transaction() as conn:
+                    await conn.execute(
+                        text("DELETE FROM account_run WHERE id = :id"), {"id": committed_id}
+                    )
 
     run_async(_run())
 

@@ -22,9 +22,9 @@ and serializes it.
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Callable, Iterable, Sequence
+from collections.abc import Awaitable, Callable, Iterable, Sequence
 from contextlib import AbstractAsyncContextManager
-from typing import Any
+from typing import Any, TypeVar, overload
 
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from pydantic import BaseModel, ConfigDict
@@ -37,6 +37,8 @@ from clue_research.locks import DEFAULT_TTL_MS, entity_lock
 # so tests can supply a process-local lock (no Redis) and prod supplies the Redis entity lock.
 LockFactory = Callable[[EntityId], AbstractAsyncContextManager[Any]]
 
+_RunResultT = TypeVar("_RunResultT")
+
 
 class AccountSpec(BaseModel):
     """One account to deep-research in the ``deep`` phase (M7.3) — the entity, its tier, and the
@@ -48,6 +50,15 @@ class AccountSpec(BaseModel):
     tier: str
     tenant_id: str | None = None
     field_keys: tuple[str, ...] | None = None
+
+
+# A per-account callback the deep handler (M8A.2) supplies to drive a *custom* pipeline — the M8A.1
+# account→committee→contact sequence — inside the scheduler's bounded-parallelism + per-entity
+# single-flight slot, in place of the default ``AccountResearchGraph.run``. It receives the resolved
+# spec and returns the per-account result (the ``campaign_run_id`` / ``checkpointer`` it needs are
+# bound by the caller's closure, so the scheduler stays agnostic to the pipeline's shape). Omitting
+# it preserves today's ``graph.run`` path exactly.
+RunOne = Callable[[AccountSpec], Awaitable[_RunResultT]]
 
 
 def account_entity_lock_factory(redis: Any, *, ttl_ms: int = DEFAULT_TTL_MS) -> LockFactory:
@@ -83,21 +94,53 @@ class AccountScheduler:
         self._semaphore = asyncio.Semaphore(max_parallel)
         self._lock_factory = lock_factory
 
+    @overload
     async def run_accounts(
         self,
         specs: Iterable[AccountSpec],
         *,
         campaign_run_id: CampaignRunId,
         checkpointer: BaseCheckpointSaver[Any],
-    ) -> list[AccountRunResult]:
+        run_one: None = None,
+    ) -> list[AccountRunResult]: ...
+
+    @overload
+    async def run_accounts(
+        self,
+        specs: Iterable[AccountSpec],
+        *,
+        campaign_run_id: CampaignRunId,
+        checkpointer: BaseCheckpointSaver[Any],
+        run_one: RunOne[_RunResultT],
+    ) -> list[_RunResultT]: ...
+
+    async def run_accounts(
+        self,
+        specs: Iterable[AccountSpec],
+        *,
+        campaign_run_id: CampaignRunId,
+        checkpointer: BaseCheckpointSaver[Any],
+        run_one: RunOne[Any] | None = None,
+    ) -> list[Any]:
         """Research every account, at most ``max_parallel`` at a time, each single-flighted by its
         entity lock. Results come back in input order (``asyncio.gather``). One account raising
-        propagates — the caller (the M8 ``deep`` handler) decides per-account isolation policy."""
+        propagates — the caller (the M8A ``deep`` handler) decides per-account isolation policy.
+
+        ``run_one`` (M8A.0) overrides what runs *inside* each account's semaphore + single-flight
+        slot: when supplied, the scheduler invokes ``run_one(spec)`` (the M8A.1 per-account
+        ``account → committee → contact`` pipeline) instead of :meth:`AccountResearchGraph.run`, so
+        the same bounded + entity-lock guarantees cover the three-stage sequence. Omitted (the
+        default), the account axis behaves exactly as before."""
         ordered: Sequence[AccountSpec] = tuple(specs)
         return list(
             await asyncio.gather(
                 *(
-                    self._run_one(spec, campaign_run_id=campaign_run_id, checkpointer=checkpointer)
+                    self._run_one(
+                        spec,
+                        campaign_run_id=campaign_run_id,
+                        checkpointer=checkpointer,
+                        run_one=run_one,
+                    )
                     for spec in ordered
                 )
             )
@@ -109,12 +152,18 @@ class AccountScheduler:
         *,
         campaign_run_id: CampaignRunId,
         checkpointer: BaseCheckpointSaver[Any],
-    ) -> AccountRunResult:
+        run_one: RunOne[Any] | None,
+    ) -> Any:
+        async def _go() -> Any:
+            if run_one is not None:
+                return await run_one(spec)
+            return await self._invoke(spec, campaign_run_id, checkpointer)
+
         async with self._semaphore:
             if self._lock_factory is None:
-                return await self._invoke(spec, campaign_run_id, checkpointer)
+                return await _go()
             async with self._lock_factory(spec.entity_id):
-                return await self._invoke(spec, campaign_run_id, checkpointer)
+                return await _go()
 
     async def _invoke(
         self,

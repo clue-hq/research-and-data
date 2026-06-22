@@ -158,6 +158,130 @@ def test_max_parallel_must_be_positive() -> None:
         AccountScheduler(_TrackingGraph(), max_parallel=0)
 
 
+# --- M8A.0: the per-account run_one callback -------------------------------------------------
+# The deep handler (M8A.2) supplies a custom pipeline (the M8A.1 account→committee→contact
+# sequence) that the scheduler must run inside the SAME semaphore + per-entity single-flight slot as
+# the default graph.run, so the three-stage sequence inherits the cap + the no-double-research lock.
+
+
+class _CallbackTracker:
+    """Records peak concurrency + per-entity overlap for an injected ``run_one`` callback (the
+    callable analogue of :class:`_TrackingGraph`), proving the callback runs inside the scheduler's
+    semaphore + entity-lock slot."""
+
+    def __init__(self, *, delay: float = 0.02) -> None:
+        self._delay = delay
+        self.in_flight = 0
+        self.peak = 0
+        self._entity_counts: Counter[EntityId] = Counter()
+        self.same_entity_overlap = False
+        self.seen: list[EntityId] = []
+
+    async def __call__(self, spec: AccountSpec) -> AccountRunResult:
+        self.seen.append(spec.entity_id)
+        self.in_flight += 1
+        self.peak = max(self.peak, self.in_flight)
+        self._entity_counts[spec.entity_id] += 1
+        if self._entity_counts[spec.entity_id] > 1:
+            self.same_entity_overlap = True
+        try:
+            await asyncio.sleep(self._delay)
+        finally:
+            self._entity_counts[spec.entity_id] -= 1
+            self.in_flight -= 1
+        return AccountRunResult(
+            account_run_id=new_run_id(),
+            entity_id=spec.entity_id,
+            tier=spec.tier,
+            status=AccountRunStatus.DONE,
+        )
+
+
+def test_run_one_callback_runs_capped_in_order_and_bypasses_the_graph() -> None:
+    # With run_one supplied, the scheduler drives the callback (NOT the graph) under the semaphore,
+    # returning results in input order.
+    graph = _TrackingGraph()
+    scheduler = AccountScheduler(graph, max_parallel=2)
+    run_one = _CallbackTracker()
+    specs = [AccountSpec(entity_id=new_entity_id(), tier="top") for _ in range(6)]
+
+    async def _run() -> None:
+        results = await scheduler.run_accounts(
+            specs, campaign_run_id=new_campaign_run_id(), checkpointer=None, run_one=run_one
+        )
+        assert len(results) == 6
+        assert [r.entity_id for r in results] == [s.entity_id for s in specs]  # input order
+        assert run_one.peak == 2  # the semaphore bounded the callback fan-out (reached the cap)
+        assert sorted(run_one.seen) == sorted(s.entity_id for s in specs)  # every spec dispatched
+        assert graph.ran == []  # the default graph.run was bypassed entirely
+
+    run_async(_run())
+
+
+def test_run_one_callback_is_single_flighted_by_the_entity_lock() -> None:
+    # The callback inherits the per-entity lock: two runs for the same entity never overlap, while
+    # distinct entities still run in parallel.
+    graph = _TrackingGraph()
+    scheduler = AccountScheduler(graph, max_parallel=8, lock_factory=_per_entity_lock_factory())
+    run_one = _CallbackTracker()
+    shared = new_entity_id()
+    other = new_entity_id()
+    specs = [
+        AccountSpec(entity_id=shared, tier="top"),
+        AccountSpec(entity_id=other, tier="top"),
+        AccountSpec(entity_id=shared, tier="top"),
+        AccountSpec(entity_id=other, tier="top"),
+        AccountSpec(entity_id=shared, tier="top"),
+    ]
+
+    async def _run() -> None:
+        await scheduler.run_accounts(
+            specs, campaign_run_id=new_campaign_run_id(), checkpointer=None, run_one=run_one
+        )
+        assert run_one.same_entity_overlap is False  # the lock serialized the same entity...
+        assert run_one.peak >= 2  # ...but distinct entities still overlapped
+
+    run_async(_run())
+
+
+def test_run_one_callback_may_return_a_non_account_run_result() -> None:
+    # The scheduler is generic over the callback's result type: the M8A.1 orchestrator returns a
+    # richer references-only AccountDeepResult, not an AccountRunResult. Prove results come
+    # back, in input order.
+    graph = _TrackingGraph()
+    scheduler = AccountScheduler(graph, max_parallel=4)
+    specs = [AccountSpec(entity_id=new_entity_id(), tier="top") for _ in range(4)]
+
+    async def deep_run_one(spec: AccountSpec) -> str:
+        return f"deep:{spec.entity_id}"
+
+    async def _run() -> None:
+        results = await scheduler.run_accounts(
+            specs, campaign_run_id=new_campaign_run_id(), checkpointer=None, run_one=deep_run_one
+        )
+        assert results == [f"deep:{s.entity_id}" for s in specs]
+        assert graph.ran == []
+
+    run_async(_run())
+
+
+def test_run_one_omitted_drives_the_graph_unchanged() -> None:
+    # The control: with run_one omitted, the scheduler uses AccountResearchGraph.run exactly as
+    # before (the additive callback never perturbs the default account axis).
+    graph = _TrackingGraph(delay=0.0)
+    scheduler = AccountScheduler(graph, max_parallel=2)
+    specs = [AccountSpec(entity_id=new_entity_id(), tier="top") for _ in range(3)]
+
+    async def _run() -> None:
+        results = await scheduler.run_accounts(
+            specs, campaign_run_id=new_campaign_run_id(), checkpointer=None
+        )
+        assert [r.entity_id for r in results] == [s.entity_id for s in specs]
+        assert sorted(graph.ran) == sorted(s.entity_id for s in specs)  # the graph WAS driven
+
+    run_async(_run())
+
+
 def test_spec_carries_tenant_and_field_scope() -> None:
     # The per-account graph receives the spec's tenant + field scope (so private resonance/facet
     # claims are read under the right tenant). A recording graph captures what it was handed.

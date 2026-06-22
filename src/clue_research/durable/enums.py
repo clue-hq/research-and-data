@@ -38,6 +38,37 @@ class AccountRunStatus(StrEnum):
     BUDGET_EXCEEDED = "budget_exceeded"
 
 
+class AccountRunSubPhase(StrEnum):
+    """Last-completed deep-orchestration boundary of one ``account_run`` (``account_run.sub_phase``;
+    M8A.0).
+
+    Orthogonal to :class:`AccountRunStatus`: ``status`` is the run's *coarse* lifecycle (pending →
+    running → done/failed), while ``sub_phase`` records *which of the three deep stages* of the
+    per-account ``account → committee → contact`` sequence (M8A.1) is done, so a crashed run can
+    resume at its last boundary instead of re-discovering the committee or re-profiling the
+    account. ``NULL`` (no member) = not started; it then advances **monotonically**:
+
+    * ``ACCOUNT_PROFILED`` — stage 1 done: ``profile_account`` (M8.1/M8.2) wrote the deep account
+      picture; the committee has not been discovered yet.
+    * ``COMMITTEE_DISCOVERED`` — stage 2 done: ``discover_committee`` (M8.3) admitted the buying
+      committee; the per-contact fan-out has not started.
+    * ``CONTACTS_COMPLETE`` — stage 3 done: every admitted member was profiled (M8.4) — the account
+      is M12-ready.
+
+    The marker is **advisory** (a resume optimization): the M7.4 idempotency ledger remains
+    authoritative for spend, and the claim-store gap-recompute is the correctness backstop, so a
+    stale marker can only cause an idempotent re-run, never double-spend (Doc C; substrate §5).
+
+    Durable-internal lifecycle enum (Beat-0: M7 owns it; NOT in ``core.enums``, like
+    :class:`AccountRunStatus`). Mirrored by the ``account_run_sub_phase`` Postgres ``ENUM``; the
+    parity test in ``tests/durable/`` asserts the Python members and DB labels stay aligned.
+    """
+
+    ACCOUNT_PROFILED = "account_profiled"
+    COMMITTEE_DISCOVERED = "committee_discovered"
+    CONTACTS_COMPLETE = "contacts_complete"
+
+
 class CampaignRunStatus(StrEnum):
     """Lifecycle of one campaign run (``campaign_run.status``; M7.3).
 
