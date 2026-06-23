@@ -38,10 +38,15 @@ already-charged contacts' references straight from the durable ledger (so a cap-
 cannot drop them), and the admission carries a local reservation so concurrent admits cannot
 collectively breach the per-account cap.
 
-**Out of scope (later M8A issues):** the ``CampaignPhase.DEEP`` handler + high-tier resolution
-(M8A.2), the handoff skeleton (M8A.5), and injecting the concrete gate/classifier (M8A.6). The
-committee/contact pre-spend gate is **not** wired here: those callables do not yet accept a gate on
-this base (that seam lands with #1 at the M8A.6 composition root) — only ``profile_account`` gates.
+**Pre-spend gate (M8A.6 / #1).** The injected ``pre_spend_gate`` is threaded into **all three**
+axes — ``profile_account`` (account field-fill), ``discover_committee`` (people-enumeration +
+role inference), and ``profile_contact`` (facet-fill) — so every claim-producing path on this
+sequence consults the gate before it spends (the deferred M9.1 routing, closed at the composition
+root; ``None`` here means an un-wired unit-test orchestrator, which is gate-free by design).
+
+**Out of scope (later M8A issues):** constructing + injecting the concrete gate/classifier and the
+high-tier resolution live at the M8A.6 composition root (``api/deep/composition.py``); this trunk
+only *threads* whatever collaborators it is handed.
 """
 
 from __future__ import annotations
@@ -365,6 +370,7 @@ class AccountDeepOrchestrator:
                         spec=self._spec,
                         role_model=self._role_model,
                         budget_cap_cents=self._budget_cap_cents,
+                        pre_spend_gate=self._pre_spend_gate,
                         config=self._committee_config,
                     ),
                 )
@@ -541,6 +547,7 @@ class AccountDeepOrchestrator:
                         facet_subworker_budget=facet_budget,
                         binding_classifier=self._binding_classifier,
                         use_class_tagger=self._use_class_tagger,
+                        pre_spend_gate=self._pre_spend_gate,
                         config=self._contact_config,
                     ),
                 )
