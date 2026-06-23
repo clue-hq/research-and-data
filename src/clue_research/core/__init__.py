@@ -13,6 +13,7 @@ Implements ENG-108 (docs/specs/M00-foundations-and-shared-contracts.md §M0.2).
 from __future__ import annotations
 
 from clue_research.core.claim import Claim, DiscoveryProvenance, can_be_promoted
+from clue_research.core.compliance import UseDecision, UseGate, is_outreach_promotable
 from clue_research.core.entity import AccountEntity, ContactEntity, Entity
 from clue_research.core.enums import (
     AccountStatus,
@@ -39,6 +40,7 @@ from clue_research.core.enums import (
     ResearchMode,
     ReuseScope,
     UseClass,
+    UseReason,
     VerificationStatus,
     WorkerStatus,
 )
@@ -142,6 +144,7 @@ from clue_research.core.primitives import (
 from clue_research.core.resolver import Resolver, ResolverError, RetryableResolverError
 from clue_research.core.source import SourceManifest
 from clue_research.core.verification import (
+    AgeOutCandidate,
     Binding,
     FaithfulnessJudge,
     Freshness,
@@ -181,6 +184,7 @@ __all__ = [
     "Modality",
     "EntityScope",
     "UseClass",
+    "UseReason",
     "IdentityBinding",
     "PassKind",
     "AccountStatus",
@@ -297,5 +301,10 @@ __all__ = [
     "IdentityBindingGate",
     "Staleness",
     "ReResearchCandidate",
+    "AgeOutCandidate",
     "Freshness",
+    # use-gate seam (M10 appropriateness/use gate; impl in clue_research.compliance)
+    "UseDecision",
+    "UseGate",
+    "is_outreach_promotable",
 ]
