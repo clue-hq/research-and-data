@@ -51,9 +51,7 @@ _FACET_SOURCE = "exa_deep"  # the seeded facet tier_plan source (resolver-absent
 async def _gate_rows(conn: AsyncConnection) -> list[tuple[str, str | None, str]]:
     rows = (
         await conn.execute(
-            text(
-                "SELECT request_kind, field_key, decision FROM gate_decision WHERE run_id = :r"
-            ),
+            text("SELECT request_kind, field_key, decision FROM gate_decision WHERE run_id = :r"),
             {"r": str(_RUN)},
         )
     ).all()
