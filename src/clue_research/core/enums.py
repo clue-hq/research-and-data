@@ -271,6 +271,28 @@ class PreSpendVerdict(StrEnum):
     REJECT = "reject"
 
 
+class PreSpendKind(StrEnum):
+    """The two shapes of a pre-spend request (M9.1, Option C).
+
+    ``FIELD`` (the original, default) is a single ``(entity, field, tier)`` spend — fill one claim;
+    it carries a ``field_key``. ``ENUMERATION`` governs a *discovery* spend that fans out over a
+    ``scope`` to enumerate members that do not yet exist as entities (committee people-discovery:
+    "find the people AT this account") — so it carries a ``scope``, not a ``field_key`` (there is no
+    single field being filled). Mirrored by the ``pre_spend_kind`` DB enum (parity-tested)."""
+
+    FIELD = "field"
+    ENUMERATION = "enumeration"
+
+
+class EnumerationScope(StrEnum):
+    """The scope an ``ENUMERATION`` pre-spend fans out over (M9.1, Option C). ``COMMITTEE`` — the
+    buying-committee people-discovery within a known account (M8.3 ``discover_committee``) — is the
+    only scope today; account-channel discovery is M6's ``DiscoveryChannel`` (a different seam), not
+    an enumeration spend. Mirrored by the ``enumeration_scope`` DB enum (parity-tested)."""
+
+    COMMITTEE = "committee"
+
+
 class JudgeVerdict(StrEnum):
     """The faithfulness judge's claim-level entailment verdict (M9.3, the ``JudgeResult`` verdict):
     is ``value_json`` entailed by the claim's ``evidence_span`` (not the wider document)?

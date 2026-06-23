@@ -43,6 +43,7 @@ from decimal import Decimal
 from typing import Protocol, runtime_checkable
 
 from pydantic import JsonValue
+from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_research.config import BudgetCaps
 from clue_research.core import (
@@ -201,6 +202,7 @@ class BudgetStore(Protocol):
         campaign_run_id: CampaignRunId,
         cost_cents: CostCents,
         account_run_id: RunId | None = None,
+        conn: AsyncConnection | None = None,
     ) -> None: ...
 
     async def set_campaign_cap(
@@ -247,18 +249,37 @@ class DbBudgetStore:
         campaign_run_id: CampaignRunId,
         cost_cents: CostCents,
         account_run_id: RunId | None = None,
+        conn: AsyncConnection | None = None,
     ) -> None:
         # Raise on a 0-row increment (a charge against a missing run/account) so a charge can never
         # silently vanish — the write-path analogue of ``check``'s fail-loud-on-missing-row rule.
         # Run + account increment in ONE transaction: a missing account rolls the run back too.
-        async with transaction() as conn:
-            if await add_run_spend(conn, campaign_run_id, cost_cents) == 0:
-                raise BudgetStateNotFound(f"campaign_run {campaign_run_id}")
-            if (
-                account_run_id is not None
-                and await add_account_spend(conn, account_run_id, cost_cents) == 0
-            ):
-                raise BudgetStateNotFound(f"account_run {account_run_id}")
+        #
+        # ``conn`` (M8A.4): when the caller supplies a connection, the increments run on **its**
+        # transaction — so the charge commits atomically with the claim writes + the M7.4 ledger
+        # ``succeed`` the caller also does on that conn (the airtight exactly-once the ``record``
+        # docstring deferred to "the M8 claim-write path"). When omitted, the increments open their
+        # own transaction exactly as before (today's M6/M7/M9 callers are unchanged).
+        if conn is not None:
+            await self._add_spend(conn, campaign_run_id, cost_cents, account_run_id)
+            return
+        async with transaction() as own_conn:
+            await self._add_spend(own_conn, campaign_run_id, cost_cents, account_run_id)
+
+    @staticmethod
+    async def _add_spend(
+        conn: AsyncConnection,
+        campaign_run_id: CampaignRunId,
+        cost_cents: CostCents,
+        account_run_id: RunId | None,
+    ) -> None:
+        if await add_run_spend(conn, campaign_run_id, cost_cents) == 0:
+            raise BudgetStateNotFound(f"campaign_run {campaign_run_id}")
+        if (
+            account_run_id is not None
+            and await add_account_spend(conn, account_run_id, cost_cents) == 0
+        ):
+            raise BudgetStateNotFound(f"account_run {account_run_id}")
 
     async def set_campaign_cap(self, campaign_run_id: CampaignRunId, cap_cents: CostCents) -> None:
         async with transaction() as conn:
@@ -459,6 +480,7 @@ class BudgetEngine:
         campaign_run_id: CampaignRunId,
         entity_id: EntityId | None = None,
         account_run_id: RunId | None = None,
+        conn: AsyncConnection | None = None,
     ) -> None:
         """Record an actual charge — the **single** live increment of the spend counters
         (``campaign_run.spent_cents``, plus ``account_run.cost_cents`` when ``account_run_id`` is
@@ -471,18 +493,25 @@ class BudgetEngine:
         :class:`BudgetStateNotFound` (fail-loud, symmetric with :meth:`check`) — a charge never
         silently vanishes.
 
-        **Transactional caveat (V1):** the increment commits in its own transaction, separate from
-        the ledger ``succeed``. Airtight exactly-once (a crash between the increment and the ledger
-        finalize cannot double-count) requires the caller to commit the charge *and* finish the
-        ledger in **one** transaction — the M8 claim-write path (see ``DbIdempotencyStore`` and
-        ``_finalize_phase``). Until then the increment is the single live counter and reconciles
-        with the ledger because it runs once on the EXECUTE branch."""
+        **Exactly-once (M8A.4).** Pass ``conn`` to commit the increment on the **caller's**
+        transaction, atomically with the claim write(s) and the M7.4 ledger ``succeed`` the caller
+        does on the same connection — closing the crash window the V1 caveat below named (the deep
+        committee/contact spend path is the caller that closes it; see
+        ``clue_research.api.deep.spend``). This is an extension of the frozen ``core.BudgetEngine``
+        protocol that lives only on the concrete engine.
+
+        **Transactional caveat (V1, when ``conn`` is omitted):** the increment commits in its own
+        transaction, separate from the ledger ``succeed``. Airtight exactly-once then requires the
+        caller to commit the charge *and* finish the ledger in **one** transaction — which the
+        ``conn`` parameter now enables. Without it the increment is the single live counter and
+        reconciles with the ledger because it runs once on the EXECUTE branch."""
         if cost_cents < 0:
             raise ValueError(f"cost_cents must be >= 0 (got {cost_cents})")
         await self._store.add_spend(
             campaign_run_id=campaign_run_id,
             cost_cents=cost_cents,
             account_run_id=account_run_id,
+            conn=conn,
         )
 
     async def set_campaign_cap(self, campaign_run_id: CampaignRunId, cap_cents: CostCents) -> None:

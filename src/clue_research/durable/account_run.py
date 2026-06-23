@@ -30,7 +30,7 @@ from clue_research.core import (
     parse_value_json,
     serialize_value_json,
 )
-from clue_research.durable.enums import AccountRunStatus
+from clue_research.durable.enums import AccountRunStatus, AccountRunSubPhase
 
 # Claim-id references grouped by aspect — the orchestrator's context-bounding artifact (substrate
 # §5b): the lead holds ids, never claim bodies.
@@ -52,6 +52,7 @@ class AccountRunRow(BaseModel):
     entity_id: EntityId
     tier: str
     status: AccountRunStatus
+    sub_phase: AccountRunSubPhase | None = None
     plan_json: dict[str, JsonValue]
     references_index: ReferencesIndex
     cost_cents: CostCents
@@ -76,7 +77,7 @@ _ENSURE_SQL = text(
 )
 
 _SELECT_COLUMNS = (
-    "id, campaign_run_id, entity_id, tier, status, plan_json, references_index, "
+    "id, campaign_run_id, entity_id, tier, status, sub_phase, plan_json, references_index, "
     "cost_cents, started_at, updated_at"
 )
 
@@ -202,6 +203,42 @@ async def save_references(
     )
 
 
+async def fold_references(
+    conn: AsyncConnection,
+    account_run_id: RunId,
+    *,
+    references_index: ReferencesIndex,
+    status: AccountRunStatus,
+) -> None:
+    """Fold the collected references and advance status — without touching ``cost_cents`` (M8A.4).
+
+    The cost-blind sibling of :func:`save_references`: the M8A deep orchestrator routes every
+    committee/contact charge through :meth:`BudgetEngine.record`, which becomes the **single live
+    writer** of ``account_run.cost_cents`` (atomically with the claim writes + the M7.4 ledger
+    finalise, on one connection). The references fold must therefore *not* re-``SET`` the cost, or
+    it would clobber the record-owned increments (the single-writer reconciliation, spec §M8A.4).
+    Takes a connection so the orchestrator commits the fold + marker (:func:`set_account_sub_phase`)
+    in the **same** transaction as the spend it folds. (The M7.1 graph path keeps using
+    :func:`save_references`, which still owns ``cost_cents`` on the account axis it drives.)
+    """
+    await conn.execute(
+        text(
+            """
+            UPDATE account_run
+            SET references_index = CAST(:references_index AS jsonb),
+                status = CAST(:status AS account_run_status),
+                updated_at = now()
+            WHERE id = :id
+            """
+        ),
+        {
+            "id": account_run_id,
+            "references_index": serialize_value_json(references_index),
+            "status": status.value,
+        },
+    )
+
+
 async def set_status(
     conn: AsyncConnection, account_run_id: RunId, status: AccountRunStatus
 ) -> None:
@@ -215,6 +252,33 @@ async def set_status(
             """
         ),
         {"id": account_run_id, "status": status.value},
+    )
+
+
+async def set_account_sub_phase(
+    conn: AsyncConnection, account_run_id: RunId, sub_phase: AccountRunSubPhase
+) -> None:
+    """Advance the deep-orchestration sub-phase marker (M8A.0), stamping ``updated_at``.
+
+    Orthogonal to :func:`set_status`: this records *which* of the ``account → committee → contact``
+    deep stages finished (M8A.1), so a crashed run resumes at its last boundary. Born ``NULL`` (not
+    started) and advanced monotonically; it is **advisory** — the M7.4 ledger stays authoritative
+    for spend, and the claim-store gap-recompute is the correctness backstop, so a stale marker can
+    only cause an idempotent re-run.
+
+    Takes a connection (like :func:`set_status` / :func:`save_references`) so the M8A.1 orchestrator
+    can advance the marker inside the **same** transaction as its claim writes + budget charge (the
+    M8A.4 exactly-once boundary), not in a separate commit.
+    """
+    await conn.execute(
+        text(
+            """
+            UPDATE account_run
+            SET sub_phase = CAST(:sub_phase AS account_run_sub_phase), updated_at = now()
+            WHERE id = :id
+            """
+        ),
+        {"id": account_run_id, "sub_phase": sub_phase.value},
     )
 
 
@@ -233,6 +297,7 @@ def _row_to_account_run(row: dict[str, object]) -> AccountRunRow:
             "entity_id": row["entity_id"],
             "tier": row["tier"],
             "status": row["status"],
+            "sub_phase": row["sub_phase"],
             "plan_json": _decode_jsonb(row["plan_json"]),
             "references_index": _decode_jsonb(row["references_index"]),
             "cost_cents": row["cost_cents"] if row["cost_cents"] is not None else Decimal(0),

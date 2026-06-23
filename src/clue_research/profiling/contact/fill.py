@@ -29,12 +29,17 @@ from clue_research.core import (
     ContactEntity,
     CostCents,
     EntityScope,
+    EntityType,
     FieldDef,
     ICPSpec,
     IdentityBinding,
+    PreSpendGate,
+    PreSpendRequest,
+    PreSpendVerdict,
     ProfileClaimView,
     ResearchMode,
     RunId,
+    SourceTier,
     revalidate_with,
 )
 from clue_research.identity import stamp_reuse
@@ -103,6 +108,7 @@ async def fill_contact_field(
     spec: ICPSpec | None = None,
     binding_classifier: BindingClassifier = DEFAULT_BINDING_CLASSIFIER,
     use_class_tagger: UseClassTagger = DEFAULT_USE_CLASS_TAGGER,
+    pre_spend_gate: PreSpendGate | None = None,
     thresholds: ConfidenceThresholds = DEFAULT_CONFIDENCE_THRESHOLDS,
 ) -> FacetFillResult:
     """Fill one deep contact field, tagging every claim's binding + use-class born-correct.
@@ -143,6 +149,21 @@ async def fill_contact_field(
             continue
 
         manifest = await get_source(conn, source_key)
+        # Pre-spend gate (M9.1): a facet fill is a FIELD spend — gate before the resolver call,
+        # keyed on the contact + facet field at the source tier. REJECT skips this source (a
+        # higher-trust one can still fill it). Gated only with a manifest tier (fail-soft).
+        if pre_spend_gate is not None and manifest is not None:
+            decision = await pre_spend_gate.check(
+                PreSpendRequest(
+                    entity_id=contact.id,
+                    entity_type=EntityType.CONTACT,
+                    field_key=field_def.field_key,
+                    source_tier=SourceTier(manifest.tier),
+                    run_id=run_id,
+                )
+            )
+            if decision.verdict is PreSpendVerdict.REJECT:
+                continue
         prior = manifest.identity_binding_strength if manifest is not None else None
         confident = False
         for raw in resolver.resolve(contact.as_entity(), field_def):
