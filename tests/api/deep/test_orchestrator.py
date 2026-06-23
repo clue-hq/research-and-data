@@ -17,6 +17,7 @@ from typing import Any
 
 from clue_research.api.deep import (
     AccountDeepOrchestrator,
+    StepInfo,
     deep_account_run_id,
 )
 from clue_research.api.deep.run_io import DeepRunState
@@ -56,8 +57,10 @@ from tests.db.conftest import run_async
 class FakeAccountRunIO:
     """In-memory :class:`~clue_research.api.deep.run_io.AccountRunIO` (no DB).
 
-    Records each ``save`` and supports ``seed`` to simulate a prior run's persisted resume state
-    (sub_phase + references) so the resume path is exercised without a database."""
+    Records each ``fold`` and supports ``seed`` to simulate a prior run's persisted resume state
+    (sub_phase + references + cost) so the resume path is exercised without a database. ``fold``
+    (M8A.4) takes the caller's connection and does **not** write ``cost_cents`` — the budget
+    engine's ``record`` is its single writer — so the fake leaves the stored cost untouched."""
 
     def __init__(self) -> None:
         self.runs: dict[RunId, dict[str, Any]] = {}
@@ -86,20 +89,21 @@ class FakeAccountRunIO:
             cost_cents=row["cost_cents"],
         )
 
-    async def save(
+    async def fold(
         self,
+        conn: Any,
         account_run_id: RunId,
         *,
         references_index: dict[str, list[str]],
-        cost_cents: Decimal,
         status: AccountRunStatus,
         sub_phase: AccountRunSubPhase,
     ) -> None:
-        self.runs[account_run_id] = {
-            "sub_phase": sub_phase,
-            "references_index": dict(references_index),
-            "cost_cents": cost_cents,
-        }
+        row = self.runs.setdefault(
+            account_run_id,
+            {"sub_phase": None, "references_index": {}, "cost_cents": Decimal(0)},
+        )
+        row["sub_phase"] = sub_phase
+        row["references_index"] = dict(references_index)
         self.saves.append((sub_phase, status))
 
     def seed(
@@ -234,7 +238,8 @@ class FakeBudgetEngine:
     admission seam; the rest satisfy the protocol trivially. Default construction admits
     everything, so the M8A.1 ordering/resume tests inject it unchanged. ``raise_after`` makes the
     ``(raise_after+1)``-th ``check`` raise (a Postgres-backed engine can fail mid-admission), so the
-    orphaned-task cleanup can be exercised."""
+    orphaned-task cleanup can be exercised. ``cap_cents`` is echoed back on every decision (0 =
+    uncapped), so the M8A.4 reservation guard — which reads ``decision.cap_cents`` — can fire."""
 
     def __init__(
         self,
@@ -242,10 +247,12 @@ class FakeBudgetEngine:
         verdicts: Sequence[BudgetVerdict] = (),
         default: BudgetVerdict = BudgetVerdict.ALLOW,
         raise_after: int | None = None,
+        cap_cents: CostCents = Decimal(0),
     ) -> None:
         self._verdicts = list(verdicts)
         self._default = default
         self._raise_after = raise_after
+        self._cap = cap_cents
         self.checks: list[dict[str, Any]] = []
 
     async def check(
@@ -274,7 +281,7 @@ class FakeBudgetEngine:
             }
         )
         return BudgetDecision(
-            verdict=verdict, scope=scope, projected_cents=projected_cents, cap_cents=Decimal(0)
+            verdict=verdict, scope=scope, projected_cents=projected_cents, cap_cents=self._cap
         )
 
     async def estimate(
@@ -313,6 +320,47 @@ class FakeBudgetEngine:
         )
 
 
+class FakeExactlyOnceSpend:
+    """In-memory :class:`~clue_research.api.deep.spend.ExactlyOnceSpend` (no DB, no ledger).
+
+    Default behaviour: run ``work`` and record its charge exactly once, returning the result + a
+    fresh :class:`StepInfo`. ``replay`` maps a step ``key`` → ``(claim_ids, cost)`` to simulate a
+    stage that already committed on a prior run — the work is **not** re-run and the charge **not**
+    re-recorded (a resumed stage). ``charges`` logs every real (non-replayed) charge so a test can
+    assert exactly-once accounting and the per-account keying."""
+
+    def __init__(self, *, replay: dict[str, tuple[tuple[str, ...], Decimal]] | None = None) -> None:
+        self._replay = dict(replay or {})
+        self.charges: list[dict[str, Any]] = []
+
+    async def run_step(
+        self,
+        conn: Any,
+        *,
+        key: str,
+        campaign_run_id: CampaignRunId,
+        account_run_id: RunId,
+        entity_id: EntityId,
+        work: Any,
+        stale_after: Any = None,
+    ) -> tuple[Any, StepInfo]:
+        if key in self._replay:
+            ids, cost = self._replay[key]
+            return None, StepInfo(replayed=True, claim_ids=ids, cost_cents=cost)
+        result = await work(conn)
+        ids = tuple(str(c) for c in result.claim_refs)
+        self.charges.append(
+            {
+                "key": key,
+                "campaign_run_id": campaign_run_id,
+                "account_run_id": account_run_id,
+                "entity_id": entity_id,
+                "cost_cents": result.cost_cents,
+            }
+        )
+        return result, StepInfo(replayed=False, claim_ids=ids, cost_cents=result.cost_cents)
+
+
 @asynccontextmanager
 async def _fake_conn() -> Any:
     yield None
@@ -335,6 +383,7 @@ def _orchestrator(
     config: DeepPhaseConfig | None = None,
     recursion_policy: RecursionPolicy | None = None,
     budget: Any | None = None,
+    spend: Any | None = None,
 ) -> AccountDeepOrchestrator:
     return AccountDeepOrchestrator(
         profile_account=profile_account,
@@ -345,6 +394,7 @@ def _orchestrator(
         spec=_spec(),
         config=config if config is not None else DeepPhaseConfig(),
         budget=budget if budget is not None else FakeBudgetEngine(),
+        spend=spend if spend is not None else FakeExactlyOnceSpend(),
         sources=(),
         gateway=object(),  # a sentinel; the fakes ignore it
         recursion_policy=recursion_policy,

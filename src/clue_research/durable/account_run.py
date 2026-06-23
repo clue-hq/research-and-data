@@ -203,6 +203,42 @@ async def save_references(
     )
 
 
+async def fold_references(
+    conn: AsyncConnection,
+    account_run_id: RunId,
+    *,
+    references_index: ReferencesIndex,
+    status: AccountRunStatus,
+) -> None:
+    """Fold the collected references and advance status — without touching ``cost_cents`` (M8A.4).
+
+    The cost-blind sibling of :func:`save_references`: the M8A deep orchestrator routes every
+    committee/contact charge through :meth:`BudgetEngine.record`, which becomes the **single live
+    writer** of ``account_run.cost_cents`` (atomically with the claim writes + the M7.4 ledger
+    finalise, on one connection). The references fold must therefore *not* re-``SET`` the cost, or
+    it would clobber the record-owned increments (the single-writer reconciliation, spec §M8A.4).
+    Takes a connection so the orchestrator commits the fold + marker (:func:`set_account_sub_phase`)
+    in the **same** transaction as the spend it folds. (The M7.1 graph path keeps using
+    :func:`save_references`, which still owns ``cost_cents`` on the account axis it drives.)
+    """
+    await conn.execute(
+        text(
+            """
+            UPDATE account_run
+            SET references_index = CAST(:references_index AS jsonb),
+                status = CAST(:status AS account_run_status),
+                updated_at = now()
+            WHERE id = :id
+            """
+        ),
+        {
+            "id": account_run_id,
+            "references_index": serialize_value_json(references_index),
+            "status": status.value,
+        },
+    )
+
+
 async def set_status(
     conn: AsyncConnection, account_run_id: RunId, status: AccountRunStatus
 ) -> None:

@@ -10,9 +10,11 @@ M8A.1 ships the trunk — :class:`AccountDeepOrchestrator` (the per-account sequ
 M8A.0 ``account_run.sub_phase`` marker) + its injectable :class:`AccountRunIO` cursor seam. M8A.2
 adds :class:`DeepPhaseHandler` — the ``CampaignPhase.DEEP`` handler that resolves the high-tier set
 and drives the scheduler with the orchestrator bound as the per-account callback. M8A.3 adds the
-fan-out budget admission in the contact loop. M8A.5 adds the references-only handoff skeleton
-(:func:`build_handoff_skeleton`) that proves an account is M12-ready. The exactly-once spend (M8A.4)
-and the composition root that injects the concretes (M8A.6) build against these interfaces.
+fan-out budget admission in the contact loop. M8A.4 adds exactly-once spend
+(:class:`ExactlyOnceSpend` / :class:`DbExactlyOnceSpend`): each stage's claim writes + charge +
+ledger ``succeed`` commit in one transaction, with a concurrent-admit reservation. M8A.5 adds the
+references-only handoff skeleton (:func:`build_handoff_skeleton`) that proves an account is
+M12-ready. The composition root that injects the concretes (M8A.6) builds against these interfaces.
 """
 
 from __future__ import annotations
@@ -44,6 +46,14 @@ from clue_research.api.deep.run_io import (
     DbAccountRunIO,
     DeepRunState,
 )
+from clue_research.api.deep.spend import (
+    DbExactlyOnceSpend,
+    ExactlyOnceSpend,
+    Spendable,
+    StepInfo,
+    already_done,
+    deep_step_key,
+)
 
 __all__ = [
     # the per-account orchestrator trunk (M8A.1)
@@ -57,6 +67,13 @@ __all__ = [
     "AccountRunIO",
     "DbAccountRunIO",
     "DeepRunState",
+    # exactly-once spend (M8A.4)
+    "ExactlyOnceSpend",
+    "DbExactlyOnceSpend",
+    "Spendable",
+    "StepInfo",
+    "already_done",
+    "deep_step_key",
     # the CampaignPhase.DEEP handler (M8A.2)
     "DeepPhaseHandler",
     "HighTierResolver",
