@@ -25,12 +25,18 @@ semaphore. A budget ``DENY`` yields a partial committee (coverage-confidence, no
 ``GRACEFUL_STOP`` is surfaced so the handler suspends the phase.
 
 **Exactly-once spend (M8A.4).** Each stage's spend runs through the injected
-:class:`~clue_research.api.deep.spend.ExactlyOnceSpend`: the worker's claim write(s), the
-:meth:`~clue_research.durable.budget.BudgetEngine.record` charge, and the M7.4 ledger ``succeed``
-all commit on **one** connection — so a crash never leaves the client hard-cap counter desynced from
-claims (no under-count, no double-charge). ``record`` is the single live writer of the per-account
-spend; the references-fold no longer writes ``cost_cents``. The per-contact admission carries a
-local reservation so concurrent admits cannot collectively breach the per-account cap.
+:class:`~clue_research.api.deep.spend.ExactlyOnceSpend`. For the **committee and contact** axes the
+worker's claim write(s), the :meth:`~clue_research.durable.budget.BudgetEngine.record` charge, and
+the M7.4 ledger ``succeed`` all commit on **one** connection — so a crash never leaves the client
+hard-cap counter desynced from those claims (no under-count, no double-charge). The **account** axis
+is ledger-anchored only: ``profile_account`` writes its account/resonance claims in its own
+transactions, so a crash before its charge commits under-counts the account portion and re-runs
+``profile_account`` on resume (its M7-graph idempotency + the gap-recompute are the backstop; spec
+§M8A.4 scopes that out). ``record`` is the single live writer of the per-account spend (the
+references-fold no longer writes ``cost_cents``). On resume the contact fan-out recovers
+already-charged contacts' references straight from the durable ledger (so a cap-saturated resume
+cannot drop them), and the admission carries a local reservation so concurrent admits cannot
+collectively breach the per-account cap.
 
 **Out of scope (later M8A issues):** the ``CampaignPhase.DEEP`` handler + high-tier resolution
 (M8A.2), the handoff skeleton (M8A.5), and injecting the concrete gate/classifier (M8A.6). The
@@ -465,16 +471,27 @@ class AccountDeepOrchestrator:
           and surface the verdict so the handler (M8A.2) suspends the phase at the next checkpoint.
 
         Returns ``(outcomes, budget_stop)`` where each :class:`_ContactOutcome` carries the result
-        (``None`` on a REPLAY) + references-only step info, and ``budget_stop`` is the verdict that
-        halted admission (``None`` if every in-cap member was admitted). The four bounds all live at
-        this one chokepoint: (a) committee-size truncation (the caller slices ``contact_ids``), (b)
-        this ``check`` admission, (c) the contact worker's per-tier ``facet_subworker_budget``, (d)
-        the in-flight semaphore — none hardcoded; all read from :class:`DeepPhaseConfig` /
-        :class:`RecursionPolicy`.
+        (``None`` on a recovered/replayed contact) + references-only step info, and ``budget_stop``
+        the verdict that halted admission (``None`` if every in-cap member was admitted). The four
+        bounds all live at this one chokepoint: (a) committee-size truncation (the caller slices
+        ``contact_ids``), (b) this ``check`` admission, (c) the contact worker's per-tier
+        ``facet_subworker_budget``, (d) the in-flight semaphore — none hardcoded; all read from
+        :class:`DeepPhaseConfig` / :class:`RecursionPolicy`.
 
-        The **reservation** (M8A.4) closes the concurrent over-commit window the bare ``check`` left
-        open: ``check`` sees only the committed ``cost_cents``, so launched-but-uncharged peers
-        are invisible to it; the local :class:`_Reservation` accounts for them so concurrent admits
+        **Resume recovery (M8A.4).** A contact already charged on a prior run (its ledger row is
+        ``SUCCEEDED``) is recovered **directly from the durable ledger** — its references folded, no
+        re-spend — *independent of the budget gate*, before any admission. This is the
+        crux of resume safety: when every contact was already charged the account is **at** its cap,
+        so the admission ``check`` would ``DENY`` re-admission; recovering references through
+        re-admission would then silently drop the whole committee's contact claims from
+        ``references_index`` (M8A.5/M12 read it). Only un-recorded members go through the admission
+        spend. Recovering already-paid contacts here (vs re-admitting them) also keeps the
+        reservation honest — a recovered charge is in the committed seed but never reserved, so it
+        is not double-counted.
+
+        The **reservation** closes the concurrent over-commit window the bare ``check`` left open:
+        ``check`` sees only the committed ``cost_cents``, so launched-but-uncharged peers are
+        invisible to it; the local :class:`_Reservation` accounts for them so concurrent admits
         cannot collectively breach the per-account cap (paired with ``max_contacts_in_flight``).
         """
         semaphore = asyncio.Semaphore(self._config.max_contacts_in_flight)
@@ -484,6 +501,25 @@ class AccountDeepOrchestrator:
             else 0
         )
         estimate = self._config.per_contact_estimate_cents
+
+        # --- Resume recovery: fold already-charged contacts from the durable ledger (no re-spend,
+        # no budget gate), and admit only the un-recorded members below. ``committed_cents`` already
+        # includes the recovered charges (it is the record-owned ``account_run.cost_cents``), so the
+        # reservation seeds with it but only reserves for the *pending* members → no double-count.
+        recovered: list[_ContactOutcome] = []
+        pending: list[EntityId] = []
+        async with self._session_factory() as conn:
+            for contact_id in contact_ids:
+                info = await self._spend.recorded(
+                    conn, deep_step_key(run_id, f"contact:{contact_id}")
+                )
+                if info is not None:
+                    recovered.append(
+                        _ContactOutcome(contact_entity_id=contact_id, result=None, info=info)
+                    )
+                else:
+                    pending.append(contact_id)
+
         reservation = _Reservation(committed=committed_cents)
 
         async def _one(contact_id: EntityId) -> _ContactOutcome:
@@ -516,7 +552,7 @@ class AccountDeepOrchestrator:
         tasks: list[asyncio.Task[_ContactOutcome]] = []
         budget_stop: BudgetVerdict | None = None
         try:
-            for contact_id in contact_ids:
+            for contact_id in pending:
                 decision = await self._budget.check(
                     scope=BudgetScope.ACCOUNT,
                     projected_cents=estimate,
@@ -540,7 +576,10 @@ class AccountDeepOrchestrator:
                     break
                 reservation.reserve(estimate)
                 tasks.append(asyncio.create_task(_one(contact_id)))
-            return tuple(await asyncio.gather(*tasks)), budget_stop
+            admitted = tuple(await asyncio.gather(*tasks))
+            # Recovered-from-ledger contacts first (their refs are folded regardless of the gate),
+            # then the freshly-admitted ones.
+            return tuple(recovered) + admitted, budget_stop
         except BaseException:
             # Never leave an admitted contact detached. ``create_task`` schedules eagerly, so if
             # admission itself raises (e.g. ``budget.check`` hits a DB error) — or one ``_one``

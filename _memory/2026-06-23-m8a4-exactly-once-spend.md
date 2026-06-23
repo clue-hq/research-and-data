@@ -104,4 +104,58 @@ outcome.cost_cents` (replayed spends are already in the seed → never double-ad
 
 ## No migration (reservation is in-memory; uses existing idempotency_ledger + spent/cost columns).
 
-## Status: design locked; implementing.
+## Adversarial review (14-agent Workflow, 4 dimensions × verify) — 2 confirmed bugs FIXED
+First commit `71d92ec` was green but the review found two real, mine, confirmed defects (both in the
+resume path; both masked because the fake `BudgetEngine.check` ignores cost_cents so no in-memory test
+hit a cap-saturated resume):
+
+- **HIGH — resume dropped already-paid contacts' references.** Contact `contact:*` refs are folded
+  only by the post-gather fold, fed by re-admission→REPLAY. If a prior run charged every contact
+  (account AT its cap) and crashed *before* the contacts_complete fold, on resume the FIRST
+  `check(ACCOUNT)` DENYs (cost==cap) → zero re-admission → the whole committee's contact claims drop
+  from `references_index` (M8A.5/M12 read it). Claims+ledger survive; only the index pointer was lost.
+- **MED — reservation double-counted REPLAY contacts.** The seed `committed` already includes a
+  replayed contact's charge, yet the admission loop also `reserve(estimate)`s it before `_one`
+  discovers REPLAY → transient over-count → spurious DENY → reduced coverage on resume.
+
+**Fix (both):** a ledger pre-read. New `ExactlyOnceSpend.recorded(conn, key) -> StepInfo | None`
+(SUCCEEDED row → replayed StepInfo). `_profile_contacts` now **partitions** the work-list: contacts
+with a SUCCEEDED ledger row are *recovered straight from the ledger* (refs folded, no re-charge, **no
+budget gate**); only un-recorded members go through admission. So a cap-saturated resume can't drop
+refs, and recovered contacts are in the committed seed but never reserved (no double-count). New
+tests: in-memory `test_cap_saturated_resume_recovers_all_committed_contact_references` (fails on the
+old code) + DB `tests/durable/test_deep_orchestrator_db.py` (AC1 end-to-end: real orchestrator +
+DbExactlyOnceSpend + DbAccountRunIO over a savepoint factory, model the pre-fold crash by reverting
+index/marker, resume → cost==spent==SUM(ledger), no double-charge, no ref drop).
+Also fixed: module docstring now scopes the airtight guarantee to committee/contact (account axis is
+ledger-anchored only); the AC3 reservation test docstring clarified it exercises the guard arithmetic
+(deterministic; production concurrency-safety = single-threaded asyncio).
+
+### Deferred / documented (review residue — NOT M8A.4 blockers)
+- **[#1 partial-low]** The DB crash test models rollback via a SAVEPOINT (`begin_nested`), one level
+  off the production flat `db.transaction()` abort; production semantics verified correct. A
+  flat-transaction crash test needs a disposable DB (can't reuse `rollback_conn`).
+- **[atomicity partial-low]** A transient `IdempotencyConflict` on one contact aborts/FAILs the whole
+  account (the M8A.1 fan-out's one-raises-fails-the-account behaviour). Rare under single-driver; the
+  ledger pre-read makes it rarer. Backlog: per-contact isolation if wanted.
+- **[atomicity partial-low]** The committee stage holds its conn (+ in_progress ledger row) open
+  across `discover_committee`'s LLM/network I/O (inherent to single-txn atomicity for committee; one
+  per account, bounded by the budget cap + stopping rules). Acceptable tradeoff; noted.
+- **[#6 partial-med]** Deep admission only `check`s scope=ACCOUNT (DENY), never RUN (GRACEFUL_STOP),
+  so the orchestrator's `budget_stop==GRACEFUL_STOP` → handler PAUSED branch is unreachable from the
+  deep loop. The RUN hard cap IS enforced — at the M7.3 phase pre-gate (`campaign.py::advance` →
+  `check(RUN)` before (re-)entering DEEP), at checkpoint granularity (by design). Commit framing:
+  "accounting was blind" (the pre-gate couldn't see deep spend until record() moved spent_cents) — now
+  fixed. Mid-phase per-contact RUN enforcement is net-new scope beyond M8A.4.
+- **[#7 partial-low / M8A.3]** `DeepPhaseConfig.per_contact_cap_cents` (default 200) is read by nobody
+  — the M8A.3 "carve the sub-envelope at admission" deliverable is unimplemented. Track on M8A.3/M8A.6
+  (implement the clamp, or drop the field + strike the spec line).
+
+## DB convention: ran DB-gated tests on an isolated per-branch DB `clue_m8a4` (created + migrated to
+head; rollback-isolated tests, never the shared `clue`).
+
+## Status: DONE. Two commits: `71d92ec` (impl) + the review-fix commit. `make check` 849 passed /
+612 skipped (lint + mypy + import-linter 11/0); durable+api/deep DB suite 225 passed on clue_m8a4.
+M8A.4 ACs all met (AC1 crash-resume, AC2 single-writer==SUM(ledger), AC3 reservation). Local commits
+only (not pushed). Remaining M8A: M8A.6 (composition root + AC-6/AC-4 + the deferred RUN-check /
+per_contact_cap decisions).

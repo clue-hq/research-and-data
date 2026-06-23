@@ -360,6 +360,14 @@ class FakeExactlyOnceSpend:
         )
         return result, StepInfo(replayed=False, claim_ids=ids, cost_cents=result.cost_cents)
 
+    async def recorded(self, conn: Any, key: str) -> StepInfo | None:
+        """A scripted ``replay`` key models a contact already charged on a prior run — recovered
+        from the (fake) ledger as a replayed :class:`StepInfo`, independent of the budget gate."""
+        if key in self._replay:
+            ids, cost = self._replay[key]
+            return StepInfo(replayed=True, claim_ids=ids, cost_cents=cost)
+        return None
+
 
 @asynccontextmanager
 async def _fake_conn() -> Any:
