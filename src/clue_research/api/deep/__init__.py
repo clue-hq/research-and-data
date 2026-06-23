@@ -19,6 +19,14 @@ M12-ready. The composition root that injects the concretes (M8A.6) builds agains
 
 from __future__ import annotations
 
+from clue_research.api.deep.composition import (
+    DeepPhaseComposition,
+    build_account_axis_registry,
+    build_deep_phase_handler,
+    build_high_tier_resolver,
+    load_research_packs,
+    register_deep_phase_handler,
+)
 from clue_research.api.deep.handler import (
     CheckpointerFactory,
     DeepAccountOrchestrator,
@@ -86,4 +94,11 @@ __all__ = [
     "AccountHandoffSkeleton",
     "DeepCompleteManifest",
     "build_handoff_skeleton",
+    # the DEEP-phase composition root (M8A.6)
+    "DeepPhaseComposition",
+    "build_deep_phase_handler",
+    "register_deep_phase_handler",
+    "build_high_tier_resolver",
+    "build_account_axis_registry",
+    "load_research_packs",
 ]
