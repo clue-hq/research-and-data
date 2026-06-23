@@ -331,6 +331,7 @@ def test_skeleton_computes_no_scores_narrative_or_provenance() -> None:
         "tier",
         "account_run_id",
         "committee",
+        "committee_member_ids",
         "coverage",
         "cost_cents",
         "references_index",

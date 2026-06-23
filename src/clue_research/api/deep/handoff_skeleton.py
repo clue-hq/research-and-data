@@ -83,6 +83,11 @@ class AccountHandoffSkeleton(BaseModel):
     tier: str
     account_run_id: RunId
     committee: tuple[CommitteeMember, ...] = ()
+    # The admitted member contact-ids (references only): from the committee result on a fresh run,
+    # and from the profiled contacts on a *resumed* run (where the committee result is not
+    # re-materialised, so :attr:`committee` is empty but its members were profiled this run). The
+    # resume-robust id list :meth:`manifest` emits, distinct from the rich :attr:`committee` join.
+    committee_member_ids: tuple[EntityId, ...] = ()
     coverage: CommitteeCoverage | None = None
     cost_cents: CostCents = Decimal(0)
     # section -> claim ids: ``account`` (+ resonance), ``committee``, ``contact:<entity_id>``.
@@ -103,7 +108,7 @@ class AccountHandoffSkeleton(BaseModel):
             account_entity_id=self.account_entity_id,
             account_run_id=self.account_run_id,
             tier=self.tier,
-            committee_member_ids=tuple(m.contact_entity_id for m in self.committee),
+            committee_member_ids=self.committee_member_ids,
             coverage=self.coverage,
             cost_cents=self.cost_cents,
             references_index=self.references_index,
@@ -155,11 +160,22 @@ def build_handoff_skeleton(result: AccountDeepResult) -> AccountHandoffSkeleton:
                 contact.claim_refs
             )
 
+    # The admitted member ids (references only): from the committee result on a fresh run, else
+    # from the profiled contacts on a resumed run (committee is None — not re-materialised — but
+    # its members were profiled this run, so their ids still belong in the manifest). Mirrors the
+    # M8A.2 handler's original sourcing, now owned here so the manifest is the single producer.
+    member_ids: tuple[EntityId, ...] = (
+        tuple(member.contact_entity_id for member in result.committee.members)
+        if result.committee is not None
+        else tuple(contact.contact_entity_id for contact in result.contacts)
+    )
+
     return AccountHandoffSkeleton(
         account_entity_id=result.entity_id,
         tier=result.tier,
         account_run_id=result.account_run_id,
         committee=committee,
+        committee_member_ids=member_ids,
         coverage=coverage,
         cost_cents=result.cost_cents,
         references_index=references_index,
