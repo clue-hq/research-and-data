@@ -180,7 +180,14 @@ def _call_judge(
             return None
         from .providers import init_model, try_structured_model
 
-        model = try_structured_model(init_model(config.model), ImageryJudgeVerdict)
+        model = try_structured_model(
+            init_model(
+                config.model,
+                base_url=getattr(config, "agent_base_url", None),
+                api_key=getattr(config, "agent_api_key", None),
+            ),
+            ImageryJudgeVerdict,
+        )
     response = model.invoke(_build_judge_messages(b64, brief, det))
     return _verdict_from_response(response)
 

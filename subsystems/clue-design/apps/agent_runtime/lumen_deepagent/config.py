@@ -13,6 +13,11 @@ class AgentRuntimeConfig:
     preview_format: str
     trace_dir: Path
     asset_store_root: Path | None = None
+    # Agent LLM service. When both are set the deep-agent's text model is routed
+    # through an OpenAI-compatible endpoint (e.g. OpenRouter) instead of Anthropic;
+    # `model` must then be an "openai:<openrouter-model-id>" value. Blank → Anthropic.
+    agent_base_url: str | None = None
+    agent_api_key: str | None = None
 
     @classmethod
     def from_env(cls, repo_root: Path | None = None) -> "AgentRuntimeConfig":
@@ -33,6 +38,8 @@ class AgentRuntimeConfig:
                 if os.environ.get("LUMEN_AGENT_ASSET_STORE")
                 else None
             ),
+            agent_base_url=(os.environ.get("LUMEN_AGENT_BASE_URL", "").strip() or None),
+            agent_api_key=(os.environ.get("LUMEN_AGENT_API_KEY", "").strip() or None),
         )
 
     @property

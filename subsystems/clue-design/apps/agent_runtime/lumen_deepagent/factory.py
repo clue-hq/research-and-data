@@ -30,8 +30,22 @@ def create_lumen_design_agent(
     tools = LumenDesignTools(runtime_config, prompt)
     backend = FilesystemBackend(root_dir=str(runtime_config.repo_root))
 
+    # Anthropic stays a bare "provider:model" string (deepagents builds it via
+    # init_chat_model). For an OpenAI-compatible service (OpenRouter) we must hand
+    # deepagents a pre-built model instance so the base_url + api_key are applied.
+    if runtime_config.agent_base_url and runtime_config.agent_api_key:
+        from .providers import init_model
+
+        model = init_model(
+            runtime_config.model,
+            base_url=runtime_config.agent_base_url,
+            api_key=runtime_config.agent_api_key,
+        )
+    else:
+        model = runtime_config.model
+
     agent = create_deep_agent(
-        model=runtime_config.model,
+        model=model,
         backend=backend,
         skills=["apps/agent_runtime/knowledge_docs/skills"],
         tools=[
@@ -63,7 +77,7 @@ def create_lumen_design_agent(
             tools.finalize_run,
         ],
         system_prompt=COORDINATOR_SYSTEM_PROMPT,
-        subagents=build_subagents(runtime_config.model),
+        subagents=build_subagents(model),
         name="lumen-design-coordinator",
     )
     return agent, tools

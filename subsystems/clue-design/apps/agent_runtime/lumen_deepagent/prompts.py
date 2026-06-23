@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Any
+
 from .schemas import VisualCritique
 
 
@@ -332,7 +334,9 @@ The `visual-review` skill has worked examples.
 """
 
 
-def build_subagents(model: str) -> list[dict]:
+def build_subagents(model: Any) -> list[dict]:
+    # `model` is a "provider:model" string for Anthropic, or a pre-built LangChain
+    # chat-model instance when routed through an OpenAI-compatible service.
     # IMPORTANT — each subagent declares an explicit (empty) `tools` list.
     #
     # In deepagents a subagent with no `tools` key INHERITS the coordinator's full
