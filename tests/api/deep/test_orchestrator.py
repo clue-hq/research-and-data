@@ -10,6 +10,7 @@ bound, and that the account axis carries the ICP spec + tenant as explicit kwarg
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Sequence
 from contextlib import asynccontextmanager
 from decimal import Decimal
 from typing import Any
@@ -21,8 +22,14 @@ from clue_research.api.deep import (
 from clue_research.api.deep.run_io import DeepRunState
 from clue_research.config import DeepPhaseConfig, RecursionPolicy
 from clue_research.core import (
+    BudgetDecision,
+    BudgetScope,
+    BudgetVerdict,
+    BurnDown,
     CampaignRunId,
+    CostCents,
     EntityId,
+    Estimate,
     Persona,
     RunId,
     WorkerStatus,
@@ -218,6 +225,94 @@ class FakeProfileContact:
         )
 
 
+class FakeBudgetEngine:
+    """A configurable :class:`~clue_research.core.BudgetEngine` for the admission tests (M8A.3).
+
+    ``check`` returns a scripted sequence of verdicts (falling back to ``default`` — ``ALLOW`` —
+    once the script is exhausted) and records every call, so a test can assert the projected
+    amount, the scope, and the account keys passed to the cost dial. Only ``check`` matters for the
+    admission seam; the rest satisfy the protocol trivially. Default construction admits
+    everything, so the M8A.1 ordering/resume tests inject it unchanged. ``raise_after`` makes the
+    ``(raise_after+1)``-th ``check`` raise (a Postgres-backed engine can fail mid-admission), so the
+    orphaned-task cleanup can be exercised."""
+
+    def __init__(
+        self,
+        *,
+        verdicts: Sequence[BudgetVerdict] = (),
+        default: BudgetVerdict = BudgetVerdict.ALLOW,
+        raise_after: int | None = None,
+    ) -> None:
+        self._verdicts = list(verdicts)
+        self._default = default
+        self._raise_after = raise_after
+        self.checks: list[dict[str, Any]] = []
+
+    async def check(
+        self,
+        *,
+        scope: BudgetScope,
+        projected_cents: CostCents,
+        campaign_run_id: CampaignRunId,
+        entity_id: EntityId | None = None,
+        account_run_id: RunId | None = None,
+    ) -> BudgetDecision:
+        if self._raise_after is not None and len(self.checks) >= self._raise_after:
+            raise RuntimeError("boom: budget engine unavailable")
+        verdict = (
+            self._verdicts[len(self.checks)]
+            if len(self.checks) < len(self._verdicts)
+            else self._default
+        )
+        self.checks.append(
+            {
+                "scope": scope,
+                "projected_cents": projected_cents,
+                "campaign_run_id": campaign_run_id,
+                "entity_id": entity_id,
+                "account_run_id": account_run_id,
+            }
+        )
+        return BudgetDecision(
+            verdict=verdict, scope=scope, projected_cents=projected_cents, cap_cents=Decimal(0)
+        )
+
+    async def estimate(
+        self,
+        campaign_run_id: CampaignRunId,
+        *,
+        discovered_count: int,
+        tier_cutoffs: dict[str, float] | None = None,
+    ) -> Estimate:
+        zero = Decimal(0)
+        return Estimate(
+            discovered_count=discovered_count,
+            projected_deep_count=0,
+            estimated_cost_cents=zero,
+            cost_per_account_cents=zero,
+        )
+
+    async def record(
+        self,
+        *,
+        cost_cents: CostCents,
+        scope: BudgetScope,
+        campaign_run_id: CampaignRunId,
+        entity_id: EntityId | None = None,
+        account_run_id: RunId | None = None,
+    ) -> None:
+        return None
+
+    async def set_campaign_cap(self, campaign_run_id: CampaignRunId, cap_cents: CostCents) -> None:
+        return None
+
+    async def burn_down(self, campaign_run_id: CampaignRunId) -> BurnDown:
+        zero = Decimal(0)
+        return BurnDown(
+            spent_cents=zero, estimated_cents=zero, cap_cents=zero, remaining_cents=zero
+        )
+
+
 @asynccontextmanager
 async def _fake_conn() -> Any:
     yield None
@@ -239,6 +334,7 @@ def _orchestrator(
     *,
     config: DeepPhaseConfig | None = None,
     recursion_policy: RecursionPolicy | None = None,
+    budget: Any | None = None,
 ) -> AccountDeepOrchestrator:
     return AccountDeepOrchestrator(
         profile_account=profile_account,
@@ -248,6 +344,7 @@ def _orchestrator(
         session_factory=_fake_session_factory,
         spec=_spec(),
         config=config if config is not None else DeepPhaseConfig(),
+        budget=budget if budget is not None else FakeBudgetEngine(),
         sources=(),
         gateway=object(),  # a sentinel; the fakes ignore it
         recursion_policy=recursion_policy,
