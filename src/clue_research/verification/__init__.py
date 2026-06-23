@@ -41,6 +41,7 @@ Implemented so far:
 
 from __future__ import annotations
 
+from clue_research.core import AgeOutCandidate
 from clue_research.verification.corroboration import (
     DEFAULT_CORROBORATION_POLICY,
     CorroborationPolicy,
@@ -89,7 +90,6 @@ from clue_research.verification.freshness import (
     METRIC_FRESHNESS_EXPIRED,
     METRIC_FRESHNESS_SCANNED,
     METRIC_FRESHNESS_STALE,
-    AgeOutCandidate,
     CadencePolicy,
     FreshnessImpl,
     load_cadence_policy,
