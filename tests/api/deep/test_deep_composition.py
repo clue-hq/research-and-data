@@ -32,10 +32,16 @@ from clue_research.core import (
     new_run_id,
 )
 from clue_research.discovery_scoring.tiering import TIER_FIELD, cutoff_version
-from clue_research.durable import AccountSpec, PhaseHandlerRegistry
+from clue_research.durable import (
+    AccountSpec,
+    CampaignRun,
+    CampaignRunStatus,
+    PhaseHandlerRegistry,
+)
 from clue_research.icp.rubric import TierBand, TierCutoffs
 from clue_research.identity import stamp_reuse
 from clue_research.profiling import discover_committee, profile_account, profile_contact
+from tests.durable.conftest import FakeCampaignRunStore
 from tests.profiling.conftest import (
     FakeCommitteeSource,
     FakeGateway,
@@ -53,6 +59,12 @@ _COMMITTEE = [FakeCommitteeSource(source_key="apollo_people", tier=2)]
 
 def _spec(*, icp_key: str = _ICP) -> ICPSpec:
     return ICPSpec(client_id=_CLIENT, icp_key=icp_key, created_from=ICPCreatedFrom.SYNTHESIS)
+
+
+async def _empty_resolver(_ctx: PhaseContext) -> tuple[AccountSpec, ...]:
+    """A high-tier resolver that selects no accounts — keeps the handler DB-free so the
+    state-machine wiring (dispatch + transition) can be exercised without a Postgres read."""
+    return ()
 
 
 def _composition(**kwargs: object) -> DeepPhaseComposition:
@@ -115,10 +127,7 @@ def test_empty_high_tier_set_is_a_clean_completed_no_op() -> None:
     """A high-tier set of zero (no approved accounts) is a clean COMPLETED no-op — the handler
     short-circuits before the scheduler/checkpointer, so it needs no DB."""
 
-    async def _empty(_ctx: PhaseContext) -> tuple[AccountSpec, ...]:
-        return ()
-
-    comp = _composition(high_tier_resolver=_empty)
+    comp = _composition(high_tier_resolver=_empty_resolver)
     ctx = PhaseContext(
         campaign_run_id=new_campaign_run_id(),
         phase=CampaignPhase.DEEP,
@@ -209,5 +218,38 @@ def test_high_tier_resolver_selects_named_band_at_committed_cutoff(
             assert {s.entity_id for s in specs} == {high.id}
             assert specs[0].tier == "high"
             assert specs[0].tenant_id == _CLIENT
+
+    run_async(scenario())
+
+
+# --- end to end: the registered handler is dispatched by the state machine ----------------------
+
+
+def test_advance_dispatches_deep_and_transitions_to_verification() -> None:
+    """The milestone's reason to exist: registering the deep handler makes ``CampaignRun.advance()``
+    dispatch ``CampaignPhase.DEEP`` (no ``NoPhaseHandlerRegistered``) and, on a clean COMPLETED,
+    advance the run ``DEEP → VERIFICATION`` — the state-machine integration through the real wired
+    handler. (Per-account claim production through the orchestrator is covered on a real DB by the
+    M8A.4 orchestrator suite + the AC-6/AC-4 deep-callable tests; here the high-tier set is empty so
+    the wiring is exercised without Postgres.)"""
+
+    async def scenario() -> None:
+        store = FakeCampaignRunStore()
+        registry = PhaseHandlerRegistry()
+        register_deep_phase_handler(
+            spec=_spec(),
+            gateway=FakeGateway(),
+            committee_sources=_COMMITTEE,
+            high_tier_resolver=_empty_resolver,
+            register=registry.register,
+        )
+        machine = CampaignRun(store=store, registry=registry)
+        run_id = await machine.start(client_id=_CLIENT, icp_key=_ICP, icp_version=1)
+        # Park the run at DEEP (the prior phases have their own handlers/milestones); advancing must
+        # now dispatch our handler rather than raise NoPhaseHandlerRegistered(DEEP).
+        await store.transition(run_id, phase=CampaignPhase.DEEP, status=CampaignRunStatus.ACTIVE)
+        run = await machine.advance(run_id)
+        assert run.phase is CampaignPhase.VERIFICATION
+        assert run.status is CampaignRunStatus.ACTIVE
 
     run_async(scenario())
