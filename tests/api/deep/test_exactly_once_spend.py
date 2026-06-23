@@ -125,10 +125,12 @@ def test_resumed_fan_out_replays_committed_contacts_without_recharge() -> None:
     run_async(_run())
 
 
-def test_reservation_stops_admitting_before_in_flight_peers_breach_the_cap() -> None:
-    """The local reservation closes the concurrent over-commit window: with slow (still-charging)
-    peers, admission stops once committed + reserved + one-more would breach the per-account cap —
-    even though the engine ``check`` (seeing only committed spend) would still ALLOW."""
+def test_reservation_guard_stops_admitting_when_reservations_would_breach_the_cap() -> None:
+    """The reservation guard's arithmetic: admission stops once committed + reserved + one-more
+    would breach the per-account cap, even though the engine ``check`` (seeing only committed spend)
+    still ALLOWs. This exercises the guard deterministically (the fake ``check`` does not yield, so
+    no peer settles mid-admission); production concurrency-safety rests on single-threaded asyncio
+    mutating the reservation only at await boundaries, documented on :class:`_Reservation`."""
     io = FakeAccountRunIO()
     rec = Recorder()
     # ALLOW everything, but report a real per-account cap so the reservation guard is live. Account
@@ -183,6 +185,62 @@ def test_uncapped_account_runs_the_reservation_guard_inert() -> None:
         result = await orch.run_one(spec, campaign_run_id=new_campaign_run_id())
         assert len(result.contacts) == 4  # all admitted despite a huge estimate — no cap to breach
         assert result.budget_stop is None
+
+    run_async(_run())
+
+
+def test_cap_saturated_resume_recovers_all_committed_contact_references() -> None:
+    """Regression for the resume reference-drop: a prior run charged every contact (so the account
+    is AT its per-account cap) and crashed before the contacts_complete fold, leaving no
+    ``contact:*`` keys in the index. On resume the budget would DENY re-admission of every member —
+    but the contacts are recovered straight from the durable ledger, *independent of the budget
+    gate*, so no committed contact's references drop (the handoff keeps the buying committee)."""
+    io = FakeAccountRunIO()
+    rec = Recorder()
+    campaign = new_campaign_run_id()
+    entity = new_entity_id()
+    run_id = deep_account_run_id(campaign, entity)
+    members = [new_entity_id() for _ in range(5)]
+    # All 5 were charged on the prior run (50 each); the crash happened before the contacts_complete
+    # fold, so the durable index has the work-list but NO contact:* reference keys yet.
+    io.seed(
+        run_id,
+        sub_phase=AccountRunSubPhase.COMMITTEE_DISCOVERED,
+        references_index={"committee_contacts": [str(m) for m in members]},
+        cost_cents=Decimal("258"),
+    )
+    spend = FakeExactlyOnceSpend(
+        replay={
+            deep_step_key(run_id, f"contact:{m}"): ((f"rc-{i}",), Decimal("50"))
+            for i, m in enumerate(members)
+        }
+    )
+    # The account is at its cap → every admission check would DENY (modelled as a DENY default).
+    budget = FakeBudgetEngine(default=BudgetVerdict.DENY)
+    orch = _orchestrator(
+        io,
+        make_profile_account(rec),
+        make_discover_committee(rec),
+        FakeProfileContact(rec),
+        budget=budget,
+        spend=spend,
+    )
+    spec = AccountSpec(entity_id=entity, tier="top", tenant_id="client-1")
+
+    async def _run() -> None:
+        result = await orch.run_one(spec, campaign_run_id=campaign)
+        refs = io.runs[run_id]["references_index"]
+        # every committed contact's references are recovered from the ledger — none dropped
+        for i, m in enumerate(members):
+            assert refs[f"contact:{m}"] == [f"rc-{i}"]
+        # ...without re-running the worker, re-charging, or even consulting the budget gate
+        assert rec.contact_ids == []  # no contact worker re-ran
+        assert spend.charges == []  # nothing re-charged
+        assert budget.checks == []  # no admission was attempted for the recovered contacts
+        # the already-booked cost is unchanged and the account resumes to a clean DONE
+        assert result.cost_cents == Decimal("258")
+        assert result.sub_phase is AccountRunSubPhase.CONTACTS_COMPLETE
+        assert io.saves[-1][1] is AccountRunStatus.DONE
 
     run_async(_run())
 

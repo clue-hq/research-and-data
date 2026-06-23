@@ -51,6 +51,7 @@ from clue_research.durable.idempotency import (
     ClaimOutcome,
     claim_idempotency_step,
     finish_idempotency_step,
+    get_idempotency_ledger,
 )
 
 
@@ -117,6 +118,18 @@ class ExactlyOnceSpend(Protocol):
         charge was recorded this run; on ``REPLAY`` ``result`` is ``None`` and ``info`` carries the
         recorded claim ids + cost (no re-spend). Raises
         :class:`~clue_research.durable.IdempotencyConflict` if a live holder owns the key."""
+        ...
+
+    async def recorded(self, conn: AsyncConnection, key: str) -> StepInfo | None:
+        """The recorded :class:`StepInfo` if ``key`` already committed a charge (its ledger row is
+        ``SUCCEEDED``), else ``None`` — a read-only ledger probe; no claim, charge, or side effect.
+
+        The orchestrator uses this on a resumed contact fan-out to **recover already-paid contacts'
+        references directly from the durable ledger, independent of the budget gate** — so a
+        cap-saturated resume (every contact already charged → the account is at its cap, so
+        ``check`` would ``DENY`` re-admission) cannot drop those contacts' references from
+        ``account_run.references_index`` (which M8A.5/M12 read). Only members with **no**
+        ``SUCCEEDED`` row go through the budget-admitted :meth:`run_step` path."""
         ...
 
 
@@ -194,6 +207,18 @@ class DbExactlyOnceSpend:
             cost_cents=result.cost_cents,
         )
         return result, StepInfo(replayed=False, claim_ids=claim_ids, cost_cents=result.cost_cents)
+
+    async def recorded(self, conn: AsyncConnection, key: str) -> StepInfo | None:
+        row = await get_idempotency_ledger(conn, key)
+        if row is None or row.status is not IdempotencyStatus.SUCCEEDED:
+            # No row (never run), or in_progress/failed (a crash mid-step) — not a recorded charge,
+            # so the caller must run it through run_step (which re-claims / re-executes safely).
+            return None
+        return StepInfo(
+            replayed=True,
+            claim_ids=_claim_ids(row.result_ref),
+            cost_cents=row.cost_cents_charged,
+        )
 
 
 def _claim_ids(result_ref: dict[str, JsonValue]) -> tuple[str, ...]:
