@@ -64,11 +64,13 @@ from clue_research.db import database_url, transaction
 from clue_research.durable.account_run import (
     ReferencesIndex,
     ensure_account_run,
+    get_account_run,
     save_plan,
     save_references,
+    set_account_sub_phase,
     set_status,
 )
-from clue_research.durable.enums import AccountRunStatus
+from clue_research.durable.enums import AccountRunStatus, AccountRunSubPhase
 from clue_research.durable.planning import ResearchPlan, build_plan, compute_gap_fields
 from clue_research.durable.recursion import SpawnDenyReason, SpawnGuard
 from clue_research.durable.spans import (
@@ -142,6 +144,26 @@ class AccountRunStore(Protocol):
         scheduler (or an operator) calls this to record a genuinely terminal failure."""
         ...
 
+    async def set_account_sub_phase(
+        self, *, account_run_id: RunId, sub_phase: AccountRunSubPhase
+    ) -> None:
+        """Advance the deep-orchestration sub-phase marker (M8A.0) — own-transaction convenience.
+
+        Not used by :meth:`AccountResearchGraph.run` (the graph drives the account *axis* only,
+        through :meth:`begin`/:meth:`complete`); the seam the M8A.1 ``AccountDeepOrchestrator``
+        uses to mark a per-account stage (``account_profiled`` / ``committee_discovered`` /
+        ``contacts_complete``) done so a crash resumes at the last boundary. Each call commits on
+        its own; M8A.4 advances the marker inside the spend transaction via the connection-taking
+        :func:`~clue_research.durable.account_run.set_account_sub_phase` instead."""
+        ...
+
+    async def get_account_sub_phase(self, *, account_run_id: RunId) -> AccountRunSubPhase | None:
+        """The last-completed deep sub-phase, or ``None`` if the sequence has not started (M8A.0).
+
+        The read half of :meth:`set_account_sub_phase`: the orchestrator consults it on re-entry to
+        skip stages already marked complete."""
+        ...
+
 
 class DbAccountRunStore:
     """The Postgres :class:`AccountRunStore` — the production persistence path (M7.1).
@@ -211,6 +233,17 @@ class DbAccountRunStore:
     async def fail(self, *, account_run_id: RunId, status: AccountRunStatus) -> None:
         async with transaction() as conn:
             await set_status(conn, account_run_id, status)
+
+    async def set_account_sub_phase(
+        self, *, account_run_id: RunId, sub_phase: AccountRunSubPhase
+    ) -> None:
+        async with transaction() as conn:
+            await set_account_sub_phase(conn, account_run_id, sub_phase)
+
+    async def get_account_sub_phase(self, *, account_run_id: RunId) -> AccountRunSubPhase | None:
+        async with transaction() as conn:
+            row = await get_account_run(conn, account_run_id)
+        return row.sub_phase if row is not None else None
 
 
 # --- the graph result -------------------------------------------------------

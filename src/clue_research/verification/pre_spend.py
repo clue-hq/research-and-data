@@ -48,11 +48,14 @@ from clue_research.core import (
     AccountEntity,
     AccountStatus,
     ContactEntity,
+    EnumerationScope,
     FieldDef,
     PreSpendDecision,
+    PreSpendKind,
     PreSpendRequest,
     PreSpendVerdict,
     RunId,
+    SourceTier,
     TargetLock,
     serialize_value_json,
 )
@@ -135,6 +138,16 @@ class PreSpendPolicy(BaseModel):
     # Cost guard: reject if a *different* run holds the entity's in-flight Redis lock (no double
     # spend). Checked only when a lock reader is wired (skipped in pure-unit contexts).
     requires_in_flight_lock: bool = True
+    # Enumeration (Option C): the per-scope sanctioned discovery tiers — the enumeration analogue
+    # of ``enforce_tier_in_plan`` (an enumeration has no field ``tier_plan`` to check). COMMITTEE
+    # people-discovery is a deterministic / scrape / CRM spend (tiers 1-3 by nature): an LLM can
+    # never *be* the source of a person (anti-fabrication; admission clamps a people source's
+    # discovery provenance to ≤3), so tier 4 is excluded here. The tier-4 role-inference LLM is a
+    # *field-fill* on an already-admitted contact (the FIELD path), not an enumeration spend, so it
+    # is not governed by this set. A scope absent from the map is unsanctioned (fail closed).
+    enumeration_allowed_tiers: dict[EnumerationScope, tuple[SourceTier, ...]] = {
+        EnumerationScope.COMMITTEE: (SourceTier(1), SourceTier(2), SourceTier(3)),
+    }
 
 
 DEFAULT_PRE_SPEND_POLICY = PreSpendPolicy()
@@ -253,9 +266,12 @@ async def _record_gate_decision(
         text(
             """
             INSERT INTO gate_decision
-                (run_id, entity_id, entity_type, field_key, source_tier, decision, reasons)
+                (run_id, entity_id, entity_type, request_kind, field_key, enumeration_scope,
+                 source_tier, decision, reasons)
             VALUES
-                (:run_id, :entity_id, CAST(:entity_type AS entity_type), :field_key, :source_tier,
+                (:run_id, :entity_id, CAST(:entity_type AS entity_type),
+                 CAST(:request_kind AS pre_spend_kind), :field_key,
+                 CAST(:enumeration_scope AS enumeration_scope), :source_tier,
                  CAST(:decision AS pre_spend_verdict), CAST(:reasons AS jsonb))
             """
         ),
@@ -263,7 +279,9 @@ async def _record_gate_decision(
             "run_id": str(request.run_id),
             "entity_id": str(request.entity_id),
             "entity_type": request.entity_type.value,
-            "field_key": str(request.field_key),
+            "request_kind": request.kind.value,
+            "field_key": str(request.field_key) if request.field_key is not None else None,
+            "enumeration_scope": request.scope.value if request.scope is not None else None,
             "source_tier": int(request.source_tier),
             "decision": decision.verdict.value,
             "reasons": serialize_value_json(list(decision.reasons)),
@@ -309,7 +327,7 @@ class PreSpendGateImpl:
         attrs: dict[str, object] = {
             ATTR_ENTITY_ID: str(request.entity_id),
             ATTR_ENTITY_TYPE: request.entity_type.value,
-            ATTR_FIELD_KEY: str(request.field_key),
+            ATTR_FIELD_KEY: str(request.field_key) if request.field_key is not None else "",
             ATTR_SOURCE_TIER: int(request.source_tier),
             ATTR_RUN_ID: str(request.run_id),
         }
@@ -331,34 +349,67 @@ class PreSpendGateImpl:
 
     async def _collect_reasons(self, conn: AsyncConnection, request: PreSpendRequest) -> list[str]:
         reasons: list[str] = []
-        field_def = await get_field(conn, str(request.field_key))
-        gate_spec = parse_gate_spec(field_def.gate) if field_def is not None else None
+        # --- schema / scope gate (kind-specific) ---
+        if request.kind is PreSpendKind.ENUMERATION:
+            # No field → the per-field gate_spec (strong-key override) does not apply; fall back to
+            # the global policy's strong-key requirement.
+            gate_spec: GateSpec | None = None
+            reasons.extend(self._enumeration_reasons(request))
+        else:  # FIELD (the validator guarantees field_key is set)
+            assert request.field_key is not None
+            field_def = await get_field(conn, str(request.field_key))
+            gate_spec = parse_gate_spec(field_def.gate) if field_def is not None else None
+            reasons.extend(await self._field_reasons(conn, request, field_def))
 
-        # --- schema gate ---
+        # --- identity gate (keys on a resolved entity_id, never a free-text name) — BOTH kinds ---
+        reasons.extend(await self._identity_reasons(conn, request, gate_spec))
+
+        # --- in-flight lock (anti-double-spend; cost guard) — BOTH kinds ---
+        reasons.extend(await self._lock_reasons(request))
+        return reasons
+
+    async def _field_reasons(
+        self, conn: AsyncConnection, request: PreSpendRequest, field_def: FieldDef | None
+    ) -> list[str]:
+        """The FIELD schema gate: field registered, requested tier sanctioned by the field's
+        ``tier_plan``, and (when a value is in hand) it passes the field's value schema."""
+        reasons: list[str] = []
         if field_def is None:
             reasons.append(
                 f"field_key {request.field_key!r} is not registered in the field registry"
             )
-        else:
-            if self._policy.enforce_tier_in_plan and field_def.tier_plan:
-                covered = await _covered_tiers(conn, field_def.tier_plan)
-                if covered and int(request.source_tier) not in covered:
-                    reasons.append(
-                        f"source_tier {request.source_tier} is not in field "
-                        f"{request.field_key!r}'s tier_plan (sanctioned tiers: {sorted(covered)})"
-                    )
-            if request.value_json is not None:
-                try:
-                    await validate_value(conn, str(request.field_key), request.value_json)
-                except (UnknownFieldError, ValueSchemaError) as exc:
-                    reasons.append(f"value_json fails the field's schema: {exc}")
-
-        # --- identity gate (keys on a resolved entity_id, never a free-text name) ---
-        reasons.extend(await self._identity_reasons(conn, request, gate_spec))
-
-        # --- in-flight lock (anti-double-spend; cost guard) ---
-        reasons.extend(await self._lock_reasons(request))
+            return reasons
+        if self._policy.enforce_tier_in_plan and field_def.tier_plan:
+            covered = await _covered_tiers(conn, field_def.tier_plan)
+            if covered and int(request.source_tier) not in covered:
+                reasons.append(
+                    f"source_tier {request.source_tier} is not in field "
+                    f"{request.field_key!r}'s tier_plan (sanctioned tiers: {sorted(covered)})"
+                )
+        if request.value_json is not None:
+            try:
+                await validate_value(conn, str(request.field_key), request.value_json)
+            except (UnknownFieldError, ValueSchemaError) as exc:
+                reasons.append(f"value_json fails the field's schema: {exc}")
         return reasons
+
+    def _enumeration_reasons(self, request: PreSpendRequest) -> list[str]:
+        """The ENUMERATION scope gate (Option C): the requested ``source_tier`` must be sanctioned
+        by the policy for this enumeration ``scope`` — the field-less analogue of tier-in-plan. A
+        scope with no configured tiers is unsanctioned (fail closed). Pure (no I/O)."""
+        assert request.scope is not None  # guaranteed by PreSpendRequest._check_kind
+        allowed = self._policy.enumeration_allowed_tiers.get(request.scope)
+        if allowed is None:
+            return [
+                f"enumeration scope {request.scope.value!r} is not sanctioned by policy "
+                "(no allowed tiers configured) — failing closed"
+            ]
+        if int(request.source_tier) not in {int(t) for t in allowed}:
+            return [
+                f"source_tier {request.source_tier} is not allowed for enumeration scope "
+                f"{request.scope.value!r} (allowed: {sorted(int(t) for t in allowed)})"
+            ]
+        return []
 
     async def _identity_reasons(
         self, conn: AsyncConnection, request: PreSpendRequest, gate_spec: GateSpec | None
