@@ -19,17 +19,20 @@ all-or-nothing).
 ``DENY`` leaves a *partial* committee with coverage metadata — a COMPLETED-but-partial account, not
 a failure; a ``RUN``-scope ``GRACEFUL_STOP`` returns ``PhaseResult(PAUSED)`` so the campaign
 suspends cleanly and re-enters ``DEEP`` fresh on resume (the sub-phase markers skip the accounts
-already done). M8A.3 adds the ``budget_stop`` signal to ``AccountDeepResult``; until it merges this
-handler reads the signal forward-compatibly (see :func:`_budget_stop`) so it is correct on the
-current trunk (no admission yet → never paused) and lights up automatically once M8A.3 lands.
+already done). M8A.3 records the ``budget_stop`` verdict on ``AccountDeepResult``;
+:func:`_budget_stop` reads it and :meth:`DeepPhaseHandler.run` maps it to the phase status.
+
+**Handoff payload (M8A.5, folded in here):** each account's references-only payload entry is the
+M8A.5 ``DeepCompleteManifest`` — ``build_handoff_skeleton(result).manifest()`` — carrying the
+account-run id, admitted member ids, coverage band, cost, and the per-section claim-id index
+(``account`` / ``committee`` / ``contact:<id>``), **ids only, never a claim body** (substrate §5b);
+the handler stamps the budget-derived ``status``. The rich ``(account, persona)`` join with
+``profile_claims`` stays in-memory on the ``AccountHandoffSkeleton`` for M12.2 to recompute on read.
 
 **Out of scope (later M8A issues):** the per-account sequence itself (M8A.1, injected); the fan-out
 budget admission + ``DeepPhaseConfig`` (M8A.3, on the orchestrator); the exactly-once spend
-transaction (M8A.4); the rich ``(account, persona)``-keyed handoff skeleton with joined
-``profile_claims`` (M8A.5 — folded into this payload when it lands); injecting the concrete
-scheduler/orchestrator/resolver/gate + the AC-6/AC-4 enforcement (M8A.6 composition root). The
-payload is **references-only** — account-run ids, admitted member ids, coverage bands, costs — never
-claim bodies (substrate §5b).
+transaction (M8A.4); injecting the concrete scheduler/orchestrator/resolver/gate + the AC-6/AC-4
+enforcement (M8A.6 composition root).
 """
 
 from __future__ import annotations
@@ -43,6 +46,7 @@ from typing import Any, Protocol, runtime_checkable
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from pydantic import JsonValue
 
+from clue_research.api.deep.handoff_skeleton import build_handoff_skeleton
 from clue_research.api.deep.orchestrator import (
     AccountDeepOrchestrator,
     AccountDeepResult,
@@ -168,86 +172,50 @@ class _AccountOutcome:
 
 
 def _budget_stop(result: AccountDeepResult) -> BudgetVerdict | None:
-    """The ``ACCOUNT``-DENY / ``RUN``-GRACEFUL_STOP signal M8A.3 surfaces on the result.
+    """The ``ACCOUNT``-DENY / ``RUN``-GRACEFUL_STOP verdict M8A.3 records on the result.
 
-    Read structurally (``getattr``) rather than as a typed attribute so this handler compiles and
-    runs on the current M8A.1 trunk — where ``AccountDeepResult`` has no ``budget_stop`` field and
-    there is no budget admission yet, so it is always ``None`` (never paused, correctly) — and
-    lights up automatically once M8A.3 adds the field. A non-:class:`BudgetVerdict` value is
-    ignored."""
-    stop = getattr(result, "budget_stop", None)
-    return stop if isinstance(stop, BudgetVerdict) else None
-
-
-def _committee_member_ids(result: AccountDeepResult) -> list[JsonValue]:
-    """The admitted committee member contact-ids (references only). On a fresh run they come from
-    the committee result; on a resumed run (``committee is None``) from the profiled contacts."""
-    # Declared ``list[JsonValue]`` so the id strings flow into the references-only payload (a bare
-    # ``list[str]`` is invariant-incompatible with the ``dict[str, JsonValue]`` manifest).
-    ids: list[JsonValue]
-    if result.committee is not None:
-        ids = [str(member.contact_entity_id) for member in result.committee.members]
-    else:
-        ids = [str(contact.contact_entity_id) for contact in result.contacts]
-    return ids
-
-
-def _coverage_view(result: AccountDeepResult) -> dict[str, JsonValue] | None:
-    """The committee coverage band + named unsearched channels (Doc C §7) — partial, not failed.
-
-    ``None`` on a resumed run that skipped discovery (the committee result is not re-materialised);
-    the durable coverage still lives on the claim store for M12."""
-    if result.committee is None:
-        return None
-    coverage = result.committee.coverage
-    return {
-        "confidence": str(coverage.confidence),
-        "estimate_point": coverage.estimate_point,
-        "estimate_low": coverage.estimate_low,
-        "estimate_high": coverage.estimate_high,
-        "channels_not_searched": list(coverage.channels_not_searched),
-    }
+    ``None`` when the contact fan-out admitted every in-cap member within budget; a ``DENY`` → a
+    partial-but-COMPLETED account; a ``RUN``-scope ``GRACEFUL_STOP`` → ``PhaseResult(PAUSED)``
+    (mapped in :meth:`DeepPhaseHandler.run`)."""
+    return result.budget_stop
 
 
 def _failed_manifest(
     spec: AccountSpec, run_id: RunId, *, cost_cents: CostCents
 ) -> dict[str, JsonValue]:
+    # A FAILED account produced no ``AccountDeepResult`` to fold a skeleton from, so it cannot run
+    # ``build_handoff_skeleton`` — emit the same references-only ``DeepCompleteManifest`` shape
+    # (M8A.5) with empty member/coverage/index sections and the ``failed`` status the handler owns.
     return {
+        "account_entity_id": str(spec.entity_id),
         "account_run_id": str(run_id),
-        "entity_id": str(spec.entity_id),
         "tier": spec.tier,
-        "status": "failed",
-        "cost_cents": str(cost_cents),
         "committee_member_ids": [],
         "coverage": None,
-        "claim_ref_count": 0,
+        "cost_cents": str(cost_cents),
+        "references_index": {},
+        "status": "failed",
     }
 
 
 def _succeeded_outcome(result: AccountDeepResult) -> _AccountOutcome:
-    # M8A.5 fold-point: this is the references-only per-account manifest the spec's "deep-complete"
-    # payload requires (account-run id, admitted member ids, coverage band, cost). M8A.5 ships
-    # ``build_handoff_skeleton(result)`` — the richer ``(account, persona)``-keyed view with each
-    # member's ``profile_claims`` joined by ``contact_entity_id``; when it merges, this manifest is
-    # replaced/augmented by that skeleton (ids only, still no claim bodies). M8A.5 is a parallel
-    # branch, so the function does not exist on this base — the inline manifest is the interim form.
+    """Fold the M8A.5 handoff skeleton into this account's references-only payload entry.
+
+    ``build_handoff_skeleton(result).manifest()`` is the references-only ``DeepCompleteManifest``
+    (account-run id, admitted member ids, coverage band, cost, and the per-section claim-id index —
+    **ids only, never a ``value_json``**); the rich ``(account, persona)`` join with joined
+    ``profile_claims`` stays in-memory for M12.2 to recompute on read. The handler stamps the only
+    field the skeleton can't know — the budget-derived ``status``: an ``ACCOUNT``-DENY (or
+    ``RUN``-GRACEFUL_STOP) account did real work but stopped early → ``partial``; an un-capped
+    account that ran to ``CONTACTS_COMPLETE`` is ``completed`` (Doc C §7 coverage-confidence)."""
     stop = _budget_stop(result)
+    manifest = build_handoff_skeleton(result).manifest().model_dump(mode="json")
+    manifest["status"] = "partial" if stop is not None else "completed"
     return _AccountOutcome(
         cost_cents=result.cost_cents,
         succeeded=True,
         budget_stop=stop,
-        manifest={
-            "account_run_id": str(result.account_run_id),
-            "entity_id": str(result.entity_id),
-            "tier": result.tier,
-            # A budget-DENY (or GRACEFUL_STOP) account did real work but stopped early → partial,
-            # not failed; an un-capped account that ran to CONTACTS_COMPLETE is completed.
-            "status": "partial" if stop is not None else "completed",
-            "cost_cents": str(result.cost_cents),
-            "committee_member_ids": _committee_member_ids(result),
-            "coverage": _coverage_view(result),
-            "claim_ref_count": len(result.claim_refs),
-        },
+        manifest=manifest,
     )
 
 

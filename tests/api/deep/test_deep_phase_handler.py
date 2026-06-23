@@ -324,7 +324,7 @@ def test_resolves_high_tier_set_and_processes_every_account() -> None:
         assert sched.campaign_run_id == campaign
         accounts = result.payload["accounts"]
         assert isinstance(accounts, list)
-        assert {a["entity_id"] for a in accounts} == {str(e1), str(e2)}
+        assert {a["account_entity_id"] for a in accounts} == {str(e1), str(e2)}
         assert all(a["status"] == "completed" for a in accounts)
 
     run_async(_run())
@@ -356,7 +356,7 @@ def test_one_account_raising_is_isolated_and_marked_failed() -> None:
         assert result.cost_cents == Decimal("6")
         # the raised account's run was marked FAILED via the injected seam (deterministic id)
         assert marker.failed == [deep_account_run_id(campaign, e1)]
-        by_entity = {a["entity_id"]: a for a in result.payload["accounts"]}
+        by_entity = {a["account_entity_id"]: a for a in result.payload["accounts"]}
         assert by_entity[str(e1)]["status"] == "failed"
         assert by_entity[str(e1)]["cost_cents"] == "2"  # recovered partial cost in the manifest
         assert by_entity[str(e2)]["status"] == "completed"
@@ -422,7 +422,7 @@ def test_run_graceful_stop_pauses_the_phase() -> None:
         assert result.accounts_processed == 2
         assert result.payload["accounts_failed"] == 0
         assert result.cost_cents == Decimal("8")
-        by_entity = {a["entity_id"]: a for a in result.payload["accounts"]}
+        by_entity = {a["account_entity_id"]: a for a in result.payload["accounts"]}
         assert by_entity[str(e2)]["status"] == "partial"
 
     run_async(_run())
@@ -482,7 +482,12 @@ def test_payload_is_references_only_no_claim_bodies() -> None:
         assert len(acct["committee_member_ids"]) == 3
         assert all(isinstance(mid, str) for mid in acct["committee_member_ids"])
         assert acct["coverage"] is not None
-        assert acct["claim_ref_count"] >= 1
+        # the M8A.5 per-section claim-id index reaches the payload — ids only, never a claim body
+        references_index = acct["references_index"]
+        assert isinstance(references_index, dict)
+        all_ids = [cid for ids in references_index.values() for cid in ids]
+        assert len(all_ids) >= 1
+        assert all(isinstance(cid, str) for cid in all_ids)
 
     run_async(_run())
 
