@@ -642,10 +642,14 @@ class FakeBudgetStore:
         campaign_run_id: CampaignRunId,
         cost_cents: CostCents,
         account_run_id: RunId | None = None,
+        conn: object | None = None,
     ) -> None:
-        # Mirror DbBudgetStore.add_spend exactly: fail-loud on a missing run/account (a charge never
-        # silently vanishes), and check both rows BEFORE applying either (the DB does it in one
-        # transaction). No setdefault auto-create — that would diverge from production's no-op row.
+        # ``conn`` (M8A.4): the in-memory store ignores it (there is no transaction to enclose), but
+        # the parameter keeps the fake a structural ``BudgetStore`` so the engine's conn-aware
+        # ``record(conn=…)`` path can be exercised on the fake too. Otherwise mirror
+        # DbBudgetStore.add_spend exactly: fail-loud on a missing run/account (a charge never
+        # silently vanishes), and check both rows BEFORE applying either (DB does it in one txn).
+        # No setdefault auto-create — that would diverge from production's no-op row.
         if campaign_run_id not in self._runs:
             raise BudgetStateNotFound(f"campaign_run {campaign_run_id}")
         if account_run_id is not None and account_run_id not in self._accounts:

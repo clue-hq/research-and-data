@@ -24,9 +24,16 @@ each contact, the contact worker's per-tier facet sub-worker budget, and the int
 semaphore. A budget ``DENY`` yields a partial committee (coverage-confidence, not completeness); a
 ``GRACEFUL_STOP`` is surfaced so the handler suspends the phase.
 
-**Out of scope (later M8A issues):** the exactly-once spend transaction + the concurrent-admit
-reservation (M8A.4), the ``CampaignPhase.DEEP`` handler + high-tier resolution (M8A.2), the handoff
-skeleton (M8A.5), and injecting the concrete gate/classifier (M8A.6). The
+**Exactly-once spend (M8A.4).** Each stage's spend runs through the injected
+:class:`~clue_research.api.deep.spend.ExactlyOnceSpend`: the worker's claim write(s), the
+:meth:`~clue_research.durable.budget.BudgetEngine.record` charge, and the M7.4 ledger ``succeed``
+all commit on **one** connection — so a crash never leaves the client hard-cap counter desynced from
+claims (no under-count, no double-charge). ``record`` is the single live writer of the per-account
+spend; the references-fold no longer writes ``cost_cents``. The per-contact admission carries a
+local reservation so concurrent admits cannot collectively breach the per-account cap.
+
+**Out of scope (later M8A issues):** the ``CampaignPhase.DEEP`` handler + high-tier resolution
+(M8A.2), the handoff skeleton (M8A.5), and injecting the concrete gate/classifier (M8A.6). The
 committee/contact pre-spend gate is **not** wired here: those callables do not yet accept a gate on
 this base (that seam lands with #1 at the M8A.6 composition root) — only ``profile_account`` gates.
 """
@@ -36,11 +43,18 @@ from __future__ import annotations
 import asyncio
 import uuid
 from collections.abc import Awaitable, Callable, Sequence
+from dataclasses import dataclass
 from decimal import Decimal
 
 from pydantic import BaseModel, ConfigDict
 
 from clue_research.api.deep.run_io import AccountRunIO
+from clue_research.api.deep.spend import (
+    ExactlyOnceSpend,
+    StepInfo,
+    already_done,
+    deep_step_key,
+)
 from clue_research.config import DeepPhaseConfig, RecursionPolicy
 from clue_research.core import (
     BudgetEngine,
@@ -142,6 +156,47 @@ class AccountDeepResult(BaseModel):
         return tuple(refs)
 
 
+@dataclass(frozen=True, slots=True)
+class _ContactOutcome:
+    """One contact's exactly-once spend outcome (M8A.4): the contact id, the worker result (``None``
+    on a ``REPLAY`` — a resumed fan-out recovers the references from the ledger, not a re-run), and
+    the references-only :class:`~clue_research.api.deep.spend.StepInfo` (claim ids + cost + the
+    ``replayed`` flag the orchestrator reads to avoid double-counting an already-booked charge)."""
+
+    contact_entity_id: EntityId
+    result: ContactProfileResult | None
+    info: StepInfo
+
+
+@dataclass(slots=True)
+class _Reservation:
+    """In-memory per-account spend reservation (M8A.4) for the concurrent contact fan-out.
+
+    ``BudgetEngine.check`` reads only the committed ``account_run.cost_cents``, so under concurrency
+    it cannot see peers already admitted-but-not-yet-charged → N concurrent admits could
+    collectively breach the per-account cap. This tracks both halves: ``committed`` is the account's
+    charged spend so far (account + committee + each settled contact) and ``reserved`` the estimate
+    of every admitted-not-yet-charged contact. The admission guard tests ``committed + reserved +
+    estimate`` against the cap. Single-threaded asyncio → the mutations are safe at await boundaries
+    (the admission loop and the contact tasks interleave only where they ``await``)."""
+
+    committed: CostCents
+    reserved: CostCents = Decimal(0)
+
+    def reserve(self, estimate: CostCents) -> None:
+        """Reserve one contact's estimate at admit (decrement-at-admit)."""
+        self.reserved += estimate
+
+    def settle(self, estimate: CostCents, actual: CostCents) -> None:
+        """Convert a reservation to the real (or zero, on REPLAY) charge once it commits."""
+        self.reserved -= estimate
+        self.committed += actual
+
+    def outstanding(self, estimate: CostCents) -> CostCents:
+        """What the account would owe if one more contact (``estimate``) were admitted now."""
+        return self.committed + self.reserved + estimate
+
+
 class AccountDeepOrchestrator:
     """Sequences ``profile_account → discover_committee → bounded profile_contact fan-out`` for one
     account, advancing the M8A.0 ``sub_phase`` marker and resuming at the last completed boundary.
@@ -149,9 +204,10 @@ class AccountDeepOrchestrator:
     Construct once per campaign (the ICP spec + collaborators are campaign-scoped); call
     :meth:`run_one` per account — it is the ``run_one`` callback the M8A.0 scheduler runs inside its
     semaphore + entity-lock slot. All *behavior* is injected (the three worker callables, the run-IO
-    cursor, the M7.5 budget engine that admits the per-contact fan-out); only types + the workers'
-    inert default-arg sentinels are imported, never a worker body — so the sequencing logic is
-    unit-testable with fakes (no DB)."""
+    cursor, the M7.5 budget engine that admits the per-contact fan-out, and the M8A.4
+    :class:`~clue_research.api.deep.spend.ExactlyOnceSpend` that commits each stage's claim writes +
+    charge + ledger in one transaction); only types + the workers' inert default-arg sentinels are
+    imported, never a worker body — so the sequencing logic is unit-testable with fakes (no DB)."""
 
     def __init__(
         self,
@@ -164,6 +220,7 @@ class AccountDeepOrchestrator:
         spec: ICPSpec,
         config: DeepPhaseConfig,
         budget: BudgetEngine,
+        spend: ExactlyOnceSpend,
         sources: Sequence[CommitteeSource],
         gateway: LLMGateway,
         role_model: str | None = None,
@@ -184,6 +241,7 @@ class AccountDeepOrchestrator:
         self._spec = spec
         self._config = config
         self._budget = budget
+        self._spend = spend
         self._sources = tuple(sources)
         self._gateway = gateway
         self._role_model = role_model
@@ -239,13 +297,11 @@ class AccountDeepOrchestrator:
                 planner_model=self._planner_model,
                 pre_spend_gate=self._pre_spend_gate,
             )
-            cost += account_result.cost_cents
             if account_result.status is WorkerStatus.FAILED and not account_result.aspects:
                 # The account did not resolve (``profile_account`` returns FAILED with no aspects
-                # when the entity is absent). Committee/contact have no account to target and would
-                # raise mid-stage, so stop here — a clean hard-stop the M8A.2 handler records as a
-                # FAILED account — rather than advance the marker and crash in stage 2. The marker
-                # stays un-advanced so the run is honestly "not started" (a no-op on a retry).
+                # when the entity is absent, cost 0). Committee/contact have no account to target,
+                # so stop here — a clean hard-stop the M8A.2 handler marks FAILED, without spending
+                # or advancing the marker (a no-op on a retry).
                 return AccountDeepResult(
                     account_run_id=run_id,
                     entity_id=spec.entity_id,
@@ -254,77 +310,111 @@ class AccountDeepOrchestrator:
                     cost_cents=cost,
                     sub_phase=done,
                 )
-            refs["account"] = [str(c) for c in account_result.claim_refs]
-            await self._io.save(
-                run_id,
-                references_index=refs,
-                cost_cents=cost,
-                status=AccountRunStatus.RUNNING,
-                sub_phase=AccountRunSubPhase.ACCOUNT_PROFILED,
-            )
+            # The account/resonance claims already committed in ``profile_account``'s own
+            # transactions (it opens its own sessions). Record its charge + a ledger anchor and fold
+            # the references + marker in ONE transaction (M8A.4): the account-axis *claim-write*
+            # atomicity stays the M7 graph's domain, but its cost now flows through ``record`` (the
+            # single ``cost_cents`` writer) and the ledger guards a double-record on resume.
+            async with self._session_factory() as conn:
+                _, info = await self._spend.run_step(
+                    conn,
+                    key=deep_step_key(run_id, "account"),
+                    campaign_run_id=campaign_run_id,
+                    account_run_id=run_id,
+                    entity_id=spec.entity_id,
+                    work=already_done(account_result),
+                )
+                refs["account"] = list(info.claim_ids)
+                await self._io.fold(
+                    conn,
+                    run_id,
+                    references_index=refs,
+                    status=AccountRunStatus.RUNNING,
+                    sub_phase=AccountRunSubPhase.ACCOUNT_PROFILED,
+                )
+            if not info.replayed:
+                cost += info.cost_cents
             done = AccountRunSubPhase.ACCOUNT_PROFILED
 
         # --- Stage 2: committee axis (M8.3) — direct callable (no AspectContext, so the ctx.params
-        # KeyError hazard never arises). Persist the admitted member contact-ids so the contact
-        # fan-out resumes WITHOUT re-discovering the committee.
+        # KeyError hazard never arises). The committee's claim writes, its charge, the ledger
+        # ``succeed``, the member-id work-list, and the marker all commit in one transaction (M8A.4)
+        # so the contact fan-out resumes WITHOUT re-discovering the committee and the work-list is
+        # never lost vs the ledger.
         if done is AccountRunSubPhase.ACCOUNT_PROFILED:
             async with self._session_factory() as conn:
-                committee_result = await self._discover_committee(
+                committee_result, info = await self._spend.run_step(
                     conn,
-                    account_entity_id=spec.entity_id,
-                    run_id=run_id,
-                    tenant_id=tenant_id,
-                    sources=self._sources,
-                    gateway=self._gateway,
-                    spec=self._spec,
-                    role_model=self._role_model,
-                    budget_cap_cents=self._budget_cap_cents,
-                    config=self._committee_config,
+                    key=deep_step_key(run_id, "committee"),
+                    campaign_run_id=campaign_run_id,
+                    account_run_id=run_id,
+                    entity_id=spec.entity_id,
+                    work=lambda c: self._discover_committee(
+                        c,
+                        account_entity_id=spec.entity_id,
+                        run_id=run_id,
+                        tenant_id=tenant_id,
+                        sources=self._sources,
+                        gateway=self._gateway,
+                        spec=self._spec,
+                        role_model=self._role_model,
+                        budget_cap_cents=self._budget_cap_cents,
+                        config=self._committee_config,
+                    ),
                 )
-            cost += committee_result.cost_cents
-            refs["committee"] = [str(c) for c in committee_result.claim_refs]
-            refs[_COMMITTEE_CONTACTS_KEY] = [
-                str(m.contact_entity_id) for m in committee_result.members
-            ]
-            await self._io.save(
-                run_id,
-                references_index=refs,
-                cost_cents=cost,
-                status=AccountRunStatus.RUNNING,
-                sub_phase=AccountRunSubPhase.COMMITTEE_DISCOVERED,
-            )
+                refs["committee"] = list(info.claim_ids)
+                if committee_result is not None:  # EXECUTE — refresh the work-list from the members
+                    refs[_COMMITTEE_CONTACTS_KEY] = [
+                        str(m.contact_entity_id) for m in committee_result.members
+                    ]
+                await self._io.fold(
+                    conn,
+                    run_id,
+                    references_index=refs,
+                    status=AccountRunStatus.RUNNING,
+                    sub_phase=AccountRunSubPhase.COMMITTEE_DISCOVERED,
+                )
+            if not info.replayed:
+                cost += info.cost_cents
             done = AccountRunSubPhase.COMMITTEE_DISCOVERED
 
         # --- Stage 3: contact axis (M8.4) — bounded fan-out over the admitted members (M8A.3): the
-        # level-1 breadth is capped at committee_size_cap, each contact is budget-admitted at the
-        # chokepoint, and the intra-account semaphore caps concurrency. ``budget_stop`` records the
-        # verdict (if any) that halted admission.
+        # level-1 breadth is capped at committee_size_cap, each contact is budget-admitted (with the
+        # M8A.4 concurrent-admit reservation), and the intra-account semaphore caps concurrency;
+        # contact's claim writes + charge + ledger ``succeed`` commit in ONE transaction (M8A.4);
+        # ``budget_stop`` records the verdict (if any) that halted admission.
         if done is AccountRunSubPhase.COMMITTEE_DISCOVERED:
             contact_ids = self._committee_contact_ids(committee_result, refs)
-            contact_results, budget_stop = await self._profile_contacts(
+            outcomes, budget_stop = await self._profile_contacts(
                 contact_ids[: self._config.committee_size_cap],
                 campaign_run_id=campaign_run_id,
                 account_entity_id=spec.entity_id,
                 run_id=run_id,
                 tenant_id=tenant_id,
                 tier=spec.tier,
+                committed_cents=cost,
             )
-            for contact in contact_results:
-                cost += contact.cost_cents
-                refs[f"contact:{contact.contact_entity_id}"] = [str(c) for c in contact.claim_refs]
+            for outcome in outcomes:
+                if not outcome.info.replayed:
+                    cost += outcome.info.cost_cents
+                refs[f"contact:{outcome.contact_entity_id}"] = list(outcome.info.claim_ids)
+            contact_results = tuple(o.result for o in outcomes if o.result is not None)
             # The contact axis is complete even when budget halted admission: a ``DENY`` exhausted
             # the account envelope and a ``GRACEFUL_STOP`` "finishes the in-flight unit and stops at
             # the next checkpoint" — both leave this account a *finished partial* (coverage-
             # confidence, not completeness), so the marker advances and the run is DONE. The
             # ``budget_stop`` verdict (surfaced on the result) is what the handler reads to suspend
-            # the *phase* (GRACEFUL_STOP) or continue the batch with partial coverage (DENY).
-            await self._io.save(
-                run_id,
-                references_index=refs,
-                cost_cents=cost,
-                status=AccountRunStatus.DONE,
-                sub_phase=AccountRunSubPhase.CONTACTS_COMPLETE,
-            )
+            # the *phase* (GRACEFUL_STOP) or continue the batch with partial coverage (DENY). Each
+            # contact's spend already committed atomically; this fold records the references +
+            # marker (contact claim ids are recovered from each ledger row on a resumed fan-out).
+            async with self._session_factory() as conn:
+                await self._io.fold(
+                    conn,
+                    run_id,
+                    references_index=refs,
+                    status=AccountRunStatus.DONE,
+                    sub_phase=AccountRunSubPhase.CONTACTS_COMPLETE,
+                )
             done = AccountRunSubPhase.CONTACTS_COMPLETE
 
         return AccountDeepResult(
@@ -357,30 +447,35 @@ class AccountDeepOrchestrator:
         run_id: RunId,
         tenant_id: str,
         tier: str,
-    ) -> tuple[tuple[ContactProfileResult, ...], BudgetVerdict | None]:
-        """Admit-then-launch the contact fan-out under the four fan-out bounds (M8A.3, Doc C §3/§5).
+        committed_cents: CostCents,
+    ) -> tuple[tuple[_ContactOutcome, ...], BudgetVerdict | None]:
+        """Admit-then-launch the contact fan-out under the four fan-out bounds (M8A.3, Doc C §3/§5)
+        with exactly-once spend + a concurrent-admit reservation (M8A.4).
 
         Before each member, ask the cost dial whether the account can afford one more contact —
         ``BudgetEngine.check(scope=ACCOUNT)`` projecting ``per_contact_estimate_cents`` — and launch
-        only an ``ALLOW``. The verdict at the chokepoint:
+        only an ``ALLOW`` that also clears the reservation guard. The verdict at the chokepoint:
 
-        * ``ALLOW`` — schedule the profile under the ``max_contacts_in_flight`` semaphore.
+        * ``ALLOW`` (+ within the reservation) — schedule the profile under the
+          ``max_contacts_in_flight`` semaphore; each runs as one exactly-once spend step (claim +
+          claim-writes + charge + ledger ``succeed`` in one transaction).
         * ``DENY`` — the account's envelope is spent; stop admitting and return what was admitted
           as a **partial committee** (coverage-confidence, not completeness, Doc C §3) — not failed.
         * ``GRACEFUL_STOP`` — a run-level cap is breached; finish the admitted in-flight contacts
           and surface the verdict so the handler (M8A.2) suspends the phase at the next checkpoint.
 
-        Returns ``(results, budget_stop)`` where ``budget_stop`` is the verdict that halted
-        admission (``None`` if every in-cap member was admitted). The four bounds all live at this
-        one chokepoint: (a) committee-size truncation (the caller slices ``contact_ids``), (b) this
-        ``check`` admission, (c) the contact worker's per-tier ``facet_subworker_budget``, (d) the
-        in-flight semaphore — none of them hardcoded; (a)/(b)/(c)/(d) all read from
-        :class:`DeepPhaseConfig` / :class:`RecursionPolicy`.
+        Returns ``(outcomes, budget_stop)`` where each :class:`_ContactOutcome` carries the result
+        (``None`` on a REPLAY) + references-only step info, and ``budget_stop`` is the verdict that
+        halted admission (``None`` if every in-cap member was admitted). The four bounds all live at
+        this one chokepoint: (a) committee-size truncation (the caller slices ``contact_ids``), (b)
+        this ``check`` admission, (c) the contact worker's per-tier ``facet_subworker_budget``, (d)
+        the in-flight semaphore — none hardcoded; all read from :class:`DeepPhaseConfig` /
+        :class:`RecursionPolicy`.
 
-        Note: the sequential admit reads spend-so-far while already-launched peers have not yet
-        ``record``-ed, so concurrent admits can collectively overshoot the per-account cap by a
-        bounded window. Closing that window (a reservation) and the exactly-once charge are
-        **M8A.4**; this method only opens the admission seam.
+        The **reservation** (M8A.4) closes the concurrent over-commit window the bare ``check`` left
+        open: ``check`` sees only the committed ``cost_cents``, so launched-but-uncharged peers
+        are invisible to it; the local :class:`_Reservation` accounts for them so concurrent admits
+        cannot collectively breach the per-account cap (paired with ``max_contacts_in_flight``).
         """
         semaphore = asyncio.Semaphore(self._config.max_contacts_in_flight)
         facet_budget = (
@@ -388,50 +483,72 @@ class AccountDeepOrchestrator:
             if self._recursion_policy is not None
             else 0
         )
+        estimate = self._config.per_contact_estimate_cents
+        reservation = _Reservation(committed=committed_cents)
 
-        async def _one(contact_id: EntityId) -> ContactProfileResult:
+        async def _one(contact_id: EntityId) -> _ContactOutcome:
             async with semaphore, self._session_factory() as conn:
-                return await self._profile_contact(
+                result, info = await self._spend.run_step(
                     conn,
-                    contact_entity_id=contact_id,
-                    account_entity_id=account_entity_id,
-                    run_id=run_id,
-                    tenant_id=tenant_id,
-                    tier=tier,
-                    spec=self._spec,
-                    facet_subworker_budget=facet_budget,
-                    binding_classifier=self._binding_classifier,
-                    use_class_tagger=self._use_class_tagger,
-                    config=self._contact_config,
+                    key=deep_step_key(run_id, f"contact:{contact_id}"),
+                    campaign_run_id=campaign_run_id,
+                    account_run_id=run_id,
+                    entity_id=account_entity_id,
+                    work=lambda c: self._profile_contact(
+                        c,
+                        contact_entity_id=contact_id,
+                        account_entity_id=account_entity_id,
+                        run_id=run_id,
+                        tenant_id=tenant_id,
+                        tier=tier,
+                        spec=self._spec,
+                        facet_subworker_budget=facet_budget,
+                        binding_classifier=self._binding_classifier,
+                        use_class_tagger=self._use_class_tagger,
+                        config=self._contact_config,
+                    ),
                 )
+            # The transaction committed: the reservation becomes the real charge (or zero on a
+            # REPLAY, whose charge was already booked on the prior run).
+            reservation.settle(estimate, Decimal(0) if info.replayed else info.cost_cents)
+            return _ContactOutcome(contact_entity_id=contact_id, result=result, info=info)
 
-        tasks: list[asyncio.Task[ContactProfileResult]] = []
+        tasks: list[asyncio.Task[_ContactOutcome]] = []
         budget_stop: BudgetVerdict | None = None
         try:
             for contact_id in contact_ids:
                 decision = await self._budget.check(
                     scope=BudgetScope.ACCOUNT,
-                    projected_cents=self._config.per_contact_estimate_cents,
+                    projected_cents=estimate,
                     campaign_run_id=campaign_run_id,
                     entity_id=account_entity_id,
                     account_run_id=run_id,
                 )
-                if decision.verdict is BudgetVerdict.ALLOW:
-                    tasks.append(asyncio.create_task(_one(contact_id)))
-                else:
+                if decision.verdict is not BudgetVerdict.ALLOW:
                     # DENY (partial) or GRACEFUL_STOP (pause): stop admitting; the already-launched
                     # contacts below still finish (GRACEFUL_STOP = "finish the in-flight unit").
                     budget_stop = decision.verdict
                     break
+                if (
+                    decision.cap_cents > 0
+                    and reservation.outstanding(estimate) > decision.cap_cents
+                ):
+                    # The engine ALLOW-ed against committed spend, but the in-flight reservations of
+                    # already-admitted peers would breach the per-account cap → stop admitting (a
+                    # partial, like a DENY). ``cap_cents == 0`` means uncapped → the guard is inert.
+                    budget_stop = BudgetVerdict.DENY
+                    break
+                reservation.reserve(estimate)
+                tasks.append(asyncio.create_task(_one(contact_id)))
             return tuple(await asyncio.gather(*tasks)), budget_stop
         except BaseException:
             # Never leave an admitted contact detached. ``create_task`` schedules eagerly, so if
             # admission itself raises (e.g. ``budget.check`` hits a DB error) — or one ``_one``
             # raises in the gather, which does NOT cancel its in-flight siblings — cancel every
             # launched task and drain it before propagating. The M8A.2 handler marks the account
-            # FAILED; claims already committed are idempotent on resume, so cancelling in-flight
-            # work is safe (and stops wasted spend). This also forwards a cancellation of
-            # ``_profile_contacts`` itself to its children.
+            # FAILED; claims already committed are idempotent on resume (a crash rolls back the
+            # whole spend step), so cancelling in-flight work is safe (and stops wasted spend). This
+            # also forwards a cancellation of ``_profile_contacts`` itself to its children.
             for task in tasks:
                 task.cancel()
             await asyncio.gather(*tasks, return_exceptions=True)
