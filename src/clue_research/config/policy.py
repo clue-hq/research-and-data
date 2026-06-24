@@ -102,6 +102,141 @@ _CONSERVATIVE_ALLOW_MAP: dict[UseClass, UseDisposition] = {
 }
 
 
+# --- region -> regime mapping (M10.1) --------------------------------------
+# The strictest common regime — used whenever a contact's jurisdiction cannot be resolved (no
+# location evidence, or a region the mapping does not cover). "Design for the strict (GDPR-grade)
+# case and switch down" (Doc D §1): absence/ambiguity of evidence never *relaxes* governance, so the
+# resolver fails closed to this regime rather than to a permissive default.
+STRICT_DEFAULT_REGIME = Jurisdiction.GDPR
+
+# Default ISO-3166 alpha-2 region -> regime. EU-27 + EEA (IS/LI/NO) -> GDPR; GB -> UK GDPR; US ->
+# US state-privacy regime. This is a *starting* default authored as config (policy-as-data,
+# conventions §2): the precise 2026 boundaries (US state granularity, adequacy decisions, the long
+# tail of jurisdictions) are D8 and are changed by editing this map, never the resolver. Any region
+# not listed resolves to STRICT_DEFAULT_REGIME (fail-closed), so an unlisted country is governed
+# strictly rather than leniently.
+_EU_EEA_REGIONS = (
+    "AT",
+    "BE",
+    "BG",
+    "HR",
+    "CY",
+    "CZ",
+    "DK",
+    "EE",
+    "FI",
+    "FR",
+    "DE",
+    "GR",
+    "HU",
+    "IE",
+    "IT",
+    "LV",
+    "LT",
+    "LU",
+    "MT",
+    "NL",
+    "PL",
+    "PT",
+    "RO",
+    "SK",
+    "SI",
+    "ES",
+    "SE",  # EU-27
+    "IS",
+    "LI",
+    "NO",  # EEA (GDPR applies)
+)
+_DEFAULT_REGION_REGIME: dict[str, Jurisdiction] = {
+    **dict.fromkeys(_EU_EEA_REGIONS, Jurisdiction.GDPR),
+    "GB": Jurisdiction.UK_GDPR,
+    "UK": Jurisdiction.UK_GDPR,  # common non-ISO alias for GB
+    "US": Jurisdiction.US_STATE,
+}
+
+# Common full-country-NAME → ISO alpha-2 aliases. Scraped/synthesized ``geo`` dicts (M8) frequently
+# carry a country name ("Germany") rather than the ISO code ("DE"), so without this layer the
+# resolver would fail closed to the strict default for most real contacts — safe but useless. This
+# is a *curated, finite* set for the regions in the default mapping; an unlisted name still fails
+# closed (never relaxes governance). Like the mapping itself it is policy-as-data (D8-extensible).
+_DEFAULT_NAME_ALIASES: dict[str, str] = {
+    "GERMANY": "DE",
+    "FRANCE": "FR",
+    "ITALY": "IT",
+    "SPAIN": "ES",
+    "NETHERLANDS": "NL",
+    "THE NETHERLANDS": "NL",
+    "IRELAND": "IE",
+    "BELGIUM": "BE",
+    "POLAND": "PL",
+    "SWEDEN": "SE",
+    "DENMARK": "DK",
+    "FINLAND": "FI",
+    "AUSTRIA": "AT",
+    "PORTUGAL": "PT",
+    "GREECE": "GR",
+    "CZECHIA": "CZ",
+    "CZECH REPUBLIC": "CZ",
+    "ROMANIA": "RO",
+    "HUNGARY": "HU",
+    "CROATIA": "HR",
+    "BULGARIA": "BG",
+    "SLOVAKIA": "SK",
+    "SLOVENIA": "SI",
+    "LITHUANIA": "LT",
+    "LATVIA": "LV",
+    "ESTONIA": "EE",
+    "LUXEMBOURG": "LU",
+    "CYPRUS": "CY",
+    "MALTA": "MT",
+    "NORWAY": "NO",
+    "ICELAND": "IS",
+    "LIECHTENSTEIN": "LI",
+    "UNITED KINGDOM": "GB",
+    "GREAT BRITAIN": "GB",
+    "ENGLAND": "GB",
+    "SCOTLAND": "GB",
+    "WALES": "GB",
+    "UNITED STATES": "US",
+    "UNITED STATES OF AMERICA": "US",
+    "USA": "US",
+    "AMERICA": "US",
+}
+
+
+class RegimeMapping(BaseModel):
+    """region -> data-protection :class:`Jurisdiction` regime — the M10.1 lookup table (Doc D §1;
+    D8). **Policy is data:** adding/adjusting a regime is a config edit, not code.
+
+    ``mapping`` is keyed by ISO-3166 alpha-2 codes; ``name_aliases`` maps common full country NAMES
+    to those codes (scraped ``geo`` dicts often carry "Germany" rather than "DE"). ``region_keys``
+    is the ordered set of keys the resolver probes in a contact/account ``geo`` dict (or a location
+    claim's value) to find the region — geo dicts are loosely conventional (``country`` /
+    ``country_code`` / ``region``) and carry no enforced schema. Lookups upper-case the region, try
+    ``name_aliases`` then ``mapping``; a region matching neither returns ``None`` (the resolver then
+    fails closed to ``STRICT_DEFAULT_REGIME`` — absence/ambiguity never relaxes governance).
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    mapping: dict[str, Jurisdiction] = dict(_DEFAULT_REGION_REGIME)
+    name_aliases: dict[str, str] = dict(_DEFAULT_NAME_ALIASES)
+    region_keys: tuple[str, ...] = ("country", "country_code", "region", "jurisdiction")
+
+    def regime_for(self, region: str | None) -> Jurisdiction | None:
+        """The regime for a region code or full country name, or ``None`` when empty/unmapped."""
+        if region is None:
+            return None
+        normalized = region.strip().upper()
+        if not normalized:
+            return None
+        code = self.name_aliases.get(normalized, normalized)
+        return self.mapping.get(code)
+
+
+DEFAULT_REGIME_MAPPING = RegimeMapping()
+
+
 class LawfulBasisDefaults(BaseModel):
     """Placeholder for lawful-basis defaults (Doc D §4) — *carried, not enforced* in M0.
 
@@ -158,6 +293,18 @@ class JurisdictionPolicy(BaseModel):
     }
     lawful_basis_defaults: LawfulBasisDefaults = LawfulBasisDefaults()
     retention_ttls: RetentionTtls = RetentionTtls()
+    # --- jurisdiction resolution inputs (M10.1) ---
+    # The region->regime lookup the M10.1 JurisdictionResolver applies (Doc D §1; D8). A per-client
+    # overlay can swap it without code (policy-as-data); note the ConfigOverlay whole-subtree
+    # replace semantics — an overlay overriding ``policy`` must re-supply the whole policy.
+    regime_mapping: RegimeMapping = DEFAULT_REGIME_MAPPING
+    # The field-keys the resolver reads via ``current_value`` to find a contact's / the parent
+    # account's location *claim* (provenance-backed, supersession-correct). Empty/absent fields are
+    # read gracefully as "no claim" — the resolver then falls back to the resolved entity columns
+    # (``ContactEntity.geo`` / ``AccountEntity.hq_geo``). M8/M1 own the location field-keys; M10
+    # only *lists* which to consult, so adding one when M8 registers a field is a config change.
+    contact_location_fields: tuple[str, ...] = ("contact.location",)
+    account_location_fields: tuple[str, ...] = ("account.hq_location",)
 
     @model_validator(mode="after")
     def _check_allow_map_complete(self) -> JurisdictionPolicy:

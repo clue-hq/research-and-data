@@ -27,7 +27,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
-from sqlalchemy import text
+from sqlalchemy import bindparam, text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_research.claimstore.registry import check_claim_writable
@@ -217,6 +217,30 @@ async def supersede_claim(conn: AsyncConnection, old_id: ClaimId, new_claim: Cla
         text("UPDATE claim SET superseded_by = :new_id WHERE id = :old_id"),
         {"new_id": new_id, "old_id": old_id},
     )
+    return new_id
+
+
+async def supersede_claims(
+    conn: AsyncConnection, old_ids: Sequence[ClaimId], new_claim: Claim
+) -> ClaimId:
+    """Supersede *every* claim in ``old_ids`` with a single ``new_claim`` — the many→one analogue of
+    :func:`supersede_claim`: insert the new row once, then point each old row's ``superseded_by`` at
+    it (the trigger-allowlisted forward pointer), atomically in the caller's transaction.
+
+    For a re-resolution that collapses several live claims into one current value — e.g. M10.1
+    re-resolving a contact's jurisdiction must retire *all* live ``contact.jurisdiction`` claims,
+    not just the newest, so a stray/concurrent live sibling cannot keep contributing to
+    ``current_value``. The immutable provenance of each old row is untouched; append-only history
+    is preserved (substrate §1). ``old_ids`` may be empty — then it is exactly :func:`insert_claim`.
+    """
+    new_id = await insert_claim(conn, new_claim)
+    ids = list(old_ids)
+    if ids:
+        stmt = text(
+            "UPDATE claim SET superseded_by = :new_id "
+            "WHERE id IN :old_ids AND superseded_by IS NULL"
+        ).bindparams(bindparam("old_ids", expanding=True))
+        await conn.execute(stmt, {"new_id": new_id, "old_ids": ids})
     return new_id
 
 
