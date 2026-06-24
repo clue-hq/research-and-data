@@ -34,8 +34,7 @@ only here (import-linter Rule 4).
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
-from decimal import Decimal
+from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -47,8 +46,11 @@ from clue_research.resolvers.grounded import (
     SynthesisBackend,
     SynthesisResult,
     SynthesizedField,
+    as_list,
+    dollars_to_cost_cents,
+    entity_query,
+    field_intent,
     register_synthesis_resolver,
-    registrable_host,
 )
 from clue_research.resolvers.http import DEFAULT_RETRIES, DEFAULT_TIMEOUT_S, get_json
 from clue_research.resolvers.live import AccountLookup, HttpFetcher, HttpRequest
@@ -60,16 +62,6 @@ if TYPE_CHECKING:
 
 SOURCE_KEY = "exa_deep"
 AUTH_REF = "CLUE_EXA_API_KEY"
-
-# Per-field synthesis intent — the phrase appended to the entity-bound query so Exa retrieves
-# passages relevant to *this* field (substrate §3 the synthesis fields). Policy-as-data: a new
-# synthesis field gets an intent here (or falls back to the humanized field leaf). Keyed by the
-# field_key the waterfall passes; resonance.* falls back via the leaf when not enumerated.
-_FIELD_INTENT: dict[str, str] = {
-    "account.operational_pain": "operational challenges, bottlenecks and pain points",
-    "account.strategic_moves": "strategic initiatives, expansion and recent moves",
-    "account.resonance.culture": "company culture, employee sentiment and morale",
-}
 
 
 class ExaDeepConfig(BaseModel):
@@ -100,37 +92,6 @@ class ExaDeepConfig(BaseModel):
 DEFAULT_EXA_CONFIG = ExaDeepConfig()
 
 
-def _field_intent(field: FieldDef) -> str:
-    """The retrieval intent phrase for a synthesis field — an enumerated phrase or the humanized
-    field leaf (``account.resonance.attrition`` → ``attrition``), so a newly-registered resonance
-    sub-field gets a sensible query with no code change (Doc C §2 — registered, not enumerated)."""
-    intent = _FIELD_INTENT.get(field.field_key)
-    if intent is not None:
-        return intent
-    leaf = field.field_key.rsplit(".", 1)[-1]
-    return leaf.replace("_", " ")
-
-
-def _entity_query(account: AccountEntity, field: FieldDef) -> str:
-    """The target-locked, entity-bound query string (staged-flow §5): the canonical name (quoted),
-    aliases, the primary domain, an HQ-geo disambiguator, and the field intent. Binding the query to
-    the entity is the *first* anti-drift measure; off-entity evidence that still slips through is
-    rejected by the shared resolver's target-lock guard."""
-    parts: list[str] = [f'"{account.canonical_name}"']
-    parts.extend(account.aliases)
-    domain = registrable_host(account.primary_domain)
-    if domain is not None:
-        parts.append(domain)
-    geo = account.hq_geo or {}
-    for key in ("country", "country_code", "city", "region"):
-        value = geo.get(key)
-        if isinstance(value, str) and value.strip():
-            parts.append(value.strip())
-            break
-    parts.append(_field_intent(field))
-    return " ".join(parts)
-
-
 def build_exa_request(
     account: AccountEntity,
     field: FieldDef,
@@ -145,14 +106,14 @@ def build_exa_request(
     passages. The API key is sent as the ``x-api-key`` header; a public/no-auth call omits it.
     """
     body: dict[str, Any] = {
-        "query": _entity_query(account, field),
+        "query": entity_query(account, field),
         "type": config.search_type,
         "numResults": config.num_results,
         "contents": {
             "highlights": {
                 "numSentences": config.highlight_sentences,
                 "highlightsPerUrl": config.highlights_per_result,
-                "query": _field_intent(field),
+                "query": field_intent(field),
             },
             "text": True,
         },
@@ -165,26 +126,12 @@ def build_exa_request(
     return HttpRequest(url=config.endpoint, method="POST", headers=headers, json_body=body)
 
 
-def _as_list(value: Any) -> list[Any]:
-    """A list view of a JSON array, or ``[]`` for anything else (a string is *not* an array —
-    iterating it char-by-char would be a silent bug)."""
-    return (
-        list(value) if isinstance(value, Sequence) and not isinstance(value, (str, bytes)) else []
-    )
-
-
 def _cost_cents(payload: Mapping[str, Any]) -> CostCents:
-    """Read Exa's realized per-call cost (``costDollars.total``, in dollars) into cents. Absent/
-    malformed → ``0`` (the resolver then attributes the seed-manifest default), never a guess."""
+    """Read Exa's realized per-call cost (``costDollars.total``, in dollars) into cents via the
+    shared converter. Absent/malformed → ``0`` (the resolver attributes the seed-manifest cost)."""
     cost = payload.get("costDollars")
     total = cost.get("total") if isinstance(cost, Mapping) else None
-    try:
-        dollars = Decimal(str(total))
-    except (TypeError, ValueError, ArithmeticError):
-        return Decimal(0)
-    if dollars < 0 or not dollars.is_finite():
-        return Decimal(0)
-    return dollars * 100
+    return dollars_to_cost_cents(total)
 
 
 def normalize_exa_response(
@@ -204,7 +151,7 @@ def normalize_exa_response(
     ``min_confidence``.
     """
     fields: list[SynthesizedField] = []
-    for result in _as_list(payload.get("results")):
+    for result in as_list(payload.get("results")):
         if not isinstance(result, Mapping):
             continue
         url = result.get("url")
@@ -212,8 +159,8 @@ def normalize_exa_response(
             continue  # a citation is mandatory — no url ⇒ ungroundable, dropped
         page_text = result.get("text")
         page_text = page_text if isinstance(page_text, str) else ""
-        highlights = _as_list(result.get("highlights"))
-        scores = _as_list(result.get("highlightScores"))
+        highlights = as_list(result.get("highlights"))
+        scores = as_list(result.get("highlightScores"))
         result_score = result.get("score")
         for i, passage in enumerate(highlights):
             if not isinstance(passage, str) or not passage.strip():

@@ -42,6 +42,8 @@ _ALLOWED_LITERALS = frozenset(
         "register_exa_deep_resolver",
         "register_synthesis_resolver",
         "GroundedSynthesisResolver",
+        "register_parallel_task_resolver",
+        "normalize_parallel_response",
     }
 )
 

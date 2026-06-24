@@ -29,6 +29,7 @@ from clue_research.resolvers import (
     crm,
     exa,
     firecrawl,
+    parallel,
     registries,
     zoominfo,
 )
@@ -84,6 +85,11 @@ from clue_research.resolvers.live import (
     HttpRequest,
     fetch_via_http,
 )
+from clue_research.resolvers.parallel import (
+    DEFAULT_PARALLEL_CONFIG,
+    ParallelTaskConfig,
+    register_parallel_task_resolver,
+)
 from clue_research.sources import SEED_MANIFESTS, bind_resolver
 
 # The enrichment provider modules (each a single-module sub-package) and the registry family. The
@@ -123,6 +129,7 @@ __all__ = [
     "register_crm_resolver",  # M4.5 CRM (tier-1, tenant-private)
     "register_scrape_resolver",  # M4.5 Firecrawl official-site scrape (tier-2)
     "register_exa_deep_resolver",  # M11.1 Exa Deep (tier-4 grounded synthesis)
+    "register_parallel_task_resolver",  # M11.2 Parallel Task (tier-4 grounded synthesis)
     # provider sub-packages (referenced by tier_plan source_keys; never branched on by name)
     "clay",
     "apollo",
@@ -132,6 +139,7 @@ __all__ = [
     "crm",
     "firecrawl",
     "exa",
+    "parallel",
     # M4.5 CRM seam (the connector + records are config; nothing downstream knows the vendor)
     "CRMConnector",
     "CrmResolver",
@@ -162,6 +170,8 @@ __all__ = [
     "register_synthesis_resolver",
     "ExaDeepConfig",
     "DEFAULT_EXA_CONFIG",
+    "ParallelTaskConfig",
+    "DEFAULT_PARALLEL_CONFIG",
     # live transport seam (HTTP backend template + the account-key lookup)
     "AccountLookup",
     "HttpEnrichmentBackend",
