@@ -397,7 +397,8 @@ def test_parallel_span_records_reasoning_and_dims() -> None:
                 url="https://glassdoor.com/acme",
                 excerpts=("Acme Corp morale is low",),
                 reasoning="weighed multiple Glassdoor reviews",
-            )
+            ),
+            cost_dollars=0.1,
         ),
         _field(),
     )
@@ -405,12 +406,14 @@ def test_parallel_span_records_reasoning_and_dims() -> None:
         _resolver(result, account).resolve(account.as_entity(), _field())
     span = next(s for s in exporter.get_finished_spans() if s.name == "synthesis.parallel_task")
     attrs = dict(span.attributes or {})
+    assert attrs["source_key"] == "parallel_task"  # the "provider" tracing dim (AC)
     assert attrs["field_key"] == _MOVES
     assert attrs["entity_id"] == str(account.id)
     assert str(attrs["n_retrieved"]) == "1" and str(attrs["n_kept"]) == "1"
     assert attrs["n_claims"] == 1
     assert attrs["outcome"] == "hit"
     assert float(attrs["confidence"]) == pytest.approx(0.9)  # strongest grounding ("high" band)
+    assert Decimal(attrs["cost_cents"]) == Decimal("10.0")  # realized cost on the span (0.1 USD)
     assert attrs["reasoning"] == "weighed multiple Glassdoor reviews"
 
 

@@ -69,8 +69,17 @@ Did a **manual + deterministic** audit instead (main loop still available):
 - **Parallel request/response is the documented assumed contract** (recorded-fixture path; cost
   assumed `costDollars.total`). Finalized against live fixtures when creds land — isolated in
   `build_parallel_request`/`normalize_parallel_response`, never a seam change.
-- `_cost_cents` is intentionally per-provider (each owns its response shape); only the dollars→cents
-  math is shared. Not a DRY miss.
+## Second audit pass (re-ran the 4-lens Workflow after the user reset the account limit)
+The full audit ran (9 agents, 766k tokens) and confirmed **2 findings, both `nit`** (no functional
+defect). Both fixed in a follow-up commit:
+1. The tracing test didn't assert the `source_key` ("provider") / `cost_cents` span dims the M11.2
+   AC names — the code set them, but a refactor dropping them wouldn't be caught. Added the asserts.
+2. The `costDollars.total` reader was byte-identical in `exa/` and `parallel/` `_cost_cents` (only
+   the dollars→cents math had been extracted). Promoted the full reader to
+   `grounded.cost_cents_from_cost_dollars`; both providers now call it (no duplication). A provider
+   whose live cost shape differs overrides with its own reader — `cost_cents_from_cost_dollars` then
+   stays the shared default. (Earlier note's "`_cost_cents` intentionally per-provider" was the
+   pre-fix state; superseded by this extraction.)
 
 ## Files (M11.2 change set, on top of a2c2063)
 NEW: `resolvers/parallel/__init__.py`, `tests/resolvers/test_parallel_task.py`.

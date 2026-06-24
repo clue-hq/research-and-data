@@ -49,7 +49,7 @@ from clue_research.resolvers.grounded import (
     SynthesisResult,
     SynthesizedField,
     as_list,
-    dollars_to_cost_cents,
+    cost_cents_from_cost_dollars,
     entity_query,
     field_intent,
     register_synthesis_resolver,
@@ -143,15 +143,6 @@ def _coerce_confidence(raw: Any, config: ParallelTaskConfig) -> float:
     return coerce_confidence(raw, config.confidence_default)
 
 
-def _cost_cents(payload: Mapping[str, Any]) -> CostCents:
-    """Read Parallel's realized per-call cost (assumed ``costDollars.total``, in dollars) into cents
-    via the shared converter. Absent/malformed → ``0`` (the resolver attributes the seed-manifest
-    default), never a guess."""
-    cost = payload.get("costDollars")
-    total = cost.get("total") if isinstance(cost, Mapping) else None
-    return dollars_to_cost_cents(total)
-
-
 def normalize_parallel_response(
     payload: Mapping[str, Any],
     field: FieldDef,
@@ -206,7 +197,9 @@ def normalize_parallel_response(
                     )
                 )
     return SynthesisResult(
-        fields=tuple(fields), cost_cents=_cost_cents(payload), reasoning=tuple(reasoning)
+        fields=tuple(fields),
+        cost_cents=cost_cents_from_cost_dollars(payload),
+        reasoning=tuple(reasoning),
     )
 
 

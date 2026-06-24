@@ -307,9 +307,9 @@ def as_list(value: Any) -> list[Any]:
 
 
 def dollars_to_cost_cents(dollars: Any) -> CostCents:
-    """Convert a provider's realized USD cost to cents, defensively: absent / malformed / negative /
-    non-finite → ``0`` (the resolver then attributes the seed-manifest default), never a guess. The
-    conversion is shared (DRY); each provider extracts the raw value from its own response shape."""
+    """Convert a USD amount to cents, defensively — absent/malformed/negative/non-finite → ``0``
+    (the resolver then attributes the seed-manifest default), never a guess. The pure conversion;
+    :func:`cost_cents_from_cost_dollars` reads the assumed ``costDollars.total`` shape over it."""
     try:
         amount = Decimal(str(dollars))
     except (TypeError, ValueError, ArithmeticError):
@@ -317,6 +317,17 @@ def dollars_to_cost_cents(dollars: Any) -> CostCents:
     if amount < 0 or not amount.is_finite():
         return Decimal(0)
     return amount * 100
+
+
+def cost_cents_from_cost_dollars(payload: Mapping[str, Any]) -> CostCents:
+    """Read a provider's realized per-call cost from the assumed ``costDollars.total`` (USD) field
+    into cents — the shape both research-product APIs (Exa, Parallel) are modeled on, shared
+    so the ``costDollars``→``total`` walk is written once (DRY). Absent/malformed → ``0`` (the
+    resolver attributes the seed-manifest cost). A provider whose *live* response nests cost
+    differently overrides this with its own reader; this then stays the shared default."""
+    cost = payload.get("costDollars")
+    total = cost.get("total") if isinstance(cost, Mapping) else None
+    return dollars_to_cost_cents(total)
 
 
 # Off-domain name-match floor: a name token shorter than this is too ambiguous to target-lock on
