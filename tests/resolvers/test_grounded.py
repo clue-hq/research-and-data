@@ -269,12 +269,15 @@ def _span_attrs(account: AccountEntity, fields: tuple[SynthesizedField, ...]):
 
 def test_synthesis_span_records_dims_and_hit_outcome() -> None:
     account = _account()
-    attrs = _span_attrs(account, (_synth("Acme ships weekly", url="https://acme.com/eng"),))
+    attrs = _span_attrs(
+        account, (_synth("Acme ships weekly", url="https://acme.com/eng", conf=0.83),)
+    )
     assert attrs["field_key"] == _FIELD_KEY
     assert attrs["entity_id"] == str(account.id)
     assert str(attrs["n_retrieved"]) == "1" and str(attrs["n_kept"]) == "1"
     assert attrs["n_claims"] == 1
     assert attrs["outcome"] == "hit"
+    assert float(attrs["confidence"]) == pytest.approx(0.83)  # the kept grounding's confidence
 
 
 def test_synthesis_span_outcome_miss_when_all_dropped() -> None:
@@ -283,6 +286,7 @@ def test_synthesis_span_outcome_miss_when_all_dropped() -> None:
     attrs = _span_attrs(account, (off,))
     assert str(attrs["n_retrieved"]) == "1" and str(attrs["n_kept"]) == "0"
     assert attrs["outcome"] == "miss"
+    assert "confidence" not in attrs  # nothing kept → no confidence reported
 
 
 def test_synthesis_span_outcome_empty_when_no_retrieval() -> None:
@@ -370,3 +374,52 @@ def test_default_cost_used_when_backend_reports_none() -> None:
     )
     (claim,) = resolver.resolve(account.as_entity(), _field())
     assert claim.cost_cents == Decimal(10)
+
+
+# --- reasoning → trace ONLY, structurally barred from an evidence span (M11.2, provider-neutral) --
+
+
+def _resolver_with(result: SynthesisResult, account: AccountEntity) -> GroundedSynthesisResolver:
+    return GroundedSynthesisResolver(
+        _StubBackend(result), _Accounts(account), source_key="exa_deep"
+    )
+
+
+def test_reasoning_is_surfaced_on_the_span_but_never_becomes_a_claim() -> None:
+    # A backend's synthesis rationale is recorded on the trace for audit — and can NEVER become a
+    # claim's value/evidence_span (claims are built only from SynthesizedFields). The firewall is
+    # structural: _build_claims never reads result.reasoning.
+    account = _account()
+    rationale = "a free-hand rationale that must not ground a value"
+    result = SynthesisResult(
+        fields=(_synth("Acme ships weekly", url="https://acme.com/eng"),), reasoning=(rationale,)
+    )
+    with collect_spans() as exporter:
+        claims = _resolver_with(result, account).resolve(account.as_entity(), _field())
+    span = next(s for s in exporter.get_finished_spans() if s.name == "synthesis.exa_deep")
+    assert dict(span.attributes or {})["reasoning"] == rationale
+    assert all(c.evidence_span != rationale and c.value_json != rationale for c in claims)
+
+
+def test_reasoning_recorded_on_span_even_when_there_are_no_claims() -> None:
+    account = _account()
+    rationale = "rationale with no grounded field behind it"
+    result = SynthesisResult(fields=(), reasoning=(rationale,))
+    with collect_spans() as exporter:
+        claims = _resolver_with(result, account).resolve(account.as_entity(), _field())
+    assert claims == []
+    attrs = dict(
+        next(s for s in exporter.get_finished_spans() if s.name == "synthesis.exa_deep").attributes
+        or {}
+    )
+    assert attrs["outcome"] == "empty"
+    assert attrs["reasoning"] == rationale
+
+
+def test_no_reasoning_attr_when_backend_returns_none() -> None:
+    account = _account()
+    result = SynthesisResult(fields=(_synth("Acme ships weekly", url="https://acme.com/eng"),))
+    with collect_spans() as exporter:
+        _resolver_with(result, account).resolve(account.as_entity(), _field())
+    span = next(s for s in exporter.get_finished_spans() if s.name == "synthesis.exa_deep")
+    assert "reasoning" not in dict(span.attributes or {})

@@ -93,6 +93,10 @@ if TYPE_CHECKING:
 # llm_synthesis; the waterfall's _finalize re-asserts the manifest tier matches.
 _TIER4 = 4
 
+# Max chars of a backend's reasoning rationale recorded on the trace span — a synthesis rationale
+# can be long, and a span attribute must stay bounded (the reasoning is an audit aid, not evidence).
+_REASONING_TRACE_CAP = 2000
+
 # Field-classes this account-synthesis resolver writes. A contact-class field (CONTACT /
 # CONTACT_FACET) routes through M10's governed path, never here (the personal-data firewall).
 _ACCOUNT_SYNTHESIS_CLASSES: frozenset[FieldClass] = frozenset(
@@ -133,12 +137,21 @@ class SynthesisResult(BaseModel):
     ``cost_cents`` is the **realized** per-call price the budget engine (M7.5) reads to hard-stop
     tier-4 spend — distinct from the manifest's pre-spend estimate. An empty ``fields`` is a hard
     miss (the field may end empty+flagged), never a fabricated value.
+
+    ``reasoning`` carries a provider's synthesis *rationale* (e.g. Parallel Task's reasoning string)
+    for the **trace only** — the resolver surfaces it on the span for auditability and NOTHING else.
+    It is structurally barred from ever becoming an ``evidence_span``: claims are built solely from
+    :class:`SynthesizedField`\\s (each a *cited, retrieved* passage), and ``_build_claims`` never
+    reads this field. So "only cited source text qualifies as evidence; the LLM's reasoning never
+    does" (substrate §1/§6; M11.2) is enforced by the type, not by discipline. Empty for providers
+    (Exa Deep) that return none.
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     fields: tuple[SynthesizedField, ...] = ()
     cost_cents: CostCents = Decimal(0)
+    reasoning: tuple[str, ...] = ()
 
 
 @runtime_checkable
@@ -237,6 +250,73 @@ def registrable_host(value: str | None) -> str | None:
         raw = "//" + raw  # treat a bare domain as a netloc, not a path
     host = (urlsplit(raw).hostname or "").lower().removeprefix("www.")
     return host or None
+
+
+# Per-field synthesis intent — the phrase appended to the entity-bound query so a provider retrieves
+# passages relevant to *this* field (substrate §3 the synthesis fields). Provider-NEUTRAL: Exa Deep
+# and Parallel Task share it (the field→intent mapping is written once). Policy-as-data keyed by
+# field_key; an unenumerated field falls back to its humanized leaf, so a newly-registered resonance
+# sub-field needs no code change (Doc C §2 — registered, not enumerated).
+_FIELD_INTENT: dict[str, str] = {
+    "account.operational_pain": "operational challenges, bottlenecks and pain points",
+    "account.strategic_moves": "strategic initiatives, expansion and recent moves",
+    "account.resonance.culture": "company culture, employee sentiment and morale",
+}
+
+
+def field_intent(field: FieldDef) -> str:
+    """The retrieval-intent phrase for a synthesis field — an enumerated phrase or the humanized
+    field leaf (``account.resonance.attrition`` → ``attrition``). Shared by every tier-4 provider so
+    the field→intent mapping is defined exactly once (DRY)."""
+    intent = _FIELD_INTENT.get(field.field_key)
+    if intent is not None:
+        return intent
+    leaf = field.field_key.rsplit(".", 1)[-1]
+    return leaf.replace("_", " ")
+
+
+def entity_query(account: AccountEntity, field: FieldDef) -> str:
+    """The target-locked, entity-bound query string every tier-4 provider issues (staged-flow §5):
+    the canonical name (quoted), aliases, the primary domain as a *hint* (never a hard ``site:``),
+    one hq-geo disambiguator, and the field intent. Binding the query to the entity is the first
+    anti-drift measure; off-entity evidence that still slips through is rejected by the resolver's
+    target-lock guard. Shared so Exa and Parallel build the **identical** entity-bound query — only
+    the provider's wire envelope (``build_request``) differs."""
+    parts: list[str] = [f'"{account.canonical_name}"']
+    parts.extend(account.aliases)
+    domain = registrable_host(account.primary_domain)
+    if domain is not None:
+        parts.append(domain)
+    geo = account.hq_geo or {}
+    for key in ("country", "country_code", "city", "region"):
+        value = geo.get(key)
+        if isinstance(value, str) and value.strip():
+            parts.append(value.strip())
+            break
+    parts.append(field_intent(field))
+    return " ".join(parts)
+
+
+def as_list(value: Any) -> list[Any]:
+    """A list view of a JSON array, or ``[]`` for anything else — a ``str``/``bytes`` is **not** an
+    array (iterating it element-wise would be a silent bug). Shared by every tier-4 provider's
+    response normalizer so the "is this a JSON array?" guard is written once (DRY)."""
+    if isinstance(value, (str, bytes)) or not isinstance(value, Sequence):
+        return []
+    return list(value)
+
+
+def dollars_to_cost_cents(dollars: Any) -> CostCents:
+    """Convert a provider's realized USD cost to cents, defensively: absent / malformed / negative /
+    non-finite → ``0`` (the resolver then attributes the seed-manifest default), never a guess. The
+    conversion is shared (DRY); each provider extracts the raw value from its own response shape."""
+    try:
+        amount = Decimal(str(dollars))
+    except (TypeError, ValueError, ArithmeticError):
+        return Decimal(0)
+    if amount < 0 or not amount.is_finite():
+        return Decimal(0)
+    return amount * 100
 
 
 # Off-domain name-match floor: a name token shorter than this is too ambiguous to target-lock on
@@ -368,16 +448,26 @@ class GroundedSynthesisResolver:
                 and _on_entity(sf, account, names)
             ]
             claims = self._build_claims(account, kept, cost_cents=result.cost_cents)
-            apply_attributes(
-                span,
-                {
-                    "n_retrieved": len(result.fields),
-                    "n_kept": len(kept),
-                    ATTR_N_CLAIMS: len(claims),
-                    "outcome": _outcome(result.fields, claims),
-                    ATTR_COST_CENTS: result.cost_cents,
-                },
-            )
+            attrs: dict[str, Any] = {
+                "n_retrieved": len(result.fields),
+                "n_kept": len(kept),
+                ATTR_N_CLAIMS: len(claims),
+                "outcome": _outcome(result.fields, claims),
+                ATTR_COST_CENTS: result.cost_cents,
+            }
+            # The strongest grounding's confidence for the call (the `confidence` tracing dim) —
+            # only when something was kept (a miss/empty call has no confidence to report).
+            if kept:
+                attrs["confidence"] = max(float(sf.confidence) for sf in kept)
+            # A backend's synthesis rationale (Parallel's "reasoning") is recorded on the trace for
+            # auditability — and ONLY here. It can never become a claim's evidence_span:
+            # _build_claims reads sf.evidence_span (a cited, retrieved passage), never
+            # result.reasoning, so the LLM's free-hand rationale is structurally barred from
+            # grounding a value (substrate §1/§6; M11.2 reasoning-vs-span). Capped so an unbounded
+            # rationale can't bloat the span.
+            if result.reasoning:
+                attrs["reasoning"] = " | ".join(result.reasoning)[:_REASONING_TRACE_CAP]
+            apply_attributes(span, attrs)
         return claims
 
     def _build_claims(

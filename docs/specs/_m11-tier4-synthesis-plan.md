@@ -138,12 +138,83 @@ like `tests/resolvers/test_firecrawl_site.py`. End-to-end tests skip without `CL
 
 ---
 
-## M11.2 (Parallel Task) — deferred this turn, shape locked
+## M11.2 (Parallel Task) — IMPLEMENTED
 
-Add `resolvers/parallel/` with `build_parallel_request`/`normalize_parallel_response` (each citation →
-`source_url`+`evidence_span`; Parallel's *reasoning* string goes to the trace span, **never** the
-evidence span) + `register_parallel_task_resolver` reusing `grounded.py` byte-for-byte. Independence
-test: running both on one field yields two distinct claims with distinct `source_url`s.
+A *second*, independent tier-4 provider so the subsystem is not single-vendor for its least-trusted
+source, and so two independently-grounded tier-4 values for one field give the faithfulness judge
+(M9.3) a far stronger signal than a single-source guess (substrate §4/§12). Parallel Task is bound
+behind the **same** `GroundedSynthesisResolver` seam as Exa — the concrete proof the tier-4 seam is
+provider-agnostic.
+
+### What M11.2 adds / changes
+
+- **`resolvers/parallel/__init__.py`** (NEW) — the Parallel-only pure pieces, mirroring `exa/`:
+  - `ParallelTaskConfig` (endpoint / `processor` quality-cost tier / timeout / retries /
+    `min_confidence` / the categorical-confidence bands / `default_cost_cents`) — policy-as-data,
+    injected at the api root. `CLUE_PARALLEL_API_KEY` (its own key), **not** the OpenRouter gateway.
+  - `build_parallel_request` — POSTs the **shared** `entity_query(account, field)` as the task
+    `input` with basis (citations + reasoning + confidence) enabled, key as `x-api-key`.
+  - `normalize_parallel_response` — maps each **cited excerpt** to one `SynthesizedField`:
+    `value ≡ evidence_span ≡ excerpt` (grounded-only *by construction* — a claim's value is always
+    real, cited, retrieved text, exactly like an Exa highlight), `source_url` = the citation URL,
+    confidence from the basis entry. Parallel's `reasoning` is collected onto
+    `SynthesisResult.reasoning` (→ the trace span) and is **never** an evidence span.
+  - `_coerce_confidence` — categorical (`high`/`medium`/`low` → configured bands) **or** numeric
+    (via the shared `coerce_confidence`); `make_backend`; `register_parallel_task_resolver`.
+- **`resolvers/grounded.py`** (the shared substrate, generalized to serve *both* providers — DRY):
+  - `SynthesisResult.reasoning: tuple[str, …]` — a provider's synthesis *rationale*, surfaced on the
+    resolver's `synthesis.<source_key>` span (capped) for audit and **structurally barred** from
+    becoming an `evidence_span`: `_build_claims` reads only `SynthesizedField.evidence_span` (a
+    cited passage), never `result.reasoning`. "Only cited source text qualifies as evidence; the
+    LLM's reasoning never does" (substrate §1/§6) is now enforced by the *type*, not by discipline.
+  - `entity_query` / `field_intent` / `_FIELD_INTENT` — the entity-bound (target-locked) query
+    builder, **extracted from `exa/`** so Exa and Parallel issue the identical query (only the wire
+    envelope differs). `as_list` / `dollars_to_cost_cents` — the JSON-array guard and the USD→cents
+    conversion, extracted so both providers' normalizers share one copy.
+- **`api/synthesis_wiring.py`** — `register_synthesis_wiring()` now also binds Parallel Task; running
+  one, the other, or both (cross-provider convergence) is a registry/config choice, not code.
+- **`resolvers/__init__.py`** — exports the `parallel` sub-package + its config/registration symbols.
+- **`tests/resolvers/test_static.py`** — two new long Parallel public symbol names added to the
+  secret-shape allowlist (`≥24`-char identifiers trip the opaque-token oracle, like the Exa names).
+
+### Why "cited-excerpt-as-value" (not "synthesized-narrative-as-value")
+
+The spec lists Parallel's output as *value + reasoning + citations + confidence* and says **each
+citation becomes the claim's `source_url` + `evidence_span`** (mandatory-span rule), reasoning →
+trace. Making the *cited excerpt* the claim value (rather than the LLM's free-hand narrative) is the
+tightest reading of the architecture's core bet — *the LLM may plan/expand queries but may never be
+the source; no value without a backing passage* (substrate §0/§4/§13). It keeps Exa and Parallel
+**semantically uniform** (both emit grounded-passage claims), so the distinct-value dedup, target-
+lock, and grounded-only guards in `grounded.py` apply unchanged, and the synthesized rationale is
+relegated to the (un-promotable) trace where it cannot ground a claim.
+
+### AC → test mapping (`tests/resolvers/test_parallel_task.py` + `test_grounded.py`)
+
+| AC (spec M11.2) | Test |
+|---|---|
+| satisfies `Resolver`, `tier==4`, registers a valid manifest | `register_synthesis_wiring` binds `parallel_task` at tier 4; reached via the waterfall |
+| claim shape (span from a citation, url, conf, cost, method) | e2e resolve of `account.strategic_moves` |
+| **reasoning-vs-span** (reasoning → trace, never a span; reasoning-only → dropped) | `normalize_reasoning_is_captured_…`, `reasoning_only_entry_yields_no_field`, `reasoning_is_never_emitted_as_a_claim_through_resolve`, + grounded `reasoning_is_surfaced_on_the_span_but_never_becomes_a_claim` |
+| **independence** (Exa + Parallel → 2 distinct claims, distinct `source_url`s, each own span) | `independence_exa_and_parallel_yield_distinct_grounded_claims` |
+| **provider-agnostic swap** (call site unchanged whichever is bound) | bound behind the shared `GroundedSynthesisResolver`; the M11.1 e2e swap test covers the seam |
+| grounded-only / target-lock / no-self-promotion / empty-on-miss | inherited from `grounded.py` (covered in `test_grounded.py`) + parallel normalize drop tests |
+| budget (realized `cost_cents`; timeout/retry honored) | `make_backend_threads_timeout_and_retries`, `transient_http_fault_propagates`, e2e `budget_envelope_stops_tier4_spend` |
+| categorical + numeric confidence | `normalize_categorical_confidence_bands`, `normalize_numeric_confidence_is_coerced_and_clamped` |
+| tracing (provider, field_key, entity_id, citation count, reasoning, cost, outcome) | `parallel_span_records_reasoning_and_dims`, `…no_reasoning_attr_when_backend_returns_none` |
+
+All resolver tests are **hermetic** (a `SynthesisBackend` double — no live call, no key); e2e tests
+skip without `CLUE_DATABASE_URL`. The Parallel request/response shape is the documented assumed
+contract (the recorded-fixture path), finalized against live fixtures when credentials land — kept
+isolated in `build_parallel_request`/`normalize_parallel_response` so finalizing it is a normalize
+edit, never a seam change.
+
+### Deferred from M11.2 (unchanged from the M11.1 follow-ups)
+
+`corroborations` is a tier-≤3 contract (conventions §4, substrate §1/§6) — cross-provider tier-4
+convergence is a confidence/judge signal, **not** an increment to the tier-≤3 corroboration count
+(M9.2 owns that decision). The resolver never dedups Exa vs Parallel — that is the merge/verification
+path's job. D7 (default to one provider with the other as fallback, vs both) is a config/economics
+choice; the wiring binds both, the Source Planner (M4.6) chooses.
 
 ## M11.3 (judge-gating glue) — deferred, lives in `synthesis/`
 
