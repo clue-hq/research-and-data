@@ -16,6 +16,7 @@ from clue_research.core import (
     Claim,
     ClaimId,
     EntityType,
+    EqualityMode,
     ExtractionMethod,
     FreshnessState,
     IdentityBinding,
@@ -83,8 +84,14 @@ def _claim(
     return Claim(**kwargs)  # type: ignore[arg-type]
 
 
-def _merge(claims: list[Claim], *, policy: MergePolicy | None = None, ttl: timedelta | None = _TTL):
-    return merge_claims(claims, ttl, policy or MergePolicy(), _NOW)
+def _merge(
+    claims: list[Claim],
+    *,
+    policy: MergePolicy | None = None,
+    ttl: timedelta | None = _TTL,
+    equality_mode: EqualityMode = EqualityMode.EXACT,
+):
+    return merge_claims(claims, ttl, policy or MergePolicy(), _NOW, equality_mode)
 
 
 def test_lowest_tier_wins_over_higher_tiers() -> None:
@@ -167,6 +174,59 @@ def test_conflict_flag_only_for_tier_le2_disagreement() -> None:
     t4 = _claim(4, value={"amount_usd": 99}, status=VerificationStatus.VERIFIED, span="cited")
     no_conflict = _merge([t2, t4])
     assert no_conflict is not None and no_conflict.conflict is False
+
+
+def test_numeric_tol_conflict_is_mode_aware() -> None:
+    """[M9.2×M1.2] The conflict check honours the field's ``equality_mode``: two authoritative
+    sources that *agree* under numeric tolerance (1000 vs 1024) no longer raise a spurious
+    conflict — the merge now decides agreement exactly as the M9.2 corroborator does (no over-flag).
+    The same pair still conflicts under EXACT (distinct values), proving the mode is load-bearing.
+    A genuinely divergent pair (1000 vs 2000) conflicts under numeric tolerance too."""
+    a = _claim(2, value=1000, field="account.employee_count", cid=ClaimId(new_claim_id()))
+    b = _claim(2, value=1024, field="account.employee_count", cid=ClaimId(new_claim_id()))
+
+    agree = _merge([a, b], equality_mode=EqualityMode.NUMERIC_TOL)
+    assert agree is not None and agree.conflict is False  # within rel-tol -> not a conflict
+
+    over_flag = _merge([a, b], equality_mode=EqualityMode.EXACT)
+    assert over_flag is not None and over_flag.conflict is True  # the pre-fix behaviour
+
+    far = _claim(2, value=2000, field="account.employee_count", cid=ClaimId(new_claim_id()))
+    diverge = _merge([a, far], equality_mode=EqualityMode.NUMERIC_TOL)
+    assert diverge is not None and diverge.conflict is True
+    assert set(diverge.conflicting_claim_ids) == {a.id, far.id}
+
+
+def test_numeric_tol_conflict_is_pairwise_non_transitive() -> None:
+    """The conflict detection is **pairwise** (mirroring the corroborator), so a non-transitive
+    tolerance chain (960 ~ 1000 ~ 1040 but 960 ≁ 1040 at rel-tol 0.05) is NOT masked by the bridging
+    middle value: 960 and 1040 are surfaced as conflicting, the agreeing 1000 anchor is not."""
+    lo = _claim(2, value=960, field="account.employee_count", cid=ClaimId(new_claim_id()))
+    mid = _claim(2, value=1000, field="account.employee_count", cid=ClaimId(new_claim_id()))
+    hi = _claim(2, value=1040, field="account.employee_count", cid=ClaimId(new_claim_id()))
+    result = _merge([lo, mid, hi], equality_mode=EqualityMode.NUMERIC_TOL)
+    assert result is not None and result.conflict is True
+    assert set(result.conflicting_claim_ids) == {lo.id, hi.id}  # the bridging 1000 is excluded
+
+
+def test_semantic_conflict_is_mode_aware() -> None:
+    """Under ``SEMANTIC`` mode, "Snowflake" and "uses Snowflake" agree (token containment) → no
+    conflict, where EXACT would over-flag; "Snowflake" vs "Databricks" still conflict."""
+    a = _claim(
+        2, value="Snowflake", field="account.primary_tech_stack", cid=ClaimId(new_claim_id())
+    )
+    b = _claim(
+        2, value="uses Snowflake", field="account.primary_tech_stack", cid=ClaimId(new_claim_id())
+    )
+    agree = _merge([a, b], equality_mode=EqualityMode.SEMANTIC)
+    assert agree is not None and agree.conflict is False
+
+    c = _claim(
+        2, value="Databricks", field="account.primary_tech_stack", cid=ClaimId(new_claim_id())
+    )
+    diverge = _merge([a, c], equality_mode=EqualityMode.SEMANTIC)
+    assert diverge is not None and diverge.conflict is True
+    assert set(diverge.conflicting_claim_ids) == {a.id, c.id}
 
 
 def test_unverified_tier4_is_excluded() -> None:

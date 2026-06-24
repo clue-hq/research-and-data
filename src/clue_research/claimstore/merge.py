@@ -30,31 +30,40 @@ readable set — a stale winner is returned with ``freshness_state='stale'``.
 
 from __future__ import annotations
 
-import json
 from collections import defaultdict
 from collections.abc import Iterable, Sequence
 from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 
-from pydantic import BaseModel, ConfigDict, JsonValue
+from pydantic import BaseModel, ConfigDict
 from sqlalchemy import bindparam, text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_research.claimstore.claims import _SELECT_COLUMNS, _row_to_claim, claims_for
 from clue_research.claimstore.tenancy import TenantScope
 from clue_research.core import (
+    DEFAULT_NUMERIC_ABS_TOLERANCE,
+    DEFAULT_NUMERIC_REL_TOLERANCE,
+    DEFAULT_SEMANTIC_JACCARD_THRESHOLD,
     Claim,
     ClaimFlavor,
     ClaimId,
     CurrentValue,
     EntityId,
     EntityType,
+    EqualityMode,
     FreshnessState,
     IdentityBinding,
     VerificationStatus,
     WinningProvenance,
+    values_agree,
 )
 from clue_research.core.field import FieldKey
+
+# ``EqualityMode`` / ``values_agree`` come from ``core`` (the substrate's one equality contract):
+# the merge's conflict / distinctness check and the M9.2 corroborator's grouping share them, so
+# "same value" is decided identically on both surfaces under the field's ``equality_mode`` (DRY).
+# ``canonical_json`` likewise moved to ``core``; it is re-exported by ``claimstore`` (the package).
 
 
 class FreshnessMode(StrEnum):
@@ -89,19 +98,15 @@ class MergePolicy(BaseModel):
     exclude_weak_binding: bool = True  # a weak-binding contact claim never wins (M1.4 / staged §6)
     exclude_rejected: bool = True  # a rejected claim never wins
     fallback_to_unpromotable: bool = False  # if set, return the best un-promotable claim, flagged
+    # Equality tolerances for the mode-aware conflict check (default from the shared core constants
+    # so they stay aligned with the M9.2 corroborator — a no-DB drift guard asserts it). Used only
+    # when the field declares a NUMERIC_TOL / SEMANTIC ``equality_mode``; EXACT ignores them.
+    numeric_rel_tolerance: float = DEFAULT_NUMERIC_REL_TOLERANCE
+    numeric_abs_tolerance: float = DEFAULT_NUMERIC_ABS_TOLERANCE
+    semantic_jaccard_threshold: float = DEFAULT_SEMANTIC_JACCARD_THRESHOLD
 
 
 DEFAULT_MERGE_POLICY = MergePolicy()
-
-
-def canonical_json(value: JsonValue) -> str:
-    """A canonical string for value equality / distinctness (order-independent for objects).
-
-    The one place exact ``value_json`` equality is decided in the substrate — the merge layer's
-    conflict/distinctness check and the M9.2 corroborator's exact-equality mode both call this, so
-    "same value" means the same thing on both surfaces (it is NOT
-    :func:`core.serialize_value_json`, whose Pydantic dump does not sort object keys)."""
-    return json.dumps(value, sort_keys=True, separators=(",", ":"), default=str)
 
 
 def _reference_time(claim: Claim) -> datetime:
@@ -150,32 +155,66 @@ def _winner(claims: Sequence[Claim]) -> Claim:
     )
 
 
-def _conflict(live: Sequence[Claim], policy: MergePolicy) -> tuple[bool, tuple[ClaimId, ...]]:
-    """Conflict flag + the disagreeing contender ids: two non-superseded tier≤threshold claims with
-    different values (substrate §1). A tier≤2 vs tier-4 disagreement is *not* a conflict.
+def _conflict(
+    live: Sequence[Claim], policy: MergePolicy, equality_mode: EqualityMode
+) -> tuple[bool, tuple[ClaimId, ...]]:
+    """Conflict flag + the disagreeing contender ids: two non-superseded tier≤threshold claims that
+    *disagree* under the field's ``equality_mode`` (substrate §1). A tier≤2 vs tier-4 disagreement
+    is *not* a conflict.
 
     Contenders are drawn from the same population the *winner* is — only claims that pass
     :func:`_is_eligible` (the merge's "may be current truth" gate). A conflict is "two tier≤2
     *sources* disagree", so claims that can never be a field's truth — discovery-provenance
     (admission evidence) and weak-binding contact claims (someone else's fact) — must not count as
-    disagreeing sources and raise a spurious flag (staged-flow §6/§9)."""
-    contenders = [
-        c
-        for c in live
-        if _is_eligible(c, policy) and c.source_tier <= policy.conflict_tier_threshold
-    ]
-    representative: dict[str, ClaimId] = {}
-    for claim in sorted(contenders, key=lambda c: (c.source_tier, c.collected_at.timestamp())):
-        representative.setdefault(canonical_json(claim.value_json), claim.id)
-    if len(representative) >= 2:
-        return True, tuple(representative.values())
-    return False, ()
+    disagreeing sources and raise a spurious flag (staged-flow §6/§9).
+
+    Agreement is the shared :func:`core.values_agree` under the field's ``equality_mode`` — so a
+    ``numeric_tol`` / ``semantic`` field's two authoritative sources that *agree* (headcount 1000 vs
+    1024; "Snowflake" vs "uses Snowflake") no longer raise a spurious conflict, and the merge agrees
+    with the M9.2 corroborator (which groups by the same predicate). Checked **pairwise** over the
+    authoritative claims (mirroring ``verification.corroboration``: a claim conflicts if it
+    disagrees with *any* other authoritative claim) rather than by counting value-groups, so a
+    non-transitive mode (960/1000/1040 at rel-tol 0.05, where 1000 bridges 960↔1040 yet 960 and 1040
+    disagree) cannot mask a genuine conflict behind a bridging anchor. The agreeing middle value is
+    not surfaced. For ``EXACT`` this is identical to the prior distinct-value check on the common
+    two-source case."""
+    contenders = sorted(
+        (
+            c
+            for c in live
+            if _is_eligible(c, policy) and c.source_tier <= policy.conflict_tier_threshold
+        ),
+        key=lambda c: (c.source_tier, c.collected_at.timestamp(), str(c.id)),
+    )
+    conflicting = tuple(
+        c.id
+        for c in contenders
+        if any(
+            o.id != c.id
+            and not values_agree(
+                c.value_json,
+                o.value_json,
+                mode=equality_mode,
+                numeric_rel_tolerance=policy.numeric_rel_tolerance,
+                numeric_abs_tolerance=policy.numeric_abs_tolerance,
+                semantic_jaccard_threshold=policy.semantic_jaccard_threshold,
+            )
+            for o in contenders
+        )
+    )
+    return bool(conflicting), conflicting
 
 
 def _build(
-    winner: Claim, live: Sequence[Claim], policy: MergePolicy, *, fresh: bool, flagged: bool
+    winner: Claim,
+    live: Sequence[Claim],
+    policy: MergePolicy,
+    equality_mode: EqualityMode,
+    *,
+    fresh: bool,
+    flagged: bool,
 ) -> CurrentValue:
-    conflict, conflicting_ids = _conflict(live, policy)
+    conflict, conflicting_ids = _conflict(live, policy, equality_mode)
     return CurrentValue(
         entity_id=winner.entity_id,
         field_key=winner.field_key,
@@ -200,12 +239,18 @@ def merge_claims(
     freshness_ttl: timedelta | None,
     policy: MergePolicy,
     now: datetime,
+    equality_mode: EqualityMode = EqualityMode.EXACT,
 ) -> CurrentValue | None:
     """The pure deterministic merge for one ``(entity, field)``.
 
     Returns the current truth, or ``None`` when no eligible claim exists (an empty field is a
     correct output — conventions §5; the un-promotable claim, if any, stays visible via
     :func:`claims_for` for review). This function is DB-free and fully unit-testable.
+
+    ``equality_mode`` is the field's declared agreement mode (``field_definition.equality_mode``),
+    threaded the same way ``freshness_ttl`` is — a param read from the registry at the seam, kept
+    off the pure function. It governs the conflict check only (the winner ranking is
+    value-agnostic); defaulting to ``EXACT`` keeps every pure caller's behaviour unchanged.
     """
     live = [c for c in claims if c.superseded_by is None]
     eligible = [c for c in live if _is_eligible(c, policy)]
@@ -224,7 +269,12 @@ def merge_claims(
             return None
         winner = _winner(pool)
         return _build(
-            winner, live, policy, fresh=_is_fresh(winner, freshness_ttl, now), flagged=True
+            winner,
+            live,
+            policy,
+            equality_mode,
+            fresh=_is_fresh(winner, freshness_ttl, now),
+            flagged=True,
         )
 
     if policy.freshness_mode is FreshnessMode.TTL_GATES_ELIGIBILITY:
@@ -234,7 +284,14 @@ def merge_claims(
         pool = eligible
 
     winner = _winner(pool)
-    return _build(winner, live, policy, fresh=_is_fresh(winner, freshness_ttl, now), flagged=False)
+    return _build(
+        winner,
+        live,
+        policy,
+        equality_mode,
+        fresh=_is_fresh(winner, freshness_ttl, now),
+        flagged=False,
+    )
 
 
 # --- DB readers (the seam) --------------------------------------------------
@@ -242,26 +299,45 @@ def _now() -> datetime:
     return datetime.now(UTC)
 
 
-async def _freshness_ttl(conn: AsyncConnection, field_key: str) -> timedelta | None:
+def _coerce_mode(raw: object) -> EqualityMode:
+    """Map the ``field_definition.equality_mode`` DB string to the enum (defaulting to ``EXACT`` for
+    a NULL / absent / unrecognised value — the safe over-flagging direction)."""
+    if not isinstance(raw, str):
+        return EqualityMode.EXACT
+    try:
+        return EqualityMode(raw)
+    except ValueError:
+        return EqualityMode.EXACT
+
+
+async def _freshness_ttl(
+    conn: AsyncConnection, field_key: str
+) -> tuple[timedelta | None, EqualityMode]:
+    """The field's freshness TTL **and** equality mode (one read of the two merge-config columns,
+    keeping the ``field_definition`` SQL in the merge seam — as the registry's
+    ``get_corroboration_config`` does for the corroboration columns)."""
     row = await conn.execute(
-        text("SELECT freshness_ttl FROM field_definition WHERE field_key = :k"),
+        text("SELECT freshness_ttl, equality_mode FROM field_definition WHERE field_key = :k"),
         {"k": field_key},
     )
     found = row.first()
-    return found[0] if found is not None else None
+    if found is None:
+        return None, EqualityMode.EXACT
+    return found[0], _coerce_mode(found[1])
 
 
 async def _freshness_ttls(
     conn: AsyncConnection, field_keys: Sequence[str]
-) -> dict[str, timedelta | None]:
+) -> dict[str, tuple[timedelta | None, EqualityMode]]:
     stmt = text(
-        "SELECT field_key, freshness_ttl FROM field_definition WHERE field_key IN :fkeys"
+        "SELECT field_key, freshness_ttl, equality_mode "
+        "FROM field_definition WHERE field_key IN :fkeys"
     ).bindparams(bindparam("fkeys", expanding=True))
     rows = await conn.execute(stmt, {"fkeys": list(field_keys)})
-    ttls: dict[str, timedelta | None] = {}
-    for field_key, ttl in rows.all():
-        ttls[field_key] = ttl
-    return ttls
+    meta: dict[str, tuple[timedelta | None, EqualityMode]] = {}
+    for field_key, ttl, mode in rows.all():
+        meta[field_key] = (ttl, _coerce_mode(mode))
+    return meta
 
 
 async def current_value(
@@ -280,8 +356,8 @@ async def current_value(
     A tenant scope never returns another tenant's private claim.
     """
     claims = await claims_for(conn, entity_id, field_key, scope=scope)
-    ttl = await _freshness_ttl(conn, str(field_key))
-    return merge_claims(list(claims), ttl, policy, _now())
+    ttl, equality_mode = await _freshness_ttl(conn, str(field_key))
+    return merge_claims(list(claims), ttl, policy, _now(), equality_mode)
 
 
 async def current_values(
@@ -323,11 +399,12 @@ async def current_values(
         claim = _row_to_claim(dict(row))
         grouped[(EntityId(row["entity_id"]), row["field_key"])].append(claim)
 
-    ttls = await _freshness_ttls(conn, fields)
+    meta = await _freshness_ttls(conn, fields)
     now = _now()
     result: dict[tuple[EntityId, str], CurrentValue] = {}
     for (entity_id, field_key), claim_list in grouped.items():
-        merged = merge_claims(claim_list, ttls.get(field_key), policy, now)
+        ttl, equality_mode = meta.get(field_key, (None, EqualityMode.EXACT))
+        merged = merge_claims(claim_list, ttl, policy, now, equality_mode)
         if merged is not None:
             result[(entity_id, field_key)] = merged
     return result

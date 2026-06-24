@@ -44,6 +44,14 @@ from clue_research.core.enums import (
     VerificationStatus,
     WorkerStatus,
 )
+from clue_research.core.equality import (
+    DEFAULT_NUMERIC_ABS_TOLERANCE,
+    DEFAULT_NUMERIC_REL_TOLERANCE,
+    DEFAULT_SEMANTIC_JACCARD_THRESHOLD,
+    EqualityMode,
+    canonical_json,
+    values_agree,
+)
 from clue_research.core.execution import (
     AspectContext,
     AspectWorker,
@@ -262,6 +270,13 @@ __all__ = [
     "ValueNarrativeItem",
     "ProvenanceRef",
     "AccountHandoff",
+    # value equality (the substrate's one equality contract — merge conflict ∩ corroboration)
+    "EqualityMode",
+    "canonical_json",
+    "values_agree",
+    "DEFAULT_NUMERIC_REL_TOLERANCE",
+    "DEFAULT_NUMERIC_ABS_TOLERANCE",
+    "DEFAULT_SEMANTIC_JACCARD_THRESHOLD",
     # helpers
     "TIER_ORDER",
     "to_value_json",
