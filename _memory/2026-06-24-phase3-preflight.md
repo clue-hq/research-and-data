@@ -43,14 +43,33 @@ in three worktrees. M8/M8A/M9 are done + merged to `origin/main` (PR #22, `18d7f
 - Docs: wrote `docs/specs/_phase3-preflight.md` (the checklist/owner's source of truth) + added
   "Phase-3 pre-flight overrides" callouts to M10/M11/M12 specs.
 
-## TODO (next) — owner = integration owner unless noted
-- PF-2 side-tables (total decision, overrides M10 spec "extend claim row"); PF-3/4 the unified
-  tombstone-before-read sweep (M1.2+M10.5); PF-5 tombstone=`human`; PF-6 fix `packs.py` tier_plan
-  (`("exa","parallel")` → `("exa_deep","parallel_task")` for pain/moves; audit other `"exa"` plans);
-  PF-7 split `api/*_wiring.py` + `RESEARCH_PACK_LOADERS` registry + freeze the verification order;
-  PF-8 tighten exa_deep+parallel_task to `entity_scope=account`; freeze `retrieve_client_knowledge`.
+## PF-2…PF-8 outcomes (same session) — investigation re-scoped the checklist
+- **PF-6** `9e06ade`: realigned `account.operational_pain`/`account.strategic_moves` tier_plans
+  `("exa","parallel")`→`("exa_deep","parallel_task")` (only those are registered source_keys; provider
+  is a separate column). Added a no-DB guard test. Left the dangling `"exa"` on deterministic fields
+  (recent_funding/hiring_velocity) — `no_resolver→empty` is safe; LLM-filling a deterministic field is
+  the anti-pattern.
+- **PF-7** `4fab273`: `api/composition.py` `RESEARCH_PACK_LOADERS` registry (replaces the flat
+  load_research_packs body) + `VERIFICATION_GATE_ORDER` constant (use_gate last) + 3 per-milestone
+  wiring scaffolds (`api/{synthesis,compliance,narrative}_wiring.py`).
+- **retrieval seam** `4fab273`: froze `core.retrieval.ClientKnowledgeChunk` + `ClientKnowledgeRetriever`
+  (M12←M5; narrative can't import stage0, so the seam lives in core). M12 stubs the impl.
+- **PF-8 DROPPED (was harmful):** `exa_deep` is `entity_scope=BOTH` BY DESIGN — it's the tier-4
+  synthesis engine for `contact.facet` too (M8.5/M10; merged AC-6 test uses `_FACET_SOURCE="exa_deep"`).
+  Tightening it to account-only breaks merged code. Firewall = M11 field-routing/resolver-assertion,
+  not a manifest edit. Corrected the doc + M11 spec callout + (TODO) the M11 Linear comments.
+- **PF-3/PF-4 confirmed, NO base code:** merge already excludes superseded (`merge_claims` merge.py:210
+  `superseded_by is None`; `current_values` :311 `WHERE … superseded_by IS NULL`). M10.5 tombstone-by-
+  supersede works with zero merge change. 40d fixture + sweep = M10.5.
+- **PF-2 / PF-5:** recorded decisions (side-tables; tombstone=`ExtractionMethod.HUMAN`). No base code.
+- All green after each commit: ruff, mypy (208), 11 contracts, PF-6 test + import smoke.
+
+## TODO (next)
+- Correct the 3 M11 Linear comments (ENG-143/148/155) re: PF-8 dropped (they said tighten to
+  entity_scope=account — now wrong).
+- User to review PF-1 (core delta) + PF-6/PF-7 before forking.
 - Then fork WS-A=m11, WS-B=m10, WS-C=m12 off the frozen base. Integrate M11→M10→M12.
-- Update Linear issues for M10/M11/M12 with the pre-flight overrides (in progress).
+- Branch `integration/phase3-preflight` now has 6 commits (PF-0,1,docs,6,7); NOT pushed.
 
 ## Verification performed
 `make`-equivalent: `uv run ruff format/check`, `uv run mypy` (204 files clean), `uv run lint-imports`

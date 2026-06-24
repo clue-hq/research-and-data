@@ -5,7 +5,7 @@
 > **⚠ Phase-3 pre-flight overrides** (see `docs/specs/_phase3-preflight.md`; landed on `integration/phase3-preflight`). Before M11 forks:
 > - **Resolver classes live in `resolvers/exa/` + `resolvers/parallel/`** (provider SDKs behind the forbidden-SDK contract), NOT in `synthesis/` (which holds M11.3 wiring/gating only). **M11 adds ZERO migrations** (manifest + field rows are data).
 > - **The `claimstore/packs.py` tier_plan fix is PF-6 base work** — `account.operational_pain`/`account.strategic_moves` are realigned to `("exa_deep","parallel_task")` on the base; do NOT touch `packs.py` on the M11 branch.
-> - **Firewall: both `exa_deep` and `parallel_task` manifests tighten to `entity_scope=account`** and `exa_deep` drops its `contact.facet` yield (PF-8). M11 writes only `entity_type=account` / `account.*` / `account.resonance.*` claims; contact-level synthesis stays M10-governed.
+> - **Firewall is field-routing, NOT a manifest edit (PF-8 dropped as harmful):** `exa_deep` stays `entity_scope=BOTH` — it is *also* the `contact.facet` synthesis engine for M8.5/M10 (the merged AC-6 test uses it), so tightening it would break merged code. Instead, M11's account-synthesis fields are `account.*` / `account.resonance.*`, and the M11.1 resolver writes only claims matching the field's entity_type — so account synthesis never emits a `contact.facet.*` claim. Contact-level synthesis stays M10-governed.
 
 ## Goal & scope of this milestone
 
