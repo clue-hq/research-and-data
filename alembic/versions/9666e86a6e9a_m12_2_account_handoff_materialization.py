@@ -42,6 +42,7 @@ def upgrade() -> None:
             client_id         text NOT NULL,
             account_entity_id uuid NOT NULL,
             icp_spec_version  int NOT NULL,
+            icp_key           text NOT NULL DEFAULT '',
             campaign_run_id   uuid,
             assembled_at      timestamptz NOT NULL,
             payload           jsonb NOT NULL,
@@ -53,16 +54,18 @@ def upgrade() -> None:
     )
     op.execute(
         "COMMENT ON TABLE account_handoff IS 'M12.2 materialised account_handoff (overview §3): a "
-        "row per (client_id, account_entity_id, icp_spec_version) holding the serialized "
+        "row per (client_id, account_entity_id, icp_spec_version, icp_key) holding the serialized "
         "AssembledHandoff (frozen AccountHandoff + the M12.2 extras) as JSONB. Tenant-private "
         "(substrate §2): a client''s assembled view, recomputed on supersede (UPSERT). A "
         "read-projection of the claim store — never a write-back path (conventions §6).'"
     )
-    # The scope key (client_id, account_entity_id, icp_spec_version) — re-assembly UPSERTs the slot.
-    # The same public account under two clients/ICPs keeps distinct handoffs (D5; substrate §2).
+    # The scope key (client_id, account_entity_id, icp_spec_version, icp_key) — re-assembly UPSERTs
+    # the slot. icp_key is the ICP *segment* (D5: icp_spec_version restarts at 1 per icp_key, so two
+    # segments would otherwise collide on one slot); '' for a single-segment account. The same public
+    # account under two clients / ICPs / segments keeps distinct handoffs (substrate §2).
     op.execute(
         "CREATE UNIQUE INDEX account_handoff_scope "
-        "ON account_handoff (client_id, account_entity_id, icp_spec_version)"
+        "ON account_handoff (client_id, account_entity_id, icp_spec_version, icp_key)"
     )
     # Serve path: all handoffs for an account; the campaign-run list (M12.3).
     op.execute("CREATE INDEX account_handoff_account ON account_handoff (account_entity_id)")
