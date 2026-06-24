@@ -21,7 +21,7 @@ from __future__ import annotations
 from datetime import timedelta
 from enum import StrEnum
 
-from pydantic import BaseModel, ConfigDict, model_validator
+from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 
 from clue_research.core import UseClass
 
@@ -100,6 +100,180 @@ _CONSERVATIVE_ALLOW_MAP: dict[UseClass, UseDisposition] = {
     UseClass.PERSONAL_PUBLIC_NON_SENSITIVE: UseDisposition.USABLE,
     UseClass.SENSITIVE: UseDisposition.STORED_UNUSABLE,  # locked: special-category, Art. 9
 }
+
+
+# --- use-class special-category lexicon (M10.2) ----------------------------
+# The Art. 9 special-category markers (Doc D §2) the use-class tagger escalates on, plus the
+# benign-cause markers that let a SENSITIVE-hinted "causes" field de-escalate. Authored as config
+# (policy-as-data, conventions §2) so the Art. 9 set is editable WITHOUT code (M10.2 AC; D8) — the
+# M8 tagger reads this lexicon instead of a hardcoded list. The set covers every Doc D §2 category:
+# religion, politics, health/disability, sexual-orientation/ethnicity, trade-union,
+# biometric/genetic, plus the reasonable-person-private extension (family/children, financial).
+#
+# A missed marker leaves the field at its declared hint — fail-*safe* only for a restrictive
+# hint (``causes`` hints SENSITIVE), but fail-*open* for an escalatable field whose hint is usable
+# (``stated_interests`` hints PERSONAL_PUBLIC_NON_SENSITIVE → an uncaught special-category interest
+# stays usable). So the marker set must cover the Doc D §2 categories; substring recall is still
+# best-effort, and adversarial/recall hardening belongs in the M9.6 eval battery. Matching is
+# substring over lowercased text, so markers are kept lowercase + selective (no substrings of common
+# benign words) to protect precision against the M8 behaviour tests.
+_DEFAULT_SENSITIVE_MARKERS: tuple[str, ...] = (
+    # religion
+    "church",
+    "mosque",
+    "synagogue",
+    "temple",
+    "faith",
+    "religious",
+    "religion",
+    "christian",
+    "catholic",
+    "muslim",
+    "islam",
+    "islamic",
+    "jewish",
+    "judaism",
+    "hindu",
+    "buddhist",
+    "bible",
+    "evangelical",
+    "ministry",
+    "parish",
+    # politics
+    "political",
+    "politics",
+    "republican",
+    "democrat",
+    "conservative party",
+    "labour party",
+    "campaign",
+    "candidate",
+    "election",
+    "activist",
+    "lobby",
+    # health / disability
+    "health condition",
+    "medical",
+    "disability",
+    "disabled",
+    "illness",
+    "cancer",
+    "disease",
+    "mental health",
+    "addiction",
+    "recovery",
+    "diagnosis",
+    "patient advocacy",
+    # sexual orientation / ethnicity
+    "lgbt",
+    "lgbtq",
+    "gay rights",
+    "queer",
+    "ethnic",
+    "racial",
+    # trade-union membership (Art. 9) — selective phrases, not bare "union" (≈ reunion/communion)
+    "trade union",
+    "trade-union",
+    "trade unionist",
+    "union member",
+    "labor union",
+    "labour union",
+    # biometric / genetic (Art. 9)
+    "biometric",
+    "genetic",
+    "genome",
+    "dna test",
+    # family / children (reasonable-person-private) — selective, not bare "family"/"children"
+    "pregnan",
+    "my children",
+    "my kids",
+    "my son",
+    "my daughter",
+    "custody battle",
+    "fertility",
+    "ivf",
+    # financial status (reasonable-person-private) — selective, not bare "debt"/"financial"/"loan"
+    "bankruptcy",
+    "insolvency",
+    "foreclosure",
+    "net worth",
+    "in debt",
+    "financial hardship",
+)
+# Markers that a "cause" is evidently benign (lets a SENSITIVE-hint field de-escalate per-claim).
+_DEFAULT_BENIGN_CAUSE_MARKERS: tuple[str, ...] = (
+    "environment",
+    "climate",
+    "wildlife",
+    "conservation",
+    "education",
+    "literacy",
+    "animal",
+    "sports",
+    "arts",
+    "music",
+    "open source",
+    "open-source",
+    "stem",
+    "scholarship",
+    "mentorship",
+    "youth",
+    "hunger",
+    "homelessness",
+)
+
+
+class UseClassLexicon(BaseModel):
+    """The versioned special-category lexicon the use-class tagger reads (Doc D §2; M10.2; D8).
+
+    ``sensitive_markers`` are the Art. 9 special-category (+ reasonable-person-private) substrings
+    whose presence in a claim's evidence/value escalates an *escalatable* personal field to
+    ``SENSITIVE``; ``benign_cause_markers`` let a SENSITIVE-hinted ``causes`` field de-escalate when
+    the cause is evidently benign. **Policy is data:** adding an Art. 9 category is a config edit,
+    not code — the tagger consults this lexicon, never a hardcoded list (M10.2 AC). Matching is
+    conservative and fails *safe* toward ``SENSITIVE`` (Doc D §2 "empty is correct").
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    sensitive_markers: tuple[str, ...] = _DEFAULT_SENSITIVE_MARKERS
+    benign_cause_markers: tuple[str, ...] = _DEFAULT_BENIGN_CAUSE_MARKERS
+    version: int = 1
+
+    @field_validator("sensitive_markers", "benign_cause_markers", mode="before")
+    @classmethod
+    def _normalize_markers(cls, value: object) -> object:
+        """Lower-case + strip every marker (matching is over lowercased text, so an upper-case
+        custom marker would silently never fire) and **reject a blank marker** — an empty/whitespace
+        marker substring-matches *everything*, which on the benign side would silently de-escalate
+        every claim (the unsafe direction). Only runs for *provided* values; the defaults are clean.
+        """
+        if not isinstance(value, (list, tuple)):
+            return value
+        out: list[str] = []
+        for raw in value:
+            marker = str(raw).strip().lower()
+            if not marker:
+                raise ValueError(
+                    "a use-class marker must be non-empty/non-whitespace — a blank marker matches "
+                    "every claim (Doc D §2; the benign side would silently de-escalate everything)"
+                )
+            out.append(marker)
+        return tuple(out)
+
+    @model_validator(mode="after")
+    def _check_sensitive_non_empty(self) -> UseClassLexicon:
+        # An empty special-category set silently disables Art. 9 escalation — sensitive data must
+        # fail *safe* toward SENSITIVE, so reject it (mirrors JurisdictionPolicy's sensitive floor).
+        if not self.sensitive_markers:
+            raise ValueError(
+                "sensitive_markers must be non-empty: an empty special-category lexicon silently "
+                "disables Art. 9 escalation; sensitive data must fail safe to SENSITIVE (Doc D §2)"
+            )
+        return self
+
+
+DEFAULT_USE_CLASS_LEXICON = UseClassLexicon()
 
 
 # --- region -> regime mapping (M10.1) --------------------------------------
@@ -293,6 +467,12 @@ class JurisdictionPolicy(BaseModel):
     }
     lawful_basis_defaults: LawfulBasisDefaults = LawfulBasisDefaults()
     retention_ttls: RetentionTtls = RetentionTtls()
+    # --- use-class tagging input (M10.2) ---
+    # The Art. 9 special-category lexicon the M8 tagger escalates on (Doc D §2). Carried on the
+    # policy (like ``regime_mapping``) so it is per-client overlayable as policy-as-data; the api
+    # composition root constructs ``UseClassTagger(lexicon=get_policy(cid).use_class_lexicon)`` when
+    # wiring the M8 call site. Defaults to the conservative platform lexicon.
+    use_class_lexicon: UseClassLexicon = DEFAULT_USE_CLASS_LEXICON
     # --- jurisdiction resolution inputs (M10.1) ---
     # The region->regime lookup the M10.1 JurisdictionResolver applies (Doc D §1; D8). A per-client
     # overlay can swap it without code (policy-as-data); note the ConfigOverlay whole-subtree

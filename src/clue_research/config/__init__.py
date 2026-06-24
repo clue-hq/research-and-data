@@ -37,6 +37,7 @@ from clue_research.config.policy import (
     DEFAULT_JURISDICTION,
     DEFAULT_POSTURE,
     DEFAULT_REGIME_MAPPING,
+    DEFAULT_USE_CLASS_LEXICON,
     STRICT_DEFAULT_REGIME,
     Jurisdiction,
     JurisdictionPolicy,
@@ -45,6 +46,7 @@ from clue_research.config.policy import (
     RegimeMapping,
     RetentionTtls,
     SourceScope,
+    UseClassLexicon,
     UseDisposition,
 )
 from clue_research.config.schema import (
@@ -86,9 +88,11 @@ __all__ = [
     "LawfulBasisDefaults",
     "RetentionTtls",
     "RegimeMapping",
+    "UseClassLexicon",
     "DEFAULT_JURISDICTION",
     "DEFAULT_POSTURE",
     "DEFAULT_REGIME_MAPPING",
+    "DEFAULT_USE_CLASS_LEXICON",
     "STRICT_DEFAULT_REGIME",
     # config-schema placeholders
     "MergePolicy",

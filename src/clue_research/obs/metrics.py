@@ -26,6 +26,9 @@ METRIC_TIER4_TOTAL = "research.verification.tier4.total"
 METRIC_TIER4_PASSED = "research.verification.tier4.passed"
 METRIC_CONTACT_CLAIMS_TOTAL = "research.verification.contact.total"
 METRIC_CONTACT_STRONG_BINDING = "research.verification.contact.strong_binding"
+# Use-class tag distribution (Doc D §2 / Doc C §6) — the *appropriateness* axis, kept separate from
+# the accuracy axis above (Doc D §5: separately measurable). Labelled by use_class.
+METRIC_USE_CLASS_TOTAL = "research.compliance.use_class.total"
 METRIC_COST_CENTS = "research.cost.cents"
 METRIC_COST_CAP_CENTS = "research.cost.cap_cents"
 METRIC_PHASE_PROGRESS = "research.phase.progress"
@@ -114,6 +117,24 @@ def record_verification_health(claims: Iterable[Claim], *, sink: MetricSink | No
             sink.add(METRIC_CONTACT_CLAIMS_TOTAL, 1, {})
             if claim.identity_binding is IdentityBinding.STRONG:
                 sink.add(METRIC_CONTACT_STRONG_BINDING, 1, {})
+
+
+def record_use_class_distribution(
+    claims: Iterable[Claim], *, sink: MetricSink | None = None
+) -> None:
+    """Use-class tag distribution: per-use-class counts of personal claims (Doc D §2 / Doc C §6).
+
+    The *appropriateness* surface — kept distinct from :func:`record_verification_health` (the
+    accuracy axis) so "what share of personal claims are sensitive/locked" is separately measurable
+    from "what share are strongly bound" (Doc D §5). Computed at-rest over the claim store: it reads
+    the ``use_class`` M8 stamps born-correct at extraction (M8.4), so a claim with no ``use_class``
+    (account / firmographic — not personal) is not counted. The share-sensitive surface is
+    ``total{use_class=sensitive} / Σ total``.
+    """
+    sink = sink or get_metric_sink()
+    for claim in claims:
+        if claim.use_class is not None:
+            sink.add(METRIC_USE_CLASS_TOTAL, 1, {"use_class": claim.use_class.value})
 
 
 def record_cost_burndown(
