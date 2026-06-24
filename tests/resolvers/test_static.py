@@ -38,6 +38,10 @@ _ALLOWED_LITERALS = frozenset(
         "api_key",
         "register_deterministic_resolvers",
         "register_scrape_resolver",
+        # M11 tier-4 synthesis public symbol names (≥24 chars → trip the opaque-token shape).
+        "register_exa_deep_resolver",
+        "register_synthesis_resolver",
+        "GroundedSynthesisResolver",
     }
 )
 
