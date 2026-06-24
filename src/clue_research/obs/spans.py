@@ -68,6 +68,10 @@ SPAN_VERIFICATION_FRESHNESS = "verification.freshness"
 
 # --- compliance (M10) — appropriateness/use. DISTINCT from the judge (Doc D §5) ---
 SPAN_COMPLIANCE_USE_GATE = "compliance.use_gate"
+# Jurisdiction resolution (M10.1): resolve one data-protection regime per contact from its location
+# evidence. Its own span so "which regime governs this person, and how confidently" is queryable
+# (Doc D §1) — separate from the use gate's per-claim appropriateness decision.
+SPAN_COMPLIANCE_JURISDICTION = "compliance.jurisdiction"
 
 # --- campaign-run phases (Doc C §4) ----------------------------------------
 # Exactly the Doc C §4 / conventions §3 phase sequence (annotations like "(Pass A)"/"(human)" are
