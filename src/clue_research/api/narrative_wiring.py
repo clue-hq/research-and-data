@@ -38,7 +38,13 @@ from clue_research.api.composition import RESEARCH_PACK_LOADERS
 from clue_research.core import EntityId
 from clue_research.core.retrieval import ClientKnowledgeChunk, ClientKnowledgeRetriever
 from clue_research.db import transaction
-from clue_research.narrative import fact_to_text, load_narrative_pack, rank_by_query_overlap
+from clue_research.narrative import (
+    HandoffAssembler,
+    HandoffCommitteeReader,
+    fact_to_text,
+    load_narrative_pack,
+    rank_by_query_overlap,
+)
 from clue_research.stage0 import read_client_kb_claims
 
 _ConnFactory = Callable[[], AbstractAsyncContextManager[AsyncConnection]]
@@ -102,3 +108,20 @@ def build_client_knowledge_retriever(
     """Construct the api-root Client-Knowledge retriever to inject into the M12.1 positioner (the
     ``read_client_kb_claims``-backed pre-flight stub until pgvector lands behind the same seam)."""
     return ClientKnowledgeRetrieverStub(conn_factory=conn_factory)
+
+
+def build_handoff_assembler(*, committee_reader: HandoffCommitteeReader) -> HandoffAssembler:
+    """Construct the M12.2 ``account_handoff`` assembler at the ``api`` composition root.
+
+    The assembler is a pure store read; its one injected dependency is the
+    :class:`~clue_research.narrative.HandoffCommitteeReader` (the M12 ↔ M8/M10 seam). The
+    **production** reader — which reads ``profiling``'s committee/contact results (via the M8A.5
+    ``build_handoff_skeleton``) and ``compliance``'s ``use_decision`` per facet — needs the M8/M10
+    packages, so it is constructed at this root **when M8/M10 integrate** (the deferred-injection
+    pattern, exactly like the M12.1 positioner's committee reader). Until then a caller injects the
+    in-memory fake (``InMemoryHandoffCommitteeReader``) or an M8A.5-skeleton-backed adapter; M12.2's
+    own code is unchanged by the swap (the seam is the contract).
+
+    Materialising the assembled handoff (``narrative.write_handoff``) and serving / emitting it
+    (M12.3) are wired here later; M12.2 stops at the assembler + the ``account_handoff`` table."""
+    return HandoffAssembler(committee_reader=committee_reader)

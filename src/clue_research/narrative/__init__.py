@@ -28,6 +28,21 @@ from clue_research.narrative.fields import (
     VALUE_NARRATIVE,
     load_narrative_pack,
 )
+from clue_research.narrative.handoff import (
+    FIT_FIELD,
+    INTENT_FIELD,
+    METRIC_HANDOFFS_ASSEMBLED,
+    SPAN_HANDOFF_ASSEMBLE,
+    AssembledHandoff,
+    HandoffAssembler,
+    HandoffAssemblyError,
+)
+from clue_research.narrative.handoff_seams import (
+    HandoffCommitteeMember,
+    HandoffCommitteeReader,
+    InMemoryHandoffCommitteeReader,
+)
+from clue_research.narrative.handoff_store import read_handoff, write_handoff
 from clue_research.narrative.policy import (
     ACCOUNT_OPERATIONAL_PAIN,
     ACCOUNT_RESONANCE_CULTURE,
@@ -71,7 +86,9 @@ from clue_research.narrative.seams import (
 )
 from clue_research.narrative.support import (
     ClaimSupport,
+    FaithfulnessCitation,
     read_claim_support,
+    read_faithfulness_citation,
     write_claim_support,
 )
 
@@ -114,6 +131,9 @@ __all__ = [
     "ClaimSupport",
     "write_claim_support",
     "read_claim_support",
+    # faithfulness citation (M12.2 provenance — the answering judge model)
+    "FaithfulnessCitation",
+    "read_faithfulness_citation",
     # the positioning step
     "Positioner",
     "PositioningResult",
@@ -123,4 +143,19 @@ __all__ = [
     "SPAN_NARRATIVE_POSITION",
     "METRIC_NARRATIVES_PRODUCED",
     "METRIC_NARRATIVE_COVERAGE_GAP",
+    # the handoff assembler (M12.2)
+    "HandoffAssembler",
+    "AssembledHandoff",
+    "HandoffAssemblyError",
+    "FIT_FIELD",
+    "INTENT_FIELD",
+    "SPAN_HANDOFF_ASSEMBLE",
+    "METRIC_HANDOFFS_ASSEMBLED",
+    # the handoff committee seam (M12.2)
+    "HandoffCommitteeReader",
+    "HandoffCommitteeMember",
+    "InMemoryHandoffCommitteeReader",
+    # the account_handoff materialization (M12.2)
+    "write_handoff",
+    "read_handoff",
 ]

@@ -106,3 +106,58 @@ async def read_claim_support(conn: AsyncConnection, claim_id: ClaimId) -> ClaimS
         account_evidence_ids=account_ids,
         client_knowledge_ids=client_ids,
     )
+
+
+class FaithfulnessCitation(BaseModel):
+    """The faithfulness-judge citation behind a verified value-narrative claim — "judged faithful by
+    ``<answering_model>@<prompt_version>``" (M12.2 provenance; substrate §6(3) / Doc C §6).
+
+    ``answering_model`` is the gateway model that *actually* produced the verdict (it differs from
+    the requested ``judge_model`` only on an OpenRouter fallback; backfilled to ``judge_model`` for
+    pre-column rows). M12.2 cites it so the handoff names the model that did the judging — not a
+    requested id that a fallback bypassed."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    claim_id: ClaimId
+    verdict: str
+    score: float
+    judge_model: str  # the requested id (the cache key)
+    answering_model: str  # the id that actually answered (cited)
+    prompt_version: str
+
+
+async def read_faithfulness_citation(
+    conn: AsyncConnection, claim_id: ClaimId
+) -> FaithfulnessCitation | None:
+    """Read the latest M9.3 ``faithfulness_verdict`` for ``claim_id``, or ``None`` if the claim was
+    never judged.
+
+    Reads the verification-layer side table directly (the shared claim-store substrate — the same
+    way the assembler reads any claim/side-table row), NOT by importing the ``verification`` package
+    (the import-linter independence contract forbids ``narrative → verification``). One row per
+    ``(claim_id, judge_model, prompt_version)``; the most recently judged wins (a re-judge under a
+    new prompt mints a fresh row). ``answering_model`` falls back to ``judge_model`` if a legacy row
+    predates the column (the migration backfills it, so this is belt-and-braces)."""
+    row = (
+        await conn.execute(
+            text(
+                "SELECT verdict, score, judge_model, answering_model, prompt_version "
+                "FROM faithfulness_verdict WHERE claim_id = :claim_id "
+                "ORDER BY judged_at DESC, judge_model DESC LIMIT 1"
+            ),
+            {"claim_id": str(claim_id)},
+        )
+    ).first()
+    if row is None:
+        return None
+    judge_model = str(row[2])
+    answering_model = str(row[3]) if row[3] is not None else judge_model
+    return FaithfulnessCitation(
+        claim_id=claim_id,
+        verdict=str(row[0]),
+        score=float(row[1]),
+        judge_model=judge_model,
+        answering_model=answering_model,
+        prompt_version=str(row[4]),
+    )
