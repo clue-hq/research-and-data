@@ -65,7 +65,7 @@ Concretely, this layer delivers, all as **policy-as-data behind stable seams** (
   - An ambiguous "religion-adjacent hobby" claim is tagged `sensitive` (conservative tie-break verified).
   - Tagging is independent of accuracy: a claim that later fails the faithfulness judge still carried a use-class at extraction (the two are decoupled — Doc D §5).
   - The Art. 9 category list is loaded from config; adding a category re-classifies matching claims with zero code change.
-  - The tag-distribution span emits counts per use-class for observability (Doc C §6).
+  - The tag-distribution **metric** emits counts per use-class for observability (Doc C §6). *(Implementation note: realized as the at-rest claim-derived recorder `obs.record_use_class_distribution` / `METRIC_USE_CLASS_TOTAL`, consistent with the other four Doc C §6 surfaces which are metrics, not trace spans — supersedes the original "span" wording.)*
 - **Out of scope:** Deciding whether a `sensitive` claim is *stored* vs. *stored-but-locked* vs. *not collected* (that is the posture decision, M10.4). Deciding whether a tagged claim may *drive outreach* (the gate, M10.3). Identity-binding strength (M9.4). Collecting the claims themselves (M8).
 - **Open decisions:** D8 — the precise special-category boundaries depend on confirmed 2026 law; the category list is config so it tracks D8's resolution. D3 — tagging happens under all three postures (Doc D §6 all "use-class-tagged at extraction"), so this issue is posture-agnostic.
 
