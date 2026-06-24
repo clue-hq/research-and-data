@@ -169,8 +169,9 @@ provider-agnostic.
     LLM's reasoning never does" (substrate §1/§6) is now enforced by the *type*, not by discipline.
   - `entity_query` / `field_intent` / `_FIELD_INTENT` — the entity-bound (target-locked) query
     builder, **extracted from `exa/`** so Exa and Parallel issue the identical query (only the wire
-    envelope differs). `as_list` / `dollars_to_cost_cents` — the JSON-array guard and the USD→cents
-    conversion, extracted so both providers' normalizers share one copy.
+    envelope differs). `as_list` (JSON-array guard), `dollars_to_cost_cents` (USD→cents math) and
+    `cost_cents_from_cost_dollars` (the `costDollars.total` reader) — extracted so both providers'
+    normalizers share one copy of the cost-parse + JSON-guard logic (no per-provider duplication).
 - **`api/synthesis_wiring.py`** — `register_synthesis_wiring()` now also binds Parallel Task; running
   one, the other, or both (cross-provider convergence) is a registry/config choice, not code.
 - **`resolvers/__init__.py`** — exports the `parallel` sub-package + its config/registration symbols.

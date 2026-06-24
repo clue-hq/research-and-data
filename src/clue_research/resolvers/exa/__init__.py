@@ -47,7 +47,7 @@ from clue_research.resolvers.grounded import (
     SynthesisResult,
     SynthesizedField,
     as_list,
-    dollars_to_cost_cents,
+    cost_cents_from_cost_dollars,
     entity_query,
     field_intent,
     register_synthesis_resolver,
@@ -126,14 +126,6 @@ def build_exa_request(
     return HttpRequest(url=config.endpoint, method="POST", headers=headers, json_body=body)
 
 
-def _cost_cents(payload: Mapping[str, Any]) -> CostCents:
-    """Read Exa's realized per-call cost (``costDollars.total``, in dollars) into cents via the
-    shared converter. Absent/malformed → ``0`` (the resolver attributes the seed-manifest cost)."""
-    cost = payload.get("costDollars")
-    total = cost.get("total") if isinstance(cost, Mapping) else None
-    return dollars_to_cost_cents(total)
-
-
 def normalize_exa_response(
     payload: Mapping[str, Any],
     field: FieldDef,
@@ -190,7 +182,7 @@ def normalize_exa_response(
                     confidence=confidence,
                 )
             )
-    return SynthesisResult(fields=tuple(fields), cost_cents=_cost_cents(payload))
+    return SynthesisResult(fields=tuple(fields), cost_cents=cost_cents_from_cost_dollars(payload))
 
 
 def make_backend(
