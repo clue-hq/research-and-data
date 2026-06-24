@@ -142,6 +142,7 @@ from clue_research.core.primitives import (
     new_run_id,
 )
 from clue_research.core.resolver import Resolver, ResolverError, RetryableResolverError
+from clue_research.core.retrieval import ClientKnowledgeChunk, ClientKnowledgeRetriever
 from clue_research.core.source import SourceManifest
 from clue_research.core.verification import (
     AgeOutCandidate,
@@ -307,4 +308,7 @@ __all__ = [
     "UseDecision",
     "UseGate",
     "is_outreach_promotable",
+    # client-knowledge retrieval seam (M5↔M12 contract; impl stubbed in M12/stage0)
+    "ClientKnowledgeChunk",
+    "ClientKnowledgeRetriever",
 ]
