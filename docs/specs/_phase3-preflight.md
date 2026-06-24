@@ -39,6 +39,24 @@ main @18d7fab (head 3df3b2f629fd)
 
 Integrate sequentially **M11 → M10 → M12** (§ integration order). Build in parallel.
 
+## Implementation status — updated 2026-06-24
+
+Investigating while implementing PF-2…PF-8 re-scoped three items (grounded in code, not the draft):
+
+| Item | Status | Note |
+|---|---|---|
+| PF-0 | ✅ done `d683690` | green base |
+| PF-1 | ✅ done `fdcaa64` | core contract-delta |
+| PF-2 | ☐ decision only | the side-table decision is recorded (this doc + Linear); the tables themselves are milestone-owned (M10/M12). No pre-flight base code. |
+| PF-3/PF-4 | ✅ confirmed — **no base code** | the merge already excludes superseded claims (`merge_claims` filters `superseded_by IS NULL` — merge.py:210; `current_values` does `WHERE … superseded_by IS NULL` — :311). So M10.5's tombstone-by-supersede works with **zero merge change**. The 40d divergence fixture + the sweep are M10.5 milestone work. |
+| PF-5 | ✅ recorded | tombstone reuses `ExtractionMethod.HUMAN`; no enum/parity change. |
+| PF-6 | ✅ done `9e06ade` | scoped to the tier-4 synthesis fields; the dangling `"exa"` on *deterministic* fields (recent_funding, hiring_velocity) is left — `no_resolver → empty` is safe, and LLM-filling a deterministic field is the anti-pattern. |
+| PF-7 | ✅ done `4fab273` | `RESEARCH_PACK_LOADERS` registry + `VERIFICATION_GATE_ORDER` + 3 per-milestone wiring scaffolds. |
+| PF-8 | ⚠️ **DROPPED (was harmful)** | The draft was wrong: `exa_deep` is `entity_scope=BOTH` **by design** — it is the tier-4 synthesis engine for `contact.facet` too (M8.5/M10; the merged AC-6 test uses `_FACET_SOURCE="exa_deep"`). Tightening it to account-only would break merged code. The personal-data firewall is an **M11 field-routing / resolver-assertion** concern (M11's account-synthesis fields are `account.*`; the M11.1 resolver writes claims matching the field's entity_type), **not** a manifest edit. `parallel_task` *could* be tightened (no contact yield) but it's unnecessary + inconsistent, so left as-is. |
+| retrieval seam | ✅ done `4fab273` | `core.retrieval.ClientKnowledgeChunk` + `ClientKnowledgeRetriever` (the M12←M5 gap). |
+
+Net: the executable base code was **PF-6, PF-7, and the retrieval seam** (3 commits). PF-2/PF-5 are recorded decisions, PF-3/PF-4 needed no base code, PF-8 was dropped. The detail below is the original plan; the table above is authoritative where they differ.
+
 ## Pre-flight checklist (PF-0 … PF-8)
 
 ### PF-0 — Green the shared base · ✅ DONE (`d683690`)
