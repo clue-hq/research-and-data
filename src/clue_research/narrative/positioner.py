@@ -222,6 +222,7 @@ class Positioner:
         client_id: str,
         client_entity_id: EntityId,
         run_id: RunId,
+        icp_key: str | None = None,
         kb_version: int | None = None,
     ) -> PositioningResult:
         """Produce the per-persona value narrative for one ``(account, icp)``.
@@ -230,7 +231,14 @@ class Positioner:
         is the client's resolved account entity, for Client-Knowledge retrieval. The merge reads
         are tenant-scoped to ``client_id`` (public account facts ∪ this tenant's private
         resonance).
-        """
+
+        ``icp_key`` disambiguates *which* ICP segment this narrative is for: an ICP is
+        ``(client_id, icp_key, version)`` and ``version`` restarts at 1 per ``icp_key`` (D5), so two
+        segments can share ``icp_spec_version=1``. When provided it is stamped into the claim's
+        ``value_json`` and keys supersession on ``(persona, icp_key, icp_version)`` — so segment B's
+        re-synthesis never clobbers segment A's narrative at the same version. ``None`` preserves
+        the
+        legacy version-only keying (a single-segment account)."""
         policy = self._policy
         scope = TenantScope.for_tenant(client_id)
         with traced_step(
@@ -269,6 +277,7 @@ class Positioner:
                     account_entity_id=account_entity_id,
                     account_facts_by_field=account_facts_by_field,
                     icp_spec_version=icp_spec_version,
+                    icp_key=icp_key,
                     client_id=client_id,
                     client_entity_id=client_entity_id,
                     run_id=run_id,
@@ -304,6 +313,7 @@ class Positioner:
         account_entity_id: EntityId,
         account_facts_by_field: dict[str, CurrentValue],
         icp_spec_version: int,
+        icp_key: str | None,
         client_id: str,
         client_entity_id: EntityId,
         run_id: RunId,
@@ -390,6 +400,10 @@ class Positioner:
             "angle_label": angle.angle_label,
             "icp_spec_version": icp_spec_version,
         }
+        if icp_key is not None:
+            # The ICP segment (D5: version restarts per icp_key) — stamped so M12.2 reads the right
+            # segment's narrative and supersession keys on (persona, icp_key, icp_version).
+            value_json["icp_key"] = icp_key
         evidence_span = assemble_evidence_span(
             account_facts, chunks, max_chars=policy.max_evidence_chars
         )
@@ -415,6 +429,7 @@ class Positioner:
                 claim,
                 persona=persona,
                 icp_spec_version=icp_spec_version,
+                icp_key=icp_key,
                 scope=scope,
             )
             await write_claim_support(
@@ -444,22 +459,32 @@ class Positioner:
         *,
         persona: Persona,
         icp_spec_version: int,
+        icp_key: str | None,
         scope: TenantScope,
     ) -> ClaimId:
         """Insert the narrative claim, superseding any prior live narrative for the same ``(account,
-        persona, icp)`` (append-only + supersede; M12.1 AC7 — re-run never duplicates).
+        persona, icp_key, icp)`` (append-only + supersede; M12.1 AC7 — re-run never duplicates).
+        When
+        ``icp_key`` is set, segment B never supersedes segment A's narrative at the same version
+        (D5).
         """
         live = await self._live_for_persona(
-            conn, claim.entity_id, persona=persona, icp_spec_version=icp_spec_version, scope=scope
+            conn,
+            claim.entity_id,
+            persona=persona,
+            icp_spec_version=icp_spec_version,
+            icp_key=icp_key,
+            scope=scope,
         )
         if not live:
             return await insert_claim(conn, claim)
         if len(live) > 1:
             _log.warning(
-                "more than one live value_narrative for (account=%s, persona=%s, icp=%s); "
-                "superseding the most recent (the others are a pre-existing anomaly)",
+                "more than one live value_narrative for (account=%s, persona=%s, icp_key=%s, "
+                "icp=%s); superseding the most recent (the others are a pre-existing anomaly)",
                 claim.entity_id,
                 persona.value,
+                icp_key,
                 icp_spec_version,
             )
         return await supersede_claim(conn, live[0].id, claim)
@@ -471,11 +496,12 @@ class Positioner:
         *,
         persona: Persona,
         icp_spec_version: int,
+        icp_key: str | None,
         scope: TenantScope,
     ) -> list[Claim]:
-        """The live ``account.value_narrative`` claims for this exact ``(account, persona, icp)``
-        (claims_for returns non-superseded; ordered collected_at DESC so ``[0]`` is the most
-        recent).
+        """The live ``account.value_narrative`` claims for this exact ``(account, persona, icp_key,
+        icp)`` (claims_for returns non-superseded; ordered collected_at DESC so ``[0]`` is the most
+        recent). ``icp_key=None`` matches on version only (legacy single-segment keying).
         """
         claims = await claims_for(conn, account_entity_id, VALUE_NARRATIVE, scope=scope)
         result: list[Claim] = []
@@ -485,6 +511,7 @@ class Positioner:
                 isinstance(value, dict)
                 and value.get("persona") == persona.value
                 and value.get("icp_spec_version") == icp_spec_version
+                and (icp_key is None or value.get("icp_key") == icp_key)
             ):
                 result.append(claim)
         return result

@@ -22,6 +22,49 @@ Change surface (working tree): `core/equality.py`(new), `core/__init__`, `claims
 `verification/{corroboration,faithfulness,__init__}`, `identity/review`, `narrative/{handoff,handoff_seams,
 handoff_store,support,__init__}`(handoff* new), `api/narrative_wiring`, migration `b3b…` docstring,
 2 new migrations, tests `{test_merge_policy, test_corroboration, test_faithfulness, narrative/test_handoff}`.
+Committed `d5e0a59` (impl); audit fixes follow in a second commit.
+
+## ADVERSARIAL AUDIT (18-agent review→verify workflow) → 10 confirmed, ALL fixed
+1. **HIGH ×3 — D5 `icp_key` conflation** (`icp_spec_version` restarts at 1 per `icp_key`, so two
+   ICP segments share version 1; assembler + M12.1 narrative keyed on version only → conflate). FIX:
+   additive optional `icp_key` threaded through `positioner.position` (→ value_json + supersession on
+   `(persona, icp_key, version)`), `fields.py` schema (`icp_key` property, non-required), `handoff.assemble`
+   → `_read_score`/`_read_value_narrative` (match icp_key AND version), and the `account_handoff`
+   materialization scope key `(client_id, account, icp_spec_version, icp_key)` (migration `9666e…`
+   amended in place — re-applied via down→up). `None` preserves legacy single-segment keying. Residual
+   (documented, NOT fixed): the frozen `AccountHandoff` has no `icp_key` FIELD (PF-1 chose
+   `icp_spec_version:int`) — the assembler disambiguates INPUT; echoing icp_key on the OUTPUT object is a
+   future `core` contract-delta. New test `test_icp_key_segments_at_same_version_do_not_conflate`.
+2. **MEDIUM — missing-score fabricates 0.0.** FIX: `_read_score` returns `(score, non_fit, scored)`;
+   `AssembledHandoff` gains `fit_scored`/`intent_scored` so the empty `Score(0.0)` placeholder is never
+   read as a real fit. Test `test_missing_score_is_flagged_unscored_not_a_fabricated_zero`.
+3. **MEDIUM — use-gate bypass (fail-closed).** Production seam fills `profile_claims` from M8.4 facets,
+   so a no-`use_decision` claim is NOT necessarily identifying. FIX: `_filter_committee_member` keeps a
+   no-decision claim only if `use_class is None or PROFESSIONAL_PUBLIC`; a `SENSITIVE` /
+   `PERSONAL_PUBLIC_NON_SENSITIVE` claim with no clearing decision is dropped. Test
+   `test_sensitive_facet_without_use_decision_is_dropped_fail_closed`.
+4. **MEDIUM — committee not sorted (AC5).** FIX: sort committee members `(persona, contact)` + each
+   member's `profile_claims` `(value, id)` — byte-stable independent of the seam's read order.
+5. **LOW — field_conflicts ids absent from provenance_index.** FIX: collect `field_conflicts` contender
+   ids into the index. Test `test_field_conflict_contenders_are_in_the_provenance_index`.
+6. **MEDIUM — mirrored constants no drift guard.** FIX: NEW `tests/test_handoff_drift_guards.py`
+   (cross-imports siblings): `FIT_FIELD`/`INTENT_FIELD` == `discovery_scoring`,
+   `_ACCOUNT_AXIS_CLASSES` == `profiling.account`, `_facet_outreach_eligible` ≡ `is_outreach_promotable`.
+7. **LOW — FLAGGED mirror docstring overstated.** FIX: softened `merge._conflict` +
+   `corroboration._is_authoritative` docstrings — they share the equality predicate + pairwise method,
+   but merge's `_is_eligible` still admits FLAGGED tier≤2 (safe over-flag; `conflict_flag` is M13.1's signal).
+8. **NIT — config/schema MergePolicy lacked tolerance fields.** FIX: added the 3 tolerance fields
+   (default from core consts) + extended `test_equality_tolerances_align_across_policies` to the config layer.
+
+Also (caught by my own pre-audit review): the provenance index now resolves with `include_superseded=True`
+so a since-superseded *derivation-evidence* ref (a refreshed signal) doesn't permanently dangling-fail
+the build (only a truly non-existent id does). Test `test_superseded_evidence_reference_still_resolves`.
+
+Post-fix gate: ruff/format, mypy 219, import-linter 11/11, db-smoke single head, narrative (22 handoff
++ positioner) / verification / claimstore / identity / discovery_scoring / api / drift-guard suites green.
+Two broad-run-only failures are PRE-EXISTING, not this change: `test_no_domain_tables_at_m0_head`
+(LangGraph `checkpoint*` runtime tables) and `test_live_claims_partial_index_is_used` (planner stats —
+passes in isolation).
 
 ## Scope of THIS work (user instruction)
 1. **M12.2** — the deterministic `account_handoff` assembler + provenance index.

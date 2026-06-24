@@ -286,8 +286,11 @@ def _is_counting(claim: Claim, policy: CorroborationPolicy) -> bool:
 
 def _is_authoritative(claim: Claim, policy: CorroborationPolicy) -> bool:
     """Whether a claim is an *authoritative* source whose disagreement raises a conflict flag
-    (tier≤threshold, not rejected/flagged, promotable). Mirrors the merge layer's conflict
-    contenders."""
+    (tier≤threshold, not rejected/flagged, promotable). Shares the tier band, the equality predicate
+    (``core.values_agree``) and the pairwise check with the merge layer's ``_conflict``, but is
+    **stricter on status**: it also excludes ``FLAGGED`` (via ``_NON_SOURCE_STATUSES``), where the
+    merge's ``_is_eligible`` still admits a FLAGGED tier≤2 claim. The merge over-flags toward
+    review; this ``conflict_flag`` is the authoritative signal M13.1 consumes."""
     return (
         claim.source_tier <= policy.conflict_tier_threshold
         and claim.verification_status not in _NON_SOURCE_STATUSES

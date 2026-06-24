@@ -25,11 +25,13 @@ from clue_research.narrative.handoff import AssembledHandoff
 
 
 async def write_handoff(
-    conn: AsyncConnection, assembled: AssembledHandoff, *, client_id: str
+    conn: AsyncConnection, assembled: AssembledHandoff, *, client_id: str, icp_key: str = ""
 ) -> None:
-    """Materialise ``assembled`` for ``client_id`` (UPSERT on the ``(client_id, account_entity_id,
-    icp_spec_version)`` scope key — a re-assembly after supersession replaces the payload +
-    ``assembled_at``, never duplicating). The scope columns are read off the handoff; the full
+    """Materialise ``assembled`` for ``(client_id, icp_key)`` (UPSERT on the ``(client_id,
+    account_entity_id, icp_spec_version, icp_key)`` scope key — a re-assembly after supersession
+    replaces the payload + ``assembled_at``, never duplicating). ``icp_key`` is the ICP segment
+    (D5: ``icp_spec_version`` restarts at 1 per ``icp_key``, so two segments must not clobber each
+    other's materialised handoff); it defaults to ``""`` for a single-segment account. The full
     ``AssembledHandoff`` is stored as JSONB so the serve path reconstructs it without re-reading the
     claim store."""
     h = assembled.handoff
@@ -38,12 +40,12 @@ async def write_handoff(
         text(
             """
             INSERT INTO account_handoff
-                (client_id, account_entity_id, icp_spec_version, campaign_run_id, assembled_at,
-                 payload)
+                (client_id, account_entity_id, icp_spec_version, icp_key, campaign_run_id,
+                 assembled_at, payload)
             VALUES
-                (:client_id, :account_entity_id, :icp_spec_version, :campaign_run_id, :assembled_at,
-                 CAST(:payload AS jsonb))
-            ON CONFLICT (client_id, account_entity_id, icp_spec_version) DO UPDATE SET
+                (:client_id, :account_entity_id, :icp_spec_version, :icp_key, :campaign_run_id,
+                 :assembled_at, CAST(:payload AS jsonb))
+            ON CONFLICT (client_id, account_entity_id, icp_spec_version, icp_key) DO UPDATE SET
                 campaign_run_id = EXCLUDED.campaign_run_id,
                 assembled_at    = EXCLUDED.assembled_at,
                 payload         = EXCLUDED.payload
@@ -53,6 +55,7 @@ async def write_handoff(
             "client_id": client_id,
             "account_entity_id": str(h.account_entity_id),
             "icp_spec_version": h.icp_spec_version,
+            "icp_key": icp_key,
             "campaign_run_id": str(h.campaign_run_id) if h.campaign_run_id is not None else None,
             "assembled_at": h.assembled_at,
             "payload": json.dumps(payload),
@@ -66,21 +69,24 @@ async def read_handoff(
     client_id: str,
     account_entity_id: EntityId,
     icp_spec_version: int,
+    icp_key: str = "",
 ) -> AssembledHandoff | None:
     """Read the materialised :class:`AssembledHandoff` for ``(client_id, account_entity_id,
-    icp_spec_version)``, or ``None`` if it has not been assembled. Tenant-scoped on ``client_id`` so
-    a client never reads another client's assembled handoff (substrate §2)."""
+    icp_spec_version, icp_key)``, or ``None`` if it has not been assembled. Tenant-scoped on
+    ``client_id`` so a client never reads another client's assembled handoff (substrate §2);
+    ``icp_key`` (default ``""``) selects the ICP segment (D5)."""
     row = (
         await conn.execute(
             text(
                 "SELECT payload FROM account_handoff WHERE client_id = :client_id "
                 "AND account_entity_id = :account_entity_id "
-                "AND icp_spec_version = :icp_spec_version"
+                "AND icp_spec_version = :icp_spec_version AND icp_key = :icp_key"
             ),
             {
                 "client_id": client_id,
                 "account_entity_id": str(account_entity_id),
                 "icp_spec_version": icp_spec_version,
+                "icp_key": icp_key,
             },
         )
     ).first()

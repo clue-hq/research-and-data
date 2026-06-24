@@ -108,7 +108,9 @@ _SUPPORTED = '{"verdict": "supported", "score": 0.92, "rationale": "the span sup
 # === pure unit (no DB) ======================================================
 
 
-def _score_payload(value: float, evidence: list[str], *, icp_version: int, non_fit: bool) -> dict:
+def _score_payload(
+    value: float, evidence: list[str], *, icp_version: int, non_fit: bool, icp_key: str = "default"
+) -> dict:
     return {
         "value": value,
         "components": [
@@ -117,7 +119,7 @@ def _score_payload(value: float, evidence: list[str], *, icp_version: int, non_f
         "rubric_version": 1,
         "non_fit_flag": non_fit,
         "fit_floor": 0.3,
-        "icp_key": "default",
+        "icp_key": icp_key,
         "icp_version": icp_version,
     }
 
@@ -285,16 +287,20 @@ async def _write_narrative(
     account_evidence_ids: list[ClaimId],
     client_knowledge_ids: list[str],
     verified: bool = True,
+    icp_key: str | None = None,
 ) -> ClaimId:
+    value_json: dict = {
+        "persona": persona.value,
+        "argument": f"why we matter to {persona.value}",
+        "angle_label": "roi",
+        "icp_spec_version": icp_version,
+    }
+    if icp_key is not None:
+        value_json["icp_key"] = icp_key
     claim = account_claim(
         entity_id=account,
         field_key=VALUE_NARRATIVE,
-        value_json={
-            "persona": persona.value,
-            "argument": f"why we matter to {persona.value}",
-            "angle_label": "roi",
-            "icp_spec_version": icp_version,
-        },
+        value_json=value_json,
         source_tier=4,
         extraction_method=ExtractionMethod.LLM_SYNTHESIS,
         confidence=0.7,
@@ -886,5 +892,182 @@ def test_materialization_round_trip_and_tenant_isolation() -> None:
                 conn, client_id="other-client", account_entity_id=account, icp_spec_version=1
             )
             assert other is None
+
+    run_async(_run())
+
+
+@pytest.mark.usefixtures("require_narrative_db")
+def test_icp_key_segments_at_same_version_do_not_conflate() -> None:
+    """D5 (audit HIGH): an ICP version restarts at 1 per icp_key, so two segments share version=1.
+    assemble(icp_key=A) must read segment A's score + narrative, never segment B's at the same
+    version — and the materialization keeps the two distinct."""
+
+    async def _run() -> None:
+        async with rollback_conn() as conn:
+            account = await _account(conn)
+            await _write_score(
+                conn,
+                account,
+                FIT_FIELD,
+                _score_payload(0.3, [], icp_version=1, non_fit=False, icp_key="seg_a"),
+            )
+            await _write_score(
+                conn,
+                account,
+                FIT_FIELD,
+                _score_payload(0.9, [], icp_version=1, non_fit=False, icp_key="seg_b"),
+            )
+            await _write_narrative(
+                conn,
+                account,
+                Persona.CHAMPION,
+                icp_version=1,
+                icp_key="seg_a",
+                account_evidence_ids=[],
+                client_knowledge_ids=["a"],
+            )
+            await _write_narrative(
+                conn,
+                account,
+                Persona.BLOCKER,
+                icp_version=1,
+                icp_key="seg_b",
+                account_evidence_ids=[],
+                client_knowledge_ids=["b"],
+            )
+            assembler = _assembler()
+            a = await assembler.assemble(
+                conn,
+                account,
+                icp_spec_version=1,
+                icp_key="seg_a",
+                client_id=_CLIENT,
+                assembled_at=_AT,
+            )
+            b = await assembler.assemble(
+                conn,
+                account,
+                icp_spec_version=1,
+                icp_key="seg_b",
+                client_id=_CLIENT,
+                assembled_at=_AT,
+            )
+            assert a.handoff.fit_score.value == pytest.approx(0.3)
+            assert b.handoff.fit_score.value == pytest.approx(0.9)
+            assert {i.persona for i in a.handoff.value_narrative} == {Persona.CHAMPION}
+            assert {i.persona for i in b.handoff.value_narrative} == {Persona.BLOCKER}
+            # the materialization keeps the two segments distinct (same account + version).
+            await write_handoff(conn, a, client_id=_CLIENT, icp_key="seg_a")
+            await write_handoff(conn, b, client_id=_CLIENT, icp_key="seg_b")
+            got_a = await read_handoff(
+                conn,
+                client_id=_CLIENT,
+                account_entity_id=account,
+                icp_spec_version=1,
+                icp_key="seg_a",
+            )
+            assert got_a is not None and got_a.handoff.fit_score.value == pytest.approx(0.3)
+
+    run_async(_run())
+
+
+@pytest.mark.usefixtures("require_narrative_db")
+def test_missing_score_is_flagged_unscored_not_a_fabricated_zero() -> None:
+    """Audit MEDIUM: an account with no score for the segment carries an empty Score placeholder,
+    but fit_scored/intent_scored are False so the consumer never reads it as a real 0.0 fit."""
+
+    async def _run() -> None:
+        async with rollback_conn() as conn:
+            account = await _account(conn)
+            await _profile_fact(conn, account, "account.operational_pain", "cloud overspend")
+            assembled = await _assembler().assemble(
+                conn, account, icp_spec_version=1, client_id=_CLIENT, assembled_at=_AT
+            )
+            assert assembled.fit_scored is False and assembled.intent_scored is False
+            assert assembled.handoff.fit_score.value == pytest.approx(0.0)
+            assert assembled.handoff.fit_score.components == ()
+
+    run_async(_run())
+
+
+@pytest.mark.usefixtures("require_narrative_db")
+def test_sensitive_facet_without_use_decision_is_dropped_fail_closed() -> None:
+    """Audit MEDIUM: the production seam fills profile_claims from M8.4 facets; a governed-personal
+    claim (SENSITIVE / PERSONAL_PUBLIC_NON_SENSITIVE) with NO use_decision must NOT cross ungated
+    (fail-closed) — while a professional-public / identifying view with no decision is kept."""
+
+    async def _run() -> None:
+        async with rollback_conn() as conn:
+            account = await _account(conn)
+            await _write_score(
+                conn, account, FIT_FIELD, _score_payload(0.5, [], icp_version=1, non_fit=False)
+            )
+            contact = new_entity_id()
+            prof_cid = await _real_committee_claim(conn, contact, "ex-Stripe")  # professional view
+            sensitive_cid = (
+                new_claim_id()
+            )  # ungated sensitive facet (no decision) — must be dropped
+            member = HandoffCommitteeMember(
+                member=CommitteeMember(
+                    contact_entity_id=contact,
+                    persona=Persona.CHAMPION,
+                    role_on_committee="champion",
+                    profile_claims=(
+                        ProfileClaimView(
+                            claim_id=prof_cid,
+                            value_json="ex-Stripe",
+                            source_tier=4,
+                            identity_binding=IdentityBinding.STRONG,
+                            use_class=UseClass.PROFESSIONAL_PUBLIC,
+                        ),
+                        ProfileClaimView(
+                            claim_id=sensitive_cid,
+                            value_json="health note",
+                            source_tier=4,
+                            identity_binding=IdentityBinding.STRONG,
+                            use_class=UseClass.SENSITIVE,
+                        ),
+                    ),
+                ),
+                use_decisions={},  # NO use-gate verdict for either claim
+            )
+            assembler = HandoffAssembler(committee_reader=_committee((member,), account))
+            h = (
+                await assembler.assemble(
+                    conn, account, icp_spec_version=1, client_id=_CLIENT, assembled_at=_AT
+                )
+            ).handoff
+            kept = {pv.claim_id for pv in h.committee[0].profile_claims}
+            assert prof_cid in kept  # professional-public identifying view: kept
+            assert sensitive_cid not in kept  # sensitive, ungated: fail-closed dropped
+            assert str(sensitive_cid) not in h.provenance_index
+
+    run_async(_run())
+
+
+@pytest.mark.usefixtures("require_narrative_db")
+def test_field_conflict_contenders_are_in_the_provenance_index() -> None:
+    """Audit LOW: the disagreeing tier<=2 contenders surfaced in field_conflicts are themselves
+    traceable — their claim ids resolve in the provenance index."""
+
+    async def _run() -> None:
+        async with rollback_conn() as conn:
+            account = await _account(conn)
+            a = await _profile_fact(
+                conn, account, "account.operational_pain", "overspend", tier=2, verified=False
+            )
+            b = await _profile_fact(
+                conn, account, "account.operational_pain", "security gaps", tier=2, verified=False
+            )
+            await _write_score(
+                conn, account, FIT_FIELD, _score_payload(0.5, [], icp_version=1, non_fit=False)
+            )
+            h = (
+                await _assembler().assemble(
+                    conn, account, icp_spec_version=1, client_id=_CLIENT, assembled_at=_AT
+                )
+            ).handoff
+            assert set(h.field_conflicts["account.operational_pain"]) == {a, b}
+            assert str(a) in h.provenance_index and str(b) in h.provenance_index
 
     run_async(_run())

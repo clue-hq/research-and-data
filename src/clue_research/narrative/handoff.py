@@ -3,7 +3,7 @@
 The four required outputs (overview §1) live across the substrate as claims: the decomposed
 fit/intent **scores** (M6.3, on the reserved ``account.scoring.*`` fields), the verified **account
 profile** incl. ``account.resonance.*`` (M8.1/M8.2), the identity-resolved, governed **committee**
-(M8.3/M8.4 × M10) and the per-``(account, persona)`` **value narrative** (M12.1). This module is
+(M8.3/M8.4 × M10) and the per-``(account, persona)`` **value narrative** (M12.1). This module is the
 **deterministic assembler/serializer** gathering the current verified truth into the one canonical
 :class:`~clue_research.core.handoff.AccountHandoff` (conventions §4 / overview §3), with a
 ``provenance_index`` that makes "every fact links to its source" literally true and traversable.
@@ -65,6 +65,7 @@ from clue_research.core import (
     ProvenanceRef,
     Score,
     UnitInterval,
+    UseClass,
     UtcDatetime,
     ValueNarrativeItem,
     VerificationStatus,
@@ -123,6 +124,10 @@ class AssembledHandoff(BaseModel):
 
     * ``non_fit`` (D6): the imported-account non-fit flag travels *with* the fit score; the frozen
       ``AccountHandoff`` has no field for it, so it is surfaced here (and in the materialization).
+    * ``fit_scored`` / ``intent_scored``: whether a real score claim was found for this segment. The
+      frozen ``AccountHandoff.fit_score`` / ``intent_score`` are non-optional, so a *missing* score
+      is carried as an empty ``Score(value=0.0)`` placeholder — these flags make "unscored" explicit
+      so a consumer never mistakes the placeholder for a real 0.0 fit ("no score without evidence").
     * ``narrative_citations``: per value-narrative ``claim_id``, "judged faithful by
       ``<answering_model>@<prompt_version>``" (the [M9.3×M12] answering-model citation) — the frozen
       ``ProvenanceRef`` carries no model, so the citation rides here.
@@ -133,6 +138,8 @@ class AssembledHandoff(BaseModel):
 
     handoff: AccountHandoff
     non_fit: bool = False
+    fit_scored: bool = True
+    intent_scored: bool = True
     narrative_citations: dict[str, FaithfulnessCitation] = {}
     coverage_gap_personas: tuple[Persona, ...] = ()
 
@@ -175,18 +182,33 @@ def _facet_outreach_eligible(pv: ProfileClaimView, decision_usable: bool) -> boo
 
 def _filter_committee_member(hm: HandoffCommitteeMember) -> CommitteeMember:
     """Project a :class:`HandoffCommitteeMember` to the handoff :class:`CommitteeMember`, dropping
-    weak-binding / use-disallowed **governed facet** profile claims from the outreach-eligible set
-    (M12.2 AC4). A profile claim with a ``use_decisions`` entry is a governed facet the M10 use-gate
-    evaluated — kept only if it clears both gates; a claim with no entry (the identifying
-    ``role_on_committee`` / ``persona`` claims) is always kept (it is not an outreach hook)."""
+    weak-binding / use-disallowed facet profile claims from the outreach-eligible set (M12.2 AC4) —
+    **fail-closed** on personal data.
+
+    A profile claim with a ``use_decisions`` entry was evaluated by the M10 use-gate → kept only if
+    it clears both gates (``is_outreach_promotable``: strong binding AND use-allowed). A claim with
+    **no** decision is gate-*un*evaluated; the production seam (``build_handoff_skeleton``) fills
+    ``profile_claims`` from M8.4 contact-fill outputs, which are mostly governed ``contact.facet.*``
+    hooks, so a missing decision must NOT default-keep a personal hook into outreach. So a
+    no-decision
+    claim is kept only when it is **not** a governed-personal class — ``use_class`` is ``None`` or
+    ``PROFESSIONAL_PUBLIC`` (an identifying / professional view, e.g. role, title); a no-decision
+    ``SENSITIVE`` or ``PERSONAL_PUBLIC_NON_SENSITIVE`` claim is dropped (fail-closed: a personal
+    hook
+    never crosses ungated)."""
     kept: list[ProfileClaimView] = []
     for pv in hm.member.profile_claims:
         decision = hm.use_decisions.get(pv.claim_id)
-        if decision is None:
-            kept.append(pv)  # identifying / non-governed claim
-        elif _facet_outreach_eligible(pv, decision.usable_for_outreach):
-            kept.append(pv)  # governed facet that cleared both gates
-        # else: weak-binding or use-disallowed facet → excluded from the handoff (AC4)
+        if decision is not None:
+            if _facet_outreach_eligible(pv, decision.usable_for_outreach):
+                kept.append(pv)  # governed facet that cleared both gates
+            # else: weak-binding or use-disallowed facet → excluded (AC4)
+        elif pv.use_class is None or pv.use_class is UseClass.PROFESSIONAL_PUBLIC:
+            kept.append(pv)  # identifying / professional-public view (not a gated personal hook)
+        # else: a governed-personal claim (SENSITIVE / PERSONAL_PUBLIC_NON_SENSITIVE) with no
+        # use-gate
+        #       verdict → dropped (fail-closed; never cross a personal hook ungated)
+    kept.sort(key=lambda pv: (str(pv.value_json), str(pv.claim_id)))  # AC5 byte-stability
     return hm.member.model_copy(update={"profile_claims": tuple(kept)})
 
 
@@ -212,6 +234,7 @@ class HandoffAssembler:
         icp_spec_version: int,
         client_id: str,
         assembled_at: UtcDatetime,
+        icp_key: str | None = None,
         campaign_run_id: CampaignRunId | None = None,
         coverage_confidence: UnitInterval | None = None,
     ) -> AssembledHandoff:
@@ -221,19 +244,29 @@ class HandoffAssembler:
         are ``TENANT_PRIVATE``); reads are scoped to ``TenantScope.for_tenant(client_id)`` so a
         cross-tenant claim never enters the handoff. ``assembled_at`` + ``coverage_confidence`` are
         injected (a deterministic stamp keeps re-assembly byte-stable; M6.5 coverage is a sibling
-        worker's output). Raises :class:`HandoffAssemblyError` if any value's claim id is
-        unresolvable (the build-fail "every line is sourced" check)."""
+        worker's output).
+
+        ``icp_key`` disambiguates the ICP **segment**: an ICP is ``(client_id, icp_key, version)``
+        and ``version`` restarts at 1 per ``icp_key`` (D5), so two segments can share
+        ``icp_spec_version=1``. When the account is targeted under several segments the production
+        caller MUST pass ``icp_key`` — the scores and narrative are then matched on *both*
+        ``icp_key`` and ``icp_spec_version`` so segment A's handoff never mixes in segment B's score
+        or narrative. ``None`` (a single-segment account) matches on the version alone (legacy).
+
+        Raises :class:`HandoffAssemblyError` if any value's claim id is unresolvable (the build-fail
+        "every line is sourced" check)."""
         scope = TenantScope.for_tenant(client_id)
         with traced_step(
             SPAN_HANDOFF_ASSEMBLE,
             **{ATTR_ENTITY_ID: str(account_entity_id), ATTR_CLIENT_ID: client_id},
         ) as span:
-            # 1) decomposed scores (per-ICP; the merge would mix several ICPs' live scores — D5).
-            fit_score, non_fit = await self._read_score(
-                conn, account_entity_id, FIT_FIELD, icp_spec_version, scope
+            # 1) decomposed scores for THIS segment (D5: version restarts per icp_key, so match
+            # both).
+            fit_score, non_fit, fit_scored = await self._read_score(
+                conn, account_entity_id, FIT_FIELD, icp_spec_version, icp_key, scope
             )
-            intent_score, _ = await self._read_score(
-                conn, account_entity_id, INTENT_FIELD, icp_spec_version, scope
+            intent_score, _, intent_scored = await self._read_score(
+                conn, account_entity_id, INTENT_FIELD, icp_spec_version, icp_key, scope
             )
 
             # 2) verified account profile claims (Output 2) + the field-conflict surface.
@@ -241,15 +274,23 @@ class HandoffAssembler:
                 conn, account_entity_id, scope
             )
 
-            # 3) the governed committee (Output 3) — weak/disallowed facets excluded (AC4).
+            # 3) the governed committee (Output 3) — weak/disallowed facets excluded (AC4). Sorted
+            #    by (persona, contact) so the handoff is byte-stable independent of the seam's read
+            #    order (AC5 determinism), not relying on the deferred production reader to order.
             hand_members = await self._committee_reader.committee_for_handoff(
                 account_entity_id=account_entity_id, tenant_id=client_id
             )
-            committee = tuple(_filter_committee_member(hm) for hm in hand_members)
+            committee = tuple(
+                sorted(
+                    (_filter_committee_member(hm) for hm in hand_members),
+                    key=lambda m: (m.persona.value, str(m.contact_entity_id)),
+                )
+            )
 
-            # 4) the value narrative (Output 4) + its judge citations + coverage gaps.
+            # 4) the value narrative (Output 4) for THIS segment + its judge citations + coverage
+            # gaps.
             narrative, citations = await self._read_value_narrative(
-                conn, account_entity_id, icp_spec_version, scope
+                conn, account_entity_id, icp_spec_version, icp_key, scope
             )
             personas_with_narrative = {item.persona for item in narrative}
             coverage_gaps = tuple(
@@ -268,6 +309,7 @@ class HandoffAssembler:
                 profile_claims=profile_claims,
                 committee=committee,
                 narrative=narrative,
+                field_conflicts=field_conflicts,
             )
 
             handoff = AccountHandoff(
@@ -297,6 +339,8 @@ class HandoffAssembler:
             return AssembledHandoff(
                 handoff=handoff,
                 non_fit=non_fit,
+                fit_scored=fit_scored,
+                intent_scored=intent_scored,
                 narrative_citations=citations,
                 coverage_gap_personas=coverage_gaps,
             )
@@ -307,18 +351,28 @@ class HandoffAssembler:
         account_entity_id: EntityId,
         field_key: str,
         icp_spec_version: int,
+        icp_key: str | None,
         scope: TenantScope,
-    ) -> tuple[Score, bool]:
-        """The decomposed score for *this* ICP, or an empty ``Score`` if the account carries none (a
-        correct "not scored under this ICP" output). Filters live ``account.scoring.*`` claims by
-        ``value_json.icp_version`` (D5: the merge would mix several ICPs' live scores). Returns
-        ``(score, non_fit_flag)``."""
+    ) -> tuple[Score, bool, bool]:
+        """The decomposed score for *this* ICP segment. Filters the live ``account.scoring.*``
+        claims
+        by ``value_json.icp_version`` **and** ``icp_key`` (D5: version restarts per ``icp_key``, so
+        version alone would mix two segments' live scores). Returns ``(score, non_fit_flag,
+        scored)``
+        — ``scored`` is ``False`` and the ``Score`` is the empty placeholder ``value=0.0`` when the
+        account carries no matching score (the absence is surfaced explicitly on the wrapper rather
+        than fabricating a real 0.0 fit — "no score without its evidence")."""
         claims = await claims_for(conn, account_entity_id, field_key, scope=scope)
         for claim in claims:  # claims_for orders collected_at DESC → most recent first
             value = claim.value_json
-            if isinstance(value, dict) and value.get("icp_version") == icp_spec_version:
-                return _score_from_value_json(value)
-        return Score(value=0.0), False
+            if (
+                isinstance(value, dict)
+                and value.get("icp_version") == icp_spec_version
+                and (icp_key is None or value.get("icp_key") == icp_key)
+            ):
+                score, non_fit = _score_from_value_json(value)
+                return score, non_fit, True
+        return Score(value=0.0), False, False
 
     async def _read_account_profile(
         self, conn: AsyncConnection, account_entity_id: EntityId, scope: TenantScope
@@ -357,13 +411,17 @@ class HandoffAssembler:
         conn: AsyncConnection,
         account_entity_id: EntityId,
         icp_spec_version: int,
+        icp_key: str | None,
         scope: TenantScope,
     ) -> tuple[tuple[ValueNarrativeItem, ...], dict[str, FaithfulnessCitation]]:
-        """The verified value-narrative lines (Output 4) for this ICP + their judge citations.
+        """The verified value-narrative lines (Output 4) for this ICP segment + their judge
+        citations.
 
-        Only **verified** ``account.value_narrative`` claims belong in the handoff: an ungrounded
-        argument is ``rejected`` by the M9.3 judge and must not appear. Each line carries its
-        two-sided ``claim_support`` (account evidence × client knowledge) and, in the wrapper's
+        Matched on ``icp_spec_version`` **and** ``icp_key`` (D5: version restarts per segment, so
+        version alone would mix segment A's and B's narratives). Only **verified**
+        ``account.value_narrative`` claims belong in the handoff: an ungrounded argument is
+        ``rejected`` by the M9.3 judge and must not appear. Each line carries its two-sided
+        ``claim_support`` (account evidence × client knowledge) and, in the wrapper's
         ``narrative_citations``, the answering judge model ([M9.3×M12]). Ordered by ``(persona,
         claim_id)`` for a byte-stable handoff (AC5)."""
         claims = await claims_for(conn, account_entity_id, VALUE_NARRATIVE, scope=scope)
@@ -375,6 +433,8 @@ class HandoffAssembler:
                 continue
             if value.get("icp_spec_version") != icp_spec_version:
                 continue
+            if icp_key is not None and value.get("icp_key") != icp_key:
+                continue  # a different ICP segment (D5)
             if claim.verification_status is not VerificationStatus.VERIFIED:
                 continue  # an ungrounded / unpromoted narrative is not handed off
             support = await read_claim_support(conn, claim.id)
@@ -409,13 +469,15 @@ class HandoffAssembler:
         profile_claims: tuple[ProfileClaimView, ...],
         committee: tuple[CommitteeMember, ...],
         narrative: tuple[ValueNarrativeItem, ...],
+        field_conflicts: dict[str, tuple[ClaimId, ...]],
     ) -> dict[str, ProvenanceRef]:
         """Resolve **every** claim id appearing anywhere to its (immutable) source provenance — the
         literal "every fact links to its source" map (overview §3, AC2). Collects: each score
         sub-component's ``evidence_claim_ids``; each account-profile claim id; each committee
         ``profile_claim`` id (only the *included*, outreach-eligible ones — an excluded
         weak/disallowed facet is absent from the handoff AND the index — M13.1); each narrative id
-        and its account-evidence support ids.
+        and its account-evidence support ids; each ``field_conflicts`` contender id (the disagreeing
+        tier≤2 claims surfaced on the handoff are themselves traceable).
 
         A current-truth **value** (a profile / committee / narrative claim) is non-superseded by
         construction — it was read via ``current_value`` / the seam / live ``claims_for``. A
@@ -436,6 +498,8 @@ class HandoffAssembler:
         for item in narrative:
             ids.add(item.claim_id)
             ids.update(item.supporting.account_evidence_ids)
+        for contender_ids in field_conflicts.values():
+            ids.update(contender_ids)
 
         if not ids:
             return {}

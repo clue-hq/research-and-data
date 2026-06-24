@@ -170,14 +170,19 @@ def _conflict(
 
     Agreement is the shared :func:`core.values_agree` under the field's ``equality_mode`` — so a
     ``numeric_tol`` / ``semantic`` field's two authoritative sources that *agree* (headcount 1000 vs
-    1024; "Snowflake" vs "uses Snowflake") no longer raise a spurious conflict, and the merge agrees
-    with the M9.2 corroborator (which groups by the same predicate). Checked **pairwise** over the
-    authoritative claims (mirroring ``verification.corroboration``: a claim conflicts if it
-    disagrees with *any* other authoritative claim) rather than by counting value-groups, so a
+    1024; "Snowflake" vs "uses Snowflake") no longer raise a spurious conflict. The merge now shares
+    its **equality predicate** and **pairwise** detection with the M9.2 corroborator (a claim
+    conflicts if it disagrees with *any* other contender, not by counting value-groups), so a
     non-transitive mode (960/1000/1040 at rel-tol 0.05, where 1000 bridges 960↔1040 yet 960 and 1040
-    disagree) cannot mask a genuine conflict behind a bridging anchor. The agreeing middle value is
+    disagree) cannot mask a genuine conflict behind a bridging anchor; the agreeing middle value is
     not surfaced. For ``EXACT`` this is identical to the prior distinct-value check on the common
-    two-source case."""
+    two-source case.
+
+    The two surfaces do NOT share the exact contender *population*: merge contenders come from
+    :func:`_is_eligible` (which still admits a ``FLAGGED`` tier≤2 claim), whereas the corroborator's
+    ``_is_authoritative`` additionally excludes ``FLAGGED``. The divergence is intentional and safe
+    (merge over-flags toward review); ``conflict_flag`` — the FLAGGED-excluding, mode-aware signal —
+    is what M13.1 consumes, not ``CurrentValue.conflict``."""
     contenders = sorted(
         (
             c

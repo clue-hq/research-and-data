@@ -221,15 +221,23 @@ def test_equality_tolerances_align_across_policies() -> None:
     layer loosens a tolerance) would re-split the two surfaces; this makes it a build failure."""
     corr = CorroborationPolicy()
     merge = MergePolicy()
+    cfg = ConfigMergePolicy()  # the M0.4 config/schema seam shape
     assert (
-        corr.numeric_rel_tolerance == merge.numeric_rel_tolerance == DEFAULT_NUMERIC_REL_TOLERANCE
+        corr.numeric_rel_tolerance
+        == merge.numeric_rel_tolerance
+        == cfg.numeric_rel_tolerance
+        == DEFAULT_NUMERIC_REL_TOLERANCE
     )
     assert (
-        corr.numeric_abs_tolerance == merge.numeric_abs_tolerance == DEFAULT_NUMERIC_ABS_TOLERANCE
+        corr.numeric_abs_tolerance
+        == merge.numeric_abs_tolerance
+        == cfg.numeric_abs_tolerance
+        == DEFAULT_NUMERIC_ABS_TOLERANCE
     )
     assert (
         corr.semantic_jaccard_threshold
         == merge.semantic_jaccard_threshold
+        == cfg.semantic_jaccard_threshold
         == DEFAULT_SEMANTIC_JACCARD_THRESHOLD
     )
 
