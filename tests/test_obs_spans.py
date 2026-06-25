@@ -53,6 +53,7 @@ def test_campaign_phases_match_doc_c_section_4_exactly() -> None:
         "tier_checkpoint",
         "deep",
         "verification",
+        "review",
         "handoff",
     )
 

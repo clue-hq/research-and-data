@@ -39,6 +39,9 @@ from clue_research.core.enums import (
     PreSpendVerdict,
     ResearchMode,
     ReuseScope,
+    ReviewAction,
+    ReviewRejectReason,
+    ReviewSessionStatus,
     UseClass,
     UseReason,
     VerificationStatus,
@@ -151,6 +154,19 @@ from clue_research.core.primitives import (
 )
 from clue_research.core.resolver import Resolver, ResolverError, RetryableResolverError
 from clue_research.core.retrieval import ClientKnowledgeChunk, ClientKnowledgeRetriever
+from clue_research.core.review import (
+    ClaimAnnotation,
+    FieldConflict,
+    ReviewActionOutcome,
+    ReviewClaimRow,
+    ReviewCommitteeMember,
+    ReviewDispositionEmitter,
+    ReviewResumeHook,
+    ReviewSession,
+    ReviewSessionId,
+    ReviewSurface,
+    VerificationAnnotationReader,
+)
 from clue_research.core.source import SourceManifest
 from clue_research.core.verification import (
     AgeOutCandidate,
@@ -212,6 +228,10 @@ __all__ = [
     "PreSpendKind",
     "EnumerationScope",
     "JudgeVerdict",
+    # enums — M13.1 review surface
+    "ReviewAction",
+    "ReviewSessionStatus",
+    "ReviewRejectReason",
     # fields
     "FieldClass",
     "FieldKey",
@@ -326,4 +346,16 @@ __all__ = [
     # client-knowledge retrieval seam (M5↔M12 contract; impl stubbed in M12/stage0)
     "ClientKnowledgeChunk",
     "ClientKnowledgeRetriever",
+    # review-surface seam (M13.1 Tier-1 review; impl in clue_research.review, wired at api root)
+    "ReviewSessionId",
+    "ClaimAnnotation",
+    "ReviewClaimRow",
+    "ReviewCommitteeMember",
+    "FieldConflict",
+    "ReviewSession",
+    "ReviewActionOutcome",
+    "ReviewSurface",
+    "VerificationAnnotationReader",
+    "ReviewResumeHook",
+    "ReviewDispositionEmitter",
 ]
