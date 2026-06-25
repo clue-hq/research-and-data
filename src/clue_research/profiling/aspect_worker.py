@@ -160,6 +160,15 @@ class AspectCoverage(BaseModel):
         return self.model_dump(mode="json")
 
 
+# The M11.3 pre-resolution synthesis guard (``synthesis.guard_synthesis_resolution``), injected as a
+# callable so ``profiling`` need not import ``synthesis`` (the independence contract). Given a field
+# + the worker's research mode it raises ``SynthesisGateError`` if an account-synthesis field is
+# about to be resolved off the account axis or outside Pass B — a wiring-regression tripwire on top
+# of the structural firewall (the resolver returns ``[]`` for contacts; the fields are deep-pass).
+# A no-op for any non-synthesis field, so the worker may call it for every field it fills.
+SynthesisGuard = Callable[[FieldDef, ResearchMode], None]
+
+
 class AspectProfilingWorker:
     """A mode-M2 account-profiling :class:`~clue_research.core.AspectWorker` (M8.1).
 
@@ -182,6 +191,7 @@ class AspectProfilingWorker:
         gateway: LLMGateway | None = None,
         planner_model: str | None = None,
         pre_spend_gate: PreSpendGate | None = None,
+        synthesis_guard: SynthesisGuard | None = None,
         claim_filter: ClaimFilter | None = None,
     ) -> None:
         self.aspect = aspect
@@ -192,6 +202,7 @@ class AspectProfilingWorker:
         self._gateway = gateway
         self._planner_model = planner_model
         self._pre_spend_gate = pre_spend_gate
+        self._synthesis_guard = synthesis_guard
         self._claim_filter = claim_filter
 
     async def research(self, ctx: AspectContext) -> WorkerResult:
@@ -364,6 +375,11 @@ class AspectProfilingWorker:
                 field_key=field_key,
                 disposition=ProfilingFieldDisposition.SOURCES_EXHAUSTED,
             )
+        # 4.5 synthesis guard (M11.3 defense-in-depth; injected). Asserts an account-synthesis field
+        # is resolved on the account axis in Pass B before the (possibly tier-4) spend — a no-op for
+        # any non-synthesis field. Raises ``SynthesisGateError`` loudly on a wiring regression.
+        if self._synthesis_guard is not None:
+            self._synthesis_guard(field_def, self._mode)
         result = await resolve_field(
             conn,
             entity,

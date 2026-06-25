@@ -332,3 +332,150 @@ def test_account_spend_records_prior_gate_decision(require_profiling_db: None) -
             assert written, "gate passed but the spend wrote no claim"
 
     run_async(scenario())
+
+
+# --- M9.1 AC6 (tier-4): the M11 synthesis spend path is gated before it spends --------------
+
+_T4_FIELD = "account.synth_probe"  # a tier-4 account-synthesis gap field
+_T4_SOURCE = "synth_probe_src"  # a tier-4 synthesis source (the exa_deep/parallel_task shape)
+
+
+class _FakeT4(_Fake):
+    """A tier-4 synthesis resolver double (the exa_deep/parallel_task shape) that would spend."""
+
+    tier = 4
+
+
+def _t4_probe_claim() -> Claim:
+    return account_claim(
+        entity_id=new_entity_id(),  # placeholder — _FakeT4 re-stamps the resolved entity_id
+        field_key=_T4_FIELD,
+        value_json="engineers describe relentless on-call burnout",
+        source_tier=4,
+        extraction_method=ExtractionMethod.LLM_SYNTHESIS,
+        confidence=0.9,
+        run_id=new_run_id(),  # placeholder — the engine stamps the run's id
+        research_mode=ResearchMode.ACCOUNT_PROFILING,
+        source_url="https://news.example/acme",
+        evidence_span="relentless on-call burnout",
+        cost_cents=Decimal(0),
+    )
+
+
+def test_tier4_synthesis_spend_records_prior_gate_decision(require_profiling_db: None) -> None:
+    """The headline M11 path: with the composition root's gate injected and an ICP authorizing a
+    **tier-4** synthesis source, the account worker gates the field *before* the waterfall invokes
+    the tier-4 resolver — a ``gate_decision`` keyed on ``(run_id, entity, field)`` with
+    ``source_tier=4`` exists, and only then is the synthesis claim written (M9.1 AC6 tier-4)."""
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            await seed_packs(conn)
+            await register_field(
+                conn,
+                FieldDef(
+                    field_key=_T4_FIELD,
+                    value_type="str",
+                    tier_plan=(_T4_SOURCE,),
+                    pass_kind=PassKind.DEEP,
+                ),
+            )
+            await register_source(
+                conn,
+                RegistrySourceManifest(
+                    manifest=SourceManifest(
+                        source_key=_T4_SOURCE,
+                        modality=Modality.TEXT,
+                        entity_scope=EntityScope.ACCOUNT,
+                        yields=("account",),
+                        tier=4,  # the least-trusted, most-expensive synthesis tier
+                        cost_cents=Decimal(0),
+                    ),
+                    active=True,
+                ),
+            )
+            await register_pack_catalog(
+                conn,
+                Pack(
+                    pack_key="synthpack",
+                    namespace="synthpack",
+                    title="Synth",
+                    source_profile=(
+                        PackSourceSlot(
+                            sources=(
+                                WeightedSource(
+                                    source_key=_T4_SOURCE, weight=SourceWeight.HIGH, rank=1
+                                ),
+                            )
+                        ),
+                    ),
+                ),
+            )
+            spec = await create_icp_spec(
+                conn,
+                client_id=_TENANT,
+                icp_key="seg1",
+                created_from=ICPCreatedFrom.SYNTHESIS,
+                enabled_packs=("synthpack",),
+            )
+            bind_resolver(_T4_SOURCE, _FakeT4([_t4_probe_claim()]))
+            account_id = await insert_account_entity(
+                conn,
+                canonical_name="Acme Robotics",
+                primary_domain="acme.com",
+                status=AccountStatus.ACTIVE,
+            )
+
+            @asynccontextmanager
+            async def gate_conn() -> AsyncIterator[AsyncConnection]:
+                yield conn
+
+            gate = build_pre_spend_gate(conn_factory=gate_conn)
+            workers = build_profiling_workers(
+                gateway=FakeGateway(),
+                committee_sources=_COMMITTEE,
+                session_factory=conn_session_factory(conn),
+                pre_spend_gate=gate,
+            )
+            account_worker = next(w for w in workers if w.aspect == "account")
+
+            run_id = new_run_id()
+            ctx = AspectContext(
+                entity_id=account_id,
+                campaign_run_id=new_campaign_run_id(),
+                run_id=run_id,
+                tier="top",
+                aspect="account",
+                field_keys=(_T4_FIELD,),
+                params=params_for_run(client_id=_TENANT, icp_key="seg1", icp_version=spec.version),
+            )
+            await account_worker.research(ctx)
+
+            rows = await _gate_rows(conn, run_id)
+            probe = [(fk, d, t) for fk, d, t in rows if fk == _T4_FIELD]
+            assert probe, f"no gate_decision recorded before the tier-4 synthesis spend: {rows}"
+            decision, tier = probe[0][1], probe[0][2]
+            assert decision == PreSpendVerdict.PASS.value
+            assert tier == 4  # gated on the tier-4 synthesis source — the M11 spend path
+            written = await claims_for(conn, account_id, _T4_FIELD, scope=PUBLIC_ONLY)
+            assert written, "gate passed but the tier-4 synthesis spend wrote no claim"
+
+    run_async(scenario())
+
+
+# --- M11.3: the synthesis guard is injected into the account-axis workers -------------------
+
+
+def test_composition_injects_synthesis_guard_into_account_axis() -> None:
+    """The composition threads ``guard_synthesis_resolution`` (M11.3's account-only + Pass-B-only
+    tripwire) into the account-axis workers, so a mis-wired synthesis resolve fails loud before the
+    tier-4 spend — the M8-side ``guard_synthesis_resolution`` call site (DB-free)."""
+    from clue_research.synthesis import guard_synthesis_resolution
+
+    workers = build_profiling_workers(gateway=FakeGateway(), committee_sources=_COMMITTEE)
+    account_axis = [w for w in workers if w.aspect in {"core", "account", "account.resonance"}]
+    assert {w.aspect for w in account_axis} == {"core", "account", "account.resonance"}
+    for worker in account_axis:
+        assert getattr(worker, "_synthesis_guard", None) is guard_synthesis_resolution, (
+            worker.aspect
+        )
