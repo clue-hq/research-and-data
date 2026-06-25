@@ -223,9 +223,12 @@ class ClientPolicy(BaseModel):
 
     def should_store(self, use_class: UseClass) -> bool:
         """Whether a claim of ``use_class`` may be *persisted* at all (Doc D §4 minimization;
-        M8 reads this at the insert site). Only ``sensitive`` is gated, by ``store_sensitive``;
-        non-sensitive personal data is always storable (the gate governs its *use*, not storage).
-        """
+        M8 reads this at the insert site). A use-class the allow-map marks ``NOT_STORED`` (the
+        strictest disposition — "not retained at all") is never stored, for any class; otherwise it
+        is storable, except ``sensitive`` which is additionally gated by the ``store_sensitive``
+        sub-flag (so Option 1/3 minimize special-category data while Option 2 stores it)."""
+        if self.allow_map[use_class] is UseDisposition.NOT_STORED:
+            return False
         return use_class is not UseClass.SENSITIVE or self.store_sensitive
 
     def gathers_source(self, source_key: str) -> bool:
@@ -504,11 +507,10 @@ def _parse_regime_overrides(
 
 
 def _parse_sensitive_overrides(raw: object) -> tuple[SensitiveOverride, ...]:
-    return tuple(
-        SensitiveOverride.model_validate(entry)
-        for entry in _as_array(raw)
-        if isinstance(entry, dict)
-    )
+    # Every array element is validated — a non-object element raises (fail-loud, like the sibling
+    # _parse_allow_map / _parse_regime_overrides), never silently dropped: a malformed entry in the
+    # Art. 9 override register must surface, not vanish into an empty register no operator can see.
+    return tuple(SensitiveOverride.model_validate(entry) for entry in _as_array(raw))
 
 
 async def load_client_policy(

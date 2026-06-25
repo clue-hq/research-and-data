@@ -111,6 +111,29 @@ def test_posture_change_bumps_policy_version() -> None:  # AC: a posture change 
     assert v2.version == 2  # a subsequent gate decision records the new version
 
 
+def test_m104_migration_defaults_match_code() -> None:
+    # Pure no-DB drift guard (mirrors the M10.3 allow_map guard + the M9.4 binding_policy guard):
+    # the migration's hand-written SQL DEFAULTs must equal the Option-1 / DEFAULT_CLIENT_POLICY
+    # values, so a preset retune that forgets the migration (or vice-versa) fails `make check`
+    # loudly without a database.
+    import re
+
+    src = (
+        Path(__file__).resolve().parents[2]
+        / "alembic/versions/196d37e4a179_m10_4_posture_client_policy_columns.py"
+    ).read_text()
+    p = DEFAULT_CLIENT_POLICY  # == client_policy_for_posture(DEFAULT_POSTURE)
+
+    ss = re.search(r"source_scope text NOT NULL DEFAULT '([^']*)'", src)
+    assert ss is not None and ss.group(1) == p.source_scope.value  # 'full_sweep'
+    st = re.search(r"store_sensitive boolean NOT NULL DEFAULT (true|false)", src)
+    assert st is not None and (st.group(1) == "true") is p.store_sensitive  # false (Doc D §4)
+    gs = re.search(r"gather_scope jsonb NOT NULL DEFAULT '(\[\])'", src)
+    assert gs is not None and not p.gather_scope
+    so = re.search(r"sensitive_overrides jsonb NOT NULL DEFAULT '(\[\])'", src)
+    assert so is not None and not p.sensitive_overrides
+
+
 def test_no_posture_named_branch_in_gate_or_collection() -> None:  # AC: "not permanent forks"
     # grep guard (Doc D §6): no posture-named if/elif branch exists in the gate or the posture
     # resolution — postures are DATA (the POSTURE_PRESETS table), never if/else. The preset dict
