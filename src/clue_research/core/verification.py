@@ -223,11 +223,35 @@ class ReResearchCandidate(BaseModel):
     priority: int = 5
 
 
+class AgeOutCandidate(BaseModel):
+    """A personal claim past its **retention horizon** (``FreshnessState.EXPIRED``), surfaced to
+    M10.5 for lawful age-out / erasure — the M9.5↔M10.5 seam (M9.5 detects + surfaces; M10.5 owns
+    the tombstone/erasure). One per expired claim (each erased individually); ``claim_id`` is the
+    durable reference M10.5 tombstones **before the next merge read**, so ``current_value`` and the
+    handoff stop seeing it with no merge-ranking change. ``retention_days`` is the use-class-keyed
+    retention horizon it crossed — *distinct from* the freshness TTL (``Staleness.ttl_days``): a
+    claim can be FRESH by its field TTL yet EXPIRED by a shorter retention horizon (Doc D §4).
+
+    Promoted to ``core`` in the phase-3 pre-flight contract-delta (it postdates the Beat-0 freeze):
+    the M9.5 impl lives in ``verification`` which ``compliance`` may not import, so the *type* must
+    live here for M10.5 to consume it via the ``core`` seam."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    claim_id: ClaimId
+    entity_id: EntityId
+    field_key: FieldKey
+    age_days: float
+    retention_days: float | None = None
+
+
 @runtime_checkable
 class Freshness(Protocol):
     """The freshness engine (M9.5). ``evaluate`` is a pure staleness verdict for one claim (mirrors
     the merge layer's freshness computation); ``due_for_refresh`` scans the store and returns
-    re-research candidates for M7 to schedule — it returns candidates, it does not fetch.
+    re-research candidates for M7 to schedule; ``due_for_age_out`` scans for personal claims past
+    their *retention* horizon (EXPIRED) and surfaces them to M10.5 for tombstone/erasure (the
+    M9.5↔M10.5 seam). Both scans return candidates — they never fetch or erase.
 
     ``evaluate``'s ``ttl`` is an *override*: when given (tests, client-specific cadence) it is used
     directly; when ``None`` the implementation reads the field's configured
@@ -244,3 +268,10 @@ class Freshness(Protocol):
         entity_ids: tuple[EntityId, ...] | None = None,
         field_keys: tuple[FieldKey, ...] | None = None,
     ) -> tuple[ReResearchCandidate, ...]: ...
+
+    async def due_for_age_out(
+        self,
+        *,
+        entity_ids: tuple[EntityId, ...] | None = None,
+        field_keys: tuple[FieldKey, ...] | None = None,
+    ) -> tuple[AgeOutCandidate, ...]: ...

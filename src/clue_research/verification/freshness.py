@@ -63,6 +63,7 @@ from clue_research.claimstore import ALL_TENANTS, TenantScope
 from clue_research.config.policy import RetentionTtls
 from clue_research.config.schema import FreshnessTtls
 from clue_research.core import (
+    AgeOutCandidate,
     Claim,
     ClaimId,
     EntityId,
@@ -246,21 +247,9 @@ class CadencePolicy(BaseModel):
 DEFAULT_CADENCE_POLICY = CadencePolicy()
 
 
-# --- the re-research / age-out candidate value types ------------------------
-
-
-class AgeOutCandidate(BaseModel):
-    """A personal claim past its retention horizon, surfaced to M10.5 for lawful age-out/erasure
-    (M9.5 detects + surfaces; M10.5 owns the erasure). One per expired claim (each must be erased
-    individually). The ``claim_id`` is the durable reference M10.5 tombstones."""
-
-    model_config = ConfigDict(frozen=True, extra="forbid")
-
-    claim_id: ClaimId
-    entity_id: EntityId
-    field_key: FieldKey
-    age_days: float
-    retention_days: float | None = None
+# ``AgeOutCandidate`` now lives in ``core.verification`` (phase-3 pre-flight contract-delta): it is
+# the M9.5↔M10.5 seam, so M10.5 (``compliance``, which may not import ``verification``) reads it via
+# ``core``. Imported above; this package's ``__init__`` re-exports it for back-compat.
 
 
 # --- internal scan row ------------------------------------------------------

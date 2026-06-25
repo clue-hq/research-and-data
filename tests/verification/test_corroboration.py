@@ -29,6 +29,9 @@ from clue_research.claimstore import (
 )
 from clue_research.config import MergePolicy as ConfigMergePolicy
 from clue_research.core import (
+    DEFAULT_NUMERIC_ABS_TOLERANCE,
+    DEFAULT_NUMERIC_REL_TOLERANCE,
+    DEFAULT_SEMANTIC_JACCARD_THRESHOLD,
     AccountStatus,
     Claim,
     ClaimId,
@@ -208,6 +211,35 @@ def test_conflict_tier_threshold_aligns_across_policies() -> None:
         band == MergePolicy().conflict_tier_threshold
     )  # claimstore merge layer (the engine reads)
     assert band == ConfigMergePolicy().conflict_tier_threshold  # config/schema.py M0.4 seam shape
+
+
+def test_equality_tolerances_align_across_policies() -> None:
+    """Drift guard (pure, ``make check`` — no DB): the numeric / semantic tolerances on the
+    corroborator's :class:`CorroborationPolicy` and the merge's :class:`MergePolicy` must match each
+    other AND the shared ``core`` defaults — so the mode-aware merge conflict check ([M9.2×M1.2])
+    decides "two authoritative sources agree" identically to the corroborator. Silent drift (one
+    layer loosens a tolerance) would re-split the two surfaces; this makes it a build failure."""
+    corr = CorroborationPolicy()
+    merge = MergePolicy()
+    cfg = ConfigMergePolicy()  # the M0.4 config/schema seam shape
+    assert (
+        corr.numeric_rel_tolerance
+        == merge.numeric_rel_tolerance
+        == cfg.numeric_rel_tolerance
+        == DEFAULT_NUMERIC_REL_TOLERANCE
+    )
+    assert (
+        corr.numeric_abs_tolerance
+        == merge.numeric_abs_tolerance
+        == cfg.numeric_abs_tolerance
+        == DEFAULT_NUMERIC_ABS_TOLERANCE
+    )
+    assert (
+        corr.semantic_jaccard_threshold
+        == merge.semantic_jaccard_threshold
+        == cfg.semantic_jaccard_threshold
+        == DEFAULT_SEMANTIC_JACCARD_THRESHOLD
+    )
 
 
 def test_corroboration_config_defaults() -> None:

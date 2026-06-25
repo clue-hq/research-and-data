@@ -68,6 +68,22 @@ SPAN_VERIFICATION_FRESHNESS = "verification.freshness"
 
 # --- compliance (M10) — appropriateness/use. DISTINCT from the judge (Doc D §5) ---
 SPAN_COMPLIANCE_USE_GATE = "compliance.use_gate"
+# Jurisdiction resolution (M10.1): resolve one data-protection regime per contact from its location
+# evidence. Its own span so "which regime governs this person, and how confidently" is queryable
+# (Doc D §1) — separate from the use gate's per-claim appropriateness decision.
+SPAN_COMPLIANCE_JURISDICTION = "compliance.jurisdiction"
+# Lawful-basis recording (M10.5): the basis a personal claim is held under (Doc D §4 —
+# legitimate_interest for professional B2B; none for sensitive). Its own span so "why are we allowed
+# to hold this" is queryable as a distinct compliance event.
+SPAN_COMPLIANCE_LAWFUL_BASIS = "compliance.lawful_basis"
+# Data-subject rights / erasure (M10.5): one span per access / rectify / erase / object operation —
+# the audited "stop holding this" surface (Doc D §4). Tombstoning is append-only supersession, so
+# erasure is a queryable, replayable compliance event, distinct from the retention age-out sweep.
+SPAN_COMPLIANCE_DSAR = "compliance.dsar"
+# Retention age-out sweep (M10.5): the periodic pass that tombstones personal claims past their
+# retention horizon (FreshnessState.EXPIRED, surfaced by the M9.5 core.Freshness seam) before the
+# merge read — a substrate exclusion, not a use-gate reason (D-EXP).
+SPAN_COMPLIANCE_RETENTION_SWEEP = "compliance.retention_sweep"
 
 # --- campaign-run phases (Doc C §4) ----------------------------------------
 # Exactly the Doc C §4 / conventions §3 phase sequence (annotations like "(Pass A)"/"(human)" are

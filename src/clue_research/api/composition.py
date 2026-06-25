@@ -27,7 +27,7 @@ in-graph (today they are driven via their direct callables, which populate those
 
 from __future__ import annotations
 
-from collections.abc import Callable, Sequence
+from collections.abc import Awaitable, Callable, Sequence
 from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass
 
@@ -50,6 +50,7 @@ from clue_research.durable import (
     WorkerRegistry,
 )
 from clue_research.profiling import (
+    SynthesisGuard,
     account_axis_workers,
     load_committee_pack,
     load_deep_profiling_pack,
@@ -59,6 +60,7 @@ from clue_research.profiling.contact import ContactProfileAspectWorker
 from clue_research.profiling.contact.binding import BindingClassifier, BindingInput
 from clue_research.profiling.runtime import SessionFactory
 from clue_research.sources import seed_source_manifests
+from clue_research.synthesis import guard_synthesis_resolution
 from clue_research.verification import (
     DEFAULT_BINDING_POLICY,
     DEFAULT_PRE_SPEND_POLICY,
@@ -69,6 +71,8 @@ from clue_research.verification import (
 )
 
 __all__ = [
+    "RESEARCH_PACK_LOADERS",
+    "VERIFICATION_GATE_ORDER",
     "load_research_packs",
     "VerificationBindingClassifier",
     "production_binding_classifier",
@@ -84,18 +88,41 @@ _ConnFactory = Callable[[], AbstractAsyncContextManager[AsyncConnection]]
 
 # --- packs + source manifests ------------------------------------------------
 
+PackLoader = Callable[[AsyncConnection], Awaitable[None]]
+
+# The ordered field-pack loaders a deep run registers — a *registry list*, not a hand-edited call
+# sequence (phase-3 pre-flight PF-7). Each new milestone appends its loader from its OWN
+# ``api/<milestone>_wiring.py`` (e.g. ``RESEARCH_PACK_LOADERS.append(load_synthesis_pack)``), so
+# M10 / M11 / M12 never co-edit ``load_research_packs`` — the M2×M3-class collision the pre-flight
+# avoids. Source manifests are seeded after all field packs (``yields`` reference registered keys).
+RESEARCH_PACK_LOADERS: list[PackLoader] = [
+    load_core_pack,  # M1 core pack
+    load_deep_profiling_pack,  # M8 account.resonance.* / contact.facet.*
+    load_committee_pack,  # M8.3 contact.role_on_committee / contact.persona
+]
+
+# The frozen order verification gates apply to a claim (phase-3 pre-flight PF-7; Doc D §7). The use
+# gate (M10.3) registers LAST — after the M9 accuracy/identity gates: "is it true / is it this
+# person?" before "may we use it?". M10's wiring reads this to slot the use gate; do not reorder.
+VERIFICATION_GATE_ORDER: tuple[str, ...] = (
+    "pre_spend",  # M9.1 — before any spend
+    "resolve",  # M4 waterfall — produce claims
+    "corroboration",  # M9.2
+    "faithfulness",  # M9.3 — tier-4 synthesized claims
+    "identity_binding",  # M9.4 — contact claims
+    "use_gate",  # M10.3 — appropriateness/use, runs last
+)
+
 
 async def load_research_packs(conn: AsyncConnection) -> None:
     """Register every field pack + source manifest a deep-profiling run reads (idempotent).
 
-    The M1 core pack, the M8 tiny seed (``account.resonance.*`` / ``contact.facet.*``), the M8.3
-    committee pack (``contact.role_on_committee`` / ``contact.persona``), and the M4 source
-    manifests. Idempotent: ``register_field`` is a read-then-conditional-insert, so re-loading on an
-    already-seeded connection is a no-op.
+    Iterates :data:`RESEARCH_PACK_LOADERS` (each milestone appends its loader from its own wiring
+    module — PF-7), then seeds the M4 source manifests last. Idempotent: ``register_field`` is a
+    read-then-conditional-insert, so re-loading on an already-seeded connection is a no-op.
     """
-    await load_core_pack(conn)
-    await load_deep_profiling_pack(conn)
-    await load_committee_pack(conn)
+    for loader in RESEARCH_PACK_LOADERS:
+        await loader(conn)
     await seed_source_manifests(conn)
 
 
@@ -191,6 +218,7 @@ def build_profiling_workers(
     session_factory: SessionFactory = transaction,
     pre_spend_gate: PreSpendGate | None = None,
     binding_classifier: BindingClassifier | None = None,
+    synthesis_guard: SynthesisGuard | None = guard_synthesis_resolution,
     role_model: str | None = None,
     recursion_policy: RecursionPolicy | None = None,
     pack_namespaces: Sequence[str] = (),
@@ -202,8 +230,10 @@ def build_profiling_workers(
     contact profiler (the authoritative ``binding_classifier`` — defaults to
     :func:`production_binding_classifier`). The ``pre_spend_gate`` is threaded into all three axes:
     account field-fill (FIELD), committee people-enumeration (ENUMERATION) + role inference (FIELD),
-    and contact facet-fill (FIELD). ``recursion_policy`` is shared with the graph so the contact
-    facet sub-worker soft cap and the graph's ``SpawnGuard`` hard cap agree.
+    and contact facet-fill (FIELD). The ``synthesis_guard`` (M11.3 ``guard_synthesis_resolution``,
+    the account-only + Pass-B-only pre-resolution tripwire) is threaded into the account axis.
+    ``recursion_policy`` is shared with the graph so the contact facet sub-worker soft cap and the
+    graph's ``SpawnGuard`` hard cap agree.
     """
     recursion = recursion_policy or RecursionPolicy()
     binder = binding_classifier or production_binding_classifier()
@@ -213,6 +243,7 @@ def build_profiling_workers(
             session_factory=session_factory,
             gateway=gateway,
             pre_spend_gate=pre_spend_gate,
+            synthesis_guard=synthesis_guard,
         )
     )
     workers.append(

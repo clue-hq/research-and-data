@@ -331,6 +331,33 @@ async def get_contact(conn: AsyncConnection, entity_id: EntityId) -> ContactEnti
     return _row_to_contact(dict(row)) if row is not None else None
 
 
+async def contact_ids_for_account(
+    conn: AsyncConnection, account_entity_id: EntityId
+) -> tuple[EntityId, ...]:
+    """The **live** (non-merged) contact entity ids under an account — the committee membership the
+    VERIFICATION pass and the M12 handoff assembler iterate.
+
+    Merged-loser contacts are excluded (``status = 'merged'``): a merge re-keys the loser's claims
+    onto the survivor, which is itself returned, so the survivor's claims are covered exactly once.
+    Read-only; ordered by ``id`` for deterministic iteration. Entities are not tenant-scoped (claims
+    carry tenancy), so this takes no scope — like :func:`get_contact`."""
+    rows = (
+        (
+            await conn.execute(
+                text(
+                    "SELECT id FROM contact_entity "
+                    "WHERE account_entity_id = :acct AND status <> CAST(:merged AS entity_status) "
+                    "ORDER BY id"
+                ),
+                {"acct": account_entity_id, "merged": AccountStatus.MERGED.value},
+            )
+        )
+        .scalars()
+        .all()
+    )
+    return tuple(EntityId(r) for r in rows)
+
+
 async def get_entity(
     conn: AsyncConnection, entity_id: EntityId, entity_type: EntityType
 ) -> AccountEntity | ContactEntity | None:
