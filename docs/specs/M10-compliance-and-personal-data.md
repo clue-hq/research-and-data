@@ -43,7 +43,7 @@ Concretely, this layer delivers, all as **policy-as-data behind stable seams** (
   - Given a contact with neither, `resolve` returns the strict-default regime and sets `jurisdiction_unknown = true`.
   - A later higher-tier location claim that supersedes the earlier one changes `resolved_jurisdiction` deterministically via `current_value`, with the prior jurisdiction claim marked `superseded_by` (no UPDATE-in-place).
   - The region→regime mapping is loaded from config; adding a new region row changes resolution with zero code change (verified by a config-only test).
-  - Every returned `JurisdictionResolution` carries provenance claim ids; none is emitted without provenance.
+  - A **claim-derived** resolution (`derived_from` ∈ {`contact_location`, `account_hq`} read from a location *claim*) carries the upstream location claim id(s) in `provenance_claim_ids`. *(Implementation note: a resolution read from a resolved **entity column** — `ContactEntity.geo` / `AccountEntity.hq_geo`, which carries no claim id — and the strict-default fall-through carry empty `provenance_claim_ids` by construction; the resolution is itself always persisted as a provenance-bearing `contact.jurisdiction` claim, so the regime is never *stored* without provenance. This supersedes the original "none is emitted without provenance" wording, which conflicted with the column-fallback and strict-default ACs above.)*
 - **Out of scope:** Authoring the legal *content* of each regime (M10.4 policy config; legal facts gated by D8). Geo-IP or third-party jurisdiction enrichment (a future resolver behind the seam). Account-level jurisdiction for firmographic data (firmographic claims are not personal data and are out of the use-gate's scope).
 - **Open decisions:** D4 (**resolved: mixed/global**) — this issue exists precisely because of that resolution; build accordingly. D8 — the *list* of regimes and their boundaries (US state laws, EU/UK) must be confirmed before go-live; the mapping is config so the list is replaceable without code.
 
@@ -65,7 +65,7 @@ Concretely, this layer delivers, all as **policy-as-data behind stable seams** (
   - An ambiguous "religion-adjacent hobby" claim is tagged `sensitive` (conservative tie-break verified).
   - Tagging is independent of accuracy: a claim that later fails the faithfulness judge still carried a use-class at extraction (the two are decoupled — Doc D §5).
   - The Art. 9 category list is loaded from config; adding a category re-classifies matching claims with zero code change.
-  - The tag-distribution span emits counts per use-class for observability (Doc C §6).
+  - The tag-distribution **metric** emits counts per use-class for observability (Doc C §6). *(Implementation note: realized as the at-rest claim-derived recorder `obs.record_use_class_distribution` / `METRIC_USE_CLASS_TOTAL`, consistent with the other four Doc C §6 surfaces which are metrics, not trace spans — supersedes the original "span" wording.)*
 - **Out of scope:** Deciding whether a `sensitive` claim is *stored* vs. *stored-but-locked* vs. *not collected* (that is the posture decision, M10.4). Deciding whether a tagged claim may *drive outreach* (the gate, M10.3). Identity-binding strength (M9.4). Collecting the claims themselves (M8).
 - **Open decisions:** D8 — the precise special-category boundaries depend on confirmed 2026 law; the category list is config so it tracks D8's resolution. D3 — tagging happens under all three postures (Doc D §6 all "use-class-tagged at extraction"), so this issue is posture-agnostic.
 

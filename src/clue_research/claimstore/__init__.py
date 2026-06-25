@@ -26,6 +26,7 @@ from clue_research.claimstore.claims import (
     insert_claim,
     record_verification,
     supersede_claim,
+    supersede_claims,
 )
 from clue_research.claimstore.merge import (
     DEFAULT_MERGE_POLICY,
@@ -62,6 +63,7 @@ __all__ = [
     # write contract (M1.1)
     "insert_claim",
     "supersede_claim",
+    "supersede_claims",
     "claims_for",
     "entities_with_field_claim",
     # verification verdict write (M9.2 — in-place on the trigger-allowlisted columns)
