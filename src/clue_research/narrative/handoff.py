@@ -72,6 +72,7 @@ from clue_research.core import (
 )
 from clue_research.narrative.fields import VALUE_NARRATIVE
 from clue_research.narrative.handoff_seams import HandoffCommitteeMember, HandoffCommitteeReader
+from clue_research.narrative.health import VerificationHealth, compute_verification_health
 from clue_research.narrative.support import (
     FaithfulnessCitation,
     read_claim_support,
@@ -132,7 +133,13 @@ class AssembledHandoff(BaseModel):
       ``<answering_model>@<prompt_version>``" (the [M9.3×M12] answering-model citation) — the frozen
       ``ProvenanceRef`` carries no model, so the citation rides here.
     * ``coverage_gap_personas``: committee personas with no live, verified narrative claim — the
-      M12.1 thin-coverage signal, surfaced explicitly (Doc C §7 coverage confidence)."""
+      M12.1 thin-coverage signal, surfaced explicitly (Doc C §7 coverage confidence).
+    * ``verification_health`` (M12.3): the trust posture that travels with the served object (Doc C
+      §6) — tier-4 judge pass rate + strong-binding share. Computed at assembly time over the
+      *unfiltered* committee (the only place with the honest strong-binding denominator), so it has
+      no
+      home on the frozen contract; defaulted ``None`` so a pre-M12.3 materialised row still
+      validates."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
@@ -142,6 +149,7 @@ class AssembledHandoff(BaseModel):
     intent_scored: bool = True
     narrative_citations: dict[str, FaithfulnessCitation] = {}
     coverage_gap_personas: tuple[Persona, ...] = ()
+    verification_health: VerificationHealth | None = None
 
 
 # --- pure helpers (DB-free, unit-testable) ----------------------------------
@@ -335,6 +343,16 @@ class HandoffAssembler:
                     ATTR_N_PROVENANCE: len(provenance),
                 },
             )
+            # 6) verification health (Doc C §6) over the UNFILTERED committee + narrative citations
+            # —
+            #    the honest strong-binding denominator (the handoff's committee is post-filter).
+            # Pure
+            #    + deterministic, so it keeps re-assembly byte-stable (AC5).
+            health = compute_verification_health(
+                narrative=narrative,
+                citations=citations,
+                committee_members=hand_members,
+            )
             (self._sink or get_metric_sink()).add(METRIC_HANDOFFS_ASSEMBLED, 1, {})
             return AssembledHandoff(
                 handoff=handoff,
@@ -343,6 +361,7 @@ class HandoffAssembler:
                 intent_scored=intent_scored,
                 narrative_citations=citations,
                 coverage_gap_personas=coverage_gaps,
+                verification_health=health,
             )
 
     async def _read_score(
