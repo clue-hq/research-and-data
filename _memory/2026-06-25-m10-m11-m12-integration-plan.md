@@ -76,10 +76,18 @@ Three layers, in this priority:
   last-write-wins over M12's. 5 hermetic tests (sweep-before-handoff order, run-scoped age-out,
   empty-run no operator-wide widening, payload augmentation, registration). Full suite 1786 passed.
 
+- **DONE — end-to-end DB negative governance tests** (`tests/compliance/test_governance_e2e.py`, 8
+  DB-gated): the integration proof on a real Postgres, composing the REAL components (M9.3 judge w/
+  stub gateway, M9.4 weak-binding merge exclusion, M10.3 use-gate, M10.5 RetentionSweep over the REAL
+  M9.5 FreshnessImpl, M1.2 merge). Asserts `current_value` / `is_outreach_promotable` (what M12
+  reads) EXCLUDES: a judge-rejected/no-span tier-4 synthesis claim (A; supported one promoted), a
+  weak-binding contact claim (B), a sensitive hook (C; `sensitive_locked`, not outreach-promotable),
+  a retention-EXPIRED-but-merge-FRESH sensitive claim after the sweep (D — the [M9.5×M1.2/M10.5]
+  ordering proof: served before sweep, tombstoned+absent after), and an objected contact's hooks
+  (E). Full suite 1794 passed.
+
 ## The deferred-wiring checklist (remaining — all at the api root)
 - `PreSpendGate.check` tier-4 spend routing (M9.1 AC-6); born-binding stamp into M8.4/M8.5.
-- End-to-end DB negative tests (rejected tier-4 / sensitive / weak-binding / objected absent from
-  `current_value` + the assembled handoff).
 - `synthesis.guard_synthesis_resolution` pre-resolution call site is a DEEP-phase concern (the resolve
   step), not VERIFICATION; wire it where M8 resolves tier-4 fields.
 - `PreSpendGate.check` routing on the tier-4 spend path (exa_deep/parallel_task) + the AC-6 lint test
