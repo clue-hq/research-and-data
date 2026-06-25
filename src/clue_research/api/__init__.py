@@ -20,6 +20,10 @@ Shipped so far:
 * the **M12 narrative wiring** (:mod:`clue_research.api.narrative_wiring`): the
 ``account.value_narrative``
   field pack, the Client-Knowledge retriever stub, and the M12.2 handoff assembler construction.
+* the **VERIFICATION composition root** (:mod:`clue_research.api.verification`): the
+  ``CampaignPhase.VERIFICATION`` phase handler that drives the frozen ``VERIFICATION_GATE_ORDER``
+  (corroboration → faithfulness → use-gate last) over the deep-produced claims and records per-field
+  verification-health — the integration keystone that makes tier-4 ``current_value`` non-empty.
 * the **M12.3 output/handoff boundary** — the FastAPI read API
   (:mod:`clue_research.api.handoff_app`) and its wiring (:mod:`clue_research.api.handoff_wiring`):
   the
@@ -63,6 +67,11 @@ from clue_research.api.narrative_wiring import (
     register_narrative_wiring,
 )
 from clue_research.api.synthesis_wiring import register_synthesis_wiring
+from clue_research.api.verification import (
+    VerificationPhaseHandler,
+    build_verification_phase_handler,
+    register_verification_phase_handler,
+)
 
 __all__ = [
     "load_research_packs",
@@ -77,6 +86,10 @@ __all__ = [
     "register_synthesis_wiring",
     # M10 compliance wiring
     "register_compliance_wiring",
+    # VERIFICATION phase handler (integration keystone)
+    "VerificationPhaseHandler",
+    "build_verification_phase_handler",
+    "register_verification_phase_handler",
     # M12 narrative wiring
     "register_narrative_wiring",
     "build_client_knowledge_retriever",
