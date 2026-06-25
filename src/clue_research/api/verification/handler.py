@@ -29,12 +29,12 @@ then records the per-field tier-4 verification-health (Doc C §6,
 failed and the batch continues (coverage-confidence, not all-or-nothing), like the DEEP handler.
 The result is references-only (counts + cost). Construct and register at the api composition root.
 
-**Scope note (production v1):** the injected ``account_resolver`` yields the high-tier *account*
-entities, so production v1 verifies the account-level synthesis claims (the primary value — making
-``current_value`` non-empty for Output-2). The handler is generic over the entities it loads claims
-for and fully drives the ``use_gate`` leg when ``contact.facet.*`` claims are present (exercised in
-the tests); sourcing the account's committee *contact* entities into the loader — which lights up
-the use-gate in production — is the immediate follow-on (it needs a contacts-under-account reader).
+**Coverage:** each account is verified together with its committee *contact* entities (resolved via
+the injected ``contact_resolver`` → ``identity.contact_ids_for_account``), so the account-level
+synthesis claims **and** the contacts' ``contact.facet.*`` hooks are governed in one pass — the
+account fields make ``current_value`` non-empty for Output-2, and the facet hooks clear the use-gate
+before M12 reads them. With no ``contact_resolver``/``use_gate_provider`` wired the pass is
+account-only (e.g. a no-committee run); both are defaulted on at the composition root.
 """
 
 from __future__ import annotations
@@ -78,6 +78,17 @@ VerificationAccountResolver = Callable[[PhaseContext], Awaitable[Sequence[Accoun
 # the composition root.
 ClaimLoader = Callable[[EntityId, TenantScope], Awaitable[Sequence[Claim]]]
 
+# Resolve the committee *contact* entity ids under an account so their ``contact.facet.*`` claims
+# are verified + use-gated alongside the account. ``None`` (the resolver unset) keeps verification
+# account-only. Production reads ``identity.contact_ids_for_account``.
+ContactResolver = Callable[[EntityId], Awaitable[Sequence[EntityId]]]
+
+# Build the per-client M10.3 :class:`~clue_research.core.compliance.UseGate` for a run (the gate is
+# parameterized by the client's posture policy, so it is resolved from ``ctx.client_id`` at run
+# time, not at handler-construction). ``None`` (the provider unset, or returning ``None``) skips the
+# use-gate leg. Production loads ``ClientPolicy`` and constructs ``compliance.UseGateImpl``.
+UseGateProvider = Callable[[str], Awaitable[UseGate | None]]
+
 
 @runtime_checkable
 class ClaimCorroborator(Protocol):
@@ -120,14 +131,16 @@ class VerificationPhaseHandler:
         load_claims: ClaimLoader,
         corroborator: ClaimCorroborator,
         judge: FaithfulnessJudge,
-        use_gate: UseGate | None = None,
+        contact_resolver: ContactResolver | None = None,
+        use_gate_provider: UseGateProvider | None = None,
         health_sink: MetricSink | None = None,
     ) -> None:
         self._account_resolver = account_resolver
         self._load_claims = load_claims
         self._corroborator = corroborator
         self._judge = judge
-        self._use_gate = use_gate
+        self._contact_resolver = contact_resolver
+        self._use_gate_provider = use_gate_provider
         self._health_sink = health_sink
 
     async def run(self, ctx: PhaseContext) -> PhaseResult:
@@ -147,7 +160,17 @@ class VerificationPhaseHandler:
             )
 
         scope = TenantScope.for_tenant(ctx.client_id)
-        outcomes = [await self._verify_isolated(spec.entity_id, scope) for spec in accounts]
+        # The use-gate is per-client (its posture policy is the client's), so resolve it once for
+        # the whole run from ``ctx.client_id`` — not at handler construction (one handler serves
+        # every campaign).
+        use_gate = (
+            await self._use_gate_provider(ctx.client_id)
+            if self._use_gate_provider is not None
+            else None
+        )
+        outcomes = [
+            await self._verify_isolated(spec.entity_id, scope, use_gate) for spec in accounts
+        ]
 
         processed = sum(1 for o in outcomes if o.succeeded)
         failed = sum(1 for o in outcomes if not o.succeeded)
@@ -160,19 +183,37 @@ class VerificationPhaseHandler:
         )
 
     async def _verify_isolated(
-        self, entity_id: EntityId, scope: TenantScope
+        self, account_entity_id: EntityId, scope: TenantScope, use_gate: UseGate | None
     ) -> _AccountVerification:
         # The per-account isolation boundary: one account's fault must not sink the batch (the same
         # coverage-confidence policy the DEEP handler owns).
         try:
-            cost = await self._verify_account(entity_id, scope)
+            cost = await self._verify_account(account_entity_id, scope, use_gate)
         except Exception:  # noqa: BLE001 — isolate one account; record failed and continue
             return _AccountVerification(cost_cents=Decimal(0), succeeded=False)
         return _AccountVerification(cost_cents=cost, succeeded=True)
 
-    async def _verify_account(self, entity_id: EntityId, scope: TenantScope) -> CostCents:
-        """Run the gate chain over one account's live claims; return the judge spend incurred."""
-        claims = await self._load_claims(entity_id, scope)
+    async def _entities_for(self, account_entity_id: EntityId) -> list[EntityId]:
+        """The account plus its committee contacts (when a contact resolver is wired) — the entities
+        whose claims this account's verification covers."""
+        entity_ids = [account_entity_id]
+        if self._contact_resolver is not None:
+            entity_ids.extend(await self._contact_resolver(account_entity_id))
+        return entity_ids
+
+    async def _load_all(self, entity_ids: Sequence[EntityId], scope: TenantScope) -> list[Claim]:
+        claims: list[Claim] = []
+        for entity_id in entity_ids:
+            claims.extend(await self._load_claims(entity_id, scope))
+        return claims
+
+    async def _verify_account(
+        self, account_entity_id: EntityId, scope: TenantScope, use_gate: UseGate | None
+    ) -> CostCents:
+        """Run the gate chain over an account + its committee contacts' live claims; return judge
+        spend."""
+        entity_ids = await self._entities_for(account_entity_id)
+        claims = await self._load_all(entity_ids, scope)
 
         # 1. corroboration (M9.2) — once per distinct (entity, field); promotes tier≤3.
         corroborated: set[tuple[EntityId, str]] = set()
@@ -195,14 +236,14 @@ class VerificationPhaseHandler:
         # 3. identity-binding (M9.4) is structural (born immutable at insert) — no runtime step.
 
         # 4. use gate (M10.3) LAST — appropriateness verdict on each personal-hook claim.
-        if self._use_gate is not None:
+        if use_gate is not None:
             for claim in claims:
                 if str(claim.field_key).startswith(_FACET_PREFIX):
-                    await self._use_gate.evaluate(claim)
+                    await use_gate.evaluate(claim)
 
         # 5. verification-health (Doc C §6) — per-field tier-4 pass-rate over the POST-judge claims
         #    (reload so the status reflects the verdicts just written).
-        fresh = await self._load_claims(entity_id, scope)
+        fresh = await self._load_all(entity_ids, scope)
         record_synthesis_health([c for c in fresh if c.source_tier == 4], sink=self._health_sink)
         return cost
 

@@ -16,6 +16,8 @@ from clue_research.api.verification.composition import (
 from clue_research.api.verification.handler import (
     ClaimCorroborator,
     ClaimLoader,
+    ContactResolver,
+    UseGateProvider,
     VerificationAccountResolver,
     VerificationPhaseHandler,
 )
@@ -25,6 +27,8 @@ __all__ = [
     "VerificationAccountResolver",
     "ClaimLoader",
     "ClaimCorroborator",
+    "ContactResolver",
+    "UseGateProvider",
     "build_verification_phase_handler",
     "register_verification_phase_handler",
 ]
