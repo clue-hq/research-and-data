@@ -66,9 +66,17 @@ Three layers, in this priority:
   (M10.3) before M12 reads them. New handler test proves committee contacts are sourced + governed. Full suite
   1781 passed / 14 skipped.
 
+- **DONE — M10.5 tombstone-before-merge-read sweep** (the load-bearing `[M9.5×M1.2/M10.5]` invariant):
+  `api/handoff_retention.py::RetentionSweepHandoffHandler` wraps M12's HANDOFF handler — runs
+  `RetentionSweep.sweep_expired` (scoped to the run's accounts+contacts) + `sweep_objections`
+  (operator-wide) BEFORE delegating, so the tombstones land before M12's assemble/merge read. Closes
+  the 40-day-sensitive-facet gap (EXPIRED-to-retention but FRESH-to-merge). `FreshnessImpl` →
+  `due_for_age_out` is the source (now on the frozen `core.Freshness` protocol on this base — the
+  `[M9.5×M7/M10.5]` contract-delta was applied). `register_retention_sweeping_handoff_handler`
+  last-write-wins over M12's. 5 hermetic tests (sweep-before-handoff order, run-scoped age-out,
+  empty-run no operator-wide widening, payload augmentation, registration). Full suite 1786 passed.
+
 ## The deferred-wiring checklist (remaining — all at the api root)
-- M10.5 retention/objection tombstone-before-merge-read sweep (HANDOFF phase) — the load-bearing
-  `[M9.5×M1.2/M10.5]` ordering invariant.
 - `PreSpendGate.check` tier-4 spend routing (M9.1 AC-6); born-binding stamp into M8.4/M8.5.
 - End-to-end DB negative tests (rejected tier-4 / sensitive / weak-binding / objected absent from
   `current_value` + the assembled handoff).
