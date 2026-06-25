@@ -22,7 +22,12 @@ from decimal import Decimal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from clue_research.core import CostCents
+from clue_research.core import (
+    DEFAULT_NUMERIC_ABS_TOLERANCE,
+    DEFAULT_NUMERIC_REL_TOLERANCE,
+    DEFAULT_SEMANTIC_JACCARD_THRESHOLD,
+    CostCents,
+)
 
 
 class MergePolicy(BaseModel):
@@ -41,6 +46,14 @@ class MergePolicy(BaseModel):
     min_confidence_to_consider: float = Field(default=0.0, ge=0.0, le=1.0)
     # Corroborations needed before a tier-3 (third-party) claim outranks a stale tier-2.
     corroboration_floor: int = Field(default=1, ge=0)
+    # The mode-aware conflict-equality tolerances ([M9.2×M1.2]). Default from the shared ``core``
+    # constants so this M0.4 seam stays aligned with ``claimstore.MergePolicy`` and
+    # ``verification.CorroborationPolicy`` (a no-DB drift guard asserts all three layers match).
+    numeric_rel_tolerance: float = Field(default=DEFAULT_NUMERIC_REL_TOLERANCE, ge=0.0)
+    numeric_abs_tolerance: float = Field(default=DEFAULT_NUMERIC_ABS_TOLERANCE, ge=0.0)
+    semantic_jaccard_threshold: float = Field(
+        default=DEFAULT_SEMANTIC_JACCARD_THRESHOLD, ge=0.0, le=1.0
+    )
 
 
 class ScoringRubric(BaseModel):

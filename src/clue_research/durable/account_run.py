@@ -144,6 +144,29 @@ async def get_account_run(conn: AsyncConnection, account_run_id: RunId) -> Accou
     return _row_to_account_run(dict(row)) if row is not None else None
 
 
+_LIST_BY_CAMPAIGN_SQL = text(
+    f"SELECT {_SELECT_COLUMNS} FROM account_run WHERE campaign_run_id = :campaign_run_id "
+    "ORDER BY entity_id"
+)
+
+
+async def list_account_runs(
+    conn: AsyncConnection, campaign_run_id: CampaignRunId
+) -> list[AccountRunRow]:
+    """All ``account_run`` rows for a campaign run, ordered by ``entity_id`` (a stable page).
+
+    The read the M12.3 handoff emit path needs: it filters the returned rows to the handoff-ready
+    accounts (``status = DONE`` AND ``sub_phase = CONTACTS_COMPLETE`` — "M12-ready", per
+    :class:`AccountRunSubPhase`) to assemble + emit a handoff per account. A read-only repository
+    helper (no caller hand-writes SQL against ``account_run`` — the repository is the only path)."""
+    rows = (
+        (await conn.execute(_LIST_BY_CAMPAIGN_SQL, {"campaign_run_id": campaign_run_id}))
+        .mappings()
+        .all()
+    )
+    return [_row_to_account_run(dict(r)) for r in rows]
+
+
 async def save_plan(
     conn: AsyncConnection,
     account_run_id: RunId,

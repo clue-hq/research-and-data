@@ -13,6 +13,7 @@ Implements ENG-108 (docs/specs/M00-foundations-and-shared-contracts.md §M0.2).
 from __future__ import annotations
 
 from clue_research.core.claim import Claim, DiscoveryProvenance, can_be_promoted
+from clue_research.core.compliance import UseDecision, UseGate, is_outreach_promotable
 from clue_research.core.entity import AccountEntity, ContactEntity, Entity
 from clue_research.core.enums import (
     AccountStatus,
@@ -39,8 +40,17 @@ from clue_research.core.enums import (
     ResearchMode,
     ReuseScope,
     UseClass,
+    UseReason,
     VerificationStatus,
     WorkerStatus,
+)
+from clue_research.core.equality import (
+    DEFAULT_NUMERIC_ABS_TOLERANCE,
+    DEFAULT_NUMERIC_REL_TOLERANCE,
+    DEFAULT_SEMANTIC_JACCARD_THRESHOLD,
+    EqualityMode,
+    canonical_json,
+    values_agree,
 )
 from clue_research.core.execution import (
     AspectContext,
@@ -140,8 +150,10 @@ from clue_research.core.primitives import (
     new_run_id,
 )
 from clue_research.core.resolver import Resolver, ResolverError, RetryableResolverError
+from clue_research.core.retrieval import ClientKnowledgeChunk, ClientKnowledgeRetriever
 from clue_research.core.source import SourceManifest
 from clue_research.core.verification import (
+    AgeOutCandidate,
     Binding,
     FaithfulnessJudge,
     Freshness,
@@ -181,6 +193,7 @@ __all__ = [
     "Modality",
     "EntityScope",
     "UseClass",
+    "UseReason",
     "IdentityBinding",
     "PassKind",
     "AccountStatus",
@@ -257,6 +270,13 @@ __all__ = [
     "ValueNarrativeItem",
     "ProvenanceRef",
     "AccountHandoff",
+    # value equality (the substrate's one equality contract — merge conflict ∩ corroboration)
+    "EqualityMode",
+    "canonical_json",
+    "values_agree",
+    "DEFAULT_NUMERIC_REL_TOLERANCE",
+    "DEFAULT_NUMERIC_ABS_TOLERANCE",
+    "DEFAULT_SEMANTIC_JACCARD_THRESHOLD",
     # helpers
     "TIER_ORDER",
     "to_value_json",
@@ -297,5 +317,13 @@ __all__ = [
     "IdentityBindingGate",
     "Staleness",
     "ReResearchCandidate",
+    "AgeOutCandidate",
     "Freshness",
+    # use-gate seam (M10 appropriateness/use gate; impl in clue_research.compliance)
+    "UseDecision",
+    "UseGate",
+    "is_outreach_promotable",
+    # client-knowledge retrieval seam (M5↔M12 contract; impl stubbed in M12/stage0)
+    "ClientKnowledgeChunk",
+    "ClientKnowledgeRetriever",
 ]

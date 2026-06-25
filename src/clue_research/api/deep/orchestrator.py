@@ -87,6 +87,7 @@ from clue_research.profiling import (
     CommitteeResult,
     CommitteeSource,
     ContactProfileResult,
+    SynthesisGuard,
 )
 from clue_research.profiling.committee import DEFAULT_COMMITTEE_CONFIG, CommitteeConfig
 from clue_research.profiling.contact import (
@@ -242,6 +243,7 @@ class AccountDeepOrchestrator:
         recursion_policy: RecursionPolicy | None = None,
         planner_model: str | None = None,
         pre_spend_gate: PreSpendGate | None = None,
+        synthesis_guard: SynthesisGuard | None = None,
         budget_cap_cents: CostCents | None = None,
     ) -> None:
         self._profile_account = profile_account
@@ -263,6 +265,7 @@ class AccountDeepOrchestrator:
         self._recursion_policy = recursion_policy
         self._planner_model = planner_model
         self._pre_spend_gate = pre_spend_gate
+        self._synthesis_guard = synthesis_guard
         self._budget_cap_cents = budget_cap_cents
 
     async def run_one(
@@ -307,6 +310,7 @@ class AccountDeepOrchestrator:
                 gateway=self._gateway,
                 planner_model=self._planner_model,
                 pre_spend_gate=self._pre_spend_gate,
+                synthesis_guard=self._synthesis_guard,
             )
             if account_result.status is WorkerStatus.FAILED and not account_result.aspects:
                 # The account did not resolve (``profile_account`` returns FAILED with no aspects

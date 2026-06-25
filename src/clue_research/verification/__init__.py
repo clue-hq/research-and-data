@@ -41,12 +41,13 @@ Implemented so far:
 
 from __future__ import annotations
 
+# EqualityMode relocated to ``core`` (M9.2×M1.2 — merge/corroborator shared equality); re-exported.
+from clue_research.core import AgeOutCandidate, EqualityMode
 from clue_research.verification.corroboration import (
     DEFAULT_CORROBORATION_POLICY,
     CorroborationPolicy,
     CorroborationResult,
     Corroborator,
-    EqualityMode,
     ValueGroup,
     group_by_agreement,
     independent_source_count,
@@ -89,7 +90,6 @@ from clue_research.verification.freshness import (
     METRIC_FRESHNESS_EXPIRED,
     METRIC_FRESHNESS_SCANNED,
     METRIC_FRESHNESS_STALE,
-    AgeOutCandidate,
     CadencePolicy,
     FreshnessImpl,
     load_cadence_policy,

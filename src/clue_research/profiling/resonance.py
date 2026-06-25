@@ -49,6 +49,7 @@ from clue_research.profiling.aspect_worker import (
     DEEP_PROFILING_PLANNER_CONFIG,
     AspectProfilingWorker,
     SessionFactory,
+    SynthesisGuard,
 )
 from clue_research.profiling.context import RunContext, params_for_run
 from clue_research.profiling.fields import RESONANCE_FIELD_KEYS
@@ -173,19 +174,19 @@ class ResonanceAspectWorker(AspectProfilingWorker):
         gateway: LLMGateway | None = None,
         planner_model: str | None = None,
         pre_spend_gate: PreSpendGate | None = None,
+        synthesis_guard: SynthesisGuard | None = None,
     ) -> None:
         super().__init__(
             FieldClass.ACCOUNT_RESONANCE.value,  # "account.resonance" — the graph's cluster key
             session_factory=session_factory,
             mode=ResearchMode.ACCOUNT_PROFILING,
             # Full tier band: tier-3 reputable review/news first, tier-4 synthesis last (Doc C §2).
-            # tier-4 is resolver-absent until M11 → those fields stay empty/flagged, never
-            # fabricated.
             tier_scope=None,
             planner_config=planner_config,
             gateway=gateway,
             planner_model=planner_model,
             pre_spend_gate=pre_spend_gate,
+            synthesis_guard=synthesis_guard,
             claim_filter=resonance_firewall_ok,
         )
 

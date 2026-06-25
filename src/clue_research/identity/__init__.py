@@ -35,6 +35,7 @@ from clue_research.identity.embedding import (
 from clue_research.identity.entities import (
     MergeCycleError,
     UnknownEntityTypeError,
+    contact_ids_for_account,
     get_account,
     get_contact,
     get_entity,
@@ -112,6 +113,7 @@ __all__ = [
     "mark_merged",
     "get_account",
     "get_contact",
+    "contact_ids_for_account",
     "get_entity",
     "resolve_alias",
     "surviving_id",

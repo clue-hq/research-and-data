@@ -303,3 +303,21 @@ class JudgeVerdict(StrEnum):
     PARTIAL = "partial"
     UNSUPPORTED = "unsupported"
     CONTRADICTED = "contradicted"
+
+
+class UseReason(StrEnum):
+    """Why the appropriateness/use gate (M10.3, Doc D §3/§5) reached its ``usable_for_outreach``
+    verdict on a personal claim — the closed reason vocabulary M10 emits and M12/M13 switch on.
+    Mirrors the ``JudgeVerdict``/``PreSpendVerdict`` pattern so the cross-package boundary carries a
+    *typed* verdict, never free text (the same latent-drift class as the ``tenant_id``/``client_id``
+    naming and the strong-binding-share metric in the backlog).
+
+    Note the deliberate *absence* of an ``objected`` member: a data-subject objection (GDPR Art. 21)
+    is handled at the **merge/eligibility substrate** (M10.5 tombstones the contact's claims before
+    the merge read), not in the per-claim ``UseGate.evaluate`` — so an objected claim never reaches
+    the gate to be given a reason. Likewise retention age-out (``FreshnessState.EXPIRED``) is a
+    substrate exclusion, not a use reason. These reasons are purely the appropriateness axis."""
+
+    ALLOWED = "allowed"
+    SENSITIVE_LOCKED = "sensitive_locked"
+    USE_CLASS_DISALLOWED_FOR_REGIME = "use_class_disallowed_for_regime"

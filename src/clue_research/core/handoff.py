@@ -29,6 +29,7 @@ from clue_research.core.enums import (
 )
 from clue_research.core.field import FieldKey
 from clue_research.core.primitives import (
+    CampaignRunId,
     ClaimId,
     Confidence,
     EntityId,
@@ -189,6 +190,12 @@ class AccountHandoff(BaseModel):
     (Output 2), governed committee (Output 3), and the value narrative (Output 4), with a
     ``provenance_index`` that makes "every fact links to its source" literally true.
     Assembly is M12; this is the shape only.
+
+    The ``icp_spec_version`` / ``campaign_run_id`` / ``assembled_at`` stamps are **additive +
+    defaulted** (phase-3 pre-flight contract-delta) so M13's existing reads don't break, but M12's
+    assembler MUST set them — ``(account_entity_id, icp_spec_version)`` is the handoff scope. They
+    are added here, not as M12-runtime extras, because the model is ``frozen, extra="forbid"`` and
+    M12 must not edit ``core``.
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
@@ -200,3 +207,14 @@ class AccountHandoff(BaseModel):
     committee: tuple[CommitteeMember, ...] = ()
     value_narrative: tuple[ValueNarrativeItem, ...] = ()
     provenance_index: dict[str, ProvenanceRef] = {}  # claim_id -> its source
+    # phase-3 pre-flight additive stamps — M12's assembler sets the first three (the scope key +
+    # provenance of *when/which run* assembled this); defaulted so M13's reads stay back-compatible.
+    icp_spec_version: int | None = None  # with account_entity_id, the handoff scope
+    campaign_run_id: CampaignRunId | None = None
+    assembled_at: UtcDatetime | None = None
+    coverage_confidence: UnitInterval | None = (
+        None  # M6.5 coverage estimate (confidence, not a guarantee)
+    )
+    field_conflicts: dict[
+        FieldKey, tuple[ClaimId, ...]
+    ] = {}  # account field_key -> disagreeing tier<=2 claims

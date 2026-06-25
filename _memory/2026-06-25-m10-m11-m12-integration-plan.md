@@ -1,0 +1,138 @@
+# Topic note — Integrating M10 + M11 + M12 (the three-way join)
+
+**Date:** 2026-06-25 · **Context:** advisory analysis (no code changed). M11 is on `m11/tier4-synthesis`
+(`52e461c`); M10 and M12 are being built in separate worktrees off the same frozen preflight base
+(`integration/phase3-preflight`).
+
+## What "integration" actually is here
+Not "merge three branches." It is: compose three independent packages at the **one import-linter-exempt
+seam** (`api/`) and **prove the substrate's safety bet end-to-end** — the part each isolated branch
+*could not* build because the independence contract forbids the cross-package wiring. PF-7 already
+de-risked the *code seam* (three own `api/*_wiring.py` files; append-only `RESEARCH_PACK_LOADERS`; frozen
+`VERIFICATION_GATE_ORDER` with `use_gate` last). It did **nothing** for migrations or the runtime spine.
+
+## Sequencing (data-flow, NOT milestone number)
+Produce → govern → read. **M12 lands LAST** regardless: it is the pure reader at the boundary and the
+only branch that touches frozen `core` (the deferred M9.2 `EqualityMode` relocation) and shared
+`api/__init__.py`. M11 (producer, already landed, 0 migrations) and M10 (the gate + governance layer)
+feed the substrate/verification; M12 reads the post-judge, post-tombstone, use-gated merge.
+Migration-merge order is independent of code order: a **2-head `alembic merge`** of M10's head + M12's
+head (M11 contributes none) → single head → `make db-smoke`.
+
+## Verified gap: the runtime spine does not exist yet
+No `CampaignPhase.VERIFICATION` handler, no `HANDOFF` handler, no `HandoffAssembler` in `src/` — only
+`DEEP` is registered, and `DEEP` only resolves/spends, leaving every tier-4 claim `unverified`. Because
+`merge_claims` defaults `require_verified_tier4=True`, `current_value` returns **EMPTY** for every
+synthesis field until something invokes the judge and promotes. So the worst failure is **silent**
+(blank Output-2/Output-4, judge never runs) — not a crash.
+
+## The most important part (sharpened by adversarial review)
+Three layers, in this priority:
+1. **Hard preconditions for any run to exist:** single `alembic head` + green `make db-smoke`
+   (M10+M12 both add migrations off the same base — the M2/M3 collision scenario); and import-linter
+   **11/11 KEPT** on the merged tree (the structural guarantee the whole parallel strategy rests on).
+2. **The load-bearing causal invariant:** the **M10.5 retention/objection tombstone sweep must run
+   BEFORE every merge read** (`core.Freshness.due_for_age_out` → tombstone EXPIRED + `outreach_objected`).
+   This closes the *documented live bug* `[M9.5×M1.2/M10.5]`: `RetentionTtls.sensitive_claim_ttl`=30d <
+   `FreshnessTtls.contact.facet`=90d, so a 40-day sensitive facet is EXPIRED-to-retention but FRESH-to-
+   merge → it WINS `current_value` and crosses the handoff unless tombstoned first. M12 is built to NOT
+   special-case EXPIRED (PF-1 D-EXP) **on the assumption this sweep runs first** — if unwired, the
+   assumption is false and ungoverned personal data reaches the content layer (a lawful-basis/Art.21
+   breach, the architecture's one named real failure).
+3. **The detector:** the end-to-end NEGATIVE proof (fabricated tier-4 → absent; weak-binding → absent;
+   sensitive → not outreach-promotable under any posture; objected/erased/expired → tombstoned & absent).
+   It only confirms (1)+(2) composed correctly; it does not *cause* correctness.
+
+## Progress (integration branch `integration/m10-m11-m12`, PR #23)
+- **DONE — merge + single alembic head + green gate** (commits `c26b06e`/`da6bb89`/`d3f9b27` merges,
+  `8ff0117` alembic merge `05f66cc526ae`). `make check` green, import-linter 11/11, 1765 passed.
+- **DONE — M10 compliance pack-loader wiring** (`086baf0`): `register_compliance_wiring` appends
+  `load_compliance_pack`; three milestone wirings exported from `api`.
+- **DONE — `CampaignPhase.VERIFICATION` handler** (the keystone): `api/verification/{handler,composition}.py`
+  + 11 hermetic tests. Drives corroboration(M9.2)→faithfulness(M9.3)→use_gate(M10.3 **last**) over each
+  high-tier account's claims, per-account isolated, records per-field `record_synthesis_health`.
+  `register_verification_phase_handler` registers it into the M7 phase registry. **Production v1 sources
+  account entities only** (account-level synthesis → `current_value` non-empty); the handler fully drives
+  the use-gate leg over `contact.facet.*` claims (tested with fakes) — the immediate follow-on is sourcing
+  committee *contact* entities into the loader (needs a contacts-under-account reader) + per-client UseGate.
+  1777 passed / 14 skipped / 0 failed on a pristine DB.
+
+- **DONE — contact sourcing + production use-gate** (this commit): added `identity.contact_ids_for_account`
+  (live, non-merged committee contacts under an account; 3 DB-gated tests). VERIFICATION handler gained two
+  seams — `contact_resolver` (account → committee contact ids) and `use_gate_provider` (per-client, resolved
+  from `ctx.client_id` at run time since the posture policy is the client's). `build_verification_phase_handler`
+  now defaults `govern_contacts=True`: wires `contact_ids_for_account` + `load_client_policy`→`UseGateImpl`, so
+  in production each account's contacts are verified and their `contact.facet.*` hooks clear the use-gate
+  (M10.3) before M12 reads them. New handler test proves committee contacts are sourced + governed. Full suite
+  1781 passed / 14 skipped.
+
+- **DONE — M10.5 tombstone-before-merge-read sweep** (the load-bearing `[M9.5×M1.2/M10.5]` invariant):
+  `api/handoff_retention.py::RetentionSweepHandoffHandler` wraps M12's HANDOFF handler — runs
+  `RetentionSweep.sweep_expired` (scoped to the run's accounts+contacts) + `sweep_objections`
+  (operator-wide) BEFORE delegating, so the tombstones land before M12's assemble/merge read. Closes
+  the 40-day-sensitive-facet gap (EXPIRED-to-retention but FRESH-to-merge). `FreshnessImpl` →
+  `due_for_age_out` is the source (now on the frozen `core.Freshness` protocol on this base — the
+  `[M9.5×M7/M10.5]` contract-delta was applied). `register_retention_sweeping_handoff_handler`
+  last-write-wins over M12's. 5 hermetic tests (sweep-before-handoff order, run-scoped age-out,
+  empty-run no operator-wide widening, payload augmentation, registration). Full suite 1786 passed.
+
+- **DONE — end-to-end DB negative governance tests** (`tests/compliance/test_governance_e2e.py`, 8
+  DB-gated): the integration proof on a real Postgres, composing the REAL components (M9.3 judge w/
+  stub gateway, M9.4 weak-binding merge exclusion, M10.3 use-gate, M10.5 RetentionSweep over the REAL
+  M9.5 FreshnessImpl, M1.2 merge). Asserts `current_value` / `is_outreach_promotable` (what M12
+  reads) EXCLUDES: a judge-rejected/no-span tier-4 synthesis claim (A; supported one promoted), a
+  weak-binding contact claim (B), a sensitive hook (C; `sensitive_locked`, not outreach-promotable),
+  a retention-EXPIRED-but-merge-FRESH sensitive claim after the sweep (D — the [M9.5×M1.2/M10.5]
+  ordering proof: served before sweep, tombstoned+absent after), and an objected contact's hooks
+  (E). Full suite 1794 passed.
+
+- **DONE — M9.1 AC-6 tier-4 routing + born-binding + M11.3 guard call site** (the last task-#6 items):
+  - **Born-binding (M9.4×M8.4/M8.5):** was already wired in M8A.6 (`build_deep_phase_handler` injects
+    `production_binding_classifier`) and tested (`test_identity_binding_ac4.py`,
+    `test_governance_integration.py`). No new code.
+  - **PreSpendGate tier-4 routing (M9.1 AC-6):** the gate was already injected into the account-axis +
+    orchestrator (M8A.6); the aspect worker (`aspect_worker.py:334`) gates with the first-RUN source's
+    tier (=4 for a tier-4-only synthesis field) before the waterfall spends. Added the explicit proof
+    `test_tier4_synthesis_spend_records_prior_gate_decision` — a tier-4 synthesis resolve records a
+    `gate_decision` with `source_tier=4` before the spend, then writes the claim.
+  - **M11.3 `guard_synthesis_resolution` call site (3):** added an injected `SynthesisGuard` hook to the
+    aspect worker (`_fill_field`, before `resolve_field`), threaded through
+    resonance → account_axis_workers → default_account_worker_builder → profile_account → orchestrator →
+    build_deep_phase_handler / build_account_axis_registry / composition.build_profiling_workers,
+    defaulting to `synthesis.guard_synthesis_resolution` at the api roots. `profiling` stays
+    import-independent of `synthesis` (it holds an injected callable). No-op for non-synthesis fields;
+    raises `SynthesisGateError` on a wiring regression. `test_composition_injects_synthesis_guard_into_account_axis`.
+  Full suite 1796 passed; import-linter 11/11 KEPT.
+
+## The deferred-wiring checklist (remaining)
+- All M10×M11×M12 integration governance wiring is landed. Remaining are the pre-existing cross-milestone
+  cleanups in CLAUDE.md's backlog (DRY consolidations; the M9.2/M9.6 step-2 items) — not integration blockers.
+- `synthesis.guard_synthesis_resolution` pre-resolution call site is a DEEP-phase concern (the resolve
+  step), not VERIFICATION; wire it where M8 resolves tier-4 fields.
+- `PreSpendGate.check` routing on the tier-4 spend path (exa_deep/parallel_task) + the AC-6 lint test
+  (`[M9.1×M4/M8/M11]`).
+- Inject `UseGate` impl into the `use_gate` slot; append M10 pack loader (`contact.jurisdiction` + short
+  `contact.facet.*` TTLs). Promote `due_for_age_out`/`record_re_research_candidates`/`AgeOutCandidate`
+  onto frozen `core.Freshness` so compliance/durable can call across the independence contract.
+- `HANDOFF` handler + `HandoffAssembler` (pure fn over `current_value` + provenance_index + M10
+  `use_decision` side table); filter committee hooks with `core.compliance.is_outreach_promotable`,
+  **never** `Claim.is_promotable`; register `account.value_narrative` as `reuse_scope=TENANT_PRIVATE`
+  + `identity.stamp_reuse`; set PF-1 additive `AccountHandoff` stamps.
+- Born identity_binding = `verification.classify_binding` via `production_binding_classifier` into
+  M8.4/M8.5 (`[M9.4×M8.4/M8.5]`); add `answering_model` column to `faithfulness_verdict`
+  (`[M9.3×M12]`); land the M1.2 conflict-equality (`equality_mode`) fix before M12 reads conflict flags
+  (`[M9.2×M1.2]`); pick ONE strong-binding metric surface (`[M9.4×M13.4]`); add M9.6 golden rows for the
+  synthesis fields + wire the enforced regression CLI.
+- Reconcile the `exa_deep` `entity_scope=BOTH` binding (M11 account-only firewall returns `[]` for
+  contacts — safe; if M10 adds a contact-facet synth resolver on the same key, reconcile bind order).
+- `api/__init__.py` export-list 2-way reconcile (M10 abstains; M12 adds handoff/narrative exports);
+  keep M11's filled `synthesis_wiring.py` (M10/M12 carry stale-scaffold phantom diffs of it).
+
+## Post-integration (scheduled, NOT mid-merge — would reintroduce the divergence the contract prevents)
+DRY consolidations now legal once on one tree: `normalize_host` ×3, `reference_time` ×2,
+`decode_jsonb_scalar` ×4–5, `ACCOUNT_SYNTHESIS_CLASSES` vs resolver `_ACCOUNT_SYNTHESIS_CLASSES`;
+source `conflict_tier_threshold` from one `config/schema.py` constant.
+
+> Caveat: specific migration revision hashes for M10/M12 are NOT visible from the M11 worktree — verify
+> on the merged tree. The *structural* facts (M11=0 migrations; M10/M12 each branch off the same base →
+> 2-head merge) are sound from the specs + conventions.

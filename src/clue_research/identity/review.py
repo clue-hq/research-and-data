@@ -48,6 +48,7 @@ from clue_research.core import (
     CurrentValue,
     EntityId,
     EntityType,
+    EqualityMode,
     serialize_value_json,
 )
 from clue_research.identity.canonicalize import plan_merge
@@ -806,14 +807,22 @@ async def merged_member_ids(
     return [EntityId(r) for r in rows]
 
 
-async def _field_ttl(conn: AsyncConnection, field_key: str) -> object:
+async def _field_ttl(conn: AsyncConnection, field_key: str) -> tuple[object, EqualityMode]:
+    """The field's freshness TTL **and** equality mode, so the merge-resolved read is mode-aware
+    (the conflict check agrees with :func:`claimstore.current_value` and the M9.2 corroborator)."""
     row = (
         await conn.execute(
-            text("SELECT freshness_ttl FROM field_definition WHERE field_key = :k"),
+            text("SELECT freshness_ttl, equality_mode FROM field_definition WHERE field_key = :k"),
             {"k": field_key},
         )
     ).first()
-    return row[0] if row is not None else None
+    if row is None:
+        return None, EqualityMode.EXACT
+    try:
+        mode = EqualityMode(row[1]) if row[1] is not None else EqualityMode.EXACT
+    except ValueError:
+        mode = EqualityMode.EXACT
+    return row[0], mode
 
 
 async def current_value_resolved(
@@ -838,5 +847,5 @@ async def current_value_resolved(
     claims: list[Claim] = []
     for member in members:
         claims.extend(await claims_for(conn, member, field_key, scope=scope))
-    ttl = await _field_ttl(conn, field_key)
-    return merge_claims(claims, ttl, policy, _now())  # type: ignore[arg-type]
+    ttl, equality_mode = await _field_ttl(conn, field_key)
+    return merge_claims(claims, ttl, policy, _now(), equality_mode)  # type: ignore[arg-type]

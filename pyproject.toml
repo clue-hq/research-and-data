@@ -36,6 +36,8 @@ dependencies = [
     "pypdf>=6",
     "langgraph>=0.2",
     "langgraph-checkpoint-postgres>=2",
+    "fastapi>=0.138.0",
+    "httpx>=0.28.1",
 ]
 
 [dependency-groups]
@@ -263,6 +265,16 @@ forbidden_modules = [
     "simple_salesforce",
     "hubspot",
 ]
+# The ONE sanctioned SDK location: the Firecrawl SDK is imported lazily, inside a function, *behind
+# the M4.3 adapter seam* (``adapters.concrete._build_client``, ``# pragma: no cover`` live path). The
+# adapter seam is exactly where a provider SDK is allowed to live (Rule 4 — "behind adapters/<source>").
+# import-linter follows that lazy edge, so without this exemption the `api` composition root could
+# never wire ANY resolver (importing ``resolvers`` transitively reaches the firecrawl resolver →
+# adapters → this lazy SDK import) — defeating the whole point of the composition root. Ignoring this
+# single sanctioned edge severs that transitive path; a *direct* SDK import by any source module is a
+# different edge and is still caught. (M11 is the first api-root resolver wiring to need this; the
+# deferred firecrawl/deterministic composition-root wiring needs it identically.)
+ignore_imports = ["clue_research.adapters.concrete -> firecrawl"]
 
 # Rule 4b — the LLM-vendor SDK lives ONLY behind the gateway/ package (the model analogue of
 # Rule 4 for data-source SDKs). The gateway is the single egress for every *direct* LLM call

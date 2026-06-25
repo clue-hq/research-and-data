@@ -1,10 +1,14 @@
 # `clue_research/narrative/` — Value Narrative & Handoff
 
-**Status:** reserved by M0.1 (ENG-101) — empty until M12.
+**Status:** M12.1 + M12.2 + M12.3 shipped.
 
 **Spec:** [`docs/specs/M12-value-narrative-and-handoff.md`](../../../docs/specs/M12-value-narrative-and-handoff.md)
 
-The per-persona value narrative (account claims × client knowledge) and the `account_handoff` contract object + provenance index — where this subsystem's output is assembled.
+The per-persona value narrative (account claims × client knowledge), the `account_handoff` contract object + provenance index, and the transport-agnostic boundary to the content layer — where this subsystem's output is assembled and served.
+
+- **M12.1 — positioning step** (`positioner.py`): joins verified account claims × Client-Knowledge into per-`(account, persona)` `account.value_narrative` claims-with-provenance, behind the M9.3 faithfulness judge.
+- **M12.2 — `account_handoff` assembler** (`handoff.py` / `handoff_store.py`): the pure, deterministic store-read that gathers Outputs 1–4 into the frozen `core.handoff.AccountHandoff` + provenance index, materialised per `(client, account, icp segment)`.
+- **M12.3 — output/handoff boundary** (`service.py` / `handoff_events.py` / `publisher.py` / `readiness.py` / `health.py`): the transport-agnostic read service (list / get / resolve-provenance), the durable `handoff_event` emit/notify outbox, the `HandoffPublisher` adapter seam (D2), the injected readiness seam (the M7 campaign-run phase), and per-handoff verification health (Doc C §6). The FastAPI HTTP surface itself lives at the `api` composition root (`api/handoff_app.py`) — `narrative` stays transport-agnostic.
 
 ## Modular boundary (M0.1 / ENG-101)
 
