@@ -870,6 +870,101 @@ class LumenDesignTools:
         )
         return json.dumps(payload, indent=2)
 
+    def _tool_error(self, code: str, message: str, **extra: Any) -> str:
+        """Uniform error envelope for the dispatcher tools (asset/inspect)."""
+        payload: JsonObject = {"status": "error", "error_code": code, "message": message}
+        payload.update(extra)
+        return json.dumps(payload, indent=2)
+
+    def asset(
+        self,
+        action: str,
+        prompt: Optional[str] = None,
+        aspect_ratio: Optional[str] = None,
+        width: Optional[int] = None,
+        height: Optional[int] = None,
+        brand_notes: Optional[List[str]] = None,
+        transparent_background: bool = False,
+        target_node_id: Optional[str] = None,
+        target_slot_id: Optional[str] = None,
+        data: Optional[str] = None,
+        ec_level: Optional[str] = None,
+        print_media: bool = False,
+        target_width_mm: Optional[float] = None,
+        node_id: Optional[str] = None,
+        slot_id: Optional[str] = None,
+        asset_id: Optional[str] = None,
+        fit: str = "cover",
+        focal_x: float = 0.5,
+        focal_y: float = 0.5,
+        alt: Optional[str] = None,
+        preserve_transparency: Optional[bool] = None,
+        label: Optional[str] = None,
+    ) -> str:
+        """Generate or place a design asset. Pick `action`:
+
+        - `action="generate_image"` — generate a raster image from `prompt` and
+          register it (returns its asset_id; NOT auto-placed). Pass `target_node_id`
+          (or `target_slot_id`) so the aspect is derived from that frame's geometry —
+          images are cropped to fill, never stretched. Optional `aspect_ratio` /
+          `width` / `height`, `brand_notes`, `transparent_background`, `label`.
+        - `action="generate_qr"` — generate a deterministic QR asset from `data`
+          (URL/text). For physical artifacts set `print_media=True` and `target_width_mm`
+          so print-scannability diagnostics can fire. Optional `ec_level`, `label`.
+        - `action="place"` — place an existing asset (`asset_id`, generated or library)
+          into either an image node (`node_id`) or a bound image slot (`slot_id`) with a
+          `fit` (default cover), normalized focal point (`focal_x`/`focal_y`, 0..1,
+          default centered), `alt` text, and optional `preserve_transparency`. Reversible.
+
+        Every action mutates the scene only through the canonical core operation path."""
+        if action == "generate_image":
+            if not prompt:
+                return self._tool_error(
+                    "asset.bad_request", "action='generate_image' requires `prompt`."
+                )
+            return self.generate_image(
+                prompt,
+                target_node_id,
+                target_slot_id,
+                aspect_ratio,
+                width,
+                height,
+                brand_notes,
+                transparent_background,
+                label,
+            )
+        if action == "generate_qr":
+            if not data:
+                return self._tool_error(
+                    "asset.bad_request", "action='generate_qr' requires `data`."
+                )
+            return self.generate_qr(data, ec_level, print_media, target_width_mm, label)
+        if action == "place":
+            if not asset_id:
+                return self._tool_error(
+                    "asset.bad_request", "action='place' requires `asset_id`."
+                )
+            # Preserve the two distinct core op kinds: node_id -> place_asset_in_node,
+            # slot_id -> place_asset_in_slot. The agent-facing tool merges to one; the
+            # core operation `kind` must NOT, or the slot-binding path breaks.
+            if node_id is not None:
+                return self.place_asset_in_node(
+                    node_id, asset_id, fit, focal_x, focal_y, alt, preserve_transparency
+                )
+            if slot_id is not None:
+                return self.place_asset_in_slot(
+                    slot_id, asset_id, fit, focal_x, focal_y, alt, preserve_transparency
+                )
+            return self._tool_error(
+                "asset.bad_request",
+                "action='place' requires `node_id` or `slot_id`.",
+            )
+        return self._tool_error(
+            "asset.unknown_action",
+            f"unknown action '{action}'.",
+            valid_actions=["generate_image", "generate_qr", "place"],
+        )
+
     def _finalized_snapshot_for(self, binding: JsonObject) -> JsonObject:
         """Instances derive from finalized revisions; for agent previews the
         working scene is treated as a snapshot of the binding's revision."""
@@ -1576,6 +1671,52 @@ class LumenDesignTools:
             indent=2,
         )
 
+    def inspect(self, view: str, target: Optional[str] = None) -> str:
+        """Read-only inspection of the in-memory scene. Pick `view`:
+
+        - `view="scene"` — document, pages, counts, slots, effective brand.
+        - `view="page"` (target=page_id) — page node tree with geometry + slot bindings.
+        - `view="node_tree"` (target=page_id) — the node hierarchy for one page.
+        - `view="slots"` — every slot key → bound nodes.
+        - `view="geometry"` (target=node_id) — stored computed geometry + declared
+          transform/size for one node.
+        - `view="slot_bindings"` (target=slot_key) — binding details for a semantic slot.
+
+        Use it to confirm a node/page/slot id before targeting a repair. Never mutates."""
+        if view == "scene":
+            return self.summarize_scene()
+        if view == "slots":
+            return self.summarize_slots()
+        if view == "page":
+            if not target:
+                return self._tool_error(
+                    "inspect.bad_request", "view='page' requires target=<page_id>."
+                )
+            return self.summarize_page(target)
+        if view == "node_tree":
+            if not target:
+                return self._tool_error(
+                    "inspect.bad_request", "view='node_tree' requires target=<page_id>."
+                )
+            return self.summarize_node_tree(target)
+        if view == "geometry":
+            if not target:
+                return self._tool_error(
+                    "inspect.bad_request", "view='geometry' requires target=<node_id>."
+                )
+            return self.query_geometry(target)
+        if view == "slot_bindings":
+            if not target:
+                return self._tool_error(
+                    "inspect.bad_request", "view='slot_bindings' requires target=<slot_key>."
+                )
+            return self.query_slot_bindings(target)
+        return self._tool_error(
+            "inspect.unknown_view",
+            f"unknown view '{view}'.",
+            valid_views=["scene", "page", "node_tree", "slots", "geometry", "slot_bindings"],
+        )
+
     def curated_context(
         self,
         *,
@@ -1918,18 +2059,6 @@ class LumenDesignTools:
             },
             indent=2,
         )
-
-    def persist_trace_event(
-        self,
-        actor: str,
-        event: str,
-        output_summary: str,
-        payload_json: str = "{}",
-    ) -> str:
-        """Persist an explicit trace event supplied by the coordinator or a subagent."""
-        payload = json.loads(payload_json)
-        self.record(actor, event, output_summary=output_summary, payload=payload)
-        return json.dumps({"status": "persisted", "run_id": self.run_id}, indent=2)
 
     def finalize_run(
         self,

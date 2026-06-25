@@ -766,22 +766,24 @@ def test_coordinator_prompt_wires_the_imagery_decide_generate_place_chain():
     # Decide first, defaulting to no image.
     assert "DECIDE IMAGERY" in prompt
     assert "knowledge/images/decide" in prompt
-    # Generate, then place, are explicit coordinator-owned tool steps.
-    assert "generate_image" in prompt
-    assert "place_asset_in_node" in prompt
+    # Generate, then place, are explicit coordinator-owned tool steps — now routed
+    # through the single `asset` dispatcher (Group B consolidation).
+    assert 'asset(action="generate_image"' in prompt
+    assert 'asset(action="place"' in prompt
     # The author is handed the exact asset id and the placement/scrim idiom.
     assert "asset_id" in prompt
     assert "knowledge/images/placement" in prompt
     # Ordering invariant: decide before generate before place.
-    assert prompt.index("DECIDE IMAGERY") < prompt.index("generate_image")
-    assert prompt.index("generate_image") < prompt.index("place_asset_in_node")
+    assert prompt.index("DECIDE IMAGERY") < prompt.index('asset(action="generate_image"')
+    assert prompt.index('asset(action="generate_image"') < prompt.index('asset(action="place"')
 
 
 def test_author_prompt_defers_image_generation_to_the_coordinator():
     # The author has no tools (see the strict-tool-cap fix) and must not be told to
-    # call generate_image; it composes the frame around the coordinator's asset_id.
+    # call the image tool; it composes the frame around the coordinator's asset_id.
     prompt = DSL_AUTHOR_SYSTEM_PROMPT
-    assert "never call `generate_image`" in prompt
+    assert 'never call the image tool' in prompt
+    assert 'asset(action="generate_image")' in prompt
     assert "coordinator" in prompt
     assert "scrim" in prompt
 
@@ -814,11 +816,17 @@ def test_deepagents_factory_wires_full_phase_a_tool_surface(tmp_path: Path, monk
     assert agent["agent"] == "fake"
     assert tools.run_id
     tool_names = {tool.__name__ for tool in calls["kwargs"]["tools"]}
-    assert {
+    # 17 tools after the Group A/B/C consolidation: the asset/inspect dispatchers
+    # replace the 4 generate/place + 6 summarize/query singletons, and
+    # persist_trace_event is dropped.
+    assert tool_names == {
         "load_knowledge",
         "compile_dsl_block",
         "apply_operations",
         "apply_structured_edit",
+        "asset",
+        "validate_binding_set",
+        "derive_instance_preview",
         "preflight_design",
         "export_preview",
         "export_preview_bundle",
@@ -827,15 +835,27 @@ def test_deepagents_factory_wires_full_phase_a_tool_surface(tmp_path: Path, monk
         "recommend_edit_surface",
         "create_repair_request",
         "record_gap",
-        "summarize_scene",
-        "summarize_page",
-        "summarize_slots",
-        "summarize_node_tree",
-        "query_geometry",
-        "query_slot_bindings",
-        "persist_trace_event",
+        "inspect",
         "finalize_run",
-    }.issubset(tool_names)
+    }
+    assert len(calls["kwargs"]["tools"]) == 17
+    # The folded singletons must NOT be in the model's tool surface anymore.
+    assert not (
+        {
+            "generate_image",
+            "generate_qr",
+            "place_asset_in_node",
+            "place_asset_in_slot",
+            "summarize_scene",
+            "summarize_page",
+            "summarize_slots",
+            "summarize_node_tree",
+            "query_geometry",
+            "query_slot_bindings",
+            "persist_trace_event",
+        }
+        & tool_names
+    )
     assert {agent["name"] for agent in calls["kwargs"]["subagents"]} == {
         "lumen-dsl-author",
         "lumen-visual-reviewer",
@@ -3780,6 +3800,78 @@ def test_place_asset_in_slot_targets_the_slot(tmp_path: Path, monkeypatch):
     assert op["asset_id"] == "asset_img_abc"
     assert op["placement"]["fit"] == "cover"
     assert op["placement"]["focal_point"] == {"x": 0.5, "y": 0.5}
+
+
+def test_asset_dispatcher_routes_actions_and_preserves_place_kinds(
+    tmp_path: Path, monkeypatch
+):
+    # Group B: the single `asset` tool fans out to generate_image / generate_qr / place,
+    # and `place` MUST preserve the two distinct core op kinds (node vs slot) — the
+    # critic-flagged invariant.
+    monkeypatch.setattr("lumen_deepagent.tools.CoreClient", FakeCoreClient)
+    stub = types.SimpleNamespace(is_configured=lambda: False, generate=lambda **k: None)
+    monkeypatch.setattr("lumen_deepagent.tools.image_provider", stub)
+    tools = LumenDesignTools(runtime_config(tmp_path), "Create an ad with imagery")
+
+    img = json.loads(tools.asset(action="generate_image", prompt="a serene mountain lake at dawn"))
+    assert img["image"]["status"] == "ok"
+    assert tools.scene_update_sources[-1] == "generate_image"
+
+    qr = json.loads(
+        tools.asset(action="generate_qr", data="https://lumen.example/x", print_media=True, target_width_mm=12.0)
+    )
+    assert qr["qr"]["status"] == "ok"
+    assert tools.scene_update_sources[-1] == "generate_qr"
+
+    node_place = json.loads(
+        tools.asset(action="place", node_id="hero", asset_id="asset_img_abc", focal_y=0.4)
+    )
+    assert node_place["placement"]["status"] == "ok"
+    assert tools.scene_update_sources[-1] == "place_asset_in_node"
+    assert any(op.get("kind") == "place_asset_in_node" for op in tools.core.applied_operations)
+
+    slot_place = json.loads(
+        tools.asset(action="place", slot_id="slot_campaign_hero_image", asset_id="asset_img_abc")
+    )
+    assert slot_place["placement"]["status"] == "ok"
+    assert tools.scene_update_sources[-1] == "place_asset_in_slot"
+    assert any(op.get("kind") == "place_asset_in_slot" for op in tools.core.applied_operations)
+
+    # Bad requests fail closed (no new scene mutation).
+    sources_before = list(tools.scene_update_sources)
+    assert json.loads(tools.asset(action="place", asset_id="asset_img_abc"))["error_code"] == "asset.bad_request"
+    assert json.loads(tools.asset(action="generate_image"))["error_code"] == "asset.bad_request"
+    assert json.loads(tools.asset(action="generate_qr"))["error_code"] == "asset.bad_request"
+    assert json.loads(tools.asset(action="bogus"))["error_code"] == "asset.unknown_action"
+    assert tools.scene_update_sources == sources_before
+
+
+def test_inspect_dispatcher_routes_all_views(tmp_path: Path, monkeypatch):
+    # Group A: the single `inspect` tool returns exactly what the former
+    # summarize_*/query_* singletons returned, for every view.
+    monkeypatch.setattr("lumen_deepagent.tools.CoreClient", FakeCoreClient)
+    tools = LumenDesignTools(runtime_config(tmp_path), "Inspect a scene")
+    tools.compile_dsl_block("page page_test")
+
+    assert json.loads(tools.inspect(view="scene")) == json.loads(tools.summarize_scene())
+    assert json.loads(tools.inspect(view="slots")) == json.loads(tools.summarize_slots())
+    assert json.loads(tools.inspect(view="page", target="page_test")) == json.loads(
+        tools.summarize_page("page_test")
+    )
+    assert json.loads(tools.inspect(view="node_tree", target="page_test")) == json.loads(
+        tools.summarize_node_tree("page_test")
+    )
+    assert json.loads(tools.inspect(view="geometry", target="headline")) == json.loads(
+        tools.query_geometry("headline")
+    )
+    assert json.loads(tools.inspect(view="slot_bindings", target="campaign.headline")) == json.loads(
+        tools.query_slot_bindings("campaign.headline")
+    )
+
+    # Views needing a target fail closed; unknown view is reported.
+    assert json.loads(tools.inspect(view="page"))["error_code"] == "inspect.bad_request"
+    assert json.loads(tools.inspect(view="geometry"))["error_code"] == "inspect.bad_request"
+    assert json.loads(tools.inspect(view="bogus"))["error_code"] == "inspect.unknown_view"
 
 
 def test_critic_preview_export_passes_asset_store_root(tmp_path: Path, monkeypatch):

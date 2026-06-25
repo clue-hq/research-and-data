@@ -1,7 +1,7 @@
 # Imagery — Icons (the reliable vector path)
 
 For anything **iconographic** — feature rows, checklists, step markers, bullet accents,
-directional cues — reach for a **library icon**, not `generate_image`. A curated vector is
+directional cues — reach for a **library icon**, not `asset(action="generate_image")`. A curated vector is
 reliable, crisp at any size, and recolors to brand; a model garbles small flat marks. This
 is the `icon → library` branch of `knowledge/images/decide`.
 
@@ -37,6 +37,6 @@ extensible; richer pictograms (calendar, shield, users…) arrive in a later sli
 
 ## When NOT to use an icon
 
-- A **photo/portrait/product** that must be seen → `generate_image` (see `images/decide`).
+- A **photo/portrait/product** that must be seen → `asset(action="generate_image")` (see `images/decide`).
 - A **logo** → a brand `logo.*` / `asset.*` token, never `svg(icon:...)`.
 - Pure **decoration that adds no meaning** → drop it; whitespace beats clutter.

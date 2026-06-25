@@ -3,7 +3,7 @@
 Once `knowledge/images/decide` says "generate a photo", write the prompt well. A vague
 keyword bag ("business, technology, success, blue") produces generic stock-feel
 filler. Specificity is what makes a generated image look art-directed. Every
-`generate_image` prompt carries **five components**, in descriptive prose.
+`asset(action="generate_image")` prompt carries **five components**, in descriptive prose.
 
 ## The five components
 
@@ -36,8 +36,8 @@ Write them as one or two natural sentences, not a comma list. Prose beats keywor
   area: *"ample uncluttered negative space in the lower third for text"*, *"subject on
   the right, soft empty background on the left."* This is what makes a scrimmed hero
   read cleanly (see `knowledge/images/placement`).
-- **Aspect comes from the frame, not the prompt.** `generate_image` derives the aspect
-  ratio from the target node's geometry — don't hardcode a ratio that fights the frame.
+- **Aspect comes from the frame, not the prompt.** `asset(action="generate_image")` derives
+  the aspect ratio from the target node's geometry — don't hardcode a ratio that fights the frame.
 
 ## Per-use-case templates
 

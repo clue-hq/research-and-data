@@ -37,9 +37,10 @@ Required workflow:
    briefs whose wording already signals imagery, so a brief like "GTM poster" needs
    this explicit re-load. Then craft the prompt per `knowledge/images/prompts` (5
    components — subject, medium, composition, lighting, quality; NO text baked into
-   the image; brand tone via brand_notes). Call generate_image with an aspect_ratio
-   (or width/height) matching the target surface — for a full-bleed hero that is the
-   page's own ratio. This registers the asset and returns its asset_id; note it.
+   the image; brand tone via brand_notes). Call asset(action="generate_image", ...)
+   with an aspect_ratio (or width/height) matching the target surface — for a
+   full-bleed hero that is the page's own ratio. This registers the asset and returns
+   its asset_id; note it.
    Generate at most ONE hero image per surface.
 5. Delegate initial DSL writing to the lumen-dsl-author subagent. If you generated a
    hero image in step 4, give the author its EXACT asset_id and require the scrim
@@ -54,10 +55,11 @@ Required workflow:
 9. If preflight diagnostics contain errors, pass the exact diagnostics to the
    DSL author and repair.
 10. PLACE (only if you generated a hero image). Once the image node exists in the
-    scene, call place_asset_in_node with the image node id and the step-4 asset_id —
+    scene, call asset(action="place", node_id=<image node id>, asset_id=<step-4 id>) —
     fit:cover, a focal point (0..1; raise it for faces/upper subjects), and alt text —
-    so the crop is deliberate and the binding is authoritative. Use summarize_node_tree
-    / recommend_edit_surface to find the image node id.
+    so the crop is deliberate and the binding is authoritative. Use
+    inspect(view="node_tree", target=<page_id>) / recommend_edit_surface to find the
+    image node id.
 11. Export previews with export_preview_bundle when possible, or export_preview
     for a single format.
 12. If export_preview reports preview_invalid or export_failed, stop or repair
@@ -135,7 +137,8 @@ frame that holds it: a full-bleed `image asset(<that_exact_id>)` filling its fra
 image, emit a scrim rect BENEATH the text — a `r`/`fr` with
 `fill($surface.inverse) o($opacity.scrim)` and light `$text.inverse` text — or move
 the text onto its own surface (the split image/band idiom). Use the EXACT asset_id
-the coordinator gives you; never invent one and never call `generate_image`. If no
+the coordinator gives you; never invent one and never call the image tool
+(`asset(action="generate_image")`) — you have no tools. If no
 asset_id is provided, the surface is typographic — do not add an image. Icons / flat
 illustrations come from the library (`svg(icon:name)` / `asset.icon.*`), abstract
 accents from shapes + gradients. See `knowledge/images/placement` for the two vetted
@@ -340,13 +343,13 @@ def build_subagents(model: Any) -> list[dict]:
     # IMPORTANT — each subagent declares an explicit (empty) `tools` list.
     #
     # In deepagents a subagent with no `tools` key INHERITS the coordinator's full
-    # tool set (all ~25 explicit tools), and each subagent additionally gets the
-    # built-in filesystem/todo tools from its middleware stack. For the
-    # `lumen-visual-reviewer` that inheritance is fatal: its `response_format`
-    # (VisualCritique) makes langchain bind tools via the Anthropic provider
-    # strategy with strict=True, and Anthropic caps STRICT tools at 20 — the
-    # inherited ~33-tool surface raises `BadRequestError: Too many strict tools`,
-    # which blocked the entire deepagent loop. An empty `tools` list overrides the
+    # tool set (now 17 explicit tools after the asset/inspect consolidation; was 26),
+    # and each subagent additionally gets the built-in filesystem/todo tools from its
+    # middleware stack. For the `lumen-visual-reviewer` that inheritance is fatal: its
+    # `response_format` (VisualCritique) makes langchain bind tools via the Anthropic
+    # provider strategy with strict=True, and Anthropic caps STRICT tools at 20 — the
+    # inherited surface (17 + built-ins) raises `BadRequestError: Too many strict
+    # tools`, which blocked the entire deepagent loop. An empty `tools` list overrides the
     # inheritance (deepagents keys off the presence of "tools", not its truthiness),
     # so the reviewer binds only its built-ins + the VisualCritique tool — well
     # under the cap. The author likewise needs no tools: it returns DSL text (the

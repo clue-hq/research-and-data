@@ -48,15 +48,18 @@ def create_lumen_design_agent(
         model=model,
         backend=backend,
         skills=["apps/agent_runtime/knowledge_docs/skills"],
+        # 17 agent-facing tools. The asset/inspect dispatchers fold what were 10
+        # singletons (generate_*/place_*; summarize_*/query_*) into two multiplexers,
+        # and persist_trace_event is dropped (record() auto-traces every tool call).
+        # The folded methods remain on LumenDesignTools as internal Python API — the
+        # deterministic loop and tests call them directly; they are simply no longer
+        # in the model's tool surface. See .context/tool-and-docs-audit/Q1-*.md.
         tools=[
             tools.load_knowledge,
             tools.compile_dsl_block,
             tools.apply_operations,
             tools.apply_structured_edit,
-            tools.generate_qr,
-            tools.generate_image,
-            tools.place_asset_in_node,
-            tools.place_asset_in_slot,
+            tools.asset,
             tools.validate_binding_set,
             tools.derive_instance_preview,
             tools.preflight_design,
@@ -67,13 +70,7 @@ def create_lumen_design_agent(
             tools.recommend_edit_surface,
             tools.create_repair_request,
             tools.record_gap,
-            tools.summarize_scene,
-            tools.summarize_page,
-            tools.summarize_slots,
-            tools.summarize_node_tree,
-            tools.query_geometry,
-            tools.query_slot_bindings,
-            tools.persist_trace_event,
+            tools.inspect,
             tools.finalize_run,
         ],
         system_prompt=COORDINATOR_SYSTEM_PROMPT,

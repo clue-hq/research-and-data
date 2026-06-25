@@ -9,8 +9,8 @@ and return `{"ok": true}` (only the platform-font warnings `LUMB0613`/`LUMB0614`
 ## Place onto a target — cover + focal, never stretched
 
 - The image fills a frame whose **aspect comes from the frame**, not the image. The
-  agent tool `generate_image(target_node_id=…)` derives the ratio from the target's
-  geometry; `place_asset_in_node` / `place_asset_in_slot` then drop the asset in.
+  agent tool `asset(action="generate_image", target_node_id=…)` derives the ratio from the
+  target's geometry; `asset(action="place", node_id=…/slot_id=…)` then drops the asset in.
 - **Default `fit:cover` + a focal point.** Cover crops to fill the frame at the image's
   natural ratio; the focal point (0..1, default centered) keeps the subject in view —
   raise it for faces/upper subjects, bias it toward the busy side. Never `fill`-stretch

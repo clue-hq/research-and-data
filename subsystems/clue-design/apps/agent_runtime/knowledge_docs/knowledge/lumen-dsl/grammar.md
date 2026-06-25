@@ -118,8 +118,8 @@ Three ways to put a picture on a surface — pick by content (see `knowledge/ima
 **Fit / focal / alt are placement, not DSL leaf props.** An `image` line carries only
 `asset(id)` (+ geometry/`slot`). The *cover/contain/crop fit*, the *focal point*, and the
 *alt text* live on the node's **AssetPlacement**, attached by the agent's
-`place_asset_in_node` / `place_asset_in_slot` tools (or the editor's image inspector) —
-the same canonical ops a human edit issues. So the DSL author **composes the frame +
+`asset(action="place")` tool (or the editor's image inspector) — the same canonical
+`place_asset_in_node` / `place_asset_in_slot` ops a human edit issues. So the DSL author **composes the frame +
 image + scrim structure**; the placement is set on the node, not typed as a property on
 the `image` line (`fit(...)`/`focal(...)` are not DSL properties). The default is
 **`fit:cover` + a sensible focal point**; aspect comes from the *frame*, never stretch.
@@ -141,7 +141,7 @@ colour if the image fails to load.
 
 ```text
 frame fr p(0,0) s(1080,1350) clip(true) rd($radius.card) fill($surface.inverse)
-  photo image asset(hero_photo) p(0,0) s(1080,1350)          # cover-fit + focal set by place_asset_in_node
+  photo image asset(hero_photo) p(0,0) s(1080,1350)          # cover-fit + focal set by asset(action="place")
   scrim r p(0,0) s(1080,1350) fill($surface.inverse) o($opacity.scrim)
   caption text "Faster triage, calmer clinics" p(64,1120) s(936,180) style($type.headline) fill($text.inverse) wrap_text(true) max_lines(2)
 ```

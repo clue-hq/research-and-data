@@ -156,8 +156,8 @@ keep the artboard `$surface.inverse`.
 
 **Placement is on the node, not the DSL line.** The `image` line carries only
 `asset(hero_photo)` — its **`fit:cover` + focal point + alt** are set on the node's
-AssetPlacement by the agent's `place_asset_in_node` tool (or the editor inspector), the same
-op a human edit issues. **Aspect comes from the 1080×1350 frame**, so the photo is cropped to
+AssetPlacement by the agent's `asset(action="place")` tool (or the editor inspector), the same
+`place_asset_in_node` op a human edit issues. **Aspect comes from the 1080×1350 frame**, so the photo is cropped to
 fill, never stretched. Swap `hero_photo` for the generated/uploaded asset id.
 
 **Distribution:** the `content` autolayout fills the frame at `y(sb)` (space-between) with
