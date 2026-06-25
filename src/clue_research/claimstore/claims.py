@@ -27,7 +27,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
-from sqlalchemy import text
+from sqlalchemy import bindparam, text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_research.claimstore.registry import check_claim_writable
@@ -204,19 +204,58 @@ async def insert_claim(
     return ClaimId(result.scalar_one())
 
 
-async def supersede_claim(conn: AsyncConnection, old_id: ClaimId, new_claim: Claim) -> ClaimId:
+async def supersede_claim(
+    conn: AsyncConnection, old_id: ClaimId, new_claim: Claim, *, validate_field: bool = True
+) -> ClaimId:
     """Supersede ``old_id`` with ``new_claim``: insert the new row, then point the old row's
     ``superseded_by`` at it — atomically (the caller's transaction).
 
     This is the *only* permitted mutation of an existing claim besides verification-status /
     corroboration transitions: the immutable provenance of ``old_id`` is untouched; it simply gains
     a forward pointer. Append-only history is preserved (substrate §1).
+
+    ``validate_field`` is threaded to :func:`insert_claim`. It defaults ``True`` (the field-write
+    check runs); the **only** sanctioned ``False`` caller is M10.5's DSAR tombstone path, whose
+    ``new_claim`` carries a deliberately *redacted* ``value_json`` (a redaction sentinel, not a real
+    field value) that must bypass the registry ``value_schema`` check — the tombstone is written
+    ``REJECTED`` so it can never win the merge regardless (substrate §6 / Doc D §4).
     """
-    new_id = await insert_claim(conn, new_claim)
+    new_id = await insert_claim(conn, new_claim, validate_field=validate_field)
     await conn.execute(
         text("UPDATE claim SET superseded_by = :new_id WHERE id = :old_id"),
         {"new_id": new_id, "old_id": old_id},
     )
+    return new_id
+
+
+async def supersede_claims(
+    conn: AsyncConnection,
+    old_ids: Sequence[ClaimId],
+    new_claim: Claim,
+    *,
+    validate_field: bool = True,
+) -> ClaimId:
+    """Supersede *every* claim in ``old_ids`` with a single ``new_claim`` — the many→one analogue of
+    :func:`supersede_claim`: insert the new row once, then point each old row's ``superseded_by`` at
+    it (the trigger-allowlisted forward pointer), atomically in the caller's transaction.
+
+    For a re-resolution that collapses several live claims into one current value — e.g. M10.1
+    re-resolving a contact's jurisdiction must retire *all* live ``contact.jurisdiction`` claims,
+    not just the newest, so a stray/concurrent live sibling cannot keep contributing to
+    ``current_value``. The immutable provenance of each old row is untouched; append-only history
+    is preserved (substrate §1). ``old_ids`` may be empty — then it is exactly :func:`insert_claim`.
+
+    ``validate_field`` is threaded to :func:`insert_claim` (default ``True``); see
+    :func:`supersede_claim` for the single sanctioned ``False`` caller (M10.5 redacted tombstones).
+    """
+    new_id = await insert_claim(conn, new_claim, validate_field=validate_field)
+    ids = list(old_ids)
+    if ids:
+        stmt = text(
+            "UPDATE claim SET superseded_by = :new_id "
+            "WHERE id IN :old_ids AND superseded_by IS NULL"
+        ).bindparams(bindparam("old_ids", expanding=True))
+        await conn.execute(stmt, {"new_id": new_id, "old_ids": ids})
     return new_id
 
 
