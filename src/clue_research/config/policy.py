@@ -427,6 +427,11 @@ class LawfulBasisDefaults(BaseModel):
     # sensitive (Art. 9) needs more than legitimate interest — effectively explicit consent you
     # will not have in cold outreach; excluded from outreach by default regardless of posture.
     sensitive_basis: str | None = None
+    # Pointer to the client's documented legitimate-interest balancing test (the LIA) — recorded as
+    # provenance alongside a legitimate-interest claim by M10.5 so "why were we allowed to hold
+    # this" cites the actual assessment. Per-client config (the LIA is the client's document); None
+    # until the client supplies one (M10.5 records the basis with a null lia_ref, for the owner).
+    lia_ref: str | None = None
 
 
 class RetentionTtls(BaseModel):
@@ -441,7 +446,12 @@ class RetentionTtls(BaseModel):
 
     personal_claim_ttl: timedelta = timedelta(days=180)  # contact.facet.* and personal fields
     sensitive_claim_ttl: timedelta = timedelta(days=30)  # shortest — minimize sensitive retention
-    professional_claim_ttl: timedelta = timedelta(days=365)
+    # The longest-held personal class (professional B2B, legitimate interest), but still **strictly
+    # shorter than the firmographic freshness TTL** (FreshnessTtls core = 365d) — Doc D §4 / M10.5:
+    # "personal claims carry a *shorter* retention than firmographic facts". All three personal
+    # horizons (sensitive 30d < personal 180d < professional 300d) are < 365d firmographic. (D8
+    # config.)
+    professional_claim_ttl: timedelta = timedelta(days=300)
 
 
 class JurisdictionPolicy(BaseModel):
