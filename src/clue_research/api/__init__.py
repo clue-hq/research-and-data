@@ -12,6 +12,11 @@ Shipped so far:
   the M9 governance seams (``verification.classify_binding`` behind M8.4's ``BindingClassifier``;
   the
   ``PreSpendGate`` before account/committee/contact spend).
+* the **M11 synthesis wiring** (:mod:`clue_research.api.synthesis_wiring`): binds the Exa Deep /
+  Parallel Task tier-4 resolvers behind the shared ``Resolver`` seam.
+* the **M10 compliance wiring** (:mod:`clue_research.api.compliance_wiring`): registers the
+  ``contact.jurisdiction`` + shorter personal-data retention TTL field pack (the use-gate /
+  retention-sweep runtime seams land with the ``CampaignPhase.VERIFICATION`` handler).
 * the **M12 narrative wiring** (:mod:`clue_research.api.narrative_wiring`): the
 ``account.value_narrative``
   field pack, the Client-Knowledge retriever stub, and the M12.2 handoff assembler construction.
@@ -25,6 +30,7 @@ Shipped so far:
 
 from __future__ import annotations
 
+from clue_research.api.compliance_wiring import register_compliance_wiring
 from clue_research.api.composition import (
     VerificationBindingClassifier,
     build_pre_spend_gate,
@@ -56,6 +62,7 @@ from clue_research.api.narrative_wiring import (
     build_handoff_assembler,
     register_narrative_wiring,
 )
+from clue_research.api.synthesis_wiring import register_synthesis_wiring
 
 __all__ = [
     "load_research_packs",
@@ -66,6 +73,10 @@ __all__ = [
     "register_profiling_workers",
     "build_worker_registry",
     "build_research_graph",
+    # M11 synthesis wiring
+    "register_synthesis_wiring",
+    # M10 compliance wiring
+    "register_compliance_wiring",
     # M12 narrative wiring
     "register_narrative_wiring",
     "build_client_knowledge_retriever",
