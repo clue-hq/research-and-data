@@ -198,7 +198,8 @@ class CampaignPhase(StrEnum):
     """The campaign-run phase sequence (Doc C §4 / conventions §3) — the ordered states the M7.3
     state machine advances through. Each phase is owned by a registered ``PhaseHandler`` (M5 owns
     ``REVERSE_PROFILING``/``ICP_CONFIRMED``; M6 ``DISCOVERY``/``SCORING``/``TIER_CHECKPOINT``; M8
-    ``DEEP``; M9 ``VERIFICATION``; M12 ``HANDOFF``). Single source of truth for the phase tokens:
+    ``DEEP``; M9 ``VERIFICATION``; M13 ``REVIEW`` — the Tier-1 human gate; M12 ``HANDOFF``). Single
+    source of truth for the phase tokens:
     ``obs.spans.CAMPAIGN_PHASES`` is derived from this enum, and the M7 ``campaign_run.phase`` DB
     enum mirrors it (parity-tested in the M7 branch)."""
 
@@ -209,6 +210,7 @@ class CampaignPhase(StrEnum):
     TIER_CHECKPOINT = "tier_checkpoint"  # the human gate (M6.4, interrupt-style)
     DEEP = "deep"
     VERIFICATION = "verification"
+    REVIEW = "review"  # the Tier-1 human review gate (M13.1, interrupt-style via AWAITING_INPUT)
     HANDOFF = "handoff"
 
 
@@ -321,3 +323,57 @@ class UseReason(StrEnum):
     ALLOWED = "allowed"
     SENSITIVE_LOCKED = "sensitive_locked"
     USE_CLASS_DISALLOWED_FOR_REGIME = "use_class_disallowed_for_regime"
+
+
+# ---------------------------------------------------------------------------
+# M13.1 review-surface taxonomies.
+#
+# These cross the package boundary — the ``core.review.ReviewSurface`` contract (which the
+# ``review`` impl and the ``api`` composition root both bind to) switches on ``ReviewAction`` /
+# ``ReviewSessionStatus``, so they live here with every other closed enum, not in ``review`` (the
+# same reason the Beat-0 execution/verification enums above live in ``core``). Each is mirrored by a
+# Postgres ``ENUM`` (``review_action_kind`` / ``review_session_status`` / ``review_reject_reason``)
+# created in the M13.1 migration; a per-enum parity test asserts the Python members and DB labels
+# stay aligned. (The *disposition* taxonomy is M13.2's and lives in the ``review`` package — its
+# producers/consumers are all inside ``review`` and it crosses no package boundary into ``core``.)
+# ---------------------------------------------------------------------------
+
+
+class ReviewAction(StrEnum):
+    """A Tier-1 reviewer's per-claim action (M13.1, substrate §10).
+
+    * ``APPROVE`` — records assent; the claim flows to the handoff unchanged.
+    * ``CORRECT`` — the reviewer supplies a corrected value; written as a new ``human``-extraction
+      claim that *supersedes* the original (append-only, never an in-place edit), so
+      ``current_value`` returns the human-tier value.
+    * ``REJECT`` — excludes the claim from the finalized handoff; written as a ``REJECTED``
+      superseding claim so the merge drops it (an empty field is a correct output, conventions §5).
+    """
+
+    APPROVE = "approve"
+    CORRECT = "correct"
+    REJECT = "reject"
+
+
+class ReviewSessionStatus(StrEnum):
+    """Lifecycle of a Tier-1 review session over one ``account_handoff`` candidate (M13.1).
+
+    A session opens at the ``REVIEW`` phase per ready high-tier account; ``FINALIZED`` is what gates
+    that account's handoff (per-account session finalization); ``ABANDONED`` is a session closed
+    without finalizing (it does not unblock the handoff)."""
+
+    OPEN = "open"
+    FINALIZED = "finalized"
+    ABANDONED = "abandoned"
+
+
+class ReviewRejectReason(StrEnum):
+    """Why a reviewer rejected a claim (M13.1, the ``review_action.reason_code`` vocabulary). Closed
+    so the disposition/learning loop (M13.2/M13.3) can switch on a typed reason, never free text."""
+
+    INACCURATE = "inaccurate"
+    OUTDATED = "outdated"
+    MISATTRIBUTED = "misattributed"
+    INAPPROPRIATE = "inappropriate"
+    UNSUPPORTED = "unsupported"
+    OTHER = "other"
