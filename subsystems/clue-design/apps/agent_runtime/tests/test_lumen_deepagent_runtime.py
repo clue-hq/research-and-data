@@ -27,7 +27,12 @@ from lumen_deepagent.knowledge import (
     IMAGES_ICONS_PATH,
     IMAGES_PLACEMENT_PATH,
     IMAGES_PROMPTS_PATH,
+    KNOWLEDGE_DOCS_ROOT,
+    PRIMARY_KNOWLEDGE_PATHS,
+    assumes_keys,
+    assumes_path,
     mandatory_task_paths,
+    parse_frontmatter,
     read_knowledge,
     read_task_knowledge,
 )
@@ -1041,6 +1046,61 @@ def test_imagery_prompt_and_placement_docs_pin_by_relevance():
     # Step 8: an icon-bearing brief pins the icon-library reference.
     icon_task = mandatory_task_paths("a four-pillar deck slide with an icon row")
     assert IMAGES_ICONS_PATH in icon_task
+
+
+def test_assumes_frontmatter_resolves_transitively():
+    # Brilliant-style `assumes:` resolution: selecting images/placement (mandatory for
+    # an imagery task) must transitively pull its declared prerequisites —
+    # assets/asset-placement and images/decide — into the loaded context, even though
+    # neither is a mandatory pin nor a required-category pick.
+    repo_root = Path(__file__).resolve().parents[3]
+    snippets = read_task_knowledge(
+        repo_root,
+        "a social ad with a hero photo and a headline overlay",
+        limit=12,
+    )
+    by_path = {snippet.path: snippet for snippet in snippets}
+    asset_placement = f"{KNOWLEDGE_DOCS_ROOT}/knowledge/assets/asset-placement.md"
+
+    assert IMAGES_PLACEMENT_PATH in by_path
+    assert IMAGES_DECIDE_PATH in by_path
+    assert asset_placement in by_path, "images/placement's assumes: dep was not pulled in"
+    # assets/asset-placement is neither mandatory nor a required-category pick, so the
+    # only way it enters is the assumes resolver (which runs before the score fill).
+    assert by_path[asset_placement].selected_reason == "assumes_dependency"
+
+
+def test_knowledge_assumes_keys_resolve_to_real_primary_docs():
+    # Lint guard (scoped Tier-4 idea): every `assumes:` key in every knowledge doc must
+    # resolve to a real PRIMARY doc, so the cross-reference graph can't silently rot.
+    repo_root = Path(__file__).resolve().parents[3]
+    knowledge_root = repo_root / KNOWLEDGE_DOCS_ROOT / "knowledge"
+    primary = set(PRIMARY_KNOWLEDGE_PATHS)
+    edges = 0
+    for md in sorted(knowledge_root.rglob("*.md")):
+        for key in assumes_keys(md.read_text(encoding="utf-8")):
+            edges += 1
+            dep_path = assumes_path(key)
+            assert (repo_root / dep_path).exists(), (
+                f"{md.name}: assumes key '{key}' -> missing file {dep_path}"
+            )
+            assert dep_path in primary, (
+                f"{md.name}: assumes key '{key}' -> {dep_path} is not a PRIMARY doc"
+            )
+    assert edges >= 4, "expected the Tier 0-1 assumes: edges to be present"
+
+
+def test_parse_frontmatter_is_a_noop_without_a_block():
+    # Docs without frontmatter (the common case) must be returned untouched, so the
+    # loader's full-delivery `excerpt == on_disk` invariant holds for them.
+    body = "# Heading\n\nNo frontmatter here."
+    meta, rest = parse_frontmatter(body)
+    assert meta == {}
+    assert rest == body
+
+    meta2, rest2 = parse_frontmatter("---\nassumes: images/decide\n---\n# Title\nx")
+    assert meta2["assumes"] == "images/decide"
+    assert rest2 == "# Title\nx"
 
 
 def test_artboard_fixture_prompts_cover_required_surfaces():

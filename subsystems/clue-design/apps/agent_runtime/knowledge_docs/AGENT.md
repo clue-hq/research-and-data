@@ -58,6 +58,10 @@ load_knowledge
   → stop only on: acceptance, max iterations, or a deterministic tool failure
 ```
 
+Full loop procedure — the step-by-step contract, the surgical-vs-rewrite repair rule,
+and the layout-cluster repair policy — is `knowledge/loop/authoring-and-repair`. Load it
+before driving the loop.
+
 **"Done" = the visual reviewer ACCEPTS.** Compiling is not done. Passing preflight
 is not done. Exporting is not done.
 
@@ -82,7 +86,8 @@ Over-load, never under-load. The reference files are short and precise. Load
 | **Shadows, special strokes, gradients** | `skills/effects` + `knowledge/lumen-dsl/colors` |
 | **Text-heavy / overflow risk** | `knowledge/design/typography-and-composition` + `knowledge/lumen-dsl/text` |
 | **Deciding which tool/function to call** | `skills/tools` |
-| **Reviewing a preview** | `skills/visual-review` + `knowledge/export/preview-quality` |
+| **Per-surface layout skeleton** (reference) | `knowledge/design/layout-recipes` — conservative per-surface starting structures; the validator-passed `knowledge/design/blocks/patterns` is the production source, prefer it |
+| **Reviewing a preview** | `skills/visual-review` + `knowledge/export/preview-quality` (artifact-validity gate) + (branded?) `knowledge/design-systems/brand-fit-critique` (brand-rejection rubric) |
 | **Colors / paint / gradients detail** | `knowledge/lumen-dsl/colors` |
 | **Auto-layout / sizing / alignment detail** | `knowledge/lumen-dsl/layout` |
 | **Answering "can Lumen do X?"** | the matching `knowledge/...` file — never answer capability questions from memory |

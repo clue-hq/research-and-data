@@ -14,7 +14,7 @@ Route by what the content actually is. Most of these are NOT a generated photo.
 | Content | Mechanism | Why |
 |---|---|---|
 | Photo, product shot, portrait, food, place/scene, **texture**, raster illustration | **`asset(action="generate_image")`** (text-to-image) | Only a model can render real photographic/painted content. |
-| **Icon, pictogram, simple flat illustration, logo glyph** | **icon/library** — `svg(icon:name)` or a brand `logo.*`/`asset.icon.*` token | A curated vector is reliable, crisp at any size, and recolorable; a model garbles small flat marks. NOT `asset(action="generate_image")`. |
+| **Icon, pictogram, simple flat illustration, logo glyph** | **icon/library** — `svg(icon:name)` or a brand `logo.*`/`asset.icon.*` token (logo roles + allowed surfaces: `knowledge/design-systems/logo-and-assets`) | A curated vector is reliable, crisp at any size, and recolorable; a model garbles small flat marks. NOT `asset(action="generate_image")`. |
 | Abstract / decorative geometric, accents | **shapes + gradients** (`r`, `vector`, gradient fills) | Built primitives are sharper, on-brand, and free. |
 | Flat color field, brand block, panel | **solid / gradient fill** (`fill($surface.*)`) | A token surface, not an image. |
 | Data, comparison, timeline, process, metrics | **layout / data-display blocks**, not imagery | Information belongs on surfaces, not behind a photo. |

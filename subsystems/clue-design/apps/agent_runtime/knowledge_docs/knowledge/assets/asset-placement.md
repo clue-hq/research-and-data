@@ -2,6 +2,10 @@
 
 Status: supported now, recognized but not lowered, and future scaffold.
 
+Related: `knowledge/images/placement` (the cover/focal-point + text-over-image scrim
+idioms for placing a hero image) and `knowledge/design-systems/logo-and-assets` (brand
+logo/asset roles + allowed-surface rules).
+
 ## Supported Now
 
 Agents may reference registered or fixture assets by stable asset IDs. Use

@@ -1,3 +1,6 @@
+---
+assumes: images/decide, assets/asset-placement
+---
 # Imagery — Placement & the Scrim Rule
 
 How a generated or library image goes into a design. Two non-negotiables: an image is
@@ -5,6 +8,10 @@ placed **onto a target frame** (the frame's geometry drives the aspect, the imag
 cropped to fill — never stretched), and **text over an image always gets a scrim**
 beneath it for legibility. Both examples below were run through `.context/p02-validate.py`
 and return `{"ok": true}` (only the platform-font warnings `LUMB0613`/`LUMB0614`).
+
+Builds on `knowledge/images/decide` (decide *whether* a surface earns an image first)
+and `knowledge/assets/asset-placement` (the asset-registry rules + the
+`place_asset_in_node` / `place_asset_in_slot` op contract this placement compiles to).
 
 ## Place onto a target — cover + focal, never stretched
 

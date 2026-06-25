@@ -15,6 +15,11 @@ compile / preflight / export diagnostics · the SVG text or PNG image · brand-k
 summary. Inspect the actual rendered pixels (PNG) or geometry (SVG) — never
 "approve" without looking.
 
+The artifact must first be a **valid** preview — non-empty bytes, a real PNG/SVG
+header, visible text nodes, recorded dimensions — per `knowledge/export/preview-quality`.
+Never review (or accept) an artifact that fails those checks; repair from the export
+output instead.
+
 ## Measured rubric — walk EVERY check
 
 A `*` check is acceptance-blocking: a single clear failure means `accepted=false`.
@@ -45,6 +50,8 @@ Be specific and target-bound on every issue you raise.
   (tokens, not raw guesses); meaningful ABM slots. Unresolved brand-governance
   diagnostics, raw branded surfaces, raw typography in branded scenes, logo misuse,
   and print/digital mode mismatch are quality failures even when the render is neat.
+  For the full brand-rejection rubric (when does a branded design fail brand fit, and
+  the concrete token repairs) see `knowledge/design-systems/brand-fit-critique`.
 
 Do **not** accept just because compile/preflight/export succeeded, and never approve
 without inspecting the rendered PNG.

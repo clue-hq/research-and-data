@@ -114,3 +114,6 @@ strings.
 `load_knowledge → compile_dsl_block → preflight_design → export_preview_bundle →
 get_latest_preview_for_critique → submit_visual_critique → (repair via
 apply_structured_edit / compile_dsl_block) → finalize_run`.
+
+Full procedure, with the surgical-repair and layout-cluster rules:
+`knowledge/loop/authoring-and-repair`.

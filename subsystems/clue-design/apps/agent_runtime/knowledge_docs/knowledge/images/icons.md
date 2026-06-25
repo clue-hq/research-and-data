@@ -1,3 +1,6 @@
+---
+assumes: images/decide
+---
 # Imagery — Icons (the reliable vector path)
 
 For anything **iconographic** — feature rows, checklists, step markers, bullet accents,
@@ -38,5 +41,6 @@ extensible; richer pictograms (calendar, shield, users…) arrive in a later sli
 ## When NOT to use an icon
 
 - A **photo/portrait/product** that must be seen → `asset(action="generate_image")` (see `images/decide`).
-- A **logo** → a brand `logo.*` / `asset.*` token, never `svg(icon:...)`.
+- A **logo** → a brand `logo.*` / `asset.*` token, never `svg(icon:...)`; for the logo
+  roles + allowed-surface rules see `knowledge/design-systems/logo-and-assets`.
 - Pure **decoration that adds no meaning** → drop it; whitespace beats clutter.

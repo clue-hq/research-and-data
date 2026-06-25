@@ -1,3 +1,6 @@
+---
+assumes: images/decide
+---
 # Imagery — Prompt Craft (the 5-component structure)
 
 Once `knowledge/images/decide` says "generate a photo", write the prompt well. A vague

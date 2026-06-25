@@ -144,6 +144,52 @@ LAYOUT_CLUSTER_TERMS = {
 }
 
 
+# --- Brilliant-style `assumes:` frontmatter (machine-readable prerequisites) ----
+# Brilliant connects its knowledge corpus with an `assumes:` frontmatter field that
+# `get_knowledge` resolves transitively — loading a leaf doc automatically pulls its
+# base. We mirror that here: a doc declares its prerequisites in a YAML frontmatter
+# block, and `read_task_knowledge` force-includes them when the doc is selected. This
+# keeps cross-references machine-resolvable (and lint-checkable) instead of relying on
+# prose pointers that silently rot.
+
+_FRONTMATTER_RE = re.compile(r"^---[ \t]*\n(.*?)\n---[ \t]*\n?", re.DOTALL)
+
+
+def parse_frontmatter(text: str) -> tuple[dict[str, str], str]:
+    """Split a leading `---`-delimited frontmatter block from the body.
+
+    Only the minimal `key: value` subset we use (`assumes:`) is parsed. Returns
+    ``({}, text)`` when there is no frontmatter, so docs without it are unaffected.
+    """
+    if not text.startswith("---"):
+        return {}, text
+    match = _FRONTMATTER_RE.match(text)
+    if not match:
+        return {}, text
+    meta: dict[str, str] = {}
+    for line in match.group(1).splitlines():
+        if ":" in line:
+            key, _, value = line.partition(":")
+            meta[key.strip()] = value.strip()
+    return meta, text[match.end() :]
+
+
+def assumes_keys(text: str) -> list[str]:
+    """The prerequisite knowledge keys a doc declares via `assumes:` frontmatter.
+
+    Brilliant style: a comma-separated list of keys relative to the `knowledge/`
+    dir, e.g. ``assumes: images/decide, assets/asset-placement``.
+    """
+    meta, _ = parse_frontmatter(text)
+    raw = meta.get("assumes", "")
+    return [key.strip() for key in raw.split(",") if key.strip()]
+
+
+def assumes_path(key: str) -> str:
+    """Resolve an `assumes:` key (relative to `knowledge/`) to a repo-relative path."""
+    return f"{KNOWLEDGE_DOCS_ROOT}/knowledge/{key}.md"
+
+
 def read_knowledge(
     repo_root: Path,
     query: str,
@@ -216,6 +262,31 @@ def read_task_knowledge(
             match.model_copy(update={"selected_reason": "mandatory_task_context"})
         )
         seen_paths.add(match.path)
+
+    # Brilliant-style `assumes:` resolution. When a doc is selected, pull its declared
+    # prerequisites (transitively) so loading a leaf — e.g. `images/placement` — also
+    # brings its base (`images/decide` + `assets/asset-placement`). Dependencies come
+    # from the same candidate pool and are force-included (like mandatory pins), before
+    # the score-ranked fill, because a prerequisite outranks a low-scored extra.
+    candidate_by_path = {snippet.path: snippet for snippet in candidates}
+    queue = [snippet.path for snippet in selected]
+    while queue:
+        source_path = queue.pop()
+        source_file = repo_root / source_path
+        if not source_file.exists():
+            continue
+        for key in assumes_keys(source_file.read_text(encoding="utf-8")):
+            dep_path = assumes_path(key)
+            if dep_path in seen_paths:
+                continue
+            dep = candidate_by_path.get(dep_path)
+            if dep is None:
+                continue
+            selected.append(
+                dep.model_copy(update={"selected_reason": "assumes_dependency"})
+            )
+            seen_paths.add(dep_path)
+            queue.append(dep_path)
 
     for snippet in candidates:
         if snippet.path in seen_paths:
