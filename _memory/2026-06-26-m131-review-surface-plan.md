@@ -88,4 +88,12 @@ for v1 — the `review_session` rows already give the per-account "ready/finaliz
 met by the seam call; review_action rows are the durable audit M13.2 reads/mirrors. See [[2026-06-25-m10-m11-m12-integration-plan]].
 
 ## Status
-Stage 1 in progress.
+- **Stage 1 DONE & committed** (`dc2e3a6`): core contract-delta (`REVIEW` phase + 3 review enums +
+  `core/review.py` value types/protocols + exports) + migration `c48ebe0a1e62`. Verified: ruff, mypy,
+  import-linter 11/11, db-smoke (up→base→up, single head), full suite **1796 passed / 14 skipped / 0
+  failed** on a fresh DB; campaign_phase DB enum order = `…verification, review, handoff`.
+- Throwaway DB for increments: `docker` container `clue-pg-m131` on **:5436** (the worktree's own
+  `make db-up`/:5432 is taken by a sibling). DSN
+  `postgresql+asyncpg://clue:clue@localhost:5436/clue` — pass inline to alembic/pytest.
+- **Next: Stage 2** — `review/` impl (projection + surface + repo). Then Stage 3 (api/review phase
+  handler + wiring), Stage 4 (handoff gate), Stage 5 (tests), Stage 6 (docs).
