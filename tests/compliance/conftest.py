@@ -3,9 +3,11 @@
 Mirrors the M9 verification harness (`tests/verification/conftest.py`): the schema is migrated to
 head once per session; each test runs inside an always-rolled-back transaction, so tests neither see
 nor leave each other's rows. The core field pack, the **M10 compliance pack** (so
-``contact.jurisdiction`` is registered), and a couple of *test-only* location fields (so the
-jurisdiction resolver's claim-path can be exercised — M8/M1 own the real location field-keys) are
-loaded inside the transaction. DB tests ``pytest.skip`` gracefully without a reachable database, so
+``contact.jurisdiction`` is registered), and a few *test-only* fields — representative location
+fields (so the jurisdiction resolver's claim-path can be exercised) and a governed
+``contact.facet.*`` hook (so the M10.3 use-gate can be exercised over a real personal claim) — are
+loaded inside the transaction. M8/M1 own the real location/facet field-keys; here we register
+representative rows. DB tests ``pytest.skip`` gracefully without a reachable database, so
 ``make check`` stays green without one.
 """
 
@@ -30,9 +32,10 @@ from tests.db.conftest import run_async as run_async
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 
-# Test-only location fields the resolver reads via current_value (its configured defaults). M8/M1
-# own real location field-keys; here we register representative rows so the claim-path is testable.
-_TEST_LOCATION_PACK: tuple[SeedField, ...] = (
+# Test-only fields M10 reads. M8/M1 own the real location/facet field-keys; here we register
+# representative rows so the M10.1 resolver claim-path and the M10.3 use-gate (which gates a real
+# governed contact.facet.* personal claim) are testable.
+_TEST_FIELD_PACK: tuple[SeedField, ...] = (
     SeedField(
         field_def=FieldDef(
             field_key="contact.location",
@@ -54,6 +57,20 @@ _TEST_LOCATION_PACK: tuple[SeedField, ...] = (
         ),
         value_schema={"type": "object"},
         description="Test-only account HQ location field (M10.1 resolver claim-path).",
+    ),
+    SeedField(
+        field_def=FieldDef(
+            field_key="contact.facet.test_hook",
+            value_type="string",
+            freshness_ttl=timedelta(days=90),
+            pass_kind=PassKind.DEEP,
+            # contact.facet.* is FieldClass.CONTACT_FACET → TENANT_PRIVATE by default; declared
+            # explicitly. A claim on it requires both identity_binding + use_class (the Claim
+            # validator + DB CHECK), which is exactly what the M10.3 gate reads.
+            reuse_scope=ReuseScope.TENANT_PRIVATE,
+        ),
+        value_schema={"type": "string"},
+        description="Test-only governed contact personal-hook field (M10.3 use-gate path).",
     ),
 )
 
@@ -86,14 +103,14 @@ def require_compliance_db(migrated_db: bool) -> None:
 @asynccontextmanager
 async def rollback_conn() -> AsyncIterator[AsyncConnection]:
     """Yield a pooled connection inside an always-rolled-back transaction, with the core pack, the
-    M10 compliance pack, and the test-only location fields loaded so the resolver's reads work."""
+    M10 compliance pack, and the test-only location/facet fields loaded so M10's reads work."""
     async with db_lifespan() as engine:
         conn = await engine.connect()
         trans = await conn.begin()
         try:
             await load_core_pack(conn)
             await load_compliance_pack(conn)
-            await load_pack(conn, _TEST_LOCATION_PACK)
+            await load_pack(conn, _TEST_FIELD_PACK)
             yield conn
         finally:
             await trans.rollback()

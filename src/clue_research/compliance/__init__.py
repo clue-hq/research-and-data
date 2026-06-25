@@ -26,6 +26,13 @@ from clue_research.compliance.jurisdiction import (
     region_from_value,
     region_to_regime,
 )
+from clue_research.compliance.use_gate import (
+    DEFAULT_USE_POLICY,
+    UseGateImpl,
+    UsePolicy,
+    decide_use,
+    load_client_policy,
+)
 
 __all__ = [
     # M10.1 — jurisdiction resolution
@@ -36,6 +43,12 @@ __all__ = [
     "extract_region",
     "region_from_value",
     "region_to_regime",
+    # M10.3 — appropriateness/use gate (impl of core.compliance.UseGate)
+    "UseGateImpl",
+    "UsePolicy",
+    "DEFAULT_USE_POLICY",
+    "decide_use",
+    "load_client_policy",
     # field pack (M10.1 contact.jurisdiction; M10.5 will extend)
     "COMPLIANCE_PACK",
     "CONTACT_JURISDICTION",
