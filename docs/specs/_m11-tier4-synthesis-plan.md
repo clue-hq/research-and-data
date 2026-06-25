@@ -217,12 +217,64 @@ convergence is a confidence/judge signal, **not** an increment to the tier-≤3 
 path's job. D7 (default to one provider with the other as fallback, vs both) is a config/economics
 choice; the wiring binds both, the Source Planner (M4.6) chooses.
 
-## M11.3 (judge-gating glue) — deferred, lives in `synthesis/`
+## M11.3 (judge-gating glue) — IMPLEMENTED (the part that fits the isolated branch)
 
-Field rows already seeded (PF-6). M11.3 adds: the mode-M2 synthesis aspect workers, the
-`pre_spend → resolve → corroboration → faithfulness → promote` ordering (PF-7
-`VERIFICATION_GATE_ORDER`), the Pass-B-only guard, the personal-data firewall assertion, the
-"share of tier-4 claims passing the judge" metric (Doc C §6 → M13.4), and the M9.6 golden-set rows.
+The key constraint: **`synthesis/` is a milestone worker under the "workers are independent" import
+contract** — it may import `core`/`config`/`obs` + the M1–M4 services
+(`claimstore`/`sources`/`icp`/`identity`), but **not** `verification/` (the judge), `resolvers/`
+(Exa/Parallel), `durable/`, or `profiling/`. So the *runtime* judge-gating pipeline cannot be wired
+inside `synthesis/`; the cross-worker composition is an `api`-root job (the same deferral pattern as
+M9.1 AC-6 / M9.4 / M9.5). And the substrate that M11.3 was specced to "add" mostly **already exists**
+on the base:
+
+| M11.3 deliverable | Status on base | Owner |
+|---|---|---|
+| Synthesis field rows (`pass=DEEP`, tier-4 `tier_plan`, `gate`, TTL) | already seeded (frozen; M11 must not touch `packs.py`) | PF-6 |
+| Merge **judge-gating** (unverified/judge-failed tier-4 excluded from `current_value`) | already enforced — `MergePolicy.require_verified_tier4` | M1.2 |
+| `no-span → cannot promote` | `core.can_be_promoted` | core/M1 |
+| Faithfulness judge + verdict→status | `verification/faithfulness.py` | M9.3 |
+| The aspect worker that resolves deep account fields via the waterfall → exa/parallel | `profiling/AspectProfilingWorker` (mode M2) | M8 |
+| `VERIFICATION_GATE_ORDER` (…→corroboration→**faithfulness**→…) | `api/composition.py` | PF-7 |
+| Tier-4 pass-rate metric (aggregate) | `obs.record_verification_health` | M9/obs |
+
+So M11.3 does **not** add a redundant synthesis worker (M8's deep worker already resolves the
+synthesis fields), nor re-implement the merge gate. What it ships (this commit), in `synthesis/`
+(import-safe) + hermetic tests:
+
+- **`synthesis/gating.py`** — the M11 synthesis policy as testable, core-typed code: `is_synthesis_field`
+  / `is_account_synthesis_field` predicates; **`guard_account_only`** (the account-only personal-data
+  firewall — a contact-class synthesis field is M10's, never this path); **`guard_pass_b`**
+  (Pass-B-only — a deep account-synthesis field resolves only in mode M2 / `ACCOUNT_PROFILING`);
+  `guard_synthesis_resolution` (the combined pre-resolution guard the api root calls); and claim-level
+  reads (`assert_pass_b_claim`, `synthesis_claim_is_promotable`) that restate the M1.2 gate at the
+  field level. It does NOT re-implement the merge gate or the resolver firewall — both are already
+  structural; this is the single tested source of truth + the api-root defense-in-depth guard.
+- **`synthesis/health.py`** — `record_synthesis_health`: the **per-field** tier-4 faithfulness
+  pass-rate (Doc C §6), dimensioning obs's tier-4 metrics with `{field_key}` (summing over `field_key`
+  recovers the aggregate — do not also call the aggregate over the same claims).
+- **Tests** (`tests/synthesis/`, hermetic — the field rows read from in-memory `CORE_PACK`, merge is
+  pure): field-row shape; account-only firewall; Pass-B-only; `resonance.*` open class; the **judge-gate**
+  (merge excludes an unverified/rejected tier-4 synthesis claim from `current_value`, promotes a
+  verified one); no-span-no-promote; per-field metric (incl. the sum-to-aggregate check).
+
+### Decisions taken (confirmed with the product owner)
+1. **Scope:** defer the `api`-root `VERIFICATION`-phase integration (it is M9's phase, needs
+   `verification/`+`resolvers/`, and would risk conflicts with the parallel m10/m12 worktrees at the
+   shared composition root). Ship the synthesis-package policy/health/tests + document the deferral.
+2. **`strategic_moves` tier-4-last:** PF-6 deliberately set its `tier_plan` to `(exa_deep,
+   parallel_task)` (tier-4-only, no tier-3 news) and `packs.py` is frozen — so the spec's
+   "tier-3-news-short-circuits-tier-4" AC is **superseded by PF-6 / N/A**; generic stop-at-first-confident
+   is already covered by the M11.1/M11.2 waterfall e2e. Not re-adding a tier-3 news source (out of M11 scope).
+3. **Gate values:** the frozen base rows use `gate="deep-pass"` (the spec's `committee-gated` / `tier>=1`
+   simplified by PF-6); tests assert the actual base value.
+
+### Deferred to integration (documented, not built on this isolated branch)
+- The `CampaignPhase.VERIFICATION` handler that runs corroboration+judge+promote over the unverified
+  tier-4 claims (M9's phase) — the live call site for `guard_synthesis_resolution` (pre-resolution) and
+  `record_synthesis_health` (post-judge) is there / at the api root.
+- The api-root `PreSpendGate.check` routing for the tier-4 spend path (M9.1 AC-6).
+- The **M9.6 golden-set rows** for the synthesis fields — they live in `verification/golden.py` (M9.6),
+  which M11 cannot import/edit (worker independence); add when M9.6 / the worktrees integrate.
 
 ## Integration notes (carry to the M11→M10→M12 join)
 - Wire `exa_deep`/`parallel_task` resolve through `PreSpendGate.check` at the api root (closes M9.1
