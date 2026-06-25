@@ -18,11 +18,11 @@ Doc D §7 — "is it this person?" before "may we use it?"). ``evaluate(claim)``
    (:func:`decide_use`) — the claim's immutable ``use_class`` (stamped at extraction by M10.2), the
    contact's *current* resolved regime read via M10.1's ``contact.jurisdiction`` claim
    (:meth:`_resolved_regime`, **fail-closed** to the strict regime when unknown — Doc D §1), and the
-   versioned :class:`UsePolicy` allow-map (M10.4 postures-as-config);
+   versioned :class:`ClientPolicy` allow-map (M10.4 postures-as-config);
 2. **the hard floor (Doc D §4):** ``sensitive`` (special-category) data is **never usable** for
    outreach under *any* posture — enforced in the gate itself (not left to config), so even an
-   Option-2 "gather broadly" policy that stored it cannot make it usable absent an explicit,
-   legally-reviewed override (the M10.4 override register; none here);
+   Option-2 "gather broadly" policy that stored it cannot make it usable except via an explicit,
+   legally-reviewed per-field :class:`SensitiveOverride` (M10.4's ``sensitive_overrides`` register);
 3. the verdict is recorded in the ``use_decision`` side table (PF-2 — a verdict settable *after* the
    immutable claim is inserted, never a born ``claim`` column), idempotent per
    ``(claim_id, policy_version)`` and **refreshed in place** when a jurisdiction re-resolution flips
@@ -37,10 +37,11 @@ identity-binding is excluded upstream (``merge`` drops weak-bound contacts; the 
 strong), so the use gate is the appropriateness axis *only* and never folds binding into its verdict
 (that would conflate the two gates Doc D §5 keeps apart).
 
-Policy-as-data (conventions §2): the allow-map, per-regime relaxation, and ``version`` are versioned
-:class:`UsePolicy` rows in ``client_policy`` (per-client overridable; read via
-:func:`load_client_policy`), so a posture switch is a config row, not code (Doc D §6). Architecture:
-Doc D §3/§5/§6/§7; docs/specs/M10-compliance-and-personal-data.md §M10.3.
+Policy-as-data (conventions §2): the allow-map, per-regime relaxation, gather/store scope, override
+register, and ``version`` are versioned :class:`ClientPolicy` rows in ``client_policy`` (per-client
+overridable; read via :func:`load_client_policy`; the three postures materialize into it via
+:mod:`clue_research.compliance.posture`), so a posture switch is a config row, not code (Doc D §6).
+Architecture: Doc D §3/§5/§6/§7; docs/specs/M10-compliance-and-personal-data.md §M10.3/§M10.4.
 """
 
 from __future__ import annotations
@@ -49,7 +50,7 @@ import json
 from collections.abc import Callable, Mapping
 from contextlib import AbstractAsyncContextManager
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
@@ -61,6 +62,7 @@ from clue_research.config import (
     Jurisdiction,
     JurisdictionPolicy,
     Posture,
+    SourceScope,
     UseDisposition,
 )
 from clue_research.core import (
@@ -113,16 +115,49 @@ _ATTR_POLICY_VERSION = "compliance.use_gate.policy_version"
 _DEFAULT_ALLOW_MAP: dict[UseClass, UseDisposition] = dict(JurisdictionPolicy().allow_map)
 
 
-class UsePolicy(BaseModel):
-    """The use-gate policy as data (policy-as-data, conventions §2; Doc D §6) — what the gate reads.
+class SensitiveOverride(BaseModel):
+    """One legally-reviewed exception that lets the gate clear a ``sensitive`` claim for a specific
+    field (Doc D §4; M10.4). This is the **only** sanctioned relaxation of the Art. 9 hard floor —
+    *not* a blanket config toggle (the ``allow_map`` / ``regime_overrides`` floor is fixed).
+    Every entry must carry an explicit ``lawful_basis`` (e.g. an Art. 9(2) condition) and a
+    ``reviewed_by`` so the relaxation is narrow, per-field, and auditable; an entry missing
+    either is rejected (an override with no reviewed basis is exactly the bypass the floor exists to
+    prevent)."""
 
-    A small gate-facing model (the M9.4 ``BindingPolicy`` analogue), persisted as the
-    ``client_policy`` side table and read via :func:`load_client_policy`. Postures are **not forks**
-    (Doc D §6): the ``posture`` is a descriptive label; ``allow_map`` is the *authoritative*
-    materialized posture — the ``use_class → disposition`` parameters the gate decides on.
-    ``regime_overrides`` is the per-regime relaxation read down from the strict default (the
-    "design strict, switch down" lever; M10.4 fills these). ``version`` is recorded on every
-    :class:`UseDecision`; bumping it is a config change, not code.
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    field_key: str  # the specific contact.facet.* field this override authorizes
+    lawful_basis: str  # the explicit Art. 9 condition relied on (non-empty)
+    reviewed_by: str  # who reviewed/approved the exception (non-empty, auditable)
+    note: str = ""
+
+    @field_validator("field_key", "lawful_basis", "reviewed_by")
+    @classmethod
+    def _non_empty(cls, value: str) -> str:
+        if not value or not value.strip():
+            raise ValueError(
+                "a sensitive override requires field_key, lawful_basis, and reviewed_by "
+                "— a blank entry is the un-reviewed bypass the Art. 9 floor forbids (Doc D §4)"
+            )
+        return value.strip()
+
+
+class ClientPolicy(BaseModel):
+    """The per-client posture policy as data (policy-as-data, conventions §2; Doc D §6) — the seam
+    M10.3 reads for usability and M8 / the M4.6 planner read for gather/store scope.
+
+    The three deep-research postures (Doc D §6) are **not permanent forks**: ``posture`` is a
+    descriptive label, and every posture is materialized into the SAME parameters on this one model
+    (see :mod:`clue_research.compliance.posture`). Nothing reads ``posture`` as a branch.
+
+    *Use-side* (read by the M10.3 gate): ``allow_map`` is the authoritative ``use_class →
+    disposition`` map; ``regime_overrides`` is the per-regime relaxation read down from the strict
+    default ("design strict, switch down", a lookup not a branch). *Gather/store-side* (read by M8 /
+    M4.6 at integration): ``source_scope`` is the collection-time lever (Option 3 scopes to
+    professional-public surfaces), ``store_sensitive`` the Doc D §4 minimization sub-flag, and
+    ``gather_scope`` an optional explicit source-key allow-list. ``sensitive_overrides`` is the
+    legally-reviewed register — the only sanctioned relaxation of the Art. 9 floor. ``version`` is
+    recorded on every :class:`UseDecision`; bumping it is a config change, not code.
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
@@ -133,17 +168,23 @@ class UsePolicy(BaseModel):
     )
     # regime -> (use_class -> disposition). A regime present here overrides the base allow-map for
     # the listed use-classes *only* (a partial per-regime relaxation); absent regimes/use-classes
-    # fall through to ``allow_map``. M10.4 authors these; empty = the base map applies everywhere.
+    # fall through to ``allow_map``. Empty = the base map applies everywhere.
     regime_overrides: dict[Jurisdiction, dict[UseClass, UseDisposition]] = Field(
         default_factory=dict
     )
+    # --- gather/store-side (Doc D §6; read by M8 / the M4.6 planner at integration) ---
+    source_scope: SourceScope = SourceScope.FULL_SWEEP
+    store_sensitive: bool = False  # Option 1/3 minimize; Option 2 stores all (gate still locks use)
+    gather_scope: frozenset[str] = frozenset()  # explicit source-key allow-list (empty = no narrow)
+    sensitive_overrides: tuple[SensitiveOverride, ...] = ()
     version: int = Field(default=1, ge=1)
 
     @model_validator(mode="after")
-    def _check(self) -> UsePolicy:
+    def _check(self) -> ClientPolicy:
         """Every use-class has a base disposition; ``sensitive`` may never be config-marked USABLE
-        (the gate floors it regardless, but a config row trying to bypass the Art. 9 floor is a
-        misconfiguration that must fail loudly, not silently — mirrors ``JurisdictionPolicy``)."""
+        in ``allow_map`` *or* ``regime_overrides`` (the gate floors it regardless, but a config row
+        trying to bypass the Art. 9 floor is a misconfiguration that must fail loudly —
+        the *only* sanctioned relaxation is the reviewed ``sensitive_overrides`` register)."""
         missing = [uc for uc in UseClass if uc not in self.allow_map]
         if missing:
             raise ValueError(f"allow_map missing dispositions for use-classes: {missing}")
@@ -151,17 +192,14 @@ class UsePolicy(BaseModel):
             raise ValueError(
                 "sensitive (special-category) data may not be marked USABLE — it is excluded from "
                 "outreach by default regardless of posture (Doc D §4); the gate floors it. Use "
-                "STORED_UNUSABLE / NOT_STORED, or the M10.4 legally-reviewed override register."
+                "STORED_UNUSABLE / NOT_STORED, or the reviewed sensitive_overrides register."
             )
-        # The floor is not config-bypassable per regime either: a regime_override marking sensitive
-        # USABLE is the same Art. 9 misconfiguration and must fail loudly (the gate floors it at
-        # runtime regardless, but the promise is fail-closed at config load too).
         for regime, overrides in self.regime_overrides.items():
             if overrides.get(UseClass.SENSITIVE) is UseDisposition.USABLE:
                 raise ValueError(
                     f"sensitive may not be marked USABLE in regime_overrides[{regime.value}] — "
                     "the Art. 9 floor is not config-bypassable per regime (Doc D §4); the gate "
-                    "floors it. Use the M10.4 legally-reviewed override register."
+                    "floors it. Use the legally-reviewed sensitive_overrides register."
                 )
         return self
 
@@ -173,25 +211,66 @@ class UsePolicy(BaseModel):
             return override[use_class]
         return self.allow_map[use_class]
 
+    def usable_use_classes(self, regime: Jurisdiction) -> frozenset[UseClass]:
+        """The use-classes usable for outreach under ``regime`` (the named introspection seam).
+        ``sensitive`` is never included — the gate floors it (a per-field reviewed override is
+        the only exception, and that is decided per claim, not surfaced as a regime-wide class)."""
+        return frozenset(
+            uc
+            for uc in (UseClass.PROFESSIONAL_PUBLIC, UseClass.PERSONAL_PUBLIC_NON_SENSITIVE)
+            if self.disposition_for(uc, regime) is UseDisposition.USABLE
+        )
 
-DEFAULT_USE_POLICY = UsePolicy()
+    def should_store(self, use_class: UseClass) -> bool:
+        """Whether a claim of ``use_class`` may be *persisted* at all (Doc D §4 minimization;
+        M8 reads this at the insert site). Only ``sensitive`` is gated, by ``store_sensitive``;
+        non-sensitive personal data is always storable (the gate governs its *use*, not storage).
+        """
+        return use_class is not UseClass.SENSITIVE or self.store_sensitive
+
+    def gathers_source(self, source_key: str) -> bool:
+        """Whether the M4.6 planner may consult ``source_key`` (Doc D §6 Option 3 source-scoping).
+        An empty ``gather_scope`` imposes no narrowing (the ``source_scope`` lever governs);
+        a non-empty allow-list restricts collection to exactly its members."""
+        return not self.gather_scope or source_key in self.gather_scope
+
+    def sensitive_override_for(self, field_key: str | None) -> SensitiveOverride | None:
+        """The legally-reviewed override authorizing a ``sensitive`` claim for ``field_key``, or
+        ``None`` (the floor holds). The only sanctioned relaxation of the Art. 9 hard floor."""
+        if field_key is None:
+            return None
+        for override in self.sensitive_overrides:
+            if override.field_key == field_key:
+                return override
+        return None
+
+
+DEFAULT_CLIENT_POLICY = ClientPolicy()
 
 
 # --- the pure decision (DB-free, unit-testable) -----------------------------
 
 
 def decide_use(
-    use_class: UseClass, regime: Jurisdiction, policy: UsePolicy
+    use_class: UseClass,
+    regime: Jurisdiction,
+    policy: ClientPolicy,
+    *,
+    field_key: str | None = None,
 ) -> tuple[bool, UseReason]:
     """The appropriateness verdict ``(usable_for_outreach, reason)`` for a personal claim — the pure
     core of the gate, a function of ``(use_class, regime, client_policy)`` only (Doc D §3).
 
     The **hard floor first** (Doc D §4, AC2): ``sensitive`` special-category data is *never* usable
     for outreach under any posture — enforced here in the gate, not delegated to the allow-map, so
-    an Option-2 policy (or a buggy config) can never make it usable. Everything else reads the
-    policy's per-regime disposition: ``USABLE`` → allowed; ``STORED_UNUSABLE`` / ``NOT_STORED`` →
-    not usable for this use-class in this regime. An empty hook is correct (universal rule)."""
+    an Option-2 policy (or a buggy config) can never make it usable. The only sanctioned relaxation
+    is a reviewed :class:`SensitiveOverride` for this exact ``field_key`` (M10.4) — a narrow,
+    per-field, audited exception, never a blanket toggle. Everything else reads the policy's
+    per-regime disposition: ``USABLE`` → allowed; ``STORED_UNUSABLE`` / ``NOT_STORED`` → not usable
+    for this use-class in this regime. An empty hook is correct (universal rule)."""
     if use_class is UseClass.SENSITIVE:
+        if policy.sensitive_override_for(field_key) is not None:
+            return True, UseReason.ALLOWED  # the legally-reviewed per-field exception (Doc D §4)
         return False, UseReason.SENSITIVE_LOCKED
     if policy.disposition_for(use_class, regime) is UseDisposition.USABLE:
         return True, UseReason.ALLOWED
@@ -212,7 +291,7 @@ def _conn_factory_default() -> AbstractAsyncContextManager[AsyncConnection]:
 class UseGateImpl:
     """The M10.3 appropriateness/use gate (implements ``clue_research.core.compliance.UseGate``).
 
-    Constructed per (client) context at the ``api`` root with the resolved :class:`UsePolicy`
+    Constructed per (client) context at the ``api`` root with the resolved :class:`ClientPolicy`
     (loaded via :func:`load_client_policy`), a connection factory (defaults to a committed
     transaction per evaluate), and an optional metric sink. It reads the contact's resolved regime
     under the client's tenant scope and records the verdict in ``use_decision``.
@@ -222,7 +301,7 @@ class UseGateImpl:
         self,
         client_id: str,
         *,
-        policy: UsePolicy = DEFAULT_USE_POLICY,
+        policy: ClientPolicy = DEFAULT_CLIENT_POLICY,
         conn_factory: Callable[[], AbstractAsyncContextManager[AsyncConnection]] = (
             _conn_factory_default
         ),
@@ -268,7 +347,9 @@ class UseGateImpl:
         ) as span:
             async with self._conn_factory() as conn:
                 regime = await self._resolved_regime(conn, claim.entity_id)
-                usable, reason = decide_use(use_class, regime, self._policy)
+                usable, reason = decide_use(
+                    use_class, regime, self._policy, field_key=str(claim.field_key)
+                )
                 cache_hit = False
                 if self._record:
                     existing = await self._load_cached(conn, claim.id, policy_version)
@@ -402,6 +483,13 @@ def _as_object(raw: object) -> dict[str, object]:
     return raw if isinstance(raw, dict) else {}
 
 
+def _as_array(raw: object) -> list[object]:
+    """Decode a jsonb array column to a list (same defensive decode as :func:`_as_object`)."""
+    if isinstance(raw, (bytes, bytearray, str)):
+        raw = json.loads(raw)
+    return list(raw) if isinstance(raw, list) else []
+
+
 def _parse_allow_map(raw: object) -> dict[UseClass, UseDisposition]:
     return {UseClass(str(k)): UseDisposition(str(v)) for k, v in _as_object(raw).items()}
 
@@ -415,9 +503,19 @@ def _parse_regime_overrides(
     }
 
 
-async def load_client_policy(conn: AsyncConnection, *, client_id: str | None = None) -> UsePolicy:
-    """Load the most-specific :class:`UsePolicy` for a scope: per-client → global default row →
-    :data:`DEFAULT_USE_POLICY`. The latest ``version`` within the matched scope wins (deterministic
+def _parse_sensitive_overrides(raw: object) -> tuple[SensitiveOverride, ...]:
+    return tuple(
+        SensitiveOverride.model_validate(entry)
+        for entry in _as_array(raw)
+        if isinstance(entry, dict)
+    )
+
+
+async def load_client_policy(
+    conn: AsyncConnection, *, client_id: str | None = None
+) -> ClientPolicy:
+    """Load the most-specific :class:`ClientPolicy` for a scope: per-client → global default row →
+    :data:`DEFAULT_CLIENT_POLICY`. The latest ``version`` in the matched scope wins (deterministic
     ``created_at``/``policy_id`` tie-break, so a duplicate same-version global row can never resolve
     non-deterministically). Returns the built-in default when no row matches (policy-as-data;
     fail-soft).
@@ -425,9 +523,10 @@ async def load_client_policy(conn: AsyncConnection, *, client_id: str | None = N
     A row's ``allow_map`` is layered **over** the conservative default, so a config row only needs
     to list the entries it changes (a partial override; mirrors the config skeleton's "a client
     override replaces individual entries") and is always complete. A row that tries to mark
-    ``sensitive`` USABLE fails :class:`UsePolicy` validation at load (fail-closed — the Art. 9 floor
-    is not config-bypassable; use the M10.4 override register), surfacing the misconfiguration
-    loudly rather than silently relaxing governance."""
+    ``sensitive`` USABLE (in ``allow_map`` or ``regime_overrides``), or carries a blank
+    ``sensitive_overrides`` entry, fails :class:`ClientPolicy` validation at load (fail-closed — the
+    Art. 9 floor is not config-bypassable; only a reviewed per-field override relaxes it), surfacing
+    the misconfiguration loudly rather than silently relaxing governance."""
     candidates: list[str | None] = []
     if client_id is not None:
         candidates.append(client_id)
@@ -438,7 +537,9 @@ async def load_client_policy(conn: AsyncConnection, *, client_id: str | None = N
             await conn.execute(
                 text(
                     """
-                    SELECT posture, allow_map, regime_overrides, version FROM client_policy
+                    SELECT posture, allow_map, regime_overrides, source_scope, store_sensitive,
+                           gather_scope, sensitive_overrides, version
+                    FROM client_policy
                     WHERE client_id IS NOT DISTINCT FROM :client_id
                     ORDER BY version DESC, created_at DESC, policy_id DESC
                     LIMIT 1
@@ -448,10 +549,14 @@ async def load_client_policy(conn: AsyncConnection, *, client_id: str | None = N
             )
         ).first()
         if row is not None:
-            return UsePolicy(
+            return ClientPolicy(
                 posture=Posture(row[0]),
                 allow_map={**_DEFAULT_ALLOW_MAP, **_parse_allow_map(row[1])},
                 regime_overrides=_parse_regime_overrides(row[2]),
-                version=int(row[3]),
+                source_scope=SourceScope(row[3]),
+                store_sensitive=bool(row[4]),
+                gather_scope=frozenset(str(s) for s in _as_array(row[5])),
+                sensitive_overrides=_parse_sensitive_overrides(row[6]),
+                version=int(row[7]),
             )
-    return DEFAULT_USE_POLICY
+    return DEFAULT_CLIENT_POLICY

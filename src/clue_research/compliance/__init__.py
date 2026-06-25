@@ -26,10 +26,17 @@ from clue_research.compliance.jurisdiction import (
     region_from_value,
     region_to_regime,
 )
+from clue_research.compliance.posture import (
+    DEFAULT_POSTURE_POLICY,
+    POSTURE_PRESETS,
+    PosturePreset,
+    client_policy_for_posture,
+)
 from clue_research.compliance.use_gate import (
-    DEFAULT_USE_POLICY,
+    DEFAULT_CLIENT_POLICY,
+    ClientPolicy,
+    SensitiveOverride,
     UseGateImpl,
-    UsePolicy,
     decide_use,
     load_client_policy,
 )
@@ -45,10 +52,16 @@ __all__ = [
     "region_to_regime",
     # M10.3 — appropriateness/use gate (impl of core.compliance.UseGate)
     "UseGateImpl",
-    "UsePolicy",
-    "DEFAULT_USE_POLICY",
+    "ClientPolicy",
+    "SensitiveOverride",
+    "DEFAULT_CLIENT_POLICY",
     "decide_use",
     "load_client_policy",
+    # M10.4 — the three postures as per-client config
+    "POSTURE_PRESETS",
+    "PosturePreset",
+    "client_policy_for_posture",
+    "DEFAULT_POSTURE_POLICY",
     # field pack (M10.1 contact.jurisdiction; M10.5 will extend)
     "COMPLIANCE_PACK",
     "CONTACT_JURISDICTION",
