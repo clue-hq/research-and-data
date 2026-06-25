@@ -229,11 +229,22 @@ def test_sensitive_override_requires_reviewed_basis() -> None:
 
 
 def test_client_policy_gather_and_store_helpers() -> None:  # the M8 / M4.6-facing seam
-    # store_sensitive sub-flag: only sensitive is gated by it; everything else is always storable.
+    # store_sensitive sub-flag: sensitive is gated by it; non-sensitive is storable by default.
     minimal = ClientPolicy(store_sensitive=False)
     assert minimal.should_store(_SENSITIVE) is False
     assert minimal.should_store(_PRO) is True
     assert ClientPolicy(store_sensitive=True).should_store(_SENSITIVE) is True
+    # ...but a NOT_STORED disposition ("not retained at all") is honored for ANY class, not just
+    # sensitive — the client's do-not-retain intent must not be silently ignored.
+    not_stored = ClientPolicy(
+        allow_map={
+            _PRO: UseDisposition.USABLE,
+            _PERSONAL: UseDisposition.NOT_STORED,
+            _SENSITIVE: UseDisposition.STORED_UNUSABLE,
+        }
+    )
+    assert not_stored.should_store(_PERSONAL) is False
+    assert not_stored.should_store(_PRO) is True
     # gather_scope: empty = no narrowing (all sources); a non-empty allow-list restricts.
     assert ClientPolicy().gathers_source("any_source") is True
     scoped = ClientPolicy(gather_scope=frozenset({"linkedin", "company_site"}))
@@ -921,5 +932,50 @@ def test_sensitive_override_makes_claim_usable_via_gate() -> None:  # AC2 — th
             allowed = await _gate(conn, policy=policy).evaluate(claim)
             assert allowed.usable_for_outreach is True
             assert allowed.reason is UseReason.ALLOWED
+
+    run_async(_run())
+
+
+@pytest.mark.usefixtures("require_compliance_db")
+def test_load_client_policy_reads_option2_store_sensitive_true() -> (
+    None
+):  # AC2 store-bit round-trip
+    async def _run() -> None:
+        async with rollback_conn() as conn:
+            # an Option-2 row stores sensitive (store_sensitive=true) — the loader must read the
+            # TRUE case back (the existing round-trip only exercises the false/minimize case).
+            await conn.execute(
+                text(
+                    "INSERT INTO client_policy "
+                    "(policy_id, client_id, posture, source_scope, store_sensitive, version) "
+                    "VALUES (:pid, :cid, 'gather_broadly_gate_at_use', 'full_sweep', true, 5)"
+                ),
+                {"pid": "p-opt2", "cid": _CLIENT},
+            )
+            loaded = await load_client_policy(conn, client_id=_CLIENT)
+            assert loaded.posture is Posture.GATHER_BROADLY_GATE_AT_USE
+            assert loaded.store_sensitive is True
+            assert loaded.should_store(_SENSITIVE) is True  # stored — the gate still locks its use
+            assert loaded.version == 5
+
+    run_async(_run())
+
+
+@pytest.mark.usefixtures("require_compliance_db")
+def test_load_client_policy_rejects_malformed_override_entry() -> None:
+    async def _run() -> None:
+        async with rollback_conn() as conn:
+            # a sensitive_overrides element that is not an object (a bare string) must fail loudly
+            # at load, not be silently dropped to an empty register (the Art. 9 register must show).
+            await conn.execute(
+                text(
+                    "INSERT INTO client_policy "
+                    "(policy_id, client_id, sensitive_overrides, version) "
+                    "VALUES ('p-bad-ovr', :cid, CAST(:so AS jsonb), 1)"
+                ),
+                {"cid": _CLIENT, "so": '["contact.facet.health"]'},
+            )
+            with pytest.raises(ValidationError):
+                await load_client_policy(conn, client_id=_CLIENT)
 
     run_async(_run())
