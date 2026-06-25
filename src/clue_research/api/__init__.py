@@ -53,6 +53,11 @@ from clue_research.api.handoff_app import (
     header_tenant_resolver,
     read_conn_dependency,
 )
+from clue_research.api.handoff_retention import (
+    RetentionSweepHandoffHandler,
+    build_retention_sweeping_handoff_handler,
+    register_retention_sweeping_handoff_handler,
+)
 from clue_research.api.handoff_wiring import (
     DurableHandoffReadinessReader,
     HandoffPhaseHandler,
@@ -90,6 +95,10 @@ __all__ = [
     "VerificationPhaseHandler",
     "build_verification_phase_handler",
     "register_verification_phase_handler",
+    # HANDOFF retention/objection tombstone-before-merge-read sweep (M10.5 × M12)
+    "RetentionSweepHandoffHandler",
+    "build_retention_sweeping_handoff_handler",
+    "register_retention_sweeping_handoff_handler",
     # M12 narrative wiring
     "register_narrative_wiring",
     "build_client_knowledge_retriever",
