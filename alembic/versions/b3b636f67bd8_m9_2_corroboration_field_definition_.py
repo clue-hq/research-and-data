@@ -25,10 +25,11 @@ The promotion verdict itself rides the **already-mutable** ``claim.verification_
 trigger change and no ``claim`` ALTER**. The ``claim_tier4_verified_requires_span`` CHECK (0002)
 stays the backstop against promoting a span-less tier-4 claim.
 
-``equality_mode`` mirrors :class:`clue_research.verification.corroboration.EqualityMode` (an
-M9-internal enum — there is no ``core`` enum for it, so the parity test lives in the M9.2 suite:
-``test_corroboration.py::test_equality_mode_enum_matches_db``). ``downgrade()`` cleanly reverses
-``upgrade()`` (CI runs up → down → up).
+``equality_mode`` mirrors :class:`clue_research.core.EqualityMode` (relocated from the M9.2
+corroborator to ``core`` by the [M9.2×M1.2] merge-equality fix, so the mode-aware merge conflict
+check and the corroborator share one enum; the parity test
+``test_corroboration.py::test_equality_mode_enum_matches_db`` imports it via the verification
+re-export). ``downgrade()`` cleanly reverses ``upgrade()`` (CI runs up → down → up).
 """
 
 from __future__ import annotations
@@ -43,7 +44,7 @@ down_revision: str | None = "8aefd82b6d59"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
-# Mirrors clue_research.verification.corroboration.EqualityMode (parity-tested in the M9.2 suite).
+# Mirrors clue_research.core.EqualityMode (parity-tested in the M9.2 suite).
 _EQUALITY_MODE = ("exact", "numeric_tol", "semantic")
 
 

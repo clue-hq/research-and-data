@@ -1,10 +1,15 @@
-# `clue_research/api/` — FastAPI app layer (placeholder)
+# `clue_research/api/` — composition root + FastAPI app layer
 
-**Status:** placeholder created by M0.1 (ENG-101); wired by M5 (front edge) and M13 (review surface).
+**Status:** the deep-profiling composition root (`composition.py`), the M12 narrative wiring (`narrative_wiring.py`), and the **M12.3 output/handoff FastAPI surface** (`handoff_app.py` + `handoff_wiring.py`) are shipped. The front-edge (M5) and review (M13) surfaces are still to come.
 
-**Spec:** [`docs/specs/M00-foundations-and-shared-contracts.md`](../../../docs/specs/M00-foundations-and-shared-contracts.md) §M0.1
+**Spec:** [`docs/specs/M00-foundations-and-shared-contracts.md`](../../../docs/specs/M00-foundations-and-shared-contracts.md) §M0.1 · [`docs/specs/M12-value-narrative-and-handoff.md`](../../../docs/specs/M12-value-narrative-and-handoff.md) §M12.3
 
-The FastAPI app layer — the front-edge surface (M5) and the review surface (M13). Placeholder only in M0.
+The composition root where the otherwise-independent milestone packages are wired together, and the FastAPI app layer:
+
+- **`composition.py`** — the M8 deep-profiling wiring (field packs, worker registry, M9 governance seams).
+- **`narrative_wiring.py`** — M12: the `account.value_narrative` field pack, the Client-Knowledge retriever stub, and the M12.2 handoff-assembler construction.
+- **`handoff_app.py`** — the M12.3 read-only handoff HTTP surface (the terminal seam of the subsystem): `GET` one handoff (+ provenance index), list a run's ready handoffs, resolve any value's provenance. Tenant-scoped (the auth seam), schema-versioned, no write path.
+- **`handoff_wiring.py`** — the durable-backed readiness reader, the `HandoffService` builder, and the `CampaignPhase.HANDOFF` phase handler that drives the durable emit/notify outbox.
 
 ## Modular boundary (M0.1 / ENG-101)
 

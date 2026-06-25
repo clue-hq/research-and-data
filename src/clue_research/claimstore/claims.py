@@ -25,7 +25,7 @@ M1.4 extends both the ``claim`` table and the INSERT here with the provenance-fl
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 
 from sqlalchemy import bindparam, text
 from sqlalchemy.ext.asyncio import AsyncConnection
@@ -335,6 +335,48 @@ async def claims_for(
         },
     )
     return [_row_to_claim(dict(row)) for row in result.mappings().all()]
+
+
+async def claims_by_ids(
+    conn: AsyncConnection,
+    claim_ids: Iterable[ClaimId],
+    *,
+    scope: TenantScope,
+    include_superseded: bool = False,
+) -> dict[ClaimId, Claim]:
+    """Resolve a set of ``claim_id``s to their :class:`Claim` rows in one query — the batch reader
+    the M12.2 handoff ``provenance_index`` needs (it collects every claim id appearing anywhere in
+    the assembled object — score-component evidence, profile claims, committee claims, narrative
+    claims + their two-sided support — and resolves them to their source provenance in one round
+    trip).
+
+    Live (``superseded_by IS NULL``) by default — the handoff's "every value points at a real,
+    *non-superseded* claim" invariant; pass ``include_superseded=True`` for audit. ``scope`` is
+    **required** (M2.5, fail-closed), like :func:`claims_for`. A requested id **absent** from the
+    returned map (unknown, superseded, or out of scope) lets the caller detect a dangling reference
+    and fail the build rather than silently drop it.
+    """
+    ids = [str(cid) for cid in claim_ids]
+    if not ids:
+        return {}
+    scope_sql, scope_params = scope.predicate()
+    stmt = text(
+        f"""
+        SELECT {_SELECT_COLUMNS}
+        FROM claim
+        WHERE id IN :ids
+          AND (CAST(:include_superseded AS boolean) OR superseded_by IS NULL)
+          AND {scope_sql}
+        """
+    ).bindparams(bindparam("ids", expanding=True))
+    result = await conn.execute(
+        stmt, {"ids": ids, "include_superseded": include_superseded, **scope_params}
+    )
+    out: dict[ClaimId, Claim] = {}
+    for row in result.mappings().all():
+        claim = _row_to_claim(dict(row))
+        out[claim.id] = claim
+    return out
 
 
 async def entities_with_field_claim(
