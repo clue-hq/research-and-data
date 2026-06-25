@@ -82,5 +82,46 @@ path · AC5 schema version, pinned consumer survives additive change · AC6 tena
 denied) · AC7 verification-health per object · AC8 swap publisher pull→push no schema/producer change.
 
 ## Gate: ruff/format, mypy, import-linter (narrative stays clean — no durable/fastapi import; api may
-import fastapi), pytest (rome DB 55030), db-smoke single head. Then adversarial review workflow, fix,
-commit. Pause.
+import fastapi), pytest (rome DB on localhost:5432, container `clue-postgres`), db-smoke single head.
+
+## STATUS — DONE (implemented + audited + green) 2026-06-25
+Commits on `m12/value-narrative`: `18dfd03` (impl) + the audit-fix commit. Alembic head
+**`ebba8073cc2a`** (m12_3 handoff_event outbox + the M12.2 account_handoff `tier` column + a
+`(client_id, campaign_run_id)` list index — all in the one M12.3 migration). Gate green: ruff +
+`format --check`, mypy 226 files, import-linter **11/11** (narrative transport-agnostic — no
+durable/fastapi leak), db-smoke up→base→up single head. M12.3 suites (events/service/health/app/wiring)
++ narrative/api/durable/claimstore/verification all green.
+
+### Adversarial audit (51-agent review→verify workflow) → 45 findings, 35 confirmed, actionable ones fixed
+- **[HIGH] tier filter (spec deviation)** — the spec's list deliverable says "filterable by tier,
+  persona, verification health"; only persona + pass-rate existed. FIXED: threaded `tier` through
+  `AccountReadiness.tier` ← durable `account_run.tier` → emit `write_handoff(tier=…)` → an additive
+  `account_handoff.tier` column (M12.3 migration ALTER) → `HandoffSummary.tier` → `list_handoffs(tier=…)`
+  + `_passes_filters` + the HTTP `tier` query param. Tested (`test_list_filters_by_tier` + the wiring
+  end-to-end tier assertion). `tier` is nullable (None when materialised outside the emit path).
+- **[HIGH] list index** — added `account_handoff_client_run (client_id, campaign_run_id)` (the
+  tenant-scoped list query filters both) in the M12.3 migration (the M12.2 single-col index is left).
+- **[HIGH] AC5 forward-compat** — added `test_served_schema_is_forward_compatible_for_pinned_consumer`
+  (an additive field is ignored by a pinned consumer reading by known keys). Kept the producer models
+  `extra="forbid"` deliberately (AC5 is about the EXTERNAL consumer + the additive wire policy, not
+  loosening our own validation — the verifier's "switch to extra=ignore" was declined with reasoning).
+- **[HIGH] AC1 provenance depth** — strengthened the GET test to assert the provenance entry resolves
+  to a real source_url/source_tier (not just key-present); the resolve-provenance tests already cover it.
+- **[MED] AC2 mid-run** — added `test_list_excludes_unmaterialised_mid_run_account` (a run-member with
+  no materialised handoff is absent from the list).
+- **[NIT] DRY** — extracted `handoff_store._decode_payload` (was duplicated in read/list).
+
+### Declined / non-issues (documented)
+verification-health-uses-unfiltered-committee = intentional (honest denominator); independence-by-
+absence = WRONG (import-linter IS the gate, 11/11); no-write-path-by-type = the GET-only router + the
+no-write-route test is the structural AC4 guarantee; HandoffEventStatus drift = 2 tests already;
+icp_spec_version-vs-version naming = pre-existing M12.2 convention (core handoff vs value_json).
+
+## Cross-cutting note for the integration owner
+M12.3 adds a read-only `durable.account_run.list_account_runs` (sanctioned repo helper) and an
+additive `account_handoff.tier` column + `(client_id, campaign_run_id)` index in the M12.3 migration
+(extends M12.2's table additively — never contradicts it). Collision-safe: M10/M11 touch neither
+`account_run` readers nor `account_handoff`. M12 integrates last. fastapi+httpx added to deps
+(substrate §12 names FastAPI; first HTTP surface in the repo).
+
+## PAUSED after M12.3 (per the M12.2 cadence). Nothing pushed; awaiting go.

@@ -93,17 +93,20 @@ def create_handoff_router(service: HandoffService) -> APIRouter:
         response: Response,
         conn: ConnDep,
         client_id: TenantDep,
+        tier: Annotated[str | None, Query()] = None,
         persona: Annotated[Persona | None, Query()] = None,
         min_verification_pass_rate: Annotated[float | None, Query(ge=0.0, le=1.0)] = None,
     ) -> HandoffListPage:
         """List the ready handoffs for a run (only handoff-phase accounts; an account still in
-        deep/verification is absent — AC2). Optional ``persona`` / ``min_verification_pass_rate``
-        filters. The envelope carries the run's phase so a consumer can poll rather than guess."""
+        deep/verification is absent — AC2). Optional ``tier`` / ``persona`` /
+        ``min_verification_pass_rate`` filters. The envelope carries the run's phase so a consumer
+        can poll rather than guess."""
         response.headers[HANDOFF_SCHEMA_HEADER] = HANDOFF_SCHEMA_VERSION
         return await service.list_handoffs(
             conn,
             client_id=client_id,
             campaign_run_id=CampaignRunId(campaign_run_id),
+            tier=tier,
             persona=persona,
             min_verification_pass_rate=min_verification_pass_rate,
         )

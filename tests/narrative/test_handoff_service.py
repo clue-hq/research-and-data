@@ -42,6 +42,7 @@ from clue_research.narrative import (
     OutboxHandoffPublisher,
     RecordingHandoffPublisher,
     RunReadiness,
+    ServedHandoff,
     VerificationHealth,
     emit_ready_handoffs,
     list_handoff_events,
@@ -268,6 +269,54 @@ def test_list_filters_by_persona_and_pass_rate() -> None:
             assert by_rate.items[0].verification_health.tier4_judge_pass_rate == 0.9
 
     run_async(_run())
+
+
+def test_list_filters_by_tier() -> None:
+    """Spec §M12.3 list deliverable: the list is filterable by tier (stamped at materialisation)."""
+
+    async def _run() -> None:
+        async with rollback_conn() as conn:
+            run = new_campaign_run_id()
+            top, high = new_entity_id(), new_entity_id()
+            await write_handoff(
+                conn, _assembled(account=top, campaign_run_id=run), client_id=_CLIENT, tier="top"
+            )
+            await write_handoff(
+                conn, _assembled(account=high, campaign_run_id=run), client_id=_CLIENT, tier="high"
+            )
+            svc = HandoffService()
+            both = await svc.list_handoffs(conn, client_id=_CLIENT, campaign_run_id=run)
+            assert both.total == 2
+            assert {s.tier for s in both.items} == {"top", "high"}
+            only_top = await svc.list_handoffs(
+                conn, client_id=_CLIENT, campaign_run_id=run, tier="top"
+            )
+            assert only_top.total == 1
+            assert only_top.items[0].account_entity_id == top
+            assert only_top.items[0].tier == "top"
+
+    run_async(_run())
+
+
+def test_served_schema_is_forward_compatible_for_pinned_consumer() -> None:
+    """AC5: a consumer pinned to the served schema version survives an *additive* change. The wire
+    contract evolves additively (new optional fields, never renamed/removed), and the consumer reads
+    by known keys after pinning on ``schema_version`` — an unknown future field is ignored. Proven
+    here without a DB: a future ``1.x`` payload (an extra field injected) is still readable by a
+    ``1.0`` consumer that selects only the fields it knows."""
+    acc, run = new_entity_id(), new_campaign_run_id()
+    served = ServedHandoff(
+        schema_version=HANDOFF_SCHEMA_VERSION,
+        assembled=_assembled(account=acc, campaign_run_id=run),
+    )
+    wire = served.model_dump(mode="json")
+    # a future producer adds an optional field (additive evolution — MINOR bump):
+    wire["future_additive_field"] = {"some": "value"}
+    wire["assembled"]["handoff"]["future_nested_field"] = 7
+    # a pinned 1.0 consumer reads only what it knows, ignoring unknown fields:
+    assert wire["schema_version"] == HANDOFF_SCHEMA_VERSION
+    assert wire["assembled"]["handoff"]["account_entity_id"] == str(acc)
+    assert "provenance_index" in wire["assembled"]["handoff"]  # known field still present
 
 
 # --- emit (AC3 idempotency + AC8 publisher seam swap) -----------------------

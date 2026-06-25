@@ -61,8 +61,8 @@ def upgrade() -> None:
     )
     # The scope key (client_id, account_entity_id, icp_spec_version, icp_key) — re-assembly UPSERTs
     # the slot. icp_key is the ICP *segment* (D5: icp_spec_version restarts at 1 per icp_key, so two
-    # segments would otherwise collide on one slot); '' for a single-segment account. The same public
-    # account under two clients / ICPs / segments keeps distinct handoffs (substrate §2).
+    # segments would otherwise collide on one slot); '' for a single-segment account. The same
+    # public account under two clients / ICPs / segments keeps distinct handoffs (substrate §2).
     op.execute(
         "CREATE UNIQUE INDEX account_handoff_scope "
         "ON account_handoff (client_id, account_entity_id, icp_spec_version, icp_key)"

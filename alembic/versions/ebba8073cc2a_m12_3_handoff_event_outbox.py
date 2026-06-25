@@ -89,8 +89,22 @@ def upgrade() -> None:
     # Tenant scoping: a client only ever reads its own events (substrate §2).
     op.execute("CREATE INDEX handoff_event_client ON handoff_event (client_id)")
 
+    # M12.3 also extends the M12.2 account_handoff materialisation (additive, never contradicting):
+    #  * tier — the account's research tier (M6 two-pass), stamped by the emit path from the
+    #    account_run so the list endpoint can filter "by tier" (spec §M12.3 list deliverable);
+    #    nullable (a handoff materialised outside the emit path has an unknown tier).
+    #  * the (client_id, campaign_run_id) composite index — the tenant-scoped list-serve query
+    #    (handoff_store.list_handoffs_for_run filters on BOTH columns), so the planner satisfies the
+    #    multi-tenant list at the index level rather than scanning a run's rows across tenants.
+    op.execute("ALTER TABLE account_handoff ADD COLUMN tier text")
+    op.execute(
+        "CREATE INDEX account_handoff_client_run ON account_handoff (client_id, campaign_run_id)"
+    )
+
 
 def downgrade() -> None:
+    op.execute("DROP INDEX IF EXISTS account_handoff_client_run")
+    op.execute("ALTER TABLE account_handoff DROP COLUMN IF EXISTS tier")
     op.execute("DROP INDEX IF EXISTS handoff_event_client")
     op.execute("DROP INDEX IF EXISTS handoff_event_run_status")
     op.execute("DROP INDEX IF EXISTS handoff_event_scope")

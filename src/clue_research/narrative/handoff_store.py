@@ -24,14 +24,28 @@ from clue_research.core import CampaignRunId, EntityId
 from clue_research.narrative.handoff import AssembledHandoff
 
 
+def _decode_payload(raw: object) -> AssembledHandoff:
+    """Decode an ``account_handoff.payload`` column (asyncpg returns jsonb already decoded; a raw
+    ``str`` / ``bytes`` is parsed defensively) into an :class:`AssembledHandoff`."""
+    payload = json.loads(raw) if isinstance(raw, (str, bytes, bytearray)) else raw
+    return AssembledHandoff.model_validate(payload)
+
+
 async def write_handoff(
-    conn: AsyncConnection, assembled: AssembledHandoff, *, client_id: str, icp_key: str = ""
+    conn: AsyncConnection,
+    assembled: AssembledHandoff,
+    *,
+    client_id: str,
+    icp_key: str = "",
+    tier: str | None = None,
 ) -> None:
     """Materialise ``assembled`` for ``(client_id, icp_key)`` (UPSERT on the ``(client_id,
     account_entity_id, icp_spec_version, icp_key)`` scope key — a re-assembly after supersession
     replaces the payload + ``assembled_at``, never duplicating). ``icp_key`` is the ICP segment
     (D5: ``icp_spec_version`` restarts at 1 per ``icp_key``, so two segments must not clobber each
-    other's materialised handoff); it defaults to ``""`` for a single-segment account. The full
+    other's materialised handoff); it defaults to ``""`` for a single-segment account. ``tier`` is
+    the account's research tier (M6 two-pass), stamped by the emit path so the list endpoint can
+    filter "by tier" (spec §M12.3); ``None`` when materialised outside the emit path. The full
     ``AssembledHandoff`` is stored as JSONB so the serve path reconstructs it without re-reading the
     claim store."""
     h = assembled.handoff
@@ -41,13 +55,14 @@ async def write_handoff(
             """
             INSERT INTO account_handoff
                 (client_id, account_entity_id, icp_spec_version, icp_key, campaign_run_id,
-                 assembled_at, payload)
+                 assembled_at, tier, payload)
             VALUES
                 (:client_id, :account_entity_id, :icp_spec_version, :icp_key, :campaign_run_id,
-                 :assembled_at, CAST(:payload AS jsonb))
+                 :assembled_at, :tier, CAST(:payload AS jsonb))
             ON CONFLICT (client_id, account_entity_id, icp_spec_version, icp_key) DO UPDATE SET
                 campaign_run_id = EXCLUDED.campaign_run_id,
                 assembled_at    = EXCLUDED.assembled_at,
+                tier            = EXCLUDED.tier,
                 payload         = EXCLUDED.payload
             """
         ),
@@ -58,6 +73,7 @@ async def write_handoff(
             "icp_key": icp_key,
             "campaign_run_id": str(h.campaign_run_id) if h.campaign_run_id is not None else None,
             "assembled_at": h.assembled_at,
+            "tier": tier,
             "payload": json.dumps(payload),
         },
     )
@@ -92,37 +108,28 @@ async def read_handoff(
     ).first()
     if row is None:
         return None
-    raw = row[0]
-    payload = json.loads(raw) if isinstance(raw, (str, bytes, bytearray)) else raw
-    return AssembledHandoff.model_validate(payload)
+    return _decode_payload(row[0])
 
 
 async def list_handoffs_for_run(
     conn: AsyncConnection, *, client_id: str, campaign_run_id: CampaignRunId
-) -> list[tuple[str, AssembledHandoff]]:
-    """All materialised handoffs for ``(client_id, campaign_run_id)`` as ``(icp_key, assembled)``
-    pairs — the M12.3 list-serve surface (``GET /campaign_runs/{id}/handoffs``). A materialised row
-    exists only *after* assembly (which reads verified claims), so the list returns exactly the
-    run's
-    **ready** handoffs (M12.3 AC: an account still in deep/verification has no row and is absent).
-    The ``icp_key`` is the table column (the frozen ``AccountHandoff`` payload carries
-    ``icp_spec_version`` but not the segment key — D5), so a multi-segment account's fetch ref is
-    correct. Tenant-scoped on ``client_id`` (substrate §2); ordered by ``(account_entity_id,
-    icp_spec_version, icp_key)`` for a stable page."""
+) -> list[tuple[str, str | None, AssembledHandoff]]:
+    """All materialised handoffs for ``(client_id, campaign_run_id)`` as ``(icp_key, tier,
+    assembled)`` triples — the M12.3 list-serve surface (``GET /campaign_runs/{id}/handoffs``). A
+    materialised row exists only *after* assembly (which reads verified claims), so the list returns
+    exactly the run's **ready** handoffs (M12.3 AC: an account still in deep/verification has no row
+    and is absent). ``icp_key`` / ``tier`` are table columns (the frozen ``AccountHandoff`` payload
+    carries ``icp_spec_version`` but not the segment key — D5 — nor the tier), so a multi-segment
+    account's fetch ref is correct and the list can filter by tier. Tenant-scoped on ``client_id``
+    (substrate §2); ordered by ``(account_entity_id, icp_spec_version, icp_key)``."""
     rows = (
         await conn.execute(
             text(
-                "SELECT icp_key, payload FROM account_handoff "
+                "SELECT icp_key, tier, payload FROM account_handoff "
                 "WHERE client_id = :client_id AND campaign_run_id = :campaign_run_id "
                 "ORDER BY account_entity_id, icp_spec_version, icp_key"
             ),
             {"client_id": client_id, "campaign_run_id": campaign_run_id},
         )
     ).all()
-    out: list[tuple[str, AssembledHandoff]] = []
-    for row in rows:
-        icp_key = str(row[0])
-        raw = row[1]
-        payload = json.loads(raw) if isinstance(raw, (str, bytes, bytearray)) else raw
-        out.append((icp_key, AssembledHandoff.model_validate(payload)))
-    return out
+    return [(str(row[0]), row[1], _decode_payload(row[2])) for row in rows]

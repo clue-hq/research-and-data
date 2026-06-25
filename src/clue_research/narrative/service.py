@@ -120,6 +120,7 @@ class HandoffSummary(BaseModel):
     account_entity_id: EntityId
     icp_spec_version: int
     icp_key: str
+    tier: str | None
     fit_score: UnitInterval
     intent_score: UnitInterval
     fit_scored: bool
@@ -163,14 +164,15 @@ class EmitReport(BaseModel):
     refs: tuple[str, ...] = ()
 
 
-def _summary(icp_key: str, assembled: AssembledHandoff) -> HandoffSummary:
-    """Project an ``(icp_key, AssembledHandoff)`` row to its compact list summary."""
+def _summary(icp_key: str, tier: str | None, assembled: AssembledHandoff) -> HandoffSummary:
+    """Project an ``(icp_key, tier, AssembledHandoff)`` row to its compact list summary."""
     h = assembled.handoff
     version = h.icp_spec_version if h.icp_spec_version is not None else 0
     return HandoffSummary(
         account_entity_id=h.account_entity_id,
         icp_spec_version=version,
         icp_key=icp_key,
+        tier=tier,
         fit_score=h.fit_score.value,
         intent_score=h.intent_score.value,
         fit_scored=assembled.fit_scored,
@@ -274,14 +276,16 @@ class HandoffService:
         *,
         client_id: str,
         campaign_run_id: CampaignRunId,
+        tier: str | None = None,
         persona: Persona | None = None,
         min_verification_pass_rate: UnitInterval | None = None,
     ) -> HandoffListPage:
         """List the **ready** handoffs for a campaign run (only materialised → only handoff-phase
         accounts; an account in deep/verification is absent — AC2). Tenant-scoped on ``client_id``;
         a run unknown to this tenant yields an empty page with ``run_phase=None`` (no cross-tenant
-        leak). Optional filters: ``persona`` (presence in the committee) and
-        ``min_verification_pass_rate`` (the tier-4 judge pass rate floor)."""
+        leak). Optional filters (spec §M12.3): ``tier`` (the account's research tier), ``persona``
+        (presence in the committee), and ``min_verification_pass_rate`` (the tier-4 judge pass-rate
+        floor)."""
         with traced_step(
             SPAN_HANDOFF_LIST,
             **{ATTR_CAMPAIGN_RUN_ID: str(campaign_run_id), ATTR_CLIENT_ID: client_id},
@@ -299,9 +303,9 @@ class HandoffService:
                 conn, client_id=client_id, campaign_run_id=campaign_run_id
             )
             summaries = [
-                _summary(icp_key, a)
-                for icp_key, a in assembled_rows
-                if _passes_filters(a, persona, min_verification_pass_rate)
+                _summary(icp_key, row_tier, a)
+                for icp_key, row_tier, a in assembled_rows
+                if _passes_filters(a, row_tier, tier, persona, min_verification_pass_rate)
             ]
             return HandoffListPage(
                 schema_version=HANDOFF_SCHEMA_VERSION,
@@ -331,11 +335,16 @@ class HandoffService:
 
 def _passes_filters(
     assembled: AssembledHandoff,
+    row_tier: str | None,
+    tier: str | None,
     persona: Persona | None,
     min_verification_pass_rate: UnitInterval | None,
 ) -> bool:
-    """Apply the optional list filters (persona presence in the committee; verification pass-rate
-    floor). A pass-rate floor excludes a handoff whose rate is unknown (``None``) — conservative."""
+    """Apply the optional list filters (tier; persona presence in the committee; verification
+    pass-rate floor). A ``tier`` filter excludes a handoff whose tier is unknown (``None``); a
+    pass-rate floor excludes a handoff whose rate is unknown (``None``) — both conservative."""
+    if tier is not None and row_tier != tier:
+        return False
     if persona is not None and persona not in {m.persona for m in assembled.handoff.committee}:
         return False
     if min_verification_pass_rate is not None:
@@ -402,6 +411,7 @@ async def emit_ready_handoffs(
                 account_entity_id=acc.account_entity_id,
                 icp_version=icp_version,
                 icp_key=icp_key,
+                tier=acc.tier,
                 assembled_at=assembled_at,
                 coverage_confidence=coverage_confidence,
             )
@@ -429,6 +439,7 @@ async def _assemble_materialise_emit(
     account_entity_id: EntityId,
     icp_version: int,
     icp_key: str,
+    tier: str | None,
     assembled_at: UtcDatetime,
     coverage_confidence: UnitInterval | None,
 ) -> tuple[HandoffEvent, bool]:
@@ -455,7 +466,7 @@ async def _assemble_materialise_emit(
             campaign_run_id=campaign_run_id,
             coverage_confidence=coverage_confidence,
         )
-        await write_handoff(conn, assembled, client_id=client_id, icp_key=icp_key)
+        await write_handoff(conn, assembled, client_id=client_id, icp_key=icp_key, tier=tier)
         was_new = await emit_handoff_event(conn, event)
     return event, was_new
 
