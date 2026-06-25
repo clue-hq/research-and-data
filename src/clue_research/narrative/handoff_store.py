@@ -20,7 +20,7 @@ import json
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_research.core import EntityId
+from clue_research.core import CampaignRunId, EntityId
 from clue_research.narrative.handoff import AssembledHandoff
 
 
@@ -95,3 +95,34 @@ async def read_handoff(
     raw = row[0]
     payload = json.loads(raw) if isinstance(raw, (str, bytes, bytearray)) else raw
     return AssembledHandoff.model_validate(payload)
+
+
+async def list_handoffs_for_run(
+    conn: AsyncConnection, *, client_id: str, campaign_run_id: CampaignRunId
+) -> list[tuple[str, AssembledHandoff]]:
+    """All materialised handoffs for ``(client_id, campaign_run_id)`` as ``(icp_key, assembled)``
+    pairs — the M12.3 list-serve surface (``GET /campaign_runs/{id}/handoffs``). A materialised row
+    exists only *after* assembly (which reads verified claims), so the list returns exactly the
+    run's
+    **ready** handoffs (M12.3 AC: an account still in deep/verification has no row and is absent).
+    The ``icp_key`` is the table column (the frozen ``AccountHandoff`` payload carries
+    ``icp_spec_version`` but not the segment key — D5), so a multi-segment account's fetch ref is
+    correct. Tenant-scoped on ``client_id`` (substrate §2); ordered by ``(account_entity_id,
+    icp_spec_version, icp_key)`` for a stable page."""
+    rows = (
+        await conn.execute(
+            text(
+                "SELECT icp_key, payload FROM account_handoff "
+                "WHERE client_id = :client_id AND campaign_run_id = :campaign_run_id "
+                "ORDER BY account_entity_id, icp_spec_version, icp_key"
+            ),
+            {"client_id": client_id, "campaign_run_id": campaign_run_id},
+        )
+    ).all()
+    out: list[tuple[str, AssembledHandoff]] = []
+    for row in rows:
+        icp_key = str(row[0])
+        raw = row[1]
+        payload = json.loads(raw) if isinstance(raw, (str, bytes, bytearray)) else raw
+        out.append((icp_key, AssembledHandoff.model_validate(payload)))
+    return out

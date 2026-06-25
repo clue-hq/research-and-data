@@ -37,12 +37,28 @@ from clue_research.narrative.handoff import (
     HandoffAssembler,
     HandoffAssemblyError,
 )
+from clue_research.narrative.handoff_events import (
+    HANDOFF_EVENT_STATUSES,
+    HandoffEvent,
+    HandoffEventRow,
+    HandoffEventStatus,
+    emit_handoff_event,
+    get_handoff_event,
+    handoff_ref_for,
+    list_handoff_events,
+    mark_handoff_event,
+)
 from clue_research.narrative.handoff_seams import (
     HandoffCommitteeMember,
     HandoffCommitteeReader,
     InMemoryHandoffCommitteeReader,
 )
-from clue_research.narrative.handoff_store import read_handoff, write_handoff
+from clue_research.narrative.handoff_store import (
+    list_handoffs_for_run,
+    read_handoff,
+    write_handoff,
+)
+from clue_research.narrative.health import VerificationHealth, compute_verification_health
 from clue_research.narrative.policy import (
     ACCOUNT_OPERATIONAL_PAIN,
     ACCOUNT_RESONANCE_CULTURE,
@@ -75,6 +91,17 @@ from clue_research.narrative.prompts import (
     fact_to_text,
     parse_positioning_response,
 )
+from clue_research.narrative.publisher import (
+    HandoffPublisher,
+    OutboxHandoffPublisher,
+    RecordingHandoffPublisher,
+)
+from clue_research.narrative.readiness import (
+    AccountReadiness,
+    HandoffReadinessReader,
+    InMemoryHandoffReadinessReader,
+    RunReadiness,
+)
 from clue_research.narrative.reuse import NARRATIVE_REUSE_POLICY
 from clue_research.narrative.seams import (
     CommitteeContact,
@@ -83,6 +110,24 @@ from clue_research.narrative.seams import (
     InMemoryClientKnowledgeRetriever,
     InMemoryCommitteeReader,
     rank_by_query_overlap,
+)
+from clue_research.narrative.service import (
+    HANDOFF_SCHEMA_VERSION,
+    METRIC_HANDOFF_STRONG_BINDING_SHARE,
+    METRIC_HANDOFF_TIER4_PASS_RATE,
+    METRIC_HANDOFFS_EMITTED,
+    METRIC_HANDOFFS_SERVED,
+    SPAN_HANDOFF_EMIT,
+    SPAN_HANDOFF_LIST,
+    SPAN_HANDOFF_SERVE,
+    EmitReport,
+    HandoffListPage,
+    HandoffNotFoundError,
+    HandoffService,
+    HandoffSummary,
+    ProvenanceRefResponse,
+    ServedHandoff,
+    emit_ready_handoffs,
 )
 from clue_research.narrative.support import (
     ClaimSupport,
@@ -158,4 +203,44 @@ __all__ = [
     # the account_handoff materialization (M12.2)
     "write_handoff",
     "read_handoff",
+    "list_handoffs_for_run",
+    # verification health (M12.3 — the trust posture that travels with the output)
+    "VerificationHealth",
+    "compute_verification_health",
+    # the handoff_event outbox (M12.3)
+    "HandoffEvent",
+    "HandoffEventRow",
+    "HandoffEventStatus",
+    "HANDOFF_EVENT_STATUSES",
+    "handoff_ref_for",
+    "emit_handoff_event",
+    "get_handoff_event",
+    "list_handoff_events",
+    "mark_handoff_event",
+    # the publisher adapter seam (M12.3 / D2)
+    "HandoffPublisher",
+    "OutboxHandoffPublisher",
+    "RecordingHandoffPublisher",
+    # the readiness seam (M12.3 ↔ M7 campaign-run state)
+    "HandoffReadinessReader",
+    "RunReadiness",
+    "AccountReadiness",
+    "InMemoryHandoffReadinessReader",
+    # the output/handoff service (M12.3)
+    "HandoffService",
+    "HandoffNotFoundError",
+    "ServedHandoff",
+    "ProvenanceRefResponse",
+    "HandoffSummary",
+    "HandoffListPage",
+    "EmitReport",
+    "emit_ready_handoffs",
+    "HANDOFF_SCHEMA_VERSION",
+    "SPAN_HANDOFF_SERVE",
+    "SPAN_HANDOFF_LIST",
+    "SPAN_HANDOFF_EMIT",
+    "METRIC_HANDOFFS_SERVED",
+    "METRIC_HANDOFFS_EMITTED",
+    "METRIC_HANDOFF_TIER4_PASS_RATE",
+    "METRIC_HANDOFF_STRONG_BINDING_SHARE",
 ]
