@@ -12,6 +12,19 @@ package (the import-linter independence contract). The cross-package use-gate se
 
 from __future__ import annotations
 
+from clue_research.compliance.dsar import (
+    ERASE_ALL,
+    DataSubjectExport,
+    DataSubjectRights,
+    DataSubjectRightsImpl,
+    ErasureResult,
+    ErasureScope,
+    ObjectionResult,
+    RetentionSweep,
+    SweepResult,
+    TombstoneReason,
+    build_tombstone,
+)
 from clue_research.compliance.fields import (
     COMPLIANCE_PACK,
     CONTACT_JURISDICTION,
@@ -25,6 +38,17 @@ from clue_research.compliance.jurisdiction import (
     extract_region,
     region_from_value,
     region_to_regime,
+)
+from clue_research.compliance.lawful_basis import (
+    LawfulBasis,
+    LawfulBasisRecord,
+    NoticeReport,
+    derive_lawful_basis,
+    is_third_party_collected,
+    load_lawful_basis,
+    record_lawful_basis,
+    retention_horizon_for,
+    third_party_notice_report,
 )
 from clue_research.compliance.posture import (
     DEFAULT_POSTURE_POLICY,
@@ -62,7 +86,29 @@ __all__ = [
     "PosturePreset",
     "client_policy_for_posture",
     "DEFAULT_POSTURE_POLICY",
-    # field pack (M10.1 contact.jurisdiction; M10.5 will extend)
+    # M10.5 — lawful basis + retention
+    "LawfulBasis",
+    "LawfulBasisRecord",
+    "NoticeReport",
+    "derive_lawful_basis",
+    "retention_horizon_for",
+    "is_third_party_collected",
+    "record_lawful_basis",
+    "load_lawful_basis",
+    "third_party_notice_report",
+    # M10.5 — DSAR / erasure (tombstone) + retention sweep
+    "DataSubjectRights",
+    "DataSubjectRightsImpl",
+    "RetentionSweep",
+    "DataSubjectExport",
+    "ErasureScope",
+    "ERASE_ALL",
+    "ErasureResult",
+    "ObjectionResult",
+    "SweepResult",
+    "TombstoneReason",
+    "build_tombstone",
+    # field pack (M10.1 contact.jurisdiction; M10.5 retention semantics live in lawful_basis/dsar)
     "COMPLIANCE_PACK",
     "CONTACT_JURISDICTION",
     "load_compliance_pack",
