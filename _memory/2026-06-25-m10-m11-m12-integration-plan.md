@@ -43,10 +43,25 @@ Three layers, in this priority:
    sensitive → not outreach-promotable under any posture; objected/erased/expired → tombstoned & absent).
    It only confirms (1)+(2) composed correctly; it does not *cause* correctness.
 
-## The deferred-wiring checklist (the real work — all at the api root)
-- `CampaignPhase.VERIFICATION` handler enforcing `VERIFICATION_GATE_ORDER` live: provenance→corroboration
-  →faithfulness(M9.3)→identity_binding(M9.4)→**use_gate(M10.3) last**; call `synthesis.guard_synthesis_resolution`
-  pre-resolution + `synthesis.record_synthesis_health` post-judge (M11.3's deferred live call sites).
+## Progress (integration branch `integration/m10-m11-m12`, PR #23)
+- **DONE — merge + single alembic head + green gate** (commits `c26b06e`/`da6bb89`/`d3f9b27` merges,
+  `8ff0117` alembic merge `05f66cc526ae`). `make check` green, import-linter 11/11, 1765 passed.
+- **DONE — M10 compliance pack-loader wiring** (`086baf0`): `register_compliance_wiring` appends
+  `load_compliance_pack`; three milestone wirings exported from `api`.
+- **DONE — `CampaignPhase.VERIFICATION` handler** (the keystone): `api/verification/{handler,composition}.py`
+  + 11 hermetic tests. Drives corroboration(M9.2)→faithfulness(M9.3)→use_gate(M10.3 **last**) over each
+  high-tier account's claims, per-account isolated, records per-field `record_synthesis_health`.
+  `register_verification_phase_handler` registers it into the M7 phase registry. **Production v1 sources
+  account entities only** (account-level synthesis → `current_value` non-empty); the handler fully drives
+  the use-gate leg over `contact.facet.*` claims (tested with fakes) — the immediate follow-on is sourcing
+  committee *contact* entities into the loader (needs a contacts-under-account reader) + per-client UseGate.
+  1777 passed / 14 skipped / 0 failed on a pristine DB.
+
+## The deferred-wiring checklist (remaining — all at the api root)
+- Contact-entity sourcing into the VERIFICATION loader + per-client `UseGateImpl` (lights up the use-gate
+  leg in production); the handler already supports it.
+- `synthesis.guard_synthesis_resolution` pre-resolution call site is a DEEP-phase concern (the resolve
+  step), not VERIFICATION; wire it where M8 resolves tier-4 fields.
 - `PreSpendGate.check` routing on the tier-4 spend path (exa_deep/parallel_task) + the AC-6 lint test
   (`[M9.1×M4/M8/M11]`).
 - Inject `UseGate` impl into the `use_gate` slot; append M10 pack loader (`contact.jurisdiction` + short
