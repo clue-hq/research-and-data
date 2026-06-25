@@ -116,6 +116,7 @@ class DurableHandoffReadinessReader:
                     is_ready=True,
                     status=row.status.value,
                     sub_phase=row.sub_phase.value if row.sub_phase is not None else None,
+                    tier=row.tier,
                 )
             )
         return tuple(ready)

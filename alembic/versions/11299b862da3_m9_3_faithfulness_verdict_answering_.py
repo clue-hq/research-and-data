@@ -38,7 +38,7 @@ def upgrade() -> None:
         "COMMENT ON COLUMN faithfulness_verdict.answering_model IS "
         "'M9.3: the gateway model id that ACTUALLY answered (core.gateway.Completion.model) — "
         "differs from judge_model (the REQUESTED id, the cache key) only on an OpenRouter "
-        "fallback. Cited by M12.2 provenance (judged faithful by <answering_model>@<prompt_version>). "
+        "fallback. Cited by M12.2 provenance (judged faithful by <answering_model>@<version>). "
         "Nullable: historical rows predate it and are backfilled to judge_model.'"
     )
     # Backfill: pre-fallback rows had answering == requested.

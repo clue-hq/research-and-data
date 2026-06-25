@@ -43,6 +43,7 @@ from clue_research.durable import (
 from clue_research.identity import insert_account_entity
 from clue_research.narrative import (
     HandoffAssembler,
+    HandoffService,
     InMemoryHandoffCommitteeReader,
     RecordingHandoffPublisher,
     list_handoff_events,
@@ -195,6 +196,13 @@ def test_phase_handler_emits_idempotently() -> None:
             assert len(rows) == 1
             assert rows[0].account_entity_id == acc
             assert rows[0].icp_spec_version == _ICP_VERSION and rows[0].icp_key == _ICP_KEY
+
+            # end-to-end: the account_run tier ("top") is stamped onto the materialised handoff and
+            # surfaced on the list summary (spec §M12.3 tier filter).
+            page = await HandoffService(
+                readiness_reader=DurableHandoffReadinessReader(conn_factory=_factory(conn))
+            ).list_handoffs(conn, client_id=_CLIENT, campaign_run_id=run)
+            assert page.total == 1 and page.items[0].tier == "top"
 
             second = await handler.run(ctx)  # phase re-entry / crash-resume
             assert second.accounts_processed == 1 and second.payload["newly_emitted"] == 0

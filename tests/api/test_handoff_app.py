@@ -120,7 +120,12 @@ def test_get_handoff_200_with_schema_header() -> None:
             body = r.json()
             assert body["schema_version"] == HANDOFF_SCHEMA_VERSION
             assert body["assembled"]["handoff"]["account_entity_id"] == str(acc)
-            assert str(cid) in body["assembled"]["handoff"]["provenance_index"]
+            # AC1: the provenance entry resolves to a real source, not just a key present.
+            index = body["assembled"]["handoff"]["provenance_index"]
+            assert str(cid) in index
+            ref = index[str(cid)]
+            assert ref["source_url"] == "https://src/x"
+            assert ref["source_tier"] == 1
 
     run_async(_run())
 
@@ -186,6 +191,32 @@ def test_list_endpoint_returns_ready_with_phase() -> None:
             assert body["total"] == 1
             assert body["run_phase"] == CampaignPhase.HANDOFF.value
             assert body["items"][0]["account_entity_id"] == str(acc)
+
+    run_async(_run())
+
+
+def test_list_excludes_unmaterialised_mid_run_account() -> None:
+    """AC2: only ready (materialised) accounts appear in the list — an account still mid-run (no
+    materialised handoff) is absent even though it belongs to the run."""
+
+    async def _run() -> None:
+        async with rollback_conn(seed_pack=False) as conn:
+            run, ready_acc, mid_run_acc = (
+                new_campaign_run_id(),
+                new_entity_id(),
+                new_entity_id(),
+            )
+            # only ready_acc has a materialised handoff; mid_run_acc has none.
+            await write_handoff(conn, _assembled(account=ready_acc, run=run), client_id=_CLIENT)
+            async with _client(_app(conn, run=run)) as client:
+                r = await client.get(
+                    f"/campaign_runs/{run}/handoffs", headers={"X-Client-Id": _CLIENT}
+                )
+            assert r.status_code == 200
+            body = r.json()
+            served = {item["account_entity_id"] for item in body["items"]}
+            assert served == {str(ready_acc)}
+            assert str(mid_run_acc) not in served
 
     run_async(_run())
 

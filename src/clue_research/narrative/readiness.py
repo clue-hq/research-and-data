@@ -60,6 +60,7 @@ class AccountReadiness(BaseModel):
     is_ready: bool
     status: str | None = None
     sub_phase: str | None = None
+    tier: str | None = None  # the account's research tier (M6 two-pass) — stamped on the handoff
 
 
 @runtime_checkable
