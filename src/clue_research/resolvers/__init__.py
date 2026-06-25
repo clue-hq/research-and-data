@@ -22,7 +22,17 @@ provider re-implements HTTP, retry, or auth.
 from __future__ import annotations
 
 from clue_research.core import ResolverError, RetryableResolverError
-from clue_research.resolvers import apollo, builtwith, clay, crm, firecrawl, registries, zoominfo
+from clue_research.resolvers import (
+    apollo,
+    builtwith,
+    clay,
+    crm,
+    exa,
+    firecrawl,
+    parallel,
+    registries,
+    zoominfo,
+)
 from clue_research.resolvers.base import (
     DeterministicResolver,
     EnrichmentBackend,
@@ -43,11 +53,24 @@ from clue_research.resolvers.crm import (
     register_crm_resolver,
     resolve_crm_seeds,
 )
+from clue_research.resolvers.exa import (
+    DEFAULT_EXA_CONFIG,
+    ExaDeepConfig,
+    register_exa_deep_resolver,
+)
 from clue_research.resolvers.firecrawl import (
     ScrapePolicy,
     ScrapeResolver,
     default_surfaces,
     register_scrape_resolver,
+)
+from clue_research.resolvers.grounded import (
+    GroundedSynthesisResolver,
+    HttpSynthesisBackend,
+    SynthesisBackend,
+    SynthesisResult,
+    SynthesizedField,
+    register_synthesis_resolver,
 )
 from clue_research.resolvers.http import (
     CredentialError,
@@ -61,6 +84,11 @@ from clue_research.resolvers.live import (
     HttpEnrichmentBackend,
     HttpRequest,
     fetch_via_http,
+)
+from clue_research.resolvers.parallel import (
+    DEFAULT_PARALLEL_CONFIG,
+    ParallelTaskConfig,
+    register_parallel_task_resolver,
 )
 from clue_research.sources import SEED_MANIFESTS, bind_resolver
 
@@ -100,6 +128,8 @@ __all__ = [
     "register_deterministic_resolvers",  # M4.4 tier-1 deterministic providers
     "register_crm_resolver",  # M4.5 CRM (tier-1, tenant-private)
     "register_scrape_resolver",  # M4.5 Firecrawl official-site scrape (tier-2)
+    "register_exa_deep_resolver",  # M11.1 Exa Deep (tier-4 grounded synthesis)
+    "register_parallel_task_resolver",  # M11.2 Parallel Task (tier-4 grounded synthesis)
     # provider sub-packages (referenced by tier_plan source_keys; never branched on by name)
     "clay",
     "apollo",
@@ -108,6 +138,8 @@ __all__ = [
     "registries",
     "crm",
     "firecrawl",
+    "exa",
+    "parallel",
     # M4.5 CRM seam (the connector + records are config; nothing downstream knows the vendor)
     "CRMConnector",
     "CrmResolver",
@@ -129,6 +161,17 @@ __all__ = [
     "resolved_field",
     "normalize_record",
     "build_claim",
+    # M11.1/M11.2 tier-4 grounded-synthesis substrate (Exa Deep / Parallel Task build on this)
+    "GroundedSynthesisResolver",
+    "SynthesisBackend",
+    "SynthesisResult",
+    "SynthesizedField",
+    "HttpSynthesisBackend",
+    "register_synthesis_resolver",
+    "ExaDeepConfig",
+    "DEFAULT_EXA_CONFIG",
+    "ParallelTaskConfig",
+    "DEFAULT_PARALLEL_CONFIG",
     # live transport seam (HTTP backend template + the account-key lookup)
     "AccountLookup",
     "HttpEnrichmentBackend",

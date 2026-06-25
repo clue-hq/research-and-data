@@ -13,14 +13,36 @@ Kept in its OWN module so M10 / M11 / M12 never co-edit ``api/composition.py`` w
 * register the synthesis aspect workers, judge-gated per
   :data:`~clue_research.api.composition.VERIFICATION_GATE_ORDER` (faithfulness M9.3 → promotion).
 
-Until M11 lands this is a documented no-op so the seam + ownership home exist.
+**M11.1** binds Exa Deep to the already-seeded ``exa_deep`` manifest. **M11.2 (this commit)** also
+binds Parallel Task to the seeded ``parallel_task`` manifest — a *second*, independent tier-4
+provider behind the identical seam, so running one, the other, or both (cross-provider convergence)
+is purely a Source-Planner/config choice. Both resolvers are account-scoped — each returns ``[]``
+for a contact entity / contact-class field, so binding to the ``entity_scope=BOTH`` manifests cannot
+leak a ``contact.facet.*`` claim (the personal-data firewall; PF-8 was dropped as harmful, so the
+firewall is field-routing, not a manifest edit).
+**M11.3** adds the judge-gated synthesis workers + the verification-health metric. (The deferred
+``PreSpendGate.check`` wiring for the tier-4 spend path — M9.1 AC6 — lands here at integration,
+alongside the M4/M8 gate routing.)
 """
 
 from __future__ import annotations
 
+from clue_research.resolvers import (
+    AccountLookup,
+    register_exa_deep_resolver,
+    register_parallel_task_resolver,
+)
 
-def register_synthesis_wiring() -> None:
-    """Bind the tier-4 synthesis resolvers + register their fields/workers at the api root.
 
-    Filled by M11 (M11.1 Exa Deep, M11.2 Parallel Task, M11.3 field-wiring). Placeholder until then.
+def register_synthesis_wiring(*, accounts: AccountLookup | None = None) -> None:
+    """Bind the tier-4 synthesis resolvers at the api root (M11.1 Exa Deep; M11.2 Parallel Task).
+
+    Both bind to their already-seeded manifests (``exa_deep`` / ``parallel_task``) behind the same
+    :class:`~clue_research.resolvers.GroundedSynthesisResolver` seam — the waterfall dispatches to
+    whichever a field's ``tier_plan`` names, with no knowledge of either provider. ``accounts`` is
+    the orchestrator's :class:`~clue_research.resolvers.AccountLookup` (entity_id → the resolved
+    :class:`~clue_research.core.AccountEntity`) the resolvers target-lock the query with; the M6/M8
+    deep-run composition supplies it. Idempotent (last write wins per key).
     """
+    register_exa_deep_resolver(accounts=accounts)
+    register_parallel_task_resolver(accounts=accounts)
