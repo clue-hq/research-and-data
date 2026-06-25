@@ -86,8 +86,27 @@ Three layers, in this priority:
   ordering proof: served before sweep, tombstoned+absent after), and an objected contact's hooks
   (E). Full suite 1794 passed.
 
-## The deferred-wiring checklist (remaining — all at the api root)
-- `PreSpendGate.check` tier-4 spend routing (M9.1 AC-6); born-binding stamp into M8.4/M8.5.
+- **DONE — M9.1 AC-6 tier-4 routing + born-binding + M11.3 guard call site** (the last task-#6 items):
+  - **Born-binding (M9.4×M8.4/M8.5):** was already wired in M8A.6 (`build_deep_phase_handler` injects
+    `production_binding_classifier`) and tested (`test_identity_binding_ac4.py`,
+    `test_governance_integration.py`). No new code.
+  - **PreSpendGate tier-4 routing (M9.1 AC-6):** the gate was already injected into the account-axis +
+    orchestrator (M8A.6); the aspect worker (`aspect_worker.py:334`) gates with the first-RUN source's
+    tier (=4 for a tier-4-only synthesis field) before the waterfall spends. Added the explicit proof
+    `test_tier4_synthesis_spend_records_prior_gate_decision` — a tier-4 synthesis resolve records a
+    `gate_decision` with `source_tier=4` before the spend, then writes the claim.
+  - **M11.3 `guard_synthesis_resolution` call site (3):** added an injected `SynthesisGuard` hook to the
+    aspect worker (`_fill_field`, before `resolve_field`), threaded through
+    resonance → account_axis_workers → default_account_worker_builder → profile_account → orchestrator →
+    build_deep_phase_handler / build_account_axis_registry / composition.build_profiling_workers,
+    defaulting to `synthesis.guard_synthesis_resolution` at the api roots. `profiling` stays
+    import-independent of `synthesis` (it holds an injected callable). No-op for non-synthesis fields;
+    raises `SynthesisGateError` on a wiring regression. `test_composition_injects_synthesis_guard_into_account_axis`.
+  Full suite 1796 passed; import-linter 11/11 KEPT.
+
+## The deferred-wiring checklist (remaining)
+- All M10×M11×M12 integration governance wiring is landed. Remaining are the pre-existing cross-milestone
+  cleanups in CLAUDE.md's backlog (DRY consolidations; the M9.2/M9.6 step-2 items) — not integration blockers.
 - `synthesis.guard_synthesis_resolution` pre-resolution call site is a DEEP-phase concern (the resolve
   step), not VERIFICATION; wire it where M8 resolves tier-4 fields.
 - `PreSpendGate.check` routing on the tier-4 spend path (exa_deep/parallel_task) + the AC-6 lint test

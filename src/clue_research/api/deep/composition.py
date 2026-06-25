@@ -88,6 +88,7 @@ from clue_research.durable import (
 from clue_research.icp.rubric import TierCutoffs
 from clue_research.profiling import (
     CommitteeSource,
+    SynthesisGuard,
     account_axis_workers,
     discover_committee,
     profile_account,
@@ -95,6 +96,7 @@ from clue_research.profiling import (
 )
 from clue_research.profiling.contact.binding import BindingClassifier
 from clue_research.profiling.runtime import SessionFactory
+from clue_research.synthesis import guard_synthesis_resolution
 
 __all__ = [
     "DeepPhaseComposition",
@@ -209,6 +211,7 @@ def build_account_axis_registry(
     session_factory: SessionFactory = transaction,
     planner_model: str | None = None,
     pack_namespaces: Sequence[str] = (),
+    synthesis_guard: SynthesisGuard = guard_synthesis_resolution,
 ) -> WorkerRegistry:
     """A :class:`WorkerRegistry` holding **only** the account-axis aspect workers
     (account / core / resonance / pack) — the graph the M8A scheduler is built over.
@@ -225,6 +228,7 @@ def build_account_axis_registry(
         gateway=gateway,
         planner_model=planner_model,
         pre_spend_gate=pre_spend_gate,
+        synthesis_guard=synthesis_guard,
     ):
         registry.register(worker)
     return registry
@@ -267,6 +271,7 @@ def build_deep_phase_handler(
     budget: BudgetEngine | None = None,
     pre_spend_gate: PreSpendGate | None = None,
     binding_classifier: BindingClassifier | None = None,
+    synthesis_guard: SynthesisGuard = guard_synthesis_resolution,
     session_factory: SessionFactory = transaction,
     high_tier_resolver: HighTierResolver | None = None,
     checkpointer_factory: CheckpointerFactory | None = None,
@@ -308,6 +313,7 @@ def build_deep_phase_handler(
         recursion_policy=recursion_policy,
         planner_model=planner_model,
         pre_spend_gate=gate,
+        synthesis_guard=synthesis_guard,
         budget_cap_cents=budget_cap_cents,
     )
 
@@ -316,6 +322,7 @@ def build_deep_phase_handler(
         pre_spend_gate=gate,
         session_factory=session_factory,
         planner_model=planner_model,
+        synthesis_guard=synthesis_guard,
     )
     graph = AccountResearchGraph(workers=registry, recursion_policy=recursion_policy)
     scheduler = AccountScheduler(graph, max_parallel=config.max_parallel_accounts)

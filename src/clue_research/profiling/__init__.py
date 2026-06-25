@@ -36,6 +36,7 @@ from clue_research.profiling.aspect_worker import (
     AspectCoverage,
     AspectProfilingWorker,
     ProfilingFieldDisposition,
+    SynthesisGuard,
 )
 from clue_research.profiling.committee import (
     COMMITTEE_FIELD_KEYS,
@@ -89,6 +90,7 @@ __all__ = [
     "profile_account",
     "AccountProfileResult",
     "AspectProfilingWorker",
+    "SynthesisGuard",
     "AspectCoverage",
     "ProfilingFieldDisposition",
     "aspect_key_for",

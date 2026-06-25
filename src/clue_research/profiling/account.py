@@ -67,6 +67,7 @@ from clue_research.profiling.aspect_worker import (
     AspectCoverage,
     AspectProfilingWorker,
     SessionFactory,
+    SynthesisGuard,
 )
 from clue_research.profiling.context import params_for_run
 from clue_research.profiling.resonance import ResonanceAspectWorker
@@ -101,6 +102,7 @@ def default_account_worker_builder(
     gateway: LLMGateway | None = None,
     planner_model: str | None = None,
     pre_spend_gate: PreSpendGate | None = None,
+    synthesis_guard: SynthesisGuard | None = None,
 ) -> WorkerBuilder:
     """A :data:`WorkerBuilder` constructing the real M8.1/M8.2 workers: the resonance specialisation
     for ``account.resonance``, the generic account-profiling worker for every other account-axis
@@ -114,6 +116,7 @@ def default_account_worker_builder(
                 gateway=gateway,
                 planner_model=planner_model,
                 pre_spend_gate=pre_spend_gate,
+                synthesis_guard=synthesis_guard,
             )
         return AspectProfilingWorker(
             aspect,
@@ -122,6 +125,7 @@ def default_account_worker_builder(
             gateway=gateway,
             planner_model=planner_model,
             pre_spend_gate=pre_spend_gate,
+            synthesis_guard=synthesis_guard,
         )
 
     return _build
@@ -253,6 +257,7 @@ async def profile_account(
     gateway: LLMGateway | None = None,
     planner_model: str | None = None,
     pre_spend_gate: PreSpendGate | None = None,
+    synthesis_guard: SynthesisGuard | None = None,
 ) -> AccountProfileResult:
     """Profile one high-tier account: fill every deep account-axis gap field, or leave it
     empty/flagged, bounded by the tier's aspect cap and the budget envelope (M8.1).
@@ -278,6 +283,7 @@ async def profile_account(
             gateway=gateway,
             planner_model=planner_model,
             pre_spend_gate=pre_spend_gate,
+            synthesis_guard=synthesis_guard,
         )
     )
 
@@ -364,6 +370,7 @@ def account_axis_workers(
     gateway: LLMGateway | None = None,
     planner_model: str | None = None,
     pre_spend_gate: PreSpendGate | None = None,
+    synthesis_guard: SynthesisGuard | None = None,
 ) -> list[AspectWorker]:
     """The account-axis aspect workers the api composition root registers into M7's
     ``WorkerRegistry`` (the one coordination point).
@@ -389,6 +396,7 @@ def account_axis_workers(
             gateway=gateway,
             planner_model=planner_model,
             pre_spend_gate=pre_spend_gate,
+            synthesis_guard=synthesis_guard,
         )
 
     workers: list[AspectWorker] = [
@@ -400,6 +408,7 @@ def account_axis_workers(
             gateway=gateway,
             planner_model=planner_model,
             pre_spend_gate=pre_spend_gate,
+            synthesis_guard=synthesis_guard,
         ),
     ]
     workers.extend(_generic(ns) for ns in pack_namespaces)

@@ -50,6 +50,7 @@ from clue_research.durable import (
     WorkerRegistry,
 )
 from clue_research.profiling import (
+    SynthesisGuard,
     account_axis_workers,
     load_committee_pack,
     load_deep_profiling_pack,
@@ -59,6 +60,7 @@ from clue_research.profiling.contact import ContactProfileAspectWorker
 from clue_research.profiling.contact.binding import BindingClassifier, BindingInput
 from clue_research.profiling.runtime import SessionFactory
 from clue_research.sources import seed_source_manifests
+from clue_research.synthesis import guard_synthesis_resolution
 from clue_research.verification import (
     DEFAULT_BINDING_POLICY,
     DEFAULT_PRE_SPEND_POLICY,
@@ -216,6 +218,7 @@ def build_profiling_workers(
     session_factory: SessionFactory = transaction,
     pre_spend_gate: PreSpendGate | None = None,
     binding_classifier: BindingClassifier | None = None,
+    synthesis_guard: SynthesisGuard | None = guard_synthesis_resolution,
     role_model: str | None = None,
     recursion_policy: RecursionPolicy | None = None,
     pack_namespaces: Sequence[str] = (),
@@ -227,8 +230,10 @@ def build_profiling_workers(
     contact profiler (the authoritative ``binding_classifier`` — defaults to
     :func:`production_binding_classifier`). The ``pre_spend_gate`` is threaded into all three axes:
     account field-fill (FIELD), committee people-enumeration (ENUMERATION) + role inference (FIELD),
-    and contact facet-fill (FIELD). ``recursion_policy`` is shared with the graph so the contact
-    facet sub-worker soft cap and the graph's ``SpawnGuard`` hard cap agree.
+    and contact facet-fill (FIELD). The ``synthesis_guard`` (M11.3 ``guard_synthesis_resolution``,
+    the account-only + Pass-B-only pre-resolution tripwire) is threaded into the account axis.
+    ``recursion_policy`` is shared with the graph so the contact facet sub-worker soft cap and the
+    graph's ``SpawnGuard`` hard cap agree.
     """
     recursion = recursion_policy or RecursionPolicy()
     binder = binding_classifier or production_binding_classifier()
@@ -238,6 +243,7 @@ def build_profiling_workers(
             session_factory=session_factory,
             gateway=gateway,
             pre_spend_gate=pre_spend_gate,
+            synthesis_guard=synthesis_guard,
         )
     )
     workers.append(
