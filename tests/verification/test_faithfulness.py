@@ -75,15 +75,28 @@ class FakeGateway:
     one canned response and records every ``complete`` call (model + messages) so the test can
     assert *which* model was called and *how many times* (caching / no-call / model-swap)."""
 
-    def __init__(self, response_text: str, *, cost_cents: Decimal = Decimal("0.5")) -> None:
+    def __init__(
+        self,
+        response_text: str,
+        *,
+        cost_cents: Decimal = Decimal("0.5"),
+        answering_model: str | None = None,
+    ) -> None:
         self._response = response_text
         self._cost = cost_cents
+        # When set, the completion reports a DIFFERENT model than the one requested — simulating an
+        # OpenRouter fallback so the test can assert ``answering_model`` is recorded distinctly from
+        # the requested ``judge_model`` (the cache key).
+        self._answering_model = answering_model
         self.calls: list[tuple[str, list[Message]]] = []
 
     def complete(self, *, model: str, messages: list[Message], **opts: object) -> Completion:
         self.calls.append((model, list(messages)))
         return Completion(
-            model=model, text=self._response, cost_cents=self._cost, finish_reason="stop"
+            model=self._answering_model or model,
+            text=self._response,
+            cost_cents=self._cost,
+            finish_reason="stop",
         )
 
     def embed(self, *, model: str, inputs: list[str]) -> object:  # pragma: no cover - unused
@@ -674,7 +687,8 @@ def test_verdict_row_content_persists_and_replays() -> None:
                 await conn.execute(
                     text(
                         "SELECT verdict, score, rationale, judge_model, prompt_version, "
-                        "cost_cents, latency_ms FROM faithfulness_verdict WHERE claim_id = :id"
+                        "cost_cents, latency_ms, answering_model "
+                        "FROM faithfulness_verdict WHERE claim_id = :id"
                     ),
                     {"id": claim.id},
                 )
@@ -687,11 +701,95 @@ def test_verdict_row_content_persists_and_replays() -> None:
             assert row[4] == PROMPT_VERSION
             assert row[5] == Decimal("0.5")
             assert row[6] is not None  # latency recorded
+            # no fallback configured → the model that answered == the requested judge_model.
+            assert row[7] == DEFAULT_JUDGE_POLICY.judge_model
             # the cache replay reconstructs the same JudgeResult from the row (no second LLM call).
             second = await judge.judge(claim)
             assert second.verdict is first.verdict
             assert second.score == pytest.approx(first.score)
             assert second.cost_cents == first.cost_cents and second.rationale == first.rationale
+
+    run_async(_run())
+
+
+@pytest.mark.usefixtures("require_verification_db")
+def test_answering_model_records_fallback_distinct_from_cache_key() -> None:
+    """[M9.3×M12] When the gateway falls back (the completion reports a different model than the one
+    requested), the verdict row records the **answering** model in ``answering_model`` while
+    ``judge_model`` stays the requested id — so the cache key is stable across the fallback and a
+    re-judge is still a cache hit (no duplicate row), yet M12.2 cites the model that actually
+    answered."""
+
+    async def _run() -> None:
+        async with rollback_conn() as conn:
+            entity = await _account(conn)
+            await _register(conn)
+            claim = _claim(entity_id=entity)
+            await insert_claim(conn, claim)
+            gateway = FakeGateway(_SUPPORTED, answering_model="anthropic/claude-3-opus-fallback")
+            judge = _judge(conn, gateway)
+            await judge.judge(claim)
+            rows = (
+                await conn.execute(
+                    text(
+                        "SELECT judge_model, answering_model FROM faithfulness_verdict "
+                        "WHERE claim_id = :id"
+                    ),
+                    {"id": claim.id},
+                )
+            ).all()
+            assert len(rows) == 1  # one row keyed on the REQUESTED model
+            assert rows[0][0] == DEFAULT_JUDGE_POLICY.judge_model  # cache key = requested
+            assert rows[0][1] == "anthropic/claude-3-opus-fallback"  # cited = answered
+            # re-judge: cache hit on the (claim, requested judge_model, prompt) key → still one row.
+            await judge.judge(claim)
+            count = (
+                await conn.execute(
+                    text("SELECT count(*) FROM faithfulness_verdict WHERE claim_id = :id"),
+                    {"id": claim.id},
+                )
+            ).scalar()
+            assert count == 1
+            # the M12.2 citation reader reports the answering model (read via the narrative seam).
+            from clue_research.narrative import read_faithfulness_citation
+
+            citation = await read_faithfulness_citation(conn, claim.id)
+            assert citation is not None
+            assert citation.answering_model == "anthropic/claude-3-opus-fallback"
+            assert citation.judge_model == DEFAULT_JUDGE_POLICY.judge_model
+            assert citation.verdict == "supported"
+
+    run_async(_run())
+
+
+@pytest.mark.usefixtures("require_verification_db")
+def test_answering_model_for_span_less_claim_is_the_requested_model() -> None:
+    """A span-less tier-4 claim is auto-``unsupported`` with ZERO LLM calls (no completion exists),
+    so ``answering_model`` is, correctly, the requested ``judge_model`` (no fallback could occur) —
+    never NULL."""
+
+    async def _run() -> None:
+        async with rollback_conn() as conn:
+            entity = await _account(conn)
+            await _register(conn)
+            claim = _claim(entity_id=entity, span=None)  # tier-4, no evidence_span
+            await insert_claim(conn, claim)
+            gateway = FakeGateway(_SUPPORTED)
+            judge = _judge(conn, gateway)
+            await judge.judge(claim)
+            assert gateway.calls == []  # the kill switch: no LLM call
+            row = (
+                await conn.execute(
+                    text(
+                        "SELECT verdict, answering_model FROM faithfulness_verdict "
+                        "WHERE claim_id = :id"
+                    ),
+                    {"id": claim.id},
+                )
+            ).first()
+            assert row is not None
+            assert row[0] == "unsupported"
+            assert row[1] == DEFAULT_JUDGE_POLICY.judge_model
 
     run_async(_run())
 

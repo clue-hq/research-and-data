@@ -373,11 +373,18 @@ class FaithfulnessJudgeImpl:
                 result, cache_hit, latency_ms = cached, True, 0.0
             else:
                 # 2) compute the verdict with NO connection held (the gateway call is synchronous).
-                parsed, cost, latency_ms = self._compute_verdict(claim)
+                parsed, answering_model, cost, latency_ms = self._compute_verdict(claim)
                 # 3) persist + drive status (short write txn).
                 if self._record:
                     async with self._conn_factory() as conn:
-                        await self._persist(conn, claim, parsed, cost=cost, latency_ms=latency_ms)
+                        await self._persist(
+                            conn,
+                            claim,
+                            parsed,
+                            answering_model=answering_model,
+                            cost=cost,
+                            latency_ms=latency_ms,
+                        )
                 result = JudgeResult(
                     claim_id=claim.id,
                     verdict=parsed.verdict,
@@ -401,9 +408,14 @@ class FaithfulnessJudgeImpl:
             self._emit_metrics(str(claim.field_key), result, cache_hit=cache_hit)
             return result
 
-    def _compute_verdict(self, claim: Claim) -> tuple[ParsedVerdict, CostCents, float]:
+    def _compute_verdict(self, claim: Claim) -> tuple[ParsedVerdict, str, CostCents, float]:
         """Produce the verdict for one claim with **no DB connection held** (pure + one gateway
-        call). The no-span structural pre-check (substrate §1 kill switch) makes ZERO LLM calls."""
+        call). Returns ``(parsed, answering_model, cost, latency_ms)`` — ``answering_model`` is the
+        gateway model that *actually answered* (``completion.model``; differs from the requested
+        ``judge_model`` only on an OpenRouter fallback), recorded on the verdict row so M12.2 cites
+        the model that produced the judgment. The no-span structural pre-check (substrate §1 kill
+        switch) makes ZERO LLM calls — no completion exists, so the answering model is, correctly,
+        the requested ``judge_model`` (no fallback could have occurred)."""
         if not claim.evidence_span:
             parsed = ParsedVerdict(
                 verdict=JudgeVerdict.UNSUPPORTED,
@@ -411,12 +423,17 @@ class FaithfulnessJudgeImpl:
                 rationale="no evidence_span: a claim with no cited span cannot be promoted "
                 "(substrate §1)",
             )
-            return parsed, Decimal(0), 0.0
+            return parsed, self._policy.judge_model, Decimal(0), 0.0
         messages = build_judge_messages(claim, prompt_version=self._policy.prompt_version)
         start = perf_counter()
         completion = self._gateway.complete(model=self._policy.judge_model, messages=messages)
         latency_ms = (perf_counter() - start) * 1000.0
-        return parse_judge_response(completion.text), completion.cost_cents, latency_ms
+        return (
+            parse_judge_response(completion.text),
+            completion.model,
+            completion.cost_cents,
+            latency_ms,
+        )
 
     async def _persist(
         self,
@@ -424,6 +441,7 @@ class FaithfulnessJudgeImpl:
         claim: Claim,
         parsed: ParsedVerdict,
         *,
+        answering_model: str,
         cost: CostCents,
         latency_ms: float,
     ) -> None:
@@ -441,6 +459,7 @@ class FaithfulnessJudgeImpl:
             claim.id,
             parsed,
             judge_model=self._policy.judge_model,
+            answering_model=answering_model,
             prompt_version=self._policy.prompt_version,
             cost=cost,
             latency_ms=latency_ms,
@@ -489,22 +508,25 @@ class FaithfulnessJudgeImpl:
         parsed: ParsedVerdict,
         *,
         judge_model: str,
+        answering_model: str,
         prompt_version: str,
         cost: CostCents,
         latency_ms: float,
     ) -> None:
         """Append the append-only verdict row (the cache). ``ON CONFLICT DO NOTHING`` on the
         ``(claim_id, judge_model, prompt_version)`` key makes a concurrent first-judgment race safe
-        (the first verdict wins; never a duplicate row)."""
+        (the first verdict wins; never a duplicate row). ``answering_model`` (the id that actually
+        answered) is recorded alongside the requested ``judge_model`` (the cache key) — they differ
+        only on an OpenRouter fallback, and M12.2 cites ``answering_model``."""
         await conn.execute(
             text(
                 """
                 INSERT INTO faithfulness_verdict
-                    (claim_id, verdict, score, rationale, judge_model, prompt_version,
-                     cost_cents, latency_ms)
+                    (claim_id, verdict, score, rationale, judge_model, answering_model,
+                     prompt_version, cost_cents, latency_ms)
                 VALUES
                     (:claim_id, CAST(:verdict AS judge_verdict), :score, :rationale, :judge_model,
-                     :prompt_version, :cost_cents, :latency_ms)
+                     :answering_model, :prompt_version, :cost_cents, :latency_ms)
                 ON CONFLICT (claim_id, judge_model, prompt_version) DO NOTHING
                 """
             ),
@@ -514,6 +536,7 @@ class FaithfulnessJudgeImpl:
                 "score": parsed.score,
                 "rationale": parsed.rationale,
                 "judge_model": judge_model,
+                "answering_model": answering_model,
                 "prompt_version": prompt_version,
                 "cost_cents": cost,
                 "latency_ms": latency_ms,

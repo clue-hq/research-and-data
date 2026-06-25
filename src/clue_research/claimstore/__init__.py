@@ -21,6 +21,7 @@ from within ``clue_research`` (it is not a worker; conventions §2 / import-lint
 from __future__ import annotations
 
 from clue_research.claimstore.claims import (
+    claims_by_ids,
     claims_for,
     entities_with_field_claim,
     insert_claim,
@@ -32,7 +33,6 @@ from clue_research.claimstore.merge import (
     DEFAULT_MERGE_POLICY,
     FreshnessMode,
     MergePolicy,
-    canonical_json,
     current_value,
     current_values,
     merge_claims,
@@ -58,6 +58,9 @@ from clue_research.claimstore.registry import (
     validate_value,
 )
 from clue_research.claimstore.tenancy import ALL_TENANTS, PUBLIC_ONLY, TenantScope
+from clue_research.core import (
+    canonical_json,
+)  # re-export: relocated to core (the equality contract)
 
 __all__ = [
     # write contract (M1.1)
@@ -65,6 +68,7 @@ __all__ = [
     "supersede_claim",
     "supersede_claims",
     "claims_for",
+    "claims_by_ids",
     "entities_with_field_claim",
     # verification verdict write (M9.2 — in-place on the trigger-allowlisted columns)
     "record_verification",

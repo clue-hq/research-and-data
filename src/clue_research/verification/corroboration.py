@@ -35,10 +35,8 @@ evaluator (swap note, M09 §M9.2).
 
 from __future__ import annotations
 
-import re
 from collections.abc import Callable, Sequence
 from contextlib import AbstractAsyncContextManager
-from enum import StrEnum
 from urllib.parse import urlsplit
 
 from pydantic import BaseModel, ConfigDict, JsonValue
@@ -47,7 +45,6 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_research.claimstore import (
     TenantScope,
-    canonical_json,
     claims_for,
     get_corroboration_config,
     record_verification,
@@ -58,10 +55,12 @@ from clue_research.core import (
     ClaimId,
     EntityId,
     EntityType,
+    EqualityMode,
     VerificationStatus,
     can_be_promoted,
     serialize_value_json,
 )
+from clue_research.core import values_agree as _core_values_agree
 from clue_research.core.field import FieldKey
 from clue_research.db import transaction
 from clue_research.obs import (
@@ -87,27 +86,6 @@ METRIC_CORROBORATION_CONFLICTS = "research.verification.corroboration.conflicts"
 ATTR_CONFLICT = "verification.conflict"
 ATTR_N_VALUE_GROUPS = "verification.corroboration.value_groups"
 ATTR_N_PROMOTED = "verification.corroboration.promoted"
-
-# Tokeniser for semantic equality: lowercase alphanumeric runs ("uses Snowflake!" -> {uses, snow}).
-_TOKEN_RE = re.compile(r"[a-z0-9]+")
-
-
-class EqualityMode(StrEnum):
-    """How the corroborator decides two ``value_json`` payloads *agree* (M9.2 — type-aware equality,
-    derived from M1.3's field type/validation). An M9-internal enum mirrored by the
-    ``equality_mode`` DB enum (parity-tested); there is no ``core`` enum because nothing outside the
-    corroborator consumes it.
-
-    * ``EXACT`` — canonical-JSON equality (enums, ids, structured payloads): the safe default.
-    * ``NUMERIC_TOL`` — two numbers agree within tolerance (headcount 1000 vs 1024 corroborate);
-      non-numeric values fall back to exact.
-    * ``SEMANTIC`` — normalized text overlap (``"Snowflake"`` vs ``"uses Snowflake"`` corroborate;
-      ``"Snowflake"`` vs ``"Databricks"`` conflict); non-string values fall back to exact.
-    """
-
-    EXACT = "exact"
-    NUMERIC_TOL = "numeric_tol"
-    SEMANTIC = "semantic"
 
 
 class CorroborationPolicy(BaseModel):
@@ -165,55 +143,28 @@ class CorroborationResult(BaseModel):
     conflicting_claim_ids: tuple[ClaimId, ...] = ()
 
 
-# --- pure equality / grouping / independence (DB-free, unit-testable) -------
-# Exact equality uses the substrate's shared ``canonical_json`` (claimstore.merge) so "same value"
-# is decided identically here and in the merge layer's conflict/distinctness check (DRY; one seam).
-
-
-def _as_number(value: JsonValue) -> float | None:
-    """The numeric value of a JSON number, or ``None`` (booleans are not numbers here)."""
-    if isinstance(value, bool):
-        return None
-    if isinstance(value, (int, float)):
-        return float(value)
-    return None
-
-
-def _within_tolerance(a: float, b: float, policy: CorroborationPolicy) -> bool:
-    diff = abs(a - b)
-    if diff <= policy.numeric_abs_tolerance:
-        return True
-    scale = max(abs(a), abs(b))
-    return scale > 0 and diff <= policy.numeric_rel_tolerance * scale
-
-
-def _tokens(value: JsonValue) -> frozenset[str]:
-    if not isinstance(value, str):
-        return frozenset()
-    return frozenset(_TOKEN_RE.findall(value.lower()))
+# --- equality / grouping / independence (DB-free, unit-testable) -------------
+# Value agreement is the substrate's shared :func:`core.values_agree` — the merge layer's conflict /
+# distinctness check uses the *same* predicate under the field's ``equality_mode``, so "same value"
+# is decided identically on both surfaces (DRY; one seam). This thin adapter binds the cross-field
+# tolerances carried on the :class:`CorroborationPolicy`; the merge passes its ``MergePolicy``'s
+# tolerances to the same core function (a no-DB drift guard asserts the two default-align).
 
 
 def values_agree(
     a: JsonValue, b: JsonValue, *, mode: EqualityMode, policy: CorroborationPolicy
 ) -> bool:
-    """Whether two ``value_json`` payloads *agree* under ``mode`` (the corroboration equality)."""
-    if mode is EqualityMode.NUMERIC_TOL:
-        na, nb = _as_number(a), _as_number(b)
-        if na is not None and nb is not None:
-            return _within_tolerance(na, nb, policy)
-        return canonical_json(a) == canonical_json(b)  # non-numeric → exact fallback
-    if mode is EqualityMode.SEMANTIC:
-        if isinstance(a, str) and isinstance(b, str):
-            ta, tb = _tokens(a), _tokens(b)
-            if not ta or not tb:
-                return canonical_json(a) == canonical_json(b)
-            if ta <= tb or tb <= ta:  # containment: "snowflake" ⊆ "uses snowflake"
-                return True
-            inter = len(ta & tb)
-            union = len(ta | tb)
-            return union > 0 and inter / union >= policy.semantic_jaccard_threshold
-        return canonical_json(a) == canonical_json(b)  # non-text → exact fallback
-    return canonical_json(a) == canonical_json(b)  # EXACT
+    """Whether two ``value_json`` payloads *agree* under ``mode`` — the corroboration equality,
+    delegating to :func:`core.values_agree` with this policy's tolerances (the one equality contract
+    the merge conflict check shares)."""
+    return _core_values_agree(
+        a,
+        b,
+        mode=mode,
+        numeric_rel_tolerance=policy.numeric_rel_tolerance,
+        numeric_abs_tolerance=policy.numeric_abs_tolerance,
+        semantic_jaccard_threshold=policy.semantic_jaccard_threshold,
+    )
 
 
 def group_by_agreement(
@@ -335,8 +286,11 @@ def _is_counting(claim: Claim, policy: CorroborationPolicy) -> bool:
 
 def _is_authoritative(claim: Claim, policy: CorroborationPolicy) -> bool:
     """Whether a claim is an *authoritative* source whose disagreement raises a conflict flag
-    (tier≤threshold, not rejected/flagged, promotable). Mirrors the merge layer's conflict
-    contenders."""
+    (tier≤threshold, not rejected/flagged, promotable). Shares the tier band, the equality predicate
+    (``core.values_agree``) and the pairwise check with the merge layer's ``_conflict``, but is
+    **stricter on status**: it also excludes ``FLAGGED`` (via ``_NON_SOURCE_STATUSES``), where the
+    merge's ``_is_eligible`` still admits a FLAGGED tier≤2 claim. The merge over-flags toward
+    review; this ``conflict_flag`` is the authoritative signal M13.1 consumes."""
     return (
         claim.source_tier <= policy.conflict_tier_threshold
         and claim.verification_status not in _NON_SOURCE_STATUSES
