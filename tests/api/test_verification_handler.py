@@ -18,7 +18,12 @@ from clue_research.api.verification import (
     VerificationPhaseHandler,
     build_verification_phase_handler,
 )
-from clue_research.api.verification.handler import ClaimLoader, VerificationAccountResolver
+from clue_research.api.verification.handler import (
+    ClaimLoader,
+    ContactResolver,
+    UseGateProvider,
+    VerificationAccountResolver,
+)
 from clue_research.claimstore import TenantScope
 from clue_research.core import (
     CampaignPhase,
@@ -197,12 +202,32 @@ def _facet(entity_id: EntityId, *, field_key: str = _FACET) -> Claim:
     )
 
 
+def _use_gate_provider(use_gate: FakeUseGate | None) -> UseGateProvider | None:
+    if use_gate is None:
+        return None
+
+    async def _provide(client_id: str) -> FakeUseGate:
+        return use_gate
+
+    return _provide
+
+
+def _contact_resolver(
+    contacts: dict[EntityId, list[EntityId]],
+) -> ContactResolver:
+    async def _resolve(account_entity_id: EntityId) -> Sequence[EntityId]:
+        return contacts.get(account_entity_id, [])
+
+    return _resolve
+
+
 def _handler(
     *,
     specs: Sequence[AccountSpec],
     by_entity: dict[EntityId, list[Claim]],
     rec: _Recorder,
     use_gate: FakeUseGate | None,
+    contact_resolver: ContactResolver | None = None,
     raise_for: EntityId | None = None,
     sink: InMemorySink | None = None,
 ) -> VerificationPhaseHandler:
@@ -211,7 +236,8 @@ def _handler(
         load_claims=_loader(by_entity, raise_for=raise_for),
         corroborator=FakeCorroborator(rec),
         judge=FakeJudge(rec),
-        use_gate=use_gate,
+        contact_resolver=contact_resolver,
+        use_gate_provider=_use_gate_provider(use_gate),
         health_sink=sink,
     )
 
@@ -263,7 +289,7 @@ def test_judges_every_tier4_claim_and_no_lower_tier() -> None:
         load_claims=_loader({e1: [_acct(_PAIN, 4, e1), _acct(_MOVES, 3, e1)]}),
         corroborator=FakeCorroborator(rec),
         judge=judge,
-        use_gate=None,
+        use_gate_provider=None,
     )
 
     async def _run() -> None:
@@ -293,6 +319,35 @@ def test_use_gate_runs_only_on_facet_claims() -> None:
     asyncio.run(_run())
 
 
+def test_committee_contacts_are_sourced_and_their_facets_governed() -> None:
+    # The follow-on: with a contact resolver wired, the account's committee CONTACT entities are
+    # pulled in and their contact.facet.* hooks go through corroboration → judge → use-gate — the
+    # personal-data leg the production handler runs.
+    rec = _Recorder()
+    account, contact = new_entity_id(), new_entity_id()
+    use_gate = FakeUseGate(rec)
+    handler = _handler(
+        specs=(_spec(account),),
+        by_entity={account: [_acct(_PAIN, 4, account)], contact: [_facet(contact)]},
+        rec=rec,
+        use_gate=use_gate,
+        contact_resolver=_contact_resolver({account: [contact]}),
+    )
+
+    async def _run() -> None:
+        result = await handler.run(_ctx())
+        assert result.accounts_processed == 1
+        # the contact's facet hook went through the full chain: corroborate → judge → use-gate.
+        assert ("corroborate", _FACET) in rec.log
+        assert ("judge", _FACET) in rec.log  # the facet claim is tier-4 → judged
+        assert use_gate.evaluated == [_FACET]
+        # and the account's own field was still verified in the same pass.
+        assert ("corroborate", _PAIN) in rec.log
+        assert ("judge", _PAIN) in rec.log
+
+    asyncio.run(_run())
+
+
 def test_no_span_tier4_claim_is_still_routed_through_the_judge() -> None:
     # The fabrication trap: a tier-4 claim with no evidence span must reach the judge (which fails
     # it safe to unsupported) — it can never silently bypass verification into current_value.
@@ -304,7 +359,7 @@ def test_no_span_tier4_claim_is_still_routed_through_the_judge() -> None:
         load_claims=_loader({e1: [_acct(_PAIN, 4, e1, span=None)]}),
         corroborator=FakeCorroborator(rec),
         judge=judge,
-        use_gate=None,
+        use_gate_provider=None,
     )
 
     async def _run() -> None:

@@ -57,9 +57,21 @@ Three layers, in this priority:
   committee *contact* entities into the loader (needs a contacts-under-account reader) + per-client UseGate.
   1777 passed / 14 skipped / 0 failed on a pristine DB.
 
+- **DONE — contact sourcing + production use-gate** (this commit): added `identity.contact_ids_for_account`
+  (live, non-merged committee contacts under an account; 3 DB-gated tests). VERIFICATION handler gained two
+  seams — `contact_resolver` (account → committee contact ids) and `use_gate_provider` (per-client, resolved
+  from `ctx.client_id` at run time since the posture policy is the client's). `build_verification_phase_handler`
+  now defaults `govern_contacts=True`: wires `contact_ids_for_account` + `load_client_policy`→`UseGateImpl`, so
+  in production each account's contacts are verified and their `contact.facet.*` hooks clear the use-gate
+  (M10.3) before M12 reads them. New handler test proves committee contacts are sourced + governed. Full suite
+  1781 passed / 14 skipped.
+
 ## The deferred-wiring checklist (remaining — all at the api root)
-- Contact-entity sourcing into the VERIFICATION loader + per-client `UseGateImpl` (lights up the use-gate
-  leg in production); the handler already supports it.
+- M10.5 retention/objection tombstone-before-merge-read sweep (HANDOFF phase) — the load-bearing
+  `[M9.5×M1.2/M10.5]` ordering invariant.
+- `PreSpendGate.check` tier-4 spend routing (M9.1 AC-6); born-binding stamp into M8.4/M8.5.
+- End-to-end DB negative tests (rejected tier-4 / sensitive / weak-binding / objected absent from
+  `current_value` + the assembled handoff).
 - `synthesis.guard_synthesis_resolution` pre-resolution call site is a DEEP-phase concern (the resolve
   step), not VERIFICATION; wire it where M8 resolves tier-4 fields.
 - `PreSpendGate.check` routing on the tier-4 spend path (exa_deep/parallel_task) + the AC-6 lint test
