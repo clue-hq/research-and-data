@@ -27,6 +27,7 @@ from clue_research.config.schema import (
     RecursionPolicy,
     ScoringRubric,
     SourceProfile,
+    VerificationHealthThresholds,
 )
 
 
@@ -66,6 +67,11 @@ class ConfigOverlay(BaseModel):
     recursion_policy: RecursionPolicy | None = None
     freshness_ttls: FreshnessTtls | None = None
     gateway: GatewayConfig | None = None
+    verification_health_thresholds: VerificationHealthThresholds | None = None
+    # M13.4/D7 — whether the cost & progress ObservabilitySurface is exposed to the client. A
+    # top-level scalar (not a sub-tree) so a client can flip *just* this flag without re-supplying a
+    # whole sub-object (ConfigOverlay has no partial sub-tree merge).
+    observability_client_facing: bool | None = None
 
 
 class Config(BaseModel):
@@ -88,5 +94,12 @@ class Config(BaseModel):
     recursion_policy: RecursionPolicy = RecursionPolicy()
     freshness_ttls: FreshnessTtls = FreshnessTtls()
     gateway: GatewayConfig = GatewayConfig()
+    verification_health_thresholds: VerificationHealthThresholds = VerificationHealthThresholds()
+    # M13.4/D7 — whether the cost & progress ObservabilitySurface read projections are exposed to
+    # the
+    # client (cost pass-through) vs. kept as an internal control. Defaults to the recommended
+    # client-facing posture (Doc C §5). A *visibility* toggle only — the surface computes the same
+    # projections either way; gating happens at the api/portal boundary, never as two code paths.
+    observability_client_facing: bool = True
     # The layer versions that produced this object, base-first (defaults → client → icp).
     applied_versions: tuple[ConfigVersion, ...] = Field(default_factory=tuple)
