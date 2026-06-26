@@ -4,8 +4,8 @@ Mirrors the durable / claim-store harness (DRY): reuses the M0.3 single-loop ``r
 reachable-DB probe, migrates to head once per session, and yields a rolled-back connection seeded
 with the M1 core pack. Covers all three Wave-1 surfaces in this package:
 
-* M13.1 surface / projection / gate tests and M13.2 disposition tables + ``labeled_dataset`` view run
-  against real Postgres (the tables + view are SQL), so they ``pytest.skip`` when no DB is reachable.
+* M13.1 surface / projection / gate tests and M13.2 disposition tables + the ``labeled_dataset``
+  view run against real Postgres (the tables + view are SQL), so they skip when no DB is reachable.
 * M13.4 observability-panel logic runs entirely on in-memory reader fakes (no database) and stays in
   the default ``make check``; only its seam tests (``cost_estimate`` snapshot,
   ``claimstore.claims_for_runs``, per-source-yield equality) need the DB gate.
