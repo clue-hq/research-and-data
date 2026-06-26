@@ -177,6 +177,10 @@ class ICPCreatedFrom(StrEnum):
     SYNTHESIS = "synthesis"
     CLIENT_EDIT = "client_edit"
     IMPORT_REDERIVE = "import_rederive"
+    # M13.3: a new ICP-spec version written by promoting a learning-loop scoring-rubric reweight (so
+    # "which versions came from the feedback loop" is queryable). Appended last — the DB enum's
+    # ALTER ... ADD VALUE appends, keeping enum-parity.
+    FEEDBACK_REWEIGHT = "feedback_reweight"
 
 
 # ---------------------------------------------------------------------------
@@ -377,3 +381,32 @@ class ReviewRejectReason(StrEnum):
     INAPPROPRIATE = "inappropriate"
     UNSUPPORTED = "unsupported"
     OTHER = "other"
+
+
+class ConfigRevisionTarget(StrEnum):
+    """What an M13.3 learning-loop ``config_revision`` reweights — a source profile (M4.6) or the
+    fit/intent scoring rubric (M3.4). The two reweight targets the one disposition signal drives
+    (staged-flow §9). The loop emits versioned revisions; the engine reads the existing config
+    stores, never ``config_revision`` (the ledger)."""
+
+    SOURCE_PROFILE = "source_profile"
+    SCORING_RUBRIC = "scoring_rubric"
+
+
+class ConfigRevisionStatus(StrEnum):
+    """An M13.3 config_revision's lifecycle: ``PROPOSED`` by the loop, then ``PROMOTED`` (written
+    to the versioned store, active for new runs) or ``REJECTED`` (never applied). Reweighting only
+    ever *proposes*; promotion is a separate step (substrate §9 — never autonomous mutation)."""
+
+    PROPOSED = "proposed"
+    PROMOTED = "promoted"
+    REJECTED = "rejected"
+
+
+class PromotionMode(StrEnum):
+    """How an M13.3 revision promotion is authorized: ``AUTO`` (an in-bounds move the loop may
+    promote itself) or ``HUMAN`` (an out-of-bounds move needing explicit approval). Policy is data —
+    the bound is configurable; the mode records which gate cleared the promotion."""
+
+    AUTO = "auto"
+    HUMAN = "human"

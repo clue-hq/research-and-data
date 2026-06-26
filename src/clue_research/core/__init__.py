@@ -21,6 +21,8 @@ from clue_research.core.enums import (
     BudgetVerdict,
     CampaignPhase,
     ClaimFlavor,
+    ConfigRevisionStatus,
+    ConfigRevisionTarget,
     EntityScope,
     EntityType,
     EnumerationScope,
@@ -37,6 +39,7 @@ from clue_research.core.enums import (
     PhaseStatus,
     PreSpendKind,
     PreSpendVerdict,
+    PromotionMode,
     ResearchMode,
     ReuseScope,
     ReviewAction,
@@ -127,6 +130,11 @@ from clue_research.core.idempotency import (
     account_step_key,
     idempotency_key,
     phase_key,
+)
+from clue_research.core.learning import (
+    BacktestGate,
+    BacktestRegression,
+    BacktestVerdict,
 )
 from clue_research.core.modality import (
     AdaptContext,
@@ -236,6 +244,14 @@ __all__ = [
     "ReviewAction",
     "ReviewSessionStatus",
     "ReviewRejectReason",
+    # enums — M13.3 learning loop
+    "ConfigRevisionTarget",
+    "ConfigRevisionStatus",
+    "PromotionMode",
+    # M13.3 learning-loop backtest seam (impl injected at the api root)
+    "BacktestGate",
+    "BacktestVerdict",
+    "BacktestRegression",
     # fields
     "FieldClass",
     "FieldKey",
