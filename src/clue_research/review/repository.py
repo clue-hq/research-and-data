@@ -158,6 +158,27 @@ async def count_open_sessions(conn: AsyncConnection, campaign_run_id: CampaignRu
     return int(count)
 
 
+async def finalized_review_account_ids(
+    conn: AsyncConnection, campaign_run_id: CampaignRunId
+) -> frozenset[EntityId]:
+    """The account ids whose review session for this run is FINALIZED — the M13.1 handoff gate (an
+    account hands off only if its session is finalized; un-finalized leaves it pending)."""
+    rows = (
+        (
+            await conn.execute(
+                text(
+                    "SELECT account_entity_id FROM review_session "
+                    "WHERE campaign_run_id = :run AND status = 'finalized'"
+                ),
+                {"run": campaign_run_id},
+            )
+        )
+        .scalars()
+        .all()
+    )
+    return frozenset(EntityId(r) for r in rows)
+
+
 async def record_review_action(
     conn: AsyncConnection,
     *,

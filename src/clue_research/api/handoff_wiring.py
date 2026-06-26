@@ -56,6 +56,7 @@ from clue_research.narrative import (
     RunReadiness,
     emit_ready_handoffs,
 )
+from clue_research.review import finalized_review_account_ids
 
 _ConnFactory = Callable[[], AbstractAsyncContextManager[AsyncConnection]]
 _Clock = Callable[[], UtcDatetime]
@@ -75,8 +76,15 @@ class DurableHandoffReadinessReader:
     retriever stub). Tenant-scoped: a run whose ``client_id`` is not the caller's resolves to
     ``None`` / no ready accounts (cross-tenant isolation — substrate §2)."""
 
-    def __init__(self, *, conn_factory: _ConnFactory = connection) -> None:
+    def __init__(
+        self, *, conn_factory: _ConnFactory = connection, require_finalized_review: bool = False
+    ) -> None:
         self._conn_factory = conn_factory
+        # M13.1 handoff gate: when True, an account is handoff-ready only if its Tier-1 review
+        # session is FINALIZED (a finalized session unblocks that account's handoff; un-finalized
+        # leaves it pending). Default OFF so existing M12 flows / tests are unaffected; the full M13
+        # flow opts in at the composition root.
+        self._require_finalized_review = require_finalized_review
 
     async def run_readiness(
         self, *, campaign_run_id: CampaignRunId, client_id: str
@@ -102,6 +110,11 @@ class DurableHandoffReadinessReader:
             if run is None or run.client_id != client_id:
                 return ()
             rows = await list_account_runs(conn, campaign_run_id)
+            finalized_review = (
+                await finalized_review_account_ids(conn, campaign_run_id)
+                if self._require_finalized_review
+                else None
+            )
         ready: list[AccountReadiness] = []
         for row in rows:
             is_ready = (
@@ -110,6 +123,8 @@ class DurableHandoffReadinessReader:
             )
             if not is_ready:
                 continue  # account still in deep/verification — not handoff-ready (AC2)
+            if finalized_review is not None and EntityId(row.entity_id) not in finalized_review:
+                continue  # M13.1: Tier-1 review not finalized for this account — handoff pending
             ready.append(
                 AccountReadiness(
                     account_entity_id=EntityId(row.entity_id),
@@ -123,11 +138,14 @@ class DurableHandoffReadinessReader:
 
 
 def build_handoff_readiness_reader(
-    *, conn_factory: _ConnFactory = connection
+    *, conn_factory: _ConnFactory = connection, require_finalized_review: bool = False
 ) -> HandoffReadinessReader:
     """The api-root :class:`HandoffReadinessReader` (durable-backed) to inject into the service +
-    the emit path."""
-    return DurableHandoffReadinessReader(conn_factory=conn_factory)
+    the emit path. ``require_finalized_review`` (M13.1) gates handoff on a finalized Tier-1 review
+    session — default OFF (back-compat); the full M13 flow passes ``True`` for the HANDOFF path."""
+    return DurableHandoffReadinessReader(
+        conn_factory=conn_factory, require_finalized_review=require_finalized_review
+    )
 
 
 def build_handoff_service(
@@ -196,14 +214,16 @@ def build_handoff_phase_handler(
     publisher: HandoffPublisher | None = None,
     conn_factory: _ConnFactory = transaction,
     clock: _Clock = _utc_now,
+    require_finalized_review: bool = False,
 ) -> HandoffPhaseHandler:
     """Construct the handoff phase handler (the emit driver). ``assembler`` is the M12.2 assembler
     (its committee reader injected at this root); ``readiness_reader`` defaults to the
-    durable-backed
-    reader."""
+    durable-backed reader. ``require_finalized_review`` (M13.1) gates the emit on a finalized review
+    — the full M13 flow passes ``True`` so HANDOFF only emits reviewed accounts."""
     return HandoffPhaseHandler(
         assembler=assembler,
-        readiness_reader=readiness_reader or build_handoff_readiness_reader(),
+        readiness_reader=readiness_reader
+        or build_handoff_readiness_reader(require_finalized_review=require_finalized_review),
         publisher=publisher,
         conn_factory=conn_factory,
         clock=clock,
