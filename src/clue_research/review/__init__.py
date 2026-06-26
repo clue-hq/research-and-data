@@ -27,6 +27,18 @@ the ``api`` root.
 
 from __future__ import annotations
 
+from clue_research.review.config_revision import (
+    ConfigRevision,
+    ConfigRevisionId,
+    ScoringRubricRevision,
+    SourceProfileRevision,
+    get_config_revision,
+    latest_config_revision,
+    mark_promoted,
+    mark_rejected,
+    new_config_revision_id,
+    record_config_revision,
+)
 from clue_research.review.disposition import (
     ACCOUNT_DISPOSITION_TYPES,
     CLAIM_DISPOSITION_TYPES,
@@ -53,6 +65,11 @@ from clue_research.review.disposition_store import (
     tombstone_contact_dispositions,
 )
 from clue_research.review.labeled_dataset import LabeledRow, read_labeled_dataset
+from clue_research.review.learning import (
+    LearningLoopError,
+    LearningLoopImpl,
+    PromotionBlocked,
+)
 from clue_research.review.observability import (
     COST_STATUS_GRACEFUL_STOP,
     COST_STATUS_NEAR_CAP,
@@ -92,6 +109,14 @@ from clue_research.review.repository import (
     get_review_session,
     record_review_action,
 )
+from clue_research.review.reweight import (
+    DEFAULT_REWEIGHT_POLICY,
+    ReweightPolicy,
+    WeightMove,
+    account_outcome_labels,
+    reweight_scoring_rubric,
+    reweight_source_profile,
+)
 from clue_research.review.surface import (
     ClaimNotInSession,
     ReviewError,
@@ -100,6 +125,7 @@ from clue_research.review.surface import (
     SessionFactory,
     SessionNotOpen,
 )
+from clue_research.review.yield_metrics import SourceYield, YieldMetrics, compute_yield
 
 __all__ = [
     # read projection (M13.1)
@@ -176,4 +202,30 @@ __all__ = [
     "InMemoryPreRunEstimator",
     "InMemoryVerificationHealthReader",
     "InMemoryCoverageReportReader",
+    # yield metrics (M13.3)
+    "SourceYield",
+    "YieldMetrics",
+    "compute_yield",
+    # reweighters (M13.3)
+    "ReweightPolicy",
+    "DEFAULT_REWEIGHT_POLICY",
+    "WeightMove",
+    "account_outcome_labels",
+    "reweight_source_profile",
+    "reweight_scoring_rubric",
+    # config_revision ledger (M13.3)
+    "ConfigRevision",
+    "ConfigRevisionId",
+    "SourceProfileRevision",
+    "ScoringRubricRevision",
+    "new_config_revision_id",
+    "record_config_revision",
+    "get_config_revision",
+    "latest_config_revision",
+    "mark_promoted",
+    "mark_rejected",
+    # learning loop (M13.3)
+    "LearningLoopImpl",
+    "LearningLoopError",
+    "PromotionBlocked",
 ]
