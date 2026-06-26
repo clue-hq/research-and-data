@@ -30,6 +30,7 @@ from clue_research.review.repository import (
     count_open_sessions,
     ensure_review_session,
     finalize_review_session,
+    finalized_review_account_ids,
     get_review_session,
     record_review_action,
 )
@@ -61,5 +62,6 @@ __all__ = [
     "get_review_session",
     "finalize_review_session",
     "count_open_sessions",
+    "finalized_review_account_ids",
     "record_review_action",
 ]
