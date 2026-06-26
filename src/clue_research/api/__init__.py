@@ -71,6 +71,19 @@ from clue_research.api.narrative_wiring import (
     build_handoff_assembler,
     register_narrative_wiring,
 )
+from clue_research.api.observability_wiring import (
+    BudgetCapsPreRunEstimator,
+    BudgetEngineBurnDownReader,
+    CheckpointCoverageReportReader,
+    ClaimScanVerificationHealthReader,
+    DurableCampaignStateReader,
+    build_campaign_state_reader,
+    build_cost_burndown_reader,
+    build_coverage_report_reader,
+    build_observability_surface,
+    build_pre_run_estimator,
+    build_verification_health_reader,
+)
 from clue_research.api.synthesis_wiring import register_synthesis_wiring
 from clue_research.api.verification import (
     VerificationPhaseHandler,
@@ -116,4 +129,16 @@ __all__ = [
     "HandoffPhaseHandler",
     "build_handoff_phase_handler",
     "register_handoff_phase_handler",
+    # M13.4 observability surface wiring
+    "DurableCampaignStateReader",
+    "BudgetEngineBurnDownReader",
+    "BudgetCapsPreRunEstimator",
+    "ClaimScanVerificationHealthReader",
+    "CheckpointCoverageReportReader",
+    "build_campaign_state_reader",
+    "build_cost_burndown_reader",
+    "build_pre_run_estimator",
+    "build_verification_health_reader",
+    "build_coverage_report_reader",
+    "build_observability_surface",
 ]

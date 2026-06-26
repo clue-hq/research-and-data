@@ -420,3 +420,45 @@ async def entities_with_field_claim(
         },
     )
     return [EntityId(row[0]) for row in result.all()]
+
+
+async def claims_for_runs(
+    conn: AsyncConnection,
+    run_ids: Iterable[RunId],
+    *,
+    scope: TenantScope,
+    include_superseded: bool = False,
+) -> Sequence[Claim]:
+    """All (live) claims written under a set of account ``run_id``s — the campaign-scoped scan.
+
+    Every worker of an account run stamps its ``run_id`` on each claim it writes
+    (``account_run.id`` == ``claim.run_id``), so the union of claims over a campaign's account
+    ``run_id``s is exactly that campaign's deep-produced claims (account *and* contact). The M13.4
+    observability surface uses this for the at-rest verification-health scan (tier-4 faithfulness,
+    strong identity-binding share, corroboration) over one campaign run — the set-shaped sibling of
+    :func:`entities_with_field_claim` and :func:`claims_by_ids`, so no caller hand-writes SQL
+    against
+    ``claim`` (conventions §2 — the table stays behind this seam).
+
+    Live (``superseded_by IS NULL``) by default; ``scope`` is **required** (M2.5, fail-closed). An
+    empty ``run_ids`` returns ``[]`` without a query. Ordered by ``(run_id, collected_at DESC, id)``
+    for a deterministic result.
+    """
+    ids = [str(rid) for rid in run_ids]
+    if not ids:
+        return []
+    scope_sql, scope_params = scope.predicate()
+    stmt = text(
+        f"""
+        SELECT {_SELECT_COLUMNS}
+        FROM claim
+        WHERE run_id IN :run_ids
+          AND (CAST(:include_superseded AS boolean) OR superseded_by IS NULL)
+          AND {scope_sql}
+        ORDER BY run_id, collected_at DESC, id
+        """
+    ).bindparams(bindparam("run_ids", expanding=True))
+    result = await conn.execute(
+        stmt, {"run_ids": ids, "include_superseded": include_superseded, **scope_params}
+    )
+    return [_row_to_claim(dict(row)) for row in result.mappings().all()]
