@@ -1,7 +1,11 @@
-"""M13 review test harness — the DB gate + rollback conn (mirrors tests/durable/conftest).
+"""M13 review test harness — the migrated-DB gate, rollback conn, and enum-parity helper.
 
-The surface/projection/gate tests need the real Postgres review tables (and the claim store) and
-``pytest.skip`` when no DB is reachable, reusing the M0.3 ``run_async`` + reachable-DB probe (DRY).
+Mirrors the durable / claim-store harness (DRY): reuses the M0.3 single-loop ``run_async`` +
+reachable-DB probe, migrates to head once per session, and yields a rolled-back connection seeded
+with the M1 core pack (so the field registry is present for ``insert_claim`` and the
+``account.scoring.*`` fields exist for the ``labeled_dataset`` join). The surface / projection / gate
+tests (M13.1) and the disposition tables + ``labeled_dataset`` view (M13.2) are real Postgres, so the
+tests ``pytest.skip`` when no DB is reachable.
 """
 
 from __future__ import annotations
@@ -13,6 +17,7 @@ from pathlib import Path
 import pytest
 from alembic import command
 from alembic.config import Config
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_research.claimstore import load_core_pack
@@ -63,3 +68,15 @@ async def rollback_conn(*, seed_pack: bool = True) -> AsyncIterator[AsyncConnect
         finally:
             await trans.rollback()
             await conn.close()
+
+
+async def enum_labels(conn: AsyncConnection, typname: str) -> list[str]:
+    """The Postgres enum's labels in definition order (the enum-parity comparison)."""
+    rows = await conn.execute(
+        text(
+            "SELECT e.enumlabel FROM pg_type t JOIN pg_enum e ON e.enumtypid = t.oid "
+            "WHERE t.typname = :t ORDER BY e.enumsortorder"
+        ),
+        {"t": typname},
+    )
+    return [r[0] for r in rows.all()]
