@@ -42,6 +42,7 @@ from clue_research.core import (
 from clue_research.core.review import (
     ClaimAnnotation,
     FieldConflict,
+    ReviewDispositionEmitter,
     VerificationAnnotationReader,
 )
 from clue_research.db import connection, transaction
@@ -211,15 +212,21 @@ def build_review_surface(
     session_factory: SessionFactory = transaction,
     campaign_run: CampaignRun | None = None,
     annotation_reader: VerificationAnnotationReader | None = None,
+    disposition_emitter: ReviewDispositionEmitter | None = None,
 ) -> ReviewSurfaceImpl:
     """Construct the production :class:`~clue_research.review.ReviewSurfaceImpl` — the projection
-    over the durable annotation reader, the campaign resume hook, and the (no-op) M13.2 emitter."""
+    over the durable annotation reader, the campaign resume hook, and the M13.2 disposition emitter.
+
+    ``disposition_emitter`` defaults to the :class:`NoopReviewDispositionEmitter` (M13.1
+    standalone — review actions are still durably recorded as ``review_action`` rows); the
+    integration root passes the concrete emitter (``build_review_disposition_emitter``) so every
+    action is mirrored into a ``disposition`` at the moment it occurs (the M13.1 ↔ M13.2 seam)."""
     reader = annotation_reader or DbVerificationAnnotationReader(conn_factory=conn_factory)
     return ReviewSurfaceImpl(
         projector=ReviewProjector(annotation_reader=reader),
         session_factory=session_factory,
         resume_hook=CampaignRunResumeHook(campaign_run=campaign_run),
-        disposition_emitter=NoopReviewDispositionEmitter(),
+        disposition_emitter=disposition_emitter or NoopReviewDispositionEmitter(),
     )
 
 
@@ -230,15 +237,20 @@ def build_review_phase_handler(
     conn_factory: _ConnFactory = connection,
     session_factory: SessionFactory = transaction,
     campaign_run: CampaignRun | None = None,
+    disposition_emitter: ReviewDispositionEmitter | None = None,
 ) -> ReviewPhaseHandler:
     """Construct the ``CampaignPhase.REVIEW`` handler with the concrete seams (mirrors
-    ``build_verification_phase_handler``)."""
+    ``build_verification_phase_handler``). ``disposition_emitter`` is threaded into the default
+    surface (None → the M13.1 no-op); the integration root passes M13.2's concrete emitter."""
     return ReviewPhaseHandler(
         account_resolver=account_resolver
         or build_review_account_resolver(conn_factory=conn_factory),
         surface=surface
         or build_review_surface(
-            conn_factory=conn_factory, session_factory=session_factory, campaign_run=campaign_run
+            conn_factory=conn_factory,
+            session_factory=session_factory,
+            campaign_run=campaign_run,
+            disposition_emitter=disposition_emitter,
         ),
     )
 
@@ -250,15 +262,19 @@ def register_review_phase_handler(
     conn_factory: _ConnFactory = connection,
     session_factory: SessionFactory = transaction,
     campaign_run: CampaignRun | None = None,
+    disposition_emitter: ReviewDispositionEmitter | None = None,
 ) -> ReviewPhaseHandler:
     """Build + register the REVIEW handler into the M7.3 process-default ``PhaseHandlerRegistry``
-    (the api-root binder; mirrors ``register_verification_phase_handler``)."""
+    (the api-root binder; mirrors ``register_verification_phase_handler``). Pass
+    ``disposition_emitter`` to mirror review actions into dispositions (the M13.2 join); see
+    ``api.review_feedback_wiring.register_reviewed_phase_handler`` for the production binder."""
     handler = build_review_phase_handler(
         account_resolver=account_resolver,
         surface=surface,
         conn_factory=conn_factory,
         session_factory=session_factory,
         campaign_run=campaign_run,
+        disposition_emitter=disposition_emitter,
     )
     register_phase_handler(handler)
     return handler
