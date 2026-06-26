@@ -15,7 +15,7 @@ M13.1 puts a Tier-1 human review surface immediately before the M12 handoff, mod
   label in place — a documented no-op; the full ``downgrade`` to base drops the whole type anyway.
 * ``review_session`` — one row per ``account_handoff`` candidate under review (one high-tier
   ``account_entity_id`` within a ``campaign_run`` at a ``review_round``). A *mutable* cursor
-  (``status`` open→finalized), deliberately **not** append-only (like ``campaign_run``/``account_run``
+  (``status`` open→finalized), **not** append-only (like ``campaign_run``/``account_run``
   — the claim store keeps immutable history). ``UNIQUE(account_entity_id, campaign_run_id,
   review_round)`` is the frozen idempotency shape (resume never double-advances; ``open_session`` is
   idempotent on it). Finalization gates that account's handoff (M13.1 AC).
@@ -29,7 +29,7 @@ Enums: ``review_session_status`` / ``review_action_kind`` / ``review_reject_reas
 ``core.enums`` taxonomies (``ReviewSessionStatus`` / ``ReviewAction`` / ``ReviewRejectReason``);
 parity-tested in ``tests/review/`` (the same ``StrEnum`` discipline as the durable enums).
 
-Soft FKs (no ``REFERENCES``, mirroring ``claim``/``campaign_run``): ``review_session.campaign_run_id``
+Soft FKs (no ``REFERENCES``, mirroring ``claim``): ``review_session.campaign_run_id``
 / ``account_entity_id`` and ``review_action.claim_id`` / ``review_session_id`` are not DB-level FKs;
 integrity is enforced in the write path so milestone migrations stay order-independent.
 """
@@ -55,7 +55,7 @@ def upgrade() -> None:
     #    transaction — it is not (the review tables use their own enums, not campaign_phase).
     op.execute("ALTER TYPE campaign_phase ADD VALUE IF NOT EXISTS 'review' BEFORE 'handoff'")
 
-    # 2. review-surface enums (mirror core.enums.ReviewSessionStatus / ReviewAction / ReviewRejectReason).
+    # 2. review-surface enums (mirror core.enums Review{SessionStatus, Action, RejectReason}).
     op.execute("CREATE TYPE review_session_status AS ENUM ('open', 'finalized', 'abandoned')")
     op.execute("CREATE TYPE review_action_kind AS ENUM ('approve', 'correct', 'reject')")
     op.execute(
@@ -81,7 +81,7 @@ def upgrade() -> None:
 
             CONSTRAINT review_session_pkey PRIMARY KEY (id),
             CONSTRAINT review_session_round_positive CHECK (review_round >= 1),
-            -- The frozen (account, campaign_run, review_round) idempotency shape: at most one session
+            -- The (account, campaign_run, review_round) idempotency shape: at most one session
             -- per round of a candidate, so open_session deduplicates onto the same row (M13.1 AC).
             CONSTRAINT review_session_scope
                 UNIQUE (account_entity_id, campaign_run_id, review_round),
@@ -94,7 +94,7 @@ def upgrade() -> None:
     op.execute(
         "COMMENT ON TABLE review_session IS 'Tier-1 review session over one account_handoff "
         "candidate (M13.1). Mutable cursor (open->finalized); finalization gates that account''s "
-        "handoff. UNIQUE(account_entity_id, campaign_run_id, review_round) = the idempotency shape.'"
+        "handoff. UNIQUE(account_entity_id, campaign_run_id, review_round) = idempotency shape.'"
     )
     # Hot read: the reviewer's queue — open sessions for a run (the app orders by tier then fit).
     op.execute("CREATE INDEX review_session_run_status ON review_session (campaign_run_id, status)")
@@ -129,7 +129,7 @@ def upgrade() -> None:
         """
     )
     op.execute(
-        "COMMENT ON TABLE review_action IS 'Append-only audit of Tier-1 review actions (M13.1): one "
+        "COMMENT ON TABLE review_action IS 'Append-only audit of review actions (M13.1): one "
         "row per approve/correct/reject. correct writes a human superseding claim; reject writes a "
         "REJECTED superseding claim. Immutable (reject trigger); ordered by the monotonic seq.'"
     )

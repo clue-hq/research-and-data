@@ -7,8 +7,13 @@ The frozen contract both this impl and the ``api`` composition root bind to is
 :mod:`clue_research.core.review` (``ReviewSurface`` / ``VerificationAnnotationReader`` …); the
 ``CampaignPhase.REVIEW`` handler + its wiring live under ``api/review`` (the composition root).
 
-M13.2 (disposition capture), M13.3 (learning loop), and M13.4 (observability surface) also land in
-this package — see ``README.md`` and ``docs/specs/M13-review-feedback-observability.md``.
+M13.2 (disposition capture) lives here too: :class:`FeedbackDisposition` (named so to avoid colliding
+with ``clue_research.identity.Disposition``) + its taxonomies, the :class:`DispositionStore` capture
+substrate and the concrete :class:`ReviewDispositionEmitterImpl` (the M13.1 ↔ M13.2 seam), and the
+:class:`LabeledRow` read view M13.3 consumes via :func:`read_labeled_dataset`.
+
+M13.3 (learning loop) and M13.4 (observability surface) also land in this package — see ``README.md``
+and ``docs/specs/M13-review-feedback-observability.md``.
 
 Modular boundary (import-linter ``independence`` contract): ``review`` may import the shared base
 (``core``/``config``/``obs``) and the M1-M4 services (``claimstore``/``identity``/``icp``/
@@ -19,6 +24,32 @@ the ``api`` root.
 
 from __future__ import annotations
 
+from clue_research.review.disposition import (
+    ACCOUNT_DISPOSITION_TYPES,
+    CLAIM_DISPOSITION_TYPES,
+    REVIEW_ACTION_TO_DISPOSITION,
+    DispositionActor,
+    DispositionId,
+    DispositionOrigin,
+    DispositionType,
+    DownstreamOutcome,
+    FeedbackDisposition,
+    IngestRejection,
+    IngestReport,
+    new_disposition_id,
+)
+from clue_research.review.disposition_store import (
+    DispositionCaptureError,
+    DispositionStore,
+    ReviewDispositionEmitterImpl,
+    capture_downstream,
+    capture_review_action,
+    ingest_downstream,
+    record_disposition,
+    snapshot_claim_provenance,
+    tombstone_contact_dispositions,
+)
+from clue_research.review.labeled_dataset import LabeledRow, read_labeled_dataset
 from clue_research.review.projection import (
     FIT_FIELD,
     INTENT_FIELD,
@@ -56,7 +87,7 @@ __all__ = [
     "ReviewSessionNotFound",
     "SessionNotOpen",
     "ClaimNotInSession",
-    # repository (the review tables)
+    # repository (the review tables) (M13.1)
     "ReviewSessionRow",
     "ensure_review_session",
     "get_review_session",
@@ -64,4 +95,31 @@ __all__ = [
     "count_open_sessions",
     "finalized_review_account_ids",
     "record_review_action",
+    # disposition records + taxonomies (M13.2)
+    "FeedbackDisposition",
+    "DispositionType",
+    "DispositionActor",
+    "DispositionOrigin",
+    "DispositionId",
+    "new_disposition_id",
+    "CLAIM_DISPOSITION_TYPES",
+    "ACCOUNT_DISPOSITION_TYPES",
+    "REVIEW_ACTION_TO_DISPOSITION",
+    # downstream ingest contract (M13.2)
+    "DownstreamOutcome",
+    "IngestReport",
+    "IngestRejection",
+    # store + emitter + conn-in primitives (M13.2)
+    "DispositionStore",
+    "ReviewDispositionEmitterImpl",
+    "DispositionCaptureError",
+    "record_disposition",
+    "snapshot_claim_provenance",
+    "capture_review_action",
+    "capture_downstream",
+    "ingest_downstream",
+    "tombstone_contact_dispositions",
+    # labeled-dataset read view (M13.2)
+    "LabeledRow",
+    "read_labeled_dataset",
 ]
