@@ -12,8 +12,11 @@ with ``clue_research.identity.Disposition``) + its taxonomies, the :class:`Dispo
 substrate and the concrete :class:`ReviewDispositionEmitterImpl` (the M13.1 ↔ M13.2 seam), and the
 :class:`LabeledRow` read view M13.3 consumes via :func:`read_labeled_dataset`.
 
-M13.3 (learning loop) and M13.4 (observability surface) also land in this package — see ``README.md``
-and ``docs/specs/M13-review-feedback-observability.md``.
+M13.4 (observability surface) lives here too: the read-only :class:`ObservabilitySurface` (phase
+progress, cost burn-down, pre-run estimate, per-source yield, verification health, coverage
+confidence), its panel projections, the injected reader Protocols whose concrete impls are wired at
+the ``api`` composition root, and their in-memory fakes. M13.3 (learning loop) also lands here — see
+``README.md`` and ``docs/specs/M13-review-feedback-observability.md``.
 
 Modular boundary (import-linter ``independence`` contract): ``review`` may import the shared base
 (``core``/``config``/``obs``) and the M1-M4 services (``claimstore``/``identity``/``icp``/
@@ -50,6 +53,30 @@ from clue_research.review.disposition_store import (
     tombstone_contact_dispositions,
 )
 from clue_research.review.labeled_dataset import LabeledRow, read_labeled_dataset
+from clue_research.review.observability import (
+    COST_STATUS_GRACEFUL_STOP,
+    COST_STATUS_NEAR_CAP,
+    COST_STATUS_OK,
+    CampaignProgress,
+    CampaignStateReader,
+    CostBurnDown,
+    CostBurnDownReader,
+    CoverageReportReader,
+    InMemoryCampaignStateReader,
+    InMemoryCostBurnDownReader,
+    InMemoryCoverageReportReader,
+    InMemoryPreRunEstimator,
+    InMemoryVerificationHealthReader,
+    ObservabilitySurface,
+    PhaseProgress,
+    PreRunEstimate,
+    PreRunEstimator,
+    RunPhaseState,
+    VerificationHealth,
+    VerificationHealthCounts,
+    VerificationHealthReader,
+    observability_is_client_facing,
+)
 from clue_research.review.projection import (
     FIT_FIELD,
     INTENT_FIELD,
@@ -122,4 +149,31 @@ __all__ = [
     # labeled-dataset read view (M13.2)
     "LabeledRow",
     "read_labeled_dataset",
+    # observability surface (M13.4)
+    "ObservabilitySurface",
+    "observability_is_client_facing",
+    # panel projections (M13.4)
+    "CampaignProgress",
+    "PhaseProgress",
+    "CostBurnDown",
+    "PreRunEstimate",
+    "VerificationHealth",
+    "VerificationHealthCounts",
+    "RunPhaseState",
+    # cost-status tokens (M13.4)
+    "COST_STATUS_OK",
+    "COST_STATUS_NEAR_CAP",
+    "COST_STATUS_GRACEFUL_STOP",
+    # injected reader protocols — concrete impls at the api root (M13.4)
+    "CampaignStateReader",
+    "CostBurnDownReader",
+    "PreRunEstimator",
+    "VerificationHealthReader",
+    "CoverageReportReader",
+    # in-memory fakes (M13.4)
+    "InMemoryCampaignStateReader",
+    "InMemoryCostBurnDownReader",
+    "InMemoryPreRunEstimator",
+    "InMemoryVerificationHealthReader",
+    "InMemoryCoverageReportReader",
 ]

@@ -136,6 +136,10 @@ from clue_research.core.modality import (
     NormalizedText,
     RawArtifact,
 )
+from clue_research.core.observability import (
+    CoverageReport,
+    UnsearchedChannel,
+)
 from clue_research.core.primitives import (
     CampaignRunId,
     ClaimId,
@@ -269,6 +273,9 @@ __all__ = [
     "NormalizedText",
     "ClaimDraft",
     "AdaptContext",
+    # M13.4 observability — the coverage-confidence projection (Doc C §7)
+    "CoverageReport",
+    "UnsearchedChannel",
     "GateDecision",
     # llm gateway (model-egress seam)
     "LLMGateway",

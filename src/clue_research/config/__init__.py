@@ -58,6 +58,7 @@ from clue_research.config.schema import (
     ScoringRubric,
     SourceProfile,
     TierRecursionCaps,
+    VerificationHealthThresholds,
 )
 from clue_research.config.secrets import (
     DB_DSN_ENV_VAR,
@@ -96,6 +97,7 @@ __all__ = [
     "STRICT_DEFAULT_REGIME",
     # config-schema placeholders
     "MergePolicy",
+    "VerificationHealthThresholds",
     "ScoringRubric",
     "SourceProfile",
     "BudgetCaps",

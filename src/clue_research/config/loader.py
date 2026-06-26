@@ -122,6 +122,11 @@ def _merge(base: Config, overlay: ConfigOverlay, version: ConfigVersion) -> Conf
         updates["freshness_ttls"] = overlay.freshness_ttls
     if overlay.gateway is not None:
         updates["gateway"] = overlay.gateway
+    if overlay.verification_health_thresholds is not None:
+        updates["verification_health_thresholds"] = overlay.verification_health_thresholds
+    # `is not None` (not truthiness) so an explicit `False` overrides the default `True`.
+    if overlay.observability_client_facing is not None:
+        updates["observability_client_facing"] = overlay.observability_client_facing
     applied = (*base.applied_versions, version)
     return base.model_copy(update={**updates, "applied_versions": applied})
 
