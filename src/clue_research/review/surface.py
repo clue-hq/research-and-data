@@ -252,16 +252,22 @@ class ReviewSurfaceImpl:
                 review_action_id=action_id,
                 superseding_claim_id=superseding_id,
             )
-            if self._emit is not None:
-                contact_id = target.entity_id if target.entity_type is EntityType.CONTACT else None
-                await self._emit.on_review_action(
-                    outcome,
-                    account_entity_id=row.account_entity_id,
-                    contact_entity_id=contact_id,
-                    campaign_run_id=row.campaign_run_id,
-                    actor=actor,
-                )
-            return outcome
+        # Emit the M13.2 disposition OUTSIDE the write transaction (mirrors ``finalize``'s resume
+        # hook below). The production emitter opens its OWN transaction to mirror the now-committed
+        # ``review_action`` row; emitting in-txn would hide that row from a separate-connection
+        # emitter (it would fall back to a null reason_code / wrong occurred_at), and a rollback
+        # after a committed emit would orphan the disposition. The ``review_action`` is the durable
+        # backstop, so a failed/replayed emit loses no signal.
+        if self._emit is not None:
+            contact_id = target.entity_id if target.entity_type is EntityType.CONTACT else None
+            await self._emit.on_review_action(
+                outcome,
+                account_entity_id=row.account_entity_id,
+                contact_entity_id=contact_id,
+                campaign_run_id=row.campaign_run_id,
+                actor=actor,
+            )
+        return outcome
 
     async def finalize(self, *, session_id: ReviewSessionId, actor: str) -> ReviewSession:
         async with self._session_factory() as conn:
