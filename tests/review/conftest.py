@@ -2,10 +2,13 @@
 
 Mirrors the durable / claim-store harness (DRY): reuses the M0.3 single-loop ``run_async`` +
 reachable-DB probe, migrates to head once per session, and yields a rolled-back connection seeded
-with the M1 core pack (so the field registry is present for ``insert_claim`` and the
-``account.scoring.*`` fields exist for the ``labeled_dataset`` join). The surface / projection / gate
-tests (M13.1) and the disposition tables + ``labeled_dataset`` view (M13.2) are real Postgres, so the
-tests ``pytest.skip`` when no DB is reachable.
+with the M1 core pack. Covers all three Wave-1 surfaces in this package:
+
+* M13.1 surface / projection / gate tests and M13.2 disposition tables + ``labeled_dataset`` view run
+  against real Postgres (the tables + view are SQL), so they ``pytest.skip`` when no DB is reachable.
+* M13.4 observability-panel logic runs entirely on in-memory reader fakes (no database) and stays in
+  the default ``make check``; only its seam tests (``cost_estimate`` snapshot,
+  ``claimstore.claims_for_runs``, per-source-yield equality) need the DB gate.
 """
 
 from __future__ import annotations
@@ -57,7 +60,12 @@ def require_review_db(migrated_db: bool) -> None:
 
 @asynccontextmanager
 async def rollback_conn(*, seed_pack: bool = True) -> AsyncIterator[AsyncConnection]:
-    """Yield a connection inside a transaction that is always rolled back (test isolation)."""
+    """Yield a pooled connection inside a transaction that is always rolled back (test isolation).
+
+    The core field pack is seeded inside the transaction (so ``insert_claim`` payload validation
+    finds registered fields, and the ``account.scoring.*`` fields exist for the ``labeled_dataset``
+    join) and rolled back with everything else.
+    """
     async with db_lifespan() as engine:
         conn = await engine.connect()
         trans = await conn.begin()
