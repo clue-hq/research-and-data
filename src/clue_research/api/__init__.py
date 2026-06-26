@@ -40,6 +40,10 @@ Shipped so far:
 
 from __future__ import annotations
 
+from clue_research.api.backtest_wiring import (
+    LabeledDatasetBacktestGate,
+    build_backtest_gate,
+)
 from clue_research.api.compliance_wiring import register_compliance_wiring
 from clue_research.api.composition import (
     VerificationBindingClassifier,
@@ -76,6 +80,7 @@ from clue_research.api.handoff_wiring import (
     build_handoff_service,
     register_handoff_phase_handler,
 )
+from clue_research.api.learning_wiring import build_learning_loop
 from clue_research.api.narrative_wiring import (
     build_client_knowledge_retriever,
     build_handoff_assembler,
@@ -186,4 +191,8 @@ __all__ = [
     "ContactDispositionTombstoner",
     "TombstoneCascadingDataSubjectRights",
     "build_dsar_with_disposition_cascade",
+    # M13.3 learning-loop wiring (backtest gate + the loop)
+    "LabeledDatasetBacktestGate",
+    "build_backtest_gate",
+    "build_learning_loop",
 ]
