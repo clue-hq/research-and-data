@@ -7,7 +7,7 @@ The frozen contract both this impl and the ``api`` composition root bind to is
 :mod:`clue_research.core.review` (``ReviewSurface`` / ``VerificationAnnotationReader`` …); the
 ``CampaignPhase.REVIEW`` handler + its wiring live under ``api/review`` (the composition root).
 
-M13.2 (disposition capture) lives here too: :class:`FeedbackDisposition` (named so to avoid colliding
+M13.2 (disposition capture) lives here too: :class:`FeedbackDisposition` (named to avoid colliding
 with ``clue_research.identity.Disposition``) + its taxonomies, the :class:`DispositionStore` capture
 substrate and the concrete :class:`ReviewDispositionEmitterImpl` (the M13.1 ↔ M13.2 seam), and the
 :class:`LabeledRow` read view M13.3 consumes via :func:`read_labeled_dataset`.
