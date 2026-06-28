@@ -84,11 +84,6 @@ from clue_research.icp.spec import get_icp_version
 from clue_research.sources import DEFAULT_CONFIDENCE_THRESHOLDS, ConfidenceThresholds
 from clue_research.sources.source_yield import record_source_yield
 
-# The M6 phase-handler spelling of the shared ``db.ConnFactory`` seam: an async context manager
-# yielding a connection (``db.transaction`` in production; a rollback-scoped connection in tests).
-# Injected so the handler is testable without committing.
-SessionFactory = ConnFactory
-
 
 def _discovery_run_id(ctx: PhaseContext) -> RunId:
     """A deterministic discovery run id per ``(campaign_run, icp_key, icp_version)`` — stable across
@@ -114,7 +109,7 @@ class DiscoveryPhaseHandler:
         config: DiscoveryConfig = DEFAULT_DISCOVERY_CONFIG,
         redis: Redis | None = None,
         existence: ExistenceCheck = DEFAULT_EXISTENCE_CHECK,
-        session_factory: SessionFactory = transaction,
+        session_factory: ConnFactory = transaction,
     ) -> None:
         self._channels = channels
         self._gateway = gateway
@@ -251,7 +246,7 @@ class ScoringPhaseHandler:
         *,
         config: ScoringConfig = DEFAULT_SCORING_CONFIG,
         thresholds: ConfidenceThresholds = DEFAULT_CONFIDENCE_THRESHOLDS,
-        session_factory: SessionFactory = transaction,
+        session_factory: ConnFactory = transaction,
     ) -> None:
         self._config = config
         self._thresholds = thresholds
@@ -406,7 +401,7 @@ class TierCheckpointPhaseHandler:
         *,
         config: TieringConfig = DEFAULT_TIERING_CONFIG,
         coverage_config: CoverageConfig = DEFAULT_COVERAGE_CONFIG,
-        session_factory: SessionFactory = transaction,
+        session_factory: ConnFactory = transaction,
     ) -> None:
         self._config = config
         self._coverage_config = coverage_config

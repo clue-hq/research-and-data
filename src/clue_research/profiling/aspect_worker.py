@@ -72,11 +72,10 @@ from clue_research.core import (
 )
 from clue_research.core.enums import PreSpendVerdict, ReuseScope
 from clue_research.core.field import resolve_reuse_scope
-from clue_research.db import transaction
+from clue_research.db import ConnFactory, transaction
 from clue_research.icp import get_icp_version
 from clue_research.identity import get_account, surviving_id
 from clue_research.profiling.context import RunContext
-from clue_research.profiling.runtime import SessionFactory
 from clue_research.profiling.target_lock import binds_to_entity, build_target_lock, is_lockable
 from clue_research.sources import (
     DEFAULT_SOURCE_PLANNER_CONFIG,
@@ -98,10 +97,6 @@ from clue_research.sources import (
 DEEP_PROFILING_PLANNER_CONFIG: SourcePlannerConfig = DEFAULT_SOURCE_PLANNER_CONFIG.model_copy(
     update={"gate_expensive_entity_tiers": frozenset({"top", "high"})}
 )
-
-# ``SessionFactory`` (imported above) is the injected DB-session seam — the same DI seam M6's phase
-# handlers use; ``db.transaction`` in production, a rollback-scoped connection in tests. Re-exported
-# here (``__all__``) so the resonance/account workers import it from one place.
 
 # A per-claim screen applied post-fill: ``True`` keeps the claim, ``False`` drops it from the
 # aspect's
@@ -183,7 +178,7 @@ class AspectProfilingWorker:
         self,
         aspect: str,
         *,
-        session_factory: SessionFactory = transaction,
+        session_factory: ConnFactory = transaction,
         mode: ResearchMode = ResearchMode.ACCOUNT_PROFILING,
         tier_scope: int | None = None,
         planner_config: SourcePlannerConfig = DEEP_PROFILING_PLANNER_CONFIG,
@@ -507,6 +502,5 @@ __all__ = [
     "AspectProfilingWorker",
     "AspectCoverage",
     "ProfilingFieldDisposition",
-    "SessionFactory",
     "ClaimFilter",
 ]

@@ -64,7 +64,7 @@ from clue_research.core.review import ReviewDispositionEmitter
 from clue_research.db import ConnFactory, connection, transaction
 from clue_research.durable.campaign import CampaignRun
 from clue_research.obs import MetricSink
-from clue_research.review import DispositionStore, SessionFactory
+from clue_research.review import DispositionStore
 
 # --- M13.1 ↔ M13.2: register the REVIEW handler with the concrete disposition emitter ------------
 
@@ -87,7 +87,7 @@ def _production_review_emitter(
 def build_reviewed_phase_handler(
     *,
     conn_factory: ConnFactory = connection,
-    session_factory: SessionFactory = transaction,
+    session_factory: ConnFactory = transaction,
     campaign_run: CampaignRun | None = None,
     disposition_emitter: ReviewDispositionEmitter | None = None,
     emitter_conn_factory: ConnFactory = transaction,
@@ -112,7 +112,7 @@ def build_reviewed_phase_handler(
 def register_reviewed_phase_handler(
     *,
     conn_factory: ConnFactory = connection,
-    session_factory: SessionFactory = transaction,
+    session_factory: ConnFactory = transaction,
     campaign_run: CampaignRun | None = None,
     disposition_emitter: ReviewDispositionEmitter | None = None,
     emitter_conn_factory: ConnFactory = transaction,

@@ -44,11 +44,10 @@ from clue_research.core import (
     WorkerResult,
     new_campaign_run_id,
 )
-from clue_research.db import transaction
+from clue_research.db import ConnFactory, transaction
 from clue_research.profiling.aspect_worker import (
     DEEP_PROFILING_PLANNER_CONFIG,
     AspectProfilingWorker,
-    SessionFactory,
     SynthesisGuard,
 )
 from clue_research.profiling.context import RunContext, params_for_run
@@ -169,7 +168,7 @@ class ResonanceAspectWorker(AspectProfilingWorker):
     def __init__(
         self,
         *,
-        session_factory: SessionFactory = transaction,
+        session_factory: ConnFactory = transaction,
         planner_config: SourcePlannerConfig = DEEP_PROFILING_PLANNER_CONFIG,
         gateway: LLMGateway | None = None,
         planner_model: str | None = None,

@@ -60,13 +60,12 @@ from clue_research.core import (
     new_run_id,
 )
 from clue_research.core.field import field_namespace
-from clue_research.db import transaction
+from clue_research.db import ConnFactory, transaction
 from clue_research.identity import get_account, surviving_id
 from clue_research.profiling.aspect_worker import (
     DEEP_PROFILING_PLANNER_CONFIG,
     AspectCoverage,
     AspectProfilingWorker,
-    SessionFactory,
     SynthesisGuard,
 )
 from clue_research.profiling.context import params_for_run
@@ -97,7 +96,7 @@ def aspect_key_for(field: FieldDef) -> str:
 
 def default_account_worker_builder(
     *,
-    session_factory: SessionFactory = transaction,
+    session_factory: ConnFactory = transaction,
     planner_config: SourcePlannerConfig = DEEP_PROFILING_PLANNER_CONFIG,
     gateway: LLMGateway | None = None,
     planner_model: str | None = None,
@@ -251,7 +250,7 @@ async def profile_account(
     campaign_run_id: CampaignRunId | None = None,
     tenant_id: str | None = None,
     budget_cap_cents: CostCents | None = None,
-    session_factory: SessionFactory = transaction,
+    session_factory: ConnFactory = transaction,
     recursion_policy: RecursionPolicy | None = None,
     worker_for: WorkerBuilder | None = None,
     gateway: LLMGateway | None = None,
@@ -365,7 +364,7 @@ async def profile_account(
 def account_axis_workers(
     *,
     pack_namespaces: Sequence[str] = (),
-    session_factory: SessionFactory = transaction,
+    session_factory: ConnFactory = transaction,
     planner_config: SourcePlannerConfig = DEEP_PROFILING_PLANNER_CONFIG,
     gateway: LLMGateway | None = None,
     planner_model: str | None = None,

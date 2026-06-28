@@ -46,7 +46,7 @@ from clue_research.core.review import (
 from clue_research.db import ConnFactory, connection, transaction
 from clue_research.durable import AccountSpec, register_phase_handler
 from clue_research.durable.campaign import CampaignRun, CheckpointNotAwaiting
-from clue_research.review import ReviewProjector, ReviewSurfaceImpl, SessionFactory
+from clue_research.review import ReviewProjector, ReviewSurfaceImpl
 
 
 class DbVerificationAnnotationReader:
@@ -205,7 +205,7 @@ def build_review_account_resolver(
 def build_review_surface(
     *,
     conn_factory: ConnFactory = connection,
-    session_factory: SessionFactory = transaction,
+    session_factory: ConnFactory = transaction,
     campaign_run: CampaignRun | None = None,
     annotation_reader: VerificationAnnotationReader | None = None,
     disposition_emitter: ReviewDispositionEmitter | None = None,
@@ -231,7 +231,7 @@ def build_review_phase_handler(
     account_resolver: ReviewAccountResolver | None = None,
     surface: ReviewSurfaceImpl | None = None,
     conn_factory: ConnFactory = connection,
-    session_factory: SessionFactory = transaction,
+    session_factory: ConnFactory = transaction,
     campaign_run: CampaignRun | None = None,
     disposition_emitter: ReviewDispositionEmitter | None = None,
 ) -> ReviewPhaseHandler:
@@ -256,7 +256,7 @@ def register_review_phase_handler(
     account_resolver: ReviewAccountResolver | None = None,
     surface: ReviewSurfaceImpl | None = None,
     conn_factory: ConnFactory = connection,
-    session_factory: SessionFactory = transaction,
+    session_factory: ConnFactory = transaction,
     campaign_run: CampaignRun | None = None,
     disposition_emitter: ReviewDispositionEmitter | None = None,
 ) -> ReviewPhaseHandler:

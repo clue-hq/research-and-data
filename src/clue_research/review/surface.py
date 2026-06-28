@@ -60,10 +60,6 @@ from clue_research.review.repository import (
     record_review_action,
 )
 
-# The review worker-domain spelling of the shared ``db.ConnFactory`` seam (re-exported via
-# ``__all__``); injected so each method runs in one ``transaction()`` (rolled back per-test).
-SessionFactory = ConnFactory
-
 # The redaction sentinel a reject writes as the superseding claim's value (distinct from DSAR's
 # ``__erased__``). The original stays queryable on the superseded claim + the review_action row.
 _REJECT_SENTINEL: JsonValue = {"__rejected__": True}
@@ -156,7 +152,7 @@ class ReviewSurfaceImpl:
         self,
         *,
         projector: ReviewProjector,
-        session_factory: SessionFactory,
+        session_factory: ConnFactory,
         resume_hook: ReviewResumeHook | None = None,
         disposition_emitter: ReviewDispositionEmitter | None = None,
     ) -> None:
@@ -304,6 +300,5 @@ __all__ = [
     "ReviewSessionNotFound",
     "SessionNotOpen",
     "ClaimNotInSession",
-    "SessionFactory",
     "VerificationAnnotationReader",
 ]

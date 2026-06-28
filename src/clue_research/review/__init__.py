@@ -122,7 +122,6 @@ from clue_research.review.surface import (
     ReviewError,
     ReviewSessionNotFound,
     ReviewSurfaceImpl,
-    SessionFactory,
     SessionNotOpen,
 )
 from clue_research.review.yield_metrics import SourceYield, YieldMetrics, compute_yield
@@ -135,7 +134,6 @@ __all__ = [
     "INTENT_FIELD",
     # the surface (M13.1)
     "ReviewSurfaceImpl",
-    "SessionFactory",
     "ReviewError",
     "ReviewSessionNotFound",
     "SessionNotOpen",
