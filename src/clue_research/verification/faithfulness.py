@@ -308,13 +308,6 @@ def status_for_verdict(
 # --- the FaithfulnessJudge --------------------------------------------------
 
 
-def _conn_factory_default() -> AbstractAsyncContextManager[AsyncConnection]:
-    """Default connection source: one committed transaction per ``judge`` (the cache probe + the
-    verdict insert + the status UPDATE are atomic). Indirected so the engine resolves lazily at call
-    time; tests inject a rollback-bound factory."""
-    return transaction()
-
-
 class FaithfulnessJudgeImpl:
     """The M9.3 faithfulness judge (implements :class:`clue_research.core.verification.
     FaithfulnessJudge`).
@@ -330,9 +323,7 @@ class FaithfulnessJudgeImpl:
         *,
         gateway: LLMGateway,
         policy: JudgePolicy = DEFAULT_JUDGE_POLICY,
-        conn_factory: Callable[[], AbstractAsyncContextManager[AsyncConnection]] = (
-            _conn_factory_default
-        ),
+        conn_factory: Callable[[], AbstractAsyncContextManager[AsyncConnection]] = transaction,
         record_verdicts: bool = True,
         sink: MetricSink | None = None,
     ) -> None:

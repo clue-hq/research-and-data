@@ -289,14 +289,6 @@ async def _record_gate_decision(
     )
 
 
-def _conn_factory_default() -> AbstractAsyncContextManager[AsyncConnection]:
-    """Default connection source: one committed transaction per ``check`` (reads + the audit row).
-
-    Indirected through a function so the process-wide engine is resolved lazily at call time (a gate
-    can be constructed before ``db_lifespan`` is entered); tests inject a rollback-bound factory."""
-    return transaction()
-
-
 class PreSpendGateImpl:
     """The M9.1 pre-spend gate (implements :class:`clue_research.core.verification.PreSpendGate`).
 
@@ -308,9 +300,7 @@ class PreSpendGateImpl:
         self,
         *,
         policy: PreSpendPolicy = DEFAULT_PRE_SPEND_POLICY,
-        conn_factory: Callable[[], AbstractAsyncContextManager[AsyncConnection]] = (
-            _conn_factory_default
-        ),
+        conn_factory: Callable[[], AbstractAsyncContextManager[AsyncConnection]] = transaction,
         lock_reader: _LockReader | None = None,
         record_decisions: bool = True,
         sink: MetricSink | None = None,

@@ -283,14 +283,6 @@ def decide_use(
 # --- the UseGate ------------------------------------------------------------
 
 
-def _conn_factory_default() -> AbstractAsyncContextManager[AsyncConnection]:
-    """Default connection source — one committed transaction per ``evaluate`` (the jurisdiction read
-    + the verdict upsert are atomic; the decision is pure, no external call to hold a connection
-    across). Indirected so the engine resolves lazily at call time; tests inject a rollback factory.
-    """
-    return transaction()
-
-
 class UseGateImpl:
     """The M10.3 appropriateness/use gate (implements ``clue_research.core.compliance.UseGate``).
 
@@ -305,9 +297,7 @@ class UseGateImpl:
         client_id: str,
         *,
         policy: ClientPolicy = DEFAULT_CLIENT_POLICY,
-        conn_factory: Callable[[], AbstractAsyncContextManager[AsyncConnection]] = (
-            _conn_factory_default
-        ),
+        conn_factory: Callable[[], AbstractAsyncContextManager[AsyncConnection]] = transaction,
         record_decisions: bool = True,
         sink: MetricSink | None = None,
     ) -> None:

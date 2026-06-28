@@ -165,13 +165,6 @@ class PositioningResult(BaseModel):
     cost_cents: CostCents = Decimal(0)
 
 
-def _conn_factory_default() -> AbstractAsyncContextManager[AsyncConnection]:
-    """Default connection source: one committed transaction per read/write unit (indirected so the
-    engine resolves lazily; tests inject a rollback-bound factory that yields the shared conn).
-    """
-    return transaction()
-
-
 def assemble_evidence_span(
     account_facts: list[AccountFact], client_chunks: list[ClientKnowledgeChunk], *, max_chars: int
 ) -> str:
@@ -201,9 +194,7 @@ class Positioner:
         committee_reader: CommitteeReader,
         judge: FaithfulnessJudge,
         policy: PositioningPolicy = DEFAULT_POSITIONING_POLICY,
-        conn_factory: Callable[[], AbstractAsyncContextManager[AsyncConnection]] = (
-            _conn_factory_default
-        ),
+        conn_factory: Callable[[], AbstractAsyncContextManager[AsyncConnection]] = transaction,
         sink: MetricSink | None = None,
     ) -> None:
         self._gateway = gateway
