@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from decimal import Decimal
 
 from clue_research.core import (
     TIER_ORDER,
@@ -10,6 +11,7 @@ from clue_research.core import (
     ExtractionMethod,
     by_tier_ascending,
     first_confident_claim,
+    parse_cost_cents,
     parse_value_json,
     serialize_value_json,
     to_value_json,
@@ -57,3 +59,20 @@ def test_first_confident_claim_stops_at_first_hit(make_account: Callable[..., Cl
     assert first_confident_claim([t2_high, t1_low], min_confidence=0.1) is t1_low
     # nothing clears a very high bar
     assert first_confident_claim([t1_low], min_confidence=0.99) is None
+
+
+def test_parse_cost_cents_accepts_finite_non_negative() -> None:
+    # str / int / float all coerce to an exact (non-float-rounded) Decimal.
+    assert parse_cost_cents("150000") == Decimal("150000")
+    assert parse_cost_cents(100) == Decimal("100")
+    assert parse_cost_cents(1.5) == Decimal("1.5")
+    assert parse_cost_cents("0") == Decimal("0")
+
+
+def test_parse_cost_cents_rejects_dangerous_values() -> None:
+    # The whole point of the strict parser: a hostile/malformed budget input can never enter a
+    # budget calculation as a real number. A negative would *inflate* remaining budget (a silent
+    # per-entity-cap evasion) and a NaN would crash the ordering comparison in the spawn-budget
+    # check — both must coerce to None so the caller treats them as "no estimate / no cap".
+    for bad in (None, "NaN", "nan", "Infinity", "inf", "-inf", "-5", -5, "notanumber", [1], True):
+        assert parse_cost_cents(bad) is None

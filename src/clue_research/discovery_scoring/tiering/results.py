@@ -18,12 +18,11 @@ These are *references and decompositions*, never blobs (conventions §2):
 from __future__ import annotations
 
 from collections.abc import Mapping
-from decimal import Decimal, InvalidOperation
 from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict, JsonValue, ValidationError
 
-from clue_research.core import ClaimId, CostCents, EntityId, Estimate
+from clue_research.core import ClaimId, CostCents, EntityId, Estimate, parse_cost_cents
 from clue_research.icp.rubric import TierCutoffs
 
 # The key under which the M7 state machine threads the client's ``resume(...)`` decision into the
@@ -172,18 +171,9 @@ class CheckpointDecision(BaseModel):
             except ValidationError:
                 cutoffs = None
 
-        cap: CostCents | None = None
-        cap_raw = raw.get("budget_cap_cents")
-        if isinstance(cap_raw, (int, float, str)) and not isinstance(cap_raw, bool):
-            try:
-                parsed = Decimal(str(cap_raw))
-            except (InvalidOperation, ValueError):
-                parsed = None
-            # ``is_finite()`` is checked first (and short-circuits): ``Decimal(str(float("inf")))``
-            # *succeeds* (yields ``Infinity``), and a ``NaN >= 0`` comparison itself signals — so
-            # without this guard a non-finite cap would either raise here or fail the finite
-            # ``CostCents`` constructor below, crashing the durable phase instead of degrading.
-            if parsed is not None and parsed.is_finite() and parsed >= 0:
-                cap = parsed
+        # A malformed/NaN/Infinity/negative cap is ignored (coerced to ``None``) rather than
+        # crashing the durable phase — the shared defensive coercion every budget input passes
+        # through.
+        cap = parse_cost_cents(raw.get("budget_cap_cents"))
 
         return cls(action=action, cutoffs=cutoffs, budget_cap_cents=cap)

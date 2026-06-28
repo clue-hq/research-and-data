@@ -75,6 +75,27 @@ def decode_jsonb(raw: object) -> Any:
     return parse_value_json(raw) if isinstance(raw, (str, bytes)) else raw
 
 
+def parse_cost_cents(value: object) -> CostCents | None:
+    """Defensively coerce an untrusted JSON-carried cost (``str``/number) to ``CostCents``.
+
+    Returns ``None`` when the value is absent, unparseable, non-finite (``NaN``/±``Infinity``), or
+    negative. ``CostCents`` is ``Annotated[Decimal, Ge(0)]``, so those values are not just invalid
+    inputs — they are *dangerous* ones: a ``NaN`` signals ``InvalidOperation`` on the ordering
+    comparison inside a budget check (crashing a durable phase), and a negative *inflates* remaining
+    budget (a silent per-entity-cap evasion). Both a worker-supplied facet estimate and a
+    client-supplied cap reach budget reservation through this one seam, so the rejection lives here
+    rather than at each caller. ``is_finite()`` is checked before ``>= 0`` because a bare
+    ``NaN >= 0`` comparison itself signals.
+    """
+    if value is None:
+        return None
+    try:
+        cost = Decimal(str(value))
+    except (ValueError, ArithmeticError):
+        return None
+    return cost if cost.is_finite() and cost >= 0 else None
+
+
 def by_tier_ascending(claims: Iterable[Claim]) -> list[Claim]:
     """Claims ordered most-trusted first (tier 1 -> 4). Stable; does not merge."""
     return sorted(claims, key=lambda c: c.source_tier)
