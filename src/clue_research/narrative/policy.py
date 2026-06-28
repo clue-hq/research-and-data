@@ -17,14 +17,12 @@ default with a logged warning (a stale config row never raises per-account mid-r
 
 from __future__ import annotations
 
-import json
-
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_research.config.gateway import DEFAULT_GATEWAY_CONFIG
-from clue_research.core import Persona
+from clue_research.core import Persona, decode_jsonb
 from clue_research.narrative.prompts import PROMPT_VERSION, PROMPTS
 from clue_research.obs import get_logger
 
@@ -98,18 +96,15 @@ def _parse_field_relevance(raw: object) -> dict[Persona, tuple[str, ...]]:
     to the known-good subset rather than raising mid-run). Returns the default map if nothing
     parses.
     """
-    if isinstance(raw, (bytes, bytearray)):
-        raw = raw.decode("utf-8")
-    if isinstance(raw, str):
-        try:
-            raw = json.loads(raw)
-        except json.JSONDecodeError:
-            _log.warning("positioning_policy field_relevance is not valid JSON; using default")
-            return DEFAULT_FIELD_RELEVANCE
-    if not isinstance(raw, dict):
+    try:
+        decoded = decode_jsonb(raw)
+    except ValueError:
+        _log.warning("positioning_policy field_relevance is not valid JSON; using default")
+        return DEFAULT_FIELD_RELEVANCE
+    if not isinstance(decoded, dict):
         return DEFAULT_FIELD_RELEVANCE
     parsed: dict[Persona, tuple[str, ...]] = {}
-    for key, value in raw.items():
+    for key, value in decoded.items():
         try:
             persona = Persona(key)
         except ValueError:

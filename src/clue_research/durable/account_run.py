@@ -27,7 +27,7 @@ from clue_research.core import (
     EntityId,
     RunId,
     UtcDatetime,
-    parse_value_json,
+    decode_jsonb,
     serialize_value_json,
 )
 from clue_research.durable.enums import AccountRunStatus, AccountRunSubPhase
@@ -305,13 +305,6 @@ async def set_account_sub_phase(
     )
 
 
-def _decode_jsonb(raw: object) -> object:
-    """Decode a JSONB column to a Python object (asyncpg returns it already decoded)."""
-    if isinstance(raw, (bytes, bytearray)):
-        return parse_value_json(bytes(raw))
-    return raw
-
-
 def _row_to_account_run(row: dict[str, object]) -> AccountRunRow:
     return AccountRunRow.model_validate(
         {
@@ -321,8 +314,8 @@ def _row_to_account_run(row: dict[str, object]) -> AccountRunRow:
             "tier": row["tier"],
             "status": row["status"],
             "sub_phase": row["sub_phase"],
-            "plan_json": _decode_jsonb(row["plan_json"]),
-            "references_index": _decode_jsonb(row["references_index"]),
+            "plan_json": decode_jsonb(row["plan_json"]),
+            "references_index": decode_jsonb(row["references_index"]),
             "cost_cents": row["cost_cents"] if row["cost_cents"] is not None else Decimal(0),
             "started_at": row["started_at"],
             "updated_at": row["updated_at"],

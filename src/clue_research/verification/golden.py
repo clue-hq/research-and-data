@@ -39,9 +39,9 @@ from clue_research.core import (
     UtcDatetime,
     account_claim,
     contact_claim,
+    decode_jsonb_scalar,
     new_entity_id,
     new_run_id,
-    parse_value_json,
     serialize_value_json,
 )
 from clue_research.evals import FixtureKind, GoldClaim, GoldEntity, GoldSet
@@ -460,9 +460,7 @@ async def load_golden_fixtures(conn: AsyncConnection, *, name: str = GOLD_SUITE)
         grouped[ref].append(
             GoldClaim(
                 field_key=field_key,
-                expected_value=value
-                if not isinstance(value, (bytes, bytearray))
-                else parse_value_json(bytes(value)),
+                expected_value=decode_jsonb_scalar(value),
                 max_source_tier=int(tier) if tier is not None else 3,
                 requires_evidence_span=bool(requires_span),
                 fixture_kind=FixtureKind(kind),
