@@ -28,7 +28,6 @@ in-graph (today they are driven via their direct callables, which populate those
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable, Sequence
-from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass
 
 from sqlalchemy.ext.asyncio import AsyncConnection
@@ -44,7 +43,7 @@ from clue_research.core import (
     new_claim_id,
 )
 from clue_research.core.execution import AspectWorker
-from clue_research.db import transaction
+from clue_research.db import ConnFactory, transaction
 from clue_research.durable import (
     AccountResearchGraph,
     WorkerRegistry,
@@ -82,8 +81,6 @@ __all__ = [
     "build_worker_registry",
     "build_research_graph",
 ]
-
-_ConnFactory = Callable[[], AbstractAsyncContextManager[AsyncConnection]]
 
 
 # --- packs + source manifests ------------------------------------------------
@@ -190,7 +187,7 @@ def production_binding_classifier(
 def build_pre_spend_gate(
     *,
     policy: PreSpendPolicy = DEFAULT_PRE_SPEND_POLICY,
-    conn_factory: _ConnFactory | None = None,
+    conn_factory: ConnFactory | None = None,
     record_decisions: bool = True,
 ) -> PreSpendGate:
     """The api-root :class:`~clue_research.core.verification.PreSpendGate` to inject before spend.

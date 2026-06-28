@@ -9,24 +9,17 @@ joins in ``api/review_feedback_wiring.py``.
 
 from __future__ import annotations
 
-from collections.abc import Callable
-from contextlib import AbstractAsyncContextManager
-
-from sqlalchemy.ext.asyncio import AsyncConnection
-
 from clue_research.api.backtest_wiring import build_backtest_gate
 from clue_research.core import BacktestGate
-from clue_research.db import connection, transaction
+from clue_research.db import ConnFactory, connection, transaction
 from clue_research.review import DEFAULT_REWEIGHT_POLICY, LearningLoopImpl, ReweightPolicy
-
-_ConnFactory = Callable[[], AbstractAsyncContextManager[AsyncConnection]]
 
 
 def build_learning_loop(
     *,
-    conn_factory: _ConnFactory = transaction,
+    conn_factory: ConnFactory = transaction,
     backtest_gate: BacktestGate | None = None,
-    gate_conn_factory: _ConnFactory = connection,
+    gate_conn_factory: ConnFactory = connection,
     policy: ReweightPolicy = DEFAULT_REWEIGHT_POLICY,
 ) -> LearningLoopImpl:
     """The production M13.3 ``LearningLoop``: a write-path ``conn_factory`` (one committed txn

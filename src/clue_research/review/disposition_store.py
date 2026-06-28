@@ -26,8 +26,7 @@ NOTHING`` and the provenance snapshot is keyed 1:1 on ``disposition_id``.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Sequence
-from contextlib import AbstractAsyncContextManager
+from collections.abc import Sequence
 from datetime import UTC, datetime
 from typing import NamedTuple
 from uuid import UUID
@@ -45,7 +44,7 @@ from clue_research.core import (
     serialize_value_json,
 )
 from clue_research.core.review import ReviewActionOutcome
-from clue_research.db import transaction
+from clue_research.db import ConnFactory, transaction
 from clue_research.identity import (
     DEFAULT_DISPOSITION_POLICY,
     Observation,
@@ -65,8 +64,6 @@ from clue_research.review.disposition import (
     IngestReport,
 )
 from clue_research.review.labeled_dataset import LabeledRow, read_labeled_dataset
-
-_ConnFactory = Callable[[], AbstractAsyncContextManager[AsyncConnection]]
 
 # A downstream company resolves "confidently" only at the auto-merge band (M2.3): a deterministic
 # strong-key hit (domain/registry, score 1.0) or top_score ≥ auto_merge_threshold. By M2.2's
@@ -477,7 +474,7 @@ class DispositionStore:
     the only read M13.3 sees is ``labeled_dataset``."""
 
     def __init__(
-        self, *, conn_factory: _ConnFactory = transaction, sink: MetricSink | None = None
+        self, *, conn_factory: ConnFactory = transaction, sink: MetricSink | None = None
     ) -> None:
         self._conn_factory = conn_factory
         self._sink = sink
@@ -543,7 +540,7 @@ class ReviewDispositionEmitterImpl:
     M13.1 review surface in place of the no-op. Mirrors each review action into a disposition."""
 
     def __init__(
-        self, *, conn_factory: _ConnFactory = transaction, sink: MetricSink | None = None
+        self, *, conn_factory: ConnFactory = transaction, sink: MetricSink | None = None
     ) -> None:
         self._conn_factory = conn_factory
         self._sink = sink

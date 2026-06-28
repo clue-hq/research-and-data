@@ -43,7 +43,6 @@ Verification (the faithfulness judge, corroboration, the actual promotion) is th
 from __future__ import annotations
 
 from collections.abc import Callable
-from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass
 from decimal import Decimal
 from enum import StrEnum
@@ -77,6 +76,7 @@ from clue_research.db import transaction
 from clue_research.icp import get_icp_version
 from clue_research.identity import get_account, surviving_id
 from clue_research.profiling.context import RunContext
+from clue_research.profiling.runtime import SessionFactory
 from clue_research.profiling.target_lock import binds_to_entity, build_target_lock, is_lockable
 from clue_research.sources import (
     DEFAULT_SOURCE_PLANNER_CONFIG,
@@ -99,10 +99,9 @@ DEEP_PROFILING_PLANNER_CONFIG: SourcePlannerConfig = DEFAULT_SOURCE_PLANNER_CONF
     update={"gate_expensive_entity_tiers": frozenset({"top", "high"})}
 )
 
-# A session is an async context manager yielding a connection (``db.transaction`` in production; a
-# rollback-scoped connection in tests). Injected so the worker is testable without committing — the
-# same DI seam M6's phase handlers use (``discovery_scoring/phases.py``).
-SessionFactory = Callable[[], AbstractAsyncContextManager[AsyncConnection]]
+# ``SessionFactory`` (imported above) is the injected DB-session seam — the same DI seam M6's phase
+# handlers use; ``db.transaction`` in production, a rollback-scoped connection in tests. Re-exported
+# here (``__all__``) so the resonance/account workers import it from one place.
 
 # A per-claim screen applied post-fill: ``True`` keeps the claim, ``False`` drops it from the
 # aspect's

@@ -8,11 +8,9 @@ in one place lets the committee (M8.3) and contact (M8.4) workers share it witho
 
 from __future__ import annotations
 
-from collections.abc import Callable
-from contextlib import AbstractAsyncContextManager
-
-from sqlalchemy.ext.asyncio import AsyncConnection
+from clue_research.db import ConnFactory
 
 # A session is an async context manager yielding a connection (committed in prod via
 # ``db.transaction``; rolled back per-test). Injected so a worker is testable without committing.
-SessionFactory = Callable[[], AbstractAsyncContextManager[AsyncConnection]]
+# The profiling/review worker-domain spelling of the shared ``db.ConnFactory`` seam.
+SessionFactory = ConnFactory
