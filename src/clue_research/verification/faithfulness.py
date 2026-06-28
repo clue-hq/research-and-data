@@ -49,8 +49,6 @@ plus the claim's ``verification_status = rejected`` (``rejected`` is a *verifica
 from __future__ import annotations
 
 import json
-from collections.abc import Callable
-from contextlib import AbstractAsyncContextManager
 from decimal import Decimal
 from time import perf_counter
 
@@ -73,7 +71,7 @@ from clue_research.core import (
     serialize_value_json,
 )
 from clue_research.core.gateway import LLMGateway, Message, Role
-from clue_research.db import transaction
+from clue_research.db import ConnFactory, transaction
 from clue_research.obs import (
     ATTR_CACHE_HIT,
     ATTR_COST_CENTS,
@@ -323,7 +321,7 @@ class FaithfulnessJudgeImpl:
         *,
         gateway: LLMGateway,
         policy: JudgePolicy = DEFAULT_JUDGE_POLICY,
-        conn_factory: Callable[[], AbstractAsyncContextManager[AsyncConnection]] = transaction,
+        conn_factory: ConnFactory = transaction,
         record_verdicts: bool = True,
         sink: MetricSink | None = None,
     ) -> None:

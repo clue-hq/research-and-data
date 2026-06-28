@@ -22,10 +22,7 @@ serves. Read/emit only — never a write-back path into the claim store (convent
 from __future__ import annotations
 
 from collections.abc import Callable
-from contextlib import AbstractAsyncContextManager
 from datetime import UTC, datetime
-
-from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_research.core import (
     CampaignPhase,
@@ -37,7 +34,7 @@ from clue_research.core import (
     UnitInterval,
     UtcDatetime,
 )
-from clue_research.db import connection, transaction
+from clue_research.db import ConnFactory, connection, transaction
 from clue_research.durable import (
     AccountRunStatus,
     AccountRunSubPhase,
@@ -58,7 +55,6 @@ from clue_research.narrative import (
 )
 from clue_research.review import finalized_review_account_ids
 
-_ConnFactory = Callable[[], AbstractAsyncContextManager[AsyncConnection]]
 _Clock = Callable[[], UtcDatetime]
 
 # A campaign run past these statuses will produce no further handoffs (the API tells consumers to
@@ -77,7 +73,7 @@ class DurableHandoffReadinessReader:
     ``None`` / no ready accounts (cross-tenant isolation — substrate §2)."""
 
     def __init__(
-        self, *, conn_factory: _ConnFactory = connection, require_finalized_review: bool = False
+        self, *, conn_factory: ConnFactory = connection, require_finalized_review: bool = False
     ) -> None:
         self._conn_factory = conn_factory
         # M13.1 handoff gate: when True, an account is handoff-ready only if its Tier-1 review
@@ -138,7 +134,7 @@ class DurableHandoffReadinessReader:
 
 
 def build_handoff_readiness_reader(
-    *, conn_factory: _ConnFactory = connection, require_finalized_review: bool = False
+    *, conn_factory: ConnFactory = connection, require_finalized_review: bool = False
 ) -> HandoffReadinessReader:
     """The api-root :class:`HandoffReadinessReader` (durable-backed) to inject into the service +
     the emit path. ``require_finalized_review`` (M13.1) gates handoff on a finalized Tier-1 review
@@ -178,7 +174,7 @@ class HandoffPhaseHandler:
         assembler: HandoffAssembler,
         readiness_reader: HandoffReadinessReader,
         publisher: HandoffPublisher | None = None,
-        conn_factory: _ConnFactory = transaction,
+        conn_factory: ConnFactory = transaction,
         clock: _Clock = _utc_now,
         coverage_confidence: UnitInterval | None = None,
     ) -> None:
@@ -212,7 +208,7 @@ def build_handoff_phase_handler(
     assembler: HandoffAssembler,
     readiness_reader: HandoffReadinessReader | None = None,
     publisher: HandoffPublisher | None = None,
-    conn_factory: _ConnFactory = transaction,
+    conn_factory: ConnFactory = transaction,
     clock: _Clock = _utc_now,
     require_finalized_review: bool = False,
 ) -> HandoffPhaseHandler:

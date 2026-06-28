@@ -47,8 +47,7 @@ Architecture: Doc D §3/§5/§6/§7; docs/specs/M10-compliance-and-personal-data
 from __future__ import annotations
 
 import json
-from collections.abc import Callable, Mapping
-from contextlib import AbstractAsyncContextManager
+from collections.abc import Mapping
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from sqlalchemy import text
@@ -74,7 +73,7 @@ from clue_research.core import (
     UseDecision,
     UseReason,
 )
-from clue_research.db import transaction
+from clue_research.db import ConnFactory, transaction
 from clue_research.obs import (
     ATTR_CACHE_HIT,
     ATTR_ENTITY_ID,
@@ -297,7 +296,7 @@ class UseGateImpl:
         client_id: str,
         *,
         policy: ClientPolicy = DEFAULT_CLIENT_POLICY,
-        conn_factory: Callable[[], AbstractAsyncContextManager[AsyncConnection]] = transaction,
+        conn_factory: ConnFactory = transaction,
         record_decisions: bool = True,
         sink: MetricSink | None = None,
     ) -> None:

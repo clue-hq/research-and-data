@@ -49,8 +49,7 @@ placeholder), not redefined here. Re-research *execution* lives entirely behind 
 from __future__ import annotations
 
 from collections import Counter, defaultdict
-from collections.abc import Callable, Iterable, Mapping, Sequence
-from contextlib import AbstractAsyncContextManager
+from collections.abc import Iterable, Mapping, Sequence
 from datetime import UTC, datetime, timedelta
 from typing import Any, NamedTuple
 
@@ -75,7 +74,7 @@ from clue_research.core import (
     classify_field_key,
 )
 from clue_research.core.field import FieldKey
-from clue_research.db import transaction
+from clue_research.db import ConnFactory, transaction
 from clue_research.obs import (
     SPAN_VERIFICATION_FRESHNESS,
     MetricSink,
@@ -289,7 +288,7 @@ class FreshnessImpl:
         *,
         policy: CadencePolicy = DEFAULT_CADENCE_POLICY,
         scope: TenantScope = ALL_TENANTS,
-        conn_factory: Callable[[], AbstractAsyncContextManager[AsyncConnection]] = transaction,
+        conn_factory: ConnFactory = transaction,
         sink: MetricSink | None = None,
     ) -> None:
         self._policy = policy

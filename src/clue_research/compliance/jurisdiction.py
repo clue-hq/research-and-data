@@ -33,7 +33,6 @@ docs/specs/M10-compliance-and-personal-data.md §M10.1.
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
-from contextlib import AbstractAsyncContextManager
 from enum import StrEnum
 from typing import Protocol, runtime_checkable
 
@@ -64,7 +63,7 @@ from clue_research.core import (
     RunId,
     UnitInterval,
 )
-from clue_research.db import transaction
+from clue_research.db import ConnFactory, transaction
 from clue_research.identity import get_account, get_contact, stamp_reuse
 from clue_research.obs import (
     ATTR_CLIENT_ID,
@@ -200,7 +199,7 @@ class JurisdictionResolverImpl:
         run_id: RunId,
         *,
         policy_getter: Callable[[str], JurisdictionPolicy] = get_policy,
-        conn_factory: Callable[[], AbstractAsyncContextManager[AsyncConnection]] = transaction,
+        conn_factory: ConnFactory = transaction,
         persist: bool = True,
         sink: MetricSink | None = None,
     ) -> None:

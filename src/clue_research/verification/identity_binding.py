@@ -52,8 +52,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-from collections.abc import Callable, Sequence
-from contextlib import AbstractAsyncContextManager
+from collections.abc import Sequence
 from urllib.parse import urlsplit
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -74,7 +73,7 @@ from clue_research.core import (
     serialize_value_json,
 )
 from clue_research.core.entity import AccountEntity
-from clue_research.db import transaction
+from clue_research.db import ConnFactory, transaction
 from clue_research.identity import get_account, get_contact
 from clue_research.obs import (
     ATTR_CACHE_HIT,
@@ -432,7 +431,7 @@ class IdentityBindingGateImpl:
         self,
         *,
         policy: BindingPolicy = DEFAULT_BINDING_POLICY,
-        conn_factory: Callable[[], AbstractAsyncContextManager[AsyncConnection]] = transaction,
+        conn_factory: ConnFactory = transaction,
         record_evals: bool = True,
         sink: MetricSink | None = None,
     ) -> None:

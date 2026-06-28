@@ -39,8 +39,6 @@ duplicating it (append-only + supersede; M12.1 AC7).
 
 from __future__ import annotations
 
-from collections.abc import Callable
-from contextlib import AbstractAsyncContextManager
 from decimal import Decimal
 from time import perf_counter
 
@@ -70,7 +68,7 @@ from clue_research.core import (
     is_outreach_promotable,
 )
 from clue_research.core.retrieval import ClientKnowledgeChunk, ClientKnowledgeRetriever
-from clue_research.db import transaction
+from clue_research.db import ConnFactory, transaction
 from clue_research.identity import stamp_reuse
 from clue_research.narrative.fields import VALUE_NARRATIVE
 from clue_research.narrative.policy import DEFAULT_POSITIONING_POLICY, PositioningPolicy
@@ -194,7 +192,7 @@ class Positioner:
         committee_reader: CommitteeReader,
         judge: FaithfulnessJudge,
         policy: PositioningPolicy = DEFAULT_POSITIONING_POLICY,
-        conn_factory: Callable[[], AbstractAsyncContextManager[AsyncConnection]] = transaction,
+        conn_factory: ConnFactory = transaction,
         sink: MetricSink | None = None,
     ) -> None:
         self._gateway = gateway

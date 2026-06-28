@@ -27,14 +27,22 @@ machine → Temporal) changes *where workflow state lives* without touching this
 from __future__ import annotations
 
 import os
-from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager
+from collections.abc import AsyncIterator, Callable
+from contextlib import AbstractAsyncContextManager, asynccontextmanager
 
 from sqlalchemy.ext.asyncio import (
     AsyncConnection,
     AsyncEngine,
     create_async_engine,
 )
+
+# The dependency-injection seam every persistence-touching worker/handler takes: a zero-arg factory
+# yielding a connection context manager — :func:`transaction` (commit-on-exit) or :func:`connection`
+# in production, a rollback-scoped connection in tests. Declared here, next to the helpers it
+# abstracts over, so callers inject one named type instead of re-spelling
+# ``Callable[[], AbstractAsyncContextManager[AsyncConnection]]`` in every module. The deep-profiling
+# (M8) and review (M13) workers name the same seam ``SessionFactory``, re-exported from this alias.
+ConnFactory = Callable[[], AbstractAsyncContextManager[AsyncConnection]]
 
 # The shared seam: the DSN is read from this env var. A parallel agent (M0.4) documents it in
 # ``.env.example``; ``db`` only READS it. Kept as a module constant so callers and tests agree;

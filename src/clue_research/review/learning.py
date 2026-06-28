@@ -12,9 +12,6 @@ reproducibility holds for free. ``review`` may import ``icp``/``sources`` (servi
 
 from __future__ import annotations
 
-from collections.abc import Callable
-from contextlib import AbstractAsyncContextManager
-
 from pydantic import JsonValue
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
@@ -26,7 +23,7 @@ from clue_research.core import (
     ICPCreatedFrom,
     PromotionMode,
 )
-from clue_research.db import transaction
+from clue_research.db import ConnFactory, transaction
 from clue_research.icp import (
     WeightedSource,
     create_icp_spec,
@@ -55,8 +52,6 @@ from clue_research.review.reweight import (
 )
 from clue_research.review.yield_metrics import YieldMetrics, compute_yield
 
-_ConnFactory = Callable[[], AbstractAsyncContextManager[AsyncConnection]]
-
 
 class LearningLoopError(RuntimeError):
     """A learning-loop precondition failed (e.g. no active ICP spec / rubric to reweight)."""
@@ -77,7 +72,7 @@ class LearningLoopImpl:
     def __init__(
         self,
         *,
-        conn_factory: _ConnFactory = transaction,
+        conn_factory: ConnFactory = transaction,
         backtest_gate: BacktestGate | None = None,
         policy: ReweightPolicy = DEFAULT_REWEIGHT_POLICY,
     ) -> None:

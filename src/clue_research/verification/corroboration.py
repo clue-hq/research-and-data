@@ -35,8 +35,7 @@ evaluator (swap note, M09 §M9.2).
 
 from __future__ import annotations
 
-from collections.abc import Callable, Sequence
-from contextlib import AbstractAsyncContextManager
+from collections.abc import Sequence
 from urllib.parse import urlsplit
 
 from pydantic import BaseModel, ConfigDict, JsonValue
@@ -62,7 +61,7 @@ from clue_research.core import (
 )
 from clue_research.core import values_agree as _core_values_agree
 from clue_research.core.field import FieldKey
-from clue_research.db import transaction
+from clue_research.db import ConnFactory, transaction
 from clue_research.obs import (
     ATTR_ENTITY_ID,
     ATTR_ENTITY_TYPE,
@@ -303,7 +302,7 @@ class Corroborator:
         self,
         *,
         policy: CorroborationPolicy = DEFAULT_CORROBORATION_POLICY,
-        conn_factory: Callable[[], AbstractAsyncContextManager[AsyncConnection]] = transaction,
+        conn_factory: ConnFactory = transaction,
         record_conflicts: bool = True,
         sink: MetricSink | None = None,
     ) -> None:
