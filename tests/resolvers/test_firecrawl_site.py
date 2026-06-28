@@ -127,7 +127,7 @@ def _field() -> FieldDef:
 
 
 def test_scrape_resolver_conforms_to_protocol_at_tier_2() -> None:
-    resolver = ScrapeResolver(_seed_manifest(), _Accounts(_account()))
+    resolver = ScrapeResolver(_seed_manifest(), _Accounts(_account()), extractor=_extractor())
     assert isinstance(resolver, Resolver)
     assert resolver.tier == 2
 
@@ -280,9 +280,9 @@ def test_manifest_rate_limit_is_surfaced_to_the_transport() -> None:
     # (the live FirecrawlScrapeBackend ignores it today); hard rate-limiting is M7's Redis bucket.
     account = _account("acme.com")
     scraper = _RecordingScraper()
-    register_adapter("firecrawl_html", FirecrawlHtmlAdapter(_extractor(), scraper=scraper))
+    register_adapter("firecrawl_html", FirecrawlHtmlAdapter(scraper=scraper))
     manifest = _seed_manifest().model_copy(update={"rate_limit": {"rpm": 30}})
-    resolver = ScrapeResolver(manifest, _Accounts(account))
+    resolver = ScrapeResolver(manifest, _Accounts(account), extractor=_extractor())
     claims = resolver.resolve(account.as_entity(), _field())
     assert len(claims) == 1  # the resolve() path is pure/sync — no DB needed
     assert scraper.calls, "the on-domain surface was scraped"
