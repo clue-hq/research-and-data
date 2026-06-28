@@ -285,3 +285,39 @@ def test_budget_envelope_is_shared_across_sibling_facet_grants() -> None:
     assert facet.calls == 1  # only the first facet fit the shared envelope
     cap_hits = [s for s in spans.get_finished_spans() if s.name == "account.graph.cap_hit"]
     assert any(s.attributes.get("cap_hit_reason") == "budget" for s in cap_hits)
+
+
+def test_malformed_facet_estimate_cannot_inflate_or_crash_budget() -> None:
+    # Regression for the drifted loose cost coercion: ``estimated_cost_cents`` is *worker-supplied*
+    # (the least-trusted input). A negative estimate used to be subtracted from ``remaining``,
+    # *inflating* the envelope (silent per-entity-cap evasion); a NaN used to signal an
+    # InvalidOperation in the spawn-budget comparison, crashing the phase. Both now coerce to
+    # None (== "no estimate" == free) via the shared ``parse_cost_cents``: the malformed facet is
+    # granted at zero cost without moving ``remaining``, so a *real* over-budget follow-up facet is
+    # still denied — the per-account cap holds and the run completes.
+    for bad in ("-1000", "NaN"):
+        policy = RecursionPolicy(
+            by_tier={
+                "top": TierRecursionCaps(
+                    max_depth=2, max_aspect_workers=8, max_facet_workers_per_aspect=4
+                )
+            }
+        )
+        store = FakeAccountRunStore(_resonance_plan(budget_envelope_cents=Decimal(100)))
+        aspect = StubAspectWorker(
+            "account.resonance",
+            facet_requests=[
+                {"aspect": "account.resonance.facet", "estimated_cost_cents": bad},
+                {"aspect": "account.resonance.facet", "estimated_cost_cents": "150"},
+            ],
+        )
+        facet = StubAspectWorker("account.resonance.facet")
+        graph = _graph(store, aspect, facet, policy=policy)
+
+        with collect_spans() as spans:
+            result = _run(graph, tier="top")
+        assert result.status is AccountRunStatus.DONE  # no crash (the NaN case)
+        # malformed → free; the real 150-cent facet is still denied (the envelope was not inflated).
+        assert facet.calls == 1
+        cap_hits = [s for s in spans.get_finished_spans() if s.name == "account.graph.cap_hit"]
+        assert any(s.attributes.get("cap_hit_reason") == "budget" for s in cap_hits)

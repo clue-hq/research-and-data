@@ -59,6 +59,7 @@ from clue_research.core import (
     WorkerResult,
     WorkerStatus,
     new_run_id,
+    parse_cost_cents,
 )
 from clue_research.db import database_url, transaction
 from clue_research.durable.account_run import (
@@ -310,16 +311,6 @@ def _facet_requests(result: WorkerResult) -> list[dict[str, Any]]:
     if not isinstance(raw, list):
         return []
     return [req for req in raw if isinstance(req, dict) and isinstance(req.get("aspect"), str)]
-
-
-def _to_cost(value: object) -> CostCents | None:
-    """Coerce a JSON-carried estimated cost (str/number) to ``CostCents``; ``None`` if absent."""
-    if value is None:
-        return None
-    try:
-        return Decimal(str(value))
-    except (ValueError, ArithmeticError):
-        return None
 
 
 def _terminal_status(statuses: Sequence[WorkerStatus]) -> AccountRunStatus:
@@ -600,7 +591,7 @@ class AccountResearchGraph:
         granted: list[dict[str, Any]] = []
         remaining = budget_remaining
         for req in _facet_requests(result):
-            estimated = _to_cost(req.get("estimated_cost_cents"))
+            estimated = parse_cost_cents(req.get("estimated_cost_cents"))
             decision = self._guard.may_spawn(
                 parent_aspect=parent_aspect,
                 depth=child_depth,
