@@ -70,6 +70,8 @@ from clue_research.core import (
     IdentityBinding,
     VerificationStatus,
     can_be_promoted,
+    decode_jsonb,
+    decode_jsonb_scalar,
     serialize_value_json,
 )
 from clue_research.core.entity import AccountEntity
@@ -572,9 +574,7 @@ class IdentityBindingGateImpl:
         ).first()
         if row is None:
             return None
-        signals = row[2]
-        if isinstance(signals, (bytes, bytearray)):
-            signals = json.loads(bytes(signals))
+        signals = decode_jsonb_scalar(row[2])
         return Binding(
             claim_id=claim_id,
             contact_entity_id=row[3],
@@ -659,9 +659,7 @@ async def load_binding_policy(
             )
         ).first()
         if row is not None:
-            identifier_set = row[1]
-            if isinstance(identifier_set, (bytes, bytearray, str)):
-                identifier_set = json.loads(identifier_set)
+            identifier_set = decode_jsonb(row[1])
             kinds = tuple(str(x) for x in identifier_set)
             unsupported = [k for k in kinds if k not in SUPPORTED_IDENTIFIER_KINDS]
             if unsupported:

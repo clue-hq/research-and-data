@@ -37,7 +37,7 @@ from clue_research.core import (
     ContactEntity,
     EntityId,
     EntityType,
-    parse_value_json,
+    decode_jsonb,
     serialize_value_json,
 )
 from clue_research.identity.normalize import (
@@ -66,15 +66,6 @@ def _table(entity_type: EntityType) -> str:
     if entity_type is EntityType.CONTACT:
         return "contact_entity"
     raise UnknownEntityTypeError(f"no entity table for entity_type {entity_type!r}")
-
-
-def _decode_jsonb(raw: object) -> object:
-    """asyncpg returns jsonb already-decoded; only parse if a driver hands back raw bytes/text."""
-    if isinstance(raw, (bytes, bytearray)):
-        return parse_value_json(bytes(raw))
-    if isinstance(raw, str):
-        return parse_value_json(raw)
-    return raw
 
 
 def _match_keys(canonical_name: str, aliases: Sequence[str]) -> list[str]:
@@ -126,14 +117,14 @@ def _row_to_account(row: Mapping[str, object]) -> AccountEntity:
     return AccountEntity.model_validate(
         {
             **row,
-            "hq_geo": _decode_jsonb(row["hq_geo"]),
-            "registry_ids": _decode_jsonb(row["registry_ids"]) or {},
+            "hq_geo": decode_jsonb(row["hq_geo"]),
+            "registry_ids": decode_jsonb(row["registry_ids"]) or {},
         }
     )
 
 
 def _row_to_contact(row: Mapping[str, object]) -> ContactEntity:
-    return ContactEntity.model_validate({**row, "geo": _decode_jsonb(row["geo"])})
+    return ContactEntity.model_validate({**row, "geo": decode_jsonb(row["geo"])})
 
 
 # --- writes -----------------------------------------------------------------

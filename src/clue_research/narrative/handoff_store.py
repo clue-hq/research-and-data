@@ -20,15 +20,15 @@ import json
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_research.core import CampaignRunId, EntityId
+from clue_research.core import CampaignRunId, EntityId, decode_jsonb
 from clue_research.narrative.handoff import AssembledHandoff
 
 
 def _decode_payload(raw: object) -> AssembledHandoff:
     """Decode an ``account_handoff.payload`` column (asyncpg returns jsonb already decoded; a raw
-    ``str`` / ``bytes`` is parsed defensively) into an :class:`AssembledHandoff`."""
-    payload = json.loads(raw) if isinstance(raw, (str, bytes, bytearray)) else raw
-    return AssembledHandoff.model_validate(payload)
+    ``str`` / ``bytes`` is parsed defensively through ``core.decode_jsonb``) into an
+    :class:`AssembledHandoff`."""
+    return AssembledHandoff.model_validate(decode_jsonb(raw))
 
 
 async def write_handoff(

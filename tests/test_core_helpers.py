@@ -10,6 +10,8 @@ from clue_research.core import (
     Claim,
     ExtractionMethod,
     by_tier_ascending,
+    decode_jsonb,
+    decode_jsonb_scalar,
     first_confident_claim,
     parse_cost_cents,
     parse_value_json,
@@ -31,6 +33,29 @@ def test_to_value_json_rejects_non_json() -> None:
 
     with pytest.raises(ValidationError):
         to_value_json({1, 2, 3})  # a set is not JSON
+
+
+def test_decode_jsonb_passes_decoded_and_parses_raw() -> None:
+    # asyncpg returns structured jsonb already decoded -> an object/array/None passes through as-is
+    assert decode_jsonb({"a": 1}) == {"a": 1}
+    assert decode_jsonb([1, 2]) == [1, 2]
+    assert decode_jsonb(None) is None
+    # a str/bytes round-trip is parsed; the widened guard now covers bytearray too
+    assert decode_jsonb('{"a": 1}') == {"a": 1}
+    assert decode_jsonb(b"[1, 2]") == [1, 2]
+    assert decode_jsonb(bytearray(b'{"a": 1}')) == {"a": 1}
+
+
+def test_decode_jsonb_scalar_never_reparses_a_decoded_scalar() -> None:
+    # A bare-scalar column (claim.value_json): a decoded "robotics" IS the value, not JSON text, so
+    # it must pass through untouched — decode_jsonb would reject the bare word as invalid JSON.
+    assert decode_jsonb_scalar("robotics") == "robotics"
+    assert decode_jsonb_scalar(42) == 42
+    assert decode_jsonb_scalar({"a": 1}) == {"a": 1}
+    assert decode_jsonb_scalar(None) is None
+    # only a raw bytes/bytearray round-trip is parsed
+    assert decode_jsonb_scalar(b'"robotics"') == "robotics"
+    assert decode_jsonb_scalar(bytearray(b"42")) == 42
 
 
 def test_tier_order_constant() -> None:

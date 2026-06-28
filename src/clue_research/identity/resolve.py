@@ -24,13 +24,13 @@ from pydantic import BaseModel, ConfigDict, JsonValue
 from sqlalchemy import ARRAY, Text, bindparam, text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_research.core import EntityId, EntityType
+from clue_research.core import EntityId, EntityType, decode_jsonb
 from clue_research.identity.embedding import (
     DEFAULT_EMBEDDER,
     Embedder,
     vector_literal,
 )
-from clue_research.identity.entities import _decode_jsonb, surviving_id
+from clue_research.identity.entities import surviving_id
 from clue_research.identity.normalize import (
     canonical_registry_id,
     name_key,
@@ -333,8 +333,8 @@ async def _fetch_account_records(
                     "canonical_name": row["canonical_name"],
                     "primary_domain": row["primary_domain"],
                     "aliases": tuple(row["aliases"] or ()),
-                    "hq_geo": _decode_jsonb(row["hq_geo"]),
-                    "registry_ids": _decode_jsonb(row["registry_ids"]) or {},
+                    "hq_geo": decode_jsonb(row["hq_geo"]),
+                    "registry_ids": decode_jsonb(row["registry_ids"]) or {},
                     "cosine": float(row["cosine"]) if row["cosine"] is not None else None,
                 }
             )
