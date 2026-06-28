@@ -1,18 +1,25 @@
-"""The modality-adapter contract — ``fetch → adapt → extract`` (M0.2, alongside ``Resolver``).
+"""The modality-adapter contract — ``fetch → adapt`` (M0.2, alongside ``Resolver``).
 
 A source isn't always "fetch a URL and read text" (staged-flow §7b): video/podcasts need
 transcription, PDFs/journals text extraction, structured payloads parsing — *before* claim
-extraction. This module defines the **three-stage, independently-swappable** contract that makes
-that heterogeneity *open by registration* (like the field registry): adding "anything on the
-internet" is registering a manifest (M4.2) + (if non-trivial) an adapter — never a pipeline fork
-(the fork the architecture forbids).
+extraction. This module defines the **modality normalizer**: a two-stage, independently-swappable
+contract (``fetch`` transport → ``adapt`` normalization) that makes that heterogeneity *open by
+registration* (like the field registry): adding "anything on the internet" is registering a manifest
+(M4.2) + (if non-trivial) an adapter — never a pipeline fork (the fork the architecture forbids).
+
+Extraction is **not** the adapter's job: an adapter emits modality-erased :class:`NormalizedText`,
+and claim extraction varies by *field*, not modality, so it is a separate seam — the
+``ClaimExtractor`` (in :mod:`clue_research.adapters`), injected per-call into ``run_pipeline``. The
+adapter normalizes; the extractor reads the normalized surface and emits the :class:`ClaimDraft`s
+this module defines.
 
 The protocol + its value types live here in ``core`` (the shared-contracts package — the *modality*
 analogue of :class:`~clue_research.core.resolver.Resolver`) so the dispatch framework
 (M4.3, :mod:`clue_research.adapters`), a resolver that needs adaptation (M4.5 Firecrawl), and a
 deep-pass worker (M8) all import one shape and never re-implement it. The concrete adapters, the
-provider seams (``Transcriber`` / PDF extractor / scrape backend), and ``run_pipeline`` live in
-:mod:`clue_research.adapters` — ``core`` imports none of them (the M0.1 kernel rule).
+provider seams (``Transcriber`` / PDF extractor / scrape backend / ``ClaimExtractor``), and
+``run_pipeline`` live in :mod:`clue_research.adapters` — ``core`` imports none of them (the M0.1
+kernel rule).
 """
 
 from __future__ import annotations
@@ -22,9 +29,8 @@ from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, field_validator
 
-from clue_research.core.entity import Entity
 from clue_research.core.enums import Modality, UseClass
-from clue_research.core.field import FieldDef, FieldKey
+from clue_research.core.field import FieldKey
 from clue_research.core.primitives import Confidence, UtcDatetime
 
 
@@ -132,15 +138,18 @@ class GateDecision(StrEnum):
 
 @runtime_checkable
 class ModalityAdapter(Protocol):
-    """The three-stage, independently-swappable source contract (staged-flow §7b).
+    """The two-stage modality normalizer — an independently-swappable source contract (staged-flow
+    §7b).
 
-    ``fetch`` (transport) → ``adapt`` (transcribe / OCR-extract / parse) → ``extract`` (claim
-    extraction). Each stage is a separate seam, so swapping the transcription provider, the
-    PDF extractor, or the HTML→markdown backend is a config/registration change behind
-    ``run_pipeline`` — and because ``extract`` yields :class:`ClaimDraft`s with an ``evidence_span``
-    while ``run_pipeline`` stamps the manifest's tier, the claim contract is identical across
-    modalities ("a new modality is just another source"). ``@runtime_checkable`` lets the adapter
-    registry assert conformance structurally; mypy checks the full signatures.
+    ``fetch`` (transport) → ``adapt`` (transcribe / OCR-extract / parse). Each stage is a separate
+    seam, so swapping the transcription provider, the PDF extractor, or the HTML→markdown backend is
+    a config/registration change behind ``run_pipeline``. ``adapt`` yields modality-erased
+    :class:`NormalizedText` — the surface claim extraction reads — so *extraction* is **not** a
+    method here: it varies by field, not modality, and lives behind the separate ``ClaimExtractor``
+    seam ``run_pipeline`` injects per-call (which yields :class:`ClaimDraft`s with an
+    ``evidence_span`` while ``run_pipeline`` stamps the manifest's tier, so the claim contract is
+    identical across modalities — "a new modality is just another source"). ``@runtime_checkable``
+    lets the adapter registry assert conformance structurally; mypy checks the full signatures.
     """
 
     modality: Modality
@@ -149,14 +158,10 @@ class ModalityAdapter(Protocol):
 
     def adapt(self, artifact: RawArtifact, ctx: AdaptContext) -> NormalizedText: ...
 
-    def extract(
-        self, normalized: NormalizedText, entity: Entity, field: FieldDef
-    ) -> list[ClaimDraft]: ...
-
 
 if TYPE_CHECKING:
     # --- static conformance contract (checked by `make typecheck`, not run) ---
-    # Positive: a minimal structural adapter MUST satisfy the protocol.
+    # Positive: a minimal structural normalizer MUST satisfy the protocol.
     class _ExampleAdapter:
         modality: Modality = Modality.TEXT
 
@@ -165,11 +170,6 @@ if TYPE_CHECKING:
 
         def adapt(self, artifact: RawArtifact, ctx: AdaptContext) -> NormalizedText:
             return NormalizedText(text=artifact.text())
-
-        def extract(
-            self, normalized: NormalizedText, entity: Entity, field: FieldDef
-        ) -> list[ClaimDraft]:
-            return []
 
     _conforms: ModalityAdapter = _ExampleAdapter()
 
@@ -182,10 +182,5 @@ if TYPE_CHECKING:
 
         def adapt(self, artifact: RawArtifact, ctx: AdaptContext) -> NormalizedText:
             return NormalizedText(text="")
-
-        def extract(
-            self, normalized: NormalizedText, entity: Entity, field: FieldDef
-        ) -> list[ClaimDraft]:
-            return []
 
     _rejected: ModalityAdapter = _MissingModality()  # type: ignore[assignment]

@@ -179,16 +179,13 @@ def test_pdf_source_writes_claim_with_span_scrape_method_and_manifest_tier() -> 
                 conn, "journal_pdf", modality=Modality.PDF, tier=3, requires_adapter="pdf_journal"
             )
             text = "Findings: the firm's operational pain is legacy ETL migration is slow."
-            adapter = PdfAdapter(
-                _extractor(
-                    "account.operational_pain",
-                    "legacy ETL migration is slow",
-                    "legacy ETL migration is slow",
-                    source_url="https://journal.example/p.pdf",
-                ),
-                pdf_text=_PdfDouble(),
-                fetcher=InlineBytesFetcher(),
+            extractor = _extractor(
+                "account.operational_pain",
+                "legacy ETL migration is slow",
+                "legacy ETL migration is slow",
+                source_url="https://journal.example/p.pdf",
             )
+            adapter = PdfAdapter(pdf_text=_PdfDouble(), fetcher=InlineBytesFetcher())
             register_adapter("pdf_journal", adapter)
             entity = _account()
             claims = await run_pipeline(
@@ -199,6 +196,7 @@ def test_pdf_source_writes_claim_with_span_scrape_method_and_manifest_tier() -> 
                 _field("account.operational_pain", "str"),
                 run_id=new_run_id(),
                 research_mode=_MODE,
+                extractor=extractor,
             )
             assert len(claims) == 1
             claim = claims[0]
@@ -288,7 +286,7 @@ def test_audio_routes_through_transcription_and_provider_swap_keeps_contract() -
             t1 = _Transcriber("the guest said we struggle with data silos across teams")
             register_adapter(
                 "podcast_transcribe",
-                TranscriptionAdapter(extractor, t1, fetcher=InlineBytesFetcher()),
+                TranscriptionAdapter(t1, fetcher=InlineBytesFetcher()),
             )
             c1 = (
                 await run_pipeline(
@@ -299,6 +297,7 @@ def test_audio_routes_through_transcription_and_provider_swap_keeps_contract() -
                     field,
                     run_id=new_run_id(),
                     research_mode=_MODE,
+                    extractor=extractor,
                 )
             )[0]
             assert t1.calls == 1
@@ -308,7 +307,7 @@ def test_audio_routes_through_transcription_and_provider_swap_keeps_contract() -
             t2 = _Transcriber("verbatim: our biggest issue is data silos in the warehouse")
             register_adapter(
                 "podcast_transcribe",
-                TranscriptionAdapter(extractor, t2, fetcher=InlineBytesFetcher()),
+                TranscriptionAdapter(t2, fetcher=InlineBytesFetcher()),
             )
             c2 = (
                 await run_pipeline(
@@ -319,6 +318,7 @@ def test_audio_routes_through_transcription_and_provider_swap_keeps_contract() -
                     field,
                     run_id=new_run_id(),
                     research_mode=_MODE,
+                    extractor=extractor,
                 )
             )[0]
             assert t2.calls == 1
@@ -353,11 +353,7 @@ def test_gate_skip_makes_no_call_but_exposes_cost_estimate() -> None:
             transcriber = _Transcriber("nobody should transcribe me")
             register_adapter(
                 "podcast_transcribe",
-                TranscriptionAdapter(
-                    _extractor("account.operational_pain", "x", "x"),
-                    transcriber,
-                    fetcher=InlineBytesFetcher(),
-                ),
+                TranscriptionAdapter(transcriber, fetcher=InlineBytesFetcher()),
             )
 
             # cost_estimate is the manifest cost (the pre-spend gate input)
@@ -372,6 +368,7 @@ def test_gate_skip_makes_no_call_but_exposes_cost_estimate() -> None:
                     field,
                     run_id=new_run_id(),
                     research_mode=_MODE,
+                    extractor=_extractor("account.operational_pain", "x", "x"),
                     gate_decision=GateDecision.SKIP,
                 )
             assert claims == []
@@ -409,13 +406,10 @@ def test_cache_runs_costly_op_once_and_zeros_re_incurred_cost() -> None:
             entity = _account()
             field = _field("account.operational_pain", "str")
             transcriber = _Transcriber("we struggle with data silos")
+            extractor = _extractor("account.operational_pain", "data silos", "data silos")
             register_adapter(
                 "podcast_transcribe",
-                TranscriptionAdapter(
-                    _extractor("account.operational_pain", "data silos", "data silos"),
-                    transcriber,
-                    fetcher=InlineBytesFetcher(),
-                ),
+                TranscriptionAdapter(transcriber, fetcher=InlineBytesFetcher()),
             )
             cache = InMemoryArtifactCache()
 
@@ -428,6 +422,7 @@ def test_cache_runs_costly_op_once_and_zeros_re_incurred_cost() -> None:
                     field,
                     run_id=new_run_id(),
                     research_mode=_MODE,
+                    extractor=extractor,
                     cache=cache,
                 )
             )[0]
@@ -440,6 +435,7 @@ def test_cache_runs_costly_op_once_and_zeros_re_incurred_cost() -> None:
                     field,
                     run_id=new_run_id(),
                     research_mode=_MODE,
+                    extractor=extractor,
                     cache=cache,
                 )
             )[0]
@@ -478,7 +474,7 @@ def test_cache_respects_freshness_expiry_and_realtime_never_caches() -> None:
 
             hourly_tx = _Transcriber("data silos a")
             register_adapter(
-                "adp_hourly", TranscriptionAdapter(ex, hourly_tx, fetcher=InlineBytesFetcher())
+                "adp_hourly", TranscriptionAdapter(hourly_tx, fetcher=InlineBytesFetcher())
             )
             clock = _Clock(datetime(2026, 1, 1, tzinfo=UTC))
             cache = InMemoryArtifactCache()
@@ -490,6 +486,7 @@ def test_cache_respects_freshness_expiry_and_realtime_never_caches() -> None:
                 field,
                 run_id=new_run_id(),
                 research_mode=_MODE,
+                extractor=ex,
                 cache=cache,
                 clock=clock,
             )
@@ -502,6 +499,7 @@ def test_cache_respects_freshness_expiry_and_realtime_never_caches() -> None:
                 field,
                 run_id=new_run_id(),
                 research_mode=_MODE,
+                extractor=ex,
                 cache=cache,
                 clock=clock,
             )
@@ -515,6 +513,7 @@ def test_cache_respects_freshness_expiry_and_realtime_never_caches() -> None:
                 field,
                 run_id=new_run_id(),
                 research_mode=_MODE,
+                extractor=ex,
                 cache=cache,
                 clock=clock,
             )
@@ -523,7 +522,7 @@ def test_cache_respects_freshness_expiry_and_realtime_never_caches() -> None:
             # a livecrawl/realtime source is never served from cache (TTL 0)
             live_tx = _Transcriber("data silos b")
             register_adapter(
-                "adp_live", TranscriptionAdapter(ex, live_tx, fetcher=InlineBytesFetcher())
+                "adp_live", TranscriptionAdapter(live_tx, fetcher=InlineBytesFetcher())
             )
             live_cache = InMemoryArtifactCache()
             await run_pipeline(
@@ -534,6 +533,7 @@ def test_cache_respects_freshness_expiry_and_realtime_never_caches() -> None:
                 field,
                 run_id=new_run_id(),
                 research_mode=_MODE,
+                extractor=ex,
                 cache=live_cache,
             )
             await run_pipeline(
@@ -544,6 +544,7 @@ def test_cache_respects_freshness_expiry_and_realtime_never_caches() -> None:
                 field,
                 run_id=new_run_id(),
                 research_mode=_MODE,
+                extractor=ex,
                 cache=live_cache,
             )
             assert live_tx.calls == 2
@@ -565,7 +566,8 @@ def test_registering_a_brand_new_modality_adapter_makes_the_source_consumable() 
                 requires_adapter="substack_long_form",
             )
 
-            # a bespoke adapter for a brand-new source — no waterfall (M4.1) or worker (M8) change
+            # a bespoke normalizer for a brand-new source — no waterfall (M4.1) or worker (M8)
+            # change; extraction is the per-call ClaimExtractor seam, not the adapter's job.
             class _SubstackAdapter:
                 modality = Modality.TEXT
 
@@ -577,19 +579,6 @@ def test_registering_a_brand_new_modality_adapter_makes_the_source_consumable() 
                         text=f"NEWSLETTER: {artifact.text()}", media_type="text/markdown"
                     )
 
-                def extract(
-                    self, normalized: NormalizedText, entity: Entity, field: FieldDef
-                ) -> list[ClaimDraft]:
-                    return [
-                        ClaimDraft(
-                            field_key="account.operational_pain",
-                            value="scaling pain",
-                            evidence_span=span_for(normalized.text, "scaling pain"),
-                            confidence=0.8,
-                            source_url="https://sub.example/post",
-                        )
-                    ]
-
             register_adapter("substack_long_form", _SubstackAdapter())
             entity = _account()
             claims = await run_pipeline(
@@ -600,6 +589,12 @@ def test_registering_a_brand_new_modality_adapter_makes_the_source_consumable() 
                 _field("account.operational_pain", "str"),
                 run_id=new_run_id(),
                 research_mode=_MODE,
+                extractor=_extractor(
+                    "account.operational_pain",
+                    "scaling pain",
+                    "scaling pain",
+                    source_url="https://sub.example/post",
+                ),
             )
             assert len(claims) == 1
             assert claims[0].source_key == "substack"
@@ -625,7 +620,6 @@ def test_each_stage_emits_a_span_and_transcription_cost_is_distinct() -> None:
             register_adapter(
                 "podcast_transcribe",
                 TranscriptionAdapter(
-                    _extractor("account.operational_pain", "data silos", "data silos"),
                     _Transcriber("we struggle with data silos"),
                     fetcher=InlineBytesFetcher(),
                 ),
@@ -640,6 +634,7 @@ def test_each_stage_emits_a_span_and_transcription_cost_is_distinct() -> None:
                     _field("account.operational_pain", "str"),
                     run_id=new_run_id(),
                     research_mode=_MODE,
+                    extractor=_extractor("account.operational_pain", "data silos", "data silos"),
                 )
             by_name = {s.name: s for s in spans.get_finished_spans()}
             # the wrapper span + the three stage spans are all present
@@ -669,11 +664,7 @@ def test_non_transcribed_modality_attributes_cost_to_the_fetch_span() -> None:
             )
             register_adapter(
                 "pdf_journal",
-                PdfAdapter(
-                    _extractor("account.operational_pain", "etl pain", "etl pain"),
-                    pdf_text=_PdfDouble(),
-                    fetcher=InlineBytesFetcher(),
-                ),
+                PdfAdapter(pdf_text=_PdfDouble(), fetcher=InlineBytesFetcher()),
             )
             entity = _account()
             with collect_spans() as spans:
@@ -685,6 +676,7 @@ def test_non_transcribed_modality_attributes_cost_to_the_fetch_span() -> None:
                     _field("account.operational_pain", "str"),
                     run_id=new_run_id(),
                     research_mode=_MODE,
+                    extractor=_extractor("account.operational_pain", "etl pain", "etl pain"),
                 )
             by_name = {s.name: s for s in spans.get_finished_spans()}
             # for a non-AV modality, the call cost is attributed to the fetch span, not adapt
@@ -770,19 +762,7 @@ def test_persist_true_fails_loud_on_a_tenant_private_claim_with_no_tenant() -> N
                 entity_scope=EntityScope.BOTH,
                 identity_binding=IdentityBinding.STRONG,
             )
-            register_adapter(
-                "li_posts2",
-                PassthroughAdapter(
-                    _extractor(
-                        "contact.facet.recent_post",
-                        "spoke at KubeCon",
-                        "spoke at KubeCon",
-                        source_url="https://linkedin.com/in/x",
-                        use_class=UseClass.PROFESSIONAL_PUBLIC,
-                    ),
-                    modality=Modality.TEXT,
-                ),
-            )
+            register_adapter("li_posts2", PassthroughAdapter(modality=Modality.TEXT))
             with pytest.raises(ValueError, match="tenant_private"):
                 await run_pipeline(
                     conn,
@@ -792,6 +772,13 @@ def test_persist_true_fails_loud_on_a_tenant_private_claim_with_no_tenant() -> N
                     _field("contact.facet.recent_post", "str"),
                     run_id=new_run_id(),
                     research_mode=ResearchMode.CONTACT_PROFILING,
+                    extractor=_extractor(
+                        "contact.facet.recent_post",
+                        "spoke at KubeCon",
+                        "spoke at KubeCon",
+                        source_url="https://linkedin.com/in/x",
+                        use_class=UseClass.PROFESSIONAL_PUBLIC,
+                    ),
                     # no tenant_id → the writer refuses to persist the private claim
                 )
 
@@ -858,6 +845,7 @@ def test_unknown_source_raises() -> None:
                     _field("account.operational_pain", "str"),
                     run_id=new_run_id(),
                     research_mode=_MODE,
+                    extractor=_extractor("account.operational_pain", "x", "x"),
                 )
             with pytest.raises(UnknownSourceError, match="not registered"):
                 await cost_estimate(conn, "ghost", "ref")
@@ -880,6 +868,7 @@ def test_pdf_source_without_registered_adapter_raises() -> None:
                     _field("account.operational_pain", "str"),
                     run_id=new_run_id(),
                     research_mode=_MODE,
+                    extractor=_extractor("account.operational_pain", "x", "x"),
                 )
 
     run_async(_run())
@@ -908,18 +897,7 @@ def test_firecrawl_html_adapter_normalizes_to_markdown_claim() -> None:
                         metadata={"backend": "firecrawl"},
                     )
 
-            register_adapter(
-                "firecrawl_html",
-                FirecrawlHtmlAdapter(
-                    _extractor(
-                        "account.operational_pain",
-                        "data silos",
-                        "data silos",
-                        source_url="https://acme.example",
-                    ),
-                    scraper=_Scraper(),
-                ),
-            )
+            register_adapter("firecrawl_html", FirecrawlHtmlAdapter(scraper=_Scraper()))
             entity = _account()
             claims = await run_pipeline(
                 conn,
@@ -929,6 +907,12 @@ def test_firecrawl_html_adapter_normalizes_to_markdown_claim() -> None:
                 _field("account.operational_pain", "str"),
                 run_id=new_run_id(),
                 research_mode=_MODE,
+                extractor=_extractor(
+                    "account.operational_pain",
+                    "data silos",
+                    "data silos",
+                    source_url="https://acme.example",
+                ),
             )
             assert len(claims) == 1
             assert claims[0].source_tier == 2  # official-site scrape stays tier-2
@@ -966,7 +950,7 @@ def test_contact_claim_carries_binding_from_manifest_and_use_class_from_draft() 
                 source_url="https://linkedin.com/in/x",
                 use_class=UseClass.PROFESSIONAL_PUBLIC,
             )
-            register_adapter("li_posts", PassthroughAdapter(extractor, modality=Modality.TEXT))
+            register_adapter("li_posts", PassthroughAdapter(modality=Modality.TEXT))
             claim = (
                 await run_pipeline(
                     conn,
@@ -976,6 +960,7 @@ def test_contact_claim_carries_binding_from_manifest_and_use_class_from_draft() 
                     field,
                     run_id=new_run_id(),
                     research_mode=ResearchMode.CONTACT_PROFILING,
+                    extractor=extractor,
                     # a contact.facet.* claim classifies tenant_private (decision #6); run_pipeline,
                     # as the writer, stamps it and so requires the run's tenant_id.
                     tenant_id="tenant-a",
@@ -1004,18 +989,7 @@ def test_contact_claim_without_manifest_binding_fails_loud() -> None:
                 yields=("contact.facet",),
                 entity_scope=EntityScope.BOTH,
             )
-            register_adapter(
-                "nb",
-                PassthroughAdapter(
-                    _extractor(
-                        "contact.facet.recent_post",
-                        "x",
-                        "x",
-                        use_class=UseClass.PROFESSIONAL_PUBLIC,
-                    ),
-                    modality=Modality.TEXT,
-                ),
-            )
+            register_adapter("nb", PassthroughAdapter(modality=Modality.TEXT))
             with pytest.raises(AdaptError, match="identity_binding_strength"):
                 await run_pipeline(
                     conn,
@@ -1025,6 +999,12 @@ def test_contact_claim_without_manifest_binding_fails_loud() -> None:
                     _field("contact.facet.recent_post", "str"),
                     run_id=new_run_id(),
                     research_mode=ResearchMode.CONTACT_PROFILING,
+                    extractor=_extractor(
+                        "contact.facet.recent_post",
+                        "x",
+                        "x",
+                        use_class=UseClass.PROFESSIONAL_PUBLIC,
+                    ),
                 )
 
     run_async(_run())
@@ -1044,12 +1024,7 @@ def test_contact_claim_without_use_class_fails_loud() -> None:
                 identity_binding=IdentityBinding.STRONG,
             )
             # the extractor leaves use_class unset — fail loud (governance provenance is required)
-            register_adapter(
-                "nu",
-                PassthroughAdapter(
-                    _extractor("contact.facet.recent_post", "x", "x"), modality=Modality.TEXT
-                ),
-            )
+            register_adapter("nu", PassthroughAdapter(modality=Modality.TEXT))
             with pytest.raises(AdaptError, match="use_class"):
                 await run_pipeline(
                     conn,
@@ -1059,6 +1034,7 @@ def test_contact_claim_without_use_class_fails_loud() -> None:
                     _field("contact.facet.recent_post", "str"),
                     run_id=new_run_id(),
                     research_mode=ResearchMode.CONTACT_PROFILING,
+                    extractor=_extractor("contact.facet.recent_post", "x", "x"),
                 )
 
     run_async(_run())

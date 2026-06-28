@@ -140,7 +140,7 @@ async def run_pipeline(
     *,
     run_id: RunId,
     research_mode: ResearchMode,
-    extractor: ClaimExtractor | None = None,
+    extractor: ClaimExtractor,
     gate_decision: GateDecision = GateDecision.RUN,
     cache: ArtifactCache | None = None,
     clock: Callable[[], datetime] = utc_now,
@@ -157,9 +157,10 @@ async def run_pipeline(
         ref: the artifact reference (URL / path / inline) the adapter's transport fetches.
         entity, field: the resolved entity and the field being populated (the claims' target-lock).
         run_id, research_mode: the run provenance on every claim (the resolver can't know it).
-        extractor: an optional per-call extraction seam; when given it **overrides** the adapter's
-            own ``extract`` (and enables the built-in text/structured passthrough when no adapter is
-            registered). When ``None`` the registered adapter's ``extract`` is used.
+        extractor: the field-specific extraction seam (normalized text → claim drafts). The adapter
+            is a pure normalizer (``fetch`` + ``adapt``), so extraction is **always** this per-call
+            seam — and it also enables the built-in text/structured passthrough when no adapter is
+            registered. A SKIP gate short-circuits before it runs, but the caller still declares it.
         gate_decision: ``skip`` returns ``[]`` without any fetch/transcription (still tracing the
             ``cost_estimate``); ``run`` proceeds.
         cache: an optional content-addressed artifact cache; pass a per-run instance to dedupe
@@ -220,7 +221,7 @@ def run_chain(
     *,
     run_id: RunId,
     research_mode: ResearchMode,
-    extractor: ClaimExtractor | None = None,
+    extractor: ClaimExtractor,
     gate_decision: GateDecision = GateDecision.RUN,
     cache: ArtifactCache | None = None,
     clock: Callable[[], datetime] = utc_now,
@@ -268,11 +269,11 @@ def run_chain(
             apply_attributes(span, {ATTR_N_CLAIMS: 0, ATTR_CACHE_HIT: False})
             return []
 
-        adapter = _select_adapter(manifest, extractor)
+        adapter = _select_adapter(manifest)
         normalized, realized_cost, cache_hit = _fetch_and_adapt(
             adapter, ref, ctx, manifest, cache=cache, clock=clock, estimate=estimate
         )
-        drafts = _extract(adapter, extractor, normalized, entity, field, source_key)
+        drafts = _extract(extractor, normalized, entity, field, source_key)
         claims = _materialize(
             drafts,
             manifest=manifest,
@@ -289,13 +290,11 @@ def run_chain(
         return claims
 
 
-def _select_adapter(
-    manifest: RegistrySourceManifest, extractor: ClaimExtractor | None
-) -> ModalityAdapter:
+def _select_adapter(manifest: RegistrySourceManifest) -> ModalityAdapter:
     """Pick the adapter for a source: a source-specific ``requires_adapter`` key, else the modality
     default; for ``text``/``structured`` that declared **no** specific adapter, the built-in
-    passthrough (when an extractor is supplied). ``pdf``/``audio``/``video`` — and any source that
-    explicitly named a ``requires_adapter`` — REQUIRE a registered adapter; a missing one is
+    passthrough normalizer. ``pdf``/``audio``/``video`` — and any source that explicitly named a
+    ``requires_adapter`` — REQUIRE a registered adapter; a missing one is
     :class:`AdapterNotRegisteredError`, not a crash."""
     adapter_key = manifest.requires_adapter or manifest.modality.value
     if is_adapter_registered(adapter_key):
@@ -304,16 +303,14 @@ def _select_adapter(
     # adapter. A source that explicitly named a ``requires_adapter`` (e.g. firecrawl_site →
     # firecrawl_html) whose adapter is unregistered must fail loud — substituting passthrough
     # would extract from the un-normalized ref (a misconfiguration masquerading as a fallback).
-    if (
-        manifest.requires_adapter is None
-        and manifest.modality in (Modality.TEXT, Modality.STRUCTURED)
-        and extractor is not None
+    if manifest.requires_adapter is None and manifest.modality in (
+        Modality.TEXT,
+        Modality.STRUCTURED,
     ):
-        return PassthroughAdapter(extractor, modality=manifest.modality)
+        return PassthroughAdapter(modality=manifest.modality)
     raise AdapterNotRegisteredError(
         f"no adapter registered for key {adapter_key!r} (source {manifest.source_key!r}, modality "
-        f"{manifest.modality.value}); register one with register_adapter, or pass an extractor "
-        "for a text/structured passthrough"
+        f"{manifest.modality.value}); register one with register_adapter"
     )
 
 
@@ -371,22 +368,21 @@ def _fetch_and_adapt(
 
 
 def _extract(
-    adapter: ModalityAdapter,
-    extractor: ClaimExtractor | None,
+    extractor: ClaimExtractor,
     normalized: NormalizedText,
     entity: Entity,
     field: FieldDef,
     source_key: str,
 ) -> list[ClaimDraft]:
     """Run the extraction stage (its own span) and assert every draft's span is grounded in the
-    normalized text. A per-call ``extractor`` overrides the adapter's own ``extract``."""
-    extract_fn = extractor.extract if extractor is not None else adapter.extract
+    normalized text. Extraction is always the per-call ``extractor`` — the adapter only normalizes
+    (``fetch`` + ``adapt``); claim extraction varies by field, not modality."""
     with traced_step(
         adapter_span("extract", source_key),
         **{ATTR_SOURCE_KEY: source_key, ATTR_FIELD_KEY: field.field_key},
     ) as extract_span:
         start = perf_counter()
-        drafts = list(extract_fn(normalized, entity, field))
+        drafts = list(extractor.extract(normalized, entity, field))
         apply_attributes(
             extract_span, {ATTR_LATENCY_MS: _elapsed_ms(start), ATTR_N_CLAIMS: len(drafts)}
         )

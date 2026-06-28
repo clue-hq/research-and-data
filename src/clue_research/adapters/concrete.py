@@ -11,11 +11,14 @@ Enough to prove the framework end-to-end and unblock M4.5 (Firecrawl scrape) and
 * :class:`FirecrawlHtmlAdapter` — the tier-2 official-site scrape normalization M4.5 consumes:
   page → markdown via the :class:`ScrapeBackend` seam (default Firecrawl-backed).
 
-Each adapter composes its modality-specific *transport* (``fetch``) + *normalization* (``adapt``)
-with an injected *extraction* (``extract``) seam — three independently-swappable seams behind one
-:class:`~clue_research.core.ModalityAdapter`. The live provider clients are **lazy-imported** so the
-double-driven CI path (locked decision #3) never needs the SDK/key; the Firecrawl client is wired in
-M4.5. Adapters import only ``core`` + these seams — never a resolver or another adapter.
+Each adapter is a pure *normalizer*: it composes its modality-specific *transport* (``fetch``) +
+*normalization* (``adapt``) into modality-erased :class:`~clue_research.core.NormalizedText` — two
+independently-swappable seams behind one :class:`~clue_research.core.ModalityAdapter`. Claim
+*extraction* is **not** an adapter concern (it varies by field, not modality): it is the separate
+:class:`~clue_research.adapters.seams.ClaimExtractor` seam ``run_pipeline`` injects per-call. The
+live provider clients are **lazy-imported** so the double-driven CI path (locked decision #3) never
+needs the SDK/key; the Firecrawl client is wired in M4.5. Adapters import only ``core`` + these
+seams — never a resolver or another adapter.
 """
 
 from __future__ import annotations
@@ -27,7 +30,6 @@ from typing import Any
 from clue_research.adapters.seams import (
     AdaptError,
     BytesFetcher,
-    ClaimExtractor,
     FetchError,
     PdfTextExtractor,
     ScrapeBackend,
@@ -35,9 +37,6 @@ from clue_research.adapters.seams import (
 )
 from clue_research.core import (
     AdaptContext,
-    ClaimDraft,
-    Entity,
-    FieldDef,
     Modality,
     NormalizedText,
     RawArtifact,
@@ -162,20 +161,18 @@ def _firecrawl_markdown(result: Any) -> str | None:
 class PassthroughAdapter:
     """``text`` / ``structured`` source needing no transcription/OCR — the default (substrate §7b).
 
-    ``fetch`` gets the bytes (inline by default), ``adapt`` decodes them unchanged, ``extract``
-    delegates to the injected :class:`ClaimExtractor`. No transcription/OCR is ever invoked — the
-    M4.3 "passthrough still types claims correctly" acceptance criterion.
+    ``fetch`` gets the bytes (inline by default), ``adapt`` decodes them unchanged. No
+    transcription/OCR is ever invoked — the M4.3 "passthrough still types claims correctly"
+    acceptance criterion (the claim typing is done by ``run_pipeline``'s per-call extractor).
     """
 
     def __init__(
         self,
-        extractor: ClaimExtractor,
         *,
         fetcher: BytesFetcher | None = None,
         modality: Modality = Modality.TEXT,
     ) -> None:
         self.modality = modality
-        self._extractor = extractor
         self._fetcher = fetcher or InlineBytesFetcher()
 
     def fetch(self, ref: str, ctx: AdaptContext) -> RawArtifact:
@@ -183,11 +180,6 @@ class PassthroughAdapter:
 
     def adapt(self, artifact: RawArtifact, ctx: AdaptContext) -> NormalizedText:
         return NormalizedText(text=artifact.text(), media_type=artifact.media_type)
-
-    def extract(
-        self, normalized: NormalizedText, entity: Entity, field: FieldDef
-    ) -> list[ClaimDraft]:
-        return self._extractor.extract(normalized, entity, field)
 
 
 class PdfAdapter:
@@ -197,12 +189,10 @@ class PdfAdapter:
 
     def __init__(
         self,
-        extractor: ClaimExtractor,
         *,
         pdf_text: PdfTextExtractor | None = None,
         fetcher: BytesFetcher | None = None,
     ) -> None:
-        self._extractor = extractor
         self._pdf_text = pdf_text or PypdfTextExtractor()
         self._fetcher = fetcher or FileBytesFetcher()
 
@@ -212,27 +202,20 @@ class PdfAdapter:
     def adapt(self, artifact: RawArtifact, ctx: AdaptContext) -> NormalizedText:
         return self._pdf_text.to_text(artifact)
 
-    def extract(
-        self, normalized: NormalizedText, entity: Entity, field: FieldDef
-    ) -> list[ClaimDraft]:
-        return self._extractor.extract(normalized, entity, field)
-
 
 class TranscriptionAdapter:
-    """Audio/video source: media → transcript → claims. The ``adapt`` stage is the costly,
-    *gated* transcription (its own cost span). The :class:`Transcriber` is injected — swapping it
-    (a config change) keeps the claim contract, an M4.3 acceptance criterion."""
+    """Audio/video source: media → transcript. The ``adapt`` stage is the costly, *gated*
+    transcription (its own cost span). The :class:`Transcriber` is injected — swapping it (a config
+    change) keeps the claim contract, an M4.3 acceptance criterion."""
 
     def __init__(
         self,
-        extractor: ClaimExtractor,
         transcriber: Transcriber,
         *,
         fetcher: BytesFetcher | None = None,
         modality: Modality = Modality.AUDIO,
     ) -> None:
         self.modality = modality
-        self._extractor = extractor
         self._transcriber = transcriber
         self._fetcher = fetcher or FileBytesFetcher()
 
@@ -242,22 +225,17 @@ class TranscriptionAdapter:
     def adapt(self, artifact: RawArtifact, ctx: AdaptContext) -> NormalizedText:
         return self._transcriber.transcribe(artifact)
 
-    def extract(
-        self, normalized: NormalizedText, entity: Entity, field: FieldDef
-    ) -> list[ClaimDraft]:
-        return self._extractor.extract(normalized, entity, field)
-
 
 class FirecrawlHtmlAdapter:
     """The tier-2 HTML→markdown adapter M4.5's Firecrawl resolver consumes (it does not
     hand-roll fetch/parse). ``fetch`` scrapes via the :class:`ScrapeBackend` seam (Firecrawl returns
-    markdown); ``adapt`` carries it through as the normalized surface; ``extract`` is injected.
+    markdown); ``adapt`` carries it through as the normalized surface. Extraction is the per-call
+    ``ClaimExtractor`` ``run_chain`` injects, not the adapter's concern.
     ``modality = text`` (matches the ``firecrawl_site`` manifest)."""
 
     modality = Modality.TEXT
 
-    def __init__(self, extractor: ClaimExtractor, *, scraper: ScrapeBackend | None = None) -> None:
-        self._extractor = extractor
+    def __init__(self, *, scraper: ScrapeBackend | None = None) -> None:
         self._scraper = scraper or FirecrawlScrapeBackend()
 
     def fetch(self, ref: str, ctx: AdaptContext) -> RawArtifact:
@@ -267,8 +245,3 @@ class FirecrawlHtmlAdapter:
         return NormalizedText(
             text=artifact.text(), media_type="text/markdown", metadata=artifact.metadata
         )
-
-    def extract(
-        self, normalized: NormalizedText, entity: Entity, field: FieldDef
-    ) -> list[ClaimDraft]:
-        return self._extractor.extract(normalized, entity, field)

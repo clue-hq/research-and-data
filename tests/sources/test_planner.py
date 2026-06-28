@@ -15,7 +15,7 @@ from decimal import Decimal
 import pytest
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_research.adapters import run_pipeline
+from clue_research.adapters import CallableClaimExtractor, run_pipeline
 from clue_research.core import (
     Claim,
     Completion,
@@ -300,7 +300,8 @@ def test_m4_3_run_pipeline_honors_the_skip_gate() -> None:
                 field_key=_FIELD, value_type="str", tier_plan=("podcast",), pass_kind=PassKind.DEEP
             )
             # M4.3 honors the planner's verdict: a SKIP incurs no fetch/transcription, no claims —
-            # even though 'podcast' has no adapter registered (the SKIP short-circuits before it).
+            # even though 'podcast' has no adapter registered (the SKIP short-circuits before it,
+            # and before the extractor the caller still declares).
             claims = await run_pipeline(
                 conn,
                 "podcast",
@@ -309,6 +310,7 @@ def test_m4_3_run_pipeline_honors_the_skip_gate() -> None:
                 field,
                 run_id=new_run_id(),
                 research_mode=_M2,
+                extractor=CallableClaimExtractor(lambda n, e, f: []),
                 gate_decision=skip,
             )
             assert claims == []

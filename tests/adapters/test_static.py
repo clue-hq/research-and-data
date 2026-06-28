@@ -24,7 +24,6 @@ from clue_research.adapters import (
     span_for,
     unregister_adapter,
 )
-from clue_research.adapters.extractors import CallableClaimExtractor
 from clue_research.core import Modality
 
 _ADAPTERS_DIR = Path(__file__).resolve().parents[2] / "src" / "clue_research" / "adapters"
@@ -63,8 +62,7 @@ def test_adapters_package_does_not_import_resolvers() -> None:
 
 
 def _passthrough() -> PassthroughAdapter:
-    extractor = CallableClaimExtractor(lambda n, e, f: [])
-    return PassthroughAdapter(extractor, modality=Modality.TEXT)
+    return PassthroughAdapter(modality=Modality.TEXT)
 
 
 def test_register_and_get_adapter_roundtrip() -> None:
