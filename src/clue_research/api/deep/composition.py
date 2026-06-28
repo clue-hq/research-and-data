@@ -75,7 +75,7 @@ from clue_research.core import (
     PhaseContext,
     PreSpendGate,
 )
-from clue_research.db import transaction
+from clue_research.db import ConnFactory, transaction
 from clue_research.discovery_scoring.tiering import TIER_FIELD, cutoff_version
 from clue_research.durable import (
     AccountResearchGraph,
@@ -95,7 +95,6 @@ from clue_research.profiling import (
     profile_contact,
 )
 from clue_research.profiling.contact.binding import BindingClassifier
-from clue_research.profiling.runtime import SessionFactory
 from clue_research.synthesis import guard_synthesis_resolution
 
 __all__ = [
@@ -130,7 +129,7 @@ class DeepPhaseComposition:
 def build_high_tier_resolver(
     *,
     spec: ICPSpec,
-    session_factory: SessionFactory = transaction,
+    session_factory: ConnFactory = transaction,
     deep_tiers: frozenset[str] | None = None,
 ) -> HighTierResolver:
     """The :data:`~clue_research.api.deep.handler.HighTierResolver` that reads the human-approved
@@ -208,7 +207,7 @@ def build_account_axis_registry(
     *,
     gateway: LLMGateway,
     pre_spend_gate: PreSpendGate,
-    session_factory: SessionFactory = transaction,
+    session_factory: ConnFactory = transaction,
     planner_model: str | None = None,
     pack_namespaces: Sequence[str] = (),
     synthesis_guard: SynthesisGuard = guard_synthesis_resolution,
@@ -272,7 +271,7 @@ def build_deep_phase_handler(
     pre_spend_gate: PreSpendGate | None = None,
     binding_classifier: BindingClassifier | None = None,
     synthesis_guard: SynthesisGuard = guard_synthesis_resolution,
-    session_factory: SessionFactory = transaction,
+    session_factory: ConnFactory = transaction,
     high_tier_resolver: HighTierResolver | None = None,
     checkpointer_factory: CheckpointerFactory | None = None,
     budget_cap_cents: CostCents | None = None,

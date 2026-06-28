@@ -57,7 +57,6 @@ from clue_research.profiling import (
 from clue_research.profiling.committee import CommitteeAspectWorker, CommitteeSource
 from clue_research.profiling.contact import ContactProfileAspectWorker
 from clue_research.profiling.contact.binding import BindingClassifier, BindingInput
-from clue_research.profiling.runtime import SessionFactory
 from clue_research.sources import seed_source_manifests
 from clue_research.synthesis import guard_synthesis_resolution
 from clue_research.verification import (
@@ -212,7 +211,7 @@ def build_profiling_workers(
     *,
     gateway: LLMGateway,
     committee_sources: Sequence[CommitteeSource],
-    session_factory: SessionFactory = transaction,
+    session_factory: ConnFactory = transaction,
     pre_spend_gate: PreSpendGate | None = None,
     binding_classifier: BindingClassifier | None = None,
     synthesis_guard: SynthesisGuard | None = guard_synthesis_resolution,
@@ -277,7 +276,7 @@ def build_worker_registry(
     *,
     gateway: LLMGateway,
     committee_sources: Sequence[CommitteeSource],
-    session_factory: SessionFactory = transaction,
+    session_factory: ConnFactory = transaction,
     pre_spend_gate: PreSpendGate | None = None,
     binding_classifier: BindingClassifier | None = None,
     role_model: str | None = None,

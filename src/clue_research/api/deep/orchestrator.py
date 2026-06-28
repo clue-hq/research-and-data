@@ -81,6 +81,7 @@ from clue_research.core import (
     RunId,
     WorkerStatus,
 )
+from clue_research.db import ConnFactory
 from clue_research.durable import AccountRunStatus, AccountRunSubPhase, AccountSpec
 from clue_research.profiling import (
     AccountProfileResult,
@@ -98,7 +99,6 @@ from clue_research.profiling.contact import (
     ContactProfileConfig,
     UseClassTagger,
 )
-from clue_research.profiling.runtime import SessionFactory
 
 # The injected worker callables — typed by their *return* so a fake just returns the right result
 # shape; each worker's full kwarg signature is checked at M8A.6 + integration, not here, so
@@ -228,7 +228,7 @@ class AccountDeepOrchestrator:
         discover_committee: DiscoverCommitteeFn,
         profile_contact: ProfileContactFn,
         io: AccountRunIO,
-        session_factory: SessionFactory,
+        session_factory: ConnFactory,
         spec: ICPSpec,
         config: DeepPhaseConfig,
         budget: BudgetEngine,

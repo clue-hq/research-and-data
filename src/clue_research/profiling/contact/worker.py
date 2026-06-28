@@ -35,6 +35,7 @@ from clue_research.core import (
     WorkerResult,
     WorkerStatus,
 )
+from clue_research.db import ConnFactory
 from clue_research.icp.spec import get_icp_version
 from clue_research.identity import get_account, get_contact, surviving_id
 from clue_research.profiling.contact.binding import DEFAULT_BINDING_CLASSIFIER, BindingClassifier
@@ -46,7 +47,6 @@ from clue_research.profiling.contact.results import (
     ContactProfileResult,
 )
 from clue_research.profiling.contact.use_class import DEFAULT_USE_CLASS_TAGGER, UseClassTagger
-from clue_research.profiling.runtime import SessionFactory
 
 # The conservative default dial (top tier depth 2, lower tiers single-level) — the ``api`` root
 # injects the run's versioned :class:`RecursionPolicy`; tests use this default.
@@ -157,7 +157,7 @@ class ContactProfileAspectWorker:
     (``caps_for(tier).max_facet_workers_per_aspect``, and only if the aspect is recursion-eligible)
     — the versioned dial is the single source of truth, so a low-tier contact gets single-level
     depth regardless of any per-call hint. The worker opens a connection from the injected
-    ``SessionFactory`` (the orchestrator never passes one). A level-1 worker (``depth>=1``) requests
+    ``ConnFactory`` (the orchestrator never passes one). A level-1 worker (``depth>=1``) requests
     no further sub-workers (single descent)."""
 
     aspect = "contact.facet"
@@ -165,7 +165,7 @@ class ContactProfileAspectWorker:
     def __init__(
         self,
         *,
-        session_factory: SessionFactory,
+        session_factory: ConnFactory,
         binding_classifier: BindingClassifier = DEFAULT_BINDING_CLASSIFIER,
         use_class_tagger: UseClassTagger = DEFAULT_USE_CLASS_TAGGER,
         recursion: RecursionPolicy = _DEFAULT_RECURSION_POLICY,

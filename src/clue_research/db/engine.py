@@ -38,10 +38,10 @@ from sqlalchemy.ext.asyncio import (
 
 # The dependency-injection seam every persistence-touching worker/handler takes: a zero-arg factory
 # yielding a connection context manager — :func:`transaction` (commit-on-exit) or :func:`connection`
-# in production, a rollback-scoped connection in tests. Declared here, next to the helpers it
-# abstracts over, so callers inject one named type instead of re-spelling
-# ``Callable[[], AbstractAsyncContextManager[AsyncConnection]]`` in every module. The deep-profiling
-# (M8) and review (M13) workers name the same seam ``SessionFactory``, re-exported from this alias.
+# in production, a rollback-scoped connection in tests. Declared here once, next to the helpers it
+# abstracts over, so every caller injects this one named type instead of re-spelling
+# ``Callable[[], AbstractAsyncContextManager[AsyncConnection]]``. The M6 phase handlers, M8
+# deep-profiling workers, and M13 review surface all annotate their ``session_factory`` with it.
 ConnFactory = Callable[[], AbstractAsyncContextManager[AsyncConnection]]
 
 # The shared seam: the DSN is read from this env var. A parallel agent (M0.4) documents it in
