@@ -185,11 +185,6 @@ def _confidence(source: str, tier: int | None = None) -> float:
     return min(1.0, base)
 
 
-def _conn_factory_default() -> AbstractAsyncContextManager[AsyncConnection]:
-    """Default connection source — one committed transaction per ``resolve`` (mirrors M9.4)."""
-    return transaction()
-
-
 class JurisdictionResolverImpl:
     """The M10.1 :class:`JurisdictionResolver` implementation.
 
@@ -205,9 +200,7 @@ class JurisdictionResolverImpl:
         run_id: RunId,
         *,
         policy_getter: Callable[[str], JurisdictionPolicy] = get_policy,
-        conn_factory: Callable[[], AbstractAsyncContextManager[AsyncConnection]] = (
-            _conn_factory_default
-        ),
+        conn_factory: Callable[[], AbstractAsyncContextManager[AsyncConnection]] = transaction,
         persist: bool = True,
         sink: MetricSink | None = None,
     ) -> None:

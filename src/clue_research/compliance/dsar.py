@@ -300,11 +300,6 @@ async def _apply_tombstone(
     return tombstone_id
 
 
-def _conn_factory_default() -> AbstractAsyncContextManager[AsyncConnection]:
-    """Default connection source — one committed transaction per operation (mirrors M10.1/M10.3)."""
-    return transaction()
-
-
 # --- the data-subject rights service (controller-scoped) --------------------
 
 
@@ -337,9 +332,7 @@ class DataSubjectRightsImpl:
         self,
         client_id: str,
         *,
-        conn_factory: Callable[[], AbstractAsyncContextManager[AsyncConnection]] = (
-            _conn_factory_default
-        ),
+        conn_factory: Callable[[], AbstractAsyncContextManager[AsyncConnection]] = transaction,
         sink: MetricSink | None = None,
     ) -> None:
         self._client_id = client_id
@@ -557,9 +550,7 @@ class RetentionSweep:
         self,
         freshness: Freshness,
         *,
-        conn_factory: Callable[[], AbstractAsyncContextManager[AsyncConnection]] = (
-            _conn_factory_default
-        ),
+        conn_factory: Callable[[], AbstractAsyncContextManager[AsyncConnection]] = transaction,
         sink: MetricSink | None = None,
     ) -> None:
         self._freshness = freshness

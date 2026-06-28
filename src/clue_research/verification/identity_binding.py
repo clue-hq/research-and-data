@@ -420,14 +420,6 @@ def classify_binding(
 # --- the IdentityBindingGate ------------------------------------------------
 
 
-def _conn_factory_default() -> AbstractAsyncContextManager[AsyncConnection]:
-    """Default connection source: one committed transaction per ``classify`` (cache probe + the
-    entity/manifest reads + the eval insert + the status backstop are atomic — there is no external
-    call to hold a connection across, unlike the M9.3 judge). Indirected so the engine
-    resolves lazily at call time; tests inject a rollback-bound factory."""
-    return transaction()
-
-
 class IdentityBindingGateImpl:
     """The M9.4 identity-binding gate (implements :class:`clue_research.core.verification.
     IdentityBindingGate`).
@@ -440,9 +432,7 @@ class IdentityBindingGateImpl:
         self,
         *,
         policy: BindingPolicy = DEFAULT_BINDING_POLICY,
-        conn_factory: Callable[[], AbstractAsyncContextManager[AsyncConnection]] = (
-            _conn_factory_default
-        ),
+        conn_factory: Callable[[], AbstractAsyncContextManager[AsyncConnection]] = transaction,
         record_evals: bool = True,
         sink: MetricSink | None = None,
     ) -> None:

@@ -270,13 +270,6 @@ class _ScanRow(NamedTuple):
 # --- the Freshness engine ---------------------------------------------------
 
 
-def _conn_factory_default() -> AbstractAsyncContextManager[AsyncConnection]:
-    """Default connection source: one committed transaction per scan (a read-only scan + the
-    cadence/TTL reads). Indirected so the engine resolves lazily at call time; tests inject a
-    rollback-bound factory."""
-    return transaction()
-
-
 def _utcnow() -> datetime:
     return datetime.now(UTC)
 
@@ -296,9 +289,7 @@ class FreshnessImpl:
         *,
         policy: CadencePolicy = DEFAULT_CADENCE_POLICY,
         scope: TenantScope = ALL_TENANTS,
-        conn_factory: Callable[[], AbstractAsyncContextManager[AsyncConnection]] = (
-            _conn_factory_default
-        ),
+        conn_factory: Callable[[], AbstractAsyncContextManager[AsyncConnection]] = transaction,
         sink: MetricSink | None = None,
     ) -> None:
         self._policy = policy
