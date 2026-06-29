@@ -30,10 +30,20 @@ Shipped so far:
   durable-backed readiness reader, the :class:`~clue_research.narrative.HandoffService`, and the
   ``CampaignPhase.HANDOFF`` phase handler that drives the durable emit/notify path. This is the
   terminal seam of the subsystem (overview §3).
+* the **M13 Review/Feedback/Observability wiring** — the ``CampaignPhase.REVIEW`` handler
+  (:mod:`clue_research.api.review`), the M13.2 disposition substrate
+  (:mod:`clue_research.api.disposition_wiring`), the M13.4 read-only observability surface
+  (:mod:`clue_research.api.observability_wiring`), and the integration join
+  (:mod:`clue_research.api.review_feedback_wiring`): binds M13.2's concrete disposition emitter into
+  the M13.1 review surface and cascades M10.5 erasure/objection into disposition tombstoning.
 """
 
 from __future__ import annotations
 
+from clue_research.api.backtest_wiring import (
+    LabeledDatasetBacktestGate,
+    build_backtest_gate,
+)
 from clue_research.api.compliance_wiring import register_compliance_wiring
 from clue_research.api.composition import (
     VerificationBindingClassifier,
@@ -44,6 +54,10 @@ from clue_research.api.composition import (
     load_research_packs,
     production_binding_classifier,
     register_profiling_workers,
+)
+from clue_research.api.disposition_wiring import (
+    build_disposition_store,
+    build_review_disposition_emitter,
 )
 from clue_research.api.handoff_app import (
     HANDOFF_SCHEMA_HEADER,
@@ -66,10 +80,41 @@ from clue_research.api.handoff_wiring import (
     build_handoff_service,
     register_handoff_phase_handler,
 )
+from clue_research.api.learning_wiring import build_learning_loop
 from clue_research.api.narrative_wiring import (
     build_client_knowledge_retriever,
     build_handoff_assembler,
     register_narrative_wiring,
+)
+from clue_research.api.observability_wiring import (
+    BudgetCapsPreRunEstimator,
+    BudgetEngineBurnDownReader,
+    CheckpointCoverageReportReader,
+    ClaimScanVerificationHealthReader,
+    DurableCampaignStateReader,
+    build_campaign_state_reader,
+    build_cost_burndown_reader,
+    build_coverage_report_reader,
+    build_observability_surface,
+    build_pre_run_estimator,
+    build_verification_health_reader,
+)
+from clue_research.api.review import (
+    CampaignRunResumeHook,
+    DbVerificationAnnotationReader,
+    NoopReviewDispositionEmitter,
+    ReviewPhaseHandler,
+    build_review_account_resolver,
+    build_review_phase_handler,
+    build_review_surface,
+    register_review_phase_handler,
+)
+from clue_research.api.review_feedback_wiring import (
+    ContactDispositionTombstoner,
+    TombstoneCascadingDataSubjectRights,
+    build_dsar_with_disposition_cascade,
+    build_reviewed_phase_handler,
+    register_reviewed_phase_handler,
 )
 from clue_research.api.synthesis_wiring import register_synthesis_wiring
 from clue_research.api.verification import (
@@ -116,4 +161,38 @@ __all__ = [
     "HandoffPhaseHandler",
     "build_handoff_phase_handler",
     "register_handoff_phase_handler",
+    # M13.4 observability surface wiring
+    "DurableCampaignStateReader",
+    "BudgetEngineBurnDownReader",
+    "BudgetCapsPreRunEstimator",
+    "ClaimScanVerificationHealthReader",
+    "CheckpointCoverageReportReader",
+    "build_campaign_state_reader",
+    "build_cost_burndown_reader",
+    "build_pre_run_estimator",
+    "build_verification_health_reader",
+    "build_coverage_report_reader",
+    "build_observability_surface",
+    # M13.1 review-surface wiring
+    "ReviewPhaseHandler",
+    "DbVerificationAnnotationReader",
+    "CampaignRunResumeHook",
+    "NoopReviewDispositionEmitter",
+    "build_review_account_resolver",
+    "build_review_surface",
+    "build_review_phase_handler",
+    "register_review_phase_handler",
+    # M13.2 disposition-capture wiring
+    "build_disposition_store",
+    "build_review_disposition_emitter",
+    # M13 integration join (review↔disposition emitter; M10.5→disposition tombstone cascade)
+    "build_reviewed_phase_handler",
+    "register_reviewed_phase_handler",
+    "ContactDispositionTombstoner",
+    "TombstoneCascadingDataSubjectRights",
+    "build_dsar_with_disposition_cascade",
+    # M13.3 learning-loop wiring (backtest gate + the loop)
+    "LabeledDatasetBacktestGate",
+    "build_backtest_gate",
+    "build_learning_loop",
 ]

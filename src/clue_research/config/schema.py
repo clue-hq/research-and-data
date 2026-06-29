@@ -280,3 +280,21 @@ class FreshnessTtls(BaseModel):
         }
     )
     by_field_key: dict[str, timedelta] = Field(default_factory=dict)
+
+
+class VerificationHealthThresholds(BaseModel):
+    """Alert floors for the M13.4 verification-health panel (Doc C §6 — the early-warning surface).
+
+    The panel reports three rates — tier-4 faithfulness pass share (M9.3), strong identity-binding
+    share (M9.4 / Doc D), and the M9.2 corroboration pass rate — and *flags* one when it drops below
+    its floor, signalling a possible model/resolver regression. The floors are *policy-as-data*
+    (conventions §2): per-client/ICP tunable config, not a code constant, so a stricter client can
+    raise them without a code change. Each is a share in ``[0, 1]``; a metric with no observations
+    (zero denominator) never alerts (there is nothing to be unhealthy about yet).
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    faithfulness_pass_floor: float = Field(default=0.8, ge=0.0, le=1.0)
+    strong_binding_floor: float = Field(default=0.5, ge=0.0, le=1.0)
+    corroboration_pass_floor: float = Field(default=0.5, ge=0.0, le=1.0)
