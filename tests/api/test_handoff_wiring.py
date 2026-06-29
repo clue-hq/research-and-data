@@ -48,6 +48,7 @@ from clue_research.narrative import (
     RecordingHandoffPublisher,
     list_handoff_events,
 )
+from clue_research.review import ensure_review_session, finalize_review_session
 from tests.db.conftest import run_async
 from tests.profiling.conftest import rollback_conn
 
@@ -153,6 +154,42 @@ def test_ready_accounts_filters_to_m12_ready() -> None:
             assert all(r.is_ready for r in ready)
             # cross-tenant: no ready accounts for another client
             assert await reader.ready_accounts(campaign_run_id=run, client_id=_OTHER) == ()
+
+    run_async(_run())
+
+
+def test_require_finalized_review_gates_handoff_readiness() -> None:
+    """M13.1 gate: with ``require_finalized_review=True`` a M12-ready account is handoff-ready ONLY
+    after its Tier-1 review session is finalized (finalize unblocks; un-finalized stays pending).
+    The flag defaults OFF, so the plain reader is unaffected (back-compat)."""
+
+    async def _run() -> None:
+        async with rollback_conn() as conn:
+            run = await _seed_run(conn)
+            acct = await _account(conn, "reviewed")
+            await _add_account_run(
+                conn,
+                run=run,
+                entity=acct,
+                status=AccountRunStatus.DONE,
+                sub_phase=AccountRunSubPhase.CONTACTS_COMPLETE,
+            )
+            gated = DurableHandoffReadinessReader(
+                conn_factory=_factory(conn), require_finalized_review=True
+            )
+            # M12-ready, but the Tier-1 review is not finalized → gated out (handoff pending).
+            assert await gated.ready_accounts(campaign_run_id=run, client_id=_CLIENT) == ()
+            # the default reader (gate OFF) still sees it ready — back-compat.
+            ungated = DurableHandoffReadinessReader(conn_factory=_factory(conn))
+            ready_ungated = await ungated.ready_accounts(campaign_run_id=run, client_id=_CLIENT)
+            assert {r.account_entity_id for r in ready_ungated} == {acct}
+            # finalize the review session → the gated reader now lets the account through.
+            session = await ensure_review_session(
+                conn, account_entity_id=acct, campaign_run_id=run, client_id=_CLIENT
+            )
+            await finalize_review_session(conn, session.id)
+            ready = await gated.ready_accounts(campaign_run_id=run, client_id=_CLIENT)
+            assert {r.account_entity_id for r in ready} == {acct}
 
     run_async(_run())
 

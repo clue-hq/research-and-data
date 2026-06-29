@@ -21,6 +21,8 @@ from clue_research.core.enums import (
     BudgetVerdict,
     CampaignPhase,
     ClaimFlavor,
+    ConfigRevisionStatus,
+    ConfigRevisionTarget,
     EntityScope,
     EntityType,
     EnumerationScope,
@@ -37,8 +39,12 @@ from clue_research.core.enums import (
     PhaseStatus,
     PreSpendKind,
     PreSpendVerdict,
+    PromotionMode,
     ResearchMode,
     ReuseScope,
+    ReviewAction,
+    ReviewRejectReason,
+    ReviewSessionStatus,
     UseClass,
     UseReason,
     VerificationStatus,
@@ -125,6 +131,11 @@ from clue_research.core.idempotency import (
     idempotency_key,
     phase_key,
 )
+from clue_research.core.learning import (
+    BacktestGate,
+    BacktestRegression,
+    BacktestVerdict,
+)
 from clue_research.core.modality import (
     AdaptContext,
     ClaimDraft,
@@ -132,6 +143,10 @@ from clue_research.core.modality import (
     ModalityAdapter,
     NormalizedText,
     RawArtifact,
+)
+from clue_research.core.observability import (
+    CoverageReport,
+    UnsearchedChannel,
 )
 from clue_research.core.primitives import (
     CampaignRunId,
@@ -151,6 +166,19 @@ from clue_research.core.primitives import (
 )
 from clue_research.core.resolver import Resolver, ResolverError, RetryableResolverError
 from clue_research.core.retrieval import ClientKnowledgeChunk, ClientKnowledgeRetriever
+from clue_research.core.review import (
+    ClaimAnnotation,
+    FieldConflict,
+    ReviewActionOutcome,
+    ReviewClaimRow,
+    ReviewCommitteeMember,
+    ReviewDispositionEmitter,
+    ReviewResumeHook,
+    ReviewSession,
+    ReviewSessionId,
+    ReviewSurface,
+    VerificationAnnotationReader,
+)
 from clue_research.core.source import SourceManifest
 from clue_research.core.verification import (
     AgeOutCandidate,
@@ -212,6 +240,18 @@ __all__ = [
     "PreSpendKind",
     "EnumerationScope",
     "JudgeVerdict",
+    # enums — M13.1 review surface
+    "ReviewAction",
+    "ReviewSessionStatus",
+    "ReviewRejectReason",
+    # enums — M13.3 learning loop
+    "ConfigRevisionTarget",
+    "ConfigRevisionStatus",
+    "PromotionMode",
+    # M13.3 learning-loop backtest seam (impl injected at the api root)
+    "BacktestGate",
+    "BacktestVerdict",
+    "BacktestRegression",
     # fields
     "FieldClass",
     "FieldKey",
@@ -249,6 +289,9 @@ __all__ = [
     "NormalizedText",
     "ClaimDraft",
     "AdaptContext",
+    # M13.4 observability — the coverage-confidence projection (Doc C §7)
+    "CoverageReport",
+    "UnsearchedChannel",
     "GateDecision",
     # llm gateway (model-egress seam)
     "LLMGateway",
@@ -326,4 +369,16 @@ __all__ = [
     # client-knowledge retrieval seam (M5↔M12 contract; impl stubbed in M12/stage0)
     "ClientKnowledgeChunk",
     "ClientKnowledgeRetriever",
+    # review-surface seam (M13.1 Tier-1 review; impl in clue_research.review, wired at api root)
+    "ReviewSessionId",
+    "ClaimAnnotation",
+    "ReviewClaimRow",
+    "ReviewCommitteeMember",
+    "FieldConflict",
+    "ReviewSession",
+    "ReviewActionOutcome",
+    "ReviewSurface",
+    "VerificationAnnotationReader",
+    "ReviewResumeHook",
+    "ReviewDispositionEmitter",
 ]

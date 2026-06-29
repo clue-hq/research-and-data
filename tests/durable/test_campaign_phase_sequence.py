@@ -21,6 +21,7 @@ _EXPECTED = (
     "tier_checkpoint",
     "deep",
     "verification",
+    "review",
     "handoff",
 )
 

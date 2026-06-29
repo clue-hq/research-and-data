@@ -23,13 +23,21 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_research.core import CostCents, FieldClass, RunId, serialize_value_json
 
+# The recency horizon the freshness_score decays over (M13.3): a surviving claim at-or-past this age
+# scores 0.0, a brand-new one 1.0, linearly between. ~6 months — long enough a stale-but-live
+# field still registers, short enough that a source feeding ancient claims is visibly down-weighted.
+_FRESHNESS_HORIZON_SECONDS: float = 180 * 86_400
+
 
 class SourceYieldStat(BaseModel):
     """An aggregate of the yield measurements for one (field-class, source) slot.
 
     Sums the append-only rows; :attr:`precision` is the read-side ratio (claims that survived M9 /
     claims produced) — the signal M13 reweights on. ``None`` precision means the source produced no
-    claims yet (nothing to judge).
+    claims yet (nothing to judge). M13.3 (Decision 4) extends this in place with two more reweight
+    terms — :attr:`cost_per_surviving_claim` and :attr:`freshness_score` — read from the columns the
+    telemetry already records; the per-source ``downstream_signal`` term needs disposition data and
+    is computed by the loop (``review``), not here (``sources`` stays disposition-unaware).
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
@@ -41,11 +49,28 @@ class SourceYieldStat(BaseModel):
     claims_verified: int
     fields_filled: int
     cost_cents: CostCents
+    # mean age (seconds) of this slot's measured claims; None when no row recorded a freshness.
+    avg_freshness_seconds: float | None = None
 
     @property
     def precision(self) -> float | None:
         """claims that survived verification / claims produced (``None`` if none produced)."""
         return self.claims_verified / self.claims_total if self.claims_total else None
+
+    @property
+    def cost_per_surviving_claim(self) -> CostCents | None:
+        """``cost_cents`` spent per claim that survived verification (M13.3 cost term) — the cost of
+        a *useful* claim, not a raw one. ``None`` when nothing survived (no denominator)."""
+        return self.cost_cents / self.claims_verified if self.claims_verified else None
+
+    @property
+    def freshness_score(self) -> float | None:
+        """A ``[0,1]`` recency score (M13.3 freshness term): ``1.0`` brand-new, ``0.0`` at/past the
+        :data:`_FRESHNESS_HORIZON_SECONDS` horizon, linear between. ``None`` when no measurement
+        recorded a freshness (nothing to age)."""
+        if self.avg_freshness_seconds is None:
+            return None
+        return max(0.0, 1.0 - self.avg_freshness_seconds / _FRESHNESS_HORIZON_SECONDS)
 
 
 def _field_class_value(field_class: FieldClass | str | None) -> str | None:
@@ -141,7 +166,8 @@ async def get_source_yield(
                            COALESCE(SUM(claims_total), 0) AS claims_total,
                            COALESCE(SUM(claims_verified), 0) AS claims_verified,
                            COALESCE(SUM(fields_filled), 0) AS fields_filled,
-                           COALESCE(SUM(cost_cents), 0) AS cost_cents
+                           COALESCE(SUM(cost_cents), 0) AS cost_cents,
+                           AVG(freshness_seconds) AS avg_freshness_seconds
                     FROM source_yield
                     WHERE client_id = :client_id
                       AND (CAST(:icp_key AS text) IS NULL OR icp_key = :icp_key)
@@ -174,6 +200,11 @@ async def get_source_yield(
             claims_verified=int(row["claims_verified"]),
             fields_filled=int(row["fields_filled"]),
             cost_cents=row["cost_cents"],
+            avg_freshness_seconds=(
+                float(row["avg_freshness_seconds"])
+                if row["avg_freshness_seconds"] is not None
+                else None
+            ),
         )
         for row in rows
     ]
