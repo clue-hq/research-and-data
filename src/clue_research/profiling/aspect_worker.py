@@ -51,6 +51,14 @@ from pydantic import BaseModel, ConfigDict, JsonValue
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_research.claimstore import claims_for, get_field
+from clue_research.config import (
+    DEFAULT_CONFIDENCE_THRESHOLDS,
+    DEFAULT_SOURCE_PLAN_POLICY,
+    ConfidenceThresholds,
+    OverlayStore,
+    SourcePlanPolicy,
+    get_config,
+)
 from clue_research.core import (
     AccountEntity,
     AspectContext,
@@ -187,6 +195,7 @@ class AspectProfilingWorker:
         pre_spend_gate: PreSpendGate | None = None,
         synthesis_guard: SynthesisGuard | None = None,
         claim_filter: ClaimFilter | None = None,
+        config_store: OverlayStore | None = None,
     ) -> None:
         self.aspect = aspect
         self._session_factory = session_factory
@@ -198,11 +207,15 @@ class AspectProfilingWorker:
         self._pre_spend_gate = pre_spend_gate
         self._synthesis_guard = synthesis_guard
         self._claim_filter = claim_filter
+        # The layered-config seam: the per-run waterfall stop bar + planner tier reach are read off
+        # the merged Config (keyed by the run's client). ``None`` → the process default store.
+        self._config_store = config_store
 
     async def research(self, ctx: AspectContext) -> WorkerResult:
         """Fill this aspect's gap ``field_keys`` for the resolved account; return references
         only."""
         rc = RunContext.from_params(ctx.params)
+        thresholds, plan_policy = self._source_policies(rc)
         async with self._session_factory() as conn:
             account = await self._resolve_account(conn, ctx)
             if account is None:
@@ -258,11 +271,24 @@ class AspectProfilingWorker:
                     tier=ctx.tier,
                     run_id=ctx.run_id,
                     budget_remaining=remaining,
+                    thresholds=thresholds,
+                    plan_policy=plan_policy,
                 )
                 fills.append(fill)
                 spent += fill.cost_cents
 
         return self._assemble(ctx.aspect, fills, spent)
+
+    def _source_policies(self, rc: RunContext) -> tuple[ConfidenceThresholds, SourcePlanPolicy]:
+        """The per-run waterfall stop bar + planner tier reach from the layered config.
+
+        Keyed by ``(client_id, icp_key)`` when both are present (ICP overlay wins over client);
+        client-only when ``icp_key`` is absent. A run with no client coordinate (a bare unit test)
+        keeps the defaults — behaviour is unchanged unless an overlay is registered."""
+        if rc.client_id is None:
+            return DEFAULT_CONFIDENCE_THRESHOLDS, DEFAULT_SOURCE_PLAN_POLICY
+        cfg = get_config(rc.client_id, rc.icp_key, store=self._config_store)
+        return cfg.confidence_thresholds, cfg.source_plan_policy
 
     # -- account resolution --
 
@@ -293,6 +319,8 @@ class AspectProfilingWorker:
         tier: str,
         run_id: RunId,
         budget_remaining: CostCents | None,
+        thresholds: ConfidenceThresholds,
+        plan_policy: SourcePlanPolicy,
     ) -> _FieldFill:
         field_key = field_def.field_key
         entity = account.as_entity()
@@ -325,7 +353,10 @@ class AspectProfilingWorker:
                 entity=entity,
                 field=field_key,
                 mode=self._mode,
-                tier_scope=self._tier_scope,
+                # The worker's own scope is the base; the config policy widens it to tier-4 when
+                # ``prefer_deep_sources`` is set, or supplies the default scope when the worker has
+                # none — the policy-as-data tier reach (lever 2).
+                tier_scope=plan_policy.effective_max_tier(self._tier_scope),
                 entity_tier=tier,
                 budget_envelope=budget_remaining,
                 gateway=self._gateway,
@@ -382,6 +413,8 @@ class AspectProfilingWorker:
             run_id=run_id,
             tenant_id=rc.tenant_id,
             budget_envelope=budget_remaining,
+            # The per-field-class stop bar from the layered config (lever 1).
+            thresholds=thresholds,
         )
 
         # 6. post-fill target-lock + sensitivity validation.

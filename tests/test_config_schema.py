@@ -17,17 +17,21 @@ import pytest
 from pydantic import ValidationError
 
 from clue_research.config import (
+    DEFAULT_CONFIDENCE_THRESHOLDS,
+    DEFAULT_SOURCE_PLAN_POLICY,
     BudgetCaps,
+    ConfidenceThresholds,
     FreshnessTtls,
     JurisdictionPolicy,
     LawfulBasisDefaults,
     MergePolicy,
     RetentionTtls,
     ScoringRubric,
+    SourcePlanPolicy,
     SourceProfile,
     get_config,
 )
-from clue_research.core import CostCents
+from clue_research.core import CostCents, FieldClass
 
 
 def test_all_placeholders_default_and_validate() -> None:
@@ -86,6 +90,65 @@ def test_freshness_ttls_by_field_class_defaults() -> None:
     ttls = FreshnessTtls()
     assert ttls.by_field_class["contact.facet"] == timedelta(days=90)
     assert ttls.by_field_class["core"] == timedelta(days=365)
+
+
+def test_confidence_thresholds_defaults_and_lookup() -> None:
+    """The relocated waterfall stop-bar keeps its per-field-class priors and default fallback."""
+    t = ConfidenceThresholds()
+    assert t.for_field_class(FieldClass.CORE) == pytest.approx(0.8)
+    assert t.for_field_class(FieldClass.ACCOUNT_RESONANCE) == pytest.approx(0.6)
+    # A field-class not explicitly listed falls back to `default`.
+    bare = ConfidenceThresholds(by_field_class={})
+    assert bare.for_field_class(FieldClass.CORE) == pytest.approx(bare.default)
+
+
+def test_confidence_thresholds_reject_out_of_range() -> None:
+    with pytest.raises(ValidationError):
+        ConfidenceThresholds(default=1.5)
+    with pytest.raises(ValidationError):
+        ConfidenceThresholds(by_field_class={FieldClass.CORE: 2.0})
+
+
+def test_source_plan_policy_defaults_are_no_op() -> None:
+    """The default policy spans every tier and never widens — behaviour is unchanged by default."""
+    p = DEFAULT_SOURCE_PLAN_POLICY
+    assert p.tier_scope is None
+    assert p.prefer_deep_sources is False
+    assert p.effective_max_tier() is None  # no policy, no override → all tiers
+    assert p.effective_max_tier(3) == 3  # an explicit worker scope is honoured verbatim
+
+
+def test_source_plan_policy_prefer_deep_widens_to_tier_four() -> None:
+    """`prefer_deep_sources` only ever *adds* tier-4 (never narrows a configured scope)."""
+    # A finite policy scope is widened to include tier-4.
+    assert SourcePlanPolicy(tier_scope=3, prefer_deep_sources=True).effective_max_tier() == 4
+    # An explicit override is the base, then widened: a worker capping at tier-2 still reaches 4.
+    assert SourcePlanPolicy(prefer_deep_sources=True).effective_max_tier(2) == 4
+    # `None` already spans every tier, so it stays None (tier-4 included).
+    assert SourcePlanPolicy(prefer_deep_sources=True).effective_max_tier() is None
+
+
+def test_source_plan_policy_override_precedence_without_prefer_deep() -> None:
+    """Without `prefer_deep_sources`, the override (if set) wins, else the policy's tier_scope."""
+    p = SourcePlanPolicy(tier_scope=3)
+    assert p.effective_max_tier() == 3  # policy default applies
+    assert p.effective_max_tier(2) == 2  # an explicit worker scope overrides the policy
+
+
+def test_source_plan_policy_tier_scope_bounds() -> None:
+    assert SourcePlanPolicy(tier_scope=1).tier_scope == 1
+    assert SourcePlanPolicy(tier_scope=4).tier_scope == 4
+    assert SourcePlanPolicy(tier_scope=None).tier_scope is None
+    with pytest.raises(ValidationError):
+        SourcePlanPolicy(tier_scope=0)
+    with pytest.raises(ValidationError):
+        SourcePlanPolicy(tier_scope=5)
+
+
+def test_config_carries_live_source_knobs_defaulted() -> None:
+    cfg = get_config("acme")
+    assert cfg.confidence_thresholds == DEFAULT_CONFIDENCE_THRESHOLDS
+    assert cfg.source_plan_policy == DEFAULT_SOURCE_PLAN_POLICY
 
 
 def test_lawful_basis_and_retention_placeholders_on_policy() -> None:

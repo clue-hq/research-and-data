@@ -38,9 +38,7 @@ from clue_research.sources.registry import (
 from clue_research.sources.seeds import SEED_MANIFESTS, seed_source_manifests
 from clue_research.sources.source_profile import (
     AllowedSource,
-    ServedSourceProfile,
     resolve_allowed_set,
-    serve_source_profile,
 )
 from clue_research.sources.source_yield import (
     SourceYieldStat,
@@ -93,10 +91,8 @@ __all__ = [
     # confidence thresholds (engine-side config, decision #1)
     "ConfidenceThresholds",
     "DEFAULT_CONFIDENCE_THRESHOLDS",
-    # source-profile serving + the registry-intersection allowed set (M4.6)
-    "ServedSourceProfile",
+    # the registry-intersection allowed set (M4.6; profile serving lives in clue_research.icp)
     "AllowedSource",
-    "serve_source_profile",
     "resolve_allowed_set",
     # the config-bounded Source Planner (M4.6)
     "plan_sources",
