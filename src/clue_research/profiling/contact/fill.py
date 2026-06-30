@@ -22,6 +22,7 @@ from decimal import Decimal
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_research.claimstore import TenantScope, claims_for, insert_claim
+from clue_research.config import DEFAULT_SOURCE_PLAN_POLICY, SourcePlanPolicy
 from clue_research.core import (
     AccountEntity,
     Claim,
@@ -77,11 +78,13 @@ async def _planned_source_keys(
     *,
     spec: ICPSpec | None,
     tier: str,
+    plan_policy: SourcePlanPolicy,
 ) -> tuple[str, ...]:
     """The ordered, modality-gated source keys to consult for this field.
 
     Uses the M4 Source Planner when an ICP spec is available (so the expensive-modality gate +
-    source-profile ordering apply); otherwise falls back to the field's declared ``tier_plan``."""
+    source-profile ordering apply); otherwise falls back to the field's declared ``tier_plan``.
+    ``plan_policy`` sets how deep the plan reaches (tier scope / deep-research preference)."""
     if spec is None:
         return field_def.tier_plan
     plan = await plan_sources(
@@ -90,6 +93,7 @@ async def _planned_source_keys(
         entity=contact.as_entity(),
         field=field_def.field_key,
         mode=ResearchMode.CONTACT_PROFILING,
+        tier_scope=plan_policy.effective_max_tier(),
         entity_tier=tier,
         entity_scope=EntityScope.CONTACT,
     )
@@ -110,6 +114,7 @@ async def fill_contact_field(
     use_class_tagger: UseClassTagger = DEFAULT_USE_CLASS_TAGGER,
     pre_spend_gate: PreSpendGate | None = None,
     thresholds: ConfidenceThresholds = DEFAULT_CONFIDENCE_THRESHOLDS,
+    plan_policy: SourcePlanPolicy = DEFAULT_SOURCE_PLAN_POLICY,
 ) -> FacetFillResult:
     """Fill one deep contact field, tagging every claim's binding + use-class born-correct.
 
@@ -123,7 +128,9 @@ async def fill_contact_field(
     scope = TenantScope.for_tenant(tenant_id)
     ran_any = False
 
-    for source_key in await _planned_source_keys(conn, contact, field_def, spec=spec, tier=tier):
+    for source_key in await _planned_source_keys(
+        conn, contact, field_def, spec=spec, tier=tier, plan_policy=plan_policy
+    ):
         try:
             resolver = get_resolver(source_key)
         except NoResolverBoundError:

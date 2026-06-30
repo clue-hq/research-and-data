@@ -21,7 +21,13 @@ from uuid import UUID
 from pydantic import JsonValue
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_research.config import RecursionPolicy
+from clue_research.config import (
+    ConfidenceThresholds,
+    OverlayStore,
+    RecursionPolicy,
+    SourcePlanPolicy,
+    get_config,
+)
 from clue_research.core import (
     AspectContext,
     EntityId,
@@ -84,13 +90,27 @@ async def profile_contact(
     use_class_tagger: UseClassTagger = DEFAULT_USE_CLASS_TAGGER,
     pre_spend_gate: PreSpendGate | None = None,
     config: ContactProfileConfig = DEFAULT_CONTACT_PROFILE_CONFIG,
+    thresholds: ConfidenceThresholds | None = None,
+    plan_policy: SourcePlanPolicy | None = None,
+    icp_key: str | None = None,
+    config_store: OverlayStore | None = None,
 ) -> ContactProfileResult:
     """Profile one verified committee member (mode M4).
 
     ``facet_subworker_budget`` is the per-tier level-2 fan-out allowance (= the M7 recursion knob's
     ``max_facet_workers_per_aspect`` for this tier, ``0`` ⇒ single-level depth) — M8.4 requests at
     most this many facet sub-workers; the M7 ``SpawnGuard`` is the hard cap. ``tenant_id`` binds the
-    tenant-private contact claims."""
+    tenant-private contact claims.
+
+    ``thresholds`` (the waterfall stop bar, lever 1) and ``plan_policy`` (the planner tier reach,
+    lever 2) default to the per-run layered config keyed by ``(tenant_id, icp_key)``; pass them
+    explicitly to override. This is the single config-resolution point for the contact axis — the
+    live deep path calls this callable directly, so resolving here (not only in the aspect-worker
+    adapter) keeps it config-aware. ``config_store=None`` reads the process default store."""
+    if thresholds is None or plan_policy is None:
+        cfg = get_config(tenant_id, icp_key, store=config_store)
+        thresholds = thresholds if thresholds is not None else cfg.confidence_thresholds
+        plan_policy = plan_policy if plan_policy is not None else cfg.source_plan_policy
     contact = await get_contact(
         conn, await surviving_id(conn, contact_entity_id, EntityType.CONTACT)
     )
@@ -124,6 +144,8 @@ async def profile_contact(
             binding_classifier=binding_classifier,
             use_class_tagger=use_class_tagger,
             pre_spend_gate=pre_spend_gate,
+            thresholds=thresholds,
+            plan_policy=plan_policy,
         )
         views.extend(fill.profile_views)
         cost += fill.cost_cents
@@ -171,6 +193,7 @@ class ContactProfileAspectWorker:
         recursion: RecursionPolicy = _DEFAULT_RECURSION_POLICY,
         pre_spend_gate: PreSpendGate | None = None,
         config: ContactProfileConfig = DEFAULT_CONTACT_PROFILE_CONFIG,
+        config_store: OverlayStore | None = None,
     ) -> None:
         self._session_factory = session_factory
         self._binding_classifier = binding_classifier
@@ -178,6 +201,9 @@ class ContactProfileAspectWorker:
         self._recursion = recursion
         self._pre_spend_gate = pre_spend_gate
         self._config = config
+        # The layered-config seam: the waterfall stop bar + planner tier reach read per-run off the
+        # merged Config (keyed by the run's client). ``None`` → the process default store.
+        self._config_store = config_store
 
     async def research(self, ctx: AspectContext) -> WorkerResult:
         params = ctx.params
@@ -210,6 +236,10 @@ class ContactProfileAspectWorker:
                 use_class_tagger=self._use_class_tagger,
                 pre_spend_gate=self._pre_spend_gate,
                 config=self._config,
+                icp_key=icp_key,
+                # profile_contact resolves the per-run source policies (lever 1/2) from the layered
+                # config keyed by (tenant_id, icp_key); pass the store through for test isolation.
+                config_store=self._config_store,
             )
 
         return WorkerResult(

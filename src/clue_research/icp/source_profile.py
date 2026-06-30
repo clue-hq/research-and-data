@@ -7,6 +7,14 @@ optionally per field-class, an ordered/weighted set of ``source_key``s with thei
 (override > pack default) and the writable target of M13's learning loop — so they live as versioned
 config rows (conventions §2, policy-is-data), not in code.
 
+Two resolution levels share one type — :class:`ResolvedSourceProfile` — distinguished only by
+``packs``: one pack key for a pack-level resolve (:func:`clue_research.icp.get_pack_source_profile`)
+or every key in ``ICPSpec.enabled_packs`` after merge
+(:func:`clue_research.icp.serve_source_profile` in ``catalog``). The merge function lives in
+``catalog`` next to ``get_pack_source_profile`` so this module stays free of any ``ICPSpec``
+dependency. The downstream M4 Source Planner intersects the served profile with the live registry
+(``clue_research.sources.resolve_allowed_set``).
+
 Boundary (conventions §2; M3.3 spec): a ``source_key`` is an opaque **string reference** into M4's
 ``source_manifest`` namespace. This module never imports a resolver, a manifest, the Source Planner,
 or any provider SDK — exactly as ``field_definition.tier_plan`` names resolvers by string only. The
@@ -93,8 +101,8 @@ def slot_for(
     field_class: FieldClass | None,
 ) -> tuple[WeightedSource, ...]:
     """The effective weighted sources for ``field_class``: the specific slot, else the pack-wide
-    default. The single definition of the slot-fallback rule, shared by the M3.3 pack-level
-    :class:`ResolvedSourceProfile` and the M4.6 ICP-level ServedSourceProfile (DRY — one rule)."""
+    default. The single definition of the slot-fallback rule, shared by every
+    :class:`ResolvedSourceProfile` (DRY — one rule)."""
     if field_class is not None:
         specific = by_field_class.get(field_class)
         if specific is not None:
@@ -103,16 +111,18 @@ def slot_for(
 
 
 class ResolvedSourceProfile(BaseModel):
-    """A pack's source profile after pack-default ⊕ client/ICP override resolution.
+    """A resolved source profile: weighted ``source_key`` priors after default ⊕ override.
 
-    ``default`` is the pack-wide slot (the ``field_class is None`` row); ``by_field_class`` holds
-    any field-class-specific slots. Consumers (M4's Source Planner) call :meth:`for_field_class`,
-    which falls back to the pack-wide default when a field-class has no specific slot.
+    ``packs`` scopes the profile: a single pack key from :func:`get_source_profile`, or every
+    enabled pack key after :func:`clue_research.icp.serve_source_profile` merges them.
+    ``default`` is the pack-wide slot; ``by_field_class`` holds any field-class-specific slots. Call
+    :meth:`for_field_class` to fall back to the pack-wide default when a field-class has no
+    specific slot (starter packs author only the default, so it serves every field-class).
     """
 
     model_config = ConfigDict(frozen=True)
 
-    pack_key: str
+    packs: tuple[str, ...] = ()
     default: tuple[WeightedSource, ...] = ()
     by_field_class: dict[FieldClass, tuple[WeightedSource, ...]] = {}
 
@@ -309,7 +319,7 @@ async def get_source_profile(
         slots = _apply_overrides(slots, await _override_rows(conn, pack_key, client_id, icp_key))
 
     return ResolvedSourceProfile(
-        pack_key=pack_key,
+        packs=(pack_key,),
         default=slots.get(None, ()),
         by_field_class={fc: src for fc, src in slots.items() if fc is not None},
     )

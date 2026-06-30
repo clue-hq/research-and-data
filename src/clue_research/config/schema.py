@@ -7,12 +7,18 @@ rather than inventing their own config blob:
 * :class:`MergePolicy` — merge/`current_value` params (M1).
 * :class:`ScoringRubric` — fit/intent weights (M3 compiles, M6 scores).
 * :class:`SourceProfile` — per-pack source profiles + source-intelligence reweighting knobs (M4).
+* :class:`ConfidenceThresholds` — the trust-tiered waterfall's per-field-class stop knob (M4.1).
+* :class:`SourcePlanPolicy` — how deep the M4.6 source plan reaches (tier scope + deep-research
+  preference).
 * :class:`BudgetCaps` — tier/budget caps + the per-campaign hard cap (M7 / Doc C §5).
 * :class:`FreshnessTtls` — field-level freshness TTLs (M1 merge / M9 verification).
 
-These ship with sensible defaults and **validate on load** (out-of-range caps/weights raise), but
-no engine reads them in M0 — they reserve the seam. The owning milestone fills in behavior; the
-shape never moves.
+Most ship with sensible defaults and **validate on load** (out-of-range caps/weights raise) but are
+read by no engine yet — they reserve the seam, and the owning milestone fills in behavior. Two are
+*live*: :class:`ConfidenceThresholds` (the waterfall's stop bar) and :class:`SourcePlanPolicy` (the
+planner's tier reach) are read per-run by the M8 deep workers through the layered config — the
+client/ICP-facing toggle for "raise the bar / consult deep research more eagerly" with no code edit.
+The shape never moves.
 """
 
 from __future__ import annotations
@@ -27,6 +33,8 @@ from clue_research.core import (
     DEFAULT_NUMERIC_REL_TOLERANCE,
     DEFAULT_SEMANTIC_JACCARD_THRESHOLD,
     CostCents,
+    FieldClass,
+    UnitInterval,
 )
 
 
@@ -114,6 +122,90 @@ class SourceProfile(BaseModel):
         if out_of_range:
             raise ValueError(f"source_weights must be in 0..1; out of range: {out_of_range}")
         return self
+
+
+# Starting priors (D7 — defaults to confirm against real campaigns, not hardcoded policy):
+# deterministic/official facts demand a high bar; fuzzy synthesized signals (resonance, personal
+# hooks) clear at a lower one (locked decision #1 example: "firmographic 0.8, fuzzy resonance 0.6").
+_CONFIDENCE_DEFAULTS: dict[FieldClass, float] = {
+    FieldClass.CORE: 0.8,
+    FieldClass.ACCOUNT: 0.75,
+    FieldClass.ACCOUNT_RESONANCE: 0.6,
+    FieldClass.CONTACT: 0.75,
+    FieldClass.CONTACT_FACET: 0.6,
+    FieldClass.PACK: 0.75,
+}
+
+
+class ConfidenceThresholds(BaseModel):
+    """Per-field-class confidence thresholds — the waterfall's stop knob (M4.1, locked decision #1).
+
+    The trust-tiered waterfall stops at the first claim whose ``confidence`` clears the field's
+    threshold (substrate §4). Locked decision #1: that threshold is **versioned config keyed by
+    field-class** (deterministic firmographic fields demand a high bar; fuzzy resonance/facet a
+    lower one) — it is **NOT** on ``FieldDef`` / the field table / the plan hash, so swapping a
+    threshold is a config change, never a field-row migration or a code edit. Raising the bar is the
+    indirect lever on deep research: the higher tiers "succeed" less often, so the waterfall reaches
+    the tier-4 synthesis products more often (paired with :class:`SourcePlanPolicy`).
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    version: int = 1
+    # Fallback for any field-class not explicitly listed.
+    default: UnitInterval = 0.7
+    by_field_class: dict[FieldClass, UnitInterval] = Field(
+        default_factory=lambda: dict(_CONFIDENCE_DEFAULTS)
+    )
+
+    def for_field_class(self, field_class: FieldClass) -> float:
+        """The confidence a claim must clear to stop the waterfall for this field-class."""
+        return self.by_field_class.get(field_class, self.default)
+
+
+DEFAULT_CONFIDENCE_THRESHOLDS = ConfidenceThresholds()
+
+
+class SourcePlanPolicy(BaseModel):
+    """Client/ICP-facing source-planner policy — how deep the source plan reaches (M4.6).
+
+    Two knobs over the config-bounded Source Planner. Neither changes *what* the planner may
+    propose — that stays the allowed set (source-profile ∩ registry); they only set how far down the
+    trust tiers a plan spans and whether the tier-4 deep-research products are guaranteed a seat:
+
+    * ``tier_scope`` — the inclusive upper bound on trust tiers the plan includes (``None`` = all
+      tiers). Lowering it to ``3`` keeps the cheap, high-trust band and excludes the tier-4 open-web
+      synthesis products (``exa_deep`` / ``parallel_task``) — the cost dial.
+    * ``prefer_deep_sources`` — guarantees the tier-4 deep-research products are *in scope* even
+      when ``tier_scope`` would otherwise exclude them. It does **not** reorder the trust tiers
+      (tier-4 still runs last, after 1–3, and stays least-trusted — the anti-fabrication discipline
+      holds); it only widens the band so deep research is consulted when the top tiers miss.
+
+    Both are versioned, layered config (overridable per client/ICP) — the policy-as-data toggle for
+    "consult deep research more eagerly at a given time" without a code change.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    version: int = 1
+    tier_scope: int | None = Field(default=None, ge=1, le=4)
+    prefer_deep_sources: bool = False
+
+    def effective_max_tier(self, override: int | None = None) -> int | None:
+        """The inclusive max trust tier a plan should span, after resolving the policy.
+
+        ``override`` (a worker / call-site's explicit ``tier_scope``) wins when set; otherwise the
+        policy's ``tier_scope`` applies. When ``prefer_deep_sources`` is on, the bound is *widened*
+        to include tier 4 (``None`` already spans every tier, so it is left as-is) — never narrowed,
+        so the toggle can only add deep research, never silently drop a configured tier.
+        """
+        base = override if override is not None else self.tier_scope
+        if not self.prefer_deep_sources or base is None:
+            return base
+        return max(base, 4)
+
+
+DEFAULT_SOURCE_PLAN_POLICY = SourcePlanPolicy()
 
 
 class BudgetCaps(BaseModel):

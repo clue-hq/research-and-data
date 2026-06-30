@@ -114,6 +114,10 @@ def _merge(base: Config, overlay: ConfigOverlay, version: ConfigVersion) -> Conf
         updates["scoring_rubric"] = overlay.scoring_rubric
     if overlay.source_profiles is not None:
         updates["source_profiles"] = overlay.source_profiles
+    if overlay.confidence_thresholds is not None:
+        updates["confidence_thresholds"] = overlay.confidence_thresholds
+    if overlay.source_plan_policy is not None:
+        updates["source_plan_policy"] = overlay.source_plan_policy
     if overlay.budget_caps is not None:
         updates["budget_caps"] = overlay.budget_caps
     if overlay.recursion_policy is not None:
