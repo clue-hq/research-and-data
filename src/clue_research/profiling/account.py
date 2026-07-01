@@ -36,7 +36,7 @@ from clue_research.claimstore import (
     current_values,
     list_fields,
 )
-from clue_research.config import RecursionPolicy
+from clue_research.config import OverlayStore, RecursionPolicy
 from clue_research.core import (
     AccountEntity,
     AspectContext,
@@ -60,13 +60,12 @@ from clue_research.core import (
     new_run_id,
 )
 from clue_research.core.field import field_namespace
-from clue_research.db import transaction
+from clue_research.db import ConnFactory, transaction
 from clue_research.identity import get_account, surviving_id
 from clue_research.profiling.aspect_worker import (
     DEEP_PROFILING_PLANNER_CONFIG,
     AspectCoverage,
     AspectProfilingWorker,
-    SessionFactory,
     SynthesisGuard,
 )
 from clue_research.profiling.context import params_for_run
@@ -97,12 +96,13 @@ def aspect_key_for(field: FieldDef) -> str:
 
 def default_account_worker_builder(
     *,
-    session_factory: SessionFactory = transaction,
+    session_factory: ConnFactory = transaction,
     planner_config: SourcePlannerConfig = DEEP_PROFILING_PLANNER_CONFIG,
     gateway: LLMGateway | None = None,
     planner_model: str | None = None,
     pre_spend_gate: PreSpendGate | None = None,
     synthesis_guard: SynthesisGuard | None = None,
+    config_store: OverlayStore | None = None,
 ) -> WorkerBuilder:
     """A :data:`WorkerBuilder` constructing the real M8.1/M8.2 workers: the resonance specialisation
     for ``account.resonance``, the generic account-profiling worker for every other account-axis
@@ -117,6 +117,7 @@ def default_account_worker_builder(
                 planner_model=planner_model,
                 pre_spend_gate=pre_spend_gate,
                 synthesis_guard=synthesis_guard,
+                config_store=config_store,
             )
         return AspectProfilingWorker(
             aspect,
@@ -126,6 +127,7 @@ def default_account_worker_builder(
             planner_model=planner_model,
             pre_spend_gate=pre_spend_gate,
             synthesis_guard=synthesis_guard,
+            config_store=config_store,
         )
 
     return _build
@@ -179,12 +181,9 @@ async def _deep_account_gap_fields(
     set).
 
     Reads the registered ``pass=deep`` schema, narrows it to the ICP's active ``field_keys`` (when
-    the
-    spec declares any) and the account axis, then drops every field whose ``current_value`` is
-    already
-    ``FRESH`` — a field with no value, or a ``STALE`` / ``EXPIRED`` one, is a gap (a refresh is
-    wanted), never silently skipped (substrate §1/§6). Mirrors
-    ``durable.planning.compute_gap_fields``
+    the spec declares any) and the account axis, then drops every field whose ``current_value`` is
+    already  ``FRESH`` — a field with no value, or a ``STALE`` / ``EXPIRED`` one, is a gap (a refresh is
+    wanted), never silently skipped (substrate §1/§6). Mirrors ``durable.planning.compute_gap_fields``
     over claimstore primitives (no ``durable`` import)."""
     deep_fields = [
         f
@@ -251,13 +250,14 @@ async def profile_account(
     campaign_run_id: CampaignRunId | None = None,
     tenant_id: str | None = None,
     budget_cap_cents: CostCents | None = None,
-    session_factory: SessionFactory = transaction,
+    session_factory: ConnFactory = transaction,
     recursion_policy: RecursionPolicy | None = None,
     worker_for: WorkerBuilder | None = None,
     gateway: LLMGateway | None = None,
     planner_model: str | None = None,
     pre_spend_gate: PreSpendGate | None = None,
     synthesis_guard: SynthesisGuard | None = None,
+    config_store: OverlayStore | None = None,
 ) -> AccountProfileResult:
     """Profile one high-tier account: fill every deep account-axis gap field, or leave it
     empty/flagged, bounded by the tier's aspect cap and the budget envelope (M8.1).
@@ -284,6 +284,7 @@ async def profile_account(
             planner_model=planner_model,
             pre_spend_gate=pre_spend_gate,
             synthesis_guard=synthesis_guard,
+            config_store=config_store,
         )
     )
 
@@ -365,12 +366,13 @@ async def profile_account(
 def account_axis_workers(
     *,
     pack_namespaces: Sequence[str] = (),
-    session_factory: SessionFactory = transaction,
+    session_factory: ConnFactory = transaction,
     planner_config: SourcePlannerConfig = DEEP_PROFILING_PLANNER_CONFIG,
     gateway: LLMGateway | None = None,
     planner_model: str | None = None,
     pre_spend_gate: PreSpendGate | None = None,
     synthesis_guard: SynthesisGuard | None = None,
+    config_store: OverlayStore | None = None,
 ) -> list[AspectWorker]:
     """The account-axis aspect workers the api composition root registers into M7's
     ``WorkerRegistry`` (the one coordination point).
@@ -378,15 +380,11 @@ def account_axis_workers(
     Returns one worker per account-axis aspect key the graph's field-class clustering can produce:
     the generic :class:`AspectProfilingWorker` for ``account`` / ``core`` and each enabled pack
     namespace, plus the :class:`ResonanceAspectWorker` for ``account.resonance``. ``profiling``
-    cannot
-    import ``durable`` (the independence contract), so it cannot call ``register_aspect_worker``
+    cannot import ``durable`` (the independence contract), so it cannot call ``register_aspect_worker``
     itself — the api root does ``for w in account_axis_workers(...): register_aspect_worker(w)``
-    after
-    ``load_deep_profiling_pack``. ``pack_namespaces`` are the vertical packs enabled for the
-    campaign
-    (knowable at composition time); a pack aspect with no registered worker would otherwise be
-    marked
-    ``FAILED`` by the graph (``durable.graph._run_one_worker``)."""
+    after ``load_deep_profiling_pack``. ``pack_namespaces`` are the vertical packs enabled for the
+    campaign (knowable at composition time); a pack aspect with no registered worker would otherwise be
+    marked ``FAILED`` by the graph (``durable.graph._run_one_worker``)."""
 
     def _generic(aspect: str) -> AspectProfilingWorker:
         return AspectProfilingWorker(
@@ -397,6 +395,7 @@ def account_axis_workers(
             planner_model=planner_model,
             pre_spend_gate=pre_spend_gate,
             synthesis_guard=synthesis_guard,
+            config_store=config_store,
         )
 
     workers: list[AspectWorker] = [
@@ -409,6 +408,7 @@ def account_axis_workers(
             planner_model=planner_model,
             pre_spend_gate=pre_spend_gate,
             synthesis_guard=synthesis_guard,
+            config_store=config_store,
         ),
     ]
     workers.extend(_generic(ns) for ns in pack_namespaces)

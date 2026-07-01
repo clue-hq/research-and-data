@@ -29,15 +29,10 @@ per the pre-flight overrides. The M12.2 handoff assembler + M12.3 publisher are 
 
 from __future__ import annotations
 
-from collections.abc import Callable
-from contextlib import AbstractAsyncContextManager
-
-from sqlalchemy.ext.asyncio import AsyncConnection
-
 from clue_research.api.composition import RESEARCH_PACK_LOADERS
 from clue_research.core import EntityId
 from clue_research.core.retrieval import ClientKnowledgeChunk, ClientKnowledgeRetriever
-from clue_research.db import transaction
+from clue_research.db import ConnFactory, transaction
 from clue_research.narrative import (
     HandoffAssembler,
     HandoffCommitteeReader,
@@ -46,8 +41,6 @@ from clue_research.narrative import (
     rank_by_query_overlap,
 )
 from clue_research.stage0 import read_client_kb_claims
-
-_ConnFactory = Callable[[], AbstractAsyncContextManager[AsyncConnection]]
 
 
 def register_narrative_wiring() -> None:
@@ -76,7 +69,7 @@ class ClientKnowledgeRetrieverStub:
     behind this same :class:`~clue_research.core.retrieval.ClientKnowledgeRetriever` signature — a
     config/impl swap, no positioner change. Manages its own short read txn (no conn in the seam)."""
 
-    def __init__(self, *, conn_factory: _ConnFactory = transaction) -> None:
+    def __init__(self, *, conn_factory: ConnFactory = transaction) -> None:
         self._conn_factory = conn_factory
 
     async def retrieve(
@@ -103,7 +96,7 @@ class ClientKnowledgeRetrieverStub:
 
 
 def build_client_knowledge_retriever(
-    *, conn_factory: _ConnFactory = transaction
+    *, conn_factory: ConnFactory = transaction
 ) -> ClientKnowledgeRetriever:
     """Construct the api-root Client-Knowledge retriever to inject into the M12.1 positioner (the
     ``read_client_kb_claims``-backed pre-flight stub until pgvector lands behind the same seam)."""

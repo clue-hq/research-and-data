@@ -27,13 +27,13 @@ from clue_research.icp import (
     load_starter_packs,
     register_pack_catalog,
     register_source_profile_override,
+    serve_source_profile,
 )
 from clue_research.sources import (
     RegistrySourceManifest,
     register_source,
     resolve_allowed_set,
     seed_source_manifests,
-    serve_source_profile,
 )
 
 from .conftest import rollback_conn, run_async

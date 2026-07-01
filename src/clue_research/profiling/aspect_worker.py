@@ -1,8 +1,8 @@
-"""The mode-M2 account-profiling aspect worker (M8.1) — the converge body M7's graph spawns.
+"""
+The mode-M2 account-profiling aspect worker (M8.1) — the converge body M7's graph spawns.
 
 M7 (``durable``) owns the per-account orchestrator-worker graph: it computes the gap fields,
-clusters
-them **by field-class** into aspects (``durable/planning.build_plan`` → ``"account"`` /
+clusters them **by field-class** into aspects (``durable/planning.build_plan`` → ``"account"`` /
 ``"account.resonance"`` / ``"core"`` / ``<pack>``), and dispatches one :class:`AspectWorker` per
 cluster (``durable/graph._dispatch`` looks the worker up by that field-class key). M8.1 supplies the
 **worker body** — :class:`AspectProfilingWorker` — that fills the cluster's ``field_keys`` it is
@@ -13,8 +13,7 @@ The worker is mode **M2 Profiling**: *converge*, not discover (staged-flow §1/�
 gap field it walks a closed, target-locked fill sequence and stops — the opposite of M6's open-ended
 ``expand``. The whole loop terminates by construction: a finite field set, each filled by the M4
 waterfall's finite ``tier_plan`` walk; the three stop states are **schema-satisfied** (a confident
-hit), **sources-exhausted** (ran out of resolvers — a correct empty/flagged field), and
-**budget-cap**
+hit), **sources-exhausted** (ran out of resolvers — a correct empty/flagged field), and **budget-cap**
 (the M7.5 envelope halted the walk).
 
 The per-gap-field sequence (§C of the build contract):
@@ -43,7 +42,6 @@ Verification (the faithfulness judge, corroboration, the actual promotion) is th
 from __future__ import annotations
 
 from collections.abc import Callable
-from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass
 from decimal import Decimal
 from enum import StrEnum
@@ -52,6 +50,14 @@ from pydantic import BaseModel, ConfigDict, JsonValue
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_research.claimstore import claims_for, get_field
+from clue_research.config import (
+    DEFAULT_CONFIDENCE_THRESHOLDS,
+    DEFAULT_SOURCE_PLAN_POLICY,
+    ConfidenceThresholds,
+    OverlayStore,
+    SourcePlanPolicy,
+    get_config,
+)
 from clue_research.core import (
     AccountEntity,
     AspectContext,
@@ -73,7 +79,7 @@ from clue_research.core import (
 )
 from clue_research.core.enums import PreSpendVerdict, ReuseScope
 from clue_research.core.field import resolve_reuse_scope
-from clue_research.db import transaction
+from clue_research.db import ConnFactory, transaction
 from clue_research.icp import get_icp_version
 from clue_research.identity import get_account, surviving_id
 from clue_research.profiling.context import RunContext
@@ -88,24 +94,17 @@ from clue_research.sources import (
 
 # The deep-profiling planner config. Identical to the M4 default except the expensive-modality
 # (video/audio transcription) gate clears for **both** top-deep-tier band names. The M4 default
-# gates
-# expensive modalities to ``{"high"}``, but the deep tier band is named inconsistently across config
-# (M6 tiering uses ``high``/``medium``; the M7 recursion knob uses ``top``/``high``), so a top-deep
-# account named ``top`` would otherwise silently skip transcription. Including both names makes the
-# top deep tier get the full modality set regardless of naming (``medium`` stays gated — a lower
-# deep
-# tier should not transcribe a 90-min podcast). Doc C §3/§7d: high tier + high-weighted source only.
+# gates expensive modalities to ``{"high"}``, but the deep tier band is named inconsistently across
+# config (M6 tiering uses ``high``/``medium``; the M7 recursion knob uses ``top``/``high``), so a
+# top-deep account named ``top`` would otherwise silently skip transcription. Including both names
+# makes the top deep tier get the full modality set regardless of naming (``medium`` stays gated —
+# a lower deep tier should not transcribe a 90-min podcast). Doc C §3/§7d: high tier + high-weighted
+# source only.
 DEEP_PROFILING_PLANNER_CONFIG: SourcePlannerConfig = DEFAULT_SOURCE_PLANNER_CONFIG.model_copy(
     update={"gate_expensive_entity_tiers": frozenset({"top", "high"})}
 )
 
-# A session is an async context manager yielding a connection (``db.transaction`` in production; a
-# rollback-scoped connection in tests). Injected so the worker is testable without committing — the
-# same DI seam M6's phase handlers use (``discovery_scoring/phases.py``).
-SessionFactory = Callable[[], AbstractAsyncContextManager[AsyncConnection]]
-
-# A per-claim screen applied post-fill: ``True`` keeps the claim, ``False`` drops it from the
-# aspect's
+# A per-claim screen applied post-fill: ``True`` keeps the claim, ``False`` drops it from the aspect's
 # output (still written to the append-only store, unpromotable). M8.2's resonance firewall is one.
 ClaimFilter = Callable[[Claim], bool]
 
@@ -176,15 +175,16 @@ class AspectProfilingWorker:
     ``"core"`` / a ``<pack>`` namespace; the resonance specialisation
     (``aspect="account.resonance"``)
     is :class:`~clue_research.profiling.resonance.ResonanceAspectWorker`. Construct once with the
-    injected dependencies and register it into M7's ``WorkerRegistry`` at the api root
-    (``profiling/wiring.py``). Stateless across calls; the per-run context arrives in
+    injected dependencies and register it into M7's ``WorkerRegistry`` at the api composition
+    root (``api/composition.py`` — ``build_profiling_workers`` / ``register_profiling_workers``).
+    Stateless across calls; the per-run context arrives in
     :class:`~clue_research.core.AspectContext`."""
 
     def __init__(
         self,
         aspect: str,
         *,
-        session_factory: SessionFactory = transaction,
+        session_factory: ConnFactory = transaction,
         mode: ResearchMode = ResearchMode.ACCOUNT_PROFILING,
         tier_scope: int | None = None,
         planner_config: SourcePlannerConfig = DEEP_PROFILING_PLANNER_CONFIG,
@@ -193,6 +193,7 @@ class AspectProfilingWorker:
         pre_spend_gate: PreSpendGate | None = None,
         synthesis_guard: SynthesisGuard | None = None,
         claim_filter: ClaimFilter | None = None,
+        config_store: OverlayStore | None = None,
     ) -> None:
         self.aspect = aspect
         self._session_factory = session_factory
@@ -204,11 +205,15 @@ class AspectProfilingWorker:
         self._pre_spend_gate = pre_spend_gate
         self._synthesis_guard = synthesis_guard
         self._claim_filter = claim_filter
+        # The layered-config seam: the per-run waterfall stop bar + planner tier reach are read off
+        # the merged Config (keyed by the run's client). ``None`` → the process default store.
+        self._config_store = config_store
 
     async def research(self, ctx: AspectContext) -> WorkerResult:
         """Fill this aspect's gap ``field_keys`` for the resolved account; return references
         only."""
         rc = RunContext.from_params(ctx.params)
+        thresholds, plan_policy = self._source_policies(rc)
         async with self._session_factory() as conn:
             account = await self._resolve_account(conn, ctx)
             if account is None:
@@ -264,11 +269,24 @@ class AspectProfilingWorker:
                     tier=ctx.tier,
                     run_id=ctx.run_id,
                     budget_remaining=remaining,
+                    thresholds=thresholds,
+                    plan_policy=plan_policy,
                 )
                 fills.append(fill)
                 spent += fill.cost_cents
 
         return self._assemble(ctx.aspect, fills, spent)
+
+    def _source_policies(self, rc: RunContext) -> tuple[ConfidenceThresholds, SourcePlanPolicy]:
+        """The per-run waterfall stop bar + planner tier reach from the layered config.
+
+        Keyed by ``(client_id, icp_key)`` when both are present (ICP overlay wins over client);
+        client-only when ``icp_key`` is absent. A run with no client coordinate (a bare unit test)
+        keeps the defaults — behaviour is unchanged unless an overlay is registered."""
+        if rc.client_id is None:
+            return DEFAULT_CONFIDENCE_THRESHOLDS, DEFAULT_SOURCE_PLAN_POLICY
+        cfg = get_config(rc.client_id, rc.icp_key, store=self._config_store)
+        return cfg.confidence_thresholds, cfg.source_plan_policy
 
     # -- account resolution --
 
@@ -299,6 +317,8 @@ class AspectProfilingWorker:
         tier: str,
         run_id: RunId,
         budget_remaining: CostCents | None,
+        thresholds: ConfidenceThresholds,
+        plan_policy: SourcePlanPolicy,
     ) -> _FieldFill:
         field_key = field_def.field_key
         entity = account.as_entity()
@@ -331,7 +351,10 @@ class AspectProfilingWorker:
                 entity=entity,
                 field=field_key,
                 mode=self._mode,
-                tier_scope=self._tier_scope,
+                # The worker's own scope is the base; the config policy widens it to tier-4 when
+                # ``prefer_deep_sources`` is set, or supplies the default scope when the worker has
+                # none — the policy-as-data tier reach (lever 2).
+                tier_scope=plan_policy.effective_max_tier(self._tier_scope),
                 entity_tier=tier,
                 budget_envelope=budget_remaining,
                 gateway=self._gateway,
@@ -388,6 +411,8 @@ class AspectProfilingWorker:
             run_id=run_id,
             tenant_id=rc.tenant_id,
             budget_envelope=budget_remaining,
+            # The per-field-class stop bar from the layered config (lever 1).
+            thresholds=thresholds,
         )
 
         # 6. post-fill target-lock + sensitivity validation.
@@ -422,12 +447,9 @@ class AspectProfilingWorker:
         rc: RunContext,
     ) -> tuple[tuple[ClaimId, ...], int, int]:
         """Drop a written claim from the aspect's output if it fails target-lock (a drift-prone
-        claim
-        not bound to this entity) or the optional ``claim_filter`` (M8.2's sensitivity firewall).
-        The
-        claim still exists in the append-only store (unpromotable); it is simply not surfaced as
-        this
-        aspect's evidence. Returns ``(kept_refs, target_lock_rejected, filter_rejected)``."""
+        claim not bound to this entity) or the optional ``claim_filter`` (M8.2's sensitivity firewall).
+        The claim still exists in the append-only store (unpromotable); it is simply not surfaced as
+        this aspect's evidence. Returns ``(kept_refs, target_lock_rejected, filter_rejected)``."""
         if not result_refs:
             return (), 0, 0
         ref_set = set(result_refs)
@@ -508,6 +530,5 @@ __all__ = [
     "AspectProfilingWorker",
     "AspectCoverage",
     "ProfilingFieldDisposition",
-    "SessionFactory",
     "ClaimFilter",
 ]

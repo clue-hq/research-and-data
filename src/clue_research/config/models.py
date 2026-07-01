@@ -22,10 +22,12 @@ from clue_research.config.gateway import GatewayConfig
 from clue_research.config.policy import JurisdictionPolicy
 from clue_research.config.schema import (
     BudgetCaps,
+    ConfidenceThresholds,
     FreshnessTtls,
     MergePolicy,
     RecursionPolicy,
     ScoringRubric,
+    SourcePlanPolicy,
     SourceProfile,
     VerificationHealthThresholds,
 )
@@ -63,6 +65,8 @@ class ConfigOverlay(BaseModel):
     merge_policy: MergePolicy | None = None
     scoring_rubric: ScoringRubric | None = None
     source_profiles: tuple[SourceProfile, ...] | None = None
+    confidence_thresholds: ConfidenceThresholds | None = None
+    source_plan_policy: SourcePlanPolicy | None = None
     budget_caps: BudgetCaps | None = None
     recursion_policy: RecursionPolicy | None = None
     freshness_ttls: FreshnessTtls | None = None
@@ -90,6 +94,10 @@ class Config(BaseModel):
     merge_policy: MergePolicy = MergePolicy()
     scoring_rubric: ScoringRubric = ScoringRubric()
     source_profiles: tuple[SourceProfile, ...] = ()
+    # The waterfall's per-field-class stop bar and the planner's tier reach — read per-run by the
+    # M8 deep workers (the two *live* policy-as-data source knobs; the rest here is still a seam).
+    confidence_thresholds: ConfidenceThresholds = ConfidenceThresholds()
+    source_plan_policy: SourcePlanPolicy = SourcePlanPolicy()
     budget_caps: BudgetCaps = BudgetCaps()
     recursion_policy: RecursionPolicy = RecursionPolicy()
     freshness_ttls: FreshnessTtls = FreshnessTtls()

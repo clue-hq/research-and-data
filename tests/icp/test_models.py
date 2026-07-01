@@ -47,7 +47,7 @@ def test_resolved_profile_for_field_class_falls_back_to_default() -> None:
     default = (WeightedSource(source_key="exa", weight=SourceWeight.MEDIUM, rank=1),)
     specific = (WeightedSource(source_key="arxiv", weight=SourceWeight.HIGH, rank=1),)
     profile = ResolvedSourceProfile(
-        pack_key="frontier_ai",
+        packs=("frontier_ai",),
         default=default,
         by_field_class={FieldClass.ACCOUNT_RESONANCE: specific},
     )

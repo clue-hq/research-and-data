@@ -50,9 +50,9 @@ from clue_research.core import (
     account_claim,
     can_be_promoted,
     contact_claim,
+    decode_jsonb_scalar,
     new_entity_id,
     new_run_id,
-    parse_value_json,
     serialize_value_json,
 )
 from clue_research.core import JudgeVerdict as CoreJudgeVerdict
@@ -523,12 +523,6 @@ class SpotCheckSample(BaseModel):
     research_mode: ResearchMode
 
 
-def _decode_jsonb(raw: object) -> JsonValue:
-    if isinstance(raw, (bytes, bytearray)):
-        return parse_value_json(bytes(raw))
-    return raw  # type: ignore[return-value]
-
-
 async def sample_promoted_claims(
     conn: AsyncConnection,
     *,
@@ -578,7 +572,7 @@ async def sample_promoted_claims(
                 entity_id=entity_id,
                 field_key=field_key,
                 field_class=field_class,
-                value_json=_decode_jsonb(value),
+                value_json=decode_jsonb_scalar(value),
                 source_url=source_url,
                 source_tier=int(source_tier),
                 research_mode=ResearchMode(research_mode),

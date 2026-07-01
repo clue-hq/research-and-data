@@ -19,6 +19,7 @@ from __future__ import annotations
 from clue_research.db.engine import (
     DATABASE_URL_ENV,
     DEFAULT_DATABASE_URL,
+    ConnFactory,
     connection,
     create_engine,
     database_url,
@@ -31,6 +32,7 @@ from clue_research.db.engine import (
 __all__ = [
     "DATABASE_URL_ENV",
     "DEFAULT_DATABASE_URL",
+    "ConnFactory",
     "database_url",
     "create_engine",
     "db_lifespan",

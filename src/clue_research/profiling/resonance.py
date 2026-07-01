@@ -30,6 +30,7 @@ from __future__ import annotations
 import json
 import re
 
+from clue_research.config import OverlayStore
 from clue_research.core import (
     AspectContext,
     CampaignRunId,
@@ -44,11 +45,10 @@ from clue_research.core import (
     WorkerResult,
     new_campaign_run_id,
 )
-from clue_research.db import transaction
+from clue_research.db import ConnFactory, transaction
 from clue_research.profiling.aspect_worker import (
     DEEP_PROFILING_PLANNER_CONFIG,
     AspectProfilingWorker,
-    SessionFactory,
     SynthesisGuard,
 )
 from clue_research.profiling.context import RunContext, params_for_run
@@ -160,7 +160,8 @@ class ResonanceAspectWorker(AspectProfilingWorker):
     sensitivity firewall as its ``claim_filter`` and the full tier band as its planner scope.
 
     Registered into M7's ``WorkerRegistry`` under ``"account.resonance"`` (the field-class key the
-    graph clusters resonance gaps into) — see ``profiling/wiring.py``. Because ``account.resonance``
+    graph clusters resonance gaps into) — see ``api/composition.py`` (``build_profiling_workers``).
+    Because ``account.resonance``
     is a recursion-eligible class (``config.RecursionPolicy.eligible_classes``), the graph *may* let
     this aspect spawn facet sub-workers; M8.2 does not require them (a single-level fill is
     correct),
@@ -169,18 +170,21 @@ class ResonanceAspectWorker(AspectProfilingWorker):
     def __init__(
         self,
         *,
-        session_factory: SessionFactory = transaction,
+        session_factory: ConnFactory = transaction,
         planner_config: SourcePlannerConfig = DEEP_PROFILING_PLANNER_CONFIG,
         gateway: LLMGateway | None = None,
         planner_model: str | None = None,
         pre_spend_gate: PreSpendGate | None = None,
         synthesis_guard: SynthesisGuard | None = None,
+        config_store: OverlayStore | None = None,
     ) -> None:
         super().__init__(
             FieldClass.ACCOUNT_RESONANCE.value,  # "account.resonance" — the graph's cluster key
             session_factory=session_factory,
             mode=ResearchMode.ACCOUNT_PROFILING,
             # Full tier band: tier-3 reputable review/news first, tier-4 synthesis last (Doc C §2).
+            # ``tier_scope=None`` already spans every tier, so the config's ``prefer_deep_sources``
+            # is a no-op here unless an overlay sets a finite ``tier_scope`` to cap cost.
             tier_scope=None,
             planner_config=planner_config,
             gateway=gateway,
@@ -188,6 +192,7 @@ class ResonanceAspectWorker(AspectProfilingWorker):
             pre_spend_gate=pre_spend_gate,
             synthesis_guard=synthesis_guard,
             claim_filter=resonance_firewall_ok,
+            config_store=config_store,
         )
 
 

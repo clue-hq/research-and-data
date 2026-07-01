@@ -27,7 +27,7 @@ from clue_research.core import (
     CampaignRunId,
     CostCents,
     UtcDatetime,
-    parse_value_json,
+    decode_jsonb,
     serialize_value_json,
 )
 from clue_research.durable.enums import CampaignRunStatus, PhaseCheckpointStatus
@@ -353,13 +353,6 @@ async def list_adjustments(
 # --- row decoders --------------------------------------------------------------------------------
 
 
-def _decode_jsonb(raw: object) -> object:
-    """Decode a JSONB column to a Python object (asyncpg returns it already decoded)."""
-    if isinstance(raw, (bytes, bytearray)):
-        return parse_value_json(bytes(raw))
-    return raw
-
-
 def _row_to_campaign_run(row: dict[str, object]) -> CampaignRunRow:
     return CampaignRunRow.model_validate(
         {
@@ -371,7 +364,7 @@ def _row_to_campaign_run(row: dict[str, object]) -> CampaignRunRow:
             "status": row["status"],
             "budget_cap_cents": row["budget_cap_cents"],
             "spent_cents": row["spent_cents"] if row["spent_cents"] is not None else Decimal(0),
-            "tier_cutoffs": _decode_jsonb(row["tier_cutoffs_json"]),
+            "tier_cutoffs": decode_jsonb(row["tier_cutoffs_json"]),
             "paused_at": row["paused_at"],
             "resumed_at": row["resumed_at"],
             "created_at": row["created_at"],
@@ -388,7 +381,7 @@ def _row_to_checkpoint(row: dict[str, object]) -> CampaignPhaseCheckpointRow:
             "phase": row["phase"],
             "idempotency_key": row["idempotency_key"],
             "status": row["status"],
-            "payload": _decode_jsonb(row["payload_json"]),
+            "payload": decode_jsonb(row["payload_json"]),
             "committed_at": row["committed_at"],
             "created_at": row["created_at"],
             "updated_at": row["updated_at"],
@@ -402,7 +395,7 @@ def _row_to_adjustment(row: dict[str, object]) -> AdjustmentRow:
             "id": row["id"],
             "campaign_run_id": row["campaign_run_id"],
             "kind": row["kind"],
-            "detail": _decode_jsonb(row["detail_json"]),
+            "detail": decode_jsonb(row["detail_json"]),
             "created_at": row["created_at"],
         }
     )

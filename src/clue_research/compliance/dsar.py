@@ -50,8 +50,7 @@ at the ``api`` root. Architecture: Doc D §4; docs/specs/M10-compliance-and-pers
 
 from __future__ import annotations
 
-from collections.abc import Callable, Sequence
-from contextlib import AbstractAsyncContextManager
+from collections.abc import Sequence
 from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Protocol, runtime_checkable
@@ -85,7 +84,7 @@ from clue_research.core import (
     classify_field_key,
     new_run_id,
 )
-from clue_research.db import transaction
+from clue_research.db import ConnFactory, transaction
 from clue_research.identity import dsar_private_claims, stamp_reuse
 from clue_research.obs import (
     ATTR_ENTITY_ID,
@@ -300,11 +299,6 @@ async def _apply_tombstone(
     return tombstone_id
 
 
-def _conn_factory_default() -> AbstractAsyncContextManager[AsyncConnection]:
-    """Default connection source — one committed transaction per operation (mirrors M10.1/M10.3)."""
-    return transaction()
-
-
 # --- the data-subject rights service (controller-scoped) --------------------
 
 
@@ -337,9 +331,7 @@ class DataSubjectRightsImpl:
         self,
         client_id: str,
         *,
-        conn_factory: Callable[[], AbstractAsyncContextManager[AsyncConnection]] = (
-            _conn_factory_default
-        ),
+        conn_factory: ConnFactory = transaction,
         sink: MetricSink | None = None,
     ) -> None:
         self._client_id = client_id
@@ -557,9 +549,7 @@ class RetentionSweep:
         self,
         freshness: Freshness,
         *,
-        conn_factory: Callable[[], AbstractAsyncContextManager[AsyncConnection]] = (
-            _conn_factory_default
-        ),
+        conn_factory: ConnFactory = transaction,
         sink: MetricSink | None = None,
     ) -> None:
         self._freshness = freshness

@@ -54,7 +54,7 @@ def serialize_value_json(value: object) -> str:
     return _VALUE_JSON.dump_json(to_value_json(value)).decode()
 
 
-def parse_value_json(raw: str | bytes) -> JsonValue:
+def parse_value_json(raw: str | bytes | bytearray) -> JsonValue:
     """Parse a JSON string/bytes back into a ``value_json`` payload."""
     return _VALUE_JSON.validate_json(raw)
 
@@ -68,11 +68,46 @@ def decode_jsonb(raw: object) -> Any:
     validation / tier_plan / value_schema, or ``source_profile`` weighted_sources.
 
     NOT for a column that may hold a bare JSON *scalar* string value (e.g. ``claim.value_json``,
-    where a decoded ``"x"`` is the value, not JSON text) — that needs a bytes-only guard instead.
+    where a decoded ``"x"`` is the value, not JSON text) — use :func:`decode_jsonb_scalar` there.
     """
     if raw is None:
         return None
-    return parse_value_json(raw) if isinstance(raw, (str, bytes)) else raw
+    return parse_value_json(raw) if isinstance(raw, (str, bytes, bytearray)) else raw
+
+
+def decode_jsonb_scalar(raw: object) -> Any:
+    """Decode a value read from a jsonb column that may hold a bare JSON *scalar* — e.g.
+    ``claim.value_json``, where a decoded ``"robotics"`` is the value itself, not JSON text.
+
+    The bytes-only sibling of :func:`decode_jsonb`: asyncpg returns jsonb already decoded, so a
+    decoded ``str``/``int``/``dict`` passes straight through — re-parsing a decoded scalar ``str``
+    would treat the value as JSON text (a bare ``"robotics"`` is not valid JSON) and reject it. Only
+    a raw ``bytes``/``bytearray`` round-trip is parsed; ``None`` passes through.
+    """
+    if isinstance(raw, (bytes, bytearray)):
+        return parse_value_json(raw)
+    return raw
+
+
+def parse_cost_cents(value: object) -> CostCents | None:
+    """Defensively coerce an untrusted JSON-carried cost (``str``/number) to ``CostCents``.
+
+    Returns ``None`` when the value is absent, unparseable, non-finite (``NaN``/±``Infinity``), or
+    negative. ``CostCents`` is ``Annotated[Decimal, Ge(0)]``, so those values are not just invalid
+    inputs — they are *dangerous* ones: a ``NaN`` signals ``InvalidOperation`` on the ordering
+    comparison inside a budget check (crashing a durable phase), and a negative *inflates* remaining
+    budget (a silent per-entity-cap evasion). Both a worker-supplied facet estimate and a
+    client-supplied cap reach budget reservation through this one seam, so the rejection lives here
+    rather than at each caller. ``is_finite()`` is checked before ``>= 0`` because a bare
+    ``NaN >= 0`` comparison itself signals.
+    """
+    if value is None:
+        return None
+    try:
+        cost = Decimal(str(value))
+    except (ValueError, ArithmeticError):
+        return None
+    return cost if cost.is_finite() and cost >= 0 else None
 
 
 def by_tier_ascending(claims: Iterable[Claim]) -> list[Claim]:

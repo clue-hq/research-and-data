@@ -50,12 +50,16 @@ from clue_research.config.policy import (
     UseDisposition,
 )
 from clue_research.config.schema import (
+    DEFAULT_CONFIDENCE_THRESHOLDS,
+    DEFAULT_SOURCE_PLAN_POLICY,
     BudgetCaps,
+    ConfidenceThresholds,
     DeepPhaseConfig,
     FreshnessTtls,
     MergePolicy,
     RecursionPolicy,
     ScoringRubric,
+    SourcePlanPolicy,
     SourceProfile,
     TierRecursionCaps,
     VerificationHealthThresholds,
@@ -105,6 +109,11 @@ __all__ = [
     "TierRecursionCaps",
     "DeepPhaseConfig",
     "FreshnessTtls",
+    # live source knobs (read per-run by the M8 deep workers)
+    "ConfidenceThresholds",
+    "DEFAULT_CONFIDENCE_THRESHOLDS",
+    "SourcePlanPolicy",
+    "DEFAULT_SOURCE_PLAN_POLICY",
     # llm-gateway config (the model-egress policy-as-data; client in clue_research.gateway)
     "GatewayConfig",
     "ModelPrice",

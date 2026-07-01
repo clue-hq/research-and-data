@@ -115,9 +115,11 @@ class ScrapePolicy(BaseModel):
 class ScrapeResolver:
     """A tier-2 ``Resolver`` (M0.2): scrape the resolved entity's official surface via the M4.3
     adapter, target-locked to its own domain. ``extraction_method='scrape'`` and ``source_tier=2``
-    are stamped by ``run_chain`` from the manifest (adaptation never upgrades trust). A hard miss
-    (no resolved domain, every surface off-domain or excluded, or the extractor finds nothing) is an
-    empty list — a correct flagged-empty output, never fabricated."""
+    are stamped by ``run_chain`` from the manifest (adaptation never upgrades trust). It holds the
+    field ``extractor`` and passes it per-call into ``run_chain`` (the adapter is a pure normalizer;
+    extraction is the injected seam). A hard miss (no resolved domain, every surface off-domain or
+    excluded, or the extractor finds nothing) is an empty list — a correct flagged-empty output,
+    never fabricated."""
 
     tier: int = 2
 
@@ -126,11 +128,13 @@ class ScrapeResolver:
         manifest: RegistrySourceManifest,
         accounts: AccountLookup | None = None,
         *,
+        extractor: ClaimExtractor,
         policy: ScrapePolicy | None = None,
         surface_builder: SurfaceBuilder = default_surfaces,
     ) -> None:
         self._manifest = manifest
         self._accounts = accounts
+        self._extractor = extractor
         self._policy = policy or ScrapePolicy()
         self._surface_builder = surface_builder
 
@@ -167,6 +171,7 @@ class ScrapeResolver:
                 field,
                 run_id=new_run_id(),  # placeholder — the waterfall restamps the run's id/mode
                 research_mode=ResearchMode.ACCOUNT_PROFILING,
+                extractor=self._extractor,
                 params=params,
             )
         return []  # no allowed, on-domain surface → nothing scraped, a correct empty
@@ -180,17 +185,18 @@ def register_scrape_resolver(
     policy: ScrapePolicy | None = None,
     surface_builder: SurfaceBuilder = default_surfaces,
 ) -> None:
-    """Wire the firecrawl scrape source: register its M4.3 ``firecrawl_html`` adapter (HTML→markdown
-    via ``scraper`` + the field ``extractor``) and bind the tier-2 :class:`ScrapeResolver` to
-    ``firecrawl_site``. The M6/M8 orchestrator calls this with the live Firecrawl-backed
-    ``ScrapeBackend`` and a field-specific extractor; tests inject doubles. Idempotent (last write
-    wins for both the adapter key and the resolver binding)."""
-    register_adapter(ADAPTER_KEY, FirecrawlHtmlAdapter(extractor, scraper=scraper))
+    """Wire the firecrawl scrape source: register its M4.3 ``firecrawl_html`` adapter (the
+    HTML→markdown normalizer via ``scraper``) and bind the tier-2 :class:`ScrapeResolver` (holding
+    the field ``extractor``) to ``firecrawl_site``. The M6/M8 orchestrator calls this with the live
+    Firecrawl-backed ``ScrapeBackend`` and a field-specific extractor; tests inject doubles.
+    Idempotent (last write wins for both the adapter key and the resolver binding)."""
+    register_adapter(ADAPTER_KEY, FirecrawlHtmlAdapter(scraper=scraper))
     bind_resolver(
         SOURCE_KEY,
         ScrapeResolver(
             _seed_manifest(),
             accounts,
+            extractor=extractor,
             policy=policy,
             surface_builder=surface_builder,
         ),

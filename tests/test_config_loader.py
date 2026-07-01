@@ -14,6 +14,7 @@ from decimal import Decimal
 import pytest
 
 from clue_research.config import (
+    ConfidenceThresholds,
     Config,
     ConfigError,
     ConfigOverlay,
@@ -22,6 +23,7 @@ from clue_research.config import (
     OverlayStore,
     Posture,
     ScoringRubric,
+    SourcePlanPolicy,
     SourceScope,
     get_config,
     get_policy,
@@ -160,3 +162,45 @@ def test_budget_caps_valid_tiered() -> None:
     )
     assert overlay.budget_caps is not None
     assert overlay.budget_caps.per_account_cap_cents["top"] == Decimal("500")
+
+
+def test_source_plan_policy_overlay_overrides_defaults(store: OverlayStore) -> None:
+    """Lever 2: a client overlay flips the planner's tier reach (the deep-research toggle)."""
+    store.set_client_overlay(
+        "acme",
+        ConfigOverlay(source_plan_policy=SourcePlanPolicy(tier_scope=3, prefer_deep_sources=True)),
+    )
+    cfg = get_config("acme", store=store)
+    assert cfg.source_plan_policy.tier_scope == 3
+    assert cfg.source_plan_policy.prefer_deep_sources is True
+    # A different client still gets the conservative (all-tiers, no-prefer) default.
+    assert get_config("globex", store=store).source_plan_policy == SourcePlanPolicy()
+
+
+def test_confidence_thresholds_overlay_and_icp_precedence(store: OverlayStore) -> None:
+    """Lever 1: the waterfall stop bar is layered config; the ICP layer wins over the client."""
+    store.set_client_overlay(
+        "acme",
+        ConfigOverlay(confidence_thresholds=ConfidenceThresholds(default=0.5)),
+    )
+    store.set_icp_overlay(
+        "acme",
+        "icp-eu",
+        ConfigOverlay(confidence_thresholds=ConfidenceThresholds(default=0.95)),
+    )
+    assert get_config("acme", store=store).confidence_thresholds.default == pytest.approx(0.5)
+    icp = get_config("acme", "icp-eu", store=store).confidence_thresholds
+    assert icp.default == pytest.approx(0.95)
+
+
+def test_overlay_from_mapping_rejects_bad_tier_scope() -> None:
+    with pytest.raises(ConfigError):
+        overlay_from_mapping({"source_plan_policy": {"tier_scope": 9}})
+
+
+def test_overlay_from_mapping_accepts_source_plan_policy() -> None:
+    overlay = overlay_from_mapping(
+        {"source_plan_policy": {"tier_scope": 4, "prefer_deep_sources": True}}
+    )
+    assert overlay.source_plan_policy is not None
+    assert overlay.source_plan_policy.effective_max_tier() == 4

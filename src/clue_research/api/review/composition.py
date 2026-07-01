@@ -21,11 +21,9 @@ displays / whose state machine it resumes. This module assembles:
 
 from __future__ import annotations
 
-from collections.abc import Callable, Sequence
-from contextlib import AbstractAsyncContextManager
+from collections.abc import Sequence
 
 from sqlalchemy import bindparam, text
-from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_research.api.handoff_wiring import DurableHandoffReadinessReader
 from clue_research.api.review.handler import ReviewAccountResolver, ReviewPhaseHandler
@@ -45,12 +43,10 @@ from clue_research.core.review import (
     ReviewDispositionEmitter,
     VerificationAnnotationReader,
 )
-from clue_research.db import connection, transaction
+from clue_research.db import ConnFactory, connection, transaction
 from clue_research.durable import AccountSpec, register_phase_handler
 from clue_research.durable.campaign import CampaignRun, CheckpointNotAwaiting
-from clue_research.review import ReviewProjector, ReviewSurfaceImpl, SessionFactory
-
-_ConnFactory = Callable[[], AbstractAsyncContextManager[AsyncConnection]]
+from clue_research.review import ReviewProjector, ReviewSurfaceImpl
 
 
 class DbVerificationAnnotationReader:
@@ -59,7 +55,7 @@ class DbVerificationAnnotationReader:
     are already tenant-scoped by the projection (it reads only tenant-visible claims), so the side
     tables — which carry no tenant column — are read by ``claim_id`` directly."""
 
-    def __init__(self, *, conn_factory: _ConnFactory = connection) -> None:
+    def __init__(self, *, conn_factory: ConnFactory = connection) -> None:
         self._conn_factory = conn_factory
 
     async def annotations_for_claims(
@@ -185,7 +181,7 @@ class NoopReviewDispositionEmitter:
 
 
 def build_review_account_resolver(
-    *, conn_factory: _ConnFactory = connection
+    *, conn_factory: ConnFactory = connection
 ) -> ReviewAccountResolver:
     """Resolve the M12-ready accounts (DONE + CONTACTS_COMPLETE) for the REVIEW phase — the
     readiness reader *without* the review-finalized gate (which would be circular: no session is
@@ -208,8 +204,8 @@ def build_review_account_resolver(
 
 def build_review_surface(
     *,
-    conn_factory: _ConnFactory = connection,
-    session_factory: SessionFactory = transaction,
+    conn_factory: ConnFactory = connection,
+    session_factory: ConnFactory = transaction,
     campaign_run: CampaignRun | None = None,
     annotation_reader: VerificationAnnotationReader | None = None,
     disposition_emitter: ReviewDispositionEmitter | None = None,
@@ -234,8 +230,8 @@ def build_review_phase_handler(
     *,
     account_resolver: ReviewAccountResolver | None = None,
     surface: ReviewSurfaceImpl | None = None,
-    conn_factory: _ConnFactory = connection,
-    session_factory: SessionFactory = transaction,
+    conn_factory: ConnFactory = connection,
+    session_factory: ConnFactory = transaction,
     campaign_run: CampaignRun | None = None,
     disposition_emitter: ReviewDispositionEmitter | None = None,
 ) -> ReviewPhaseHandler:
@@ -259,8 +255,8 @@ def register_review_phase_handler(
     *,
     account_resolver: ReviewAccountResolver | None = None,
     surface: ReviewSurfaceImpl | None = None,
-    conn_factory: _ConnFactory = connection,
-    session_factory: SessionFactory = transaction,
+    conn_factory: ConnFactory = connection,
+    session_factory: ConnFactory = transaction,
     campaign_run: CampaignRun | None = None,
     disposition_emitter: ReviewDispositionEmitter | None = None,
 ) -> ReviewPhaseHandler:

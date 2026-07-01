@@ -40,7 +40,7 @@ from clue_research.core import (
     RunId,
     VerificationStatus,
     can_be_promoted,
-    parse_value_json,
+    decode_jsonb_scalar,
     serialize_value_json,
 )
 from clue_research.core.field import FieldKey
@@ -113,26 +113,15 @@ def _insert_params(claim: Claim) -> dict[str, object]:
     }
 
 
-def _decode_jsonb(raw: object) -> object:
-    """Decode a JSONB column value to a Python object.
-
-    SQLAlchemy's asyncpg dialect returns ``jsonb`` *already decoded* (dict / list / str / int / …),
-    so the value passes straight through. Only if a driver hands back raw ``bytes`` do we parse it,
-    through the one ``core`` round-trip path.
-    """
-    if isinstance(raw, (bytes, bytearray)):
-        return parse_value_json(bytes(raw))
-    return raw
-
-
 def _row_to_claim(row: dict[str, object]) -> Claim:
     """Rebuild a :class:`Claim` from a ``claim`` row mapping.
 
     Reconstruction re-runs the model validators, so a row that somehow violated an invariant is
-    caught on read too (defense in depth).
+    caught on read too (defense in depth). ``value_json`` is a bare-scalar column (a decoded ``"x"``
+    is the value, not JSON text), so it reads through the bytes-only ``decode_jsonb_scalar``.
     """
-    value_json = _decode_jsonb(row["value_json"])
-    discovery = _decode_jsonb(row.get("discovery_provenance"))
+    value_json = decode_jsonb_scalar(row["value_json"])
+    discovery = decode_jsonb_scalar(row.get("discovery_provenance"))
     return Claim.model_validate(
         {
             "id": row["id"],

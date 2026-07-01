@@ -14,21 +14,17 @@ drops below ``baseline − tolerance`` is blocked (spec §M13.3 AC).
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping, Sequence
-from contextlib import AbstractAsyncContextManager
+from collections.abc import Mapping, Sequence
 
 from pydantic import JsonValue
-from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_research.claimstore import TenantScope
 from clue_research.core import BacktestGate, BacktestRegression, BacktestVerdict
-from clue_research.db import connection
+from clue_research.db import ConnFactory, connection
 from clue_research.evals import EvalReport, MechanismMetric
 from clue_research.icp import get_rubric_version, rubric_from_slot, score_entity
 from clue_research.review import account_outcome_labels, read_labeled_dataset
 from clue_research.verification import check_regressions
-
-_ConnFactory = Callable[[], AbstractAsyncContextManager[AsyncConnection]]
 
 # A [0,1] AUC is encoded as a MechanismMetric recall (detected/expected) for the M9.6 regression
 # engine to score it like any other gate metric; the scale fixes the precision of that encoding.
@@ -51,7 +47,7 @@ def _auc(positive: Sequence[float], negative: Sequence[float]) -> float | None:
 class LabeledDatasetBacktestGate:
     """The production ``core.BacktestGate`` over the M13.2 labeled account set."""
 
-    def __init__(self, *, conn_factory: _ConnFactory = connection) -> None:
+    def __init__(self, *, conn_factory: ConnFactory = connection) -> None:
         self._conn_factory = conn_factory
 
     async def backtest(
@@ -151,7 +147,7 @@ class LabeledDatasetBacktestGate:
         )
 
 
-def build_backtest_gate(*, conn_factory: _ConnFactory = connection) -> BacktestGate:
+def build_backtest_gate(*, conn_factory: ConnFactory = connection) -> BacktestGate:
     """Construct the production ``BacktestGate`` to inject into the M13.3 loop (read-only;
     re-scores over the claim store + labeled dataset and runs the M9.6 regression engine)."""
     return LabeledDatasetBacktestGate(conn_factory=conn_factory)

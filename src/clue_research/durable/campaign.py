@@ -44,6 +44,7 @@ from clue_research.core import (
     PhaseContext,
     PhaseStatus,
     new_campaign_run_id,
+    parse_cost_cents,
 )
 from clue_research.core.idempotency import phase_key
 from clue_research.db import transaction
@@ -624,9 +625,10 @@ class CampaignRun:
 
         # Apply only the edits that actually change the run, so re-submitting the same decision (a
         # UI retry, or a crash between this adjust and the commit below) does not append a duplicate
-        # journal row. ``_to_cost`` defends against a malformed/NaN/Infinity client cap (ignored).
+        # journal row. ``parse_cost_cents`` defends against a malformed/NaN/Infinity/negative client
+        # cap (ignored).
         cutoffs_in = decision.get("tier_cutoffs")
-        cap_in = _to_cost(decision.get("budget_cap_cents"))
+        cap_in = parse_cost_cents(decision.get("budget_cap_cents"))
         new_cutoffs = (
             cutoffs_in
             if isinstance(cutoffs_in, dict) and cutoffs_in and cutoffs_in != run.tier_cutoffs
@@ -806,21 +808,6 @@ class CampaignRun:
             await self._commit_phase(run.id, phase, payload=payload, resume=resume)
             step.record(result_ref={"phase": phase.value}, cost_cents=cost_cents)
         return await self._transition_after(await self.status(run.id))
-
-
-def _to_cost(value: object) -> CostCents | None:
-    """Coerce a JSON-carried cap (str/number) from a decision dict to ``CostCents``; ``None`` if
-    absent, unparseable, non-finite, or negative (the decision is client input, so it is parsed
-    defensively — a ``NaN`` / ``Infinity`` / negative cap is ignored rather than crashing or
-    persisting an effectively-uncapped budget). ``is_finite()`` rejects ``NaN`` / ±``Infinity`` and
-    never raises, so the ``>= 0`` comparison can never signal ``InvalidOperation`` on a ``NaN``."""
-    if value is None:
-        return None
-    try:
-        cost = Decimal(str(value))
-    except (ValueError, ArithmeticError):
-        return None
-    return cost if cost.is_finite() and cost >= 0 else None
 
 
 def _to_float_cutoffs(cutoffs: TierCutoffs) -> dict[str, float] | None:

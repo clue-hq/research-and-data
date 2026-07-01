@@ -24,7 +24,7 @@ from pydantic import BaseModel, ConfigDict
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_research.core import CampaignRunId, CostCents, EntityId, RunId
-from clue_research.db import transaction
+from clue_research.db import ConnFactory, transaction
 from clue_research.durable import (
     AccountRunStatus,
     AccountRunSubPhase,
@@ -34,7 +34,6 @@ from clue_research.durable import (
     set_account_sub_phase,
 )
 from clue_research.durable.account_run import ReferencesIndex
-from clue_research.profiling.runtime import SessionFactory
 
 
 class DeepRunState(BaseModel):
@@ -104,7 +103,7 @@ class DbAccountRunIO:
     M8A.0 sub-phase setter. ``ensure`` / ``load`` run in their own ``session_factory`` transaction;
     ``fold`` runs on the caller's connection (the M8A.4 exactly-once boundary)."""
 
-    def __init__(self, *, session_factory: SessionFactory = transaction) -> None:
+    def __init__(self, *, session_factory: ConnFactory = transaction) -> None:
         self._session_factory = session_factory
 
     async def ensure(

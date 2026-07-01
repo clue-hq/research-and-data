@@ -63,7 +63,7 @@ from clue_research.core import (
     PhaseStatus,
     RunId,
 )
-from clue_research.db import transaction
+from clue_research.db import ConnFactory, transaction
 from clue_research.durable import (
     AccountRunStatus,
     AccountScheduler,
@@ -72,7 +72,6 @@ from clue_research.durable import (
     get_account_run,
     set_status,
 )
-from clue_research.profiling.runtime import SessionFactory
 
 # --- injected seams ----------------------------------------------------------
 
@@ -132,7 +131,7 @@ class DeepAccountOrchestrator(Protocol):
 
 
 def db_finalize_failed_account(
-    *, session_factory: SessionFactory = transaction
+    *, session_factory: ConnFactory = transaction
 ) -> FinalizeFailedAccount:
     """The production :data:`FinalizeFailedAccount`: read the run's persisted cost, mark it FAILED,
     return that cost — all in one transaction.

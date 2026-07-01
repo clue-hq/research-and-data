@@ -28,7 +28,6 @@ in-graph (today they are driven via their direct callables, which populate those
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable, Sequence
-from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass
 
 from sqlalchemy.ext.asyncio import AsyncConnection
@@ -44,7 +43,7 @@ from clue_research.core import (
     new_claim_id,
 )
 from clue_research.core.execution import AspectWorker
-from clue_research.db import transaction
+from clue_research.db import ConnFactory, transaction
 from clue_research.durable import (
     AccountResearchGraph,
     WorkerRegistry,
@@ -58,7 +57,6 @@ from clue_research.profiling import (
 from clue_research.profiling.committee import CommitteeAspectWorker, CommitteeSource
 from clue_research.profiling.contact import ContactProfileAspectWorker
 from clue_research.profiling.contact.binding import BindingClassifier, BindingInput
-from clue_research.profiling.runtime import SessionFactory
 from clue_research.sources import seed_source_manifests
 from clue_research.synthesis import guard_synthesis_resolution
 from clue_research.verification import (
@@ -82,8 +80,6 @@ __all__ = [
     "build_worker_registry",
     "build_research_graph",
 ]
-
-_ConnFactory = Callable[[], AbstractAsyncContextManager[AsyncConnection]]
 
 
 # --- packs + source manifests ------------------------------------------------
@@ -190,7 +186,7 @@ def production_binding_classifier(
 def build_pre_spend_gate(
     *,
     policy: PreSpendPolicy = DEFAULT_PRE_SPEND_POLICY,
-    conn_factory: _ConnFactory | None = None,
+    conn_factory: ConnFactory | None = None,
     record_decisions: bool = True,
 ) -> PreSpendGate:
     """The api-root :class:`~clue_research.core.verification.PreSpendGate` to inject before spend.
@@ -215,7 +211,7 @@ def build_profiling_workers(
     *,
     gateway: LLMGateway,
     committee_sources: Sequence[CommitteeSource],
-    session_factory: SessionFactory = transaction,
+    session_factory: ConnFactory = transaction,
     pre_spend_gate: PreSpendGate | None = None,
     binding_classifier: BindingClassifier | None = None,
     synthesis_guard: SynthesisGuard | None = guard_synthesis_resolution,
@@ -280,7 +276,7 @@ def build_worker_registry(
     *,
     gateway: LLMGateway,
     committee_sources: Sequence[CommitteeSource],
-    session_factory: SessionFactory = transaction,
+    session_factory: ConnFactory = transaction,
     pre_spend_gate: PreSpendGate | None = None,
     binding_classifier: BindingClassifier | None = None,
     role_model: str | None = None,

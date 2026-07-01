@@ -43,11 +43,7 @@ the flag is the deploying caller's one-line opt-in, not a default.
 
 from __future__ import annotations
 
-from collections.abc import Callable
-from contextlib import AbstractAsyncContextManager
 from typing import Protocol, runtime_checkable
-
-from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_research.api.disposition_wiring import build_review_disposition_emitter
 from clue_research.api.review import (
@@ -65,13 +61,10 @@ from clue_research.compliance import (
 )
 from clue_research.core import Claim, ClaimId, EntityId
 from clue_research.core.review import ReviewDispositionEmitter
-from clue_research.db import connection, transaction
+from clue_research.db import ConnFactory, connection, transaction
 from clue_research.durable.campaign import CampaignRun
 from clue_research.obs import MetricSink
-from clue_research.review import DispositionStore, SessionFactory
-
-_ConnFactory = Callable[[], AbstractAsyncContextManager[AsyncConnection]]
-
+from clue_research.review import DispositionStore
 
 # --- M13.1 ↔ M13.2: register the REVIEW handler with the concrete disposition emitter ------------
 
@@ -79,7 +72,7 @@ _ConnFactory = Callable[[], AbstractAsyncContextManager[AsyncConnection]]
 def _production_review_emitter(
     *,
     disposition_emitter: ReviewDispositionEmitter | None,
-    emitter_conn_factory: _ConnFactory,
+    emitter_conn_factory: ConnFactory,
     emitter_sink: MetricSink | None,
 ) -> ReviewDispositionEmitter:
     """The disposition emitter the production REVIEW surface uses — M13.2's concrete
@@ -93,11 +86,11 @@ def _production_review_emitter(
 
 def build_reviewed_phase_handler(
     *,
-    conn_factory: _ConnFactory = connection,
-    session_factory: SessionFactory = transaction,
+    conn_factory: ConnFactory = connection,
+    session_factory: ConnFactory = transaction,
     campaign_run: CampaignRun | None = None,
     disposition_emitter: ReviewDispositionEmitter | None = None,
-    emitter_conn_factory: _ConnFactory = transaction,
+    emitter_conn_factory: ConnFactory = transaction,
     emitter_sink: MetricSink | None = None,
 ) -> ReviewPhaseHandler:
     """Build the ``CampaignPhase.REVIEW`` handler whose surface emits **real** dispositions (no
@@ -118,11 +111,11 @@ def build_reviewed_phase_handler(
 
 def register_reviewed_phase_handler(
     *,
-    conn_factory: _ConnFactory = connection,
-    session_factory: SessionFactory = transaction,
+    conn_factory: ConnFactory = connection,
+    session_factory: ConnFactory = transaction,
     campaign_run: CampaignRun | None = None,
     disposition_emitter: ReviewDispositionEmitter | None = None,
-    emitter_conn_factory: _ConnFactory = transaction,
+    emitter_conn_factory: ConnFactory = transaction,
     emitter_sink: MetricSink | None = None,
 ) -> ReviewPhaseHandler:
     """Build + register the production ``CampaignPhase.REVIEW`` handler (emitting real dispositions)

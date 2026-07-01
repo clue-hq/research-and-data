@@ -142,7 +142,7 @@ async def rollback_conn(*, seed_pack: bool = True) -> AsyncIterator[AsyncConnect
 
 
 def conn_session_factory(conn: AsyncConnection):
-    """A ``SessionFactory`` that hands the worker the *test's* rolled-back connection.
+    """A ``ConnFactory`` that hands the worker the *test's* rolled-back connection.
 
     The deep workers (and ``profile_account``) open their own session via an injected
     ``session_factory``; in tests we inject this so the worker reads/writes the same rolled-back

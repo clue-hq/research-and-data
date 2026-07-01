@@ -64,6 +64,7 @@ from clue_research.core import (
     ResolverError,
     account_claim,
     new_run_id,
+    parse_cost_cents,
     serialize_value_json,
     to_value_json,
 )
@@ -310,13 +311,8 @@ def dollars_to_cost_cents(dollars: Any) -> CostCents:
     """Convert a USD amount to cents, defensively — absent/malformed/negative/non-finite → ``0``
     (the resolver then attributes the seed-manifest default), never a guess. The pure conversion;
     :func:`cost_cents_from_cost_dollars` reads the assumed ``costDollars.total`` shape over it."""
-    try:
-        amount = Decimal(str(dollars))
-    except (TypeError, ValueError, ArithmeticError):
-        return Decimal(0)
-    if amount < 0 or not amount.is_finite():
-        return Decimal(0)
-    return amount * 100
+    amount = parse_cost_cents(dollars)
+    return Decimal(0) if amount is None else amount * 100
 
 
 def cost_cents_from_cost_dollars(payload: Mapping[str, Any]) -> CostCents:

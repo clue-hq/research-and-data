@@ -33,6 +33,7 @@ from clue_research.icp.catalog import (
     get_pack_source_profile,
     list_packs,
     register_pack_catalog,
+    serve_source_profile,
     validate_pack,
 )
 from clue_research.icp.compiler import (
@@ -110,11 +111,12 @@ __all__ = [
     "get_pack",
     "get_pack_field_set",
     "get_pack_source_profile",
+    "serve_source_profile",
     "validate_pack",
     "UnknownPackError",
     "PackRedefinitionError",
     "PackValidationError",
-    # source-profile half (M3.3)
+    # source-profile half (M3.3) + ICP-level merge via serve_source_profile
     "SourceWeight",
     "WeightedSource",
     "ResolvedSourceProfile",

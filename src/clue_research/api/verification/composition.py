@@ -42,11 +42,10 @@ from clue_research.compliance import UseGateImpl, load_client_policy
 from clue_research.core import Claim, EntityId
 from clue_research.core.compliance import UseGate
 from clue_research.core.gateway import LLMGateway
-from clue_research.db import transaction
+from clue_research.db import ConnFactory, transaction
 from clue_research.durable import register_phase_handler
 from clue_research.identity import contact_ids_for_account
 from clue_research.obs import MetricSink
-from clue_research.profiling.runtime import SessionFactory
 from clue_research.verification import (
     DEFAULT_CORROBORATION_POLICY,
     DEFAULT_JUDGE_POLICY,
@@ -61,7 +60,7 @@ def build_verification_phase_handler(
     *,
     gateway: LLMGateway,
     account_resolver: VerificationAccountResolver,
-    session_factory: SessionFactory = transaction,
+    session_factory: ConnFactory = transaction,
     judge_policy: JudgePolicy = DEFAULT_JUDGE_POLICY,
     corroboration_policy: CorroborationPolicy = DEFAULT_CORROBORATION_POLICY,
     govern_contacts: bool = True,
@@ -118,7 +117,7 @@ def register_verification_phase_handler(
     *,
     gateway: LLMGateway,
     account_resolver: VerificationAccountResolver,
-    session_factory: SessionFactory = transaction,
+    session_factory: ConnFactory = transaction,
     judge_policy: JudgePolicy = DEFAULT_JUDGE_POLICY,
     corroboration_policy: CorroborationPolicy = DEFAULT_CORROBORATION_POLICY,
     govern_contacts: bool = True,

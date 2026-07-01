@@ -12,16 +12,11 @@ from pydantic import ValidationError
 from clue_research.core import (
     AdaptContext,
     ClaimDraft,
-    Entity,
-    EntityType,
-    FieldDef,
     Modality,
     ModalityAdapter,
     NormalizedText,
-    PassKind,
     RawArtifact,
     UseClass,
-    new_entity_id,
 )
 
 
@@ -34,11 +29,6 @@ class _Adapter:
     def adapt(self, artifact: RawArtifact, ctx: AdaptContext) -> NormalizedText:
         return NormalizedText(text=artifact.text())
 
-    def extract(
-        self, normalized: NormalizedText, entity: Entity, field: FieldDef
-    ) -> list[ClaimDraft]:
-        return []
-
 
 def test_modality_adapter_is_runtime_checkable() -> None:
     assert isinstance(_Adapter(), ModalityAdapter)
@@ -49,11 +39,6 @@ def test_modality_adapter_is_runtime_checkable() -> None:
 
         def adapt(self, artifact: RawArtifact, ctx: AdaptContext) -> NormalizedText:
             return NormalizedText(text="")
-
-        def extract(
-            self, normalized: NormalizedText, entity: Entity, field: FieldDef
-        ) -> list[ClaimDraft]:
-            return []
 
     # missing the `modality` data member -> not structurally an adapter
     assert not isinstance(_NoModality(), ModalityAdapter)
@@ -98,14 +83,10 @@ def test_adapt_context_carries_a_reference_not_a_secret() -> None:
     assert ctx.params == {}
 
 
-def test_example_adapter_extract_signature() -> None:
-    # exercises the protocol's three stages against a real entity/field (the M8/M4.5 call shape)
-    entity = Entity(entity_id=new_entity_id(), entity_type=EntityType.ACCOUNT)
-    field = FieldDef(
-        field_key="account.operational_pain", value_type="str", pass_kind=PassKind.DEEP
-    )
+def test_example_adapter_fetch_adapt_pipeline() -> None:
+    # exercises the normalizer's two stages (the M8/M4.5 call shape); extraction is a separate
+    # per-call ClaimExtractor seam, not a method on the adapter.
     adapter = _Adapter()
     art = adapter.fetch("some text", AdaptContext(source_key="x"))
     normalized = adapter.adapt(art, AdaptContext(source_key="x"))
     assert normalized.text == "some text"
-    assert adapter.extract(normalized, entity, field) == []
