@@ -160,7 +160,8 @@ class ResonanceAspectWorker(AspectProfilingWorker):
     sensitivity firewall as its ``claim_filter`` and the full tier band as its planner scope.
 
     Registered into M7's ``WorkerRegistry`` under ``"account.resonance"`` (the field-class key the
-    graph clusters resonance gaps into) — see ``profiling/wiring.py``. Because ``account.resonance``
+    graph clusters resonance gaps into) — see ``api/composition.py`` (``build_profiling_workers``).
+    Because ``account.resonance``
     is a recursion-eligible class (``config.RecursionPolicy.eligible_classes``), the graph *may* let
     this aspect spawn facet sub-workers; M8.2 does not require them (a single-level fill is
     correct),

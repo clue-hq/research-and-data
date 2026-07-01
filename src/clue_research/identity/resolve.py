@@ -50,7 +50,12 @@ class ResolutionMethod(StrEnum):
 
 
 class Observation(BaseModel):
-    """A raw thing to resolve — from discovery, import, or committee. Free-text in, ids out."""
+    """The **input** to :func:`resolve` — a messy, unresolved row (import, discovery, committee).
+
+    Carries whatever identifiers the caller has (name, domain, geo, strong keys for contacts).
+    The engine first tries deterministic strong-key lookup; on a miss it embeds the name, blocks
+    DB candidates, and scores each as ``Observation`` (left) vs :class:`_CandidateRecord` (right)
+    → :class:`Candidate` (ranked output). Not a persisted entity — free-text in, entity ids out."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
@@ -91,6 +96,7 @@ class ResolutionResult(BaseModel):
 
 # --- feature helpers (pure) -------------------------------------------------
 def _geo_country(geo: Mapping[str, object] | None) -> str | None:
+    """Normalize a country token from a geo dict (``country`` / ``country_code`` keys)."""
     if not geo:
         return None
     for key in ("country", "country_code", "Country"):
@@ -103,6 +109,8 @@ def _geo_country(geo: Mapping[str, object] | None) -> str | None:
 def _geo_agreement(
     obs_geo: Mapping[str, object] | None, cand_geo: Mapping[str, object] | None
 ) -> float:
+    """Pairwise geo feature for :func:`_score`: ``1.0`` match, ``0.0`` mismatch, ``0.5`` if either side
+    lacks a country (neutral — does not penalize unknown geo)."""
     obs_country, cand_country = _geo_country(obs_geo), _geo_country(cand_geo)
     if obs_country is None or cand_country is None:
         return 0.5  # neutral — one side unknown
@@ -110,6 +118,7 @@ def _geo_agreement(
 
 
 def _token_jaccard(a: set[str], b: set[str]) -> float:
+    """Token-set Jaccard similarity: ``|a ∩ b| / |a ∪ b|``; ``0.0`` when either set is empty."""
     if not a or not b:
         return 0.0
     return len(a & b) / len(a | b)
@@ -124,6 +133,7 @@ def _name_jaccard(obs_name: str, candidate_aliases: Sequence[str]) -> float:
 
 
 def _alias_overlap(obs_aliases: Sequence[str], candidate_aliases: Sequence[str]) -> float:
+    """Share of the observation's normalized alias keys that appear on the candidate (``0.0``–``1.0``)."""
     obs_keys = {name_key(a) for a in obs_aliases if name_key(a)}
     if not obs_keys:
         return 0.0
@@ -131,6 +141,7 @@ def _alias_overlap(obs_aliases: Sequence[str], candidate_aliases: Sequence[str])
 
 
 def _domain_agreement(obs: Observation, cand_domain: str | None) -> float:
+    """``1.0`` when both sides have the same registrable domain; ``0.0`` otherwise (including missing)."""
     obs_domain = registrable_domain(obs.domain) if obs.domain else None
     if obs_domain is None or cand_domain is None:
         return 0.0  # strong-key budget stays unearned without a confirmed domain
@@ -138,6 +149,7 @@ def _domain_agreement(obs: Observation, cand_domain: str | None) -> float:
 
 
 def _registry_agreement(obs: Observation, cand_registry: Mapping[str, str]) -> float:
+    """``1.0`` when any normalized ``(namespace, id)`` pair overlaps; ``0.0`` when none do."""
     obs_reg = dict(canonical_registry_id(ns, v) for ns, v in obs.registry_ids.items())
     obs_pairs = {(ns, v) for ns, v in obs_reg.items() if v}
     cand_pairs = {(ns, v) for ns, v in cand_registry.items()}
@@ -146,6 +158,13 @@ def _registry_agreement(obs: Observation, cand_registry: Mapping[str, str]) -> f
 
 # --- candidate record ------------------------------------------------------
 class _CandidateRecord(BaseModel):
+    """Slim **right-hand side** of probabilistic scoring — one live DB entity + query-time cosine.
+
+    Built by :func:`_fetch_account_records` from ``account_entity`` (and its embedding join).
+    Not :class:`~clue_research.core.AccountEntity` (no status/merge fields) and not a
+    :class:`Candidate` (no score yet): it is the feature bundle :func:`_score` compares against an
+    :class:`Observation` before producing the ranked :class:`Candidate` output."""
+
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     entity_id: EntityId
