@@ -1,8 +1,8 @@
-"""The mode-M2 account-profiling aspect worker (M8.1) — the converge body M7's graph spawns.
+"""
+The mode-M2 account-profiling aspect worker (M8.1) — the converge body M7's graph spawns.
 
 M7 (``durable``) owns the per-account orchestrator-worker graph: it computes the gap fields,
-clusters
-them **by field-class** into aspects (``durable/planning.build_plan`` → ``"account"`` /
+clusters them **by field-class** into aspects (``durable/planning.build_plan`` → ``"account"`` /
 ``"account.resonance"`` / ``"core"`` / ``<pack>``), and dispatches one :class:`AspectWorker` per
 cluster (``durable/graph._dispatch`` looks the worker up by that field-class key). M8.1 supplies the
 **worker body** — :class:`AspectProfilingWorker` — that fills the cluster's ``field_keys`` it is
@@ -13,8 +13,7 @@ The worker is mode **M2 Profiling**: *converge*, not discover (staged-flow §1/�
 gap field it walks a closed, target-locked fill sequence and stops — the opposite of M6's open-ended
 ``expand``. The whole loop terminates by construction: a finite field set, each filled by the M4
 waterfall's finite ``tier_plan`` walk; the three stop states are **schema-satisfied** (a confident
-hit), **sources-exhausted** (ran out of resolvers — a correct empty/flagged field), and
-**budget-cap**
+hit), **sources-exhausted** (ran out of resolvers — a correct empty/flagged field), and **budget-cap**
 (the M7.5 envelope halted the walk).
 
 The per-gap-field sequence (§C of the build contract):
@@ -95,19 +94,17 @@ from clue_research.sources import (
 
 # The deep-profiling planner config. Identical to the M4 default except the expensive-modality
 # (video/audio transcription) gate clears for **both** top-deep-tier band names. The M4 default
-# gates
-# expensive modalities to ``{"high"}``, but the deep tier band is named inconsistently across config
-# (M6 tiering uses ``high``/``medium``; the M7 recursion knob uses ``top``/``high``), so a top-deep
-# account named ``top`` would otherwise silently skip transcription. Including both names makes the
-# top deep tier get the full modality set regardless of naming (``medium`` stays gated — a lower
-# deep
-# tier should not transcribe a 90-min podcast). Doc C §3/§7d: high tier + high-weighted source only.
+# gates expensive modalities to ``{"high"}``, but the deep tier band is named inconsistently across
+# config (M6 tiering uses ``high``/``medium``; the M7 recursion knob uses ``top``/``high``), so a
+# top-deep account named ``top`` would otherwise silently skip transcription. Including both names
+# makes the top deep tier get the full modality set regardless of naming (``medium`` stays gated —
+# a lower deep tier should not transcribe a 90-min podcast). Doc C §3/§7d: high tier + high-weighted
+# source only.
 DEEP_PROFILING_PLANNER_CONFIG: SourcePlannerConfig = DEFAULT_SOURCE_PLANNER_CONFIG.model_copy(
     update={"gate_expensive_entity_tiers": frozenset({"top", "high"})}
 )
 
-# A per-claim screen applied post-fill: ``True`` keeps the claim, ``False`` drops it from the
-# aspect's
+# A per-claim screen applied post-fill: ``True`` keeps the claim, ``False`` drops it from the aspect's
 # output (still written to the append-only store, unpromotable). M8.2's resonance firewall is one.
 ClaimFilter = Callable[[Claim], bool]
 
@@ -178,8 +175,9 @@ class AspectProfilingWorker:
     ``"core"`` / a ``<pack>`` namespace; the resonance specialisation
     (``aspect="account.resonance"``)
     is :class:`~clue_research.profiling.resonance.ResonanceAspectWorker`. Construct once with the
-    injected dependencies and register it into M7's ``WorkerRegistry`` at the api root
-    (``profiling/wiring.py``). Stateless across calls; the per-run context arrives in
+    injected dependencies and register it into M7's ``WorkerRegistry`` at the api composition
+    root (``api/composition.py`` — ``build_profiling_workers`` / ``register_profiling_workers``).
+    Stateless across calls; the per-run context arrives in
     :class:`~clue_research.core.AspectContext`."""
 
     def __init__(
@@ -449,12 +447,9 @@ class AspectProfilingWorker:
         rc: RunContext,
     ) -> tuple[tuple[ClaimId, ...], int, int]:
         """Drop a written claim from the aspect's output if it fails target-lock (a drift-prone
-        claim
-        not bound to this entity) or the optional ``claim_filter`` (M8.2's sensitivity firewall).
-        The
-        claim still exists in the append-only store (unpromotable); it is simply not surfaced as
-        this
-        aspect's evidence. Returns ``(kept_refs, target_lock_rejected, filter_rejected)``."""
+        claim not bound to this entity) or the optional ``claim_filter`` (M8.2's sensitivity firewall).
+        The claim still exists in the append-only store (unpromotable); it is simply not surfaced as
+        this aspect's evidence. Returns ``(kept_refs, target_lock_rejected, filter_rejected)``."""
         if not result_refs:
             return (), 0, 0
         ref_set = set(result_refs)
