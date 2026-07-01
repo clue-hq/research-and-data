@@ -20,15 +20,12 @@ no-op on replay, and the checkpoint re-presents byte-identical state.
 
 from __future__ import annotations
 
-from collections.abc import Callable
-from contextlib import AbstractAsyncContextManager
 from decimal import Decimal
 from typing import cast
 from uuid import NAMESPACE_URL, uuid5
 
 from pydantic import JsonValue
 from redis.asyncio import Redis
-from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_research.claimstore import ALL_TENANTS
 from clue_research.core import (
@@ -39,7 +36,7 @@ from clue_research.core import (
     PhaseStatus,
     RunId,
 )
-from clue_research.db import transaction
+from clue_research.db import ConnFactory, transaction
 from clue_research.discovery_scoring.coverage import (
     DEFAULT_COVERAGE_CONFIG,
     CoverageConfig,
@@ -87,10 +84,6 @@ from clue_research.icp.spec import get_icp_version
 from clue_research.sources import DEFAULT_CONFIDENCE_THRESHOLDS, ConfidenceThresholds
 from clue_research.sources.source_yield import record_source_yield
 
-# A session is an async context manager yielding a connection (db.transaction in production; a
-# rollback-scoped connection in tests). Injected so the handler is testable without committing.
-SessionFactory = Callable[[], AbstractAsyncContextManager[AsyncConnection]]
-
 
 def _discovery_run_id(ctx: PhaseContext) -> RunId:
     """A deterministic discovery run id per ``(campaign_run, icp_key, icp_version)`` — stable across
@@ -116,7 +109,7 @@ class DiscoveryPhaseHandler:
         config: DiscoveryConfig = DEFAULT_DISCOVERY_CONFIG,
         redis: Redis | None = None,
         existence: ExistenceCheck = DEFAULT_EXISTENCE_CHECK,
-        session_factory: SessionFactory = transaction,
+        session_factory: ConnFactory = transaction,
     ) -> None:
         self._channels = channels
         self._gateway = gateway
@@ -253,7 +246,7 @@ class ScoringPhaseHandler:
         *,
         config: ScoringConfig = DEFAULT_SCORING_CONFIG,
         thresholds: ConfidenceThresholds = DEFAULT_CONFIDENCE_THRESHOLDS,
-        session_factory: SessionFactory = transaction,
+        session_factory: ConnFactory = transaction,
     ) -> None:
         self._config = config
         self._thresholds = thresholds
@@ -408,7 +401,7 @@ class TierCheckpointPhaseHandler:
         *,
         config: TieringConfig = DEFAULT_TIERING_CONFIG,
         coverage_config: CoverageConfig = DEFAULT_COVERAGE_CONFIG,
-        session_factory: SessionFactory = transaction,
+        session_factory: ConnFactory = transaction,
     ) -> None:
         self._config = config
         self._coverage_config = coverage_config

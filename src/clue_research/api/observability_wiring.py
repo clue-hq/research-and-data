@@ -33,9 +33,6 @@ edit
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
-from contextlib import AbstractAsyncContextManager
-
-from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_research.claimstore import TenantScope, claims_for_runs
 from clue_research.config import BudgetCaps, get_config
@@ -49,7 +46,7 @@ from clue_research.core import (
     UnsearchedChannel,
     VerificationStatus,
 )
-from clue_research.db import connection
+from clue_research.db import ConnFactory, connection
 from clue_research.discovery_scoring import CoverageReport as _DiscoveryCoverageReport
 from clue_research.durable import (
     BudgetStateNotFound,
@@ -79,8 +76,6 @@ from clue_research.review import (
     VerificationHealthReader,
 )
 
-_ConnFactory = Callable[[], AbstractAsyncContextManager[AsyncConnection]]
-
 # A run past these statuses produces no further work (mirrors api/handoff_wiring).
 _TERMINAL_RUN_STATUSES = frozenset({CampaignRunStatus.COMPLETED, CampaignRunStatus.FAILED})
 
@@ -93,7 +88,7 @@ class DurableCampaignStateReader:
     supports the per-phase look-ups). Tenant-scoped; projects the durable enums to plain strings so
     ``review`` never learns the durable enum tokens."""
 
-    def __init__(self, *, conn_factory: _ConnFactory = connection) -> None:
+    def __init__(self, *, conn_factory: ConnFactory = connection) -> None:
         self._conn_factory = conn_factory
 
     async def run_phase_state(
@@ -124,7 +119,7 @@ class BudgetEngineBurnDownReader:
     uses so M13.3/M13.4 and the engine never diverge on the number. Tenant-scoped via a
     ``get_campaign_run`` check before reading the burn-down."""
 
-    def __init__(self, *, budget: BudgetEngine, conn_factory: _ConnFactory = connection) -> None:
+    def __init__(self, *, budget: BudgetEngine, conn_factory: ConnFactory = connection) -> None:
         self._budget = budget
         self._conn_factory = conn_factory
 
@@ -187,7 +182,7 @@ class ClaimScanVerificationHealthReader:
     Tenant-scoped; ``None`` for a missing / cross-tenant run. ``[]`` account runs → all-zero counts
     (a run with no deep claims is not unhealthy, it is empty)."""
 
-    def __init__(self, *, conn_factory: _ConnFactory = connection) -> None:
+    def __init__(self, *, conn_factory: ConnFactory = connection) -> None:
         self._conn_factory = conn_factory
 
     async def health_counts(
@@ -234,7 +229,7 @@ class CheckpointCoverageReportReader:
     telemetry (e.g. an import-only campaign) — surfaced honestly, never fabricated.
     Tenant-scoped."""
 
-    def __init__(self, *, conn_factory: _ConnFactory = connection) -> None:
+    def __init__(self, *, conn_factory: ConnFactory = connection) -> None:
         self._conn_factory = conn_factory
 
     async def coverage_for_run(
@@ -278,13 +273,13 @@ def _map_coverage(report: _DiscoveryCoverageReport) -> CoverageReport:
     )
 
 
-def build_campaign_state_reader(*, conn_factory: _ConnFactory = connection) -> CampaignStateReader:
+def build_campaign_state_reader(*, conn_factory: ConnFactory = connection) -> CampaignStateReader:
     """The api-root durable-backed :class:`CampaignStateReader`."""
     return DurableCampaignStateReader(conn_factory=conn_factory)
 
 
 def build_cost_burndown_reader(
-    *, budget: BudgetEngine, conn_factory: _ConnFactory = connection
+    *, budget: BudgetEngine, conn_factory: ConnFactory = connection
 ) -> CostBurnDownReader:
     """The api-root :class:`CostBurnDownReader` over the shared :class:`BudgetEngine`."""
     return BudgetEngineBurnDownReader(budget=budget, conn_factory=conn_factory)
@@ -298,15 +293,13 @@ def build_pre_run_estimator(
 
 
 def build_verification_health_reader(
-    *, conn_factory: _ConnFactory = connection
+    *, conn_factory: ConnFactory = connection
 ) -> VerificationHealthReader:
     """The api-root at-rest :class:`VerificationHealthReader`."""
     return ClaimScanVerificationHealthReader(conn_factory=conn_factory)
 
 
-def build_coverage_report_reader(
-    *, conn_factory: _ConnFactory = connection
-) -> CoverageReportReader:
+def build_coverage_report_reader(*, conn_factory: ConnFactory = connection) -> CoverageReportReader:
     """The api-root :class:`CoverageReportReader` over the M6.4 tier-checkpoint coverage payload."""
     return CheckpointCoverageReportReader(conn_factory=conn_factory)
 
@@ -314,7 +307,7 @@ def build_coverage_report_reader(
 def build_observability_surface(
     *,
     budget: BudgetEngine,
-    conn_factory: _ConnFactory = connection,
+    conn_factory: ConnFactory = connection,
     caps_for: Callable[[str], BudgetCaps] | None = None,
 ) -> ObservabilitySurface:
     """Construct the wired M13.4 :class:`ObservabilitySurface` — the durable-backed readers over the

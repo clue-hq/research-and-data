@@ -52,8 +52,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-from collections.abc import Callable, Sequence
-from contextlib import AbstractAsyncContextManager
+from collections.abc import Sequence
 from urllib.parse import urlsplit
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -71,10 +70,12 @@ from clue_research.core import (
     IdentityBinding,
     VerificationStatus,
     can_be_promoted,
+    decode_jsonb,
+    decode_jsonb_scalar,
     serialize_value_json,
 )
 from clue_research.core.entity import AccountEntity
-from clue_research.db import transaction
+from clue_research.db import ConnFactory, transaction
 from clue_research.identity import get_account, get_contact
 from clue_research.obs import (
     ATTR_CACHE_HIT,
@@ -420,14 +421,6 @@ def classify_binding(
 # --- the IdentityBindingGate ------------------------------------------------
 
 
-def _conn_factory_default() -> AbstractAsyncContextManager[AsyncConnection]:
-    """Default connection source: one committed transaction per ``classify`` (cache probe + the
-    entity/manifest reads + the eval insert + the status backstop are atomic — there is no external
-    call to hold a connection across, unlike the M9.3 judge). Indirected so the engine
-    resolves lazily at call time; tests inject a rollback-bound factory."""
-    return transaction()
-
-
 class IdentityBindingGateImpl:
     """The M9.4 identity-binding gate (implements :class:`clue_research.core.verification.
     IdentityBindingGate`).
@@ -440,9 +433,7 @@ class IdentityBindingGateImpl:
         self,
         *,
         policy: BindingPolicy = DEFAULT_BINDING_POLICY,
-        conn_factory: Callable[[], AbstractAsyncContextManager[AsyncConnection]] = (
-            _conn_factory_default
-        ),
+        conn_factory: ConnFactory = transaction,
         record_evals: bool = True,
         sink: MetricSink | None = None,
     ) -> None:
@@ -583,9 +574,7 @@ class IdentityBindingGateImpl:
         ).first()
         if row is None:
             return None
-        signals = row[2]
-        if isinstance(signals, (bytes, bytearray)):
-            signals = json.loads(bytes(signals))
+        signals = decode_jsonb_scalar(row[2])
         return Binding(
             claim_id=claim_id,
             contact_entity_id=row[3],
@@ -670,9 +659,7 @@ async def load_binding_policy(
             )
         ).first()
         if row is not None:
-            identifier_set = row[1]
-            if isinstance(identifier_set, (bytes, bytearray, str)):
-                identifier_set = json.loads(identifier_set)
+            identifier_set = decode_jsonb(row[1])
             kinds = tuple(str(x) for x in identifier_set)
             unsupported = [k for k in kinds if k not in SUPPORTED_IDENTIFIER_KINDS]
             if unsupported:

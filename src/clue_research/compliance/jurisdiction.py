@@ -33,7 +33,6 @@ docs/specs/M10-compliance-and-personal-data.md §M10.1.
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
-from contextlib import AbstractAsyncContextManager
 from enum import StrEnum
 from typing import Protocol, runtime_checkable
 
@@ -64,7 +63,7 @@ from clue_research.core import (
     RunId,
     UnitInterval,
 )
-from clue_research.db import transaction
+from clue_research.db import ConnFactory, transaction
 from clue_research.identity import get_account, get_contact, stamp_reuse
 from clue_research.obs import (
     ATTR_CLIENT_ID,
@@ -185,11 +184,6 @@ def _confidence(source: str, tier: int | None = None) -> float:
     return min(1.0, base)
 
 
-def _conn_factory_default() -> AbstractAsyncContextManager[AsyncConnection]:
-    """Default connection source — one committed transaction per ``resolve`` (mirrors M9.4)."""
-    return transaction()
-
-
 class JurisdictionResolverImpl:
     """The M10.1 :class:`JurisdictionResolver` implementation.
 
@@ -205,9 +199,7 @@ class JurisdictionResolverImpl:
         run_id: RunId,
         *,
         policy_getter: Callable[[str], JurisdictionPolicy] = get_policy,
-        conn_factory: Callable[[], AbstractAsyncContextManager[AsyncConnection]] = (
-            _conn_factory_default
-        ),
+        conn_factory: ConnFactory = transaction,
         persist: bool = True,
         sink: MetricSink | None = None,
     ) -> None:

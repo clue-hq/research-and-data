@@ -10,11 +10,10 @@ fails *loud* without a ``tenant_id``).
 `AspectContext.params` is the frozen escape hatch for exactly this (its docstring: "the escape hatch
 for phase-specific inputs … so adding one does not force a ``core`` change"). M7.1 ships it carrying
 only ``{"recursion": {...}}`` today; the **api composition root** populates the campaign coordinates
-when it builds the per-account graph run (the one coordination point — see
-``profiling/wiring.py``). :class:`RunContext` reads them defensively: every field is optional and
-the
-worker degrades to a correct, *flagged* output (never a crash) when a coordinate is absent — the
-same fail-soft discipline as the M9.1 / M9.4 deferred gate wirings.
+when it builds the per-account graph run (``api/composition.py`` / ``api/deep/composition.py``).
+:class:`RunContext` reads them defensively: every field is optional and the worker degrades to a
+correct, *flagged* output (never a crash) when a coordinate is absent — the same fail-soft discipline
+as the M9.1 / M9.4 deferred gate wirings.
 """
 
 from __future__ import annotations
@@ -24,7 +23,7 @@ from pydantic import BaseModel, ConfigDict, JsonValue
 from clue_research.claimstore import PUBLIC_ONLY, TenantScope
 
 # The `AspectContext.params` keys the api root populates (mirrors the durable graph's `recursion`
-# key). Kept here so the producer (api/wiring) and consumer (the worker) name them once.
+# key). Kept here so the producer (api/composition.py) and consumer (the worker) name them once.
 PARAM_CLIENT_ID = "client_id"
 PARAM_ICP_KEY = "icp_key"
 PARAM_ICP_VERSION = "icp_version"
@@ -53,8 +52,7 @@ class RunContext(BaseModel):
     (no planner) and refuses to write a ``tenant_private`` field (no ``tenant_id``), leaving it
     empty/flagged. ``tenant_id`` defaults to ``client_id`` (a campaign's tenant *is* its client; the
     project's ``tenant_id`` vs ``client_id`` naming is the same concept — see the M2/M3
-    harmonisation
-    note in CLAUDE.md)."""
+    harmonisation note in CLAUDE.md)."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
@@ -99,8 +97,9 @@ def params_for_run(
 ) -> dict[str, JsonValue]:
     """Build the ``AspectContext.params`` campaign-coordinate dict (the producer side).
 
-    Called by ``profiling/wiring.py`` / the api composition root (and by ``profile_account`` for its
-    per-aspect contexts) so the keys are written in exactly one place. Omits ``None`` values so the
+    Called by the api composition root (``api/composition.py``, ``api/deep/composition.py``) and by
+    ``profile_account`` for its per-aspect contexts so the keys are written in exactly one place.
+    Omits ``None`` values so the
     dict round-trips cleanly through the graph's JSON state."""
     raw: dict[str, JsonValue | None] = {
         PARAM_CLIENT_ID: client_id,

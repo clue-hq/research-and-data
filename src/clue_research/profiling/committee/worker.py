@@ -10,7 +10,7 @@ committee coverage confidence (:mod:`coverage`) rather than implying exhaustiven
 
 It returns **references** (contact ids + claim ids), never blobs. :class:`CommitteeAspectWorker`
 adapts it to the M7 ``AspectWorker`` seam (the orchestrator hands it an ``AspectContext`` and never
-a connection, so the worker opens one from an injected ``SessionFactory`` — the M6 pattern).
+a connection, so the worker opens one from an injected ``ConnFactory`` — the M6 pattern).
 """
 
 from __future__ import annotations
@@ -46,6 +46,7 @@ from clue_research.core import (
     WorkerStatus,
     contact_claim,
 )
+from clue_research.db import ConnFactory
 from clue_research.icp.spec import get_icp_version
 from clue_research.identity import get_account, stamp_reuse, surviving_id
 from clue_research.profiling.committee.admission import AdmissionStatus, admit_candidate
@@ -69,7 +70,6 @@ from clue_research.profiling.committee.sources import (
     order_committee_sources,
 )
 from clue_research.profiling.committee.stopping import CommitteeStoppingRule, CommitteeStopReason
-from clue_research.profiling.runtime import SessionFactory
 
 # Default personas to consider when the ICP does not narrow them (D5: read per ICP version).
 _ALL_PERSONAS: tuple[Persona, ...] = tuple(Persona)
@@ -388,7 +388,7 @@ class CommitteeAspectWorker:
     """Adapts :func:`discover_committee` to the M7 ``AspectWorker`` seam (``aspect='committee'``).
 
     The orchestrator hands an :class:`AspectContext` (no connection); the worker opens one from the
-    injected ``SessionFactory`` and reads ``client_id``/``icp_key``/``icp_version`` from
+    injected ``ConnFactory`` and reads ``client_id``/``icp_key``/``icp_version`` from
     ``ctx.params`` (the phase-input escape hatch) to load the ICP spec + bind the tenant. Concrete
     ``CommitteeSource``s + the gateway + the role model are injected at the ``api`` composition
     root."""
@@ -398,7 +398,7 @@ class CommitteeAspectWorker:
     def __init__(
         self,
         *,
-        session_factory: SessionFactory,
+        session_factory: ConnFactory,
         sources: Sequence[CommitteeSource],
         gateway: LLMGateway,
         role_model: str | None = None,

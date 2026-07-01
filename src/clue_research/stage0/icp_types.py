@@ -52,9 +52,47 @@ class TechnographicDimension(BaseModel):
 
 
 class CandidateSignal(BaseModel):
-    """Element 3 — a two-tier candidate signal (Doc C §1): the cheap ``proxy_field_keys`` scored at
-    Pass A (all accounts) and the ``narrative_field_keys`` synthesized deep at Pass B (high tier).
-    Keeping both coherent is what lets the compiled plan link proxy↔narrative."""
+    """Element 3 — a proposed *signal class* under Doc C's two-tier signal model (Doc C §1).
+
+    Every signal class splits into a **cheap proxy** and an optional **deep narrative**. The proxy
+    is a deterministic, tier-1/2 registry field tagged ``pass_kind=scoring`` — resolved on *all*
+    accounts in Pass A to produce fit/intent scores cheaply. The narrative is a ``pass_kind=deep``
+    field — often tier-4 synthesis — resolved only on high-tier accounts in Pass B once an account
+    has earned deeper spend. M1 discovery stays existence-only; signal richness lives here, in Pass
+    A/B, not in discovery.
+
+    This type is the *proposal-layer* grouping: synthesis suggests which proxy and narrative fields
+    belong to one theme; the client may drop whole classes via
+    :attr:`ICPProposalEdits.removed_signal_classes`. At confirm, both key tuples merge into the
+    compiled spec's active field set and ``signal_class`` names feed
+    ``discovery_strategy.candidate_signal_classes``; the durable proxy↔narrative link in
+    :class:`~clue_research.icp.compiler.SignalClassLink` is rebuilt from each field's registry
+    ``signal_class`` + ``pass_kind``.
+
+    Attributes:
+        signal_class: Human-readable theme name (``"growth"``, ``"intent"``, ``"saas_vertical"``).
+            Groups the proxy and narrative fields; also the handle the client edits/removes.
+        proxy_field_keys: Pass-A scoring fields — cheap deterministic facts for the whole list
+            (e.g. ``account.recent_funding``, headcount trend). Weighted in the proposed rubric's
+            ``intent`` (or ``fit``) dimension; must be ``pass_kind=scoring`` registry keys.
+        narrative_field_keys: Pass-B deep fields — synthesized "why" for high-tier accounts only
+            (e.g. ``account.hiring_velocity_eng``, strategic-moves narrative). May be empty when
+            the signal is proxy-only (firmographics rarely need synthesis).
+        justifying_claim_ids: Client-KB claim ids that justify proposing this signal — no element
+            may rest on "synthesis thought it was a good idea" alone.
+
+    Example (floor synthesis — growth signal)::
+
+        CandidateSignal(
+            signal_class="growth",
+            proxy_field_keys=("account.recent_funding",),       # Pass A: Crunchbase/API fact
+            narrative_field_keys=("account.hiring_velocity_eng",),  # Pass B: deep hiring read
+            justifying_claim_ids=(...),  # from client.delivered_value / client.icp_evidence
+        )
+
+    At runtime: Pass A scores every account on ``account.recent_funding``; only accounts that tier
+    high enough trigger Pass B to synthesize ``account.hiring_velocity_eng`` — same ``growth``
+    theme, two execution depths."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
@@ -78,8 +116,19 @@ class SeedAccount(BaseModel):
 
 
 class SourcePrior(BaseModel):
-    """One weighted source in a starting source profile (staged-flow §7c): a ``source_key`` with its
-    ordinal trust ``weight`` (``high``/``medium``/``low``) and 1-based consult ``rank``."""
+    """One row in the ICP proposal's source-profile *preview* (staged-flow §7c).
+
+    Different ICPs/industries need different sources prioritized (e.g. arXiv **high** for
+    frontier AI, BuiltWith **high** for data infra). At runtime the Source Planner reads weighted
+    priors to pick and order sources per field; this type surfaces that choice to the client *before*
+    confirm. Synthesis copies these from each enabled pack's catalog defaults
+    (:class:`~clue_research.icp.source_profile.WeightedSource`); it is proposal-layer only — the
+    authoritative profile is served at runtime from ``enabled_packs`` (M4.6).
+
+    Attributes:
+        source_key: Registered source id (``"arxiv"``, ``"builtwith"``, ``"g2"``, …).
+        weight: Ordinal trust band (``SourceWeight``: ``high`` / ``medium`` / ``low``).
+        rank: 1-based consult order when several sources could apply."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
@@ -89,9 +138,16 @@ class SourcePrior(BaseModel):
 
 
 class StartingSourceProfile(BaseModel):
-    """Element 5 — the starting source profile: which packs' priors apply (the authoritative runtime
-    profile is served from ``enabled_packs`` by M4.6) plus a flattened ``priors`` preview the client
-    can inspect/edit. ``packs`` is the part that actually compiles into the spec."""
+    """Element 5 — *which sources matter for this ICP* (Doc B §3 / staged-flow §7).
+
+    Fields say *what* to research; source profiles say *where* to learn it and how much to trust
+    each place — per industry pack. Synthesis proposes enabled ``packs`` plus a flattened ``priors``
+    preview so the client can inspect source trust/order before spend, not discover it only after
+    discovery/deep research starts. Only ``packs`` compiles into the spec
+    (``enabled_packs`` → ``source_profile_ref``); at confirm the full weighted profile is reloaded
+    from the pack catalog via :func:`~clue_research.icp.serve_source_profile`. ``priors`` is
+    denormalized transparency — same information the planner will use, shown alongside the pack
+    choice in the (out-of-repo) editor."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 

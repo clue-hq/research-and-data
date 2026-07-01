@@ -31,7 +31,6 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable, Sequence
-from contextlib import AbstractAsyncContextManager
 from typing import Protocol
 
 from pydantic import BaseModel, ConfigDict, JsonValue, ValidationError
@@ -59,7 +58,7 @@ from clue_research.core import (
     TargetLock,
     serialize_value_json,
 )
-from clue_research.db import transaction
+from clue_research.db import ConnFactory, transaction
 from clue_research.identity import get_entity
 from clue_research.locks.entity_lock import lock_key
 from clue_research.obs import (
@@ -289,14 +288,6 @@ async def _record_gate_decision(
     )
 
 
-def _conn_factory_default() -> AbstractAsyncContextManager[AsyncConnection]:
-    """Default connection source: one committed transaction per ``check`` (reads + the audit row).
-
-    Indirected through a function so the process-wide engine is resolved lazily at call time (a gate
-    can be constructed before ``db_lifespan`` is entered); tests inject a rollback-bound factory."""
-    return transaction()
-
-
 class PreSpendGateImpl:
     """The M9.1 pre-spend gate (implements :class:`clue_research.core.verification.PreSpendGate`).
 
@@ -308,9 +299,7 @@ class PreSpendGateImpl:
         self,
         *,
         policy: PreSpendPolicy = DEFAULT_PRE_SPEND_POLICY,
-        conn_factory: Callable[[], AbstractAsyncContextManager[AsyncConnection]] = (
-            _conn_factory_default
-        ),
+        conn_factory: ConnFactory = transaction,
         lock_reader: _LockReader | None = None,
         record_decisions: bool = True,
         sink: MetricSink | None = None,

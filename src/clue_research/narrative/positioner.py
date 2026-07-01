@@ -39,8 +39,6 @@ duplicating it (append-only + supersede; M12.1 AC7).
 
 from __future__ import annotations
 
-from collections.abc import Callable
-from contextlib import AbstractAsyncContextManager
 from decimal import Decimal
 from time import perf_counter
 
@@ -70,7 +68,7 @@ from clue_research.core import (
     is_outreach_promotable,
 )
 from clue_research.core.retrieval import ClientKnowledgeChunk, ClientKnowledgeRetriever
-from clue_research.db import transaction
+from clue_research.db import ConnFactory, transaction
 from clue_research.identity import stamp_reuse
 from clue_research.narrative.fields import VALUE_NARRATIVE
 from clue_research.narrative.policy import DEFAULT_POSITIONING_POLICY, PositioningPolicy
@@ -165,13 +163,6 @@ class PositioningResult(BaseModel):
     cost_cents: CostCents = Decimal(0)
 
 
-def _conn_factory_default() -> AbstractAsyncContextManager[AsyncConnection]:
-    """Default connection source: one committed transaction per read/write unit (indirected so the
-    engine resolves lazily; tests inject a rollback-bound factory that yields the shared conn).
-    """
-    return transaction()
-
-
 def assemble_evidence_span(
     account_facts: list[AccountFact], client_chunks: list[ClientKnowledgeChunk], *, max_chars: int
 ) -> str:
@@ -201,9 +192,7 @@ class Positioner:
         committee_reader: CommitteeReader,
         judge: FaithfulnessJudge,
         policy: PositioningPolicy = DEFAULT_POSITIONING_POLICY,
-        conn_factory: Callable[[], AbstractAsyncContextManager[AsyncConnection]] = (
-            _conn_factory_default
-        ),
+        conn_factory: ConnFactory = transaction,
         sink: MetricSink | None = None,
     ) -> None:
         self._gateway = gateway

@@ -11,8 +11,7 @@ without a DB):
 
 * :func:`build_target_lock` turns a resolved :class:`~clue_research.core.AccountEntity` into the
   shared :class:`~clue_research.core.TargetLock` context (canonical domain + identifiers + a
-  no-drift
-  instruction) — the same shape M9.1's ``PreSpendGate.assemble_target_lock`` produces, so the
+  no-drift instruction) — the same shape M9.1's ``PreSpendGate.assemble_target_lock`` produces, so the
   synthesis prompt and the post-fill validator read one lock.
 * :func:`binds_to_entity` is the validator the M8.1 worker applies to drift-prone claims (tier ≥ 3):
   the claim's ``evidence_span`` / ``source_url`` must reference a *strong* identifier of **this**
@@ -46,9 +45,8 @@ def build_target_lock(account: AccountEntity) -> TargetLock:
 
     Mirrors M9.1's ``assemble_target_lock``: the canonical domain is the strong key, with the
     registry ids / canonical name / aliases / hq geo as the disambiguator bundle, plus a
-    model-facing
-    no-drift instruction for any tier-4 synthesis prompt. The lock binds to the account's *resolved*
-    ``id`` — never a free-text name.
+    model-facing no-drift instruction for any tier-4 synthesis prompt. The lock binds to the
+    account's *resolved* ``id`` — never a free-text name.
     """
     domain = registrable_domain(account.primary_domain) if account.primary_domain else None
     identifiers: dict[str, JsonValue] = {"canonical_name": account.canonical_name}

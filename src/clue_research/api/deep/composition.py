@@ -44,6 +44,7 @@ definitions a deep run reads are registered.
 
 from __future__ import annotations
 
+import functools
 from collections.abc import Callable, Sequence
 from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass
@@ -67,7 +68,7 @@ from clue_research.api.deep.orchestrator import AccountDeepOrchestrator
 from clue_research.api.deep.run_io import DbAccountRunIO
 from clue_research.api.deep.spend import DbExactlyOnceSpend
 from clue_research.claimstore import TenantScope, claims_for, entities_with_field_claim
-from clue_research.config import DeepPhaseConfig, RecursionPolicy
+from clue_research.config import DeepPhaseConfig, OverlayStore, RecursionPolicy
 from clue_research.core import (
     CostCents,
     ICPSpec,
@@ -75,7 +76,7 @@ from clue_research.core import (
     PhaseContext,
     PreSpendGate,
 )
-from clue_research.db import transaction
+from clue_research.db import ConnFactory, transaction
 from clue_research.discovery_scoring.tiering import TIER_FIELD, cutoff_version
 from clue_research.durable import (
     AccountResearchGraph,
@@ -95,7 +96,6 @@ from clue_research.profiling import (
     profile_contact,
 )
 from clue_research.profiling.contact.binding import BindingClassifier
-from clue_research.profiling.runtime import SessionFactory
 from clue_research.synthesis import guard_synthesis_resolution
 
 __all__ = [
@@ -130,7 +130,7 @@ class DeepPhaseComposition:
 def build_high_tier_resolver(
     *,
     spec: ICPSpec,
-    session_factory: SessionFactory = transaction,
+    session_factory: ConnFactory = transaction,
     deep_tiers: frozenset[str] | None = None,
 ) -> HighTierResolver:
     """The :data:`~clue_research.api.deep.handler.HighTierResolver` that reads the human-approved
@@ -208,10 +208,11 @@ def build_account_axis_registry(
     *,
     gateway: LLMGateway,
     pre_spend_gate: PreSpendGate,
-    session_factory: SessionFactory = transaction,
+    session_factory: ConnFactory = transaction,
     planner_model: str | None = None,
     pack_namespaces: Sequence[str] = (),
     synthesis_guard: SynthesisGuard = guard_synthesis_resolution,
+    config_store: OverlayStore | None = None,
 ) -> WorkerRegistry:
     """A :class:`WorkerRegistry` holding **only** the account-axis aspect workers
     (account / core / resonance / pack) — the graph the M8A scheduler is built over.
@@ -229,6 +230,7 @@ def build_account_axis_registry(
         planner_model=planner_model,
         pre_spend_gate=pre_spend_gate,
         synthesis_guard=synthesis_guard,
+        config_store=config_store,
     ):
         registry.register(worker)
     return registry
@@ -272,10 +274,11 @@ def build_deep_phase_handler(
     pre_spend_gate: PreSpendGate | None = None,
     binding_classifier: BindingClassifier | None = None,
     synthesis_guard: SynthesisGuard = guard_synthesis_resolution,
-    session_factory: SessionFactory = transaction,
+    session_factory: ConnFactory = transaction,
     high_tier_resolver: HighTierResolver | None = None,
     checkpointer_factory: CheckpointerFactory | None = None,
     budget_cap_cents: CostCents | None = None,
+    config_store: OverlayStore | None = None,
 ) -> DeepPhaseComposition:
     """Construct the fully-wired DEEP phase for one campaign's ICP and return the bundle (M8A.6).
 
@@ -295,11 +298,24 @@ def build_deep_phase_handler(
         spec=spec, session_factory=session_factory
     )
     checkpointers = checkpointer_factory or _memory_checkpointer_factory()
+    # Bind the layered-config seam onto the live account + contact callables so an injected
+    # (test/Stage-0) overlay store reaches the deep workers; ``None`` leaves them on the process
+    # default store (the production config source — staged-flow §2 "policy is data").
+    account_fn = (
+        functools.partial(profile_account, config_store=config_store)
+        if config_store is not None
+        else profile_account
+    )
+    contact_fn = (
+        functools.partial(profile_contact, config_store=config_store)
+        if config_store is not None
+        else profile_contact
+    )
 
     orchestrator = AccountDeepOrchestrator(
-        profile_account=profile_account,
+        profile_account=account_fn,
         discover_committee=discover_committee,
-        profile_contact=profile_contact,
+        profile_contact=contact_fn,
         io=DbAccountRunIO(session_factory=session_factory),
         session_factory=session_factory,
         spec=spec,
@@ -323,6 +339,7 @@ def build_deep_phase_handler(
         session_factory=session_factory,
         planner_model=planner_model,
         synthesis_guard=synthesis_guard,
+        config_store=config_store,
     )
     graph = AccountResearchGraph(workers=registry, recursion_policy=recursion_policy)
     scheduler = AccountScheduler(graph, max_parallel=config.max_parallel_accounts)

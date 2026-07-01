@@ -12,7 +12,8 @@ This is the framework that ties together staged-flow §9's two prior sets so a v
 A pack's ``pack_key`` (``healthcare_practice``) and its field-key ``namespace`` (``healthcare``)
 differ on purpose (conventions §3). The two seams are kept distinct so "what to know" and "where to
 look" evolve independently: :func:`get_pack_field_set` feeds M3.2's compiler;
-:func:`get_pack_source_profile` feeds M4's Source Planner.
+:func:`get_pack_source_profile` (one pack) and :func:`serve_source_profile` (the whole ICP, every
+enabled pack merged) feed M4's Source Planner.
 
 Boundary: this module imports the shared claim-store substrate (M1) and the M3.3 source-profile
 tables only. It never imports a resolver, a ``source_manifest``, the Source Planner, or a provider
@@ -22,6 +23,7 @@ SDK (all M4) — it references ``source_key``s by string and defers the existenc
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
@@ -34,6 +36,7 @@ from clue_research.claimstore import SeedField, get_field, list_fields, load_pac
 from clue_research.core import (
     FieldClass,
     FieldDef,
+    ICPSpec,
     classify_field_key,
     field_namespace,
     resolve_reuse_scope,
@@ -255,11 +258,68 @@ async def get_pack_source_profile(
     icp_key: str | None = None,
 ) -> ResolvedSourceProfile:
     """The pack's resolved source profile (pack default ⊕ client/ICP override). Consumed by M4's
-    Source Planner (staged-flow §7d)."""
+    Source Planner (staged-flow §7d); :func:`serve_source_profile` merges it across an ICP's
+    packs."""
     rec = await get_pack(conn, pack_key)
     if rec is None:
         raise UnknownPackError(f"pack {pack_key!r} is not in the catalog")
     return await get_source_profile(conn, pack_key, client_id=client_id, icp_key=icp_key)
+
+
+def _merge_slot(weighted_lists: Sequence[Sequence[WeightedSource]]) -> tuple[WeightedSource, ...]:
+    """Merge per-pack weighted-source lists into one ordered slot.
+
+    Dedup by ``source_key`` keeping the strongest weight (tie-break: lowest authored ``rank``), then
+    order by weight prior DESC → rank ASC → key (deterministic). For a single-pack ICP this exactly
+    reproduces the pack's staged-flow §7c ordering, since each pack authors its sources in
+    weight-descending order.
+    """
+    best: dict[str, WeightedSource] = {}
+    for lst in weighted_lists:
+        for ws in lst:
+            current = best.get(ws.source_key)
+            if (
+                current is None
+                or ws.weight.prior > current.weight.prior
+                or (ws.weight.prior == current.weight.prior and ws.rank < current.rank)
+            ):
+                best[ws.source_key] = ws
+    return tuple(sorted(best.values(), key=lambda w: (-w.weight.prior, w.rank, w.source_key)))
+
+
+async def serve_source_profile(
+    conn: AsyncConnection,
+    spec: ICPSpec,
+    *,
+    packs: Sequence[str] | None = None,
+) -> ResolvedSourceProfile:
+    """Resolve ``spec``'s effective source profile: every enabled pack, merged.
+
+    The ICP-level analogue of :func:`get_pack_source_profile`. Each pack is resolved with the
+    client/ICP override applied (:func:`get_pack_source_profile`, keyed by ``pack_key`` with
+    ``client_id``/``icp_key`` from the spec — override > pack default). The merge unions the packs'
+    weighted sets (see :func:`_merge_slot`). ``packs`` overrides ``spec.enabled_packs`` (for an
+    audit of a subset); the default serves exactly the ICP's enabled packs. Consumed by M4's Source
+    Planner (``clue_research.sources.resolve_allowed_set`` intersects the result with the registry).
+    """
+    pack_keys = tuple(packs) if packs is not None else tuple(spec.enabled_packs)
+    profiles: list[ResolvedSourceProfile] = [
+        await get_pack_source_profile(
+            conn, pack_key, client_id=spec.client_id, icp_key=spec.icp_key
+        )
+        for pack_key in pack_keys
+    ]
+
+    explicit_fcs: set[FieldClass] = set()
+    for profile in profiles:
+        explicit_fcs.update(profile.by_field_class.keys())
+
+    default = _merge_slot([profile.default for profile in profiles])
+    by_field_class = {
+        fc: _merge_slot([profile.for_field_class(fc) for profile in profiles])
+        for fc in explicit_fcs
+    }
+    return ResolvedSourceProfile(packs=pack_keys, default=default, by_field_class=by_field_class)
 
 
 async def validate_pack(
@@ -312,5 +372,6 @@ __all__ = [
     "get_pack",
     "get_pack_field_set",
     "get_pack_source_profile",
+    "serve_source_profile",
     "validate_pack",
 ]

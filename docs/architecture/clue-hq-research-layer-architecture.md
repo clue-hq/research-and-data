@@ -1,4 +1,5 @@
 # Clue-HQ — Data & Research Layer
+
 ## Product-Grade Architecture (V1)
 
 This is the design for the data and research stage: ICP → target list → prioritization → per-account research → buying-committee contact graph → scored, provenance-backed claims that feed the design/content module. It folds in what the current market (Clay, 6sense/Demandbase, 11x/Artisan, Anthropic's research system, the grounding literature, Exa/Parallel) gets right and wrong, plus the failure modes from the scrappy prototype.
@@ -293,19 +294,21 @@ Steps 1–4 produce a genuinely useful, *trustworthy* account list before a sing
 
 ## 12. Stack mapping (to your foundation)
 
-| Concern | Recommendation |
-|---|---|
-| System of record | **Postgres** (claims, identity, accounts, contacts, schemas). JSONB for per-vertical field payloads; real columns + indexes on hot query paths. **No Airtable in the write path.** |
-| Dedup / KB retrieval | **pgvector** for candidate-set matching and client-knowledge retrieval. |
-| Per-account research | **LangGraph** orchestrator-worker, `AsyncPostgresSaver` checkpointing for crash-resumability (you've shipped this shape on Iris/WatsonX). |
-| Durable execution | V1: **Postgres-backed state machine**, idempotency keys on `(account, field, tier)`, per-account/run budget caps. Design it **Temporal-shaped** for a clean later migration. |
-| Locks / ephemeral state | **Redis** for in-flight account locks and rate-limit coordination. |
-| Search / synthesis (tier 4) | **Exa Deep** (field-level grounding) and/or **Parallel Task API** (Basis: citations + reasoning + confidence) as pluggable resolvers; **Firecrawl** for tier-2 official-site scraping with livecrawl freshness. |
+
+| Concern                          | Recommendation                                                                                                                                                                                                                                                                                                                                                                                                    |
+| -------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| System of record                 | **Postgres** (claims, identity, accounts, contacts, schemas). JSONB for per-vertical field payloads; real columns + indexes on hot query paths. **No Airtable in the write path.**                                                                                                                                                                                                                                |
+| Dedup / KB retrieval             | **pgvector** for candidate-set matching and client-knowledge retrieval.                                                                                                                                                                                                                                                                                                                                           |
+| Per-account research             | **LangGraph** orchestrator-worker, `AsyncPostgresSaver` checkpointing for crash-resumability (you've shipped this shape on Iris/WatsonX).                                                                                                                                                                                                                                                                         |
+| Durable execution                | V1: **Postgres-backed state machine**, idempotency keys on `(account, field, tier)`, per-account/run budget caps. Design it **Temporal-shaped** for a clean later migration.                                                                                                                                                                                                                                      |
+| Locks / ephemeral state          | **Redis** for in-flight account locks and rate-limit coordination.                                                                                                                                                                                                                                                                                                                                                |
+| Search / synthesis (tier 4)      | **Exa Deep** (field-level grounding) and/or **Parallel Task API** (Basis: citations + reasoning + confidence) as pluggable resolvers; **Firecrawl** for tier-2 official-site scraping with livecrawl freshness.                                                                                                                                                                                                   |
 | LLM gateway (direct model calls) | **OpenRouter** (OpenAI-compatible) as the single egress for *all direct* LLM calls — the faithfulness judge, discovery query-planning, ICP synthesis, committee role-inference, and value-narrative positioning. One `OPENROUTER_API_KEY`; the model is config per call site (a model-id string); deterministic stub in CI. **Exa Deep / Parallel Task above are research-product resolvers, not gateway calls.** |
-| Deterministic (tiers 1–3) | Apollo / ZoomInfo / BuiltWith / Places / registries / **client CRM**, each behind the uniform `Resolver` interface. |
-| Verification | Separate **LLM-as-judge** faithfulness step (the model call routed through the OpenRouter gateway below) with its own trace span; eval harness over a hand-verified account set. |
-| Human checkpoints | `interrupt()`-based pause/resume (your secure-input pattern) for Tier-1 review. |
-| API | **FastAPI** with the lifespan/`asynccontextmanager` pattern you're already using for pools and clients. |
+| Deterministic (tiers 1–3)        | Apollo / ZoomInfo / BuiltWith / Places / registries / **client CRM**, each behind the uniform `Resolver` interface.                                                                                                                                                                                                                                                                                               |
+| Verification                     | Separate **LLM-as-judge** faithfulness step (the model call routed through the OpenRouter gateway below) with its own trace span; eval harness over a hand-verified account set.                                                                                                                                                                                                                                  |
+| Human checkpoints                | `interrupt()`-based pause/resume (your secure-input pattern) for Tier-1 review.                                                                                                                                                                                                                                                                                                                                   |
+| API                              | **FastAPI** with the lifespan/`asynccontextmanager` pattern you're already using for pools and clients.                                                                                                                                                                                                                                                                                                           |
+
 
 ---
 
@@ -318,3 +321,4 @@ Steps 1–4 produce a genuinely useful, *trustworthy* account list before a sing
 - **Account-only data model.** You'll re-pay for everything in V2. Contact graph + persona keys in V1.
 - **Filling a field with a plausible guess.** An empty, flagged field is a *correct* output. Fabrication is the only real failure.
 - **Opaque scores / opaque facts.** Provenance and decomposition are trust features and your defensible differentiator — not overhead.
+

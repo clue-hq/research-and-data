@@ -24,8 +24,8 @@ from clue_research.icp import (
     list_icp_versions,
     rubric_from_slot,
     score,
+    serve_source_profile,
 )
-from clue_research.sources import serve_source_profile
 from clue_research.stage0 import (
     ICP_CONFIRM_DIFF,
     ClientKnowledgeBaseRef,

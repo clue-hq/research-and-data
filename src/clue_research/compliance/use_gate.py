@@ -46,9 +46,7 @@ Architecture: Doc D §3/§5/§6/§7; docs/specs/M10-compliance-and-personal-data
 
 from __future__ import annotations
 
-import json
-from collections.abc import Callable, Mapping
-from contextlib import AbstractAsyncContextManager
+from collections.abc import Mapping
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from sqlalchemy import text
@@ -73,8 +71,9 @@ from clue_research.core import (
     UseClass,
     UseDecision,
     UseReason,
+    decode_jsonb,
 )
-from clue_research.db import transaction
+from clue_research.db import ConnFactory, transaction
 from clue_research.obs import (
     ATTR_CACHE_HIT,
     ATTR_ENTITY_ID,
@@ -283,14 +282,6 @@ def decide_use(
 # --- the UseGate ------------------------------------------------------------
 
 
-def _conn_factory_default() -> AbstractAsyncContextManager[AsyncConnection]:
-    """Default connection source — one committed transaction per ``evaluate`` (the jurisdiction read
-    + the verdict upsert are atomic; the decision is pure, no external call to hold a connection
-    across). Indirected so the engine resolves lazily at call time; tests inject a rollback factory.
-    """
-    return transaction()
-
-
 class UseGateImpl:
     """The M10.3 appropriateness/use gate (implements ``clue_research.core.compliance.UseGate``).
 
@@ -305,9 +296,7 @@ class UseGateImpl:
         client_id: str,
         *,
         policy: ClientPolicy = DEFAULT_CLIENT_POLICY,
-        conn_factory: Callable[[], AbstractAsyncContextManager[AsyncConnection]] = (
-            _conn_factory_default
-        ),
+        conn_factory: ConnFactory = transaction,
         record_decisions: bool = True,
         sink: MetricSink | None = None,
     ) -> None:
@@ -479,18 +468,16 @@ class UseGateImpl:
 
 def _as_object(raw: object) -> dict[str, object]:
     """Decode a jsonb column to a dict: SQLAlchemy/asyncpg may hand back an already-decoded ``dict``
-    or a ``str``/``bytes`` payload (mirrors ``load_binding_policy``'s defensive decode). Anything
-    that is not an object decodes to ``{}``."""
-    if isinstance(raw, (bytes, bytearray, str)):
-        raw = json.loads(raw)
-    return raw if isinstance(raw, dict) else {}
+    or a ``str``/``bytes`` payload (the shared ``core.decode_jsonb`` round-trip). Anything that is
+    not an object decodes to ``{}``."""
+    decoded = decode_jsonb(raw)
+    return decoded if isinstance(decoded, dict) else {}
 
 
 def _as_array(raw: object) -> list[object]:
     """Decode a jsonb array column to a list (same defensive decode as :func:`_as_object`)."""
-    if isinstance(raw, (bytes, bytearray, str)):
-        raw = json.loads(raw)
-    return list(raw) if isinstance(raw, list) else []
+    decoded = decode_jsonb(raw)
+    return list(decoded) if isinstance(decoded, list) else []
 
 
 def _parse_allow_map(raw: object) -> dict[UseClass, UseDisposition]:

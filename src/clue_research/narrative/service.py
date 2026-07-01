@@ -23,9 +23,6 @@ change
 
 from __future__ import annotations
 
-from collections.abc import Callable
-from contextlib import AbstractAsyncContextManager
-
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy.ext.asyncio import AsyncConnection
 
@@ -39,6 +36,7 @@ from clue_research.core import (
     UnitInterval,
     UtcDatetime,
 )
+from clue_research.db import ConnFactory
 from clue_research.narrative.handoff import AssembledHandoff, HandoffAssembler
 from clue_research.narrative.handoff_events import (
     HandoffEvent,
@@ -77,8 +75,6 @@ METRIC_HANDOFFS_SERVED = "research.handoff.served"
 METRIC_HANDOFFS_EMITTED = "research.handoff.emitted"
 METRIC_HANDOFF_TIER4_PASS_RATE = "research.handoff.verification.tier4_pass_rate"
 METRIC_HANDOFF_STRONG_BINDING_SHARE = "research.handoff.verification.strong_binding_share"
-
-_ConnFactory = Callable[[], AbstractAsyncContextManager[AsyncConnection]]
 
 
 class HandoffNotFoundError(Exception):
@@ -357,7 +353,7 @@ def _passes_filters(
 
 async def emit_ready_handoffs(
     *,
-    conn_factory: _ConnFactory,
+    conn_factory: ConnFactory,
     assembler: HandoffAssembler,
     readiness_reader: HandoffReadinessReader,
     publisher: HandoffPublisher | None = None,
@@ -432,7 +428,7 @@ async def emit_ready_handoffs(
 
 async def _assemble_materialise_emit(
     *,
-    conn_factory: _ConnFactory,
+    conn_factory: ConnFactory,
     assembler: HandoffAssembler,
     campaign_run_id: CampaignRunId,
     client_id: str,

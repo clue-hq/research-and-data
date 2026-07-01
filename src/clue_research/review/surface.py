@@ -21,11 +21,7 @@ commit atomically (a replay is idempotent on the session/append-only audit). The
 
 from __future__ import annotations
 
-from collections.abc import Callable
-from contextlib import AbstractAsyncContextManager
-
 from pydantic import JsonValue
-from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_research.claimstore import TenantScope, claims_by_ids, supersede_claim
 from clue_research.core import (
@@ -54,6 +50,7 @@ from clue_research.core.review import (
     ReviewSessionId,
     VerificationAnnotationReader,
 )
+from clue_research.db import ConnFactory
 from clue_research.review.projection import ReviewProjector
 from clue_research.review.repository import (
     count_open_sessions,
@@ -62,8 +59,6 @@ from clue_research.review.repository import (
     get_review_session,
     record_review_action,
 )
-
-SessionFactory = Callable[[], AbstractAsyncContextManager[AsyncConnection]]
 
 # The redaction sentinel a reject writes as the superseding claim's value (distinct from DSAR's
 # ``__erased__``). The original stays queryable on the superseded claim + the review_action row.
@@ -157,7 +152,7 @@ class ReviewSurfaceImpl:
         self,
         *,
         projector: ReviewProjector,
-        session_factory: SessionFactory,
+        session_factory: ConnFactory,
         resume_hook: ReviewResumeHook | None = None,
         disposition_emitter: ReviewDispositionEmitter | None = None,
     ) -> None:
@@ -305,6 +300,5 @@ __all__ = [
     "ReviewSessionNotFound",
     "SessionNotOpen",
     "ClaimNotInSession",
-    "SessionFactory",
     "VerificationAnnotationReader",
 ]

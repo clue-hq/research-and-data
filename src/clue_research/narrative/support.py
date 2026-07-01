@@ -24,7 +24,7 @@ from pydantic import BaseModel, ConfigDict
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_research.core import ClaimId
+from clue_research.core import ClaimId, decode_jsonb
 
 
 class ClaimSupport(BaseModel):
@@ -44,16 +44,14 @@ class ClaimSupport(BaseModel):
 
 def _decode_list(raw: object) -> list[object]:
     """Decode a JSONB array column to a Python list (asyncpg returns it already decoded; a raw
-    ``bytes`` / ``str`` is parsed defensively). A non-array decodes to the empty list.
+    ``bytes`` / ``str`` is parsed defensively through ``core.decode_jsonb``). Malformed JSON or a
+    non-array decodes to the empty list — fail-soft, a stale row never raises mid-assembly.
     """
-    if isinstance(raw, (bytes, bytearray)):
-        raw = raw.decode("utf-8")
-    if isinstance(raw, str):
-        try:
-            raw = json.loads(raw)
-        except json.JSONDecodeError:
-            return []
-    return list(raw) if isinstance(raw, list) else []
+    try:
+        decoded = decode_jsonb(raw)
+    except ValueError:
+        return []
+    return list(decoded) if isinstance(decoded, list) else []
 
 
 async def write_claim_support(

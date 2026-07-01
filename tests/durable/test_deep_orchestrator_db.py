@@ -126,7 +126,7 @@ class _ConnBudgetStore:
 
 
 def _savepoint_factory(conn: AsyncConnection) -> Any:
-    """A ``SessionFactory`` whose every ``session_factory()`` is a SAVEPOINT on the shared test
+    """A ``ConnFactory`` whose every ``session_factory()`` is a SAVEPOINT on the shared test
     connection — commit (release) on clean exit, rollback on exception — modelling the production
     per-stage ``db.transaction()`` while staying inside ``rollback_conn``'s outer rollback."""
 

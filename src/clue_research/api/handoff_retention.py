@@ -41,11 +41,10 @@ from clue_research.core import (
     PhaseHandler,
     PhaseResult,
 )
-from clue_research.db import transaction
+from clue_research.db import ConnFactory, transaction
 from clue_research.durable import register_phase_handler
 from clue_research.identity import contact_ids_for_account
 from clue_research.obs import MetricSink
-from clue_research.profiling.runtime import SessionFactory
 from clue_research.verification import FreshnessImpl
 
 # Reuse the VERIFICATION resolver seams (DRY): the same "run's high-tier accounts" and "an account's
@@ -125,7 +124,7 @@ def build_retention_sweeping_handoff_handler(
     *,
     inner: PhaseHandler,
     account_resolver: HandoffAccountResolver,
-    session_factory: SessionFactory = transaction,
+    session_factory: ConnFactory = transaction,
     govern_contacts: bool = True,
     health_sink: MetricSink | None = None,
 ) -> RetentionSweepHandoffHandler:
@@ -159,7 +158,7 @@ def register_retention_sweeping_handoff_handler(
     *,
     inner: PhaseHandler,
     account_resolver: HandoffAccountResolver,
-    session_factory: SessionFactory = transaction,
+    session_factory: ConnFactory = transaction,
     govern_contacts: bool = True,
     health_sink: MetricSink | None = None,
 ) -> RetentionSweepHandoffHandler:

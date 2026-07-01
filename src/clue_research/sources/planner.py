@@ -43,7 +43,7 @@ from clue_research.core import (
     ResearchMode,
     Role,
 )
-from clue_research.icp import SourceWeight
+from clue_research.icp import ResolvedSourceProfile, SourceWeight
 from clue_research.obs import (
     ATTR_FIELD_KEY,
     ATTR_ICP_ID,
@@ -55,7 +55,6 @@ from clue_research.obs import (
 )
 from clue_research.sources.source_profile import (
     AllowedSource,
-    ServedSourceProfile,
     resolve_allowed_set,
 )
 
@@ -297,7 +296,7 @@ async def plan_sources(
     gateway: LLMGateway | None = None,
     planner_model: str | None = None,
     config: SourcePlannerConfig = DEFAULT_SOURCE_PLANNER_CONFIG,
-    served: ServedSourceProfile | None = None,
+    served: ResolvedSourceProfile | None = None,
 ) -> OrderedSourcePlan:
     """Select + order the sources to consult for ``field`` under ``spec`` (staged-flow §7d).
 
