@@ -433,9 +433,94 @@ textarea:disabled {
 }
 
 .center-workspace {
+  position: relative;
   display: grid;
   min-height: 0;
   grid-template-rows: minmax(0, 1fr);
+}
+
+/* Phase 0c — Moda-style floating review bar: a white pill anchored to the
+   bottom-center of the canvas with Before/After compare, a ghost Reject, and
+   a filled magenta Accept. */
+.agent-review-bar {
+  position: absolute;
+  bottom: 26px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 999px;
+  background: #ffffff;
+  border: 1px solid #e7e3db;
+  box-shadow:
+    0 12px 32px rgba(15, 18, 24, 0.28),
+    0 2px 8px rgba(15, 18, 24, 0.16);
+}
+
+.agent-review-bar button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 36px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 750;
+  padding: 7px 16px;
+}
+
+.agent-review-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  border-radius: 999px;
+  background: #f1efe9;
+}
+
+.agent-review-toggle button {
+  min-height: 30px;
+  padding: 4px 12px;
+  border: none;
+  background: transparent;
+  color: #6d675c;
+}
+
+.agent-review-toggle button.active {
+  background: #ffffff;
+  color: #1c1a16;
+  box-shadow: 0 1px 3px rgba(15, 18, 24, 0.18);
+}
+
+.agent-review-summary {
+  color: #5b5348;
+  font-size: 12px;
+  font-weight: 750;
+  padding: 0 2px;
+  white-space: nowrap;
+}
+
+.agent-review-reject {
+  border: 1px solid #ddd7cc;
+  background: #ffffff;
+  color: #3e382f;
+}
+
+.agent-review-reject:hover {
+  background: #f7f4ee;
+}
+
+.agent-review-accept {
+  border: 1px solid #ec2f8a;
+  background: #ec2f8a;
+  color: #ffffff;
+}
+
+.agent-review-accept:hover {
+  background: #d92079;
+  border-color: #d92079;
 }
 
 .center-workspace.with-view-toggle {
@@ -1528,6 +1613,60 @@ textarea:disabled {
 
 .agent-proposal.failed {
   border-color: #d49b8e;
+}
+
+.agent-proposal.reviewing {
+  border-color: #ec2f8a;
+  box-shadow: 0 0 0 1px rgba(236, 47, 138, 0.25);
+}
+
+.agent-scope-chip {
+  margin-left: auto;
+  border: 1px solid #b6d7d5;
+  border-radius: 999px;
+  background: #eef9f7;
+  color: #174f52;
+  padding: 2px 8px;
+  font-size: 10px;
+  font-weight: 850;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.agent-proposal-review-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.agent-proposal-review-actions button {
+  flex: 1;
+  border-radius: 999px;
+}
+
+.agent-proposal-review-actions .agent-review-reject {
+  border: 1px solid #ddd7cc;
+  background: #ffffff;
+  color: #3e382f;
+}
+
+.agent-proposal-review-actions .agent-review-accept {
+  border: 1px solid #ec2f8a;
+  background: #ec2f8a;
+  color: #ffffff;
+}
+
+.agent-diagnostic-list li.advisory {
+  border-color: #d6c8a8;
+  background: #fffaf0;
+}
+
+.advisory-chip {
+  border-radius: 999px;
+  background: #f4e9d0;
+  color: #7a5d1e;
+  font-weight: 850;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
 }
 
 .agent-proposal-heading,

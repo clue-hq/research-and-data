@@ -32,6 +32,10 @@ export interface EditorAgentResult {
   operations: Operation[];
   draft_scene: Scene | null;
   stop_reason: string | null;
+  /** Phase 0b/0c: "edit" = the requested edit was verified applied and the
+   * whole-design critique rides along as advisory; "design" = the reviewer
+   * accepted the full design. */
+  acceptance_scope: "edit" | "design" | null;
   diagnostics: Diagnostic[];
   trace: EditorAgentTrace;
   artifacts: EditorAgentArtifactRef[];
@@ -89,6 +93,10 @@ export function agentResultFromUnknown(payload: unknown): EditorAgentResult {
     operations,
     draft_scene: sceneFromUnknown(payload.draft_scene),
     stop_reason: typeof payload.stop_reason === "string" ? payload.stop_reason : null,
+    acceptance_scope:
+      payload.acceptance_scope === "edit" || payload.acceptance_scope === "design"
+        ? payload.acceptance_scope
+        : null,
     diagnostics,
     trace: traceFromUnknown(payload),
     artifacts: artifactsFromUnknown(payload)
@@ -266,6 +274,7 @@ function failedAgentResult(code: string, message: string): EditorAgentResult {
     operations: [],
     draft_scene: null,
     stop_reason: null,
+    acceptance_scope: null,
     diagnostics: [
       {
         severity: "error",

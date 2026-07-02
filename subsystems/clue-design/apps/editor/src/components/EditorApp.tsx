@@ -8,7 +8,7 @@ import {
   type CSSProperties,
   type PointerEvent as ReactPointerEvent
 } from "react";
-import { Download, FileCheck2, History, PanelRightClose, RotateCcw, RotateCw } from "lucide-react";
+import { Check, Download, FileCheck2, History, PanelRightClose, RotateCcw, RotateCw, X } from "lucide-react";
 import { AgentChatPanel, type AgentChatMessage } from "./AgentChatPanel";
 import { BrandKitPanel } from "./BrandKitPanel";
 import { EditorCanvas } from "./canvas/EditorCanvas";
@@ -194,6 +194,18 @@ export default function EditorApp({
   const [agentDraft, setAgentDraft] = useState("");
   const [agentMessages, setAgentMessages] = useState<AgentChatMessage[]>([]);
   const [agentProposal, setAgentProposal] = useState<EditorAgentResult | null>(null);
+  // Phase 0c (Moda pattern): a proposed agent turn is applied to the live scene
+  // as an ephemeral PREVIEW first. Nothing persists until the human Accepts;
+  // Reject restores the pre-preview scene byte-for-byte. While a review is
+  // pending, mutating actions (ops, undo/redo, new agent turns) are blocked.
+  const [agentPreview, setAgentPreview] = useState<{
+    operations: Operation[];
+    baseScene: Scene;
+    previewScene: Scene;
+    baseActivePageId: PageId | null;
+    baseSelectedNodeId: NodeId | null;
+    view: "before" | "after";
+  } | null>(null);
   const [isPreflighting, setIsPreflighting] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const [exportResult, setExportResult] = useState<EditorExportResult | null>(null);
@@ -370,8 +382,53 @@ export default function EditorApp({
     editQueueRef.current.enqueueOperations(operations);
   };
 
+  /**
+   * Shared post-apply bookkeeping for operations that are already applied to
+   * the engine: undo frame, history, persistence. Used by the direct edit path
+   * (applyOperations) and by accepting an agent preview (Phase 0c), so both
+   * commit identically.
+   */
+  const commitAppliedOperations = (
+    previousScene: Scene,
+    operations: Operation[],
+    nextScene: Scene
+  ) => {
+    setLastOperation(operations[operations.length - 1] ?? null);
+    setBrandCompatibilityReport(null);
+    setPreflightResult(null);
+    setExportResult(null);
+    setWorkspaceMode("canvas");
+    setUndoStack((stack) => [
+      ...stack.slice(-49),
+      {
+        scene: previousScene,
+        operations
+      }
+    ]);
+    setRedoStack([]);
+    setOperationHistory((history) => [...history, ...operations].slice(-50));
+    setDiagnostics([]);
+    setScene(nextScene);
+    enqueueForPersistence(operations);
+  };
+
+  const pendingAgentReviewDiagnostic = (): Diagnostic => ({
+    severity: "warning",
+    phase: "operation",
+    code: "EDITOR_AGENT_REVIEW_PENDING",
+    message: "An agent proposal is awaiting review.",
+    subject: { kind: "document" },
+    hint: "Accept or Reject the agent's changes before editing the design."
+  });
+
   const applyOperations = (operations: Operation[], onAccepted?: (scene: Scene) => void) => {
     if (operations.length === 0) {
+      return;
+    }
+    // Phase 0c: the pending preview owns the engine state; resolving it first
+    // keeps Accept/Reject byte-exact (no interleaved manual edits).
+    if (agentPreview) {
+      setDiagnostics([pendingAgentReviewDiagnostic()]);
       return;
     }
     const engine = engineRef.current;
@@ -413,23 +470,7 @@ export default function EditorApp({
       return;
     }
 
-    setLastOperation(operations[operations.length - 1] ?? null);
-    setBrandCompatibilityReport(null);
-    setPreflightResult(null);
-    setExportResult(null);
-    setWorkspaceMode("canvas");
-    setUndoStack((stack) => [
-      ...stack.slice(-49),
-      {
-        scene: previousScene,
-        operations
-      }
-    ]);
-    setRedoStack([]);
-    setOperationHistory((history) => [...history, ...operations].slice(-50));
-    setDiagnostics([]);
-    setScene(result.scene);
-    enqueueForPersistence(operations);
+    commitAppliedOperations(previousScene, operations, result.scene);
     onAccepted?.(result.scene);
   };
 
@@ -440,6 +481,10 @@ export default function EditorApp({
   const sendAgentPrompt = async (prompt: string) => {
     const trimmedPrompt = prompt.trim();
     if (!trimmedPrompt || isAgentRunning) {
+      return;
+    }
+    if (agentPreview) {
+      setDiagnostics([pendingAgentReviewDiagnostic()]);
       return;
     }
 
@@ -479,6 +524,11 @@ export default function EditorApp({
       if (result.diagnostics.length > 0) {
         setDiagnostics(result.diagnostics);
       }
+      // Phase 0c (Moda pattern): a proposed turn goes straight onto the canvas
+      // as a reviewable preview — the human answers with Accept or Reject.
+      if (result.status === "proposed" && result.operations.length > 0) {
+        previewAgentProposal(result);
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : "Agent request failed.";
       const diagnostic: Diagnostic = {
@@ -496,6 +546,7 @@ export default function EditorApp({
         operations: [],
         draft_scene: null,
         stop_reason: null,
+        acceptance_scope: null,
         diagnostics: [diagnostic],
         trace: {
           run_id: null,
@@ -553,7 +604,169 @@ export default function EditorApp({
     setDiagnostics([draftDiagnostic, ...result.diagnostics]);
   };
 
+  /**
+   * Phase 0c: apply the proposed operations to the live scene as an ephemeral
+   * PREVIEW. The engine holds the previewed state; nothing is persisted and no
+   * undo frame is pushed until Accept. The base scene is kept for Reject and
+   * for the Before/After toggle.
+   */
+  const previewAgentProposal = (result: EditorAgentResult) => {
+    if (result.operations.length === 0 || agentPreview) {
+      return;
+    }
+    const engine = engineRef.current;
+    if (!engine) {
+      // Server-only mode cannot apply locally; the proposal card's manual
+      // apply button surfaces the same server-only diagnostic as any edit.
+      return;
+    }
+    const baseScene = engine.scene;
+    const applied = engine.applyOperations(result.operations);
+    if (!applied.accepted) {
+      setDiagnostics([
+        {
+          severity: "error",
+          phase: "operation",
+          code: "EDITOR_AGENT_PREVIEW_REJECTED",
+          message:
+            applied.message ??
+            "The agent's operations were rejected by the editor engine; the scene is unchanged.",
+          subject: { kind: "document" },
+          hint: "The proposal may target content that changed since the agent turn started. Ask the agent again from the current design."
+        }
+      ]);
+      return;
+    }
+    const proposedPageId = agentPreviewPageId(result.operations, activePageId, baseScene);
+    const previewPageId =
+      proposedPageId && applied.scene.pages[proposedPageId]
+        ? proposedPageId
+        : firstPageId(applied.scene);
+    setAgentPreview({
+      operations: result.operations,
+      baseScene,
+      previewScene: applied.scene,
+      baseActivePageId: activePageId,
+      baseSelectedNodeId: selectedNodeId,
+      view: "after"
+    });
+    setScene(applied.scene);
+    setActivePageId(previewPageId);
+    setSelectedNodeId((current) =>
+      current && applied.scene.nodes[current] ? current : null
+    );
+    setBrandCompatibilityReport(null);
+    setPreflightResult(null);
+    setExportResult(null);
+    setWorkspaceMode("canvas");
+  };
+
+  /** Accept the pending preview: commit the already-applied ops (undo frame,
+   * history, persistence via the document operations path — edit_envelopes
+   * inverses server-side), then run the export preview. The token-baked
+   * preflight scene is never swapped into the live scene (see
+   * runExportForScene). */
+  const acceptAgentPreview = async () => {
+    if (!agentPreview) {
+      return;
+    }
+    const { operations, baseScene, previewScene, view } = agentPreview;
+    const advisoryDiagnostics = agentProposal?.diagnostics ?? [];
+    setAgentPreview(null);
+    setAgentProposal(null);
+    // The user may be looking at "Before" — the engine must hold the accepted
+    // (preview) state before the commit bookkeeping runs.
+    const engine = engineRef.current;
+    let acceptedScene = previewScene;
+    if (engine) {
+      if (view === "before") {
+        engine.reset(previewScene);
+      }
+      acceptedScene = engine.scene;
+    }
+    commitAppliedOperations(baseScene, operations, acceptedScene);
+    setAgentMessages((messages) => [
+      ...messages,
+      {
+        id: uniqueChatMessageId("system"),
+        role: "system",
+        content:
+          `Accepted ${operations.length} agent change${operations.length === 1 ? "" : "s"}.` +
+          (advisoryDiagnostics.length > 0
+            ? ` ${advisoryDiagnostics.length} advisory review note${advisoryDiagnostics.length === 1 ? "" : "s"} kept in Diagnostics.`
+            : "")
+      }
+    ]);
+    const previewPageId =
+      activePageId && acceptedScene.pages[activePageId]
+        ? activePageId
+        : firstPageId(acceptedScene);
+    if (previewPageId) {
+      await runExportForScene(acceptedScene, defaultEditorExportProfile(), [previewPageId]);
+    }
+    // Re-surface the agent's advisory review notes AFTER the export preview
+    // (which resets diagnostics as it runs) so accepting never silently
+    // discards them.
+    if (advisoryDiagnostics.length > 0) {
+      setDiagnostics((current) => [...advisoryDiagnostics, ...current]);
+    }
+  };
+
+  /** Reject the pending preview: restore the pre-preview scene byte-for-byte.
+   * Nothing was persisted, so there is nothing to roll back server-side. */
+  const rejectAgentPreview = () => {
+    if (!agentPreview) {
+      return;
+    }
+    const { baseScene, baseActivePageId, baseSelectedNodeId } = agentPreview;
+    setAgentPreview(null);
+    setAgentProposal(null);
+    replaceScene(baseScene);
+    setActivePageId(
+      baseActivePageId && baseScene.pages[baseActivePageId]
+        ? baseActivePageId
+        : firstPageId(baseScene)
+    );
+    setSelectedNodeId(
+      baseSelectedNodeId && baseScene.nodes[baseSelectedNodeId] ? baseSelectedNodeId : null
+    );
+    setDiagnostics([]);
+    setAgentMessages((messages) => [
+      ...messages,
+      {
+        id: uniqueChatMessageId("system"),
+        role: "system",
+        content: "Rejected the agent changes and restored the previous design."
+      }
+    ]);
+  };
+
+  /** Before/After toggle (Moda's compare). The CanvasKit surface paints from
+   * the ENGINE, not the React scene prop, so the toggle resets the engine to
+   * the chosen snapshot — authoritative for every renderer. Accept re-arms the
+   * preview state first; Reject resets to base anyway. */
+  const setAgentPreviewView = (view: "before" | "after") => {
+    setAgentPreview((current) => {
+      if (!current || current.view === view) {
+        return current;
+      }
+      const nextScene = view === "before" ? current.baseScene : current.previewScene;
+      const engine = engineRef.current;
+      if (engine) {
+        engine.reset(nextScene);
+        setScene(engine.scene);
+      } else {
+        setScene(nextScene);
+      }
+      return { ...current, view };
+    });
+  };
+
   const undoLastOperation = () => {
+    if (agentPreview) {
+      setDiagnostics([pendingAgentReviewDiagnostic()]);
+      return;
+    }
     const undoFrame = undoStack[undoStack.length - 1];
     if (!undoFrame) {
       return;
@@ -583,6 +796,10 @@ export default function EditorApp({
   };
 
   const redoLastOperation = () => {
+    if (agentPreview) {
+      setDiagnostics([pendingAgentReviewDiagnostic()]);
+      return;
+    }
     const redoFrame = redoStack[redoStack.length - 1];
     if (!redoFrame) {
       return;
@@ -1026,7 +1243,15 @@ export default function EditorApp({
   };
 
   const applyAgentProposal = () => {
-    if (!agentProposal || agentProposal.operations.length === 0) {
+    if (!agentProposal || agentProposal.operations.length === 0 || agentPreview) {
+      return;
+    }
+    // Phase 0c: the panel button re-enters the reviewable preview (the normal
+    // path previews automatically when the proposal arrives). In server-only
+    // mode (no engine) previewing is impossible; fall through to the legacy
+    // immediate apply, which surfaces the server-only diagnostic.
+    if (engineRef.current) {
+      previewAgentProposal(agentProposal);
       return;
     }
 
@@ -1094,10 +1319,12 @@ export default function EditorApp({
       const preflight = await preflightRunner({ scene: sceneForExport });
       setPreflightResult(preflight);
       const preflightDiagnostics = exportPreflightDiagnostics(preflight);
+      // Phase 0c: the preflight scene is token-BAKED (brand refs resolved to
+      // literal values). It is transient export INPUT only — swapping it into
+      // the live scene (the old replaceScene(preflight.scene) here) silently
+      // stripped live token bindings from the user's document on every
+      // export/agent apply.
       const sceneToExport = preflight.scene ?? sceneForExport;
-      if (preflight.scene) {
-        replaceScene(preflight.scene);
-      }
       const result = await exportRunner({
         scene: sceneToExport,
         profile,
@@ -1212,6 +1439,39 @@ export default function EditorApp({
           />
         </div>
         <section className={`center-workspace${editorPanelMode === "export" ? " with-view-toggle" : ""}`}>
+          {agentPreview ? (
+            <div className="agent-review-bar" role="toolbar" aria-label="Review agent changes">
+              <div className="agent-review-toggle" role="group" aria-label="Compare agent changes">
+                <button
+                  type="button"
+                  className={agentPreview.view === "before" ? "active" : ""}
+                  aria-pressed={agentPreview.view === "before"}
+                  onClick={() => setAgentPreviewView("before")}
+                >
+                  Before
+                </button>
+                <button
+                  type="button"
+                  className={agentPreview.view === "after" ? "active" : ""}
+                  aria-pressed={agentPreview.view === "after"}
+                  onClick={() => setAgentPreviewView("after")}
+                >
+                  After
+                </button>
+              </div>
+              <span className="agent-review-summary">
+                {agentPreview.operations.length} agent change{agentPreview.operations.length === 1 ? "" : "s"}
+              </span>
+              <button type="button" className="agent-review-reject" onClick={rejectAgentPreview}>
+                <X aria-hidden size={15} />
+                Reject
+              </button>
+              <button type="button" className="agent-review-accept" onClick={() => void acceptAgentPreview()}>
+                <Check aria-hidden size={15} />
+                Accept
+              </button>
+            </div>
+          ) : null}
           {editorPanelMode === "export" ? (
             <div className="view-toggle" aria-label="Export preview mode">
               <button
@@ -1313,12 +1573,15 @@ export default function EditorApp({
               draft={agentDraft}
               isRunning={isAgentRunning}
               proposal={agentProposal}
+              pendingReview={agentPreview !== null}
               activePageId={activePageId}
               selectedNodeId={selectedNodeId}
               diagnostics={diagnostics}
               onDraftChange={setAgentDraft}
               onSend={(prompt) => void sendAgentPrompt(prompt)}
               onApplyProposal={applyAgentProposal}
+              onAcceptProposal={() => void acceptAgentPreview()}
+              onRejectProposal={rejectAgentPreview}
             />
           ) : editorPanelMode === "export" ? (
             <ExportPanel

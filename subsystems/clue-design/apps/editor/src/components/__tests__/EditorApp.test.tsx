@@ -587,15 +587,25 @@ describe.skipIf(!wasmArtifactPresent)("EditorApp", () => {
     });
   });
 
-  it("lets users chat with the agent, inspect proposed operations, and apply them through preview", async () => {
+  it("previews a proposed turn, compares Before/After, and Accept commits without adopting the token-baked preflight scene", async () => {
     const agentRunner: EditorAgentRunner = vi.fn().mockResolvedValue({
       status: "proposed",
       summary: "I proposed a tighter headline for the current page.",
       dsl_blocks: ["#node_contact_name text \"Agent authored headline\""],
       operations: [updateDocumentTitle("Agent Authored Ad")],
       draft_scene: null,
-      stop_reason: null,
-      diagnostics: [],
+      stop_reason: "edit_scoped_acceptance",
+      acceptance_scope: "edit",
+      diagnostics: [
+        {
+          severity: "warning",
+          phase: "validation",
+          code: "agent_runtime.visual_critique_advisory",
+          message: "The hero image reads as a placeholder gradient.",
+          subject: { kind: "document" },
+          hint: "Regenerate the hero with a concrete subject."
+        }
+      ],
       trace: {
         run_id: "run_agent_editor",
         trace_dir: ".lumen-runs/run_agent_editor",
@@ -628,7 +638,12 @@ describe.skipIf(!wasmArtifactPresent)("EditorApp", () => {
         }
       ]
     });
-    const preflightRunner = successfulPreflightRunner();
+    // The preflight response is token-BAKED — if the editor ever swaps it into
+    // the live scene again (the pre-0c behavior), this marker title shows up in
+    // the topbar and the assertion below fails.
+    const bakedScene = twoPageScene();
+    bakedScene.meta.title = "BAKED PREFLIGHT SCENE";
+    const preflightRunner = successfulPreflightRunner(bakedScene);
 
     render(
       <TestEditorApp
@@ -654,11 +669,14 @@ describe.skipIf(!wasmArtifactPresent)("EditorApp", () => {
     fireEvent.click(screen.getByRole("button", { name: /^Send$/i }));
 
     expect(await screen.findAllByText("I proposed a tighter headline for the current page.")).toHaveLength(2);
-    expect(screen.getByText("Proposal ready")).toBeInTheDocument();
+    // Phase 0c: the proposed turn goes straight onto the canvas as a pending
+    // review — proposal card flips to review mode and the floating bar shows.
+    expect(await screen.findByText("Reviewing changes")).toBeInTheDocument();
+    expect(screen.getByRole("toolbar", { name: "Review agent changes" })).toBeInTheDocument();
+    expect(screen.getByText("Edit-scoped")).toBeInTheDocument();
+    expect(screen.getByText("Advisory")).toBeInTheDocument();
     expect(screen.getByText("#node_contact_name text \"Agent authored headline\"")).toBeInTheDocument();
     expect(screen.getAllByText("update_document").length).toBeGreaterThan(0);
-    expect(screen.getByText("run_agent_editor")).toBeInTheDocument();
-    expect(screen.getByText(".lumen-runs/run_agent_editor")).toBeInTheDocument();
     expect(agentRunner).toHaveBeenCalledWith({
       prompt: "Make the selected headline clearer.",
       scene: expect.objectContaining({
@@ -671,11 +689,26 @@ describe.skipIf(!wasmArtifactPresent)("EditorApp", () => {
       selectedNodeId: "node_contact_name",
       diagnostics: []
     });
+    // The preview is live on the canvas (the proposed title renders).
+    expect(screen.getByRole("heading", { name: "Agent Authored Ad" })).toBeInTheDocument();
+    // While reviewing, the chat input is locked (Moda's queue-lock pattern).
+    expect(screen.getByLabelText("Message the agent")).toBeDisabled();
 
-    fireEvent.click(screen.getByRole("button", { name: /^Apply and preview$/i }));
+    // Before/After compare is display-only.
+    const reviewBar = screen.getByRole("toolbar", { name: "Review agent changes" });
+    fireEvent.click(within(reviewBar).getByRole("button", { name: /^Before$/i }));
+    expect(screen.getByRole("heading", { name: "Hospital Letter" })).toBeInTheDocument();
+    fireEvent.click(within(reviewBar).getByRole("button", { name: /^After$/i }));
+    expect(screen.getByRole("heading", { name: "Agent Authored Ad" })).toBeInTheDocument();
 
-    expect(await screen.findByRole("heading", { name: "Agent Authored Ad" })).toBeInTheDocument();
+    fireEvent.click(within(reviewBar).getByRole("button", { name: /^Accept$/i }));
+
     expect(await screen.findByText("Export ready")).toBeInTheDocument();
+    expect(screen.queryByRole("toolbar", { name: "Review agent changes" })).not.toBeInTheDocument();
+    // Accept hands off to the export preview panel; the acceptance message is
+    // in the chat history when the agent panel is reopened.
+    fireEvent.click(screen.getByRole("button", { name: /^Agent$/i }));
+    expect(await screen.findByText(/Accepted 1 agent change/)).toBeInTheDocument();
     expect(preflightRunner).toHaveBeenCalledWith({
       scene: expect.objectContaining({
         meta: expect.objectContaining({
@@ -686,7 +719,7 @@ describe.skipIf(!wasmArtifactPresent)("EditorApp", () => {
     expect(exportRunner).toHaveBeenCalledWith({
       scene: expect.objectContaining({
         meta: expect.objectContaining({
-          title: "Agent Authored Ad"
+          title: "BAKED PREFLIGHT SCENE"
         })
       }),
       pageIds: ["page_a4"],
@@ -695,6 +728,63 @@ describe.skipIf(!wasmArtifactPresent)("EditorApp", () => {
       }),
       documentId: "doc_agent_editor"
     });
+    // THE 0c fix: the token-baked preflight scene is export INPUT only — the
+    // live document keeps its authored state (and its live token bindings).
+    expect(screen.getByRole("heading", { name: "Agent Authored Ad" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "BAKED PREFLIGHT SCENE" })).not.toBeInTheDocument();
+    // Accept pushed a real undo frame (the ops are committed, reversible).
+    expect(screen.getByRole("button", { name: /^Undo$/i })).toBeEnabled();
+  });
+
+  it("rejects a previewed agent turn and restores the previous design without committing anything", async () => {
+    const agentRunner: EditorAgentRunner = vi.fn().mockResolvedValue({
+      status: "proposed",
+      summary: "I proposed a new document title.",
+      dsl_blocks: [],
+      operations: [updateDocumentTitle("Agent Authored Ad")],
+      draft_scene: null,
+      stop_reason: "edit_scoped_acceptance",
+      acceptance_scope: "edit",
+      diagnostics: [],
+      trace: { run_id: "run_agent_reject", trace_dir: null, preview_paths: [] },
+      artifacts: []
+    });
+    const exportRunner: EditorExportRunner = vi.fn();
+    const preflightRunner = successfulPreflightRunner();
+
+    render(
+      <TestEditorApp
+        documentId="doc_agent_reject"
+        initialScene={twoPageScene()}
+        initialSelectedNodeId="node_contact_name"
+        agentRunner={agentRunner}
+        exportRunner={exportRunner}
+        preflightRunner={preflightRunner}
+      />
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /^Agent$/i }));
+    fireEvent.change(screen.getByLabelText("Message the agent"), {
+      target: { value: "Retitle the document." }
+    });
+    fireEvent.click(screen.getByRole("button", { name: /^Send$/i }));
+
+    const reviewBar = await screen.findByRole("toolbar", { name: "Review agent changes" });
+    expect(screen.getByRole("heading", { name: "Agent Authored Ad" })).toBeInTheDocument();
+
+    fireEvent.click(within(reviewBar).getByRole("button", { name: /^Reject$/i }));
+
+    // The pre-preview design is restored byte-for-byte; nothing was committed.
+    expect(screen.getByRole("heading", { name: "Hospital Letter" })).toBeInTheDocument();
+    expect(screen.queryByRole("toolbar", { name: "Review agent changes" })).not.toBeInTheDocument();
+    expect(screen.getByText(/Rejected the agent changes/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^Undo$/i })).toBeDisabled();
+    expect(exportRunner).not.toHaveBeenCalled();
+    // The selection survives the restore.
+    expect(screen.getByTestId("canvas-selection")).toHaveAttribute(
+      "data-selected-node",
+      "node_contact_name"
+    );
   });
 
   it("surfaces failed agent responses without applying operations", async () => {
@@ -743,7 +833,7 @@ describe.skipIf(!wasmArtifactPresent)("EditorApp", () => {
 
     expect(await screen.findByText("Agent blocked")).toBeInTheDocument();
     expect(screen.getAllByText("LUMA_AGENT_COMPILE_FAILED").length).toBeGreaterThan(0);
-    expect(screen.getByRole("button", { name: /^Apply and preview$/i })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /^Review changes$/i })).toBeDisabled();
     expect(screen.getByRole("heading", { name: "Hospital Letter" })).toBeInTheDocument();
   });
 

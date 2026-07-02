@@ -26,6 +26,7 @@ function repeatedProposal(): EditorAgentResult {
     operations: [],
     draft_scene: null,
     stop_reason: "max_iterations",
+    acceptance_scope: null,
     diagnostics: [
       diagnostic("agent_runtime.diagnostic", "unknown property valign"),
       diagnostic("agent_runtime.diagnostic", "unknown property valign")
@@ -45,12 +46,15 @@ function renderPanel(proposal: EditorAgentResult) {
       draft=""
       isRunning={false}
       proposal={proposal}
+      pendingReview={false}
       activePageId="page_a4"
       selectedNodeId={null}
       diagnostics={[]}
       onDraftChange={() => {}}
       onSend={() => {}}
       onApplyProposal={() => {}}
+      onAcceptProposal={() => {}}
+      onRejectProposal={() => {}}
     />
   );
 }

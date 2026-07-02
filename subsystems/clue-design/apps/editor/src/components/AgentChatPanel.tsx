@@ -1,4 +1,4 @@
-import { AlertTriangle, Bot, CheckCircle2, FileCode2, Send, Sparkles } from "lucide-react";
+import { AlertTriangle, Bot, Check, CheckCircle2, Eye, FileCode2, Send, Sparkles, X } from "lucide-react";
 import type { FormEvent } from "react";
 import type { Diagnostic, NodeId, Operation, PageId } from "@/engine/contracts";
 import type { EditorAgentResult } from "@/engine/agentRunner";
@@ -14,12 +14,16 @@ export interface AgentChatPanelProps {
   draft: string;
   isRunning: boolean;
   proposal: EditorAgentResult | null;
+  /** Phase 0c: a proposed turn is on the canvas awaiting Accept / Reject. */
+  pendingReview: boolean;
   activePageId: PageId | null;
   selectedNodeId: NodeId | null;
   diagnostics: Diagnostic[];
   onDraftChange: (value: string) => void;
   onSend: (prompt: string) => void;
   onApplyProposal: () => void;
+  onAcceptProposal: () => void;
+  onRejectProposal: () => void;
 }
 
 export function AgentChatPanel({
@@ -27,17 +31,20 @@ export function AgentChatPanel({
   draft,
   isRunning,
   proposal,
+  pendingReview,
   activePageId,
   selectedNodeId,
   diagnostics,
   onDraftChange,
   onSend,
-  onApplyProposal
+  onApplyProposal,
+  onAcceptProposal,
+  onRejectProposal
 }: AgentChatPanelProps) {
   const submitPrompt = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const trimmed = draft.trim();
-    if (!trimmed || isRunning) {
+    if (!trimmed || isRunning || pendingReview) {
       return;
     }
     onSend(trimmed);
@@ -73,7 +80,10 @@ export function AgentChatPanel({
         <AgentProposalCard
           proposal={proposal}
           isRunning={isRunning}
+          pendingReview={pendingReview}
           onApplyProposal={onApplyProposal}
+          onAcceptProposal={onAcceptProposal}
+          onRejectProposal={onRejectProposal}
         />
       ) : null}
       <form className="agent-chat-form" onSubmit={submitPrompt}>
@@ -82,11 +92,16 @@ export function AgentChatPanel({
           <textarea
             value={draft}
             onChange={(event) => onDraftChange(event.target.value)}
-            placeholder="Ask for a square ad, repair overflow, or update the selected section."
+            placeholder={
+              pendingReview
+                ? "Accept or reject the agent's changes to continue."
+                : "Ask for a square ad, repair overflow, or update the selected section."
+            }
+            disabled={pendingReview}
             rows={4}
           />
         </label>
-        <button type="submit" disabled={isRunning || !draft.trim()}>
+        <button type="submit" disabled={isRunning || pendingReview || !draft.trim()}>
           <Send aria-hidden size={15} />
           {isRunning ? "Sending" : "Send"}
         </button>
@@ -98,31 +113,52 @@ export function AgentChatPanel({
 function AgentProposalCard({
   proposal,
   isRunning,
-  onApplyProposal
+  pendingReview,
+  onApplyProposal,
+  onAcceptProposal,
+  onRejectProposal
 }: {
   proposal: EditorAgentResult;
   isRunning: boolean;
+  pendingReview: boolean;
   onApplyProposal: () => void;
+  onAcceptProposal: () => void;
+  onRejectProposal: () => void;
 }) {
   const canApply = proposal.status === "proposed" && proposal.operations.length > 0;
   const hasDraftScene = Boolean(proposal.draft_scene);
   return (
-    <div className={`agent-proposal ${proposal.status}`}>
+    <div className={`agent-proposal ${proposal.status}${pendingReview ? " reviewing" : ""}`}>
       <div className="agent-proposal-heading">
-        {proposal.status === "proposed" ? (
+        {pendingReview ? (
+          <Eye aria-hidden size={15} />
+        ) : proposal.status === "proposed" ? (
           <CheckCircle2 aria-hidden size={15} />
         ) : (
           <AlertTriangle aria-hidden size={15} />
         )}
         <strong>
-          {proposal.status === "proposed"
-            ? "Proposal ready"
-            : hasDraftScene
-              ? "Draft visible"
-              : "Agent blocked"}
+          {pendingReview
+            ? "Reviewing changes"
+            : proposal.status === "proposed"
+              ? "Proposal ready"
+              : hasDraftScene
+                ? "Draft visible"
+                : "Agent blocked"}
         </strong>
+        {proposal.acceptance_scope === "edit" ? (
+          <span className="agent-scope-chip" title="The agent verified the requested edit; remaining review notes are advisory.">
+            Edit-scoped
+          </span>
+        ) : null}
       </div>
       <p>{proposal.summary}</p>
+      {pendingReview ? (
+        <p className="muted">
+          The changes are on the canvas. Compare Before/After, then Accept to keep them or Reject to
+          restore the previous design.
+        </p>
+      ) : null}
       {proposal.status === "failed" && hasDraftScene ? (
         <p className="muted">
           The latest unapproved draft is shown on the canvas for inspection. It has not been accepted
@@ -168,12 +204,19 @@ function AgentProposalCard({
       ) : null}
       {proposal.diagnostics.length > 0 ? (
         <ul className="agent-diagnostic-list" aria-label="Agent diagnostics">
-          {proposal.diagnostics.slice(0, 4).map((diagnostic, index) => (
+          {proposal.diagnostics.slice(0, 6).map((diagnostic, index) => (
             // Index-qualified: the Phase A repair loop can emit the same
             // diagnostic (code + message) across iterations, so code+message
             // alone is not unique.
-            <li key={`${index}-${diagnostic.code}-${diagnostic.message}`}>
-              <code>{diagnostic.code}</code>
+            <li
+              key={`${index}-${diagnostic.code}-${diagnostic.message}`}
+              className={isAdvisoryDiagnostic(diagnostic) ? "advisory" : undefined}
+            >
+              {isAdvisoryDiagnostic(diagnostic) ? (
+                <code className="advisory-chip">Advisory</code>
+              ) : (
+                <code>{diagnostic.code}</code>
+              )}
               <span>{diagnostic.message}</span>
             </li>
           ))}
@@ -190,11 +233,28 @@ function AgentProposalCard({
           ))}
         </ul>
       ) : null}
-      <button type="button" onClick={onApplyProposal} disabled={!canApply || isRunning}>
-        {proposal.status === "failed" && hasDraftScene ? "Draft already shown" : "Apply and preview"}
-      </button>
+      {pendingReview ? (
+        <div className="agent-proposal-review-actions">
+          <button type="button" className="agent-review-reject" onClick={onRejectProposal}>
+            <X aria-hidden size={15} />
+            Reject
+          </button>
+          <button type="button" className="agent-review-accept" onClick={onAcceptProposal}>
+            <Check aria-hidden size={15} />
+            Accept
+          </button>
+        </div>
+      ) : (
+        <button type="button" onClick={onApplyProposal} disabled={!canApply || isRunning}>
+          {proposal.status === "failed" && hasDraftScene ? "Draft already shown" : "Review changes"}
+        </button>
+      )}
     </div>
   );
+}
+
+function isAdvisoryDiagnostic(diagnostic: Diagnostic): boolean {
+  return diagnostic.code === "agent_runtime.visual_critique_advisory";
 }
 
 function operationLabel(operation: Operation): string {
