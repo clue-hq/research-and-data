@@ -3241,6 +3241,10 @@ def agent_response_from_trace(
     operations: List[JsonObject] = []
     dsl_blocks: List[str] = []
     diagnostics: List[JsonObject] = []
+    # Phase 0b: the loop's keep-best snapshot can return an EARLIER iteration's
+    # scene as the draft. Operations from later iterations are then not part of
+    # that draft and must not be replayed by the editor.
+    ops_valid_through = result.get("ops_valid_through_iteration")
     iterations_dir = trace_dir / "iterations"
     if iterations_dir.exists():
         for iteration_dir in sorted(
@@ -3261,7 +3265,9 @@ def agent_response_from_trace(
                         compile_summary.get("diagnostics", []), "dsl"
                     )
                 )
-                if compile_summary.get("status") == "ok":
+                if compile_summary.get("status") == "ok" and iteration_in_ops_window(
+                    iteration_dir.name, ops_valid_through
+                ):
                     operations.extend(compile_payload.get("operations", []))
 
     raw_preview_paths = result.get("preview_paths", [])
@@ -3271,7 +3277,15 @@ def agent_response_from_trace(
         else []
     )
     accepted = result.get("status") == "accepted"
-    status = "proposed" if accepted and operations else "failed"
+    # Phase 0b edit-scoped acceptance: a seeded turn whose requested edit is
+    # verified applied proposes its operations even though the whole-design
+    # critique still has (advisory) complaints.
+    edit_scoped = result.get("status") == "edit_applied"
+    status = "proposed" if (accepted or edit_scoped) and operations else "failed"
+    if edit_scoped and status == "proposed":
+        diagnostics.extend(
+            advisory_critique_diagnostics(result.get("critique"))
+        )
     if status == "failed" and not diagnostics:
         diagnostics.append(
             agent_diagnostic(
@@ -3292,6 +3306,7 @@ def agent_response_from_trace(
         "dsl_blocks": dsl_blocks,
         "operations": operations if status == "proposed" else [],
         "draft_scene": draft_scene,
+        "acceptance_scope": "edit" if edit_scoped else ("design" if accepted else None),
         "stop_reason": result.get("stop_reason")
         if isinstance(result.get("stop_reason"), str)
         else None,
@@ -3308,6 +3323,47 @@ def agent_response_from_trace(
             for path in preview_paths
         ],
     }
+
+
+def iteration_in_ops_window(dir_name: str, ops_valid_through: Any) -> bool:
+    """True when an iteration's applied operations belong to the returned draft."""
+    if not isinstance(ops_valid_through, int):
+        return True
+    try:
+        return int(dir_name) <= ops_valid_through
+    except ValueError:
+        return True
+
+
+def advisory_critique_diagnostics(critique: Any) -> List[JsonObject]:
+    """Surface a whole-design critique as ADVISORY warnings (Phase 0b).
+
+    On an edit-scoped acceptance the critique did not block the turn; the
+    editor still shows its issues so the human can act on them (or ask the
+    agent to, as a follow-up turn)."""
+    diagnostics: List[JsonObject] = []
+    issues = (critique or {}).get("issues") if isinstance(critique, dict) else None
+    for issue in issues or []:
+        if not isinstance(issue, dict):
+            continue
+        target = issue.get("target") or {}
+        subject = None
+        if isinstance(target, dict):
+            if target.get("node_id"):
+                subject = {"kind": "node", "id": target["node_id"]}
+            elif target.get("page_id"):
+                subject = {"kind": "page", "id": target["page_id"]}
+        diagnostics.append(
+            agent_diagnostic(
+                "agent_runtime.visual_critique_advisory",
+                str(issue.get("message") or "Visual critique note."),
+                "review",
+                "warning",
+                issue.get("suggested_repair"),
+                subject,
+            )
+        )
+    return diagnostics
 
 
 def agent_artifact_format(path: str) -> str:

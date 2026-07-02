@@ -13,6 +13,7 @@ from .schemas import (
     AuthoringBlockRequest,
     CompileRepairContext,
     CompileSummary,
+    DiagnosticSeverity,
     PreviewTarget,
     PreflightSummary,
     ExportSummary,
@@ -23,9 +24,14 @@ from .schemas import (
     EditSurfaceRecommendation,
     StopReason,
     VisualCritique,
+    VisualIssue,
     VisualTarget,
 )
-from .prompts import IMAGERY_REPAIR_RECIPE, POSTER_RECOMPOSE_RECIPE
+from .prompts import (
+    IMAGERY_REPAIR_RECIPE,
+    POSTER_RECOMPOSE_RECIPE,
+    SEEDED_CONTINUATION_RECIPE,
+)
 from .tools import LumenDesignTools
 
 
@@ -45,6 +51,24 @@ IMAGERY_CATEGORIES = {"imagery"}
 # unbalanced page is fixed by geometry first, then the imagery axis is revisited next
 # iteration. (Mirrors the layout-cluster forcing set in classify_visual_critique.)
 _STRUCTURAL_LAYOUT_CATEGORIES = {"visual_balance", "alignment", "spacing", "compiler_repair"}
+
+# Phase 0b: action modes that author from scratch (or wipe the working scene).
+# On a SEEDED run the scene is the user's live document — these are coerced to
+# targeted_patch so the turn continues the document instead of replacing it.
+SEEDED_FORBIDDEN_ACTION_MODES = {
+    AgentActionMode.new_artifact,
+    AgentActionMode.full_page_rewrite,
+    AgentActionMode.replace_artboard_subtree,
+}
+
+# The two ways an authoring block re-authors existing content instead of editing
+# it: re-declaring an existing node id (LUMD0401) or an existing page (LUMA0200).
+# Both halt the compile with the code preserved in `halted_at.code` — the ONE
+# place the code survives diagnostic normalization (diagnostics_from stringifies
+# session-shaped DSL diagnostics, so `diagnostics[].code` may be null).
+REAUTHOR_HALT_CODES = {"LUMD0401", "LUMA0200"}
+_REAUTHORED_NODE_RE = re.compile(r"duplicate node id ([A-Za-z0-9_.\-]+)")
+_REAUTHORED_PAGE_RE = re.compile(r"recreate existing page ([A-Za-z0-9_.\-]+)")
 
 
 def recompose_recipe_for_feedback(feedback: Optional[dict]) -> Optional[str]:
@@ -234,6 +258,10 @@ class LumenQualityLoop:
         self.best_scene: Optional[dict] = None
         self.best_rank: Optional[tuple] = None
         self.best_iteration: Optional[int] = None
+        # Phase 0b: the node/page ids this run's APPLIED operations touched — the
+        # edit scope that edit-scoped acceptance judges critique issues against.
+        self.edited_node_ids: set = set()
+        self.edited_page_ids: set = set()
 
     def run(self, user_request: str) -> dict:
         knowledge = json.loads(self.tools.load_knowledge(user_request))
@@ -252,6 +280,40 @@ class LumenQualityLoop:
                 director_decisions=self.director_decisions,
             )
             decision = self.director.decide(full_context=full_context)
+            # Phase 0b: a seeded run continues the user's live document. Fresh
+            # authoring would discard or collide with it — coerce those modes to
+            # a targeted continuation, deterministically, and record it. (The
+            # tools-level start_fresh_rewrite_scene refuses seeded scenes too;
+            # this keeps the iteration productive instead of merely safe.)
+            if (
+                self.tools.seeded_from_initial_scene
+                and decision.action_mode in SEEDED_FORBIDDEN_ACTION_MODES
+            ):
+                original_mode = decision.action_mode
+                decision = decision.model_copy(
+                    update={
+                        "action_mode": AgentActionMode.targeted_patch,
+                        "instructions_to_author": (
+                            f"(The director chose '{original_mode.value}', which is "
+                            "unavailable on a seeded document. Perform the intent "
+                            "as targeted edits within the existing scene instead.)"
+                            f"\n\n{decision.instructions_to_author}"
+                        ).strip(),
+                    }
+                )
+                self.tools.record(
+                    "director",
+                    "seeded_mode_coerced",
+                    input_summary=original_mode.value,
+                    output_summary=(
+                        f"coerced {original_mode.value} -> targeted_patch: a "
+                        "seeded scene is continuation-only"
+                    ),
+                    payload={
+                        "from": original_mode.value,
+                        "to": AgentActionMode.targeted_patch.value,
+                    },
+                )
             # P1.5#2a: when the latest critique flags a vertical-distribution
             # problem (dead bands / visual_balance / spacing), deterministically
             # hand the rebuild the exact poster-idiom recipe — regardless of what
@@ -289,6 +351,26 @@ class LumenQualityLoop:
                             f"{decision.instructions_to_author}\n\n{imagery_recipe}"
                             if decision.instructions_to_author
                             else imagery_recipe
+                        )
+                    }
+                )
+            # Phase 0b: every seeded-turn author instruction carries the
+            # continuation recipe (modify-line grammar, never re-author existing
+            # ids, fresh ids for new content) so grammar discovery does not burn
+            # an iteration — 0a's e2e lost its first iteration to exactly that.
+            if (
+                self.tools.seeded_from_initial_scene
+                and decision.action_mode
+                not in {AgentActionMode.accept, AgentActionMode.stop_with_gap}
+                and SEEDED_CONTINUATION_RECIPE
+                not in (decision.instructions_to_author or "")
+            ):
+                decision = decision.model_copy(
+                    update={
+                        "instructions_to_author": (
+                            f"{decision.instructions_to_author}\n\n{SEEDED_CONTINUATION_RECIPE}"
+                            if decision.instructions_to_author
+                            else SEEDED_CONTINUATION_RECIPE
                         )
                     }
                 )
@@ -541,6 +623,24 @@ class LumenQualityLoop:
                     ) or {}
                     if prior_target.get("node_id"):
                         target = prior_target
+                correction = reauthor_correction(compile_summary)
+                if correction:
+                    # Phase 0b guardrail: the block re-authored existing content
+                    # (LUMD0401 duplicate id / LUMA0200 page re-declaration) and
+                    # was rejected WHOLE. Reroute deterministically as a
+                    # corrective, targeted repair — never rely on the model
+                    # noticing the pattern on its own.
+                    if correction["kind"] == "node" and correction.get("offending_id"):
+                        surgical = True
+                        recommendation = "structured_ops"
+                        target = {"node_id": correction["offending_id"]}
+                    self.tools.record(
+                        "coordinator",
+                        "reauthor_rerouted",
+                        input_summary=correction["code"],
+                        output_summary=correction["instruction"][:300],
+                        payload={"correction": correction},
+                    )
                 feedback = {
                     "kind": "compile",
                     "feedback": context.model_dump(mode="json"),
@@ -560,6 +660,12 @@ class LumenQualityLoop:
                 if surgical:
                     feedback["surgical_repair"] = True
                     feedback["surgical_target"] = target
+                if correction:
+                    feedback["reauthor_correction"] = correction
+                    feedback["authoring_constraints"] = [
+                        correction["instruction"],
+                        *(feedback.get("authoring_constraints") or []),
+                    ]
                 repair_request = json.loads(
                     self.tools.create_repair_request(
                         exact_feedback=json.dumps(feedback, indent=2),
@@ -585,6 +691,7 @@ class LumenQualityLoop:
             # gates (preflight/critic) reject it. Record it as a (weak) keep-best
             # candidate so a subsequent failed repair cannot strip the design from
             # canvas. Preflight-clean / reviewed drafts outrank it below.
+            self._track_edited_ids(compile_result.get("operations") or [])
             self._consider_best(stage="compiled", critique=None)
 
             preflight_result = json.loads(self.tools.preflight_design())
@@ -774,6 +881,59 @@ class LumenQualityLoop:
                     )
                 )
 
+            # Phase 0b edit-scoped acceptance: on a seeded turn, when the
+            # requested edit has compiled and preflighted clean (we are past
+            # both gates here) and no BLOCKING critique issue targets content
+            # this turn touched, the whole-design rejection must not hold the
+            # user's edit hostage. Accept at edit scope; the critique rides
+            # along as advisory. Error/blocker issues targeting an edited node
+            # (or anything it contains) still block and repair as before —
+            # warnings/info are advisory by severity even on edited nodes (the
+            # 0b e2e showed a pre-existing "could dominate more" warning on the
+            # edited headline forcing a needless extra director round).
+            if self.tools.seeded_from_initial_scene and (
+                self.edited_node_ids or self.edited_page_ids
+            ):
+                scope_node_ids = self._edited_scope_node_ids()
+                in_scope_issues = [
+                    issue
+                    for issue in critique.issues
+                    if issue.severity
+                    in {DiagnosticSeverity.blocker, DiagnosticSeverity.error}
+                    and issue_in_edit_scope(issue, scope_node_ids, self.edited_page_ids)
+                ]
+                if not in_scope_issues:
+                    iteration_record.stop_reason = StopReason.edit_scoped_acceptance
+                    self.state.status = "edit_applied"
+                    self.state.stop_reason = StopReason.edit_scoped_acceptance
+                    self.tools.record(
+                        "director",
+                        "edit_scoped_acceptance",
+                        output_summary=(
+                            "requested edit applied and verified; "
+                            f"{len(critique.issues)} whole-design critique "
+                            "issue(s) are advisory (no blocking issue targets "
+                            "this turn's edits)"
+                        ),
+                        payload={
+                            "edited_node_ids": sorted(self.edited_node_ids),
+                            "edited_page_ids": sorted(self.edited_page_ids),
+                            "advisory_issue_count": len(critique.issues),
+                        },
+                    )
+                    return json.loads(
+                        self.tools.finalize_run(
+                            "edit_applied",
+                            StopReason.edit_scoped_acceptance.value,
+                            "Requested edit applied and verified (compile + "
+                            "preflight clean). Remaining whole-design critique "
+                            "is advisory and targets content this turn did not "
+                            "modify.",
+                            critique_json=critique.model_dump_json(),
+                            ops_valid_through_iteration=self.state.current_iteration,
+                        )
+                    )
+
             feedback = {
                 "kind": "visual",
                 "feedback": critique.model_dump(mode="json"),
@@ -814,6 +974,27 @@ class LumenQualityLoop:
         best_is_preflight_clean = bool(self.best_rank and self.best_rank[0] == 1)
         if best_is_preflight_clean:
             self._restore_best_scene()
+            if self.tools.seeded_from_initial_scene and (
+                self.edited_node_ids or self.edited_page_ids
+            ):
+                # Phase 0b: on a seeded turn the verified, preflight-clean edit
+                # must reach the editor even at budget exhaustion — 0a's run 1
+                # showed the ops being stripped despite the edit having landed.
+                # Ops are valid only through the restored best iteration.
+                self.state.status = "edit_applied"
+                return json.loads(
+                    self.tools.finalize_run(
+                        "edit_applied",
+                        StopReason.max_iterations_reached.value,
+                        "Repair budget reached. The requested edit is applied in "
+                        "the best preflight-clean draft; remaining visual "
+                        "critique is advisory.",
+                        critique_json=json.dumps(
+                            self._latest_visual_critique_payload()
+                        ),
+                        ops_valid_through_iteration=self.best_iteration,
+                    )
+                )
             self.state.status = "completed_with_warnings"
             return json.loads(
                 self.tools.finalize_run(
@@ -822,6 +1003,7 @@ class LumenQualityLoop:
                     "Repair budget reached. Returned the best preflight-clean draft, "
                     "which was not explicitly accepted by the visual reviewer.",
                     critique_json=json.dumps(last_feedback),
+                    ops_valid_through_iteration=self.best_iteration,
                 )
             )
         self.state.status = "failed"
@@ -830,6 +1012,55 @@ class LumenQualityLoop:
             "Maximum Phase A repair iterations reached without a clean draft.",
             critique_json=json.dumps(last_feedback),
         )
+
+    def _track_edited_ids(self, operations: list) -> None:
+        """Accumulate the node/page ids touched by APPLIED operations (Phase 0b).
+
+        This is the edit scope that edit-scoped acceptance judges critique
+        issues against. Ids come from the checked core operations, not the DSL
+        text, so the scope reflects what actually changed."""
+        for op in operations:
+            if not isinstance(op, dict):
+                continue
+            node_id = op.get("node_id")
+            if isinstance(node_id, str) and node_id:
+                self.edited_node_ids.add(node_id)
+            node = op.get("node")
+            if isinstance(node, dict) and isinstance(node.get("id"), str):
+                self.edited_node_ids.add(node["id"])
+            page = op.get("page")
+            if isinstance(page, dict) and isinstance(page.get("id"), str):
+                self.edited_page_ids.add(page["id"])
+            page_id = op.get("page_id")
+            if isinstance(page_id, str) and page_id:
+                self.edited_page_ids.add(page_id)
+
+    def _edited_scope_node_ids(self) -> set:
+        """Edited node ids plus their CURRENT descendants.
+
+        An edit to a container legitimately owns critique on what it contains;
+        pre-existing siblings and ancestors stay out of scope (an ancestor
+        inclusion would let any pre-existing page-level complaint block every
+        targeted edit — the exact failure edit-scoped acceptance removes)."""
+        scope = set(self.edited_node_ids)
+        nodes = (self.tools.scene or {}).get("nodes") or {}
+        stack = list(scope)
+        while stack:
+            node = nodes.get(stack.pop())
+            for child in (node or {}).get("children") or []:
+                if child not in scope:
+                    scope.add(child)
+                    stack.append(child)
+        return scope
+
+    def _latest_visual_critique_payload(self) -> dict:
+        """The most recent visual critique payload, for advisory surfacing."""
+        for entry in reversed(self.previous_feedback):
+            if isinstance(entry, dict) and entry.get("kind") == "visual":
+                payload = entry.get("feedback")
+                if isinstance(payload, dict):
+                    return payload
+        return {}
 
     def _consider_best(
         self, *, stage: str, critique: Optional[VisualCritique]
@@ -976,6 +1207,70 @@ UNSUPPORTED_LAYOUT_CLUSTER_MODIFY_CALL_RE = re.compile(
     r"(?:^|\s)(?:al|autolayout|wrap)\("
 )
 SIZE_CALL_RE = re.compile(r"(?:^|\s)(?:s|size)\(([^)]*)\)")
+
+
+def reauthor_correction(compile_summary: dict) -> Optional[dict]:
+    """Detect the re-author failure modes on an existing scene and produce the
+    exact corrective feedback for the next authoring attempt (Phase 0b).
+
+    Keys off `halted_at.code` — the one place the LUMD0401/LUMA0200 code
+    survives diagnostic normalization — and pulls the offending id out of the
+    diagnostic text (which may be a stringified session-shaped dict)."""
+    halted = compile_summary.get("halted_at") or {}
+    code = halted.get("code")
+    if code not in REAUTHOR_HALT_CODES:
+        return None
+    blob = json.dumps(compile_summary.get("diagnostics") or [])
+    if code == "LUMD0401":
+        match = _REAUTHORED_NODE_RE.search(blob)
+        offending = match.group(1) if match else None
+        return {
+            "code": code,
+            "kind": "node",
+            "offending_id": offending,
+            "instruction": (
+                f"You re-declared the existing node id '{offending or '<unknown>'}' "
+                "as a new element, so the WHOLE block was rejected unapplied "
+                f"(LUMD0401). Edit it in place with `#{offending or '<id>'} "
+                "property(...)` modify lines (every property is a parenthesized "
+                "call), or swap its subtree atomically with `replace("
+                f"{offending or '<id>'})` + an indented single-root subtree. "
+                "Never re-author existing ids."
+            ),
+        }
+    match = _REAUTHORED_PAGE_RE.search(blob)
+    offending = match.group(1) if match else None
+    return {
+        "code": code,
+        "kind": "page",
+        "offending_id": offending,
+        "instruction": (
+            f"You re-declared the existing page '{offending or '<unknown>'}', so "
+            "the block was rejected unapplied (LUMA0200). Do not emit a `page` "
+            "line for an existing page. Edit existing content with `#<id>` "
+            "modify lines, restructure with replace(...)/clone(...)/parent(...), "
+            "and give any NEW content new unique ids."
+        ),
+    }
+
+
+def issue_in_edit_scope(
+    issue: VisualIssue, scope_node_ids: set, edited_page_ids: set
+) -> bool:
+    """True when a critique issue targets content this turn edited (Phase 0b).
+
+    Node targets are in scope when they name an edited node or one of its
+    current descendants. Page targets are in scope only for pages this turn
+    added/updated. Untargeted (whole-design) issues and slot-key-only issues
+    are advisory on a seeded turn — they describe pre-existing content."""
+    target = issue.target
+    if target is None:
+        return False
+    if target.node_id:
+        return target.node_id in scope_node_ids
+    if target.page_id:
+        return target.page_id in edited_page_ids
+    return False
 
 
 def primary_diagnostic(diagnostics: list[dict]) -> dict | None:

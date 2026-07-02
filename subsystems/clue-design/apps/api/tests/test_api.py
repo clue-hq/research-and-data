@@ -407,6 +407,94 @@ def test_agent_turn_preview_route_returns_editor_safe_proposal(client: TestClien
     assert captured["root"] == REPO_ROOT
 
 
+def write_iteration_compile(trace_dir, index: int, operations: list) -> None:
+    iteration_dir = trace_dir / "iterations" / f"{index:03d}"
+    iteration_dir.mkdir(parents=True, exist_ok=True)
+    (iteration_dir / "dsl.lumen").write_text(f"# block {index}", encoding="utf-8")
+    (iteration_dir / "compile.json").write_text(
+        json.dumps(
+            {
+                "compile": {"status": "ok", "diagnostics": []},
+                "operations": operations,
+            }
+        ),
+        encoding="utf-8",
+    )
+
+
+def test_agent_response_edit_applied_maps_to_proposed_with_advisory_diagnostics(
+    tmp_path,
+) -> None:
+    # Phase 0b: an edit-scoped acceptance proposes its ops; the whole-design
+    # critique rides along as ADVISORY warning diagnostics, never errors.
+    from lumen_api.main import agent_response_from_trace
+
+    write_iteration_compile(
+        tmp_path, 1, [{"kind": "update_node", "node_id": "headline"}]
+    )
+    result = {
+        "status": "edit_applied",
+        "stop_reason": "edit_scoped_acceptance",
+        "run_id": "run_edit_scoped",
+        "summary": "Requested edit applied and verified.",
+        "preview_paths": [],
+        "ops_valid_through_iteration": 1,
+        "critique": {
+            "accepted": False,
+            "summary": "pre-existing issues",
+            "issues": [
+                {
+                    "severity": "blocker",
+                    "category": "imagery",
+                    "message": "hero image is a placeholder gradient",
+                    "suggested_repair": "regenerate the hero",
+                    "target": {"page_id": "hero_poster", "node_id": "hero"},
+                }
+            ],
+        },
+    }
+
+    response = agent_response_from_trace(result, tmp_path)
+
+    assert response["status"] == "proposed"
+    assert response["acceptance_scope"] == "edit"
+    assert response["operations"] == [{"kind": "update_node", "node_id": "headline"}]
+    advisory = [
+        diag
+        for diag in response["diagnostics"]
+        if diag["code"] == "agent_runtime.visual_critique_advisory"
+    ]
+    assert len(advisory) == 1
+    assert advisory[0]["severity"] == "warning"  # advisory even for critique blockers
+    assert advisory[0]["subject"] == {"kind": "node", "id": "hero"}
+    assert advisory[0]["hint"] == "regenerate the hero"
+
+
+def test_agent_response_ops_window_excludes_iterations_after_best(tmp_path) -> None:
+    # Phase 0b: when the loop returns an EARLIER iteration's scene as the best
+    # draft, ops from later iterations are not part of it and must not replay.
+    from lumen_api.main import agent_response_from_trace
+
+    write_iteration_compile(tmp_path, 1, [{"kind": "update_node", "node_id": "headline"}])
+    write_iteration_compile(tmp_path, 2, [{"kind": "update_node", "node_id": "kicker"}])
+    result = {
+        "status": "edit_applied",
+        "stop_reason": "max_iterations_reached",
+        "run_id": "run_window",
+        "summary": "Budget reached; best draft returned.",
+        "preview_paths": [],
+        "ops_valid_through_iteration": 1,
+        "critique": {},
+    }
+
+    response = agent_response_from_trace(result, tmp_path)
+
+    assert response["status"] == "proposed"
+    assert response["operations"] == [{"kind": "update_node", "node_id": "headline"}]
+    # Later blocks still appear as informational DSL history.
+    assert len(response["dsl_blocks"]) == 2
+
+
 def test_agent_seed_scene_accepts_scene_shape_and_rejects_junk() -> None:
     # Phase 0a: only a structurally plausible scene document seeds the agent's
     # working scene; anything else falls back to a fresh scene (None).

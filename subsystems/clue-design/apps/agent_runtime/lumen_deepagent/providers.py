@@ -26,6 +26,14 @@ composition, visual balance, parent/artboard overflow, or repeated failed local
 patches (see attempt_history), choose a structural rewrite mode instead of a tiny
 targeted patch.
 
+SEEDED CONTINUATION TURNS: when the report says `seeded_from_initial_scene: true`,
+the scene IS the user's live document — you are continuing it, not creating one.
+`new_artifact`, `full_page_rewrite`, and `replace_artboard_subtree` are unavailable
+(the loop coerces them to `targeted_patch`). Choose `targeted_patch` or
+`layout_cluster_rewrite`, scoped to what the user asked for. Pre-existing quality
+issues OUTSIDE the requested edit are advisory — do not block or redesign for them
+unless the user asked.
+
 Return only a structured AgentDirectorDecision.
 """
 

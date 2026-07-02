@@ -87,6 +87,33 @@ summary. Do not claim success before preview-based review accepts the output.
 """
 
 
+# Phase 0b: verbatim continuation recipe injected into EVERY author instruction on a
+# seeded run (the working scene was seeded from the user's live editor document).
+# It front-loads the two things the 0a probes showed the author gets wrong without
+# help: modify-line grammar (properties are parenthesized CALLS — the e2e burned an
+# iteration on `#headline text "…"` → LUMD0210) and the never-re-author-ids rule
+# (a block that re-declares an existing id/page is rejected whole: LUMD0401/LUMA0200).
+SEEDED_CONTINUATION_RECIPE = (
+    "SEEDED CONTINUATION MODE — this run edits the user's EXISTING document (the "
+    "scene was seeded from the live editor). Rules:\n"
+    "- The current scene is the user's work. NEVER re-author it from scratch, NEVER "
+    "re-declare an existing `page`, and NEVER re-declare an existing node id as an "
+    "element line — such a block is rejected WHOLE (LUMD0401 / LUMA0200) and the "
+    "iteration is wasted.\n"
+    "- Edit existing objects ONLY with `#<id>` modify lines. On a modify line every "
+    'property is a parenthesized call: `#headline text("New copy") font_size(64)`. '
+    'Element-style syntax like `#headline text "New copy"` is INVALID on a modify '
+    "line (LUMD0210).\n"
+    "- Structural changes go through directives on existing ids: `replace(<id>)` + an "
+    "indented single-root subtree, `clone(src,new_id,after:src)`, `parent(...)`, "
+    "`before(...)`/`after(...)`, `delete(...)`.\n"
+    "- New content gets NEW unique ids that collide with nothing in the scene "
+    "(suffix `_2`, `_b`, ...). New pages may be added under new page ids.\n"
+    "- Touch ONLY what the request requires: every node you do not name must remain "
+    "byte-identical after your block."
+)
+
+
 # Verbatim recompose recipe handed to the author whenever the visual critic flags a
 # vertical-distribution problem (dead bands / "truncated" / "disconnected strips" /
 # visual_balance). The loop injects this into the author's instructions so the rebuild
@@ -149,6 +176,10 @@ Hard syntax rules:
 - Use line-oriented indentation, for example: `page page_a4 preset(a4,portrait)`.
 - Use element lines such as `hero fr p(32,32) s(520,260) fill(#ffffff) rd(16)`.
 - Use quoted text inline, for example: `headline text "Clear headline" p(24,24) s(460,hug)`.
+- MODIFY LINES are different from element lines: on a `#<id>` modify line every
+  property is a parenthesized CALL. Write `#headline text("New copy") font_size(64)`;
+  the element-style `#headline text "New copy"` is invalid on a modify line
+  (LUMD0210 unsupported property syntax).
 - Do not write block forms like `page "pg" { ... }`, `width 1080`, or `height 1080`.
 - Custom page dimensions are supported. For exact surfaces, use
   `page page_id size(width,height,px)`. Presets are shortcuts only. Page sizes

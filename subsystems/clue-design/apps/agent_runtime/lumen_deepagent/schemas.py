@@ -244,6 +244,11 @@ class RepairClassification(BaseModel):
 
 class StopReason(str, Enum):
     accepted = "accepted"
+    # Phase 0b: a seeded (continuation) turn whose requested edit compiled and
+    # preflighted clean, where every remaining critique issue targets content
+    # the turn did not touch — the edit is accepted at its own scope and the
+    # whole-design critique is surfaced as advisory, not blocking.
+    edit_scoped_acceptance = "edit_scoped_acceptance"
     compile_failed = "compile_failed"
     preflight_failed = "preflight_failed"
     export_failed = "export_failed"

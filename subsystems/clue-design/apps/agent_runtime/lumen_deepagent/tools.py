@@ -1769,6 +1769,10 @@ class LumenDesignTools:
             "iteration": self.iteration,
             "user_request": user_request,
             "original_prompt": self.prompt,
+            # Phase 0b: a seeded run continues the user's live document — the
+            # director must choose continuation modes (targeted_patch /
+            # layout_cluster_rewrite), never fresh authoring.
+            "seeded_from_initial_scene": self.seeded_from_initial_scene,
             "conversation_context": extract_editor_conversation_context(self.prompt),
             "scene_summary": self._scene_summary(),
             "scene_subtree": self._scene_subtree_for_targets(target_ids),
@@ -2034,7 +2038,26 @@ class LumenDesignTools:
         return capped
 
     def start_fresh_rewrite_scene(self, reason: str) -> None:
-        """Reset the live authoring scene for a director-approved rewrite."""
+        """Reset the live authoring scene for a director-approved rewrite.
+
+        Phase 0b guarantee: a SEEDED scene is the user's live document and is
+        unwipeable — the reset is refused (and recorded) instead of replacing
+        the seed with an empty scene. The loop additionally coerces the action
+        modes that request this away on seeded runs; this block is the
+        belt-and-suspenders enforcement for any other caller.
+        """
+        if self.seeded_from_initial_scene:
+            self.record(
+                "director",
+                "seeded_scene_wipe_blocked",
+                input_summary=reason[:500],
+                output_summary=(
+                    "refused to reset the live scene: it was seeded from the "
+                    "user's document and is unwipeable"
+                ),
+                payload={"reason": reason},
+            )
+            return
         self.scene = self.core.new_scene(self.run_id, "Agent-authored design")
         self.dsl_session = None
         self.scene_update_sources.append("director_fresh_rewrite")
@@ -2095,8 +2118,15 @@ class LumenDesignTools:
         stop_reason: str,
         summary: str,
         critique_json: str = "{}",
+        ops_valid_through_iteration: Optional[int] = None,
     ) -> str:
-        """Write the final run summary in a later-API-compatible local format."""
+        """Write the final run summary in a later-API-compatible local format.
+
+        `ops_valid_through_iteration` names the last iteration whose applied
+        operations are part of the returned draft scene (the keep-best snapshot
+        can restore an EARLIER iteration's scene; ops from later iterations must
+        then not be replayed by the editor). None means all ok iterations.
+        """
         critique = json.loads(critique_json) if critique_json.strip() else {}
         payload = {
             "run_id": self.run_id,
@@ -2109,6 +2139,8 @@ class LumenDesignTools:
             "critique": critique,
             "gaps": self.gaps,
             "scene_update_sources": self.scene_update_sources,
+            "seeded_from_initial_scene": self.seeded_from_initial_scene,
+            "ops_valid_through_iteration": ops_valid_through_iteration,
         }
         self._write_json(self.trace_dir / "final.json", payload)
         # Persist the FULL final scene (not just the summary) so offline tooling — the
