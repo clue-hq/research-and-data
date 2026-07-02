@@ -1,0 +1,81 @@
+{
+  "baseline": "image-pipeline / step-1b (OpenRouter chat-completions adapter wired)",
+  "mode": "recorded",
+  "model_id": "google/gemini-2.5-flash-image",
+  "brief": {
+    "prompt": "Editorial photograph of a focused neurosurgeon reviewing a glowing 3D brain scan on a translucent display in a modern hospital, cinematic teal-and-deep-navy lighting, shallow depth of field, premium healthcare brand aesthetic, no text",
+    "brand_notes": [
+      "calm clinical confidence",
+      "deep navy + teal palette",
+      "premium, uncluttered"
+    ],
+    "alt": "Neurosurgeon reviewing a 3D brain scan on a translucent display"
+  },
+  "stages": {
+    "reference_source": {
+      "note": "deterministic stand-in for model output (held constant across steps)",
+      "format": "png",
+      "width": 1280,
+      "height": 720,
+      "bytes": 78223,
+      "sha256": "3bd986c14fd1eadb6f19e792c316bc4cbc1c9fc7ad964c3ec815e7bb30e06659"
+    },
+    "generate": {
+      "request_endpoint": "https://openrouter.ai/api/v1/chat/completions",
+      "request_modalities": [
+        "image",
+        "text"
+      ],
+      "result_mime": "image/png",
+      "result_model": "google/gemini-2.5-flash-image",
+      "result_bytes": 78223,
+      "result_sha256": "3bd986c14fd1eadb6f19e792c316bc4cbc1c9fc7ad964c3ec815e7bb30e06659",
+      "license_name": "generated_commercial_use"
+    },
+    "ingest": {
+      "asset_id": "hero_image",
+      "source_kind": "generated",
+      "store_root": "<ephemeral content-addressed store>"
+    },
+    "preflight": {
+      "brand_kit_id": "brand_kit_platform_default",
+      "brand_kit_version": 1,
+      "error_count": 0,
+      "diagnostics": [
+        {
+          "code": "LUMB0613",
+          "severity": "warning",
+          "message": "font asset brand is not marked embeddable for export"
+        },
+        {
+          "code": "LUMB0614",
+          "severity": "warning",
+          "message": "font asset brand is not marked subsettable for PDF export"
+        }
+      ]
+    },
+    "placement": {
+      "fit": "cover",
+      "focal_point": {
+        "x": 0.5,
+        "y": 0.4
+      },
+      "alt_text": "Neurosurgeon reviewing a 3D brain scan on a translucent display"
+    },
+    "render": {
+      "mime": "image/png",
+      "format": "png",
+      "width": 1080,
+      "height": 1350,
+      "bytes": 131485,
+      "sha256": "1c8dff7b12ab044ea0e5b6d548b3367d81e85788de5577b43d98da71925f64d0",
+      "diagnostics": [
+        {
+          "code": "LUME0205",
+          "severity": "warning",
+          "message": "node band uses hug/fill sizing without resolved export geometry"
+        }
+      ]
+    }
+  }
+}

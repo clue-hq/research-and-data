@@ -1,0 +1,227 @@
+{
+  "debug_only": false,
+  "debug_reason": null,
+  "canonical": {
+    "status": "ok",
+    "requested_format": "svg",
+    "diagnostics": [
+      {
+        "severity": "warning",
+        "code": "LUME0210",
+        "message": "image node hero could not resolve bytes for asset hero_image: asset.bytes_missing: store.bytes_missing: could not read /var/folders/wc/ndxjgy7s7vjb8d9rfk4tyjtr0000gn/T/lumen-probe0a-0tid4hlu/runs/asset-store/sha256/3b/3bd986c14fd1eadb6f19e792c316bc4cbc1c9fc7ad964c3ec815e7bb30e06659: No such file or directory (os error 2)",
+        "line": null,
+        "column": null,
+        "target_page_id": null,
+        "target_node_id": null,
+        "target_slot_id": null,
+        "target_slot_key": null,
+        "suggested_repair": "Verify the asset bytes exist in the configured asset store."
+      },
+      {
+        "severity": "warning",
+        "code": "LUME0205",
+        "message": "node band uses hug/fill sizing without resolved export geometry",
+        "line": null,
+        "column": null,
+        "target_page_id": null,
+        "target_node_id": "band",
+        "target_slot_id": null,
+        "target_slot_key": null,
+        "suggested_repair": "Run layout before export or provide fixed/computed dimensions."
+      },
+      {
+        "severity": "warning",
+        "code": "LUME0212",
+        "message": "node hero embeds asset hero_image whose license \"generated\" forbids export (profile agent_critique_preview, purpose AgentCritique)",
+        "line": null,
+        "column": null,
+        "target_page_id": null,
+        "target_node_id": null,
+        "target_slot_id": null,
+        "target_slot_key": null,
+        "suggested_repair": "This preview is allowed, but a print/publish export of this document will be rejected."
+      }
+    ],
+    "artifacts": [
+      {
+        "format": "svg",
+        "mime_type": "image/svg+xml",
+        "page_id": "hero_poster",
+        "byte_len": 1801,
+        "path": "/var/folders/wc/ndxjgy7s7vjb8d9rfk4tyjtr0000gn/T/lumen-probe0a-0tid4hlu/runs/run_5157cbba8730456e8ffdd88ecd85452e/iterations/002/preview.svg",
+        "width": 1080.0,
+        "height": 1350.0,
+        "aspect_ratio": 0.8,
+        "critic_input_path": "/var/folders/wc/ndxjgy7s7vjb8d9rfk4tyjtr0000gn/T/lumen-probe0a-0tid4hlu/runs/run_5157cbba8730456e8ffdd88ecd85452e/iterations/002/preview.svg",
+        "valid": true,
+        "validation_errors": []
+      }
+    ],
+    "validation_errors": []
+  },
+  "critic": {
+    "status": "ok",
+    "requested_format": "png",
+    "diagnostics": [
+      {
+        "severity": "warning",
+        "code": "LUME0210",
+        "message": "image node hero could not resolve bytes for asset hero_image: asset.bytes_missing: store.bytes_missing: could not read /var/folders/wc/ndxjgy7s7vjb8d9rfk4tyjtr0000gn/T/lumen-probe0a-0tid4hlu/runs/asset-store/sha256/3b/3bd986c14fd1eadb6f19e792c316bc4cbc1c9fc7ad964c3ec815e7bb30e06659: No such file or directory (os error 2)",
+        "line": null,
+        "column": null,
+        "target_page_id": null,
+        "target_node_id": null,
+        "target_slot_id": null,
+        "target_slot_key": null,
+        "suggested_repair": "Verify the asset bytes exist in the configured asset store."
+      },
+      {
+        "severity": "warning",
+        "code": "LUME0205",
+        "message": "node band uses hug/fill sizing without resolved export geometry",
+        "line": null,
+        "column": null,
+        "target_page_id": null,
+        "target_node_id": "band",
+        "target_slot_id": null,
+        "target_slot_key": null,
+        "suggested_repair": "Run layout before export or provide fixed/computed dimensions."
+      },
+      {
+        "severity": "warning",
+        "code": "LUME0212",
+        "message": "node hero embeds asset hero_image whose license \"generated\" forbids export (profile agent_critique_preview, purpose AgentCritique)",
+        "line": null,
+        "column": null,
+        "target_page_id": null,
+        "target_node_id": null,
+        "target_slot_id": null,
+        "target_slot_key": null,
+        "suggested_repair": "This preview is allowed, but a print/publish export of this document will be rejected."
+      }
+    ],
+    "artifacts": [
+      {
+        "format": "png",
+        "mime_type": "image/png",
+        "page_id": "hero_poster",
+        "byte_len": 28701,
+        "path": "/var/folders/wc/ndxjgy7s7vjb8d9rfk4tyjtr0000gn/T/lumen-probe0a-0tid4hlu/runs/run_5157cbba8730456e8ffdd88ecd85452e/iterations/002/preview.png",
+        "width": 1080.0,
+        "height": 1350.0,
+        "aspect_ratio": 0.8,
+        "critic_input_path": "/var/folders/wc/ndxjgy7s7vjb8d9rfk4tyjtr0000gn/T/lumen-probe0a-0tid4hlu/runs/run_5157cbba8730456e8ffdd88ecd85452e/iterations/002/preview.png",
+        "valid": true,
+        "validation_errors": []
+      }
+    ],
+    "validation_errors": []
+  },
+  "reviewer": {
+    "status": "ok",
+    "requested_format": "png",
+    "artifacts": [
+      {
+        "format": "svg",
+        "mime_type": "image/svg+xml",
+        "page_id": "hero_poster",
+        "byte_len": 1801,
+        "path": "/var/folders/wc/ndxjgy7s7vjb8d9rfk4tyjtr0000gn/T/lumen-probe0a-0tid4hlu/runs/run_5157cbba8730456e8ffdd88ecd85452e/iterations/002/preview.svg",
+        "width": 1080.0,
+        "height": 1350.0,
+        "aspect_ratio": 0.8,
+        "critic_input_path": "/var/folders/wc/ndxjgy7s7vjb8d9rfk4tyjtr0000gn/T/lumen-probe0a-0tid4hlu/runs/run_5157cbba8730456e8ffdd88ecd85452e/iterations/002/preview.svg",
+        "valid": true,
+        "validation_errors": []
+      },
+      {
+        "format": "png",
+        "mime_type": "image/png",
+        "page_id": "hero_poster",
+        "byte_len": 28701,
+        "path": "/var/folders/wc/ndxjgy7s7vjb8d9rfk4tyjtr0000gn/T/lumen-probe0a-0tid4hlu/runs/run_5157cbba8730456e8ffdd88ecd85452e/iterations/002/preview.png",
+        "width": 1080.0,
+        "height": 1350.0,
+        "aspect_ratio": 0.8,
+        "critic_input_path": "/var/folders/wc/ndxjgy7s7vjb8d9rfk4tyjtr0000gn/T/lumen-probe0a-0tid4hlu/runs/run_5157cbba8730456e8ffdd88ecd85452e/iterations/002/preview.png",
+        "valid": true,
+        "validation_errors": []
+      }
+    ],
+    "validation_errors": [],
+    "diagnostics": [
+      {
+        "severity": "warning",
+        "code": "LUME0210",
+        "message": "image node hero could not resolve bytes for asset hero_image: asset.bytes_missing: store.bytes_missing: could not read /var/folders/wc/ndxjgy7s7vjb8d9rfk4tyjtr0000gn/T/lumen-probe0a-0tid4hlu/runs/asset-store/sha256/3b/3bd986c14fd1eadb6f19e792c316bc4cbc1c9fc7ad964c3ec815e7bb30e06659: No such file or directory (os error 2)",
+        "line": null,
+        "column": null,
+        "target_page_id": null,
+        "target_node_id": null,
+        "target_slot_id": null,
+        "target_slot_key": null,
+        "suggested_repair": "Verify the asset bytes exist in the configured asset store."
+      },
+      {
+        "severity": "warning",
+        "code": "LUME0205",
+        "message": "node band uses hug/fill sizing without resolved export geometry",
+        "line": null,
+        "column": null,
+        "target_page_id": null,
+        "target_node_id": "band",
+        "target_slot_id": null,
+        "target_slot_key": null,
+        "suggested_repair": "Run layout before export or provide fixed/computed dimensions."
+      },
+      {
+        "severity": "warning",
+        "code": "LUME0212",
+        "message": "node hero embeds asset hero_image whose license \"generated\" forbids export (profile agent_critique_preview, purpose AgentCritique)",
+        "line": null,
+        "column": null,
+        "target_page_id": null,
+        "target_node_id": null,
+        "target_slot_id": null,
+        "target_slot_key": null,
+        "suggested_repair": "This preview is allowed, but a print/publish export of this document will be rejected."
+      },
+      {
+        "severity": "warning",
+        "code": "LUME0210",
+        "message": "image node hero could not resolve bytes for asset hero_image: asset.bytes_missing: store.bytes_missing: could not read /var/folders/wc/ndxjgy7s7vjb8d9rfk4tyjtr0000gn/T/lumen-probe0a-0tid4hlu/runs/asset-store/sha256/3b/3bd986c14fd1eadb6f19e792c316bc4cbc1c9fc7ad964c3ec815e7bb30e06659: No such file or directory (os error 2)",
+        "line": null,
+        "column": null,
+        "target_page_id": null,
+        "target_node_id": null,
+        "target_slot_id": null,
+        "target_slot_key": null,
+        "suggested_repair": "Verify the asset bytes exist in the configured asset store."
+      },
+      {
+        "severity": "warning",
+        "code": "LUME0205",
+        "message": "node band uses hug/fill sizing without resolved export geometry",
+        "line": null,
+        "column": null,
+        "target_page_id": null,
+        "target_node_id": "band",
+        "target_slot_id": null,
+        "target_slot_key": null,
+        "suggested_repair": "Run layout before export or provide fixed/computed dimensions."
+      },
+      {
+        "severity": "warning",
+        "code": "LUME0212",
+        "message": "node hero embeds asset hero_image whose license \"generated\" forbids export (profile agent_critique_preview, purpose AgentCritique)",
+        "line": null,
+        "column": null,
+        "target_page_id": null,
+        "target_node_id": null,
+        "target_slot_id": null,
+        "target_slot_key": null,
+        "suggested_repair": "This preview is allowed, but a print/publish export of this document will be rejected."
+      }
+    ]
+  }
+}

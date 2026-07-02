@@ -1,0 +1,20 @@
+{
+  "url": "https://openrouter.ai/api/v1/chat/completions",
+  "body": {
+    "model": "google/gemini-2.5-flash-image",
+    "messages": [
+      {
+        "role": "user",
+        "content": "Editorial photograph of a focused neurosurgeon reviewing a glowing 3D brain scan on a translucent display in a modern hospital, cinematic teal-and-deep-navy lighting, shallow depth of field, premium healthcare brand aesthetic, no text\n\nBrand/style direction: calm clinical confidence; deep navy + teal palette; premium, uncluttered\n\n(Render with aspect ratio 4:3.)"
+      }
+    ],
+    "modalities": [
+      "image",
+      "text"
+    ]
+  },
+  "headers": {
+    "Authorization": "<redacted>",
+    "Content-Type": "application/json"
+  }
+}

@@ -1,0 +1,60 @@
+{
+  "status": "ok",
+  "critique": {
+    "accepted": false,
+    "summary": "The headline text edit succeeded (\"Calmer clinics, faster triage\" is present), but the rendered poster is essentially a blank 1080\u00d71350 canvas with three tiny text lines huddled in the lower-left quadrant. The hero image did not resolve (LUME0210 asset bytes missing) so ~60% of the top of the page is empty white, and the type is far too small for the surface \u2014 no focal dominance, massive dead band above, and no visible band/scrim/brand structure that a \"hero poster\" implies. This is not a shippable artifact even though the copy change itself is correct.",
+    "issues": [
+      {
+        "severity": "blocker",
+        "category": "imagery",
+        "target": {
+          "page_id": "hero_poster",
+          "node_id": "hero",
+          "slot_key": null
+        },
+        "message": "The `hero` image failed to resolve (LUME0210: asset bytes missing for hero_image) so the top ~60% of the poster is a blank white void. A hero poster with no hero renders as an unfinished draft.",
+        "suggested_repair": "Restore/regenerate the hero_image asset bytes in the asset store, or replace `hero` with a placeholder brand surface fill (e.g. `#hero fill($surface.brand)` on the image node's parent frame) so the top region is not empty white."
+      },
+      {
+        "severity": "blocker",
+        "category": "hierarchy",
+        "target": {
+          "page_id": "hero_poster",
+          "node_id": "headline",
+          "slot_key": null
+        },
+        "message": "The headline renders at ~32pt on a 1080\u00d71350 canvas \u2014 it does not dominate. On this surface a hero headline should be ~64\u201380pt (`$type.size.6xl`/`7xl`) so it reads as the focal point. Currently CASE STUDY, headline, and body all read at nearly the same visual weight.",
+        "suggested_repair": "On #headline, step the size up: `#headline style($type.headline) font_size($type.size.6xl)` (64) or `7xl` (80), keeping the rest of the node untouched."
+      },
+      {
+        "severity": "error",
+        "category": "visual_balance",
+        "target": {
+          "page_id": "hero_poster",
+          "node_id": "band",
+          "slot_key": null
+        },
+        "message": "Massive dead band: the top ~810pt of the page is empty white while all three text lines are stranded in a narrow strip near the bottom-left. The band `translate(0 810)` fills white and its children start at x=24 with a 32pt headline \u2014 the composition reads as truncated/unfinished, not intentional.",
+        "suggested_repair": "Either restore the hero image so the top band is filled, or give the `band` a real fill (e.g. `#band fill($surface.brand)` or `$surface.muted`) and center/scale its content so the poster reads as a finished layout instead of a void with a caption."
+      },
+      {
+        "severity": "warning",
+        "category": "alignment",
+        "target": {
+          "page_id": "hero_poster",
+          "node_id": "band",
+          "slot_key": null
+        },
+        "message": "Text hugs the left edge at x=24 (a 24pt inset on a 1080-wide canvas) with no matching right margin structure. On a 1080-wide poster, content margins should be ~72\u201396pt to feel intentional.",
+        "suggested_repair": "Increase left/right padding on the band's content column to ~80pt (e.g. `pad(80)` on the band's autolayout) so the copy sits inside a proper margin."
+      }
+    ],
+    "repair_instruction": "The headline copy change is correct. The design is not shippable because (1) the hero image asset failed to resolve \u2014 restore hero_image bytes in the asset store or fall back the `hero` node's parent to a solid brand surface so the top ~810pt is not empty white; (2) the headline is too small \u2014 apply `#headline font_size($type.size.6xl)` (64) or `7xl` (80) so it dominates the 1080\u00d71350 canvas; and (3) widen the band's inner padding to ~80pt so the text isn't glued to the left edge. Do not alter the headline string or other copy.",
+    "acceptance_notes": [],
+    "requirement_coverage_notes": [
+      "Requested headline copy 'Calmer clinics, faster triage' is present in the render.",
+      "Page dimensions match the requested 1080\u00d71350 portrait poster."
+    ],
+    "confidence": 0.9
+  }
+}

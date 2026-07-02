@@ -1,0 +1,79 @@
+{
+  "repair_request": {
+    "original_user_request": "Change the headline text to 'Calmer clinics, faster triage'. Keep everything else exactly as it is.\n\nEditor context JSON:\n{\n  \"document_id\": \"doc_probe_0a\",\n  \"active_page_id\": \"hero_poster\",\n  \"selected_node_id\": \"headline\",\n  \"scene_summary\": {\n    \"meta\": {\n      \"artifact_type\": null,\n      \"brand_kit\": {\n        \"id\": \"brand_kit_platform_default\",\n        \"version\": 1\n      },\n      \"id\": \"doc_probe_0a\",\n      \"medium\": null,\n      \"status\": {\n        \"kind\": \"draft\"\n      },\n      \"title\": \"GTM hero poster (probe 0a)\"\n    },\n    \"pages\": [\n      {\n        \"id\": \"hero_poster\",\n        \"name\": \"hero_poster\",\n        \"size\": {\n          \"height\": 1350.0,\n          \"orientation\": \"portrait\",\n          \"output\": {\n            \"raster\": {\n              \"height_px\": 1350,\n              \"width_px\": 1080\n            }\n          },\n          \"preset\": \"custom\",\n          \"source\": {\n            \"height\": 1350.0,\n            \"unit\": \"px\",\n            \"width\": 1080.0\n          },\n          \"unit\": \"pt\",\n          \"width\": 1080.0\n        },\n        \"child_count\": 1,\n        \"children\": [\n          \"canvas\"\n        ]\n      }\n    ],\n    \"nodes\": [\n      {\n        \"id\": \"band\",\n        \"name\": null,\n        \"kind\": \"auto_layout\",\n        \"parent\": {\n          \"kind\": \"node\",\n          \"id\": \"canvas\"\n        },\n        \"child_count\": 3,\n        \"slot_keys\": [],\n        \"locked\": false,\n        \"has_computed_geometry\": true\n      },\n      {\n        \"id\": \"body\",\n        \"name\": null,\n        \"kind\": \"text\",\n        \"parent\": {\n          \"kind\": \"node\",\n          \"id\": \"band\"\n        },\n        \"child_count\": 0,\n        \"slot_keys\": [],\n        \"locked\": false,\n        \"has_computed_geometry\": true\n      },\n      {\n        \"id\": \"canvas\",\n        \"name\": null,\n        \"kind\": \"auto_layout\",\n        \"parent\": {\n          \"kind\": \"page\",\n          \"id\": \"hero_poster\"\n        },\n        \"child_count\": 2,\n        \"slot_keys\": [],\n        \"locked\": false,\n        \"has_computed_geometry\": true\n      },\n      {\n        \"id\": \"headline\",\n        \"name\": null,\n        \"kind\": \"text\",\n        \"parent\": {\n          \"kind\": \"node\",\n          \"id\": \"band\"\n        },\n        \"child_count\": 0,\n        \"slot_keys\": [],\n        \"locked\": false,\n        \"has_computed_geometry\": true\n      },\n      {\n        \"id\": \"hero\",\n        \"name\": null,\n        \"kind\": \"image\",\n        \"parent\": {\n          \"kind\": \"node\",\n          \"id\": \"canvas\"\n        },\n        \"child_count\": 0,\n        \"slot_keys\": [],\n        \"locked\": false,\n        \"has_computed_geometry\": true\n      },\n      {\n        \"id\": \"kicker\",\n        \"name\": null,\n        \"kind\": \"text\",\n        \"parent\": {\n          \"kind\": \"node\",\n          \"id\": \"band\"\n        },\n        \"child_count\": 0,\n        \"slot_keys\": [],\n        \"locked\": false,\n        \"has_computed_geometry\": true\n      }\n    ],\n    \"slots\": [],\n    \"asset_count\": 1,\n    \"export_profile_count\": 0\n  },\n  \"current_diagnostics\": [],\n  \"editor_instruction\": \"Return changes that can be applied to the current canonical Scene. Do not mutate scene JSON outside canonical operations. Prefer targeted repairs when a selected node or diagnostic target is present.\"\n}",
+    "exact_feedback": "{\n  \"kind\": \"compile\",\n  \"feedback\": {\n    \"reason\": \"compile_failed\",\n    \"compile_summary\": {\n      \"status\": \"error\",\n      \"applied_operations\": 0,\n      \"operation_count\": 0,\n      \"diagnostics\": [\n        {\n          \"severity\": \"info\",\n          \"code\": null,\n          \"message\": \"{'diagnostic': {'code': 'LUMD0210', 'hint': 'Use property calls such as p(x,y), s(w,h), fill(#hex), font(...), or slot(key).', 'message': 'unsupported property syntax text', 'phase': 'dsl', 'severity': 'error', 'subject': None}, 'span': {'column': 1, 'length': 4, 'line': 1}}\",\n          \"line\": 1,\n          \"column\": 1,\n          \"target_page_id\": null,\n          \"target_node_id\": null,\n          \"target_slot_id\": null,\n          \"target_slot_key\": null,\n          \"suggested_repair\": null\n        }\n      ],\n      \"halted_at\": {\n        \"code\": \"LUMD0210\",\n        \"line\": 1\n      },\n      \"operation_error\": null\n    },\n    \"failing_source\": \"#headline text \\\"Calmer clinics, faster triage\\\"\",\n    \"exact_feedback\": \"{\\n  \\\"status\\\": \\\"error\\\",\\n  \\\"applied_operations\\\": 0,\\n  \\\"operation_count\\\": 0,\\n  \\\"diagnostics\\\": [\\n    {\\n      \\\"severity\\\": \\\"info\\\",\\n      \\\"code\\\": null,\\n      \\\"message\\\": \\\"{'diagnostic': {'code': 'LUMD0210', 'hint': 'Use property calls such as p(x,y), s(w,h), fill(#hex), font(...), or slot(key).', 'message': 'unsupported property syntax text', 'phase': 'dsl', 'severity': 'error', 'subject': None}, 'span': {'column': 1, 'length': 4, 'line': 1}}\\\",\\n      \\\"line\\\": 1,\\n      \\\"column\\\": 1,\\n      \\\"target_page_id\\\": null,\\n      \\\"target_node_id\\\": null,\\n      \\\"target_slot_id\\\": null,\\n      \\\"target_slot_key\\\": null,\\n      \\\"suggested_repair\\\": null\\n    }\\n  ],\\n  \\\"halted_at\\\": {\\n    \\\"code\\\": \\\"LUMD0210\\\",\\n    \\\"line\\\": 1\\n  },\\n  \\\"operation_error\\\": null\\n}\"\n  },\n  \"target\": {},\n  \"recommended_edit_surface\": \"dsl\",\n  \"authoring_constraints\": [\n    \"Do not recreate an existing page unless the coordinator explicitly requests a whole-scene replacement.\",\n    \"Do not re-emit existing node IDs as new elements.\",\n    \"Repair only the failing line or targeted existing object.\"\n  ],\n  \"repair_class\": \"syntax_continuation\",\n  \"cluster\": null,\n  \"permissions\": [],\n  \"prohibitions\": [],\n  \"repair_class_reason\": \"default_repair_class\"\n}",
+    "diagnostics": [
+      {
+        "severity": "info",
+        "code": null,
+        "message": "{'diagnostic': {'code': 'LUMD0210', 'hint': 'Use property calls such as p(x,y), s(w,h), fill(#hex), font(...), or slot(key).', 'message': 'unsupported property syntax text', 'phase': 'dsl', 'severity': 'error', 'subject': None}, 'span': {'column': 1, 'length': 4, 'line': 1}}",
+        "line": 1,
+        "column": 1,
+        "target_page_id": null,
+        "target_node_id": null,
+        "target_slot_id": null,
+        "target_slot_key": null,
+        "suggested_repair": null
+      }
+    ],
+    "target": null,
+    "repair_class": "syntax_continuation",
+    "cluster": null,
+    "scene_summary": {
+      "document_id": "doc_probe_0a",
+      "title": "GTM hero poster (probe 0a)",
+      "status": {
+        "kind": "draft"
+      },
+      "brand_kit": {
+        "id": "brand_kit_platform_default",
+        "version": 1
+      },
+      "effective_brand": null,
+      "page_count": 1,
+      "node_count": 6,
+      "slot_count": 0,
+      "asset_count": 1,
+      "pages": [
+        {
+          "id": "hero_poster",
+          "name": "hero_poster",
+          "size": {
+            "height": 1350.0,
+            "orientation": "portrait",
+            "output": {
+              "raster": {
+                "height_px": 1350,
+                "width_px": 1080
+              }
+            },
+            "preset": "custom",
+            "source": {
+              "height": 1350.0,
+              "unit": "px",
+              "width": 1080.0
+            },
+            "unit": "pt",
+            "width": 1080.0
+          },
+          "width": 1080.0,
+          "height": 1350.0,
+          "aspect_ratio": 0.8,
+          "children": [
+            "canvas"
+          ],
+          "child_count": 1
+        }
+      ],
+      "slots": []
+    },
+    "allowed_edit_surface": "dsl",
+    "permissions": [],
+    "prohibitions": [],
+    "forbidden_changes": [
+      "do not recreate existing pages",
+      "do not reinsert existing node IDs",
+      "do not remove unrelated existing nodes"
+    ]
+  }
+}
