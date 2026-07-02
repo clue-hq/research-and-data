@@ -176,6 +176,12 @@ Observed directly in `e2e-trace-run2/iterations/002/` (both `preview.png` and
 
 ## Decision for 0b
 
+> **STATUS: 0b SHIPPED** — all four items implemented and e2e-validated on
+> `agents/editing-roundtrip-v0`; see `0B-IMPLEMENTATION.md` for what landed and
+> `e2e-trace-0b/` / `e2e-trace-0b-final/` for the validation runs. One
+> refinement discovered live: in-scope critique issues block only at
+> error/blocker severity — warnings/info on edited nodes are advisory too.
+
 Proceed with 0b, re-scoped to four items (was three):
 1. Forbid `new_artifact` / `start_fresh_rewrite_scene` when seeded (guarantee, since
    the director already *tends* to choose targeted_patch).

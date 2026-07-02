@@ -60,6 +60,7 @@ def main() -> int:
 
     summary = {
         "status": result.get("status"),
+        "acceptance_scope": result.get("acceptance_scope"),
         "run_id": result.get("run_id"),
         "stop_reason": result.get("stop_reason"),
         "summary": result.get("summary"),
