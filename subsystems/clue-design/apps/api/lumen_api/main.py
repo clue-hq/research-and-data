@@ -3149,8 +3149,16 @@ def run_agent_turn_preview(
         config = AgentRuntimeConfig.from_env(root)
         if payload.max_iterations is not None:
             config = replace(config, max_iterations=payload.max_iterations)
+        if config.asset_store_root is None:
+            # A seeded scene references assets ingested through the API's store;
+            # the agent must export from the same root or seeded imagery fails
+            # with LUME0210 (asset bytes missing). LUMEN_AGENT_ASSET_STORE still
+            # overrides explicitly.
+            config = replace(config, asset_store_root=api_asset_store_root())
         prompt = editor_agent_prompt(payload)
-        loop, tools = create_provider_quality_loop(prompt, config)
+        loop, tools = create_provider_quality_loop(
+            prompt, config, initial_scene=agent_seed_scene(payload)
+        )
         result = loop.run(prompt)
     except Exception as error:
         return failed_agent_turn_response(
@@ -3168,6 +3176,32 @@ def ensure_agent_runtime_path(root: Path) -> None:
     for path in [agent_runtime_path, api_path]:
         if path not in sys.path:
             sys.path.insert(0, path)
+
+
+def api_asset_store_root() -> Path:
+    """The API's asset store root, resolved exactly as create_app resolves it."""
+    database_path = Path(
+        os.environ.get("LUMEN_API_DATABASE_PATH", "apps/api/lumen-api.sqlite3")
+    )
+    return Path(
+        os.environ.get("LUMEN_ASSET_STORE_ROOT") or database_path.parent / "asset-store"
+    )
+
+
+def agent_seed_scene(payload: AgentTurnPreviewRequest) -> Optional[JsonObject]:
+    """Phase 0a: the live editor scene seeds the agent's working scene, so a
+    targeted edit lands on existing NodeIds instead of an empty document. Only
+    a payload that carries a structurally plausible scene document seeds the
+    run; anything else falls back to a fresh scene."""
+    scene = payload.scene
+    if (
+        isinstance(scene, dict)
+        and isinstance(scene.get("nodes"), dict)
+        and isinstance(scene.get("pages"), dict)
+        and isinstance(scene.get("meta"), dict)
+    ):
+        return scene
+    return None
 
 
 def editor_agent_prompt(payload: AgentTurnPreviewRequest) -> str:

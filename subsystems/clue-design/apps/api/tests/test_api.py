@@ -407,6 +407,22 @@ def test_agent_turn_preview_route_returns_editor_safe_proposal(client: TestClien
     assert captured["root"] == REPO_ROOT
 
 
+def test_agent_seed_scene_accepts_scene_shape_and_rejects_junk() -> None:
+    # Phase 0a: only a structurally plausible scene document seeds the agent's
+    # working scene; anything else falls back to a fresh scene (None).
+    from lumen_api.main import agent_seed_scene
+    from lumen_api.models import AgentTurnPreviewRequest
+
+    seeded = AgentTurnPreviewRequest(prompt="edit", scene=minimal_scene())
+    assert agent_seed_scene(seeded) == seeded.scene
+
+    junk = AgentTurnPreviewRequest(prompt="edit", scene={"foo": "bar"})
+    assert agent_seed_scene(junk) is None
+
+    empty = AgentTurnPreviewRequest(prompt="edit", scene={})
+    assert agent_seed_scene(empty) is None
+
+
 def test_agent_turn_preview_allows_editor_cors_preflight(client: TestClient) -> None:
     response = client.options(
         "/agent/turn-preview",

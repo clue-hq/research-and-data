@@ -1404,6 +1404,52 @@ def test_imagery_runner_diff_tags_reports_axis_and_tier_transition(tmp_path: Pat
     assert diff["axis_delta"]["legibility"] == -2
 
 
+def test_tools_seed_scene_is_used_instead_of_new_scene(tmp_path: Path, monkeypatch):
+    # Phase 0a: an initial_scene seeds the working scene (deep-copied), replaces
+    # the new_scene call, and the seeding is recorded in the run trace.
+    monkeypatch.setattr("lumen_deepagent.tools.CoreClient", FakeCoreClient)
+    seed = {
+        "meta": {"id": "doc_live", "title": "Saved doc"},
+        "pages": {"hero_poster": {"id": "hero_poster", "children": ["headline"]}},
+        "nodes": {
+            "headline": {
+                "id": "headline",
+                "kind": {"kind": "text", "content": "Old copy"},
+                "children": [],
+            }
+        },
+        "slots": {},
+        "assets": {},
+    }
+    config = runtime_config(tmp_path)
+    tools = LumenDesignTools(config, "Edit the headline", initial_scene=seed)
+
+    assert tools.seeded_from_initial_scene is True
+    assert tools.scene["meta"]["id"] == "doc_live"
+    assert "headline" in tools.scene["nodes"]
+    assert tools.scene_update_sources[0] == "initial_scene_seed"
+    # Deep copy: caller-side mutation must not leak into the running scene.
+    seed["nodes"]["headline"]["kind"]["content"] = "Mutated by caller"
+    assert tools.scene["nodes"]["headline"]["kind"]["content"] == "Old copy"
+    input_payload = json.loads(
+        (config.trace_dir / tools.run_id / "input.json").read_text(encoding="utf-8")
+    )
+    assert input_payload["seeded_from_initial_scene"] is True
+
+
+def test_tools_without_seed_records_unseeded_run(tmp_path: Path, monkeypatch):
+    monkeypatch.setattr("lumen_deepagent.tools.CoreClient", FakeCoreClient)
+    config = runtime_config(tmp_path)
+    tools = LumenDesignTools(config, "Create a square ad")
+
+    assert tools.seeded_from_initial_scene is False
+    assert tools.scene_update_sources == []
+    input_payload = json.loads(
+        (config.trace_dir / tools.run_id / "input.json").read_text(encoding="utf-8")
+    )
+    assert input_payload["seeded_from_initial_scene"] is False
+
+
 def test_finalize_run_persists_the_full_final_scene_for_offline_scoring(tmp_path: Path, monkeypatch):
     # The imagery eval runner reads final_scene.json (the FULL scene, not just the
     # summary) to deterministically score imagery without re-running the agent.

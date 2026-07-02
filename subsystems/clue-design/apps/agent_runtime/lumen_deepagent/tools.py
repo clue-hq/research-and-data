@@ -130,7 +130,12 @@ def _is_render_export_issue(diagnostics: list, previous_feedback: list) -> bool:
 
 
 class LumenDesignTools:
-    def __init__(self, config: AgentRuntimeConfig, prompt: str) -> None:
+    def __init__(
+        self,
+        config: AgentRuntimeConfig,
+        prompt: str,
+        initial_scene: Optional[JsonObject] = None,
+    ) -> None:
         self.config = config
         self.core = CoreClient(repo_root=config.repo_root)
         self.run_id = new_run_id()
@@ -139,26 +144,50 @@ class LumenDesignTools:
         self.iterations_dir = self.trace_dir / "iterations"
         self.trace_dir.mkdir(parents=True, exist_ok=True)
         self.iterations_dir.mkdir(parents=True, exist_ok=True)
-        self.scene = self.core.new_scene(self.run_id, "Agent-authored design")
+        # Phase 0a: a caller (the editor's /agent/turn-preview) can seed the
+        # working scene from the live canonical scene so targeted edits land on
+        # existing NodeIds. Without a seed the run starts from a fresh scene.
+        self.seeded_from_initial_scene = initial_scene is not None
+        if initial_scene is not None:
+            self.scene = copy.deepcopy(initial_scene)
+        else:
+            self.scene = self.core.new_scene(self.run_id, "Agent-authored design")
         self.prompt = prompt
         self.preview_paths: list[str] = []
         self.loaded_knowledge: list[JsonObject] = []
         self.gaps: list[JsonObject] = []
-        self.scene_update_sources: list[str] = []
+        self.scene_update_sources: list[str] = (
+            ["initial_scene_seed"] if self.seeded_from_initial_scene else []
+        )
         self.effective_brand_context: Optional[JsonObject] = None
         self.dsl_session: Optional[JsonObject] = None
         self.latest_export_summary: Optional[JsonObject] = None
         self.latest_preview_bundle: Optional[JsonObject] = None
         self._write_json(
             self.trace_dir / "input.json",
-            {"run_id": self.run_id, "prompt": prompt},
+            {
+                "run_id": self.run_id,
+                "prompt": prompt,
+                "seeded_from_initial_scene": self.seeded_from_initial_scene,
+            },
         )
         self.record(
             "coordinator",
             "run_started",
             input_summary=prompt[:500],
-            output_summary=f"created scene {self.run_id}",
-            payload={"scene_update_policy": "core_response_only"},
+            output_summary=(
+                f"seeded scene from initial_scene "
+                f"({len(self.scene.get('nodes', {}))} nodes, "
+                f"{len(self.scene.get('pages', {}))} pages)"
+                if self.seeded_from_initial_scene
+                else f"created scene {self.run_id}"
+            ),
+            payload={
+                "scene_update_policy": "core_response_only",
+                "seeded_from_initial_scene": self.seeded_from_initial_scene,
+                "seed_node_count": len(self.scene.get("nodes", {})),
+                "seed_page_count": len(self.scene.get("pages", {})),
+            },
         )
 
     def load_knowledge(self, query: str) -> str:

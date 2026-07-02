@@ -10,8 +10,13 @@ from .tools import LumenDesignTools
 def create_lumen_design_agent(
     prompt: str,
     config: AgentRuntimeConfig | None = None,
+    initial_scene: dict | None = None,
 ) -> tuple[Any, LumenDesignTools]:
     """Create the Phase A DeepAgent and its deterministic Lumen tool state.
+
+    `initial_scene` seeds the agent's working scene from an existing canonical
+    scene (Phase 0a) so targeted edits land on existing NodeIds; None starts
+    from a fresh scene.
 
     The import is intentionally lazy so unit tests and deterministic helper
     code do not require model-provider dependencies.
@@ -27,7 +32,7 @@ def create_lumen_design_agent(
         ) from error
 
     runtime_config = config or AgentRuntimeConfig.from_env()
-    tools = LumenDesignTools(runtime_config, prompt)
+    tools = LumenDesignTools(runtime_config, prompt, initial_scene=initial_scene)
     backend = FilesystemBackend(root_dir=str(runtime_config.repo_root))
 
     # Anthropic stays a bare "provider:model" string (deepagents builds it via

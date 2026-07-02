@@ -154,11 +154,11 @@ class LangChainVisualReviewer(VisualReviewer):
         return parse_visual_critique(response_content(response))
 
 
-def create_provider_quality_loop(prompt: str, config):
+def create_provider_quality_loop(prompt: str, config, initial_scene: dict | None = None):
     from .loop import LumenQualityLoop
     from .tools import LumenDesignTools
 
-    tools = LumenDesignTools(config, prompt)
+    tools = LumenDesignTools(config, prompt, initial_scene=initial_scene)
     creds = {
         "base_url": getattr(config, "agent_base_url", None),
         "api_key": getattr(config, "agent_api_key", None),
