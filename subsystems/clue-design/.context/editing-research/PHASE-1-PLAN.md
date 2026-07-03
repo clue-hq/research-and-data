@@ -89,6 +89,17 @@ EXPORT renderer too (recommended) so editor/export agree.
   (0c) and future Compare/Revert ride on these. Test: detach→invert = byte-identical.
 
 ### 1d — Editor unlock + gestures (finishes Milestone M1)
+**DONE 2026-07-03** — see `.context/phase1d/1D-IMPLEMENTATION.md`. Gate opens
+for pinned/Free-child; pinned drags/resizes commit to absolute_box (no parent
+clamp — the rejected "fights your hand" behavior); container drags carry
+pinned descendants atomically; Detach/Re-attach inspector actions on the 1c
+ops; freehand render policy (escape ancestor masks, page-level paint pass,
+hit-test mirror) across Skia/SVG/PDF/editor; pinned-text LUMV0902-4 →
+warning. Browser e2e on an Opus 4.8 subagent: ALL 7 STEPS PASS (detach,
+drag-sticks, page-edge clip = Moda reference, parent-drag carry with 0.0mm
+delta divergence, re-attach re-flow, atomic undo). **Milestone M1's
+interaction beat is done.** Deferred: pinned-drag guide snapping,
+auto-detach-on-drag, Free/Stack conversion UI (op exists).
 - `sceneQueries.ts:183` `isNodeDirectGeometryEditable` — also true when
   `position_mode == Absolute` OR the parent container is `layout_mode == Free`.
 - Point drag/resize commits (`canvasOperations.ts`) at `absolute_box` for Absolute
