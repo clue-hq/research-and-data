@@ -68,6 +68,16 @@ has it); pinned-text LUMV0902-4 stay errors until the 1d resize decision.
   container lays children at their baked transforms; managed siblings unaffected.
 
 ### 1c — Invertible ops (engine)
+**DONE 2026-07-03** — see `.context/phase1c/1C-IMPLEMENTATION.md`. Shipped as
+three `StructuredEditInstruction` variants (`detach_to_freehand`,
+`reattach_to_layout`, `convert_container_layout {stack|free}`) on the shared
+builder seam — helper + wasm gained them with zero binding changes (real-wasm
+round-trip verified). Byte-identical inverses; zero-motion baking; pinned
+children skipped on ToFree; Token dims never baked. 10 new tests; workspace
+509; Python 186; editor 351/352. Moda clip clarification recorded (user
+screenshots): containers don't mask, only the page clips → editor already
+matches; 1d decision teed up = freehand nodes escape ancestor masks in the
+EXPORT renderer too (recommended) so editor/export agree.
 - Composite builders emitting `UpdateNode` patches:
   - `DetachToFreehand{node_id}`: read solved `computed.layout_bounds` → set
     `position_mode=Absolute`, `absolute_box`=that, `base_anchor`=that, bake
