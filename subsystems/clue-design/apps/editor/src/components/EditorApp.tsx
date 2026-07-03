@@ -29,7 +29,8 @@ import { emptyScene } from "@/fixtures/emptyScene";
 import type { BrandCompatibilityRunner } from "@/engine/brandCompatibility";
 import type { BrandGovernanceRunner } from "@/engine/brandGovernance";
 import {
-  createApiAgentRunner,
+  createStreamingAgentRunner,
+  subscribeToAgentRun,
   type EditorAgentRunner
 } from "@/engine/agentRunner";
 import type {
@@ -166,9 +167,17 @@ const defaultPreflightRunner = createApiPreflightRunner({
   apiBaseUrl: editorApiBaseUrl()
 });
 
-const defaultAgentRunner = createApiAgentRunner({
+const defaultAgentRunner = createStreamingAgentRunner({
   apiBaseUrl: editorApiBaseUrl()
 });
+
+// 2b resume: rejoin an in-flight run's SSE stream after a tab reload. Bound to
+// the same base URL as the default runner; only fires when a run id survives
+// in sessionStorage, so injected test runners never reach it.
+const defaultResumeRun = (
+  runId: string,
+  onEvent: Parameters<typeof subscribeToAgentRun>[0]["onEvent"]
+) => subscribeToAgentRun({ apiBaseUrl: editorApiBaseUrl(), runId, onEvent });
 
 const defaultDocumentCreator = (scene: Scene) =>
   createDocument({ apiBaseUrl: editorApiBaseUrl() }, scene);
@@ -639,6 +648,7 @@ export default function EditorApp({
     agentProposal,
     agentPreview,
     queuedAgentMessages,
+    runEvents,
     sendAgentPrompt,
     queueAgentMessage,
     removeQueuedAgentMessage,
@@ -648,6 +658,7 @@ export default function EditorApp({
     setAgentPreviewView
   } = useAgentTurn({
     agentRunner,
+    resumeRun: defaultResumeRun,
     engineRef,
     scene,
     activeDocumentId,
@@ -1506,6 +1517,7 @@ export default function EditorApp({
               proposal={agentProposal}
               pendingReview={agentPreview !== null}
               queuedMessages={queuedAgentMessages}
+              runEvents={runEvents}
               activePageId={activePageId}
               selectedNodeId={selectedNodeId}
               diagnostics={diagnostics}

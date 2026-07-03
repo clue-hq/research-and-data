@@ -1,7 +1,8 @@
-import { AlertTriangle, Bot, Check, CheckCircle2, Eye, FileCode2, Send, Sparkles, X } from "lucide-react";
+import { AlertTriangle, Bot, Check, CheckCircle2, Eye, FileCode2, Loader2, Send, Sparkles, X } from "lucide-react";
 import type { FormEvent } from "react";
 import type { Diagnostic, NodeId, Operation, PageId } from "@/engine/contracts";
-import type { EditorAgentResult } from "@/engine/agentRunner";
+import type { AgentRunEvent, EditorAgentResult } from "@/engine/agentRunner";
+import { agentChecklist, agentEventLabel } from "@/engine/agentChecklist";
 
 export interface AgentChatMessage {
   id: string;
@@ -24,6 +25,8 @@ export interface AgentChatPanelProps {
   /** Phase 0c: a proposed turn is on the canvas awaiting Accept / Reject. */
   pendingReview: boolean;
   queuedMessages: QueuedAgentMessage[];
+  /** 2b show-work: live run events driving the Moda plan checklist. */
+  runEvents: AgentRunEvent[];
   activePageId: PageId | null;
   selectedNodeId: NodeId | null;
   diagnostics: Diagnostic[];
@@ -43,6 +46,7 @@ export function AgentChatPanel({
   proposal,
   pendingReview,
   queuedMessages,
+  runEvents,
   activePageId,
   selectedNodeId,
   diagnostics,
@@ -97,6 +101,9 @@ export function AgentChatPanel({
           ))
         )}
       </div>
+      {runEvents.length > 0 || isRunning ? (
+        <AgentRunChecklist runEvents={runEvents} isRunning={isRunning} />
+      ) : null}
       {proposal ? (
         <AgentProposalCard
           proposal={proposal}
@@ -148,6 +155,53 @@ export function AgentChatPanel({
         </button>
       </form>
     </section>
+  );
+}
+
+/**
+ * Moda's "show work" plan checklist (§1.6): live stage ticks while the agent
+ * designs, collapsing behind a "Show work" disclosure once the run settles so
+ * the finished conversation stays clean. Pure render — the stage mapping lives
+ * in engine/agentChecklist.
+ */
+function AgentRunChecklist({
+  runEvents,
+  isRunning
+}: {
+  runEvents: AgentRunEvent[];
+  isRunning: boolean;
+}) {
+  const steps = agentChecklist(runEvents, isRunning);
+  if (steps.length === 0) {
+    return null;
+  }
+  return (
+    <div className="agent-run-checklist" aria-label="Agent plan" data-running={isRunning}>
+      <ol className="agent-checklist-steps">
+        {steps.map((step) => (
+          <li key={step.key} className={`agent-checklist-step ${step.status}`}>
+            {step.status === "active" ? (
+              <Loader2 aria-hidden size={14} className="agent-checklist-spinner" />
+            ) : (
+              <CheckCircle2 aria-hidden size={14} />
+            )}
+            <span>{step.label}</span>
+          </li>
+        ))}
+      </ol>
+      {runEvents.length > 0 ? (
+        <details className="agent-run-worklog">
+          <summary>Show work</summary>
+          <ol className="agent-worklog-list">
+            {runEvents
+              .filter((event) => event.type !== "run_started")
+              .map((event) => (
+                <li key={`${event.seq}-${event.type}`}>{agentEventLabel(event)}</li>
+              ))}
+          </ol>
+        </details>
+      ) : null}
+    </div>
   );
 }
 

@@ -688,7 +688,9 @@ describe.skipIf(!wasmArtifactPresent)("EditorApp", () => {
       documentId: "doc_agent_editor",
       activePageId: "page_a4",
       selectedNodeId: "node_contact_name",
-      diagnostics: []
+      diagnostics: [],
+      // 2b: the live-event channel for the show-work checklist.
+      onEvent: expect.any(Function)
     });
     // The preview is live on the canvas (the proposed title renders).
     expect(screen.getByRole("heading", { name: "Agent Authored Ad" })).toBeInTheDocument();

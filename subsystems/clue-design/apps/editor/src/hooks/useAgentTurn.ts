@@ -1,7 +1,11 @@
-import { useEffect, useState, type Dispatch, type SetStateAction } from "react";
+import { useEffect, useRef, useState, type Dispatch, type SetStateAction } from "react";
 import type { AgentChatMessage, QueuedAgentMessage } from "@/components/AgentChatPanel";
 import type { EditorHistoryFrame } from "@/components/EditorApp";
-import type { EditorAgentResult, EditorAgentRunner } from "@/engine/agentRunner";
+import type {
+  AgentRunEvent,
+  EditorAgentResult,
+  EditorAgentRunner
+} from "@/engine/agentRunner";
 import type {
   BrandCompatibilityReport,
   Diagnostic,
@@ -94,6 +98,42 @@ export interface UseAgentTurnDeps {
     pageIds: PageId[]
   ) => Promise<void>;
   applyOperations: (operations: Operation[], onAccepted?: (scene: Scene) => void) => void;
+  /** 2b: rejoin an in-flight run's SSE stream after a tab reload (resume). The
+   * run keeps executing server-side; this replays its events and resolves with
+   * the final result. Omitted in tests (no resume). */
+  resumeRun?: (
+    runId: string,
+    onEvent: (event: AgentRunEvent) => void
+  ) => Promise<EditorAgentResult>;
+}
+
+// Moda's exclusive turn is server-durable in 2b: stash the in-flight run id so
+// a tab reload can rejoin its live stream. sessionStorage (not local) so it is
+// tab-scoped and cleared when the tab closes.
+const ACTIVE_RUN_STORAGE_KEY = "lumen.activeAgentRun";
+
+function writeActiveRun(runId: string): void {
+  try {
+    window.sessionStorage?.setItem(ACTIVE_RUN_STORAGE_KEY, runId);
+  } catch {
+    // Private-mode / disabled storage: resume is best-effort.
+  }
+}
+
+function readActiveRun(): string | null {
+  try {
+    return window.sessionStorage?.getItem(ACTIVE_RUN_STORAGE_KEY) ?? null;
+  } catch {
+    return null;
+  }
+}
+
+function clearActiveRun(): void {
+  try {
+    window.sessionStorage?.removeItem(ACTIVE_RUN_STORAGE_KEY);
+  } catch {
+    // ignore
+  }
 }
 
 export function useAgentTurn(deps: UseAgentTurnDeps) {
@@ -119,11 +159,14 @@ export function useAgentTurn(deps: UseAgentTurnDeps) {
     setEditorPanelMode,
     commitAppliedOperations,
     runExportForScene,
-    applyOperations
+    applyOperations,
+    resumeRun
   } = deps;
 
   const [isAgentRunning, setIsAgentRunning] = useState(false);
   const [agentDraft, setAgentDraft] = useState("");
+  // 2b show-work: the live run-event stream feeding the Moda plan checklist.
+  const [runEvents, setRunEvents] = useState<AgentRunEvent[]>([]);
   const [agentMessages, setAgentMessages] = useState<AgentChatMessage[]>([]);
   const [agentProposal, setAgentProposal] = useState<EditorAgentResult | null>(null);
   // Phase 0c (Moda pattern): a proposed agent turn is applied to the live scene
@@ -136,6 +179,107 @@ export function useAgentTurn(deps: UseAgentTurnDeps) {
   // seeds from the scene as it is at drain time, not at enqueue time.
   const [queuedAgentMessages, setQueuedAgentMessages] = useState<QueuedAgentMessage[]>([]);
 
+  // Merge one streamed run event into the checklist state. Replay (EventSource
+  // reconnect, or resume-on-mount) re-sends events, so dedupe by seq; the
+  // run_started frame carries the run id we persist for reload resume.
+  const handleRunEvent = (event: AgentRunEvent) => {
+    if (typeof event.data.run_id === "string") {
+      writeActiveRun(event.data.run_id);
+    }
+    setRunEvents((events) => {
+      if (events.some((existing) => existing.seq === event.seq && existing.type === event.type)) {
+        return events;
+      }
+      return [...events, event].sort((left, right) => left.seq - right.seq);
+    });
+  };
+
+  // Turn-settled bookkeeping, shared by the live send path and the reload
+  // resume path: surface the proposal/draft, post the chat messages, and (for
+  // a proposed turn) drop into the reviewable preview. `seedScene` is the scene
+  // the turn was seeded from — used only to detect the unchanged-seed case.
+  const handleTurnResult = (result: EditorAgentResult, seedScene: Scene) => {
+    // A failed run can hand back a "draft" that is just the untouched seed
+    // (every authored block was rejected — nothing ever applied). Claiming
+    // "draft visible" for an unchanged design reads as a broken canvas;
+    // be honest instead and keep the proposal card in its blocked state.
+    const draftIsUnchangedSeed =
+      result.status === "failed" &&
+      result.draft_scene !== null &&
+      JSON.stringify(result.draft_scene) === JSON.stringify(seedScene);
+    setAgentProposal(
+      draftIsUnchangedSeed ? { ...result, draft_scene: null } : result
+    );
+    if (result.status === "failed" && result.draft_scene && !draftIsUnchangedSeed) {
+      showAgentDraftScene(result);
+    }
+    setAgentMessages((messages) => [
+      ...messages,
+      {
+        id: uniqueChatMessageId("agent"),
+        role: "agent",
+        content: result.summary
+      }
+    ]);
+    if (draftIsUnchangedSeed) {
+      setAgentMessages((messages) => [
+        ...messages,
+        {
+          id: uniqueChatMessageId("system"),
+          role: "system",
+          content:
+            "The agent could not produce any applicable changes — the design is unchanged. " +
+            "Try rephrasing the request, or ask for the change as an edit to the existing elements."
+        }
+      ]);
+    }
+    if (result.diagnostics.length > 0) {
+      setDiagnostics(result.diagnostics);
+    }
+    // Phase 0c (Moda pattern): a proposed turn goes straight onto the canvas
+    // as a reviewable preview — the human answers with Accept or Reject.
+    if (result.status === "proposed" && result.operations.length > 0) {
+      previewAgentProposal(result);
+    }
+  };
+
+  const handleTurnError = (error: unknown) => {
+    const message = error instanceof Error ? error.message : "Agent request failed.";
+    const diagnostic: Diagnostic = {
+      severity: "error",
+      phase: "validation",
+      code: "EDITOR_AGENT_REQUEST_FAILED",
+      message,
+      subject: { kind: "document" },
+      hint: "Check the editor API/agent runtime connection and retry."
+    };
+    setAgentProposal({
+      status: "failed",
+      summary: message,
+      dsl_blocks: [],
+      operations: [],
+      draft_scene: null,
+      stop_reason: null,
+      acceptance_scope: null,
+      diagnostics: [diagnostic],
+      trace: {
+        run_id: null,
+        trace_dir: null,
+        preview_paths: []
+      },
+      artifacts: []
+    });
+    setDiagnostics([diagnostic]);
+    setAgentMessages((messages) => [
+      ...messages,
+      {
+        id: uniqueChatMessageId("system"),
+        role: "system",
+        content: message
+      }
+    ]);
+  };
+
   const sendAgentPrompt = async (prompt: string) => {
     const trimmedPrompt = prompt.trim();
     if (!trimmedPrompt || isAgentRunning) {
@@ -146,8 +290,10 @@ export function useAgentTurn(deps: UseAgentTurnDeps) {
       return;
     }
 
+    const seedScene = scene;
     setAgentDraft("");
     setAgentProposal(null);
+    setRunEvents([]);
     setIsAgentRunning(true);
     setAgentMessages((messages) => [
       ...messages,
@@ -165,87 +311,15 @@ export function useAgentTurn(deps: UseAgentTurnDeps) {
         documentId: activeDocumentId ?? undefined,
         activePageId,
         selectedNodeId,
-        diagnostics
+        diagnostics,
+        onEvent: handleRunEvent
       });
-      // A failed run can hand back a "draft" that is just the untouched seed
-      // (every authored block was rejected — nothing ever applied). Claiming
-      // "draft visible" for an unchanged design reads as a broken canvas;
-      // be honest instead and keep the proposal card in its blocked state.
-      const draftIsUnchangedSeed =
-        result.status === "failed" &&
-        result.draft_scene !== null &&
-        JSON.stringify(result.draft_scene) === JSON.stringify(scene);
-      setAgentProposal(
-        draftIsUnchangedSeed ? { ...result, draft_scene: null } : result
-      );
-      if (result.status === "failed" && result.draft_scene && !draftIsUnchangedSeed) {
-        showAgentDraftScene(result);
-      }
-      setAgentMessages((messages) => [
-        ...messages,
-        {
-          id: uniqueChatMessageId("agent"),
-          role: "agent",
-          content: result.summary
-        }
-      ]);
-      if (draftIsUnchangedSeed) {
-        setAgentMessages((messages) => [
-          ...messages,
-          {
-            id: uniqueChatMessageId("system"),
-            role: "system",
-            content:
-              "The agent could not produce any applicable changes — the design is unchanged. " +
-              "Try rephrasing the request, or ask for the change as an edit to the existing elements."
-          }
-        ]);
-      }
-      if (result.diagnostics.length > 0) {
-        setDiagnostics(result.diagnostics);
-      }
-      // Phase 0c (Moda pattern): a proposed turn goes straight onto the canvas
-      // as a reviewable preview — the human answers with Accept or Reject.
-      if (result.status === "proposed" && result.operations.length > 0) {
-        previewAgentProposal(result);
-      }
+      handleTurnResult(result, seedScene);
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Agent request failed.";
-      const diagnostic: Diagnostic = {
-        severity: "error",
-        phase: "validation",
-        code: "EDITOR_AGENT_REQUEST_FAILED",
-        message,
-        subject: { kind: "document" },
-        hint: "Check the editor API/agent runtime connection and retry."
-      };
-      setAgentProposal({
-        status: "failed",
-        summary: message,
-        dsl_blocks: [],
-        operations: [],
-        draft_scene: null,
-        stop_reason: null,
-        acceptance_scope: null,
-        diagnostics: [diagnostic],
-        trace: {
-          run_id: null,
-          trace_dir: null,
-          preview_paths: []
-        },
-        artifacts: []
-      });
-      setDiagnostics([diagnostic]);
-      setAgentMessages((messages) => [
-        ...messages,
-        {
-          id: uniqueChatMessageId("system"),
-          role: "system",
-          content: message
-        }
-      ]);
+      handleTurnError(error);
     } finally {
       setIsAgentRunning(false);
+      clearActiveRun();
     }
   };
 
@@ -279,6 +353,42 @@ export function useAgentTurn(deps: UseAgentTurnDeps) {
     // drain the whole queue in one burst instead of one per idle transition.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAgentRunning, agentPreview, queuedAgentMessages]);
+
+  // Resume-on-mount: an async turn keeps running server-side across a tab
+  // reload. If one was in flight, rejoin its SSE stream — replaying the
+  // checklist and then either streaming live ticks or settling immediately if
+  // it finished while we were away. Refs keep the mount-only effect calling
+  // the latest handlers (which close over the current scene) without re-firing.
+  const handleRunEventRef = useRef(handleRunEvent);
+  handleRunEventRef.current = handleRunEvent;
+  const handleTurnResultRef = useRef(handleTurnResult);
+  handleTurnResultRef.current = handleTurnResult;
+  const handleTurnErrorRef = useRef(handleTurnError);
+  handleTurnErrorRef.current = handleTurnError;
+  const sceneRef = useRef(scene);
+  sceneRef.current = scene;
+
+  useEffect(() => {
+    if (!resumeRun) {
+      return;
+    }
+    const runId = readActiveRun();
+    if (!runId) {
+      return;
+    }
+    setRunEvents([]);
+    setAgentProposal(null);
+    setIsAgentRunning(true);
+    void resumeRun(runId, (event) => handleRunEventRef.current(event))
+      .then((result) => handleTurnResultRef.current(result, sceneRef.current))
+      .catch((error) => handleTurnErrorRef.current(error))
+      .finally(() => {
+        setIsAgentRunning(false);
+        clearActiveRun();
+      });
+    // Mount-only: a reload rejoins exactly one in-flight run.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const showAgentDraftScene = (result: EditorAgentResult) => {
     if (!result.draft_scene) {
@@ -523,6 +633,7 @@ export function useAgentTurn(deps: UseAgentTurnDeps) {
     agentProposal,
     agentPreview,
     queuedAgentMessages,
+    runEvents,
     sendAgentPrompt,
     queueAgentMessage,
     removeQueuedAgentMessage,

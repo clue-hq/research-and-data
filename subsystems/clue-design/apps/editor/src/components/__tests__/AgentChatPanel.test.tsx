@@ -48,6 +48,7 @@ function renderPanel(proposal: EditorAgentResult) {
       proposal={proposal}
       pendingReview={false}
       queuedMessages={[]}
+      runEvents={[]}
       activePageId="page_a4"
       selectedNodeId={null}
       diagnostics={[]}
