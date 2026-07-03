@@ -575,3 +575,52 @@ fn rect_at(x: f64, y: f64, width: f64, height: f64) -> Rect {
         height,
     }
 }
+
+fn tiny_text(id: &str) -> Node {
+    let mut node = Node::new(
+        NodeId::from(id),
+        NodeKind::Text(lumen_core::TextNode {
+            content: "This copy is far too long to fit inside such a tiny box".to_owned(),
+            font_family: "Inter".to_owned(),
+            font_size: 18.0,
+            font_weight: 600,
+            align: lumen_core::TextAlign::Left,
+            style_token: None,
+            ..lumen_core::TextNode::default()
+        }),
+    );
+    node.size = SizeSpec::fixed(60.0, 10.0);
+    node
+}
+
+#[test]
+fn pinned_text_overflow_warns_while_managed_errors() {
+    // Phase 1d text-fit policy: a human resizing a pinned text box below
+    // its content is explicit intent — advisory for freehand, fail-closed
+    // for managed (agent-authored copy stays protected).
+    let mut scene = scene_with_page(400.0, 400.0);
+    let mut managed = tiny_text("managed_text");
+    managed.transform.x = 20.0;
+    managed.transform.y = 20.0;
+    insert(&mut scene, ParentRef::Page(PageId::from("page")), managed);
+    insert(
+        &mut scene,
+        ParentRef::Page(PageId::from("page")),
+        tiny_text("pinned_text"),
+    );
+    pin(&mut scene, "pinned_text", 100.0, 100.0, 60.0, 10.0);
+
+    let diagnostics = validate_layout(&scene, LayoutOptions::default());
+
+    let managed_overflow = diag_for(&diagnostics, "LUMV0903", "managed_text")
+        .expect("managed text overflow keeps firing LUMV0903");
+    assert_eq!(managed_overflow.severity, DiagnosticSeverity::Error);
+
+    let pinned_overflow = diag_for(&diagnostics, "LUMV0903", "pinned_text")
+        .expect("pinned text overflow still surfaces LUMV0903");
+    assert_eq!(
+        pinned_overflow.severity,
+        DiagnosticSeverity::Warning,
+        "freehand text truncation is advisory: {diagnostics:#?}"
+    );
+}

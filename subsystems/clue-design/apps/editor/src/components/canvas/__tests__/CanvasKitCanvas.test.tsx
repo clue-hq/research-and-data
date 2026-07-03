@@ -165,7 +165,7 @@ function renderCanvasKit({
       selectedNodeId={selectedNodeId}
       onSelectNode={() => {}}
       onSelectPage={() => {}}
-      onOperation={() => {}}
+      onOperations={() => {}}
       engine={engine}
       diagnostics={diagnostics}
       workspaceModel={createWorkspaceModel(canvasScene, "page_a4", diagnostics)}

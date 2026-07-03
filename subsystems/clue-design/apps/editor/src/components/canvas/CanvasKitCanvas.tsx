@@ -17,12 +17,18 @@ import {
 } from "@/engine/gestureMachine";
 import {
   descriptorToScene,
-  dragActionToOperation,
+  dragActionToOperations,
   handleAtPoint,
   resizeActionToOperation,
   screenToDescriptor
 } from "@/engine/canvaskitGestures";
-import { getNode, getPage, nodeDisplayName, topLevelAncestorId } from "@/engine/sceneQueries";
+import {
+  getNode,
+  getPage,
+  isNodePinned,
+  nodeDisplayName,
+  topLevelAncestorId
+} from "@/engine/sceneQueries";
 import { nodeDescriptor, pageDescriptor, type ParentComputedOrigin } from "@/engine/renderAdapter";
 import { loadCanvasKit } from "@/engine/canvaskit/loadCanvasKit";
 import { skiaMeasurements } from "@/engine/canvaskit/skiaMeasurements";
@@ -64,7 +70,9 @@ export interface CanvasKitCanvasProps {
   selectedNodeId: NodeId | null;
   onSelectNode: (nodeId: NodeId | null) => void;
   onSelectPage?: (pageId: PageId) => void;
-  onOperation: (operation: Operation) => void;
+  /** Commits land as one atomic batch (one undo frame) — a container drag
+   * can carry pinned-descendant box translations alongside the primary op. */
+  onOperations: (operations: Operation[]) => void;
   /** The engine provides authoritative point→node hit-testing (C3a). */
   engine: OptimisticEnginePort | null;
   diagnostics?: Diagnostic[];
@@ -94,7 +102,7 @@ export function CanvasKitCanvas({
   selectedNodeId,
   onSelectNode,
   onSelectPage,
-  onOperation,
+  onOperations,
   engine,
   diagnostics = [],
   workspaceModel,
@@ -240,8 +248,32 @@ export function CanvasKitCanvas({
         : null;
       return {
         descriptor,
-        children: node.children.map((childId) => buildForPage(pageId, childId, childParentComputedOrigin)).filter(Boolean) as DrawNode[]
+        // Pinned children are skipped inline and hoisted to the page-level
+        // pass below — mirroring the engine renderers (`pinned_paint_pass`)
+        // so the editor canvas and exports stack identically.
+        children: node.children
+          .filter((childId) => !isNodePinned(scene, childId))
+          .map((childId) => buildForPage(pageId, childId, childParentComputedOrigin))
+          .filter(Boolean) as DrawNode[]
       };
+    };
+    // Every pinned node under the page, in document order: painted last
+    // (above in-flow content), positioned from its page-space computed box.
+    const pinnedForPage = (pageId: PageId): DrawNode[] => {
+      const currentPage = scene.pages[pageId];
+      if (!currentPage) return [];
+      const out: DrawNode[] = [];
+      const walk = (nodeId: NodeId) => {
+        const node = scene.nodes[nodeId];
+        if (!node) return;
+        if (isNodePinned(scene, nodeId)) {
+          const built = buildForPage(pageId, nodeId, null);
+          if (built) out.push(built);
+        }
+        node.children.forEach(walk);
+      };
+      currentPage.children.forEach(walk);
+      return out;
     };
     return workspaceModel.artboards
       .map((artboard) => {
@@ -253,7 +285,13 @@ export function CanvasKitCanvas({
           page: pageDescriptor(currentPage),
           workspaceRect: artboard.workspaceRect,
           isActive: artboard.isActive,
-          nodes: currentPage.children.map((nodeId) => buildForPage(artboard.pageId, nodeId)).filter(Boolean) as DrawNode[]
+          nodes: [
+            ...(currentPage.children
+              .filter((nodeId) => !isNodePinned(scene, nodeId))
+              .map((nodeId) => buildForPage(artboard.pageId, nodeId))
+              .filter(Boolean) as DrawNode[]),
+            ...pinnedForPage(artboard.pageId)
+          ]
         };
       })
       .filter(Boolean) as Array<{
@@ -293,9 +331,9 @@ export function CanvasKitCanvas({
         fit: node.asset_placement?.fit ?? "cover",
         focal_point: focal
       };
-      onOperation({ kind: "update_node", node_id: node.id, patch: nodePatch({ asset_placement: set(placement) }) });
+      onOperations([{ kind: "update_node", node_id: node.id, patch: nodePatch({ asset_placement: set(placement) }) }]);
     },
-    [scene, selectionBox, onOperation]
+    [scene, selectionBox, onOperations]
   );
 
   const chromeModel = useMemo(
@@ -392,8 +430,8 @@ export function CanvasKitCanvas({
           if (!node) break;
           if (action.committed) {
             setPreview(null);
-            const op = dragActionToOperation(action.box, scene, node, page, pageOrigin);
-            if (op) onOperation(op);
+            const ops = dragActionToOperations(action.box, scene, node, page, pageOrigin);
+            if (ops.length > 0) onOperations(ops);
           } else {
             setPreview({ nodeId: action.nodeId, box: action.box, rotation: nodeDescriptor(scene, node, page).rotation });
           }
@@ -406,7 +444,7 @@ export function CanvasKitCanvas({
           if (action.committed) {
             setPreview(null);
             const op = resizeActionToOperation(action.box, rotation, scene, node, page, pageOrigin);
-            if (op) onOperation(op);
+            if (op) onOperations([op]);
           } else {
             setPreview({ nodeId: action.nodeId, box: action.box, rotation });
           }
@@ -418,7 +456,7 @@ export function CanvasKitCanvas({
           if (action.committed) {
             setPreview(null);
             const op = resizeActionToOperation(selectionBox.box, action.rotation, scene, node, page, pageOrigin);
-            if (op) onOperation(op);
+            if (op) onOperations([op]);
           } else {
             setPreview({ nodeId: action.nodeId, box: selectionBox.box, rotation: action.rotation });
           }
@@ -444,7 +482,7 @@ export function CanvasKitCanvas({
           break;
       }
     },
-    [scene, page, pageOrigin, selectionBox, onOperation, onSelectNode, boxForNode]
+    [scene, page, pageOrigin, selectionBox, onOperations, onSelectNode, boxForNode]
   );
 
   const dispatch = useCallback(
@@ -518,7 +556,7 @@ export function CanvasKitCanvas({
     const original = editing?.content;
     setEditingNodeId(null);
     if (node && content !== original) {
-      onOperation(updateTextNode(node, { content }));
+      onOperations([updateTextNode(node, { content })]);
     }
   };
 

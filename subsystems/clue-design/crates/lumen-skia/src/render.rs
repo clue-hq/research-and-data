@@ -19,7 +19,8 @@ use crate::measure::{
     UNBOUNDED_LAYOUT_WIDTH,
 };
 use lumen_core::{
-    page_geometry, render_box_for_node, Color, CornerRadii, Diagnostic, DiagnosticSubject,
+    page_geometry, paints_out_of_tree, pinned_paint_pass, render_box_for_node, Color, CornerRadii,
+    Diagnostic, DiagnosticSubject,
     EffectKind, ImageFitMode, ImageNode, Node, NodeId, NodeKind, Page, PageId, Paint, Phase, Scene,
     Stroke, StrokeAlign, StrokeCap, StrokeJoin, TextAlign, TextNode, TextWrap,
 };
@@ -145,8 +146,28 @@ impl<'a> PagePainter<'a> {
         }
 
         for child_id in &page.children {
+            if self.skips_inline_paint(child_id) {
+                continue;
+            }
             self.paint_node(canvas, child_id, None);
         }
+
+        // Phase 1d freehand: pinned nodes escape every ancestor mask (only
+        // the page clips — the Moda model). Inline painting skipped them;
+        // they paint here in document order, above the in-flow content,
+        // from page space (their computed geometry is page-space already).
+        for node_id in pinned_paint_pass(self.scene, page) {
+            self.paint_node(canvas, &node_id, None);
+        }
+    }
+
+    /// Pinned nodes never paint inside their parent's tree — see
+    /// [`pinned_paint_pass`].
+    fn skips_inline_paint(&self, node_id: &NodeId) -> bool {
+        self.scene
+            .nodes
+            .get(node_id)
+            .is_some_and(paints_out_of_tree)
     }
 
     fn paint_node(
@@ -217,6 +238,9 @@ impl<'a> PagePainter<'a> {
                     canvas.clip_rrect(corner_rrect(node, width, height), None, true);
                 }
                 for child_id in &node.children {
+                    if self.skips_inline_paint(child_id) {
+                        continue;
+                    }
                     self.paint_node(canvas, child_id, child_parent_origin);
                 }
                 if node.clip {
@@ -225,6 +249,9 @@ impl<'a> PagePainter<'a> {
             }
             NodeKind::Group => {
                 for child_id in &node.children {
+                    if self.skips_inline_paint(child_id) {
+                        continue;
+                    }
                     self.paint_node(canvas, child_id, child_parent_origin);
                 }
             }

@@ -26,7 +26,9 @@ export interface EditorCanvasProps {
   selectedNodeId: NodeId | null;
   onSelectNode: (nodeId: NodeId | null) => void;
   onSelectPage?: (pageId: PageId) => void;
-  onOperation: (operation: Operation) => void;
+  /** Commits land as one atomic batch (one undo frame); Phase 1d container
+   * drags carry pinned-descendant box translations alongside the primary op. */
+  onOperations: (operations: Operation[]) => void;
   engine: OptimisticEnginePort | null;
   diagnostics?: Diagnostic[];
   workspaceViewport: WorkspaceViewport;
@@ -56,7 +58,10 @@ export function EditorCanvas(props: EditorCanvasProps) {
       selectedNodeId={props.selectedNodeId}
       onSelectNode={props.onSelectNode}
       onSelectPage={props.onSelectPage}
-      onOperation={props.onOperation}
+      // The legacy Konva surface commits one op at a time; wrap into the
+      // atomic batch contract. (Multi-op parent-drag pin translation is a
+      // CanvasKit-path behavior; Konva is the retained test surface.)
+      onOperation={(operation: Operation) => props.onOperations([operation])}
       workspaceModel={workspaceModel}
       workspaceViewport={props.workspaceViewport}
       onWorkspaceViewportChange={props.onWorkspaceViewportChange}

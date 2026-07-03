@@ -14,7 +14,7 @@
  */
 
 import type { Node as SceneNodeModel, Operation, Page, Scene } from "./contracts";
-import { canvasDragOperation, canvasResizeOperation } from "./canvasOperations";
+import { canvasDragOperations, canvasResizeOperation } from "./canvasOperations";
 import { nodeSizeForRender } from "./renderAdapter";
 import { handlePoint, type Box, type Point, type ResizeHandle } from "./transformerMath";
 
@@ -74,20 +74,22 @@ export function handleAtPoint(
   return best?.handle ?? null;
 }
 
-/** Convert a drag action's descriptor-space box into a canonical operation. */
-export function dragActionToOperation(
+/** Convert a drag action's descriptor-space box into canonical operations —
+ * the primary move plus, for containers, one box translation per pinned
+ * descendant (Phase 1d: an explicit parent drag carries its pins). */
+export function dragActionToOperations(
   box: Box,
   scene: Scene,
   node: SceneNodeModel,
   page: Page,
   pageOrigin: Point
-): Operation | null {
-  return canvasDragOperation({
+): Operation[] {
+  return canvasDragOperations({
     scene,
     node,
     page,
     pageOrigin,
-    // canvasDragOperation subtracts pageOrigin then converts to scene units;
+    // canvasDragOperations subtracts pageOrigin then converts to scene units;
     // the descriptor box top-left lives in unscaled stage space at pageOrigin.
     canvasX: pageOrigin.x + box.x,
     canvasY: pageOrigin.y + box.y

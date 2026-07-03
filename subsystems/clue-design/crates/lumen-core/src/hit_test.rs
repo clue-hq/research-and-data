@@ -13,7 +13,7 @@
 //! path-fill hit-testing (V0 uses the rotated box for vectors).
 
 use crate::ids::{NodeId, PageId};
-use crate::render_geometry::render_box_for_node;
+use crate::render_geometry::{paints_out_of_tree, pinned_paint_pass, render_box_for_node};
 use crate::scene::{Node, NodeKind, Scene};
 
 /// Extra pick slop (scene units) added to a line's stroke half-width so thin
@@ -37,6 +37,15 @@ pub fn hit_stack(scene: &Scene, page_id: &PageId, x: f64, y: f64) -> Vec<NodeId>
         for child in &page.children {
             collect(scene, child, x, y, &mut out);
         }
+        // Phase 1d freehand: pinned nodes paint in a page-level pass above
+        // the in-flow content (see `pinned_paint_pass`), so they hit-test
+        // last — clicking where a pinned node overlaps in-flow content
+        // selects the pinned node, matching what the renderers put on top.
+        for pinned_id in pinned_paint_pass(scene, page) {
+            if let Some(node) = scene.nodes.get(&pinned_id) {
+                collect_in_paint_tree(scene, node, &pinned_id, x, y, &mut out);
+            }
+        }
     }
     out
 }
@@ -45,9 +54,27 @@ fn collect(scene: &Scene, node_id: &NodeId, x: f64, y: f64, out: &mut Vec<NodeId
     let Some(node) = scene.nodes.get(node_id) else {
         return;
     };
+    // Pinned nodes are skipped inline exactly like the renderers skip them;
+    // the page-level pass in `hit_stack` records them on top.
+    if paints_out_of_tree(node) {
+        return;
+    }
+    collect_in_paint_tree(scene, node, node_id, x, y, out);
+}
+
+fn collect_in_paint_tree(
+    scene: &Scene,
+    node: &Node,
+    node_id: &NodeId,
+    x: f64,
+    y: f64,
+    out: &mut Vec<NodeId>,
+) {
     let inside = point_in_node(node, x, y);
     // A clipped container hides anything outside its own box: if the point is
-    // outside, neither it nor its clipped descendants can be hit.
+    // outside, neither it nor its clipped descendants can be hit. (A pinned
+    // node escapes its ANCESTORS' clips via the page-level pass, but still
+    // masks its own managed children when it clips.)
     if node.clip && !inside {
         return;
     }

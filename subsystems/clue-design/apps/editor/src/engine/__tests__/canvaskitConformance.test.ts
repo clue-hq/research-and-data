@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { Scene } from "../contracts";
 import { minimalScene } from "@/fixtures/minimalScene";
 import { canvasDragOperation, canvasResizeOperation } from "../canvasOperations";
-import { dragActionToOperation, resizeActionToOperation } from "../canvaskitGestures";
+import { dragActionToOperations, resizeActionToOperation } from "../canvaskitGestures";
 import {
   gestureReducer,
   initialGestureState,
@@ -67,7 +67,7 @@ describe("CanvasKit interaction conformance (Wave 3 C6)", () => {
       { kind: "up", point: { x: 90, y: 80 }, modifiers: {} }
     ]);
     expect(action?.kind).toBe("drag");
-    const gestureOp = dragActionToOperation((action as { box: Box }).box, scene, node, page, PAGE_ORIGIN);
+    const [gestureOp] = dragActionToOperations((action as { box: Box }).box, scene, node, page, PAGE_ORIGIN);
 
     const directOp = canvasDragOperation({
       scene,

@@ -1,6 +1,6 @@
 "use client";
 
-import { Lock, Trash2, Type, Unlock } from "lucide-react";
+import { Lock, Pin, PinOff, Trash2, Type, Unlock } from "lucide-react";
 import type {
   AutoLayoutNode,
   BrandTokenCatalog,
@@ -39,6 +39,7 @@ import {
   updateNodeSize,
   updateNodeName,
   updateNodeStrokes,
+  updateNodeAbsoluteBox,
   updateNodeTransform,
   updatePageBackground,
   updatePageBleed,
@@ -49,8 +50,19 @@ import {
 } from "@/engine/operations";
 import { colorToCss, dimensionToNumber, fixedSize } from "@/engine/renderAdapter";
 import { normalizePageSize } from "@/engine/pageGeometry";
-import { flattenPageNodeIds, isNodeDirectGeometryEditable, isNodeLayoutManaged, nodeDisplayName } from "@/engine/sceneQueries";
+import {
+  flattenPageNodeIds,
+  isNodeDirectGeometryEditable,
+  isNodeLayoutManaged,
+  isNodePinned,
+  nodeDisplayName
+} from "@/engine/sceneQueries";
 import { deriveSelectionChromeModel, type SelectionChromeModel } from "@/engine/selectionChrome";
+import {
+  detachToFreehandEdit,
+  reattachToLayoutEdit,
+  type StructuredEdit
+} from "@/engine/structuredEdits";
 import { SlotInspector, SlotOverview } from "./SlotInspector";
 import { ImageInspectorSection } from "./ImageInspectorSection";
 
@@ -65,6 +77,9 @@ interface InspectorPanelProps {
   apiBaseUrl?: string;
   onOperation: (operation: Operation) => void;
   onOperations?: (operations: Operation[]) => void;
+  /** Phase 1d: detach/re-attach run through the engine's structured-edit
+   * path (the 1c invertible ops), not raw operations. */
+  onStructuredEdit?: (edit: StructuredEdit) => void;
   onSelectSubject?: (subject: DiagnosticSubject) => void;
 }
 
@@ -79,6 +94,7 @@ export function InspectorPanel({
   apiBaseUrl,
   onOperation,
   onOperations,
+  onStructuredEdit,
   onSelectSubject
 }: InspectorPanelProps) {
   const emitOperations =
@@ -197,6 +213,13 @@ export function InspectorPanel({
   const size = fixedSize(selectedNode.size);
   const layoutManaged = isNodeLayoutManaged(scene, selectedNode.id);
   const directGeometryEditable = isNodeDirectGeometryEditable(scene, selectedNode.id);
+  // Phase 1d freehand: a pinned node's geometry is its page-space
+  // absolute_box — shown and edited directly (the solver treats the box as
+  // authoritative), while transform stays the flow input for managed nodes.
+  const pinned = isNodePinned(scene, selectedNode.id);
+  const pinnedBox = pinned
+    ? selectedNode.absolute_box ?? selectedNode.computed?.layout_bounds ?? null
+    : null;
   const currentLayout = selectedNode.layout ?? defaultLayoutProps();
   const selectedDiagnostics = inspectorDiagnosticsForNode(scene, selectedNode, [...diagnostics, ...renderDiagnostics]);
   const selectionChrome = deriveSelectionChromeModel(scene, {
@@ -206,6 +229,23 @@ export function InspectorPanel({
   });
   const emitTransform = (patch: Partial<Transform>) => {
     onOperation(updateNodeTransform(selectedNode, { ...selectedNode.transform, ...patch }));
+  };
+  const emitPosition = (patch: { x?: number; y?: number }) => {
+    if (pinnedBox) {
+      onOperation(updateNodeAbsoluteBox(selectedNode, { ...pinnedBox, ...patch }));
+      return;
+    }
+    emitTransform(patch);
+  };
+  const emitExtent = (patch: { width?: number; height?: number }) => {
+    if (pinnedBox) {
+      onOperation(updateNodeAbsoluteBox(selectedNode, { ...pinnedBox, ...patch }));
+      return;
+    }
+    const next = { ...selectedNode.size };
+    if (patch.width !== undefined) next.width = { kind: "fixed", value: patch.width };
+    if (patch.height !== undefined) next.height = { kind: "fixed", value: patch.height };
+    onOperation(updateNodeSize(selectedNode, next));
   };
 
   return (
@@ -222,6 +262,22 @@ export function InspectorPanel({
               {selectedNode.locked ? <Lock aria-hidden size={15} /> : <Unlock aria-hidden size={15} />}
               {selectedNode.locked ? "Locked" : "Unlocked"}
             </button>
+            {onStructuredEdit && (pinned || layoutManaged) ? (
+              <button
+                type="button"
+                disabled={selectedNode.locked}
+                onClick={() =>
+                  onStructuredEdit(
+                    pinned
+                      ? reattachToLayoutEdit(selectedNode.id)
+                      : detachToFreehandEdit(selectedNode.id)
+                  )
+                }
+              >
+                {pinned ? <PinOff aria-hidden size={15} /> : <Pin aria-hidden size={15} />}
+                {pinned ? "Re-attach" : "Detach"}
+              </button>
+            ) : null}
             <button
               type="button"
               className="danger-button"
@@ -233,7 +289,7 @@ export function InspectorPanel({
             </button>
           </div>
         </div>
-        <SelectedObjectSummary model={selectionChrome} locked={selectedNode.locked} layoutManaged={layoutManaged} />
+        <SelectedObjectSummary model={selectionChrome} locked={selectedNode.locked} layoutManaged={layoutManaged} pinned={pinned} />
         <label className="field span">
           <span>Name</span>
           <input
@@ -251,31 +307,27 @@ export function InspectorPanel({
         <div className="field-grid two">
           <NumberField
             label="X"
-            value={selectedNode.transform.x}
+            value={pinnedBox ? pinnedBox.x : selectedNode.transform.x}
             disabled={!directGeometryEditable}
-            onCommit={(value) => emitTransform({ x: value })}
+            onCommit={(value) => emitPosition({ x: value })}
           />
           <NumberField
             label="Y"
-            value={selectedNode.transform.y}
+            value={pinnedBox ? pinnedBox.y : selectedNode.transform.y}
             disabled={!directGeometryEditable}
-            onCommit={(value) => emitTransform({ y: value })}
+            onCommit={(value) => emitPosition({ y: value })}
           />
           <NumberField
             label="W"
-            value={size.width}
+            value={pinnedBox ? pinnedBox.width : size.width}
             disabled={!directGeometryEditable}
-            onCommit={(value) =>
-              onOperation(updateNodeSize(selectedNode, { ...selectedNode.size, width: { kind: "fixed", value } }))
-            }
+            onCommit={(value) => emitExtent({ width: value })}
           />
           <NumberField
             label="H"
-            value={size.height}
+            value={pinnedBox ? pinnedBox.height : size.height}
             disabled={!directGeometryEditable}
-            onCommit={(value) =>
-              onOperation(updateNodeSize(selectedNode, { ...selectedNode.size, height: { kind: "fixed", value } }))
-            }
+            onCommit={(value) => emitExtent({ height: value })}
           />
           <NumberField
             label="Rotate"
@@ -302,8 +354,10 @@ export function InspectorPanel({
           />
         </div>
         <p className="muted contract-note">
-          {layoutManaged
-            ? "This node is managed by an auto-layout parent. Use layout controls or reorder the layer instead of direct geometry edits."
+          {pinned
+            ? "Pinned (freehand): this node keeps its page-space box across relayouts. Re-attach to hand it back to the layout."
+            : layoutManaged
+            ? "This node is managed by an auto-layout parent. Detach it to freehand, or use layout controls / layer reorder."
             : selectedNode.locked
               ? "This node is locked. Unlock it before moving, resizing, or rotating it."
             : `Dimensions use the active page unit. Non-fixed dimensions currently show as ${dimensionToNumber(selectedNode.size.width)}.`}
@@ -939,11 +993,13 @@ function SelectedArtboardSummary({ activePage, diagnostics }: { activePage: Page
 function SelectedObjectSummary({
   model,
   locked,
-  layoutManaged
+  layoutManaged,
+  pinned = false
 }: {
   model: SelectionChromeModel;
   locked: boolean;
   layoutManaged: boolean;
+  pinned?: boolean;
 }) {
   const objectKind =
     model.isSlotBound && model.baseObjectKind
@@ -963,7 +1019,7 @@ function SelectedObjectSummary({
       </div>
       <div>
         <span>State</span>
-        <strong>{selectionStateLabel({ locked, layoutManaged, isSlotBound: model.isSlotBound })}</strong>
+        <strong>{selectionStateLabel({ locked, layoutManaged, pinned, isSlotBound: model.isSlotBound })}</strong>
       </div>
       <div>
         <span>Slots</span>
@@ -1007,15 +1063,17 @@ function diagnosticCountLabel(counts: { errors: number; warnings: number }): str
 function selectionStateLabel({
   locked,
   layoutManaged,
+  pinned = false,
   isSlotBound
 }: {
   locked: boolean;
   layoutManaged: boolean;
+  pinned?: boolean;
   isSlotBound: boolean;
 }): string {
   const states = [
     locked ? "Locked" : null,
-    layoutManaged ? "Layout-managed child" : null,
+    pinned ? "Pinned (freehand)" : layoutManaged ? "Layout-managed child" : null,
     isSlotBound ? "Slot-bound" : null
   ].filter((state): state is string => Boolean(state));
   return states.length > 0 ? states.join(" / ") : "Editable";

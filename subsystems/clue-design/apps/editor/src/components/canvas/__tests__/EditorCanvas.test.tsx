@@ -53,7 +53,7 @@ const baseProps = {
   activePageId: "page_a4",
   selectedNodeId: null,
   onSelectNode: () => {},
-  onOperation: () => {},
+  onOperations: () => {},
   engine: null,
   workspaceViewport: defaultWorkspaceViewport(),
   onWorkspaceViewportChange: () => {},

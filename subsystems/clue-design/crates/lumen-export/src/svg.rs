@@ -4,11 +4,12 @@ use base64::engine::general_purpose::STANDARD as BASE64;
 use base64::Engine;
 use lumen_core::scene::{ColorStop, PhysicalUnit};
 use lumen_core::{
-    is_canonical_page_size, node_render_size, page_geometry, render_box_for_node, Color,
-    Diagnostic, DiagnosticSubject, Dimension, EffectKind, ExportAdapter, ExportArtifact,
-    ExportError, ExportFormat, ExportRequest, ExportResult, Fill, ImageFitMode, ImageNode, Node,
-    NodeId, NodeKind, Page, PageId, Paint, Phase, Rect, Scene, Stroke, StrokeAlign, StrokeCap,
-    StrokeJoin, TextAlign, TextDirection, Unit,
+    is_canonical_page_size, node_render_size, page_geometry, paints_out_of_tree,
+    pinned_paint_pass, render_box_for_node, Color, Diagnostic, DiagnosticSubject, Dimension,
+    EffectKind, ExportAdapter, ExportArtifact, ExportError, ExportFormat, ExportRequest,
+    ExportResult, Fill, ImageFitMode, ImageNode, Node, NodeId, NodeKind, Page, PageId, Paint,
+    Phase, Rect, Scene, Stroke, StrokeAlign, StrokeCap, StrokeJoin, TextAlign, TextDirection,
+    Unit,
 };
 use lumen_core::{HeuristicTextMeasurer, SharedTextMeasurer, TextMeasureInput, TextMeasurer};
 use std::sync::Arc;
@@ -208,7 +209,18 @@ impl<'a> SvgPageRenderer<'a> {
         }
 
         for child_id in &self.page.children {
+            if self.skips_inline_render(child_id) {
+                continue;
+            }
             self.render_node(child_id, None);
+        }
+
+        // Phase 1d freehand: pinned nodes escape every ancestor mask (only
+        // the page clips — the Moda model). Skipped inline above; emitted
+        // here in document order, above the in-flow content, from page
+        // space. Mirrors the Skia painter exactly.
+        for node_id in pinned_paint_pass(self.scene, self.page) {
+            self.render_node(&node_id, None);
         }
 
         self.body.push_str("</g>\n");
@@ -233,6 +245,15 @@ impl<'a> SvgPageRenderer<'a> {
             self.body,
             ""
         )
+    }
+
+    /// Pinned nodes never render inside their parent's tree — see
+    /// [`pinned_paint_pass`].
+    fn skips_inline_render(&self, node_id: &NodeId) -> bool {
+        self.scene
+            .nodes
+            .get(node_id)
+            .is_some_and(paints_out_of_tree)
     }
 
     fn render_node(&mut self, node_id: &NodeId, parent_computed_origin: Option<(f64, f64)>) {
@@ -308,6 +329,9 @@ impl<'a> SvgPageRenderer<'a> {
                     ));
                 }
                 for child_id in &node.children {
+                    if self.skips_inline_render(child_id) {
+                        continue;
+                    }
                     self.render_node(child_id, child_parent_origin);
                 }
                 if node.clip {
@@ -321,6 +345,9 @@ impl<'a> SvgPageRenderer<'a> {
                     id_attrs, transform, opacity, filter
                 ));
                 for child_id in &node.children {
+                    if self.skips_inline_render(child_id) {
+                        continue;
+                    }
                     self.render_node(child_id, child_parent_origin);
                 }
                 self.body.push_str("</g>\n");

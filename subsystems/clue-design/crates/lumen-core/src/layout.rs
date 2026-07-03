@@ -1041,37 +1041,49 @@ impl<'a> LayoutEngine<'a> {
             let measured = self.measurer.measure(
                 &TextMeasureInput::from_text_node(text).with_bounds(&geometry.layout_bounds),
             );
-            if measured.exceeds_max_lines {
+            // Freehand text-fit policy (Phase 1d, user decision): a human
+            // resizing a pinned text box below its content is explicit
+            // intent — the canvas shows the true truncation, so text-fit
+            // codes are advisory for freehand nodes. Managed text keeps
+            // the fail-closed errors that protect agent-authored copy.
+            let severity = if self.is_freehand(&node.id) {
+                DiagnosticSeverity::Warning
+            } else {
+                DiagnosticSeverity::Error
+            };
+            let mut push = |code: &str, message: String, hint: &str| {
                 self.diagnostics.push(
-                    Diagnostic::error(
-                        Phase::Layout,
-                        "LUMV0904",
-                        format!("text node {} exceeds max_lines", node.id),
-                        Some(DiagnosticSubject::Node(node.id.clone())),
-                    )
-                    .with_hint("Increase max_lines, shorten the copy, or enlarge the text box."),
+                    Diagnostic {
+                        severity: severity.clone(),
+                        phase: Phase::Layout,
+                        code: code.to_owned(),
+                        message,
+                        subject: Some(DiagnosticSubject::Node(node.id.clone())),
+                        hint: None,
+                    }
+                    .with_hint(hint),
+                );
+            };
+            if measured.exceeds_max_lines {
+                push(
+                    "LUMV0904",
+                    format!("text node {} exceeds max_lines", node.id),
+                    "Increase max_lines, shorten the copy, or enlarge the text box.",
                 );
             }
             if measured.overflow_x && matches!(text.wrap, TextWrap::NoWrap) {
-                self.diagnostics.push(
-                    Diagnostic::error(
-                        Phase::Layout,
-                        "LUMV0902",
-                        format!("non-wrapping text node {} overflows horizontally", node.id),
-                        Some(DiagnosticSubject::Node(node.id.clone())),
-                    )
-                    .with_hint(
-                        "Use wrap(true), s(fill,hug), a smaller style, or a wider text box.",
-                    ),
+                push(
+                    "LUMV0902",
+                    format!("non-wrapping text node {} overflows horizontally", node.id),
+                    "Use wrap(true), s(fill,hug), a smaller style, or a wider text box.",
                 );
             }
             if measured.overflow_y {
-                self.diagnostics.push(Diagnostic::error(
-                    Phase::Layout,
+                push(
                     "LUMV0903",
                     format!("text node {} exceeds available height", node.id),
-                    Some(DiagnosticSubject::Node(node.id.clone())),
-                ).with_hint("Use hug height, increase the fixed height, reduce copy, or lower the font size."));
+                    "Use hug height, increase the fixed height, reduce copy, or lower the font size.",
+                );
             }
         }
     }

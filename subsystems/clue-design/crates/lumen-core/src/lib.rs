@@ -112,7 +112,9 @@ pub use render_contract::{
     RenderIntent, RenderManifest, RenderTarget, RendererAdapter, RendererEffectSupport,
     RendererError,
 };
-pub use render_geometry::{node_render_size, render_box_for_node, RenderBox};
+pub use render_geometry::{
+    node_render_size, paints_out_of_tree, pinned_paint_pass, render_box_for_node, RenderBox,
+};
 pub use scene::{
     AutoLayoutDirection, AutoLayoutNode, AutoLayoutProps, BrandKitRef, Color, ComputedGeometry,
     CornerRadii, Dimension, DocumentMeta, DocumentStatus, Effect, EffectKind, Fill, ImageNode,

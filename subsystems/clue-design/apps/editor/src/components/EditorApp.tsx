@@ -86,6 +86,7 @@ import {
   upsertExportProfile
 } from "@/engine/operations";
 import { normalizePageSize } from "@/engine/pageGeometry";
+import type { StructuredEdit } from "@/engine/structuredEdits";
 import { editorRenderDiagnostics } from "@/engine/renderDiagnostics";
 import { pageDescriptor } from "@/engine/renderAdapter";
 import {
@@ -476,6 +477,49 @@ export default function EditorApp({
 
   const applyOperation = (operation: Operation) => {
     applyOperations([operation]);
+  };
+
+  /**
+   * Phase 1d: structured edits (detach/re-attach, and future container
+   * conversions) run through the engine's shared lumen-core builder and
+   * commit with the exact bookkeeping manual edits get — undo frame,
+   * history, persistence — so freehand actions are ordinary edits.
+   */
+  const applyStructuredEditInstruction = (edit: StructuredEdit) => {
+    if (agentPreview) {
+      setDiagnostics([pendingAgentReviewDiagnostic()]);
+      return;
+    }
+    const engine = engineRef.current;
+    if (!engine?.applyStructuredEdit) {
+      setDiagnostics([
+        {
+          severity: "warning",
+          phase: "operation",
+          code: "EDITOR_SERVER_ONLY_MODE",
+          message: "Structured edits require the WASM engine; the editor is in server-only mode.",
+          subject: { kind: "document" },
+          hint: "Reload the editor or check the /wasm assets."
+        }
+      ]);
+      return;
+    }
+    const previousScene = engine.scene;
+    const outcome = engine.applyStructuredEdit(edit);
+    if (!outcome.accepted) {
+      setDiagnostics([
+        {
+          severity: "error",
+          phase: "operation",
+          code: outcome.code ?? "EDITOR_LOCAL_APPLY",
+          message: outcome.message ?? "Structured edit was rejected by the editor engine",
+          subject: selectedNodeId ? { kind: "node", id: selectedNodeId } : null,
+          hint: "The edit was rejected by the lumen-core engine; the scene is unchanged."
+        }
+      ]);
+      return;
+    }
+    commitAppliedOperations(previousScene, outcome.operations, outcome.scene);
   };
 
   // Dev/e2e hook (Phase 1 browser validation): lets browser tests drive
@@ -1520,7 +1564,7 @@ export default function EditorApp({
                   selectedNodeId={selectedNodeId}
                   onSelectNode={setSelectedNodeId}
                   onSelectPage={selectPage}
-                  onOperation={applyOperation}
+                  onOperations={applyOperations}
                   engine={engineRef.current}
                   diagnostics={diagnostics}
                   workspaceViewport={workspaceViewport}
@@ -1558,7 +1602,7 @@ export default function EditorApp({
               selectedNodeId={selectedNodeId}
               onSelectNode={setSelectedNodeId}
               onSelectPage={selectPage}
-              onOperation={applyOperation}
+              onOperations={applyOperations}
               engine={engineRef.current}
               diagnostics={diagnostics}
               workspaceViewport={workspaceViewport}
@@ -1642,6 +1686,7 @@ export default function EditorApp({
                 apiBaseUrl={process.env.NEXT_PUBLIC_LUMEN_API_BASE_URL ?? "http://localhost:8000"}
                 onOperation={applyOperation}
                 onOperations={applyOperations}
+                onStructuredEdit={applyStructuredEditInstruction}
                 onSelectSubject={selectDiagnosticSubject}
               />
               <BrandKitPanel

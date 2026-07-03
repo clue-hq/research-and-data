@@ -1,11 +1,11 @@
 use crate::sidecar::build_sidecar;
 use crate::svg::{fmt_num, measurer_as_dyn, resolve_page_ids, FALLBACK_MEASURER};
 use lumen_core::{
-    effect_support_diagnostics, page_size_points, render_box_for_node, unit_to_points, AssetKind,
-    Diagnostic, DiagnosticSubject, ExportAdapter, ExportArtifact, ExportError, ExportFormat,
-    ExportRequest, ExportResult, Node, NodeId, NodeKind, Page, Paint, PdfIntent, Phase, Rect,
-    RenderTarget, Scene, SharedTextMeasurer, TextAlign, TextDirection, TextMeasureInput,
-    TextMeasurer,
+    effect_support_diagnostics, page_size_points, paints_out_of_tree, pinned_paint_pass,
+    render_box_for_node, unit_to_points, AssetKind, Diagnostic, DiagnosticSubject, ExportAdapter,
+    ExportArtifact, ExportError, ExportFormat, ExportRequest, ExportResult, Node, NodeId,
+    NodeKind, Page, Paint, PdfIntent, Phase, Rect, RenderTarget, Scene, SharedTextMeasurer,
+    TextAlign, TextDirection, TextMeasureInput, TextMeasurer,
 };
 
 #[derive(Clone, Debug, Default)]
@@ -146,9 +146,27 @@ impl<'a> PdfPageRenderer<'a> {
     fn render_page(&mut self) -> String {
         self.draw_page_background();
         for child_id in &self.page.children {
+            if self.skips_inline_render(child_id) {
+                continue;
+            }
             self.render_node(child_id, 0.0, 0.0, None);
         }
+        // Phase 1d freehand: pinned nodes paint in a page-level pass above
+        // the in-flow content, mirroring the Skia and SVG renderers' z
+        // order (vector PDF never masks, so only stacking parity matters).
+        for node_id in pinned_paint_pass(self.scene, self.page) {
+            self.render_node(&node_id, 0.0, 0.0, None);
+        }
         self.stream.clone()
+    }
+
+    /// Pinned nodes never render inside their parent's tree — see
+    /// [`pinned_paint_pass`].
+    fn skips_inline_render(&self, node_id: &NodeId) -> bool {
+        self.scene
+            .nodes
+            .get(node_id)
+            .is_some_and(paints_out_of_tree)
     }
 
     fn render_node(
@@ -207,6 +225,9 @@ impl<'a> PdfPageRenderer<'a> {
                     self.draw_rect(node, x, y, width, height);
                 }
                 for child_id in &node.children {
+                    if self.skips_inline_render(child_id) {
+                        continue;
+                    }
                     self.render_node(child_id, x, y, child_parent_origin);
                 }
             }
