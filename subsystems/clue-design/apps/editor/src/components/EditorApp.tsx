@@ -478,6 +478,25 @@ export default function EditorApp({
     applyOperations([operation]);
   };
 
+  // Dev/e2e hook (Phase 1 browser validation): lets browser tests drive
+  // canonical operations through the exact pipeline manual edits use
+  // (engine apply → undo frame → history → persistence). Never installed
+  // in production builds.
+  useEffect(() => {
+    if (process.env.NODE_ENV === "production" || typeof window === "undefined") {
+      return;
+    }
+    const debugWindow = window as typeof window & { __lumenEditorDebug?: unknown };
+    debugWindow.__lumenEditorDebug = {
+      applyOperations: (operations: Operation[]) => applyOperations(operations),
+      getScene: () => scene,
+      getEngineScene: () => engineRef.current?.scene ?? null
+    };
+    return () => {
+      delete debugWindow.__lumenEditorDebug;
+    };
+  });
+
   const sendAgentPrompt = async (prompt: string) => {
     const trimmedPrompt = prompt.trim();
     if (!trimmedPrompt || isAgentRunning) {
