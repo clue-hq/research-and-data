@@ -4,7 +4,7 @@ import base64
 import copy
 import json
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 from lumen_api.core import CoreClient, CoreError
 
@@ -45,6 +45,10 @@ from .schemas import (
 
 
 JsonObject = Dict[str, Any]
+
+# A progress hook: (event_type, event_data) for each recorded trace event.
+# Kept dependency-free so agent_runtime never imports the API/DB layer.
+EventSink = Callable[[str, JsonObject], None]
 
 
 # Hard caps for the curated, windowed per-iteration context (P1). They keep the
@@ -135,9 +139,14 @@ class LumenDesignTools:
         config: AgentRuntimeConfig,
         prompt: str,
         initial_scene: Optional[JsonObject] = None,
+        event_sink: Optional["EventSink"] = None,
     ) -> None:
         self.config = config
         self.core = CoreClient(repo_root=config.repo_root)
+        # Optional progress hook: every recorded trace event is also handed to
+        # this sink so a caller (the API's async turn) can persist it to a
+        # durable store and stream it. None keeps the run purely file-traced.
+        self.event_sink = event_sink
         self.run_id = new_run_id()
         self.iteration = 0
         self.trace_dir = config.trace_dir / self.run_id
@@ -2184,6 +2193,24 @@ class LumenDesignTools:
         path = self.trace_dir / "trace.jsonl"
         with path.open("a", encoding="utf-8") as handle:
             handle.write(trace.model_dump_json() + "\n")
+        if self.event_sink is not None:
+            # Progress streaming is best-effort: a sink failure must never
+            # abort the design run (the file trace above is the source of
+            # truth). Keep the payload lightweight — the checklist needs the
+            # event name + summaries, not the full per-iteration payload.
+            try:
+                self.event_sink(
+                    event,
+                    {
+                        "actor": actor,
+                        "iteration": self.iteration,
+                        "input_summary": input_summary,
+                        "output_summary": output_summary,
+                        "diagnostic_count": len(diagnostics or []),
+                    },
+                )
+            except Exception:
+                pass
 
     def _replace_scene_from_core_response(self, response: JsonObject, source: str) -> None:
         scene = response.get("scene")

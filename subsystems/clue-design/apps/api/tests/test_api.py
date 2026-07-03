@@ -407,6 +407,108 @@ def test_agent_turn_preview_route_returns_editor_safe_proposal(client: TestClien
     assert captured["root"] == REPO_ROOT
 
 
+def _fake_async_runner(status: str = "proposed"):
+    def runner(payload, root):
+        return {
+            "schema_version": 1,
+            "status": status,
+            "summary": "Agent proposed a document title update.",
+            "run_id": "run_internal_trace",
+            "trace_dir": ".lumen-runs/run_internal_trace",
+            "preview_paths": [],
+            "dsl_blocks": ["# doc title"],
+            "operations": [title_operation("Async Title")],
+            "diagnostics": [],
+            "artifacts": [],
+        }
+
+    return runner
+
+
+def _wait_for_run_terminal(client: TestClient, run_id: str) -> dict:
+    import time as _time
+
+    for _ in range(200):
+        snapshot = client.get(f"/agent/runs/{run_id}").json()
+        if snapshot["status"] != "running":
+            return snapshot
+        _time.sleep(0.02)
+    raise AssertionError(f"run {run_id} never reached a terminal status")
+
+
+def test_agent_turns_async_persists_result_and_terminal_event(
+    client: TestClient,
+) -> None:
+    client.app.state.agent_turn_runner = _fake_async_runner("proposed")
+
+    start = client.post(
+        "/agent/turns",
+        json={
+            "prompt": "Repair the headline",
+            "scene": minimal_scene(),
+            "document_id": "doc_async_route",
+            "active_page_id": "page_a4",
+            "selected_node_id": None,
+            "diagnostics": [],
+        },
+    )
+    assert start.status_code == 200, start.text
+    started = start.json()
+    assert started["status"] == "running"
+    run_id = started["run_id"]
+    assert run_id.startswith("run_")
+
+    snapshot = _wait_for_run_terminal(client, run_id)
+    assert snapshot["status"] == "succeeded"
+    assert snapshot["result"]["operations"][0]["kind"] == "update_document"
+    # The worker appends exactly one terminal marker event.
+    assert [event["type"] for event in snapshot["events"]] == ["result"]
+
+
+def test_agent_turns_async_marks_failed_status(client: TestClient) -> None:
+    client.app.state.agent_turn_runner = _fake_async_runner("failed")
+    start = client.post(
+        "/agent/turns",
+        json={"prompt": "x", "scene": minimal_scene(), "diagnostics": []},
+    )
+    run_id = start.json()["run_id"]
+    snapshot = _wait_for_run_terminal(client, run_id)
+    assert snapshot["status"] == "failed"
+
+
+def test_agent_run_snapshot_404_for_unknown_run(client: TestClient) -> None:
+    assert client.get("/agent/runs/run_missing").status_code == 404
+
+
+def test_agent_run_events_stream_replays_then_done(client: TestClient) -> None:
+    # Drive the store directly to assert SSE framing deterministically (no
+    # dependence on background-thread timing): a progress event replays, then
+    # the terminal marker closes the stream with the stored result.
+    from lumen_api.database import Repository, connect
+
+    connection = connect(client.app.state.database_path)
+    repo = Repository(connection)
+    repo.create_run("run_sse", "doc_sse")
+    repo.append_run_event("run_sse", "dsl_block_produced", {"iteration": 1})
+    repo.set_run_result(
+        "run_sse", "succeeded", {"status": "proposed", "summary": "done"}
+    )
+    repo.append_run_event("run_sse", "result", {"status": "proposed"})
+    connection.close()
+
+    body = client.get("/agent/runs/run_sse/events").text
+    assert "event: progress" in body
+    assert "dsl_block_produced" in body
+    assert "event: done" in body
+    assert '"summary":"done"' in body or '"summary": "done"' in body
+    # Last-Event-ID replay: subscribing after seq 1 skips the progress event.
+    resumed = client.get(
+        "/agent/runs/run_sse/events", headers={"Last-Event-ID": "1"}
+    ).text
+    assert "event: progress" not in resumed
+    assert "event: done" in resumed
+
+
 def write_iteration_compile(trace_dir, index: int, operations: list) -> None:
     iteration_dir = trace_dir / "iterations" / f"{index:03d}"
     iteration_dir.mkdir(parents=True, exist_ok=True)

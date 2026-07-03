@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import base64
 import json
 import logging
@@ -7,6 +8,7 @@ import os
 import re
 import sqlite3
 import sys
+import threading
 import time
 from dataclasses import replace
 from pathlib import Path
@@ -15,7 +17,7 @@ from uuid import uuid4
 
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, Response
+from fastapi.responses import JSONResponse, Response, StreamingResponse
 
 from . import image_cache, image_provider
 from .core import CoreClient, CoreError, has_error_diagnostics
@@ -1036,6 +1038,154 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
             **diagnostic_summary(result.get("diagnostics", [])),
         )
         return result
+
+    @app.post("/agent/turns")
+    def start_agent_turn(
+        payload: AgentTurnPreviewRequest, repo: Repository = Depends(repository)
+    ) -> JsonObject:
+        # Async turn: start the run in a background thread and return its id
+        # immediately. The thread streams progress events into the durable
+        # run-event store (via the loop's event_sink) and writes the final
+        # result on completion; the editor subscribes over SSE. The synchronous
+        # /agent/turn-preview stays as-is for tests, CLI, and fixtures.
+        run_id = f"run_{uuid4().hex}"
+        repo.create_run(run_id, payload.document_id)
+        root = repo_root()
+        database_path = app.state.database_path
+        override = app.state.agent_turn_runner
+
+        def worker() -> None:
+            store = Repository(connect(database_path))
+            try:
+
+                def sink(event_type: str, data: JsonObject) -> None:
+                    try:
+                        store.append_run_event(run_id, event_type, data)
+                    except Exception:
+                        pass
+
+                try:
+                    if override is not None:
+                        response = override(payload, root)
+                    else:
+                        response = run_agent_turn_preview(payload, root, event_sink=sink)
+                    status = (
+                        "failed"
+                        if response.get("status") in ("failed", "error")
+                        else "succeeded"
+                    )
+                    store.set_run_result(run_id, status, response)
+                    store.append_run_event(
+                        run_id, "result", {"status": response.get("status")}
+                    )
+                except Exception as error:  # pragma: no cover - defensive
+                    failed = failed_agent_turn_response(
+                        "agent_runtime.failed",
+                        "Agent turn crashed before returning a proposal.",
+                        str(error),
+                    )
+                    store.set_run_result(run_id, "failed", failed)
+                    store.append_run_event(run_id, "error", {"message": str(error)})
+            finally:
+                store.connection.close()
+
+        threading.Thread(
+            target=worker, name=f"agent-turn-{run_id}", daemon=True
+        ).start()
+        log_event(
+            api_logger,
+            logging.INFO,
+            "agent_turn_started",
+            run_id=run_id,
+            document_id=payload.document_id,
+            active_page_id=payload.active_page_id,
+            selected_node_id=payload.selected_node_id,
+        )
+        return {"schema_version": 1, "run_id": run_id, "status": "running"}
+
+    @app.get("/agent/runs/{run_id}")
+    def get_agent_run(
+        run_id: str, repo: Repository = Depends(repository)
+    ) -> JsonObject:
+        run = repo.get_run(run_id)
+        if run is None:
+            raise HTTPException(
+                status_code=404, detail=f"agent_run {run_id} was not found"
+            )
+        return {
+            "schema_version": 1,
+            "run_id": run_id,
+            "status": run["status"],
+            "events": repo.list_run_events(run_id, after_seq=0),
+            "result": run["result"],
+        }
+
+    @app.get("/agent/runs/{run_id}/events")
+    async def stream_agent_run_events(run_id: str, request: Request):
+        database_path = app.state.database_path
+
+        def read_run() -> Optional[JsonObject]:
+            store = Repository(connect(database_path))
+            try:
+                return store.get_run(run_id)
+            finally:
+                store.connection.close()
+
+        def read_events(after_seq: int) -> List[JsonObject]:
+            store = Repository(connect(database_path))
+            try:
+                return store.list_run_events(run_id, after_seq=after_seq)
+            finally:
+                store.connection.close()
+
+        # Resume point: EventSource re-sends Last-Event-ID on auto-reconnect;
+        # an explicit ?after= (used by resume-on-mount after a snapshot fetch)
+        # takes precedence.
+        header_id = request.headers.get("last-event-id")
+        after_param = request.query_params.get("after")
+        try:
+            start_seq = int(after_param if after_param is not None else header_id or 0)
+        except (TypeError, ValueError):
+            start_seq = 0
+
+        if await asyncio.to_thread(read_run) is None:
+            raise HTTPException(
+                status_code=404, detail=f"agent_run {run_id} was not found"
+            )
+
+        async def event_stream():
+            last_seq = start_seq
+            yield "retry: 1000\n\n"
+            while True:
+                if await request.is_disconnected():
+                    return
+                events = await asyncio.to_thread(read_events, last_seq)
+                for event in events:
+                    last_seq = event["seq"]
+                    if event["type"] in ("result", "error"):
+                        current = await asyncio.to_thread(read_run)
+                        yield sse_frame(event["seq"], "done", (current or {}).get("result"))
+                        return
+                    yield sse_frame(event["seq"], "progress", event)
+                if not events:
+                    current = await asyncio.to_thread(read_run)
+                    # Terminal with no terminal event yet (defensive): the run
+                    # finished but the marker append lost the race — close out.
+                    if current and current["status"] in ("succeeded", "failed"):
+                        yield sse_frame(last_seq, "done", current.get("result"))
+                        return
+                    yield ": keepalive\n\n"
+                    await asyncio.sleep(1.0)
+
+        return StreamingResponse(
+            event_stream(),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                "X-Accel-Buffering": "no",
+            },
+        )
 
     @app.post("/documents/{document_id}/export")
     def export_document(
@@ -3132,7 +3282,7 @@ def repo_root() -> Path:
 
 
 def run_agent_turn_preview(
-    payload: AgentTurnPreviewRequest, root: Path
+    payload: AgentTurnPreviewRequest, root: Path, event_sink=None
 ) -> JsonObject:
     ensure_agent_runtime_path(root)
     try:
@@ -3157,7 +3307,10 @@ def run_agent_turn_preview(
             config = replace(config, asset_store_root=api_asset_store_root())
         prompt = editor_agent_prompt(payload)
         loop, tools = create_provider_quality_loop(
-            prompt, config, initial_scene=agent_seed_scene(payload)
+            prompt,
+            config,
+            initial_scene=agent_seed_scene(payload),
+            event_sink=event_sink,
         )
         result = loop.run(prompt)
     except Exception as error:
@@ -3168,6 +3321,12 @@ def run_agent_turn_preview(
         )
 
     return agent_response_from_trace(result, tools.trace_dir, tools.scene)
+
+
+def sse_frame(seq: int, event: str, data: Any) -> str:
+    """One Server-Sent Events frame. `id:` carries the monotonic run-event
+    seq so the browser's EventSource replays from it via Last-Event-ID."""
+    return f"id: {seq}\nevent: {event}\ndata: {json.dumps(data)}\n\n"
 
 
 def ensure_agent_runtime_path(root: Path) -> None:
