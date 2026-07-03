@@ -43,6 +43,12 @@ the already-tested out-of-flow path** that rotation accidentally exercises today
   the defaults are wrong — fix before anything else. Exit: parity green, no behavior.
 
 ### 1b — Solver honors the fields (engine) + the LUMV0801 policy call
+**DONE 2026-07-03** — see `.context/phase1b/1B-IMPLEMENTATION.md`. All gates
+green (12 new solver/policy tests; workspace 499; Python 186; editor 351/352
+at the 1a baseline); browser-e2e on CanvasKit proves pin-lands / sibling-reflow /
+page-edge clip (Moda behavior) / no-snap-back-on-relayout / undo-restores-pin.
+Two flags for 1d: editor canvas lacks node-level `clip` painting (server Skia
+has it); pinned-text LUMV0902-4 stay errors until the 1d resize decision.
 - `layout.rs:264` — widen: `is_out_of_flow_transform(child) || child.position_mode
   == Absolute`, so an Absolute child leaves the Taffy flex-children list exactly
   like a rotated one.

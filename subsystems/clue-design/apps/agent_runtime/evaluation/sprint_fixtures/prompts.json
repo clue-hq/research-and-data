@@ -1,0 +1,17 @@
+[
+  {
+    "id": "pricing_living_type_portrait_none",
+    "artifact": "portrait_4x5_1080x1350",
+    "prompt": "Design a 1080x1350 bold typographic statement card: Lumen ships brand-perfect creative at 1/10th the cost of an agency. One dominant living-type headline, a one-line supporting subhead, and a Start free CTA. No photo — let type and brand color carry it."
+  },
+  {
+    "id": "how_it_works_square_icons",
+    "artifact": "social_square_1x1_1080x1080",
+    "prompt": "Design a 1080x1080 how-it-works card: four ordered steps — Connect, Generate, Review, Ship — each an icon + short label + one line, in a balanced 2x2 grid with clear order. Consistent icon style, one brand accent."
+  },
+  {
+    "id": "platform_launch_deck_hero_photo",
+    "artifact": "deck_16x9_1920x1080",
+    "prompt": "Design a 1920x1080 deck section divider: Built for go-to-market teams. A short section label and one line of context, set over a wide cinematic human/operator scene. Make it confident; the text sits on a scrim for legibility."
+  }
+]
