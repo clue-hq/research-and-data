@@ -9,6 +9,13 @@ export interface AgentChatMessage {
   content: string;
 }
 
+/** Phase 2a (Moda's queue): a message typed while the editor is busy —
+ * agent running or review pending — waiting to run as the next turn. */
+export interface QueuedAgentMessage {
+  id: string;
+  content: string;
+}
+
 export interface AgentChatPanelProps {
   messages: AgentChatMessage[];
   draft: string;
@@ -16,11 +23,14 @@ export interface AgentChatPanelProps {
   proposal: EditorAgentResult | null;
   /** Phase 0c: a proposed turn is on the canvas awaiting Accept / Reject. */
   pendingReview: boolean;
+  queuedMessages: QueuedAgentMessage[];
   activePageId: PageId | null;
   selectedNodeId: NodeId | null;
   diagnostics: Diagnostic[];
   onDraftChange: (value: string) => void;
   onSend: (prompt: string) => void;
+  onQueueMessage: (content: string) => void;
+  onRemoveQueuedMessage: (id: string) => void;
   onApplyProposal: () => void;
   onAcceptProposal: () => void;
   onRejectProposal: () => void;
@@ -32,19 +42,30 @@ export function AgentChatPanel({
   isRunning,
   proposal,
   pendingReview,
+  queuedMessages,
   activePageId,
   selectedNodeId,
   diagnostics,
   onDraftChange,
   onSend,
+  onQueueMessage,
+  onRemoveQueuedMessage,
   onApplyProposal,
   onAcceptProposal,
   onRejectProposal
 }: AgentChatPanelProps) {
+  const isBusy = isRunning || pendingReview;
   const submitPrompt = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const trimmed = draft.trim();
-    if (!trimmed || isRunning || pendingReview) {
+    if (!trimmed) {
+      return;
+    }
+    // While the editor is busy the composer queues instead of sending —
+    // Moda's "Type to queue a message…" behavior.
+    if (isBusy) {
+      onQueueMessage(trimmed);
+      onDraftChange("");
       return;
     }
     onSend(trimmed);
@@ -86,6 +107,25 @@ export function AgentChatPanel({
           onRejectProposal={onRejectProposal}
         />
       ) : null}
+      {queuedMessages.length > 0 ? (
+        <div className="agent-queued-messages" aria-label="Queued messages">
+          <span className="agent-queued-label">
+            Queued — runs when the agent is free
+          </span>
+          {queuedMessages.map((message) => (
+            <div key={message.id} className="agent-queued-message">
+              <p>{message.content}</p>
+              <button
+                type="button"
+                aria-label={`Remove queued message: ${message.content}`}
+                onClick={() => onRemoveQueuedMessage(message.id)}
+              >
+                <X aria-hidden size={13} />
+              </button>
+            </div>
+          ))}
+        </div>
+      ) : null}
       <form className="agent-chat-form" onSubmit={submitPrompt}>
         <label className="field">
           <span>Message the agent</span>
@@ -93,17 +133,18 @@ export function AgentChatPanel({
             value={draft}
             onChange={(event) => onDraftChange(event.target.value)}
             placeholder={
-              pendingReview
-                ? "Accept or reject the agent's changes to continue."
-                : "Ask for a square ad, repair overflow, or update the selected section."
+              isRunning
+                ? "Type to queue a message — it runs when the agent finishes."
+                : pendingReview
+                  ? "Type to queue a message — it runs after you accept or reject."
+                  : "Ask for a square ad, repair overflow, or update the selected section."
             }
-            disabled={pendingReview}
             rows={4}
           />
         </label>
-        <button type="submit" disabled={isRunning || pendingReview || !draft.trim()}>
+        <button type="submit" disabled={!draft.trim()}>
           <Send aria-hidden size={15} />
-          {isRunning ? "Sending" : "Send"}
+          {isBusy ? "Queue" : "Send"}
         </button>
       </form>
     </section>

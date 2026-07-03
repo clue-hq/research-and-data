@@ -692,8 +692,14 @@ describe.skipIf(!wasmArtifactPresent)("EditorApp", () => {
     });
     // The preview is live on the canvas (the proposed title renders).
     expect(screen.getByRole("heading", { name: "Agent Authored Ad" })).toBeInTheDocument();
-    // While reviewing, the chat input is locked (Moda's queue-lock pattern).
-    expect(screen.getByLabelText("Message the agent")).toBeDisabled();
+    // While reviewing, the composer switches to queue mode (Phase 2a: Moda's
+    // "type to queue" pattern) — typing stays possible, sending queues.
+    expect(screen.getByLabelText("Message the agent")).toBeEnabled();
+    expect(screen.getByLabelText("Message the agent")).toHaveAttribute(
+      "placeholder",
+      "Type to queue a message — it runs after you accept or reject."
+    );
+    expect(screen.getByRole("button", { name: /^Queue$/i })).toBeInTheDocument();
 
     // Before/After compare is display-only.
     const reviewBar = screen.getByRole("toolbar", { name: "Review agent changes" });

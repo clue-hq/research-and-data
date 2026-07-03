@@ -8,8 +8,8 @@ import {
   type CSSProperties,
   type PointerEvent as ReactPointerEvent
 } from "react";
-import { AlertTriangle, Check, Download, FileCheck2, History, PanelRightClose, RotateCcw, RotateCw, X } from "lucide-react";
-import { AgentChatPanel, type AgentChatMessage } from "./AgentChatPanel";
+import { AlertTriangle, Bot, Check, Download, FileCheck2, History, PanelRightClose, RotateCcw, RotateCw, X } from "lucide-react";
+import { AgentChatPanel, type AgentChatMessage, type QueuedAgentMessage } from "./AgentChatPanel";
 import { BrandKitPanel } from "./BrandKitPanel";
 import { EditorCanvas } from "./canvas/EditorCanvas";
 import { ExportPanel, type ExportPanelState } from "./ExportPanel";
@@ -47,6 +47,7 @@ import type {
   ParentRef,
   Scene
 } from "@/engine/contracts";
+import { createDocument, type CreatedDocument } from "@/engine/documentStore";
 import {
   createEditQueue,
   type EditQueuePort,
@@ -127,6 +128,12 @@ export interface EditorAppProps {
    * reconciles the server scene at drain.
    */
   editQueueFactory?: EditQueueFactory;
+  /**
+   * Phase 2a: document auto-creation override (tests). With no documentId,
+   * the first persisting action creates a document server-side (Moda's
+   * "every canvas is a doc") and the editor adopts the returned id.
+   */
+  documentCreator?: (scene: Scene) => Promise<CreatedDocument>;
 }
 
 export type EditQueueFactory = (options: {
@@ -158,6 +165,12 @@ const defaultAgentRunner = createApiAgentRunner({
   apiBaseUrl: process.env.NEXT_PUBLIC_LUMEN_API_BASE_URL ?? "http://localhost:8000"
 });
 
+const defaultDocumentCreator = (scene: Scene) =>
+  createDocument(
+    { apiBaseUrl: process.env.NEXT_PUBLIC_LUMEN_API_BASE_URL ?? "http://localhost:8000" },
+    scene
+  );
+
 export default function EditorApp({
   documentId,
   initialScene = emptyScene,
@@ -169,9 +182,16 @@ export default function EditorApp({
   exportRunner = defaultExportRunner,
   preflightRunner = defaultPreflightRunner,
   optimisticEngine,
-  editQueueFactory = defaultEditQueueFactory
+  editQueueFactory = defaultEditQueueFactory,
+  documentCreator = defaultDocumentCreator
 }: EditorAppProps = {}) {
   const [scene, setScene] = useState<Scene>(initialScene);
+  // Phase 2a: document identity is state, not just a prop — an unsaved canvas
+  // adopts a server-minted id at its first persisting action (auto-create).
+  const [activeDocumentId, setActiveDocumentId] = useState<string | null>(documentId ?? null);
+  const activeDocumentIdRef = useRef<string | null>(activeDocumentId);
+  activeDocumentIdRef.current = activeDocumentId;
+  const documentCreationRef = useRef<Promise<string | null> | null>(null);
   // The optimistic engine owns local edit application (Track E): the WASM
   // core, loaded behind the flag (or injected by tests). Until it is
   // active the editor is in server-only mode. `replaceScene` keeps the
@@ -216,6 +236,10 @@ export default function EditorApp({
     baseSelectedNodeId: NodeId | null;
     view: "before" | "after";
   } | null>(null);
+  // Phase 2a (Moda's queue): messages typed while a turn runs or a review is
+  // pending wait here and drain one per idle transition — each drained turn
+  // seeds from the scene as it is at drain time, not at enqueue time.
+  const [queuedAgentMessages, setQueuedAgentMessages] = useState<QueuedAgentMessage[]>([]);
   const [isPreflighting, setIsPreflighting] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const [exportResult, setExportResult] = useState<EditorExportResult | null>(null);
@@ -381,16 +405,9 @@ export default function EditorApp({
   // bug signal — the server scene replaces the local one and a diagnostic
   // surfaces.
   const editQueueRef = useRef<EditQueuePort | null>(null);
-  const enqueueForPersistence = (operations: Operation[]) => {
-    if (!documentId) {
-      return;
-    }
-    const engine = engineRef.current;
-    if (!engine || engine.kind !== "wasm") {
-      return;
-    }
+  const ensureEditQueue = (queueDocumentId: string): EditQueuePort => {
     editQueueRef.current ??= editQueueFactory({
-      documentId,
+      documentId: queueDocumentId,
       localScene: () => engineRef.current?.scene ?? sceneRef.current,
       onReconcile: (event) => {
         if (event.serverScene) {
@@ -399,7 +416,103 @@ export default function EditorApp({
         setDiagnostics([event.diagnostic]);
       }
     });
-    editQueueRef.current.enqueueOperations(operations);
+    return editQueueRef.current;
+  };
+
+  /**
+   * Phase 2a: adopt a freshly-created document id. Local scenes carry the
+   * shared `doc_untitled` placeholder id; the server minted the real one, so
+   * every local copy of the scene (engine, React state, undo/redo frames)
+   * must switch to it — otherwise the first persistence reconcile flags a
+   * false divergence on `meta.id`. The URL gains `?document=<id>` so a
+   * reload reopens this document.
+   */
+  const adoptCreatedDocument = (newDocumentId: string) => {
+    const patchSceneId = (input: Scene): Scene => ({
+      ...input,
+      meta: { ...input.meta, id: newDocumentId }
+    });
+    activeDocumentIdRef.current = newDocumentId;
+    setActiveDocumentId(newDocumentId);
+    const engine = engineRef.current;
+    if (engine) {
+      engine.reset(patchSceneId(engine.scene));
+      setScene(engine.scene);
+    } else {
+      setScene((current) => patchSceneId(current));
+    }
+    setUndoStack((stack) => stack.map((frame) => ({ ...frame, scene: patchSceneId(frame.scene) })));
+    setRedoStack((stack) => stack.map((frame) => ({ ...frame, scene: patchSceneId(frame.scene) })));
+    if (typeof window !== "undefined") {
+      const url = new URL(window.location.href);
+      url.searchParams.set("document", newDocumentId);
+      window.history.replaceState(null, "", url);
+    }
+  };
+
+  const enqueueForPersistence = (
+    previousScene: Scene,
+    operations: Operation[],
+    nextScene: Scene
+  ) => {
+    const engine = engineRef.current;
+    if (!engine || engine.kind !== "wasm") {
+      return;
+    }
+    const existingDocumentId = activeDocumentIdRef.current;
+    if (existingDocumentId) {
+      ensureEditQueue(existingDocumentId).enqueueOperations(operations);
+      return;
+    }
+    // Phase 2a auto-create: the first persisting action turns this canvas
+    // into a document. Batches that land while creation is in flight ride
+    // behind it in order.
+    if (documentCreationRef.current) {
+      documentCreationRef.current = documentCreationRef.current.then((createdId) => {
+        if (createdId) {
+          ensureEditQueue(createdId).enqueueOperations(operations);
+        }
+        return createdId;
+      });
+      return;
+    }
+    // An empty canvas is not a creatable document (LUMV0100: a scene needs at
+    // least one page); seed from the post-op scene instead and skip
+    // enqueueing the triggering batch — for that case the creation IS its
+    // persistence. If even the post-op scene is still empty (say, a title
+    // edit before any artboard exists), stay local: the scene carries those
+    // changes into the eventual creation seed.
+    const seedFromPrevious = Object.keys(previousScene.pages).length > 0;
+    const seedScene = seedFromPrevious ? previousScene : nextScene;
+    if (Object.keys(seedScene.pages).length === 0) {
+      return;
+    }
+    documentCreationRef.current = documentCreator(seedScene)
+      .then((created) => {
+        adoptCreatedDocument(created.documentId);
+        if (seedFromPrevious) {
+          ensureEditQueue(created.documentId).enqueueOperations(operations);
+        }
+        return created.documentId;
+      })
+      .catch((error: unknown) => {
+        // Editing continues locally; the next persisting action retries.
+        documentCreationRef.current = null;
+        setDiagnostics([
+          {
+            severity: "error",
+            phase: "operation",
+            code: "EDITOR_DOCUMENT_CREATE_FAILED",
+            message:
+              error instanceof Error
+                ? `Creating a document for this design failed: ${error.message}`
+                : "Creating a document for this design failed.",
+            subject: { kind: "document" },
+            hint: "Local editing continues, but nothing is persisted yet. Check the API connection — the next edit retries."
+          }
+        ]);
+        return null;
+      });
   };
 
   /**
@@ -429,7 +542,7 @@ export default function EditorApp({
     setOperationHistory((history) => [...history, ...operations].slice(-50));
     setDiagnostics([]);
     setScene(nextScene);
-    enqueueForPersistence(operations);
+    enqueueForPersistence(previousScene, operations, nextScene);
   };
 
   const pendingAgentReviewDiagnostic = (): Diagnostic => ({
@@ -441,6 +554,17 @@ export default function EditorApp({
     hint: "Accept or Reject the agent's changes before editing the design."
   });
 
+  // Phase 2a exclusive turns (Moda's lock): while the agent designs, the
+  // canvas is read-only — mutations would race the turn's seed scene.
+  const agentTurnRunningDiagnostic = (): Diagnostic => ({
+    severity: "warning",
+    phase: "operation",
+    code: "EDITOR_AGENT_TURN_RUNNING",
+    message: "The agent is designing — the canvas is locked until the turn finishes.",
+    subject: { kind: "document" },
+    hint: "Wait for the agent to finish (you can queue a chat message meanwhile), then edit or review its changes."
+  });
+
   const applyOperations = (operations: Operation[], onAccepted?: (scene: Scene) => void) => {
     if (operations.length === 0) {
       return;
@@ -449,6 +573,10 @@ export default function EditorApp({
     // keeps Accept/Reject byte-exact (no interleaved manual edits).
     if (agentPreview) {
       setDiagnostics([pendingAgentReviewDiagnostic()]);
+      return;
+    }
+    if (isAgentRunning) {
+      setDiagnostics([agentTurnRunningDiagnostic()]);
       return;
     }
     const engine = engineRef.current;
@@ -507,6 +635,10 @@ export default function EditorApp({
   const applyStructuredEditInstruction = (edit: StructuredEdit) => {
     if (agentPreview) {
       setDiagnostics([pendingAgentReviewDiagnostic()]);
+      return;
+    }
+    if (isAgentRunning) {
+      setDiagnostics([agentTurnRunningDiagnostic()]);
       return;
     }
     const engine = engineRef.current;
@@ -586,7 +718,7 @@ export default function EditorApp({
       const result = await agentRunner({
         prompt: trimmedPrompt,
         scene,
-        documentId,
+        documentId: activeDocumentId ?? undefined,
         activePageId,
         selectedNodeId,
         diagnostics
@@ -672,6 +804,37 @@ export default function EditorApp({
       setIsAgentRunning(false);
     }
   };
+
+  const queueAgentMessage = (content: string) => {
+    const trimmed = content.trim();
+    if (!trimmed) {
+      return;
+    }
+    setQueuedAgentMessages((queue) => [
+      ...queue,
+      { id: uniqueChatMessageId("user"), content: trimmed }
+    ]);
+  };
+
+  const removeQueuedAgentMessage = (id: string) => {
+    setQueuedAgentMessages((queue) => queue.filter((message) => message.id !== id));
+  };
+
+  // Drain the queue one message per idle transition: a turn must have
+  // settled AND its review been resolved (Accept or Reject both count — the
+  // user answered the preview; their queued intent still stands). Seeding
+  // happens inside sendAgentPrompt from the live scene at drain time.
+  useEffect(() => {
+    if (isAgentRunning || agentPreview || queuedAgentMessages.length === 0) {
+      return;
+    }
+    const [next, ...rest] = queuedAgentMessages;
+    setQueuedAgentMessages(rest);
+    void sendAgentPrompt(next.content);
+    // sendAgentPrompt is re-created per render; keying the effect on it would
+    // drain the whole queue in one burst instead of one per idle transition.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAgentRunning, agentPreview, queuedAgentMessages]);
 
   const showAgentDraftScene = (result: EditorAgentResult) => {
     if (!result.draft_scene) {
@@ -871,6 +1034,10 @@ export default function EditorApp({
       setDiagnostics([pendingAgentReviewDiagnostic()]);
       return;
     }
+    if (isAgentRunning) {
+      setDiagnostics([agentTurnRunningDiagnostic()]);
+      return;
+    }
     const undoFrame = undoStack[undoStack.length - 1];
     if (!undoFrame) {
       return;
@@ -902,6 +1069,10 @@ export default function EditorApp({
   const redoLastOperation = () => {
     if (agentPreview) {
       setDiagnostics([pendingAgentReviewDiagnostic()]);
+      return;
+    }
+    if (isAgentRunning) {
+      setDiagnostics([agentTurnRunningDiagnostic()]);
       return;
     }
     const redoFrame = redoStack[redoStack.length - 1];
@@ -1433,7 +1604,7 @@ export default function EditorApp({
         scene: sceneToExport,
         profile,
         pageIds,
-        ...(documentId ? { documentId } : {})
+        ...(activeDocumentId ? { documentId: activeDocumentId } : {})
       });
       const combinedDiagnostics = [...preflightDiagnostics, ...result.diagnostics];
       const resultWithPreflightDiagnostics: EditorExportResult = {
@@ -1510,11 +1681,19 @@ export default function EditorApp({
             <Download aria-hidden size={16} />
             {isExporting ? "Exporting" : "Export"}
           </button>
-          <button type="button" onClick={undoLastOperation} disabled={undoStack.length === 0}>
+          <button
+            type="button"
+            onClick={undoLastOperation}
+            disabled={undoStack.length === 0 || isAgentRunning || agentPreview !== null}
+          >
             <RotateCcw aria-hidden size={16} />
             Undo
           </button>
-          <button type="button" onClick={redoLastOperation} disabled={redoStack.length === 0}>
+          <button
+            type="button"
+            onClick={redoLastOperation}
+            disabled={redoStack.length === 0 || isAgentRunning || agentPreview !== null}
+          >
             <RotateCw aria-hidden size={16} />
             Redo
           </button>
@@ -1545,6 +1724,21 @@ export default function EditorApp({
         <section className={`center-workspace${editorPanelMode === "export" ? " with-view-toggle" : ""}`}>
           {engineDisabled ? (
             <EngineDisabledBanner reason={engineDisabled.reason} detail={engineDisabled.detail} />
+          ) : null}
+          {isAgentRunning && !agentPreview ? (
+            <div
+              className="agent-designing-banner"
+              role="status"
+              data-testid="agent-designing-banner"
+            >
+              <Bot aria-hidden size={15} />
+              <span>Agent is designing — please wait to edit</span>
+              <span className="agent-designing-dots" aria-hidden>
+                <i />
+                <i />
+                <i />
+              </span>
+            </div>
           ) : null}
           {agentPreview ? (
             <div className="agent-review-bar" role="toolbar" aria-label="Review agent changes">
@@ -1681,11 +1875,14 @@ export default function EditorApp({
               isRunning={isAgentRunning}
               proposal={agentProposal}
               pendingReview={agentPreview !== null}
+              queuedMessages={queuedAgentMessages}
               activePageId={activePageId}
               selectedNodeId={selectedNodeId}
               diagnostics={diagnostics}
               onDraftChange={setAgentDraft}
               onSend={(prompt) => void sendAgentPrompt(prompt)}
+              onQueueMessage={queueAgentMessage}
+              onRemoveQueuedMessage={removeQueuedAgentMessage}
               onApplyProposal={applyAgentProposal}
               onAcceptProposal={() => void acceptAgentPreview()}
               onRejectProposal={rejectAgentPreview}
@@ -1768,12 +1965,12 @@ export default function EditorApp({
                 apiBaseUrl={process.env.NEXT_PUBLIC_LUMEN_API_BASE_URL ?? "http://localhost:8000"}
                 scene={scene}
               />
-              {documentId ? (
+              {activeDocumentId ? (
                 <HistoryPanel
                   apiBaseUrl={
                     process.env.NEXT_PUBLIC_LUMEN_API_BASE_URL ?? "http://localhost:8000"
                   }
-                  documentId={documentId}
+                  documentId={activeDocumentId}
                 />
               ) : null}
               <ValidationPanel

@@ -47,11 +47,14 @@ function renderPanel(proposal: EditorAgentResult) {
       isRunning={false}
       proposal={proposal}
       pendingReview={false}
+      queuedMessages={[]}
       activePageId="page_a4"
       selectedNodeId={null}
       diagnostics={[]}
       onDraftChange={() => {}}
       onSend={() => {}}
+      onQueueMessage={() => {}}
+      onRemoveQueuedMessage={() => {}}
       onApplyProposal={() => {}}
       onAcceptProposal={() => {}}
       onRejectProposal={() => {}}

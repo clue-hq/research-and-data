@@ -56,7 +56,11 @@ class ApiEditQueue implements EditQueuePort {
   private readonly fetchImpl: typeof fetch;
 
   constructor(private readonly options: EditQueueOptions) {
-    this.fetchImpl = options.fetchImpl ?? fetch;
+    // Wrap the global fetch instead of storing it bare: calling a class-field
+    // `this.fetchImpl(...)` rebinds `this` to the queue instance, and browser
+    // fetch throws "Illegal invocation" off its Window. Unit tests always
+    // inject fetchImpl, so only the real browser ever hit this.
+    this.fetchImpl = options.fetchImpl ?? ((input, init) => fetch(input, init));
   }
 
   enqueueOperations(operations: Operation[]): void {

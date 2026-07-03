@@ -1860,3 +1860,171 @@ textarea:disabled {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* Phase 2a exclusive turns: while the agent designs, the canvas is locked.
+   Floating status pill top-center of the canvas (Moda's "please wait to
+   edit" banner) — calm, not alarming; the amber engine banner outranks it. */
+.agent-designing-banner {
+  position: absolute;
+  top: 18px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 28;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 9px 16px;
+  border-radius: 999px;
+  border: 1px solid #d6c8a8;
+  background: #fffaf0;
+  color: #3e382f;
+  font-size: 13px;
+  font-weight: 750;
+  box-shadow:
+    0 10px 26px rgba(15, 18, 24, 0.18),
+    0 2px 6px rgba(15, 18, 24, 0.1);
+}
+
+.agent-designing-dots {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.agent-designing-dots i {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #b89961;
+  animation: agent-designing-pulse 1.2s ease-in-out infinite;
+}
+
+.agent-designing-dots i:nth-child(2) {
+  animation-delay: 0.2s;
+}
+
+.agent-designing-dots i:nth-child(3) {
+  animation-delay: 0.4s;
+}
+
+@keyframes agent-designing-pulse {
+  0%,
+  100% {
+    opacity: 0.25;
+    transform: translateY(0);
+  }
+  50% {
+    opacity: 1;
+    transform: translateY(-2px);
+  }
+}
+
+/* Phase 2a message queue: prompts typed while the agent runs (or a review is
+   pending) wait here and run one-by-one when the editor is idle again. */
+.agent-queued-messages {
+  display: grid;
+  gap: 6px;
+  border: 1px dashed #c9bda6;
+  border-radius: 7px;
+  background: #fbf7ee;
+  padding: 8px 9px;
+}
+
+.agent-queued-label {
+  color: #8a7c5e;
+  font-size: 11px;
+  font-weight: 850;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.agent-queued-message {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+  border: 1px solid #e2d8c3;
+  border-radius: 6px;
+  background: #ffffff;
+  padding: 7px 8px;
+}
+
+.agent-queued-message p {
+  margin: 0;
+  color: #3e382f;
+  font-size: 12.5px;
+  line-height: 1.4;
+}
+
+.agent-queued-message button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid #ddd7cc;
+  border-radius: 50%;
+  background: #ffffff;
+  color: #6d675c;
+}
+
+.agent-queued-message button:hover {
+  background: #f7f4ee;
+  color: #1c1a16;
+}
+
+/* Phase 2a ?document= loader: full-screen states while a document loads (or
+   fails to). */
+.document-load-screen {
+  display: grid;
+  place-items: center;
+  min-height: 100vh;
+  background: #f4f1ea;
+  color: #5b5348;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.document-load-error {
+  display: grid;
+  gap: 10px;
+  max-width: 440px;
+  border: 1px solid #e0b4b4;
+  border-radius: 10px;
+  background: #fdf6f4;
+  color: #5a2f28;
+  padding: 18px 20px;
+  box-shadow: 0 10px 26px rgba(15, 18, 24, 0.12);
+}
+
+.document-load-error strong {
+  font-size: 15px;
+}
+
+.document-load-error p {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.document-load-error button {
+  justify-self: start;
+  display: inline-flex;
+  align-items: center;
+  min-height: 34px;
+  border: 1px solid #256c70;
+  border-radius: 6px;
+  background: #256c70;
+  color: #ffffff;
+  padding: 7px 14px;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.document-load-error button:hover {
+  background: #1d585c;
+}
