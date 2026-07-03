@@ -115,10 +115,10 @@ pub use render_geometry::{node_render_size, render_box_for_node, RenderBox};
 pub use scene::{
     AutoLayoutDirection, AutoLayoutNode, AutoLayoutProps, BrandKitRef, Color, ComputedGeometry,
     CornerRadii, Dimension, DocumentMeta, DocumentStatus, Effect, EffectKind, Fill, ImageNode,
-    LayoutAnchor, LineNode, Medium, Node, NodeKind, Orientation, Page, PageOutputSize, PagePreset,
-    PageSize, PageSizeSource, Paint, ParentRef, PhysicalPageSize, PhysicalUnit, RasterPageSize,
-    Rect, Scene, SizeSpec, Stroke, StrokeAlign, StrokeCap, StrokeJoin, TextAlign, TextDirection,
-    TextNode, TextWrap, Transform, Unit, VectorNode,
+    LayoutAnchor, LayoutMode, LineNode, Medium, Node, NodeKind, Orientation, Page, PageOutputSize,
+    PagePreset, PageSize, PageSizeSource, Paint, ParentRef, PhysicalPageSize, PhysicalUnit,
+    PositionMode, RasterPageSize, Rect, Scene, SizeSpec, Stroke, StrokeAlign, StrokeCap,
+    StrokeJoin, TextAlign, TextDirection, TextNode, TextWrap, Transform, Unit, VectorNode,
 };
 pub use slots::{
     BindingHint, Cardinality, ConditionalRule, ContentType, Editability, EmptyBehavior, FocalPoint,

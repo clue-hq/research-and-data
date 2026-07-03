@@ -292,6 +292,51 @@ pub struct Node {
     pub layout: Option<AutoLayoutProps>,
     pub computed: Option<ComputedGeometry>,
     pub locked: bool,
+    /// Phase 1 freehand: who owns this node's position. `Managed` (default) =
+    /// the layout solver; `Absolute` = a human pinned it — the solver lays it
+    /// out at `absolute_box`, out of flow (the deliberate generalization of
+    /// the rotation out-of-flow seam). Serde-defaulted and omitted when
+    /// Managed so pre-freehand scene JSON round-trips byte-identically
+    /// (mirrors `effects`).
+    #[serde(default, skip_serializing_if = "position_mode_is_managed")]
+    pub position_mode: PositionMode,
+    /// Page-space box an `Absolute` node is laid out at. None while Managed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub absolute_box: Option<Rect>,
+    /// The solved box captured at detach time — the reconciliation signal
+    /// that lets the agent see "the human nudged this N px off where the
+    /// solver put it" and preserve the offset instead of clobbering or
+    /// blindly pinning.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub base_anchor: Option<Rect>,
+}
+
+/// See [`Node::position_mode`].
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PositionMode {
+    #[default]
+    Managed,
+    Absolute,
+}
+
+fn position_mode_is_managed(mode: &PositionMode) -> bool {
+    *mode == PositionMode::Managed
+}
+
+/// Phase 1 freehand: how an auto-layout container places its children.
+/// `Stack` (default) = the flex solve; `Free` = children lay out at their own
+/// baked transforms through the absolute path ("free this whole section").
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum LayoutMode {
+    #[default]
+    Stack,
+    Free,
+}
+
+fn layout_mode_is_stack(mode: &LayoutMode) -> bool {
+    *mode == LayoutMode::Stack
 }
 
 impl Node {
@@ -315,6 +360,9 @@ impl Node {
             layout: None,
             computed: None,
             locked: false,
+            position_mode: PositionMode::Managed,
+            absolute_box: None,
+            base_anchor: None,
         }
     }
 }
@@ -486,6 +534,11 @@ pub struct AutoLayoutProps {
     pub align_x: LayoutAnchor,
     #[serde(default = "default_layout_anchor_start")]
     pub align_y: LayoutAnchor,
+    /// Phase 1 freehand: Stack (default) keeps the flex solve; Free lays the
+    /// container's children out at their own baked transforms. Serde-defaulted
+    /// and omitted when Stack so pre-freehand JSON round-trips byte-identically.
+    #[serde(default, skip_serializing_if = "layout_mode_is_stack")]
+    pub layout_mode: LayoutMode,
 }
 
 impl Default for AutoLayoutProps {
@@ -498,6 +551,7 @@ impl Default for AutoLayoutProps {
             grow: 0.0,
             align_x: LayoutAnchor::Start,
             align_y: LayoutAnchor::Start,
+            layout_mode: LayoutMode::Stack,
         }
     }
 }

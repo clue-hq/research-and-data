@@ -2100,6 +2100,13 @@ fn node_patch_affects_render(patch: &NodePatch) -> bool {
         || !matches!(patch.asset_placement, OptionalFieldPatch::Unchanged)
         || !matches!(patch.clip, FieldPatch::Unchanged)
         || !matches!(patch.layout, OptionalFieldPatch::Unchanged)
+        // Phase 1 freehand: pinning/unpinning or moving an absolute box moves
+        // pixels, so stale computed geometry must be invalidated. Keep the TS
+        // mirror (`nodePatchAffectsRender`, apps/editor operations.ts) in sync
+        // when the editor starts emitting these fields (Phase 1d).
+        || !matches!(patch.position_mode, FieldPatch::Unchanged)
+        || !matches!(patch.absolute_box, OptionalFieldPatch::Unchanged)
+        || !matches!(patch.base_anchor, OptionalFieldPatch::Unchanged)
 }
 
 fn node_patch_has_changes(patch: &NodePatch) -> bool {
