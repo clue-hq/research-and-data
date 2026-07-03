@@ -100,6 +100,60 @@ describe("CanvasKitCanvas polish chrome wiring", () => {
     expect(screen.getByRole("button", { name: "Fit all artboards" })).toHaveAttribute("aria-pressed", "false");
   });
 
+  it("emits one structured [lumen-hit] line per pointer-down when ?debug=hit is set", () => {
+    vi.stubGlobal("PointerEvent", MouseEvent);
+    window.history.replaceState(null, "", "?debug=hit");
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
+    try {
+      const hitTest = vi.fn(() => ({ hit: "node_contact_name", stack: ["node_contact_name"] }));
+      const engine = { hitTest } as unknown as OptimisticEnginePort;
+      renderCanvasKit({ engine, selectedNodeId: null });
+
+      fireEvent.pointerDown(screen.getByTestId("canvaskit-interaction-layer"), {
+        clientX: 40,
+        clientY: 40,
+        pointerId: 1
+      });
+
+      const traceCall = log.mock.calls.find((call) => call[0] === "[lumen-hit]");
+      expect(traceCall).toBeDefined();
+      const payload = JSON.parse(String(traceCall?.[1])) as Record<string, unknown>;
+      expect(payload).toMatchObject({
+        event: "down",
+        engine: true,
+        tool: "select",
+        page: "page_a4",
+        hit: "node_contact_name",
+        target: "node",
+        node: "node_contact_name"
+      });
+      expect(payload.scene).toHaveLength(2);
+    } finally {
+      log.mockRestore();
+      window.history.replaceState(null, "", window.location.pathname);
+    }
+  });
+
+  it("emits no [lumen-hit] trace without the debug flag", () => {
+    vi.stubGlobal("PointerEvent", MouseEvent);
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
+    try {
+      const hitTest = vi.fn(() => ({ hit: "node_contact_name", stack: ["node_contact_name"] }));
+      const engine = { hitTest } as unknown as OptimisticEnginePort;
+      renderCanvasKit({ engine, selectedNodeId: null });
+
+      fireEvent.pointerDown(screen.getByTestId("canvaskit-interaction-layer"), {
+        clientX: 40,
+        clientY: 40,
+        pointerId: 1
+      });
+
+      expect(log.mock.calls.find((call) => call[0] === "[lumen-hit]")).toBeUndefined();
+    } finally {
+      log.mockRestore();
+    }
+  });
+
   it("passes nested CanvasKit draw descriptors in parent-local coordinates", () => {
     const nestedScene = cloneScene();
     const parent: Node = {

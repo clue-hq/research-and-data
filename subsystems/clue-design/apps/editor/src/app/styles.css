@@ -527,6 +527,72 @@ textarea:disabled {
   grid-template-rows: 45px minmax(0, 1fr);
 }
 
+/* Server-only mode: the WASM engine is expected but not active, so the canvas
+   can't be selected or edited. Loud amber banner anchored to the top-center of
+   the canvas — above the review bar — so this never reads as a silent break. */
+.engine-disabled-banner {
+  position: absolute;
+  top: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 40;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  max-width: min(680px, calc(100% - 32px));
+  padding: 12px 16px;
+  border-radius: 12px;
+  background: #fdf0d5;
+  border: 1px solid #e0a34e;
+  box-shadow:
+    0 12px 32px rgba(15, 18, 24, 0.22),
+    0 2px 8px rgba(15, 18, 24, 0.12);
+  color: #5a3410;
+}
+
+.engine-disabled-banner-icon {
+  color: #b45309;
+  flex: none;
+  margin-top: 1px;
+}
+
+.engine-disabled-banner-body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.engine-disabled-banner-body strong {
+  font-size: 13px;
+  font-weight: 800;
+  color: #7c2d12;
+}
+
+.engine-disabled-banner-body span {
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: #6b4114;
+}
+
+.engine-disabled-banner-body code {
+  font-size: 11.5px;
+  color: #5a3410;
+  background: rgba(255, 255, 255, 0.55);
+  border: 1px solid #e6c188;
+  border-radius: 6px;
+  padding: 3px 7px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+
+.engine-disabled-banner-cmd {
+  font-weight: 800;
+  color: #7c2d12;
+}
+
 .view-toggle {
   display: flex;
   align-items: center;

@@ -8,7 +8,7 @@ import {
   type CSSProperties,
   type PointerEvent as ReactPointerEvent
 } from "react";
-import { Check, Download, FileCheck2, History, PanelRightClose, RotateCcw, RotateCw, X } from "lucide-react";
+import { AlertTriangle, Check, Download, FileCheck2, History, PanelRightClose, RotateCcw, RotateCw, X } from "lucide-react";
 import { AgentChatPanel, type AgentChatMessage } from "./AgentChatPanel";
 import { BrandKitPanel } from "./BrandKitPanel";
 import { EditorCanvas } from "./canvas/EditorCanvas";
@@ -183,6 +183,15 @@ export default function EditorApp({
   const [activePageId, setActivePageId] = useState<PageId | null>(() => firstPageId(initialScene));
   const [selectedNodeId, setSelectedNodeId] = useState<NodeId | null>(initialSelectedNodeId);
   const [diagnostics, setDiagnostics] = useState<Diagnostic[]>([]);
+  // When the WASM core is expected (flag on, no injected engine) but fails to
+  // activate, the editor is in server-only mode: nothing on the canvas can be
+  // selected or edited. That failure was previously only a buried warning
+  // diagnostic; this state drives a loud, persistent canvas banner instead —
+  // a rendered-but-uneditable design is the worst failure for this product.
+  const [engineDisabled, setEngineDisabled] = useState<{
+    reason: "load_failed" | "handshake_failed" | "version_mismatch";
+    detail: string;
+  } | null>(null);
   const [lastOperation, setLastOperation] = useState<Operation | null>(null);
   const [undoStack, setUndoStack] = useState<EditorHistoryFrame[]>([]);
   const [redoStack, setRedoStack] = useState<EditorHistoryFrame[]>([]);
@@ -283,6 +292,10 @@ export default function EditorApp({
         return;
       }
       if (activation.status !== "active") {
+        // Loud, always-on signal (any reason: module missing, handshake, or
+        // mismatch) — the canvas banner reads this and tells the user how to
+        // recover. The diagnostic stays for the two verifiable-mismatch cases.
+        setEngineDisabled({ reason: activation.reason, detail: activation.detail });
         if (activation.reason === "version_mismatch" || activation.reason === "handshake_failed") {
           setDiagnostics([
             {
@@ -299,14 +312,20 @@ export default function EditorApp({
       }
       try {
         engineRef.current = new WasmEngine(activation.module, sceneRef.current);
+        setEngineDisabled(null);
         // Adopt the engine's relaid (whole-tree computed) scene so render
         // geometry is single-source from the moment the engine is live —
         // otherwise the first edit's heuristic delta would merge into a
         // scene carrying server (Skia) or no computed, re-creating the
         // parent/child desync.
         setScene(engineRef.current.scene);
-      } catch {
-        // Server-only mode; the editor stays functional.
+      } catch (error) {
+        // Server-only mode; the editor stays functional — but the inert
+        // canvas must still announce itself (same banner as load failures).
+        setEngineDisabled({
+          reason: "load_failed",
+          detail: `the engine failed to start: ${error instanceof Error ? error.message : String(error)}`
+        });
       }
     })();
     return () => {
@@ -1524,6 +1543,9 @@ export default function EditorApp({
           />
         </div>
         <section className={`center-workspace${editorPanelMode === "export" ? " with-view-toggle" : ""}`}>
+          {engineDisabled ? (
+            <EngineDisabledBanner reason={engineDisabled.reason} detail={engineDisabled.detail} />
+          ) : null}
           {agentPreview ? (
             <div className="agent-review-bar" role="toolbar" aria-label="Review agent changes">
               <div className="agent-review-toggle" role="group" aria-label="Compare agent changes">
@@ -2049,6 +2071,63 @@ function exportPreflightDiagnostics(preflight: EditorPreflightResult): Diagnosti
 
 function clampNumber(value: number, minimum: number, maximum: number): number {
   return Math.min(maximum, Math.max(minimum, value));
+}
+
+/** Reason-specific copy for the server-only-mode canvas banner. */
+function engineDisabledCopy(reason: "load_failed" | "handshake_failed" | "version_mismatch"): {
+  headline: string;
+  fix: string;
+} {
+  switch (reason) {
+    case "version_mismatch":
+      return {
+        headline: "The in-browser engine is a different build than the API.",
+        fix: "Rebuild it to match, then hard-refresh (⌘⇧R):"
+      };
+    case "handshake_failed":
+      return {
+        headline: "Couldn’t verify the in-browser engine against the API.",
+        fix: "Start the API, rebuild the engine, then hard-refresh (⌘⇧R):"
+      };
+    case "load_failed":
+    default:
+      return {
+        headline: "The in-browser engine failed to load.",
+        fix: "Build it, then hard-refresh (⌘⇧R):"
+      };
+  }
+}
+
+/**
+ * Loud, persistent banner shown when the WASM engine is expected but not
+ * active (server-only mode). Without the live engine the canvas cannot
+ * hit-test, so nothing can be selected or edited — a failure that must never
+ * again read as "the editor is silently broken."
+ */
+function EngineDisabledBanner({
+  reason,
+  detail
+}: {
+  reason: "load_failed" | "handshake_failed" | "version_mismatch";
+  detail: string;
+}) {
+  const copy = engineDisabledCopy(reason);
+  return (
+    <div className="engine-disabled-banner" role="alert" data-testid="engine-disabled-banner">
+      <AlertTriangle aria-hidden size={18} className="engine-disabled-banner-icon" />
+      <div className="engine-disabled-banner-body">
+        <strong>Canvas editing is disabled</strong>
+        <span>
+          {copy.headline} You can’t select or edit anything on the canvas until the in-browser
+          engine is running. {copy.fix}
+        </span>
+        <code>
+          <span className="engine-disabled-banner-cmd">npm run build:wasm</span>
+          {` · ${detail}`}
+        </code>
+      </div>
+    </div>
+  );
 }
 
 function agentDraftPageId(

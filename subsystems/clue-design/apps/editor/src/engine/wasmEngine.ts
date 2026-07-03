@@ -311,9 +311,17 @@ export class WasmEngine implements OptimisticEnginePort {
   }
 }
 
+/**
+ * Track E rollout gate, now ON by default: the WASM core is the editor's only
+ * local engine — without it the canvas cannot hit-test, select, or edit
+ * (server-only mode). The old opt-in default meant any frontend started
+ * outside `dev-setup.sh frontend` silently shipped an uneditable canvas.
+ * Opt out via NEXT_PUBLIC_LUMEN_WASM_CORE=0 (deliberate server-only
+ * debugging); activation still requires the W5 version handshake to pass.
+ */
 export function wasmCoreFlagEnabled(): boolean {
   const flag = process.env.NEXT_PUBLIC_LUMEN_WASM_CORE;
-  return flag === "1" || flag === "true";
+  return flag !== "0" && flag !== "false";
 }
 
 /**

@@ -538,6 +538,18 @@ export function CanvasKitCanvas({
     );
     const scenePoint = descriptorToScene(descriptorPoint, unitScale);
     const hit = engine?.hitTest?.(activePageId ?? "", scenePoint.x, scenePoint.y);
+    if (hitTraceEnabled()) {
+      const hitKind = hit?.hit ? getNode(scene, hit.hit)?.kind.kind ?? null : null;
+      hitTrace({
+        event: "dblclick",
+        engine: Boolean(engine?.hitTest),
+        page: activePageId,
+        scene: [traceCoord(scenePoint.x), traceCoord(scenePoint.y)],
+        hit: hit?.hit ?? null,
+        kind: hitKind,
+        textEdit: hitKind === "text"
+      });
+    }
     if (hit?.hit) {
       const node = getNode(scene, hit.hit);
       if (node?.kind.kind === "text") {
@@ -669,10 +681,15 @@ export function CanvasKitCanvas({
           );
         }}
         onPointerDown={(event) => {
-          if (editingNodeId) return; // editing: let the textarea own the pointer
+          if (editingNodeId) {
+            // editing: let the textarea own the pointer
+            if (hitTraceEnabled()) hitTrace({ event: "down", skipped: "text-editing", node: editingNodeId });
+            return;
+          }
           setHoverNodeId(null);
           const screenPoint = screenPointFromEvent(event);
           if (workspaceTool === "hand") {
+            if (hitTraceEnabled()) hitTrace({ event: "down", skipped: "pan-tool" });
             panDragRef.current = {
               pointerId: event.pointerId,
               x: screenPoint.x,
@@ -690,6 +707,9 @@ export function CanvasKitCanvas({
           const workspacePoint = screenToWorkspace(screenPoint, workspaceViewport);
           const hitArtboard = artboardAtWorkspacePoint(workspaceModel, workspacePoint);
           if (!hitArtboard) {
+            if (hitTraceEnabled()) {
+              hitTrace({ event: "down", engine: Boolean(engine?.hitTest), page: null, target: "outside-artboards" });
+            }
             onSelectNode(null);
             return;
           }
@@ -706,6 +726,16 @@ export function CanvasKitCanvas({
             const hit = scenePoint
               ? engine?.hitTest?.(hitArtboard.pageId, scenePoint.x, scenePoint.y)
               : null;
+            if (hitTraceEnabled()) {
+              hitTrace({
+                event: "down",
+                engine: Boolean(engine?.hitTest),
+                page: hitArtboard.pageId,
+                pageSwitch: true,
+                scene: scenePoint ? [traceCoord(scenePoint.x), traceCoord(scenePoint.y)] : null,
+                hit: hit?.hit ?? null
+              });
+            }
             onSelectPage?.(hitArtboard.pageId);
             onSelectNode(hit?.hit ?? null);
             return;
@@ -715,7 +745,22 @@ export function CanvasKitCanvas({
           } catch {
             // Pointer capture is best-effort (e.g., synthetic pointers in tests).
           }
-          dispatch({ kind: "down", point: pointerFromEvent(event), target: pressTargetFor(pointerFromEvent(event)), modifiers: modifiersFromEvent(event) });
+          const pointer = pointerFromEvent(event);
+          const target = pressTargetFor(pointer);
+          if (hitTraceEnabled()) {
+            const scenePoint = descriptorToScene(pointer, unitScale);
+            hitTrace({
+              event: "down",
+              engine: Boolean(engine?.hitTest),
+              tool: workspaceTool,
+              page: activePageId,
+              scene: [traceCoord(scenePoint.x), traceCoord(scenePoint.y)],
+              hit: engine?.hitTest?.(activePageId ?? "", scenePoint.x, scenePoint.y)?.hit ?? null,
+              target: target.kind,
+              node: "nodeId" in target ? target.nodeId : null
+            });
+          }
+          dispatch({ kind: "down", point: pointer, target, modifiers: modifiersFromEvent(event) });
         }}
         onPointerMove={(event) => {
           const activePan = panDragRef.current;
@@ -847,6 +892,29 @@ function CanvasKitArtboardLabels({
       ))}
     </div>
   );
+}
+
+/**
+ * Dev-only interaction trace, enabled by opening the editor with `?debug=hit`.
+ * One structured line per pointer-down / double-click so a pasted console log
+ * answers the load-bearing questions at once: is the engine alive, which page
+ * was hit-tested, what the hit-test returned, and what press target the
+ * gesture machine received. Without it, "I click and nothing happens" reports
+ * carry no signal (the console only shows unrelated event-listener noise).
+ */
+function hitTraceEnabled(): boolean {
+  return (
+    typeof window !== "undefined" &&
+    new URLSearchParams(window.location.search).get("debug") === "hit"
+  );
+}
+
+function hitTrace(payload: Record<string, unknown>): void {
+  console.log("[lumen-hit]", JSON.stringify(payload));
+}
+
+function traceCoord(value: number): number {
+  return Math.round(value * 10) / 10;
 }
 
 function screenPointFromEvent(
