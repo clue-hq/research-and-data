@@ -112,6 +112,14 @@ auto-detach-on-drag, Free/Stack conversion UI (op exists).
   confirm it stays; before/after render vs the fixtures.
 
 ### 1e — Agent visibility (closes deferred Phase-0 item 4)
+**DONE 2026-07-03 — PHASE 1 COMPLETE** — see
+`.context/phase1e/1E-IMPLEMENTATION.md`. _node_brief/_scene_summary/
+query_geometry expose the freehand fields only-when-set (pre-freehand
+context byte-identical); SEEDED_CONTINUATION_RECIPE carries the freehand
+rules (pins are human-owned, base_anchor = the nudge signal, freehand
+warnings advisory). 4 new tests; Python 190. Next: live reconciliation
+benchmark on the sprint fixtures, ?document= loader, Compare/Revert,
+1d fast-follows.
 - Extend `_node_brief` / `summarize_scene` (`tools.py`) to expose `position_mode`,
   `absolute_box`, `base_anchor`, container `layout_mode` — so the agent sees
   "human pinned this — preserve it" vs "I own this." Small prompt note (respect
