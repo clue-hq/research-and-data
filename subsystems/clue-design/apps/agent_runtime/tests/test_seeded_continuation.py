@@ -568,3 +568,118 @@ def test_issue_in_edit_scope_rules():
     assert issue_in_edit_scope(page_only, scope, edited_pages) is False
     assert issue_in_edit_scope(edited_page, scope, edited_pages) is True
     assert issue_in_edit_scope(untargeted, scope, edited_pages) is False
+
+
+# --- 4) Phase 1e: freehand visibility (agent sees "human pinned this") ------------
+
+
+def freehand_seed_scene() -> dict:
+    """The 0b seed plus freehand state: the headline is pinned (detached and
+    nudged by a human), and the band is a Free container."""
+    scene = seed_scene_dict()
+    scene["nodes"]["headline"]["position_mode"] = "absolute"
+    scene["nodes"]["headline"]["absolute_box"] = {
+        "x": 80.0,
+        "y": 150.0,
+        "width": 120.0,
+        "height": 40.0,
+    }
+    scene["nodes"]["headline"]["base_anchor"] = {
+        "x": 30.0,
+        "y": 140.0,
+        "width": 120.0,
+        "height": 40.0,
+    }
+    scene["nodes"]["band"]["kind"] = {
+        "kind": "auto_layout",
+        "direction": "column",
+        "wrap": False,
+    }
+    scene["nodes"]["band"]["layout"] = {
+        "gap": 10.0,
+        "padding": [0.0, 0.0, 0.0, 0.0],
+        "grow": 0.0,
+        "layout_mode": "free",
+    }
+    return scene
+
+
+def test_node_brief_exposes_freehand_fields_only_when_set(tmp_path: Path, monkeypatch):
+    monkeypatch.setattr("lumen_deepagent.tools.CoreClient", FakeCoreClient)
+    tools = LumenDesignTools(
+        runtime_config(tmp_path), "edit", initial_scene=freehand_seed_scene()
+    )
+
+    pinned = tools._node_brief("headline")
+    assert pinned["position_mode"] == "absolute"
+    assert pinned["absolute_box"] == {
+        "x": 80.0,
+        "y": 150.0,
+        "width": 120.0,
+        "height": 40.0,
+    }
+    assert pinned["base_anchor"] == {
+        "x": 30.0,
+        "y": 140.0,
+        "width": 120.0,
+        "height": 40.0,
+    }
+
+    free_container = tools._node_brief("band")
+    assert free_container["layout_mode"] == "free"
+
+    # A managed node's brief gains NO freehand keys (pre-freehand briefs stay
+    # byte-identical — the same skip-when-default discipline as the engine).
+    managed = tools._node_brief("hero")
+    for key in ("position_mode", "absolute_box", "base_anchor", "layout_mode"):
+        assert key not in managed
+
+
+def test_scene_summary_surfaces_freehand_state_for_the_director(
+    tmp_path: Path, monkeypatch
+):
+    monkeypatch.setattr("lumen_deepagent.tools.CoreClient", FakeCoreClient)
+    tools = LumenDesignTools(
+        runtime_config(tmp_path), "edit", initial_scene=freehand_seed_scene()
+    )
+    summary = json.loads(tools.summarize_scene())
+    assert summary["freehand"]["pinned_nodes"] == ["headline"]
+    assert summary["freehand"]["free_containers"] == ["band"]
+    assert "human-owned" in summary["freehand"]["note"]
+
+    # No freehand state → no freehand key (summary stays byte-identical for
+    # pre-freehand scenes).
+    plain = LumenDesignTools(
+        runtime_config(tmp_path / "plain"), "edit", initial_scene=seed_scene_dict()
+    )
+    assert "freehand" not in json.loads(plain.summarize_scene())
+
+
+def test_query_geometry_shows_the_pin(tmp_path: Path, monkeypatch):
+    monkeypatch.setattr("lumen_deepagent.tools.CoreClient", FakeCoreClient)
+    tools = LumenDesignTools(
+        runtime_config(tmp_path), "edit", initial_scene=freehand_seed_scene()
+    )
+    pinned = json.loads(tools.query_geometry("headline"))
+    assert pinned["position_mode"] == "absolute"
+    assert pinned["absolute_box"]["x"] == 80.0
+    assert pinned["base_anchor"]["y"] == 140.0
+
+    managed = json.loads(tools.query_geometry("hero"))
+    assert "position_mode" not in managed
+    assert "absolute_box" not in managed
+
+
+def test_seeded_recipe_carries_the_freehand_rules():
+    # The prompt note that closes deferred Phase-0 item 4: the author is told
+    # pinned boxes are human-owned, base_anchor is the nudge signal, free
+    # containers stay hand-placed, and freehand warnings are advisory.
+    assert "FREEHAND / PINNED NODES" in SEEDED_CONTINUATION_RECIPE
+    for phrase in (
+        "position_mode",
+        "absolute_box",
+        "base_anchor",
+        "layout_mode",
+        "ADVISORY",
+    ):
+        assert phrase in SEEDED_CONTINUATION_RECIPE

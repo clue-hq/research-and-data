@@ -2074,16 +2074,21 @@ class LumenDesignTools:
         node = self.scene.get("nodes", {}).get(node_id)
         if node is None:
             return json.dumps({"status": "missing", "node_id": node_id}, indent=2)
-        return json.dumps(
-            {
-                "status": "ok",
-                "node_id": node_id,
-                "transform": node.get("transform"),
-                "size": node.get("size"),
-                "computed": node.get("computed"),
-            },
-            indent=2,
-        )
+        payload: JsonObject = {
+            "status": "ok",
+            "node_id": node_id,
+            "transform": node.get("transform"),
+            "size": node.get("size"),
+            "computed": node.get("computed"),
+        }
+        # Phase 1e: a pinned node's geometry is human-owned — the box is
+        # authoritative (transform x/y are ignored by the solver while
+        # pinned). Surfaced only when set.
+        if node.get("position_mode") == "absolute":
+            payload["position_mode"] = "absolute"
+            payload["absolute_box"] = node.get("absolute_box")
+            payload["base_anchor"] = node.get("base_anchor")
+        return json.dumps(payload, indent=2)
 
     def query_slot_bindings(self, slot_key: str) -> str:
         """Return binding details for a semantic slot key."""
@@ -2246,7 +2251,7 @@ class LumenDesignTools:
         pages = self.scene.get("pages", {})
         nodes = self.scene.get("nodes", {})
         slots = self.scene.get("slots", {})
-        return {
+        summary: JsonObject = {
             "document_id": self.scene.get("meta", {}).get("id"),
             "title": self.scene.get("meta", {}).get("title"),
             "status": self.scene.get("meta", {}).get("status"),
@@ -2260,6 +2265,38 @@ class LumenDesignTools:
                 self._page_summary(page_id, page) for page_id, page in pages.items()
             ],
             "slots": self._slot_summaries(),
+        }
+        freehand = self._freehand_summary()
+        if freehand is not None:
+            summary["freehand"] = freehand
+        return summary
+
+    def _freehand_summary(self) -> Optional[JsonObject]:
+        """Phase 1e: the director/author's at-a-glance view of human-owned
+        geometry. Present only when the scene has freehand state, so
+        pre-freehand summaries stay byte-identical."""
+        nodes = self.scene.get("nodes", {})
+        pinned = [
+            node_id
+            for node_id, node in nodes.items()
+            if node.get("position_mode") == "absolute"
+        ]
+        free_containers = [
+            node_id
+            for node_id, node in nodes.items()
+            if isinstance(node.get("layout"), dict)
+            and node["layout"].get("layout_mode") == "free"
+        ]
+        if not pinned and not free_containers:
+            return None
+        return {
+            "pinned_nodes": pinned,
+            "free_containers": free_containers,
+            "note": (
+                "human-owned geometry: pinned nodes keep their absolute_box "
+                "across relayouts and must not be re-positioned; free "
+                "containers hold hand-placed children"
+            ),
         }
 
     def _page_summary(self, page_id: str, page: JsonObject) -> JsonObject:
@@ -2311,7 +2348,7 @@ class LumenDesignTools:
             for slot in self.scene.get("slots", {}).values()
             if node_id in slot.get("bound_nodes", [])
         ]
-        return {
+        brief: JsonObject = {
             "id": node_id,
             "name": node.get("name"),
             "kind": kind_name,
@@ -2322,6 +2359,22 @@ class LumenDesignTools:
             "slots": slots,
             "source_asset_id": node.get("source_asset_id"),
         }
+        # Phase 1e freehand visibility: surfaced only when set (pre-freehand
+        # briefs stay byte-identical). `position_mode: "absolute"` means a
+        # human pinned this node — its absolute_box is human-owned geometry;
+        # base_anchor records where the layout had it at detach (the delta is
+        # the human's deliberate nudge). `layout_mode: "free"` marks a
+        # container whose children are hand-placed.
+        if node.get("position_mode") == "absolute":
+            brief["position_mode"] = "absolute"
+            if node.get("absolute_box") is not None:
+                brief["absolute_box"] = node.get("absolute_box")
+            if node.get("base_anchor") is not None:
+                brief["base_anchor"] = node.get("base_anchor")
+        layout = node.get("layout")
+        if isinstance(layout, dict) and layout.get("layout_mode") == "free":
+            brief["layout_mode"] = "free"
+        return brief
 
     def _page_dimensions(self, page_id: Optional[str]) -> tuple[Optional[float], Optional[float]]:
         if not page_id:

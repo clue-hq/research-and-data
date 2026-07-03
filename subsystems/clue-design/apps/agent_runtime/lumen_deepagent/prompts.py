@@ -110,7 +110,18 @@ SEEDED_CONTINUATION_RECIPE = (
     "- New content gets NEW unique ids that collide with nothing in the scene "
     "(suffix `_2`, `_b`, ...). New pages may be added under new page ids.\n"
     "- Touch ONLY what the request requires: every node you do not name must remain "
-    "byte-identical after your block."
+    "byte-identical after your block.\n"
+    '- FREEHAND / PINNED NODES (Phase 1): a node whose brief shows `position_mode: "absolute"` '
+    "was HAND-PLACED by the human — its `absolute_box` (page-space x/y/w/h) is human-owned "
+    "geometry. Preserve it: never try to move such a node (it ignores transform x/y; the box "
+    "wins), and design AROUND its pinned position instead of undoing it. You MAY still edit "
+    'its content and style with `#<id>` modify lines (`text("...")`, colors, fonts). '
+    "`base_anchor` records where the layout had the node when the human detached it — the "
+    "offset from base_anchor to absolute_box is the human's deliberate nudge; treat it as "
+    'intent, not error. A container with `layout_mode: "free"` holds hand-placed children: '
+    "do not re-stack, re-order, or re-flow them. Overflow and text-fit warnings on freehand "
+    "nodes (LUMV0800/LUMV0801/LUMV0902-4) are ADVISORY — the human chose that placement; do "
+    'not "fix" them unless the user explicitly asks.'
 )
 
 
