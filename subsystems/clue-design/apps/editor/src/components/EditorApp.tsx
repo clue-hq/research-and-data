@@ -48,6 +48,7 @@ import type {
   Scene
 } from "@/engine/contracts";
 import { createDocument, type CreatedDocument } from "@/engine/documentStore";
+import { editorApiBaseUrl } from "@/engine/editorConfig";
 import {
   createEditQueue,
   type EditQueuePort,
@@ -144,7 +145,7 @@ export type EditQueueFactory = (options: {
 
 const defaultEditQueueFactory: EditQueueFactory = (options) =>
   createEditQueue({
-    apiBaseUrl: process.env.NEXT_PUBLIC_LUMEN_API_BASE_URL ?? "http://localhost:8000",
+    apiBaseUrl: editorApiBaseUrl(),
     ...options
   });
 
@@ -154,22 +155,19 @@ interface EditorHistoryFrame {
 }
 
 const defaultExportRunner = createApiExportRunner({
-  apiBaseUrl: process.env.NEXT_PUBLIC_LUMEN_API_BASE_URL ?? "http://localhost:8000"
+  apiBaseUrl: editorApiBaseUrl()
 });
 
 const defaultPreflightRunner = createApiPreflightRunner({
-  apiBaseUrl: process.env.NEXT_PUBLIC_LUMEN_API_BASE_URL ?? "http://localhost:8000"
+  apiBaseUrl: editorApiBaseUrl()
 });
 
 const defaultAgentRunner = createApiAgentRunner({
-  apiBaseUrl: process.env.NEXT_PUBLIC_LUMEN_API_BASE_URL ?? "http://localhost:8000"
+  apiBaseUrl: editorApiBaseUrl()
 });
 
 const defaultDocumentCreator = (scene: Scene) =>
-  createDocument(
-    { apiBaseUrl: process.env.NEXT_PUBLIC_LUMEN_API_BASE_URL ?? "http://localhost:8000" },
-    scene
-  );
+  createDocument({ apiBaseUrl: editorApiBaseUrl() }, scene);
 
 export default function EditorApp({
   documentId,
@@ -1924,7 +1922,7 @@ export default function EditorApp({
                 brandTokens={effectiveBrandKit?.tokens ?? null}
                 diagnostics={diagnostics}
                 renderDiagnostics={renderDiagnostics}
-                apiBaseUrl={process.env.NEXT_PUBLIC_LUMEN_API_BASE_URL ?? "http://localhost:8000"}
+                apiBaseUrl={editorApiBaseUrl()}
                 onOperation={applyOperation}
                 onOperations={applyOperations}
                 onStructuredEdit={applyStructuredEditInstruction}
@@ -1956,22 +1954,14 @@ export default function EditorApp({
               />
               <OperationHistoryPanel operations={operationHistory} redoCount={redoStack.length} />
               <AssetBrowserPanel
-                apiBaseUrl={process.env.NEXT_PUBLIC_LUMEN_API_BASE_URL ?? "http://localhost:8000"}
+                apiBaseUrl={editorApiBaseUrl()}
                 selectedNodeId={selectedNodeId}
                 selectedNodePlacement={selectedNode?.asset_placement ?? null}
                 onOperations={applyOperations}
               />
-              <WorstCasePreviewPanel
-                apiBaseUrl={process.env.NEXT_PUBLIC_LUMEN_API_BASE_URL ?? "http://localhost:8000"}
-                scene={scene}
-              />
+              <WorstCasePreviewPanel apiBaseUrl={editorApiBaseUrl()} scene={scene} />
               {activeDocumentId ? (
-                <HistoryPanel
-                  apiBaseUrl={
-                    process.env.NEXT_PUBLIC_LUMEN_API_BASE_URL ?? "http://localhost:8000"
-                  }
-                  documentId={activeDocumentId}
-                />
+                <HistoryPanel apiBaseUrl={editorApiBaseUrl()} documentId={activeDocumentId} />
               ) : null}
               <ValidationPanel
                 scene={scene}

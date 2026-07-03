@@ -13,6 +13,7 @@ import type {
   Slot,
   SlotId
 } from "./contracts";
+import { editorApiBaseUrl } from "./editorConfig";
 import type { StructuredEdit } from "./structuredEdits";
 
 /**
@@ -391,8 +392,7 @@ export async function activateWasmCore(
 ): Promise<WasmCoreActivation> {
   const loadModule = options.moduleLoader ?? (() => loadWasmModule(options));
   const fetchImpl = options.fetchImpl ?? fetch;
-  const apiBaseUrl =
-    options.apiBaseUrl ?? process.env.NEXT_PUBLIC_LUMEN_API_BASE_URL ?? "http://localhost:8000";
+  const apiBaseUrl = options.apiBaseUrl ?? editorApiBaseUrl();
 
   const module = await loadModule();
   if (!module) {

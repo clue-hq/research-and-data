@@ -3,13 +3,14 @@
 import dynamic from "next/dynamic";
 import { useEffect, useState } from "react";
 import { fetchDocument } from "@/engine/documentStore";
+import { editorApiBaseUrl } from "@/engine/editorConfig";
 import type { Scene } from "@/engine/contracts";
 
 const EditorApp = dynamic(() => import("@/components/EditorApp"), {
   ssr: false
 });
 
-const apiBaseUrl = process.env.NEXT_PUBLIC_LUMEN_API_BASE_URL ?? "http://localhost:8000";
+const apiBaseUrl = editorApiBaseUrl();
 
 /**
  * Phase 2a document identity: `?document=<id>` reopens a persisted document

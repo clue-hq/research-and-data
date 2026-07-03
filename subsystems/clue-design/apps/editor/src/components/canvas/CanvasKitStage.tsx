@@ -9,8 +9,9 @@ import { drawDescriptorTree, parseColor, type DrawNode } from "@/engine/canvaski
 import { CanvasKitImageCache, type CanvasKitImageSource } from "@/engine/canvaskit/imageCache";
 import { loadCanvasKit } from "@/engine/canvaskit/loadCanvasKit";
 import { assetBytesUrl } from "@/engine/assetLibrary";
+import { editorApiBaseUrl } from "@/engine/editorConfig";
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_LUMEN_API_BASE_URL ?? "http://localhost:8000";
+const API_BASE_URL = editorApiBaseUrl();
 
 /**
  * Wave 3 C2: the imperative CanvasKit render surface. Replaces react-konva's
