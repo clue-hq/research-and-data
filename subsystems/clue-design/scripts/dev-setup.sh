@@ -22,6 +22,7 @@ ENV_FILE="${LUMEN_ENV_FILE:-$ROOT_DIR/.env}"
 usage() {
   cat <<EOF
 Usage:
+  $(basename "$0") up            One command: engine sync + backend + frontend, fully wired
   $(basename "$0") prepare       Rebuild browser WASM and verify local helper/WASM handshake
   $(basename "$0") verify-local  Print git HEAD and local WASM engine version
   $(basename "$0") doctor        Print branch/runtime hygiene status
@@ -136,18 +137,22 @@ clean_runtime() {
   rm -f /tmp/lumen-design-recipes-quality-v0-served-wasm.wasm
 }
 
-backend() {
-  cd "$ROOT_DIR"
+backend_env() {
   need_file "$VENV_PYTHON"
   load_env
   local cors_origins
   cors_origins="${LUMEN_API_CORS_ORIGINS:-}"
-  for origin in "http://$HOST:$WEB_PORT" "http://localhost:$WEB_PORT"; do
+  for origin in "http://$HOST:$WEB_PORT" "http://localhost:$WEB_PORT" "http://$HOST:3000" "http://localhost:3000"; do
     if [[ ",$cors_origins," != *",$origin,"* ]]; then
       cors_origins="${cors_origins:+$cors_origins,}$origin"
     fi
   done
   export LUMEN_API_CORS_ORIGINS="$cors_origins"
+}
+
+backend() {
+  cd "$ROOT_DIR"
+  backend_env
   echo "Backend: http://$HOST:$API_PORT"
   echo "Log: $BACKEND_LOG"
   echo "CORS origins: $LUMEN_API_CORS_ORIGINS"
@@ -155,6 +160,61 @@ backend() {
     --host "$HOST" \
     --port "$API_PORT" \
     2>&1 | tee "$BACKEND_LOG"
+}
+
+# One-command dev: engine sync + backend + frontend, correctly wired.
+# Ctrl-C stops the frontend and tears down the backend it started.
+up() {
+  cd "$ROOT_DIR"
+  echo "== Lumen dev up: $(git rev-parse --abbrev-ref HEAD) @ $(git_head) =="
+  echo
+  echo "[1/3] Engine sync (browser WASM <-> API helper)"
+  node scripts/preflight_editor_wasm.mjs
+  node scripts/verify_handshake.mjs
+  echo
+  echo "[2/3] Backend http://$HOST:$API_PORT"
+  local backend_pid=""
+  if curl -fsS --max-time 2 "http://$HOST:$API_PORT/build-info" >/dev/null 2>&1; then
+    echo "backend already running on :$API_PORT — reusing it"
+  else
+    backend_env
+    PYTHONPATH=apps/api:apps/agent_runtime "$VENV_PYTHON" -m uvicorn lumen_api.main:app \
+      --host "$HOST" --port "$API_PORT" >"$BACKEND_LOG" 2>&1 &
+    backend_pid=$!
+    # shellcheck disable=SC2064
+    trap "kill $backend_pid 2>/dev/null || true" EXIT INT TERM
+    echo "started (pid $backend_pid, log: $BACKEND_LOG) — waiting for /build-info"
+    local waited=0
+    until curl -fsS --max-time 2 "http://$HOST:$API_PORT/build-info" >/dev/null 2>&1; do
+      if ! kill -0 "$backend_pid" 2>/dev/null; then
+        echo "backend exited during startup — last log lines:" >&2
+        tail -20 "$BACKEND_LOG" >&2
+        exit 1
+      fi
+      if (( waited >= 90 )); then
+        echo "backend did not answer /build-info within 90s — see $BACKEND_LOG" >&2
+        exit 1
+      fi
+      sleep 1
+      waited=$((waited + 1))
+    done
+  fi
+  # The engine the API serves must be the engine the browser will load —
+  # a reused stale backend would put the editor straight back into
+  # server-only (uneditable) mode.
+  local api_commit
+  api_commit="$(curl -fsS "http://$HOST:$API_PORT/build-info" \
+    | "$VENV_PYTHON" -c 'import json,sys; print(json.load(sys.stdin)["build_info"]["engine_commit"])')"
+  if [[ "$api_commit" != "$(git_head)" ]]; then
+    echo "ENGINE MISMATCH: backend on :$API_PORT serves $api_commit, checkout is $(git_head)." >&2
+    echo "Stop the stale backend (lsof -ti tcp:$API_PORT | xargs kill) and rerun: $(basename "$0") up" >&2
+    exit 1
+  fi
+  echo "backend healthy: engine $api_commit"
+  echo
+  echo "[3/3] Frontend http://$HOST:$WEB_PORT   (Ctrl-C stops everything)"
+  echo "      open http://$HOST:$WEB_PORT — append ?debug=hit for the click trace"
+  frontend
 }
 
 frontend() {
@@ -296,6 +356,9 @@ run_fixtures() {
 }
 
 case "${1:-}" in
+  up)
+    up
+    ;;
   prepare)
     prepare
     ;;

@@ -9,6 +9,8 @@ __pycache__/
 .env
 .env.*
 !.env.example
+# Committed dev default (API port for this workspace) — see the file's comment.
+!apps/editor/.env.development
 .lumen-runs/
 apps/api/*.sqlite3
 apps/editor/public/canvaskit/
