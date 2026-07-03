@@ -62,8 +62,8 @@ What Phase 2 rides on — all confirmed in current code:
 **Gate (browser e2e):** start turn → canvas locked + banner → queue a message
 → run lands → review → Accept → queued message auto-fires as the next turn →
 reload the `?document=` URL and the accepted design is still there.
-**Decision:** auto-create on first persisting action (recommended — Moda-like,
-every canvas is a doc) vs an explicit Save button.
+**Decision (LOCKED 2026-07-04):** auto-create on first persisting action —
+Moda-like, every canvas is a doc. No Save button.
 
 ### 2b — Show-work streaming: plan checklist + step events (the backend increment)
 
@@ -84,9 +84,17 @@ every canvas is a doc) vs an explicit Save button.
    later — our ops land as one previewed batch, not one-by-one writes.
 
 **Gate (browser e2e):** live ticks during a real turn; close and reopen the tab
-mid-run → polling resumes from `events.jsonl` (durability is why polling beats
-SSE for v1). **Decision:** polling v1 (recommended) with SSE as a later
-upgrade, vs SSE now.
+mid-run → the SSE reconnect (Last-Event-ID) replays missed events from the
+store and live ticks resume.
+**Decision (LOCKED 2026-07-04):** SSE with a PERSISTENT event store — Redis
+or Postgres, NOT filesystem JSON. Design implication for 2b: the loop's
+`on_event` hook writes run events to the store (run_id-keyed, monotonic seq);
+`GET /agent/runs/{run_id}/events` is an SSE endpoint that replays from the
+store on (re)connect — supporting `Last-Event-ID` — then streams live. The
+API currently uses SQLite for documents; adding the run-event table to
+Postgres (or standing up Redis) is part of 2b's scope and should be decided
+against deployment reality when 2b starts (Postgres favored if the document
+store migrates too; Redis if we want pub/sub fan-out cheaply).
 
 ### 2c — Selection-as-chat-context chips + compensating-edit contract (cheap, high value)
 
