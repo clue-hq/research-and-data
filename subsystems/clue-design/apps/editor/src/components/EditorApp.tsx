@@ -25,7 +25,7 @@ import { InspectorPanel } from "./InspectorPanel";
 import { LayerPanel } from "./LayerPanel";
 import { PageRail } from "./PageRail";
 import { ValidationPanel } from "./ValidationPanel";
-import { minimalScene } from "@/fixtures/minimalScene";
+import { emptyScene } from "@/fixtures/emptyScene";
 import type { BrandCompatibilityRunner } from "@/engine/brandCompatibility";
 import type { BrandGovernanceRunner } from "@/engine/brandGovernance";
 import {
@@ -160,7 +160,7 @@ const defaultAgentRunner = createApiAgentRunner({
 
 export default function EditorApp({
   documentId,
-  initialScene = minimalScene,
+  initialScene = emptyScene,
   initialSelectedNodeId = "node_contact_name",
   initialAvailableBrandKits = [],
   brandGovernanceRunner,
@@ -572,8 +572,18 @@ export default function EditorApp({
         selectedNodeId,
         diagnostics
       });
-      setAgentProposal(result);
-      if (result.status === "failed" && result.draft_scene) {
+      // A failed run can hand back a "draft" that is just the untouched seed
+      // (every authored block was rejected — nothing ever applied). Claiming
+      // "draft visible" for an unchanged design reads as a broken canvas;
+      // be honest instead and keep the proposal card in its blocked state.
+      const draftIsUnchangedSeed =
+        result.status === "failed" &&
+        result.draft_scene !== null &&
+        JSON.stringify(result.draft_scene) === JSON.stringify(scene);
+      setAgentProposal(
+        draftIsUnchangedSeed ? { ...result, draft_scene: null } : result
+      );
+      if (result.status === "failed" && result.draft_scene && !draftIsUnchangedSeed) {
         showAgentDraftScene(result);
       }
       setAgentMessages((messages) => [
@@ -584,6 +594,18 @@ export default function EditorApp({
           content: result.summary
         }
       ]);
+      if (draftIsUnchangedSeed) {
+        setAgentMessages((messages) => [
+          ...messages,
+          {
+            id: uniqueChatMessageId("system"),
+            role: "system",
+            content:
+              "The agent could not produce any applicable changes — the design is unchanged. " +
+              "Try rephrasing the request, or ask for the change as an edit to the existing elements."
+          }
+        ]);
+      }
       if (result.diagnostics.length > 0) {
         setDiagnostics(result.diagnostics);
       }

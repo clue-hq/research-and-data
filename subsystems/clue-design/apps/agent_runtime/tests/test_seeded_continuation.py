@@ -397,6 +397,65 @@ def test_reauthor_correction_parses_halt_codes():
     )
     assert page["kind"] == "page"
     assert page["offending_id"] == "hero_poster"
+    # The corrective grammar must be UNAMBIGUOUS about the page-ref form — the
+    # live run_8cbeae790f07 failure came from the model reading `#<id>` as
+    # `#hero_poster` (node grammar) and burning every iteration on LUMD0901.
+    assert "#page:hero_poster" in page["instruction"]
+    assert "replace(" in page["instruction"]
+
+
+def test_page_ref_grammar_trap_is_rerouted():
+    # From the live failure: the author wrote `#page_a4 size(...)` (node-ref
+    # grammar) for a PAGE, halting LUMD0901 with "target node page_a4 does not
+    # exist". With the scene available the guardrail must produce the exact
+    # `#page:page_a4` correction instead of leaving the model guessing.
+    summary = {
+        "halted_at": {"code": "LUMD0901", "line": 1},
+        "diagnostics": [
+            {
+                "severity": "info",
+                "code": None,
+                "message": "{'diagnostic': {'code': 'LUMD0901', 'hint': 'Use a node id from the current scene.', 'message': 'target node page_a4 does not exist'}, 'span': {...}}",
+            }
+        ],
+    }
+    scene = {"pages": {"page_a4": {"id": "page_a4"}}, "nodes": {}}
+
+    correction = reauthor_correction(summary, scene)
+    assert correction is not None
+    assert correction["kind"] == "page_ref"
+    assert correction["offending_id"] == "page_a4"
+    assert "#page:page_a4" in correction["instruction"]
+    assert "replace(" in correction["instruction"]
+
+    # replace() pointed at a page reroutes the same way.
+    replace_summary = {
+        "halted_at": {"code": "LUMD0901", "line": 3},
+        "diagnostics": [
+            {
+                "severity": "info",
+                "code": None,
+                "message": "{'diagnostic': {'code': 'LUMD0901', 'message': 'replace target page_a4 does not exist or has no parent'}, 'span': {...}}",
+            }
+        ],
+    }
+    assert reauthor_correction(replace_summary, scene)["kind"] == "page_ref"
+
+    # A genuinely missing NODE id (not a page) stays on the generic repair
+    # path — no correction.
+    missing_node = {
+        "halted_at": {"code": "LUMD0901", "line": 1},
+        "diagnostics": [
+            {
+                "severity": "info",
+                "code": None,
+                "message": "{'diagnostic': {'code': 'LUMD0901', 'message': 'target node no_such_node does not exist'}, 'span': {...}}",
+            }
+        ],
+    }
+    assert reauthor_correction(missing_node, scene) is None
+    # And without a scene (legacy callers) LUMD0901 is never claimed.
+    assert reauthor_correction(summary) is None
 
 
 class FakeSeededEditCoreClient(FakeCoreClient):

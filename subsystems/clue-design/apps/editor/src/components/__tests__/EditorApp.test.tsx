@@ -1,6 +1,7 @@
 import React from "react";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeAll, describe, expect, it, vi } from "vitest";
+import { emptyScene } from "@/fixtures/emptyScene";
 import { minimalScene } from "@/fixtures/minimalScene";
 import type { BrandKitSummary, Scene } from "@/engine/contracts";
 import type { EditorAgentRunner } from "@/engine/agentRunner";
@@ -96,7 +97,7 @@ let wasmModule: WasmModule;
 
 function TestEditorApp(props: EditorAppProps) {
   const engine = React.useMemo(
-    () => new WasmEngine(wasmModule, props.initialScene ?? minimalScene),
+    () => new WasmEngine(wasmModule, props.initialScene ?? emptyScene),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     []
   );
@@ -835,6 +836,66 @@ describe.skipIf(!wasmArtifactPresent)("EditorApp", () => {
     expect(screen.getAllByText("LUMA_AGENT_COMPILE_FAILED").length).toBeGreaterThan(0);
     expect(screen.getByRole("button", { name: /^Review changes$/i })).toBeDisabled();
     expect(screen.getByRole("heading", { name: "Hospital Letter" })).toBeInTheDocument();
+  });
+
+  it("starts from an empty untitled document with no demo content", async () => {
+    // The old default seeded every session (and every agent turn) with the
+    // "Hospital Letter" demo page and its placeholder contact name — removed.
+    render(<TestEditorApp />);
+
+    expect(screen.getByRole("heading", { name: "Untitled design" })).toBeInTheDocument();
+    expect(screen.queryByText(/Hospital Letter/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Dr\. Priya/)).not.toBeInTheDocument();
+    expect(screen.getByText("No artboard")).toBeInTheDocument();
+    // The user creates the first artboard themselves.
+    expect(screen.getByRole("button", { name: /^Add artboard$/i })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /^Add artboard$/i }));
+    expect((await screen.findAllByText(/Custom Artboard/)).length).toBeGreaterThan(0);
+  });
+
+  it("says the design is unchanged when a failed run's draft is just the untouched seed", async () => {
+    // From the live run_8cbeae790f07 failure: every authored block was
+    // rejected, so the "draft" the server returned was byte-identical to the
+    // seed. Claiming "Draft visible" for an unchanged canvas reads as a broken
+    // editor — the honest path posts a system message and keeps the proposal
+    // card in its blocked state.
+    const agentRunner: EditorAgentRunner = vi.fn().mockImplementation(
+      async ({ scene }: { scene: Scene }) => ({
+        status: "failed",
+        summary: "Maximum Phase A repair iterations reached without a clean draft.",
+        dsl_blocks: ["page page_a4 size(1080,1350,px)"],
+        operations: [],
+        draft_scene: JSON.parse(JSON.stringify(scene)) as Scene,
+        stop_reason: "max_iterations_reached",
+        acceptance_scope: null,
+        diagnostics: [],
+        trace: { run_id: "run_unchanged_seed", trace_dir: null, preview_paths: [] },
+        artifacts: []
+      })
+    );
+
+    render(
+      <TestEditorApp
+        initialScene={twoPageScene()}
+        initialSelectedNodeId={null}
+        agentRunner={agentRunner}
+      />
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /^Agent$/i }));
+    fireEvent.change(screen.getByLabelText("Message the agent"), {
+      target: { value: "Design a bold 1080x1350 statement card." }
+    });
+    fireEvent.click(screen.getByRole("button", { name: /^Send$/i }));
+
+    expect(
+      await screen.findByText(/could not produce any applicable changes/i)
+    ).toBeInTheDocument();
+    // No "draft" claim, no canvas swap, no undo frame.
+    expect(screen.queryByText("Draft visible")).not.toBeInTheDocument();
+    expect(screen.getByText("Agent blocked")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Hospital Letter" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^Undo$/i })).toBeDisabled();
   });
 
   it("shows the latest unapproved agent draft on the canvas when the loop is blocked", async () => {

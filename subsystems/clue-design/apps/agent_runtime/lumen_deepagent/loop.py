@@ -69,6 +69,14 @@ SEEDED_FORBIDDEN_ACTION_MODES = {
 REAUTHOR_HALT_CODES = {"LUMD0401", "LUMA0200"}
 _REAUTHORED_NODE_RE = re.compile(r"duplicate node id ([A-Za-z0-9_.\-]+)")
 _REAUTHORED_PAGE_RE = re.compile(r"recreate existing page ([A-Za-z0-9_.\-]+)")
+# LUMD0901 halts whose "missing node" is actually an existing PAGE id: the
+# author wrote `#page_a4 ...` (node-ref grammar) where the page-modify grammar
+# is `#page:page_a4 ...` — or pointed replace() at a page. Observed live
+# (run_8cbeae790f07): the model followed the LUMA0200 corrective hint but used
+# the wrong ref form, and burned every remaining iteration on it.
+_MISSING_TARGET_RE = re.compile(
+    r"(?:target node|replace target) ([A-Za-z0-9_.\-]+) does not exist"
+)
 
 
 def recompose_recipe_for_feedback(feedback: Optional[dict]) -> Optional[str]:
@@ -623,7 +631,7 @@ class LumenQualityLoop:
                     ) or {}
                     if prior_target.get("node_id"):
                         target = prior_target
-                correction = reauthor_correction(compile_summary)
+                correction = reauthor_correction(compile_summary, self.tools.scene)
                 if correction:
                     # Phase 0b guardrail: the block re-authored existing content
                     # (LUMD0401 duplicate id / LUMA0200 page re-declaration) and
@@ -1209,18 +1217,42 @@ UNSUPPORTED_LAYOUT_CLUSTER_MODIFY_CALL_RE = re.compile(
 SIZE_CALL_RE = re.compile(r"(?:^|\s)(?:s|size)\(([^)]*)\)")
 
 
-def reauthor_correction(compile_summary: dict) -> Optional[dict]:
+def reauthor_correction(compile_summary: dict, scene: Optional[dict] = None) -> Optional[dict]:
     """Detect the re-author failure modes on an existing scene and produce the
     exact corrective feedback for the next authoring attempt (Phase 0b).
 
-    Keys off `halted_at.code` — the one place the LUMD0401/LUMA0200 code
-    survives diagnostic normalization — and pulls the offending id out of the
-    diagnostic text (which may be a stringified session-shaped dict)."""
+    Keys off `halted_at.code` — the one place the LUMD code survives diagnostic
+    normalization — and pulls the offending id out of the diagnostic text
+    (which may be a stringified session-shaped dict). With the scene available
+    it also catches the page-ref grammar trap: a LUMD0901 "missing node" whose
+    id is actually an existing PAGE (`#page_a4` written instead of
+    `#page:page_a4`, or `replace()` pointed at a page)."""
     halted = compile_summary.get("halted_at") or {}
     code = halted.get("code")
+    blob = json.dumps(compile_summary.get("diagnostics") or [])
+    if code == "LUMD0901":
+        match = _MISSING_TARGET_RE.search(blob)
+        offending = match.group(1) if match else None
+        pages = (scene or {}).get("pages") or {}
+        if not offending or offending not in pages:
+            return None
+        return {
+            "code": code,
+            "kind": "page_ref",
+            "offending_id": offending,
+            "instruction": (
+                f"'{offending}' is a PAGE, not a node — `#{offending} ...` is node-ref "
+                "grammar, so the block halted (LUMD0901) and NOTHING applied. Page "
+                f"modify lines use the page ref form: `#page:{offending} "
+                "size(1080,1350,px)`. `replace(...)`/`clone(...)`/`delete(...)` take "
+                "NODE ids only, never page ids. To repurpose this page in ONE block: "
+                f"`#page:{offending} size(w,h,px)` on the first line, then "
+                "`replace(<existing_root_node_id>)` with your new single-root subtree "
+                "indented under it."
+            ),
+        }
     if code not in REAUTHOR_HALT_CODES:
         return None
-    blob = json.dumps(compile_summary.get("diagnostics") or [])
     if code == "LUMD0401":
         match = _REAUTHORED_NODE_RE.search(blob)
         offending = match.group(1) if match else None
@@ -1240,16 +1272,21 @@ def reauthor_correction(compile_summary: dict) -> Optional[dict]:
         }
     match = _REAUTHORED_PAGE_RE.search(blob)
     offending = match.group(1) if match else None
+    page_ref = f"#page:{offending}" if offending else "#page:<page_id>"
     return {
         "code": code,
         "kind": "page",
         "offending_id": offending,
         "instruction": (
             f"You re-declared the existing page '{offending or '<unknown>'}', so "
-            "the block was rejected unapplied (LUMA0200). Do not emit a `page` "
-            "line for an existing page. Edit existing content with `#<id>` "
-            "modify lines, restructure with replace(...)/clone(...)/parent(...), "
-            "and give any NEW content new unique ids."
+            "the block was rejected unapplied (LUMA0200). Never emit a `page` "
+            "line for an existing page. To resize or restyle it, use the PAGE "
+            f"ref form on a modify line: `{page_ref} size(1080,1350,px)` — "
+            f"plain `#{offending or '<page_id>'}` is NODE grammar and will fail "
+            "with LUMD0901. To replace its content, keep the page and swap the "
+            "existing root node's subtree: `replace(<existing_root_node_id>)` "
+            "with your new single-root subtree indented under it (replace takes "
+            "node ids only). Brand-new pages go under NEW page ids."
         ),
     }
 

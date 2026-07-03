@@ -3192,7 +3192,13 @@ def agent_seed_scene(payload: AgentTurnPreviewRequest) -> Optional[JsonObject]:
     """Phase 0a: the live editor scene seeds the agent's working scene, so a
     targeted edit lands on existing NodeIds instead of an empty document. Only
     a payload that carries a structurally plausible scene document seeds the
-    run; anything else falls back to a fresh scene."""
+    run; anything else falls back to a fresh scene.
+
+    An EMPTY document (no pages, no nodes) also runs unseeded: there is no
+    user work to preserve, and continuation mode would only force the agent
+    to fight a blank scaffold — the fresh-generation path is the proven one.
+    (Observed live: a generation brief into the old default demo page burned
+    every iteration on page-collision repairs.)"""
     scene = payload.scene
     if (
         isinstance(scene, dict)
@@ -3200,6 +3206,8 @@ def agent_seed_scene(payload: AgentTurnPreviewRequest) -> Optional[JsonObject]:
         and isinstance(scene.get("pages"), dict)
         and isinstance(scene.get("meta"), dict)
     ):
+        if not scene["pages"] and not scene["nodes"]:
+            return None
         return scene
     return None
 

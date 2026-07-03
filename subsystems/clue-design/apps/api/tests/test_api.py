@@ -510,6 +510,22 @@ def test_agent_seed_scene_accepts_scene_shape_and_rejects_junk() -> None:
     empty = AgentTurnPreviewRequest(prompt="edit", scene={})
     assert agent_seed_scene(empty) is None
 
+    # An empty DOCUMENT (valid scene, zero pages/nodes) runs unseeded: nothing
+    # to preserve, and continuation mode would fight a blank scaffold.
+    empty_doc = AgentTurnPreviewRequest(
+        prompt="design something",
+        scene={
+            "schema_version": 1,
+            "meta": {"id": "doc_untitled", "title": "Untitled design"},
+            "pages": {},
+            "nodes": {},
+            "slots": {},
+            "assets": {},
+            "export_profiles": [],
+        },
+    )
+    assert agent_seed_scene(empty_doc) is None
+
 
 def test_agent_turn_preview_allows_editor_cors_preflight(client: TestClient) -> None:
     response = client.options(

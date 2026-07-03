@@ -104,11 +104,20 @@ SEEDED_CONTINUATION_RECIPE = (
     'property is a parenthesized call: `#headline text("New copy") font_size(64)`. '
     'Element-style syntax like `#headline text "New copy"` is INVALID on a modify '
     "line (LUMD0210).\n"
-    "- Structural changes go through directives on existing ids: `replace(<id>)` + an "
-    "indented single-root subtree, `clone(src,new_id,after:src)`, `parent(...)`, "
-    "`before(...)`/`after(...)`, `delete(...)`.\n"
+    "- Ref grammar: `#node_id` targets a NODE; pages use `#page:page_id` (e.g. "
+    "`#page:page_a4 size(1080,1350,px)`); slots use `#slot:key`. Plain `#page_a4` "
+    "is a NODE ref and fails with LUMD0901 when page_a4 is a page.\n"
+    "- Structural changes go through directives on existing NODE ids (never page "
+    "ids): `replace(<node_id>)` + an indented single-root subtree, "
+    "`clone(src,new_id,after:src)`, `parent(...)`, `before(...)`/`after(...)`, "
+    "`delete(...)`.\n"
     "- New content gets NEW unique ids that collide with nothing in the scene "
     "(suffix `_2`, `_b`, ...). New pages may be added under new page ids.\n"
+    "- REPURPOSING a nearly-empty existing page into a new design (the user asked "
+    "for a fresh design but the document already has a default page): do it in ONE "
+    "block — `#page:<page_id> size(w,h,px)` to set the surface, then "
+    "`replace(<existing_root_node_id>)` with your complete new single-root subtree "
+    "indented under it. Never re-declare the page line itself.\n"
     "- Touch ONLY what the request requires: every node you do not name must remain "
     "byte-identical after your block.\n"
     '- FREEHAND / PINNED NODES (Phase 1): a node whose brief shows `position_mode: "absolute"` '
