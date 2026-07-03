@@ -116,6 +116,24 @@ export function archiveAssetEdit(assetId: string): StructuredEdit {
   return { kind: "archive_asset", asset_id: assetId };
 }
 
+/** Phase 1c freehand: pin a node at its solved box (zero-motion detach). */
+export function detachToFreehandEdit(nodeId: string): StructuredEdit {
+  return { kind: "detach_to_freehand", node_id: nodeId };
+}
+
+/** Phase 1c freehand: return a pinned node to solver ownership. */
+export function reattachToLayoutEdit(nodeId: string): StructuredEdit {
+  return { kind: "reattach_to_layout", node_id: nodeId };
+}
+
+/** Phase 1c freehand: flip a container between stacked and free children. */
+export function convertContainerLayoutEdit(
+  nodeId: string,
+  layoutMode: "stack" | "free"
+): StructuredEdit {
+  return { kind: "convert_container_layout", node_id: nodeId, layout_mode: layoutMode };
+}
+
 export function deleteExportProfileEdit(
   name: string,
   replaceWith?: string
