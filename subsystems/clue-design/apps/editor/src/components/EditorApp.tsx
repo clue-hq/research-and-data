@@ -116,6 +116,7 @@ import {
   useAgentTurn
 } from "@/hooks/useAgentTurn";
 import { useAgentInstructions } from "@/hooks/useAgentInstructions";
+import { useTurnNotification } from "@/hooks/useTurnNotification";
 import { useDocumentSync, type EditQueueFactory } from "@/hooks/useDocumentSync";
 import { useEditHistory } from "@/hooks/useEditHistory";
 import { useTargetChips } from "@/hooks/useTargetChips";
@@ -704,6 +705,14 @@ export default function EditorApp({
     commitAppliedOperations,
     runExportForScene,
     applyOperations: (operations, onAccepted) => applyOperations(operations, onAccepted)
+  });
+
+  // 2e notify-when-done: a turn that settles while the agent panel is
+  // closed raises a click-to-open toast (no browser Notification API).
+  const { toast: turnToast, dismiss: dismissTurnToast } = useTurnNotification({
+    isAgentRunning,
+    isAgentPanelOpen,
+    hasProposal: agentProposal?.status === "proposed"
   });
 
   // 2d per-turn Compare | Revert. Compare is a read-only modal view of a
@@ -1488,6 +1497,21 @@ export default function EditorApp({
                 Accept
               </button>
             </div>
+          ) : null}
+          {turnToast ? (
+            <button
+              type="button"
+              className={`agent-done-toast ${turnToast.tone}`}
+              role="status"
+              data-testid="agent-done-toast"
+              onClick={() => {
+                dismissTurnToast();
+                setEditorPanelMode("agent");
+              }}
+            >
+              <Bot aria-hidden size={15} />
+              <span>{turnToast.message}</span>
+            </button>
           ) : null}
           {compareView && !agentPreview ? (
             <div

@@ -1975,6 +1975,36 @@ textarea:disabled {
   color: #1c1a16;
 }
 
+/* 2e notify-when-done toast: a settled turn while the agent panel is
+   closed. Same floating-pill treatment as the designing banner; click
+   opens the agent panel. */
+.agent-done-toast {
+  position: absolute;
+  top: 18px;
+  right: 18px;
+  z-index: 28;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 9px 16px;
+  border-radius: 999px;
+  border: 1px solid #b6d7d5;
+  background: #eef9f7;
+  color: #174f52;
+  font-size: 13px;
+  font-weight: 750;
+  cursor: pointer;
+  box-shadow:
+    0 10px 26px rgba(15, 18, 24, 0.18),
+    0 2px 6px rgba(15, 18, 24, 0.1);
+}
+
+.agent-done-toast.issue {
+  border-color: #d6c8a8;
+  background: #fffaf0;
+  color: #3e382f;
+}
+
 /* 2e post-turn suggestion chips: click fills the composer. Teal chip look
    shared with the target chips. */
 .agent-suggestions {
