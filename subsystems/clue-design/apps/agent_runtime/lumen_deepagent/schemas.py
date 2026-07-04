@@ -5,7 +5,7 @@ from enum import Enum
 from typing import Any, Dict, List, Literal, Optional
 from uuid import uuid4
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 JsonObject = Dict[str, Any]
@@ -62,7 +62,17 @@ class VisualCritique(BaseModel):
     repair_instruction: Optional[str] = None
     acceptance_notes: List[str] = Field(default_factory=list)
     requirement_coverage_notes: List[str] = Field(default_factory=list)
-    confidence: float = Field(default=0.0, ge=0.0, le=1.0)
+    # No ge/le bounds: they emit JSON-schema minimum/maximum, which the
+    # Anthropic structured-output path rejects with a 400 — every critic
+    # call then fails (stop_reason=critic_failed) and no turn can reach
+    # Accept. Clamp in a validator instead; validators never surface in
+    # the emitted schema.
+    confidence: float = Field(default=0.0)
+
+    @field_validator("confidence")
+    @classmethod
+    def _clamp_confidence(cls, value: float) -> float:
+        return min(1.0, max(0.0, value))
 
 
 class KnowledgeSnippet(BaseModel):
