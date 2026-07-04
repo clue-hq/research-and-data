@@ -36,16 +36,25 @@ scopes to them and reports what it preserved.
   per-chip remove, "Clear"). CSS reuses the teal `agent-scope-chip` palette —
   no new token values (frontend-practices #3).
 
-## Design note — accumulate vs mirror-selection
+## Design note — accumulate → mirror-selection (revised)
 
-The chip set *accumulates* selections and persists across turns (the plan's
-"multi-select → multiple chips … persists across turns"), rather than merely
-mirroring the single live selection. This is what makes chips worth more than
-the existing `selected_node_id`: you can target several layers deliberately.
-The canvas is single-select, so chips are built one selection at a time; a
-future canvas multi-select would populate several at once. Inspecting-by-
-clicking does accumulate chips — the "Clear" affordance and per-chip remove
-keep that manageable; tightening this (e.g. explicit pin) is a 2e polish item.
+The first cut *accumulated* selections into a separate persistent chip set. On
+review that was changed to **mirror the selection**: chips are now a pure view
+of the canvas selection set, and multi-node targeting is done by
+**multi-selecting** (see `8d59121`). Rationale: accumulate-on-every-click piled
+up chips from incidental inspection; mirroring is what users expect (select →
+chip, deselect → un-chip) and is simpler (no separate chip state).
+
+Multi-select is **shift/Cmd+click** (toggle: shift+click a selected node again
+to drop it). Selection is now a set (`selectedNodeIds`); the **primary**
+(last-clicked) is derived and drives every single-node concern unchanged —
+inspector, keyboard, transform handles. **Multi-drag/transform is intentionally
+out of scope** — the set exists for *targeting*, and secondary members render
+as dashed outlines (no handles) on the canvas + highlight in the Layers panel.
+A single-select adapter keeps `useAgentTurn` and the ~10 existing
+`setSelectedNodeId` call sites untouched. The gesture machine already modeled
+`additive`; it now responds to shift (was meta-only) and an additive
+empty-press no longer clears the multi-selection.
 
 ## Gates
 
@@ -91,3 +100,23 @@ Anomalies (all cosmetic / expected): the seed doc must be opened via
 `?document=doc_demo` (test setup, not a 2c defect); only one selectable
 layer so multi-chip wasn't shown live; the review bar surfaces an internal
 trace run id distinct from the authoritative POST run id.
+
+### Mirror-selection + multi-select e2e (PASS, refinement `8d59121`)
+
+Verified in-browser (opus-4.8, both sides at `8d59121`) on a real
+**12-node** agent-generated poster (the generation turn succeeded, so
+multi-select ran on a genuine multi-node doc — no fallback needed). Zero
+console errors. Screenshots `2c-ms-*` in `browser-e2e/`.
+
+- **Mirror (primary gate):** selecting "headline" → exactly 1 chip;
+  pressing **Escape removed the chip** (strip gone) — chips mirror the
+  selection (`2c-ms-1-mirror-deselect.png`).
+- **Multi-select + toggle (secondary gate):** headline (1 chip) →
+  shift+click subtitle → **2 chips, "Editing 2 layers", 1 dashed
+  secondary-selection-box on canvas**; shift+click headline again →
+  its chip removed, back to 1 (`2c-ms-2-multiselect.png`,
+  `2c-ms-3-toggle-off.png`).
+- **Payload:** with subtitle+contact selected, the POST `/agent/turns`
+  body carried `"target_node_ids":["subtitle","contact"]` (+
+  `"selected_node_id":"contact"` primary) — matching the chips exactly
+  (`2c-ms-4-turn-payload.png`).
