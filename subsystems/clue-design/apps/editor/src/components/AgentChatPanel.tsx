@@ -53,6 +53,17 @@ export interface AgentChatPanelProps {
   /** 2d: checkpoints no longer on the active history path (already reverted). */
   invalidCheckpoints: ReadonlySet<string>;
   isReverting: boolean;
+  /** 2e: per-document standing instructions (sent with every turn; Save
+   * persists them on the document). */
+  standingInstructions: {
+    draft: string;
+    dirty: boolean;
+    saving: boolean;
+    canSave: boolean;
+    error: string | null;
+    onDraftChange: (value: string) => void;
+    onSave: () => void;
+  };
   activePageId: PageId | null;
   selectedNodeId: NodeId | null;
   diagnostics: Diagnostic[];
@@ -82,6 +93,7 @@ export function AgentChatPanel({
   compareView,
   invalidCheckpoints,
   isReverting,
+  standingInstructions,
   activePageId,
   selectedNodeId,
   diagnostics,
@@ -126,6 +138,43 @@ export function AgentChatPanel({
         <span>Selection {selectedNodeId ?? "none"}</span>
         <span>{diagnostics.length} diagnostic{diagnostics.length === 1 ? "" : "s"}</span>
       </div>
+      <details className="agent-standing-instructions">
+        <summary>
+          Standing instructions
+          {standingInstructions.draft.trim() ? <em> · active</em> : null}
+        </summary>
+        <label className="field">
+          <span>Applied to every turn on this document</span>
+          <textarea
+            value={standingInstructions.draft}
+            onChange={(event) => standingInstructions.onDraftChange(event.target.value)}
+            placeholder="e.g. Always use the serif brand voice; keep CTAs under five words."
+            rows={3}
+          />
+        </label>
+        <div className="agent-standing-instructions-actions">
+          <button
+            type="button"
+            disabled={
+              !standingInstructions.canSave ||
+              !standingInstructions.dirty ||
+              standingInstructions.saving
+            }
+            onClick={standingInstructions.onSave}
+          >
+            {standingInstructions.saving ? "Saving…" : "Save to document"}
+          </button>
+          <span className="muted">
+            {standingInstructions.error
+              ? standingInstructions.error
+              : !standingInstructions.canSave
+                ? "Saves automatically once the design becomes a document."
+                : standingInstructions.dirty
+                  ? "Unsaved — still sent with every turn."
+                  : "Saved with the document."}
+          </span>
+        </div>
+      </details>
       <div className="agent-message-list" aria-label="Agent conversation">
         {messages.length === 0 ? (
           <p className="muted">

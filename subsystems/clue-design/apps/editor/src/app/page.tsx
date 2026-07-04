@@ -20,7 +20,12 @@ const apiBaseUrl = editorApiBaseUrl();
  */
 type DocumentLoadState =
   | { kind: "loading" }
-  | { kind: "ready"; documentId: string | null; scene: Scene | null }
+  | {
+      kind: "ready";
+      documentId: string | null;
+      scene: Scene | null;
+      agentInstructions: string | null;
+    }
   | { kind: "error"; documentId: string; message: string };
 
 export default function Home() {
@@ -29,14 +34,19 @@ export default function Home() {
   useEffect(() => {
     const requestedDocumentId = new URLSearchParams(window.location.search).get("document");
     if (!requestedDocumentId) {
-      setLoadState({ kind: "ready", documentId: null, scene: null });
+      setLoadState({ kind: "ready", documentId: null, scene: null, agentInstructions: null });
       return;
     }
     let cancelled = false;
     fetchDocument({ apiBaseUrl }, requestedDocumentId)
       .then((document) => {
         if (!cancelled) {
-          setLoadState({ kind: "ready", documentId: document.documentId, scene: document.scene });
+          setLoadState({
+            kind: "ready",
+            documentId: document.documentId,
+            scene: document.scene,
+            agentInstructions: document.agentInstructions
+          });
         }
       })
       .catch((error: unknown) => {
@@ -57,7 +67,7 @@ export default function Home() {
     const url = new URL(window.location.href);
     url.searchParams.delete("document");
     window.history.replaceState(null, "", url);
-    setLoadState({ kind: "ready", documentId: null, scene: null });
+    setLoadState({ kind: "ready", documentId: null, scene: null, agentInstructions: null });
   };
 
   if (loadState.kind === "loading") {
@@ -90,6 +100,7 @@ export default function Home() {
       documentId={loadState.documentId ?? undefined}
       initialScene={loadState.scene ?? undefined}
       initialSelectedNodeId={null}
+      initialAgentInstructions={loadState.agentInstructions}
     />
   );
 }

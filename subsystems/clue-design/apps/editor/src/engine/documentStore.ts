@@ -24,6 +24,8 @@ export interface LoadedDocument {
   documentId: string;
   title: string;
   scene: Scene;
+  /** 2e: the document's standing agent instructions (null when unset). */
+  agentInstructions: string | null;
 }
 
 export async function createDocument(
@@ -127,6 +129,7 @@ export async function fetchDocument(
     id?: unknown;
     title?: unknown;
     scene?: unknown;
+    agent_instructions?: unknown;
   };
   if (!payload.scene || typeof payload.scene !== "object") {
     throw new Error("document fetch returned no scene");
@@ -134,6 +137,29 @@ export async function fetchDocument(
   return {
     documentId: typeof payload.id === "string" ? payload.id : documentId,
     title: typeof payload.title === "string" ? payload.title : "Untitled design",
-    scene: payload.scene as Scene
+    scene: payload.scene as Scene,
+    agentInstructions:
+      typeof payload.agent_instructions === "string" ? payload.agent_instructions : null
   };
+}
+
+/** 2e: persist the document's standing agent instructions (blank clears). */
+export async function saveAgentInstructions(
+  { apiBaseUrl, fetchImpl = fetch }: DocumentStoreOptions,
+  documentId: string,
+  instructions: string | null
+): Promise<string | null> {
+  const response = await fetchImpl(
+    new URL(`/documents/${encodeURIComponent(documentId)}/agent-instructions`, apiBaseUrl),
+    {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ instructions })
+    }
+  );
+  if (!response.ok) {
+    throw new Error(`saving agent instructions failed (HTTP ${response.status})`);
+  }
+  const payload = (await response.json()) as { agent_instructions?: unknown };
+  return typeof payload.agent_instructions === "string" ? payload.agent_instructions : null;
 }

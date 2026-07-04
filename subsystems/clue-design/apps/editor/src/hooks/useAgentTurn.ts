@@ -75,6 +75,8 @@ export interface UseAgentTurnDeps {
   selectedNodeId: NodeId | null;
   /** 2c: the chipped edit targets sent with each turn. */
   targetNodeIds: NodeId[];
+  /** 2e: the document's standing instructions sent with each turn. */
+  agentInstructions: string | null;
   diagnostics: Diagnostic[];
   setDiagnostics: Dispatch<SetStateAction<Diagnostic[]>>;
   setScene: Dispatch<SetStateAction<Scene>>;
@@ -146,6 +148,7 @@ export function useAgentTurn(deps: UseAgentTurnDeps) {
     activePageId,
     selectedNodeId,
     targetNodeIds,
+    agentInstructions,
     diagnostics,
     setDiagnostics,
     setScene,
@@ -313,6 +316,7 @@ export function useAgentTurn(deps: UseAgentTurnDeps) {
         activePageId,
         selectedNodeId,
         targetNodeIds,
+        agentInstructions,
         diagnostics,
         onEvent: handleRunEvent
       });

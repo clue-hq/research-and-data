@@ -27,6 +27,8 @@ export interface EditorAgentRequest {
   /** 2c: the chipped edit targets. Sent as target_node_ids; the server scopes
    * the compensating edit to them and keeps every other node byte-identical. */
   targetNodeIds?: NodeId[];
+  /** 2e: the document's standing instructions, folded into every turn. */
+  agentInstructions?: string | null;
   diagnostics: Diagnostic[];
   /** 2b: live run events (checklist ticks) are pushed here as they stream. */
   onEvent?: (event: AgentRunEvent) => void;
@@ -97,6 +99,7 @@ export function createApiAgentRunner({ apiBaseUrl }: ApiAgentRunnerOptions): Edi
     activePageId,
     selectedNodeId,
     targetNodeIds,
+    agentInstructions,
     diagnostics
   }) => {
     const response = await fetch(new URL("/agent/turn-preview", apiBaseUrl), {
@@ -111,6 +114,7 @@ export function createApiAgentRunner({ apiBaseUrl }: ApiAgentRunnerOptions): Edi
         active_page_id: activePageId,
         selected_node_id: selectedNodeId,
         target_node_ids: targetNodeIds ?? [],
+        agent_instructions: agentInstructions ?? null,
         diagnostics
       })
     });
@@ -146,6 +150,7 @@ export function createStreamingAgentRunner({
     activePageId,
     selectedNodeId,
     targetNodeIds,
+    agentInstructions,
     diagnostics,
     onEvent
   }) => {
@@ -159,6 +164,7 @@ export function createStreamingAgentRunner({
         active_page_id: activePageId,
         selected_node_id: selectedNodeId,
         target_node_ids: targetNodeIds ?? [],
+        agent_instructions: agentInstructions ?? null,
         diagnostics
       })
     });

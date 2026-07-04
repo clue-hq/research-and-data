@@ -52,6 +52,7 @@ import type {
 import {
   createDocument,
   revertDocument,
+  saveAgentInstructions,
   type CreatedDocument,
   type RevertOutcome
 } from "@/engine/documentStore";
@@ -113,6 +114,7 @@ import {
   pendingAgentReviewDiagnostic,
   useAgentTurn
 } from "@/hooks/useAgentTurn";
+import { useAgentInstructions } from "@/hooks/useAgentInstructions";
 import { useDocumentSync, type EditQueueFactory } from "@/hooks/useDocumentSync";
 import { useEditHistory } from "@/hooks/useEditHistory";
 import { useTargetChips } from "@/hooks/useTargetChips";
@@ -153,6 +155,13 @@ export interface EditorAppProps {
    * /documents/{id}/revert?checkpoint=… and fetches the reverted scene.
    */
   revertRunner?: (documentId: string, checkpoint: string) => Promise<RevertOutcome>;
+  /** 2e: the document's standing agent instructions, loaded with it. */
+  initialAgentInstructions?: string | null;
+  /** 2e: instructions persistence override (tests). */
+  agentInstructionsSaver?: (
+    documentId: string,
+    instructions: string | null
+  ) => Promise<string | null>;
 }
 
 // Re-exported so tests keep importing it from here; the type lives with the
@@ -192,6 +201,9 @@ const defaultDocumentCreator = (scene: Scene) =>
 const defaultRevertRunner = (documentId: string, checkpoint: string) =>
   revertDocument({ apiBaseUrl: editorApiBaseUrl() }, documentId, checkpoint);
 
+const defaultAgentInstructionsSaver = (documentId: string, instructions: string | null) =>
+  saveAgentInstructions({ apiBaseUrl: editorApiBaseUrl() }, documentId, instructions);
+
 export default function EditorApp({
   documentId,
   initialScene = emptyScene,
@@ -205,7 +217,9 @@ export default function EditorApp({
   optimisticEngine,
   editQueueFactory = defaultEditQueueFactory,
   documentCreator = defaultDocumentCreator,
-  revertRunner = defaultRevertRunner
+  revertRunner = defaultRevertRunner,
+  initialAgentInstructions = null,
+  agentInstructionsSaver = defaultAgentInstructionsSaver
 }: EditorAppProps = {}) {
   const [scene, setScene] = useState<Scene>(initialScene);
   // The optimistic engine owns local edit application (Track E): the WASM
@@ -495,6 +509,15 @@ export default function EditorApp({
     setRedoStack
   });
 
+  // 2e: per-document standing instructions — editable any time, sent with
+  // every turn immediately, persisted on the document (auto-saved once a
+  // fresh canvas becomes a document).
+  const standingInstructions = useAgentInstructions({
+    activeDocumentId,
+    initialInstructions: initialAgentInstructions,
+    saveRunner: agentInstructionsSaver
+  });
+
   /**
    * Shared post-apply bookkeeping for operations that are already applied to
    * the engine: undo frame, history, persistence. Used by the direct edit path
@@ -664,6 +687,7 @@ export default function EditorApp({
     activePageId,
     selectedNodeId,
     targetNodeIds,
+    agentInstructions: standingInstructions.instructions,
     diagnostics,
     setDiagnostics,
     setScene,
@@ -1608,6 +1632,15 @@ export default function EditorApp({
               compareView={compareView}
               invalidCheckpoints={invalidCheckpoints}
               isReverting={isReverting}
+              standingInstructions={{
+                draft: standingInstructions.draft,
+                dirty: standingInstructions.isDirty,
+                saving: standingInstructions.isSaving,
+                canSave: standingInstructions.canSave,
+                error: standingInstructions.saveError,
+                onDraftChange: standingInstructions.setDraft,
+                onSave: () => void standingInstructions.save()
+              }}
               activePageId={activePageId}
               selectedNodeId={selectedNodeId}
               diagnostics={diagnostics}

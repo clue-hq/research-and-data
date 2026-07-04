@@ -9,6 +9,16 @@ import {
   type AgentChatMessage
 } from "../AgentChatPanel";
 
+const noopInstructions = {
+  draft: "",
+  dirty: false,
+  saving: false,
+  canSave: false,
+  error: null,
+  onDraftChange: () => {},
+  onSave: () => {}
+};
+
 function renderChips(
   targetChips: TargetChip[],
   handlers: { onRemoveTargetChip?: (id: string) => void; onClearTargetChips?: () => void } = {}
@@ -26,6 +36,7 @@ function renderChips(
       compareView={null}
       invalidCheckpoints={new Set<string>()}
       isReverting={false}
+      standingInstructions={noopInstructions}
       activePageId="page_a4"
       selectedNodeId={null}
       diagnostics={[]}
@@ -94,6 +105,7 @@ function renderPanel(proposal: EditorAgentResult) {
       compareView={null}
       invalidCheckpoints={new Set<string>()}
       isReverting={false}
+      standingInstructions={noopInstructions}
       activePageId="page_a4"
       selectedNodeId={null}
       diagnostics={[]}
@@ -201,6 +213,7 @@ describe("AgentChatPanel turn actions (2d)", () => {
         compareView={null}
         invalidCheckpoints={overrides.invalidCheckpoints ?? new Set<string>()}
         isReverting={false}
+        standingInstructions={noopInstructions}
         activePageId="page_a4"
         selectedNodeId={null}
         diagnostics={[]}
@@ -267,6 +280,7 @@ describe("AgentChatPanel turn actions (2d)", () => {
         compareView={null}
         invalidCheckpoints={new Set<string>()}
         isReverting={false}
+        standingInstructions={noopInstructions}
         activePageId="page_a4"
         selectedNodeId={null}
         diagnostics={[]}

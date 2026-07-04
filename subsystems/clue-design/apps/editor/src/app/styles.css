@@ -1975,6 +1975,59 @@ textarea:disabled {
   color: #1c1a16;
 }
 
+/* 2e standing instructions: per-document rules sent with every turn.
+   Palette reused from the agent cards / worklog summary. */
+.agent-standing-instructions {
+  border: 1px solid #d7ccbd;
+  border-radius: 7px;
+  background: #fffdf8;
+  padding: 8px 10px;
+}
+
+.agent-standing-instructions summary {
+  cursor: pointer;
+  color: #8a7c5e;
+  font-size: 11px;
+  font-weight: 850;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.agent-standing-instructions summary em {
+  color: #174f52;
+  font-style: normal;
+}
+
+.agent-standing-instructions .field {
+  margin-top: 8px;
+}
+
+.agent-standing-instructions-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.agent-standing-instructions-actions button {
+  border: 1px solid #ddd7cc;
+  border-radius: 6px;
+  background: #ffffff;
+  color: #3e382f;
+  padding: 4px 9px;
+  font-size: 11.5px;
+  font-weight: 750;
+}
+
+.agent-standing-instructions-actions button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.agent-standing-instructions-actions .muted {
+  font-size: 11px;
+}
+
 /* 2d Compare | Revert: the action row under an accepted turn's message.
    Palette reused from the agent message cards / queued-message buttons. */
 .turn-actions {
