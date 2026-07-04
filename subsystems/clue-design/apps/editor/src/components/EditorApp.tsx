@@ -38,8 +38,6 @@ import {
   type EditorAgentRunner
 } from "@/engine/agentRunner";
 import type {
-  BrandCompatibilityReport,
-  BrandKitRef,
   BrandKitSummary,
   Diagnostic,
   DiagnosticSubject,
@@ -101,6 +99,7 @@ import {
   useAgentTurn
 } from "@/hooks/useAgentTurn";
 import { useAgentInstructions } from "@/hooks/useAgentInstructions";
+import { useBrandChecks } from "@/hooks/useBrandChecks";
 import { useTurnNotification } from "@/hooks/useTurnNotification";
 import { useDocumentSync, type EditQueueFactory } from "@/hooks/useDocumentSync";
 import { useEditHistory } from "@/hooks/useEditHistory";
@@ -289,34 +288,15 @@ export default function EditorApp({
     reason: "load_failed" | "handshake_failed" | "version_mismatch";
     detail: string;
   } | null>(null);
-  const [isBrandGovernanceRunning, setIsBrandGovernanceRunning] = useState(false);
-  const [isBrandCompatibilityRunning, setIsBrandCompatibilityRunning] = useState(false);
   const [editorPanelMode, setEditorPanelMode] = useState<EditorPanelMode>("inspector");
   const [agentSidebarWidth, setAgentSidebarWidth] = useState(420);
   const [workspaceMode, setWorkspaceMode] = useState<"canvas" | "export" | "compare">("canvas");
   const [workspaceViewport, setWorkspaceViewport] = useState(defaultWorkspaceViewport);
   const [workspaceTool, setWorkspaceTool] = useState<WorkspaceTool>("select");
   const [workspaceFitTarget, setWorkspaceFitTarget] = useState<WorkspaceFitTarget>("all");
-  const [brandCompatibilityReport, setBrandCompatibilityReport] =
-    useState<BrandCompatibilityReport | null>(null);
   const isAgentPanelOpen = editorPanelMode === "agent";
   const selectedNode = useMemo(() => getNode(scene, selectedNodeId), [scene, selectedNodeId]);
   const activePage = activePageId ? scene.pages[activePageId] ?? null : null;
-  const effectiveBrandKit = useMemo(
-    () =>
-      scene.meta.brand_kit
-        ? initialAvailableBrandKits.find(
-            (brandKit) =>
-              brandKit.id === scene.meta.brand_kit?.id &&
-              brandKit.version === scene.meta.brand_kit?.version
-          )
-        : null,
-    [initialAvailableBrandKits, scene.meta.brand_kit]
-  );
-  const compatibilityTarget = useMemo(
-    () => latestBrandKitVersion(initialAvailableBrandKits, scene.meta.brand_kit),
-    [initialAvailableBrandKits, scene.meta.brand_kit]
-  );
   const brandDiagnostics = diagnostics.filter((diagnostic) => diagnostic.phase === "brand");
   const renderDiagnostics = useMemo(
     () => editorRenderDiagnostics(scene, activePageId),
@@ -440,6 +420,25 @@ export default function EditorApp({
       setScene(engine.scene);
     }
   };
+
+  // Brand Kit checks (effective kit, newer-version target, governance and
+  // compatibility flows) live in useBrandChecks. Deps rebuilt per render.
+  const {
+    isBrandGovernanceRunning,
+    isBrandCompatibilityRunning,
+    brandCompatibilityReport,
+    setBrandCompatibilityReport,
+    effectiveBrandKit,
+    compatibilityTarget,
+    runBrandGovernance,
+    runBrandCompatibility
+  } = useBrandChecks({
+    scene,
+    availableBrandKits: initialAvailableBrandKits,
+    brandGovernanceRunner,
+    brandCompatibilityRunner,
+    setDiagnostics
+  });
 
   // The export + preflight leg (Validate/Export flows, their in-flight
   // flags and results) lives in useExportPreflight. Deps rebuilt per
@@ -937,180 +936,6 @@ export default function EditorApp({
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [redoLastOperation, scene, selectedNode, selectedNodeId, undoLastOperation]);
-
-  const runBrandGovernance = async () => {
-    if (!scene.meta.brand_kit) {
-      setDiagnostics([
-        {
-          severity: "warning",
-          phase: "brand",
-          code: "EDITOR_BRAND_KIT_REQUIRED",
-          message: "No Brand Kit is attached to this document.",
-          subject: { kind: "document" },
-          hint: "Attach a stored Brand Kit before running strict brand governance."
-        }
-      ]);
-      return;
-    }
-
-    if (!brandGovernanceRunner) {
-      setDiagnostics([
-        {
-          severity: "advice",
-          phase: "brand",
-          code: "EDITOR_BRAND_GOVERNANCE_PORT",
-          message: "Brand governance UI is wired; provide a BrandGovernanceRunner to call the API/core validator.",
-          subject: { kind: "document" },
-          hint: "Use createApiBrandGovernanceRunner against POST /documents/{id}/brand-governance."
-        }
-      ]);
-      return;
-    }
-
-    setIsBrandGovernanceRunning(true);
-    setDiagnostics([
-      {
-        severity: "advice",
-        phase: "brand",
-        code: "EDITOR_BRAND_GOVERNANCE_RUNNING",
-        message: "Running Brand Kit governance checks.",
-        subject: { kind: "document" },
-        hint: null
-      }
-    ]);
-
-    try {
-      const result = await brandGovernanceRunner({
-        scene,
-        brandKit: effectiveBrandKit ?? null
-      });
-      setDiagnostics(
-        result.diagnostics.length > 0
-          ? result.diagnostics
-          : [
-              {
-                severity: "advice",
-                phase: "brand",
-                code: "EDITOR_BRAND_GOVERNANCE_OK",
-                message: "Brand Kit governance passed with no diagnostics.",
-                subject: { kind: "document" },
-                hint: null
-              }
-            ]
-      );
-    } catch (error) {
-      setDiagnostics([
-        {
-          severity: "error",
-          phase: "brand",
-          code: "EDITOR_BRAND_GOVERNANCE_FAILED",
-          message: error instanceof Error ? error.message : "Brand governance request failed.",
-          subject: { kind: "document" },
-          hint: "Check the editor API connection and retry the Brand Kit check."
-        }
-      ]);
-    } finally {
-      setIsBrandGovernanceRunning(false);
-    }
-  };
-
-  const runBrandCompatibility = async () => {
-    if (!scene.meta.brand_kit) {
-      setDiagnostics([
-        {
-          severity: "warning",
-          phase: "brand",
-          code: "EDITOR_BRAND_KIT_REQUIRED",
-          message: "No Brand Kit is attached to this document.",
-          subject: { kind: "document" },
-          hint: "Attach a stored Brand Kit before checking compatibility."
-        }
-      ]);
-      return;
-    }
-
-    if (!compatibilityTarget) {
-      setBrandCompatibilityReport(null);
-      setDiagnostics([
-        {
-          severity: "advice",
-          phase: "brand",
-          code: "EDITOR_BRAND_COMPATIBILITY_CURRENT",
-          message: "No newer stored Brand Kit version is available for this document.",
-          subject: { kind: "document" },
-          hint: "Compatibility warnings appear when a later version of the same Brand Kit is available."
-        }
-      ]);
-      return;
-    }
-
-    if (!brandCompatibilityRunner) {
-      setDiagnostics([
-        {
-          severity: "advice",
-          phase: "brand",
-          code: "EDITOR_BRAND_COMPATIBILITY_PORT",
-          message: "Brand compatibility UI is wired; provide a BrandCompatibilityRunner to call the API/core report.",
-          subject: { kind: "document" },
-          hint: "Use createApiBrandCompatibilityRunner against POST /brand-kits/compatibility."
-        }
-      ]);
-      return;
-    }
-
-    setIsBrandCompatibilityRunning(true);
-    setDiagnostics([
-      {
-        severity: "advice",
-        phase: "brand",
-        code: "EDITOR_BRAND_COMPATIBILITY_RUNNING",
-        message: "Checking Brand Kit version compatibility.",
-        subject: { kind: "document" },
-        hint: null
-      }
-    ]);
-
-    try {
-      const result = await brandCompatibilityRunner({
-        scene,
-        currentBrandKit: effectiveBrandKit ?? null,
-        targetBrandKit: compatibilityTarget
-      });
-      setBrandCompatibilityReport(result.report);
-      const reportDiagnostics = result.diagnostics.length > 0 ? result.diagnostics : result.report?.diagnostics ?? [];
-      setDiagnostics(
-        reportDiagnostics.length > 0
-          ? reportDiagnostics
-          : [
-              {
-                severity: "advice",
-                phase: "brand",
-                code: "EDITOR_BRAND_COMPATIBILITY_OK",
-                message:
-                  result.report && result.report.token_changes.length > 0
-                    ? "Brand Kit compatibility report completed with token changes to review."
-                    : "Brand Kit compatibility report passed with no token changes.",
-                subject: { kind: "document" },
-                hint: null
-              }
-            ]
-      );
-    } catch (error) {
-      setBrandCompatibilityReport(null);
-      setDiagnostics([
-        {
-          severity: "error",
-          phase: "brand",
-          code: "EDITOR_BRAND_COMPATIBILITY_FAILED",
-          message: error instanceof Error ? error.message : "Brand compatibility request failed.",
-          subject: { kind: "document" },
-          hint: "Check the editor API connection and retry the compatibility check."
-        }
-      ]);
-    } finally {
-      setIsBrandCompatibilityRunning(false);
-    }
-  };
 
   const selectPage = (pageId: PageId) => {
     setActivePageId(pageId);
@@ -1634,17 +1459,3 @@ function clampNumber(value: number, minimum: number, maximum: number): number {
   return Math.min(maximum, Math.max(minimum, value));
 }
 
-function latestBrandKitVersion(
-  brandKits: BrandKitSummary[],
-  currentRef: BrandKitRef | null
-): BrandKitSummary | null {
-  if (!currentRef) {
-    return null;
-  }
-
-  return (
-    brandKits
-      .filter((brandKit) => brandKit.id === currentRef.id && brandKit.version > currentRef.version)
-      .sort((left, right) => right.version - left.version)[0] ?? null
-  );
-}
