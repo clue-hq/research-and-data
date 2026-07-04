@@ -1316,6 +1316,186 @@ pub fn build_hard_delete_asset(scene: &Scene, asset_id: AssetId) -> Result<EditB
     .with_inverses(scene)
 }
 
+/// Group: insert an empty Group container just above the topmost selected
+/// sibling, then move the selection into it in z-order. The insert is empty
+/// and the children arrive by `MoveNode`, so every operation is individually
+/// invertible (an `InsertNode` adopting pre-existing children is not).
+///
+/// Geometry contract: when every grouped node is pinned (`Absolute`), the
+/// group itself pins to the union of their page-space boxes — children keep
+/// their boxes untouched and ungroup round-trips exactly. Otherwise the
+/// group joins its parent's manual flow at the identity transform with Hug
+/// size, so children's parent-relative transforms keep their meaning.
+/// Grouping solver-managed children of a Stack container is rejected: their
+/// positions are solved-and-discarded, and wrapping them in a plain Group
+/// would collapse them onto its origin (detach to freehand first).
+pub fn build_group(
+    scene: &Scene,
+    node_ids: &[NodeId],
+    group_id: NodeId,
+    name: Option<String>,
+) -> Result<EditBatch, EditError> {
+    if node_ids.is_empty() {
+        return Err(EditError::new(
+            EditErrorKind::UnsupportedTarget,
+            "group requires at least one node",
+        ));
+    }
+    let unique: BTreeSet<&NodeId> = node_ids.iter().collect();
+    if unique.len() != node_ids.len() {
+        return Err(EditError::new(
+            EditErrorKind::UnsupportedTarget,
+            "group selection contains duplicate nodes",
+        ));
+    }
+    if scene.nodes.contains_key(&group_id) {
+        return Err(EditError::new(
+            EditErrorKind::OperationFailed,
+            format!("group id {} already exists in the scene", group_id),
+        )
+        .with_target(EditTargetRef::Node(group_id)));
+    }
+
+    let mut parent: Option<ParentRef> = None;
+    for node_id in node_ids {
+        let node = require_node(scene, node_id)?;
+        if node.locked {
+            return Err(EditError::new(
+                EditErrorKind::LockedTarget,
+                format!("node {} is locked", node_id),
+            )
+            .with_target(EditTargetRef::Node(node_id.clone())));
+        }
+        let node_parent = scene.parent_of(node_id).ok_or_else(|| {
+            EditError::new(
+                EditErrorKind::TargetNotFound,
+                format!("node {} has no parent", node_id),
+            )
+            .with_target(EditTargetRef::Node(node_id.clone()))
+        })?;
+        match &parent {
+            None => parent = Some(node_parent),
+            Some(existing) if *existing == node_parent => {}
+            Some(_) => {
+                return Err(EditError::new(
+                    EditErrorKind::UnsupportedTarget,
+                    "grouped nodes must share the same parent",
+                )
+                .with_target(EditTargetRef::Node(node_id.clone())));
+            }
+        }
+    }
+    let parent = parent.expect("non-empty selection has a parent");
+
+    if let ParentRef::Node(parent_id) = &parent {
+        let parent_node = require_node(scene, parent_id)?;
+        let is_stack_container = matches!(parent_node.kind, NodeKind::AutoLayout(_))
+            && parent_node
+                .layout
+                .as_ref()
+                .is_none_or(|layout| layout.layout_mode == LayoutMode::Stack);
+        if is_stack_container {
+            let all_pinned = node_ids.iter().all(|node_id| {
+                scene.nodes.get(node_id).is_some_and(|node| {
+                    node.position_mode == PositionMode::Absolute && node.absolute_box.is_some()
+                })
+            });
+            if !all_pinned {
+                return Err(EditError::new(
+                    EditErrorKind::LifecycleProtected,
+                    format!(
+                        "cannot group solver-managed children of auto-layout container {}; detach them to freehand first",
+                        parent_id
+                    ),
+                )
+                .with_target(EditTargetRef::Node(parent_id.clone())));
+            }
+        }
+    }
+
+    let siblings = children_for_parent(scene, &parent)?;
+    let mut indexed: Vec<(usize, NodeId)> = Vec::with_capacity(node_ids.len());
+    for node_id in node_ids {
+        let index = siblings
+            .iter()
+            .position(|id| id == node_id)
+            .ok_or_else(|| {
+                EditError::new(
+                    EditErrorKind::TargetNotFound,
+                    format!("node {} is not in its parent", node_id),
+                )
+                .with_target(EditTargetRef::Node(node_id.clone()))
+            })?;
+        indexed.push((index, node_id.clone()));
+    }
+    indexed.sort_by_key(|(index, _)| *index);
+    let insert_index = indexed.last().expect("non-empty").0 + 1;
+
+    let mut group_node = Node::new(group_id.clone(), NodeKind::Group);
+    group_node.name = name;
+    let pinned_boxes: Option<Vec<&Rect>> = node_ids
+        .iter()
+        .map(|node_id| {
+            scene.nodes.get(node_id).and_then(|node| {
+                (node.position_mode == PositionMode::Absolute)
+                    .then_some(node.absolute_box.as_ref())
+                    .flatten()
+            })
+        })
+        .collect();
+    if let Some(boxes) = pinned_boxes {
+        let min_x = boxes.iter().map(|b| b.x).fold(f64::INFINITY, f64::min);
+        let min_y = boxes.iter().map(|b| b.y).fold(f64::INFINITY, f64::min);
+        let max_x = boxes
+            .iter()
+            .map(|b| b.x + b.width)
+            .fold(f64::NEG_INFINITY, f64::max);
+        let max_y = boxes
+            .iter()
+            .map(|b| b.y + b.height)
+            .fold(f64::NEG_INFINITY, f64::max);
+        group_node.position_mode = PositionMode::Absolute;
+        group_node.absolute_box = Some(Rect {
+            x: min_x,
+            y: min_y,
+            width: max_x - min_x,
+            height: max_y - min_y,
+        });
+        group_node.size = SizeSpec::fixed(max_x - min_x, max_y - min_y);
+    } else {
+        group_node.size = SizeSpec {
+            width: Dimension::Hug,
+            height: Dimension::Hug,
+        };
+    }
+
+    let mut operations = vec![Operation::InsertNode {
+        parent,
+        index: insert_index,
+        node: group_node,
+    }];
+    let mut touched = vec![EditTargetRef::Node(group_id.clone())];
+    for (child_index, (_, node_id)) in indexed.iter().enumerate() {
+        operations.push(Operation::MoveNode {
+            node_id: node_id.clone(),
+            new_parent: ParentRef::Node(group_id.clone()),
+            index: child_index,
+        });
+        operations.push(Operation::UpdateNode {
+            node_id: node_id.clone(),
+            patch: NodePatch {
+                computed: OptionalFieldPatch::Clear,
+                ..NodePatch::default()
+            },
+        });
+        touched.push(EditTargetRef::Node(node_id.clone()));
+    }
+
+    EditBatch::new(operations, touched)
+        .with_intent("group")
+        .with_inverses(scene)
+}
+
 /// Ungroup: move the group's children to its parent at the group's index
 /// (order preserved), then delete the emptied group. Auto-layout containers
 /// are protected unless explicitly allowed, because dissolving them destroys
@@ -2519,6 +2699,21 @@ pub enum StructuredEditInstruction {
         node_id: NodeId,
         layout_mode: LayoutMode,
     },
+    /// Phase 4b arrange: wrap same-parent siblings in a new Group container.
+    /// The caller mints `group_id` so the operation replays deterministically.
+    Group {
+        node_ids: Vec<NodeId>,
+        group_id: NodeId,
+        #[serde(default)]
+        name: Option<String>,
+    },
+    /// Phase 4b arrange: dissolve a container into its parent. Children keep
+    /// their order and geometry; the emptied container is removed.
+    Ungroup {
+        node_id: NodeId,
+        #[serde(default)]
+        allow_layout: bool,
+    },
 }
 
 impl StructuredEditInstruction {
@@ -2537,6 +2732,8 @@ impl StructuredEditInstruction {
             Self::DetachToFreehand { .. } => "detach_to_freehand",
             Self::ReattachToLayout { .. } => "reattach_to_layout",
             Self::ConvertContainerLayout { .. } => "convert_container_layout",
+            Self::Group { .. } => "group",
+            Self::Ungroup { .. } => "ungroup",
         }
     }
 }
@@ -2605,5 +2802,14 @@ pub fn build_structured_edit_batch(
             node_id,
             layout_mode,
         } => build_convert_container_layout(scene, node_id.clone(), *layout_mode),
+        StructuredEditInstruction::Group {
+            node_ids,
+            group_id,
+            name,
+        } => build_group(scene, node_ids, group_id.clone(), name.clone()),
+        StructuredEditInstruction::Ungroup {
+            node_id,
+            allow_layout,
+        } => build_ungroup(scene, node_id.clone(), *allow_layout),
     }
 }

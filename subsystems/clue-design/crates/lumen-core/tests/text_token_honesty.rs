@@ -6,9 +6,10 @@
 //! the inverse-op roundtrip that restores bindings on undo.
 
 use lumen_core::{
-    build_modify_operations, DocumentId, EditPatch, EditTargetRef, FieldPatch, Node, NodeEditPatch,
-    NodeId, NodeKind, NodePatch, Operation, OptionalFieldPatch, Orientation, Page, PageId,
-    PagePreset, PageSize, ParentRef, Scene, SizeSpec, TextAlign, TextEditPatch, TextNode, Unit,
+    build_modify_operations, Color, DocumentId, EditPatch, EditTargetRef, FieldPatch, Fill, Node,
+    NodeEditPatch, NodeId, NodeKind, NodePatch, Operation, OptionalFieldPatch, Orientation, Page,
+    PageId, PagePreset, PageSize, Paint, PaintId, ParentRef, Scene, SizeSpec, StackEntryEdit,
+    TextAlign, TextEditPatch, TextNode, Unit,
 };
 
 fn square_page() -> Page {
@@ -258,5 +259,142 @@ fn dsl_content_only_edit_keeps_all_tokens() {
 
     let text = headline_text(&scene);
     assert_eq!(text.style_token, Some("$type.h1".to_owned()));
+    assert_eq!(text.font_size_token, Some("$type.size.5xl".to_owned()));
+}
+
+// ---- Token honesty for color (4b): raw fills edits detach the type role ----
+//
+// Text color lives in node-level fills; the role's baked color (plus
+// contrast correction) re-resolves over them, so a raw recolor must clear
+// `style_token` the same way a raw typography edit does. Typography channel
+// tokens are not color-bearing and survive.
+
+fn recolor(value: &str) -> Vec<Fill> {
+    vec![Fill {
+        id: PaintId::from("fill_headline"),
+        paint: Paint::Solid {
+            color: Color::Hex {
+                value: value.to_owned(),
+            },
+        },
+    }]
+}
+
+#[test]
+fn ops_raw_fill_edit_clears_only_the_style_token() {
+    let mut scene = scene_with_tokened_headline();
+    scene
+        .apply_operation(Operation::UpdateNode {
+            node_id: NodeId::from("headline"),
+            patch: NodePatch {
+                fills: FieldPatch::Set(recolor("#FF3366")),
+                ..NodePatch::default()
+            },
+        })
+        .unwrap();
+
+    let text = headline_text(&scene);
+    assert_eq!(text.style_token, None);
+    // Color is not a typography channel: the channel tokens survive.
+    assert_eq!(text.font_size_token, Some("$type.size.5xl".to_owned()));
+    assert_eq!(
+        text.line_height_token,
+        Some("$type.leading.tight".to_owned())
+    );
+    assert_eq!(
+        text.letter_spacing_token,
+        Some("$type.tracking.tight".to_owned())
+    );
+}
+
+#[test]
+fn ops_fill_noop_keeps_the_style_token() {
+    let mut scene = scene_with_tokened_headline();
+    let current_fills = scene.nodes[&NodeId::from("headline")].fills.clone();
+    scene
+        .apply_operation(Operation::UpdateNode {
+            node_id: NodeId::from("headline"),
+            patch: NodePatch {
+                fills: FieldPatch::Set(current_fills),
+                ..NodePatch::default()
+            },
+        })
+        .unwrap();
+
+    assert_eq!(
+        headline_text(&scene).style_token,
+        Some("$type.h1".to_owned())
+    );
+}
+
+#[test]
+fn ops_explicitly_authored_style_token_survives_a_recolor() {
+    let mut scene = scene_with_tokened_headline();
+    let mut rebound = headline_text(&scene).clone();
+    rebound.style_token = Some("$type.h2".to_owned());
+    scene
+        .apply_operation(Operation::UpdateNode {
+            node_id: NodeId::from("headline"),
+            patch: NodePatch {
+                kind: FieldPatch::Set(NodeKind::Text(rebound)),
+                fills: FieldPatch::Set(recolor("#FF3366")),
+                ..NodePatch::default()
+            },
+        })
+        .unwrap();
+
+    // The edit re-bound the role on purpose; the recolor must not sever it.
+    assert_eq!(
+        headline_text(&scene).style_token,
+        Some("$type.h2".to_owned())
+    );
+}
+
+#[test]
+fn undo_restores_the_role_binding_after_a_recolor() {
+    let mut scene = scene_with_tokened_headline();
+    let edit = Operation::UpdateNode {
+        node_id: NodeId::from("headline"),
+        patch: NodePatch {
+            fills: FieldPatch::Set(recolor("#FF3366")),
+            ..NodePatch::default()
+        },
+    };
+    let inverses = scene
+        .invert_operations(std::slice::from_ref(&edit))
+        .unwrap()
+        .expect("update_node is invertible");
+
+    scene.apply_operation(edit).unwrap();
+    assert_eq!(headline_text(&scene).style_token, None);
+
+    scene.apply_operations(inverses).unwrap();
+    let node = &scene.nodes[&NodeId::from("headline")];
+    assert!(node.fills.is_empty());
+    assert_eq!(
+        headline_text(&scene).style_token,
+        Some("$type.h1".to_owned())
+    );
+}
+
+#[test]
+fn dsl_fill_stack_edit_clears_the_style_token() {
+    let mut scene = scene_with_tokened_headline();
+    let batch = build_modify_operations(
+        &scene,
+        EditTargetRef::Node(NodeId::from("headline")),
+        EditPatch::Node(NodeEditPatch {
+            fill_edits: vec![StackEntryEdit::Add {
+                entry: recolor("#FF3366").remove(0),
+                index: None,
+            }],
+            ..NodeEditPatch::default()
+        }),
+    )
+    .unwrap();
+    batch.apply_checked(&mut scene).unwrap();
+
+    let text = headline_text(&scene);
+    assert_eq!(text.style_token, None);
     assert_eq!(text.font_size_token, Some("$type.size.5xl".to_owned()));
 }
