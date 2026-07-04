@@ -519,12 +519,18 @@ export default function EditorApp({
   // Document identity + the persistence leg (auto-create, id adoption, the
   // ordered edit queue with reconcile-at-drain) live in useDocumentSync.
   // Deps rebuilt per render, like every workflow hook here.
+  // While an agent preview/draft is pending, its ops live in the optimistic
+  // engine but in no enqueued batch — reconcile must compare the preview's
+  // base scene or every pending draft reads as divergence (assigned below,
+  // after useAgentTurn; ref so the queue's closure always sees the latest).
+  const previewBaseSceneRef = useRef<Scene | null>(null);
   const { activeDocumentId, enqueueForPersistence, resyncPersistence } = useDocumentSync({
     documentId,
     documentCreator,
     editQueueFactory,
     engineRef,
     sceneRef,
+    previewBaseSceneRef,
     replaceScene,
     setScene,
     setDiagnostics,
@@ -641,6 +647,10 @@ export default function EditorApp({
     runExportForScene,
     applyOperations: (operations, onAccepted) => applyOperations(operations, onAccepted)
   });
+  // Keep the reconcile baseline in step with the pending preview (see the
+  // ref's declaration above useDocumentSync). Render-body assignment is the
+  // established ref-mirror pattern here (activeDocumentIdRef et al.).
+  previewBaseSceneRef.current = agentPreview?.baseScene ?? null;
 
   // 2e notify-when-done: a turn that settles while the agent panel is
   // closed raises a click-to-open toast (no browser Notification API).
