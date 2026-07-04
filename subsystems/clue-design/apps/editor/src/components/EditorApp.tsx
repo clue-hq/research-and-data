@@ -10,8 +10,14 @@ import {
   type PointerEvent as ReactPointerEvent,
   type SetStateAction
 } from "react";
-import { AlertTriangle, Bot, Check, Download, FileCheck2, History, PanelRightClose, RotateCcw, RotateCw, X } from "lucide-react";
+import { Bot, Check, Download, FileCheck2, PanelRightClose, RotateCcw, RotateCw, X } from "lucide-react";
 import { AgentChatPanel, type AcceptedTurnRecord } from "./AgentChatPanel";
+import {
+  EditorModeSwitch,
+  EngineDisabledBanner,
+  OperationHistoryPanel,
+  topArtboardSizeLabel
+} from "./EditorChrome";
 import { BrandKitPanel } from "./BrandKitPanel";
 import { EditorCanvas } from "./canvas/EditorCanvas";
 import { ExportPanel, type ExportPanelState } from "./ExportPanel";
@@ -41,12 +47,10 @@ import type {
   BrandKitSummary,
   Diagnostic,
   DiagnosticSubject,
-  Node,
   NodeId,
   Operation,
   Page,
   PageId,
-  ParentRef,
   Scene
 } from "@/engine/contracts";
 import {
@@ -60,11 +64,9 @@ import { editorApiBaseUrl } from "@/engine/editorConfig";
 import { postTurnSuggestions } from "@/engine/agentSuggestions";
 import { mergeStickyDiagnostics } from "@/engine/diagnosticsPolicy";
 import { createEditQueue, type EnqueueOptions } from "@/engine/editQueue";
-import {
-  EDITOR_PANEL_MODES,
-  rightSidebarLabelForMode,
-  type EditorPanelMode
-} from "@/engine/editorModes";
+import { rightSidebarLabelForMode, type EditorPanelMode } from "@/engine/editorModes";
+import { arrowNudge, isEditableEventTarget, keyboardHistoryAction } from "@/engine/editorKeyboard";
+import { duplicatePageOperations, uniquePageId } from "@/engine/pageDuplication";
 import {
   activateWasmCore,
   wasmCoreFlagEnabled,
@@ -85,8 +87,6 @@ import {
 } from "@/engine/preflightRunner";
 import {
   addPage,
-  bindNodeToSlot,
-  insertNode,
   removeExportProfile,
   removeNode,
   removePage,
@@ -96,7 +96,6 @@ import {
 import { normalizePageSize } from "@/engine/pageGeometry";
 import type { StructuredEdit } from "@/engine/structuredEdits";
 import { editorRenderDiagnostics } from "@/engine/renderDiagnostics";
-import { pageDescriptor } from "@/engine/renderAdapter";
 import {
   defaultWorkspaceViewport,
   type WorkspaceFitTarget,
@@ -1795,215 +1794,6 @@ export default function EditorApp({
   );
 }
 
-function EditorModeSwitch({
-  mode,
-  onModeChange
-}: {
-  mode: EditorPanelMode;
-  onModeChange: (mode: EditorPanelMode) => void;
-}) {
-  return (
-    <div className="top-mode-switch" aria-label="Editor mode">
-      {EDITOR_PANEL_MODES.map((item) => (
-        <button
-          key={item.mode}
-          type="button"
-          className={mode === item.mode ? "active" : undefined}
-          aria-label={item.ariaLabel}
-          aria-pressed={mode === item.mode}
-          onClick={() => onModeChange(item.mode)}
-        >
-          {item.label}
-        </button>
-      ))}
-    </div>
-  );
-}
-
-function topArtboardSizeLabel(page: Page): string {
-  const descriptor = pageDescriptor(page);
-  return `${formatTopbarDimension(descriptor.width)} x ${formatTopbarDimension(descriptor.height)} pt`;
-}
-
-function formatTopbarDimension(value: number): string {
-  return Number.isInteger(value) ? String(value) : value.toFixed(1).replace(/\.0$/, "");
-}
-
-function OperationHistoryPanel({
-  operations,
-  redoCount
-}: {
-  operations: Operation[];
-  redoCount: number;
-}) {
-  const recentOperations = operations.slice(-6).reverse();
-
-  return (
-    <section className="inspector-section">
-      <div className="section-heading">
-        <History aria-hidden size={15} />
-        Operation history
-      </div>
-      {operations.length === 0 ? (
-        <p className="muted">No accepted editor operations yet.</p>
-      ) : (
-        <ol className="operation-history-list">
-          {recentOperations.map((operation, index) => (
-            <li key={`${operations.length - index}-${operation.kind}`}>
-              <span>{operations.length - index}</span>
-              <code>{operationLabel(operation)}</code>
-            </li>
-          ))}
-        </ol>
-      )}
-      {redoCount > 0 ? <p className="muted">{redoCount} action{redoCount === 1 ? "" : "s"} available to redo.</p> : null}
-    </section>
-  );
-}
-
-function operationLabel(operation: Operation): string {
-  switch (operation.kind) {
-    case "add_page":
-      return `add_page ${operation.page.id}`;
-    case "remove_page":
-      return `remove_page ${operation.page_id}`;
-    case "insert_node":
-      return `insert_node ${operation.node.id}`;
-    case "update_node":
-      return `update_node ${operation.node_id}`;
-    case "remove_node":
-      return `remove_node ${operation.node_id}`;
-    case "update_page":
-      return `update_page ${operation.page_id}`;
-    case "move_node":
-      return `move_node ${operation.node_id}`;
-    case "upsert_slot":
-      return `upsert_slot ${operation.slot.key}`;
-    case "remove_slot":
-      return `remove_slot ${operation.slot_id}`;
-    case "bind_node_to_slot":
-      return `bind_node_to_slot ${operation.node_id}`;
-    case "unbind_node_from_slot":
-      return `unbind_node_from_slot ${operation.node_id}`;
-    case "upsert_asset":
-      return `upsert_asset ${operation.asset.id}`;
-    case "remove_asset":
-      return `remove_asset ${operation.asset_id}`;
-    case "place_asset_in_node":
-      return `place_asset_in_node ${operation.node_id}`;
-    case "place_asset_in_slot":
-      return `place_asset_in_slot ${operation.slot_id}`;
-    case "upsert_export_profile":
-      return `upsert_export_profile ${operation.profile.name}`;
-    case "remove_export_profile":
-      return `remove_export_profile ${operation.name}`;
-    case "update_document":
-      return "update_document";
-  }
-}
-
-function uniquePageId(scene: Scene, input: { name: string; width: number; height: number }): PageId {
-  const readable = input.name
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "_")
-    .replace(/^_+|_+$/g, "");
-  const base = readable || `custom_${input.width}x${input.height}`;
-  let candidate = `page_${base}`;
-  let index = 2;
-  while (scene.pages[candidate]) {
-    candidate = `page_${base}_${index}`;
-    index += 1;
-  }
-  return candidate;
-}
-
-function duplicatePageOperations(scene: Scene, page: Page): Operation[] {
-  const pageName = `${page.name} Copy`;
-  const pageId = uniquePageId(scene, {
-    name: pageName,
-    width: page.size.width,
-    height: page.size.height
-  });
-  const usedNodeIds = new Set(Object.keys(scene.nodes));
-  const nodeIdMap = new Map<NodeId, NodeId>();
-
-  const assignNodeIds = (nodeId: NodeId) => {
-    if (nodeIdMap.has(nodeId)) {
-      return;
-    }
-    const clonedNodeId = uniqueClonedNodeId(usedNodeIds, nodeId, pageId);
-    nodeIdMap.set(nodeId, clonedNodeId);
-    const node = scene.nodes[nodeId];
-    for (const childId of node?.children ?? []) {
-      assignNodeIds(childId);
-    }
-  };
-
-  for (const childId of page.children) {
-    assignNodeIds(childId);
-  }
-
-  const duplicatedPage: Page = {
-    ...cloneJson(page),
-    id: pageId,
-    name: pageName,
-    children: []
-  };
-  const operations: Operation[] = [addPage(duplicatedPage)];
-
-  const emitNodeTree = (sourceNodeId: NodeId, parent: ParentRef, index: number) => {
-    const sourceNode = scene.nodes[sourceNodeId];
-    const clonedNodeId = nodeIdMap.get(sourceNodeId);
-    if (!sourceNode || !clonedNodeId) {
-      return;
-    }
-    const clonedNode: Node = {
-      ...cloneJson(sourceNode),
-      id: clonedNodeId,
-      children: [],
-      computed: null
-    };
-    operations.push(insertNode(parent, index, clonedNode));
-
-    for (const slot of Object.values(scene.slots)) {
-      if (slot.bound_nodes.includes(sourceNodeId)) {
-        operations.push(bindNodeToSlot(slot.id, clonedNodeId));
-      }
-    }
-
-    sourceNode.children.forEach((childId, childIndex) =>
-      emitNodeTree(childId, { kind: "node", id: clonedNodeId }, childIndex)
-    );
-  };
-
-  page.children.forEach((childId, index) =>
-    emitNodeTree(childId, { kind: "page", id: pageId }, index)
-  );
-
-  return operations;
-}
-
-function uniqueClonedNodeId(usedNodeIds: Set<NodeId>, sourceNodeId: NodeId, pageId: PageId): NodeId {
-  const pageSuffix = pageId
-    .replace(/^page_/, "")
-    .replace(/[^a-zA-Z0-9_]+/g, "_")
-    .replace(/^_+|_+$/g, "");
-  const base = `${sourceNodeId}_${pageSuffix || "copy"}`;
-  let candidate = base;
-  let index = 2;
-  while (usedNodeIds.has(candidate)) {
-    candidate = `${base}_${index}`;
-    index += 1;
-  }
-  usedNodeIds.add(candidate);
-  return candidate;
-}
-
-function cloneJson<T>(value: T): T {
-  return JSON.parse(JSON.stringify(value)) as T;
-}
-
 function preflightOperationCount(result: EditorPreflightResult): number {
   return (
     result.preflight.brand_ref_operations +
@@ -2072,109 +1862,6 @@ function exportPreflightDiagnostics(preflight: EditorPreflightResult): Diagnosti
 
 function clampNumber(value: number, minimum: number, maximum: number): number {
   return Math.min(maximum, Math.max(minimum, value));
-}
-
-/** Reason-specific copy for the server-only-mode canvas banner. */
-function engineDisabledCopy(reason: "load_failed" | "handshake_failed" | "version_mismatch"): {
-  headline: string;
-  fix: string;
-} {
-  switch (reason) {
-    case "version_mismatch":
-      return {
-        headline: "The in-browser engine is a different build than the API.",
-        fix: "Rebuild it to match, then hard-refresh (⌘⇧R):"
-      };
-    case "handshake_failed":
-      return {
-        headline: "Couldn’t verify the in-browser engine against the API.",
-        fix: "Start the API, rebuild the engine, then hard-refresh (⌘⇧R):"
-      };
-    case "load_failed":
-    default:
-      return {
-        headline: "The in-browser engine failed to load.",
-        fix: "Build it, then hard-refresh (⌘⇧R):"
-      };
-  }
-}
-
-/**
- * Loud, persistent banner shown when the WASM engine is expected but not
- * active (server-only mode). Without the live engine the canvas cannot
- * hit-test, so nothing can be selected or edited — a failure that must never
- * again read as "the editor is silently broken."
- */
-function EngineDisabledBanner({
-  reason,
-  detail
-}: {
-  reason: "load_failed" | "handshake_failed" | "version_mismatch";
-  detail: string;
-}) {
-  const copy = engineDisabledCopy(reason);
-  return (
-    <div className="engine-disabled-banner" role="alert" data-testid="engine-disabled-banner">
-      <AlertTriangle aria-hidden size={18} className="engine-disabled-banner-icon" />
-      <div className="engine-disabled-banner-body">
-        <strong>Canvas editing is disabled</strong>
-        <span>
-          {copy.headline} You can’t select or edit anything on the canvas until the in-browser
-          engine is running. {copy.fix}
-        </span>
-        <code>
-          <span className="engine-disabled-banner-cmd">npm run build:wasm</span>
-          {` · ${detail}`}
-        </code>
-      </div>
-    </div>
-  );
-}
-
-function isEditableEventTarget(target: EventTarget | null): boolean {
-  if (!(target instanceof HTMLElement)) {
-    return false;
-  }
-  const tagName = target.tagName.toLowerCase();
-  return (
-    tagName === "input" ||
-    tagName === "textarea" ||
-    tagName === "select" ||
-    target.isContentEditable
-  );
-}
-
-function keyboardHistoryAction(event: KeyboardEvent): "undo" | "redo" | null {
-  const key = event.key.toLowerCase();
-  const modifier = event.metaKey || event.ctrlKey;
-  if (!modifier) {
-    return null;
-  }
-  if (key === "z" && event.shiftKey) {
-    return "redo";
-  }
-  if (key === "z") {
-    return "undo";
-  }
-  if (key === "y") {
-    return "redo";
-  }
-  return null;
-}
-
-function arrowNudge(key: string): { x: number; y: number } | null {
-  switch (key) {
-    case "ArrowLeft":
-      return { x: -1, y: 0 };
-    case "ArrowRight":
-      return { x: 1, y: 0 };
-    case "ArrowUp":
-      return { x: 0, y: -1 };
-    case "ArrowDown":
-      return { x: 0, y: 1 };
-    default:
-      return null;
-  }
 }
 
 function latestBrandKitVersion(
