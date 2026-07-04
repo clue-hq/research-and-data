@@ -573,6 +573,14 @@ pub struct NodeEditPatch {
     pub name: OptionalFieldPatch<String>,
     pub transform: FieldPatch<Transform>,
     pub size: FieldPatch<SizeSpec>,
+    /// Phase 4c: pinned-node moves (`p()`/`s()` on `position_mode: absolute`
+    /// targets) lower here instead of `transform`, since the solver lays
+    /// pinned nodes out at `absolute_box`, page-space, and ignores
+    /// `transform`. Skipped when unchanged so pinned pre-existing wire
+    /// fixtures stay byte-identical (mirrors `NodePatch::absolute_box` in
+    /// operations.rs).
+    #[serde(skip_serializing_if = "OptionalFieldPatch::is_unchanged")]
+    pub absolute_box: OptionalFieldPatch<Rect>,
     pub fills: FieldPatch<Vec<Fill>>,
     pub strokes: FieldPatch<Vec<Stroke>>,
     #[serde(skip_serializing_if = "FieldPatch::is_unchanged")]
@@ -973,6 +981,7 @@ pub fn build_node_modify(
         name: patch.name,
         transform: patch.transform,
         size: patch.size,
+        absolute_box: patch.absolute_box,
         fills,
         strokes,
         effects,

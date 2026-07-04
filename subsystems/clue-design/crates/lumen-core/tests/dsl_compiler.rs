@@ -2020,3 +2020,381 @@ page page_square size(400,400,px)
     );
     assert_eq!(color_token.as_deref(), Some("shadow.soft"));
 }
+
+// --- Phase 4c: p()/s() on pinned (position_mode: absolute) nodes ---
+//
+// Pinned nodes lay out at their page-space `absolute_box`; the solver
+// ignores `transform` entirely for them. Historically `#node p(x,y)` wrote
+// `transform`, a silent visual no-op on exactly the nodes humans create by
+// dragging. p()/s() now stay parent-relative in *meaning* but lower to
+// `absolute_box` for pinned targets, computed against the parent's solved
+// (page-space) layout bounds.
+
+fn scene_with_pinned_badge(parent_origin: lumen_core::Rect, badge_box: lumen_core::Rect) -> Scene {
+    use lumen_core::{ComputedGeometry, Node, Page, PageSize};
+
+    let mut scene = Scene::new(lumen_core::DocumentId::from("doc_pinned"), "Pinned");
+    scene
+        .apply_operation(Operation::AddPage {
+            page: Page {
+                id: PageId::from("page_a4"),
+                name: "Page".to_owned(),
+                size: PageSize {
+                    width: 1080.0,
+                    height: 1080.0,
+                    unit: Unit::Px,
+                    preset: Some(PagePreset::Custom),
+                    orientation: Orientation::Landscape,
+                    source: None,
+                    output: None,
+                },
+                children: Vec::new(),
+                bleed: None,
+                safe_area: None,
+                background: Vec::new(),
+            },
+        })
+        .unwrap();
+
+    let mut frame = Node::new(NodeId::from("panel"), NodeKind::Frame);
+    frame.size = lumen_core::SizeSpec::fixed(400.0, 400.0);
+    frame.transform.x = parent_origin.x;
+    frame.transform.y = parent_origin.y;
+    frame.computed = Some(ComputedGeometry {
+        layout_bounds: parent_origin.clone(),
+        render_bounds: parent_origin.clone(),
+    });
+    scene
+        .apply_operation(Operation::InsertNode {
+            parent: ParentRef::Page(PageId::from("page_a4")),
+            index: 0,
+            node: frame,
+        })
+        .unwrap();
+
+    let mut badge = Node::new(NodeId::from("badge"), NodeKind::Rect);
+    badge.size = lumen_core::SizeSpec::fixed(badge_box.width, badge_box.height);
+    badge.position_mode = lumen_core::PositionMode::Absolute;
+    badge.absolute_box = Some(badge_box.clone());
+    badge.base_anchor = Some(badge_box);
+    scene
+        .apply_operation(Operation::InsertNode {
+            parent: ParentRef::Node(NodeId::from("panel")),
+            index: 0,
+            node: badge,
+        })
+        .unwrap();
+
+    scene
+}
+
+#[test]
+fn pinned_node_position_lowers_to_absolute_box_not_transform() {
+    let mut scene = scene_with_pinned_badge(
+        lumen_core::Rect {
+            x: 50.0,
+            y: 50.0,
+            width: 400.0,
+            height: 400.0,
+        },
+        lumen_core::Rect {
+            x: 100.0,
+            y: 200.0,
+            width: 220.0,
+            height: 48.0,
+        },
+    );
+    let before_transform = scene.nodes[&NodeId::from("badge")].transform.clone();
+
+    let output = compile_dsl_into_scene("#badge p(80,904)", &mut scene);
+
+    assert_no_dsl_errors(&output.compile_output.diagnostics);
+    assert!(output.operation_error.is_none());
+
+    let update = output
+        .compile_output
+        .operations
+        .iter()
+        .find_map(|operation| match operation {
+            Operation::UpdateNode { node_id, patch } if *node_id == NodeId::from("badge") => {
+                Some(patch)
+            }
+            _ => None,
+        })
+        .expect("badge UpdateNode present");
+    assert_eq!(
+        update.absolute_box,
+        lumen_core::OptionalFieldPatch::Set(lumen_core::Rect {
+            x: 130.0,
+            y: 954.0,
+            width: 220.0,
+            height: 48.0,
+        })
+    );
+    assert_eq!(update.transform, lumen_core::FieldPatch::Unchanged);
+
+    let badge = &scene.nodes[&NodeId::from("badge")];
+    assert_eq!(
+        badge.absolute_box,
+        Some(lumen_core::Rect {
+            x: 130.0,
+            y: 954.0,
+            width: 220.0,
+            height: 48.0,
+        })
+    );
+    // transform must be untouched: pinned moves never write it.
+    assert_eq!(badge.transform, before_transform);
+
+    // Re-running layout must place the node at the new box (zero-motion:
+    // the solver lays a pinned node out exactly at its absolute_box).
+    let operations = lumen_core::layout_operations(&scene, lumen_core::LayoutOptions::default());
+    scene.apply_operations(operations).unwrap();
+    let placed = scene.nodes[&NodeId::from("badge")]
+        .computed
+        .as_ref()
+        .unwrap()
+        .layout_bounds
+        .clone();
+    assert_eq!(placed.x, 130.0);
+    assert_eq!(placed.y, 954.0);
+}
+
+#[test]
+fn pinned_node_position_and_size_together_updates_absolute_box_and_size() {
+    let mut scene = scene_with_pinned_badge(
+        lumen_core::Rect {
+            x: 50.0,
+            y: 50.0,
+            width: 400.0,
+            height: 400.0,
+        },
+        lumen_core::Rect {
+            x: 100.0,
+            y: 200.0,
+            width: 220.0,
+            height: 48.0,
+        },
+    );
+
+    let output = compile_dsl_into_scene("#badge p(80,904) s(200,40)", &mut scene);
+
+    assert_no_dsl_errors(&output.compile_output.diagnostics);
+    assert!(output.operation_error.is_none());
+
+    let badge = &scene.nodes[&NodeId::from("badge")];
+    assert_eq!(
+        badge.absolute_box,
+        Some(lumen_core::Rect {
+            x: 130.0,
+            y: 954.0,
+            width: 200.0,
+            height: 40.0,
+        })
+    );
+    assert_eq!(badge.size, lumen_core::SizeSpec::fixed(200.0, 40.0));
+}
+
+#[test]
+fn pinned_node_on_page_parent_treats_position_as_page_space() {
+    use lumen_core::Node;
+
+    let mut scene = Scene::new(lumen_core::DocumentId::from("doc_pinned_page"), "Pinned");
+    scene
+        .apply_operation(Operation::AddPage {
+            page: lumen_core::Page {
+                id: PageId::from("page_a4"),
+                name: "Page".to_owned(),
+                size: lumen_core::PageSize {
+                    width: 1080.0,
+                    height: 1080.0,
+                    unit: Unit::Px,
+                    preset: Some(PagePreset::Custom),
+                    orientation: Orientation::Landscape,
+                    source: None,
+                    output: None,
+                },
+                children: Vec::new(),
+                bleed: None,
+                safe_area: None,
+                background: Vec::new(),
+            },
+        })
+        .unwrap();
+
+    let mut badge = Node::new(NodeId::from("badge"), NodeKind::Rect);
+    badge.size = lumen_core::SizeSpec::fixed(220.0, 48.0);
+    badge.position_mode = lumen_core::PositionMode::Absolute;
+    badge.absolute_box = Some(lumen_core::Rect {
+        x: 100.0,
+        y: 200.0,
+        width: 220.0,
+        height: 48.0,
+    });
+    scene
+        .apply_operation(Operation::InsertNode {
+            parent: ParentRef::Page(PageId::from("page_a4")),
+            index: 0,
+            node: badge,
+        })
+        .unwrap();
+
+    let output = compile_dsl_into_scene("#badge p(80,904)", &mut scene);
+
+    assert_no_dsl_errors(&output.compile_output.diagnostics);
+    let badge = &scene.nodes[&NodeId::from("badge")];
+    assert_eq!(
+        badge.absolute_box,
+        Some(lumen_core::Rect {
+            x: 80.0,
+            y: 904.0,
+            width: 220.0,
+            height: 48.0,
+        })
+    );
+}
+
+#[test]
+fn pinned_node_move_without_parent_computed_geometry_is_a_compile_error() {
+    use lumen_core::Node;
+
+    let mut scene = Scene::new(lumen_core::DocumentId::from("doc_pinned_nogeo"), "Pinned");
+    scene
+        .apply_operation(Operation::AddPage {
+            page: lumen_core::Page {
+                id: PageId::from("page_a4"),
+                name: "Page".to_owned(),
+                size: lumen_core::PageSize {
+                    width: 1080.0,
+                    height: 1080.0,
+                    unit: Unit::Px,
+                    preset: Some(PagePreset::Custom),
+                    orientation: Orientation::Landscape,
+                    source: None,
+                    output: None,
+                },
+                children: Vec::new(),
+                bleed: None,
+                safe_area: None,
+                background: Vec::new(),
+            },
+        })
+        .unwrap();
+
+    // Parent frame has no `computed` geometry (no layout pass ran yet).
+    let mut frame = Node::new(NodeId::from("panel"), NodeKind::Frame);
+    frame.size = lumen_core::SizeSpec::fixed(400.0, 400.0);
+    scene
+        .apply_operation(Operation::InsertNode {
+            parent: ParentRef::Page(PageId::from("page_a4")),
+            index: 0,
+            node: frame,
+        })
+        .unwrap();
+
+    let mut badge = Node::new(NodeId::from("badge"), NodeKind::Rect);
+    badge.size = lumen_core::SizeSpec::fixed(220.0, 48.0);
+    badge.position_mode = lumen_core::PositionMode::Absolute;
+    badge.absolute_box = Some(lumen_core::Rect {
+        x: 100.0,
+        y: 200.0,
+        width: 220.0,
+        height: 48.0,
+    });
+    scene
+        .apply_operation(Operation::InsertNode {
+            parent: ParentRef::Node(NodeId::from("panel")),
+            index: 0,
+            node: badge,
+        })
+        .unwrap();
+
+    let output = compile_dsl_into_scene("#badge p(80,904)", &mut scene);
+
+    assert_eq!(
+        output
+            .compile_output
+            .halted_at
+            .as_ref()
+            .map(|halt| halt.code.as_str()),
+        Some("LUMD0918")
+    );
+}
+
+#[test]
+fn pinned_node_non_fixed_size_is_a_compile_error() {
+    let mut scene = scene_with_pinned_badge(
+        lumen_core::Rect {
+            x: 50.0,
+            y: 50.0,
+            width: 400.0,
+            height: 400.0,
+        },
+        lumen_core::Rect {
+            x: 100.0,
+            y: 200.0,
+            width: 220.0,
+            height: 48.0,
+        },
+    );
+
+    let output = compile_dsl_into_scene("#badge s(fill,hug)", &mut scene);
+
+    assert_eq!(
+        output
+            .compile_output
+            .halted_at
+            .as_ref()
+            .map(|halt| halt.code.as_str()),
+        Some("LUMD0919")
+    );
+}
+
+#[test]
+fn non_pinned_node_position_still_lowers_to_transform() {
+    let mut scene = Scene::new(lumen_core::DocumentId::from("doc_managed"), "Managed");
+    let first = compile_dsl_into_scene("page page_a4\n  badge rect p(0,0) s(220,48)", &mut scene);
+    assert_no_dsl_errors(&first.compile_output.diagnostics);
+
+    let output = compile_dsl_into_scene("#badge p(80,904)", &mut scene);
+
+    assert_no_dsl_errors(&output.compile_output.diagnostics);
+    let update = output
+        .compile_output
+        .operations
+        .iter()
+        .find_map(|operation| match operation {
+            Operation::UpdateNode { node_id, patch } if *node_id == NodeId::from("badge") => {
+                Some(patch)
+            }
+            _ => None,
+        })
+        .expect("badge UpdateNode present");
+    assert_eq!(
+        update.transform,
+        lumen_core::FieldPatch::Set(lumen_core::Transform {
+            x: 80.0,
+            y: 904.0,
+            ..scene.nodes[&NodeId::from("badge")].transform.clone()
+        })
+    );
+    assert_eq!(
+        update.absolute_box,
+        lumen_core::OptionalFieldPatch::Unchanged
+    );
+    assert_eq!(scene.nodes[&NodeId::from("badge")].transform.x, 80.0);
+    assert_eq!(scene.nodes[&NodeId::from("badge")].transform.y, 904.0);
+}
+
+#[test]
+fn node_edit_patch_wire_format_omits_absolute_box_when_unchanged() {
+    let patch = lumen_core::NodeEditPatch {
+        name: lumen_core::OptionalFieldPatch::Set("Renamed".to_owned()),
+        ..lumen_core::NodeEditPatch::default()
+    };
+    let json = serde_json::to_string(&patch).unwrap();
+    assert!(
+        !json.contains("absolute_box"),
+        "unchanged absolute_box must be omitted from the wire format: {json}"
+    );
+}
