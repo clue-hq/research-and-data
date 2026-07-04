@@ -112,7 +112,9 @@ SEEDED_CONTINUATION_RECIPE = (
     "`clone(src,new_id,after:src)`, `parent(...)`, `before(...)`/`after(...)`, "
     "`delete(...)`.\n"
     "- New content gets NEW unique ids that collide with nothing in the scene "
-    "(suffix `_2`, `_b`, ...). New pages may be added under new page ids.\n"
+    "AND nothing else in your own block — ids are document-global across pages, "
+    "so multi-page additions need per-page suffixes (`_2`, `_a`, `_b`, ...). "
+    "New pages may be added under new page ids.\n"
     "- REPURPOSING a nearly-empty existing page into a new design (the user asked "
     "for a fresh design but the document already has a default page): do it in ONE "
     "block — `#page:<page_id> size(w,h,px)` to set the surface, then "
@@ -200,6 +202,13 @@ Hard syntax rules:
   property is a parenthesized CALL. Write `#headline text("New copy") font_size(64)`;
   the element-style `#headline text "New copy"` is invalid on a modify line
   (LUMD0210 unsupported property syntax).
+- Node ids are DOCUMENT-GLOBAL: unique across ALL pages of the document, not
+  per page. When one block authors multiple pages (variant concepts, multi-page
+  documents), suffix every id per page — `artboard_a`/`headline_a` on the first
+  variant page, `artboard_b`/`headline_b` on the second; never repeat a generic
+  id like `artboard` or `header` on two pages. A block that declares the same id
+  twice, or re-declares an id already in the scene, is rejected WHOLE
+  (LUMD0401) and the iteration is wasted.
 - Do not write block forms like `page "pg" { ... }`, `width 1080`, or `height 1080`.
 - Custom page dimensions are supported. For exact surfaces, use
   `page page_id size(width,height,px)`. Presets are shortcuts only. Page sizes

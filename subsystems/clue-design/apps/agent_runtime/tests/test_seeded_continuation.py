@@ -404,6 +404,71 @@ def test_reauthor_correction_parses_halt_codes():
     assert "replace(" in page["instruction"]
 
 
+def test_within_block_duplicate_gets_rename_correction_not_inplace_edit():
+    # run_bdfe575c pinned: one block declared `artboard` on BOTH variant pages
+    # of a fresh generation. The id exists nowhere in the scene, so the
+    # existing-node correction ("edit it in place with `#artboard` modify
+    # lines") would chase a phantom node into LUMD0901. The correction must
+    # instead demand unique per-page ids and a full re-emit.
+    summary = {
+        "halted_at": {"code": "LUMD0401", "line": 14},
+        "diagnostics": [
+            {
+                "severity": "info",
+                "code": None,
+                "message": "{'diagnostic': {'code': 'LUMD0401', 'message': 'duplicate node id artboard'}, 'span': {...}}",
+            }
+        ],
+    }
+    empty_scene = {"pages": {}, "nodes": {}}
+    correction = reauthor_correction(summary, empty_scene)
+    assert correction["kind"] == "duplicate_in_block"
+    assert correction["offending_id"] == "artboard"
+    assert "MORE THAN ONCE" in correction["instruction"]
+    assert "artboard_a" in correction["instruction"]
+    # With the id actually IN the scene, the existing-node correction stands.
+    seeded = {"pages": {}, "nodes": {"artboard": {"id": "artboard"}}}
+    assert reauthor_correction(summary, seeded)["kind"] == "node"
+    # Legacy callers without a scene keep the existing-node behavior.
+    assert reauthor_correction(summary)["kind"] == "node"
+
+
+def test_within_block_duplicate_halt_is_not_pinned_surgical(
+    tmp_path: Path, monkeypatch
+):
+    # Fresh (unseeded) generation halts LUMD0401 because the block collides
+    # with ITSELF. The reroute must deliver the rename correction WITHOUT
+    # surgical enforcement — pinning the next iteration to `#headline` modify
+    # lines would target a node that does not exist (run_a0c54fab spent its
+    # final iteration exactly that way).
+    monkeypatch.setattr(
+        "lumen_deepagent.tools.CoreClient", FakeReauthorHaltOnceCoreClient
+    )
+    config = runtime_config(tmp_path)
+    tools = LumenDesignTools(config, "Create two variant pages")
+    author = ScriptedAuthor(
+        [
+            'page variant_a size(1080,1350,px)\npage variant_b size(1080,1350,px)',
+            'page variant_a size(1080,1350,px)\npage variant_b size(1080,1350,px)',
+        ]
+    )
+    reviewer = ScriptedReviewer([VisualCritique(accepted=True, summary="ok")])
+    loop = LumenQualityLoop(tools, author, reviewer)
+
+    result = loop.run("Create two variant pages")
+
+    assert result["status"] == "accepted"
+    feedback = loop.previous_feedback[0]
+    correction = feedback.get("reauthor_correction")
+    assert correction is not None
+    assert correction["kind"] == "duplicate_in_block"
+    assert correction["offending_id"] == "headline"
+    assert feedback.get("surgical_repair") is None
+    assert feedback.get("surgical_target") is None
+    assert "MORE THAN ONCE" in (feedback.get("authoring_constraints") or [""])[0]
+    assert "reauthor_rerouted" in trace_events(config, tools.run_id)
+
+
 def test_page_ref_grammar_trap_is_rerouted():
     # From the live failure: the author wrote `#page_a4 size(...)` (node-ref
     # grammar) for a PAGE, halting LUMD0901 with "target node page_a4 does not

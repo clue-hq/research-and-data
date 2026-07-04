@@ -637,7 +637,10 @@ class LumenQualityLoop:
                     # (LUMD0401 duplicate id / LUMA0200 page re-declaration) and
                     # was rejected WHOLE. Reroute deterministically as a
                     # corrective, targeted repair — never rely on the model
-                    # noticing the pattern on its own.
+                    # noticing the pattern on its own. A `duplicate_in_block`
+                    # correction stays NON-surgical on purpose: its node does
+                    # not exist in the scene, so the fix is a corrected full
+                    # re-emit, not modify lines against a phantom target.
                     if correction["kind"] == "node" and correction.get("offending_id"):
                         surgical = True
                         recommendation = "structured_ops"
@@ -1224,9 +1227,12 @@ def reauthor_correction(compile_summary: dict, scene: Optional[dict] = None) -> 
     Keys off `halted_at.code` — the one place the LUMD code survives diagnostic
     normalization — and pulls the offending id out of the diagnostic text
     (which may be a stringified session-shaped dict). With the scene available
-    it also catches the page-ref grammar trap: a LUMD0901 "missing node" whose
-    id is actually an existing PAGE (`#page_a4` written instead of
-    `#page:page_a4`, or `replace()` pointed at a page)."""
+    it also distinguishes two traps the code alone cannot: a LUMD0901 "missing
+    node" whose id is actually an existing PAGE (`#page_a4` written instead of
+    `#page:page_a4`, or `replace()` pointed at a page), and a LUMD0401 whose
+    duplicate id is NOT in the scene — a within-block collision (the same id
+    declared on two pages of one block) that needs rename-and-re-emit, not an
+    in-place edit of a node that doesn't exist."""
     halted = compile_summary.get("halted_at") or {}
     code = halted.get("code")
     blob = json.dumps(compile_summary.get("diagnostics") or [])
@@ -1256,6 +1262,32 @@ def reauthor_correction(compile_summary: dict, scene: Optional[dict] = None) -> 
     if code == "LUMD0401":
         match = _REAUTHORED_NODE_RE.search(blob)
         offending = match.group(1) if match else None
+        nodes = (scene or {}).get("nodes") or {}
+        if scene is not None and offending and offending not in nodes:
+            # The duplicate collides with itself INSIDE the rejected block — the
+            # scene has no such node (observed live, run_bdfe575c: the author
+            # declared `artboard`/`header` on BOTH variant pages of one block).
+            # The existing-node correction would be a misdiagnosis here: "edit
+            # it in place with `#<id>` modify lines" targets a node that does
+            # not exist (LUMD0901), and the surgical reroute would pin the next
+            # iteration to it. The correct move is rename-and-re-emit.
+            return {
+                "code": code,
+                "kind": "duplicate_in_block",
+                "offending_id": offending,
+                "instruction": (
+                    f"Your block declares the node id '{offending}' MORE THAN "
+                    "ONCE — the collision is inside the block itself (no node "
+                    f"'{offending}' exists in the scene), so the WHOLE block "
+                    "was rejected unapplied (LUMD0401). Node ids are "
+                    "document-global across ALL pages: give every element a "
+                    "unique id — suffix per page/variant, e.g. "
+                    f"`{offending}_a` on the first page, `{offending}_b` on "
+                    "the second — and re-emit the corrected FULL block. Do "
+                    f"NOT switch to `#{offending}` modify lines; that node "
+                    "does not exist."
+                ),
+            }
         return {
             "code": code,
             "kind": "node",

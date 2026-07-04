@@ -145,7 +145,10 @@ the smallest failing piece.
 
 ## Self-check before handing off
 
-- IDs stable, descriptive, unique. Two-space indentation. Leaf nodes childless.
+- IDs stable, descriptive, unique — DOCUMENT-GLOBAL, across ALL pages: on
+  multi-page output (variant concepts), suffix ids per page
+  (`headline_a`/`headline_b`); a repeated id rejects the whole block (LUMD0401).
+  Two-space indentation. Leaf nodes childless.
 - Page surface matches the request exactly.
 - Child `p()`/`s()` values are canonical `pt`, never `mm` and never renderer
   pixels; physical/raster units stay in the page/export declaration.
