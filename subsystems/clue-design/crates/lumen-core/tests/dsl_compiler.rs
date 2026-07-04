@@ -2090,6 +2090,9 @@ fn scene_with_pinned_badge(parent_origin: lumen_core::Rect, badge_box: lumen_cor
 
 #[test]
 fn pinned_node_position_lowers_to_absolute_box_not_transform() {
+    // Parent panel sits at page (50,50); p() on a pinned child is PAGE-SPACE,
+    // so the parent origin must NOT be added — the badge lands exactly at the
+    // coordinates the model read off the brief/inspector (run_8e7b9f64).
     let mut scene = scene_with_pinned_badge(
         lumen_core::Rect {
             x: 50.0,
@@ -2125,8 +2128,8 @@ fn pinned_node_position_lowers_to_absolute_box_not_transform() {
     assert_eq!(
         update.absolute_box,
         lumen_core::OptionalFieldPatch::Set(lumen_core::Rect {
-            x: 130.0,
-            y: 954.0,
+            x: 80.0,
+            y: 904.0,
             width: 220.0,
             height: 48.0,
         })
@@ -2137,8 +2140,8 @@ fn pinned_node_position_lowers_to_absolute_box_not_transform() {
     assert_eq!(
         badge.absolute_box,
         Some(lumen_core::Rect {
-            x: 130.0,
-            y: 954.0,
+            x: 80.0,
+            y: 904.0,
             width: 220.0,
             height: 48.0,
         })
@@ -2156,8 +2159,8 @@ fn pinned_node_position_lowers_to_absolute_box_not_transform() {
         .unwrap()
         .layout_bounds
         .clone();
-    assert_eq!(placed.x, 130.0);
-    assert_eq!(placed.y, 954.0);
+    assert_eq!(placed.x, 80.0);
+    assert_eq!(placed.y, 904.0);
 }
 
 #[test]
@@ -2186,8 +2189,8 @@ fn pinned_node_position_and_size_together_updates_absolute_box_and_size() {
     assert_eq!(
         badge.absolute_box,
         Some(lumen_core::Rect {
-            x: 130.0,
-            y: 954.0,
+            x: 80.0,
+            y: 904.0,
             width: 200.0,
             height: 40.0,
         })
@@ -2255,7 +2258,10 @@ fn pinned_node_on_page_parent_treats_position_as_page_space() {
 }
 
 #[test]
-fn pinned_node_move_without_parent_computed_geometry_is_a_compile_error() {
+fn pinned_node_move_needs_no_parent_computed_geometry() {
+    // Page-space p() reads nothing from the parent, so a pinned move must
+    // compile even when no layout pass has populated `computed` yet (the old
+    // parent-relative lowering errored here with LUMD0918).
     use lumen_core::Node;
 
     let mut scene = Scene::new(lumen_core::DocumentId::from("doc_pinned_nogeo"), "Pinned");
@@ -2311,13 +2317,16 @@ fn pinned_node_move_without_parent_computed_geometry_is_a_compile_error() {
 
     let output = compile_dsl_into_scene("#badge p(80,904)", &mut scene);
 
+    assert_no_dsl_errors(&output.compile_output.diagnostics);
+    assert!(output.operation_error.is_none());
     assert_eq!(
-        output
-            .compile_output
-            .halted_at
-            .as_ref()
-            .map(|halt| halt.code.as_str()),
-        Some("LUMD0918")
+        scene.nodes[&NodeId::from("badge")].absolute_box,
+        Some(lumen_core::Rect {
+            x: 80.0,
+            y: 904.0,
+            width: 220.0,
+            height: 48.0,
+        })
     );
 }
 

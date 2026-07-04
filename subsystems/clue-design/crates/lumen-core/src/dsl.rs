@@ -2307,58 +2307,6 @@ fn parse_pdf_intent(
     }
 }
 
-/// The page-space origin `p()` is relative to for a pinned node: the page
-/// (0,0) when parented directly to a page, or the parent's solved
-/// layout-bounds origin when parented to another node. `p()` stays
-/// parent-relative in meaning even though pinned targets store page-space
-/// `absolute_box` — the editor always ships laid-out scenes, so the parent's
-/// `computed` geometry is expected to be present.
-fn pinned_origin(
-    scene: &Scene,
-    parent: Option<&ParentRef>,
-    node_id: &NodeId,
-    line: &DslLine,
-) -> Result<Rect, DslDiagnostic> {
-    match parent {
-        None | Some(ParentRef::Page(_)) => Ok(Rect {
-            x: 0.0,
-            y: 0.0,
-            width: 0.0,
-            height: 0.0,
-        }),
-        Some(ParentRef::Node(parent_id)) => {
-            let parent_node = scene.nodes.get(parent_id).ok_or_else(|| {
-                error_diag(
-                    line.line_number,
-                    1,
-                    line.raw.len().max(1),
-                    "LUMD0901",
-                    format!("parent {} does not exist", parent_id),
-                    "Use a node id from the current scene.",
-                )
-            })?;
-            let bounds = parent_node
-                .computed
-                .as_ref()
-                .map(|computed| computed.layout_bounds.clone())
-                .ok_or_else(|| {
-                    error_diag(
-                        line.line_number,
-                        1,
-                        line.raw.len().max(1),
-                        "LUMD0918",
-                        format!(
-                            "cannot move pinned node {}: parent {} has no computed geometry; run layout first",
-                            node_id, parent_id
-                        ),
-                        "The editor always ships laid-out scenes; run a layout pass before compiling moves against a pinned node.",
-                    )
-                })?;
-            Ok(bounds)
-        }
-    }
-}
-
 fn node_edit_patch_from_properties(
     scene: &Scene,
     node_id: &NodeId,
@@ -2397,6 +2345,15 @@ fn node_edit_patch_from_properties(
     // silent visual no-op, but "move that thing I dragged" is a core
     // round-trip ask — so pinned targets lower p()/s() into `absolute_box`
     // instead, keeping the DSL surface identical for the agent.
+    //
+    // `p()` coordinates on a pinned target are PAGE-SPACE, not
+    // parent-relative: every surface the model reads pinned geometry from
+    // (the scene brief, the inspector, `absolute_box` itself) is page-space,
+    // and in practice the model echoes coordinates back in the frame it read
+    // them (run_8e7b9f64: both attempts were correct page-space positions
+    // that a parent-relative reading sent 88pt off / off-canvas). Rule: p()
+    // means "the frame this node's geometry is displayed in" — transform
+    // frame for flow nodes, page frame for pinned ones.
     let pinned_box = (current.position_mode == PositionMode::Absolute)
         .then(|| current.absolute_box.clone())
         .flatten();
@@ -2407,11 +2364,9 @@ fn node_edit_patch_from_properties(
         match property {
             DslProperty::Position(x, y) => {
                 if let Some(pinned) = pinned_box.as_ref() {
-                    let parent = scene.parent_of(node_id);
-                    let origin = pinned_origin(scene, parent.as_ref(), node_id, line)?;
                     let target = next_absolute_box.get_or_insert_with(|| pinned.clone());
-                    target.x = origin.x + *x;
-                    target.y = origin.y + *y;
+                    target.x = *x;
+                    target.y = *y;
                     absolute_box_changed = true;
                 } else {
                     next_transform.x = *x;

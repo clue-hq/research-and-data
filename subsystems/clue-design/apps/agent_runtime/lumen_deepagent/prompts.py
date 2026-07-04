@@ -122,11 +122,17 @@ SEEDED_CONTINUATION_RECIPE = (
     "indented under it. Never re-declare the page line itself.\n"
     "- Touch ONLY what the request requires: every node you do not name must remain "
     "byte-identical after your block.\n"
-    '- FREEHAND / PINNED NODES (Phase 1): a node whose brief shows `position_mode: "absolute"` '
+    '- FREEHAND / PINNED NODES (Phase 1 + 4c): a node whose brief shows `position_mode: "absolute"` '
     "was HAND-PLACED by the human — its `absolute_box` (page-space x/y/w/h) is human-owned "
-    "geometry. Preserve it: never try to move such a node (it ignores transform x/y; the box "
-    "wins), and design AROUND its pinned position instead of undoing it. You MAY still edit "
-    'its content and style with `#<id>` modify lines (`text("...")`, colors, fonts). '
+    "geometry. Leave it where the human put it and design AROUND it — move or resize it ONLY "
+    "when the user's request asks for that. When the user DOES ask, `#<id> p(x,y)` and "
+    "`s(w,h)` work on pinned nodes and update `absolute_box` directly. On a pinned target "
+    "`p(x,y)` is PAGE-SPACE (artboard coordinates — the same frame as the `absolute_box` "
+    "shown in its brief), NOT parent-relative; `s(w,h)` takes fixed numbers only (no "
+    "hug/fill). Rule of thumb: p() speaks the frame the brief shows that node's geometry "
+    "in — page space for pinned `absolute_box` nodes, parent-local for everything else "
+    "(transform nodes). You MAY always edit content and style with `#<id>` modify lines "
+    '(`text("...")`, colors, fonts). '
     "`base_anchor` records where the layout had the node when the human detached it — the "
     "offset from base_anchor to absolute_box is the human's deliberate nudge; treat it as "
     'intent, not error. A container with `layout_mode: "free"` holds hand-placed children: '
@@ -136,7 +142,8 @@ SEEDED_CONTINUATION_RECIPE = (
     '`layout_mode: "free"` container: a free container does not lay out children, so a new '
     "element with no transform lands stacked at the container's origin (0,0), on top of "
     "existing content. You MUST give every new child an explicit `p(x,y)` placed within the "
-    "container's bounds and an explicit `s(w,h)` — never omit them and rely on layout to place it."
+    "container's bounds (new children position container-relative, not page-space) and an "
+    "explicit `s(w,h)` — never omit them and rely on layout to place it."
 )
 
 
