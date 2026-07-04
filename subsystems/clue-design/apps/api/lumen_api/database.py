@@ -51,6 +51,8 @@ def run_migrations(database_path: Path) -> None:
         ensure_column(connection, "operation_log", "batch_id", "TEXT")
         ensure_column(connection, "documents", "undo_stack_json", "TEXT")
         ensure_column(connection, "documents", "redo_stack_json", "TEXT")
+        # 2e: per-document standing instructions injected into every agent turn.
+        ensure_column(connection, "documents", "agent_instructions", "TEXT")
         backfill_edit_envelopes(connection)
 
 
@@ -562,6 +564,17 @@ class Repository:
             (document_id,),
         ).fetchone()
         return int(row["max_sequence"]) + 1
+
+    def set_agent_instructions(
+        self, document_id: str, instructions: Optional[str]
+    ) -> JsonObject:
+        self.require_document(document_id)
+        self.connection.execute(
+            "UPDATE documents SET agent_instructions = ?, updated_at = ? WHERE id = ?",
+            (instructions, utc_now(), document_id),
+        )
+        self.connection.commit()
+        return self.require_document(document_id)
 
     # --- Agent runs: async turns + their durable SSE event stream ---
 
@@ -1233,6 +1246,9 @@ def document_from_row(row: sqlite3.Row) -> JsonObject:
         else None,
         "redo_stack": decode_optional(row["redo_stack_json"])
         if "redo_stack_json" in columns
+        else None,
+        "agent_instructions": row["agent_instructions"]
+        if "agent_instructions" in columns
         else None,
         "created_at": row["created_at"],
         "updated_at": row["updated_at"],

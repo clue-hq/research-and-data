@@ -110,7 +110,14 @@ class AgentTurnPreviewRequest(BaseModel):
     selected_node_id: Optional[str] = None
     target_node_ids: List[str] = Field(default_factory=list)
     diagnostics: List[JsonObject] = Field(default_factory=list)
+    # 2e: the document's standing agent instructions, sent by the editor with
+    # every turn and folded into the prompt context.
+    agent_instructions: Optional[str] = None
     max_iterations: Optional[int] = None
+
+
+class SetAgentInstructionsRequest(BaseModel):
+    instructions: Optional[str] = None
 
 
 class FinalizeTemplateRequest(BaseModel):

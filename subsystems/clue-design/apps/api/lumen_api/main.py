@@ -44,6 +44,7 @@ from .dto import (
 )
 from .models import (
     AgentTurnPreviewRequest,
+    SetAgentInstructionsRequest,
     AttachBrandKitRequest,
     ApplyOperationsRequest,
     ApplyStructuredEditRequest,
@@ -441,6 +442,23 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
         document_id: str, repo: Repository = Depends(repository)
     ) -> JsonObject:
         return public_document(require_document(repo, document_id))
+
+    @app.put("/documents/{document_id}/agent-instructions")
+    def set_agent_instructions(
+        document_id: str,
+        payload: SetAgentInstructionsRequest,
+        repo: Repository = Depends(repository),
+    ) -> JsonObject:
+        """2e: per-document standing instructions for the agent. Stored on the
+        document (they survive reloads) and sent by the editor with every
+        turn; an empty/blank body clears them."""
+        instructions = (payload.instructions or "").strip() or None
+        document = repo.set_agent_instructions(document_id, instructions)
+        return {
+            "schema_version": 1,
+            "document_id": document_id,
+            "agent_instructions": document["agent_instructions"],
+        }
 
     @app.put("/documents/{document_id}/scene")
     def replace_scene(
@@ -3398,6 +3416,14 @@ def editor_agent_prompt(payload: AgentTurnPreviewRequest) -> str:
         "current_diagnostics": payload.diagnostics[:20],
         "editor_instruction": editor_instruction(targets),
     }
+    instructions = (payload.agent_instructions or "").strip()
+    if instructions:
+        # 2e: the document's standing instructions apply to EVERY turn — they
+        # shape style and constraints but never override the current request.
+        context["standing_instructions"] = (
+            f"{instructions} (These are the document's standing instructions; "
+            "apply them to every turn, but the user's current request wins on conflict.)"
+        )
     return (
         f"{payload.prompt}\n\n"
         "Editor context JSON:\n"

@@ -463,6 +463,48 @@ def test_editor_prompt_without_targets_uses_soft_targeting() -> None:
     assert "what you preserved" in prompt
 
 
+def test_agent_instructions_round_trip_and_prompt_injection(client: TestClient) -> None:
+    from lumen_api.main import editor_agent_prompt
+    from lumen_api.models import AgentTurnPreviewRequest
+
+    document = create_document(client)
+    document_id = document["id"]
+
+    # Set → returned by GET (survives reload); blank → cleared.
+    response = client.put(
+        f"/documents/{document_id}/agent-instructions",
+        json={"instructions": "Always use the serif brand voice."},
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["agent_instructions"] == "Always use the serif brand voice."
+    assert (
+        client.get(f"/documents/{document_id}").json()["agent_instructions"]
+        == "Always use the serif brand voice."
+    )
+    cleared = client.put(
+        f"/documents/{document_id}/agent-instructions", json={"instructions": "   "}
+    )
+    assert cleared.json()["agent_instructions"] is None
+
+    # The editor sends the instructions with each turn; they land in the
+    # context as standing instructions that never override the request.
+    prompt = editor_agent_prompt(
+        AgentTurnPreviewRequest(
+            prompt="Make a poster",
+            scene=minimal_scene(),
+            agent_instructions="Always use the serif brand voice.",
+        )
+    )
+    assert "standing_instructions" in prompt
+    assert "Always use the serif brand voice." in prompt
+    assert "current request wins" in prompt
+    # Absent instructions → no standing block at all.
+    bare = editor_agent_prompt(
+        AgentTurnPreviewRequest(prompt="Make a poster", scene=minimal_scene())
+    )
+    assert "standing_instructions" not in bare
+
+
 def _fake_async_runner(status: str = "proposed"):
     def runner(payload, root):
         return {
