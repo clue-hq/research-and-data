@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type Dispatch, type SetStateAction } from "react";
 import type { AgentChatMessage, QueuedAgentMessage } from "@/components/AgentChatPanel";
-import type { EditorHistoryFrame } from "@/components/EditorApp";
+import type { EditorHistoryFrame } from "@/hooks/useEditHistory";
 import type {
   AgentRunEvent,
   EditorAgentResult,
@@ -15,7 +15,6 @@ import type {
   PageId,
   Scene
 } from "@/engine/contracts";
-import type { EditorPanelMode } from "@/engine/editorModes";
 import { defaultEditorExportProfile, type EditorExportResult } from "@/engine/exportRunner";
 import type { EditorPreflightResult } from "@/engine/preflightRunner";
 import { firstPageId } from "@/engine/sceneQueries";
@@ -88,7 +87,6 @@ export interface UseAgentTurnDeps {
   setPreflightResult: Dispatch<SetStateAction<EditorPreflightResult | null>>;
   setExportResult: Dispatch<SetStateAction<EditorExportResult | null>>;
   setWorkspaceMode: Dispatch<SetStateAction<"canvas" | "export" | "compare">>;
-  setEditorPanelMode: Dispatch<SetStateAction<EditorPanelMode>>;
   commitAppliedOperations: (
     previousScene: Scene,
     operations: Operation[],
@@ -159,7 +157,6 @@ export function useAgentTurn(deps: UseAgentTurnDeps) {
     setPreflightResult,
     setExportResult,
     setWorkspaceMode,
-    setEditorPanelMode,
     commitAppliedOperations,
     runExportForScene,
     applyOperations,
@@ -591,42 +588,16 @@ export function useAgentTurn(deps: UseAgentTurnDeps) {
     if (!agentProposal || agentProposal.operations.length === 0 || agentPreview) {
       return;
     }
-    // Phase 0c: the panel button re-enters the reviewable preview (the normal
-    // path previews automatically when the proposal arrives). In server-only
-    // mode (no engine) previewing is impossible; fall through to the legacy
-    // immediate apply, which surfaces the server-only diagnostic.
+    // The panel button re-enters the reviewable preview (the normal path
+    // previews automatically when the proposal arrives). In server-only mode
+    // (no engine) previewing is impossible; applyOperations then surfaces the
+    // server-only diagnostic and applies nothing — its onAccepted callback
+    // can never run without an engine, so none is passed.
     if (engineRef.current) {
       previewAgentProposal(agentProposal);
       return;
     }
-
-    const proposedOperations = agentProposal.operations;
-    const proposedPageId = agentPreviewPageId(proposedOperations, activePageId, scene);
-    applyOperations(proposedOperations, (nextScene) => {
-      const previewPageId =
-        proposedPageId && nextScene.pages[proposedPageId]
-          ? proposedPageId
-          : firstPageId(nextScene);
-      setAgentProposal(null);
-      setAgentMessages((messages) => [
-        ...messages,
-        {
-          id: uniqueChatMessageId("system"),
-          role: "system",
-          content: `Applied ${proposedOperations.length} agent operation${proposedOperations.length === 1 ? "" : "s"} and started preflight/export preview.`
-        }
-      ]);
-      setEditorPanelMode("inspector");
-      setActivePageId(previewPageId);
-      setSelectedNodeId((currentSelectedNodeId) =>
-        currentSelectedNodeId && nextScene.nodes[currentSelectedNodeId]
-          ? currentSelectedNodeId
-          : null
-      );
-      if (previewPageId) {
-        void runExportForScene(nextScene, defaultEditorExportProfile(), [previewPageId]);
-      }
-    });
+    applyOperations(agentProposal.operations);
   };
 
   return {

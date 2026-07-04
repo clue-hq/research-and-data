@@ -111,6 +111,7 @@ import {
   pendingAgentReviewDiagnostic,
   useAgentTurn
 } from "@/hooks/useAgentTurn";
+import { useEditHistory } from "@/hooks/useEditHistory";
 import { useTargetChips } from "@/hooks/useTargetChips";
 
 export interface EditorAppProps {
@@ -157,10 +158,6 @@ const defaultEditQueueFactory: EditQueueFactory = (options) =>
     ...options
   });
 
-export interface EditorHistoryFrame {
-  scene: Scene;
-  operations: Operation[];
-}
 
 const defaultExportRunner = createApiExportRunner({
   apiBaseUrl: editorApiBaseUrl()
@@ -268,10 +265,6 @@ export default function EditorApp({
     reason: "load_failed" | "handshake_failed" | "version_mismatch";
     detail: string;
   } | null>(null);
-  const [lastOperation, setLastOperation] = useState<Operation | null>(null);
-  const [undoStack, setUndoStack] = useState<EditorHistoryFrame[]>([]);
-  const [redoStack, setRedoStack] = useState<EditorHistoryFrame[]>([]);
-  const [operationHistory, setOperationHistory] = useState<Operation[]>([]);
   const [isBrandGovernanceRunning, setIsBrandGovernanceRunning] = useState(false);
   const [isBrandCompatibilityRunning, setIsBrandCompatibilityRunning] = useState(false);
   const [editorPanelMode, setEditorPanelMode] = useState<EditorPanelMode>("inspector");
@@ -438,6 +431,30 @@ export default function EditorApp({
       setScene(engine.scene);
     }
   };
+
+  // Local undo/redo history lives in useEditHistory (pure mechanics; the
+  // agent-turn canvas-lock guards stay HERE, on the orchestration layer,
+  // like every other guarded mutation path). Deps rebuilt per render.
+  const {
+    lastOperation,
+    setLastOperation,
+    undoStack,
+    setUndoStack,
+    redoStack,
+    setRedoStack,
+    operationHistory,
+    setOperationHistory,
+    undo: undoHistoryStep,
+    redo: redoHistoryStep
+  } = useEditHistory({
+    scene,
+    replaceScene,
+    setDiagnostics,
+    setBrandCompatibilityReport,
+    setPreflightResult,
+    setExportResult,
+    setWorkspaceMode
+  });
 
   // W3 optimistic pipeline: locally-applied batches persist to the
   // document API in order; the server reconciles at drain. Divergence is a
@@ -731,7 +748,6 @@ export default function EditorApp({
     setPreflightResult,
     setExportResult,
     setWorkspaceMode,
-    setEditorPanelMode,
     commitAppliedOperations,
     runExportForScene,
     applyOperations: (operations, onAccepted) => applyOperations(operations, onAccepted)
@@ -873,32 +889,7 @@ export default function EditorApp({
       setDiagnostics([agentTurnRunningDiagnostic()]);
       return;
     }
-    const undoFrame = undoStack[undoStack.length - 1];
-    if (!undoFrame) {
-      return;
-    }
-
-    const nextHistory =
-      undoFrame.operations.length > 0
-        ? operationHistory.slice(0, -undoFrame.operations.length)
-        : operationHistory;
-
-    setUndoStack((stack) => stack.slice(0, -1));
-    setRedoStack((stack) => [
-      ...stack.slice(-49),
-      {
-        scene,
-        operations: undoFrame.operations
-      }
-    ]);
-    setOperationHistory(nextHistory);
-    replaceScene(undoFrame.scene);
-    setLastOperation(nextHistory[nextHistory.length - 1] ?? null);
-    setDiagnostics([]);
-    setBrandCompatibilityReport(null);
-    setPreflightResult(null);
-    setExportResult(null);
-    setWorkspaceMode("canvas");
+    undoHistoryStep();
   };
 
   const redoLastOperation = () => {
@@ -910,27 +901,7 @@ export default function EditorApp({
       setDiagnostics([agentTurnRunningDiagnostic()]);
       return;
     }
-    const redoFrame = redoStack[redoStack.length - 1];
-    if (!redoFrame) {
-      return;
-    }
-
-    setRedoStack((stack) => stack.slice(0, -1));
-    setUndoStack((stack) => [
-      ...stack.slice(-49),
-      {
-        scene,
-        operations: redoFrame.operations
-      }
-    ]);
-    setOperationHistory((history) => [...history, ...redoFrame.operations].slice(-50));
-    replaceScene(redoFrame.scene);
-    setLastOperation(redoFrame.operations[redoFrame.operations.length - 1] ?? null);
-    setDiagnostics([]);
-    setBrandCompatibilityReport(null);
-    setPreflightResult(null);
-    setExportResult(null);
-    setWorkspaceMode("canvas");
+    redoHistoryStep();
   };
 
   const startAgentSidebarResize = (event: ReactPointerEvent<HTMLDivElement>) => {
