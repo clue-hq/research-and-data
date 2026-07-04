@@ -198,3 +198,30 @@ Editor UI and agent capability are **decoupled**: the agent authors through the 
 ### 5.4 Sequencing
 
 **4b color rider → Appearance/Fills slice @ Moda restyle → `$gradient.*` tokens + SVG extraction @ brand-import track → mesh/blur/blend/image-fill on demand.**
+
+---
+
+## 6. Handoff-absolute (decided + SHIPPED 2026-07-05, user-critical)
+
+Direct user feedback after 4b (recordings in `.context/phase4b5/`):
+end users (sales/marketing) must never experience layout-engine behavior —
+no sibling re-flow on drag, no detach concept, no auto-layout jargon. This
+SUPERSEDES Phase 1's "explicit detach toggle" UX framing: detach still
+exists as power-user surface, but the primary contract is now **the layout
+engine is the agent's authoring tool; humans always receive baked
+absolute** — precisely Moda's authoring-time-intelligence → baked-absolute
+handoff (§1.1/§2.5), while we retain the ability to re-enter the solve.
+
+Mechanism (record: `.context/phase4b5/IMPLEMENTATION.md`):
+- Engine `build_freeze_layout` — every unlocked Stack container → Free in
+  one invertible zero-motion batch; layout props survive so agent turns can
+  re-Stack; idempotent; wire kind `freeze_layout`.
+- Freeze at agent-turn **Accept**, merged into the turn's own undo frame /
+  envelope / checkpoint (one ⌘Z = whole turn incl. freeze).
+- Lazy freeze on **first human gesture** on a solver-managed node
+  (pointer-down seam) — migrates pre-freeze docs invisibly.
+- Round-trip: exclusive turns; chip-targeted property edits are
+  layout-inert; layout-affecting turns may re-Stack → Accept re-freezes.
+  Agent-side follow-ups pending: layout_mode/human-arranged in _node_brief,
+  prefer-absolute-edits prompt policy, explicit transforms on insert into
+  Free containers.
