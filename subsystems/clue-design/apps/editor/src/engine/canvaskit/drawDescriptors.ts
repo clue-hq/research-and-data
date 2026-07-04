@@ -295,9 +295,32 @@ function drawText(ck: CanvasKit, canvas: Canvas, d: RenderNodeDescriptor, fontPr
   const builder = ck.ParagraphBuilder.MakeFromFontProvider(style, fontProvider);
   builder.addText(d.text.content);
   const paragraph = builder.build();
-  // No-wrap text lays out on one line; give it room so it does not wrap.
-  paragraph.layout(d.text.wrap === "wrap" ? d.width : Number.MAX_SAFE_INTEGER);
-  canvas.drawParagraph(paragraph, 0, 0);
+  if (d.text.wrap === "wrap") {
+    // Wrapped text breaks at the node width — the same width the exporter
+    // (and the measurer) use, so line breaks are bit-faithful. Alignment
+    // resolves against this width, so it paints at the block origin.
+    paragraph.layout(d.width);
+    canvas.drawParagraph(paragraph, 0, 0);
+  } else {
+    // No-wrap text: mirror the Skia exporter's `paint_text` NoWrap arm
+    // exactly (lumen-skia/src/render.rs). Laying out at a near-infinite
+    // width and painting at x=0 works for LEFT alignment, but CENTER/RIGHT
+    // anchor the glyphs within that width — pushing them ~quadrillions of
+    // px off-canvas (the reported "centered button labels don't paint"
+    // bug). Instead: lay out unbounded to find the natural line width,
+    // relayout snugly so alignment math stays in small coordinates, then
+    // place the block per alignment against the real node width.
+    paragraph.layout(Number.MAX_SAFE_INTEGER);
+    const natural = Math.ceil(paragraph.getLongestLine()) + 2;
+    paragraph.layout(natural);
+    const x =
+      d.text.align === "center"
+        ? (d.width - natural) / 2
+        : d.text.align === "right"
+          ? d.width - natural
+          : 0;
+    canvas.drawParagraph(paragraph, x, 0);
+  }
   paragraph.delete();
   builder.delete();
 }
