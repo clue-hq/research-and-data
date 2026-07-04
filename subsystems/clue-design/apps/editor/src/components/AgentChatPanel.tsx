@@ -1,8 +1,9 @@
-import { AlertTriangle, Bot, Check, CheckCircle2, Eye, FileCode2, Loader2, Send, Sparkles, X } from "lucide-react";
+import { AlertTriangle, Bot, Check, CheckCircle2, Crosshair, Eye, FileCode2, Loader2, Send, Sparkles, X } from "lucide-react";
 import type { FormEvent } from "react";
 import type { Diagnostic, NodeId, Operation, PageId } from "@/engine/contracts";
 import type { AgentRunEvent, EditorAgentResult } from "@/engine/agentRunner";
 import { agentChecklist, agentEventLabel } from "@/engine/agentChecklist";
+import type { TargetChip } from "@/hooks/useTargetChips";
 
 export interface AgentChatMessage {
   id: string;
@@ -27,9 +28,13 @@ export interface AgentChatPanelProps {
   queuedMessages: QueuedAgentMessage[];
   /** 2b show-work: live run events driving the Moda plan checklist. */
   runEvents: AgentRunEvent[];
+  /** 2c: the chipped edit targets sent with the next turn. */
+  targetChips: TargetChip[];
   activePageId: PageId | null;
   selectedNodeId: NodeId | null;
   diagnostics: Diagnostic[];
+  onRemoveTargetChip: (id: NodeId) => void;
+  onClearTargetChips: () => void;
   onDraftChange: (value: string) => void;
   onSend: (prompt: string) => void;
   onQueueMessage: (content: string) => void;
@@ -47,9 +52,12 @@ export function AgentChatPanel({
   pendingReview,
   queuedMessages,
   runEvents,
+  targetChips,
   activePageId,
   selectedNodeId,
   diagnostics,
+  onRemoveTargetChip,
+  onClearTargetChips,
   onDraftChange,
   onSend,
   onQueueMessage,
@@ -131,6 +139,32 @@ export function AgentChatPanel({
               </button>
             </div>
           ))}
+        </div>
+      ) : null}
+      {targetChips.length > 0 ? (
+        <div className="agent-target-chips" aria-label="Edit targets">
+          <span className="agent-target-chips-label">
+            <Crosshair aria-hidden size={12} />
+            Editing {targetChips.length === 1 ? "this layer" : `${targetChips.length} layers`}
+            <button type="button" className="agent-target-chips-clear" onClick={onClearTargetChips}>
+              Clear
+            </button>
+          </span>
+          <div className="agent-target-chip-row">
+            {targetChips.map((chip) => (
+              <span key={chip.id} className="agent-target-chip" title={chip.id}>
+                <span className="agent-target-chip-name">{chip.name}</span>
+                <code className="agent-target-chip-id">{chip.id}</code>
+                <button
+                  type="button"
+                  aria-label={`Remove edit target: ${chip.name}`}
+                  onClick={() => onRemoveTargetChip(chip.id)}
+                >
+                  <X aria-hidden size={12} />
+                </button>
+              </span>
+            ))}
+          </div>
         </div>
       ) : null}
       <form className="agent-chat-form" onSubmit={submitPrompt}>

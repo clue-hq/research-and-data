@@ -1,8 +1,39 @@
-import { render } from "@testing-library/react";
+import { fireEvent, render } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Diagnostic } from "@/engine/contracts";
-import type { EditorAgentResult } from "@/engine/agentRunner";
+import type { EditorAgentResult, AgentRunEvent } from "@/engine/agentRunner";
+import type { TargetChip } from "@/hooks/useTargetChips";
 import { AgentChatPanel } from "../AgentChatPanel";
+
+function renderChips(
+  targetChips: TargetChip[],
+  handlers: { onRemoveTargetChip?: (id: string) => void; onClearTargetChips?: () => void } = {}
+) {
+  return render(
+    <AgentChatPanel
+      messages={[]}
+      draft=""
+      isRunning={false}
+      proposal={null}
+      pendingReview={false}
+      queuedMessages={[]}
+      runEvents={[] as AgentRunEvent[]}
+      targetChips={targetChips}
+      activePageId="page_a4"
+      selectedNodeId={null}
+      diagnostics={[]}
+      onRemoveTargetChip={handlers.onRemoveTargetChip ?? (() => {})}
+      onClearTargetChips={handlers.onClearTargetChips ?? (() => {})}
+      onDraftChange={() => {}}
+      onSend={() => {}}
+      onQueueMessage={() => {}}
+      onRemoveQueuedMessage={() => {}}
+      onApplyProposal={() => {}}
+      onAcceptProposal={() => {}}
+      onRejectProposal={() => {}}
+    />
+  );
+}
 
 function diagnostic(code: string, message: string): Diagnostic {
   return {
@@ -49,9 +80,12 @@ function renderPanel(proposal: EditorAgentResult) {
       pendingReview={false}
       queuedMessages={[]}
       runEvents={[]}
+      targetChips={[]}
       activePageId="page_a4"
       selectedNodeId={null}
       diagnostics={[]}
+      onRemoveTargetChip={() => {}}
+      onClearTargetChips={() => {}}
       onDraftChange={() => {}}
       onSend={() => {}}
       onQueueMessage={() => {}}
@@ -81,5 +115,39 @@ describe("AgentChatPanel duplicate-key regression", () => {
     expect(container.querySelectorAll(".agent-artifact-list li")).toHaveLength(2);
     // …and no "same key" warning was logged.
     expect(errors.some((message) => /same key/i.test(message))).toBe(false);
+  });
+});
+
+describe("AgentChatPanel target chips (2c)", () => {
+  it("renders chips with layer name + node id and fires remove/clear", () => {
+    const removed: string[] = [];
+    let cleared = 0;
+    const { getByText, getByLabelText } = renderChips(
+      [
+        { id: "node_headline", name: "Headline" },
+        { id: "node_cta", name: "CTA Button" }
+      ],
+      {
+        onRemoveTargetChip: (id) => removed.push(id),
+        onClearTargetChips: () => {
+          cleared += 1;
+        }
+      }
+    );
+    // Moda two-layer display: friendly name + the node id.
+    expect(getByText("Headline")).toBeInTheDocument();
+    expect(getByText("node_headline")).toBeInTheDocument();
+    expect(getByText("Editing 2 layers")).toBeInTheDocument();
+
+    fireEvent.click(getByLabelText("Remove edit target: CTA Button"));
+    expect(removed).toEqual(["node_cta"]);
+
+    fireEvent.click(getByText("Clear"));
+    expect(cleared).toBe(1);
+  });
+
+  it("renders no target strip when there are no chips", () => {
+    const { queryByLabelText } = renderChips([]);
+    expect(queryByLabelText("Edit targets")).toBeNull();
   });
 });

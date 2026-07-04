@@ -688,6 +688,8 @@ describe.skipIf(!wasmArtifactPresent)("EditorApp", () => {
       documentId: "doc_agent_editor",
       activePageId: "page_a4",
       selectedNodeId: "node_contact_name",
+      // 2c: the selected node becomes a chipped edit target.
+      targetNodeIds: ["node_contact_name"],
       diagnostics: [],
       // 2b: the live-event channel for the show-work checklist.
       onEvent: expect.any(Function)

@@ -24,6 +24,9 @@ export interface EditorAgentRequest {
   documentId?: string;
   activePageId: PageId | null;
   selectedNodeId: NodeId | null;
+  /** 2c: the chipped edit targets. Sent as target_node_ids; the server scopes
+   * the compensating edit to them and keeps every other node byte-identical. */
+  targetNodeIds?: NodeId[];
   diagnostics: Diagnostic[];
   /** 2b: live run events (checklist ticks) are pushed here as they stream. */
   onEvent?: (event: AgentRunEvent) => void;
@@ -87,7 +90,15 @@ export interface ApiAgentRunnerOptions {
 }
 
 export function createApiAgentRunner({ apiBaseUrl }: ApiAgentRunnerOptions): EditorAgentRunner {
-  return async ({ prompt, scene, documentId, activePageId, selectedNodeId, diagnostics }) => {
+  return async ({
+    prompt,
+    scene,
+    documentId,
+    activePageId,
+    selectedNodeId,
+    targetNodeIds,
+    diagnostics
+  }) => {
     const response = await fetch(new URL("/agent/turn-preview", apiBaseUrl), {
       method: "POST",
       headers: {
@@ -99,6 +110,7 @@ export function createApiAgentRunner({ apiBaseUrl }: ApiAgentRunnerOptions): Edi
         document_id: documentId ?? null,
         active_page_id: activePageId,
         selected_node_id: selectedNodeId,
+        target_node_ids: targetNodeIds ?? [],
         diagnostics
       })
     });
@@ -127,7 +139,16 @@ export function createStreamingAgentRunner({
   apiBaseUrl,
   eventSourceFactory = defaultEventSourceFactory
 }: StreamingAgentRunnerOptions): EditorAgentRunner {
-  return async ({ prompt, scene, documentId, activePageId, selectedNodeId, diagnostics, onEvent }) => {
+  return async ({
+    prompt,
+    scene,
+    documentId,
+    activePageId,
+    selectedNodeId,
+    targetNodeIds,
+    diagnostics,
+    onEvent
+  }) => {
     const response = await fetch(new URL("/agent/turns", apiBaseUrl), {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -137,6 +158,7 @@ export function createStreamingAgentRunner({
         document_id: documentId ?? null,
         active_page_id: activePageId,
         selected_node_id: selectedNodeId,
+        target_node_ids: targetNodeIds ?? [],
         diagnostics
       })
     });

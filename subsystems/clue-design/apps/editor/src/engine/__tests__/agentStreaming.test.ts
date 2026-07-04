@@ -38,7 +38,9 @@ class FakeEventSource implements EventSourceLike {
 
 describe("streaming agent runner", () => {
   it("POSTs /agent/turns, forwards run id + progress events, resolves on done", async () => {
-    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ run_id: "run_stream_1" })));
+    const fetchMock = vi.fn(
+      async (_url: string | URL) => new Response(JSON.stringify({ run_id: "run_stream_1" }))
+    );
     vi.stubGlobal("fetch", fetchMock);
 
     let source: FakeEventSource | null = null;

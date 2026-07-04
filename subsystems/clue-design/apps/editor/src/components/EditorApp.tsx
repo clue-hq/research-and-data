@@ -109,6 +109,7 @@ import {
   pendingAgentReviewDiagnostic,
   useAgentTurn
 } from "@/hooks/useAgentTurn";
+import { useTargetChips } from "@/hooks/useTargetChips";
 
 export interface EditorAppProps {
   documentId?: string;
@@ -633,6 +634,15 @@ export default function EditorApp({
     }
   };
 
+  // 2c selection chips: the human's edit targets for the agent, built from
+  // canvas selection and persisting across turns.
+  const {
+    chips: targetChips,
+    targetNodeIds,
+    removeChip: removeTargetChip,
+    clearChips: clearTargetChips
+  } = useTargetChips(scene, selectedNodeId);
+
   // The agent-turn state machine (run → propose → preview → Accept/Reject,
   // plus the message queue) lives in useAgentTurn. The deps object is
   // rebuilt every render so the hook's callbacks always close over the
@@ -664,6 +674,7 @@ export default function EditorApp({
     activeDocumentId,
     activePageId,
     selectedNodeId,
+    targetNodeIds,
     diagnostics,
     setDiagnostics,
     setScene,
@@ -1518,9 +1529,12 @@ export default function EditorApp({
               pendingReview={agentPreview !== null}
               queuedMessages={queuedAgentMessages}
               runEvents={runEvents}
+              targetChips={targetChips}
               activePageId={activePageId}
               selectedNodeId={selectedNodeId}
               diagnostics={diagnostics}
+              onRemoveTargetChip={removeTargetChip}
+              onClearTargetChips={clearTargetChips}
               onDraftChange={setAgentDraft}
               onSend={(prompt) => void sendAgentPrompt(prompt)}
               onQueueMessage={queueAgentMessage}
