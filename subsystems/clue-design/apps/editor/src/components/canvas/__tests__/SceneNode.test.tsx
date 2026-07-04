@@ -114,7 +114,9 @@ describe("SceneNode snap guide reporting (Konva fallback)", () => {
 
     onDragMove(fakeDragEvent(2, 40));
 
-    expect(guideUpdates.at(-1)).toEqual([{ axis: "x", position: 0, from: 40, to: 68 }]);
+    // "from"/"to" span the FULL page height (1080), not the dragged box's
+    // own extent — a Moda-style full-bleed guide line.
+    expect(guideUpdates.at(-1)).toEqual([{ axis: "x", position: 0, from: 0, to: 1080 }]);
   });
 
   it("reports no guides while dragging far from any snap target", () => {
@@ -152,7 +154,8 @@ describe("SceneNode snap guide reporting (Konva fallback)", () => {
     // the page bound" in canvasOperations.test.ts: scaleX = 1004/160.
     onTransform(fakeTransformEvent(72, 72, 0, 1004 / 160, 1));
 
-    expect(guideUpdates.at(-1)).toEqual([{ axis: "x", position: 1080, from: 72, to: 100 }]);
+    // Spans the full page height (1080), not the resized box's own extent.
+    expect(guideUpdates.at(-1)).toEqual([{ axis: "x", position: 1080, from: 0, to: 1080 }]);
   });
 
   it("clears guides on transform end", () => {

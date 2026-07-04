@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
-import type { SnapGuide } from "@/engine/canvasOperations";
+import { SNAP_GUIDE_COLOR, SNAP_GUIDE_DASH, type SnapGuide } from "@/engine/canvasOperations";
 import { handlePoint, type Box, type ResizeHandle } from "@/engine/transformerMath";
 
 /**
@@ -27,10 +27,6 @@ export const RESIZE_HANDLES: ResizeHandle[] = [
 
 const HANDLE_SIZE = 8;
 const ROTATE_OFFSET = 22;
-/** Smart-guide accent — Moda's alternate-object-selection magenta
- * (`--color-accent-magenta-selection`), reserved for guides so they read as
- * a distinct signal from the teal selection chrome. */
-const GUIDE_COLOR = "#f052cf";
 
 export interface SelectionOverlayProps {
   /** Selected node box + rotation in descriptor space (null = no selection). */
@@ -246,8 +242,9 @@ function SnapGuideLine({
       y1={a.y}
       x2={b.x}
       y2={b.y}
-      stroke={GUIDE_COLOR}
+      stroke={SNAP_GUIDE_COLOR}
       strokeWidth={1}
+      strokeDasharray={SNAP_GUIDE_DASH.join(" ")}
     />
   );
 }

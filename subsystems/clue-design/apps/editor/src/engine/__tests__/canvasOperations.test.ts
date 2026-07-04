@@ -322,6 +322,77 @@ describe("canvas operations", () => {
     ).toBeNull();
   });
 
+  it("snaps a pinned (Absolute) node's drag into its committed absolute_box (deliberate behavior change)", () => {
+    // The bug this fixes: dragging an Absolute-mode node near a page edge
+    // used to commit the raw, unsnapped position — no guide engaged, no
+    // snap applied, even within the 8px threshold. Post-Phase-1, Absolute
+    // nodes are exactly what humans drag by hand, and Moda snaps everything.
+    const scene = customPixelScene();
+    const node = {
+      ...scene.nodes.node_contact_name,
+      position_mode: "absolute" as const,
+      absolute_box: { x: 24, y: 40, width: 160, height: 28 }
+    };
+    scene.nodes.node_contact_name = node;
+
+    const operation = canvasDragOperation({
+      scene,
+      node,
+      page: scene.pages.page_a4,
+      pageOrigin: { x: 0, y: 0 },
+      canvasX: 2, // within 6px threshold of the page's left edge (x=0)
+      canvasY: 40
+    });
+
+    expect(operation).toMatchObject({
+      kind: "update_node",
+      node_id: "node_contact_name",
+      patch: {
+        absolute_box: {
+          kind: "set",
+          value: { x: 0, y: 40, width: 160, height: 28 }
+        }
+      }
+    });
+  });
+
+  it("snaps a pinned (Absolute) node's resize into its committed absolute_box", () => {
+    const scene = customPixelScene();
+    const node = {
+      ...scene.nodes.node_contact_name,
+      position_mode: "absolute" as const,
+      absolute_box: { x: 72, y: 72, width: 160, height: 28 }
+    };
+    scene.nodes.node_contact_name = node;
+
+    // Byte-identical scaleX to "snaps resize gestures to page bounds":
+    // stretches the trailing edge to the page's right bound (x=1080).
+    const operation = canvasResizeOperation({
+      scene,
+      node,
+      page: scene.pages.page_a4,
+      pageOrigin: { x: 0, y: 0 },
+      transform: {
+        canvasX: 72,
+        canvasY: 72,
+        rotation: 0,
+        scaleX: 1004 / 160,
+        scaleY: 1
+      }
+    });
+
+    expect(operation).toMatchObject({
+      kind: "update_node",
+      node_id: "node_contact_name",
+      patch: {
+        absolute_box: {
+          kind: "set",
+          value: { x: 72, y: 72, width: 1008, height: 28 }
+        }
+      }
+    });
+  });
+
   it("rejects non-finite or zero-scale resize gestures", () => {
     const scene = customPixelScene();
     const node = scene.nodes.node_contact_name;
@@ -364,7 +435,9 @@ describe("snap guides (visualization)", () => {
       canvasY: 40
     });
 
-    expect(guides).toEqual([{ axis: "x", position: 0, from: 40, to: 68 }]);
+    // "from"/"to" span the FULL page height (1080), not the dragged box's
+    // own extent — a Moda-style full-bleed guide line.
+    expect(guides).toEqual([{ axis: "x", position: 0, from: 0, to: 1080 }]);
   });
 
   it("reports a center-alignment guide when a drag snaps to the page midline", () => {
@@ -382,7 +455,7 @@ describe("snap guides (visualization)", () => {
       canvasY: 40
     });
 
-    expect(guides).toEqual([{ axis: "x", position: 540, from: 40, to: 68 }]);
+    expect(guides).toEqual([{ axis: "x", position: 540, from: 0, to: 1080 }]);
   });
 
   it("reports both axes when a drag snaps into a safe-area corner", () => {
@@ -401,9 +474,10 @@ describe("snap guides (visualization)", () => {
       canvasY: 74
     });
 
+    // Both guides span the full page extent on their cross axis (1080x1080).
     expect(guides).toEqual([
-      { axis: "x", position: 72, from: 74, to: 102 },
-      { axis: "y", position: 72, from: 69, to: 229 }
+      { axis: "x", position: 72, from: 0, to: 1080 },
+      { axis: "y", position: 72, from: 0, to: 1080 }
     ]);
   });
 
@@ -423,14 +497,46 @@ describe("snap guides (visualization)", () => {
     expect(guides).toEqual([]);
   });
 
-  it("reports no guides for pinned or freehand nodes (they never snap)", () => {
+  it("snaps a pinned (Absolute) node to page guides, same as a managed node (deliberate behavior change)", () => {
+    // Post-Phase-1, Absolute nodes are exactly what humans drag by hand, and
+    // Moda snaps everything — pinned/freehand exclusion from guide-snapping
+    // was 4b-4 visualization-only scope, not a permanent policy.
     const scene = customPixelScene();
-    const node = { ...scene.nodes.node_contact_name, position_mode: "absolute" as const };
+    const node = {
+      ...scene.nodes.node_contact_name,
+      position_mode: "absolute" as const,
+      absolute_box: { x: 24, y: 40, width: 160, height: 28 }
+    };
     scene.nodes.node_contact_name = node;
 
+    // canvasX=2 is within the 6px threshold of the page's left edge (x=0).
     const guides = dragSnapGuides({
       scene,
       node,
+      page: scene.pages.page_a4,
+      pageOrigin: { x: 0, y: 0 },
+      canvasX: 2,
+      canvasY: 40
+    });
+
+    expect(guides).toEqual([{ axis: "x", position: 0, from: 0, to: 1080 }]);
+  });
+
+  it("reports no guides for a freehand child of a Free container (no page-space box to snap)", () => {
+    const scene = customPixelScene();
+    scene.nodes.node_free_container = {
+      ...scene.nodes.node_contact_name,
+      id: "node_free_container",
+      name: "Free container",
+      kind: { kind: "auto_layout", direction: "column", wrap: false },
+      layout: { gap: 0, grow: 0, padding: [0, 0, 0, 0], layout_mode: "free" },
+      children: ["node_contact_name"]
+    };
+    scene.pages.page_a4.children = ["node_free_container"];
+
+    const guides = dragSnapGuides({
+      scene,
+      node: scene.nodes.node_contact_name,
       page: scene.pages.page_a4,
       pageOrigin: { x: 0, y: 0 },
       canvasX: 2,
@@ -459,7 +565,8 @@ describe("snap guides (visualization)", () => {
       }
     });
 
-    expect(guides).toEqual([{ axis: "x", position: 1080, from: 72, to: 100 }]);
+    // Spans the full page height (1080), not the resized box's own extent.
+    expect(guides).toEqual([{ axis: "x", position: 1080, from: 0, to: 1080 }]);
   });
 
   it("does not compute guides for locked or layout-managed nodes", () => {

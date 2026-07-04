@@ -49,6 +49,10 @@ function freehandScene(): Scene {
   const pageId = Object.keys(scene.pages)[0];
   // Identity canvas↔scene conversion so box coordinates assert exactly.
   scene.pages[pageId].size = { ...scene.pages[pageId].size, unit: "px", width: 800, height: 600 };
+  // Clear the fixture's mm-based safe area — under the new px page size its
+  // stale coordinates would otherwise become an unintended (and irrelevant
+  // to this test) page-guide snap target for the pinned-node assertions.
+  scene.pages[pageId].safe_area = null;
   const stack = baseNode("stack");
   stack.kind = { kind: "auto_layout", direction: "column", wrap: false };
   stack.size = {

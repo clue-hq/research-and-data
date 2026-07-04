@@ -17,14 +17,25 @@ import {
 
 const SNAP_THRESHOLD_CANVAS_PX = 6;
 
+/** Smart-guide style — Moda's focus-blue (`--color-border-focus` /
+ * `--color-accent-blue`), dashed so a guide reads as a transient snap signal
+ * rather than persistent selection chrome. One constant, shared by both
+ * canvas paths (`SelectionOverlay` for CanvasKit, `SnapGuideLayer` for the
+ * Konva fallback) so they render guides identically. */
+export const SNAP_GUIDE_COLOR = "#4c8dff";
+export const SNAP_GUIDE_DASH: [number, number] = [4, 3];
+
 export interface CanvasPoint {
   x: number;
   y: number;
 }
 
 /** One active snap guide, in page space (scene units). `position` is the
- * snapped edge/center line; `from`/`to` span both the dragged box and the
- * snap target along the guide, so the drawn line visually connects them. */
+ * snapped edge/center line; `from`/`to` span the full page extent along the
+ * guide (entire width for a "y" guide's x-run, entire height for an "x"
+ * guide's y-run) — Moda-style full-bleed guide lines, not just the dragged
+ * box's extent, computed here (where page size is in scope) so both
+ * renderers inherit it verbatim. */
 export interface SnapGuide {
   axis: "x" | "y";
   position: number;
@@ -78,13 +89,19 @@ export function canvasDragOperations({
 
   // Pinned node: the drag rewrites the page-space box. No parent-bounds
   // clamp (freehand drags are honored past boundaries and the render clips,
-  // Moda-style) and no guide snapping in v1 — the hand stays in control.
+  // Moda-style) — but it DOES snap to page guides, same as a managed node's
+  // transform: post-Phase-1, Absolute nodes are exactly what humans drag,
+  // and Moda snaps everything.
   const pin = pinnedBox(node);
   if (pin) {
+    const snappedPosition = snapPinnedPositionToGuides({
+      page,
+      box: { x: pageX, y: pageY, width: pin.width, height: pin.height }
+    });
     const nextBox = {
       ...pin,
-      x: roundForOperation(pageX),
-      y: roundForOperation(pageY)
+      x: roundForOperation(snappedPosition.x),
+      y: roundForOperation(snappedPosition.y)
     };
     return [
       updateNodeAbsoluteBox(node, nextBox),
@@ -151,9 +168,11 @@ export function canvasDragOperation(args: {
 
 /** The snap guides that would engage for this drag, in page space — a pure
  * readout alongside `canvasDragOperations` for the host to render as guide
- * lines. Empty when the node isn't guide-snapped (pinned/freehand nodes
- * don't snap, matching `canvasDragOperations`) or no guide is within
- * threshold. Never mutates and never affects the committed operation. */
+ * lines. Pinned (Absolute) nodes snap to page guides same as managed nodes
+ * (see `canvasDragOperations`); freehand children of a Free container still
+ * don't snap (no page-space box to test against parent-relative guides).
+ * Empty when no guide is within threshold. Never mutates and never affects
+ * the committed operation. */
 export function dragSnapGuides({
   scene,
   node,
@@ -172,14 +191,25 @@ export function dragSnapGuides({
   if (!isNodeDirectGeometryEditable(scene, node.id) || !Number.isFinite(canvasX) || !Number.isFinite(canvasY)) {
     return [];
   }
-  // Pinned and freehand drags don't snap (see canvasDragOperations) — no guides.
-  if (pinnedBox(node) || isNodeFreehand(scene, node.id)) {
-    return [];
-  }
   const pageX = sceneUnitFromCanvas(canvasX - pageOrigin.x, page);
   const pageY = sceneUnitFromCanvas(canvasY - pageOrigin.y, page);
-  const rawTransform = { ...node.transform, x: pageX, y: pageY };
   const guides: SnapGuide[] = [];
+
+  const pin = pinnedBox(node);
+  if (pin) {
+    snapPinnedPositionToGuides(
+      { page, box: { x: pageX, y: pageY, width: pin.width, height: pin.height } },
+      (guide) => guides.push(guide)
+    );
+    return guides;
+  }
+
+  // Freehand child of a Free container: no snap (see canvasDragOperations).
+  if (isNodeFreehand(scene, node.id)) {
+    return [];
+  }
+
+  const rawTransform = { ...node.transform, x: pageX, y: pageY };
   snapTransformToGuides(
     {
       scene,
@@ -250,15 +280,25 @@ export function canvasResizeOperation({
 
   // Pinned node: resize rewrites the page-space box (and bakes the Fixed
   // size in the same patch); rotation rides the transform. No clamps —
-  // freehand policy, matching drags.
+  // freehand policy, matching drags — but the box DOES snap to page guides,
+  // consistent with drag's pinned-node snapping.
   if (pinnedBox(node)) {
+    const snappedBox = snapPinnedBoxToGuides({
+      page,
+      box: {
+        x: sceneUnitFromCanvas(transform.canvasX - pageOrigin.x, page),
+        y: sceneUnitFromCanvas(transform.canvasY - pageOrigin.y, page),
+        width: sceneUnitFromCanvas(nextWidth, page),
+        height: sceneUnitFromCanvas(nextHeight, page)
+      }
+    });
     return updateNodeAbsoluteBoxAndRotation(
       node,
       {
-        x: roundForOperation(sceneUnitFromCanvas(transform.canvasX - pageOrigin.x, page)),
-        y: roundForOperation(sceneUnitFromCanvas(transform.canvasY - pageOrigin.y, page)),
-        width: roundForOperation(sceneUnitFromCanvas(nextWidth, page)),
-        height: roundForOperation(sceneUnitFromCanvas(nextHeight, page))
+        x: roundForOperation(snappedBox.x),
+        y: roundForOperation(snappedBox.y),
+        width: roundForOperation(snappedBox.width),
+        height: roundForOperation(snappedBox.height)
       },
       transform.rotation
     );
@@ -315,8 +355,9 @@ export function canvasResizeOperation({
 
 /** The snap guides that would engage for this resize, in page space — a pure
  * readout alongside `canvasResizeOperation` for the host to render as guide
- * lines. Empty for pinned/freehand nodes (no guide snapping, matching
- * `canvasResizeOperation`) or when nothing is within threshold. */
+ * lines. Pinned (Absolute) nodes snap to page guides same as managed nodes
+ * (see `canvasResizeOperation`); freehand children of a Free container still
+ * don't snap. Empty when nothing is within threshold. */
 export function resizeSnapGuides({
   scene,
   node,
@@ -333,12 +374,31 @@ export function resizeSnapGuides({
   if (!isNodeDirectGeometryEditable(scene, node.id) || !validCanvasTransform(transform)) {
     return [];
   }
-  if (pinnedBox(node) || isNodeFreehand(scene, node.id)) {
-    return [];
-  }
   const baseSize = nodeSizeForRender(node, page);
   const nextWidth = Math.max(2, baseSize.width * Math.abs(transform.scaleX));
   const nextHeight = Math.max(2, baseSize.height * Math.abs(transform.scaleY));
+  const guides: SnapGuide[] = [];
+
+  if (pinnedBox(node)) {
+    snapPinnedBoxToGuides(
+      {
+        page,
+        box: {
+          x: sceneUnitFromCanvas(transform.canvasX - pageOrigin.x, page),
+          y: sceneUnitFromCanvas(transform.canvasY - pageOrigin.y, page),
+          width: sceneUnitFromCanvas(nextWidth, page),
+          height: sceneUnitFromCanvas(nextHeight, page)
+        }
+      },
+      (guide) => guides.push(guide)
+    );
+    return guides;
+  }
+
+  if (isNodeFreehand(scene, node.id)) {
+    return [];
+  }
+
   const nextTransform: Transform = {
     ...node.transform,
     x: sceneUnitFromCanvas(transform.canvasX - pageOrigin.x, page),
@@ -349,7 +409,6 @@ export function resizeSnapGuides({
     width: sceneUnitFromCanvas(nextWidth, page),
     height: sceneUnitFromCanvas(nextHeight, page)
   };
-  const guides: SnapGuide[] = [];
   snapTransformAndSizeToGuides(
     {
       scene,
@@ -396,8 +455,8 @@ function snapTransformToGuides(
     return transform;
   }
   const threshold = sceneUnitFromCanvas(SNAP_THRESHOLD_CANVAS_PX, page);
-  const nextX = snapAxis("x", transform.x, size.width, guides.x, threshold, true, transform.y, size.height, onGuide);
-  const nextY = snapAxis("y", transform.y, size.height, guides.y, threshold, true, transform.x, size.width, onGuide);
+  const nextX = snapAxis("x", transform.x, size.width, guides.x, threshold, true, page, onGuide);
+  const nextY = snapAxis("y", transform.y, size.height, guides.y, threshold, true, page, onGuide);
   return {
     ...transform,
     x: nextX,
@@ -440,8 +499,7 @@ function snapTransformAndSizeToGuides(
     guides.x,
     threshold,
     false,
-    snapped.transform.y,
-    snapped.size.height,
+    page,
     onGuide
   );
   snapped.transform.y = snapAxis(
@@ -451,39 +509,63 @@ function snapTransformAndSizeToGuides(
     guides.y,
     threshold,
     false,
-    snapped.transform.x,
-    snapped.size.width,
+    page,
     onGuide
   );
-  snapped.size.width = snapExtentAxis(
-    "x",
-    snapped.transform.x,
-    snapped.size.width,
-    guides.x,
-    threshold,
-    snapped.transform.y,
-    snapped.size.height,
-    onGuide
-  );
+  snapped.size.width = snapExtentAxis("x", snapped.transform.x, snapped.size.width, guides.x, threshold, page, onGuide);
   snapped.size.height = snapExtentAxis(
     "y",
     snapped.transform.y,
     snapped.size.height,
     guides.y,
     threshold,
-    snapped.transform.x,
-    snapped.size.width,
+    page,
     onGuide
   );
   return snapped;
 }
 
+/** Snaps a pinned (Absolute) node's page-space box position to the page's
+ * guide targets (bounds / safe-area edges / midlines) — the pinned
+ * counterpart to `snapTransformToGuides`. Absolute nodes are exactly what
+ * humans drag post-Phase-1, and Moda snaps everything; there is no reason a
+ * freehand-placed node should be exempt from the same 8px-threshold guides
+ * as a flow node. Position only (size unaffected) — matches drag semantics
+ * for managed nodes. */
+function snapPinnedPositionToGuides(
+  { page, box }: { page: Page; box: { x: number; y: number; width: number; height: number } },
+  onGuide?: (guide: SnapGuide) => void
+): { x: number; y: number } {
+  const guides = guidesForPage(page);
+  const threshold = sceneUnitFromCanvas(SNAP_THRESHOLD_CANVAS_PX, page);
+  const nextX = snapAxis("x", box.x, box.width, guides.x, threshold, true, page, onGuide);
+  const nextY = snapAxis("y", box.y, box.height, guides.y, threshold, true, page, onGuide);
+  return { x: nextX, y: nextY };
+}
+
+/** Snaps a pinned (Absolute) node's page-space box position AND size to the
+ * page's guide targets — the pinned counterpart to
+ * `snapTransformAndSizeToGuides`, used by resize. */
+function snapPinnedBoxToGuides(
+  { page, box }: { page: Page; box: { x: number; y: number; width: number; height: number } },
+  onGuide?: (guide: SnapGuide) => void
+): { x: number; y: number; width: number; height: number } {
+  const guides = guidesForPage(page);
+  const threshold = sceneUnitFromCanvas(SNAP_THRESHOLD_CANVAS_PX, page);
+  const snapped = { ...box };
+  snapped.x = snapAxis("x", snapped.x, snapped.width, guides.x, threshold, false, page, onGuide);
+  snapped.y = snapAxis("y", snapped.y, snapped.height, guides.y, threshold, false, page, onGuide);
+  snapped.width = snapExtentAxis("x", snapped.x, snapped.width, guides.x, threshold, page, onGuide);
+  snapped.height = snapExtentAxis("y", snapped.y, snapped.height, guides.y, threshold, page, onGuide);
+  return snapped;
+}
+
 /** `snapPosition`, plus (when a snap engages) reporting the guide segment as
- * a line perpendicular to `axis` — an "x" guide is a vertical line at the
- * snapped x, drawn across the box's extent on the CROSS axis (`crossStart`/
- * `crossExtent`), since the snap target here is a page-level line (page
- * bounds / safe-area edge or midline) with no independent box of its own to
- * connect to. `reportOtherEnd` extends the search to the trailing-edge
+ * a line perpendicular to `axis`, spanning the ENTIRE artboard on the cross
+ * axis — an "x" guide is a vertical line at the snapped x, drawn from y=0 to
+ * the full page height (Moda-style full-bleed guide), not just the dragged
+ * box's extent; the page is in scope here, so both renderers inherit the
+ * span verbatim. `reportOtherEnd` extends the search to the trailing-edge
  * candidate too (drag: box may snap by either edge or center; resize: only
  * the leading edge moves). */
 function snapAxis(
@@ -493,8 +575,7 @@ function snapAxis(
   guides: number[],
   threshold: number,
   reportOtherEnd: boolean,
-  crossStart: number,
-  crossExtent: number,
+  page: Page,
   onGuide?: (guide: SnapGuide) => void
 ): number {
   const candidate = snapPositionWithCandidate(position, extent, guides, threshold, reportOtherEnd);
@@ -502,11 +583,12 @@ function snapAxis(
     return position;
   }
   if (onGuide) {
+    const span = pageCrossAxisSpan(axis, page);
     onGuide({
       axis,
       position: roundForOperation(candidate.guide),
-      from: roundForOperation(crossStart),
-      to: roundForOperation(crossStart + crossExtent)
+      from: span.from,
+      to: span.to
     });
   }
   return roundForOperation(candidate.value);
@@ -518,8 +600,7 @@ function snapExtentAxis(
   extent: number,
   guides: number[],
   threshold: number,
-  crossStart: number,
-  crossExtent: number,
+  page: Page,
   onGuide?: (guide: SnapGuide) => void
 ): number {
   const candidate = snapExtentWithCandidate(position, extent, guides, threshold);
@@ -527,14 +608,24 @@ function snapExtentAxis(
     return extent;
   }
   if (onGuide) {
+    const span = pageCrossAxisSpan(axis, page);
     onGuide({
       axis,
       position: roundForOperation(candidate.guide),
-      from: roundForOperation(crossStart),
-      to: roundForOperation(crossStart + crossExtent)
+      from: span.from,
+      to: span.to
     });
   }
   return roundForOperation(candidate.value);
+}
+
+/** The full-artboard span a guide line is drawn across on its CROSS axis —
+ * an "x" guide (vertical line) runs the page's full height; a "y" guide
+ * (horizontal line) runs the page's full width. Always page-space [0, page
+ * extent], regardless of the dragged node's own bounds. */
+function pageCrossAxisSpan(axis: "x" | "y", page: Page): { from: number; to: number } {
+  const extent = axis === "x" ? page.size.height : page.size.width;
+  return { from: 0, to: roundForOperation(extent) };
 }
 
 /** A snap candidate: `guide` is the page-space guide line it targets, `value`
@@ -620,12 +711,7 @@ function guidesForNodeParent(
     if (!parentPage) {
       return null;
     }
-    const guides = guidesForBounds(parentPage.size.width, parentPage.size.height);
-    if (parentPage.safe_area) {
-      guides.x.push(parentPage.safe_area.x, parentPage.safe_area.x + parentPage.safe_area.width, parentPage.safe_area.x + parentPage.safe_area.width / 2);
-      guides.y.push(parentPage.safe_area.y, parentPage.safe_area.y + parentPage.safe_area.height, parentPage.safe_area.y + parentPage.safe_area.height / 2);
-    }
-    return dedupeGuides(guides);
+    return guidesForPage(parentPage);
   }
 
   const parentNode = scene.nodes[parentInfo.parent.id];
@@ -634,6 +720,29 @@ function guidesForNodeParent(
   }
   const parentSize = nodeSceneUnitSize(parentNode, page);
   return dedupeGuides(guidesForBounds(parentSize.width, parentSize.height));
+}
+
+/** Page bounds + safe-area guide targets, in page space. A pinned
+ * (Absolute) node's `absolute_box` is already page-space regardless of
+ * structural nesting, so it always snaps against the PAGE — not whatever
+ * container it happens to be a descendant of (unlike `guidesForNodeParent`,
+ * which resolves the immediate structural parent's local frame for
+ * flow-positioned nodes). */
+function guidesForPage(page: Page): { x: number[]; y: number[] } {
+  const guides = guidesForBounds(page.size.width, page.size.height);
+  if (page.safe_area) {
+    guides.x.push(
+      page.safe_area.x,
+      page.safe_area.x + page.safe_area.width,
+      page.safe_area.x + page.safe_area.width / 2
+    );
+    guides.y.push(
+      page.safe_area.y,
+      page.safe_area.y + page.safe_area.height,
+      page.safe_area.y + page.safe_area.height / 2
+    );
+  }
+  return dedupeGuides(guides);
 }
 
 function nodeSceneUnitSize(node: SceneNodeModel, page: Page): { width: number; height: number } {

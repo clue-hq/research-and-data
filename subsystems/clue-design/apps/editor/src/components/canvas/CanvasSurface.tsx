@@ -15,7 +15,7 @@ import { Group, Layer, Line, Rect, Stage, Text, Transformer } from "react-konva"
 import type Konva from "konva";
 import type { NodeId, Operation, PageId, Scene } from "@/engine/contracts";
 import { canvasDirectEditNotice, isCanvasDirectGeometryEditable } from "@/engine/canvasSelection";
-import type { SnapGuide } from "@/engine/canvasOperations";
+import { SNAP_GUIDE_COLOR, SNAP_GUIDE_DASH, type SnapGuide } from "@/engine/canvasOperations";
 import { getPage } from "@/engine/sceneQueries";
 import { pageDescriptor } from "@/engine/renderAdapter";
 import type { WorkspaceArtboard, WorkspaceModel } from "@/engine/workspaceLayout";
@@ -443,11 +443,6 @@ function ArtboardFrame({
   );
 }
 
-/** Smart-guide accent — Moda's alternate-object-selection magenta
- * (`--color-accent-magenta-selection`), matching the CanvasKit overlay so
- * both canvas paths render guides identically. */
-const GUIDE_COLOR = "#f052cf";
-
 /**
  * Renders the currently-engaged snap guides as 1px lines in the artboard's
  * local (page-space × unitScale) coordinates — same placement convention as
@@ -472,8 +467,9 @@ export function SnapGuideLayer({ guides, unitScale }: { guides: SnapGuide[]; uni
             key={`guide-${guide.axis}-${index}`}
             name="snap-guide"
             points={points}
-            stroke={GUIDE_COLOR}
+            stroke={SNAP_GUIDE_COLOR}
             strokeWidth={1}
+            dash={SNAP_GUIDE_DASH}
             listening={false}
           />
         );

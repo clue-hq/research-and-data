@@ -42,7 +42,9 @@ describe("SnapGuideLayer (Konva fallback)", () => {
     expect(lines).toHaveLength(1);
     // points = [x, yFrom, x, yTo] scaled by unitScale=2.
     expect(lines[0].getAttribute("data-points")).toBe("0,80,0,136");
-    expect(lines[0].getAttribute("data-stroke")).toBe("#f052cf");
+    // Moda focus-blue, dashed — matches the CanvasKit overlay's guide style.
+    expect(lines[0].getAttribute("data-stroke")).toBe("#4c8dff");
+    expect(lines[0].getAttribute("data-dash")).toBe("4,3");
   });
 
   it("renders a horizontal line for a y-axis guide", () => {
