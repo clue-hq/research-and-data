@@ -28,8 +28,10 @@ from .schemas import (
     VisualTarget,
 )
 from .prompts import (
+    DSL_REF_GRAMMAR_ESCALATION,
     IMAGERY_REPAIR_RECIPE,
     POSTER_RECOMPOSE_RECIPE,
+    REPEAT_BLOCK_ESCALATION,
     SEEDED_CONTINUATION_RECIPE,
 )
 from .tools import LumenDesignTools
@@ -556,6 +558,47 @@ class LumenQualityLoop:
                 )
                 continue
 
+            # Agent-quality: a block IDENTICAL to the previous iteration's
+            # cannot change the outcome — the prior attempt either applied (so
+            # this is a no-op) or was rejected (so this fails the same way).
+            # Observed live (run_d6e08a28): the same 1-op patch three times
+            # against the same critique, burning the whole repair budget. Skip
+            # the wasted compile/review and escalate the standing feedback so
+            # the next attempt must change strictly more. This check sits
+            # AFTER the cluster/surgical gates on purpose: their violation
+            # feedback is the more specific correction, so it wins on a first
+            # offense; the repeat gate catches identical re-emits that would
+            # otherwise burn a full compile/review cycle.
+            previous_source = (
+                self.state.iterations[-2].dsl_source
+                if len(self.state.iterations) >= 2
+                else None
+            )
+            if (
+                previous_source is not None
+                and source.strip() == previous_source.strip()
+                and self.previous_feedback
+            ):
+                standing = self.previous_feedback[-1]
+                if standing.get("escalation") != "repeat_block":
+                    standing["escalation"] = "repeat_block"
+                    standing["authoring_constraints"] = [
+                        REPEAT_BLOCK_ESCALATION,
+                        *(standing.get("authoring_constraints") or []),
+                    ]
+                iteration_record.stop_reason = StopReason.compile_failed
+                self.tools.record(
+                    "coordinator",
+                    "repeat_block_escalated",
+                    input_summary=source[:300],
+                    output_summary=(
+                        "identical block re-emitted; compile/review skipped "
+                        "and the standing feedback escalated"
+                    ),
+                    payload={"repeated_source": source[:2000]},
+                )
+                continue
+
             rewrite_scene_backup: Optional[dict] = None
             if (
                 decision.action_mode
@@ -677,6 +720,37 @@ class LumenQualityLoop:
                         correction["instruction"],
                         *(feedback.get("authoring_constraints") or []),
                     ]
+                # Agent-quality: two CONSECUTIVE halts on the same diagnostic
+                # code mean the corrective hint alone is not landing
+                # (run_8cbeae790f07 burned every iteration on one grammar
+                # form). Pin the ref-grammar excerpt into the next author
+                # request deterministically — the escalation heuristic from
+                # the agent-improvement backlog.
+                halt_code = (compile_summary.get("halted_at") or {}).get("code")
+                feedback["halt_code"] = halt_code
+                prior_feedback = block_request.repair_context or {}
+                if halt_code and prior_feedback.get("halt_code") == halt_code:
+                    feedback["escalation"] = "repeated_halt"
+                    feedback["authoring_constraints"] = [
+                        (
+                            f"ESCALATION — this is another consecutive {halt_code} "
+                            "halt; the previous correction did not land. Follow "
+                            "the pinned grammar below EXACTLY and do not repeat "
+                            "the failing form."
+                        ),
+                        DSL_REF_GRAMMAR_ESCALATION,
+                        *(feedback.get("authoring_constraints") or []),
+                    ]
+                    self.tools.record(
+                        "coordinator",
+                        "repeated_halt_escalated",
+                        input_summary=halt_code,
+                        output_summary=(
+                            "same-code compile halt repeated; ref-grammar "
+                            "excerpt pinned into the author request"
+                        ),
+                        payload={"halt_code": halt_code},
+                    )
                 repair_request = json.loads(
                     self.tools.create_repair_request(
                         exact_feedback=json.dumps(feedback, indent=2),

@@ -51,9 +51,11 @@ from lumen_deepagent.loop import (
 from lumen_deepagent.prompts import (
     COORDINATOR_SYSTEM_PROMPT,
     DSL_AUTHOR_SYSTEM_PROMPT,
+    DSL_REF_GRAMMAR_ESCALATION,
     IMAGERY_REPAIR_RECIPE,
     IMAGERY_RUBRIC,
     POSTER_RECOMPOSE_RECIPE,
+    REPEAT_BLOCK_ESCALATION,
     VISUAL_REVIEWER_SYSTEM_PROMPT,
     build_subagents,
 )
@@ -3352,6 +3354,150 @@ def test_quality_loop_records_max_iteration_stop(tmp_path: Path, monkeypatch):
     assert result["status"] == "completed_with_warnings"
     assert result["stop_reason"] == "max_iterations_reached"
     assert tools.scene["nodes"], "best preflight-clean draft must remain on the canvas"
+
+
+def test_identical_repeat_block_is_skipped_and_escalated(
+    tmp_path: Path, monkeypatch
+):
+    # run_d6e08a28 pinned: the author answered the same critique with the
+    # byte-identical 1-op patch on every iteration, burning the whole repair
+    # budget with zero information gain. An identical block cannot change the
+    # outcome, so the loop must skip the wasted compile/review, escalate the
+    # standing feedback, and hand the NEXT attempt the strengthened instruction.
+    monkeypatch.setattr("lumen_deepagent.tools.CoreClient", FakeCoreClient)
+    config = runtime_config(tmp_path, max_iterations=4)
+    tools = LumenDesignTools(config, "Create a square LinkedIn ad")
+    rejected_critique = VisualCritique(
+        accepted=False,
+        summary="Composition sits low.",
+        issues=[
+            VisualIssue(
+                category=CritiqueCategory.alignment,
+                target=VisualTarget(page_id="page_test", node_id="headline"),
+                message="Re-center the composition.",
+                suggested_repair="Wrap and center the main group.",
+            )
+        ],
+    )
+    author = ScriptedAuthor(
+        [
+            "page page_test",
+            "#headline x(c) y(c)",  # in-cluster repair; the critic still rejects
+            "#headline x(c) y(c)",  # IDENTICAL re-emit — must be skipped
+            "#headline pad(24)",  # the escalated, different attempt
+        ]
+    )
+    reviewer = ScriptedReviewer(
+        [
+            rejected_critique,
+            rejected_critique,
+            VisualCritique(accepted=True, summary="Centered now."),
+        ]
+    )
+    loop = LumenQualityLoop(tools, author, reviewer)
+
+    result = loop.run("Create a square LinkedIn ad")
+
+    assert result["status"] == "accepted"
+    assert len(author.requests) == 4
+    # The identical re-emit (iteration 3) consumed NO review call.
+    assert len(reviewer.calls) == 3
+    events = [
+        json.loads(line).get("event")
+        for line in (config.trace_dir / tools.run_id / "trace.jsonl")
+        .read_text(encoding="utf-8")
+        .splitlines()
+        if line.strip()
+    ]
+    assert "repeat_block_escalated" in events
+    # The final attempt's repair context carries the escalation up front.
+    escalated_context = author.requests[3].repair_context
+    assert escalated_context.get("escalation") == "repeat_block"
+    assert (escalated_context.get("authoring_constraints") or [""])[0] == (
+        REPEAT_BLOCK_ESCALATION
+    )
+
+
+class FakeSameHaltTwiceCoreClient(FakeCoreClient):
+    """First two compiles halt with the SAME diagnostic code (a modify-grammar
+    error, session-shaped exactly as the real path mangles it); the third
+    succeeds via the base fake."""
+
+    def __init__(self, repo_root: Path) -> None:
+        super().__init__(repo_root)
+        self.compile_calls = 0
+
+    def compile_dsl_into_scene(self, scene, source: str, dsl_session=None):
+        self.compile_calls += 1
+        if self.compile_calls <= 2:
+            return {
+                "scene": scene,
+                "applied_operations": 0,
+                "dsl": {
+                    "compile_output": {
+                        "operations": [],
+                        "diagnostics": [
+                            {
+                                "diagnostic": {
+                                    "code": "LUMD0210",
+                                    "message": "unsupported property syntax on modify line",
+                                    "severity": "error",
+                                },
+                                "span": {"line": 1, "column": 1},
+                            }
+                        ],
+                        "halted_at": {"code": "LUMD0210", "line": 1},
+                    },
+                    "operation_error": None,
+                    "session_snapshot": None,
+                },
+            }
+        return super().compile_dsl_into_scene(scene, source, dsl_session)
+
+
+def test_repeated_same_code_halt_pins_ref_grammar_escalation(
+    tmp_path: Path, monkeypatch
+):
+    # run_8cbeae790f07 pinned (the agent-improvement backlog's escalation
+    # heuristic): three DIFFERENT blocks, one unlearned grammar form, zero
+    # applied ops. On the second consecutive halt with the same code the loop
+    # must pin the ref-grammar excerpt into the next author request.
+    monkeypatch.setattr(
+        "lumen_deepagent.tools.CoreClient", FakeSameHaltTwiceCoreClient
+    )
+    config = runtime_config(tmp_path, max_iterations=3)
+    tools = LumenDesignTools(config, "Edit the headline")
+    author = ScriptedAuthor(
+        [
+            '#headline text "A"',
+            '#headline text "B"',
+            '#headline text("C")',
+        ]
+    )
+    reviewer = ScriptedReviewer([VisualCritique(accepted=True, summary="ok")])
+    loop = LumenQualityLoop(tools, author, reviewer)
+
+    result = loop.run("Edit the headline")
+
+    assert result["status"] == "accepted"
+    first, second = loop.previous_feedback[0], loop.previous_feedback[1]
+    assert first.get("halt_code") == "LUMD0210"
+    assert first.get("escalation") is None
+    assert second.get("halt_code") == "LUMD0210"
+    assert second.get("escalation") == "repeated_halt"
+    constraints = second.get("authoring_constraints") or []
+    assert DSL_REF_GRAMMAR_ESCALATION in constraints
+    assert "ESCALATION" in constraints[0]
+    events = [
+        json.loads(line).get("event")
+        for line in (config.trace_dir / tools.run_id / "trace.jsonl")
+        .read_text(encoding="utf-8")
+        .splitlines()
+        if line.strip()
+    ]
+    assert "repeated_halt_escalated" in events
+    # Iteration 3's author request received the pinned grammar.
+    assert author.requests[2].repair_context.get("escalation") == "repeated_halt"
 
 
 class FakeDestructiveRepairCoreClient(FakeCoreClient):

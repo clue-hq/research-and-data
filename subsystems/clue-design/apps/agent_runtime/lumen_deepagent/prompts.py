@@ -280,6 +280,43 @@ Repair rules:
 """
 
 
+# Escalation injected when the author re-emits a block IDENTICAL to the previous
+# iteration's (run_d6e08a28: the same 1-op patch three times against the same
+# critique, burning the whole repair budget with zero information gain). The
+# loop skips the wasted compile/review and prepends this to the standing
+# feedback instead.
+REPEAT_BLOCK_ESCALATION = (
+    "ESCALATION — your last block was IDENTICAL to the previous attempt, which "
+    "did not resolve this feedback; re-emitting it cannot change the outcome. "
+    "Change strictly more this time: address EVERY issue in the feedback, and "
+    "prefer restructuring the affected container/cluster (sizes, anchors, "
+    "grouping, gaps) over re-nudging the same property on the same node."
+)
+
+
+# Ref-grammar excerpt pinned into the author request after two CONSECUTIVE
+# compile halts with the same diagnostic code (run_8cbeae790f07: three different
+# blocks, one unlearned grammar form, zero applied ops). Prompts drift;
+# deterministic reroutes must not.
+DSL_REF_GRAMMAR_ESCALATION = (
+    "DSL REF GRAMMAR — pinned because the same compile halt repeated:\n"
+    "- `#node_id prop(...)` modifies a NODE; on a modify line every property is "
+    'a parenthesized call (`#headline text("New copy") font_size(64)`).\n'
+    "- Pages use the PAGE ref form `#page:page_id` (e.g. `#page:page_a4 "
+    "size(1080,1350,px)`); plain `#page_a4` is NODE grammar and halts "
+    "LUMD0901.\n"
+    "- Slots use `#slot:key`.\n"
+    "- `replace(...)`/`clone(...)`/`delete(...)` take NODE ids only, never page "
+    "ids; `replace(<node_id>)` swaps a subtree with your indented single-root "
+    "replacement.\n"
+    "- Element lines DECLARE new ids, and ids are document-global across ALL "
+    "pages — re-declaring an existing id (LUMD0401) or an existing page "
+    "(LUMA0200) rejects the block WHOLE.\n"
+    "- Do not re-emit the failing block unchanged: fix the grammar form the "
+    "diagnostic names, or take a structurally different approach."
+)
+
+
 # THE SHARED IMAGERY RUBRIC — single source of truth for both the in-loop visual
 # reviewer (Step 9) and the offline imagery LLM judge (Phase 2). The reviewer frames
 # it as a reject-on-failure gate; the judge frames it as a 0–3 score per axis. Keep the

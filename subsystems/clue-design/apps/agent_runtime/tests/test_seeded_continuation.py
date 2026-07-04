@@ -448,8 +448,16 @@ def test_within_block_duplicate_halt_is_not_pinned_surgical(
     tools = LumenDesignTools(config, "Create two variant pages")
     author = ScriptedAuthor(
         [
-            'page variant_a size(1080,1350,px)\npage variant_b size(1080,1350,px)',
-            'page variant_a size(1080,1350,px)\npage variant_b size(1080,1350,px)',
+            # First block: the same generic id on both pages (the live failure).
+            "page variant_a size(1080,1350,px)\n"
+            '  headline text "A" s(400,80)\n'
+            "page variant_b size(1080,1350,px)\n"
+            '  headline text "B" s(400,80)',
+            # Corrected re-emit: per-page suffixed ids.
+            "page variant_a size(1080,1350,px)\n"
+            '  headline_a text "A" s(400,80)\n'
+            "page variant_b size(1080,1350,px)\n"
+            '  headline_b text "B" s(400,80)',
         ]
     )
     reviewer = ScriptedReviewer([VisualCritique(accepted=True, summary="ok")])
