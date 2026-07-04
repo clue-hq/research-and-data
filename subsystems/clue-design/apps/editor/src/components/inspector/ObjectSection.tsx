@@ -27,6 +27,7 @@ import {
   isNodeDirectGeometryEditable,
   isNodeLayoutManaged,
   isNodePinned,
+  isNodeReorderableOnGesture,
   nodeDisplayName
 } from "@/engine/sceneQueries";
 import { deriveSelectionChromeModel } from "@/engine/selectionChrome";
@@ -50,7 +51,8 @@ export function ObjectSection({
   renderDiagnostics,
   onOperation,
   onStructuredEdit,
-  onSelectSubject
+  onSelectSubject,
+  layoutManagedEditing = false
 }: {
   scene: Scene;
   activePage: Page | null;
@@ -61,10 +63,16 @@ export function ObjectSection({
   onOperation: (operation: Operation) => void;
   onStructuredEdit?: (edit: StructuredEdit) => void;
   onSelectSubject?: (subject: DiagnosticSubject) => void;
+  /** Advanced per-document opt-in (4c-C): when true, a reorderable managed
+   * Stack child's hint mentions the canvas drag-to-reorder/resize gestures
+   * that become available instead of only pointing at Detach. */
+  layoutManagedEditing?: boolean;
 }) {
   const size = fixedSize(selectedNode.size);
   const layoutManaged = isNodeLayoutManaged(scene, selectedNode.id);
   const directGeometryEditable = isNodeDirectGeometryEditable(scene, selectedNode.id);
+  const reorderableInManagedMode =
+    layoutManagedEditing && isNodeReorderableOnGesture(scene, selectedNode.id);
   // Phase 1d freehand: a pinned node's geometry is its page-space
   // absolute_box — shown and edited directly (the solver treats the box as
   // authoritative), while transform stays the flow input for managed nodes.
@@ -208,7 +216,9 @@ export function ObjectSection({
           {pinned
             ? "Pinned (freehand): this node keeps its page-space box across relayouts. Re-attach to hand it back to the layout."
             : layoutManaged
-            ? "This node is managed by an auto-layout parent. Detach it to freehand, or use layout controls / layer reorder."
+            ? reorderableInManagedMode
+              ? "This node is managed by an auto-layout parent. Detach it to freehand, or use layout controls / layer reorder — in layout-managed mode you can also drag it on the canvas to reorder it and resize it directly."
+              : "This node is managed by an auto-layout parent. Detach it to freehand, or use layout controls / layer reorder."
             : selectedNode.locked
               ? "This node is locked. Unlock it before moving, resizing, or rotating it."
             : `Dimensions use the active page unit. Non-fixed dimensions currently show as ${dimensionToNumber(selectedNode.size.width)}.`}

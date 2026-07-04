@@ -5,12 +5,14 @@ import {
   updateNodeTransform,
   updateNodeTransformAndSize
 } from "./operations";
+import { updateNodeSize } from "./operations";
 import { nodeSizeForRender, sceneUnitFromCanvas } from "./renderAdapter";
 import {
   clampNodeSizeToParentBounds,
   clampNodeTransformToParentBounds,
   isNodeDirectGeometryEditable,
   isNodeFreehand,
+  isNodeReorderableOnGesture,
   parentComputedOrigin,
   parentInfoForNode
 } from "./sceneQueries";
@@ -277,21 +279,39 @@ export function canvasResizeOperation({
   node,
   page,
   pageOrigin,
-  transform
+  transform,
+  allowManagedResize = false
 }: {
   scene: Scene;
   node: SceneNodeModel;
   page: Page;
   pageOrigin: CanvasPoint;
   transform: CanvasTransformInput;
+  /** Phase 4c-C: layout-managed-editing opt-in. When true AND the node is a
+   * live solver-managed Stack child (`isNodeReorderableOnGesture`), a resize
+   * commits a SIZE-ONLY Fixed patch (below) instead of being rejected by the
+   * `isNodeDirectGeometryEditable` gate — the solver keeps owning position. */
+  allowManagedResize?: boolean;
 }): Operation | null {
-  if (!isNodeDirectGeometryEditable(scene, node.id) || !validCanvasTransform(transform)) {
+  const managedResize = allowManagedResize && isNodeReorderableOnGesture(scene, node.id);
+  if ((!managedResize && !isNodeDirectGeometryEditable(scene, node.id)) || !validCanvasTransform(transform)) {
     return null;
   }
 
   const baseSize = nodeSizeForRender(node, page);
   const nextWidth = Math.max(2, baseSize.width * Math.abs(transform.scaleX));
   const nextHeight = Math.max(2, baseSize.height * Math.abs(transform.scaleY));
+
+  // Managed stack child (4c-C): size-only Fixed patch, no transform/position/
+  // absolute_box writes — the solver owns position and will re-place the
+  // child at its slot with the new size. No guide snapping (guides are for
+  // free placement, meaningless for a solver-managed slot).
+  if (managedResize) {
+    return updateNodeSize(node, {
+      width: { kind: "fixed", value: roundForOperation(sceneUnitFromCanvas(nextWidth, page)) },
+      height: { kind: "fixed", value: roundForOperation(sceneUnitFromCanvas(nextHeight, page)) }
+    });
+  }
 
   // Pinned node: resize rewrites the page-space box (and bakes the Fixed
   // size in the same patch); rotation rides the transform. No clamps —

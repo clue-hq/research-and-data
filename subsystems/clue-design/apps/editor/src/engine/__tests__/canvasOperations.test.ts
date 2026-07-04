@@ -416,6 +416,117 @@ describe("canvas operations", () => {
       })
     ).toBeNull();
   });
+
+  describe("managed resize (4c-C, allowManagedResize)", () => {
+    it("commits a size-only Fixed patch for a managed Stack child, no transform/position writes", () => {
+      const scene = managedStackScene();
+      const node = scene.nodes.node_contact_name;
+
+      const operation = canvasResizeOperation({
+        scene,
+        node,
+        page: scene.pages.page_a4,
+        pageOrigin: { x: 0, y: 0 },
+        transform: { canvasX: 24, canvasY: 40, rotation: 0, scaleX: 2, scaleY: 1.5 },
+        allowManagedResize: true
+      });
+
+      expect(operation).toMatchObject({
+        kind: "update_node",
+        node_id: "node_contact_name",
+        patch: {
+          transform: { kind: "unchanged" },
+          size: { kind: "set", value: { width: { kind: "fixed", value: 320 }, height: { kind: "fixed", value: 42 } } }
+        }
+      });
+      // No position/absolute_box write of any kind rides along.
+      const patch = (operation as Extract<Operation, { kind: "update_node" }>).patch as unknown as Record<string, unknown>;
+      expect(patch.absolute_box).toBeUndefined();
+    });
+
+    it("is rejected (byte-identical to before) without allowManagedResize even for a managed child", () => {
+      const scene = managedStackScene();
+      const node = scene.nodes.node_contact_name;
+
+      const operation = canvasResizeOperation({
+        scene,
+        node,
+        page: scene.pages.page_a4,
+        pageOrigin: { x: 0, y: 0 },
+        transform: { canvasX: 24, canvasY: 40, rotation: 0, scaleX: 2, scaleY: 1.5 }
+      });
+
+      expect(operation).toBeNull();
+    });
+
+    it("leaves a pinned (absolute) node's resize path byte-identical when allowManagedResize is set", () => {
+      // A pinned node is never `isNodeReorderableOnGesture` (freehand), so
+      // passing allowManagedResize=true must not change its resize path.
+      const scene = customPixelScene();
+      const node = scene.nodes.node_contact_name;
+      node.position_mode = "absolute";
+      node.absolute_box = { x: 72, y: 72, width: 160, height: 28 };
+
+      const withoutFlag = canvasResizeOperation({
+        scene,
+        node,
+        page: scene.pages.page_a4,
+        pageOrigin: { x: 0, y: 0 },
+        transform: { canvasX: 72, canvasY: 72, rotation: 0, scaleX: 6.3, scaleY: 1 }
+      });
+      const withFlag = canvasResizeOperation({
+        scene,
+        node,
+        page: scene.pages.page_a4,
+        pageOrigin: { x: 0, y: 0 },
+        transform: { canvasX: 72, canvasY: 72, rotation: 0, scaleX: 6.3, scaleY: 1 },
+        allowManagedResize: true
+      });
+
+      expect(withFlag).toEqual(withoutFlag);
+    });
+
+    it("leaves a freehand child's resize path byte-identical when allowManagedResize is set", () => {
+      // A Free-container child is freehand, so isNodeReorderableOnGesture is
+      // false for it too — allowManagedResize must be a no-op here.
+      const scene = managedStackScene();
+      scene.nodes.stack.layout = { gap: 0, grow: 0, padding: [0, 0, 0, 0], layout_mode: "free" };
+      const node = scene.nodes.node_contact_name;
+
+      const withoutFlag = canvasResizeOperation({
+        scene,
+        node,
+        page: scene.pages.page_a4,
+        pageOrigin: { x: 0, y: 0 },
+        transform: { canvasX: 24, canvasY: 40, rotation: 0, scaleX: 2, scaleY: 1.5 }
+      });
+      const withFlag = canvasResizeOperation({
+        scene,
+        node,
+        page: scene.pages.page_a4,
+        pageOrigin: { x: 0, y: 0 },
+        transform: { canvasX: 24, canvasY: 40, rotation: 0, scaleX: 2, scaleY: 1.5 },
+        allowManagedResize: true
+      });
+
+      expect(withFlag).toEqual(withoutFlag);
+    });
+
+    it("never emits managed-resize guides — resizeSnapGuides stays empty for a managed child", () => {
+      const scene = managedStackScene();
+      const node = scene.nodes.node_contact_name;
+
+      const guides = resizeSnapGuides({
+        scene,
+        node,
+        page: scene.pages.page_a4,
+        pageOrigin: { x: 0, y: 0 },
+        transform: { canvasX: 24, canvasY: 40, rotation: 0, scaleX: 2, scaleY: 1.5 }
+      });
+
+      expect(guides).toEqual([]);
+    });
+  });
 });
 
 describe("snap guides (visualization)", () => {
@@ -604,6 +715,24 @@ function customPixelScene(): Scene {
     preset: "custom",
     orientation: "landscape"
   };
+  return scene;
+}
+
+/** `node_contact_name` as an unlocked child of a Stack auto-layout container
+ * — `isNodeReorderableOnGesture` true — on the customPixelScene page (px, 1:1
+ * scale) so canvas-px transform math is trivial to hand-check. */
+function managedStackScene(): Scene {
+  const scene = customPixelScene();
+  const node = scene.nodes.node_contact_name;
+  scene.nodes.stack = {
+    ...node,
+    id: "stack",
+    name: "Stack",
+    kind: { kind: "auto_layout", direction: "column", wrap: false },
+    layout: { gap: 0, grow: 0, padding: [0, 0, 0, 0], layout_mode: "stack" },
+    children: ["node_contact_name"]
+  };
+  scene.pages.page_a4.children = ["stack"];
   return scene;
 }
 

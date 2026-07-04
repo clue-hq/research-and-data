@@ -45,6 +45,60 @@ describe("SelectionOverlay (Wave 3 C3d)", () => {
     expect(container.querySelector('[data-role="disabled-handle-notice"]')?.textContent).toContain("auto-layout");
   });
 
+  it("4c-C: shows resize handles but not the rotate handle when they're split", () => {
+    const { container } = render(
+      <SelectionOverlay
+        selection={{ box: { x: 0, y: 0, width: 50, height: 50 }, rotation: 0 }}
+        pageOrigin={pageOrigin}
+        zoom={1}
+        showHandles={false}
+        showResizeHandles
+        showRotateHandle={false}
+      />
+    );
+    expect(container.querySelectorAll('[data-role="resize-handle"]')).toHaveLength(8);
+    expect(container.querySelector('[data-role="rotate-handle"]')).toBeNull();
+    // Handles are on, so the disabled-handle notice must not show even
+    // though showHandles itself is false.
+    expect(container.querySelector('[data-role="disabled-handle-notice"]')).toBeNull();
+  });
+
+  it("4c-C: showResizeHandles/showRotateHandle default to showHandles when omitted", () => {
+    const { container } = render(
+      <SelectionOverlay
+        selection={{ box: { x: 0, y: 0, width: 50, height: 50 }, rotation: 0 }}
+        pageOrigin={pageOrigin}
+        zoom={1}
+        showHandles={false}
+        disabledReason="Selection is managed by an auto-layout parent."
+      />
+    );
+    expect(container.querySelectorAll('[data-role="resize-handle"]')).toHaveLength(0);
+    expect(container.querySelector('[data-role="rotate-handle"]')).toBeNull();
+    expect(container.querySelector('[data-role="disabled-handle-notice"]')).not.toBeNull();
+  });
+
+  it("4c-C: draws a solid insertion-indicator line, mapped like a snap guide", () => {
+    const { container } = render(
+      <SelectionOverlay
+        selection={null}
+        pageOrigin={pageOrigin}
+        zoom={2}
+        insertionIndicator={{ axis: "y", position: 30, from: 0, to: 100 }}
+      />
+    );
+    const indicator = container.querySelector('[data-role="reorder-insertion-indicator"]')!;
+    expect(indicator).not.toBeNull();
+    expect(indicator.getAttribute("data-axis")).toBe("y");
+    expect(indicator.getAttribute("stroke-dasharray")).toBeNull();
+    // axis "y" -> horizontal line at fixed y=30, spanning x from 0 to 100.
+    // screen = pageOrigin + p * zoom.
+    expect(Number(indicator.getAttribute("x1"))).toBeCloseTo(pageOrigin.x + 0 * 2, 6);
+    expect(Number(indicator.getAttribute("y1"))).toBeCloseTo(pageOrigin.y + 30 * 2, 6);
+    expect(Number(indicator.getAttribute("x2"))).toBeCloseTo(pageOrigin.x + 100 * 2, 6);
+    expect(Number(indicator.getAttribute("y2"))).toBeCloseTo(pageOrigin.y + 30 * 2, 6);
+  });
+
   it("draws hover chrome separately from selected chrome", () => {
     const { container } = render(
       <SelectionOverlay

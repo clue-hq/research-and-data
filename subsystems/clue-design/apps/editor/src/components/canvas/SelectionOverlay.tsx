@@ -50,6 +50,12 @@ export interface SelectionOverlayProps {
   zoom: number;
   /** Whether to show resize/rotate handles (false for layout-managed nodes). */
   showHandles?: boolean;
+  /** Phase 4c-C: resize handles specifically — defaults to `showHandles` when
+   * omitted. A layout-managed-editing reorderable Stack child can have this
+   * true while `showRotateHandle` stays false. */
+  showResizeHandles?: boolean;
+  /** Phase 4c-C: the rotate handle specifically — defaults to `showHandles`. */
+  showRotateHandle?: boolean;
   /** Human-readable reason shown when direct geometry handles are suppressed. */
   disabledReason?: string | null;
   /** Slot keys bound to the selected node; used for subtle selected-node chrome. */
@@ -60,6 +66,11 @@ export interface SelectionOverlayProps {
   focal?: { x: number; y: number } | null;
   /** Commit a new focal point (drag end); only wired for image nodes. */
   onFocalChange?: (focal: { x: number; y: number }) => void;
+  /** Phase 4c-C: the live drag-to-reorder insertion line, in descriptor
+   * space — a solid (no dash) line, same color/mapping as a snap guide.
+   * Only meaningful during a managed-reorder gesture; the host suppresses
+   * `guides` while this is set (the two are mutually exclusive). */
+  insertionIndicator?: { axis: "x" | "y"; position: number; from: number; to: number } | null;
 }
 
 export function SelectionOverlay({
@@ -73,16 +84,21 @@ export function SelectionOverlay({
   pageOrigin,
   zoom,
   showHandles = true,
+  showResizeHandles,
+  showRotateHandle,
   disabledReason = null,
   slotKeys = [],
   diagnosticCounts = { errors: 0, warnings: 0 },
   focal = null,
-  onFocalChange
+  onFocalChange,
+  insertionIndicator = null
 }: SelectionOverlayProps) {
   const toScreen = (p: { x: number; y: number }) => ({
     x: pageOrigin.x + p.x * zoom,
     y: pageOrigin.y + p.y * zoom
   });
+  const resolvedShowResizeHandles = showResizeHandles ?? showHandles;
+  const resolvedShowRotateHandle = showRotateHandle ?? showHandles;
   const hasSlotKeys = slotKeys.length > 0;
   const diagnosticTone =
     diagnosticCounts.errors > 0 ? "error" : diagnosticCounts.warnings > 0 ? "warning" : null;
@@ -161,11 +177,11 @@ export function SelectionOverlay({
         <DiagnosticBadge selection={selection} toScreen={toScreen} counts={diagnosticCounts} tone={diagnosticTone} />
       ) : null}
 
-      {selection && !showHandles && disabledReason ? (
+      {selection && !resolvedShowResizeHandles && disabledReason ? (
         <DisabledNotice point={toScreen(selection.box)} text={disabledReason} />
       ) : null}
 
-      {selection && showHandles
+      {selection && resolvedShowResizeHandles
         ? RESIZE_HANDLES.map((handle) => {
             const p = toScreen(handlePoint(selection.box, handle, selection.rotation));
             return (
@@ -185,7 +201,7 @@ export function SelectionOverlay({
           })
         : null}
 
-      {selection && showHandles ? <RotateHandle selection={selection} toScreen={toScreen} /> : null}
+      {selection && resolvedShowRotateHandle ? <RotateHandle selection={selection} toScreen={toScreen} /> : null}
 
       {selection && focal && onFocalChange ? (
         <FocalHandle
@@ -215,7 +231,40 @@ export function SelectionOverlay({
       {guides.map((guide, index) => (
         <SnapGuideLine key={`guide-${guide.axis}-${index}`} guide={guide} toScreen={toScreen} />
       ))}
+
+      {insertionIndicator ? (
+        <InsertionIndicatorLine indicator={insertionIndicator} toScreen={toScreen} />
+      ) : null}
     </svg>
+  );
+}
+
+function InsertionIndicatorLine({
+  indicator,
+  toScreen
+}: {
+  indicator: { axis: "x" | "y"; position: number; from: number; to: number };
+  toScreen: (p: { x: number; y: number }) => { x: number; y: number };
+}) {
+  const a =
+    indicator.axis === "x"
+      ? toScreen({ x: indicator.position, y: indicator.from })
+      : toScreen({ x: indicator.from, y: indicator.position });
+  const b =
+    indicator.axis === "x"
+      ? toScreen({ x: indicator.position, y: indicator.to })
+      : toScreen({ x: indicator.to, y: indicator.position });
+  return (
+    <line
+      data-role="reorder-insertion-indicator"
+      data-axis={indicator.axis}
+      x1={a.x}
+      y1={a.y}
+      x2={b.x}
+      y2={b.y}
+      stroke={SNAP_GUIDE_COLOR}
+      strokeWidth={2}
+    />
   );
 }
 

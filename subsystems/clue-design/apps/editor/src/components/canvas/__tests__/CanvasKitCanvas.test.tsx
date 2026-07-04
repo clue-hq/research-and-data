@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { createEvent, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { minimalScene } from "@/fixtures/minimalScene";
 import type { Diagnostic, Node, Scene } from "@/engine/contracts";
@@ -23,12 +23,20 @@ vi.mock("../SelectionOverlay", () => ({
     hover,
     slotKeys,
     diagnosticCounts,
-    disabledReason
+    disabledReason,
+    showResizeHandles,
+    showRotateHandle,
+    guides,
+    insertionIndicator
   }: {
     hover: unknown;
     slotKeys: string[];
     diagnosticCounts: { errors: number; warnings: number };
     disabledReason: string | null;
+    showResizeHandles?: boolean;
+    showRotateHandle?: boolean;
+    guides?: unknown[];
+    insertionIndicator?: { axis: string; position: number; from: number; to: number } | null;
   }) => (
     <div
       data-testid="selection-overlay"
@@ -36,11 +44,32 @@ vi.mock("../SelectionOverlay", () => ({
       data-slot-keys={slotKeys.join(",")}
       data-diagnostics={`${diagnosticCounts.errors}/${diagnosticCounts.warnings}`}
       data-disabled-reason={disabledReason ?? ""}
+      data-show-resize-handles={showResizeHandles ? "yes" : "no"}
+      data-show-rotate-handle={showRotateHandle ? "yes" : "no"}
+      data-guides-count={(guides ?? []).length}
+      data-indicator={insertionIndicator ? JSON.stringify(insertionIndicator) : ""}
     />
   )
 }));
 
 const scene = cloneScene();
+
+/**
+ * `fireEvent.pointerUp(el, { pointerId })` silently drops `pointerId` in this
+ * suite: `PointerEvent` is stubbed to `MouseEvent` (jsdom's real
+ * `PointerEvent` isn't used here), and `MouseEvent`'s constructor ignores
+ * unrecognized init properties. Assigning `pointerId` on the constructed
+ * event directly (own-property write, unlike the constructor init) makes it
+ * observable at `event.pointerId` — needed here because
+ * `CanvasKitCanvas`'s pan-drag guard compares `panDragRef.current?.pointerId
+ * === event.pointerId`, and `undefined === undefined` would otherwise always
+ * short-circuit a bare pointerUp before it reaches `dispatch`.
+ */
+function firePointerUp(element: Element, init: { clientX: number; clientY: number; pointerId: number }) {
+  const event = createEvent.pointerUp(element, init) as PointerEvent & { pointerId: number };
+  event.pointerId = init.pointerId;
+  fireEvent(element, event);
+}
 
 describe("CanvasKitCanvas polish chrome wiring", () => {
   afterEach(() => {
@@ -297,6 +326,187 @@ describe("CanvasKitCanvas polish chrome wiring", () => {
       expect(onStructuredEdit).not.toHaveBeenCalled();
     });
   });
+
+  describe("4c-C managed gestures (layoutManagedEditing: drag-to-reorder + resize)", () => {
+    it("does not ghost-move and commits exactly one move edit when dropped past the sibling's midpoint", () => {
+      vi.stubGlobal("PointerEvent", MouseEvent);
+      const twoChildStack = stackManagedTwoChildScene();
+      const hitTest = vi.fn(() => ({ hit: "node_contact_name", stack: ["node_contact_name"] }));
+      const engine = { hitTest } as unknown as OptimisticEnginePort;
+      const onStructuredEdit = vi.fn().mockReturnValue(null);
+      const onOperations = vi.fn();
+
+      render(
+        <CanvasKitCanvas
+          scene={twoChildStack}
+          activePageId="page_a4"
+          selectedNodeId={null}
+          onSelectNode={() => {}}
+          onSelectPage={() => {}}
+          onOperations={onOperations}
+          engine={engine}
+          workspaceModel={createWorkspaceModel(twoChildStack, "page_a4", [])}
+          workspaceViewport={defaultWorkspaceViewport()}
+          onWorkspaceViewportChange={() => {}}
+          workspaceTool="select"
+          onWorkspaceToolChange={() => {}}
+          workspaceFitTarget="manual"
+          onWorkspaceFitTargetChange={() => {}}
+          onStructuredEdit={onStructuredEdit}
+          layoutManagedEditing
+        />
+      );
+
+      const layer = screen.getByTestId("canvaskit-interaction-layer");
+      // node_contact_name spans mm y [0,50]; sibling spans mm y [50,100].
+      // Descriptor px = scene mm * unitScale(mm); drag past y=75mm (sibling's
+      // midpoint) to force "after sibling".
+      const unitScale = 96 / 25.4;
+      fireEvent.pointerDown(layer, { clientX: 10, clientY: 10 * unitScale, pointerId: 1 });
+      fireEvent.pointerMove(layer, { clientX: 10, clientY: 75 * unitScale, pointerId: 1 });
+
+      // No ghost preview: the stage tree still reports node_contact_name at
+      // its solved position (unchanged descriptor coordinates), not a
+      // translated preview box — verified indirectly via onOperations never
+      // firing for this drag (a geometry move would call onOperations).
+      expect(onOperations).not.toHaveBeenCalled();
+      expect(screen.getByTestId("selection-overlay")).toHaveAttribute("data-guides-count", "0");
+      const indicatorAttr = screen.getByTestId("selection-overlay").getAttribute("data-indicator");
+      expect(indicatorAttr).toBeTruthy();
+      expect(JSON.parse(indicatorAttr as string)).toMatchObject({ axis: "y" });
+
+      firePointerUp(layer, { clientX: 10, clientY: 75 * unitScale, pointerId: 1 });
+
+      expect(onStructuredEdit).toHaveBeenCalledTimes(1);
+      expect(onStructuredEdit).toHaveBeenCalledWith(
+        expect.objectContaining({ kind: "move_after", node_id: "node_contact_name", anchor: "sibling" })
+      );
+      expect(onOperations).not.toHaveBeenCalled();
+    });
+
+    it("commits nothing when the drop resolves to the node's current position", () => {
+      vi.stubGlobal("PointerEvent", MouseEvent);
+      const twoChildStack = stackManagedTwoChildScene();
+      const hitTest = vi.fn(() => ({ hit: "node_contact_name", stack: ["node_contact_name"] }));
+      const engine = { hitTest } as unknown as OptimisticEnginePort;
+      const onStructuredEdit = vi.fn().mockReturnValue(null);
+
+      renderCanvasKit({
+        scene: twoChildStack,
+        selectedNodeId: null,
+        engine,
+        onStructuredEdit,
+        layoutManagedEditing: true
+      });
+
+      const layer = screen.getByTestId("canvaskit-interaction-layer");
+      const unitScale = 96 / 25.4;
+      // Drag within node_contact_name's own slot (y=10mm -> y=20mm): the drop
+      // index doesn't change, so nothing commits.
+      fireEvent.pointerDown(layer, { clientX: 10, clientY: 10 * unitScale, pointerId: 1 });
+      fireEvent.pointerMove(layer, { clientX: 10, clientY: 20 * unitScale, pointerId: 1 });
+      firePointerUp(layer, { clientX: 10, clientY: 20 * unitScale, pointerId: 1 });
+
+      expect(onStructuredEdit).not.toHaveBeenCalled();
+    });
+
+    it("cancels the reorder (no commit) on pointercancel mid-gesture", () => {
+      vi.stubGlobal("PointerEvent", MouseEvent);
+      const twoChildStack = stackManagedTwoChildScene();
+      const hitTest = vi.fn(() => ({ hit: "node_contact_name", stack: ["node_contact_name"] }));
+      const engine = { hitTest } as unknown as OptimisticEnginePort;
+      const onStructuredEdit = vi.fn().mockReturnValue(null);
+
+      renderCanvasKit({
+        scene: twoChildStack,
+        selectedNodeId: null,
+        engine,
+        onStructuredEdit,
+        layoutManagedEditing: true
+      });
+
+      const layer = screen.getByTestId("canvaskit-interaction-layer");
+      const unitScale = 96 / 25.4;
+      fireEvent.pointerDown(layer, { clientX: 10, clientY: 10 * unitScale, pointerId: 1 });
+      fireEvent.pointerMove(layer, { clientX: 10, clientY: 75 * unitScale, pointerId: 1 });
+      fireEvent.pointerCancel(layer, { pointerId: 1 });
+      firePointerUp(layer, { clientX: 10, clientY: 75 * unitScale, pointerId: 1 });
+
+      expect(onStructuredEdit).not.toHaveBeenCalled();
+      expect(screen.getByTestId("selection-overlay")).toHaveAttribute("data-indicator", "");
+    });
+
+    it("exposes resize handles (not rotate) for a selected managed Stack child in layout-managed-editing mode", () => {
+      const twoChildStack = stackManagedTwoChildScene();
+
+      renderCanvasKit({
+        scene: twoChildStack,
+        selectedNodeId: "node_contact_name",
+        layoutManagedEditing: true
+      });
+
+      const overlay = screen.getByTestId("selection-overlay");
+      expect(overlay).toHaveAttribute("data-show-resize-handles", "yes");
+      expect(overlay).toHaveAttribute("data-show-rotate-handle", "no");
+    });
+
+    it("keeps handles off for a selected managed Stack child when layout-managed editing is off", () => {
+      const twoChildStack = stackManagedTwoChildScene();
+
+      renderCanvasKit({
+        scene: twoChildStack,
+        selectedNodeId: "node_contact_name"
+      });
+
+      const overlay = screen.getByTestId("selection-overlay");
+      expect(overlay).toHaveAttribute("data-show-resize-handles", "no");
+      expect(overlay).toHaveAttribute("data-show-rotate-handle", "no");
+    });
+
+    it("commits a size-only update through onOperations when dragging a managed node's resize handle", () => {
+      vi.stubGlobal("PointerEvent", MouseEvent);
+      const twoChildStack = stackManagedTwoChildScene();
+      const hitTest = vi.fn(() => ({ hit: "node_contact_name", stack: ["node_contact_name"] }));
+      const engine = { hitTest } as unknown as OptimisticEnginePort;
+      const onOperations = vi.fn();
+      const unitScale = 96 / 25.4;
+
+      render(
+        <CanvasKitCanvas
+          scene={twoChildStack}
+          activePageId="page_a4"
+          selectedNodeId="node_contact_name"
+          onSelectNode={() => {}}
+          onSelectPage={() => {}}
+          onOperations={onOperations}
+          engine={engine}
+          workspaceModel={createWorkspaceModel(twoChildStack, "page_a4", [])}
+          workspaceViewport={defaultWorkspaceViewport()}
+          onWorkspaceViewportChange={() => {}}
+          workspaceTool="select"
+          onWorkspaceToolChange={() => {}}
+          workspaceFitTarget="manual"
+          onWorkspaceFitTargetChange={() => {}}
+          layoutManagedEditing
+        />
+      );
+
+      const layer = screen.getByTestId("canvaskit-interaction-layer");
+      // node_contact_name's descriptor box is [0,0]-[50,50]mm * unitScale;
+      // its bottom-right resize handle sits at (50mm, 50mm) in descriptor px.
+      const handlePx = 50 * unitScale;
+      fireEvent.pointerDown(layer, { clientX: handlePx, clientY: handlePx, pointerId: 1 });
+      fireEvent.pointerMove(layer, { clientX: handlePx + 20, clientY: handlePx + 20, pointerId: 1 });
+      firePointerUp(layer, { clientX: handlePx + 20, clientY: handlePx + 20, pointerId: 1 });
+
+      expect(onOperations).toHaveBeenCalledTimes(1);
+      const [ops] = onOperations.mock.calls[0] as [Array<{ kind: string; patch?: Record<string, unknown> }>];
+      expect(ops).toHaveLength(1);
+      expect(ops[0]).toMatchObject({ kind: "update_node", node_id: "node_contact_name" });
+      expect(ops[0].patch?.transform).toEqual({ kind: "unchanged" });
+      expect((ops[0].patch?.size as { kind: string }).kind).toBe("set");
+    });
+  });
 });
 
 /** A scene where `node_contact_name` is the sole child of a Stack
@@ -313,6 +523,46 @@ function stackManagedScene(): Scene {
     computed: {
       layout_bounds: { x: 24, y: 32, width: 180, height: 30 },
       render_bounds: { x: 24, y: 32, width: 180, height: 30 }
+    }
+  };
+  next.pages.page_a4 = { ...next.pages.page_a4, children: ["stack"] };
+  return next;
+}
+
+/** A vertical (column) Stack container with TWO children —
+ * `node_contact_name` (y mm [0,50]) then `sibling` (y mm [50,100]) — for
+ * exercising 4c-C drag-to-reorder / managed resize against a real second
+ * sibling to anchor against. */
+function stackManagedTwoChildScene(): Scene {
+  const next = cloneScene();
+  const template = next.nodes.node_contact_name;
+  next.nodes.node_contact_name = {
+    ...template,
+    computed: {
+      layout_bounds: { x: 0, y: 0, width: 50, height: 50 },
+      render_bounds: { x: 0, y: 0, width: 50, height: 50 }
+    }
+  };
+  next.nodes.sibling = {
+    ...template,
+    id: "sibling",
+    name: "Sibling",
+    children: [],
+    computed: {
+      layout_bounds: { x: 0, y: 50, width: 50, height: 50 },
+      render_bounds: { x: 0, y: 50, width: 50, height: 50 }
+    }
+  };
+  next.nodes.stack = {
+    ...template,
+    id: "stack",
+    name: "Stack",
+    kind: { kind: "auto_layout", direction: "column", wrap: false },
+    layout: { gap: 0, grow: 0, padding: [0, 0, 0, 0], layout_mode: "stack" },
+    children: ["node_contact_name", "sibling"],
+    computed: {
+      layout_bounds: { x: 0, y: 0, width: 50, height: 100 },
+      render_bounds: { x: 0, y: 0, width: 50, height: 100 }
     }
   };
   next.pages.page_a4 = { ...next.pages.page_a4, children: ["stack"] };

@@ -245,6 +245,37 @@ export function isNodeFreezableOnGesture(scene: Scene, nodeId: NodeId | null): b
   return isNodeLayoutManaged(scene, nodeId) && !isNodeFreehand(scene, nodeId);
 }
 
+/**
+ * Whether a node is a live solver-managed child of a Stack auto-layout
+ * container that layout-managed editing (4c-C) can drag-to-reorder: not
+ * locked, not freehand (an opted-out pin would move independently of the
+ * stack order), and its parent is an `auto_layout` node with
+ * `layout.layout_mode === "stack"`. Mirrors the `isNodeDirectGeometryEditable`
+ * predicate family; the engine remains the authority on the actual
+ * `move_before`/`move_after` structured edit — this is UI pre-gating only.
+ */
+export function isNodeReorderableOnGesture(scene: Scene, nodeId: NodeId | null): boolean {
+  if (!nodeId) {
+    return false;
+  }
+  const node = scene.nodes[nodeId];
+  if (!node || node.locked) {
+    return false;
+  }
+  if (isNodeFreehand(scene, nodeId)) {
+    return false;
+  }
+  const parentInfo = parentInfoForNode(scene, nodeId);
+  if (!parentInfo || parentInfo.parent.kind !== "node") {
+    return false;
+  }
+  const parent = scene.nodes[parentInfo.parent.id];
+  if (!parent || parent.kind.kind !== "auto_layout") {
+    return false;
+  }
+  return (parent.layout?.layout_mode ?? "stack") === "stack";
+}
+
 /** Z-order position of a node among its siblings (Phase 4b arrange). Null
  * when the node has no resolvable parent info. */
 export interface SiblingArrangeInfo {

@@ -13,6 +13,7 @@ import {
   isContainerNode,
   isNodeDirectGeometryEditable,
   isNodeFreezableOnGesture,
+  isNodeReorderableOnGesture,
   nodeIdForAsset,
   nodePageSpaceBox,
   pageIdForNode,
@@ -119,6 +120,107 @@ describe("scene queries", () => {
       const scene = cloneScene();
       expect(isNodeFreezableOnGesture(scene, null)).toBe(false);
       expect(isNodeFreezableOnGesture(scene, "missing_node")).toBe(false);
+    });
+  });
+
+  describe("isNodeReorderableOnGesture (4c-C managed drag-to-reorder)", () => {
+    it("is true for an unlocked child of a Stack auto-layout container", () => {
+      const scene = cloneScene();
+      scene.nodes.stack = {
+        ...scene.nodes.node_contact_name,
+        id: "stack",
+        name: "Stack",
+        kind: { kind: "auto_layout", direction: "column", wrap: false },
+        children: ["node_contact_name"]
+      };
+      scene.pages.page_a4.children = ["stack"];
+
+      expect(isNodeReorderableOnGesture(scene, "node_contact_name")).toBe(true);
+    });
+
+    it("defaults to reorderable when layout is omitted (Stack is the unset default)", () => {
+      const scene = cloneScene();
+      scene.nodes.stack = {
+        ...scene.nodes.node_contact_name,
+        id: "stack",
+        name: "Stack",
+        kind: { kind: "auto_layout", direction: "row", wrap: false },
+        layout: null,
+        children: ["node_contact_name"]
+      };
+      scene.pages.page_a4.children = ["stack"];
+
+      expect(isNodeReorderableOnGesture(scene, "node_contact_name")).toBe(true);
+    });
+
+    it("is false for a locked child", () => {
+      const scene = cloneScene();
+      scene.nodes.stack = {
+        ...scene.nodes.node_contact_name,
+        id: "stack",
+        name: "Stack",
+        kind: { kind: "auto_layout", direction: "column", wrap: false },
+        children: ["node_contact_name"]
+      };
+      scene.pages.page_a4.children = ["stack"];
+      scene.nodes.node_contact_name.locked = true;
+
+      expect(isNodeReorderableOnGesture(scene, "node_contact_name")).toBe(false);
+    });
+
+    it("is false for a freehand child of a Free auto-layout container", () => {
+      const scene = cloneScene();
+      scene.nodes.stack = {
+        ...scene.nodes.node_contact_name,
+        id: "stack",
+        name: "Free container",
+        kind: { kind: "auto_layout", direction: "column", wrap: false },
+        layout: { gap: 0, grow: 0, padding: [0, 0, 0, 0], layout_mode: "free" },
+        children: ["node_contact_name"]
+      };
+      scene.pages.page_a4.children = ["stack"];
+
+      expect(isNodeReorderableOnGesture(scene, "node_contact_name")).toBe(false);
+    });
+
+    it("is false for a pinned (absolute) child even under a Stack parent", () => {
+      const scene = cloneScene();
+      scene.nodes.stack = {
+        ...scene.nodes.node_contact_name,
+        id: "stack",
+        name: "Stack",
+        kind: { kind: "auto_layout", direction: "column", wrap: false },
+        children: ["node_contact_name"]
+      };
+      scene.pages.page_a4.children = ["stack"];
+      scene.nodes.node_contact_name.position_mode = "absolute";
+
+      expect(isNodeReorderableOnGesture(scene, "node_contact_name")).toBe(false);
+    });
+
+    it("is false for a top-level (page-child) node — no auto-layout parent", () => {
+      const scene = cloneScene();
+      expect(isNodeReorderableOnGesture(scene, "node_contact_name")).toBe(false);
+    });
+
+    it("is false for a child of a non-auto-layout container (frame/group)", () => {
+      const scene = cloneScene();
+      scene.nodes.frame = {
+        ...scene.nodes.node_contact_name,
+        id: "frame",
+        name: "Frame",
+        kind: { kind: "frame" },
+        children: ["node_contact_name"]
+      };
+      scene.pages.page_a4.children = ["frame"];
+
+      expect(isNodeReorderableOnGesture(scene, "node_contact_name")).toBe(false);
+    });
+
+    it("is false for a null/missing node id", () => {
+      const scene = cloneScene();
+      expect(isNodeReorderableOnGesture(scene, null)).toBe(false);
+      expect(isNodeReorderableOnGesture(scene, "missing_node")).toBe(false);
     });
   });
 

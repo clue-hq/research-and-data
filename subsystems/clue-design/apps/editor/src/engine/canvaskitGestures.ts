@@ -97,14 +97,18 @@ export function dragActionToOperations(
 }
 
 /** Convert a resize action's descriptor-space box into a canonical operation,
- * expressing the new size as scale factors over the node's base render size. */
+ * expressing the new size as scale factors over the node's base render size.
+ * `allowManagedResize` (4c-C) opts a layout-managed reorderable Stack child
+ * into a size-only commit instead of being rejected — see
+ * `canvasResizeOperation`. */
 export function resizeActionToOperation(
   box: Box,
   rotation: number,
   scene: Scene,
   node: SceneNodeModel,
   page: Page,
-  pageOrigin: Point
+  pageOrigin: Point,
+  allowManagedResize = false
 ): Operation | null {
   const base = nodeSizeForRender(node, page);
   if (base.width === 0 || base.height === 0) {
@@ -121,7 +125,8 @@ export function resizeActionToOperation(
       rotation,
       scaleX: box.width / base.width,
       scaleY: box.height / base.height
-    }
+    },
+    allowManagedResize
   });
 }
 

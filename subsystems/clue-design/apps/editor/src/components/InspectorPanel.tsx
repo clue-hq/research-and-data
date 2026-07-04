@@ -103,6 +103,7 @@ export function InspectorPanel({
         onOperation={onOperation}
         onStructuredEdit={onStructuredEdit}
         onSelectSubject={onSelectSubject}
+        layoutManagedEditing={layoutManagedEditing}
       />
 
       {onStructuredEdit ? (

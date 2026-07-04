@@ -30,15 +30,18 @@ import {
   getPage,
   isNodeFreezableOnGesture,
   isNodePinned,
+  isNodeReorderableOnGesture,
   nodeDisplayName,
+  parentInfoForNode,
   topLevelAncestorId
 } from "@/engine/sceneQueries";
-import { nodeDescriptor, pageDescriptor, type ParentComputedOrigin } from "@/engine/renderAdapter";
+import { reorderDropTarget, type ReorderDropTarget } from "@/engine/managedGestures";
+import { nodeDescriptor, pageDescriptor, sceneUnitFromCanvas, type ParentComputedOrigin } from "@/engine/renderAdapter";
 import { loadCanvasKit } from "@/engine/canvaskit/loadCanvasKit";
 import { skiaMeasurements } from "@/engine/canvaskit/skiaMeasurements";
 import type { Box } from "@/engine/transformerMath";
 import { nodePatch, set, updateTextNode } from "@/engine/operations";
-import { freezeLayoutEdit, type StructuredEdit } from "@/engine/structuredEdits";
+import { freezeLayoutEdit, moveAfterEdit, moveBeforeEdit, type StructuredEdit } from "@/engine/structuredEdits";
 import {
   clampWorkspacePanToKeepVisible,
   clampWorkspaceZoom,
@@ -140,9 +143,19 @@ export function CanvasKitCanvas({
   const containerRef = useRef<HTMLDivElement | null>(null);
   const stateRef = useRef<GestureState>(initialGestureState);
   const panDragRef = useRef<{ pointerId: number; x: number; y: number; pan: { x: number; y: number } } | null>(null);
+  // 4c-C: computed once at press time (per the "class of the target" guard —
+  // never re-derived per frame) — set only when the press target is a
+  // layout-managed-editing reorderable Stack child, so the drag branches to
+  // reorder semantics instead of a geometry move for the rest of the
+  // gesture, however the node's class happens to read mid-drag.
+  const reorderGestureRef = useRef<{ nodeId: NodeId; containerId: NodeId } | null>(null);
+  // 4c-C: whether the CURRENT resize gesture targets a layout-managed-editing
+  // reorderable Stack child — same "decide once at press time" discipline.
+  const managedResizeRef = useRef(false);
   const [viewport, setViewport] = useState({ width: 900, height: 720 });
   const [preview, setPreview] = useState<Preview | null>(null);
   const [activeGuides, setActiveGuides] = useState<SnapGuide[]>([]);
+  const [reorderTarget, setReorderTarget] = useState<ReorderDropTarget | null>(null);
   const [marquee, setMarquee] = useState<Box | null>(null);
   const [editingNodeId, setEditingNodeId] = useState<NodeId | null>(null);
   const [hoverNodeId, setHoverNodeId] = useState<NodeId | null>(null);
@@ -364,12 +377,15 @@ export function CanvasKitCanvas({
         activePageId,
         selectedNodeId,
         hoverNodeId,
-        diagnostics
+        diagnostics,
+        layoutManagedEditing
       }),
-    [activePageId, diagnostics, hoverNodeId, scene, selectedNodeId]
+    [activePageId, diagnostics, hoverNodeId, scene, selectedNodeId, layoutManagedEditing]
   );
 
   const showHandles = chromeModel.showHandles;
+  const showResizeHandles = chromeModel.showResizeHandles;
+  const showRotateHandle = chromeModel.showRotateHandle;
 
   const boxForNode = useCallback(
     (nodeId: NodeId): { box: Box; rotation: number } | null => {
@@ -394,16 +410,16 @@ export function CanvasKitCanvas({
   const pressTargetFor = useCallback(
     (descriptorPoint: { x: number; y: number }): PressTarget => {
       // Handle grab on the current selection takes priority.
-      if (selectionBox && showHandles) {
+      if (selectionBox && (showResizeHandles || showRotateHandle)) {
         const handle = handleAtPoint(descriptorPoint, selectionBox.box, selectionBox.rotation, zoom);
-        if (handle === "rotate") {
+        if (handle === "rotate" && showRotateHandle) {
           const center = {
             x: selectionBox.box.x + selectionBox.box.width / 2,
             y: selectionBox.box.y + selectionBox.box.height / 2
           };
           return { kind: "rotate", nodeId: selectionBox.nodeId, pivot: center, box: selectionBox.box, rotation: selectionBox.rotation };
         }
-        if (handle) {
+        if (handle && handle !== "rotate" && showResizeHandles) {
           return { kind: "handle", nodeId: selectionBox.nodeId, handle, box: selectionBox.box, rotation: selectionBox.rotation };
         }
       }
@@ -460,6 +476,37 @@ export function CanvasKitCanvas({
         case "drag": {
           const node = getNode(scene, action.nodeId);
           if (!node) break;
+          // 4c-C: a managed reorder gesture (decided once at press time —
+          // see reorderGestureRef) never previews a geometry move — the
+          // dragged node stays put; only the insertion indicator moves.
+          const reorderGesture = reorderGestureRef.current;
+          if (reorderGesture && reorderGesture.nodeId === action.nodeId) {
+            // action.box is the node's startBox translated by the pointer
+            // delta; its center is the drag's page-space reference point
+            // (descriptor space maps 1:1 onto page-relative canvas px — see
+            // dragActionToOperations/canvasDragOperations).
+            const centerDescriptor = { x: action.box.x + action.box.width / 2, y: action.box.y + action.box.height / 2 };
+            const pointPageSpace = {
+              x: sceneUnitFromCanvas(centerDescriptor.x, page),
+              y: sceneUnitFromCanvas(centerDescriptor.y, page)
+            };
+            const drop = reorderDropTarget(scene, reorderGesture.containerId, reorderGesture.nodeId, pointPageSpace);
+            if (action.committed) {
+              setReorderTarget(null);
+              reorderGestureRef.current = null;
+              const currentIndex = currentSiblingIndex(scene, reorderGesture.containerId, reorderGesture.nodeId);
+              if (drop && drop.index !== currentIndex) {
+                onStructuredEdit?.(
+                  drop.placement === "before"
+                    ? moveBeforeEdit(action.nodeId, drop.anchorId)
+                    : moveAfterEdit(action.nodeId, drop.anchorId)
+                );
+              }
+            } else {
+              setReorderTarget(drop);
+            }
+            break;
+          }
           if (action.committed) {
             setPreview(null);
             setActiveGuides([]);
@@ -478,11 +525,14 @@ export function CanvasKitCanvas({
           if (action.committed) {
             setPreview(null);
             setActiveGuides([]);
-            const op = resizeActionToOperation(action.box, rotation, scene, node, page, pageOrigin);
+            const op = resizeActionToOperation(action.box, rotation, scene, node, page, pageOrigin, managedResizeRef.current);
             if (op) onOperations([op]);
+            managedResizeRef.current = false;
           } else {
             setPreview({ nodeId: action.nodeId, box: action.box, rotation });
-            setActiveGuides(resizeActionToGuides(action.box, rotation, scene, node, page, pageOrigin));
+            setActiveGuides(
+              managedResizeRef.current ? [] : resizeActionToGuides(action.box, rotation, scene, node, page, pageOrigin)
+            );
           }
           break;
         }
@@ -803,6 +853,26 @@ export function CanvasKitCanvas({
           ) {
             onStructuredEdit?.(freezeLayoutEdit());
           }
+          // 4c-C: decide the gesture's CLASS once, here at press time (never
+          // re-derived per frame) — a plain node press on a layout-managed-
+          // editing reorderable Stack child becomes a reorder gesture; a
+          // handle press on one becomes a managed (size-only) resize. Both
+          // only apply when the advanced opt-in is on — the freeze branch
+          // above already owns the non-opted-in case, and a node that isn't
+          // reorderable falls through to the ordinary drag/resize paths
+          // below unchanged.
+          reorderGestureRef.current = null;
+          managedResizeRef.current = false;
+          if (layoutManagedEditing) {
+            if (target.kind === "node" && isNodeReorderableOnGesture(scene, target.nodeId)) {
+              const parentInfo = parentInfoForNode(scene, target.nodeId);
+              if (parentInfo && parentInfo.parent.kind === "node") {
+                reorderGestureRef.current = { nodeId: target.nodeId, containerId: parentInfo.parent.id };
+              }
+            } else if (target.kind === "handle" && isNodeReorderableOnGesture(scene, target.nodeId)) {
+              managedResizeRef.current = true;
+            }
+          }
           if (hitTraceEnabled()) {
             const scenePoint = descriptorToScene(pointer, unitScale);
             hitTrace({
@@ -864,8 +934,11 @@ export function CanvasKitCanvas({
         onPointerCancel={() => {
           panDragRef.current = null;
           stateRef.current = initialGestureState;
+          reorderGestureRef.current = null;
+          managedResizeRef.current = false;
           setPreview(null);
           setActiveGuides([]);
+          setReorderTarget(null);
           setMarquee(null);
           setHoverNodeId(null);
         }}
@@ -887,15 +960,20 @@ export function CanvasKitCanvas({
           containerChildren={editingNodeId ? [] : containerChildBoxes(scene, selectedNodeId, unitScale)}
           containerLabel={editingNodeId ? undefined : containerLabel(scene, selectedNodeId)}
           marquee={marquee}
-          guides={editingNodeId ? [] : descriptorGuides(activeGuides, unitScale)}
+          // A reorder gesture's own indicator replaces snap guides — guides
+          // are a free-placement concept and are meaningless mid-reorder.
+          guides={editingNodeId || reorderGestureRef.current ? [] : descriptorGuides(activeGuides, unitScale)}
           pageOrigin={pageOrigin}
           zoom={zoom}
           showHandles={showHandles && !editingNodeId}
+          showResizeHandles={showResizeHandles && !editingNodeId}
+          showRotateHandle={showRotateHandle && !editingNodeId}
           disabledReason={editingNodeId ? null : chromeModel.disabledReason}
           slotKeys={chromeModel.slotKeys}
           diagnosticCounts={chromeModel.diagnosticCounts}
           focal={editingNodeId ? null : focalPoint}
           onFocalChange={commitFocalPoint}
+          insertionIndicator={editingNodeId ? null : descriptorIndicator(reorderTarget?.indicator ?? null, unitScale)}
         />
         {editing ? (
           <TextEditOverlay
@@ -924,6 +1002,33 @@ function descriptorGuides(guides: SnapGuide[], unitScale: number): SnapGuide[] {
     from: guide.from * unitScale,
     to: guide.to * unitScale
   }));
+}
+
+/** Same page-space→descriptor-space scaling as `descriptorGuides`, for the
+ * 4c-C drag-to-reorder insertion indicator. */
+function descriptorIndicator(
+  indicator: ReorderDropTarget["indicator"] | null,
+  unitScale: number
+): { axis: "x" | "y"; position: number; from: number; to: number } | null {
+  if (!indicator) return null;
+  return {
+    axis: indicator.axis,
+    position: indicator.position * unitScale,
+    from: indicator.from * unitScale,
+    to: indicator.to * unitScale
+  };
+}
+
+/** The dragged node's current index in `reorderDropTarget`'s index space
+ * (siblings only, dragged node excluded) — i.e. how many OTHER children
+ * precede it today. Compared against a drop target's `index` to detect a
+ * no-op drop (4c-C: dropping back at the current position commits nothing). */
+function currentSiblingIndex(scene: Scene, containerId: NodeId, nodeId: NodeId): number | null {
+  const container = scene.nodes[containerId];
+  if (!container) return null;
+  const originalIndex = container.children.indexOf(nodeId);
+  if (originalIndex < 0) return null;
+  return originalIndex;
 }
 
 function containerChildBoxes(scene: Scene, nodeId: NodeId | null, unitScale: number): Box[] {

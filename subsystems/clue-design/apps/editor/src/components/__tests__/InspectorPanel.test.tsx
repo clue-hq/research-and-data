@@ -1184,6 +1184,38 @@ describe("InspectorPanel", () => {
     expect(screen.getByLabelText("Grow")).toBeInTheDocument();
   });
 
+  it("4c-C: mentions canvas drag-to-reorder/resize for a managed child when layoutManagedEditing is on", () => {
+    const scene = autoLayoutScene();
+    render(
+      React.createElement(InspectorPanel, {
+        scene,
+        activePage: scene.pages.page_a4,
+        selectedNode: scene.nodes.stack_child,
+        selectedNodeId: "stack_child",
+        onOperation: vi.fn(),
+        layoutManagedEditing: true
+      })
+    );
+
+    expect(screen.getByText(/drag it on the canvas to reorder it and resize it directly/)).toBeInTheDocument();
+  });
+
+  it("4c-C: keeps the plain managed-child hint when layoutManagedEditing is off", () => {
+    const scene = autoLayoutScene();
+    render(
+      React.createElement(InspectorPanel, {
+        scene,
+        activePage: scene.pages.page_a4,
+        selectedNode: scene.nodes.stack_child,
+        selectedNodeId: "stack_child",
+        onOperation: vi.fn()
+      })
+    );
+
+    expect(screen.getByText(/managed by an auto-layout parent/)).toBeInTheDocument();
+    expect(screen.queryByText(/drag it on the canvas to reorder it/)).not.toBeInTheDocument();
+  });
+
   it("emits sizing-mode operations for auto-layout managed children", () => {
     const scene = autoLayoutScene();
     const onOperation = vi.fn();
