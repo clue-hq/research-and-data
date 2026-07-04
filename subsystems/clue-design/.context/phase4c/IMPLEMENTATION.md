@@ -107,11 +107,25 @@ is per-document, advanced, and the rollout safety valve.
   handshake + served-WASM-bytes verified identical). NOTE: a test-only
   commit still shifts engine_commit — helper reports git HEAD — so ANY
   commit needs a prepare+restart to keep the handshake clean.
-- Browser e2e (opus agent): badge replay on the real doc (page-space
-  proof: DSL p(x,y) must equal landing coordinates) + fresh-doc toggle
-  scenario (accept-seam skip with live Stack containers, first-gesture
-  freeze after toggling back off). Verdict recorded in
-  .context/phase4c/e2e/ when it lands.
+- Browser e2e (opus agent): **15/15 PASS** — see e2e/VERDICT.md. The
+  headline: DSL `#badge p(884,48)` landed at absolute_box (884,48)
+  exactly (page-space agreement, 1 iteration, critic accepted 0.9), and
+  the toggle's full lifecycle held (3 stack containers survive Accept
+  with the flag on; first-gesture freeze flips them stack→free once the
+  flag is off; auto-persist on doc-id mint; reload persistence).
+  Best-draft-wins was also observed live (run_58685f0c exhausted its
+  budget yet proposed a clean draft). Scenario-A document left
+  net-unchanged — NOTE: "net-unchanged" = badge back at (176,1088),
+  which is the OFF-CANVAS position run_8e7b9f64 left it in last night;
+  the user may want an agent ask / history-redo to bring it back visible.
+- User feedback during the run → the next agent-quality item, recorded
+  with the design in ../agent-improvement/2026-07-05-accommodation-edits
+  .md: strict edit scope forbids the neighbor nudge that would have kept
+  the YC lockup clear of the moved badge, and s() on a frozen container
+  leaves children at baked offsets (pill shrank under its label; critic
+  missed the overflow). Proposal: bounded accommodation edits keyed off
+  turn-introduced conflicts (reuses baseline-diff scoping), pending user
+  go-ahead.
 
 ## Process notes
 
