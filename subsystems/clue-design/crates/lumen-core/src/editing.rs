@@ -1813,41 +1813,7 @@ pub fn build_convert_container_layout(
     let mut touched = vec![EditTargetRef::Node(node_id.clone())];
 
     if layout_mode == LayoutMode::Free {
-        let container_bounds = solved_bounds(node, &node_id, "freeing")?;
-        for child_id in &node.children {
-            let Some(child) = scene.nodes.get(child_id) else {
-                continue;
-            };
-            if child.position_mode == PositionMode::Absolute {
-                continue;
-            }
-            let child_bounds = solved_bounds(child, child_id, "freeing")?;
-
-            let mut child_patch = NodePatch::default();
-            let baked_transform = Transform {
-                x: child_bounds.x - container_bounds.x,
-                y: child_bounds.y - container_bounds.y,
-                ..child.transform.clone()
-            };
-            if baked_transform != child.transform {
-                child_patch.transform = FieldPatch::Set(baked_transform);
-            }
-            let baked_size = SizeSpec {
-                width: bake_dimension(&child.size.width, child_bounds.width),
-                height: bake_dimension(&child.size.height, child_bounds.height),
-            };
-            if baked_size != child.size {
-                child_patch.size = FieldPatch::Set(baked_size);
-            }
-            if node_patch_has_changes(&child_patch) {
-                child_patch.computed = OptionalFieldPatch::Clear;
-                operations.push(Operation::UpdateNode {
-                    node_id: child_id.clone(),
-                    patch: child_patch,
-                });
-                touched.push(EditTargetRef::Node(child_id.clone()));
-            }
-        }
+        free_container_operations(scene, node, &node_id, &mut operations, &mut touched)?;
     }
 
     operations.push(Operation::UpdateNode {
@@ -1864,6 +1830,101 @@ pub fn build_convert_container_layout(
 
     EditBatch::new(operations, touched)
         .with_intent("convert_container_layout")
+        .with_inverses(scene)
+}
+
+/// Zero-motion child baking for a Stack→Free conversion: every managed
+/// child's transform bakes to its solved offset inside the container, and
+/// Hug/Fill sizes bake to Fixed; children already pinned Absolute are left
+/// untouched (their page-space box keeps winning either way). Shared by the
+/// single-container convert and the scene-wide freeze so the two cannot
+/// drift.
+fn free_container_operations(
+    scene: &Scene,
+    node: &Node,
+    node_id: &NodeId,
+    operations: &mut Vec<Operation>,
+    touched: &mut Vec<EditTargetRef>,
+) -> Result<(), EditError> {
+    let container_bounds = solved_bounds(node, node_id, "freeing")?;
+    for child_id in &node.children {
+        let Some(child) = scene.nodes.get(child_id) else {
+            continue;
+        };
+        if child.position_mode == PositionMode::Absolute {
+            continue;
+        }
+        let child_bounds = solved_bounds(child, child_id, "freeing")?;
+
+        let mut child_patch = NodePatch::default();
+        let baked_transform = Transform {
+            x: child_bounds.x - container_bounds.x,
+            y: child_bounds.y - container_bounds.y,
+            ..child.transform.clone()
+        };
+        if baked_transform != child.transform {
+            child_patch.transform = FieldPatch::Set(baked_transform);
+        }
+        let baked_size = SizeSpec {
+            width: bake_dimension(&child.size.width, child_bounds.width),
+            height: bake_dimension(&child.size.height, child_bounds.height),
+        };
+        if baked_size != child.size {
+            child_patch.size = FieldPatch::Set(baked_size);
+        }
+        if node_patch_has_changes(&child_patch) {
+            child_patch.computed = OptionalFieldPatch::Clear;
+            operations.push(Operation::UpdateNode {
+                node_id: child_id.clone(),
+                patch: child_patch,
+            });
+            touched.push(EditTargetRef::Node(child_id.clone()));
+        }
+    }
+    Ok(())
+}
+
+/// Handoff-absolute (Moda model, MODA-EDITOR-PLAN §2): once the agent's turn
+/// is done, the human edits a design that behaves purely absolute — no
+/// solver ever re-flows siblings under their cursor. This bakes EVERY Stack
+/// auto-layout container in the scene to Free in one invertible, zero-motion
+/// batch (each container's children bake to their solved offsets via the
+/// same helper the single convert uses). Locked containers and containers
+/// already Free are skipped; a scene with nothing to freeze yields an empty
+/// batch so callers may invoke this unconditionally at handoff. Layout
+/// props (gap/padding/mode) are preserved, so a later agent turn can convert
+/// containers back to Stack and re-enter the solve.
+pub fn build_freeze_layout(scene: &Scene) -> Result<EditBatch, EditError> {
+    let mut operations = Vec::new();
+    let mut touched = Vec::new();
+
+    // BTreeMap iteration = deterministic op order across replays.
+    for (node_id, node) in &scene.nodes {
+        if !matches!(node.kind, NodeKind::AutoLayout(_)) || node.locked {
+            continue;
+        }
+        let current_props = node.layout.clone().unwrap_or_default();
+        if current_props.layout_mode == LayoutMode::Free {
+            continue;
+        }
+
+        free_container_operations(scene, node, node_id, &mut operations, &mut touched)?;
+        operations.push(Operation::UpdateNode {
+            node_id: node_id.clone(),
+            patch: NodePatch {
+                layout: OptionalFieldPatch::Set(AutoLayoutProps {
+                    layout_mode: LayoutMode::Free,
+                    ..current_props
+                }),
+                computed: OptionalFieldPatch::Clear,
+                ..NodePatch::default()
+            },
+        });
+        touched.push(EditTargetRef::Node(node_id.clone()));
+    }
+
+    EditBatch::new(operations, touched)
+        .with_intent("freeze_layout")
         .with_inverses(scene)
 }
 
@@ -2714,6 +2775,9 @@ pub enum StructuredEditInstruction {
         #[serde(default)]
         allow_layout: bool,
     },
+    /// Handoff-absolute: bake every Stack container to Free in one
+    /// zero-motion batch — the human edits pure absolute after an agent turn.
+    FreezeLayout {},
 }
 
 impl StructuredEditInstruction {
@@ -2734,6 +2798,7 @@ impl StructuredEditInstruction {
             Self::ConvertContainerLayout { .. } => "convert_container_layout",
             Self::Group { .. } => "group",
             Self::Ungroup { .. } => "ungroup",
+            Self::FreezeLayout {} => "freeze_layout",
         }
     }
 }
@@ -2811,5 +2876,6 @@ pub fn build_structured_edit_batch(
             node_id,
             allow_layout,
         } => build_ungroup(scene, node_id.clone(), *allow_layout),
+        StructuredEditInstruction::FreezeLayout {} => build_freeze_layout(scene),
     }
 }

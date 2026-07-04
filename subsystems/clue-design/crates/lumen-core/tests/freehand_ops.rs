@@ -458,3 +458,116 @@ fn wire_format_kinds_are_pinned() {
     let round_tripped: StructuredEditInstruction = serde_json::from_value(json).unwrap();
     assert_eq!(round_tripped, convert);
 }
+
+/// Handoff-absolute: `freeze_layout` bakes every Stack container to Free in
+/// one zero-motion, invertible batch — nested stacks included. This is the
+/// Moda handoff contract: after an agent turn the human edits pure absolute
+/// and the solver never re-flows siblings under their cursor.
+#[test]
+fn freeze_layout_bakes_every_stack_zero_motion_and_inverts_byte_identical() {
+    use lumen_core::build_freeze_layout;
+
+    let mut scene = stack_scene();
+    // Nest a second stack inside the first to prove recursion-by-iteration.
+    let mut inner = auto_layout("inner", 200.0, 120.0, 5.0);
+    inner.size = SizeSpec::fixed(200.0, 120.0);
+    insert(&mut scene, ParentRef::Node(NodeId::from("stack")), inner);
+    insert(
+        &mut scene,
+        ParentRef::Node(NodeId::from("inner")),
+        rect("d", 60.0, 40.0),
+    );
+    apply_layout(&mut scene);
+    let before = scene_json(&scene);
+    let solved_before: Vec<(&str, Rect)> = ["a", "b", "c", "d", "inner", "stack"]
+        .iter()
+        .map(|id| (*id, solved(&scene, id)))
+        .collect();
+
+    let batch = build_freeze_layout(&scene).expect("freeze builds");
+    assert!(
+        batch.inverse_operations.is_some(),
+        "freeze carries inverses"
+    );
+    batch.apply_checked(&mut scene).expect("freeze applies");
+
+    for id in ["stack", "inner"] {
+        let node = &scene.nodes[&NodeId::from(id)];
+        assert_eq!(
+            node.layout.as_ref().map(|layout| layout.layout_mode),
+            Some(LayoutMode::Free),
+            "{id} must be Free after freeze"
+        );
+    }
+    // Zero motion: every solved box is where the stack solve had it.
+    for (id, before_box) in &solved_before {
+        assert_eq!(&solved(&scene, id), before_box, "{id} moved during freeze");
+    }
+
+    let mut restored = scene.clone();
+    restored
+        .apply_operations(batch.inverse_operations.clone().unwrap())
+        .unwrap();
+    assert_eq!(
+        scene_json(&restored),
+        before,
+        "freeze inverses must restore the pre-freeze scene exactly"
+    );
+}
+
+#[test]
+fn freeze_layout_skips_locked_and_free_containers_and_noops_when_done() {
+    use lumen_core::{build_freeze_layout, FieldPatch, NodePatch, Operation};
+
+    let mut scene = stack_scene();
+    apply_layout(&mut scene);
+    scene
+        .apply_operation(Operation::UpdateNode {
+            node_id: NodeId::from("stack"),
+            patch: NodePatch {
+                locked: FieldPatch::Set(true),
+                ..NodePatch::default()
+            },
+        })
+        .unwrap();
+
+    let batch = build_freeze_layout(&scene).expect("freeze builds");
+    assert!(
+        batch.operations.is_empty(),
+        "a locked container is skipped, not converted"
+    );
+
+    // Unlock, freeze for real, then a second freeze is a clean no-op.
+    scene
+        .apply_operation(Operation::UpdateNode {
+            node_id: NodeId::from("stack"),
+            patch: NodePatch {
+                locked: FieldPatch::Set(false),
+                ..NodePatch::default()
+            },
+        })
+        .unwrap();
+    apply_layout(&mut scene);
+    build_freeze_layout(&scene)
+        .expect("freeze builds")
+        .apply_checked(&mut scene)
+        .expect("freeze applies");
+    let again = build_freeze_layout(&scene).expect("second freeze builds");
+    assert!(again.operations.is_empty(), "freeze is idempotent");
+}
+
+#[test]
+fn freeze_layout_wire_kind_is_pinned() {
+    let freeze = instruction(serde_json::json!({ "kind": "freeze_layout" }));
+    assert_eq!(freeze.kind(), "freeze_layout");
+    let batch = lumen_core::build_structured_edit_batch(
+        &{
+            let mut scene = stack_scene();
+            apply_layout(&mut scene);
+            scene
+        },
+        &freeze,
+    )
+    .expect("freeze routes through the wire surface");
+    assert!(!batch.operations.is_empty());
+}
