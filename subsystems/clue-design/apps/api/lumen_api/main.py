@@ -3517,8 +3517,17 @@ def agent_response_from_trace(
     # verified applied proposes its operations even though the whole-design
     # critique still has (advisory) complaints.
     edit_scoped = result.get("status") == "edit_applied"
-    status = "proposed" if (accepted or edit_scoped) and operations else "failed"
-    if edit_scoped and status == "proposed":
+    # Agent-quality: `completed_with_warnings` means the loop kept a
+    # PREFLIGHT-CLEAN best draft that simply never won explicit visual
+    # acceptance within the repair budget. That is a reviewable proposal —
+    # mapping it to "failed" threw away good drafts (runs d6e08a28/d77d41d in
+    # the 2e gate both died here). The unresolved critique rides along as
+    # advisory warnings, exactly like an edit-scoped acceptance.
+    best_draft = result.get("status") == "completed_with_warnings"
+    status = (
+        "proposed" if (accepted or edit_scoped or best_draft) and operations else "failed"
+    )
+    if (edit_scoped or best_draft) and status == "proposed":
         diagnostics.extend(
             advisory_critique_diagnostics(result.get("critique"))
         )
@@ -3578,6 +3587,12 @@ def advisory_critique_diagnostics(critique: Any) -> List[JsonObject]:
     editor still shows its issues so the human can act on them (or ask the
     agent to, as a follow-up turn)."""
     diagnostics: List[JsonObject] = []
+    if isinstance(critique, dict) and critique.get("kind") == "visual":
+        # A completed_with_warnings run finalizes with the loop's last FEEDBACK
+        # envelope ({"kind": "visual", "feedback": {critique...}}), not the bare
+        # critique. Non-visual envelopes (compile/preflight) carry no critique
+        # issues and simply yield no advisories.
+        critique = critique.get("feedback")
     issues = (critique or {}).get("issues") if isinstance(critique, dict) else None
     for issue in issues or []:
         if not isinstance(issue, dict):

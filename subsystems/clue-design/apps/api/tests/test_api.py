@@ -670,6 +670,73 @@ def test_agent_response_edit_applied_maps_to_proposed_with_advisory_diagnostics(
     assert advisory[0]["hint"] == "regenerate the hero"
 
 
+def test_agent_response_completed_with_warnings_maps_to_proposed(tmp_path) -> None:
+    # Agent-quality: a run that exhausts its repair budget holding a
+    # preflight-clean best draft finalizes as `completed_with_warnings`. That
+    # draft must reach the editor as a reviewable PROPOSAL (Accept/Reject),
+    # not "failed" — with the unresolved critique as advisory warnings. The
+    # critique arrives wrapped in the loop's last feedback envelope.
+    from lumen_api.main import agent_response_from_trace
+
+    write_iteration_compile(
+        tmp_path, 1, [{"kind": "update_node", "node_id": "cta_text"}]
+    )
+    result = {
+        "status": "completed_with_warnings",
+        "stop_reason": "max_iterations_reached",
+        "run_id": "run_best_draft",
+        "summary": "Repair budget reached. Returned the best preflight-clean draft.",
+        "preview_paths": [],
+        "ops_valid_through_iteration": 1,
+        "critique": {
+            "kind": "visual",
+            "feedback": {
+                "accepted": False,
+                "summary": "composition still off-center",
+                "issues": [
+                    {
+                        "severity": "major",
+                        "category": "visual_balance",
+                        "message": "composition sits low on the canvas",
+                        "suggested_repair": "re-center the main group",
+                        "target": {"node_id": "artboard"},
+                    }
+                ],
+            },
+        },
+    }
+
+    response = agent_response_from_trace(result, tmp_path)
+
+    assert response["status"] == "proposed"
+    assert response["acceptance_scope"] is None
+    assert response["operations"] == [{"kind": "update_node", "node_id": "cta_text"}]
+    advisory = [
+        diag
+        for diag in response["diagnostics"]
+        if diag["code"] == "agent_runtime.visual_critique_advisory"
+    ]
+    assert len(advisory) == 1
+    assert advisory[0]["severity"] == "warning"
+    assert advisory[0]["subject"] == {"kind": "node", "id": "artboard"}
+
+    # A best draft whose last feedback was compile/preflight-shaped (no
+    # critique issues) still proposes — just without advisories.
+    result_no_visual = dict(result, critique={"kind": "compile", "feedback": {}})
+    response2 = agent_response_from_trace(result_no_visual, tmp_path)
+    assert response2["status"] == "proposed"
+    assert [
+        d
+        for d in response2["diagnostics"]
+        if d["code"] == "agent_runtime.visual_critique_advisory"
+    ] == []
+
+    # Without any applied operations there is nothing to propose: still failed.
+    result_no_ops = dict(result, ops_valid_through_iteration=0)
+    response3 = agent_response_from_trace(result_no_ops, tmp_path)
+    assert response3["status"] == "failed"
+
+
 def test_agent_response_ops_window_excludes_iterations_after_best(tmp_path) -> None:
     # Phase 0b: when the loop returns an EARLIER iteration's scene as the best
     # draft, ops from later iterations are not part of it and must not replay.
