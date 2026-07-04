@@ -4,12 +4,11 @@ use base64::engine::general_purpose::STANDARD as BASE64;
 use base64::Engine;
 use lumen_core::scene::{ColorStop, PhysicalUnit};
 use lumen_core::{
-    is_canonical_page_size, node_render_size, page_geometry, paints_out_of_tree,
-    pinned_paint_pass, render_box_for_node, Color, Diagnostic, DiagnosticSubject, Dimension,
-    EffectKind, ExportAdapter, ExportArtifact, ExportError, ExportFormat, ExportRequest,
-    ExportResult, Fill, ImageFitMode, ImageNode, Node, NodeId, NodeKind, Page, PageId, Paint,
-    Phase, Rect, Scene, Stroke, StrokeAlign, StrokeCap, StrokeJoin, TextAlign, TextDirection,
-    Unit,
+    is_canonical_page_size, node_render_size, page_geometry, paints_out_of_tree, pinned_paint_pass,
+    render_box_for_node, Color, Diagnostic, DiagnosticSubject, Dimension, EffectKind,
+    ExportAdapter, ExportArtifact, ExportError, ExportFormat, ExportRequest, ExportResult, Fill,
+    ImageFitMode, ImageNode, Node, NodeId, NodeKind, Page, PageId, Paint, Phase, Rect, Scene,
+    Stroke, StrokeAlign, StrokeCap, StrokeJoin, TextAlign, TextDirection, Unit,
 };
 use lumen_core::{HeuristicTextMeasurer, SharedTextMeasurer, TextMeasureInput, TextMeasurer};
 use std::sync::Arc;
@@ -310,7 +309,7 @@ impl<'a> SvgPageRenderer<'a> {
                     "x=\"0\" y=\"0\" width=\"{}\" height=\"{}\"{}",
                     fmt_num(width),
                     fmt_num(height),
-                    corner_attrs(node)
+                    corner_attrs(node, width, height)
                 );
                 if stacked {
                     for layer in self.paint_layer_attrs(&node.fills, &node.strokes, Some(&node.id))
@@ -357,7 +356,7 @@ impl<'a> SvgPageRenderer<'a> {
                     "x=\"0\" y=\"0\" width=\"{}\" height=\"{}\"{}",
                     fmt_num(width),
                     fmt_num(height),
-                    corner_attrs(node)
+                    corner_attrs(node, width, height)
                 );
                 if stacked {
                     self.body.push_str(&format!(
@@ -520,8 +519,7 @@ impl<'a> SvgPageRenderer<'a> {
                         id_attrs, transform, opacity, filter
                     ));
                     if let Some(fit) = &fit {
-                        self.body
-                            .push_str(&format!("<g transform=\"{fit}\">\n"));
+                        self.body.push_str(&format!("<g transform=\"{fit}\">\n"));
                     }
                     for layer in self.paint_layer_attrs(&node.fills, &node.strokes, Some(&node.id))
                     {
@@ -597,7 +595,7 @@ impl<'a> SvgPageRenderer<'a> {
                     clip_id,
                     fmt_num(width),
                     fmt_num(height),
-                    corner_attrs(node)
+                    corner_attrs(node, width, height)
                 ));
                 self.body.push_str(&format!(
                     "<g{} clip-path=\"url(#{})\" data-lumen-asset-id=\"{}\" data-lumen-image-fit=\"focal-crop\"{}{}{}>\n<image x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" preserveAspectRatio=\"none\" href=\"{}\" />\n</g>\n",
@@ -1049,7 +1047,7 @@ impl<'a> SvgPageRenderer<'a> {
             clip_id,
             fmt_num(width),
             fmt_num(height),
-            corner_attrs(node)
+            corner_attrs(node, width, height)
         ));
         clip_id
     }
@@ -1329,7 +1327,7 @@ fn transform_attr(node: &Node, x: f64, y: f64) -> String {
     }
 }
 
-fn corner_attrs(node: &Node) -> String {
+fn corner_attrs(node: &Node, width: f64, height: f64) -> String {
     if node.corner.top_left == 0.0
         && node.corner.top_right == 0.0
         && node.corner.bottom_right == 0.0
@@ -1342,11 +1340,18 @@ fn corner_attrs(node: &Node) -> String {
         && node.corner.top_left == node.corner.bottom_right
         && node.corner.top_left == node.corner.bottom_left
     {
-        return format!(
-            " rx=\"{}\" ry=\"{}\"",
-            fmt_num(node.corner.top_left),
-            fmt_num(node.corner.top_left)
-        );
+        // Clamp like Skia: an oversized radius saturates at half the SMALLER
+        // dimension, keeping a stadium shape. Emitting the raw value lets the
+        // SVG renderer clamp rx/ry per-axis independently (rx→w/2, ry→h/2),
+        // which turns pill buttons and badges into full ellipses on export
+        // while the canvas shows stadiums.
+        let radius = node
+            .corner
+            .top_left
+            .min(width / 2.0)
+            .min(height / 2.0)
+            .max(0.0);
+        return format!(" rx=\"{}\" ry=\"{}\"", fmt_num(radius), fmt_num(radius));
     }
 
     String::new()
