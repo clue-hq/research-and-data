@@ -113,13 +113,22 @@ export function canvasDragOperations({
   }
 
   // Child of a Free container: hand-placed transform in the parent's frame;
-  // no clamp — same freehand policy as pinned nodes.
+  // no clamp — same freehand policy as pinned nodes. Snaps against page
+  // guides too (4c): rebuild the page-space candidate box from the parent's
+  // solved origin (the same source the rebase below reads) plus the live
+  // drag position, snap that box exactly like a pinned node, then rebase the
+  // snapped page-space position back to parent space before committing.
   if (isNodeFreehand(scene, node.id)) {
     const origin = parentComputedOrigin(scene, node.id);
+    const size = nodeSceneUnitSize(node, page);
+    const snappedPosition = snapPinnedPositionToGuides({
+      page,
+      box: { x: pageX, y: pageY, width: size.width, height: size.height }
+    });
     const nextTransform = {
       ...node.transform,
-      x: roundForOperation(pageX - origin.x),
-      y: roundForOperation(pageY - origin.y)
+      x: roundForOperation(snappedPosition.x - origin.x),
+      y: roundForOperation(snappedPosition.y - origin.y)
     };
     return [
       updateNodeTransform(node, nextTransform),
@@ -168,11 +177,10 @@ export function canvasDragOperation(args: {
 
 /** The snap guides that would engage for this drag, in page space — a pure
  * readout alongside `canvasDragOperations` for the host to render as guide
- * lines. Pinned (Absolute) nodes snap to page guides same as managed nodes
- * (see `canvasDragOperations`); freehand children of a Free container still
- * don't snap (no page-space box to test against parent-relative guides).
- * Empty when no guide is within threshold. Never mutates and never affects
- * the committed operation. */
+ * lines. Pinned (Absolute) nodes and freehand children of a Free container
+ * both snap to page guides same as managed nodes (see
+ * `canvasDragOperations`). Empty when no guide is within threshold. Never
+ * mutates and never affects the committed operation. */
 export function dragSnapGuides({
   scene,
   node,
@@ -204,9 +212,16 @@ export function dragSnapGuides({
     return guides;
   }
 
-  // Freehand child of a Free container: no snap (see canvasDragOperations).
+  // Freehand child of a Free container: snaps against page guides too (4c;
+  // see canvasDragOperations) — page-space candidate box from the parent's
+  // solved origin plus the live drag position, same as the committed path.
   if (isNodeFreehand(scene, node.id)) {
-    return [];
+    const size = nodeSceneUnitSize(node, page);
+    snapPinnedPositionToGuides(
+      { page, box: { x: pageX, y: pageY, width: size.width, height: size.height } },
+      (guide) => guides.push(guide)
+    );
+    return guides;
   }
 
   const rawTransform = { ...node.transform, x: pageX, y: pageY };
@@ -315,19 +330,29 @@ export function canvasResizeOperation({
     height: sceneUnitFromCanvas(nextHeight, page)
   };
 
-  // Child of a Free container: parent-relative transform, no clamps.
+  // Child of a Free container: parent-relative transform, no clamps. Snaps
+  // against page guides too (4c): `nextTransform`/`rawSize` above are already
+  // the page-space candidate box (built from `pageOrigin`, the canvas→page
+  // origin — not the parent's origin), so snap it exactly like a pinned
+  // node's resize, then rebase the snapped page-space position back to
+  // parent space using the same `parentComputedOrigin` the commit already
+  // reads.
   if (isNodeFreehand(scene, node.id)) {
     const origin = parentComputedOrigin(scene, node.id);
+    const snappedBox = snapPinnedBoxToGuides({
+      page,
+      box: { x: nextTransform.x, y: nextTransform.y, width: rawSize.width, height: rawSize.height }
+    });
     return updateNodeTransformAndSize(
       node,
       {
         ...nextTransform,
-        x: roundForOperation(nextTransform.x - origin.x),
-        y: roundForOperation(nextTransform.y - origin.y)
+        x: roundForOperation(snappedBox.x - origin.x),
+        y: roundForOperation(snappedBox.y - origin.y)
       },
       {
-        width: { kind: "fixed", value: roundForOperation(rawSize.width) },
-        height: { kind: "fixed", value: roundForOperation(rawSize.height) }
+        width: { kind: "fixed", value: roundForOperation(snappedBox.width) },
+        height: { kind: "fixed", value: roundForOperation(snappedBox.height) }
       }
     );
   }
@@ -355,9 +380,9 @@ export function canvasResizeOperation({
 
 /** The snap guides that would engage for this resize, in page space — a pure
  * readout alongside `canvasResizeOperation` for the host to render as guide
- * lines. Pinned (Absolute) nodes snap to page guides same as managed nodes
- * (see `canvasResizeOperation`); freehand children of a Free container still
- * don't snap. Empty when nothing is within threshold. */
+ * lines. Pinned (Absolute) nodes and freehand children of a Free container
+ * both snap to page guides same as managed nodes (see
+ * `canvasResizeOperation`). Empty when nothing is within threshold. */
 export function resizeSnapGuides({
   scene,
   node,
@@ -379,7 +404,12 @@ export function resizeSnapGuides({
   const nextHeight = Math.max(2, baseSize.height * Math.abs(transform.scaleY));
   const guides: SnapGuide[] = [];
 
-  if (pinnedBox(node)) {
+  // Pinned (Absolute) nodes and freehand children of a Free container share
+  // the same page-space candidate box here — `transform.canvasX/canvasY`
+  // relative to `pageOrigin` (canvas→page origin) is page space regardless
+  // of which case it is; only the commit path (canvasResizeOperation) later
+  // rebases a freehand node's snapped box into its parent's frame.
+  if (pinnedBox(node) || isNodeFreehand(scene, node.id)) {
     snapPinnedBoxToGuides(
       {
         page,
@@ -393,10 +423,6 @@ export function resizeSnapGuides({
       (guide) => guides.push(guide)
     );
     return guides;
-  }
-
-  if (isNodeFreehand(scene, node.id)) {
-    return [];
   }
 
   const nextTransform: Transform = {

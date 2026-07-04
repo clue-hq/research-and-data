@@ -522,7 +522,13 @@ describe("snap guides (visualization)", () => {
     expect(guides).toEqual([{ axis: "x", position: 0, from: 0, to: 1080 }]);
   });
 
-  it("reports no guides for a freehand child of a Free container (no page-space box to snap)", () => {
+  it("reports a guide for a freehand child of a Free container (4c: snaps like a pinned node)", () => {
+    // Deliberate behavior change (4c, mirrors the earlier pinned-node
+    // change): a Free-container child's drag builds a page-space candidate
+    // box from the parent's solved origin + the live offset and snaps it
+    // against the same page guides — almost everything a human drags is
+    // this class post-freeze_layout (every Stack container bakes to Free at
+    // agent handoff).
     const scene = customPixelScene();
     scene.nodes.node_free_container = {
       ...scene.nodes.node_contact_name,
@@ -534,16 +540,19 @@ describe("snap guides (visualization)", () => {
     };
     scene.pages.page_a4.children = ["node_free_container"];
 
+    // The free container has no `computed` bounds here, so its page-space
+    // origin is (0,0) — the child's page-space candidate box is the raw
+    // cursor position, same as the page-level fixture used elsewhere.
     const guides = dragSnapGuides({
       scene,
       node: scene.nodes.node_contact_name,
       page: scene.pages.page_a4,
       pageOrigin: { x: 0, y: 0 },
       canvasX: 2,
-      canvasY: 2
+      canvasY: 40
     });
 
-    expect(guides).toEqual([]);
+    expect(guides).toEqual([{ axis: "x", position: 0, from: 0, to: 1080 }]);
   });
 
   it("reports a guide for a resize that snaps its trailing edge to the page bound", () => {
