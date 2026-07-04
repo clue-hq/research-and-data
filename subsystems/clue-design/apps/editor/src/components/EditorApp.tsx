@@ -20,12 +20,8 @@ import {
 } from "./EditorChrome";
 import { BrandKitPanel } from "./BrandKitPanel";
 import { EditorCanvas } from "./canvas/EditorCanvas";
-import { ExportPanel, type ExportPanelState } from "./ExportPanel";
+import { ExportPanel } from "./ExportPanel";
 import { ExportPreviewSurface } from "./ExportPreviewSurface";
-import {
-  openBlankArtifactPreviewWindow,
-  showArtifactInPreviewWindow
-} from "./exportArtifactActions";
 import { AssetBrowserPanel } from "./AssetBrowserPanel";
 import { HistoryPanel } from "./HistoryPanel";
 import { WorstCasePreviewPanel } from "./WorstCasePreviewPanel";
@@ -73,18 +69,8 @@ import {
   WasmEngine,
   type OptimisticEnginePort
 } from "@/engine/wasmEngine";
-import {
-  createApiExportRunner,
-  defaultEditorExportProfile,
-  type EditorExportArtifact,
-  type EditorExportResult,
-  type EditorExportRunner
-} from "@/engine/exportRunner";
-import {
-  createApiPreflightRunner,
-  type EditorPreflightResult,
-  type EditorPreflightRunner
-} from "@/engine/preflightRunner";
+import { createApiExportRunner, type EditorExportRunner } from "@/engine/exportRunner";
+import { createApiPreflightRunner, type EditorPreflightRunner } from "@/engine/preflightRunner";
 import {
   addPage,
   removeExportProfile,
@@ -118,6 +104,7 @@ import { useAgentInstructions } from "@/hooks/useAgentInstructions";
 import { useTurnNotification } from "@/hooks/useTurnNotification";
 import { useDocumentSync, type EditQueueFactory } from "@/hooks/useDocumentSync";
 import { useEditHistory } from "@/hooks/useEditHistory";
+import { useExportPreflight } from "@/hooks/useExportPreflight";
 import { useTargetChips } from "@/hooks/useTargetChips";
 import { compareActiveDiagnostic, useTurnCheckpoints } from "@/hooks/useTurnCheckpoints";
 
@@ -306,18 +293,6 @@ export default function EditorApp({
   const [isBrandCompatibilityRunning, setIsBrandCompatibilityRunning] = useState(false);
   const [editorPanelMode, setEditorPanelMode] = useState<EditorPanelMode>("inspector");
   const [agentSidebarWidth, setAgentSidebarWidth] = useState(420);
-  const [isPreflighting, setIsPreflighting] = useState(false);
-  const [isExporting, setIsExporting] = useState(false);
-  const [exportResult, setExportResult] = useState<EditorExportResult | null>(null);
-  const [exportPanelState, setExportPanelState] = useState<ExportPanelState>(() => {
-    const profile = defaultEditorExportProfile();
-    return {
-      profileName: profile.name,
-      scope: "active",
-      draftProfile: profile
-    };
-  });
-  const [preflightResult, setPreflightResult] = useState<EditorPreflightResult | null>(null);
   const [workspaceMode, setWorkspaceMode] = useState<"canvas" | "export" | "compare">("canvas");
   const [workspaceViewport, setWorkspaceViewport] = useState(defaultWorkspaceViewport);
   const [workspaceTool, setWorkspaceTool] = useState<WorkspaceTool>("select");
@@ -325,9 +300,6 @@ export default function EditorApp({
   const [brandCompatibilityReport, setBrandCompatibilityReport] =
     useState<BrandCompatibilityReport | null>(null);
   const isAgentPanelOpen = editorPanelMode === "agent";
-  const hasExportArtifacts = Boolean(exportResult?.artifacts.length);
-  const exportWorkspaceMode = workspaceMode === "compare" && hasExportArtifacts ? "compare" : "export";
-  const renderedWorkspaceMode = editorPanelMode === "export" ? exportWorkspaceMode : "canvas";
   const selectedNode = useMemo(() => getNode(scene, selectedNodeId), [scene, selectedNodeId]);
   const activePage = activePageId ? scene.pages[activePageId] ?? null : null;
   const effectiveBrandKit = useMemo(
@@ -469,6 +441,37 @@ export default function EditorApp({
     }
   };
 
+  // The export + preflight leg (Validate/Export flows, their in-flight
+  // flags and results) lives in useExportPreflight. Deps rebuilt per
+  // render; activeDocumentId crosses via a lazy getter because
+  // useDocumentSync is wired below (it needs the history setters).
+  const {
+    isPreflighting,
+    isExporting,
+    exportResult,
+    setExportResult,
+    exportPanelState,
+    setExportPanelState,
+    preflightResult,
+    setPreflightResult,
+    runExport,
+    runExportForScene,
+    runPreflight
+  } = useExportPreflight({
+    exportRunner,
+    preflightRunner,
+    scene,
+    activePageId,
+    getActiveDocumentId: () => activeDocumentId,
+    replaceScene,
+    setDiagnostics,
+    setEditorPanelMode,
+    setWorkspaceMode
+  });
+  const hasExportArtifacts = Boolean(exportResult?.artifacts.length);
+  const exportWorkspaceMode = workspaceMode === "compare" && hasExportArtifacts ? "compare" : "export";
+  const renderedWorkspaceMode = editorPanelMode === "export" ? exportWorkspaceMode : "canvas";
+
   // Local undo/redo history lives in useEditHistory (pure mechanics; the
   // agent-turn canvas-lock guards stay HERE, on the orchestration layer,
   // like every other guarded mutation path). Deps rebuilt per render.
@@ -550,103 +553,6 @@ export default function EditorApp({
     // The disposition tells the caller whether this batch gets a server
     // envelope — an Accept only offers Revert when its checkpoint will exist.
     return enqueueForPersistence(previousScene, operations, nextScene, persistOptions);
-  };
-
-  const runExport = async (
-    profile = defaultEditorExportProfile(),
-    pageIds: PageId[] = activePageId ? [activePageId] : []
-  ) => runExportForScene(scene, profile, pageIds, { openPreviewTab: true });
-
-  const runExportForScene = async (
-    sceneForExport: Scene,
-    profile = defaultEditorExportProfile(),
-    pageIds: PageId[] = activePageId ? [activePageId] : [],
-    options: { openPreviewTab?: boolean } = {}
-  ) => {
-    const previewWindow = options.openPreviewTab ? openBlankArtifactPreviewWindow() : null;
-    setEditorPanelMode("export");
-    if (pageIds.length === 0) {
-      previewWindow?.close();
-      setDiagnostics([
-        {
-          severity: "warning",
-          phase: "export",
-          code: "EDITOR_EXPORT_PAGE_REQUIRED",
-          message: "Select an artboard before exporting.",
-          subject: { kind: "document" },
-          hint: "Choose an artboard in the left rail or export all artboards from the Export panel."
-        }
-      ]);
-      return;
-    }
-
-    setIsExporting(true);
-    setDiagnostics([]);
-
-    try {
-      const preflight = await preflightRunner({ scene: sceneForExport });
-      setPreflightResult(preflight);
-      const preflightDiagnostics = exportPreflightDiagnostics(preflight);
-      // Phase 0c: the preflight scene is token-BAKED (brand refs resolved to
-      // literal values). It is transient export INPUT only — swapping it into
-      // the live scene (the old replaceScene(preflight.scene) here) silently
-      // stripped live token bindings from the user's document on every
-      // export/agent apply.
-      const sceneToExport = preflight.scene ?? sceneForExport;
-      const result = await exportRunner({
-        scene: sceneToExport,
-        profile,
-        pageIds,
-        ...(activeDocumentId ? { documentId: activeDocumentId } : {})
-      });
-      const combinedDiagnostics = [...preflightDiagnostics, ...result.diagnostics];
-      const resultWithPreflightDiagnostics: EditorExportResult = {
-        ...result,
-        diagnostics: combinedDiagnostics
-      };
-      setExportResult(resultWithPreflightDiagnostics);
-      if (result.status === "ok" && result.artifacts.length > 0) {
-        setWorkspaceMode("export");
-        showArtifactInPreviewWindow(
-          previewWindow,
-          artifactForExportPreview(resultWithPreflightDiagnostics, pageIds)
-        );
-      } else if (previewWindow) {
-        previewWindow.close();
-      }
-      logExportDiagnostics(combinedDiagnostics);
-      setDiagnostics(
-        result.status === "ok"
-          ? []
-          : result.diagnostics.length > 0
-            ? result.diagnostics
-            : [
-                {
-                  severity: "error",
-                  phase: "export",
-                  code: "EDITOR_EXPORT_FAILED",
-                  message: "Export failed without returning detailed diagnostics.",
-                  subject: { kind: "document" },
-                  hint: "Inspect the browser console or API logs for the export request."
-                }
-              ]
-      );
-    } catch (error) {
-      previewWindow?.close();
-      setExportResult(null);
-      setDiagnostics([
-        {
-          severity: "error",
-          phase: "export",
-          code: "EDITOR_EXPORT_REQUEST_FAILED",
-          message: error instanceof Error ? error.message : "Export request failed.",
-          subject: { kind: "document" },
-          hint: "Check the editor API connection and retry export."
-        }
-      ]);
-    } finally {
-      setIsExporting(false);
-    }
   };
 
   // 2c selection chips: the agent's edit targets mirror the selection set.
@@ -1031,76 +937,6 @@ export default function EditorApp({
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [redoLastOperation, scene, selectedNode, selectedNodeId, undoLastOperation]);
-
-  const runPreflight = async () => {
-    setIsPreflighting(true);
-    setEditorPanelMode("diagnostics");
-    setDiagnostics([
-      {
-        severity: "advice",
-        phase: "validation",
-        code: "EDITOR_PREFLIGHT_RUNNING",
-        message: "Running canonical preflight validation.",
-        subject: null,
-        hint: "Preflight resolves BrandKit tokens, layout, text-fit diagnostics, and computed geometry before export."
-      }
-    ]);
-
-    try {
-      const result = await preflightRunner({ scene });
-      setPreflightResult(result);
-      setExportResult(null);
-      setWorkspaceMode("canvas");
-      if (result.status === "applied" && result.scene) {
-        replaceScene(result.scene);
-        setDiagnostics(
-          result.diagnostics.length > 0
-            ? result.diagnostics
-            : [
-                {
-                  severity: "advice",
-                  phase: "validation",
-                  code: "EDITOR_PREFLIGHT_OK",
-                  message: `Preflight applied ${preflightOperationCount(result)} canonical operation${preflightOperationCount(result) === 1 ? "" : "s"}.`,
-                  subject: { kind: "document" },
-                  hint: result.brand_kit.source
-                    ? `Effective Brand Kit source: ${result.brand_kit.source}.`
-                    : null
-                }
-              ]
-        );
-      } else {
-        setDiagnostics(
-          result.diagnostics.length > 0
-            ? result.diagnostics
-            : [
-                {
-                  severity: "error",
-                  phase: "validation",
-                  code: "EDITOR_PREFLIGHT_FAILED",
-                  message: "Preflight failed without returning detailed diagnostics.",
-                  subject: { kind: "document" },
-                  hint: "Inspect the API/core logs and retry after correcting the scene."
-                }
-              ]
-        );
-      }
-    } catch (error) {
-      setPreflightResult(null);
-      setDiagnostics([
-        {
-          severity: "error",
-          phase: "validation",
-          code: "EDITOR_PREFLIGHT_REQUEST_FAILED",
-          message: error instanceof Error ? error.message : "Preflight request failed.",
-          subject: { kind: "document" },
-          hint: "Check the editor API connection and retry validation."
-        }
-      ]);
-    } finally {
-      setIsPreflighting(false);
-    }
-  };
 
   const runBrandGovernance = async () => {
     if (!scene.meta.brand_kit) {
@@ -1792,72 +1628,6 @@ export default function EditorApp({
       </div>
     </main>
   );
-}
-
-function preflightOperationCount(result: EditorPreflightResult): number {
-  return (
-    result.preflight.brand_ref_operations +
-    result.preflight.token_operations +
-    result.preflight.layout_operations
-  );
-}
-
-function artifactForExportPreview(
-  result: EditorExportResult,
-  pageIds: PageId[]
-): EditorExportArtifact | null {
-  return (
-    result.artifacts.find((artifact) => artifact.page_id && pageIds.includes(artifact.page_id)) ??
-    result.artifacts[0] ??
-    null
-  );
-}
-
-function logExportDiagnostics(diagnostics: Diagnostic[]): void {
-  if (diagnostics.length === 0 || typeof console === "undefined") {
-    return;
-  }
-  console.info(
-    "[lumen-export-preview] diagnostics",
-    diagnostics.map((diagnostic) => ({
-      severity: diagnostic.severity,
-      code: diagnostic.code,
-      message: diagnostic.message,
-      subject: diagnostic.subject
-    }))
-  );
-}
-
-function hasErrorDiagnostics(diagnostics: Diagnostic[]): boolean {
-  return diagnostics.some((diagnostic) => diagnostic.severity === "error");
-}
-
-function exportPreflightDiagnostics(preflight: EditorPreflightResult): Diagnostic[] {
-  const diagnostics = [...preflight.diagnostics];
-  const needsSyntheticError =
-    preflight.status !== "applied" ||
-    preflight.preflight.has_errors ||
-    !preflight.scene;
-
-  if (needsSyntheticError && !hasErrorDiagnostics(diagnostics)) {
-    diagnostics.unshift({
-      severity: "error",
-      phase: "validation",
-      code:
-        preflight.status !== "applied" || !preflight.scene
-          ? "EDITOR_EXPORT_PREFLIGHT_FAILED_NONBLOCKING"
-          : "EDITOR_EXPORT_PREFLIGHT_HAS_ERRORS",
-      message:
-        preflight.status !== "applied" || !preflight.scene
-          ? "Preflight failed; exporting the current scene anyway for preview inspection."
-          : "Preflight reported unresolved errors; exporting anyway for preview inspection.",
-      subject: { kind: "document" },
-      hint:
-        "This preview is useful for inspection, but the artifact is not ready for approval until preflight diagnostics are resolved."
-    });
-  }
-
-  return diagnostics;
 }
 
 function clampNumber(value: number, minimum: number, maximum: number): number {
