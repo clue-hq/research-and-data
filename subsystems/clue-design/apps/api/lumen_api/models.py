@@ -104,10 +104,9 @@ class AgentTurnPreviewRequest(BaseModel):
     scene: JsonObject
     document_id: Optional[str] = None
     active_page_id: Optional[str] = None
-    # 2c selection chips: the node ids the human chipped as edit targets. The
-    # singular selected_node_id stays one release for back-compat; when both
-    # arrive, target_node_ids wins.
-    selected_node_id: Optional[str] = None
+    # 2c selection chips: the node ids the human chipped as edit targets.
+    # (The singular selected_node_id back-compat field was dropped after its
+    # one-release window; legacy senders' extra key is ignored by pydantic.)
     target_node_ids: List[str] = Field(default_factory=list)
     diagnostics: List[JsonObject] = Field(default_factory=list)
     # 2e: the document's standing agent instructions, sent by the editor with

@@ -389,7 +389,10 @@ def test_agent_turn_preview_route_returns_editor_safe_proposal(client: TestClien
             "scene": minimal_scene(),
             "document_id": "doc_agent_route",
             "active_page_id": "page_a4",
-            "selected_node_id": "node_contact_name",
+            # Legacy senders may still include the dropped back-compat key;
+            # it must be IGNORED (pydantic extra), never a 422.
+            "selected_node_id": "node_legacy_ignored",
+            "target_node_ids": ["node_contact_name"],
             "diagnostics": [],
         },
     )
@@ -403,7 +406,8 @@ def test_agent_turn_preview_route_returns_editor_safe_proposal(client: TestClien
     assert payload["artifacts"][0]["format"] == "svg"
     assert captured["payload"].prompt == "Repair the headline"
     assert captured["payload"].active_page_id == "page_a4"
-    assert captured["payload"].selected_node_id == "node_contact_name"
+    assert captured["payload"].target_node_ids == ["node_contact_name"]
+    assert not hasattr(captured["payload"], "selected_node_id")
     assert captured["root"] == REPO_ROOT
 
 
@@ -415,16 +419,10 @@ def test_editor_target_node_ids_prefers_plural_and_dedupes() -> None:
     both = AgentTurnPreviewRequest(
         prompt="x",
         scene=scene,
-        selected_node_id="node_selected",
         target_node_ids=["node_a", "node_a", "node_b"],
     )
-    # Plural wins over the singular back-compat field; order preserved, deduped.
+    # Order preserved, deduped.
     assert editor_target_node_ids(both) == ["node_a", "node_b"]
-
-    only_selected = AgentTurnPreviewRequest(
-        prompt="x", scene=scene, selected_node_id="node_selected"
-    )
-    assert editor_target_node_ids(only_selected) == ["node_selected"]
 
     neither = AgentTurnPreviewRequest(prompt="x", scene=scene)
     assert editor_target_node_ids(neither) == []
@@ -546,7 +544,6 @@ def test_agent_turns_async_persists_result_and_terminal_event(
             "scene": minimal_scene(),
             "document_id": "doc_async_route",
             "active_page_id": "page_a4",
-            "selected_node_id": None,
             "diagnostics": [],
         },
     )

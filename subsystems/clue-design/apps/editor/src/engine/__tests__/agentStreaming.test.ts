@@ -58,7 +58,6 @@ describe("streaming agent runner", () => {
       scene: minimalScene,
       documentId: undefined,
       activePageId: "page_a4",
-      selectedNodeId: null,
       diagnostics: [],
       onEvent: (event) => events.push(event)
     });

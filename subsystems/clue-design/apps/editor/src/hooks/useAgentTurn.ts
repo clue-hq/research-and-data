@@ -314,7 +314,6 @@ export function useAgentTurn(deps: UseAgentTurnDeps) {
         scene,
         documentId: activeDocumentId ?? undefined,
         activePageId,
-        selectedNodeId,
         targetNodeIds,
         agentInstructions,
         diagnostics,

@@ -23,7 +23,6 @@ export interface EditorAgentRequest {
   scene: Scene;
   documentId?: string;
   activePageId: PageId | null;
-  selectedNodeId: NodeId | null;
   /** 2c: the chipped edit targets. Sent as target_node_ids; the server scopes
    * the compensating edit to them and keeps every other node byte-identical. */
   targetNodeIds?: NodeId[];
@@ -97,7 +96,6 @@ export function createApiAgentRunner({ apiBaseUrl }: ApiAgentRunnerOptions): Edi
     scene,
     documentId,
     activePageId,
-    selectedNodeId,
     targetNodeIds,
     agentInstructions,
     diagnostics
@@ -112,7 +110,6 @@ export function createApiAgentRunner({ apiBaseUrl }: ApiAgentRunnerOptions): Edi
         scene,
         document_id: documentId ?? null,
         active_page_id: activePageId,
-        selected_node_id: selectedNodeId,
         target_node_ids: targetNodeIds ?? [],
         agent_instructions: agentInstructions ?? null,
         diagnostics
@@ -148,7 +145,6 @@ export function createStreamingAgentRunner({
     scene,
     documentId,
     activePageId,
-    selectedNodeId,
     targetNodeIds,
     agentInstructions,
     diagnostics,
@@ -162,7 +158,6 @@ export function createStreamingAgentRunner({
         scene,
         document_id: documentId ?? null,
         active_page_id: activePageId,
-        selected_node_id: selectedNodeId,
         target_node_ids: targetNodeIds ?? [],
         agent_instructions: agentInstructions ?? null,
         diagnostics

@@ -1044,7 +1044,7 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
             "agent_turn_preview_completed",
             document_id=payload.document_id,
             active_page_id=payload.active_page_id,
-            selected_node_id=payload.selected_node_id,
+            target_node_ids=payload.target_node_ids,
             status=result.get("status"),
             run_id=result.get("run_id"),
             operation_count=len(result.get("operations", []))
@@ -1117,7 +1117,7 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
             run_id=run_id,
             document_id=payload.document_id,
             active_page_id=payload.active_page_id,
-            selected_node_id=payload.selected_node_id,
+            target_node_ids=payload.target_node_ids,
         )
         return {"schema_version": 1, "run_id": run_id, "status": "running"}
 
@@ -3390,12 +3390,9 @@ def agent_seed_scene(payload: AgentTurnPreviewRequest) -> Optional[JsonObject]:
 
 
 def editor_target_node_ids(payload: AgentTurnPreviewRequest) -> List[str]:
-    """The nodes the human chipped as edit targets (2c). Prefer the plural
-    target_node_ids; fall back to the singular selected_node_id for back-compat.
+    """The nodes the human chipped as edit targets (2c).
     De-duplicated, order preserved."""
-    raw = payload.target_node_ids or (
-        [payload.selected_node_id] if payload.selected_node_id else []
-    )
+    raw = payload.target_node_ids
     seen: set[str] = set()
     targets: List[str] = []
     for node_id in raw:
@@ -3410,7 +3407,6 @@ def editor_agent_prompt(payload: AgentTurnPreviewRequest) -> str:
     context = {
         "document_id": payload.document_id,
         "active_page_id": payload.active_page_id,
-        "selected_node_id": payload.selected_node_id,
         "target_node_ids": targets,
         "scene_summary": scene_context_summary(payload.scene),
         "current_diagnostics": payload.diagnostics[:20],
