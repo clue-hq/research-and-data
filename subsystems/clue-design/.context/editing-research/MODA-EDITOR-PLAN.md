@@ -93,6 +93,8 @@ Key inferences:
 | Agent works on live doc (round-trip) | **NO — agent seeds empty scene** (`tools.py:142`), sees 80-node text summary | **Phase 0 — the gate on everything** |
 | Accept/Reject gate on agent turn | Ops auto-applied; post-preflight `replaceScene(preflight.scene)` swaps in token-baked scene (`EditorApp.tsx:1099`) | Phase 0/2 |
 | Brand kit entity | BrandKitPanel + brand-kits knowledge exist | Enrich later (fonts validation, images, tone) |
+| Text/fill color in toolbar; gradient fill editor | Engine renders linear/radial gradients end-to-end (model+DSL+Skia+SVG+Konva); UI is solid-hex-only, clobbers fill stack | §5 — 4b color rider, then Appearance slice at restyle |
+| Page background Mesh Gradient (+ grain) | Not in `Paint` model; no Skia/SVG primitive | §5 deferral — demand-driven, weeks-class |
 | Design Plan pre-brief | Nothing | Phase 2 (cheap, prompt-side) |
 | Variants as named pages | Multi-page exists (PageRail) | Agent emits N concepts as pages — prompt/loop change |
 | Version history / Save as template / comments / presentation / animation / shaders / charts | Partial (HistoryPanel) / absent | Phase 4+ / non-goals for now |
@@ -136,8 +138,8 @@ Key inferences:
 - Keep fit/focal as the "crop" story short-term (already shipped); free-rect crop stays deferred (STUDY.md Phase 3).
 
 ### Phase 4 — Editor completeness ladder (prioritized floor, in order)
-1. Contextual text toolbar (font/weight/size/style/align + line-height/letter-spacing) with **token-aware overrides** — raw edit clears the sibling `*_token` (the stale-token clobber fix, `operations.rs:556-597`).
-2. Align/distribute + smart guides for Absolute/Free nodes; z-order + group/ungroup UI (ops exist).
+1. Contextual text toolbar (font/weight/size/style/align + line-height/letter-spacing) with **token-aware overrides** — raw edit clears the sibling `*_token` (the stale-token clobber fix, `operations.rs:556-597`). **SHIPPED as 4a** (commits `4e90201` engine + `cb0d2b2` toolbar, e2e-proven). Residual: raw *color* edits (fills) don't yet clear `style_token` — resolved by the 4b color rider below.
+2. Align/distribute + smart guides for Absolute/Free nodes; z-order + group/ungroup UI (ops exist). **+ Color rider (decided 2026-07-04):** token-first color swatch in the contextual toolbar (text + shape solid fills), the fills-clear-`style_token` engine rule, and a gradient-clobber guard — full rationale and scope in §5.
 3. Managed-drag → reorder (`MoveNode` by index); managed W/H → size-mode variant.
 4. Page-level: background fill UI, margins as visible guides (agent already respects artboard bounds), page rename in rail.
 5. Comments, version history UI, Save-as-template. Later/likely never: shaders, charts/map/LaTeX/Mermaid, page duration/animation, presentation mode.
@@ -156,3 +158,43 @@ Phase 0 → Phase 1 → Phase 2 in that order; Phases 3/4 parallelizable after 1
 - LUMV0801 clip-overflow policy for freehand.
 - Serde-default byte-parity for new fields on old scenes.
 - Agent quality degradation on heavily-freehanded scenes (semantic erosion — honest cost; `base_anchor` mitigates).
+
+---
+
+## 5. Color & fills — engine capability audit + sequencing (added 2026-07-04, post-4a)
+
+*Two code surveys on `agents/editing-roundtrip-v0` after 4a shipped, prompted by: when does color join the toolbar, and can brand kits carrying gradient backgrounds (e.g. SVGs) be used by the agent/engine without editor fill features?*
+
+### 5.1 What the engine already has (the surprising part)
+
+`Paint` is `Solid | LinearGradient{angle, stops} | RadialGradient{stops} | Token` (`scene.rs:750-757`); fills are a stacked `Vec<Fill>` (`scene.rs:276`); page backgrounds use the same model (`scene.rs:191`); every `ColorStop.color` may itself be a token, resolved per-stop on brand apply (`brand.rs:3568-3576`). **"Add gradients" is a UI project, not an engine project. Mesh/blur/blend are the opposite.**
+
+| Capability | Model | DSL | Skia | SVG export | Konva preview | Editor UI |
+|---|---|---|---|---|---|---|
+| Solid fill (hex/oklch/token) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ crude (`RawStyleSection` hex input; `DesignTokensSection` token dropdown) |
+| Linear gradient (angle + n stops) | ✅ | ✅ `linear(angle, stop(c,p)…)` (`dsl.rs:4482-4506`) | ✅ | ✅ | ✅ | ❌ |
+| Radial gradient (n stops, center fixed 0.5,0.5) | ✅ | ✅ `radial(stop…)` | ✅ | ✅ | ✅ | ❌ |
+| Token refs inside gradient stops | ✅ | ✅ `stop($token, pos)` | ✅ | ✅ | ✅ | ❌ |
+| Drop shadow (color/opacity/x/y/blur/spread) | ✅ `EffectKind::DropShadow` (`scene.rs:737-748`) | ❌ | ✅ (`render.rs:705-750`) | ✅ | ✅ approx | ❌ |
+| Node opacity (+ `$opacity.*` tokens) | ✅ | — | ✅ | ✅ | ✅ | ✅ |
+| Blur / backdrop-blur | ❌ scene-side — exists ONLY as brand *token type* (`EffectToken` Blur/BackdropBlur), no `EffectKind`, no render path | ❌ | ❌ | ❌ | ❌ | ❌ |
+| Mesh gradient, blend modes, image-as-fill | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+
+Brand-kit side: `TokenCatalog` stores **flat colors only** (`brand.rs:1168-1192`; `ColorTokenValue = Hex | Oklch | Alias` at `brand.rs:1227-1231`) — **no gradient tokens** — though `constraints.allow_gradients` already anticipates them. Brand assets (logos/images) are `asset_id` refs into the asset store; the agent can place them only as image nodes (`image asset(<id>)`, `dsl.rs:3588`), never as fill paints. `validate_scene_brand_governance` (`brand.rs:1632-1903`) wants token fills; gradient stops satisfy this per-stop.
+
+### 5.2 Decisions
+
+1. **Toolbar color = 4b rider (~2 days incl. e2e).** Token-first swatch popover: brand swatches write `Paint::Token` (stays restylable, passes governance); custom picker is the escape hatch writing raw hex → node visibly **detaches** (clears `style_token` for text — closing the 4a residual), same semantics/undo as 4a typography. This is Moda's Strict/Balanced/Loose adherence expressed in one control; a raw-only picker would fight the brand story, a token-first one strengthens it. Engine piece in `editing.rs` + WASM rebuild.
+2. **Gradient-clobber guard ships with the rider.** Today's `RawStyleSection` color input **replaces the entire fills stack with one solid** — a naive toolbar swatch would silently destroy agent-authored gradients. The control must detect gradient fills and defer to the fill editor (or warn) instead of overwriting.
+3. **Appearance/Fills slice lands at the Moda restyle** (when the inspector's Raw-Style/Appearance surface is rebuilt): gradient stop/angle editor, per-fill alpha/opacity, drop-shadow editor (engine already renders shadows), effects list, full picker. **Pure frontend** — zero engine work; the engine renders all of it today.
+4. **Brand-gradient ingestion rides the brand-import track, not the editor track.** To make "brand kit with gradient backgrounds → agent uses them natively" true: add `$gradient.*` tokens to `TokenCatalog` (+ resolver + governance + DSL sugar, ~2-3 days engine) and an ingestion extractor that lifts angle+stops out of brand SVGs into native `Paint::LinearGradient` with stop colors bound to `$palette.*` tokens. Renderers need nothing. Prompts/skills then teach the agent to use them (`prompts.py` brand guidance currently pushes solid `$surface.*` only).
+5. **Gradient SVG assets are usable TODAY** as `image asset(<id>)` background nodes — with caveats: `VectorNode` is path-data-only (`scene.rs:524-532`), so defs-based gradient SVGs must be **rasterized at ingest**; and images are opaque to restyle/theming/governance (not recolorable on brand reapply, no light/dark modes). Native gradients (decision 4) are the right long-term path. Known adjacent gap: agent loop doesn't yet reliably *place* imagery even though plumbing works (see image-agent-integration memory).
+6. **Demand-driven deferrals** — each is scene schema + both renderers + DSL + governance + WASM (the expensive class), and nothing consumes them yet: **mesh gradients** (no Skia primitive, no SVG-export representation → rasterize fallback; weeks-class — this is Moda's page-background Mesh Gradient + grain), **blur/backdrop effects** (promote the existing token types to `EffectKind` when a consumer appears), **blend modes**, **image-as-fill**.
+
+### 5.3 The orthogonality principle (why brand kits don't block on the editor)
+
+Editor UI and agent capability are **decoupled**: the agent authors through the DSL, and DSL + both renderers + the Konva preview already handle gradients end-to-end. The agent could emit `linear(45, stop($palette.primary.500, 0), stop($palette.accent.400, 1))` today and the human canvas renders it faithfully — the human just can't *edit* it until the Appearance slice. So: agent-side brand-gradient support needs only decision 4 (tokens + ingestion); human-side editing catches up at the restyle; neither waits on the other.
+
+### 5.4 Sequencing
+
+**4b color rider → Appearance/Fills slice @ Moda restyle → `$gradient.*` tokens + SVG extraction @ brand-import track → mesh/blur/blend/image-fill on demand.**
