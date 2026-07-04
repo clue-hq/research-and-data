@@ -35,6 +35,9 @@ export interface UseDocumentSyncDeps {
   replaceScene: (nextScene: Scene) => void;
   setScene: Dispatch<SetStateAction<Scene>>;
   setDiagnostics: Dispatch<SetStateAction<Diagnostic[]>>;
+  /** Clears a STICKY diagnostic once its condition is resolved (the sticky
+   * merge policy deliberately ignores ordinary overwrites). */
+  resolveDiagnosticCode: (code: string) => void;
   setUndoStack: Dispatch<SetStateAction<EditorHistoryFrame[]>>;
   setRedoStack: Dispatch<SetStateAction<EditorHistoryFrame[]>>;
 }
@@ -49,6 +52,7 @@ export function useDocumentSync(deps: UseDocumentSyncDeps) {
     replaceScene,
     setScene,
     setDiagnostics,
+    resolveDiagnosticCode,
     setUndoStack,
     setRedoStack
   } = deps;
@@ -150,6 +154,8 @@ export function useDocumentSync(deps: UseDocumentSyncDeps) {
     documentCreationRef.current = documentCreator(seedScene)
       .then((created) => {
         adoptCreatedDocument(created.documentId);
+        // A retry succeeded — the sticky create-failure is resolved.
+        resolveDiagnosticCode("EDITOR_DOCUMENT_CREATE_FAILED");
         if (seedFromPrevious) {
           ensureEditQueue(created.documentId).enqueueOperations(operations);
         }

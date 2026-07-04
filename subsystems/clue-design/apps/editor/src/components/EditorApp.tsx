@@ -51,6 +51,7 @@ import type {
 } from "@/engine/contracts";
 import { createDocument, type CreatedDocument } from "@/engine/documentStore";
 import { editorApiBaseUrl } from "@/engine/editorConfig";
+import { mergeStickyDiagnostics } from "@/engine/diagnosticsPolicy";
 import { createEditQueue } from "@/engine/editQueue";
 import {
   EDITOR_PANEL_MODES,
@@ -244,7 +245,24 @@ export default function EditorApp({
       return next ? [next] : [];
     });
   };
-  const [diagnostics, setDiagnostics] = useState<Diagnostic[]>([]);
+  const [diagnostics, rawSetDiagnostics] = useState<Diagnostic[]>([]);
+  // Every diagnostics write flows through the sticky-merge policy: a
+  // persistence-class error (edits not saving, reconcile divergence, failed
+  // revert) survives unrelated overwrites instead of losing the last-writer
+  // race to cosmetic flows. See engine/diagnosticsPolicy.
+  const setDiagnostics: Dispatch<SetStateAction<Diagnostic[]>> = (action) =>
+    rawSetDiagnostics((current) =>
+      mergeStickyDiagnostics(
+        current,
+        typeof action === "function" ? action(current) : action
+      )
+    );
+  // The one way to CLEAR a sticky diagnostic: the flow that resolved the
+  // condition says so explicitly (bypasses the sticky merge).
+  const resolveDiagnosticCode = (code: string) =>
+    rawSetDiagnostics((current) =>
+      current.filter((diagnostic) => diagnostic.code !== code)
+    );
   // When the WASM core is expected (flag on, no injected engine) but fails to
   // activate, the editor is in server-only mode: nothing on the canvas can be
   // selected or edited. That failure was previously only a buried warning
@@ -457,6 +475,7 @@ export default function EditorApp({
     replaceScene,
     setScene,
     setDiagnostics,
+    resolveDiagnosticCode,
     setUndoStack,
     setRedoStack
   });
