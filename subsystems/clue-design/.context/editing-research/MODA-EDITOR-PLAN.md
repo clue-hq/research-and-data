@@ -241,3 +241,42 @@ page-space origin (the compile session holds the laid-out scene). Zero new
 concepts for the agent; "move it there" is owner-independent. Rider: the
 agent brief's "pinned nodes must not be re-positioned" note rewords to
 "pinned geometry is human-owned — move it only when the user asks."
+
+#### 4c-A shipped (1fe3622) + the semantics correction (2026-07-05)
+
+4c-A landed parent-relative; the live retest (run_8e7b9f64) immediately
+falsified that frame choice: the model wrote artboard coordinates on both
+attempts — the frame the brief/inspector display `absolute_box` in — so
+parent-relative lowering put the badge 88pt off, then off-canvas.
+**Corrected: `p()` on a pinned target is PAGE-SPACE** (writes absolute_box
+verbatim; `pinned_origin()`/LUMD0918 deleted — page-space needs no parent
+geometry). The frame rule taught to the agent: *p() speaks the frame the
+brief shows that node's geometry in* — page space for pinned nodes,
+parent-local for flow/transform nodes (incl. new children of Free
+containers). LUMD0919 (fixed sizes only on pinned) unchanged.
+
+#### Best-draft-wins (same retest, Finding B)
+
+At budget exhaustion the loop proposed the LAST preflight-clean draft, not
+the best: both drafts rejected with 2 issues each → rank tie-broke on raw
+critic confidence, and confidence on a rejected draft measures
+certainty-of-badness (0.90-certainly-bad off-canvas beat 0.86 visible).
+Fixed in `_consider_best`: severity-weighted issue penalty (blocker 10 /
+error 3 / warning 1 / info 0) + verdict-signed confidence (+conf accepted,
+−conf rejected).
+
+#### 4c-B — per-document handoff toggle (decided with user 2026-07-05)
+
+Handoff-absolute stays the default contract, but it becomes a per-document
+setting: `layout_managed_editing` (default false). ON = advanced opt-out —
+both freeze seams (Accept-time + first-gesture) are skipped, agent designs
+keep live Stack containers, and the pre-4b.5 managed-editing surface
+(detach affordances) is reachable again. Enabling does NOT un-freeze
+already-Free containers (one-way; disabling re-freezes at the next seam).
+Persistence rides the agent_instructions pattern (documents column + save
+route), not the scene schema — it is editor policy, invisible to the
+engine and the agent runtime. This is also the rollout safety valve.
+
+Still open for 4c-C (managed gestures in advanced mode): strict
+reorder-within-container v1, pull-out-to-detach as fast-follow — needs
+user's word before build.
