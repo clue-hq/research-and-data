@@ -26,6 +26,7 @@ import { AssetBrowserPanel } from "./AssetBrowserPanel";
 import { HistoryPanel } from "./HistoryPanel";
 import { WorstCasePreviewPanel } from "./WorstCasePreviewPanel";
 import { InspectorPanel } from "./InspectorPanel";
+import { TextToolbar } from "./TextToolbar";
 import { LayerPanel } from "./LayerPanel";
 import { PageRail } from "./PageRail";
 import { ValidationPanel } from "./ValidationPanel";
@@ -1291,26 +1292,31 @@ export default function EditorApp({
               onSelectSubject={selectDiagnosticSubject}
             />
           ) : (
-            <EditorCanvas
-              scene={scene}
-              activePageId={activePageId}
-              selectedNodeId={selectedNodeId}
-              selectedNodeIds={selectedNodeIds}
-              onSelectNode={selectNode}
-              onSelectPage={selectPage}
-              onOperations={applyOperations}
-              engine={engineRef.current}
-              diagnostics={diagnostics}
-              workspaceViewport={workspaceViewport}
-              onWorkspaceViewportChange={setWorkspaceViewport}
-              workspaceTool={workspaceTool}
-              onWorkspaceToolChange={setWorkspaceTool}
-              workspaceFitTarget={workspaceFitTarget}
-              onWorkspaceFitTargetChange={setWorkspaceFitTarget}
-              onOpenDiagnostics={() => setEditorPanelMode("diagnostics")}
-              onOpenExport={() => setEditorPanelMode("export")}
-              onSceneRefresh={refreshSceneFromEngine}
-            />
+            <>
+              {!isAgentRunning && !agentPreview && !compareView ? (
+                <TextToolbar selectedNode={selectedNode} onOperation={applyOperation} />
+              ) : null}
+              <EditorCanvas
+                scene={scene}
+                activePageId={activePageId}
+                selectedNodeId={selectedNodeId}
+                selectedNodeIds={selectedNodeIds}
+                onSelectNode={selectNode}
+                onSelectPage={selectPage}
+                onOperations={applyOperations}
+                engine={engineRef.current}
+                diagnostics={diagnostics}
+                workspaceViewport={workspaceViewport}
+                onWorkspaceViewportChange={setWorkspaceViewport}
+                workspaceTool={workspaceTool}
+                onWorkspaceToolChange={setWorkspaceTool}
+                workspaceFitTarget={workspaceFitTarget}
+                onWorkspaceFitTargetChange={setWorkspaceFitTarget}
+                onOpenDiagnostics={() => setEditorPanelMode("diagnostics")}
+                onOpenExport={() => setEditorPanelMode("export")}
+                onSceneRefresh={refreshSceneFromEngine}
+              />
+            </>
           )}
         </section>
         {isAgentPanelOpen ? (
