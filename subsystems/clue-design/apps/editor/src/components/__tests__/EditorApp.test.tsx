@@ -150,6 +150,39 @@ describe.skipIf(!wasmArtifactPresent)("EditorApp", () => {
     expect(screen.getByText(/"preset": "custom"/)).toBeInTheDocument();
   });
 
+  it("surfaces error diagnostics as a topbar pill outside the Diagnostics panel", async () => {
+    // An export request failure writes an error diagnostic while the panel
+    // mode is "export" — previously invisible until the user opened the
+    // Diagnostics panel themselves.
+    const exportRunner: EditorExportRunner = vi
+      .fn()
+      .mockRejectedValue(new Error("api unreachable"));
+    render(
+      <TestEditorApp
+        initialScene={twoPageScene()}
+        initialSelectedNodeId={null}
+        exportRunner={exportRunner}
+        preflightRunner={successfulPreflightRunner(twoPageScene())}
+      />
+    );
+
+    expect(screen.queryByTestId("diagnostics-alert-pill")).not.toBeInTheDocument();
+
+    fireEvent.click(
+      within(screen.getByLabelText("Editor actions")).getByRole("button", {
+        name: /Export/i
+      })
+    );
+
+    const pill = await screen.findByTestId("diagnostics-alert-pill");
+    expect(pill).toHaveTextContent("1 error");
+
+    // Clicking opens the Diagnostics panel (where the pill hides itself).
+    fireEvent.click(pill);
+    expect(screen.queryByTestId("diagnostics-alert-pill")).not.toBeInTheDocument();
+    expect(screen.getAllByText(/EDITOR_EXPORT_REQUEST_FAILED/).length).toBeGreaterThan(0);
+  });
+
   it("edits document metadata through canonical document operations", () => {
     render(<TestEditorApp initialScene={twoPageScene()} initialSelectedNodeId={null} />);
 

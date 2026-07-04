@@ -12,6 +12,7 @@ import {
 import { Bot, Check, Download, FileCheck2, PanelRightClose, RotateCcw, RotateCw, X } from "lucide-react";
 import { AgentChatPanel, type AcceptedTurnRecord } from "./AgentChatPanel";
 import {
+  DiagnosticsAlertPill,
   EditorModeSwitch,
   EngineDisabledBanner,
   OperationHistoryPanel,
@@ -1067,6 +1068,14 @@ export default function EditorApp({
               {activePage ? `${topArtboardSizeLabel(activePage)} · ${Math.round(workspaceViewport.zoom * 100)}%` : "No frame"}
             </span>
           </div>
+          {editorPanelMode !== "diagnostics" ? (
+            <DiagnosticsAlertPill
+              errorCount={
+                diagnostics.filter((diagnostic) => diagnostic.severity === "error").length
+              }
+              onOpen={() => setEditorPanelMode("diagnostics")}
+            />
+          ) : null}
           <EditorModeSwitch mode={editorPanelMode} onModeChange={setEditorPanelMode} />
         </div>
         <div className="toolbar" aria-label="Editor actions">

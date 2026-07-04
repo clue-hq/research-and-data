@@ -76,6 +76,35 @@ export function OperationHistoryPanel({
   );
 }
 
+/**
+ * Always-visible error signal for diagnostics that would otherwise be
+ * invisible outside the Diagnostics panel (sticky persistence failures
+ * surfaced mid-agent-chat, export errors while inspecting, …). Renders
+ * nothing when there are no errors; clicking opens the Diagnostics panel.
+ */
+export function DiagnosticsAlertPill({
+  errorCount,
+  onOpen
+}: {
+  errorCount: number;
+  onOpen: () => void;
+}) {
+  if (errorCount === 0) {
+    return null;
+  }
+  return (
+    <button
+      type="button"
+      className="diagnostics-alert-pill"
+      data-testid="diagnostics-alert-pill"
+      onClick={onOpen}
+    >
+      <AlertTriangle aria-hidden size={13} />
+      {errorCount} error{errorCount === 1 ? "" : "s"}
+    </button>
+  );
+}
+
 /** Reason-specific copy for the server-only-mode canvas banner. */
 function engineDisabledCopy(reason: "load_failed" | "handshake_failed" | "version_mismatch"): {
   headline: string;

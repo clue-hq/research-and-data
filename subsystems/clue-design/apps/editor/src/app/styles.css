@@ -358,6 +358,25 @@ textarea:disabled {
   background: #ef5f5f;
 }
 
+.diagnostics-alert-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 24px;
+  padding: 0 10px;
+  border: 1px solid #ef5f5f;
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: #ef5f5f;
+  font-size: 12px;
+  font-weight: 650;
+  white-space: nowrap;
+}
+
+.diagnostics-alert-pill:hover {
+  background: rgb(239 95 95 / 12%);
+}
+
 .page-button small,
 .muted {
   color: var(--chrome-text-muted);
