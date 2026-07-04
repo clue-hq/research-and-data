@@ -104,7 +104,11 @@ class AgentTurnPreviewRequest(BaseModel):
     scene: JsonObject
     document_id: Optional[str] = None
     active_page_id: Optional[str] = None
+    # 2c selection chips: the node ids the human chipped as edit targets. The
+    # singular selected_node_id stays one release for back-compat; when both
+    # arrive, target_node_ids wins.
     selected_node_id: Optional[str] = None
+    target_node_ids: List[str] = Field(default_factory=list)
     diagnostics: List[JsonObject] = Field(default_factory=list)
     max_iterations: Optional[int] = None
 

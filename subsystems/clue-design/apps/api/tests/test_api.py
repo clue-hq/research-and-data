@@ -407,6 +407,62 @@ def test_agent_turn_preview_route_returns_editor_safe_proposal(client: TestClien
     assert captured["root"] == REPO_ROOT
 
 
+def test_editor_target_node_ids_prefers_plural_and_dedupes() -> None:
+    from lumen_api.main import editor_target_node_ids
+    from lumen_api.models import AgentTurnPreviewRequest
+
+    scene = {"meta": {}, "pages": {}, "nodes": {}}
+    both = AgentTurnPreviewRequest(
+        prompt="x",
+        scene=scene,
+        selected_node_id="node_selected",
+        target_node_ids=["node_a", "node_a", "node_b"],
+    )
+    # Plural wins over the singular back-compat field; order preserved, deduped.
+    assert editor_target_node_ids(both) == ["node_a", "node_b"]
+
+    only_selected = AgentTurnPreviewRequest(
+        prompt="x", scene=scene, selected_node_id="node_selected"
+    )
+    assert editor_target_node_ids(only_selected) == ["node_selected"]
+
+    neither = AgentTurnPreviewRequest(prompt="x", scene=scene)
+    assert editor_target_node_ids(neither) == []
+
+
+def test_editor_prompt_scopes_to_targets_with_compensating_contract() -> None:
+    from lumen_api.main import editor_agent_prompt
+    from lumen_api.models import AgentTurnPreviewRequest
+
+    payload = AgentTurnPreviewRequest(
+        prompt="Make the headline bigger",
+        scene=minimal_scene(),
+        target_node_ids=["node_contact_name"],
+    )
+    prompt = editor_agent_prompt(payload)
+    # The chipped target is named in the context and the instruction scopes to
+    # it (untouched nodes byte-identical) with the §1.6 compensating contract.
+    assert '"target_node_ids"' in prompt
+    assert "node_contact_name" in prompt
+    assert "byte-identical" in prompt
+    assert "re-fit and verify" in prompt
+    assert "what you preserved" in prompt
+
+
+def test_editor_prompt_without_targets_uses_soft_targeting() -> None:
+    from lumen_api.main import editor_agent_prompt
+    from lumen_api.models import AgentTurnPreviewRequest
+
+    prompt = editor_agent_prompt(
+        AgentTurnPreviewRequest(prompt="Fix overflow", scene=minimal_scene())
+    )
+    # No chips: no hard byte-identical scoping, but the compensating contract
+    # still applies to every turn.
+    assert "byte-identical" not in prompt
+    assert "Prefer targeted repairs" in prompt
+    assert "what you preserved" in prompt
+
+
 def _fake_async_runner(status: str = "proposed"):
     def runner(payload, root):
         return {

@@ -3371,24 +3371,67 @@ def agent_seed_scene(payload: AgentTurnPreviewRequest) -> Optional[JsonObject]:
     return None
 
 
+def editor_target_node_ids(payload: AgentTurnPreviewRequest) -> List[str]:
+    """The nodes the human chipped as edit targets (2c). Prefer the plural
+    target_node_ids; fall back to the singular selected_node_id for back-compat.
+    De-duplicated, order preserved."""
+    raw = payload.target_node_ids or (
+        [payload.selected_node_id] if payload.selected_node_id else []
+    )
+    seen: set[str] = set()
+    targets: List[str] = []
+    for node_id in raw:
+        if node_id and node_id not in seen:
+            seen.add(node_id)
+            targets.append(node_id)
+    return targets
+
+
 def editor_agent_prompt(payload: AgentTurnPreviewRequest) -> str:
+    targets = editor_target_node_ids(payload)
     context = {
         "document_id": payload.document_id,
         "active_page_id": payload.active_page_id,
         "selected_node_id": payload.selected_node_id,
+        "target_node_ids": targets,
         "scene_summary": scene_context_summary(payload.scene),
         "current_diagnostics": payload.diagnostics[:20],
-        "editor_instruction": (
-            "Return changes that can be applied to the current canonical Scene. "
-            "Do not mutate scene JSON outside canonical operations. Prefer targeted "
-            "repairs when a selected node or diagnostic target is present."
-        ),
+        "editor_instruction": editor_instruction(targets),
     }
     return (
         f"{payload.prompt}\n\n"
         "Editor context JSON:\n"
         f"{json.dumps(context, indent=2)}"
     )
+
+
+def editor_instruction(targets: List[str]) -> str:
+    """2c compensating-edit contract (Moda §1.6): scope the change to the
+    chipped target(s), then re-fit and verify — and report both what changed
+    and what was preserved. When targets are named, everything else must stay
+    byte-identical."""
+    base = (
+        "Return changes that can be applied to the current canonical Scene. "
+        "Do not mutate scene JSON outside canonical operations. "
+    )
+    if targets:
+        scope = (
+            "Scope every change to these target node id(s): "
+            f"{', '.join(targets)}. Do not touch any other node — every "
+            "untouched node must stay byte-identical. "
+        )
+    else:
+        scope = (
+            "Prefer targeted repairs when a selected node or diagnostic target "
+            "is present, and touch as little else as possible. "
+        )
+    contract = (
+        "Make a compensating edit: apply the requested change, then re-fit and "
+        "verify the result — text must still fit its box (no overflow), nodes "
+        "must not newly overlap, and the surrounding layout must be preserved. "
+        "In your summary, state both what you changed and what you preserved."
+    )
+    return base + scope + contract
 
 
 def scene_context_summary(scene: JsonObject) -> JsonObject:
