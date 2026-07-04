@@ -7,7 +7,6 @@ import {
   useState,
   type CSSProperties,
   type Dispatch,
-  type PointerEvent as ReactPointerEvent,
   type SetStateAction
 } from "react";
 import { Bot, Check, Download, FileCheck2, PanelRightClose, RotateCcw, RotateCw, X } from "lucide-react";
@@ -81,11 +80,6 @@ import { normalizePageSize } from "@/engine/pageGeometry";
 import type { StructuredEdit } from "@/engine/structuredEdits";
 import { editorRenderDiagnostics } from "@/engine/renderDiagnostics";
 import {
-  defaultWorkspaceViewport,
-  type WorkspaceFitTarget,
-  type WorkspaceTool
-} from "@/engine/workspaceViewport";
-import {
   clampNodeTransformToParentBounds,
   firstPageId,
   getNode,
@@ -102,6 +96,7 @@ import { useAgentInstructions } from "@/hooks/useAgentInstructions";
 import { useBrandChecks } from "@/hooks/useBrandChecks";
 import { useTurnNotification } from "@/hooks/useTurnNotification";
 import { useDocumentSync, type EditQueueFactory } from "@/hooks/useDocumentSync";
+import { useWorkspaceChrome } from "@/hooks/useWorkspaceChrome";
 import { useEditHistory } from "@/hooks/useEditHistory";
 import { useExportPreflight } from "@/hooks/useExportPreflight";
 import { useTargetChips } from "@/hooks/useTargetChips";
@@ -288,12 +283,22 @@ export default function EditorApp({
     reason: "load_failed" | "handshake_failed" | "version_mismatch";
     detail: string;
   } | null>(null);
-  const [editorPanelMode, setEditorPanelMode] = useState<EditorPanelMode>("inspector");
-  const [agentSidebarWidth, setAgentSidebarWidth] = useState(420);
-  const [workspaceMode, setWorkspaceMode] = useState<"canvas" | "export" | "compare">("canvas");
-  const [workspaceViewport, setWorkspaceViewport] = useState(defaultWorkspaceViewport);
-  const [workspaceTool, setWorkspaceTool] = useState<WorkspaceTool>("select");
-  const [workspaceFitTarget, setWorkspaceFitTarget] = useState<WorkspaceFitTarget>("all");
+  // Workspace chrome (panel mode, workspace mode, viewport/tool, sidebar
+  // width + resizer) lives in useWorkspaceChrome — presentation state only.
+  const {
+    editorPanelMode,
+    setEditorPanelMode,
+    agentSidebarWidth,
+    workspaceMode,
+    setWorkspaceMode,
+    workspaceViewport,
+    setWorkspaceViewport,
+    workspaceTool,
+    setWorkspaceTool,
+    workspaceFitTarget,
+    setWorkspaceFitTarget,
+    startAgentSidebarResize
+  } = useWorkspaceChrome();
   const isAgentPanelOpen = editorPanelMode === "agent";
   const selectedNode = useMemo(() => getNode(scene, selectedNodeId), [scene, selectedNodeId]);
   const activePage = activePageId ? scene.pages[activePageId] ?? null : null;
@@ -863,24 +868,6 @@ export default function EditorApp({
       return;
     }
     redoHistoryStep();
-  };
-
-  const startAgentSidebarResize = (event: ReactPointerEvent<HTMLDivElement>) => {
-    event.preventDefault();
-    const startX = event.clientX;
-    const startWidth = agentSidebarWidth;
-    const resize = (moveEvent: PointerEvent) => {
-      if (!Number.isFinite(moveEvent.clientX)) {
-        return;
-      }
-      const nextWidth = clampNumber(startWidth + startX - moveEvent.clientX, 320, 720);
-      setAgentSidebarWidth(nextWidth);
-    };
-    const stopResize = () => {
-      window.removeEventListener("pointermove", resize);
-    };
-    window.addEventListener("pointermove", resize);
-    window.addEventListener("pointerup", stopResize, { once: true });
   };
 
   useEffect(() => {
@@ -1455,7 +1442,4 @@ export default function EditorApp({
   );
 }
 
-function clampNumber(value: number, minimum: number, maximum: number): number {
-  return Math.min(maximum, Math.max(minimum, value));
-}
 
