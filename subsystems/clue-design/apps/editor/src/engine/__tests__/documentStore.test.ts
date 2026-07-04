@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { emptyScene } from "@/fixtures/emptyScene";
 import type { Scene } from "../contracts";
-import { createDocument, fetchDocument, revertDocument } from "../documentStore";
+import { createDocument, fetchBrandKits, fetchDocument, revertDocument } from "../documentStore";
 
 function jsonResponse(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), {
@@ -135,5 +135,34 @@ describe("documentStore", () => {
     await expect(
       revertDocument({ apiBaseUrl: "http://localhost:8002", fetchImpl: failing }, "doc_x", "cp")
     ).rejects.toThrow("HTTP 500");
+  });
+
+  it("fetchBrandKits returns the stored brand kit summaries", async () => {
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(
+      jsonResponse(200, [
+        { id: "brand_acme", version: 3, name: "Acme" },
+        { id: "brand_globex", version: 1, name: "Globex" }
+      ])
+    );
+
+    const brandKits = await fetchBrandKits({ apiBaseUrl: "http://localhost:8002", fetchImpl });
+
+    expect(brandKits).toEqual([
+      { id: "brand_acme", version: 3, name: "Acme" },
+      { id: "brand_globex", version: 1, name: "Globex" }
+    ]);
+    expect(String(fetchImpl.mock.calls[0][0])).toBe("http://localhost:8002/brand-kits");
+  });
+
+  it("fetchBrandKits throws on HTTP errors and tolerates a non-array payload", async () => {
+    const failing = vi.fn<typeof fetch>().mockResolvedValue(jsonResponse(500, {}));
+    await expect(
+      fetchBrandKits({ apiBaseUrl: "http://localhost:8002", fetchImpl: failing })
+    ).rejects.toThrow("HTTP 500");
+
+    const malformed = vi.fn<typeof fetch>().mockResolvedValue(jsonResponse(200, { oops: true }));
+    await expect(
+      fetchBrandKits({ apiBaseUrl: "http://localhost:8002", fetchImpl: malformed })
+    ).resolves.toEqual([]);
   });
 });

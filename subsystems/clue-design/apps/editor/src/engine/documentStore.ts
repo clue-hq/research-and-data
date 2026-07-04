@@ -1,4 +1,4 @@
-import type { Scene } from "./contracts";
+import type { BrandKitSummary, Scene } from "./contracts";
 
 /**
  * Phase 2a: document identity for the editor.
@@ -141,6 +141,23 @@ export async function fetchDocument(
     agentInstructions:
       typeof payload.agent_instructions === "string" ? payload.agent_instructions : null
   };
+}
+
+/**
+ * The stored Brand Kit summaries (latest version per kit) that the Brand Kit
+ * dropdown can offer for attachment. Callers should treat a fetch failure as
+ * "no kits available yet" rather than block the editor from loading — this
+ * list only gates the dropdown, not the canvas.
+ */
+export async function fetchBrandKits(
+  { apiBaseUrl, fetchImpl = fetch }: DocumentStoreOptions
+): Promise<BrandKitSummary[]> {
+  const response = await fetchImpl(new URL("/brand-kits", apiBaseUrl));
+  if (!response.ok) {
+    throw new Error(`brand kit list failed (HTTP ${response.status})`);
+  }
+  const payload = (await response.json()) as unknown;
+  return Array.isArray(payload) ? (payload as BrandKitSummary[]) : [];
 }
 
 /** 2e: persist the document's standing agent instructions (blank clears). */
