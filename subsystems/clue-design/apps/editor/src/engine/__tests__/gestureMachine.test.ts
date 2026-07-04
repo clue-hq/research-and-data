@@ -46,11 +46,26 @@ describe("gesture machine (Wave 3 C3b)", () => {
     expect(actions[0]).toEqual({ kind: "select", nodeId: "n1", additive: true });
   });
 
+  it("shift-click selects additively (multi-select)", () => {
+    const { actions } = run([
+      { kind: "down", point: { x: 120, y: 110 }, target: nodeTarget, modifiers: { shift: true } }
+    ]);
+    expect(actions[0]).toEqual({ kind: "select", nodeId: "n1", additive: true });
+  });
+
   it("clears selection on an empty press", () => {
     const { actions } = run([
       { kind: "down", point: { x: 5, y: 5 }, target: { kind: "empty" }, modifiers: {} }
     ]);
     expect(actions[0]).toEqual({ kind: "select", nodeId: null, additive: false });
+  });
+
+  it("keeps the multi-selection on a shift+empty press", () => {
+    // Additive empty press must NOT clear — you're adding, not deselecting all.
+    const { actions } = run([
+      { kind: "down", point: { x: 5, y: 5 }, target: { kind: "empty" }, modifiers: { shift: true } }
+    ]);
+    expect(actions[0]).toEqual({ kind: "none" });
   });
 
   it("drags a node past the threshold and commits on release", () => {

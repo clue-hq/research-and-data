@@ -6,7 +6,9 @@ import {
   useRef,
   useState,
   type CSSProperties,
-  type PointerEvent as ReactPointerEvent
+  type Dispatch,
+  type PointerEvent as ReactPointerEvent,
+  type SetStateAction
 } from "react";
 import { AlertTriangle, Bot, Check, Download, FileCheck2, History, PanelRightClose, RotateCcw, RotateCw, X } from "lucide-react";
 import { AgentChatPanel } from "./AgentChatPanel";
@@ -213,7 +215,49 @@ export default function EditorApp({
   const sceneRef = useRef<Scene>(scene);
   sceneRef.current = scene;
   const [activePageId, setActivePageId] = useState<PageId | null>(() => firstPageId(initialScene));
-  const [selectedNodeId, setSelectedNodeId] = useState<NodeId | null>(initialSelectedNodeId);
+  // Selection is a SET: shift/Cmd+click builds a multi-node selection whose
+  // members become the agent's edit-target chips. The PRIMARY selection (the
+  // most recently clicked node) is derived from the set and drives every
+  // single-node concern unchanged — inspector, keyboard, transform handles.
+  // Multi-drag/transform is intentionally out of scope; the set is for
+  // targeting, and secondary members render as plain outlines (no handles).
+  const [selectedNodeIds, setSelectedNodeIds] = useState<NodeId[]>(
+    initialSelectedNodeId ? [initialSelectedNodeId] : []
+  );
+  const selectedNodeId =
+    selectedNodeIds.length > 0 ? selectedNodeIds[selectedNodeIds.length - 1] : null;
+  const selectNode = (nodeId: NodeId | null, additive = false) => {
+    if (!nodeId) {
+      setSelectedNodeIds([]);
+      return;
+    }
+    if (additive) {
+      // shift/Cmd+click toggles: add if absent, remove if already selected
+      // (shift+click a chipped node again to drop it from the group).
+      setSelectedNodeIds((current) =>
+        current.includes(nodeId)
+          ? current.filter((id) => id !== nodeId)
+          : [...current, nodeId]
+      );
+      return;
+    }
+    setSelectedNodeIds([nodeId]);
+  };
+  // Back-compat adapter for consumers that still think single-selection
+  // (useAgentTurn's preview flow, diagnostic jumps, page changes): a plain
+  // set collapses the selection to that one node; a functional updater sees
+  // the current primary. Keeps ~10 existing setSelectedNodeId(...) calls
+  // untouched.
+  const setSelectedNodeId: Dispatch<SetStateAction<NodeId | null>> = (action) => {
+    setSelectedNodeIds((current) => {
+      const primary = current.length > 0 ? current[current.length - 1] : null;
+      const next =
+        typeof action === "function"
+          ? (action as (prev: NodeId | null) => NodeId | null)(primary)
+          : action;
+      return next ? [next] : [];
+    });
+  };
   const [diagnostics, setDiagnostics] = useState<Diagnostic[]>([]);
   // When the WASM core is expected (flag on, no injected engine) but fails to
   // activate, the editor is in server-only mode: nothing on the canvas can be
@@ -286,9 +330,12 @@ export default function EditorApp({
     if (!activePageId) {
       setActivePageId(firstPageId(scene));
     }
-    if (selectedNodeId && !scene.nodes[selectedNodeId]) {
-      setSelectedNodeId(null);
-    }
+    // Drop any selected node (primary or secondary) that no longer exists —
+    // deleting a node also unchips it.
+    setSelectedNodeIds((current) => {
+      const next = current.filter((id) => scene.nodes[id]);
+      return next.length === current.length ? current : next;
+    });
   }, [activePageId, scene, selectedNodeId]);
 
   // Activate the WASM core behind the flag, gated on the W5 version
@@ -634,14 +681,11 @@ export default function EditorApp({
     }
   };
 
-  // 2c selection chips: the human's edit targets for the agent, built from
-  // canvas selection and persisting across turns.
-  const {
-    chips: targetChips,
-    targetNodeIds,
-    removeChip: removeTargetChip,
-    clearChips: clearTargetChips
-  } = useTargetChips(scene, selectedNodeId);
+  // 2c selection chips: the agent's edit targets mirror the selection set.
+  // Removing a chip de-selects that node; Clear de-selects all.
+  const { chips: targetChips, targetNodeIds } = useTargetChips(scene, selectedNodeIds);
+  const removeTargetChip = (nodeId: NodeId) => selectNode(nodeId, true);
+  const clearTargetChips = () => selectNode(null);
 
   // The agent-turn state machine (run → propose → preview → Accept/Reject,
   // plus the message queue) lives in useAgentTurn. The deps object is
@@ -1369,7 +1413,8 @@ export default function EditorApp({
             scene={scene}
             activePageId={activePageId}
             selectedNodeId={selectedNodeId}
-            onSelectNode={setSelectedNodeId}
+            selectedNodeIds={selectedNodeIds}
+            onSelectNode={selectNode}
             onOperation={applyOperation}
           />
         </div>
@@ -1452,7 +1497,8 @@ export default function EditorApp({
                   scene={scene}
                   activePageId={activePageId}
                   selectedNodeId={selectedNodeId}
-                  onSelectNode={setSelectedNodeId}
+                  selectedNodeIds={selectedNodeIds}
+                  onSelectNode={selectNode}
                   onSelectPage={selectPage}
                   onOperations={applyOperations}
                   engine={engineRef.current}
@@ -1490,7 +1536,8 @@ export default function EditorApp({
               scene={scene}
               activePageId={activePageId}
               selectedNodeId={selectedNodeId}
-              onSelectNode={setSelectedNodeId}
+              selectedNodeIds={selectedNodeIds}
+              onSelectNode={selectNode}
               onSelectPage={selectPage}
               onOperations={applyOperations}
               engine={engineRef.current}

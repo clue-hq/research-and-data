@@ -30,6 +30,10 @@ const ROTATE_OFFSET = 22;
 export interface SelectionOverlayProps {
   /** Selected node box + rotation in descriptor space (null = no selection). */
   selection: { box: Box; rotation: number } | null;
+  /** Non-primary members of a multi-selection (shift/Cmd+click). Drawn as
+   * plain outlines with no handles — they are agent edit targets, not the
+   * active transform target. */
+  secondarySelections?: Array<{ box: Box; rotation: number }>;
   /** Hovered hit target in descriptor space. Hover chrome is intentionally DOM/SVG-only. */
   hover?: { box: Box; rotation: number } | null;
   /** Direct children of a selected container, for the labeled-container chrome. */
@@ -56,6 +60,7 @@ export interface SelectionOverlayProps {
 
 export function SelectionOverlay({
   selection,
+  secondarySelections = [],
   hover = null,
   containerChildren = [],
   containerLabel,
@@ -117,6 +122,20 @@ export function SelectionOverlay({
           opacity={0.8}
         />
       ) : null}
+
+      {secondarySelections.map((secondary, index) => (
+        <SelectionBox
+          key={`secondary-${index}`}
+          box={secondary.box}
+          rotation={secondary.rotation}
+          toScreen={toScreen}
+          role="secondary-selection-box"
+          stroke="#256c70"
+          strokeWidth={1.5}
+          strokeDasharray="5 3"
+          opacity={0.8}
+        />
+      ))}
 
       {selection ? (
         <SelectionBox

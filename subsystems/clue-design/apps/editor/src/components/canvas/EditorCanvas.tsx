@@ -24,7 +24,9 @@ export interface EditorCanvasProps {
   scene: Scene;
   activePageId: PageId | null;
   selectedNodeId: NodeId | null;
-  onSelectNode: (nodeId: NodeId | null) => void;
+  /** Full multi-selection set (CanvasKit path renders secondary outlines). */
+  selectedNodeIds?: NodeId[];
+  onSelectNode: (nodeId: NodeId | null, additive?: boolean) => void;
   onSelectPage?: (pageId: PageId) => void;
   /** Commits land as one atomic batch (one undo frame); Phase 1d container
    * drags carry pinned-descendant box translations alongside the primary op. */

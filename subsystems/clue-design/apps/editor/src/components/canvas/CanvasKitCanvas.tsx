@@ -68,7 +68,11 @@ export interface CanvasKitCanvasProps {
   scene: Scene;
   activePageId: PageId | null;
   selectedNodeId: NodeId | null;
-  onSelectNode: (nodeId: NodeId | null) => void;
+  /** The full multi-selection set (shift/Cmd+click). The primary node
+   * (selectedNodeId) gets full transform chrome; the rest render as plain
+   * outlines to show they are agent edit targets. */
+  selectedNodeIds?: NodeId[];
+  onSelectNode: (nodeId: NodeId | null, additive?: boolean) => void;
   onSelectPage?: (pageId: PageId) => void;
   /** Commits land as one atomic batch (one undo frame) — a container drag
    * can carry pinned-descendant box translations alongside the primary op. */
@@ -100,6 +104,7 @@ export function CanvasKitCanvas({
   scene,
   activePageId,
   selectedNodeId,
+  selectedNodeIds,
   onSelectNode,
   onSelectPage,
   onOperations,
@@ -359,6 +364,16 @@ export function CanvasKitCanvas({
     [scene, page]
   );
 
+  // Secondary multi-selection: every selected node except the primary, drawn
+  // as a plain outline (no handles) to show it is an agent edit target.
+  const secondarySelectionBoxes = useMemo<Array<{ box: Box; rotation: number }>>(() => {
+    if (!selectedNodeIds || selectedNodeIds.length < 2) return [];
+    return selectedNodeIds
+      .filter((id) => id !== selectedNodeId)
+      .map((id) => boxForNode(id))
+      .filter((entry): entry is { box: Box; rotation: number } => entry !== null);
+  }, [selectedNodeIds, selectedNodeId, boxForNode]);
+
   const pressTargetFor = useCallback(
     (descriptorPoint: { x: number; y: number }): PressTarget => {
       // Handle grab on the current selection takes priority.
@@ -423,7 +438,7 @@ export function CanvasKitCanvas({
       if (!page) return;
       switch (action.kind) {
         case "select":
-          onSelectNode(action.nodeId);
+          onSelectNode(action.nodeId, action.additive);
           break;
         case "drag": {
           const node = getNode(scene, action.nodeId);
@@ -821,6 +836,7 @@ export function CanvasKitCanvas({
               ? { box: selectionBox.box, rotation: selectionBox.rotation }
               : null
           }
+          secondarySelections={editingNodeId ? [] : secondarySelectionBoxes}
           hover={
             hoverNodeId && hoverNodeId !== selectedNodeId && !editingNodeId
               ? boxForNode(hoverNodeId)

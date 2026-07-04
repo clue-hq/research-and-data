@@ -1,4 +1,4 @@
-import { act, renderHook } from "@testing-library/react";
+import { renderHook } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import type { Node, Scene } from "@/engine/contracts";
 import { minimalScene } from "@/fixtures/minimalScene";
@@ -16,43 +16,25 @@ function sceneWithNodes(names: Record<string, string>): Scene {
 describe("useTargetChips", () => {
   const scene = sceneWithNodes({ node_a: "Headline", node_b: "Subtitle" });
 
-  it("adds the selected node as a chip and keeps it after deselect", () => {
-    const { result, rerender } = renderHook(
-      ({ selected }) => useTargetChips(scene, selected),
-      { initialProps: { selected: "node_a" as string | null } }
-    );
-    expect(result.current.chips).toEqual([{ id: "node_a", name: "Headline" }]);
-    expect(result.current.targetNodeIds).toEqual(["node_a"]);
-
-    // Deselecting must NOT drop the chip — the target set persists.
-    rerender({ selected: null });
-    expect(result.current.targetNodeIds).toEqual(["node_a"]);
-  });
-
-  it("accumulates multiple targets and dedupes re-selection", () => {
-    const { result, rerender } = renderHook(
-      ({ selected }) => useTargetChips(scene, selected),
-      { initialProps: { selected: "node_a" as string | null } }
-    );
-    rerender({ selected: "node_b" });
-    rerender({ selected: "node_a" }); // already chipped — no duplicate
+  it("mirrors the selection set as chips with fresh layer names", () => {
+    const { result } = renderHook(() => useTargetChips(scene, ["node_a", "node_b"]));
+    expect(result.current.chips).toEqual([
+      { id: "node_a", name: "Headline" },
+      { id: "node_b", name: "Subtitle" }
+    ]);
     expect(result.current.targetNodeIds).toEqual(["node_a", "node_b"]);
   });
 
-  it("removes and clears chips", () => {
-    const { result } = renderHook(() => useTargetChips(scene, "node_a"));
-    act(() => result.current.removeChip("node_a"));
+  it("is empty when nothing is selected", () => {
+    const { result } = renderHook(() => useTargetChips(scene, []));
+    expect(result.current.chips).toEqual([]);
     expect(result.current.targetNodeIds).toEqual([]);
   });
 
-  it("prunes a chip whose node was deleted from the scene", () => {
-    const { result, rerender } = renderHook(
-      ({ currentScene }) => useTargetChips(currentScene, "node_a"),
-      { initialProps: { currentScene: scene } }
-    );
-    expect(result.current.targetNodeIds).toEqual(["node_a"]);
-    // node_a no longer exists → its chip is dropped.
-    rerender({ currentScene: sceneWithNodes({ node_b: "Subtitle" }) });
-    expect(result.current.targetNodeIds).toEqual([]);
+  it("falls back to the node id when a node has no name", () => {
+    const nameless = sceneWithNodes({ node_x: "" });
+    const { result } = renderHook(() => useTargetChips(nameless, ["node_x"]));
+    // Empty string is falsy → id shown.
+    expect(result.current.chips[0].name).toBe("node_x");
   });
 });
