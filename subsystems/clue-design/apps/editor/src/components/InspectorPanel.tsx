@@ -41,6 +41,10 @@ interface InspectorPanelProps {
    * path (the 1c invertible ops), not raw operations. */
   onStructuredEdit?: (edit: StructuredEdit) => void;
   onSelectSubject?: (subject: DiagnosticSubject) => void;
+  /** Advanced per-document opt-out from handoff-absolute (Document section
+   * toggle): keep agent auto-layout live by skipping both freeze seams. */
+  layoutManagedEditing?: boolean;
+  onSetLayoutManagedEditing?: (enabled: boolean) => void;
 }
 
 /**
@@ -61,7 +65,9 @@ export function InspectorPanel({
   onOperation,
   onOperations,
   onStructuredEdit,
-  onSelectSubject
+  onSelectSubject,
+  layoutManagedEditing,
+  onSetLayoutManagedEditing
 }: InspectorPanelProps) {
   const emitOperations =
     onOperations ?? ((operations: Operation[]) => operations.forEach(onOperation));
@@ -77,6 +83,8 @@ export function InspectorPanel({
         pageDiagnostics={pageDiagnostics}
         onOperation={onOperation}
         onSelectSubject={onSelectSubject}
+        layoutManagedEditing={layoutManagedEditing}
+        onSetLayoutManagedEditing={onSetLayoutManagedEditing}
       />
     );
   }

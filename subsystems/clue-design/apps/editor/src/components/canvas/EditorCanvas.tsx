@@ -52,6 +52,9 @@ export interface EditorCanvasProps {
    * gesture. Omitted on the Konva fallback (test-only; freeze is a
    * CanvasKit-path concern). */
   onStructuredEdit?: (edit: StructuredEdit) => Scene | null;
+  /** Advanced per-document opt-out from handoff-absolute: skips the
+   * first-gesture freeze (CanvasKit-path concern, like onStructuredEdit). */
+  layoutManagedEditing?: boolean;
 }
 
 export function EditorCanvas(props: EditorCanvasProps) {

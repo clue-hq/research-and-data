@@ -116,6 +116,7 @@ function buildDeps(overrides: Partial<UseAgentTurnDeps> = {}): {
     selectedNodeId: null,
     targetNodeIds: [],
     agentInstructions: null,
+    layoutManagedEditing: false,
     diagnostics: [],
     setDiagnostics: vi.fn(),
     setScene: vi.fn(),
@@ -200,6 +201,38 @@ describe("useAgentTurn — accept-time freeze merge (handoff-absolute)", () => {
     expect(call.inverseOperations).toHaveLength(2);
     // The merged frame lands against the frozen scene.
     expect(call.nextScene).toBe(frozenScene);
+  });
+
+  it("skips the freeze entirely when layout-managed editing is enabled (advanced opt-out)", async () => {
+    const turnOps = [updateDocumentTitle("Agent Authored Ad")];
+    const agentRunner = vi.fn().mockResolvedValue(proposedResult(turnOps));
+    const freezeOp = { kind: "freeze_marker" } as unknown as Operation;
+    const engine = createFakeEngine({
+      freezeOutcome: acceptedOutcome(cloneScene(), [freezeOp])
+    });
+    const applyStructuredEdit = vi.spyOn(engine, "applyStructuredEdit");
+    const { deps, commitCalls } = buildDeps({
+      agentRunner,
+      engineRef: { current: engine },
+      layoutManagedEditing: true
+    });
+
+    const { result } = renderHook(() => useAgentTurn(deps));
+
+    await act(async () => {
+      await result.current.sendAgentPrompt("Make it punchier.");
+    });
+    await waitFor(() => expect(result.current.agentPreview).not.toBeNull());
+
+    await act(async () => {
+      await result.current.acceptAgentPreview();
+    });
+
+    // The engine's freeze path is never consulted, and the committed batch is
+    // exactly the turn's own ops — the Stack containers stay live.
+    expect(applyStructuredEdit).not.toHaveBeenCalled();
+    expect(commitCalls).toHaveLength(1);
+    expect(commitCalls[0].operations).toEqual(turnOps);
   });
 
   it("does not merge anything when the freeze outcome is empty (already frozen / nothing to freeze)", async () => {

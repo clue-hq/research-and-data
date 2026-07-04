@@ -52,6 +52,7 @@ import {
   createDocument,
   revertDocument,
   saveAgentInstructions,
+  saveLayoutManagedEditing,
   type CreatedDocument,
   type RevertOutcome
 } from "@/engine/documentStore";
@@ -105,6 +106,7 @@ import {
   useAgentTurn
 } from "@/hooks/useAgentTurn";
 import { useAgentInstructions } from "@/hooks/useAgentInstructions";
+import { useLayoutManagedEditing } from "@/hooks/useLayoutManagedEditing";
 import { useBrandChecks } from "@/hooks/useBrandChecks";
 import { useTurnNotification } from "@/hooks/useTurnNotification";
 import { useDocumentSync, type EditQueueFactory } from "@/hooks/useDocumentSync";
@@ -156,6 +158,11 @@ export interface EditorAppProps {
     documentId: string,
     instructions: string | null
   ) => Promise<string | null>;
+  /** Advanced per-document opt-out from handoff-absolute, loaded with the
+   * document: keep agent auto-layout live (skip both freeze seams). */
+  initialLayoutManagedEditing?: boolean;
+  /** Layout-managed-editing persistence override (tests). */
+  layoutManagedEditingSaver?: (documentId: string, enabled: boolean) => Promise<boolean>;
 }
 
 // Re-exported so tests keep importing it from here; the type lives with the
@@ -198,6 +205,9 @@ const defaultRevertRunner = (documentId: string, checkpoint: string) =>
 const defaultAgentInstructionsSaver = (documentId: string, instructions: string | null) =>
   saveAgentInstructions({ apiBaseUrl: editorApiBaseUrl() }, documentId, instructions);
 
+const defaultLayoutManagedEditingSaver = (documentId: string, enabled: boolean) =>
+  saveLayoutManagedEditing({ apiBaseUrl: editorApiBaseUrl() }, documentId, enabled);
+
 export default function EditorApp({
   documentId,
   initialScene = emptyScene,
@@ -213,7 +223,9 @@ export default function EditorApp({
   documentCreator = defaultDocumentCreator,
   revertRunner = defaultRevertRunner,
   initialAgentInstructions = null,
-  agentInstructionsSaver = defaultAgentInstructionsSaver
+  agentInstructionsSaver = defaultAgentInstructionsSaver,
+  initialLayoutManagedEditing = false,
+  layoutManagedEditingSaver = defaultLayoutManagedEditingSaver
 }: EditorAppProps = {}) {
   const [scene, setScene] = useState<Scene>(initialScene);
   // The optimistic engine owns local edit application (Track E): the WASM
@@ -548,6 +560,14 @@ export default function EditorApp({
     saveRunner: agentInstructionsSaver
   });
 
+  // Advanced per-document opt-out from handoff-absolute: applies to the
+  // session immediately, persists on the document per change.
+  const layoutManagedEditing = useLayoutManagedEditing({
+    activeDocumentId,
+    initialEnabled: initialLayoutManagedEditing,
+    saveRunner: layoutManagedEditingSaver
+  });
+
   /**
    * Shared post-apply bookkeeping for operations that are already applied to
    * the engine: undo frame, history, persistence. Used by the direct edit path
@@ -631,6 +651,7 @@ export default function EditorApp({
     selectedNodeId,
     targetNodeIds,
     agentInstructions: standingInstructions.instructions,
+    layoutManagedEditing: layoutManagedEditing.enabled,
     diagnostics,
     setDiagnostics,
     setScene,
@@ -1403,6 +1424,7 @@ export default function EditorApp({
                 onOpenExport={() => setEditorPanelMode("export")}
                 onSceneRefresh={refreshSceneFromEngine}
                 onStructuredEdit={applyStructuredEditInstruction}
+                layoutManagedEditing={layoutManagedEditing.enabled}
               />
             </>
           )}
@@ -1518,6 +1540,8 @@ export default function EditorApp({
                 onOperations={applyOperations}
                 onStructuredEdit={applyStructuredEditInstruction}
                 onSelectSubject={selectDiagnosticSubject}
+                layoutManagedEditing={layoutManagedEditing.enabled}
+                onSetLayoutManagedEditing={layoutManagedEditing.setEnabled}
               />
               <BrandKitPanel
                 scene={scene}

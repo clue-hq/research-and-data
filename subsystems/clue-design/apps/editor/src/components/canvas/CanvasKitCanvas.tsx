@@ -102,6 +102,10 @@ export interface CanvasKitCanvasProps {
    * scene (or null if rejected/unavailable) so a gesture can continue
    * against fresh geometry after an in-gesture freeze. */
   onStructuredEdit?: (edit: StructuredEdit) => Scene | null;
+  /** Advanced per-document opt-out from handoff-absolute: when true, a press
+   * on a solver-managed node does NOT freeze the layout — the node stays
+   * layout-managed and the inspector's detach affordances apply instead. */
+  layoutManagedEditing?: boolean;
 }
 
 interface Preview {
@@ -130,7 +134,8 @@ export function CanvasKitCanvas({
   onOpenDiagnostics,
   onOpenExport,
   onSceneRefresh,
-  onStructuredEdit
+  onStructuredEdit,
+  layoutManagedEditing = false
 }: CanvasKitCanvasProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const stateRef = useRef<GestureState>(initialGestureState);
@@ -789,8 +794,13 @@ export function CanvasKitCanvas({
           // a click-that-never-drags is harmless. Resize/rotate handles
           // never appear on a managed node's chrome (showHandles requires
           // direct-geometry-editable), so "node" is the only press target
-          // that can be blocked this way.
-          if (target.kind === "node" && isNodeFreezableOnGesture(scene, target.nodeId)) {
+          // that can be blocked this way. The layout-managed-editing opt-out
+          // skips the freeze: the press selects the managed node as-is.
+          if (
+            !layoutManagedEditing &&
+            target.kind === "node" &&
+            isNodeFreezableOnGesture(scene, target.nodeId)
+          ) {
             onStructuredEdit?.(freezeLayoutEdit());
           }
           if (hitTraceEnabled()) {

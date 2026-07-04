@@ -217,6 +217,30 @@ describe("CanvasKitCanvas polish chrome wiring", () => {
       expect(onStructuredEdit).toHaveBeenCalledWith(expect.objectContaining({ kind: "freeze_layout" }));
     });
 
+    it("does not freeze a Stack-managed press when layout-managed editing is enabled (advanced opt-out)", () => {
+      vi.stubGlobal("PointerEvent", MouseEvent);
+      const stackScene = stackManagedScene();
+      const hitTest = vi.fn(() => ({ hit: "node_contact_name", stack: ["node_contact_name"] }));
+      const engine = { hitTest } as unknown as OptimisticEnginePort;
+      const onStructuredEdit = vi.fn().mockReturnValue(null);
+
+      renderCanvasKit({
+        scene: stackScene,
+        selectedNodeId: null,
+        engine,
+        onStructuredEdit,
+        layoutManagedEditing: true
+      });
+
+      fireEvent.pointerDown(screen.getByTestId("canvaskit-interaction-layer"), {
+        clientX: 40,
+        clientY: 40,
+        pointerId: 1
+      });
+
+      expect(onStructuredEdit).not.toHaveBeenCalled();
+    });
+
     it("does not freeze when the pressed node is already directly geometry-editable", () => {
       vi.stubGlobal("PointerEvent", MouseEvent);
       const hitTest = vi.fn(() => ({ hit: "node_contact_name", stack: ["node_contact_name"] }));
@@ -302,7 +326,8 @@ function renderCanvasKit({
   engine = null,
   workspaceTool = "select",
   workspaceFitTarget = "manual",
-  onStructuredEdit
+  onStructuredEdit,
+  layoutManagedEditing
 }: {
   scene?: Scene;
   selectedNodeId: string | null;
@@ -311,6 +336,7 @@ function renderCanvasKit({
   workspaceTool?: "select" | "hand";
   workspaceFitTarget?: "current" | "all" | "manual";
   onStructuredEdit?: (edit: StructuredEdit) => Scene | null;
+  layoutManagedEditing?: boolean;
 }) {
   return render(
     <CanvasKitCanvas
@@ -330,6 +356,7 @@ function renderCanvasKit({
       workspaceFitTarget={workspaceFitTarget}
       onWorkspaceFitTargetChange={() => {}}
       onStructuredEdit={onStructuredEdit}
+      layoutManagedEditing={layoutManagedEditing}
     />
   );
 }

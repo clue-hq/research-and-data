@@ -53,6 +53,9 @@ def run_migrations(database_path: Path) -> None:
         ensure_column(connection, "documents", "redo_stack_json", "TEXT")
         # 2e: per-document standing instructions injected into every agent turn.
         ensure_column(connection, "documents", "agent_instructions", "TEXT")
+        # Per-document advanced opt-out (0/1): when set, the editor skips the
+        # handoff-absolute freeze seams so agent auto-layout stays live.
+        ensure_column(connection, "documents", "layout_managed_editing", "INTEGER")
         backfill_edit_envelopes(connection)
 
 
@@ -572,6 +575,17 @@ class Repository:
         self.connection.execute(
             "UPDATE documents SET agent_instructions = ?, updated_at = ? WHERE id = ?",
             (instructions, utc_now(), document_id),
+        )
+        self.connection.commit()
+        return self.require_document(document_id)
+
+    def set_layout_managed_editing(
+        self, document_id: str, enabled: bool
+    ) -> JsonObject:
+        self.require_document(document_id)
+        self.connection.execute(
+            "UPDATE documents SET layout_managed_editing = ?, updated_at = ? WHERE id = ?",
+            (1 if enabled else 0, utc_now(), document_id),
         )
         self.connection.commit()
         return self.require_document(document_id)
@@ -1250,6 +1264,9 @@ def document_from_row(row: sqlite3.Row) -> JsonObject:
         "agent_instructions": row["agent_instructions"]
         if "agent_instructions" in columns
         else None,
+        "layout_managed_editing": bool(row["layout_managed_editing"])
+        if "layout_managed_editing" in columns
+        else False,
         "created_at": row["created_at"],
         "updated_at": row["updated_at"],
     }

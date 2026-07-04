@@ -26,6 +26,9 @@ export interface LoadedDocument {
   scene: Scene;
   /** 2e: the document's standing agent instructions (null when unset). */
   agentInstructions: string | null;
+  /** Advanced per-document opt-out from handoff-absolute: when true the
+   * editor skips both freeze seams so agent auto-layout stays live. */
+  layoutManagedEditing: boolean;
 }
 
 export async function createDocument(
@@ -130,6 +133,7 @@ export async function fetchDocument(
     title?: unknown;
     scene?: unknown;
     agent_instructions?: unknown;
+    layout_managed_editing?: unknown;
   };
   if (!payload.scene || typeof payload.scene !== "object") {
     throw new Error("document fetch returned no scene");
@@ -139,7 +143,8 @@ export async function fetchDocument(
     title: typeof payload.title === "string" ? payload.title : "Untitled design",
     scene: payload.scene as Scene,
     agentInstructions:
-      typeof payload.agent_instructions === "string" ? payload.agent_instructions : null
+      typeof payload.agent_instructions === "string" ? payload.agent_instructions : null,
+    layoutManagedEditing: payload.layout_managed_editing === true
   };
 }
 
@@ -179,4 +184,26 @@ export async function saveAgentInstructions(
   }
   const payload = (await response.json()) as { agent_instructions?: unknown };
   return typeof payload.agent_instructions === "string" ? payload.agent_instructions : null;
+}
+
+/** Persist the document's layout-managed-editing opt-out (see
+ * LoadedDocument.layoutManagedEditing). Returns the persisted value. */
+export async function saveLayoutManagedEditing(
+  { apiBaseUrl, fetchImpl = fetch }: DocumentStoreOptions,
+  documentId: string,
+  enabled: boolean
+): Promise<boolean> {
+  const response = await fetchImpl(
+    new URL(`/documents/${encodeURIComponent(documentId)}/layout-managed-editing`, apiBaseUrl),
+    {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ enabled })
+    }
+  );
+  if (!response.ok) {
+    throw new Error(`saving layout-managed editing failed (HTTP ${response.status})`);
+  }
+  const payload = (await response.json()) as { layout_managed_editing?: unknown };
+  return payload.layout_managed_editing === true;
 }

@@ -493,6 +493,58 @@ describe("InspectorPanel", () => {
     );
   });
 
+  it("renders the layout-managed editing toggle and fires the setter", () => {
+    const onSetLayoutManagedEditing = vi.fn();
+    render(
+      React.createElement(InspectorPanel, {
+        scene: minimalScene,
+        activePage: minimalScene.pages.page_a4,
+        selectedNode: null,
+        selectedNodeId: null,
+        onOperation: vi.fn(),
+        layoutManagedEditing: false,
+        onSetLayoutManagedEditing
+      })
+    );
+
+    const toggle = screen.getByLabelText("Layout-managed editing");
+    expect(toggle).not.toBeChecked();
+    expect(
+      screen.getByText(/keep agent auto-layout live after Accept/)
+    ).toBeInTheDocument();
+
+    fireEvent.click(toggle);
+    expect(onSetLayoutManagedEditing).toHaveBeenCalledWith(true);
+  });
+
+  it("reflects an enabled layout-managed editing document and hides the toggle without a setter", () => {
+    const { rerender } = render(
+      React.createElement(InspectorPanel, {
+        scene: minimalScene,
+        activePage: minimalScene.pages.page_a4,
+        selectedNode: null,
+        selectedNodeId: null,
+        onOperation: vi.fn(),
+        layoutManagedEditing: true,
+        onSetLayoutManagedEditing: vi.fn()
+      })
+    );
+    expect(screen.getByLabelText("Layout-managed editing")).toBeChecked();
+
+    // Without the setter (test-only shells) the advanced control stays out
+    // of the way entirely.
+    rerender(
+      React.createElement(InspectorPanel, {
+        scene: minimalScene,
+        activePage: minimalScene.pages.page_a4,
+        selectedNode: null,
+        selectedNodeId: null,
+        onOperation: vi.fn()
+      })
+    );
+    expect(screen.queryByLabelText("Layout-managed editing")).not.toBeInTheDocument();
+  });
+
   it("shows a page-level slot overview grouped by bound nodes", () => {
     render(
       React.createElement(InspectorPanel, {
