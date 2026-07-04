@@ -43,9 +43,11 @@ crates/lumen-wasm    Rust engine in WASM; owns the local scene.
    lives in hooks/controllers. Components bind fields and fire callbacks;
    they never decide whether an action is allowed.
 
-3. **No new one-off styles.** `styles.css` has no design-token layer yet;
-   one is scheduled before the Moda restyle. Until then, reuse existing
-   colors, shadows, radii, and control heights — never invent new ones.
+3. **No new raw style values.** `styles.css` opens with the design-token
+   layer (`--chrome-*`, `--panel-*`, `--teal-*`, `--action-*`, `--radius-*`,
+   `--shadow-*`) — the single place the Moda restyle edits. New rules use
+   `var(...)`; a raw color/radius is allowed only for a genuine one-off,
+   and never a near-duplicate of an existing token's value.
 
 4. **CanvasKit is the only product canvas.** Konva exists solely because
    jsdom can't run CanvasKit — the unit suite renders through it with
