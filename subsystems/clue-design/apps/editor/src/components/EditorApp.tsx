@@ -57,6 +57,7 @@ import {
   type RevertOutcome
 } from "@/engine/documentStore";
 import { editorApiBaseUrl } from "@/engine/editorConfig";
+import { postTurnSuggestions } from "@/engine/agentSuggestions";
 import { mergeStickyDiagnostics } from "@/engine/diagnosticsPolicy";
 import { createEditQueue, type EnqueueOptions } from "@/engine/editQueue";
 import {
@@ -1632,6 +1633,7 @@ export default function EditorApp({
               compareView={compareView}
               invalidCheckpoints={invalidCheckpoints}
               isReverting={isReverting}
+              suggestions={postTurnSuggestions(scene)}
               standingInstructions={{
                 draft: standingInstructions.draft,
                 dirty: standingInstructions.isDirty,

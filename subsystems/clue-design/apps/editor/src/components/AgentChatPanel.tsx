@@ -59,6 +59,9 @@ export interface AgentChatPanelProps {
   /** 2d: checkpoints no longer on the active history path (already reverted). */
   invalidCheckpoints: ReadonlySet<string>;
   isReverting: boolean;
+  /** 2e: post-turn suggestion chips (static heuristics); clicking fills the
+   * composer draft, never auto-sends. */
+  suggestions: string[];
   /** 2e: per-document standing instructions (sent with every turn; Save
    * persists them on the document). */
   standingInstructions: {
@@ -99,6 +102,7 @@ export function AgentChatPanel({
   compareView,
   invalidCheckpoints,
   isReverting,
+  suggestions,
   standingInstructions,
   activePageId,
   selectedNodeId,
@@ -270,6 +274,21 @@ export function AgentChatPanel({
               </span>
             ))}
           </div>
+        </div>
+      ) : null}
+      {!isBusy && suggestions.length > 0 && messages.some((message) => message.role !== "user") ? (
+        <div className="agent-suggestions" aria-label="Suggested follow-ups">
+          {suggestions.map((suggestion) => (
+            <button
+              key={suggestion}
+              type="button"
+              className="agent-suggestion-chip"
+              onClick={() => onDraftChange(suggestion)}
+            >
+              <Sparkles aria-hidden size={12} />
+              {suggestion}
+            </button>
+          ))}
         </div>
       ) : null}
       <details className="agent-prebrief">
