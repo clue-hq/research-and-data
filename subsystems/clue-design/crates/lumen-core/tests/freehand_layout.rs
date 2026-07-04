@@ -636,3 +636,72 @@ fn pinned_text_overflow_warns_while_managed_errors() {
         "freehand text truncation is advisory: {diagnostics:#?}"
     );
 }
+
+/// Slot-fit mirrors the Phase 1d text-fit policy: worst-case fixture
+/// overflow on a pinned (human-owned) text box is advisory, while a
+/// solver-managed slot node keeps the fail-closed error that protects
+/// template instantiation. Without this, one legacy fixture error wedges
+/// every agent turn on a frozen document (repair loop + checked persist).
+#[test]
+fn pinned_slot_fixture_overflow_warns_while_managed_errors() {
+    use lumen_core::{OverflowPolicy, Slot, SlotId, SlotKey, ValidationFixtures};
+
+    let mut scene = scene_with_page(400.0, 400.0);
+    let mut managed = tiny_text("managed_text");
+    managed.transform.x = 20.0;
+    managed.transform.y = 20.0;
+    insert(&mut scene, ParentRef::Page(PageId::from("page")), managed);
+    insert(
+        &mut scene,
+        ParentRef::Page(PageId::from("page")),
+        tiny_text("pinned_text"),
+    );
+    pin(&mut scene, "pinned_text", 100.0, 100.0, 60.0, 10.0);
+
+    for (slot_id, node) in [
+        ("slot_managed", "managed_text"),
+        ("slot_pinned", "pinned_text"),
+    ] {
+        let mut slot = Slot::text_short(SlotId::from(slot_id), SlotKey::from(slot_id), slot_id);
+        slot.overflow = OverflowPolicy::Error;
+        slot.validation = ValidationFixtures {
+            samples: Vec::new(),
+            worst_case: Some(
+                "An extremely long worst-case fixture that cannot possibly fit in a tiny box"
+                    .to_owned(),
+            ),
+            max_length: None,
+        };
+        scene
+            .apply_operation(Operation::UpsertSlot { slot })
+            .unwrap();
+        scene
+            .apply_operation(Operation::BindNodeToSlot {
+                slot_id: SlotId::from(slot_id),
+                node_id: NodeId::from(node),
+            })
+            .unwrap();
+    }
+
+    let diagnostics = validate_layout(&scene, LayoutOptions::default());
+    let slot_diag = |slot: &str| {
+        let slot_id = lumen_core::SlotId::from(slot);
+        diagnostics
+            .iter()
+            .find(|diagnostic| {
+                diagnostic.code == "LUMV0810"
+                    && matches!(&diagnostic.subject, Some(DiagnosticSubject::Slot(id)) if *id == slot_id)
+            })
+            .unwrap_or_else(|| panic!("expected LUMV0810 for {slot}: {diagnostics:#?}"))
+    };
+
+    assert_eq!(
+        slot_diag("slot_managed").severity,
+        DiagnosticSeverity::Error
+    );
+    assert_eq!(
+        slot_diag("slot_pinned").severity,
+        DiagnosticSeverity::Warning,
+        "human-owned geometry keeps fixture overflow advisory: {diagnostics:#?}"
+    );
+}
