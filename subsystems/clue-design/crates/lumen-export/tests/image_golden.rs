@@ -251,8 +251,12 @@ fn golden_image_hero_scrim() {
     );
     // Z-order: image is painted before the scrim, which is painted before the
     // headline — the legibility stack.
-    let photo = svg.find("data-lumen-node-id=\"photo\"").expect("photo node");
-    let scrim = svg.find("data-lumen-node-id=\"scrim\"").expect("scrim node");
+    let photo = svg
+        .find("data-lumen-node-id=\"photo\"")
+        .expect("photo node");
+    let scrim = svg
+        .find("data-lumen-node-id=\"scrim\"")
+        .expect("scrim node");
     let headline = svg
         .find("data-lumen-node-id=\"headline\"")
         .expect("headline node");

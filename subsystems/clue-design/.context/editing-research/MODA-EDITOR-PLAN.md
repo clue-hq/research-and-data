@@ -225,3 +225,19 @@ Mechanism (record: `.context/phase4b5/IMPLEMENTATION.md`):
   Agent-side follow-ups pending: layout_mode/human-arranged in _node_brief,
   prefer-absolute-edits prompt policy, explicit transforms on insert into
   Free containers.
+
+### Phase 4c — RE-SCOPED (2026-07-05): agent edits on human-owned geometry
+
+The original 4c (managed-drag → reorder) is largely obsoleted by
+handoff-absolute: humans rarely touch managed nodes now (first touch
+freezes). The retest exposed the real 4c: **the agent cannot move a pinned
+node** — DSL `p()` writes `transform`, which pinned nodes ignore
+(`absolute_box` is authoritative, page-space) → user asks like "move the
+badge" are silent no-ops on exactly the elements humans drag.
+
+Decision: make `p()`/`s()` JUST WORK on pinned targets — the DSL compiler
+translates them into `absolute_box` updates using the parent's solved
+page-space origin (the compile session holds the laid-out scene). Zero new
+concepts for the agent; "move it there" is owner-independent. Rider: the
+agent brief's "pinned nodes must not be re-positioned" note rewords to
+"pinned geometry is human-owned — move it only when the user asks."
