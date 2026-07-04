@@ -93,11 +93,12 @@ in there."**
 
 | Debt | When it gets fixed |
 |---|---|
-| API base URL copy-pasted 12× | **2a.5** → `editorConfig.ts` |
-| Agent-turn state inside `EditorApp` | **2a.5** → extract `useAgentTurn` (+ queue, preview gate), because 2b rewrites exactly this code |
+| ~~API base URL copy-pasted 12×~~ | **DONE 2a.5** → `engine/editorConfig.ts` |
+| ~~Agent-turn state inside `EditorApp`~~ | **DONE 2a.5** → `hooks/useAgentTurn` (2b then rewrote it in place, as planned) |
 | Undo/redo + documentId-adoption logic in `EditorApp` | **2d** — not earlier; adoption has three sites and a false-divergence trap |
-| `EditorApp` shell split (2,433 lines, ~22 `useState`) | pre-restyle hygiene increment |
-| CSS token layer (`styles.css`, ~1,800 lines) | pre-restyle hygiene increment |
+| Drop the `selected_node_id` back-compat field (2c kept it one release) | post-Phase-2 chore (coordinated API + editor change) |
+| `EditorApp` shell split (~2,100 lines, ~25 `useState`) | pre-restyle hygiene increment |
+| CSS token layer (`styles.css`, ~2,200 lines) | pre-restyle hygiene increment |
 | `InspectorPanel` split into sections (1,715 lines) | pre-restyle hygiene increment |
 | Old phase comments | opportunistic only |
 
@@ -121,6 +122,14 @@ state starts life in a hook, even if neighboring code doesn't.
 - **Preview text layout ≠ server text layout.** The WASM core uses heuristic
   text measurement (no Skia on wasm32); the server is authority. Small
   divergence is expected — don't "fix" it by forking layout logic in JS.
+- **Run the suite from `apps/editor`, never the repo root.** A bare
+  `npx vitest` from the root finds no local install, silently uses an
+  npx-cached vitest with NO project config (no jsdom — `environment ~0ms`
+  in the summary — and no JSX transform), and "fails" every `.tsx` file
+  with `Unexpected JSX expression` pointing at valid code. This burned
+  cycles in 2b and 2c masquerading as a transform-cache flake. A root
+  `vitest.config.ts` guard now turns it into one clear error; the fix is
+  always `cd apps/editor && npm test`.
 
 ---
 
