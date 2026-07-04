@@ -20,6 +20,9 @@ fn generation_request(prompt: &str) -> AssetGenerationRequest {
             mime_type: None,
             transparent_background: None,
             brand_notes: Vec::new(),
+            aspect_ratio: None,
+            image_size: None,
+            reference_asset_ids: Vec::new(),
         },
     }
 }
