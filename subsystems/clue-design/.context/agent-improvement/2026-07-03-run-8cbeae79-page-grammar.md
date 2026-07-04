@@ -62,20 +62,35 @@ Result: zero compiles → no best draft ever existed → `failed`,
 
 ## Doc improvements to make later (the user's ask — where to focus)
 
-- [ ] `knowledge_docs/AGENT.md` hard invariants: add the ref-grammar line
-  (`#page:` / `#slot:` forms) — it's an invariant, not a lookup.
-- [ ] `knowledge_docs/skills/repair-design`: add the "repurpose a default page"
-  playbook (the one-block idiom) and the replace-is-node-only rule.
-- [ ] `knowledge_docs/knowledge/lumen-dsl/directives.md`: promote the ref-form
-  table to the top with a WRONG/RIGHT example (`#page_a4` ✗ → `#page:page_a4` ✓).
-- [ ] Knowledge loader: ensure seeded-continuation turns always pin the
-  directives grammar excerpt (`modify` ref table) — the recipe now inlines the
-  essentials, but the full table should be one load away.
+- [x] `knowledge_docs/AGENT.md` hard invariants: ref-grammar invariant added
+  (#3: typed refs + document-global node ids). *(agent-quality track, 2026-07-04)*
+- [x] `knowledge_docs/skills/repair-design`: "Repurposing a nearly-empty default
+  page" playbook + replace-is-node-only rule added.
+- [x] `knowledge_docs/knowledge/lumen-dsl/directives.md`: WRONG/RIGHT example
+  (`#page_a4` ✗ → `#page:page_a4` ✓) under the ref table + node-ids-only rule
+  on structural directives.
+- [x] Knowledge loader: seeded turns now pin `directives.md` via
+  `extra_mandatory_paths` (`tools.load_knowledge` keys on
+  `seeded_from_initial_scene`).
 - [ ] Engine candidate: LUMD0901's hint could say "did you mean `#page:<id>`?"
   when the missing id matches an existing page — the correction would then be
   provider-agnostic (helps the deepagent path too, not just the editor loop).
-- [ ] Escalation heuristic: two consecutive LUMD09xx halts → auto-load the DSL
-  grammar knowledge into the next author request.
+  *(still open — engine-side, needs wasm rebuild; the Python loop guard covers
+  the editor path)*
+- [x] Escalation heuristic: implemented generalized — TWO consecutive compile
+  halts with the same code (any code, not just LUMD09xx) pin the ref-grammar
+  excerpt into the next author request (`repeated_halt_escalated`); identical
+  re-emitted blocks skip compile/review and escalate (`repeat_block_escalated`).
 - [ ] Also on the backlog from the fixtures README: the deepagent photo path's
   LUMV0100 crash (generate-image before any page exists) — same class of
-  "cold-start ordering" context gap.
+  "cold-start ordering" context gap. *(still open)*
+
+## 2026-07-04 addendum — LUMD0401 cluster forensics (2e M2 gate, 3/4 turns dirty)
+
+Full decomposition + fixes in the agent-quality-track commits on
+`agents/editing-roundtrip-v0`: document-global id rule (prompts + create-design),
+`duplicate_in_block` reauthor correction (within-block duplicates are NOT
+existing-node re-declarations; never reroute surgical at a phantom node),
+`completed_with_warnings` → editor proposal (two of the three "failed" gate
+turns had preflight-clean drafts discarded by the API mapping), and the two
+non-convergence escalations above.

@@ -18,6 +18,26 @@ compile/preflight/visual repair is **not** a whole-scene replacement.
 If you catch yourself about to write `page page_a4 …` again, stop — you want a
 modify line or a continuation instead.
 
+## Repurposing a nearly-empty default page
+
+The most common cold start: the user asks for a fresh design but the document
+already has a default page, so the run is SEEDED and re-authoring is forbidden.
+Do it in ONE block — set the surface with the PAGE ref form, then swap the
+existing root node's subtree:
+
+```text
+#page:page_a4 size(1080,1350,px)
+replace(node_contact_name)
+  artboard al(v, x(s), y(s), g($space.section), pad(80)) s(fill,fill) fill($surface.page) clip(true)
+    …your new design…
+```
+
+- `#page:<page_id>` is the page ref form — a bare `#page_a4` is NODE grammar
+  and halts `LUMD0901` ("target node page_a4 does not exist").
+- `replace(...)`, `clone(...)`, `delete(...)` take **node ids only**, never
+  page ids. Keep the page; replace its existing root NODE's subtree.
+- Never re-declare the `page …` line itself (`LUMA0200`).
+
 ## Choose the smallest actuator (in order)
 
 1. **Modify line** — `#<node_id> prop(...)`. Best for changing a property on one
@@ -33,7 +53,8 @@ modify line or a continuation instead.
    `knowledge/loop/layout-cluster-repair`.
 3. **Structural directive** — `delete`, `parent`, `before`/`after`, `clone`,
    `replace`, `ungroup` (see `knowledge/lumen-dsl/directives`). For reordering,
-   re-homing, duplicating, or swapping a subtree.
+   re-homing, duplicating, or swapping a subtree. All of these take **node ids
+   only** — pointing one at a page id halts `LUMD0901`.
 4. **Checked structured edit** — the `apply_structured_edit` tool with a `scope`.
    Use this for a precise edit on a *named* node when you want the engine to **fail
    closed** if the edit would touch anything else:

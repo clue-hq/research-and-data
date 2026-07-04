@@ -25,6 +25,13 @@ A leading `#ref` line is a **modify**, not a comment. Properties that don't appl
 to the target type warn (e.g. `font(...)` on a page → `LUMD0903`). Missing target
 → `LUMD0901`.
 
+**The #1 ref mistake** (observed to burn whole runs):
+
+```text
+#page_a4 size(1080,1350,px)        ✗  bare #page_a4 is NODE grammar → LUMD0901
+#page:page_a4 size(1080,1350,px)   ✓  pages need the #page: form
+```
+
 ```text
 # Fix an overflowing instruction box — change only that node:
 #instruction s(352,140) max_lines(6) lh(1.4)
@@ -33,6 +40,10 @@ to the target type warn (e.g. `font(...)` on a page → `LUMD0903`). Missing tar
 ```
 
 ## Structural directives
+
+All structural directives take **NODE ids only**, never page ids —
+`replace(page_a4)` halts `LUMD0901`. To rebuild a page's content, keep the page
+and `replace(<its existing root node>)` with your new single-root subtree.
 
 | Directive | Form | Use |
 |-----------|------|-----|

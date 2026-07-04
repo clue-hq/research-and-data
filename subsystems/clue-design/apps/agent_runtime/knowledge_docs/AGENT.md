@@ -125,35 +125,42 @@ Each skill is a procedure for one job. Read the skill before doing that job.
    repair.** That is the #1 cause of `LUMA0200`/duplicate-id failures and it
    destroys the scene. Ordinary compile/preflight/visual repairs are *not* a
    whole-scene replacement.
-3. **Repair the smallest failing target.** When a diagnostic names a node, change
+3. **Ref grammar is typed, and node ids are document-global.** `#node_id`
+   targets a NODE; pages use `#page:page_id` (a bare `#page_a4` is node grammar
+   and halts `LUMD0901`); slots use `#slot:key`. Structural directives
+   (`replace`/`clone`/`delete`/…) take NODE ids only, never page ids. Node ids
+   are unique across ALL pages — on multi-page output, suffix ids per page
+   (`headline_a`/`headline_b`); a block that declares the same id twice is
+   rejected whole (`LUMD0401`).
+4. **Repair the smallest failing target.** When a diagnostic names a node, change
    only that node (or its immediate container). Prefer a checked
    `apply_structured_edit` with a `scope` for a named node over re-authoring DSL.
    See `skills/repair-design`.
-4. **Colors** are `#RRGGBB`, `#AARRGGBB`, `$token`, `oklch(l,c,h,a)`, or CSS
+5. **Colors** are `#RRGGBB`, `#AARRGGBB`, `$token`, `oklch(l,c,h,a)`, or CSS
    `rgb(...)` / `rgba(...)`. Never a bare number.
-5. **Shadows** take the color first (`shadow(#000,o(),x(),y(),blur(),spread())`)
+6. **Shadows** take the color first (`shadow(#000,o(),x(),y(),blur(),spread())`)
    or the CSS positional form (`shadow(x,y,blur[,spread],color)`). `rd(...)` is a
    single uniform radius — per-corner `rd(a,b,c,d)` is not supported.
-6. **Brand-resolved values use tokens.** With an effective Brand Kit, prefer
+7. **Brand-resolved values use tokens.** With an effective Brand Kit, prefer
    `$surface.*`, `$text.*`, `$type.*`, `$space.*`, `$radius.*`, `$stroke.width.*`,
    `logo.*`, `asset.*`. Do not repair off-brand output by swapping one raw value
    for another.
-7. **Artboard geometry is canonical `pt`.** Page presets/custom sizes normalize
+8. **Artboard geometry is canonical `pt`.** Page presets/custom sizes normalize
    into artboard layout bounds before children are interpreted. Child `p()` and
    `s()` values are artboard- or parent-local points; never use `mm` or renderer
    pixels for child coordinates. Physical and raster dimensions belong to
    page/export metadata.
-8. **Export-safe backgrounds belong to the artboard/root frame.** In new DSL,
+9. **Export-safe backgrounds belong to the artboard/root frame.** In new DSL,
    use `fill(...)` on a clipped root artboard frame. Do not put
    `background(...)` on a `page ...` creation line, and do not create loose
    oversized `bg` rectangles for the canvas background.
-9. **Parent overflow can be a cluster repair.** If diagnostics show a page/artboard
+10. **Parent overflow can be a cluster repair.** If diagnostics show a page/artboard
    bounds failure, background-like rect, or child larger than its parent, repair
    the diagnosed layout cluster with bounded modify lines such as p/s, g, pad,
    x/y alignment, clip, text wrapping, and root sizing changes. For root
    artboard frame size repairs, use `s(fill,fill)` instead of hardcoded page
    dimensions. Do not redesign unrelated content.
-10. **Missing capability → record a gap.** Never simulate an unsupported feature in
+11. **Missing capability → record a gap.** Never simulate an unsupported feature in
    prose or with decorative shapes.
 
 ---

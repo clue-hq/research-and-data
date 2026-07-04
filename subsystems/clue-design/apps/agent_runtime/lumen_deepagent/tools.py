@@ -19,7 +19,7 @@ except Exception:  # pragma: no cover
     image_cache = None  # type: ignore[assignment]
 
 from .config import AgentRuntimeConfig
-from .knowledge import read_task_knowledge
+from .knowledge import DIRECTIVES_PATH, read_task_knowledge
 from .schemas import (
     CompileSummary,
     DiagnosticSeverity,
@@ -201,7 +201,17 @@ class LumenDesignTools:
 
     def load_knowledge(self, query: str) -> str:
         """Load task-specific Lumen knowledge snippets with provenance."""
-        snippets = read_task_knowledge(self.config.repo_root, query)
+        snippets = read_task_knowledge(
+            self.config.repo_root,
+            query,
+            # A seeded turn edits an existing document, so the modify/ref
+            # grammar (`#page:` form, directives-are-node-only) must always be
+            # loaded — the recipe inlines the essentials, but the full table
+            # stays one load away (agent-improvement backlog).
+            extra_mandatory_paths=(
+                [DIRECTIVES_PATH] if self.seeded_from_initial_scene else []
+            ),
+        )
         result = KnowledgeLoadResult(query=query, snippets=snippets)
         payload = _dump(result)
         self.loaded_knowledge = payload["snippets"]

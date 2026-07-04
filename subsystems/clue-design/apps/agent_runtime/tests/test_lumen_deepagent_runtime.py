@@ -23,6 +23,7 @@ if load_dotenv is not None:
 from lumen_deepagent.config import AgentRuntimeConfig
 from lumen_deepagent.eval_traces import summarize_trace_dir
 from lumen_deepagent.knowledge import (
+    DIRECTIVES_PATH,
     IMAGES_DECIDE_PATH,
     IMAGES_ICONS_PATH,
     IMAGES_PLACEMENT_PATH,
@@ -1029,6 +1030,50 @@ def test_images_decide_is_pinned_and_delivered_full():
     assert by_path[IMAGES_DECIDE_PATH].excerpt == on_disk, (
         "images/decide was windowed/truncated, not delivered in full"
     )
+
+
+def test_directives_ref_grammar_is_pinned_for_seeded_turns(
+    tmp_path: Path, monkeypatch
+):
+    # Agent-improvement backlog: a SEEDED turn edits an existing document, so
+    # the modify/ref grammar (`#page:` form, directives-take-node-ids-only)
+    # must always be loaded — run_8cbeae790f07 burned every iteration on the
+    # `#page_a4`-vs-`#page:page_a4` trap with directives.md never in context.
+    repo_root = Path(__file__).resolve().parents[3]
+
+    # The loader honors explicit extra mandatory pins even when the prompt
+    # shares no words with the doc.
+    snippets = read_task_knowledge(
+        repo_root,
+        "Change the greeting copy to Hello",
+        extra_mandatory_paths=[DIRECTIVES_PATH],
+    )
+    assert DIRECTIVES_PATH in {snippet.path for snippet in snippets}
+
+    # And the tools wire the pin automatically for seeded scenes.
+    monkeypatch.setattr("lumen_deepagent.tools.CoreClient", FakeCoreClient)
+    config = AgentRuntimeConfig(
+        repo_root=repo_root,
+        model="anthropic:claude-opus-4-6",
+        max_iterations=1,
+        preview_format="svg",
+        trace_dir=tmp_path / ".lumen-runs",
+    )
+    seeded_tools = LumenDesignTools(
+        config,
+        "Change the greeting copy to Hello",
+        initial_scene={
+            "meta": {"id": "doc_live", "title": "Saved doc"},
+            "pages": {"page_a4": {"id": "page_a4", "children": []}},
+            "nodes": {},
+            "slots": {},
+            "assets": {},
+        },
+    )
+    json.loads(seeded_tools.load_knowledge("Change the greeting copy to Hello"))
+    assert DIRECTIVES_PATH in {
+        snippet["path"] for snippet in seeded_tools.loaded_knowledge
+    }
 
 
 def test_imagery_prompt_and_placement_docs_pin_by_relevance():

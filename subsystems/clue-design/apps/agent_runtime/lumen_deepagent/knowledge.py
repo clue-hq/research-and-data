@@ -66,6 +66,11 @@ LAYOUT_CLUSTER_REPAIR_PATH = (
 # (horizontal-only align — there is NO valign/text_align — plus wrap/max_lines).
 GRAMMAR_PATH = f"{KNOWLEDGE_DOCS_ROOT}/knowledge/lumen-dsl/grammar.md"
 TEXT_PATH = f"{KNOWLEDGE_DOCS_ROOT}/knowledge/lumen-dsl/text.md"
+# The modify/ref grammar (`#node_id` vs `#page:` vs `#slot:`, directives take
+# node ids only) — pinned for SEEDED turns, which edit an existing document and
+# live or die by these forms (run_8cbeae790f07 burned every iteration on the
+# `#page_a4`-vs-`#page:page_a4` trap with this doc never loaded).
+DIRECTIVES_PATH = f"{KNOWLEDGE_DOCS_ROOT}/knowledge/lumen-dsl/directives.md"
 # The art-direction taste rubric the visual critic scores against (one-dominant /
 # squint test, hero-size-per-surface, jump rule, whitespace-as-margin, 60-30-10,
 # WCAG contrast, single alignment spine, eyebrow/anti-cliche). Pinned + delivered
@@ -228,6 +233,7 @@ def read_task_knowledge(
     query: str,
     limit: int = 8,
     paths: Iterable[str] = DEFAULT_KNOWLEDGE_PATHS,
+    extra_mandatory_paths: Iterable[str] = (),
 ) -> List[KnowledgeSnippet]:
     """Return task knowledge with mandatory Lumen docs before reference docs."""
     # The candidate pool must cover every pinned/mandatory path — the mandatory
@@ -251,7 +257,7 @@ def read_task_knowledge(
         )
         seen_paths.add(match.path)
 
-    for rel_path in mandatory_task_paths(query):
+    for rel_path in [*mandatory_task_paths(query), *extra_mandatory_paths]:
         match = next(
             (snippet for snippet in candidates if snippet.path == rel_path),
             None,
