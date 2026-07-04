@@ -134,6 +134,13 @@ export function convertContainerLayoutEdit(
   return { kind: "convert_container_layout", node_id: nodeId, layout_mode: layoutMode };
 }
 
+/** Handoff-absolute: bake every Stack container to Free in one zero-motion
+ * batch — after an agent turn the human edits pure absolute. Idempotent
+ * (empty batch when nothing is left to freeze). */
+export function freezeLayoutEdit(): StructuredEdit {
+  return { kind: "freeze_layout" };
+}
+
 /** Phase 4b arrange: wrap same-parent siblings in a new Group container.
  * The caller mints `groupId` so the edit replays deterministically. */
 export function groupEdit(nodeIds: string[], groupId: string, name?: string): StructuredEdit {

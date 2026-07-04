@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Dev helper for agents/design-recipes-quality-v0.
+# Dev helper for the local Conductor workspace.
 #
 # The important invariant is that the checked-out branch, backend helper, and
 # browser WASM artifact all report the same engine_commit. Generated WASM files
@@ -7,12 +7,12 @@
 set -Eeuo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-VENV_PYTHON="${LUMEN_VENV_PYTHON:-/Users/aryankeshri/Documents/brilliant-design/.venv/bin/python}"
+VENV_PYTHON="${LUMEN_VENV_PYTHON:-$ROOT_DIR/.venv/bin/python}"
 HOST="${LUMEN_HOST:-127.0.0.1}"
 API_PORT="${LUMEN_API_PORT:-8002}"
 WEB_PORT="${LUMEN_WEB_PORT:-3002}"
-BACKEND_LOG="${LUMEN_BACKEND_LOG:-/tmp/lumen-design-recipes-quality-v0-backend.log}"
-FRONTEND_LOG="${LUMEN_FRONTEND_LOG:-/tmp/lumen-design-recipes-quality-v0-frontend.log}"
+BACKEND_LOG="${LUMEN_BACKEND_LOG:-/tmp/lumen-havana-backend.log}"
+FRONTEND_LOG="${LUMEN_FRONTEND_LOG:-/tmp/lumen-havana-frontend.log}"
 FIXTURE_ROOT="${LUMEN_AGENT_FIXTURE_ROOT:-$ROOT_DIR/.lumen-fixtures/agent-quality-hygiene}"
 FIXTURE_TRACE_DIR="${LUMEN_AGENT_FIXTURE_TRACE_DIR:-$FIXTURE_ROOT/traces}"
 AGENT_MODE="${LUMEN_AGENT_MODE:-quality-loop}"
@@ -134,7 +134,7 @@ clean_runtime() {
   rm -rf apps/editor/.next
   rm -rf "$FIXTURE_ROOT"
   rm -f "$BACKEND_LOG" "$FRONTEND_LOG"
-  rm -f /tmp/lumen-design-recipes-quality-v0-served-wasm.wasm
+  rm -f /tmp/lumen-havana-served-wasm.wasm
 }
 
 backend_env() {
@@ -233,7 +233,7 @@ check_served() {
   cd "$ROOT_DIR"
   local local_wasm served_wasm url local_hash served_hash
   local_wasm="apps/editor/public/wasm/lumen_wasm_bg.wasm"
-  served_wasm="/tmp/lumen-design-recipes-quality-v0-served-wasm.wasm"
+  served_wasm="/tmp/lumen-havana-served-wasm.wasm"
   url="http://$HOST:$WEB_PORT/wasm/lumen_wasm_bg.wasm?cb=$(date +%s)"
 
   need_file "$local_wasm"
