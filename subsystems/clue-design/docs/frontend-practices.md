@@ -99,9 +99,9 @@ in there."**
 | ~~Agent-turn state inside `EditorApp`~~ | **DONE 2a.5** → `hooks/useAgentTurn` (2b then rewrote it in place, as planned) |
 | Undo/redo + documentId-adoption logic in `EditorApp` | **2d** — not earlier; adoption has three sites and a false-divergence trap |
 | Drop the `selected_node_id` back-compat field (2c kept it one release) | post-Phase-2 chore (coordinated API + editor change) |
-| `EditorApp` shell split (~2,100 lines, ~25 `useState`) | pre-restyle hygiene increment |
-| CSS token layer (`styles.css`, ~2,200 lines) | pre-restyle hygiene increment |
-| `InspectorPanel` split into sections (1,715 lines) | pre-restyle hygiene increment |
+| ~~`EditorApp` shell split (~2,100 lines, ~25 `useState`)~~ | **DONE pre-restyle hygiene** → 1,445 lines / 5 core `useState`; clusters in `hooks/useWorkspaceChrome`, `useBrandChecks`, `useExportPreflight`; chrome in `components/EditorChrome`; pure helpers in `engine/pageDuplication`, `engine/editorKeyboard`, `engine/operationLabels` |
+| ~~CSS token layer (`styles.css`, ~2,200 lines)~~ | **DONE pre-restyle hygiene** → `:root` token block (chrome/panel/teal/action/radius/shadow), 302 sites tokenized |
+| ~~`InspectorPanel` split into sections (1,715 lines)~~ | **DONE pre-restyle hygiene** → ~145-line orchestrator + `components/inspector/*` sections |
 | Old phase comments | opportunistic only |
 
 Until then, **don't extend the debt**: no new state concerns in `EditorApp`,
