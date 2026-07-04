@@ -10,7 +10,7 @@ use lumen_core::{
     layout_operations, layout_scene, validate_layout, AutoLayoutDirection, AutoLayoutNode,
     AutoLayoutProps, Diagnostic, DiagnosticSeverity, DiagnosticSubject, Dimension, DocumentId,
     FieldPatch, LayoutMode, LayoutOptions, Node, NodeId, NodeKind, NodePatch, Operation,
-    Orientation, OptionalFieldPatch, Page, PageId, PagePreset, PageSize, ParentRef, PositionMode,
+    OptionalFieldPatch, Orientation, Page, PageId, PagePreset, PageSize, ParentRef, PositionMode,
     Rect, Scene, SizeSpec, Unit,
 };
 
@@ -198,7 +198,8 @@ fn pinned_child_does_not_snap_back_across_relayouts() {
     let second = layout_scene(&scene, LayoutOptions::default());
 
     assert_eq!(
-        second.geometry[&NodeId::from("b")].layout_bounds, pinned,
+        second.geometry[&NodeId::from("b")].layout_bounds,
+        pinned,
         "pinned node must stay at its box after computed write-back"
     );
     assert_eq!(
@@ -290,7 +291,10 @@ fn free_container_lays_children_at_baked_transforms() {
     f2.transform.y = 100.0;
     insert(&mut scene, ParentRef::Node(NodeId::from("free_sec")), f2);
 
-    assert_eq!(bounds(&scene, "free_sec"), rect_at(50.0, 50.0, 400.0, 300.0));
+    assert_eq!(
+        bounds(&scene, "free_sec"),
+        rect_at(50.0, 50.0, 400.0, 300.0)
+    );
     // Children sit at container origin + their own baked transforms — the
     // column solve would have stacked f2 directly under f1 instead.
     assert_eq!(bounds(&scene, "f1"), rect_at(60.0, 70.0, 80.0, 40.0));
@@ -468,12 +472,20 @@ fn free_container_child_overflow_warns_despite_clip() {
     free_frame.transform.y = 20.0;
     free_frame.clip = true;
     free_frame.layout.as_mut().unwrap().layout_mode = LayoutMode::Free;
-    insert(&mut scene, ParentRef::Page(PageId::from("page")), free_frame);
+    insert(
+        &mut scene,
+        ParentRef::Page(PageId::from("page")),
+        free_frame,
+    );
 
     let mut child = rect("fc", 50.0, 50.0);
     child.transform.x = 90.0;
     child.transform.y = 90.0;
-    insert(&mut scene, ParentRef::Node(NodeId::from("free_frame")), child);
+    insert(
+        &mut scene,
+        ParentRef::Node(NodeId::from("free_frame")),
+        child,
+    );
 
     let diagnostics = validate_layout(&scene, LayoutOptions::default());
     let overflow = diag_for(&diagnostics, "LUMV0801", "fc")

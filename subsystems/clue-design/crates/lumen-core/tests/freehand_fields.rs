@@ -49,10 +49,9 @@ fn old_json_deserializes_with_managed_and_stack_defaults() {
     assert!(node.base_anchor.is_none());
 
     // AutoLayoutProps JSON authored before the field exists → Stack.
-    let props: AutoLayoutProps = serde_json::from_str(
-        r#"{"gap": 8.0, "padding": [0.0, 0.0, 0.0, 0.0], "grow": 0.0}"#,
-    )
-    .unwrap();
+    let props: AutoLayoutProps =
+        serde_json::from_str(r#"{"gap": 8.0, "padding": [0.0, 0.0, 0.0, 0.0], "grow": 0.0}"#)
+            .unwrap();
     assert_eq!(props.layout_mode, LayoutMode::Stack);
 }
 
