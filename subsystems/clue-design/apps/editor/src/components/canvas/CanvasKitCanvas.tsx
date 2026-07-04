@@ -17,11 +17,14 @@ import {
 } from "@/engine/gestureMachine";
 import {
   descriptorToScene,
+  dragActionToGuides,
   dragActionToOperations,
   handleAtPoint,
+  resizeActionToGuides,
   resizeActionToOperation,
   screenToDescriptor
 } from "@/engine/canvaskitGestures";
+import type { SnapGuide } from "@/engine/canvasOperations";
 import {
   getNode,
   getPage,
@@ -126,6 +129,7 @@ export function CanvasKitCanvas({
   const panDragRef = useRef<{ pointerId: number; x: number; y: number; pan: { x: number; y: number } } | null>(null);
   const [viewport, setViewport] = useState({ width: 900, height: 720 });
   const [preview, setPreview] = useState<Preview | null>(null);
+  const [activeGuides, setActiveGuides] = useState<SnapGuide[]>([]);
   const [marquee, setMarquee] = useState<Box | null>(null);
   const [editingNodeId, setEditingNodeId] = useState<NodeId | null>(null);
   const [hoverNodeId, setHoverNodeId] = useState<NodeId | null>(null);
@@ -445,10 +449,12 @@ export function CanvasKitCanvas({
           if (!node) break;
           if (action.committed) {
             setPreview(null);
+            setActiveGuides([]);
             const ops = dragActionToOperations(action.box, scene, node, page, pageOrigin);
             if (ops.length > 0) onOperations(ops);
           } else {
             setPreview({ nodeId: action.nodeId, box: action.box, rotation: nodeDescriptor(scene, node, page).rotation });
+            setActiveGuides(dragActionToGuides(action.box, scene, node, page, pageOrigin));
           }
           break;
         }
@@ -458,10 +464,12 @@ export function CanvasKitCanvas({
           const rotation = nodeDescriptor(scene, node, page).rotation;
           if (action.committed) {
             setPreview(null);
+            setActiveGuides([]);
             const op = resizeActionToOperation(action.box, rotation, scene, node, page, pageOrigin);
             if (op) onOperations([op]);
           } else {
             setPreview({ nodeId: action.nodeId, box: action.box, rotation });
+            setActiveGuides(resizeActionToGuides(action.box, rotation, scene, node, page, pageOrigin));
           }
           break;
         }
@@ -470,6 +478,7 @@ export function CanvasKitCanvas({
           if (!node || !selectionBox) break;
           if (action.committed) {
             setPreview(null);
+            setActiveGuides([]);
             const op = resizeActionToOperation(selectionBox.box, action.rotation, scene, node, page, pageOrigin);
             if (op) onOperations([op]);
           } else {
@@ -824,6 +833,7 @@ export function CanvasKitCanvas({
           panDragRef.current = null;
           stateRef.current = initialGestureState;
           setPreview(null);
+          setActiveGuides([]);
           setMarquee(null);
           setHoverNodeId(null);
         }}
@@ -845,6 +855,7 @@ export function CanvasKitCanvas({
           containerChildren={editingNodeId ? [] : containerChildBoxes(scene, selectedNodeId, unitScale)}
           containerLabel={editingNodeId ? undefined : containerLabel(scene, selectedNodeId)}
           marquee={marquee}
+          guides={editingNodeId ? [] : descriptorGuides(activeGuides, unitScale)}
           pageOrigin={pageOrigin}
           zoom={zoom}
           showHandles={showHandles && !editingNodeId}
@@ -869,6 +880,18 @@ export function CanvasKitCanvas({
       </div>
     </section>
   );
+}
+
+/** Snap guides come out of the engine in page space (scene units); the
+ * overlay works in descriptor space (scene × unitScale) like every other box
+ * it draws — same scaling convention as `containerChildBoxes` below. */
+function descriptorGuides(guides: SnapGuide[], unitScale: number): SnapGuide[] {
+  return guides.map((guide) => ({
+    axis: guide.axis,
+    position: guide.position * unitScale,
+    from: guide.from * unitScale,
+    to: guide.to * unitScale
+  }));
 }
 
 function containerChildBoxes(scene: Scene, nodeId: NodeId | null, unitScale: number): Box[] {

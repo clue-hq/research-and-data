@@ -14,7 +14,7 @@
  */
 
 import type { Node as SceneNodeModel, Operation, Page, Scene } from "./contracts";
-import { canvasDragOperations, canvasResizeOperation } from "./canvasOperations";
+import { canvasDragOperations, canvasResizeOperation, dragSnapGuides, resizeSnapGuides, type SnapGuide } from "./canvasOperations";
 import { nodeSizeForRender } from "./renderAdapter";
 import { handlePoint, type Box, type Point, type ResizeHandle } from "./transformerMath";
 
@@ -111,6 +111,55 @@ export function resizeActionToOperation(
     return null;
   }
   return canvasResizeOperation({
+    scene,
+    node,
+    page,
+    pageOrigin,
+    transform: {
+      canvasX: pageOrigin.x + box.x,
+      canvasY: pageOrigin.y + box.y,
+      rotation,
+      scaleX: box.width / base.width,
+      scaleY: box.height / base.height
+    }
+  });
+}
+
+/** The active snap guides for a drag action's live (uncommitted) box — same
+ * inputs as `dragActionToOperations`, so a host can call both per pointer
+ * move and render whichever guides are currently engaged. */
+export function dragActionToGuides(
+  box: Box,
+  scene: Scene,
+  node: SceneNodeModel,
+  page: Page,
+  pageOrigin: Point
+): SnapGuide[] {
+  return dragSnapGuides({
+    scene,
+    node,
+    page,
+    pageOrigin,
+    canvasX: pageOrigin.x + box.x,
+    canvasY: pageOrigin.y + box.y
+  });
+}
+
+/** The active snap guides for a resize action's live (uncommitted) box —
+ * same inputs as `resizeActionToOperation`. */
+export function resizeActionToGuides(
+  box: Box,
+  rotation: number,
+  scene: Scene,
+  node: SceneNodeModel,
+  page: Page,
+  pageOrigin: Point
+): SnapGuide[] {
+  const base = nodeSizeForRender(node, page);
+  if (base.width === 0 || base.height === 0) {
+    return [];
+  }
+  return resizeSnapGuides({
     scene,
     node,
     page,

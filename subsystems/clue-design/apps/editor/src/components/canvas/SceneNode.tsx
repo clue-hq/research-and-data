@@ -4,7 +4,7 @@ import { Fragment } from "react";
 import { Group, Line, Path, Rect, Text } from "react-konva";
 import type Konva from "konva";
 import type { NodeId, Operation, Page, Scene } from "@/engine/contracts";
-import { canvasDragOperation, canvasResizeOperation } from "@/engine/canvasOperations";
+import { canvasDragOperation, canvasResizeOperation, dragSnapGuides, resizeSnapGuides, type SnapGuide } from "@/engine/canvasOperations";
 import type { ParentComputedOrigin } from "@/engine/renderAdapter";
 import {
   konvaFillProps,
@@ -24,6 +24,11 @@ interface SceneNodeProps {
   onOperation: (operation: Operation) => void;
   registerNode: (nodeId: NodeId, node: Konva.Node | null) => void;
   parentComputedOrigin?: ParentComputedOrigin | null;
+  /** Reports the guides engaged by an in-progress drag/resize (page space);
+   * called with `[]` when the gesture ends or no snap is engaged. Optional —
+   * omitted entirely, a node just doesn't report guides (e.g. nested nodes
+   * under a container drag rely on the top-level handler). */
+  onGuidesChange?: (guides: SnapGuide[]) => void;
 }
 
 export function SceneNode({
@@ -35,7 +40,8 @@ export function SceneNode({
   onSelectNode,
   onOperation,
   registerNode,
-  parentComputedOrigin = null
+  parentComputedOrigin = null,
+  onGuidesChange
 }: SceneNodeProps) {
   const node = scene.nodes[nodeId];
   if (!node) {
@@ -63,7 +69,24 @@ export function SceneNode({
     onSelectNode(topLevelAncestorId(scene, node.id) ?? node.id);
   };
 
+  const handleDragMove = (event: Konva.KonvaEventObject<DragEvent>) => {
+    if (!directGeometryEditable || !onGuidesChange) {
+      return;
+    }
+    onGuidesChange(
+      dragSnapGuides({
+        scene,
+        node,
+        page,
+        pageOrigin,
+        canvasX: event.target.x(),
+        canvasY: event.target.y()
+      })
+    );
+  };
+
   const handleDragEnd = (event: Konva.KonvaEventObject<DragEvent>) => {
+    onGuidesChange?.([]);
     if (!directGeometryEditable) {
       return;
     }
@@ -80,7 +103,34 @@ export function SceneNode({
     }
   };
 
+  // Live resize: the Transformer drives the target node's scale directly, so
+  // this reads the in-progress geometry for guide visualization only — no
+  // operation is built here (that stays `handleTransformEnd`'s job, matching
+  // the existing commit-on-release policy for resize).
+  const handleTransform = (event: Konva.KonvaEventObject<Event>) => {
+    if (!directGeometryEditable || !onGuidesChange) {
+      return;
+    }
+    const target = event.target;
+    onGuidesChange(
+      resizeSnapGuides({
+        scene,
+        node,
+        page,
+        pageOrigin,
+        transform: {
+          canvasX: target.x(),
+          canvasY: target.y(),
+          rotation: target.rotation(),
+          scaleX: target.scaleX(),
+          scaleY: target.scaleY()
+        }
+      })
+    );
+  };
+
   const handleTransformEnd = (event: Konva.KonvaEventObject<Event>) => {
+    onGuidesChange?.([]);
     if (!directGeometryEditable) {
       return;
     }
@@ -128,7 +178,9 @@ export function SceneNode({
       }}
       onDblClick={handleSelectContainer}
       onDblTap={handleSelectContainer}
+      onDragMove={handleDragMove}
       onDragEnd={handleDragEnd}
+      onTransform={handleTransform}
       onTransformEnd={handleTransformEnd}
     >
       <NodeBody descriptor={descriptor} selected={selected} locked={node.locked} />
@@ -145,6 +197,7 @@ export function SceneNode({
           onOperation={onOperation}
           registerNode={registerNode}
           parentComputedOrigin={childParentComputedOrigin}
+          onGuidesChange={onGuidesChange}
         />
       ))}
     </Group>

@@ -22,6 +22,16 @@ export interface CanvasPoint {
   y: number;
 }
 
+/** One active snap guide, in page space (scene units). `position` is the
+ * snapped edge/center line; `from`/`to` span both the dragged box and the
+ * snap target along the guide, so the drawn line visually connects them. */
+export interface SnapGuide {
+  axis: "x" | "y";
+  position: number;
+  from: number;
+  to: number;
+}
+
 export interface CanvasTransformInput {
   canvasX: number;
   canvasY: number;
@@ -137,6 +147,50 @@ export function canvasDragOperation(args: {
   canvasY: number;
 }): Operation | null {
   return canvasDragOperations(args)[0] ?? null;
+}
+
+/** The snap guides that would engage for this drag, in page space — a pure
+ * readout alongside `canvasDragOperations` for the host to render as guide
+ * lines. Empty when the node isn't guide-snapped (pinned/freehand nodes
+ * don't snap, matching `canvasDragOperations`) or no guide is within
+ * threshold. Never mutates and never affects the committed operation. */
+export function dragSnapGuides({
+  scene,
+  node,
+  page,
+  pageOrigin,
+  canvasX,
+  canvasY
+}: {
+  scene: Scene;
+  node: SceneNodeModel;
+  page: Page;
+  pageOrigin: CanvasPoint;
+  canvasX: number;
+  canvasY: number;
+}): SnapGuide[] {
+  if (!isNodeDirectGeometryEditable(scene, node.id) || !Number.isFinite(canvasX) || !Number.isFinite(canvasY)) {
+    return [];
+  }
+  // Pinned and freehand drags don't snap (see canvasDragOperations) — no guides.
+  if (pinnedBox(node) || isNodeFreehand(scene, node.id)) {
+    return [];
+  }
+  const pageX = sceneUnitFromCanvas(canvasX - pageOrigin.x, page);
+  const pageY = sceneUnitFromCanvas(canvasY - pageOrigin.y, page);
+  const rawTransform = { ...node.transform, x: pageX, y: pageY };
+  const guides: SnapGuide[] = [];
+  snapTransformToGuides(
+    {
+      scene,
+      node,
+      page,
+      transform: rawTransform,
+      size: nodeSceneUnitSize(node, page)
+    },
+    (guide) => guides.push(guide)
+  );
+  return guides;
 }
 
 /** A translated container carries every pinned descendant's page-space box
@@ -259,6 +313,56 @@ export function canvasResizeOperation({
   });
 }
 
+/** The snap guides that would engage for this resize, in page space — a pure
+ * readout alongside `canvasResizeOperation` for the host to render as guide
+ * lines. Empty for pinned/freehand nodes (no guide snapping, matching
+ * `canvasResizeOperation`) or when nothing is within threshold. */
+export function resizeSnapGuides({
+  scene,
+  node,
+  page,
+  pageOrigin,
+  transform
+}: {
+  scene: Scene;
+  node: SceneNodeModel;
+  page: Page;
+  pageOrigin: CanvasPoint;
+  transform: CanvasTransformInput;
+}): SnapGuide[] {
+  if (!isNodeDirectGeometryEditable(scene, node.id) || !validCanvasTransform(transform)) {
+    return [];
+  }
+  if (pinnedBox(node) || isNodeFreehand(scene, node.id)) {
+    return [];
+  }
+  const baseSize = nodeSizeForRender(node, page);
+  const nextWidth = Math.max(2, baseSize.width * Math.abs(transform.scaleX));
+  const nextHeight = Math.max(2, baseSize.height * Math.abs(transform.scaleY));
+  const nextTransform: Transform = {
+    ...node.transform,
+    x: sceneUnitFromCanvas(transform.canvasX - pageOrigin.x, page),
+    y: sceneUnitFromCanvas(transform.canvasY - pageOrigin.y, page),
+    rotation: transform.rotation
+  };
+  const rawSize = {
+    width: sceneUnitFromCanvas(nextWidth, page),
+    height: sceneUnitFromCanvas(nextHeight, page)
+  };
+  const guides: SnapGuide[] = [];
+  snapTransformAndSizeToGuides(
+    {
+      scene,
+      node,
+      page,
+      transform: nextTransform,
+      size: rawSize
+    },
+    (guide) => guides.push(guide)
+  );
+  return guides;
+}
+
 function validCanvasTransform(transform: CanvasTransformInput): boolean {
   return (
     Number.isFinite(transform.canvasX) &&
@@ -271,44 +375,52 @@ function validCanvasTransform(transform: CanvasTransformInput): boolean {
   );
 }
 
-function snapTransformToGuides({
-  scene,
-  node,
-  page,
-  transform,
-  size
-}: {
-  scene: Scene;
-  node: SceneNodeModel;
-  page: Page;
-  transform: Transform;
-  size: { width: number; height: number };
-}): Transform {
+function snapTransformToGuides(
+  {
+    scene,
+    node,
+    page,
+    transform,
+    size
+  }: {
+    scene: Scene;
+    node: SceneNodeModel;
+    page: Page;
+    transform: Transform;
+    size: { width: number; height: number };
+  },
+  onGuide?: (guide: SnapGuide) => void
+): Transform {
   const guides = guidesForNodeParent(scene, node, page);
   if (!guides) {
     return transform;
   }
   const threshold = sceneUnitFromCanvas(SNAP_THRESHOLD_CANVAS_PX, page);
+  const nextX = snapAxis("x", transform.x, size.width, guides.x, threshold, true, transform.y, size.height, onGuide);
+  const nextY = snapAxis("y", transform.y, size.height, guides.y, threshold, true, transform.x, size.width, onGuide);
   return {
     ...transform,
-    x: snapPosition(transform.x, size.width, guides.x, threshold),
-    y: snapPosition(transform.y, size.height, guides.y, threshold)
+    x: nextX,
+    y: nextY
   };
 }
 
-function snapTransformAndSizeToGuides({
-  scene,
-  node,
-  page,
-  transform,
-  size
-}: {
-  scene: Scene;
-  node: SceneNodeModel;
-  page: Page;
-  transform: Transform;
-  size: { width: number; height: number };
-}): { transform: Transform; size: { width: number; height: number } } {
+function snapTransformAndSizeToGuides(
+  {
+    scene,
+    node,
+    page,
+    transform,
+    size
+  }: {
+    scene: Scene;
+    node: SceneNodeModel;
+    page: Page;
+    transform: Transform;
+    size: { width: number; height: number };
+  },
+  onGuide?: (guide: SnapGuide) => void
+): { transform: Transform; size: { width: number; height: number } } {
   const guides = guidesForNodeParent(scene, node, page);
   if (!guides) {
     return {
@@ -321,13 +433,139 @@ function snapTransformAndSizeToGuides({
     transform: { ...transform },
     size: { ...size }
   };
-  const snappedX = snapPosition(snapped.transform.x, snapped.size.width, guides.x, threshold, false);
-  const snappedY = snapPosition(snapped.transform.y, snapped.size.height, guides.y, threshold, false);
-  snapped.transform.x = snappedX;
-  snapped.transform.y = snappedY;
-  snapped.size.width = snapExtent(snapped.transform.x, snapped.size.width, guides.x, threshold);
-  snapped.size.height = snapExtent(snapped.transform.y, snapped.size.height, guides.y, threshold);
+  snapped.transform.x = snapAxis(
+    "x",
+    snapped.transform.x,
+    snapped.size.width,
+    guides.x,
+    threshold,
+    false,
+    snapped.transform.y,
+    snapped.size.height,
+    onGuide
+  );
+  snapped.transform.y = snapAxis(
+    "y",
+    snapped.transform.y,
+    snapped.size.height,
+    guides.y,
+    threshold,
+    false,
+    snapped.transform.x,
+    snapped.size.width,
+    onGuide
+  );
+  snapped.size.width = snapExtentAxis(
+    "x",
+    snapped.transform.x,
+    snapped.size.width,
+    guides.x,
+    threshold,
+    snapped.transform.y,
+    snapped.size.height,
+    onGuide
+  );
+  snapped.size.height = snapExtentAxis(
+    "y",
+    snapped.transform.y,
+    snapped.size.height,
+    guides.y,
+    threshold,
+    snapped.transform.x,
+    snapped.size.width,
+    onGuide
+  );
   return snapped;
+}
+
+/** `snapPosition`, plus (when a snap engages) reporting the guide segment as
+ * a line perpendicular to `axis` — an "x" guide is a vertical line at the
+ * snapped x, drawn across the box's extent on the CROSS axis (`crossStart`/
+ * `crossExtent`), since the snap target here is a page-level line (page
+ * bounds / safe-area edge or midline) with no independent box of its own to
+ * connect to. `reportOtherEnd` extends the search to the trailing-edge
+ * candidate too (drag: box may snap by either edge or center; resize: only
+ * the leading edge moves). */
+function snapAxis(
+  axis: "x" | "y",
+  position: number,
+  extent: number,
+  guides: number[],
+  threshold: number,
+  reportOtherEnd: boolean,
+  crossStart: number,
+  crossExtent: number,
+  onGuide?: (guide: SnapGuide) => void
+): number {
+  const candidate = snapPositionWithCandidate(position, extent, guides, threshold, reportOtherEnd);
+  if (!candidate) {
+    return position;
+  }
+  if (onGuide) {
+    onGuide({
+      axis,
+      position: roundForOperation(candidate.guide),
+      from: roundForOperation(crossStart),
+      to: roundForOperation(crossStart + crossExtent)
+    });
+  }
+  return roundForOperation(candidate.value);
+}
+
+function snapExtentAxis(
+  axis: "x" | "y",
+  position: number,
+  extent: number,
+  guides: number[],
+  threshold: number,
+  crossStart: number,
+  crossExtent: number,
+  onGuide?: (guide: SnapGuide) => void
+): number {
+  const candidate = snapExtentWithCandidate(position, extent, guides, threshold);
+  if (!candidate) {
+    return extent;
+  }
+  if (onGuide) {
+    onGuide({
+      axis,
+      position: roundForOperation(candidate.guide),
+      from: roundForOperation(crossStart),
+      to: roundForOperation(crossStart + crossExtent)
+    });
+  }
+  return roundForOperation(candidate.value);
+}
+
+/** A snap candidate: `guide` is the page-space guide line it targets, `value`
+ * is the resulting snapped position/extent, `distance` is how close the
+ * unsnapped geometry came to it. */
+interface SnapCandidate {
+  distance: number;
+  value: number;
+  guide: number;
+}
+
+function snapPositionWithCandidate(
+  position: number,
+  extent: number,
+  guides: number[],
+  threshold: number,
+  includeEnd = true
+): SnapCandidate | null {
+  const candidates: SnapCandidate[] = [];
+  for (const guide of guides) {
+    candidates.push({ distance: Math.abs(position - guide), value: guide, guide });
+    candidates.push({ distance: Math.abs(position + extent / 2 - guide), value: guide - extent / 2, guide });
+    if (includeEnd) {
+      candidates.push({ distance: Math.abs(position + extent - guide), value: guide - extent, guide });
+    }
+  }
+  const best = candidates.reduce<SnapCandidate | null>(
+    (current, candidate) => (!current || candidate.distance < current.distance ? candidate : current),
+    null
+  );
+  return best && best.distance <= threshold ? best : null;
 }
 
 function snapPosition(
@@ -337,47 +575,34 @@ function snapPosition(
   threshold: number,
   includeEnd = true
 ): number {
-  const candidates = [
-    {
-      distance: Infinity,
-      value: position
-    }
-  ];
+  const candidate = snapPositionWithCandidate(position, extent, guides, threshold, includeEnd);
+  return candidate ? roundForOperation(candidate.value) : position;
+}
+
+function snapExtentWithCandidate(
+  position: number,
+  extent: number,
+  guides: number[],
+  threshold: number
+): SnapCandidate | null {
+  const end = position + extent;
+  let best: SnapCandidate | null = null;
   for (const guide of guides) {
-    candidates.push({
-      distance: Math.abs(position - guide),
-      value: guide
-    });
-    candidates.push({
-      distance: Math.abs(position + extent / 2 - guide),
-      value: guide - extent / 2
-    });
-    if (includeEnd) {
-      candidates.push({
-        distance: Math.abs(position + extent - guide),
-        value: guide - extent
-      });
+    const value = guide - position;
+    if (value <= 0) {
+      continue;
+    }
+    const distance = Math.abs(end - guide);
+    if (!best || distance < best.distance) {
+      best = { distance, value, guide };
     }
   }
-  const best = candidates.reduce((current, candidate) =>
-    candidate.distance < current.distance ? candidate : current
-  );
-  return best.distance <= threshold ? roundForOperation(best.value) : position;
+  return best && best.distance <= threshold ? best : null;
 }
 
 function snapExtent(position: number, extent: number, guides: number[], threshold: number): number {
-  const end = position + extent;
-  const best = guides
-    .map((guide) => ({
-      distance: Math.abs(end - guide),
-      value: guide - position
-    }))
-    .filter((candidate) => candidate.value > 0)
-    .reduce<{ distance: number; value: number } | null>(
-      (current, candidate) => (!current || candidate.distance < current.distance ? candidate : current),
-      null
-    );
-  return best && best.distance <= threshold ? roundForOperation(best.value) : extent;
+  const candidate = snapExtentWithCandidate(position, extent, guides, threshold);
+  return candidate ? roundForOperation(candidate.value) : extent;
 }
 
 function guidesForNodeParent(

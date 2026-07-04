@@ -1,8 +1,9 @@
 "use client";
 
 import { AlignCenter, AlignJustify, AlignLeft, AlignRight } from "lucide-react";
-import type { Node, Operation, TextAlign } from "@/engine/contracts";
-import { updateTextNode } from "@/engine/operations";
+import type { BrandTokenCatalog, Node, Operation, TextAlign } from "@/engine/contracts";
+import { updateNodeFills, updateTextNode } from "@/engine/operations";
+import { ColorSwatchControl } from "./ColorSwatchControl";
 
 /** Contextual typography toolbar shown above the canvas while a text node is
  * selected — the fast twin of the inspector's Text section. Fields in,
@@ -29,10 +30,12 @@ const ALIGN_OPTIONS: Array<{ value: TextAlign; label: string; Icon: typeof Align
 
 export function TextToolbar({
   selectedNode,
-  onOperation
+  onOperation,
+  brandTokens
 }: {
   selectedNode: Node | null;
   onOperation: (operation: Operation) => void;
+  brandTokens?: BrandTokenCatalog | null;
 }) {
   if (!selectedNode || selectedNode.kind.kind !== "text") {
     return null;
@@ -141,6 +144,12 @@ export function TextToolbar({
           {text.style_token}
         </span>
       ) : null}
+      <ColorSwatchControl
+        node={selectedNode}
+        brandTokens={brandTokens}
+        label="Text color"
+        onEdit={(fills) => onOperation(updateNodeFills(selectedNode, fills))}
+      />
     </div>
   );
 }

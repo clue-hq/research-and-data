@@ -32,6 +32,35 @@ export function keyboardHistoryAction(event: KeyboardEvent): "undo" | "redo" | n
   return null;
 }
 
+export type ArrangeAction =
+  | "group"
+  | "ungroup"
+  | "to_front"
+  | "to_back"
+  | "forward"
+  | "backward";
+
+/** Phase 4b arrange shortcuts: ⌘G group, ⌘⇧G ungroup, ⌘] forward, ⌘[
+ * backward, ⌥⌘] to front, ⌥⌘[ to back. Mirrors `keyboardHistoryAction`'s
+ * shape — pure interpretation, the caller decides whether it's allowed. */
+export function keyboardArrangeAction(event: KeyboardEvent): ArrangeAction | null {
+  const modifier = event.metaKey || event.ctrlKey;
+  if (!modifier) {
+    return null;
+  }
+  const key = event.key.toLowerCase();
+  if (key === "g") {
+    return event.shiftKey ? "ungroup" : "group";
+  }
+  if (key === "]") {
+    return event.altKey ? "to_front" : "forward";
+  }
+  if (key === "[") {
+    return event.altKey ? "to_back" : "backward";
+  }
+  return null;
+}
+
 export function arrowNudge(key: string): { x: number; y: number } | null {
   switch (key) {
     case "ArrowLeft":

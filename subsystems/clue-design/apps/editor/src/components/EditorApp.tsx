@@ -60,7 +60,7 @@ import { postTurnSuggestions } from "@/engine/agentSuggestions";
 import { mergeStickyDiagnostics } from "@/engine/diagnosticsPolicy";
 import { createEditQueue, type EnqueueOptions } from "@/engine/editQueue";
 import { rightSidebarLabelForMode, type EditorPanelMode } from "@/engine/editorModes";
-import { arrowNudge, isEditableEventTarget, keyboardHistoryAction } from "@/engine/editorKeyboard";
+import { arrowNudge, isEditableEventTarget, keyboardArrangeAction, keyboardHistoryAction } from "@/engine/editorKeyboard";
 import { duplicatePageOperations, uniquePageId } from "@/engine/pageDuplication";
 import {
   activateWasmCore,
@@ -79,15 +79,25 @@ import {
   upsertExportProfile
 } from "@/engine/operations";
 import { normalizePageSize } from "@/engine/pageGeometry";
-import type { StructuredEdit } from "@/engine/structuredEdits";
+import {
+  groupEdit,
+  mintGroupId,
+  moveAfterEdit,
+  moveBeforeEdit,
+  ungroupEdit,
+  type StructuredEdit
+} from "@/engine/structuredEdits";
 import { editorRenderDiagnostics } from "@/engine/renderDiagnostics";
 import {
+  canGroupNodes,
+  canUngroupNode,
   clampNodeTransformToParentBounds,
   firstPageId,
   getNode,
   isNodeLayoutManaged,
   nodeIdForAsset,
-  pageIdForNode
+  pageIdForNode,
+  siblingArrangeInfo
 } from "@/engine/sceneQueries";
 import {
   agentTurnRunningDiagnostic,
@@ -898,6 +908,61 @@ export default function EditorApp({
     redoHistoryStep();
   };
 
+  /** Phase 4b arrange: the keyboard-shortcut counterpart of ArrangeSection's
+   * buttons — same predicates, same structured-edit path, so a shortcut and
+   * its inspector button always agree on whether an action is allowed. */
+  const runArrangeAction = (
+    action: ReturnType<typeof keyboardArrangeAction>,
+    primaryNodeId: NodeId,
+    multiSelection: NodeId[]
+  ) => {
+    const arrangeInfo = siblingArrangeInfo(scene, primaryNodeId);
+    const node = scene.nodes[primaryNodeId];
+    if (!node || node.locked) {
+      return;
+    }
+    switch (action) {
+      case "to_front":
+        if (arrangeInfo && !arrangeInfo.isFront) {
+          applyStructuredEditInstruction(
+            moveAfterEdit(primaryNodeId, arrangeInfo.siblings[arrangeInfo.siblings.length - 1])
+          );
+        }
+        return;
+      case "forward":
+        if (arrangeInfo && !arrangeInfo.isFront) {
+          applyStructuredEditInstruction(moveAfterEdit(primaryNodeId, arrangeInfo.siblings[arrangeInfo.index + 1]));
+        }
+        return;
+      case "backward":
+        if (arrangeInfo && !arrangeInfo.isBack) {
+          applyStructuredEditInstruction(moveBeforeEdit(primaryNodeId, arrangeInfo.siblings[arrangeInfo.index - 1]));
+        }
+        return;
+      case "to_back":
+        if (arrangeInfo && !arrangeInfo.isBack) {
+          applyStructuredEditInstruction(moveBeforeEdit(primaryNodeId, arrangeInfo.siblings[0]));
+        }
+        return;
+      case "group": {
+        const groupSelectionIds = multiSelection.includes(primaryNodeId) ? multiSelection : [primaryNodeId];
+        if (canGroupNodes(scene, groupSelectionIds)) {
+          applyStructuredEditInstruction(groupEdit(groupSelectionIds, mintGroupId(scene), "Group"));
+        }
+        return;
+      }
+      case "ungroup": {
+        const groupSelectionIds = multiSelection.includes(primaryNodeId) ? multiSelection : [primaryNodeId];
+        if (groupSelectionIds.length === 1 && canUngroupNode(scene, primaryNodeId)) {
+          applyStructuredEditInstruction(ungroupEdit(primaryNodeId));
+        }
+        return;
+      }
+      default:
+        return;
+    }
+  };
+
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (isEditableEventTarget(event.target)) {
@@ -932,6 +997,13 @@ export default function EditorApp({
         return;
       }
 
+      const arrangeAction = keyboardArrangeAction(event);
+      if (arrangeAction) {
+        event.preventDefault();
+        runArrangeAction(arrangeAction, selectedNode.id, selectedNodeIds);
+        return;
+      }
+
       const nudge = arrowNudge(event.key);
       if (!nudge || selectedNode.locked || isNodeLayoutManaged(scene, selectedNode.id)) {
         return;
@@ -950,7 +1022,7 @@ export default function EditorApp({
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [redoLastOperation, scene, selectedNode, selectedNodeId, undoLastOperation]);
+  }, [redoLastOperation, runArrangeAction, scene, selectedNode, selectedNodeId, selectedNodeIds, undoLastOperation]);
 
   const selectPage = (pageId: PageId) => {
     setActivePageId(pageId);
@@ -1294,7 +1366,7 @@ export default function EditorApp({
           ) : (
             <>
               {!isAgentRunning && !agentPreview && !compareView ? (
-                <TextToolbar selectedNode={selectedNode} onOperation={applyOperation} />
+                <TextToolbar selectedNode={selectedNode} onOperation={applyOperation} brandTokens={effectiveBrandKit?.tokens ?? null} />
               ) : null}
               <EditorCanvas
                 scene={scene}
@@ -1421,6 +1493,7 @@ export default function EditorApp({
                 activePage={activePage}
                 selectedNode={selectedNode}
                 selectedNodeId={selectedNodeId}
+                selectedNodeIds={selectedNodeIds}
                 brandTokens={effectiveBrandKit?.tokens ?? null}
                 diagnostics={diagnostics}
                 renderDiagnostics={renderDiagnostics}

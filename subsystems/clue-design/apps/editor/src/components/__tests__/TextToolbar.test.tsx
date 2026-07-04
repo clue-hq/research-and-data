@@ -1,8 +1,8 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { minimalScene } from "@/fixtures/minimalScene";
-import type { Node, Operation } from "@/engine/contracts";
-import { updateTextNode } from "@/engine/operations";
+import type { BrandTokenCatalog, Node, Operation } from "@/engine/contracts";
+import { updateNodeFills, updateTextNode } from "@/engine/operations";
 import { TextToolbar } from "../TextToolbar";
 
 const baseTextNode = minimalScene.nodes.node_contact_name;
@@ -84,5 +84,39 @@ describe("TextToolbar", () => {
     expect(screen.getByLabelText("Align left")).toBeDisabled();
     expect(screen.getByLabelText("Line height")).toBeDisabled();
     expect(screen.getByLabelText("Letter spacing")).toBeDisabled();
+    expect(screen.getByLabelText("Text color")).toBeDisabled();
+  });
+
+  it("renders the color swatch at the right end, after the style-role chip", () => {
+    render(<TextToolbar selectedNode={textNode({ style_token: "type.h1" })} onOperation={vi.fn()} />);
+    const toolbar = screen.getByTestId("text-toolbar");
+    const chip = screen.getByTestId("text-toolbar-token-chip");
+    const swatch = screen.getByLabelText("Text color");
+    const children = Array.from(toolbar.children);
+    expect(children.indexOf(chip)).toBeLessThan(children.indexOf(swatch.parentElement ?? swatch));
+    expect(children.indexOf(swatch.parentElement ?? swatch)).toBe(children.length - 1);
+  });
+
+  it("recoloring via the swatch emits a plain fills UpdateNode — no style_token field authored", () => {
+    const node = textNode({ style_token: "type.h1" });
+    const onOperation = vi.fn<(operation: Operation) => void>();
+    render(<TextToolbar selectedNode={node} onOperation={onOperation} />);
+
+    fireEvent.click(screen.getByLabelText("Text color"));
+    fireEvent.change(screen.getByLabelText("Custom color"), { target: { value: "#123456" } });
+
+    expect(onOperation).toHaveBeenCalledTimes(1);
+    const operation = onOperation.mock.calls[0][0];
+    expect(operation).toEqual(
+      updateNodeFills(node, [{ id: expect.stringContaining("_fill"), paint: { kind: "solid", color: { kind: "hex", value: "#123456" } } }])
+    );
+    expect(JSON.stringify(operation)).not.toContain("style_token");
+  });
+
+  it("passes brand tokens through to the swatch popover", () => {
+    const brandTokens: BrandTokenCatalog = { text_tokens: ["text.primary"] };
+    render(<TextToolbar selectedNode={textNode()} onOperation={vi.fn()} brandTokens={brandTokens} />);
+    fireEvent.click(screen.getByLabelText("Text color"));
+    expect(screen.getByTitle("$text.primary")).toBeInTheDocument();
   });
 });

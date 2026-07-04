@@ -3,13 +3,19 @@ import { minimalScene } from "@/fixtures/minimalScene";
 import type { Scene } from "../contracts";
 import type { Node } from "../contracts";
 import {
+  canAlignNodes,
+  canDistributeNodes,
+  canGroupNodes,
+  canUngroupNode,
   clampNodeTransformToParentBounds,
   firstPageId,
   flattenPageNodeIds,
   isContainerNode,
   isNodeDirectGeometryEditable,
   nodeIdForAsset,
+  nodePageSpaceBox,
   pageIdForNode,
+  siblingArrangeInfo,
   slotBoundNodeSummaries,
   slotByNode,
   topLevelAncestorId
@@ -180,7 +186,230 @@ describe("scene queries", () => {
     expect(isContainerNode(scene.nodes.headline)).toBe(false); // leaf text
     expect(isContainerNode(scene.nodes.sibling)).toBe(false); // empty frame
   });
+
+  describe("arrange (Phase 4b): z-order + group/ungroup gating", () => {
+    it("reports front/back position among page-level siblings", () => {
+      const scene = siblingScene();
+
+      expect(siblingArrangeInfo(scene, "a")).toEqual({
+        siblings: ["a", "b", "c"],
+        index: 0,
+        isFront: false,
+        isBack: true
+      });
+      expect(siblingArrangeInfo(scene, "b")).toEqual({
+        siblings: ["a", "b", "c"],
+        index: 1,
+        isFront: false,
+        isBack: false
+      });
+      expect(siblingArrangeInfo(scene, "c")).toEqual({
+        siblings: ["a", "b", "c"],
+        index: 2,
+        isFront: true,
+        isBack: false
+      });
+      expect(siblingArrangeInfo(scene, null)).toBeNull();
+      expect(siblingArrangeInfo(scene, "missing")).toBeNull();
+    });
+
+    it("allows grouping 2+ unlocked same-parent siblings", () => {
+      const scene = siblingScene();
+      expect(canGroupNodes(scene, ["a", "b"])).toBe(true);
+      expect(canGroupNodes(scene, ["a", "b", "c"])).toBe(true);
+    });
+
+    it("rejects grouping fewer than two nodes", () => {
+      const scene = siblingScene();
+      expect(canGroupNodes(scene, [])).toBe(false);
+      expect(canGroupNodes(scene, ["a"])).toBe(false);
+    });
+
+    it("rejects grouping duplicate ids", () => {
+      const scene = siblingScene();
+      expect(canGroupNodes(scene, ["a", "a"])).toBe(false);
+    });
+
+    it("rejects grouping a locked member", () => {
+      const scene = siblingScene();
+      scene.nodes.b.locked = true;
+      expect(canGroupNodes(scene, ["a", "b"])).toBe(false);
+    });
+
+    it("rejects grouping a missing node id", () => {
+      const scene = siblingScene();
+      expect(canGroupNodes(scene, ["a", "missing"])).toBe(false);
+    });
+
+    it("rejects grouping nodes with different parents", () => {
+      const scene = siblingScene();
+      scene.nodes.frame = {
+        ...scene.nodes.a,
+        id: "frame",
+        name: "Frame",
+        kind: { kind: "frame" },
+        children: ["c"]
+      };
+      scene.nodes.c = { ...scene.nodes.c };
+      scene.pages.page_a4.children = ["a", "b", "frame"];
+      // "c" is now a child of "frame", not a page-level sibling of a/b.
+      expect(canGroupNodes(scene, ["a", "c"])).toBe(false);
+    });
+
+    it("rejects grouping solver-managed stack children (not freehand)", () => {
+      const scene = siblingScene();
+      scene.nodes.stack = {
+        ...scene.nodes.a,
+        id: "stack",
+        name: "Stack",
+        kind: { kind: "auto_layout", direction: "column", wrap: false },
+        children: ["a", "b"]
+      };
+      scene.pages.page_a4.children = ["stack"];
+      expect(canGroupNodes(scene, ["a", "b"])).toBe(false);
+    });
+
+    it("allows grouping freehand children of a Free auto-layout container", () => {
+      const scene = siblingScene();
+      scene.nodes.stack = {
+        ...scene.nodes.a,
+        id: "stack",
+        name: "Free container",
+        kind: { kind: "auto_layout", direction: "column", wrap: false },
+        layout: { gap: 0, grow: 0, padding: [0, 0, 0, 0], layout_mode: "free" },
+        children: ["a", "b"]
+      };
+      scene.pages.page_a4.children = ["stack"];
+      expect(canGroupNodes(scene, ["a", "b"])).toBe(true);
+    });
+
+    it("allows ungrouping an unlocked Frame or Group container", () => {
+      const scene = nestedScene();
+      expect(canUngroupNode(scene, "hero")).toBe(true); // frame
+      expect(canUngroupNode(scene, "inner")).toBe(true); // group
+    });
+
+    it("rejects ungrouping a leaf, a locked container, or a null selection", () => {
+      const scene = nestedScene();
+      expect(canUngroupNode(scene, "headline")).toBe(false); // leaf text
+      scene.nodes.hero.locked = true;
+      expect(canUngroupNode(scene, "hero")).toBe(false);
+      expect(canUngroupNode(scene, null)).toBe(false);
+      expect(canUngroupNode(scene, "missing")).toBe(false);
+    });
+  });
+
+  describe("align/distribute eligibility (Phase 4b-3)", () => {
+    it("allows Align at 2+ direct-geometry-editable nodes", () => {
+      const scene = siblingScene();
+      expect(canAlignNodes(scene, ["a", "b"])).toBe(true);
+      expect(canAlignNodes(scene, ["a", "b", "c"])).toBe(true);
+    });
+
+    it("rejects Align under 2 nodes", () => {
+      const scene = siblingScene();
+      expect(canAlignNodes(scene, [])).toBe(false);
+      expect(canAlignNodes(scene, ["a"])).toBe(false);
+    });
+
+    it("rejects Align when any selected node is locked", () => {
+      const scene = siblingScene();
+      scene.nodes.b.locked = true;
+      expect(canAlignNodes(scene, ["a", "b"])).toBe(false);
+    });
+
+    it("rejects Align when any selected node is a solver-managed stack child", () => {
+      const scene = siblingScene();
+      scene.nodes.stack = {
+        ...scene.nodes.a,
+        id: "stack",
+        name: "Stack",
+        kind: { kind: "auto_layout", direction: "column", wrap: false },
+        children: ["a", "b"]
+      };
+      scene.pages.page_a4.children = ["stack"];
+      expect(canAlignNodes(scene, ["a", "b"])).toBe(false);
+    });
+
+    it("allows Align for freehand children of a Free auto-layout container", () => {
+      const scene = siblingScene();
+      scene.nodes.stack = {
+        ...scene.nodes.a,
+        id: "stack",
+        name: "Free container",
+        kind: { kind: "auto_layout", direction: "column", wrap: false },
+        layout: { gap: 0, grow: 0, padding: [0, 0, 0, 0], layout_mode: "free" },
+        children: ["a", "b"]
+      };
+      scene.pages.page_a4.children = ["stack"];
+      expect(canAlignNodes(scene, ["a", "b"])).toBe(true);
+    });
+
+    it("rejects Align when any selected node id is missing", () => {
+      const scene = siblingScene();
+      expect(canAlignNodes(scene, ["a", "missing"])).toBe(false);
+    });
+
+    it("allows Distribute at 3+ direct-geometry-editable nodes, rejects under 3", () => {
+      const scene = siblingScene();
+      expect(canDistributeNodes(scene, ["a", "b", "c"])).toBe(true);
+      expect(canDistributeNodes(scene, ["a", "b"])).toBe(false);
+    });
+
+    it("rejects Distribute when any selected node is locked", () => {
+      const scene = siblingScene();
+      scene.nodes.c.locked = true;
+      expect(canDistributeNodes(scene, ["a", "b", "c"])).toBe(false);
+    });
+
+    it("reads a pinned node's absolute_box as its page-space box", () => {
+      const scene = siblingScene();
+      scene.nodes.a.position_mode = "absolute";
+      scene.nodes.a.absolute_box = { x: 10, y: 20, width: 30, height: 40 };
+      expect(nodePageSpaceBox(scene, "a")).toEqual({ x: 10, y: 20, width: 30, height: 40 });
+    });
+
+    it("falls back to computed.layout_bounds for a boxless pin", () => {
+      const scene = siblingScene();
+      scene.nodes.a.position_mode = "absolute";
+      scene.nodes.a.absolute_box = null;
+      scene.nodes.a.computed = {
+        layout_bounds: { x: 1, y: 2, width: 3, height: 4 },
+        render_bounds: { x: 1, y: 2, width: 3, height: 4 }
+      };
+      expect(nodePageSpaceBox(scene, "a")).toEqual({ x: 1, y: 2, width: 3, height: 4 });
+    });
+
+    it("reads a non-pinned node's computed.layout_bounds as its page-space box", () => {
+      const scene = siblingScene();
+      scene.nodes.b.computed = {
+        layout_bounds: { x: 5, y: 6, width: 7, height: 8 },
+        render_bounds: { x: 5, y: 6, width: 7, height: 8 }
+      };
+      expect(nodePageSpaceBox(scene, "b")).toEqual({ x: 5, y: 6, width: 7, height: 8 });
+    });
+
+    it("returns null for a node with no resolvable box or a missing node", () => {
+      const scene = siblingScene();
+      scene.nodes.a.computed = null;
+      expect(nodePageSpaceBox(scene, "a")).toBeNull();
+      expect(nodePageSpaceBox(scene, "missing")).toBeNull();
+    });
+  });
 });
+
+/** page -> three unlocked, unmanaged page-level siblings a, b, c (in that
+ * z-order) — the minimal fixture for arrange (z-order + group) tests. */
+function siblingScene(): Scene {
+  const scene = cloneScene();
+  const template = scene.nodes.node_contact_name;
+  const a: Node = { ...template, id: "a", name: "A", kind: { kind: "rect" }, children: [] };
+  const b: Node = { ...template, id: "b", name: "B", kind: { kind: "rect" }, children: [] };
+  const c: Node = { ...template, id: "c", name: "C", kind: { kind: "rect" }, children: [] };
+  scene.nodes = { a, b, c };
+  scene.pages.page_a4.children = ["a", "b", "c"];
+  return scene;
+}
 
 function cloneScene(): Scene {
   return JSON.parse(JSON.stringify(minimalScene)) as Scene;

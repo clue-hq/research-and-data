@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import type { SnapGuide } from "@/engine/canvasOperations";
 import { handlePoint, type Box, type ResizeHandle } from "@/engine/transformerMath";
 
 /**
@@ -26,6 +27,10 @@ export const RESIZE_HANDLES: ResizeHandle[] = [
 
 const HANDLE_SIZE = 8;
 const ROTATE_OFFSET = 22;
+/** Smart-guide accent — Moda's alternate-object-selection magenta
+ * (`--color-accent-magenta-selection`), reserved for guides so they read as
+ * a distinct signal from the teal selection chrome. */
+const GUIDE_COLOR = "#f052cf";
 
 export interface SelectionOverlayProps {
   /** Selected node box + rotation in descriptor space (null = no selection). */
@@ -42,6 +47,9 @@ export interface SelectionOverlayProps {
   containerLabel?: string;
   /** Live marquee rect in descriptor space (null when not marqueeing). */
   marquee?: Box | null;
+  /** Active snap guides in descriptor space, engaged only while a drag/resize
+   * is currently snapped; empty otherwise. */
+  guides?: SnapGuide[];
   pageOrigin: { x: number; y: number };
   zoom: number;
   /** Whether to show resize/rotate handles (false for layout-managed nodes). */
@@ -65,6 +73,7 @@ export function SelectionOverlay({
   containerChildren = [],
   containerLabel,
   marquee = null,
+  guides = [],
   pageOrigin,
   zoom,
   showHandles = true,
@@ -206,7 +215,40 @@ export function SelectionOverlay({
           strokeWidth={1}
         />
       ) : null}
+
+      {guides.map((guide, index) => (
+        <SnapGuideLine key={`guide-${guide.axis}-${index}`} guide={guide} toScreen={toScreen} />
+      ))}
     </svg>
+  );
+}
+
+function SnapGuideLine({
+  guide,
+  toScreen
+}: {
+  guide: SnapGuide;
+  toScreen: (p: { x: number; y: number }) => { x: number; y: number };
+}) {
+  const a =
+    guide.axis === "x"
+      ? toScreen({ x: guide.position, y: guide.from })
+      : toScreen({ x: guide.from, y: guide.position });
+  const b =
+    guide.axis === "x"
+      ? toScreen({ x: guide.position, y: guide.to })
+      : toScreen({ x: guide.to, y: guide.position });
+  return (
+    <line
+      data-role="snap-guide"
+      data-axis={guide.axis}
+      x1={a.x}
+      y1={a.y}
+      x2={b.x}
+      y2={b.y}
+      stroke={GUIDE_COLOR}
+      strokeWidth={1}
+    />
   );
 }
 

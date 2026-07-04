@@ -14,6 +14,7 @@ import { isNodeLayoutManaged } from "@/engine/sceneQueries";
 import type { StructuredEdit } from "@/engine/structuredEdits";
 import { SlotInspector } from "./SlotInspector";
 import { ImageInspectorSection } from "./ImageInspectorSection";
+import { ArrangeSection } from "./inspector/ArrangeSection";
 import { AutoLayoutSection } from "./inspector/AutoLayoutSection";
 import { DesignTokensSection } from "./inspector/DesignTokensSection";
 import { DocumentPageSection } from "./inspector/DocumentPageSection";
@@ -28,6 +29,8 @@ interface InspectorPanelProps {
   activePage: Page | null;
   selectedNode: Node | null;
   selectedNodeId: NodeId | null;
+  /** Full multi-selection set (shift/Cmd+click) — drives Group eligibility. */
+  selectedNodeIds?: NodeId[];
   brandTokens?: BrandTokenCatalog | null;
   diagnostics?: Diagnostic[];
   renderDiagnostics?: Diagnostic[];
@@ -50,6 +53,7 @@ export function InspectorPanel({
   activePage,
   selectedNode,
   selectedNodeId,
+  selectedNodeIds,
   brandTokens,
   diagnostics = [],
   renderDiagnostics = [],
@@ -93,6 +97,16 @@ export function InspectorPanel({
         onSelectSubject={onSelectSubject}
       />
 
+      {onStructuredEdit ? (
+        <ArrangeSection
+          scene={scene}
+          selectedNode={selectedNode}
+          selectedNodeIds={selectedNodeIds ?? [selectedNode.id]}
+          onStructuredEdit={onStructuredEdit}
+          onOperations={emitOperations}
+        />
+      ) : null}
+
       {selectedNode.kind.kind === "image" ? (
         <ImageInspectorSection
           node={selectedNode}
@@ -105,7 +119,7 @@ export function InspectorPanel({
 
       <SizingSection selectedNode={selectedNode} onOperation={onOperation} />
 
-      <RawStyleSection selectedNode={selectedNode} onOperation={onOperation} />
+      <RawStyleSection selectedNode={selectedNode} brandTokens={brandTokens} onOperation={onOperation} />
 
       {brandTokens ? (
         <DesignTokensSection
