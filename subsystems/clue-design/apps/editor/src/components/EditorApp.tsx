@@ -6,18 +6,22 @@ import {
   useRef,
   useState,
   type CSSProperties,
-  type PointerEvent as ReactPointerEvent
+  type Dispatch,
+  type SetStateAction
 } from "react";
-import { Download, FileCheck2, History, PanelRightClose, RotateCcw, RotateCw } from "lucide-react";
-import { AgentChatPanel, type AgentChatMessage } from "./AgentChatPanel";
+import { Bot, Check, Download, FileCheck2, PanelRightClose, RotateCcw, RotateCw, X } from "lucide-react";
+import { AgentChatPanel, type AcceptedTurnRecord } from "./AgentChatPanel";
+import {
+  DiagnosticsAlertPill,
+  EditorModeSwitch,
+  EngineDisabledBanner,
+  OperationHistoryPanel,
+  topArtboardSizeLabel
+} from "./EditorChrome";
 import { BrandKitPanel } from "./BrandKitPanel";
 import { EditorCanvas } from "./canvas/EditorCanvas";
-import { ExportPanel, type ExportPanelState } from "./ExportPanel";
+import { ExportPanel } from "./ExportPanel";
 import { ExportPreviewSurface } from "./ExportPreviewSurface";
-import {
-  openBlankArtifactPreviewWindow,
-  showArtifactInPreviewWindow
-} from "./exportArtifactActions";
 import { AssetBrowserPanel } from "./AssetBrowserPanel";
 import { HistoryPanel } from "./HistoryPanel";
 import { WorstCasePreviewPanel } from "./WorstCasePreviewPanel";
@@ -25,60 +29,48 @@ import { InspectorPanel } from "./InspectorPanel";
 import { LayerPanel } from "./LayerPanel";
 import { PageRail } from "./PageRail";
 import { ValidationPanel } from "./ValidationPanel";
-import { minimalScene } from "@/fixtures/minimalScene";
+import { emptyScene } from "@/fixtures/emptyScene";
 import type { BrandCompatibilityRunner } from "@/engine/brandCompatibility";
 import type { BrandGovernanceRunner } from "@/engine/brandGovernance";
 import {
-  createApiAgentRunner,
-  type EditorAgentResult,
+  createStreamingAgentRunner,
+  subscribeToAgentRun,
   type EditorAgentRunner
 } from "@/engine/agentRunner";
 import type {
-  BrandCompatibilityReport,
-  BrandKitRef,
   BrandKitSummary,
   Diagnostic,
   DiagnosticSubject,
-  Node,
   NodeId,
   Operation,
   Page,
   PageId,
-  ParentRef,
   Scene
 } from "@/engine/contracts";
 import {
-  createEditQueue,
-  type EditQueuePort,
-  type ReconcileEvent
-} from "@/engine/editQueue";
-import {
-  EDITOR_PANEL_MODES,
-  rightSidebarLabelForMode,
-  type EditorPanelMode
-} from "@/engine/editorModes";
+  createDocument,
+  revertDocument,
+  saveAgentInstructions,
+  type CreatedDocument,
+  type RevertOutcome
+} from "@/engine/documentStore";
+import { editorApiBaseUrl } from "@/engine/editorConfig";
+import { postTurnSuggestions } from "@/engine/agentSuggestions";
+import { mergeStickyDiagnostics } from "@/engine/diagnosticsPolicy";
+import { createEditQueue, type EnqueueOptions } from "@/engine/editQueue";
+import { rightSidebarLabelForMode, type EditorPanelMode } from "@/engine/editorModes";
+import { arrowNudge, isEditableEventTarget, keyboardHistoryAction } from "@/engine/editorKeyboard";
+import { duplicatePageOperations, uniquePageId } from "@/engine/pageDuplication";
 import {
   activateWasmCore,
   wasmCoreFlagEnabled,
   WasmEngine,
   type OptimisticEnginePort
 } from "@/engine/wasmEngine";
-import {
-  createApiExportRunner,
-  defaultEditorExportProfile,
-  type EditorExportArtifact,
-  type EditorExportResult,
-  type EditorExportRunner
-} from "@/engine/exportRunner";
-import {
-  createApiPreflightRunner,
-  type EditorPreflightResult,
-  type EditorPreflightRunner
-} from "@/engine/preflightRunner";
+import { createApiExportRunner, type EditorExportRunner } from "@/engine/exportRunner";
+import { createApiPreflightRunner, type EditorPreflightRunner } from "@/engine/preflightRunner";
 import {
   addPage,
-  bindNodeToSlot,
-  insertNode,
   removeExportProfile,
   removeNode,
   removePage,
@@ -86,13 +78,8 @@ import {
   upsertExportProfile
 } from "@/engine/operations";
 import { normalizePageSize } from "@/engine/pageGeometry";
+import type { StructuredEdit } from "@/engine/structuredEdits";
 import { editorRenderDiagnostics } from "@/engine/renderDiagnostics";
-import { pageDescriptor } from "@/engine/renderAdapter";
-import {
-  defaultWorkspaceViewport,
-  type WorkspaceFitTarget,
-  type WorkspaceTool
-} from "@/engine/workspaceViewport";
 import {
   clampNodeTransformToParentBounds,
   firstPageId,
@@ -101,6 +88,20 @@ import {
   nodeIdForAsset,
   pageIdForNode
 } from "@/engine/sceneQueries";
+import {
+  agentTurnRunningDiagnostic,
+  pendingAgentReviewDiagnostic,
+  useAgentTurn
+} from "@/hooks/useAgentTurn";
+import { useAgentInstructions } from "@/hooks/useAgentInstructions";
+import { useBrandChecks } from "@/hooks/useBrandChecks";
+import { useTurnNotification } from "@/hooks/useTurnNotification";
+import { useDocumentSync, type EditQueueFactory } from "@/hooks/useDocumentSync";
+import { useWorkspaceChrome } from "@/hooks/useWorkspaceChrome";
+import { useEditHistory } from "@/hooks/useEditHistory";
+import { useExportPreflight } from "@/hooks/useExportPreflight";
+import { useTargetChips } from "@/hooks/useTargetChips";
+import { compareActiveDiagnostic, useTurnCheckpoints } from "@/hooks/useTurnCheckpoints";
 
 export interface EditorAppProps {
   documentId?: string;
@@ -126,40 +127,69 @@ export interface EditorAppProps {
    * reconciles the server scene at drain.
    */
   editQueueFactory?: EditQueueFactory;
+  /**
+   * Phase 2a: document auto-creation override (tests). With no documentId,
+   * the first persisting action creates a document server-side (Moda's
+   * "every canvas is a doc") and the editor adopts the returned id.
+   */
+  documentCreator?: (scene: Scene) => Promise<CreatedDocument>;
+  /**
+   * Checkpoint revert override (tests). The default POSTs
+   * /documents/{id}/revert?checkpoint=… and fetches the reverted scene.
+   */
+  revertRunner?: (documentId: string, checkpoint: string) => Promise<RevertOutcome>;
+  /** 2e: the document's standing agent instructions, loaded with it. */
+  initialAgentInstructions?: string | null;
+  /** 2e: instructions persistence override (tests). */
+  agentInstructionsSaver?: (
+    documentId: string,
+    instructions: string | null
+  ) => Promise<string | null>;
 }
 
-export type EditQueueFactory = (options: {
-  documentId: string;
-  localScene: () => Scene;
-  onReconcile: (event: ReconcileEvent) => void;
-}) => EditQueuePort;
+// Re-exported so tests keep importing it from here; the type lives with the
+// persistence hook now.
+export type { EditQueueFactory } from "@/hooks/useDocumentSync";
 
 const defaultEditQueueFactory: EditQueueFactory = (options) =>
   createEditQueue({
-    apiBaseUrl: process.env.NEXT_PUBLIC_LUMEN_API_BASE_URL ?? "http://localhost:8000",
+    apiBaseUrl: editorApiBaseUrl(),
     ...options
   });
 
-interface EditorHistoryFrame {
-  scene: Scene;
-  operations: Operation[];
-}
 
 const defaultExportRunner = createApiExportRunner({
-  apiBaseUrl: process.env.NEXT_PUBLIC_LUMEN_API_BASE_URL ?? "http://localhost:8000"
+  apiBaseUrl: editorApiBaseUrl()
 });
 
 const defaultPreflightRunner = createApiPreflightRunner({
-  apiBaseUrl: process.env.NEXT_PUBLIC_LUMEN_API_BASE_URL ?? "http://localhost:8000"
+  apiBaseUrl: editorApiBaseUrl()
 });
 
-const defaultAgentRunner = createApiAgentRunner({
-  apiBaseUrl: process.env.NEXT_PUBLIC_LUMEN_API_BASE_URL ?? "http://localhost:8000"
+const defaultAgentRunner = createStreamingAgentRunner({
+  apiBaseUrl: editorApiBaseUrl()
 });
+
+// 2b resume: rejoin an in-flight run's SSE stream after a tab reload. Bound to
+// the same base URL as the default runner; only fires when a run id survives
+// in sessionStorage, so injected test runners never reach it.
+const defaultResumeRun = (
+  runId: string,
+  onEvent: Parameters<typeof subscribeToAgentRun>[0]["onEvent"]
+) => subscribeToAgentRun({ apiBaseUrl: editorApiBaseUrl(), runId, onEvent });
+
+const defaultDocumentCreator = (scene: Scene) =>
+  createDocument({ apiBaseUrl: editorApiBaseUrl() }, scene);
+
+const defaultRevertRunner = (documentId: string, checkpoint: string) =>
+  revertDocument({ apiBaseUrl: editorApiBaseUrl() }, documentId, checkpoint);
+
+const defaultAgentInstructionsSaver = (documentId: string, instructions: string | null) =>
+  saveAgentInstructions({ apiBaseUrl: editorApiBaseUrl() }, documentId, instructions);
 
 export default function EditorApp({
   documentId,
-  initialScene = minimalScene,
+  initialScene = emptyScene,
   initialSelectedNodeId = "node_contact_name",
   initialAvailableBrandKits = [],
   brandGovernanceRunner,
@@ -168,7 +198,11 @@ export default function EditorApp({
   exportRunner = defaultExportRunner,
   preflightRunner = defaultPreflightRunner,
   optimisticEngine,
-  editQueueFactory = defaultEditQueueFactory
+  editQueueFactory = defaultEditQueueFactory,
+  documentCreator = defaultDocumentCreator,
+  revertRunner = defaultRevertRunner,
+  initialAgentInstructions = null,
+  agentInstructionsSaver = defaultAgentInstructionsSaver
 }: EditorAppProps = {}) {
   const [scene, setScene] = useState<Scene>(initialScene);
   // The optimistic engine owns local edit application (Track E): the WASM
@@ -180,59 +214,95 @@ export default function EditorApp({
   const sceneRef = useRef<Scene>(scene);
   sceneRef.current = scene;
   const [activePageId, setActivePageId] = useState<PageId | null>(() => firstPageId(initialScene));
-  const [selectedNodeId, setSelectedNodeId] = useState<NodeId | null>(initialSelectedNodeId);
-  const [diagnostics, setDiagnostics] = useState<Diagnostic[]>([]);
-  const [lastOperation, setLastOperation] = useState<Operation | null>(null);
-  const [undoStack, setUndoStack] = useState<EditorHistoryFrame[]>([]);
-  const [redoStack, setRedoStack] = useState<EditorHistoryFrame[]>([]);
-  const [operationHistory, setOperationHistory] = useState<Operation[]>([]);
-  const [isBrandGovernanceRunning, setIsBrandGovernanceRunning] = useState(false);
-  const [isBrandCompatibilityRunning, setIsBrandCompatibilityRunning] = useState(false);
-  const [editorPanelMode, setEditorPanelMode] = useState<EditorPanelMode>("inspector");
-  const [agentSidebarWidth, setAgentSidebarWidth] = useState(420);
-  const [isAgentRunning, setIsAgentRunning] = useState(false);
-  const [agentDraft, setAgentDraft] = useState("");
-  const [agentMessages, setAgentMessages] = useState<AgentChatMessage[]>([]);
-  const [agentProposal, setAgentProposal] = useState<EditorAgentResult | null>(null);
-  const [isPreflighting, setIsPreflighting] = useState(false);
-  const [isExporting, setIsExporting] = useState(false);
-  const [exportResult, setExportResult] = useState<EditorExportResult | null>(null);
-  const [exportPanelState, setExportPanelState] = useState<ExportPanelState>(() => {
-    const profile = defaultEditorExportProfile();
-    return {
-      profileName: profile.name,
-      scope: "active",
-      draftProfile: profile
-    };
-  });
-  const [preflightResult, setPreflightResult] = useState<EditorPreflightResult | null>(null);
-  const [workspaceMode, setWorkspaceMode] = useState<"canvas" | "export" | "compare">("canvas");
-  const [workspaceViewport, setWorkspaceViewport] = useState(defaultWorkspaceViewport);
-  const [workspaceTool, setWorkspaceTool] = useState<WorkspaceTool>("select");
-  const [workspaceFitTarget, setWorkspaceFitTarget] = useState<WorkspaceFitTarget>("all");
-  const [brandCompatibilityReport, setBrandCompatibilityReport] =
-    useState<BrandCompatibilityReport | null>(null);
+  // Selection is a SET: shift/Cmd+click builds a multi-node selection whose
+  // members become the agent's edit-target chips. The PRIMARY selection (the
+  // most recently clicked node) is derived from the set and drives every
+  // single-node concern unchanged — inspector, keyboard, transform handles.
+  // Multi-drag/transform is intentionally out of scope; the set is for
+  // targeting, and secondary members render as plain outlines (no handles).
+  const [selectedNodeIds, setSelectedNodeIds] = useState<NodeId[]>(
+    initialSelectedNodeId ? [initialSelectedNodeId] : []
+  );
+  const selectedNodeId =
+    selectedNodeIds.length > 0 ? selectedNodeIds[selectedNodeIds.length - 1] : null;
+  const selectNode = (nodeId: NodeId | null, additive = false) => {
+    if (!nodeId) {
+      setSelectedNodeIds([]);
+      return;
+    }
+    if (additive) {
+      // shift/Cmd+click toggles: add if absent, remove if already selected
+      // (shift+click a chipped node again to drop it from the group).
+      setSelectedNodeIds((current) =>
+        current.includes(nodeId)
+          ? current.filter((id) => id !== nodeId)
+          : [...current, nodeId]
+      );
+      return;
+    }
+    setSelectedNodeIds([nodeId]);
+  };
+  // Back-compat adapter for consumers that still think single-selection
+  // (useAgentTurn's preview flow, diagnostic jumps, page changes): a plain
+  // set collapses the selection to that one node; a functional updater sees
+  // the current primary. Keeps ~10 existing setSelectedNodeId(...) calls
+  // untouched.
+  const setSelectedNodeId: Dispatch<SetStateAction<NodeId | null>> = (action) => {
+    setSelectedNodeIds((current) => {
+      const primary = current.length > 0 ? current[current.length - 1] : null;
+      const next =
+        typeof action === "function"
+          ? (action as (prev: NodeId | null) => NodeId | null)(primary)
+          : action;
+      return next ? [next] : [];
+    });
+  };
+  const [diagnostics, rawSetDiagnostics] = useState<Diagnostic[]>([]);
+  // Every diagnostics write flows through the sticky-merge policy: a
+  // persistence-class error (edits not saving, reconcile divergence, failed
+  // revert) survives unrelated overwrites instead of losing the last-writer
+  // race to cosmetic flows. See engine/diagnosticsPolicy.
+  const setDiagnostics: Dispatch<SetStateAction<Diagnostic[]>> = (action) =>
+    rawSetDiagnostics((current) =>
+      mergeStickyDiagnostics(
+        current,
+        typeof action === "function" ? action(current) : action
+      )
+    );
+  // The one way to CLEAR a sticky diagnostic: the flow that resolved the
+  // condition says so explicitly (bypasses the sticky merge).
+  const resolveDiagnosticCode = (code: string) =>
+    rawSetDiagnostics((current) =>
+      current.filter((diagnostic) => diagnostic.code !== code)
+    );
+  // When the WASM core is expected (flag on, no injected engine) but fails to
+  // activate, the editor is in server-only mode: nothing on the canvas can be
+  // selected or edited. That failure was previously only a buried warning
+  // diagnostic; this state drives a loud, persistent canvas banner instead —
+  // a rendered-but-uneditable design is the worst failure for this product.
+  const [engineDisabled, setEngineDisabled] = useState<{
+    reason: "load_failed" | "handshake_failed" | "version_mismatch";
+    detail: string;
+  } | null>(null);
+  // Workspace chrome (panel mode, workspace mode, viewport/tool, sidebar
+  // width + resizer) lives in useWorkspaceChrome — presentation state only.
+  const {
+    editorPanelMode,
+    setEditorPanelMode,
+    agentSidebarWidth,
+    workspaceMode,
+    setWorkspaceMode,
+    workspaceViewport,
+    setWorkspaceViewport,
+    workspaceTool,
+    setWorkspaceTool,
+    workspaceFitTarget,
+    setWorkspaceFitTarget,
+    startAgentSidebarResize
+  } = useWorkspaceChrome();
   const isAgentPanelOpen = editorPanelMode === "agent";
-  const hasExportArtifacts = Boolean(exportResult?.artifacts.length);
-  const exportWorkspaceMode = workspaceMode === "compare" && hasExportArtifacts ? "compare" : "export";
-  const renderedWorkspaceMode = editorPanelMode === "export" ? exportWorkspaceMode : "canvas";
   const selectedNode = useMemo(() => getNode(scene, selectedNodeId), [scene, selectedNodeId]);
   const activePage = activePageId ? scene.pages[activePageId] ?? null : null;
-  const effectiveBrandKit = useMemo(
-    () =>
-      scene.meta.brand_kit
-        ? initialAvailableBrandKits.find(
-            (brandKit) =>
-              brandKit.id === scene.meta.brand_kit?.id &&
-              brandKit.version === scene.meta.brand_kit?.version
-          )
-        : null,
-    [initialAvailableBrandKits, scene.meta.brand_kit]
-  );
-  const compatibilityTarget = useMemo(
-    () => latestBrandKitVersion(initialAvailableBrandKits, scene.meta.brand_kit),
-    [initialAvailableBrandKits, scene.meta.brand_kit]
-  );
   const brandDiagnostics = diagnostics.filter((diagnostic) => diagnostic.phase === "brand");
   const renderDiagnostics = useMemo(
     () => editorRenderDiagnostics(scene, activePageId),
@@ -248,9 +318,12 @@ export default function EditorApp({
     if (!activePageId) {
       setActivePageId(firstPageId(scene));
     }
-    if (selectedNodeId && !scene.nodes[selectedNodeId]) {
-      setSelectedNodeId(null);
-    }
+    // Drop any selected node (primary or secondary) that no longer exists —
+    // deleting a node also unchips it.
+    setSelectedNodeIds((current) => {
+      const next = current.filter((id) => scene.nodes[id]);
+      return next.length === current.length ? current : next;
+    });
   }, [activePageId, scene, selectedNodeId]);
 
   // Activate the WASM core behind the flag, gated on the W5 version
@@ -270,6 +343,10 @@ export default function EditorApp({
         return;
       }
       if (activation.status !== "active") {
+        // Loud, always-on signal (any reason: module missing, handshake, or
+        // mismatch) — the canvas banner reads this and tells the user how to
+        // recover. The diagnostic stays for the two verifiable-mismatch cases.
+        setEngineDisabled({ reason: activation.reason, detail: activation.detail });
         if (activation.reason === "version_mismatch" || activation.reason === "handshake_failed") {
           setDiagnostics([
             {
@@ -286,14 +363,20 @@ export default function EditorApp({
       }
       try {
         engineRef.current = new WasmEngine(activation.module, sceneRef.current);
+        setEngineDisabled(null);
         // Adopt the engine's relaid (whole-tree computed) scene so render
         // geometry is single-source from the moment the engine is live —
         // otherwise the first edit's heuristic delta would merge into a
         // scene carrying server (Skia) or no computed, re-creating the
         // parent/child desync.
         setScene(engineRef.current.scene);
-      } catch {
-        // Server-only mode; the editor stays functional.
+      } catch (error) {
+        // Server-only mode; the editor stays functional — but the inert
+        // canvas must still announce itself (same banner as load failures).
+        setEngineDisabled({
+          reason: "load_failed",
+          detail: `the engine failed to start: ${error instanceof Error ? error.message : String(error)}`
+        });
       }
     })();
     return () => {
@@ -344,34 +427,268 @@ export default function EditorApp({
     }
   };
 
-  // W3 optimistic pipeline: locally-applied batches persist to the
-  // document API in order; the server reconciles at drain. Divergence is a
-  // bug signal — the server scene replaces the local one and a diagnostic
-  // surfaces.
-  const editQueueRef = useRef<EditQueuePort | null>(null);
-  const enqueueForPersistence = (operations: Operation[]) => {
-    if (!documentId) {
-      return;
-    }
-    const engine = engineRef.current;
-    if (!engine || engine.kind !== "wasm") {
-      return;
-    }
-    editQueueRef.current ??= editQueueFactory({
-      documentId,
-      localScene: () => engineRef.current?.scene ?? sceneRef.current,
-      onReconcile: (event) => {
-        if (event.serverScene) {
-          replaceScene(event.serverScene);
-        }
-        setDiagnostics([event.diagnostic]);
+  // Brand Kit checks (effective kit, newer-version target, governance and
+  // compatibility flows) live in useBrandChecks. Deps rebuilt per render.
+  const {
+    isBrandGovernanceRunning,
+    isBrandCompatibilityRunning,
+    brandCompatibilityReport,
+    setBrandCompatibilityReport,
+    effectiveBrandKit,
+    compatibilityTarget,
+    runBrandGovernance,
+    runBrandCompatibility
+  } = useBrandChecks({
+    scene,
+    availableBrandKits: initialAvailableBrandKits,
+    brandGovernanceRunner,
+    brandCompatibilityRunner,
+    setDiagnostics
+  });
+
+  // The export + preflight leg (Validate/Export flows, their in-flight
+  // flags and results) lives in useExportPreflight. Deps rebuilt per
+  // render; activeDocumentId crosses via a lazy getter because
+  // useDocumentSync is wired below (it needs the history setters).
+  const {
+    isPreflighting,
+    isExporting,
+    exportResult,
+    setExportResult,
+    exportPanelState,
+    setExportPanelState,
+    preflightResult,
+    setPreflightResult,
+    runExport,
+    runExportForScene,
+    runPreflight
+  } = useExportPreflight({
+    exportRunner,
+    preflightRunner,
+    scene,
+    activePageId,
+    getActiveDocumentId: () => activeDocumentId,
+    replaceScene,
+    setDiagnostics,
+    setEditorPanelMode,
+    setWorkspaceMode
+  });
+  const hasExportArtifacts = Boolean(exportResult?.artifacts.length);
+  const exportWorkspaceMode = workspaceMode === "compare" && hasExportArtifacts ? "compare" : "export";
+  const renderedWorkspaceMode = editorPanelMode === "export" ? exportWorkspaceMode : "canvas";
+
+  // Local undo/redo history lives in useEditHistory (pure mechanics; the
+  // agent-turn canvas-lock guards stay HERE, on the orchestration layer,
+  // like every other guarded mutation path). Deps rebuilt per render.
+  const {
+    lastOperation,
+    setLastOperation,
+    undoStack,
+    setUndoStack,
+    redoStack,
+    setRedoStack,
+    operationHistory,
+    setOperationHistory,
+    undo: undoHistoryStep,
+    redo: redoHistoryStep
+  } = useEditHistory({
+    scene,
+    replaceScene,
+    setDiagnostics,
+    setBrandCompatibilityReport,
+    setPreflightResult,
+    setExportResult,
+    setWorkspaceMode,
+    // Lazy wrapper: document sync is wired below (it needs the history
+    // setters), and history steps only persist from event handlers.
+    persistHistoryStep: (previousScene, operations, nextScene) =>
+      enqueueForPersistence(previousScene, operations, nextScene)
+  });
+
+  // Document identity + the persistence leg (auto-create, id adoption, the
+  // ordered edit queue with reconcile-at-drain) live in useDocumentSync.
+  // Deps rebuilt per render, like every workflow hook here.
+  const { activeDocumentId, enqueueForPersistence, resyncPersistence } = useDocumentSync({
+    documentId,
+    documentCreator,
+    editQueueFactory,
+    engineRef,
+    sceneRef,
+    replaceScene,
+    setScene,
+    setDiagnostics,
+    resolveDiagnosticCode,
+    setUndoStack,
+    setRedoStack
+  });
+
+  // 2e: per-document standing instructions — editable any time, sent with
+  // every turn immediately, persisted on the document (auto-saved once a
+  // fresh canvas becomes a document).
+  const standingInstructions = useAgentInstructions({
+    activeDocumentId,
+    initialInstructions: initialAgentInstructions,
+    saveRunner: agentInstructionsSaver
+  });
+
+  /**
+   * Shared post-apply bookkeeping for operations that are already applied to
+   * the engine: undo frame, history, persistence. Used by the direct edit path
+   * (applyOperations) and by accepting an agent preview (Phase 0c), so both
+   * commit identically.
+   */
+  const commitAppliedOperations = (
+    previousScene: Scene,
+    operations: Operation[],
+    nextScene: Scene,
+    persistOptions?: EnqueueOptions,
+    inverseOperations: Operation[] | null = null
+  ) => {
+    // The disposition tells the caller whether this batch gets a server
+    // envelope — an Accept only offers Revert when its checkpoint will exist —
+    // and the undo frame whether undoing it must persist the inverse batch.
+    const disposition = enqueueForPersistence(
+      previousScene,
+      operations,
+      nextScene,
+      persistOptions
+    );
+    setLastOperation(operations[operations.length - 1] ?? null);
+    setBrandCompatibilityReport(null);
+    setPreflightResult(null);
+    setExportResult(null);
+    setWorkspaceMode("canvas");
+    setUndoStack((stack) => [
+      ...stack.slice(-49),
+      {
+        scene: previousScene,
+        operations,
+        inverseOperations,
+        persisted: disposition !== "local-only"
       }
-    });
-    editQueueRef.current.enqueueOperations(operations);
+    ]);
+    setRedoStack([]);
+    setOperationHistory((history) => [...history, ...operations].slice(-50));
+    setDiagnostics([]);
+    setScene(nextScene);
+    return disposition;
   };
+
+  // 2c selection chips: the agent's edit targets mirror the selection set.
+  // Removing a chip de-selects that node; Clear de-selects all.
+  const { chips: targetChips, targetNodeIds } = useTargetChips(scene, selectedNodeIds);
+  const removeTargetChip = (nodeId: NodeId) => selectNode(nodeId, true);
+  const clearTargetChips = () => selectNode(null);
+
+  // The agent-turn state machine (run → propose → preview → Accept/Reject,
+  // plus the message queue) lives in useAgentTurn. The deps object is
+  // rebuilt every render so the hook's callbacks always close over the
+  // current scene/selection — exactly like the closures they replaced.
+  // applyOperations is passed through a lazy wrapper: it is defined below
+  // this call because it guards on the turn state the hook owns (the other
+  // half of the canvas lock), and it only runs from event handlers.
+  const {
+    isAgentRunning,
+    agentDraft,
+    setAgentDraft,
+    agentMessages,
+    agentProposal,
+    agentPreview,
+    queuedAgentMessages,
+    runEvents,
+    sendAgentPrompt,
+    postSystemMessage,
+    queueAgentMessage,
+    removeQueuedAgentMessage,
+    applyAgentProposal,
+    acceptAgentPreview,
+    rejectAgentPreview,
+    setAgentPreviewView
+  } = useAgentTurn({
+    agentRunner,
+    resumeRun: defaultResumeRun,
+    engineRef,
+    scene,
+    activeDocumentId,
+    activePageId,
+    selectedNodeId,
+    targetNodeIds,
+    agentInstructions: standingInstructions.instructions,
+    diagnostics,
+    setDiagnostics,
+    setScene,
+    replaceScene,
+    setActivePageId,
+    setSelectedNodeId,
+    setUndoStack,
+    setRedoStack,
+    setBrandCompatibilityReport,
+    setPreflightResult,
+    setExportResult,
+    setWorkspaceMode,
+    commitAppliedOperations,
+    runExportForScene,
+    applyOperations: (operations, onAccepted) => applyOperations(operations, onAccepted)
+  });
+
+  // 2e notify-when-done: a turn that settles while the agent panel is
+  // closed raises a click-to-open toast (no browser Notification API).
+  const { toast: turnToast, dismiss: dismissTurnToast } = useTurnNotification({
+    isAgentRunning,
+    isAgentPanelOpen,
+    hasProposal: agentProposal?.status === "proposed"
+  });
+
+  // 2d per-turn Compare | Revert. Compare is a read-only modal view of a
+  // turn's before/after snapshot (mutations locked below, same two-sided
+  // pattern as the agent lock); Revert unwinds the server history to just
+  // after the turn's checkpoint and adopts the authoritative scene.
+  const {
+    compareView,
+    invalidCheckpoints,
+    isReverting,
+    startCompare,
+    setCompareView,
+    exitCompare,
+    revertToTurn
+  } = useTurnCheckpoints({
+    engineRef,
+    sceneRef,
+    activeDocumentId,
+    revertRunner,
+    setScene,
+    replaceScene,
+    setDiagnostics,
+    resetHistory: () => {
+      setUndoStack([]);
+      setRedoStack([]);
+      setOperationHistory([]);
+      setLastOperation(null);
+    },
+    resyncPersistence,
+    postSystemMessage,
+    turnCheckpointsInOrder: () =>
+      agentMessages.flatMap((message) =>
+        message.turn?.checkpoint ? [message.turn.checkpoint] : []
+      )
+  });
 
   const applyOperations = (operations: Operation[], onAccepted?: (scene: Scene) => void) => {
     if (operations.length === 0) {
+      return;
+    }
+    if (compareView) {
+      setDiagnostics([compareActiveDiagnostic()]);
+      return;
+    }
+    // Phase 0c: the pending preview owns the engine state; resolving it first
+    // keeps Accept/Reject byte-exact (no interleaved manual edits).
+    if (agentPreview) {
+      setDiagnostics([pendingAgentReviewDiagnostic()]);
+      return;
+    }
+    if (isAgentRunning) {
+      setDiagnostics([agentTurnRunningDiagnostic()]);
       return;
     }
     const engine = engineRef.current;
@@ -413,23 +730,13 @@ export default function EditorApp({
       return;
     }
 
-    setLastOperation(operations[operations.length - 1] ?? null);
-    setBrandCompatibilityReport(null);
-    setPreflightResult(null);
-    setExportResult(null);
-    setWorkspaceMode("canvas");
-    setUndoStack((stack) => [
-      ...stack.slice(-49),
-      {
-        scene: previousScene,
-        operations
-      }
-    ]);
-    setRedoStack([]);
-    setOperationHistory((history) => [...history, ...operations].slice(-50));
-    setDiagnostics([]);
-    setScene(result.scene);
-    enqueueForPersistence(operations);
+    commitAppliedOperations(
+      previousScene,
+      operations,
+      result.scene,
+      undefined,
+      result.inverseOperations ?? null
+    );
     onAccepted?.(result.scene);
   };
 
@@ -437,191 +744,157 @@ export default function EditorApp({
     applyOperations([operation]);
   };
 
-  const sendAgentPrompt = async (prompt: string) => {
-    const trimmedPrompt = prompt.trim();
-    if (!trimmedPrompt || isAgentRunning) {
+  /**
+   * Phase 1d: structured edits (detach/re-attach, and future container
+   * conversions) run through the engine's shared lumen-core builder and
+   * commit with the exact bookkeeping manual edits get — undo frame,
+   * history, persistence — so freehand actions are ordinary edits.
+   */
+  const applyStructuredEditInstruction = (edit: StructuredEdit) => {
+    if (compareView) {
+      setDiagnostics([compareActiveDiagnostic()]);
       return;
     }
-
-    setAgentDraft("");
-    setAgentProposal(null);
-    setIsAgentRunning(true);
-    setAgentMessages((messages) => [
-      ...messages,
-      {
-        id: uniqueChatMessageId("user"),
-        role: "user",
-        content: trimmedPrompt
-      }
-    ]);
-
-    try {
-      const result = await agentRunner({
-        prompt: trimmedPrompt,
-        scene,
-        documentId,
-        activePageId,
-        selectedNodeId,
-        diagnostics
-      });
-      setAgentProposal(result);
-      if (result.status === "failed" && result.draft_scene) {
-        showAgentDraftScene(result);
-      }
-      setAgentMessages((messages) => [
-        ...messages,
-        {
-          id: uniqueChatMessageId("agent"),
-          role: "agent",
-          content: result.summary
-        }
-      ]);
-      if (result.diagnostics.length > 0) {
-        setDiagnostics(result.diagnostics);
-      }
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Agent request failed.";
-      const diagnostic: Diagnostic = {
-        severity: "error",
-        phase: "validation",
-        code: "EDITOR_AGENT_REQUEST_FAILED",
-        message,
-        subject: { kind: "document" },
-        hint: "Check the editor API/agent runtime connection and retry."
-      };
-      setAgentProposal({
-        status: "failed",
-        summary: message,
-        dsl_blocks: [],
-        operations: [],
-        draft_scene: null,
-        stop_reason: null,
-        diagnostics: [diagnostic],
-        trace: {
-          run_id: null,
-          trace_dir: null,
-          preview_paths: []
-        },
-        artifacts: []
-      });
-      setDiagnostics([diagnostic]);
-      setAgentMessages((messages) => [
-        ...messages,
-        {
-          id: uniqueChatMessageId("system"),
-          role: "system",
-          content: message
-        }
-      ]);
-    } finally {
-      setIsAgentRunning(false);
+    if (agentPreview) {
+      setDiagnostics([pendingAgentReviewDiagnostic()]);
+      return;
     }
+    if (isAgentRunning) {
+      setDiagnostics([agentTurnRunningDiagnostic()]);
+      return;
+    }
+    const engine = engineRef.current;
+    if (!engine?.applyStructuredEdit) {
+      setDiagnostics([
+        {
+          severity: "warning",
+          phase: "operation",
+          code: "EDITOR_SERVER_ONLY_MODE",
+          message: "Structured edits require the WASM engine; the editor is in server-only mode.",
+          subject: { kind: "document" },
+          hint: "Reload the editor or check the /wasm assets."
+        }
+      ]);
+      return;
+    }
+    const previousScene = engine.scene;
+    const outcome = engine.applyStructuredEdit(edit);
+    if (!outcome.accepted) {
+      setDiagnostics([
+        {
+          severity: "error",
+          phase: "operation",
+          code: outcome.code ?? "EDITOR_LOCAL_APPLY",
+          message: outcome.message ?? "Structured edit was rejected by the editor engine",
+          subject: selectedNodeId ? { kind: "node", id: selectedNodeId } : null,
+          hint: "The edit was rejected by the lumen-core engine; the scene is unchanged."
+        }
+      ]);
+      return;
+    }
+    commitAppliedOperations(
+      previousScene,
+      outcome.operations,
+      outcome.scene,
+      undefined,
+      outcome.inverseOperations ?? null
+    );
   };
 
-  const showAgentDraftScene = (result: EditorAgentResult) => {
-    if (!result.draft_scene) {
+  // Dev/e2e hook (Phase 1 browser validation): lets browser tests drive
+  // canonical operations through the exact pipeline manual edits use
+  // (engine apply → undo frame → history → persistence). Never installed
+  // in production builds.
+  useEffect(() => {
+    if (process.env.NODE_ENV === "production" || typeof window === "undefined") {
       return;
     }
-    const draftScene = result.draft_scene;
-    const draftPageId = agentDraftPageId(scene, draftScene, activePageId);
-    const draftDiagnostic: Diagnostic = {
-      severity: "warning",
-      phase: "validation",
-      code: "EDITOR_AGENT_UNAPPROVED_DRAFT_VISIBLE",
-      message: "Showing the agent's latest unapproved draft on the canvas.",
-      subject: { kind: "document" },
-      hint:
-        result.stop_reason ??
-        "The draft did not pass the agent quality loop, but it is available for inspection and manual repair."
+    const debugWindow = window as typeof window & { __lumenEditorDebug?: unknown };
+    debugWindow.__lumenEditorDebug = {
+      applyOperations: (operations: Operation[]) => applyOperations(operations),
+      getScene: () => scene,
+      getEngineScene: () => engineRef.current?.scene ?? null
     };
+    return () => {
+      delete debugWindow.__lumenEditorDebug;
+    };
+  });
 
-    setUndoStack((stack) => [
-      ...stack.slice(-49),
-      {
-        scene,
-        operations: []
-      }
-    ]);
-    setRedoStack([]);
-    replaceScene(draftScene);
-    setActivePageId(draftPageId);
-    setSelectedNodeId(null);
-    setBrandCompatibilityReport(null);
-    setPreflightResult(null);
-    setExportResult(null);
-    setWorkspaceMode("canvas");
-    setDiagnostics([draftDiagnostic, ...result.diagnostics]);
+  /** Enter Compare for an accepted turn — only while the editor is idle.
+   * Queued messages block entry too: they drain at idle and would start a
+   * turn underneath the read-only snapshot. */
+  const compareTurn = (record: AcceptedTurnRecord, view: "before" | "after") => {
+    if (agentPreview) {
+      setDiagnostics([pendingAgentReviewDiagnostic()]);
+      return;
+    }
+    if (isAgentRunning) {
+      setDiagnostics([agentTurnRunningDiagnostic()]);
+      return;
+    }
+    if (queuedAgentMessages.length > 0) {
+      setDiagnostics([
+        {
+          severity: "warning",
+          phase: "operation",
+          code: "EDITOR_COMPARE_BLOCKED_QUEUE",
+          message: "Queued messages are about to run — comparing would race them.",
+          subject: { kind: "document" },
+          hint: "Let the queued turns finish (or remove them) before comparing a past turn."
+        }
+      ]);
+      return;
+    }
+    startCompare(record, view);
+  };
+
+  /** Revert to just after an accepted turn — same idle-only entry rules. */
+  const revertTurn = (record: AcceptedTurnRecord) => {
+    if (compareView) {
+      setDiagnostics([compareActiveDiagnostic()]);
+      return;
+    }
+    if (agentPreview) {
+      setDiagnostics([pendingAgentReviewDiagnostic()]);
+      return;
+    }
+    if (isAgentRunning) {
+      setDiagnostics([agentTurnRunningDiagnostic()]);
+      return;
+    }
+    void revertToTurn(record);
   };
 
   const undoLastOperation = () => {
-    const undoFrame = undoStack[undoStack.length - 1];
-    if (!undoFrame) {
+    if (compareView) {
+      setDiagnostics([compareActiveDiagnostic()]);
       return;
     }
-
-    const nextHistory =
-      undoFrame.operations.length > 0
-        ? operationHistory.slice(0, -undoFrame.operations.length)
-        : operationHistory;
-
-    setUndoStack((stack) => stack.slice(0, -1));
-    setRedoStack((stack) => [
-      ...stack.slice(-49),
-      {
-        scene,
-        operations: undoFrame.operations
-      }
-    ]);
-    setOperationHistory(nextHistory);
-    replaceScene(undoFrame.scene);
-    setLastOperation(nextHistory[nextHistory.length - 1] ?? null);
-    setDiagnostics([]);
-    setBrandCompatibilityReport(null);
-    setPreflightResult(null);
-    setExportResult(null);
-    setWorkspaceMode("canvas");
+    if (agentPreview) {
+      setDiagnostics([pendingAgentReviewDiagnostic()]);
+      return;
+    }
+    if (isAgentRunning) {
+      setDiagnostics([agentTurnRunningDiagnostic()]);
+      return;
+    }
+    undoHistoryStep();
   };
 
   const redoLastOperation = () => {
-    const redoFrame = redoStack[redoStack.length - 1];
-    if (!redoFrame) {
+    if (compareView) {
+      setDiagnostics([compareActiveDiagnostic()]);
       return;
     }
-
-    setRedoStack((stack) => stack.slice(0, -1));
-    setUndoStack((stack) => [
-      ...stack.slice(-49),
-      {
-        scene,
-        operations: redoFrame.operations
-      }
-    ]);
-    setOperationHistory((history) => [...history, ...redoFrame.operations].slice(-50));
-    replaceScene(redoFrame.scene);
-    setLastOperation(redoFrame.operations[redoFrame.operations.length - 1] ?? null);
-    setDiagnostics([]);
-    setBrandCompatibilityReport(null);
-    setPreflightResult(null);
-    setExportResult(null);
-    setWorkspaceMode("canvas");
-  };
-
-  const startAgentSidebarResize = (event: ReactPointerEvent<HTMLDivElement>) => {
-    event.preventDefault();
-    const startX = event.clientX;
-    const startWidth = agentSidebarWidth;
-    const resize = (moveEvent: PointerEvent) => {
-      if (!Number.isFinite(moveEvent.clientX)) {
-        return;
-      }
-      const nextWidth = clampNumber(startWidth + startX - moveEvent.clientX, 320, 720);
-      setAgentSidebarWidth(nextWidth);
-    };
-    const stopResize = () => {
-      window.removeEventListener("pointermove", resize);
-    };
-    window.addEventListener("pointermove", resize);
-    window.addEventListener("pointerup", stopResize, { once: true });
+    if (agentPreview) {
+      setDiagnostics([pendingAgentReviewDiagnostic()]);
+      return;
+    }
+    if (isAgentRunning) {
+      setDiagnostics([agentTurnRunningDiagnostic()]);
+      return;
+    }
+    redoHistoryStep();
   };
 
   useEffect(() => {
@@ -677,250 +950,6 @@ export default function EditorApp({
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [redoLastOperation, scene, selectedNode, selectedNodeId, undoLastOperation]);
-
-  const runPreflight = async () => {
-    setIsPreflighting(true);
-    setEditorPanelMode("diagnostics");
-    setDiagnostics([
-      {
-        severity: "advice",
-        phase: "validation",
-        code: "EDITOR_PREFLIGHT_RUNNING",
-        message: "Running canonical preflight validation.",
-        subject: null,
-        hint: "Preflight resolves BrandKit tokens, layout, text-fit diagnostics, and computed geometry before export."
-      }
-    ]);
-
-    try {
-      const result = await preflightRunner({ scene });
-      setPreflightResult(result);
-      setExportResult(null);
-      setWorkspaceMode("canvas");
-      if (result.status === "applied" && result.scene) {
-        replaceScene(result.scene);
-        setDiagnostics(
-          result.diagnostics.length > 0
-            ? result.diagnostics
-            : [
-                {
-                  severity: "advice",
-                  phase: "validation",
-                  code: "EDITOR_PREFLIGHT_OK",
-                  message: `Preflight applied ${preflightOperationCount(result)} canonical operation${preflightOperationCount(result) === 1 ? "" : "s"}.`,
-                  subject: { kind: "document" },
-                  hint: result.brand_kit.source
-                    ? `Effective Brand Kit source: ${result.brand_kit.source}.`
-                    : null
-                }
-              ]
-        );
-      } else {
-        setDiagnostics(
-          result.diagnostics.length > 0
-            ? result.diagnostics
-            : [
-                {
-                  severity: "error",
-                  phase: "validation",
-                  code: "EDITOR_PREFLIGHT_FAILED",
-                  message: "Preflight failed without returning detailed diagnostics.",
-                  subject: { kind: "document" },
-                  hint: "Inspect the API/core logs and retry after correcting the scene."
-                }
-              ]
-        );
-      }
-    } catch (error) {
-      setPreflightResult(null);
-      setDiagnostics([
-        {
-          severity: "error",
-          phase: "validation",
-          code: "EDITOR_PREFLIGHT_REQUEST_FAILED",
-          message: error instanceof Error ? error.message : "Preflight request failed.",
-          subject: { kind: "document" },
-          hint: "Check the editor API connection and retry validation."
-        }
-      ]);
-    } finally {
-      setIsPreflighting(false);
-    }
-  };
-
-  const runBrandGovernance = async () => {
-    if (!scene.meta.brand_kit) {
-      setDiagnostics([
-        {
-          severity: "warning",
-          phase: "brand",
-          code: "EDITOR_BRAND_KIT_REQUIRED",
-          message: "No Brand Kit is attached to this document.",
-          subject: { kind: "document" },
-          hint: "Attach a stored Brand Kit before running strict brand governance."
-        }
-      ]);
-      return;
-    }
-
-    if (!brandGovernanceRunner) {
-      setDiagnostics([
-        {
-          severity: "advice",
-          phase: "brand",
-          code: "EDITOR_BRAND_GOVERNANCE_PORT",
-          message: "Brand governance UI is wired; provide a BrandGovernanceRunner to call the API/core validator.",
-          subject: { kind: "document" },
-          hint: "Use createApiBrandGovernanceRunner against POST /documents/{id}/brand-governance."
-        }
-      ]);
-      return;
-    }
-
-    setIsBrandGovernanceRunning(true);
-    setDiagnostics([
-      {
-        severity: "advice",
-        phase: "brand",
-        code: "EDITOR_BRAND_GOVERNANCE_RUNNING",
-        message: "Running Brand Kit governance checks.",
-        subject: { kind: "document" },
-        hint: null
-      }
-    ]);
-
-    try {
-      const result = await brandGovernanceRunner({
-        scene,
-        brandKit: effectiveBrandKit ?? null
-      });
-      setDiagnostics(
-        result.diagnostics.length > 0
-          ? result.diagnostics
-          : [
-              {
-                severity: "advice",
-                phase: "brand",
-                code: "EDITOR_BRAND_GOVERNANCE_OK",
-                message: "Brand Kit governance passed with no diagnostics.",
-                subject: { kind: "document" },
-                hint: null
-              }
-            ]
-      );
-    } catch (error) {
-      setDiagnostics([
-        {
-          severity: "error",
-          phase: "brand",
-          code: "EDITOR_BRAND_GOVERNANCE_FAILED",
-          message: error instanceof Error ? error.message : "Brand governance request failed.",
-          subject: { kind: "document" },
-          hint: "Check the editor API connection and retry the Brand Kit check."
-        }
-      ]);
-    } finally {
-      setIsBrandGovernanceRunning(false);
-    }
-  };
-
-  const runBrandCompatibility = async () => {
-    if (!scene.meta.brand_kit) {
-      setDiagnostics([
-        {
-          severity: "warning",
-          phase: "brand",
-          code: "EDITOR_BRAND_KIT_REQUIRED",
-          message: "No Brand Kit is attached to this document.",
-          subject: { kind: "document" },
-          hint: "Attach a stored Brand Kit before checking compatibility."
-        }
-      ]);
-      return;
-    }
-
-    if (!compatibilityTarget) {
-      setBrandCompatibilityReport(null);
-      setDiagnostics([
-        {
-          severity: "advice",
-          phase: "brand",
-          code: "EDITOR_BRAND_COMPATIBILITY_CURRENT",
-          message: "No newer stored Brand Kit version is available for this document.",
-          subject: { kind: "document" },
-          hint: "Compatibility warnings appear when a later version of the same Brand Kit is available."
-        }
-      ]);
-      return;
-    }
-
-    if (!brandCompatibilityRunner) {
-      setDiagnostics([
-        {
-          severity: "advice",
-          phase: "brand",
-          code: "EDITOR_BRAND_COMPATIBILITY_PORT",
-          message: "Brand compatibility UI is wired; provide a BrandCompatibilityRunner to call the API/core report.",
-          subject: { kind: "document" },
-          hint: "Use createApiBrandCompatibilityRunner against POST /brand-kits/compatibility."
-        }
-      ]);
-      return;
-    }
-
-    setIsBrandCompatibilityRunning(true);
-    setDiagnostics([
-      {
-        severity: "advice",
-        phase: "brand",
-        code: "EDITOR_BRAND_COMPATIBILITY_RUNNING",
-        message: "Checking Brand Kit version compatibility.",
-        subject: { kind: "document" },
-        hint: null
-      }
-    ]);
-
-    try {
-      const result = await brandCompatibilityRunner({
-        scene,
-        currentBrandKit: effectiveBrandKit ?? null,
-        targetBrandKit: compatibilityTarget
-      });
-      setBrandCompatibilityReport(result.report);
-      const reportDiagnostics = result.diagnostics.length > 0 ? result.diagnostics : result.report?.diagnostics ?? [];
-      setDiagnostics(
-        reportDiagnostics.length > 0
-          ? reportDiagnostics
-          : [
-              {
-                severity: "advice",
-                phase: "brand",
-                code: "EDITOR_BRAND_COMPATIBILITY_OK",
-                message:
-                  result.report && result.report.token_changes.length > 0
-                    ? "Brand Kit compatibility report completed with token changes to review."
-                    : "Brand Kit compatibility report passed with no token changes.",
-                subject: { kind: "document" },
-                hint: null
-              }
-            ]
-      );
-    } catch (error) {
-      setBrandCompatibilityReport(null);
-      setDiagnostics([
-        {
-          severity: "error",
-          phase: "brand",
-          code: "EDITOR_BRAND_COMPATIBILITY_FAILED",
-          message: error instanceof Error ? error.message : "Brand compatibility request failed.",
-          subject: { kind: "document" },
-          hint: "Check the editor API connection and retry the compatibility check."
-        }
-      ]);
-    } finally {
-      setIsBrandCompatibilityRunning(false);
-    }
-  };
 
   const selectPage = (pageId: PageId) => {
     setActivePageId(pageId);
@@ -1025,135 +1054,6 @@ export default function EditorApp({
     }
   };
 
-  const applyAgentProposal = () => {
-    if (!agentProposal || agentProposal.operations.length === 0) {
-      return;
-    }
-
-    const proposedOperations = agentProposal.operations;
-    const proposedPageId = agentPreviewPageId(proposedOperations, activePageId, scene);
-    applyOperations(proposedOperations, (nextScene) => {
-      const previewPageId =
-        proposedPageId && nextScene.pages[proposedPageId]
-          ? proposedPageId
-          : firstPageId(nextScene);
-      setAgentProposal(null);
-      setAgentMessages((messages) => [
-        ...messages,
-        {
-          id: uniqueChatMessageId("system"),
-          role: "system",
-          content: `Applied ${proposedOperations.length} agent operation${proposedOperations.length === 1 ? "" : "s"} and started preflight/export preview.`
-        }
-      ]);
-      setEditorPanelMode("inspector");
-      setActivePageId(previewPageId);
-      setSelectedNodeId((currentSelectedNodeId) =>
-        currentSelectedNodeId && nextScene.nodes[currentSelectedNodeId]
-          ? currentSelectedNodeId
-          : null
-      );
-      if (previewPageId) {
-        void runExportForScene(nextScene, defaultEditorExportProfile(), [previewPageId]);
-      }
-    });
-  };
-
-  const runExport = async (
-    profile = defaultEditorExportProfile(),
-    pageIds: PageId[] = activePageId ? [activePageId] : []
-  ) => runExportForScene(scene, profile, pageIds, { openPreviewTab: true });
-
-  const runExportForScene = async (
-    sceneForExport: Scene,
-    profile = defaultEditorExportProfile(),
-    pageIds: PageId[] = activePageId ? [activePageId] : [],
-    options: { openPreviewTab?: boolean } = {}
-  ) => {
-    const previewWindow = options.openPreviewTab ? openBlankArtifactPreviewWindow() : null;
-    setEditorPanelMode("export");
-    if (pageIds.length === 0) {
-      previewWindow?.close();
-      setDiagnostics([
-        {
-          severity: "warning",
-          phase: "export",
-          code: "EDITOR_EXPORT_PAGE_REQUIRED",
-          message: "Select an artboard before exporting.",
-          subject: { kind: "document" },
-          hint: "Choose an artboard in the left rail or export all artboards from the Export panel."
-        }
-      ]);
-      return;
-    }
-
-    setIsExporting(true);
-    setDiagnostics([]);
-
-    try {
-      const preflight = await preflightRunner({ scene: sceneForExport });
-      setPreflightResult(preflight);
-      const preflightDiagnostics = exportPreflightDiagnostics(preflight);
-      const sceneToExport = preflight.scene ?? sceneForExport;
-      if (preflight.scene) {
-        replaceScene(preflight.scene);
-      }
-      const result = await exportRunner({
-        scene: sceneToExport,
-        profile,
-        pageIds,
-        ...(documentId ? { documentId } : {})
-      });
-      const combinedDiagnostics = [...preflightDiagnostics, ...result.diagnostics];
-      const resultWithPreflightDiagnostics: EditorExportResult = {
-        ...result,
-        diagnostics: combinedDiagnostics
-      };
-      setExportResult(resultWithPreflightDiagnostics);
-      if (result.status === "ok" && result.artifacts.length > 0) {
-        setWorkspaceMode("export");
-        showArtifactInPreviewWindow(
-          previewWindow,
-          artifactForExportPreview(resultWithPreflightDiagnostics, pageIds)
-        );
-      } else if (previewWindow) {
-        previewWindow.close();
-      }
-      logExportDiagnostics(combinedDiagnostics);
-      setDiagnostics(
-        result.status === "ok"
-          ? []
-          : result.diagnostics.length > 0
-            ? result.diagnostics
-            : [
-                {
-                  severity: "error",
-                  phase: "export",
-                  code: "EDITOR_EXPORT_FAILED",
-                  message: "Export failed without returning detailed diagnostics.",
-                  subject: { kind: "document" },
-                  hint: "Inspect the browser console or API logs for the export request."
-                }
-              ]
-      );
-    } catch (error) {
-      previewWindow?.close();
-      setExportResult(null);
-      setDiagnostics([
-        {
-          severity: "error",
-          phase: "export",
-          code: "EDITOR_EXPORT_REQUEST_FAILED",
-          message: error instanceof Error ? error.message : "Export request failed.",
-          subject: { kind: "document" },
-          hint: "Check the editor API connection and retry export."
-        }
-      ]);
-    } finally {
-      setIsExporting(false);
-    }
-  };
-
   return (
     <main className="editor-shell">
       <header className="topbar">
@@ -1168,6 +1068,14 @@ export default function EditorApp({
               {activePage ? `${topArtboardSizeLabel(activePage)} · ${Math.round(workspaceViewport.zoom * 100)}%` : "No frame"}
             </span>
           </div>
+          {editorPanelMode !== "diagnostics" ? (
+            <DiagnosticsAlertPill
+              errorCount={
+                diagnostics.filter((diagnostic) => diagnostic.severity === "error").length
+              }
+              onOpen={() => setEditorPanelMode("diagnostics")}
+            />
+          ) : null}
           <EditorModeSwitch mode={editorPanelMode} onModeChange={setEditorPanelMode} />
         </div>
         <div className="toolbar" aria-label="Editor actions">
@@ -1179,11 +1087,19 @@ export default function EditorApp({
             <Download aria-hidden size={16} />
             {isExporting ? "Exporting" : "Export"}
           </button>
-          <button type="button" onClick={undoLastOperation} disabled={undoStack.length === 0}>
+          <button
+            type="button"
+            onClick={undoLastOperation}
+            disabled={undoStack.length === 0 || isAgentRunning || agentPreview !== null}
+          >
             <RotateCcw aria-hidden size={16} />
             Undo
           </button>
-          <button type="button" onClick={redoLastOperation} disabled={redoStack.length === 0}>
+          <button
+            type="button"
+            onClick={redoLastOperation}
+            disabled={redoStack.length === 0 || isAgentRunning || agentPreview !== null}
+          >
             <RotateCw aria-hidden size={16} />
             Redo
           </button>
@@ -1207,11 +1123,112 @@ export default function EditorApp({
             scene={scene}
             activePageId={activePageId}
             selectedNodeId={selectedNodeId}
-            onSelectNode={setSelectedNodeId}
+            selectedNodeIds={selectedNodeIds}
+            onSelectNode={selectNode}
             onOperation={applyOperation}
           />
         </div>
         <section className={`center-workspace${editorPanelMode === "export" ? " with-view-toggle" : ""}`}>
+          {engineDisabled ? (
+            <EngineDisabledBanner reason={engineDisabled.reason} detail={engineDisabled.detail} />
+          ) : null}
+          {isAgentRunning && !agentPreview ? (
+            <div
+              className="agent-designing-banner"
+              role="status"
+              data-testid="agent-designing-banner"
+            >
+              <Bot aria-hidden size={15} />
+              <span>Agent is designing — please wait to edit</span>
+              <span className="agent-designing-dots" aria-hidden>
+                <i />
+                <i />
+                <i />
+              </span>
+            </div>
+          ) : null}
+          {agentPreview ? (
+            <div className="agent-review-bar" role="toolbar" aria-label="Review agent changes">
+              <div className="agent-review-toggle" role="group" aria-label="Compare agent changes">
+                <button
+                  type="button"
+                  className={agentPreview.view === "before" ? "active" : ""}
+                  aria-pressed={agentPreview.view === "before"}
+                  onClick={() => setAgentPreviewView("before")}
+                >
+                  Before
+                </button>
+                <button
+                  type="button"
+                  className={agentPreview.view === "after" ? "active" : ""}
+                  aria-pressed={agentPreview.view === "after"}
+                  onClick={() => setAgentPreviewView("after")}
+                >
+                  After
+                </button>
+              </div>
+              <span className="agent-review-summary">
+                {agentPreview.operations.length} agent change{agentPreview.operations.length === 1 ? "" : "s"}
+              </span>
+              <button type="button" className="agent-review-reject" onClick={rejectAgentPreview}>
+                <X aria-hidden size={15} />
+                Reject
+              </button>
+              <button type="button" className="agent-review-accept" onClick={() => void acceptAgentPreview()}>
+                <Check aria-hidden size={15} />
+                Accept
+              </button>
+            </div>
+          ) : null}
+          {turnToast ? (
+            <button
+              type="button"
+              className={`agent-done-toast ${turnToast.tone}`}
+              role="status"
+              data-testid="agent-done-toast"
+              onClick={() => {
+                dismissTurnToast();
+                setEditorPanelMode("agent");
+              }}
+            >
+              <Bot aria-hidden size={15} />
+              <span>{turnToast.message}</span>
+            </button>
+          ) : null}
+          {compareView && !agentPreview ? (
+            <div
+              className="agent-review-bar turn-compare-bar"
+              role="toolbar"
+              aria-label="Compare a past turn"
+              data-testid="turn-compare-bar"
+            >
+              <div className="agent-review-toggle" role="group" aria-label="Turn snapshot">
+                <button
+                  type="button"
+                  className={compareView.view === "before" ? "active" : ""}
+                  aria-pressed={compareView.view === "before"}
+                  onClick={() => setCompareView("before")}
+                >
+                  Before
+                </button>
+                <button
+                  type="button"
+                  className={compareView.view === "after" ? "active" : ""}
+                  aria-pressed={compareView.view === "after"}
+                  onClick={() => setCompareView("after")}
+                >
+                  After
+                </button>
+              </div>
+              <span className="agent-review-summary">
+                Viewing a past turn — the canvas is read-only
+              </span>
+              <button type="button" className="agent-review-accept" onClick={exitCompare}>
+                <Check aria-hidden size={15} />
+                Back to current
+              </button>
+            </div>
+          ) : null}
           {editorPanelMode === "export" ? (
             <div className="view-toggle" aria-label="Export preview mode">
               <button
@@ -1239,9 +1256,10 @@ export default function EditorApp({
                   scene={scene}
                   activePageId={activePageId}
                   selectedNodeId={selectedNodeId}
-                  onSelectNode={setSelectedNodeId}
+                  selectedNodeIds={selectedNodeIds}
+                  onSelectNode={selectNode}
                   onSelectPage={selectPage}
-                  onOperation={applyOperation}
+                  onOperations={applyOperations}
                   engine={engineRef.current}
                   diagnostics={diagnostics}
                   workspaceViewport={workspaceViewport}
@@ -1277,9 +1295,10 @@ export default function EditorApp({
               scene={scene}
               activePageId={activePageId}
               selectedNodeId={selectedNodeId}
-              onSelectNode={setSelectedNodeId}
+              selectedNodeIds={selectedNodeIds}
+              onSelectNode={selectNode}
               onSelectPage={selectPage}
-              onOperation={applyOperation}
+              onOperations={applyOperations}
               engine={engineRef.current}
               diagnostics={diagnostics}
               workspaceViewport={workspaceViewport}
@@ -1313,12 +1332,54 @@ export default function EditorApp({
               draft={agentDraft}
               isRunning={isAgentRunning}
               proposal={agentProposal}
+              pendingReview={agentPreview !== null}
+              queuedMessages={queuedAgentMessages}
+              runEvents={runEvents}
+              targetChips={targetChips}
+              compareView={compareView}
+              invalidCheckpoints={invalidCheckpoints}
+              isReverting={isReverting}
+              suggestions={postTurnSuggestions(scene)}
+              standingInstructions={{
+                draft: standingInstructions.draft,
+                dirty: standingInstructions.isDirty,
+                saving: standingInstructions.isSaving,
+                canSave: standingInstructions.canSave,
+                error: standingInstructions.saveError,
+                onDraftChange: standingInstructions.setDraft,
+                onSave: () => void standingInstructions.save()
+              }}
               activePageId={activePageId}
               selectedNodeId={selectedNodeId}
               diagnostics={diagnostics}
+              onRemoveTargetChip={removeTargetChip}
+              onClearTargetChips={clearTargetChips}
               onDraftChange={setAgentDraft}
-              onSend={(prompt) => void sendAgentPrompt(prompt)}
+              onSend={(prompt) => {
+                // Compare is read-only: a send would seed the turn from the
+                // displayed snapshot, not the live design.
+                if (compareView) {
+                  setDiagnostics([compareActiveDiagnostic()]);
+                  return;
+                }
+                void sendAgentPrompt(prompt);
+              }}
+              onQueueMessage={(content) => {
+                // Queueing while comparing would drain immediately (the
+                // editor is idle) and start a turn under the read-only view.
+                if (compareView) {
+                  setDiagnostics([compareActiveDiagnostic()]);
+                  return;
+                }
+                queueAgentMessage(content);
+              }}
+              onRemoveQueuedMessage={removeQueuedAgentMessage}
               onApplyProposal={applyAgentProposal}
+              onAcceptProposal={() => void acceptAgentPreview()}
+              onRejectProposal={rejectAgentPreview}
+              onCompareTurn={compareTurn}
+              onExitCompare={exitCompare}
+              onRevertTurn={revertTurn}
             />
           ) : editorPanelMode === "export" ? (
             <ExportPanel
@@ -1357,8 +1418,10 @@ export default function EditorApp({
                 brandTokens={effectiveBrandKit?.tokens ?? null}
                 diagnostics={diagnostics}
                 renderDiagnostics={renderDiagnostics}
+                apiBaseUrl={editorApiBaseUrl()}
                 onOperation={applyOperation}
                 onOperations={applyOperations}
+                onStructuredEdit={applyStructuredEditInstruction}
                 onSelectSubject={selectDiagnosticSubject}
               />
               <BrandKitPanel
@@ -1387,21 +1450,14 @@ export default function EditorApp({
               />
               <OperationHistoryPanel operations={operationHistory} redoCount={redoStack.length} />
               <AssetBrowserPanel
-                apiBaseUrl={process.env.NEXT_PUBLIC_LUMEN_API_BASE_URL ?? "http://localhost:8000"}
+                apiBaseUrl={editorApiBaseUrl()}
                 selectedNodeId={selectedNodeId}
+                selectedNodePlacement={selectedNode?.asset_placement ?? null}
                 onOperations={applyOperations}
               />
-              <WorstCasePreviewPanel
-                apiBaseUrl={process.env.NEXT_PUBLIC_LUMEN_API_BASE_URL ?? "http://localhost:8000"}
-                scene={scene}
-              />
-              {documentId ? (
-                <HistoryPanel
-                  apiBaseUrl={
-                    process.env.NEXT_PUBLIC_LUMEN_API_BASE_URL ?? "http://localhost:8000"
-                  }
-                  documentId={documentId}
-                />
+              <WorstCasePreviewPanel apiBaseUrl={editorApiBaseUrl()} scene={scene} />
+              {activeDocumentId ? (
+                <HistoryPanel apiBaseUrl={editorApiBaseUrl()} documentId={activeDocumentId} />
               ) : null}
               <ValidationPanel
                 scene={scene}
@@ -1421,386 +1477,4 @@ export default function EditorApp({
   );
 }
 
-function EditorModeSwitch({
-  mode,
-  onModeChange
-}: {
-  mode: EditorPanelMode;
-  onModeChange: (mode: EditorPanelMode) => void;
-}) {
-  return (
-    <div className="top-mode-switch" aria-label="Editor mode">
-      {EDITOR_PANEL_MODES.map((item) => (
-        <button
-          key={item.mode}
-          type="button"
-          className={mode === item.mode ? "active" : undefined}
-          aria-label={item.ariaLabel}
-          aria-pressed={mode === item.mode}
-          onClick={() => onModeChange(item.mode)}
-        >
-          {item.label}
-        </button>
-      ))}
-    </div>
-  );
-}
 
-function topArtboardSizeLabel(page: Page): string {
-  const descriptor = pageDescriptor(page);
-  return `${formatTopbarDimension(descriptor.width)} x ${formatTopbarDimension(descriptor.height)} pt`;
-}
-
-function formatTopbarDimension(value: number): string {
-  return Number.isInteger(value) ? String(value) : value.toFixed(1).replace(/\.0$/, "");
-}
-
-function OperationHistoryPanel({
-  operations,
-  redoCount
-}: {
-  operations: Operation[];
-  redoCount: number;
-}) {
-  const recentOperations = operations.slice(-6).reverse();
-
-  return (
-    <section className="inspector-section">
-      <div className="section-heading">
-        <History aria-hidden size={15} />
-        Operation history
-      </div>
-      {operations.length === 0 ? (
-        <p className="muted">No accepted editor operations yet.</p>
-      ) : (
-        <ol className="operation-history-list">
-          {recentOperations.map((operation, index) => (
-            <li key={`${operations.length - index}-${operation.kind}`}>
-              <span>{operations.length - index}</span>
-              <code>{operationLabel(operation)}</code>
-            </li>
-          ))}
-        </ol>
-      )}
-      {redoCount > 0 ? <p className="muted">{redoCount} action{redoCount === 1 ? "" : "s"} available to redo.</p> : null}
-    </section>
-  );
-}
-
-function operationLabel(operation: Operation): string {
-  switch (operation.kind) {
-    case "add_page":
-      return `add_page ${operation.page.id}`;
-    case "remove_page":
-      return `remove_page ${operation.page_id}`;
-    case "insert_node":
-      return `insert_node ${operation.node.id}`;
-    case "update_node":
-      return `update_node ${operation.node_id}`;
-    case "remove_node":
-      return `remove_node ${operation.node_id}`;
-    case "update_page":
-      return `update_page ${operation.page_id}`;
-    case "move_node":
-      return `move_node ${operation.node_id}`;
-    case "upsert_slot":
-      return `upsert_slot ${operation.slot.key}`;
-    case "remove_slot":
-      return `remove_slot ${operation.slot_id}`;
-    case "bind_node_to_slot":
-      return `bind_node_to_slot ${operation.node_id}`;
-    case "unbind_node_from_slot":
-      return `unbind_node_from_slot ${operation.node_id}`;
-    case "upsert_asset":
-      return `upsert_asset ${operation.asset.id}`;
-    case "remove_asset":
-      return `remove_asset ${operation.asset_id}`;
-    case "place_asset_in_node":
-      return `place_asset_in_node ${operation.node_id}`;
-    case "place_asset_in_slot":
-      return `place_asset_in_slot ${operation.slot_id}`;
-    case "upsert_export_profile":
-      return `upsert_export_profile ${operation.profile.name}`;
-    case "remove_export_profile":
-      return `remove_export_profile ${operation.name}`;
-    case "update_document":
-      return "update_document";
-  }
-}
-
-function uniquePageId(scene: Scene, input: { name: string; width: number; height: number }): PageId {
-  const readable = input.name
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "_")
-    .replace(/^_+|_+$/g, "");
-  const base = readable || `custom_${input.width}x${input.height}`;
-  let candidate = `page_${base}`;
-  let index = 2;
-  while (scene.pages[candidate]) {
-    candidate = `page_${base}_${index}`;
-    index += 1;
-  }
-  return candidate;
-}
-
-function duplicatePageOperations(scene: Scene, page: Page): Operation[] {
-  const pageName = `${page.name} Copy`;
-  const pageId = uniquePageId(scene, {
-    name: pageName,
-    width: page.size.width,
-    height: page.size.height
-  });
-  const usedNodeIds = new Set(Object.keys(scene.nodes));
-  const nodeIdMap = new Map<NodeId, NodeId>();
-
-  const assignNodeIds = (nodeId: NodeId) => {
-    if (nodeIdMap.has(nodeId)) {
-      return;
-    }
-    const clonedNodeId = uniqueClonedNodeId(usedNodeIds, nodeId, pageId);
-    nodeIdMap.set(nodeId, clonedNodeId);
-    const node = scene.nodes[nodeId];
-    for (const childId of node?.children ?? []) {
-      assignNodeIds(childId);
-    }
-  };
-
-  for (const childId of page.children) {
-    assignNodeIds(childId);
-  }
-
-  const duplicatedPage: Page = {
-    ...cloneJson(page),
-    id: pageId,
-    name: pageName,
-    children: []
-  };
-  const operations: Operation[] = [addPage(duplicatedPage)];
-
-  const emitNodeTree = (sourceNodeId: NodeId, parent: ParentRef, index: number) => {
-    const sourceNode = scene.nodes[sourceNodeId];
-    const clonedNodeId = nodeIdMap.get(sourceNodeId);
-    if (!sourceNode || !clonedNodeId) {
-      return;
-    }
-    const clonedNode: Node = {
-      ...cloneJson(sourceNode),
-      id: clonedNodeId,
-      children: [],
-      computed: null
-    };
-    operations.push(insertNode(parent, index, clonedNode));
-
-    for (const slot of Object.values(scene.slots)) {
-      if (slot.bound_nodes.includes(sourceNodeId)) {
-        operations.push(bindNodeToSlot(slot.id, clonedNodeId));
-      }
-    }
-
-    sourceNode.children.forEach((childId, childIndex) =>
-      emitNodeTree(childId, { kind: "node", id: clonedNodeId }, childIndex)
-    );
-  };
-
-  page.children.forEach((childId, index) =>
-    emitNodeTree(childId, { kind: "page", id: pageId }, index)
-  );
-
-  return operations;
-}
-
-function uniqueClonedNodeId(usedNodeIds: Set<NodeId>, sourceNodeId: NodeId, pageId: PageId): NodeId {
-  const pageSuffix = pageId
-    .replace(/^page_/, "")
-    .replace(/[^a-zA-Z0-9_]+/g, "_")
-    .replace(/^_+|_+$/g, "");
-  const base = `${sourceNodeId}_${pageSuffix || "copy"}`;
-  let candidate = base;
-  let index = 2;
-  while (usedNodeIds.has(candidate)) {
-    candidate = `${base}_${index}`;
-    index += 1;
-  }
-  usedNodeIds.add(candidate);
-  return candidate;
-}
-
-function cloneJson<T>(value: T): T {
-  return JSON.parse(JSON.stringify(value)) as T;
-}
-
-function preflightOperationCount(result: EditorPreflightResult): number {
-  return (
-    result.preflight.brand_ref_operations +
-    result.preflight.token_operations +
-    result.preflight.layout_operations
-  );
-}
-
-function artifactForExportPreview(
-  result: EditorExportResult,
-  pageIds: PageId[]
-): EditorExportArtifact | null {
-  return (
-    result.artifacts.find((artifact) => artifact.page_id && pageIds.includes(artifact.page_id)) ??
-    result.artifacts[0] ??
-    null
-  );
-}
-
-function logExportDiagnostics(diagnostics: Diagnostic[]): void {
-  if (diagnostics.length === 0 || typeof console === "undefined") {
-    return;
-  }
-  console.info(
-    "[lumen-export-preview] diagnostics",
-    diagnostics.map((diagnostic) => ({
-      severity: diagnostic.severity,
-      code: diagnostic.code,
-      message: diagnostic.message,
-      subject: diagnostic.subject
-    }))
-  );
-}
-
-function hasErrorDiagnostics(diagnostics: Diagnostic[]): boolean {
-  return diagnostics.some((diagnostic) => diagnostic.severity === "error");
-}
-
-function exportPreflightDiagnostics(preflight: EditorPreflightResult): Diagnostic[] {
-  const diagnostics = [...preflight.diagnostics];
-  const needsSyntheticError =
-    preflight.status !== "applied" ||
-    preflight.preflight.has_errors ||
-    !preflight.scene;
-
-  if (needsSyntheticError && !hasErrorDiagnostics(diagnostics)) {
-    diagnostics.unshift({
-      severity: "error",
-      phase: "validation",
-      code:
-        preflight.status !== "applied" || !preflight.scene
-          ? "EDITOR_EXPORT_PREFLIGHT_FAILED_NONBLOCKING"
-          : "EDITOR_EXPORT_PREFLIGHT_HAS_ERRORS",
-      message:
-        preflight.status !== "applied" || !preflight.scene
-          ? "Preflight failed; exporting the current scene anyway for preview inspection."
-          : "Preflight reported unresolved errors; exporting anyway for preview inspection.",
-      subject: { kind: "document" },
-      hint:
-        "This preview is useful for inspection, but the artifact is not ready for approval until preflight diagnostics are resolved."
-    });
-  }
-
-  return diagnostics;
-}
-
-function clampNumber(value: number, minimum: number, maximum: number): number {
-  return Math.min(maximum, Math.max(minimum, value));
-}
-
-function agentDraftPageId(
-  currentScene: Scene,
-  draftScene: Scene,
-  activePageId: PageId | null
-): PageId | null {
-  const newDraftPage = Object.values(draftScene.pages).find(
-    (page) => !currentScene.pages[page.id]
-  );
-  if (newDraftPage) {
-    return newDraftPage.id;
-  }
-  if (activePageId && draftScene.pages[activePageId]) {
-    return activePageId;
-  }
-  return firstPageId(draftScene);
-}
-
-function agentPreviewPageId(
-  operations: Operation[],
-  activePageId: PageId | null,
-  scene: Scene
-): PageId | null {
-  for (let index = operations.length - 1; index >= 0; index -= 1) {
-    const operation = operations[index];
-    if (operation.kind === "add_page") {
-      return operation.page.id;
-    }
-    if (operation.kind === "update_page") {
-      return operation.page_id;
-    }
-    if (operation.kind === "insert_node" && operation.parent.kind === "page") {
-      return operation.parent.id;
-    }
-    if (operation.kind === "move_node" && operation.new_parent.kind === "page") {
-      return operation.new_parent.id;
-    }
-  }
-  return activePageId && scene.pages[activePageId] ? activePageId : firstPageId(scene);
-}
-
-function uniqueChatMessageId(role: AgentChatMessage["role"]): string {
-  return `${role}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-}
-
-function isEditableEventTarget(target: EventTarget | null): boolean {
-  if (!(target instanceof HTMLElement)) {
-    return false;
-  }
-  const tagName = target.tagName.toLowerCase();
-  return (
-    tagName === "input" ||
-    tagName === "textarea" ||
-    tagName === "select" ||
-    target.isContentEditable
-  );
-}
-
-function keyboardHistoryAction(event: KeyboardEvent): "undo" | "redo" | null {
-  const key = event.key.toLowerCase();
-  const modifier = event.metaKey || event.ctrlKey;
-  if (!modifier) {
-    return null;
-  }
-  if (key === "z" && event.shiftKey) {
-    return "redo";
-  }
-  if (key === "z") {
-    return "undo";
-  }
-  if (key === "y") {
-    return "redo";
-  }
-  return null;
-}
-
-function arrowNudge(key: string): { x: number; y: number } | null {
-  switch (key) {
-    case "ArrowLeft":
-      return { x: -1, y: 0 };
-    case "ArrowRight":
-      return { x: 1, y: 0 };
-    case "ArrowUp":
-      return { x: 0, y: -1 };
-    case "ArrowDown":
-      return { x: 0, y: 1 };
-    default:
-      return null;
-  }
-}
-
-function latestBrandKitVersion(
-  brandKits: BrandKitSummary[],
-  currentRef: BrandKitRef | null
-): BrandKitSummary | null {
-  if (!currentRef) {
-    return null;
-  }
-
-  return (
-    brandKits
-      .filter((brandKit) => brandKit.id === currentRef.id && brandKit.version > currentRef.version)
-      .sort((left, right) => right.version - left.version)[0] ?? null
-  );
-}

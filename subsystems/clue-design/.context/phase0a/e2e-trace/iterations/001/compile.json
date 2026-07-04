@@ -1,0 +1,42 @@
+{
+  "compile": {
+    "status": "error",
+    "applied_operations": 0,
+    "operation_count": 0,
+    "diagnostics": [
+      {
+        "severity": "info",
+        "code": null,
+        "message": "{'diagnostic': {'code': 'LUMD0210', 'hint': 'Use property calls such as p(x,y), s(w,h), fill(#hex), font(...), or slot(key).', 'message': 'unsupported property syntax text', 'phase': 'dsl', 'severity': 'error', 'subject': None}, 'span': {'column': 1, 'length': 4, 'line': 1}}",
+        "line": 1,
+        "column": 1,
+        "target_page_id": null,
+        "target_node_id": null,
+        "target_slot_id": null,
+        "target_slot_key": null,
+        "suggested_repair": null
+      }
+    ],
+    "halted_at": {
+      "code": "LUMD0210",
+      "line": 1
+    },
+    "operation_error": null
+  },
+  "operations": [],
+  "dsl_session": {
+    "emitted_slots": {},
+    "parent_stack": [],
+    "previous_can_have_children": true,
+    "previous_structural_depth": null,
+    "seen_node_ids": [
+      "band",
+      "body",
+      "canvas",
+      "headline",
+      "hero",
+      "kicker"
+    ]
+  },
+  "checkpoint_label": null
+}

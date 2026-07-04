@@ -2,11 +2,12 @@
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { beforeAll, describe, expect, it } from "vitest";
-import type { CanvasKit, Surface, TypefaceFontProvider } from "canvaskit-wasm";
-import type { Node, Scene } from "../../contracts";
+import type { CanvasKit, Image, Surface, TypefaceFontProvider } from "canvaskit-wasm";
+import type { AssetRecord, Node, Scene } from "../../contracts";
 import { minimalScene } from "@/fixtures/minimalScene";
 import { nodeDescriptor, pageDescriptor, type RenderPageDescriptor } from "../../renderAdapter";
 import { drawDescriptorTree, type DrawNode } from "../drawDescriptors";
+import type { CanvasKitImageSource } from "../imageCache";
 
 /**
  * Wave 3 C2: the descriptor→CanvasKit interpreter, verified by rendering to a
@@ -45,12 +46,13 @@ function render(
   pageId: string,
   width: number,
   height: number,
-  fontProvider: TypefaceFontProvider | null = null
+  fontProvider: TypefaceFontProvider | null = null,
+  images: CanvasKitImageSource | null = null
 ): Uint8Array {
   const surface: Surface = ck.MakeSurface(width, height)!;
   const canvas = surface.getCanvas();
   const { page, nodes } = tree(scene, pageId);
-  drawDescriptorTree(ck, canvas, page, nodes, fontProvider);
+  drawDescriptorTree(ck, canvas, page, nodes, fontProvider, images);
   surface.flush();
   const image = surface.makeImageSnapshot();
   const pixels = image.readPixels(0, 0, {
@@ -102,6 +104,89 @@ function rect(id: string, x: number, y: number, w: number, h: number, fill: stri
   };
 }
 
+/** A raster asset record (status ready) with the given natural pixel size. */
+function rasterAsset(id: string, pixelWidth: number, pixelHeight: number): AssetRecord {
+  return {
+    id,
+    label: id,
+    kind: "raster_image",
+    status: "ready",
+    source: { kind: "workspace", asset_id: id },
+    raster: {
+      pixel_width: pixelWidth,
+      pixel_height: pixelHeight,
+      dpi_x: null,
+      dpi_y: null,
+      has_alpha: false,
+      color_profile: null,
+      aspect_ratio: null
+    },
+    vector: null,
+    font: null,
+    logo: null,
+    license: null,
+    provenance: {
+      created_by: "test",
+      created_at: "2026-06-20T00:00:00Z",
+      source_label: "test fixture",
+      confidence: 1,
+      notes: []
+    },
+    tags: []
+  };
+}
+
+function imageNode(
+  id: string,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  assetId: string,
+  placement: Node["asset_placement"]
+): Node {
+  const base = JSON.parse(JSON.stringify(minimalScene.nodes.node_contact_name)) as Node;
+  return {
+    ...base,
+    id,
+    name: id,
+    kind: { kind: "image", asset_id: assetId, alt: "test image" },
+    source_asset_id: assetId,
+    asset_placement: placement,
+    children: [],
+    transform: { ...base.transform, x, y },
+    size: { width: { kind: "fixed", value: w }, height: { kind: "fixed", value: h } },
+    fills: [],
+    strokes: [],
+    corner: { top_left: 0, top_right: 0, bottom_right: 0, bottom_left: 0 },
+    computed: { layout_bounds: { x, y, width: w, height: h }, render_bounds: { x, y, width: w, height: h } }
+  };
+}
+
+/** Build a decoded raster image from raw RGBA pixels (row-major, 4 bytes/px). */
+function rasterImage(width: number, height: number, rgba: number[]): Image {
+  const image = ck.MakeImage(
+    {
+      width,
+      height,
+      colorType: ck.ColorType.RGBA_8888,
+      alphaType: ck.AlphaType.Unpremul,
+      colorSpace: ck.ColorSpace.SRGB
+    },
+    Uint8Array.from(rgba),
+    width * 4
+  );
+  if (!image) {
+    throw new Error("MakeImage returned null");
+  }
+  return image;
+}
+
+/** A single-decoded-image source keyed to one asset id. */
+function imageSource(assetId: string, image: Image): CanvasKitImageSource {
+  return { get: (id) => (id === assetId ? image : null) };
+}
+
 describe.skipIf(!present)("CanvasKit descriptor interpreter (Wave 3 C2)", () => {
   beforeAll(async () => {
     ck = await loadCk();
@@ -148,6 +233,66 @@ describe.skipIf(!present)("CanvasKit descriptor interpreter (Wave 3 C2)", () => 
     expect(green).toBe(red);
     expect(blue).toBe(red);
     expect(alpha).toBe(255);
+  });
+
+  it("draws real image pixels for a ready image node (not the gray placeholder)", () => {
+    const green = [0, 200, 0, 255];
+    const img = rasterImage(2, 2, [...green, ...green, ...green, ...green]);
+    const node = imageNode("img", 30, 10, 40, 40, "asset_img", {
+      fit: "cover",
+      focal_point: null,
+      alt_text: null
+    });
+    const scene = pxScene({ img: node }, ["img"]);
+    scene.assets.asset_img = rasterAsset("asset_img", 2, 2);
+
+    const out = render(scene, "page_a4", 100, 60, null, imageSource("asset_img", img));
+    img.delete();
+
+    const [r, g, b, a] = pixel(out, 50, 30, 100); // box center
+    expect(g).toBeGreaterThan(150); // image green drawn, not the gray placeholder
+    expect(r).toBeLessThan(90);
+    expect(b).toBeLessThan(90);
+    expect(a).toBe(255);
+    // Placeholder gray is #ddd7cc (≈221,215,204) — prove we did NOT draw it.
+    expect(r === 221 && g === 215 && b === 204).toBe(false);
+  });
+
+  it("honors the focal point for a cover crop (left-focal → left of image, right-focal → right)", () => {
+    // 4×2 image: columns 0–1 red, columns 2–3 blue (natural ratio 2:1).
+    const red = [255, 0, 0, 255];
+    const blue = [0, 0, 255, 255];
+    const row = [...red, ...red, ...blue, ...blue];
+    const img = rasterImage(4, 2, [...row, ...row]);
+
+    // Tall 20×60 box: a cover crop scales the image to 120×60 and slides it
+    // horizontally by the focal point, so x=0 shows the red edge, x=1 the blue.
+    const makeScene = (focalX: number): Scene => {
+      const node = imageNode("img", 0, 0, 20, 60, "asset_img", {
+        fit: "cover",
+        focal_point: { x: focalX, y: 0.5 },
+        alt_text: null
+      });
+      const scene = pxScene({ img: node }, ["img"]);
+      scene.pages.page_a4 = {
+        ...scene.pages.page_a4,
+        size: { width: 20, height: 60, unit: "px", preset: "custom", orientation: "portrait" }
+      };
+      scene.assets.asset_img = rasterAsset("asset_img", 4, 2);
+      return scene;
+    };
+
+    const leftFocal = render(makeScene(0), "page_a4", 20, 60, null, imageSource("asset_img", img));
+    const rightFocal = render(makeScene(1), "page_a4", 20, 60, null, imageSource("asset_img", img));
+    img.delete();
+
+    const [lr, , lb] = pixel(leftFocal, 10, 30, 20);
+    expect(lr).toBeGreaterThan(150); // focal x=0 → red side visible
+    expect(lb).toBeLessThan(100);
+
+    const [rr, , rb] = pixel(rightFocal, 10, 30, 20);
+    expect(rb).toBeGreaterThan(150); // focal x=1 → blue side visible
+    expect(rr).toBeLessThan(100);
   });
 });
 

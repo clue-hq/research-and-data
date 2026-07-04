@@ -1,0 +1,90 @@
+{
+  "compile": {
+    "status": "ok",
+    "applied_operations": 1,
+    "operation_count": 1,
+    "diagnostics": [],
+    "halted_at": null,
+    "operation_error": null
+  },
+  "operations": [
+    {
+      "kind": "update_node",
+      "node_id": "headline",
+      "patch": {
+        "asset_placement": {
+          "kind": "unchanged"
+        },
+        "clip": {
+          "kind": "unchanged"
+        },
+        "computed": {
+          "kind": "clear"
+        },
+        "corner": {
+          "kind": "unchanged"
+        },
+        "fills": {
+          "kind": "unchanged"
+        },
+        "kind": {
+          "kind": "set",
+          "value": {
+            "align": "left",
+            "content": "Calmer clinics, faster triage",
+            "direction": "ltr",
+            "font_family": "Inter",
+            "font_size": 32.0,
+            "font_weight": 800,
+            "kind": "text",
+            "letter_spacing": 0.0,
+            "line_height": 1.1,
+            "wrap": "wrap"
+          }
+        },
+        "layout": {
+          "kind": "unchanged"
+        },
+        "locked": {
+          "kind": "unchanged"
+        },
+        "name": {
+          "kind": "unchanged"
+        },
+        "opacity": {
+          "kind": "unchanged"
+        },
+        "opacity_token": {
+          "kind": "unchanged"
+        },
+        "size": {
+          "kind": "unchanged"
+        },
+        "source_asset_id": {
+          "kind": "unchanged"
+        },
+        "strokes": {
+          "kind": "unchanged"
+        },
+        "transform": {
+          "kind": "unchanged"
+        }
+      }
+    }
+  ],
+  "dsl_session": {
+    "emitted_slots": {},
+    "parent_stack": [],
+    "previous_can_have_children": true,
+    "previous_structural_depth": null,
+    "seen_node_ids": [
+      "band",
+      "body",
+      "canvas",
+      "headline",
+      "hero",
+      "kicker"
+    ]
+  },
+  "checkpoint_label": null
+}

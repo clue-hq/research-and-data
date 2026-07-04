@@ -114,7 +114,8 @@ describe.skipIf(!wasmArtifactPresent)("EditorApp on the WASM engine", () => {
             idle: async () => undefined,
             enqueueOperations: (operations) => {
               enqueued.push(operations);
-            }
+            },
+            resync: () => {}
           };
         }}
       />
@@ -199,6 +200,35 @@ describe.skipIf(!wasmArtifactPresent)("EditorApp on the WASM engine", () => {
     } finally {
       vi.unstubAllEnvs();
     }
+  });
+
+  it("shows a loud canvas banner when the engine is expected but not active", async () => {
+    // Flag on, no injected engine → the runtime loader can't resolve /wasm/
+    // here (load_failure). The canvas is inert in server-only mode, so the
+    // banner must appear and name the fix — never a silent, uneditable canvas.
+    vi.stubEnv("NEXT_PUBLIC_LUMEN_WASM_CORE", "1");
+    try {
+      const scene = cloneScene();
+      render(<EditorApp initialScene={scene} initialSelectedNodeId={null} />);
+
+      const banner = await screen.findByTestId("engine-disabled-banner");
+      expect(banner).toHaveTextContent(/Canvas editing is disabled/i);
+      expect(banner).toHaveTextContent(/npm run build:wasm/);
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it("shows no engine banner when the WASM engine is active", async () => {
+    const module = await loadWasmModuleFromDisk();
+    const scene = cloneScene();
+    const engine = new WasmEngine(module, scene);
+
+    render(
+      <EditorApp initialScene={scene} initialSelectedNodeId={null} optimisticEngine={engine} />
+    );
+
+    expect(screen.queryByTestId("engine-disabled-banner")).toBeNull();
   });
 
   it("moves the selected node with arrow keys through the engine", async () => {

@@ -19,7 +19,8 @@ use crate::measure::{
     UNBOUNDED_LAYOUT_WIDTH,
 };
 use lumen_core::{
-    page_geometry, render_box_for_node, Color, CornerRadii, Diagnostic, DiagnosticSubject,
+    page_geometry, paints_out_of_tree, pinned_paint_pass, render_box_for_node, Color, CornerRadii,
+    Diagnostic, DiagnosticSubject,
     EffectKind, ImageFitMode, ImageNode, Node, NodeId, NodeKind, Page, PageId, Paint, Phase, Scene,
     Stroke, StrokeAlign, StrokeCap, StrokeJoin, TextAlign, TextNode, TextWrap,
 };
@@ -145,8 +146,28 @@ impl<'a> PagePainter<'a> {
         }
 
         for child_id in &page.children {
+            if self.skips_inline_paint(child_id) {
+                continue;
+            }
             self.paint_node(canvas, child_id, None);
         }
+
+        // Phase 1d freehand: pinned nodes escape every ancestor mask (only
+        // the page clips — the Moda model). Inline painting skipped them;
+        // they paint here in document order, above the in-flow content,
+        // from page space (their computed geometry is page-space already).
+        for node_id in pinned_paint_pass(self.scene, page) {
+            self.paint_node(canvas, &node_id, None);
+        }
+    }
+
+    /// Pinned nodes never paint inside their parent's tree — see
+    /// [`pinned_paint_pass`].
+    fn skips_inline_paint(&self, node_id: &NodeId) -> bool {
+        self.scene
+            .nodes
+            .get(node_id)
+            .is_some_and(paints_out_of_tree)
     }
 
     fn paint_node(
@@ -217,6 +238,9 @@ impl<'a> PagePainter<'a> {
                     canvas.clip_rrect(corner_rrect(node, width, height), None, true);
                 }
                 for child_id in &node.children {
+                    if self.skips_inline_paint(child_id) {
+                        continue;
+                    }
                     self.paint_node(canvas, child_id, child_parent_origin);
                 }
                 if node.clip {
@@ -225,6 +249,9 @@ impl<'a> PagePainter<'a> {
             }
             NodeKind::Group => {
                 for child_id in &node.children {
+                    if self.skips_inline_paint(child_id) {
+                        continue;
+                    }
                     self.paint_node(canvas, child_id, child_parent_origin);
                 }
             }
@@ -261,6 +288,15 @@ impl<'a> PagePainter<'a> {
             }
             NodeKind::Vector(vector) => {
                 if let Some(path) = skia_safe::utils::parse_path::from_svg(&vector.path_data) {
+                    // A library icon carries its source viewBox: scale the path uniformly
+                    // and center it within the node box (so an icon renders at the node's
+                    // size, not its intrinsic 24px). Hand-authored vectors (view_box None)
+                    // draw at raw node-local coordinates, unchanged.
+                    let scaled = icon_fit_matrix(vector.view_box, width, height);
+                    if let Some(matrix) = scaled {
+                        canvas.save();
+                        canvas.concat(&matrix);
+                    }
                     for fill in &node.fills {
                         if let Some(paint) =
                             self.fill_paint(&fill.paint, width, height, Some(&node.id))
@@ -274,6 +310,9 @@ impl<'a> PagePainter<'a> {
                         {
                             canvas.draw_path(&path, &paint);
                         }
+                    }
+                    if scaled.is_some() {
+                        canvas.restore();
                     }
                 } else {
                     self.diagnostics.push(Diagnostic::warning(
@@ -932,6 +971,22 @@ fn corner_rrect(node: &Node, width: f64, height: f64) -> RRect {
         &node.corner,
         0.0,
     )
+}
+
+/// The transform that fits a vector node's source viewBox uniformly (centered) into
+/// its rendered box, so a library icon renders at the node's size. `None` when the
+/// node has no viewBox (a hand-authored vector path → draw at raw coordinates).
+fn icon_fit_matrix(view_box: Option<[f64; 2]>, width: f64, height: f64) -> Option<Matrix> {
+    let [vbw, vbh] = view_box?;
+    if vbw <= 0.0 || vbh <= 0.0 {
+        return None;
+    }
+    let scale = (width / vbw).min(height / vbh);
+    let tx = (width - vbw * scale) / 2.0;
+    let ty = (height - vbh * scale) / 2.0;
+    let mut matrix = Matrix::translate((tx as f32, ty as f32));
+    matrix.pre_scale((scale as f32, scale as f32), None);
+    Some(matrix)
 }
 
 /// Corner-radius delta for natively aligned strokes: inside strokes shrink

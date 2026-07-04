@@ -17,17 +17,23 @@ import {
 } from "@/engine/gestureMachine";
 import {
   descriptorToScene,
-  dragActionToOperation,
+  dragActionToOperations,
   handleAtPoint,
   resizeActionToOperation,
   screenToDescriptor
 } from "@/engine/canvaskitGestures";
-import { getNode, getPage, nodeDisplayName, topLevelAncestorId } from "@/engine/sceneQueries";
+import {
+  getNode,
+  getPage,
+  isNodePinned,
+  nodeDisplayName,
+  topLevelAncestorId
+} from "@/engine/sceneQueries";
 import { nodeDescriptor, pageDescriptor, type ParentComputedOrigin } from "@/engine/renderAdapter";
 import { loadCanvasKit } from "@/engine/canvaskit/loadCanvasKit";
 import { skiaMeasurements } from "@/engine/canvaskit/skiaMeasurements";
 import type { Box } from "@/engine/transformerMath";
-import { updateTextNode } from "@/engine/operations";
+import { nodePatch, set, updateTextNode } from "@/engine/operations";
 import {
   clampWorkspacePanToKeepVisible,
   clampWorkspaceZoom,
@@ -62,9 +68,15 @@ export interface CanvasKitCanvasProps {
   scene: Scene;
   activePageId: PageId | null;
   selectedNodeId: NodeId | null;
-  onSelectNode: (nodeId: NodeId | null) => void;
+  /** The full multi-selection set (shift/Cmd+click). The primary node
+   * (selectedNodeId) gets full transform chrome; the rest render as plain
+   * outlines to show they are agent edit targets. */
+  selectedNodeIds?: NodeId[];
+  onSelectNode: (nodeId: NodeId | null, additive?: boolean) => void;
   onSelectPage?: (pageId: PageId) => void;
-  onOperation: (operation: Operation) => void;
+  /** Commits land as one atomic batch (one undo frame) — a container drag
+   * can carry pinned-descendant box translations alongside the primary op. */
+  onOperations: (operations: Operation[]) => void;
   /** The engine provides authoritative point→node hit-testing (C3a). */
   engine: OptimisticEnginePort | null;
   diagnostics?: Diagnostic[];
@@ -92,9 +104,10 @@ export function CanvasKitCanvas({
   scene,
   activePageId,
   selectedNodeId,
+  selectedNodeIds,
   onSelectNode,
   onSelectPage,
-  onOperation,
+  onOperations,
   engine,
   diagnostics = [],
   workspaceModel,
@@ -240,8 +253,32 @@ export function CanvasKitCanvas({
         : null;
       return {
         descriptor,
-        children: node.children.map((childId) => buildForPage(pageId, childId, childParentComputedOrigin)).filter(Boolean) as DrawNode[]
+        // Pinned children are skipped inline and hoisted to the page-level
+        // pass below — mirroring the engine renderers (`pinned_paint_pass`)
+        // so the editor canvas and exports stack identically.
+        children: node.children
+          .filter((childId) => !isNodePinned(scene, childId))
+          .map((childId) => buildForPage(pageId, childId, childParentComputedOrigin))
+          .filter(Boolean) as DrawNode[]
       };
+    };
+    // Every pinned node under the page, in document order: painted last
+    // (above in-flow content), positioned from its page-space computed box.
+    const pinnedForPage = (pageId: PageId): DrawNode[] => {
+      const currentPage = scene.pages[pageId];
+      if (!currentPage) return [];
+      const out: DrawNode[] = [];
+      const walk = (nodeId: NodeId) => {
+        const node = scene.nodes[nodeId];
+        if (!node) return;
+        if (isNodePinned(scene, nodeId)) {
+          const built = buildForPage(pageId, nodeId, null);
+          if (built) out.push(built);
+        }
+        node.children.forEach(walk);
+      };
+      currentPage.children.forEach(walk);
+      return out;
     };
     return workspaceModel.artboards
       .map((artboard) => {
@@ -253,7 +290,13 @@ export function CanvasKitCanvas({
           page: pageDescriptor(currentPage),
           workspaceRect: artboard.workspaceRect,
           isActive: artboard.isActive,
-          nodes: currentPage.children.map((nodeId) => buildForPage(artboard.pageId, nodeId)).filter(Boolean) as DrawNode[]
+          nodes: [
+            ...(currentPage.children
+              .filter((nodeId) => !isNodePinned(scene, nodeId))
+              .map((nodeId) => buildForPage(artboard.pageId, nodeId))
+              .filter(Boolean) as DrawNode[]),
+            ...pinnedForPage(artboard.pageId)
+          ]
         };
       })
       .filter(Boolean) as Array<{
@@ -274,6 +317,29 @@ export function CanvasKitCanvas({
     const d = nodeDescriptor(scene, node, page);
     return { box: { x: d.x, y: d.y, width: d.width, height: d.height }, rotation: d.rotation, nodeId: selectedNodeId };
   }, [scene, page, selectedNodeId, preview]);
+
+  // Step 5 (E0.2): a draggable focal-point dot for the selected image node.
+  const focalPoint = useMemo(() => {
+    if (!selectionBox) return null;
+    const node = getNode(scene, selectionBox.nodeId);
+    if (!node || node.kind.kind !== "image") return null;
+    return node.asset_placement?.focal_point ?? { x: 0.5, y: 0.5 };
+  }, [scene, selectionBox]);
+
+  const commitFocalPoint = useCallback(
+    (focal: { x: number; y: number }) => {
+      if (!selectionBox) return;
+      const node = getNode(scene, selectionBox.nodeId);
+      if (!node || node.kind.kind !== "image") return;
+      const placement = {
+        ...(node.asset_placement ?? {}),
+        fit: node.asset_placement?.fit ?? "cover",
+        focal_point: focal
+      };
+      onOperations([{ kind: "update_node", node_id: node.id, patch: nodePatch({ asset_placement: set(placement) }) }]);
+    },
+    [scene, selectionBox, onOperations]
+  );
 
   const chromeModel = useMemo(
     () =>
@@ -297,6 +363,16 @@ export function CanvasKitCanvas({
     },
     [scene, page]
   );
+
+  // Secondary multi-selection: every selected node except the primary, drawn
+  // as a plain outline (no handles) to show it is an agent edit target.
+  const secondarySelectionBoxes = useMemo<Array<{ box: Box; rotation: number }>>(() => {
+    if (!selectedNodeIds || selectedNodeIds.length < 2) return [];
+    return selectedNodeIds
+      .filter((id) => id !== selectedNodeId)
+      .map((id) => boxForNode(id))
+      .filter((entry): entry is { box: Box; rotation: number } => entry !== null);
+  }, [selectedNodeIds, selectedNodeId, boxForNode]);
 
   const pressTargetFor = useCallback(
     (descriptorPoint: { x: number; y: number }): PressTarget => {
@@ -362,15 +438,15 @@ export function CanvasKitCanvas({
       if (!page) return;
       switch (action.kind) {
         case "select":
-          onSelectNode(action.nodeId);
+          onSelectNode(action.nodeId, action.additive);
           break;
         case "drag": {
           const node = getNode(scene, action.nodeId);
           if (!node) break;
           if (action.committed) {
             setPreview(null);
-            const op = dragActionToOperation(action.box, scene, node, page, pageOrigin);
-            if (op) onOperation(op);
+            const ops = dragActionToOperations(action.box, scene, node, page, pageOrigin);
+            if (ops.length > 0) onOperations(ops);
           } else {
             setPreview({ nodeId: action.nodeId, box: action.box, rotation: nodeDescriptor(scene, node, page).rotation });
           }
@@ -383,7 +459,7 @@ export function CanvasKitCanvas({
           if (action.committed) {
             setPreview(null);
             const op = resizeActionToOperation(action.box, rotation, scene, node, page, pageOrigin);
-            if (op) onOperation(op);
+            if (op) onOperations([op]);
           } else {
             setPreview({ nodeId: action.nodeId, box: action.box, rotation });
           }
@@ -395,7 +471,7 @@ export function CanvasKitCanvas({
           if (action.committed) {
             setPreview(null);
             const op = resizeActionToOperation(selectionBox.box, action.rotation, scene, node, page, pageOrigin);
-            if (op) onOperation(op);
+            if (op) onOperations([op]);
           } else {
             setPreview({ nodeId: action.nodeId, box: selectionBox.box, rotation: action.rotation });
           }
@@ -421,7 +497,7 @@ export function CanvasKitCanvas({
           break;
       }
     },
-    [scene, page, pageOrigin, selectionBox, onOperation, onSelectNode, boxForNode]
+    [scene, page, pageOrigin, selectionBox, onOperations, onSelectNode, boxForNode]
   );
 
   const dispatch = useCallback(
@@ -477,6 +553,18 @@ export function CanvasKitCanvas({
     );
     const scenePoint = descriptorToScene(descriptorPoint, unitScale);
     const hit = engine?.hitTest?.(activePageId ?? "", scenePoint.x, scenePoint.y);
+    if (hitTraceEnabled()) {
+      const hitKind = hit?.hit ? getNode(scene, hit.hit)?.kind.kind ?? null : null;
+      hitTrace({
+        event: "dblclick",
+        engine: Boolean(engine?.hitTest),
+        page: activePageId,
+        scene: [traceCoord(scenePoint.x), traceCoord(scenePoint.y)],
+        hit: hit?.hit ?? null,
+        kind: hitKind,
+        textEdit: hitKind === "text"
+      });
+    }
     if (hit?.hit) {
       const node = getNode(scene, hit.hit);
       if (node?.kind.kind === "text") {
@@ -495,7 +583,7 @@ export function CanvasKitCanvas({
     const original = editing?.content;
     setEditingNodeId(null);
     if (node && content !== original) {
-      onOperation(updateTextNode(node, { content }));
+      onOperations([updateTextNode(node, { content })]);
     }
   };
 
@@ -608,10 +696,15 @@ export function CanvasKitCanvas({
           );
         }}
         onPointerDown={(event) => {
-          if (editingNodeId) return; // editing: let the textarea own the pointer
+          if (editingNodeId) {
+            // editing: let the textarea own the pointer
+            if (hitTraceEnabled()) hitTrace({ event: "down", skipped: "text-editing", node: editingNodeId });
+            return;
+          }
           setHoverNodeId(null);
           const screenPoint = screenPointFromEvent(event);
           if (workspaceTool === "hand") {
+            if (hitTraceEnabled()) hitTrace({ event: "down", skipped: "pan-tool" });
             panDragRef.current = {
               pointerId: event.pointerId,
               x: screenPoint.x,
@@ -629,6 +722,9 @@ export function CanvasKitCanvas({
           const workspacePoint = screenToWorkspace(screenPoint, workspaceViewport);
           const hitArtboard = artboardAtWorkspacePoint(workspaceModel, workspacePoint);
           if (!hitArtboard) {
+            if (hitTraceEnabled()) {
+              hitTrace({ event: "down", engine: Boolean(engine?.hitTest), page: null, target: "outside-artboards" });
+            }
             onSelectNode(null);
             return;
           }
@@ -645,6 +741,16 @@ export function CanvasKitCanvas({
             const hit = scenePoint
               ? engine?.hitTest?.(hitArtboard.pageId, scenePoint.x, scenePoint.y)
               : null;
+            if (hitTraceEnabled()) {
+              hitTrace({
+                event: "down",
+                engine: Boolean(engine?.hitTest),
+                page: hitArtboard.pageId,
+                pageSwitch: true,
+                scene: scenePoint ? [traceCoord(scenePoint.x), traceCoord(scenePoint.y)] : null,
+                hit: hit?.hit ?? null
+              });
+            }
             onSelectPage?.(hitArtboard.pageId);
             onSelectNode(hit?.hit ?? null);
             return;
@@ -654,7 +760,22 @@ export function CanvasKitCanvas({
           } catch {
             // Pointer capture is best-effort (e.g., synthetic pointers in tests).
           }
-          dispatch({ kind: "down", point: pointerFromEvent(event), target: pressTargetFor(pointerFromEvent(event)), modifiers: modifiersFromEvent(event) });
+          const pointer = pointerFromEvent(event);
+          const target = pressTargetFor(pointer);
+          if (hitTraceEnabled()) {
+            const scenePoint = descriptorToScene(pointer, unitScale);
+            hitTrace({
+              event: "down",
+              engine: Boolean(engine?.hitTest),
+              tool: workspaceTool,
+              page: activePageId,
+              scene: [traceCoord(scenePoint.x), traceCoord(scenePoint.y)],
+              hit: engine?.hitTest?.(activePageId ?? "", scenePoint.x, scenePoint.y)?.hit ?? null,
+              target: target.kind,
+              node: "nodeId" in target ? target.nodeId : null
+            });
+          }
+          dispatch({ kind: "down", point: pointer, target, modifiers: modifiersFromEvent(event) });
         }}
         onPointerMove={(event) => {
           const activePan = panDragRef.current;
@@ -715,6 +836,7 @@ export function CanvasKitCanvas({
               ? { box: selectionBox.box, rotation: selectionBox.rotation }
               : null
           }
+          secondarySelections={editingNodeId ? [] : secondarySelectionBoxes}
           hover={
             hoverNodeId && hoverNodeId !== selectedNodeId && !editingNodeId
               ? boxForNode(hoverNodeId)
@@ -729,6 +851,8 @@ export function CanvasKitCanvas({
           disabledReason={editingNodeId ? null : chromeModel.disabledReason}
           slotKeys={chromeModel.slotKeys}
           diagnosticCounts={chromeModel.diagnosticCounts}
+          focal={editingNodeId ? null : focalPoint}
+          onFocalChange={commitFocalPoint}
         />
         {editing ? (
           <TextEditOverlay
@@ -784,6 +908,29 @@ function CanvasKitArtboardLabels({
       ))}
     </div>
   );
+}
+
+/**
+ * Dev-only interaction trace, enabled by opening the editor with `?debug=hit`.
+ * One structured line per pointer-down / double-click so a pasted console log
+ * answers the load-bearing questions at once: is the engine alive, which page
+ * was hit-tested, what the hit-test returned, and what press target the
+ * gesture machine received. Without it, "I click and nothing happens" reports
+ * carry no signal (the console only shows unrelated event-listener noise).
+ */
+function hitTraceEnabled(): boolean {
+  return (
+    typeof window !== "undefined" &&
+    new URLSearchParams(window.location.search).get("debug") === "hit"
+  );
+}
+
+function hitTrace(payload: Record<string, unknown>): void {
+  console.log("[lumen-hit]", JSON.stringify(payload));
+}
+
+function traceCoord(value: number): number {
+  return Math.round(value * 10) / 10;
 }
 
 function screenPointFromEvent(

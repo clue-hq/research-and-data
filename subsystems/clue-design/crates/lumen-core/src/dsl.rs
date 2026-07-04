@@ -3615,16 +3615,28 @@ fn node_from_element(element: &DslElement, line_number: usize) -> Result<Node, D
                         "Use vector icon path(\"M0 0L10 10\") ...",
                     )
                 })?,
+            // Hand-authored vector paths are in node-local space — no viewBox fit.
+            view_box: None,
         }),
-        DslElementKind::SvgIcon { .. } => {
-            return Err(error_diag(
-                line_number,
-                1,
-                element.id.as_str().len(),
-                "LUMD0703",
-                "svg icon elements are parsed but not lowered by this workstream",
-                "Use vector path(...) for now; SVG/icon acquisition belongs to assets/pipeline-v0.",
-            ));
+        DslElementKind::SvgIcon { icon } => {
+            // `svg(icon:name)` lowers to a vector node carrying the curated icon's path
+            // and its source viewBox, so the renderers scale it into the node's box
+            // (recolor through the node's `fill($color.*)`).
+            let icon_name = icon.strip_prefix("icon:").unwrap_or(icon.as_str());
+            let resolved = crate::icons::resolve_icon(icon_name).ok_or_else(|| {
+                error_diag(
+                    line_number,
+                    1,
+                    element.id.as_str().len(),
+                    "LUMD0703",
+                    format!("unknown icon \"{icon_name}\""),
+                    format!("Use one of: {}.", crate::icons::icon_names().join(", ")),
+                )
+            })?;
+            NodeKind::Vector(VectorNode {
+                path_data: resolved.path_data.to_string(),
+                view_box: Some(resolved.view_box),
+            })
         }
         DslElementKind::AutoLayout { direction } => NodeKind::AutoLayout(AutoLayoutNode {
             direction: direction.clone(),

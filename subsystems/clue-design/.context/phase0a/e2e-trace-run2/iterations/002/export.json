@@ -1,0 +1,48 @@
+{
+  "export": {
+    "status": "ok",
+    "requested_format": "png",
+    "diagnostics": [
+      {
+        "severity": "warning",
+        "code": "LUME0205",
+        "message": "node band uses hug/fill sizing without resolved export geometry",
+        "line": null,
+        "column": null,
+        "target_page_id": null,
+        "target_node_id": "band",
+        "target_slot_id": null,
+        "target_slot_key": null,
+        "suggested_repair": "Run layout before export or provide fixed/computed dimensions."
+      },
+      {
+        "severity": "warning",
+        "code": "LUME0212",
+        "message": "node hero embeds asset hero_image whose license \"generated\" forbids export (profile agent_critique_preview, purpose AgentCritique)",
+        "line": null,
+        "column": null,
+        "target_page_id": null,
+        "target_node_id": null,
+        "target_slot_id": null,
+        "target_slot_key": null,
+        "suggested_repair": "This preview is allowed, but a print/publish export of this document will be rejected."
+      }
+    ],
+    "artifacts": [
+      {
+        "format": "png",
+        "mime_type": "image/png",
+        "page_id": "hero_poster",
+        "byte_len": 120359,
+        "path": "/var/folders/wc/ndxjgy7s7vjb8d9rfk4tyjtr0000gn/T/lumen-probe0a-g_90aqsn/runs/run_a0fdcc8a1e7c40bdbeec3b8dd195ab69/iterations/002/preview.png",
+        "width": 1080.0,
+        "height": 1350.0,
+        "aspect_ratio": 0.8,
+        "critic_input_path": "/var/folders/wc/ndxjgy7s7vjb8d9rfk4tyjtr0000gn/T/lumen-probe0a-g_90aqsn/runs/run_a0fdcc8a1e7c40bdbeec3b8dd195ab69/iterations/002/preview.png",
+        "valid": true,
+        "validation_errors": []
+      }
+    ],
+    "validation_errors": []
+  }
+}

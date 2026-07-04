@@ -163,8 +163,38 @@ describe("render adapter", () => {
       alt: "Account logo",
       assetLabel: "Demo Account Logo",
       assetKind: "logo",
-      assetStatus: "ready"
+      assetStatus: "ready",
+      fit: null,
+      focalPoint: null,
+      naturalAspectRatio: null
     });
+  });
+
+  it("carries fit, focal point, and natural aspect ratio for raster image placement", () => {
+    const scene = cloneScene();
+    const raster = assetRecord("asset_hero", "Hero Photo", "raster_image");
+    raster.raster = {
+      pixel_width: 1600,
+      pixel_height: 900,
+      dpi_x: null,
+      dpi_y: null,
+      has_alpha: false,
+      color_profile: null,
+      aspect_ratio: null
+    };
+    scene.assets.asset_hero = raster;
+    scene.nodes.node_contact_name = {
+      ...scene.nodes.node_contact_name,
+      kind: { kind: "image", asset_id: "asset_hero", alt: "Hero" },
+      source_asset_id: "asset_hero",
+      asset_placement: { fit: "cover", focal_point: { x: 0.25, y: 0.75 }, alt_text: "Hero" }
+    };
+
+    const descriptor = nodeDescriptor(scene, scene.nodes.node_contact_name, scene.pages.page_a4);
+
+    expect(descriptor.image?.fit).toBe("cover");
+    expect(descriptor.image?.focalPoint).toEqual({ x: 0.25, y: 0.75 });
+    expect(descriptor.image?.naturalAspectRatio).toBeCloseTo(1600 / 900, 6);
   });
 
   it("preserves vector source asset metadata for canvas placeholders and parity diagnostics", () => {

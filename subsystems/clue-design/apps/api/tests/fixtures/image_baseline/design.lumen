@@ -1,0 +1,7 @@
+page hero_poster size(1080,1350,px)
+  canvas al(v,g(0),pad(0),x(s)) p(0,0) s(1080,1350) fill($surface.page)
+    hero img asset(hero_image) s(1080,810)
+    band al(v,g($space.stack.default),pad($space.card.padding),x(s),y(c)) s(1080,fill) fill($surface.page)
+      kicker text "CASE STUDY" s(936,48) style($type.body) wrap_text(true)
+      headline text "Faster triage, calmer clinics" s(936,210) style($type.headline) wrap_text(true)
+      body text "How Insight Health cut phone wait times by 63% with AI intake." s(936,160) style($type.body) wrap_text(true)

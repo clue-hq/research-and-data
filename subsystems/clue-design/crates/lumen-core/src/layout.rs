@@ -3,8 +3,8 @@ use crate::ids::{NodeId, PageId};
 use crate::operations::{NodePatch, Operation, OptionalFieldPatch};
 use crate::page_geometry::page_geometry;
 use crate::scene::{
-    AutoLayoutDirection, ComputedGeometry, Dimension, LayoutAnchor, Node, NodeKind, Rect, Scene,
-    SizeSpec, TextWrap,
+    AutoLayoutDirection, ComputedGeometry, Dimension, LayoutAnchor, LayoutMode, Node, NodeKind,
+    PositionMode, Rect, Scene, SizeSpec, TextWrap,
 };
 use crate::slots::{ContentType, EmptyBehavior, ImagePolicy, OverflowPolicy, ReflowPolicy, Slot};
 use crate::text_measure::{
@@ -154,26 +154,36 @@ impl<'a> LayoutEngine<'a> {
         parent_size: Size2,
         page_id: &PageId,
     ) {
-        let Some(is_auto_layout) = self
-            .scene
-            .nodes
-            .get(node_id)
-            .map(|node| matches!(node.kind, NodeKind::AutoLayout(_)))
-        else {
+        let Some(node) = self.scene.nodes.get(node_id) else {
             return;
         };
 
-        if is_auto_layout {
+        // Phase 1 freehand: a pinned node lays out at its page-space
+        // absolute_box — `origin` (where the flow would have put it) is
+        // ignored and the box is authoritative for both position and size.
+        // An Absolute node without a box falls back to flow position, the
+        // same treatment as a rotated out-of-flow child.
+        let (origin, pinned_size) = match pinned_box(node) {
+            Some(pin) => (
+                Point2 { x: pin.x, y: pin.y },
+                Some(Size2 {
+                    width: pin.width,
+                    height: pin.height,
+                }),
+            ),
+            None => (origin, None),
+        };
+
+        // A Free container skips the flex solve entirely: it takes the
+        // manual path below, so its children keep their own baked
+        // transforms instead of being stacked.
+        if matches!(node.kind, NodeKind::AutoLayout(_)) && !is_free_container(node) {
             self.layout_auto_node(node_id, origin, parent_size, page_id);
             return;
         }
 
         self.warn_unresolved_dimension_tokens(node_id);
-        let Some(node) = self.scene.nodes.get(node_id) else {
-            return;
-        };
-
-        let size = self.resolve_manual_size(node, parent_size);
+        let size = pinned_size.unwrap_or_else(|| self.resolve_manual_size(node, parent_size));
         self.write_geometry(node, origin, size);
 
         for child_id in &node.children {
@@ -253,13 +263,23 @@ impl<'a> LayoutEngine<'a> {
         let node = self.scene.nodes.get(node_id).expect("node exists");
         let style = self.style_for_node(node, parent_size, parent_flow);
 
-        let taffy_id = if let NodeKind::AutoLayout(auto) = &node.kind {
+        let taffy_id = if let (NodeKind::AutoLayout(auto), false) =
+            (&node.kind, is_free_container(node))
+        {
             let flow = self.flow_context(node, auto.direction.clone(), parent_size);
             let mut children = Vec::new();
             for child_id in &node.children {
                 let Some(child) = self.scene.nodes.get(child_id) else {
                     continue;
                 };
+
+                // A pinned child leaves the flow deliberately — no
+                // diagnostic, unlike rotation, which is accidental
+                // out-of-flow. It lays out at its absolute_box through the
+                // fallback pass in collect_taffy_geometry.
+                if is_absolute(child) {
+                    continue;
+                }
 
                 if is_out_of_flow_transform(child) {
                     self.diagnostics.push(
@@ -288,6 +308,10 @@ impl<'a> LayoutEngine<'a> {
                 tree.new_with_children(style, &children)?
             }
         } else {
+            // Leaves — and Free containers, which join their parent's flow
+            // as a plain box: their children stay out of the flex tree and
+            // lay out at their own baked transforms through the fallback
+            // pass in collect_taffy_geometry.
             tree.new_leaf_with_context(style, self.measure_context_for(node))?
         };
 
@@ -323,9 +347,19 @@ impl<'a> LayoutEngine<'a> {
             x: parent_origin.x + f64::from(layout.location.x),
             y: parent_origin.y + f64::from(layout.location.y),
         };
-        let size = Size2 {
-            width: f64::from(layout.size.width),
-            height: f64::from(layout.size.height),
+        // A pinned node only enters a flex solve as its root (children of
+        // the solve are never Absolute), with its style sized from the box;
+        // write the exact f64 box back so `computed.layout_bounds` matches
+        // `absolute_box` byte-for-byte instead of the f32-rounded solve.
+        let size = match pinned_box(node) {
+            Some(pin) => Size2 {
+                width: pin.width,
+                height: pin.height,
+            },
+            None => Size2 {
+                width: f64::from(layout.size.width),
+                height: f64::from(layout.size.height),
+            },
         };
         self.write_geometry(node, origin, size);
 
@@ -439,6 +473,16 @@ impl<'a> LayoutEngine<'a> {
             flex_shrink: 0.0,
             ..Style::default()
         };
+
+        // A pinned node only ever enters a flex solve as its root
+        // (build_taffy_node skips Absolute children), so its box is the
+        // solve's fixed size regardless of the authored size spec.
+        if let Some(pin) = pinned_box(node) {
+            style.size = TaffySize {
+                width: length(pin.width as f32),
+                height: length(pin.height as f32),
+            };
+        }
 
         if let Some(flow) = parent_flow {
             match flow.direction {
@@ -559,7 +603,7 @@ impl<'a> LayoutEngine<'a> {
                     .get(child_id)
                     .map(|child| (child_id, child))
             })
-            .filter(|(_, child)| !is_out_of_flow_transform(child))
+            .filter(|(_, child)| !is_out_of_flow_transform(child) && !is_absolute(child))
             .collect::<Vec<_>>();
 
         let mut fill_nodes = BTreeSet::new();
@@ -800,6 +844,28 @@ impl<'a> LayoutEngine<'a> {
             return;
         }
 
+        // Freehand clip policy (Phase 1b, user decision 2026-07-03):
+        // freehand overflow is explicit intent, so it warns instead of
+        // blocking — the canvas shows the true clipped consequence.
+        // Managed content keeps the hard error.
+        if self.is_freehand(node_id) {
+            self.diagnostics.push(
+                Diagnostic::warning(
+                    Phase::Layout,
+                    "LUMV0800",
+                    format!(
+                        "node {} exceeds exportable bounds for page {}",
+                        node_id, page.id
+                    ),
+                    Some(DiagnosticSubject::Node(node_id.clone())),
+                )
+                .with_hint(
+                    "Freehand node extends beyond the artboard; content outside the page is not exported.",
+                ),
+            );
+            return;
+        }
+
         self.diagnostics.push(
             Diagnostic::error(
                 Phase::Layout,
@@ -829,10 +895,21 @@ impl<'a> LayoutEngine<'a> {
         };
 
         if !parent_is_page && !rect_contains(parent_bounds, &node_bounds) {
-            let severity = if self.parent_clips(node_id) {
+            // Freehand clip policy (Phase 1b, user decision 2026-07-03):
+            // a freehand node past a clipping parent warns instead of
+            // erroring — the human opted out of the solver's protection and
+            // the canvas shows the clipped result. Managed content keeps
+            // the fail-closed error under a clipping parent.
+            let freehand = self.is_freehand(node_id);
+            let severity = if !freehand && self.parent_clips(node_id) {
                 DiagnosticSeverity::Error
             } else {
                 DiagnosticSeverity::Warning
+            };
+            let hint = if freehand {
+                "Freehand node extends beyond its parent; the overflow is cut off wherever the parent clips content."
+            } else {
+                "Move, resize, wrap, or change the parent layout so the child fits."
             };
             let diagnostic = Diagnostic {
                 severity,
@@ -840,9 +917,7 @@ impl<'a> LayoutEngine<'a> {
                 code: "LUMV0801".to_owned(),
                 message: format!("node {} exceeds parent bounds on page {}", node_id, page.id),
                 subject: Some(DiagnosticSubject::Node(node_id.clone())),
-                hint: Some(
-                    "Move, resize, wrap, or change the parent layout so the child fits.".to_owned(),
-                ),
+                hint: Some(hint.to_owned()),
             };
             self.diagnostics.push(diagnostic);
         }
@@ -875,6 +950,27 @@ impl<'a> LayoutEngine<'a> {
                 .map(|node| node.clip)
                 .unwrap_or(false),
             Some(crate::scene::ParentRef::Page(_)) | None => true,
+        }
+    }
+
+    /// A node a human freehands directly: pinned Absolute, or a child of a
+    /// Free container (whose children all live at hand-placed transforms).
+    fn is_freehand(&self, node_id: &NodeId) -> bool {
+        if self
+            .scene
+            .nodes
+            .get(node_id)
+            .is_some_and(|node| is_absolute(node))
+        {
+            return true;
+        }
+        match self.scene.parent_of(node_id) {
+            Some(crate::scene::ParentRef::Node(parent_id)) => self
+                .scene
+                .nodes
+                .get(&parent_id)
+                .is_some_and(is_free_container),
+            Some(crate::scene::ParentRef::Page(_)) | None => false,
         }
     }
 
@@ -945,37 +1041,49 @@ impl<'a> LayoutEngine<'a> {
             let measured = self.measurer.measure(
                 &TextMeasureInput::from_text_node(text).with_bounds(&geometry.layout_bounds),
             );
-            if measured.exceeds_max_lines {
+            // Freehand text-fit policy (Phase 1d, user decision): a human
+            // resizing a pinned text box below its content is explicit
+            // intent — the canvas shows the true truncation, so text-fit
+            // codes are advisory for freehand nodes. Managed text keeps
+            // the fail-closed errors that protect agent-authored copy.
+            let severity = if self.is_freehand(&node.id) {
+                DiagnosticSeverity::Warning
+            } else {
+                DiagnosticSeverity::Error
+            };
+            let mut push = |code: &str, message: String, hint: &str| {
                 self.diagnostics.push(
-                    Diagnostic::error(
-                        Phase::Layout,
-                        "LUMV0904",
-                        format!("text node {} exceeds max_lines", node.id),
-                        Some(DiagnosticSubject::Node(node.id.clone())),
-                    )
-                    .with_hint("Increase max_lines, shorten the copy, or enlarge the text box."),
+                    Diagnostic {
+                        severity: severity.clone(),
+                        phase: Phase::Layout,
+                        code: code.to_owned(),
+                        message,
+                        subject: Some(DiagnosticSubject::Node(node.id.clone())),
+                        hint: None,
+                    }
+                    .with_hint(hint),
+                );
+            };
+            if measured.exceeds_max_lines {
+                push(
+                    "LUMV0904",
+                    format!("text node {} exceeds max_lines", node.id),
+                    "Increase max_lines, shorten the copy, or enlarge the text box.",
                 );
             }
             if measured.overflow_x && matches!(text.wrap, TextWrap::NoWrap) {
-                self.diagnostics.push(
-                    Diagnostic::error(
-                        Phase::Layout,
-                        "LUMV0902",
-                        format!("non-wrapping text node {} overflows horizontally", node.id),
-                        Some(DiagnosticSubject::Node(node.id.clone())),
-                    )
-                    .with_hint(
-                        "Use wrap(true), s(fill,hug), a smaller style, or a wider text box.",
-                    ),
+                push(
+                    "LUMV0902",
+                    format!("non-wrapping text node {} overflows horizontally", node.id),
+                    "Use wrap(true), s(fill,hug), a smaller style, or a wider text box.",
                 );
             }
             if measured.overflow_y {
-                self.diagnostics.push(Diagnostic::error(
-                    Phase::Layout,
+                push(
                     "LUMV0903",
                     format!("text node {} exceeds available height", node.id),
-                    Some(DiagnosticSubject::Node(node.id.clone())),
-                ).with_hint("Use hug height, increase the fixed height, reduce copy, or lower the font size."));
+                    "Use hug height, increase the fixed height, reduce copy, or lower the font size.",
+                );
             }
         }
     }
@@ -1509,6 +1617,32 @@ fn is_out_of_flow_transform(node: &Node) -> bool {
     node.transform.rotation.abs() > f64::EPSILON
         || node.transform.skew_x.abs() > f64::EPSILON
         || node.transform.skew_y.abs() > f64::EPSILON
+}
+
+/// Phase 1 freehand: a pinned node leaves normal flow exactly like a
+/// rotated child does — except deliberately.
+fn is_absolute(node: &Node) -> bool {
+    node.position_mode == PositionMode::Absolute
+}
+
+/// A container whose children lay out at their own baked transforms
+/// instead of the flex solve ("free this whole section").
+fn is_free_container(node: &Node) -> bool {
+    matches!(node.kind, NodeKind::AutoLayout(_))
+        && node
+            .layout
+            .as_ref()
+            .is_some_and(|layout| layout.layout_mode == LayoutMode::Free)
+}
+
+/// The page-space box a pinned node lays out at. The box alone means
+/// nothing while Managed; Absolute without a box falls back to flow
+/// position (mirrors the rotated out-of-flow treatment).
+fn pinned_box(node: &Node) -> Option<&Rect> {
+    match node.position_mode {
+        PositionMode::Absolute => node.absolute_box.as_ref(),
+        PositionMode::Managed => None,
+    }
 }
 
 fn render_bounds_for(layout_bounds: &Rect, node: &Node) -> Rect {

@@ -13,6 +13,7 @@ import type {
   Slot,
   SlotId
 } from "./contracts";
+import { editorApiBaseUrl } from "./editorConfig";
 import type { StructuredEdit } from "./structuredEdits";
 
 /**
@@ -311,20 +312,29 @@ export class WasmEngine implements OptimisticEnginePort {
   }
 }
 
+/**
+ * Track E rollout gate, now ON by default: the WASM core is the editor's only
+ * local engine — without it the canvas cannot hit-test, select, or edit
+ * (server-only mode). The old opt-in default meant any frontend started
+ * outside `dev-setup.sh frontend` silently shipped an uneditable canvas.
+ * Opt out via NEXT_PUBLIC_LUMEN_WASM_CORE=0 (deliberate server-only
+ * debugging); activation still requires the W5 version handshake to pass.
+ */
 export function wasmCoreFlagEnabled(): boolean {
   const flag = process.env.NEXT_PUBLIC_LUMEN_WASM_CORE;
-  return flag === "1" || flag === "true";
+  return flag !== "0" && flag !== "false";
 }
 
 /**
- * Wave 3 C5: render the editor canvas with CanvasKit instead of Konva. Off by
- * default — Konva stays the fallback until render parity + interaction
- * conformance hold. Parallel to the WASM-core flag (CanvasKit also needs the
- * in-browser engine for hit-testing).
+ * Wave 3 C5 / Step 2: render the editor canvas with CanvasKit instead of Konva.
+ * ON by default — CanvasKit is the Skia-parity renderer and the only path that
+ * draws real image pixels (E0.1); the legacy Konva canvas is opt-out via
+ * NEXT_PUBLIC_LUMEN_CANVASKIT=0. Parallel to the WASM-core flag (CanvasKit also
+ * needs the in-browser engine for hit-testing).
  */
 export function canvasKitFlagEnabled(): boolean {
   const flag = process.env.NEXT_PUBLIC_LUMEN_CANVASKIT;
-  return flag === "1" || flag === "true";
+  return flag !== "0" && flag !== "false";
 }
 
 export interface WasmModuleLoadOptions {
@@ -382,8 +392,7 @@ export async function activateWasmCore(
 ): Promise<WasmCoreActivation> {
   const loadModule = options.moduleLoader ?? (() => loadWasmModule(options));
   const fetchImpl = options.fetchImpl ?? fetch;
-  const apiBaseUrl =
-    options.apiBaseUrl ?? process.env.NEXT_PUBLIC_LUMEN_API_BASE_URL ?? "http://localhost:8000";
+  const apiBaseUrl = options.apiBaseUrl ?? editorApiBaseUrl();
 
   const module = await loadModule();
   if (!module) {

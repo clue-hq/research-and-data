@@ -7,8 +7,9 @@ use crate::operations::{
     OptionalFieldPatch, PagePatch,
 };
 use crate::scene::{
-    AutoLayoutProps, Color, CornerRadii, Effect, Fill, Node, NodeKind, PageSize, Paint, ParentRef,
-    Rect, Scene, SizeSpec, Stroke, TextAlign, TextDirection, TextNode, TextWrap, Transform,
+    AutoLayoutProps, Color, CornerRadii, Dimension, Effect, Fill, LayoutMode, Node, NodeKind,
+    PageSize, Paint, ParentRef, PositionMode, Rect, Scene, SizeSpec, Stroke, TextAlign,
+    TextDirection, TextNode, TextWrap, Transform,
 };
 use crate::slots::Slot;
 use serde::{Deserialize, Serialize};
@@ -1483,6 +1484,251 @@ pub fn build_move_to_parent(
     .with_inverses(scene)
 }
 
+/// Phase 1c freehand: detach a node from solver ownership. Pins the node at
+/// its *solved* box (`absolute_box` = `base_anchor` = `computed.layout_bounds`),
+/// so the detached node itself does not move; flow siblings close the vacated
+/// slot on the next solve, as in Figma (freezing a whole section in place is
+/// [`build_convert_container_layout`] with `Free`). Hug/Fill dimensions bake
+/// to Fixed at the solved extent so the size spec matches what the human sees
+/// (and what a later re-attach keeps).
+pub fn build_detach_to_freehand(scene: &Scene, node_id: NodeId) -> Result<EditBatch, EditError> {
+    let node = require_node(scene, &node_id)?;
+    if node.locked {
+        return Err(EditError::new(
+            EditErrorKind::LockedTarget,
+            format!("node {} is locked; unlock it before detaching", node_id),
+        )
+        .with_target(EditTargetRef::Node(node_id)));
+    }
+    if node.position_mode == PositionMode::Absolute {
+        return Err(EditError::new(
+            EditErrorKind::UnsupportedTarget,
+            format!("node {} is already freehand", node_id),
+        )
+        .with_target(EditTargetRef::Node(node_id)));
+    }
+    let solved = solved_bounds(node, &node_id, "detaching")?;
+
+    let mut patch = NodePatch {
+        position_mode: FieldPatch::Set(PositionMode::Absolute),
+        absolute_box: OptionalFieldPatch::Set(solved.clone()),
+        base_anchor: OptionalFieldPatch::Set(solved.clone()),
+        computed: OptionalFieldPatch::Clear,
+        ..NodePatch::default()
+    };
+    let baked = SizeSpec {
+        width: bake_dimension(&node.size.width, solved.width),
+        height: bake_dimension(&node.size.height, solved.height),
+    };
+    if baked != node.size {
+        patch.size = FieldPatch::Set(baked);
+    }
+
+    EditBatch::new(
+        vec![Operation::UpdateNode {
+            node_id: node_id.clone(),
+            patch,
+        }],
+        vec![EditTargetRef::Node(node_id)],
+    )
+    .with_intent("detach_to_freehand")
+    .with_inverses(scene)
+}
+
+/// Phase 1c freehand: return a pinned node to solver ownership. Clears the
+/// pin and the detach-time anchor; the next layout re-flows the node into
+/// its parent's solve. The size baked at detach (or resized since) is kept —
+/// the solver cannot know what Hug/Fill meant before the human took over.
+pub fn build_reattach_to_layout(scene: &Scene, node_id: NodeId) -> Result<EditBatch, EditError> {
+    let node = require_node(scene, &node_id)?;
+    if node.locked {
+        return Err(EditError::new(
+            EditErrorKind::LockedTarget,
+            format!("node {} is locked; unlock it before re-attaching", node_id),
+        )
+        .with_target(EditTargetRef::Node(node_id)));
+    }
+    if node.position_mode != PositionMode::Absolute {
+        return Err(EditError::new(
+            EditErrorKind::UnsupportedTarget,
+            format!("node {} is not freehand; nothing to re-attach", node_id),
+        )
+        .with_target(EditTargetRef::Node(node_id)));
+    }
+
+    let patch = NodePatch {
+        position_mode: FieldPatch::Set(PositionMode::Managed),
+        absolute_box: if node.absolute_box.is_some() {
+            OptionalFieldPatch::Clear
+        } else {
+            OptionalFieldPatch::Unchanged
+        },
+        base_anchor: if node.base_anchor.is_some() {
+            OptionalFieldPatch::Clear
+        } else {
+            OptionalFieldPatch::Unchanged
+        },
+        computed: OptionalFieldPatch::Clear,
+        ..NodePatch::default()
+    };
+
+    EditBatch::new(
+        vec![Operation::UpdateNode {
+            node_id: node_id.clone(),
+            patch,
+        }],
+        vec![EditTargetRef::Node(node_id)],
+    )
+    .with_intent("reattach_to_layout")
+    .with_inverses(scene)
+}
+
+/// Phase 1c freehand: flip an auto-layout container between the flex solve
+/// (`Stack`) and hand-placed children (`Free`). Converting to Free bakes
+/// every managed child's transform to its solved offset inside the container
+/// (and Hug/Fill sizes to Fixed) so the conversion is zero-motion; children
+/// already pinned Absolute are left untouched — their page-space box keeps
+/// winning either way. Converting back to Stack only flips the mode: the
+/// solve takes over and re-stacks the children.
+pub fn build_convert_container_layout(
+    scene: &Scene,
+    node_id: NodeId,
+    layout_mode: LayoutMode,
+) -> Result<EditBatch, EditError> {
+    let node = require_node(scene, &node_id)?;
+    if node.locked {
+        return Err(EditError::new(
+            EditErrorKind::LockedTarget,
+            format!("node {} is locked; unlock it before converting", node_id),
+        )
+        .with_target(EditTargetRef::Node(node_id)));
+    }
+    if !matches!(node.kind, NodeKind::AutoLayout(_)) {
+        return Err(EditError::new(
+            EditErrorKind::UnsupportedTarget,
+            format!(
+                "node {} is not an auto-layout container; layout mode does not apply",
+                node_id
+            ),
+        )
+        .with_target(EditTargetRef::Node(node_id)));
+    }
+    let current_props = node.layout.clone().unwrap_or_default();
+    if current_props.layout_mode == layout_mode {
+        return Err(EditError::new(
+            EditErrorKind::UnsupportedTarget,
+            format!(
+                "node {} is already {}",
+                node_id,
+                match layout_mode {
+                    LayoutMode::Stack => "a stack container",
+                    LayoutMode::Free => "a free container",
+                }
+            ),
+        )
+        .with_target(EditTargetRef::Node(node_id)));
+    }
+
+    let mut operations = Vec::new();
+    let mut touched = vec![EditTargetRef::Node(node_id.clone())];
+
+    if layout_mode == LayoutMode::Free {
+        let container_bounds = solved_bounds(node, &node_id, "freeing")?;
+        for child_id in &node.children {
+            let Some(child) = scene.nodes.get(child_id) else {
+                continue;
+            };
+            if child.position_mode == PositionMode::Absolute {
+                continue;
+            }
+            let child_bounds = solved_bounds(child, child_id, "freeing")?;
+
+            let mut child_patch = NodePatch::default();
+            let baked_transform = Transform {
+                x: child_bounds.x - container_bounds.x,
+                y: child_bounds.y - container_bounds.y,
+                ..child.transform.clone()
+            };
+            if baked_transform != child.transform {
+                child_patch.transform = FieldPatch::Set(baked_transform);
+            }
+            let baked_size = SizeSpec {
+                width: bake_dimension(&child.size.width, child_bounds.width),
+                height: bake_dimension(&child.size.height, child_bounds.height),
+            };
+            if baked_size != child.size {
+                child_patch.size = FieldPatch::Set(baked_size);
+            }
+            if node_patch_has_changes(&child_patch) {
+                child_patch.computed = OptionalFieldPatch::Clear;
+                operations.push(Operation::UpdateNode {
+                    node_id: child_id.clone(),
+                    patch: child_patch,
+                });
+                touched.push(EditTargetRef::Node(child_id.clone()));
+            }
+        }
+    }
+
+    operations.push(Operation::UpdateNode {
+        node_id: node_id.clone(),
+        patch: NodePatch {
+            layout: OptionalFieldPatch::Set(AutoLayoutProps {
+                layout_mode,
+                ..current_props
+            }),
+            computed: OptionalFieldPatch::Clear,
+            ..NodePatch::default()
+        },
+    });
+
+    EditBatch::new(operations, touched)
+        .with_intent("convert_container_layout")
+        .with_inverses(scene)
+}
+
+fn require_node<'a>(scene: &'a Scene, node_id: &NodeId) -> Result<&'a Node, EditError> {
+    scene.nodes.get(node_id).ok_or_else(|| {
+        EditError::new(
+            EditErrorKind::TargetNotFound,
+            format!("node {} does not exist", node_id),
+        )
+        .with_target(EditTargetRef::Node(node_id.clone()))
+    })
+}
+
+/// Freehand builders read the node's solved box; they never lay out
+/// themselves (the editor and helper both hold laid-out scenes, and an
+/// internal solve here could disagree with the canonical measurer).
+fn solved_bounds(node: &Node, node_id: &NodeId, verb: &str) -> Result<Rect, EditError> {
+    node.computed
+        .as_ref()
+        .map(|computed| computed.layout_bounds.clone())
+        .ok_or_else(|| {
+            EditError::new(
+                EditErrorKind::OperationFailed,
+                format!(
+                    "node {} has no computed geometry; run layout before {}",
+                    node_id, verb
+                ),
+            )
+            .with_target(EditTargetRef::Node(node_id.clone()))
+        })
+}
+
+/// Hug/Fill bake to the solved extent at detach/free time; Fixed keeps its
+/// authored value and Token dimensions keep their binding (baking a token
+/// to a number would silently sever brand governance).
+fn bake_dimension(dimension: &Dimension, solved: f64) -> Dimension {
+    match dimension {
+        Dimension::Hug | Dimension::Fill { .. } => Dimension::Fixed(solved),
+        Dimension::Fixed(value) => Dimension::Fixed(*value),
+        Dimension::Token { token } => Dimension::Token {
+            token: token.clone(),
+        },
+    }
+}
+
 pub fn build_clone_subtree(
     scene: &Scene,
     request: CloneSubtreeRequest,
@@ -2100,6 +2346,13 @@ fn node_patch_affects_render(patch: &NodePatch) -> bool {
         || !matches!(patch.asset_placement, OptionalFieldPatch::Unchanged)
         || !matches!(patch.clip, FieldPatch::Unchanged)
         || !matches!(patch.layout, OptionalFieldPatch::Unchanged)
+        // Phase 1 freehand: pinning/unpinning or moving an absolute box moves
+        // pixels, so stale computed geometry must be invalidated. Keep the TS
+        // mirror (`nodePatchAffectsRender`, apps/editor operations.ts) in sync
+        // when the editor starts emitting these fields (Phase 1d).
+        || !matches!(patch.position_mode, FieldPatch::Unchanged)
+        || !matches!(patch.absolute_box, OptionalFieldPatch::Unchanged)
+        || !matches!(patch.base_anchor, OptionalFieldPatch::Unchanged)
 }
 
 fn node_patch_has_changes(patch: &NodePatch) -> bool {
@@ -2243,6 +2496,19 @@ pub enum StructuredEditInstruction {
         #[serde(default)]
         replace_with: Option<String>,
     },
+    /// Phase 1c freehand: pin a node at its solved box (zero-motion detach).
+    DetachToFreehand {
+        node_id: NodeId,
+    },
+    /// Phase 1c freehand: return a pinned node to solver ownership.
+    ReattachToLayout {
+        node_id: NodeId,
+    },
+    /// Phase 1c freehand: flip a container between Stack and Free children.
+    ConvertContainerLayout {
+        node_id: NodeId,
+        layout_mode: LayoutMode,
+    },
 }
 
 impl StructuredEditInstruction {
@@ -2258,6 +2524,9 @@ impl StructuredEditInstruction {
             Self::ArchiveAsset { .. } => "archive_asset",
             Self::HardDeleteAsset { .. } => "hard_delete_asset",
             Self::DeleteExportProfile { .. } => "delete_export_profile",
+            Self::DetachToFreehand { .. } => "detach_to_freehand",
+            Self::ReattachToLayout { .. } => "reattach_to_layout",
+            Self::ConvertContainerLayout { .. } => "convert_container_layout",
         }
     }
 }
@@ -2316,5 +2585,15 @@ pub fn build_structured_edit_batch(
         StructuredEditInstruction::ReplaceNode { request } => {
             build_replace_node(scene, request.clone())
         }
+        StructuredEditInstruction::DetachToFreehand { node_id } => {
+            build_detach_to_freehand(scene, node_id.clone())
+        }
+        StructuredEditInstruction::ReattachToLayout { node_id } => {
+            build_reattach_to_layout(scene, node_id.clone())
+        }
+        StructuredEditInstruction::ConvertContainerLayout {
+            node_id,
+            layout_mode,
+        } => build_convert_container_layout(scene, node_id.clone(), *layout_mode),
     }
 }

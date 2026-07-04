@@ -25,6 +25,8 @@ one-pager. Use these as the ground truth for correct Lumen DSL syntax + token us
 | Block | Use it for |
 |-------|-----------|
 | Social square ad (1080×1080) | A square social/display ad: one focal message + 3 proof stats + one CTA. |
+| Full-canvas poster (1080×1080) | A LIGHT-content big-canvas ad: one focal message + CTA, no stats, distributed. |
+| Image hero (1080×1350) | A **photo-led** editorial hero/poster: full-bleed image + scrim + headline (text-over-image, scrimmed). |
 | A4 one-pager (A4 portrait) | A printed/PDF sell-sheet: header + hero + **vertical** 3-up benefits + CTA footer. |
 | Landscape flyer (1200×628) | A wide banner/email hero: left message + CTA, right proof-stat panel. |
 | Postcard (6×4 in) | The smallest surface: brand + recipient, one headline, one line, one CTA. |

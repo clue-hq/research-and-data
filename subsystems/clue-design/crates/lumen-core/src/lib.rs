@@ -11,6 +11,7 @@ pub mod dsl;
 pub mod editing;
 pub mod export_contract;
 pub mod hit_test;
+pub mod icons;
 pub mod ids;
 pub mod instance;
 pub mod layout;
@@ -69,9 +70,10 @@ pub use dsl::{
 };
 pub use editing::{
     batch_scope_violations, build_archive_asset, build_asset_modify, build_clone_subtree,
-    build_delete_export_profile, build_document_modify, build_export_profile_modify,
-    build_hard_delete_asset, build_modify_operations, build_move_after, build_move_before,
-    build_move_to_parent, build_node_modify, build_page_modify, build_replace_node,
+    build_convert_container_layout, build_delete_export_profile, build_detach_to_freehand,
+    build_document_modify, build_export_profile_modify, build_hard_delete_asset,
+    build_modify_operations, build_move_after, build_move_before, build_move_to_parent,
+    build_node_modify, build_page_modify, build_reattach_to_layout, build_replace_node,
     build_safe_delete, build_safe_delete_page, build_safe_delete_slot, build_slot_modify,
     build_structured_edit_batch, build_ungroup, resolve_edit_target, AssetEditPatch, CloneLineage,
     CloneSlotPolicy, CloneSubtreeRequest, ComputedClonePolicy, EditBatch, EditError, EditErrorKind,
@@ -110,14 +112,16 @@ pub use render_contract::{
     RenderIntent, RenderManifest, RenderTarget, RendererAdapter, RendererEffectSupport,
     RendererError,
 };
-pub use render_geometry::{node_render_size, render_box_for_node, RenderBox};
+pub use render_geometry::{
+    node_render_size, paints_out_of_tree, pinned_paint_pass, render_box_for_node, RenderBox,
+};
 pub use scene::{
     AutoLayoutDirection, AutoLayoutNode, AutoLayoutProps, BrandKitRef, Color, ComputedGeometry,
     CornerRadii, Dimension, DocumentMeta, DocumentStatus, Effect, EffectKind, Fill, ImageNode,
-    LayoutAnchor, LineNode, Medium, Node, NodeKind, Orientation, Page, PageOutputSize, PagePreset,
-    PageSize, PageSizeSource, Paint, ParentRef, PhysicalPageSize, PhysicalUnit, RasterPageSize,
-    Rect, Scene, SizeSpec, Stroke, StrokeAlign, StrokeCap, StrokeJoin, TextAlign, TextDirection,
-    TextNode, TextWrap, Transform, Unit, VectorNode,
+    LayoutAnchor, LayoutMode, LineNode, Medium, Node, NodeKind, Orientation, Page, PageOutputSize,
+    PagePreset, PageSize, PageSizeSource, Paint, ParentRef, PhysicalPageSize, PhysicalUnit,
+    PositionMode, RasterPageSize, Rect, Scene, SizeSpec, Stroke, StrokeAlign, StrokeCap,
+    StrokeJoin, TextAlign, TextDirection, TextNode, TextWrap, Transform, Unit, VectorNode,
 };
 pub use slots::{
     BindingHint, Cardinality, ConditionalRule, ContentType, Editability, EmptyBehavior, FocalPoint,

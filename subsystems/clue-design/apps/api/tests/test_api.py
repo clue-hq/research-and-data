@@ -9,6 +9,7 @@ from typing import Optional
 import pytest
 from fastapi.testclient import TestClient
 
+from lumen_api import image_provider
 from lumen_api.main import agent_response_from_trace, create_app
 
 
@@ -388,7 +389,10 @@ def test_agent_turn_preview_route_returns_editor_safe_proposal(client: TestClien
             "scene": minimal_scene(),
             "document_id": "doc_agent_route",
             "active_page_id": "page_a4",
-            "selected_node_id": "node_contact_name",
+            # Legacy senders may still include the dropped back-compat key;
+            # it must be IGNORED (pydantic extra), never a 422.
+            "selected_node_id": "node_legacy_ignored",
+            "target_node_ids": ["node_contact_name"],
             "diagnostics": [],
         },
     )
@@ -402,8 +406,389 @@ def test_agent_turn_preview_route_returns_editor_safe_proposal(client: TestClien
     assert payload["artifacts"][0]["format"] == "svg"
     assert captured["payload"].prompt == "Repair the headline"
     assert captured["payload"].active_page_id == "page_a4"
-    assert captured["payload"].selected_node_id == "node_contact_name"
+    assert captured["payload"].target_node_ids == ["node_contact_name"]
+    assert not hasattr(captured["payload"], "selected_node_id")
     assert captured["root"] == REPO_ROOT
+
+
+def test_editor_target_node_ids_prefers_plural_and_dedupes() -> None:
+    from lumen_api.main import editor_target_node_ids
+    from lumen_api.models import AgentTurnPreviewRequest
+
+    scene = {"meta": {}, "pages": {}, "nodes": {}}
+    both = AgentTurnPreviewRequest(
+        prompt="x",
+        scene=scene,
+        target_node_ids=["node_a", "node_a", "node_b"],
+    )
+    # Order preserved, deduped.
+    assert editor_target_node_ids(both) == ["node_a", "node_b"]
+
+    neither = AgentTurnPreviewRequest(prompt="x", scene=scene)
+    assert editor_target_node_ids(neither) == []
+
+
+def test_editor_prompt_scopes_to_targets_with_compensating_contract() -> None:
+    from lumen_api.main import editor_agent_prompt
+    from lumen_api.models import AgentTurnPreviewRequest
+
+    payload = AgentTurnPreviewRequest(
+        prompt="Make the headline bigger",
+        scene=minimal_scene(),
+        target_node_ids=["node_contact_name"],
+    )
+    prompt = editor_agent_prompt(payload)
+    # The chipped target is named in the context and the instruction scopes to
+    # it (untouched nodes byte-identical) with the §1.6 compensating contract.
+    assert '"target_node_ids"' in prompt
+    assert "node_contact_name" in prompt
+    assert "byte-identical" in prompt
+    assert "re-fit and verify" in prompt
+    assert "what you preserved" in prompt
+
+
+def test_editor_prompt_without_targets_uses_soft_targeting() -> None:
+    from lumen_api.main import editor_agent_prompt
+    from lumen_api.models import AgentTurnPreviewRequest
+
+    prompt = editor_agent_prompt(
+        AgentTurnPreviewRequest(prompt="Fix overflow", scene=minimal_scene())
+    )
+    # No chips: no hard byte-identical scoping, but the compensating contract
+    # still applies to every turn.
+    assert "byte-identical" not in prompt
+    assert "Prefer targeted repairs" in prompt
+    assert "what you preserved" in prompt
+
+
+def test_agent_instructions_round_trip_and_prompt_injection(client: TestClient) -> None:
+    from lumen_api.main import editor_agent_prompt
+    from lumen_api.models import AgentTurnPreviewRequest
+
+    document = create_document(client)
+    document_id = document["id"]
+
+    # Set → returned by GET (survives reload); blank → cleared.
+    response = client.put(
+        f"/documents/{document_id}/agent-instructions",
+        json={"instructions": "Always use the serif brand voice."},
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["agent_instructions"] == "Always use the serif brand voice."
+    assert (
+        client.get(f"/documents/{document_id}").json()["agent_instructions"]
+        == "Always use the serif brand voice."
+    )
+    cleared = client.put(
+        f"/documents/{document_id}/agent-instructions", json={"instructions": "   "}
+    )
+    assert cleared.json()["agent_instructions"] is None
+
+    # The editor sends the instructions with each turn; they land in the
+    # context as standing instructions that never override the request.
+    prompt = editor_agent_prompt(
+        AgentTurnPreviewRequest(
+            prompt="Make a poster",
+            scene=minimal_scene(),
+            agent_instructions="Always use the serif brand voice.",
+        )
+    )
+    assert "standing_instructions" in prompt
+    assert "Always use the serif brand voice." in prompt
+    assert "current request wins" in prompt
+    # Absent instructions → no standing block at all.
+    bare = editor_agent_prompt(
+        AgentTurnPreviewRequest(prompt="Make a poster", scene=minimal_scene())
+    )
+    assert "standing_instructions" not in bare
+
+
+def _fake_async_runner(status: str = "proposed"):
+    def runner(payload, root):
+        return {
+            "schema_version": 1,
+            "status": status,
+            "summary": "Agent proposed a document title update.",
+            "run_id": "run_internal_trace",
+            "trace_dir": ".lumen-runs/run_internal_trace",
+            "preview_paths": [],
+            "dsl_blocks": ["# doc title"],
+            "operations": [title_operation("Async Title")],
+            "diagnostics": [],
+            "artifacts": [],
+        }
+
+    return runner
+
+
+def _wait_for_run_terminal(client: TestClient, run_id: str) -> dict:
+    import time as _time
+
+    for _ in range(200):
+        snapshot = client.get(f"/agent/runs/{run_id}").json()
+        if snapshot["status"] != "running":
+            return snapshot
+        _time.sleep(0.02)
+    raise AssertionError(f"run {run_id} never reached a terminal status")
+
+
+def test_agent_turns_async_persists_result_and_terminal_event(
+    client: TestClient,
+) -> None:
+    client.app.state.agent_turn_runner = _fake_async_runner("proposed")
+
+    start = client.post(
+        "/agent/turns",
+        json={
+            "prompt": "Repair the headline",
+            "scene": minimal_scene(),
+            "document_id": "doc_async_route",
+            "active_page_id": "page_a4",
+            "diagnostics": [],
+        },
+    )
+    assert start.status_code == 200, start.text
+    started = start.json()
+    assert started["status"] == "running"
+    run_id = started["run_id"]
+    assert run_id.startswith("run_")
+
+    snapshot = _wait_for_run_terminal(client, run_id)
+    assert snapshot["status"] == "succeeded"
+    assert snapshot["result"]["operations"][0]["kind"] == "update_document"
+    # The worker appends exactly one terminal marker event.
+    assert [event["type"] for event in snapshot["events"]] == ["result"]
+
+
+def test_agent_turns_async_marks_failed_status(client: TestClient) -> None:
+    client.app.state.agent_turn_runner = _fake_async_runner("failed")
+    start = client.post(
+        "/agent/turns",
+        json={"prompt": "x", "scene": minimal_scene(), "diagnostics": []},
+    )
+    run_id = start.json()["run_id"]
+    snapshot = _wait_for_run_terminal(client, run_id)
+    assert snapshot["status"] == "failed"
+
+
+def test_agent_run_snapshot_404_for_unknown_run(client: TestClient) -> None:
+    assert client.get("/agent/runs/run_missing").status_code == 404
+
+
+def test_agent_run_events_stream_replays_then_done(client: TestClient) -> None:
+    # Drive the store directly to assert SSE framing deterministically (no
+    # dependence on background-thread timing): a progress event replays, then
+    # the terminal marker closes the stream with the stored result.
+    from lumen_api.database import Repository, connect
+
+    connection = connect(client.app.state.database_path)
+    repo = Repository(connection)
+    repo.create_run("run_sse", "doc_sse")
+    repo.append_run_event("run_sse", "dsl_block_produced", {"iteration": 1})
+    repo.set_run_result(
+        "run_sse", "succeeded", {"status": "proposed", "summary": "done"}
+    )
+    repo.append_run_event("run_sse", "result", {"status": "proposed"})
+    connection.close()
+
+    body = client.get("/agent/runs/run_sse/events").text
+    assert "event: progress" in body
+    assert "dsl_block_produced" in body
+    assert "event: done" in body
+    assert '"summary":"done"' in body or '"summary": "done"' in body
+    # Last-Event-ID replay: subscribing after seq 1 skips the progress event.
+    resumed = client.get(
+        "/agent/runs/run_sse/events", headers={"Last-Event-ID": "1"}
+    ).text
+    assert "event: progress" not in resumed
+    assert "event: done" in resumed
+
+
+def write_iteration_compile(trace_dir, index: int, operations: list) -> None:
+    iteration_dir = trace_dir / "iterations" / f"{index:03d}"
+    iteration_dir.mkdir(parents=True, exist_ok=True)
+    (iteration_dir / "dsl.lumen").write_text(f"# block {index}", encoding="utf-8")
+    (iteration_dir / "compile.json").write_text(
+        json.dumps(
+            {
+                "compile": {"status": "ok", "diagnostics": []},
+                "operations": operations,
+            }
+        ),
+        encoding="utf-8",
+    )
+
+
+def test_agent_response_edit_applied_maps_to_proposed_with_advisory_diagnostics(
+    tmp_path,
+) -> None:
+    # Phase 0b: an edit-scoped acceptance proposes its ops; the whole-design
+    # critique rides along as ADVISORY warning diagnostics, never errors.
+    from lumen_api.main import agent_response_from_trace
+
+    write_iteration_compile(
+        tmp_path, 1, [{"kind": "update_node", "node_id": "headline"}]
+    )
+    result = {
+        "status": "edit_applied",
+        "stop_reason": "edit_scoped_acceptance",
+        "run_id": "run_edit_scoped",
+        "summary": "Requested edit applied and verified.",
+        "preview_paths": [],
+        "ops_valid_through_iteration": 1,
+        "critique": {
+            "accepted": False,
+            "summary": "pre-existing issues",
+            "issues": [
+                {
+                    "severity": "blocker",
+                    "category": "imagery",
+                    "message": "hero image is a placeholder gradient",
+                    "suggested_repair": "regenerate the hero",
+                    "target": {"page_id": "hero_poster", "node_id": "hero"},
+                }
+            ],
+        },
+    }
+
+    response = agent_response_from_trace(result, tmp_path)
+
+    assert response["status"] == "proposed"
+    assert response["acceptance_scope"] == "edit"
+    assert response["operations"] == [{"kind": "update_node", "node_id": "headline"}]
+    advisory = [
+        diag
+        for diag in response["diagnostics"]
+        if diag["code"] == "agent_runtime.visual_critique_advisory"
+    ]
+    assert len(advisory) == 1
+    assert advisory[0]["severity"] == "warning"  # advisory even for critique blockers
+    assert advisory[0]["subject"] == {"kind": "node", "id": "hero"}
+    assert advisory[0]["hint"] == "regenerate the hero"
+
+
+def test_agent_response_completed_with_warnings_maps_to_proposed(tmp_path) -> None:
+    # Agent-quality: a run that exhausts its repair budget holding a
+    # preflight-clean best draft finalizes as `completed_with_warnings`. That
+    # draft must reach the editor as a reviewable PROPOSAL (Accept/Reject),
+    # not "failed" — with the unresolved critique as advisory warnings. The
+    # critique arrives wrapped in the loop's last feedback envelope.
+    from lumen_api.main import agent_response_from_trace
+
+    write_iteration_compile(
+        tmp_path, 1, [{"kind": "update_node", "node_id": "cta_text"}]
+    )
+    result = {
+        "status": "completed_with_warnings",
+        "stop_reason": "max_iterations_reached",
+        "run_id": "run_best_draft",
+        "summary": "Repair budget reached. Returned the best preflight-clean draft.",
+        "preview_paths": [],
+        "ops_valid_through_iteration": 1,
+        "critique": {
+            "kind": "visual",
+            "feedback": {
+                "accepted": False,
+                "summary": "composition still off-center",
+                "issues": [
+                    {
+                        "severity": "major",
+                        "category": "visual_balance",
+                        "message": "composition sits low on the canvas",
+                        "suggested_repair": "re-center the main group",
+                        "target": {"node_id": "artboard"},
+                    }
+                ],
+            },
+        },
+    }
+
+    response = agent_response_from_trace(result, tmp_path)
+
+    assert response["status"] == "proposed"
+    assert response["acceptance_scope"] is None
+    assert response["operations"] == [{"kind": "update_node", "node_id": "cta_text"}]
+    advisory = [
+        diag
+        for diag in response["diagnostics"]
+        if diag["code"] == "agent_runtime.visual_critique_advisory"
+    ]
+    assert len(advisory) == 1
+    assert advisory[0]["severity"] == "warning"
+    assert advisory[0]["subject"] == {"kind": "node", "id": "artboard"}
+
+    # A best draft whose last feedback was compile/preflight-shaped (no
+    # critique issues) still proposes — just without advisories.
+    result_no_visual = dict(result, critique={"kind": "compile", "feedback": {}})
+    response2 = agent_response_from_trace(result_no_visual, tmp_path)
+    assert response2["status"] == "proposed"
+    assert [
+        d
+        for d in response2["diagnostics"]
+        if d["code"] == "agent_runtime.visual_critique_advisory"
+    ] == []
+
+    # Without any applied operations there is nothing to propose: still failed.
+    result_no_ops = dict(result, ops_valid_through_iteration=0)
+    response3 = agent_response_from_trace(result_no_ops, tmp_path)
+    assert response3["status"] == "failed"
+
+
+def test_agent_response_ops_window_excludes_iterations_after_best(tmp_path) -> None:
+    # Phase 0b: when the loop returns an EARLIER iteration's scene as the best
+    # draft, ops from later iterations are not part of it and must not replay.
+    from lumen_api.main import agent_response_from_trace
+
+    write_iteration_compile(tmp_path, 1, [{"kind": "update_node", "node_id": "headline"}])
+    write_iteration_compile(tmp_path, 2, [{"kind": "update_node", "node_id": "kicker"}])
+    result = {
+        "status": "edit_applied",
+        "stop_reason": "max_iterations_reached",
+        "run_id": "run_window",
+        "summary": "Budget reached; best draft returned.",
+        "preview_paths": [],
+        "ops_valid_through_iteration": 1,
+        "critique": {},
+    }
+
+    response = agent_response_from_trace(result, tmp_path)
+
+    assert response["status"] == "proposed"
+    assert response["operations"] == [{"kind": "update_node", "node_id": "headline"}]
+    # Later blocks still appear as informational DSL history.
+    assert len(response["dsl_blocks"]) == 2
+
+
+def test_agent_seed_scene_accepts_scene_shape_and_rejects_junk() -> None:
+    # Phase 0a: only a structurally plausible scene document seeds the agent's
+    # working scene; anything else falls back to a fresh scene (None).
+    from lumen_api.main import agent_seed_scene
+    from lumen_api.models import AgentTurnPreviewRequest
+
+    seeded = AgentTurnPreviewRequest(prompt="edit", scene=minimal_scene())
+    assert agent_seed_scene(seeded) == seeded.scene
+
+    junk = AgentTurnPreviewRequest(prompt="edit", scene={"foo": "bar"})
+    assert agent_seed_scene(junk) is None
+
+    empty = AgentTurnPreviewRequest(prompt="edit", scene={})
+    assert agent_seed_scene(empty) is None
+
+    # An empty DOCUMENT (valid scene, zero pages/nodes) runs unseeded: nothing
+    # to preserve, and continuation mode would fight a blank scaffold.
+    empty_doc = AgentTurnPreviewRequest(
+        prompt="design something",
+        scene={
+            "schema_version": 1,
+            "meta": {"id": "doc_untitled", "title": "Untitled design"},
+            "pages": {},
+            "nodes": {},
+            "slots": {},
+            "assets": {},
+            "export_profiles": [],
+        },
+    )
+    assert agent_seed_scene(empty_doc) is None
 
 
 def test_agent_turn_preview_allows_editor_cors_preflight(client: TestClient) -> None:
@@ -1999,6 +2384,265 @@ def test_generate_asset_route_runs_registry_providers(client: TestClient) -> Non
     )
     assert unknown.status_code == 400
     assert unknown.json()["detail"]["code"] == "provider.unknown"
+
+
+def _tiny_png(width: int = 8, height: int = 8, rgba=(64, 120, 200, 255)) -> bytes:
+    """A minimal but valid RGBA PNG the Rust asset probe can decode."""
+    import struct
+    import zlib
+
+    def chunk(tag: bytes, data: bytes) -> bytes:
+        body = tag + data
+        return (
+            struct.pack(">I", len(data))
+            + body
+            + struct.pack(">I", zlib.crc32(body) & 0xFFFFFFFF)
+        )
+
+    sig = b"\x89PNG\r\n\x1a\n"
+    ihdr = struct.pack(">IIBBBBB", width, height, 8, 6, 0, 0, 0)  # 8-bit RGBA
+    raw = (b"\x00" + bytes(rgba) * width) * height  # filter byte 0 + pixels per row
+    idat = zlib.compress(raw)
+    return sig + chunk(b"IHDR", ihdr) + chunk(b"IDAT", idat) + chunk(b"IEND", b"")
+
+
+def test_generate_asset_image_model_persists_generated_raster(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Slice 0 / Step 1: the Python T2I provider path. A mocked model returns real
+    # PNG bytes that are persisted through the SAME ingest pipeline as uploads,
+    # stamped with a `generated` source — no live API key required.
+    png = _tiny_png(8, 8)
+
+    def fake_generate(**kwargs) -> image_provider.ImageGenerationResult:
+        assert kwargs["prompt"], "prompt must thread through to the provider"
+        # brand_notes flow through for conditioning
+        assert kwargs.get("brand_notes") == ["warm palette", "trustworthy"]
+        return image_provider.ImageGenerationResult(
+            image_bytes=png,
+            mime_type="image/png",
+            model="mock-image-model",
+            provenance={
+                "created_by": "agent",
+                "created_at": "2026-06-19T00:00:00Z",
+                "source_label": "image generation",
+                "confidence": None,
+                "notes": ["model=mock-image-model"],
+            },
+            license={
+                "name": "generated_commercial_use",
+                "allow_export": True,
+                "allow_modification": True,
+                "allow_embedding": True,
+                "allow_subsetting": False,
+                "source_url": None,
+                "restrictions": [],
+            },
+        )
+
+    monkeypatch.setattr(image_provider, "generate", fake_generate)
+
+    response = client.post(
+        "/assets/generate",
+        json={
+            "provider": "image-gen-v1",
+            "prompt": "a calm, sunlit clinic waiting room, editorial photography",
+            "width": 8,
+            "height": 8,
+            "brand_notes": ["warm palette", "trustworthy"],
+        },
+    )
+    assert response.status_code == 200, response.text
+    body = response.json()
+    record = body["asset"]
+    assert record["kind"] == "raster_image"
+    assert record["source"]["kind"] == "generated"
+    assert record["source"]["model"] == "mock-image-model"
+    assert record["raster"]["pixel_width"] == 8
+    assert record["raster"]["pixel_height"] == 8
+    assert record["license"]["allow_export"] is True
+    assert body["provider"]["id"] == "image-gen-v1"
+
+    served = client.get(f"/assets/{record['id']}/bytes")
+    assert served.status_code == 200
+    assert served.content == png
+
+
+def test_generate_asset_image_model_not_configured_returns_clean_error(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # With no model configured and no mock, the provider raises a typed error
+    # that surfaces as a clean 503 (never a 500).
+    for var in (
+        "IMAGE_MODEL_BASE_URL",
+        "IMAGE_MODEL_API_KEY",
+        "IMAGE_MODEL_ID",
+        "IMAGE_MODEL_PROVIDER_ID",
+    ):
+        monkeypatch.delenv(var, raising=False)
+    response = client.post(
+        "/assets/generate",
+        json={"provider": "image-gen-v1", "prompt": "anything"},
+    )
+    assert response.status_code == 503, response.text
+    assert response.json()["detail"]["code"] == "image_model.not_configured"
+
+
+def test_image_provider_openrouter_chat_completion_shape(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Raw-HTTP OpenRouter adapter: POST {base}/chat/completions with an image
+    # modality; decode the data: URL from choices[0].message.images[0].
+    import base64
+
+    monkeypatch.setenv("IMAGE_MODEL_BASE_URL", "https://openrouter.ai/api/v1")
+    monkeypatch.setenv("IMAGE_MODEL_API_KEY", "test-key")
+    monkeypatch.setenv("IMAGE_MODEL_ID", "test/image-model")
+
+    png = _tiny_png(8, 8)
+    data_url = "data:image/png;base64," + base64.b64encode(png).decode("ascii")
+    captured: dict = {}
+
+    class _FakeResponse:
+        status_code = 200
+        headers = {"content-type": "application/json"}
+
+        def json(self) -> dict:
+            return {"choices": [{"message": {"images": [{"image_url": {"url": data_url}}]}}]}
+
+    def fake_post(url, json=None, headers=None, timeout=None):
+        captured.update(url=url, json=json, headers=headers)
+        return _FakeResponse()
+
+    monkeypatch.setattr("httpx.post", fake_post)
+
+    result = image_provider.generate(
+        prompt="a calm clinic waiting room",
+        aspect_ratio="16:9",
+        brand_notes=["warm palette"],
+    )
+    assert result.image_bytes == png
+    assert result.mime_type == "image/png"
+    assert result.model == "test/image-model"
+    # request shape: chat-completions + image modality, brand/aspect threaded in
+    assert captured["url"].endswith("/chat/completions")
+    assert captured["json"]["model"] == "test/image-model"
+    assert captured["json"]["modalities"] == ["image", "text"]
+    content = captured["json"]["messages"][0]["content"]
+    assert "16:9" in content and "warm palette" in content
+    assert captured["headers"]["Authorization"] == "Bearer test-key"
+
+
+def test_image_provider_surfaces_no_image_response(monkeypatch: pytest.MonkeyPatch) -> None:
+    # A text-only chat response (model refused / no image) -> typed error.
+    monkeypatch.setenv("IMAGE_MODEL_BASE_URL", "https://openrouter.ai/api/v1")
+    monkeypatch.setenv("IMAGE_MODEL_API_KEY", "test-key")
+    monkeypatch.setenv("IMAGE_MODEL_ID", "test/image-model")
+
+    class _FakeResponse:
+        status_code = 200
+        headers = {"content-type": "application/json"}
+
+        def json(self) -> dict:
+            return {"choices": [{"message": {"content": "I can't make that image."}}]}
+
+    monkeypatch.setattr("httpx.post", lambda *a, **k: _FakeResponse())
+
+    with pytest.raises(image_provider.ImageGenerationError) as excinfo:
+        image_provider.generate(prompt="anything")
+    assert excinfo.value.code == "image_model.no_image"
+
+
+def test_image_generation_cache_dedups_identical_requests(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Slice 0 / Step 6: an identical repeat request re-uses the cached asset instead
+    # of re-paying the (paid, non-deterministic) model. The byte-digest store dedup
+    # only fires AFTER the call — too late; this cache fires BEFORE the provider.
+    png = _tiny_png(8, 8)
+    calls = {"n": 0}
+
+    def fake_generate(**kwargs) -> image_provider.ImageGenerationResult:
+        calls["n"] += 1
+        return image_provider.ImageGenerationResult(
+            image_bytes=png,
+            mime_type="image/png",
+            model="mock-image-model",
+            provenance={"created_by": "agent", "source_label": "image generation", "notes": []},
+            license={"name": "generated_commercial_use", "allow_export": True},
+        )
+
+    monkeypatch.setattr(image_provider, "generate", fake_generate)
+    body = {
+        "provider": "image-gen-v1",
+        "prompt": "a calm sunlit clinic reception, editorial photography",
+        "width": 1024,
+        "height": 768,
+        "brand_notes": ["deep navy", "premium"],
+    }
+
+    first = client.post("/assets/generate", json=body)
+    assert first.status_code == 200, first.text
+    first_id = first.json()["asset"]["id"]
+    assert calls["n"] == 1
+    assert first.json()["deduplicated"] is False
+
+    # Identical request → cache hit: the model is NOT called again, same asset id.
+    second = client.post("/assets/generate", json=body)
+    assert second.status_code == 200, second.text
+    assert calls["n"] == 1, "the cached request must not re-call the model"
+    assert second.json()["deduplicated"] is True
+    assert second.json()["asset"]["id"] == first_id
+
+    # A different prompt is a cache miss → the model runs again.
+    third = client.post("/assets/generate", json={**body, "prompt": "a wholly different scene"})
+    assert third.status_code == 200, third.text
+    assert calls["n"] == 2
+
+
+def test_resolve_dimensions_translates_aspect_ratio_and_size_tier() -> None:
+    # Step 7 (G0.2): aspect_ratio + image_size → concrete dimensions; explicit dims win.
+    resolve = image_provider.resolve_dimensions
+    assert resolve(1080, 1350, "16:9", "2k") == (1080, 1350)  # explicit w+h win
+    assert resolve(None, None, "16:9", None) == (1024, 576)  # default 1k long edge
+    assert resolve(None, None, "16:9", "2k") == (2048, 1152)
+    assert resolve(None, None, "4:5", "1k") == (819, 1024)  # portrait
+    assert resolve(None, None, "3x2", None) == (1024, 683)  # 'WxH' form
+    assert resolve(None, None, None, "4k") == (4096, 4096)  # no aspect → square at tier
+    assert resolve(None, None, "1:1", "unknown") == (1024, 1024)  # unknown tier → 1k
+
+
+def test_generate_asset_image_model_forwards_aspect_size_and_references(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Step 7: the route threads aspect_ratio / image_size / reference_asset_ids to the provider.
+    captured: dict = {}
+
+    def fake_generate(**kwargs) -> image_provider.ImageGenerationResult:
+        captured.update(kwargs)
+        return image_provider.ImageGenerationResult(
+            image_bytes=_tiny_png(8, 8),
+            mime_type="image/png",
+            model="mock-image-model",
+            provenance={"created_by": "agent", "source_label": "image generation", "notes": []},
+            license={"name": "generated_commercial_use", "allow_export": True},
+        )
+
+    monkeypatch.setattr(image_provider, "generate", fake_generate)
+    response = client.post(
+        "/assets/generate",
+        json={
+            "provider": "image-gen-v1",
+            "prompt": "a hero photograph",
+            "aspect_ratio": "16:9",
+            "image_size": "2k",
+            "reference_asset_ids": ["asset_ref_a"],
+        },
+    )
+    assert response.status_code == 200, response.text
+    assert captured["aspect_ratio"] == "16:9"
+    assert captured["image_size"] == "2k"
+    assert captured["reference_asset_ids"] == ["asset_ref_a"]
 
 
 def test_mailer_carries_scannable_qr_through_export(client: TestClient) -> None:

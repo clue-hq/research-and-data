@@ -89,10 +89,13 @@ export function gestureReducer(state: GestureState, event: GestureEvent): Reduce
 function onDown(point: Point, target: PressTarget, modifiers: Modifiers): Reduced {
   // Selecting happens on press (Figma-style): a node press selects it
   // immediately, an empty press clears selection unless additive.
+  const additive = Boolean(modifiers.shift || modifiers.meta);
   let action: GestureAction = { kind: "none" };
   if (target.kind === "node") {
-    action = { kind: "select", nodeId: target.nodeId, additive: Boolean(modifiers.meta) };
-  } else if (target.kind === "empty" && !modifiers.meta) {
+    action = { kind: "select", nodeId: target.nodeId, additive };
+  } else if (target.kind === "empty" && !additive) {
+    // An empty press clears the selection — unless an additive modifier is
+    // held, in which case the multi-selection is preserved.
     action = { kind: "select", nodeId: null, additive: false };
   }
   return {

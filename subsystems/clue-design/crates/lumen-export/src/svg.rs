@@ -4,11 +4,12 @@ use base64::engine::general_purpose::STANDARD as BASE64;
 use base64::Engine;
 use lumen_core::scene::{ColorStop, PhysicalUnit};
 use lumen_core::{
-    is_canonical_page_size, node_render_size, page_geometry, render_box_for_node, Color,
-    Diagnostic, DiagnosticSubject, Dimension, EffectKind, ExportAdapter, ExportArtifact,
-    ExportError, ExportFormat, ExportRequest, ExportResult, Fill, ImageFitMode, ImageNode, Node,
-    NodeId, NodeKind, Page, PageId, Paint, Phase, Rect, Scene, Stroke, StrokeAlign, StrokeCap,
-    StrokeJoin, TextAlign, TextDirection, Unit,
+    is_canonical_page_size, node_render_size, page_geometry, paints_out_of_tree,
+    pinned_paint_pass, render_box_for_node, Color, Diagnostic, DiagnosticSubject, Dimension,
+    EffectKind, ExportAdapter, ExportArtifact, ExportError, ExportFormat, ExportRequest,
+    ExportResult, Fill, ImageFitMode, ImageNode, Node, NodeId, NodeKind, Page, PageId, Paint,
+    Phase, Rect, Scene, Stroke, StrokeAlign, StrokeCap, StrokeJoin, TextAlign, TextDirection,
+    Unit,
 };
 use lumen_core::{HeuristicTextMeasurer, SharedTextMeasurer, TextMeasureInput, TextMeasurer};
 use std::sync::Arc;
@@ -208,7 +209,18 @@ impl<'a> SvgPageRenderer<'a> {
         }
 
         for child_id in &self.page.children {
+            if self.skips_inline_render(child_id) {
+                continue;
+            }
             self.render_node(child_id, None);
+        }
+
+        // Phase 1d freehand: pinned nodes escape every ancestor mask (only
+        // the page clips — the Moda model). Skipped inline above; emitted
+        // here in document order, above the in-flow content, from page
+        // space. Mirrors the Skia painter exactly.
+        for node_id in pinned_paint_pass(self.scene, self.page) {
+            self.render_node(&node_id, None);
         }
 
         self.body.push_str("</g>\n");
@@ -233,6 +245,15 @@ impl<'a> SvgPageRenderer<'a> {
             self.body,
             ""
         )
+    }
+
+    /// Pinned nodes never render inside their parent's tree — see
+    /// [`pinned_paint_pass`].
+    fn skips_inline_render(&self, node_id: &NodeId) -> bool {
+        self.scene
+            .nodes
+            .get(node_id)
+            .is_some_and(paints_out_of_tree)
     }
 
     fn render_node(&mut self, node_id: &NodeId, parent_computed_origin: Option<(f64, f64)>) {
@@ -308,6 +329,9 @@ impl<'a> SvgPageRenderer<'a> {
                     ));
                 }
                 for child_id in &node.children {
+                    if self.skips_inline_render(child_id) {
+                        continue;
+                    }
                     self.render_node(child_id, child_parent_origin);
                 }
                 if node.clip {
@@ -321,6 +345,9 @@ impl<'a> SvgPageRenderer<'a> {
                     id_attrs, transform, opacity, filter
                 ));
                 for child_id in &node.children {
+                    if self.skips_inline_render(child_id) {
+                        continue;
+                    }
                     self.render_node(child_id, child_parent_origin);
                 }
                 self.body.push_str("</g>\n");
@@ -482,14 +509,26 @@ impl<'a> SvgPageRenderer<'a> {
             }
             NodeKind::Vector(vector) => {
                 let geometry = format!("d=\"{}\"", escape_attr(&vector.path_data));
-                if stacked {
+                // A library icon carries a source viewBox: the node transform positions the
+                // box, and an inner group scales the path uniformly (centered) into it — so
+                // the icon renders at the node's size, not its intrinsic 24px. Hand-authored
+                // vectors (view_box None) draw at raw node-local coordinates, unchanged.
+                let fit = icon_fit_transform(vector.view_box, width, height);
+                if stacked || fit.is_some() {
                     self.body.push_str(&format!(
                         "<g{}{}{}{}>\n",
                         id_attrs, transform, opacity, filter
                     ));
+                    if let Some(fit) = &fit {
+                        self.body
+                            .push_str(&format!("<g transform=\"{fit}\">\n"));
+                    }
                     for layer in self.paint_layer_attrs(&node.fills, &node.strokes, Some(&node.id))
                     {
                         self.body.push_str(&format!("<path {geometry}{layer} />\n"));
+                    }
+                    if fit.is_some() {
+                        self.body.push_str("</g>\n");
                     }
                     self.body.push_str("</g>\n");
                 } else {
@@ -1240,6 +1279,25 @@ fn dimension_token(dimension: &Dimension) -> Option<&str> {
         Dimension::Token { token } => Some(token),
         Dimension::Fixed(_) | Dimension::Hug | Dimension::Fill { .. } => None,
     }
+}
+
+/// The inner transform that fits a vector node's source viewBox uniformly (centered)
+/// into its rendered box, so a library icon renders at the node's size. `None` when the
+/// node has no viewBox (a hand-authored vector path → draw at raw coordinates).
+fn icon_fit_transform(view_box: Option<[f64; 2]>, width: f64, height: f64) -> Option<String> {
+    let [vbw, vbh] = view_box?;
+    if vbw <= 0.0 || vbh <= 0.0 {
+        return None;
+    }
+    let scale = (width / vbw).min(height / vbh);
+    let tx = (width - vbw * scale) / 2.0;
+    let ty = (height - vbh * scale) / 2.0;
+    Some(format!(
+        "translate({} {}) scale({})",
+        fmt_num(tx),
+        fmt_num(ty),
+        fmt_num(scale)
+    ))
 }
 
 fn transform_attr(node: &Node, x: f64, y: f64) -> String {

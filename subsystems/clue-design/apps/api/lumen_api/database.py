@@ -30,6 +30,10 @@ def connect(database_path: Path) -> sqlite3.Connection:
     connection = sqlite3.connect(str(database_path), check_same_thread=False)
     connection.row_factory = sqlite3.Row
     connection.execute("PRAGMA foreign_keys = ON")
+    # An async agent run writes progress events from a background thread while
+    # the SSE endpoint reads them from another connection. Wait for a busy
+    # lock rather than erroring instantly (strictly safer; no semantic change).
+    connection.execute("PRAGMA busy_timeout = 5000")
     return connection
 
 
@@ -47,6 +51,8 @@ def run_migrations(database_path: Path) -> None:
         ensure_column(connection, "operation_log", "batch_id", "TEXT")
         ensure_column(connection, "documents", "undo_stack_json", "TEXT")
         ensure_column(connection, "documents", "redo_stack_json", "TEXT")
+        # 2e: per-document standing instructions injected into every agent turn.
+        ensure_column(connection, "documents", "agent_instructions", "TEXT")
         backfill_edit_envelopes(connection)
 
 
@@ -558,6 +564,91 @@ class Repository:
             (document_id,),
         ).fetchone()
         return int(row["max_sequence"]) + 1
+
+    def set_agent_instructions(
+        self, document_id: str, instructions: Optional[str]
+    ) -> JsonObject:
+        self.require_document(document_id)
+        self.connection.execute(
+            "UPDATE documents SET agent_instructions = ?, updated_at = ? WHERE id = ?",
+            (instructions, utc_now(), document_id),
+        )
+        self.connection.commit()
+        return self.require_document(document_id)
+
+    # --- Agent runs: async turns + their durable SSE event stream ---
+
+    def create_run(self, run_id: str, document_id: Optional[str]) -> JsonObject:
+        now = utc_now()
+        self.connection.execute(
+            """
+            INSERT INTO agent_runs (run_id, status, document_id, result_json, created_at, updated_at)
+            VALUES (?, 'running', ?, NULL, ?, ?)
+            """,
+            (run_id, document_id, now, now),
+        )
+        self.connection.commit()
+        return self.require_run(run_id)
+
+    def next_run_event_seq(self, run_id: str) -> int:
+        # Only the run's own background thread appends its events, so MAX+1
+        # is race-free (mirrors next_operation_sequence per document).
+        row = self.connection.execute(
+            "SELECT COALESCE(MAX(seq), 0) AS max_seq FROM run_events WHERE run_id = ?",
+            (run_id,),
+        ).fetchone()
+        return int(row["max_seq"]) + 1
+
+    def append_run_event(self, run_id: str, event_type: str, data: JsonObject) -> int:
+        seq = self.next_run_event_seq(run_id)
+        now = utc_now()
+        self.connection.execute(
+            """
+            INSERT INTO run_events (run_id, seq, event_type, data_json, created_at)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (run_id, seq, event_type, encode(data or {}), now),
+        )
+        self.connection.execute(
+            "UPDATE agent_runs SET updated_at = ? WHERE run_id = ?",
+            (now, run_id),
+        )
+        self.connection.commit()
+        return seq
+
+    def set_run_result(
+        self, run_id: str, status: str, result: Optional[JsonObject]
+    ) -> None:
+        now = utc_now()
+        self.connection.execute(
+            "UPDATE agent_runs SET status = ?, result_json = ?, updated_at = ? WHERE run_id = ?",
+            (status, encode_optional(result), now, run_id),
+        )
+        self.connection.commit()
+
+    def get_run(self, run_id: str) -> Optional[JsonObject]:
+        row = self.connection.execute(
+            "SELECT * FROM agent_runs WHERE run_id = ?",
+            (run_id,),
+        ).fetchone()
+        return agent_run_from_row(row) if row is not None else None
+
+    def require_run(self, run_id: str) -> JsonObject:
+        run = self.get_run(run_id)
+        if run is None:
+            raise NotFoundError("agent_run", run_id)
+        return run
+
+    def list_run_events(self, run_id: str, after_seq: int = 0) -> List[JsonObject]:
+        rows = self.connection.execute(
+            """
+            SELECT * FROM run_events
+            WHERE run_id = ? AND seq > ?
+            ORDER BY seq ASC
+            """,
+            (run_id, after_seq),
+        ).fetchall()
+        return [run_event_from_row(row) for row in rows]
 
     def create_snapshot(
         self, document_id: str, snapshot_id: str, reason: str
@@ -1156,6 +1247,9 @@ def document_from_row(row: sqlite3.Row) -> JsonObject:
         "redo_stack": decode_optional(row["redo_stack_json"])
         if "redo_stack_json" in columns
         else None,
+        "agent_instructions": row["agent_instructions"]
+        if "agent_instructions" in columns
+        else None,
         "created_at": row["created_at"],
         "updated_at": row["updated_at"],
     }
@@ -1224,6 +1318,26 @@ def envelope_from_row(row: sqlite3.Row) -> JsonObject:
         "lineage": decode_optional(row["lineage_json"]),
         "reverts_batch_id": row["reverts_batch_id"],
         "reapplies_batch_id": row["reapplies_batch_id"],
+        "created_at": row["created_at"],
+    }
+
+
+def agent_run_from_row(row: sqlite3.Row) -> JsonObject:
+    return {
+        "run_id": row["run_id"],
+        "status": row["status"],
+        "document_id": row["document_id"],
+        "result": decode_optional(row["result_json"]),
+        "created_at": row["created_at"],
+        "updated_at": row["updated_at"],
+    }
+
+
+def run_event_from_row(row: sqlite3.Row) -> JsonObject:
+    return {
+        "seq": row["seq"],
+        "type": row["event_type"],
+        "data": decode(row["data_json"]),
         "created_at": row["created_at"],
     }
 

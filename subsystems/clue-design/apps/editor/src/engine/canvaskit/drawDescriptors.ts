@@ -1,5 +1,7 @@
 import type { Canvas, CanvasKit, TypefaceFontProvider } from "canvaskit-wasm";
+import type { ImageFitMode } from "../contracts";
 import type { RenderNodeDescriptor, RenderPageDescriptor } from "../renderAdapter";
+import type { CanvasKitImageSource } from "./imageCache";
 
 /**
  * Wave 3 C2: the descriptor→CanvasKit interpreter.
@@ -13,9 +15,12 @@ import type { RenderNodeDescriptor, RenderPageDescriptor } from "../renderAdapte
  * Node rotation (about the top-left origin) and opacity (a group layer over
  * body + children) are honored.
  *
- * Text (SkParagraph) is Wave 3 C4; C2 draws every non-text node. Images draw
- * as their placeholder fill (no asset bytes in the descriptor yet). Skia
- * objects are released immediately (RAII-style) so long editor sessions do
+ * Text (SkParagraph) is Wave 3 C4; C2 draws every non-text node. Image nodes
+ * draw real pixels (Step 2 / E0.1) when a decoded `Image` is available from the
+ * `images` source — honoring fit (cover/contain/crop) + focal point + clip +
+ * corner radius with the SAME geometry the Skia/SVG exporters use, so the canvas
+ * matches export; until the bytes load they fall back to the placeholder box.
+ * Skia objects are released immediately (RAII-style) so long editor sessions do
  * not leak the wasm heap.
  */
 
@@ -31,7 +36,8 @@ export function drawDescriptorTree(
   canvas: Canvas,
   page: RenderPageDescriptor,
   nodes: DrawNode[],
-  fontProvider: TypefaceFontProvider | null
+  fontProvider: TypefaceFontProvider | null,
+  images: CanvasKitImageSource | null = null
 ): void {
   // Fill the page as a bounded rect (not a full-surface clear, which would
   // erase the stage's backdrop and hide the artboard boundary).
@@ -42,11 +48,17 @@ export function drawDescriptorTree(
   canvas.drawRect(ck.LTRBRect(0, 0, page.width, page.height), bgPaint);
   bgPaint.delete();
   for (const node of nodes) {
-    drawNode(ck, canvas, node, fontProvider);
+    drawNode(ck, canvas, node, fontProvider, images);
   }
 }
 
-function drawNode(ck: CanvasKit, canvas: Canvas, node: DrawNode, fontProvider: TypefaceFontProvider | null): void {
+function drawNode(
+  ck: CanvasKit,
+  canvas: Canvas,
+  node: DrawNode,
+  fontProvider: TypefaceFontProvider | null,
+  images: CanvasKitImageSource | null
+): void {
   const d = node.descriptor;
   canvas.save();
   canvas.translate(d.x, d.y);
@@ -73,14 +85,14 @@ function drawNode(ck: CanvasKit, canvas: Canvas, node: DrawNode, fontProvider: T
     filter.delete();
   }
 
-  drawBody(ck, canvas, d, fontProvider);
+  drawBody(ck, canvas, d, fontProvider, images);
 
   if (filter) {
     canvas.restore();
   }
 
   for (const child of node.children) {
-    drawNode(ck, canvas, child, fontProvider);
+    drawNode(ck, canvas, child, fontProvider, images);
   }
 
   if (opacityLayer) {
@@ -93,7 +105,8 @@ function drawBody(
   ck: CanvasKit,
   canvas: Canvas,
   d: RenderNodeDescriptor,
-  fontProvider: TypefaceFontProvider | null
+  fontProvider: TypefaceFontProvider | null,
+  images: CanvasKitImageSource | null
 ): void {
   if (d.kind === "line" && d.line) {
     drawLine(ck, canvas, d);
@@ -107,9 +120,151 @@ function drawBody(
     drawText(ck, canvas, d, fontProvider);
     return;
   }
+  if (d.kind === "image" && d.image) {
+    // Real pixels when the bytes are decoded; otherwise fall through to the
+    // placeholder box below (the image node draws ONLY the image, matching the
+    // Rust renderer's NodeKind::Image arm — no fill/stroke around it).
+    if (drawImage(ck, canvas, d, images)) {
+      return;
+    }
+  }
   if (d.contourPath) {
     drawShapedPath(ck, canvas, d, d.contourPath);
   }
+}
+
+interface CropWindow {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+const clamp01 = (value: number): number => Math.min(1, Math.max(0, value));
+const clampRange = (value: number, lo: number, hi: number): number => Math.min(hi, Math.max(lo, value));
+
+/**
+ * Port of lumen-export `focal_crop_geometry`: the explicit cover window for a
+ * focal point, sized to the asset's natural aspect ratio and shifted so the
+ * focal point sits as near box-center as the image allows. Uses the RECORD's
+ * natural ratio (not the decoded pixels) to stay bit-faithful to the exporter.
+ * Returns null unless fit is cover/crop with a focal point and a valid ratio.
+ */
+function focalCropGeometry(
+  fit: ImageFitMode | null,
+  focal: { x: number; y: number } | null,
+  ratio: number | null,
+  boxWidth: number,
+  boxHeight: number
+): CropWindow | null {
+  if (!focal || (fit !== "cover" && fit !== "crop")) {
+    return null;
+  }
+  if (boxWidth <= 0 || boxHeight <= 0 || !ratio || !Number.isFinite(ratio) || ratio <= 0) {
+    return null;
+  }
+  const [drawnWidth, drawnHeight] =
+    boxWidth / boxHeight < ratio ? [boxHeight * ratio, boxHeight] : [boxWidth, boxWidth / ratio];
+  const focalX = clamp01(focal.x);
+  const focalY = clamp01(focal.y);
+  const offsetX = clampRange(focalX * drawnWidth - boxWidth / 2, 0, Math.max(0, drawnWidth - boxWidth));
+  const offsetY = clampRange(focalY * drawnHeight - boxHeight / 2, 0, Math.max(0, drawnHeight - boxHeight));
+  return { x: -offsetX, y: -offsetY, width: drawnWidth, height: drawnHeight };
+}
+
+/**
+ * Draw a ready image node's real pixels, mirroring lumen-skia `paint_image`:
+ * focal-crop window, else center cover (xMidYMid slice), else contain letterbox
+ * (xMidYMid meet), else stretch-to-fill. Cover/crop clip to the box (contour +
+ * corner radius); contain fits inside so it needs no clip. Returns false when no
+ * decoded bytes are available yet (the caller draws the placeholder).
+ */
+function drawImage(
+  ck: CanvasKit,
+  canvas: Canvas,
+  d: RenderNodeDescriptor,
+  images: CanvasKitImageSource | null
+): boolean {
+  const info = d.image;
+  if (!info || !images || info.assetStatus !== "ready") {
+    return false;
+  }
+  const image = images.get(info.assetId);
+  if (!image) {
+    return false;
+  }
+  const boxWidth = d.width;
+  const boxHeight = d.height;
+  if (boxWidth <= 0 || boxHeight <= 0) {
+    return false;
+  }
+
+  const src = ck.LTRBRect(0, 0, image.width(), image.height());
+  const paint = new ck.Paint();
+  paint.setAntiAlias(true);
+
+  const clipToBox = (): void => {
+    const path = d.contourPath ? ck.Path.MakeFromSVGString(d.contourPath) : null;
+    if (path) {
+      canvas.clipPath(path, ck.ClipOp.Intersect, true);
+      path.delete();
+    } else {
+      canvas.clipRect(ck.LTRBRect(0, 0, boxWidth, boxHeight), ck.ClipOp.Intersect, true);
+    }
+  };
+
+  // Case 1 — explicit focal-crop window.
+  const crop = focalCropGeometry(info.fit, info.focalPoint, info.naturalAspectRatio, boxWidth, boxHeight);
+  if (crop) {
+    canvas.save();
+    clipToBox();
+    canvas.drawImageRect(image, src, ck.XYWHRect(crop.x, crop.y, crop.width, crop.height), paint);
+    canvas.restore();
+    paint.delete();
+    return true;
+  }
+
+  // Intrinsic ratio: prefer the decoded pixels (mirrors `decoded_dimensions`),
+  // falling back to the record's natural ratio.
+  const decodedRatio = image.height() > 0 ? image.width() / image.height() : null;
+  const ratio = decodedRatio && decodedRatio > 0 ? decodedRatio : info.naturalAspectRatio;
+  const isCover = info.fit === "cover" || info.fit === "crop";
+
+  if (ratio && ratio > 0 && isCover) {
+    // Case 2 — center cover (preserveAspectRatio xMidYMid slice).
+    const [drawnWidth, drawnHeight] =
+      boxWidth / boxHeight < ratio ? [boxHeight * ratio, boxHeight] : [boxWidth, boxWidth / ratio];
+    canvas.save();
+    clipToBox();
+    canvas.drawImageRect(
+      image,
+      src,
+      ck.XYWHRect((boxWidth - drawnWidth) / 2, (boxHeight - drawnHeight) / 2, drawnWidth, drawnHeight),
+      paint
+    );
+    canvas.restore();
+    paint.delete();
+    return true;
+  }
+
+  if (ratio && ratio > 0) {
+    // Case 3 — contain letterbox (xMidYMid meet); fits inside the box, no clip.
+    const [drawnWidth, drawnHeight] =
+      boxWidth / boxHeight < ratio ? [boxWidth, boxWidth / ratio] : [boxHeight * ratio, boxHeight];
+    canvas.drawImageRect(
+      image,
+      src,
+      ck.XYWHRect((boxWidth - drawnWidth) / 2, (boxHeight - drawnHeight) / 2, drawnWidth, drawnHeight),
+      paint
+    );
+    paint.delete();
+    return true;
+  }
+
+  // Case 4 — no ratio available → stretch to fill the box.
+  canvas.drawImageRect(image, src, ck.XYWHRect(0, 0, boxWidth, boxHeight), paint);
+  paint.delete();
+  return true;
 }
 
 /**

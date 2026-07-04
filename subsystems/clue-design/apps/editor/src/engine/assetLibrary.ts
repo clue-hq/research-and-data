@@ -94,6 +94,72 @@ export async function uploadAsset(
   };
 }
 
+export interface GenerateAssetRequest {
+  prompt: string;
+  provider?: string;
+  outputKind?: string;
+  width?: number;
+  height?: number;
+  mimeType?: string;
+  transparentBackground?: boolean;
+  brandNotes?: string[];
+  label?: string;
+}
+
+export interface AssetGenerateResult {
+  asset: AssetRecord;
+  deduplicated: boolean;
+  diagnostics: Diagnostic[];
+}
+
+/** Default provider id for the text-to-image path (the Python image-gen seam). */
+export const IMAGE_GEN_PROVIDER = "image-gen-v1";
+
+/**
+ * Generate a raster image through `POST /assets/generate`. The bytes are persisted
+ * by the API exactly like an upload and a ready `AssetRecord` is returned; the editor
+ * then places it with `buildNodePlacementOperations`. On a provider/config failure the
+ * API returns a typed error (e.g. a 503 when the model is not configured) whose
+ * `detail.message` / `LUMA*` code is surfaced to the user.
+ */
+export async function generateAsset(
+  apiBaseUrl: string,
+  request: GenerateAssetRequest
+): Promise<AssetGenerateResult> {
+  const response = await fetch(new URL("/assets/generate", apiBaseUrl), {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Accept: "application/json" },
+    body: JSON.stringify({
+      provider: request.provider ?? IMAGE_GEN_PROVIDER,
+      prompt: request.prompt,
+      output_kind: request.outputKind ?? "raster_image",
+      width: request.width,
+      height: request.height,
+      mime_type: request.mimeType,
+      transparent_background: request.transparentBackground,
+      brand_notes: request.brandNotes ?? [],
+      label: request.label
+    })
+  });
+  const payload = (await response.json().catch(() => ({}))) as {
+    asset?: AssetRecord;
+    deduplicated?: boolean;
+    diagnostics?: Diagnostic[];
+    detail?: { message?: string; code?: string };
+  };
+  if (!response.ok || !payload.asset) {
+    const detail = payload.detail;
+    throw new Error(
+      detail?.message ?? detail?.code ?? `Image generation failed with status ${response.status}`
+    );
+  }
+  return {
+    asset: payload.asset,
+    deduplicated: payload.deduplicated ?? false,
+    diagnostics: payload.diagnostics ?? []
+  };
+}
+
 export function assetThumbnailUrl(apiBaseUrl: string, assetId: string): string {
   return new URL(`/assets/${assetId}/thumbnail`, apiBaseUrl).toString();
 }

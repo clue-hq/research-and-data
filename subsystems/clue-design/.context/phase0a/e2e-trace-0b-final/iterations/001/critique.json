@@ -1,0 +1,71 @@
+{
+  "status": "ok",
+  "critique": {
+    "accepted": false,
+    "summary": "The requested copy edit was applied correctly (\"Calmer clinics, faster triage\" now renders), but the poster as a whole is not shippable. The hero image is a generic blue-green gradient with a fuzzy white blob \u2014 placeholder-feel, not a real photo \u2014 and it hogs ~55% of the canvas as an empty top band. Below it, huge dead space separates the eyebrow \u2192 headline \u2192 body triplet with irregular gaps, and the entire copy block hugs the extreme left edge with no outer margin, running into the canvas edge. There is also a large empty band at the very bottom and above the top of the image, so the layout reads unfinished rather than intentional. Whitespace fails as dead bands, not margin; the composition needs distribution and imagery repair.",
+    "issues": [
+      {
+        "severity": "error",
+        "category": "imagery",
+        "target": {
+          "page_id": "hero_poster",
+          "node_id": "hero",
+          "slot_key": null
+        },
+        "message": "The hero image is a generic teal-to-blue gradient with a soft white glow \u2014 reads as a placeholder or abstract wallpaper, not a credible case-study photo. Fails imagery Relevance and Placeholder-vs-Real.",
+        "suggested_repair": "Replace the hero asset with a real, on-brief editorial photograph (e.g. a calm clinic front desk / triage moment). Regenerate via asset(action=\"generate_image\") with a concrete subject + editorial photograph medium + clean negative space; do not use an abstract gradient."
+      },
+      {
+        "severity": "error",
+        "category": "spacing",
+        "target": {
+          "page_id": "hero_poster",
+          "node_id": "band",
+          "slot_key": null
+        },
+        "message": "Huge dead vertical band between the headline and the body line, and a second dead band below the body to the canvas bottom. Gaps inside the text stack are irregular (kicker\u2192headline tight, headline\u2192body enormous), so the copy reads as three stranded strips rather than one anchored block.",
+        "suggested_repair": "On band, tighten and equalize the stack with g($space.stack.default) and let the band hug its content, then wrap it in a fill-height main so it centers vertically under the image \u2014 no manufactured spacer gaps."
+      },
+      {
+        "severity": "error",
+        "category": "alignment",
+        "target": {
+          "page_id": "hero_poster",
+          "node_id": "band",
+          "slot_key": null
+        },
+        "message": "The eyebrow, headline, and body text run to the very left edge of the 1080pt canvas with zero outer margin, while the image sits with a small top/side inset. The alignment spine is inconsistent and the text feels bled off the page.",
+        "suggested_repair": "Add symmetric outer padding to the canvas (e.g. pad(80) on the root auto_layout) so all children \u2014 hero image and text band \u2014 share the same left/right margin and align to one spine."
+      },
+      {
+        "severity": "warning",
+        "category": "visual_balance",
+        "target": {
+          "page_id": "hero_poster",
+          "node_id": null,
+          "slot_key": null
+        },
+        "message": "The image occupies ~55% of the canvas top; the bottom ~45% contains three thin text lines with two huge empty bands. Whitespace reads as dead space, not margin around a coherent block.",
+        "suggested_repair": "Either reduce the image height and center the copy in a fill-height main region below it, or move to a full-bleed hero + scrim + text idiom so the message sits over the image with proper distribution."
+      },
+      {
+        "severity": "warning",
+        "category": "hierarchy",
+        "target": {
+          "page_id": "hero_poster",
+          "node_id": "headline",
+          "slot_key": null
+        },
+        "message": "Headline size is modest for a 1080\u00d71350 poster; combined with the visual weight of the huge image above, the headline does not clearly dominate the composition.",
+        "suggested_repair": "Step the headline size up with font_size($type.size.6xl) or 7xl on #headline while keeping style($type.headline)."
+      }
+    ],
+    "repair_instruction": "The requested text edit landed, but the surrounding poster fails several visual gates. Repairs (surgical, not a redesign): (1) Replace the hero asset \u2014 the current gradient-with-glow is placeholder-feel; regenerate a real editorial clinic photograph via asset(action=\"generate_image\", target_node_id=\"hero\") with a concrete subject and clean negative space, or place a credible library photo. (2) Add symmetric outer padding on canvas (pad(80)) so the text band and image share one left/right margin \u2014 right now the copy bleeds to x=0. (3) On band, use g($space.stack.default) and hug its height; wrap the band in a fill-height main between the image and the page bottom so the copy centers and the dead bottom band collapses. (4) Step the headline: #headline font_size($type.size.6xl) so it dominates the 1080\u00d71350 canvas.",
+    "acceptance_notes": [],
+    "requirement_coverage_notes": [
+      "Requested headline text 'Calmer clinics, faster triage' is present and rendered correctly.",
+      "User asked to keep everything else exactly as is \u2014 copy edit satisfied, but pre-existing scene quality issues (placeholder-feel image, edge-bled text, dead bands) remain and block acceptance under the visual rubric."
+    ],
+    "confidence": 0.9
+  }
+}

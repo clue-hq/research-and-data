@@ -26,13 +26,23 @@ composition, visual balance, parent/artboard overflow, or repeated failed local
 patches (see attempt_history), choose a structural rewrite mode instead of a tiny
 targeted patch.
 
+SEEDED CONTINUATION TURNS: when the report says `seeded_from_initial_scene: true`,
+the scene IS the user's live document — you are continuing it, not creating one.
+`new_artifact`, `full_page_rewrite`, and `replace_artboard_subtree` are unavailable
+(the loop coerces them to `targeted_patch`). Choose `targeted_patch` or
+`layout_cluster_rewrite`, scoped to what the user asked for. Pre-existing quality
+issues OUTSIDE the requested edit are advisory — do not block or redesign for them
+unless the user asked.
+
 Return only a structured AgentDirectorDecision.
 """
 
 
 class LangChainAgentDirector(AgentDirector):
-    def __init__(self, model: str) -> None:
-        raw_model = init_model(model)
+    def __init__(
+        self, model: str, *, base_url: str | None = None, api_key: str | None = None
+    ) -> None:
+        raw_model = init_model(model, base_url=base_url, api_key=api_key)
         self.structured_model = try_structured_model(raw_model, AgentDirectorDecision)
         self.raw_model = raw_model
 
@@ -63,8 +73,10 @@ class LangChainAgentDirector(AgentDirector):
 
 
 class LangChainDslAuthor(DslAuthor):
-    def __init__(self, model: str) -> None:
-        self.model = init_model(model)
+    def __init__(
+        self, model: str, *, base_url: str | None = None, api_key: str | None = None
+    ) -> None:
+        self.model = init_model(model, base_url=base_url, api_key=api_key)
 
     def write_block(self, request: AuthoringBlockRequest) -> str:
         payload = request.model_dump(mode="json")
@@ -92,8 +104,10 @@ class LangChainDslAuthor(DslAuthor):
 
 
 class LangChainVisualReviewer(VisualReviewer):
-    def __init__(self, model: str) -> None:
-        raw_model = init_model(model)
+    def __init__(
+        self, model: str, *, base_url: str | None = None, api_key: str | None = None
+    ) -> None:
+        raw_model = init_model(model, base_url=base_url, api_key=api_key)
         self.structured_model = try_structured_model(raw_model, VisualCritique)
         self.raw_model = raw_model
 
@@ -148,30 +162,49 @@ class LangChainVisualReviewer(VisualReviewer):
         return parse_visual_critique(response_content(response))
 
 
-def create_provider_quality_loop(prompt: str, config):
+def create_provider_quality_loop(
+    prompt: str, config, initial_scene: dict | None = None, event_sink=None
+):
     from .loop import LumenQualityLoop
     from .tools import LumenDesignTools
 
-    tools = LumenDesignTools(config, prompt)
+    tools = LumenDesignTools(
+        config, prompt, initial_scene=initial_scene, event_sink=event_sink
+    )
+    creds = {
+        "base_url": getattr(config, "agent_base_url", None),
+        "api_key": getattr(config, "agent_api_key", None),
+    }
     return (
         LumenQualityLoop(
             tools=tools,
-            author=LangChainDslAuthor(config.model),
-            reviewer=LangChainVisualReviewer(config.model),
-            director=LangChainAgentDirector(config.model),
+            author=LangChainDslAuthor(config.model, **creds),
+            reviewer=LangChainVisualReviewer(config.model, **creds),
+            director=LangChainAgentDirector(config.model, **creds),
         ),
         tools,
     )
 
 
-def init_model(model: str):
+def init_model(
+    model: str, *, base_url: str | None = None, api_key: str | None = None
+):
+    """Build the deep-agent text model.
+
+    When `base_url` + `api_key` are supplied, route through an OpenAI-compatible
+    endpoint (e.g. OpenRouter) — `model` must be an "openai:<model-id>" string so
+    LangChain selects the OpenAI client. Otherwise fall back to the provider
+    encoded in `model` (e.g. "anthropic:..."), authed via that provider's own env.
+    """
     try:
         from langchain.chat_models import init_chat_model
     except ImportError as error:
         raise RuntimeError(
             "LangChain model dependencies are missing. Install apps/api/requirements.txt "
-            "or add langchain and langchain-anthropic to the active environment."
+            "or add langchain, langchain-anthropic, and langchain-openai to the active environment."
         ) from error
+    if base_url and api_key:
+        return init_chat_model(model, base_url=base_url, api_key=api_key)
     return init_chat_model(model)
 
 

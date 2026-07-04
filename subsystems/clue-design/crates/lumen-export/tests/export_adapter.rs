@@ -452,6 +452,34 @@ fn svg_export_uses_computed_xy_for_layouted_children() {
 }
 
 #[test]
+fn svg_export_scales_a_library_icon_to_its_node_box() {
+    // Step 8: a `svg(icon:name)` node carries a 24×24 viewBox; the export must fit it to
+    // the node box (here 48×48 → uniform 2× scale) so the icon renders at the node's size.
+    let adapter = LumenExportAdapter::new();
+    let mut scene = Scene::new(DocumentId::from("doc_icon"), "Icon");
+    compile_dsl_into_scene(
+        "page page_a4\n  mark svg(icon:check) p(0,0) s(48,48) fill(#111827)",
+        &mut scene,
+    );
+    let node = scene.nodes.get_mut(&NodeId::from("mark")).unwrap();
+    node.computed = Some(ComputedGeometry {
+        layout_bounds: Rect { x: 0.0, y: 0.0, width: 48.0, height: 48.0 },
+        render_bounds: Rect { x: 0.0, y: 0.0, width: 48.0, height: 48.0 },
+    });
+
+    let result = adapter
+        .export(
+            &scene,
+            &request(ExportFormat::Svg, vec![PageId::from("page_a4")]),
+        )
+        .unwrap();
+    let svg = std::str::from_utf8(&result.artifacts[0].bytes).unwrap();
+
+    assert!(svg.contains("scale(2)"), "missing icon fit scale: {svg}");
+    assert!(svg.contains("M9 16.17"), "missing icon path: {svg}");
+}
+
+#[test]
 fn golden_dsl_brand_slot_layout_exports_svg_preview() {
     let brand_kit: BrandKit = serde_json::from_str(ACME_BRAND_KIT).unwrap();
     let mut scene = Scene::new(DocumentId::from("doc_preflight_export"), "Preflight Export");

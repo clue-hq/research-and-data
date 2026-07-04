@@ -78,16 +78,28 @@ strings.
 
 ## Scene inspection (read-only)
 
-- **`summarize_scene()`** — document, pages, counts, slots, effective brand.
-- **`summarize_page(page_id)`** / **`summarize_node_tree(page_id)`** — node tree
-  with geometry and slot bindings; use to confirm a node id before targeting it.
-- **`summarize_slots()`** — slot key → bound nodes.
+- **`inspect(view, target?)`** — one read-only window onto the scene. Pick `view`:
+  - `view="scene"` — document, pages, counts, slots, effective brand.
+  - `view="page"` (target=page_id) / `view="node_tree"` (target=page_id) — node tree
+    with geometry and slot bindings; use to confirm a node id before targeting it.
+  - `view="slots"` — slot key → bound nodes.
+  - `view="geometry"` (target=node_id) — computed geometry + declared transform/size.
+  - `view="slot_bindings"` (target=slot_key) — binding details for one semantic slot.
 
 ## Assets
 
-- **`generate_qr(data, ec_level?, print_media?, target_width_mm?, label?)`** →
-  deterministic SVG QR asset. **Mutates** (adds an asset). For print, set
-  `print_media=True` + `target_width_mm`. Place with an asset-placement operation.
+- **`asset(action, …)`** — generate or place a design asset. **Mutates** the scene
+  through the canonical core operation path. Pick `action`:
+  - `action="generate_image"` — `prompt`, plus `target_node_id`/`target_slot_id` so the
+    aspect is derived from the frame (optional `aspect_ratio`/`width`/`height`,
+    `brand_notes`, `transparent_background`, `label`). Registers a raster image and
+    returns its asset_id — NOT auto-placed; crop-to-fill, never stretched.
+  - `action="generate_qr"` — `data` (URL/text), optional `ec_level`, `print_media`,
+    `target_width_mm`, `label`. Deterministic SVG QR asset. For print set
+    `print_media=True` + `target_width_mm`.
+  - `action="place"` — `asset_id` + either `node_id` or `slot_id`; `fit` (default cover),
+    `focal_x`/`focal_y` (0..1), `alt`, `preserve_transparency`. Places an existing asset
+    into an image node or a bound image slot. Reversible.
 
 ## Gaps & telemetry
 
@@ -102,3 +114,6 @@ strings.
 `load_knowledge → compile_dsl_block → preflight_design → export_preview_bundle →
 get_latest_preview_for_critique → submit_visual_critique → (repair via
 apply_structured_edit / compile_dsl_block) → finalize_run`.
+
+Full procedure, with the surgical-repair and layout-cluster rules:
+`knowledge/loop/authoring-and-repair`.

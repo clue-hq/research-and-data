@@ -1,6 +1,6 @@
 import { render } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
-import { SelectionOverlay } from "../SelectionOverlay";
+import { describe, expect, it, vi } from "vitest";
+import { SelectionOverlay, focalFromScreenPoint } from "../SelectionOverlay";
 
 const pageOrigin = { x: 100, y: 50 };
 
@@ -123,5 +123,40 @@ describe("SelectionOverlay (Wave 3 C3d)", () => {
     const marquee = container.querySelector('[data-role="marquee"]')!;
     expect(Number(marquee.getAttribute("width"))).toBe(40);
     expect(Number(marquee.getAttribute("x"))).toBe(105); // 100 + 5
+  });
+
+  it("draws a focal-point dot only when a focal + callback are provided (image nodes)", () => {
+    const base = {
+      selection: { box: { x: 0, y: 0, width: 100, height: 80 }, rotation: 0 },
+      pageOrigin,
+      zoom: 1
+    } as const;
+    const { container, rerender } = render(<SelectionOverlay {...base} />);
+    expect(container.querySelector('[data-role="focal-point"]')).toBeNull();
+
+    rerender(<SelectionOverlay {...base} focal={{ x: 0.5, y: 0.5 }} onFocalChange={vi.fn()} />);
+    const dot = container.querySelector('[data-testid="focal-handle"]')!;
+    // 0.5/0.5 focal of a 100×80 box at origin (0,0): center (50,40) → screen pageOrigin + center.
+    expect(Number(dot.getAttribute("cx"))).toBeCloseTo(pageOrigin.x + 50, 6);
+    expect(Number(dot.getAttribute("cy"))).toBeCloseTo(pageOrigin.y + 40, 6);
+  });
+});
+
+describe("focalFromScreenPoint", () => {
+  const box = { x: 100, y: 50, width: 200, height: 100 };
+  const origin = { x: 10, y: 20 };
+
+  it("maps the box-center screen point to a 0.5/0.5 focal", () => {
+    // descriptor center (200,100) → screen origin + center*zoom = (410,220)
+    expect(focalFromScreenPoint({ x: 410, y: 220 }, box, origin, 2)).toEqual({ x: 0.5, y: 0.5 });
+  });
+
+  it("maps the box top-left screen point to 0/0", () => {
+    expect(focalFromScreenPoint({ x: 210, y: 120 }, box, origin, 2)).toEqual({ x: 0, y: 0 });
+  });
+
+  it("clamps points outside the box to the 0..1 range", () => {
+    expect(focalFromScreenPoint({ x: -1000, y: -1000 }, box, origin, 2)).toEqual({ x: 0, y: 0 });
+    expect(focalFromScreenPoint({ x: 100000, y: 100000 }, box, origin, 2)).toEqual({ x: 1, y: 1 });
   });
 });

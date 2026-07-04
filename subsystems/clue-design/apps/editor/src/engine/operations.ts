@@ -63,7 +63,12 @@ export function nodePatch(patch: Partial<NodePatch>): NodePatch {
     // operation layer applies patches verbatim — engine and server both —
     // so the builder is where invalidation belongs.
     computed: patch.computed ?? (nodePatchAffectsRender(patch) ? clear() : unchanged()),
-    locked: patch.locked ?? unchanged()
+    locked: patch.locked ?? unchanged(),
+    // Phase 1 freehand: like `effects`, the Rust core skips these when
+    // unchanged, so the wire format only carries them when set.
+    ...(patch.position_mode ? { position_mode: patch.position_mode } : {}),
+    ...(patch.absolute_box ? { absolute_box: patch.absolute_box } : {}),
+    ...(patch.base_anchor ? { base_anchor: patch.base_anchor } : {})
   };
 }
 
@@ -85,8 +90,58 @@ function nodePatchAffectsRender(patch: Partial<NodePatch>): boolean {
     changed(patch.source_asset_id) ||
     changed(patch.asset_placement) ||
     changed(patch.clip) ||
-    changed(patch.layout)
+    changed(patch.layout) ||
+    // Phase 1 freehand: pinning/unpinning or moving an absolute box moves
+    // pixels (mirrors the Rust arm added in 1a).
+    changed(patch.position_mode) ||
+    changed(patch.absolute_box) ||
+    changed(patch.base_anchor)
   );
+}
+
+/** Phase 1d freehand: move/resize a pinned node by rewriting its page-space
+ * `absolute_box` — the solver treats the box as authoritative for both
+ * position and size, so this IS the drag/resize commit for pinned nodes.
+ * Resizes also bake the Fixed size in the same patch, keeping the
+ * size-spec ↔ box invariant from detach (what a later re-attach keeps). */
+export function updateNodeAbsoluteBox(node: Node, box: Rect): Operation {
+  const resized =
+    node.absolute_box?.width !== box.width || node.absolute_box?.height !== box.height;
+  return {
+    kind: "update_node",
+    node_id: node.id,
+    patch: nodePatch({
+      absolute_box: set(box),
+      ...(resized
+        ? {
+            size: set({
+              width: { kind: "fixed", value: box.width },
+              height: { kind: "fixed", value: box.height }
+            } as SizeSpec)
+          }
+        : {})
+    })
+  };
+}
+
+/** Pinned rotate rides the transform (rotation is render-only for pinned
+ * nodes; the solver ignores transform x/y while the box is authoritative). */
+export function updateNodeAbsoluteBoxAndRotation(
+  node: Node,
+  box: Rect,
+  rotation: number
+): Operation {
+  const base = updateNodeAbsoluteBox(node, box);
+  if (base.kind !== "update_node" || node.transform.rotation === rotation) {
+    return base;
+  }
+  return {
+    ...base,
+    patch: {
+      ...base.patch,
+      transform: set({ ...node.transform, rotation })
+    }
+  };
 }
 
 export function pagePatch(patch: Partial<PagePatch>): PagePatch {

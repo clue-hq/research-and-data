@@ -22,6 +22,10 @@ PRIMARY_KNOWLEDGE_PATHS = [
     f"{KNOWLEDGE_DOCS_ROOT}/knowledge/lumen-dsl/directives.md",
     f"{KNOWLEDGE_DOCS_ROOT}/knowledge/lumen-dsl/diagnostics.md",
     f"{KNOWLEDGE_DOCS_ROOT}/knowledge/design/foundations.md",
+    f"{KNOWLEDGE_DOCS_ROOT}/knowledge/images/decide.md",
+    f"{KNOWLEDGE_DOCS_ROOT}/knowledge/images/prompts.md",
+    f"{KNOWLEDGE_DOCS_ROOT}/knowledge/images/placement.md",
+    f"{KNOWLEDGE_DOCS_ROOT}/knowledge/images/icons.md",
     f"{KNOWLEDGE_DOCS_ROOT}/knowledge/design/artboard-frame-authoring.md",
     f"{KNOWLEDGE_DOCS_ROOT}/knowledge/design/layout-recipes.md",
     f"{KNOWLEDGE_DOCS_ROOT}/knowledge/design/typography-and-composition.md",
@@ -62,11 +66,27 @@ LAYOUT_CLUSTER_REPAIR_PATH = (
 # (horizontal-only align — there is NO valign/text_align — plus wrap/max_lines).
 GRAMMAR_PATH = f"{KNOWLEDGE_DOCS_ROOT}/knowledge/lumen-dsl/grammar.md"
 TEXT_PATH = f"{KNOWLEDGE_DOCS_ROOT}/knowledge/lumen-dsl/text.md"
+# The modify/ref grammar (`#node_id` vs `#page:` vs `#slot:`, directives take
+# node ids only) — pinned for SEEDED turns, which edit an existing document and
+# live or die by these forms (run_8cbeae790f07 burned every iteration on the
+# `#page_a4`-vs-`#page:page_a4` trap with this doc never loaded).
+DIRECTIVES_PATH = f"{KNOWLEDGE_DOCS_ROOT}/knowledge/lumen-dsl/directives.md"
 # The art-direction taste rubric the visual critic scores against (one-dominant /
 # squint test, hero-size-per-surface, jump rule, whitespace-as-margin, 60-30-10,
 # WCAG contrast, single alignment spine, eyebrow/anti-cliche). Pinned + delivered
 # in full so the priors arrive intact, not windowed to a half-rule.
 FOUNDATIONS_PATH = f"{KNOWLEDGE_DOCS_ROOT}/knowledge/design/foundations.md"
+
+# Imagery knowledge. `decide` is the cheap guardrail (generate only what you can't
+# build) and is pinned for EVERY task so the author always considers whether imagery
+# is warranted. `prompts` (5-component prompt craft) and `placement` (cover/focal +
+# the text-over-image scrim rule) are pinned only when the task is image-bearing, so
+# they don't bloat the context for a pure-typographic card. All three are delivered
+# in full when present — a windowed prompt template or half a scrim example misleads.
+IMAGES_DECIDE_PATH = f"{KNOWLEDGE_DOCS_ROOT}/knowledge/images/decide.md"
+IMAGES_PROMPTS_PATH = f"{KNOWLEDGE_DOCS_ROOT}/knowledge/images/prompts.md"
+IMAGES_PLACEMENT_PATH = f"{KNOWLEDGE_DOCS_ROOT}/knowledge/images/placement.md"
+IMAGES_ICONS_PATH = f"{KNOWLEDGE_DOCS_ROOT}/knowledge/images/icons.md"
 
 # The vetted block catalog: pre-proportioned, compile+preflight-validated blocks
 # the author ASSEMBLES (README index + full-artifact patterns + component blocks).
@@ -84,7 +104,38 @@ BLOCK_CATALOG_PATHS = [
 # Docs delivered to the author IN FULL (not windowed to a best_excerpt). The block
 # examples and the grammar/text references must arrive intact — a 1600-char window
 # slices a full page+artboard+block example in half and teaches broken syntax.
-FULL_DELIVERY_PATHS = {GRAMMAR_PATH, TEXT_PATH, FOUNDATIONS_PATH, *BLOCK_CATALOG_PATHS}
+FULL_DELIVERY_PATHS = {
+    GRAMMAR_PATH,
+    TEXT_PATH,
+    FOUNDATIONS_PATH,
+    IMAGES_DECIDE_PATH,
+    IMAGES_PROMPTS_PATH,
+    IMAGES_PLACEMENT_PATH,
+    IMAGES_ICONS_PATH,
+    *BLOCK_CATALOG_PATHS,
+}
+# Query terms that mark an image-bearing task; when present, the imagery prompt-craft
+# and placement docs are force-pinned alongside the always-pinned decide guardrail.
+IMAGERY_TERMS = {
+    "image",
+    "images",
+    "imagery",
+    "photo",
+    "photograph",
+    "photography",
+    "picture",
+    "portrait",
+    "hero",
+    "background",
+    "illustration",
+    "illustrations",
+    "icon",
+    "icons",
+    "texture",
+    "banner",
+    "visual",
+    "product shot",
+}
 LAYOUT_CLUSTER_TERMS = {
     "artboard",
     "background",
@@ -96,6 +147,52 @@ LAYOUT_CLUSTER_TERMS = {
     "overflow",
     "parent",
 }
+
+
+# --- Brilliant-style `assumes:` frontmatter (machine-readable prerequisites) ----
+# Brilliant connects its knowledge corpus with an `assumes:` frontmatter field that
+# `get_knowledge` resolves transitively — loading a leaf doc automatically pulls its
+# base. We mirror that here: a doc declares its prerequisites in a YAML frontmatter
+# block, and `read_task_knowledge` force-includes them when the doc is selected. This
+# keeps cross-references machine-resolvable (and lint-checkable) instead of relying on
+# prose pointers that silently rot.
+
+_FRONTMATTER_RE = re.compile(r"^---[ \t]*\n(.*?)\n---[ \t]*\n?", re.DOTALL)
+
+
+def parse_frontmatter(text: str) -> tuple[dict[str, str], str]:
+    """Split a leading `---`-delimited frontmatter block from the body.
+
+    Only the minimal `key: value` subset we use (`assumes:`) is parsed. Returns
+    ``({}, text)`` when there is no frontmatter, so docs without it are unaffected.
+    """
+    if not text.startswith("---"):
+        return {}, text
+    match = _FRONTMATTER_RE.match(text)
+    if not match:
+        return {}, text
+    meta: dict[str, str] = {}
+    for line in match.group(1).splitlines():
+        if ":" in line:
+            key, _, value = line.partition(":")
+            meta[key.strip()] = value.strip()
+    return meta, text[match.end() :]
+
+
+def assumes_keys(text: str) -> list[str]:
+    """The prerequisite knowledge keys a doc declares via `assumes:` frontmatter.
+
+    Brilliant style: a comma-separated list of keys relative to the `knowledge/`
+    dir, e.g. ``assumes: images/decide, assets/asset-placement``.
+    """
+    meta, _ = parse_frontmatter(text)
+    raw = meta.get("assumes", "")
+    return [key.strip() for key in raw.split(",") if key.strip()]
+
+
+def assumes_path(key: str) -> str:
+    """Resolve an `assumes:` key (relative to `knowledge/`) to a repo-relative path."""
+    return f"{KNOWLEDGE_DOCS_ROOT}/knowledge/{key}.md"
 
 
 def read_knowledge(
@@ -136,6 +233,7 @@ def read_task_knowledge(
     query: str,
     limit: int = 8,
     paths: Iterable[str] = DEFAULT_KNOWLEDGE_PATHS,
+    extra_mandatory_paths: Iterable[str] = (),
 ) -> List[KnowledgeSnippet]:
     """Return task knowledge with mandatory Lumen docs before reference docs."""
     # The candidate pool must cover every pinned/mandatory path — the mandatory
@@ -159,7 +257,7 @@ def read_task_knowledge(
         )
         seen_paths.add(match.path)
 
-    for rel_path in mandatory_task_paths(query):
+    for rel_path in [*mandatory_task_paths(query), *extra_mandatory_paths]:
         match = next(
             (snippet for snippet in candidates if snippet.path == rel_path),
             None,
@@ -170,6 +268,31 @@ def read_task_knowledge(
             match.model_copy(update={"selected_reason": "mandatory_task_context"})
         )
         seen_paths.add(match.path)
+
+    # Brilliant-style `assumes:` resolution. When a doc is selected, pull its declared
+    # prerequisites (transitively) so loading a leaf — e.g. `images/placement` — also
+    # brings its base (`images/decide` + `assets/asset-placement`). Dependencies come
+    # from the same candidate pool and are force-included (like mandatory pins), before
+    # the score-ranked fill, because a prerequisite outranks a low-scored extra.
+    candidate_by_path = {snippet.path: snippet for snippet in candidates}
+    queue = [snippet.path for snippet in selected]
+    while queue:
+        source_path = queue.pop()
+        source_file = repo_root / source_path
+        if not source_file.exists():
+            continue
+        for key in assumes_keys(source_file.read_text(encoding="utf-8")):
+            dep_path = assumes_path(key)
+            if dep_path in seen_paths:
+                continue
+            dep = candidate_by_path.get(dep_path)
+            if dep is None:
+                continue
+            selected.append(
+                dep.model_copy(update={"selected_reason": "assumes_dependency"})
+            )
+            seen_paths.add(dep_path)
+            queue.append(dep_path)
 
     for snippet in candidates:
         if snippet.path in seen_paths:
@@ -194,12 +317,21 @@ def mandatory_task_paths(query: str) -> list[str]:
         GRAMMAR_PATH,
         TEXT_PATH,
         FOUNDATIONS_PATH,
+        # The imagery guardrail is cheap and always relevant: the author must decide
+        # whether a surface needs an image (and route icon/shape/none correctly)
+        # before composing — so it is pinned for every task.
+        IMAGES_DECIDE_PATH,
         ARTBOARD_AUTHORING_PATH,
         *BLOCK_CATALOG_PATHS,
     ]
     terms = set(re.split(r"[^a-z0-9_.$-]+", query.lower()))
     if terms & LAYOUT_CLUSTER_TERMS:
         paths.append(LAYOUT_CLUSTER_REPAIR_PATH)
+    # Pin the prompt-craft + placement/scrim docs only for image-bearing tasks.
+    if terms & IMAGERY_TERMS:
+        paths.append(IMAGES_PROMPTS_PATH)
+        paths.append(IMAGES_PLACEMENT_PATH)
+        paths.append(IMAGES_ICONS_PATH)
     return paths
 
 

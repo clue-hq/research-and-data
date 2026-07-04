@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1350" viewBox="0 0 1080 1350" data-lumen-document-id="doc_probe_0a" data-lumen-page-id="hero_poster">
+<g id="lumen-page-hero_poster" data-lumen-page-id="hero_poster">
+<g id="lumen-node-canvas" data-lumen-node-id="canvas">
+<rect x="0" y="0" width="1080" height="1350" fill="#FFFFFF" data-lumen-fill-id="paint_canvas_fill_1" />
+<g id="lumen-node-hero" data-lumen-node-id="hero" data-lumen-unsupported="image" data-lumen-asset-id="hero_image" />
+<g id="lumen-node-band" data-lumen-node-id="band" transform="translate(0 810)">
+<rect x="0" y="0" width="1080" height="540" fill="#FFFFFF" data-lumen-fill-id="paint_band_fill_1" />
+<text id="lumen-node-kicker" data-lumen-node-id="kicker" x="0" y="16" font-family="Inter, Arial, Helvetica, sans-serif" font-size="16" font-weight="400" text-anchor="start" letter-spacing="0" direction="ltr" transform="translate(24 45)" fill="#111827" data-lumen-fill-id="kicker_text_fill"><tspan x="0" y="18.375">CASE STUDY</tspan></text>
+<text id="lumen-node-headline" data-lumen-node-id="headline" x="0" y="32" font-family="Inter, Arial, Helvetica, sans-serif" font-size="32" font-weight="800" text-anchor="start" letter-spacing="0" direction="ltr" transform="translate(24 109)" fill="#111827" data-lumen-fill-id="headline_text_fill"><tspan x="0" y="27.9827">Calmer clinics, faster triage</tspan></text>
+<text id="lumen-node-body" data-lumen-node-id="body" x="0" y="16" font-family="Inter, Arial, Helvetica, sans-serif" font-size="16" font-weight="400" text-anchor="start" letter-spacing="0" direction="ltr" transform="translate(24 335)" fill="#111827" data-lumen-fill-id="body_text_fill"><tspan x="0" y="18.375">How Insight Health cut phone wait times by 63% with AI intake.</tspan></text>
+</g>
+</g>
+</g>
+</svg>

@@ -22,6 +22,11 @@ class CritiqueCategory(str, Enum):
     typography = "typography"
     brand_fit = "brand_fit"
     asset_use = "asset_use"
+    # Imagery-quality failures (relevance/decide, aspect-fit, legibility-over-image,
+    # placeholder-vs-real, theme-coherence). Distinct from `asset_use` so the loop can
+    # route it to an asset-tool repair (regenerate/recrop/scrim/replace/remove) rather
+    # than a layout-geometry patch, and so the eval harness can aggregate it.
+    imagery = "imagery"
     visual_balance = "visual_balance"
     semantic_slot_coverage = "semantic_slot_coverage"
     request_satisfaction = "request_satisfaction"
@@ -239,6 +244,11 @@ class RepairClassification(BaseModel):
 
 class StopReason(str, Enum):
     accepted = "accepted"
+    # Phase 0b: a seeded (continuation) turn whose requested edit compiled and
+    # preflighted clean, where every remaining critique issue targets content
+    # the turn did not touch — the edit is accepted at its own scope and the
+    # whole-design critique is surfaced as advisory, not blocking.
+    edit_scoped_acceptance = "edit_scoped_acceptance"
     compile_failed = "compile_failed"
     preflight_failed = "preflight_failed"
     export_failed = "export_failed"

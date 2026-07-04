@@ -54,7 +54,7 @@ describe("agent runner", () => {
       scene: minimalScene,
       documentId: "doc_agent",
       activePageId: "page_a4",
-      selectedNodeId: "node_contact_name",
+      targetNodeIds: ["node_contact_name"],
       diagnostics: []
     });
 
@@ -80,7 +80,8 @@ describe("agent runner", () => {
           scene: minimalScene,
           document_id: "doc_agent",
           active_page_id: "page_a4",
-          selected_node_id: "node_contact_name",
+          target_node_ids: ["node_contact_name"],
+          agent_instructions: null,
           diagnostics: []
         })
       })

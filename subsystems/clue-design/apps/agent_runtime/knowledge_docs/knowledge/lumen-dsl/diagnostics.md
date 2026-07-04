@@ -34,7 +34,7 @@ failing line is dropped, later lines are discarded (cascade halt).
 | `LUMD0301/0302/0304` | indentation / over-nesting / leaf-with-children | two spaces per level; only containers nest |
 | `LUMD0401` | duplicate node id | rename, or modify the existing node instead of re-declaring |
 | `LUMD0403/0404/0405` | image/vector/instance missing required arg | add `asset(id)` / `path("…")` / `source(id)` |
-| `LUMD0901` | modify target does not exist | check the id with `summarize_page`/`summarize_scene` |
+| `LUMD0901` | modify target does not exist | check the id with `inspect(view="page")`/`inspect(view="scene")` |
 | `LUMD0903` | property not valid for that modify target | use a property the target supports |
 
 ## Layout & fit (the usual cause of "won't accept")

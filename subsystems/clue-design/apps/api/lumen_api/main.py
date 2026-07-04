@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import base64
 import json
 import logging
@@ -7,6 +8,7 @@ import os
 import re
 import sqlite3
 import sys
+import threading
 import time
 from dataclasses import replace
 from pathlib import Path
@@ -15,8 +17,9 @@ from uuid import uuid4
 
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, Response
+from fastapi.responses import JSONResponse, Response, StreamingResponse
 
+from . import image_cache, image_provider
 from .core import CoreClient, CoreError, has_error_diagnostics
 from .database import NotFoundError, Repository, connect, run_migrations, utc_now
 from .dto import (
@@ -41,6 +44,7 @@ from .dto import (
 )
 from .models import (
     AgentTurnPreviewRequest,
+    SetAgentInstructionsRequest,
     AttachBrandKitRequest,
     ApplyOperationsRequest,
     ApplyStructuredEditRequest,
@@ -438,6 +442,23 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
         document_id: str, repo: Repository = Depends(repository)
     ) -> JsonObject:
         return public_document(require_document(repo, document_id))
+
+    @app.put("/documents/{document_id}/agent-instructions")
+    def set_agent_instructions(
+        document_id: str,
+        payload: SetAgentInstructionsRequest,
+        repo: Repository = Depends(repository),
+    ) -> JsonObject:
+        """2e: per-document standing instructions for the agent. Stored on the
+        document (they survive reloads) and sent by the editor with every
+        turn; an empty/blank body clears them."""
+        instructions = (payload.instructions or "").strip() or None
+        document = repo.set_agent_instructions(document_id, instructions)
+        return {
+            "schema_version": 1,
+            "document_id": document_id,
+            "agent_instructions": document["agent_instructions"],
+        }
 
     @app.put("/documents/{document_id}/scene")
     def replace_scene(
@@ -1023,7 +1044,7 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
             "agent_turn_preview_completed",
             document_id=payload.document_id,
             active_page_id=payload.active_page_id,
-            selected_node_id=payload.selected_node_id,
+            target_node_ids=payload.target_node_ids,
             status=result.get("status"),
             run_id=result.get("run_id"),
             operation_count=len(result.get("operations", []))
@@ -1035,6 +1056,154 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
             **diagnostic_summary(result.get("diagnostics", [])),
         )
         return result
+
+    @app.post("/agent/turns")
+    def start_agent_turn(
+        payload: AgentTurnPreviewRequest, repo: Repository = Depends(repository)
+    ) -> JsonObject:
+        # Async turn: start the run in a background thread and return its id
+        # immediately. The thread streams progress events into the durable
+        # run-event store (via the loop's event_sink) and writes the final
+        # result on completion; the editor subscribes over SSE. The synchronous
+        # /agent/turn-preview stays as-is for tests, CLI, and fixtures.
+        run_id = f"run_{uuid4().hex}"
+        repo.create_run(run_id, payload.document_id)
+        root = repo_root()
+        database_path = app.state.database_path
+        override = app.state.agent_turn_runner
+
+        def worker() -> None:
+            store = Repository(connect(database_path))
+            try:
+
+                def sink(event_type: str, data: JsonObject) -> None:
+                    try:
+                        store.append_run_event(run_id, event_type, data)
+                    except Exception:
+                        pass
+
+                try:
+                    if override is not None:
+                        response = override(payload, root)
+                    else:
+                        response = run_agent_turn_preview(payload, root, event_sink=sink)
+                    status = (
+                        "failed"
+                        if response.get("status") in ("failed", "error")
+                        else "succeeded"
+                    )
+                    store.set_run_result(run_id, status, response)
+                    store.append_run_event(
+                        run_id, "result", {"status": response.get("status")}
+                    )
+                except Exception as error:  # pragma: no cover - defensive
+                    failed = failed_agent_turn_response(
+                        "agent_runtime.failed",
+                        "Agent turn crashed before returning a proposal.",
+                        str(error),
+                    )
+                    store.set_run_result(run_id, "failed", failed)
+                    store.append_run_event(run_id, "error", {"message": str(error)})
+            finally:
+                store.connection.close()
+
+        threading.Thread(
+            target=worker, name=f"agent-turn-{run_id}", daemon=True
+        ).start()
+        log_event(
+            api_logger,
+            logging.INFO,
+            "agent_turn_started",
+            run_id=run_id,
+            document_id=payload.document_id,
+            active_page_id=payload.active_page_id,
+            target_node_ids=payload.target_node_ids,
+        )
+        return {"schema_version": 1, "run_id": run_id, "status": "running"}
+
+    @app.get("/agent/runs/{run_id}")
+    def get_agent_run(
+        run_id: str, repo: Repository = Depends(repository)
+    ) -> JsonObject:
+        run = repo.get_run(run_id)
+        if run is None:
+            raise HTTPException(
+                status_code=404, detail=f"agent_run {run_id} was not found"
+            )
+        return {
+            "schema_version": 1,
+            "run_id": run_id,
+            "status": run["status"],
+            "events": repo.list_run_events(run_id, after_seq=0),
+            "result": run["result"],
+        }
+
+    @app.get("/agent/runs/{run_id}/events")
+    async def stream_agent_run_events(run_id: str, request: Request):
+        database_path = app.state.database_path
+
+        def read_run() -> Optional[JsonObject]:
+            store = Repository(connect(database_path))
+            try:
+                return store.get_run(run_id)
+            finally:
+                store.connection.close()
+
+        def read_events(after_seq: int) -> List[JsonObject]:
+            store = Repository(connect(database_path))
+            try:
+                return store.list_run_events(run_id, after_seq=after_seq)
+            finally:
+                store.connection.close()
+
+        # Resume point: EventSource re-sends Last-Event-ID on auto-reconnect;
+        # an explicit ?after= (used by resume-on-mount after a snapshot fetch)
+        # takes precedence.
+        header_id = request.headers.get("last-event-id")
+        after_param = request.query_params.get("after")
+        try:
+            start_seq = int(after_param if after_param is not None else header_id or 0)
+        except (TypeError, ValueError):
+            start_seq = 0
+
+        if await asyncio.to_thread(read_run) is None:
+            raise HTTPException(
+                status_code=404, detail=f"agent_run {run_id} was not found"
+            )
+
+        async def event_stream():
+            last_seq = start_seq
+            yield "retry: 1000\n\n"
+            while True:
+                if await request.is_disconnected():
+                    return
+                events = await asyncio.to_thread(read_events, last_seq)
+                for event in events:
+                    last_seq = event["seq"]
+                    if event["type"] in ("result", "error"):
+                        current = await asyncio.to_thread(read_run)
+                        yield sse_frame(event["seq"], "done", (current or {}).get("result"))
+                        return
+                    yield sse_frame(event["seq"], "progress", event)
+                if not events:
+                    current = await asyncio.to_thread(read_run)
+                    # Terminal with no terminal event yet (defensive): the run
+                    # finished but the marker append lost the race — close out.
+                    if current and current["status"] in ("succeeded", "failed"):
+                        yield sse_frame(last_seq, "done", current.get("result"))
+                        return
+                    yield ": keepalive\n\n"
+                    await asyncio.sleep(1.0)
+
+        return StreamingResponse(
+            event_stream(),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                "X-Accel-Buffering": "no",
+            },
+        )
 
     @app.post("/documents/{document_id}/export")
     def export_document(
@@ -1959,31 +2128,120 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
         run any registered generation provider and persist the normalized
         asset record."""
         asset_id = f"asset_gen_{uuid4().hex[:12]}"
-        request = {
-            "request_id": asset_id,
-            "prompt": payload.prompt,
-            "output_kind": payload.output_kind,
-            "target_node_id": None,
-            "target_slot_id": None,
-            "constraints": {
-                "width": payload.width,
-                "height": payload.height,
-                "mime_type": payload.mime_type,
-                "transparent_background": payload.transparent_background,
-                "brand_notes": payload.brand_notes,
-            },
-        }
-        try:
-            result = app.state.core.generate_asset(
-                store_root=asset_store_root(),
-                provider=payload.provider,
-                request=request,
-                asset_id=asset_id,
-                label=payload.label,
-                raise_on_error=False,
+        cache_key: Optional[str] = None
+        if image_provider.is_image_model_provider(payload.provider):
+            # Generation cache: re-use the asset produced by an identical earlier
+            # request instead of re-paying the model (the byte-digest store dedup
+            # only fires AFTER the paid, non-deterministic call). Checked BEFORE the
+            # provider; the cache lives in the same store the assets do.
+            cache_key = image_cache.generation_key(
+                prompt=payload.prompt,
+                model=image_provider.configured_model_id(),
+                width=payload.width,
+                height=payload.height,
+                brand_notes=payload.brand_notes,
+                aspect_ratio=payload.aspect_ratio,
+                image_size=payload.image_size,
+                transparent_background=payload.transparent_background,
+                reference_asset_ids=payload.reference_asset_ids,
             )
-        except CoreError as error:
-            raise core_http_error(error) from error
+            cached_record = image_cache.lookup(asset_store_root(), cache_key)
+            if cached_record:
+                log_event(
+                    api_logger,
+                    logging.INFO,
+                    "asset_generation_completed",
+                    status="ok",
+                    provider=payload.provider,
+                    asset_id=cached_record.get("id"),
+                    deduplicated=True,
+                    cached=True,
+                )
+                return {
+                    "schema_version": 1,
+                    "asset": cached_record,
+                    "provider": {"id": payload.provider},
+                    "deduplicated": True,
+                    "diagnostics": [],
+                }
+            # Real text-to-image generation runs here in the async-capable Python
+            # layer; the returned bytes are persisted through the SAME ingest
+            # pipeline as uploads, stamped with a `generated` source, so the rest
+            # of the stack (placement/render/export/validation) is unchanged.
+            try:
+                generated = image_provider.generate(
+                    prompt=payload.prompt,
+                    width=payload.width,
+                    height=payload.height,
+                    brand_notes=payload.brand_notes,
+                    aspect_ratio=payload.aspect_ratio,
+                    image_size=payload.image_size,
+                    transparent_background=payload.transparent_background,
+                    reference_asset_ids=payload.reference_asset_ids,
+                    request_id=asset_id,
+                )
+            except image_provider.ImageGenerationError as error:
+                log_event(
+                    api_logger,
+                    logging.INFO,
+                    "asset_generation_completed",
+                    status="rejected",
+                    provider=payload.provider,
+                    error_code=error.code,
+                )
+                raise HTTPException(
+                    status_code=error.status_code,
+                    detail={"code": error.code, "message": str(error), "diagnostics": []},
+                ) from error
+            try:
+                result = app.state.core.ingest_asset(
+                    store_root=asset_store_root(),
+                    bytes_base64=base64.b64encode(generated.image_bytes).decode("ascii"),
+                    asset_id=asset_id,
+                    label=payload.label or (payload.prompt[:60].strip() or asset_id),
+                    declared_mime_type=generated.mime_type,
+                    kind=payload.output_kind,
+                    license=generated.license,
+                    provenance=generated.provenance,
+                    source={
+                        "kind": "generated",
+                        "request_id": asset_id,
+                        "model": generated.model,
+                    },
+                    max_bytes=asset_max_bytes(),
+                    raise_on_error=False,
+                )
+            except CoreError as error:
+                raise core_http_error(error) from error
+        else:
+            request = {
+                "request_id": asset_id,
+                "prompt": payload.prompt,
+                "output_kind": payload.output_kind,
+                "target_node_id": None,
+                "target_slot_id": None,
+                "constraints": {
+                    "width": payload.width,
+                    "height": payload.height,
+                    "mime_type": payload.mime_type,
+                    "transparent_background": payload.transparent_background,
+                    "brand_notes": payload.brand_notes,
+                    "aspect_ratio": payload.aspect_ratio,
+                    "image_size": payload.image_size,
+                    "reference_asset_ids": payload.reference_asset_ids,
+                },
+            }
+            try:
+                result = app.state.core.generate_asset(
+                    store_root=asset_store_root(),
+                    provider=payload.provider,
+                    request=request,
+                    asset_id=asset_id,
+                    label=payload.label,
+                    raise_on_error=False,
+                )
+            except CoreError as error:
+                raise core_http_error(error) from error
 
         diagnostics = result.get("diagnostics", [])
         if not result.get("ok", False):
@@ -2011,6 +2269,10 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
         asset_payload = result.get("asset") or {}
         record = asset_payload.get("record") or {}
         stored = repo.create_asset_record(record)
+        if cache_key is not None:
+            # Record the request → asset mapping so an identical repeat re-uses
+            # this asset instead of re-paying the model.
+            image_cache.store(asset_store_root(), cache_key, stored["asset"])
         log_event(
             api_logger,
             logging.INFO,
@@ -3038,7 +3300,7 @@ def repo_root() -> Path:
 
 
 def run_agent_turn_preview(
-    payload: AgentTurnPreviewRequest, root: Path
+    payload: AgentTurnPreviewRequest, root: Path, event_sink=None
 ) -> JsonObject:
     ensure_agent_runtime_path(root)
     try:
@@ -3055,8 +3317,19 @@ def run_agent_turn_preview(
         config = AgentRuntimeConfig.from_env(root)
         if payload.max_iterations is not None:
             config = replace(config, max_iterations=payload.max_iterations)
+        if config.asset_store_root is None:
+            # A seeded scene references assets ingested through the API's store;
+            # the agent must export from the same root or seeded imagery fails
+            # with LUME0210 (asset bytes missing). LUMEN_AGENT_ASSET_STORE still
+            # overrides explicitly.
+            config = replace(config, asset_store_root=api_asset_store_root())
         prompt = editor_agent_prompt(payload)
-        loop, tools = create_provider_quality_loop(prompt, config)
+        loop, tools = create_provider_quality_loop(
+            prompt,
+            config,
+            initial_scene=agent_seed_scene(payload),
+            event_sink=event_sink,
+        )
         result = loop.run(prompt)
     except Exception as error:
         return failed_agent_turn_response(
@@ -3068,6 +3341,12 @@ def run_agent_turn_preview(
     return agent_response_from_trace(result, tools.trace_dir, tools.scene)
 
 
+def sse_frame(seq: int, event: str, data: Any) -> str:
+    """One Server-Sent Events frame. `id:` carries the monotonic run-event
+    seq so the browser's EventSource replays from it via Last-Event-ID."""
+    return f"id: {seq}\nevent: {event}\ndata: {json.dumps(data)}\n\n"
+
+
 def ensure_agent_runtime_path(root: Path) -> None:
     agent_runtime_path = str(root / "apps" / "agent_runtime")
     api_path = str(root / "apps" / "api")
@@ -3076,24 +3355,105 @@ def ensure_agent_runtime_path(root: Path) -> None:
             sys.path.insert(0, path)
 
 
+def api_asset_store_root() -> Path:
+    """The API's asset store root, resolved exactly as create_app resolves it."""
+    database_path = Path(
+        os.environ.get("LUMEN_API_DATABASE_PATH", "apps/api/lumen-api.sqlite3")
+    )
+    return Path(
+        os.environ.get("LUMEN_ASSET_STORE_ROOT") or database_path.parent / "asset-store"
+    )
+
+
+def agent_seed_scene(payload: AgentTurnPreviewRequest) -> Optional[JsonObject]:
+    """Phase 0a: the live editor scene seeds the agent's working scene, so a
+    targeted edit lands on existing NodeIds instead of an empty document. Only
+    a payload that carries a structurally plausible scene document seeds the
+    run; anything else falls back to a fresh scene.
+
+    An EMPTY document (no pages, no nodes) also runs unseeded: there is no
+    user work to preserve, and continuation mode would only force the agent
+    to fight a blank scaffold — the fresh-generation path is the proven one.
+    (Observed live: a generation brief into the old default demo page burned
+    every iteration on page-collision repairs.)"""
+    scene = payload.scene
+    if (
+        isinstance(scene, dict)
+        and isinstance(scene.get("nodes"), dict)
+        and isinstance(scene.get("pages"), dict)
+        and isinstance(scene.get("meta"), dict)
+    ):
+        if not scene["pages"] and not scene["nodes"]:
+            return None
+        return scene
+    return None
+
+
+def editor_target_node_ids(payload: AgentTurnPreviewRequest) -> List[str]:
+    """The nodes the human chipped as edit targets (2c).
+    De-duplicated, order preserved."""
+    raw = payload.target_node_ids
+    seen: set[str] = set()
+    targets: List[str] = []
+    for node_id in raw:
+        if node_id and node_id not in seen:
+            seen.add(node_id)
+            targets.append(node_id)
+    return targets
+
+
 def editor_agent_prompt(payload: AgentTurnPreviewRequest) -> str:
+    targets = editor_target_node_ids(payload)
     context = {
         "document_id": payload.document_id,
         "active_page_id": payload.active_page_id,
-        "selected_node_id": payload.selected_node_id,
+        "target_node_ids": targets,
         "scene_summary": scene_context_summary(payload.scene),
         "current_diagnostics": payload.diagnostics[:20],
-        "editor_instruction": (
-            "Return changes that can be applied to the current canonical Scene. "
-            "Do not mutate scene JSON outside canonical operations. Prefer targeted "
-            "repairs when a selected node or diagnostic target is present."
-        ),
+        "editor_instruction": editor_instruction(targets),
     }
+    instructions = (payload.agent_instructions or "").strip()
+    if instructions:
+        # 2e: the document's standing instructions apply to EVERY turn — they
+        # shape style and constraints but never override the current request.
+        context["standing_instructions"] = (
+            f"{instructions} (These are the document's standing instructions; "
+            "apply them to every turn, but the user's current request wins on conflict.)"
+        )
     return (
         f"{payload.prompt}\n\n"
         "Editor context JSON:\n"
         f"{json.dumps(context, indent=2)}"
     )
+
+
+def editor_instruction(targets: List[str]) -> str:
+    """2c compensating-edit contract (Moda §1.6): scope the change to the
+    chipped target(s), then re-fit and verify — and report both what changed
+    and what was preserved. When targets are named, everything else must stay
+    byte-identical."""
+    base = (
+        "Return changes that can be applied to the current canonical Scene. "
+        "Do not mutate scene JSON outside canonical operations. "
+    )
+    if targets:
+        scope = (
+            "Scope every change to these target node id(s): "
+            f"{', '.join(targets)}. Do not touch any other node — every "
+            "untouched node must stay byte-identical. "
+        )
+    else:
+        scope = (
+            "Prefer targeted repairs when a selected node or diagnostic target "
+            "is present, and touch as little else as possible. "
+        )
+    contract = (
+        "Make a compensating edit: apply the requested change, then re-fit and "
+        "verify the result — text must still fit its box (no overflow), nodes "
+        "must not newly overlap, and the surrounding layout must be preserved. "
+        "In your summary, state both what you changed and what you preserved."
+    )
+    return base + scope + contract
 
 
 def scene_context_summary(scene: JsonObject) -> JsonObject:
@@ -3113,6 +3473,10 @@ def agent_response_from_trace(
     operations: List[JsonObject] = []
     dsl_blocks: List[str] = []
     diagnostics: List[JsonObject] = []
+    # Phase 0b: the loop's keep-best snapshot can return an EARLIER iteration's
+    # scene as the draft. Operations from later iterations are then not part of
+    # that draft and must not be replayed by the editor.
+    ops_valid_through = result.get("ops_valid_through_iteration")
     iterations_dir = trace_dir / "iterations"
     if iterations_dir.exists():
         for iteration_dir in sorted(
@@ -3133,7 +3497,9 @@ def agent_response_from_trace(
                         compile_summary.get("diagnostics", []), "dsl"
                     )
                 )
-                if compile_summary.get("status") == "ok":
+                if compile_summary.get("status") == "ok" and iteration_in_ops_window(
+                    iteration_dir.name, ops_valid_through
+                ):
                     operations.extend(compile_payload.get("operations", []))
 
     raw_preview_paths = result.get("preview_paths", [])
@@ -3143,7 +3509,24 @@ def agent_response_from_trace(
         else []
     )
     accepted = result.get("status") == "accepted"
-    status = "proposed" if accepted and operations else "failed"
+    # Phase 0b edit-scoped acceptance: a seeded turn whose requested edit is
+    # verified applied proposes its operations even though the whole-design
+    # critique still has (advisory) complaints.
+    edit_scoped = result.get("status") == "edit_applied"
+    # Agent-quality: `completed_with_warnings` means the loop kept a
+    # PREFLIGHT-CLEAN best draft that simply never won explicit visual
+    # acceptance within the repair budget. That is a reviewable proposal —
+    # mapping it to "failed" threw away good drafts (runs d6e08a28/d77d41d in
+    # the 2e gate both died here). The unresolved critique rides along as
+    # advisory warnings, exactly like an edit-scoped acceptance.
+    best_draft = result.get("status") == "completed_with_warnings"
+    status = (
+        "proposed" if (accepted or edit_scoped or best_draft) and operations else "failed"
+    )
+    if (edit_scoped or best_draft) and status == "proposed":
+        diagnostics.extend(
+            advisory_critique_diagnostics(result.get("critique"))
+        )
     if status == "failed" and not diagnostics:
         diagnostics.append(
             agent_diagnostic(
@@ -3164,6 +3547,7 @@ def agent_response_from_trace(
         "dsl_blocks": dsl_blocks,
         "operations": operations if status == "proposed" else [],
         "draft_scene": draft_scene,
+        "acceptance_scope": "edit" if edit_scoped else ("design" if accepted else None),
         "stop_reason": result.get("stop_reason")
         if isinstance(result.get("stop_reason"), str)
         else None,
@@ -3180,6 +3564,53 @@ def agent_response_from_trace(
             for path in preview_paths
         ],
     }
+
+
+def iteration_in_ops_window(dir_name: str, ops_valid_through: Any) -> bool:
+    """True when an iteration's applied operations belong to the returned draft."""
+    if not isinstance(ops_valid_through, int):
+        return True
+    try:
+        return int(dir_name) <= ops_valid_through
+    except ValueError:
+        return True
+
+
+def advisory_critique_diagnostics(critique: Any) -> List[JsonObject]:
+    """Surface a whole-design critique as ADVISORY warnings (Phase 0b).
+
+    On an edit-scoped acceptance the critique did not block the turn; the
+    editor still shows its issues so the human can act on them (or ask the
+    agent to, as a follow-up turn)."""
+    diagnostics: List[JsonObject] = []
+    if isinstance(critique, dict) and critique.get("kind") == "visual":
+        # A completed_with_warnings run finalizes with the loop's last FEEDBACK
+        # envelope ({"kind": "visual", "feedback": {critique...}}), not the bare
+        # critique. Non-visual envelopes (compile/preflight) carry no critique
+        # issues and simply yield no advisories.
+        critique = critique.get("feedback")
+    issues = (critique or {}).get("issues") if isinstance(critique, dict) else None
+    for issue in issues or []:
+        if not isinstance(issue, dict):
+            continue
+        target = issue.get("target") or {}
+        subject = None
+        if isinstance(target, dict):
+            if target.get("node_id"):
+                subject = {"kind": "node", "id": target["node_id"]}
+            elif target.get("page_id"):
+                subject = {"kind": "page", "id": target["page_id"]}
+        diagnostics.append(
+            agent_diagnostic(
+                "agent_runtime.visual_critique_advisory",
+                str(issue.get("message") or "Visual critique note."),
+                "review",
+                "warning",
+                issue.get("suggested_repair"),
+                subject,
+            )
+        )
+    return diagnostics
 
 
 def agent_artifact_format(path: str) -> str:

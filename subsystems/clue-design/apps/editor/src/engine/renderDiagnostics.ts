@@ -126,17 +126,20 @@ function collectNodeDiagnostics(scene: Scene, node: Node, diagnostics: Diagnosti
     }
   }
   if (node.kind.kind === "image") {
+    // Ready image assets now render real pixels on the canvas (Step 2 / E0.1),
+    // so no placeholder advisory is needed; only a non-ready/missing asset still
+    // draws the placeholder box and warrants a warning.
     const asset = scene.assets[node.kind.asset_id];
-    diagnostics.push(
-      diagnostic(
-        asset?.status === "ready" ? "EDITOR_RENDER_IMAGE_PLACEHOLDER" : "EDITOR_RENDER_IMAGE_ASSET_MISSING",
-        asset?.status === "ready"
-          ? `${nodeDisplay(node)} renders as an image placeholder in the canvas; asset bytes are not resolved in the editor yet.`
-          : `${nodeDisplay(node)} references missing or non-ready image asset ${node.kind.asset_id}.`,
-        subject,
-        "Use export preview once the asset resolver is available before final approval."
-      )
-    );
+    if (asset?.status !== "ready") {
+      diagnostics.push(
+        diagnostic(
+          "EDITOR_RENDER_IMAGE_ASSET_MISSING",
+          `${nodeDisplay(node)} references missing or non-ready image asset ${node.kind.asset_id}.`,
+          subject,
+          "Generate or attach a ready image asset before final approval."
+        )
+      );
+    }
   }
 }
 
@@ -229,7 +232,7 @@ function collectColorDiagnostics(
 
 function diagnostic(code: string, message: string, subject: DiagnosticSubject, hint: string): Diagnostic {
   return {
-    severity: code === "EDITOR_RENDER_IMAGE_PLACEHOLDER" ? "advice" : "warning",
+    severity: "warning",
     phase: "validation",
     code,
     message,

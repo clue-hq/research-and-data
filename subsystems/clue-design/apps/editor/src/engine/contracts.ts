@@ -178,7 +178,15 @@ export interface Node {
   layout: AutoLayoutProps | null;
   computed: ComputedGeometry | null;
   locked: boolean;
+  /** Phase 1 freehand: omitted by the Rust core while Managed/unset. */
+  position_mode?: PositionMode;
+  /** Page-space box a pinned node lays out at (authoritative for x/y/w/h). */
+  absolute_box?: Rect | null;
+  /** The solved box captured at detach — the agent's reconciliation signal. */
+  base_anchor?: Rect | null;
 }
+
+export type PositionMode = "managed" | "absolute";
 
 export type NodeKind =
   | {
@@ -383,6 +391,8 @@ export interface AutoLayoutProps {
   grow: number;
   align_x?: LayoutAnchor;
   align_y?: LayoutAnchor;
+  /** Phase 1 freehand: omitted by the Rust core while Stack (default). */
+  layout_mode?: "stack" | "free";
 }
 
 export type LayoutAnchor = "start" | "center" | "end" | "space_between" | "stretch";
@@ -714,6 +724,10 @@ export interface NodePatch {
   layout: OptionalFieldPatch<AutoLayoutProps>;
   computed: OptionalFieldPatch<ComputedGeometry>;
   locked: FieldPatch<boolean>;
+  /** Phase 1 freehand: skipped by the Rust core when unchanged. */
+  position_mode?: FieldPatch<PositionMode>;
+  absolute_box?: OptionalFieldPatch<Rect>;
+  base_anchor?: OptionalFieldPatch<Rect>;
 }
 
 export interface PagePatch {

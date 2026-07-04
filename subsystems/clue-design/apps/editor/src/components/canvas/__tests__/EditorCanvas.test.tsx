@@ -53,7 +53,7 @@ const baseProps = {
   activePageId: "page_a4",
   selectedNodeId: null,
   onSelectNode: () => {},
-  onOperation: () => {},
+  onOperations: () => {},
   engine: null,
   workspaceViewport: defaultWorkspaceViewport(),
   onWorkspaceViewportChange: () => {},
@@ -68,7 +68,16 @@ describe("EditorCanvas renderer switch (Wave 3 C5)", () => {
     delete process.env.NEXT_PUBLIC_LUMEN_CANVASKIT;
   });
 
-  it("renders the Konva canvas by default", () => {
+  it("renders the CanvasKit canvas by default", () => {
+    const { queryByTestId } = render(<EditorCanvas {...baseProps} />);
+    expect(queryByTestId("canvaskit-canvas")).not.toBeNull();
+    expect(queryByTestId("canvaskit-canvas")).toHaveAttribute("data-tool", "select");
+    expect(queryByTestId("canvaskit-canvas")).toHaveAttribute("data-fit-target", "all");
+    expect(queryByTestId("konva-canvas")).toBeNull();
+  });
+
+  it("renders the Konva canvas when the flag is disabled", () => {
+    process.env.NEXT_PUBLIC_LUMEN_CANVASKIT = "0";
     const { queryByTestId } = render(<EditorCanvas {...baseProps} />);
     expect(queryByTestId("konva-canvas")).not.toBeNull();
     expect(queryByTestId("konva-canvas")).toHaveAttribute("data-tool", "select");
@@ -88,6 +97,7 @@ describe("EditorCanvas renderer switch (Wave 3 C5)", () => {
   it("passes the same derived multi-artboard workspace model to both renderers", () => {
     const workspaceScene = multiArtboardScene();
 
+    process.env.NEXT_PUBLIC_LUMEN_CANVASKIT = "0";
     const { getByTestId, unmount } = render(
       <EditorCanvas {...baseProps} scene={workspaceScene} activePageId="page_square" />
     );

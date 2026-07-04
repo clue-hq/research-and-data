@@ -104,9 +104,19 @@ class AgentTurnPreviewRequest(BaseModel):
     scene: JsonObject
     document_id: Optional[str] = None
     active_page_id: Optional[str] = None
-    selected_node_id: Optional[str] = None
+    # 2c selection chips: the node ids the human chipped as edit targets.
+    # (The singular selected_node_id back-compat field was dropped after its
+    # one-release window; legacy senders' extra key is ignored by pydantic.)
+    target_node_ids: List[str] = Field(default_factory=list)
     diagnostics: List[JsonObject] = Field(default_factory=list)
+    # 2e: the document's standing agent instructions, sent by the editor with
+    # every turn and folded into the prompt context.
+    agent_instructions: Optional[str] = None
     max_iterations: Optional[int] = None
+
+
+class SetAgentInstructionsRequest(BaseModel):
+    instructions: Optional[str] = None
 
 
 class FinalizeTemplateRequest(BaseModel):
@@ -132,6 +142,9 @@ class GenerateAssetRequest(BaseModel):
     mime_type: Optional[str] = None
     transparent_background: Optional[bool] = None
     brand_notes: List[str] = Field(default_factory=list)
+    aspect_ratio: Optional[str] = None
+    image_size: Optional[str] = None
+    reference_asset_ids: List[str] = Field(default_factory=list)
     label: Optional[str] = None
 
 

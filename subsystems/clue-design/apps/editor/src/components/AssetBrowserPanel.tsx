@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Images } from "lucide-react";
 
-import type { AssetRecord, NodeId, Operation } from "../engine/contracts";
+import type { AssetPlacement, AssetRecord, NodeId, Operation } from "../engine/contracts";
 import {
   assetThumbnailUrl,
   buildNodePlacementOperations,
@@ -17,10 +17,14 @@ import {
 export function AssetBrowserPanel({
   apiBaseUrl,
   selectedNodeId,
+  selectedNodePlacement = null,
   onOperations
 }: {
   apiBaseUrl: string;
   selectedNodeId: NodeId | null;
+  /** Existing placement on the selected node — carried forward on Replace so fit /
+   * focal / slot binding survive swapping the image, instead of resetting to {}. */
+  selectedNodePlacement?: AssetPlacement | null;
   onOperations: (operations: Operation[]) => void;
 }) {
   const [assets, setAssets] = useState<AssetRecord[]>([]);
@@ -84,11 +88,11 @@ export function AssetBrowserPanel({
         setError("Select a node before placing an asset.");
         return;
       }
-      onOperations(buildNodePlacementOperations(record, selectedNodeId));
+      onOperations(buildNodePlacementOperations(record, selectedNodeId, selectedNodePlacement ?? {}));
       setNotice(`Placed ${record.label} into ${selectedNodeId}`);
       setError(null);
     },
-    [onOperations, selectedNodeId]
+    [onOperations, selectedNodeId, selectedNodePlacement]
   );
 
   return (

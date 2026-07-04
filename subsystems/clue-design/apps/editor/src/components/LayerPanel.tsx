@@ -10,7 +10,9 @@ interface LayerPanelProps {
   scene: Scene;
   activePageId: PageId | null;
   selectedNodeId: NodeId | null;
-  onSelectNode: (nodeId: NodeId) => void;
+  /** Full multi-selection set (shift/Cmd+click); highlights every member. */
+  selectedNodeIds?: NodeId[];
+  onSelectNode: (nodeId: NodeId, additive?: boolean) => void;
   onOperation: (operation: Operation) => void;
 }
 
@@ -18,9 +20,11 @@ export function LayerPanel({
   scene,
   activePageId,
   selectedNodeId,
+  selectedNodeIds,
   onSelectNode,
   onOperation
 }: LayerPanelProps) {
+  const selectedSet = selectedNodeIds ?? (selectedNodeId ? [selectedNodeId] : []);
   const page = activePageId ? scene.pages[activePageId] : null;
   return (
     <section className="layer-panel" aria-label="Layers">
@@ -41,6 +45,7 @@ export function LayerPanel({
               nodeId={nodeId}
               depth={0}
               selectedNodeId={selectedNodeId}
+              selectedSet={selectedSet}
               onSelectNode={onSelectNode}
               onOperation={onOperation}
             />
@@ -56,6 +61,7 @@ function LayerRow({
   nodeId,
   depth,
   selectedNodeId,
+  selectedSet,
   onSelectNode,
   onOperation
 }: {
@@ -63,7 +69,8 @@ function LayerRow({
   nodeId: NodeId;
   depth: number;
   selectedNodeId: NodeId | null;
-  onSelectNode: (nodeId: NodeId) => void;
+  selectedSet: NodeId[];
+  onSelectNode: (nodeId: NodeId, additive?: boolean) => void;
   onOperation: (operation: Operation) => void;
 }) {
   const node = scene.nodes[nodeId];
@@ -78,17 +85,20 @@ function LayerRow({
   const canMoveDown = parentInfo && !reorderBlocked ? parentInfo.index < parentInfo.siblings.length - 1 : false;
   const name = nodeDisplayName(node);
   const detail = layerDetailLabel(node, parentNode);
-  const selected = selectedNodeId === node.id;
+  // Every selected node (primary or secondary) shows the active row highlight;
+  // scroll-into-view still tracks the primary only.
+  const selected = selectedSet.includes(node.id);
+  const isPrimary = selectedNodeId === node.id;
   const rowRef = useRef<HTMLDivElement | null>(null);
   // Canvas→panel sync: when selection lands on this (possibly deeply nested)
   // row — e.g. the user clicked the node on the canvas — scroll it into view
   // so the highlighted layer is never hidden below the fold. Guarded for
   // jsdom, where scrollIntoView is not implemented.
   useEffect(() => {
-    if (selected) {
+    if (isPrimary) {
       rowRef.current?.scrollIntoView?.({ block: "nearest" });
     }
-  }, [selected]);
+  }, [isPrimary]);
   return (
     <div className="layer-row-group">
       <div
@@ -100,7 +110,9 @@ function LayerRow({
           type="button"
           className="layer-select"
           aria-label={`Select layer ${name}`}
-          onClick={() => onSelectNode(node.id)}
+          onClick={(event) =>
+            onSelectNode(node.id, event.shiftKey || event.metaKey || event.ctrlKey)
+          }
         >
           <span>{name}</span>
           <small>{detail}</small>
@@ -141,6 +153,7 @@ function LayerRow({
           nodeId={childId}
           depth={depth + 1}
           selectedNodeId={selectedNodeId}
+          selectedSet={selectedSet}
           onSelectNode={onSelectNode}
           onOperation={onOperation}
         />

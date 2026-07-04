@@ -180,6 +180,33 @@ export function isNodeLayoutManaged(scene: Scene, nodeId: NodeId | null): boolea
   return scene.nodes[parentInfo.parent.id]?.kind.kind === "auto_layout";
 }
 
+/** Phase 1d freehand: a pinned node — the solver lays it out at its
+ * page-space `absolute_box`, so the human owns its geometry directly. */
+export function isNodePinned(scene: Scene, nodeId: NodeId | null): boolean {
+  if (!nodeId) {
+    return false;
+  }
+  return scene.nodes[nodeId]?.position_mode === "absolute";
+}
+
+/** A node the human freehands directly: pinned Absolute, or a child of a
+ * Free container (whose children all live at hand-placed transforms).
+ * Mirrors the Rust engine's `is_freehand` (layout.rs). */
+export function isNodeFreehand(scene: Scene, nodeId: NodeId | null): boolean {
+  if (!nodeId) {
+    return false;
+  }
+  if (isNodePinned(scene, nodeId)) {
+    return true;
+  }
+  const parentInfo = parentInfoForNode(scene, nodeId);
+  if (!parentInfo || parentInfo.parent.kind !== "node") {
+    return false;
+  }
+  const parent = scene.nodes[parentInfo.parent.id];
+  return parent?.kind.kind === "auto_layout" && parent.layout?.layout_mode === "free";
+}
+
 export function isNodeDirectGeometryEditable(scene: Scene, nodeId: NodeId | null): boolean {
   if (!nodeId) {
     return false;
@@ -188,7 +215,9 @@ export function isNodeDirectGeometryEditable(scene: Scene, nodeId: NodeId | null
   if (!node || node.locked) {
     return false;
   }
-  return !isNodeLayoutManaged(scene, nodeId);
+  // Freehand nodes opted out of the solver: the human owns their geometry
+  // even though the parent is an auto-layout container (Phase 1d).
+  return !isNodeLayoutManaged(scene, nodeId) || isNodeFreehand(scene, nodeId);
 }
 
 export function clampNodeTransformToParentBounds(
@@ -283,6 +312,19 @@ function parentBoundsForNode(scene: Scene, nodeId: NodeId): { width: number; hei
   }
   const parent = scene.nodes[parentInfo.parent.id];
   return parent ? nodeSceneSize(parent) : null;
+}
+
+/** Page-space origin of a node's parent container ((0,0) for page parents
+ * or unsolved parents) — the offset between parent-relative transform
+ * coordinates and page space. Phase 1d uses it to commit Free-container
+ * child drags in the parent's frame. */
+export function parentComputedOrigin(scene: Scene, nodeId: NodeId): { x: number; y: number } {
+  const parentInfo = parentInfoForNode(scene, nodeId);
+  if (!parentInfo || parentInfo.parent.kind !== "node") {
+    return { x: 0, y: 0 };
+  }
+  const bounds = scene.nodes[parentInfo.parent.id]?.computed?.layout_bounds;
+  return bounds ? { x: bounds.x, y: bounds.y } : { x: 0, y: 0 };
 }
 
 function nodeSceneSize(node: Node): { width: number; height: number } {

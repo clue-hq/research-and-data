@@ -3,7 +3,7 @@ import type { Scene } from "../contracts";
 import { minimalScene } from "@/fixtures/minimalScene";
 import {
   descriptorToScene,
-  dragActionToOperation,
+  dragActionToOperations,
   handleAtPoint,
   resizeActionToOperation,
   screenToDescriptor
@@ -51,9 +51,9 @@ describe("canvaskit gesture glue (Wave 3 host)", () => {
     const page = scene.pages.page_a4;
     const pageOrigin = { x: 0, y: 0 };
 
-    const drag = dragActionToOperation({ x: 30, y: 30, width: 100, height: 28 }, scene, node, page, pageOrigin);
-    expect(drag).not.toBeNull();
-    expect(drag!.kind).toBe("update_node");
+    const [drag] = dragActionToOperations({ x: 30, y: 30, width: 100, height: 28 }, scene, node, page, pageOrigin);
+    expect(drag).toBeDefined();
+    expect(drag.kind).toBe("update_node");
 
     const resize = resizeActionToOperation(
       { x: 0, y: 0, width: 200, height: 56 },

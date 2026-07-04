@@ -4,12 +4,22 @@ import base64
 import copy
 import json
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 from lumen_api.core import CoreClient, CoreError
 
+try:  # the real Python text-to-image seam, shared with the /assets/generate route
+    from lumen_api import image_provider
+except Exception:  # pragma: no cover - keeps the runtime importable without the API package
+    image_provider = None  # type: ignore[assignment]
+
+try:  # generation cache (request -> asset), so the loop doesn't re-pay per iteration
+    from lumen_api import image_cache
+except Exception:  # pragma: no cover
+    image_cache = None  # type: ignore[assignment]
+
 from .config import AgentRuntimeConfig
-from .knowledge import read_task_knowledge
+from .knowledge import DIRECTIVES_PATH, read_task_knowledge
 from .schemas import (
     CompileSummary,
     DiagnosticSeverity,
@@ -35,6 +45,10 @@ from .schemas import (
 
 
 JsonObject = Dict[str, Any]
+
+# A progress hook: (event_type, event_data) for each recorded trace event.
+# Kept dependency-free so agent_runtime never imports the API/DB layer.
+EventSink = Callable[[str, JsonObject], None]
 
 
 # Hard caps for the curated, windowed per-iteration context (P1). They keep the
@@ -120,40 +134,84 @@ def _is_render_export_issue(diagnostics: list, previous_feedback: list) -> bool:
 
 
 class LumenDesignTools:
-    def __init__(self, config: AgentRuntimeConfig, prompt: str) -> None:
+    def __init__(
+        self,
+        config: AgentRuntimeConfig,
+        prompt: str,
+        initial_scene: Optional[JsonObject] = None,
+        event_sink: Optional["EventSink"] = None,
+    ) -> None:
         self.config = config
         self.core = CoreClient(repo_root=config.repo_root)
+        # Optional progress hook: every recorded trace event is also handed to
+        # this sink so a caller (the API's async turn) can persist it to a
+        # durable store and stream it. None keeps the run purely file-traced.
+        self.event_sink = event_sink
         self.run_id = new_run_id()
         self.iteration = 0
         self.trace_dir = config.trace_dir / self.run_id
         self.iterations_dir = self.trace_dir / "iterations"
         self.trace_dir.mkdir(parents=True, exist_ok=True)
         self.iterations_dir.mkdir(parents=True, exist_ok=True)
-        self.scene = self.core.new_scene(self.run_id, "Agent-authored design")
+        # Phase 0a: a caller (the editor's /agent/turn-preview) can seed the
+        # working scene from the live canonical scene so targeted edits land on
+        # existing NodeIds. Without a seed the run starts from a fresh scene.
+        self.seeded_from_initial_scene = initial_scene is not None
+        if initial_scene is not None:
+            self.scene = copy.deepcopy(initial_scene)
+        else:
+            self.scene = self.core.new_scene(self.run_id, "Agent-authored design")
         self.prompt = prompt
         self.preview_paths: list[str] = []
         self.loaded_knowledge: list[JsonObject] = []
         self.gaps: list[JsonObject] = []
-        self.scene_update_sources: list[str] = []
+        self.scene_update_sources: list[str] = (
+            ["initial_scene_seed"] if self.seeded_from_initial_scene else []
+        )
         self.effective_brand_context: Optional[JsonObject] = None
         self.dsl_session: Optional[JsonObject] = None
         self.latest_export_summary: Optional[JsonObject] = None
         self.latest_preview_bundle: Optional[JsonObject] = None
         self._write_json(
             self.trace_dir / "input.json",
-            {"run_id": self.run_id, "prompt": prompt},
+            {
+                "run_id": self.run_id,
+                "prompt": prompt,
+                "seeded_from_initial_scene": self.seeded_from_initial_scene,
+            },
         )
         self.record(
             "coordinator",
             "run_started",
             input_summary=prompt[:500],
-            output_summary=f"created scene {self.run_id}",
-            payload={"scene_update_policy": "core_response_only"},
+            output_summary=(
+                f"seeded scene from initial_scene "
+                f"({len(self.scene.get('nodes', {}))} nodes, "
+                f"{len(self.scene.get('pages', {}))} pages)"
+                if self.seeded_from_initial_scene
+                else f"created scene {self.run_id}"
+            ),
+            payload={
+                "scene_update_policy": "core_response_only",
+                "seeded_from_initial_scene": self.seeded_from_initial_scene,
+                "seed_node_count": len(self.scene.get("nodes", {})),
+                "seed_page_count": len(self.scene.get("pages", {})),
+            },
         )
 
     def load_knowledge(self, query: str) -> str:
         """Load task-specific Lumen knowledge snippets with provenance."""
-        snippets = read_task_knowledge(self.config.repo_root, query)
+        snippets = read_task_knowledge(
+            self.config.repo_root,
+            query,
+            # A seeded turn edits an existing document, so the modify/ref
+            # grammar (`#page:` form, directives-are-node-only) must always be
+            # loaded — the recipe inlines the essentials, but the full table
+            # stays one load away (agent-improvement backlog).
+            extra_mandatory_paths=(
+                [DIRECTIVES_PATH] if self.seeded_from_initial_scene else []
+            ),
+        )
         result = KnowledgeLoadResult(query=query, snippets=snippets)
         payload = _dump(result)
         self.loaded_knowledge = payload["snippets"]
@@ -501,6 +559,459 @@ class LumenDesignTools:
             payload=payload,
         )
         return json.dumps(payload, indent=2)
+
+    def generate_image(
+        self,
+        prompt: str,
+        target_node_id: Optional[str] = None,
+        target_slot_id: Optional[str] = None,
+        aspect_ratio: Optional[str] = None,
+        width: Optional[int] = None,
+        height: Optional[int] = None,
+        brand_notes: Optional[List[str]] = None,
+        transparent_background: bool = False,
+        label: Optional[str] = None,
+    ) -> str:
+        """Generate a raster image asset from a text prompt and register it in the
+        scene. Pass target_node_id (or target_slot_id) so the aspect ratio is
+        derived from that frame's geometry — generated images are cropped to fill,
+        never stretched. Uses the configured text-to-image model (image-gen-v1)
+        when available, otherwise a deterministic placeholder so the design still
+        composes offline. Returns the asset_id; place it with place_asset_in_node /
+        place_asset_in_slot (a generated image is not auto-placed)."""
+        asset_id = f"asset_img_{self.run_id[:8]}_{len(self.scene.get('assets', {}))}"
+        width, height, aspect_ratio = self._image_constraints(
+            target_node_id, target_slot_id, width, height, aspect_ratio
+        )
+        notes = [note for note in (brand_notes or []) if note and note.strip()]
+        resolved_label = label or (prompt[:60].strip() or asset_id)
+
+        record, meta, raw_diagnostics, error = self._produce_image_asset(
+            asset_id=asset_id,
+            prompt=prompt,
+            label=resolved_label,
+            width=width,
+            height=height,
+            aspect_ratio=aspect_ratio,
+            brand_notes=notes,
+            transparent_background=transparent_background,
+        )
+        diagnostics = diagnostics_from(raw_diagnostics)
+        if record is None:
+            payload = {
+                "image": {
+                    "status": "error",
+                    "error_code": error[0] if error else "image.error",
+                    "message": error[1] if error else "image generation failed",
+                },
+                "diagnostics": [diag.model_dump(mode="json") for diag in diagnostics],
+            }
+            self.record(
+                "coordinator",
+                "image_generation_failed",
+                input_summary=prompt[:200],
+                output_summary=payload["image"]["message"],
+                diagnostics=[diag.model_dump(mode="json") for diag in diagnostics],
+                payload=payload,
+            )
+            return json.dumps(payload, indent=2)
+
+        apply_response = self.core.apply_operations(
+            self.scene, [{"kind": "upsert_asset", "asset": record}]
+        )
+        self._replace_scene_from_core_response(apply_response, "generate_image")
+
+        payload = {
+            "image": {
+                "status": "ok",
+                "asset_id": record.get("id"),
+                "mode": meta.get("mode"),
+                "model": meta.get("model"),
+                "mime_type": (record.get("media") or {}).get("mime_type"),
+                "aspect_ratio": aspect_ratio,
+                "width": width,
+                "height": height,
+                "provenance": record.get("provenance"),
+                "source": record.get("source"),
+                "license": (record.get("license") or {}).get("name"),
+            },
+            "diagnostics": [diag.model_dump(mode="json") for diag in diagnostics],
+        }
+        self.record(
+            "coordinator",
+            "image_generated",
+            input_summary=prompt[:200],
+            output_summary=(
+                f"generated image asset {record.get('id')} "
+                f"(mode={meta.get('mode')}, model={meta.get('model')}, aspect={aspect_ratio})"
+            ),
+            diagnostics=[diag.model_dump(mode="json") for diag in diagnostics],
+            payload=payload,
+        )
+        return json.dumps(payload, indent=2)
+
+    def _produce_image_asset(
+        self,
+        *,
+        asset_id: str,
+        prompt: str,
+        label: str,
+        width: Optional[int],
+        height: Optional[int],
+        aspect_ratio: Optional[str],
+        brand_notes: List[str],
+        transparent_background: bool,
+    ) -> tuple[Optional[JsonObject], JsonObject, List[JsonObject], Optional[tuple]]:
+        """Produce + ingest one image asset record. Prefers the configured T2I
+        model; on a missing config or any model/ingest failure it falls back to the
+        deterministic stub provider (with a warning) so the design loop never
+        dead-ends on imagery. Returns (record, meta, raw_diagnostics, error)."""
+        diagnostics: List[JsonObject] = []
+
+        # 1) Real text-to-image model, when configured.
+        if image_provider is not None and image_provider.is_configured():
+            store_root = str(self.config.effective_asset_store_root)
+            # Generation cache: re-use the asset an identical earlier request
+            # produced (the loop re-requests the same hero each iteration) instead
+            # of re-paying the model. Checked BEFORE the provider call.
+            cache_key = None
+            model_id = getattr(image_provider, "configured_model_id", None)
+            if image_cache is not None and callable(model_id):
+                cache_key = image_cache.generation_key(
+                    prompt=prompt,
+                    model=model_id(),
+                    width=width,
+                    height=height,
+                    brand_notes=brand_notes,
+                    aspect_ratio=aspect_ratio,
+                    transparent_background=transparent_background or None,
+                )
+                cached = image_cache.lookup(store_root, cache_key)
+                if cached:
+                    return (
+                        cached,
+                        {"mode": "cached", "model": (cached.get("source") or {}).get("model")},
+                        diagnostics,
+                        None,
+                    )
+            try:
+                result = image_provider.generate(
+                    prompt=prompt,
+                    width=width,
+                    height=height,
+                    brand_notes=brand_notes,
+                    aspect_ratio=aspect_ratio,
+                    transparent_background=transparent_background or None,
+                    request_id=asset_id,
+                )
+                ingest = self.core.ingest_asset(
+                    store_root=store_root,
+                    bytes_base64=base64.b64encode(result.image_bytes).decode("ascii"),
+                    asset_id=asset_id,
+                    label=label,
+                    declared_mime_type=result.mime_type,
+                    kind="raster_image",
+                    license=result.license,
+                    provenance=result.provenance,
+                    source={"kind": "generated", "request_id": asset_id, "model": result.model},
+                    raise_on_error=False,
+                )
+                if ingest.get("ok"):
+                    record = (ingest.get("asset") or {}).get("record") or {}
+                    diagnostics.extend(_as_diag_list(ingest.get("diagnostics")))
+                    if cache_key is not None and image_cache is not None:
+                        image_cache.store(store_root, cache_key, record)
+                    return record, {"mode": "model", "model": result.model}, diagnostics, None
+                detail = (ingest.get("error") or {}).get("message", "unknown error")
+                diagnostics.append(
+                    _image_warning(
+                        "LUMA0710",
+                        f"generated image could not be ingested ({detail}); used a placeholder",
+                    )
+                )
+            except Exception as error:  # noqa: BLE001 - degrade to a placeholder, never crash the loop
+                code = getattr(error, "code", error.__class__.__name__)
+                diagnostics.append(
+                    _image_warning(
+                        "LUMA0710",
+                        f"text-to-image model unavailable ({code}); used a placeholder image",
+                    )
+                )
+        elif image_provider is not None:
+            diagnostics.append(
+                _image_warning(
+                    "LUMA0711",
+                    "text-to-image model is not configured (set IMAGE_MODEL_*); used a placeholder image",
+                )
+            )
+
+        # 2) Deterministic stub fallback through the Rust provider registry.
+        request = {
+            "request_id": asset_id,
+            "prompt": prompt,
+            "output_kind": "raster_image",
+            "target_node_id": None,
+            "target_slot_id": None,
+            "constraints": {
+                "width": width,
+                "height": height,
+                "transparent_background": transparent_background or None,
+                "brand_notes": brand_notes,
+            },
+        }
+        try:
+            response = self.core.generate_asset(
+                store_root=str(self.config.effective_asset_store_root),
+                provider="stub-image-v0",
+                request=request,
+                asset_id=asset_id,
+                label=label,
+            )
+        except CoreError as error:
+            diagnostics.extend(_as_diag_list(error.diagnostics))
+            return None, {}, diagnostics, (error.code, error.message)
+        record = (response.get("asset") or {}).get("record") or {}
+        diagnostics.extend(_as_diag_list(response.get("diagnostics")))
+        return record, {"mode": "placeholder", "model": "stub-image-v0"}, diagnostics, None
+
+    def _image_constraints(
+        self,
+        target_node_id: Optional[str],
+        target_slot_id: Optional[str],
+        width: Optional[int],
+        height: Optional[int],
+        aspect_ratio: Optional[str],
+    ) -> tuple[Optional[int], Optional[int], Optional[str]]:
+        """Derive aspect_ratio (and a role-appropriate resolution) from the target
+        frame's geometry so generated images match the frame they fill."""
+        bounds = self._target_bounds(target_node_id, target_slot_id)
+        if bounds:
+            box_width, box_height = bounds
+            if aspect_ratio is None:
+                aspect_ratio = _nearest_aspect_label(box_width, box_height)
+            if width is None and height is None:
+                width, height = _resolution_for_aspect(box_width, box_height)
+        return width, height, aspect_ratio
+
+    def _target_bounds(
+        self, target_node_id: Optional[str], target_slot_id: Optional[str]
+    ) -> Optional[tuple]:
+        """Resolve a target node's (width, height) from computed geometry, falling
+        back to its declared fixed size. Slots resolve to their first bound node."""
+        node_id = target_node_id
+        if node_id is None and target_slot_id:
+            slot = self.scene.get("slots", {}).get(target_slot_id) or {}
+            bound = slot.get("bound_nodes") or []
+            node_id = bound[0] if bound else None
+        if not node_id:
+            return None
+        node = self.scene.get("nodes", {}).get(node_id) or {}
+        bounds = (node.get("computed") or {}).get("layout_bounds") or {}
+        box_width = bounds.get("width")
+        box_height = bounds.get("height")
+        if not box_width or not box_height:
+            size = node.get("size") or {}
+            box_width = _fixed_dim(size.get("width"))
+            box_height = _fixed_dim(size.get("height"))
+        if box_width and box_height and box_width > 0 and box_height > 0:
+            return float(box_width), float(box_height)
+        return None
+
+    def place_asset_in_node(
+        self,
+        node_id: str,
+        asset_id: str,
+        fit: str = "cover",
+        focal_x: float = 0.5,
+        focal_y: float = 0.5,
+        alt: Optional[str] = None,
+        preserve_transparency: Optional[bool] = None,
+    ) -> str:
+        """Place an existing asset (generated or library) into an image node with a
+        fit mode (default cover, so the frame fills without stretching), a
+        normalized focal point (0..1, default centered) that controls the cover
+        crop, and alt text. Reversible — re-place or remove to change it."""
+        return self._place_asset(
+            "place_asset_in_node", "node_id", node_id, asset_id, fit, focal_x, focal_y, alt, preserve_transparency
+        )
+
+    def place_asset_in_slot(
+        self,
+        slot_id: str,
+        asset_id: str,
+        fit: str = "cover",
+        focal_x: float = 0.5,
+        focal_y: float = 0.5,
+        alt: Optional[str] = None,
+        preserve_transparency: Optional[bool] = None,
+    ) -> str:
+        """Place an existing asset into an image slot's bound node — same placement
+        semantics as place_asset_in_node, preserving the slot binding. Reversible."""
+        return self._place_asset(
+            "place_asset_in_slot", "slot_id", slot_id, asset_id, fit, focal_x, focal_y, alt, preserve_transparency
+        )
+
+    def _place_asset(
+        self,
+        kind: str,
+        target_key: str,
+        target_id: str,
+        asset_id: str,
+        fit: str,
+        focal_x: float,
+        focal_y: float,
+        alt: Optional[str],
+        preserve_transparency: Optional[bool],
+    ) -> str:
+        placement: JsonObject = {
+            "fit": fit,
+            "focal_point": {"x": float(focal_x), "y": float(focal_y)},
+        }
+        if alt is not None:
+            placement["alt_text"] = alt
+        if preserve_transparency is not None:
+            placement["preserve_transparency"] = bool(preserve_transparency)
+        operation = {"kind": kind, target_key: target_id, "asset_id": asset_id, "placement": placement}
+        try:
+            apply_response = self.core.apply_operations(self.scene, [operation])
+        except CoreError as error:
+            payload = {
+                "placement": {
+                    "status": "error",
+                    "error_code": error.code,
+                    "message": error.message,
+                },
+                "diagnostics": [
+                    diag.model_dump(mode="json") for diag in diagnostics_from(error.diagnostics)
+                ],
+            }
+            self.record(
+                "coordinator",
+                "asset_placement_failed",
+                input_summary=f"{kind} {target_id} <- {asset_id}",
+                output_summary=error.message,
+                payload=payload,
+            )
+            return json.dumps(payload, indent=2)
+
+        self._replace_scene_from_core_response(apply_response, kind)
+        diagnostics = diagnostics_from(apply_response.get("diagnostics", []))
+        payload = {
+            "placement": {
+                "status": "ok",
+                "operation": kind,
+                target_key: target_id,
+                "asset_id": asset_id,
+                "fit": fit,
+                "focal_point": {"x": float(focal_x), "y": float(focal_y)},
+                "alt": alt,
+            },
+            "diagnostics": [diag.model_dump(mode="json") for diag in diagnostics],
+        }
+        self.record(
+            "coordinator",
+            "asset_placed",
+            input_summary=f"{kind} {target_id} <- {asset_id}",
+            output_summary=f"placed {asset_id} into {target_id} (fit={fit})",
+            diagnostics=[diag.model_dump(mode="json") for diag in diagnostics],
+            payload=payload,
+        )
+        return json.dumps(payload, indent=2)
+
+    def _tool_error(self, code: str, message: str, **extra: Any) -> str:
+        """Uniform error envelope for the dispatcher tools (asset/inspect)."""
+        payload: JsonObject = {"status": "error", "error_code": code, "message": message}
+        payload.update(extra)
+        return json.dumps(payload, indent=2)
+
+    def asset(
+        self,
+        action: str,
+        prompt: Optional[str] = None,
+        aspect_ratio: Optional[str] = None,
+        width: Optional[int] = None,
+        height: Optional[int] = None,
+        brand_notes: Optional[List[str]] = None,
+        transparent_background: bool = False,
+        target_node_id: Optional[str] = None,
+        target_slot_id: Optional[str] = None,
+        data: Optional[str] = None,
+        ec_level: Optional[str] = None,
+        print_media: bool = False,
+        target_width_mm: Optional[float] = None,
+        node_id: Optional[str] = None,
+        slot_id: Optional[str] = None,
+        asset_id: Optional[str] = None,
+        fit: str = "cover",
+        focal_x: float = 0.5,
+        focal_y: float = 0.5,
+        alt: Optional[str] = None,
+        preserve_transparency: Optional[bool] = None,
+        label: Optional[str] = None,
+    ) -> str:
+        """Generate or place a design asset. Pick `action`:
+
+        - `action="generate_image"` — generate a raster image from `prompt` and
+          register it (returns its asset_id; NOT auto-placed). Pass `target_node_id`
+          (or `target_slot_id`) so the aspect is derived from that frame's geometry —
+          images are cropped to fill, never stretched. Optional `aspect_ratio` /
+          `width` / `height`, `brand_notes`, `transparent_background`, `label`.
+        - `action="generate_qr"` — generate a deterministic QR asset from `data`
+          (URL/text). For physical artifacts set `print_media=True` and `target_width_mm`
+          so print-scannability diagnostics can fire. Optional `ec_level`, `label`.
+        - `action="place"` — place an existing asset (`asset_id`, generated or library)
+          into either an image node (`node_id`) or a bound image slot (`slot_id`) with a
+          `fit` (default cover), normalized focal point (`focal_x`/`focal_y`, 0..1,
+          default centered), `alt` text, and optional `preserve_transparency`. Reversible.
+
+        Every action mutates the scene only through the canonical core operation path."""
+        if action == "generate_image":
+            if not prompt:
+                return self._tool_error(
+                    "asset.bad_request", "action='generate_image' requires `prompt`."
+                )
+            return self.generate_image(
+                prompt,
+                target_node_id,
+                target_slot_id,
+                aspect_ratio,
+                width,
+                height,
+                brand_notes,
+                transparent_background,
+                label,
+            )
+        if action == "generate_qr":
+            if not data:
+                return self._tool_error(
+                    "asset.bad_request", "action='generate_qr' requires `data`."
+                )
+            return self.generate_qr(data, ec_level, print_media, target_width_mm, label)
+        if action == "place":
+            if not asset_id:
+                return self._tool_error(
+                    "asset.bad_request", "action='place' requires `asset_id`."
+                )
+            # Preserve the two distinct core op kinds: node_id -> place_asset_in_node,
+            # slot_id -> place_asset_in_slot. The agent-facing tool merges to one; the
+            # core operation `kind` must NOT, or the slot-binding path breaks.
+            if node_id is not None:
+                return self.place_asset_in_node(
+                    node_id, asset_id, fit, focal_x, focal_y, alt, preserve_transparency
+                )
+            if slot_id is not None:
+                return self.place_asset_in_slot(
+                    slot_id, asset_id, fit, focal_x, focal_y, alt, preserve_transparency
+                )
+            return self._tool_error(
+                "asset.bad_request",
+                "action='place' requires `node_id` or `slot_id`.",
+            )
+        return self._tool_error(
+            "asset.unknown_action",
+            f"unknown action '{action}'.",
+            valid_actions=["generate_image", "generate_qr", "place"],
+        )
 
     def _finalized_snapshot_for(self, binding: JsonObject) -> JsonObject:
         """Instances derive from finalized revisions; for agent previews the
@@ -1125,7 +1636,7 @@ class LumenDesignTools:
             exact_feedback=exact_feedback,
             diagnostics=diagnostics,
             target=VisualTarget.model_validate(target_payload) if target_payload else None,
-            repair_class=RepairClass(repair_class) if repair_class else None,
+            repair_class=_coerce_repair_class(repair_class),
             cluster=(
                 LayoutClusterTarget.model_validate(cluster_payload)
                 if cluster_payload
@@ -1208,6 +1719,52 @@ class LumenDesignTools:
             indent=2,
         )
 
+    def inspect(self, view: str, target: Optional[str] = None) -> str:
+        """Read-only inspection of the in-memory scene. Pick `view`:
+
+        - `view="scene"` — document, pages, counts, slots, effective brand.
+        - `view="page"` (target=page_id) — page node tree with geometry + slot bindings.
+        - `view="node_tree"` (target=page_id) — the node hierarchy for one page.
+        - `view="slots"` — every slot key → bound nodes.
+        - `view="geometry"` (target=node_id) — stored computed geometry + declared
+          transform/size for one node.
+        - `view="slot_bindings"` (target=slot_key) — binding details for a semantic slot.
+
+        Use it to confirm a node/page/slot id before targeting a repair. Never mutates."""
+        if view == "scene":
+            return self.summarize_scene()
+        if view == "slots":
+            return self.summarize_slots()
+        if view == "page":
+            if not target:
+                return self._tool_error(
+                    "inspect.bad_request", "view='page' requires target=<page_id>."
+                )
+            return self.summarize_page(target)
+        if view == "node_tree":
+            if not target:
+                return self._tool_error(
+                    "inspect.bad_request", "view='node_tree' requires target=<page_id>."
+                )
+            return self.summarize_node_tree(target)
+        if view == "geometry":
+            if not target:
+                return self._tool_error(
+                    "inspect.bad_request", "view='geometry' requires target=<node_id>."
+                )
+            return self.query_geometry(target)
+        if view == "slot_bindings":
+            if not target:
+                return self._tool_error(
+                    "inspect.bad_request", "view='slot_bindings' requires target=<slot_key>."
+                )
+            return self.query_slot_bindings(target)
+        return self._tool_error(
+            "inspect.unknown_view",
+            f"unknown view '{view}'.",
+            valid_views=["scene", "page", "node_tree", "slots", "geometry", "slot_bindings"],
+        )
+
     def curated_context(
         self,
         *,
@@ -1231,6 +1788,10 @@ class LumenDesignTools:
             "iteration": self.iteration,
             "user_request": user_request,
             "original_prompt": self.prompt,
+            # Phase 0b: a seeded run continues the user's live document — the
+            # director must choose continuation modes (targeted_patch /
+            # layout_cluster_rewrite), never fresh authoring.
+            "seeded_from_initial_scene": self.seeded_from_initial_scene,
             "conversation_context": extract_editor_conversation_context(self.prompt),
             "scene_summary": self._scene_summary(),
             "scene_subtree": self._scene_subtree_for_targets(target_ids),
@@ -1496,7 +2057,26 @@ class LumenDesignTools:
         return capped
 
     def start_fresh_rewrite_scene(self, reason: str) -> None:
-        """Reset the live authoring scene for a director-approved rewrite."""
+        """Reset the live authoring scene for a director-approved rewrite.
+
+        Phase 0b guarantee: a SEEDED scene is the user's live document and is
+        unwipeable — the reset is refused (and recorded) instead of replacing
+        the seed with an empty scene. The loop additionally coerces the action
+        modes that request this away on seeded runs; this block is the
+        belt-and-suspenders enforcement for any other caller.
+        """
+        if self.seeded_from_initial_scene:
+            self.record(
+                "director",
+                "seeded_scene_wipe_blocked",
+                input_summary=reason[:500],
+                output_summary=(
+                    "refused to reset the live scene: it was seeded from the "
+                    "user's document and is unwipeable"
+                ),
+                payload={"reason": reason},
+            )
+            return
         self.scene = self.core.new_scene(self.run_id, "Agent-authored design")
         self.dsl_session = None
         self.scene_update_sources.append("director_fresh_rewrite")
@@ -1513,16 +2093,21 @@ class LumenDesignTools:
         node = self.scene.get("nodes", {}).get(node_id)
         if node is None:
             return json.dumps({"status": "missing", "node_id": node_id}, indent=2)
-        return json.dumps(
-            {
-                "status": "ok",
-                "node_id": node_id,
-                "transform": node.get("transform"),
-                "size": node.get("size"),
-                "computed": node.get("computed"),
-            },
-            indent=2,
-        )
+        payload: JsonObject = {
+            "status": "ok",
+            "node_id": node_id,
+            "transform": node.get("transform"),
+            "size": node.get("size"),
+            "computed": node.get("computed"),
+        }
+        # Phase 1e: a pinned node's geometry is human-owned — the box is
+        # authoritative (transform x/y are ignored by the solver while
+        # pinned). Surfaced only when set.
+        if node.get("position_mode") == "absolute":
+            payload["position_mode"] = "absolute"
+            payload["absolute_box"] = node.get("absolute_box")
+            payload["base_anchor"] = node.get("base_anchor")
+        return json.dumps(payload, indent=2)
 
     def query_slot_bindings(self, slot_key: str) -> str:
         """Return binding details for a semantic slot key."""
@@ -1551,26 +2136,21 @@ class LumenDesignTools:
             indent=2,
         )
 
-    def persist_trace_event(
-        self,
-        actor: str,
-        event: str,
-        output_summary: str,
-        payload_json: str = "{}",
-    ) -> str:
-        """Persist an explicit trace event supplied by the coordinator or a subagent."""
-        payload = json.loads(payload_json)
-        self.record(actor, event, output_summary=output_summary, payload=payload)
-        return json.dumps({"status": "persisted", "run_id": self.run_id}, indent=2)
-
     def finalize_run(
         self,
         status: str,
         stop_reason: str,
         summary: str,
         critique_json: str = "{}",
+        ops_valid_through_iteration: Optional[int] = None,
     ) -> str:
-        """Write the final run summary in a later-API-compatible local format."""
+        """Write the final run summary in a later-API-compatible local format.
+
+        `ops_valid_through_iteration` names the last iteration whose applied
+        operations are part of the returned draft scene (the keep-best snapshot
+        can restore an EARLIER iteration's scene; ops from later iterations must
+        then not be replayed by the editor). None means all ok iterations.
+        """
         critique = json.loads(critique_json) if critique_json.strip() else {}
         payload = {
             "run_id": self.run_id,
@@ -1583,8 +2163,16 @@ class LumenDesignTools:
             "critique": critique,
             "gaps": self.gaps,
             "scene_update_sources": self.scene_update_sources,
+            "seeded_from_initial_scene": self.seeded_from_initial_scene,
+            "ops_valid_through_iteration": ops_valid_through_iteration,
         }
         self._write_json(self.trace_dir / "final.json", payload)
+        # Persist the FULL final scene (not just the summary) so offline tooling — the
+        # imagery-quality eval runner in particular — can deterministically score the
+        # design's use of imagery (node kinds, asset_placement, asset records, page
+        # sizes) without re-running the agent or recompiling the DSL.
+        if isinstance(self.scene, dict):
+            self._write_json(self.trace_dir / "final_scene.json", self.scene)
         self.record(
             "coordinator",
             "run_finalized",
@@ -1615,6 +2203,24 @@ class LumenDesignTools:
         path = self.trace_dir / "trace.jsonl"
         with path.open("a", encoding="utf-8") as handle:
             handle.write(trace.model_dump_json() + "\n")
+        if self.event_sink is not None:
+            # Progress streaming is best-effort: a sink failure must never
+            # abort the design run (the file trace above is the source of
+            # truth). Keep the payload lightweight — the checklist needs the
+            # event name + summaries, not the full per-iteration payload.
+            try:
+                self.event_sink(
+                    event,
+                    {
+                        "actor": actor,
+                        "iteration": self.iteration,
+                        "input_summary": input_summary,
+                        "output_summary": output_summary,
+                        "diagnostic_count": len(diagnostics or []),
+                    },
+                )
+            except Exception:
+                pass
 
     def _replace_scene_from_core_response(self, response: JsonObject, source: str) -> None:
         scene = response.get("scene")
@@ -1682,7 +2288,7 @@ class LumenDesignTools:
         pages = self.scene.get("pages", {})
         nodes = self.scene.get("nodes", {})
         slots = self.scene.get("slots", {})
-        return {
+        summary: JsonObject = {
             "document_id": self.scene.get("meta", {}).get("id"),
             "title": self.scene.get("meta", {}).get("title"),
             "status": self.scene.get("meta", {}).get("status"),
@@ -1696,6 +2302,38 @@ class LumenDesignTools:
                 self._page_summary(page_id, page) for page_id, page in pages.items()
             ],
             "slots": self._slot_summaries(),
+        }
+        freehand = self._freehand_summary()
+        if freehand is not None:
+            summary["freehand"] = freehand
+        return summary
+
+    def _freehand_summary(self) -> Optional[JsonObject]:
+        """Phase 1e: the director/author's at-a-glance view of human-owned
+        geometry. Present only when the scene has freehand state, so
+        pre-freehand summaries stay byte-identical."""
+        nodes = self.scene.get("nodes", {})
+        pinned = [
+            node_id
+            for node_id, node in nodes.items()
+            if node.get("position_mode") == "absolute"
+        ]
+        free_containers = [
+            node_id
+            for node_id, node in nodes.items()
+            if isinstance(node.get("layout"), dict)
+            and node["layout"].get("layout_mode") == "free"
+        ]
+        if not pinned and not free_containers:
+            return None
+        return {
+            "pinned_nodes": pinned,
+            "free_containers": free_containers,
+            "note": (
+                "human-owned geometry: pinned nodes keep their absolute_box "
+                "across relayouts and must not be re-positioned; free "
+                "containers hold hand-placed children"
+            ),
         }
 
     def _page_summary(self, page_id: str, page: JsonObject) -> JsonObject:
@@ -1747,7 +2385,7 @@ class LumenDesignTools:
             for slot in self.scene.get("slots", {}).values()
             if node_id in slot.get("bound_nodes", [])
         ]
-        return {
+        brief: JsonObject = {
             "id": node_id,
             "name": node.get("name"),
             "kind": kind_name,
@@ -1758,6 +2396,22 @@ class LumenDesignTools:
             "slots": slots,
             "source_asset_id": node.get("source_asset_id"),
         }
+        # Phase 1e freehand visibility: surfaced only when set (pre-freehand
+        # briefs stay byte-identical). `position_mode: "absolute"` means a
+        # human pinned this node — its absolute_box is human-owned geometry;
+        # base_anchor records where the layout had it at detach (the delta is
+        # the human's deliberate nudge). `layout_mode: "free"` marks a
+        # container whose children are hand-placed.
+        if node.get("position_mode") == "absolute":
+            brief["position_mode"] = "absolute"
+            if node.get("absolute_box") is not None:
+                brief["absolute_box"] = node.get("absolute_box")
+            if node.get("base_anchor") is not None:
+                brief["base_anchor"] = node.get("base_anchor")
+        layout = node.get("layout")
+        if isinstance(layout, dict) and layout.get("layout_mode") == "free":
+            brief["layout_mode"] = "free"
+        return brief
 
     def _page_dimensions(self, page_id: Optional[str]) -> tuple[Optional[float], Optional[float]]:
         if not page_id:
@@ -1938,6 +2592,67 @@ def extract_editor_conversation_context(prompt: str) -> JsonObject:
     if isinstance(conversation, list):
         return {"messages": conversation}
     return {"raw_prompt": prompt}
+
+
+# Common print/social aspect ratios; a generated image is snapped to the nearest
+# one of these so the frame is filled cleanly without an odd model ratio.
+_COMMON_ASPECTS: list[tuple[str, float]] = [
+    ("1:1", 1.0),
+    ("4:5", 4 / 5),
+    ("5:4", 5 / 4),
+    ("3:4", 3 / 4),
+    ("4:3", 4 / 3),
+    ("2:3", 2 / 3),
+    ("3:2", 3 / 2),
+    ("9:16", 9 / 16),
+    ("16:9", 16 / 9),
+    ("21:9", 21 / 9),
+]
+# Slice-0 hardcodes a sensible long-edge resolution by frame aspect; the explicit
+# image_size tier (1K/2K/4K) lands in Step 7 (G0.2).
+_IMAGE_LONG_EDGE = 1536
+
+
+def _fixed_dim(spec: Any) -> Optional[float]:
+    if isinstance(spec, dict) and spec.get("kind") == "fixed":
+        value = spec.get("value")
+        if isinstance(value, (int, float)):
+            return float(value)
+    return None
+
+
+def _nearest_aspect_label(box_width: float, box_height: float) -> str:
+    target = box_width / box_height
+    return min(_COMMON_ASPECTS, key=lambda entry: abs(entry[1] - target))[0]
+
+
+def _resolution_for_aspect(box_width: float, box_height: float) -> tuple[int, int]:
+    if box_width >= box_height:
+        width = _IMAGE_LONG_EDGE
+        height = max(1, round(_IMAGE_LONG_EDGE * box_height / box_width))
+    else:
+        height = _IMAGE_LONG_EDGE
+        width = max(1, round(_IMAGE_LONG_EDGE * box_width / box_height))
+    return int(width), int(height)
+
+
+def _image_warning(code: str, message: str) -> JsonObject:
+    return {"severity": "warning", "phase": "validation", "code": code, "message": message}
+
+
+def _coerce_repair_class(value: Optional[str]) -> Optional[RepairClass]:
+    """Tolerate an unknown/hallucinated repair_class from the model: an invalid
+    enum value becomes None (unclassified) rather than raising and crashing the run."""
+    if not value:
+        return None
+    try:
+        return RepairClass(value)
+    except ValueError:
+        return None
+
+
+def _as_diag_list(raw: Any) -> list[JsonObject]:
+    return [item for item in raw if isinstance(item, dict)] if isinstance(raw, list) else []
 
 
 def diagnostics_from(raw_diagnostics: Any) -> list[DiagnosticSummary]:

@@ -4,6 +4,7 @@ import json
 import os
 import sys
 import types
+from collections import Counter
 from pathlib import Path
 
 import pytest
@@ -21,19 +22,44 @@ if load_dotenv is not None:
 
 from lumen_deepagent.config import AgentRuntimeConfig
 from lumen_deepagent.eval_traces import summarize_trace_dir
-from lumen_deepagent.knowledge import read_knowledge, read_task_knowledge
+from lumen_deepagent.knowledge import (
+    DIRECTIVES_PATH,
+    IMAGES_DECIDE_PATH,
+    IMAGES_ICONS_PATH,
+    IMAGES_PLACEMENT_PATH,
+    IMAGES_PROMPTS_PATH,
+    KNOWLEDGE_DOCS_ROOT,
+    PRIMARY_KNOWLEDGE_PATHS,
+    assumes_keys,
+    assumes_path,
+    mandatory_task_paths,
+    parse_frontmatter,
+    read_knowledge,
+    read_task_knowledge,
+)
 from lumen_deepagent.loop import (
     HeuristicAgentDirector,
     LumenQualityLoop,
     classify_diagnostics,
     classify_visual_critique,
+    imagery_recipe_for_feedback,
     is_layout_cluster_dsl,
     is_surgical_dsl,
     layout_cluster_allowed_node_ids,
     recompose_recipe_for_feedback,
     repair_is_surgical,
 )
-from lumen_deepagent.prompts import POSTER_RECOMPOSE_RECIPE, build_subagents
+from lumen_deepagent.prompts import (
+    COORDINATOR_SYSTEM_PROMPT,
+    DSL_AUTHOR_SYSTEM_PROMPT,
+    DSL_REF_GRAMMAR_ESCALATION,
+    IMAGERY_REPAIR_RECIPE,
+    IMAGERY_RUBRIC,
+    POSTER_RECOMPOSE_RECIPE,
+    REPEAT_BLOCK_ESCALATION,
+    VISUAL_REVIEWER_SYSTEM_PROMPT,
+    build_subagents,
+)
 from lumen_deepagent.providers import (
     compact_preview_payload,
     extract_dsl,
@@ -46,6 +72,7 @@ from lumen_deepagent.schemas import (
     AgentActionMode,
     AgentDirectorDecision,
     CritiqueCategory,
+    EditSurfaceRecommendation,
     RepairClass,
     VisualCritique,
     VisualIssue,
@@ -57,6 +84,9 @@ from lumen_deepagent.tools import LumenDesignTools, validate_preview_bytes
 class FakeCoreClient:
     def __init__(self, repo_root: Path) -> None:
         self.repo_root = repo_root
+        # Every operation list passed through apply_operations, in order, so tests
+        # can assert on the exact placement/upsert ops the tools emit.
+        self.applied_operations: list = []
 
     def new_scene(self, document_id: str, title: str):
         return {
@@ -117,9 +147,73 @@ class FakeCoreClient:
         }
 
     def apply_operations(self, scene, operations, scope=None):
+        self.applied_operations.extend(operations)
         updated = dict(scene)
         updated["applied_by_core"] = True
         return {"scene": updated, "applied_operations": len(operations), "diagnostics": []}
+
+    def ingest_asset(
+        self,
+        store_root,
+        bytes_base64,
+        asset_id,
+        label,
+        declared_mime_type=None,
+        filename=None,
+        kind=None,
+        uploaded_by=None,
+        license=None,
+        provenance=None,
+        source=None,
+        tags=None,
+        max_bytes=None,
+        raise_on_error=True,
+    ):
+        self.last_ingest = {
+            "asset_id": asset_id,
+            "mime": declared_mime_type,
+            "kind": kind,
+            "source": source,
+            "bytes_base64": bytes_base64,
+        }
+        return {
+            "ok": True,
+            "diagnostics": [],
+            "asset": {
+                "record": {
+                    "id": asset_id,
+                    "label": label,
+                    "kind": kind or "raster_image",
+                    "status": "ready",
+                    "source": source or {"kind": "generated", "request_id": asset_id, "model": "model"},
+                    "media": {"mime_type": declared_mime_type or "image/png"},
+                    "provenance": provenance,
+                    "license": license,
+                    "tags": tags or ["generated"],
+                }
+            },
+        }
+
+    def generate_asset(self, store_root, provider, request, asset_id, label=None, raise_on_error=True):
+        self.last_generate_asset = {"provider": provider, "request": request, "asset_id": asset_id}
+        return {
+            "ok": True,
+            "diagnostics": [],
+            "asset": {
+                "record": {
+                    "id": asset_id,
+                    "label": label or asset_id,
+                    "kind": "raster_image",
+                    "status": "ready",
+                    "source": {"kind": "generated", "request_id": request.get("request_id"), "model": provider},
+                    "media": {"mime_type": "image/png"},
+                    "provenance": {"created_by": provider, "source_label": f"generated:{provider}"},
+                    "license": {"name": "stub_generated", "allow_export": True},
+                    "tags": ["generated"],
+                },
+                "provider": {"id": provider, "metadata": {}},
+            },
+        }
 
     def generate_qr(
         self,
@@ -658,6 +752,50 @@ def test_subagents_have_isolated_skills_and_structured_reviewer_output():
     assert all("/skills/" in skill for skill in author["skills"])
 
 
+def test_subagents_declare_empty_tools_to_stay_under_strict_tool_cap():
+    # Regression guard for the deepagent-loop blocker: a subagent with NO `tools`
+    # key inherits the coordinator's full tool surface, and the visual reviewer's
+    # `response_format` forces Anthropic's strict provider strategy — together they
+    # exceed Anthropic's 20 STRICT-tool cap ("Too many strict tools (33)"), which
+    # killed every deepagent run. Each subagent must therefore declare an explicit
+    # (empty) tool list so deepagents does NOT inherit the coordinator's tools.
+    # Skills still load via the filesystem middleware, independent of `tools`.
+    subagents = build_subagents("anthropic:claude-opus-4-6")
+    for agent in subagents:
+        assert "tools" in agent, f"{agent['name']} must declare tools explicitly"
+        assert agent["tools"] == [], f"{agent['name']} must not inherit coordinator tools"
+
+
+def test_coordinator_prompt_wires_the_imagery_decide_generate_place_chain():
+    # The coordinator must actively drive the imagery chain (decide -> generate ->
+    # place -> scrim) rather than leave it to chance — otherwise the loop only ever
+    # produces typographic designs even when a brief warrants a hero image.
+    prompt = COORDINATOR_SYSTEM_PROMPT
+    # Decide first, defaulting to no image.
+    assert "DECIDE IMAGERY" in prompt
+    assert "knowledge/images/decide" in prompt
+    # Generate, then place, are explicit coordinator-owned tool steps — now routed
+    # through the single `asset` dispatcher (Group B consolidation).
+    assert 'asset(action="generate_image"' in prompt
+    assert 'asset(action="place"' in prompt
+    # The author is handed the exact asset id and the placement/scrim idiom.
+    assert "asset_id" in prompt
+    assert "knowledge/images/placement" in prompt
+    # Ordering invariant: decide before generate before place.
+    assert prompt.index("DECIDE IMAGERY") < prompt.index('asset(action="generate_image"')
+    assert prompt.index('asset(action="generate_image"') < prompt.index('asset(action="place"')
+
+
+def test_author_prompt_defers_image_generation_to_the_coordinator():
+    # The author has no tools (see the strict-tool-cap fix) and must not be told to
+    # call the image tool; it composes the frame around the coordinator's asset_id.
+    prompt = DSL_AUTHOR_SYSTEM_PROMPT
+    assert 'never call the image tool' in prompt
+    assert 'asset(action="generate_image")' in prompt
+    assert "coordinator" in prompt
+    assert "scrim" in prompt
+
+
 def test_deepagents_factory_wires_full_phase_a_tool_surface(tmp_path: Path, monkeypatch):
     calls = {}
 
@@ -686,11 +824,17 @@ def test_deepagents_factory_wires_full_phase_a_tool_surface(tmp_path: Path, monk
     assert agent["agent"] == "fake"
     assert tools.run_id
     tool_names = {tool.__name__ for tool in calls["kwargs"]["tools"]}
-    assert {
+    # 17 tools after the Group A/B/C consolidation: the asset/inspect dispatchers
+    # replace the 4 generate/place + 6 summarize/query singletons, and
+    # persist_trace_event is dropped.
+    assert tool_names == {
         "load_knowledge",
         "compile_dsl_block",
         "apply_operations",
         "apply_structured_edit",
+        "asset",
+        "validate_binding_set",
+        "derive_instance_preview",
         "preflight_design",
         "export_preview",
         "export_preview_bundle",
@@ -699,15 +843,27 @@ def test_deepagents_factory_wires_full_phase_a_tool_surface(tmp_path: Path, monk
         "recommend_edit_surface",
         "create_repair_request",
         "record_gap",
-        "summarize_scene",
-        "summarize_page",
-        "summarize_slots",
-        "summarize_node_tree",
-        "query_geometry",
-        "query_slot_bindings",
-        "persist_trace_event",
+        "inspect",
         "finalize_run",
-    }.issubset(tool_names)
+    }
+    assert len(calls["kwargs"]["tools"]) == 17
+    # The folded singletons must NOT be in the model's tool surface anymore.
+    assert not (
+        {
+            "generate_image",
+            "generate_qr",
+            "place_asset_in_node",
+            "place_asset_in_slot",
+            "summarize_scene",
+            "summarize_page",
+            "summarize_slots",
+            "summarize_node_tree",
+            "query_geometry",
+            "query_slot_bindings",
+            "persist_trace_event",
+        }
+        & tool_names
+    )
     assert {agent["name"] for agent in calls["kwargs"]["subagents"]} == {
         "lumen-dsl-author",
         "lumen-visual-reviewer",
@@ -857,6 +1013,143 @@ def test_block_catalog_is_pinned_and_delivered_full():
         )
 
 
+def test_images_decide_is_pinned_and_delivered_full():
+    # Step 4 (A0.1): the imagery DECIDE guardrail must be pinned for any authoring
+    # task AND delivered in FULL — the author always decides whether a surface needs
+    # imagery (and which mechanism) before composing.
+    repo_root = Path(__file__).resolve().parents[3]
+
+    snippets = read_task_knowledge(
+        repo_root,
+        "Create a patient appointment card with a clear headline and a Book a Demo button",
+    )
+    by_path = {snippet.path: snippet for snippet in snippets}
+
+    assert IMAGES_DECIDE_PATH in by_path, "images/decide not pinned for authoring"
+    on_disk = (repo_root / IMAGES_DECIDE_PATH).read_text(encoding="utf-8")
+    assert by_path[IMAGES_DECIDE_PATH].excerpt == on_disk, (
+        "images/decide was windowed/truncated, not delivered in full"
+    )
+
+
+def test_directives_ref_grammar_is_pinned_for_seeded_turns(
+    tmp_path: Path, monkeypatch
+):
+    # Agent-improvement backlog: a SEEDED turn edits an existing document, so
+    # the modify/ref grammar (`#page:` form, directives-take-node-ids-only)
+    # must always be loaded — run_8cbeae790f07 burned every iteration on the
+    # `#page_a4`-vs-`#page:page_a4` trap with directives.md never in context.
+    repo_root = Path(__file__).resolve().parents[3]
+
+    # The loader honors explicit extra mandatory pins even when the prompt
+    # shares no words with the doc.
+    snippets = read_task_knowledge(
+        repo_root,
+        "Change the greeting copy to Hello",
+        extra_mandatory_paths=[DIRECTIVES_PATH],
+    )
+    assert DIRECTIVES_PATH in {snippet.path for snippet in snippets}
+
+    # And the tools wire the pin automatically for seeded scenes.
+    monkeypatch.setattr("lumen_deepagent.tools.CoreClient", FakeCoreClient)
+    config = AgentRuntimeConfig(
+        repo_root=repo_root,
+        model="anthropic:claude-opus-4-6",
+        max_iterations=1,
+        preview_format="svg",
+        trace_dir=tmp_path / ".lumen-runs",
+    )
+    seeded_tools = LumenDesignTools(
+        config,
+        "Change the greeting copy to Hello",
+        initial_scene={
+            "meta": {"id": "doc_live", "title": "Saved doc"},
+            "pages": {"page_a4": {"id": "page_a4", "children": []}},
+            "nodes": {},
+            "slots": {},
+            "assets": {},
+        },
+    )
+    json.loads(seeded_tools.load_knowledge("Change the greeting copy to Hello"))
+    assert DIRECTIVES_PATH in {
+        snippet["path"] for snippet in seeded_tools.loaded_knowledge
+    }
+
+
+def test_imagery_prompt_and_placement_docs_pin_by_relevance():
+    # decide is always pinned (cheap guardrail); the prompt-craft + placement/scrim
+    # docs pin only for image-bearing tasks, so a pure-typographic card is not bloated.
+    generic = mandatory_task_paths("a patient appointment card with a headline and a button")
+    assert IMAGES_DECIDE_PATH in generic
+    assert IMAGES_PROMPTS_PATH not in generic
+    assert IMAGES_PLACEMENT_PATH not in generic
+    assert IMAGES_ICONS_PATH not in generic
+
+    imagery = mandatory_task_paths("a social ad with a hero photo and headline overlay")
+    assert IMAGES_DECIDE_PATH in imagery
+    assert IMAGES_PROMPTS_PATH in imagery
+    assert IMAGES_PLACEMENT_PATH in imagery
+
+    # Step 8: an icon-bearing brief pins the icon-library reference.
+    icon_task = mandatory_task_paths("a four-pillar deck slide with an icon row")
+    assert IMAGES_ICONS_PATH in icon_task
+
+
+def test_assumes_frontmatter_resolves_transitively():
+    # Brilliant-style `assumes:` resolution: selecting images/placement (mandatory for
+    # an imagery task) must transitively pull its declared prerequisites —
+    # assets/asset-placement and images/decide — into the loaded context, even though
+    # neither is a mandatory pin nor a required-category pick.
+    repo_root = Path(__file__).resolve().parents[3]
+    snippets = read_task_knowledge(
+        repo_root,
+        "a social ad with a hero photo and a headline overlay",
+        limit=12,
+    )
+    by_path = {snippet.path: snippet for snippet in snippets}
+    asset_placement = f"{KNOWLEDGE_DOCS_ROOT}/knowledge/assets/asset-placement.md"
+
+    assert IMAGES_PLACEMENT_PATH in by_path
+    assert IMAGES_DECIDE_PATH in by_path
+    assert asset_placement in by_path, "images/placement's assumes: dep was not pulled in"
+    # assets/asset-placement is neither mandatory nor a required-category pick, so the
+    # only way it enters is the assumes resolver (which runs before the score fill).
+    assert by_path[asset_placement].selected_reason == "assumes_dependency"
+
+
+def test_knowledge_assumes_keys_resolve_to_real_primary_docs():
+    # Lint guard (scoped Tier-4 idea): every `assumes:` key in every knowledge doc must
+    # resolve to a real PRIMARY doc, so the cross-reference graph can't silently rot.
+    repo_root = Path(__file__).resolve().parents[3]
+    knowledge_root = repo_root / KNOWLEDGE_DOCS_ROOT / "knowledge"
+    primary = set(PRIMARY_KNOWLEDGE_PATHS)
+    edges = 0
+    for md in sorted(knowledge_root.rglob("*.md")):
+        for key in assumes_keys(md.read_text(encoding="utf-8")):
+            edges += 1
+            dep_path = assumes_path(key)
+            assert (repo_root / dep_path).exists(), (
+                f"{md.name}: assumes key '{key}' -> missing file {dep_path}"
+            )
+            assert dep_path in primary, (
+                f"{md.name}: assumes key '{key}' -> {dep_path} is not a PRIMARY doc"
+            )
+    assert edges >= 4, "expected the Tier 0-1 assumes: edges to be present"
+
+
+def test_parse_frontmatter_is_a_noop_without_a_block():
+    # Docs without frontmatter (the common case) must be returned untouched, so the
+    # loader's full-delivery `excerpt == on_disk` invariant holds for them.
+    body = "# Heading\n\nNo frontmatter here."
+    meta, rest = parse_frontmatter(body)
+    assert meta == {}
+    assert rest == body
+
+    meta2, rest2 = parse_frontmatter("---\nassumes: images/decide\n---\n# Title\nx")
+    assert meta2["assumes"] == "images/decide"
+    assert rest2 == "# Title\nx"
+
+
 def test_artboard_fixture_prompts_cover_required_surfaces():
     repo_root = Path(__file__).resolve().parents[3]
     fixture_path = repo_root / "apps/agent_runtime/evaluation/fixture_prompts.json"
@@ -885,6 +1178,338 @@ def test_artboard_fixture_prompts_cover_required_surfaces():
             "parent_overflow_cluster_repair",
         }
     )
+
+
+def test_imagery_fixture_briefs_cover_decisions_and_match_sidecar():
+    # Imagery-quality eval set: the 16 imagery briefs exist in fixture_prompts.json,
+    # the sidecar covers each with a valid decision, and ~a third are NONE-correct
+    # (the DECIDE guardrail — a good agent declines imagery on data/type surfaces).
+    repo_root = Path(__file__).resolve().parents[3]
+    base = repo_root / "apps/agent_runtime/evaluation"
+    fixtures = json.loads((base / "fixture_prompts.json").read_text(encoding="utf-8"))
+    by_id = {fixture["id"]: fixture for fixture in fixtures}
+    sidecar = json.loads((base / "imagery_fixtures" / "briefs.json").read_text(encoding="utf-8"))
+
+    assert len(sidecar) == 16
+    for brief_id, meta in sidecar.items():
+        assert brief_id in by_id, f"imagery brief {brief_id} missing from fixture_prompts.json"
+        assert meta["expected_decision"] in {"photo", "icon", "none"}
+        assert meta["role"] and meta["risks"]
+        # The prompt must NOT pre-decide the imagery for the agent (we test the DECIDE).
+        prompt = by_id[brief_id]["prompt"].lower()
+        assert "generate_image" not in prompt and "use a scrim" not in prompt
+
+    decisions = Counter(meta["expected_decision"] for meta in sidecar.values())
+    assert decisions["photo"] == 6 and decisions["icon"] == 4 and decisions["none"] == 6
+    # The same GTM/SF theme appears with three different correct answers.
+    assert {"gtm_conf_poster_photo", "gtm_conf_social_none", "gtm_conf_deck_band"} <= set(sidecar)
+    assert sidecar["gtm_conf_poster_photo"]["expected_decision"] == "photo"
+    assert sidecar["gtm_conf_social_none"]["expected_decision"] == "none"
+
+
+def _poster_scene(*, asset_model="google/gemini-3-pro-image", with_scrim=True, asset_status="ready"):
+    nodes = {
+        "img": {
+            "kind": {"kind": "image", "asset_id": "hero"},
+            "asset_placement": {"fit": "cover", "focal_point": {"x": 0.5, "y": 0.4}},
+            "computed": {"layout_bounds": {"x": 0, "y": 0, "width": 1080, "height": 1920}},
+        },
+        "headline": {
+            "kind": {"kind": "text"},
+            "computed": {"layout_bounds": {"x": 80, "y": 1400, "width": 920, "height": 300}},
+        },
+    }
+    if with_scrim:
+        nodes["scrim"] = {
+            "kind": {"kind": "rect"},
+            "opacity_token": "opacity.scrim",
+            "computed": {"layout_bounds": {"x": 0, "y": 1100, "width": 1080, "height": 820}},
+        }
+    return {
+        "pages": {"p": {"size": {"width": 1080, "height": 1920}}},
+        "assets": {
+            "hero": {
+                "status": asset_status,
+                "kind": "raster_image",
+                "source": {"kind": "generated", "model": asset_model},
+                "raster": {"pixel_width": 1080, "pixel_height": 1920},
+            }
+        },
+        "nodes": nodes,
+    }
+
+
+def test_imagery_checks_accept_a_clean_scrimmed_poster():
+    from lumen_deepagent.imagery_checks import score_scene
+
+    result = score_scene(_poster_scene(), expected_decision="photo")
+    assert result["accept"] is True
+    assert result["gate_failed"] is False
+    d = result["dimensions"]
+    assert d["placeholder_real"]["score"] == 3
+    assert d["decision"]["score"] == 3
+    assert d["legibility"]["score"] == 3
+    assert d["hero_count"]["score"] == 3
+
+
+def test_imagery_checks_gate_on_placeholder_text_over_image_and_gratuitous():
+    from lumen_deepagent.imagery_checks import score_scene
+
+    # A solid-color stub placeholder shipped as final → hard gate.
+    stub = score_scene(_poster_scene(asset_model="stub-image-v0"), expected_decision="photo")
+    assert stub["accept"] is False and stub["dimensions"]["placeholder_real"]["gate"] is True
+
+    # Text over a busy image with no covering scrim → legibility gate.
+    no_scrim = score_scene(_poster_scene(with_scrim=False), expected_decision="photo")
+    assert no_scrim["accept"] is False and no_scrim["dimensions"]["legibility"]["gate"] is True
+
+    # The DECIDE guardrail: a photo placed on a NONE-correct brief → decision gate.
+    gratuitous = score_scene(_poster_scene(), expected_decision="none")
+    assert gratuitous["accept"] is False and gratuitous["dimensions"]["decision"]["gate"] is True
+
+    # NONE-correct brief with a clean typographic design (no image) → accepts.
+    type_only = {"pages": {"p": {"size": {"width": 1080, "height": 1080}}},
+                 "assets": {},
+                 "nodes": {"h": {"kind": {"kind": "text"},
+                                 "computed": {"layout_bounds": {"x": 80, "y": 80, "width": 920, "height": 400}}}}}
+    clean = score_scene(type_only, expected_decision="none")
+    assert clean["accept"] is True and clean["dimensions"]["decision"]["score"] == 3
+
+
+class _FakeJudgeModel:
+    """A stand-in for the structured-output LLM judge: .invoke returns a canned verdict
+    and records that a vision call happened (so we can assert when the judge is skipped)."""
+
+    def __init__(self, verdict):
+        self.verdict = verdict
+        self.calls = 0
+
+    def invoke(self, messages):
+        self.calls += 1
+        return self.verdict
+
+
+def _perfect_verdict():
+    from lumen_deepagent.imagery_judge import ImageryJudgeVerdict
+
+    return ImageryJudgeVerdict(
+        relevance=3, placeholder_real=3, aspect_fit=3, placement=3, legibility=3,
+        resolution_dpi=3, no_in_image_text=3, theme_coherence=3, reasoning="clean",
+    )
+
+
+def test_imagery_judge_ships_a_clean_scrimmed_poster_with_a_good_verdict():
+    from lumen_deepagent.imagery_judge import judge_imagery
+
+    model = _FakeJudgeModel(_perfect_verdict())
+    result = judge_imagery(
+        _poster_scene(),
+        b"\x89PNG fake-bytes",
+        {"id": "GTM-01", "expected_decision": "photo", "role": "full_bleed_hero", "risks": []},
+        model=model,
+    )
+    assert model.calls == 1  # an image is present → the judge runs
+    assert result["judge_ran"] is True
+    assert result["accept"] is True and result["tier"] == "ship"
+    assert result["per_axis"]["theme_coherence"]["final"] == 3
+    assert result["weighted_mean"] >= 2.3
+
+
+def test_imagery_judge_skips_the_vision_call_on_a_correct_typographic_none_design():
+    from lumen_deepagent.imagery_judge import judge_imagery
+
+    type_only = {
+        "pages": {"p": {"size": {"width": 1080, "height": 1080}}},
+        "assets": {},
+        "nodes": {"h": {"kind": {"kind": "text"},
+                        "computed": {"layout_bounds": {"x": 80, "y": 80, "width": 920, "height": 400}}}},
+    }
+    model = _FakeJudgeModel(_perfect_verdict())
+    result = judge_imagery(type_only, None, {"id": "NO-01", "expected_decision": "none"}, model=model)
+    # No image and none expected → deterministic accept, no paid vision call.
+    assert model.calls == 0 and result["judge_ran"] is False
+    assert result["accept"] is True and result["tier"] == "ship"
+    assert result["per_axis"]["relevance"]["final"] == 3
+
+
+def test_imagery_judge_det_gate_caps_a_perfect_verdict_to_redo():
+    from lumen_deepagent.imagery_judge import judge_imagery
+
+    # A perfect verdict cannot rescue a design whose text is unscrimmed over the image:
+    # the DET legibility gate caps the axis at 1 and forces a redo.
+    model = _FakeJudgeModel(_perfect_verdict())
+    result = judge_imagery(
+        _poster_scene(with_scrim=False),
+        b"\x89PNG",
+        {"id": "GTM-01", "expected_decision": "photo"},
+        model=model,
+    )
+    assert result["gate_failed"] is True
+    assert result["per_axis"]["legibility"]["final"] == 1
+    assert result["accept"] is False and result["tier"] == "redo"
+
+
+def test_imagery_judge_final_is_min_of_det_cap_and_judge():
+    from lumen_deepagent.imagery_judge import ImageryJudgeVerdict, judge_imagery
+
+    # DET passes every gate (score 3), but the judge dislikes the theme (1) and the
+    # composition/placement (2) → final theme is the judge's 1 → redo.
+    verdict = ImageryJudgeVerdict(
+        relevance=3, placeholder_real=3, aspect_fit=3, placement=2, legibility=3,
+        resolution_dpi=2, no_in_image_text=3, theme_coherence=1, reasoning="off-brand stock cliché",
+    )
+    result = judge_imagery(
+        _poster_scene(),
+        b"\x89PNG",
+        {"id": "GTM-01", "expected_decision": "photo"},
+        model=_FakeJudgeModel(verdict),
+    )
+    assert result["per_axis"]["theme_coherence"]["final"] == 1  # judge below DET cap
+    assert result["per_axis"]["placement"]["final"] == 2        # min(2 judge, 3 det)
+    assert result["accept"] is False and result["tier"] == "redo"
+
+
+def _load_imagery_runner():
+    import importlib.util
+
+    path = Path(__file__).resolve().parents[1] / "evaluation" / "run_imagery_evals.py"
+    spec = importlib.util.spec_from_file_location("run_imagery_evals", path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def _write_synthetic_run_dir(run_dir: Path, scene: dict) -> Path:
+    run_dir.mkdir(parents=True, exist_ok=True)
+    (run_dir / "final_scene.json").write_text(json.dumps(scene), encoding="utf-8")
+    png = run_dir / "iterations" / "001" / "preview.png"
+    png.parent.mkdir(parents=True, exist_ok=True)
+    png.write_bytes(b"\x89PNG synthetic")
+    (run_dir / "final.json").write_text(
+        json.dumps({"run_id": "run_synthetic", "status": "accepted", "preview_paths": [str(png)]}),
+        encoding="utf-8",
+    )
+    return run_dir
+
+
+def test_imagery_runner_merge_briefs_joins_sidecar_and_prompt():
+    runner = _load_imagery_runner()
+    merged = runner.merge_briefs(runner.DEFAULT_BRIEFS, runner.DEFAULT_PROMPTS)
+    assert len(merged) == 16
+    by_id = {b["id"]: b for b in merged}
+    gtm = by_id["gtm_conf_poster_photo"]
+    assert gtm["expected_decision"] == "photo" and gtm["prompt"] and gtm["risks"]
+    decisions = Counter(b["expected_decision"] for b in merged)
+    assert decisions == Counter({"photo": 6, "none": 6, "icon": 4})
+
+
+def test_imagery_runner_scores_and_captures_a_run_dir(tmp_path: Path):
+    runner = _load_imagery_runner()
+    run_dir = _write_synthetic_run_dir(tmp_path / "run", _poster_scene())
+    brief = {"id": "GTM-01", "artifact": "event_poster_9x16", "prompt": "p",
+             "expected_decision": "photo", "role": "full_bleed_hero", "risks": []}
+
+    scores = runner.score_run_dir(run_dir, brief, model=_FakeJudgeModel(_perfect_verdict()))
+    assert scores["tier"] == "ship" and scores["accept"] is True
+    assert scores["run_id"] == "run_synthetic"
+
+    capture = runner.write_capture(tmp_path / "out", brief, scores, tag="baseline-pre-step9", model="fake-model")
+    for name in ("brief.json", "scores.json", "asset_provenance.json", "run_meta.json", "render.png"):
+        assert (capture / name).exists(), name
+    prov = json.loads((capture / "asset_provenance.json").read_text())
+    assert prov["asset_id"] == "hero" and prov["source_kind"] == "generated"
+
+
+def test_imagery_runner_summarize_aggregates_accept_and_tiers():
+    runner = _load_imagery_runner()
+    results = [
+        {"brief": {"expected_decision": "photo"}, "scores": {"tier": "ship", "accept": True}},
+        {"brief": {"expected_decision": "photo"}, "scores": {"tier": "redo", "accept": False}},
+        {"brief": {"expected_decision": "none"}, "scores": {"tier": "ship", "accept": True}},
+        {"brief": {"expected_decision": "icon"}, "scores": None},  # unscored — ignored
+    ]
+    summary = runner.summarize(results)
+    assert summary["briefs_scored"] == 3
+    assert summary["accept_rate"] == round(2 / 3, 3)
+    assert summary["tiers"]["ship"] == 2 and summary["tiers"]["redo"] == 1
+    assert summary["by_decision"]["photo"] == {"n": 2, "accept": 1}
+
+
+def test_imagery_runner_diff_tags_reports_axis_and_tier_transition(tmp_path: Path):
+    runner = _load_imagery_runner()
+    brief_dir = tmp_path / "GTM-01"
+    (brief_dir / "a").mkdir(parents=True)
+    (brief_dir / "b").mkdir(parents=True)
+    (brief_dir / "a" / "scores.json").write_text(
+        json.dumps({"tier": "ship", "weighted_mean": 2.6, "per_axis": {"legibility": {"final": 3}}})
+    )
+    (brief_dir / "b" / "scores.json").write_text(
+        json.dumps({"tier": "redo", "weighted_mean": 1.8, "per_axis": {"legibility": {"final": 1}}})
+    )
+    diff = runner.diff_tags(brief_dir, "a", "b")
+    assert diff["tier"] == {"from": "ship", "to": "redo", "regressed_from_ship": True}
+    assert diff["axis_delta"]["legibility"] == -2
+
+
+def test_tools_seed_scene_is_used_instead_of_new_scene(tmp_path: Path, monkeypatch):
+    # Phase 0a: an initial_scene seeds the working scene (deep-copied), replaces
+    # the new_scene call, and the seeding is recorded in the run trace.
+    monkeypatch.setattr("lumen_deepagent.tools.CoreClient", FakeCoreClient)
+    seed = {
+        "meta": {"id": "doc_live", "title": "Saved doc"},
+        "pages": {"hero_poster": {"id": "hero_poster", "children": ["headline"]}},
+        "nodes": {
+            "headline": {
+                "id": "headline",
+                "kind": {"kind": "text", "content": "Old copy"},
+                "children": [],
+            }
+        },
+        "slots": {},
+        "assets": {},
+    }
+    config = runtime_config(tmp_path)
+    tools = LumenDesignTools(config, "Edit the headline", initial_scene=seed)
+
+    assert tools.seeded_from_initial_scene is True
+    assert tools.scene["meta"]["id"] == "doc_live"
+    assert "headline" in tools.scene["nodes"]
+    assert tools.scene_update_sources[0] == "initial_scene_seed"
+    # Deep copy: caller-side mutation must not leak into the running scene.
+    seed["nodes"]["headline"]["kind"]["content"] = "Mutated by caller"
+    assert tools.scene["nodes"]["headline"]["kind"]["content"] == "Old copy"
+    input_payload = json.loads(
+        (config.trace_dir / tools.run_id / "input.json").read_text(encoding="utf-8")
+    )
+    assert input_payload["seeded_from_initial_scene"] is True
+
+
+def test_tools_without_seed_records_unseeded_run(tmp_path: Path, monkeypatch):
+    monkeypatch.setattr("lumen_deepagent.tools.CoreClient", FakeCoreClient)
+    config = runtime_config(tmp_path)
+    tools = LumenDesignTools(config, "Create a square ad")
+
+    assert tools.seeded_from_initial_scene is False
+    assert tools.scene_update_sources == []
+    input_payload = json.loads(
+        (config.trace_dir / tools.run_id / "input.json").read_text(encoding="utf-8")
+    )
+    assert input_payload["seeded_from_initial_scene"] is False
+
+
+def test_finalize_run_persists_the_full_final_scene_for_offline_scoring(tmp_path: Path, monkeypatch):
+    # The imagery eval runner reads final_scene.json (the FULL scene, not just the
+    # summary) to deterministically score imagery without re-running the agent.
+    monkeypatch.setattr("lumen_deepagent.tools.CoreClient", FakeCoreClient)
+    config = runtime_config(tmp_path)
+    tools = LumenDesignTools(config, "Create a square ad")
+    tools.compile_dsl_block("page page_test")
+    tools.finalize_run("accepted", "accepted", "Accepted.")
+
+    final_scene_path = config.trace_dir / tools.run_id / "final_scene.json"
+    assert final_scene_path.exists()
+    scene = json.loads(final_scene_path.read_text(encoding="utf-8"))
+    assert "nodes" in scene and "pages" in scene  # the full scene, round-trippable
 
 
 def test_quality_loop_passes_knowledge_excerpts_to_author(tmp_path: Path, monkeypatch):
@@ -1695,6 +2320,113 @@ def test_recompose_recipe_triggers_only_on_dead_band_categories():
     )
     assert recompose_recipe_for_feedback({"kind": "preflight", "feedback": {}}) is None
     assert recompose_recipe_for_feedback(None) is None
+
+
+def test_imagery_critique_routes_to_asset_tool_repair():
+    # Step 9: a pure imagery-quality critique must be repaired as an ASSET (regenerate /
+    # recrop / scrim / replace / remove) on the asset-tool surface — never as a layout
+    # patch. (asset_use / contrast / clipping etc. keep their existing routing.)
+    critique = VisualCritique(
+        accepted=False,
+        summary="The hero photo is a generic stock cliché and the headline is illegible.",
+        issues=[
+            VisualIssue(
+                severity="error",
+                category=CritiqueCategory.imagery,
+                target=VisualTarget(page_id="page_hero", node_id="hero_img"),
+                message="Gratuitous stock-feel photo; headline has no scrim.",
+                suggested_repair="Regenerate a relevant hero and add a covering scrim.",
+            )
+        ],
+        repair_instruction="Fix the image, not the layout.",
+    )
+
+    classification = classify_visual_critique(
+        critique,
+        {"page_id": "page_hero", "node_id": "hero_img"},
+        {},
+    )
+
+    assert classification.repair_class == RepairClass.asset_tool
+    assert classification.allowed_edit_surface == EditSurfaceRecommendation.asset_tool
+    assert classification.reason == "imagery_quality_requires_asset_repair"
+    assert "regenerate_asset" in classification.permissions
+
+
+def test_imagery_critique_with_structural_failure_defers_to_layout_repair():
+    # If a critique carries BOTH an imagery defect AND a structural layout failure, the
+    # geometry repair wins this iteration (the imagery axis is revisited next).
+    critique = VisualCritique(
+        accepted=False,
+        summary="Dead band above the footer, and the hero photo is off-crop.",
+        issues=[
+            VisualIssue(
+                severity="error",
+                category=CritiqueCategory.visual_balance,
+                target=VisualTarget(page_id="page_a4", node_id="main"),
+                message="Large empty band above the footer.",
+                suggested_repair="Recompose with the poster idiom.",
+            ),
+            VisualIssue(
+                severity="warning",
+                category=CritiqueCategory.imagery,
+                target=VisualTarget(page_id="page_a4", node_id="hero_img"),
+                message="Hero crop cuts off the subject.",
+                suggested_repair="Recrop via focal point.",
+            ),
+        ],
+        repair_instruction="Fix the dead band first.",
+    )
+
+    classification = classify_visual_critique(
+        critique,
+        {"page_id": "page_a4", "node_id": "main"},
+        layout_cluster_scene(),
+    )
+
+    assert classification.repair_class == RepairClass.layout_cluster
+
+
+def test_imagery_recipe_triggers_only_on_imagery_categories():
+    # Step 9 mirror of the recompose-recipe trigger: a visual critique flagging the
+    # `imagery` category hands the rebuild the verbatim imagery-repair recipe.
+    feedback = {
+        "kind": "visual",
+        "feedback": {"issues": [{"category": "imagery", "message": "cliché hero"}]},
+    }
+    assert imagery_recipe_for_feedback(feedback) == IMAGERY_REPAIR_RECIPE
+    # A structural layout co-failure suppresses the imagery recipe (layout fixed first).
+    mixed = {
+        "kind": "visual",
+        "feedback": {
+            "issues": [
+                {"category": "imagery", "message": "off-crop"},
+                {"category": "visual_balance", "message": "dead band"},
+            ]
+        },
+    }
+    assert imagery_recipe_for_feedback(mixed) is None
+    # Unrelated category, non-visual kind, and None all yield no recipe.
+    assert (
+        imagery_recipe_for_feedback(
+            {"kind": "visual", "feedback": {"issues": [{"category": "typography"}]}}
+        )
+        is None
+    )
+    assert imagery_recipe_for_feedback({"kind": "preflight", "feedback": {}}) is None
+    assert imagery_recipe_for_feedback(None) is None
+
+
+def test_reviewer_prompt_carries_the_shared_imagery_rubric():
+    # Step 9 / Phase-2 pairing: the in-loop reviewer applies the SAME imagery rubric the
+    # offline judge uses, framed as a reject gate with category `imagery`.
+    prompt = VISUAL_REVIEWER_SYSTEM_PROMPT
+    assert "J. IMAGERY" in prompt
+    assert "category" in prompt and "imagery" in prompt
+    # The shared rubric constant is spliced in verbatim (single source of truth).
+    assert IMAGERY_RUBRIC in prompt
+    assert "LEGIBILITY-OVER-IMAGE" in prompt
+    assert "RELEVANCE / DECIDE" in prompt
 
 
 def test_heuristic_director_hands_poster_recipe_for_visual_balance():
@@ -2669,6 +3401,150 @@ def test_quality_loop_records_max_iteration_stop(tmp_path: Path, monkeypatch):
     assert tools.scene["nodes"], "best preflight-clean draft must remain on the canvas"
 
 
+def test_identical_repeat_block_is_skipped_and_escalated(
+    tmp_path: Path, monkeypatch
+):
+    # run_d6e08a28 pinned: the author answered the same critique with the
+    # byte-identical 1-op patch on every iteration, burning the whole repair
+    # budget with zero information gain. An identical block cannot change the
+    # outcome, so the loop must skip the wasted compile/review, escalate the
+    # standing feedback, and hand the NEXT attempt the strengthened instruction.
+    monkeypatch.setattr("lumen_deepagent.tools.CoreClient", FakeCoreClient)
+    config = runtime_config(tmp_path, max_iterations=4)
+    tools = LumenDesignTools(config, "Create a square LinkedIn ad")
+    rejected_critique = VisualCritique(
+        accepted=False,
+        summary="Composition sits low.",
+        issues=[
+            VisualIssue(
+                category=CritiqueCategory.alignment,
+                target=VisualTarget(page_id="page_test", node_id="headline"),
+                message="Re-center the composition.",
+                suggested_repair="Wrap and center the main group.",
+            )
+        ],
+    )
+    author = ScriptedAuthor(
+        [
+            "page page_test",
+            "#headline x(c) y(c)",  # in-cluster repair; the critic still rejects
+            "#headline x(c) y(c)",  # IDENTICAL re-emit — must be skipped
+            "#headline pad(24)",  # the escalated, different attempt
+        ]
+    )
+    reviewer = ScriptedReviewer(
+        [
+            rejected_critique,
+            rejected_critique,
+            VisualCritique(accepted=True, summary="Centered now."),
+        ]
+    )
+    loop = LumenQualityLoop(tools, author, reviewer)
+
+    result = loop.run("Create a square LinkedIn ad")
+
+    assert result["status"] == "accepted"
+    assert len(author.requests) == 4
+    # The identical re-emit (iteration 3) consumed NO review call.
+    assert len(reviewer.calls) == 3
+    events = [
+        json.loads(line).get("event")
+        for line in (config.trace_dir / tools.run_id / "trace.jsonl")
+        .read_text(encoding="utf-8")
+        .splitlines()
+        if line.strip()
+    ]
+    assert "repeat_block_escalated" in events
+    # The final attempt's repair context carries the escalation up front.
+    escalated_context = author.requests[3].repair_context
+    assert escalated_context.get("escalation") == "repeat_block"
+    assert (escalated_context.get("authoring_constraints") or [""])[0] == (
+        REPEAT_BLOCK_ESCALATION
+    )
+
+
+class FakeSameHaltTwiceCoreClient(FakeCoreClient):
+    """First two compiles halt with the SAME diagnostic code (a modify-grammar
+    error, session-shaped exactly as the real path mangles it); the third
+    succeeds via the base fake."""
+
+    def __init__(self, repo_root: Path) -> None:
+        super().__init__(repo_root)
+        self.compile_calls = 0
+
+    def compile_dsl_into_scene(self, scene, source: str, dsl_session=None):
+        self.compile_calls += 1
+        if self.compile_calls <= 2:
+            return {
+                "scene": scene,
+                "applied_operations": 0,
+                "dsl": {
+                    "compile_output": {
+                        "operations": [],
+                        "diagnostics": [
+                            {
+                                "diagnostic": {
+                                    "code": "LUMD0210",
+                                    "message": "unsupported property syntax on modify line",
+                                    "severity": "error",
+                                },
+                                "span": {"line": 1, "column": 1},
+                            }
+                        ],
+                        "halted_at": {"code": "LUMD0210", "line": 1},
+                    },
+                    "operation_error": None,
+                    "session_snapshot": None,
+                },
+            }
+        return super().compile_dsl_into_scene(scene, source, dsl_session)
+
+
+def test_repeated_same_code_halt_pins_ref_grammar_escalation(
+    tmp_path: Path, monkeypatch
+):
+    # run_8cbeae790f07 pinned (the agent-improvement backlog's escalation
+    # heuristic): three DIFFERENT blocks, one unlearned grammar form, zero
+    # applied ops. On the second consecutive halt with the same code the loop
+    # must pin the ref-grammar excerpt into the next author request.
+    monkeypatch.setattr(
+        "lumen_deepagent.tools.CoreClient", FakeSameHaltTwiceCoreClient
+    )
+    config = runtime_config(tmp_path, max_iterations=3)
+    tools = LumenDesignTools(config, "Edit the headline")
+    author = ScriptedAuthor(
+        [
+            '#headline text "A"',
+            '#headline text "B"',
+            '#headline text("C")',
+        ]
+    )
+    reviewer = ScriptedReviewer([VisualCritique(accepted=True, summary="ok")])
+    loop = LumenQualityLoop(tools, author, reviewer)
+
+    result = loop.run("Edit the headline")
+
+    assert result["status"] == "accepted"
+    first, second = loop.previous_feedback[0], loop.previous_feedback[1]
+    assert first.get("halt_code") == "LUMD0210"
+    assert first.get("escalation") is None
+    assert second.get("halt_code") == "LUMD0210"
+    assert second.get("escalation") == "repeated_halt"
+    constraints = second.get("authoring_constraints") or []
+    assert DSL_REF_GRAMMAR_ESCALATION in constraints
+    assert "ESCALATION" in constraints[0]
+    events = [
+        json.loads(line).get("event")
+        for line in (config.trace_dir / tools.run_id / "trace.jsonl")
+        .read_text(encoding="utf-8")
+        .splitlines()
+        if line.strip()
+    ]
+    assert "repeated_halt_escalated" in events
+    # Iteration 3's author request received the pinned grammar.
+    assert author.requests[2].repair_context.get("escalation") == "repeated_halt"
+
+
 class FakeDestructiveRepairCoreClient(FakeCoreClient):
     """First compile builds a full scene; the repair compile strips every node
     and halts. This mirrors a real destructive repair that emits `delete(...)`
@@ -3061,6 +3937,238 @@ def test_generate_qr_tool_registers_asset_and_traces_provenance(
     payload = qr_events[0]["payload"]
     assert payload["qr"]["provenance"]["source_label"] == "generated:qr"
     assert payload["qr"]["asset_id"].startswith("asset_qr_")
+
+
+def test_generate_image_uses_configured_model_and_upserts_generated_asset(
+    tmp_path: Path, monkeypatch
+):
+    monkeypatch.setattr("lumen_deepagent.tools.CoreClient", FakeCoreClient)
+    captured: dict = {}
+
+    def fake_generate(**kwargs):
+        captured.update(kwargs)
+        return types.SimpleNamespace(
+            image_bytes=b"\x89PNG fake-image-bytes",
+            mime_type="image/png",
+            model="test/image-model",
+            provenance={"created_by": "agent", "source_label": "image generation", "notes": []},
+            license={"name": "generated_commercial_use", "allow_export": True},
+        )
+
+    stub = types.SimpleNamespace(is_configured=lambda: True, generate=fake_generate)
+    monkeypatch.setattr("lumen_deepagent.tools.image_provider", stub)
+
+    tools = LumenDesignTools(runtime_config(tmp_path), "Create a clinic ad")
+    result = json.loads(
+        tools.generate_image("editorial photo of a calm clinic reception", brand_notes=["deep navy"])
+    )
+
+    assert result["image"]["status"] == "ok"
+    assert result["image"]["mode"] == "model"
+    assert result["image"]["model"] == "test/image-model"
+    assert result["image"]["asset_id"].startswith("asset_img_")
+    assert result["image"]["source"]["kind"] == "generated"
+    assert result["image"]["source"]["model"] == "test/image-model"
+
+    # The prompt + brand notes reached the model; bytes were ingested as Generated.
+    assert captured["prompt"].startswith("editorial photo")
+    assert captured["brand_notes"] == ["deep navy"]
+    assert tools.core.last_ingest["source"]["model"] == "test/image-model"
+    assert tools.core.last_ingest["kind"] == "raster_image"
+
+    # Registered through the canonical upsert_asset op path.
+    assert any(op.get("kind") == "upsert_asset" for op in tools.core.applied_operations)
+    assert tools.scene_update_sources[-1] == "generate_image"
+
+
+def test_generate_image_falls_back_to_placeholder_when_model_unconfigured(
+    tmp_path: Path, monkeypatch
+):
+    monkeypatch.setattr("lumen_deepagent.tools.CoreClient", FakeCoreClient)
+
+    def fail_generate(**kwargs):  # must not be called when unconfigured
+        raise AssertionError("model should not be called when unconfigured")
+
+    stub = types.SimpleNamespace(is_configured=lambda: False, generate=fail_generate)
+    monkeypatch.setattr("lumen_deepagent.tools.image_provider", stub)
+
+    tools = LumenDesignTools(runtime_config(tmp_path), "Create a poster")
+    result = json.loads(tools.generate_image("a serene mountain lake at dawn"))
+
+    assert result["image"]["status"] == "ok"
+    assert result["image"]["mode"] == "placeholder"
+    assert result["image"]["model"] == "stub-image-v0"
+    assert any(diag["code"] == "LUMA0711" for diag in result["diagnostics"])
+    assert tools.core.last_generate_asset["provider"] == "stub-image-v0"
+    assert tools.scene_update_sources[-1] == "generate_image"
+
+
+def test_generate_image_derives_aspect_from_target_node(tmp_path: Path, monkeypatch):
+    monkeypatch.setattr("lumen_deepagent.tools.CoreClient", FakeCoreClient)
+    stub = types.SimpleNamespace(is_configured=lambda: False, generate=lambda **k: None)
+    monkeypatch.setattr("lumen_deepagent.tools.image_provider", stub)
+
+    tools = LumenDesignTools(runtime_config(tmp_path), "Create a landscape hero")
+    tools.scene["nodes"]["hero"] = {
+        "id": "hero",
+        "kind": {"kind": "image", "asset_id": "placeholder", "alt": None},
+        "computed": {"layout_bounds": {"x": 0.0, "y": 0.0, "width": 1600.0, "height": 900.0}},
+    }
+
+    result = json.loads(tools.generate_image("a coastal city skyline", target_node_id="hero"))
+
+    # 1600x900 -> nearest common aspect 16:9, long-edge 1536 -> 1536x864.
+    assert result["image"]["aspect_ratio"] == "16:9"
+    assert result["image"]["width"] == 1536
+    assert result["image"]["height"] == 864
+    assert tools.core.last_generate_asset["request"]["constraints"]["width"] == 1536
+    assert tools.core.last_generate_asset["request"]["constraints"]["height"] == 864
+
+
+def test_generate_image_caches_identical_model_requests(tmp_path: Path, monkeypatch):
+    # Step 6: across loop iterations the same hero is requested repeatedly; the
+    # cache re-uses the asset instead of re-paying the model.
+    monkeypatch.setattr("lumen_deepagent.tools.CoreClient", FakeCoreClient)
+    calls = {"n": 0}
+
+    def fake_generate(**kwargs):
+        calls["n"] += 1
+        return types.SimpleNamespace(
+            image_bytes=b"\x89PNG fake-image-bytes",
+            mime_type="image/png",
+            model="test/image-model",
+            provenance={"created_by": "agent", "source_label": "image generation", "notes": []},
+            license={"name": "generated_commercial_use", "allow_export": True},
+        )
+
+    stub = types.SimpleNamespace(
+        is_configured=lambda: True,
+        generate=fake_generate,
+        configured_model_id=lambda: "test/image-model",
+    )
+    monkeypatch.setattr("lumen_deepagent.tools.image_provider", stub)
+
+    tools = LumenDesignTools(runtime_config(tmp_path), "Create a clinic ad")
+
+    first = json.loads(tools.generate_image("editorial photo of a calm clinic reception", brand_notes=["deep navy"]))
+    assert first["image"]["status"] == "ok"
+    assert first["image"]["mode"] == "model"
+    assert calls["n"] == 1
+
+    # Identical re-request (next iteration) → cache hit: model not called again.
+    second = json.loads(tools.generate_image("editorial photo of a calm clinic reception", brand_notes=["deep navy"]))
+    assert second["image"]["status"] == "ok"
+    assert second["image"]["mode"] == "cached"
+    assert calls["n"] == 1
+    assert second["image"]["asset_id"] == first["image"]["asset_id"]
+
+
+def test_place_asset_in_node_emits_reversible_placement_op(tmp_path: Path, monkeypatch):
+    monkeypatch.setattr("lumen_deepagent.tools.CoreClient", FakeCoreClient)
+    tools = LumenDesignTools(runtime_config(tmp_path), "Place a hero image")
+
+    result = json.loads(
+        tools.place_asset_in_node(
+            "hero", "asset_img_abc", fit="cover", focal_x=0.5, focal_y=0.42, alt="clinic hero"
+        )
+    )
+
+    assert result["placement"]["status"] == "ok"
+    place_ops = [op for op in tools.core.applied_operations if op.get("kind") == "place_asset_in_node"]
+    assert len(place_ops) == 1
+    op = place_ops[0]
+    assert op["node_id"] == "hero"
+    assert op["asset_id"] == "asset_img_abc"
+    assert op["placement"]["fit"] == "cover"
+    assert op["placement"]["focal_point"] == {"x": 0.5, "y": 0.42}
+    assert op["placement"]["alt_text"] == "clinic hero"
+    assert tools.scene_update_sources[-1] == "place_asset_in_node"
+
+
+def test_place_asset_in_slot_targets_the_slot(tmp_path: Path, monkeypatch):
+    monkeypatch.setattr("lumen_deepagent.tools.CoreClient", FakeCoreClient)
+    tools = LumenDesignTools(runtime_config(tmp_path), "Place into a slot")
+
+    result = json.loads(tools.place_asset_in_slot("slot_campaign_hero_image", "asset_img_abc"))
+
+    assert result["placement"]["status"] == "ok"
+    op = [op for op in tools.core.applied_operations if op.get("kind") == "place_asset_in_slot"][-1]
+    assert op["slot_id"] == "slot_campaign_hero_image"
+    assert op["asset_id"] == "asset_img_abc"
+    assert op["placement"]["fit"] == "cover"
+    assert op["placement"]["focal_point"] == {"x": 0.5, "y": 0.5}
+
+
+def test_asset_dispatcher_routes_actions_and_preserves_place_kinds(
+    tmp_path: Path, monkeypatch
+):
+    # Group B: the single `asset` tool fans out to generate_image / generate_qr / place,
+    # and `place` MUST preserve the two distinct core op kinds (node vs slot) — the
+    # critic-flagged invariant.
+    monkeypatch.setattr("lumen_deepagent.tools.CoreClient", FakeCoreClient)
+    stub = types.SimpleNamespace(is_configured=lambda: False, generate=lambda **k: None)
+    monkeypatch.setattr("lumen_deepagent.tools.image_provider", stub)
+    tools = LumenDesignTools(runtime_config(tmp_path), "Create an ad with imagery")
+
+    img = json.loads(tools.asset(action="generate_image", prompt="a serene mountain lake at dawn"))
+    assert img["image"]["status"] == "ok"
+    assert tools.scene_update_sources[-1] == "generate_image"
+
+    qr = json.loads(
+        tools.asset(action="generate_qr", data="https://lumen.example/x", print_media=True, target_width_mm=12.0)
+    )
+    assert qr["qr"]["status"] == "ok"
+    assert tools.scene_update_sources[-1] == "generate_qr"
+
+    node_place = json.loads(
+        tools.asset(action="place", node_id="hero", asset_id="asset_img_abc", focal_y=0.4)
+    )
+    assert node_place["placement"]["status"] == "ok"
+    assert tools.scene_update_sources[-1] == "place_asset_in_node"
+    assert any(op.get("kind") == "place_asset_in_node" for op in tools.core.applied_operations)
+
+    slot_place = json.loads(
+        tools.asset(action="place", slot_id="slot_campaign_hero_image", asset_id="asset_img_abc")
+    )
+    assert slot_place["placement"]["status"] == "ok"
+    assert tools.scene_update_sources[-1] == "place_asset_in_slot"
+    assert any(op.get("kind") == "place_asset_in_slot" for op in tools.core.applied_operations)
+
+    # Bad requests fail closed (no new scene mutation).
+    sources_before = list(tools.scene_update_sources)
+    assert json.loads(tools.asset(action="place", asset_id="asset_img_abc"))["error_code"] == "asset.bad_request"
+    assert json.loads(tools.asset(action="generate_image"))["error_code"] == "asset.bad_request"
+    assert json.loads(tools.asset(action="generate_qr"))["error_code"] == "asset.bad_request"
+    assert json.loads(tools.asset(action="bogus"))["error_code"] == "asset.unknown_action"
+    assert tools.scene_update_sources == sources_before
+
+
+def test_inspect_dispatcher_routes_all_views(tmp_path: Path, monkeypatch):
+    # Group A: the single `inspect` tool returns exactly what the former
+    # summarize_*/query_* singletons returned, for every view.
+    monkeypatch.setattr("lumen_deepagent.tools.CoreClient", FakeCoreClient)
+    tools = LumenDesignTools(runtime_config(tmp_path), "Inspect a scene")
+    tools.compile_dsl_block("page page_test")
+
+    assert json.loads(tools.inspect(view="scene")) == json.loads(tools.summarize_scene())
+    assert json.loads(tools.inspect(view="slots")) == json.loads(tools.summarize_slots())
+    assert json.loads(tools.inspect(view="page", target="page_test")) == json.loads(
+        tools.summarize_page("page_test")
+    )
+    assert json.loads(tools.inspect(view="node_tree", target="page_test")) == json.loads(
+        tools.summarize_node_tree("page_test")
+    )
+    assert json.loads(tools.inspect(view="geometry", target="headline")) == json.loads(
+        tools.query_geometry("headline")
+    )
+    assert json.loads(tools.inspect(view="slot_bindings", target="campaign.headline")) == json.loads(
+        tools.query_slot_bindings("campaign.headline")
+    )
+
+    # Views needing a target fail closed; unknown view is reported.
+    assert json.loads(tools.inspect(view="page"))["error_code"] == "inspect.bad_request"
+    assert json.loads(tools.inspect(view="geometry"))["error_code"] == "inspect.bad_request"
+    assert json.loads(tools.inspect(view="bogus"))["error_code"] == "inspect.unknown_view"
 
 
 def test_critic_preview_export_passes_asset_store_root(tmp_path: Path, monkeypatch):

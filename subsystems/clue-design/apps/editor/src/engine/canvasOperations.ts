@@ -1,10 +1,17 @@
-import type { Node as SceneNodeModel, Operation, Page, Scene, Transform } from "./contracts";
-import { updateNodeTransform, updateNodeTransformAndSize } from "./operations";
+import type { Node as SceneNodeModel, Operation, Page, Rect, Scene, Transform } from "./contracts";
+import {
+  updateNodeAbsoluteBox,
+  updateNodeAbsoluteBoxAndRotation,
+  updateNodeTransform,
+  updateNodeTransformAndSize
+} from "./operations";
 import { nodeSizeForRender, sceneUnitFromCanvas } from "./renderAdapter";
 import {
   clampNodeSizeToParentBounds,
   clampNodeTransformToParentBounds,
   isNodeDirectGeometryEditable,
+  isNodeFreehand,
+  parentComputedOrigin,
   parentInfoForNode
 } from "./sceneQueries";
 
@@ -23,7 +30,21 @@ export interface CanvasTransformInput {
   scaleY: number;
 }
 
-export function canvasDragOperation({
+/** Page-space box a pinned node currently lays out at (`absolute_box`,
+ * falling back to solved geometry for a boxless pin). */
+function pinnedBox(node: SceneNodeModel): Rect | null {
+  if (node.position_mode !== "absolute") {
+    return null;
+  }
+  return node.absolute_box ?? (node.computed ? { ...node.computed.layout_bounds } : null);
+}
+
+/** One drag commit, possibly multi-op: the primary geometry change plus —
+ * when the dragged node is a container — one box translation per pinned
+ * descendant, so "I moved the card" carries its pins along (containers
+ * only; solver reflows never move a pin). All ops land in one batch, one
+ * undo frame. */
+export function canvasDragOperations({
   scene,
   node,
   page,
@@ -37,15 +58,55 @@ export function canvasDragOperation({
   pageOrigin: CanvasPoint;
   canvasX: number;
   canvasY: number;
-}): Operation | null {
+}): Operation[] {
   if (!isNodeDirectGeometryEditable(scene, node.id) || !Number.isFinite(canvasX) || !Number.isFinite(canvasY)) {
-    return null;
+    return [];
+  }
+
+  const pageX = sceneUnitFromCanvas(canvasX - pageOrigin.x, page);
+  const pageY = sceneUnitFromCanvas(canvasY - pageOrigin.y, page);
+
+  // Pinned node: the drag rewrites the page-space box. No parent-bounds
+  // clamp (freehand drags are honored past boundaries and the render clips,
+  // Moda-style) and no guide snapping in v1 — the hand stays in control.
+  const pin = pinnedBox(node);
+  if (pin) {
+    const nextBox = {
+      ...pin,
+      x: roundForOperation(pageX),
+      y: roundForOperation(pageY)
+    };
+    return [
+      updateNodeAbsoluteBox(node, nextBox),
+      ...translatePinnedDescendants(scene, node, {
+        x: nextBox.x - pin.x,
+        y: nextBox.y - pin.y
+      })
+    ];
+  }
+
+  // Child of a Free container: hand-placed transform in the parent's frame;
+  // no clamp — same freehand policy as pinned nodes.
+  if (isNodeFreehand(scene, node.id)) {
+    const origin = parentComputedOrigin(scene, node.id);
+    const nextTransform = {
+      ...node.transform,
+      x: roundForOperation(pageX - origin.x),
+      y: roundForOperation(pageY - origin.y)
+    };
+    return [
+      updateNodeTransform(node, nextTransform),
+      ...translatePinnedDescendants(scene, node, {
+        x: nextTransform.x - node.transform.x,
+        y: nextTransform.y - node.transform.y
+      })
+    ];
   }
 
   const rawTransform = {
     ...node.transform,
-    x: sceneUnitFromCanvas(canvasX - pageOrigin.x, page),
-    y: sceneUnitFromCanvas(canvasY - pageOrigin.y, page)
+    x: pageX,
+    y: pageY
   };
   const nextTransform = clampNodeTransformToParentBounds(
     scene,
@@ -58,7 +119,58 @@ export function canvasDragOperation({
       size: nodeSceneUnitSize(node, page)
     })
   );
-  return updateNodeTransform(node, nextTransform);
+  return [
+    updateNodeTransform(node, nextTransform),
+    ...translatePinnedDescendants(scene, node, {
+      x: nextTransform.x - node.transform.x,
+      y: nextTransform.y - node.transform.y
+    })
+  ];
+}
+
+export function canvasDragOperation(args: {
+  scene: Scene;
+  node: SceneNodeModel;
+  page: Page;
+  pageOrigin: CanvasPoint;
+  canvasX: number;
+  canvasY: number;
+}): Operation | null {
+  return canvasDragOperations(args)[0] ?? null;
+}
+
+/** A translated container carries every pinned descendant's page-space box
+ * by the same delta — the explicit-gesture half of the Phase 1d decision
+ * (solver/agent reflows leave pins alone; a human moving the container
+ * keeps the composition together). */
+function translatePinnedDescendants(
+  scene: Scene,
+  node: SceneNodeModel,
+  delta: { x: number; y: number }
+): Operation[] {
+  if (delta.x === 0 && delta.y === 0) {
+    return [];
+  }
+  const operations: Operation[] = [];
+  const walk = (nodeId: string) => {
+    const child = scene.nodes[nodeId];
+    if (!child) {
+      return;
+    }
+    const pin = pinnedBox(child);
+    if (pin) {
+      operations.push(
+        updateNodeAbsoluteBox(child, {
+          ...pin,
+          x: roundForOperation(pin.x + delta.x),
+          y: roundForOperation(pin.y + delta.y)
+        })
+      );
+    }
+    child.children.forEach(walk);
+  };
+  node.children.forEach(walk);
+  return operations;
 }
 
 export function canvasResizeOperation({
@@ -81,6 +193,23 @@ export function canvasResizeOperation({
   const baseSize = nodeSizeForRender(node, page);
   const nextWidth = Math.max(2, baseSize.width * Math.abs(transform.scaleX));
   const nextHeight = Math.max(2, baseSize.height * Math.abs(transform.scaleY));
+
+  // Pinned node: resize rewrites the page-space box (and bakes the Fixed
+  // size in the same patch); rotation rides the transform. No clamps —
+  // freehand policy, matching drags.
+  if (pinnedBox(node)) {
+    return updateNodeAbsoluteBoxAndRotation(
+      node,
+      {
+        x: roundForOperation(sceneUnitFromCanvas(transform.canvasX - pageOrigin.x, page)),
+        y: roundForOperation(sceneUnitFromCanvas(transform.canvasY - pageOrigin.y, page)),
+        width: roundForOperation(sceneUnitFromCanvas(nextWidth, page)),
+        height: roundForOperation(sceneUnitFromCanvas(nextHeight, page))
+      },
+      transform.rotation
+    );
+  }
+
   const nextTransform: Transform = {
     ...node.transform,
     x: sceneUnitFromCanvas(transform.canvasX - pageOrigin.x, page),
@@ -91,6 +220,23 @@ export function canvasResizeOperation({
     width: sceneUnitFromCanvas(nextWidth, page),
     height: sceneUnitFromCanvas(nextHeight, page)
   };
+
+  // Child of a Free container: parent-relative transform, no clamps.
+  if (isNodeFreehand(scene, node.id)) {
+    const origin = parentComputedOrigin(scene, node.id);
+    return updateNodeTransformAndSize(
+      node,
+      {
+        ...nextTransform,
+        x: roundForOperation(nextTransform.x - origin.x),
+        y: roundForOperation(nextTransform.y - origin.y)
+      },
+      {
+        width: { kind: "fixed", value: roundForOperation(rawSize.width) },
+        height: { kind: "fixed", value: roundForOperation(rawSize.height) }
+      }
+    );
+  }
   const snapped = snapTransformAndSizeToGuides({
     scene,
     node,

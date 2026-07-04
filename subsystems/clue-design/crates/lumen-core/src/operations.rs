@@ -4,8 +4,8 @@ use crate::export_contract::ExportProfile;
 use crate::ids::{AssetId, BrandKitId, NodeId, PageId, SlotId, TemplateRevisionId};
 use crate::scene::{
     AutoLayoutProps, BrandKitRef, ComputedGeometry, CornerRadii, DocumentStatus, Effect, Fill,
-    ImageNode, Medium, Node, NodeKind, PageSize, ParentRef, Rect, Scene, SizeSpec, Stroke,
-    Transform, VectorNode,
+    ImageNode, Medium, Node, NodeKind, PageSize, ParentRef, PositionMode, Rect, Scene, SizeSpec,
+    Stroke, Transform, VectorNode,
 };
 use crate::slots::ContentType;
 use crate::slots::Slot;
@@ -123,6 +123,14 @@ pub struct NodePatch {
     pub layout: OptionalFieldPatch<AutoLayoutProps>,
     pub computed: OptionalFieldPatch<ComputedGeometry>,
     pub locked: FieldPatch<bool>,
+    /// Phase 1 freehand fields. Skipped when unchanged so pinned pre-freehand
+    /// operation fixtures stay byte-identical (mirrors `effects`).
+    #[serde(default, skip_serializing_if = "FieldPatch::is_unchanged")]
+    pub position_mode: FieldPatch<PositionMode>,
+    #[serde(default, skip_serializing_if = "OptionalFieldPatch::is_unchanged")]
+    pub absolute_box: OptionalFieldPatch<Rect>,
+    #[serde(default, skip_serializing_if = "OptionalFieldPatch::is_unchanged")]
+    pub base_anchor: OptionalFieldPatch<Rect>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -592,6 +600,9 @@ impl Scene {
         apply_optional_patch(&mut node.layout, patch.layout);
         apply_optional_patch(&mut node.computed, patch.computed);
         apply_field_patch(&mut node.locked, patch.locked);
+        apply_field_patch(&mut node.position_mode, patch.position_mode);
+        apply_optional_patch(&mut node.absolute_box, patch.absolute_box);
+        apply_optional_patch(&mut node.base_anchor, patch.base_anchor);
 
         Ok(())
     }
@@ -637,7 +648,10 @@ impl Scene {
                     .as_ref()
                     .and_then(|metadata| metadata.path_data.clone())
                 {
-                    node.kind = NodeKind::Vector(VectorNode { path_data });
+                    node.kind = NodeKind::Vector(VectorNode {
+                        path_data,
+                        view_box: None,
+                    });
                 } else {
                     node.kind = NodeKind::Image(ImageNode {
                         asset_id: asset_id.clone(),
@@ -1129,6 +1143,15 @@ impl Scene {
                 }
                 if !matches!(patch.locked, FieldPatch::Unchanged) {
                     inverse.locked = FieldPatch::Set(node.locked);
+                }
+                if !matches!(patch.position_mode, FieldPatch::Unchanged) {
+                    inverse.position_mode = FieldPatch::Set(node.position_mode);
+                }
+                if !matches!(patch.absolute_box, OptionalFieldPatch::Unchanged) {
+                    inverse.absolute_box = optional_restore(&node.absolute_box);
+                }
+                if !matches!(patch.base_anchor, OptionalFieldPatch::Unchanged) {
+                    inverse.base_anchor = optional_restore(&node.base_anchor);
                 }
                 Ok(Some(vec![Operation::UpdateNode {
                     node_id: node_id.clone(),

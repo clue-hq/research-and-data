@@ -1,5 +1,6 @@
 "use client";
 
+import { useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { handlePoint, type Box, type ResizeHandle } from "@/engine/transformerMath";
 
 /**
@@ -29,6 +30,10 @@ const ROTATE_OFFSET = 22;
 export interface SelectionOverlayProps {
   /** Selected node box + rotation in descriptor space (null = no selection). */
   selection: { box: Box; rotation: number } | null;
+  /** Non-primary members of a multi-selection (shift/Cmd+click). Drawn as
+   * plain outlines with no handles — they are agent edit targets, not the
+   * active transform target. */
+  secondarySelections?: Array<{ box: Box; rotation: number }>;
   /** Hovered hit target in descriptor space. Hover chrome is intentionally DOM/SVG-only. */
   hover?: { box: Box; rotation: number } | null;
   /** Direct children of a selected container, for the labeled-container chrome. */
@@ -47,10 +52,15 @@ export interface SelectionOverlayProps {
   slotKeys?: string[];
   /** Focused diagnostics relevant to the selected node/artboard. */
   diagnosticCounts?: { errors: number; warnings: number };
+  /** Normalized 0..1 focal point of a selected image node; null = no focal dot. */
+  focal?: { x: number; y: number } | null;
+  /** Commit a new focal point (drag end); only wired for image nodes. */
+  onFocalChange?: (focal: { x: number; y: number }) => void;
 }
 
 export function SelectionOverlay({
   selection,
+  secondarySelections = [],
   hover = null,
   containerChildren = [],
   containerLabel,
@@ -60,7 +70,9 @@ export function SelectionOverlay({
   showHandles = true,
   disabledReason = null,
   slotKeys = [],
-  diagnosticCounts = { errors: 0, warnings: 0 }
+  diagnosticCounts = { errors: 0, warnings: 0 },
+  focal = null,
+  onFocalChange
 }: SelectionOverlayProps) {
   const toScreen = (p: { x: number; y: number }) => ({
     x: pageOrigin.x + p.x * zoom,
@@ -111,6 +123,20 @@ export function SelectionOverlay({
         />
       ) : null}
 
+      {secondarySelections.map((secondary, index) => (
+        <SelectionBox
+          key={`secondary-${index}`}
+          box={secondary.box}
+          rotation={secondary.rotation}
+          toScreen={toScreen}
+          role="secondary-selection-box"
+          stroke="#256c70"
+          strokeWidth={1.5}
+          strokeDasharray="5 3"
+          opacity={0.8}
+        />
+      ))}
+
       {selection ? (
         <SelectionBox
           box={selection.box}
@@ -155,6 +181,17 @@ export function SelectionOverlay({
         : null}
 
       {selection && showHandles ? <RotateHandle selection={selection} toScreen={toScreen} /> : null}
+
+      {selection && focal && onFocalChange ? (
+        <FocalHandle
+          box={selection.box}
+          focal={focal}
+          pageOrigin={pageOrigin}
+          zoom={zoom}
+          toScreen={toScreen}
+          onFocalChange={onFocalChange}
+        />
+      ) : null}
 
       {marquee ? (
         <rect
@@ -207,6 +244,96 @@ function SelectionBox({
       strokeDasharray={strokeDasharray}
       opacity={opacity}
     />
+  );
+}
+
+/**
+ * Convert a screen point (SVG-local px) to a normalized 0..1 focal point within a
+ * descriptor-space box, using the overlay's `pageOrigin + p × zoom` transform. Pure
+ * + exported so the drag math is unit-tested without a DOM. Mirrors the cover/focal
+ * crop semantics the renderers use (focal is the point kept in view).
+ */
+export function focalFromScreenPoint(
+  point: { x: number; y: number },
+  box: Box,
+  pageOrigin: { x: number; y: number },
+  zoom: number
+): { x: number; y: number } {
+  const descriptorX = zoom !== 0 ? (point.x - pageOrigin.x) / zoom : box.x;
+  const descriptorY = zoom !== 0 ? (point.y - pageOrigin.y) / zoom : box.y;
+  const clamp01 = (value: number) => Math.min(1, Math.max(0, value));
+  return {
+    x: box.width > 0 ? clamp01((descriptorX - box.x) / box.width) : 0.5,
+    y: box.height > 0 ? clamp01((descriptorY - box.y) / box.height) : 0.5
+  };
+}
+
+function FocalHandle({
+  box,
+  focal,
+  pageOrigin,
+  zoom,
+  toScreen,
+  onFocalChange
+}: {
+  box: Box;
+  focal: { x: number; y: number };
+  pageOrigin: { x: number; y: number };
+  zoom: number;
+  toScreen: (p: { x: number; y: number }) => { x: number; y: number };
+  onFocalChange: (focal: { x: number; y: number }) => void;
+}) {
+  const [drag, setDrag] = useState<{ x: number; y: number } | null>(null);
+  const draggingRef = useRef(false);
+  const latestRef = useRef(focal);
+  const current = drag ?? focal;
+  const point = toScreen({ x: box.x + box.width * current.x, y: box.y + box.height * current.y });
+
+  const svgLocal = (event: ReactPointerEvent<SVGCircleElement>) => {
+    const rect = event.currentTarget.ownerSVGElement?.getBoundingClientRect();
+    return { x: event.clientX - (rect?.left ?? 0), y: event.clientY - (rect?.top ?? 0) };
+  };
+  const compute = (event: ReactPointerEvent<SVGCircleElement>) => {
+    const next = focalFromScreenPoint(svgLocal(event), box, pageOrigin, zoom);
+    latestRef.current = next;
+    return next;
+  };
+
+  return (
+    <g data-role="focal-point" aria-label="Image focal point">
+      <circle cx={point.x} cy={point.y} r={11} fill="#256c70" fillOpacity={0.18} stroke="#256c70" strokeWidth={1} />
+      <circle
+        data-testid="focal-handle"
+        cx={point.x}
+        cy={point.y}
+        r={6}
+        fill="#256c70"
+        stroke="#ffffff"
+        strokeWidth={2}
+        style={{ pointerEvents: "auto", cursor: "grab" }}
+        onPointerDown={(event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          draggingRef.current = true;
+          event.currentTarget.setPointerCapture?.(event.pointerId);
+          setDrag(compute(event));
+        }}
+        onPointerMove={(event) => {
+          if (draggingRef.current) {
+            setDrag(compute(event));
+          }
+        }}
+        onPointerUp={(event) => {
+          if (!draggingRef.current) {
+            return;
+          }
+          draggingRef.current = false;
+          event.currentTarget.releasePointerCapture?.(event.pointerId);
+          onFocalChange(latestRef.current);
+          setDrag(null);
+        }}
+      />
+    </g>
   );
 }
 
