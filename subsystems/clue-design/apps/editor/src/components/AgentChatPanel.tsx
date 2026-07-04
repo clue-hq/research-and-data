@@ -2,6 +2,12 @@ import { AlertTriangle, Bot, Check, CheckCircle2, Crosshair, Eye, FileCode2, His
 import { useState, type FormEvent } from "react";
 import type { Diagnostic, NodeId, Operation, PageId, Scene } from "@/engine/contracts";
 import type { AgentRunEvent, EditorAgentResult } from "@/engine/agentRunner";
+import {
+  briefIsEmpty,
+  composeBriefPrompt,
+  EMPTY_BRIEF,
+  type DesignBrief
+} from "@/engine/agentBrief";
 import { agentChecklist, agentEventLabel } from "@/engine/agentChecklist";
 import type { TargetChip } from "@/hooks/useTargetChips";
 import type { CompareView } from "@/hooks/useTurnCheckpoints";
@@ -111,6 +117,10 @@ export function AgentChatPanel({
   onRevertTurn
 }: AgentChatPanelProps) {
   const isBusy = isRunning || pendingReview;
+  // 2e Design-Plan pre-brief: form values live here (view state); the prompt
+  // composition is the pure engine helper. Applies to direct sends only —
+  // queued messages stay verbatim so their chips read as typed.
+  const [brief, setBrief] = useState<DesignBrief>(EMPTY_BRIEF);
   const submitPrompt = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const trimmed = draft.trim();
@@ -124,7 +134,7 @@ export function AgentChatPanel({
       onDraftChange("");
       return;
     }
-    onSend(trimmed);
+    onSend(composeBriefPrompt(brief, trimmed));
   };
 
   return (
@@ -262,6 +272,63 @@ export function AgentChatPanel({
           </div>
         </div>
       ) : null}
+      <details className="agent-prebrief">
+        <summary>
+          Design brief (optional)
+          {!briefIsEmpty(brief) ? <em> · set</em> : null}
+        </summary>
+        <div className="agent-prebrief-grid">
+          <label className="field">
+            <span>Variations</span>
+            <select
+              value={brief.variations}
+              onChange={(event) =>
+                setBrief({ ...brief, variations: Number(event.target.value) })
+              }
+            >
+              <option value={1}>1 design</option>
+              <option value={2}>2 concepts (as pages)</option>
+              <option value={3}>3 concepts (as pages)</option>
+              <option value={4}>4 concepts (as pages)</option>
+            </select>
+          </label>
+          <label className="field">
+            <span>Brand adherence</span>
+            <select
+              value={brief.brandAdherence}
+              onChange={(event) =>
+                setBrief({
+                  ...brief,
+                  brandAdherence: event.target.value as DesignBrief["brandAdherence"]
+                })
+              }
+            >
+              <option value="">No preference</option>
+              <option value="strict">Strict</option>
+              <option value="flexible">Flexible</option>
+            </select>
+          </label>
+          <label className="field">
+            <span>Focus</span>
+            <input
+              type="text"
+              value={brief.focus}
+              placeholder="e.g. the discount, the venue photo"
+              onChange={(event) => setBrief({ ...brief, focus: event.target.value })}
+            />
+          </label>
+          <label className="field">
+            <span>Call to action</span>
+            <input
+              type="text"
+              value={brief.cta}
+              placeholder="e.g. Book your seat"
+              onChange={(event) => setBrief({ ...brief, cta: event.target.value })}
+            />
+          </label>
+        </div>
+        <p className="muted">Folded into your next sent message; queued messages stay as typed.</p>
+      </details>
       <form className="agent-chat-form" onSubmit={submitPrompt}>
         <label className="field">
           <span>Message the agent</span>
