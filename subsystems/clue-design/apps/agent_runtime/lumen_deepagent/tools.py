@@ -172,12 +172,21 @@ class LumenDesignTools:
         self.dsl_session: Optional[JsonObject] = None
         self.latest_export_summary: Optional[JsonObject] = None
         self.latest_preview_bundle: Optional[JsonObject] = None
+        # Agent-improvement follow-up 1: memoized pre-existing-diagnostics
+        # baseline, populated on first access by `baseline_preflight_diagnostics`.
+        # None means "not computed yet" (distinct from `[]`, "computed, clean").
+        self._baseline_diagnostics: Optional[list[JsonObject]] = None
         self._write_json(
             self.trace_dir / "input.json",
             {
                 "run_id": self.run_id,
                 "prompt": prompt,
                 "seeded_from_initial_scene": self.seeded_from_initial_scene,
+                # Agent-improvement follow-up 3: the initial brief carries the
+                # same scene summary (freehand/frozen-doc state included) that
+                # repair requests already see, so the author is never blind to
+                # frozen geometry on the FIRST pass — only during repairs.
+                "scene_summary": self._scene_summary(),
             },
         )
         self.record(
@@ -1238,6 +1247,61 @@ class LumenDesignTools:
         )
         return json.dumps(payload, indent=2)
 
+    def baseline_preflight_diagnostics(self) -> list[JsonObject]:
+        """Preflight diagnostics on the scene AS SEEDED, before this turn's own
+        edits. (Agent-improvement follow-up 1, the frozen-doc turn wedge.)
+
+        A live turn can seed from a document that already carries legacy
+        errors — e.g. LUMV0810 slot-fixture overflow on frozen/pinned text
+        that predates this edit entirely. Without a baseline, the Phase A
+        repair loop cannot tell "the turn broke this" from "this was already
+        broken," and burns its whole iteration budget re-fixing errors that
+        were never in scope (run_4a0feb15048e4fbe993029bd2cab436f: two
+        pre-existing LUMV0810s ate all 3 iterations while the user's actual
+        positional ask never landed).
+
+        Memoized and UNTRACED on purpose: this runs once, before iteration 1,
+        against the seeded scene only (a fresh/unseeded scene has nothing to
+        baseline against). It must not consume an iteration slot, must not
+        bump `self.iteration`, and must not write into `iterations/NNN/` —
+        those are reserved for this turn's own authoring attempts. It reuses
+        the same core preflight call and `diagnostics_from` normalizer as
+        `preflight_design` so the diagnostic shape (and therefore the
+        `(code, subject)` keys the loop diffs against) is identical."""
+        if self._baseline_diagnostics is not None:
+            return self._baseline_diagnostics
+        if not self.seeded_from_initial_scene:
+            self._baseline_diagnostics = []
+            return self._baseline_diagnostics
+        try:
+            brand_kit = self.core.platform_default_brand_kit()
+            response = self.core.preflight_scene(self.scene, brand_kit)
+        except CoreError:
+            # A baseline that cannot be computed is treated as empty — the
+            # repair loop falls back to today's un-scoped behavior rather
+            # than blocking the turn on a baseline-capture failure.
+            self._baseline_diagnostics = []
+            return self._baseline_diagnostics
+        diagnostics = [
+            diag.model_dump(mode="json")
+            for diag in diagnostics_from(response.get("diagnostics", []))
+        ]
+        self._baseline_diagnostics = diagnostics
+        self._write_json(
+            self.trace_dir / "baseline_preflight.json",
+            {"baseline_diagnostics": diagnostics},
+        )
+        self.record(
+            "coordinator",
+            "baseline_preflight_captured",
+            output_summary=(
+                f"{len(diagnostics)} pre-existing diagnostic(s) on the seeded scene"
+            ),
+            diagnostics=diagnostics,
+            payload={"baseline_diagnostics": diagnostics},
+        )
+        return diagnostics
+
     def export_preview(self, export_format: Optional[str] = None) -> str:
         """Export and validate an SVG or PNG preview for visual critique."""
         preview_format = (export_format or self.config.preview_format).lower()
@@ -2143,6 +2207,7 @@ class LumenDesignTools:
         summary: str,
         critique_json: str = "{}",
         ops_valid_through_iteration: Optional[int] = None,
+        baseline_advisory_json: str = "null",
     ) -> str:
         """Write the final run summary in a later-API-compatible local format.
 
@@ -2150,8 +2215,18 @@ class LumenDesignTools:
         operations are part of the returned draft scene (the keep-best snapshot
         can restore an EARLIER iteration's scene; ops from later iterations must
         then not be replayed by the editor). None means all ok iterations.
+
+        `baseline_advisory_json` (agent-improvement follow-up 1): pre-existing
+        diagnostics on the seeded scene that this turn never addressed —
+        distinct field from `critique`/`diagnostics` on purpose, so the editor
+        can show "N pre-existing issues predate this turn" without implying
+        the turn caused or must fix them. `"null"` (default) means either an
+        unseeded run or a run with no unaddressed baseline issues.
         """
         critique = json.loads(critique_json) if critique_json.strip() else {}
+        baseline_advisory = (
+            json.loads(baseline_advisory_json) if baseline_advisory_json.strip() else None
+        )
         payload = {
             "run_id": self.run_id,
             "status": status,
@@ -2165,6 +2240,7 @@ class LumenDesignTools:
             "scene_update_sources": self.scene_update_sources,
             "seeded_from_initial_scene": self.seeded_from_initial_scene,
             "ops_valid_through_iteration": ops_valid_through_iteration,
+            "baseline_advisory": baseline_advisory,
         }
         self._write_json(self.trace_dir / "final.json", payload)
         # Persist the FULL final scene (not just the summary) so offline tooling — the

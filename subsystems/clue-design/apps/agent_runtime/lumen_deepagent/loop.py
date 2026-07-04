@@ -272,8 +272,29 @@ class LumenQualityLoop:
         # edit scope that edit-scoped acceptance judges critique issues against.
         self.edited_node_ids: set = set()
         self.edited_page_ids: set = set()
+        # Agent-improvement follow-up 1 (baseline-diff repair scoping): errors
+        # that already existed on the SEEDED scene before this turn touched it,
+        # keyed by (code, subject) — see `_diagnostic_key`. Populated once at
+        # the start of `run()`. The Phase A preflight gate must block only on
+        # errors NOT in this set (i.e. errors this turn introduced); baseline
+        # errors are surfaced as advisory context instead of burning repair
+        # iterations. Empty for an unseeded (fresh) run — there is no prior
+        # state to baseline against.
+        self.baseline_diagnostic_keys: set = set()
+        self.baseline_diagnostics: list[dict] = []
+        # Baseline errors the turn never touched (still present, unaddressed,
+        # by the time the run finalizes) — surfaced as advisory in the result.
+        self.unaddressed_baseline_diagnostics: list[dict] = []
 
     def run(self, user_request: str) -> dict:
+        # Agent-improvement follow-up 1: capture the seeded scene's OWN
+        # diagnostics before this turn's first draft/edit ever applies. Must
+        # happen before the iteration loop so every gate this run runs sees
+        # the same baseline (the loop never re-captures mid-run).
+        self.baseline_diagnostics = self.tools.baseline_preflight_diagnostics()
+        self.baseline_diagnostic_keys = {
+            _diagnostic_key(diag) for diag in self.baseline_diagnostics
+        }
         knowledge = json.loads(self.tools.load_knowledge(user_request))
         self.state.loaded_knowledge = [
             KnowledgeSnippet.model_validate(snippet)
@@ -406,6 +427,7 @@ class LumenQualityLoop:
                         "accepted",
                         StopReason.accepted.value,
                         decision.rationale,
+                        baseline_advisory_json=self._baseline_advisory_payload_json(),
                     )
                 )
             if decision.action_mode == AgentActionMode.stop_with_gap:
@@ -785,7 +807,22 @@ class LumenQualityLoop:
             iteration_record.preflight_summary = PreflightSummary.model_validate(
                 preflight_summary
             )
-            if tool_has_blocking_failure(preflight_summary) or preflight_summary.get("has_errors"):
+            # Agent-improvement follow-up 1 (baseline-diff repair scoping): the
+            # clean-draft gate blocks ONLY on errors this turn INTRODUCED, never
+            # on errors that already existed on the seeded scene before this
+            # turn touched it. Without this, a doc with pre-existing legacy
+            # errors (e.g. LUMV0810 slot-fixture overflow on frozen/pinned
+            # text) wedges every repair iteration re-fixing out-of-scope
+            # errors while the user's actual ask never converges
+            # (run_4a0feb15048e4fbe993029bd2cab436f).
+            all_preflight_diagnostics = preflight_summary.get("diagnostics", [])
+            introduced_diagnostics = self._introduced_diagnostics(all_preflight_diagnostics)
+            baseline_advisory = self._baseline_advisory(all_preflight_diagnostics)
+            self.unaddressed_baseline_diagnostics = baseline_advisory
+            introduced_summary = {**preflight_summary, "diagnostics": introduced_diagnostics}
+            if tool_has_blocking_failure(introduced_summary) or has_blocking_diagnostics(
+                introduced_diagnostics
+            ):
                 debug_preview = json.loads(
                     self.tools.export_preview_bundle(
                         debug_only=True,
@@ -797,8 +834,8 @@ class LumenQualityLoop:
                     iteration_record.export_summary = ExportSummary.model_validate(
                         debug_export_summary
                     )
-                target = first_diagnostic_target(preflight_summary)
-                repair_intent = diagnostic_repair_intent(preflight_summary)
+                target = first_diagnostic_target(introduced_summary)
+                repair_intent = diagnostic_repair_intent(introduced_summary)
                 recommendation = json.loads(
                     self.tools.recommend_edit_surface(
                         repair_intent,
@@ -806,7 +843,7 @@ class LumenQualityLoop:
                     )
                 ).get("recommendation", "dsl")
                 classification = classify_diagnostics(
-                    preflight_summary.get("diagnostics", []),
+                    introduced_diagnostics,
                     target,
                     scene=self.tools.scene,
                     prior_context=block_request.repair_context,
@@ -818,7 +855,7 @@ class LumenQualityLoop:
                 )
                 feedback = {
                     "kind": "preflight",
-                    "feedback": preflight_summary,
+                    "feedback": introduced_summary,
                     "debug_preview": debug_export_summary,
                     "target": target,
                     "recommended_edit_surface": recommendation,
@@ -834,13 +871,27 @@ class LumenQualityLoop:
                     ),
                     **repair_class_payload(classification),
                 }
+                if baseline_advisory:
+                    # The repair prompt must never be told to fix baseline
+                    # errors — they are handed to the author only as advisory
+                    # context, never as part of what to repair.
+                    feedback["baseline_advisory"] = {
+                        "count": len(baseline_advisory),
+                        "diagnostics": baseline_advisory,
+                        "note": (
+                            f"{len(baseline_advisory)} pre-existing issue(s) on this "
+                            "document were not addressed — they predate this turn "
+                            "and are out of scope; do not spend the repair budget "
+                            "on them unless the user explicitly asks."
+                        ),
+                    }
                 if surgical:
                     feedback["surgical_repair"] = True
                     feedback["surgical_target"] = target
                 repair_request = json.loads(
                     self.tools.create_repair_request(
                         exact_feedback=json.dumps(feedback, indent=2),
-                        diagnostics_json=json.dumps(preflight_summary.get("diagnostics", [])),
+                        diagnostics_json=json.dumps(introduced_diagnostics),
                         target_json=json.dumps(target),
                         allowed_edit_surface=recommendation,
                         forbidden_changes_json=json.dumps(
@@ -858,6 +909,10 @@ class LumenQualityLoop:
                 self.previous_feedback.append(feedback)
                 iteration_record.stop_reason = StopReason.preflight_failed
                 continue
+
+            # Preflight is CLEAN for gating purposes (no errors this turn
+            # introduced), even if pre-existing baseline errors remain. Those
+            # ride along as advisory — never re-checked here, never blocking.
 
             # Preflight passed: this draft is renderable AND valid — a strictly
             # better keep-best candidate than a compile-only draft.
@@ -963,6 +1018,7 @@ class LumenQualityLoop:
                         StopReason.accepted.value,
                         critique.summary,
                         critique_json=critique.model_dump_json(),
+                        baseline_advisory_json=self._baseline_advisory_payload_json(),
                     )
                 )
 
@@ -1016,6 +1072,7 @@ class LumenQualityLoop:
                             "modify.",
                             critique_json=critique.model_dump_json(),
                             ops_valid_through_iteration=self.state.current_iteration,
+                            baseline_advisory_json=self._baseline_advisory_payload_json(),
                         )
                     )
 
@@ -1078,6 +1135,7 @@ class LumenQualityLoop:
                             self._latest_visual_critique_payload()
                         ),
                         ops_valid_through_iteration=self.best_iteration,
+                        baseline_advisory_json=self._baseline_advisory_payload_json(),
                     )
                 )
             self.state.status = "completed_with_warnings"
@@ -1089,6 +1147,7 @@ class LumenQualityLoop:
                     "which was not explicitly accepted by the visual reviewer.",
                     critique_json=json.dumps(last_feedback),
                     ops_valid_through_iteration=self.best_iteration,
+                    baseline_advisory_json=self._baseline_advisory_payload_json(),
                 )
             )
         self.state.status = "failed"
@@ -1138,6 +1197,58 @@ class LumenQualityLoop:
                     stack.append(child)
         return scope
 
+    def _introduced_diagnostics(self, diagnostics: list[dict]) -> list[dict]:
+        """Diagnostics from THIS turn's gate that are NOT in the baseline.
+
+        Agent-improvement follow-up 1: a diagnostic counts as baseline (and is
+        dropped here) only when its (code, subject) key was already present on
+        the seeded scene BEFORE this turn's first edit. A baseline error that
+        MOVED to a new subject (e.g. the same slot-fixture overflow code now
+        keyed to a different node) is a different key and so counts as
+        introduced — it is not the same error, it is a new occurrence. A
+        baseline error that simply disappeared needs no handling here; it is
+        just absent from `diagnostics`, which is fine (an improvement)."""
+        if not self.baseline_diagnostic_keys:
+            return list(diagnostics)
+        return [
+            diag
+            for diag in diagnostics
+            if not isinstance(diag, dict)
+            or _diagnostic_key(diag) not in self.baseline_diagnostic_keys
+        ]
+
+    def _baseline_advisory(self, diagnostics: list[dict]) -> list[dict]:
+        """The subset of `diagnostics` that ARE baseline (pre-existing, out of
+        this turn's scope) — the complement of `_introduced_diagnostics`, used
+        to surface "N pre-existing issues were not addressed" advisories
+        instead of silently dropping them."""
+        if not self.baseline_diagnostic_keys:
+            return []
+        return [
+            diag
+            for diag in diagnostics
+            if isinstance(diag, dict) and _diagnostic_key(diag) in self.baseline_diagnostic_keys
+        ]
+
+    def _baseline_advisory_payload_json(self) -> str:
+        """The turn-result advisory payload for `finalize_run`: pre-existing
+        baseline issues that were never addressed this turn (agent-improvement
+        follow-up 1). `"null"` when there is nothing to advise — either an
+        unseeded run or every baseline issue happened to be resolved anyway."""
+        if not self.unaddressed_baseline_diagnostics:
+            return "null"
+        return json.dumps(
+            {
+                "count": len(self.unaddressed_baseline_diagnostics),
+                "diagnostics": self.unaddressed_baseline_diagnostics,
+                "note": (
+                    f"{len(self.unaddressed_baseline_diagnostics)} pre-existing "
+                    "issue(s) on this document were not addressed — they predate "
+                    "this turn."
+                ),
+            }
+        )
+
     def _latest_visual_critique_payload(self) -> dict:
         """The most recent visual critique payload, for advisory surfacing."""
         for entry in reversed(self.previous_feedback):
@@ -1181,6 +1292,7 @@ class LumenQualityLoop:
         rejected scene from the last repair attempt.
         """
         self._restore_best_scene()
+        kwargs.setdefault("baseline_advisory_json", self._baseline_advisory_payload_json())
         return json.loads(
             self.tools.finalize_run("failed", stop_reason, message, **kwargs)
         )
@@ -2293,15 +2405,37 @@ def slot_fixture_violation_feedback(prior: dict, rejected_source: str) -> dict:
     }
 
 
+def _diagnostic_key(diagnostic: dict) -> tuple:
+    """Stable identity for a diagnostic: (code, subject).
+
+    `subject` is whichever target field is set, preferring the most specific
+    (node > slot > page), falling back to None for document-level diagnostics
+    (e.g. brand/font asset warnings with no target at all). Two diagnostics
+    with the same code but a DIFFERENT subject are different errors — this is
+    what makes a baseline error that moves to a new node count as introduced
+    rather than pre-existing (agent-improvement follow-up 1)."""
+    subject = (
+        diagnostic.get("target_node_id")
+        or diagnostic.get("target_slot_id")
+        or diagnostic.get("target_slot_key")
+        or diagnostic.get("target_page_id")
+    )
+    return (diagnostic.get("code"), subject)
+
+
+def has_blocking_diagnostics(diagnostics: list) -> bool:
+    return any(
+        isinstance(diagnostic, dict) and diagnostic.get("severity") in {"error", "blocker"}
+        for diagnostic in diagnostics
+    )
+
+
 def tool_has_blocking_failure(summary: dict) -> bool:
     if summary.get("status") == "error":
         return True
     if summary.get("validation_errors"):
         return True
-    for diagnostic in summary.get("diagnostics", []):
-        if diagnostic.get("severity") in {"error", "blocker"}:
-            return True
-    return False
+    return has_blocking_diagnostics(summary.get("diagnostics", []))
 
 
 def infer_preview_target(user_request: str) -> PreviewTarget:

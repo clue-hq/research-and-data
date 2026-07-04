@@ -132,7 +132,11 @@ SEEDED_CONTINUATION_RECIPE = (
     'intent, not error. A container with `layout_mode: "free"` holds hand-placed children: '
     "do not re-stack, re-order, or re-flow them. Overflow and text-fit warnings on freehand "
     "nodes (LUMV0800/LUMV0801/LUMV0902-4) are ADVISORY — the human chose that placement; do "
-    'not "fix" them unless the user explicitly asks.'
+    'not "fix" them unless the user explicitly asks. INSERTING a NEW element into a '
+    '`layout_mode: "free"` container: a free container does not lay out children, so a new '
+    "element with no transform lands stacked at the container's origin (0,0), on top of "
+    "existing content. You MUST give every new child an explicit `p(x,y)` placed within the "
+    "container's bounds and an explicit `s(w,h)` — never omit them and rely on layout to place it."
 )
 
 
