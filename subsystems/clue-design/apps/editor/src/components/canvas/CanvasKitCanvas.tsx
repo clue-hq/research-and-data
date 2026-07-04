@@ -28,6 +28,7 @@ import type { SnapGuide } from "@/engine/canvasOperations";
 import {
   getNode,
   getPage,
+  isNodeFreezableOnGesture,
   isNodePinned,
   nodeDisplayName,
   topLevelAncestorId
@@ -37,6 +38,7 @@ import { loadCanvasKit } from "@/engine/canvaskit/loadCanvasKit";
 import { skiaMeasurements } from "@/engine/canvaskit/skiaMeasurements";
 import type { Box } from "@/engine/transformerMath";
 import { nodePatch, set, updateTextNode } from "@/engine/operations";
+import { freezeLayoutEdit, type StructuredEdit } from "@/engine/structuredEdits";
 import {
   clampWorkspacePanToKeepVisible,
   clampWorkspaceZoom,
@@ -95,6 +97,11 @@ export interface CanvasKitCanvasProps {
   /** Called after the C4 measurement pass updates the engine's `computed`
    * (which does not emit a delta), so the host can re-sync its React scene. */
   onSceneRefresh?: () => void;
+  /** Handoff-absolute (lazy seam): applies a structured edit through the
+   * canonical engine-apply-then-commit path, returning the post-apply engine
+   * scene (or null if rejected/unavailable) so a gesture can continue
+   * against fresh geometry after an in-gesture freeze. */
+  onStructuredEdit?: (edit: StructuredEdit) => Scene | null;
 }
 
 interface Preview {
@@ -122,7 +129,8 @@ export function CanvasKitCanvas({
   onWorkspaceFitTargetChange,
   onOpenDiagnostics,
   onOpenExport,
-  onSceneRefresh
+  onSceneRefresh,
+  onStructuredEdit
 }: CanvasKitCanvasProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const stateRef = useRef<GestureState>(initialGestureState);
@@ -771,6 +779,20 @@ export function CanvasKitCanvas({
           }
           const pointer = pointerFromEvent(event);
           const target = pressTargetFor(pointer);
+          // Handoff-absolute (lazy seam): a plain node press that is blocked
+          // ONLY by solver ownership (not locked, not some other reason)
+          // freezes the layout silently before the gesture starts, so the
+          // SAME press-drag-release the human is already mid-gesture on just
+          // works — no tooltip, no blocked drag, no layout jargon. Zero
+          // motion (freeze bakes children at their exact solved positions),
+          // and idempotent (a no-op once frozen), so firing it here even on
+          // a click-that-never-drags is harmless. Resize/rotate handles
+          // never appear on a managed node's chrome (showHandles requires
+          // direct-geometry-editable), so "node" is the only press target
+          // that can be blocked this way.
+          if (target.kind === "node" && isNodeFreezableOnGesture(scene, target.nodeId)) {
+            onStructuredEdit?.(freezeLayoutEdit());
+          }
           if (hitTraceEnabled()) {
             const scenePoint = descriptorToScene(pointer, unitScale);
             hitTrace({

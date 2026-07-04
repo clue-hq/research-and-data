@@ -2,6 +2,7 @@
 
 import { useMemo } from "react";
 import type { Diagnostic, NodeId, Operation, PageId, Scene } from "@/engine/contracts";
+import type { StructuredEdit } from "@/engine/structuredEdits";
 import type { OptimisticEnginePort } from "@/engine/wasmEngine";
 import { canvasKitFlagEnabled } from "@/engine/wasmEngine";
 import { createWorkspaceModel } from "@/engine/workspaceLayout";
@@ -43,6 +44,14 @@ export interface EditorCanvasProps {
   onOpenExport?: () => void;
   /** CanvasKit-only: re-sync the host scene after the C4 measurement pass. */
   onSceneRefresh?: () => void;
+  /** Handoff-absolute (lazy seam), CanvasKit-only: applies a structured edit
+   * through the canonical engine-apply-then-commit path and returns the
+   * post-apply engine scene (or null if the engine rejected/was
+   * unavailable), so a gesture blocked only by solver ownership can freeze
+   * the layout and continue against fresh geometry in the same pointer
+   * gesture. Omitted on the Konva fallback (test-only; freeze is a
+   * CanvasKit-path concern). */
+  onStructuredEdit?: (edit: StructuredEdit) => Scene | null;
 }
 
 export function EditorCanvas(props: EditorCanvasProps) {

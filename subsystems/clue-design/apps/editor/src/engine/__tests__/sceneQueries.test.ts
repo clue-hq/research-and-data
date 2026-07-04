@@ -12,6 +12,7 @@ import {
   flattenPageNodeIds,
   isContainerNode,
   isNodeDirectGeometryEditable,
+  isNodeFreezableOnGesture,
   nodeIdForAsset,
   nodePageSpaceBox,
   pageIdForNode,
@@ -58,6 +59,67 @@ describe("scene queries", () => {
 
     expect(isNodeDirectGeometryEditable(scene, "node_contact_name")).toBe(false);
     expect(isNodeDirectGeometryEditable(scene, "missing_node")).toBe(false);
+  });
+
+  describe("isNodeFreezableOnGesture (handoff-absolute lazy seam)", () => {
+    it("is true only for a node blocked solely by Stack solver ownership", () => {
+      const scene = cloneScene();
+      scene.nodes.stack = {
+        ...scene.nodes.node_contact_name,
+        id: "stack",
+        name: "Stack",
+        kind: { kind: "auto_layout", direction: "column", wrap: false },
+        children: ["node_contact_name"]
+      };
+      scene.pages.page_a4.children = ["stack"];
+
+      // Blocked, and a freeze would fix it (Stack-managed, not freehand).
+      expect(isNodeFreezableOnGesture(scene, "node_contact_name")).toBe(true);
+    });
+
+    it("is false for a node that is already directly geometry-editable", () => {
+      const scene = cloneScene();
+      // No auto-layout ancestor: already free.
+      expect(isNodeDirectGeometryEditable(scene, "node_contact_name")).toBe(true);
+      expect(isNodeFreezableOnGesture(scene, "node_contact_name")).toBe(false);
+    });
+
+    it("is false for a locked node even under a Stack parent (freeze cannot fix locking)", () => {
+      const scene = cloneScene();
+      scene.nodes.stack = {
+        ...scene.nodes.node_contact_name,
+        id: "stack",
+        name: "Stack",
+        kind: { kind: "auto_layout", direction: "column", wrap: false },
+        children: ["node_contact_name"]
+      };
+      scene.pages.page_a4.children = ["stack"];
+      scene.nodes.node_contact_name.locked = true;
+
+      expect(isNodeFreezableOnGesture(scene, "node_contact_name")).toBe(false);
+    });
+
+    it("is false for a freehand child of a Free auto-layout container (already editable)", () => {
+      const scene = cloneScene();
+      scene.nodes.stack = {
+        ...scene.nodes.node_contact_name,
+        id: "stack",
+        name: "Free container",
+        kind: { kind: "auto_layout", direction: "column", wrap: false },
+        layout: { gap: 0, grow: 0, padding: [0, 0, 0, 0], layout_mode: "free" },
+        children: ["node_contact_name"]
+      };
+      scene.pages.page_a4.children = ["stack"];
+
+      expect(isNodeDirectGeometryEditable(scene, "node_contact_name")).toBe(true);
+      expect(isNodeFreezableOnGesture(scene, "node_contact_name")).toBe(false);
+    });
+
+    it("is false for a null/missing node id", () => {
+      const scene = cloneScene();
+      expect(isNodeFreezableOnGesture(scene, null)).toBe(false);
+      expect(isNodeFreezableOnGesture(scene, "missing_node")).toBe(false);
+    });
   });
 
   it("summarizes slot bound nodes with page context", () => {

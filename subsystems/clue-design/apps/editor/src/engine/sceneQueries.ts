@@ -220,6 +220,31 @@ export function isNodeDirectGeometryEditable(scene: Scene, nodeId: NodeId | null
   return !isNodeLayoutManaged(scene, nodeId) || isNodeFreehand(scene, nodeId);
 }
 
+/**
+ * Handoff-absolute (lazy seam): whether a human gesture on this node is
+ * blocked FOR NO OTHER REASON than solver ownership — i.e. freezing every
+ * Stack container would make it directly geometry-editable. False for a
+ * locked node, an already-editable node, or a node blocked by something a
+ * freeze cannot fix (there is currently no other blocking reason, but this
+ * stays an explicit allow-list rather than "not editable" so a future
+ * blocking reason doesn't silently start firing freezes for it). Mirrors
+ * `isNodeDirectGeometryEditable`'s predicate family; the engine remains the
+ * authority — this is UI pre-gating only.
+ */
+export function isNodeFreezableOnGesture(scene: Scene, nodeId: NodeId | null): boolean {
+  if (!nodeId) {
+    return false;
+  }
+  const node = scene.nodes[nodeId];
+  if (!node || node.locked) {
+    return false;
+  }
+  if (isNodeDirectGeometryEditable(scene, nodeId)) {
+    return false;
+  }
+  return isNodeLayoutManaged(scene, nodeId) && !isNodeFreehand(scene, nodeId);
+}
+
 /** Z-order position of a node among its siblings (Phase 4b arrange). Null
  * when the node has no resolvable parent info. */
 export interface SiblingArrangeInfo {

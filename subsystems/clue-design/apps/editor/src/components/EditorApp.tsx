@@ -759,20 +759,24 @@ export default function EditorApp({
    * Phase 1d: structured edits (detach/re-attach, and future container
    * conversions) run through the engine's shared lumen-core builder and
    * commit with the exact bookkeeping manual edits get — undo frame,
-   * history, persistence — so freehand actions are ordinary edits.
+   * history, persistence — so freehand actions are ordinary edits. Returns
+   * the post-apply engine scene (or null if blocked/rejected/unavailable) so
+   * a caller that needs fresh geometry synchronously — e.g. the CanvasKit
+   * gesture-gate freeze, which continues the same pointer gesture right
+   * after — doesn't have to wait for the next render's `scene` prop.
    */
-  const applyStructuredEditInstruction = (edit: StructuredEdit) => {
+  const applyStructuredEditInstruction = (edit: StructuredEdit): Scene | null => {
     if (compareView) {
       setDiagnostics([compareActiveDiagnostic()]);
-      return;
+      return null;
     }
     if (agentPreview) {
       setDiagnostics([pendingAgentReviewDiagnostic()]);
-      return;
+      return null;
     }
     if (isAgentRunning) {
       setDiagnostics([agentTurnRunningDiagnostic()]);
-      return;
+      return null;
     }
     const engine = engineRef.current;
     if (!engine?.applyStructuredEdit) {
@@ -786,7 +790,7 @@ export default function EditorApp({
           hint: "Reload the editor or check the /wasm assets."
         }
       ]);
-      return;
+      return null;
     }
     const previousScene = engine.scene;
     const outcome = engine.applyStructuredEdit(edit);
@@ -801,7 +805,7 @@ export default function EditorApp({
           hint: "The edit was rejected by the lumen-core engine; the scene is unchanged."
         }
       ]);
-      return;
+      return null;
     }
     commitAppliedOperations(
       previousScene,
@@ -810,6 +814,7 @@ export default function EditorApp({
       undefined,
       outcome.inverseOperations ?? null
     );
+    return outcome.scene;
   };
 
   // Dev/e2e hook (Phase 1 browser validation): lets browser tests drive
@@ -1387,6 +1392,7 @@ export default function EditorApp({
                 onOpenDiagnostics={() => setEditorPanelMode("diagnostics")}
                 onOpenExport={() => setEditorPanelMode("export")}
                 onSceneRefresh={refreshSceneFromEngine}
+                onStructuredEdit={applyStructuredEditInstruction}
               />
             </>
           )}

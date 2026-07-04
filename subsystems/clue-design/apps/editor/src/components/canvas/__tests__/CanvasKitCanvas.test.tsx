@@ -2,6 +2,7 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { minimalScene } from "@/fixtures/minimalScene";
 import type { Diagnostic, Node, Scene } from "@/engine/contracts";
+import type { StructuredEdit } from "@/engine/structuredEdits";
 import type { OptimisticEnginePort } from "@/engine/wasmEngine";
 import { createWorkspaceModel } from "@/engine/workspaceLayout";
 import { defaultWorkspaceViewport } from "@/engine/workspaceViewport";
@@ -195,7 +196,104 @@ describe("CanvasKitCanvas polish chrome wiring", () => {
     expect(childSummary.x).toBeCloseTo(24 * scale);
     expect(childSummary.y).toBeCloseTo(24 * scale);
   });
+
+  describe("handoff-absolute lazy seam: freeze on gesture", () => {
+    it("freezes silently on pointer-down when the press hits a Stack-managed child, before the gesture starts", () => {
+      vi.stubGlobal("PointerEvent", MouseEvent);
+      const stackScene = stackManagedScene();
+      const hitTest = vi.fn(() => ({ hit: "node_contact_name", stack: ["node_contact_name"] }));
+      const engine = { hitTest } as unknown as OptimisticEnginePort;
+      const onStructuredEdit = vi.fn().mockReturnValue(null);
+
+      renderCanvasKit({ scene: stackScene, selectedNodeId: null, engine, onStructuredEdit });
+
+      fireEvent.pointerDown(screen.getByTestId("canvaskit-interaction-layer"), {
+        clientX: 40,
+        clientY: 40,
+        pointerId: 1
+      });
+
+      expect(onStructuredEdit).toHaveBeenCalledTimes(1);
+      expect(onStructuredEdit).toHaveBeenCalledWith(expect.objectContaining({ kind: "freeze_layout" }));
+    });
+
+    it("does not freeze when the pressed node is already directly geometry-editable", () => {
+      vi.stubGlobal("PointerEvent", MouseEvent);
+      const hitTest = vi.fn(() => ({ hit: "node_contact_name", stack: ["node_contact_name"] }));
+      const engine = { hitTest } as unknown as OptimisticEnginePort;
+      const onStructuredEdit = vi.fn().mockReturnValue(null);
+
+      // Default fixture scene: node_contact_name is a top-level page child,
+      // not Stack-managed — already free.
+      renderCanvasKit({ selectedNodeId: null, engine, onStructuredEdit });
+
+      fireEvent.pointerDown(screen.getByTestId("canvaskit-interaction-layer"), {
+        clientX: 40,
+        clientY: 40,
+        pointerId: 1
+      });
+
+      expect(onStructuredEdit).not.toHaveBeenCalled();
+    });
+
+    it("does not freeze a locked node under a Stack parent (freeze cannot fix locking)", () => {
+      vi.stubGlobal("PointerEvent", MouseEvent);
+      const stackScene = stackManagedScene();
+      stackScene.nodes.node_contact_name.locked = true;
+      const hitTest = vi.fn(() => ({ hit: "node_contact_name", stack: ["node_contact_name"] }));
+      const engine = { hitTest } as unknown as OptimisticEnginePort;
+      const onStructuredEdit = vi.fn().mockReturnValue(null);
+
+      renderCanvasKit({ scene: stackScene, selectedNodeId: null, engine, onStructuredEdit });
+
+      fireEvent.pointerDown(screen.getByTestId("canvaskit-interaction-layer"), {
+        clientX: 40,
+        clientY: 40,
+        pointerId: 1
+      });
+
+      expect(onStructuredEdit).not.toHaveBeenCalled();
+    });
+
+    it("does not freeze on an empty-space press (no node hit)", () => {
+      vi.stubGlobal("PointerEvent", MouseEvent);
+      const stackScene = stackManagedScene();
+      const hitTest = vi.fn(() => ({ hit: null, stack: [] }));
+      const engine = { hitTest } as unknown as OptimisticEnginePort;
+      const onStructuredEdit = vi.fn().mockReturnValue(null);
+
+      renderCanvasKit({ scene: stackScene, selectedNodeId: null, engine, onStructuredEdit });
+
+      fireEvent.pointerDown(screen.getByTestId("canvaskit-interaction-layer"), {
+        clientX: 40,
+        clientY: 40,
+        pointerId: 1
+      });
+
+      expect(onStructuredEdit).not.toHaveBeenCalled();
+    });
+  });
 });
+
+/** A scene where `node_contact_name` is the sole child of a Stack
+ * auto-layout container — solver-managed, blocked only by layout ownership
+ * (the handoff-absolute lazy seam's freeze target). */
+function stackManagedScene(): Scene {
+  const next = cloneScene();
+  next.nodes.stack = {
+    ...next.nodes.node_contact_name,
+    id: "stack",
+    name: "Stack",
+    kind: { kind: "auto_layout", direction: "column", wrap: false },
+    children: ["node_contact_name"],
+    computed: {
+      layout_bounds: { x: 24, y: 32, width: 180, height: 30 },
+      render_bounds: { x: 24, y: 32, width: 180, height: 30 }
+    }
+  };
+  next.pages.page_a4 = { ...next.pages.page_a4, children: ["stack"] };
+  return next;
+}
 
 function renderCanvasKit({
   scene: canvasScene = scene,
@@ -203,7 +301,8 @@ function renderCanvasKit({
   diagnostics = [],
   engine = null,
   workspaceTool = "select",
-  workspaceFitTarget = "manual"
+  workspaceFitTarget = "manual",
+  onStructuredEdit
 }: {
   scene?: Scene;
   selectedNodeId: string | null;
@@ -211,6 +310,7 @@ function renderCanvasKit({
   engine?: OptimisticEnginePort | null;
   workspaceTool?: "select" | "hand";
   workspaceFitTarget?: "current" | "all" | "manual";
+  onStructuredEdit?: (edit: StructuredEdit) => Scene | null;
 }) {
   return render(
     <CanvasKitCanvas
@@ -229,6 +329,7 @@ function renderCanvasKit({
       onWorkspaceToolChange={() => {}}
       workspaceFitTarget={workspaceFitTarget}
       onWorkspaceFitTargetChange={() => {}}
+      onStructuredEdit={onStructuredEdit}
     />
   );
 }
