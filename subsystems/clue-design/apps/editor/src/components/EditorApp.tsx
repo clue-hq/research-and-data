@@ -497,7 +497,11 @@ export default function EditorApp({
     setBrandCompatibilityReport,
     setPreflightResult,
     setExportResult,
-    setWorkspaceMode
+    setWorkspaceMode,
+    // Lazy wrapper: document sync is wired below (it needs the history
+    // setters), and history steps only persist from event handlers.
+    persistHistoryStep: (previousScene, operations, nextScene) =>
+      enqueueForPersistence(previousScene, operations, nextScene)
   });
 
   // Document identity + the persistence leg (auto-create, id adoption, the
@@ -536,8 +540,18 @@ export default function EditorApp({
     previousScene: Scene,
     operations: Operation[],
     nextScene: Scene,
-    persistOptions?: EnqueueOptions
+    persistOptions?: EnqueueOptions,
+    inverseOperations: Operation[] | null = null
   ) => {
+    // The disposition tells the caller whether this batch gets a server
+    // envelope — an Accept only offers Revert when its checkpoint will exist —
+    // and the undo frame whether undoing it must persist the inverse batch.
+    const disposition = enqueueForPersistence(
+      previousScene,
+      operations,
+      nextScene,
+      persistOptions
+    );
     setLastOperation(operations[operations.length - 1] ?? null);
     setBrandCompatibilityReport(null);
     setPreflightResult(null);
@@ -547,16 +561,16 @@ export default function EditorApp({
       ...stack.slice(-49),
       {
         scene: previousScene,
-        operations
+        operations,
+        inverseOperations,
+        persisted: disposition !== "local-only"
       }
     ]);
     setRedoStack([]);
     setOperationHistory((history) => [...history, ...operations].slice(-50));
     setDiagnostics([]);
     setScene(nextScene);
-    // The disposition tells the caller whether this batch gets a server
-    // envelope — an Accept only offers Revert when its checkpoint will exist.
-    return enqueueForPersistence(previousScene, operations, nextScene, persistOptions);
+    return disposition;
   };
 
   // 2c selection chips: the agent's edit targets mirror the selection set.
@@ -715,7 +729,13 @@ export default function EditorApp({
       return;
     }
 
-    commitAppliedOperations(previousScene, operations, result.scene);
+    commitAppliedOperations(
+      previousScene,
+      operations,
+      result.scene,
+      undefined,
+      result.inverseOperations ?? null
+    );
     onAccepted?.(result.scene);
   };
 
@@ -771,7 +791,13 @@ export default function EditorApp({
       ]);
       return;
     }
-    commitAppliedOperations(previousScene, outcome.operations, outcome.scene);
+    commitAppliedOperations(
+      previousScene,
+      outcome.operations,
+      outcome.scene,
+      undefined,
+      outcome.inverseOperations ?? null
+    );
   };
 
   // Dev/e2e hook (Phase 1 browser validation): lets browser tests drive

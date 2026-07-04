@@ -59,6 +59,9 @@ export const agentTurnRunningDiagnostic = (): Diagnostic => ({
  * with the base kept for Reject and the Before/After toggle. */
 export interface AgentPreviewState {
   operations: Operation[];
+  /** Engine-computed inverse of the previewed batch, captured at apply time
+   * so an Accept's undo frame can persist its undo later. */
+  inverseOperations: Operation[] | null;
   baseScene: Scene;
   previewScene: Scene;
   baseActivePageId: PageId | null;
@@ -93,7 +96,8 @@ export interface UseAgentTurnDeps {
     previousScene: Scene,
     operations: Operation[],
     nextScene: Scene,
-    persistOptions?: { checkpoint?: string }
+    persistOptions?: { checkpoint?: string },
+    inverseOperations?: Operation[] | null
   ) => "persisted" | "creation-seed" | "local-only";
   runExportForScene: (
     sceneForExport: Scene,
@@ -425,7 +429,9 @@ export function useAgentTurn(deps: UseAgentTurnDeps) {
       ...stack.slice(-49),
       {
         scene,
-        operations: []
+        operations: [],
+        inverseOperations: null,
+        persisted: false
       }
     ]);
     setRedoStack([]);
@@ -479,6 +485,7 @@ export function useAgentTurn(deps: UseAgentTurnDeps) {
         : firstPageId(applied.scene);
     setAgentPreview({
       operations: result.operations,
+      inverseOperations: applied.inverseOperations ?? null,
       baseScene,
       previewScene: applied.scene,
       baseActivePageId: activePageId,
@@ -505,7 +512,7 @@ export function useAgentTurn(deps: UseAgentTurnDeps) {
     if (!agentPreview) {
       return;
     }
-    const { operations, baseScene, previewScene, view } = agentPreview;
+    const { operations, inverseOperations, baseScene, previewScene, view } = agentPreview;
     const advisoryDiagnostics = agentProposal?.diagnostics ?? [];
     // Anchor this turn to a server-side checkpoint: the persisted batch's
     // envelope gets checkpoint_label "agent-turn-<run id>", which Revert
@@ -524,9 +531,13 @@ export function useAgentTurn(deps: UseAgentTurnDeps) {
       }
       acceptedScene = engine.scene;
     }
-    const disposition = commitAppliedOperations(baseScene, operations, acceptedScene, {
-      checkpoint
-    });
+    const disposition = commitAppliedOperations(
+      baseScene,
+      operations,
+      acceptedScene,
+      { checkpoint },
+      inverseOperations
+    );
     const messageId = uniqueChatMessageId("system");
     setAgentMessages((messages) => [
       ...messages,

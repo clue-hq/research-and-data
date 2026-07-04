@@ -241,6 +241,51 @@ describe.skipIf(!wasmArtifactPresent)("EditorApp Phase 2a document flow", () => 
     expect(documentCreator).toHaveBeenCalledTimes(1);
   });
 
+  it("persists local undo as the inverse batch and redo as the original batch", async () => {
+    const scene = cloneMinimalScene();
+    const engine = new WasmEngine(wasmModule, scene);
+    const { factory, batches } = recordingEditQueueFactory();
+    const documentCreator = vi
+      .fn<(scene: Scene) => Promise<CreatedDocument>>()
+      .mockResolvedValue({ documentId: "doc_history_1" });
+
+    render(
+      <EditorApp
+        initialScene={scene}
+        initialSelectedNodeId={null}
+        optimisticEngine={engine}
+        editQueueFactory={factory}
+        documentCreator={documentCreator}
+      />
+    );
+
+    act(() => {
+      editorDebug().applyOperations([updateDocumentTitle("Persisted title")]);
+    });
+    await waitFor(() => {
+      expect(engine.scene.meta.id).toBe("doc_history_1");
+    });
+    expect(batches).toHaveLength(1);
+
+    // Undo posts the engine-computed INVERSE batch — the server document
+    // follows local history instead of drifting until the next reconcile.
+    fireEvent.click(toolbarUndoButton());
+    expect(engine.scene.meta.title).toBe("Hospital Letter");
+    expect(batches).toHaveLength(2);
+    expect(batches[1][0].kind).toBe("update_document");
+    expect(JSON.stringify(batches[1])).toContain("Hospital Letter");
+
+    // Redo re-posts the original batch (history stays append-only).
+    fireEvent.click(
+      within(screen.getByLabelText("Editor actions")).getByRole("button", {
+        name: /^Redo$/i
+      })
+    );
+    expect(engine.scene.meta.title).toBe("Persisted title");
+    expect(batches).toHaveLength(3);
+    expect(JSON.stringify(batches[2])).toContain("Persisted title");
+  });
+
   it("keeps edits local when creation fails and retries on the next persisting action", async () => {
     const scene = cloneMinimalScene();
     const engine = new WasmEngine(wasmModule, scene);

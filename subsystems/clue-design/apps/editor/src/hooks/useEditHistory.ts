@@ -8,10 +8,15 @@ import type {
 import type { EditorExportResult } from "@/engine/exportRunner";
 import type { EditorPreflightResult } from "@/engine/preflightRunner";
 
-/** One undo/redo step: the scene BEFORE the batch applied, plus the batch. */
+/** One undo/redo step: the scene BEFORE the batch applied, the batch, the
+ * engine-computed inverse of the batch (null when the engine could not
+ * invert it), and whether the batch reached the server — an undo of a
+ * persisted, non-invertible batch is the one case that must warn. */
 export interface EditorHistoryFrame {
   scene: Scene;
   operations: Operation[];
+  inverseOperations: Operation[] | null;
+  persisted: boolean;
 }
 
 /**
@@ -34,6 +39,16 @@ export interface UseEditHistoryDeps {
   setPreflightResult: Dispatch<SetStateAction<EditorPreflightResult | null>>;
   setExportResult: Dispatch<SetStateAction<EditorExportResult | null>>;
   setWorkspaceMode: Dispatch<SetStateAction<"canvas" | "export" | "compare">>;
+  /** Persist a history step through the ordinary document-operations path
+   * (an undo posts the frame's inverse batch; a redo re-posts the original
+   * batch), so the server document tracks local history instead of drifting
+   * until the next reconcile. Passed as a lazy wrapper — document sync is
+   * wired after this hook — and only called from event handlers. */
+  persistHistoryStep: (
+    previousScene: Scene,
+    operations: Operation[],
+    nextScene: Scene
+  ) => unknown;
 }
 
 export function useEditHistory(deps: UseEditHistoryDeps) {
@@ -44,7 +59,8 @@ export function useEditHistory(deps: UseEditHistoryDeps) {
     setBrandCompatibilityReport,
     setPreflightResult,
     setExportResult,
-    setWorkspaceMode
+    setWorkspaceMode,
+    persistHistoryStep
   } = deps;
 
   const [lastOperation, setLastOperation] = useState<Operation | null>(null);
@@ -68,7 +84,9 @@ export function useEditHistory(deps: UseEditHistoryDeps) {
       ...stack.slice(-49),
       {
         scene,
-        operations: undoFrame.operations
+        operations: undoFrame.operations,
+        inverseOperations: undoFrame.inverseOperations,
+        persisted: undoFrame.persisted
       }
     ]);
     setOperationHistory(nextHistory);
@@ -79,6 +97,23 @@ export function useEditHistory(deps: UseEditHistoryDeps) {
     setPreflightResult(null);
     setExportResult(null);
     setWorkspaceMode("canvas");
+    // Persist the undo as an ordinary forward batch of the frame's inverse
+    // ops — the server history stays append-only and in step with the canvas.
+    if (undoFrame.inverseOperations && undoFrame.inverseOperations.length > 0) {
+      persistHistoryStep(scene, undoFrame.inverseOperations, undoFrame.scene);
+    } else if (undoFrame.persisted) {
+      setDiagnostics([
+        {
+          severity: "warning",
+          phase: "operation",
+          code: "EDITOR_UNDO_NOT_PERSISTED",
+          message:
+            "This undo could not be persisted (the batch was not invertible); the server document still has the undone change.",
+          subject: { kind: "document" },
+          hint: "The next saved edit reconciles the document. Redo restores the change everywhere."
+        }
+      ]);
+    }
   };
 
   const redo = () => {
@@ -92,7 +127,9 @@ export function useEditHistory(deps: UseEditHistoryDeps) {
       ...stack.slice(-49),
       {
         scene,
-        operations: redoFrame.operations
+        operations: redoFrame.operations,
+        inverseOperations: redoFrame.inverseOperations,
+        persisted: redoFrame.persisted
       }
     ]);
     setOperationHistory((history) => [...history, ...redoFrame.operations].slice(-50));
@@ -103,6 +140,8 @@ export function useEditHistory(deps: UseEditHistoryDeps) {
     setPreflightResult(null);
     setExportResult(null);
     setWorkspaceMode("canvas");
+    // A redo re-persists the original batch (append-only, like undo above).
+    persistHistoryStep(scene, redoFrame.operations, redoFrame.scene);
   };
 
   return {
