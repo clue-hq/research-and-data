@@ -92,7 +92,7 @@ export interface UseAgentTurnDeps {
     operations: Operation[],
     nextScene: Scene,
     persistOptions?: { checkpoint?: string }
-  ) => void;
+  ) => "persisted" | "creation-seed" | "local-only";
   runExportForScene: (
     sceneForExport: Scene,
     profile: ExportProfile,
@@ -521,11 +521,14 @@ export function useAgentTurn(deps: UseAgentTurnDeps) {
       }
       acceptedScene = engine.scene;
     }
-    commitAppliedOperations(baseScene, operations, acceptedScene, { checkpoint });
+    const disposition = commitAppliedOperations(baseScene, operations, acceptedScene, {
+      checkpoint
+    });
+    const messageId = uniqueChatMessageId("system");
     setAgentMessages((messages) => [
       ...messages,
       {
-        id: uniqueChatMessageId("system"),
+        id: messageId,
         role: "system",
         content:
           `Accepted ${operations.length} agent change${operations.length === 1 ? "" : "s"}.` +
@@ -533,7 +536,11 @@ export function useAgentTurn(deps: UseAgentTurnDeps) {
             ? ` ${advisoryDiagnostics.length} advisory review note${advisoryDiagnostics.length === 1 ? "" : "s"} kept in Diagnostics.`
             : ""),
         turn: {
-          checkpoint,
+          key: messageId,
+          // Only a batch that gets its own server envelope is revertible.
+          // The empty-canvas accept folds into the creation seed (no
+          // envelope), so its turn is honestly non-revertible from birth.
+          checkpoint: disposition === "persisted" ? checkpoint : null,
           beforeScene: baseScene,
           afterScene: acceptedScene,
           operationCount: operations.length

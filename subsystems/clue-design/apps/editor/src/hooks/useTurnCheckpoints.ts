@@ -56,7 +56,9 @@ export interface UseTurnCheckpointsDeps {
 }
 
 export interface CompareView {
-  checkpoint: string;
+  /** The turn's stable client identity (AcceptedTurnRecord.key) — NOT the
+   * checkpoint, which is null for non-revertible creation turns. */
+  key: string;
   view: "before" | "after";
 }
 
@@ -76,7 +78,7 @@ export function useTurnCheckpoints(deps: UseTurnCheckpointsDeps) {
   } = deps;
 
   const [compare, setCompare] = useState<{
-    checkpoint: string;
+    key: string;
     record: AcceptedTurnRecord;
     view: "before" | "after";
     /** The live scene parked while the snapshot is displayed. */
@@ -101,7 +103,7 @@ export function useTurnCheckpoints(deps: UseTurnCheckpointsDeps) {
     setCompare((current) => {
       const savedScene = current ? current.savedScene : sceneRef.current;
       showSnapshot(view === "before" ? record.beforeScene : record.afterScene);
-      return { checkpoint: record.checkpoint, record, view, savedScene };
+      return { key: record.key, record, view, savedScene };
     });
   };
 
@@ -129,11 +131,15 @@ export function useTurnCheckpoints(deps: UseTurnCheckpointsDeps) {
     if (isReverting || compare) {
       return;
     }
-    if (!activeDocumentId) {
-      // No persisted document — the turn's batch never reached a server
-      // envelope (e.g. the empty-canvas Accept where creation IS the
-      // persistence), so there is no checkpoint to revert to.
-      markInvalid([record.checkpoint]);
+    const checkpoint = record.checkpoint;
+    if (!activeDocumentId || checkpoint === null) {
+      // No persisted anchor — the turn's batch never got a server envelope
+      // (the empty-canvas Accept whose creation IS the persistence). The
+      // row normally never offers Revert for these; keep the refusal
+      // honest and visible if it is reached anyway.
+      postSystemMessage(
+        "This turn can't be reverted — it created the document, so there is no earlier server state to unwind to."
+      );
       setDiagnostics([
         {
           severity: "warning",
@@ -148,9 +154,12 @@ export function useTurnCheckpoints(deps: UseTurnCheckpointsDeps) {
     }
     setIsReverting(true);
     try {
-      const outcome = await revertRunner(activeDocumentId, record.checkpoint);
+      const outcome = await revertRunner(activeDocumentId, checkpoint);
       if (outcome.status === "refused") {
-        markInvalid([record.checkpoint]);
+        markInvalid([checkpoint]);
+        // The diagnostics panel may not be visible in agent mode — refusals
+        // must land in the chat the user is looking at.
+        postSystemMessage(`Couldn't revert this turn: ${outcome.message}`);
         setDiagnostics([
           {
             severity: "warning",
@@ -171,13 +180,17 @@ export function useTurnCheckpoints(deps: UseTurnCheckpointsDeps) {
       resyncPersistence(outcome.currentVersion);
       // Every turn accepted AFTER the target left the active undo path.
       const ordered = turnCheckpointsInOrder();
-      const anchorIndex = ordered.indexOf(record.checkpoint);
+      const anchorIndex = ordered.indexOf(checkpoint);
       markInvalid(anchorIndex >= 0 ? ordered.slice(anchorIndex + 1) : []);
       postSystemMessage(
         `Reverted the design to just after this turn (${outcome.revertedBatchIds.length} later change batch${outcome.revertedBatchIds.length === 1 ? "" : "es"} undone).`
       );
       setDiagnostics([]);
     } catch (error) {
+      // Visible in the chat too — the diagnostics panel may be hidden.
+      postSystemMessage(
+        "Reverting failed — the document is unchanged. Check the API connection and retry."
+      );
       setDiagnostics([
         {
           severity: "error",
@@ -210,7 +223,7 @@ export function useTurnCheckpoints(deps: UseTurnCheckpointsDeps) {
   };
 
   const compareView: CompareView | null = compare
-    ? { checkpoint: compare.checkpoint, view: compare.view }
+    ? { key: compare.key, view: compare.view }
     : null;
 
   return {

@@ -264,5 +264,11 @@ describe("export runner profiles", () => {
       profile: defaultEditorExportProfile()
     });
     expect(body.scene).toBeUndefined();
+    // The editor's export is a PREVIEW: the endpoint's persist_preflight
+    // default (true) would write the token-baked preflight scene + ops into
+    // the document behind the edit queue's back — stale base_version (next
+    // edit rejected as concurrent) and server-side token baking. The
+    // 2d browser e2e caught exactly this as a 409 after Accept.
+    expect(body.persist_preflight).toBe(false);
   });
 });

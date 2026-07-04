@@ -89,7 +89,15 @@ function exportPayload(
     return {
       format: profile.format,
       page_ids: pageIds,
-      profile
+      profile,
+      // The editor's export is a PREVIEW. The endpoint's default
+      // (persist_preflight: true) writes the token-BAKED preflight scene and
+      // its operations into the document — bumping the version behind the
+      // edit queue's back (the next local edit is rejected as a concurrent
+      // write) and baking out live token bindings server-side: the server-
+      // side twin of the scene-swap bug 0c fixed client-side. Never persist
+      // from here.
+      persist_preflight: false
     };
   }
   return {

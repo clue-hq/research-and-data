@@ -523,7 +523,9 @@ export default function EditorApp({
     setOperationHistory((history) => [...history, ...operations].slice(-50));
     setDiagnostics([]);
     setScene(nextScene);
-    enqueueForPersistence(previousScene, operations, nextScene, persistOptions);
+    // The disposition tells the caller whether this batch gets a server
+    // envelope — an Accept only offers Revert when its checkpoint will exist.
+    return enqueueForPersistence(previousScene, operations, nextScene, persistOptions);
   };
 
   const runExport = async (
@@ -708,7 +710,9 @@ export default function EditorApp({
     resyncPersistence,
     postSystemMessage,
     turnCheckpointsInOrder: () =>
-      agentMessages.flatMap((message) => (message.turn ? [message.turn.checkpoint] : []))
+      agentMessages.flatMap((message) =>
+        message.turn?.checkpoint ? [message.turn.checkpoint] : []
+      )
   });
 
   const applyOperations = (operations: Operation[], onAccepted?: (scene: Scene) => void) => {

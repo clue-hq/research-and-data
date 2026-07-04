@@ -170,11 +170,12 @@ describe("AgentChatPanel target chips (2c)", () => {
 
 describe("AgentChatPanel turn actions (2d)", () => {
   const emptySceneRef = { meta: {}, pages: {}, nodes: {} } as unknown as Scene;
-  const turnMessage = (checkpoint: string): AgentChatMessage => ({
-    id: `msg_${checkpoint}`,
+  const turnMessage = (checkpoint: string | null): AgentChatMessage => ({
+    id: `msg_${checkpoint ?? "creation"}`,
     role: "system",
     content: "Accepted 3 agent changes.",
     turn: {
+      key: `msg_${checkpoint ?? "creation"}`,
       checkpoint,
       beforeScene: emptySceneRef,
       afterScene: emptySceneRef,
@@ -247,6 +248,44 @@ describe("AgentChatPanel turn actions (2d)", () => {
     });
     expect(getByText("No longer revertible")).toBeInTheDocument();
     expect(queryByText("Compare")).toBeNull();
+    expect(queryByText("Revert…")).toBeNull();
+  });
+
+  it("never offers Revert for a creation turn (null checkpoint) but keeps Compare", () => {
+    // The e2e-caught case: an empty-canvas Accept folds into the creation
+    // seed (no server envelope), so the turn is non-revertible from birth.
+    const { getByText, queryByText } = render(
+      <AgentChatPanel
+        messages={[turnMessage(null)]}
+        draft=""
+        isRunning={false}
+        proposal={null}
+        pendingReview={false}
+        queuedMessages={[]}
+        runEvents={[]}
+        targetChips={[]}
+        compareView={null}
+        invalidCheckpoints={new Set<string>()}
+        isReverting={false}
+        activePageId="page_a4"
+        selectedNodeId={null}
+        diagnostics={[]}
+        onRemoveTargetChip={() => {}}
+        onClearTargetChips={() => {}}
+        onDraftChange={() => {}}
+        onSend={() => {}}
+        onQueueMessage={() => {}}
+        onRemoveQueuedMessage={() => {}}
+        onApplyProposal={() => {}}
+        onAcceptProposal={() => {}}
+        onRejectProposal={() => {}}
+        onCompareTurn={() => {}}
+        onExitCompare={() => {}}
+        onRevertTurn={() => {}}
+      />
+    );
+    expect(getByText("Compare")).toBeInTheDocument();
+    expect(getByText("Not revertible (created the document)")).toBeInTheDocument();
     expect(queryByText("Revert…")).toBeNull();
   });
 });

@@ -114,20 +114,30 @@ export function useDocumentSync(deps: UseDocumentSyncDeps) {
     }
   };
 
+  /**
+   * What happened to a committed batch on the persistence leg:
+   * - "persisted": it was (or will be, riding behind an in-flight creation)
+   *   sent as its own /operations batch — it gets a server envelope, so a
+   *   checkpoint label on it is revertible later.
+   * - "creation-seed": the batch was folded into the document creation seed
+   *   (the empty-canvas case) — NO envelope exists, nothing to anchor on.
+   * - "local-only": nothing reached the server (no engine, or still-empty
+   *   scene); the scene carries the changes into an eventual creation seed.
+   */
   const enqueueForPersistence = (
     previousScene: Scene,
     operations: Operation[],
     nextScene: Scene,
     enqueueOptions?: EnqueueOptions
-  ) => {
+  ): "persisted" | "creation-seed" | "local-only" => {
     const engine = engineRef.current;
     if (!engine || engine.kind !== "wasm") {
-      return;
+      return "local-only";
     }
     const existingDocumentId = activeDocumentIdRef.current;
     if (existingDocumentId) {
       ensureEditQueue(existingDocumentId).enqueueOperations(operations, enqueueOptions);
-      return;
+      return "persisted";
     }
     // Auto-create: the first persisting action turns this canvas into a
     // document. Batches that land while creation is in flight ride behind it
@@ -139,7 +149,7 @@ export function useDocumentSync(deps: UseDocumentSyncDeps) {
         }
         return createdId;
       });
-      return;
+      return "persisted";
     }
     // An empty canvas is not a creatable document (LUMV0100: a scene needs at
     // least one page); seed from the post-op scene instead and skip
@@ -150,7 +160,7 @@ export function useDocumentSync(deps: UseDocumentSyncDeps) {
     const seedFromPrevious = Object.keys(previousScene.pages).length > 0;
     const seedScene = seedFromPrevious ? previousScene : nextScene;
     if (Object.keys(seedScene.pages).length === 0) {
-      return;
+      return "local-only";
     }
     documentCreationRef.current = documentCreator(seedScene)
       .then((created) => {
@@ -180,6 +190,9 @@ export function useDocumentSync(deps: UseDocumentSyncDeps) {
         ]);
         return null;
       });
+    // The fresh-creation path: a seed-from-previous batch gets its own
+    // envelope; the empty-canvas batch is folded into the creation seed.
+    return seedFromPrevious ? "persisted" : "creation-seed";
   };
 
   /** After an external server-side write (checkpoint revert), the queue's

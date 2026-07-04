@@ -6,11 +6,15 @@ import { agentChecklist, agentEventLabel } from "@/engine/agentChecklist";
 import type { TargetChip } from "@/hooks/useTargetChips";
 import type { CompareView } from "@/hooks/useTurnCheckpoints";
 
-/** An accepted agent turn, anchored to its server-side checkpoint. Carries
- * the before/after scene snapshots for Compare (session-local; a reload
- * loses Compare but Revert still works off the persisted checkpoint). */
+/** An accepted agent turn. `checkpoint` is its server-side anchor — null
+ * when the accept's batch got no envelope (the empty-canvas accept whose
+ * creation IS its persistence): such a turn is honestly non-revertible.
+ * Snapshots power Compare and are session-local (a reload loses Compare;
+ * Revert still works off a persisted checkpoint). `key` is the turn's
+ * stable client-side identity (checkpoints can be null). */
 export interface AcceptedTurnRecord {
-  checkpoint: string;
+  key: string;
+  checkpoint: string | null;
   beforeScene: Scene;
   afterScene: Scene;
   operationCount: number;
@@ -137,7 +141,10 @@ export function AgentChatPanel({
                 <TurnActionsRow
                   turn={message.turn}
                   compareView={compareView}
-                  invalid={invalidCheckpoints.has(message.turn.checkpoint)}
+                  invalid={
+                    message.turn.checkpoint !== null &&
+                    invalidCheckpoints.has(message.turn.checkpoint)
+                  }
                   busy={isRunning || pendingReview || isReverting}
                   onCompareTurn={onCompareTurn}
                   onExitCompare={onExitCompare}
@@ -256,7 +263,7 @@ function TurnActionsRow({
   onRevertTurn: (turn: AcceptedTurnRecord) => void;
 }) {
   const [confirmingRevert, setConfirmingRevert] = useState(false);
-  const comparingThisTurn = compareView?.checkpoint === turn.checkpoint;
+  const comparingThisTurn = compareView?.key === turn.key;
 
   if (invalid) {
     return (
@@ -320,14 +327,26 @@ function TurnActionsRow({
         <Eye aria-hidden size={13} />
         Compare
       </button>
-      <button
-        type="button"
-        disabled={busy || Boolean(compareView)}
-        onClick={() => setConfirmingRevert(true)}
-      >
-        <History aria-hidden size={13} />
-        Revert…
-      </button>
+      {turn.checkpoint === null ? (
+        // The batch got no server envelope (this Accept created the
+        // document) — there is no anchor to revert to, so never offer it.
+        <span
+          className="turn-actions-invalid"
+          title="This turn created the document; there is no earlier server state to unwind to."
+        >
+          <History aria-hidden size={13} />
+          Not revertible (created the document)
+        </span>
+      ) : (
+        <button
+          type="button"
+          disabled={busy || Boolean(compareView)}
+          onClick={() => setConfirmingRevert(true)}
+        >
+          <History aria-hidden size={13} />
+          Revert…
+        </button>
+      )}
     </div>
   );
 }
