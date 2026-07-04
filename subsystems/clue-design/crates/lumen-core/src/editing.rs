@@ -7,9 +7,9 @@ use crate::operations::{
     OptionalFieldPatch, PagePatch,
 };
 use crate::scene::{
-    AutoLayoutProps, Color, CornerRadii, Dimension, Effect, Fill, LayoutMode, Node, NodeKind,
-    PageSize, Paint, ParentRef, PositionMode, Rect, Scene, SizeSpec, Stroke, TextAlign,
-    TextDirection, TextNode, TextWrap, Transform,
+    AutoLayoutProps, Color, CornerRadii, Dimension, Effect, ExplicitTextTokens, Fill, LayoutMode,
+    Node, NodeKind, PageSize, Paint, ParentRef, PositionMode, Rect, Scene, SizeSpec, Stroke,
+    TextAlign, TextDirection, TextNode, TextWrap, Transform,
 };
 use crate::slots::Slot;
 use serde::{Deserialize, Serialize};
@@ -2315,6 +2315,15 @@ fn apply_stack_entry_edit<T: Clone, I: Clone + Eq + fmt::Display>(
 }
 
 fn apply_text_edit_patch(mut text: TextNode, patch: TextEditPatch) -> TextNode {
+    let before = text.clone();
+    // A token field the patch addressed (set OR cleared) is an explicit
+    // authoring decision; only untouched tokens are eligible for staleness.
+    let explicit = ExplicitTextTokens {
+        style: !patch.style_token.is_unchanged(),
+        font_size: !patch.font_size_token.is_unchanged(),
+        line_height: !patch.line_height_token.is_unchanged(),
+        letter_spacing: !patch.letter_spacing_token.is_unchanged(),
+    };
     apply_field_patch(&mut text.content, patch.content);
     apply_field_patch(&mut text.font_family, patch.font_family);
     apply_field_patch(&mut text.font_size, patch.font_size);
@@ -2329,6 +2338,7 @@ fn apply_text_edit_patch(mut text: TextNode, patch: TextEditPatch) -> TextNode {
     apply_optional_patch(&mut text.font_size_token, patch.font_size_token);
     apply_optional_patch(&mut text.line_height_token, patch.line_height_token);
     apply_optional_patch(&mut text.letter_spacing_token, patch.letter_spacing_token);
+    text.clear_stale_tokens(&before, explicit);
     text
 }
 
