@@ -72,7 +72,8 @@ function recordingEditQueueFactory(): {
         batches.push(operations);
       },
       idle: () => Promise.resolve(),
-      persistedBatches: 0
+      persistedBatches: 0,
+      resync: () => {}
     };
     return queue;
   };

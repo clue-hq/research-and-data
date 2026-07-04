@@ -1,9 +1,13 @@
 import { fireEvent, render } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { Diagnostic } from "@/engine/contracts";
+import type { Diagnostic, Scene } from "@/engine/contracts";
 import type { EditorAgentResult, AgentRunEvent } from "@/engine/agentRunner";
 import type { TargetChip } from "@/hooks/useTargetChips";
-import { AgentChatPanel } from "../AgentChatPanel";
+import {
+  AgentChatPanel,
+  type AcceptedTurnRecord,
+  type AgentChatMessage
+} from "../AgentChatPanel";
 
 function renderChips(
   targetChips: TargetChip[],
@@ -19,6 +23,9 @@ function renderChips(
       queuedMessages={[]}
       runEvents={[] as AgentRunEvent[]}
       targetChips={targetChips}
+      compareView={null}
+      invalidCheckpoints={new Set<string>()}
+      isReverting={false}
       activePageId="page_a4"
       selectedNodeId={null}
       diagnostics={[]}
@@ -31,6 +38,9 @@ function renderChips(
       onApplyProposal={() => {}}
       onAcceptProposal={() => {}}
       onRejectProposal={() => {}}
+      onCompareTurn={() => {}}
+      onExitCompare={() => {}}
+      onRevertTurn={() => {}}
     />
   );
 }
@@ -81,6 +91,9 @@ function renderPanel(proposal: EditorAgentResult) {
       queuedMessages={[]}
       runEvents={[]}
       targetChips={[]}
+      compareView={null}
+      invalidCheckpoints={new Set<string>()}
+      isReverting={false}
       activePageId="page_a4"
       selectedNodeId={null}
       diagnostics={[]}
@@ -93,6 +106,9 @@ function renderPanel(proposal: EditorAgentResult) {
       onApplyProposal={() => {}}
       onAcceptProposal={() => {}}
       onRejectProposal={() => {}}
+      onCompareTurn={() => {}}
+      onExitCompare={() => {}}
+      onRevertTurn={() => {}}
     />
   );
 }
@@ -149,5 +165,88 @@ describe("AgentChatPanel target chips (2c)", () => {
   it("renders no target strip when there are no chips", () => {
     const { queryByLabelText } = renderChips([]);
     expect(queryByLabelText("Edit targets")).toBeNull();
+  });
+});
+
+describe("AgentChatPanel turn actions (2d)", () => {
+  const emptySceneRef = { meta: {}, pages: {}, nodes: {} } as unknown as Scene;
+  const turnMessage = (checkpoint: string): AgentChatMessage => ({
+    id: `msg_${checkpoint}`,
+    role: "system",
+    content: "Accepted 3 agent changes.",
+    turn: {
+      checkpoint,
+      beforeScene: emptySceneRef,
+      afterScene: emptySceneRef,
+      operationCount: 3
+    }
+  });
+
+  function renderTurnRow(overrides: {
+    invalidCheckpoints?: ReadonlySet<string>;
+    onCompareTurn?: (turn: AcceptedTurnRecord, view: "before" | "after") => void;
+    onRevertTurn?: (turn: AcceptedTurnRecord) => void;
+  } = {}) {
+    return render(
+      <AgentChatPanel
+        messages={[turnMessage("agent-turn-run_1")]}
+        draft=""
+        isRunning={false}
+        proposal={null}
+        pendingReview={false}
+        queuedMessages={[]}
+        runEvents={[]}
+        targetChips={[]}
+        compareView={null}
+        invalidCheckpoints={overrides.invalidCheckpoints ?? new Set<string>()}
+        isReverting={false}
+        activePageId="page_a4"
+        selectedNodeId={null}
+        diagnostics={[]}
+        onRemoveTargetChip={() => {}}
+        onClearTargetChips={() => {}}
+        onDraftChange={() => {}}
+        onSend={() => {}}
+        onQueueMessage={() => {}}
+        onRemoveQueuedMessage={() => {}}
+        onApplyProposal={() => {}}
+        onAcceptProposal={() => {}}
+        onRejectProposal={() => {}}
+        onCompareTurn={overrides.onCompareTurn ?? (() => {})}
+        onExitCompare={() => {}}
+        onRevertTurn={overrides.onRevertTurn ?? (() => {})}
+      />
+    );
+  }
+
+  it("renders Compare and a two-step Revert confirm under an accepted turn", () => {
+    const compared: Array<[AcceptedTurnRecord, string]> = [];
+    const reverted: AcceptedTurnRecord[] = [];
+    const { getByText, queryByText } = renderTurnRow({
+      onCompareTurn: (turn, view) => compared.push([turn, view]),
+      onRevertTurn: (turn) => reverted.push(turn)
+    });
+
+    fireEvent.click(getByText("Compare"));
+    expect(compared[0]?.[0].checkpoint).toBe("agent-turn-run_1");
+    expect(compared[0]?.[1]).toBe("before");
+
+    // Revert is two-step: the first click only arms the inline confirm.
+    fireEvent.click(getByText("Revert…"));
+    expect(reverted).toHaveLength(0);
+    expect(getByText("Undo everything after this turn?")).toBeInTheDocument();
+    fireEvent.click(getByText("Confirm revert"));
+    expect(reverted[0]?.checkpoint).toBe("agent-turn-run_1");
+    // Cancel path leaves no confirm behind.
+    expect(queryByText("Undo everything after this turn?")).toBeNull();
+  });
+
+  it("renders an invalidated checkpoint as honestly non-revertible", () => {
+    const { getByText, queryByText } = renderTurnRow({
+      invalidCheckpoints: new Set(["agent-turn-run_1"])
+    });
+    expect(getByText("No longer revertible")).toBeInTheDocument();
+    expect(queryByText("Compare")).toBeNull();
+    expect(queryByText("Revert…")).toBeNull();
   });
 });

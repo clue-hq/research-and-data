@@ -114,7 +114,8 @@ describe.skipIf(!wasmArtifactPresent)("EditorApp on the WASM engine", () => {
             idle: async () => undefined,
             enqueueOperations: (operations) => {
               enqueued.push(operations);
-            }
+            },
+            resync: () => {}
           };
         }}
       />

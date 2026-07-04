@@ -1,14 +1,28 @@
-import { AlertTriangle, Bot, Check, CheckCircle2, Crosshair, Eye, FileCode2, Loader2, Send, Sparkles, X } from "lucide-react";
-import type { FormEvent } from "react";
-import type { Diagnostic, NodeId, Operation, PageId } from "@/engine/contracts";
+import { AlertTriangle, Bot, Check, CheckCircle2, Crosshair, Eye, FileCode2, History, Loader2, Send, Sparkles, X } from "lucide-react";
+import { useState, type FormEvent } from "react";
+import type { Diagnostic, NodeId, Operation, PageId, Scene } from "@/engine/contracts";
 import type { AgentRunEvent, EditorAgentResult } from "@/engine/agentRunner";
 import { agentChecklist, agentEventLabel } from "@/engine/agentChecklist";
 import type { TargetChip } from "@/hooks/useTargetChips";
+import type { CompareView } from "@/hooks/useTurnCheckpoints";
+
+/** An accepted agent turn, anchored to its server-side checkpoint. Carries
+ * the before/after scene snapshots for Compare (session-local; a reload
+ * loses Compare but Revert still works off the persisted checkpoint). */
+export interface AcceptedTurnRecord {
+  checkpoint: string;
+  beforeScene: Scene;
+  afterScene: Scene;
+  operationCount: number;
+}
 
 export interface AgentChatMessage {
   id: string;
   role: "user" | "agent" | "system";
   content: string;
+  /** Present on the "Accepted N changes" message of an accepted turn —
+   * renders the Compare | Revert row beneath it. */
+  turn?: AcceptedTurnRecord;
 }
 
 /** Phase 2a (Moda's queue): a message typed while the editor is busy —
@@ -30,6 +44,11 @@ export interface AgentChatPanelProps {
   runEvents: AgentRunEvent[];
   /** 2c: the chipped edit targets sent with the next turn. */
   targetChips: TargetChip[];
+  /** 2d: the active past-turn compare view (null = viewing the live design). */
+  compareView: CompareView | null;
+  /** 2d: checkpoints no longer on the active history path (already reverted). */
+  invalidCheckpoints: ReadonlySet<string>;
+  isReverting: boolean;
   activePageId: PageId | null;
   selectedNodeId: NodeId | null;
   diagnostics: Diagnostic[];
@@ -42,6 +61,9 @@ export interface AgentChatPanelProps {
   onApplyProposal: () => void;
   onAcceptProposal: () => void;
   onRejectProposal: () => void;
+  onCompareTurn: (turn: AcceptedTurnRecord, view: "before" | "after") => void;
+  onExitCompare: () => void;
+  onRevertTurn: (turn: AcceptedTurnRecord) => void;
 }
 
 export function AgentChatPanel({
@@ -53,6 +75,9 @@ export function AgentChatPanel({
   queuedMessages,
   runEvents,
   targetChips,
+  compareView,
+  invalidCheckpoints,
+  isReverting,
   activePageId,
   selectedNodeId,
   diagnostics,
@@ -64,7 +89,10 @@ export function AgentChatPanel({
   onRemoveQueuedMessage,
   onApplyProposal,
   onAcceptProposal,
-  onRejectProposal
+  onRejectProposal,
+  onCompareTurn,
+  onExitCompare,
+  onRevertTurn
 }: AgentChatPanelProps) {
   const isBusy = isRunning || pendingReview;
   const submitPrompt = (event: FormEvent<HTMLFormElement>) => {
@@ -105,6 +133,17 @@ export function AgentChatPanel({
             <article key={message.id} className={`agent-message ${message.role}`}>
               <span>{message.role === "user" ? "You" : message.role === "agent" ? "Agent" : "System"}</span>
               <p>{message.content}</p>
+              {message.turn ? (
+                <TurnActionsRow
+                  turn={message.turn}
+                  compareView={compareView}
+                  invalid={invalidCheckpoints.has(message.turn.checkpoint)}
+                  busy={isRunning || pendingReview || isReverting}
+                  onCompareTurn={onCompareTurn}
+                  onExitCompare={onExitCompare}
+                  onRevertTurn={onRevertTurn}
+                />
+              ) : null}
             </article>
           ))
         )}
@@ -189,6 +228,107 @@ export function AgentChatPanel({
         </button>
       </form>
     </section>
+  );
+}
+
+/**
+ * 2d: the Compare | Revert row under an accepted turn's message. Compare
+ * opens the read-only before/after view of THAT turn; Revert (two-step
+ * inline confirm, no browser dialogs) undoes every later change batch via
+ * the server checkpoint. A checkpoint that left the active history path
+ * (already reverted) renders disabled with an honest reason.
+ */
+function TurnActionsRow({
+  turn,
+  compareView,
+  invalid,
+  busy,
+  onCompareTurn,
+  onExitCompare,
+  onRevertTurn
+}: {
+  turn: AcceptedTurnRecord;
+  compareView: CompareView | null;
+  invalid: boolean;
+  busy: boolean;
+  onCompareTurn: (turn: AcceptedTurnRecord, view: "before" | "after") => void;
+  onExitCompare: () => void;
+  onRevertTurn: (turn: AcceptedTurnRecord) => void;
+}) {
+  const [confirmingRevert, setConfirmingRevert] = useState(false);
+  const comparingThisTurn = compareView?.checkpoint === turn.checkpoint;
+
+  if (invalid) {
+    return (
+      <div className="turn-actions" aria-label="Turn actions">
+        <span
+          className="turn-actions-invalid"
+          title="This turn is no longer on the active history path (a revert removed it)."
+        >
+          <History aria-hidden size={13} />
+          No longer revertible
+        </span>
+      </div>
+    );
+  }
+
+  if (comparingThisTurn) {
+    return (
+      <div className="turn-actions" aria-label="Turn actions">
+        <span className="turn-actions-comparing">
+          <Eye aria-hidden size={13} />
+          Comparing this turn
+        </span>
+        <button type="button" onClick={onExitCompare}>
+          Back to current
+        </button>
+      </div>
+    );
+  }
+
+  if (confirmingRevert) {
+    return (
+      <div className="turn-actions" aria-label="Turn actions">
+        <span className="turn-actions-confirm">
+          Undo everything after this turn?
+        </span>
+        <button
+          type="button"
+          className="turn-actions-danger"
+          disabled={busy}
+          onClick={() => {
+            setConfirmingRevert(false);
+            onRevertTurn(turn);
+          }}
+        >
+          Confirm revert
+        </button>
+        <button type="button" onClick={() => setConfirmingRevert(false)}>
+          Cancel
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="turn-actions" aria-label="Turn actions">
+      <button
+        type="button"
+        disabled={busy || Boolean(compareView)}
+        onClick={() => onCompareTurn(turn, "before")}
+      >
+        <Eye aria-hidden size={13} />
+        Compare
+      </button>
+      <button
+        type="button"
+        disabled={busy || Boolean(compareView)}
+        onClick={() => setConfirmingRevert(true)}
+      >
+        <History aria-hidden size={13} />
+        Revert…
+      </button>
+    </div>
   );
 }
 

@@ -90,7 +90,8 @@ export interface UseAgentTurnDeps {
   commitAppliedOperations: (
     previousScene: Scene,
     operations: Operation[],
-    nextScene: Scene
+    nextScene: Scene,
+    persistOptions?: { checkpoint?: string }
   ) => void;
   runExportForScene: (
     sceneForExport: Scene,
@@ -324,6 +325,15 @@ export function useAgentTurn(deps: UseAgentTurnDeps) {
     }
   };
 
+  /** Post a system line into the chat from an external flow (e.g. a
+   * checkpoint revert) — same id/shape as internally posted messages. */
+  const postSystemMessage = (content: string) => {
+    setAgentMessages((messages) => [
+      ...messages,
+      { id: uniqueChatMessageId("system"), role: "system", content }
+    ]);
+  };
+
   const queueAgentMessage = (content: string) => {
     const trimmed = content.trim();
     if (!trimmed) {
@@ -494,6 +504,11 @@ export function useAgentTurn(deps: UseAgentTurnDeps) {
     }
     const { operations, baseScene, previewScene, view } = agentPreview;
     const advisoryDiagnostics = agentProposal?.diagnostics ?? [];
+    // Anchor this turn to a server-side checkpoint: the persisted batch's
+    // envelope gets checkpoint_label "agent-turn-<run id>", which Revert
+    // points at later. The trace run id is unique per run; a turn without
+    // one (defensive) falls back to the unique message id generator.
+    const checkpoint = `agent-turn-${agentProposal?.trace.run_id ?? uniqueChatMessageId("system")}`;
     setAgentPreview(null);
     setAgentProposal(null);
     // The user may be looking at "Before" — the engine must hold the accepted
@@ -506,7 +521,7 @@ export function useAgentTurn(deps: UseAgentTurnDeps) {
       }
       acceptedScene = engine.scene;
     }
-    commitAppliedOperations(baseScene, operations, acceptedScene);
+    commitAppliedOperations(baseScene, operations, acceptedScene, { checkpoint });
     setAgentMessages((messages) => [
       ...messages,
       {
@@ -516,7 +531,13 @@ export function useAgentTurn(deps: UseAgentTurnDeps) {
           `Accepted ${operations.length} agent change${operations.length === 1 ? "" : "s"}.` +
           (advisoryDiagnostics.length > 0
             ? ` ${advisoryDiagnostics.length} advisory review note${advisoryDiagnostics.length === 1 ? "" : "s"} kept in Diagnostics.`
-            : "")
+            : ""),
+        turn: {
+          checkpoint,
+          beforeScene: baseScene,
+          afterScene: acceptedScene,
+          operationCount: operations.length
+        }
       }
     ]);
     const previewPageId =
@@ -610,6 +631,7 @@ export function useAgentTurn(deps: UseAgentTurnDeps) {
     queuedAgentMessages,
     runEvents,
     sendAgentPrompt,
+    postSystemMessage,
     queueAgentMessage,
     removeQueuedAgentMessage,
     applyAgentProposal,

@@ -11,7 +11,7 @@ import {
   type SetStateAction
 } from "react";
 import { AlertTriangle, Bot, Check, Download, FileCheck2, History, PanelRightClose, RotateCcw, RotateCw, X } from "lucide-react";
-import { AgentChatPanel } from "./AgentChatPanel";
+import { AgentChatPanel, type AcceptedTurnRecord } from "./AgentChatPanel";
 import { BrandKitPanel } from "./BrandKitPanel";
 import { EditorCanvas } from "./canvas/EditorCanvas";
 import { ExportPanel, type ExportPanelState } from "./ExportPanel";
@@ -49,10 +49,15 @@ import type {
   ParentRef,
   Scene
 } from "@/engine/contracts";
-import { createDocument, type CreatedDocument } from "@/engine/documentStore";
+import {
+  createDocument,
+  revertDocument,
+  type CreatedDocument,
+  type RevertOutcome
+} from "@/engine/documentStore";
 import { editorApiBaseUrl } from "@/engine/editorConfig";
 import { mergeStickyDiagnostics } from "@/engine/diagnosticsPolicy";
-import { createEditQueue } from "@/engine/editQueue";
+import { createEditQueue, type EnqueueOptions } from "@/engine/editQueue";
 import {
   EDITOR_PANEL_MODES,
   rightSidebarLabelForMode,
@@ -111,6 +116,7 @@ import {
 import { useDocumentSync, type EditQueueFactory } from "@/hooks/useDocumentSync";
 import { useEditHistory } from "@/hooks/useEditHistory";
 import { useTargetChips } from "@/hooks/useTargetChips";
+import { compareActiveDiagnostic, useTurnCheckpoints } from "@/hooks/useTurnCheckpoints";
 
 export interface EditorAppProps {
   documentId?: string;
@@ -142,6 +148,11 @@ export interface EditorAppProps {
    * "every canvas is a doc") and the editor adopts the returned id.
    */
   documentCreator?: (scene: Scene) => Promise<CreatedDocument>;
+  /**
+   * Checkpoint revert override (tests). The default POSTs
+   * /documents/{id}/revert?checkpoint=… and fetches the reverted scene.
+   */
+  revertRunner?: (documentId: string, checkpoint: string) => Promise<RevertOutcome>;
 }
 
 // Re-exported so tests keep importing it from here; the type lives with the
@@ -178,6 +189,9 @@ const defaultResumeRun = (
 const defaultDocumentCreator = (scene: Scene) =>
   createDocument({ apiBaseUrl: editorApiBaseUrl() }, scene);
 
+const defaultRevertRunner = (documentId: string, checkpoint: string) =>
+  revertDocument({ apiBaseUrl: editorApiBaseUrl() }, documentId, checkpoint);
+
 export default function EditorApp({
   documentId,
   initialScene = emptyScene,
@@ -190,7 +204,8 @@ export default function EditorApp({
   preflightRunner = defaultPreflightRunner,
   optimisticEngine,
   editQueueFactory = defaultEditQueueFactory,
-  documentCreator = defaultDocumentCreator
+  documentCreator = defaultDocumentCreator,
+  revertRunner = defaultRevertRunner
 }: EditorAppProps = {}) {
   const [scene, setScene] = useState<Scene>(initialScene);
   // The optimistic engine owns local edit application (Track E): the WASM
@@ -466,7 +481,7 @@ export default function EditorApp({
   // Document identity + the persistence leg (auto-create, id adoption, the
   // ordered edit queue with reconcile-at-drain) live in useDocumentSync.
   // Deps rebuilt per render, like every workflow hook here.
-  const { activeDocumentId, enqueueForPersistence } = useDocumentSync({
+  const { activeDocumentId, enqueueForPersistence, resyncPersistence } = useDocumentSync({
     documentId,
     documentCreator,
     editQueueFactory,
@@ -489,7 +504,8 @@ export default function EditorApp({
   const commitAppliedOperations = (
     previousScene: Scene,
     operations: Operation[],
-    nextScene: Scene
+    nextScene: Scene,
+    persistOptions?: EnqueueOptions
   ) => {
     setLastOperation(operations[operations.length - 1] ?? null);
     setBrandCompatibilityReport(null);
@@ -507,7 +523,7 @@ export default function EditorApp({
     setOperationHistory((history) => [...history, ...operations].slice(-50));
     setDiagnostics([]);
     setScene(nextScene);
-    enqueueForPersistence(previousScene, operations, nextScene);
+    enqueueForPersistence(previousScene, operations, nextScene, persistOptions);
   };
 
   const runExport = async (
@@ -630,6 +646,7 @@ export default function EditorApp({
     queuedAgentMessages,
     runEvents,
     sendAgentPrompt,
+    postSystemMessage,
     queueAgentMessage,
     removeQueuedAgentMessage,
     applyAgentProposal,
@@ -662,8 +679,44 @@ export default function EditorApp({
     applyOperations: (operations, onAccepted) => applyOperations(operations, onAccepted)
   });
 
+  // 2d per-turn Compare | Revert. Compare is a read-only modal view of a
+  // turn's before/after snapshot (mutations locked below, same two-sided
+  // pattern as the agent lock); Revert unwinds the server history to just
+  // after the turn's checkpoint and adopts the authoritative scene.
+  const {
+    compareView,
+    invalidCheckpoints,
+    isReverting,
+    startCompare,
+    setCompareView,
+    exitCompare,
+    revertToTurn
+  } = useTurnCheckpoints({
+    engineRef,
+    sceneRef,
+    activeDocumentId,
+    revertRunner,
+    setScene,
+    replaceScene,
+    setDiagnostics,
+    resetHistory: () => {
+      setUndoStack([]);
+      setRedoStack([]);
+      setOperationHistory([]);
+      setLastOperation(null);
+    },
+    resyncPersistence,
+    postSystemMessage,
+    turnCheckpointsInOrder: () =>
+      agentMessages.flatMap((message) => (message.turn ? [message.turn.checkpoint] : []))
+  });
+
   const applyOperations = (operations: Operation[], onAccepted?: (scene: Scene) => void) => {
     if (operations.length === 0) {
+      return;
+    }
+    if (compareView) {
+      setDiagnostics([compareActiveDiagnostic()]);
       return;
     }
     // Phase 0c: the pending preview owns the engine state; resolving it first
@@ -730,6 +783,10 @@ export default function EditorApp({
    * history, persistence — so freehand actions are ordinary edits.
    */
   const applyStructuredEditInstruction = (edit: StructuredEdit) => {
+    if (compareView) {
+      setDiagnostics([compareActiveDiagnostic()]);
+      return;
+    }
     if (agentPreview) {
       setDiagnostics([pendingAgentReviewDiagnostic()]);
       return;
@@ -789,7 +846,56 @@ export default function EditorApp({
     };
   });
 
+  /** Enter Compare for an accepted turn — only while the editor is idle.
+   * Queued messages block entry too: they drain at idle and would start a
+   * turn underneath the read-only snapshot. */
+  const compareTurn = (record: AcceptedTurnRecord, view: "before" | "after") => {
+    if (agentPreview) {
+      setDiagnostics([pendingAgentReviewDiagnostic()]);
+      return;
+    }
+    if (isAgentRunning) {
+      setDiagnostics([agentTurnRunningDiagnostic()]);
+      return;
+    }
+    if (queuedAgentMessages.length > 0) {
+      setDiagnostics([
+        {
+          severity: "warning",
+          phase: "operation",
+          code: "EDITOR_COMPARE_BLOCKED_QUEUE",
+          message: "Queued messages are about to run — comparing would race them.",
+          subject: { kind: "document" },
+          hint: "Let the queued turns finish (or remove them) before comparing a past turn."
+        }
+      ]);
+      return;
+    }
+    startCompare(record, view);
+  };
+
+  /** Revert to just after an accepted turn — same idle-only entry rules. */
+  const revertTurn = (record: AcceptedTurnRecord) => {
+    if (compareView) {
+      setDiagnostics([compareActiveDiagnostic()]);
+      return;
+    }
+    if (agentPreview) {
+      setDiagnostics([pendingAgentReviewDiagnostic()]);
+      return;
+    }
+    if (isAgentRunning) {
+      setDiagnostics([agentTurnRunningDiagnostic()]);
+      return;
+    }
+    void revertToTurn(record);
+  };
+
   const undoLastOperation = () => {
+    if (compareView) {
+      setDiagnostics([compareActiveDiagnostic()]);
+      return;
+    }
     if (agentPreview) {
       setDiagnostics([pendingAgentReviewDiagnostic()]);
       return;
@@ -802,6 +908,10 @@ export default function EditorApp({
   };
 
   const redoLastOperation = () => {
+    if (compareView) {
+      setDiagnostics([compareActiveDiagnostic()]);
+      return;
+    }
     if (agentPreview) {
       setDiagnostics([pendingAgentReviewDiagnostic()]);
       return;
@@ -1350,6 +1460,40 @@ export default function EditorApp({
               </button>
             </div>
           ) : null}
+          {compareView && !agentPreview ? (
+            <div
+              className="agent-review-bar turn-compare-bar"
+              role="toolbar"
+              aria-label="Compare a past turn"
+              data-testid="turn-compare-bar"
+            >
+              <div className="agent-review-toggle" role="group" aria-label="Turn snapshot">
+                <button
+                  type="button"
+                  className={compareView.view === "before" ? "active" : ""}
+                  aria-pressed={compareView.view === "before"}
+                  onClick={() => setCompareView("before")}
+                >
+                  Before
+                </button>
+                <button
+                  type="button"
+                  className={compareView.view === "after" ? "active" : ""}
+                  aria-pressed={compareView.view === "after"}
+                  onClick={() => setCompareView("after")}
+                >
+                  After
+                </button>
+              </div>
+              <span className="agent-review-summary">
+                Viewing a past turn — the canvas is read-only
+              </span>
+              <button type="button" className="agent-review-accept" onClick={exitCompare}>
+                <Check aria-hidden size={15} />
+                Back to current
+              </button>
+            </div>
+          ) : null}
           {editorPanelMode === "export" ? (
             <div className="view-toggle" aria-label="Export preview mode">
               <button
@@ -1457,18 +1601,40 @@ export default function EditorApp({
               queuedMessages={queuedAgentMessages}
               runEvents={runEvents}
               targetChips={targetChips}
+              compareView={compareView}
+              invalidCheckpoints={invalidCheckpoints}
+              isReverting={isReverting}
               activePageId={activePageId}
               selectedNodeId={selectedNodeId}
               diagnostics={diagnostics}
               onRemoveTargetChip={removeTargetChip}
               onClearTargetChips={clearTargetChips}
               onDraftChange={setAgentDraft}
-              onSend={(prompt) => void sendAgentPrompt(prompt)}
-              onQueueMessage={queueAgentMessage}
+              onSend={(prompt) => {
+                // Compare is read-only: a send would seed the turn from the
+                // displayed snapshot, not the live design.
+                if (compareView) {
+                  setDiagnostics([compareActiveDiagnostic()]);
+                  return;
+                }
+                void sendAgentPrompt(prompt);
+              }}
+              onQueueMessage={(content) => {
+                // Queueing while comparing would drain immediately (the
+                // editor is idle) and start a turn under the read-only view.
+                if (compareView) {
+                  setDiagnostics([compareActiveDiagnostic()]);
+                  return;
+                }
+                queueAgentMessage(content);
+              }}
               onRemoveQueuedMessage={removeQueuedAgentMessage}
               onApplyProposal={applyAgentProposal}
               onAcceptProposal={() => void acceptAgentPreview()}
               onRejectProposal={rejectAgentPreview}
+              onCompareTurn={compareTurn}
+              onExitCompare={exitCompare}
+              onRevertTurn={revertTurn}
             />
           ) : editorPanelMode === "export" ? (
             <ExportPanel

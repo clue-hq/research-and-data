@@ -1,7 +1,7 @@
 import { useRef, useState, type Dispatch, type SetStateAction } from "react";
 import type { Diagnostic, Operation, Scene } from "@/engine/contracts";
 import type { CreatedDocument } from "@/engine/documentStore";
-import type { EditQueuePort, ReconcileEvent } from "@/engine/editQueue";
+import type { EditQueuePort, EnqueueOptions, ReconcileEvent } from "@/engine/editQueue";
 import type { OptimisticEnginePort } from "@/engine/wasmEngine";
 import type { EditorHistoryFrame } from "@/hooks/useEditHistory";
 
@@ -117,7 +117,8 @@ export function useDocumentSync(deps: UseDocumentSyncDeps) {
   const enqueueForPersistence = (
     previousScene: Scene,
     operations: Operation[],
-    nextScene: Scene
+    nextScene: Scene,
+    enqueueOptions?: EnqueueOptions
   ) => {
     const engine = engineRef.current;
     if (!engine || engine.kind !== "wasm") {
@@ -125,7 +126,7 @@ export function useDocumentSync(deps: UseDocumentSyncDeps) {
     }
     const existingDocumentId = activeDocumentIdRef.current;
     if (existingDocumentId) {
-      ensureEditQueue(existingDocumentId).enqueueOperations(operations);
+      ensureEditQueue(existingDocumentId).enqueueOperations(operations, enqueueOptions);
       return;
     }
     // Auto-create: the first persisting action turns this canvas into a
@@ -134,7 +135,7 @@ export function useDocumentSync(deps: UseDocumentSyncDeps) {
     if (documentCreationRef.current) {
       documentCreationRef.current = documentCreationRef.current.then((createdId) => {
         if (createdId) {
-          ensureEditQueue(createdId).enqueueOperations(operations);
+          ensureEditQueue(createdId).enqueueOperations(operations, enqueueOptions);
         }
         return createdId;
       });
@@ -157,7 +158,7 @@ export function useDocumentSync(deps: UseDocumentSyncDeps) {
         // A retry succeeded — the sticky create-failure is resolved.
         resolveDiagnosticCode("EDITOR_DOCUMENT_CREATE_FAILED");
         if (seedFromPrevious) {
-          ensureEditQueue(created.documentId).enqueueOperations(operations);
+          ensureEditQueue(created.documentId).enqueueOperations(operations, enqueueOptions);
         }
         return created.documentId;
       })
@@ -181,8 +182,16 @@ export function useDocumentSync(deps: UseDocumentSyncDeps) {
       });
   };
 
+  /** After an external server-side write (checkpoint revert), the queue's
+   * cached base_version is stale; re-arm it with the new server version so
+   * the next local edit isn't rejected as a concurrent write. */
+  const resyncPersistence = (version: number | null) => {
+    editQueueRef.current?.resync(version);
+  };
+
   return {
     activeDocumentId,
-    enqueueForPersistence
+    enqueueForPersistence,
+    resyncPersistence
   };
 }

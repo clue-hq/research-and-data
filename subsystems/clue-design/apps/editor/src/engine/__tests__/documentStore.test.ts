@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { emptyScene } from "@/fixtures/emptyScene";
 import type { Scene } from "../contracts";
-import { createDocument, fetchDocument } from "../documentStore";
+import { createDocument, fetchDocument, revertDocument } from "../documentStore";
 
 function jsonResponse(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), {
@@ -78,5 +78,62 @@ describe("documentStore", () => {
     await expect(
       fetchDocument({ apiBaseUrl: "http://localhost:8002", fetchImpl: sceneless }, "doc_abc123")
     ).rejects.toThrow("no scene");
+  });
+
+  it("revertDocument applies: POSTs the checkpoint then fetches the reverted scene (2d)", async () => {
+    const fetchImpl = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(
+        jsonResponse(200, {
+          status: "applied",
+          checkpoint: "agent-turn-run_1",
+          reverted_batch_ids: ["batch_a", "batch_b"],
+          document: { id: "doc_abc123", current_version: 12 }
+        })
+      )
+      .mockResolvedValueOnce(
+        jsonResponse(200, { id: "doc_abc123", title: "Poster", scene: emptyScene })
+      );
+
+    const outcome = await revertDocument(
+      { apiBaseUrl: "http://localhost:8002", fetchImpl },
+      "doc_abc123",
+      "agent-turn-run_1"
+    );
+
+    expect(outcome).toEqual({
+      status: "applied",
+      revertedBatchIds: ["batch_a", "batch_b"],
+      currentVersion: 12,
+      scene: emptyScene
+    });
+    const [revertUrl, revertInit] = fetchImpl.mock.calls[0];
+    expect(String(revertUrl)).toBe(
+      "http://localhost:8002/documents/doc_abc123/revert?checkpoint=agent-turn-run_1"
+    );
+    expect(revertInit?.method).toBe("POST");
+  });
+
+  it("revertDocument returns an honest refusal on 409/404, throws on 5xx (2d)", async () => {
+    const refusing = vi.fn<typeof fetch>().mockResolvedValue(
+      jsonResponse(409, {
+        detail: {
+          code: "history.checkpoint_not_active",
+          message: "checkpoint is not on the active undo path"
+        }
+      })
+    );
+    await expect(
+      revertDocument({ apiBaseUrl: "http://localhost:8002", fetchImpl: refusing }, "doc_x", "cp")
+    ).resolves.toEqual({
+      status: "refused",
+      code: "history.checkpoint_not_active",
+      message: "checkpoint is not on the active undo path"
+    });
+
+    const failing = vi.fn<typeof fetch>().mockResolvedValue(jsonResponse(500, {}));
+    await expect(
+      revertDocument({ apiBaseUrl: "http://localhost:8002", fetchImpl: failing }, "doc_x", "cp")
+    ).rejects.toThrow("HTTP 500");
   });
 });

@@ -220,4 +220,48 @@ describe("editQueue", () => {
     expect(events[0].diagnostic.code).toBe("EDITOR_WASM_EDIT_PERSIST_FAILED");
     expect(queue.persistedBatches).toBe(0);
   });
+
+  it("stamps a checkpoint label onto exactly the batch that carries it (2d)", async () => {
+    const localScene = cloneScene(baseScene);
+    const server = fakeServer({ scene: localScene });
+    const queue = createEditQueue({
+      apiBaseUrl: "http://api.test",
+      documentId: "doc_test",
+      localScene: () => localScene,
+      onReconcile: () => {},
+      fetchImpl: server.fetchImpl
+    });
+
+    queue.enqueueOperations(operationBatch("a"), { checkpoint: "agent-turn-run_1" });
+    queue.enqueueOperations(operationBatch("b"));
+    await queue.idle();
+
+    expect(server.posts[0].body.checkpoint).toBe("agent-turn-run_1");
+    // Unlabeled batches carry NO checkpoint field at all.
+    expect("checkpoint" in server.posts[1].body).toBe(false);
+  });
+
+  it("resync re-arms base_version after an external server write (2d revert)", async () => {
+    const localScene = cloneScene(baseScene);
+    const server = fakeServer({ scene: localScene });
+    const queue = createEditQueue({
+      apiBaseUrl: "http://api.test",
+      documentId: "doc_test",
+      localScene: () => localScene,
+      onReconcile: () => {},
+      fetchImpl: server.fetchImpl
+    });
+
+    queue.enqueueOperations(operationBatch("a"));
+    await queue.idle();
+    expect(server.posts[0].body.base_version).toBe(7);
+
+    // A checkpoint revert bumped the server to version 42 behind the
+    // queue's back; without resync the next batch would POST base_version 8
+    // (stale) and be rejected as a concurrent write.
+    queue.resync(42);
+    queue.enqueueOperations(operationBatch("b"));
+    await queue.idle();
+    expect(server.posts[1].body.base_version).toBe(42);
+  });
 });

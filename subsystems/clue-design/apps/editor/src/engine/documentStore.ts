@@ -51,6 +51,64 @@ export async function createDocument(
   return { documentId };
 }
 
+/** A checkpoint revert either applies, or the server refuses it honestly:
+ * the anchor may be unknown (404) or off the active undo path — already
+ * reverted (409). Refusals are outcomes, not exceptions; only transport or
+ * server failures throw. */
+export type RevertOutcome =
+  | {
+      status: "applied";
+      revertedBatchIds: string[];
+      currentVersion: number | null;
+      scene: Scene;
+    }
+  | { status: "refused"; code: string; message: string };
+
+export async function revertDocument(
+  options: DocumentStoreOptions,
+  documentId: string,
+  checkpoint: string
+): Promise<RevertOutcome> {
+  const { apiBaseUrl, fetchImpl = fetch } = options;
+  const url = new URL(`/documents/${encodeURIComponent(documentId)}/revert`, apiBaseUrl);
+  url.searchParams.set("checkpoint", checkpoint);
+  const response = await fetchImpl(url, { method: "POST" });
+  if (response.status === 404 || response.status === 409) {
+    const payload = (await response.json().catch(() => ({}))) as {
+      detail?: { code?: unknown; message?: unknown };
+    };
+    return {
+      status: "refused",
+      code: typeof payload.detail?.code === "string" ? payload.detail.code : "history.refused",
+      message:
+        typeof payload.detail?.message === "string"
+          ? payload.detail.message
+          : `The server refused reverting to ${checkpoint}.`
+    };
+  }
+  if (!response.ok) {
+    throw new Error(`revert failed (HTTP ${response.status})`);
+  }
+  const payload = (await response.json()) as {
+    reverted_batch_ids?: unknown;
+    document?: { current_version?: unknown };
+  };
+  // The revert response carries the document summary (no scene); fetch the
+  // authoritative reverted scene through the same loader the editor uses.
+  const document = await fetchDocument(options, documentId);
+  return {
+    status: "applied",
+    revertedBatchIds: Array.isArray(payload.reverted_batch_ids)
+      ? payload.reverted_batch_ids.filter((id): id is string => typeof id === "string")
+      : [],
+    currentVersion:
+      typeof payload.document?.current_version === "number"
+        ? payload.document.current_version
+        : null,
+    scene: document.scene
+  };
+}
+
 export async function fetchDocument(
   { apiBaseUrl, fetchImpl = fetch }: DocumentStoreOptions,
   documentId: string

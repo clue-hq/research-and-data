@@ -24,13 +24,24 @@ export interface ReconcileEvent {
   diagnostic: Diagnostic;
 }
 
+export interface EnqueueOptions {
+  /** Server-side checkpoint label stamped onto this batch's envelope
+   * (checkpoint_label) — the anchor Compare/Revert points at. */
+  checkpoint?: string;
+}
+
 export interface EditQueuePort {
   /** Queue a locally-applied operation batch for persistence. */
-  enqueueOperations(operations: Operation[]): void;
+  enqueueOperations(operations: Operation[], options?: EnqueueOptions): void;
   /** Resolves when every queued batch has been processed. */
   idle(): Promise<void>;
   /** Number of batches accepted by the server since creation. */
   readonly persistedBatches: number;
+  /** Re-sync after an external server-side write (e.g. a checkpoint revert):
+   * the cached base_version is stale and the next batch would be rejected as
+   * a concurrent write. Passing null re-fetches on the next batch. Also
+   * clears a halted queue — the caller just adopted authoritative state. */
+  resync(version: number | null): void;
 }
 
 export interface EditQueueOptions {
@@ -63,13 +74,13 @@ class ApiEditQueue implements EditQueuePort {
     this.fetchImpl = options.fetchImpl ?? ((input, init) => fetch(input, init));
   }
 
-  enqueueOperations(operations: Operation[]): void {
+  enqueueOperations(operations: Operation[], options?: EnqueueOptions): void {
     if (operations.length === 0 || this.halted) {
       return;
     }
     this.pending += 1;
     this.chain = this.chain
-      .then(() => this.persistBatch(operations))
+      .then(() => this.persistBatch(operations, options))
       .catch((error: unknown) => {
         this.halted = true;
         this.options.onReconcile({
@@ -88,7 +99,12 @@ class ApiEditQueue implements EditQueuePort {
     return this.chain.then(() => undefined);
   }
 
-  private async persistBatch(operations: Operation[]): Promise<void> {
+  resync(version: number | null): void {
+    this.baseVersion = version;
+    this.halted = false;
+  }
+
+  private async persistBatch(operations: Operation[], options?: EnqueueOptions): Promise<void> {
     if (this.halted) {
       return;
     }
@@ -104,7 +120,8 @@ class ApiEditQueue implements EditQueuePort {
           operations,
           actor: { kind: "editor" },
           source: "editor",
-          base_version: this.baseVersion
+          base_version: this.baseVersion,
+          ...(options?.checkpoint ? { checkpoint: options.checkpoint } : {})
         })
       }
     );
