@@ -54,6 +54,19 @@ IMAGERY_CATEGORIES = {"imagery"}
 # iteration. (Mirrors the layout-cluster forcing set in classify_visual_critique.)
 _STRUCTURAL_LAYOUT_CATEGORIES = {"visual_balance", "alignment", "spacing", "compiler_repair"}
 
+# How much a critic issue counts against a draft when ranking keep-best
+# candidates. A raw issue COUNT treats "entirely clipped off-canvas" (blocker)
+# the same as a margin nit (warning): run_8e7b9f64 proposed an invisible badge
+# over a visible one because both drafts had two issues and the invisible one
+# was rejected with higher confidence. Weights are deliberately coarse — one
+# blocker outweighs several errors, one error outweighs a pile of warnings.
+_ISSUE_SEVERITY_PENALTY = {
+    DiagnosticSeverity.info: 0,
+    DiagnosticSeverity.warning: 1,
+    DiagnosticSeverity.error: 3,
+    DiagnosticSeverity.blocker: 10,
+}
+
 # Phase 0b: action modes that author from scratch (or wipe the working scene).
 # On a SEEDED run the scene is the user's live document — these are coerced to
 # targeted_patch so the turn continues the document instead of replacing it.
@@ -1264,20 +1277,31 @@ class LumenQualityLoop:
         """Update the keep-best snapshot if the live scene beats the incumbent.
 
         Ranking (higher wins): preflight-clean drafts dominate compile-only ones;
-        among equals, an accepted critique beats a rejected one, then fewer critic
-        issues, then higher critic confidence. The scene is unchanged across the
+        among equals, an accepted critique beats a rejected one, then the lower
+        severity-weighted issue penalty, then confidence — SIGNED by the verdict:
+        the critic's confidence is in its own verdict, so among accepted drafts
+        higher confidence wins, while among rejected drafts higher confidence
+        means "more certainly bad" and ranks LOWER (run_8e7b9f64: the off-canvas
+        draft was rejected at 0.90, the visible one at 0.86 — the raw-confidence
+        tiebreak proposed the invisible badge). The scene is unchanged across the
         compile/preflight/critique stages of one iteration, so re-ranking the same
         iteration as more signal arrives simply upgrades its tier.
         """
         preflight_clean = stage == "preflight_clean"
         accepted = bool(critique and critique.accepted)
-        issue_count = len(critique.issues) if critique is not None else None
+        if critique is None:
+            issue_penalty = 999
+        else:
+            issue_penalty = sum(
+                _ISSUE_SEVERITY_PENALTY.get(issue.severity, 3)
+                for issue in critique.issues
+            )
         confidence = critique.confidence if critique is not None else 0.0
         rank = (
             1 if preflight_clean else 0,
             1 if accepted else 0,
-            -(issue_count if issue_count is not None else 999),
-            confidence,
+            -issue_penalty,
+            confidence if accepted else -confidence,
         )
         if self.best_rank is None or rank > self.best_rank:
             self.best_rank = rank
