@@ -175,6 +175,22 @@ def write_capture(
     return capture_dir
 
 
+def parse_cli_payload(stdout: str) -> Optional[Dict[str, Any]]:
+    """Parse the CLI's result payload from stdout. The CLI prints it as INDENTED
+    multi-line JSON (the old last-line parse only ever saw the closing brace), and
+    tool/framework chatter may precede it — so parse the last top-level object."""
+    text = stdout.strip()
+    start = text.rfind("\n{")
+    candidate = text[start + 1 :] if start != -1 else text
+    try:
+        payload = json.loads(candidate)
+    except json.JSONDecodeError:
+        return None
+    if isinstance(payload, dict) and payload.get("run_id"):
+        return payload
+    return None
+
+
 def run_brief_live(brief: Dict[str, Any], *, repo_root: Path, trace_root: Path, mode: str = "deepagent") -> Optional[Path]:
     """Invoke the agent CLI for one brief and return its trace dir. COSTS CREDITS and
     requires the model/image-model env to be configured. Returns None on failure."""
@@ -188,13 +204,11 @@ def run_brief_live(brief: Dict[str, Any], *, repo_root: Path, trace_root: Path, 
     if proc.returncode != 0:
         print(f"[error] {brief['id']} CLI failed: {proc.stderr[-500:]}")
         return None
-    try:
-        payload = json.loads(proc.stdout.strip().splitlines()[-1])
-        run_id = payload["run_id"]
-    except Exception:
+    payload = parse_cli_payload(proc.stdout)
+    if payload is None:
         print(f"[error] {brief['id']} could not parse run_id from CLI output")
         return None
-    return Path(trace_root) / run_id
+    return Path(trace_root) / payload["run_id"]
 
 
 def summarize(results: List[Dict[str, Any]]) -> Dict[str, Any]:

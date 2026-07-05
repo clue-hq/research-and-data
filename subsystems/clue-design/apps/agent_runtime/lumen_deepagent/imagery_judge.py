@@ -22,7 +22,7 @@ import json
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from .imagery_checks import score_scene
 from .prompts import IMAGERY_RUBRIC
@@ -73,15 +73,33 @@ TWEAK_MEAN = 2.0    # weighted-mean floor for "Tweak"
 class ImageryJudgeVerdict(BaseModel):
     """The LLM judge's 0–3 score on each shared-rubric axis (the JUDGE ceiling)."""
 
-    relevance: int = Field(ge=0, le=3, description="Axis 1 — does the imagery earn its place for THIS brief; gratuitous/cliché = low.")
-    placeholder_real: int = Field(ge=0, le=3, description="Axis 2 — a real credible picture, not a gray/solid placeholder.")
-    aspect_fit: int = Field(ge=0, le=3, description="Axis 3 — fills the frame, no stretch, no letterbox dead bands, subject in-frame.")
-    placement: int = Field(ge=0, le=3, description="Axis 4 — one hero, coherent role, aligned, clipped/rounded if intended, alt set.")
-    legibility: int = Field(ge=0, le=3, description="Axis 5 — text over image scrimmed/own-surface with adequate contrast.")
-    resolution_dpi: int = Field(ge=0, le=3, description="Axis 6 — sharp at rendered size, no upscale blur.")
-    no_in_image_text: int = Field(ge=0, le=3, description="Axis 7 — no words/letters/logos baked into the image.")
-    theme_coherence: int = Field(ge=0, le=3, description="Axis 8 — subject/style/palette on-brief and on-brand; one element dominates.")
+    # No ge/le bounds on the axis ints: they emit JSON-schema minimum/maximum,
+    # which the Anthropic structured-output path rejects with a 400 (same failure
+    # class as the VisualCritique confidence fix, d8eb4e7). Clamp in a validator;
+    # validators never surface in the emitted schema.
+    relevance: int = Field(description="Axis 1 (0-3) — does the imagery earn its place for THIS brief; gratuitous/cliché = low.")
+    placeholder_real: int = Field(description="Axis 2 (0-3) — a real credible picture, not a gray/solid placeholder.")
+    aspect_fit: int = Field(description="Axis 3 (0-3) — fills the frame, no stretch, no letterbox dead bands, subject in-frame.")
+    placement: int = Field(description="Axis 4 (0-3) — one hero, coherent role, aligned, clipped/rounded if intended, alt set.")
+    legibility: int = Field(description="Axis 5 (0-3) — text over image scrimmed/own-surface with adequate contrast.")
+    resolution_dpi: int = Field(description="Axis 6 (0-3) — sharp at rendered size, no upscale blur.")
+    no_in_image_text: int = Field(description="Axis 7 (0-3) — no words/letters/logos baked into the image.")
+    theme_coherence: int = Field(description="Axis 8 (0-3) — subject/style/palette on-brief and on-brand; one element dominates.")
     reasoning: str = Field(default="", description="One or two sentences explaining the lowest scores.")
+
+    @field_validator(
+        "relevance",
+        "placeholder_real",
+        "aspect_fit",
+        "placement",
+        "legibility",
+        "resolution_dpi",
+        "no_in_image_text",
+        "theme_coherence",
+    )
+    @classmethod
+    def _clamp_axis(cls, value: int) -> int:
+        return min(3, max(0, value))
 
 
 JUDGE_SYSTEM_PROMPT = (

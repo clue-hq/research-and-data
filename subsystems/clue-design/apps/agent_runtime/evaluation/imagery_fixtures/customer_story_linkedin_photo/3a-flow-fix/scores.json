@@ -1,0 +1,108 @@
+{
+  "per_axis": {
+    "relevance": {
+      "final": 2,
+      "judge": 2,
+      "det_cap": 3,
+      "weight": 1.0,
+      "hard_gate": false
+    },
+    "placeholder_real": {
+      "final": 3,
+      "judge": 3,
+      "det_cap": 3,
+      "weight": 1.0,
+      "hard_gate": false
+    },
+    "aspect_fit": {
+      "final": 3,
+      "judge": 3,
+      "det_cap": 3,
+      "weight": 1.0,
+      "hard_gate": true
+    },
+    "placement": {
+      "final": 3,
+      "judge": 3,
+      "det_cap": 3,
+      "weight": 1.0,
+      "hard_gate": true
+    },
+    "legibility": {
+      "final": 3,
+      "judge": 3,
+      "det_cap": 3,
+      "weight": 1.2,
+      "hard_gate": true
+    },
+    "resolution_dpi": {
+      "final": 3,
+      "judge": 3,
+      "det_cap": null,
+      "weight": 0.8,
+      "hard_gate": false
+    },
+    "no_in_image_text": {
+      "final": 3,
+      "judge": 3,
+      "det_cap": null,
+      "weight": 0.8,
+      "hard_gate": false
+    },
+    "theme_coherence": {
+      "final": 3,
+      "judge": 3,
+      "det_cap": null,
+      "weight": 1.0,
+      "hard_gate": false
+    }
+  },
+  "gate_failed": false,
+  "weighted_mean": 2.872,
+  "accept": true,
+  "tier": "ship",
+  "judge_ran": true,
+  "judge_reasoning": "The split image-panel layout is clean, text sits on its own dark surface with strong contrast, faces are un-cropped and undistorted. Relevance dips to 2 because it leans on the diverse-people-around-a-laptop stock cliche flagged in the risks, though a customer-story brief does justify showing real people.",
+  "image_count": 1,
+  "real_image_count": 1,
+  "brief_id": "customer_story_linkedin_photo",
+  "expected_decision": "photo",
+  "det": {
+    "dimensions": {
+      "placeholder_real": {
+        "score": 3,
+        "gate": false,
+        "notes": []
+      },
+      "decision": {
+        "score": 3,
+        "gate": false,
+        "notes": []
+      },
+      "aspect_fit": {
+        "score": 3,
+        "gate": false,
+        "notes": []
+      },
+      "legibility": {
+        "score": 3,
+        "gate": false,
+        "notes": [
+          "no text overlaps image"
+        ]
+      },
+      "hero_count": {
+        "score": 3,
+        "gate": false,
+        "notes": []
+      }
+    },
+    "gate_failed": false,
+    "accept": true,
+    "image_count": 1,
+    "real_image_count": 1
+  },
+  "run_id": "run_fd934cbb907d4be29cf8510e46ff0e15",
+  "run_status": "success",
+  "png_path": ".lumen-runs/run_fd934cbb907d4be29cf8510e46ff0e15/iterations/001/preview.png"
+}

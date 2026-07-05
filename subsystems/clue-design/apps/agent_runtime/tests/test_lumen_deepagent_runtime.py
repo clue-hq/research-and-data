@@ -1430,6 +1430,34 @@ def test_imagery_runner_merge_briefs_joins_sidecar_and_prompt():
     assert decisions == Counter({"photo": 6, "none": 6, "icon": 4})
 
 
+def test_imagery_judge_schema_emits_no_integer_bounds_and_clamps():
+    # Same failure class as the VisualCritique confidence fix (d8eb4e7): ge/le on
+    # ints emit JSON-schema minimum/maximum, which the Anthropic structured-output
+    # path 400s on every judge call. Bounds live in a validator clamp instead.
+    from lumen_deepagent.imagery_judge import ImageryJudgeVerdict
+
+    text = json.dumps(ImageryJudgeVerdict.model_json_schema())
+    assert '"minimum"' not in text and '"maximum"' not in text
+
+    verdict = ImageryJudgeVerdict(
+        relevance=7, placeholder_real=-2, aspect_fit=3, placement=2,
+        legibility=1, resolution_dpi=0, no_in_image_text=3, theme_coherence=3,
+    )
+    assert verdict.relevance == 3 and verdict.placeholder_real == 0
+
+
+def test_imagery_runner_parses_indented_cli_payload():
+    # The CLI prints its result as indent=2 JSON; the old last-line parse only
+    # ever saw the closing brace, so every live run "failed" to report a run_id.
+    runner = _load_imagery_runner()
+    pretty = json.dumps({"run_id": "run_abc123", "result": "done"}, indent=2)
+    assert runner.parse_cli_payload(pretty)["run_id"] == "run_abc123"
+    chatter = "warning: something\nprogress line\n" + pretty
+    assert runner.parse_cli_payload(chatter)["run_id"] == "run_abc123"
+    assert runner.parse_cli_payload("no json here") is None
+    assert runner.parse_cli_payload(json.dumps({"other": 1}, indent=2)) is None
+
+
 def test_imagery_runner_scores_and_captures_a_run_dir(tmp_path: Path):
     runner = _load_imagery_runner()
     run_dir = _write_synthetic_run_dir(tmp_path / "run", _poster_scene())
