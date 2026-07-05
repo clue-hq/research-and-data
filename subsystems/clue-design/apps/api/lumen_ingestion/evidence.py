@@ -104,6 +104,13 @@ class LogoEvidence(BaseModel):
     width: float | None = None
     height: float | None = None
     background_hint: str | None = None
+    # Description-engine metadata (brandkit ingestion v1 slice 3). Additive and
+    # optional; schema_version stays 1 and existing evidence deserializes
+    # unchanged (all default None/[]).
+    title: str | None = None
+    description: str | None = None
+    usage_note: str | None = None
+    tags: list[str] = []
     pointer: EvidencePointer
 
     @field_validator("background_hint")
@@ -121,6 +128,13 @@ class ImageEvidence(BaseModel):
     transparency: bool | None = None
     dominant_colors: list[str] = []
     kind_hint: Literal["photo", "illustration", "screenshot", "icon", "og_image"] | None = None
+    # Description-engine metadata (brandkit ingestion v1 slice 3). Additive and
+    # optional; schema_version stays 1 and existing evidence deserializes
+    # unchanged (all default None/[]).
+    title: str | None = None
+    description: str | None = None
+    usage_note: str | None = None
+    tags: list[str] = []
     pointer: EvidencePointer
 
     @field_validator("dominant_colors")

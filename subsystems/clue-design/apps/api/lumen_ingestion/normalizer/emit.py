@@ -13,7 +13,7 @@ from __future__ import annotations
 import re
 
 from ..colorspace import hex_alpha
-from ..evidence import BrandEvidence, FontEvidence, LogoEvidence
+from ..evidence import BrandEvidence, FontEvidence, ImageEvidence, LogoEvidence
 from .required import (
     REQUIRED_ASSET_TOKENS,
     REQUIRED_COLOR_TOKENS,
@@ -232,7 +232,7 @@ class KitBuilder:
             allowed = ["surface.page", "surface.card"]
             if has_reversed:
                 allowed.append("surface.inverse")
-            self.logos[key] = {
+            entry = {
                 "variants": [
                     {
                         "name": logo.color_mode_hint or "full_color",
@@ -250,6 +250,16 @@ class KitBuilder:
                 "license": None,
                 "provenance": _provenance(f"{group[0].pointer.source}:{group[0].pointer.locator}", 0.7),
             }
+            # Description-engine metadata (slice 3): the primary variant carries
+            # the title/description. Fields are OMITTED (not null) when absent so
+            # pre-slice-3 golden snapshots stay byte-identical (matches the Rust
+            # skip_serializing_if on LogoAsset.title/description).
+            title, description = _asset_meta(group[0])
+            if title is not None:
+                entry["title"] = title
+            if description is not None:
+                entry["description"] = description
+            self.logos[key] = entry
 
         # asset tokens
         primary = groups.get("primary")
@@ -278,18 +288,26 @@ class KitBuilder:
     def add_images(self) -> None:
         for index, image in enumerate(self.evidence.images, start=1):
             key = f"img.{index}"
-            self.images[key] = {
+            entry = {
                 "asset_id": image.asset_id,
                 "role": image.kind_hint or "photo",
                 "mime_type": None,
                 "license": None,
                 "provenance": _provenance(f"{image.pointer.source}:{image.pointer.locator}", 0.6),
-                "style_tags": [],
+                "style_tags": _merge_style_tags([], image.tags),
                 "allowed_contexts": [],
                 "preferred_color_tokens": [],
                 "recolor_allowed": False,
                 "crop_allowed": True,
             }
+            # Description-engine metadata (slice 3): title/description OMITTED
+            # (not null) when absent so pre-slice-3 goldens stay byte-identical.
+            title, description = _asset_meta(image)
+            if title is not None:
+                entry["title"] = title
+            if description is not None:
+                entry["description"] = description
+            self.images[key] = entry
 
     # --- aliases --------------------------------------------------------
 
@@ -362,6 +380,30 @@ class KitBuilder:
             },
             "constraints": constraints,
         }
+
+
+def _asset_meta(asset: "LogoEvidence | ImageEvidence") -> tuple[str | None, str | None]:
+    """Return (title, description) for a logo/image evidence entry, folding the
+    usage note into the description ("… Usage: …"). Either may be None so the
+    caller can OMIT the field entirely (matches the Rust skip_serializing_if)."""
+    title = asset.title
+    description = asset.description
+    usage_note = asset.usage_note
+    if description is not None and usage_note:
+        description = f"{description} Usage: {usage_note}"
+    elif description is None and usage_note:
+        description = f"Usage: {usage_note}"
+    return title, description
+
+
+def _merge_style_tags(existing: list[str], tags: list[str]) -> list[str]:
+    """Merge evidence tags into existing style tags: deduped, sorted, prepended
+    after the existing tags (existing order preserved, new tags follow)."""
+    if not tags:
+        return list(existing)
+    seen = set(existing)
+    extra = sorted({tag for tag in tags if tag not in seen})
+    return list(existing) + extra
 
 
 def _confidence_for(basis: str) -> float:

@@ -1748,6 +1748,8 @@ fn acme_brand_kit() -> BrandKit {
             allowed_backgrounds: vec!["surface.brand".to_owned()],
             license: None,
             provenance: None,
+            title: None,
+            description: None,
         },
     );
 

@@ -84,7 +84,11 @@ from .models import (
     ValidateDocumentBrandGovernanceRequest,
 )
 from lumen_ingestion.jobs import IngestionJobStore
-from lumen_ingestion.pipeline import run_pdf_ingestion, run_website_ingestion
+from lumen_ingestion.pipeline import (
+    run_asset_ingestion,
+    run_pdf_ingestion,
+    run_website_ingestion,
+)
 
 from .observability import (
     REQUEST_ID_HEADER,
@@ -467,6 +471,104 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
 
         background_tasks.add_task(
             run_pdf_ingestion,
+            str(app.state.database_path),
+            asset_store_root(),
+            job["job_id"],
+        )
+        return {"schema_version": 1, "job": ingestion_job_dto(job)}
+
+    @app.post("/brand-kits/ingest/assets")
+    def ingest_assets(
+        background_tasks: BackgroundTasks,
+        files: List[UploadFile] = File(...),
+        name: Optional[str] = Form(None),
+        brand_kit_id: Optional[str] = Form(None),
+        repo: Repository = Depends(repository),
+    ) -> JsonObject:
+        if not files:
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "code": "ingest.unsupported_file",
+                    "message": "asset ingest requires at least one file",
+                },
+            )
+        if len(files) > _INGEST_MAX_ASSET_FILES:
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "code": "ingest.too_many_files",
+                    "message": (
+                        f"asset ingest accepts at most {_INGEST_MAX_ASSET_FILES} "
+                        f"files, got {len(files)}"
+                    ),
+                },
+            )
+
+        max_bytes = asset_max_bytes()
+        payloads: List[Tuple[UploadFile, bytes]] = []
+        for upload in files:
+            data = upload.file.read()
+            if len(data) > max_bytes:
+                raise HTTPException(
+                    status_code=413,
+                    detail=(
+                        f"asset payload of {len(data)} bytes exceeds the "
+                        f"{max_bytes}-byte limit"
+                    ),
+                )
+            payloads.append((upload, data))
+
+        # Magic-sniff each file (§2). Files failing the sniff are still passed
+        # through — uploads.py skips them with diagnostics — but if NONE pass we
+        # reject the whole batch up-front rather than queue a doomed job.
+        if not any(_sniff_supported_asset(data) for _upload, data in payloads):
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "code": "ingest.unsupported_file",
+                    "message": (
+                        "no uploaded file is a supported image "
+                        "(PNG, JPEG, WebP, or SVG)"
+                    ),
+                },
+            )
+
+        # Create the job first so its id names the tmp files, then write each
+        # file's bytes to <asset_store_root>/ingest_tmp/<job_id>_<idx>_<name>
+        # and record those paths in the job request — run_asset_ingestion reads
+        # + deletes them. The file bytes themselves are never stored in the job
+        # row.
+        job = IngestionJobStore(repo.connection).create(
+            "asset_upload",
+            {
+                "name": name,
+                "brand_kit_id": brand_kit_id,
+                "file_count": len(payloads),
+            },
+        )
+        tmp_dir = Path(asset_store_root()) / "ingest_tmp"
+        tmp_dir.mkdir(parents=True, exist_ok=True)
+
+        file_specs: List[JsonObject] = []
+        for idx, (upload, data) in enumerate(payloads):
+            safe_name = _sanitize_tmp_filename(upload.filename)
+            tmp_path = tmp_dir / f"{job['job_id']}_{idx}_{safe_name}"
+            tmp_path.write_bytes(data)
+            file_specs.append(
+                {
+                    "filename": upload.filename,
+                    "content_type": upload.content_type,
+                    "tmp_path": str(tmp_path),
+                }
+            )
+
+        request = dict(job["request"])
+        request["files"] = file_specs
+        job = IngestionJobStore(repo.connection).update_request(job["job_id"], request)
+
+        background_tasks.add_task(
+            run_asset_ingestion,
             str(app.state.database_path),
             asset_store_root(),
             job["job_id"],
@@ -3077,6 +3179,40 @@ def _resolve_guard_url():
     from lumen_ingestion.capture.net import guard_url
 
     return guard_url
+
+
+# Asset-upload ingest (slice 3 §6). The cap mirrors uploads.py's own LUMI0702
+# cap so the route and analyzer agree; the sniff mirrors §2's accepted types.
+_INGEST_MAX_ASSET_FILES = 20
+
+
+def _sniff_supported_asset(data: bytes) -> bool:
+    """True when ``data`` looks like PNG, JPEG, WebP, or SVG by magic bytes
+    (§2). Mirrors uploads.py's own sniff so the route and analyzer agree on
+    which files are worth queuing; uploads.py re-sniffs and skips per-file."""
+    if not data:
+        return False
+    if data.startswith(b"\x89PNG"):
+        return True
+    if data.startswith(b"\xff\xd8"):  # JPEG
+        return True
+    if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        return True
+    # SVG: first 512 bytes contain "<svg" after optional decl/whitespace/comments.
+    head = data[:512]
+    try:
+        text = head.decode("utf-8", errors="ignore").lower()
+    except Exception:
+        return False
+    return "<svg" in text
+
+
+def _sanitize_tmp_filename(filename: Optional[str]) -> str:
+    """Sanitize an uploaded filename for use in a tmp path: keep only
+    ``[A-Za-z0-9._-]`` and cap length. Never returns empty."""
+    base = os.path.basename(filename or "")
+    cleaned = re.sub(r"[^A-Za-z0-9._-]", "_", base).strip("._") or "asset"
+    return cleaned[:80]
 
 
 def ingest_url_rejected(url: str, error: Exception) -> HTTPException:
