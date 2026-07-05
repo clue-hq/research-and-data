@@ -18,6 +18,7 @@ import type {
 import { defaultEditorExportProfile, type EditorExportResult } from "@/engine/exportRunner";
 import type { EditorPreflightResult } from "@/engine/preflightRunner";
 import { firstPageId } from "@/engine/sceneQueries";
+import { freezeLayoutEdit } from "@/engine/structuredEdits";
 import type { OptimisticEnginePort } from "@/engine/wasmEngine";
 
 /**
@@ -80,6 +81,9 @@ export interface UseAgentTurnDeps {
   targetNodeIds: NodeId[];
   /** 2e: the document's standing instructions sent with each turn. */
   agentInstructions: string | null;
+  /** Advanced per-document opt-out from handoff-absolute: when true the
+   * accept-time freeze is skipped, so the turn's Stack containers stay live. */
+  layoutManagedEditing: boolean;
   diagnostics: Diagnostic[];
   setDiagnostics: Dispatch<SetStateAction<Diagnostic[]>>;
   setScene: Dispatch<SetStateAction<Scene>>;
@@ -153,6 +157,7 @@ export function useAgentTurn(deps: UseAgentTurnDeps) {
     selectedNodeId,
     targetNodeIds,
     agentInstructions,
+    layoutManagedEditing,
     diagnostics,
     setDiagnostics,
     setScene,
@@ -531,12 +536,36 @@ export function useAgentTurn(deps: UseAgentTurnDeps) {
       }
       acceptedScene = engine.scene;
     }
+    // Handoff-absolute: bake every Stack container to Free in the SAME
+    // envelope as the turn's own ops — merged into one undo frame and one
+    // server checkpoint (not a second commit), so a single Undo fully
+    // unwinds both the freeze and the turn's content back to the true
+    // pre-turn scene, and Revert has exactly one batch to point at. An empty
+    // freeze outcome (already frozen / nothing to freeze) merges nothing.
+    // The layout-managed-editing opt-out skips the bake entirely: the turn's
+    // ops commit exactly as proposed and its Stack containers stay live.
+    let mergedOperations = operations;
+    let mergedInverseOperations = inverseOperations;
+    if (!layoutManagedEditing && engine?.applyStructuredEdit) {
+      const freezeOutcome = engine.applyStructuredEdit(freezeLayoutEdit());
+      if (freezeOutcome.accepted && freezeOutcome.operations.length > 0) {
+        acceptedScene = freezeOutcome.scene;
+        mergedOperations = [...operations, ...freezeOutcome.operations];
+        // Inverses undo in reverse order of the forward batch: the freeze's
+        // inverse (each sub-batch already internally reverse-ordered) goes
+        // first so undoing peels the freeze off before the turn's content.
+        mergedInverseOperations =
+          inverseOperations && freezeOutcome.inverseOperations
+            ? [...freezeOutcome.inverseOperations, ...inverseOperations]
+            : null;
+      }
+    }
     const disposition = commitAppliedOperations(
       baseScene,
-      operations,
+      mergedOperations,
       acceptedScene,
       { checkpoint },
-      inverseOperations
+      mergedInverseOperations
     );
     const messageId = uniqueChatMessageId("system");
     setAgentMessages((messages) => [

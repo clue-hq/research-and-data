@@ -32,6 +32,13 @@ export interface UseDocumentSyncDeps {
   editQueueFactory: EditQueueFactory;
   engineRef: { current: OptimisticEnginePort | null };
   sceneRef: { current: Scene };
+  /** The pre-draft scene while an agent preview/draft is pending, else null.
+   * The queue only ever persisted state UP TO the preview's base — the
+   * draft's ops live in the optimistic engine but in no enqueued batch — so
+   * drain-time reconciliation must compare the last queue-owned scene, or
+   * every pending draft reads as divergence and gets clobbered by the
+   * server's authoritative state. */
+  previewBaseSceneRef: { current: Scene | null };
   replaceScene: (nextScene: Scene) => void;
   setScene: Dispatch<SetStateAction<Scene>>;
   setDiagnostics: Dispatch<SetStateAction<Diagnostic[]>>;
@@ -49,6 +56,7 @@ export function useDocumentSync(deps: UseDocumentSyncDeps) {
     editQueueFactory,
     engineRef,
     sceneRef,
+    previewBaseSceneRef,
     replaceScene,
     setScene,
     setDiagnostics,
@@ -72,7 +80,8 @@ export function useDocumentSync(deps: UseDocumentSyncDeps) {
   const ensureEditQueue = (queueDocumentId: string): EditQueuePort => {
     editQueueRef.current ??= editQueueFactory({
       documentId: queueDocumentId,
-      localScene: () => engineRef.current?.scene ?? sceneRef.current,
+      localScene: () =>
+        previewBaseSceneRef.current ?? engineRef.current?.scene ?? sceneRef.current,
       onReconcile: (event) => {
         if (event.serverScene) {
           replaceScene(event.serverScene);

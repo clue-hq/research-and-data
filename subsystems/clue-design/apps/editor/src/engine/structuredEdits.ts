@@ -1,4 +1,4 @@
-import type { Effect, Fill, Node, Operation, Stroke } from "./contracts";
+import type { Effect, Fill, Node, Operation, Scene, Stroke } from "./contracts";
 
 /**
  * TypeScript wrapper for the Phase D structured-edit wire format.
@@ -132,6 +132,45 @@ export function convertContainerLayoutEdit(
   layoutMode: "stack" | "free"
 ): StructuredEdit {
   return { kind: "convert_container_layout", node_id: nodeId, layout_mode: layoutMode };
+}
+
+/** Handoff-absolute: bake every Stack container to Free in one zero-motion
+ * batch — after an agent turn the human edits pure absolute. Idempotent
+ * (empty batch when nothing is left to freeze). */
+export function freezeLayoutEdit(): StructuredEdit {
+  return { kind: "freeze_layout" };
+}
+
+/** Phase 4b arrange: wrap same-parent siblings in a new Group container.
+ * The caller mints `groupId` so the edit replays deterministically. */
+export function groupEdit(nodeIds: string[], groupId: string, name?: string): StructuredEdit {
+  return {
+    kind: "group",
+    node_ids: nodeIds,
+    group_id: groupId,
+    ...(name !== undefined ? { name } : {})
+  };
+}
+
+/** Phase 4b arrange: dissolve a container into its parent, keeping child
+ * order and geometry. `allowLayout` opts into ungrouping an auto-layout
+ * container (destroys its layout semantics) — defaults to false. */
+export function ungroupEdit(nodeId: string, allowLayout = false): StructuredEdit {
+  return { kind: "ungroup", node_id: nodeId, allow_layout: allowLayout };
+}
+
+/** Mints a fresh, scene-unique group id for `groupEdit` — the engine
+ * rejects a `group_id` that already exists (see arrange_ops.rs). No
+ * existing client-side node-id minting convention covers a fresh id with
+ * no source node (unlike page duplication's per-source suffixing), so this
+ * wraps `crypto.randomUUID` — never stored bare (frontend-practices §2.8). */
+export function mintGroupId(scene: Pick<Scene, "nodes">): string {
+  const randomUUID = () => crypto.randomUUID();
+  let candidate = `grp-${randomUUID().slice(0, 8)}`;
+  while (scene.nodes[candidate]) {
+    candidate = `grp-${randomUUID().slice(0, 8)}`;
+  }
+  return candidate;
 }
 
 export function deleteExportProfileEdit(

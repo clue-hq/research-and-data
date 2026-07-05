@@ -1551,11 +1551,7 @@ fn text_color_is_corrected_for_surface_contrast() {
             }),
         );
         artboard.children = vec![headline.id.clone()];
-        scene
-            .pages
-            .get_mut(&PageId::from("page"))
-            .unwrap()
-            .children = vec![artboard.id.clone()];
+        scene.pages.get_mut(&PageId::from("page")).unwrap().children = vec![artboard.id.clone()];
         scene.nodes.insert(headline.id.clone(), headline);
         scene.nodes.insert(artboard.id.clone(), artboard);
 
@@ -1565,7 +1561,10 @@ fn text_color_is_corrected_for_surface_contrast() {
             color: Color::Hex { value },
         } = &headline.fills[0].paint
         else {
-            panic!("expected a resolved solid hex text fill, got {:?}", headline.fills);
+            panic!(
+                "expected a resolved solid hex text fill, got {:?}",
+                headline.fills
+            );
         };
         hex_rgb(value)
     };
@@ -1901,9 +1900,7 @@ fn font_size_step_token_overrides_role_default_size() {
     let brand_kit = platform_default_brand_kit().unwrap();
     let mut scene = Scene::new(DocumentId::from("doc_typesize"), "TypeSize");
     scene.meta.brand_kit = Some(brand_kit.brand_ref());
-    scene
-        .pages
-        .insert(PageId::from("page_ts"), page("page_ts"));
+    scene.pages.insert(PageId::from("page_ts"), page("page_ts"));
 
     // Role headline (default 56, weight 800) + explicit 7xl (80) size override.
     let hero = Node::new(

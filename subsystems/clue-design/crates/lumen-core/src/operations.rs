@@ -3,9 +3,9 @@ use crate::diagnostics::{Diagnostic, DiagnosticSeverity};
 use crate::export_contract::ExportProfile;
 use crate::ids::{AssetId, BrandKitId, NodeId, PageId, SlotId, TemplateRevisionId};
 use crate::scene::{
-    AutoLayoutProps, BrandKitRef, ComputedGeometry, CornerRadii, DocumentStatus, Effect, Fill,
-    ImageNode, Medium, Node, NodeKind, PageSize, ParentRef, PositionMode, Rect, Scene, SizeSpec,
-    Stroke, Transform, VectorNode,
+    AutoLayoutProps, BrandKitRef, ComputedGeometry, CornerRadii, DocumentStatus, Effect,
+    ExplicitTextTokens, Fill, ImageNode, Medium, Node, NodeKind, PageSize, ParentRef, PositionMode,
+    Rect, Scene, SizeSpec, Stroke, Transform, VectorNode,
 };
 use crate::slots::ContentType;
 use crate::slots::Slot;
@@ -583,9 +583,42 @@ impl Scene {
             ));
         }
 
+        // A kind replace carries whatever token fields the writer had in
+        // hand; a token the write left untouched while moving its raw channel
+        // is stale and must not re-resolve over the edit later.
+        let previous_text = match (&patch.kind, &current.kind) {
+            (FieldPatch::Set(NodeKind::Text(_)), NodeKind::Text(text)) => Some(text.clone()),
+            _ => None,
+        };
+        // Token honesty for color: text color lives in node-level fills, and
+        // the type role's baked color (plus contrast correction) re-resolves
+        // over them — so a raw fills edit detaches `style_token` the same way
+        // a raw typography edit does. A style_token the patch itself authored
+        // survives, which is also how inverse operations restore the binding.
+        let fills_changing =
+            matches!(&patch.fills, FieldPatch::Set(fills) if *fills != current.fills);
+        let fills_detach_style = fills_changing && fills_edit_detaches_style_token(current, &patch);
+
         let node = self.nodes.get_mut(node_id).expect("node checked above");
         apply_optional_patch(&mut node.name, patch.name);
         apply_field_patch(&mut node.kind, patch.kind);
+        if let (Some(before), NodeKind::Text(after)) = (previous_text, &mut node.kind) {
+            let explicit = ExplicitTextTokens {
+                style: after.style_token != before.style_token,
+                font_size: after.font_size_token != before.font_size_token,
+                line_height: after.line_height_token != before.line_height_token,
+                letter_spacing: after.letter_spacing_token != before.letter_spacing_token,
+            };
+            after.clear_stale_tokens(&before, explicit);
+            if fills_changing && !explicit.style {
+                after.style_token = None;
+            }
+        }
+        if fills_detach_style {
+            if let NodeKind::Text(text) = &mut node.kind {
+                text.style_token = None;
+            }
+        }
         apply_field_patch(&mut node.transform, patch.transform);
         apply_field_patch(&mut node.size, patch.size);
         apply_field_patch(&mut node.fills, patch.fills);
@@ -923,6 +956,19 @@ impl Scene {
     }
 }
 
+/// Does a raw fills write in `patch` detach `node`'s type role? True only
+/// for a Text node holding a `style_token` while the patch leaves `kind`
+/// untouched — a kind replace carries its own token intent and is covered
+/// by the diff rule in `update_node`. Callers pair this with a fills
+/// inequality check; apply and inverse must agree on the full condition so
+/// undo restores the binding.
+fn fills_edit_detaches_style_token(node: &Node, patch: &NodePatch) -> bool {
+    if !matches!(patch.kind, FieldPatch::Unchanged) {
+        return false;
+    }
+    matches!(&node.kind, NodeKind::Text(text) if text.style_token.is_some())
+}
+
 impl Scene {
     /// Compute the inverse operation batch for `operations` against this
     /// scene, stepping an internal draft through each operation so every
@@ -1100,6 +1146,15 @@ impl Scene {
                     inverse.name = optional_restore(&node.name);
                 }
                 if !matches!(patch.kind, FieldPatch::Unchanged) {
+                    inverse.kind = FieldPatch::Set(node.kind.clone());
+                }
+                // A raw fills edit on a text node clears `style_token` as a
+                // side effect (token honesty for color, `update_node`); the
+                // inverse restores the whole kind so undo restores the
+                // binding along with the fills.
+                if matches!(&patch.fills, FieldPatch::Set(fills) if *fills != node.fills)
+                    && fills_edit_detaches_style_token(node, patch)
+                {
                     inverse.kind = FieldPatch::Set(node.kind.clone());
                 }
                 if !matches!(patch.transform, FieldPatch::Unchanged) {

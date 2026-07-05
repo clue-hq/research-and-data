@@ -5,6 +5,12 @@ import json
 import re
 from typing import Optional, Protocol
 
+from .accommodation import (
+    CONFLICT_CLEARANCE_THRESHOLD,
+    clearance,
+    page_space_box,
+    turn_introduced_conflicts,
+)
 from .schemas import (
     AgentActionMode,
     AgentDirectorDecision,
@@ -53,6 +59,19 @@ IMAGERY_CATEGORIES = {"imagery"}
 # unbalanced page is fixed by geometry first, then the imagery axis is revisited next
 # iteration. (Mirrors the layout-cluster forcing set in classify_visual_critique.)
 _STRUCTURAL_LAYOUT_CATEGORIES = {"visual_balance", "alignment", "spacing", "compiler_repair"}
+
+# How much a critic issue counts against a draft when ranking keep-best
+# candidates. A raw issue COUNT treats "entirely clipped off-canvas" (blocker)
+# the same as a margin nit (warning): run_8e7b9f64 proposed an invisible badge
+# over a visible one because both drafts had two issues and the invisible one
+# was rejected with higher confidence. Weights are deliberately coarse — one
+# blocker outweighs several errors, one error outweighs a pile of warnings.
+_ISSUE_SEVERITY_PENALTY = {
+    DiagnosticSeverity.info: 0,
+    DiagnosticSeverity.warning: 1,
+    DiagnosticSeverity.error: 3,
+    DiagnosticSeverity.blocker: 10,
+}
 
 # Phase 0b: action modes that author from scratch (or wipe the working scene).
 # On a SEEDED run the scene is the user's live document — these are coerced to
@@ -272,8 +291,53 @@ class LumenQualityLoop:
         # edit scope that edit-scoped acceptance judges critique issues against.
         self.edited_node_ids: set = set()
         self.edited_page_ids: set = set()
+        # Agent-improvement follow-up 1 (baseline-diff repair scoping): errors
+        # that already existed on the SEEDED scene before this turn touched it,
+        # keyed by (code, subject) — see `_diagnostic_key`. Populated once at
+        # the start of `run()`. The Phase A preflight gate must block only on
+        # errors NOT in this set (i.e. errors this turn introduced); baseline
+        # errors are surfaced as advisory context instead of burning repair
+        # iterations. Empty for an unseeded (fresh) run — there is no prior
+        # state to baseline against.
+        self.baseline_diagnostic_keys: set = set()
+        self.baseline_diagnostics: list[dict] = []
+        # Baseline errors the turn never touched (still present, unaddressed,
+        # by the time the run finalizes) — surfaced as advisory in the result.
+        self.unaddressed_baseline_diagnostics: list[dict] = []
+        # Accommodation edits: the seeded scene AS GEOMETRY, captured before
+        # the turn's first edit, so turn-introduced crowding can be measured
+        # (baseline_diagnostics above only captures diagnostic keys). None for
+        # an unseeded run.
+        self.baseline_scene: Optional[dict] = None
+        # Latest detection: turn-introduced (edited node × neighbor) conflicts
+        # on the CURRENT draft — drives the critic hint, the repair
+        # accommodation clause, and edit-scoped-acceptance scope expansion.
+        self.accommodation_conflicts: list[dict] = []
+        # Every conflict ever detected this run, keyed (edited, neighbor).
+        # The final announcement diffs these neighbors' geometry against the
+        # baseline: a repair that RESOLVES a conflict empties the latest list,
+        # but the nudge that resolved it must still be reported.
+        self.accommodation_conflict_log: dict = {}
+        # At most ONE forced accommodation repair round per run (see
+        # _should_force_accommodation_round).
+        self.accommodation_repair_attempted = False
 
     def run(self, user_request: str) -> dict:
+        # Agent-improvement follow-up 1: capture the seeded scene's OWN
+        # diagnostics before this turn's first draft/edit ever applies. Must
+        # happen before the iteration loop so every gate this run runs sees
+        # the same baseline (the loop never re-captures mid-run).
+        self.baseline_diagnostics = self.tools.baseline_preflight_diagnostics()
+        self.baseline_diagnostic_keys = {
+            _diagnostic_key(diag) for diag in self.baseline_diagnostics
+        }
+        # Accommodation edits: snapshot the seeded scene's geometry at the same
+        # pre-first-edit moment, so crowding this turn CREATES is separable
+        # from adjacency the design already had (frozen output legitimately
+        # contains 0pt gaps — see the calibration in
+        # .context/agent-improvement/2026-07-05-accommodation-edits.md).
+        if self.tools.seeded_from_initial_scene and isinstance(self.tools.scene, dict):
+            self.baseline_scene = copy.deepcopy(self.tools.scene)
         knowledge = json.loads(self.tools.load_knowledge(user_request))
         self.state.loaded_knowledge = [
             KnowledgeSnippet.model_validate(snippet)
@@ -406,6 +470,8 @@ class LumenQualityLoop:
                         "accepted",
                         StopReason.accepted.value,
                         decision.rationale,
+                        baseline_advisory_json=self._baseline_advisory_payload_json(),
+                        accommodation_json=self._accommodation_payload_json(),
                     )
                 )
             if decision.action_mode == AgentActionMode.stop_with_gap:
@@ -785,7 +851,22 @@ class LumenQualityLoop:
             iteration_record.preflight_summary = PreflightSummary.model_validate(
                 preflight_summary
             )
-            if tool_has_blocking_failure(preflight_summary) or preflight_summary.get("has_errors"):
+            # Agent-improvement follow-up 1 (baseline-diff repair scoping): the
+            # clean-draft gate blocks ONLY on errors this turn INTRODUCED, never
+            # on errors that already existed on the seeded scene before this
+            # turn touched it. Without this, a doc with pre-existing legacy
+            # errors (e.g. LUMV0810 slot-fixture overflow on frozen/pinned
+            # text) wedges every repair iteration re-fixing out-of-scope
+            # errors while the user's actual ask never converges
+            # (run_4a0feb15048e4fbe993029bd2cab436f).
+            all_preflight_diagnostics = preflight_summary.get("diagnostics", [])
+            introduced_diagnostics = self._introduced_diagnostics(all_preflight_diagnostics)
+            baseline_advisory = self._baseline_advisory(all_preflight_diagnostics)
+            self.unaddressed_baseline_diagnostics = baseline_advisory
+            introduced_summary = {**preflight_summary, "diagnostics": introduced_diagnostics}
+            if tool_has_blocking_failure(introduced_summary) or has_blocking_diagnostics(
+                introduced_diagnostics
+            ):
                 debug_preview = json.loads(
                     self.tools.export_preview_bundle(
                         debug_only=True,
@@ -797,8 +878,8 @@ class LumenQualityLoop:
                     iteration_record.export_summary = ExportSummary.model_validate(
                         debug_export_summary
                     )
-                target = first_diagnostic_target(preflight_summary)
-                repair_intent = diagnostic_repair_intent(preflight_summary)
+                target = first_diagnostic_target(introduced_summary)
+                repair_intent = diagnostic_repair_intent(introduced_summary)
                 recommendation = json.loads(
                     self.tools.recommend_edit_surface(
                         repair_intent,
@@ -806,7 +887,7 @@ class LumenQualityLoop:
                     )
                 ).get("recommendation", "dsl")
                 classification = classify_diagnostics(
-                    preflight_summary.get("diagnostics", []),
+                    introduced_diagnostics,
                     target,
                     scene=self.tools.scene,
                     prior_context=block_request.repair_context,
@@ -818,7 +899,7 @@ class LumenQualityLoop:
                 )
                 feedback = {
                     "kind": "preflight",
-                    "feedback": preflight_summary,
+                    "feedback": introduced_summary,
                     "debug_preview": debug_export_summary,
                     "target": target,
                     "recommended_edit_surface": recommendation,
@@ -834,13 +915,27 @@ class LumenQualityLoop:
                     ),
                     **repair_class_payload(classification),
                 }
+                if baseline_advisory:
+                    # The repair prompt must never be told to fix baseline
+                    # errors — they are handed to the author only as advisory
+                    # context, never as part of what to repair.
+                    feedback["baseline_advisory"] = {
+                        "count": len(baseline_advisory),
+                        "diagnostics": baseline_advisory,
+                        "note": (
+                            f"{len(baseline_advisory)} pre-existing issue(s) on this "
+                            "document were not addressed — they predate this turn "
+                            "and are out of scope; do not spend the repair budget "
+                            "on them unless the user explicitly asks."
+                        ),
+                    }
                 if surgical:
                     feedback["surgical_repair"] = True
                     feedback["surgical_target"] = target
                 repair_request = json.loads(
                     self.tools.create_repair_request(
                         exact_feedback=json.dumps(feedback, indent=2),
-                        diagnostics_json=json.dumps(preflight_summary.get("diagnostics", [])),
+                        diagnostics_json=json.dumps(introduced_diagnostics),
                         target_json=json.dumps(target),
                         allowed_edit_surface=recommendation,
                         forbidden_changes_json=json.dumps(
@@ -859,9 +954,21 @@ class LumenQualityLoop:
                 iteration_record.stop_reason = StopReason.preflight_failed
                 continue
 
+            # Preflight is CLEAN for gating purposes (no errors this turn
+            # introduced), even if pre-existing baseline errors remain. Those
+            # ride along as advisory — never re-checked here, never blocking.
+
             # Preflight passed: this draft is renderable AND valid — a strictly
             # better keep-best candidate than a compile-only draft.
             self._consider_best(stage="preflight_clean", critique=None)
+
+            # Accommodation edits: measure turn-introduced crowding on this
+            # laid-out draft BEFORE the critic runs, so the critic judges the
+            # conflicts (it missed exactly this at confidence 0.9 in
+            # run_e0bb1733) and a subsequent repair may nudge the named
+            # neighbors. Detection is geometric; judgment stays with the
+            # critic and the author.
+            self._detect_accommodation_conflicts()
 
             # Quality is judged on PIXELS: always render a PNG for the critic so the
             # visual reviewer inspects the rendered image, not SVG geometry, even
@@ -953,6 +1060,13 @@ class LumenQualityLoop:
             # Rank this fully-reviewed draft. The highest-scoring one is what we
             # hand back if no iteration is ever accepted.
             self._consider_best(stage="preflight_clean", critique=critique)
+            if critique.accepted and self._should_force_accommodation_round():
+                # The pixel critic accepted OVER an unresolved turn-introduced
+                # conflict. Swap in a synthetic rejection carrying the nudge
+                # instruction so the ordinary repair plumbing below runs one
+                # bounded accommodation round; keep-best already ranked the
+                # accepted draft, so a failed round still returns it.
+                critique = self._forced_accommodation_critique(critique)
             if critique.accepted:
                 iteration_record.stop_reason = StopReason.accepted
                 self.state.status = "accepted"
@@ -963,6 +1077,8 @@ class LumenQualityLoop:
                         StopReason.accepted.value,
                         critique.summary,
                         critique_json=critique.model_dump_json(),
+                        baseline_advisory_json=self._baseline_advisory_payload_json(),
+                        accommodation_json=self._accommodation_payload_json(),
                     )
                 )
 
@@ -979,7 +1095,14 @@ class LumenQualityLoop:
             if self.tools.seeded_from_initial_scene and (
                 self.edited_node_ids or self.edited_page_ids
             ):
-                scope_node_ids = self._edited_scope_node_ids()
+                # Accommodation edits: neighbors this turn newly crowds are
+                # in scope too — a blocking critique on the crowded neighbor
+                # must be able to block, or the mechanism that protects edits
+                # from pre-existing complaints would wave through damage the
+                # edit itself caused.
+                scope_node_ids = (
+                    self._edited_scope_node_ids() | self._accommodation_scope_node_ids()
+                )
                 in_scope_issues = [
                     issue
                     for issue in critique.issues
@@ -1016,6 +1139,8 @@ class LumenQualityLoop:
                             "modify.",
                             critique_json=critique.model_dump_json(),
                             ops_valid_through_iteration=self.state.current_iteration,
+                            baseline_advisory_json=self._baseline_advisory_payload_json(),
+                            accommodation_json=self._accommodation_payload_json(),
                         )
                     )
 
@@ -1078,6 +1203,8 @@ class LumenQualityLoop:
                             self._latest_visual_critique_payload()
                         ),
                         ops_valid_through_iteration=self.best_iteration,
+                        baseline_advisory_json=self._baseline_advisory_payload_json(),
+                        accommodation_json=self._accommodation_payload_json(),
                     )
                 )
             self.state.status = "completed_with_warnings"
@@ -1089,6 +1216,8 @@ class LumenQualityLoop:
                     "which was not explicitly accepted by the visual reviewer.",
                     critique_json=json.dumps(last_feedback),
                     ops_valid_through_iteration=self.best_iteration,
+                    baseline_advisory_json=self._baseline_advisory_payload_json(),
+                    accommodation_json=self._accommodation_payload_json(),
                 )
             )
         self.state.status = "failed"
@@ -1127,7 +1256,235 @@ class LumenQualityLoop:
         pre-existing siblings and ancestors stay out of scope (an ancestor
         inclusion would let any pre-existing page-level complaint block every
         targeted edit — the exact failure edit-scoped acceptance removes)."""
-        scope = set(self.edited_node_ids)
+        return self._with_descendants(set(self.edited_node_ids))
+
+    def _introduced_diagnostics(self, diagnostics: list[dict]) -> list[dict]:
+        """Diagnostics from THIS turn's gate that are NOT in the baseline.
+
+        Agent-improvement follow-up 1: a diagnostic counts as baseline (and is
+        dropped here) only when its (code, subject) key was already present on
+        the seeded scene BEFORE this turn's first edit. A baseline error that
+        MOVED to a new subject (e.g. the same slot-fixture overflow code now
+        keyed to a different node) is a different key and so counts as
+        introduced — it is not the same error, it is a new occurrence. A
+        baseline error that simply disappeared needs no handling here; it is
+        just absent from `diagnostics`, which is fine (an improvement)."""
+        if not self.baseline_diagnostic_keys:
+            return list(diagnostics)
+        return [
+            diag
+            for diag in diagnostics
+            if not isinstance(diag, dict)
+            or _diagnostic_key(diag) not in self.baseline_diagnostic_keys
+        ]
+
+    def _baseline_advisory(self, diagnostics: list[dict]) -> list[dict]:
+        """The subset of `diagnostics` that ARE baseline (pre-existing, out of
+        this turn's scope) — the complement of `_introduced_diagnostics`, used
+        to surface "N pre-existing issues were not addressed" advisories
+        instead of silently dropping them."""
+        if not self.baseline_diagnostic_keys:
+            return []
+        return [
+            diag
+            for diag in diagnostics
+            if isinstance(diag, dict) and _diagnostic_key(diag) in self.baseline_diagnostic_keys
+        ]
+
+    def _baseline_advisory_payload_json(self) -> str:
+        """The turn-result advisory payload for `finalize_run`: pre-existing
+        baseline issues that were never addressed this turn (agent-improvement
+        follow-up 1). `"null"` when there is nothing to advise — either an
+        unseeded run or every baseline issue happened to be resolved anyway."""
+        if not self.unaddressed_baseline_diagnostics:
+            return "null"
+        return json.dumps(
+            {
+                "count": len(self.unaddressed_baseline_diagnostics),
+                "diagnostics": self.unaddressed_baseline_diagnostics,
+                "note": (
+                    f"{len(self.unaddressed_baseline_diagnostics)} pre-existing "
+                    "issue(s) on this document were not addressed — they predate "
+                    "this turn."
+                ),
+            }
+        )
+
+    def _detect_accommodation_conflicts(self) -> None:
+        """Refresh `accommodation_conflicts` for the current laid-out draft.
+
+        A conflict is TURN-INTRODUCED crowding: an edited node now sits closer
+        than the calibrated threshold to a neighbor it cleared at baseline
+        (ancestors/descendants excluded, neighbor rolled up to its topmost
+        conflicting container — the correct nudge unit). When conflicts exist,
+        they are appended to `previous_feedback` so both the visual reviewer
+        (this iteration) and any repair author (next iteration) see them with
+        the accommodation rule attached."""
+        self.accommodation_conflicts = []
+        if not (
+            self.tools.seeded_from_initial_scene
+            and isinstance(self.baseline_scene, dict)
+            and self.edited_node_ids
+            and isinstance(self.tools.scene, dict)
+        ):
+            return
+        conflicts = turn_introduced_conflicts(
+            self.baseline_scene, self.tools.scene, set(self.edited_node_ids)
+        )
+        self.accommodation_conflicts = conflicts
+        for conflict in conflicts:
+            key = (conflict.get("edited"), conflict.get("neighbor"))
+            self.accommodation_conflict_log.setdefault(key, conflict)
+        if not conflicts:
+            return
+        self.tools.record(
+            "coordinator",
+            "accommodation_conflicts",
+            output_summary=(
+                f"{len(conflicts)} turn-introduced crowding conflict(s): "
+                + "; ".join(
+                    f"{c['edited']}↔{c['neighbor']} ({c['clearance']:.0f}pt)"
+                    for c in conflicts
+                )
+            ),
+            payload={"conflicts": conflicts},
+        )
+        self.previous_feedback.append(
+            {
+                "kind": "mechanical_crowding",
+                "feedback": {
+                    "conflicts": conflicts,
+                    "note": (
+                        "Geometrically measured: this turn's edit newly crowds "
+                        "neighbors that were clear before (clearance in pt; "
+                        "negative = overlap). ACCOMMODATION RULE — you MAY move "
+                        "each named neighbor with a position-only `#<id> p(x,y)` "
+                        "nudge: the smallest move that restores at least 16pt "
+                        "clearance. Never restyle, resize, delete, or reorder an "
+                        "accommodated neighbor, never touch nodes not listed, "
+                        "and record each nudge as a `// collateral:` comment line in your block. If the crowding "
+                        "is what the user explicitly asked for, leave it and "
+                        "say so."
+                    ),
+                },
+            }
+        )
+
+    def _should_force_accommodation_round(self) -> bool:
+        """Whether an acceptance must yield to ONE accommodation repair round.
+
+        A sub-16pt gap or hairline overlap is a geometric fact the pixel
+        critic cannot reliably see: run_7ff4ac79 accepted a -0.31pt
+        badge↔organizer overlap at confidence 0.9 with a false "visible
+        vertical space" acceptance note — exactly the run_e0bb1733 failure
+        this feature exists for. When conflicts stand at acceptance time,
+        the geometric signal outranks pixel judgment — once. Bounded by
+        design: at most one forced round per run, and only while an
+        iteration remains, so a turn can never wedge on it; if the nudge
+        round fails, the accepted draft still returns via keep-best (as
+        completed_with_warnings, conflict honestly advisory)."""
+        return bool(
+            self.accommodation_conflicts
+            and not self.accommodation_repair_attempted
+            and self.state.current_iteration < self.tools.config.max_iterations
+        )
+
+    def _accommodation_repair_instruction(self, conflict: dict) -> str:
+        """A precise, boxed nudge instruction for one conflict.
+
+        run_e3bbb02e's forced round failed on model precision, not intent: it
+        nudged using the LABEL's box instead of the container's and drifted
+        +46pt sideways off the artboard. So the instruction now carries the
+        neighbor's and edited node's CURRENT page-space boxes, tells the model
+        to move along one axis only by the minimal amount, and to keep the
+        node fully on the artboard."""
+        nodes = (self.tools.scene or {}).get("nodes") or {}
+        neighbor_node = nodes.get(conflict["neighbor"])
+        edited_node = nodes.get(conflict["edited"])
+        neighbor_box = page_space_box(neighbor_node) if neighbor_node else None
+        edited_box = page_space_box(edited_node) if edited_node else None
+        deficit = max(0.0, CONFLICT_CLEARANCE_THRESHOLD - conflict["clearance"])
+        boxes = ""
+        if neighbor_box and edited_box:
+            boxes = (
+                f" {conflict['neighbor']} currently occupies page-space "
+                f"({neighbor_box['x']:.0f},{neighbor_box['y']:.0f},"
+                f"{neighbor_box['width']:.0f},{neighbor_box['height']:.0f}); "
+                f"{conflict['edited']} occupies "
+                f"({edited_box['x']:.0f},{edited_box['y']:.0f},"
+                f"{edited_box['width']:.0f},{edited_box['height']:.0f})."
+            )
+        return (
+            f"Nudge {conflict['neighbor']} with a position-only "
+            f"`#{conflict['neighbor']} p(x,y)` — move it along ONE axis only, "
+            f"directly away from {conflict['edited']}, by about "
+            f"{deficit + 2.0:.0f}pt (just enough for 16pt clearance)."
+            f"{boxes} Use the CONTAINER's own box above (not a child label's), "
+            "keep the node fully inside the artboard, and do not restyle, "
+            "resize, delete, or reorder it."
+        )
+
+    def _forced_accommodation_critique(self, accepted: VisualCritique) -> VisualCritique:
+        """The synthetic rejection that drives the forced accommodation round."""
+        self.accommodation_repair_attempted = True
+        issues = [
+            VisualIssue(
+                severity=DiagnosticSeverity.error,
+                category="spacing",
+                target=VisualTarget(node_id=conflict["neighbor"]),
+                message=(
+                    f"Geometrically measured: this turn's edit to "
+                    f"{conflict['edited']} left {conflict['neighbor']} at "
+                    f"{conflict['clearance']:.1f}pt clearance "
+                    f"({'overlapping' if conflict.get('overlap') else 'under the 16pt minimum'}) "
+                    "— crowding that did not exist before this turn."
+                ),
+                suggested_repair=self._accommodation_repair_instruction(conflict),
+            )
+            for conflict in self.accommodation_conflicts
+        ]
+        forced = VisualCritique(
+            accepted=False,
+            summary=(
+                "Visual acceptance withheld for one accommodation round: "
+                "turn-introduced crowding is unresolved ("
+                + "; ".join(
+                    f"{c['edited']}↔{c['neighbor']} {c['clearance']:.1f}pt"
+                    for c in self.accommodation_conflicts
+                )
+                + "). Nudge the named neighbor(s), position-only."
+            ),
+            issues=issues,
+            repair_instruction=issues[0].suggested_repair if issues else None,
+            confidence=1.0,
+        )
+        self.tools.record(
+            "coordinator",
+            "accommodation_repair_forced",
+            output_summary=(
+                "critic accepted over unresolved turn-introduced crowding; "
+                "forcing one accommodation repair round"
+            ),
+            payload={
+                "conflicts": self.accommodation_conflicts,
+                "overridden_acceptance_summary": accepted.summary,
+                "overridden_confidence": accepted.confidence,
+            },
+        )
+        return forced
+
+    def _accommodation_scope_node_ids(self) -> set:
+        """Crowded neighbors (+ their descendants) count as this turn's scope.
+
+        Edit-scoped acceptance exists so PRE-EXISTING whole-design complaints
+        can't hold a targeted edit hostage — but crowding the turn itself
+        created is the turn's business, so a blocking critique that targets
+        the crowded neighbor must be able to block."""
+        seeds = {c["neighbor"] for c in self.accommodation_conflicts}
+        return self._with_descendants(seeds)
+
+    def _with_descendants(self, seeds: set) -> set:
+        scope = set(seeds)
         nodes = (self.tools.scene or {}).get("nodes") or {}
         stack = list(scope)
         while stack:
@@ -1137,6 +1494,72 @@ class LumenQualityLoop:
                     scope.add(child)
                     stack.append(child)
         return scope
+
+    def _final_unresolved_conflicts(self) -> list[dict]:
+        """The logged conflict pairs re-measured on the FINAL scene.
+
+        `accommodation_conflicts` (the latest detection) can describe a draft
+        that is NOT the one being returned: run_e3bbb02e's forced-round draft
+        resolved the crowding but was rejected for clipping, keep-best
+        restored the earlier accepted draft — and the stale latest list
+        reported `unresolved: []` over a scene still carrying the 7.7pt
+        conflict. Direct re-measurement of the known pairs on whatever scene
+        finalize is actually returning cannot go stale, and sidesteps the
+        both-edited pair exclusion (a discarded nudge marks the neighbor
+        edited without its edit surviving)."""
+        nodes = (self.tools.scene or {}).get("nodes") or {}
+        unresolved = []
+        for (edited, neighbor), first_seen in self.accommodation_conflict_log.items():
+            edited_box = page_space_box(nodes[edited]) if nodes.get(edited) else None
+            neighbor_box = page_space_box(nodes[neighbor]) if nodes.get(neighbor) else None
+            if not edited_box or not neighbor_box:
+                continue
+            gap = clearance(edited_box, neighbor_box)
+            if gap < CONFLICT_CLEARANCE_THRESHOLD:
+                unresolved.append(
+                    {**first_seen, "clearance": gap, "overlap": gap < 0}
+                )
+        return unresolved
+
+    def _accommodation_payload_json(self) -> str:
+        """The run-result announcement: conflicts detected + nudges applied.
+
+        Applied nudges diff each ever-conflicting neighbor's geometry against
+        the baseline — computed from the LOG, not the latest detection, because
+        a successful accommodation repair empties the latest list while being
+        exactly the thing worth announcing. `unresolved` re-measures the
+        logged pairs on the final scene (see _final_unresolved_conflicts).
+        Every finalize path restores/settles the returned scene BEFORE calling
+        this, so both diffs read the geometry the editor actually receives."""
+        if not self.accommodation_conflict_log:
+            return "null"
+        nodes_now = (self.tools.scene or {}).get("nodes") or {}
+        nodes_then = (self.baseline_scene or {}).get("nodes") or {}
+        applied_nudges = []
+        for _, neighbor in self.accommodation_conflict_log:
+            then = nodes_then.get(neighbor)
+            now = nodes_now.get(neighbor)
+            box_then = page_space_box(then) if then else None
+            box_now = page_space_box(now) if now else None
+            if not box_then or not box_now:
+                continue
+            dx = round(box_now["x"] - box_then["x"], 2)
+            dy = round(box_now["y"] - box_then["y"], 2)
+            if dx or dy:
+                applied_nudges.append({"node": neighbor, "dx": dx, "dy": dy})
+        return json.dumps(
+            {
+                "detected": list(self.accommodation_conflict_log.values()),
+                "applied_nudges": applied_nudges,
+                "unresolved": self._final_unresolved_conflicts(),
+                "note": (
+                    "Turn-introduced crowding, measured geometrically. "
+                    "applied_nudges are accommodation moves this turn made to "
+                    "neighbors of its own edit; unresolved conflicts remain on "
+                    "the final draft."
+                ),
+            }
+        )
 
     def _latest_visual_critique_payload(self) -> dict:
         """The most recent visual critique payload, for advisory surfacing."""
@@ -1153,20 +1576,31 @@ class LumenQualityLoop:
         """Update the keep-best snapshot if the live scene beats the incumbent.
 
         Ranking (higher wins): preflight-clean drafts dominate compile-only ones;
-        among equals, an accepted critique beats a rejected one, then fewer critic
-        issues, then higher critic confidence. The scene is unchanged across the
+        among equals, an accepted critique beats a rejected one, then the lower
+        severity-weighted issue penalty, then confidence — SIGNED by the verdict:
+        the critic's confidence is in its own verdict, so among accepted drafts
+        higher confidence wins, while among rejected drafts higher confidence
+        means "more certainly bad" and ranks LOWER (run_8e7b9f64: the off-canvas
+        draft was rejected at 0.90, the visible one at 0.86 — the raw-confidence
+        tiebreak proposed the invisible badge). The scene is unchanged across the
         compile/preflight/critique stages of one iteration, so re-ranking the same
         iteration as more signal arrives simply upgrades its tier.
         """
         preflight_clean = stage == "preflight_clean"
         accepted = bool(critique and critique.accepted)
-        issue_count = len(critique.issues) if critique is not None else None
+        if critique is None:
+            issue_penalty = 999
+        else:
+            issue_penalty = sum(
+                _ISSUE_SEVERITY_PENALTY.get(issue.severity, 3)
+                for issue in critique.issues
+            )
         confidence = critique.confidence if critique is not None else 0.0
         rank = (
             1 if preflight_clean else 0,
             1 if accepted else 0,
-            -(issue_count if issue_count is not None else 999),
-            confidence,
+            -issue_penalty,
+            confidence if accepted else -confidence,
         )
         if self.best_rank is None or rank > self.best_rank:
             self.best_rank = rank
@@ -1181,6 +1615,8 @@ class LumenQualityLoop:
         rejected scene from the last repair attempt.
         """
         self._restore_best_scene()
+        kwargs.setdefault("baseline_advisory_json", self._baseline_advisory_payload_json())
+        kwargs.setdefault("accommodation_json", self._accommodation_payload_json())
         return json.loads(
             self.tools.finalize_run("failed", stop_reason, message, **kwargs)
         )
@@ -2293,15 +2729,37 @@ def slot_fixture_violation_feedback(prior: dict, rejected_source: str) -> dict:
     }
 
 
+def _diagnostic_key(diagnostic: dict) -> tuple:
+    """Stable identity for a diagnostic: (code, subject).
+
+    `subject` is whichever target field is set, preferring the most specific
+    (node > slot > page), falling back to None for document-level diagnostics
+    (e.g. brand/font asset warnings with no target at all). Two diagnostics
+    with the same code but a DIFFERENT subject are different errors — this is
+    what makes a baseline error that moves to a new node count as introduced
+    rather than pre-existing (agent-improvement follow-up 1)."""
+    subject = (
+        diagnostic.get("target_node_id")
+        or diagnostic.get("target_slot_id")
+        or diagnostic.get("target_slot_key")
+        or diagnostic.get("target_page_id")
+    )
+    return (diagnostic.get("code"), subject)
+
+
+def has_blocking_diagnostics(diagnostics: list) -> bool:
+    return any(
+        isinstance(diagnostic, dict) and diagnostic.get("severity") in {"error", "blocker"}
+        for diagnostic in diagnostics
+    )
+
+
 def tool_has_blocking_failure(summary: dict) -> bool:
     if summary.get("status") == "error":
         return True
     if summary.get("validation_errors"):
         return True
-    for diagnostic in summary.get("diagnostics", []):
-        if diagnostic.get("severity") in {"error", "blocker"}:
-            return True
-    return False
+    return has_blocking_diagnostics(summary.get("diagnostics", []))
 
 
 def infer_preview_target(user_request: str) -> PreviewTarget:

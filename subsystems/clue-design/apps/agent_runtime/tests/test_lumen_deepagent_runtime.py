@@ -2023,6 +2023,93 @@ def test_quality_loop_repairs_after_visual_rejection(tmp_path: Path, monkeypatch
     assert events[-1] == "run_finalized"
 
 
+class SourceEchoCoreClient(FakeCoreClient):
+    """Compile fake whose scene records WHICH draft produced it, so keep-best
+    tests can assert which iteration's scene the run finally returned."""
+
+    def compile_dsl_into_scene(self, scene, source: str, dsl_session=None):
+        result = super().compile_dsl_into_scene(scene, source, dsl_session)
+        result["scene"]["nodes"]["headline"]["kind"]["content"] = source
+        return result
+
+
+def test_budget_exhaustion_returns_least_severe_draft_not_the_last(
+    tmp_path: Path, monkeypatch
+):
+    # run_8e7b9f64 regression (Finding B, .context/phase4b5/retest/VERDICT.md):
+    # both iterations were rejected with two issues each — the earlier draft
+    # carried [error, warning] at confidence 0.86, the later one [blocker,
+    # error] at 0.90 (its badge landed entirely off-canvas). The old raw-count
+    # + raw-confidence tiebreak proposed the later, invisible draft; severity
+    # weighting and verdict-signed confidence must both prefer the earlier one.
+    monkeypatch.setattr("lumen_deepagent.tools.CoreClient", SourceEchoCoreClient)
+    config = runtime_config(tmp_path, max_iterations=2)
+    tools = LumenDesignTools(config, "Move the headline to the bottom-left")
+    # The repair block must reference the in-scene node: a stray ref would be
+    # zero-applied by the layout-cluster gate and iteration 2 would never reach
+    # the critic, making this test pass vacuously on any ranking.
+    author = ScriptedAuthor(["page page_test", "#headline font(Inter,42,700,left)"])
+    target = VisualTarget(page_id="page_test", node_id="headline")
+    reviewer = ScriptedReviewer(
+        [
+            VisualCritique(
+                accepted=False,
+                summary="Headline overlaps the footer note.",
+                issues=[
+                    VisualIssue(
+                        severity="error",
+                        category=CritiqueCategory.overflow,
+                        target=target,
+                        message="The headline overlaps the footer note text.",
+                        suggested_repair="Raise the headline above the footer.",
+                    ),
+                    VisualIssue(
+                        severity="warning",
+                        category=CritiqueCategory.spacing,
+                        target=target,
+                        message="Headline misses the 88pt content margin.",
+                        suggested_repair="Align the headline to the content margin.",
+                    ),
+                ],
+                confidence=0.86,
+            ),
+            VisualCritique(
+                accepted=False,
+                summary="Headline is entirely below the artboard.",
+                issues=[
+                    VisualIssue(
+                        severity="blocker",
+                        category=CritiqueCategory.clipping,
+                        target=target,
+                        message="The headline sits below the artboard bottom edge.",
+                        suggested_repair="Move the headline back on-canvas.",
+                    ),
+                    VisualIssue(
+                        severity="error",
+                        category=CritiqueCategory.request_satisfaction,
+                        target=target,
+                        message="The headline is not visible anywhere in the design.",
+                        suggested_repair="Place the headline at the bottom-left.",
+                    ),
+                ],
+                confidence=0.9,
+            ),
+        ]
+    )
+
+    result = LumenQualityLoop(tools, author, reviewer).run(
+        "Move the headline to the bottom-left"
+    )
+
+    assert result["stop_reason"] == "max_iterations_reached"
+    # Guard against the vacuous pass: both drafts must have been critiqued.
+    assert len(reviewer.calls) == 2
+    assert result["ops_valid_through_iteration"] == 1
+    # The finalized scene is iteration 1's draft — not the last draft, whose
+    # blocker the critic was merely MORE confident about.
+    assert tools.scene["nodes"]["headline"]["kind"]["content"] == "page page_test"
+
+
 def test_quality_loop_persists_reviewer_failures_as_critic_failed(
     tmp_path: Path, monkeypatch
 ):

@@ -1163,14 +1163,29 @@ impl<'a> LayoutEngine<'a> {
                 continue;
             }
 
+            // Freehand slot-fit policy (mirrors the Phase 1d text-fit
+            // decision): a pinned or baked-Free text box is human-owned
+            // geometry — worst-case fixture overflow is advisory there,
+            // while solver-managed slot nodes keep the fail-closed errors
+            // that protect template instantiation.
+            let severity = if self.is_freehand(node_id) {
+                DiagnosticSeverity::Warning
+            } else {
+                DiagnosticSeverity::Error
+            };
             match &slot.overflow {
                 OverflowPolicy::Error => {
-                    self.diagnostics.push(Diagnostic::error(
-                        Phase::Layout,
-                        "LUMV0810",
-                        format!("slot {} fixture overflows text node {}", slot.key, node_id),
-                        Some(DiagnosticSubject::Slot(slot.id.clone())),
-                    ));
+                    self.diagnostics.push(Diagnostic {
+                        severity: severity.clone(),
+                        phase: Phase::Layout,
+                        code: "LUMV0810".to_owned(),
+                        message: format!(
+                            "slot {} fixture overflows text node {}",
+                            slot.key, node_id
+                        ),
+                        subject: Some(DiagnosticSubject::Slot(slot.id.clone())),
+                        hint: None,
+                    });
                 }
                 OverflowPolicy::ShrinkFont { min_font_size, .. } => {
                     let shrink_fit = text_fit(
@@ -1191,27 +1206,31 @@ impl<'a> LayoutEngine<'a> {
                             Some(DiagnosticSubject::Slot(slot.id.clone())),
                         ));
                     } else {
-                        self.diagnostics.push(Diagnostic::error(
-                            Phase::Layout,
-                            "LUMV0812",
-                            format!(
+                        self.diagnostics.push(Diagnostic {
+                            severity: severity.clone(),
+                            phase: Phase::Layout,
+                            code: "LUMV0812".to_owned(),
+                            message: format!(
                                 "slot {} fixture does not fit even at min font size {}",
                                 slot.key, min_font_size
                             ),
-                            Some(DiagnosticSubject::Slot(slot.id.clone())),
-                        ));
+                            subject: Some(DiagnosticSubject::Slot(slot.id.clone())),
+                            hint: None,
+                        });
                     }
                 }
                 OverflowPolicy::Wrap { max_lines } => {
-                    self.diagnostics.push(Diagnostic::error(
-                        Phase::Layout,
-                        "LUMV0813",
-                        format!(
+                    self.diagnostics.push(Diagnostic {
+                        severity: severity.clone(),
+                        phase: Phase::Layout,
+                        code: "LUMV0813".to_owned(),
+                        message: format!(
                             "slot {} fixture needs {} lines but max_lines is {:?}",
                             slot.key, fit.line_count, max_lines
                         ),
-                        Some(DiagnosticSubject::Slot(slot.id.clone())),
-                    ));
+                        subject: Some(DiagnosticSubject::Slot(slot.id.clone())),
+                        hint: None,
+                    });
                 }
                 OverflowPolicy::Clip | OverflowPolicy::Ellipsis => {
                     self.diagnostics.push(Diagnostic::warning(

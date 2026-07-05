@@ -108,7 +108,7 @@ function collectNodeDiagnostics(scene: Scene, node: Node, diagnostics: Diagnosti
       diagnostics.push(
         diagnostic(
           "EDITOR_RENDER_TEXT_CLAMP_APPROXIMATION",
-          `${nodeDisplay(node)} uses max_lines(${node.kind.max_lines}); canvas preview uses Konva clamping and may not match export text measurement exactly.`,
+          `${nodeDisplay(node)} uses max_lines(${node.kind.max_lines}); canvas preview clamps with CanvasKit (SkParagraph) and may not match export text measurement exactly.`,
           subject,
           "Use preflight diagnostics and export preview as the fidelity baseline for final text fit."
         )

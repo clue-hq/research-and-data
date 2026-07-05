@@ -5,7 +5,7 @@ import {
   isCanvasDirectGeometryEditable,
   type SelectionRect
 } from "./canvasSelection";
-import { getNode, nodeDisplayName, pageIdForNode, slotsForNode } from "./sceneQueries";
+import { getNode, isNodeReorderableOnGesture, nodeDisplayName, pageIdForNode, slotsForNode } from "./sceneQueries";
 import type { Box } from "./transformerMath";
 
 export type SelectedObjectKind =
@@ -43,6 +43,14 @@ export interface SelectionChromeModel {
   containerChildren: SelectionRect[];
   containerLabel: string | null;
   showHandles: boolean;
+  /** Phase 4c-C: resize handles for a layout-managed-editing reorderable
+   * Stack child (all 8, size-only commit) — true whenever `showHandles` is,
+   * plus this one extra case. Equal to `showHandles` outside that case. */
+  showResizeHandles: boolean;
+  /** The rotate handle stays OFF for a managed Stack child even when its
+   * resize handles are on (4c-C) — rotation isn't a solver-managed-size
+   * concept. Equal to `showHandles` outside that case. */
+  showRotateHandle: boolean;
   disabledReason: string | null;
   slotBindings: SlotBindingSummary[];
   slotKeys: string[];
@@ -54,6 +62,10 @@ export interface SelectionChromeOptions {
   selectedNodeId: NodeId | null;
   hoverNodeId?: NodeId | null;
   diagnostics?: Diagnostic[];
+  /** Phase 4c-C: advanced per-document opt-in (same flag CanvasKitCanvas
+   * gates its freeze-on-first-gesture skip with). When true, a reorderable
+   * managed Stack child gets resize handles (see `showResizeHandles`). */
+  layoutManagedEditing?: boolean;
 }
 
 export function deriveSelectionChromeModel(scene: Scene, options: SelectionChromeOptions): SelectionChromeModel {
@@ -64,6 +76,11 @@ export function deriveSelectionChromeModel(scene: Scene, options: SelectionChrom
   const selectedObjectKind = slotBindings.length > 0 ? "slot_bound" : baseObjectKind;
   const containerGeometry = selectedNode ? containerSelectionGeometry(scene, selectedNode.id) : null;
   const disabledReason = selectedNode ? canvasDirectEditNotice(scene, selectedNode.id) : null;
+  const showHandles = selectedNode ? isCanvasDirectGeometryEditable(scene, selectedNode.id) : false;
+  const managedResizable =
+    Boolean(options.layoutManagedEditing) && selectedNode
+      ? isNodeReorderableOnGesture(scene, selectedNode.id)
+      : false;
 
   return {
     activePageId: options.activePageId,
@@ -76,7 +93,11 @@ export function deriveSelectionChromeModel(scene: Scene, options: SelectionChrom
     hoverBox: hoverNode ? selectionBoxForNode(hoverNode) : null,
     containerChildren: containerGeometry?.children ?? [],
     containerLabel: containerGeometry ? `${containerGeometry.label} · ${containerGeometry.children.length} inside` : null,
-    showHandles: selectedNode ? isCanvasDirectGeometryEditable(scene, selectedNode.id) : false,
+    showHandles,
+    // The rotate handle never turns on beyond `showHandles`; resize handles
+    // additionally turn on for a layout-managed-editing reorderable child.
+    showResizeHandles: showHandles || managedResizable,
+    showRotateHandle: showHandles,
     disabledReason,
     slotBindings,
     slotKeys: slotBindings.map((slot) => slot.key),

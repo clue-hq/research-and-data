@@ -815,3 +815,24 @@ def test_seeded_recipe_carries_the_freehand_rules():
         "ADVISORY",
     ):
         assert phrase in SEEDED_CONTINUATION_RECIPE
+
+
+def test_seeded_recipe_carries_the_taste_first_policy():
+    # Taste-first edit policy (user-decided 2026-07-05, .context/agent-
+    # improvement/2026-07-05-taste-first-edit-policy.md): slight collateral
+    # adjustments freely (announced as `// collateral:` lines), big
+    # rearrangements only with a `// heads-up:` opener, unannounced changes
+    # forbidden, accommodation nudges remain the non-optional mechanical floor.
+    for phrase in (
+        "YOU OWN THE COMPOSITION",
+        "// collateral:",
+        "// heads-up:",
+        "UNANNOUNCED change",
+        "mechanical floor",
+        "meaningful intent, not an obstacle",
+        "BIG rearrangement",
+    ):
+        assert phrase in SEEDED_CONTINUATION_RECIPE, phrase
+    # The old strict-scope wording must be gone.
+    assert "Touch ONLY what the request requires" not in SEEDED_CONTINUATION_RECIPE
+    assert "move or resize it ONLY" not in SEEDED_CONTINUATION_RECIPE

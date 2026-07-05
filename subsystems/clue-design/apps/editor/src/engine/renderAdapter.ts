@@ -16,6 +16,7 @@ import type {
   Unit
 } from "./contracts";
 import { isNodeLayoutManaged } from "./sceneQueries";
+import { resolveTokenColor, type TokenColorMap } from "./tokenColors";
 
 /**
  * Konva-ready paint description (Effects Contract V0). Gradients carry the
@@ -323,7 +324,7 @@ export function paintToCss(paint: Paint): string {
     case "radial_gradient":
       return paint.stops[0] ? colorToCss(paint.stops[0].color) : "#d8d1c3";
     case "token":
-      return tokenFallback(paint.token);
+      return resolveTokenColor(tokenColorMap, paint.token) ?? tokenFallback(paint.token);
   }
 }
 
@@ -334,7 +335,7 @@ export function colorToCss(color: Color): string {
     case "oklch":
       return `oklch(${color.l} ${color.c} ${color.h} / ${color.alpha})`;
     case "token":
-      return tokenFallback(color.token);
+      return resolveTokenColor(tokenColorMap, color.token) ?? tokenFallback(color.token);
   }
 }
 
@@ -400,7 +401,10 @@ export function paintDescriptor(paint: Paint, width: number, height: number): Pa
         colorStops: paint.stops.flatMap((stop) => [stop.position, colorToCss(stop.color)])
       };
     case "token":
-      return { kind: "solid", color: tokenFallback(paint.token) };
+      return {
+        kind: "solid",
+        color: resolveTokenColor(tokenColorMap, paint.token) ?? tokenFallback(paint.token)
+      };
   }
 }
 
@@ -615,6 +619,34 @@ function normalizeHexForCss(value: string): string {
     return `rgba(${red}, ${green}, ${blue}, ${Number(alpha.toFixed(3))})`;
   }
   return hex;
+}
+
+/**
+ * Real token color values for the current document's effective brand kit
+ * (attached kit, or the platform default when none is attached), set from
+ * exactly one place: an `EditorApp` effect keyed on
+ * `[scene.meta.brand_kit, availableBrandKits]` (see `EditorApp.tsx`). A
+ * module-level registry — rather than threading a map through every
+ * `nodeDescriptor`/`pageDescriptor` caller — because those descriptors are
+ * built from ~10 call sites across the Konva (`CanvasSurface`, `SceneNode`)
+ * and CanvasKit (`CanvasKitCanvas`) render paths plus `EditorChrome`,
+ * `exportParity`, and `workspaceLayout`; none of them share a context/props
+ * chain today, so plumbing a map through all of them would touch every one
+ * of those signatures for a value that's document-scoped, not
+ * render-call-scoped. Both canvas backends and the compare-pane/preview
+ * instances read the same module-level map, so they resolve identically.
+ *
+ * Unset (tests, SSR, a document with no available kits yet) leaves the map
+ * empty, which makes every token lookup miss and fall through to
+ * `tokenFallback` below — the pre-existing heuristic behavior, preserved as
+ * the safe default.
+ */
+let tokenColorMap: TokenColorMap = {};
+
+/** Sets the token color map consulted by the token paint cases in
+ * `paintToCss`/`colorToCss`/`paintDescriptor`. See `tokenColorMap` above. */
+export function setTokenColorMap(map: TokenColorMap): void {
+  tokenColorMap = map;
 }
 
 function tokenFallback(token: string): string {

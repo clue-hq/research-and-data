@@ -12,10 +12,10 @@ use crate::{
     EditError, EditPatch, EditTargetRef, Effect, EffectId, EffectKind, ExportFormat, FieldPatch,
     Fill, ImageNode, LayoutAnchor, LineNode, Node, NodeEditPatch, NodeId, NodeKind, Operation,
     OperationError, OperationReport, OptionalFieldPatch, Orientation, Page, PageEditPatch, PageId,
-    PagePreset, PageSizeInput, Paint, PaintId, ParentRef, PdfIntent, Phase, RasterScale, Rect,
-    RelativePlacement, ReplaceNodeRequest, ReplaceSlotPolicy, Scene, SizeSpec, Slot, SlotEditPatch,
-    SlotId, SlotKey, Stroke, StrokeAlign, StrokeCap, StrokeJoin, TextAlign, TextDirection,
-    TextEditPatch, TextNode, TextWrap, Unit, VectorNode,
+    PagePreset, PageSizeInput, Paint, PaintId, ParentRef, PdfIntent, Phase, PositionMode,
+    RasterScale, Rect, RelativePlacement, ReplaceNodeRequest, ReplaceSlotPolicy, Scene, SizeSpec,
+    Slot, SlotEditPatch, SlotId, SlotKey, Stroke, StrokeAlign, StrokeCap, StrokeJoin, TextAlign,
+    TextDirection, TextEditPatch, TextNode, TextWrap, Unit, VectorNode,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
@@ -874,7 +874,7 @@ impl DslParser {
                 tokens[0].len(),
                 "LUMD0206",
                 format!("unknown element kind in line: {trimmed}"),
-                "Use frame/fr, group/gr, autolayout/al, rect/r, ellipse/e, line/l, text/t, image/img, vector/v, or instance.",
+                "If this line is narration or explanation rather than an element, delete it — DSL blocks contain only DSL. Otherwise use frame/fr, group/gr, autolayout/al, rect/r, ellipse/e, line/l, text/t, image/img, vector/v, or instance.",
             ));
         };
 
@@ -2339,12 +2339,40 @@ fn node_edit_patch_from_properties(
     let mut text_patch = TextEditPatch::default();
     let mut has_text_patch = false;
 
+    // Phase 4c: pinned nodes (`position_mode: absolute`) are laid out at
+    // their page-space `absolute_box`; the solver ignores `transform`
+    // entirely. Writing p()/s() into `transform` on a pinned target is a
+    // silent visual no-op, but "move that thing I dragged" is a core
+    // round-trip ask — so pinned targets lower p()/s() into `absolute_box`
+    // instead, keeping the DSL surface identical for the agent.
+    //
+    // `p()` coordinates on a pinned target are PAGE-SPACE, not
+    // parent-relative: every surface the model reads pinned geometry from
+    // (the scene brief, the inspector, `absolute_box` itself) is page-space,
+    // and in practice the model echoes coordinates back in the frame it read
+    // them (run_8e7b9f64: both attempts were correct page-space positions
+    // that a parent-relative reading sent 88pt off / off-canvas). Rule: p()
+    // means "the frame this node's geometry is displayed in" — transform
+    // frame for flow nodes, page frame for pinned ones.
+    let pinned_box = (current.position_mode == PositionMode::Absolute)
+        .then(|| current.absolute_box.clone())
+        .flatten();
+    let mut next_absolute_box = pinned_box.clone();
+    let mut absolute_box_changed = false;
+
     for property in properties {
         match property {
             DslProperty::Position(x, y) => {
-                next_transform.x = *x;
-                next_transform.y = *y;
-                transform_changed = true;
+                if let Some(pinned) = pinned_box.as_ref() {
+                    let target = next_absolute_box.get_or_insert_with(|| pinned.clone());
+                    target.x = *x;
+                    target.y = *y;
+                    absolute_box_changed = true;
+                } else {
+                    next_transform.x = *x;
+                    next_transform.y = *y;
+                    transform_changed = true;
+                }
             }
             DslProperty::Rotation(rotation) => {
                 next_transform.rotation = *rotation;
@@ -2361,6 +2389,22 @@ fn node_edit_patch_from_properties(
                 transform_changed = true;
             }
             DslProperty::Size(width, height) => {
+                if let Some(pinned) = pinned_box.as_ref() {
+                    let (DslDimension::Fixed(w), DslDimension::Fixed(h)) = (width, height) else {
+                        return Err(error_diag(
+                            line.line_number,
+                            1,
+                            line.raw.len().max(1),
+                            "LUMD0919",
+                            format!("pinned node {} takes fixed sizes only", node_id),
+                            "Pinned nodes take fixed sizes; use s(w,h) with numbers.",
+                        ));
+                    };
+                    let target = next_absolute_box.get_or_insert_with(|| pinned.clone());
+                    target.width = *w;
+                    target.height = *h;
+                    absolute_box_changed = true;
+                }
                 patch.size = FieldPatch::Set(SizeSpec {
                     width: dimension_to_scene(width),
                     height: dimension_to_scene(height),
@@ -2636,6 +2680,11 @@ fn node_edit_patch_from_properties(
 
     if transform_changed {
         patch.transform = FieldPatch::Set(next_transform);
+    }
+    if absolute_box_changed {
+        patch.absolute_box = OptionalFieldPatch::Set(
+            next_absolute_box.expect("absolute_box_changed only set alongside next_absolute_box"),
+        );
     }
     if corner_changed {
         patch.corner = FieldPatch::Set(next_corner);

@@ -7,9 +7,9 @@ use crate::operations::{
     OptionalFieldPatch, PagePatch,
 };
 use crate::scene::{
-    AutoLayoutProps, Color, CornerRadii, Dimension, Effect, Fill, LayoutMode, Node, NodeKind,
-    PageSize, Paint, ParentRef, PositionMode, Rect, Scene, SizeSpec, Stroke, TextAlign,
-    TextDirection, TextNode, TextWrap, Transform,
+    AutoLayoutProps, Color, CornerRadii, Dimension, Effect, ExplicitTextTokens, Fill, LayoutMode,
+    Node, NodeKind, PageSize, Paint, ParentRef, PositionMode, Rect, Scene, SizeSpec, Stroke,
+    TextAlign, TextDirection, TextNode, TextWrap, Transform,
 };
 use crate::slots::Slot;
 use serde::{Deserialize, Serialize};
@@ -573,6 +573,14 @@ pub struct NodeEditPatch {
     pub name: OptionalFieldPatch<String>,
     pub transform: FieldPatch<Transform>,
     pub size: FieldPatch<SizeSpec>,
+    /// Phase 4c: pinned-node moves (`p()`/`s()` on `position_mode: absolute`
+    /// targets) lower here instead of `transform`, since the solver lays
+    /// pinned nodes out at `absolute_box`, page-space, and ignores
+    /// `transform`. Skipped when unchanged so pinned pre-existing wire
+    /// fixtures stay byte-identical (mirrors `NodePatch::absolute_box` in
+    /// operations.rs).
+    #[serde(skip_serializing_if = "OptionalFieldPatch::is_unchanged")]
+    pub absolute_box: OptionalFieldPatch<Rect>,
     pub fills: FieldPatch<Vec<Fill>>,
     pub strokes: FieldPatch<Vec<Stroke>>,
     #[serde(skip_serializing_if = "FieldPatch::is_unchanged")]
@@ -973,6 +981,7 @@ pub fn build_node_modify(
         name: patch.name,
         transform: patch.transform,
         size: patch.size,
+        absolute_box: patch.absolute_box,
         fills,
         strokes,
         effects,
@@ -1316,6 +1325,186 @@ pub fn build_hard_delete_asset(scene: &Scene, asset_id: AssetId) -> Result<EditB
     .with_inverses(scene)
 }
 
+/// Group: insert an empty Group container just above the topmost selected
+/// sibling, then move the selection into it in z-order. The insert is empty
+/// and the children arrive by `MoveNode`, so every operation is individually
+/// invertible (an `InsertNode` adopting pre-existing children is not).
+///
+/// Geometry contract: when every grouped node is pinned (`Absolute`), the
+/// group itself pins to the union of their page-space boxes — children keep
+/// their boxes untouched and ungroup round-trips exactly. Otherwise the
+/// group joins its parent's manual flow at the identity transform with Hug
+/// size, so children's parent-relative transforms keep their meaning.
+/// Grouping solver-managed children of a Stack container is rejected: their
+/// positions are solved-and-discarded, and wrapping them in a plain Group
+/// would collapse them onto its origin (detach to freehand first).
+pub fn build_group(
+    scene: &Scene,
+    node_ids: &[NodeId],
+    group_id: NodeId,
+    name: Option<String>,
+) -> Result<EditBatch, EditError> {
+    if node_ids.is_empty() {
+        return Err(EditError::new(
+            EditErrorKind::UnsupportedTarget,
+            "group requires at least one node",
+        ));
+    }
+    let unique: BTreeSet<&NodeId> = node_ids.iter().collect();
+    if unique.len() != node_ids.len() {
+        return Err(EditError::new(
+            EditErrorKind::UnsupportedTarget,
+            "group selection contains duplicate nodes",
+        ));
+    }
+    if scene.nodes.contains_key(&group_id) {
+        return Err(EditError::new(
+            EditErrorKind::OperationFailed,
+            format!("group id {} already exists in the scene", group_id),
+        )
+        .with_target(EditTargetRef::Node(group_id)));
+    }
+
+    let mut parent: Option<ParentRef> = None;
+    for node_id in node_ids {
+        let node = require_node(scene, node_id)?;
+        if node.locked {
+            return Err(EditError::new(
+                EditErrorKind::LockedTarget,
+                format!("node {} is locked", node_id),
+            )
+            .with_target(EditTargetRef::Node(node_id.clone())));
+        }
+        let node_parent = scene.parent_of(node_id).ok_or_else(|| {
+            EditError::new(
+                EditErrorKind::TargetNotFound,
+                format!("node {} has no parent", node_id),
+            )
+            .with_target(EditTargetRef::Node(node_id.clone()))
+        })?;
+        match &parent {
+            None => parent = Some(node_parent),
+            Some(existing) if *existing == node_parent => {}
+            Some(_) => {
+                return Err(EditError::new(
+                    EditErrorKind::UnsupportedTarget,
+                    "grouped nodes must share the same parent",
+                )
+                .with_target(EditTargetRef::Node(node_id.clone())));
+            }
+        }
+    }
+    let parent = parent.expect("non-empty selection has a parent");
+
+    if let ParentRef::Node(parent_id) = &parent {
+        let parent_node = require_node(scene, parent_id)?;
+        let is_stack_container = matches!(parent_node.kind, NodeKind::AutoLayout(_))
+            && parent_node
+                .layout
+                .as_ref()
+                .is_none_or(|layout| layout.layout_mode == LayoutMode::Stack);
+        if is_stack_container {
+            let all_pinned = node_ids.iter().all(|node_id| {
+                scene.nodes.get(node_id).is_some_and(|node| {
+                    node.position_mode == PositionMode::Absolute && node.absolute_box.is_some()
+                })
+            });
+            if !all_pinned {
+                return Err(EditError::new(
+                    EditErrorKind::LifecycleProtected,
+                    format!(
+                        "cannot group solver-managed children of auto-layout container {}; detach them to freehand first",
+                        parent_id
+                    ),
+                )
+                .with_target(EditTargetRef::Node(parent_id.clone())));
+            }
+        }
+    }
+
+    let siblings = children_for_parent(scene, &parent)?;
+    let mut indexed: Vec<(usize, NodeId)> = Vec::with_capacity(node_ids.len());
+    for node_id in node_ids {
+        let index = siblings
+            .iter()
+            .position(|id| id == node_id)
+            .ok_or_else(|| {
+                EditError::new(
+                    EditErrorKind::TargetNotFound,
+                    format!("node {} is not in its parent", node_id),
+                )
+                .with_target(EditTargetRef::Node(node_id.clone()))
+            })?;
+        indexed.push((index, node_id.clone()));
+    }
+    indexed.sort_by_key(|(index, _)| *index);
+    let insert_index = indexed.last().expect("non-empty").0 + 1;
+
+    let mut group_node = Node::new(group_id.clone(), NodeKind::Group);
+    group_node.name = name;
+    let pinned_boxes: Option<Vec<&Rect>> = node_ids
+        .iter()
+        .map(|node_id| {
+            scene.nodes.get(node_id).and_then(|node| {
+                (node.position_mode == PositionMode::Absolute)
+                    .then_some(node.absolute_box.as_ref())
+                    .flatten()
+            })
+        })
+        .collect();
+    if let Some(boxes) = pinned_boxes {
+        let min_x = boxes.iter().map(|b| b.x).fold(f64::INFINITY, f64::min);
+        let min_y = boxes.iter().map(|b| b.y).fold(f64::INFINITY, f64::min);
+        let max_x = boxes
+            .iter()
+            .map(|b| b.x + b.width)
+            .fold(f64::NEG_INFINITY, f64::max);
+        let max_y = boxes
+            .iter()
+            .map(|b| b.y + b.height)
+            .fold(f64::NEG_INFINITY, f64::max);
+        group_node.position_mode = PositionMode::Absolute;
+        group_node.absolute_box = Some(Rect {
+            x: min_x,
+            y: min_y,
+            width: max_x - min_x,
+            height: max_y - min_y,
+        });
+        group_node.size = SizeSpec::fixed(max_x - min_x, max_y - min_y);
+    } else {
+        group_node.size = SizeSpec {
+            width: Dimension::Hug,
+            height: Dimension::Hug,
+        };
+    }
+
+    let mut operations = vec![Operation::InsertNode {
+        parent,
+        index: insert_index,
+        node: group_node,
+    }];
+    let mut touched = vec![EditTargetRef::Node(group_id.clone())];
+    for (child_index, (_, node_id)) in indexed.iter().enumerate() {
+        operations.push(Operation::MoveNode {
+            node_id: node_id.clone(),
+            new_parent: ParentRef::Node(group_id.clone()),
+            index: child_index,
+        });
+        operations.push(Operation::UpdateNode {
+            node_id: node_id.clone(),
+            patch: NodePatch {
+                computed: OptionalFieldPatch::Clear,
+                ..NodePatch::default()
+            },
+        });
+        touched.push(EditTargetRef::Node(node_id.clone()));
+    }
+
+    EditBatch::new(operations, touched)
+        .with_intent("group")
+        .with_inverses(scene)
+}
+
 /// Ungroup: move the group's children to its parent at the group's index
 /// (order preserved), then delete the emptied group. Auto-layout containers
 /// are protected unless explicitly allowed, because dissolving them destroys
@@ -1633,41 +1822,7 @@ pub fn build_convert_container_layout(
     let mut touched = vec![EditTargetRef::Node(node_id.clone())];
 
     if layout_mode == LayoutMode::Free {
-        let container_bounds = solved_bounds(node, &node_id, "freeing")?;
-        for child_id in &node.children {
-            let Some(child) = scene.nodes.get(child_id) else {
-                continue;
-            };
-            if child.position_mode == PositionMode::Absolute {
-                continue;
-            }
-            let child_bounds = solved_bounds(child, child_id, "freeing")?;
-
-            let mut child_patch = NodePatch::default();
-            let baked_transform = Transform {
-                x: child_bounds.x - container_bounds.x,
-                y: child_bounds.y - container_bounds.y,
-                ..child.transform.clone()
-            };
-            if baked_transform != child.transform {
-                child_patch.transform = FieldPatch::Set(baked_transform);
-            }
-            let baked_size = SizeSpec {
-                width: bake_dimension(&child.size.width, child_bounds.width),
-                height: bake_dimension(&child.size.height, child_bounds.height),
-            };
-            if baked_size != child.size {
-                child_patch.size = FieldPatch::Set(baked_size);
-            }
-            if node_patch_has_changes(&child_patch) {
-                child_patch.computed = OptionalFieldPatch::Clear;
-                operations.push(Operation::UpdateNode {
-                    node_id: child_id.clone(),
-                    patch: child_patch,
-                });
-                touched.push(EditTargetRef::Node(child_id.clone()));
-            }
-        }
+        free_container_operations(scene, node, &node_id, &mut operations, &mut touched)?;
     }
 
     operations.push(Operation::UpdateNode {
@@ -1684,6 +1839,101 @@ pub fn build_convert_container_layout(
 
     EditBatch::new(operations, touched)
         .with_intent("convert_container_layout")
+        .with_inverses(scene)
+}
+
+/// Zero-motion child baking for a Stack→Free conversion: every managed
+/// child's transform bakes to its solved offset inside the container, and
+/// Hug/Fill sizes bake to Fixed; children already pinned Absolute are left
+/// untouched (their page-space box keeps winning either way). Shared by the
+/// single-container convert and the scene-wide freeze so the two cannot
+/// drift.
+fn free_container_operations(
+    scene: &Scene,
+    node: &Node,
+    node_id: &NodeId,
+    operations: &mut Vec<Operation>,
+    touched: &mut Vec<EditTargetRef>,
+) -> Result<(), EditError> {
+    let container_bounds = solved_bounds(node, node_id, "freeing")?;
+    for child_id in &node.children {
+        let Some(child) = scene.nodes.get(child_id) else {
+            continue;
+        };
+        if child.position_mode == PositionMode::Absolute {
+            continue;
+        }
+        let child_bounds = solved_bounds(child, child_id, "freeing")?;
+
+        let mut child_patch = NodePatch::default();
+        let baked_transform = Transform {
+            x: child_bounds.x - container_bounds.x,
+            y: child_bounds.y - container_bounds.y,
+            ..child.transform.clone()
+        };
+        if baked_transform != child.transform {
+            child_patch.transform = FieldPatch::Set(baked_transform);
+        }
+        let baked_size = SizeSpec {
+            width: bake_dimension(&child.size.width, child_bounds.width),
+            height: bake_dimension(&child.size.height, child_bounds.height),
+        };
+        if baked_size != child.size {
+            child_patch.size = FieldPatch::Set(baked_size);
+        }
+        if node_patch_has_changes(&child_patch) {
+            child_patch.computed = OptionalFieldPatch::Clear;
+            operations.push(Operation::UpdateNode {
+                node_id: child_id.clone(),
+                patch: child_patch,
+            });
+            touched.push(EditTargetRef::Node(child_id.clone()));
+        }
+    }
+    Ok(())
+}
+
+/// Handoff-absolute (Moda model, MODA-EDITOR-PLAN §2): once the agent's turn
+/// is done, the human edits a design that behaves purely absolute — no
+/// solver ever re-flows siblings under their cursor. This bakes EVERY Stack
+/// auto-layout container in the scene to Free in one invertible, zero-motion
+/// batch (each container's children bake to their solved offsets via the
+/// same helper the single convert uses). Locked containers and containers
+/// already Free are skipped; a scene with nothing to freeze yields an empty
+/// batch so callers may invoke this unconditionally at handoff. Layout
+/// props (gap/padding/mode) are preserved, so a later agent turn can convert
+/// containers back to Stack and re-enter the solve.
+pub fn build_freeze_layout(scene: &Scene) -> Result<EditBatch, EditError> {
+    let mut operations = Vec::new();
+    let mut touched = Vec::new();
+
+    // BTreeMap iteration = deterministic op order across replays.
+    for (node_id, node) in &scene.nodes {
+        if !matches!(node.kind, NodeKind::AutoLayout(_)) || node.locked {
+            continue;
+        }
+        let current_props = node.layout.clone().unwrap_or_default();
+        if current_props.layout_mode == LayoutMode::Free {
+            continue;
+        }
+
+        free_container_operations(scene, node, node_id, &mut operations, &mut touched)?;
+        operations.push(Operation::UpdateNode {
+            node_id: node_id.clone(),
+            patch: NodePatch {
+                layout: OptionalFieldPatch::Set(AutoLayoutProps {
+                    layout_mode: LayoutMode::Free,
+                    ..current_props
+                }),
+                computed: OptionalFieldPatch::Clear,
+                ..NodePatch::default()
+            },
+        });
+        touched.push(EditTargetRef::Node(node_id.clone()));
+    }
+
+    EditBatch::new(operations, touched)
+        .with_intent("freeze_layout")
         .with_inverses(scene)
 }
 
@@ -2315,6 +2565,15 @@ fn apply_stack_entry_edit<T: Clone, I: Clone + Eq + fmt::Display>(
 }
 
 fn apply_text_edit_patch(mut text: TextNode, patch: TextEditPatch) -> TextNode {
+    let before = text.clone();
+    // A token field the patch addressed (set OR cleared) is an explicit
+    // authoring decision; only untouched tokens are eligible for staleness.
+    let explicit = ExplicitTextTokens {
+        style: !patch.style_token.is_unchanged(),
+        font_size: !patch.font_size_token.is_unchanged(),
+        line_height: !patch.line_height_token.is_unchanged(),
+        letter_spacing: !patch.letter_spacing_token.is_unchanged(),
+    };
     apply_field_patch(&mut text.content, patch.content);
     apply_field_patch(&mut text.font_family, patch.font_family);
     apply_field_patch(&mut text.font_size, patch.font_size);
@@ -2329,6 +2588,7 @@ fn apply_text_edit_patch(mut text: TextNode, patch: TextEditPatch) -> TextNode {
     apply_optional_patch(&mut text.font_size_token, patch.font_size_token);
     apply_optional_patch(&mut text.line_height_token, patch.line_height_token);
     apply_optional_patch(&mut text.letter_spacing_token, patch.letter_spacing_token);
+    text.clear_stale_tokens(&before, explicit);
     text
 }
 
@@ -2509,6 +2769,24 @@ pub enum StructuredEditInstruction {
         node_id: NodeId,
         layout_mode: LayoutMode,
     },
+    /// Phase 4b arrange: wrap same-parent siblings in a new Group container.
+    /// The caller mints `group_id` so the operation replays deterministically.
+    Group {
+        node_ids: Vec<NodeId>,
+        group_id: NodeId,
+        #[serde(default)]
+        name: Option<String>,
+    },
+    /// Phase 4b arrange: dissolve a container into its parent. Children keep
+    /// their order and geometry; the emptied container is removed.
+    Ungroup {
+        node_id: NodeId,
+        #[serde(default)]
+        allow_layout: bool,
+    },
+    /// Handoff-absolute: bake every Stack container to Free in one
+    /// zero-motion batch — the human edits pure absolute after an agent turn.
+    FreezeLayout {},
 }
 
 impl StructuredEditInstruction {
@@ -2527,6 +2805,9 @@ impl StructuredEditInstruction {
             Self::DetachToFreehand { .. } => "detach_to_freehand",
             Self::ReattachToLayout { .. } => "reattach_to_layout",
             Self::ConvertContainerLayout { .. } => "convert_container_layout",
+            Self::Group { .. } => "group",
+            Self::Ungroup { .. } => "ungroup",
+            Self::FreezeLayout {} => "freeze_layout",
         }
     }
 }
@@ -2595,5 +2876,15 @@ pub fn build_structured_edit_batch(
             node_id,
             layout_mode,
         } => build_convert_container_layout(scene, node_id.clone(), *layout_mode),
+        StructuredEditInstruction::Group {
+            node_ids,
+            group_id,
+            name,
+        } => build_group(scene, node_ids, group_id.clone(), name.clone()),
+        StructuredEditInstruction::Ungroup {
+            node_id,
+            allow_layout,
+        } => build_ungroup(scene, node_id.clone(), *allow_layout),
+        StructuredEditInstruction::FreezeLayout {} => build_freeze_layout(scene),
     }
 }

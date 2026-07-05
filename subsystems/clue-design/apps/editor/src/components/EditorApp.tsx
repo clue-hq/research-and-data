@@ -26,6 +26,7 @@ import { AssetBrowserPanel } from "./AssetBrowserPanel";
 import { HistoryPanel } from "./HistoryPanel";
 import { WorstCasePreviewPanel } from "./WorstCasePreviewPanel";
 import { InspectorPanel } from "./InspectorPanel";
+import { TextToolbar } from "./TextToolbar";
 import { LayerPanel } from "./LayerPanel";
 import { PageRail } from "./PageRail";
 import { ValidationPanel } from "./ValidationPanel";
@@ -49,17 +50,25 @@ import type {
 } from "@/engine/contracts";
 import {
   createDocument,
+  fetchBrandKitDetail,
   revertDocument,
   saveAgentInstructions,
+  saveLayoutManagedEditing,
   type CreatedDocument,
   type RevertOutcome
 } from "@/engine/documentStore";
 import { editorApiBaseUrl } from "@/engine/editorConfig";
+import {
+  buildTokenColorMap,
+  PLATFORM_DEFAULT_BRAND_KIT_ID,
+  type BrandKitDetailPayload
+} from "@/engine/tokenColors";
+import { setTokenColorMap } from "@/engine/renderAdapter";
 import { postTurnSuggestions } from "@/engine/agentSuggestions";
 import { mergeStickyDiagnostics } from "@/engine/diagnosticsPolicy";
 import { createEditQueue, type EnqueueOptions } from "@/engine/editQueue";
 import { rightSidebarLabelForMode, type EditorPanelMode } from "@/engine/editorModes";
-import { arrowNudge, isEditableEventTarget, keyboardHistoryAction } from "@/engine/editorKeyboard";
+import { arrowNudge, isEditableEventTarget, keyboardArrangeAction, keyboardHistoryAction } from "@/engine/editorKeyboard";
 import { duplicatePageOperations, uniquePageId } from "@/engine/pageDuplication";
 import {
   activateWasmCore,
@@ -78,15 +87,25 @@ import {
   upsertExportProfile
 } from "@/engine/operations";
 import { normalizePageSize } from "@/engine/pageGeometry";
-import type { StructuredEdit } from "@/engine/structuredEdits";
+import {
+  groupEdit,
+  mintGroupId,
+  moveAfterEdit,
+  moveBeforeEdit,
+  ungroupEdit,
+  type StructuredEdit
+} from "@/engine/structuredEdits";
 import { editorRenderDiagnostics } from "@/engine/renderDiagnostics";
 import {
+  canGroupNodes,
+  canUngroupNode,
   clampNodeTransformToParentBounds,
   firstPageId,
   getNode,
   isNodeLayoutManaged,
   nodeIdForAsset,
-  pageIdForNode
+  pageIdForNode,
+  siblingArrangeInfo
 } from "@/engine/sceneQueries";
 import {
   agentTurnRunningDiagnostic,
@@ -94,6 +113,8 @@ import {
   useAgentTurn
 } from "@/hooks/useAgentTurn";
 import { useAgentInstructions } from "@/hooks/useAgentInstructions";
+import { useLayoutManagedEditing } from "@/hooks/useLayoutManagedEditing";
+import { useMarginGuides } from "@/hooks/useMarginGuides";
 import { useBrandChecks } from "@/hooks/useBrandChecks";
 import { useTurnNotification } from "@/hooks/useTurnNotification";
 import { useDocumentSync, type EditQueueFactory } from "@/hooks/useDocumentSync";
@@ -138,6 +159,13 @@ export interface EditorAppProps {
    * /documents/{id}/revert?checkpoint=… and fetches the reverted scene.
    */
   revertRunner?: (documentId: string, checkpoint: string) => Promise<RevertOutcome>;
+  /**
+   * Full brand-kit token detail fetch override (tests). The default GETs
+   * /brand-kits/{id} for the document's effective kit (attached, or the
+   * platform default when none is attached) to build the canvas
+   * token-color map — see `useEffect` below and `engine/tokenColors.ts`.
+   */
+  brandKitDetailFetcher?: (brandKitId: string) => Promise<BrandKitDetailPayload | null>;
   /** 2e: the document's standing agent instructions, loaded with it. */
   initialAgentInstructions?: string | null;
   /** 2e: instructions persistence override (tests). */
@@ -145,6 +173,11 @@ export interface EditorAppProps {
     documentId: string,
     instructions: string | null
   ) => Promise<string | null>;
+  /** Advanced per-document opt-out from handoff-absolute, loaded with the
+   * document: keep agent auto-layout live (skip both freeze seams). */
+  initialLayoutManagedEditing?: boolean;
+  /** Layout-managed-editing persistence override (tests). */
+  layoutManagedEditingSaver?: (documentId: string, enabled: boolean) => Promise<boolean>;
 }
 
 // Re-exported so tests keep importing it from here; the type lives with the
@@ -184,8 +217,14 @@ const defaultDocumentCreator = (scene: Scene) =>
 const defaultRevertRunner = (documentId: string, checkpoint: string) =>
   revertDocument({ apiBaseUrl: editorApiBaseUrl() }, documentId, checkpoint);
 
+const defaultBrandKitDetailFetcher = (brandKitId: string) =>
+  fetchBrandKitDetail({ apiBaseUrl: editorApiBaseUrl() }, brandKitId);
+
 const defaultAgentInstructionsSaver = (documentId: string, instructions: string | null) =>
   saveAgentInstructions({ apiBaseUrl: editorApiBaseUrl() }, documentId, instructions);
+
+const defaultLayoutManagedEditingSaver = (documentId: string, enabled: boolean) =>
+  saveLayoutManagedEditing({ apiBaseUrl: editorApiBaseUrl() }, documentId, enabled);
 
 export default function EditorApp({
   documentId,
@@ -201,8 +240,11 @@ export default function EditorApp({
   editQueueFactory = defaultEditQueueFactory,
   documentCreator = defaultDocumentCreator,
   revertRunner = defaultRevertRunner,
+  brandKitDetailFetcher = defaultBrandKitDetailFetcher,
   initialAgentInstructions = null,
-  agentInstructionsSaver = defaultAgentInstructionsSaver
+  agentInstructionsSaver = defaultAgentInstructionsSaver,
+  initialLayoutManagedEditing = false,
+  layoutManagedEditingSaver = defaultLayoutManagedEditingSaver
 }: EditorAppProps = {}) {
   const [scene, setScene] = useState<Scene>(initialScene);
   // The optimistic engine owns local edit application (Track E): the WASM
@@ -446,6 +488,38 @@ export default function EditorApp({
     setDiagnostics
   });
 
+  // Canvas token-paint fidelity: resolves $surface.page/$surface.card/…
+  // fills to the document's real brand-kit values instead of the renderer's
+  // string-heuristic fallback (every "surface" token painting one cream).
+  // Precedence: the attached kit's id when the document has one, else the
+  // platform default kit — mirroring server-side token resolution/export,
+  // which is exactly where the canvas previously diverged from it. Sets the
+  // module-level map in `engine/renderAdapter.ts` (see its doc comment for
+  // why a registry rather than threading); both canvas backends and the
+  // compare-pane/preview instances read that same module state, so this one
+  // effect covers all of them. Keyed on the attached kit ref (not
+  // `availableBrandKits` — the fetch resolves by id, it doesn't read that
+  // list) so re-attaching a different kit refreshes the map. A failed fetch
+  // leaves the map from the last success (or empty on first load), which
+  // falls through to the pre-existing heuristic — never blocks rendering.
+  useEffect(() => {
+    let cancelled = false;
+    const brandKitId = scene.meta.brand_kit?.id ?? PLATFORM_DEFAULT_BRAND_KIT_ID;
+    brandKitDetailFetcher(brandKitId)
+      .then((detail) => {
+        if (!cancelled) {
+          setTokenColorMap(buildTokenColorMap(detail));
+        }
+      })
+      .catch(() => {
+        // API-down or kit not found: leave the canvas on whatever map (or
+        // heuristic) it already had rather than block rendering.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [scene.meta.brand_kit, brandKitDetailFetcher]);
+
   // The export + preflight leg (Validate/Export flows, their in-flight
   // flags and results) lives in useExportPreflight. Deps rebuilt per
   // render; activeDocumentId crosses via a lazy getter because
@@ -508,12 +582,18 @@ export default function EditorApp({
   // Document identity + the persistence leg (auto-create, id adoption, the
   // ordered edit queue with reconcile-at-drain) live in useDocumentSync.
   // Deps rebuilt per render, like every workflow hook here.
+  // While an agent preview/draft is pending, its ops live in the optimistic
+  // engine but in no enqueued batch — reconcile must compare the preview's
+  // base scene or every pending draft reads as divergence (assigned below,
+  // after useAgentTurn; ref so the queue's closure always sees the latest).
+  const previewBaseSceneRef = useRef<Scene | null>(null);
   const { activeDocumentId, enqueueForPersistence, resyncPersistence } = useDocumentSync({
     documentId,
     documentCreator,
     editQueueFactory,
     engineRef,
     sceneRef,
+    previewBaseSceneRef,
     replaceScene,
     setScene,
     setDiagnostics,
@@ -530,6 +610,18 @@ export default function EditorApp({
     initialInstructions: initialAgentInstructions,
     saveRunner: agentInstructionsSaver
   });
+
+  // Advanced per-document opt-out from handoff-absolute: applies to the
+  // session immediately, persists on the document per change.
+  const layoutManagedEditing = useLayoutManagedEditing({
+    activeDocumentId,
+    initialEnabled: initialLayoutManagedEditing,
+    saveRunner: layoutManagedEditingSaver
+  });
+
+  // View preference (not per-document): renders the active page's
+  // safe-area/bleed guides on the canvas.
+  const marginGuides = useMarginGuides();
 
   /**
    * Shared post-apply bookkeeping for operations that are already applied to
@@ -614,6 +706,7 @@ export default function EditorApp({
     selectedNodeId,
     targetNodeIds,
     agentInstructions: standingInstructions.instructions,
+    layoutManagedEditing: layoutManagedEditing.enabled,
     diagnostics,
     setDiagnostics,
     setScene,
@@ -630,6 +723,10 @@ export default function EditorApp({
     runExportForScene,
     applyOperations: (operations, onAccepted) => applyOperations(operations, onAccepted)
   });
+  // Keep the reconcile baseline in step with the pending preview (see the
+  // ref's declaration above useDocumentSync). Render-body assignment is the
+  // established ref-mirror pattern here (activeDocumentIdRef et al.).
+  previewBaseSceneRef.current = agentPreview?.baseScene ?? null;
 
   // 2e notify-when-done: a turn that settles while the agent panel is
   // closed raises a click-to-open toast (no browser Notification API).
@@ -748,20 +845,24 @@ export default function EditorApp({
    * Phase 1d: structured edits (detach/re-attach, and future container
    * conversions) run through the engine's shared lumen-core builder and
    * commit with the exact bookkeeping manual edits get — undo frame,
-   * history, persistence — so freehand actions are ordinary edits.
+   * history, persistence — so freehand actions are ordinary edits. Returns
+   * the post-apply engine scene (or null if blocked/rejected/unavailable) so
+   * a caller that needs fresh geometry synchronously — e.g. the CanvasKit
+   * gesture-gate freeze, which continues the same pointer gesture right
+   * after — doesn't have to wait for the next render's `scene` prop.
    */
-  const applyStructuredEditInstruction = (edit: StructuredEdit) => {
+  const applyStructuredEditInstruction = (edit: StructuredEdit): Scene | null => {
     if (compareView) {
       setDiagnostics([compareActiveDiagnostic()]);
-      return;
+      return null;
     }
     if (agentPreview) {
       setDiagnostics([pendingAgentReviewDiagnostic()]);
-      return;
+      return null;
     }
     if (isAgentRunning) {
       setDiagnostics([agentTurnRunningDiagnostic()]);
-      return;
+      return null;
     }
     const engine = engineRef.current;
     if (!engine?.applyStructuredEdit) {
@@ -775,7 +876,7 @@ export default function EditorApp({
           hint: "Reload the editor or check the /wasm assets."
         }
       ]);
-      return;
+      return null;
     }
     const previousScene = engine.scene;
     const outcome = engine.applyStructuredEdit(edit);
@@ -790,7 +891,7 @@ export default function EditorApp({
           hint: "The edit was rejected by the lumen-core engine; the scene is unchanged."
         }
       ]);
-      return;
+      return null;
     }
     commitAppliedOperations(
       previousScene,
@@ -799,6 +900,7 @@ export default function EditorApp({
       undefined,
       outcome.inverseOperations ?? null
     );
+    return outcome.scene;
   };
 
   // Dev/e2e hook (Phase 1 browser validation): lets browser tests drive
@@ -897,6 +999,61 @@ export default function EditorApp({
     redoHistoryStep();
   };
 
+  /** Phase 4b arrange: the keyboard-shortcut counterpart of ArrangeSection's
+   * buttons — same predicates, same structured-edit path, so a shortcut and
+   * its inspector button always agree on whether an action is allowed. */
+  const runArrangeAction = (
+    action: ReturnType<typeof keyboardArrangeAction>,
+    primaryNodeId: NodeId,
+    multiSelection: NodeId[]
+  ) => {
+    const arrangeInfo = siblingArrangeInfo(scene, primaryNodeId);
+    const node = scene.nodes[primaryNodeId];
+    if (!node || node.locked) {
+      return;
+    }
+    switch (action) {
+      case "to_front":
+        if (arrangeInfo && !arrangeInfo.isFront) {
+          applyStructuredEditInstruction(
+            moveAfterEdit(primaryNodeId, arrangeInfo.siblings[arrangeInfo.siblings.length - 1])
+          );
+        }
+        return;
+      case "forward":
+        if (arrangeInfo && !arrangeInfo.isFront) {
+          applyStructuredEditInstruction(moveAfterEdit(primaryNodeId, arrangeInfo.siblings[arrangeInfo.index + 1]));
+        }
+        return;
+      case "backward":
+        if (arrangeInfo && !arrangeInfo.isBack) {
+          applyStructuredEditInstruction(moveBeforeEdit(primaryNodeId, arrangeInfo.siblings[arrangeInfo.index - 1]));
+        }
+        return;
+      case "to_back":
+        if (arrangeInfo && !arrangeInfo.isBack) {
+          applyStructuredEditInstruction(moveBeforeEdit(primaryNodeId, arrangeInfo.siblings[0]));
+        }
+        return;
+      case "group": {
+        const groupSelectionIds = multiSelection.includes(primaryNodeId) ? multiSelection : [primaryNodeId];
+        if (canGroupNodes(scene, groupSelectionIds)) {
+          applyStructuredEditInstruction(groupEdit(groupSelectionIds, mintGroupId(scene), "Group"));
+        }
+        return;
+      }
+      case "ungroup": {
+        const groupSelectionIds = multiSelection.includes(primaryNodeId) ? multiSelection : [primaryNodeId];
+        if (groupSelectionIds.length === 1 && canUngroupNode(scene, primaryNodeId)) {
+          applyStructuredEditInstruction(ungroupEdit(primaryNodeId));
+        }
+        return;
+      }
+      default:
+        return;
+    }
+  };
+
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (isEditableEventTarget(event.target)) {
@@ -931,6 +1088,13 @@ export default function EditorApp({
         return;
       }
 
+      const arrangeAction = keyboardArrangeAction(event);
+      if (arrangeAction) {
+        event.preventDefault();
+        runArrangeAction(arrangeAction, selectedNode.id, selectedNodeIds);
+        return;
+      }
+
       const nudge = arrowNudge(event.key);
       if (!nudge || selectedNode.locked || isNodeLayoutManaged(scene, selectedNode.id)) {
         return;
@@ -949,7 +1113,7 @@ export default function EditorApp({
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [redoLastOperation, scene, selectedNode, selectedNodeId, undoLastOperation]);
+  }, [redoLastOperation, runArrangeAction, scene, selectedNode, selectedNodeId, selectedNodeIds, undoLastOperation]);
 
   const selectPage = (pageId: PageId) => {
     setActivePageId(pageId);
@@ -1291,26 +1455,35 @@ export default function EditorApp({
               onSelectSubject={selectDiagnosticSubject}
             />
           ) : (
-            <EditorCanvas
-              scene={scene}
-              activePageId={activePageId}
-              selectedNodeId={selectedNodeId}
-              selectedNodeIds={selectedNodeIds}
-              onSelectNode={selectNode}
-              onSelectPage={selectPage}
-              onOperations={applyOperations}
-              engine={engineRef.current}
-              diagnostics={diagnostics}
-              workspaceViewport={workspaceViewport}
-              onWorkspaceViewportChange={setWorkspaceViewport}
-              workspaceTool={workspaceTool}
-              onWorkspaceToolChange={setWorkspaceTool}
-              workspaceFitTarget={workspaceFitTarget}
-              onWorkspaceFitTargetChange={setWorkspaceFitTarget}
-              onOpenDiagnostics={() => setEditorPanelMode("diagnostics")}
-              onOpenExport={() => setEditorPanelMode("export")}
-              onSceneRefresh={refreshSceneFromEngine}
-            />
+            <>
+              {!isAgentRunning && !agentPreview && !compareView ? (
+                <TextToolbar selectedNode={selectedNode} onOperation={applyOperation} brandTokens={effectiveBrandKit?.tokens ?? null} />
+              ) : null}
+              <EditorCanvas
+                scene={scene}
+                activePageId={activePageId}
+                selectedNodeId={selectedNodeId}
+                selectedNodeIds={selectedNodeIds}
+                onSelectNode={selectNode}
+                onSelectPage={selectPage}
+                onOperations={applyOperations}
+                engine={engineRef.current}
+                diagnostics={diagnostics}
+                workspaceViewport={workspaceViewport}
+                onWorkspaceViewportChange={setWorkspaceViewport}
+                workspaceTool={workspaceTool}
+                onWorkspaceToolChange={setWorkspaceTool}
+                workspaceFitTarget={workspaceFitTarget}
+                onWorkspaceFitTargetChange={setWorkspaceFitTarget}
+                onOpenDiagnostics={() => setEditorPanelMode("diagnostics")}
+                onOpenExport={() => setEditorPanelMode("export")}
+                onSceneRefresh={refreshSceneFromEngine}
+                onStructuredEdit={applyStructuredEditInstruction}
+                layoutManagedEditing={layoutManagedEditing.enabled}
+                showMarginGuides={marginGuides.showMarginGuides}
+                onToggleMarginGuides={marginGuides.toggleMarginGuides}
+              />
+            </>
           )}
         </section>
         {isAgentPanelOpen ? (
@@ -1415,6 +1588,7 @@ export default function EditorApp({
                 activePage={activePage}
                 selectedNode={selectedNode}
                 selectedNodeId={selectedNodeId}
+                selectedNodeIds={selectedNodeIds}
                 brandTokens={effectiveBrandKit?.tokens ?? null}
                 diagnostics={diagnostics}
                 renderDiagnostics={renderDiagnostics}
@@ -1423,6 +1597,8 @@ export default function EditorApp({
                 onOperations={applyOperations}
                 onStructuredEdit={applyStructuredEditInstruction}
                 onSelectSubject={selectDiagnosticSubject}
+                layoutManagedEditing={layoutManagedEditing.enabled}
+                onSetLayoutManagedEditing={layoutManagedEditing.setEnabled}
               />
               <BrandKitPanel
                 scene={scene}

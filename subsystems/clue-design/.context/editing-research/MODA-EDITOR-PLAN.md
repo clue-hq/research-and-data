@@ -93,6 +93,8 @@ Key inferences:
 | Agent works on live doc (round-trip) | **NO — agent seeds empty scene** (`tools.py:142`), sees 80-node text summary | **Phase 0 — the gate on everything** |
 | Accept/Reject gate on agent turn | Ops auto-applied; post-preflight `replaceScene(preflight.scene)` swaps in token-baked scene (`EditorApp.tsx:1099`) | Phase 0/2 |
 | Brand kit entity | BrandKitPanel + brand-kits knowledge exist | Enrich later (fonts validation, images, tone) |
+| Text/fill color in toolbar; gradient fill editor | Engine renders linear/radial gradients end-to-end (model+DSL+Skia+SVG+Konva); UI is solid-hex-only, clobbers fill stack | §5 — 4b color rider, then Appearance slice at restyle |
+| Page background Mesh Gradient (+ grain) | Not in `Paint` model; no Skia/SVG primitive | §5 deferral — demand-driven, weeks-class |
 | Design Plan pre-brief | Nothing | Phase 2 (cheap, prompt-side) |
 | Variants as named pages | Multi-page exists (PageRail) | Agent emits N concepts as pages — prompt/loop change |
 | Version history / Save as template / comments / presentation / animation / shaders / charts | Partial (HistoryPanel) / absent | Phase 4+ / non-goals for now |
@@ -136,10 +138,10 @@ Key inferences:
 - Keep fit/focal as the "crop" story short-term (already shipped); free-rect crop stays deferred (STUDY.md Phase 3).
 
 ### Phase 4 — Editor completeness ladder (prioritized floor, in order)
-1. Contextual text toolbar (font/weight/size/style/align + line-height/letter-spacing) with **token-aware overrides** — raw edit clears the sibling `*_token` (the stale-token clobber fix, `operations.rs:556-597`).
-2. Align/distribute + smart guides for Absolute/Free nodes; z-order + group/ungroup UI (ops exist).
+1. Contextual text toolbar (font/weight/size/style/align + line-height/letter-spacing) with **token-aware overrides** — raw edit clears the sibling `*_token` (the stale-token clobber fix, `operations.rs:556-597`). **SHIPPED as 4a** (commits `4e90201` engine + `cb0d2b2` toolbar, e2e-proven). Residual: raw *color* edits (fills) don't yet clear `style_token` — resolved by the 4b color rider below.
+2. Align/distribute + smart guides for Absolute/Free nodes; z-order + group/ungroup UI (ops exist). **+ Color rider (decided 2026-07-04):** token-first color swatch in the contextual toolbar (text + shape solid fills), the fills-clear-`style_token` engine rule, and a gradient-clobber guard — full rationale and scope in §5.
 3. Managed-drag → reorder (`MoveNode` by index); managed W/H → size-mode variant.
-4. Page-level: background fill UI, margins as visible guides (agent already respects artboard bounds), page rename in rail.
+4. Page-level: background fill UI, margins as visible guides (agent already respects artboard bounds), page rename in rail. **Opening rider (decided 2026-07-05): canvas token fidelity** — the canvas resolves ALL `Paint::Token`/color-token values through `tokenFallback()` (`renderAdapter.ts:620`, a 4-branch string match: every `surface.*` → the same cream), never through real token values, kit attached or not. Symptom that surfaced it: an unattached agent doc's `surface.inverse` button painted cream-on-cream (invisible) on canvas while the SVG export (real resolver) drew it navy. Fix mirrors server semantics: attached kit's resolved values → platform-default kit when unattached → heuristic only for unknown tokens. Pure frontend (renderAdapter.ts:326/337/403 + descriptor threading). Prerequisite for this rung's background-fill UI and a hard prerequisite of the Appearance/Fills slice at the restyle; also fixes the shipped 4b swatch's WYSIWYG gap.
 5. Comments, version history UI, Save-as-template. Later/likely never: shaders, charts/map/LaTeX/Mermaid, page duration/animation, presentation mode.
 
 ### Non-goals / do-not-copy
@@ -156,3 +158,125 @@ Phase 0 → Phase 1 → Phase 2 in that order; Phases 3/4 parallelizable after 1
 - LUMV0801 clip-overflow policy for freehand.
 - Serde-default byte-parity for new fields on old scenes.
 - Agent quality degradation on heavily-freehanded scenes (semantic erosion — honest cost; `base_anchor` mitigates).
+
+---
+
+## 5. Color & fills — engine capability audit + sequencing (added 2026-07-04, post-4a)
+
+*Two code surveys on `agents/editing-roundtrip-v0` after 4a shipped, prompted by: when does color join the toolbar, and can brand kits carrying gradient backgrounds (e.g. SVGs) be used by the agent/engine without editor fill features?*
+
+### 5.1 What the engine already has (the surprising part)
+
+`Paint` is `Solid | LinearGradient{angle, stops} | RadialGradient{stops} | Token` (`scene.rs:750-757`); fills are a stacked `Vec<Fill>` (`scene.rs:276`); page backgrounds use the same model (`scene.rs:191`); every `ColorStop.color` may itself be a token, resolved per-stop on brand apply (`brand.rs:3568-3576`). **"Add gradients" is a UI project, not an engine project. Mesh/blur/blend are the opposite.**
+
+| Capability | Model | DSL | Skia | SVG export | Konva preview | Editor UI |
+|---|---|---|---|---|---|---|
+| Solid fill (hex/oklch/token) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ crude (`RawStyleSection` hex input; `DesignTokensSection` token dropdown) |
+| Linear gradient (angle + n stops) | ✅ | ✅ `linear(angle, stop(c,p)…)` (`dsl.rs:4482-4506`) | ✅ | ✅ | ✅ | ❌ |
+| Radial gradient (n stops, center fixed 0.5,0.5) | ✅ | ✅ `radial(stop…)` | ✅ | ✅ | ✅ | ❌ |
+| Token refs inside gradient stops | ✅ | ✅ `stop($token, pos)` | ✅ | ✅ | ✅ | ❌ |
+| Drop shadow (color/opacity/x/y/blur/spread) | ✅ `EffectKind::DropShadow` (`scene.rs:737-748`) | ❌ | ✅ (`render.rs:705-750`) | ✅ | ✅ approx | ❌ |
+| Node opacity (+ `$opacity.*` tokens) | ✅ | — | ✅ | ✅ | ✅ | ✅ |
+| Blur / backdrop-blur | ❌ scene-side — exists ONLY as brand *token type* (`EffectToken` Blur/BackdropBlur), no `EffectKind`, no render path | ❌ | ❌ | ❌ | ❌ | ❌ |
+| Mesh gradient, blend modes, image-as-fill | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+
+Brand-kit side: `TokenCatalog` stores **flat colors only** (`brand.rs:1168-1192`; `ColorTokenValue = Hex | Oklch | Alias` at `brand.rs:1227-1231`) — **no gradient tokens** — though `constraints.allow_gradients` already anticipates them. Brand assets (logos/images) are `asset_id` refs into the asset store; the agent can place them only as image nodes (`image asset(<id>)`, `dsl.rs:3588`), never as fill paints. `validate_scene_brand_governance` (`brand.rs:1632-1903`) wants token fills; gradient stops satisfy this per-stop.
+
+### 5.2 Decisions
+
+1. **Toolbar color = 4b rider (~2 days incl. e2e).** Token-first swatch popover: brand swatches write `Paint::Token` (stays restylable, passes governance); custom picker is the escape hatch writing raw hex → node visibly **detaches** (clears `style_token` for text — closing the 4a residual), same semantics/undo as 4a typography. This is Moda's Strict/Balanced/Loose adherence expressed in one control; a raw-only picker would fight the brand story, a token-first one strengthens it. Engine piece in `editing.rs` + WASM rebuild.
+2. **Gradient-clobber guard ships with the rider.** Today's `RawStyleSection` color input **replaces the entire fills stack with one solid** — a naive toolbar swatch would silently destroy agent-authored gradients. The control must detect gradient fills and defer to the fill editor (or warn) instead of overwriting.
+3. **Appearance/Fills slice lands at the Moda restyle** (when the inspector's Raw-Style/Appearance surface is rebuilt): gradient stop/angle editor, per-fill alpha/opacity, drop-shadow editor (engine already renders shadows), effects list, full picker. **Pure frontend** — zero engine work; the engine renders all of it today.
+4. **Brand-gradient ingestion rides the brand-import track, not the editor track.** To make "brand kit with gradient backgrounds → agent uses them natively" true: add `$gradient.*` tokens to `TokenCatalog` (+ resolver + governance + DSL sugar, ~2-3 days engine) and an ingestion extractor that lifts angle+stops out of brand SVGs into native `Paint::LinearGradient` with stop colors bound to `$palette.*` tokens. Renderers need nothing. Prompts/skills then teach the agent to use them (`prompts.py` brand guidance currently pushes solid `$surface.*` only).
+5. **Gradient SVG assets are usable TODAY** as `image asset(<id>)` background nodes — with caveats: `VectorNode` is path-data-only (`scene.rs:524-532`), so defs-based gradient SVGs must be **rasterized at ingest**; and images are opaque to restyle/theming/governance (not recolorable on brand reapply, no light/dark modes). Native gradients (decision 4) are the right long-term path. Known adjacent gap: agent loop doesn't yet reliably *place* imagery even though plumbing works (see image-agent-integration memory).
+6. **Demand-driven deferrals** — each is scene schema + both renderers + DSL + governance + WASM (the expensive class), and nothing consumes them yet: **mesh gradients** (no Skia primitive, no SVG-export representation → rasterize fallback; weeks-class — this is Moda's page-background Mesh Gradient + grain), **blur/backdrop effects** (promote the existing token types to `EffectKind` when a consumer appears), **blend modes**, **image-as-fill**.
+
+### 5.3 The orthogonality principle (why brand kits don't block on the editor)
+
+Editor UI and agent capability are **decoupled**: the agent authors through the DSL, and DSL + both renderers + the Konva preview already handle gradients end-to-end. The agent could emit `linear(45, stop($palette.primary.500, 0), stop($palette.accent.400, 1))` today and the human canvas renders it faithfully — the human just can't *edit* it until the Appearance slice. So: agent-side brand-gradient support needs only decision 4 (tokens + ingestion); human-side editing catches up at the restyle; neither waits on the other.
+
+### 5.4 Sequencing
+
+**4b color rider → Appearance/Fills slice @ Moda restyle → `$gradient.*` tokens + SVG extraction @ brand-import track → mesh/blur/blend/image-fill on demand.**
+
+---
+
+## 6. Handoff-absolute (decided + SHIPPED 2026-07-05, user-critical)
+
+Direct user feedback after 4b (recordings in `.context/phase4b5/`):
+end users (sales/marketing) must never experience layout-engine behavior —
+no sibling re-flow on drag, no detach concept, no auto-layout jargon. This
+SUPERSEDES Phase 1's "explicit detach toggle" UX framing: detach still
+exists as power-user surface, but the primary contract is now **the layout
+engine is the agent's authoring tool; humans always receive baked
+absolute** — precisely Moda's authoring-time-intelligence → baked-absolute
+handoff (§1.1/§2.5), while we retain the ability to re-enter the solve.
+
+Mechanism (record: `.context/phase4b5/IMPLEMENTATION.md`):
+- Engine `build_freeze_layout` — every unlocked Stack container → Free in
+  one invertible zero-motion batch; layout props survive so agent turns can
+  re-Stack; idempotent; wire kind `freeze_layout`.
+- Freeze at agent-turn **Accept**, merged into the turn's own undo frame /
+  envelope / checkpoint (one ⌘Z = whole turn incl. freeze).
+- Lazy freeze on **first human gesture** on a solver-managed node
+  (pointer-down seam) — migrates pre-freeze docs invisibly.
+- Round-trip: exclusive turns; chip-targeted property edits are
+  layout-inert; layout-affecting turns may re-Stack → Accept re-freezes.
+  Agent-side follow-ups pending: layout_mode/human-arranged in _node_brief,
+  prefer-absolute-edits prompt policy, explicit transforms on insert into
+  Free containers.
+
+### Phase 4c — RE-SCOPED (2026-07-05): agent edits on human-owned geometry
+
+The original 4c (managed-drag → reorder) is largely obsoleted by
+handoff-absolute: humans rarely touch managed nodes now (first touch
+freezes). The retest exposed the real 4c: **the agent cannot move a pinned
+node** — DSL `p()` writes `transform`, which pinned nodes ignore
+(`absolute_box` is authoritative, page-space) → user asks like "move the
+badge" are silent no-ops on exactly the elements humans drag.
+
+Decision: make `p()`/`s()` JUST WORK on pinned targets — the DSL compiler
+translates them into `absolute_box` updates using the parent's solved
+page-space origin (the compile session holds the laid-out scene). Zero new
+concepts for the agent; "move it there" is owner-independent. Rider: the
+agent brief's "pinned nodes must not be re-positioned" note rewords to
+"pinned geometry is human-owned — move it only when the user asks."
+
+#### 4c-A shipped (1fe3622) + the semantics correction (2026-07-05)
+
+4c-A landed parent-relative; the live retest (run_8e7b9f64) immediately
+falsified that frame choice: the model wrote artboard coordinates on both
+attempts — the frame the brief/inspector display `absolute_box` in — so
+parent-relative lowering put the badge 88pt off, then off-canvas.
+**Corrected: `p()` on a pinned target is PAGE-SPACE** (writes absolute_box
+verbatim; `pinned_origin()`/LUMD0918 deleted — page-space needs no parent
+geometry). The frame rule taught to the agent: *p() speaks the frame the
+brief shows that node's geometry in* — page space for pinned nodes,
+parent-local for flow/transform nodes (incl. new children of Free
+containers). LUMD0919 (fixed sizes only on pinned) unchanged.
+
+#### Best-draft-wins (same retest, Finding B)
+
+At budget exhaustion the loop proposed the LAST preflight-clean draft, not
+the best: both drafts rejected with 2 issues each → rank tie-broke on raw
+critic confidence, and confidence on a rejected draft measures
+certainty-of-badness (0.90-certainly-bad off-canvas beat 0.86 visible).
+Fixed in `_consider_best`: severity-weighted issue penalty (blocker 10 /
+error 3 / warning 1 / info 0) + verdict-signed confidence (+conf accepted,
+−conf rejected).
+
+#### 4c-B — per-document handoff toggle (decided with user 2026-07-05)
+
+Handoff-absolute stays the default contract, but it becomes a per-document
+setting: `layout_managed_editing` (default false). ON = advanced opt-out —
+both freeze seams (Accept-time + first-gesture) are skipped, agent designs
+keep live Stack containers, and the pre-4b.5 managed-editing surface
+(detach affordances) is reachable again. Enabling does NOT un-freeze
+already-Free containers (one-way; disabling re-freezes at the next seam).
+Persistence rides the agent_instructions pattern (documents column + save
+route), not the scene schema — it is editor policy, invisible to the
+engine and the agent runtime. This is also the rollout safety valve.
+
+Still open for 4c-C (managed gestures in advanced mode): strict
+reorder-within-container v1, pull-out-to-detach as fast-follow — needs
+user's word before build.

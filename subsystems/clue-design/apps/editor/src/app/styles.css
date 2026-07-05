@@ -2483,3 +2483,245 @@ textarea:disabled {
 .document-load-error button:hover {
   background: #1d585c;
 }
+
+/* Contextual text toolbar — a floating pill anchored top-center of the canvas
+   while a text node is selected; the fast twin of the inspector Text section. */
+.text-toolbar {
+  position: absolute;
+  top: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: var(--radius-pill);
+  background: var(--surface-white);
+  border: 1px solid #e7e3db;
+  box-shadow:
+    0 8px 24px rgba(15, 18, 24, 0.22),
+    0 2px 6px rgba(15, 18, 24, 0.12);
+  color: var(--panel-text);
+}
+
+.text-toolbar input,
+.text-toolbar select {
+  height: 26px;
+  padding: 0 8px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--panel-border-soft);
+  background: var(--panel-bg);
+  color: var(--panel-ink);
+  font-size: 12px;
+}
+
+.text-toolbar .text-toolbar-family {
+  width: 130px;
+}
+
+.text-toolbar .text-toolbar-weight {
+  width: 104px;
+}
+
+.text-toolbar .text-toolbar-number {
+  width: 56px;
+}
+
+.text-toolbar .text-toolbar-number.size {
+  width: 62px;
+}
+
+.text-toolbar-align {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  border-radius: var(--radius-sm);
+  background: var(--panel-bg-hover);
+}
+
+.text-toolbar-align button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 22px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--panel-text-muted);
+  cursor: pointer;
+}
+
+.text-toolbar-align button.active {
+  background: var(--surface-white);
+  color: var(--panel-ink);
+  box-shadow: 0 1px 3px rgba(15, 18, 24, 0.18);
+}
+
+.text-toolbar-metric {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  color: var(--panel-text-muted);
+}
+
+.text-toolbar-token-chip {
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 3px 9px;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--panel-gold);
+  background: var(--panel-bg-warm);
+  color: var(--panel-accent);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.color-swatch-control {
+  position: relative;
+  display: inline-flex;
+}
+
+.color-swatch-trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--panel-border-soft);
+  background: var(--surface-white);
+}
+
+.color-swatch-trigger.mixed {
+  border-style: dashed;
+}
+
+.color-swatch-preview {
+  width: 16px;
+  height: 16px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--panel-border-soft);
+}
+
+.color-swatch-preview.empty {
+  background: var(--surface-white);
+  border-style: dashed;
+}
+
+.color-swatch-preview.mixed {
+  background: linear-gradient(135deg, var(--panel-bg-warm) 45%, var(--panel-border-soft) 55%);
+  border-style: dashed;
+}
+
+.color-swatch-preview.token {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--panel-bg-warm);
+}
+
+.color-swatch-token-badge {
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--panel-accent);
+}
+
+.color-swatch-popover {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 20;
+  min-width: 200px;
+  padding: 10px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--panel-border-soft);
+  background: var(--surface-white);
+  box-shadow: var(--shadow-pop);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.color-swatch-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.color-swatch-group-label {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--panel-text-muted);
+}
+
+.color-swatch-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.color-swatch-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--panel-border-soft);
+  background: var(--panel-bg-warm);
+}
+
+.color-swatch-chip.active {
+  border-color: var(--teal-deep);
+  box-shadow: 0 0 0 1px var(--teal-deep);
+}
+
+.color-swatch-custom-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding-top: 6px;
+  border-top: 1px solid var(--panel-border-soft);
+}
+
+.color-swatch-custom-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--panel-text-soft);
+}
+
+.color-swatch-empty-groups {
+  font-size: 11px;
+}
+
+.color-swatch-guard {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.color-swatch-guard-message {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--panel-text-soft);
+}
+
+.color-swatch-guard-list {
+  margin: 0;
+  padding-left: 16px;
+  font-size: 11px;
+  color: var(--panel-text-muted);
+}

@@ -1,8 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Download, Hand, LocateFixed, Maximize2, Minus, MousePointer2, Plus, Scan } from "lucide-react";
-import type { Diagnostic, NodeId, Operation, PageId, Scene } from "@/engine/contracts";
+import { Download, Frame, Hand, LocateFixed, Maximize2, Minus, MousePointer2, Plus, Scan } from "lucide-react";
+import type { Diagnostic, NodeId, Operation, PageId, Rect, Scene } from "@/engine/contracts";
 import type { OptimisticEnginePort } from "@/engine/wasmEngine";
 import { artboardAtWorkspacePoint, type WorkspaceModel } from "@/engine/workspaceLayout";
 import { containerSelectionGeometry } from "@/engine/canvasSelection";
@@ -17,23 +17,31 @@ import {
 } from "@/engine/gestureMachine";
 import {
   descriptorToScene,
+  dragActionToGuides,
   dragActionToOperations,
   handleAtPoint,
+  resizeActionToGuides,
   resizeActionToOperation,
   screenToDescriptor
 } from "@/engine/canvaskitGestures";
+import type { SnapGuide } from "@/engine/canvasOperations";
 import {
   getNode,
   getPage,
+  isNodeFreezableOnGesture,
   isNodePinned,
+  isNodeReorderableOnGesture,
   nodeDisplayName,
+  parentInfoForNode,
   topLevelAncestorId
 } from "@/engine/sceneQueries";
-import { nodeDescriptor, pageDescriptor, type ParentComputedOrigin } from "@/engine/renderAdapter";
+import { reorderDropTarget, type ReorderDropTarget } from "@/engine/managedGestures";
+import { nodeDescriptor, pageDescriptor, sceneUnitFromCanvas, type ParentComputedOrigin } from "@/engine/renderAdapter";
 import { loadCanvasKit } from "@/engine/canvaskit/loadCanvasKit";
 import { skiaMeasurements } from "@/engine/canvaskit/skiaMeasurements";
 import type { Box } from "@/engine/transformerMath";
 import { nodePatch, set, updateTextNode } from "@/engine/operations";
+import { freezeLayoutEdit, moveAfterEdit, moveBeforeEdit, type StructuredEdit } from "@/engine/structuredEdits";
 import {
   clampWorkspacePanToKeepVisible,
   clampWorkspaceZoom,
@@ -92,6 +100,22 @@ export interface CanvasKitCanvasProps {
   /** Called after the C4 measurement pass updates the engine's `computed`
    * (which does not emit a delta), so the host can re-sync its React scene. */
   onSceneRefresh?: () => void;
+  /** Handoff-absolute (lazy seam): applies a structured edit through the
+   * canonical engine-apply-then-commit path, returning the post-apply engine
+   * scene (or null if rejected/unavailable) so a gesture can continue
+   * against fresh geometry after an in-gesture freeze. */
+  onStructuredEdit?: (edit: StructuredEdit) => Scene | null;
+  /** Advanced per-document opt-out from handoff-absolute: when true, a press
+   * on a solver-managed node does NOT freeze the layout — the node stays
+   * layout-managed and the inspector's detach affordances apply instead. */
+  layoutManagedEditing?: boolean;
+  /** Phase 4d: view preference (not per-document) — when true, the active
+   * page's safe-area/bleed rects render as guide outlines on the canvas. */
+  showMarginGuides?: boolean;
+  /** Phase 4d: toggles `showMarginGuides`. Omitted renders the control
+   * disabled-less but inert (no-op click) — callers always pass it in
+   * practice, same convention as the other toolbar callbacks. */
+  onToggleMarginGuides?: () => void;
 }
 
 interface Preview {
@@ -119,13 +143,28 @@ export function CanvasKitCanvas({
   onWorkspaceFitTargetChange,
   onOpenDiagnostics,
   onOpenExport,
-  onSceneRefresh
+  onSceneRefresh,
+  onStructuredEdit,
+  layoutManagedEditing = false,
+  showMarginGuides = false,
+  onToggleMarginGuides
 }: CanvasKitCanvasProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const stateRef = useRef<GestureState>(initialGestureState);
   const panDragRef = useRef<{ pointerId: number; x: number; y: number; pan: { x: number; y: number } } | null>(null);
+  // 4c-C: computed once at press time (per the "class of the target" guard —
+  // never re-derived per frame) — set only when the press target is a
+  // layout-managed-editing reorderable Stack child, so the drag branches to
+  // reorder semantics instead of a geometry move for the rest of the
+  // gesture, however the node's class happens to read mid-drag.
+  const reorderGestureRef = useRef<{ nodeId: NodeId; containerId: NodeId } | null>(null);
+  // 4c-C: whether the CURRENT resize gesture targets a layout-managed-editing
+  // reorderable Stack child — same "decide once at press time" discipline.
+  const managedResizeRef = useRef(false);
   const [viewport, setViewport] = useState({ width: 900, height: 720 });
   const [preview, setPreview] = useState<Preview | null>(null);
+  const [activeGuides, setActiveGuides] = useState<SnapGuide[]>([]);
+  const [reorderTarget, setReorderTarget] = useState<ReorderDropTarget | null>(null);
   const [marquee, setMarquee] = useState<Box | null>(null);
   const [editingNodeId, setEditingNodeId] = useState<NodeId | null>(null);
   const [hoverNodeId, setHoverNodeId] = useState<NodeId | null>(null);
@@ -150,6 +189,18 @@ export function CanvasKitCanvas({
     }
     return workspaceModel.bounds;
   }, [activeArtboard, workspaceFitTarget, workspaceModel.bounds]);
+
+  // 4d: the "Show margins" toggle's page guides — the active page's
+  // safe-area/bleed rects, mapped page-space → descriptor space with the
+  // same unitScale the snap guides use. Off (or no active page) means null,
+  // which SelectionOverlay treats as "render nothing" for both rects.
+  const marginGuides = useMemo(() => {
+    if (!showMarginGuides || !page) return null;
+    return {
+      safeArea: descriptorRect(page.safe_area, unitScale),
+      bleed: descriptorRect(page.bleed, unitScale)
+    };
+  }, [page, showMarginGuides, unitScale]);
 
   useEffect(() => {
     const element = containerRef.current;
@@ -347,12 +398,15 @@ export function CanvasKitCanvas({
         activePageId,
         selectedNodeId,
         hoverNodeId,
-        diagnostics
+        diagnostics,
+        layoutManagedEditing
       }),
-    [activePageId, diagnostics, hoverNodeId, scene, selectedNodeId]
+    [activePageId, diagnostics, hoverNodeId, scene, selectedNodeId, layoutManagedEditing]
   );
 
   const showHandles = chromeModel.showHandles;
+  const showResizeHandles = chromeModel.showResizeHandles;
+  const showRotateHandle = chromeModel.showRotateHandle;
 
   const boxForNode = useCallback(
     (nodeId: NodeId): { box: Box; rotation: number } | null => {
@@ -377,16 +431,16 @@ export function CanvasKitCanvas({
   const pressTargetFor = useCallback(
     (descriptorPoint: { x: number; y: number }): PressTarget => {
       // Handle grab on the current selection takes priority.
-      if (selectionBox && showHandles) {
+      if (selectionBox && (showResizeHandles || showRotateHandle)) {
         const handle = handleAtPoint(descriptorPoint, selectionBox.box, selectionBox.rotation, zoom);
-        if (handle === "rotate") {
+        if (handle === "rotate" && showRotateHandle) {
           const center = {
             x: selectionBox.box.x + selectionBox.box.width / 2,
             y: selectionBox.box.y + selectionBox.box.height / 2
           };
           return { kind: "rotate", nodeId: selectionBox.nodeId, pivot: center, box: selectionBox.box, rotation: selectionBox.rotation };
         }
-        if (handle) {
+        if (handle && handle !== "rotate" && showResizeHandles) {
           return { kind: "handle", nodeId: selectionBox.nodeId, handle, box: selectionBox.box, rotation: selectionBox.rotation };
         }
       }
@@ -443,12 +497,45 @@ export function CanvasKitCanvas({
         case "drag": {
           const node = getNode(scene, action.nodeId);
           if (!node) break;
+          // 4c-C: a managed reorder gesture (decided once at press time —
+          // see reorderGestureRef) never previews a geometry move — the
+          // dragged node stays put; only the insertion indicator moves.
+          const reorderGesture = reorderGestureRef.current;
+          if (reorderGesture && reorderGesture.nodeId === action.nodeId) {
+            // action.box is the node's startBox translated by the pointer
+            // delta; its center is the drag's page-space reference point
+            // (descriptor space maps 1:1 onto page-relative canvas px — see
+            // dragActionToOperations/canvasDragOperations).
+            const centerDescriptor = { x: action.box.x + action.box.width / 2, y: action.box.y + action.box.height / 2 };
+            const pointPageSpace = {
+              x: sceneUnitFromCanvas(centerDescriptor.x, page),
+              y: sceneUnitFromCanvas(centerDescriptor.y, page)
+            };
+            const drop = reorderDropTarget(scene, reorderGesture.containerId, reorderGesture.nodeId, pointPageSpace);
+            if (action.committed) {
+              setReorderTarget(null);
+              reorderGestureRef.current = null;
+              const currentIndex = currentSiblingIndex(scene, reorderGesture.containerId, reorderGesture.nodeId);
+              if (drop && drop.index !== currentIndex) {
+                onStructuredEdit?.(
+                  drop.placement === "before"
+                    ? moveBeforeEdit(action.nodeId, drop.anchorId)
+                    : moveAfterEdit(action.nodeId, drop.anchorId)
+                );
+              }
+            } else {
+              setReorderTarget(drop);
+            }
+            break;
+          }
           if (action.committed) {
             setPreview(null);
+            setActiveGuides([]);
             const ops = dragActionToOperations(action.box, scene, node, page, pageOrigin);
             if (ops.length > 0) onOperations(ops);
           } else {
             setPreview({ nodeId: action.nodeId, box: action.box, rotation: nodeDescriptor(scene, node, page).rotation });
+            setActiveGuides(dragActionToGuides(action.box, scene, node, page, pageOrigin));
           }
           break;
         }
@@ -458,10 +545,15 @@ export function CanvasKitCanvas({
           const rotation = nodeDescriptor(scene, node, page).rotation;
           if (action.committed) {
             setPreview(null);
-            const op = resizeActionToOperation(action.box, rotation, scene, node, page, pageOrigin);
+            setActiveGuides([]);
+            const op = resizeActionToOperation(action.box, rotation, scene, node, page, pageOrigin, managedResizeRef.current);
             if (op) onOperations([op]);
+            managedResizeRef.current = false;
           } else {
             setPreview({ nodeId: action.nodeId, box: action.box, rotation });
+            setActiveGuides(
+              managedResizeRef.current ? [] : resizeActionToGuides(action.box, rotation, scene, node, page, pageOrigin)
+            );
           }
           break;
         }
@@ -470,6 +562,7 @@ export function CanvasKitCanvas({
           if (!node || !selectionBox) break;
           if (action.committed) {
             setPreview(null);
+            setActiveGuides([]);
             const op = resizeActionToOperation(selectionBox.box, action.rotation, scene, node, page, pageOrigin);
             if (op) onOperations([op]);
           } else {
@@ -667,6 +760,16 @@ export function CanvasKitCanvas({
         >
           <Maximize2 aria-hidden size={16} />
         </button>
+        <button
+          type="button"
+          className={showMarginGuides ? "active" : undefined}
+          aria-label="Show margins"
+          aria-pressed={showMarginGuides}
+          title="Show margins"
+          onClick={onToggleMarginGuides}
+        >
+          <Frame aria-hidden size={16} />
+        </button>
         <button type="button" aria-label="Open diagnostics panel" title="Open diagnostics panel" onClick={onOpenDiagnostics}>
           <Scan aria-hidden size={16} />
         </button>
@@ -762,6 +865,45 @@ export function CanvasKitCanvas({
           }
           const pointer = pointerFromEvent(event);
           const target = pressTargetFor(pointer);
+          // Handoff-absolute (lazy seam): a plain node press that is blocked
+          // ONLY by solver ownership (not locked, not some other reason)
+          // freezes the layout silently before the gesture starts, so the
+          // SAME press-drag-release the human is already mid-gesture on just
+          // works — no tooltip, no blocked drag, no layout jargon. Zero
+          // motion (freeze bakes children at their exact solved positions),
+          // and idempotent (a no-op once frozen), so firing it here even on
+          // a click-that-never-drags is harmless. Resize/rotate handles
+          // never appear on a managed node's chrome (showHandles requires
+          // direct-geometry-editable), so "node" is the only press target
+          // that can be blocked this way. The layout-managed-editing opt-out
+          // skips the freeze: the press selects the managed node as-is.
+          if (
+            !layoutManagedEditing &&
+            target.kind === "node" &&
+            isNodeFreezableOnGesture(scene, target.nodeId)
+          ) {
+            onStructuredEdit?.(freezeLayoutEdit());
+          }
+          // 4c-C: decide the gesture's CLASS once, here at press time (never
+          // re-derived per frame) — a plain node press on a layout-managed-
+          // editing reorderable Stack child becomes a reorder gesture; a
+          // handle press on one becomes a managed (size-only) resize. Both
+          // only apply when the advanced opt-in is on — the freeze branch
+          // above already owns the non-opted-in case, and a node that isn't
+          // reorderable falls through to the ordinary drag/resize paths
+          // below unchanged.
+          reorderGestureRef.current = null;
+          managedResizeRef.current = false;
+          if (layoutManagedEditing) {
+            if (target.kind === "node" && isNodeReorderableOnGesture(scene, target.nodeId)) {
+              const parentInfo = parentInfoForNode(scene, target.nodeId);
+              if (parentInfo && parentInfo.parent.kind === "node") {
+                reorderGestureRef.current = { nodeId: target.nodeId, containerId: parentInfo.parent.id };
+              }
+            } else if (target.kind === "handle" && isNodeReorderableOnGesture(scene, target.nodeId)) {
+              managedResizeRef.current = true;
+            }
+          }
           if (hitTraceEnabled()) {
             const scenePoint = descriptorToScene(pointer, unitScale);
             hitTrace({
@@ -823,7 +965,11 @@ export function CanvasKitCanvas({
         onPointerCancel={() => {
           panDragRef.current = null;
           stateRef.current = initialGestureState;
+          reorderGestureRef.current = null;
+          managedResizeRef.current = false;
           setPreview(null);
+          setActiveGuides([]);
+          setReorderTarget(null);
           setMarquee(null);
           setHoverNodeId(null);
         }}
@@ -845,14 +991,21 @@ export function CanvasKitCanvas({
           containerChildren={editingNodeId ? [] : containerChildBoxes(scene, selectedNodeId, unitScale)}
           containerLabel={editingNodeId ? undefined : containerLabel(scene, selectedNodeId)}
           marquee={marquee}
+          // A reorder gesture's own indicator replaces snap guides — guides
+          // are a free-placement concept and are meaningless mid-reorder.
+          guides={editingNodeId || reorderGestureRef.current ? [] : descriptorGuides(activeGuides, unitScale)}
           pageOrigin={pageOrigin}
           zoom={zoom}
           showHandles={showHandles && !editingNodeId}
+          showResizeHandles={showResizeHandles && !editingNodeId}
+          showRotateHandle={showRotateHandle && !editingNodeId}
           disabledReason={editingNodeId ? null : chromeModel.disabledReason}
           slotKeys={chromeModel.slotKeys}
           diagnosticCounts={chromeModel.diagnosticCounts}
           focal={editingNodeId ? null : focalPoint}
           onFocalChange={commitFocalPoint}
+          insertionIndicator={editingNodeId ? null : descriptorIndicator(reorderTarget?.indicator ?? null, unitScale)}
+          marginGuides={marginGuides}
         />
         {editing ? (
           <TextEditOverlay
@@ -869,6 +1022,58 @@ export function CanvasKitCanvas({
       </div>
     </section>
   );
+}
+
+/** Snap guides come out of the engine in page space (scene units); the
+ * overlay works in descriptor space (scene × unitScale) like every other box
+ * it draws — same scaling convention as `containerChildBoxes` below. */
+function descriptorGuides(guides: SnapGuide[], unitScale: number): SnapGuide[] {
+  return guides.map((guide) => ({
+    axis: guide.axis,
+    position: guide.position * unitScale,
+    from: guide.from * unitScale,
+    to: guide.to * unitScale
+  }));
+}
+
+/** Same page-space→descriptor-space scaling as `descriptorGuides`, for the
+ * 4c-C drag-to-reorder insertion indicator. */
+function descriptorIndicator(
+  indicator: ReorderDropTarget["indicator"] | null,
+  unitScale: number
+): { axis: "x" | "y"; position: number; from: number; to: number } | null {
+  if (!indicator) return null;
+  return {
+    axis: indicator.axis,
+    position: indicator.position * unitScale,
+    from: indicator.from * unitScale,
+    to: indicator.to * unitScale
+  };
+}
+
+/** Same page-space→descriptor-space scaling as `descriptorGuides`, for the
+ * 4d "Show margins" safe-area/bleed rects. Null in, null out — a page
+ * without a bleed (or safe-area) renders nothing for that rect. */
+function descriptorRect(rect: Rect | null, unitScale: number): Box | null {
+  if (!rect) return null;
+  return {
+    x: rect.x * unitScale,
+    y: rect.y * unitScale,
+    width: rect.width * unitScale,
+    height: rect.height * unitScale
+  };
+}
+
+/** The dragged node's current index in `reorderDropTarget`'s index space
+ * (siblings only, dragged node excluded) — i.e. how many OTHER children
+ * precede it today. Compared against a drop target's `index` to detect a
+ * no-op drop (4c-C: dropping back at the current position commits nothing). */
+function currentSiblingIndex(scene: Scene, containerId: NodeId, nodeId: NodeId): number | null {
+  const container = scene.nodes[containerId];
+  if (!container) return null;
+  const originalIndex = container.children.indexOf(nodeId);
+  if (originalIndex < 0) return null;
+  return originalIndex;
 }
 
 function containerChildBoxes(scene: Scene, nodeId: NodeId | null, unitScale: number): Box[] {

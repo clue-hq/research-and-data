@@ -127,7 +127,11 @@ function tokenFromStroke(stroke: Stroke | undefined): string {
   return stroke?.paint.kind === "token" ? stroke.paint.token : "";
 }
 
-function fillTokensForNode(node: Node, brandTokens: BrandTokenCatalog): string[] {
+/** Which brand fill-token bucket applies to a node: text nodes get the
+ * `text.*` role tokens, everything else gets `surface.*`. Shared with
+ * `ColorSwatchControl`'s token-first popover so the two surfaces never
+ * diverge on which tokens count as "this node's fill tokens." */
+export function fillTokensForNode(node: Node, brandTokens: BrandTokenCatalog): string[] {
   if (node.kind.kind === "text") {
     return brandTokens.text_tokens ?? [];
   }

@@ -463,8 +463,18 @@ fn svg_export_scales_a_library_icon_to_its_node_box() {
     );
     let node = scene.nodes.get_mut(&NodeId::from("mark")).unwrap();
     node.computed = Some(ComputedGeometry {
-        layout_bounds: Rect { x: 0.0, y: 0.0, width: 48.0, height: 48.0 },
-        render_bounds: Rect { x: 0.0, y: 0.0, width: 48.0, height: 48.0 },
+        layout_bounds: Rect {
+            x: 0.0,
+            y: 0.0,
+            width: 48.0,
+            height: 48.0,
+        },
+        render_bounds: Rect {
+            x: 0.0,
+            y: 0.0,
+            width: 48.0,
+            height: 48.0,
+        },
     });
 
     let result = adapter
@@ -1628,4 +1638,44 @@ fn fmt_test(value: f64) -> String {
             .trim_end_matches('.')
             .to_owned()
     }
+}
+
+/// Skia clamps an oversized uniform corner radius to half the SMALLER
+/// dimension (a stadium); SVG's <rect rx ry> clamps per-axis independently,
+/// which would turn pill badges/buttons into full ellipses on export while
+/// the canvas shows stadiums (user-reported disparity). The exporter must
+/// pre-clamp to match Skia.
+#[test]
+fn oversized_corner_radius_exports_as_a_stadium_not_an_ellipse() {
+    let adapter = LumenExportAdapter::new();
+    let mut scene = Scene::new(DocumentId::from("doc_pill_export"), "Pill Export");
+    let mut pill = rect_node("node_pill");
+    pill.size = SizeSpec::fixed(40.0, 16.0);
+    pill.corner = lumen_core::CornerRadii {
+        top_left: 9999.0,
+        top_right: 9999.0,
+        bottom_right: 9999.0,
+        bottom_left: 9999.0,
+        token: None,
+    };
+    scene.pages.insert(
+        PageId::from("page_pill"),
+        square_px_page("page_pill", vec![NodeId::from("node_pill")]),
+    );
+    scene.nodes.insert(pill.id.clone(), pill);
+
+    let result = adapter
+        .export(
+            &scene,
+            &request(ExportFormat::Svg, vec![PageId::from("page_pill")]),
+        )
+        .unwrap();
+    let svg = std::str::from_utf8(&result.artifacts[0].bytes).unwrap();
+
+    // Half the smaller dimension (16/2), matching Skia's stadium clamp.
+    assert!(
+        svg.contains("rx=\"8\" ry=\"8\""),
+        "expected the Skia-matching clamped radius, got: {svg}"
+    );
+    assert!(!svg.contains("rx=\"9999\""), "raw oversized radius leaked");
 }

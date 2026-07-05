@@ -101,6 +101,59 @@ describe("selection chrome model", () => {
     expect(managedModel.disabledReason).toMatch(/auto-layout parent/i);
   });
 
+  describe("4c-C managed gestures: showResizeHandles / showRotateHandle", () => {
+    it("keeps both off for a managed Stack child when layoutManagedEditing is unset (byte-identical default mode)", () => {
+      const managedScene = autoLayoutManagedScene();
+      const model = deriveSelectionChromeModel(managedScene, {
+        activePageId: "page_a4",
+        selectedNodeId: "node_contact_name"
+      });
+
+      expect(model.showHandles).toBe(false);
+      expect(model.showResizeHandles).toBe(false);
+      expect(model.showRotateHandle).toBe(false);
+    });
+
+    it("turns on resize handles (not rotate) for a reorderable managed Stack child when layoutManagedEditing is true", () => {
+      const managedScene = autoLayoutManagedScene();
+      const model = deriveSelectionChromeModel(managedScene, {
+        activePageId: "page_a4",
+        selectedNodeId: "node_contact_name",
+        layoutManagedEditing: true
+      });
+
+      expect(model.showHandles).toBe(false);
+      expect(model.showResizeHandles).toBe(true);
+      expect(model.showRotateHandle).toBe(false);
+    });
+
+    it("does not turn on managed resize handles for a locked child even with layoutManagedEditing true", () => {
+      const managedScene = autoLayoutManagedScene();
+      managedScene.nodes.node_contact_name.locked = true;
+      const model = deriveSelectionChromeModel(managedScene, {
+        activePageId: "page_a4",
+        selectedNodeId: "node_contact_name",
+        layoutManagedEditing: true
+      });
+
+      expect(model.showResizeHandles).toBe(false);
+    });
+
+    it("leaves an already-direct-geometry-editable node's handles unaffected by layoutManagedEditing", () => {
+      const scene = cloneScene();
+      scene.nodes.node_contact_name.computed = computed(24, 32, 180, 30);
+      const model = deriveSelectionChromeModel(scene, {
+        activePageId: "page_a4",
+        selectedNodeId: "node_contact_name",
+        layoutManagedEditing: true
+      });
+
+      expect(model.showHandles).toBe(true);
+      expect(model.showResizeHandles).toBe(true);
+      expect(model.showRotateHandle).toBe(true);
+    });
+  });
+
   it("includes direct node, bound slot, and placed asset diagnostics for a selected node", () => {
     const scene = imageNodeScene();
     const node = scene.nodes.node_image;

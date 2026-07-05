@@ -45,6 +45,7 @@ from .dto import (
 from .models import (
     AgentTurnPreviewRequest,
     SetAgentInstructionsRequest,
+    SetLayoutManagedEditingRequest,
     AttachBrandKitRequest,
     ApplyOperationsRequest,
     ApplyStructuredEditRequest,
@@ -458,6 +459,23 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
             "schema_version": 1,
             "document_id": document_id,
             "agent_instructions": document["agent_instructions"],
+        }
+
+    @app.put("/documents/{document_id}/layout-managed-editing")
+    def set_layout_managed_editing(
+        document_id: str,
+        payload: SetLayoutManagedEditingRequest,
+        repo: Repository = Depends(repository),
+    ) -> JsonObject:
+        """Per-document advanced opt-out from handoff-absolute: when enabled,
+        the editor skips both freeze seams (Accept and first gesture) so agent
+        auto-layout stays live. Forward-only — enabling never un-freezes
+        containers that are already Free."""
+        document = repo.set_layout_managed_editing(document_id, payload.enabled)
+        return {
+            "schema_version": 1,
+            "document_id": document_id,
+            "layout_managed_editing": document["layout_managed_editing"],
         }
 
     @app.put("/documents/{document_id}/scene")

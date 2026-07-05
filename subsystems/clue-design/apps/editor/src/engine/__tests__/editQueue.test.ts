@@ -176,6 +176,71 @@ describe("editQueue", () => {
     expect(events).toEqual([]);
   });
 
+  it("does not flag divergence when scenes differ only in `computed` geometry", async () => {
+    // `computed` is a derived cache: the WASM engine solves layout with a
+    // heuristic text measurer (no Skia on wasm32), the server solves it with
+    // real Skia — so the same authored scene legitimately produces different
+    // `computed.layout_bounds`/`render_bounds` on each side (see
+    // docs/frontend-practices.md, "Preview text layout != server text
+    // layout"). This is exactly the field a freeze_layout handoff touches on
+    // every text-bearing node, so a false-positive here would fire on every
+    // freeze. Only authored content differing should ever trigger reconcile.
+    const localScene = cloneScene(baseScene);
+    localScene.nodes.node_contact_name.computed = {
+      layout_bounds: { x: 24, y: 40, width: 160, height: 28 },
+      render_bounds: { x: 24, y: 40, width: 160, height: 28 }
+    };
+    const serverScene = cloneScene(baseScene);
+    serverScene.nodes.node_contact_name.computed = {
+      // Skia measured this text a few px narrower/taller than the wasm
+      // heuristic did — same authored node, different derived geometry.
+      layout_bounds: { x: 24, y: 40, width: 157.4, height: 30.1 },
+      render_bounds: { x: 24, y: 40, width: 157.4, height: 30.1 }
+    };
+    const server = fakeServer({ scene: serverScene });
+    const events: ReconcileEvent[] = [];
+    const queue = createEditQueue({
+      apiBaseUrl: "http://api.test",
+      documentId: "doc_test",
+      localScene: () => localScene,
+      onReconcile: (event) => events.push(event),
+      fetchImpl: server.fetchImpl
+    });
+
+    queue.enqueueOperations(operationBatch("a"));
+    await queue.idle();
+
+    expect(events).toEqual([]);
+  });
+
+  it("still flags divergence when authored content differs alongside matching computed", async () => {
+    // The mirror of the test above: stripping `computed` must never mask a
+    // real authored-field mismatch (e.g. the baked `transform`/`size` a
+    // freeze_layout handoff writes) — only `computed` itself is exempt.
+    const localScene = cloneScene(baseScene);
+    const serverScene = cloneScene(baseScene);
+    serverScene.nodes.node_contact_name.transform = {
+      ...serverScene.nodes.node_contact_name.transform,
+      x: 999
+    };
+    const server = fakeServer({ scene: serverScene });
+    const events: ReconcileEvent[] = [];
+    const queue = createEditQueue({
+      apiBaseUrl: "http://api.test",
+      documentId: "doc_test",
+      localScene: () => localScene,
+      onReconcile: (event) => events.push(event),
+      fetchImpl: server.fetchImpl
+    });
+
+    queue.enqueueOperations(operationBatch("a"));
+    await queue.idle();
+
+    expect(events).toHaveLength(1);
+    expect(events[0].kind).toBe("divergence");
+    expect(events[0].diagnostic.code).toBe("EDITOR_WASM_RECONCILE_DIVERGENCE");
+  });
+
   it("recovers the server scene when a batch is rejected", async () => {
     const serverScene = cloneScene(baseScene);
     serverScene.meta.title = "Server truth";

@@ -40,7 +40,9 @@ export function DocumentPageSection({
   brandTokens,
   pageDiagnostics,
   onOperation,
-  onSelectSubject
+  onSelectSubject,
+  layoutManagedEditing,
+  onSetLayoutManagedEditing
 }: {
   scene: Scene;
   activePage: Page | null;
@@ -48,6 +50,10 @@ export function DocumentPageSection({
   pageDiagnostics: Diagnostic[];
   onOperation: (operation: Operation) => void;
   onSelectSubject?: (subject: DiagnosticSubject) => void;
+  /** Advanced per-document opt-out from handoff-absolute: this section only
+   * binds the checkbox; the freeze-seam policy lives with the setting. */
+  layoutManagedEditing?: boolean;
+  onSetLayoutManagedEditing?: (enabled: boolean) => void;
 }) {
   return (
       <section className="inspector-section">
@@ -64,6 +70,21 @@ export function DocumentPageSection({
             onChange={(event) => onOperation(updateDocumentArtifactType(event.target.value))}
           />
         </label>
+        {onSetLayoutManagedEditing ? (
+          <>
+            <label className="toggle-field">
+              <input
+                type="checkbox"
+                checked={layoutManagedEditing ?? false}
+                onChange={(event) => onSetLayoutManagedEditing(event.target.checked)}
+              />
+              Layout-managed editing
+            </label>
+            <p className="muted">
+              Advanced: keep agent auto-layout live after Accept; managed elements re-flow and use Detach.
+            </p>
+          </>
+        ) : null}
         {activePage ? (
           <>
             <div className="section-heading">Page</div>

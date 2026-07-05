@@ -9,7 +9,7 @@
 import { describe, expect, it } from "vitest";
 import type { Node, NodePatch, Operation, Scene } from "../contracts";
 import { minimalScene } from "@/fixtures/minimalScene";
-import { canvasDragOperations, canvasResizeOperation } from "../canvasOperations";
+import { canvasDragOperations, canvasResizeOperation, dragSnapGuides, resizeSnapGuides } from "../canvasOperations";
 import {
   isNodeDirectGeometryEditable,
   isNodeFreehand,
@@ -49,6 +49,10 @@ function freehandScene(): Scene {
   const pageId = Object.keys(scene.pages)[0];
   // Identity canvas↔scene conversion so box coordinates assert exactly.
   scene.pages[pageId].size = { ...scene.pages[pageId].size, unit: "px", width: 800, height: 600 };
+  // Clear the fixture's mm-based safe area — under the new px page size its
+  // stale coordinates would otherwise become an unintended (and irrelevant
+  // to this test) page-guide snap target for the pinned-node assertions.
+  scene.pages[pageId].safe_area = null;
   const stack = baseNode("stack");
   stack.kind = { kind: "auto_layout", direction: "column", wrap: false };
   stack.size = {
@@ -240,5 +244,165 @@ describe("free-container child drags (Phase 1d)", () => {
         flip_y: false
       }
     });
+  });
+
+  // 4c: children of a Free container now snap to page guides, exactly like
+  // a pinned node — the primary case post-freeze_layout, since every Stack
+  // container gets baked to Free at agent handoff.
+  it("snaps the page-space candidate box to a page guide, then rebases into the parent's frame", () => {
+    const scene = freehandScene();
+    scene.nodes.stack.layout = { ...scene.nodes.stack.layout!, layout_mode: "free" };
+    const page = pageOf(scene);
+    // Page-space x=2 is within the 6px threshold of the page's left edge
+    // (x=0); parent origin is (20,20), so the committed transform.x must be
+    // the snapped page-space x (0) minus the parent origin (20) = -20.
+    const ops = canvasDragOperations({
+      scene,
+      node: scene.nodes.managed_child,
+      page,
+      pageOrigin: ORIGIN,
+      canvasX: 2,
+      canvasY: 90
+    });
+    expect(ops).toHaveLength(1);
+    const patch = patchOf(ops[0]);
+    expect(patch.transform).toEqual({
+      kind: "set",
+      value: {
+        x: -20,
+        y: 70,
+        rotation: 0,
+        skew_x: 0,
+        skew_y: 0,
+        flip_x: false,
+        flip_y: false
+      }
+    });
+  });
+
+  it("emits a page-space guide for a free-container child drag that snaps", () => {
+    const scene = freehandScene();
+    scene.nodes.stack.layout = { ...scene.nodes.stack.layout!, layout_mode: "free" };
+    const page = pageOf(scene);
+    const guides = dragSnapGuides({
+      scene,
+      node: scene.nodes.managed_child,
+      page,
+      pageOrigin: ORIGIN,
+      canvasX: 2,
+      canvasY: 90
+    });
+    expect(guides).toEqual([{ axis: "x", position: 0, from: 0, to: 600 }]);
+  });
+
+  it("emits no guide when the drag doesn't land within threshold of any guide", () => {
+    const scene = freehandScene();
+    scene.nodes.stack.layout = { ...scene.nodes.stack.layout!, layout_mode: "free" };
+    const page = pageOf(scene);
+    // Page-space (150, 90): clear of the page's x guides (0, 400, 800) and
+    // y guides (0, 300, 600) by well over the 6px threshold — same target as
+    // the "commits a parent-relative transform" test above.
+    const ops = canvasDragOperations({
+      scene,
+      node: scene.nodes.managed_child,
+      page,
+      pageOrigin: ORIGIN,
+      canvasX: 150,
+      canvasY: 90
+    });
+    const guides = dragSnapGuides({
+      scene,
+      node: scene.nodes.managed_child,
+      page,
+      pageOrigin: ORIGIN,
+      canvasX: 150,
+      canvasY: 90
+    });
+    expect(guides).toEqual([]);
+    // And the commit carries the exact unsnapped page-space position, rebased.
+    const patch = patchOf(ops[0]);
+    expect(patch.transform).toEqual({
+      kind: "set",
+      value: {
+        x: 130,
+        y: 70,
+        rotation: 0,
+        skew_x: 0,
+        skew_y: 0,
+        flip_x: false,
+        flip_y: false
+      }
+    });
+  });
+
+  it("resize: snaps the page-space box and rebases position into the parent's frame", () => {
+    const scene = freehandScene();
+    scene.nodes.stack.layout = { ...scene.nodes.stack.layout!, layout_mode: "free" };
+    const page = pageOf(scene);
+    // Trailing edge at canvasX(72) + width(40*2=80) = 152 lands 4px shy of a
+    // fabricated safe-area-free page guide — use the page's right bound
+    // (800) instead: canvasX=760, scaleX=1 keeps width 40 so the trailing
+    // edge (800) sits exactly on the page's right guide.
+    const op = canvasResizeOperation({
+      scene,
+      node: scene.nodes.managed_child,
+      page,
+      pageOrigin: ORIGIN,
+      transform: { canvasX: 760, canvasY: 90, rotation: 0, scaleX: 1, scaleY: 1 }
+    });
+    expect(op).not.toBeNull();
+    const patch = patchOf(op!);
+    // Page-space box after resize: x=760, width=40 → trailing edge 800,
+    // exactly the page's right guide (no snap movement needed on x); parent
+    // origin (20,20) rebases x to 760-20=740, y to 90-20=70.
+    expect(patch.transform).toEqual({
+      kind: "set",
+      value: {
+        x: 740,
+        y: 70,
+        rotation: 0,
+        skew_x: 0,
+        skew_y: 0,
+        flip_x: false,
+        flip_y: false
+      }
+    });
+    expect(patch.size).toEqual({
+      kind: "set",
+      value: {
+        width: { kind: "fixed", value: 40 },
+        height: { kind: "fixed", value: 20 }
+      }
+    });
+  });
+
+  it("resize: emits a page-space guide when the trailing edge snaps to the page bound", () => {
+    const scene = freehandScene();
+    scene.nodes.stack.layout = { ...scene.nodes.stack.layout!, layout_mode: "free" };
+    const page = pageOf(scene);
+    // Trailing edge lands at 796 — within the 6px threshold of the page's
+    // right guide (800) — engaging a snap that pulls the edge to 800.
+    const guides = resizeSnapGuides({
+      scene,
+      node: scene.nodes.managed_child,
+      page,
+      pageOrigin: ORIGIN,
+      transform: { canvasX: 756, canvasY: 90, rotation: 0, scaleX: 1, scaleY: 1 }
+    });
+    expect(guides).toEqual([{ axis: "x", position: 800, from: 0, to: 600 }]);
+  });
+
+  it("resize: emits no guide when nothing is within threshold", () => {
+    const scene = freehandScene();
+    scene.nodes.stack.layout = { ...scene.nodes.stack.layout!, layout_mode: "free" };
+    const page = pageOf(scene);
+    const guides = resizeSnapGuides({
+      scene,
+      node: scene.nodes.managed_child,
+      page,
+      pageOrigin: ORIGIN,
+      transform: { canvasX: 150, canvasY: 90, rotation: 0, scaleX: 1, scaleY: 1 }
+    });
+    expect(guides).toEqual([]);
   });
 });

@@ -1,4 +1,5 @@
-import type { Scene } from "./contracts";
+import type { BrandKitSummary, Scene } from "./contracts";
+import type { BrandKitDetailPayload } from "./tokenColors";
 
 /**
  * Phase 2a: document identity for the editor.
@@ -26,6 +27,9 @@ export interface LoadedDocument {
   scene: Scene;
   /** 2e: the document's standing agent instructions (null when unset). */
   agentInstructions: string | null;
+  /** Advanced per-document opt-out from handoff-absolute: when true the
+   * editor skips both freeze seams so agent auto-layout stays live. */
+  layoutManagedEditing: boolean;
 }
 
 export async function createDocument(
@@ -130,6 +134,7 @@ export async function fetchDocument(
     title?: unknown;
     scene?: unknown;
     agent_instructions?: unknown;
+    layout_managed_editing?: unknown;
   };
   if (!payload.scene || typeof payload.scene !== "object") {
     throw new Error("document fetch returned no scene");
@@ -139,8 +144,48 @@ export async function fetchDocument(
     title: typeof payload.title === "string" ? payload.title : "Untitled design",
     scene: payload.scene as Scene,
     agentInstructions:
-      typeof payload.agent_instructions === "string" ? payload.agent_instructions : null
+      typeof payload.agent_instructions === "string" ? payload.agent_instructions : null,
+    layoutManagedEditing: payload.layout_managed_editing === true
   };
+}
+
+/**
+ * The stored Brand Kit summaries (latest version per kit) that the Brand Kit
+ * dropdown can offer for attachment. Callers should treat a fetch failure as
+ * "no kits available yet" rather than block the editor from loading — this
+ * list only gates the dropdown, not the canvas.
+ */
+export async function fetchBrandKits(
+  { apiBaseUrl, fetchImpl = fetch }: DocumentStoreOptions
+): Promise<BrandKitSummary[]> {
+  const response = await fetchImpl(new URL("/brand-kits", apiBaseUrl));
+  if (!response.ok) {
+    throw new Error(`brand kit list failed (HTTP ${response.status})`);
+  }
+  const payload = (await response.json()) as unknown;
+  return Array.isArray(payload) ? (payload as BrandKitSummary[]) : [];
+}
+
+/**
+ * The full raw brand-kit JSON for one stored kit (`GET
+ * /brand-kits/{id}` -> `brand_kit_json`) — the resolved token *values*, not
+ * just the name/count summary `fetchBrandKits` returns. Used to build the
+ * canvas token-color map (see `tokenColors.ts`); callers should treat a
+ * fetch failure the same way `fetchBrandKits` does (leave the canvas on the
+ * string-heuristic fallback) rather than block anything on it.
+ */
+export async function fetchBrandKitDetail(
+  { apiBaseUrl, fetchImpl = fetch }: DocumentStoreOptions,
+  brandKitId: string
+): Promise<BrandKitDetailPayload | null> {
+  const response = await fetchImpl(
+    new URL(`/brand-kits/${encodeURIComponent(brandKitId)}`, apiBaseUrl)
+  );
+  if (!response.ok) {
+    throw new Error(`brand kit detail fetch failed (HTTP ${response.status})`);
+  }
+  const payload = (await response.json()) as { brand_kit_json?: unknown };
+  return (payload.brand_kit_json as BrandKitDetailPayload | undefined) ?? null;
 }
 
 /** 2e: persist the document's standing agent instructions (blank clears). */
@@ -162,4 +207,26 @@ export async function saveAgentInstructions(
   }
   const payload = (await response.json()) as { agent_instructions?: unknown };
   return typeof payload.agent_instructions === "string" ? payload.agent_instructions : null;
+}
+
+/** Persist the document's layout-managed-editing opt-out (see
+ * LoadedDocument.layoutManagedEditing). Returns the persisted value. */
+export async function saveLayoutManagedEditing(
+  { apiBaseUrl, fetchImpl = fetch }: DocumentStoreOptions,
+  documentId: string,
+  enabled: boolean
+): Promise<boolean> {
+  const response = await fetchImpl(
+    new URL(`/documents/${encodeURIComponent(documentId)}/layout-managed-editing`, apiBaseUrl),
+    {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ enabled })
+    }
+  );
+  if (!response.ok) {
+    throw new Error(`saving layout-managed editing failed (HTTP ${response.status})`);
+  }
+  const payload = (await response.json()) as { layout_managed_editing?: unknown };
+  return payload.layout_managed_editing === true;
 }

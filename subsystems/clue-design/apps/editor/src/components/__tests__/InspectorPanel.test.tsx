@@ -493,6 +493,58 @@ describe("InspectorPanel", () => {
     );
   });
 
+  it("renders the layout-managed editing toggle and fires the setter", () => {
+    const onSetLayoutManagedEditing = vi.fn();
+    render(
+      React.createElement(InspectorPanel, {
+        scene: minimalScene,
+        activePage: minimalScene.pages.page_a4,
+        selectedNode: null,
+        selectedNodeId: null,
+        onOperation: vi.fn(),
+        layoutManagedEditing: false,
+        onSetLayoutManagedEditing
+      })
+    );
+
+    const toggle = screen.getByLabelText("Layout-managed editing");
+    expect(toggle).not.toBeChecked();
+    expect(
+      screen.getByText(/keep agent auto-layout live after Accept/)
+    ).toBeInTheDocument();
+
+    fireEvent.click(toggle);
+    expect(onSetLayoutManagedEditing).toHaveBeenCalledWith(true);
+  });
+
+  it("reflects an enabled layout-managed editing document and hides the toggle without a setter", () => {
+    const { rerender } = render(
+      React.createElement(InspectorPanel, {
+        scene: minimalScene,
+        activePage: minimalScene.pages.page_a4,
+        selectedNode: null,
+        selectedNodeId: null,
+        onOperation: vi.fn(),
+        layoutManagedEditing: true,
+        onSetLayoutManagedEditing: vi.fn()
+      })
+    );
+    expect(screen.getByLabelText("Layout-managed editing")).toBeChecked();
+
+    // Without the setter (test-only shells) the advanced control stays out
+    // of the way entirely.
+    rerender(
+      React.createElement(InspectorPanel, {
+        scene: minimalScene,
+        activePage: minimalScene.pages.page_a4,
+        selectedNode: null,
+        selectedNodeId: null,
+        onOperation: vi.fn()
+      })
+    );
+    expect(screen.queryByLabelText("Layout-managed editing")).not.toBeInTheDocument();
+  });
+
   it("shows a page-level slot overview grouped by bound nodes", () => {
     render(
       React.createElement(InspectorPanel, {
@@ -691,7 +743,8 @@ describe("InspectorPanel", () => {
       })
     );
 
-    fireEvent.change(screen.getByLabelText("Fill Color"), {
+    fireEvent.click(screen.getByLabelText("Fill color"));
+    fireEvent.change(screen.getByLabelText("Custom color"), {
       target: {
         value: "#ff0000"
       }
@@ -1131,6 +1184,38 @@ describe("InspectorPanel", () => {
     expect(screen.getByLabelText("Grow")).toBeInTheDocument();
   });
 
+  it("4c-C: mentions canvas drag-to-reorder/resize for a managed child when layoutManagedEditing is on", () => {
+    const scene = autoLayoutScene();
+    render(
+      React.createElement(InspectorPanel, {
+        scene,
+        activePage: scene.pages.page_a4,
+        selectedNode: scene.nodes.stack_child,
+        selectedNodeId: "stack_child",
+        onOperation: vi.fn(),
+        layoutManagedEditing: true
+      })
+    );
+
+    expect(screen.getByText(/drag it on the canvas to reorder it and resize it directly/)).toBeInTheDocument();
+  });
+
+  it("4c-C: keeps the plain managed-child hint when layoutManagedEditing is off", () => {
+    const scene = autoLayoutScene();
+    render(
+      React.createElement(InspectorPanel, {
+        scene,
+        activePage: scene.pages.page_a4,
+        selectedNode: scene.nodes.stack_child,
+        selectedNodeId: "stack_child",
+        onOperation: vi.fn()
+      })
+    );
+
+    expect(screen.getByText(/managed by an auto-layout parent/)).toBeInTheDocument();
+    expect(screen.queryByText(/drag it on the canvas to reorder it/)).not.toBeInTheDocument();
+  });
+
   it("emits sizing-mode operations for auto-layout managed children", () => {
     const scene = autoLayoutScene();
     const onOperation = vi.fn();
@@ -1246,6 +1331,56 @@ describe("InspectorPanel", () => {
     );
   });
 
+  it("shows the Arrange section only when onStructuredEdit is wired", () => {
+    const { rerender } = render(
+      React.createElement(InspectorPanel, {
+        scene: minimalScene,
+        activePage: minimalScene.pages.page_a4,
+        selectedNode: minimalScene.nodes.node_contact_name,
+        selectedNodeId: "node_contact_name",
+        onOperation: vi.fn()
+      })
+    );
+
+    expect(screen.queryByText("Arrange")).not.toBeInTheDocument();
+
+    rerender(
+      React.createElement(InspectorPanel, {
+        scene: minimalScene,
+        activePage: minimalScene.pages.page_a4,
+        selectedNode: minimalScene.nodes.node_contact_name,
+        selectedNodeId: "node_contact_name",
+        onOperation: vi.fn(),
+        onStructuredEdit: vi.fn()
+      })
+    );
+
+    expect(screen.getByText("Arrange")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^group$/i })).toBeDisabled();
+  });
+
+  it("emits a group structured edit from the Arrange section using the full multi-selection", () => {
+    const scene = siblingScene();
+    const onStructuredEdit = vi.fn();
+    render(
+      React.createElement(InspectorPanel, {
+        scene,
+        activePage: scene.pages.page_a4,
+        selectedNode: scene.nodes.a,
+        selectedNodeId: "a",
+        selectedNodeIds: ["a", "b"],
+        onOperation: vi.fn(),
+        onStructuredEdit
+      })
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /^group$/i }));
+
+    expect(onStructuredEdit).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: "group", node_ids: ["a", "b"] })
+    );
+  });
+
   it("disables direct geometry controls for locked nodes", () => {
     const scene = JSON.parse(JSON.stringify(minimalScene)) as Scene;
     scene.nodes.node_contact_name.locked = true;
@@ -1270,7 +1405,7 @@ describe("InspectorPanel", () => {
     expect(screen.getByLabelText("H")).toBeDisabled();
     expect(screen.getByLabelText("Rotate")).toBeDisabled();
     expect(screen.getByLabelText("Opacity")).toBeDisabled();
-    expect(screen.getByLabelText("Fill Color")).toBeDisabled();
+    expect(screen.getByLabelText("Fill color")).toBeDisabled();
     expect(screen.getByLabelText("Stroke Color")).toBeDisabled();
     expect(screen.getByLabelText("Stroke Width")).toBeDisabled();
     expect(screen.getByLabelText("Radius All")).toBeDisabled();
@@ -1371,6 +1506,19 @@ function slotReadinessScene(): Scene {
       }
     }
   };
+  return scene;
+}
+
+/** page -> two unlocked, unmanaged page-level siblings a, b — the minimal
+ * fixture for Arrange section group/z-order integration coverage. */
+function siblingScene(): Scene {
+  const scene = JSON.parse(JSON.stringify(minimalScene)) as Scene;
+  const template = scene.nodes.node_contact_name;
+  scene.nodes = {
+    a: { ...template, id: "a", name: "A", kind: { kind: "rect" }, children: [] },
+    b: { ...template, id: "b", name: "B", kind: { kind: "rect" }, children: [] }
+  };
+  scene.pages.page_a4.children = ["a", "b"];
   return scene;
 }
 

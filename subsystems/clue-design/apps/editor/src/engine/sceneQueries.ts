@@ -1,4 +1,4 @@
-import type { AssetId, Node, NodeId, Page, PageId, ParentRef, Scene, SizeSpec, Slot, Transform } from "./contracts";
+import type { AssetId, Node, NodeId, Page, PageId, ParentRef, Rect, Scene, SizeSpec, Slot, Transform } from "./contracts";
 
 export function listPages(scene: Scene): Page[] {
   return Object.values(scene.pages);
@@ -218,6 +218,179 @@ export function isNodeDirectGeometryEditable(scene: Scene, nodeId: NodeId | null
   // Freehand nodes opted out of the solver: the human owns their geometry
   // even though the parent is an auto-layout container (Phase 1d).
   return !isNodeLayoutManaged(scene, nodeId) || isNodeFreehand(scene, nodeId);
+}
+
+/**
+ * Handoff-absolute (lazy seam): whether a human gesture on this node is
+ * blocked FOR NO OTHER REASON than solver ownership — i.e. freezing every
+ * Stack container would make it directly geometry-editable. False for a
+ * locked node, an already-editable node, or a node blocked by something a
+ * freeze cannot fix (there is currently no other blocking reason, but this
+ * stays an explicit allow-list rather than "not editable" so a future
+ * blocking reason doesn't silently start firing freezes for it). Mirrors
+ * `isNodeDirectGeometryEditable`'s predicate family; the engine remains the
+ * authority — this is UI pre-gating only.
+ */
+export function isNodeFreezableOnGesture(scene: Scene, nodeId: NodeId | null): boolean {
+  if (!nodeId) {
+    return false;
+  }
+  const node = scene.nodes[nodeId];
+  if (!node || node.locked) {
+    return false;
+  }
+  if (isNodeDirectGeometryEditable(scene, nodeId)) {
+    return false;
+  }
+  return isNodeLayoutManaged(scene, nodeId) && !isNodeFreehand(scene, nodeId);
+}
+
+/**
+ * Whether a node is a live solver-managed child of a Stack auto-layout
+ * container that layout-managed editing (4c-C) can drag-to-reorder: not
+ * locked, not freehand (an opted-out pin would move independently of the
+ * stack order), and its parent is an `auto_layout` node with
+ * `layout.layout_mode === "stack"`. Mirrors the `isNodeDirectGeometryEditable`
+ * predicate family; the engine remains the authority on the actual
+ * `move_before`/`move_after` structured edit — this is UI pre-gating only.
+ */
+export function isNodeReorderableOnGesture(scene: Scene, nodeId: NodeId | null): boolean {
+  if (!nodeId) {
+    return false;
+  }
+  const node = scene.nodes[nodeId];
+  if (!node || node.locked) {
+    return false;
+  }
+  if (isNodeFreehand(scene, nodeId)) {
+    return false;
+  }
+  const parentInfo = parentInfoForNode(scene, nodeId);
+  if (!parentInfo || parentInfo.parent.kind !== "node") {
+    return false;
+  }
+  const parent = scene.nodes[parentInfo.parent.id];
+  if (!parent || parent.kind.kind !== "auto_layout") {
+    return false;
+  }
+  return (parent.layout?.layout_mode ?? "stack") === "stack";
+}
+
+/** Z-order position of a node among its siblings (Phase 4b arrange). Null
+ * when the node has no resolvable parent info. */
+export interface SiblingArrangeInfo {
+  siblings: NodeId[];
+  index: number;
+  isFront: boolean;
+  isBack: boolean;
+}
+
+export function siblingArrangeInfo(scene: Scene, nodeId: NodeId | null): SiblingArrangeInfo | null {
+  if (!nodeId) {
+    return null;
+  }
+  const parentInfo = parentInfoForNode(scene, nodeId);
+  if (!parentInfo) {
+    return null;
+  }
+  return {
+    siblings: parentInfo.siblings,
+    index: parentInfo.index,
+    isFront: parentInfo.index === parentInfo.siblings.length - 1,
+    isBack: parentInfo.index === 0
+  };
+}
+
+/**
+ * Whether a set of nodes is eligible to be grouped (Phase 4b arrange): at
+ * least two nodes, all present, none locked, all sharing the same parent,
+ * and none a solver-managed child of a Stack auto-layout container (the
+ * engine rejects those with LifecycleProtected — detach to freehand first).
+ * Mirrors the `isNodeDirectGeometryEditable` predicate family; the engine
+ * remains the authority, this is UI pre-gating only.
+ */
+export function canGroupNodes(scene: Scene, nodeIds: NodeId[]): boolean {
+  if (nodeIds.length < 2) {
+    return false;
+  }
+  const uniqueIds = new Set(nodeIds);
+  if (uniqueIds.size !== nodeIds.length) {
+    return false;
+  }
+  let sharedParentId: string | null = null;
+  for (const nodeId of nodeIds) {
+    const node = scene.nodes[nodeId];
+    if (!node || node.locked) {
+      return false;
+    }
+    if (isNodeLayoutManaged(scene, nodeId) && !isNodeFreehand(scene, nodeId)) {
+      return false;
+    }
+    const parentInfo = parentInfoForNode(scene, nodeId);
+    if (!parentInfo) {
+      return false;
+    }
+    const parentKey = `${parentInfo.parent.kind}:${parentInfo.parent.id}`;
+    if (sharedParentId === null) {
+      sharedParentId = parentKey;
+    } else if (sharedParentId !== parentKey) {
+      return false;
+    }
+  }
+  return true;
+}
+
+/** Whether a single node can be ungrouped (Phase 4b arrange): a Frame,
+ * Group, or AutoLayout container that isn't locked. Auto-layout containers
+ * are still shown but require `allow_layout` on the edit itself — the
+ * engine is the authority on that override. */
+export function canUngroupNode(scene: Scene, nodeId: NodeId | null): boolean {
+  if (!nodeId) {
+    return false;
+  }
+  const node = scene.nodes[nodeId];
+  if (!node || node.locked) {
+    return false;
+  }
+  return canNodeHaveChildren(node);
+}
+
+/** Whether a set of nodes is eligible for Align (2+ nodes): every node must
+ * be present, unlocked, and direct-geometry-editable (pinned Absolute, or a
+ * freehand child of a Free auto-layout container) — the same class of node
+ * a drag can move. Mirrors `canGroupNodes`'s all-must-pass shape; the engine
+ * remains the authority, this is UI pre-gating only. */
+export function canAlignNodes(scene: Scene, nodeIds: NodeId[]): boolean {
+  if (nodeIds.length < 2) {
+    return false;
+  }
+  return nodeIds.every((nodeId) => isNodeDirectGeometryEditable(scene, nodeId));
+}
+
+/** Whether a set of nodes is eligible for Distribute (3+ nodes) — same
+ * per-node eligibility as `canAlignNodes`, just a higher count floor since
+ * distributing needs a first/last anchor plus at least one node to space. */
+export function canDistributeNodes(scene: Scene, nodeIds: NodeId[]): boolean {
+  if (nodeIds.length < 3) {
+    return false;
+  }
+  return nodeIds.every((nodeId) => isNodeDirectGeometryEditable(scene, nodeId));
+}
+
+/** A node's current solved page-space box (scene units) — the same
+ * geometry `canvasDragOperations` reads before computing a drag delta: the
+ * pinned `absolute_box` when pinned (falling back to solved computed bounds
+ * for a boxless pin), else `computed.layout_bounds`. Null when neither is
+ * available (never laid out yet). */
+export function nodePageSpaceBox(scene: Scene, nodeId: NodeId): Rect | null {
+  const node = scene.nodes[nodeId];
+  if (!node) {
+    return null;
+  }
+  if (node.position_mode === "absolute") {
+    return node.absolute_box ?? (node.computed ? { ...node.computed.layout_bounds } : null);
+  }
+  return node.computed ? { ...node.computed.layout_bounds } : null;
 }
 
 export function clampNodeTransformToParentBounds(

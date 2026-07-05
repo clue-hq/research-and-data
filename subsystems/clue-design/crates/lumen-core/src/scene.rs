@@ -439,6 +439,45 @@ impl Default for TextNode {
     }
 }
 
+/// Which token bindings an edit explicitly authored. Explicit tokens are
+/// never cleared by [`TextNode::clear_stale_tokens`].
+#[derive(Clone, Copy, Debug, Default)]
+pub struct ExplicitTextTokens {
+    pub style: bool,
+    pub font_size: bool,
+    pub line_height: bool,
+    pub letter_spacing: bool,
+}
+
+impl TextNode {
+    /// Token honesty: a raw edit to a typography channel detaches any token
+    /// that would later re-resolve over it (export preflight, brand apply)
+    /// and silently clobber the edit. A channel token is cleared when its raw
+    /// sibling changed; `style_token` — the role supplying family/size/weight
+    /// and optionally line-height/letter-spacing/color — is cleared when any
+    /// of those channels changed. Tokens the edit itself authored survive,
+    /// which is also how inverse operations restore bindings on undo.
+    pub fn clear_stale_tokens(&mut self, before: &TextNode, explicit: ExplicitTextTokens) {
+        if !explicit.font_size && self.font_size != before.font_size {
+            self.font_size_token = None;
+        }
+        if !explicit.line_height && self.line_height != before.line_height {
+            self.line_height_token = None;
+        }
+        if !explicit.letter_spacing && self.letter_spacing != before.letter_spacing {
+            self.letter_spacing_token = None;
+        }
+        let role_channel_changed = self.font_family != before.font_family
+            || self.font_size != before.font_size
+            || self.font_weight != before.font_weight
+            || self.line_height != before.line_height
+            || self.letter_spacing != before.letter_spacing;
+        if !explicit.style && role_channel_changed {
+            self.style_token = None;
+        }
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum TextAlign {

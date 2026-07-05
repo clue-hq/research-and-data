@@ -1,7 +1,14 @@
 import { describe, expect, it, vi } from "vitest";
 import { emptyScene } from "@/fixtures/emptyScene";
 import type { Scene } from "../contracts";
-import { createDocument, fetchDocument, revertDocument } from "../documentStore";
+import {
+  createDocument,
+  fetchBrandKitDetail,
+  fetchBrandKits,
+  fetchDocument,
+  revertDocument,
+  saveLayoutManagedEditing
+} from "../documentStore";
 
 function jsonResponse(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), {
@@ -61,9 +68,77 @@ describe("documentStore", () => {
     expect(loaded.documentId).toBe("doc_abc123");
     expect(loaded.title).toBe("GTM poster");
     expect(loaded.scene.meta.id).toBe("doc_abc123");
+    // Absent layout_managed_editing (legacy payload) defaults to false.
+    expect(loaded.layoutManagedEditing).toBe(false);
     expect(String(fetchImpl.mock.calls[0][0])).toBe(
       "http://localhost:8002/documents/doc_abc123"
     );
+  });
+
+  it("fetchDocument round-trips layout_managed_editing (strictly-true only)", async () => {
+    const withFlag = (value: unknown) =>
+      vi.fn<typeof fetch>().mockResolvedValue(
+        jsonResponse(200, {
+          id: "doc_abc123",
+          title: "GTM poster",
+          scene: emptyScene,
+          layout_managed_editing: value
+        })
+      );
+
+    const enabled = await fetchDocument(
+      { apiBaseUrl: "http://localhost:8002", fetchImpl: withFlag(true) },
+      "doc_abc123"
+    );
+    expect(enabled.layoutManagedEditing).toBe(true);
+
+    const disabled = await fetchDocument(
+      { apiBaseUrl: "http://localhost:8002", fetchImpl: withFlag(false) },
+      "doc_abc123"
+    );
+    expect(disabled.layoutManagedEditing).toBe(false);
+
+    // Anything not literally true (defensive) reads as off.
+    const malformed = await fetchDocument(
+      { apiBaseUrl: "http://localhost:8002", fetchImpl: withFlag("yes") },
+      "doc_abc123"
+    );
+    expect(malformed.layoutManagedEditing).toBe(false);
+  });
+
+  it("saveLayoutManagedEditing PUTs the flag and returns the persisted value", async () => {
+    const fetchImpl = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(
+        jsonResponse(200, {
+          schema_version: 1,
+          document_id: "doc_abc123",
+          layout_managed_editing: true
+        })
+      );
+
+    const persisted = await saveLayoutManagedEditing(
+      { apiBaseUrl: "http://localhost:8002", fetchImpl },
+      "doc_abc123",
+      true
+    );
+
+    expect(persisted).toBe(true);
+    const [url, init] = fetchImpl.mock.calls[0];
+    expect(String(url)).toBe(
+      "http://localhost:8002/documents/doc_abc123/layout-managed-editing"
+    );
+    expect(init?.method).toBe("PUT");
+    expect(JSON.parse(String(init?.body))).toEqual({ enabled: true });
+
+    const failing = vi.fn<typeof fetch>().mockResolvedValue(jsonResponse(500, {}));
+    await expect(
+      saveLayoutManagedEditing(
+        { apiBaseUrl: "http://localhost:8002", fetchImpl: failing },
+        "doc_abc123",
+        false
+      )
+    ).rejects.toThrow("HTTP 500");
   });
 
   it("fetchDocument reports not-found and missing-scene errors clearly", async () => {
@@ -135,5 +210,78 @@ describe("documentStore", () => {
     await expect(
       revertDocument({ apiBaseUrl: "http://localhost:8002", fetchImpl: failing }, "doc_x", "cp")
     ).rejects.toThrow("HTTP 500");
+  });
+
+  it("fetchBrandKits returns the stored brand kit summaries", async () => {
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(
+      jsonResponse(200, [
+        { id: "brand_acme", version: 3, name: "Acme" },
+        { id: "brand_globex", version: 1, name: "Globex" }
+      ])
+    );
+
+    const brandKits = await fetchBrandKits({ apiBaseUrl: "http://localhost:8002", fetchImpl });
+
+    expect(brandKits).toEqual([
+      { id: "brand_acme", version: 3, name: "Acme" },
+      { id: "brand_globex", version: 1, name: "Globex" }
+    ]);
+    expect(String(fetchImpl.mock.calls[0][0])).toBe("http://localhost:8002/brand-kits");
+  });
+
+  it("fetchBrandKits throws on HTTP errors and tolerates a non-array payload", async () => {
+    const failing = vi.fn<typeof fetch>().mockResolvedValue(jsonResponse(500, {}));
+    await expect(
+      fetchBrandKits({ apiBaseUrl: "http://localhost:8002", fetchImpl: failing })
+    ).rejects.toThrow("HTTP 500");
+
+    const malformed = vi.fn<typeof fetch>().mockResolvedValue(jsonResponse(200, { oops: true }));
+    await expect(
+      fetchBrandKits({ apiBaseUrl: "http://localhost:8002", fetchImpl: malformed })
+    ).resolves.toEqual([]);
+  });
+
+  it("fetchBrandKitDetail returns the raw brand_kit_json for token resolution", async () => {
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(
+      jsonResponse(200, {
+        schema_version: 1,
+        brand_kit: { id: "brand_kit_platform_default", version: 1, name: "Lumen Platform Default" },
+        brand_kit_json: {
+          tokens: {
+            colors: {
+              "surface.page": { value: { default: { kind: "hex", value: "#FFFFFF" } } }
+            }
+          }
+        }
+      })
+    );
+
+    const detail = await fetchBrandKitDetail(
+      { apiBaseUrl: "http://localhost:8002", fetchImpl },
+      "brand_kit_platform_default"
+    );
+
+    expect(detail).toEqual({
+      tokens: {
+        colors: {
+          "surface.page": { value: { default: { kind: "hex", value: "#FFFFFF" } } }
+        }
+      }
+    });
+    expect(String(fetchImpl.mock.calls[0][0])).toBe(
+      "http://localhost:8002/brand-kits/brand_kit_platform_default"
+    );
+  });
+
+  it("fetchBrandKitDetail throws on HTTP errors and tolerates a missing brand_kit_json", async () => {
+    const failing = vi.fn<typeof fetch>().mockResolvedValue(jsonResponse(404, {}));
+    await expect(
+      fetchBrandKitDetail({ apiBaseUrl: "http://localhost:8002", fetchImpl: failing }, "brand_kit_x")
+    ).rejects.toThrow("HTTP 404");
+
+    const empty = vi.fn<typeof fetch>().mockResolvedValue(jsonResponse(200, {}));
+    await expect(
+      fetchBrandKitDetail({ apiBaseUrl: "http://localhost:8002", fetchImpl: empty }, "brand_kit_x")
+    ).resolves.toBeNull();
   });
 });

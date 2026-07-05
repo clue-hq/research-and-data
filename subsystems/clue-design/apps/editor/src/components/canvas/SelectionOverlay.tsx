@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import { SNAP_GUIDE_COLOR, SNAP_GUIDE_DASH, type SnapGuide } from "@/engine/canvasOperations";
 import { handlePoint, type Box, type ResizeHandle } from "@/engine/transformerMath";
 
 /**
@@ -42,10 +43,19 @@ export interface SelectionOverlayProps {
   containerLabel?: string;
   /** Live marquee rect in descriptor space (null when not marqueeing). */
   marquee?: Box | null;
+  /** Active snap guides in descriptor space, engaged only while a drag/resize
+   * is currently snapped; empty otherwise. */
+  guides?: SnapGuide[];
   pageOrigin: { x: number; y: number };
   zoom: number;
   /** Whether to show resize/rotate handles (false for layout-managed nodes). */
   showHandles?: boolean;
+  /** Phase 4c-C: resize handles specifically — defaults to `showHandles` when
+   * omitted. A layout-managed-editing reorderable Stack child can have this
+   * true while `showRotateHandle` stays false. */
+  showResizeHandles?: boolean;
+  /** Phase 4c-C: the rotate handle specifically — defaults to `showHandles`. */
+  showRotateHandle?: boolean;
   /** Human-readable reason shown when direct geometry handles are suppressed. */
   disabledReason?: string | null;
   /** Slot keys bound to the selected node; used for subtle selected-node chrome. */
@@ -56,6 +66,16 @@ export interface SelectionOverlayProps {
   focal?: { x: number; y: number } | null;
   /** Commit a new focal point (drag end); only wired for image nodes. */
   onFocalChange?: (focal: { x: number; y: number }) => void;
+  /** Phase 4c-C: the live drag-to-reorder insertion line, in descriptor
+   * space — a solid (no dash) line, same color/mapping as a snap guide.
+   * Only meaningful during a managed-reorder gesture; the host suppresses
+   * `guides` while this is set (the two are mutually exclusive). */
+  insertionIndicator?: { axis: "x" | "y"; position: number; from: number; to: number } | null;
+  /** Phase 4d: the active page's safe-area/bleed rects, in descriptor space
+   * (null when the "Show margins" toggle is off or there is no active
+   * page). Either rect may itself be null. Page guides, not selection
+   * chrome — rendered independent of `selection`. */
+  marginGuides?: { safeArea: Box | null; bleed: Box | null } | null;
 }
 
 export function SelectionOverlay({
@@ -65,19 +85,26 @@ export function SelectionOverlay({
   containerChildren = [],
   containerLabel,
   marquee = null,
+  guides = [],
   pageOrigin,
   zoom,
   showHandles = true,
+  showResizeHandles,
+  showRotateHandle,
   disabledReason = null,
   slotKeys = [],
   diagnosticCounts = { errors: 0, warnings: 0 },
   focal = null,
-  onFocalChange
+  onFocalChange,
+  insertionIndicator = null,
+  marginGuides = null
 }: SelectionOverlayProps) {
   const toScreen = (p: { x: number; y: number }) => ({
     x: pageOrigin.x + p.x * zoom,
     y: pageOrigin.y + p.y * zoom
   });
+  const resolvedShowResizeHandles = showResizeHandles ?? showHandles;
+  const resolvedShowRotateHandle = showRotateHandle ?? showHandles;
   const hasSlotKeys = slotKeys.length > 0;
   const diagnosticTone =
     diagnosticCounts.errors > 0 ? "error" : diagnosticCounts.warnings > 0 ? "warning" : null;
@@ -87,6 +114,14 @@ export function SelectionOverlay({
       data-testid="selection-overlay"
       style={{ position: "absolute", inset: 0, pointerEvents: "none", overflow: "visible" }}
     >
+      {marginGuides?.safeArea ? (
+        <MarginGuideRect box={marginGuides.safeArea} toScreen={toScreen} zoom={zoom} role="margin-guide-safe-area" stroke={SNAP_GUIDE_COLOR} />
+      ) : null}
+
+      {marginGuides?.bleed ? (
+        <MarginGuideRect box={marginGuides.bleed} toScreen={toScreen} zoom={zoom} role="margin-guide-bleed" stroke="#e5484d" />
+      ) : null}
+
       {containerChildren.map((child, index) => {
         const tl = toScreen(child);
         return (
@@ -156,11 +191,11 @@ export function SelectionOverlay({
         <DiagnosticBadge selection={selection} toScreen={toScreen} counts={diagnosticCounts} tone={diagnosticTone} />
       ) : null}
 
-      {selection && !showHandles && disabledReason ? (
+      {selection && !resolvedShowResizeHandles && disabledReason ? (
         <DisabledNotice point={toScreen(selection.box)} text={disabledReason} />
       ) : null}
 
-      {selection && showHandles
+      {selection && resolvedShowResizeHandles
         ? RESIZE_HANDLES.map((handle) => {
             const p = toScreen(handlePoint(selection.box, handle, selection.rotation));
             return (
@@ -180,7 +215,7 @@ export function SelectionOverlay({
           })
         : null}
 
-      {selection && showHandles ? <RotateHandle selection={selection} toScreen={toScreen} /> : null}
+      {selection && resolvedShowRotateHandle ? <RotateHandle selection={selection} toScreen={toScreen} /> : null}
 
       {selection && focal && onFocalChange ? (
         <FocalHandle
@@ -206,7 +241,107 @@ export function SelectionOverlay({
           strokeWidth={1}
         />
       ) : null}
+
+      {guides.map((guide, index) => (
+        <SnapGuideLine key={`guide-${guide.axis}-${index}`} guide={guide} toScreen={toScreen} />
+      ))}
+
+      {insertionIndicator ? (
+        <InsertionIndicatorLine indicator={insertionIndicator} toScreen={toScreen} />
+      ) : null}
     </svg>
+  );
+}
+
+function InsertionIndicatorLine({
+  indicator,
+  toScreen
+}: {
+  indicator: { axis: "x" | "y"; position: number; from: number; to: number };
+  toScreen: (p: { x: number; y: number }) => { x: number; y: number };
+}) {
+  const a =
+    indicator.axis === "x"
+      ? toScreen({ x: indicator.position, y: indicator.from })
+      : toScreen({ x: indicator.from, y: indicator.position });
+  const b =
+    indicator.axis === "x"
+      ? toScreen({ x: indicator.position, y: indicator.to })
+      : toScreen({ x: indicator.to, y: indicator.position });
+  return (
+    <line
+      data-role="reorder-insertion-indicator"
+      data-axis={indicator.axis}
+      x1={a.x}
+      y1={a.y}
+      x2={b.x}
+      y2={b.y}
+      stroke={SNAP_GUIDE_COLOR}
+      strokeWidth={2}
+    />
+  );
+}
+
+function SnapGuideLine({
+  guide,
+  toScreen
+}: {
+  guide: SnapGuide;
+  toScreen: (p: { x: number; y: number }) => { x: number; y: number };
+}) {
+  const a =
+    guide.axis === "x"
+      ? toScreen({ x: guide.position, y: guide.from })
+      : toScreen({ x: guide.from, y: guide.position });
+  const b =
+    guide.axis === "x"
+      ? toScreen({ x: guide.position, y: guide.to })
+      : toScreen({ x: guide.to, y: guide.position });
+  return (
+    <line
+      data-role="snap-guide"
+      data-axis={guide.axis}
+      x1={a.x}
+      y1={a.y}
+      x2={b.x}
+      y2={b.y}
+      stroke={SNAP_GUIDE_COLOR}
+      strokeWidth={1}
+      strokeDasharray={SNAP_GUIDE_DASH.join(" ")}
+    />
+  );
+}
+
+/** Phase 4d: a page guide rect (safe-area or bleed), mapped corner + scaled
+ * dimensions via the same `pageOrigin + p × zoom` transform as every other
+ * overlay element. Rendered as a plain dashed outline — no fill, no
+ * hit-testing (the overlay's `pointerEvents: none` already covers this). */
+function MarginGuideRect({
+  box,
+  toScreen,
+  zoom,
+  role,
+  stroke
+}: {
+  box: Box;
+  toScreen: (p: { x: number; y: number }) => { x: number; y: number };
+  zoom: number;
+  role: string;
+  stroke: string;
+}) {
+  const topLeft = toScreen({ x: box.x, y: box.y });
+  return (
+    <rect
+      data-role={role}
+      x={topLeft.x}
+      y={topLeft.y}
+      width={box.width * zoom}
+      height={box.height * zoom}
+      fill="none"
+      stroke={stroke}
+      strokeWidth={1}
+      strokeDasharray={SNAP_GUIDE_DASH.join(" ")}
+    />
   );
 }
 

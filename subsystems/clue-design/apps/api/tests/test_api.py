@@ -503,6 +503,29 @@ def test_agent_instructions_round_trip_and_prompt_injection(client: TestClient) 
     assert "standing_instructions" not in bare
 
 
+def test_layout_managed_editing_round_trip(client: TestClient) -> None:
+    document = create_document(client)
+    document_id = document["id"]
+
+    # Default off: handoff-absolute freezing stays the shipped behavior.
+    assert client.get(f"/documents/{document_id}").json()["layout_managed_editing"] is False
+
+    enabled = client.put(
+        f"/documents/{document_id}/layout-managed-editing", json={"enabled": True}
+    )
+    assert enabled.status_code == 200, enabled.text
+    assert enabled.json()["layout_managed_editing"] is True
+    assert client.get(f"/documents/{document_id}").json()["layout_managed_editing"] is True
+
+    # Disabling re-enables freezing at the next seam and survives reloads.
+    disabled = client.put(
+        f"/documents/{document_id}/layout-managed-editing", json={"enabled": False}
+    )
+    assert disabled.status_code == 200, disabled.text
+    assert disabled.json()["layout_managed_editing"] is False
+    assert client.get(f"/documents/{document_id}").json()["layout_managed_editing"] is False
+
+
 def _fake_async_runner(status: str = "proposed"):
     def runner(payload, root):
         return {

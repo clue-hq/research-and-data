@@ -352,4 +352,75 @@ describe.skipIf(!present || !existsSync(SYSTEM_FONT))("CanvasKit text rendering 
     }
     expect(darkCount).toBeGreaterThan(20);
   });
+
+  // Regression: centered/right-aligned no-wrap text used to lay out at a
+  // near-infinite width and paint at x=0, so SkParagraph anchored the glyphs
+  // within that width and pushed them ~quadrillions of px off-canvas (button
+  // labels / badges never painted, though the SVG export was fine). The draw
+  // path now mirrors the exporter's NoWrap arm: measure the natural width,
+  // then offset the block per alignment against the real node width.
+  const BOX_W = 200;
+  const glyphStats = (align: "left" | "center" | "right"): { count: number; centroid: number } => {
+    const base = JSON.parse(JSON.stringify(minimalScene.nodes.node_contact_name)) as Node;
+    const text: Node = {
+      ...base,
+      id: "t",
+      kind: {
+        kind: "text",
+        content: "HI",
+        font_family: family,
+        font_size: 30,
+        font_weight: 700,
+        align,
+        line_height: 1.2,
+        letter_spacing: 0,
+        wrap: "no_wrap",
+        max_lines: 1,
+        direction: "ltr"
+      },
+      fills: [{ id: "t_fill", paint: { kind: "solid", color: { kind: "hex", value: "#000000" } } }],
+      strokes: [],
+      transform: { ...base.transform, x: 0, y: 0 },
+      // Box far wider than the short glyph run so alignment actually shifts it.
+      size: { width: { kind: "fixed", value: BOX_W }, height: { kind: "fixed", value: 50 } },
+      computed: {
+        layout_bounds: { x: 0, y: 0, width: BOX_W, height: 50 },
+        render_bounds: { x: 0, y: 0, width: BOX_W, height: 50 }
+      }
+    };
+    const pixels = render(pxScene({ t: text }, ["t"]), "page_a4", BOX_W, 50, fontProvider);
+    let count = 0;
+    let sumX = 0;
+    for (let y = 5; y < 45; y++) {
+      for (let x = 0; x < BOX_W; x++) {
+        if (pixel(pixels, x, y, BOX_W)[0] < 80) {
+          count++;
+          sumX += x;
+        }
+      }
+    }
+    return { count, centroid: count > 0 ? sumX / count : NaN };
+  };
+
+  it("no-wrap text paints on-canvas for every alignment (not off at infinity)", () => {
+    // Before the fix, center/right laid out at ~MAX_SAFE_INTEGER width and
+    // painted at x=0, so the glyphs anchored quadrillions of px right of the
+    // box and NONE of them landed on the 200px surface.
+    for (const align of ["left", "center", "right"] as const) {
+      expect(glyphStats(align).count).toBeGreaterThan(20);
+    }
+  });
+
+  it("no-wrap alignment shifts the glyph block within the real box", () => {
+    const left = glyphStats("left").centroid;
+    const center = glyphStats("center").centroid;
+    const right = glyphStats("right").centroid;
+    // Every centroid is inside the box, and they march left → center → right.
+    for (const c of [left, center, right]) {
+      expect(c).toBeGreaterThan(0);
+      expect(c).toBeLessThan(BOX_W);
+    }
+    expect(center).toBeGreaterThan(left);
+    expect(right).toBeGreaterThan(center);
+  });
 });

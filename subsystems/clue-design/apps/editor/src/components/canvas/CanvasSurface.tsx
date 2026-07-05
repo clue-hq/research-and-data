@@ -15,6 +15,7 @@ import { Group, Layer, Line, Rect, Stage, Text, Transformer } from "react-konva"
 import type Konva from "konva";
 import type { NodeId, Operation, PageId, Scene } from "@/engine/contracts";
 import { canvasDirectEditNotice, isCanvasDirectGeometryEditable } from "@/engine/canvasSelection";
+import { SNAP_GUIDE_COLOR, SNAP_GUIDE_DASH, type SnapGuide } from "@/engine/canvasOperations";
 import { getPage } from "@/engine/sceneQueries";
 import { pageDescriptor } from "@/engine/renderAdapter";
 import type { WorkspaceArtboard, WorkspaceModel } from "@/engine/workspaceLayout";
@@ -74,6 +75,7 @@ export function CanvasSurface({
   const nodeRefs = useRef(new Map<NodeId, Konva.Node>());
   const dragStartRef = useRef<{ x: number; y: number; pan: { x: number; y: number } } | null>(null);
   const [viewportSize, setViewportSize] = useState(EMPTY_VIEWPORT);
+  const [activeGuides, setActiveGuides] = useState<SnapGuide[]>([]);
   const selectedNodeDirectGeometryEditable = isCanvasDirectGeometryEditable(scene, selectedNodeId);
   const selectedEditNotice = canvasDirectEditNotice(scene, selectedNodeId);
   const activeArtboard = workspaceModel.activeArtboard;
@@ -271,6 +273,8 @@ export function CanvasSurface({
               onSelectArtboard={() => activateArtboard(artboard.pageId, null)}
               onOperation={onOperation}
               registerNode={registerNode}
+              activeGuides={artboard.isActive ? activeGuides : []}
+              onGuidesChange={setActiveGuides}
             />
           ))}
           <Transformer
@@ -298,7 +302,9 @@ function ArtboardFrame({
   onSelectNode,
   onSelectArtboard,
   onOperation,
-  registerNode
+  registerNode,
+  activeGuides,
+  onGuidesChange
 }: {
   artboard: WorkspaceArtboard;
   scene: Scene;
@@ -307,6 +313,8 @@ function ArtboardFrame({
   onSelectArtboard: () => void;
   onOperation: (operation: Operation) => void;
   registerNode: (nodeId: NodeId, node: Konva.Node | null) => void;
+  activeGuides: SnapGuide[];
+  onGuidesChange: (guides: SnapGuide[]) => void;
 }) {
   const page = scene.pages[artboard.pageId];
   if (!page) {
@@ -420,6 +428,7 @@ function ArtboardFrame({
             onSelectNode={onSelectNode}
             onOperation={onOperation}
             registerNode={registerNode}
+            onGuidesChange={onGuidesChange}
           />
         ))}
         <ContainerSelectionOverlay
@@ -428,7 +437,43 @@ function ArtboardFrame({
           pageOrigin={{ x: 0, y: 0 }}
           unitScale={descriptor.unitScale}
         />
+        <SnapGuideLayer guides={activeGuides} unitScale={descriptor.unitScale} />
       </Group>
+    </Group>
+  );
+}
+
+/**
+ * Renders the currently-engaged snap guides as 1px lines in the artboard's
+ * local (page-space × unitScale) coordinates — same placement convention as
+ * `ContainerSelectionOverlay`. Purely presentational; empty while no drag/
+ * resize is snapped. Exported for direct component-level testing (Konva
+ * can't mount for real in this project's jsdom suite, so tests render this
+ * through the mocked `react-konva` boundary, same as the rest of the file).
+ */
+export function SnapGuideLayer({ guides, unitScale }: { guides: SnapGuide[]; unitScale: number }) {
+  if (guides.length === 0) {
+    return null;
+  }
+  return (
+    <Group listening={false} name="snap-guide-layer">
+      {guides.map((guide, index) => {
+        const points =
+          guide.axis === "x"
+            ? [guide.position * unitScale, guide.from * unitScale, guide.position * unitScale, guide.to * unitScale]
+            : [guide.from * unitScale, guide.position * unitScale, guide.to * unitScale, guide.position * unitScale];
+        return (
+          <Line
+            key={`guide-${guide.axis}-${index}`}
+            name="snap-guide"
+            points={points}
+            stroke={SNAP_GUIDE_COLOR}
+            strokeWidth={1}
+            dash={SNAP_GUIDE_DASH}
+            listening={false}
+          />
+        );
+      })}
     </Group>
   );
 }

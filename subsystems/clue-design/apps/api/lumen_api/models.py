@@ -119,6 +119,10 @@ class SetAgentInstructionsRequest(BaseModel):
     instructions: Optional[str] = None
 
 
+class SetLayoutManagedEditingRequest(BaseModel):
+    enabled: bool = False
+
+
 class FinalizeTemplateRequest(BaseModel):
     template_revision_id: Optional[str] = None
     snapshot_id: Optional[str] = None

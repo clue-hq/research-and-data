@@ -2,9 +2,9 @@
 
 import dynamic from "next/dynamic";
 import { useEffect, useState } from "react";
-import { fetchDocument } from "@/engine/documentStore";
+import { fetchBrandKits, fetchDocument } from "@/engine/documentStore";
 import { editorApiBaseUrl } from "@/engine/editorConfig";
-import type { Scene } from "@/engine/contracts";
+import type { BrandKitSummary, Scene } from "@/engine/contracts";
 
 const EditorApp = dynamic(() => import("@/components/EditorApp"), {
   ssr: false
@@ -25,16 +25,44 @@ type DocumentLoadState =
       documentId: string | null;
       scene: Scene | null;
       agentInstructions: string | null;
+      layoutManagedEditing: boolean;
     }
   | { kind: "error"; documentId: string; message: string };
 
 export default function Home() {
   const [loadState, setLoadState] = useState<DocumentLoadState>({ kind: "loading" });
+  // Stored Brand Kit summaries for the Brand-Kit dropdown. Fetched
+  // independently of document load — the dropdown is a nice-to-have, so an
+  // API hiccup here must never block the editor from opening. Empty list is
+  // a fine (if inert) default.
+  const [availableBrandKits, setAvailableBrandKits] = useState<BrandKitSummary[]>([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchBrandKits({ apiBaseUrl })
+      .then((brandKits) => {
+        if (!cancelled) {
+          setAvailableBrandKits(brandKits);
+        }
+      })
+      .catch(() => {
+        // API-down or no kits yet: leave the dropdown empty, don't block load.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     const requestedDocumentId = new URLSearchParams(window.location.search).get("document");
     if (!requestedDocumentId) {
-      setLoadState({ kind: "ready", documentId: null, scene: null, agentInstructions: null });
+      setLoadState({
+        kind: "ready",
+        documentId: null,
+        scene: null,
+        agentInstructions: null,
+        layoutManagedEditing: false
+      });
       return;
     }
     let cancelled = false;
@@ -45,7 +73,8 @@ export default function Home() {
             kind: "ready",
             documentId: document.documentId,
             scene: document.scene,
-            agentInstructions: document.agentInstructions
+            agentInstructions: document.agentInstructions,
+            layoutManagedEditing: document.layoutManagedEditing
           });
         }
       })
@@ -67,7 +96,13 @@ export default function Home() {
     const url = new URL(window.location.href);
     url.searchParams.delete("document");
     window.history.replaceState(null, "", url);
-    setLoadState({ kind: "ready", documentId: null, scene: null, agentInstructions: null });
+    setLoadState({
+      kind: "ready",
+      documentId: null,
+      scene: null,
+      agentInstructions: null,
+      layoutManagedEditing: false
+    });
   };
 
   if (loadState.kind === "loading") {
@@ -101,6 +136,8 @@ export default function Home() {
       initialScene={loadState.scene ?? undefined}
       initialSelectedNodeId={null}
       initialAgentInstructions={loadState.agentInstructions}
+      initialLayoutManagedEditing={loadState.layoutManagedEditing}
+      initialAvailableBrandKits={availableBrandKits}
     />
   );
 }

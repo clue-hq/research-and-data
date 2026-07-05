@@ -1,15 +1,18 @@
 "use client";
 
-import type { CornerRadii, Fill, Node, Operation, Stroke } from "@/engine/contracts";
+import type { BrandTokenCatalog, CornerRadii, Node, Operation, Stroke } from "@/engine/contracts";
 import { nodePatch, set, updateNodeFills, updateNodeStrokes } from "@/engine/operations";
+import { ColorSwatchControl } from "../ColorSwatchControl";
 import { NumberField, roundForEditor } from "./fields";
 
 /** Raw (non-token) fills, strokes, and corner radii for the selected node. */
 export function RawStyleSection({
   selectedNode,
+  brandTokens,
   onOperation
 }: {
   selectedNode: Node;
+  brandTokens?: BrandTokenCatalog | null;
   onOperation: (operation: Operation) => void;
 }) {
   return (
@@ -18,11 +21,11 @@ export function RawStyleSection({
         <div className="field-grid two">
           <label className="field">
             <span>Fill Color</span>
-            <input
-              type="color"
-              value={hexInputValueFromFill(selectedNode)}
-              disabled={selectedNode.locked}
-              onChange={(event) => onOperation(updateNodeFills(selectedNode, [solidFill(selectedNode.id, "fill", event.target.value)]))}
+            <ColorSwatchControl
+              node={selectedNode}
+              brandTokens={brandTokens}
+              label="Fill color"
+              onEdit={(fills) => onOperation(updateNodeFills(selectedNode, fills))}
             />
           </label>
           <label className="field">
@@ -133,19 +136,6 @@ export function RawStyleSection({
   );
 }
 
-function solidFill(ownerId: string, role: string, hex: string): Fill {
-  return {
-    id: `paint_${ownerId}_${role}`,
-    paint: {
-      kind: "solid",
-      color: {
-        kind: "hex",
-        value: normalizeHexInput(hex)
-      }
-    }
-  };
-}
-
 function solidStroke(node: Node, hex: string, width: number): Stroke {
   const existing = node.strokes[0];
   return {
@@ -190,20 +180,6 @@ function uniformCornerRadius(corner: CornerRadii): number {
 
 function normalizeCornerRadius(value: number): number {
   return roundForEditor(Number.isFinite(value) ? Math.max(0, value) : 0);
-}
-
-function hexInputValueFromFill(node: Node): string {
-  const fill = node.fills[0];
-  if (fill?.paint.kind === "solid" && fill.paint.color.kind === "hex") {
-    return normalizeHexInput(fill.paint.color.value);
-  }
-  if (node.kind.kind === "text" || node.kind.kind === "line") {
-    return "#27231d";
-  }
-  if (node.kind.kind === "image") {
-    return "#ddd7cc";
-  }
-  return "#f5f1e9";
 }
 
 function hexInputValueFromStroke(node: Node): string {
