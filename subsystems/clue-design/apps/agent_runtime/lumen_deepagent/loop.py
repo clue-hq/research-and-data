@@ -5,7 +5,12 @@ import json
 import re
 from typing import Optional, Protocol
 
-from .accommodation import page_space_box, turn_introduced_conflicts
+from .accommodation import (
+    CONFLICT_CLEARANCE_THRESHOLD,
+    clearance,
+    page_space_box,
+    turn_introduced_conflicts,
+)
 from .schemas import (
     AgentActionMode,
     AgentDirectorDecision,
@@ -1384,6 +1389,41 @@ class LumenQualityLoop:
             and self.state.current_iteration < self.tools.config.max_iterations
         )
 
+    def _accommodation_repair_instruction(self, conflict: dict) -> str:
+        """A precise, boxed nudge instruction for one conflict.
+
+        run_e3bbb02e's forced round failed on model precision, not intent: it
+        nudged using the LABEL's box instead of the container's and drifted
+        +46pt sideways off the artboard. So the instruction now carries the
+        neighbor's and edited node's CURRENT page-space boxes, tells the model
+        to move along one axis only by the minimal amount, and to keep the
+        node fully on the artboard."""
+        nodes = (self.tools.scene or {}).get("nodes") or {}
+        neighbor_node = nodes.get(conflict["neighbor"])
+        edited_node = nodes.get(conflict["edited"])
+        neighbor_box = page_space_box(neighbor_node) if neighbor_node else None
+        edited_box = page_space_box(edited_node) if edited_node else None
+        deficit = max(0.0, CONFLICT_CLEARANCE_THRESHOLD - conflict["clearance"])
+        boxes = ""
+        if neighbor_box and edited_box:
+            boxes = (
+                f" {conflict['neighbor']} currently occupies page-space "
+                f"({neighbor_box['x']:.0f},{neighbor_box['y']:.0f},"
+                f"{neighbor_box['width']:.0f},{neighbor_box['height']:.0f}); "
+                f"{conflict['edited']} occupies "
+                f"({edited_box['x']:.0f},{edited_box['y']:.0f},"
+                f"{edited_box['width']:.0f},{edited_box['height']:.0f})."
+            )
+        return (
+            f"Nudge {conflict['neighbor']} with a position-only "
+            f"`#{conflict['neighbor']} p(x,y)` — move it along ONE axis only, "
+            f"directly away from {conflict['edited']}, by about "
+            f"{deficit + 2.0:.0f}pt (just enough for 16pt clearance)."
+            f"{boxes} Use the CONTAINER's own box above (not a child label's), "
+            "keep the node fully inside the artboard, and do not restyle, "
+            "resize, delete, or reorder it."
+        )
+
     def _forced_accommodation_critique(self, accepted: VisualCritique) -> VisualCritique:
         """The synthetic rejection that drives the forced accommodation round."""
         self.accommodation_repair_attempted = True
@@ -1399,13 +1439,7 @@ class LumenQualityLoop:
                     f"({'overlapping' if conflict.get('overlap') else 'under the 16pt minimum'}) "
                     "— crowding that did not exist before this turn."
                 ),
-                suggested_repair=(
-                    f"Nudge {conflict['neighbor']} with a position-only "
-                    f"`#{conflict['neighbor']} p(x,y)` — the smallest move "
-                    "restoring at least 16pt clearance from "
-                    f"{conflict['edited']}. Do not restyle, resize, delete, "
-                    "or reorder it."
-                ),
+                suggested_repair=self._accommodation_repair_instruction(conflict),
             )
             for conflict in self.accommodation_conflicts
         ]
@@ -1461,14 +1495,42 @@ class LumenQualityLoop:
                     stack.append(child)
         return scope
 
+    def _final_unresolved_conflicts(self) -> list[dict]:
+        """The logged conflict pairs re-measured on the FINAL scene.
+
+        `accommodation_conflicts` (the latest detection) can describe a draft
+        that is NOT the one being returned: run_e3bbb02e's forced-round draft
+        resolved the crowding but was rejected for clipping, keep-best
+        restored the earlier accepted draft — and the stale latest list
+        reported `unresolved: []` over a scene still carrying the 7.7pt
+        conflict. Direct re-measurement of the known pairs on whatever scene
+        finalize is actually returning cannot go stale, and sidesteps the
+        both-edited pair exclusion (a discarded nudge marks the neighbor
+        edited without its edit surviving)."""
+        nodes = (self.tools.scene or {}).get("nodes") or {}
+        unresolved = []
+        for (edited, neighbor), first_seen in self.accommodation_conflict_log.items():
+            edited_box = page_space_box(nodes[edited]) if nodes.get(edited) else None
+            neighbor_box = page_space_box(nodes[neighbor]) if nodes.get(neighbor) else None
+            if not edited_box or not neighbor_box:
+                continue
+            gap = clearance(edited_box, neighbor_box)
+            if gap < CONFLICT_CLEARANCE_THRESHOLD:
+                unresolved.append(
+                    {**first_seen, "clearance": gap, "overlap": gap < 0}
+                )
+        return unresolved
+
     def _accommodation_payload_json(self) -> str:
         """The run-result announcement: conflicts detected + nudges applied.
 
         Applied nudges diff each ever-conflicting neighbor's geometry against
         the baseline — computed from the LOG, not the latest detection, because
         a successful accommodation repair empties the latest list while being
-        exactly the thing worth announcing. `unresolved` carries the conflicts
-        still present on the final draft (advisory for the editor/user)."""
+        exactly the thing worth announcing. `unresolved` re-measures the
+        logged pairs on the final scene (see _final_unresolved_conflicts).
+        Every finalize path restores/settles the returned scene BEFORE calling
+        this, so both diffs read the geometry the editor actually receives."""
         if not self.accommodation_conflict_log:
             return "null"
         nodes_now = (self.tools.scene or {}).get("nodes") or {}
@@ -1489,7 +1551,7 @@ class LumenQualityLoop:
             {
                 "detected": list(self.accommodation_conflict_log.values()),
                 "applied_nudges": applied_nudges,
-                "unresolved": self.accommodation_conflicts,
+                "unresolved": self._final_unresolved_conflicts(),
                 "note": (
                     "Turn-introduced crowding, measured geometrically. "
                     "applied_nudges are accommodation moves this turn made to "

@@ -465,3 +465,62 @@ def test_forced_accommodation_round_overrides_blind_acceptance(
     ]
     assert accommodation["unresolved"] == []
     assert accommodation["detected"][0]["neighbor"] == "organizer"
+
+
+# ---------------------------------------------------------------------------
+# 7) run_e3bbb02e regression: the forced round's nudge draft RESOLVES the
+#    crowding but gets REJECTED (there: for clipping) — keep-best restores the
+#    earlier accepted draft, which still carries the conflict. `unresolved`
+#    must be re-measured on the RESTORED scene, not read from the last
+#    detection (which described the discarded, conflict-free draft).
+# ---------------------------------------------------------------------------
+
+
+def test_unresolved_is_remeasured_on_the_restored_draft(tmp_path: Path, monkeypatch):
+    monkeypatch.setattr(
+        "lumen_deepagent.tools.CoreClient", FakeBadgeMoveThenOrganizerNudgeCoreClient
+    )
+    config = runtime_config(tmp_path, max_iterations=2)
+    tools = LumenDesignTools(
+        config, "Move the badge", initial_scene=accommodation_seed_scene()
+    )
+    author = ScriptedAuthor(["#badge p(884,48)", "#organizer p(715,112)"])
+    reviewer = ScriptedReviewer(
+        [
+            # Iteration 1: blind acceptance over the overlap → forced round.
+            VisualCritique(accepted=True, summary="Looks clean.", confidence=0.9),
+            # Iteration 2: the nudge draft resolves the crowding but is
+            # rejected for an unrelated reason (run_e3bbb02e: clipping).
+            VisualCritique(
+                accepted=False,
+                summary="Organizer clipped off the artboard.",
+                issues=[
+                    VisualIssue(
+                        severity="blocker",
+                        category="clipping",
+                        target=VisualTarget(node_id="organizer"),
+                        message="Organizer extends past the artboard edge.",
+                        suggested_repair="Move it back on-canvas.",
+                    )
+                ],
+                confidence=0.9,
+            ),
+        ]
+    )
+
+    result = LumenQualityLoop(tools, author, reviewer).run("Move the badge")
+
+    # Budget exhausted; keep-best restored iteration 1 (accepted tier).
+    assert result["stop_reason"] == "max_iterations_reached"
+    assert result["ops_valid_through_iteration"] == 1
+    assert "accommodation_repair_forced" in trace_events(config, tools.run_id)
+
+    # The restored draft still carries the conflict — it must be REPORTED:
+    # re-measured on the final scene (clearance 0.0), never the stale [] from
+    # the discarded draft's detection, and no nudge is claimed.
+    accommodation = result["accommodation"]
+    assert accommodation is not None
+    assert len(accommodation["unresolved"]) == 1
+    assert accommodation["unresolved"][0]["neighbor"] == "organizer"
+    assert accommodation["unresolved"][0]["clearance"] == 0.0
+    assert accommodation["applied_nudges"] == []
