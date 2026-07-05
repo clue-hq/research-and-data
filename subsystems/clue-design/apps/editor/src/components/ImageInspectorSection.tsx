@@ -187,7 +187,7 @@ export function ImageInspectorSection({
       </div>
 
       <div className="field-row">
-        <label className="field">
+        <label className="field inline">
           <span>Fit</span>
           <select
             aria-label="Image fit"
@@ -356,7 +356,7 @@ function FocalField({
   onCommit: (value: number) => void;
 }) {
   return (
-    <label className="field">
+    <label className="field inline">
       <span>{label}</span>
       <input
         type="number"

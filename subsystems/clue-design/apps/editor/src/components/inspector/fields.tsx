@@ -10,15 +10,18 @@ export function DimensionModeSelect({
   label,
   dimension,
   disabled,
+  inline = false,
   onChange
 }: {
   label: string;
   dimension: Dimension;
   disabled: boolean;
+  /** Label-left / control-right row (moda Details anatomy) for short controls. */
+  inline?: boolean;
   onChange: (dimension: Dimension) => void;
 }) {
   return (
-    <label className="field">
+    <label className={inline ? "field inline" : "field"}>
       <span>{label}</span>
       <select
         value={dimension.kind}
@@ -77,16 +80,19 @@ export function TokenSelect({
   value,
   tokens,
   disabled = false,
+  inline = false,
   onChange
 }: {
   label: string;
   value: string;
   tokens?: string[];
   disabled?: boolean;
+  /** Label-left / control-right row (moda Details anatomy) for short controls. */
+  inline?: boolean;
   onChange: (token: string) => void;
 }) {
   return (
-    <label className="field">
+    <label className={inline ? "field inline" : "field"}>
       <span>{label}</span>
       <select value={value} disabled={disabled || !tokens?.length} onChange={(event) => onChange(event.target.value)}>
         <option value="">Concrete value</option>
@@ -107,6 +113,7 @@ export function NumberField({
   max,
   step = 1,
   disabled = false,
+  inline = false,
   onCommit
 }: {
   label: string;
@@ -115,10 +122,12 @@ export function NumberField({
   max?: number;
   step?: number;
   disabled?: boolean;
+  /** Label-left / control-right row (moda Details anatomy) for short controls. */
+  inline?: boolean;
   onCommit: (value: number) => void;
 }) {
   return (
-    <label className="field">
+    <label className={inline ? "field inline" : "field"}>
       <span>{label}</span>
       <input
         type="number"

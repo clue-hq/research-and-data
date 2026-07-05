@@ -149,7 +149,7 @@ export function ObjectSection({
           </div>
         </div>
         <SelectedObjectSummary model={selectionChrome} locked={selectedNode.locked} layoutManaged={layoutManaged} pinned={pinned} />
-        <label className="field span">
+        <label className="field inline span">
           <span>Name</span>
           <input
             value={selectedNode.name ?? ""}
@@ -163,39 +163,45 @@ export function ObjectSection({
           diagnostics={selectedDiagnostics}
           onSelectSubject={onSelectSubject}
         />
-        <div className="field-grid two">
+        <div className="field-grid">
           <NumberField
             label="X"
+            inline
             value={pinnedBox ? pinnedBox.x : selectedNode.transform.x}
             disabled={!directGeometryEditable}
             onCommit={(value) => emitPosition({ x: value })}
           />
           <NumberField
             label="Y"
+            inline
             value={pinnedBox ? pinnedBox.y : selectedNode.transform.y}
             disabled={!directGeometryEditable}
             onCommit={(value) => emitPosition({ y: value })}
           />
           <NumberField
             label="W"
+            inline
             value={pinnedBox ? pinnedBox.width : size.width}
             disabled={!directGeometryEditable}
             onCommit={(value) => emitExtent({ width: value })}
           />
           <NumberField
             label="H"
+            inline
             value={pinnedBox ? pinnedBox.height : size.height}
             disabled={!directGeometryEditable}
             onCommit={(value) => emitExtent({ height: value })}
           />
           <NumberField
             label="Rotate"
+            inline
             value={selectedNode.transform.rotation}
             disabled={!directGeometryEditable}
             onCommit={(value) => emitTransform({ rotation: value })}
           />
           <NumberField
             label="Opacity"
+            inline
             value={selectedNode.opacity}
             step={0.05}
             min={0}
