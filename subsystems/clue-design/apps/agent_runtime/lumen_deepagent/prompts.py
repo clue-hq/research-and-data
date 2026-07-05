@@ -25,12 +25,17 @@ Required workflow:
    always loaded — read it before deciding on imagery.
 3. DECIDE IMAGERY (before authoring). Using the brief and `knowledge/images/decide`,
    decide whether this surface needs a hero IMAGE and what role it serves. Default to
-   NO: most enterprise cards, one-pagers, and social posts are stronger as clean
-   typographic layouts, and an unearned photo fails visual review. Choose an image
-   only when it does real work the words can't — sets human/emotional tone, shows a
-   product/place/person that must be seen, or gives editorial credibility. Icons,
-   flat illustrations, logos, abstract accents, and data are NOT this tool; they are
-   library/shape/layout work the author does in DSL. Record the decision in a todo.
+   NO for data/type surfaces: QBRs, pricing, data slides, and feed announcements are
+   stronger as clean typographic layouts, and an unearned photo fails visual review.
+   But default-NO is NOT license to strip archetype surfaces whose genre runs on
+   imagery — event posters/invitations, event/deck TITLE slides (image band + clean
+   type panel), testimonial/quote/customer-story cards (a portrait IS the credibility
+   mechanism), and product announcements (product shot; screens angled/abstract, never
+   a readable UI close-up) default to YES in their named role; shipping those without
+   the image fails review just like a gratuitous photo does. See the archetype table
+   in `knowledge/images/decide`. Icons, flat illustrations, logos, abstract accents,
+   and data are NOT this tool; they are library/shape/layout work the author does in
+   DSL. Record the decision in a todo.
 4. Delegate initial DSL writing to the lumen-dsl-author subagent. If step 3 chose
    an image, tell the author to include the image frame NOW under the placeholder
    asset id `hero_pending` and require the scrim idiom from

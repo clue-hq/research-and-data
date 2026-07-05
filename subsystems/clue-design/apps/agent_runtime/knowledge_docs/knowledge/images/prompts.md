@@ -31,6 +31,11 @@ Write them as one or two natural sentences, not a comma list. Prose beats keywor
 - **No in-image text.** Models garble lettering, and all real copy comes from the
   design layer (it must be editable + on-brand). End every prompt with *"no text, no
   words, no letters, no logos, no watermarks."*
+- **No readable screens.** The trap version of in-image text: "show the product" makes
+  the model render a monitor/phone with a garbled fake UI — that fails review the same
+  way. For product-in-context shots, prompt the screen *away*: angled/side view,
+  distant, screen dimmed, or *"screen showing abstract soft-colored shapes"* — never a
+  legible UI close-up.
 - **Brand tone goes in `brand_notes`, not the prompt.** Pass palette + mood as
   `brand_notes` (e.g. `["deep navy + teal palette", "calm clinical confidence",
   "premium, uncluttered"]`). The model conditions on them; the prompt stays about the
