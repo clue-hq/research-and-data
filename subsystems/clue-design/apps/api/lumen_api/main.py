@@ -15,7 +15,17 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 from uuid import uuid4
 
-from fastapi import Depends, FastAPI, File, Form, HTTPException, Query, Request, UploadFile
+from fastapi import (
+    BackgroundTasks,
+    Depends,
+    FastAPI,
+    File,
+    Form,
+    HTTPException,
+    Query,
+    Request,
+    UploadFile,
+)
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 
@@ -32,6 +42,7 @@ from .dto import (
     brand_kit_validation_dto,
     diagnostic_views,
     diagnostics_response,
+    ingestion_job_dto,
     document_summary,
     document_created_dto,
     finalize_dto,
@@ -65,12 +76,16 @@ from .models import (
     GenerateAssetRequest,
     GenerateQrRequest,
     GenerateBrandKitRequest,
+    IngestWebsiteRequest,
     PreflightRequest,
     PreflightPreviewRequest,
     ReplaceSceneRequest,
     ValidateBrandKitRequest,
     ValidateDocumentBrandGovernanceRequest,
 )
+from lumen_ingestion.jobs import IngestionJobStore
+from lumen_ingestion.pipeline import run_website_ingestion
+
 from .observability import (
     REQUEST_ID_HEADER,
     artifact_summary,
@@ -367,6 +382,47 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
             brand_kit_summary(record)
             for record in repo.list_brand_kits(all_versions=all_versions)
         ]
+
+    # Ingestion routes are registered BEFORE GET /brand-kits/{brand_kit_id} so
+    # the literal "ingest" segment is not captured as a kit id (FastAPI matches
+    # routes in registration order).
+    @app.post("/brand-kits/ingest/website")
+    async def ingest_website(
+        payload: IngestWebsiteRequest,
+        background_tasks: BackgroundTasks,
+        repo: Repository = Depends(repository),
+    ) -> JsonObject:
+        guard = _resolve_guard_url()
+        try:
+            await guard(payload.url)
+        except Exception as error:  # CaptureError / ValueError from the guard
+            raise ingest_url_rejected(payload.url, error) from error
+
+        job = IngestionJobStore(repo.connection).create(
+            "website", payload.model_dump()
+        )
+        background_tasks.add_task(
+            run_website_ingestion,
+            str(app.state.database_path),
+            asset_store_root(),
+            job["job_id"],
+        )
+        return {"schema_version": 1, "job": ingestion_job_dto(job)}
+
+    @app.get("/brand-kits/ingest/{job_id}")
+    def get_ingestion_job(
+        job_id: str, repo: Repository = Depends(repository)
+    ) -> JsonObject:
+        job = IngestionJobStore(repo.connection).get(job_id)
+        if job is None:
+            raise HTTPException(
+                status_code=404,
+                detail={
+                    "code": "ingestion_job.not_found",
+                    "message": f"ingestion job {job_id} was not found",
+                },
+            )
+        return {"schema_version": 1, "job": ingestion_job_dto(job)}
 
     @app.get("/brand-kits/{brand_kit_id}")
     def get_latest_brand_kit(
@@ -2943,6 +2999,29 @@ def choose_effective_brand_mode_for_scene(
             values["medium"] = "digital"
 
     return {"values": values}
+
+
+def _resolve_guard_url():
+    """Resolve the capture SSRF guard lazily.
+
+    Agent A's ``lumen_ingestion.capture.net.guard_url`` is an async callable
+    that resolves DNS and rejects loopback/private/link-local/reserved
+    addresses, non-standard ports, userinfo, and non-http(s) schemes. It is
+    imported lazily so this module stays importable while the capture package
+    is being built; tests monkeypatch this resolver.
+    """
+    from lumen_ingestion.capture.net import guard_url
+
+    return guard_url
+
+
+def ingest_url_rejected(url: str, error: Exception) -> HTTPException:
+    code = getattr(error, "code", "LUMI0501")
+    message = getattr(error, "message", None) or str(error) or f"blocked url: {url}"
+    return HTTPException(
+        status_code=422,
+        detail={"code": code, "message": message},
+    )
 
 
 def core_http_error(error: CoreError) -> HTTPException:

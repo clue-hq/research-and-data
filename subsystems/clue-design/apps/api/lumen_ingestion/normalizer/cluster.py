@@ -11,10 +11,31 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from ..colorspace import hex_alpha, hex_to_oklab, oklab_distance, oklab_to_hex
+from ..colorspace import hex_alpha, hex_to_oklab, hex_to_rgb, oklab_distance, oklab_to_hex, rgb_to_hex
 from ..evidence import ColorEvidence
 
 _MERGE_DISTANCE = 0.03
+_MIN_ALPHA = 0.05
+
+
+def _composite(color: ColorEvidence) -> ColorEvidence:
+    """Flatten alpha to the color's SEEN value before clustering.
+
+    A hero pill at 20% alpha must not win surface.brand with its raw channel
+    values — role assignment reasons about what the page actually shows. Light
+    evidence composites over white, dark over black (the overwhelmingly common
+    page bases per theme; if the true base differs, the opaque swatch will
+    usually also exist as its own evidence and outweigh this one).
+    """
+    alpha = hex_alpha(color.value)
+    if alpha >= 1.0:
+        return color
+    base = (1.0, 1.0, 1.0) if color.theme == "light" else (0.0, 0.0, 0.0)
+    rgb = hex_to_rgb(color.value)
+    flattened = rgb_to_hex(
+        tuple(alpha * c + (1.0 - alpha) * b for c, b in zip(rgb, base))
+    )
+    return color.model_copy(update={"value": flattened})
 
 
 @dataclass
@@ -43,8 +64,9 @@ class _Accumulator:
 
 
 def cluster_colors(colors: list[ColorEvidence]) -> list[ColorCluster]:
-    light = [c for c in colors if c.theme == "light" and hex_alpha(c.value) > 0.0]
-    dark = [c for c in colors if c.theme == "dark" and hex_alpha(c.value) > 0.0]
+    usable = [_composite(c) for c in colors if hex_alpha(c.value) > _MIN_ALPHA]
+    light = [c for c in usable if c.theme == "light"]
+    dark = [c for c in usable if c.theme == "dark"]
     return _cluster_theme(light, "light") + _cluster_theme(dark, "dark")
 
 

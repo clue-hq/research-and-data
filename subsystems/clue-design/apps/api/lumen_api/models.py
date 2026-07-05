@@ -237,6 +237,13 @@ class ValidateDocumentBrandGovernanceRequest(BaseModel):
     strictness: Literal["advisory", "strict", "finalize"] = "strict"
 
 
+class IngestWebsiteRequest(BaseModel):
+    url: str
+    name: Optional[str] = None
+    brand_kit_id: Optional[str] = None
+    force_render: bool = False
+
+
 class BrandCompatibilityRequest(BaseModel):
     from_brand_kit: Optional[JsonObject] = None
     to_brand_kit: Optional[JsonObject] = None
