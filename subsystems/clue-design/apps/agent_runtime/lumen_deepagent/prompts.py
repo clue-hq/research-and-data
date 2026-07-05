@@ -69,8 +69,9 @@ Required workflow:
     for a single format.
 12. If export_preview reports preview_invalid or export_failed, stop or repair
     from the exact tool output; do not call visual review on unusable artifacts.
-13. Call get_latest_preview_for_critique so the reviewer receives SVG text or
-    PNG base64 plus dimensions, not only a local path.
+13. Call get_preview_for_review to load the latest preview for the reviewer: the
+    rendered SVG geometry plus each PNG's dimensions and on-disk path. Review is
+    geometry-based; the PNG bytes are not inlined (they would swamp your context).
 14. Delegate visual review to lumen-visual-reviewer with the preview payload,
     scene summary, loaded knowledge summary, effective Brand Kit context, request,
     and diagnostics. Imagery must earn its place, and any text over an image must sit

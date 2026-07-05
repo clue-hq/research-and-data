@@ -1527,12 +1527,38 @@ class LumenDesignTools:
         return json.dumps(payload, indent=2)
 
     def get_latest_preview_for_critique(self, max_svg_chars: int = 40000) -> str:
-        """Return the latest validated preview payload for visual review.
+        """Return the latest validated preview payload WITH the PNG base64 inlined.
 
-        SVG artifacts are returned as text because the model can inspect
-        geometry directly. PNG artifacts are returned as base64 so a
-        vision-capable provider adapter can turn them into an image message.
+        SVG artifacts are returned as text because the model can inspect geometry
+        directly. PNG artifacts are returned as base64 so a vision-capable adapter
+        can turn them into a real image message. This is the payload the typed
+        quality-loop consumes: it strips the base64 from the *text* prompt
+        (`compact_preview_payload`) and re-attaches it exactly once as a vision
+        block at the model boundary (`preview_image_blocks`), so it never piles up
+        in history. Do NOT register this directly as a DeepAgent coordinator tool —
+        the coordinator has no vision-block path, so an inlined base64 would sit in
+        its message history as dead weight (a single poster PNG's base64 approaches
+        the whole model context window). The coordinator uses `get_preview_for_review`.
         """
+        return self._latest_preview_payload(include_base64=True, max_svg_chars=max_svg_chars)
+
+    def get_preview_for_review(self, max_svg_chars: int = 20000) -> str:
+        """Coordinator-facing preview handoff for the visual-reviewer subagent.
+
+        Returns the rendered SVG geometry (capped) plus, for PNG artifacts, the
+        on-disk path and dimensions — NEVER the base64 bytes. In DeepAgent mode the
+        reviewer is a text-only subagent (its `task` interface carries a text
+        description, and a base64 string inside a tool result is plain text, never
+        vision), so it reviews from the SVG geometry and the coordinator's handoff;
+        inlining the PNG base64 would only bloat the coordinator's history — a
+        987KB poster PNG base64 tokenizes to nearly a whole 1M context window and
+        was the cause of the LUMV/context blowup on poster-sized briefs. The
+        rendered PNG stays on disk (`png_path`) for the offline imagery judge and
+        any filesystem read.
+        """
+        return self._latest_preview_payload(include_base64=False, max_svg_chars=max_svg_chars)
+
+    def _latest_preview_payload(self, *, include_base64: bool, max_svg_chars: int) -> str:
         latest_preview = self.latest_preview_bundle or self.latest_export_summary
         if not latest_preview:
             payload = {
@@ -1585,9 +1611,21 @@ class LumenDesignTools:
                 item["svg_text"] = text[:max_svg_chars]
                 item["truncated"] = len(text) > max_svg_chars
             elif artifact.get("format") == "png":
-                raw = path.read_bytes()
-                item["base64"] = base64.b64encode(raw).decode("ascii")
-                item["encoding"] = "base64"
+                if include_base64:
+                    raw = path.read_bytes()
+                    item["base64"] = base64.b64encode(raw).decode("ascii")
+                    item["encoding"] = "base64"
+                else:
+                    # Coordinator-facing: keep the on-disk render + dims, drop the
+                    # heavy base64 (it is never consumed as vision here and would
+                    # dominate the context window). dict(artifact) already carries
+                    # path/width/height/byte_len.
+                    item["png_path"] = str(path)
+                    item["base64_omitted"] = True
+                    item["note"] = (
+                        "rendered PNG kept on disk; base64 omitted to keep coordinator "
+                        "context small — review from svg geometry"
+                    )
             else:
                 content_errors.append(
                     f"unsupported critic payload format {artifact.get('format')}"

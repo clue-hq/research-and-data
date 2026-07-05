@@ -70,7 +70,7 @@ def create_lumen_design_agent(
             tools.preflight_design,
             tools.export_preview,
             tools.export_preview_bundle,
-            tools.get_latest_preview_for_critique,
+            tools.get_preview_for_review,
             tools.submit_visual_critique,
             tools.recommend_edit_surface,
             tools.create_repair_request,

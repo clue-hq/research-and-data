@@ -865,7 +865,7 @@ def test_deepagents_factory_wires_full_phase_a_tool_surface(tmp_path: Path, monk
         "preflight_design",
         "export_preview",
         "export_preview_bundle",
-        "get_latest_preview_for_critique",
+        "get_preview_for_review",
         "submit_visual_critique",
         "recommend_edit_surface",
         "create_repair_request",
@@ -1934,6 +1934,44 @@ def test_preview_bundle_stores_canonical_svg_and_png_critic_preview(
     assert critic_payload["artifacts"][0]["svg_text"].startswith("<svg")
     assert critic_payload["artifacts"][1]["encoding"] == "base64"
     assert (config.trace_dir / tools.run_id / "iterations" / "001" / "preview_bundle.json").exists()
+
+
+def test_coordinator_preview_omits_png_base64_but_keeps_svg_and_dims(
+    tmp_path: Path, monkeypatch
+):
+    # Context-blowup regression: the DeepAgent coordinator registers
+    # get_preview_for_review (NOT get_latest_preview_for_critique). A poster PNG's
+    # base64 tokenizes to ~a whole 1M context window and was the cause of the
+    # coordinator exceeding the provider cap; the coordinator has no vision-block
+    # path, so the bytes are pure bloat. The reviewer reviews from svg geometry;
+    # the render stays on disk for the offline judge.
+    monkeypatch.setattr("lumen_deepagent.tools.CoreClient", FakePngCoreClient)
+    base = runtime_config(tmp_path)
+    config = AgentRuntimeConfig(
+        repo_root=base.repo_root, model=base.model,
+        max_iterations=base.max_iterations, preview_format="png", trace_dir=base.trace_dir,
+    )
+    tools = LumenDesignTools(config, "Create a square ad")
+    tools.compile_dsl_block("page page_test")
+    tools.export_preview_bundle()
+
+    review = json.loads(tools.get_preview_for_review())
+    png = [a for a in review["artifacts"] if a["format"] == "png"][0]
+    svg = [a for a in review["artifacts"] if a["format"] == "svg"][0]
+    # No encoded bytes on any artifact in the coordinator-facing payload
+    # (checked on keys, so the explanatory "base64_omitted" flag doesn't count).
+    assert png.get("base64_omitted") is True
+    assert all("base64" not in a and a.get("encoding") is None for a in review["artifacts"])
+    # The render + dims survive so the coordinator/judge can still find the pixels.
+    assert png["png_path"] and Path(png["png_path"]).exists()
+    assert png.get("width") and png.get("height")
+    # SVG geometry (what the reviewer actually reads) is still present.
+    assert svg["svg_text"].startswith("<svg")
+
+    # The full method is unchanged for the vision-capable quality-loop consumer.
+    full = json.loads(tools.get_latest_preview_for_critique())
+    full_png = [a for a in full["artifacts"] if a["format"] == "png"][0]
+    assert full_png["encoding"] == "base64" and full_png["base64"]
 
 
 def test_debug_preview_bundle_writes_artifacts_without_exposing_critic_payload(
