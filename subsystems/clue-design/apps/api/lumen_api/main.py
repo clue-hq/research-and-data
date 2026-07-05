@@ -80,9 +80,12 @@ from .models import (
     PreflightRequest,
     PreflightPreviewRequest,
     ReplaceSceneRequest,
+    SetAssetDescriptionRequest,
+    SetBrandKitApprovalRequest,
     ValidateBrandKitRequest,
     ValidateDocumentBrandGovernanceRequest,
 )
+from lumen_ingestion.describe import DescriptionStore
 from lumen_ingestion.jobs import IngestionJobStore
 from lumen_ingestion.pipeline import (
     run_asset_ingestion,
@@ -575,6 +578,19 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
         )
         return {"schema_version": 1, "job": ingestion_job_dto(job)}
 
+    @app.get("/brand-kits/ingest")
+    def list_ingestion_jobs(
+        repo: Repository = Depends(repository),
+    ) -> JsonObject:
+        """Most-recent 50 ingestion jobs (public dto — no request/evidence
+        bodies). Registered adjacent to the param route; the literal segment
+        only matches when the path has no trailing job id."""
+        jobs = IngestionJobStore(repo.connection).list_recent(50)
+        return {
+            "schema_version": 1,
+            "jobs": [ingestion_job_dto(job) for job in jobs],
+        }
+
     @app.get("/brand-kits/ingest/{job_id}")
     def get_ingestion_job(
         job_id: str, repo: Repository = Depends(repository)
@@ -601,6 +617,26 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
         brand_kit_id: str, version: int, repo: Repository = Depends(repository)
     ) -> JsonObject:
         return brand_kit_detail_dto(repo.require_brand_kit(brand_kit_id, version))
+
+    @app.post("/brand-kits/{brand_kit_id}/approval")
+    def set_brand_kit_approval(
+        brand_kit_id: str,
+        payload: SetBrandKitApprovalRequest,
+        repo: Repository = Depends(repository),
+    ) -> JsonObject:
+        """Flip the approval state on the latest version of a kit (approve /
+        revert to draft). Unknown kit → 404; invalid status → 422 (model)."""
+        record = repo.update_brand_kit_approval(
+            brand_kit_id, payload.approval_status
+        )
+        log_event(
+            api_logger,
+            logging.INFO,
+            "brand_kit_approval_set",
+            brand_kit_id=brand_kit_id,
+            approval_status=payload.approval_status,
+        )
+        return brand_kit_detail_dto(record)
 
     @app.get("/brand-compatibility-reports/{report_id}")
     def get_brand_compatibility_report(
@@ -2650,6 +2686,46 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
             return False
         path.unlink()
         return True
+
+    # GET /assets/descriptions is registered BEFORE GET /assets/{asset_id} so
+    # the literal "descriptions" segment is not captured as an asset id (FastAPI
+    # matches routes in registration order at the same path depth).
+    @app.get("/assets/descriptions")
+    def get_asset_descriptions(
+        asset_ids: str = Query(..., description="comma-separated asset ids"),
+        repo: Repository = Depends(repository),
+    ) -> JsonObject:
+        ids = [ident for ident in (asset_ids or "").split(",") if ident.strip()]
+        ids = [ident.strip() for ident in ids][:200]
+        store = DescriptionStore(repo.connection)
+        return {
+            "schema_version": 1,
+            "descriptions": store.get_many(ids),
+        }
+
+    @app.put("/assets/{asset_id}/description")
+    def set_asset_description(
+        asset_id: str,
+        payload: SetAssetDescriptionRequest,
+        repo: Repository = Depends(repository),
+    ) -> JsonObject:
+        """Human-author an asset's library metadata (partial merge with the
+        existing row). 404 only when the asset RECORD doesn't exist."""
+        repo.require_asset_record(asset_id)
+        store = DescriptionStore(repo.connection)
+        existing = store.get_many([asset_id]).get(asset_id) or {}
+
+        def _merge(key: str, incoming: Optional[Any]) -> Any:
+            return incoming if incoming is not None else existing.get(key)
+
+        store.put_human(
+            asset_id,
+            title=_merge("title", payload.title),
+            description=_merge("description", payload.description),
+            usage=_merge("usage", payload.usage),
+            tags=payload.tags if payload.tags is not None else list(existing.get("tags") or []),
+        )
+        return store.get_many([asset_id])[asset_id]
 
     @app.get("/assets/{asset_id}")
     def get_asset(

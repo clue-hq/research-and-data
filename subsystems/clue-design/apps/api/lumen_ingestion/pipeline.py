@@ -66,6 +66,41 @@ def _core_client() -> Any:
     return CoreClient()
 
 
+class _RecordingCore:
+    """Proxy over CoreClient that captures ingest_asset records.
+
+    The capture layer writes bytes into the asset STORE via core.ingest_asset
+    but the /assets/{id} routes serve from the DB asset RECORDS (the upload
+    route persists both). Wrapping the client here lets each pipeline persist
+    the records afterward without threading a sink through the capture layer.
+    ingest_asset may run in worker threads (list.append is GIL-atomic);
+    persistence happens on the pipeline thread via `persist_records`.
+    """
+
+    def __init__(self, inner: Any) -> None:
+        self._inner = inner
+        self.records: list[JsonObject] = []
+
+    def ingest_asset(self, *args: Any, **kwargs: Any) -> Any:
+        response = self._inner.ingest_asset(*args, **kwargs)
+        record = ((response or {}).get("asset") or {}).get("record") or {}
+        if record.get("id"):
+            self.records.append(record)
+        return response
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._inner, name)
+
+    def persist_records(self, repo: Repository) -> None:
+        seen: set[str] = set()
+        for record in self.records:
+            asset_id = str(record["id"])
+            if asset_id in seen:
+                continue
+            seen.add(asset_id)
+            repo.create_asset_record(record)
+
+
 def _capture_diagnostics(outcome: Any) -> list[JsonObject]:
     diagnostics = getattr(outcome, "diagnostics", None) or []
     return [dict(d) for d in diagnostics]
@@ -248,7 +283,7 @@ def run_website_ingestion(
     try:
         store = IngestionJobStore(connection)
         repo = Repository(connection)
-        core = _core_client()
+        core = _RecordingCore(_core_client())
 
         def work(reporter: StageReporter) -> "tuple[str, int, Optional[str]]":
             return _ingest(
@@ -305,6 +340,10 @@ def _ingest(
         describer=describer,
         apply_descriptions=apply_descriptions,
     )
+
+    # Persist DB asset records for everything the capture layer ingested so
+    # /assets/{id}/bytes|thumbnail and the library can serve them.
+    getattr(core, "persist_records", lambda _repo: None)(repo)
 
     reporter("Preparing your brand kit…", 0.85)
 
@@ -434,7 +473,7 @@ def run_pdf_ingestion(
     try:
         store = IngestionJobStore(connection)
         repo = Repository(connection)
-        core = _core_client()
+        core = _RecordingCore(_core_client())
 
         def work(reporter: StageReporter) -> "tuple[str, int, Optional[str]]":
             return _ingest_pdf(
@@ -507,6 +546,10 @@ def _ingest_pdf(
         describer=describer,
         apply_descriptions=apply_descriptions,
     )
+
+    # Persist DB asset records for everything the capture layer ingested so
+    # /assets/{id}/bytes|thumbnail and the library can serve them.
+    getattr(core, "persist_records", lambda _repo: None)(repo)
 
     reporter("Preparing your brand kit…", 0.85)
 
@@ -648,7 +691,7 @@ def run_asset_ingestion(
     try:
         store = IngestionJobStore(connection)
         repo = Repository(connection)
-        core = _core_client()
+        core = _RecordingCore(_core_client())
 
         def work(reporter: StageReporter) -> "tuple[str, int, Optional[str]]":
             return _ingest_assets(
@@ -736,6 +779,10 @@ def _ingest_assets(
         describer=describer,
         apply_descriptions=apply_descriptions,
     )
+
+    # Persist DB asset records for everything the capture layer ingested so
+    # /assets/{id}/bytes|thumbnail and the library can serve them.
+    getattr(core, "persist_records", lambda _repo: None)(repo)
 
     reporter("Preparing your brand kit…", 0.85)
 

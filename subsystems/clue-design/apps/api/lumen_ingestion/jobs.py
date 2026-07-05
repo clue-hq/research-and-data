@@ -105,6 +105,18 @@ class IngestionJobStore:
             raise KeyError(f"ingestion_job {job_id} was not found")
         return job
 
+    def list_recent(self, limit: int = 50) -> list[JsonObject]:
+        """Most-recent jobs first (by created_at, then job_id as a tiebreak)."""
+        rows = self.connection.execute(
+            """
+            SELECT * FROM ingestion_jobs
+            ORDER BY created_at DESC, job_id DESC
+            LIMIT ?
+            """,
+            (limit,),
+        ).fetchall()
+        return [_job_from_row(row) for row in rows]
+
     def set_running(self, job_id: str) -> JsonObject:
         self.connection.execute(
             """

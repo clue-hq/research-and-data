@@ -244,6 +244,17 @@ class IngestWebsiteRequest(BaseModel):
     force_render: bool = False
 
 
+class SetBrandKitApprovalRequest(BaseModel):
+    approval_status: Literal["approved", "draft"]
+
+
+class SetAssetDescriptionRequest(BaseModel):
+    title: Optional[str] = None
+    description: Optional[str] = None
+    usage: Optional[str] = None
+    tags: Optional[List[str]] = None
+
+
 class BrandCompatibilityRequest(BaseModel):
     from_brand_kit: Optional[JsonObject] = None
     to_brand_kit: Optional[JsonObject] = None

@@ -1,0 +1,534 @@
+/* Clue brand-section component vocabulary. Every rule uses tokens from tokens.css —
+ * NO literal colors, NO box-shadows (focus ring exempt), hairlines + tone for depth
+ * (design/DESIGN.md §1, §4, §6, §8). Scoped under .brand-app. */
+
+.brand-app {
+  min-height: 100vh;
+  background: var(--bg-app);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  font-size: var(--text-body-size);
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+.brand-app *:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+  border-radius: var(--radius-xs);
+}
+
+/* --- topbar (DESIGN.md §8.1) -------------------------------------------- */
+.brand-topbar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-lg);
+  height: 56px;
+  padding: 0 var(--space-lg);
+  background: var(--bg-app);
+  border-bottom: 1px solid var(--border-default);
+  position: sticky;
+  top: 0;
+  z-index: 20;
+}
+.brand-wordmark {
+  font-weight: 700;
+  font-size: var(--text-body-lg);
+  color: var(--text-primary);
+  text-decoration: none;
+  letter-spacing: -0.01em;
+}
+.brand-wordmark .dot { color: var(--accent); }
+.brand-topbar nav { display: flex; gap: var(--space-md); flex: 1; }
+.brand-topbar nav a {
+  color: var(--text-muted);
+  text-decoration: none;
+  font-size: var(--text-body-size);
+  transition: color var(--duration) var(--ease-out);
+}
+.brand-topbar nav a:hover, .brand-topbar nav a[data-active="true"] { color: var(--text-primary); }
+.brand-main { max-width: 1120px; margin: 0 auto; padding: var(--space-xl) var(--space-lg) var(--space-section); }
+
+/* --- buttons: ink pill primary, ghost secondary (DESIGN.md §4) ----------- */
+.brand-app .btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
+  border: 1px solid transparent;
+  border-radius: var(--radius-pill);
+  padding: 8px 16px;
+  font: inherit;
+  font-size: var(--text-body-size);
+  cursor: pointer;
+  background: none;
+  color: var(--text-primary);
+  transition: background var(--duration) var(--ease-out), color var(--duration) var(--ease-out),
+    border-color var(--duration) var(--ease-out);
+  text-decoration: none;
+}
+.brand-app .btn-primary { background: var(--btn-primary-bg); color: var(--btn-primary-text); }
+.brand-app .btn-primary:hover:not(:disabled) { background: var(--btn-primary-bg-hover); }
+.brand-app .btn-ghost { border-color: var(--btn-ghost-border); }
+.brand-app .btn-ghost:hover:not(:disabled) { background: var(--bg-inset); border-color: var(--ink); }
+.brand-app .btn-quiet { color: var(--text-muted); padding: 6px 10px; }
+.brand-app .btn-quiet:hover:not(:disabled) { color: var(--text-primary); }
+.brand-app .btn-danger { border-color: var(--status-error); color: var(--status-error); }
+.brand-app .btn-danger:hover:not(:disabled) { background: var(--status-error-wash); }
+.brand-app .btn-sm { padding: 5px 12px; font-size: var(--text-body-sm); }
+.brand-app .btn:disabled { opacity: 0.45; cursor: default; }
+
+/* --- cards: tone, not borders or shadows (DESIGN.md §8.4) ----------------- */
+.brand-card {
+  background: var(--bg-card);
+  border-radius: var(--radius-lg);
+  padding: var(--space-lg);
+  border: 1px solid transparent;
+  transition: background var(--duration) var(--ease-out), border-color var(--duration) var(--ease-out);
+}
+.brand-card.is-clickable { cursor: pointer; text-decoration: none; color: inherit; display: block; }
+.brand-card.is-clickable:hover { background: var(--bg-chip); border-color: var(--border-default); }
+
+/* --- chips + pills (DESIGN.md §8.5) --------------------------------------- */
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--bg-chip);
+  border-radius: var(--radius-sm);
+  padding: 3px 10px;
+  font-size: var(--text-body-sm);
+  font-weight: 500;
+  color: var(--text-body);
+  border: 1px solid transparent;
+}
+.chip.is-selected { background: var(--bg-card-04); color: var(--text-primary); }
+.chip.is-uppercase {
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  font-size: var(--text-caption);
+  font-weight: 600;
+}
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border-radius: var(--radius-pill);
+  padding: 2px 10px;
+  font-size: var(--text-body-sm);
+  font-weight: 500;
+  background: var(--bg-chip);
+  color: var(--text-muted);
+}
+.status-pill.is-approved { background: var(--status-success-wash); color: var(--status-success); }
+.status-pill.is-draft { background: var(--accent-wash); color: var(--accent-pressed); }
+.status-pill.is-error { background: var(--status-error-wash); color: var(--status-error); }
+
+/* --- type roles (DESIGN.md §5.3-5.4) --------------------------------------- */
+.display { font-size: var(--text-display); font-weight: 700; line-height: 1.05; letter-spacing: -0.02em; }
+.headline { font-size: var(--text-headline); font-weight: 700; line-height: 1.15; letter-spacing: -0.01em; }
+.title { font-size: var(--text-title); font-weight: 700; line-height: 1.25; }
+.subtitle { font-size: var(--text-subtitle); font-weight: 400; line-height: 1.3; color: var(--text-muted); }
+.eyebrow {
+  font-size: var(--text-caption);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--text-muted);
+}
+.caption { font-size: var(--text-caption); color: var(--text-disabled); }
+.mono { font-family: var(--font-mono); font-size: var(--text-mono-size); }
+
+/* --- sections + hairline rows (DESIGN.md §8.6, §8.10) ---------------------- */
+.brand-section { margin-top: var(--space-2xl); }
+.brand-section > .brand-section-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: var(--space-md);
+}
+.hairline-list { list-style: none; margin: 0; padding: 0; }
+.hairline-list > li {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  padding: var(--space-sm) 0;
+  border-bottom: 1px solid var(--border-default);
+}
+.hairline-list > li:last-child { border-bottom: none; }
+
+/* --- forms ------------------------------------------------------------------ */
+.brand-app input[type="text"], .brand-app input[type="url"], .brand-app input[type="search"],
+.brand-app textarea, .brand-app select {
+  font: inherit;
+  color: var(--text-primary);
+  background: var(--bg-white);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  padding: 8px 12px;
+  transition: border-color var(--duration) var(--ease-out);
+}
+.brand-app input:hover, .brand-app textarea:hover, .brand-app select:hover { border-color: var(--border-strong); }
+.brand-app input::placeholder, .brand-app textarea::placeholder { color: var(--text-disabled); }
+.field { display: flex; flex-direction: column; gap: 6px; }
+.field > .field-label { font-size: var(--text-body-sm); font-weight: 500; color: var(--text-muted); }
+
+/* --- swatches (kit colorways) ------------------------------------------------ */
+.swatch {
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-default);
+  flex: none;
+}
+.swatch.is-large { width: 40px; height: 40px; border-radius: var(--radius-md); }
+.ramp-row { display: flex; gap: 4px; }
+.ramp-row .swatch { border-radius: var(--radius-xs); width: 24px; height: 24px; }
+
+/* --- agent/status dots -------------------------------------------------------- */
+.dot { width: 8px; height: 8px; border-radius: var(--radius-pill); flex: none; }
+
+/* --- tables --------------------------------------------------------------------- */
+.brand-table { width: 100%; border-collapse: collapse; font-size: var(--text-body-sm); }
+.brand-table th {
+  text-align: left;
+  font-weight: 500;
+  color: var(--text-muted);
+  padding: var(--space-xs) var(--space-sm);
+  border-bottom: 1px solid var(--border-strong);
+}
+.brand-table td { padding: var(--space-xs) var(--space-sm); border-bottom: 1px solid var(--border-default); }
+
+/* --- diagnostics --------------------------------------------------------------- */
+.diag-list { list-style: none; margin: 0; padding: 0; font-size: var(--text-body-sm); }
+.diag-list > li { display: flex; gap: var(--space-sm); padding: 6px 0; border-bottom: 1px solid var(--border-soft); }
+.diag-list .diag-code { font-family: var(--font-mono); font-size: var(--text-caption); color: var(--text-disabled); min-width: 72px; }
+.diag-list > li.is-warning .diag-code { color: var(--accent-pressed); }
+.diag-list > li.is-error .diag-code { color: var(--status-error); }
+
+/* --- ingest progress (moda-style stages, Cursor skin) ---------------------------- */
+.progress-track { height: 4px; background: var(--bg-chip); border-radius: var(--radius-pill); overflow: hidden; }
+.progress-fill {
+  height: 100%;
+  background: var(--ink);
+  border-radius: var(--radius-pill);
+  transition: width var(--duration-slow) var(--ease-out);
+}
+.stage-line { color: var(--text-muted); font-size: var(--text-body-size); }
+
+/* --- dropzone ---------------------------------------------------------------------- */
+.dropzone {
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-lg);
+  padding: var(--space-xl);
+  text-align: center;
+  color: var(--text-muted);
+  background: var(--bg-card-01);
+  transition: background var(--duration) var(--ease-out), border-color var(--duration) var(--ease-out);
+}
+.dropzone.is-active, .dropzone:hover { background: var(--bg-chip); border-color: var(--ink-60); }
+
+/* --- lightbox (asset detail) ---------------------------------------------------------- */
+.lightbox-overlay {
+  position: fixed;
+  inset: 0;
+  background: var(--ink-60);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 50;
+}
+.lightbox-panel {
+  background: var(--bg-app);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border-default);
+  width: min(960px, calc(100vw - 48px));
+  max-height: calc(100vh - 48px);
+  display: flex;
+  overflow: hidden;
+}
+
+/* --- misc grids -------------------------------------------------------------------------- */
+.grid-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: var(--space-md); }
+.asset-thumb {
+  background: var(--bg-card);
+  border-radius: var(--radius-md);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  aspect-ratio: 4 / 3;
+}
+.asset-thumb img { max-width: 100%; max-height: 100%; object-fit: contain; }
+
+/* --- asset library (ploy anatomy, Cursor skin) — Agent C slice 4 ----------------------- */
+.lib-shell { display: grid; grid-template-columns: 200px 1fr; gap: var(--space-xl); align-items: start; margin-top: var(--space-lg); }
+.lib-sidebar { display: flex; flex-direction: column; gap: var(--space-xs); }
+.brand-app .lib-facet {
+  justify-content: space-between;
+  width: 100%;
+  cursor: pointer;
+  border: 1px solid transparent;
+  background: none;
+  font: inherit;
+  color: var(--text-body);
+  text-align: left;
+}
+.brand-app .lib-facet:hover { background: var(--bg-chip); }
+.brand-app .lib-facet.is-selected { background: var(--bg-card-04); color: var(--text-primary); }
+.lib-facet-count { color: var(--text-disabled); }
+
+.lib-content { min-width: 0; }
+.lib-toolbar { display: flex; align-items: flex-end; justify-content: space-between; gap: var(--space-md); margin-bottom: var(--space-lg); }
+.lib-search { flex: 1; max-width: 320px; }
+.lib-view-toggle { display: inline-flex; gap: 4px; background: var(--bg-card); border-radius: var(--radius-pill); padding: 3px; }
+.brand-app .lib-view-toggle .btn.is-selected { background: var(--bg-card-04); color: var(--text-primary); }
+
+.brand-app .lib-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+  align-items: flex-start;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  text-align: left;
+  color: inherit;
+}
+.lib-card .asset-thumb { width: 100%; }
+.lib-card-title { color: var(--text-primary); }
+
+.lib-table-row { cursor: pointer; }
+.lib-table-row:hover { background: var(--bg-chip); }
+.lib-table-thumb { width: 48px; }
+.lib-table-thumb-cell {
+  display: flex;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-xs);
+  overflow: hidden;
+  background: var(--bg-card);
+}
+.lib-table-thumb-cell img { width: 100%; height: 100%; object-fit: contain; }
+
+/* --- asset detail lightbox (ploy detail anatomy) --------------------------------------- */
+.lib-lightbox-preview {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-card);
+  padding: var(--space-lg);
+  min-width: 0;
+}
+.lib-lightbox-preview img { max-width: 100%; max-height: calc(100vh - 96px); object-fit: contain; }
+.lib-lightbox-meta {
+  width: 320px;
+  flex: none;
+  border-left: 1px solid var(--border-default);
+  padding: var(--space-lg);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+}
+.lib-lightbox-meta-head { display: flex; align-items: baseline; gap: var(--space-xs); }
+.lib-lightbox-close { margin-left: auto; }
+
+.lib-detail-row { display: flex; flex-direction: column; gap: 4px; }
+.lib-detail-row-head { display: flex; align-items: center; justify-content: space-between; }
+.lib-detail-value { margin: 0; font-size: var(--text-body-size); color: var(--text-body); }
+.lib-detail-edit { display: flex; flex-direction: column; gap: var(--space-xs); }
+.lib-detail-edit textarea { width: 100%; resize: vertical; }
+.lib-detail-edit-actions { display: flex; gap: var(--space-xs); }
+
+.lib-detail-facts {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 4px var(--space-md);
+  margin: 0;
+  padding-top: var(--space-sm);
+  border-top: 1px solid var(--border-default);
+}
+.lib-detail-facts dt { align-self: center; }
+.lib-detail-facts dd { margin: 0; font-size: var(--text-body-sm); color: var(--text-body); }
+.lib-detail-tags { display: flex; flex-wrap: wrap; gap: var(--space-xs); }
+
+/* --- ingest surface (three intake paths + moda-style progress) — Agent C slice 4 ------- */
+.ingest-shell { margin-top: var(--space-lg); }
+.ingest-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: var(--space-md); }
+.ingest-card { display: flex; flex-direction: column; gap: var(--space-sm); }
+.ingest-card-title { font-size: var(--text-subtitle); }
+.ingest-card-desc { color: var(--text-muted); }
+.ingest-form { display: flex; flex-direction: column; gap: var(--space-sm); }
+.ingest-dropzone { display: flex; flex-direction: column; gap: var(--space-xs); cursor: pointer; }
+.ingest-dropzone input[type="file"] { cursor: pointer; }
+
+.ingest-progress { display: flex; flex-direction: column; gap: var(--space-xs); }
+.ingest-result { display: flex; align-items: center; gap: var(--space-sm); flex-wrap: wrap; }
+
+.ingest-recent > li { flex-wrap: wrap; }
+.ingest-recent-stage { color: var(--text-body); flex: 1; }
+
+@media (prefers-reduced-motion: reduce) {
+  .brand-app * { transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; }
+}
+
+/* ===========================================================================
+ * Kit pages (Agent B) — list + detail/review. Layout-only additions; every
+ * value is a token from tokens.css. Prefixed `.kit-`.
+ * ========================================================================= */
+
+/* --- shared page chrome --------------------------------------------------- */
+.kit-page-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--space-lg);
+  margin-bottom: var(--space-xl);
+}
+.kit-page-head .display { margin: var(--space-xs) 0 0; }
+.kit-loading { padding: var(--space-lg) 0; }
+.kit-inline-error { margin: var(--space-sm) 0; }
+
+/* --- kit list ------------------------------------------------------------- */
+.kit-list-grid { grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); }
+.kit-list-card { display: flex; flex-direction: column; gap: var(--space-sm); }
+.kit-card-head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-sm); }
+.kit-card-name { line-height: 1.2; }
+.kit-pill-row { display: flex; flex-wrap: wrap; gap: var(--space-xs); }
+.kit-card-desc {
+  margin: 0;
+  color: var(--text-muted);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.kit-card-meta { margin: 0; }
+.kit-empty {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+  align-items: center;
+  text-decoration: none;
+  color: var(--text-muted);
+}
+.kit-empty .title { color: var(--text-primary); }
+
+/* --- detail: identity header --------------------------------------------- */
+.kit-identity { display: flex; flex-direction: column; gap: var(--space-sm); }
+.kit-identity-name { margin: 0; }
+.kit-identity-source { margin: 0; }
+.kit-identity-desc { margin: 0; font-size: var(--text-body-lg); color: var(--text-muted); max-width: 60ch; }
+.kit-action-row { display: flex; align-items: center; gap: var(--space-sm); flex-wrap: wrap; margin-top: var(--space-xs); }
+
+/* --- detail: colors ------------------------------------------------------- */
+.kit-colorway-grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-md); }
+.kit-colorway-card { display: flex; flex-direction: column; gap: var(--space-md); }
+.kit-colorway-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-sm); }
+.kit-colorway-group { display: flex; flex-direction: column; gap: var(--space-xs); }
+.kit-swatch-row { display: flex; align-items: center; gap: var(--space-sm); }
+.kit-swatch-role { flex: 1; color: var(--text-body); font-size: var(--text-body-sm); }
+.kit-swatch-hex { color: var(--text-muted); }
+.kit-ramps { display: flex; flex-direction: column; gap: var(--space-md); margin-top: var(--space-lg); }
+.kit-ramp { display: flex; flex-direction: column; gap: var(--space-xs); }
+.kit-extras { margin-top: var(--space-lg); display: flex; flex-direction: column; gap: var(--space-xs); }
+.kit-extra-chips { display: flex; flex-wrap: wrap; gap: var(--space-xs); }
+
+/* --- detail: typography --------------------------------------------------- */
+.kit-font-grid { grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); }
+.kit-font-card { display: flex; flex-direction: column; gap: var(--space-md); }
+.kit-font-specimen { margin: 0; font-size: var(--text-headline); line-height: 1.1; color: var(--text-primary); }
+.kit-font-warning { display: flex; flex-direction: column; gap: var(--space-xs); }
+.kit-font-suggestions { display: flex; flex-wrap: wrap; gap: var(--space-xs); }
+.kit-type-ramp { margin-top: var(--space-lg); }
+
+/* --- detail: logos + images ---------------------------------------------- */
+.kit-logo-group { display: flex; flex-direction: column; gap: var(--space-xs); margin-top: var(--space-md); }
+.kit-logo-cell { display: flex; flex-direction: column; gap: var(--space-xs); align-items: flex-start; }
+.kit-image-cell { display: flex; flex-direction: column; gap: var(--space-xs); }
+.kit-image-title { margin: 0; font-size: var(--text-body-size); color: var(--text-primary); }
+.kit-image-desc {
+  margin: 0;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* --- detail: voice + rules ------------------------------------------------ */
+.kit-tone-chips { display: flex; flex-wrap: wrap; gap: var(--space-xs); margin-bottom: var(--space-md); }
+.kit-ruleset { display: flex; flex-direction: column; gap: var(--space-xs); margin-top: var(--space-md); }
+.kit-rule-list > li { align-items: baseline; }
+.kit-dont-chip {
+  font-family: var(--font-mono);
+  font-size: var(--text-caption);
+  color: var(--status-error);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  min-width: 48px;
+}
+
+/* --- detail: ingestion report -------------------------------------------- */
+.kit-ingestion-card { background: var(--bg-card-01); display: flex; flex-direction: column; gap: var(--space-md); }
+.kit-stats-line { margin: 0; color: var(--text-muted); }
+.kit-gap-chips { display: flex; flex-wrap: wrap; gap: var(--space-xs); }
+.kit-role-value { display: inline-flex; align-items: center; gap: var(--space-xs); }
+.kit-role-pointer {
+  max-width: 240px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: inline-block;
+  vertical-align: bottom;
+}
+
+/* --- detail: diagnostics -------------------------------------------------- */
+.kit-diag-list { margin-top: var(--space-sm); }
+
+@media (max-width: 720px) {
+  .kit-colorway-grid { grid-template-columns: 1fr; }
+}
+
+/* --- taste-review fixes (orchestrator) --------------------------------------- */
+/* Kit list card palette strip — the card's identity at a glance. */
+.kit-card-palette { display: flex; gap: 3px; margin-bottom: var(--space-sm); }
+.kit-card-palette > span {
+  height: 20px;
+  flex: 1;
+  border-radius: var(--radius-xs);
+  border: 1px solid var(--border-soft);
+}
+
+/* Colorway cards: card titles sit below section titles in the hierarchy. */
+.kit-colorway-title { font-size: var(--text-body-lg); font-weight: 600; }
+/* The dark card paints itself with kit data (inline bg/color); its muted
+ * descendants must inherit that ink instead of the app's, softened by opacity
+ * so no literal colors enter the stylesheet. */
+.kit-colorway-card.is-dark .eyebrow,
+.kit-colorway-card.is-dark .kit-swatch-hex,
+.kit-colorway-card.is-dark .caption { color: inherit; opacity: 0.6; }
+.kit-colorway-card.is-dark .kit-swatch-role { color: inherit; }
+.kit-colorway-card.is-dark .status-pill.kit-colorway-basis {
+  background: transparent;
+  border: 1px solid currentColor;
+  color: inherit;
+  opacity: 0.75;
+}
+.kit-colorway-card.is-dark .swatch { border-color: currentColor; }
+
+/* Ingest: pills never stretch full width; native file inputs stay hidden
+ * behind the dropzone affordance. */
+.ingest-form .btn { align-self: flex-start; }
+.ingest-dropzone input[type="file"] { display: none; }
+.ingest-dropzone { display: flex; flex-direction: column; align-items: center; gap: var(--space-xs); cursor: pointer; }
+.ingest-choose { pointer-events: none; }
+
+/* Library overflow guard: unbroken ingested filenames must wrap, never widen
+ * the page (the horizontal-scroll void found in the taste review). */
+.lib-card, .lib-card-title, .lib-card .caption, .brand-table td { overflow-wrap: anywhere; }
+.lib-card { min-width: 0; }
+.lib-card-title { max-width: 100%; }
+.grid-cards { grid-auto-rows: min-content; }
+.grid-cards > * { min-width: 0; }

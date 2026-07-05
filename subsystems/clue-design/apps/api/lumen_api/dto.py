@@ -75,6 +75,7 @@ def brand_kit_detail_dto(record: JsonObject) -> JsonObject:
         "schema_version": DTO_SCHEMA_VERSION,
         "brand_kit": brand_kit_summary(record),
         "brand_kit_json": record["brand_kit"],
+        "brand_summary": record.get("brand_summary") or {},
         "diagnostics": diagnostic_views(record.get("diagnostics", [])),
     }
 
