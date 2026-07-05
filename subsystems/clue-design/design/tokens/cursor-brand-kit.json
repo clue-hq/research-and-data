@@ -1,0 +1,2579 @@
+{
+ "approval_status": "draft",
+ "assets": {
+  "fonts": {
+   "brand": {
+    "faces": [
+     {
+      "asset_id": null,
+      "source_url": "https://cursor.com/media/CursorGothic_Regular-s.p.05-84umc_47y9.woff2?dpl=dpl_HH6a5prQZrH8WHpwyEWXTDfK8RBx",
+      "style": "normal",
+      "weight": 400
+     },
+     {
+      "asset_id": null,
+      "source_url": "https://cursor.com/media/CursorGothic_Italic-s.p.0klm.ze1la4ej.woff2?dpl=dpl_HH6a5prQZrH8WHpwyEWXTDfK8RBx",
+      "style": "italic",
+      "weight": 400
+     },
+     {
+      "asset_id": null,
+      "source_url": "https://cursor.com/media/CursorGothic_Bold-s.p.15hkw~ebmtjvr.woff2?dpl=dpl_HH6a5prQZrH8WHpwyEWXTDfK8RBx",
+      "style": "normal",
+      "weight": 700
+     },
+     {
+      "asset_id": null,
+      "source_url": "https://cursor.com/media/CursorGothic_BoldItalic-s.p.0cqzqaem~_s9y.woff2?dpl=dpl_HH6a5prQZrH8WHpwyEWXTDfK8RBx",
+      "style": "italic",
+      "weight": 700
+     }
+    ],
+    "fallback_stack": [
+     "Arial",
+     "sans-serif"
+    ],
+    "family": "CursorGothic",
+    "license": {
+     "embeddable": false,
+     "name": "unknown",
+     "restrictions": [
+      "License not verified at ingestion; do not embed in print exports without confirmation."
+     ],
+     "source_url": null,
+     "subsettable": false
+    },
+    "provenance": {
+     "confidence": 0.7,
+     "source": "website:https://cursor.com/marketing-static/_next/static/chunks/0l~sqiseq5cws.css?dpl=dpl_HH6a5prQZrH8WHpwyEWXTDfK8RBx :: @font-face CursorGothic"
+    },
+    "scripts": [
+     "latin"
+    ],
+    "source": {
+     "kind": "url",
+     "url": "https://cursor.com/media/CursorGothic_Regular-s.p.05-84umc_47y9.woff2?dpl=dpl_HH6a5prQZrH8WHpwyEWXTDfK8RBx"
+    }
+   }
+  },
+  "images": {
+   "img.1": {
+    "allowed_contexts": [],
+    "asset_id": "asset_ing_0b108182dc32fda5",
+    "crop_allowed": true,
+    "license": null,
+    "mime_type": null,
+    "preferred_color_tokens": [],
+    "provenance": {
+     "confidence": 0.6,
+     "source": "website:dom :: og:image"
+    },
+    "recolor_allowed": false,
+    "role": "og_image",
+    "style_tags": []
+   },
+   "img.10": {
+    "allowed_contexts": [],
+    "asset_id": "asset_ing_21fa75257d2069c2",
+    "crop_allowed": true,
+    "license": null,
+    "mime_type": null,
+    "preferred_color_tokens": [],
+    "provenance": {
+     "confidence": 0.6,
+     "source": "website:dom :: img"
+    },
+    "recolor_allowed": false,
+    "role": "photo",
+    "style_tags": []
+   },
+   "img.11": {
+    "allowed_contexts": [],
+    "asset_id": "asset_ing_8f6fa068fa4393cf",
+    "crop_allowed": true,
+    "license": null,
+    "mime_type": null,
+    "preferred_color_tokens": [],
+    "provenance": {
+     "confidence": 0.6,
+     "source": "website:dom :: img"
+    },
+    "recolor_allowed": false,
+    "role": "photo",
+    "style_tags": []
+   },
+   "img.12": {
+    "allowed_contexts": [],
+    "asset_id": "asset_ing_8a3860f47887d236",
+    "crop_allowed": true,
+    "license": null,
+    "mime_type": null,
+    "preferred_color_tokens": [],
+    "provenance": {
+     "confidence": 0.6,
+     "source": "website:dom :: img"
+    },
+    "recolor_allowed": false,
+    "role": "photo",
+    "style_tags": []
+   },
+   "img.13": {
+    "allowed_contexts": [],
+    "asset_id": "asset_ing_22a7124b3bfd63ee",
+    "crop_allowed": true,
+    "license": null,
+    "mime_type": null,
+    "preferred_color_tokens": [],
+    "provenance": {
+     "confidence": 0.6,
+     "source": "website:dom :: img"
+    },
+    "recolor_allowed": false,
+    "role": "photo",
+    "style_tags": []
+   },
+   "img.14": {
+    "allowed_contexts": [],
+    "asset_id": "asset_ing_97e1fd5528a8790e",
+    "crop_allowed": true,
+    "license": null,
+    "mime_type": null,
+    "preferred_color_tokens": [],
+    "provenance": {
+     "confidence": 0.6,
+     "source": "website:dom :: og:image"
+    },
+    "recolor_allowed": false,
+    "role": "og_image",
+    "style_tags": []
+   },
+   "img.15": {
+    "allowed_contexts": [],
+    "asset_id": "asset_ing_0fe722ec18fa55ae",
+    "crop_allowed": true,
+    "license": null,
+    "mime_type": null,
+    "preferred_color_tokens": [],
+    "provenance": {
+     "confidence": 0.6,
+     "source": "website:dom :: img"
+    },
+    "recolor_allowed": false,
+    "role": "photo",
+    "style_tags": []
+   },
+   "img.16": {
+    "allowed_contexts": [],
+    "asset_id": "asset_ing_b0df9bc1c118c595",
+    "crop_allowed": true,
+    "license": null,
+    "mime_type": null,
+    "preferred_color_tokens": [],
+    "provenance": {
+     "confidence": 0.6,
+     "source": "website:dom :: img"
+    },
+    "recolor_allowed": false,
+    "role": "photo",
+    "style_tags": []
+   },
+   "img.17": {
+    "allowed_contexts": [],
+    "asset_id": "asset_ing_af89940419e7a347",
+    "crop_allowed": true,
+    "license": null,
+    "mime_type": null,
+    "preferred_color_tokens": [],
+    "provenance": {
+     "confidence": 0.6,
+     "source": "website:dom :: img"
+    },
+    "recolor_allowed": false,
+    "role": "photo",
+    "style_tags": []
+   },
+   "img.18": {
+    "allowed_contexts": [],
+    "asset_id": "asset_ing_6e9c7358ddbc506b",
+    "crop_allowed": true,
+    "license": null,
+    "mime_type": null,
+    "preferred_color_tokens": [],
+    "provenance": {
+     "confidence": 0.6,
+     "source": "website:dom :: img"
+    },
+    "recolor_allowed": false,
+    "role": "photo",
+    "style_tags": []
+   },
+   "img.19": {
+    "allowed_contexts": [],
+    "asset_id": "asset_ing_ee0e2314124515f1",
+    "crop_allowed": true,
+    "license": null,
+    "mime_type": null,
+    "preferred_color_tokens": [],
+    "provenance": {
+     "confidence": 0.6,
+     "source": "website:dom :: img"
+    },
+    "recolor_allowed": false,
+    "role": "photo",
+    "style_tags": []
+   },
+   "img.2": {
+    "allowed_contexts": [],
+    "asset_id": "asset_ing_2d9fc9fbc2f6b8de",
+    "crop_allowed": true,
+    "license": null,
+    "mime_type": null,
+    "preferred_color_tokens": [],
+    "provenance": {
+     "confidence": 0.6,
+     "source": "website:dom :: img"
+    },
+    "recolor_allowed": false,
+    "role": "photo",
+    "style_tags": []
+   },
+   "img.20": {
+    "allowed_contexts": [],
+    "asset_id": "asset_ing_c74d20815f31f1c9",
+    "crop_allowed": true,
+    "license": null,
+    "mime_type": null,
+    "preferred_color_tokens": [],
+    "provenance": {
+     "confidence": 0.6,
+     "source": "website:dom :: img"
+    },
+    "recolor_allowed": false,
+    "role": "photo",
+    "style_tags": []
+   },
+   "img.21": {
+    "allowed_contexts": [],
+    "asset_id": "asset_ing_a6842df2c7e072af",
+    "crop_allowed": true,
+    "license": null,
+    "mime_type": null,
+    "preferred_color_tokens": [],
+    "provenance": {
+     "confidence": 0.6,
+     "source": "website:dom :: img"
+    },
+    "recolor_allowed": false,
+    "role": "photo",
+    "style_tags": []
+   },
+   "img.22": {
+    "allowed_contexts": [],
+    "asset_id": "asset_ing_d542f141471c65e2",
+    "crop_allowed": true,
+    "license": null,
+    "mime_type": null,
+    "preferred_color_tokens": [],
+    "provenance": {
+     "confidence": 0.6,
+     "source": "website:dom :: img"
+    },
+    "recolor_allowed": false,
+    "role": "photo",
+    "style_tags": []
+   },
+   "img.23": {
+    "allowed_contexts": [],
+    "asset_id": "asset_ing_938c8a973e9f8994",
+    "crop_allowed": true,
+    "license": null,
+    "mime_type": null,
+    "preferred_color_tokens": [],
+    "provenance": {
+     "confidence": 0.6,
+     "source": "website:dom :: img"
+    },
+    "recolor_allowed": false,
+    "role": "photo",
+    "style_tags": []
+   },
+   "img.24": {
+    "allowed_contexts": [],
+    "asset_id": "asset_ing_c59dc1facb6a9434",
+    "crop_allowed": true,
+    "license": null,
+    "mime_type": null,
+    "preferred_color_tokens": [],
+    "provenance": {
+     "confidence": 0.6,
+     "source": "website:dom :: img"
+    },
+    "recolor_allowed": false,
+    "role": "photo",
+    "style_tags": []
+   },
+   "img.25": {
+    "allowed_contexts": [],
+    "asset_id": "asset_ing_2255879f505fe85a",
+    "crop_allowed": true,
+    "license": null,
+    "mime_type": null,
+    "preferred_color_tokens": [],
+    "provenance": {
+     "confidence": 0.6,
+     "source": "website:dom :: img"
+    },
+    "recolor_allowed": false,
+    "role": "photo",
+    "style_tags": []
+   },
+   "img.26": {
+    "allowed_contexts": [],
+    "asset_id": "asset_ing_677b8bf91956da3f",
+    "crop_allowed": true,
+    "license": null,
+    "mime_type": null,
+    "preferred_color_tokens": [],
+    "provenance": {
+     "confidence": 0.6,
+     "source": "website:dom :: img"
+    },
+    "recolor_allowed": false,
+    "role": "photo",
+    "style_tags": []
+   },
+   "img.27": {
+    "allowed_contexts": [],
+    "asset_id": "asset_ing_f956e259a4b6a69b",
+    "crop_allowed": true,
+    "license": null,
+    "mime_type": null,
+    "preferred_color_tokens": [],
+    "provenance": {
+     "confidence": 0.6,
+     "source": "website:dom :: img"
+    },
+    "recolor_allowed": false,
+    "role": "photo",
+    "style_tags": []
+   },
+   "img.28": {
+    "allowed_contexts": [],
+    "asset_id": "asset_ing_29bde95008fdb459",
+    "crop_allowed": true,
+    "license": null,
+    "mime_type": null,
+    "preferred_color_tokens": [],
+    "provenance": {
+     "confidence": 0.6,
+     "source": "website:dom :: img"
+    },
+    "recolor_allowed": false,
+    "role": "photo",
+    "style_tags": []
+   },
+   "img.29": {
+    "allowed_contexts": [],
+    "asset_id": "asset_ing_e7d72385ef423cb8",
+    "crop_allowed": true,
+    "license": null,
+    "mime_type": null,
+    "preferred_color_tokens": [],
+    "provenance": {
+     "confidence": 0.6,
+     "source": "website:dom :: img"
+    },
+    "recolor_allowed": false,
+    "role": "photo",
+    "style_tags": []
+   },
+   "img.3": {
+    "allowed_contexts": [],
+    "asset_id": "asset_ing_09b01c9514892aa9",
+    "crop_allowed": true,
+    "license": null,
+    "mime_type": null,
+    "preferred_color_tokens": [],
+    "provenance": {
+     "confidence": 0.6,
+     "source": "website:dom :: img"
+    },
+    "recolor_allowed": false,
+    "role": "photo",
+    "style_tags": []
+   },
+   "img.30": {
+    "allowed_contexts": [],
+    "asset_id": "asset_ing_1006633b3f552d9c",
+    "crop_allowed": true,
+    "license": null,
+    "mime_type": null,
+    "preferred_color_tokens": [],
+    "provenance": {
+     "confidence": 0.6,
+     "source": "website:dom :: img"
+    },
+    "recolor_allowed": false,
+    "role": "photo",
+    "style_tags": []
+   },
+   "img.31": {
+    "allowed_contexts": [],
+    "asset_id": "asset_ing_f5d541baf1e6180f",
+    "crop_allowed": true,
+    "license": null,
+    "mime_type": null,
+    "preferred_color_tokens": [],
+    "provenance": {
+     "confidence": 0.6,
+     "source": "website:dom :: img"
+    },
+    "recolor_allowed": false,
+    "role": "photo",
+    "style_tags": []
+   },
+   "img.32": {
+    "allowed_contexts": [],
+    "asset_id": "asset_ing_00e40b1b8586b114",
+    "crop_allowed": true,
+    "license": null,
+    "mime_type": null,
+    "preferred_color_tokens": [],
+    "provenance": {
+     "confidence": 0.6,
+     "source": "website:dom :: img"
+    },
+    "recolor_allowed": false,
+    "role": "photo",
+    "style_tags": []
+   },
+   "img.33": {
+    "allowed_contexts": [],
+    "asset_id": "asset_ing_758d988b9f6b92c5",
+    "crop_allowed": true,
+    "license": null,
+    "mime_type": null,
+    "preferred_color_tokens": [],
+    "provenance": {
+     "confidence": 0.6,
+     "source": "website:dom :: img"
+    },
+    "recolor_allowed": false,
+    "role": "photo",
+    "style_tags": []
+   },
+   "img.34": {
+    "allowed_contexts": [],
+    "asset_id": "asset_ing_dda2fb4dba9b2702",
+    "crop_allowed": true,
+    "license": null,
+    "mime_type": null,
+    "preferred_color_tokens": [],
+    "provenance": {
+     "confidence": 0.6,
+     "source": "website:dom :: og:image"
+    },
+    "recolor_allowed": false,
+    "role": "og_image",
+    "style_tags": []
+   },
+   "img.35": {
+    "allowed_contexts": [],
+    "asset_id": "asset_ing_af08f679bb447ca7",
+    "crop_allowed": true,
+    "license": null,
+    "mime_type": null,
+    "preferred_color_tokens": [],
+    "provenance": {
+     "confidence": 0.6,
+     "source": "website:dom :: img"
+    },
+    "recolor_allowed": false,
+    "role": "photo",
+    "style_tags": []
+   },
+   "img.36": {
+    "allowed_contexts": [],
+    "asset_id": "asset_ing_c94729a48ebdd8f6",
+    "crop_allowed": true,
+    "license": null,
+    "mime_type": null,
+    "preferred_color_tokens": [],
+    "provenance": {
+     "confidence": 0.6,
+     "source": "website:dom :: img"
+    },
+    "recolor_allowed": false,
+    "role": "photo",
+    "style_tags": []
+   },
+   "img.37": {
+    "allowed_contexts": [],
+    "asset_id": "asset_ing_6f0bdec445c9b146",
+    "crop_allowed": true,
+    "license": null,
+    "mime_type": null,
+    "preferred_color_tokens": [],
+    "provenance": {
+     "confidence": 0.6,
+     "source": "website:dom :: img"
+    },
+    "recolor_allowed": false,
+    "role": "photo",
+    "style_tags": []
+   },
+   "img.38": {
+    "allowed_contexts": [],
+    "asset_id": "asset_ing_601ef4a7765a043d",
+    "crop_allowed": true,
+    "license": null,
+    "mime_type": null,
+    "preferred_color_tokens": [],
+    "provenance": {
+     "confidence": 0.6,
+     "source": "website:dom :: img"
+    },
+    "recolor_allowed": false,
+    "role": "photo",
+    "style_tags": []
+   },
+   "img.39": {
+    "allowed_contexts": [],
+    "asset_id": "asset_ing_ced9c801aa5d3b88",
+    "crop_allowed": true,
+    "license": null,
+    "mime_type": null,
+    "preferred_color_tokens": [],
+    "provenance": {
+     "confidence": 0.6,
+     "source": "website:dom :: img"
+    },
+    "recolor_allowed": false,
+    "role": "photo",
+    "style_tags": []
+   },
+   "img.4": {
+    "allowed_contexts": [],
+    "asset_id": "asset_ing_c946e57244911b22",
+    "crop_allowed": true,
+    "license": null,
+    "mime_type": null,
+    "preferred_color_tokens": [],
+    "provenance": {
+     "confidence": 0.6,
+     "source": "website:dom :: img"
+    },
+    "recolor_allowed": false,
+    "role": "photo",
+    "style_tags": []
+   },
+   "img.40": {
+    "allowed_contexts": [],
+    "asset_id": "asset_ing_f3636c05d5bf3569",
+    "crop_allowed": true,
+    "license": null,
+    "mime_type": null,
+    "preferred_color_tokens": [],
+    "provenance": {
+     "confidence": 0.6,
+     "source": "website:dom :: img"
+    },
+    "recolor_allowed": false,
+    "role": "photo",
+    "style_tags": []
+   },
+   "img.41": {
+    "allowed_contexts": [],
+    "asset_id": "asset_ing_8e9a16f854ffdf93",
+    "crop_allowed": true,
+    "license": null,
+    "mime_type": null,
+    "preferred_color_tokens": [],
+    "provenance": {
+     "confidence": 0.6,
+     "source": "website:dom :: img"
+    },
+    "recolor_allowed": false,
+    "role": "photo",
+    "style_tags": []
+   },
+   "img.42": {
+    "allowed_contexts": [],
+    "asset_id": "asset_ing_004c46c1b28c9993",
+    "crop_allowed": true,
+    "license": null,
+    "mime_type": null,
+    "preferred_color_tokens": [],
+    "provenance": {
+     "confidence": 0.6,
+     "source": "website:dom :: img"
+    },
+    "recolor_allowed": false,
+    "role": "photo",
+    "style_tags": []
+   },
+   "img.43": {
+    "allowed_contexts": [],
+    "asset_id": "asset_ing_80d110adeaf2c523",
+    "crop_allowed": true,
+    "license": null,
+    "mime_type": null,
+    "preferred_color_tokens": [],
+    "provenance": {
+     "confidence": 0.6,
+     "source": "website:dom :: img"
+    },
+    "recolor_allowed": false,
+    "role": "photo",
+    "style_tags": []
+   },
+   "img.44": {
+    "allowed_contexts": [],
+    "asset_id": "asset_ing_3047729cfa5a991d",
+    "crop_allowed": true,
+    "license": null,
+    "mime_type": null,
+    "preferred_color_tokens": [],
+    "provenance": {
+     "confidence": 0.6,
+     "source": "website:dom :: img"
+    },
+    "recolor_allowed": false,
+    "role": "photo",
+    "style_tags": []
+   },
+   "img.45": {
+    "allowed_contexts": [],
+    "asset_id": "asset_ing_f9371f5b8b79c217",
+    "crop_allowed": true,
+    "license": null,
+    "mime_type": null,
+    "preferred_color_tokens": [],
+    "provenance": {
+     "confidence": 0.6,
+     "source": "website:dom :: img"
+    },
+    "recolor_allowed": false,
+    "role": "photo",
+    "style_tags": []
+   },
+   "img.46": {
+    "allowed_contexts": [],
+    "asset_id": "asset_ing_9abbb6d9468501f7",
+    "crop_allowed": true,
+    "license": null,
+    "mime_type": null,
+    "preferred_color_tokens": [],
+    "provenance": {
+     "confidence": 0.6,
+     "source": "website:dom :: img"
+    },
+    "recolor_allowed": false,
+    "role": "photo",
+    "style_tags": []
+   },
+   "img.5": {
+    "allowed_contexts": [],
+    "asset_id": "asset_ing_b89b4cda412e4b7d",
+    "crop_allowed": true,
+    "license": null,
+    "mime_type": null,
+    "preferred_color_tokens": [],
+    "provenance": {
+     "confidence": 0.6,
+     "source": "website:dom :: img"
+    },
+    "recolor_allowed": false,
+    "role": "photo",
+    "style_tags": []
+   },
+   "img.6": {
+    "allowed_contexts": [],
+    "asset_id": "asset_ing_3fe3ac81aac5b0af",
+    "crop_allowed": true,
+    "license": null,
+    "mime_type": null,
+    "preferred_color_tokens": [],
+    "provenance": {
+     "confidence": 0.6,
+     "source": "website:dom :: img"
+    },
+    "recolor_allowed": false,
+    "role": "photo",
+    "style_tags": []
+   },
+   "img.7": {
+    "allowed_contexts": [],
+    "asset_id": "asset_ing_b87323250ce77894",
+    "crop_allowed": true,
+    "license": null,
+    "mime_type": null,
+    "preferred_color_tokens": [],
+    "provenance": {
+     "confidence": 0.6,
+     "source": "website:dom :: img"
+    },
+    "recolor_allowed": false,
+    "role": "photo",
+    "style_tags": []
+   },
+   "img.8": {
+    "allowed_contexts": [],
+    "asset_id": "asset_ing_a9d27679b73a1a19",
+    "crop_allowed": true,
+    "license": null,
+    "mime_type": null,
+    "preferred_color_tokens": [],
+    "provenance": {
+     "confidence": 0.6,
+     "source": "website:dom :: img"
+    },
+    "recolor_allowed": false,
+    "role": "photo",
+    "style_tags": []
+   },
+   "img.9": {
+    "allowed_contexts": [],
+    "asset_id": "asset_ing_ebdb5ce5a5712597",
+    "crop_allowed": true,
+    "license": null,
+    "mime_type": null,
+    "preferred_color_tokens": [],
+    "provenance": {
+     "confidence": 0.6,
+     "source": "website:dom :: img"
+    },
+    "recolor_allowed": false,
+    "role": "photo",
+    "style_tags": []
+   }
+  },
+  "logos": {
+   "mark": {
+    "allowed_backgrounds": [
+     "surface.page",
+     "surface.card"
+    ],
+    "clearspace": null,
+    "license": null,
+    "min_size": null,
+    "provenance": {
+     "confidence": 0.7,
+     "source": "website:dom :: apple-touch-icon"
+    },
+    "usage": "mark",
+    "variants": [
+     {
+      "asset_id": "asset_ing_9c941729e5131822",
+      "color_mode": "full_color",
+      "height": null,
+      "name": "full_color",
+      "width": null
+     }
+    ]
+   },
+   "primary": {
+    "allowed_backgrounds": [
+     "surface.page",
+     "surface.card"
+    ],
+    "clearspace": null,
+    "license": null,
+    "min_size": null,
+    "provenance": {
+     "confidence": 0.7,
+     "source": "website:dom :: inline svg"
+    },
+    "usage": "primary",
+    "variants": [
+     {
+      "asset_id": "asset_ing_c5602b748d1735bb",
+      "color_mode": "full_color",
+      "height": null,
+      "name": "full_color",
+      "width": null
+     },
+     {
+      "asset_id": "asset_ing_87057ca2cfd4e003",
+      "color_mode": "full_color",
+      "height": null,
+      "name": "full_color",
+      "width": null
+     },
+     {
+      "asset_id": "asset_ing_abac12dc86310df4",
+      "color_mode": "full_color",
+      "height": null,
+      "name": "full_color",
+      "width": null
+     }
+    ]
+   }
+  }
+ },
+ "constraints": {
+  "accessibility_notes": [],
+  "allow_gradients": true,
+  "contrast_pairs": [
+   {
+    "background": "surface.page",
+    "foreground": "text.primary",
+    "min_ratio": 4.5
+   },
+   {
+    "background": "surface.brand",
+    "foreground": "text.primary",
+    "min_ratio": 4.5
+   },
+   {
+    "background": "surface.inverse",
+    "foreground": "text.inverse",
+    "min_ratio": 4.5
+   }
+  ],
+  "iconography": [],
+  "imagery": [],
+  "print_constraints": [
+   "Font licensing was not verified at ingestion; confirm embeddability before print export."
+  ],
+  "tone": [
+   "clear",
+   "professional"
+  ]
+ },
+ "description": null,
+ "id": "brand_kit_cursor",
+ "modes": {
+  "axes": {
+   "accessibility": [
+    "standard",
+    "high_contrast",
+    "large_text"
+   ],
+   "density": [
+    "comfortable",
+    "compact"
+   ],
+   "theme": [
+    "light",
+    "dark"
+   ]
+  },
+  "defaults": {
+   "accessibility": "standard",
+   "density": "comfortable",
+   "theme": "light"
+  }
+ },
+ "name": "Cursor",
+ "provenance": {
+  "confidence": 0.6944,
+  "created_at": "2026-07-06",
+  "created_by": "lumen_ingestion",
+  "notes": [
+   "Ingested from website evidence.",
+   "Dark colorway captured from evidence."
+  ],
+  "updated_at": null
+ },
+ "sources": [
+  {
+   "captured_at": "2026-07-05T19:28:11.319793+00:00",
+   "confidence": 0.7,
+   "kind": "website",
+   "url": "https://cursor.com"
+  }
+ ],
+ "tokens": {
+  "aliases": {
+   "accent.primary": {
+    "description": "ingestion alias",
+    "token": "surface.accent"
+   }
+  },
+  "assets": {
+   "logo.mark": {
+    "description": "Ingested logo.mark asset",
+    "provenance": {
+     "confidence": 0.7,
+     "source": "upload:asset"
+    },
+    "value": {
+     "default": {
+      "asset_id": "asset_ing_9c941729e5131822",
+      "kind": "asset"
+     },
+     "modes": {}
+    }
+   },
+   "logo.primary": {
+    "description": "Ingested logo.primary asset",
+    "provenance": {
+     "confidence": 0.7,
+     "source": "upload:asset"
+    },
+    "value": {
+     "default": {
+      "asset_id": "asset_ing_c5602b748d1735bb",
+      "kind": "asset"
+     },
+     "modes": {}
+    }
+   }
+  },
+  "colors": {
+   "border.brand": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:border.brand"
+    },
+    "role": "border",
+    "value": {
+     "default": {
+      "kind": "hex",
+      "value": "#F54E00"
+     },
+     "modes": {
+      "theme.dark": {
+       "kind": "hex",
+       "value": "#8BC4F8"
+      }
+     }
+    }
+   },
+   "border.default": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:border.default"
+    },
+    "role": "border",
+    "value": {
+     "default": {
+      "kind": "hex",
+      "value": "#C3C3C0"
+     },
+     "modes": {
+      "theme.dark": {
+       "kind": "hex",
+       "value": "#38444F"
+      }
+     }
+    }
+   },
+   "border.strong": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:border.strong"
+    },
+    "role": "border",
+    "value": {
+     "default": {
+      "kind": "hex",
+      "value": "#888885"
+     },
+     "modes": {
+      "theme.dark": {
+       "kind": "hex",
+       "value": "#535F6B"
+      }
+     }
+    }
+   },
+   "border.subtle": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:border.subtle"
+    },
+    "role": "border",
+    "value": {
+     "default": {
+      "kind": "hex",
+      "value": "#DDDDDA"
+     },
+     "modes": {
+      "theme.dark": {
+       "kind": "hex",
+       "value": "#242F39"
+      }
+     }
+    }
+   },
+   "focus.ring": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:focus.ring"
+    },
+    "role": "focus",
+    "value": {
+     "default": {
+      "kind": "hex",
+      "value": "#F54E00"
+     },
+     "modes": {
+      "theme.dark": {
+       "kind": "hex",
+       "value": "#8BC4F8"
+      }
+     }
+    }
+   },
+   "palette.neutral.100": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:ramp(palette.neutral.100)"
+    },
+    "role": "palette",
+    "value": {
+     "default": {
+      "kind": "hex",
+      "value": "#EAF1F9"
+     },
+     "modes": {}
+    }
+   },
+   "palette.neutral.200": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:ramp(palette.neutral.200)"
+    },
+    "role": "palette",
+    "value": {
+     "default": {
+      "kind": "hex",
+      "value": "#D8DFE6"
+     },
+     "modes": {}
+    }
+   },
+   "palette.neutral.300": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:ramp(palette.neutral.300)"
+    },
+    "role": "palette",
+    "value": {
+     "default": {
+      "kind": "hex",
+      "value": "#BEC5CC"
+     },
+     "modes": {}
+    }
+   },
+   "palette.neutral.400": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:ramp(palette.neutral.400)"
+    },
+    "role": "palette",
+    "value": {
+     "default": {
+      "kind": "hex",
+      "value": "#9FA5AC"
+     },
+     "modes": {}
+    }
+   },
+   "palette.neutral.50": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:ramp(palette.neutral.50)"
+    },
+    "role": "palette",
+    "value": {
+     "default": {
+      "kind": "hex",
+      "value": "#F6FBFF"
+     },
+     "modes": {}
+    }
+   },
+   "palette.neutral.500": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:ramp(palette.neutral.500)"
+    },
+    "role": "palette",
+    "value": {
+     "default": {
+      "kind": "hex",
+      "value": "#81878E"
+     },
+     "modes": {}
+    }
+   },
+   "palette.neutral.600": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:ramp(palette.neutral.600)"
+    },
+    "role": "palette",
+    "value": {
+     "default": {
+      "kind": "hex",
+      "value": "#666D73"
+     },
+     "modes": {}
+    }
+   },
+   "palette.neutral.700": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:ramp(palette.neutral.700)"
+    },
+    "role": "palette",
+    "value": {
+     "default": {
+      "kind": "hex",
+      "value": "#50565C"
+     },
+     "modes": {}
+    }
+   },
+   "palette.neutral.800": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:ramp(palette.neutral.800)"
+    },
+    "role": "palette",
+    "value": {
+     "default": {
+      "kind": "hex",
+      "value": "#3D4349"
+     },
+     "modes": {}
+    }
+   },
+   "palette.neutral.900": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:ramp(palette.neutral.900)"
+    },
+    "role": "palette",
+    "value": {
+     "default": {
+      "kind": "hex",
+      "value": "#26251E"
+     },
+     "modes": {}
+    }
+   },
+   "palette.neutral.950": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:ramp(palette.neutral.950)"
+    },
+    "role": "palette",
+    "value": {
+     "default": {
+      "kind": "hex",
+      "value": "#161B20"
+     },
+     "modes": {}
+    }
+   },
+   "palette.primary.100": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:ramp(palette.primary.100)"
+    },
+    "role": "palette",
+    "value": {
+     "default": {
+      "kind": "hex",
+      "value": "#FFEBE5"
+     },
+     "modes": {}
+    }
+   },
+   "palette.primary.200": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:ramp(palette.primary.200)"
+    },
+    "role": "palette",
+    "value": {
+     "default": {
+      "kind": "hex",
+      "value": "#FFD3C5"
+     },
+     "modes": {}
+    }
+   },
+   "palette.primary.300": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:ramp(palette.primary.300)"
+    },
+    "role": "palette",
+    "value": {
+     "default": {
+      "kind": "hex",
+      "value": "#FFAD93"
+     },
+     "modes": {}
+    }
+   },
+   "palette.primary.400": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:ramp(palette.primary.400)"
+    },
+    "role": "palette",
+    "value": {
+     "default": {
+      "kind": "hex",
+      "value": "#FF7549"
+     },
+     "modes": {}
+    }
+   },
+   "palette.primary.50": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:ramp(palette.primary.50)"
+    },
+    "role": "palette",
+    "value": {
+     "default": {
+      "kind": "hex",
+      "value": "#FFF8F6"
+     },
+     "modes": {}
+    }
+   },
+   "palette.primary.500": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:ramp(palette.primary.500)"
+    },
+    "role": "palette",
+    "value": {
+     "default": {
+      "kind": "hex",
+      "value": "#F54E00"
+     },
+     "modes": {}
+    }
+   },
+   "palette.primary.600": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:ramp(palette.primary.600)"
+    },
+    "role": "palette",
+    "value": {
+     "default": {
+      "kind": "hex",
+      "value": "#BA3900"
+     },
+     "modes": {}
+    }
+   },
+   "palette.primary.700": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:ramp(palette.primary.700)"
+    },
+    "role": "palette",
+    "value": {
+     "default": {
+      "kind": "hex",
+      "value": "#952C00"
+     },
+     "modes": {}
+    }
+   },
+   "palette.primary.800": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:ramp(palette.primary.800)"
+    },
+    "role": "palette",
+    "value": {
+     "default": {
+      "kind": "hex",
+      "value": "#762100"
+     },
+     "modes": {}
+    }
+   },
+   "palette.primary.900": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:ramp(palette.primary.900)"
+    },
+    "role": "palette",
+    "value": {
+     "default": {
+      "kind": "hex",
+      "value": "#541500"
+     },
+     "modes": {}
+    }
+   },
+   "palette.primary.950": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:ramp(palette.primary.950)"
+    },
+    "role": "palette",
+    "value": {
+     "default": {
+      "kind": "hex",
+      "value": "#350900"
+     },
+     "modes": {}
+    }
+   },
+   "surface.accent": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.9,
+     "source": "website:css :: --color-success"
+    },
+    "role": "surface",
+    "value": {
+     "default": {
+      "kind": "hex",
+      "value": "#1F8A65"
+     },
+     "modes": {
+      "theme.dark": {
+       "kind": "hex",
+       "value": "#8BC4F8"
+      }
+     }
+    }
+   },
+   "surface.brand": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.9,
+     "source": "website:css :: --color-accent"
+    },
+    "role": "surface",
+    "value": {
+     "default": {
+      "kind": "hex",
+      "value": "#F54E00"
+     },
+     "modes": {
+      "theme.dark": {
+       "kind": "hex",
+       "value": "#8BC4F8"
+      }
+     }
+    }
+   },
+   "surface.brand.subtle": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:surface.brand.subtle"
+    },
+    "role": "surface",
+    "value": {
+     "default": {
+      "kind": "hex",
+      "value": "#FFEBE5"
+     },
+     "modes": {
+      "theme.dark": {
+       "kind": "hex",
+       "value": "#1A2B3A"
+      }
+     }
+    }
+   },
+   "surface.canvas": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:surface.canvas"
+    },
+    "role": "surface",
+    "value": {
+     "default": {
+      "kind": "hex",
+      "value": "#F9F9F6"
+     },
+     "modes": {
+      "theme.dark": {
+       "kind": "hex",
+       "value": "#1D2832"
+      }
+     }
+    }
+   },
+   "surface.card": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.9,
+     "source": "website:rendered :: body"
+    },
+    "role": "surface",
+    "value": {
+     "default": {
+      "kind": "hex",
+      "value": "#F7F7F4"
+     },
+     "modes": {
+      "theme.dark": {
+       "kind": "hex",
+       "value": "#2E3A44"
+      }
+     }
+    }
+   },
+   "surface.elevated": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:surface.elevated"
+    },
+    "role": "surface",
+    "value": {
+     "default": {
+      "kind": "hex",
+      "value": "#F7F7F7"
+     },
+     "modes": {
+      "theme.dark": {
+       "kind": "hex",
+       "value": "#39444F"
+      }
+     }
+    }
+   },
+   "surface.inverse": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:surface.inverse"
+    },
+    "role": "surface",
+    "value": {
+     "default": {
+      "kind": "hex",
+      "value": "#121210"
+     },
+     "modes": {
+      "theme.dark": {
+       "kind": "hex",
+       "value": "#F7F7F4"
+      }
+     }
+    }
+   },
+   "surface.muted": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:surface.muted"
+    },
+    "role": "surface",
+    "value": {
+     "default": {
+      "kind": "hex",
+      "value": "#E6E6E3"
+     },
+     "modes": {
+      "theme.dark": {
+       "kind": "hex",
+       "value": "#343F49"
+      }
+     }
+    }
+   },
+   "surface.page": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.9,
+     "source": "website:rendered :: body"
+    },
+    "role": "surface",
+    "value": {
+     "default": {
+      "kind": "hex",
+      "value": "#F7F7F4"
+     },
+     "modes": {
+      "theme.dark": {
+       "kind": "hex",
+       "value": "#2E2E2E"
+      }
+     }
+    }
+   },
+   "text.accent": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:text.accent"
+    },
+    "role": "text",
+    "value": {
+     "default": {
+      "kind": "hex",
+      "value": "#952C00"
+     },
+     "modes": {
+      "theme.dark": {
+       "kind": "hex",
+       "value": "#8BC4F8"
+      }
+     }
+    }
+   },
+   "text.brand": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:text.brand"
+    },
+    "role": "text",
+    "value": {
+     "default": {
+      "kind": "hex",
+      "value": "#952C00"
+     },
+     "modes": {
+      "theme.dark": {
+       "kind": "hex",
+       "value": "#8BC4F8"
+      }
+     }
+    }
+   },
+   "text.inverse": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:text.inverse"
+    },
+    "role": "text",
+    "value": {
+     "default": {
+      "kind": "hex",
+      "value": "#FFFFFF"
+     },
+     "modes": {
+      "theme.dark": {
+       "kind": "hex",
+       "value": "#26251E"
+      }
+     }
+    }
+   },
+   "text.muted": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:text.muted"
+    },
+    "role": "text",
+    "value": {
+     "default": {
+      "kind": "hex",
+      "value": "#73726A"
+     },
+     "modes": {
+      "theme.dark": {
+       "kind": "hex",
+       "value": "#7D8892"
+      }
+     }
+    }
+   },
+   "text.primary": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.9,
+     "source": "website:rendered :: body"
+    },
+    "role": "text",
+    "value": {
+     "default": {
+      "kind": "hex",
+      "value": "#26251E"
+     },
+     "modes": {
+      "theme.dark": {
+       "kind": "hex",
+       "value": "#EDECEC"
+      }
+     }
+    }
+   },
+   "text.secondary": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:text.secondary"
+    },
+    "role": "text",
+    "value": {
+     "default": {
+      "kind": "hex",
+      "value": "#57564E"
+     },
+     "modes": {
+      "theme.dark": {
+       "kind": "hex",
+       "value": "#AEB9C4"
+      }
+     }
+    }
+   }
+  },
+  "effects": {},
+  "numbers": {},
+  "opacity": {
+   "opacity.disabled": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:opacity-scale"
+    },
+    "role": "visibility",
+    "value": {
+     "default": {
+      "kind": "number",
+      "unit": "ratio",
+      "value": 0.4
+     },
+     "modes": {}
+    }
+   },
+   "opacity.emphasis": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:opacity-scale"
+    },
+    "role": "visibility",
+    "value": {
+     "default": {
+      "kind": "number",
+      "unit": "ratio",
+      "value": 0.88
+     },
+     "modes": {}
+    }
+   },
+   "opacity.muted": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:opacity-scale"
+    },
+    "role": "visibility",
+    "value": {
+     "default": {
+      "kind": "number",
+      "unit": "ratio",
+      "value": 0.56
+     },
+     "modes": {}
+    }
+   },
+   "opacity.overlay": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:opacity-scale"
+    },
+    "role": "visibility",
+    "value": {
+     "default": {
+      "kind": "number",
+      "unit": "ratio",
+      "value": 0.48
+     },
+     "modes": {}
+    }
+   },
+   "opacity.scrim": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:opacity-scale"
+    },
+    "role": "visibility",
+    "value": {
+     "default": {
+      "kind": "number",
+      "unit": "ratio",
+      "value": 0.64
+     },
+     "modes": {}
+    }
+   },
+   "opacity.subtle": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:opacity-scale"
+    },
+    "role": "visibility",
+    "value": {
+     "default": {
+      "kind": "number",
+      "unit": "ratio",
+      "value": 0.72
+     },
+     "modes": {}
+    }
+   }
+  },
+  "radii": {
+   "radius.badge": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:radius-scale"
+    },
+    "role": "radius",
+    "value": {
+     "default": {
+      "kind": "number",
+      "unit": "px",
+      "value": 9999.0
+     },
+     "modes": {}
+    }
+   },
+   "radius.button": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:radius-scale"
+    },
+    "role": "radius",
+    "value": {
+     "default": {
+      "kind": "number",
+      "unit": "px",
+      "value": 8.0
+     },
+     "modes": {}
+    }
+   },
+   "radius.card": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:radius-scale"
+    },
+    "role": "radius",
+    "value": {
+     "default": {
+      "kind": "number",
+      "unit": "px",
+      "value": 12.0
+     },
+     "modes": {}
+    }
+   },
+   "radius.full": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:radius-scale"
+    },
+    "role": "radius",
+    "value": {
+     "default": {
+      "kind": "number",
+      "unit": "px",
+      "value": 9999.0
+     },
+     "modes": {}
+    }
+   },
+   "radius.lg": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:radius-scale"
+    },
+    "role": "radius",
+    "value": {
+     "default": {
+      "kind": "number",
+      "unit": "px",
+      "value": 12.0
+     },
+     "modes": {}
+    }
+   },
+   "radius.md": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:radius-scale"
+    },
+    "role": "radius",
+    "value": {
+     "default": {
+      "kind": "number",
+      "unit": "px",
+      "value": 8.0
+     },
+     "modes": {}
+    }
+   },
+   "radius.none": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:radius-scale"
+    },
+    "role": "radius",
+    "value": {
+     "default": {
+      "kind": "number",
+      "unit": "px",
+      "value": 0.0
+     },
+     "modes": {}
+    }
+   },
+   "radius.sm": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:radius-scale"
+    },
+    "role": "radius",
+    "value": {
+     "default": {
+      "kind": "number",
+      "unit": "px",
+      "value": 4.0
+     },
+     "modes": {}
+    }
+   },
+   "radius.xl": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:radius-scale"
+    },
+    "role": "radius",
+    "value": {
+     "default": {
+      "kind": "number",
+      "unit": "px",
+      "value": 16.0
+     },
+     "modes": {}
+    }
+   },
+   "radius.xs": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:radius-scale"
+    },
+    "role": "radius",
+    "value": {
+     "default": {
+      "kind": "number",
+      "unit": "px",
+      "value": 2.0
+     },
+     "modes": {}
+    }
+   }
+  },
+  "shadows": {},
+  "spacing": {
+   "space.0": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:spacing-scale"
+    },
+    "role": "spacing",
+    "value": {
+     "default": {
+      "kind": "number",
+      "unit": "px",
+      "value": 0.0
+     },
+     "modes": {}
+    }
+   },
+   "space.1": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:spacing-scale"
+    },
+    "role": "spacing",
+    "value": {
+     "default": {
+      "kind": "number",
+      "unit": "px",
+      "value": 4.0
+     },
+     "modes": {}
+    }
+   },
+   "space.10": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:spacing-scale"
+    },
+    "role": "spacing",
+    "value": {
+     "default": {
+      "kind": "number",
+      "unit": "px",
+      "value": 40.0
+     },
+     "modes": {}
+    }
+   },
+   "space.12": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:spacing-scale"
+    },
+    "role": "spacing",
+    "value": {
+     "default": {
+      "kind": "number",
+      "unit": "px",
+      "value": 48.0
+     },
+     "modes": {}
+    }
+   },
+   "space.16": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:spacing-scale"
+    },
+    "role": "spacing",
+    "value": {
+     "default": {
+      "kind": "number",
+      "unit": "px",
+      "value": 64.0
+     },
+     "modes": {}
+    }
+   },
+   "space.2": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:spacing-scale"
+    },
+    "role": "spacing",
+    "value": {
+     "default": {
+      "kind": "number",
+      "unit": "px",
+      "value": 8.0
+     },
+     "modes": {}
+    }
+   },
+   "space.3": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:spacing-scale"
+    },
+    "role": "spacing",
+    "value": {
+     "default": {
+      "kind": "number",
+      "unit": "px",
+      "value": 12.0
+     },
+     "modes": {}
+    }
+   },
+   "space.4": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:spacing-scale"
+    },
+    "role": "spacing",
+    "value": {
+     "default": {
+      "kind": "number",
+      "unit": "px",
+      "value": 16.0
+     },
+     "modes": {}
+    }
+   },
+   "space.5": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:spacing-scale"
+    },
+    "role": "spacing",
+    "value": {
+     "default": {
+      "kind": "number",
+      "unit": "px",
+      "value": 20.0
+     },
+     "modes": {}
+    }
+   },
+   "space.6": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:spacing-scale"
+    },
+    "role": "spacing",
+    "value": {
+     "default": {
+      "kind": "number",
+      "unit": "px",
+      "value": 24.0
+     },
+     "modes": {}
+    }
+   },
+   "space.8": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:spacing-scale"
+    },
+    "role": "spacing",
+    "value": {
+     "default": {
+      "kind": "number",
+      "unit": "px",
+      "value": 32.0
+     },
+     "modes": {}
+    }
+   },
+   "space.card.padding": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:spacing-scale"
+    },
+    "role": "spacing",
+    "value": {
+     "default": {
+      "kind": "number",
+      "unit": "px",
+      "value": 24.0
+     },
+     "modes": {}
+    }
+   },
+   "space.page.margin": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:spacing-scale"
+    },
+    "role": "spacing",
+    "value": {
+     "default": {
+      "kind": "number",
+      "unit": "px",
+      "value": 48.0
+     },
+     "modes": {}
+    }
+   },
+   "space.section": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:spacing-scale"
+    },
+    "role": "spacing",
+    "value": {
+     "default": {
+      "kind": "number",
+      "unit": "px",
+      "value": 64.0
+     },
+     "modes": {}
+    }
+   },
+   "space.stack.default": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:spacing-scale"
+    },
+    "role": "spacing",
+    "value": {
+     "default": {
+      "kind": "number",
+      "unit": "px",
+      "value": 16.0
+     },
+     "modes": {}
+    }
+   },
+   "space.stack.loose": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:spacing-scale"
+    },
+    "role": "spacing",
+    "value": {
+     "default": {
+      "kind": "number",
+      "unit": "px",
+      "value": 24.0
+     },
+     "modes": {}
+    }
+   },
+   "space.stack.tight": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:spacing-scale"
+    },
+    "role": "spacing",
+    "value": {
+     "default": {
+      "kind": "number",
+      "unit": "px",
+      "value": 8.0
+     },
+     "modes": {}
+    }
+   }
+  },
+  "stroke_widths": {
+   "stroke.width.bold": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:stroke-scale"
+    },
+    "role": "stroke",
+    "value": {
+     "default": {
+      "kind": "number",
+      "unit": "px",
+      "value": 3.0
+     },
+     "modes": {}
+    }
+   },
+   "stroke.width.card": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:stroke-scale"
+    },
+    "role": "stroke",
+    "value": {
+     "default": {
+      "kind": "number",
+      "unit": "px",
+      "value": 1.0
+     },
+     "modes": {}
+    }
+   },
+   "stroke.width.default": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:stroke-scale"
+    },
+    "role": "stroke",
+    "value": {
+     "default": {
+      "kind": "number",
+      "unit": "px",
+      "value": 1.0
+     },
+     "modes": {}
+    }
+   },
+   "stroke.width.divider": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:stroke-scale"
+    },
+    "role": "stroke",
+    "value": {
+     "default": {
+      "kind": "number",
+      "unit": "px",
+      "value": 1.0
+     },
+     "modes": {}
+    }
+   },
+   "stroke.width.firm": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:stroke-scale"
+    },
+    "role": "stroke",
+    "value": {
+     "default": {
+      "kind": "number",
+      "unit": "px",
+      "value": 2.0
+     },
+     "modes": {}
+    }
+   },
+   "stroke.width.focus": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:stroke-scale"
+    },
+    "role": "stroke",
+    "value": {
+     "default": {
+      "kind": "number",
+      "unit": "px",
+      "value": 2.0
+     },
+     "modes": {}
+    }
+   },
+   "stroke.width.hairline": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:stroke-scale"
+    },
+    "role": "stroke",
+    "value": {
+     "default": {
+      "kind": "number",
+      "unit": "px",
+      "value": 0.5
+     },
+     "modes": {}
+    }
+   },
+   "stroke.width.thin": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:stroke-scale"
+    },
+    "role": "stroke",
+    "value": {
+     "default": {
+      "kind": "number",
+      "unit": "px",
+      "value": 1.0
+     },
+     "modes": {}
+    }
+   }
+  },
+  "typography": {
+   "type.body": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.9,
+     "source": "website:https://cursor.com/marketing-static/_next/static/chunks/0n3w.msyn~5aj.css?dpl=dpl_HH6a5prQZrH8WHpwyEWXTDfK8RBx :: .prose-column h3"
+    },
+    "role": "body",
+    "value": {
+     "default": {
+      "color": "text.primary",
+      "font_asset": "brand",
+      "font_family": "CursorGothic",
+      "font_size": 12.0,
+      "font_weight": 400,
+      "kind": "style",
+      "letter_spacing": 0.0,
+      "line_height": 1.5
+     },
+     "modes": {}
+    }
+   },
+   "type.body.small": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.9,
+     "source": "website:https://cursor.com/marketing-static/_next/static/chunks/0n3w.msyn~5aj.css?dpl=dpl_HH6a5prQZrH8WHpwyEWXTDfK8RBx :: .prose-column h3"
+    },
+    "role": "body.small",
+    "value": {
+     "default": {
+      "color": "text.primary",
+      "font_asset": "brand",
+      "font_family": "CursorGothic",
+      "font_size": 10.5,
+      "font_weight": 400,
+      "kind": "style",
+      "letter_spacing": 0.0,
+      "line_height": 1.4
+     },
+     "modes": {}
+    }
+   },
+   "type.caption": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.9,
+     "source": "website:https://cursor.com/marketing-static/_next/static/chunks/0n3w.msyn~5aj.css?dpl=dpl_HH6a5prQZrH8WHpwyEWXTDfK8RBx :: .prose-column h3"
+    },
+    "role": "caption",
+    "value": {
+     "default": {
+      "color": "text.secondary",
+      "font_asset": "brand",
+      "font_family": "CursorGothic",
+      "font_size": 9.0,
+      "font_weight": 500,
+      "kind": "style",
+      "letter_spacing": 0.0,
+      "line_height": 1.35
+     },
+     "modes": {}
+    }
+   },
+   "type.cta": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.9,
+     "source": "website:https://cursor.com/marketing-static/_next/static/chunks/0n3w.msyn~5aj.css?dpl=dpl_HH6a5prQZrH8WHpwyEWXTDfK8RBx :: .prose-column h3"
+    },
+    "role": "cta",
+    "value": {
+     "default": {
+      "color": "text.primary",
+      "font_asset": "brand",
+      "font_family": "CursorGothic",
+      "font_size": 14.0,
+      "font_weight": 400,
+      "kind": "style",
+      "letter_spacing": 0.0088,
+      "line_height": 1.3125
+     },
+     "modes": {}
+    }
+   },
+   "type.display": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.9,
+     "source": "website:https://cursor.com/marketing-static/_next/static/chunks/0n3w.msyn~5aj.css?dpl=dpl_HH6a5prQZrH8WHpwyEWXTDfK8RBx :: .prose-column h3"
+    },
+    "role": "display",
+    "value": {
+     "default": {
+      "color": "text.primary",
+      "font_asset": "brand",
+      "font_family": "CursorGothic",
+      "font_size": 41.5,
+      "font_weight": 700,
+      "kind": "style",
+      "letter_spacing": -0.02,
+      "line_height": 1.05
+     },
+     "modes": {}
+    }
+   },
+   "type.eyebrow": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.9,
+     "source": "website:https://cursor.com/marketing-static/_next/static/chunks/0n3w.msyn~5aj.css?dpl=dpl_HH6a5prQZrH8WHpwyEWXTDfK8RBx :: .prose-column h3"
+    },
+    "role": "eyebrow",
+    "value": {
+     "default": {
+      "color": "text.brand",
+      "font_asset": "brand",
+      "font_family": "CursorGothic",
+      "font_size": 9.0,
+      "font_weight": 600,
+      "kind": "style",
+      "letter_spacing": 0.08,
+      "line_height": 1.2
+     },
+     "modes": {}
+    }
+   },
+   "type.headline": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.9,
+     "source": "website:https://cursor.com/marketing-static/_next/static/chunks/0n3w.msyn~5aj.css?dpl=dpl_HH6a5prQZrH8WHpwyEWXTDfK8RBx :: .prose-column h3"
+    },
+    "role": "headline",
+    "value": {
+     "default": {
+      "color": "text.primary",
+      "font_asset": "brand",
+      "font_family": "CursorGothic",
+      "font_size": 26.0,
+      "font_weight": 400,
+      "kind": "style",
+      "letter_spacing": -0.0203,
+      "line_height": 2.0312
+     },
+     "modes": {}
+    }
+   },
+   "type.label": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.9,
+     "source": "website:https://cursor.com/marketing-static/_next/static/chunks/0n3w.msyn~5aj.css?dpl=dpl_HH6a5prQZrH8WHpwyEWXTDfK8RBx :: .prose-column h3"
+    },
+    "role": "label",
+    "value": {
+     "default": {
+      "color": "text.primary",
+      "font_asset": "brand",
+      "font_family": "CursorGothic",
+      "font_size": 10.0,
+      "font_weight": 600,
+      "kind": "style",
+      "letter_spacing": 0.0,
+      "line_height": 1.2
+     },
+     "modes": {}
+    }
+   },
+   "type.legal": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.9,
+     "source": "website:https://cursor.com/marketing-static/_next/static/chunks/0n3w.msyn~5aj.css?dpl=dpl_HH6a5prQZrH8WHpwyEWXTDfK8RBx :: .prose-column h3"
+    },
+    "role": "legal",
+    "value": {
+     "default": {
+      "color": "text.muted",
+      "font_asset": "brand",
+      "font_family": "CursorGothic",
+      "font_size": 8.0,
+      "font_weight": 400,
+      "kind": "style",
+      "letter_spacing": 0.0,
+      "line_height": 1.3
+     },
+     "modes": {}
+    }
+   },
+   "type.stat": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.9,
+     "source": "website:https://cursor.com/marketing-static/_next/static/chunks/0n3w.msyn~5aj.css?dpl=dpl_HH6a5prQZrH8WHpwyEWXTDfK8RBx :: .prose-column h3"
+    },
+    "role": "stat",
+    "value": {
+     "default": {
+      "color": "text.brand",
+      "font_asset": "brand",
+      "font_family": "CursorGothic",
+      "font_size": 32.5,
+      "font_weight": 700,
+      "kind": "style",
+      "letter_spacing": 0.0,
+      "line_height": 1.0
+     },
+     "modes": {}
+    }
+   },
+   "type.subtitle": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.9,
+     "source": "website:https://cursor.com/marketing-static/_next/static/chunks/0n3w.msyn~5aj.css?dpl=dpl_HH6a5prQZrH8WHpwyEWXTDfK8RBx :: .prose-column h3"
+    },
+    "role": "subtitle",
+    "value": {
+     "default": {
+      "color": "text.secondary",
+      "font_asset": "brand",
+      "font_family": "CursorGothic",
+      "font_size": 15.0,
+      "font_weight": 500,
+      "kind": "style",
+      "letter_spacing": 0.0,
+      "line_height": 1.3
+     },
+     "modes": {}
+    }
+   },
+   "type.title": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.9,
+     "source": "website:https://cursor.com/marketing-static/_next/static/chunks/0n3w.msyn~5aj.css?dpl=dpl_HH6a5prQZrH8WHpwyEWXTDfK8RBx :: .prose-column h3"
+    },
+    "role": "title",
+    "value": {
+     "default": {
+      "color": "text.primary",
+      "font_asset": "brand",
+      "font_family": "CursorGothic",
+      "font_size": 14.0,
+      "font_weight": 400,
+      "kind": "style",
+      "letter_spacing": 0.0088,
+      "line_height": 1.3125
+     },
+     "modes": {}
+    }
+   }
+  }
+ },
+ "version": 1
+}

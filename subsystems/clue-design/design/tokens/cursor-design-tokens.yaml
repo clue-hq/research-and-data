@@ -1,0 +1,2459 @@
+meta:
+  brand: Cursor
+  source_pages:
+  - https://cursor.com
+  - https://cursor.com/pricing
+  - https://cursor.com/enterprise
+  - https://cursor.com/students
+  - https://cursor.com/blog
+  captured_at: '2026-07-06'
+  pipeline: lumen brandkit ingestion v1 (rendered tier)
+  dark_colorway: captured
+tokens:
+  colors:
+    border.brand:
+      value: '#F54E00'
+      role: border
+      provenance: derived:border.brand
+      dark: '#8BC4F8'
+    border.default:
+      value: '#C3C3C0'
+      role: border
+      provenance: derived:border.default
+      dark: '#38444F'
+    border.strong:
+      value: '#888885'
+      role: border
+      provenance: derived:border.strong
+      dark: '#535F6B'
+    border.subtle:
+      value: '#DDDDDA'
+      role: border
+      provenance: derived:border.subtle
+      dark: '#242F39'
+    focus.ring:
+      value: '#F54E00'
+      role: focus
+      provenance: derived:focus.ring
+      dark: '#8BC4F8'
+    palette.neutral.100:
+      value: '#EAF1F9'
+      role: palette
+      provenance: derived:ramp(palette.neutral.100)
+    palette.neutral.200:
+      value: '#D8DFE6'
+      role: palette
+      provenance: derived:ramp(palette.neutral.200)
+    palette.neutral.300:
+      value: '#BEC5CC'
+      role: palette
+      provenance: derived:ramp(palette.neutral.300)
+    palette.neutral.400:
+      value: '#9FA5AC'
+      role: palette
+      provenance: derived:ramp(palette.neutral.400)
+    palette.neutral.50:
+      value: '#F6FBFF'
+      role: palette
+      provenance: derived:ramp(palette.neutral.50)
+    palette.neutral.500:
+      value: '#81878E'
+      role: palette
+      provenance: derived:ramp(palette.neutral.500)
+    palette.neutral.600:
+      value: '#666D73'
+      role: palette
+      provenance: derived:ramp(palette.neutral.600)
+    palette.neutral.700:
+      value: '#50565C'
+      role: palette
+      provenance: derived:ramp(palette.neutral.700)
+    palette.neutral.800:
+      value: '#3D4349'
+      role: palette
+      provenance: derived:ramp(palette.neutral.800)
+    palette.neutral.900:
+      value: '#26251E'
+      role: palette
+      provenance: derived:ramp(palette.neutral.900)
+    palette.neutral.950:
+      value: '#161B20'
+      role: palette
+      provenance: derived:ramp(palette.neutral.950)
+    palette.primary.100:
+      value: '#FFEBE5'
+      role: palette
+      provenance: derived:ramp(palette.primary.100)
+    palette.primary.200:
+      value: '#FFD3C5'
+      role: palette
+      provenance: derived:ramp(palette.primary.200)
+    palette.primary.300:
+      value: '#FFAD93'
+      role: palette
+      provenance: derived:ramp(palette.primary.300)
+    palette.primary.400:
+      value: '#FF7549'
+      role: palette
+      provenance: derived:ramp(palette.primary.400)
+    palette.primary.50:
+      value: '#FFF8F6'
+      role: palette
+      provenance: derived:ramp(palette.primary.50)
+    palette.primary.500:
+      value: '#F54E00'
+      role: palette
+      provenance: derived:ramp(palette.primary.500)
+    palette.primary.600:
+      value: '#BA3900'
+      role: palette
+      provenance: derived:ramp(palette.primary.600)
+    palette.primary.700:
+      value: '#952C00'
+      role: palette
+      provenance: derived:ramp(palette.primary.700)
+    palette.primary.800:
+      value: '#762100'
+      role: palette
+      provenance: derived:ramp(palette.primary.800)
+    palette.primary.900:
+      value: '#541500'
+      role: palette
+      provenance: derived:ramp(palette.primary.900)
+    palette.primary.950:
+      value: '#350900'
+      role: palette
+      provenance: derived:ramp(palette.primary.950)
+    surface.accent:
+      value: '#1F8A65'
+      role: surface
+      provenance: 'website:css :: --color-success'
+      dark: '#8BC4F8'
+    surface.brand:
+      value: '#F54E00'
+      role: surface
+      provenance: 'website:css :: --color-accent'
+      dark: '#8BC4F8'
+    surface.brand.subtle:
+      value: '#FFEBE5'
+      role: surface
+      provenance: derived:surface.brand.subtle
+      dark: '#1A2B3A'
+    surface.canvas:
+      value: '#F9F9F6'
+      role: surface
+      provenance: derived:surface.canvas
+      dark: '#1D2832'
+    surface.card:
+      value: '#F7F7F4'
+      role: surface
+      provenance: 'website:rendered :: body'
+      dark: '#2E3A44'
+    surface.elevated:
+      value: '#F7F7F7'
+      role: surface
+      provenance: derived:surface.elevated
+      dark: '#39444F'
+    surface.inverse:
+      value: '#121210'
+      role: surface
+      provenance: derived:surface.inverse
+      dark: '#F7F7F4'
+    surface.muted:
+      value: '#E6E6E3'
+      role: surface
+      provenance: derived:surface.muted
+      dark: '#343F49'
+    surface.page:
+      value: '#F7F7F4'
+      role: surface
+      provenance: 'website:rendered :: body'
+      dark: '#2E2E2E'
+    text.accent:
+      value: '#952C00'
+      role: text
+      provenance: derived:text.accent
+      dark: '#8BC4F8'
+    text.brand:
+      value: '#952C00'
+      role: text
+      provenance: derived:text.brand
+      dark: '#8BC4F8'
+    text.inverse:
+      value: '#FFFFFF'
+      role: text
+      provenance: derived:text.inverse
+      dark: '#26251E'
+    text.muted:
+      value: '#73726A'
+      role: text
+      provenance: derived:text.muted
+      dark: '#7D8892'
+    text.primary:
+      value: '#26251E'
+      role: text
+      provenance: 'website:rendered :: body'
+      dark: '#EDECEC'
+    text.secondary:
+      value: '#57564E'
+      role: text
+      provenance: derived:text.secondary
+      dark: '#AEB9C4'
+  typography:
+    type.body:
+      font_family: CursorGothic
+      font_size: 12.0
+      font_weight: 400
+      line_height: 1.5
+      letter_spacing: 0.0
+      color: text.primary
+    type.body.small:
+      font_family: CursorGothic
+      font_size: 10.5
+      font_weight: 400
+      line_height: 1.4
+      letter_spacing: 0.0
+      color: text.primary
+    type.caption:
+      font_family: CursorGothic
+      font_size: 9.0
+      font_weight: 500
+      line_height: 1.35
+      letter_spacing: 0.0
+      color: text.secondary
+    type.cta:
+      font_family: CursorGothic
+      font_size: 14.0
+      font_weight: 400
+      line_height: 1.3125
+      letter_spacing: 0.0088
+      color: text.primary
+    type.display:
+      font_family: CursorGothic
+      font_size: 41.5
+      font_weight: 700
+      line_height: 1.05
+      letter_spacing: -0.02
+      color: text.primary
+    type.eyebrow:
+      font_family: CursorGothic
+      font_size: 9.0
+      font_weight: 600
+      line_height: 1.2
+      letter_spacing: 0.08
+      color: text.brand
+    type.headline:
+      font_family: CursorGothic
+      font_size: 26.0
+      font_weight: 400
+      line_height: 2.0312
+      letter_spacing: -0.0203
+      color: text.primary
+    type.label:
+      font_family: CursorGothic
+      font_size: 10.0
+      font_weight: 600
+      line_height: 1.2
+      letter_spacing: 0.0
+      color: text.primary
+    type.legal:
+      font_family: CursorGothic
+      font_size: 8.0
+      font_weight: 400
+      line_height: 1.3
+      letter_spacing: 0.0
+      color: text.muted
+    type.stat:
+      font_family: CursorGothic
+      font_size: 32.5
+      font_weight: 700
+      line_height: 1.0
+      letter_spacing: 0.0
+      color: text.brand
+    type.subtitle:
+      font_family: CursorGothic
+      font_size: 15.0
+      font_weight: 500
+      line_height: 1.3
+      letter_spacing: 0.0
+      color: text.secondary
+    type.title:
+      font_family: CursorGothic
+      font_size: 14.0
+      font_weight: 400
+      line_height: 1.3125
+      letter_spacing: 0.0088
+      color: text.primary
+  spacing:
+    space.0: 0.0
+    space.1: 4.0
+    space.10: 40.0
+    space.12: 48.0
+    space.16: 64.0
+    space.2: 8.0
+    space.3: 12.0
+    space.4: 16.0
+    space.5: 20.0
+    space.6: 24.0
+    space.8: 32.0
+    space.card.padding: 24.0
+    space.page.margin: 48.0
+    space.section: 64.0
+    space.stack.default: 16.0
+    space.stack.loose: 24.0
+    space.stack.tight: 8.0
+  radii:
+    radius.badge: 9999.0
+    radius.button: 8.0
+    radius.card: 12.0
+    radius.full: 9999.0
+    radius.lg: 12.0
+    radius.md: 8.0
+    radius.none: 0.0
+    radius.sm: 4.0
+    radius.xl: 16.0
+    radius.xs: 2.0
+  stroke_widths:
+    stroke.width.bold: 3.0
+    stroke.width.card: 1.0
+    stroke.width.default: 1.0
+    stroke.width.divider: 1.0
+    stroke.width.firm: 2.0
+    stroke.width.focus: 2.0
+    stroke.width.hairline: 0.5
+    stroke.width.thin: 1.0
+  opacity:
+    opacity.disabled: 0.4
+    opacity.emphasis: 0.88
+    opacity.muted: 0.56
+    opacity.overlay: 0.48
+    opacity.scrim: 0.64
+    opacity.subtle: 0.72
+  aliases:
+    accent.primary: surface.accent
+assets:
+  fonts:
+    brand:
+      family: CursorGothic
+      source:
+        kind: url
+        url: https://cursor.com/media/CursorGothic_Regular-s.p.05-84umc_47y9.woff2?dpl=dpl_HH6a5prQZrH8WHpwyEWXTDfK8RBx
+      faces:
+      - weight: 400
+        style: normal
+        asset_id: null
+        source_url: https://cursor.com/media/CursorGothic_Regular-s.p.05-84umc_47y9.woff2?dpl=dpl_HH6a5prQZrH8WHpwyEWXTDfK8RBx
+      - weight: 400
+        style: italic
+        asset_id: null
+        source_url: https://cursor.com/media/CursorGothic_Italic-s.p.0klm.ze1la4ej.woff2?dpl=dpl_HH6a5prQZrH8WHpwyEWXTDfK8RBx
+      - weight: 700
+        style: normal
+        asset_id: null
+        source_url: https://cursor.com/media/CursorGothic_Bold-s.p.15hkw~ebmtjvr.woff2?dpl=dpl_HH6a5prQZrH8WHpwyEWXTDfK8RBx
+      - weight: 700
+        style: italic
+        asset_id: null
+        source_url: https://cursor.com/media/CursorGothic_BoldItalic-s.p.0cqzqaem~_s9y.woff2?dpl=dpl_HH6a5prQZrH8WHpwyEWXTDfK8RBx
+      fallback_stack:
+      - Arial
+      - sans-serif
+      scripts:
+      - latin
+      license:
+        name: unknown
+        embeddable: false
+        subsettable: false
+        source_url: null
+        restrictions:
+        - License not verified at ingestion; do not embed in print exports without confirmation.
+      provenance:
+        source: 'website:https://cursor.com/marketing-static/_next/static/chunks/0l~sqiseq5cws.css?dpl=dpl_HH6a5prQZrH8WHpwyEWXTDfK8RBx
+          :: @font-face CursorGothic'
+        confidence: 0.7
+  logos:
+    primary:
+      variants:
+      - name: full_color
+        asset_id: asset_ing_c5602b748d1735bb
+        color_mode: full_color
+        width: null
+        height: null
+      - name: full_color
+        asset_id: asset_ing_87057ca2cfd4e003
+        color_mode: full_color
+        width: null
+        height: null
+      - name: full_color
+        asset_id: asset_ing_abac12dc86310df4
+        color_mode: full_color
+        width: null
+        height: null
+      usage: primary
+      min_size: null
+      clearspace: null
+      allowed_backgrounds:
+      - surface.page
+      - surface.card
+      license: null
+      provenance:
+        source: 'website:dom :: inline svg'
+        confidence: 0.7
+    mark:
+      variants:
+      - name: full_color
+        asset_id: asset_ing_9c941729e5131822
+        color_mode: full_color
+        width: null
+        height: null
+      usage: mark
+      min_size: null
+      clearspace: null
+      allowed_backgrounds:
+      - surface.page
+      - surface.card
+      license: null
+      provenance:
+        source: 'website:dom :: apple-touch-icon'
+        confidence: 0.7
+  images:
+    img.1:
+      asset_id: asset_ing_0b108182dc32fda5
+      role: og_image
+      mime_type: null
+      license: null
+      provenance:
+        source: 'website:dom :: og:image'
+        confidence: 0.6
+      style_tags: []
+      allowed_contexts: []
+      preferred_color_tokens: []
+      recolor_allowed: false
+      crop_allowed: true
+    img.2:
+      asset_id: asset_ing_2d9fc9fbc2f6b8de
+      role: photo
+      mime_type: null
+      license: null
+      provenance:
+        source: 'website:dom :: img'
+        confidence: 0.6
+      style_tags: []
+      allowed_contexts: []
+      preferred_color_tokens: []
+      recolor_allowed: false
+      crop_allowed: true
+    img.3:
+      asset_id: asset_ing_09b01c9514892aa9
+      role: photo
+      mime_type: null
+      license: null
+      provenance:
+        source: 'website:dom :: img'
+        confidence: 0.6
+      style_tags: []
+      allowed_contexts: []
+      preferred_color_tokens: []
+      recolor_allowed: false
+      crop_allowed: true
+    img.4:
+      asset_id: asset_ing_c946e57244911b22
+      role: photo
+      mime_type: null
+      license: null
+      provenance:
+        source: 'website:dom :: img'
+        confidence: 0.6
+      style_tags: []
+      allowed_contexts: []
+      preferred_color_tokens: []
+      recolor_allowed: false
+      crop_allowed: true
+    img.5:
+      asset_id: asset_ing_b89b4cda412e4b7d
+      role: photo
+      mime_type: null
+      license: null
+      provenance:
+        source: 'website:dom :: img'
+        confidence: 0.6
+      style_tags: []
+      allowed_contexts: []
+      preferred_color_tokens: []
+      recolor_allowed: false
+      crop_allowed: true
+    img.6:
+      asset_id: asset_ing_3fe3ac81aac5b0af
+      role: photo
+      mime_type: null
+      license: null
+      provenance:
+        source: 'website:dom :: img'
+        confidence: 0.6
+      style_tags: []
+      allowed_contexts: []
+      preferred_color_tokens: []
+      recolor_allowed: false
+      crop_allowed: true
+    img.7:
+      asset_id: asset_ing_b87323250ce77894
+      role: photo
+      mime_type: null
+      license: null
+      provenance:
+        source: 'website:dom :: img'
+        confidence: 0.6
+      style_tags: []
+      allowed_contexts: []
+      preferred_color_tokens: []
+      recolor_allowed: false
+      crop_allowed: true
+    img.8:
+      asset_id: asset_ing_a9d27679b73a1a19
+      role: photo
+      mime_type: null
+      license: null
+      provenance:
+        source: 'website:dom :: img'
+        confidence: 0.6
+      style_tags: []
+      allowed_contexts: []
+      preferred_color_tokens: []
+      recolor_allowed: false
+      crop_allowed: true
+    img.9:
+      asset_id: asset_ing_ebdb5ce5a5712597
+      role: photo
+      mime_type: null
+      license: null
+      provenance:
+        source: 'website:dom :: img'
+        confidence: 0.6
+      style_tags: []
+      allowed_contexts: []
+      preferred_color_tokens: []
+      recolor_allowed: false
+      crop_allowed: true
+    img.10:
+      asset_id: asset_ing_21fa75257d2069c2
+      role: photo
+      mime_type: null
+      license: null
+      provenance:
+        source: 'website:dom :: img'
+        confidence: 0.6
+      style_tags: []
+      allowed_contexts: []
+      preferred_color_tokens: []
+      recolor_allowed: false
+      crop_allowed: true
+    img.11:
+      asset_id: asset_ing_8f6fa068fa4393cf
+      role: photo
+      mime_type: null
+      license: null
+      provenance:
+        source: 'website:dom :: img'
+        confidence: 0.6
+      style_tags: []
+      allowed_contexts: []
+      preferred_color_tokens: []
+      recolor_allowed: false
+      crop_allowed: true
+    img.12:
+      asset_id: asset_ing_8a3860f47887d236
+      role: photo
+      mime_type: null
+      license: null
+      provenance:
+        source: 'website:dom :: img'
+        confidence: 0.6
+      style_tags: []
+      allowed_contexts: []
+      preferred_color_tokens: []
+      recolor_allowed: false
+      crop_allowed: true
+    img.13:
+      asset_id: asset_ing_22a7124b3bfd63ee
+      role: photo
+      mime_type: null
+      license: null
+      provenance:
+        source: 'website:dom :: img'
+        confidence: 0.6
+      style_tags: []
+      allowed_contexts: []
+      preferred_color_tokens: []
+      recolor_allowed: false
+      crop_allowed: true
+    img.14:
+      asset_id: asset_ing_97e1fd5528a8790e
+      role: og_image
+      mime_type: null
+      license: null
+      provenance:
+        source: 'website:dom :: og:image'
+        confidence: 0.6
+      style_tags: []
+      allowed_contexts: []
+      preferred_color_tokens: []
+      recolor_allowed: false
+      crop_allowed: true
+    img.15:
+      asset_id: asset_ing_0fe722ec18fa55ae
+      role: photo
+      mime_type: null
+      license: null
+      provenance:
+        source: 'website:dom :: img'
+        confidence: 0.6
+      style_tags: []
+      allowed_contexts: []
+      preferred_color_tokens: []
+      recolor_allowed: false
+      crop_allowed: true
+    img.16:
+      asset_id: asset_ing_b0df9bc1c118c595
+      role: photo
+      mime_type: null
+      license: null
+      provenance:
+        source: 'website:dom :: img'
+        confidence: 0.6
+      style_tags: []
+      allowed_contexts: []
+      preferred_color_tokens: []
+      recolor_allowed: false
+      crop_allowed: true
+    img.17:
+      asset_id: asset_ing_af89940419e7a347
+      role: photo
+      mime_type: null
+      license: null
+      provenance:
+        source: 'website:dom :: img'
+        confidence: 0.6
+      style_tags: []
+      allowed_contexts: []
+      preferred_color_tokens: []
+      recolor_allowed: false
+      crop_allowed: true
+    img.18:
+      asset_id: asset_ing_6e9c7358ddbc506b
+      role: photo
+      mime_type: null
+      license: null
+      provenance:
+        source: 'website:dom :: img'
+        confidence: 0.6
+      style_tags: []
+      allowed_contexts: []
+      preferred_color_tokens: []
+      recolor_allowed: false
+      crop_allowed: true
+    img.19:
+      asset_id: asset_ing_ee0e2314124515f1
+      role: photo
+      mime_type: null
+      license: null
+      provenance:
+        source: 'website:dom :: img'
+        confidence: 0.6
+      style_tags: []
+      allowed_contexts: []
+      preferred_color_tokens: []
+      recolor_allowed: false
+      crop_allowed: true
+    img.20:
+      asset_id: asset_ing_c74d20815f31f1c9
+      role: photo
+      mime_type: null
+      license: null
+      provenance:
+        source: 'website:dom :: img'
+        confidence: 0.6
+      style_tags: []
+      allowed_contexts: []
+      preferred_color_tokens: []
+      recolor_allowed: false
+      crop_allowed: true
+    img.21:
+      asset_id: asset_ing_a6842df2c7e072af
+      role: photo
+      mime_type: null
+      license: null
+      provenance:
+        source: 'website:dom :: img'
+        confidence: 0.6
+      style_tags: []
+      allowed_contexts: []
+      preferred_color_tokens: []
+      recolor_allowed: false
+      crop_allowed: true
+    img.22:
+      asset_id: asset_ing_d542f141471c65e2
+      role: photo
+      mime_type: null
+      license: null
+      provenance:
+        source: 'website:dom :: img'
+        confidence: 0.6
+      style_tags: []
+      allowed_contexts: []
+      preferred_color_tokens: []
+      recolor_allowed: false
+      crop_allowed: true
+    img.23:
+      asset_id: asset_ing_938c8a973e9f8994
+      role: photo
+      mime_type: null
+      license: null
+      provenance:
+        source: 'website:dom :: img'
+        confidence: 0.6
+      style_tags: []
+      allowed_contexts: []
+      preferred_color_tokens: []
+      recolor_allowed: false
+      crop_allowed: true
+    img.24:
+      asset_id: asset_ing_c59dc1facb6a9434
+      role: photo
+      mime_type: null
+      license: null
+      provenance:
+        source: 'website:dom :: img'
+        confidence: 0.6
+      style_tags: []
+      allowed_contexts: []
+      preferred_color_tokens: []
+      recolor_allowed: false
+      crop_allowed: true
+    img.25:
+      asset_id: asset_ing_2255879f505fe85a
+      role: photo
+      mime_type: null
+      license: null
+      provenance:
+        source: 'website:dom :: img'
+        confidence: 0.6
+      style_tags: []
+      allowed_contexts: []
+      preferred_color_tokens: []
+      recolor_allowed: false
+      crop_allowed: true
+    img.26:
+      asset_id: asset_ing_677b8bf91956da3f
+      role: photo
+      mime_type: null
+      license: null
+      provenance:
+        source: 'website:dom :: img'
+        confidence: 0.6
+      style_tags: []
+      allowed_contexts: []
+      preferred_color_tokens: []
+      recolor_allowed: false
+      crop_allowed: true
+    img.27:
+      asset_id: asset_ing_f956e259a4b6a69b
+      role: photo
+      mime_type: null
+      license: null
+      provenance:
+        source: 'website:dom :: img'
+        confidence: 0.6
+      style_tags: []
+      allowed_contexts: []
+      preferred_color_tokens: []
+      recolor_allowed: false
+      crop_allowed: true
+    img.28:
+      asset_id: asset_ing_29bde95008fdb459
+      role: photo
+      mime_type: null
+      license: null
+      provenance:
+        source: 'website:dom :: img'
+        confidence: 0.6
+      style_tags: []
+      allowed_contexts: []
+      preferred_color_tokens: []
+      recolor_allowed: false
+      crop_allowed: true
+    img.29:
+      asset_id: asset_ing_e7d72385ef423cb8
+      role: photo
+      mime_type: null
+      license: null
+      provenance:
+        source: 'website:dom :: img'
+        confidence: 0.6
+      style_tags: []
+      allowed_contexts: []
+      preferred_color_tokens: []
+      recolor_allowed: false
+      crop_allowed: true
+    img.30:
+      asset_id: asset_ing_1006633b3f552d9c
+      role: photo
+      mime_type: null
+      license: null
+      provenance:
+        source: 'website:dom :: img'
+        confidence: 0.6
+      style_tags: []
+      allowed_contexts: []
+      preferred_color_tokens: []
+      recolor_allowed: false
+      crop_allowed: true
+    img.31:
+      asset_id: asset_ing_f5d541baf1e6180f
+      role: photo
+      mime_type: null
+      license: null
+      provenance:
+        source: 'website:dom :: img'
+        confidence: 0.6
+      style_tags: []
+      allowed_contexts: []
+      preferred_color_tokens: []
+      recolor_allowed: false
+      crop_allowed: true
+    img.32:
+      asset_id: asset_ing_00e40b1b8586b114
+      role: photo
+      mime_type: null
+      license: null
+      provenance:
+        source: 'website:dom :: img'
+        confidence: 0.6
+      style_tags: []
+      allowed_contexts: []
+      preferred_color_tokens: []
+      recolor_allowed: false
+      crop_allowed: true
+    img.33:
+      asset_id: asset_ing_758d988b9f6b92c5
+      role: photo
+      mime_type: null
+      license: null
+      provenance:
+        source: 'website:dom :: img'
+        confidence: 0.6
+      style_tags: []
+      allowed_contexts: []
+      preferred_color_tokens: []
+      recolor_allowed: false
+      crop_allowed: true
+    img.34:
+      asset_id: asset_ing_dda2fb4dba9b2702
+      role: og_image
+      mime_type: null
+      license: null
+      provenance:
+        source: 'website:dom :: og:image'
+        confidence: 0.6
+      style_tags: []
+      allowed_contexts: []
+      preferred_color_tokens: []
+      recolor_allowed: false
+      crop_allowed: true
+    img.35:
+      asset_id: asset_ing_af08f679bb447ca7
+      role: photo
+      mime_type: null
+      license: null
+      provenance:
+        source: 'website:dom :: img'
+        confidence: 0.6
+      style_tags: []
+      allowed_contexts: []
+      preferred_color_tokens: []
+      recolor_allowed: false
+      crop_allowed: true
+    img.36:
+      asset_id: asset_ing_c94729a48ebdd8f6
+      role: photo
+      mime_type: null
+      license: null
+      provenance:
+        source: 'website:dom :: img'
+        confidence: 0.6
+      style_tags: []
+      allowed_contexts: []
+      preferred_color_tokens: []
+      recolor_allowed: false
+      crop_allowed: true
+    img.37:
+      asset_id: asset_ing_6f0bdec445c9b146
+      role: photo
+      mime_type: null
+      license: null
+      provenance:
+        source: 'website:dom :: img'
+        confidence: 0.6
+      style_tags: []
+      allowed_contexts: []
+      preferred_color_tokens: []
+      recolor_allowed: false
+      crop_allowed: true
+    img.38:
+      asset_id: asset_ing_601ef4a7765a043d
+      role: photo
+      mime_type: null
+      license: null
+      provenance:
+        source: 'website:dom :: img'
+        confidence: 0.6
+      style_tags: []
+      allowed_contexts: []
+      preferred_color_tokens: []
+      recolor_allowed: false
+      crop_allowed: true
+    img.39:
+      asset_id: asset_ing_ced9c801aa5d3b88
+      role: photo
+      mime_type: null
+      license: null
+      provenance:
+        source: 'website:dom :: img'
+        confidence: 0.6
+      style_tags: []
+      allowed_contexts: []
+      preferred_color_tokens: []
+      recolor_allowed: false
+      crop_allowed: true
+    img.40:
+      asset_id: asset_ing_f3636c05d5bf3569
+      role: photo
+      mime_type: null
+      license: null
+      provenance:
+        source: 'website:dom :: img'
+        confidence: 0.6
+      style_tags: []
+      allowed_contexts: []
+      preferred_color_tokens: []
+      recolor_allowed: false
+      crop_allowed: true
+    img.41:
+      asset_id: asset_ing_8e9a16f854ffdf93
+      role: photo
+      mime_type: null
+      license: null
+      provenance:
+        source: 'website:dom :: img'
+        confidence: 0.6
+      style_tags: []
+      allowed_contexts: []
+      preferred_color_tokens: []
+      recolor_allowed: false
+      crop_allowed: true
+    img.42:
+      asset_id: asset_ing_004c46c1b28c9993
+      role: photo
+      mime_type: null
+      license: null
+      provenance:
+        source: 'website:dom :: img'
+        confidence: 0.6
+      style_tags: []
+      allowed_contexts: []
+      preferred_color_tokens: []
+      recolor_allowed: false
+      crop_allowed: true
+    img.43:
+      asset_id: asset_ing_80d110adeaf2c523
+      role: photo
+      mime_type: null
+      license: null
+      provenance:
+        source: 'website:dom :: img'
+        confidence: 0.6
+      style_tags: []
+      allowed_contexts: []
+      preferred_color_tokens: []
+      recolor_allowed: false
+      crop_allowed: true
+    img.44:
+      asset_id: asset_ing_3047729cfa5a991d
+      role: photo
+      mime_type: null
+      license: null
+      provenance:
+        source: 'website:dom :: img'
+        confidence: 0.6
+      style_tags: []
+      allowed_contexts: []
+      preferred_color_tokens: []
+      recolor_allowed: false
+      crop_allowed: true
+    img.45:
+      asset_id: asset_ing_f9371f5b8b79c217
+      role: photo
+      mime_type: null
+      license: null
+      provenance:
+        source: 'website:dom :: img'
+        confidence: 0.6
+      style_tags: []
+      allowed_contexts: []
+      preferred_color_tokens: []
+      recolor_allowed: false
+      crop_allowed: true
+    img.46:
+      asset_id: asset_ing_9abbb6d9468501f7
+      role: photo
+      mime_type: null
+      license: null
+      provenance:
+        source: 'website:dom :: img'
+        confidence: 0.6
+      style_tags: []
+      allowed_contexts: []
+      preferred_color_tokens: []
+      recolor_allowed: false
+      crop_allowed: true
+constraints:
+  allow_gradients: true
+  tone:
+  - clear
+  - professional
+  imagery: []
+  iconography: []
+  accessibility_notes: []
+  print_constraints:
+  - Font licensing was not verified at ingestion; confirm embeddability before print export.
+  contrast_pairs:
+  - foreground: text.primary
+    background: surface.page
+    min_ratio: 4.5
+  - foreground: text.primary
+    background: surface.brand
+    min_ratio: 4.5
+  - foreground: text.inverse
+    background: surface.inverse
+    min_ratio: 4.5
+raw_evidence:
+  css_custom_properties:
+    --_number-flow-d: '0'
+    --_number-flow-d-opacity: '0'
+    --_number-flow-d-width: '0'
+    --_number-flow-dx: 0px
+    --animate-gallery-marquee-item-slide-up: gallery-marquee-item-slide-up 1s cubic-bezier(.25, 1, .5, 1) both
+    --animate-pulse: pulse 2s cubic-bezier(.4, 0, .6, 1) infinite
+    --animate-spin: spin 1s linear infinite
+    --aspect-video: 16 / 9
+    --blur-lg: 16px
+    --blur-md: 12px
+    --blur-sm: 8px
+    --breakpoint-md: 660px
+    --button-padding-default: .78em 1.35em .8em
+    --button-padding-md-sm: .6em 1.25em .62em
+    --button-padding-sm: .4em .75em .42em
+    --button-padding-xs: .15em .5em
+    --color-accent: '#f54e00'
+    --color-accent-bg: 'color-mix(in srgb, #f54e00 10%, transparent)'
+    --color-accent-bg-strong: 'color-mix(in srgb, #f54e00 25%, transparent)'
+    --color-bg: '#f7f7f4'
+    --color-bg-elevated: '#f2f1ed'
+    --color-bg-hover: '#ebeae5'
+    --color-black: '#000'
+    --color-blue-50: lab(96.492% -1.14644 -5.11479)
+    --color-blue-600: lab(44.0605% 29.0279 -86.0352)
+    --color-blue-800: lab(30.2514% 27.7853 -70.2699)
+    --color-blue-900: lab(26.1542% 15.7545 -51.5504)
+    --color-border: 'color-mix(in oklab, #26251e 10%, transparent)'
+    --color-border-bright: 'color-mix(in oklab, #26251e 20%, transparent)'
+    --color-code-bg: '#f2f1ed'
+    --color-code-text: '#26251e'
+    --color-error: '#cf2d56'
+    --color-error-bg: 'color-mix(in srgb, #cf2d56 15%, transparent)'
+    --color-gray-200: lab(91.6229% -.159115 -2.26791)
+    --color-gray-300: lab(85.1236% -.612259 -3.7138)
+    --color-gray-50: lab(98.2596% -.247031 -.706708)
+    --color-gray-500: lab(47.7841% -.393182 -10.0268)
+    --color-gray-600: lab(35.6337% -1.58697 -10.8425)
+    --color-gray-700: lab(27.1134% -.956401 -12.3224)
+    --color-gray-800: lab(16.1051% -1.18239 -11.7533)
+    --color-gray-900: lab(8.11897% .811279 -12.254)
+    --color-green-50: lab(98.1563% -5.60117 2.75915)
+    --color-green-500: lab(70.5521% -66.5147 45.8073)
+    --color-green-600: lab(59.0978% -58.6621 41.2579)
+    --color-green-800: lab(37.4616% -36.7971 22.9692)
+    --color-green-900: lab(30.797% -29.6927 17.382)
+    --color-info: 'color-mix(in oklab, #26251e 60%, transparent)'
+    --color-neutral-500: lab(48.496% 0 0)
+    --color-neutral-800: lab(15.204% 0 -.00000596046)
+    --color-neutral-900: lab(7.78201% -.0000149012 0)
+    --color-purple-400: lab(63.6946% 47.6127 -59.2066)
+    --color-red-500: lab(55.4814% 75.0732 48.8528)
+    --color-red-600: lab(48.4493% 77.4328 61.5452)
+    --color-slate-200: lab(91.7353% -.998765 -4.76968)
+    --color-slate-500: lab(48.0876% -2.03595 -16.5814)
+    --color-success: '#1f8a65'
+    --color-success-bg: 'color-mix(in srgb, #1f8a65 15%, transparent)'
+    --color-text-muted: 'color-mix(in oklab, #26251e 60%, transparent)'
+    --color-text-primary: '#26251e'
+    --color-text-secondary: 'color-mix(in oklab, #26251e 60%, transparent)'
+    --color-theme-accent: '#f54e00'
+    --color-theme-bg: '#f7f7f4'
+    --color-theme-border: 'color-mix(in oklab, #26251e 2.5%, transparent)'
+    --color-theme-border-01: 'color-mix(in oklab, #26251e 2.5%, transparent)'
+    --color-theme-border-01-5: 'color-mix(in oklab, #26251e 5%, transparent)'
+    --color-theme-border-02: 'color-mix(in oklab, #26251e 10%, transparent)'
+    --color-theme-border-02-5: 'color-mix(in oklab, #26251e 20%, transparent)'
+    --color-theme-border-03: 'color-mix(in oklab, #26251e 60%, transparent)'
+    --color-theme-button-bg: '#26251e'
+    --color-theme-button-hover-bg: '#3b3a33'
+    --color-theme-button-hover-border: '#3b3a33'
+    --color-theme-button-hover-text: '#f7f7f4'
+    --color-theme-button-sec-bg: transparent
+    --color-theme-button-sec-border: 'color-mix(in oklab, #26251e 60%, transparent)'
+    --color-theme-button-sec-text: '#26251e'
+    --color-theme-button-text: '#f7f7f4'
+    --color-theme-card: linear-gradient(#f2f1ed 0% 100%)
+    --color-theme-card-01-hex: '#f0efeb'
+    --color-theme-card-02: 'linear-gradient(color-mix(in oklab, #26251e 2.5%, transparent) 0% 100%), linear-gradient(#f2f1ed
+      0% 100%)'
+    --color-theme-card-02-hex: '#ebeae5'
+    --color-theme-card-03: 'linear-gradient(color-mix(in oklab, #26251e 5%, transparent) 0% 100%), linear-gradient(#f2f1ed
+      0% 100%)'
+    --color-theme-card-03-hex: '#e6e5e0'
+    --color-theme-card-04-hex: '#e1e0db'
+    --color-theme-card-hex: '#f2f1ed'
+    --color-theme-card-hover-border: 'color-mix(in oklab, #26251e 10%, transparent)'
+    --color-theme-card-hover-hex: '#ebeae5'
+    --color-theme-card-hover-light-hex: '#f0efeb'
+    --color-theme-card-warm-hex: '#f3ede6'
+    --color-theme-fg: '#26251e'
+    --color-theme-fg-01: 'color-mix(in oklab, #26251e 1%, transparent)'
+    --color-theme-fg-02: '#3b3a33'
+    --color-theme-fg-02-5: 'color-mix(in oklab, #26251e 2.5%, transparent)'
+    --color-theme-fg-05: 'color-mix(in oklab, #26251e 5%, transparent)'
+    --color-theme-fg-07-5: 'color-mix(in oklab, #26251e 7.5%, transparent)'
+    --color-theme-fg-08: 'color-mix(in oklab, #26251e 8%, transparent)'
+    --color-theme-fg-10: 'color-mix(in oklab, #26251e 10%, transparent)'
+    --color-theme-fg-15: 'color-mix(in oklab, #26251e 15%, transparent)'
+    --color-theme-fg-20: 'color-mix(in oklab, #26251e 20%, transparent)'
+    --color-theme-product-ansi-green: '#1f8a65'
+    --color-theme-product-ansi-red: '#cf2d56'
+    --color-theme-product-chrome: '#f2f1ed'
+    --color-theme-product-editor: '#f7f7f4'
+    --color-theme-product-line-inserted-line-background: 'color-mix(in srgb, #1f8a65 8%, transparent)'
+    --color-theme-product-removed-line-background: 'color-mix(in srgb, #cf2d56 6%, transparent)'
+    --color-theme-product-text: 'color-mix(in oklab, #26251e 92%, transparent)'
+    --color-theme-product-text-sec: 'color-mix(in oklab, #26251e 60%, transparent)'
+    --color-theme-product-text-tertiary: 'color-mix(in oklab, #26251e 40%, transparent)'
+    --color-theme-text: '#26251e'
+    --color-theme-text-mid: 'color-mix(in oklab, #26251e 50%, transparent)'
+    --color-theme-text-sec: 'color-mix(in oklab, #26251e 60%, transparent)'
+    --color-theme-text-tertiary: 'color-mix(in oklab, #26251e 40%, transparent)'
+    --color-timeline-edit: '#c0a8dd'
+    --color-timeline-grep: '#9fc9a2'
+    --color-timeline-read: '#9fbbe0'
+    --color-timeline-thinking: '#dfa88f'
+    --color-warning: '#f54e00'
+    --color-warning-bg: 'color-mix(in srgb, #f54e00 15%, transparent)'
+    --color-white: '#fff'
+    --container-2xl: 42rem
+    --container-2xs: 18rem
+    --container-3xl: 48rem
+    --container-4xl: 56rem
+    --container-5xl: 64rem
+    --container-7xl: 80rem
+    --container-lg: 32rem
+    --container-md: 28rem
+    --container-sm: 24rem
+    --container-xl: 36rem
+    --container-xs: 20rem
+    --default-font-family: '"CursorGothic", "CursorGothic Fallback", system-ui, Helvetica Neue, Helvetica, Arial,
+      sans-serif'
+    --default-mono-font-family: '"berkeleyMono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, Liberation
+      Mono, Courier New, monospace, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace'
+    --default-transition-duration: .15s
+    --default-transition-timing-function: cubic-bezier(.4, 0, .2, 1)
+    --duration: .14s
+    --duration-slow: .25s
+    --ease-in-out: cubic-bezier(.4, 0, .2, 1)
+    --ease-out: cubic-bezier(0, 0, .2, 1)
+    --ease-out-spring: cubic-bezier(.25, 1, .5, 1)
+    --font-berkeley-mono: '"berkeleyMono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, Liberation Mono,
+      Courier New, monospace'
+    --font-mono: '"berkeleyMono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, Liberation Mono, Courier
+      New, monospace, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace'
+    --font-sans: '"CursorGothic", "CursorGothic Fallback", system-ui, Helvetica Neue, Helvetica, Arial, sans-serif'
+    --font-serif: '"EB Garamond", Iowan Old Style, Palatino Linotype, URW Palladio L, P052, ui-serif, Georgia, Cambria,
+      Times New Roman, Times, serif'
+    --font-system: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue", Arial, sans-serif
+    --font-weight-bold: '700'
+    --font-weight-light: '300'
+    --font-weight-medium: '500'
+    --font-weight-normal: '400'
+    --font-weight-semibold: '600'
+    --g: calc(10rem / 16)
+    --grid-gap: calc(12rem / 15)
+    --katex-font-size: 1.15rem
+    --leading-2xsnug: '1.15'
+    --leading-cozy: '1.4'
+    --leading-normal: '1.5'
+    --leading-product-base: '1.33333'
+    --leading-product-base-mono: 1.25rem
+    --leading-product-sm: '1.27273'
+    --leading-relaxed: '1.625'
+    --leading-snug: '1.25'
+    --leading-snug-plus: '1.3'
+    --leading-tight: '1.1'
+    --leading-xsnug: '1.2'
+    --max-width-container: 1300px
+    --media-range-thumb-display: none
+    --prose-body: '#26251e'
+    --prose-bullets: 'color-mix(in oklab, #26251e 40%, transparent)'
+    --prose-captions: 'color-mix(in oklab, #26251e 60%, transparent)'
+    --prose-code: '#26251e'
+    --prose-code-bg: '#f2f1ed'
+    --prose-code-border: 'color-mix(in oklab, #26251e 2.5%, transparent)'
+    --prose-code-border-radius: 4px
+    --prose-headings: '#26251e'
+    --prose-hr: 'color-mix(in oklab, #26251e 10%, transparent)'
+    --prose-pre-bg: 'color-mix(in oklab, #26251e 2.5%, transparent)'
+    --prose-pre-code: '#26251e'
+    --radius-2xl: 1rem
+    --radius-2xs: 2px
+    --radius-lg: .5rem
+    --radius-md: 8px
+    --radius-sm: .25rem
+    --radius-xl: .75rem
+    --radius-xs: 4px
+    --shadow-flyout: '0 0 1rem #00000005, 0 0 .5rem #00000002'
+    --shadow-outline-theme: '0 0 0 1px color-mix(in oklab, #26251e 10%, transparent)'
+    --site-header-height: 52px
+    --site-sticky-top: 64px
+    --spacing: .25rem
+    --spacing-2xl: calc(calc(10rem / 16) * 3)
+    --spacing-g0.25: calc(calc(10rem / 16) * .25)
+    --spacing-g0.5: calc(calc(10rem / 16) * .5)
+    --spacing-g0.75: calc(calc(10rem / 16) * .75)
+    --spacing-g1: calc(calc(10rem / 16) * 1)
+    --spacing-g1.25: calc(calc(10rem / 16) * 1.25)
+    --spacing-g1.5: calc(calc(10rem / 16) * 1.5)
+    --spacing-g1.75: calc(calc(10rem / 16) * 1.75)
+    --spacing-g2: calc(calc(10rem / 16) * 2)
+    --spacing-g2.5: calc(calc(10rem / 16) * 2.5)
+    --spacing-g3: calc(calc(10rem / 16) * 3)
+    --spacing-lg: calc(calc(10rem / 16) * 1.5)
+    --spacing-md: calc(calc(10rem / 16) * 1)
+    --spacing-prose-medium-wide: 80ch
+    --spacing-prose-narrow: 48ch
+    --spacing-prose-wide: 96ch
+    --spacing-sm: calc(calc(10rem / 16) * .5)
+    --spacing-v1: calc(1rem * 1.4)
+    --spacing-v1.25: calc(1rem * 1.4 * 1.25)
+    --spacing-v1.5: calc(1rem * 1.4 * 1.5)
+    --spacing-v1/12: calc(1rem * 1.4 * 1 / 12)
+    --spacing-v10/12: calc(1rem * 1.4 * 10 / 12)
+    --spacing-v2: calc(1rem * 1.4 * 2)
+    --spacing-v2.5: calc(1rem * 1.4 * 2.5)
+    --spacing-v2.5/12: calc(1rem * 1.4 * 2.5 / 12)
+    --spacing-v2/12: calc(1rem * 1.4 * 2 / 12)
+    --spacing-v3: calc(1rem * 1.4 * 3)
+    --spacing-v3/12: calc(1rem * 1.4 * 3 / 12)
+    --spacing-v4: calc(1rem * 1.4 * 4)
+    --spacing-v4.5: calc(1rem * 1.4 * 4.5)
+    --spacing-v4/12: calc(1rem * 1.4 * 4 / 12)
+    --spacing-v5: calc(1rem * 1.4 * 5)
+    --spacing-v5/12: calc(1rem * 1.4 * 5 / 12)
+    --spacing-v6: calc(1rem * 1.4 * 6)
+    --spacing-v6/12: calc(1rem * 1.4 * 6 / 12)
+    --spacing-v7/12: calc(1rem * 1.4 * 7 / 12)
+    --spacing-v8: calc(1rem * 1.4 * 8)
+    --spacing-v8/12: calc(1rem * 1.4 * 8 / 12)
+    --spacing-v9/12: calc(1rem * 1.4 * 9 / 12)
+    --spacing-xl: calc(calc(10rem / 16) * 2)
+    --spacing-xs: calc(calc(10rem / 16) * .25)
+    --text-2xl: 4.5rem
+    --text-2xl--line-height: calc(2 / 1.5)
+    --text-3xl: 1.875rem
+    --text-3xl--line-height: calc(2.25 / 1.875)
+    --text-4xl: 2.25rem
+    --text-4xl--line-height: calc(2.5 / 2.25)
+    --text-base: 1rem
+    --text-base--line-height: calc(1.5 / 1)
+    --text-lg: 2.25rem
+    --text-lg--line-height: calc(1.75 / 1.125)
+    --text-md: 1.375rem
+    --text-md-lg: 1.625rem
+    --text-md-sm: 1.125rem
+    --text-product-base: .75rem
+    --text-product-lg: .8125rem
+    --text-product-sm: .6875rem
+    --text-slack-base: .875rem
+    --text-slack-lg: 1rem
+    --text-slack-sm: .75rem
+    --text-sm: .875rem
+    --text-sm--line-height: calc(1.25 / .875)
+    --text-xl: 3.25rem
+    --text-xs: .75rem
+    --text-xs--line-height: calc(1 / .75)
+    --tracking-2xl: -.03em
+    --tracking-base: .005em
+    --tracking-lg: -.02em
+    --tracking-md: -.005em
+    --tracking-md-lg: -.0125em
+    --tracking-normal: 0em
+    --tracking-product-sm: .0044em
+    --tracking-sm: .01em
+    --tracking-tight: -.025em
+    --tracking-wide: .025em
+    --tracking-xl: -.025em
+    --transition-fast: .14s
+    --tw-border-style: solid
+    --tw-content: '""'
+    --tw-divide-y-reverse: '0'
+    --tw-drop-shadow-alpha: 100%
+    --tw-gradient-from: rgba(0, 0, 0, 0)
+    --tw-gradient-from-position: 0%
+    --tw-gradient-to: rgba(0, 0, 0, 0)
+    --tw-gradient-to-position: 100%
+    --tw-gradient-via: rgba(0, 0, 0, 0)
+    --tw-gradient-via-position: 50%
+    --tw-inset-ring-shadow: '0 0 #0000'
+    --tw-inset-shadow: '0 0 #0000'
+    --tw-inset-shadow-alpha: 100%
+    --tw-outline-style: solid
+    --tw-ring-offset-color: '#fff'
+    --tw-ring-offset-shadow: '0 0 #0000'
+    --tw-ring-offset-width: 0px
+    --tw-ring-shadow: '0 0 #0000'
+    --tw-scale-x: '1'
+    --tw-scale-y: '1'
+    --tw-scale-z: '1'
+    --tw-scroll-snap-strictness: proximity
+    --tw-shadow: '0 0 #0000'
+    --tw-shadow-alpha: 100%
+    --tw-space-x-reverse: '0'
+    --tw-space-y-reverse: '0'
+    --tw-translate-x: '0'
+    --tw-translate-y: '0'
+    --tw-translate-z: '0'
+    --v: 1rem * 1.4
+  color_clusters_by_weight:
+  - hex: '#26251E'
+    weight: 1352.73
+    theme: light
+    hints:
+    - custom-prop:--color-theme-button-bg
+    - custom-prop:--prose-code
+    - custom-prop:--color-theme-button-sec-text
+    - custom-prop:--color-theme-fg
+    - custom-prop:--prose-headings
+    - custom-prop:--prose-pre-code
+    name: null
+  - hex: '#F7F7F4'
+    weight: 635.02
+    theme: light
+    hints:
+    - custom-prop:--color-theme-product-editor
+    - custom-prop:--color-white
+    - custom-prop:--color-theme-button-text
+    - custom-prop:--color-bg
+    - custom-prop:--color-bg-elevated
+    - custom-prop:--color-theme-bg
+    name: null
+  - hex: '#F54E00'
+    weight: 147.0
+    theme: light
+    hints:
+    - custom-prop:--color-accent
+    - custom-prop:--color-warning
+    - custom-prop:--color-theme-accent
+    name: null
+  - hex: '#F2F1ED'
+    weight: 83.5
+    theme: light
+    hints:
+    - custom-prop:--color-theme-product-chrome
+    - custom-prop:--color-bg-hover
+    - custom-prop:--color-theme-card-hover-light-hex
+    - custom-prop:--color-theme-card-02-hex
+    - custom-prop:--color-theme-card-hover-hex
+    - custom-prop:--color-theme-card-03-hex
+    name: null
+  - hex: '#1F8A65'
+    weight: 82.5
+    theme: light
+    hints:
+    - custom-prop:--color-success
+    - custom-prop:--color-theme-product-ansi-green
+    name: null
+  - hex: '#CF2D56'
+    weight: 51.0
+    theme: light
+    hints:
+    - custom-prop:--color-error
+    - custom-prop:--color-theme-product-ansi-red
+    name: null
+  - hex: '#3B3A33'
+    weight: 47.5
+    theme: light
+    hints:
+    - custom-prop:--color-theme-button-hover-bg
+    - custom-prop:--color-theme-fg-02
+    - custom-prop:--color-theme-button-hover-border
+    name: null
+  - hex: '#000000'
+    weight: 41.82
+    theme: light
+    hints:
+    - custom-prop:--color-black
+    - body-text
+    name: null
+  - hex: '#FFFFFF'
+    weight: 26.5
+    theme: light
+    hints:
+    - custom-prop:--color-white
+    - custom-prop:--tw-ring-offset-color
+    name: null
+  - hex: '#9FBBE0'
+    weight: 9.0
+    theme: light
+    hints:
+    - custom-prop:--color-timeline-read
+    name: null
+  - hex: '#9FC9A2'
+    weight: 9.0
+    theme: light
+    hints:
+    - custom-prop:--color-timeline-grep
+    name: null
+  - hex: '#C0A8DD'
+    weight: 9.0
+    theme: light
+    hints:
+    - custom-prop:--color-timeline-edit
+    name: null
+  - hex: '#DFA88F'
+    weight: 9.0
+    theme: light
+    hints:
+    - custom-prop:--color-timeline-thinking
+    name: null
+  - hex: '#E1E0DB'
+    weight: 9.0
+    theme: light
+    hints:
+    - custom-prop:--color-theme-card-04-hex
+    name: null
+  - hex: '#888783'
+    weight: 8.5
+    theme: light
+    hints:
+    - link
+    - button-text
+    - body-text
+    name: null
+  - hex: '#3A6A9F'
+    weight: 0.5
+    theme: light
+    hints: []
+    name: null
+  - hex: '#8BC4F8'
+    weight: 0.5
+    theme: light
+    hints: []
+    name: null
+  - hex: '#828282'
+    weight: 7.5
+    theme: dark
+    hints:
+    - link
+    - button-text
+    name: null
+  - hex: '#EDECEC'
+    weight: 1.0
+    theme: dark
+    hints: []
+    name: null
+  - hex: '#8BC4F8'
+    weight: 0.5
+    theme: dark
+    hints: []
+    name: null
+  type_samples:
+  - label: h3
+    family: null
+    size_px: 20.0
+    weight: 600
+    line_height: null
+    letter_spacing: null
+  - label: h6
+    family: null
+    size_px: 13.6
+    weight: 600
+    line_height: null
+    letter_spacing: null
+  - label: body
+    family: null
+    size_px: 12.0
+    weight: null
+    line_height: 1.5
+    letter_spacing: null
+  - label: body
+    family: CursorGothic
+    size_px: 16.0
+    weight: 400
+    line_height: 1.5
+    letter_spacing: null
+  - label: h1
+    family: CursorGothic
+    size_px: 26.0
+    weight: 400
+    line_height: 2.03125
+    letter_spacing: -0.0203125
+  - label: h2
+    family: CursorGothic
+    size_px: 14.0
+    weight: 400
+    line_height: 1.3125
+    letter_spacing: 0.00875
+  - label: h2
+    family: Segoe UI
+    size_px: 20.0
+    weight: 700
+    line_height: 1.9375
+    letter_spacing: null
+  - label: h2
+    family: Segoe UI
+    size_px: 14.0
+    weight: 600
+    line_height: 1.35625
+    letter_spacing: null
+  - label: h3
+    family: CursorGothic
+    size_px: 22.0
+    weight: 400
+    line_height: 1.7875
+    letter_spacing: -0.006875
+  - label: h3
+    family: CursorGothic
+    size_px: 22.0
+    weight: 400
+    line_height: 1.7875
+    letter_spacing: -0.006875
+  - label: h3
+    family: CursorGothic
+    size_px: 22.0
+    weight: 400
+    line_height: 1.7875
+    letter_spacing: -0.006875
+  - label: button
+    family: CursorGothic
+    size_px: 14.0
+    weight: 400
+    line_height: 1.3125
+    letter_spacing: 0.00875
+  - label: button
+    family: CursorGothic
+    size_px: 14.0
+    weight: 400
+    line_height: 1.3125
+    letter_spacing: 0.00875
+  - label: button
+    family: CursorGothic
+    size_px: 16.0
+    weight: 400
+    line_height: 1.5
+    letter_spacing: null
+  - label: button
+    family: CursorGothic
+    size_px: 36.0
+    weight: 400
+    line_height: 2.7
+    letter_spacing: -0.045
+  - label: nav
+    family: CursorGothic
+    size_px: 16.0
+    weight: 400
+    line_height: 1.5
+    letter_spacing: null
+  - label: body
+    family: CursorGothic
+    size_px: 16.0
+    weight: 400
+    line_height: 1.5
+    letter_spacing: null
+  - label: nav
+    family: CursorGothic
+    size_px: 16.0
+    weight: 400
+    line_height: 1.5
+    letter_spacing: null
+  - label: h2
+    family: CursorGothic
+    size_px: 72.0
+    weight: 400
+    line_height: 4.95
+    letter_spacing: -0.135
+  - label: body
+    family: CursorGothic
+    size_px: 16.0
+    weight: 400
+    line_height: 1.5
+    letter_spacing: null
+  - label: h1
+    family: CursorGothic
+    size_px: 52.0
+    weight: 400
+    line_height: 3.7375
+    letter_spacing: -0.08125
+  - label: h2
+    family: CursorGothic
+    size_px: 14.0
+    weight: 400
+    line_height: 1.3125
+    letter_spacing: 0.00875
+  - label: h2
+    family: CursorGothic
+    size_px: 36.0
+    weight: 400
+    line_height: 2.7
+    letter_spacing: -0.045
+  - label: h2
+    family: CursorGothic
+    size_px: 72.0
+    weight: 400
+    line_height: 4.95
+    letter_spacing: -0.135
+  - label: h3
+    family: CursorGothic
+    size_px: 22.0
+    weight: 400
+    line_height: 1.7875
+    letter_spacing: -0.006875
+  - label: h3
+    family: CursorGothic
+    size_px: 22.0
+    weight: 400
+    line_height: 1.7875
+    letter_spacing: -0.006875
+  - label: h3
+    family: CursorGothic
+    size_px: 22.0
+    weight: 400
+    line_height: 1.7875
+    letter_spacing: -0.006875
+  - label: button
+    family: CursorGothic
+    size_px: 14.0
+    weight: 400
+    line_height: 1.3125
+    letter_spacing: 0.00875
+  - label: button
+    family: CursorGothic
+    size_px: 14.0
+    weight: 400
+    line_height: 1.3125
+    letter_spacing: 0.00875
+  - label: button
+    family: CursorGothic
+    size_px: 16.0
+    weight: 400
+    line_height: 1.5
+    letter_spacing: null
+  - label: button
+    family: CursorGothic
+    size_px: 36.0
+    weight: 400
+    line_height: 2.7
+    letter_spacing: -0.045
+  - label: nav
+    family: CursorGothic
+    size_px: 16.0
+    weight: 400
+    line_height: 1.5
+    letter_spacing: null
+  - label: body
+    family: CursorGothic
+    size_px: 16.0
+    weight: 400
+    line_height: 1.5
+    letter_spacing: null
+  - label: nav
+    family: CursorGothic
+    size_px: 16.0
+    weight: 400
+    line_height: 1.5
+    letter_spacing: null
+  - label: h2
+    family: CursorGothic
+    size_px: 72.0
+    weight: 400
+    line_height: 4.95
+    letter_spacing: -0.135
+  - label: h3
+    family: null
+    size_px: 20.0
+    weight: 600
+    line_height: null
+    letter_spacing: null
+  - label: h6
+    family: null
+    size_px: 13.6
+    weight: 600
+    line_height: null
+    letter_spacing: null
+  - label: body
+    family: null
+    size_px: 12.0
+    weight: null
+    line_height: 1.5
+    letter_spacing: null
+  - label: body
+    family: CursorGothic
+    size_px: 16.0
+    weight: 400
+    line_height: 1.5
+    letter_spacing: null
+  - label: h1
+    family: CursorGothic
+    size_px: 36.0
+    weight: 400
+    line_height: 2.7
+    letter_spacing: -0.045
+  - label: h2
+    family: CursorGothic
+    size_px: 14.0
+    weight: 400
+    line_height: 1.3125
+    letter_spacing: 0.00875
+  - label: h2
+    family: CursorGothic
+    size_px: 36.0
+    weight: 400
+    line_height: 2.7
+    letter_spacing: -0.045
+  - label: h2
+    family: CursorGothic
+    size_px: 26.0
+    weight: 400
+    line_height: 2.03125
+    letter_spacing: -0.0203125
+  - label: h3
+    family: CursorGothic
+    size_px: 22.0
+    weight: 400
+    line_height: 1.7875
+    letter_spacing: -0.006875
+  - label: h3
+    family: CursorGothic
+    size_px: 22.0
+    weight: 400
+    line_height: 1.7875
+    letter_spacing: -0.006875
+  - label: h3
+    family: CursorGothic
+    size_px: 22.0
+    weight: 400
+    line_height: 1.7875
+    letter_spacing: -0.006875
+  - label: button
+    family: CursorGothic
+    size_px: 14.0
+    weight: 400
+    line_height: 1.3125
+    letter_spacing: 0.00875
+  - label: button
+    family: CursorGothic
+    size_px: 14.0
+    weight: 400
+    line_height: 1.3125
+    letter_spacing: 0.00875
+  - label: button
+    family: CursorGothic
+    size_px: 16.0
+    weight: 400
+    line_height: 1.5
+    letter_spacing: null
+  - label: button
+    family: CursorGothic
+    size_px: 36.0
+    weight: 400
+    line_height: 2.7
+    letter_spacing: -0.045
+  - label: nav
+    family: CursorGothic
+    size_px: 16.0
+    weight: 400
+    line_height: 1.5
+    letter_spacing: null
+  - label: body
+    family: CursorGothic
+    size_px: 16.0
+    weight: 400
+    line_height: 1.5
+    letter_spacing: null
+  - label: nav
+    family: CursorGothic
+    size_px: 16.0
+    weight: 400
+    line_height: 1.5
+    letter_spacing: null
+  - label: body
+    family: CursorGothic
+    size_px: 16.0
+    weight: 400
+    line_height: 1.5
+    letter_spacing: null
+  - label: h1
+    family: CursorGothic
+    size_px: 36.0
+    weight: 400
+    line_height: 2.7
+    letter_spacing: -0.045
+  - label: h2
+    family: CursorGothic
+    size_px: 14.0
+    weight: 400
+    line_height: 1.3125
+    letter_spacing: 0.00875
+  - label: h2
+    family: CursorGothic
+    size_px: 36.0
+    weight: 400
+    line_height: 2.7
+    letter_spacing: -0.045
+  - label: h2
+    family: CursorGothic
+    size_px: 26.0
+    weight: 400
+    line_height: 2.03125
+    letter_spacing: -0.0203125
+  - label: h3
+    family: CursorGothic
+    size_px: 16.0
+    weight: 400
+    line_height: 1.5
+    letter_spacing: null
+  - label: h3
+    family: CursorGothic
+    size_px: 16.0
+    weight: 400
+    line_height: 1.5
+    letter_spacing: null
+  - label: h3
+    family: CursorGothic
+    size_px: 14.0
+    weight: 400
+    line_height: 1.3125
+    letter_spacing: 0.00875
+  - label: button
+    family: CursorGothic
+    size_px: 14.0
+    weight: 400
+    line_height: 1.3125
+    letter_spacing: 0.00875
+  - label: button
+    family: CursorGothic
+    size_px: 14.0
+    weight: 400
+    line_height: 1.3125
+    letter_spacing: 0.00875
+  - label: button
+    family: CursorGothic
+    size_px: 16.0
+    weight: 400
+    line_height: 1.5
+    letter_spacing: null
+  - label: button
+    family: CursorGothic
+    size_px: 36.0
+    weight: 400
+    line_height: 2.7
+    letter_spacing: -0.045
+  - label: nav
+    family: CursorGothic
+    size_px: 16.0
+    weight: 400
+    line_height: 1.5
+    letter_spacing: null
+  - label: body
+    family: CursorGothic
+    size_px: 16.0
+    weight: 400
+    line_height: 1.5
+    letter_spacing: null
+  - label: nav
+    family: CursorGothic
+    size_px: 16.0
+    weight: 400
+    line_height: 1.5
+    letter_spacing: null
+  - label: h3
+    family: null
+    size_px: 20.0
+    weight: 600
+    line_height: null
+    letter_spacing: null
+  - label: h6
+    family: null
+    size_px: 13.6
+    weight: 600
+    line_height: null
+    letter_spacing: null
+  - label: body
+    family: null
+    size_px: 12.0
+    weight: null
+    line_height: 1.5
+    letter_spacing: null
+  - label: body
+    family: CursorGothic
+    size_px: 16.0
+    weight: 400
+    line_height: 1.5
+    letter_spacing: null
+  - label: h1
+    family: CursorGothic
+    size_px: 16.0
+    weight: 400
+    line_height: 1.5
+    letter_spacing: null
+  - label: h2
+    family: CursorGothic
+    size_px: 22.0
+    weight: 400
+    line_height: 1.7875
+    letter_spacing: -0.006875
+  - label: h2
+    family: CursorGothic
+    size_px: 22.0
+    weight: 400
+    line_height: 1.7875
+    letter_spacing: -0.006875
+  - label: h2
+    family: CursorGothic
+    size_px: 22.0
+    weight: 400
+    line_height: 1.7875
+    letter_spacing: -0.006875
+  - label: h3
+    family: CursorGothic
+    size_px: 14.0
+    weight: 400
+    line_height: 1.3125
+    letter_spacing: 0.00875
+  - label: h3
+    family: CursorGothic
+    size_px: 14.0
+    weight: 400
+    line_height: 1.3125
+    letter_spacing: 0.00875
+  - label: h3
+    family: CursorGothic
+    size_px: 14.0
+    weight: 400
+    line_height: 1.3125
+    letter_spacing: 0.00875
+  - label: button
+    family: CursorGothic
+    size_px: 14.0
+    weight: 400
+    line_height: 1.3125
+    letter_spacing: 0.00875
+  - label: button
+    family: CursorGothic
+    size_px: 14.0
+    weight: 400
+    line_height: 1.3125
+    letter_spacing: 0.00875
+  - label: button
+    family: CursorGothic
+    size_px: 16.0
+    weight: 400
+    line_height: 1.5
+    letter_spacing: null
+  - label: button
+    family: CursorGothic
+    size_px: 36.0
+    weight: 400
+    line_height: 2.7
+    letter_spacing: -0.045
+  - label: nav
+    family: CursorGothic
+    size_px: 16.0
+    weight: 400
+    line_height: 1.5
+    letter_spacing: null
+  - label: body
+    family: CursorGothic
+    size_px: 16.0
+    weight: 400
+    line_height: 1.5
+    letter_spacing: null
+  - label: nav
+    family: CursorGothic
+    size_px: 16.0
+    weight: 400
+    line_height: 1.5
+    letter_spacing: null
+  font_faces:
+  - family: CursorIcons16
+    role_hint: unknown
+    license_hint: null
+    faces:
+    - weight: 400
+      style: normal
+      url: https://cursor.com/marketing-static/fonts/cursor-icons-16.woff2
+  - family: KaTeX_AMS
+    role_hint: unknown
+    license_hint: null
+    faces:
+    - weight: 400
+      style: normal
+      url: https://cursor.com/media/KaTeX_AMS-Regular.0p1vbqd84i2~o.woff2?dpl=dpl_HH6a5prQZrH8WHpwyEWXTDfK8RBx
+  - family: KaTeX_Caligraphic
+    role_hint: unknown
+    license_hint: null
+    faces:
+    - weight: 700
+      style: normal
+      url: https://cursor.com/media/KaTeX_Caligraphic-Bold.01-pzluls4zgb.woff2?dpl=dpl_HH6a5prQZrH8WHpwyEWXTDfK8RBx
+    - weight: 400
+      style: normal
+      url: https://cursor.com/media/KaTeX_Caligraphic-Regular.0rysu1t-ncjq8.woff2?dpl=dpl_HH6a5prQZrH8WHpwyEWXTDfK8RBx
+  - family: KaTeX_Fraktur
+    role_hint: unknown
+    license_hint: null
+    faces:
+    - weight: 700
+      style: normal
+      url: https://cursor.com/media/KaTeX_Fraktur-Bold.0w23i72~hprpq.woff2?dpl=dpl_HH6a5prQZrH8WHpwyEWXTDfK8RBx
+    - weight: 400
+      style: normal
+      url: https://cursor.com/media/KaTeX_Fraktur-Regular.0rekyoa-52fj_.woff2?dpl=dpl_HH6a5prQZrH8WHpwyEWXTDfK8RBx
+  - family: KaTeX_Main
+    role_hint: unknown
+    license_hint: null
+    faces:
+    - weight: 700
+      style: normal
+      url: https://cursor.com/media/KaTeX_Main-Bold.16pfc63_du6mx.woff2?dpl=dpl_HH6a5prQZrH8WHpwyEWXTDfK8RBx
+    - weight: 700
+      style: italic
+      url: https://cursor.com/media/KaTeX_Main-BoldItalic.0d54rk08rx11s.woff2?dpl=dpl_HH6a5prQZrH8WHpwyEWXTDfK8RBx
+    - weight: 400
+      style: italic
+      url: https://cursor.com/media/KaTeX_Main-Italic.06o5nq0_91v60.woff2?dpl=dpl_HH6a5prQZrH8WHpwyEWXTDfK8RBx
+    - weight: 400
+      style: normal
+      url: https://cursor.com/media/KaTeX_Main-Regular.0kaf-ag2_wkm-.woff2?dpl=dpl_HH6a5prQZrH8WHpwyEWXTDfK8RBx
+  - family: KaTeX_Math
+    role_hint: unknown
+    license_hint: null
+    faces:
+    - weight: 700
+      style: italic
+      url: https://cursor.com/media/KaTeX_Math-BoldItalic.0ja97dn.cpc87.woff2?dpl=dpl_HH6a5prQZrH8WHpwyEWXTDfK8RBx
+    - weight: 400
+      style: italic
+      url: https://cursor.com/media/KaTeX_Math-Italic.0zrha2c4sl2je.woff2?dpl=dpl_HH6a5prQZrH8WHpwyEWXTDfK8RBx
+  - family: KaTeX_SansSerif
+    role_hint: unknown
+    license_hint: null
+    faces:
+    - weight: 700
+      style: normal
+      url: https://cursor.com/media/KaTeX_SansSerif-Bold.05a9.pc1j_zx9.woff2?dpl=dpl_HH6a5prQZrH8WHpwyEWXTDfK8RBx
+    - weight: 400
+      style: italic
+      url: https://cursor.com/media/KaTeX_SansSerif-Italic.0a0234dc3s62j.woff2?dpl=dpl_HH6a5prQZrH8WHpwyEWXTDfK8RBx
+    - weight: 400
+      style: normal
+      url: https://cursor.com/media/KaTeX_SansSerif-Regular.0v6gcj32-czft.woff2?dpl=dpl_HH6a5prQZrH8WHpwyEWXTDfK8RBx
+  - family: KaTeX_Script
+    role_hint: unknown
+    license_hint: null
+    faces:
+    - weight: 400
+      style: normal
+      url: https://cursor.com/media/KaTeX_Script-Regular.0c4.h-mer83d_.woff2?dpl=dpl_HH6a5prQZrH8WHpwyEWXTDfK8RBx
+  - family: KaTeX_Size1
+    role_hint: unknown
+    license_hint: null
+    faces:
+    - weight: 400
+      style: normal
+      url: https://cursor.com/media/KaTeX_Size1-Regular.013x6a4ierotp.woff2?dpl=dpl_HH6a5prQZrH8WHpwyEWXTDfK8RBx
+  - family: KaTeX_Size2
+    role_hint: unknown
+    license_hint: null
+    faces:
+    - weight: 400
+      style: normal
+      url: https://cursor.com/media/KaTeX_Size2-Regular.0d5inmyp-tyv3.woff2?dpl=dpl_HH6a5prQZrH8WHpwyEWXTDfK8RBx
+  - family: KaTeX_Size3
+    role_hint: unknown
+    license_hint: null
+    faces:
+    - weight: 400
+      style: normal
+      url: https://cursor.com/media/KaTeX_Size3-Regular.0iukctyhw5j56.woff2?dpl=dpl_HH6a5prQZrH8WHpwyEWXTDfK8RBx
+  - family: KaTeX_Size4
+    role_hint: unknown
+    license_hint: null
+    faces:
+    - weight: 400
+      style: normal
+      url: https://cursor.com/media/KaTeX_Size4-Regular.0w3.rb_c4stzk.woff2?dpl=dpl_HH6a5prQZrH8WHpwyEWXTDfK8RBx
+  - family: KaTeX_Typewriter
+    role_hint: unknown
+    license_hint: null
+    faces:
+    - weight: 400
+      style: normal
+      url: https://cursor.com/media/KaTeX_Typewriter-Regular.0c4zdxz~8frhm.woff2?dpl=dpl_HH6a5prQZrH8WHpwyEWXTDfK8RBx
+  - family: CursorGothic
+    role_hint: unknown
+    license_hint: null
+    faces:
+    - weight: 400
+      style: normal
+      url: https://cursor.com/media/CursorGothic_Regular-s.p.05-84umc_47y9.woff2?dpl=dpl_HH6a5prQZrH8WHpwyEWXTDfK8RBx
+    - weight: 400
+      style: italic
+      url: https://cursor.com/media/CursorGothic_Italic-s.p.0klm.ze1la4ej.woff2?dpl=dpl_HH6a5prQZrH8WHpwyEWXTDfK8RBx
+    - weight: 700
+      style: normal
+      url: https://cursor.com/media/CursorGothic_Bold-s.p.15hkw~ebmtjvr.woff2?dpl=dpl_HH6a5prQZrH8WHpwyEWXTDfK8RBx
+    - weight: 700
+      style: italic
+      url: https://cursor.com/media/CursorGothic_BoldItalic-s.p.0cqzqaem~_s9y.woff2?dpl=dpl_HH6a5prQZrH8WHpwyEWXTDfK8RBx
+  - family: CursorGothic Fallback
+    role_hint: unknown
+    license_hint: null
+    faces:
+    - weight: 400
+      style: normal
+      url: null
+  - family: berkeleyMono
+    role_hint: unknown
+    license_hint: null
+    faces:
+    - weight: 400
+      style: normal
+      url: https://cursor.com/media/BerkeleyMono_Regular.p.0x~g-6.~uijej.woff2?dpl=dpl_HH6a5prQZrH8WHpwyEWXTDfK8RBx
+    - weight: 400
+      style: italic
+      url: https://cursor.com/media/BerkeleyMono_Oblique.p.0ljxuk9ar7~k_.woff2?dpl=dpl_HH6a5prQZrH8WHpwyEWXTDfK8RBx
+  - family: EB Garamond
+    role_hint: unknown
+    license_hint: null
+    faces:
+    - weight: 400
+      style: italic
+      url: https://cursor.com/media/196d5f6118cb1c52.0rhpwbwwx4_6f.woff2?dpl=dpl_HH6a5prQZrH8WHpwyEWXTDfK8RBx
+    - weight: 400
+      style: italic
+      url: https://cursor.com/media/55664f0a7289b762.172.mocnhu5ne.woff2?dpl=dpl_HH6a5prQZrH8WHpwyEWXTDfK8RBx
+    - weight: 400
+      style: italic
+      url: https://cursor.com/media/f724cb2b266db11d.0h9uge2b7.34r.woff2?dpl=dpl_HH6a5prQZrH8WHpwyEWXTDfK8RBx
+    - weight: 400
+      style: italic
+      url: https://cursor.com/media/58bfdf9faee08215.018lsmg0d37r~.woff2?dpl=dpl_HH6a5prQZrH8WHpwyEWXTDfK8RBx
+    - weight: 400
+      style: italic
+      url: https://cursor.com/media/257505a8a5531435.0-v_25l2o2e.1.woff2?dpl=dpl_HH6a5prQZrH8WHpwyEWXTDfK8RBx
+    - weight: 400
+      style: italic
+      url: https://cursor.com/media/346e8051f901134e.p.0o1dbgwxcty-b.woff2?dpl=dpl_HH6a5prQZrH8WHpwyEWXTDfK8RBx
+    - weight: 400
+      style: italic
+      url: https://cursor.com/media/4ee71d90e0f663bd.p.0_4wfesx-21w2.woff2?dpl=dpl_HH6a5prQZrH8WHpwyEWXTDfK8RBx
+    - weight: 500
+      style: italic
+      url: https://cursor.com/media/196d5f6118cb1c52.0rhpwbwwx4_6f.woff2?dpl=dpl_HH6a5prQZrH8WHpwyEWXTDfK8RBx
+    - weight: 500
+      style: italic
+      url: https://cursor.com/media/55664f0a7289b762.172.mocnhu5ne.woff2?dpl=dpl_HH6a5prQZrH8WHpwyEWXTDfK8RBx
+    - weight: 500
+      style: italic
+      url: https://cursor.com/media/f724cb2b266db11d.0h9uge2b7.34r.woff2?dpl=dpl_HH6a5prQZrH8WHpwyEWXTDfK8RBx
+    - weight: 500
+      style: italic
+      url: https://cursor.com/media/58bfdf9faee08215.018lsmg0d37r~.woff2?dpl=dpl_HH6a5prQZrH8WHpwyEWXTDfK8RBx
+    - weight: 500
+      style: italic
+      url: https://cursor.com/media/257505a8a5531435.0-v_25l2o2e.1.woff2?dpl=dpl_HH6a5prQZrH8WHpwyEWXTDfK8RBx
+    - weight: 500
+      style: italic
+      url: https://cursor.com/media/346e8051f901134e.p.0o1dbgwxcty-b.woff2?dpl=dpl_HH6a5prQZrH8WHpwyEWXTDfK8RBx
+    - weight: 500
+      style: italic
+      url: https://cursor.com/media/4ee71d90e0f663bd.p.0_4wfesx-21w2.woff2?dpl=dpl_HH6a5prQZrH8WHpwyEWXTDfK8RBx
+    - weight: 600
+      style: italic
+      url: https://cursor.com/media/196d5f6118cb1c52.0rhpwbwwx4_6f.woff2?dpl=dpl_HH6a5prQZrH8WHpwyEWXTDfK8RBx
+    - weight: 600
+      style: italic
+      url: https://cursor.com/media/55664f0a7289b762.172.mocnhu5ne.woff2?dpl=dpl_HH6a5prQZrH8WHpwyEWXTDfK8RBx
+    - weight: 600
+      style: italic
+      url: https://cursor.com/media/f724cb2b266db11d.0h9uge2b7.34r.woff2?dpl=dpl_HH6a5prQZrH8WHpwyEWXTDfK8RBx
+    - weight: 600
+      style: italic
+      url: https://cursor.com/media/58bfdf9faee08215.018lsmg0d37r~.woff2?dpl=dpl_HH6a5prQZrH8WHpwyEWXTDfK8RBx
+    - weight: 600
+      style: italic
+      url: https://cursor.com/media/257505a8a5531435.0-v_25l2o2e.1.woff2?dpl=dpl_HH6a5prQZrH8WHpwyEWXTDfK8RBx
+    - weight: 600
+      style: italic
+      url: https://cursor.com/media/346e8051f901134e.p.0o1dbgwxcty-b.woff2?dpl=dpl_HH6a5prQZrH8WHpwyEWXTDfK8RBx
+    - weight: 600
+      style: italic
+      url: https://cursor.com/media/4ee71d90e0f663bd.p.0_4wfesx-21w2.woff2?dpl=dpl_HH6a5prQZrH8WHpwyEWXTDfK8RBx
+    - weight: 700
+      style: italic
+      url: https://cursor.com/media/196d5f6118cb1c52.0rhpwbwwx4_6f.woff2?dpl=dpl_HH6a5prQZrH8WHpwyEWXTDfK8RBx
+    - weight: 700
+      style: italic
+      url: https://cursor.com/media/55664f0a7289b762.172.mocnhu5ne.woff2?dpl=dpl_HH6a5prQZrH8WHpwyEWXTDfK8RBx
+    - weight: 700
+      style: italic
+      url: https://cursor.com/media/f724cb2b266db11d.0h9uge2b7.34r.woff2?dpl=dpl_HH6a5prQZrH8WHpwyEWXTDfK8RBx
+    - weight: 700
+      style: italic
+      url: https://cursor.com/media/58bfdf9faee08215.018lsmg0d37r~.woff2?dpl=dpl_HH6a5prQZrH8WHpwyEWXTDfK8RBx
+    - weight: 700
+      style: italic
+      url: https://cursor.com/media/257505a8a5531435.0-v_25l2o2e.1.woff2?dpl=dpl_HH6a5prQZrH8WHpwyEWXTDfK8RBx
+    - weight: 700
+      style: italic
+      url: https://cursor.com/media/346e8051f901134e.p.0o1dbgwxcty-b.woff2?dpl=dpl_HH6a5prQZrH8WHpwyEWXTDfK8RBx
+    - weight: 700
+      style: italic
+      url: https://cursor.com/media/4ee71d90e0f663bd.p.0_4wfesx-21w2.woff2?dpl=dpl_HH6a5prQZrH8WHpwyEWXTDfK8RBx
+    - weight: 800
+      style: italic
+      url: https://cursor.com/media/196d5f6118cb1c52.0rhpwbwwx4_6f.woff2?dpl=dpl_HH6a5prQZrH8WHpwyEWXTDfK8RBx
+    - weight: 800
+      style: italic
+      url: https://cursor.com/media/55664f0a7289b762.172.mocnhu5ne.woff2?dpl=dpl_HH6a5prQZrH8WHpwyEWXTDfK8RBx
+    - weight: 800
+      style: italic
+      url: https://cursor.com/media/f724cb2b266db11d.0h9uge2b7.34r.woff2?dpl=dpl_HH6a5prQZrH8WHpwyEWXTDfK8RBx
+    - weight: 800
+      style: italic
+      url: https://cursor.com/media/58bfdf9faee08215.018lsmg0d37r~.woff2?dpl=dpl_HH6a5prQZrH8WHpwyEWXTDfK8RBx
+    - weight: 800
+      style: italic
+      url: https://cursor.com/media/257505a8a5531435.0-v_25l2o2e.1.woff2?dpl=dpl_HH6a5prQZrH8WHpwyEWXTDfK8RBx
+    - weight: 800
+      style: italic
+      url: https://cursor.com/media/346e8051f901134e.p.0o1dbgwxcty-b.woff2?dpl=dpl_HH6a5prQZrH8WHpwyEWXTDfK8RBx
+    - weight: 800
+      style: italic
+      url: https://cursor.com/media/4ee71d90e0f663bd.p.0_4wfesx-21w2.woff2?dpl=dpl_HH6a5prQZrH8WHpwyEWXTDfK8RBx
+    - weight: 400
+      style: normal
+      url: https://cursor.com/media/0fec32c78403d184.0clmy8uas2o02.woff2?dpl=dpl_HH6a5prQZrH8WHpwyEWXTDfK8RBx
+    - weight: 400
+      style: normal
+      url: https://cursor.com/media/9d30e1ac529a223a.16h94gcaft.36.woff2?dpl=dpl_HH6a5prQZrH8WHpwyEWXTDfK8RBx
+    - weight: 400
+      style: normal
+      url: https://cursor.com/media/9056bf441d45cedc.06okiszhq3vzf.woff2?dpl=dpl_HH6a5prQZrH8WHpwyEWXTDfK8RBx
+    - weight: 400
+      style: normal
+      url: https://cursor.com/media/e6c3b2b7c3a61f79.0akjet91qu_z..woff2?dpl=dpl_HH6a5prQZrH8WHpwyEWXTDfK8RBx
+    - weight: 400
+      style: normal
+      url: https://cursor.com/media/e557826f452dbd06.0m_.8nb7sv3tq.woff2?dpl=dpl_HH6a5prQZrH8WHpwyEWXTDfK8RBx
+    - weight: 400
+      style: normal
+      url: https://cursor.com/media/1497d94d4ac5c969.p.0zw8maj75452d.woff2?dpl=dpl_HH6a5prQZrH8WHpwyEWXTDfK8RBx
+    - weight: 400
+      style: normal
+      url: https://cursor.com/media/e4505858a30c79c2.p.093j32h9etvau.woff2?dpl=dpl_HH6a5prQZrH8WHpwyEWXTDfK8RBx
+    - weight: 500
+      style: normal
+      url: https://cursor.com/media/0fec32c78403d184.0clmy8uas2o02.woff2?dpl=dpl_HH6a5prQZrH8WHpwyEWXTDfK8RBx
+    - weight: 500
+      style: normal
+      url: https://cursor.com/media/9d30e1ac529a223a.16h94gcaft.36.woff2?dpl=dpl_HH6a5prQZrH8WHpwyEWXTDfK8RBx
+    - weight: 500
+      style: normal
+      url: https://cursor.com/media/9056bf441d45cedc.06okiszhq3vzf.woff2?dpl=dpl_HH6a5prQZrH8WHpwyEWXTDfK8RBx
+    - weight: 500
+      style: normal
+      url: https://cursor.com/media/e6c3b2b7c3a61f79.0akjet91qu_z..woff2?dpl=dpl_HH6a5prQZrH8WHpwyEWXTDfK8RBx
+    - weight: 500
+      style: normal
+      url: https://cursor.com/media/e557826f452dbd06.0m_.8nb7sv3tq.woff2?dpl=dpl_HH6a5prQZrH8WHpwyEWXTDfK8RBx
+    - weight: 500
+      style: normal
+      url: https://cursor.com/media/1497d94d4ac5c969.p.0zw8maj75452d.woff2?dpl=dpl_HH6a5prQZrH8WHpwyEWXTDfK8RBx
+    - weight: 500
+      style: normal
+      url: https://cursor.com/media/e4505858a30c79c2.p.093j32h9etvau.woff2?dpl=dpl_HH6a5prQZrH8WHpwyEWXTDfK8RBx
+    - weight: 600
+      style: normal
+      url: https://cursor.com/media/0fec32c78403d184.0clmy8uas2o02.woff2?dpl=dpl_HH6a5prQZrH8WHpwyEWXTDfK8RBx
+    - weight: 600
+      style: normal
+      url: https://cursor.com/media/9d30e1ac529a223a.16h94gcaft.36.woff2?dpl=dpl_HH6a5prQZrH8WHpwyEWXTDfK8RBx
+    - weight: 600
+      style: normal
+      url: https://cursor.com/media/9056bf441d45cedc.06okiszhq3vzf.woff2?dpl=dpl_HH6a5prQZrH8WHpwyEWXTDfK8RBx
+    - weight: 600
+      style: normal
+      url: https://cursor.com/media/e6c3b2b7c3a61f79.0akjet91qu_z..woff2?dpl=dpl_HH6a5prQZrH8WHpwyEWXTDfK8RBx
+    - weight: 600
+      style: normal
+      url: https://cursor.com/media/e557826f452dbd06.0m_.8nb7sv3tq.woff2?dpl=dpl_HH6a5prQZrH8WHpwyEWXTDfK8RBx
+    - weight: 600
+      style: normal
+      url: https://cursor.com/media/1497d94d4ac5c969.p.0zw8maj75452d.woff2?dpl=dpl_HH6a5prQZrH8WHpwyEWXTDfK8RBx
+    - weight: 600
+      style: normal
+      url: https://cursor.com/media/e4505858a30c79c2.p.093j32h9etvau.woff2?dpl=dpl_HH6a5prQZrH8WHpwyEWXTDfK8RBx
+    - weight: 700
+      style: normal
+      url: https://cursor.com/media/0fec32c78403d184.0clmy8uas2o02.woff2?dpl=dpl_HH6a5prQZrH8WHpwyEWXTDfK8RBx
+    - weight: 700
+      style: normal
+      url: https://cursor.com/media/9d30e1ac529a223a.16h94gcaft.36.woff2?dpl=dpl_HH6a5prQZrH8WHpwyEWXTDfK8RBx
+    - weight: 700
+      style: normal
+      url: https://cursor.com/media/9056bf441d45cedc.06okiszhq3vzf.woff2?dpl=dpl_HH6a5prQZrH8WHpwyEWXTDfK8RBx
+    - weight: 700
+      style: normal
+      url: https://cursor.com/media/e6c3b2b7c3a61f79.0akjet91qu_z..woff2?dpl=dpl_HH6a5prQZrH8WHpwyEWXTDfK8RBx
+    - weight: 700
+      style: normal
+      url: https://cursor.com/media/e557826f452dbd06.0m_.8nb7sv3tq.woff2?dpl=dpl_HH6a5prQZrH8WHpwyEWXTDfK8RBx
+    - weight: 700
+      style: normal
+      url: https://cursor.com/media/1497d94d4ac5c969.p.0zw8maj75452d.woff2?dpl=dpl_HH6a5prQZrH8WHpwyEWXTDfK8RBx
+    - weight: 700
+      style: normal
+      url: https://cursor.com/media/e4505858a30c79c2.p.093j32h9etvau.woff2?dpl=dpl_HH6a5prQZrH8WHpwyEWXTDfK8RBx
+    - weight: 800
+      style: normal
+      url: https://cursor.com/media/0fec32c78403d184.0clmy8uas2o02.woff2?dpl=dpl_HH6a5prQZrH8WHpwyEWXTDfK8RBx
+    - weight: 800
+      style: normal
+      url: https://cursor.com/media/9d30e1ac529a223a.16h94gcaft.36.woff2?dpl=dpl_HH6a5prQZrH8WHpwyEWXTDfK8RBx
+    - weight: 800
+      style: normal
+      url: https://cursor.com/media/9056bf441d45cedc.06okiszhq3vzf.woff2?dpl=dpl_HH6a5prQZrH8WHpwyEWXTDfK8RBx
+    - weight: 800
+      style: normal
+      url: https://cursor.com/media/e6c3b2b7c3a61f79.0akjet91qu_z..woff2?dpl=dpl_HH6a5prQZrH8WHpwyEWXTDfK8RBx
+    - weight: 800
+      style: normal
+      url: https://cursor.com/media/e557826f452dbd06.0m_.8nb7sv3tq.woff2?dpl=dpl_HH6a5prQZrH8WHpwyEWXTDfK8RBx
+    - weight: 800
+      style: normal
+      url: https://cursor.com/media/1497d94d4ac5c969.p.0zw8maj75452d.woff2?dpl=dpl_HH6a5prQZrH8WHpwyEWXTDfK8RBx
+    - weight: 800
+      style: normal
+      url: https://cursor.com/media/e4505858a30c79c2.p.093j32h9etvau.woff2?dpl=dpl_HH6a5prQZrH8WHpwyEWXTDfK8RBx
+  - family: Lato
+    role_hint: unknown
+    license_hint: null
+    faces:
+    - weight: 100
+      style: italic
+      url: https://cursor.com/media/0caa28048acba9f7-s.12.an6hmjn.37.woff2?dpl=dpl_HH6a5prQZrH8WHpwyEWXTDfK8RBx
+    - weight: 100
+      style: italic
+      url: https://cursor.com/media/a523ad25754b11ff-s.p.07ej8ox7wb60j.woff2?dpl=dpl_HH6a5prQZrH8WHpwyEWXTDfK8RBx
+    - weight: 300
+      style: italic
+      url: https://cursor.com/media/fb658a3c946a99cd-s.046zyq97~d4c5.woff2?dpl=dpl_HH6a5prQZrH8WHpwyEWXTDfK8RBx
+    - weight: 300
+      style: italic
+      url: https://cursor.com/media/ac372c80b3e400a1-s.p.00d4mwnv9pnmj.woff2?dpl=dpl_HH6a5prQZrH8WHpwyEWXTDfK8RBx
+    - weight: 400
+      style: italic
+      url: https://cursor.com/media/5423f56a4e793434-s.0w5p5h~sjkasz.woff2?dpl=dpl_HH6a5prQZrH8WHpwyEWXTDfK8RBx
+    - weight: 400
+      style: italic
+      url: https://cursor.com/media/6a9fa677ec1bbd33-s.p.0b-vepe81ylt2.woff2?dpl=dpl_HH6a5prQZrH8WHpwyEWXTDfK8RBx
+    - weight: 700
+      style: italic
+      url: https://cursor.com/media/f0e3cf4bb5eec8ca-s.0p6mredkl8--3.woff2?dpl=dpl_HH6a5prQZrH8WHpwyEWXTDfK8RBx
+    - weight: 700
+      style: italic
+      url: https://cursor.com/media/1112828ec2c13661-s.p.17_qw44._rch-.woff2?dpl=dpl_HH6a5prQZrH8WHpwyEWXTDfK8RBx
+    - weight: 900
+      style: italic
+      url: https://cursor.com/media/1447ad1e8672d03a-s.0v1wg9.ifxo1m.woff2?dpl=dpl_HH6a5prQZrH8WHpwyEWXTDfK8RBx
+    - weight: 900
+      style: italic
+      url: https://cursor.com/media/84a2306e77cafc81-s.p.07ukck2wwk475.woff2?dpl=dpl_HH6a5prQZrH8WHpwyEWXTDfK8RBx
+    - weight: 100
+      style: normal
+      url: https://cursor.com/media/7d256325d16c464a-s.0d6_ed9mt57o1.woff2?dpl=dpl_HH6a5prQZrH8WHpwyEWXTDfK8RBx
+    - weight: 100
+      style: normal
+      url: https://cursor.com/media/80dbc432bf467303-s.p.0ucnnm22nbe4-.woff2?dpl=dpl_HH6a5prQZrH8WHpwyEWXTDfK8RBx
+    - weight: 300
+      style: normal
+      url: https://cursor.com/media/20f1c48c725d3555-s.09l1jz5ihg0p~.woff2?dpl=dpl_HH6a5prQZrH8WHpwyEWXTDfK8RBx
+    - weight: 300
+      style: normal
+      url: https://cursor.com/media/f30fd2e485acf1bc-s.p.0_qs2mjxez25z.woff2?dpl=dpl_HH6a5prQZrH8WHpwyEWXTDfK8RBx
+    - weight: 400
+      style: normal
+      url: https://cursor.com/media/b529365fa126a3f2-s.17~hndooavd5u.woff2?dpl=dpl_HH6a5prQZrH8WHpwyEWXTDfK8RBx
+    - weight: 400
+      style: normal
+      url: https://cursor.com/media/8e451580e5e95631-s.p.0put2--9ix-3p.woff2?dpl=dpl_HH6a5prQZrH8WHpwyEWXTDfK8RBx
+    - weight: 700
+      style: normal
+      url: https://cursor.com/media/d74bdd14d6019bc6-s.02x781ca3~dwt.woff2?dpl=dpl_HH6a5prQZrH8WHpwyEWXTDfK8RBx
+    - weight: 700
+      style: normal
+      url: https://cursor.com/media/345c85a432359eed-s.p.0az0.9544w3d6.woff2?dpl=dpl_HH6a5prQZrH8WHpwyEWXTDfK8RBx
+    - weight: 900
+      style: normal
+      url: https://cursor.com/media/da28569d36042d01-s.0wf~e3vwy0y3..woff2?dpl=dpl_HH6a5prQZrH8WHpwyEWXTDfK8RBx
+    - weight: 900
+      style: normal
+      url: https://cursor.com/media/9be384ea93fe3f49-s.p.05qlfybzfat._.woff2?dpl=dpl_HH6a5prQZrH8WHpwyEWXTDfK8RBx
+  - family: Lato Fallback
+    role_hint: unknown
+    license_hint: null
+    faces:
+    - weight: 400
+      style: normal
+      url: null
+  spacing_radius_samples: []
+  narrative:
+    brand_name: Cursor
+    url: https://cursor.com/
+    tagline: null
+    summary_facts:
+    - Built to make you extraordinarily productive, Cursor is the best AI coding agent.
+    text_excerpt: '(self.__next_s=self.__next_s||[]).push([0,{"children":"window.ConceptualAnalytics=''ca'';window.ca=window.ca||function(){(window.ca.q=window.ca.q||[]).push(arguments)};window.ca.l=Date.now();","id":"conceptual-analytics-stub"}])
+      (self.__next_s=self.__next_s||[]).push([0,{"children":"\n(function(){\n try {\n var nav = window.navigator
+      || {};\n var ua = (nav.userAgent || '''').toLowerCase();\n var platform = (nav.platform || '''').toLowerCase();\n
+      var isIOS = /ipad|iphone|ipod/.test(ua) || (platform === ''macintel'' && nav.maxTouchPoints > 1);\n var os
+      = ''mac'';\n if (/windows/.test(ua)) {\n os = ''windows'';\n } else if (!/android/.test(ua) && /linux/.test(ua))
+      {\n os = ''linux'';\n } else if (isIOS) {\n os = ''mac'';\n } else if (/mac/.test(ua) || platform === ''macintel'')
+      {\n os = ''mac'';\n }\n document.documentElement.dataset.os = os;\n document.documentElement.dataset.device
+      = isIOS ? ''ios'' : ''default'';\n } catch (error) {\n if (!document.documentElement.dataset.os) {\n document.documentElement.dataset.os
+      = ''mac'';\n }\n }\n})();\n ","id":"web-new-frontend-os-detector"}]) {"@context":"https://schema.org","@type":"Organization","@id":"https://cursor.com/#org","name":"Cursor","description":"Cursor
+      is the best AI coding agent.","url":"https://cursor.com","logo":{"@type":"ImageObject","url":"https://ptht05hbb1ssoooe.public.blob.vercel-storage.com/assets/og/opengraph-default.png","width":200,"height":60},"sameAs":["https://x.com/cursor_ai","https://www.linkedin.com/company/cursorai","https://www.youtube.com/@cursor_ai","https://github.com/cursor"],"contactPoint":{"@type":"ContactPoint","contactType":"customer
+      service","url":"https://cursor.com/contact-sales"},"foundingDate":"2023"} {"@context":"https://schema.org","@type":"WebSite","@id":"https://cursor.com/#website","name":"Cursor","description":"Cursor
+      is the best AI coding agent.","url":"https://cursor.com","publisher":{"@type":"Organization","@id":"https://cursor.com/#org"}}
+      requestAnimationFrame(function(){$RT=performance.now()}); $RB=[];$RV=function(a){$RT=performance.now();for(var
+      b=0;b<a.length;b+=2){var c=a[b],e=a[b+1];null!==e.parentNode&&e.parentNode.removeChild(e);var f=c.parentNode;if(f){var
+      g=c.previousSibling,h=0;do{if(c&&8===c.nodeType){var d=c.data;if("/$"===d||"/&"===d)if(0===h)break;else h--;else"$"!==d&&"$?"!==d&&"$~"!==d&&"$!"!==d&&"&"!==d||h++}d=c.nextSibling;f.removeChild(c);c=d}while(c);for(;e.firstChild;)f.insertBefore(e.firstChild,c);g.data="$";g._reactRetry&&requestAnimationFrame(g._reactRetry)}}a.length=0};
+      $RC=function(a,b){if(b=document.getElementById(b))(a=document.getElementById(a))?(a.previousSibling.data="$~",$RB.push(a,b),2===$RB.length&&("number"!==typeof
+      $RT?requestAnimationFrame($RV.bind(null,$RB)):(a=performance.now(),setTimeout($RV.bind(null,$RB),2300>a&&2E3<a?2300-a:$RT+300-a)))):b.parentNode.removeChild(b)};$RC("B:6","S:6")
+      $RX=function(b,c,d,e,f){var a=document.getElementById(b);a&&(b=a.previousSibling,b.data="$!",a=a.dataset,c&&(a.dgst=c),d&&(a.msg=d),e&&(a.stck=e),f&&(a.c'
