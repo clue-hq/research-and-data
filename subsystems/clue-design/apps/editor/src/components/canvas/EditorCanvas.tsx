@@ -55,6 +55,12 @@ export interface EditorCanvasProps {
   /** Advanced per-document opt-out from handoff-absolute: skips the
    * first-gesture freeze (CanvasKit-path concern, like onStructuredEdit). */
   layoutManagedEditing?: boolean;
+  /** Phase 4d, CanvasKit-only: view preference for the page safe-area/bleed
+   * guide overlay (like layoutManagedEditing, a CanvasKit-path concern —
+   * omitted on the Konva fallback). */
+  showMarginGuides?: boolean;
+  /** Phase 4d, CanvasKit-only: toggles `showMarginGuides`. */
+  onToggleMarginGuides?: () => void;
 }
 
 export function EditorCanvas(props: EditorCanvasProps) {

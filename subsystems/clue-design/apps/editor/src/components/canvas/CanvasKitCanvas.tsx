@@ -1,8 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Download, Hand, LocateFixed, Maximize2, Minus, MousePointer2, Plus, Scan } from "lucide-react";
-import type { Diagnostic, NodeId, Operation, PageId, Scene } from "@/engine/contracts";
+import { Download, Frame, Hand, LocateFixed, Maximize2, Minus, MousePointer2, Plus, Scan } from "lucide-react";
+import type { Diagnostic, NodeId, Operation, PageId, Rect, Scene } from "@/engine/contracts";
 import type { OptimisticEnginePort } from "@/engine/wasmEngine";
 import { artboardAtWorkspacePoint, type WorkspaceModel } from "@/engine/workspaceLayout";
 import { containerSelectionGeometry } from "@/engine/canvasSelection";
@@ -109,6 +109,13 @@ export interface CanvasKitCanvasProps {
    * on a solver-managed node does NOT freeze the layout — the node stays
    * layout-managed and the inspector's detach affordances apply instead. */
   layoutManagedEditing?: boolean;
+  /** Phase 4d: view preference (not per-document) — when true, the active
+   * page's safe-area/bleed rects render as guide outlines on the canvas. */
+  showMarginGuides?: boolean;
+  /** Phase 4d: toggles `showMarginGuides`. Omitted renders the control
+   * disabled-less but inert (no-op click) — callers always pass it in
+   * practice, same convention as the other toolbar callbacks. */
+  onToggleMarginGuides?: () => void;
 }
 
 interface Preview {
@@ -138,7 +145,9 @@ export function CanvasKitCanvas({
   onOpenExport,
   onSceneRefresh,
   onStructuredEdit,
-  layoutManagedEditing = false
+  layoutManagedEditing = false,
+  showMarginGuides = false,
+  onToggleMarginGuides
 }: CanvasKitCanvasProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const stateRef = useRef<GestureState>(initialGestureState);
@@ -180,6 +189,18 @@ export function CanvasKitCanvas({
     }
     return workspaceModel.bounds;
   }, [activeArtboard, workspaceFitTarget, workspaceModel.bounds]);
+
+  // 4d: the "Show margins" toggle's page guides — the active page's
+  // safe-area/bleed rects, mapped page-space → descriptor space with the
+  // same unitScale the snap guides use. Off (or no active page) means null,
+  // which SelectionOverlay treats as "render nothing" for both rects.
+  const marginGuides = useMemo(() => {
+    if (!showMarginGuides || !page) return null;
+    return {
+      safeArea: descriptorRect(page.safe_area, unitScale),
+      bleed: descriptorRect(page.bleed, unitScale)
+    };
+  }, [page, showMarginGuides, unitScale]);
 
   useEffect(() => {
     const element = containerRef.current;
@@ -739,6 +760,16 @@ export function CanvasKitCanvas({
         >
           <Maximize2 aria-hidden size={16} />
         </button>
+        <button
+          type="button"
+          className={showMarginGuides ? "active" : undefined}
+          aria-label="Show margins"
+          aria-pressed={showMarginGuides}
+          title="Show margins"
+          onClick={onToggleMarginGuides}
+        >
+          <Frame aria-hidden size={16} />
+        </button>
         <button type="button" aria-label="Open diagnostics panel" title="Open diagnostics panel" onClick={onOpenDiagnostics}>
           <Scan aria-hidden size={16} />
         </button>
@@ -974,6 +1005,7 @@ export function CanvasKitCanvas({
           focal={editingNodeId ? null : focalPoint}
           onFocalChange={commitFocalPoint}
           insertionIndicator={editingNodeId ? null : descriptorIndicator(reorderTarget?.indicator ?? null, unitScale)}
+          marginGuides={marginGuides}
         />
         {editing ? (
           <TextEditOverlay
@@ -1016,6 +1048,19 @@ function descriptorIndicator(
     position: indicator.position * unitScale,
     from: indicator.from * unitScale,
     to: indicator.to * unitScale
+  };
+}
+
+/** Same page-space→descriptor-space scaling as `descriptorGuides`, for the
+ * 4d "Show margins" safe-area/bleed rects. Null in, null out — a page
+ * without a bleed (or safe-area) renders nothing for that rect. */
+function descriptorRect(rect: Rect | null, unitScale: number): Box | null {
+  if (!rect) return null;
+  return {
+    x: rect.x * unitScale,
+    y: rect.y * unitScale,
+    width: rect.width * unitScale,
+    height: rect.height * unitScale
   };
 }
 

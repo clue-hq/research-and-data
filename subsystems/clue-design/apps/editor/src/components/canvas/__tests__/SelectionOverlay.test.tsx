@@ -99,6 +99,53 @@ describe("SelectionOverlay (Wave 3 C3d)", () => {
     expect(Number(indicator.getAttribute("y2"))).toBeCloseTo(pageOrigin.y + 30 * 2, 6);
   });
 
+  it("4d: renders both safe-area and bleed margin guides mapped via toScreen", () => {
+    const { container } = render(
+      <SelectionOverlay
+        selection={null}
+        pageOrigin={pageOrigin}
+        zoom={2}
+        marginGuides={{
+          safeArea: { x: 12, y: 12, width: 186, height: 273 },
+          bleed: { x: -3, y: -3, width: 216, height: 303 }
+        }}
+      />
+    );
+    const safeArea = container.querySelector('[data-role="margin-guide-safe-area"]')!;
+    expect(safeArea).not.toBeNull();
+    expect(Number(safeArea.getAttribute("x"))).toBeCloseTo(pageOrigin.x + 12 * 2, 6);
+    expect(Number(safeArea.getAttribute("y"))).toBeCloseTo(pageOrigin.y + 12 * 2, 6);
+    expect(Number(safeArea.getAttribute("width"))).toBeCloseTo(186 * 2, 6);
+    expect(Number(safeArea.getAttribute("height"))).toBeCloseTo(273 * 2, 6);
+    expect(safeArea.getAttribute("stroke-dasharray")).toBe("4 3");
+
+    const bleed = container.querySelector('[data-role="margin-guide-bleed"]')!;
+    expect(bleed).not.toBeNull();
+    expect(Number(bleed.getAttribute("x"))).toBeCloseTo(pageOrigin.x + -3 * 2, 6);
+    expect(Number(bleed.getAttribute("y"))).toBeCloseTo(pageOrigin.y + -3 * 2, 6);
+    expect(Number(bleed.getAttribute("width"))).toBeCloseTo(216 * 2, 6);
+    expect(Number(bleed.getAttribute("height"))).toBeCloseTo(303 * 2, 6);
+  });
+
+  it("4d: renders neither margin guide when marginGuides is null", () => {
+    const { container } = render(<SelectionOverlay selection={null} pageOrigin={pageOrigin} zoom={1} marginGuides={null} />);
+    expect(container.querySelector('[data-role="margin-guide-safe-area"]')).toBeNull();
+    expect(container.querySelector('[data-role="margin-guide-bleed"]')).toBeNull();
+  });
+
+  it("4d: renders only the safe-area guide when bleed is null", () => {
+    const { container } = render(
+      <SelectionOverlay
+        selection={null}
+        pageOrigin={pageOrigin}
+        zoom={1}
+        marginGuides={{ safeArea: { x: 12, y: 12, width: 186, height: 273 }, bleed: null }}
+      />
+    );
+    expect(container.querySelector('[data-role="margin-guide-safe-area"]')).not.toBeNull();
+    expect(container.querySelector('[data-role="margin-guide-bleed"]')).toBeNull();
+  });
+
   it("draws hover chrome separately from selected chrome", () => {
     const { container } = render(
       <SelectionOverlay

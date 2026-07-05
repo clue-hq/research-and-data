@@ -107,6 +107,7 @@ import {
 } from "@/hooks/useAgentTurn";
 import { useAgentInstructions } from "@/hooks/useAgentInstructions";
 import { useLayoutManagedEditing } from "@/hooks/useLayoutManagedEditing";
+import { useMarginGuides } from "@/hooks/useMarginGuides";
 import { useBrandChecks } from "@/hooks/useBrandChecks";
 import { useTurnNotification } from "@/hooks/useTurnNotification";
 import { useDocumentSync, type EditQueueFactory } from "@/hooks/useDocumentSync";
@@ -567,6 +568,10 @@ export default function EditorApp({
     initialEnabled: initialLayoutManagedEditing,
     saveRunner: layoutManagedEditingSaver
   });
+
+  // View preference (not per-document): renders the active page's
+  // safe-area/bleed guides on the canvas.
+  const marginGuides = useMarginGuides();
 
   /**
    * Shared post-apply bookkeeping for operations that are already applied to
@@ -1425,6 +1430,8 @@ export default function EditorApp({
                 onSceneRefresh={refreshSceneFromEngine}
                 onStructuredEdit={applyStructuredEditInstruction}
                 layoutManagedEditing={layoutManagedEditing.enabled}
+                showMarginGuides={marginGuides.showMarginGuides}
+                onToggleMarginGuides={marginGuides.toggleMarginGuides}
               />
             </>
           )}

@@ -27,7 +27,8 @@ vi.mock("../SelectionOverlay", () => ({
     showResizeHandles,
     showRotateHandle,
     guides,
-    insertionIndicator
+    insertionIndicator,
+    marginGuides
   }: {
     hover: unknown;
     slotKeys: string[];
@@ -37,6 +38,7 @@ vi.mock("../SelectionOverlay", () => ({
     showRotateHandle?: boolean;
     guides?: unknown[];
     insertionIndicator?: { axis: string; position: number; from: number; to: number } | null;
+    marginGuides?: { safeArea: unknown; bleed: unknown } | null;
   }) => (
     <div
       data-testid="selection-overlay"
@@ -48,7 +50,10 @@ vi.mock("../SelectionOverlay", () => ({
       data-show-rotate-handle={showRotateHandle ? "yes" : "no"}
       data-guides-count={(guides ?? []).length}
       data-indicator={insertionIndicator ? JSON.stringify(insertionIndicator) : ""}
-    />
+    >
+      {marginGuides?.safeArea ? <div data-role="margin-guide-safe-area" /> : null}
+      {marginGuides?.bleed ? <div data-role="margin-guide-bleed" /> : null}
+    </div>
   )
 }));
 
@@ -128,6 +133,44 @@ describe("CanvasKitCanvas polish chrome wiring", () => {
     expect(screen.getByRole("button", { name: "Pan tool" })).toHaveAttribute("aria-pressed", "true");
     expect(screen.getByRole("button", { name: "Fit current artboard" })).toHaveAttribute("aria-pressed", "true");
     expect(screen.getByRole("button", { name: "Fit all artboards" })).toHaveAttribute("aria-pressed", "false");
+  });
+
+  describe("4d: Show margins toggle", () => {
+    it("renders with aria-pressed=false by default and calls the toggle callback on click", () => {
+      const onToggleMarginGuides = vi.fn();
+      renderCanvasKit({ selectedNodeId: null, onToggleMarginGuides });
+
+      const button = screen.getByRole("button", { name: "Show margins" });
+      expect(button).toHaveAttribute("aria-pressed", "false");
+
+      fireEvent.click(button);
+      expect(onToggleMarginGuides).toHaveBeenCalledTimes(1);
+    });
+
+    it("reflects showMarginGuides=true via aria-pressed and the active class", () => {
+      renderCanvasKit({ selectedNodeId: null, showMarginGuides: true });
+
+      const button = screen.getByRole("button", { name: "Show margins" });
+      expect(button).toHaveAttribute("aria-pressed", "true");
+      expect(button.className).toContain("active");
+    });
+
+    it("passes the active page's safe-area rect to the overlay when the toggle is on", () => {
+      renderCanvasKit({ selectedNodeId: null, showMarginGuides: true });
+
+      const overlay = screen.getByTestId("selection-overlay");
+      expect(overlay.querySelector('[data-role="margin-guide-safe-area"]')).not.toBeNull();
+      // The fixture page has no bleed rect.
+      expect(overlay.querySelector('[data-role="margin-guide-bleed"]')).toBeNull();
+    });
+
+    it("passes no margin guides to the overlay when the toggle is off", () => {
+      renderCanvasKit({ selectedNodeId: null, showMarginGuides: false });
+
+      const overlay = screen.getByTestId("selection-overlay");
+      expect(overlay.querySelector('[data-role="margin-guide-safe-area"]')).toBeNull();
+      expect(overlay.querySelector('[data-role="margin-guide-bleed"]')).toBeNull();
+    });
   });
 
   it("emits one structured [lumen-hit] line per pointer-down when ?debug=hit is set", () => {
@@ -577,7 +620,9 @@ function renderCanvasKit({
   workspaceTool = "select",
   workspaceFitTarget = "manual",
   onStructuredEdit,
-  layoutManagedEditing
+  layoutManagedEditing,
+  showMarginGuides,
+  onToggleMarginGuides
 }: {
   scene?: Scene;
   selectedNodeId: string | null;
@@ -587,6 +632,8 @@ function renderCanvasKit({
   workspaceFitTarget?: "current" | "all" | "manual";
   onStructuredEdit?: (edit: StructuredEdit) => Scene | null;
   layoutManagedEditing?: boolean;
+  showMarginGuides?: boolean;
+  onToggleMarginGuides?: () => void;
 }) {
   return render(
     <CanvasKitCanvas
@@ -607,6 +654,8 @@ function renderCanvasKit({
       onWorkspaceFitTargetChange={() => {}}
       onStructuredEdit={onStructuredEdit}
       layoutManagedEditing={layoutManagedEditing}
+      showMarginGuides={showMarginGuides}
+      onToggleMarginGuides={onToggleMarginGuides}
     />
   );
 }

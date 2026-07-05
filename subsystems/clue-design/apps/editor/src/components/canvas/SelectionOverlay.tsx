@@ -71,6 +71,11 @@ export interface SelectionOverlayProps {
    * Only meaningful during a managed-reorder gesture; the host suppresses
    * `guides` while this is set (the two are mutually exclusive). */
   insertionIndicator?: { axis: "x" | "y"; position: number; from: number; to: number } | null;
+  /** Phase 4d: the active page's safe-area/bleed rects, in descriptor space
+   * (null when the "Show margins" toggle is off or there is no active
+   * page). Either rect may itself be null. Page guides, not selection
+   * chrome — rendered independent of `selection`. */
+  marginGuides?: { safeArea: Box | null; bleed: Box | null } | null;
 }
 
 export function SelectionOverlay({
@@ -91,7 +96,8 @@ export function SelectionOverlay({
   diagnosticCounts = { errors: 0, warnings: 0 },
   focal = null,
   onFocalChange,
-  insertionIndicator = null
+  insertionIndicator = null,
+  marginGuides = null
 }: SelectionOverlayProps) {
   const toScreen = (p: { x: number; y: number }) => ({
     x: pageOrigin.x + p.x * zoom,
@@ -108,6 +114,14 @@ export function SelectionOverlay({
       data-testid="selection-overlay"
       style={{ position: "absolute", inset: 0, pointerEvents: "none", overflow: "visible" }}
     >
+      {marginGuides?.safeArea ? (
+        <MarginGuideRect box={marginGuides.safeArea} toScreen={toScreen} zoom={zoom} role="margin-guide-safe-area" stroke={SNAP_GUIDE_COLOR} />
+      ) : null}
+
+      {marginGuides?.bleed ? (
+        <MarginGuideRect box={marginGuides.bleed} toScreen={toScreen} zoom={zoom} role="margin-guide-bleed" stroke="#e5484d" />
+      ) : null}
+
       {containerChildren.map((child, index) => {
         const tl = toScreen(child);
         return (
@@ -292,6 +306,39 @@ function SnapGuideLine({
       x2={b.x}
       y2={b.y}
       stroke={SNAP_GUIDE_COLOR}
+      strokeWidth={1}
+      strokeDasharray={SNAP_GUIDE_DASH.join(" ")}
+    />
+  );
+}
+
+/** Phase 4d: a page guide rect (safe-area or bleed), mapped corner + scaled
+ * dimensions via the same `pageOrigin + p × zoom` transform as every other
+ * overlay element. Rendered as a plain dashed outline — no fill, no
+ * hit-testing (the overlay's `pointerEvents: none` already covers this). */
+function MarginGuideRect({
+  box,
+  toScreen,
+  zoom,
+  role,
+  stroke
+}: {
+  box: Box;
+  toScreen: (p: { x: number; y: number }) => { x: number; y: number };
+  zoom: number;
+  role: string;
+  stroke: string;
+}) {
+  const topLeft = toScreen({ x: box.x, y: box.y });
+  return (
+    <rect
+      data-role={role}
+      x={topLeft.x}
+      y={topLeft.y}
+      width={box.width * zoom}
+      height={box.height * zoom}
+      fill="none"
+      stroke={stroke}
       strokeWidth={1}
       strokeDasharray={SNAP_GUIDE_DASH.join(" ")}
     />
