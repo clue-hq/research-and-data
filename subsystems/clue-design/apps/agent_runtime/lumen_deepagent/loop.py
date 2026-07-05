@@ -1362,7 +1362,7 @@ class LumenQualityLoop:
                         "nudge: the smallest move that restores at least 16pt "
                         "clearance. Never restyle, resize, delete, or reorder an "
                         "accommodated neighbor, never touch nodes not listed, "
-                        "and state every nudge in your summary. If the crowding "
+                        "and record each nudge as a `// collateral:` comment line in your block. If the crowding "
                         "is what the user explicitly asked for, leave it and "
                         "say so."
                     ),

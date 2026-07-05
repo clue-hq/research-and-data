@@ -120,20 +120,32 @@ SEEDED_CONTINUATION_RECIPE = (
     "block — `#page:<page_id> size(w,h,px)` to set the surface, then "
     "`replace(<existing_root_node_id>)` with your complete new single-root subtree "
     "indented under it. Never re-declare the page line itself.\n"
-    "- Touch ONLY what the request requires: every node you do not name must remain "
-    "byte-identical after your block.\n"
-    "- THE ONE EXCEPTION — ACCOMMODATION NUDGES: when feedback carries a "
-    "`mechanical_crowding` entry (YOUR edit newly crowds or overlaps neighbors that "
-    "were clear before this turn), you MAY move each neighbor NAMED in that entry — "
-    "position-only `#<id> p(x,y)`, the smallest nudge that restores at least 16pt of "
-    "clearance. Never restyle, resize, delete, or reorder an accommodated neighbor, "
-    "never touch nodes the entry does not name, and state every nudge in your summary "
-    "(e.g. \"nudged organizer 24pt down to clear the badge\"). If the crowding is what "
-    "the user explicitly asked for, leave it and say so instead.\n"
+    "- THE ASK DEFINES THE GOAL; YOU OWN THE COMPOSITION (taste-first policy). "
+    "Prefer the minimal change that satisfies the request. SLIGHT collateral "
+    "adjustments to other elements — including human-placed ones — are allowed "
+    "without being asked when they clearly improve the composition your edit "
+    "affects: a small nudge for breathing room, an alignment correction, a gap "
+    "evened out. ANNOUNCE every collateral change as a comment line in your block "
+    '(`// collateral: nudged organizer 24pt down to clear the badge`) — one line '
+    "per change, stating what and why. BIG rearrangements (moving several "
+    "elements, re-flowing a section, restructuring the human's layout) are "
+    "allowed only when the request needs them, and must open your block with a "
+    '`// heads-up: <what you rearranged and why>` line. Anything not named in a '
+    "comment must remain byte-identical — an UNANNOUNCED change is the one "
+    "unforgivable failure, worse than making no change at all.\n"
+    "- ACCOMMODATION NUDGES (the mechanical floor under the taste policy): when "
+    "feedback carries a `mechanical_crowding` entry (YOUR edit newly crowds or "
+    "overlaps neighbors that were clear before this turn), resolving it is NOT "
+    "optional — nudge each neighbor NAMED in the entry, position-only "
+    "`#<id> p(x,y)`, the smallest move restoring at least 16pt of clearance, "
+    "with its `// collateral:` line. If the crowding is what the user explicitly "
+    "asked for, leave it and say so in a comment instead.\n"
     '- FREEHAND / PINNED NODES (Phase 1 + 4c): a node whose brief shows `position_mode: "absolute"` '
     "was HAND-PLACED by the human — its `absolute_box` (page-space x/y/w/h) is human-owned "
-    "geometry. Leave it where the human put it and design AROUND it — move or resize it ONLY "
-    "when the user's request asks for that. When the user DOES ask, `#<id> p(x,y)` and "
+    "geometry: meaningful intent, not an obstacle. Keep it when it works. You MAY adjust it "
+    "without being asked when a slight, announced move clearly improves the composition your "
+    "edit affects (taste-first policy above — `// collateral:` line required); restructuring "
+    "human-placed layout is a BIG rearrangement (`// heads-up:` required). `#<id> p(x,y)` and "
     "`s(w,h)` work on pinned nodes and update `absolute_box` directly. On a pinned target "
     "`p(x,y)` is PAGE-SPACE (artboard coordinates — the same frame as the `absolute_box` "
     "shown in its brief), NOT parent-relative; `s(w,h)` takes fixed numbers only (no "
@@ -144,7 +156,8 @@ SEEDED_CONTINUATION_RECIPE = (
     "`base_anchor` records where the layout had the node when the human detached it — the "
     "offset from base_anchor to absolute_box is the human's deliberate nudge; treat it as "
     'intent, not error. A container with `layout_mode: "free"` holds hand-placed children: '
-    "do not re-stack, re-order, or re-flow them. Overflow and text-fit warnings on freehand "
+    "re-stacking, re-ordering, or re-flowing them is a BIG rearrangement — only when the "
+    "request needs it, with the `// heads-up:` line. Overflow and text-fit warnings on freehand "
     "nodes (LUMV0800/LUMV0801/LUMV0902-4) are ADVISORY — the human chose that placement; do "
     'not "fix" them unless the user explicitly asks. INSERTING a NEW element into a '
     '`layout_mode: "free"` container: a free container does not lay out children, so a new '
@@ -450,6 +463,15 @@ J. IMAGERY (apply ONLY when the design uses — or a brief like this should use 
      remove — NEVER a layout-geometry edit. A correct typographic design that needed no
      image is fine; do NOT invent an imagery issue where none is warranted.
 """ + IMAGERY_RUBRIC + """
+
+SEEDED EDIT TURNS (the design existed before this turn; taste-first policy): judge
+whether the REGION the edit affects is now WELL COMPOSED — not merely whether the
+ask landed without touching anything else. The author is allowed slight collateral
+adjustments (including to human-placed elements) when they improve the composition.
+Judge collateral changes by the composition they produce, not by their existence:
+a neighbor nudged for breathing room is correct behavior, not scope creep. Reject
+when the affected region's composition got WORSE than before the turn, or when a
+rearrangement is so large it no longer serves the user's ask.
 
 MECHANICAL CROWDING FEEDBACK: when the coordinator's previous feedback carries a
 `mechanical_crowding` entry, those conflicts were MEASURED geometrically (an edited
