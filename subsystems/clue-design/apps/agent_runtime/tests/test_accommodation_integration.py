@@ -172,8 +172,11 @@ def final_json(config, run_id: str) -> dict:
 
 
 def test_conflict_detected_and_announced_when_reviewer_accepts(tmp_path: Path, monkeypatch):
+    # max_iterations=1: no iteration remains, so the forced accommodation
+    # round CANNOT run (never-wedge bound) — the acceptance stands and the
+    # unresolved conflict is honestly announced instead.
     monkeypatch.setattr("lumen_deepagent.tools.CoreClient", FakeBadgeMoveCoreClient)
-    config = runtime_config(tmp_path)
+    config = runtime_config(tmp_path, max_iterations=1)
     tools = LumenDesignTools(
         config, "Move the badge", initial_scene=accommodation_seed_scene()
     )
@@ -184,6 +187,8 @@ def test_conflict_detected_and_announced_when_reviewer_accepts(tmp_path: Path, m
 
     assert result["status"] == "accepted"
     assert result["stop_reason"] == "accepted"
+    # The forced round must NOT have fired (no budget for it).
+    assert "accommodation_repair_forced" not in trace_events(config, tools.run_id)
 
     # Trace carries the accommodation_conflicts event.
     assert "accommodation_conflicts" in trace_events(config, tools.run_id)
@@ -404,3 +409,59 @@ def test_unseeded_run_has_no_accommodation_payload(tmp_path: Path, monkeypatch):
     assert result.get("accommodation") is None
     assert _mechanical_crowding_entries(loop.previous_feedback) == []
     assert "accommodation_conflicts" not in trace_events(config, tools.run_id)
+
+
+# ---------------------------------------------------------------------------
+# 6) Forced accommodation round: the critic accepts OVER an unresolved
+#    conflict (the run_7ff4ac79 failure — a -0.31pt overlap is sub-visual, so
+#    pixel judgment cannot catch it). The loop must withhold that acceptance
+#    ONCE, run an accommodation repair that nudges the neighbor, and accept
+#    the resolved draft with the nudge announced.
+# ---------------------------------------------------------------------------
+
+
+def test_forced_accommodation_round_overrides_blind_acceptance(
+    tmp_path: Path, monkeypatch
+):
+    monkeypatch.setattr(
+        "lumen_deepagent.tools.CoreClient", FakeBadgeMoveThenOrganizerNudgeCoreClient
+    )
+    config = runtime_config(tmp_path, max_iterations=3)
+    tools = LumenDesignTools(
+        config, "Move the badge", initial_scene=accommodation_seed_scene()
+    )
+    author = ScriptedAuthor(["#badge p(884,48)", "#organizer p(715,112)"])
+    reviewer = ScriptedReviewer(
+        [
+            # Iteration 1: blind acceptance over the overlap (what the real
+            # critic did at confidence 0.9) — must be overridden.
+            VisualCritique(accepted=True, summary="Looks clean.", confidence=0.9),
+            # Iteration 2: accepts the nudged, resolved draft.
+            VisualCritique(accepted=True, summary="Resolved.", confidence=0.9),
+        ]
+    )
+
+    result = LumenQualityLoop(tools, author, reviewer).run("Move the badge")
+
+    # The forced round fired exactly once and the run still ACCEPTED.
+    events = trace_events(config, tools.run_id)
+    assert events.count("accommodation_repair_forced") == 1
+    assert result["status"] == "accepted"
+    assert result["stop_reason"] == "accepted"
+    assert len(author.requests) == 2
+    assert len(reviewer.calls) == 2
+
+    # The second author request carries the accommodation repair context
+    # (the synthetic rejection's nudge instruction reached the author).
+    second_context = json.dumps(author.requests[1].repair_context or {})
+    assert "accommodation round" in second_context
+    assert "position-only" in second_context
+
+    # The nudge is announced and nothing is left unresolved.
+    payload = final_json(config, tools.run_id)
+    accommodation = payload["accommodation"]
+    assert accommodation["applied_nudges"] == [
+        {"node": "organizer", "dx": 0.0, "dy": 24.0}
+    ]
+    assert accommodation["unresolved"] == []
+    assert accommodation["detected"][0]["neighbor"] == "organizer"

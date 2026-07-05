@@ -313,6 +313,9 @@ class LumenQualityLoop:
         # baseline: a repair that RESOLVES a conflict empties the latest list,
         # but the nudge that resolved it must still be reported.
         self.accommodation_conflict_log: dict = {}
+        # At most ONE forced accommodation repair round per run (see
+        # _should_force_accommodation_round).
+        self.accommodation_repair_attempted = False
 
     def run(self, user_request: str) -> dict:
         # Agent-improvement follow-up 1: capture the seeded scene's OWN
@@ -1052,6 +1055,13 @@ class LumenQualityLoop:
             # Rank this fully-reviewed draft. The highest-scoring one is what we
             # hand back if no iteration is ever accepted.
             self._consider_best(stage="preflight_clean", critique=critique)
+            if critique.accepted and self._should_force_accommodation_round():
+                # The pixel critic accepted OVER an unresolved turn-introduced
+                # conflict. Swap in a synthetic rejection carrying the nudge
+                # instruction so the ordinary repair plumbing below runs one
+                # bounded accommodation round; keep-best already ranked the
+                # accepted draft, so a failed round still returns it.
+                critique = self._forced_accommodation_critique(critique)
             if critique.accepted:
                 iteration_record.stop_reason = StopReason.accepted
                 self.state.status = "accepted"
@@ -1354,6 +1364,80 @@ class LumenQualityLoop:
                 },
             }
         )
+
+    def _should_force_accommodation_round(self) -> bool:
+        """Whether an acceptance must yield to ONE accommodation repair round.
+
+        A sub-16pt gap or hairline overlap is a geometric fact the pixel
+        critic cannot reliably see: run_7ff4ac79 accepted a -0.31pt
+        badge↔organizer overlap at confidence 0.9 with a false "visible
+        vertical space" acceptance note — exactly the run_e0bb1733 failure
+        this feature exists for. When conflicts stand at acceptance time,
+        the geometric signal outranks pixel judgment — once. Bounded by
+        design: at most one forced round per run, and only while an
+        iteration remains, so a turn can never wedge on it; if the nudge
+        round fails, the accepted draft still returns via keep-best (as
+        completed_with_warnings, conflict honestly advisory)."""
+        return bool(
+            self.accommodation_conflicts
+            and not self.accommodation_repair_attempted
+            and self.state.current_iteration < self.tools.config.max_iterations
+        )
+
+    def _forced_accommodation_critique(self, accepted: VisualCritique) -> VisualCritique:
+        """The synthetic rejection that drives the forced accommodation round."""
+        self.accommodation_repair_attempted = True
+        issues = [
+            VisualIssue(
+                severity=DiagnosticSeverity.error,
+                category="spacing",
+                target=VisualTarget(node_id=conflict["neighbor"]),
+                message=(
+                    f"Geometrically measured: this turn's edit to "
+                    f"{conflict['edited']} left {conflict['neighbor']} at "
+                    f"{conflict['clearance']:.1f}pt clearance "
+                    f"({'overlapping' if conflict.get('overlap') else 'under the 16pt minimum'}) "
+                    "— crowding that did not exist before this turn."
+                ),
+                suggested_repair=(
+                    f"Nudge {conflict['neighbor']} with a position-only "
+                    f"`#{conflict['neighbor']} p(x,y)` — the smallest move "
+                    "restoring at least 16pt clearance from "
+                    f"{conflict['edited']}. Do not restyle, resize, delete, "
+                    "or reorder it."
+                ),
+            )
+            for conflict in self.accommodation_conflicts
+        ]
+        forced = VisualCritique(
+            accepted=False,
+            summary=(
+                "Visual acceptance withheld for one accommodation round: "
+                "turn-introduced crowding is unresolved ("
+                + "; ".join(
+                    f"{c['edited']}↔{c['neighbor']} {c['clearance']:.1f}pt"
+                    for c in self.accommodation_conflicts
+                )
+                + "). Nudge the named neighbor(s), position-only."
+            ),
+            issues=issues,
+            repair_instruction=issues[0].suggested_repair if issues else None,
+            confidence=1.0,
+        )
+        self.tools.record(
+            "coordinator",
+            "accommodation_repair_forced",
+            output_summary=(
+                "critic accepted over unresolved turn-introduced crowding; "
+                "forcing one accommodation repair round"
+            ),
+            payload={
+                "conflicts": self.accommodation_conflicts,
+                "overridden_acceptance_summary": accepted.summary,
+                "overridden_confidence": accepted.confidence,
+            },
+        )
+        return forced
 
     def _accommodation_scope_node_ids(self) -> set:
         """Crowded neighbors (+ their descendants) count as this turn's scope.
