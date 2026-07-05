@@ -136,10 +136,41 @@ is per-document, advanced, and the rollout safety valve.
   resuming a completed/stalled agent, check whether it left live children
   on the same working tree.
 
-## Open next (needs user's word)
+## 4c-C — managed gestures (SHIPPED 4b72601, e2e 10/10)
 
-- 4c-C managed gestures in advanced mode: strict reorder-within-container
-  v1; pull-out-to-detach as fast-follow.
+User go-ahead 2026-07-05 ("proceed with 4c-C next"); strict-reorder v1 as
+proposed. Editor-only; active only in layout-managed-editing mode (default
+mode short-circuits into the first-gesture freeze before these paths).
+
+- Drag-to-reorder: pure `reorderDropTarget()` (managedGestures.ts) maps the
+  dragged box center to a drop slot via siblings' solved midpoints
+  (axis-aware, padding-inset indicator, 40pt outside-cancel). The node never
+  ghost-moves; a solid 2px #4c8dff line marks the slot; release commits ONE
+  move_before/move_after structured edit (existing envelope → one undo
+  frame); own-slot drops commit nothing. Replaces the ghost-drag-snap-back
+  dead end.
+- Managed resize: resize handles (rotate hidden) on live stack children;
+  commit is a SIZE-ONLY Fixed patch — solver keeps owning position.
+  hug→fixed on resize = human intent, consistent with drag/detach.
+- Gesture class decided once at press time (refs, never per-frame).
+- Editor suite 544→584 (40 new tests). Browser e2e 10/10 incl.
+  user-requested middle-child resize (both neighbors re-flow correctly):
+  e2e-gestures/VERDICT.md.
+- Deviations accepted: drop reference = dragged box center (GestureAction
+  carries box, not raw pointer; standard DnD feel); explicit
+  allowManagedResize param gates the commit path; no Escape-cancel (no
+  existing gesture has one — onPointerCancel only).
+- Process: the implementation agent initially deadlocked in nested
+  wait-on-background-children delegation (second occurrence tonight);
+  unblocked by a direct "implement yourself now" message with the
+  researched facts inlined.
+
+## Open next
+
+- Accommodation edits (user-sequenced AFTER 4c-C — go-ahead given in
+  principle, design in ../agent-improvement/2026-07-05-accommodation-edits
+  .md; needs an eval pass to tune the nudge bound).
+- Pull-out-to-detach as reorder fast-follow (v2, on demand).
 - Recorded riders: stale "Layout-managed" inspector copy post-freeze;
-  preflight only warns on fully-off-artboard nodes; LUMD0918/0919 not in
-  the agent diagnostics doc (0918 now deleted).
+  preflight only warns on fully-off-artboard nodes; LUMD0919 not in the
+  agent diagnostics doc (0918 deleted).
