@@ -31,35 +31,40 @@ Required workflow:
    product/place/person that must be seen, or gives editorial credibility. Icons,
    flat illustrations, logos, abstract accents, and data are NOT this tool; they are
    library/shape/layout work the author does in DSL. Record the decision in a todo.
-4. GENERATE (only if step 3 chose an image). First call load_knowledge with an
+4. Delegate initial DSL writing to the lumen-dsl-author subagent. If step 3 chose
+   an image, tell the author to include the image frame NOW under the placeholder
+   asset id `hero_pending` and require the scrim idiom from
+   `knowledge/images/placement` — full-bleed `image asset(hero_pending)` with a
+   scrim rect beneath any overlaid text and light `$text.inverse` copy, or the
+   split image/band idiom. The real image is generated and bound in steps 7-8 (a
+   dangling placeholder reference is tolerated until then). If step 3 chose no
+   image, instruct a clean typographic layout. The author returns DSL only; it
+   does not generate or place assets.
+5. Compile the DSL with compile_dsl_block.
+6. If compile diagnostics contain errors, pass the exact diagnostics to the DSL
+   author and repair the smallest failing block.
+7. GENERATE (only if step 3 chose an image; never before the page exists — asset
+   registration requires a page/artboard in the scene, so this step always runs
+   AFTER the first successful compile). First call load_knowledge with an
    imagery query (e.g. "hero image photo prompt craft placement scrim") so the
    prompt-craft and placement docs are in context — they are auto-pinned only for
    briefs whose wording already signals imagery, so a brief like "GTM poster" needs
    this explicit re-load. Then craft the prompt per `knowledge/images/prompts` (5
    components — subject, medium, composition, lighting, quality; NO text baked into
-   the image; brand tone via brand_notes). Call asset(action="generate_image", ...)
-   with an aspect_ratio (or width/height) matching the target surface — for a
-   full-bleed hero that is the page's own ratio. This registers the asset and returns
-   its asset_id; note it.
-   Generate at most ONE hero image per surface.
-5. Delegate initial DSL writing to the lumen-dsl-author subagent. If you generated a
-   hero image in step 4, give the author its EXACT asset_id and require the scrim
-   idiom from `knowledge/images/placement` — full-bleed `image asset(<asset_id>)`
-   with a scrim rect beneath any overlaid text and light `$text.inverse` copy, or the
-   split image/band idiom. If step 3 chose no image, instruct a clean typographic
-   layout. The author returns DSL only; it does not generate or place assets.
-6. Compile the DSL with compile_dsl_block.
-7. If compile diagnostics contain errors, pass the exact diagnostics to the DSL
-   author and repair the smallest failing block.
-8. Run preflight_design.
-9. If preflight diagnostics contain errors, pass the exact diagnostics to the
-   DSL author and repair.
-10. PLACE (only if you generated a hero image). Once the image node exists in the
-    scene, call asset(action="place", node_id=<image node id>, asset_id=<step-4 id>) —
-    fit:cover, a focal point (0..1; raise it for faces/upper subjects), and alt text —
-    so the crop is deliberate and the binding is authoritative. Use
-    inspect(view="node_tree", target=<page_id>) / recommend_edit_surface to find the
-    image node id.
+   the image; brand tone via brand_notes). Find the hero image node with
+   inspect(view="node_tree", target=<page_id>), then call
+   asset(action="generate_image", target_node_id=<image node id>, ...) — the aspect
+   ratio derives from that node's real solved geometry (pass aspect_ratio only when
+   there is no target node). This registers the asset and returns its asset_id;
+   note it. Generate at most ONE hero image per surface.
+8. PLACE (only if you generated a hero image). Call asset(action="place",
+    node_id=<image node id>, asset_id=<step-7 id>) — fit:cover, a focal point (0..1;
+    raise it for faces/upper subjects), and alt text — so the placeholder reference
+    is replaced by the real asset, the crop is deliberate, and the binding is
+    authoritative.
+9. Run preflight_design.
+10. If preflight diagnostics contain errors, pass the exact diagnostics to the
+    DSL author and repair.
 11. Export previews with export_preview_bundle when possible, or export_preview
     for a single format.
 12. If export_preview reports preview_invalid or export_failed, stop or repair
@@ -216,7 +221,9 @@ colors, typography, spacing, radius, stroke, and opacity. Use `$surface.*`,
 approved `logo.*` / `asset.*` roles rather than guessed values.
 
 Imagery: you do NOT generate or place images — the coordinator owns that. When the
-coordinator's instructions include a generated hero image asset_id, compose the
+coordinator's instructions include a hero image asset_id (usually the placeholder
+`hero_pending` — the real image is generated and bound by the coordinator AFTER
+your block compiles, so a dangling reference here is expected), compose the
 frame that holds it: a full-bleed `image asset(<that_exact_id>)` filling its frame
 (`fit:cover`, aspect from the frame, never stretched). Whenever text sits over the
 image, emit a scrim rect BENEATH the text — a `r`/`fr` with

@@ -533,9 +533,37 @@ class LumenDesignTools:
 
         asset_payload = response.get("asset") or {}
         record = asset_payload.get("record") or {}
-        apply_response = self.core.apply_operations(
-            self.scene, [{"kind": "upsert_asset", "asset": record}]
-        )
+        try:
+            apply_response = self.core.apply_operations(
+                self.scene, [{"kind": "upsert_asset", "asset": record}]
+            )
+        except CoreError as error:
+            payload = {
+                "qr": {
+                    "status": "error",
+                    "error_code": error.code,
+                    "message": error.message,
+                    "asset_id": record.get("id"),
+                },
+                "hint": (
+                    "The QR was generated but could not be registered in the scene "
+                    "(most often the scene has no page/artboard yet). Author the "
+                    "page first, then call generate_qr again — QR generation is "
+                    "deterministic, so the retry costs nothing."
+                ),
+                "diagnostics": [
+                    diag.model_dump(mode="json")
+                    for diag in diagnostics_from(error.diagnostics)
+                ],
+            }
+            self.record(
+                "coordinator",
+                "qr_registration_failed",
+                input_summary=data[:200],
+                output_summary=error.message,
+                payload=payload,
+            )
+            return json.dumps(payload, indent=2)
         self._replace_scene_from_core_response(apply_response, "generate_qr")
 
         diagnostics = diagnostics_from(response.get("diagnostics", []))
@@ -586,8 +614,10 @@ class LumenDesignTools:
         derived from that frame's geometry — generated images are cropped to fill,
         never stretched. Uses the configured text-to-image model (image-gen-v1)
         when available, otherwise a deterministic placeholder so the design still
-        composes offline. Returns the asset_id; place it with place_asset_in_node /
-        place_asset_in_slot (a generated image is not auto-placed)."""
+        composes offline. The scene must already contain a page/artboard (author
+        the layout first) or registration fails with a retryable error. Returns
+        the asset_id; place it with place_asset_in_node / place_asset_in_slot
+        (a generated image is not auto-placed)."""
         asset_id = f"asset_img_{self.run_id[:8]}_{len(self.scene.get('assets', {}))}"
         width, height, aspect_ratio = self._image_constraints(
             target_node_id, target_slot_id, width, height, aspect_ratio
@@ -625,9 +655,37 @@ class LumenDesignTools:
             )
             return json.dumps(payload, indent=2)
 
-        apply_response = self.core.apply_operations(
-            self.scene, [{"kind": "upsert_asset", "asset": record}]
-        )
+        try:
+            apply_response = self.core.apply_operations(
+                self.scene, [{"kind": "upsert_asset", "asset": record}]
+            )
+        except CoreError as error:
+            payload = {
+                "image": {
+                    "status": "error",
+                    "error_code": error.code,
+                    "message": error.message,
+                    "asset_id": record.get("id"),
+                },
+                "hint": (
+                    "The image was generated but could not be registered in the "
+                    "scene (most often the scene has no page/artboard yet). Author "
+                    "the page first, then call generate_image again with the same "
+                    "prompt — the generation cache makes the retry free."
+                ),
+                "diagnostics": [
+                    diag.model_dump(mode="json")
+                    for diag in diagnostics_from(error.diagnostics)
+                ],
+            }
+            self.record(
+                "coordinator",
+                "image_registration_failed",
+                input_summary=prompt[:200],
+                output_summary=error.message,
+                payload=payload,
+            )
+            return json.dumps(payload, indent=2)
         self._replace_scene_from_core_response(apply_response, "generate_image")
 
         payload = {

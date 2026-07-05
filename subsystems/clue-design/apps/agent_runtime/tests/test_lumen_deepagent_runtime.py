@@ -631,6 +631,26 @@ class FakeNonSquareCoreClient(FakeCoreClient):
         return response
 
 
+class FakePagelessUpsertCoreClient(FakeCoreClient):
+    """Rejects asset upserts the way core does on a page-less scene (LUMV0100)."""
+
+    def apply_operations(self, scene, operations, scope=None):
+        if any(op.get("kind") == "upsert_asset" for op in operations):
+            raise CoreError(
+                "LUMV0100",
+                "document must contain at least one page/artboard",
+                diagnostics=[
+                    {
+                        "severity": "error",
+                        "phase": "validation",
+                        "code": "LUMV0100",
+                        "message": "document must contain at least one page/artboard",
+                    }
+                ],
+            )
+        return super().apply_operations(scene, operations, scope)
+
+
 class ScriptedAuthor:
     def __init__(self, blocks: list[str]) -> None:
         self.blocks = blocks
@@ -778,12 +798,19 @@ def test_coordinator_prompt_wires_the_imagery_decide_generate_place_chain():
     # through the single `asset` dispatcher (Group B consolidation).
     assert 'asset(action="generate_image"' in prompt
     assert 'asset(action="place"' in prompt
-    # The author is handed the exact asset id and the placement/scrim idiom.
+    # The author composes the frame around a placeholder id; the real asset is
+    # generated and bound only after the first compile (the LUMV0100 fix — asset
+    # registration requires a page, so generation must never precede authoring).
     assert "asset_id" in prompt
+    assert "hero_pending" in prompt
     assert "knowledge/images/placement" in prompt
-    # Ordering invariant: decide before generate before place.
-    assert prompt.index("DECIDE IMAGERY") < prompt.index('asset(action="generate_image"')
+    # Ordering invariant: decide, then author+compile, then generate, then place,
+    # then preflight.
+    assert prompt.index("DECIDE IMAGERY") < prompt.index("Delegate initial DSL")
+    assert prompt.index("Delegate initial DSL") < prompt.index('asset(action="generate_image"')
+    assert prompt.index("compile_dsl_block") < prompt.index('asset(action="generate_image"')
     assert prompt.index('asset(action="generate_image"') < prompt.index('asset(action="place"')
+    assert prompt.index('asset(action="place"') < prompt.index("Run preflight_design")
 
 
 def test_author_prompt_defers_image_generation_to_the_coordinator():
@@ -4110,6 +4137,53 @@ def test_generate_image_derives_aspect_from_target_node(tmp_path: Path, monkeypa
     assert result["image"]["height"] == 864
     assert tools.core.last_generate_asset["request"]["constraints"]["width"] == 1536
     assert tools.core.last_generate_asset["request"]["constraints"]["height"] == 864
+
+
+def test_generate_image_survives_pageless_scene_and_guides_retry(
+    tmp_path: Path, monkeypatch
+):
+    # LUMV0100 regression: generating before any page exists used to raise out of
+    # the tool and kill the whole run; now the tool returns a graceful error payload
+    # that tells the coordinator to author the page and retry (cache makes it free).
+    monkeypatch.setattr(
+        "lumen_deepagent.tools.CoreClient", FakePagelessUpsertCoreClient
+    )
+    tools = LumenDesignTools(runtime_config(tmp_path), "Create a social ad")
+
+    result = json.loads(tools.generate_image("a serene mountain lake at dawn"))
+
+    assert result["image"]["status"] == "error"
+    assert result["image"]["error_code"] == "LUMV0100"
+    assert result["image"]["asset_id"]
+    assert "page" in result["hint"]
+
+    trace_lines = (
+        (tools.trace_dir / "trace.jsonl").read_text().strip().splitlines()
+    )
+    events = [json.loads(line) for line in trace_lines]
+    assert any(event["event"] == "image_registration_failed" for event in events)
+
+
+def test_generate_qr_survives_pageless_scene_and_guides_retry(
+    tmp_path: Path, monkeypatch
+):
+    monkeypatch.setattr(
+        "lumen_deepagent.tools.CoreClient", FakePagelessUpsertCoreClient
+    )
+    tools = LumenDesignTools(runtime_config(tmp_path), "Create a mailer")
+
+    result = json.loads(tools.generate_qr("https://lumen.example/a/acme-health"))
+
+    assert result["qr"]["status"] == "error"
+    assert result["qr"]["error_code"] == "LUMV0100"
+    assert result["qr"]["asset_id"]
+    assert "page" in result["hint"]
+
+    trace_lines = (
+        (tools.trace_dir / "trace.jsonl").read_text().strip().splitlines()
+    )
+    events = [json.loads(line) for line in trace_lines]
+    assert any(event["event"] == "qr_registration_failed" for event in events)
 
 
 def test_generate_image_caches_identical_model_requests(tmp_path: Path, monkeypatch):
