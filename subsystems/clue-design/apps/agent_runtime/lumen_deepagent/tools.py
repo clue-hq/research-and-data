@@ -2208,6 +2208,7 @@ class LumenDesignTools:
         critique_json: str = "{}",
         ops_valid_through_iteration: Optional[int] = None,
         baseline_advisory_json: str = "null",
+        accommodation_json: str = "null",
     ) -> str:
         """Write the final run summary in a later-API-compatible local format.
 
@@ -2227,6 +2228,12 @@ class LumenDesignTools:
         baseline_advisory = (
             json.loads(baseline_advisory_json) if baseline_advisory_json.strip() else None
         )
+        # Accommodation edits: turn-introduced crowding this run detected,
+        # plus any position-only nudges it applied to the crowded neighbors —
+        # the run result must ANNOUNCE accommodation moves, never smuggle them.
+        accommodation = (
+            json.loads(accommodation_json) if accommodation_json.strip() else None
+        )
         payload = {
             "run_id": self.run_id,
             "status": status,
@@ -2241,6 +2248,7 @@ class LumenDesignTools:
             "seeded_from_initial_scene": self.seeded_from_initial_scene,
             "ops_valid_through_iteration": ops_valid_through_iteration,
             "baseline_advisory": baseline_advisory,
+            "accommodation": accommodation,
         }
         self._write_json(self.trace_dir / "final.json", payload)
         # Persist the FULL final scene (not just the summary) so offline tooling — the

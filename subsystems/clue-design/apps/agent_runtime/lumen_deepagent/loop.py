@@ -5,6 +5,7 @@ import json
 import re
 from typing import Optional, Protocol
 
+from .accommodation import page_space_box, turn_introduced_conflicts
 from .schemas import (
     AgentActionMode,
     AgentDirectorDecision,
@@ -298,6 +299,20 @@ class LumenQualityLoop:
         # Baseline errors the turn never touched (still present, unaddressed,
         # by the time the run finalizes) — surfaced as advisory in the result.
         self.unaddressed_baseline_diagnostics: list[dict] = []
+        # Accommodation edits: the seeded scene AS GEOMETRY, captured before
+        # the turn's first edit, so turn-introduced crowding can be measured
+        # (baseline_diagnostics above only captures diagnostic keys). None for
+        # an unseeded run.
+        self.baseline_scene: Optional[dict] = None
+        # Latest detection: turn-introduced (edited node × neighbor) conflicts
+        # on the CURRENT draft — drives the critic hint, the repair
+        # accommodation clause, and edit-scoped-acceptance scope expansion.
+        self.accommodation_conflicts: list[dict] = []
+        # Every conflict ever detected this run, keyed (edited, neighbor).
+        # The final announcement diffs these neighbors' geometry against the
+        # baseline: a repair that RESOLVES a conflict empties the latest list,
+        # but the nudge that resolved it must still be reported.
+        self.accommodation_conflict_log: dict = {}
 
     def run(self, user_request: str) -> dict:
         # Agent-improvement follow-up 1: capture the seeded scene's OWN
@@ -308,6 +323,13 @@ class LumenQualityLoop:
         self.baseline_diagnostic_keys = {
             _diagnostic_key(diag) for diag in self.baseline_diagnostics
         }
+        # Accommodation edits: snapshot the seeded scene's geometry at the same
+        # pre-first-edit moment, so crowding this turn CREATES is separable
+        # from adjacency the design already had (frozen output legitimately
+        # contains 0pt gaps — see the calibration in
+        # .context/agent-improvement/2026-07-05-accommodation-edits.md).
+        if self.tools.seeded_from_initial_scene and isinstance(self.tools.scene, dict):
+            self.baseline_scene = copy.deepcopy(self.tools.scene)
         knowledge = json.loads(self.tools.load_knowledge(user_request))
         self.state.loaded_knowledge = [
             KnowledgeSnippet.model_validate(snippet)
@@ -441,6 +463,7 @@ class LumenQualityLoop:
                         StopReason.accepted.value,
                         decision.rationale,
                         baseline_advisory_json=self._baseline_advisory_payload_json(),
+                        accommodation_json=self._accommodation_payload_json(),
                     )
                 )
             if decision.action_mode == AgentActionMode.stop_with_gap:
@@ -931,6 +954,14 @@ class LumenQualityLoop:
             # better keep-best candidate than a compile-only draft.
             self._consider_best(stage="preflight_clean", critique=None)
 
+            # Accommodation edits: measure turn-introduced crowding on this
+            # laid-out draft BEFORE the critic runs, so the critic judges the
+            # conflicts (it missed exactly this at confidence 0.9 in
+            # run_e0bb1733) and a subsequent repair may nudge the named
+            # neighbors. Detection is geometric; judgment stays with the
+            # critic and the author.
+            self._detect_accommodation_conflicts()
+
             # Quality is judged on PIXELS: always render a PNG for the critic so the
             # visual reviewer inspects the rendered image, not SVG geometry, even
             # when the configured preview format is SVG.
@@ -1032,6 +1063,7 @@ class LumenQualityLoop:
                         critique.summary,
                         critique_json=critique.model_dump_json(),
                         baseline_advisory_json=self._baseline_advisory_payload_json(),
+                        accommodation_json=self._accommodation_payload_json(),
                     )
                 )
 
@@ -1048,7 +1080,14 @@ class LumenQualityLoop:
             if self.tools.seeded_from_initial_scene and (
                 self.edited_node_ids or self.edited_page_ids
             ):
-                scope_node_ids = self._edited_scope_node_ids()
+                # Accommodation edits: neighbors this turn newly crowds are
+                # in scope too — a blocking critique on the crowded neighbor
+                # must be able to block, or the mechanism that protects edits
+                # from pre-existing complaints would wave through damage the
+                # edit itself caused.
+                scope_node_ids = (
+                    self._edited_scope_node_ids() | self._accommodation_scope_node_ids()
+                )
                 in_scope_issues = [
                     issue
                     for issue in critique.issues
@@ -1086,6 +1125,7 @@ class LumenQualityLoop:
                             critique_json=critique.model_dump_json(),
                             ops_valid_through_iteration=self.state.current_iteration,
                             baseline_advisory_json=self._baseline_advisory_payload_json(),
+                            accommodation_json=self._accommodation_payload_json(),
                         )
                     )
 
@@ -1149,6 +1189,7 @@ class LumenQualityLoop:
                         ),
                         ops_valid_through_iteration=self.best_iteration,
                         baseline_advisory_json=self._baseline_advisory_payload_json(),
+                        accommodation_json=self._accommodation_payload_json(),
                     )
                 )
             self.state.status = "completed_with_warnings"
@@ -1161,6 +1202,7 @@ class LumenQualityLoop:
                     critique_json=json.dumps(last_feedback),
                     ops_valid_through_iteration=self.best_iteration,
                     baseline_advisory_json=self._baseline_advisory_payload_json(),
+                    accommodation_json=self._accommodation_payload_json(),
                 )
             )
         self.state.status = "failed"
@@ -1199,16 +1241,7 @@ class LumenQualityLoop:
         pre-existing siblings and ancestors stay out of scope (an ancestor
         inclusion would let any pre-existing page-level complaint block every
         targeted edit — the exact failure edit-scoped acceptance removes)."""
-        scope = set(self.edited_node_ids)
-        nodes = (self.tools.scene or {}).get("nodes") or {}
-        stack = list(scope)
-        while stack:
-            node = nodes.get(stack.pop())
-            for child in (node or {}).get("children") or []:
-                if child not in scope:
-                    scope.add(child)
-                    stack.append(child)
-        return scope
+        return self._with_descendants(set(self.edited_node_ids))
 
     def _introduced_diagnostics(self, diagnostics: list[dict]) -> list[dict]:
         """Diagnostics from THIS turn's gate that are NOT in the baseline.
@@ -1258,6 +1291,126 @@ class LumenQualityLoop:
                     f"{len(self.unaddressed_baseline_diagnostics)} pre-existing "
                     "issue(s) on this document were not addressed — they predate "
                     "this turn."
+                ),
+            }
+        )
+
+    def _detect_accommodation_conflicts(self) -> None:
+        """Refresh `accommodation_conflicts` for the current laid-out draft.
+
+        A conflict is TURN-INTRODUCED crowding: an edited node now sits closer
+        than the calibrated threshold to a neighbor it cleared at baseline
+        (ancestors/descendants excluded, neighbor rolled up to its topmost
+        conflicting container — the correct nudge unit). When conflicts exist,
+        they are appended to `previous_feedback` so both the visual reviewer
+        (this iteration) and any repair author (next iteration) see them with
+        the accommodation rule attached."""
+        self.accommodation_conflicts = []
+        if not (
+            self.tools.seeded_from_initial_scene
+            and isinstance(self.baseline_scene, dict)
+            and self.edited_node_ids
+            and isinstance(self.tools.scene, dict)
+        ):
+            return
+        conflicts = turn_introduced_conflicts(
+            self.baseline_scene, self.tools.scene, set(self.edited_node_ids)
+        )
+        self.accommodation_conflicts = conflicts
+        for conflict in conflicts:
+            key = (conflict.get("edited"), conflict.get("neighbor"))
+            self.accommodation_conflict_log.setdefault(key, conflict)
+        if not conflicts:
+            return
+        self.tools.record(
+            "coordinator",
+            "accommodation_conflicts",
+            output_summary=(
+                f"{len(conflicts)} turn-introduced crowding conflict(s): "
+                + "; ".join(
+                    f"{c['edited']}↔{c['neighbor']} ({c['clearance']:.0f}pt)"
+                    for c in conflicts
+                )
+            ),
+            payload={"conflicts": conflicts},
+        )
+        self.previous_feedback.append(
+            {
+                "kind": "mechanical_crowding",
+                "feedback": {
+                    "conflicts": conflicts,
+                    "note": (
+                        "Geometrically measured: this turn's edit newly crowds "
+                        "neighbors that were clear before (clearance in pt; "
+                        "negative = overlap). ACCOMMODATION RULE — you MAY move "
+                        "each named neighbor with a position-only `#<id> p(x,y)` "
+                        "nudge: the smallest move that restores at least 16pt "
+                        "clearance. Never restyle, resize, delete, or reorder an "
+                        "accommodated neighbor, never touch nodes not listed, "
+                        "and state every nudge in your summary. If the crowding "
+                        "is what the user explicitly asked for, leave it and "
+                        "say so."
+                    ),
+                },
+            }
+        )
+
+    def _accommodation_scope_node_ids(self) -> set:
+        """Crowded neighbors (+ their descendants) count as this turn's scope.
+
+        Edit-scoped acceptance exists so PRE-EXISTING whole-design complaints
+        can't hold a targeted edit hostage — but crowding the turn itself
+        created is the turn's business, so a blocking critique that targets
+        the crowded neighbor must be able to block."""
+        seeds = {c["neighbor"] for c in self.accommodation_conflicts}
+        return self._with_descendants(seeds)
+
+    def _with_descendants(self, seeds: set) -> set:
+        scope = set(seeds)
+        nodes = (self.tools.scene or {}).get("nodes") or {}
+        stack = list(scope)
+        while stack:
+            node = nodes.get(stack.pop())
+            for child in (node or {}).get("children") or []:
+                if child not in scope:
+                    scope.add(child)
+                    stack.append(child)
+        return scope
+
+    def _accommodation_payload_json(self) -> str:
+        """The run-result announcement: conflicts detected + nudges applied.
+
+        Applied nudges diff each ever-conflicting neighbor's geometry against
+        the baseline — computed from the LOG, not the latest detection, because
+        a successful accommodation repair empties the latest list while being
+        exactly the thing worth announcing. `unresolved` carries the conflicts
+        still present on the final draft (advisory for the editor/user)."""
+        if not self.accommodation_conflict_log:
+            return "null"
+        nodes_now = (self.tools.scene or {}).get("nodes") or {}
+        nodes_then = (self.baseline_scene or {}).get("nodes") or {}
+        applied_nudges = []
+        for _, neighbor in self.accommodation_conflict_log:
+            then = nodes_then.get(neighbor)
+            now = nodes_now.get(neighbor)
+            box_then = page_space_box(then) if then else None
+            box_now = page_space_box(now) if now else None
+            if not box_then or not box_now:
+                continue
+            dx = round(box_now["x"] - box_then["x"], 2)
+            dy = round(box_now["y"] - box_then["y"], 2)
+            if dx or dy:
+                applied_nudges.append({"node": neighbor, "dx": dx, "dy": dy})
+        return json.dumps(
+            {
+                "detected": list(self.accommodation_conflict_log.values()),
+                "applied_nudges": applied_nudges,
+                "unresolved": self.accommodation_conflicts,
+                "note": (
+                    "Turn-introduced crowding, measured geometrically. "
+                    "applied_nudges are accommodation moves this turn made to "
+                    "neighbors of its own edit; unresolved conflicts remain on "
+                    "the final draft."
                 ),
             }
         )
@@ -1317,6 +1470,7 @@ class LumenQualityLoop:
         """
         self._restore_best_scene()
         kwargs.setdefault("baseline_advisory_json", self._baseline_advisory_payload_json())
+        kwargs.setdefault("accommodation_json", self._accommodation_payload_json())
         return json.loads(
             self.tools.finalize_run("failed", stop_reason, message, **kwargs)
         )

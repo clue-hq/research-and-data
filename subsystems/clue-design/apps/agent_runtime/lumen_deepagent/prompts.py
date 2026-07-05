@@ -122,6 +122,14 @@ SEEDED_CONTINUATION_RECIPE = (
     "indented under it. Never re-declare the page line itself.\n"
     "- Touch ONLY what the request requires: every node you do not name must remain "
     "byte-identical after your block.\n"
+    "- THE ONE EXCEPTION — ACCOMMODATION NUDGES: when feedback carries a "
+    "`mechanical_crowding` entry (YOUR edit newly crowds or overlaps neighbors that "
+    "were clear before this turn), you MAY move each neighbor NAMED in that entry — "
+    "position-only `#<id> p(x,y)`, the smallest nudge that restores at least 16pt of "
+    "clearance. Never restyle, resize, delete, or reorder an accommodated neighbor, "
+    "never touch nodes the entry does not name, and state every nudge in your summary "
+    "(e.g. \"nudged organizer 24pt down to clear the badge\"). If the crowding is what "
+    "the user explicitly asked for, leave it and say so instead.\n"
     '- FREEHAND / PINNED NODES (Phase 1 + 4c): a node whose brief shows `position_mode: "absolute"` '
     "was HAND-PLACED by the human — its `absolute_box` (page-space x/y/w/h) is human-owned "
     "geometry. Leave it where the human put it and design AROUND it — move or resize it ONLY "
@@ -143,7 +151,11 @@ SEEDED_CONTINUATION_RECIPE = (
     "element with no transform lands stacked at the container's origin (0,0), on top of "
     "existing content. You MUST give every new child an explicit `p(x,y)` placed within the "
     "container's bounds (new children position container-relative, not page-space) and an "
-    "explicit `s(w,h)` — never omit them and rely on layout to place it."
+    "explicit `s(w,h)` — never omit them and rely on layout to place it. RESIZING a pinned "
+    'or `layout_mode: "free"` CONTAINER does not re-flow its children — they keep their '
+    "baked offsets, so shrinking it below its content clips or misaligns them (a pill "
+    "narrower than its label). Never shrink such a container below its children's extent; "
+    "if you must resize it, re-place its children with explicit p()/s() in the same block."
 )
 
 
@@ -412,6 +424,9 @@ F. TYPOGRAPHY
    - Sensible type scale; nothing oversized-and-overwhelming or too small to read.
 G. CLIPPING / OVERFLOW *
    - Nothing cut off, off-canvas, or colliding. Reject "clipping"/"overflow".
+   - Text escaping its OWN container (a label wider than its pill/button/chip)
+     is a failure here even on freehand/human-placed nodes — the human placed
+     the container, not the overflow.
 H. AVOID AI CLICHES (not imagery itself)
    - Reject GRATUITOUS or cliché decoration: generic tinted eyebrow pills,
      blue-to-purple gradients, low-opacity circles behind everything,
@@ -435,6 +450,14 @@ J. IMAGERY (apply ONLY when the design uses — or a brief like this should use 
      remove — NEVER a layout-geometry edit. A correct typographic design that needed no
      image is fine; do NOT invent an imagery issue where none is warranted.
 """ + IMAGERY_RUBRIC + """
+
+MECHANICAL CROWDING FEEDBACK: when the coordinator's previous feedback carries a
+`mechanical_crowding` entry, those conflicts were MEASURED geometrically (an edited
+node newly sits under 16pt from — or overlapping — a neighbor it cleared before this
+turn). Verify each one in the pixels: it must be either resolved (comfortable
+clearance restored) or visibly intentional per the user's request. Unresolved
+accidental crowding is a B/G failure — do not accept it merely because the layout
+compiles; you missed exactly this once at confidence 0.9.
 
 Return a VisualCritique. For each issue: set the category, target the exact
 node/page/slot, and give the SMALLEST actionable repair (the coordinator passes it

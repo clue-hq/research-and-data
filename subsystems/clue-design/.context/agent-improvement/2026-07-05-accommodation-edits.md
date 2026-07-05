@@ -80,6 +80,35 @@ this turn caused":
    in-scope for edit-scoped acceptance (they're turn-caused), so the
    critic can still block a bad accommodation.
 
+## Calibration (2026-07-05, measured from run_e0bb1733's final scene — the
+## user-confirmed "too close" case)
+
+- The crowding the user flagged: badge (884,48,148,40) bottom edge flush
+  against organizer/yc_mark top edge — **0pt clearance**, 7pt to the label.
+- The SAME design's healthy baked gaps: eyebrow→hero **15pt**,
+  hero→subtitle **7pt**, subtitle→details **0pt**, label→value 6pt.
+- ⇒ **Absolute clearance cannot be the signal** — the design's own frozen
+  layout contains deliberate 0pt adjacencies. The signal is
+  TURN-INTRODUCED-ness (the pair was not in conflict at baseline), with a
+  modest clearance threshold applied only to new adjacencies involving
+  edited nodes.
+- Threshold pick: **16pt** (just above the smallest deliberate
+  inter-element gap observed, 15pt; sub-component pairs run 0–7pt but are
+  baseline pairs anyway). Overlap (negative clearance) always flags.
+- Pair rules from the same data: exclude ancestor/descendant pairs (badge
+  is INSIDE header — containment ≠ conflict); roll the flagged neighbor up
+  to the TOPMOST conflicting container on its lineage (organizer, not
+  yc_mark) — that container is the correct nudge unit (nudging yc_mark
+  alone would break the lockup, re-creating the composite bug).
+- Runtime baseline: the loop must deep-copy the pre-turn scene at the same
+  spot baseline_preflight is captured (input.json stores only a summary).
+- Eval cases: (A) badge (884,48) vs baseline (176,1088) → conflict with
+  organizer, clearance 0 [real geometry]; (B) badge overlapping footer
+  note (88,948,600,28) → overlap conflict [run_8e7b9f64 iter-1 shape];
+  (C) subtitle↔details 0pt NOT flagged (baseline pair, not edited);
+  (D) badge to a clear spot → no conflicts; (E) badge↔header not flagged
+  (ancestor).
+
 ## Where it lands
 
 `prompts.py` (scope rule + accommodation clause), `loop.py` (scope-
