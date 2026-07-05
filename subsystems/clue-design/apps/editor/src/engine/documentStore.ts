@@ -1,4 +1,5 @@
 import type { BrandKitSummary, Scene } from "./contracts";
+import type { BrandKitDetailPayload } from "./tokenColors";
 
 /**
  * Phase 2a: document identity for the editor.
@@ -163,6 +164,28 @@ export async function fetchBrandKits(
   }
   const payload = (await response.json()) as unknown;
   return Array.isArray(payload) ? (payload as BrandKitSummary[]) : [];
+}
+
+/**
+ * The full raw brand-kit JSON for one stored kit (`GET
+ * /brand-kits/{id}` -> `brand_kit_json`) — the resolved token *values*, not
+ * just the name/count summary `fetchBrandKits` returns. Used to build the
+ * canvas token-color map (see `tokenColors.ts`); callers should treat a
+ * fetch failure the same way `fetchBrandKits` does (leave the canvas on the
+ * string-heuristic fallback) rather than block anything on it.
+ */
+export async function fetchBrandKitDetail(
+  { apiBaseUrl, fetchImpl = fetch }: DocumentStoreOptions,
+  brandKitId: string
+): Promise<BrandKitDetailPayload | null> {
+  const response = await fetchImpl(
+    new URL(`/brand-kits/${encodeURIComponent(brandKitId)}`, apiBaseUrl)
+  );
+  if (!response.ok) {
+    throw new Error(`brand kit detail fetch failed (HTTP ${response.status})`);
+  }
+  const payload = (await response.json()) as { brand_kit_json?: unknown };
+  return (payload.brand_kit_json as BrandKitDetailPayload | undefined) ?? null;
 }
 
 /** 2e: persist the document's standing agent instructions (blank clears). */

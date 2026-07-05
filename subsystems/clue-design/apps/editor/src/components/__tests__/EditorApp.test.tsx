@@ -1320,6 +1320,64 @@ describe.skipIf(!wasmArtifactPresent)("EditorApp", () => {
     expect(screen.getAllByText(/update_document/).length).toBeGreaterThan(0);
   });
 
+  it("4d: resolves token fills to the fetched brand kit's real colors, not the string heuristic", async () => {
+    const brandKitDetailFetcher = vi.fn().mockResolvedValue({
+      tokens: {
+        colors: {
+          "surface.page": { value: { default: { kind: "hex", value: "#FFFFFF" } } },
+          "surface.card": { value: { default: { kind: "hex", value: "#FFFFFF" } } },
+          "surface.inverse": { value: { default: { kind: "hex", value: "#0F172A" } } }
+        }
+      }
+    });
+
+    render(
+      <TestEditorApp
+        initialScene={twoPageScene()}
+        initialSelectedNodeId={null}
+        brandKitDetailFetcher={brandKitDetailFetcher}
+      />
+    );
+
+    await waitFor(() => {
+      expect(brandKitDetailFetcher).toHaveBeenCalledWith("brand_kit_platform_default");
+    });
+
+    // The effect sets renderAdapter's module-level token map; once it has
+    // resolved, the three surface tokens from the bug report paint their
+    // real, distinct values instead of every "surface" token painting the
+    // same cream (`colorToCss`/`paintToCss` are not mocked in this file).
+    const { colorToCss } = await import("@/engine/renderAdapter");
+    await waitFor(() => {
+      expect(colorToCss({ kind: "token", token: "surface.page" })).toBe("#FFFFFF");
+    });
+    expect(colorToCss({ kind: "token", token: "surface.card" })).toBe("#FFFFFF");
+    expect(colorToCss({ kind: "token", token: "surface.inverse" })).toBe("#0F172A");
+    expect(colorToCss({ kind: "token", token: "surface.inverse" })).not.toBe(
+      colorToCss({ kind: "token", token: "surface.page" })
+    );
+  });
+
+  it("4d: fetches the attached kit's id (not the platform default) once a Brand Kit is attached", async () => {
+    const brandKitDetailFetcher = vi.fn().mockResolvedValue({ tokens: { colors: {} } });
+    const scene = twoPageScene();
+    scene.meta.brand_kit = { id: "brand_kit_insight_health", version: 4 };
+
+    render(
+      <TestEditorApp
+        initialScene={scene}
+        initialSelectedNodeId={null}
+        initialAvailableBrandKits={[brandKitSummary()]}
+        brandKitDetailFetcher={brandKitDetailFetcher}
+      />
+    );
+
+    await waitFor(() => {
+      expect(brandKitDetailFetcher).toHaveBeenCalledWith("brand_kit_insight_health");
+    });
+    expect(brandKitDetailFetcher).not.toHaveBeenCalledWith("brand_kit_platform_default");
+  });
+
   it("exports the active page through the editor export runner", async () => {
     const svgText =
       '<svg viewBox="0 0 793.7007874015749 1122.5196850393702"><text data-lumen-node-id="node_contact_name">Dr. Priya Sharma</text></svg>';

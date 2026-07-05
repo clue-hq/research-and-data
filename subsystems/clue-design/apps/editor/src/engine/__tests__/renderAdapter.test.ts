@@ -1,8 +1,17 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import phaseFManifest from "../../../../../crates/lumen-core/fixtures/conformance/phase_f_manifest.json";
-import type { AssetRecord, Color, Node, Page, Scene } from "../contracts";
+import type { AssetRecord, Color, Node, Page, Paint, Scene } from "../contracts";
 import { minimalScene } from "@/fixtures/minimalScene";
-import { colorToCss, nodeDescriptor, pageDescriptor, sceneUnitFromCanvas, sizeFromCanvas } from "../renderAdapter";
+import {
+  colorToCss,
+  nodeDescriptor,
+  paintDescriptor,
+  paintToCss,
+  pageDescriptor,
+  sceneUnitFromCanvas,
+  setTokenColorMap,
+  sizeFromCanvas
+} from "../renderAdapter";
 
 describe("render adapter", () => {
   it("projects page dimensions into canvas units", () => {
@@ -395,6 +404,81 @@ describe("render adapter", () => {
     };
 
     expect(colorToCss(color)).toBe("rgba(255, 0, 0, 0.502)");
+  });
+
+  describe("token paint resolution (4d: canvas token fidelity)", () => {
+    afterEach(() => {
+      // Module-level registry (see renderAdapter's `tokenColorMap` doc
+      // comment) — reset after every test so map state never leaks across
+      // cases in this file.
+      setTokenColorMap({});
+    });
+
+    it("WITHOUT a map, pins the pre-existing string-heuristic fallback", () => {
+      const color: Color = { kind: "token", token: "surface.page" };
+      expect(colorToCss(color)).toBe("#f8f4ec");
+
+      const paint: Paint = { kind: "token", token: "surface.page" };
+      expect(paintToCss(paint)).toBe("#f8f4ec");
+      expect(paintDescriptor(paint, 100, 100)).toEqual({ kind: "solid", color: "#f8f4ec" });
+    });
+
+    it("WITH a map, resolves to the real mapped value instead of the heuristic", () => {
+      setTokenColorMap({
+        "surface.page": "#FFFFFF",
+        "surface.card": "#FFFFFF",
+        "surface.inverse": "#0F172A"
+      });
+
+      expect(colorToCss({ kind: "token", token: "surface.page" })).toBe("#FFFFFF");
+      expect(paintToCss({ kind: "token", token: "surface.card" })).toBe("#FFFFFF");
+      expect(paintDescriptor({ kind: "token", token: "surface.inverse" }, 100, 100)).toEqual({
+        kind: "solid",
+        color: "#0F172A"
+      });
+
+      // The three real values are distinct, unlike the heuristic (which
+      // painted every "surface" token the same cream).
+      expect(new Set(["#FFFFFF", "#FFFFFF", "#0F172A"]).size).toBeLessThan(3);
+      const pageColor = colorToCss({ kind: "token", token: "surface.page" });
+      const inverseColor = colorToCss({ kind: "token", token: "surface.inverse" });
+      expect(pageColor).not.toBe(inverseColor);
+    });
+
+    it("WITH a map, a token the map doesn't know still falls through to the heuristic", () => {
+      setTokenColorMap({ "surface.page": "#FFFFFF" });
+
+      // "unmapped.custom" contains none of the heuristic's substrings
+      // (text/surface/accent/primary), so it hits the catch-all fallback.
+      expect(colorToCss({ kind: "token", token: "unmapped.custom" })).toBe("#b7aa96");
+      expect(paintToCss({ kind: "token", token: "accent.primary" })).toBe("#256c70");
+    });
+
+    it("page background fills and node fills both consult the map", () => {
+      setTokenColorMap({ "surface.page": "#FFFFFF" });
+      const page: Page = {
+        ...minimalScene.pages.page_a4,
+        background: [
+          {
+            id: "paint_page_bg",
+            paint: { kind: "token", token: "surface.page" }
+          }
+        ]
+      };
+      expect(pageDescriptor(page).background).toBe("#FFFFFF");
+
+      setTokenColorMap({ "surface.card": "#FFFFFF" });
+      const scene = cloneScene();
+      const node: Node = {
+        ...scene.nodes.node_contact_name,
+        fills: [{ id: "paint_node_fill", paint: { kind: "token", token: "surface.card" } }],
+        strokes: []
+      };
+      scene.nodes[node.id] = node;
+      const descriptor = nodeDescriptor(scene, node, page);
+      expect(descriptor.fill).toBe("#FFFFFF");
+      expect(descriptor.fills[0]?.paint).toEqual({ kind: "solid", color: "#FFFFFF" });
+    });
   });
 
   it("round trips canvas measurements back to scene units", () => {

@@ -50,6 +50,7 @@ import type {
 } from "@/engine/contracts";
 import {
   createDocument,
+  fetchBrandKitDetail,
   revertDocument,
   saveAgentInstructions,
   saveLayoutManagedEditing,
@@ -57,6 +58,12 @@ import {
   type RevertOutcome
 } from "@/engine/documentStore";
 import { editorApiBaseUrl } from "@/engine/editorConfig";
+import {
+  buildTokenColorMap,
+  PLATFORM_DEFAULT_BRAND_KIT_ID,
+  type BrandKitDetailPayload
+} from "@/engine/tokenColors";
+import { setTokenColorMap } from "@/engine/renderAdapter";
 import { postTurnSuggestions } from "@/engine/agentSuggestions";
 import { mergeStickyDiagnostics } from "@/engine/diagnosticsPolicy";
 import { createEditQueue, type EnqueueOptions } from "@/engine/editQueue";
@@ -152,6 +159,13 @@ export interface EditorAppProps {
    * /documents/{id}/revert?checkpoint=… and fetches the reverted scene.
    */
   revertRunner?: (documentId: string, checkpoint: string) => Promise<RevertOutcome>;
+  /**
+   * Full brand-kit token detail fetch override (tests). The default GETs
+   * /brand-kits/{id} for the document's effective kit (attached, or the
+   * platform default when none is attached) to build the canvas
+   * token-color map — see `useEffect` below and `engine/tokenColors.ts`.
+   */
+  brandKitDetailFetcher?: (brandKitId: string) => Promise<BrandKitDetailPayload | null>;
   /** 2e: the document's standing agent instructions, loaded with it. */
   initialAgentInstructions?: string | null;
   /** 2e: instructions persistence override (tests). */
@@ -203,6 +217,9 @@ const defaultDocumentCreator = (scene: Scene) =>
 const defaultRevertRunner = (documentId: string, checkpoint: string) =>
   revertDocument({ apiBaseUrl: editorApiBaseUrl() }, documentId, checkpoint);
 
+const defaultBrandKitDetailFetcher = (brandKitId: string) =>
+  fetchBrandKitDetail({ apiBaseUrl: editorApiBaseUrl() }, brandKitId);
+
 const defaultAgentInstructionsSaver = (documentId: string, instructions: string | null) =>
   saveAgentInstructions({ apiBaseUrl: editorApiBaseUrl() }, documentId, instructions);
 
@@ -223,6 +240,7 @@ export default function EditorApp({
   editQueueFactory = defaultEditQueueFactory,
   documentCreator = defaultDocumentCreator,
   revertRunner = defaultRevertRunner,
+  brandKitDetailFetcher = defaultBrandKitDetailFetcher,
   initialAgentInstructions = null,
   agentInstructionsSaver = defaultAgentInstructionsSaver,
   initialLayoutManagedEditing = false,
@@ -469,6 +487,38 @@ export default function EditorApp({
     brandCompatibilityRunner,
     setDiagnostics
   });
+
+  // Canvas token-paint fidelity: resolves $surface.page/$surface.card/…
+  // fills to the document's real brand-kit values instead of the renderer's
+  // string-heuristic fallback (every "surface" token painting one cream).
+  // Precedence: the attached kit's id when the document has one, else the
+  // platform default kit — mirroring server-side token resolution/export,
+  // which is exactly where the canvas previously diverged from it. Sets the
+  // module-level map in `engine/renderAdapter.ts` (see its doc comment for
+  // why a registry rather than threading); both canvas backends and the
+  // compare-pane/preview instances read that same module state, so this one
+  // effect covers all of them. Keyed on the attached kit ref (not
+  // `availableBrandKits` — the fetch resolves by id, it doesn't read that
+  // list) so re-attaching a different kit refreshes the map. A failed fetch
+  // leaves the map from the last success (or empty on first load), which
+  // falls through to the pre-existing heuristic — never blocks rendering.
+  useEffect(() => {
+    let cancelled = false;
+    const brandKitId = scene.meta.brand_kit?.id ?? PLATFORM_DEFAULT_BRAND_KIT_ID;
+    brandKitDetailFetcher(brandKitId)
+      .then((detail) => {
+        if (!cancelled) {
+          setTokenColorMap(buildTokenColorMap(detail));
+        }
+      })
+      .catch(() => {
+        // API-down or kit not found: leave the canvas on whatever map (or
+        // heuristic) it already had rather than block rendering.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [scene.meta.brand_kit, brandKitDetailFetcher]);
 
   // The export + preflight leg (Validate/Export flows, their in-flight
   // flags and results) lives in useExportPreflight. Deps rebuilt per

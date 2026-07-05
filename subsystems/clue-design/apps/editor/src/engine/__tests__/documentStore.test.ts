@@ -3,6 +3,7 @@ import { emptyScene } from "@/fixtures/emptyScene";
 import type { Scene } from "../contracts";
 import {
   createDocument,
+  fetchBrandKitDetail,
   fetchBrandKits,
   fetchDocument,
   revertDocument,
@@ -238,5 +239,49 @@ describe("documentStore", () => {
     await expect(
       fetchBrandKits({ apiBaseUrl: "http://localhost:8002", fetchImpl: malformed })
     ).resolves.toEqual([]);
+  });
+
+  it("fetchBrandKitDetail returns the raw brand_kit_json for token resolution", async () => {
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(
+      jsonResponse(200, {
+        schema_version: 1,
+        brand_kit: { id: "brand_kit_platform_default", version: 1, name: "Lumen Platform Default" },
+        brand_kit_json: {
+          tokens: {
+            colors: {
+              "surface.page": { value: { default: { kind: "hex", value: "#FFFFFF" } } }
+            }
+          }
+        }
+      })
+    );
+
+    const detail = await fetchBrandKitDetail(
+      { apiBaseUrl: "http://localhost:8002", fetchImpl },
+      "brand_kit_platform_default"
+    );
+
+    expect(detail).toEqual({
+      tokens: {
+        colors: {
+          "surface.page": { value: { default: { kind: "hex", value: "#FFFFFF" } } }
+        }
+      }
+    });
+    expect(String(fetchImpl.mock.calls[0][0])).toBe(
+      "http://localhost:8002/brand-kits/brand_kit_platform_default"
+    );
+  });
+
+  it("fetchBrandKitDetail throws on HTTP errors and tolerates a missing brand_kit_json", async () => {
+    const failing = vi.fn<typeof fetch>().mockResolvedValue(jsonResponse(404, {}));
+    await expect(
+      fetchBrandKitDetail({ apiBaseUrl: "http://localhost:8002", fetchImpl: failing }, "brand_kit_x")
+    ).rejects.toThrow("HTTP 404");
+
+    const empty = vi.fn<typeof fetch>().mockResolvedValue(jsonResponse(200, {}));
+    await expect(
+      fetchBrandKitDetail({ apiBaseUrl: "http://localhost:8002", fetchImpl: empty }, "brand_kit_x")
+    ).resolves.toBeNull();
   });
 });
