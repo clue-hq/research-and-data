@@ -2047,6 +2047,19 @@ def test_runtime_persists_critique_repair_and_gap_records(tmp_path: Path, monkey
     assert repair["repair_request"]["allowed_edit_surface"] == "structured_ops"
     assert gap["gap"]["area"] == "layout"
     assert final["gaps"][0]["summary"] == "Need explicit custom page dimensions"
+
+    # Hallucinated-area regression (killed the pipeline_data_slide_none sweep run —
+    # same failure class as _coerce_repair_class): an unknown area must not raise;
+    # it coerces to the agent_protocol catch-all and preserves the raw label.
+    bogus = json.loads(
+        tools.record_gap(
+            "structured_edit / text font_size persistence",
+            "Font size does not persist through structured edit.",
+            "Observed while composing the data slide.",
+        )
+    )
+    assert bogus["gap"]["area"] == "agent_protocol"
+    assert "[reported area: structured_edit / text font_size persistence]" in bogus["gap"]["summary"]
     assert (config.trace_dir / tools.run_id / "iterations" / "001" / "critique.json").exists()
     assert (config.trace_dir / tools.run_id / "iterations" / "001" / "repair_request.json").exists()
     assert (config.trace_dir / tools.run_id / "gaps.json").exists()

@@ -1828,8 +1828,11 @@ class LumenDesignTools:
         suggested_phase: Optional[str] = None,
     ) -> str:
         """Record a product gap instead of hiding unsupported semantics in prompts."""
+        coerced_area = _coerce_gap_area(area)
+        if coerced_area.value != area:
+            summary = f"[reported area: {area}] {summary}"
         gap = GapRecord(
-            area=GapArea(area),
+            area=coerced_area,
             summary=summary,
             evidence=evidence,
             suggested_phase=suggested_phase,
@@ -2818,6 +2821,18 @@ def _resolution_for_aspect(box_width: float, box_height: float) -> tuple[int, in
 
 def _image_warning(code: str, message: str) -> JsonObject:
     return {"severity": "warning", "phase": "validation", "code": code, "message": message}
+
+
+def _coerce_gap_area(value: str) -> GapArea:
+    """Tolerate a hallucinated gap area from the model (same failure class as
+    _coerce_repair_class — a freeform label like 'structured_edit / text
+    font_size persistence' crashed a whole run). Unknown values map to the
+    closest catch-all rather than raising; the freeform text is preserved in
+    the gap's summary/evidence either way."""
+    try:
+        return GapArea(value)
+    except ValueError:
+        return GapArea.agent_protocol
 
 
 def _coerce_repair_class(value: Optional[str]) -> Optional[RepairClass]:
