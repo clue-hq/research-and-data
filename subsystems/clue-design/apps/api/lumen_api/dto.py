@@ -75,6 +75,7 @@ def brand_kit_detail_dto(record: JsonObject) -> JsonObject:
         "schema_version": DTO_SCHEMA_VERSION,
         "brand_kit": brand_kit_summary(record),
         "brand_kit_json": record["brand_kit"],
+        "brand_summary": record.get("brand_summary") or {},
         "diagnostics": diagnostic_views(record.get("diagnostics", [])),
     }
 
@@ -435,3 +436,19 @@ def scene_counts(scene: JsonObject) -> JsonObject:
 
 def has_error_diagnostics(diagnostics: List[JsonObject]) -> bool:
     return any(diagnostic.get("severity") == "error" for diagnostic in diagnostics)
+
+
+def ingestion_job_dto(job: JsonObject) -> JsonObject:
+    """Public view of an ingestion job row (no request/evidence bodies)."""
+    return {
+        "job_id": job["job_id"],
+        "kind": job["kind"],
+        "status": job["status"],
+        "stage": job.get("stage"),
+        "progress": job.get("progress"),
+        "brand_kit_id": job.get("brand_kit_id"),
+        "brand_kit_version": job.get("brand_kit_version"),
+        "error": job.get("error"),
+        "created_at": job["created_at"],
+        "updated_at": job["updated_at"],
+    }

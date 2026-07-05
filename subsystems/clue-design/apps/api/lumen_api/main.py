@@ -15,7 +15,17 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 from uuid import uuid4
 
-from fastapi import Depends, FastAPI, File, Form, HTTPException, Query, Request, UploadFile
+from fastapi import (
+    BackgroundTasks,
+    Depends,
+    FastAPI,
+    File,
+    Form,
+    HTTPException,
+    Query,
+    Request,
+    UploadFile,
+)
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 
@@ -32,6 +42,7 @@ from .dto import (
     brand_kit_validation_dto,
     diagnostic_views,
     diagnostics_response,
+    ingestion_job_dto,
     document_summary,
     document_created_dto,
     finalize_dto,
@@ -65,12 +76,23 @@ from .models import (
     GenerateAssetRequest,
     GenerateQrRequest,
     GenerateBrandKitRequest,
+    IngestWebsiteRequest,
     PreflightRequest,
     PreflightPreviewRequest,
     ReplaceSceneRequest,
+    SetAssetDescriptionRequest,
+    SetBrandKitApprovalRequest,
     ValidateBrandKitRequest,
     ValidateDocumentBrandGovernanceRequest,
 )
+from lumen_ingestion.describe import DescriptionStore
+from lumen_ingestion.jobs import IngestionJobStore
+from lumen_ingestion.pipeline import (
+    run_asset_ingestion,
+    run_pdf_ingestion,
+    run_website_ingestion,
+)
+
 from .observability import (
     REQUEST_ID_HEADER,
     artifact_summary,
@@ -368,6 +390,222 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
             for record in repo.list_brand_kits(all_versions=all_versions)
         ]
 
+    # Ingestion routes are registered BEFORE GET /brand-kits/{brand_kit_id} so
+    # the literal "ingest" segment is not captured as a kit id (FastAPI matches
+    # routes in registration order).
+    @app.post("/brand-kits/ingest/website")
+    async def ingest_website(
+        payload: IngestWebsiteRequest,
+        background_tasks: BackgroundTasks,
+        repo: Repository = Depends(repository),
+    ) -> JsonObject:
+        guard = _resolve_guard_url()
+        try:
+            await guard(payload.url)
+        except Exception as error:  # CaptureError / ValueError from the guard
+            raise ingest_url_rejected(payload.url, error) from error
+
+        job = IngestionJobStore(repo.connection).create(
+            "website", payload.model_dump()
+        )
+        background_tasks.add_task(
+            run_website_ingestion,
+            str(app.state.database_path),
+            asset_store_root(),
+            job["job_id"],
+        )
+        return {"schema_version": 1, "job": ingestion_job_dto(job)}
+
+    @app.post("/brand-kits/ingest/pdf")
+    def ingest_pdf(
+        background_tasks: BackgroundTasks,
+        file: UploadFile = File(...),
+        name: Optional[str] = Form(None),
+        brand_kit_id: Optional[str] = Form(None),
+        repo: Repository = Depends(repository),
+    ) -> JsonObject:
+        data = file.file.read()
+        max_bytes = asset_max_bytes()
+        if len(data) > max_bytes:
+            raise HTTPException(
+                status_code=413,
+                detail=f"asset payload of {len(data)} bytes exceeds the {max_bytes}-byte limit",
+            )
+        is_pdf_type = (file.content_type or "").lower() == "application/pdf"
+        is_pdf_name = (file.filename or "").lower().endswith(".pdf")
+        if not (is_pdf_type or is_pdf_name):
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "code": "ingest.unsupported_file",
+                    "message": "brand-guidelines ingest requires a PDF file",
+                },
+            )
+        if not data or not data.startswith(b"%PDF-"):
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "code": "ingest.not_a_pdf",
+                    "message": "uploaded file is not a valid PDF (missing %PDF- header)",
+                },
+            )
+
+        # Create the job first so its id names the tmp file, then write the
+        # bytes to <asset_store_root>/ingest_tmp/<job_id>.pdf and record that
+        # path in the job request — run_pdf_ingestion reads + deletes it. The
+        # PDF bytes themselves are never stored in the job row.
+        job = IngestionJobStore(repo.connection).create(
+            "pdf",
+            {
+                "filename": file.filename,
+                "name": name,
+                "brand_kit_id": brand_kit_id,
+                "size_bytes": len(data),
+            },
+        )
+        tmp_dir = Path(asset_store_root()) / "ingest_tmp"
+        tmp_dir.mkdir(parents=True, exist_ok=True)
+        tmp_path = tmp_dir / f"{job['job_id']}.pdf"
+        tmp_path.write_bytes(data)
+
+        request = dict(job["request"])
+        request["tmp_path"] = str(tmp_path)
+        job = IngestionJobStore(repo.connection).update_request(job["job_id"], request)
+
+        background_tasks.add_task(
+            run_pdf_ingestion,
+            str(app.state.database_path),
+            asset_store_root(),
+            job["job_id"],
+        )
+        return {"schema_version": 1, "job": ingestion_job_dto(job)}
+
+    @app.post("/brand-kits/ingest/assets")
+    def ingest_assets(
+        background_tasks: BackgroundTasks,
+        files: List[UploadFile] = File(...),
+        name: Optional[str] = Form(None),
+        brand_kit_id: Optional[str] = Form(None),
+        repo: Repository = Depends(repository),
+    ) -> JsonObject:
+        if not files:
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "code": "ingest.unsupported_file",
+                    "message": "asset ingest requires at least one file",
+                },
+            )
+        if len(files) > _INGEST_MAX_ASSET_FILES:
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "code": "ingest.too_many_files",
+                    "message": (
+                        f"asset ingest accepts at most {_INGEST_MAX_ASSET_FILES} "
+                        f"files, got {len(files)}"
+                    ),
+                },
+            )
+
+        max_bytes = asset_max_bytes()
+        payloads: List[Tuple[UploadFile, bytes]] = []
+        for upload in files:
+            data = upload.file.read()
+            if len(data) > max_bytes:
+                raise HTTPException(
+                    status_code=413,
+                    detail=(
+                        f"asset payload of {len(data)} bytes exceeds the "
+                        f"{max_bytes}-byte limit"
+                    ),
+                )
+            payloads.append((upload, data))
+
+        # Magic-sniff each file (§2). Files failing the sniff are still passed
+        # through — uploads.py skips them with diagnostics — but if NONE pass we
+        # reject the whole batch up-front rather than queue a doomed job.
+        if not any(_sniff_supported_asset(data) for _upload, data in payloads):
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "code": "ingest.unsupported_file",
+                    "message": (
+                        "no uploaded file is a supported image "
+                        "(PNG, JPEG, WebP, or SVG)"
+                    ),
+                },
+            )
+
+        # Create the job first so its id names the tmp files, then write each
+        # file's bytes to <asset_store_root>/ingest_tmp/<job_id>_<idx>_<name>
+        # and record those paths in the job request — run_asset_ingestion reads
+        # + deletes them. The file bytes themselves are never stored in the job
+        # row.
+        job = IngestionJobStore(repo.connection).create(
+            "asset_upload",
+            {
+                "name": name,
+                "brand_kit_id": brand_kit_id,
+                "file_count": len(payloads),
+            },
+        )
+        tmp_dir = Path(asset_store_root()) / "ingest_tmp"
+        tmp_dir.mkdir(parents=True, exist_ok=True)
+
+        file_specs: List[JsonObject] = []
+        for idx, (upload, data) in enumerate(payloads):
+            safe_name = _sanitize_tmp_filename(upload.filename)
+            tmp_path = tmp_dir / f"{job['job_id']}_{idx}_{safe_name}"
+            tmp_path.write_bytes(data)
+            file_specs.append(
+                {
+                    "filename": upload.filename,
+                    "content_type": upload.content_type,
+                    "tmp_path": str(tmp_path),
+                }
+            )
+
+        request = dict(job["request"])
+        request["files"] = file_specs
+        job = IngestionJobStore(repo.connection).update_request(job["job_id"], request)
+
+        background_tasks.add_task(
+            run_asset_ingestion,
+            str(app.state.database_path),
+            asset_store_root(),
+            job["job_id"],
+        )
+        return {"schema_version": 1, "job": ingestion_job_dto(job)}
+
+    @app.get("/brand-kits/ingest")
+    def list_ingestion_jobs(
+        repo: Repository = Depends(repository),
+    ) -> JsonObject:
+        """Most-recent 50 ingestion jobs (public dto — no request/evidence
+        bodies). Registered adjacent to the param route; the literal segment
+        only matches when the path has no trailing job id."""
+        jobs = IngestionJobStore(repo.connection).list_recent(50)
+        return {
+            "schema_version": 1,
+            "jobs": [ingestion_job_dto(job) for job in jobs],
+        }
+
+    @app.get("/brand-kits/ingest/{job_id}")
+    def get_ingestion_job(
+        job_id: str, repo: Repository = Depends(repository)
+    ) -> JsonObject:
+        job = IngestionJobStore(repo.connection).get(job_id)
+        if job is None:
+            raise HTTPException(
+                status_code=404,
+                detail={
+                    "code": "ingestion_job.not_found",
+                    "message": f"ingestion job {job_id} was not found",
+                },
+            )
+        return {"schema_version": 1, "job": ingestion_job_dto(job)}
+
     @app.get("/brand-kits/{brand_kit_id}")
     def get_latest_brand_kit(
         brand_kit_id: str, repo: Repository = Depends(repository)
@@ -379,6 +617,26 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
         brand_kit_id: str, version: int, repo: Repository = Depends(repository)
     ) -> JsonObject:
         return brand_kit_detail_dto(repo.require_brand_kit(brand_kit_id, version))
+
+    @app.post("/brand-kits/{brand_kit_id}/approval")
+    def set_brand_kit_approval(
+        brand_kit_id: str,
+        payload: SetBrandKitApprovalRequest,
+        repo: Repository = Depends(repository),
+    ) -> JsonObject:
+        """Flip the approval state on the latest version of a kit (approve /
+        revert to draft). Unknown kit → 404; invalid status → 422 (model)."""
+        record = repo.update_brand_kit_approval(
+            brand_kit_id, payload.approval_status
+        )
+        log_event(
+            api_logger,
+            logging.INFO,
+            "brand_kit_approval_set",
+            brand_kit_id=brand_kit_id,
+            approval_status=payload.approval_status,
+        )
+        return brand_kit_detail_dto(record)
 
     @app.get("/brand-compatibility-reports/{report_id}")
     def get_brand_compatibility_report(
@@ -2478,6 +2736,46 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
         path.unlink()
         return True
 
+    # GET /assets/descriptions is registered BEFORE GET /assets/{asset_id} so
+    # the literal "descriptions" segment is not captured as an asset id (FastAPI
+    # matches routes in registration order at the same path depth).
+    @app.get("/assets/descriptions")
+    def get_asset_descriptions(
+        asset_ids: str = Query(..., description="comma-separated asset ids"),
+        repo: Repository = Depends(repository),
+    ) -> JsonObject:
+        ids = [ident for ident in (asset_ids or "").split(",") if ident.strip()]
+        ids = [ident.strip() for ident in ids][:200]
+        store = DescriptionStore(repo.connection)
+        return {
+            "schema_version": 1,
+            "descriptions": store.get_many(ids),
+        }
+
+    @app.put("/assets/{asset_id}/description")
+    def set_asset_description(
+        asset_id: str,
+        payload: SetAssetDescriptionRequest,
+        repo: Repository = Depends(repository),
+    ) -> JsonObject:
+        """Human-author an asset's library metadata (partial merge with the
+        existing row). 404 only when the asset RECORD doesn't exist."""
+        repo.require_asset_record(asset_id)
+        store = DescriptionStore(repo.connection)
+        existing = store.get_many([asset_id]).get(asset_id) or {}
+
+        def _merge(key: str, incoming: Optional[Any]) -> Any:
+            return incoming if incoming is not None else existing.get(key)
+
+        store.put_human(
+            asset_id,
+            title=_merge("title", payload.title),
+            description=_merge("description", payload.description),
+            usage=_merge("usage", payload.usage),
+            tags=payload.tags if payload.tags is not None else list(existing.get("tags") or []),
+        )
+        return store.get_many([asset_id])[asset_id]
+
     @app.get("/assets/{asset_id}")
     def get_asset(
         asset_id: str,
@@ -2992,6 +3290,63 @@ def choose_effective_brand_mode_for_scene(
             values["medium"] = "digital"
 
     return {"values": values}
+
+
+def _resolve_guard_url():
+    """Resolve the capture SSRF guard lazily.
+
+    Agent A's ``lumen_ingestion.capture.net.guard_url`` is an async callable
+    that resolves DNS and rejects loopback/private/link-local/reserved
+    addresses, non-standard ports, userinfo, and non-http(s) schemes. It is
+    imported lazily so this module stays importable while the capture package
+    is being built; tests monkeypatch this resolver.
+    """
+    from lumen_ingestion.capture.net import guard_url
+
+    return guard_url
+
+
+# Asset-upload ingest (slice 3 §6). The cap mirrors uploads.py's own LUMI0702
+# cap so the route and analyzer agree; the sniff mirrors §2's accepted types.
+_INGEST_MAX_ASSET_FILES = 20
+
+
+def _sniff_supported_asset(data: bytes) -> bool:
+    """True when ``data`` looks like PNG, JPEG, WebP, or SVG by magic bytes
+    (§2). Mirrors uploads.py's own sniff so the route and analyzer agree on
+    which files are worth queuing; uploads.py re-sniffs and skips per-file."""
+    if not data:
+        return False
+    if data.startswith(b"\x89PNG"):
+        return True
+    if data.startswith(b"\xff\xd8"):  # JPEG
+        return True
+    if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        return True
+    # SVG: first 512 bytes contain "<svg" after optional decl/whitespace/comments.
+    head = data[:512]
+    try:
+        text = head.decode("utf-8", errors="ignore").lower()
+    except Exception:
+        return False
+    return "<svg" in text
+
+
+def _sanitize_tmp_filename(filename: Optional[str]) -> str:
+    """Sanitize an uploaded filename for use in a tmp path: keep only
+    ``[A-Za-z0-9._-]`` and cap length. Never returns empty."""
+    base = os.path.basename(filename or "")
+    cleaned = re.sub(r"[^A-Za-z0-9._-]", "_", base).strip("._") or "asset"
+    return cleaned[:80]
+
+
+def ingest_url_rejected(url: str, error: Exception) -> HTTPException:
+    code = getattr(error, "code", "LUMI0501")
+    message = getattr(error, "message", None) or str(error) or f"blocked url: {url}"
+    return HTTPException(
+        status_code=422,
+        detail={"code": code, "message": message},
+    )
 
 
 def core_http_error(error: CoreError) -> HTTPException:

@@ -1,0 +1,150 @@
+"""Optional LLM role-assist seam (§5).
+
+`RoleAssist` is a protocol the normalizer may consult to refine the deterministic
+role assignment. `NullRoleAssist` (the default, used in all tests) returns None.
+`OpenRouterRoleAssist` mirrors `lumen_api.image_provider`'s pattern: lazy httpx
+import, env-driven config, strict JSON response. It never touches the network in
+tests and is never constructed by the normalizer unless explicitly passed.
+"""
+
+from __future__ import annotations
+
+import json
+import os
+from dataclasses import dataclass, field
+from typing import Protocol, runtime_checkable
+
+DEFAULT_ASSIST_MODEL = "anthropic/claude-sonnet-4.5"
+DEFAULT_BASE_URL = "https://openrouter.ai/api/v1"
+DEFAULT_TIMEOUT_S = 30.0
+
+
+@dataclass
+class AssistDraft:
+    clusters: list[dict]                 # [{hex, weight, hints, name}]
+    color_roles: dict[str, str]          # deterministic token -> hex
+    type_anchors: dict[str, object]
+    narrative: dict
+    rules: list[str]
+
+
+@dataclass
+class AssistResult:
+    color_roles: dict[str, str] = field(default_factory=dict)
+    heading_family: str | None = None
+    body_family: str | None = None
+    description: str | None = None
+    tagline: str | None = None
+    values: list[str] = field(default_factory=list)
+    tone: list[str] = field(default_factory=list)
+    dark_overrides: dict[str, str] = field(default_factory=dict)
+
+
+@runtime_checkable
+class RoleAssist(Protocol):
+    def refine(self, draft: AssistDraft) -> AssistResult | None: ...
+
+
+class NullRoleAssist:
+    """Deterministic no-op. The default everywhere; tests use this."""
+
+    def refine(self, draft: AssistDraft) -> AssistResult | None:
+        return None
+
+
+class OpenRouterRoleAssist:
+    """LLM-backed refinement over OpenRouter. Enabled only when
+    LUMEN_INGESTION_ASSIST=1. Never call the network in tests."""
+
+    def __init__(self) -> None:
+        self.enabled = os.environ.get("LUMEN_INGESTION_ASSIST") == "1"
+        self.model = os.environ.get("LUMEN_INGESTION_ASSIST_MODEL", DEFAULT_ASSIST_MODEL)
+        self.base_url = os.environ.get("OPENROUTER_BASE_URL", DEFAULT_BASE_URL)
+        self.api_key = os.environ.get("OPENROUTER_API_KEY", "")
+        self.diagnostics: list[dict] = []
+
+    def refine(self, draft: AssistDraft) -> AssistResult | None:
+        if not self.enabled or not self.api_key:
+            self.diagnostics.append(
+                {"code": "LUMI0301", "severity": "warning", "message": "assist unavailable — deterministic fallback"}
+            )
+            return None
+        payload = self._invoke(draft)
+        if payload is None:
+            self.diagnostics.append(
+                {"code": "LUMI0301", "severity": "warning", "message": "assist unavailable — deterministic fallback"}
+            )
+            return None
+        return AssistResult(
+            color_roles={str(k): str(v) for k, v in (payload.get("color_roles") or {}).items()},
+            heading_family=payload.get("heading_family"),
+            body_family=payload.get("body_family"),
+            description=payload.get("description"),
+            tagline=payload.get("tagline"),
+            values=[str(v) for v in (payload.get("values") or [])],
+            tone=[str(v) for v in (payload.get("tone") or [])],
+            dark_overrides={str(k): str(v) for k, v in (payload.get("dark_overrides") or {}).items()},
+        )
+
+    def _invoke(self, draft: AssistDraft) -> dict | None:
+        import httpx  # lazy: only the real network path needs it
+
+        body = {
+            "model": self.model,
+            "messages": [
+                {"role": "system", "content": _SYSTEM_PROMPT},
+                {"role": "user", "content": json.dumps(_draft_payload(draft))},
+            ],
+            "response_format": {
+                "type": "json_schema",
+                "json_schema": {"name": "role_assist", "strict": True, "schema": _RESPONSE_SCHEMA},
+            },
+        }
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json",
+        }
+        url = self.base_url.rstrip("/") + "/chat/completions"
+        for _ in range(2):
+            try:
+                response = httpx.post(url, json=body, headers=headers, timeout=DEFAULT_TIMEOUT_S)
+                if response.status_code >= 400:
+                    continue
+                content = response.json()["choices"][0]["message"]["content"]
+                return json.loads(content)
+            except Exception:
+                continue
+        return None
+
+
+def _draft_payload(draft: AssistDraft) -> dict:
+    return {
+        "clusters": draft.clusters,
+        "deterministic_roles": draft.color_roles,
+        "type_anchors": draft.type_anchors,
+        "narrative": draft.narrative,
+        "rules": draft.rules,
+    }
+
+
+_SYSTEM_PROMPT = (
+    "You refine a deterministic brand color/type role assignment. Only override "
+    "where evidence clearly supports a better choice. Return valid JSON matching "
+    "the schema. Colors are #RRGGBB. Do not invent families not present in the "
+    "evidence."
+)
+
+_RESPONSE_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "color_roles": {"type": "object"},
+        "heading_family": {"type": ["string", "null"]},
+        "body_family": {"type": ["string", "null"]},
+        "description": {"type": ["string", "null"]},
+        "tagline": {"type": ["string", "null"]},
+        "values": {"type": "array", "items": {"type": "string"}},
+        "tone": {"type": "array", "items": {"type": "string"}},
+        "dark_overrides": {"type": "object"},
+    },
+    "additionalProperties": False,
+}

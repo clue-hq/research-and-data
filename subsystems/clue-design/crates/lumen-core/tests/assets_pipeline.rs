@@ -527,6 +527,8 @@ fn brand_kit_font_and_logo_refs_can_match_scene_assets() {
             allowed_backgrounds: Vec::new(),
             license: None,
             provenance: None,
+            title: None,
+            description: None,
         },
     );
 

@@ -246,6 +246,36 @@ class Repository:
             raise NotFoundError("brand_kit", brand_kit_id)
         return brand_kit_from_row(row)
 
+    def update_brand_kit_approval(
+        self, brand_kit_id: str, approval_status: str
+    ) -> JsonObject:
+        """Set the approval state on the latest version of a kit.
+
+        Updates BOTH the ``approval_status`` column and the mirrored
+        ``brand_kit_json.approval_status`` so the persisted kit JSON stays
+        consistent with the row. Raises ``NotFoundError`` for an unknown kit.
+        """
+        record = self.require_brand_kit(brand_kit_id)
+        version = int(record["version"])
+        brand_kit = record["brand_kit"]
+        brand_kit["approval_status"] = approval_status
+        self.connection.execute(
+            """
+            UPDATE brand_kits
+            SET approval_status = ?, brand_kit_json = ?, updated_at = ?
+            WHERE brand_kit_id = ? AND version = ?
+            """,
+            (
+                approval_status,
+                encode(brand_kit),
+                utc_now(),
+                brand_kit_id,
+                version,
+            ),
+        )
+        self.connection.commit()
+        return self.require_brand_kit(brand_kit_id, version)
+
     def create_brand_compatibility_report(
         self,
         report_id: str,

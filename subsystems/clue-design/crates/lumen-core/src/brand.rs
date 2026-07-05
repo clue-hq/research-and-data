@@ -1409,6 +1409,12 @@ pub struct LogoAsset {
     pub allowed_backgrounds: Vec<String>,
     pub license: Option<AssetLicense>,
     pub provenance: Option<TokenProvenance>,
+    // Human/AI-authored library metadata (brandkit ingestion v1 slice 3).
+    // skip_serializing_if keeps pre-slice-3 kit serializations byte-identical.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -1455,6 +1461,12 @@ pub struct BrandAsset {
     pub preferred_color_tokens: Vec<String>,
     pub recolor_allowed: Option<bool>,
     pub crop_allowed: Option<bool>,
+    // Human/AI-authored library metadata (brandkit ingestion v1 slice 3).
+    // skip_serializing_if keeps pre-slice-3 kit serializations byte-identical.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -2801,6 +2813,8 @@ fn generated_logo_assets(seed: &BrandSeed) -> BTreeMap<String, LogoAsset> {
                     source: "brand_seed".to_owned(),
                     confidence: 0.75,
                 }),
+                title: None,
+                description: None,
             });
     }
     logos
@@ -5426,6 +5440,8 @@ fn compile_logo_directive(name: &str, value: &str, kit: &mut BrandKit) -> Result
             allowed_backgrounds: vec!["surface.page".to_owned(), "surface.brand".to_owned()],
             license: None,
             provenance: None,
+            title: None,
+            description: None,
         },
     );
 
@@ -5576,6 +5592,8 @@ fn compile_brand_asset_directive(
             preferred_color_tokens,
             recolor_allowed,
             crop_allowed,
+            title: None,
+            description: None,
         },
     );
 

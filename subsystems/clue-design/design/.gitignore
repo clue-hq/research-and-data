@@ -1,0 +1,6 @@
+# Heavy / licensed capture artifacts stay local (regenerate via research/run_cursor_ingest.py).
+# CursorGothic + BerkeleyMono are commercial faces (study reference only) — never commit.
+# Scraped site imagery is Cursor's copyright — reference locally, don't redistribute in git.
+assets/
+research/snapshots/
+research/asset-store/
