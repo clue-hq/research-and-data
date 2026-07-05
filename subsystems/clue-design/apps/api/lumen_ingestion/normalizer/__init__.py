@@ -354,4 +354,7 @@ def _build_report(
         "dark_colorway": "captured" if dark_basis == "captured" else "synthesized",
         "gaps": gaps,
         "narrative": narrative,
+        # Usage rules (don'ts, combinations, clearspace…) survive here for the
+        # review UI and later agent briefs — most have no BrandConstraints field.
+        "rules": [{"kind": r.kind, "text": r.text} for r in evidence.rules],
     }

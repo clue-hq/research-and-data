@@ -389,12 +389,14 @@ def build_constraints(
 
     tone = tone_override or texts("tone") or ["clear", "professional"]
     print_constraints = texts("print") + [_PRINT_FONT_CAUTION]
+    # Combination rules ("text in Off White on 100% color backgrounds…") are
+    # contrast-usage guidance — accessibility_notes is their closest home.
     return {
         "allow_gradients": True,
         "tone": tone,
         "imagery": texts("imagery"),
         "iconography": texts("iconography"),
-        "accessibility_notes": texts("accessibility"),
+        "accessibility_notes": texts("accessibility") + texts("combination"),
         "print_constraints": print_constraints,
         "contrast_pairs": [
             {"foreground": "text.primary", "background": "surface.page", "min_ratio": 4.5},

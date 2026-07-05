@@ -2186,6 +2186,16 @@
         "value": "Aeonik 11.0"
       }
     ],
+    "rules": [
+      {
+        "kind": "clearspace",
+        "text": "Maintain clearspace of 16px around the logo."
+      },
+      {
+        "kind": "tone",
+        "text": "Warm, human, and clinically credible."
+      }
+    ],
     "schema_version": 1,
     "source": {
       "captured_at": "2026-07-05",

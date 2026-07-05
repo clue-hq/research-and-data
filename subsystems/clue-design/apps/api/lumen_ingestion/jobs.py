@@ -78,6 +78,21 @@ class IngestionJobStore:
         self.connection.commit()
         return self.require(job_id)
 
+    def update_request(self, job_id: str, request: JsonObject) -> JsonObject:
+        """Replace the stored request_json for a job (e.g. to record the
+        tmp-file path once it is known post-create). Job-terminal columns are
+        untouched."""
+        self.connection.execute(
+            """
+            UPDATE ingestion_jobs
+            SET request_json = ?, updated_at = ?
+            WHERE job_id = ?
+            """,
+            (_encode(request), self.now_iso(), job_id),
+        )
+        self.connection.commit()
+        return self.require(job_id)
+
     def get(self, job_id: str) -> Optional[JsonObject]:
         row = self.connection.execute(
             "SELECT * FROM ingestion_jobs WHERE job_id = ?", (job_id,)

@@ -2097,6 +2097,28 @@
         "value": "Ginto 10.5"
       }
     ],
+    "rules": [
+      {
+        "kind": "clearspace",
+        "text": "Clearspace equals the height of the mark on all sides."
+      },
+      {
+        "kind": "min_size",
+        "text": "Do not reproduce the logo smaller than 32px tall."
+      },
+      {
+        "kind": "dont",
+        "text": "Do not stretch, recolor, or rotate the logo."
+      },
+      {
+        "kind": "tone",
+        "text": "Confident, precise, reassuring."
+      },
+      {
+        "kind": "print",
+        "text": "Use Pantone 3272 C for spot-color print."
+      }
+    ],
     "schema_version": 1,
     "source": {
       "asset_id": "asset_insight_brandguide_pdf",

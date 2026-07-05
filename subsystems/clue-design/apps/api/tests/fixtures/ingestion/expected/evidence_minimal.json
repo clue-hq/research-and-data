@@ -2049,6 +2049,7 @@
         "value": "Inter 11.0"
       }
     ],
+    "rules": [],
     "schema_version": 1,
     "source": {
       "confidence": 0.4,

@@ -84,7 +84,7 @@ from .models import (
     ValidateDocumentBrandGovernanceRequest,
 )
 from lumen_ingestion.jobs import IngestionJobStore
-from lumen_ingestion.pipeline import run_website_ingestion
+from lumen_ingestion.pipeline import run_pdf_ingestion, run_website_ingestion
 
 from .observability import (
     REQUEST_ID_HEADER,
@@ -403,6 +403,70 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
         )
         background_tasks.add_task(
             run_website_ingestion,
+            str(app.state.database_path),
+            asset_store_root(),
+            job["job_id"],
+        )
+        return {"schema_version": 1, "job": ingestion_job_dto(job)}
+
+    @app.post("/brand-kits/ingest/pdf")
+    def ingest_pdf(
+        background_tasks: BackgroundTasks,
+        file: UploadFile = File(...),
+        name: Optional[str] = Form(None),
+        brand_kit_id: Optional[str] = Form(None),
+        repo: Repository = Depends(repository),
+    ) -> JsonObject:
+        data = file.file.read()
+        max_bytes = asset_max_bytes()
+        if len(data) > max_bytes:
+            raise HTTPException(
+                status_code=413,
+                detail=f"asset payload of {len(data)} bytes exceeds the {max_bytes}-byte limit",
+            )
+        is_pdf_type = (file.content_type or "").lower() == "application/pdf"
+        is_pdf_name = (file.filename or "").lower().endswith(".pdf")
+        if not (is_pdf_type or is_pdf_name):
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "code": "ingest.unsupported_file",
+                    "message": "brand-guidelines ingest requires a PDF file",
+                },
+            )
+        if not data or not data.startswith(b"%PDF-"):
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "code": "ingest.not_a_pdf",
+                    "message": "uploaded file is not a valid PDF (missing %PDF- header)",
+                },
+            )
+
+        # Create the job first so its id names the tmp file, then write the
+        # bytes to <asset_store_root>/ingest_tmp/<job_id>.pdf and record that
+        # path in the job request — run_pdf_ingestion reads + deletes it. The
+        # PDF bytes themselves are never stored in the job row.
+        job = IngestionJobStore(repo.connection).create(
+            "pdf",
+            {
+                "filename": file.filename,
+                "name": name,
+                "brand_kit_id": brand_kit_id,
+                "size_bytes": len(data),
+            },
+        )
+        tmp_dir = Path(asset_store_root()) / "ingest_tmp"
+        tmp_dir.mkdir(parents=True, exist_ok=True)
+        tmp_path = tmp_dir / f"{job['job_id']}.pdf"
+        tmp_path.write_bytes(data)
+
+        request = dict(job["request"])
+        request["tmp_path"] = str(tmp_path)
+        job = IngestionJobStore(repo.connection).update_request(job["job_id"], request)
+
+        background_tasks.add_task(
+            run_pdf_ingestion,
             str(app.state.database_path),
             asset_store_root(),
             job["job_id"],
