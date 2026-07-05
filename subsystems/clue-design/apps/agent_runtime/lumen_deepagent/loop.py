@@ -321,6 +321,13 @@ class LumenQualityLoop:
         # At most ONE forced accommodation repair round per run (see
         # _should_force_accommodation_round).
         self.accommodation_repair_attempted = False
+        # Phase 3c: at most ONE loop-executed imagery repair (edit_image /
+        # regenerate) per run — mirrors the accommodation forced-round counter so
+        # a pure-imagery critique can never wedge the loop on repeated repairs.
+        self.imagery_repair_attempted = False
+        # Latest imagery verdict from the PNG-render-seam gate (DET, + judge when a
+        # key is configured), or None on scenes without generated/edited imagery.
+        self.imagery_verdict: Optional[dict] = None
 
     def run(self, user_request: str) -> dict:
         # Agent-improvement follow-up 1: capture the seeded scene's OWN
@@ -1026,6 +1033,17 @@ class LumenQualityLoop:
                     preview_payload.get("message", "Preview payload unavailable."),
                 )
 
+            # Phase 3c imagery gate: on a scene with generated/edited imagery, run the
+            # verifier at the PNG-render seam (DET always; the judge vision call only
+            # when an agent key is configured). Its hard-gate failures ride into the
+            # reviewer's context so a baked-text / illegible / mis-fit image the
+            # geometry-only critic would wave through is caught, and the loop-executed
+            # imagery repair (below) has an explicit signal.
+            self.imagery_verdict = None
+            if self.tools.scene_has_generated_imagery():
+                self.imagery_verdict = json.loads(self.tools.verify_imagery())
+                preview_payload["imagery_verdict"] = self.imagery_verdict
+
             try:
                 reviewer_full_context = self.tools.curated_context(
                     user_request=user_request,
@@ -1144,10 +1162,19 @@ class LumenQualityLoop:
                         )
                     )
 
+            # Phase 3c: a PURE-imagery rejection over a generated/edited image is the
+            # loop's to repair — the DSL author has no image tools. Execute one
+            # in-place edit (or regenerate) BEFORE the next author round; the repaired
+            # scene carries forward and is re-reviewed next iteration. Bounded to one
+            # per run (mirrors the accommodation forced round) so it can never wedge.
+            imagery_repaired = self._maybe_execute_imagery_repair(critique)
+
             feedback = {
                 "kind": "visual",
                 "feedback": critique.model_dump(mode="json"),
             }
+            if imagery_repaired:
+                feedback["loop_executed_imagery_repair"] = True
             self.previous_feedback.append(feedback)
             target = first_issue_target(critique)
             recommendation = json.loads(
@@ -1472,6 +1499,100 @@ class LumenQualityLoop:
             },
         )
         return forced
+
+    def _pure_imagery_repair_node(self, critique: VisualCritique) -> Optional[str]:
+        """The node id an imagery repair should target, or None when the critique is
+        not a PURE-imagery critique over a generated/edited image.
+
+        Pure = every categorized issue is in IMAGERY_CATEGORIES and none is a
+        structural-layout category (those are fixed by geometry first). The target
+        must be an image node whose asset was generated or edited — a library image or
+        a typographic critique is not the loop's to auto-repair."""
+        categories = {
+            str(issue.category.value if hasattr(issue.category, "value") else issue.category)
+            for issue in critique.issues
+        }
+        if not categories:
+            return None
+        if not (categories <= IMAGERY_CATEGORIES):
+            return None
+        scene = self.tools.scene or {}
+        assets = scene.get("assets") or {}
+        nodes = scene.get("nodes") or {}
+        for issue in critique.issues:
+            node_id = issue.target.node_id if issue.target else None
+            if not node_id:
+                continue
+            node = nodes.get(node_id) or {}
+            asset_id = (node.get("kind") or {}).get("asset_id")
+            if not asset_id:
+                continue
+            source_kind = ((assets.get(asset_id) or {}).get("source") or {}).get("kind")
+            if source_kind in ("generated", "edited"):
+                return node_id
+        return None
+
+    @staticmethod
+    def _imagery_repair_is_regenerate(text: str) -> bool:
+        """Whether the critique text calls for a full regenerate (wrong subject /
+        still a placeholder) rather than an in-place edit (recolor / warmth / bg /
+        fix a flawed subject). Defaults to edit_image — the cheaper, composition-
+        preserving repair — unless the text signals a wrong/placeholder image."""
+        lowered = (text or "").lower()
+        regenerate_signals = ("wrong subject", "wrong image", "placeholder", "irrelevant", "off-brief subject")
+        return any(signal in lowered for signal in regenerate_signals)
+
+    def _maybe_execute_imagery_repair(self, critique: VisualCritique) -> bool:
+        """Phase 3c: when a rejection is a PURE-imagery critique over a generated/
+        edited image, the LOOP executes the repair before the next author round — at
+        most ONCE per run (the DSL author stays barred from image tools). Returns True
+        when a repair was executed. Bounded exactly like the accommodation forced
+        round: one attempt, and only while an iteration remains, so it can never wedge."""
+        if self.imagery_repair_attempted:
+            return False
+        if self.state.current_iteration >= self.tools.config.max_iterations:
+            return False
+        node_id = self._pure_imagery_repair_node(critique)
+        if node_id is None:
+            return False
+        self.imagery_repair_attempted = True
+        instruction = critique.repair_instruction or critique.summary or ""
+        # Prefer the targeting issue's own repair text when present.
+        for issue in critique.issues:
+            if issue.target and issue.target.node_id == node_id:
+                instruction = issue.suggested_repair or issue.message or instruction
+                break
+        if self._imagery_repair_is_regenerate(instruction):
+            # Wrong subject / placeholder → full regenerate + re-place into the node.
+            gen = json.loads(self.tools.generate_image(instruction, target_node_id=node_id))
+            action = "regenerate"
+            new_asset_id = (gen.get("image") or {}).get("asset_id")
+            ok = (gen.get("image") or {}).get("status") == "ok"
+            if ok and new_asset_id:
+                place = json.loads(self.tools.place_asset_in_node(node_id, new_asset_id))
+                ok = (place.get("placement") or {}).get("status") == "ok"
+            result = {"generate": gen}
+        else:
+            # Right-but-flawed → edit in place (preserves the composition).
+            remove_bg = "background" in (instruction or "").lower() and (
+                "remove" in instruction.lower() or "transparent" in instruction.lower()
+            )
+            edit = json.loads(
+                self.tools.edit_image(node_id, instruction, remove_background=remove_bg)
+            )
+            action = "edit_image"
+            ok = (edit.get("image_edit") or {}).get("status") == "ok"
+            result = {"edit": edit}
+        self.tools.record(
+            "coordinator",
+            "imagery_repair_executed",
+            output_summary=(
+                f"loop-executed imagery repair on {node_id} via {action} "
+                f"({'ok' if ok else 'failed'})"
+            ),
+            payload={"node_id": node_id, "action": action, "ok": bool(ok), **result},
+        )
+        return bool(ok)
 
     def _accommodation_scope_node_ids(self) -> set:
         """Crowded neighbors (+ their descendants) count as this turn's scope.

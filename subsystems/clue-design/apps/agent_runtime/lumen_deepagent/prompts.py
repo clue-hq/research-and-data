@@ -84,9 +84,12 @@ Required workflow:
 15. Persist the reviewer response with submit_visual_critique.
 16. Pass the visual reviewer's critique verbatim to the DSL author when repair is
     needed. Use create_repair_request so the exact feedback is traceable. If the
-    critique rejects the imagery itself (gratuitous, wrong crop, illegible), either
-    regenerate with a better prompt/focal point or drop the image and recompose as a
-    clean typographic layout.
+    critique rejects the imagery itself (gratuitous, wrong crop, illegible), choose:
+    the image is RIGHT-BUT-FLAWED (wrong warmth/colour, distracting background) →
+    asset(action="edit_image", node_id=<image node>, prompt=<fix>) edits it in place
+    and preserves the composition; the image is WRONG (wrong subject, still a
+    placeholder) → regenerate with a better prompt/focal point; the image does not
+    belong → drop it and recompose as a clean typographic layout.
 17. Use recommend_edit_surface before repairs that target a precise node, slot,
     page, or asset.
 18. Use record_gap if a needed repair requires unsupported Lumen semantics.

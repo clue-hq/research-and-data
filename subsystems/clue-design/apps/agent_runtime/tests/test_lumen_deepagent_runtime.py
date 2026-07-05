@@ -4383,6 +4383,325 @@ def test_asset_dispatcher_routes_actions_and_preserves_place_kinds(
     assert tools.scene_update_sources == sources_before
 
 
+# --- Phase 3c: edit_image / verify_imagery / loop-executed imagery repair --------
+
+def _seed_edit_scene(store_root: Path, source_bytes: bytes = b"\x89PNG source-image"):
+    """A minimal scene with one image node whose ready generated asset's bytes are on
+    disk in the content-addressed store — the shape edit_image resolves its source
+    from. Returns (scene, source_digest)."""
+    import hashlib
+
+    digest = hashlib.sha256(source_bytes).hexdigest()
+    blob = store_root / "sha256" / digest[:2] / digest
+    blob.parent.mkdir(parents=True, exist_ok=True)
+    blob.write_bytes(source_bytes)
+    scene = {
+        "meta": {"id": "doc", "title": "Edit"},
+        "pages": {"p": {"id": "p", "size": {"width": 1080, "height": 1080}, "children": ["hero"]}},
+        "assets": {
+            "hero_asset": {
+                "id": "hero_asset",
+                "status": "ready",
+                "kind": "raster_image",
+                "source": {"kind": "generated", "model": "test/image-model"},
+                "media": {"mime_type": "image/png", "digest": {"algorithm": "sha256", "value": digest}},
+                "raster": {"pixel_width": 1080, "pixel_height": 1080},
+            }
+        },
+        "nodes": {
+            "hero": {
+                "id": "hero",
+                "kind": {"kind": "image", "asset_id": "hero_asset"},
+                "asset_placement": {"fit": "cover", "focal_point": {"x": 0.5, "y": 0.4}, "alt_text": "clinic hero"},
+                "computed": {"layout_bounds": {"x": 0, "y": 0, "width": 1080, "height": 1080}},
+            }
+        },
+        "slots": {},
+    }
+    return scene, digest
+
+
+def _edit_stub(monkeypatch, calls: dict):
+    """Install an image_provider whose .edit records the call and returns edited bytes."""
+    def fake_edit(**kwargs):
+        calls["edit"] = kwargs
+        calls["n"] = calls.get("n", 0) + 1
+        return types.SimpleNamespace(
+            image_bytes=b"\x89PNG edited-image-bytes",
+            mime_type="image/png",
+            model="test/image-model",
+            provenance={"created_by": "agent", "source_label": "image edit", "notes": []},
+            license={"name": "generated_commercial_use", "allow_export": True},
+        )
+
+    stub = types.SimpleNamespace(
+        is_configured=lambda: True,
+        edit=fake_edit,
+        configured_model_id=lambda: "test/image-model",
+    )
+    monkeypatch.setattr("lumen_deepagent.tools.image_provider", stub)
+
+
+def test_edit_image_edits_source_and_replaces_node_preserving_placement(tmp_path: Path, monkeypatch):
+    monkeypatch.setattr("lumen_deepagent.tools.CoreClient", FakeCoreClient)
+    config = runtime_config(tmp_path)
+    scene, source_digest = _seed_edit_scene(config.effective_asset_store_root)
+    calls: dict = {}
+    _edit_stub(monkeypatch, calls)
+
+    tools = LumenDesignTools(config, "Warm up the clinic photo", initial_scene=scene)
+    result = json.loads(tools.edit_image("hero", "increase warmth, remove the harsh blue cast"))
+
+    assert result["image_edit"]["status"] == "ok"
+    assert result["image_edit"]["mode"] == "model"
+    assert result["image_edit"]["source_asset_id"] == "hero_asset"
+    # The SOURCE bytes reached the model as multimodal content.
+    assert calls["edit"]["source_images"][0][0] == b"\x89PNG source-image"
+    # Ingested as an edit with provenance chained to the source asset.
+    assert tools.core.last_ingest["source"]["kind"] == "edited"
+    assert tools.core.last_ingest["source"]["source_asset_id"] == "hero_asset"
+    # Registered through the canonical upsert op, then re-placed into the SAME node.
+    assert any(op.get("kind") == "upsert_asset" for op in tools.core.applied_operations)
+    place_ops = [op for op in tools.core.applied_operations if op.get("kind") == "place_asset_in_node"]
+    assert place_ops and place_ops[-1]["node_id"] == "hero"
+    # Placement preserved from the node's current asset_placement.
+    assert place_ops[-1]["placement"]["fit"] == "cover"
+    assert place_ops[-1]["placement"]["focal_point"] == {"x": 0.5, "y": 0.4}
+    assert place_ops[-1]["placement"]["alt_text"] == "clinic hero"
+
+
+def test_edit_image_caches_identical_source_and_prompt(tmp_path: Path, monkeypatch):
+    monkeypatch.setattr("lumen_deepagent.tools.CoreClient", FakeCoreClient)
+    config = runtime_config(tmp_path)
+    scene, _ = _seed_edit_scene(config.effective_asset_store_root)
+    calls: dict = {}
+    _edit_stub(monkeypatch, calls)
+
+    tools = LumenDesignTools(config, "Warm up the photo", initial_scene=scene)
+    first = json.loads(tools.edit_image("hero", "increase warmth"))
+    assert first["image_edit"]["status"] == "ok" and calls["n"] == 1
+
+    # Re-editing the same source with the same instruction hits the cache (no re-pay).
+    second = json.loads(tools.edit_image("hero", "increase warmth"))
+    assert second["image_edit"]["status"] == "ok"
+    assert second["image_edit"]["mode"] == "cached"
+    assert calls["n"] == 1
+    assert second["image_edit"]["asset_id"] == first["image_edit"]["asset_id"]
+
+
+def test_edit_image_passes_remove_background_as_transparent(tmp_path: Path, monkeypatch):
+    monkeypatch.setattr("lumen_deepagent.tools.CoreClient", FakeCoreClient)
+    config = runtime_config(tmp_path)
+    scene, _ = _seed_edit_scene(config.effective_asset_store_root)
+    calls: dict = {}
+    _edit_stub(monkeypatch, calls)
+
+    tools = LumenDesignTools(config, "Cut out the subject", initial_scene=scene)
+    result = json.loads(tools.edit_image("hero", "isolate the subject", remove_background=True))
+    assert result["image_edit"]["status"] == "ok"
+    assert calls["edit"]["transparent_background"] is True
+
+
+def test_edit_image_graceful_error_on_non_image_node(tmp_path: Path, monkeypatch):
+    monkeypatch.setattr("lumen_deepagent.tools.CoreClient", FakeCoreClient)
+    config = runtime_config(tmp_path)
+    calls: dict = {}
+    _edit_stub(monkeypatch, calls)
+    scene = {
+        "meta": {"id": "doc", "title": "Type"},
+        "pages": {"p": {"id": "p", "size": {"width": 1080, "height": 1080}, "children": ["headline"]}},
+        "assets": {},
+        "nodes": {"headline": {"id": "headline", "kind": {"kind": "text", "content": "Hi"}}},
+        "slots": {},
+    }
+    tools = LumenDesignTools(config, "Edit a non-image node", initial_scene=scene)
+
+    result = json.loads(tools.edit_image("headline", "recolor it"))
+    assert result["image_edit"]["status"] == "error"
+    assert result["image_edit"]["error_code"] == "asset.not_an_image_node"
+    assert "n" not in calls  # the model was never called
+    # A missing node is likewise graceful, not a crash.
+    missing = json.loads(tools.edit_image("nope", "recolor it"))
+    assert missing["image_edit"]["error_code"] == "asset.node_not_found"
+
+
+def test_asset_dispatcher_accepts_edit_image(tmp_path: Path, monkeypatch):
+    monkeypatch.setattr("lumen_deepagent.tools.CoreClient", FakeCoreClient)
+    config = runtime_config(tmp_path)
+    scene, _ = _seed_edit_scene(config.effective_asset_store_root)
+    calls: dict = {}
+    _edit_stub(monkeypatch, calls)
+    tools = LumenDesignTools(config, "Edit via dispatcher", initial_scene=scene)
+
+    result = json.loads(tools.asset(action="edit_image", node_id="hero", prompt="cooler tone"))
+    assert result["image_edit"]["status"] == "ok"
+    assert calls["n"] == 1
+
+    # `edit_image` is listed as a valid action, and bad requests fail closed.
+    assert json.loads(tools.asset(action="edit_image", prompt="x"))["error_code"] == "asset.bad_request"
+    assert json.loads(tools.asset(action="edit_image", node_id="hero"))["error_code"] == "asset.bad_request"
+    unknown = json.loads(tools.asset(action="bogus"))
+    assert "edit_image" in unknown["valid_actions"]
+
+
+def test_verify_imagery_det_only_without_key_and_vision_with_key(tmp_path: Path, monkeypatch):
+    from dataclasses import replace
+
+    monkeypatch.setattr("lumen_deepagent.tools.CoreClient", FakeCoreClient)
+    config = runtime_config(tmp_path)
+    scene, _ = _seed_edit_scene(config.effective_asset_store_root)
+
+    # No key → DET-only: the deterministic gate runs, no vision call.
+    tools = LumenDesignTools(config, "Verify imagery", initial_scene=scene)
+    det_only = json.loads(tools.verify_imagery(expected_decision="photo"))
+    assert det_only["status"] == "ok"
+    assert det_only["judge_ran"] is False
+    assert "guidance" in det_only and det_only["image_count"] == 1
+
+    # With a key → the judge vision call runs (faked model injected via patch).
+    keyed_config = replace(config, agent_api_key="test-key")
+    scene2, _ = _seed_edit_scene(keyed_config.effective_asset_store_root)
+    tools2 = LumenDesignTools(keyed_config, "Verify imagery", initial_scene=scene2)
+    # Give the verifier a PNG on disk to look at.
+    png = tmp_path / "render.png"
+    png.write_bytes(b"\x89PNG rendered")
+    fake_model = _FakeJudgeModel(_perfect_verdict())
+
+    from lumen_deepagent import imagery_judge as ij_mod
+
+    real_judge = ij_mod.judge_imagery  # capture BEFORE patching to avoid recursion
+
+    def judge_with_fake_model(scene, png_arg, brief, *, model=None, config=None):
+        return real_judge(scene, png_arg, brief, model=fake_model)
+
+    monkeypatch.setattr("lumen_deepagent.imagery_judge.judge_imagery", judge_with_fake_model)
+    keyed = json.loads(tools2.verify_imagery(expected_decision="photo", png_path=str(png)))
+    assert keyed["status"] == "ok"
+    assert keyed["judge_ran"] is True
+    assert fake_model.calls == 1
+
+
+def test_get_preview_for_review_appends_imagery_verdict_only_when_imagery_present(
+    tmp_path: Path, monkeypatch
+):
+    monkeypatch.setattr("lumen_deepagent.tools.CoreClient", FakeCoreClient)
+    config = runtime_config(tmp_path)
+    scene, _ = _seed_edit_scene(config.effective_asset_store_root)
+    tools = LumenDesignTools(config, "Preview with imagery", initial_scene=scene)
+
+    # A valid PNG preview bundle on disk for the coordinator handoff.
+    render = tmp_path / "preview.png"
+    render.write_bytes(b"\x89PNG rendered")
+    tools.latest_preview_bundle = {
+        "status": "ok",
+        "artifacts": [
+            {"format": "png", "path": str(render), "width": 1080, "height": 1080, "byte_len": 13, "valid": True}
+        ],
+    }
+
+    payload = json.loads(tools.get_preview_for_review())
+    assert payload["status"] == "ok"
+    assert "imagery_verdict" in payload
+    assert payload["imagery_verdict"]["source"] == "deterministic"
+    assert payload["imagery_verdict"]["image_count"] == 1
+
+    # A scene with NO generated/edited imagery → no verdict appended.
+    tools.scene = {
+        "pages": {"p": {"size": {"width": 1080, "height": 1080}}},
+        "assets": {},
+        "nodes": {"h": {"kind": {"kind": "text"}}},
+    }
+    payload_no_imagery = json.loads(tools.get_preview_for_review())
+    assert "imagery_verdict" not in payload_no_imagery
+
+
+def test_loop_executes_one_imagery_repair_then_never_again(tmp_path: Path, monkeypatch):
+    from lumen_deepagent.loop import LumenQualityLoop
+    from lumen_deepagent.schemas import (
+        CritiqueCategory,
+        DiagnosticSeverity,
+        VisualCritique,
+        VisualIssue,
+        VisualTarget,
+    )
+
+    monkeypatch.setattr("lumen_deepagent.tools.CoreClient", FakeCoreClient)
+    config = runtime_config(tmp_path)
+    scene, _ = _seed_edit_scene(config.effective_asset_store_root)
+    calls: dict = {}
+    _edit_stub(monkeypatch, calls)
+    tools = LumenDesignTools(config, "Fix the imagery", initial_scene=scene)
+    loop = LumenQualityLoop(tools, ScriptedAuthor([]), ScriptedReviewer([]))
+
+    # A PURE-imagery rejection whose issue targets the generated image node.
+    critique = VisualCritique(
+        accepted=False,
+        summary="The hero photo runs cold and blue against the warm brand.",
+        issues=[
+            VisualIssue(
+                severity=DiagnosticSeverity.error,
+                category=CritiqueCategory.imagery,
+                target=VisualTarget(node_id="hero"),
+                message="Recolor the hero: warm it to the brand palette.",
+                suggested_repair="Increase warmth and remove the blue cast.",
+            )
+        ],
+    )
+
+    # First encounter: the loop executes ONE repair (edit_image, since the text is a
+    # recolor, not a wrong-subject/placeholder regenerate).
+    assert loop._maybe_execute_imagery_repair(critique) is True
+    assert loop.imagery_repair_attempted is True
+    assert calls["n"] == 1
+
+    # Second encounter that run: never again (bounded, cannot wedge).
+    assert loop._maybe_execute_imagery_repair(critique) is False
+    assert calls["n"] == 1
+
+
+def test_loop_imagery_repair_skips_typographic_and_library_critiques(tmp_path: Path, monkeypatch):
+    from lumen_deepagent.loop import LumenQualityLoop
+    from lumen_deepagent.schemas import (
+        CritiqueCategory,
+        DiagnosticSeverity,
+        VisualCritique,
+        VisualIssue,
+        VisualTarget,
+    )
+
+    monkeypatch.setattr("lumen_deepagent.tools.CoreClient", FakeCoreClient)
+    config = runtime_config(tmp_path)
+    scene, _ = _seed_edit_scene(config.effective_asset_store_root)
+    calls: dict = {}
+    _edit_stub(monkeypatch, calls)
+    tools = LumenDesignTools(config, "Fix things", initial_scene=scene)
+    loop = LumenQualityLoop(tools, ScriptedAuthor([]), ScriptedReviewer([]))
+
+    # A critique that mixes imagery with a structural-layout category is NOT pure —
+    # geometry is fixed first, so the loop does not auto-repair the image.
+    mixed = VisualCritique(
+        accepted=False,
+        summary="clipped and cold",
+        issues=[
+            VisualIssue(
+                severity=DiagnosticSeverity.error,
+                category=CritiqueCategory.imagery,
+                target=VisualTarget(node_id="hero"),
+                message="cold", suggested_repair="warm it",
+            ),
+            VisualIssue(
+                severity=DiagnosticSeverity.error,
+                category=CritiqueCategory.spacing,
+                target=VisualTarget(node_id="hero"),
+                message="crowded", suggested_repair="add space",
+            ),
+        ],
+    )
+    assert loop._maybe_execute_imagery_repair(mixed) is False
+    assert loop.imagery_repair_attempted is False
+    assert "n" not in calls
+
+
 def test_inspect_dispatcher_routes_all_views(tmp_path: Path, monkeypatch):
     # Group A: the single `inspect` tool returns exactly what the former
     # summarize_*/query_* singletons returned, for every view.

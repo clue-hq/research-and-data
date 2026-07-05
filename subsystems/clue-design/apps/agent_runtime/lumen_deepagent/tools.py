@@ -985,6 +985,372 @@ class LumenDesignTools:
         )
         return json.dumps(payload, indent=2)
 
+    def _resolve_node_image_source(
+        self, node_id: str
+    ) -> tuple[Optional[JsonObject], Optional[bytes], Optional[str], Optional[str], Optional[tuple]]:
+        """Resolve a node's currently placed image asset into (record, bytes, mime,
+        source_digest, error). The bytes come from the content-addressed store the
+        same way the /assets/generate edit route reads them: media.digest.value →
+        `sha256/<first2>/<digest>` under the asset-store root. Returns an error tuple
+        (code, message) when the node has no ready image asset to edit — mirroring the
+        LUMV0100 graceful guards so an edit on an un-imaged node never crashes the loop."""
+        node = (self.scene.get("nodes") or {}).get(node_id)
+        if not node:
+            return None, None, None, None, (
+                "asset.node_not_found",
+                f"node {node_id!r} does not exist in the current scene",
+            )
+        asset_id = (node.get("kind") or {}).get("asset_id")
+        if not asset_id:
+            return None, None, None, None, (
+                "asset.not_an_image_node",
+                f"node {node_id!r} is not an image node (no placed asset to edit)",
+            )
+        record = (self.scene.get("assets") or {}).get(asset_id)
+        if not record:
+            return None, None, None, None, (
+                "asset.source_not_registered",
+                f"node {node_id!r} references asset {asset_id!r}, which is not in the scene",
+            )
+        if record.get("status") != "ready":
+            return None, None, None, None, (
+                "asset.source_not_ready",
+                f"asset {asset_id!r} on node {node_id!r} is not a ready image (status="
+                f"{record.get('status')!r}); generate a ready image before editing it",
+            )
+        media = record.get("media") or {}
+        source_digest = (media.get("digest") or {}).get("value")
+        mime = media.get("mime_type") or "image/png"
+        if not source_digest:
+            return None, None, None, None, (
+                "asset.source_bytes_missing",
+                f"asset {asset_id!r} has no stored digest; its bytes cannot be resolved to edit",
+            )
+        store_root = Path(self.config.effective_asset_store_root)
+        blob_path = store_root / "sha256" / source_digest[:2] / source_digest
+        if not blob_path.is_file():
+            return None, None, None, None, (
+                "asset.source_bytes_missing",
+                f"asset {asset_id!r} has no stored bytes to edit ({blob_path})",
+            )
+        return record, blob_path.read_bytes(), mime, source_digest, None
+
+    def edit_image(
+        self,
+        node_id: str,
+        prompt: str,
+        remove_background: bool = False,
+        label: Optional[str] = None,
+    ) -> str:
+        """Edit the raster image currently placed in `node_id` with a text
+        instruction (Phase 3c) — recolor / adjust warmth / remove or replace the
+        background / fix a flawed subject — WITHOUT changing the composition. The
+        source pixels ride the model call; the edited result re-enters the SAME node
+        preserving its current placement (fit / focal point / alt). Prefer this over a
+        full regenerate when the placed image is right-but-flawed. `remove_background`
+        requests a transparent background. Returns the new (edited) asset_id, its
+        provenance chained to the source asset. Gracefully errors (never crashes) when
+        the node has no ready image asset to edit."""
+        source_record, source_bytes, source_mime, source_digest, error = (
+            self._resolve_node_image_source(node_id)
+        )
+        if error is not None:
+            payload = {
+                "image_edit": {
+                    "status": "error",
+                    "error_code": error[0],
+                    "message": error[1],
+                    "node_id": node_id,
+                },
+                "hint": (
+                    "edit_image edits the image already placed in this node. Generate "
+                    "and place a ready image first, then edit it — or use "
+                    "action='generate_image' for a fresh image."
+                ),
+            }
+            self.record(
+                "coordinator",
+                "image_edit_failed",
+                input_summary=f"{node_id}: {prompt[:160]}",
+                output_summary=error[1],
+                payload=payload,
+            )
+            return json.dumps(payload, indent=2)
+
+        source_asset_id = (source_record or {}).get("id")
+        transparent = remove_background or None
+        asset_id = f"asset_img_{self.run_id[:8]}_edit_{len(self.scene.get('assets', {}))}"
+        resolved_label = label or (prompt[:60].strip() or asset_id)
+
+        record: Optional[JsonObject] = None
+        meta: JsonObject = {}
+        diagnostics: List[JsonObject] = []
+        edit_error: Optional[tuple] = None
+
+        if image_provider is not None and image_provider.is_configured():
+            store_root = str(self.config.effective_asset_store_root)
+            # Per-run generation cache, keyed on the SOURCE digest + prompt (+ bg flag)
+            # so the loop re-editing the same image with the same instruction is free,
+            # and the same instruction on a different image never collides.
+            cache_key = None
+            model_id = getattr(image_provider, "configured_model_id", None)
+            if image_cache is not None and callable(model_id):
+                cache_key = image_cache.generation_key(
+                    prompt=prompt,
+                    model=model_id(),
+                    transparent_background=transparent,
+                    source_digest=source_digest,
+                )
+                cached = image_cache.lookup(store_root, cache_key)
+                if cached:
+                    record = cached
+                    meta = {"mode": "cached", "model": (cached.get("source") or {}).get("model")}
+            if record is None:
+                try:
+                    result = image_provider.edit(
+                        prompt=prompt,
+                        source_images=[(source_bytes, source_mime)],
+                        transparent_background=transparent,
+                        request_id=asset_id,
+                    )
+                    ingest = self.core.ingest_asset(
+                        store_root=store_root,
+                        bytes_base64=base64.b64encode(result.image_bytes).decode("ascii"),
+                        asset_id=asset_id,
+                        label=resolved_label,
+                        declared_mime_type=result.mime_type,
+                        kind="raster_image",
+                        license=result.license,
+                        provenance=result.provenance,
+                        source={
+                            "kind": "edited",
+                            "request_id": asset_id,
+                            "model": result.model,
+                            "source_asset_id": source_asset_id,
+                        },
+                        raise_on_error=False,
+                    )
+                    if ingest.get("ok"):
+                        record = (ingest.get("asset") or {}).get("record") or {}
+                        diagnostics.extend(_as_diag_list(ingest.get("diagnostics")))
+                        if cache_key is not None and image_cache is not None:
+                            image_cache.store(store_root, cache_key, record)
+                        meta = {"mode": "model", "model": result.model}
+                    else:
+                        detail = (ingest.get("error") or {}).get("message", "unknown error")
+                        edit_error = ("image_edit.ingest_failed", f"edited image could not be ingested ({detail})")
+                except Exception as exc:  # noqa: BLE001 - report, never crash the loop
+                    code = getattr(exc, "code", exc.__class__.__name__)
+                    edit_error = ("image_edit.model_failed", f"image edit failed ({code})")
+        else:
+            edit_error = (
+                "image_edit.model_unconfigured",
+                "text-to-image model is not configured (set IMAGE_MODEL_*); cannot edit the image",
+            )
+
+        diags = diagnostics_from(diagnostics)
+        if record is None:
+            payload = {
+                "image_edit": {
+                    "status": "error",
+                    "error_code": edit_error[0] if edit_error else "image_edit.error",
+                    "message": edit_error[1] if edit_error else "image edit failed",
+                    "node_id": node_id,
+                    "source_asset_id": source_asset_id,
+                },
+                "diagnostics": [d.model_dump(mode="json") for d in diags],
+            }
+            self.record(
+                "coordinator",
+                "image_edit_failed",
+                input_summary=f"{node_id}: {prompt[:160]}",
+                output_summary=payload["image_edit"]["message"],
+                diagnostics=[d.model_dump(mode="json") for d in diags],
+                payload=payload,
+            )
+            return json.dumps(payload, indent=2)
+
+        # Register the edited asset through the canonical upsert path (guarded — a
+        # scene without a page/artboard fails here, same as generate_image).
+        try:
+            apply_response = self.core.apply_operations(
+                self.scene, [{"kind": "upsert_asset", "asset": record}]
+            )
+        except CoreError as reg_error:
+            payload = {
+                "image_edit": {
+                    "status": "error",
+                    "error_code": reg_error.code,
+                    "message": reg_error.message,
+                    "asset_id": record.get("id"),
+                    "node_id": node_id,
+                },
+                "diagnostics": [
+                    d.model_dump(mode="json") for d in diagnostics_from(reg_error.diagnostics)
+                ],
+            }
+            self.record(
+                "coordinator",
+                "image_edit_registration_failed",
+                input_summary=f"{node_id}: {prompt[:160]}",
+                output_summary=reg_error.message,
+                payload=payload,
+            )
+            return json.dumps(payload, indent=2)
+        self._replace_scene_from_core_response(apply_response, "edit_image")
+
+        # Re-place the edited asset into the SAME node, preserving the current
+        # placement (fit / focal point / alt) so the composition is untouched.
+        placement = ((self.scene.get("nodes") or {}).get(node_id) or {}).get("asset_placement") or {}
+        focal = placement.get("focal_point") or {}
+        place_result = json.loads(
+            self.place_asset_in_node(
+                node_id,
+                record.get("id"),
+                fit=placement.get("fit") or "cover",
+                focal_x=focal.get("x", 0.5),
+                focal_y=focal.get("y", 0.5),
+                alt=placement.get("alt_text"),
+                preserve_transparency=True if transparent else None,
+            )
+        )
+
+        payload = {
+            "image_edit": {
+                "status": "ok",
+                "asset_id": record.get("id"),
+                "source_asset_id": source_asset_id,
+                "node_id": node_id,
+                "mode": meta.get("mode"),
+                "model": meta.get("model"),
+                "remove_background": bool(remove_background),
+                "provenance": record.get("provenance"),
+                "source": record.get("source"),
+                "placement": place_result.get("placement"),
+            },
+            "diagnostics": [d.model_dump(mode="json") for d in diags],
+        }
+        self.record(
+            "coordinator",
+            "image_edited",
+            input_summary=f"{node_id}: {prompt[:160]}",
+            output_summary=(
+                f"edited image {source_asset_id} -> {record.get('id')} "
+                f"(mode={meta.get('mode')}, model={meta.get('model')}) re-placed into {node_id}"
+            ),
+            diagnostics=[d.model_dump(mode="json") for d in diags],
+            payload=payload,
+        )
+        return json.dumps(payload, indent=2)
+
+    def scene_has_generated_imagery(self) -> bool:
+        """Whether the current scene places any generated or edited raster asset —
+        the gate for whether the imagery verifier / mid-loop vision check is worth
+        running (a design that placed only library images or none needs no check)."""
+        assets = self.scene.get("assets") or {}
+        nodes = self.scene.get("nodes") or {}
+        for node in nodes.values():
+            asset_id = (node.get("kind") or {}).get("asset_id")
+            if not asset_id:
+                continue
+            source_kind = ((assets.get(asset_id) or {}).get("source") or {}).get("kind")
+            if source_kind in ("generated", "edited"):
+                return True
+        return False
+
+    def verify_imagery(
+        self,
+        expected_decision: Optional[str] = None,
+        role: Optional[str] = None,
+        risks: Optional[List[str]] = None,
+        png_path: Optional[str] = None,
+    ) -> str:
+        """Verify the current scene's use of imagery (Phase 3c gate). Always runs the
+        DETERMINISTIC imagery checks (`imagery_checks.score_scene`); runs the
+        `judge_imagery` VISION call in addition ONLY when an agent API key is
+        configured (the judge reads its credentials from config, providers pattern) and
+        a rendered PNG is available. Returns a compact verdict: per-axis finals, the
+        hard-gate failures, accept/tier, and one line of guidance — small enough to
+        append to a coordinator handoff or feed the imagery-repair path."""
+        from .imagery_checks import score_scene
+        from .imagery_judge import HARD_GATE_AXES, judge_imagery
+
+        brief: JsonObject = {
+            "id": self.run_id,
+            "expected_decision": expected_decision,
+            "role": role,
+            "risks": risks or [],
+        }
+        # Resolve the rendered PNG (for the vision call) from the latest preview when
+        # not passed explicitly. The judge only looks at it when it runs.
+        resolved_png = png_path
+        if resolved_png is None:
+            latest = self.latest_preview_bundle or self.latest_export_summary or {}
+            for artifact in (latest.get("artifacts") or []):
+                if artifact.get("format") == "png" and artifact.get("path"):
+                    resolved_png = artifact.get("path")
+                    break
+
+        has_key = bool(getattr(self.config, "agent_api_key", None))
+        if has_key:
+            # Full DET + JUDGE (vision) combine — judge_imagery builds the model from
+            # config when no model is injected.
+            result = judge_imagery(self.scene, resolved_png, brief, config=self.config)
+        else:
+            # DET-only: no key → never make a paid vision call.
+            det = score_scene(self.scene, expected_decision=expected_decision)
+            from .imagery_judge import combine
+
+            result = combine(det, None, brief)
+            result["brief_id"] = brief["id"]
+            result["expected_decision"] = expected_decision
+            result["det"] = det
+
+        per_axis = result.get("per_axis") or {}
+        hard_gate_failures = sorted(
+            axis
+            for axis, info in per_axis.items()
+            if axis in HARD_GATE_AXES and info.get("final") is not None and info["final"] <= 1
+        )
+        guidance = self._imagery_verdict_guidance(result, hard_gate_failures)
+        verdict = {
+            "status": "ok",
+            "judge_ran": bool(result.get("judge_ran")),
+            "accept": bool(result.get("accept")),
+            "tier": result.get("tier"),
+            "weighted_mean": result.get("weighted_mean"),
+            "gate_failed": bool(result.get("gate_failed")),
+            "hard_gate_failures": hard_gate_failures,
+            "per_axis": {axis: info.get("final") for axis, info in per_axis.items()},
+            "image_count": result.get("image_count", 0),
+            "guidance": guidance,
+        }
+        self.record(
+            "coordinator",
+            "imagery_verified",
+            output_summary=(
+                f"imagery verdict tier={verdict['tier']} accept={verdict['accept']} "
+                f"judge_ran={verdict['judge_ran']} hard_gate={hard_gate_failures}"
+            ),
+            payload=verdict,
+        )
+        return json.dumps(verdict, indent=2)
+
+    @staticmethod
+    def _imagery_verdict_guidance(result: JsonObject, hard_gate_failures: list) -> str:
+        """One-line, actionable guidance from an imagery verdict."""
+        if hard_gate_failures:
+            return (
+                "Hard imagery gate failed on "
+                + ", ".join(hard_gate_failures)
+                + " — repair the image (recolor/edit, re-scrim, or regenerate) before shipping."
+            )
+        if result.get("accept"):
+            return "Imagery clears the gate; ship."
+        if result.get("tier") == "tweak":
+            return "Imagery ships with a minor tweak — nudge the weakest axis."
+        return "Imagery below the ship bar; edit or regenerate the flawed image."
+
     def _tool_error(self, code: str, message: str, **extra: Any) -> str:
         """Uniform error envelope for the dispatcher tools (asset/inspect)."""
         payload: JsonObject = {"status": "error", "error_code": code, "message": message}
@@ -1023,6 +1389,11 @@ class LumenDesignTools:
           (or `target_slot_id`) so the aspect is derived from that frame's geometry —
           images are cropped to fill, never stretched. Optional `aspect_ratio` /
           `width` / `height`, `brand_notes`, `transparent_background`, `label`.
+        - `action="edit_image"` — edit the image already placed in `node_id` with a
+          text `prompt` (recolor / warmth / background / fix a flawed subject) WITHOUT
+          changing the composition; the edited result re-enters the same node with its
+          current placement preserved. Set `transparent_background=True` to remove the
+          background. Prefer this over a full regenerate when the image is right-but-flawed.
         - `action="generate_qr"` — generate a deterministic QR asset from `data`
           (URL/text). For physical artifacts set `print_media=True` and `target_width_mm`
           so print-scannability diagnostics can fire. Optional `ec_level`, `label`.
@@ -1048,6 +1419,16 @@ class LumenDesignTools:
                 transparent_background,
                 label,
             )
+        if action == "edit_image":
+            if not node_id:
+                return self._tool_error(
+                    "asset.bad_request", "action='edit_image' requires `node_id`."
+                )
+            if not prompt:
+                return self._tool_error(
+                    "asset.bad_request", "action='edit_image' requires `prompt`."
+                )
+            return self.edit_image(node_id, prompt, transparent_background, label)
         if action == "generate_qr":
             if not data:
                 return self._tool_error(
@@ -1077,7 +1458,7 @@ class LumenDesignTools:
         return self._tool_error(
             "asset.unknown_action",
             f"unknown action '{action}'.",
-            valid_actions=["generate_image", "generate_qr", "place"],
+            valid_actions=["generate_image", "edit_image", "generate_qr", "place"],
         )
 
     def _finalized_snapshot_for(self, binding: JsonObject) -> JsonObject:
@@ -1555,8 +1936,40 @@ class LumenDesignTools:
         was the cause of the LUMV/context blowup on poster-sized briefs. The
         rendered PNG stays on disk (`png_path`) for the offline imagery judge and
         any filesystem read.
+
+        When the scene places generated/edited imagery, a compact DETERMINISTIC-only
+        imagery verdict (`imagery_checks.score_scene`, NO vision call) is appended so
+        the coordinator sees any hard-gate failure without a paid judge request.
         """
-        return self._latest_preview_payload(include_base64=False, max_svg_chars=max_svg_chars)
+        payload_json = self._latest_preview_payload(
+            include_base64=False, max_svg_chars=max_svg_chars
+        )
+        if not self.scene_has_generated_imagery():
+            return payload_json
+        try:
+            payload = json.loads(payload_json)
+        except (TypeError, ValueError):
+            return payload_json
+        if payload.get("status") != ToolStatus.ok.value:
+            return payload_json
+        from .imagery_checks import score_scene
+        from .imagery_judge import HARD_GATE_AXES, combine
+
+        det = score_scene(self.scene)
+        det_verdict = combine(det, None, {"id": self.run_id})
+        per_axis = det_verdict.get("per_axis") or {}
+        payload["imagery_verdict"] = {
+            "source": "deterministic",
+            "gate_failed": bool(det_verdict.get("gate_failed")),
+            "tier": det_verdict.get("tier"),
+            "hard_gate_failures": sorted(
+                axis
+                for axis, info in per_axis.items()
+                if axis in HARD_GATE_AXES and info.get("final") is not None and info["final"] <= 1
+            ),
+            "image_count": det.get("image_count", 0),
+        }
+        return json.dumps(payload, indent=2)
 
     def _latest_preview_payload(self, *, include_base64: bool, max_svg_chars: int) -> str:
         latest_preview = self.latest_preview_bundle or self.latest_export_summary
