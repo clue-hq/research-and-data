@@ -1,5 +1,15 @@
 # Phase 3a — imagery baseline sweep verdict (2026-07-05, tag `3a-sweep`)
 
+> **CLOSE-OUT UPDATE (same day):** after the decide-tuning (`e8087b2` — archetype table in
+> decide.md + coordinator step 3, "no readable screens" prompt-craft rider), the two decide-miss
+> briefs were re-run and both flipped to **SHIP 3.0** with real images in the expected roles
+> (deck_band: split panel, venue photo band, no stretch; testimonial: undistorted portrait band +
+> quote plate). **Final baseline: 9 SHIP / 3 REDO.** The 3 remaining REDOs are the deferred
+> follow-up tracks, not decide failures: product_feature (baked-in screen text — prompt rider
+> added, re-proof rides the 3c mid-loop-vision work) and the two icon briefs (icon adoption +
+> library expansion, the 3a fast-follow). **3a's exit criterion — the agent reaches for imagery
+> when the brief calls for it and declines when it doesn't — is met.**
+
 12 briefs targeted (10 new + canary + prior customer_story under `3a-flow-fix`), all live
 (deepagent, Opus 4.8 via OpenRouter; image = gemini-3-pro-image; judge = Opus 4.8 vision,
 shared IMAGERY_RUBRIC). Captures: `apps/agent_runtime/evaluation/imagery_fixtures/<brief>/3a-sweep/`.

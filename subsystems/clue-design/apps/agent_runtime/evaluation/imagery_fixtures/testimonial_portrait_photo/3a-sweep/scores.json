@@ -1,37 +1,37 @@
 {
   "per_axis": {
     "relevance": {
-      "final": 1,
-      "judge": 1,
-      "det_cap": 1,
+      "final": 3,
+      "judge": 3,
+      "det_cap": 3,
       "weight": 1.0,
       "hard_gate": false
     },
     "placeholder_real": {
-      "final": 0,
-      "judge": 0,
-      "det_cap": null,
+      "final": 3,
+      "judge": 3,
+      "det_cap": 3,
       "weight": 1.0,
       "hard_gate": false
     },
     "aspect_fit": {
-      "final": 0,
-      "judge": 0,
-      "det_cap": null,
+      "final": 3,
+      "judge": 3,
+      "det_cap": 3,
       "weight": 1.0,
       "hard_gate": true
     },
     "placement": {
-      "final": 0,
-      "judge": 0,
-      "det_cap": null,
+      "final": 3,
+      "judge": 3,
+      "det_cap": 3,
       "weight": 1.0,
       "hard_gate": true
     },
     "legibility": {
       "final": 3,
       "judge": 3,
-      "det_cap": null,
+      "det_cap": 3,
       "weight": 1.2,
       "hard_gate": true
     },
@@ -50,39 +50,59 @@
       "hard_gate": false
     },
     "theme_coherence": {
-      "final": 1,
-      "judge": 1,
+      "final": 3,
+      "judge": 3,
       "det_cap": null,
       "weight": 1.0,
       "hard_gate": false
     }
   },
   "gate_failed": false,
-  "weighted_mean": 1.333,
-  "accept": false,
-  "tier": "redo",
+  "weighted_mean": 3.0,
+  "accept": true,
+  "tier": "ship",
   "judge_ran": true,
-  "judge_reasoning": "The brief expected a portrait photo in a frame with a pull-quote, but no image was placed at all \u2014 the deterministic gate is confirmed on the pixels. The quote typography is clean and legible, but the required hero portrait is entirely missing, failing the relevance, placeholder-vs-real, aspect-fit, and placement gates.",
-  "image_count": 0,
-  "real_image_count": 0,
+  "judge_reasoning": "Credible professional portrait, undistorted face at natural proportions, hero image bound to a full-bleed top band with the quote sitting on a clean navy plate below \u2014 no overlay legibility risk. On-brand and coherent.",
+  "image_count": 1,
+  "real_image_count": 1,
   "brief_id": "testimonial_portrait_photo",
   "expected_decision": "photo",
   "det": {
     "dimensions": {
+      "placeholder_real": {
+        "score": 3,
+        "gate": false,
+        "notes": []
+      },
       "decision": {
-        "score": 1,
+        "score": 3,
+        "gate": false,
+        "notes": []
+      },
+      "aspect_fit": {
+        "score": 3,
+        "gate": false,
+        "notes": []
+      },
+      "legibility": {
+        "score": 3,
         "gate": false,
         "notes": [
-          "expected a photo; none placed"
+          "no text overlaps image"
         ]
+      },
+      "hero_count": {
+        "score": 3,
+        "gate": false,
+        "notes": []
       }
     },
     "gate_failed": false,
-    "accept": false,
-    "image_count": 0,
-    "real_image_count": 0
+    "accept": true,
+    "image_count": 1,
+    "real_image_count": 1
   },
-  "run_id": "run_0103c9a412c54050a3fd37eb2c0cebe1",
+  "run_id": "run_4022b4ddd4c346db802b57045b59eff5",
   "run_status": "accepted",
-  "png_path": ".lumen-runs-C/run_0103c9a412c54050a3fd37eb2c0cebe1/iterations/002/preview.png"
+  "png_path": ".lumen-runs-B/run_4022b4ddd4c346db802b57045b59eff5/iterations/001/preview.png"
 }

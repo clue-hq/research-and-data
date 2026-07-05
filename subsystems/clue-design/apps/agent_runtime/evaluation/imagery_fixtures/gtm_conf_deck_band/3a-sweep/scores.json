@@ -1,37 +1,37 @@
 {
   "per_axis": {
     "relevance": {
-      "final": 1,
-      "judge": 1,
-      "det_cap": 1,
+      "final": 3,
+      "judge": 3,
+      "det_cap": 3,
       "weight": 1.0,
       "hard_gate": false
     },
     "placeholder_real": {
-      "final": 0,
-      "judge": 0,
-      "det_cap": null,
+      "final": 3,
+      "judge": 3,
+      "det_cap": 3,
       "weight": 1.0,
       "hard_gate": false
     },
     "aspect_fit": {
       "final": 3,
       "judge": 3,
-      "det_cap": null,
+      "det_cap": 3,
       "weight": 1.0,
       "hard_gate": true
     },
     "placement": {
-      "final": 0,
-      "judge": 0,
-      "det_cap": null,
+      "final": 3,
+      "judge": 3,
+      "det_cap": 3,
       "weight": 1.0,
       "hard_gate": true
     },
     "legibility": {
       "final": 3,
       "judge": 3,
-      "det_cap": null,
+      "det_cap": 3,
       "weight": 1.2,
       "hard_gate": true
     },
@@ -50,39 +50,59 @@
       "hard_gate": false
     },
     "theme_coherence": {
-      "final": 1,
-      "judge": 1,
+      "final": 3,
+      "judge": 3,
       "det_cap": null,
       "weight": 1.0,
       "hard_gate": false
     }
   },
   "gate_failed": false,
-  "weighted_mean": 1.718,
-  "accept": false,
-  "tier": "redo",
+  "weighted_mean": 3.0,
+  "accept": true,
+  "tier": "ship",
   "judge_ran": true,
-  "judge_reasoning": "The brief expected a photo in a clean image-band role, but no image was placed at all \u2014 the design is a plain dark type slide. That fails the relevance/decide gate and the placeholder-vs-real gate since the intended hero imagery is entirely missing; theme coherence suffers because the event-poster brief called for a place/mood photo.",
-  "image_count": 0,
-  "real_image_count": 0,
+  "judge_reasoning": "Clean split-panel: type on solid dark surface, credible event-venue photo fills the right band with no stretch or letterbox, palette matches brand navy/gold, and no baked-in text. All axes deliberate and correct.",
+  "image_count": 1,
+  "real_image_count": 1,
   "brief_id": "gtm_conf_deck_band",
   "expected_decision": "photo",
   "det": {
     "dimensions": {
+      "placeholder_real": {
+        "score": 3,
+        "gate": false,
+        "notes": []
+      },
       "decision": {
-        "score": 1,
+        "score": 3,
+        "gate": false,
+        "notes": []
+      },
+      "aspect_fit": {
+        "score": 3,
+        "gate": false,
+        "notes": []
+      },
+      "legibility": {
+        "score": 3,
         "gate": false,
         "notes": [
-          "expected a photo; none placed"
+          "no text overlaps image"
         ]
+      },
+      "hero_count": {
+        "score": 3,
+        "gate": false,
+        "notes": []
       }
     },
     "gate_failed": false,
-    "accept": false,
-    "image_count": 0,
-    "real_image_count": 0
+    "accept": true,
+    "image_count": 1,
+    "real_image_count": 1
   },
-  "run_id": "run_ffc673f3eea44f388b51804144460113",
+  "run_id": "run_fed680f8debd4549ac8e3519e801b721",
   "run_status": "accepted",
-  "png_path": ".lumen-runs-B/run_ffc673f3eea44f388b51804144460113/iterations/002/preview.png"
+  "png_path": ".lumen-runs-B/run_fed680f8debd4549ac8e3519e801b721/iterations/002/preview.png"
 }
