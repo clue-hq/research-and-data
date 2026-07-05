@@ -1,0 +1,7 @@
+{
+  "run_id": "run_4e220cad35da439ea841281d4fad9411",
+  "run_status": "success",
+  "model": "openai:anthropic/claude-opus-4.8",
+  "tag": "3a-sweep",
+  "brief_id": "pipeline_data_slide_none"
+}

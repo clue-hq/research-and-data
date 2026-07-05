@@ -1,0 +1,11 @@
+{
+  "id": "qbr_business_review_none",
+  "artifact": "a4_one_pager_data",
+  "prompt": "Design an A4 portrait Q3 Business Review one-pager for the Northwind account: revenue, NRR, expansion pipeline, and the three risks we're managing. For the QBR packet \u2014 clarity and scannability over decoration.",
+  "expected_decision": "none",
+  "role": "type_table_rules",
+  "risks": [
+    "gratuitous hero/banner eating the summary third",
+    "stock 'business meeting' photo adding zero info"
+  ]
+}

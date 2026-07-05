@@ -1,0 +1,86 @@
+{
+  "per_axis": {
+    "relevance": {
+      "final": 3,
+      "judge": 3,
+      "det_cap": 3,
+      "weight": 1.0,
+      "hard_gate": false
+    },
+    "placeholder_real": {
+      "final": 3,
+      "judge": 3,
+      "det_cap": null,
+      "weight": 1.0,
+      "hard_gate": false
+    },
+    "aspect_fit": {
+      "final": 3,
+      "judge": 3,
+      "det_cap": null,
+      "weight": 1.0,
+      "hard_gate": true
+    },
+    "placement": {
+      "final": 3,
+      "judge": 3,
+      "det_cap": null,
+      "weight": 1.0,
+      "hard_gate": true
+    },
+    "legibility": {
+      "final": 3,
+      "judge": 3,
+      "det_cap": null,
+      "weight": 1.2,
+      "hard_gate": true
+    },
+    "resolution_dpi": {
+      "final": 3,
+      "judge": 3,
+      "det_cap": null,
+      "weight": 0.8,
+      "hard_gate": false
+    },
+    "no_in_image_text": {
+      "final": 3,
+      "judge": 3,
+      "det_cap": null,
+      "weight": 0.8,
+      "hard_gate": false
+    },
+    "theme_coherence": {
+      "final": 3,
+      "judge": 3,
+      "det_cap": null,
+      "weight": 1.0,
+      "hard_gate": false
+    }
+  },
+  "gate_failed": false,
+  "weighted_mean": 3.0,
+  "accept": true,
+  "tier": "ship",
+  "judge_ran": true,
+  "judge_reasoning": "Brief called for spot icons with type below; the design uses clean library-style glyphs in mint circles, no generated photo, no corporate-memphis clutter. Icons are simple and subordinate to the display headline, all correct.",
+  "image_count": 0,
+  "real_image_count": 0,
+  "brief_id": "collab_feature_social_illustration",
+  "expected_decision": "icon",
+  "det": {
+    "dimensions": {
+      "decision": {
+        "score": 3,
+        "gate": false,
+        "notes": []
+      }
+    },
+    "gate_failed": false,
+    "accept": true,
+    "image_count": 0,
+    "real_image_count": 0
+  },
+  "run_id": "run_b9131d6e2bdf44b495e09f51caa191c4",
+  "run_status": "accepted",
+  "png_path": ".lumen-runs-C/run_b9131d6e2bdf44b495e09f51caa191c4/iterations/001/preview.png"
+}

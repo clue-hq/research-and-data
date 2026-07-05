@@ -1,0 +1,106 @@
+{
+  "per_axis": {
+    "relevance": {
+      "final": 3,
+      "judge": 3,
+      "det_cap": 3,
+      "weight": 1.0,
+      "hard_gate": false
+    },
+    "placeholder_real": {
+      "final": 3,
+      "judge": 3,
+      "det_cap": 3,
+      "weight": 1.0,
+      "hard_gate": false
+    },
+    "aspect_fit": {
+      "final": 3,
+      "judge": 3,
+      "det_cap": 3,
+      "weight": 1.0,
+      "hard_gate": true
+    },
+    "placement": {
+      "final": 3,
+      "judge": 3,
+      "det_cap": 3,
+      "weight": 1.0,
+      "hard_gate": true
+    },
+    "legibility": {
+      "final": 3,
+      "judge": 3,
+      "det_cap": 3,
+      "weight": 1.2,
+      "hard_gate": true
+    },
+    "resolution_dpi": {
+      "final": 3,
+      "judge": 3,
+      "det_cap": null,
+      "weight": 0.8,
+      "hard_gate": false
+    },
+    "no_in_image_text": {
+      "final": 3,
+      "judge": 3,
+      "det_cap": null,
+      "weight": 0.8,
+      "hard_gate": false
+    },
+    "theme_coherence": {
+      "final": 3,
+      "judge": 3,
+      "det_cap": null,
+      "weight": 1.0,
+      "hard_gate": false
+    }
+  },
+  "gate_failed": false,
+  "weighted_mean": 3.0,
+  "accept": true,
+  "tier": "ship",
+  "judge_ran": true,
+  "judge_reasoning": "Dusk SoMa skyline with Bay Bridge glimpse sets a credible, non-cliche GTM-conference tone; the dark lower third gives natural scrim so headline and body text sit at strong contrast. Image fills the frame cleanly with no stretch, no baked-in text, and sharp resolution.",
+  "image_count": 1,
+  "real_image_count": 1,
+  "brief_id": "gtm_conf_poster_photo",
+  "expected_decision": "photo",
+  "det": {
+    "dimensions": {
+      "placeholder_real": {
+        "score": 3,
+        "gate": false,
+        "notes": []
+      },
+      "decision": {
+        "score": 3,
+        "gate": false,
+        "notes": []
+      },
+      "aspect_fit": {
+        "score": 3,
+        "gate": false,
+        "notes": []
+      },
+      "legibility": {
+        "score": 3,
+        "gate": false,
+        "notes": []
+      },
+      "hero_count": {
+        "score": 3,
+        "gate": false,
+        "notes": []
+      }
+    },
+    "gate_failed": false,
+    "accept": true,
+    "image_count": 1,
+    "real_image_count": 1
+  },
+  "run_id": "run_17b226fd601a45a89c51ce55226d24ff",
+  "run_status": "accepted",
+  "png_path": ".lumen-runs-A/run_17b226fd601a45a89c51ce55226d24ff/iterations/001/preview.png"
+}
