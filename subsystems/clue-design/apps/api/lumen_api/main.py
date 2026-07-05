@@ -2148,6 +2148,36 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
         asset_id = f"asset_gen_{uuid4().hex[:12]}"
         cache_key: Optional[str] = None
         if image_provider.is_image_model_provider(payload.provider):
+            # Phase 3b image EDIT: resolve the source asset's pixels up front.
+            # The edit keys the cache on the source digest (same instruction on
+            # a different image must never hit) and stamps the result's source
+            # as kind "edited" with the parent asset id, so provenance chains.
+            source_images: Optional[list] = None
+            source_digest: Optional[str] = None
+            if payload.source_asset_id:
+                source_stored = repo.require_asset_record(payload.source_asset_id)
+                source_media = (source_stored["asset"].get("media") or {})
+                source_digest = (source_media.get("digest") or {}).get("value")
+                blob_path = (
+                    resolve_store_path(f"sha256/{source_digest[:2]}/{source_digest}")
+                    if source_digest
+                    else None
+                )
+                if blob_path is None or not blob_path.is_file():
+                    raise HTTPException(
+                        status_code=409,
+                        detail={
+                            "code": "asset.source_bytes_missing",
+                            "message": (
+                                f"source asset {payload.source_asset_id} has no stored"
+                                " bytes to edit"
+                            ),
+                            "diagnostics": [],
+                        },
+                    )
+                source_images = [
+                    (blob_path.read_bytes(), source_media.get("mime_type") or "image/png")
+                ]
             # Generation cache: re-use the asset produced by an identical earlier
             # request instead of re-paying the model (the byte-digest store dedup
             # only fires AFTER the paid, non-deterministic call). Checked BEFORE the
@@ -2162,6 +2192,7 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
                 image_size=payload.image_size,
                 transparent_background=payload.transparent_background,
                 reference_asset_ids=payload.reference_asset_ids,
+                source_digest=source_digest,
             )
             cached_record = image_cache.lookup(asset_store_root(), cache_key)
             if cached_record:
@@ -2187,17 +2218,26 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
             # pipeline as uploads, stamped with a `generated` source, so the rest
             # of the stack (placement/render/export/validation) is unchanged.
             try:
-                generated = image_provider.generate(
-                    prompt=payload.prompt,
-                    width=payload.width,
-                    height=payload.height,
-                    brand_notes=payload.brand_notes,
-                    aspect_ratio=payload.aspect_ratio,
-                    image_size=payload.image_size,
-                    transparent_background=payload.transparent_background,
-                    reference_asset_ids=payload.reference_asset_ids,
-                    request_id=asset_id,
-                )
+                if source_images is not None:
+                    generated = image_provider.edit(
+                        prompt=payload.prompt,
+                        source_images=source_images,
+                        brand_notes=payload.brand_notes,
+                        transparent_background=payload.transparent_background,
+                        request_id=asset_id,
+                    )
+                else:
+                    generated = image_provider.generate(
+                        prompt=payload.prompt,
+                        width=payload.width,
+                        height=payload.height,
+                        brand_notes=payload.brand_notes,
+                        aspect_ratio=payload.aspect_ratio,
+                        image_size=payload.image_size,
+                        transparent_background=payload.transparent_background,
+                        reference_asset_ids=payload.reference_asset_ids,
+                        request_id=asset_id,
+                    )
             except image_provider.ImageGenerationError as error:
                 log_event(
                     api_logger,
@@ -2221,11 +2261,20 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
                     kind=payload.output_kind,
                     license=generated.license,
                     provenance=generated.provenance,
-                    source={
-                        "kind": "generated",
-                        "request_id": asset_id,
-                        "model": generated.model,
-                    },
+                    source=(
+                        {
+                            "kind": "edited",
+                            "request_id": asset_id,
+                            "model": generated.model,
+                            "source_asset_id": payload.source_asset_id,
+                        }
+                        if payload.source_asset_id
+                        else {
+                            "kind": "generated",
+                            "request_id": asset_id,
+                            "model": generated.model,
+                        }
+                    ),
                     max_bytes=asset_max_bytes(),
                     raise_on_error=False,
                 )

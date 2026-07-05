@@ -150,6 +150,11 @@ class GenerateAssetRequest(BaseModel):
     image_size: Optional[str] = None
     reference_asset_ids: List[str] = Field(default_factory=list)
     label: Optional[str] = None
+    # Phase 3b image EDIT: when set, the prompt is an edit instruction applied
+    # to this existing asset's pixels; the result is a NEW asset whose source
+    # records the parent (kind "edited"). Remove-background = an edit with
+    # transparent_background=true.
+    source_asset_id: Optional[str] = None
 
 
 class CreateBindingSetRequest(BaseModel):

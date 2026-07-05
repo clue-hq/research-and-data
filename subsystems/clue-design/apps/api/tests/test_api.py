@@ -2668,6 +2668,207 @@ def test_generate_asset_image_model_forwards_aspect_size_and_references(
     assert captured["reference_asset_ids"] == ["asset_ref_a"]
 
 
+def _upload_source_raster(
+    client: TestClient, rgba=(64, 120, 200, 255), label: str = "source"
+) -> dict:
+    """Upload a valid PNG as a source asset with content-addressed stored bytes.
+
+    Distinct `rgba` -> distinct pixels -> distinct digest, which is what an
+    edit's source-keyed cache must discriminate on.
+    """
+    png = _tiny_png(8, 8, rgba=rgba)
+    response = client.post(
+        "/assets",
+        files={"file": (f"{label}.png", png, "image/png")},
+        data={"label": label, "kind": "raster_image", "uploaded_by": "designer"},
+    )
+    assert response.status_code == 200, response.text
+    return response.json()["asset"]
+
+
+def test_generate_asset_image_edit_loads_source_bytes_and_stamps_edited_source(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Phase 3b: an edit with source_asset_id routes to image_provider.edit with the
+    # SOURCE BYTES loaded from the store, and the persisted record's source chains
+    # provenance to the parent as kind "edited".
+    source = _upload_source_raster(client)
+    source_png = _tiny_png(8, 8, rgba=(64, 120, 200, 255))
+    edited_png = _tiny_png(8, 8, rgba=(10, 20, 30, 255))
+    captured: dict = {}
+
+    def fake_edit(**kwargs) -> image_provider.ImageGenerationResult:
+        captured.update(kwargs)
+        return image_provider.ImageGenerationResult(
+            image_bytes=edited_png,
+            mime_type="image/png",
+            model="mock-image-model",
+            provenance={"created_by": "agent", "source_label": "image edit", "notes": []},
+            license={"name": "generated_commercial_use", "allow_export": True},
+        )
+
+    monkeypatch.setattr(image_provider, "edit", fake_edit)
+    # generate must NOT be called on the edit path
+    def fail_generate(**kwargs):  # pragma: no cover - guard
+        raise AssertionError("edit path must not call generate")
+
+    monkeypatch.setattr(image_provider, "generate", fail_generate)
+
+    response = client.post(
+        "/assets/generate",
+        json={
+            "provider": "image-gen-v1",
+            "prompt": "make the sky pink",
+            "source_asset_id": source["id"],
+        },
+    )
+    assert response.status_code == 200, response.text
+    record = response.json()["asset"]
+    # source bytes were loaded from the store and handed to edit()
+    assert captured["prompt"] == "make the sky pink"
+    assert captured["source_images"] == [(source_png, "image/png")]
+    # provenance chains to the parent
+    assert record["source"]["kind"] == "edited"
+    assert record["source"]["source_asset_id"] == source["id"]
+    assert record["source"]["model"] == "mock-image-model"
+    served = client.get(f"/assets/{record['id']}/bytes")
+    assert served.status_code == 200
+    assert served.content == edited_png
+
+
+def test_image_edit_cache_keys_on_source_digest(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The edit cache must discriminate on source pixels: the SAME instruction on
+    # a DIFFERENT source is a miss; a repeat of the same (source, prompt) is a hit.
+    source_a = _upload_source_raster(client, rgba=(64, 120, 200, 255), label="a")
+    source_b = _upload_source_raster(client, rgba=(200, 30, 30, 255), label="b")
+    calls = {"n": 0}
+
+    def fake_edit(**kwargs) -> image_provider.ImageGenerationResult:
+        calls["n"] += 1
+        return image_provider.ImageGenerationResult(
+            image_bytes=_tiny_png(8, 8, rgba=(1, 2, 3, 255)),
+            mime_type="image/png",
+            model="mock-image-model",
+            provenance={"created_by": "agent", "source_label": "image edit", "notes": []},
+            license={"name": "generated_commercial_use", "allow_export": True},
+        )
+
+    monkeypatch.setattr(image_provider, "edit", fake_edit)
+    prompt = "remove the background"
+
+    first = client.post(
+        "/assets/generate",
+        json={"provider": "image-gen-v1", "prompt": prompt, "source_asset_id": source_a["id"]},
+    )
+    assert first.status_code == 200, first.text
+    assert calls["n"] == 1
+    assert first.json()["deduplicated"] is False
+
+    # Different source, identical prompt -> MISS (must not return A's result).
+    second = client.post(
+        "/assets/generate",
+        json={"provider": "image-gen-v1", "prompt": prompt, "source_asset_id": source_b["id"]},
+    )
+    assert second.status_code == 200, second.text
+    assert calls["n"] == 2, "a different source with the same prompt must not hit the cache"
+
+    # Repeat of the first (source, prompt) -> HIT (model not re-called).
+    repeat = client.post(
+        "/assets/generate",
+        json={"provider": "image-gen-v1", "prompt": prompt, "source_asset_id": source_a["id"]},
+    )
+    assert repeat.status_code == 200, repeat.text
+    assert calls["n"] == 2, "an identical (source, prompt) edit must hit the cache"
+    assert repeat.json()["deduplicated"] is True
+    assert repeat.json()["asset"]["id"] == first.json()["asset"]["id"]
+
+
+def test_image_edit_source_bytes_missing_returns_409(
+    client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A source record whose bytes are absent from the store -> clean 409, not a 500.
+    def fail_edit(**kwargs):  # pragma: no cover - guard
+        raise AssertionError("edit must not run when source bytes are missing")
+
+    monkeypatch.setattr(image_provider, "edit", fail_edit)
+
+    source = _upload_source_raster(client, rgba=(5, 6, 7, 255), label="gone")
+    # Remove the content-addressed blob backing the record, leaving the record.
+    for blob in store_files(tmp_path):
+        blob.unlink()
+
+    response = client.post(
+        "/assets/generate",
+        json={
+            "provider": "image-gen-v1",
+            "prompt": "edit me",
+            "source_asset_id": source["id"],
+        },
+    )
+    assert response.status_code == 409, response.text
+    assert response.json()["detail"]["code"] == "asset.source_bytes_missing"
+
+
+def test_image_provider_edit_rejects_empty_prompt_and_missing_source() -> None:
+    # Typed guardrails on the edit provider entrypoint.
+    with pytest.raises(image_provider.ImageGenerationError) as empty:
+        image_provider.edit(prompt="   ", source_images=[(b"x", "image/png")])
+    assert empty.value.code == "image_model.empty_prompt"
+
+    with pytest.raises(image_provider.ImageGenerationError) as missing:
+        image_provider.edit(prompt="make it pop", source_images=[])
+    assert missing.value.code == "image_model.missing_source"
+
+
+def test_image_provider_edit_builds_multimodal_content(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # _invoke_model turns source_images into OpenAI-style multimodal content:
+    # image_url part(s) first, the text instruction last.
+    import base64
+
+    monkeypatch.setenv("IMAGE_MODEL_BASE_URL", "https://openrouter.ai/api/v1")
+    monkeypatch.setenv("IMAGE_MODEL_API_KEY", "test-key")
+    monkeypatch.setenv("IMAGE_MODEL_ID", "test/image-model")
+
+    src_png = _tiny_png(8, 8)
+    out_png = _tiny_png(8, 8, rgba=(9, 9, 9, 255))
+    out_url = "data:image/png;base64," + base64.b64encode(out_png).decode("ascii")
+    captured: dict = {}
+
+    class _FakeResponse:
+        status_code = 200
+        headers = {"content-type": "application/json"}
+
+        def json(self) -> dict:
+            return {"choices": [{"message": {"images": [{"image_url": {"url": out_url}}]}}]}
+
+    def fake_post(url, json=None, headers=None, timeout=None):
+        captured.update(url=url, json=json, headers=headers)
+        return _FakeResponse()
+
+    monkeypatch.setattr("httpx.post", fake_post)
+
+    result = image_provider.edit(
+        prompt="remove the background completely",
+        source_images=[(src_png, "image/png")],
+        transparent_background=True,
+    )
+    assert result.image_bytes == out_png
+
+    content = captured["json"]["messages"][0]["content"]
+    assert isinstance(content, list)
+    # image part first, text part last
+    assert content[0]["type"] == "image_url"
+    expected_data_url = "data:image/png;base64," + base64.b64encode(src_png).decode("ascii")
+    assert content[0]["image_url"]["url"] == expected_data_url
+    assert content[-1]["type"] == "text"
+    assert "remove the background completely" in content[-1]["text"]
+    assert "transparent background" in content[-1]["text"]
+
+
 def test_mailer_carries_scannable_qr_through_export(client: TestClient) -> None:
     # Gate for slice E4: a mailer-style document carries a generated QR
     # that survives placement and export with real bytes.

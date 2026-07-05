@@ -160,6 +160,62 @@ export async function generateAsset(
   };
 }
 
+export interface EditAssetRequest {
+  /** The existing asset whose pixels are edited; the result is a new asset. */
+  sourceAssetId: string;
+  /** The edit instruction (or the fixed remove-background instruction). */
+  prompt: string;
+  provider?: string;
+  outputKind?: string;
+  transparentBackground?: boolean;
+  brandNotes?: string[];
+  label?: string;
+}
+
+/**
+ * Edit an existing raster asset through `POST /assets/generate` with a
+ * `source_asset_id` (Phase 3b). The API loads the source pixels, runs the
+ * model edit, and returns a NEW ready `AssetRecord` whose `source` chains to
+ * the parent (kind "edited"). Remove-background is this same call with the
+ * fixed instruction + `transparentBackground: true`. Errors surface the same
+ * typed `detail.message` / `LUMA*` code as generation.
+ */
+export async function editAsset(
+  apiBaseUrl: string,
+  request: EditAssetRequest
+): Promise<AssetGenerateResult> {
+  const response = await fetch(new URL("/assets/generate", apiBaseUrl), {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Accept: "application/json" },
+    body: JSON.stringify({
+      provider: request.provider ?? IMAGE_GEN_PROVIDER,
+      prompt: request.prompt,
+      output_kind: request.outputKind ?? "raster_image",
+      source_asset_id: request.sourceAssetId,
+      transparent_background: request.transparentBackground,
+      brand_notes: request.brandNotes ?? [],
+      label: request.label
+    })
+  });
+  const payload = (await response.json().catch(() => ({}))) as {
+    asset?: AssetRecord;
+    deduplicated?: boolean;
+    diagnostics?: Diagnostic[];
+    detail?: { message?: string; code?: string };
+  };
+  if (!response.ok || !payload.asset) {
+    const detail = payload.detail;
+    throw new Error(
+      detail?.message ?? detail?.code ?? `Image edit failed with status ${response.status}`
+    );
+  }
+  return {
+    asset: payload.asset,
+    deduplicated: payload.deduplicated ?? false,
+    diagnostics: payload.diagnostics ?? []
+  };
+}
+
 export function assetThumbnailUrl(apiBaseUrl: string, assetId: string): string {
   return new URL(`/assets/${assetId}/thumbnail`, apiBaseUrl).toString();
 }

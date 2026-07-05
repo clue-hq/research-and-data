@@ -18,6 +18,7 @@ Design:
 
 from __future__ import annotations
 
+import base64
 import os
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -154,6 +155,56 @@ def generate(
     )
 
 
+def edit(
+    *,
+    prompt: str,
+    source_images: List[Tuple[bytes, str]],
+    brand_notes: Optional[List[str]] = None,
+    transparent_background: Optional[bool] = None,
+    request_id: Optional[str] = None,
+) -> ImageGenerationResult:
+    """Edit an existing raster image with a text instruction (Phase 3b).
+
+    Same orchestration as `generate`, but the source image(s) ride the model
+    call as multimodal content and the output geometry follows the source —
+    no dimension resolution or aspect hints (asking an edit to change framing
+    belongs in the instruction itself). `transparent_background` is how
+    remove-background rides this path. Raises `ImageGenerationError` (typed)
+    on misconfiguration, empty inputs, or provider failure.
+    """
+    if not (prompt or "").strip():
+        raise ImageGenerationError(
+            "image_model.empty_prompt",
+            "a non-empty edit instruction is required",
+            status_code=400,
+        )
+    if not source_images:
+        raise ImageGenerationError(
+            "image_model.missing_source",
+            "an image edit requires at least one source image",
+            status_code=400,
+        )
+    config = ImageModelConfig.from_env()
+    full_prompt = _compose_prompt(prompt, brand_notes or [])
+    image_bytes, mime_type = _invoke_with_retries(
+        config,
+        prompt=full_prompt,
+        width=None,
+        height=None,
+        aspect_ratio=None,
+        image_size=None,
+        transparent_background=transparent_background,
+        source_images=source_images,
+    )
+    return ImageGenerationResult(
+        image_bytes=image_bytes,
+        mime_type=mime_type or DEFAULT_MIME,
+        model=config.model_id,
+        provenance=_generated_provenance(config.model_id, request_id),
+        license=_generated_license(),
+    )
+
+
 # --- dimension resolution (aspect ratio + size tier → width/height) ---------
 
 # Role-appropriate resolution tiers (Brilliant `imageSize`): long-edge pixels.
@@ -225,6 +276,7 @@ def _invoke_with_retries(
     aspect_ratio: Optional[str],
     image_size: Optional[str],
     transparent_background: Optional[bool],
+    source_images: Optional[List[Tuple[bytes, str]]] = None,
 ) -> Tuple[bytes, str]:
     last_error: Optional[Exception] = None
     for attempt in range(config.max_retries + 1):
@@ -237,6 +289,7 @@ def _invoke_with_retries(
                 aspect_ratio=aspect_ratio,
                 image_size=image_size,
                 transparent_background=transparent_background,
+                source_images=source_images,
             )
         except ImageGenerationError:
             raise  # typed/terminal — don't retry config or decode errors
@@ -258,6 +311,7 @@ def _invoke_model(
     aspect_ratio: Optional[str],
     image_size: Optional[str],
     transparent_background: Optional[bool],
+    source_images: Optional[List[Tuple[bytes, str]]] = None,
 ) -> Tuple[bytes, str]:
     """ADAPTER SEAM — OpenRouter (raw HTTP).
 
@@ -283,9 +337,32 @@ def _invoke_model(
         hints.append("transparent background")
     user_prompt = prompt if not hints else f"{prompt}\n\n(Render with " + ", ".join(hints) + ".)"
 
+    # Image EDIT: source images ride the same chat-completions call as
+    # OpenAI-style multimodal content parts (base64 data: URLs) ahead of the
+    # instruction text; the model returns the edited image the same way a
+    # generation does. Plain generation keeps the bare-string content.
+    if source_images:
+        content: object = [
+            *(
+                {
+                    "type": "image_url",
+                    "image_url": {
+                        "url": "data:"
+                        + (mime or DEFAULT_MIME)
+                        + ";base64,"
+                        + base64.b64encode(image_bytes).decode("ascii")
+                    },
+                }
+                for image_bytes, mime in source_images
+            ),
+            {"type": "text", "text": user_prompt},
+        ]
+    else:
+        content = user_prompt
+
     body = {
         "model": config.model_id,
-        "messages": [{"role": "user", "content": user_prompt}],
+        "messages": [{"role": "user", "content": content}],
         "modalities": ["image", "text"],
     }
     headers = {

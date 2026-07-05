@@ -272,6 +272,7 @@ export type AssetStatus = "pending" | "ready" | "failed" | "archived";
 export type AssetSource =
   | { kind: "uploaded"; asset_id?: AssetId | null; filename: string | null; uploaded_by: string | null }
   | { kind: "generated"; request_id: string | null; model: string }
+  | { kind: "edited"; request_id: string | null; model: string; source_asset_id: AssetId }
   | { kind: "vectorized"; source_asset_id: AssetId; tool: string | null }
   | { kind: "website"; url: string; captured_at: string | null }
   | { kind: "brand_guide"; source_asset_id: AssetId | null; label: string }

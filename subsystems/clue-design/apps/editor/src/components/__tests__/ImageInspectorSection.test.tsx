@@ -38,6 +38,34 @@ function generatedRecord(): AssetRecord {
   } as AssetRecord;
 }
 
+function editedRecord(): AssetRecord {
+  return {
+    id: "asset_edited_1",
+    label: "edited",
+    kind: "raster_image",
+    status: "ready",
+    source: {
+      kind: "edited",
+      request_id: "asset_edited_1",
+      model: "test/image-model",
+      source_asset_id: "asset_existing"
+    } as AssetRecord["source"],
+    media: { mime_type: "image/png" } as AssetRecord["media"]
+  } as AssetRecord;
+}
+
+/** A ready source asset for the node, so the edit gate is enabled. */
+function readyAsset(): AssetRecord {
+  return {
+    id: "asset_existing",
+    label: "existing",
+    kind: "raster_image",
+    status: "ready",
+    source: { kind: "generated", request_id: "asset_existing", model: "test/image-model" } as AssetRecord["source"],
+    media: { mime_type: "image/png" } as AssetRecord["media"]
+  } as AssetRecord;
+}
+
 function placementPatch(call: Operation[]) {
   const op = call[0];
   if (op.kind !== "update_node") throw new Error("expected update_node");
@@ -126,6 +154,143 @@ describe("ImageInspectorSection", () => {
     expect(place.asset_id).toBe("asset_gen_1");
     expect(place.placement.fit).toBe("cover");
     expect(place.placement.focal_point).toEqual({ x: 0.3, y: 0.7 }); // carried forward
+  });
+
+  it("edits the current image with a source_asset_id + instruction and stages a candidate", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input).includes("/assets/generate") && init?.method === "POST") {
+        return new Response(
+          JSON.stringify({ schema_version: 1, asset: editedRecord(), deduplicated: false, diagnostics: [] }),
+          { status: 200 }
+        );
+      }
+      return new Response("{}", { status: 404 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const onOperations = vi.fn();
+    render(<ImageInspectorSection node={imageNode()} asset={readyAsset()} apiBaseUrl={API_BASE} onOperations={onOperations} />);
+
+    fireEvent.change(screen.getByLabelText("Image edit instruction"), { target: { value: "make the sky pink" } });
+    fireEvent.click(screen.getByTestId("image-edit-submit"));
+
+    await waitFor(() => expect(screen.getByTestId("image-edit-review")).toBeTruthy());
+
+    const [, init] = fetchMock.mock.calls.find(([url]) => String(url).includes("/assets/generate"))!;
+    const body = JSON.parse(String(init?.body));
+    expect(body.source_asset_id).toBe("asset_existing");
+    expect(body.prompt).toBe("make the sky pink");
+    // Staging a candidate does NOT mutate the scene.
+    expect(onOperations).not.toHaveBeenCalled();
+  });
+
+  it("remove background sends the fixed instruction with transparent_background", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input).includes("/assets/generate") && init?.method === "POST") {
+        return new Response(
+          JSON.stringify({ schema_version: 1, asset: editedRecord(), deduplicated: false, diagnostics: [] }),
+          { status: 200 }
+        );
+      }
+      return new Response("{}", { status: 404 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const onOperations = vi.fn();
+    render(<ImageInspectorSection node={imageNode()} asset={readyAsset()} apiBaseUrl={API_BASE} onOperations={onOperations} />);
+
+    fireEvent.click(screen.getByTestId("image-remove-bg"));
+
+    await waitFor(() => expect(screen.getByTestId("image-edit-review")).toBeTruthy());
+
+    const [, init] = fetchMock.mock.calls.find(([url]) => String(url).includes("/assets/generate"))!;
+    const body = JSON.parse(String(init?.body));
+    expect(body.source_asset_id).toBe("asset_existing");
+    expect(body.prompt).toBe("Remove the background completely");
+    expect(body.transparent_background).toBe(true);
+    expect(onOperations).not.toHaveBeenCalled();
+  });
+
+  it("Accept emits exactly one placement batch with the candidate id, preserving fit/focal/alt", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input).includes("/assets/generate") && init?.method === "POST") {
+        return new Response(
+          JSON.stringify({ schema_version: 1, asset: editedRecord(), deduplicated: false, diagnostics: [] }),
+          { status: 200 }
+        );
+      }
+      return new Response("{}", { status: 404 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const node = imageNode({ asset_placement: { fit: "cover", focal_point: { x: 0.2, y: 0.8 }, alt_text: "hero" } });
+    const onOperations = vi.fn();
+    render(<ImageInspectorSection node={node} asset={readyAsset()} apiBaseUrl={API_BASE} onOperations={onOperations} />);
+
+    fireEvent.change(screen.getByLabelText("Image edit instruction"), { target: { value: "warm it up" } });
+    fireEvent.click(screen.getByTestId("image-edit-submit"));
+    await waitFor(() => expect(screen.getByTestId("image-edit-accept")).toBeTruthy());
+
+    fireEvent.click(screen.getByTestId("image-edit-accept"));
+
+    expect(onOperations).toHaveBeenCalledTimes(1);
+    const ops = onOperations.mock.calls[0][0] as Operation[];
+    expect(ops.map((op) => op.kind)).toEqual(["upsert_asset", "place_asset_in_node"]);
+    const place = ops[1];
+    if (place.kind !== "place_asset_in_node") throw new Error("expected place_asset_in_node");
+    expect(place.node_id).toBe("node_hero");
+    expect(place.asset_id).toBe("asset_edited_1");
+    expect(place.placement.fit).toBe("cover");
+    expect(place.placement.focal_point).toEqual({ x: 0.2, y: 0.8 });
+    expect(place.placement.alt_text).toBe("hero");
+  });
+
+  it("Reject discards the candidate and leaves the scene untouched", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        new Response(
+          JSON.stringify({ schema_version: 1, asset: editedRecord(), deduplicated: false, diagnostics: [] }),
+          { status: 200 }
+        )
+      )
+    );
+
+    const onOperations = vi.fn();
+    render(<ImageInspectorSection node={imageNode()} asset={readyAsset()} apiBaseUrl={API_BASE} onOperations={onOperations} />);
+
+    fireEvent.change(screen.getByLabelText("Image edit instruction"), { target: { value: "warm it up" } });
+    fireEvent.click(screen.getByTestId("image-edit-submit"));
+    await waitFor(() => expect(screen.getByTestId("image-edit-reject")).toBeTruthy());
+
+    fireEvent.click(screen.getByTestId("image-edit-reject"));
+
+    expect(screen.queryByTestId("image-edit-review")).toBeNull();
+    expect(onOperations).not.toHaveBeenCalled();
+  });
+
+  it("Save as new registers the candidate without mutating the scene", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        new Response(
+          JSON.stringify({ schema_version: 1, asset: editedRecord(), deduplicated: false, diagnostics: [] }),
+          { status: 200 }
+        )
+      )
+    );
+
+    const onOperations = vi.fn();
+    render(<ImageInspectorSection node={imageNode()} asset={readyAsset()} apiBaseUrl={API_BASE} onOperations={onOperations} />);
+
+    fireEvent.change(screen.getByLabelText("Image edit instruction"), { target: { value: "warm it up" } });
+    fireEvent.click(screen.getByTestId("image-edit-submit"));
+    await waitFor(() => expect(screen.getByTestId("image-edit-save-new")).toBeTruthy());
+
+    fireEvent.click(screen.getByTestId("image-edit-save-new"));
+
+    expect(onOperations).not.toHaveBeenCalled();
+    expect(screen.getByTestId("image-edit-status").getAttribute("data-status")).toBe("saved");
   });
 
   it("surfaces a failed generation (e.g. model not configured)", async () => {

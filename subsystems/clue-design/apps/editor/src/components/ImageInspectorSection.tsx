@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { ImageIcon, RefreshCw, Sparkles } from "lucide-react";
+import { Check, Eraser, ImageIcon, RefreshCw, Sparkles, Wand2, X } from "lucide-react";
 
 import type {
   AssetPlacement,
@@ -11,7 +11,15 @@ import type {
   Operation
 } from "@/engine/contracts";
 import { nodePatch, set } from "@/engine/operations";
-import { buildNodePlacementOperations, generateAsset } from "@/engine/assetLibrary";
+import {
+  assetThumbnailUrl,
+  buildNodePlacementOperations,
+  editAsset,
+  generateAsset
+} from "@/engine/assetLibrary";
+
+/** The fixed instruction the one-click remove-background affordance sends. */
+const REMOVE_BACKGROUND_INSTRUCTION = "Remove the background completely";
 
 /**
  * Step 5 (E0.2–E0.5): the image node's controls — Fit, focal point, alt text, and
@@ -51,6 +59,19 @@ export function ImageInspectorSection({
   const [prompt, setPrompt] = useState("");
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Phase 3b image-edit gate: an edit produces a CANDIDATE asset that the user
+  // reviews Before/After — nothing swaps into the node until Accept.
+  const [instruction, setInstruction] = useState("");
+  const [editing, setEditing] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
+  const [candidate, setCandidate] = useState<AssetRecord | null>(null);
+  const [savedNotice, setSavedNotice] = useState<string | null>(null);
+
+  const hasImage = node.kind.kind === "image" && Boolean(node.kind.asset_id);
+  const sourceAssetId = node.kind.kind === "image" ? node.kind.asset_id ?? null : null;
+  // Editing needs a source with real, ready pixels in the store.
+  const canEdit = hasImage && Boolean(sourceAssetId) && (asset?.status ?? "ready") === "ready";
 
   const emitPlacement = (next: AssetPlacement) => {
     onOperations([
@@ -93,7 +114,65 @@ export function ImageInspectorSection({
     }
   };
 
-  const hasImage = node.kind.kind === "image" && Boolean(node.kind.asset_id);
+  // Run an edit (or remove-background) against the current asset. Success does
+  // NOT swap the node — it stages a candidate for Before/After review.
+  const runEdit = async (editInstruction: string, options: { transparentBackground?: boolean } = {}) => {
+    const trimmed = editInstruction.trim();
+    if (!trimmed) {
+      setEditError("Enter an instruction to edit the image.");
+      return;
+    }
+    if (!sourceAssetId) {
+      setEditError("Generate or place an image before editing.");
+      return;
+    }
+    setEditing(true);
+    setEditError(null);
+    setSavedNotice(null);
+    try {
+      const result = await editAsset(apiBaseUrl, {
+        sourceAssetId,
+        prompt: trimmed,
+        transparentBackground: options.transparentBackground,
+        label: trimmed.slice(0, 60)
+      });
+      setCandidate(result.asset);
+    } catch (err) {
+      setEditError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setEditing(false);
+    }
+  };
+
+  // Accept: swap the node to the candidate via the SAME placement-carrying path
+  // Regenerate uses — exactly one history step, preserving fit/focal/alt.
+  const acceptCandidate = () => {
+    if (!candidate) {
+      return;
+    }
+    onOperations(buildNodePlacementOperations(candidate, node.id, currentPlacement(placement)));
+    setCandidate(null);
+    setInstruction("");
+    setSavedNotice(null);
+  };
+
+  // Reject: discard the candidate UI state; zero scene mutations.
+  const rejectCandidate = () => {
+    setCandidate(null);
+    setSavedNotice(null);
+  };
+
+  // Save as new: no scene change — the candidate is already registered in the
+  // asset library by the API; just confirm and clear the review panel.
+  const saveCandidateAsNew = () => {
+    if (!candidate) {
+      return;
+    }
+    setSavedNotice(`Saved ${candidate.label ?? candidate.id} to the asset library.`);
+    setCandidate(null);
+    setInstruction("");
+  };
+
   const status = generating
     ? "pending"
     : error
@@ -164,6 +243,93 @@ export function ImageInspectorSection({
           {generating ? "Generating…" : hasImage ? "Regenerate" : "Generate"}
         </button>
       </div>
+
+      {canEdit ? (
+        <div className="image-edit" data-testid="image-edit">
+          <label className="field">
+            <span>Edit image</span>
+            <textarea
+              aria-label="Image edit instruction"
+              rows={2}
+              value={instruction}
+              placeholder="e.g. make the sky warmer, remove the person on the left"
+              disabled={disabled || editing || Boolean(candidate)}
+              onChange={(event) => setInstruction(event.target.value)}
+            />
+          </label>
+          <div className="field-row">
+            <button
+              type="button"
+              data-testid="image-edit-submit"
+              disabled={disabled || editing || Boolean(candidate) || !instruction.trim()}
+              onClick={() => void runEdit(instruction)}
+            >
+              <Wand2 aria-hidden size={14} />
+              {editing ? "Editing…" : "Edit"}
+            </button>
+            <button
+              type="button"
+              data-testid="image-remove-bg"
+              disabled={disabled || editing || Boolean(candidate)}
+              onClick={() => void runEdit(REMOVE_BACKGROUND_INSTRUCTION, { transparentBackground: true })}
+            >
+              <Eraser aria-hidden size={14} />
+              Remove background
+            </button>
+          </div>
+        </div>
+      ) : null}
+
+      {candidate ? (
+        <div className="image-edit-review" data-testid="image-edit-review">
+          <span className="section-subheading">Before / After</span>
+          <div className="field-row">
+            <figure className="image-edit-preview" data-testid="image-edit-before">
+              <img
+                alt="Current image"
+                src={sourceAssetId ? assetThumbnailUrl(apiBaseUrl, sourceAssetId) : undefined}
+              />
+              <figcaption className="muted">Before</figcaption>
+            </figure>
+            <figure className="image-edit-preview" data-testid="image-edit-after">
+              <img alt="Edited candidate" src={assetThumbnailUrl(apiBaseUrl, candidate.id)} />
+              <figcaption className="muted">After</figcaption>
+            </figure>
+          </div>
+          <div className="field-row">
+            <button type="button" data-testid="image-edit-accept" disabled={disabled} onClick={acceptCandidate}>
+              <Check aria-hidden size={14} />
+              Accept
+            </button>
+            <button type="button" data-testid="image-edit-reject" disabled={disabled} onClick={rejectCandidate}>
+              <X aria-hidden size={14} />
+              Reject
+            </button>
+            <button
+              type="button"
+              data-testid="image-edit-save-new"
+              disabled={disabled}
+              onClick={saveCandidateAsNew}
+            >
+              Save as new
+            </button>
+          </div>
+        </div>
+      ) : null}
+
+      {editError ? (
+        <p className="muted" data-testid="image-edit-status" data-status="failed">
+          {`Edit failed: ${editError}`}
+        </p>
+      ) : editing ? (
+        <p className="muted" data-testid="image-edit-status" data-status="pending">
+          Editing image…
+        </p>
+      ) : savedNotice ? (
+        <p className="muted" data-testid="image-edit-status" data-status="saved">
+          {savedNotice}
+        </p>
+      ) : null}
 
       <p className="muted" data-testid="image-status" data-status={status}>
         {generating
