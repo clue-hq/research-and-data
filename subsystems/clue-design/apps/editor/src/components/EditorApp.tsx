@@ -30,6 +30,7 @@ import { TextToolbar } from "./TextToolbar";
 import { LayerPanel } from "./LayerPanel";
 import { PageRail } from "./PageRail";
 import { ValidationPanel } from "./ValidationPanel";
+import appMark from "../app/icon.svg";
 import { emptyScene } from "@/fixtures/emptyScene";
 import type { BrandCompatibilityRunner } from "@/engine/brandCompatibility";
 import type { BrandGovernanceRunner } from "@/engine/brandGovernance";
@@ -1220,53 +1221,80 @@ export default function EditorApp({
 
   return (
     <main className="editor-shell">
-      <header className="topbar">
-        <div className="topbar-title">
-          <p className="eyebrow">ABM Design Engine</p>
-          <h1>{scene.meta.title}</h1>
-        </div>
-        <div className="topbar-context" aria-label="Active artboard context">
-          <div className="topbar-artboard-label">
-            <strong>{activePage?.name ?? "No artboard"}</strong>
-            <span>
-              {activePage ? `${topArtboardSizeLabel(activePage)} · ${Math.round(workspaceViewport.zoom * 100)}%` : "No frame"}
+      <header className="editor-chrome">
+        <div className="doc-row">
+          <div className="doc-row-left">
+            <span className="app-mark" aria-hidden>
+              <img src={appMark.src} alt="" width={16} height={16} />
             </span>
+            <div className="topbar-title">
+              <p className="eyebrow">ABM Design Engine</p>
+              <h1>{scene.meta.title}</h1>
+            </div>
           </div>
-          {editorPanelMode !== "diagnostics" ? (
-            <DiagnosticsAlertPill
-              errorCount={
-                diagnostics.filter((diagnostic) => diagnostic.severity === "error").length
-              }
-              onOpen={() => setEditorPanelMode("diagnostics")}
-            />
-          ) : null}
-          <EditorModeSwitch mode={editorPanelMode} onModeChange={setEditorPanelMode} />
+          <div className="doc-row-actions" aria-label="Editor actions">
+            {editorPanelMode !== "diagnostics" ? (
+              <DiagnosticsAlertPill
+                errorCount={
+                  diagnostics.filter((diagnostic) => diagnostic.severity === "error").length
+                }
+                onOpen={() => setEditorPanelMode("diagnostics")}
+              />
+            ) : null}
+            <button
+              type="button"
+              className="btn-ghost"
+              onClick={() => void runPreflight()}
+              disabled={isPreflighting}
+            >
+              <FileCheck2 aria-hidden size={16} />
+              {isPreflighting ? "Validating" : "Validate"}
+            </button>
+            <button
+              type="button"
+              className="btn-primary"
+              onClick={() => void runExport()}
+              disabled={!activePageId || isExporting}
+            >
+              <Download aria-hidden size={16} />
+              {isExporting ? "Exporting" : "Export"}
+            </button>
+          </div>
         </div>
-        <div className="toolbar" aria-label="Editor actions">
-          <button type="button" onClick={() => void runPreflight()} disabled={isPreflighting}>
-            <FileCheck2 aria-hidden size={16} />
-            {isPreflighting ? "Validating" : "Validate"}
-          </button>
-          <button type="button" onClick={() => void runExport()} disabled={!activePageId || isExporting}>
-            <Download aria-hidden size={16} />
-            {isExporting ? "Exporting" : "Export"}
-          </button>
-          <button
-            type="button"
-            onClick={undoLastOperation}
-            disabled={undoStack.length === 0 || isAgentRunning || agentPreview !== null}
-          >
-            <RotateCcw aria-hidden size={16} />
-            Undo
-          </button>
-          <button
-            type="button"
-            onClick={redoLastOperation}
-            disabled={redoStack.length === 0 || isAgentRunning || agentPreview !== null}
-          >
-            <RotateCw aria-hidden size={16} />
-            Redo
-          </button>
+        <div className="tool-row" aria-label="Editing tools">
+          <div className="tool-row-left">
+            <button
+              type="button"
+              className="icon-ghost-button"
+              aria-label="Undo"
+              title="Undo"
+              onClick={undoLastOperation}
+              disabled={undoStack.length === 0 || isAgentRunning || agentPreview !== null}
+            >
+              <RotateCcw aria-hidden size={16} />
+            </button>
+            <button
+              type="button"
+              className="icon-ghost-button"
+              aria-label="Redo"
+              title="Redo"
+              onClick={redoLastOperation}
+              disabled={redoStack.length === 0 || isAgentRunning || agentPreview !== null}
+            >
+              <RotateCw aria-hidden size={16} />
+            </button>
+          </div>
+          <span className="tool-row-separator" aria-hidden />
+          <div className="topbar-context" aria-label="Active artboard context">
+            <div className="topbar-artboard-label">
+              <strong>{activePage?.name ?? "No artboard"}</strong>
+              <span>
+                {activePage
+                  ? `${topArtboardSizeLabel(activePage)} · ${Math.round(workspaceViewport.zoom * 100)}%`
+                  : "No frame"}
+              </span>
+            </div>
+          </div>
         </div>
       </header>
       <div
@@ -1302,7 +1330,6 @@ export default function EditorApp({
               role="status"
               data-testid="agent-designing-banner"
             >
-              <Bot aria-hidden size={15} />
               <span>Agent is designing — please wait to edit</span>
               <span className="agent-designing-dots" aria-hidden>
                 <i />
@@ -1499,6 +1526,7 @@ export default function EditorApp({
           className="inspector-shell"
           aria-label={rightSidebarLabelForMode(editorPanelMode)}
         >
+          <EditorModeSwitch mode={editorPanelMode} onModeChange={setEditorPanelMode} />
           {editorPanelMode === "agent" ? (
             <AgentChatPanel
               messages={agentMessages}

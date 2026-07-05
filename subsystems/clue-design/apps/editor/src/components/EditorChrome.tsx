@@ -1,10 +1,27 @@
 "use client";
 
-import { AlertTriangle, History } from "lucide-react";
+import {
+  Activity,
+  AlertTriangle,
+  Bot,
+  Download,
+  History,
+  SlidersHorizontal,
+  type LucideIcon
+} from "lucide-react";
 import type { Operation, Page } from "@/engine/contracts";
 import { EDITOR_PANEL_MODES, type EditorPanelMode } from "@/engine/editorModes";
 import { operationLabel } from "@/engine/operationLabels";
 import { pageDescriptor } from "@/engine/renderAdapter";
+
+/** Rail-tab glyphs per mode (moda 7.30.53's icon-over-label rail tabs).
+ * The icon is decorative; the accessible name stays the mode label / ariaLabel. */
+const MODE_ICON: Record<EditorPanelMode, LucideIcon> = {
+  inspector: SlidersHorizontal,
+  agent: Bot,
+  export: Download,
+  diagnostics: Activity
+};
 
 /** Small presentational pieces of the editor shell — topbar chrome, the
  * local operation-history section, and the engine-disabled banner. No
@@ -18,19 +35,23 @@ export function EditorModeSwitch({
   onModeChange: (mode: EditorPanelMode) => void;
 }) {
   return (
-    <div className="top-mode-switch" aria-label="Editor mode">
-      {EDITOR_PANEL_MODES.map((item) => (
-        <button
-          key={item.mode}
-          type="button"
-          className={mode === item.mode ? "active" : undefined}
-          aria-label={item.ariaLabel}
-          aria-pressed={mode === item.mode}
-          onClick={() => onModeChange(item.mode)}
-        >
-          {item.label}
-        </button>
-      ))}
+    <div className="rail-tabs" role="group" aria-label="Editor mode">
+      {EDITOR_PANEL_MODES.map((item) => {
+        const Icon = MODE_ICON[item.mode];
+        return (
+          <button
+            key={item.mode}
+            type="button"
+            className={mode === item.mode ? "active" : undefined}
+            aria-label={item.ariaLabel}
+            aria-pressed={mode === item.mode}
+            onClick={() => onModeChange(item.mode)}
+          >
+            <Icon aria-hidden size={16} />
+            <span>{item.label}</span>
+          </button>
+        );
+      })}
     </div>
   );
 }

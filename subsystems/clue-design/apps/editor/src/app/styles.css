@@ -119,51 +119,110 @@ textarea:disabled {
 
 .editor-shell {
   display: grid;
-  grid-template-rows: 68px 1fr;
+  grid-template-rows: auto 1fr;
   height: 100vh;
   overflow: hidden;
 }
 
-.topbar {
+/* Two-row document chrome (moda 7.30.53, Cursor skin): a doc row (app mark,
+   eyebrow, title, actions) over a hairline-separated tool row (undo/redo,
+   artboard context). Both sit on paper; depth is hairline + tone, no shadow. */
+.editor-chrome {
+  display: grid;
+  grid-template-rows: auto auto;
+  background: var(--bg-app);
+  border-bottom: 1px solid var(--border-default);
+}
+
+.doc-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 24px;
-  padding: 10px 18px;
-  background: var(--chrome-bg-deep);
-  border-bottom: 1px solid var(--chrome-border);
+  gap: var(--space-md);
+  padding: var(--space-xs) var(--space-md);
+}
+
+.doc-row-left {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: var(--space-xs);
+}
+
+.app-mark {
+  display: inline-grid;
+  width: 24px;
+  height: 24px;
+  flex: none;
+  place-items: center;
+  border-radius: var(--radius-sm);
+  background: var(--bg-chip);
+  border: 1px solid var(--border-default);
+}
+
+.app-mark img {
+  width: 16px;
+  height: 16px;
 }
 
 .topbar-title {
   min-width: 0;
+  display: flex;
+  flex-direction: column;
 }
 
-.topbar h1 {
-  margin: 2px 0 0;
-  font-size: 18px;
-  line-height: 1.15;
+.topbar h1,
+.doc-row h1 {
+  margin: 0;
+  font-family: var(--font-sans);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+  line-height: 1.2;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
+.doc-row-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
+}
+
+.tool-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: var(--space-xxs) var(--space-md);
+  border-top: 1px solid var(--border-soft);
+}
+
+.tool-row-left {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xxs);
+}
+
+.tool-row-separator {
+  width: 1px;
+  height: 20px;
+  flex: none;
+  background: var(--border-default);
+}
+
 .topbar-context {
   display: inline-flex;
   min-width: 0;
-  align-items: center;
-  gap: 12px;
-  border: 1px solid var(--chrome-border);
-  border-radius: 8px;
-  background: var(--chrome-bg-inset);
-  padding: 4px;
+  align-items: baseline;
+  gap: var(--space-xs);
 }
 
 .topbar-artboard-label {
-  display: grid;
-  min-width: 150px;
-  max-width: 260px;
-  gap: 2px;
-  padding: 0 8px;
+  display: inline-flex;
+  min-width: 0;
+  align-items: baseline;
+  gap: var(--space-xs);
 }
 
 .topbar-artboard-label strong,
@@ -174,47 +233,25 @@ textarea:disabled {
 }
 
 .topbar-artboard-label strong {
-  color: #f3f7fb;
+  color: var(--text-primary);
   font-size: 12px;
-  line-height: 1.15;
+  font-weight: 600;
+  line-height: 1.2;
 }
 
 .topbar-artboard-label span {
-  color: var(--chrome-text-muted);
-  font-size: 11px;
-  font-weight: 700;
-}
-
-.top-mode-switch {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-}
-
-.top-mode-switch button {
-  min-width: 0;
-  min-height: 28px;
-  border: 0;
-  border-radius: var(--radius-sm);
-  background: transparent;
-  color: var(--chrome-text-muted);
-  padding: 0 8px;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
   font-size: 12px;
-  font-weight: 750;
-}
-
-.top-mode-switch button:hover,
-.top-mode-switch button.active {
-  background: #27303a;
-  color: #eef5f7;
+  font-weight: 400;
 }
 
 .eyebrow {
   margin: 0;
-  color: #8e99a6;
+  color: var(--text-muted);
   font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0;
+  font-weight: 600;
+  letter-spacing: 0.07em;
   text-transform: uppercase;
 }
 
@@ -225,7 +262,8 @@ textarea:disabled {
   gap: 8px;
 }
 
-.toolbar button,
+/* Ghost buttons: transparent, hairline, ink text, chip-wash hover (brand
+   guide §4.4). The dense-row default across the shell's furniture. */
 .canvas-toolbar button,
 .node-header button,
 .empty-card button,
@@ -235,28 +273,80 @@ textarea:disabled {
   align-items: center;
   justify-content: center;
   gap: 6px;
-  border: 1px solid #49515d;
+  border: 1px solid var(--border-default);
   border-radius: var(--radius-sm);
-  background: #242a32;
-  color: var(--chrome-text);
+  background: transparent;
+  color: var(--text-primary);
   padding: 0 10px;
   font-size: 13px;
-  font-weight: 650;
+  font-weight: 500;
 }
 
-.toolbar button:hover:not(:disabled),
 .canvas-toolbar button:hover:not(:disabled),
 .node-header button:hover:not(:disabled),
 .empty-card button:hover:not(:disabled) {
-  border-color: var(--teal-deep);
-  color: #9fe4e3;
+  border-color: var(--border-strong);
+  background: var(--bg-chip);
 }
 
-.toolbar button.active,
 .canvas-toolbar button.active {
-  border-color: var(--teal);
-  background: #1b3f44;
-  color: var(--teal-bg-bright);
+  border-color: var(--border-strong);
+  background: var(--bg-chip);
+  color: var(--text-primary);
+}
+
+/* Doc-row actions: ghost Validate + one ink pill (Export). */
+.doc-row-actions button {
+  display: inline-flex;
+  min-height: 30px;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border-radius: var(--radius-pill);
+  padding: 0 14px;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.doc-row-actions .btn-ghost {
+  border: 1px solid var(--border-default);
+  background: transparent;
+  color: var(--text-primary);
+}
+
+.doc-row-actions .btn-ghost:hover:not(:disabled) {
+  border-color: var(--border-strong);
+  background: var(--bg-chip);
+}
+
+.doc-row-actions .btn-primary {
+  border: 1px solid var(--btn-primary-bg);
+  background: var(--btn-primary-bg);
+  color: var(--btn-primary-text);
+  font-weight: 600;
+}
+
+.doc-row-actions .btn-primary:hover:not(:disabled) {
+  background: var(--btn-primary-bg-hover);
+  border-color: var(--btn-primary-bg-hover);
+}
+
+/* 32px icon-only ghost buttons (undo/redo, revealed row affordances). */
+.icon-ghost-button {
+  display: inline-grid;
+  width: 32px;
+  height: 32px;
+  place-items: center;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+  padding: 0;
+}
+
+.icon-ghost-button:hover:not(:disabled) {
+  background: var(--bg-chip);
+  color: var(--text-primary);
 }
 
 .workspace-grid {
@@ -294,13 +384,61 @@ textarea:disabled {
   min-height: 0;
   border-left: 1px solid var(--chrome-border);
   border-right: 1px solid var(--chrome-border);
-  background: #252b34;
+  background: var(--bg-chip);
   cursor: col-resize;
   touch-action: none;
 }
 
 .right-sidebar-resizer:hover {
-  background: #33424a;
+  background: var(--bg-card-03);
+}
+
+/* Right-rail tabs (moda 7.30.53 rail-top tabs, our 4 modes): icon over 11px
+   label, sticky at the rail top on paper, hairline bottom. Active = ink
+   icon/text + accent underline mark (accent-as-mark, brand guide §4.1). */
+.rail-tabs {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  background: var(--bg-app);
+  border-bottom: 1px solid var(--border-default);
+}
+
+.rail-tabs button {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-xxs);
+  min-height: 48px;
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  padding: var(--space-xs) var(--space-xxs);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.rail-tabs button:hover {
+  background: var(--bg-chip);
+}
+
+.rail-tabs button.active {
+  color: var(--text-primary);
+}
+
+.rail-tabs button.active::after {
+  content: "";
+  position: absolute;
+  bottom: 0;
+  left: 50%;
+  width: 40%;
+  height: 2px;
+  transform: translateX(-50%);
+  background: var(--accent);
 }
 
 .panel-title,
@@ -374,17 +512,18 @@ textarea:disabled {
   gap: 5px;
   min-height: 24px;
   padding: 0 10px;
-  border: 1px solid #ef5f5f;
+  border: 1px solid transparent;
   border-radius: var(--radius-pill);
-  background: transparent;
-  color: #ef5f5f;
+  background: var(--status-error-wash);
+  color: var(--status-error);
   font-size: 12px;
-  font-weight: 650;
+  font-weight: 500;
   white-space: nowrap;
 }
 
 .diagnostics-alert-pill:hover {
-  background: rgb(239 95 95 / 12%);
+  background: var(--status-error-wash);
+  border-color: var(--status-error);
 }
 
 .page-button small,
@@ -533,11 +672,12 @@ textarea:disabled {
   display: grid;
   min-height: 0;
   grid-template-rows: minmax(0, 1fr);
+  background: var(--bg-app);
 }
 
-/* Phase 0c — Moda-style floating review bar: a white pill anchored to the
-   bottom-center of the canvas with Before/After compare, a ghost Reject, and
-   a filled magenta Accept. */
+/* Floating review bar (moda review pill, Cursor skin): a paper pill anchored
+   to the bottom-center of the canvas — segmented Before/After, ghost Reject,
+   one ink-pill Accept. Depth = hairline + tone, no shadow (brand guide §4.2). */
 .agent-review-bar {
   position: absolute;
   bottom: 26px;
@@ -549,11 +689,8 @@ textarea:disabled {
   gap: 10px;
   padding: 8px 10px;
   border-radius: var(--radius-pill);
-  background: var(--surface-white);
-  border: 1px solid #e7e3db;
-  box-shadow:
-    0 12px 32px rgba(15, 18, 24, 0.28),
-    0 2px 8px rgba(15, 18, 24, 0.16);
+  background: var(--bg-white);
+  border: 1px solid var(--border-strong);
 }
 
 .agent-review-bar button {
@@ -563,7 +700,7 @@ textarea:disabled {
   min-height: 36px;
   border-radius: var(--radius-pill);
   font-size: 13px;
-  font-weight: 750;
+  font-weight: 600;
   padding: 7px 16px;
 }
 
@@ -573,50 +710,51 @@ textarea:disabled {
   gap: 2px;
   padding: 3px;
   border-radius: var(--radius-pill);
-  background: #f1efe9;
+  background: var(--bg-chip);
 }
 
 .agent-review-toggle button {
   min-height: 30px;
   padding: 4px 12px;
-  border: none;
+  border: 1px solid transparent;
   background: transparent;
-  color: var(--panel-text-faint);
+  color: var(--text-muted);
+  font-weight: 500;
 }
 
 .agent-review-toggle button.active {
-  background: var(--surface-white);
-  color: var(--panel-ink-deep);
-  box-shadow: 0 1px 3px rgba(15, 18, 24, 0.18);
+  background: var(--bg-white);
+  border-color: var(--border-default);
+  color: var(--text-primary);
 }
 
 .agent-review-summary {
-  color: var(--panel-text-soft);
+  color: var(--text-muted);
   font-size: 12px;
-  font-weight: 750;
+  font-weight: 500;
   padding: 0 2px;
   white-space: nowrap;
 }
 
 .agent-review-reject {
-  border: 1px solid var(--panel-border-soft);
-  background: var(--surface-white);
-  color: var(--panel-text);
+  border: 1px solid var(--border-default);
+  background: transparent;
+  color: var(--text-primary);
 }
 
 .agent-review-reject:hover {
-  background: var(--panel-bg-hover);
+  background: var(--bg-chip);
 }
 
 .agent-review-accept {
-  border: 1px solid var(--action-primary);
-  background: var(--action-primary);
-  color: var(--surface-white);
+  border: 1px solid var(--btn-primary-bg);
+  background: var(--btn-primary-bg);
+  color: var(--btn-primary-text);
 }
 
 .agent-review-accept:hover {
-  background: var(--action-primary-hover);
-  border-color: var(--action-primary-hover);
+  background: var(--btn-primary-bg-hover);
+  border-color: var(--btn-primary-bg-hover);
 }
 
 .center-workspace.with-view-toggle {
@@ -624,8 +762,8 @@ textarea:disabled {
 }
 
 /* Server-only mode: the WASM engine is expected but not active, so the canvas
-   can't be selected or edited. Loud amber banner anchored to the top-center of
-   the canvas — above the review bar — so this never reads as a silent break. */
+   can't be selected or edited. Loud failure surface anchored top-center of the
+   canvas — above the review bar — so this never reads as a silent break. */
 .engine-disabled-banner {
   position: absolute;
   top: 14px;
@@ -637,17 +775,14 @@ textarea:disabled {
   gap: 10px;
   max-width: min(680px, calc(100% - 32px));
   padding: 12px 16px;
-  border-radius: 12px;
-  background: #fdf0d5;
-  border: 1px solid #e0a34e;
-  box-shadow:
-    0 12px 32px rgba(15, 18, 24, 0.22),
-    0 2px 8px rgba(15, 18, 24, 0.12);
-  color: #5a3410;
+  border-radius: var(--radius-lg);
+  background: var(--status-error-wash);
+  border: 1px solid var(--status-error);
+  color: var(--text-primary);
 }
 
 .engine-disabled-banner-icon {
-  color: #b45309;
+  color: var(--status-error);
   flex: none;
   margin-top: 1px;
 }
@@ -661,21 +796,22 @@ textarea:disabled {
 
 .engine-disabled-banner-body strong {
   font-size: 13px;
-  font-weight: 800;
-  color: #7c2d12;
+  font-weight: 700;
+  color: var(--status-error);
 }
 
 .engine-disabled-banner-body span {
   font-size: 12.5px;
   line-height: 1.45;
-  color: #6b4114;
+  color: var(--text-body);
 }
 
 .engine-disabled-banner-body code {
+  font-family: var(--font-mono);
   font-size: 11.5px;
-  color: #5a3410;
-  background: rgba(255, 255, 255, 0.55);
-  border: 1px solid #e6c188;
+  color: var(--text-primary);
+  background: var(--bg-white);
+  border: 1px solid var(--border-default);
   border-radius: var(--radius-sm);
   padding: 3px 7px;
   white-space: nowrap;
@@ -685,34 +821,34 @@ textarea:disabled {
 }
 
 .engine-disabled-banner-cmd {
-  font-weight: 800;
-  color: #7c2d12;
+  font-weight: 700;
+  color: var(--status-error);
 }
 
 .view-toggle {
   display: flex;
   align-items: center;
   gap: 8px;
-  border-bottom: 1px solid var(--chrome-border);
-  background: #1b2027;
+  border-bottom: 1px solid var(--border-default);
+  background: var(--bg-app);
   padding: 7px 12px;
 }
 
 .view-toggle button {
   min-height: 30px;
-  border: 1px solid var(--chrome-border-strong);
+  border: 1px solid var(--border-default);
   border-radius: var(--radius-sm);
-  background: var(--chrome-bg-raised);
-  color: var(--chrome-text-soft);
+  background: transparent;
+  color: var(--text-primary);
   padding: 0 10px;
   font-size: 12px;
-  font-weight: 750;
+  font-weight: 500;
 }
 
 .view-toggle button.active {
-  border-color: var(--teal);
-  background: #1b3339;
-  color: var(--teal-bg-bright);
+  border-color: var(--border-strong);
+  background: var(--bg-chip);
+  color: var(--text-primary);
 }
 
 .compare-workspace {
@@ -720,7 +856,7 @@ textarea:disabled {
   min-height: 0;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 1px;
-  background: var(--chrome-border);
+  background: var(--border-default);
 }
 
 .compare-pane {
@@ -728,18 +864,18 @@ textarea:disabled {
   min-width: 0;
   min-height: 0;
   grid-template-rows: 32px minmax(0, 1fr);
-  background: var(--chrome-border-soft);
+  background: var(--bg-app);
 }
 
 .compare-heading {
   display: flex;
   align-items: center;
-  border-bottom: 1px solid var(--chrome-border);
-  background: #1b2027;
-  color: var(--chrome-text-soft);
+  border-bottom: 1px solid var(--border-default);
+  background: var(--bg-app);
+  color: var(--text-primary);
   padding: 0 12px;
   font-size: 12px;
-  font-weight: 800;
+  font-weight: 600;
 }
 
 .canvas-shell {
@@ -747,11 +883,11 @@ textarea:disabled {
   height: 100%;
   min-height: 0;
   overflow: hidden;
-  background: var(--chrome-border-soft);
+  background: var(--bg-app);
 }
 
 .workspace-canvas-shell {
-  background: var(--chrome-border-soft);
+  background: var(--bg-app);
 }
 
 .workspace-context-bar {
@@ -765,21 +901,20 @@ textarea:disabled {
   transform: translateX(-50%);
   align-items: center;
   gap: 10px;
-  border: 1px solid #444d59;
+  border: 1px solid var(--border-strong);
   border-radius: var(--radius-md);
-  background: rgb(27 32 39 / 92%);
-  color: #b9c4cf;
-  box-shadow: 0 10px 22px rgb(0 0 0 / 22%);
+  background: var(--bg-white);
+  color: var(--text-muted);
   padding: 0 11px;
   font-size: 12px;
-  font-weight: 700;
+  font-weight: 500;
   pointer-events: none;
 }
 
 .workspace-context-label {
   overflow: hidden;
   max-width: 260px;
-  color: var(--surface-white);
+  color: var(--text-primary);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -794,10 +929,9 @@ textarea:disabled {
   transform: translateX(-50%);
   align-items: center;
   gap: 6px;
-  border: 1px solid #46505c;
-  border-radius: 8px;
-  background: rgb(27 32 39 / 94%);
-  box-shadow: 0 16px 30px rgb(0 0 0 / 28%);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  background: var(--bg-white);
   padding: 6px;
 }
 
@@ -809,20 +943,21 @@ textarea:disabled {
   border: 1px solid transparent;
   border-radius: var(--radius-sm);
   background: transparent;
-  color: var(--chrome-text-soft);
+  color: var(--text-muted);
   padding: 0;
 }
 
 .workspace-bottom-toolbar button:hover:not(:disabled),
 .workspace-bottom-toolbar button.active {
-  border-color: var(--teal);
-  background: #1b3f44;
-  color: var(--teal-bg-bright);
+  border-color: var(--border-strong);
+  background: var(--bg-chip);
+  color: var(--text-primary);
 }
 
 .workspace-bottom-toolbar strong {
   min-width: 48px;
-  color: #f4f7fa;
+  color: var(--text-primary);
+  font-family: var(--font-mono);
   font-size: 12px;
   text-align: center;
 }
@@ -830,7 +965,7 @@ textarea:disabled {
 .workspace-toolbar-separator {
   width: 1px;
   height: 22px;
-  background: var(--chrome-border-strong);
+  background: var(--border-default);
 }
 
 .canvaskit-artboard-labels {
@@ -846,22 +981,22 @@ textarea:disabled {
   left: 0;
   max-width: 240px;
   overflow: hidden;
-  color: #c8d0d8;
+  color: var(--text-muted);
   font-size: 13px;
-  font-weight: 700;
+  font-weight: 500;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .canvaskit-artboard-label.active {
-  color: var(--surface-white);
+  color: var(--text-primary);
 }
 
 .export-preview-shell {
   display: grid;
   min-height: 0;
   grid-template-rows: minmax(0, 1fr);
-  background: #3f444b;
+  background: var(--bg-app);
 }
 
 .export-preview-body {
@@ -888,9 +1023,8 @@ textarea:disabled {
   max-height: 100%;
   place-items: stretch;
   overflow: hidden;
-  border: 1px solid #181c21;
-  background: var(--surface-white);
-  box-shadow: 0 18px 50px rgb(0 0 0 / 28%);
+  border: 1px solid var(--border-strong);
+  background: var(--bg-white);
 }
 
 .artifact-preview-media iframe,
@@ -915,10 +1049,9 @@ textarea:disabled {
   top: 12px;
   left: 12px;
   padding: 6px;
-  border: 1px solid var(--chrome-border-strong);
+  border: 1px solid var(--border-strong);
   border-radius: var(--radius-md);
-  background: rgb(26 31 38 / 92%);
-  box-shadow: var(--shadow-pop);
+  background: var(--bg-white);
 }
 
 .canvas-toolbar strong {
@@ -929,7 +1062,7 @@ textarea:disabled {
 
 .canvas-toolbar .canvas-pan-controls {
   gap: 4px;
-  border-left: 1px solid var(--chrome-border-strong);
+  border-left: 1px solid var(--border-default);
   margin-left: 2px;
   padding-left: 8px;
 }
@@ -947,11 +1080,10 @@ textarea:disabled {
   left: 12px;
   max-width: min(420px, calc(100% - 24px));
   margin: 0;
-  border: 1px solid var(--chrome-border-strong);
+  border: 1px solid var(--border-strong);
   border-radius: var(--radius-md);
-  background: rgb(26 31 38 / 94%);
-  color: var(--chrome-text-soft);
-  box-shadow: var(--shadow-pop);
+  background: var(--bg-white);
+  color: var(--text-body);
   padding: 8px 10px;
   font-size: 12px;
   line-height: 1.35;
@@ -1960,9 +2092,12 @@ textarea:disabled {
 /* Phase 2a exclusive turns: while the agent designs, the canvas is locked.
    Floating status pill top-center of the canvas (Moda's "please wait to
    edit" banner) — calm, not alarming; the amber engine banner outranks it. */
+/* Agent lock pill (moda 7.30.53 bottom-center): floats at the bottom-center of
+   the canvas — paper surface + hairline (no shadow), a leading agent-generate
+   pastel dot + ink text. Marks agent activity (brand guide §4.5). */
 .agent-designing-banner {
   position: absolute;
-  top: 18px;
+  bottom: 16px;
   left: 50%;
   transform: translateX(-50%);
   z-index: 28;
@@ -1971,14 +2106,20 @@ textarea:disabled {
   gap: 9px;
   padding: 9px 16px;
   border-radius: var(--radius-pill);
-  border: 1px solid var(--panel-gold);
-  background: var(--panel-bg-warm);
-  color: var(--panel-text);
+  border: 1px solid var(--border-strong);
+  background: var(--bg-app);
+  color: var(--text-primary);
   font-size: 13px;
-  font-weight: 750;
-  box-shadow:
-    0 10px 26px rgba(15, 18, 24, 0.18),
-    0 2px 6px rgba(15, 18, 24, 0.1);
+  font-weight: 500;
+}
+
+.agent-designing-banner::before {
+  content: "";
+  width: 8px;
+  height: 8px;
+  flex: none;
+  border-radius: var(--radius-pill);
+  background: var(--agent-generate);
 }
 
 .agent-designing-dots {
@@ -1991,7 +2132,7 @@ textarea:disabled {
   width: 5px;
   height: 5px;
   border-radius: 50%;
-  background: #b89961;
+  background: var(--agent-generate);
   animation: agent-designing-pulse 1.2s ease-in-out infinite;
 }
 
@@ -2088,11 +2229,8 @@ textarea:disabled {
   background: var(--teal-bg);
   color: var(--teal-text);
   font-size: 13px;
-  font-weight: 750;
+  font-weight: 600;
   cursor: pointer;
-  box-shadow:
-    0 10px 26px rgba(15, 18, 24, 0.18),
-    0 2px 6px rgba(15, 18, 24, 0.1);
 }
 
 .agent-done-toast.issue {
@@ -2446,22 +2584,21 @@ textarea:disabled {
   display: grid;
   place-items: center;
   min-height: 100vh;
-  background: #f4f1ea;
-  color: var(--panel-text-soft);
+  background: var(--bg-app);
+  color: var(--text-muted);
   font-size: 14px;
-  font-weight: 700;
+  font-weight: 500;
 }
 
 .document-load-error {
   display: grid;
   gap: 10px;
   max-width: 440px;
-  border: 1px solid #e0b4b4;
-  border-radius: 10px;
-  background: #fdf6f4;
-  color: #5a2f28;
+  border: 1px solid var(--status-error);
+  border-radius: var(--radius-lg);
+  background: var(--status-error-wash);
+  color: var(--text-primary);
   padding: 18px 20px;
-  box-shadow: 0 10px 26px rgba(15, 18, 24, 0.12);
 }
 
 .document-load-error strong {
@@ -2481,21 +2618,23 @@ textarea:disabled {
   display: inline-flex;
   align-items: center;
   min-height: 34px;
-  border: 1px solid var(--teal-deep);
+  border: 1px solid var(--btn-primary-bg);
   border-radius: var(--radius-sm);
-  background: var(--teal-deep);
-  color: var(--surface-white);
+  background: var(--btn-primary-bg);
+  color: var(--btn-primary-text);
   padding: 7px 14px;
   font-size: 13px;
-  font-weight: 800;
+  font-weight: 600;
 }
 
 .document-load-error button:hover {
-  background: #1d585c;
+  background: var(--btn-primary-bg-hover);
+  border-color: var(--btn-primary-bg-hover);
 }
 
 /* Contextual text toolbar — a floating pill anchored top-center of the canvas
-   while a text node is selected; the fast twin of the inspector Text section. */
+   while a text node is selected; the fast twin of the inspector Text section.
+   Paper surface + hairline, no shadow (brand guide §4.2). */
 .text-toolbar {
   position: absolute;
   top: 14px;
@@ -2507,22 +2646,19 @@ textarea:disabled {
   gap: 8px;
   padding: 6px 10px;
   border-radius: var(--radius-pill);
-  background: var(--surface-white);
-  border: 1px solid #e7e3db;
-  box-shadow:
-    0 8px 24px rgba(15, 18, 24, 0.22),
-    0 2px 6px rgba(15, 18, 24, 0.12);
-  color: var(--panel-text);
+  background: var(--bg-white);
+  border: 1px solid var(--border-default);
+  color: var(--text-primary);
 }
 
 .text-toolbar input,
 .text-toolbar select {
-  height: 26px;
+  height: 28px;
   padding: 0 8px;
   border-radius: var(--radius-sm);
-  border: 1px solid var(--panel-border-soft);
-  background: var(--panel-bg);
-  color: var(--panel-ink);
+  border: 1px solid var(--border-default);
+  background: var(--bg-white);
+  color: var(--text-primary);
   font-size: 12px;
 }
 
@@ -2536,6 +2672,7 @@ textarea:disabled {
 
 .text-toolbar .text-toolbar-number {
   width: 56px;
+  font-family: var(--font-mono);
 }
 
 .text-toolbar .text-toolbar-number.size {
@@ -2547,7 +2684,7 @@ textarea:disabled {
   gap: 2px;
   padding: 2px;
   border-radius: var(--radius-sm);
-  background: var(--panel-bg-hover);
+  background: var(--bg-chip);
 }
 
 .text-toolbar-align button {
@@ -2555,27 +2692,28 @@ textarea:disabled {
   align-items: center;
   justify-content: center;
   width: 26px;
-  height: 22px;
-  border: none;
+  height: 24px;
+  border: 1px solid transparent;
   border-radius: var(--radius-sm);
   background: transparent;
-  color: var(--panel-text-muted);
+  color: var(--text-muted);
   cursor: pointer;
 }
 
 .text-toolbar-align button.active {
-  background: var(--surface-white);
-  color: var(--panel-ink);
-  box-shadow: 0 1px 3px rgba(15, 18, 24, 0.18);
+  background: var(--bg-white);
+  border-color: var(--border-default);
+  color: var(--text-primary);
 }
 
 .text-toolbar-metric {
   display: inline-flex;
   align-items: center;
   gap: 4px;
+  font-family: var(--font-mono);
   font-size: 10px;
   letter-spacing: 0.08em;
-  color: var(--panel-text-muted);
+  color: var(--text-muted);
 }
 
 .text-toolbar-token-chip {

@@ -134,7 +134,7 @@ function openAgentPanel() {
 
 /** The topbar Undo (the HistoryPanel renders its own once a document exists). */
 function toolbarUndoButton() {
-  return within(screen.getByLabelText("Editor actions")).getByRole("button", {
+  return within(screen.getByLabelText("Editing tools")).getByRole("button", {
     name: /^Undo$/i
   });
 }
@@ -277,7 +277,7 @@ describe.skipIf(!wasmArtifactPresent)("EditorApp Phase 2a document flow", () => 
 
     // Redo re-posts the original batch (history stays append-only).
     fireEvent.click(
-      within(screen.getByLabelText("Editor actions")).getByRole("button", {
+      within(screen.getByLabelText("Editing tools")).getByRole("button", {
         name: /^Redo$/i
       })
     );
