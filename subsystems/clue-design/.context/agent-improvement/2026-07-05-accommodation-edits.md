@@ -109,10 +109,77 @@ this turn caused":
   (D) badge to a clear spot → no conflicts; (E) badge↔header not flagged
   (ancestor).
 
-## Where it lands
+## SHIPPED (e64957a, 2026-07-05; user go-ahead "proceed with this, before
+## we start with phase-4d")
 
-`prompts.py` (scope rule + accommodation clause), `loop.py` (scope-
-expansion from turn-introduced diagnostics; surgical/cluster gate
-allowlists grow the accommodated ids), tests mirroring the badge/YC
-shape. Agent-quality track; NOT built yet — needs user go-ahead and an
-eval pass so the bound is tuned on real cases, not invented.
+- `accommodation.py`: pure detector — `clearance()` (hypot / single-axis /
+  overlap regimes), `turn_introduced_conflicts()` (baseline diff, ancestor
+  exclusion, roll-up to topmost conflicting container with edited-ancestor
+  guard), `CONFLICT_CLEARANCE_THRESHOLD = 16.0` per the calibration above.
+- `loop.py`: baseline SCENE deep-copied beside baseline_preflight;
+  `_detect_accommodation_conflicts()` after every preflight-clean draft →
+  trace event + `mechanical_crowding` previous_feedback entry (critic sees
+  it same-iteration, repair author next); crowded neighbors + descendants
+  join edit-scoped-acceptance scope (blocker on the crowded neighbor can
+  block; control: unrelated blockers still wave through); every finalize
+  carries `accommodation_json` → final.json["accommodation"] =
+  {detected, applied_nudges, unresolved} — applied_nudges diffs the
+  CONFLICT LOG against baseline geometry, so a resolved conflict still
+  announces the nudge that resolved it.
+- `prompts.py`: the single carve-out to "byte-identical outside the ask"
+  (position-only p() on NAMED neighbors, >=16pt, announce, skip if the
+  user asked for the adjacency); frozen-container-resize rider; reviewer
+  verifies mechanical conflicts ("you missed exactly this once at 0.9")
+  and treats text escaping its own container as clipping even on freehand.
+- Enforcement note: the surgical gate (`is_surgical_dsl`) is id-agnostic,
+  so accommodation `#<neighbor> p(x,y)` lines pass mechanically; a
+  position-ONLY mechanical filter per accommodated id is a recorded
+  fast-follow if evals show property-drift. Cluster-gate allowlist
+  expansion likewise deferred until a real drop is observed.
+- Tests: 130→150 runtime (15 detector on run_e0bb1733's real geometry
+  incl. all five calibration cases; 5 loop-integration scenarios incl.
+  scope-expansion block + control, log-vs-latest nudge announcement,
+  unseeded no-op).
+- Browser e2e replays (evidence-driven hardening, three rounds):
+  1. run_7ff4ac79 (.context/phase-acc/e2e/): detector + honest payload
+     WORKED; but the pixel critic accepted the −0.31pt overlap at 0.9
+     with a false "visible vertical space" note — a hairline overlap is
+     SUB-VISUAL, pixel judgment cannot catch it. → **Forced accommodation
+     round (f54cbe1)**: critic acceptance over unresolved conflicts is
+     withheld ONCE for a repair round carrying the nudge instruction;
+     bounded (once per run, only while an iteration remains, keep-best
+     holds the accepted draft so it can never wedge).
+  2. run_e3bbb02e (.context/phase-acc/e2e-round2/): forced round FIRED
+     correctly and its nudge resolved the crowding (22.7pt) — but the
+     model nudged using the LABEL's box (+46pt x drift), clipped
+     off-artboard, critic rejected it, keep-best restored the accepted
+     draft… and `unresolved` was read from the LAST detection (the
+     discarded draft) → silent again. → **5bb279e**: unresolved is
+     RE-MEASURED per logged pair on the scene finalize actually returns;
+     the forced repair instruction now carries both nodes' page-space
+     boxes + one-axis minimal-move + stay-on-artboard guidance.
+  Runtime suite 130 → 152 across the feature.
+
+## Editor-side bugs found in passing (NOT this feature; follow-ups)
+
+- **Undo 409 after Accept**: post-accept, a system `preflight` envelope
+  (30 update_node ops) lands after the accept envelope and bumps the
+  revision; a then-issued client undo POSTs against the stale revision →
+  409 Conflict, client pops its local stack anyway → undo/redo desync
+  until reload. (run_e3bbb02e session, evidence in e2e-round2 report.)
+- Proposal card surfaces the DISCARDED draft's critique as an Advisory
+  (iteration 3's "organizer clipped" shown although ops_valid_through=2).
+
+## Over-engineering audit (user asked; honest answer)
+
+Every mechanism traces to a specific live failure — nothing speculative
+shipped: calibration killed the naive threshold; replay 1 forced the
+forced-round; replay 2 forced the re-measurement. Explicitly DEFERRED
+until evidence demands them: mechanical position-only filter per
+accommodated id, numeric nudge caps, cluster-gate allowlist expansion,
+composite auto-unit moves. The honest structural smell: accommodation is
+a PARALLEL quality channel beside preflight/critic (5 pieces of per-turn
+state). If it grows, the consolidation is known: make turn-introduced
+crowding a first-class preflight diagnostic (rides the existing gate/
+repair machinery; needs baseline geometry engine-side), and delete the
+forced round if evals show the boxed-numbers critic hint alone suffices.
