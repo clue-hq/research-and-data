@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -300,7 +301,17 @@ def main() -> None:
         from lumen_deepagent.imagery_judge import ImageryJudgeVerdict
         from lumen_deepagent.providers import init_model, try_structured_model
 
-        model = try_structured_model(init_model(args.model), ImageryJudgeVerdict)
+        # Same routing contract as AgentRuntimeConfig.from_env: when the agent env
+        # points at an OpenAI-compatible endpoint (e.g. OpenRouter), the judge must
+        # ride it too — a bare init_model() would demand OPENAI_API_KEY instead.
+        model = try_structured_model(
+            init_model(
+                args.model,
+                base_url=os.environ.get("LUMEN_AGENT_BASE_URL", "").strip() or None,
+                api_key=os.environ.get("LUMEN_AGENT_API_KEY", "").strip() or None,
+            ),
+            ImageryJudgeVerdict,
+        )
 
     score_map = json.loads(args.score_map.read_text(encoding="utf-8")) if args.score_map else None
     run_imagery_evals(
