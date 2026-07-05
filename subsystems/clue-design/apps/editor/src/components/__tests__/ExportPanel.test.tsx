@@ -15,7 +15,7 @@ describe("ExportPanel artifact actions", () => {
   });
 
   it("downloads artifacts through blob URLs instead of direct data URL navigation", () => {
-    const createObjectURL = vi.fn(() => "blob:lumen-export");
+    const createObjectURL = vi.fn((_blob: Blob | MediaSource) => "blob:lumen-export");
     const revokeObjectURL = vi.fn();
     URL.createObjectURL = createObjectURL;
     URL.revokeObjectURL = revokeObjectURL;
