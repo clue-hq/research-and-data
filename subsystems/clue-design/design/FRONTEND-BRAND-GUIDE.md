@@ -277,3 +277,44 @@ dark values exist as *derived* data in the kit JSON only); the editor-shell rest
 separate future phase; Storybook/`packages/ui` extraction happens with the monorepo work
 (the token names here already match the token-first frontend brief's `--bg-app`/`--accent`
 /`--agent-*` semantics, so that migration is a file move, not a rename).
+
+---
+
+## 9. Vercel AI Elements — how it fits (and how it doesn't)
+
+**What it is:** a component library for AI/chat interfaces (Conversation, Message,
+PromptInput, Reasoning, Sources…) installed via `npx ai-elements add` into
+`@/components/ai-elements/`, built on shadcn/ui. **What it is not:** a brand or style
+system — it inherits whatever the project's shadcn CSS variables say. Adopting it raw
+means shipping the default Vercel look, which contradicts the locked Cursor-derived
+identity. The relationship is layered: **our tokens are the skin; AI Elements is muscle
+for conversation surfaces only** (session rail, composer, message stream, gate cards) —
+exactly as the token-first frontend brief already states.
+
+**Preconditions (not met in apps/editor today):** Tailwind 4 + shadcn/ui initialized +
+AI SDK. These arrive with the monorepo/`packages/ui` phase (W0-1/W0-2). Do not bolt
+Tailwind onto the current editor app for this.
+
+**The theming bridge (define ONCE, in the shadcn theme file, next to tokens.css):**
+map shadcn's semantic variables onto our tokens and strip every Vercel default. Note the
+trap: shadcn's `--accent` is a *hover surface*, NOT our orange — mapping our accent onto
+it would spray orange across every hover.
+
+```css
+--background: var(--bg-app);          --foreground: var(--text-primary);
+--card: var(--bg-card);               --card-foreground: var(--text-primary);
+--popover: var(--bg-app);             --popover-foreground: var(--text-primary);
+--primary: var(--ink);                --primary-foreground: var(--text-on-ink);   /* ink pill */
+--secondary: var(--bg-chip);          --secondary-foreground: var(--text-primary);
+--muted: var(--bg-inset);             --muted-foreground: var(--text-muted);
+--accent: var(--bg-chip);             --accent-foreground: var(--text-primary);   /* hover, NOT orange */
+--destructive: var(--status-error);   --border: var(--border-default);
+--input: var(--border-default);       --ring: var(--accent-pressed);              /* focus = our orange family */
+--radius: var(--radius-md);
+```
+
+Post-install rules: remove/override any component-level hardcoded colors and shadows
+(shadow-banned rule §4.2 applies to AI Elements output too); reasoning/tool rows adopt the
+agent-pastel dot motif (§4.5); PromptInput/CTAs follow the one-ink-pill rule. Acceptance
+check: with the bridge applied, an AI Elements screen should be indistinguishable in tone
+from the /brand pages.
