@@ -1,4 +1,8 @@
 import type { Metadata } from "next";
+// Order matters: Tailwind theme/utilities → token layer (defines the vars) →
+// shell styles (consume them). See tailwind.css for the no-preflight rationale.
+import "./tailwind.css";
+import "./tokens.css";
 import "./styles.css";
 
 export const metadata: Metadata = {

@@ -1,0 +1,23 @@
+/* Tailwind 4 entry for the editor — PREFLIGHT DELIBERATELY OMITTED.
+ *
+ * WHY NO PREFLIGHT (the R0 preflight decision):
+ * The editor shell is hand-rolled global CSS (src/app/styles.css) with bare
+ * element selectors (`* { box-sizing }`, `button { cursor }`, `body`, form
+ * elements) and a CanvasKit product stage. Tailwind's Preflight is an
+ * aggressive global reset (strips margins, unstyles buttons/lists, sets
+ * `img { display:block }`, etc.) that would collide with those rules and could
+ * disturb the canvas/CanvasKit stage. AI Elements is NOT installed in this
+ * rung, so nothing needs the reset yet. We therefore import only the `theme`
+ * (design-token → utility bridge) and `utilities` layers, and skip `preflight`
+ * entirely. When the conversation surfaces adopt shadcn/AI-Elements, they will
+ * live inside scoped wrappers (the `.brand-app` pattern) that can opt into a
+ * local reset — the shell never gets a global one.
+ *
+ * Equivalent to `@import "tailwindcss"` MINUS the preflight layer.
+ */
+@layer theme, base, components, utilities;
+
+@import "tailwindcss/theme.css" layer(theme);
+@import "tailwindcss/utilities.css" layer(utilities);
+
+/* shadcn/ui token bridge lives next to tokens.css — see src/app/tokens.css. */

@@ -1,77 +1,87 @@
 :root {
-  /* Design tokens — the single place the Moda restyle edits. Values with
-     three or more uses are tokenized; true one-offs stay raw at their
-     use site. No component rule may introduce a new raw color. */
+  /* R0 restyle substrate — the legacy shell tokens below are now ALIASES onto
+     the Clue semantic layer (src/app/tokens.css, Cursor identity). Remapping
+     the VALUES here flips the entire editor skin to warm-paper/ink in one place
+     WITHOUT touching component markup; R1 migrates markup to the semantics and
+     retires these aliases. No component rule may introduce a new raw color.
 
-  /* Chrome — the dark app shell */
-  --chrome-bg: #20242b;
-  --chrome-bg-deep: #171b21;
-  --chrome-bg-inset: #101318;
-  --chrome-bg-raised: #20262e;
-  --chrome-border: #303641;
-  --chrome-border-strong: #3f4652;
-  --chrome-border-soft: #3b3f46;
-  --chrome-text: #e8edf2;
-  --chrome-text-soft: #dce4ea;
-  --chrome-text-dim: #b6c0ca;
-  --chrome-text-faint: #aeb7c2;
-  --chrome-text-muted: #9ba6b2;
+     Note the identity shift: the shell was a dark-chrome + light-parchment
+     two-surface system. Cursor is single warm paper with ink diluted over it —
+     there is no dark surface. Each legacy token is aliased by its ROLE (a
+     "chrome background" becomes a paper surface, "chrome text" becomes ink,
+     the teal accent becomes the agent/accent family, the magenta primary
+     becomes the ink pill) — not by its old color. 133 literal-color sites in
+     the component rules below are pre-existing and untouched here (R1 cleans
+     them); this block is the token layer and is the one file allowed literals,
+     which now all live in tokens.css. */
 
-  /* Panel — the light parchment surfaces */
-  --panel-bg: #fffdf8;
-  --panel-bg-warm: #fffaf0;
-  --panel-bg-hover: #f7f4ee;
-  --panel-border: #d7ccbd;
-  --panel-border-soft: #ddd7cc;
-  --panel-border-warm: #ddd3c4;
-  --panel-border-dim: #cfc3b3;
-  --panel-gold: #d6c8a8;
-  --panel-accent: #8a7c5e;
-  --panel-text: #3e382f;
-  --panel-text-soft: #5b5348;
-  --panel-text-dim: #655d51;
-  --panel-text-muted: #71695e;
-  --panel-text-faint: #6d675c;
-  --panel-ink: #24211c;
-  --panel-ink-deep: #1c1a16;
+  /* Chrome — was the dark app shell; now paper surfaces (ink-on-paper) */
+  --chrome-bg: var(--bg-app);
+  --chrome-bg-deep: var(--bg-card);
+  --chrome-bg-inset: var(--bg-chip);
+  --chrome-bg-raised: var(--bg-card);
+  --chrome-border: var(--border-default);
+  --chrome-border-strong: var(--border-strong);
+  --chrome-border-soft: var(--border-default);
+  --chrome-text: var(--text-primary);
+  --chrome-text-soft: var(--text-primary);
+  --chrome-text-dim: var(--text-body);
+  --chrome-text-faint: var(--text-muted);
+  --chrome-text-muted: var(--text-muted);
 
-  /* Accent: teal (agent / status) */
-  --teal-bg: #eef9f7;
-  --teal-bg-bright: #dffefe;
-  --teal-bg-cool: #f4f7f8;
-  --teal-border: #b6d7d5;
-  --teal: #58c4c8;
-  --teal-deep: #256c70;
-  --teal-text: #174f52;
-  --teal-ink: #14322f;
+  /* Panel — was the light parchment surfaces; now the same paper substance */
+  --panel-bg: var(--bg-card);
+  --panel-bg-warm: var(--bg-card-warm);
+  --panel-bg-hover: var(--bg-chip);
+  --panel-border: var(--border-default);
+  --panel-border-soft: var(--border-soft);
+  --panel-border-warm: var(--border-default);
+  --panel-border-dim: var(--border-strong);
+  --panel-gold: var(--agent-done);
+  --panel-accent: var(--text-muted);
+  --panel-text: var(--text-body);
+  --panel-text-soft: var(--text-muted);
+  --panel-text-dim: var(--text-muted);
+  --panel-text-muted: var(--text-muted);
+  --panel-text-faint: var(--text-muted);
+  --panel-ink: var(--text-primary);
+  --panel-ink-deep: var(--text-primary);
 
-  /* Accent: magenta (primary action) */
-  --action-primary: #ec2f8a;
-  --action-primary-hover: #d92079;
+  /* Accent: teal (agent / status) — now the accent-wash + agent/status family */
+  --teal-bg: var(--accent-wash);
+  --teal-bg-bright: var(--accent-wash-strong);
+  --teal-bg-cool: var(--bg-chip);
+  --teal-border: var(--border-strong);
+  --teal: var(--accent);
+  --teal-deep: var(--accent-pressed);
+  --teal-text: var(--accent-pressed);
+  --teal-ink: var(--accent-pressed);
+
+  /* Accent: magenta (primary action) — now the ink pill (DESIGN.md §4) */
+  --action-primary: var(--btn-primary-bg);
+  --action-primary-hover: var(--btn-primary-bg-hover);
 
   /* Status text */
-  --status-error-text: #7e322a;
-  --status-warning-text: #745208;
+  --status-error-text: var(--status-error);
+  --status-warning-text: var(--accent-pressed);
 
   /* Neutral */
-  --surface-white: #ffffff;
+  --surface-white: var(--bg-white);
 
-  /* Radii */
-  --radius-md: 7px;
-  --radius-sm: 6px;
-  --radius-pill: 999px;
+  /* Radii — the Clue ladder (md 8 / sm 6 / pill 9999) is defined once in
+     tokens.css at :root; component rules here consume var(--radius-*) directly.
+     Deliberately NOT re-declared here (a self-alias would be circular). */
 
-  /* Shadows */
+  /* Shadows — depth is tone + hairline in Cursor; kept only for the few
+     floating pills the shell still relies on (R1 converts them to hairlines) */
   --shadow-pop: 0 8px 18px rgb(0 0 0 / 22%);
 }
 
 :root {
-  color-scheme: dark;
-  font-family:
-    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
-    sans-serif;
-  background: var(--chrome-bg);
-  color: var(--chrome-text);
+  color-scheme: light;
+  font-family: var(--font-sans);
+  background: var(--bg-app);
+  color: var(--text-primary);
 }
 
 * {

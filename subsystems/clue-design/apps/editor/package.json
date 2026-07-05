@@ -10,21 +10,26 @@
     "build:wasm": "bash ../../scripts/build_wasm_core.sh",
     "build:canvaskit": "bash ../../scripts/copy_canvaskit_assets.sh",
     "build:fonts": "bash ../../scripts/fetch_fonts.sh",
-    "lint": "tsc --noEmit -p tsconfig.lint.json",
+    "lint": "node ../../scripts/check_editor_hex.mjs && tsc --noEmit -p tsconfig.lint.json",
+    "lint:css": "node ../../scripts/check_editor_hex.mjs",
     "pretest": "bash ../../scripts/build_wasm_core.sh --if-missing",
     "test": "vitest run",
     "test:watch": "vitest"
   },
   "dependencies": {
     "canvaskit-wasm": "0.41.1",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
     "konva": "^9.3.20",
     "lucide-react": "^0.468.0",
     "next": "^15.3.3",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
-    "react-konva": "^19.0.3"
+    "react-konva": "^19.0.3",
+    "tailwind-merge": "^3.6.0"
   },
   "devDependencies": {
+    "@tailwindcss/postcss": "^4.3.2",
     "@testing-library/jest-dom": "^6.6.3",
     "@testing-library/react": "^16.3.0",
     "@types/node": "^22.15.29",
@@ -34,6 +39,7 @@
     "eslint": "^9.28.0",
     "eslint-config-next": "^15.3.3",
     "jsdom": "^26.1.0",
+    "tailwindcss": "^4.3.2",
     "typescript": "^5.8.3",
     "vitest": "^4.1.8",
     "wasm-pack": "^0.13.1"
