@@ -26,17 +26,31 @@ mark svg(icon:check) p(0,0) s(28,28) fill($surface.brand)
 - **Icon + label** pattern: a small horizontal `al(h, x(s), y(c), g(...))` row with the icon
   then a text label; repeat for a feature/checklist/step row.
 
-## Available icons (Slice 0 curated set)
+## Available icons (curated set)
 
 Geometric / markers: `circle`, `dot`, `square`, `diamond`, `triangle-up`, `play`, `star`,
 `heart`, `bolt`.
 Status / actions: `check`, `x`, `plus`, `minus`.
 Directional (block arrows): `arrow-right`, `arrow-left`, `arrow-up`, `arrow-down`.
+Domain pictograms: `shield` (security, compliance, trust), `lock` (encryption, privacy),
+`key` (access, SSO, credentials), `user` (person, role, RBAC), `layers` (platform, stack,
+tiers), `pencil` (write, brief, edit), `sparkles` (AI, compose, generate), `download`
+(export, save), `chart-bar` (data, metrics, analytics), `lightbulb` (idea, insight).
+
+**When a brief calls for an icon row, BUILD IT WITH THESE — never substitute plain text,
+numbered circles, or a generated illustration.** The judged failure mode is a trust-badges
+or how-it-works row shipped as bare text: it reads unfinished and fails review. Typical
+mappings:
+
+- Security / trust / compliance row (SOC 2, SSO, RBAC, encryption):
+  `shield`, `key`, `user`, `lock` — one per claim, same size, one brand color.
+- How-it-works / step row (brief → compose → approve/export):
+  `pencil`, `sparkles`, `check` or `download` — icon above or beside each step label.
+- Metrics / results: `chart-bar`; ideas / insights: `lightbulb`; platform pillars: `layers`.
 
 An unknown name fails compile (`LUMD0703`) and the error lists the valid options — pick the
 closest shipped icon (e.g. `check` for "done", `bolt` for "fast", `star` for "featured",
-`arrow-right` for "next"/"learn more") rather than inventing a name. The set is curated and
-extensible; richer pictograms (calendar, shield, users…) arrive in a later slice.
+`arrow-right` for "next"/"learn more") rather than inventing a name.
 
 ## When NOT to use an icon
 
