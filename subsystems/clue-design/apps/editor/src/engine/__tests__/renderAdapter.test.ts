@@ -10,7 +10,8 @@ import {
   pageDescriptor,
   sceneUnitFromCanvas,
   setTokenColorMap,
-  sizeFromCanvas
+  sizeFromCanvas,
+  tokenSwatchCss
 } from "../renderAdapter";
 
 describe("render adapter", () => {
@@ -412,6 +413,23 @@ describe("render adapter", () => {
       // comment) — reset after every test so map state never leaks across
       // cases in this file.
       setTokenColorMap({});
+    });
+
+    it("tokenSwatchCss resolves a mapped token to the kit value (the color the canvas paints)", () => {
+      setTokenColorMap({ "surface.brand": "#123456" });
+      expect(tokenSwatchCss("surface.brand")).toBe("#123456");
+      // `$`-prefixed author form hits the same map entry.
+      expect(tokenSwatchCss("$surface.brand")).toBe("#123456");
+    });
+
+    it("tokenSwatchCss falls through to the same heuristic the paint path uses on a map miss", () => {
+      setTokenColorMap({});
+      expect(tokenSwatchCss("text.primary")).toBe("#27231d");
+      expect(tokenSwatchCss("surface.page")).toBe("#f8f4ec");
+      expect(tokenSwatchCss("accent.primary")).toBe("#256c70");
+      expect(tokenSwatchCss("unmapped.custom")).toBe("#b7aa96");
+      // Identical to what the paint path would produce for the same token.
+      expect(tokenSwatchCss("surface.page")).toBe(paintToCss({ kind: "token", token: "surface.page" }));
     });
 
     it("WITHOUT a map, pins the pre-existing string-heuristic fallback", () => {

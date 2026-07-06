@@ -649,6 +649,14 @@ export function setTokenColorMap(map: TokenColorMap): void {
   tokenColorMap = map;
 }
 
+/** The CSS color a token swatch should show — EXACTLY what the canvas will
+ * paint for that token: the kit-resolved value when the map has it, else the
+ * same heuristic fallback the paint path uses. One resolution path for chips,
+ * previews, and canvas. */
+export function tokenSwatchCss(token: string): string {
+  return resolveTokenColor(tokenColorMap, token) ?? tokenFallback(token);
+}
+
 function tokenFallback(token: string): string {
   if (token.includes("text")) {
     return "#27231d";
