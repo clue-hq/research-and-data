@@ -881,6 +881,44 @@ def write_iteration_compile(trace_dir, index: int, operations: list) -> None:
     )
 
 
+def test_agent_response_prefers_operations_ledger_over_compile_scrape(tmp_path) -> None:
+    """K2 accept-seam: the ledger is the proposal-op source of truth — it
+    carries asset-tool mutations the compile scrape can never see, honors the
+    keep-best iteration window, and the scrape remains only as the fallback
+    for pre-ledger traces."""
+    from lumen_api.main import agent_response_from_trace
+
+    write_iteration_compile(
+        tmp_path, 1, [{"kind": "update_node", "node_id": "stale_scrape_op"}]
+    )
+    ledger = {
+        "entries": [
+            {"iteration": 1, "source": "compile_dsl_block",
+             "operation": {"kind": "insert_node", "node": {"id": "mark"}}},
+            {"iteration": 1, "source": "use_brand_asset",
+             "operation": {"kind": "upsert_asset", "asset": {"id": "asset_logo"}}},
+            {"iteration": 2, "source": "compile_dsl_block",
+             "operation": {"kind": "update_node", "node_id": "beyond_window"}},
+        ]
+    }
+    (tmp_path / "operations_ledger.json").write_text(json.dumps(ledger))
+    result = {
+        "status": "accepted",
+        "stop_reason": "accepted",
+        "run_id": "run_ledger",
+        "summary": "ok",
+        "preview_paths": [],
+        "ops_valid_through_iteration": 1,
+    }
+
+    response = agent_response_from_trace(result, tmp_path)
+
+    assert response["operations"] == [
+        {"kind": "insert_node", "node": {"id": "mark"}},
+        {"kind": "upsert_asset", "asset": {"id": "asset_logo"}},
+    ]
+
+
 def test_agent_response_edit_applied_maps_to_proposed_with_advisory_diagnostics(
     tmp_path,
 ) -> None:

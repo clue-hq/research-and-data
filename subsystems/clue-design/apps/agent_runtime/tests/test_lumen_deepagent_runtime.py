@@ -2252,6 +2252,32 @@ def test_inline_dsl_reference_to_kit_asset_auto_registers(
     assert len(upserts_after) == 1
 
 
+def test_operations_ledger_carries_asset_tool_ops_for_accept(
+    tmp_path: Path, monkeypatch
+):
+    """K2 accept-seam: the editor's Accept replays the PROPOSAL op list —
+    the legacy compile.json scrape missed asset-tool mutations, so the
+    auto-registered logo record vanished at accept (live-proven LUME0211).
+    Every applied mutation now lands in operations_ledger.json, tagged with
+    its iteration for the keep-best window."""
+    monkeypatch.setattr("lumen_deepagent.tools.CoreClient", FakeCoreClient)
+    config = _config_with_kit_assets(tmp_path)
+    tools = LumenDesignTools(config, "Brand ad")
+
+    tools.asset(
+        action="use_brand_asset",
+        asset_id="asset_logo_reversed",
+        node_id="header_logo",
+    )
+
+    ledger_path = config.trace_dir / tools.run_id / "operations_ledger.json"
+    entries = json.loads(ledger_path.read_text(encoding="utf-8"))["entries"]
+    kinds = [entry["operation"]["kind"] for entry in entries]
+    assert kinds == ["upsert_asset", "place_asset_in_node"]
+    assert entries[0]["operation"]["asset"]["source"]["kind"] == "brand_guide"
+    assert all(isinstance(entry["iteration"], int) for entry in entries)
+
+
 def test_use_brand_asset_unknown_id_errors_with_known_inventory(
     tmp_path: Path, monkeypatch
 ):

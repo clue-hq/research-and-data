@@ -170,6 +170,10 @@ class LumenDesignTools:
         self.scene_update_sources: list[str] = (
             ["initial_scene_seed"] if self.seeded_from_initial_scene else []
         )
+        # K2 accept-seam: ordered {iteration, source, operation} entries for
+        # every applied scene mutation — the proposal's op source of truth
+        # (see _log_scene_operations).
+        self.operations_ledger: list[JsonObject] = []
         self.effective_brand_context: Optional[JsonObject] = None
         # K1: compact brand context card, built once from the by-value kit in
         # config (None without a kit). Injected via load_knowledge and
@@ -361,6 +365,12 @@ class LumenDesignTools:
             "checkpoint_label": compile_output.get("checkpoint_label"),
         }
         self._write_json(iteration_dir / "compile.json", payload)
+        # Ledger: only a CLEAN compile's ops ride proposals — the same gate
+        # the legacy compile.json scrape applied in agent_response_from_trace.
+        if summary.status == ToolStatus.ok:
+            self._log_scene_operations(
+                "compile_dsl_block", compile_output.get("operations", [])
+            )
         self.record(
             "dsl-author",
             "dsl_compiled",
@@ -406,7 +416,7 @@ class LumenDesignTools:
             )
             return json.dumps(payload, indent=2)
 
-        self._replace_scene_from_core_response(response, "apply_operations")
+        self._replace_scene_from_core_response(response, "apply_operations", operations)
         self.dsl_session = None
         diagnostics = diagnostics_from(response.get("diagnostics", []))
         summary = OperationApplicationSummary(
@@ -486,7 +496,9 @@ class LumenDesignTools:
             )
             return json.dumps(payload, indent=2)
 
-        self._replace_scene_from_core_response(response, "apply_structured_edit")
+        self._replace_scene_from_core_response(
+            response, "apply_structured_edit", response.get("operations") or []
+        )
         if edit.get("kind") in {
             "delete",
             "move_before",
@@ -597,7 +609,9 @@ class LumenDesignTools:
                 payload=payload,
             )
             return json.dumps(payload, indent=2)
-        self._replace_scene_from_core_response(apply_response, "generate_qr")
+        self._replace_scene_from_core_response(
+            apply_response, "generate_qr", [{"kind": "upsert_asset", "asset": record}]
+        )
 
         diagnostics = diagnostics_from(response.get("diagnostics", []))
         payload = {
@@ -719,7 +733,9 @@ class LumenDesignTools:
                 payload=payload,
             )
             return json.dumps(payload, indent=2)
-        self._replace_scene_from_core_response(apply_response, "generate_image")
+        self._replace_scene_from_core_response(
+            apply_response, "generate_image", [{"kind": "upsert_asset", "asset": record}]
+        )
 
         payload = {
             "image": {
@@ -790,7 +806,9 @@ class LumenDesignTools:
                 )
             except CoreError:
                 continue
-            self._replace_scene_from_core_response(response, origin)
+            self._replace_scene_from_core_response(
+                response, origin, [{"kind": "upsert_asset", "asset": record}]
+            )
             self.record(
                 "coordinator",
                 "brand_asset_registered",
@@ -878,7 +896,9 @@ class LumenDesignTools:
                 payload=payload,
             )
             return json.dumps(payload, indent=2)
-        self._replace_scene_from_core_response(apply_response, "use_brand_asset")
+        self._replace_scene_from_core_response(
+            apply_response, "use_brand_asset", [{"kind": "upsert_asset", "asset": record}]
+        )
         self.record(
             "coordinator",
             "brand_asset_registered",
@@ -1147,7 +1167,7 @@ class LumenDesignTools:
             )
             return json.dumps(payload, indent=2)
 
-        self._replace_scene_from_core_response(apply_response, kind)
+        self._replace_scene_from_core_response(apply_response, kind, [operation])
         diagnostics = diagnostics_from(apply_response.get("diagnostics", []))
         payload = {
             "placement": {
@@ -1383,7 +1403,9 @@ class LumenDesignTools:
                 payload=payload,
             )
             return json.dumps(payload, indent=2)
-        self._replace_scene_from_core_response(apply_response, "edit_image")
+        self._replace_scene_from_core_response(
+            apply_response, "edit_image", [{"kind": "upsert_asset", "asset": record}]
+        )
 
         # Re-place the edited asset into the SAME node, preserving the current
         # placement (fit / focal point / alt) so the composition is untouched.
@@ -3061,12 +3083,42 @@ class LumenDesignTools:
             except Exception:
                 pass
 
-    def _replace_scene_from_core_response(self, response: JsonObject, source: str) -> None:
+    def _replace_scene_from_core_response(
+        self,
+        response: JsonObject,
+        source: str,
+        operations: Optional[list[JsonObject]] = None,
+    ) -> None:
         scene = response.get("scene")
         if not isinstance(scene, dict):
             raise CoreError("helper.scene_missing", f"{source} did not return a scene")
         self.scene = scene
         self.scene_update_sources.append(source)
+        if operations:
+            self._log_scene_operations(source, operations)
+
+    def _log_scene_operations(
+        self, source: str, operations: list[JsonObject]
+    ) -> None:
+        """K2 accept-seam fix: THE proposal operation ledger. The editor's
+        Accept replays the proposal's operation list onto the document — it
+        never sees the runtime's working scene — so any scene mutation that
+        is not in that list silently vanishes at accept (live-proven: the
+        auto-registered logo record existed in the run's final scene but the
+        accepted document had empty scene.assets → LUME0211). Every
+        successful mutation logs here, tagged with its iteration so the
+        keep-best ops window still applies; agent_response_from_trace reads
+        this ledger instead of scraping compile.json. Preflight's resolution
+        ops are deliberately NOT logged — token resolution on accept belongs
+        to the K1.6(b) accept bake, and double-carrying it would duplicate."""
+        self.operations_ledger.extend(
+            {"iteration": self.iteration, "source": source, "operation": operation}
+            for operation in operations
+        )
+        self._write_json(
+            self.trace_dir / "operations_ledger.json",
+            {"entries": self.operations_ledger},
+        )
 
     def _write_and_validate_preview_artifacts(
         self,

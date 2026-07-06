@@ -4056,6 +4056,30 @@ def agent_response_from_trace(
     # scene as the draft. Operations from later iterations are then not part of
     # that draft and must not be replayed by the editor.
     ops_valid_through = result.get("ops_valid_through_iteration")
+    # K2 accept-seam: the runtime's operations ledger is THE op source of
+    # truth — it carries every applied mutation (compile ops AND asset-tool
+    # ops: upserts, placements, edits) in order, so nothing the runtime did
+    # can vanish at accept. The legacy compile.json scrape below remains
+    # only as the fallback for pre-ledger traces (it misses asset ops).
+    ledger_path = trace_dir / "operations_ledger.json"
+    ledger_operations: Optional[List[JsonObject]] = None
+    if ledger_path.exists():
+        try:
+            entries = json.loads(ledger_path.read_text(encoding="utf-8")).get(
+                "entries", []
+            )
+            ledger_operations = [
+                entry["operation"]
+                for entry in entries
+                if isinstance(entry, dict)
+                and "operation" in entry
+                and (
+                    not isinstance(ops_valid_through, int)
+                    or int(entry.get("iteration") or 0) <= ops_valid_through
+                )
+            ]
+        except (json.JSONDecodeError, TypeError, ValueError):
+            ledger_operations = None
     iterations_dir = trace_dir / "iterations"
     if iterations_dir.exists():
         for iteration_dir in sorted(
@@ -4076,10 +4100,14 @@ def agent_response_from_trace(
                         compile_summary.get("diagnostics", []), "dsl"
                     )
                 )
-                if compile_summary.get("status") == "ok" and iteration_in_ops_window(
-                    iteration_dir.name, ops_valid_through
+                if (
+                    ledger_operations is None
+                    and compile_summary.get("status") == "ok"
+                    and iteration_in_ops_window(iteration_dir.name, ops_valid_through)
                 ):
                     operations.extend(compile_payload.get("operations", []))
+    if ledger_operations is not None:
+        operations = ledger_operations
 
     raw_preview_paths = result.get("preview_paths", [])
     preview_paths = (
