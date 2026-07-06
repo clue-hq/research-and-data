@@ -86,7 +86,7 @@ export function PageRail({
     <nav className="page-rail" aria-label="Artboards">
       <div className="panel-title">
         <FileText aria-hidden size={16} />
-        Artboards
+        Pages
       </div>
       {pages.map((page) => {
         const artboard = workspaceModel.artboards.find((item) => item.pageId === page.id);
@@ -95,13 +95,14 @@ export function PageRail({
           <button
             type="button"
             className={page.id === activePageId ? "page-button active" : "page-button"}
+            title={`${page.name} · ${pageSizeLabel(page)}`}
             onClick={() => onSelectPage(page.id)}
           >
             <span className="page-row-title">
               {page.name}
               {artboard ? <DiagnosticDot summary={artboard.diagnosticsSummary} /> : null}
             </span>
-            <small>{pageSizeLabel(page)}</small>
+            <small className="visually-hidden">{pageSizeLabel(page)}</small>
           </button>
           <button
             type="button"

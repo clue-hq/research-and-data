@@ -367,8 +367,26 @@ textarea:disabled {
   color: var(--chrome-text-soft);
 }
 
+/* Left rail (moda layers-sidebar anatomy): flat paper surface behind a
+   hairline — no dark inset, no cards-in-cards. */
 .left-sidebar {
-  border-right: 1px solid var(--chrome-border);
+  background: var(--bg-app);
+  color: var(--text-primary);
+  border-right: 1px solid var(--border-default);
+}
+
+/* Screen-reader-only text: keeps pinned copy (sizes, layer detail) in the
+   DOM and queryable while the moda row anatomy shows a single line. */
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 .page-rail {
@@ -460,33 +478,51 @@ textarea:disabled {
   color: var(--text-muted);
 }
 
+/* Page rows (moda layers capture): compact 28px flat rows — name + status
+   dot; the duplicate/remove affordances reveal on hover or keyboard focus.
+   Selection = chip fill + ink (the canvas outline carries the strong mark). */
 .page-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 32px;
-  gap: 6px;
-  align-items: stretch;
-  margin-top: 10px;
+  grid-template-columns: minmax(0, 1fr) 24px 24px;
+  gap: 2px;
+  align-items: center;
+  min-height: 28px;
+  margin-top: 2px;
+  border-radius: var(--radius-sm);
+}
+
+.page-row:hover {
+  background: var(--bg-inset);
 }
 
 .page-button {
   display: grid;
   width: 100%;
-  gap: 5px;
-  border: 1px solid #343b46;
-  border-radius: var(--radius-md);
-  background: var(--chrome-bg-raised);
-  color: var(--chrome-text);
-  padding: 10px;
+  min-height: 28px;
+  align-content: center;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-primary);
+  padding: 0 8px;
   text-align: left;
 }
 
+.page-button:hover {
+  background: var(--bg-inset);
+}
+
 .page-button.active {
-  border-color: var(--teal);
-  box-shadow: inset 3px 0 0 var(--teal);
+  background: var(--bg-chip);
+  color: var(--text-primary);
 }
 
 .page-button span {
-  font-weight: 750;
+  font-weight: 500;
+}
+
+.page-button.active span {
+  font-weight: 600;
 }
 
 .page-row-title {
@@ -495,6 +531,18 @@ textarea:disabled {
   align-items: center;
   justify-content: space-between;
   gap: 8px;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.page-row .icon-button {
+  opacity: 0;
+}
+
+.page-row:hover .icon-button,
+.page-row:focus-within .icon-button,
+.page-row .icon-button:focus-visible {
+  opacity: 1;
 }
 
 .artboard-status-dot {
@@ -503,15 +551,15 @@ textarea:disabled {
   height: 8px;
   flex: 0 0 auto;
   border-radius: var(--radius-pill);
-  background: #63c174;
+  background: var(--status-success);
 }
 
 .artboard-status-dot.warning {
-  background: #f5b84b;
+  background: var(--accent);
 }
 
 .artboard-status-dot.error {
-  background: #ef5f5f;
+  background: var(--status-error);
 }
 
 .diagnostics-alert-pill {
@@ -536,39 +584,41 @@ textarea:disabled {
 
 .page-button small,
 .muted {
-  color: var(--chrome-text-muted);
+  color: var(--text-muted);
   font-size: 12px;
-}
-
-.page-remove-button {
-  min-height: 100%;
 }
 
 .custom-page-creator {
   display: grid;
   gap: 9px;
   margin-top: 14px;
-  border-top: 1px solid var(--chrome-border);
+  border-top: 1px solid var(--border-default);
   padding-top: 14px;
 }
 
 .custom-page-creator label {
   display: grid;
   gap: 4px;
-  color: var(--chrome-text-dim);
+  color: var(--text-muted);
   font-size: 12px;
-  font-weight: 700;
+  font-weight: 500;
 }
 
 .custom-page-creator input,
 .custom-page-creator select {
   width: 100%;
-  min-height: 30px;
-  border: 1px solid var(--chrome-border-strong);
+  min-height: 28px;
+  border: 1px solid var(--border-default);
   border-radius: var(--radius-sm);
-  background: var(--chrome-bg-raised);
-  color: var(--chrome-text);
-  padding: 6px 7px;
+  background: var(--bg-white);
+  color: var(--text-primary);
+  padding: 4px 7px;
+  font-size: 13px;
+}
+
+.custom-page-creator input[type="number"] {
+  font-family: var(--font-mono);
+  font-size: 12px;
 }
 
 .compact-grid {
@@ -580,9 +630,9 @@ textarea:disabled {
 .compact-field {
   display: grid;
   gap: 4px;
-  color: var(--chrome-text-dim);
+  color: var(--text-muted);
   font-size: 12px;
-  font-weight: 700;
+  font-weight: 500;
 }
 
 .compact-grid .compact-field:nth-child(3) {
@@ -598,81 +648,126 @@ textarea:disabled {
 .quick-size-list button,
 .secondary-action {
   display: inline-flex;
-  min-height: 30px;
+  min-height: 28px;
   align-items: center;
   justify-content: center;
   gap: 5px;
-  border: 1px solid var(--chrome-border-strong);
+  border: 1px solid var(--border-default);
   border-radius: var(--radius-sm);
-  background: var(--chrome-bg-raised);
-  color: var(--chrome-text-soft);
+  background: transparent;
+  color: var(--text-primary);
   padding: 0 7px;
   font-size: 12px;
-  font-weight: 700;
+  font-weight: 500;
 }
 
-.secondary-action {
-  color: #9fe4e3;
+.quick-size-list button:hover:not(:disabled),
+.secondary-action:hover:not(:disabled) {
+  border-color: var(--border-strong);
+  background: var(--bg-chip);
+}
+
+.quick-size-list button {
+  font-family: var(--font-mono);
 }
 
 .layer-panel {
-  border-top: 1px solid var(--chrome-border);
+  border-top: 1px solid var(--border-default);
   padding: 14px;
 }
 
 .layer-list {
   display: grid;
-  gap: 6px;
+  gap: 1px;
   margin-top: 10px;
 }
 
+/* Layer rows (moda layers capture): flat compact 28px rows — a 16px
+   kind-icon column, then a single truncated name. No cards-in-cards. */
 .layer-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 28px 28px;
+  grid-template-columns: minmax(0, 1fr) 24px 24px;
   align-items: center;
-  gap: 4px;
-  border: 1px solid transparent;
+  gap: 2px;
+  min-height: 28px;
   border-radius: var(--radius-sm);
-  padding: 4px;
+}
+
+.layer-row:hover {
+  background: var(--bg-inset);
 }
 
 .layer-row.active {
-  border-color: var(--teal);
-  background: #1b3339;
+  background: var(--bg-chip);
+}
+
+.layer-row .icon-button {
+  opacity: 0;
+}
+
+.layer-row:hover .icon-button,
+.layer-row:focus-within .icon-button,
+.layer-row .icon-button:focus-visible {
+  opacity: 1;
 }
 
 .layer-select {
   display: grid;
+  grid-template-columns: 16px minmax(0, 1fr);
+  align-items: center;
+  gap: 6px;
   min-width: 0;
+  min-height: 28px;
   border: 0;
   background: transparent;
-  color: var(--chrome-text);
-  padding: 4px;
+  color: var(--text-primary);
+  padding: 0 4px;
   text-align: left;
+}
+
+.layer-kind-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  color: var(--text-muted);
+}
+
+.layer-kind-swatch {
+  width: 12px;
+  height: 4px;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--border-default);
 }
 
 .layer-select span {
   overflow: hidden;
   font-size: 12px;
-  font-weight: 750;
+  font-weight: 500;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.layer-select small {
-  color: var(--chrome-text-muted);
-  font-size: 11px;
+.layer-row.active .layer-select span {
+  font-weight: 600;
 }
 
+/* 24px icon-ghost affordances revealed on row hover / keyboard focus. */
 .icon-button {
   display: inline-grid;
-  width: 26px;
-  height: 26px;
+  width: 24px;
+  height: 24px;
   place-items: center;
-  border: 1px solid var(--chrome-border-strong);
+  border: 1px solid transparent;
   border-radius: var(--radius-sm);
-  background: var(--chrome-bg-raised);
-  color: var(--chrome-text-soft);
+  background: transparent;
+  color: var(--text-muted);
+  padding: 0;
+}
+
+.icon-button:hover:not(:disabled) {
+  background: var(--bg-chip);
+  color: var(--text-primary);
 }
 
 .center-workspace {
