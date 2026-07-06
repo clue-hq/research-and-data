@@ -1,9 +1,55 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { minimalScene } from "@/fixtures/minimalScene";
 import type { AssetRecord, Node, Scene } from "../contracts";
+import { setTokenColorMap } from "../renderAdapter";
 import { editorRenderDiagnostics } from "../renderDiagnostics";
 
 describe("editor render diagnostics", () => {
+  afterEach(() => {
+    // The diagnostics consult renderAdapter's module-level token map (K0.5);
+    // reset it so map state never leaks across cases.
+    setTokenColorMap({});
+  });
+
+  it("K0.5: does NOT report token fallback for paints the kit map actually resolves", () => {
+    const scene = cloneScene();
+    scene.nodes.node_token_card = tokenCardNode();
+    scene.pages.page_a4.children = ["node_contact_name", "node_token_card"];
+
+    // Without the map: the token paints are genuinely on the heuristic.
+    const before = editorRenderDiagnostics(scene, "page_a4");
+    expect(
+      before.some(
+        (diagnostic) =>
+          diagnostic.code === "EDITOR_RENDER_TOKEN_FALLBACK" &&
+          diagnostic.message.includes("paint token surface.card")
+      )
+    ).toBe(true);
+    expect(
+      before.some(
+        (diagnostic) =>
+          diagnostic.code === "EDITOR_RENDER_TOKEN_FALLBACK" &&
+          diagnostic.message.includes("color token border.brand")
+      )
+    ).toBe(true);
+
+    // With the attached kit's values loaded, the same paints render the real
+    // colors — reporting "uses a local fallback color" would be false.
+    setTokenColorMap({ "surface.card": "#ffffff", "border.brand": "#00525c" });
+    const after = editorRenderDiagnostics(scene, "page_a4");
+    expect(
+      after.some(
+        (diagnostic) =>
+          diagnostic.code === "EDITOR_RENDER_TOKEN_FALLBACK" &&
+          (diagnostic.message.includes("paint token surface.card") ||
+            diagnostic.message.includes("color token border.brand"))
+      )
+    ).toBe(false);
+    // Non-color token fallbacks (dimensions, typography) are untouched by the
+    // color map and still report.
+    expect(after.some((diagnostic) => diagnostic.message.includes("Token Card width"))).toBe(true);
+  });
+
   it("reports canvas preview approximations for gradients, tokens, images, and text shaping", () => {
     const scene = cloneScene();
     scene.pages.page_a4.background = [

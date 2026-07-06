@@ -377,7 +377,17 @@ class Repository:
                 brand_version = brand_kit.get("version") if brand_kit else None
                 if (
                     brand_source
-                    in {"request", "document", "generated_default", "brand_kit_library"}
+                    in {
+                        "request",
+                        "document",
+                        "generated_default",
+                        "brand_kit_library",
+                        # K0.5: an ops-attached kit (scene.meta only) resolved
+                        # via the scene ref persists onto the row here, so the
+                        # document converges with the dedicated attach route
+                        # after its first successful preflight.
+                        "scene_ref",
+                    }
                     and brand_kit
                 ):
                     brand_json = brand_kit

@@ -133,7 +133,7 @@ function resolveColorToken(
       return typeof value.l === "number" &&
         typeof value.c === "number" &&
         typeof value.h === "number"
-        ? `oklch(${value.l} ${value.c} ${value.h} / ${value.alpha ?? 1})`
+        ? oklchToHexCss(value.l, value.c, value.h, value.alpha ?? 1)
         : null;
     case "alias":
       return typeof value.token === "string"
@@ -142,6 +142,58 @@ function resolveColorToken(
     default:
       return null;
   }
+}
+
+/**
+ * oklch -> sRGB hex, so the token map only ever holds strings BOTH canvas
+ * backends can paint. The CanvasKit paint path (`parseColor` in
+ * `canvaskit/drawDescriptors.ts`) parses hex and rgb()/rgba() only — an
+ * `oklch(...)` string returns null there, which erased kit-valued fills
+ * (transparent) and dropped text to black on the product canvas: exactly the
+ * K0 live-proof failure, because ingested kits express their palette ramps
+ * in oklch and every semantic token aliases into one. Matches the engine's
+ * own resolution (`crates/lumen-core` oklch -> hex, e.g. the Insight kit's
+ * `surface.brand` -> #00525C), so canvas, export, and agent preview agree.
+ *
+ * Standard OKLab math (Björn Ottosson's reference matrices): oklch -> OKLab
+ * -> LMS' -> cube -> linear sRGB -> gamma-encode, channels clamped to [0,1]
+ * (out-of-gamut values clip, same as the engine). Alpha < 1 emits 8-digit
+ * hex, which `parseColor` already handles.
+ */
+export function oklchToHexCss(l: number, c: number, h: number, alpha = 1): string {
+  const hRad = (h * Math.PI) / 180;
+  const labA = c * Math.cos(hRad);
+  const labB = c * Math.sin(hRad);
+
+  const lPrime = l + 0.3963377774 * labA + 0.2158037573 * labB;
+  const mPrime = l - 0.1055613458 * labA - 0.0638541728 * labB;
+  const sPrime = l - 0.0894841775 * labA - 1.291485548 * labB;
+
+  const l3 = lPrime * lPrime * lPrime;
+  const m3 = mPrime * mPrime * mPrime;
+  const s3 = sPrime * sPrime * sPrime;
+
+  const red = 4.0767416621 * l3 - 3.3077115913 * m3 + 0.2309699292 * s3;
+  const green = -1.2684380046 * l3 + 2.6097574011 * m3 - 0.3413193965 * s3;
+  const blue = -0.0041960863 * l3 - 0.7034186147 * m3 + 1.707614701 * s3;
+
+  const channel = (linear: number): string => {
+    const clamped = Math.min(1, Math.max(0, linear));
+    const encoded =
+      clamped <= 0.0031308 ? clamped * 12.92 : 1.055 * Math.pow(clamped, 1 / 2.4) - 0.055;
+    return Math.round(encoded * 255)
+      .toString(16)
+      .padStart(2, "0");
+  };
+
+  const hex = `#${channel(red)}${channel(green)}${channel(blue)}`;
+  if (alpha >= 1) {
+    return hex;
+  }
+  const alphaHex = Math.round(Math.min(1, Math.max(0, alpha)) * 255)
+    .toString(16)
+    .padStart(2, "0");
+  return `${hex}${alphaHex}`;
 }
 
 /** A token string as carried on a `Paint`/`Color` (`paint.token` /

@@ -16,7 +16,7 @@ import type {
   Unit
 } from "./contracts";
 import { isNodeLayoutManaged } from "./sceneQueries";
-import { resolveTokenColor, type TokenColorMap } from "./tokenColors";
+import { oklchToHexCss, resolveTokenColor, type TokenColorMap } from "./tokenColors";
 
 /**
  * Konva-ready paint description (Effects Contract V0). Gradients carry the
@@ -333,7 +333,11 @@ export function colorToCss(color: Color): string {
     case "hex":
       return normalizeHexForCss(color.value);
     case "oklch":
-      return `oklch(${color.l} ${color.c} ${color.h} / ${color.alpha})`;
+      // Hex, not an oklch() string: the CanvasKit paint path's parseColor
+      // handles hex/rgb only — an oklch string silently erased the paint
+      // (the C2 follow-up this closes). Same converter the token map uses,
+      // so both paths match the engine's own oklch->hex resolution.
+      return oklchToHexCss(color.l, color.c, color.h, color.alpha);
     case "token":
       return resolveTokenColor(tokenColorMap, color.token) ?? tokenFallback(color.token);
   }
@@ -643,10 +647,49 @@ function normalizeHexForCss(value: string): string {
  */
 let tokenColorMap: TokenColorMap = {};
 
+/**
+ * K0.5 reactivity: the map is set by an async fetch that usually resolves
+ * AFTER the canvas first paints, and a module-level assignment re-renders
+ * nothing — the live K0 proof showed a freshly loaded document staying on
+ * heuristic colors forever because no scene change ever followed the fetch.
+ * `setTokenColorMap` therefore bumps a generation and notifies subscribers;
+ * canvas components read the generation via `useSyncExternalStore` and key
+ * their descriptor memos on it, so kit values repaint the moment they land.
+ */
+let tokenColorsGeneration = 0;
+const tokenColorListeners = new Set<() => void>();
+
 /** Sets the token color map consulted by the token paint cases in
- * `paintToCss`/`colorToCss`/`paintDescriptor`. See `tokenColorMap` above. */
+ * `paintToCss`/`colorToCss`/`paintDescriptor`, and notifies subscribers.
+ * See `tokenColorMap` above. */
 export function setTokenColorMap(map: TokenColorMap): void {
   tokenColorMap = map;
+  tokenColorsGeneration += 1;
+  for (const listener of tokenColorListeners) {
+    listener();
+  }
+}
+
+/** Subscribe to token-map replacements (useSyncExternalStore contract). */
+export function subscribeTokenColors(listener: () => void): () => void {
+  tokenColorListeners.add(listener);
+  return () => {
+    tokenColorListeners.delete(listener);
+  };
+}
+
+/** Monotonic generation of the current token map (useSyncExternalStore
+ * snapshot; also the memo key that invalidates descriptor trees). */
+export function tokenColorsGenerationSnapshot(): number {
+  return tokenColorsGeneration;
+}
+
+/** Whether a token paint will resolve to a real kit value on the canvas —
+ * i.e. the render is NOT on the string-heuristic fallback for this token.
+ * `renderDiagnostics` consults this so EDITOR_RENDER_TOKEN_FALLBACK is only
+ * reported when the fallback is actually in use. */
+export function tokenPaintResolves(token: string): boolean {
+  return resolveTokenColor(tokenColorMap, token) !== null;
 }
 
 /** The CSS color a token swatch should show — EXACTLY what the canvas will

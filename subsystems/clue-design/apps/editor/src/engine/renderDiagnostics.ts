@@ -1,4 +1,5 @@
 import type { Color, Diagnostic, DiagnosticSubject, Dimension, Node, PageId, Paint, Scene } from "./contracts";
+import { tokenPaintResolves } from "./renderAdapter";
 import { flattenPageNodeIds } from "./sceneQueries";
 
 export function editorRenderDiagnostics(scene: Scene, pageId: PageId | null): Diagnostic[] {
@@ -183,14 +184,20 @@ function collectPaintDiagnostics(
 ): void {
   switch (paint.kind) {
     case "token":
-      diagnostics.push(
-        diagnostic(
-          "EDITOR_RENDER_TOKEN_FALLBACK",
-          `${label} uses unresolved paint token ${paint.token}; canvas preview uses a local fallback color.`,
-          subject,
-          "Run preflight or select a Brand Kit so paint tokens resolve before approval."
-        )
-      );
+      // K0.5 honesty: this fired unconditionally for every token paint — even
+      // when the canvas painted the real kit value from the token map — so
+      // the panel reported "fallback" on a correctly-rendered document. Only
+      // an actual map miss is a fallback.
+      if (!tokenPaintResolves(paint.token)) {
+        diagnostics.push(
+          diagnostic(
+            "EDITOR_RENDER_TOKEN_FALLBACK",
+            `${label} uses unresolved paint token ${paint.token}; canvas preview uses a local fallback color.`,
+            subject,
+            "Run preflight or select a Brand Kit so paint tokens resolve before approval."
+          )
+        );
+      }
       break;
     case "solid":
       collectColorDiagnostics(paint.color, diagnostics, subject, label);
@@ -218,7 +225,7 @@ function collectColorDiagnostics(
   subject: DiagnosticSubject,
   label: string
 ): void {
-  if (color.kind === "token") {
+  if (color.kind === "token" && !tokenPaintResolves(color.token)) {
     diagnostics.push(
       diagnostic(
         "EDITOR_RENDER_TOKEN_FALLBACK",

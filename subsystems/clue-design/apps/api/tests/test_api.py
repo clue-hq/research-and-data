@@ -457,6 +457,71 @@ def test_resolve_agent_turn_brand_kit_passes_document_kit_by_value(
     ) == (None, None)
 
 
+def test_ops_attached_brand_kit_preflights_via_scene_ref_and_heals_the_row(
+    client: TestClient,
+) -> None:
+    """K0.5: the editor's Brandkit chip attaches via an update_document patch
+    (scene.meta.brand_kit only — the document row's brand_kit_json stays
+    null). choose_effective_brand must fall back to the scene ref so
+    preflight/export resolve the attached kit instead of the platform default
+    (which hard-errors LUMB0101 against the scene ref), and a successful
+    preflight persists the kit onto the row (source scene_ref)."""
+    compiled = client.post(
+        "/brand-kits/compile-styles",
+        json={
+            "source": valid_styles_source(),
+            "brand_kit_id": "brand_kit_insight_health",
+            "version": 4,
+            "name": "Insight Health",
+        },
+    )
+    assert compiled.status_code == 200, compiled.text
+
+    document = create_document(client, preflightable_scene())
+
+    attach_via_ops = client.post(
+        f"/documents/{document['id']}/operations",
+        json={
+            "operations": [
+                {
+                    "kind": "update_document",
+                    "patch": {
+                        "title": {"kind": "unchanged"},
+                        "artifact_type": {"kind": "unchanged"},
+                        "medium": {"kind": "unchanged"},
+                        "brand_kit": {
+                            "kind": "set",
+                            "value": {"id": "brand_kit_insight_health", "version": 4},
+                        },
+                    },
+                }
+            ],
+            "actor": {"kind": "human"},
+            "source": "editor",
+        },
+    )
+    assert attach_via_ops.status_code == 200, attach_via_ops.text
+
+    preflight = client.post(f"/documents/{document['id']}/preflight", json={})
+    assert preflight.status_code == 200, preflight.text
+    payload = preflight.json()
+    assert payload["brand_kit"]["source"] == "scene_ref"
+    assert payload["brand_kit"]["id"] == "brand_kit_insight_health"
+    diagnostic_views = payload.get("diagnostics", {})
+    codes = {
+        diag.get("code")
+        for view in diagnostic_views.values()
+        for diag in view
+        if isinstance(diag, dict)
+    }
+    assert "LUMB0101" not in codes
+
+    # The row heals: subsequent resolution takes the fast "document" branch.
+    detail = client.get(f"/documents/{document['id']}").json()
+    assert detail["effective_brand_kit_id"] == "brand_kit_insight_health"
+    assert detail["effective_brand_kit_source"] == "scene_ref"
+
+
 def test_editor_target_node_ids_prefers_plural_and_dedupes() -> None:
     from lumen_api.main import editor_target_node_ids
     from lumen_api.models import AgentTurnPreviewRequest

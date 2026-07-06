@@ -11,6 +11,9 @@ import {
   sceneUnitFromCanvas,
   setTokenColorMap,
   sizeFromCanvas,
+  subscribeTokenColors,
+  tokenColorsGenerationSnapshot,
+  tokenPaintResolves,
   tokenSwatchCss
 } from "../renderAdapter";
 
@@ -496,6 +499,42 @@ describe("render adapter", () => {
       const descriptor = nodeDescriptor(scene, node, page);
       expect(descriptor.fill).toBe("#FFFFFF");
       expect(descriptor.fills[0]?.paint).toEqual({ kind: "solid", color: "#FFFFFF" });
+    });
+
+    it("K0.5: setTokenColorMap notifies subscribers and bumps the generation (repaint trigger)", () => {
+      const before = tokenColorsGenerationSnapshot();
+      let notified = 0;
+      const unsubscribe = subscribeTokenColors(() => {
+        notified += 1;
+      });
+
+      setTokenColorMap({ "surface.brand": "#00525c" });
+      expect(notified).toBe(1);
+      expect(tokenColorsGenerationSnapshot()).toBe(before + 1);
+
+      unsubscribe();
+      setTokenColorMap({});
+      expect(notified).toBe(1);
+      expect(tokenColorsGenerationSnapshot()).toBe(before + 2);
+    });
+
+    it("K0.5: tokenPaintResolves reports map hits vs heuristic-fallback misses", () => {
+      setTokenColorMap({ "surface.brand": "#00525c" });
+      expect(tokenPaintResolves("surface.brand")).toBe(true);
+      expect(tokenPaintResolves("$surface.brand")).toBe(true);
+      expect(tokenPaintResolves("surface.page")).toBe(false);
+    });
+
+    it("K0.5: direct oklch scene colors paint as hex (CanvasKit parseColor cannot read oklch)", () => {
+      const color: Color = {
+        kind: "oklch",
+        l: 0.4,
+        c: 0.07382381488920986,
+        h: 207.87981654900904,
+        alpha: 1
+      };
+      // Same value the engine resolves for the Insight kit's surface.brand.
+      expect(colorToCss(color)).toBe("#00525c");
     });
   });
 

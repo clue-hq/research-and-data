@@ -3222,6 +3222,27 @@ def choose_effective_brand(
         )
     if document.get("brand_kit") is not None:
         return "document", document["brand_kit"]
+
+    # K0.5: a kit attached through the editor's operations path (an
+    # update_document patch) lands only in scene.meta.brand_kit — the
+    # document row's brand_kit_json stays null (only the dedicated attach
+    # route fills it). Without this fallback, preflight/export on such a
+    # document resolved against the platform default and the engine's
+    # scene-ref check failed with LUMB0101. Mirrors
+    # choose_effective_brand_for_scene_preview's scene_ref branch.
+    scene_brand_ref = (document.get("scene") or {}).get("meta", {}).get("brand_kit")
+    if isinstance(scene_brand_ref, dict) and scene_brand_ref.get("id"):
+        try:
+            return (
+                "scene_ref",
+                repo.require_brand_kit(
+                    str(scene_brand_ref["id"]), scene_brand_ref.get("version")
+                )["brand_kit"],
+            )
+        except NotFoundError:
+            if payload.strict_no_fallback:
+                raise
+
     if payload.generated_default_brand_kit is not None:
         return "generated_default", payload.generated_default_brand_kit
     if payload.strict_no_fallback:

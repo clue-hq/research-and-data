@@ -5,6 +5,7 @@ import {
   useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
   type CSSProperties,
   type Dispatch,
   type SetStateAction
@@ -67,7 +68,11 @@ import {
   PLATFORM_DEFAULT_BRAND_KIT_ID,
   type BrandKitDetailPayload
 } from "@/engine/tokenColors";
-import { setTokenColorMap } from "@/engine/renderAdapter";
+import {
+  setTokenColorMap,
+  subscribeTokenColors,
+  tokenColorsGenerationSnapshot
+} from "@/engine/renderAdapter";
 import { postTurnSuggestions } from "@/engine/agentSuggestions";
 import { mergeStickyDiagnostics } from "@/engine/diagnosticsPolicy";
 import { createEditQueue, type EnqueueOptions } from "@/engine/editQueue";
@@ -375,9 +380,21 @@ export default function EditorApp({
   const selectedNode = useMemo(() => getNode(scene, selectedNodeId), [scene, selectedNodeId]);
   const activePage = activePageId ? scene.pages[activePageId] ?? null : null;
   const brandDiagnostics = diagnostics.filter((diagnostic) => diagnostic.phase === "brand");
+  // K0.5: re-render when the async brand-kit token map lands, so token
+  // swatches, the Konva fallback canvas (descriptors built in render), and
+  // the render diagnostics below all pick up real kit values — the map is a
+  // module-level registry, so nothing else re-renders on its arrival.
+  const tokenColorsGeneration = useSyncExternalStore(
+    subscribeTokenColors,
+    tokenColorsGenerationSnapshot,
+    tokenColorsGenerationSnapshot
+  );
   const renderDiagnostics = useMemo(
     () => editorRenderDiagnostics(scene, activePageId),
-    [activePageId, scene]
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- tokenColorsGeneration
+    // is deliberately a dep: the diagnostics consult the module-level map to
+    // report only tokens actually on the heuristic fallback.
+    [activePageId, scene, tokenColorsGeneration]
   );
 
   useEffect(() => {

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { Download, Frame, Hand, LocateFixed, Maximize2, Minus, MousePointer2, Plus, Scan } from "lucide-react";
 import type { Diagnostic, NodeId, Operation, PageId, Rect, Scene } from "@/engine/contracts";
 import type { OptimisticEnginePort } from "@/engine/wasmEngine";
@@ -36,7 +36,14 @@ import {
   topLevelAncestorId
 } from "@/engine/sceneQueries";
 import { reorderDropTarget, type ReorderDropTarget } from "@/engine/managedGestures";
-import { nodeDescriptor, pageDescriptor, sceneUnitFromCanvas, type ParentComputedOrigin } from "@/engine/renderAdapter";
+import {
+  nodeDescriptor,
+  pageDescriptor,
+  sceneUnitFromCanvas,
+  subscribeTokenColors,
+  tokenColorsGenerationSnapshot,
+  type ParentComputedOrigin
+} from "@/engine/renderAdapter";
 import { loadCanvasKit } from "@/engine/canvaskit/loadCanvasKit";
 import { skiaMeasurements } from "@/engine/canvaskit/skiaMeasurements";
 import type { Box } from "@/engine/transformerMath";
@@ -279,6 +286,17 @@ export function CanvasKitCanvas({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [engine, textSignature]);
 
+  // K0.5: the brand-kit token map loads asynchronously and usually lands
+  // AFTER the first paint; descriptors built before it resolve token paints
+  // to the string heuristic. Subscribing to the map's generation and keying
+  // the descriptor memo on it repaints kit values the moment they arrive —
+  // the CanvasKitStage draw effect already keys on `artboards`.
+  const tokenColorsGeneration = useSyncExternalStore(
+    subscribeTokenColors,
+    tokenColorsGenerationSnapshot,
+    tokenColorsGenerationSnapshot
+  );
+
   // Descriptor trees, applying the live preview override to the dragged node.
   const artboards = useMemo(() => {
     const buildForPage = (pageId: PageId, nodeId: NodeId, parentComputedOrigin: ParentComputedOrigin | null = null): DrawNode | null => {
@@ -356,7 +374,9 @@ export function CanvasKitCanvas({
       isActive: boolean;
       nodes: DrawNode[];
     }>;
-  }, [scene, preview, workspaceModel.artboards]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- tokenColorsGeneration
+    // is deliberately a dep: descriptors read the module-level token map.
+  }, [scene, preview, workspaceModel.artboards, tokenColorsGeneration]);
 
   const selectionBox = useMemo<{ box: Box; rotation: number; nodeId: NodeId } | null>(() => {
     if (!selectedNodeId) return null;
