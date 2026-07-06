@@ -548,9 +548,17 @@ export default function EditorApp({
   // list) so re-attaching a different kit refreshes the map. A failed fetch
   // leaves the map from the last success (or empty on first load), which
   // falls through to the pre-existing heuristic — never blocks rendering.
+  //
+  // Keyed on the ref's VALUE (id@version string), never the ref object:
+  // `scene.meta.brand_kit` gets a fresh identity on every scene update, and
+  // object-keyed deps refired this fetch per update — measured live at
+  // ~45k GETs of the same kit during one agent turn (K1.6(b) verify).
+  const brandKitRefKey = `${scene.meta.brand_kit?.id ?? PLATFORM_DEFAULT_BRAND_KIT_ID}@${
+    scene.meta.brand_kit?.version ?? ""
+  }`;
   useEffect(() => {
     let cancelled = false;
-    const brandKitId = scene.meta.brand_kit?.id ?? PLATFORM_DEFAULT_BRAND_KIT_ID;
+    const brandKitId = brandKitRefKey.slice(0, brandKitRefKey.lastIndexOf("@"));
     brandKitDetailFetcher(brandKitId)
       .then((detail) => {
         if (!cancelled) {
@@ -566,7 +574,7 @@ export default function EditorApp({
     return () => {
       cancelled = true;
     };
-  }, [scene.meta.brand_kit, brandKitDetailFetcher]);
+  }, [brandKitRefKey, brandKitDetailFetcher]);
 
   // The export + preflight leg (Validate/Export flows, their in-flight
   // flags and results) lives in useExportPreflight. Deps rebuilt per
