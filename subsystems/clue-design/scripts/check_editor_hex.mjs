@@ -6,12 +6,9 @@
  * apps/editor/src/app/brand/tokens.css). Every other CSS file under
  * apps/editor/src must consume var(--…). This keeps a rebrand a one-file edit.
  *
- * LEVEL: warn (exit 0) while the pre-existing shell debt is cleaned. R0 aliased
- * the legacy chrome/panel/teal token VALUES onto the semantic layer
- * without touching component markup, so styles.css still carries ~133 inline
- * literals in its component rules. R1 migrates that markup to the semantics and
- * removes the literals; when the count hits 0, flip ALLOW_EXISTING to false to
- * make this error-level (new literals then fail the build).
+ * LEVEL: error. R1f finished the migration styles.css-wide (hex count 0), so
+ * any literal color outside the token layer now fails the build. A rebrand
+ * stays a one-file edit.
  *
  * Usage: node scripts/check_editor_hex.mjs   (run from repo root or apps/editor)
  */
@@ -28,8 +25,8 @@ const ALLOWLIST = new Set([
   "apps/editor/src/app/brand/tokens.css",
 ]);
 
-// While pre-existing shell literals are being migrated (R1), stay warn-level.
-const ALLOW_EXISTING = true;
+// R1f completed the migration: literals outside the token layer are errors.
+const ALLOW_EXISTING = false;
 
 const COLOR_RE = /#[0-9a-fA-F]{3,8}\b|(?:rgb|rgba|hsl|hsla)\(/g;
 

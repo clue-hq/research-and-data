@@ -1,82 +1,7 @@
-:root {
-  /* R0 restyle substrate — the legacy shell tokens below are now ALIASES onto
-     the Clue semantic layer (src/app/tokens.css, Cursor identity). Remapping
-     the VALUES here flips the entire editor skin to warm-paper/ink in one place
-     WITHOUT touching component markup; R1 migrates markup to the semantics and
-     retires these aliases. No component rule may introduce a new raw color.
-
-     Note the identity shift: the shell was a dark-chrome + light-parchment
-     two-surface system. Cursor is single warm paper with ink diluted over it —
-     there is no dark surface. Each legacy token is aliased by its ROLE (a
-     "chrome background" becomes a paper surface, "chrome text" becomes ink,
-     the teal accent becomes the agent/accent family, the magenta primary
-     becomes the ink pill) — not by its old color. 133 literal-color sites in
-     the component rules below are pre-existing and untouched here (R1 cleans
-     them); this block is the token layer and is the one file allowed literals,
-     which now all live in tokens.css. */
-
-  /* Chrome — was the dark app shell; now paper surfaces (ink-on-paper) */
-  --chrome-bg: var(--bg-app);
-  --chrome-bg-deep: var(--bg-card);
-  --chrome-bg-inset: var(--bg-chip);
-  --chrome-bg-raised: var(--bg-card);
-  --chrome-border: var(--border-default);
-  --chrome-border-strong: var(--border-strong);
-  --chrome-border-soft: var(--border-default);
-  --chrome-text: var(--text-primary);
-  --chrome-text-soft: var(--text-primary);
-  --chrome-text-dim: var(--text-body);
-  --chrome-text-faint: var(--text-muted);
-  --chrome-text-muted: var(--text-muted);
-
-  /* Panel — was the light parchment surfaces; now the same paper substance */
-  --panel-bg: var(--bg-card);
-  --panel-bg-warm: var(--bg-card-warm);
-  --panel-bg-hover: var(--bg-chip);
-  --panel-border: var(--border-default);
-  --panel-border-soft: var(--border-soft);
-  --panel-border-warm: var(--border-default);
-  --panel-border-dim: var(--border-strong);
-  --panel-gold: var(--agent-done);
-  --panel-accent: var(--text-muted);
-  --panel-text: var(--text-body);
-  --panel-text-soft: var(--text-muted);
-  --panel-text-dim: var(--text-muted);
-  --panel-text-muted: var(--text-muted);
-  --panel-text-faint: var(--text-muted);
-  --panel-ink: var(--text-primary);
-  --panel-ink-deep: var(--text-primary);
-
-  /* Accent: teal (agent / status) — now the accent-wash + agent/status family */
-  --teal-bg: var(--accent-wash);
-  --teal-bg-bright: var(--accent-wash-strong);
-  --teal-bg-cool: var(--bg-chip);
-  --teal-border: var(--border-strong);
-  --teal: var(--accent);
-  --teal-deep: var(--accent-pressed);
-  --teal-text: var(--accent-pressed);
-  --teal-ink: var(--accent-pressed);
-
-  /* Accent: magenta (primary action) — now the ink pill (DESIGN.md §4) */
-  --action-primary: var(--btn-primary-bg);
-  --action-primary-hover: var(--btn-primary-bg-hover);
-
-  /* Status text */
-  --status-error-text: var(--status-error);
-  --status-warning-text: var(--accent-pressed);
-
-  /* Neutral */
-  --surface-white: var(--bg-white);
-
-  /* Radii — the Clue ladder (md 8 / sm 6 / pill 9999) is defined once in
-     tokens.css at :root; component rules here consume var(--radius-*) directly.
-     Deliberately NOT re-declared here (a self-alias would be circular). */
-
-  /* Shadows — depth is tone + hairline in Cursor; kept only for the few
-     floating pills the shell still relies on (R1 converts them to hairlines) */
-  --shadow-pop: 0 8px 18px rgb(0 0 0 / 22%);
-}
-
+/* Editor shell styles — every color consumes the semantic token layer in
+ * src/app/tokens.css (the one file allowed literal colors; guard:
+ * scripts/check_editor_hex.mjs, error-level). R1 retired the R0 legacy
+ * chrome/panel/teal aliases; component rules read the semantics directly. */
 :root {
   color-scheme: light;
   font-family: var(--font-sans);
@@ -363,8 +288,8 @@ textarea:disabled {
 .inspector-shell {
   min-height: 0;
   overflow: auto;
-  background: var(--chrome-bg-deep);
-  color: var(--chrome-text-soft);
+  background: var(--bg-card);
+  color: var(--text-primary);
 }
 
 /* Left rail (moda layers-sidebar anatomy): flat paper surface behind a
@@ -394,14 +319,14 @@ textarea:disabled {
 }
 
 .inspector-shell {
-  border-left: 1px solid var(--chrome-border);
+  border-left: 1px solid var(--border-default);
   padding: 14px;
 }
 
 .right-sidebar-resizer {
   min-height: 0;
-  border-left: 1px solid var(--chrome-border);
-  border-right: 1px solid var(--chrome-border);
+  border-left: 1px solid var(--border-default);
+  border-right: 1px solid var(--border-default);
   background: var(--bg-chip);
   cursor: col-resize;
   touch-action: none;
@@ -1138,7 +1063,7 @@ textarea:disabled {
   max-width: 100%;
   max-height: 100%;
   border: 0;
-  background: var(--surface-white);
+  background: var(--bg-white);
   object-fit: contain;
 }
 
@@ -1196,7 +1121,7 @@ textarea:disabled {
   display: grid;
   height: 100%;
   place-items: center;
-  color: var(--chrome-text-dim);
+  color: var(--text-body);
 }
 
 .inspector-section {
@@ -1236,13 +1161,13 @@ textarea:disabled {
 }
 
 .node-header code {
-  color: var(--panel-text-dim);
+  color: var(--text-muted);
   font-size: 12px;
 }
 
 .node-kind {
   display: inline-block;
-  color: var(--teal-deep);
+  color: var(--accent-pressed);
   font-size: 11px;
   font-weight: 800;
   text-transform: uppercase;
@@ -1253,9 +1178,9 @@ textarea:disabled {
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 7px;
   margin-top: 12px;
-  border: 1px solid var(--panel-border);
+  border: 1px solid var(--border-default);
   border-radius: var(--radius-md);
-  background: var(--panel-bg);
+  background: var(--bg-card);
   padding: 8px;
 }
 
@@ -1265,7 +1190,7 @@ textarea:disabled {
 
 .selection-summary span {
   display: block;
-  color: var(--panel-text-muted);
+  color: var(--text-muted);
   font-size: 11px;
   font-weight: 750;
 }
@@ -1365,7 +1290,7 @@ textarea:disabled {
   align-content: end;
   grid-template-columns: 18px 1fr;
   align-items: center;
-  color: var(--panel-text-soft);
+  color: var(--text-muted);
   font-size: 13px;
   font-weight: 700;
 }
@@ -1473,9 +1398,9 @@ textarea:disabled {
   display: flex;
   align-items: flex-start;
   gap: 9px;
-  border: 1px solid var(--panel-border);
+  border: 1px solid var(--border-default);
   border-radius: var(--radius-md);
-  background: var(--surface-white);
+  background: var(--bg-white);
   padding: 10px;
 }
 
@@ -1491,7 +1416,7 @@ textarea:disabled {
 
 .brand-current span {
   margin-top: 3px;
-  color: var(--panel-text-dim);
+  color: var(--text-muted);
   font-size: 12px;
 }
 
@@ -1525,9 +1450,9 @@ textarea:disabled {
 
 .token-summary div {
   min-width: 0;
-  border: 1px solid var(--panel-border);
+  border: 1px solid var(--border-default);
   border-radius: var(--radius-sm);
-  background: var(--surface-white);
+  background: var(--bg-white);
   padding: 7px;
 }
 
@@ -1538,7 +1463,7 @@ textarea:disabled {
 }
 
 .token-summary span {
-  color: var(--panel-text-muted);
+  color: var(--text-muted);
   font-size: 10px;
   font-weight: 750;
 }
@@ -1559,9 +1484,9 @@ textarea:disabled {
   grid-template-columns: minmax(72px, 0.8fr) minmax(0, 1.7fr) auto;
   align-items: center;
   gap: 8px;
-  border: 1px solid var(--panel-border);
+  border: 1px solid var(--border-default);
   border-radius: var(--radius-md);
-  background: var(--panel-bg);
+  background: var(--bg-card);
   padding: 8px;
   font-size: 12px;
 }
@@ -1577,7 +1502,7 @@ textarea:disabled {
 }
 
 .style-summary-label {
-  color: var(--panel-text-muted);
+  color: var(--text-muted);
   font-weight: 750;
 }
 
@@ -1598,17 +1523,17 @@ textarea:disabled {
 }
 
 .style-summary-item strong {
-  color: var(--teal-text);
+  color: var(--accent-pressed);
   font-size: 11px;
   text-align: right;
 }
 
 .style-summary-item.raw strong {
-  color: var(--panel-text-muted);
+  color: var(--text-muted);
 }
 
 .style-summary-item.missing strong {
-  color: var(--status-warning-text);
+  color: var(--accent-pressed);
 }
 
 .style-swatch {
@@ -1713,15 +1638,15 @@ textarea:disabled {
   display: grid;
   grid-template-columns: minmax(86px, auto) minmax(0, 1fr);
   gap: 6px 10px;
-  border: 1px solid var(--panel-border-warm);
+  border: 1px solid var(--border-default);
   border-radius: var(--radius-md);
-  background: var(--panel-bg);
+  background: var(--bg-card);
   padding: 9px;
   font-size: 12px;
 }
 
 .slot-summary-grid span {
-  color: var(--panel-text-muted);
+  color: var(--text-muted);
 }
 
 .slot-summary-grid strong {
@@ -1753,13 +1678,13 @@ textarea:disabled {
 }
 
 .slot-preview-card span {
-  color: var(--panel-text-muted);
+  color: var(--text-muted);
   font-weight: 750;
 }
 
 .slot-preview-card code {
   overflow-wrap: anywhere;
-  color: var(--teal-text);
+  color: var(--accent-pressed);
   font-family: inherit;
   font-weight: 750;
 }
@@ -1781,9 +1706,9 @@ textarea:disabled {
 .slot-overview-list li {
   display: grid;
   gap: 5px;
-  border: 1px solid var(--panel-border-warm);
+  border: 1px solid var(--border-default);
   border-radius: var(--radius-md);
-  background: var(--panel-bg);
+  background: var(--bg-card);
   padding: 9px;
 }
 
@@ -1801,7 +1726,7 @@ textarea:disabled {
 
 .slot-overview-list span,
 .slot-overview-list small {
-  color: var(--panel-text-muted);
+  color: var(--text-muted);
   font-size: 12px;
 }
 
@@ -1877,19 +1802,19 @@ textarea:disabled {
   display: grid;
   gap: 3px;
   margin-top: 10px;
-  border: 1px solid var(--panel-border);
+  border: 1px solid var(--border-default);
   border-radius: var(--radius-md);
-  background: var(--panel-bg);
+  background: var(--bg-card);
   padding: 8px;
 }
 
 .preflight-summary strong {
-  color: var(--teal-text);
+  color: var(--accent-pressed);
   font-size: 12px;
 }
 
 .preflight-summary span {
-  color: var(--panel-text-muted);
+  color: var(--text-muted);
   font-size: 12px;
 }
 
@@ -1997,10 +1922,10 @@ textarea:disabled {
 }
 
 .agent-context-strip span {
-  border: 1px solid var(--panel-border);
+  border: 1px solid var(--border-default);
   border-radius: var(--radius-pill);
-  background: var(--panel-bg);
-  color: var(--panel-text-soft);
+  background: var(--bg-card);
+  color: var(--text-muted);
   padding: 4px 8px;
   font-size: 11px;
   font-weight: 750;
@@ -2016,24 +1941,24 @@ textarea:disabled {
 .agent-message {
   display: grid;
   gap: 4px;
-  border: 1px solid var(--panel-border);
+  border: 1px solid var(--border-default);
   border-radius: var(--radius-md);
-  background: var(--panel-bg);
+  background: var(--bg-card);
   padding: 9px;
 }
 
 .agent-message.user {
-  border-color: var(--teal-border);
-  background: var(--teal-bg);
+  border-color: var(--border-strong);
+  background: var(--accent-wash);
 }
 
 .agent-message.agent {
-  border-color: var(--panel-gold);
-  background: var(--panel-bg-warm);
+  border-color: var(--agent-done);
+  background: var(--bg-card-warm);
 }
 
 .agent-message span {
-  color: var(--teal-text);
+  color: var(--accent-pressed);
   font-size: 11px;
   font-weight: 850;
   text-transform: uppercase;
@@ -2041,7 +1966,7 @@ textarea:disabled {
 
 .agent-message p {
   margin: 0;
-  color: var(--panel-ink);
+  color: var(--text-primary);
   font-size: 13px;
   line-height: 1.45;
 }
@@ -2049,31 +1974,30 @@ textarea:disabled {
 .agent-proposal {
   display: grid;
   gap: 10px;
-  border: 1px solid var(--panel-border);
+  border: 1px solid var(--border-default);
   border-radius: var(--radius-md);
-  background: var(--panel-bg);
+  background: var(--bg-card);
   padding: 10px;
 }
 
 .agent-proposal.proposed {
-  border-color: #82b4a4;
+  border-color: var(--status-success);
 }
 
 .agent-proposal.failed {
-  border-color: #d49b8e;
+  border-color: var(--status-error);
 }
 
 .agent-proposal.reviewing {
-  border-color: var(--action-primary);
-  box-shadow: 0 0 0 1px rgba(236, 47, 138, 0.25);
+  border-color: var(--btn-primary-bg);
 }
 
 .agent-scope-chip {
   margin-left: auto;
-  border: 1px solid var(--teal-border);
+  border: 1px solid var(--border-strong);
   border-radius: var(--radius-pill);
-  background: var(--teal-bg);
-  color: var(--teal-text);
+  background: var(--accent-wash);
+  color: var(--accent-pressed);
   padding: 2px 8px;
   font-size: 10px;
   font-weight: 850;
@@ -2092,26 +2016,26 @@ textarea:disabled {
 }
 
 .agent-proposal-review-actions .agent-review-reject {
-  border: 1px solid var(--panel-border-soft);
-  background: var(--surface-white);
-  color: var(--panel-text);
+  border: 1px solid var(--border-soft);
+  background: var(--bg-white);
+  color: var(--text-body);
 }
 
 .agent-proposal-review-actions .agent-review-accept {
-  border: 1px solid var(--action-primary);
-  background: var(--action-primary);
-  color: var(--surface-white);
+  border: 1px solid var(--btn-primary-bg);
+  background: var(--btn-primary-bg);
+  color: var(--bg-white);
 }
 
 .agent-diagnostic-list li.advisory {
-  border-color: var(--panel-gold);
-  background: var(--panel-bg-warm);
+  border-color: var(--agent-done);
+  background: var(--bg-card-warm);
 }
 
 .advisory-chip {
   border-radius: var(--radius-pill);
-  background: #f4e9d0;
-  color: #7a5d1e;
+  background: var(--accent-wash);
+  color: var(--accent-pressed);
   font-weight: 850;
   text-transform: uppercase;
   letter-spacing: 0.04em;
@@ -2126,7 +2050,7 @@ textarea:disabled {
 
 .agent-proposal p {
   margin: 0;
-  color: var(--panel-text);
+  color: var(--text-body);
   font-size: 13px;
   line-height: 1.45;
 }
@@ -2138,10 +2062,10 @@ textarea:disabled {
   justify-content: center;
   gap: 7px;
   min-height: 34px;
-  border: 1px solid var(--teal-deep);
+  border: 1px solid var(--accent-pressed);
   border-radius: var(--radius-sm);
-  background: var(--teal-deep);
-  color: var(--surface-white);
+  background: var(--accent-pressed);
+  color: var(--bg-white);
   padding: 7px 10px;
   font-size: 13px;
   font-weight: 800;
@@ -2149,9 +2073,9 @@ textarea:disabled {
 
 .agent-proposal button:disabled,
 .agent-chat-form button:disabled {
-  border-color: #d0c5b7;
-  background: #e8e1d7;
-  color: #8f8474;
+  border-color: var(--border-default);
+  background: var(--bg-chip);
+  color: var(--text-disabled);
 }
 
 .agent-chat-form {
@@ -2162,10 +2086,10 @@ textarea:disabled {
 .agent-code-preview {
   max-height: 180px;
   overflow: auto;
-  border: 1px solid var(--panel-border);
+  border: 1px solid var(--border-default);
   border-radius: var(--radius-md);
-  background: #2e2a25;
-  color: #f7efe3;
+  background: var(--bg-card);
+  color: var(--text-body);
   padding: 10px;
   font-size: 11px;
   line-height: 1.45;
@@ -2186,11 +2110,11 @@ textarea:disabled {
 .agent-artifact-list li {
   display: grid;
   gap: 4px;
-  border: 1px solid #e2d7c8;
+  border: 1px solid var(--border-default);
   border-radius: var(--radius-sm);
-  background: var(--surface-white);
+  background: var(--bg-white);
   padding: 7px;
-  color: var(--panel-text);
+  color: var(--text-body);
   font-size: 12px;
 }
 
@@ -2201,7 +2125,7 @@ textarea:disabled {
 .agent-operation-list code,
 .agent-diagnostic-list code {
   overflow: hidden;
-  color: var(--teal-text);
+  color: var(--accent-pressed);
   font-size: 11px;
   font-weight: 800;
   text-overflow: ellipsis;
@@ -2221,14 +2145,14 @@ textarea:disabled {
   grid-template-columns: 24px minmax(0, 1fr);
   align-items: center;
   gap: 8px;
-  border: 1px solid var(--panel-border);
+  border: 1px solid var(--border-default);
   border-radius: var(--radius-md);
-  background: var(--panel-bg);
+  background: var(--bg-card);
   padding: 7px;
 }
 
 .operation-history-list span {
-  color: var(--panel-text-muted);
+  color: var(--text-muted);
   font-size: 11px;
   font-weight: 800;
   text-align: center;
@@ -2236,7 +2160,7 @@ textarea:disabled {
 
 .operation-history-list code {
   overflow: hidden;
-  color: var(--teal-text);
+  color: var(--accent-pressed);
   font-size: 12px;
   font-weight: 750;
   text-overflow: ellipsis;
@@ -2315,14 +2239,14 @@ textarea:disabled {
 .agent-queued-messages {
   display: grid;
   gap: 6px;
-  border: 1px dashed #c9bda6;
+  border: 1px dashed var(--border-strong);
   border-radius: var(--radius-md);
-  background: #fbf7ee;
+  background: var(--bg-card);
   padding: 8px 9px;
 }
 
 .agent-queued-label {
-  color: var(--panel-accent);
+  color: var(--text-muted);
   font-size: 11px;
   font-weight: 850;
   text-transform: uppercase;
@@ -2334,15 +2258,15 @@ textarea:disabled {
   align-items: flex-start;
   justify-content: space-between;
   gap: 8px;
-  border: 1px solid #e2d8c3;
+  border: 1px solid var(--border-default);
   border-radius: var(--radius-sm);
-  background: var(--surface-white);
+  background: var(--bg-white);
   padding: 7px 8px;
 }
 
 .agent-queued-message p {
   margin: 0;
-  color: var(--panel-text);
+  color: var(--text-body);
   font-size: 12.5px;
   line-height: 1.4;
 }
@@ -2355,15 +2279,15 @@ textarea:disabled {
   width: 22px;
   height: 22px;
   padding: 0;
-  border: 1px solid var(--panel-border-soft);
+  border: 1px solid var(--border-soft);
   border-radius: 50%;
-  background: var(--surface-white);
-  color: var(--panel-text-faint);
+  background: var(--bg-white);
+  color: var(--text-muted);
 }
 
 .agent-queued-message button:hover {
-  background: var(--panel-bg-hover);
-  color: var(--panel-ink-deep);
+  background: var(--bg-chip);
+  color: var(--text-primary);
 }
 
 /* 2e notify-when-done toast: a settled turn while the agent panel is
@@ -2379,18 +2303,18 @@ textarea:disabled {
   gap: 9px;
   padding: 9px 16px;
   border-radius: var(--radius-pill);
-  border: 1px solid var(--teal-border);
-  background: var(--teal-bg);
-  color: var(--teal-text);
+  border: 1px solid var(--border-strong);
+  background: var(--accent-wash);
+  color: var(--accent-pressed);
   font-size: 13px;
   font-weight: 600;
   cursor: pointer;
 }
 
 .agent-done-toast.issue {
-  border-color: var(--panel-gold);
-  background: var(--panel-bg-warm);
-  color: var(--panel-text);
+  border-color: var(--agent-done);
+  background: var(--bg-card-warm);
+  color: var(--text-body);
 }
 
 /* 2e post-turn suggestion chips: click fills the composer. Teal chip look
@@ -2405,10 +2329,10 @@ textarea:disabled {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  border: 1px solid var(--teal-border);
+  border: 1px solid var(--border-strong);
   border-radius: var(--radius-pill);
-  background: var(--teal-bg);
-  color: var(--teal-text);
+  background: var(--accent-wash);
+  color: var(--accent-pressed);
   padding: 4px 10px;
   font-size: 11.5px;
   font-weight: 750;
@@ -2416,22 +2340,22 @@ textarea:disabled {
 }
 
 .agent-suggestion-chip:hover {
-  background: #d6ece9;
-  color: var(--teal-ink);
+  background: var(--accent-wash-strong);
+  color: var(--accent-pressed);
 }
 
 /* 2e Design-Plan pre-brief: skippable form folded into the next sent
    prompt. Same disclosure treatment as standing instructions. */
 .agent-prebrief {
-  border: 1px solid var(--panel-border);
+  border: 1px solid var(--border-default);
   border-radius: var(--radius-md);
-  background: var(--panel-bg);
+  background: var(--bg-card);
   padding: 8px 10px;
 }
 
 .agent-prebrief summary {
   cursor: pointer;
-  color: var(--panel-accent);
+  color: var(--text-muted);
   font-size: 11px;
   font-weight: 850;
   text-transform: uppercase;
@@ -2439,7 +2363,7 @@ textarea:disabled {
 }
 
 .agent-prebrief summary em {
-  color: var(--teal-text);
+  color: var(--accent-pressed);
   font-style: normal;
 }
 
@@ -2458,15 +2382,15 @@ textarea:disabled {
 /* 2e standing instructions: per-document rules sent with every turn.
    Palette reused from the agent cards / worklog summary. */
 .agent-standing-instructions {
-  border: 1px solid var(--panel-border);
+  border: 1px solid var(--border-default);
   border-radius: var(--radius-md);
-  background: var(--panel-bg);
+  background: var(--bg-card);
   padding: 8px 10px;
 }
 
 .agent-standing-instructions summary {
   cursor: pointer;
-  color: var(--panel-accent);
+  color: var(--text-muted);
   font-size: 11px;
   font-weight: 850;
   text-transform: uppercase;
@@ -2474,7 +2398,7 @@ textarea:disabled {
 }
 
 .agent-standing-instructions summary em {
-  color: var(--teal-text);
+  color: var(--accent-pressed);
   font-style: normal;
 }
 
@@ -2490,10 +2414,10 @@ textarea:disabled {
 }
 
 .agent-standing-instructions-actions button {
-  border: 1px solid var(--panel-border-soft);
+  border: 1px solid var(--border-soft);
   border-radius: var(--radius-sm);
-  background: var(--surface-white);
-  color: var(--panel-text);
+  background: var(--bg-white);
+  color: var(--text-body);
   padding: 4px 9px;
   font-size: 11.5px;
   font-weight: 750;
@@ -2522,18 +2446,18 @@ textarea:disabled {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  border: 1px solid var(--panel-border-soft);
+  border: 1px solid var(--border-soft);
   border-radius: var(--radius-sm);
-  background: var(--surface-white);
-  color: var(--panel-text);
+  background: var(--bg-white);
+  color: var(--text-body);
   padding: 4px 9px;
   font-size: 11.5px;
   font-weight: 750;
 }
 
 .turn-actions button:hover:not(:disabled) {
-  background: var(--panel-bg-hover);
-  color: var(--panel-ink-deep);
+  background: var(--bg-chip);
+  color: var(--text-primary);
 }
 
 .turn-actions button:disabled {
@@ -2542,13 +2466,13 @@ textarea:disabled {
 }
 
 .turn-actions .turn-actions-danger {
-  border-color: #d49b8e;
-  color: #8a3a2b;
+  border-color: var(--status-error);
+  color: var(--status-error);
 }
 
 .turn-actions .turn-actions-danger:hover:not(:disabled) {
-  background: #fdf1ee;
-  color: #6d2517;
+  background: var(--status-error-wash);
+  color: var(--status-error);
 }
 
 .turn-actions-comparing,
@@ -2557,13 +2481,13 @@ textarea:disabled {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  color: var(--panel-accent);
+  color: var(--text-muted);
   font-size: 11.5px;
   font-weight: 750;
 }
 
 .turn-actions-comparing {
-  color: var(--teal-text);
+  color: var(--accent-pressed);
 }
 
 /* 2c selection chips: the layers the human chipped as edit targets for the
@@ -2571,9 +2495,9 @@ textarea:disabled {
 .agent-target-chips {
   display: grid;
   gap: 6px;
-  border: 1px solid var(--teal-border);
+  border: 1px solid var(--border-strong);
   border-radius: var(--radius-md);
-  background: var(--teal-bg);
+  background: var(--accent-wash);
   padding: 8px 9px;
 }
 
@@ -2581,7 +2505,7 @@ textarea:disabled {
   display: flex;
   align-items: center;
   gap: 5px;
-  color: var(--teal-text);
+  color: var(--accent-pressed);
   font-size: 11px;
   font-weight: 850;
   text-transform: uppercase;
@@ -2592,7 +2516,7 @@ textarea:disabled {
   margin-left: auto;
   border: none;
   background: none;
-  color: #4f736f;
+  color: var(--accent-pressed);
   font-size: 11px;
   font-weight: 750;
   text-transform: none;
@@ -2602,7 +2526,7 @@ textarea:disabled {
 }
 
 .agent-target-chips-clear:hover {
-  color: var(--teal-text);
+  color: var(--accent-pressed);
   text-decoration: underline;
 }
 
@@ -2616,16 +2540,16 @@ textarea:disabled {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  border: 1px solid var(--teal-border);
+  border: 1px solid var(--border-strong);
   border-radius: var(--radius-pill);
-  background: var(--surface-white);
+  background: var(--bg-white);
   padding: 3px 4px 3px 10px;
   font-size: 12px;
   max-width: 100%;
 }
 
 .agent-target-chip-name {
-  color: var(--teal-ink);
+  color: var(--accent-pressed);
   font-weight: 700;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -2634,7 +2558,7 @@ textarea:disabled {
 }
 
 .agent-target-chip-id {
-  color: var(--panel-accent);
+  color: var(--text-muted);
   font-size: 10.5px;
 }
 
@@ -2648,14 +2572,14 @@ textarea:disabled {
   padding: 0;
   border: none;
   border-radius: 50%;
-  background: var(--teal-bg);
-  color: #4f736f;
+  background: var(--accent-wash);
+  color: var(--accent-pressed);
   cursor: pointer;
 }
 
 .agent-target-chip button:hover {
-  background: #d6ece9;
-  color: var(--teal-ink);
+  background: var(--accent-wash-strong);
+  color: var(--accent-pressed);
 }
 
 /* 2b show-work: the Moda plan checklist — live stage ticks during a run,
@@ -2664,9 +2588,9 @@ textarea:disabled {
 .agent-run-checklist {
   display: grid;
   gap: 8px;
-  border: 1px solid var(--panel-border);
+  border: 1px solid var(--border-default);
   border-radius: var(--radius-md);
-  background: var(--panel-bg);
+  background: var(--bg-card);
   padding: 10px;
 }
 
@@ -2684,23 +2608,23 @@ textarea:disabled {
   gap: 8px;
   font-size: 12.5px;
   font-weight: 700;
-  color: var(--panel-accent);
+  color: var(--text-muted);
 }
 
 .agent-checklist-step.done {
-  color: var(--teal-text);
+  color: var(--accent-pressed);
 }
 
 .agent-checklist-step.done svg {
-  color: #82b4a4;
+  color: var(--status-success);
 }
 
 .agent-checklist-step.active {
-  color: var(--panel-text);
+  color: var(--text-body);
 }
 
 .agent-checklist-spinner {
-  color: #b89961;
+  color: var(--agent-generate);
   animation: agent-checklist-spin 0.9s linear infinite;
 }
 
@@ -2712,7 +2636,7 @@ textarea:disabled {
 
 .agent-run-worklog summary {
   cursor: pointer;
-  color: var(--panel-accent);
+  color: var(--text-muted);
   font-size: 11px;
   font-weight: 850;
   text-transform: uppercase;
@@ -2727,7 +2651,7 @@ textarea:disabled {
 }
 
 .agent-worklog-list li {
-  color: var(--panel-text-faint);
+  color: var(--text-muted);
   font-size: 12px;
   line-height: 1.4;
 }
@@ -2880,9 +2804,9 @@ textarea:disabled {
   white-space: nowrap;
   padding: 3px 9px;
   border-radius: var(--radius-pill);
-  border: 1px solid var(--panel-gold);
-  background: var(--panel-bg-warm);
-  color: var(--panel-accent);
+  border: 1px solid var(--agent-done);
+  background: var(--bg-card-warm);
+  color: var(--text-muted);
   font-size: 11px;
   font-weight: 600;
 }
@@ -3152,13 +3076,13 @@ textarea:disabled {
   justify-content: space-between;
   gap: 8px;
   padding-top: 6px;
-  border-top: 1px solid var(--panel-border-soft);
+  border-top: 1px solid var(--border-soft);
 }
 
 .color-swatch-custom-label {
   font-size: 11px;
   font-weight: 600;
-  color: var(--panel-text-soft);
+  color: var(--text-muted);
 }
 
 .color-swatch-empty-groups {
@@ -3175,12 +3099,12 @@ textarea:disabled {
   margin: 0;
   font-size: 11px;
   font-weight: 600;
-  color: var(--panel-text-soft);
+  color: var(--text-muted);
 }
 
 .color-swatch-guard-list {
   margin: 0;
   padding-left: 16px;
   font-size: 11px;
-  color: var(--panel-text-muted);
+  color: var(--text-muted);
 }
