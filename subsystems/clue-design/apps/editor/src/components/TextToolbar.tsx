@@ -3,7 +3,6 @@
 import { AlignCenter, AlignJustify, AlignLeft, AlignRight } from "lucide-react";
 import type { BrandTokenCatalog, Node, Operation, TextAlign } from "@/engine/contracts";
 import { updateNodeFills, updateTextNode } from "@/engine/operations";
-import { tokenSwatchCss } from "@/engine/renderAdapter";
 import { ColorSwatchControl } from "./ColorSwatchControl";
 
 /** Contextual typography toolbar shown above the canvas while a text node is
@@ -142,11 +141,6 @@ export function TextToolbar({
           data-testid="text-toolbar-token-chip"
           title="Bound to a brand type role — raw typography edits detach it"
         >
-          <span
-            className="style-swatch"
-            aria-hidden
-            style={{ background: tokenSwatchCss(text.style_token) }}
-          />
           {text.style_token}
         </span>
       ) : null}
