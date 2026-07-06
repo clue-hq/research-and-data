@@ -2071,11 +2071,15 @@ def test_load_knowledge_injects_brand_card_and_decide_doc(tmp_path: Path, monkey
     )
     payload = json.loads(with_kit.load_knowledge("brand ad"))
     assert BRAND_APPLICATION_PATH in captured["extra"]
-    card_snippets = [
-        s for s in payload["snippets"] if str(s.get("path", "")).startswith("brand-kit:")
-    ]
+    # EVERY snippet must round-trip the KnowledgeSnippet schema — the quality
+    # loop re-validates them, so a hand-rolled card dict kills the whole turn
+    # (the K1 live proof failed exactly here: missing score/excerpt).
+    from lumen_deepagent.schemas import KnowledgeSnippet
+
+    validated = [KnowledgeSnippet.model_validate(s) for s in payload["snippets"]]
+    card_snippets = [s for s in validated if s.path.startswith("brand-kit:")]
     assert len(card_snippets) == 1
-    assert "accent" in card_snippets[0]["content"]
+    assert "accent" in card_snippets[0].excerpt
 
     without_kit = LumenDesignTools(runtime_config(tmp_path), "Design an ad")
     payload = json.loads(without_kit.load_knowledge("brand ad"))

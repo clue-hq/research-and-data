@@ -30,6 +30,7 @@ from .schemas import (
     GapArea,
     GapRecord,
     KnowledgeLoadResult,
+    KnowledgeSnippet,
     LayoutClusterTarget,
     LumenRunTraceEvent,
     OperationApplicationSummary,
@@ -238,12 +239,18 @@ class LumenDesignTools:
             # The card rides the knowledge payload so the coordinator (and the
             # author via task context) reasons from the kit's ACTUAL roles,
             # accent, and inventory — not from guessed token names.
+            # Through the KnowledgeSnippet model, not a hand-rolled dict — the
+            # quality loop re-validates every snippet (loop.py), so a shape
+            # drift here kills the whole turn (found by the K1 live proof).
             payload["snippets"].append(
-                {
-                    "path": f"brand-kit:{self.brand_card['kit'].get('id')}",
-                    "title": "Brand context card (this document's attached kit)",
-                    "content": json.dumps(self.brand_card, indent=1),
-                }
+                KnowledgeSnippet(
+                    path=f"brand-kit:{self.brand_card['kit'].get('id')}",
+                    title="Brand context card (this document's attached kit)",
+                    score=100,
+                    excerpt=json.dumps(self.brand_card, indent=1),
+                    category="brand",
+                    selected_reason="attached_brand_kit",
+                ).model_dump(mode="json")
             )
         self.loaded_knowledge = payload["snippets"]
         self._write_json(self.trace_dir / "knowledge.json", payload)
