@@ -293,6 +293,133 @@ describe("ImageInspectorSection", () => {
     expect(screen.getByTestId("image-edit-status").getAttribute("data-status")).toBe("saved");
   });
 
+  it("Accept fires the asset-library refresh callback exactly once", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        new Response(
+          JSON.stringify({ schema_version: 1, asset: editedRecord(), deduplicated: false, diagnostics: [] }),
+          { status: 200 }
+        )
+      )
+    );
+
+    const onAssetLibraryChanged = vi.fn();
+    render(
+      <ImageInspectorSection
+        node={imageNode()}
+        asset={readyAsset()}
+        apiBaseUrl={API_BASE}
+        onOperations={() => {}}
+        onAssetLibraryChanged={onAssetLibraryChanged}
+      />
+    );
+
+    fireEvent.change(screen.getByLabelText("Image edit instruction"), { target: { value: "warm it up" } });
+    fireEvent.click(screen.getByTestId("image-edit-submit"));
+    await waitFor(() => expect(screen.getByTestId("image-edit-accept")).toBeTruthy());
+
+    fireEvent.click(screen.getByTestId("image-edit-accept"));
+
+    expect(onAssetLibraryChanged).toHaveBeenCalledTimes(1);
+  });
+
+  it("Save as new fires the asset-library refresh callback exactly once", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        new Response(
+          JSON.stringify({ schema_version: 1, asset: editedRecord(), deduplicated: false, diagnostics: [] }),
+          { status: 200 }
+        )
+      )
+    );
+
+    const onAssetLibraryChanged = vi.fn();
+    render(
+      <ImageInspectorSection
+        node={imageNode()}
+        asset={readyAsset()}
+        apiBaseUrl={API_BASE}
+        onOperations={() => {}}
+        onAssetLibraryChanged={onAssetLibraryChanged}
+      />
+    );
+
+    fireEvent.change(screen.getByLabelText("Image edit instruction"), { target: { value: "warm it up" } });
+    fireEvent.click(screen.getByTestId("image-edit-submit"));
+    await waitFor(() => expect(screen.getByTestId("image-edit-save-new")).toBeTruthy());
+
+    fireEvent.click(screen.getByTestId("image-edit-save-new"));
+
+    expect(onAssetLibraryChanged).toHaveBeenCalledTimes(1);
+  });
+
+  it("Reject never fires the asset-library refresh callback", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        new Response(
+          JSON.stringify({ schema_version: 1, asset: editedRecord(), deduplicated: false, diagnostics: [] }),
+          { status: 200 }
+        )
+      )
+    );
+
+    const onAssetLibraryChanged = vi.fn();
+    render(
+      <ImageInspectorSection
+        node={imageNode()}
+        asset={readyAsset()}
+        apiBaseUrl={API_BASE}
+        onOperations={() => {}}
+        onAssetLibraryChanged={onAssetLibraryChanged}
+      />
+    );
+
+    fireEvent.change(screen.getByLabelText("Image edit instruction"), { target: { value: "warm it up" } });
+    fireEvent.click(screen.getByTestId("image-edit-submit"));
+    await waitFor(() => expect(screen.getByTestId("image-edit-reject")).toBeTruthy());
+
+    fireEvent.click(screen.getByTestId("image-edit-reject"));
+
+    expect(onAssetLibraryChanged).not.toHaveBeenCalled();
+  });
+
+  it("shows the pending status pill while an edit is applying", async () => {
+    let resolveFetch: (response: Response) => void = () => {};
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        () =>
+          new Promise<Response>((resolve) => {
+            resolveFetch = resolve;
+          })
+      )
+    );
+
+    render(
+      <ImageInspectorSection node={imageNode()} asset={readyAsset()} apiBaseUrl={API_BASE} onOperations={() => {}} />
+    );
+
+    fireEvent.change(screen.getByLabelText("Image edit instruction"), { target: { value: "warm it up" } });
+    fireEvent.click(screen.getByTestId("image-edit-submit"));
+
+    // Actions row is replaced by the status pill while busy.
+    await waitFor(() => {
+      expect(screen.getByTestId("image-edit-status").getAttribute("data-status")).toBe("pending");
+    });
+    expect(screen.queryByTestId("image-edit-submit")).toBeNull();
+
+    resolveFetch(
+      new Response(
+        JSON.stringify({ schema_version: 1, asset: editedRecord(), deduplicated: false, diagnostics: [] }),
+        { status: 200 }
+      )
+    );
+    await waitFor(() => expect(screen.getByTestId("image-edit-review")).toBeTruthy());
+  });
+
   it("surfaces a failed generation (e.g. model not configured)", async () => {
     vi.stubGlobal(
       "fetch",

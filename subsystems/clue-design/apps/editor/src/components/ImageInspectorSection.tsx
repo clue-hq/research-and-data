@@ -41,6 +41,9 @@ export interface ImageInspectorSectionProps {
   apiBaseUrl: string;
   disabled?: boolean;
   onOperations: (operations: Operation[]) => void;
+  /** Data-refresh signal: a user KEPT an edited asset (Accept / Save as new),
+   * so the asset library should refetch. Reject deliberately does not fire. */
+  onAssetLibraryChanged?: () => void;
 }
 
 export function ImageInspectorSection({
@@ -48,7 +51,8 @@ export function ImageInspectorSection({
   asset,
   apiBaseUrl,
   disabled = false,
-  onOperations
+  onOperations,
+  onAssetLibraryChanged
 }: ImageInspectorSectionProps) {
   const placement = node.asset_placement ?? {};
   const fit: ImageFitMode = placement.fit ?? "cover";
@@ -154,6 +158,7 @@ export function ImageInspectorSection({
     setCandidate(null);
     setInstruction("");
     setSavedNotice(null);
+    onAssetLibraryChanged?.();
   };
 
   // Reject: discard the candidate UI state; zero scene mutations.
@@ -171,6 +176,7 @@ export function ImageInspectorSection({
     setSavedNotice(`Saved ${candidate.label ?? candidate.id} to the asset library.`);
     setCandidate(null);
     setInstruction("");
+    onAssetLibraryChanged?.();
   };
 
   const status = generating
@@ -232,7 +238,7 @@ export function ImageInspectorSection({
           onChange={(event) => setPrompt(event.target.value)}
         />
       </div>
-      <div className="field-row">
+      <div className="field-row image-edit-actions">
         <button
           type="button"
           data-testid="image-generate"
@@ -245,9 +251,9 @@ export function ImageInspectorSection({
       </div>
 
       {canEdit ? (
-        <div className="image-edit" data-testid="image-edit">
+        <div className="image-edit field-group" data-testid="image-edit">
+          <span className="eyebrow">Edit image</span>
           <label className="field">
-            <span>Edit image</span>
             <textarea
               aria-label="Image edit instruction"
               rows={2}
@@ -257,56 +263,78 @@ export function ImageInspectorSection({
               onChange={(event) => setInstruction(event.target.value)}
             />
           </label>
-          <div className="field-row">
-            <button
-              type="button"
-              data-testid="image-edit-submit"
-              disabled={disabled || editing || Boolean(candidate) || !instruction.trim()}
-              onClick={() => void runEdit(instruction)}
+          {editing ? (
+            <span
+              className="image-edit-status-pill"
+              data-testid="image-edit-status"
+              data-status="pending"
             >
-              <Wand2 aria-hidden size={14} />
-              {editing ? "Editing…" : "Edit"}
-            </button>
-            <button
-              type="button"
-              data-testid="image-remove-bg"
-              disabled={disabled || editing || Boolean(candidate)}
-              onClick={() => void runEdit(REMOVE_BACKGROUND_INSTRUCTION, { transparentBackground: true })}
-            >
-              <Eraser aria-hidden size={14} />
-              Remove background
-            </button>
-          </div>
+              Applying edit…
+            </span>
+          ) : (
+            <div className="field-row image-edit-actions">
+              <button
+                type="button"
+                data-testid="image-edit-submit"
+                disabled={disabled || Boolean(candidate) || !instruction.trim()}
+                onClick={() => void runEdit(instruction)}
+              >
+                <Wand2 aria-hidden size={14} />
+                Edit
+              </button>
+              <button
+                type="button"
+                data-testid="image-remove-bg"
+                disabled={disabled || Boolean(candidate)}
+                onClick={() => void runEdit(REMOVE_BACKGROUND_INSTRUCTION, { transparentBackground: true })}
+              >
+                <Eraser aria-hidden size={14} />
+                Remove background
+              </button>
+            </div>
+          )}
         </div>
       ) : null}
 
       {candidate ? (
-        <div className="image-edit-review" data-testid="image-edit-review">
-          <span className="section-subheading">Before / After</span>
-          <div className="field-row">
+        <div className="image-edit-review field-group" data-testid="image-edit-review">
+          <div className="image-edit-compare">
             <figure className="image-edit-preview" data-testid="image-edit-before">
+              <figcaption className="eyebrow">Before</figcaption>
               <img
                 alt="Current image"
                 src={sourceAssetId ? assetThumbnailUrl(apiBaseUrl, sourceAssetId) : undefined}
               />
-              <figcaption className="muted">Before</figcaption>
             </figure>
             <figure className="image-edit-preview" data-testid="image-edit-after">
+              <figcaption className="eyebrow">After</figcaption>
               <img alt="Edited candidate" src={assetThumbnailUrl(apiBaseUrl, candidate.id)} />
-              <figcaption className="muted">After</figcaption>
             </figure>
           </div>
-          <div className="field-row">
-            <button type="button" data-testid="image-edit-accept" disabled={disabled} onClick={acceptCandidate}>
+          <div className="field-row image-edit-review-actions">
+            <button
+              type="button"
+              className="image-edit-accept"
+              data-testid="image-edit-accept"
+              disabled={disabled}
+              onClick={acceptCandidate}
+            >
               <Check aria-hidden size={14} />
               Accept
             </button>
-            <button type="button" data-testid="image-edit-reject" disabled={disabled} onClick={rejectCandidate}>
+            <button
+              type="button"
+              className="image-edit-reject"
+              data-testid="image-edit-reject"
+              disabled={disabled}
+              onClick={rejectCandidate}
+            >
               <X aria-hidden size={14} />
               Reject
             </button>
             <button
               type="button"
+              className="image-edit-save-new"
               data-testid="image-edit-save-new"
               disabled={disabled}
               onClick={saveCandidateAsNew}
@@ -321,14 +349,10 @@ export function ImageInspectorSection({
         <p className="muted" data-testid="image-edit-status" data-status="failed">
           {`Edit failed: ${editError}`}
         </p>
-      ) : editing ? (
-        <p className="muted" data-testid="image-edit-status" data-status="pending">
-          Editing image…
-        </p>
-      ) : savedNotice ? (
-        <p className="muted" data-testid="image-edit-status" data-status="saved">
+      ) : savedNotice && !editing ? (
+        <span className="status-pill is-approved" data-testid="image-edit-status" data-status="saved">
           {savedNotice}
-        </p>
+        </span>
       ) : null}
 
       <p className="muted" data-testid="image-status" data-status={status}>

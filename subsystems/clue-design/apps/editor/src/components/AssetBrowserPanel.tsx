@@ -18,6 +18,7 @@ export function AssetBrowserPanel({
   apiBaseUrl,
   selectedNodeId,
   selectedNodePlacement = null,
+  refreshToken,
   onOperations
 }: {
   apiBaseUrl: string;
@@ -25,6 +26,9 @@ export function AssetBrowserPanel({
   /** Existing placement on the selected node — carried forward on Replace so fit /
    * focal / slot binding survive swapping the image, instead of resetting to {}. */
   selectedNodePlacement?: AssetPlacement | null;
+  /** Data-refresh signal: bumping the token refetches the library (a kept
+   * image edit registered a new asset). */
+  refreshToken?: number;
   onOperations: (operations: Operation[]) => void;
 }) {
   const [assets, setAssets] = useState<AssetRecord[]>([]);
@@ -52,7 +56,7 @@ export function AssetBrowserPanel({
 
   useEffect(() => {
     void refresh();
-  }, [refresh]);
+  }, [refresh, refreshToken]);
 
   const handleUpload = useCallback(
     async (file: File) => {

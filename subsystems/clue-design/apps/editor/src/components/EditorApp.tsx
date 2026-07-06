@@ -327,6 +327,10 @@ export default function EditorApp({
     reason: "load_failed" | "handshake_failed" | "version_mismatch";
     detail: string;
   } | null>(null);
+  // Data-refresh signal (not workflow policy): the image-edit gate reports a
+  // kept asset (Accept / Save as new) and the asset library refetches.
+  const [assetLibraryRefreshToken, setAssetLibraryRefreshToken] = useState(0);
+  const notifyAssetLibraryChanged = () => setAssetLibraryRefreshToken((t) => t + 1);
   // Workspace chrome (panel mode, workspace mode, viewport/tool, sidebar
   // width + resizer) lives in useWorkspaceChrome — presentation state only.
   const {
@@ -1627,6 +1631,7 @@ export default function EditorApp({
                 onSelectSubject={selectDiagnosticSubject}
                 layoutManagedEditing={layoutManagedEditing.enabled}
                 onSetLayoutManagedEditing={layoutManagedEditing.setEnabled}
+                onAssetLibraryChanged={notifyAssetLibraryChanged}
               />
               <BrandKitPanel
                 scene={scene}
@@ -1657,6 +1662,7 @@ export default function EditorApp({
                 apiBaseUrl={editorApiBaseUrl()}
                 selectedNodeId={selectedNodeId}
                 selectedNodePlacement={selectedNode?.asset_placement ?? null}
+                refreshToken={assetLibraryRefreshToken}
                 onOperations={applyOperations}
               />
               <WorstCasePreviewPanel apiBaseUrl={editorApiBaseUrl()} scene={scene} />

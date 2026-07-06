@@ -188,6 +188,38 @@ describe("AssetBrowserPanel", () => {
     expect(body.get("label")).toBe("logo.png");
   });
 
+  it("refetches the library when refreshToken bumps", async () => {
+    const fetchMock = mockFetch([libraryRecord("asset_logo", "Acme logo", "logo")]);
+
+    const { rerender } = render(
+      <AssetBrowserPanel
+        apiBaseUrl={API_BASE}
+        selectedNodeId={null}
+        refreshToken={0}
+        onOperations={() => {}}
+      />
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId("asset-asset_logo")).toBeTruthy();
+    });
+    const initialListCalls = fetchMock.mock.calls.filter(([url]) => String(url).includes("/assets")).length;
+
+    rerender(
+      <AssetBrowserPanel
+        apiBaseUrl={API_BASE}
+        selectedNodeId={null}
+        refreshToken={1}
+        onOperations={() => {}}
+      />
+    );
+
+    await waitFor(() => {
+      const listCalls = fetchMock.mock.calls.filter(([url]) => String(url).includes("/assets")).length;
+      expect(listCalls).toBe(initialListCalls + 1);
+    });
+  });
+
   it("surfaces upload rejections from the API", async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       if (init?.method === "POST") {

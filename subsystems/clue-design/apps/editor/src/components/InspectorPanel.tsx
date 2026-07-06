@@ -45,6 +45,9 @@ interface InspectorPanelProps {
    * toggle): keep agent auto-layout live by skipping both freeze seams. */
   layoutManagedEditing?: boolean;
   onSetLayoutManagedEditing?: (enabled: boolean) => void;
+  /** Data-refresh signal from the image-edit gate: the user kept an edited
+   * asset (Accept / Save as new), so the asset library should refetch. */
+  onAssetLibraryChanged?: () => void;
 }
 
 /**
@@ -67,7 +70,8 @@ export function InspectorPanel({
   onStructuredEdit,
   onSelectSubject,
   layoutManagedEditing,
-  onSetLayoutManagedEditing
+  onSetLayoutManagedEditing,
+  onAssetLibraryChanged
 }: InspectorPanelProps) {
   const emitOperations =
     onOperations ?? ((operations: Operation[]) => operations.forEach(onOperation));
@@ -123,6 +127,7 @@ export function InspectorPanel({
           apiBaseUrl={apiBaseUrl ?? "http://localhost:8000"}
           disabled={selectedNode.locked}
           onOperations={emitOperations}
+          onAssetLibraryChanged={onAssetLibraryChanged}
         />
       ) : null}
 

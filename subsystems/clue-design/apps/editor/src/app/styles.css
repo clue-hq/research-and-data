@@ -2789,6 +2789,149 @@ textarea:disabled {
   font-weight: 600;
 }
 
+/* Image-edit gate (brand guide §6 recipe + moda 7.38.38 cues): a field-group
+   sub-card with labeled ghost actions; while busy, a status pill with the
+   agent-generate dot replaces the actions row. */
+.image-edit .eyebrow {
+  margin: 0;
+}
+
+.image-edit-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-xs);
+  margin-top: var(--space-xs);
+}
+
+.image-edit-actions button {
+  display: inline-flex;
+  min-height: 28px;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-primary);
+  padding: 0 10px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.image-edit-actions button:hover:not(:disabled) {
+  border-color: var(--border-strong);
+  background: var(--bg-chip);
+}
+
+.image-edit-status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
+  justify-self: start;
+  min-height: 28px;
+  padding: 0 12px;
+  border-radius: var(--radius-pill);
+  background: var(--bg-chip);
+  color: var(--text-primary);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.image-edit-status-pill::before {
+  content: "";
+  width: 8px;
+  height: 8px;
+  flex: none;
+  border-radius: var(--radius-pill);
+  background: var(--agent-generate);
+}
+
+.image-edit-compare {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-xs);
+}
+
+.image-edit-preview {
+  display: grid;
+  gap: var(--space-xxs);
+  margin: 0;
+  min-width: 0;
+}
+
+.image-edit-preview img {
+  width: 100%;
+  height: 96px;
+  object-fit: contain;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  background: var(--bg-card);
+}
+
+.image-edit-review-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-xs);
+  margin-top: var(--space-xs);
+}
+
+.image-edit-review-actions button {
+  display: inline-flex;
+  min-height: 28px;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border-radius: var(--radius-pill);
+  padding: 0 12px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+/* Accept is this surface's one ink pill (§4.4). */
+.image-edit-accept {
+  border: 1px solid var(--btn-primary-bg);
+  background: var(--btn-primary-bg);
+  color: var(--btn-primary-text);
+  font-weight: 600;
+}
+
+.image-edit-accept:hover:not(:disabled) {
+  background: var(--btn-primary-bg-hover);
+  border-color: var(--btn-primary-bg-hover);
+}
+
+.image-edit-reject {
+  border: 1px solid var(--border-default);
+  background: transparent;
+  color: var(--text-primary);
+}
+
+.image-edit-reject:hover:not(:disabled) {
+  border-color: var(--border-strong);
+  background: var(--bg-chip);
+}
+
+.image-edit-save-new {
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.image-edit-save-new:hover:not(:disabled) {
+  color: var(--text-primary);
+}
+
+.status-pill.is-approved {
+  display: inline-flex;
+  align-items: center;
+  border-color: transparent;
+  background: var(--status-success-wash);
+  color: var(--status-success);
+}
+
 .color-swatch-control {
   position: relative;
   display: inline-flex;
