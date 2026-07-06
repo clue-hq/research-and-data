@@ -3672,3 +3672,48 @@ textarea:disabled {
   background: var(--bg-chip);
   color: var(--text-primary);
 }
+
+
+/* Figma-style pages head: title left, quiet + on the right toggling the
+   collapsible new-artboard creator. */
+.page-rail-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.page-rail-add {
+  display: inline-grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-mid);
+}
+
+.page-rail-add:hover,
+.page-rail-add[aria-expanded="true"] {
+  background: var(--bg-chip);
+  color: var(--text-primary);
+}
+
+.page-list {
+  display: grid;
+  gap: 1px;
+  margin: 6px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.page-list-empty {
+  margin: 8px 0 0;
+}
+
+.custom-page-creator {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border-soft);
+}

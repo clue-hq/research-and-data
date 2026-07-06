@@ -7,11 +7,14 @@ export interface EditorPanelModeItem {
   ariaLabel?: string;
 }
 
+/** The rail's visible tabs. "export" is deliberately NOT a tab: exporting
+ * lives in the topbar Export popover, and the export-results panel opens
+ * from the canvas toolbar / after an ExportPanel run (the mode still
+ * exists — it just has no tab). */
 export const EDITOR_PANEL_MODES: EditorPanelModeItem[] = [
   { mode: "inspector", label: "Inspect" },
   { mode: "assets", label: "Assets", ariaLabel: "Assets panel" },
   { mode: "agent", label: "Agent" },
-  { mode: "export", label: "Export", ariaLabel: "Export panel" },
   { mode: "diagnostics", label: "Diagnostics", ariaLabel: "Diagnostics panel" }
 ];
 

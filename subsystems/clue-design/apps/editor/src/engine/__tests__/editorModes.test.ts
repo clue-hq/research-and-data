@@ -7,11 +7,12 @@ describe("editor mode metadata", () => {
       "inspector",
       "assets",
       "agent",
-      "export",
       "diagnostics"
     ]);
+    // Export deliberately has no rail tab — the topbar popover and the
+    // canvas toolbar open the export surface.
+    expect(EDITOR_PANEL_MODES.some((item) => item.mode === "export")).toBe(false);
     expect(EDITOR_PANEL_MODES.find((item) => item.mode === "assets")?.ariaLabel).toBe("Assets panel");
-    expect(EDITOR_PANEL_MODES.find((item) => item.mode === "export")?.ariaLabel).toBe("Export panel");
     expect(EDITOR_PANEL_MODES.find((item) => item.mode === "diagnostics")?.ariaLabel).toBe("Diagnostics panel");
   });
 

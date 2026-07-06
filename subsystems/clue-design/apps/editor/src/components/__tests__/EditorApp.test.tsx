@@ -218,6 +218,7 @@ describe.skipIf(!wasmArtifactPresent)("EditorApp", () => {
       />
     );
 
+    fireEvent.click(screen.getByRole("button", { name: /^New artboard$/i }));
     fireEvent.change(screen.getByLabelText("Custom artboard name"), {
       target: { value: "Client Leaderboard" }
     });
@@ -240,7 +241,7 @@ describe.skipIf(!wasmArtifactPresent)("EditorApp", () => {
     expect(screen.getAllByText("Client Leaderboard").length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText("add_page page_client_leaderboard")).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: /^export panel$/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /^open export panel$/i }));
     fireEvent.click(screen.getByRole("button", { name: /generate preview/i }));
 
     expect(await screen.findByText("Export ready")).toBeInTheDocument();
@@ -293,7 +294,7 @@ describe.skipIf(!wasmArtifactPresent)("EditorApp", () => {
       />
     );
 
-    fireEvent.click(screen.getByRole("button", { name: /^export panel$/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /^open export panel$/i }));
     fireEvent.click(screen.getByRole("button", { name: /generate preview/i }));
 
     expect(await screen.findByText("Export ready")).toBeInTheDocument();
@@ -343,7 +344,7 @@ describe.skipIf(!wasmArtifactPresent)("EditorApp", () => {
       />
     );
 
-    fireEvent.click(screen.getByRole("button", { name: /^export panel$/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /^open export panel$/i }));
     fireEvent.click(screen.getByRole("button", { name: /generate preview/i }));
 
     expect(await screen.findByText("Export ready")).toBeInTheDocument();
@@ -419,7 +420,7 @@ describe.skipIf(!wasmArtifactPresent)("EditorApp", () => {
     expect(await screen.findByText("A4 Letter Copy")).toBeInTheDocument();
     fireEvent.click(screen.getByText("A4 Letter Copy"));
 
-    fireEvent.click(screen.getByRole("button", { name: /^export panel$/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /^open export panel$/i }));
     fireEvent.click(screen.getByRole("button", { name: /generate preview/i }));
 
     expect(await screen.findByText("Export ready")).toBeInTheDocument();
@@ -1109,7 +1110,7 @@ describe.skipIf(!wasmArtifactPresent)("EditorApp", () => {
     });
     expect(screen.getByText("No operation emitted yet.")).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: /^export panel$/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /^open export panel$/i }));
     fireEvent.click(screen.getByRole("button", { name: /generate preview/i }));
 
     expect(await screen.findByText("Export ready")).toBeInTheDocument();
@@ -1128,7 +1129,7 @@ describe.skipIf(!wasmArtifactPresent)("EditorApp", () => {
     expect(screen.getByText("No operation emitted yet.")).toBeInTheDocument();
   });
 
-  it("opens diagnostics and export panel modes from workspace toolbar callbacks", () => {
+  it("opens diagnostics and export panel modes from workspace toolbar callbacks", async () => {
     render(<TestEditorApp initialScene={twoPageScene()} initialSelectedNodeId={null} />);
 
     fireEvent.click(screen.getByTestId("mock-open-diagnostics"));
@@ -1139,14 +1140,13 @@ describe.skipIf(!wasmArtifactPresent)("EditorApp", () => {
     fireEvent.click(screen.getByTestId("mock-open-export"));
 
     expect(screen.getByRole("complementary", { name: "Export sidebar" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /^export panel$/i })).toHaveAttribute("aria-pressed", "true");
   });
 
   it("preserves active artboard and selected node across top mode switches", async () => {
     render(<TestEditorApp initialScene={twoPageScene()} initialSelectedNodeId="node_contact_name" />);
 
     for (const modeButton of [
-      screen.getByRole("button", { name: /^export panel$/i }),
+      await screen.findByRole("button", { name: /^open export panel$/i }),
       screen.getByRole("button", { name: /diagnostics panel/i }),
       screen.getByRole("button", { name: /^Agent$/i })
     ]) {
@@ -1461,7 +1461,7 @@ describe.skipIf(!wasmArtifactPresent)("EditorApp", () => {
       />
     );
 
-    fireEvent.click(screen.getByRole("button", { name: /^export panel$/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /^open export panel$/i }));
     fireEvent.click(screen.getByRole("button", { name: /generate preview/i }));
 
     expect(await screen.findByText("Export ready")).toBeInTheDocument();
@@ -1520,7 +1520,7 @@ describe.skipIf(!wasmArtifactPresent)("EditorApp", () => {
       />
     );
 
-    fireEvent.click(screen.getByRole("button", { name: /^export panel$/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /^open export panel$/i }));
     fireEvent.change(screen.getByRole("combobox", { name: "Artboard" }), {
       target: { value: "all" }
     });
@@ -1574,7 +1574,7 @@ describe.skipIf(!wasmArtifactPresent)("EditorApp", () => {
       />
     );
 
-    fireEvent.click(screen.getByRole("button", { name: /^export panel$/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /^open export panel$/i }));
     fireEvent.change(screen.getByLabelText("Profile"), {
       target: { value: "print_pdf" }
     });
@@ -1585,7 +1585,6 @@ describe.skipIf(!wasmArtifactPresent)("EditorApp", () => {
     expect(screen.queryByText("PRINT_TEXT_NON_LATIN_node_contact_name")).not.toBeInTheDocument();
     expect(screen.queryByText("PRINT_FONT_EMBEDDING")).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: /^export panel$/i }));
     fireEvent.click(screen.getByRole("button", { name: /generate preview/i }));
 
     expect(await screen.findByText("Export ready")).toBeInTheDocument();
@@ -1602,7 +1601,7 @@ describe.skipIf(!wasmArtifactPresent)("EditorApp", () => {
     });
   });
 
-  it("warns when print PDF export uses explicit mixed-size pages", () => {
+  it("warns when print PDF export uses explicit mixed-size pages", async () => {
     const scene = twoPageScene();
     scene.pages.page_a4.name = "Square Ad";
     scene.pages.page_a4.size = {
@@ -1635,7 +1634,7 @@ describe.skipIf(!wasmArtifactPresent)("EditorApp", () => {
 
     render(<TestEditorApp initialScene={scene} initialSelectedNodeId={null} />);
 
-    fireEvent.click(screen.getByRole("button", { name: /^export panel$/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /^open export panel$/i }));
     fireEvent.change(screen.getByLabelText("Profile"), {
       target: { value: "print_pdf" }
     });
@@ -1666,7 +1665,7 @@ describe.skipIf(!wasmArtifactPresent)("EditorApp", () => {
       />
     );
 
-    fireEvent.click(screen.getByRole("button", { name: /^export panel$/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /^open export panel$/i }));
     fireEvent.change(screen.getByLabelText("Profile"), {
       target: { value: "preview_png" }
     });
@@ -1676,7 +1675,6 @@ describe.skipIf(!wasmArtifactPresent)("EditorApp", () => {
     expect(screen.queryByRole("button", { name: /save profile/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /remove saved/i })).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: /^export panel$/i }));
     fireEvent.click(screen.getByRole("button", { name: /generate preview/i }));
 
     expect(await screen.findByText("Export ready")).toBeInTheDocument();
@@ -1694,7 +1692,7 @@ describe.skipIf(!wasmArtifactPresent)("EditorApp", () => {
     });
   });
 
-  it("warns before exporting oversized custom pages as PNG rasters", () => {
+  it("warns before exporting oversized custom pages as PNG rasters", async () => {
     const scene = twoPageScene();
     scene.pages.page_a4.name = "Huge Square";
     scene.pages.page_a4.size = {
@@ -1707,7 +1705,7 @@ describe.skipIf(!wasmArtifactPresent)("EditorApp", () => {
 
     render(<TestEditorApp initialScene={scene} initialSelectedNodeId={null} />);
 
-    fireEvent.click(screen.getByRole("button", { name: /^export panel$/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /^open export panel$/i }));
     fireEvent.change(screen.getByLabelText("Profile"), {
       target: { value: "high_res_png" }
     });
@@ -1782,7 +1780,7 @@ describe.skipIf(!wasmArtifactPresent)("EditorApp", () => {
       />
     );
 
-    fireEvent.click(screen.getByRole("button", { name: /^export panel$/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /^open export panel$/i }));
     fireEvent.click(screen.getByRole("button", { name: /generate preview/i }));
 
     expect(await screen.findByText("Export ready")).toBeInTheDocument();
@@ -1870,7 +1868,7 @@ describe.skipIf(!wasmArtifactPresent)("EditorApp", () => {
       />
     );
 
-    fireEvent.click(screen.getByRole("button", { name: /^export panel$/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /^open export panel$/i }));
     fireEvent.click(screen.getByRole("button", { name: /generate preview/i }));
 
     expect(await screen.findByText("Export ready")).toBeInTheDocument();
@@ -2143,7 +2141,7 @@ describe.skipIf(!wasmArtifactPresent)("EditorApp", () => {
       />
     );
 
-    fireEvent.click(screen.getByRole("button", { name: /^export panel$/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /^open export panel$/i }));
     fireEvent.click(screen.getByRole("button", { name: /generate preview/i }));
 
     expect(await screen.findByText("Export failed")).toBeInTheDocument();

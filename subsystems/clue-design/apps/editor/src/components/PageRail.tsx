@@ -63,7 +63,11 @@ export function PageRail({
   const [width, setWidth] = useState(1080);
   const [height, setHeight] = useState(1080);
   const [unit, setUnit] = useState<Unit>("px");
+  // Figma-style rail: the creator is a disclosure behind the header's +.
+  // null = "not touched yet" → open only while the document has no pages.
+  const [creatorToggled, setCreatorToggled] = useState<boolean | null>(null);
   const pages = listPages(scene);
+  const creatorOpen = creatorToggled ?? pages.length === 0;
   const workspaceModel = useMemo(
     () => createWorkspaceModel(scene, activePageId, diagnostics),
     [activePageId, diagnostics, scene]
@@ -84,52 +88,67 @@ export function PageRail({
 
   return (
     <nav className="page-rail" aria-label="Artboards">
-      <div className="panel-title">
-        <FileText aria-hidden size={16} />
-        Pages
+      <div className="page-rail-head">
+        <div className="panel-title">
+          <FileText aria-hidden size={16} />
+          Pages
+        </div>
+        <button
+          type="button"
+          className="page-rail-add"
+          aria-label="New artboard"
+          title="New artboard"
+          aria-expanded={creatorOpen}
+          onClick={() => setCreatorToggled(!creatorOpen)}
+        >
+          <Plus aria-hidden size={14} />
+        </button>
       </div>
-      {pages.map((page) => {
-        const artboard = workspaceModel.artboards.find((item) => item.pageId === page.id);
-        return (
-        <div key={page.id} className="page-row">
-          <button
-            type="button"
-            className={page.id === activePageId ? "page-button active" : "page-button"}
-            title={`${page.name} · ${pageSizeLabel(page)}`}
-            onClick={() => onSelectPage(page.id)}
-          >
-            <span className="page-row-title">
-              {page.name}
-              {artboard ? <DiagnosticDot summary={artboard.diagnosticsSummary} /> : null}
-            </span>
-            <small className="visually-hidden">{pageSizeLabel(page)}</small>
-          </button>
-          <button
-            type="button"
-            className="icon-button page-duplicate-button"
-            aria-label={`Duplicate artboard ${page.name}`}
-            title={`Duplicate artboard ${page.name}`}
-            onClick={() => onDuplicatePage(page.id)}
-          >
-            <Copy aria-hidden size={13} />
-          </button>
-          <button
-            type="button"
-            className="icon-button page-remove-button"
-            aria-label={`Remove artboard ${page.name}`}
-            title={`Remove artboard ${page.name}`}
-            onClick={() => onRemovePage(page.id)}
-          >
-            <Trash2 aria-hidden size={13} />
-          </button>
-        </div>
-        );
-      })}
+      {pages.length > 0 ? (
+        <ul className="page-list">
+          {pages.map((page) => {
+            const artboard = workspaceModel.artboards.find((item) => item.pageId === page.id);
+            return (
+              <li key={page.id} className="page-row">
+                <button
+                  type="button"
+                  className={page.id === activePageId ? "page-button active" : "page-button"}
+                  title={`${page.name} · ${pageSizeLabel(page)}`}
+                  onClick={() => onSelectPage(page.id)}
+                >
+                  <span className="page-row-title">
+                    {page.name}
+                    {artboard ? <DiagnosticDot summary={artboard.diagnosticsSummary} /> : null}
+                  </span>
+                  <small className="visually-hidden">{pageSizeLabel(page)}</small>
+                </button>
+                <button
+                  type="button"
+                  className="icon-button page-duplicate-button"
+                  aria-label={`Duplicate artboard ${page.name}`}
+                  title={`Duplicate artboard ${page.name}`}
+                  onClick={() => onDuplicatePage(page.id)}
+                >
+                  <Copy aria-hidden size={13} />
+                </button>
+                <button
+                  type="button"
+                  className="icon-button page-remove-button"
+                  aria-label={`Remove artboard ${page.name}`}
+                  title={`Remove artboard ${page.name}`}
+                  onClick={() => onRemovePage(page.id)}
+                >
+                  <Trash2 aria-hidden size={13} />
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      ) : (
+        <p className="muted page-list-empty">No artboards yet.</p>
+      )}
+      {creatorOpen ? (
       <div className="custom-page-creator" aria-label="Create custom artboard">
-        <div className="section-heading">
-          <Plus aria-hidden size={15} />
-          New artboard
-        </div>
         <label>
           Name
           <input aria-label="Custom artboard name" value={name} onChange={(event) => setName(event.target.value)} />
@@ -188,6 +207,7 @@ export function PageRail({
           Add artboard
         </button>
       </div>
+      ) : null}
     </nav>
   );
 }
