@@ -52,6 +52,8 @@ describe.skipIf(!wasmArtifactPresent)("EditorApp on the WASM engine", () => {
     });
 
     expect(screen.getByRole("heading", { name: "WASM-owned title" })).toBeInTheDocument();
+    // Operation history lives in the Diagnostics tab now.
+    fireEvent.click(screen.getByRole("button", { name: /^diagnostics panel$/i }));
     expect(screen.getAllByText(/update_document/).length).toBeGreaterThan(0);
     // The engine's wasm-side state agrees with the rendered snapshot.
     expect((JSON.parse(engine.sceneJson()) as Scene).meta.title).toBe("WASM-owned title");
@@ -152,6 +154,8 @@ describe.skipIf(!wasmArtifactPresent)("EditorApp on the WASM engine", () => {
       expect(screen.getByRole("heading", { name: "Server truth" })).toBeInTheDocument();
     });
     expect((JSON.parse(engine.sceneJson()) as Scene).meta.title).toBe("Server truth");
+    // Diagnostics render in the Diagnostics tab now.
+    fireEvent.click(screen.getByRole("button", { name: /^diagnostics panel$/i }));
     expect(screen.getAllByText(/EDITOR_WASM_RECONCILE_DIVERGENCE/).length).toBeGreaterThan(0);
   });
 
@@ -188,11 +192,13 @@ describe.skipIf(!wasmArtifactPresent)("EditorApp on the WASM engine", () => {
         target: { value: "No engine" }
       });
 
+      fireEvent.click(screen.getByRole("button", { name: /^diagnostics panel$/i }));
       expect(await screen.findByText(/EDITOR_SERVER_ONLY_MODE/)).toBeInTheDocument();
       expect(screen.queryByRole("heading", { name: "No engine" })).not.toBeInTheDocument();
       expect(screen.getByRole("heading", { name: scene.meta.title })).toBeInTheDocument();
 
-      // Server-backed flows still work in server-only mode.
+      // Server-backed flows still work in server-only mode. Validate lives
+      // in the Diagnostics panel (already open above).
       fireEvent.click(screen.getByRole("button", { name: /Validate/ }));
       await waitFor(() => {
         expect(preflightRunner).toHaveBeenCalled();

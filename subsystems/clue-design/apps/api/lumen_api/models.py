@@ -113,6 +113,9 @@ class AgentTurnPreviewRequest(BaseModel):
     # every turn and folded into the prompt context.
     agent_instructions: Optional[str] = None
     max_iterations: Optional[int] = None
+    # Editor model picker: a runtime model id ("openai:<openrouter-id>" /
+    # "anthropic:<id>"); None = the runtime's configured default.
+    model: Optional[str] = None
 
 
 class SetAgentInstructionsRequest(BaseModel):

@@ -28,6 +28,9 @@ export interface EditorAgentRequest {
   targetNodeIds?: NodeId[];
   /** 2e: the document's standing instructions, folded into every turn. */
   agentInstructions?: string | null;
+  /** Model override for this turn (runtime id, e.g. "openai:anthropic/...").
+   * null/undefined = the runtime's configured default. */
+  model?: string | null;
   diagnostics: Diagnostic[];
   /** 2b: live run events (checklist ticks) are pushed here as they stream. */
   onEvent?: (event: AgentRunEvent) => void;
@@ -98,6 +101,7 @@ export function createApiAgentRunner({ apiBaseUrl }: ApiAgentRunnerOptions): Edi
     activePageId,
     targetNodeIds,
     agentInstructions,
+    model,
     diagnostics
   }) => {
     const response = await fetch(new URL("/agent/turn-preview", apiBaseUrl), {
@@ -112,6 +116,7 @@ export function createApiAgentRunner({ apiBaseUrl }: ApiAgentRunnerOptions): Edi
         active_page_id: activePageId,
         target_node_ids: targetNodeIds ?? [],
         agent_instructions: agentInstructions ?? null,
+        model: model ?? null,
         diagnostics
       })
     });
@@ -147,6 +152,7 @@ export function createStreamingAgentRunner({
     activePageId,
     targetNodeIds,
     agentInstructions,
+    model,
     diagnostics,
     onEvent
   }) => {
@@ -160,6 +166,7 @@ export function createStreamingAgentRunner({
         active_page_id: activePageId,
         target_node_ids: targetNodeIds ?? [],
         agent_instructions: agentInstructions ?? null,
+        model: model ?? null,
         diagnostics
       })
     });

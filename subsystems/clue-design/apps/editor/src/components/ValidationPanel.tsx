@@ -1,6 +1,6 @@
 "use client";
 
-import { Braces, Eye, TriangleAlert } from "lucide-react";
+import { Braces, Eye, FileCheck2, TriangleAlert } from "lucide-react";
 import type { Diagnostic, DiagnosticSubject, NodeId, Operation, PageId, Scene } from "@/engine/contracts";
 import type { EditorPreflightResult } from "@/engine/preflightRunner";
 import { pageIdForNode } from "@/engine/sceneQueries";
@@ -14,6 +14,10 @@ interface ValidationPanelProps {
   lastOperation: Operation | null;
   preflightResult: EditorPreflightResult | null;
   onSelectSubject?: (subject: DiagnosticSubject) => void;
+  /** Manual preflight (the old topbar Validate): optional so existing
+   * callers/tests without the wiring render without the button. */
+  onRunPreflight?: () => void;
+  isPreflighting?: boolean;
 }
 
 export function ValidationPanel({
@@ -24,7 +28,9 @@ export function ValidationPanel({
   renderDiagnostics = [],
   lastOperation,
   preflightResult,
-  onSelectSubject
+  onSelectSubject,
+  onRunPreflight,
+  isPreflighting = false
 }: ValidationPanelProps) {
   const focusedDiagnostics = diagnosticsForFocus({
     scene,
@@ -42,6 +48,14 @@ export function ValidationPanel({
         <TriangleAlert aria-hidden size={15} />
         Diagnostics
       </div>
+      {onRunPreflight ? (
+        <div className="field-row">
+          <button type="button" disabled={isPreflighting} onClick={onRunPreflight}>
+            <FileCheck2 aria-hidden size={14} />
+            {isPreflighting ? "Validating…" : "Validate"}
+          </button>
+        </div>
+      ) : null}
       {preflightResult ? (
         <div className="preflight-summary">
           <strong>{preflightResult.status === "applied" ? "Preflight applied" : "Preflight failed"}</strong>

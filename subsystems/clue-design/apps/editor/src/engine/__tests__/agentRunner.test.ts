@@ -82,6 +82,7 @@ describe("agent runner", () => {
           active_page_id: "page_a4",
           target_node_ids: ["node_contact_name"],
           agent_instructions: null,
+          model: null,
           diagnostics: []
         })
       })

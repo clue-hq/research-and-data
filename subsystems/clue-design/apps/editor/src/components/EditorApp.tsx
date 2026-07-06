@@ -9,10 +9,11 @@ import {
   type Dispatch,
   type SetStateAction
 } from "react";
-import { Bot, Check, Download, FileCheck2, PanelRightClose, RotateCcw, RotateCw, X } from "lucide-react";
+import { Bot, Check, Download, History, RotateCcw, RotateCw, X } from "lucide-react";
 import { AgentChatPanel, type AcceptedTurnRecord } from "./AgentChatPanel";
 import {
   DiagnosticsAlertPill,
+  EditableDocumentTitle,
   EditorModeSwitch,
   EngineDisabledBanner,
   OperationHistoryPanel,
@@ -23,7 +24,6 @@ import { EditorCanvas } from "./canvas/EditorCanvas";
 import { ExportPanel } from "./ExportPanel";
 import { ExportPreviewSurface } from "./ExportPreviewSurface";
 import { AssetBrowserPanel } from "./AssetBrowserPanel";
-import { HistoryPanel } from "./HistoryPanel";
 import { WorstCasePreviewPanel } from "./WorstCasePreviewPanel";
 import { InspectorPanel } from "./InspectorPanel";
 import { TextToolbar } from "./TextToolbar";
@@ -31,6 +31,9 @@ import { LayerPanel } from "./LayerPanel";
 import { PageRail } from "./PageRail";
 import { ValidationPanel } from "./ValidationPanel";
 import appMark from "../app/icon.svg";
+import { ExportMenu } from "./ExportMenu";
+import { VersionHistoryDialog } from "./HistoryPanel";
+import { downloadDataUrl } from "./exportArtifactActions";
 import { emptyScene } from "@/fixtures/emptyScene";
 import type { BrandCompatibilityRunner } from "@/engine/brandCompatibility";
 import type { BrandGovernanceRunner } from "@/engine/brandGovernance";
@@ -84,6 +87,8 @@ import {
   removeExportProfile,
   removeNode,
   removePage,
+  updateDocumentBrand,
+  updateDocumentTitle,
   updateNodeTransform,
   upsertExportProfile
 } from "@/engine/operations";
@@ -227,6 +232,15 @@ const defaultAgentInstructionsSaver = (documentId: string, instructions: string 
 const defaultLayoutManagedEditingSaver = (documentId: string, enabled: boolean) =>
   saveLayoutManagedEditing({ apiBaseUrl: editorApiBaseUrl() }, documentId, enabled);
 
+/** Models offered in the composer's model chip. Values are runtime model ids
+ * (LUMEN_AGENT_MODEL format, OpenRouter-routed); "" = the runtime default. */
+const AGENT_MODEL_OPTIONS = [
+  { value: "", label: "Auto", hint: "default" },
+  { value: "openai:anthropic/claude-opus-4.8", label: "Opus 4.8", hint: "quality" },
+  { value: "openai:anthropic/claude-sonnet-5", label: "Sonnet 5", hint: "balanced" },
+  { value: "openai:google/gemini-3-pro", label: "Gemini 3 Pro", hint: "fast" }
+];
+
 export default function EditorApp({
   documentId,
   initialScene = emptyScene,
@@ -331,6 +345,16 @@ export default function EditorApp({
   // kept asset (Accept / Save as new) and the asset library refetches.
   const [assetLibraryRefreshToken, setAssetLibraryRefreshToken] = useState(0);
   const notifyAssetLibraryChanged = () => setAssetLibraryRefreshToken((t) => t + 1);
+  // Topbar floats (presentation state): the export popover and the version
+  // history dialog.
+  const [isExportMenuOpen, setIsExportMenuOpen] = useState(false);
+  const [isVersionHistoryOpen, setIsVersionHistoryOpen] = useState(false);
+  const exportMenuAnchorRef = useRef<HTMLDivElement | null>(null);
+  // Set when an export was started from the topbar menu: its artifacts
+  // download directly (moda's Download) instead of opening the Export panel.
+  const downloadAfterExportRef = useRef(false);
+  // Model override for agent turns ("" = runtime default).
+  const [agentModel, setAgentModel] = useState("");
   // Workspace chrome (panel mode, workspace mode, viewport/tool, sidebar
   // width + resizer) lives in useWorkspaceChrome — presentation state only.
   const {
@@ -556,6 +580,35 @@ export default function EditorApp({
   const exportWorkspaceMode = workspaceMode === "compare" && hasExportArtifacts ? "compare" : "export";
   const renderedWorkspaceMode = editorPanelMode === "export" ? exportWorkspaceMode : "canvas";
 
+  // Topbar export menu: exports it started download their artifacts directly
+  // (moda's Download button) instead of routing through the Export panel.
+  useEffect(() => {
+    if (!downloadAfterExportRef.current || !exportResult) {
+      return;
+    }
+    downloadAfterExportRef.current = false;
+    if (exportResult.status === "ok") {
+      for (const artifact of exportResult.artifacts) {
+        downloadDataUrl(artifact.data_url, artifact.filename);
+      }
+    }
+  }, [exportResult]);
+
+  // Close the export popover on any click outside its anchor.
+  useEffect(() => {
+    if (!isExportMenuOpen) {
+      return;
+    }
+    const onPointerDown = (event: PointerEvent) => {
+      const anchor = exportMenuAnchorRef.current;
+      if (anchor && !anchor.contains(event.target as Node)) {
+        setIsExportMenuOpen(false);
+      }
+    };
+    document.addEventListener("pointerdown", onPointerDown);
+    return () => document.removeEventListener("pointerdown", onPointerDown);
+  }, [isExportMenuOpen]);
+
   // Local undo/redo history lives in useEditHistory (pure mechanics; the
   // agent-turn canvas-lock guards stay HERE, on the orchestration layer,
   // like every other guarded mutation path). Deps rebuilt per render.
@@ -711,6 +764,7 @@ export default function EditorApp({
     selectedNodeId,
     targetNodeIds,
     agentInstructions: standingInstructions.instructions,
+    agentModel: agentModel || null,
     layoutManagedEditing: layoutManagedEditing.enabled,
     diagnostics,
     setDiagnostics,
@@ -1233,7 +1287,10 @@ export default function EditorApp({
             </span>
             <div className="topbar-title">
               <p className="eyebrow">ABM Design Engine</p>
-              <h1>{scene.meta.title}</h1>
+              <EditableDocumentTitle
+                title={scene.meta.title}
+                onRename={(title) => applyOperation(updateDocumentTitle(title))}
+              />
             </div>
           </div>
           <div className="doc-row-actions" aria-label="Editor actions">
@@ -1245,24 +1302,54 @@ export default function EditorApp({
                 onOpen={() => setEditorPanelMode("diagnostics")}
               />
             ) : null}
-            <button
-              type="button"
-              className="btn-ghost"
-              onClick={() => void runPreflight()}
-              disabled={isPreflighting}
-            >
-              <FileCheck2 aria-hidden size={16} />
-              {isPreflighting ? "Validating" : "Validate"}
-            </button>
-            <button
-              type="button"
-              className="btn-primary"
-              onClick={() => void runExport()}
-              disabled={!activePageId || isExporting}
-            >
-              <Download aria-hidden size={16} />
-              {isExporting ? "Exporting" : "Export"}
-            </button>
+            {activeDocumentId ? (
+              <button
+                type="button"
+                className="icon-ghost-button"
+                aria-label="Version history"
+                title="Version history"
+                aria-haspopup="dialog"
+                aria-expanded={isVersionHistoryOpen}
+                onClick={() => setIsVersionHistoryOpen((open) => !open)}
+              >
+                <History aria-hidden size={16} />
+              </button>
+            ) : null}
+            <div className="export-menu-anchor" ref={exportMenuAnchorRef}>
+              <button
+                type="button"
+                className="btn-primary"
+                aria-haspopup="dialog"
+                aria-expanded={isExportMenuOpen}
+                disabled={isExporting}
+                onClick={() => setIsExportMenuOpen((open) => !open)}
+              >
+                <Download aria-hidden size={16} />
+                {isExporting ? "Exporting" : "Export"}
+              </button>
+              {isExportMenuOpen ? (
+                <ExportMenu
+                  pageCount={Object.keys(scene.pages).length}
+                  activePageName={activePage?.name ?? null}
+                  isExporting={isExporting}
+                  onDownload={(profile, scope) => {
+                    setIsExportMenuOpen(false);
+                    downloadAfterExportRef.current = true;
+                    const pageIds =
+                      scope === "all"
+                        ? Object.values(scene.pages).map((page) => page.id)
+                        : activePageId
+                          ? [activePageId]
+                          : [];
+                    void runExportForScene(scene, profile, pageIds, {
+                      openPreviewTab: false,
+                      focusExportPanel: false
+                    });
+                  }}
+                  onClose={() => setIsExportMenuOpen(false)}
+                />
+              ) : null}
+            </div>
           </div>
         </div>
         <div className="tool-row" aria-label="Editing tools">
@@ -1527,7 +1614,7 @@ export default function EditorApp({
           />
         ) : null}
         <aside
-          className="inspector-shell"
+          className={`inspector-shell${editorPanelMode === "agent" ? " chat-mode" : ""}`}
           aria-label={rightSidebarLabelForMode(editorPanelMode)}
         >
           <EditorModeSwitch mode={editorPanelMode} onModeChange={setEditorPanelMode} />
@@ -1585,6 +1672,16 @@ export default function EditorApp({
               onCompareTurn={compareTurn}
               onExitCompare={exitCompare}
               onRevertTurn={revertTurn}
+              brandKits={initialAvailableBrandKits}
+              attachedBrandKit={scene.meta.brand_kit ?? null}
+              onAttachBrandKit={(kit) =>
+                applyOperation(
+                  updateDocumentBrand({ id: kit.id, version: kit.version }, scene.meta.medium)
+                )
+              }
+              modelOptions={AGENT_MODEL_OPTIONS}
+              model={agentModel}
+              onModelChange={setAgentModel}
             />
           ) : editorPanelMode === "export" ? (
             <ExportPanel
@@ -1599,22 +1696,31 @@ export default function EditorApp({
               onPanelStateChange={setExportPanelState}
             />
           ) : editorPanelMode === "diagnostics" ? (
-            <ValidationPanel
-              scene={scene}
-              activePageId={activePageId}
+            <>
+              <ValidationPanel
+                scene={scene}
+                activePageId={activePageId}
+                selectedNodeId={selectedNodeId}
+                diagnostics={diagnostics}
+                renderDiagnostics={renderDiagnostics}
+                lastOperation={lastOperation}
+                preflightResult={preflightResult}
+                onSelectSubject={selectDiagnosticSubject}
+                onRunPreflight={() => void runPreflight()}
+                isPreflighting={isPreflighting}
+              />
+              <OperationHistoryPanel operations={operationHistory} redoCount={redoStack.length} />
+            </>
+          ) : editorPanelMode === "assets" ? (
+            <AssetBrowserPanel
+              apiBaseUrl={editorApiBaseUrl()}
               selectedNodeId={selectedNodeId}
-              diagnostics={diagnostics}
-              renderDiagnostics={renderDiagnostics}
-              lastOperation={lastOperation}
-              preflightResult={preflightResult}
-              onSelectSubject={selectDiagnosticSubject}
+              selectedNodePlacement={selectedNode?.asset_placement ?? null}
+              refreshToken={assetLibraryRefreshToken}
+              onOperations={applyOperations}
             />
           ) : (
             <>
-              <div className="panel-title">
-                <PanelRightClose aria-hidden size={16} />
-                Inspector
-              </div>
               <InspectorPanel
                 scene={scene}
                 activePage={activePage}
@@ -1646,43 +1752,19 @@ export default function EditorApp({
                 isRunningBrandCompatibility={isBrandCompatibilityRunning}
                 onSelectSubject={selectDiagnosticSubject}
               />
-              <ExportPanel
-                scene={scene}
-                activePageId={activePageId}
-                exportResult={exportResult}
-                isExporting={isExporting}
-                onExport={(profile, pageIds) => void runExport(profile, pageIds)}
-                onSaveProfile={(profile) => applyOperation(upsertExportProfile(profile))}
-                onRemoveProfile={(name) => applyOperation(removeExportProfile(name))}
-                panelState={exportPanelState}
-                onPanelStateChange={setExportPanelState}
-              />
-              <OperationHistoryPanel operations={operationHistory} redoCount={redoStack.length} />
-              <AssetBrowserPanel
-                apiBaseUrl={editorApiBaseUrl()}
-                selectedNodeId={selectedNodeId}
-                selectedNodePlacement={selectedNode?.asset_placement ?? null}
-                refreshToken={assetLibraryRefreshToken}
-                onOperations={applyOperations}
-              />
               <WorstCasePreviewPanel apiBaseUrl={editorApiBaseUrl()} scene={scene} />
-              {activeDocumentId ? (
-                <HistoryPanel apiBaseUrl={editorApiBaseUrl()} documentId={activeDocumentId} />
-              ) : null}
-              <ValidationPanel
-                scene={scene}
-                activePageId={activePageId}
-                selectedNodeId={selectedNodeId}
-                diagnostics={diagnostics}
-                renderDiagnostics={renderDiagnostics}
-                lastOperation={lastOperation}
-                preflightResult={preflightResult}
-                onSelectSubject={selectDiagnosticSubject}
-              />
             </>
           )}
         </aside>
       </div>
+      {isVersionHistoryOpen && activeDocumentId ? (
+        <VersionHistoryDialog
+          apiBaseUrl={editorApiBaseUrl()}
+          documentId={activeDocumentId}
+          onClose={() => setIsVersionHistoryOpen(false)}
+          onDocumentChanged={() => void refreshSceneFromEngine()}
+        />
+      ) : null}
     </main>
   );
 }

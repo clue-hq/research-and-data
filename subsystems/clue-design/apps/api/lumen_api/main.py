@@ -3739,6 +3739,8 @@ def run_agent_turn_preview(
         config = AgentRuntimeConfig.from_env(root)
         if payload.max_iterations is not None:
             config = replace(config, max_iterations=payload.max_iterations)
+        if payload.model:
+            config = replace(config, model=payload.model)
         if config.asset_store_root is None:
             # A seeded scene references assets ingested through the API's store;
             # the agent must export from the same root or seeded imagery fails

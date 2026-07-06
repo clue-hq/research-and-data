@@ -81,6 +81,8 @@ export interface UseAgentTurnDeps {
   targetNodeIds: NodeId[];
   /** 2e: the document's standing instructions sent with each turn. */
   agentInstructions: string | null;
+  /** Model override sent with each turn (null = runtime default). */
+  agentModel?: string | null;
   /** Advanced per-document opt-out from handoff-absolute: when true the
    * accept-time freeze is skipped, so the turn's Stack containers stay live. */
   layoutManagedEditing: boolean;
@@ -157,6 +159,7 @@ export function useAgentTurn(deps: UseAgentTurnDeps) {
     selectedNodeId,
     targetNodeIds,
     agentInstructions,
+    agentModel,
     layoutManagedEditing,
     diagnostics,
     setDiagnostics,
@@ -325,6 +328,7 @@ export function useAgentTurn(deps: UseAgentTurnDeps) {
         activePageId,
         targetNodeIds,
         agentInstructions,
+        model: agentModel ?? null,
         diagnostics,
         onEvent: handleRunEvent
       });

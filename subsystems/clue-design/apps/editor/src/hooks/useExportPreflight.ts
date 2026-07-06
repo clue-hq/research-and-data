@@ -76,10 +76,14 @@ export function useExportPreflight(deps: UseExportPreflightDeps) {
     sceneForExport: Scene,
     profile = defaultEditorExportProfile(),
     pageIds: PageId[] = activePageId ? [activePageId] : [],
-    options: { openPreviewTab?: boolean } = {}
+    options: { openPreviewTab?: boolean; focusExportPanel?: boolean } = {}
   ) => {
     const previewWindow = options.openPreviewTab ? openBlankArtifactPreviewWindow() : null;
-    setEditorPanelMode("export");
+    // The topbar export menu runs "silently" (no panel switch, no preview
+    // tab) and downloads the artifacts instead.
+    if (options.focusExportPanel !== false) {
+      setEditorPanelMode("export");
+    }
     if (pageIds.length === 0) {
       previewWindow?.close();
       setDiagnostics([

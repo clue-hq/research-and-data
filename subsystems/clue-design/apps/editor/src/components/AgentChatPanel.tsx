@@ -1,6 +1,20 @@
-import { AlertTriangle, Bot, Check, CheckCircle2, Crosshair, Eye, FileCode2, History, Loader2, Send, Sparkles, X } from "lucide-react";
-import { useState, type FormEvent } from "react";
-import type { Diagnostic, NodeId, Operation, PageId, Scene } from "@/engine/contracts";
+import {
+  AlertTriangle,
+  ArrowUp,
+  Check,
+  CheckCircle2,
+  ChevronDown,
+  Crosshair,
+  Eye,
+  FileCode2,
+  History,
+  Loader2,
+  Palette,
+  Sparkles,
+  X
+} from "lucide-react";
+import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
+import type { BrandKitSummary, Diagnostic, NodeId, Operation, PageId, Scene } from "@/engine/contracts";
 import type { AgentRunEvent, EditorAgentResult } from "@/engine/agentRunner";
 import {
   briefIsEmpty,
@@ -89,6 +103,17 @@ export interface AgentChatPanelProps {
   onCompareTurn: (turn: AcceptedTurnRecord, view: "before" | "after") => void;
   onExitCompare: () => void;
   onRevertTurn: (turn: AcceptedTurnRecord) => void;
+  /** Composer brand-kit chip (Cursor's context chip pattern): the kits the
+   * document can attach, the currently attached ref, and the attach callback.
+   * All optional — the chip renders only when the shell wires them. */
+  brandKits?: BrandKitSummary[];
+  attachedBrandKit?: { id: string; version: number } | null;
+  onAttachBrandKit?: (kit: BrandKitSummary) => void;
+  /** Composer model chip: runtime model ids offered for the next turn.
+   * `model` is "" for the runtime default. */
+  modelOptions?: Array<{ value: string; label: string; hint?: string }>;
+  model?: string;
+  onModelChange?: (value: string) => void;
 }
 
 export function AgentChatPanel({
@@ -119,15 +144,31 @@ export function AgentChatPanel({
   onRejectProposal,
   onCompareTurn,
   onExitCompare,
-  onRevertTurn
+  onRevertTurn,
+  brandKits = [],
+  attachedBrandKit = null,
+  onAttachBrandKit,
+  modelOptions = [],
+  model = "",
+  onModelChange
 }: AgentChatPanelProps) {
   const isBusy = isRunning || pendingReview;
   // 2e Design-Plan pre-brief: form values live here (view state); the prompt
   // composition is the pure engine helper. Applies to direct sends only —
   // queued messages stay verbatim so their chips read as typed.
   const [brief, setBrief] = useState<DesignBrief>(EMPTY_BRIEF);
-  const submitPrompt = (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+
+  // Keep the newest message in view — the thread is the only scrollable
+  // region, so a new entry should never land below the fold unseen.
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (el) {
+      el.scrollTop = el.scrollHeight;
+    }
+  }, [messages.length, runEvents.length, queuedMessages.length]);
+
+  const submit = () => {
     const trimmed = draft.trim();
     if (!trimmed) {
       return;
@@ -142,12 +183,21 @@ export function AgentChatPanel({
     onSend(composeBriefPrompt(brief, trimmed));
   };
 
+  const submitPrompt = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    submit();
+  };
+
+  const attachedKit = attachedBrandKit
+    ? brandKits.find(
+        (kit) => kit.id === attachedBrandKit.id && kit.version === attachedBrandKit.version
+      ) ?? null
+    : null;
+  const activeModel = modelOptions.find((option) => option.value === model) ?? null;
+
   return (
-    <section className="inspector-section agent-chat-panel" aria-label="Agent chat">
-      <div className="section-heading">
-        <Bot aria-hidden size={15} />
-        Agent chat
-      </div>
+    <section className="agent-chat-panel" aria-label="Agent chat">
+      <div className="agent-chat-scroll" ref={scrollRef}>
       <div className="agent-context-strip" aria-label="Agent context">
         <span>Page {activePageId ?? "none"}</span>
         <span>Selection {selectedNodeId ?? "none"}</span>
@@ -349,12 +399,19 @@ export function AgentChatPanel({
         </div>
         <p className="muted">Folded into your next sent message; queued messages stay as typed.</p>
       </details>
-      <form className="agent-chat-form" onSubmit={submitPrompt}>
-        <label className="field">
-          <span>Message the agent</span>
+      </div>
+      <form className="agent-composer" onSubmit={submitPrompt}>
+        <div className="agent-composer-card">
           <textarea
+            aria-label="Message the agent"
             value={draft}
             onChange={(event) => onDraftChange(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
+                event.preventDefault();
+                submit();
+              }
+            }}
             placeholder={
               isRunning
                 ? "Type to queue a message — it runs when the agent finishes."
@@ -362,15 +419,149 @@ export function AgentChatPanel({
                   ? "Type to queue a message — it runs after you accept or reject."
                   : "Ask for a square ad, repair overflow, or update the selected section."
             }
-            rows={4}
+            rows={3}
           />
-        </label>
-        <button type="submit" disabled={!draft.trim()}>
-          <Send aria-hidden size={15} />
-          {isBusy ? "Queue" : "Send"}
-        </button>
+          <div className="agent-composer-row">
+            <div className="agent-composer-chips">
+              {onAttachBrandKit ? (
+                <ComposerChip
+                  label={attachedKit?.name ?? "Brandkit"}
+                  title="Brand kit applied to this document"
+                  icon={<Palette aria-hidden size={13} />}
+                  menuLabel="Brand kits"
+                  options={brandKits.map((kit) => ({
+                    key: `${kit.id}@${kit.version}`,
+                    label: kit.name,
+                    hint: `v${kit.version}`,
+                    active:
+                      attachedBrandKit?.id === kit.id &&
+                      attachedBrandKit.version === kit.version,
+                    onPick: () => onAttachBrandKit(kit)
+                  }))}
+                  emptyCopy="No brand kits available yet."
+                />
+              ) : null}
+              {onModelChange && modelOptions.length > 0 ? (
+                <ComposerChip
+                  label={activeModel?.label ?? "Auto"}
+                  title="Model for the next agent turn"
+                  menuLabel="Models"
+                  options={modelOptions.map((option) => ({
+                    key: option.value || "auto",
+                    label: option.label,
+                    hint: option.hint,
+                    active: option.value === model,
+                    onPick: () => onModelChange(option.value)
+                  }))}
+                />
+              ) : null}
+            </div>
+            <button
+              type="submit"
+              className="agent-composer-send"
+              aria-label={isBusy ? "Queue" : "Send"}
+              title={isBusy ? "Queue — runs when the agent is free" : "Send"}
+              disabled={!draft.trim()}
+            >
+              <ArrowUp aria-hidden size={14} />
+            </button>
+          </div>
+        </div>
       </form>
     </section>
+  );
+}
+
+/**
+ * A composer footer chip with an upward menu (Cursor's Ask/model chip
+ * anatomy): small pill trigger, popover above listing options with a check
+ * on the active one. Presentational; each option carries its own onPick.
+ */
+function ComposerChip({
+  label,
+  title,
+  icon,
+  menuLabel,
+  options,
+  emptyCopy
+}: {
+  label: string;
+  title: string;
+  icon?: ReactNode;
+  menuLabel: string;
+  options: Array<{
+    key: string;
+    label: string;
+    hint?: string;
+    active: boolean;
+    onPick: () => void;
+  }>;
+  emptyCopy?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+    const onPointerDown = (event: PointerEvent) => {
+      if (rootRef.current && !rootRef.current.contains(event.target as Node)) {
+        setOpen(false);
+      }
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setOpen(false);
+      }
+    };
+    document.addEventListener("pointerdown", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [open]);
+
+  return (
+    <div className="composer-chip-anchor" ref={rootRef}>
+      <button
+        type="button"
+        className="composer-chip"
+        title={title}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={() => setOpen((value) => !value)}
+      >
+        {icon}
+        <span className="composer-chip-label">{label}</span>
+        <ChevronDown aria-hidden size={12} />
+      </button>
+      {open ? (
+        <div className="composer-menu" role="menu" aria-label={menuLabel}>
+          {options.length === 0 ? (
+            <p className="muted">{emptyCopy ?? "Nothing available."}</p>
+          ) : (
+            options.map((option) => (
+              <button
+                key={option.key}
+                type="button"
+                role="menuitem"
+                className={option.active ? "active" : undefined}
+                onClick={() => {
+                  option.onPick();
+                  setOpen(false);
+                }}
+              >
+                <span className="composer-menu-label">{option.label}</span>
+                {option.hint ? <span className="composer-menu-hint">{option.hint}</span> : null}
+                {option.active ? <Check aria-hidden size={13} /> : null}
+              </button>
+            ))
+          )}
+        </div>
+      ) : null}
+    </div>
   );
 }
 

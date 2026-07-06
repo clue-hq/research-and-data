@@ -309,11 +309,15 @@ describe.skipIf(!wasmArtifactPresent)("EditorApp Phase 2a document flow", () => 
       target: { value: "First attempt" }
     });
     expect(
-      (await screen.findAllByText(/Creating a document for this design failed/)).length
+      (await (async () => {
+        fireEvent.click(screen.getByRole("button", { name: /^diagnostics panel$/i }));
+        return screen.findAllByText(/Creating a document for this design failed/);
+      })()).length
     ).toBeGreaterThan(0);
     expect(engine.scene.meta.title).toBe("First attempt");
     expect(batches).toHaveLength(0);
 
+    fireEvent.click(screen.getByRole("button", { name: /^Inspect$/i }));
     fireEvent.change(screen.getByLabelText("Document Title"), {
       target: { value: "Second attempt" }
     });

@@ -173,6 +173,7 @@ describe.skipIf(!wasmArtifactPresent)("EditorApp", () => {
         name: /Export/i
       })
     );
+    fireEvent.click(screen.getByRole("button", { name: /^Download$/i }));
 
     const pill = await screen.findByTestId("diagnostics-alert-pill");
     expect(pill).toHaveTextContent("1 error");
@@ -194,6 +195,8 @@ describe.skipIf(!wasmArtifactPresent)("EditorApp", () => {
     });
 
     expect(screen.getByRole("heading", { name: "Neurosurgery LinkedIn Ad" })).toBeInTheDocument();
+    // Operation history lives in the Diagnostics tab now.
+    fireEvent.click(screen.getByRole("button", { name: /^diagnostics panel$/i }));
     expect(screen.getAllByText(/update_document/).length).toBeGreaterThan(0);
     expect(screen.getByText(/"artifact_type":/)).toBeInTheDocument();
     expect(screen.getByText(/"linkedin_ad"/)).toBeInTheDocument();
@@ -237,6 +240,7 @@ describe.skipIf(!wasmArtifactPresent)("EditorApp", () => {
     expect(screen.getAllByText("Client Leaderboard").length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText("add_page page_client_leaderboard")).toBeInTheDocument();
 
+    fireEvent.click(screen.getByRole("button", { name: /^export panel$/i }));
     fireEvent.click(screen.getByRole("button", { name: /generate preview/i }));
 
     expect(await screen.findByText("Export ready")).toBeInTheDocument();
@@ -289,6 +293,7 @@ describe.skipIf(!wasmArtifactPresent)("EditorApp", () => {
       />
     );
 
+    fireEvent.click(screen.getByRole("button", { name: /^export panel$/i }));
     fireEvent.click(screen.getByRole("button", { name: /generate preview/i }));
 
     expect(await screen.findByText("Export ready")).toBeInTheDocument();
@@ -338,6 +343,7 @@ describe.skipIf(!wasmArtifactPresent)("EditorApp", () => {
       />
     );
 
+    fireEvent.click(screen.getByRole("button", { name: /^export panel$/i }));
     fireEvent.click(screen.getByRole("button", { name: /generate preview/i }));
 
     expect(await screen.findByText("Export ready")).toBeInTheDocument();
@@ -413,6 +419,7 @@ describe.skipIf(!wasmArtifactPresent)("EditorApp", () => {
     expect(await screen.findByText("A4 Letter Copy")).toBeInTheDocument();
     fireEvent.click(screen.getByText("A4 Letter Copy"));
 
+    fireEvent.click(screen.getByRole("button", { name: /^export panel$/i }));
     fireEvent.click(screen.getByRole("button", { name: /generate preview/i }));
 
     expect(await screen.findByText("Export ready")).toBeInTheDocument();
@@ -475,6 +482,7 @@ describe.skipIf(!wasmArtifactPresent)("EditorApp", () => {
     fireEvent.click(screen.getAllByRole("button", { name: "Apply to text node" })[1]);
 
     expect(screen.getByLabelText("Content")).toHaveValue("Dr. Maximilian Alexander Whitmore");
+    fireEvent.click(screen.getByRole("button", { name: /^diagnostics panel$/i }));
     expect(screen.getByText("update_node node_contact_name")).toBeInTheDocument();
     expect(screen.getByText(/"content": "Dr. Maximilian Alexander Whitmore"/)).toBeInTheDocument();
   });
@@ -485,24 +493,28 @@ describe.skipIf(!wasmArtifactPresent)("EditorApp", () => {
     fireEvent.click(screen.getAllByRole("button", { name: "Apply to text nodes" })[1]);
 
     expect(screen.getByLabelText("Content")).toHaveValue("Dr. Maximilian Alexander Whitmore");
+    fireEvent.click(screen.getByRole("button", { name: /^diagnostics panel$/i }));
     expect(screen.getByText("update_node node_contact_name")).toBeInTheDocument();
     expect(screen.getByText("update_node node_contact_secondary")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: /select layer secondary contact name/i }));
+    fireEvent.click(screen.getByRole("button", { name: /^Inspect$/i }));
     expect(screen.getByLabelText("Content")).toHaveValue("Dr. Maximilian Alexander Whitmore");
 
     fireEvent.click(screen.getByRole("button", { name: /^Undo$/i }));
 
     expect(screen.getByLabelText("Content")).toHaveValue("Original Secondary Contact");
+    fireEvent.click(screen.getByRole("button", { name: /^diagnostics panel$/i }));
     expect(screen.queryByText("update_node node_contact_name")).not.toBeInTheDocument();
     expect(screen.queryByText("update_node node_contact_secondary")).not.toBeInTheDocument();
     expect(screen.getByText("1 action available to redo.")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: /^Redo$/i }));
 
-    expect(screen.getByLabelText("Content")).toHaveValue("Dr. Maximilian Alexander Whitmore");
     expect(screen.getByText("update_node node_contact_name")).toBeInTheDocument();
     expect(screen.getByText("update_node node_contact_secondary")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /^Inspect$/i }));
+    expect(screen.getByLabelText("Content")).toHaveValue("Dr. Maximilian Alexander Whitmore");
   });
 
   it("surfaces page-focused canvas preview approximation notes separately from local diagnostics", () => {
@@ -535,6 +547,7 @@ describe.skipIf(!wasmArtifactPresent)("EditorApp", () => {
 
     render(<TestEditorApp initialScene={scene} initialSelectedNodeId={null} />);
 
+    fireEvent.click(screen.getByRole("button", { name: /^diagnostics panel$/i }));
     expect(screen.getByText("No local diagnostics.")).toBeInTheDocument();
     expect(screen.getByText("Focused diagnostics")).toBeInTheDocument();
     const focused = screen.getByRole("list", { name: "Focused diagnostics" });
@@ -600,6 +613,7 @@ describe.skipIf(!wasmArtifactPresent)("EditorApp", () => {
       "24,40,160,28"
     );
 
+    fireEvent.click(screen.getByRole("button", { name: /^diagnostics panel$/i }));
     fireEvent.click(screen.getByRole("button", { name: /^Validate$/i }));
 
     expect(await screen.findByText("Preflight applied")).toBeInTheDocument();
@@ -724,6 +738,7 @@ describe.skipIf(!wasmArtifactPresent)("EditorApp", () => {
       targetNodeIds: ["node_contact_name"],
       // 2e: standing instructions ride every turn (none set here).
       agentInstructions: null,
+      model: null,
       diagnostics: [],
       // 2b: the live-event channel for the show-work checklist.
       onEvent: expect.any(Function)
@@ -1094,6 +1109,7 @@ describe.skipIf(!wasmArtifactPresent)("EditorApp", () => {
     });
     expect(screen.getByText("No operation emitted yet.")).toBeInTheDocument();
 
+    fireEvent.click(screen.getByRole("button", { name: /^export panel$/i }));
     fireEvent.click(screen.getByRole("button", { name: /generate preview/i }));
 
     expect(await screen.findByText("Export ready")).toBeInTheDocument();
@@ -1123,14 +1139,14 @@ describe.skipIf(!wasmArtifactPresent)("EditorApp", () => {
     fireEvent.click(screen.getByTestId("mock-open-export"));
 
     expect(screen.getByRole("complementary", { name: "Export sidebar" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /export panel/i })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: /^export panel$/i })).toHaveAttribute("aria-pressed", "true");
   });
 
   it("preserves active artboard and selected node across top mode switches", async () => {
     render(<TestEditorApp initialScene={twoPageScene()} initialSelectedNodeId="node_contact_name" />);
 
     for (const modeButton of [
-      screen.getByRole("button", { name: /export panel/i }),
+      screen.getByRole("button", { name: /^export panel$/i }),
       screen.getByRole("button", { name: /diagnostics panel/i }),
       screen.getByRole("button", { name: /^Agent$/i })
     ]) {
@@ -1317,6 +1333,7 @@ describe.skipIf(!wasmArtifactPresent)("EditorApp", () => {
     });
 
     expect(screen.getByText("brand_kit_insight_health v4")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /^diagnostics panel$/i }));
     expect(screen.getAllByText(/update_document/).length).toBeGreaterThan(0);
   });
 
@@ -1444,6 +1461,7 @@ describe.skipIf(!wasmArtifactPresent)("EditorApp", () => {
       />
     );
 
+    fireEvent.click(screen.getByRole("button", { name: /^export panel$/i }));
     fireEvent.click(screen.getByRole("button", { name: /generate preview/i }));
 
     expect(await screen.findByText("Export ready")).toBeInTheDocument();
@@ -1502,7 +1520,7 @@ describe.skipIf(!wasmArtifactPresent)("EditorApp", () => {
       />
     );
 
-    fireEvent.click(screen.getByRole("button", { name: /export panel/i }));
+    fireEvent.click(screen.getByRole("button", { name: /^export panel$/i }));
     fireEvent.change(screen.getByRole("combobox", { name: "Artboard" }), {
       target: { value: "all" }
     });
@@ -1556,6 +1574,7 @@ describe.skipIf(!wasmArtifactPresent)("EditorApp", () => {
       />
     );
 
+    fireEvent.click(screen.getByRole("button", { name: /^export panel$/i }));
     fireEvent.change(screen.getByLabelText("Profile"), {
       target: { value: "print_pdf" }
     });
@@ -1566,6 +1585,7 @@ describe.skipIf(!wasmArtifactPresent)("EditorApp", () => {
     expect(screen.queryByText("PRINT_TEXT_NON_LATIN_node_contact_name")).not.toBeInTheDocument();
     expect(screen.queryByText("PRINT_FONT_EMBEDDING")).not.toBeInTheDocument();
 
+    fireEvent.click(screen.getByRole("button", { name: /^export panel$/i }));
     fireEvent.click(screen.getByRole("button", { name: /generate preview/i }));
 
     expect(await screen.findByText("Export ready")).toBeInTheDocument();
@@ -1615,7 +1635,7 @@ describe.skipIf(!wasmArtifactPresent)("EditorApp", () => {
 
     render(<TestEditorApp initialScene={scene} initialSelectedNodeId={null} />);
 
-    fireEvent.click(screen.getByRole("button", { name: /export panel/i }));
+    fireEvent.click(screen.getByRole("button", { name: /^export panel$/i }));
     fireEvent.change(screen.getByLabelText("Profile"), {
       target: { value: "print_pdf" }
     });
@@ -1646,6 +1666,7 @@ describe.skipIf(!wasmArtifactPresent)("EditorApp", () => {
       />
     );
 
+    fireEvent.click(screen.getByRole("button", { name: /^export panel$/i }));
     fireEvent.change(screen.getByLabelText("Profile"), {
       target: { value: "preview_png" }
     });
@@ -1655,6 +1676,7 @@ describe.skipIf(!wasmArtifactPresent)("EditorApp", () => {
     expect(screen.queryByRole("button", { name: /save profile/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /remove saved/i })).not.toBeInTheDocument();
 
+    fireEvent.click(screen.getByRole("button", { name: /^export panel$/i }));
     fireEvent.click(screen.getByRole("button", { name: /generate preview/i }));
 
     expect(await screen.findByText("Export ready")).toBeInTheDocument();
@@ -1685,6 +1707,7 @@ describe.skipIf(!wasmArtifactPresent)("EditorApp", () => {
 
     render(<TestEditorApp initialScene={scene} initialSelectedNodeId={null} />);
 
+    fireEvent.click(screen.getByRole("button", { name: /^export panel$/i }));
     fireEvent.change(screen.getByLabelText("Profile"), {
       target: { value: "high_res_png" }
     });
@@ -1759,6 +1782,7 @@ describe.skipIf(!wasmArtifactPresent)("EditorApp", () => {
       />
     );
 
+    fireEvent.click(screen.getByRole("button", { name: /^export panel$/i }));
     fireEvent.click(screen.getByRole("button", { name: /generate preview/i }));
 
     expect(await screen.findByText("Export ready")).toBeInTheDocument();
@@ -1846,6 +1870,7 @@ describe.skipIf(!wasmArtifactPresent)("EditorApp", () => {
       />
     );
 
+    fireEvent.click(screen.getByRole("button", { name: /^export panel$/i }));
     fireEvent.click(screen.getByRole("button", { name: /generate preview/i }));
 
     expect(await screen.findByText("Export ready")).toBeInTheDocument();
@@ -1913,6 +1938,7 @@ describe.skipIf(!wasmArtifactPresent)("EditorApp", () => {
 
     render(<TestEditorApp initialScene={scene} initialSelectedNodeId="node_contact_name" preflightRunner={preflightRunner} />);
 
+    fireEvent.click(screen.getByRole("button", { name: /^diagnostics panel$/i }));
     fireEvent.click(screen.getByRole("button", { name: /^Validate$/i }));
 
     const focused = await screen.findByRole("list", { name: "Focused diagnostics" });
@@ -1960,6 +1986,7 @@ describe.skipIf(!wasmArtifactPresent)("EditorApp", () => {
 
     render(<TestEditorApp initialScene={twoPageScene()} initialSelectedNodeId={null} preflightRunner={preflightRunner} />);
 
+    fireEvent.click(screen.getByRole("button", { name: /^diagnostics panel$/i }));
     fireEvent.click(screen.getByRole("button", { name: /^Validate$/i }));
 
     expect((await screen.findAllByText("LUMS_REQUIRED_SLOT_FIXTURE")).length).toBeGreaterThanOrEqual(1);
@@ -2013,6 +2040,7 @@ describe.skipIf(!wasmArtifactPresent)("EditorApp", () => {
 
     render(<TestEditorApp initialScene={scene} initialSelectedNodeId="node_contact_name" preflightRunner={preflightRunner} />);
 
+    fireEvent.click(screen.getByRole("button", { name: /^diagnostics panel$/i }));
     fireEvent.click(screen.getByRole("button", { name: /^Validate$/i }));
 
     expect(await screen.findByText("LUME_PAGE_SAFE_AREA")).toBeInTheDocument();
@@ -2062,6 +2090,7 @@ describe.skipIf(!wasmArtifactPresent)("EditorApp", () => {
 
     render(<TestEditorApp initialScene={scene} initialSelectedNodeId={null} preflightRunner={preflightRunner} />);
 
+    fireEvent.click(screen.getByRole("button", { name: /^diagnostics panel$/i }));
     fireEvent.click(screen.getByRole("button", { name: /^Validate$/i }));
 
     expect((await screen.findAllByText("LUMA_ASSET_MISSING_BYTES")).length).toBeGreaterThanOrEqual(1);
@@ -2114,6 +2143,7 @@ describe.skipIf(!wasmArtifactPresent)("EditorApp", () => {
       />
     );
 
+    fireEvent.click(screen.getByRole("button", { name: /^export panel$/i }));
     fireEvent.click(screen.getByRole("button", { name: /generate preview/i }));
 
     expect(await screen.findByText("Export failed")).toBeInTheDocument();
@@ -2176,8 +2206,8 @@ describe.skipIf(!wasmArtifactPresent)("EditorApp", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /brand check/i }));
 
-    expect(await screen.findAllByText("LUMB0807")).toHaveLength(3);
-    expect(screen.getAllByText(/text contrast/)).toHaveLength(3);
+    expect(await screen.findAllByText("LUMB0807")).toHaveLength(2);
+    expect(screen.getAllByText(/text contrast/)).toHaveLength(2);
     fireEvent.click(screen.getAllByRole("button", { name: /show node node_contact_name/i })[0]);
     expect(screen.getByTestId("canvas-selection")).toHaveAttribute("data-selected-node", "node_contact_name");
     expect(brandGovernanceRunner).toHaveBeenCalledWith({
@@ -2249,7 +2279,7 @@ describe.skipIf(!wasmArtifactPresent)("EditorApp", () => {
 
     expect(await screen.findByText("Migration required")).toBeInTheDocument();
     expect(screen.getByText("surface.brand removed")).toBeInTheDocument();
-    expect(screen.getAllByText("LUMB0814")).toHaveLength(2);
+    expect(screen.getAllByText("LUMB0814")).toHaveLength(1);
     expect(brandCompatibilityRunner).toHaveBeenCalledWith({
       scene: expect.objectContaining({
         meta: expect.objectContaining({
