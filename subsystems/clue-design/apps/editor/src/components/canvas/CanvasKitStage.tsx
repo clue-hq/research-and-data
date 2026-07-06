@@ -48,6 +48,12 @@ export function CanvasKitStage({ artboards, viewport }: CanvasKitStageProps) {
   const surfaceRef = useRef<Surface | null>(null);
   const dirtyRef = useRef(false);
   const rafRef = useRef(0);
+  // Resize is coalesced into the SAME rAF as the repaint: resetting the
+  // canvas bitmap (element.width = …) blanks it, so wipe-and-redraw must
+  // happen inside one frame callback or every sidebar-drag step presents a
+  // blank stage (the resize-flicker bug).
+  const resizePendingRef = useRef(false);
+  const remakeSurfaceRef = useRef<(() => void) | null>(null);
   const propsRef = useRef({ artboards, viewport });
   propsRef.current = { artboards, viewport };
 
@@ -55,6 +61,9 @@ export function CanvasKitStage({ artboards, viewport }: CanvasKitStageProps) {
   const flush = () => {
     rafRef.current = 0;
     const ck = ckRef.current;
+    if (resizePendingRef.current && ck) {
+      remakeSurfaceRef.current?.();
+    }
     const surface = surfaceRef.current;
     if (!ck || !surface || !dirtyRef.current) {
       return;
@@ -91,16 +100,22 @@ export function CanvasKitStage({ artboards, viewport }: CanvasKitStageProps) {
     }
 
     const makeSurface = (ck: CanvasKit) => {
+      resizePendingRef.current = false;
       try {
         surfaceRef.current?.delete();
         const dpr = typeof devicePixelRatio === "number" ? devicePixelRatio : 1;
         element.width = Math.max(1, Math.floor(element.clientWidth * dpr));
         element.height = Math.max(1, Math.floor(element.clientHeight * dpr));
         surfaceRef.current = ck.MakeWebGLCanvasSurface(element) ?? ck.MakeSWCanvasSurface(element);
-        invalidate();
       } catch {
         // Surface creation can fail (no GPU/context); leave the canvas blank
         // and let the parent fall back to Konva.
+        surfaceRef.current = null;
+      }
+    };
+    remakeSurfaceRef.current = () => {
+      if (ckRef.current) {
+        makeSurface(ckRef.current);
       }
     };
 
@@ -117,14 +132,23 @@ export function CanvasKitStage({ artboards, viewport }: CanvasKitStageProps) {
         onLoad: invalidate
       });
       makeSurface(bundle.ck);
+      invalidate();
     });
 
     const observer =
       typeof ResizeObserver !== "undefined"
         ? new ResizeObserver(() => {
-            if (ckRef.current) {
-              makeSurface(ckRef.current);
+            // Skip no-op notifications (observe() fires once immediately);
+            // real size changes wait for the next paint frame so the bitmap
+            // wipe and the redraw land together.
+            const dpr = typeof devicePixelRatio === "number" ? devicePixelRatio : 1;
+            const targetWidth = Math.max(1, Math.floor(element.clientWidth * dpr));
+            const targetHeight = Math.max(1, Math.floor(element.clientHeight * dpr));
+            if (element.width === targetWidth && element.height === targetHeight) {
+              return;
             }
+            resizePendingRef.current = true;
+            invalidate();
           })
         : null;
     observer?.observe(element);
