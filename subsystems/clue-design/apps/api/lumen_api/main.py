@@ -3747,6 +3747,15 @@ def run_agent_turn_preview(
             # with LUME0210 (asset bytes missing). LUMEN_AGENT_ASSET_STORE still
             # overrides explicitly.
             config = replace(config, asset_store_root=api_asset_store_root())
+        brand_kit, brand_kit_source = resolve_agent_turn_brand_kit(payload)
+        if brand_kit is not None:
+            # K0 (kit application): the document's attached kit rides the run
+            # config BY VALUE so the runtime preflights against it instead of
+            # the platform default — without this, an attached scene ref vs the
+            # default kit trips LUMB0101 and token resolution short-circuits.
+            config = replace(
+                config, brand_kit=brand_kit, brand_kit_source=brand_kit_source
+            )
         prompt = editor_agent_prompt(payload)
         loop, tools = create_provider_quality_loop(
             prompt,
@@ -3787,6 +3796,39 @@ def api_asset_store_root() -> Path:
     return Path(
         os.environ.get("LUMEN_ASSET_STORE_ROOT") or database_path.parent / "asset-store"
     )
+
+
+def resolve_agent_turn_brand_kit(
+    payload: AgentTurnPreviewRequest,
+) -> Tuple[Optional[JsonObject], Optional[str]]:
+    """The Brand Kit attached to the turn's document, loaded from the kit
+    library so it can be passed BY VALUE into the runtime config (the runtime
+    never reads the API database).
+
+    Resolution failures never fail the turn: no scene ref, an unknown kit id,
+    or an unreadable database all return (None, None) and the runtime falls
+    back to the platform default kit — exactly the pre-K0 behavior."""
+    scene = payload.scene if isinstance(payload.scene, dict) else None
+    meta = scene.get("meta") if scene else None
+    ref = meta.get("brand_kit") if isinstance(meta, dict) else None
+    if not isinstance(ref, dict) or not ref.get("id"):
+        return None, None
+    database_path = Path(
+        os.environ.get("LUMEN_API_DATABASE_PATH", "apps/api/lumen-api.sqlite3")
+    )
+    try:
+        connection = connect(database_path)
+    except Exception:
+        return None, None
+    try:
+        record = Repository(connection).require_brand_kit(
+            str(ref["id"]), ref.get("version")
+        )
+        return record["brand_kit"], "document"
+    except Exception:
+        return None, None
+    finally:
+        connection.close()
 
 
 def agent_seed_scene(payload: AgentTurnPreviewRequest) -> Optional[JsonObject]:

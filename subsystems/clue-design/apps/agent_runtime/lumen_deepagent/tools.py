@@ -1631,11 +1631,15 @@ class LumenDesignTools:
         return json.dumps(payload, indent=2)
 
     def preflight_design(self) -> str:
-        """Run canonical brand/token/layout preflight using the platform default Brand Kit."""
+        """Run canonical brand/token/layout preflight using the effective Brand Kit
+        (the kit passed by value in config — the document's attached kit — or the
+        platform default)."""
         iteration_dir = self._iteration_dir()
         try:
-            brand_kit = self.core.platform_default_brand_kit()
-            brand_context = self._brand_context("platform_default", brand_kit)
+            source, brand_kit, notice = self._effective_brand_kit()
+            brand_context = self._brand_context(source, brand_kit)
+            if notice:
+                brand_context["notice"] = notice
             response = self.core.preflight_scene(self.scene, brand_kit)
         except CoreError as error:
             summary = PreflightSummary(
@@ -1713,7 +1717,10 @@ class LumenDesignTools:
             self._baseline_diagnostics = []
             return self._baseline_diagnostics
         try:
-            brand_kit = self.core.platform_default_brand_kit()
+            # Same kit precedence as preflight_design — a baseline captured
+            # against a different kit than the turn's own preflights would
+            # make the (code, subject) diff misattribute brand diagnostics.
+            _, brand_kit, _ = self._effective_brand_kit()
             response = self.core.preflight_scene(self.scene, brand_kit)
         except CoreError:
             # A baseline that cannot be computed is treated as empty — the
@@ -3020,6 +3027,35 @@ class LumenDesignTools:
         height = size.get("height")
         return _as_float(width), _as_float(height)
 
+    def _effective_brand_kit(self) -> tuple[str, JsonObject, Optional[str]]:
+        """The Brand Kit this run designs against: (source, kit, notice).
+
+        Precedence: a kit passed by value in config (the API's agent-turn path
+        resolves the document's attached kit; the CLI a --brand-kit-file) →
+        the platform default. The runtime never reads the API database.
+
+        A document-attached kit is honored regardless of approval_status —
+        attaching it was the human gate, and the editor canvas already resolves
+        its values, so designing against a different kit would both split the
+        document's visual truth and trip LUMB0101 (scene ref ≠ resolver kit,
+        a hard error that short-circuits token resolution). An unapproved kit
+        instead carries a notice so the trace and coordinator see the caveat.
+        """
+        kit = self.config.brand_kit
+        if isinstance(kit, dict) and kit.get("id"):
+            source = self.config.brand_kit_source or "config"
+            status = str(kit.get("approval_status") or "").lower()
+            notice = None
+            if status != "approved":
+                notice = (
+                    f"brand kit {kit.get('id')} v{kit.get('version')} has "
+                    f"approval_status={status or 'unknown'}; it is honored because "
+                    "it is attached to this document, but its tokens and assets "
+                    "are not yet human-approved"
+                )
+            return source, kit, notice
+        return "platform_default", self.core.platform_default_brand_kit(), None
+
     def _brand_context(self, source: str, brand_kit: JsonObject) -> JsonObject:
         mode = brand_mode_from_kit(brand_kit)
         scene_medium = scene_medium_token(self.scene)
@@ -3038,17 +3074,24 @@ class LumenDesignTools:
         }
 
     def _brand_context_from_scene_ref(self, context: JsonObject) -> JsonObject:
+        # Honesty rule (K0): the context reports the kit preflight ACTUALLY ran
+        # against; a scene ref never overwrites it. A ref for a different kit is
+        # surfaced as a mismatch (preflight will also carry LUMB0101) instead of
+        # silently masquerading as the effective kit.
         brand_ref = self.scene.get("meta", {}).get("brand_kit") or {}
-        if brand_ref.get("brand_kit_id") or brand_ref.get("id"):
-            context = {
-                **context,
-                "brand_kit_id": brand_ref.get("brand_kit_id") or brand_ref.get("id"),
-            }
-        if brand_ref.get("version") is not None:
-            context = {
-                **context,
-                "brand_kit_version": str(brand_ref.get("version")),
-            }
+        ref_id = brand_ref.get("brand_kit_id") or brand_ref.get("id")
+        if ref_id:
+            honored = ref_id == context.get("brand_kit_id")
+            context = {**context, "scene_ref_honored": honored}
+            if not honored:
+                context["scene_brand_ref"] = {
+                    "brand_kit_id": ref_id,
+                    "version": (
+                        str(brand_ref.get("version"))
+                        if brand_ref.get("version") is not None
+                        else None
+                    ),
+                }
         scene_medium = scene_medium_token(self.scene)
         if scene_medium:
             context = {

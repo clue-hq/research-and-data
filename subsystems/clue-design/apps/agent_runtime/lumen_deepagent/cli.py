@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+from dataclasses import replace
 from pathlib import Path
 
 from .config import AgentRuntimeConfig
@@ -27,10 +28,25 @@ def main() -> None:
         default=Path(__file__).resolve().parents[3],
         help="Repository root",
     )
+    parser.add_argument(
+        "--brand-kit-file",
+        type=Path,
+        default=None,
+        help=(
+            "Path to a full Brand Kit JSON file; the run designs against it "
+            "instead of the platform default kit (K0 kit application)."
+        ),
+    )
     args = parser.parse_args()
 
     load_dotenv_if_available(args.repo_root)
     config = AgentRuntimeConfig.from_env(args.repo_root)
+    if args.brand_kit_file is not None:
+        config = replace(
+            config,
+            brand_kit=json.loads(args.brand_kit_file.read_text(encoding="utf-8")),
+            brand_kit_source="file",
+        )
     if args.mode == "quality-loop":
         loop, tools = create_provider_quality_loop(args.prompt, config)
         result = loop.run(args.prompt)

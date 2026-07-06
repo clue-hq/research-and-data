@@ -411,6 +411,52 @@ def test_agent_turn_preview_route_returns_editor_safe_proposal(client: TestClien
     assert captured["root"] == REPO_ROOT
 
 
+def test_resolve_agent_turn_brand_kit_passes_document_kit_by_value(
+    client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """K0 kit application: a turn whose scene references an attached Brand Kit
+    resolves the full kit JSON from the library (passed by value into the
+    runtime config); resolution failures degrade to (None, None) so the turn
+    itself can never fail on kit lookup."""
+    from lumen_api.main import resolve_agent_turn_brand_kit
+    from lumen_api.models import AgentTurnPreviewRequest
+
+    compiled = client.post(
+        "/brand-kits/compile-styles",
+        json={
+            "source": valid_styles_source(),
+            "brand_kit_id": "brand_kit_insight_health",
+            "version": 4,
+            "name": "Insight Health",
+        },
+    )
+    assert compiled.status_code == 200, compiled.text
+
+    monkeypatch.setenv("LUMEN_API_DATABASE_PATH", str(tmp_path / "api.sqlite3"))
+
+    scene = preflightable_scene()
+    scene["meta"]["brand_kit"] = {"id": "brand_kit_insight_health", "version": 4}
+    kit, source = resolve_agent_turn_brand_kit(
+        AgentTurnPreviewRequest(prompt="Restyle the letter", scene=scene)
+    )
+    assert source == "document"
+    assert kit is not None
+    assert kit["id"] == "brand_kit_insight_health"
+    assert kit["version"] == 4
+
+    # No scene ref → no kit (platform-default behavior unchanged).
+    assert resolve_agent_turn_brand_kit(
+        AgentTurnPreviewRequest(prompt="x", scene=preflightable_scene())
+    ) == (None, None)
+
+    # Unknown kit id → graceful (None, None), never an exception.
+    ghost = preflightable_scene()
+    ghost["meta"]["brand_kit"] = {"id": "brand_kit_ghost", "version": 1}
+    assert resolve_agent_turn_brand_kit(
+        AgentTurnPreviewRequest(prompt="x", scene=ghost)
+    ) == (None, None)
+
+
 def test_editor_target_node_ids_prefers_plural_and_dedupes() -> None:
     from lumen_api.main import editor_target_node_ids
     from lumen_api.models import AgentTurnPreviewRequest

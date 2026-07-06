@@ -18,6 +18,14 @@ class AgentRuntimeConfig:
     # `model` must then be an "openai:<openrouter-model-id>" value. Blank → Anthropic.
     agent_base_url: str | None = None
     agent_api_key: str | None = None
+    # Brand Kit application (K0): the full kit JSON this run designs against,
+    # passed BY VALUE — the runtime never reads the API database. The API's
+    # agent-turn path resolves the document's attached kit; the CLI accepts
+    # --brand-kit-file. None → the platform default kit, exactly as before.
+    # `brand_kit_source` is the provenance label for the effective-brand trace
+    # ("document", "file", …).
+    brand_kit: dict | None = None
+    brand_kit_source: str | None = None
 
     @classmethod
     def from_env(cls, repo_root: Path | None = None) -> "AgentRuntimeConfig":

@@ -325,11 +325,15 @@ class FakeCoreClient:
         }
 
     def preflight_scene(self, scene, brand_kit):
+        # Faithful to the real engine (preflight.rs): the kit ref is attached
+        # only when the scene has none; an existing ref is never overwritten.
         updated = json.loads(json.dumps(scene))
-        updated.setdefault("meta", {})["brand_kit"] = {
-            "id": brand_kit["id"],
-            "version": brand_kit["version"],
-        }
+        meta = updated.setdefault("meta", {})
+        if not meta.get("brand_kit"):
+            meta["brand_kit"] = {
+                "id": brand_kit["id"],
+                "version": brand_kit["version"],
+            }
         return {
             "scene": updated,
             "diagnostics": [],
@@ -1851,6 +1855,131 @@ def test_preflight_and_final_trace_record_effective_brand_context(
     finalized_event = next(event for event in trace_events if event["event"] == "run_finalized")
     assert preflight_event["payload"]["effective_brand"]["brand_kit_id"] == "brand_kit_platform_default"
     assert finalized_event["payload"]["effective_brand"]["mode"]["medium"] == "digital"
+
+
+def _insight_kit(approval_status: str = "approved") -> dict:
+    return {
+        "id": "brand_kit_insight",
+        "version": 3,
+        "name": "Insight Health",
+        "approval_status": approval_status,
+        "modes": {
+            "defaults": {
+                "theme": "light",
+                "density": "comfortable",
+                "accessibility": "standard",
+                "medium": "digital",
+            }
+        },
+    }
+
+
+def _config_with_kit(tmp_path: Path, kit: dict) -> AgentRuntimeConfig:
+    from dataclasses import replace
+
+    return replace(runtime_config(tmp_path), brand_kit=kit, brand_kit_source="document")
+
+
+def test_preflight_designs_against_config_brand_kit(tmp_path: Path, monkeypatch):
+    """K0: a kit passed by value in config (the document's attached kit) is what
+    preflight actually runs against — not the platform default."""
+    monkeypatch.setattr("lumen_deepagent.tools.CoreClient", FakeCoreClient)
+    tools = LumenDesignTools(
+        _config_with_kit(tmp_path, _insight_kit()), "Create a square ad"
+    )
+    tools.compile_dsl_block("page page_test")
+
+    result = json.loads(tools.preflight_design())
+
+    assert result["preflight"]["brand_source"] == "document"
+    assert result["preflight"]["brand_kit_id"] == "brand_kit_insight"
+    assert result["preflight"]["brand_kit_version"] == "3"
+    # The fake stamps the ref from the kit it was HANDED — proof the config kit
+    # reached core.preflight_scene.
+    assert tools.scene["meta"]["brand_kit"]["id"] == "brand_kit_insight"
+    assert result["effective_brand"]["scene_ref_honored"] is True
+    assert "notice" not in result["effective_brand"]
+
+
+def test_unapproved_config_kit_is_honored_with_notice(tmp_path: Path, monkeypatch):
+    """A document-attached draft kit is still designed against (attach was the
+    human gate; a default-kit fallback would trip LUMB0101 against the scene
+    ref) — but the effective-brand context carries the approval notice."""
+    monkeypatch.setattr("lumen_deepagent.tools.CoreClient", FakeCoreClient)
+    tools = LumenDesignTools(
+        _config_with_kit(tmp_path, _insight_kit(approval_status="draft")),
+        "Create a square ad",
+    )
+    tools.compile_dsl_block("page page_test")
+
+    result = json.loads(tools.preflight_design())
+
+    assert result["preflight"]["brand_source"] == "document"
+    assert result["preflight"]["brand_kit_id"] == "brand_kit_insight"
+    notice = result["effective_brand"]["notice"]
+    assert "approval_status=draft" in notice
+    assert "not yet human-approved" in notice
+
+
+def test_brand_context_reports_scene_ref_mismatch_honestly(
+    tmp_path: Path, monkeypatch
+):
+    """Without a config kit, a seeded scene that references some other kit no
+    longer masquerades as that kit in the effective-brand context: the context
+    reports the kit preflight actually used plus the unhonored scene ref."""
+    monkeypatch.setattr("lumen_deepagent.tools.CoreClient", FakeCoreClient)
+    seeded = {
+        "meta": {
+            "id": "doc_test",
+            "title": "Attached doc",
+            "brand_kit": {"id": "brand_kit_other", "version": 7},
+        },
+        "pages": {"page_test": {"id": "page_test", "children": []}},
+        "nodes": {},
+    }
+    tools = LumenDesignTools(
+        runtime_config(tmp_path), "Edit the doc", initial_scene=seeded
+    )
+
+    result = json.loads(tools.preflight_design())
+
+    assert result["preflight"]["brand_source"] == "platform_default"
+    assert result["preflight"]["brand_kit_id"] == "brand_kit_platform_default"
+    assert result["effective_brand"]["scene_ref_honored"] is False
+    assert result["effective_brand"]["scene_brand_ref"] == {
+        "brand_kit_id": "brand_kit_other",
+        "version": "7",
+    }
+
+
+def test_baseline_preflight_uses_config_brand_kit(tmp_path: Path, monkeypatch):
+    """The pre-turn diagnostics baseline must be captured against the SAME kit
+    as the turn's own preflights, or the (code, subject) diff misattributes
+    brand diagnostics."""
+    seen_kits: list[str] = []
+
+    class RecordingCoreClient(FakeCoreClient):
+        def preflight_scene(self, scene, brand_kit):
+            seen_kits.append(brand_kit["id"])
+            return super().preflight_scene(scene, brand_kit)
+
+    monkeypatch.setattr("lumen_deepagent.tools.CoreClient", RecordingCoreClient)
+    seeded = {
+        "meta": {
+            "id": "doc_test",
+            "title": "Attached doc",
+            "brand_kit": {"id": "brand_kit_insight", "version": 3},
+        },
+        "pages": {"page_test": {"id": "page_test", "children": []}},
+        "nodes": {},
+    }
+    tools = LumenDesignTools(
+        _config_with_kit(tmp_path, _insight_kit()), "Edit the doc", initial_scene=seeded
+    )
+
+    tools.baseline_preflight_diagnostics()
+
+    assert seen_kits == ["brand_kit_insight"]
 
 
 def test_compile_halt_location_is_preserved_as_repair_context(
