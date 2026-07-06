@@ -329,6 +329,10 @@ class LumenDesignTools:
             return json.dumps(payload, indent=2)
 
         self._replace_scene_from_core_response(response, "compile_dsl_block")
+        # K2: `image asset(<kit asset id>)` written straight in DSL registers
+        # nothing — reconcile against the kit manifest so the natural form
+        # renders instead of dangling (see _register_referenced_brand_assets).
+        self._register_referenced_brand_assets("compile_dsl_block")
         dsl = response.get("dsl", {})
         self.dsl_session = dsl.get("session_snapshot")
         compile_output = dsl.get("compile_output", {})
@@ -745,6 +749,60 @@ class LumenDesignTools:
             payload=payload,
         )
         return json.dumps(payload, indent=2)
+
+    def _register_referenced_brand_assets(self, origin: str) -> None:
+        """K2 root fix: a DSL author naturally writes `image asset(<id>)` with
+        an asset_id straight from the brand card — a form the compiler accepts
+        but which registers nothing, leaving a dangling reference that renders
+        blank (LUME0211; the K2 live verify failed exactly here). Rather than
+        prompt-steering against the natural form (a losing fight), any image
+        node whose asset_id names a kit-manifest asset that the scene doesn't
+        carry yet gets its record auto-registered with brand_guide provenance
+        — the same registration use_brand_asset performs. The explicit action
+        remains for fit/slot control. Failures never break the calling tool:
+        registration is a repair, not a gate."""
+        manifest = self.config.brand_kit_assets or {}
+        if not manifest:
+            return
+        scene_assets = self.scene.get("assets") or {}
+        referenced: list[str] = []
+        for node in (self.scene.get("nodes") or {}).values():
+            kind = node.get("kind") or {}
+            if kind.get("kind") != "image":
+                continue
+            asset_id = kind.get("asset_id")
+            if asset_id in manifest and asset_id not in scene_assets:
+                referenced.append(asset_id)
+        for asset_id in dict.fromkeys(referenced):
+            entry = manifest.get(asset_id) or {}
+            record = copy.deepcopy(entry.get("record") or {})
+            if not record.get("id"):
+                continue
+            label = entry.get("title") or record.get("label") or asset_id
+            record["source"] = {
+                "kind": "brand_guide",
+                "source_asset_id": asset_id,
+                "label": label,
+            }
+            try:
+                response = self.core.apply_operations(
+                    self.scene, [{"kind": "upsert_asset", "asset": record}]
+                )
+            except CoreError:
+                continue
+            self._replace_scene_from_core_response(response, origin)
+            self.record(
+                "coordinator",
+                "brand_asset_registered",
+                input_summary=asset_id,
+                output_summary=(
+                    f"auto-registered kit asset {asset_id} referenced by the "
+                    f"scene ({origin})"
+                ),
+                payload={
+                    "brand_asset": {"asset_id": asset_id, "label": label, "via": origin}
+                },
+            )
 
     def use_brand_asset(
         self,
@@ -1807,6 +1865,9 @@ class LumenDesignTools:
         platform default)."""
         iteration_dir = self._iteration_dir()
         try:
+            # K2 belt: catch kit-asset references that arrived via structured
+            # edits / raw operations (compile has its own reconcile pass).
+            self._register_referenced_brand_assets("preflight_design")
             source, brand_kit, notice = self._effective_brand_kit()
             brand_context = self._brand_context(source, brand_kit)
             if notice:

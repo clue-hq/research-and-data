@@ -2208,6 +2208,50 @@ def test_use_brand_asset_honors_explicit_fit_and_plain_place_keeps_cover(
     assert fits == ["cover", "cover"]
 
 
+def test_inline_dsl_reference_to_kit_asset_auto_registers(
+    tmp_path: Path, monkeypatch
+):
+    """K2 root fix (live-verify finding): the author naturally writes
+    `image asset(<kit asset id>)` straight in DSL — a form the compiler
+    accepts but which registers nothing, so the logo rendered blank
+    (LUME0211). Any scene image node referencing a manifest asset the scene
+    doesn't carry is auto-registered with brand_guide provenance at the
+    compile/preflight chokepoints."""
+    monkeypatch.setattr("lumen_deepagent.tools.CoreClient", FakeCoreClient)
+    seeded = {
+        "meta": {"id": "doc_k2", "title": "Logo ad"},
+        "pages": {"page_ad": {"id": "page_ad", "children": ["mark"]}},
+        "nodes": {
+            "mark": {
+                "id": "mark",
+                "kind": {"kind": "image", "asset_id": "asset_logo_reversed"},
+                "children": [],
+            }
+        },
+        "assets": {},
+    }
+    tools = LumenDesignTools(
+        _config_with_kit_assets(tmp_path), "Brand ad", initial_scene=seeded
+    )
+
+    tools.preflight_design()
+
+    upserts = [
+        op for op in tools.core.applied_operations if op.get("kind") == "upsert_asset"
+    ]
+    assert len(upserts) == 1
+    assert upserts[0]["asset"]["id"] == "asset_logo_reversed"
+    assert upserts[0]["asset"]["source"]["kind"] == "brand_guide"
+
+    # Idempotent: once the scene carries the record, nothing re-registers.
+    tools.scene.setdefault("assets", {})["asset_logo_reversed"] = upserts[0]["asset"]
+    tools.preflight_design()
+    upserts_after = [
+        op for op in tools.core.applied_operations if op.get("kind") == "upsert_asset"
+    ]
+    assert len(upserts_after) == 1
+
+
 def test_use_brand_asset_unknown_id_errors_with_known_inventory(
     tmp_path: Path, monkeypatch
 ):

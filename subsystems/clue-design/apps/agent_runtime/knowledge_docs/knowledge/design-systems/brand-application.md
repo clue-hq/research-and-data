@@ -45,9 +45,12 @@ with zero brand color reads as unbranded.
 
 ## Placing kit assets (logos and brand images)
 
-- Author an image frame for the logo/brand image in the DSL (a placeholder
-  asset id is tolerated until placement), then call
-  `asset(action="use_brand_asset", asset_id=<from the card>, node_id=<frame>)`.
+- Two working forms, both registering the real bytes:
+  1. Reference it directly in DSL — `image asset(<asset_id from the card>)`
+     — the runtime registers the kit asset automatically; or
+  2. Author the frame with a placeholder, then call
+     `asset(action="use_brand_asset", asset_id=<from the card>,
+     node_id=<frame>)` when you need explicit fit/slot control.
   Every logo variant and brand image in the card carries its `asset_id` —
   never invent one, and never draw a logo from shapes or text when the kit
   has the real mark.
