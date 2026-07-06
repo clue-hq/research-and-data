@@ -1982,6 +1982,126 @@ def test_baseline_preflight_uses_config_brand_kit(tmp_path: Path, monkeypatch):
     assert seen_kits == ["brand_kit_insight"]
 
 
+def _insight_kit_with_tokens(approval_status: str = "approved") -> dict:
+    kit = _insight_kit(approval_status)
+    kit["tokens"] = {
+        "colors": {
+            "surface.brand": {"value": {"default": {"kind": "alias", "token": "palette.primary.700"}}},
+            "palette.primary.700": {
+                "value": {"default": {"kind": "oklch", "l": 0.4, "c": 0.0738, "h": 207.88, "alpha": 1.0}}
+            },
+            "palette.primary.400": {
+                "value": {"default": {"kind": "oklch", "l": 0.78, "c": 0.14, "h": 168.0, "alpha": 1.0}}
+            },
+            "surface.page": {"value": {"default": {"kind": "hex", "value": "#FFFFFF"}}},
+            "surface.inverse": {"value": {"default": {"kind": "hex", "value": "#0F172A"}}},
+            "text.inverse": {"value": {"default": {"kind": "hex", "value": "#F8FAFC"}}},
+        },
+        "typography": {
+            "type.cta": {
+                "value": {
+                    "default": {
+                        "kind": "style",
+                        "font_family": "Source Sans 3",
+                        "font_size": 16.0,
+                        "font_weight": 700,
+                    }
+                }
+            }
+        },
+    }
+    kit["assets"] = {
+        "logos": {
+            "primary": {
+                "usage": "primary",
+                "variants": [
+                    {"name": "full_color", "color_mode": "full_color"},
+                    {"name": "reversed", "color_mode": "reversed"},
+                ],
+                "allowed_backgrounds": ["surface.page", "surface.brand"],
+                "min_size": 24.0,
+                "title": "Insight Health lockup",
+            }
+        },
+        "images": {},
+    }
+    kit["constraints"] = {"tone": ["clinical", "warm"], "imagery": ["no clipart"]}
+    return kit
+
+
+def test_brand_card_digests_kit_with_resolved_accent(tmp_path: Path):
+    """K1: the card resolves role colors to hex (oklch via the engine's math),
+    surfaces the brightest accent for the CTA rule, and inventories logos —
+    capped, never the full kit JSON."""
+    from lumen_deepagent.brand_card import build_brand_card
+
+    card = build_brand_card(_insight_kit_with_tokens(), source="document")
+
+    assert card["kit"]["id"] == "brand_kit_insight"
+    assert card["color_roles"]["surface.brand"] == "#00525c"
+    assert card["color_roles"]["surface.page"] == "#FFFFFF"
+    # The vivid mid-lightness palette entry wins the accent slot — the ink
+    # surface.inverse must NOT be the accent.
+    assert card["accent"]["token"] == "palette.primary.400"
+    assert card["accent"]["value"].startswith("#")
+    assert card["type_roles"]["type.cta"]["family"] == "Source Sans 3"
+    assert card["logos"][0]["allowed_backgrounds"] == ["surface.page", "surface.brand"]
+    assert card["tone"] == ["clinical", "warm"]
+    assert build_brand_card(None) is None
+
+
+def test_load_knowledge_injects_brand_card_and_decide_doc(tmp_path: Path, monkeypatch):
+    """With a kit in config, load_knowledge force-loads brand-application.md
+    and appends the card snippet; without a kit, neither happens."""
+    from lumen_deepagent.knowledge import BRAND_APPLICATION_PATH
+
+    monkeypatch.setattr("lumen_deepagent.tools.CoreClient", FakeCoreClient)
+    captured: dict = {}
+
+    def fake_read_task_knowledge(root, query, extra_mandatory_paths=None):
+        captured["extra"] = list(extra_mandatory_paths or [])
+        return []
+
+    monkeypatch.setattr(
+        "lumen_deepagent.tools.read_task_knowledge", fake_read_task_knowledge
+    )
+
+    with_kit = LumenDesignTools(
+        _config_with_kit(tmp_path, _insight_kit_with_tokens()), "Design an ad"
+    )
+    payload = json.loads(with_kit.load_knowledge("brand ad"))
+    assert BRAND_APPLICATION_PATH in captured["extra"]
+    card_snippets = [
+        s for s in payload["snippets"] if str(s.get("path", "")).startswith("brand-kit:")
+    ]
+    assert len(card_snippets) == 1
+    assert "accent" in card_snippets[0]["content"]
+
+    without_kit = LumenDesignTools(runtime_config(tmp_path), "Design an ad")
+    payload = json.loads(without_kit.load_knowledge("brand ad"))
+    assert BRAND_APPLICATION_PATH not in captured["extra"]
+    assert not [
+        s for s in payload["snippets"] if str(s.get("path", "")).startswith("brand-kit:")
+    ]
+
+
+def test_curated_context_carries_brand_card(tmp_path: Path, monkeypatch):
+    monkeypatch.setattr("lumen_deepagent.tools.CoreClient", FakeCoreClient)
+    tools = LumenDesignTools(
+        _config_with_kit(tmp_path, _insight_kit_with_tokens()), "Design an ad"
+    )
+    context = tools.curated_context(
+        user_request="Design an ad", previous_feedback=[], director_decisions=[]
+    )
+    assert context["brand_card"]["accent"]["token"] == "palette.primary.400"
+
+    bare = LumenDesignTools(runtime_config(tmp_path), "Design an ad")
+    context = bare.curated_context(
+        user_request="Design an ad", previous_feedback=[], director_decisions=[]
+    )
+    assert context["brand_card"] is None
+
+
 def test_compile_halt_location_is_preserved_as_repair_context(
     tmp_path: Path, monkeypatch
 ):

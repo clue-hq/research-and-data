@@ -1874,9 +1874,18 @@ fn free_container_operations(
         if baked_transform != child.transform {
             child_patch.transform = FieldPatch::Set(baked_transform);
         }
+        // K1 rider: a TEXT child keeps Hug dimensions through the freeze.
+        // Hug text self-measures — it cannot re-flow siblings once the
+        // container is Free, so baking it buys nothing — and at accept time
+        // the solved extent may predate typography-token resolution (the
+        // proposal ops insert skeleton text; the post-accept preflight
+        // resolves the real family/size). Baking that skeleton measurement
+        // froze an 80pt headline into a 17pt Fixed box (LUMV0903/0810 on
+        // the K0 live-proof document). Non-text children bake as before.
+        let is_text_child = matches!(child.kind, NodeKind::Text(_));
         let baked_size = SizeSpec {
-            width: bake_dimension(&child.size.width, child_bounds.width),
-            height: bake_dimension(&child.size.height, child_bounds.height),
+            width: bake_dimension_for_child(&child.size.width, child_bounds.width, is_text_child),
+            height: bake_dimension_for_child(&child.size.height, child_bounds.height, is_text_child),
         };
         if baked_size != child.size {
             child_patch.size = FieldPatch::Set(baked_size);
@@ -1977,6 +1986,17 @@ fn bake_dimension(dimension: &Dimension, solved: f64) -> Dimension {
             token: token.clone(),
         },
     }
+}
+
+/// `bake_dimension`, except a text child's Hug survives the bake (see the
+/// K1 rider comment at the call site): Hug text self-measures and cannot
+/// re-flow siblings in a Free container, while baking it can freeze a
+/// pre-token-resolution measurement into a lying Fixed box.
+fn bake_dimension_for_child(dimension: &Dimension, solved: f64, is_text: bool) -> Dimension {
+    if is_text && matches!(dimension, Dimension::Hug) {
+        return Dimension::Hug;
+    }
+    bake_dimension(dimension, solved)
 }
 
 pub fn build_clone_subtree(

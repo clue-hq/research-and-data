@@ -19,7 +19,8 @@ except Exception:  # pragma: no cover
     image_cache = None  # type: ignore[assignment]
 
 from .config import AgentRuntimeConfig
-from .knowledge import DIRECTIVES_PATH, read_task_knowledge
+from .brand_card import build_brand_card
+from .knowledge import BRAND_APPLICATION_PATH, DIRECTIVES_PATH, read_task_knowledge
 from .schemas import (
     CompileSummary,
     DiagnosticSeverity,
@@ -169,6 +170,12 @@ class LumenDesignTools:
             ["initial_scene_seed"] if self.seeded_from_initial_scene else []
         )
         self.effective_brand_context: Optional[JsonObject] = None
+        # K1: compact brand context card, built once from the by-value kit in
+        # config (None without a kit). Injected via load_knowledge and
+        # curated_context — the full kit JSON never enters model history.
+        self.brand_card: Optional[JsonObject] = build_brand_card(
+            config.brand_kit, source=config.brand_kit_source
+        )
         self.dsl_session: Optional[JsonObject] = None
         self.latest_export_summary: Optional[JsonObject] = None
         self.latest_preview_bundle: Optional[JsonObject] = None
@@ -218,11 +225,26 @@ class LumenDesignTools:
             # loaded — the recipe inlines the essentials, but the full table
             # stays one load away (agent-improvement backlog).
             extra_mandatory_paths=(
-                [DIRECTIVES_PATH] if self.seeded_from_initial_scene else []
+                ([DIRECTIVES_PATH] if self.seeded_from_initial_scene else [])
+                # K1: a run with an attached kit always gets the brand
+                # decide table (intensity per archetype, CTA/accent rule,
+                # logo-variant rules) — same pattern as images/decide.
+                + ([BRAND_APPLICATION_PATH] if self.brand_card else [])
             ),
         )
         result = KnowledgeLoadResult(query=query, snippets=snippets)
         payload = _dump(result)
+        if self.brand_card:
+            # The card rides the knowledge payload so the coordinator (and the
+            # author via task context) reasons from the kit's ACTUAL roles,
+            # accent, and inventory — not from guessed token names.
+            payload["snippets"].append(
+                {
+                    "path": f"brand-kit:{self.brand_card['kit'].get('id')}",
+                    "title": "Brand context card (this document's attached kit)",
+                    "content": json.dumps(self.brand_card, indent=1),
+                }
+            )
         self.loaded_knowledge = payload["snippets"]
         self._write_json(self.trace_dir / "knowledge.json", payload)
         self.record(
@@ -2389,6 +2411,10 @@ class LumenDesignTools:
             ),
             "loaded_knowledge": self._capped_knowledge(),
             "effective_brand_context": copy.deepcopy(self.effective_brand_context),
+            # K1: the compact kit digest (tone, resolved role colors, accent,
+            # type roles, logo/image inventory) — the author styles CTAs from
+            # its `accent`, the reviewer critiques brand-fit against it.
+            "brand_card": copy.deepcopy(self.brand_card),
             "gaps": copy.deepcopy(self.gaps[-CONTEXT_MAX_ATTEMPTS:]),
         }
 

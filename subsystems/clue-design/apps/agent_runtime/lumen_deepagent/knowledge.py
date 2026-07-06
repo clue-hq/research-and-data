@@ -40,6 +40,7 @@ PRIMARY_KNOWLEDGE_PATHS = [
     f"{KNOWLEDGE_DOCS_ROOT}/knowledge/design-systems/modes.md",
     f"{KNOWLEDGE_DOCS_ROOT}/knowledge/design-systems/logo-and-assets.md",
     f"{KNOWLEDGE_DOCS_ROOT}/knowledge/design-systems/brand-fit-critique.md",
+    f"{KNOWLEDGE_DOCS_ROOT}/knowledge/design-systems/brand-application.md",
     f"{KNOWLEDGE_DOCS_ROOT}/knowledge/assets/asset-placement.md",
     f"{KNOWLEDGE_DOCS_ROOT}/knowledge/export/preview-quality.md",
     f"{KNOWLEDGE_DOCS_ROOT}/knowledge/loop/authoring-and-repair.md",
@@ -71,6 +72,9 @@ TEXT_PATH = f"{KNOWLEDGE_DOCS_ROOT}/knowledge/lumen-dsl/text.md"
 # live or die by these forms (run_8cbeae790f07 burned every iteration on the
 # `#page_a4`-vs-`#page:page_a4` trap with this doc never loaded).
 DIRECTIVES_PATH = f"{KNOWLEDGE_DOCS_ROOT}/knowledge/lumen-dsl/directives.md"
+# K1: mandatory whenever the run carries an attached Brand Kit — the decide
+# table for brand intensity, the CTA/accent rule, logo-variant rules.
+BRAND_APPLICATION_PATH = f"{KNOWLEDGE_DOCS_ROOT}/knowledge/design-systems/brand-application.md"
 # The art-direction taste rubric the visual critic scores against (one-dominant /
 # squint test, hero-size-per-surface, jump rule, whitespace-as-margin, 60-30-10,
 # WCAG contrast, single alignment spine, eyebrow/anti-cliche). Pinned + delivered

@@ -36,6 +36,16 @@ Required workflow:
    in `knowledge/images/decide`. Icons, flat illustrations, logos, abstract accents,
    and data are NOT this tool; they are library/shape/layout work the author does in
    DSL. Record the decision in a todo.
+3b. DECIDE BRAND APPLICATION (only when a brand context card is present in the
+   loaded knowledge — it describes this document's attached Brand Kit). Using
+   the card and `knowledge/design-systems/brand-application`, decide the brand
+   intensity for this surface (full / strong / quiet per the archetype table)
+   and note the concrete choices: which surface role carries the field, the
+   CTA/emphasis color — the card's `accent`, NOT ink/`surface.inverse` — the
+   logo variant for the chosen background, and which type roles style the
+   copy. Hand these choices to the DSL author as constraints with the actual
+   token names from the card. Record the decision in a todo. Without a card,
+   skip this step.
 4. Delegate initial DSL writing to the lumen-dsl-author subagent. If step 3 chose
    an image, tell the author to include the image frame NOW under the placeholder
    asset id `hero_pending` and require the scrim idiom from
@@ -470,6 +480,12 @@ I. REQUEST & BRAND
      guesses); meaningful ABM slots. Unresolved BrandKit governance diagnostics,
      raw branded surfaces, raw typography in branded scenes, logo misuse, and
      print/digital mode mismatch are quality failures even if the render looks neat.
+   - K1: when the run context carries a `brand_card` (the document's attached
+     Brand Kit), judge brand-fit against ITS facts, not generic taste: a CTA or
+     emphasis element painted ink/`surface.inverse` when the card lists a vivid
+     `accent` is a brand failure (category "brand"); so is a logo variant on a
+     background its `allowed_backgrounds` excludes, or copy styled outside the
+     card's type roles. Name the token the author should have used.
 
 J. IMAGERY (apply ONLY when the design uses — or a brief like this should use — an
    image / illustration / icon)

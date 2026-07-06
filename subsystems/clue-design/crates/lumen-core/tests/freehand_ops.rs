@@ -515,6 +515,58 @@ fn freeze_layout_bakes_every_stack_zero_motion_and_inverts_byte_identical() {
     );
 }
 
+/// K1 rider: a TEXT child's Hug height survives the freeze. Hug text
+/// self-measures — it cannot re-flow siblings in a Free container — and at
+/// accept time the solved extent may predate typography-token resolution
+/// (proposal ops insert skeleton text; the post-accept preflight resolves
+/// the real family/size). Baking it froze an 80pt headline into a 17pt
+/// Fixed box (LUMV0903/0810 on the K0 live-proof document).
+#[test]
+fn freeze_layout_keeps_text_children_hug() {
+    use lumen_core::{build_freeze_layout, Dimension, NodeKind, TextAlign, TextNode};
+
+    let mut scene = stack_scene();
+    let mut text = Node::new(
+        NodeId::from("headline"),
+        NodeKind::Text(TextNode {
+            content: "Your health, now online.".to_owned(),
+            font_family: "Inter".to_owned(),
+            font_size: 80.0,
+            font_weight: 800,
+            align: TextAlign::Left,
+            style_token: None,
+            ..TextNode::default()
+        }),
+    );
+    text.size = SizeSpec {
+        width: Dimension::Fixed(400.0),
+        height: Dimension::Hug,
+    };
+    insert(&mut scene, ParentRef::Node(NodeId::from("stack")), text);
+    apply_layout(&mut scene);
+
+    let batch = build_freeze_layout(&scene).expect("freeze builds");
+    batch.apply_checked(&mut scene).expect("freeze applies");
+
+    let headline = &scene.nodes[&NodeId::from("headline")];
+    assert_eq!(
+        headline.size.height,
+        Dimension::Hug,
+        "text hug height must survive the freeze"
+    );
+    assert_eq!(
+        headline.size.width,
+        Dimension::Fixed(400.0),
+        "text fixed width is untouched"
+    );
+    // Non-text children still bake to Fixed at their solved extents.
+    let rect_child = &scene.nodes[&NodeId::from("a")];
+    assert!(
+        matches!(rect_child.size.width, Dimension::Fixed(_)),
+        "non-text children still bake"
+    );
+}
+
 #[test]
 fn freeze_layout_skips_locked_and_free_containers_and_noops_when_done() {
     use lumen_core::{build_freeze_layout, FieldPatch, NodePatch, Operation};
