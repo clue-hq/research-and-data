@@ -37,10 +37,27 @@ with zero brand color reads as unbranded.
 
 - Choose the variant by the background it sits on: `reversed` on dark/brand
   fields, `full_color`/primary on light fields. The card lists each logo's
-  `allowed_backgrounds` — respect them (LUMB0807 enforces this).
+  `allowed_backgrounds` — respect them (LUMB0810 enforces this; LUMB0809
+  enforces `min_size`).
 - Respect `min_size`; never distort, recolor, or add effects to a logo.
 - Mark-only (`logo.mark`) for tight corners and quiet surfaces; full lockup
   for hero/headers.
+
+## Placing kit assets (logos and brand images)
+
+- Author an image frame for the logo/brand image in the DSL (a placeholder
+  asset id is tolerated until placement), then call
+  `asset(action="use_brand_asset", asset_id=<from the card>, node_id=<frame>)`.
+  Every logo variant and brand image in the card carries its `asset_id` —
+  never invent one, and never draw a logo from shapes or text when the kit
+  has the real mark.
+- Logos place with fit `contain` (the default for this action) — a cropped
+  logo is a brand failure. Brand images/textures may pass `fit="cover"`
+  explicitly when they fill a field.
+- Size the logo frame at or above the card's `min_size` for that logo.
+- ONE logo per page. When the kit has no suitable asset for a need, fall
+  back to the imagery decide flow (generate) or `record_gap` — do not fake
+  a mark.
 
 ## Type roles
 

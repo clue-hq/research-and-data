@@ -104,7 +104,13 @@ def _logo_inventory(logos: JsonObject) -> list[JsonObject]:
                 "logo": logo_id,
                 "usage": logo.get("usage"),
                 "variants": [
-                    {"name": v.get("name"), "color_mode": v.get("color_mode")}
+                    {
+                        "name": v.get("name"),
+                        "color_mode": v.get("color_mode"),
+                        # K2: the placement handle — pass to
+                        # asset(action="use_brand_asset", asset_id=…).
+                        "asset_id": v.get("asset_id"),
+                    }
                     for v in (logo.get("variants") or [])[:4]
                     if isinstance(v, dict)
                 ],
@@ -123,6 +129,9 @@ def _image_inventory(images: JsonObject) -> list[JsonObject]:
             continue
         entry: JsonObject = {
             "asset": image_id,
+            # K2: the placement handle — pass to
+            # asset(action="use_brand_asset", asset_id=…).
+            "asset_id": image.get("asset_id"),
             "role": image.get("role"),
             "title": image.get("title"),
         }

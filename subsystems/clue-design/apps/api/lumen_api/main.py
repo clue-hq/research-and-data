@@ -3802,14 +3802,21 @@ def run_agent_turn_preview(
             # with LUME0210 (asset bytes missing). LUMEN_AGENT_ASSET_STORE still
             # overrides explicitly.
             config = replace(config, asset_store_root=api_asset_store_root())
-        brand_kit, brand_kit_source = resolve_agent_turn_brand_kit(payload)
+        brand_kit, brand_kit_source, brand_kit_assets = resolve_agent_turn_brand_kit(
+            payload
+        )
         if brand_kit is not None:
             # K0 (kit application): the document's attached kit rides the run
             # config BY VALUE so the runtime preflights against it instead of
             # the platform default — without this, an attached scene ref vs the
             # default kit trips LUMB0101 and token resolution short-circuits.
+            # K2: the kit-asset manifest rides along so use_brand_asset can
+            # place the kit's logos/images.
             config = replace(
-                config, brand_kit=brand_kit, brand_kit_source=brand_kit_source
+                config,
+                brand_kit=brand_kit,
+                brand_kit_source=brand_kit_source,
+                brand_kit_assets=brand_kit_assets,
             )
         prompt = editor_agent_prompt(payload)
         loop, tools = create_provider_quality_loop(
@@ -3855,35 +3862,86 @@ def api_asset_store_root() -> Path:
 
 def resolve_agent_turn_brand_kit(
     payload: AgentTurnPreviewRequest,
-) -> Tuple[Optional[JsonObject], Optional[str]]:
+) -> Tuple[Optional[JsonObject], Optional[str], Optional[JsonObject]]:
     """The Brand Kit attached to the turn's document, loaded from the kit
     library so it can be passed BY VALUE into the runtime config (the runtime
-    never reads the API database).
+    never reads the API database) — plus (K2) the kit-ASSET MANIFEST: the
+    library asset records + usage guidance for the kit's logo variants and
+    brand images, so `use_brand_asset` can register them into the scene.
 
     Resolution failures never fail the turn: no scene ref, an unknown kit id,
-    or an unreadable database all return (None, None) and the runtime falls
-    back to the platform default kit — exactly the pre-K0 behavior."""
+    or an unreadable database all return (None, None, None) and the runtime
+    falls back to the platform default kit — exactly the pre-K0 behavior. A
+    kit WITHOUT placeable assets (e.g. styles-compiled) gets an empty
+    manifest, not an error."""
     scene = payload.scene if isinstance(payload.scene, dict) else None
     meta = scene.get("meta") if scene else None
     ref = meta.get("brand_kit") if isinstance(meta, dict) else None
     if not isinstance(ref, dict) or not ref.get("id"):
-        return None, None
+        return None, None, None
     database_path = Path(
         os.environ.get("LUMEN_API_DATABASE_PATH", "apps/api/lumen-api.sqlite3")
     )
     try:
         connection = connect(database_path)
     except Exception:
-        return None, None
+        return None, None, None
     try:
-        record = Repository(connection).require_brand_kit(
-            str(ref["id"]), ref.get("version")
-        )
-        return record["brand_kit"], "document"
+        repo = Repository(connection)
+        record = repo.require_brand_kit(str(ref["id"]), ref.get("version"))
+        brand_kit = record["brand_kit"]
+        manifest = brand_kit_asset_manifest(repo, connection, brand_kit)
+        return brand_kit, "document", manifest
     except Exception:
-        return None, None
+        return None, None, None
     finally:
         connection.close()
+
+
+def brand_kit_asset_manifest(
+    repo: Repository, connection, brand_kit: JsonObject
+) -> JsonObject:
+    """K2: {asset_id: {record, title, description, usage}} for the kit's logo
+    variants and brand images. Records come back VERBATIM from the library
+    (they were engine-built at ingestion) — the runtime rewrites only the
+    scene copy's provenance. Missing records are skipped silently: a kit may
+    reference assets whose bytes/rows never landed, and a partial manifest
+    beats a failed turn."""
+    assets = brand_kit.get("assets") or {}
+    asset_ids: list[str] = []
+    for logo in (assets.get("logos") or {}).values():
+        if not isinstance(logo, dict):
+            continue
+        for variant in logo.get("variants") or []:
+            if isinstance(variant, dict) and variant.get("asset_id"):
+                asset_ids.append(str(variant["asset_id"]))
+    for image in (assets.get("images") or {}).values():
+        if isinstance(image, dict) and image.get("asset_id"):
+            asset_ids.append(str(image["asset_id"]))
+
+    manifest: JsonObject = {}
+    if not asset_ids:
+        return manifest
+
+    try:
+        from lumen_ingestion.describe import DescriptionStore
+
+        descriptions = DescriptionStore(connection).get_many(asset_ids)
+    except Exception:
+        descriptions = {}
+
+    for asset_id in dict.fromkeys(asset_ids):
+        try:
+            record = repo.require_asset_record(asset_id)
+        except Exception:
+            continue
+        entry: JsonObject = {"record": record.get("asset") or record}
+        described = descriptions.get(asset_id) or {}
+        for field in ("title", "description", "usage"):
+            if described.get(field):
+                entry[field] = described[field]
+        manifest[asset_id] = entry
+    return manifest
 
 
 def agent_seed_scene(payload: AgentTurnPreviewRequest) -> Optional[JsonObject]:

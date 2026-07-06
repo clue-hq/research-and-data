@@ -2106,6 +2106,132 @@ def test_curated_context_carries_brand_card(tmp_path: Path, monkeypatch):
     assert context["brand_card"] is None
 
 
+def _insight_manifest() -> dict:
+    return {
+        "asset_logo_reversed": {
+            "record": {
+                "id": "asset_logo_reversed",
+                "label": "Insight Health reversed lockup",
+                "kind": "logo",
+                "status": "ready",
+                "source": {"kind": "website", "url": "https://insighthealth.ai"},
+                "media": {
+                    "mime_type": "image/svg+xml",
+                    "digest": {"algorithm": "sha256", "value": "ab" * 32},
+                    "location": {
+                        "provider": "local-store",
+                        "opaque_ref": f"sha256/ab/{'ab' * 31}",
+                    },
+                },
+                "logo": {"color_mode": "reversed"},
+            },
+            "title": "Reversed lockup",
+            "usage": "Use on dark or brand-colored fields.",
+        }
+    }
+
+
+def _config_with_kit_assets(tmp_path: Path) -> AgentRuntimeConfig:
+    from dataclasses import replace
+
+    return replace(
+        _config_with_kit(tmp_path, _insight_kit()),
+        brand_kit_assets=_insight_manifest(),
+    )
+
+
+def test_use_brand_asset_registers_with_brand_guide_provenance_and_places(
+    tmp_path: Path, monkeypatch
+):
+    """K2: the manifest record upserts VERBATIM under its ORIGINAL id (brand
+    governance matches logo nodes by asset id) with only the scene copy's
+    source rewritten to brand_guide, then places with fit contain."""
+    monkeypatch.setattr("lumen_deepagent.tools.CoreClient", FakeCoreClient)
+    tools = LumenDesignTools(_config_with_kit_assets(tmp_path), "Brand ad")
+
+    result = json.loads(
+        tools.asset(
+            action="use_brand_asset",
+            asset_id="asset_logo_reversed",
+            node_id="header_logo",
+        )
+    )
+
+    upserts = [
+        op for op in tools.core.applied_operations if op.get("kind") == "upsert_asset"
+    ]
+    assert len(upserts) == 1
+    scene_record = upserts[0]["asset"]
+    assert scene_record["id"] == "asset_logo_reversed"
+    assert scene_record["source"] == {
+        "kind": "brand_guide",
+        "source_asset_id": "asset_logo_reversed",
+        "label": "Reversed lockup",
+    }
+    # Everything else rides verbatim from the library record.
+    assert scene_record["media"]["location"]["opaque_ref"].startswith("sha256/")
+    assert scene_record["kind"] == "logo"
+
+    places = [
+        op
+        for op in tools.core.applied_operations
+        if op.get("kind") == "place_asset_in_node"
+    ]
+    assert len(places) == 1
+    assert places[0]["node_id"] == "header_logo"
+    assert places[0]["asset_id"] == "asset_logo_reversed"
+    # Logos are never cropped: contain is the action default.
+    assert places[0]["placement"]["fit"] == "contain"
+    assert result["placement"]["status"] == "ok"
+
+
+def test_use_brand_asset_honors_explicit_fit_and_plain_place_keeps_cover(
+    tmp_path: Path, monkeypatch
+):
+    monkeypatch.setattr("lumen_deepagent.tools.CoreClient", FakeCoreClient)
+    tools = LumenDesignTools(_config_with_kit_assets(tmp_path), "Brand ad")
+
+    tools.asset(
+        action="use_brand_asset",
+        asset_id="asset_logo_reversed",
+        node_id="texture_field",
+        fit="cover",
+    )
+    tools.asset(action="place", asset_id="asset_any", node_id="hero_image")
+
+    fits = [
+        op["placement"]["fit"]
+        for op in tools.core.applied_operations
+        if op.get("kind") == "place_asset_in_node"
+    ]
+    # Explicit cover honored for the kit asset; plain place defaults to cover.
+    assert fits == ["cover", "cover"]
+
+
+def test_use_brand_asset_unknown_id_errors_with_known_inventory(
+    tmp_path: Path, monkeypatch
+):
+    monkeypatch.setattr("lumen_deepagent.tools.CoreClient", FakeCoreClient)
+    tools = LumenDesignTools(_config_with_kit_assets(tmp_path), "Brand ad")
+
+    result = json.loads(
+        tools.asset(
+            action="use_brand_asset", asset_id="asset_ghost", node_id="header_logo"
+        )
+    )
+    assert result["error_code"] == "asset.unknown_brand_asset"
+    assert result["known_asset_ids"] == ["asset_logo_reversed"]
+
+    # No kit at all → same honest error, empty inventory.
+    bare = LumenDesignTools(runtime_config(tmp_path), "Brand ad")
+    result = json.loads(
+        bare.asset(
+            action="use_brand_asset", asset_id="asset_ghost", node_id="header_logo"
+        )
+    )
+    assert result["error_code"] == "asset.unknown_brand_asset"
+
+
 def test_compile_halt_location_is_preserved_as_repair_context(
     tmp_path: Path, monkeypatch
 ):

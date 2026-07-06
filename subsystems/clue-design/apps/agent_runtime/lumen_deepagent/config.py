@@ -26,6 +26,15 @@ class AgentRuntimeConfig:
     # ("document", "file", …).
     brand_kit: dict | None = None
     brand_kit_source: str | None = None
+    # K2: the kit-asset MANIFEST — {asset_id: {"record": <engine asset record>,
+    # "title"/"description"/"usage": str|None}} for the kit's logo variants and
+    # brand images, resolved by the API from its asset library and passed BY
+    # VALUE (same rule as brand_kit: the runtime never reads the API database).
+    # The records were engine-built at ingestion time; `use_brand_asset`
+    # upserts them into the scene verbatim (same id — brand governance matches
+    # logo nodes by asset id) with provenance rewritten to brand_guide. None or
+    # empty → the kit has no placeable assets (e.g. styles-compiled kits).
+    brand_kit_assets: dict | None = None
 
     @classmethod
     def from_env(cls, repo_root: Path | None = None) -> "AgentRuntimeConfig":

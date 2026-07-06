@@ -436,25 +436,81 @@ def test_resolve_agent_turn_brand_kit_passes_document_kit_by_value(
 
     scene = preflightable_scene()
     scene["meta"]["brand_kit"] = {"id": "brand_kit_insight_health", "version": 4}
-    kit, source = resolve_agent_turn_brand_kit(
+    kit, source, manifest = resolve_agent_turn_brand_kit(
         AgentTurnPreviewRequest(prompt="Restyle the letter", scene=scene)
     )
     assert source == "document"
     assert kit is not None
     assert kit["id"] == "brand_kit_insight_health"
     assert kit["version"] == 4
+    # K2: a styles-compiled kit has no logo/image assets → empty manifest,
+    # not an error.
+    assert manifest == {}
 
     # No scene ref → no kit (platform-default behavior unchanged).
     assert resolve_agent_turn_brand_kit(
         AgentTurnPreviewRequest(prompt="x", scene=preflightable_scene())
-    ) == (None, None)
+    ) == (None, None, None)
 
-    # Unknown kit id → graceful (None, None), never an exception.
+    # Unknown kit id → graceful (None, None, None), never an exception.
     ghost = preflightable_scene()
     ghost["meta"]["brand_kit"] = {"id": "brand_kit_ghost", "version": 1}
     assert resolve_agent_turn_brand_kit(
         AgentTurnPreviewRequest(prompt="x", scene=ghost)
-    ) == (None, None)
+    ) == (None, None, None)
+
+    # K2: a kit WITH a logo asset yields a manifest carrying the library
+    # record verbatim plus the human usage guidance.
+    uploaded = upload_logo(client, label="Insight reversed lockup")
+    assert uploaded.status_code == 200, uploaded.text
+    logo_asset_id = uploaded.json()["asset"]["id"]
+    described = client.put(
+        f"/assets/{logo_asset_id}/description",
+        json={"usage": "Use on dark or brand-colored fields."},
+    )
+    assert described.status_code == 200, described.text
+
+    kit_with_logo = json.loads(
+        json.dumps(client.get("/brand-kits/brand_kit_insight_health").json()["brand_kit_json"])
+    )
+    kit_with_logo["id"] = "brand_kit_insight_with_logo"
+    kit_with_logo["assets"]["logos"] = {
+        "primary": {
+            "variants": [
+                {
+                    "name": "reversed",
+                    "asset_id": logo_asset_id,
+                    "color_mode": "reversed",
+                    "width": 8.0,
+                    "height": 8.0,
+                }
+            ],
+            "usage": "primary",
+            "min_size": 8.0,
+            "clearspace": None,
+            "allowed_backgrounds": ["surface.brand"],
+            "license": None,
+            "provenance": {"source": "manual", "confidence": 1.0},
+        }
+    }
+    created = client.post(
+        "/brand-kits", json={"brand_kit": kit_with_logo, "source": "manual"}
+    )
+    assert created.status_code == 200, created.text
+
+    logo_scene = preflightable_scene()
+    logo_scene["meta"]["brand_kit"] = {
+        "id": "brand_kit_insight_with_logo",
+        "version": kit_with_logo["version"],
+    }
+    kit, source, manifest = resolve_agent_turn_brand_kit(
+        AgentTurnPreviewRequest(prompt="Add our logo", scene=logo_scene)
+    )
+    assert kit is not None and source == "document"
+    entry = manifest[logo_asset_id]
+    assert entry["record"]["id"] == logo_asset_id
+    assert entry["record"]["media"]["digest"]["algorithm"] == "sha256"
+    assert entry["usage"] == "Use on dark or brand-colored fields."
 
 
 def test_ops_attached_brand_kit_preflights_via_scene_ref_and_heals_the_row(

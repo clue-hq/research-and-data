@@ -746,6 +746,105 @@ class LumenDesignTools:
         )
         return json.dumps(payload, indent=2)
 
+    def use_brand_asset(
+        self,
+        asset_id: str,
+        node_id: Optional[str] = None,
+        slot_id: Optional[str] = None,
+        fit: str = "contain",
+        focal_x: float = 0.5,
+        focal_y: float = 0.5,
+        alt: Optional[str] = None,
+    ) -> str:
+        """K2: register one of the attached Brand Kit's assets (a logo variant
+        or brand image, from the kit-asset manifest the API passed by value)
+        into the scene and place it into `node_id` or `slot_id`.
+
+        The library record is upserted VERBATIM under its ORIGINAL id — brand
+        governance (LUMB0809 min-size / LUMB0810 allowed-backgrounds)
+        identifies logo nodes by matching node.asset_id against the kit's
+        variant asset ids, so minting a new id would silently disable it —
+        with only the scene copy's provenance rewritten to brand_guide
+        (source_asset_id chains back to the library asset). Bytes never move:
+        the record's content-addressed location already points into the
+        shared store. Default fit is `contain` — logos are never cropped."""
+        manifest = self.config.brand_kit_assets or {}
+        entry = manifest.get(asset_id)
+        if entry is None or not isinstance(entry, dict):
+            return self._tool_error(
+                "asset.unknown_brand_asset",
+                f"'{asset_id}' is not in the attached Brand Kit's asset manifest. "
+                "Use an asset_id from the brand context card's logo/image inventory.",
+                known_asset_ids=sorted(manifest.keys())[:12],
+            )
+        record = copy.deepcopy(entry.get("record") or {})
+        if not record.get("id"):
+            return self._tool_error(
+                "asset.bad_manifest_record",
+                f"the manifest entry for '{asset_id}' carries no usable record.",
+            )
+        label = entry.get("title") or record.get("label") or asset_id
+        record["source"] = {
+            "kind": "brand_guide",
+            "source_asset_id": asset_id,
+            "label": label,
+        }
+
+        try:
+            apply_response = self.core.apply_operations(
+                self.scene, [{"kind": "upsert_asset", "asset": record}]
+            )
+        except CoreError as error:
+            payload = {
+                "brand_asset": {
+                    "status": "error",
+                    "error_code": error.code,
+                    "message": error.message,
+                    "asset_id": asset_id,
+                },
+                "hint": (
+                    "The kit asset could not be registered in the scene (most "
+                    "often the scene has no page/artboard yet). Author the page "
+                    "first, then call use_brand_asset again."
+                ),
+                "diagnostics": [
+                    diag.model_dump(mode="json")
+                    for diag in diagnostics_from(error.diagnostics)
+                ],
+            }
+            self.record(
+                "coordinator",
+                "brand_asset_registration_failed",
+                input_summary=asset_id,
+                output_summary=error.message,
+                payload=payload,
+            )
+            return json.dumps(payload, indent=2)
+        self._replace_scene_from_core_response(apply_response, "use_brand_asset")
+        self.record(
+            "coordinator",
+            "brand_asset_registered",
+            input_summary=asset_id,
+            output_summary=(
+                f"registered kit asset {record.get('id')} "
+                f"({(record.get('media') or {}).get('mime_type')}, provenance brand_guide)"
+            ),
+            payload={"brand_asset": {"asset_id": record.get("id"), "label": label}},
+        )
+
+        if node_id is not None:
+            return self.place_asset_in_node(
+                node_id, record["id"], fit, focal_x, focal_y, alt, None
+            )
+        if slot_id is not None:
+            return self.place_asset_in_slot(
+                slot_id, record["id"], fit, focal_x, focal_y, alt, None
+            )
+        return self._tool_error(
+            "asset.bad_request",
+            "action='use_brand_asset' requires `node_id` or `slot_id`.",
+        )
+
     def _produce_image_asset(
         self,
         *,
@@ -1404,7 +1503,10 @@ class LumenDesignTools:
         node_id: Optional[str] = None,
         slot_id: Optional[str] = None,
         asset_id: Optional[str] = None,
-        fit: str = "cover",
+        # None = per-action default: cover for place (imagery fills frames),
+        # contain for use_brand_asset (a cropped logo is a brand failure).
+        # An explicit value always wins.
+        fit: Optional[str] = None,
         focal_x: float = 0.5,
         focal_y: float = 0.5,
         alt: Optional[str] = None,
@@ -1430,6 +1532,12 @@ class LumenDesignTools:
           into either an image node (`node_id`) or a bound image slot (`slot_id`) with a
           `fit` (default cover), normalized focal point (`focal_x`/`focal_y`, 0..1,
           default centered), `alt` text, and optional `preserve_transparency`. Reversible.
+        - `action="use_brand_asset"` — register one of the attached Brand Kit's assets
+          (a logo variant or brand image; `asset_id` from the brand context card's
+          inventory) into the scene with brand_guide provenance and place it into
+          `node_id` or `slot_id`. Logos place with fit `contain` (never cropped);
+          pick the variant by background (reversed on dark fields). Requires an
+          attached kit — without one this action errors.
 
         Every action mutates the scene only through the canonical core operation path."""
         if action == "generate_image":
@@ -1474,20 +1582,54 @@ class LumenDesignTools:
             # core operation `kind` must NOT, or the slot-binding path breaks.
             if node_id is not None:
                 return self.place_asset_in_node(
-                    node_id, asset_id, fit, focal_x, focal_y, alt, preserve_transparency
+                    node_id,
+                    asset_id,
+                    fit or "cover",
+                    focal_x,
+                    focal_y,
+                    alt,
+                    preserve_transparency,
                 )
             if slot_id is not None:
                 return self.place_asset_in_slot(
-                    slot_id, asset_id, fit, focal_x, focal_y, alt, preserve_transparency
+                    slot_id,
+                    asset_id,
+                    fit or "cover",
+                    focal_x,
+                    focal_y,
+                    alt,
+                    preserve_transparency,
                 )
             return self._tool_error(
                 "asset.bad_request",
                 "action='place' requires `node_id` or `slot_id`.",
             )
+        if action == "use_brand_asset":
+            if not asset_id:
+                return self._tool_error(
+                    "asset.bad_request",
+                    "action='use_brand_asset' requires `asset_id` (from the brand "
+                    "context card's logo/image inventory).",
+                )
+            return self.use_brand_asset(
+                asset_id,
+                node_id,
+                slot_id,
+                fit or "contain",
+                focal_x,
+                focal_y,
+                alt,
+            )
         return self._tool_error(
             "asset.unknown_action",
             f"unknown action '{action}'.",
-            valid_actions=["generate_image", "edit_image", "generate_qr", "place"],
+            valid_actions=[
+                "generate_image",
+                "edit_image",
+                "generate_qr",
+                "place",
+                "use_brand_asset",
+            ],
         )
 
     def _finalized_snapshot_for(self, binding: JsonObject) -> JsonObject:
