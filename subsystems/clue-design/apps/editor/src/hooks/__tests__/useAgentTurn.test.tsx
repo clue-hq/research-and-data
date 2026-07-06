@@ -11,6 +11,18 @@ import type {
 import { updateDocumentTitle } from "@/engine/operations";
 import { useAgentTurn, type UseAgentTurnDeps } from "../useAgentTurn";
 
+// K1.6: the accept path re-measures the engine scene (kit-resolved fields)
+// BEFORE building the freeze, so the bake never reads a skeleton-type solve.
+// jsdom has no real CanvasKit; these mocks stand in for the loaded bundle and
+// the measurement pass so the ordering seam is testable.
+const K16_MEASUREMENT_MARKER = [{ content: "marker" }];
+vi.mock("@/engine/canvaskit/loadCanvasKit", () => ({
+  loadCanvasKit: vi.fn().mockResolvedValue({ ck: {}, fontProvider: {} })
+}));
+vi.mock("@/engine/canvaskit/skiaMeasurements", () => ({
+  skiaMeasurements: vi.fn(() => K16_MEASUREMENT_MARKER)
+}));
+
 /**
  * Handoff-absolute (Accept seam): acceptAgentPreview merges the turn's own
  * ops with a `freeze_layout` bake into ONE commitAppliedOperations call —
@@ -201,6 +213,45 @@ describe("useAgentTurn — accept-time freeze merge (handoff-absolute)", () => {
     expect(call.inverseOperations).toHaveLength(2);
     // The merged frame lands against the frozen scene.
     expect(call.nextScene).toBe(frozenScene);
+  });
+
+  it("K1.6: re-measures the engine scene BEFORE building the freeze (bake sees resolved type)", async () => {
+    const turnOps = [updateDocumentTitle("Agent Authored Ad")];
+    const agentRunner = vi.fn().mockResolvedValue(proposedResult(turnOps));
+    const callOrder: string[] = [];
+    const base = createFakeEngine({
+      freezeOutcome: acceptedOutcome(cloneScene(), [])
+    });
+    const baseFreeze = base.applyStructuredEdit.bind(base);
+    const engine = Object.create(base, {
+      setMeasurements: {
+        value: (measurements: unknown) => {
+          callOrder.push("setMeasurements");
+          expect(measurements).toBe(K16_MEASUREMENT_MARKER);
+        }
+      },
+      applyStructuredEdit: {
+        value: (edit: unknown) => {
+          callOrder.push("applyStructuredEdit");
+          return baseFreeze(edit);
+        }
+      }
+    });
+    const { deps } = buildDeps({ agentRunner, engineRef: { current: engine } });
+
+    const { result } = renderHook(() => useAgentTurn(deps));
+    await act(async () => {
+      await result.current.sendAgentPrompt("Make it punchier.");
+    });
+    await waitFor(() => expect(result.current.agentPreview).not.toBeNull());
+    await act(async () => {
+      await result.current.acceptAgentPreview();
+    });
+
+    // The measurement injection (which relayouts) must precede the freeze —
+    // a freeze from a stale solve bakes pre-resolution container heights
+    // (the LUMV0801 headline/subtitle overlap from the K1.5 live proof).
+    expect(callOrder).toEqual(["setMeasurements", "applyStructuredEdit"]);
   });
 
   it("skips the freeze entirely when layout-managed editing is enabled (advanced opt-out)", async () => {

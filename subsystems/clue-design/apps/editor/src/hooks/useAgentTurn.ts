@@ -18,6 +18,8 @@ import type {
 import { defaultEditorExportProfile, type EditorExportResult } from "@/engine/exportRunner";
 import type { EditorPreflightResult } from "@/engine/preflightRunner";
 import { firstPageId } from "@/engine/sceneQueries";
+import { loadCanvasKit } from "@/engine/canvaskit/loadCanvasKit";
+import { skiaMeasurements } from "@/engine/canvaskit/skiaMeasurements";
 import { freezeLayoutEdit } from "@/engine/structuredEdits";
 import type { OptimisticEnginePort } from "@/engine/wasmEngine";
 
@@ -551,6 +553,25 @@ export function useAgentTurn(deps: UseAgentTurnDeps) {
     let mergedOperations = operations;
     let mergedInverseOperations = inverseOperations;
     if (!layoutManagedEditing && engine?.applyStructuredEdit) {
+      // K1.6: the freeze bakes container sizes/child offsets from the
+      // engine's CURRENT solve — which can lose the race against the async
+      // canvas cycle that injects kit-resolved text measurements (K1.5). A
+      // freeze built from the skeleton-type solve fixes a hero container at
+      // its pre-resolution height (LUMV0801: the resolved 84pt headline
+      // overruns a 58pt box). Re-measure the engine's scene with the same
+      // resolved fields and relayout HERE, synchronously inside the accept
+      // envelope, so the bake always sees resolved-type geometry. CanvasKit
+      // is already loaded when a canvas is on screen, so the await resolves
+      // from cache; a null bundle (Konva/jsdom) skips — pre-K1.6 behavior.
+      if (engine.setMeasurements) {
+        const bundle = await loadCanvasKit();
+        if (bundle?.fontProvider) {
+          engine.setMeasurements(
+            skiaMeasurements(bundle.ck, bundle.fontProvider, engine.scene)
+          );
+          acceptedScene = engine.scene;
+        }
+      }
       const freezeOutcome = engine.applyStructuredEdit(freezeLayoutEdit());
       if (freezeOutcome.accepted && freezeOutcome.operations.length > 0) {
         acceptedScene = freezeOutcome.scene;
