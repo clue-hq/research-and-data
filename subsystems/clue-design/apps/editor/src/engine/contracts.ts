@@ -233,6 +233,8 @@ export interface TextNode {
   wrap?: TextWrap;
   direction?: TextDirection;
   style_token?: string | null;
+  /** K1.5: mirrors engine TextNode.font_size_token (`font_size($type.size.*)`). */
+  font_size_token?: string | null;
   line_height_token?: string | null;
   letter_spacing_token?: string | null;
 }

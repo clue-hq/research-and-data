@@ -9,6 +9,9 @@ import {
   paintToCss,
   pageDescriptor,
   sceneUnitFromCanvas,
+  resolvedTextFields,
+  resolveTokenNumber,
+  setKitTokenMaps,
   setTokenColorMap,
   sizeFromCanvas,
   subscribeTokenColors,
@@ -523,6 +526,56 @@ describe("render adapter", () => {
       expect(tokenPaintResolves("surface.brand")).toBe(true);
       expect(tokenPaintResolves("$surface.brand")).toBe(true);
       expect(tokenPaintResolves("surface.page")).toBe(false);
+    });
+
+    it("K1.5: resolvedTextFields applies the kit type role over skeleton literals", () => {
+      setKitTokenMaps({
+        colors: {},
+        typography: {
+          "type.headline": {
+            fontFamily: "Source Sans 3",
+            fontSize: 80,
+            fontWeight: 800,
+            lineHeight: 1.05
+          }
+        },
+        numbers: { "type.size.7xl": 96, "radius.button": 12 }
+      });
+      // The K1 live-proof skeleton: Inter 16 literals + a style token.
+      const styled = resolvedTextFields({
+        font_family: "Inter",
+        font_size: 16,
+        font_weight: 400,
+        style_token: "type.headline"
+      });
+      expect(styled).toEqual({
+        fontFamily: "Source Sans 3",
+        fontSize: 80,
+        fontWeight: 800,
+        lineHeight: 1.05,
+        letterSpacing: 0
+      });
+      // font_size_token overrides the role size; unresolved tokens keep literals.
+      expect(
+        resolvedTextFields({
+          font_family: "Inter",
+          font_size: 16,
+          font_weight: 400,
+          style_token: "type.headline",
+          font_size_token: "type.size.7xl"
+        }).fontSize
+      ).toBe(96);
+      expect(
+        resolvedTextFields({
+          font_family: "Inter",
+          font_size: 16,
+          font_weight: 400,
+          style_token: "type.ghost"
+        }).fontSize
+      ).toBe(16);
+      expect(resolveTokenNumber("radius.button")).toBe(12);
+      expect(resolveTokenNumber("$radius.button")).toBe(12);
+      expect(resolveTokenNumber("radius.ghost")).toBeNull();
     });
 
     it("K0.5: direct oklch scene colors paint as hex (CanvasKit parseColor cannot read oklch)", () => {

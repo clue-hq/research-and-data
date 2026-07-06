@@ -64,12 +64,12 @@ import {
 } from "@/engine/documentStore";
 import { editorApiBaseUrl } from "@/engine/editorConfig";
 import {
-  buildTokenColorMap,
+  buildKitTokenMaps,
   PLATFORM_DEFAULT_BRAND_KIT_ID,
   type BrandKitDetailPayload
 } from "@/engine/tokenColors";
 import {
-  setTokenColorMap,
+  setKitTokenMaps,
   subscribeTokenColors,
   tokenColorsGenerationSnapshot
 } from "@/engine/renderAdapter";
@@ -554,7 +554,9 @@ export default function EditorApp({
     brandKitDetailFetcher(brandKitId)
       .then((detail) => {
         if (!cancelled) {
-          setTokenColorMap(buildTokenColorMap(detail));
+          // K1.5: colors + typography roles + numbers in one install, so
+          // paint, type measurement, and radii all resolve from the kit.
+          setKitTokenMaps(buildKitTokenMaps(detail));
         }
       })
       .catch(() => {

@@ -16,7 +16,13 @@ import type {
   Unit
 } from "./contracts";
 import { isNodeLayoutManaged } from "./sceneQueries";
-import { oklchToHexCss, resolveTokenColor, type TokenColorMap } from "./tokenColors";
+import {
+  oklchToHexCss,
+  resolveTokenColor,
+  type KitTokenMaps,
+  type TokenColorMap,
+  type TokenTextStyle
+} from "./tokenColors";
 
 /**
  * Konva-ready paint description (Effects Contract V0). Gradients carry the
@@ -176,6 +182,10 @@ export function nodeDescriptor(
   const position = nodePositionForRender(node, page, parentComputedOrigin, scene);
   const stroke = node.strokes[0] ? strokeDescriptor(node.strokes[0]) : null;
   const shadows = shadowDescriptors(node.effects ?? [], scale);
+  // K1.5: kit-resolved corner radius / opacity when their tokens resolve;
+  // otherwise the node's numeric values (the pre-existing behavior).
+  const cornerToken = node.corner.token ? resolveTokenNumber(node.corner.token) : null;
+  const opacityToken = node.opacity_token ? resolveTokenNumber(node.opacity_token) : null;
   const descriptor: RenderNodeDescriptor = {
     id: node.id,
     kind: node.kind.kind,
@@ -184,7 +194,7 @@ export function nodeDescriptor(
     width: size.width,
     height: size.height,
     rotation: node.transform.rotation,
-    opacity: node.opacity,
+    opacity: opacityToken ?? node.opacity,
     fill: paintFromFill(node.fills[0]) ?? defaultFillForNode(node),
     stroke: stroke?.color ?? null,
     strokeWidth: (stroke?.width ?? 0) * scale,
@@ -195,25 +205,31 @@ export function nodeDescriptor(
     shadow: shadows[0] ?? null,
     extraShadowCount: Math.max(0, shadows.length - 1),
     allShadows: shadows,
-    cornerRadius: [
-      node.corner.top_left * scale,
-      node.corner.top_right * scale,
-      node.corner.bottom_right * scale,
-      node.corner.bottom_left * scale
-    ],
+    cornerRadius:
+      cornerToken !== null
+        ? [cornerToken * scale, cornerToken * scale, cornerToken * scale, cornerToken * scale]
+        : [
+            node.corner.top_left * scale,
+            node.corner.top_right * scale,
+            node.corner.bottom_right * scale,
+            node.corner.bottom_left * scale
+          ],
     contourPath: contourPathForNode(node, size.width, size.height, scale),
     slotKeys: slotKeysForNode(scene, node.id)
   };
 
   if (node.kind.kind === "text") {
+    // K1.5: paint what the kit's type roles say, not the skeleton literals —
+    // same resolution the measurement pass uses, so pixels match layout.
+    const styled = resolvedTextFields(node.kind);
     descriptor.text = {
       content: node.kind.content,
-      fontFamily: node.kind.font_family,
-      fontSize: node.kind.font_size * scale,
-      fontWeight: node.kind.font_weight,
+      fontFamily: styled.fontFamily,
+      fontSize: styled.fontSize * scale,
+      fontWeight: styled.fontWeight,
       align: node.kind.align,
-      lineHeight: node.kind.line_height ?? 1.2,
-      letterSpacing: (node.kind.letter_spacing ?? 0) * scale,
+      lineHeight: styled.lineHeight,
+      letterSpacing: styled.letterSpacing * scale,
       maxLines: node.kind.max_lines ?? null,
       wrap: node.kind.wrap ?? "no_wrap",
       direction: node.kind.direction ?? "ltr"
@@ -346,8 +362,19 @@ export function colorToCss(color: Color): string {
 function strokeDescriptor(stroke: Stroke): { color: string; width: number } {
   return {
     color: paintToCss(stroke.paint),
-    width: stroke.width
+    width: resolvedStrokeWidth(stroke)
   };
+}
+
+/** K1.5: the stroke's kit width when its token resolves, else the literal. */
+function resolvedStrokeWidth(stroke: Stroke): number {
+  if (stroke.width_token) {
+    const resolved = resolveTokenNumber(stroke.width_token);
+    if (resolved !== null) {
+      return resolved;
+    }
+  }
+  return stroke.width;
 }
 
 export function fillLayerDescriptor(fill: Fill, width: number, height: number): FillLayerDescriptor {
@@ -366,7 +393,7 @@ export function strokeLayerDescriptor(
   return {
     id: stroke.id,
     paint: paintDescriptor(stroke.paint, width, height),
-    width: stroke.width * scale,
+    width: resolvedStrokeWidth(stroke) * scale,
     dash: stroke.dash?.length ? stroke.dash.map((value) => value * scale) : null,
     lineCap: stroke.cap ?? "butt",
     lineJoin: stroke.join ?? "miter"
@@ -576,6 +603,13 @@ export function contourPathForNode(
 /** The single corner radius (scaled) when all four are equal, else 0 — the
  * export squares non-uniform corners, so the parity contour does too. */
 function uniformCornerRadius(node: Node, scale: number): number {
+  // K1.5: a resolved radius token IS uniform by definition.
+  if (node.corner.token) {
+    const resolved = resolveTokenNumber(node.corner.token);
+    if (resolved !== null) {
+      return resolved * scale;
+    }
+  }
   const { top_left, top_right, bottom_right, bottom_left } = node.corner;
   if (top_left === top_right && top_left === bottom_right && top_left === bottom_left) {
     return top_left * scale;
@@ -646,6 +680,11 @@ function normalizeHexForCss(value: string): string {
  * the safe default.
  */
 let tokenColorMap: TokenColorMap = {};
+// K1.5: typography roles + number tokens from the same kit fetch, so the
+// client measure/render path speaks the kit's type before server preflight
+// resolves it into literals (the LUMV0903/0810 ghost-killer).
+let tokenTextStyles: Record<string, TokenTextStyle> = {};
+let tokenNumbers: Record<string, number> = {};
 
 /**
  * K0.5 reactivity: the map is set by an async fetch that usually resolves
@@ -661,9 +700,19 @@ const tokenColorListeners = new Set<() => void>();
 
 /** Sets the token color map consulted by the token paint cases in
  * `paintToCss`/`colorToCss`/`paintDescriptor`, and notifies subscribers.
- * See `tokenColorMap` above. */
+ * Colors-only legacy/test entry point — it RESETS the typography/number
+ * maps so test isolation stays one call. Product code uses
+ * `setKitTokenMaps`. */
 export function setTokenColorMap(map: TokenColorMap): void {
-  tokenColorMap = map;
+  setKitTokenMaps({ colors: map, typography: {}, numbers: {} });
+}
+
+/** K1.5: install all three kit maps (colors, typography roles, numbers) and
+ * notify subscribers — one generation covers paint, type, and radii. */
+export function setKitTokenMaps(maps: KitTokenMaps): void {
+  tokenColorMap = maps.colors;
+  tokenTextStyles = maps.typography;
+  tokenNumbers = maps.numbers;
   tokenColorsGeneration += 1;
   for (const listener of tokenColorListeners) {
     listener();
@@ -690,6 +739,62 @@ export function tokenColorsGenerationSnapshot(): number {
  * reported when the fallback is actually in use. */
 export function tokenPaintResolves(token: string): boolean {
   return resolveTokenColor(tokenColorMap, token) !== null;
+}
+
+function stripTokenPrefix(token: string): string {
+  return token.startsWith("$") ? token.slice(1) : token;
+}
+
+/** K1.5: whether a `style($type.role)` resolves from the kit's typography. */
+export function tokenTextStyleResolves(token: string): boolean {
+  return tokenTextStyles[stripTokenPrefix(token)] !== undefined;
+}
+
+/** K1.5: a number token's kit value (radius/stroke-width/opacity/size-step),
+ * or null when the map misses. */
+export function resolveTokenNumber(token: string): number | null {
+  return tokenNumbers[stripTokenPrefix(token)] ?? null;
+}
+
+/**
+ * K1.5: a text node's EFFECTIVE fields — the kit style_token's values (with
+ * individual `*_token` overrides) over the node's literals, mirroring the
+ * engine's resolve_text_style precedence. When a token is present but not
+ * yet resolvable client-side, the literal is kept — the pre-existing
+ * skeleton behavior, and honest about what the canvas will show.
+ */
+export function resolvedTextFields(text: {
+  font_family: string;
+  font_size: number;
+  font_weight: number;
+  line_height?: number | null;
+  letter_spacing?: number | null;
+  style_token?: string | null;
+  font_size_token?: string | null;
+  line_height_token?: string | null;
+  letter_spacing_token?: string | null;
+}): {
+  fontFamily: string;
+  fontSize: number;
+  fontWeight: number;
+  lineHeight: number;
+  letterSpacing: number;
+} {
+  const style = text.style_token ? tokenTextStyles[stripTokenPrefix(text.style_token)] : undefined;
+  const sizeOverride = text.font_size_token ? resolveTokenNumber(text.font_size_token) : null;
+  const lineHeightOverride = text.line_height_token
+    ? resolveTokenNumber(text.line_height_token)
+    : null;
+  const letterSpacingOverride = text.letter_spacing_token
+    ? resolveTokenNumber(text.letter_spacing_token)
+    : null;
+  return {
+    fontFamily: style?.fontFamily ?? text.font_family,
+    fontSize: sizeOverride ?? style?.fontSize ?? text.font_size,
+    fontWeight: style?.fontWeight ?? text.font_weight,
+    lineHeight: lineHeightOverride ?? style?.lineHeight ?? text.line_height ?? 1.2,
+    letterSpacing: letterSpacingOverride ?? style?.letterSpacing ?? text.letter_spacing ?? 0
+  };
 }
 
 /** The CSS color a token swatch should show — EXACTLY what the canvas will

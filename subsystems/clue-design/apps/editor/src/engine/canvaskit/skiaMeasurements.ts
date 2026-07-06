@@ -1,5 +1,6 @@
 import type { CanvasKit, TypefaceFontProvider } from "canvaskit-wasm";
 import type { Scene } from "../contracts";
+import { resolvedTextFields } from "../renderAdapter";
 import type { TextMeasurement } from "../wasmEngine";
 
 /**
@@ -20,25 +21,31 @@ export function skiaMeasurements(ck: CanvasKit, fontProvider: TypefaceFontProvid
       continue;
     }
     const t = node.kind;
-    const lineHeight = t.line_height ?? 1.2;
-    const letterSpacing = t.letter_spacing ?? 0;
     const wrap = t.wrap ?? "no_wrap";
     const direction = t.direction ?? "ltr";
+    // K1.5: measure with the kit's RESOLVED type-role fields (style_token /
+    // *_token over the literals). Agent proposals insert skeleton text
+    // (Inter 16) whose real 80pt style arrives only at server preflight —
+    // measuring the skeleton fed relayout ~17px lines, and the accept-time
+    // freeze baked those collapsed POSITIONS (the LUMV0903/0810 ghost). The
+    // measurement RECORD keeps the node's literal fields: that's the key the
+    // engine matches on — only the measured extent reflects the resolution.
+    const styled = resolvedTextFields(t);
     const { width, height } = measureParagraph(ck, fontProvider, {
       content: t.content,
-      fontFamily: t.font_family,
-      fontSize: t.font_size,
-      fontWeight: t.font_weight,
-      lineHeight,
-      letterSpacing
+      fontFamily: styled.fontFamily,
+      fontSize: styled.fontSize,
+      fontWeight: styled.fontWeight,
+      lineHeight: styled.lineHeight,
+      letterSpacing: styled.letterSpacing
     });
     out.push({
       content: t.content,
       font_family: t.font_family,
       font_size: t.font_size,
       font_weight: t.font_weight,
-      line_height: lineHeight,
-      letter_spacing: letterSpacing,
+      line_height: t.line_height ?? 1.2,
+      letter_spacing: t.letter_spacing ?? 0,
       wrap,
       max_lines: t.max_lines ?? null,
       direction,

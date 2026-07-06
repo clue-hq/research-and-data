@@ -1,6 +1,12 @@
 import type { Color, Diagnostic, DiagnosticSubject, Dimension, Node, PageId, Paint, Scene } from "./contracts";
-import { tokenPaintResolves } from "./renderAdapter";
+import { resolveTokenNumber, tokenPaintResolves, tokenTextStyleResolves } from "./renderAdapter";
 import { flattenPageNodeIds } from "./sceneQueries";
+
+/** K1.5: a number token (radius/stroke-width/opacity/size-step) that the kit
+ * map resolves is genuinely previewed — no fallback to report. */
+function numberTokenUnresolved(token: string | null | undefined): token is string {
+  return typeof token === "string" && token.length > 0 && resolveTokenNumber(token) === null;
+}
 
 export function editorRenderDiagnostics(scene: Scene, pageId: PageId | null): Diagnostic[] {
   if (!pageId || !scene.pages[pageId]) {
@@ -43,7 +49,7 @@ function collectNodeDiagnostics(scene: Scene, node: Node, diagnostics: Diagnosti
   }
   for (const stroke of node.strokes) {
     collectPaintDiagnostics(stroke.paint, diagnostics, subject, `${nodeDisplay(node)} stroke`);
-    if (stroke.width_token) {
+    if (numberTokenUnresolved(stroke.width_token)) {
       diagnostics.push(
         diagnostic(
           "EDITOR_RENDER_TOKEN_FALLBACK",
@@ -54,7 +60,7 @@ function collectNodeDiagnostics(scene: Scene, node: Node, diagnostics: Diagnosti
       );
     }
   }
-  if (node.corner.token) {
+  if (numberTokenUnresolved(node.corner.token)) {
     diagnostics.push(
       diagnostic(
         "EDITOR_RENDER_TOKEN_FALLBACK",
@@ -64,7 +70,7 @@ function collectNodeDiagnostics(scene: Scene, node: Node, diagnostics: Diagnosti
       )
     );
   }
-  if (node.opacity_token) {
+  if (numberTokenUnresolved(node.opacity_token)) {
     diagnostics.push(
       diagnostic(
         "EDITOR_RENDER_TOKEN_FALLBACK",
@@ -75,7 +81,9 @@ function collectNodeDiagnostics(scene: Scene, node: Node, diagnostics: Diagnosti
     );
   }
   if (node.kind.kind === "text") {
-    if (node.kind.style_token) {
+    // K1.5: a style token the kit map resolves is measured AND painted with
+    // the kit's values — the preview is no longer "the current text fields".
+    if (node.kind.style_token && !tokenTextStyleResolves(node.kind.style_token)) {
       diagnostics.push(
         diagnostic(
           "EDITOR_RENDER_TOKEN_FALLBACK",
@@ -85,7 +93,7 @@ function collectNodeDiagnostics(scene: Scene, node: Node, diagnostics: Diagnosti
         )
       );
     }
-    if (node.kind.line_height_token) {
+    if (numberTokenUnresolved(node.kind.line_height_token)) {
       diagnostics.push(
         diagnostic(
           "EDITOR_RENDER_TOKEN_FALLBACK",
@@ -95,7 +103,7 @@ function collectNodeDiagnostics(scene: Scene, node: Node, diagnostics: Diagnosti
         )
       );
     }
-    if (node.kind.letter_spacing_token) {
+    if (numberTokenUnresolved(node.kind.letter_spacing_token)) {
       diagnostics.push(
         diagnostic(
           "EDITOR_RENDER_TOKEN_FALLBACK",

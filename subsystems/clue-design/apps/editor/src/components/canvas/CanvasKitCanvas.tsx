@@ -237,6 +237,16 @@ export function CanvasKitCanvas({
     );
   }, [onWorkspaceViewportChange, viewport, workspaceModel.bounds]);
 
+  // K0.5/K1.5: the brand-kit token maps load asynchronously and usually land
+  // AFTER the first paint; descriptors AND text measurements built before
+  // that resolve tokens to skeleton/heuristic values. Subscribing to the
+  // maps' generation re-runs both when kit values arrive.
+  const tokenColorsGeneration = useSyncExternalStore(
+    subscribeTokenColors,
+    tokenColorsGenerationSnapshot,
+    tokenColorsGenerationSnapshot
+  );
+
   // A signature of every text node's measurement inputs. The C4 measurement
   // pass keys on this, not the whole scene, so dragging/resizing non-text
   // nodes (which change `computed` but not text inputs) does not re-measure —
@@ -258,12 +268,18 @@ export function CanvasKitCanvas({
           t.letter_spacing ?? 0,
           t.wrap ?? "no_wrap",
           t.max_lines ?? "_",
-          t.direction ?? "ltr"
+          t.direction ?? "ltr",
+          // K1.5: kit type-role tokens are measurement inputs too — and the
+          // maps' generation, so measurements re-run when the kit lands.
+          t.style_token ?? "_",
+          t.font_size_token ?? "_",
+          t.line_height_token ?? "_",
+          t.letter_spacing_token ?? "_"
         ].join("|")
       );
     }
-    return parts.sort().join("\n");
-  }, [scene]);
+    return `${tokenColorsGeneration}\n${parts.sort().join("\n")}`;
+  }, [scene, tokenColorsGeneration]);
 
   // C4 measure-then-inject: measure every text node with SkParagraph and feed
   // the metrics to the engine, then re-sync the host scene so the Skia-faithful
@@ -285,17 +301,6 @@ export function CanvasKitCanvas({
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [engine, textSignature]);
-
-  // K0.5: the brand-kit token map loads asynchronously and usually lands
-  // AFTER the first paint; descriptors built before it resolve token paints
-  // to the string heuristic. Subscribing to the map's generation and keying
-  // the descriptor memo on it repaints kit values the moment they arrive —
-  // the CanvasKitStage draw effect already keys on `artboards`.
-  const tokenColorsGeneration = useSyncExternalStore(
-    subscribeTokenColors,
-    tokenColorsGenerationSnapshot,
-    tokenColorsGenerationSnapshot
-  );
 
   // Descriptor trees, applying the live preview override to the dragged node.
   const artboards = useMemo(() => {

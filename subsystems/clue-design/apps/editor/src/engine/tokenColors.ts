@@ -204,3 +204,95 @@ export function resolveTokenColor(map: TokenColorMap, token: string): string | n
   const name = token.startsWith("$") ? token.slice(1) : token;
   return map[name] ?? null;
 }
+
+// ---------------------------------------------------------------------------
+// K1.5 ("K0.5 for type"): typography + number tokens, resolved client-side.
+//
+// Agent proposal ops insert SKELETON text (Inter 16) carrying a style_token;
+// the server resolves the real family/size only at post-accept preflight. The
+// editor measured the skeleton (~17px/line), relayout used those metrics, and
+// the accept-time freeze baked the collapsed POSITIONS — the LUMV0903/0810
+// ghost. Resolving the kit's typography roles into the client measure/render
+// path measures the true 80pt headline before anything freezes, and makes
+// canvas type WYSIWYG. Radius / stroke-width / opacity number tokens ride
+// the same map so their fallback diagnostics can clear too.
+// ---------------------------------------------------------------------------
+
+/** Mirrors the engine's ResolvedTypographyStyle (brand.rs resolve_text_style):
+ * what a `style($type.role)` supplies to a text node. All fields optional —
+ * apply over the node's literals only when present. */
+export interface TokenTextStyle {
+  fontFamily?: string;
+  fontSize?: number;
+  fontWeight?: number;
+  lineHeight?: number;
+  letterSpacing?: number;
+}
+
+export type TokenTextStyleMap = Record<string, TokenTextStyle>;
+export type TokenNumberMap = Record<string, number>;
+
+export interface KitTokenMaps {
+  colors: TokenColorMap;
+  typography: TokenTextStyleMap;
+  numbers: TokenNumberMap;
+}
+
+interface TypographyValuePayload {
+  kind?: string;
+  font_family?: unknown;
+  font_size?: unknown;
+  font_weight?: unknown;
+  line_height?: unknown;
+  letter_spacing?: unknown;
+  token?: unknown;
+}
+
+interface NumberValuePayload {
+  kind?: string;
+  value?: unknown;
+}
+
+interface KitTokensPayload extends BrandKitTokensPayload {
+  typography?: Record<string, { value?: { default?: TypographyValuePayload } }>;
+  numbers?: Record<string, { value?: { default?: NumberValuePayload } }>;
+  spacing?: Record<string, { value?: { default?: NumberValuePayload } }>;
+  radii?: Record<string, { value?: { default?: NumberValuePayload } }>;
+  stroke_widths?: Record<string, { value?: { default?: NumberValuePayload } }>;
+  opacity?: Record<string, { value?: { default?: NumberValuePayload } }>;
+}
+
+/** All three client-resolvable maps from one kit detail payload. */
+export function buildKitTokenMaps(kit: BrandKitDetailPayload | null | undefined): KitTokenMaps {
+  const tokens = (kit?.tokens ?? {}) as KitTokensPayload;
+
+  const typography: TokenTextStyleMap = {};
+  for (const [role, entry] of Object.entries(tokens.typography ?? {})) {
+    const value = entry?.value?.default;
+    if (!value || (value.kind && value.kind !== "style")) {
+      // Alias roles are rare and server-resolved; skip rather than chase.
+      continue;
+    }
+    const style: TokenTextStyle = {};
+    if (typeof value.font_family === "string") style.fontFamily = value.font_family;
+    if (typeof value.font_size === "number") style.fontSize = value.font_size;
+    if (typeof value.font_weight === "number") style.fontWeight = value.font_weight;
+    if (typeof value.line_height === "number") style.lineHeight = value.line_height;
+    if (typeof value.letter_spacing === "number") style.letterSpacing = value.letter_spacing;
+    if (Object.keys(style).length > 0) {
+      typography[role] = style;
+    }
+  }
+
+  const numbers: TokenNumberMap = {};
+  for (const category of ["numbers", "spacing", "radii", "stroke_widths", "opacity"] as const) {
+    for (const [name, entry] of Object.entries(tokens[category] ?? {})) {
+      const value = entry?.value?.default;
+      if (value && typeof value.value === "number") {
+        numbers[name] = value.value;
+      }
+    }
+  }
+
+  return { colors: buildTokenColorMap(kit), typography, numbers };
+}
