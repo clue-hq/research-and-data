@@ -1744,11 +1744,31 @@ impl<'a> DslCompiler<'a> {
                 ));
             }
         }
+        let page_target = match &target {
+            EditTargetRef::Page(page_id) => Some(page_id.clone()),
+            _ => None,
+        };
         let patch =
             edit_patch_from_properties(self.scene, &target, &modification.properties, line)?;
         let batch = build_modify_operations(self.scene, target, patch)
             .map_err(|error| edit_error_diag(line, &error))?;
-        self.emit_edit_batch(line, batch.operations)
+        self.emit_edit_batch(line, batch.operations)?;
+        // Empty-page compose gap: a top-level `#page:<id>` modification opens
+        // the page as a parent context exactly like a fresh `page` line, so
+        // indented element lines under it APPEND to the existing page. Before
+        // this, children under a page-modify line found no parent frame and
+        // were silently dropped — a continuation block had no working way to
+        // fill an existing EMPTY page (two live agent turns burned on it).
+        if line.indent == 0 {
+            if let Some(page_id) = page_target {
+                self.parent_stack.clear();
+                self.parent_stack.push(ParentFrame {
+                    indent: line.indent,
+                    parent: ParentRef::Page(page_id),
+                });
+            }
+        }
+        Ok(())
     }
 
     fn emit_slot_binding(

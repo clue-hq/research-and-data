@@ -126,6 +126,36 @@ fn compiled_dsl_applies_through_checked_core_operations() {
     );
 }
 
+/// Empty-page compose gap (burned two live agent turns): a continuation
+/// block must be able to FILL an existing empty page. A top-level
+/// `#page:<id>` modification now opens that page as the parent context, so
+/// indented element lines append to it — exactly like a fresh `page` line.
+#[test]
+fn continuation_page_modify_accepts_indented_children() {
+    let mut scene = Scene::new(lumen_core::DocumentId::from("doc_fill"), "Fill");
+    let first = compile_dsl_into_scene("page page_empty size(1080,1080,px)", &mut scene);
+    assert_no_dsl_errors(&first.compile_output.diagnostics);
+    assert!(scene.pages[&PageId::from("page_empty")].children.is_empty());
+
+    let continuation = concat!(
+        "#page:page_empty size(1080,1080,px)\n",
+        "  hero_root fr p(0,0) s(1080,1080) fill($surface.brand)\n",
+        "    title text \"Your health, now online.\" p(60,60) s(400,hug) font(\"Inter\",64,800,left)\n",
+    );
+    let output = compile_dsl_into_scene(continuation, &mut scene);
+
+    assert_no_dsl_errors(&output.compile_output.diagnostics);
+    assert!(output.operation_error.is_none());
+    let page = &scene.pages[&PageId::from("page_empty")];
+    assert_eq!(
+        page.children,
+        vec![lumen_core::NodeId::from("hero_root")],
+        "the indented child must attach to the EXISTING page (it was silently dropped before)"
+    );
+    let hero = &scene.nodes[&lumen_core::NodeId::from("hero_root")];
+    assert_eq!(hero.children, vec![lumen_core::NodeId::from("title")]);
+}
+
 #[test]
 fn dsl_custom_page_size_lowers_to_scene_page_size() {
     let mut scene = Scene::new(lumen_core::DocumentId::from("doc_square"), "Square");
