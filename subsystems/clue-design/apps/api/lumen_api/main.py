@@ -1614,13 +1614,47 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
         except CoreError as error:
             raise core_http_error(error) from error
 
+        scene = result.get("scene", payload.scene)
+        diagnostics = result.get("diagnostics", [])
+        preflight = result.get("preflight") or {}
+
+        # K1.6(b): bake the freeze on the RESOLVED, server-relaid-out scene —
+        # the only geometry source that can never carry skeleton-literal
+        # solves. Raw ops (not summaries) ride a `bake` block so the editor
+        # can merge them into the accept envelope. A preflight with errors
+        # skips the bake: freezing broken geometry helps nobody, and the
+        # editor falls back to its client-side path.
+        bake = None
+        if payload.freeze_layout and not has_error_diagnostics(diagnostics):
+            try:
+                freeze_result = app.state.core.apply_structured_edit(
+                    scene, {"kind": "freeze_layout"}
+                )
+            except CoreError as error:
+                raise core_http_error(error) from error
+            frozen_scene = freeze_result.get("scene", scene)
+            freeze_edit = freeze_result.get("edit") or {}
+            bake = {
+                "scene": frozen_scene,
+                "resolution_operations": (
+                    preflight.get("brand_ref_operations", [])
+                    + preflight.get("token_operations", [])
+                    + preflight.get("layout_operations", [])
+                ),
+                "freeze_operations": freeze_result.get("operations") or [],
+                "freeze_inverse_operations": freeze_edit.get("inverse_operations")
+                or [],
+            }
+            scene = frozen_scene
+
         return preflight_preview_dto(
-            result.get("scene", payload.scene),
-            result.get("diagnostics", []),
-            result.get("preflight") or {},
+            scene,
+            diagnostics,
+            preflight,
             source,
             brand_kit,
             mode,
+            bake=bake,
         )
 
     @app.post("/documents/{document_id}/brand-kit")

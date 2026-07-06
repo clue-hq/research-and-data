@@ -20,8 +20,18 @@ import type { EditorPreflightResult } from "@/engine/preflightRunner";
 import { firstPageId } from "@/engine/sceneQueries";
 import { loadCanvasKit } from "@/engine/canvaskit/loadCanvasKit";
 import { skiaMeasurements } from "@/engine/canvaskit/skiaMeasurements";
+import {
+  resolveAndFreezeScene,
+  type AcceptBakeResult
+} from "@/engine/documentStore";
+import { editorApiBaseUrl } from "@/engine/editorConfig";
 import { freezeLayoutEdit } from "@/engine/structuredEdits";
 import type { OptimisticEnginePort } from "@/engine/wasmEngine";
+
+/** Default K1.6(b) bake: the real /preflight-preview call with
+ * freeze_layout, against the configured API. */
+const defaultAcceptBakeRunner = (scene: Scene): Promise<AcceptBakeResult | null> =>
+  resolveAndFreezeScene({ apiBaseUrl: editorApiBaseUrl() }, scene);
 
 /**
  * The agent-turn state machine: run → propose → preview → Accept/Reject,
@@ -88,6 +98,10 @@ export interface UseAgentTurnDeps {
   /** Advanced per-document opt-out from handoff-absolute: when true the
    * accept-time freeze is skipped, so the turn's Stack containers stay live. */
   layoutManagedEditing: boolean;
+  /** K1.6(b): the server accept bake (resolve tokens + relayout + freeze on
+   * the server, returning the raw scene + ops). Defaults to the real API
+   * call; tests inject fakes. Null return / throw → client-side fallback. */
+  acceptBakeRunner?: (scene: Scene) => Promise<AcceptBakeResult | null>;
   diagnostics: Diagnostic[];
   setDiagnostics: Dispatch<SetStateAction<Diagnostic[]>>;
   setScene: Dispatch<SetStateAction<Scene>>;
@@ -163,6 +177,7 @@ export function useAgentTurn(deps: UseAgentTurnDeps) {
     agentInstructions,
     agentModel,
     layoutManagedEditing,
+    acceptBakeRunner = defaultAcceptBakeRunner,
     diagnostics,
     setDiagnostics,
     setScene,
@@ -552,37 +567,65 @@ export function useAgentTurn(deps: UseAgentTurnDeps) {
     // ops commit exactly as proposed and its Stack containers stay live.
     let mergedOperations = operations;
     let mergedInverseOperations = inverseOperations;
-    if (!layoutManagedEditing && engine?.applyStructuredEdit) {
-      // K1.6: the freeze bakes container sizes/child offsets from the
-      // engine's CURRENT solve — which can lose the race against the async
-      // canvas cycle that injects kit-resolved text measurements (K1.5). A
-      // freeze built from the skeleton-type solve fixes a hero container at
-      // its pre-resolution height (LUMV0801: the resolved 84pt headline
-      // overruns a 58pt box). Re-measure the engine's scene with the same
-      // resolved fields and relayout HERE, synchronously inside the accept
-      // envelope, so the bake always sees resolved-type geometry. CanvasKit
-      // is already loaded when a canvas is on screen, so the await resolves
-      // from cache; a null bundle (Konva/jsdom) skips — pre-K1.6 behavior.
-      if (engine.setMeasurements) {
-        const bundle = await loadCanvasKit();
-        if (bundle?.fontProvider) {
-          engine.setMeasurements(
-            skiaMeasurements(bundle.ck, bundle.fontProvider, engine.scene)
-          );
-          acceptedScene = engine.scene;
-        }
+    if (!layoutManagedEditing) {
+      // K1.6(b): resolve THEN freeze, both server-side. Agent proposal ops
+      // carry token-form text with skeleton literals (Inter 16); the real
+      // style exists only after token resolution, which is server preflight's
+      // job. Any freeze built from a client solve can therefore bake
+      // skeleton-derived geometry (17pt text heights, a 58pt hero, collapsed
+      // child offsets — three live-proof failures of this family). The
+      // server bake preflights the accepted scene (resolution + real
+      // SkParagraph relayout) and builds the freeze from THAT, so frozen
+      // numbers can never derive from unresolved literals. Resolution ops
+      // ride the same envelope: the accepted design persists its derived
+      // values in its own history.
+      let baked: AcceptBakeResult | null = null;
+      try {
+        baked = await acceptBakeRunner(acceptedScene);
+      } catch {
+        // API unreachable mid-accept: fall through to the client-side path
+        // below rather than blocking the accept.
       }
-      const freezeOutcome = engine.applyStructuredEdit(freezeLayoutEdit());
-      if (freezeOutcome.accepted && freezeOutcome.operations.length > 0) {
-        acceptedScene = freezeOutcome.scene;
-        mergedOperations = [...operations, ...freezeOutcome.operations];
+      if (baked) {
+        acceptedScene = baked.scene;
+        engine?.reset(baked.scene);
+        mergedOperations = [
+          ...operations,
+          ...baked.resolutionOperations,
+          ...baked.freezeOperations
+        ];
         // Inverses undo in reverse order of the forward batch: the freeze's
-        // inverse (each sub-batch already internally reverse-ordered) goes
-        // first so undoing peels the freeze off before the turn's content.
+        // inverse goes first so undoing peels the freeze off before the
+        // turn's content. Resolution ops are not individually inverted —
+        // turn inverses restore touched nodes' full prior state (same
+        // semantics as the post-accept system preflight today).
         mergedInverseOperations =
-          inverseOperations && freezeOutcome.inverseOperations
-            ? [...freezeOutcome.inverseOperations, ...inverseOperations]
-            : null;
+          inverseOperations && baked.freezeInverseOperations.length > 0
+            ? [...baked.freezeInverseOperations, ...inverseOperations]
+            : mergedInverseOperations;
+      } else if (engine?.applyStructuredEdit) {
+        // Fallback (server declined/unreachable): the pre-(b) client-side
+        // freeze — re-measure with kit-resolved fields, relayout, bake.
+        // Weaker (client measurement can miss wrapped-text keys) but never
+        // blocks an accept.
+        if (engine.setMeasurements) {
+          const bundle = await loadCanvasKit();
+          if (bundle?.fontProvider) {
+            engine.setMeasurements(
+              skiaMeasurements(bundle.ck, bundle.fontProvider, engine.scene)
+            );
+            acceptedScene = engine.scene;
+          }
+        }
+        const freezeOutcome = engine.applyStructuredEdit(freezeLayoutEdit());
+        if (freezeOutcome.accepted && freezeOutcome.operations.length > 0) {
+          acceptedScene = freezeOutcome.scene;
+          mergedOperations = [...operations, ...freezeOutcome.operations];
+          mergedInverseOperations =
+            inverseOperations && freezeOutcome.inverseOperations
+              ? [...freezeOutcome.inverseOperations, ...inverseOperations]
+              : null;
+        }
       }
     }
     const disposition = commitAppliedOperations(

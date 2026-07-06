@@ -129,6 +129,10 @@ function buildDeps(overrides: Partial<UseAgentTurnDeps> = {}): {
     targetNodeIds: [],
     agentInstructions: null,
     layoutManagedEditing: false,
+    // K1.6(b): default the server bake to "declined" so the existing tests
+    // exercise the client-side fallback deterministically; the server-bake
+    // tests inject a fake result explicitly.
+    acceptBakeRunner: async () => null,
     diagnostics: [],
     setDiagnostics: vi.fn(),
     setScene: vi.fn(),
@@ -213,6 +217,88 @@ describe("useAgentTurn — accept-time freeze merge (handoff-absolute)", () => {
     expect(call.inverseOperations).toHaveLength(2);
     // The merged frame lands against the frozen scene.
     expect(call.nextScene).toBe(frozenScene);
+  });
+
+  it("K1.6(b): a successful server bake supplies scene + ops and SKIPS the client freeze", async () => {
+    const turnOps = [updateDocumentTitle("Agent Authored Ad")];
+    const agentRunner = vi.fn().mockResolvedValue(proposedResult(turnOps));
+    const bakedScene = {
+      ...cloneScene(),
+      meta: { ...cloneScene().meta, title: "Agent Authored Ad" }
+    };
+    const resolutionOp = { kind: "resolution_marker" } as unknown as Operation;
+    const freezeOp = { kind: "freeze_marker" } as unknown as Operation;
+    const freezeInverse = { kind: "unfreeze_marker" } as unknown as Operation;
+    const engine = createFakeEngine({
+      freezeOutcome: acceptedOutcome(cloneScene(), [])
+    });
+    const clientFreeze = vi.spyOn(engine, "applyStructuredEdit");
+    const resetCalls: Scene[] = [];
+    const baseReset = engine.reset.bind(engine);
+    engine.reset = (next: Scene) => {
+      resetCalls.push(next);
+      baseReset(next);
+    };
+    const acceptBakeRunner = vi.fn().mockResolvedValue({
+      scene: bakedScene,
+      resolutionOperations: [resolutionOp],
+      freezeOperations: [freezeOp],
+      freezeInverseOperations: [freezeInverse]
+    });
+    const { deps, commitCalls } = buildDeps({
+      agentRunner,
+      engineRef: { current: engine },
+      acceptBakeRunner
+    });
+
+    const { result } = renderHook(() => useAgentTurn(deps));
+    await act(async () => {
+      await result.current.sendAgentPrompt("Make it punchier.");
+    });
+    await waitFor(() => expect(result.current.agentPreview).not.toBeNull());
+    await act(async () => {
+      await result.current.acceptAgentPreview();
+    });
+
+    // The server bake got the accepted scene; the engine displays its result;
+    // the client-side freeze never ran.
+    expect(acceptBakeRunner).toHaveBeenCalledTimes(1);
+    expect(resetCalls).toEqual([bakedScene]);
+    expect(clientFreeze).not.toHaveBeenCalled();
+    // One commit: turn ops, then resolution ops, then freeze ops; inverses
+    // lead with the freeze inverse.
+    expect(commitCalls).toHaveLength(1);
+    expect(commitCalls[0].operations).toEqual([...turnOps, resolutionOp, freezeOp]);
+    expect(commitCalls[0].inverseOperations?.[0]).toEqual(freezeInverse);
+    expect(commitCalls[0].nextScene).toBe(bakedScene);
+  });
+
+  it("K1.6(b): a throwing bake runner falls back to the client-side freeze", async () => {
+    const turnOps = [updateDocumentTitle("Agent Authored Ad")];
+    const agentRunner = vi.fn().mockResolvedValue(proposedResult(turnOps));
+    const freezeOp = { kind: "freeze_marker" } as unknown as Operation;
+    const engine = createFakeEngine({
+      freezeOutcome: acceptedOutcome(cloneScene(), [freezeOp])
+    });
+    const clientFreeze = vi.spyOn(engine, "applyStructuredEdit");
+    const { deps, commitCalls } = buildDeps({
+      agentRunner,
+      engineRef: { current: engine },
+      acceptBakeRunner: vi.fn().mockRejectedValue(new Error("api down"))
+    });
+
+    const { result } = renderHook(() => useAgentTurn(deps));
+    await act(async () => {
+      await result.current.sendAgentPrompt("Make it punchier.");
+    });
+    await waitFor(() => expect(result.current.agentPreview).not.toBeNull());
+    await act(async () => {
+      await result.current.acceptAgentPreview();
+    });
+
+    expect(clientFreeze).toHaveBeenCalledTimes(1);
+    expect(commitCalls).toHaveLength(1);
+    expect(commitCalls[0].operations).toEqual([...turnOps, freezeOp]);
   });
 
   it("K1.6: re-measures the engine scene BEFORE building the freeze (bake sees resolved type)", async () => {

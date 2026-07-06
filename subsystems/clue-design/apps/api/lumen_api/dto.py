@@ -257,6 +257,7 @@ def preflight_preview_dto(
     effective_brand_source: str,
     effective_brand_kit: Optional[JsonObject],
     mode: Optional[JsonObject],
+    bake: Optional[JsonObject] = None,
 ) -> JsonObject:
     preflight_operations = (
         preflight.get("brand_ref_operations", [])
@@ -306,6 +307,10 @@ def preflight_preview_dto(
             "mode": mode,
         },
         "scene": scene,
+        # K1.6(b): present only when freeze_layout was requested and the
+        # preflight was clean — raw scene + raw operations for the editor's
+        # accept envelope (the summaries above are display-only).
+        **({"bake": bake} if bake is not None else {}),
     }
 
 

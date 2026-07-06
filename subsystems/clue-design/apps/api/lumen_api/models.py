@@ -75,6 +75,12 @@ class PreflightPreviewRequest(BaseModel):
     generated_default_brand_kit: Optional[JsonObject] = None
     mode: Optional[JsonObject] = None
     strict_no_fallback: bool = False
+    # K1.6(b): after a clean preflight, ALSO bake every Stack container to
+    # Free (build_freeze_layout) on the RESOLVED, server-relaid-out scene and
+    # return the raw scene + operations in a `bake` block. The editor's
+    # accept path uses this so frozen geometry can never derive from an
+    # unresolved (skeleton-literal) client solve.
+    freeze_layout: bool = False
 
 
 class ExportPreviewRequest(BaseModel):

@@ -1,4 +1,4 @@
-import type { BrandKitSummary, Scene } from "./contracts";
+import type { BrandKitSummary, Operation, Scene } from "./contracts";
 import type { BrandKitDetailPayload } from "./tokenColors";
 
 /**
@@ -186,6 +186,51 @@ export async function fetchBrandKitDetail(
   }
   const payload = (await response.json()) as { brand_kit_json?: unknown };
   return (payload.brand_kit_json as BrandKitDetailPayload | undefined) ?? null;
+}
+
+/** K1.6(b): the server-resolved + server-frozen accept bake. The scene comes
+ * back with tokens resolved to literals, layout re-solved with real
+ * (SkParagraph) measurement, and every Stack container baked to Free — the
+ * raw operations let the accept envelope commit resolution + freeze in the
+ * same batch as the turn's ops. Null when the server declined to bake (a
+ * preflight error); callers fall back to the client-side freeze. */
+export interface AcceptBakeResult {
+  scene: Scene;
+  resolutionOperations: Operation[];
+  freezeOperations: Operation[];
+  freezeInverseOperations: Operation[];
+}
+
+export async function resolveAndFreezeScene(
+  { apiBaseUrl, fetchImpl = fetch }: DocumentStoreOptions,
+  scene: Scene
+): Promise<AcceptBakeResult | null> {
+  const response = await fetchImpl(new URL("/preflight-preview", apiBaseUrl), {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ scene, freeze_layout: true })
+  });
+  if (!response.ok) {
+    throw new Error(`accept bake failed (HTTP ${response.status})`);
+  }
+  const payload = (await response.json()) as {
+    bake?: {
+      scene?: Scene;
+      resolution_operations?: Operation[];
+      freeze_operations?: Operation[];
+      freeze_inverse_operations?: Operation[];
+    };
+  };
+  const bake = payload.bake;
+  if (!bake?.scene) {
+    return null;
+  }
+  return {
+    scene: bake.scene,
+    resolutionOperations: bake.resolution_operations ?? [],
+    freezeOperations: bake.freeze_operations ?? [],
+    freezeInverseOperations: bake.freeze_inverse_operations ?? []
+  };
 }
 
 /** 2e: persist the document's standing agent instructions (blank clears). */

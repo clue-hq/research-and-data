@@ -522,6 +522,78 @@ def test_ops_attached_brand_kit_preflights_via_scene_ref_and_heals_the_row(
     assert detail["effective_brand_kit_source"] == "scene_ref"
 
 
+def test_preflight_preview_freeze_layout_bakes_resolved_scene(
+    client: TestClient,
+) -> None:
+    """K1.6(b): freeze_layout=true returns a `bake` block whose scene is
+    token-RESOLVED, server-relaid-out, and container-frozen — with raw
+    resolution + freeze operations (and freeze inverses) for the editor's
+    accept envelope. The frozen text child keeps its hug height (K1 rider)."""
+    compiled = client.post(
+        "/brand-kits/compile-styles",
+        json={
+            "source": valid_styles_source(),
+            "brand_kit_id": "brand_kit_insight_health",
+            "version": 4,
+            "name": "Insight Health",
+        },
+    )
+    assert compiled.status_code == 200, compiled.text
+
+    # Author the production shape through the real compiler: a Stack (al)
+    # container whose text children carry style TOKENS + skeleton literals
+    # (Inter 16) — exactly what agent proposal ops replay into the editor.
+    core = client.app.state.core
+    compiled_scene = core.compile_dsl_into_scene(
+        core.new_scene("doc_bake", "Bake preview"),
+        "\n".join(
+            [
+                "page page_bake size(1080,1080,px)",
+                "  hero al p(96,96) s(888,hug)",
+                '    headline text "Your health, now online." s(888,hug) style($type.headline)',
+                '    subtitle text "Short supporting line." s(820,hug) style($type.body)',
+            ]
+        ),
+        None,
+    )["scene"]
+    compiled_scene["meta"]["brand_kit"] = {
+        "id": "brand_kit_insight_health",
+        "version": 4,
+    }
+    assert compiled_scene["nodes"]["headline"]["kind"]["font_size"] == 16.0
+
+    response = client.post(
+        "/preflight-preview",
+        json={"scene": compiled_scene, "freeze_layout": True},
+    )
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["brand_kit"]["source"] == "scene_ref"
+
+    bake = payload["bake"]
+    baked_scene = bake["scene"]
+    # Resolution happened before the bake: the headline's literals are the
+    # kit's real typography, not the skeleton.
+    headline = baked_scene["nodes"]["headline"]
+    assert headline["kind"]["font_family"] == "Source Sans 3"
+    assert headline["kind"]["font_size"] != 16.0
+    # The container froze (Stack -> Free) with real ops + inverses; the text
+    # child keeps its hug height through the bake (K1 rider).
+    assert baked_scene["nodes"]["hero"]["layout"]["layout_mode"] == "free"
+    assert len(bake["freeze_operations"]) > 0
+    assert len(bake["freeze_inverse_operations"]) > 0
+    assert len(bake["resolution_operations"]) > 0
+    assert headline["size"]["height"] == {"kind": "hug"}
+    # No scene-ref mismatch anywhere in the pipeline.
+    codes = {
+        diag.get("code")
+        for view in payload.get("diagnostics", {}).values()
+        for diag in view
+        if isinstance(diag, dict)
+    }
+    assert "LUMB0101" not in codes
+
+
 def test_editor_target_node_ids_prefers_plural_and_dedupes() -> None:
     from lumen_api.main import editor_target_node_ids
     from lumen_api.models import AgentTurnPreviewRequest
