@@ -3653,3 +3653,22 @@ textarea:disabled {
 .asset-browser-list li > button:hover:not(:disabled) {
   background: var(--bg-chip);
 }
+
+
+/* Doc-row outlined icon button (moda's clock-next-to-Export): visible
+   affordance on paper, unlike the quiet tool-row icon ghosts. */
+.doc-icon-button {
+  display: inline-grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  background: var(--bg-white);
+  color: var(--text-body);
+}
+
+.doc-icon-button:hover {
+  background: var(--bg-chip);
+  color: var(--text-primary);
+}

@@ -1305,7 +1305,7 @@ export default function EditorApp({
             {activeDocumentId ? (
               <button
                 type="button"
-                className="icon-ghost-button"
+                className="doc-icon-button"
                 aria-label="Version history"
                 title="Version history"
                 aria-haspopup="dialog"
