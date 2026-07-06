@@ -335,7 +335,7 @@ textarea:disabled {
 .workspace-grid.agent-open {
   grid-template-columns:
     minmax(180px, 220px) minmax(0, 1fr) 6px
-    clamp(300px, var(--right-sidebar-width, 420px), 44vw);
+    clamp(300px, var(--right-sidebar-width, 340px), 44vw);
 }
 
 .left-sidebar,
