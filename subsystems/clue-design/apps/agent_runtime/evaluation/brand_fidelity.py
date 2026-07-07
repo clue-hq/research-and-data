@@ -241,7 +241,12 @@ def score_brand_fidelity(scene: JsonObject, brand_kit: JsonObject) -> JsonObject
 
 
 def _load_scene(run_dir: Path) -> JsonObject:
-    scene = json.loads((run_dir / "final_scene.json").read_text())
+    """Prefer the newest AUTHORED-scene snapshot: resolution deliberately
+    consumes token bindings (resolution-once), so the resolved final_scene
+    can never show style_token — binding is only observable pre-resolution."""
+    authored = sorted(run_dir.glob("iterations/*/authored_scene.json"))
+    path = authored[-1] if authored else (run_dir / "final_scene.json")
+    scene = json.loads(path.read_text())
     return scene.get("scene", scene) if "scene" in scene else scene
 
 

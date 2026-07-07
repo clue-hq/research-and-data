@@ -19,6 +19,7 @@ except Exception:  # pragma: no cover
     image_cache = None  # type: ignore[assignment]
 
 from .config import AgentRuntimeConfig
+from .retokenize import build_retokenize_operations
 from .brand_card import build_brand_card
 from .knowledge import BRAND_APPLICATION_PATH, DIRECTIVES_PATH, read_task_knowledge
 from .schemas import (
@@ -1894,6 +1895,61 @@ class LumenDesignTools:
             brand_context = self._brand_context(source, brand_kit)
             if notice:
                 brand_context["notice"] = notice
+            # K4 retokenization: on the agent's OWN (unseeded) draft, bind
+            # every raw literal that equals a kit token before preflight —
+            # deterministic data mapping, applied as real validated ops that
+            # ride the ledger through Accept. Seeded scenes are skipped: a
+            # human's literals are never rebound (resolution-once). LLM
+            # repair measurably cannot do this (run_bff3433f); this pass can.
+            if (
+                brand_kit is not None
+                and source not in (None, "platform_default")
+                and not self.seeded_from_initial_scene
+            ):
+                retokenize_ops = build_retokenize_operations(self.scene, brand_kit)
+                if retokenize_ops:
+                    try:
+                        rt_response = self.core.apply_operations(
+                            self.scene, retokenize_ops
+                        )
+                        self._replace_scene_from_core_response(
+                            rt_response, "retokenize_brand", operations=retokenize_ops
+                        )
+                        self.record(
+                            "coordinator",
+                            "brand_retokenized",
+                            output_summary=(
+                                f"{len(retokenize_ops)} node(s) rebound to kit tokens"
+                            ),
+                            payload={"operation_count": len(retokenize_ops)},
+                        )
+                    except CoreError:
+                        # A rejected rebind never blocks the turn; preflight
+                        # proceeds on the unmodified scene.
+                        pass
+            # K4: brand governance judges the AUTHORED scene — resolution
+            # deliberately CONSUMES token bindings (resolution-once: the
+            # resolved scene is fully literal, style_token = None), so any
+            # post-preflight governance pass reports LUMB0805/0804/0806 no
+            # matter how well the draft was authored (that artifact wasted
+            # three live proof rounds). Advisory: steers author + reviewer,
+            # never fails the turn. Platform-default runs stay ungoverned.
+            governance_diagnostics = []
+            if brand_kit is not None and source not in (None, "platform_default"):
+                try:
+                    governance = self.core.validate_scene_brand_governance(
+                        self.scene, brand_kit, strictness="advisory", raise_on_error=False
+                    )
+                    governance_diagnostics = diagnostics_from(
+                        governance.get("diagnostics", [])
+                    )
+                except CoreError:
+                    governance_diagnostics = []
+            # The authored (pre-resolution) scene is the ONLY state where
+            # bindings are observable — snapshot it for the fidelity eval.
+            self._write_json(
+                iteration_dir / "authored_scene.json", {"scene": self.scene}
+            )
             response = self.core.preflight_scene(
                 self.scene, brand_kit, brand_fonts=self.config.brand_fonts
             )
@@ -1916,24 +1972,8 @@ class LumenDesignTools:
 
         self._replace_scene_from_core_response(response, "preflight_design")
         diagnostics = diagnostics_from(response.get("diagnostics", []))
-        # K4: brand governance rides every preflight of a GENUINELY attached
-        # kit. Without this, the agent loop never sees LUMB0804/0805/0809/
-        # 0810 (raw paints, raw typography, logo misuse) — live round-2
-        # shipped 0/4 style_token bindings over a "clean" preflight because
-        # governance was a separate action nobody called. Platform-default
-        # runs stay ungoverned (no brand intent to enforce); advisory
-        # strictness: diagnostics steer the author and reviewer, a
-        # governance finding never fails the turn itself.
-        if brand_kit is not None and source not in (None, "platform_default"):
-            try:
-                governance = self.core.validate_scene_brand_governance(
-                    self.scene, brand_kit, strictness="advisory", raise_on_error=False
-                )
-                diagnostics = diagnostics + diagnostics_from(
-                    governance.get("diagnostics", [])
-                )
-            except CoreError:
-                pass
+        if governance_diagnostics:
+            diagnostics = diagnostics + governance_diagnostics
         preflight = response.get("preflight", {})
         brand_context = self._brand_context_from_scene_ref(brand_context)
         self.effective_brand_context = brand_context
