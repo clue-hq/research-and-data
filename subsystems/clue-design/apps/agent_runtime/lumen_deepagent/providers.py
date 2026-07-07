@@ -189,23 +189,37 @@ def create_provider_quality_loop(
 def init_model(
     model: str, *, base_url: str | None = None, api_key: str | None = None
 ):
-    """Build the deep-agent text model.
+    """Build a deep-agent LLM bound to the OpenRouter gateway.
 
-    When `base_url` + `api_key` are supplied, route through an OpenAI-compatible
-    endpoint (e.g. OpenRouter) — `model` must be an "openai:<model-id>" string so
-    LangChain selects the OpenAI client. Otherwise fall back to the provider
-    encoded in `model` (e.g. "anthropic:..."), authed via that provider's own env.
+    OpenRouter is the SOLE gateway for every LLM call — there is no native-provider
+    fallback. Callers must supply the OpenRouter `base_url` + `api_key`, and `model`
+    must be an "openai:<openrouter-model-id>" string so LangChain selects the
+    OpenAI-compatible client. Any other shape is a misconfiguration and raises here,
+    before a request goes out, rather than failing later as an opaque transport
+    error (e.g. an Anthropic client aimed at the OpenRouter base URL that 404s).
     """
+    if not (base_url and api_key):
+        raise ValueError(
+            "The deep-agent routes every LLM call through OpenRouter — set both "
+            "LUMEN_AGENT_BASE_URL and LUMEN_AGENT_API_KEY. There is no native "
+            "provider fallback."
+        )
+    if not model.startswith("openai:"):
+        raise ValueError(
+            "LUMEN_AGENT_MODEL must be an 'openai:<openrouter-model-id>' value so "
+            f"LangChain selects the OpenAI-compatible client. Got {model!r}. Prefix "
+            "it with 'openai:' — e.g. 'openai:anthropic/claude-opus-4.8'. A bare "
+            "'anthropic:' prefix builds the Anthropic client against the OpenRouter "
+            "base URL and 404s."
+        )
     try:
         from langchain.chat_models import init_chat_model
     except ImportError as error:
         raise RuntimeError(
             "LangChain model dependencies are missing. Install apps/api/requirements.txt "
-            "or add langchain, langchain-anthropic, and langchain-openai to the active environment."
+            "or add langchain and langchain-openai to the active environment."
         ) from error
-    if base_url and api_key:
-        return init_chat_model(model, base_url=base_url, api_key=api_key)
-    return init_chat_model(model)
+    return init_chat_model(model, base_url=base_url, api_key=api_key)
 
 
 def try_structured_model(model: Any, schema: type[VisualCritique]):

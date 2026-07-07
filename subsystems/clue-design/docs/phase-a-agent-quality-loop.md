@@ -369,14 +369,21 @@ actually blocking product-quality output.
 Use `.env` for runtime configuration:
 
 ```text
-LUMEN_AGENT_MODEL=claude-opus-4-6
-ANTHROPIC_API_KEY=...
+LUMEN_AGENT_MODEL=openai:anthropic/claude-opus-4.8
+LUMEN_AGENT_BASE_URL=https://openrouter.ai/api/v1
+LUMEN_AGENT_API_KEY=...
 LUMEN_AGENT_MAX_ITERATIONS=3
 LUMEN_AGENT_PREVIEW_FORMAT=svg
 ```
 
-The branch should keep provider-specific code behind a small adapter so the
-orchestration contract can survive model/provider changes.
+OpenRouter is the sole LLM gateway — every call routes through it and there is no
+native-provider fallback. `LUMEN_AGENT_MODEL` selects the model only and must be an
+`openai:<openrouter-model-id>` value. See the README's "Choosing a model / provider"
+section for the full contract; `init_model` rejects a missing key or a non-`openai:`
+prefix loudly.
+
+Provider-agnosticism sits behind a single adapter (`providers.init_model`) that
+binds the chosen model to the OpenRouter gateway.
 
 ## Acceptance Criteria
 
@@ -474,7 +481,7 @@ Current implementation notes:
   JSON text prompt.
 - Normal deterministic verification should set `LUMEN_AGENT_RUN_LIVE=0`. The
   live provider smoke is gated by `LUMEN_AGENT_RUN_LIVE=1` and
-  `ANTHROPIC_API_KEY`.
+  `LUMEN_AGENT_API_KEY` (the OpenRouter key).
 
 ## Production Implementation Plan
 
@@ -883,7 +890,7 @@ python -m lumen_deepagent.cli "<prompt>"
   - critic rejection then accepted repair
   - max iterations
 - Add optional real-provider smoke test gated by environment:
-  - `ANTHROPIC_API_KEY`
+  - `LUMEN_AGENT_API_KEY` (the OpenRouter key)
   - `LUMEN_AGENT_MODEL`
   - `LUMEN_AGENT_RUN_LIVE=1`
 - Add a local evaluation script that prints:

@@ -50,15 +50,45 @@ http://127.0.0.1:3000
 
 ### API Keys
 
-The setup script will not overwrite an existing `.env`. If `.env` is created
-from `.env.example`, add your live agent key before using DeepAgent calls:
+The deep-agent routes every LLM call through **OpenRouter** — there is no
+native-provider path. The setup script will not overwrite an existing `.env`. If
+`.env` is created from `.env.example`, add your OpenRouter key before using
+DeepAgent calls:
 
 ```bash
-ANTHROPIC_API_KEY=your_key_here
+LUMEN_AGENT_API_KEY=your_openrouter_key_here
 ```
 
-The editor and backend can still run without this key, but live agent calls will
-fail until the key is present.
+`LUMEN_AGENT_BASE_URL` is prefilled to the OpenRouter API. The editor and backend
+still run without the key, but live agent calls fail loudly until it is present.
+
+### Choosing a model / provider
+
+The deep-agent is model-agnostic *through a single fixed gateway*: **OpenRouter is
+the only gateway for every LLM call, and you vary only the model.** There is no
+native Anthropic/OpenAI path — the model is selected from config, never hardcoded
+at a call site.
+
+`LUMEN_AGENT_MODEL` must be an `openai:<openrouter-model-id>` value so LangChain
+selects the OpenAI-compatible client. Switching models means changing only this id:
+
+```bash
+LUMEN_AGENT_MODEL=openai:anthropic/claude-opus-4.8   # or
+LUMEN_AGENT_MODEL=openai:google/gemini-3-pro         # any OpenRouter model id
+LUMEN_AGENT_BASE_URL=https://openrouter.ai/api/v1    # prefilled
+LUMEN_AGENT_API_KEY=your_openrouter_key
+```
+
+A model without the `openai:` prefix, or a missing key, is rejected at startup
+with a clear error rather than failing later as an opaque 404 — `init_model`
+enforces the contract. The editor's model chip (Auto / Opus / Sonnet / Gemini)
+sends the same `openai:` ids per turn; **Auto** falls back to the env default.
+
+Ingestion helpers (asset description, role-assist, PDF vision) and image
+generation route through OpenRouter the same way, each via its own override —
+`LUMEN_INGESTION_DESCRIBE_MODEL`, `LUMEN_INGESTION_ASSIST_MODEL`,
+`LUMEN_INGESTION_VISION_MODEL` (default `anthropic/claude-sonnet-4.5`) and the
+`IMAGE_MODEL_*` vars in `.env.example`.
 
 ### Manual Run Commands
 

@@ -63,6 +63,7 @@ from lumen_deepagent.prompts import (
 from lumen_deepagent.providers import (
     compact_preview_payload,
     extract_dsl,
+    init_model,
     parse_director_decision,
     parse_visual_critique,
     preview_image_blocks,
@@ -709,12 +710,16 @@ class BrokenReviewer:
 
 
 def runtime_config(tmp_path: Path, max_iterations: int = 3) -> AgentRuntimeConfig:
+    # OpenRouter is the sole gateway; the fixture carries the gateway creds so the
+    # factory path (which always builds via init_model) can construct a model.
     return AgentRuntimeConfig(
         repo_root=tmp_path,
-        model="anthropic:claude-opus-4-6",
+        model="openai:anthropic/claude-opus-4.8",
         max_iterations=max_iterations,
         preview_format="svg",
         trace_dir=tmp_path / ".lumen-runs",
+        agent_base_url="https://openrouter.ai/api/v1",
+        agent_api_key="sk-test",
     )
 
 
@@ -763,7 +768,7 @@ def layout_cluster_scene() -> dict:
 
 
 def test_subagents_have_isolated_skills_and_structured_reviewer_output():
-    subagents = build_subagents("anthropic:claude-opus-4-6")
+    subagents = build_subagents("openai:anthropic/claude-opus-4.8")
 
     assert {agent["name"] for agent in subagents} == {
         "lumen-dsl-author",
@@ -794,10 +799,44 @@ def test_subagents_declare_empty_tools_to_stay_under_strict_tool_cap():
     # killed every deepagent run. Each subagent must therefore declare an explicit
     # (empty) tool list so deepagents does NOT inherit the coordinator's tools.
     # Skills still load via the filesystem middleware, independent of `tools`.
-    subagents = build_subagents("anthropic:claude-opus-4-6")
+    subagents = build_subagents("openai:anthropic/claude-opus-4.8")
     for agent in subagents:
         assert "tools" in agent, f"{agent['name']} must declare tools explicitly"
         assert agent["tools"] == [], f"{agent['name']} must not inherit coordinator tools"
+
+
+def test_init_model_rejects_non_openai_prefix_against_openrouter_base_url():
+    # Footgun guard: base_url + api_key means an OpenAI-compatible endpoint
+    # (OpenRouter), so the model MUST be "openai:<id>" — a bare "anthropic:" prefix
+    # builds the Anthropic client aimed at the OpenRouter base URL and 404s deep in
+    # the transport. init_model must reject the mismatch loudly, before any LLM call.
+    with pytest.raises(ValueError) as excinfo:
+        init_model(
+            "anthropic:claude-opus-4-6",
+            base_url="https://openrouter.ai/api/v1",
+            api_key="sk-test",
+        )
+    message = str(excinfo.value)
+    assert "openai:" in message
+    assert "LUMEN_AGENT_MODEL" in message
+
+
+def test_init_model_rejects_unprefixed_model_against_openrouter_base_url():
+    # A model with no provider prefix at all is the same footgun.
+    with pytest.raises(ValueError):
+        init_model(
+            "claude-opus-4-6",
+            base_url="https://openrouter.ai/api/v1",
+            api_key="sk-test",
+        )
+
+
+def test_init_model_requires_openrouter_credentials():
+    # OpenRouter is the sole gateway — no base_url/api_key is a hard error, not a
+    # silent fall-through to a native-provider client.
+    with pytest.raises(ValueError) as excinfo:
+        init_model("openai:anthropic/claude-opus-4.8")
+    assert "OpenRouter" in str(excinfo.value)
 
 
 def test_coordinator_prompt_wires_the_imagery_decide_generate_place_chain():
@@ -1095,7 +1134,7 @@ def test_directives_ref_grammar_is_pinned_for_seeded_turns(
     monkeypatch.setattr("lumen_deepagent.tools.CoreClient", FakeCoreClient)
     config = AgentRuntimeConfig(
         repo_root=repo_root,
-        model="anthropic:claude-opus-4-6",
+        model="openai:anthropic/claude-opus-4.8",
         max_iterations=1,
         preview_format="svg",
         trace_dir=tmp_path / ".lumen-runs",
@@ -4624,8 +4663,8 @@ def test_provider_preview_payload_omits_base64_from_text_and_emits_image_block()
 
 @pytest.mark.skipif(
     os.environ.get("LUMEN_AGENT_RUN_LIVE") != "1"
-    or not os.environ.get("ANTHROPIC_API_KEY"),
-    reason="live provider smoke requires LUMEN_AGENT_RUN_LIVE=1 and ANTHROPIC_API_KEY",
+    or not os.environ.get("LUMEN_AGENT_API_KEY"),
+    reason="live provider smoke requires LUMEN_AGENT_RUN_LIVE=1 and LUMEN_AGENT_API_KEY (OpenRouter)",
 )
 def test_live_provider_quality_loop_smoke(tmp_path: Path):
     from lumen_deepagent.providers import create_provider_quality_loop

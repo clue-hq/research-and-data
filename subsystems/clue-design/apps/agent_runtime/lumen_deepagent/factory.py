@@ -28,26 +28,25 @@ def create_lumen_design_agent(
     except ImportError as error:
         raise RuntimeError(
             "DeepAgents runtime dependencies are missing. Install apps/api/requirements.txt "
-            "or add deepagents and langchain-anthropic to the active environment."
+            "or add deepagents and langchain-openai to the active environment."
         ) from error
 
     runtime_config = config or AgentRuntimeConfig.from_env()
     tools = LumenDesignTools(runtime_config, prompt, initial_scene=initial_scene)
     backend = FilesystemBackend(root_dir=str(runtime_config.repo_root))
 
-    # Anthropic stays a bare "provider:model" string (deepagents builds it via
-    # init_chat_model). For an OpenAI-compatible service (OpenRouter) we must hand
-    # deepagents a pre-built model instance so the base_url + api_key are applied.
-    if runtime_config.agent_base_url and runtime_config.agent_api_key:
-        from .providers import init_model
+    # OpenRouter is the sole LLM gateway: always hand deepagents a pre-built model
+    # instance bound to the OpenRouter base_url + api_key. init_model enforces the
+    # "openai:<id>" contract and errors loudly if the creds are missing — there is
+    # no native-provider fallback. The same instance is shared with every subagent
+    # below (build_subagents(model)), so subagents route through OpenRouter too.
+    from .providers import init_model
 
-        model = init_model(
-            runtime_config.model,
-            base_url=runtime_config.agent_base_url,
-            api_key=runtime_config.agent_api_key,
-        )
-    else:
-        model = runtime_config.model
+    model = init_model(
+        runtime_config.model,
+        base_url=runtime_config.agent_base_url,
+        api_key=runtime_config.agent_api_key,
+    )
 
     agent = create_deep_agent(
         model=model,
