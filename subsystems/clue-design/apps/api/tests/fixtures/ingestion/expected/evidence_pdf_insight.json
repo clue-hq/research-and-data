@@ -929,7 +929,216 @@
         }
       },
       "effects": {},
-      "numbers": {},
+      "numbers": {
+        "type.size.2xl": {
+          "description": null,
+          "provenance": {
+            "confidence": 0.6,
+            "source": "derived:type-size-ramp (reference values; no measurable brand x-height)"
+          },
+          "role": "font_size",
+          "value": {
+            "default": {
+              "kind": "number",
+              "unit": "px",
+              "value": 32.0
+            },
+            "modes": {}
+          }
+        },
+        "type.size.3xl": {
+          "description": null,
+          "provenance": {
+            "confidence": 0.6,
+            "source": "derived:type-size-ramp (reference values; no measurable brand x-height)"
+          },
+          "role": "font_size",
+          "value": {
+            "default": {
+              "kind": "number",
+              "unit": "px",
+              "value": 36.0
+            },
+            "modes": {}
+          }
+        },
+        "type.size.4xl": {
+          "description": null,
+          "provenance": {
+            "confidence": 0.6,
+            "source": "derived:type-size-ramp (reference values; no measurable brand x-height)"
+          },
+          "role": "font_size",
+          "value": {
+            "default": {
+              "kind": "number",
+              "unit": "px",
+              "value": 40.0
+            },
+            "modes": {}
+          }
+        },
+        "type.size.5xl": {
+          "description": null,
+          "provenance": {
+            "confidence": 0.6,
+            "source": "derived:type-size-ramp (reference values; no measurable brand x-height)"
+          },
+          "role": "font_size",
+          "value": {
+            "default": {
+              "kind": "number",
+              "unit": "px",
+              "value": 48.0
+            },
+            "modes": {}
+          }
+        },
+        "type.size.6xl": {
+          "description": null,
+          "provenance": {
+            "confidence": 0.6,
+            "source": "derived:type-size-ramp (reference values; no measurable brand x-height)"
+          },
+          "role": "font_size",
+          "value": {
+            "default": {
+              "kind": "number",
+              "unit": "px",
+              "value": 64.0
+            },
+            "modes": {}
+          }
+        },
+        "type.size.7xl": {
+          "description": null,
+          "provenance": {
+            "confidence": 0.6,
+            "source": "derived:type-size-ramp (reference values; no measurable brand x-height)"
+          },
+          "role": "font_size",
+          "value": {
+            "default": {
+              "kind": "number",
+              "unit": "px",
+              "value": 80.0
+            },
+            "modes": {}
+          }
+        },
+        "type.size.8xl": {
+          "description": null,
+          "provenance": {
+            "confidence": 0.6,
+            "source": "derived:type-size-ramp (reference values; no measurable brand x-height)"
+          },
+          "role": "font_size",
+          "value": {
+            "default": {
+              "kind": "number",
+              "unit": "px",
+              "value": 96.0
+            },
+            "modes": {}
+          }
+        },
+        "type.size.9xl": {
+          "description": null,
+          "provenance": {
+            "confidence": 0.6,
+            "source": "derived:type-size-ramp (reference values; no measurable brand x-height)"
+          },
+          "role": "font_size",
+          "value": {
+            "default": {
+              "kind": "number",
+              "unit": "px",
+              "value": 128.0
+            },
+            "modes": {}
+          }
+        },
+        "type.size.lg": {
+          "description": null,
+          "provenance": {
+            "confidence": 0.6,
+            "source": "derived:type-size-ramp (reference values; no measurable brand x-height)"
+          },
+          "role": "font_size",
+          "value": {
+            "default": {
+              "kind": "number",
+              "unit": "px",
+              "value": 20.0
+            },
+            "modes": {}
+          }
+        },
+        "type.size.md": {
+          "description": null,
+          "provenance": {
+            "confidence": 0.6,
+            "source": "derived:type-size-ramp (reference values; no measurable brand x-height)"
+          },
+          "role": "font_size",
+          "value": {
+            "default": {
+              "kind": "number",
+              "unit": "px",
+              "value": 16.0
+            },
+            "modes": {}
+          }
+        },
+        "type.size.sm": {
+          "description": null,
+          "provenance": {
+            "confidence": 0.6,
+            "source": "derived:type-size-ramp (reference values; no measurable brand x-height)"
+          },
+          "role": "font_size",
+          "value": {
+            "default": {
+              "kind": "number",
+              "unit": "px",
+              "value": 14.0
+            },
+            "modes": {}
+          }
+        },
+        "type.size.xl": {
+          "description": null,
+          "provenance": {
+            "confidence": 0.6,
+            "source": "derived:type-size-ramp (reference values; no measurable brand x-height)"
+          },
+          "role": "font_size",
+          "value": {
+            "default": {
+              "kind": "number",
+              "unit": "px",
+              "value": 24.0
+            },
+            "modes": {}
+          }
+        },
+        "type.size.xs": {
+          "description": null,
+          "provenance": {
+            "confidence": 0.6,
+            "source": "derived:type-size-ramp (reference values; no measurable brand x-height)"
+          },
+          "role": "font_size",
+          "value": {
+            "default": {
+              "kind": "number",
+              "unit": "px",
+              "value": 12.0
+            },
+            "modes": {}
+          }
+        }
+      },
       "opacity": {
         "opacity.disabled": {
           "description": null,

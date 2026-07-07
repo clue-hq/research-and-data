@@ -1371,6 +1371,13 @@ pub struct FontAsset {
     pub scripts: Vec<String>,
     pub license: FontLicense,
     pub provenance: Option<TokenProvenance>,
+    /// Measured font metrics extracted at ingestion (units-per-em ratios:
+    /// x-height, cap-height, average char width, vertical metrics). Producers
+    /// write it, downstream consumers (perceptual size normalization, copy-fit
+    /// estimation, evals) read it; the engine itself never interprets it —
+    /// the field exists so the block survives the typed validation round trip.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub metrics: Option<serde_json::Value>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -2768,6 +2775,7 @@ fn generated_font_assets(font_family: &str) -> BTreeMap<String, FontAsset> {
                 source: "brand_seed".to_owned(),
                 confidence: 0.7,
             }),
+            metrics: None,
         },
     )])
 }
@@ -5386,6 +5394,7 @@ fn compile_font_directive(name: &str, value: &str, kit: &mut BrandKit) -> Result
                 restrictions: Vec::new(),
             },
             provenance: None,
+            metrics: None,
         },
     );
     Ok(())

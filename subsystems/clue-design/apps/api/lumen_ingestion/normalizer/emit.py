@@ -78,6 +78,7 @@ class KitBuilder:
         self.created_at = created_at
         self.colors: dict[str, dict] = {}
         self.typography: dict[str, dict] = {}
+        self.numbers: dict[str, dict] = {}
         self.spacing: dict[str, dict] = {}
         self.radii: dict[str, dict] = {}
         self.stroke_widths: dict[str, dict] = {}
@@ -363,7 +364,7 @@ class KitBuilder:
             "tokens": {
                 "colors": self.colors,
                 "typography": self.typography,
-                "numbers": {},
+                "numbers": self.numbers,
                 "spacing": self.spacing,
                 "radii": self.radii,
                 "stroke_widths": self.stroke_widths,

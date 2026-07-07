@@ -26,6 +26,7 @@ from .roles import (
     assign_light_roles,
     build_dark_colorway,
 )
+from .font_metrics import build_type_size_ramp
 from .scales import build_opacity, build_radii, build_spacing, build_strokes
 from .typography import build_type_styles, resolve_anchors
 
@@ -47,6 +48,7 @@ def normalize_evidence(
     name: str,
     created_at: str,
     assist: RoleAssist | None = None,
+    font_metrics: dict[str, dict] | None = None,
 ) -> NormalizeResult:
     assist = assist or NullRoleAssist()
     diagnostics: list[dict] = []
@@ -139,8 +141,28 @@ def normalize_evidence(
     builder.add_numbers(builder.stroke_widths, build_strokes(), "stroke", "derived:stroke-scale")
     builder.add_numbers(builder.opacity, build_opacity(), "visibility", "derived:opacity-scale")
 
+    # K4 rung 2: the canonical type.size ramp, x-height-normalized against the
+    # platform reference font using metrics MEASURED from this kit's own font
+    # bytes (pipeline extracts them; None → identity ramp). Baked here at the
+    # producer so every resolver inherits plain numbers — no resolver-side
+    # math mirrors, and the derived values persist per the resolution-once
+    # contract. The scraped ROLE sizes are untouched: they were measured on
+    # the site rendered in the brand font, so they are already perceptually
+    # ground truth.
+    heading_metrics = (font_metrics or {}).get(anchors.heading_family) or (
+        font_metrics or {}
+    ).get(anchors.body_family)
+    ramp_values, ramp_source = build_type_size_ramp(
+        (heading_metrics or {}).get("x_height_ratio")
+    )
+    builder.add_numbers(builder.numbers, ramp_values, "font_size", ramp_source)
+
     # Fonts.
     _emit_fonts(builder, anchors)
+    for font_json in builder.fonts.values():
+        measured = (font_metrics or {}).get(font_json.get("family"))
+        if measured:
+            font_json["metrics"] = measured
 
     # Logos + images.
     if evidence.logos:

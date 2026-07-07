@@ -1728,6 +1728,7 @@ fn acme_brand_kit() -> BrandKit {
                 restrictions: Vec::new(),
             },
             provenance: None,
+            metrics: None,
         },
     );
 

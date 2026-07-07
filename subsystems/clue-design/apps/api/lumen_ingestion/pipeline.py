@@ -190,6 +190,32 @@ def _default_apply_descriptions(
     )
 
 
+
+def _font_metrics_map(evidence: Any, resolve_bytes) -> dict:
+    """K4 rung 2: measured metrics per font family, from the stored face
+    bytes. Best-effort — a face that cannot be read or parsed contributes
+    nothing, and a kit with no readable faces gets the identity ramp."""
+    from .normalizer.font_metrics import extract_font_metrics
+
+    metrics: dict = {}
+    for font in getattr(evidence, "fonts", []) or []:
+        family = getattr(font, "family", None)
+        if not family or family in metrics:
+            continue
+        for face in getattr(font, "faces", []) or []:
+            asset_id = getattr(face, "asset_id", None)
+            if not asset_id:
+                continue
+            resolved = resolve_bytes(asset_id)
+            if not resolved:
+                continue
+            measured = extract_font_metrics(resolved[0])
+            if measured:
+                metrics[family] = measured
+                break
+    return metrics
+
+
 def _maybe_describe(
     evidence: Any,
     *,
@@ -358,6 +384,9 @@ def _ingest(
         name=name,
         created_at=created_at or job["created_at"],
         version=1,
+        font_metrics=_font_metrics_map(
+            evidence, _make_resolve_bytes(repo, asset_store_root)
+        ),
     )
     kit = result.brand_kit
 
@@ -564,6 +593,9 @@ def _ingest_pdf(
         name=name,
         created_at=created_at or job["created_at"],
         version=1,
+        font_metrics=_font_metrics_map(
+            evidence, _make_resolve_bytes(repo, asset_store_root)
+        ),
     )
     kit = result.brand_kit
 
@@ -797,6 +829,9 @@ def _ingest_assets(
         name=name,
         created_at=created_at or job["created_at"],
         version=1,
+        font_metrics=_font_metrics_map(
+            evidence, _make_resolve_bytes(repo, asset_store_root)
+        ),
     )
     kit = result.brand_kit
 

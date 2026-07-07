@@ -284,3 +284,47 @@ def test_soft_indigo_extra_with_alias() -> None:
     # A single-word named extra (Aqua) is aliasable and gets an alias entry.
     aliases = result.brand_kit["tokens"]["aliases"]
     assert aliases["Aqua"]["token"] == "palette.extra.aqua"
+
+
+# --- K4 rung 2: type.size ramp + font metrics ------------------------------------
+
+
+def test_normalizer_emits_the_type_size_ramp() -> None:
+    """Every ingested kit carries the canonical 13-step `type.size.*` ramp —
+    the vocabulary the styles compiler, knowledge docs, and DSL author share.
+    Without metrics the values are the reference table verbatim."""
+    kit = _normalize("evidence_website_insight").brand_kit
+    numbers = kit["tokens"]["numbers"]
+    ramp = {k: v for k, v in numbers.items() if k.startswith("type.size.")}
+    assert len(ramp) == 13
+    assert ramp["type.size.md"]["value"]["default"]["value"] == 16.0
+    assert ramp["type.size.7xl"]["value"]["default"]["value"] == 80.0
+    assert ramp["type.size.md"]["role"] == "font_size"
+    assert "type-size-ramp" in ramp["type.size.md"]["provenance"]["source"]
+
+
+def test_normalizer_bakes_x_height_adjusted_ramp_and_metrics() -> None:
+    """With measured metrics for the kit's heading family, the ramp values are
+    reference-normalized (small x-height → larger pt) and the metrics block
+    rides the kit's font entry for downstream consumers."""
+    evidence = _load("evidence_website_insight")
+    heading_family = None
+    for font in evidence.fonts:
+        heading_family = font.family
+        break
+    assert heading_family, "fixture must carry a font"
+    metrics = {heading_family: {"units_per_em": 1000.0, "x_height_ratio": 0.44}}
+    result = normalize_evidence(
+        evidence,
+        brand_kit_id="brand_kit_metrics_probe",
+        version=1,
+        name="Metrics probe",
+        created_at=_CREATED_AT,
+        font_metrics=metrics,
+    )
+    kit = result.brand_kit
+    md = kit["tokens"]["numbers"]["type.size.md"]["value"]["default"]["value"]
+    assert md > 16.0  # scaled up for the small-x-height font
+    assert "x-height-normalized" in kit["tokens"]["numbers"]["type.size.md"]["provenance"]["source"]
+    fonts = kit["assets"]["fonts"]
+    assert any(f.get("metrics", {}).get("x_height_ratio") == 0.44 for f in fonts.values())
