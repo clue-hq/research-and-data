@@ -990,6 +990,11 @@ class LumenQualityLoop:
                 for d in all_preflight_diagnostics
                 if str(d.get("code") or "").startswith("LUMB08")
             )
+            # A draft that never placed the kit's logo outranks nothing: a
+            # logo-carrying iteration beats it even against a few advisory
+            # token warnings (5 ≈ the largest observed LUMB08 spread).
+            if self._scene_lacks_kit_logo():
+                brand_debt += 5
             self._consider_best(
                 stage="preflight_clean", critique=None, brand_debt=brand_debt
             )
@@ -1202,6 +1207,15 @@ class LumenQualityLoop:
             # per run (mirrors the accommodation forced round) so it can never wedge.
             imagery_repaired = self._maybe_execute_imagery_repair(critique)
 
+            # K4 logo adoption, rejected path: the accept-intercept alone
+            # measured 1/10 ship — most runs exhaust budget without any
+            # acceptance, so the placement fact must ride EVERY repair round.
+            # Appended LAST: the critic's own top issue keeps driving the
+            # target and classification; this rider just makes the same
+            # repair round also place the logo (one op — the event-poster
+            # gate round proved the model does it reliably when told).
+            if self._scene_lacks_kit_logo():
+                critique.issues.append(self._logo_missing_issue())
             feedback = {
                 "kind": "visual",
                 "feedback": critique.model_dump(mode="json"),
@@ -1514,6 +1528,12 @@ class LumenQualityLoop:
             return False
         if self.state.current_iteration >= self.tools.config.max_iterations:
             return False
+        return self._scene_lacks_kit_logo()
+
+    def _scene_lacks_kit_logo(self) -> bool:
+        logo_ids = self._kit_logo_asset_ids()
+        if not logo_ids:
+            return False
         nodes = (self.tools.scene or {}).get("nodes") or {}
         for node in nodes.values():
             kind = (node or {}).get("kind")
@@ -1524,6 +1544,34 @@ class LumenQualityLoop:
             ):
                 return False
         return True
+
+    def _logo_missing_issue(self) -> VisualIssue:
+        kit = self.tools.config.brand_kit or {}
+        logos = (kit.get("assets") or {}).get("logos") or {}
+        suggestion = None
+        for slot in ("mark", "primary", "wordmark"):
+            for variant in (logos.get(slot) or {}).get("variants") or []:
+                if isinstance(variant, dict) and variant.get("asset_id"):
+                    suggestion = (slot, str(variant["asset_id"]))
+                    break
+            if suggestion:
+                break
+        slot_name, asset_id = suggestion or ("mark", sorted(self._kit_logo_asset_ids())[0])
+        return VisualIssue(
+            severity=DiagnosticSeverity.error,
+            category="brand_fit",
+            target=VisualTarget(node_id=None),
+            message=(
+                "Inventory fact: the attached Brand Kit provides logo assets and "
+                "no image node in the scene references any of them."
+            ),
+            suggested_repair=(
+                f"While making the requested repair, ALSO place the kit's {slot_name} "
+                f"logo: add an `image asset({asset_id})` element (the compiler "
+                "auto-registers kit assets) in the header/top region, sized per the "
+                "kit's logo rules (min_size, variant per background)."
+            ),
+        )
 
     def _forced_logo_critique(self, accepted: VisualCritique) -> VisualCritique:
         """The synthetic rejection that drives the forced logo round."""
@@ -1547,6 +1595,8 @@ class LumenQualityLoop:
             "(min_size, variant appropriate to the background — see "
             "brand-application). Do not restyle or move any other node."
         )
+        issue = self._logo_missing_issue()
+        issue.suggested_repair = repair
         forced = VisualCritique(
             accepted=False,
             summary=(
@@ -1554,19 +1604,7 @@ class LumenQualityLoop:
                 "attached Brand Kit provides logo assets and this design places "
                 "none — brand presence is part of the brief."
             ),
-            issues=[
-                VisualIssue(
-                    severity=DiagnosticSeverity.error,
-                    category="brand_fit",
-                    target=VisualTarget(node_id=None),
-                    message=(
-                        "Inventory fact: the attached kit provides logo assets "
-                        f"({', '.join(sorted(self._kit_logo_asset_ids()))}) and no "
-                        "image node in the scene references any of them."
-                    ),
-                    suggested_repair=repair,
-                )
-            ],
+            issues=[issue],
             confidence=1.0,
         )
         return forced
