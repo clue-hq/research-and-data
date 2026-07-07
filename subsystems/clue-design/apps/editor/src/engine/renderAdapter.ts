@@ -719,6 +719,16 @@ export function setKitTokenMaps(maps: KitTokenMaps): void {
   }
 }
 
+/** K3: kit font faces landed in the CanvasKit provider AFTER first paint —
+ * same generation bump as a token-map install, so text measurement and
+ * descriptor memos rebuild against the newly registered faces. */
+export function notifyKitFontsChanged(): void {
+  tokenColorsGeneration += 1;
+  for (const listener of tokenColorListeners) {
+    listener();
+  }
+}
+
 /** Subscribe to token-map replacements (useSyncExternalStore contract). */
 export function subscribeTokenColors(listener: () => void): () => void {
   tokenColorListeners.add(listener);

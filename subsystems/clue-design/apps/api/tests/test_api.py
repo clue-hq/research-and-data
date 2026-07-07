@@ -436,7 +436,7 @@ def test_resolve_agent_turn_brand_kit_passes_document_kit_by_value(
 
     scene = preflightable_scene()
     scene["meta"]["brand_kit"] = {"id": "brand_kit_insight_health", "version": 4}
-    kit, source, manifest = resolve_agent_turn_brand_kit(
+    kit, source, manifest, brand_fonts = resolve_agent_turn_brand_kit(
         AgentTurnPreviewRequest(prompt="Restyle the letter", scene=scene)
     )
     assert source == "document"
@@ -444,20 +444,22 @@ def test_resolve_agent_turn_brand_kit_passes_document_kit_by_value(
     assert kit["id"] == "brand_kit_insight_health"
     assert kit["version"] == 4
     # K2: a styles-compiled kit has no logo/image assets → empty manifest,
-    # not an error.
+    # not an error. K3: its font faces carry no asset_ids → no font spec
+    # (bundled fallback), not an error.
     assert manifest == {}
+    assert brand_fonts is None
 
     # No scene ref → no kit (platform-default behavior unchanged).
     assert resolve_agent_turn_brand_kit(
         AgentTurnPreviewRequest(prompt="x", scene=preflightable_scene())
-    ) == (None, None, None)
+    ) == (None, None, None, None)
 
-    # Unknown kit id → graceful (None, None, None), never an exception.
+    # Unknown kit id → graceful Nones, never an exception.
     ghost = preflightable_scene()
     ghost["meta"]["brand_kit"] = {"id": "brand_kit_ghost", "version": 1}
     assert resolve_agent_turn_brand_kit(
         AgentTurnPreviewRequest(prompt="x", scene=ghost)
-    ) == (None, None, None)
+    ) == (None, None, None, None)
 
     # K2: a kit WITH a logo asset yields a manifest carrying the library
     # record verbatim plus the human usage guidance.
@@ -503,7 +505,7 @@ def test_resolve_agent_turn_brand_kit_passes_document_kit_by_value(
         "id": "brand_kit_insight_with_logo",
         "version": kit_with_logo["version"],
     }
-    kit, source, manifest = resolve_agent_turn_brand_kit(
+    kit, source, manifest, _ = resolve_agent_turn_brand_kit(
         AgentTurnPreviewRequest(prompt="Add our logo", scene=logo_scene)
     )
     assert kit is not None and source == "document"
@@ -511,6 +513,78 @@ def test_resolve_agent_turn_brand_kit_passes_document_kit_by_value(
     assert entry["record"]["id"] == logo_asset_id
     assert entry["record"]["media"]["digest"]["algorithm"] == "sha256"
     assert entry["usage"] == "Use on dark or brand-colored fields."
+
+
+def test_brand_kit_font_faces_ride_preflight_as_store_digests(
+    client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """K3 server font fidelity: a kit whose font faces reference stored font
+    assets yields a {store_root, digests} spec (via the agent-turn resolver),
+    and a real-engine /preflight-preview against that kit stays clean — the
+    helper loads the face bytes from the store instead of erroring."""
+    from lumen_api.main import resolve_agent_turn_brand_kit
+    from lumen_api.models import AgentTurnPreviewRequest
+
+    compiled = client.post(
+        "/brand-kits/compile-styles",
+        json={
+            "source": valid_styles_source(),
+            "brand_kit_id": "brand_kit_insight_health",
+            "version": 4,
+            "name": "Insight Health",
+        },
+    )
+    assert compiled.status_code == 200, compiled.text
+
+    font_path = Path(__file__).resolve().parents[3] / "fonts" / "Inter-Regular.ttf"
+    uploaded = client.post(
+        "/assets",
+        files={"file": ("Inter-Regular.ttf", font_path.read_bytes(), "font/ttf")},
+        data={"label": "Inter Regular", "kind": "font"},
+    )
+    assert uploaded.status_code == 200, uploaded.text
+    font_asset = uploaded.json()["asset"]
+    font_digest = font_asset["media"]["digest"]["value"]
+
+    kit_with_font = json.loads(
+        json.dumps(
+            client.get("/brand-kits/brand_kit_insight_health").json()["brand_kit_json"]
+        )
+    )
+    kit_with_font["id"] = "brand_kit_insight_with_font"
+    kit_with_font["assets"]["fonts"]["brand"]["faces"][0]["asset_id"] = font_asset["id"]
+    created = client.post(
+        "/brand-kits", json={"brand_kit": kit_with_font, "source": "manual"}
+    )
+    assert created.status_code == 200, created.text
+
+    monkeypatch.setenv("LUMEN_API_DATABASE_PATH", str(tmp_path / "api.sqlite3"))
+    scene = preflightable_scene()
+    scene["meta"]["brand_kit"] = {
+        "id": "brand_kit_insight_with_font",
+        "version": kit_with_font["version"],
+    }
+    kit, source, _, brand_fonts = resolve_agent_turn_brand_kit(
+        AgentTurnPreviewRequest(prompt="Set our type", scene=scene)
+    )
+    assert kit is not None and source == "document"
+    assert brand_fonts is not None
+    assert brand_fonts["digests"] == [font_digest]
+    assert (Path(brand_fonts["store_root"]) / "sha256").exists()
+
+    # Real engine round trip: the spec flows through /preflight-preview and
+    # the helper reads the face bytes from the store — clean result, no
+    # LUMS0101 (unloadable face) diagnostics.
+    previewed = client.post(
+        "/preflight-preview",
+        json={"scene": scene, "brand_kit_id": "brand_kit_insight_with_font"},
+    )
+    assert previewed.status_code == 200, previewed.text
+    codes = [
+        d.get("code")
+        for d in (previewed.json().get("diagnostics") or {}).get("current", [])
+    ]
+    assert "LUMS0101" not in codes
 
 
 def test_ops_attached_brand_kit_preflights_via_scene_ref_and_heals_the_row(

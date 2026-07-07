@@ -1,6 +1,8 @@
 use base64::engine::general_purpose::STANDARD as BASE64;
 use base64::Engine;
-use lumen_assets::{AssetStore, IngestRequest, LocalAssetStore, DEFAULT_MAX_BYTES};
+use lumen_assets::{
+    digest_relative_path, AssetStore, IngestRequest, LocalAssetStore, DEFAULT_MAX_BYTES,
+};
 use lumen_core::validation::validate_scene;
 use lumen_core::SharedTextMeasurer;
 use lumen_core::{
@@ -30,23 +32,84 @@ mod store_resolver;
 
 use store_resolver::{StoreBackedResolver, LOCAL_STORE_PROVIDER};
 
-/// The server-side text measurer: SkParagraph shaping over the bundled
-/// deterministic font set (Wave 1 Track A, Decision 5). Every helper path
-/// that measures text — preflight, layout geometry, export — injects this;
-/// the heuristic remains only as the wasm fallback inside lumen-core.
+/// Brand-kit font faces for a request: sha256 digests of font assets in the
+/// shared content-addressed store. The caller (API / agent runtime) resolves
+/// kit `assets.fonts[*].faces[].asset_id` to digests; the helper only reads
+/// bytes — family and weight keying is intrinsic to the font bytes.
+#[derive(Debug, Deserialize)]
+struct BrandFontsSpec {
+    store_root: String,
+    digests: Vec<String>,
+}
+
+/// Build the request's font set: the bundled deterministic faces plus any
+/// brand-kit faces readable from the store. Unreadable or unparseable faces
+/// degrade to warning diagnostics (LUMS0101) — a bad kit font must never
+/// take down shaping, and it must never fail silently either.
+fn load_brand_fonts(spec: Option<&BrandFontsSpec>) -> (Arc<FontManager>, Vec<Diagnostic>) {
+    let Some(spec) = spec else {
+        return (Arc::new(FontManager::bundled()), Vec::new());
+    };
+    let store = LocalAssetStore::new(&spec.store_root);
+    let mut faces = Vec::new();
+    let mut diagnostics = Vec::new();
+    let mut unavailable = |digest: &str, detail: String| {
+        diagnostics.push(
+            Diagnostic::warning(
+                lumen_core::Phase::Layout,
+                "LUMS0101",
+                format!("brand font face sha256:{digest} is unavailable: {detail}"),
+                None,
+            )
+            .with_hint(
+                "Text in this family shapes with the bundled fallback; re-ingest the kit font asset to restore fidelity.",
+            ),
+        );
+    };
+    for digest in &spec.digests {
+        match digest_relative_path(digest) {
+            Ok(relative_path) => match store.get(&relative_path) {
+                Ok(bytes) => faces.push(bytes),
+                Err(error) => unavailable(digest, error.to_string()),
+            },
+            Err(error) => unavailable(digest, error.to_string()),
+        }
+    }
+    let (fonts, errors) = FontManager::bundled_with(faces);
+    for error in errors {
+        unavailable("(parsed)", error.to_string());
+    }
+    (Arc::new(fonts), diagnostics)
+}
+
+/// The server-side text measurer: SkParagraph shaping over the request's
+/// font set (Wave 1 Track A, Decision 5; K3 adds brand-kit faces). Every
+/// helper path that measures text — preflight, layout geometry, export —
+/// injects this; the heuristic remains only as the wasm fallback inside
+/// lumen-core.
+fn server_measurer_with(fonts: Arc<FontManager>) -> SharedTextMeasurer {
+    Arc::new(SkiaTextMeasurer::new(fonts))
+}
+
 fn server_measurer() -> SharedTextMeasurer {
-    Arc::new(SkiaTextMeasurer::bundled())
+    server_measurer_with(Arc::new(FontManager::bundled()))
 }
 
 /// Export adapter composition for every server export path (slice A4):
 /// Skia text measurement for SVG/PDF line breaks and the direct Skia scene
 /// rasterizer for PNG — measurer and renderer share one FontManager, so
 /// critic previews and artifacts shape text identically to preflight.
-fn server_export_adapter(adapter: LumenExportAdapter) -> LumenExportAdapter {
-    let fonts = Arc::new(FontManager::bundled());
+fn server_export_adapter_with(
+    adapter: LumenExportAdapter,
+    fonts: Arc<FontManager>,
+) -> LumenExportAdapter {
     adapter
         .with_measurer(Arc::new(SkiaTextMeasurer::new(Arc::clone(&fonts))))
         .with_rasterizer(Arc::new(SkiaSceneRenderer::new(fonts)))
+}
+
+fn server_export_adapter(adapter: LumenExportAdapter) -> LumenExportAdapter {
+    server_export_adapter_with(adapter, Arc::new(FontManager::bundled()))
 }
 
 #[derive(Debug, Deserialize)]
@@ -85,6 +148,8 @@ enum CoreRequest {
         brand_kit: Option<Value>,
         #[serde(default)]
         mode: Option<Value>,
+        #[serde(default)]
+        brand_fonts: Option<BrandFontsSpec>,
     },
     ExportPreview {
         scene: Value,
@@ -94,6 +159,8 @@ enum CoreRequest {
         profile: Option<Value>,
         #[serde(default)]
         asset_store_root: Option<String>,
+        #[serde(default)]
+        brand_fonts: Option<BrandFontsSpec>,
     },
     IngestAsset {
         store_root: String,
@@ -173,6 +240,8 @@ enum CoreRequest {
     },
     LayoutGeometry {
         scene: Value,
+        #[serde(default)]
+        brand_fonts: Option<BrandFontsSpec>,
     },
     ValidateBindingSet {
         scene: Value,
@@ -813,15 +882,18 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
             scene,
             brand_kit,
             mode,
+            brand_fonts,
         } => {
             let scene = parse_scene(scene)?;
             let brand_kit = brand_kit.map(parse_brand_kit).transpose()?;
+            let (fonts, font_diagnostics) = load_brand_fonts(brand_fonts.as_ref());
             let mut options = PreflightOptions::default();
-            options.layout.measurer = Some(server_measurer());
+            options.layout.measurer = Some(server_measurer_with(fonts));
             if let Some(mode) = mode {
                 options.token_resolution.mode = parse_brand_mode(mode)?;
             }
-            let result = preflight_scene(scene, brand_kit.as_ref(), options);
+            let mut result = preflight_scene(scene, brand_kit.as_ref(), options);
+            result.diagnostics.extend(font_diagnostics);
             let summary = PreflightSummary {
                 has_errors: result.has_errors(),
                 brand_ref_operations: values(result.brand_ref_operations)?,
@@ -855,6 +927,7 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
             page_ids,
             profile,
             asset_store_root,
+            brand_fonts,
         } => {
             let scene = parse_scene(scene)?;
             let profile = match profile {
@@ -883,17 +956,25 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                 page_ids: page_ids.into_iter().map(PageId::from).collect(),
                 purpose: ExportPurpose::AgentCritique,
             };
-            let adapter = server_export_adapter(match asset_store_root {
-                Some(root) => {
-                    LumenExportAdapter::with_resolver(Arc::new(StoreBackedResolver::new(root)))
-                }
-                None => LumenExportAdapter::new(),
-            });
+            let (fonts, font_diagnostics) = load_brand_fonts(brand_fonts.as_ref());
+            let adapter = server_export_adapter_with(
+                match asset_store_root {
+                    Some(root) => {
+                        LumenExportAdapter::with_resolver(Arc::new(StoreBackedResolver::new(root)))
+                    }
+                    None => LumenExportAdapter::new(),
+                },
+                fonts,
+            );
             match adapter.export(&scene, &request) {
                 Ok(result) => Ok(CoreResponse {
                     ok: true,
                     scene: None,
-                    diagnostics: result.diagnostics.clone(),
+                    diagnostics: {
+                        let mut diagnostics = result.diagnostics.clone();
+                        diagnostics.extend(font_diagnostics);
+                        diagnostics
+                    },
                     error: None,
                     applied_operations: None,
                     preflight: None,
@@ -1492,19 +1573,24 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                 build_info: None,
             })
         }
-        CoreRequest::LayoutGeometry { scene } => {
+        CoreRequest::LayoutGeometry { scene, brand_fonts } => {
             let scene = parse_scene(scene)?;
+            let (fonts, font_diagnostics) = load_brand_fonts(brand_fonts.as_ref());
             let result = layout_scene(
                 &scene,
                 lumen_core::LayoutOptions {
-                    measurer: Some(server_measurer()),
+                    measurer: Some(server_measurer_with(fonts)),
                     ..Default::default()
                 },
             );
             Ok(CoreResponse {
                 ok: true,
                 scene: None,
-                diagnostics: result.diagnostics,
+                diagnostics: {
+                    let mut diagnostics = result.diagnostics;
+                    diagnostics.extend(font_diagnostics);
+                    diagnostics
+                },
                 error: None,
                 applied_operations: None,
                 preflight: None,

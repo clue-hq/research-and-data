@@ -324,7 +324,7 @@ class FakeCoreClient:
             },
         }
 
-    def preflight_scene(self, scene, brand_kit):
+    def preflight_scene(self, scene, brand_kit, brand_fonts=None):
         # Faithful to the real engine (preflight.rs): the kit ref is attached
         # only when the scene has none; an existing ref is never overwritten.
         updated = json.loads(json.dumps(scene))
@@ -346,7 +346,8 @@ class FakeCoreClient:
         }
 
     def export_preview(
-        self, scene, export_format="svg", page_ids=None, asset_store_root=None
+        self, scene, export_format="svg", page_ids=None, asset_store_root=None,
+        brand_fonts=None,
     ):
         # The critic now always requests a PNG (judge on pixels); return valid PNG
         # magic bytes for png and SVG otherwise so the bundle validates.
@@ -371,7 +372,8 @@ class FakeCoreClient:
 
 class FakeInvalidPreviewCoreClient(FakeCoreClient):
     def export_preview(
-        self, scene, export_format="svg", page_ids=None, asset_store_root=None
+        self, scene, export_format="svg", page_ids=None, asset_store_root=None,
+        brand_fonts=None,
     ):
         return {
             "diagnostics": [],
@@ -447,7 +449,7 @@ class FakePreflightErrorOnceCoreClient(FakeCoreClient):
         super().__init__(repo_root)
         self.preflight_count = 0
 
-    def preflight_scene(self, scene, brand_kit):
+    def preflight_scene(self, scene, brand_kit, brand_fonts=None):
         self.preflight_count += 1
         if self.preflight_count == 1:
             return {
@@ -484,7 +486,7 @@ class FakeAlwaysPreflightErrorCoreClient(FakeCoreClient):
         self.compile_calls += 1
         return super().compile_dsl_into_scene(scene, source, dsl_session=dsl_session)
 
-    def preflight_scene(self, scene, brand_kit):
+    def preflight_scene(self, scene, brand_kit, brand_fonts=None):
         return {
             "scene": scene,
             "diagnostics": [
@@ -527,7 +529,7 @@ class FakeLayoutClusterPreflightCoreClient(FakeCoreClient):
             },
         }
 
-    def preflight_scene(self, scene, brand_kit):
+    def preflight_scene(self, scene, brand_kit, brand_fonts=None):
         return {
             "scene": scene,
             "diagnostics": [
@@ -582,7 +584,7 @@ class FakeSurgicalCarryForwardCoreClient(FakeCoreClient):
             }
         return super().compile_dsl_into_scene(scene, source, dsl_session=dsl_session)
 
-    def preflight_scene(self, scene, brand_kit):
+    def preflight_scene(self, scene, brand_kit, brand_fonts=None):
         self.preflight_calls += 1
         if self.preflight_calls == 1:
             return {
@@ -608,7 +610,8 @@ class FakeSurgicalCarryForwardCoreClient(FakeCoreClient):
 
 class FakePngCoreClient(FakeCoreClient):
     def export_preview(
-        self, scene, export_format="svg", page_ids=None, asset_store_root=None
+        self, scene, export_format="svg", page_ids=None, asset_store_root=None,
+        brand_fonts=None,
     ):
         if export_format == "png":
             return {
@@ -1901,6 +1904,45 @@ def test_preflight_designs_against_config_brand_kit(tmp_path: Path, monkeypatch)
     assert "notice" not in result["effective_brand"]
 
 
+def test_config_brand_fonts_ride_preflight_and_preview(tmp_path: Path, monkeypatch):
+    """K3: the kit font spec passed by value in config ({store_root, digests})
+    reaches core.preflight_scene AND core.export_preview — the helper loads
+    those faces so measurement and preview shape text in the kit's real
+    fonts."""
+    from dataclasses import replace
+
+    captured: dict = {}
+
+    class RecordingCoreClient(FakeCoreClient):
+        def preflight_scene(self, scene, brand_kit, brand_fonts=None):
+            captured["preflight_brand_fonts"] = brand_fonts
+            return super().preflight_scene(scene, brand_kit, brand_fonts=brand_fonts)
+
+        def export_preview(
+            self, scene, export_format="svg", page_ids=None, asset_store_root=None,
+            brand_fonts=None,
+        ):
+            captured["export_brand_fonts"] = brand_fonts
+            return super().export_preview(
+                scene, export_format, page_ids, asset_store_root=asset_store_root,
+                brand_fonts=brand_fonts,
+            )
+
+    spec = {"store_root": str(tmp_path / "asset-store"), "digests": ["a" * 64]}
+    monkeypatch.setattr("lumen_deepagent.tools.CoreClient", RecordingCoreClient)
+    tools = LumenDesignTools(
+        replace(_config_with_kit(tmp_path, _insight_kit()), brand_fonts=spec),
+        "Create a square ad",
+    )
+    tools.compile_dsl_block("page page_test")
+
+    tools.preflight_design()
+    assert captured["preflight_brand_fonts"] == spec
+
+    tools.export_preview()
+    assert captured["export_brand_fonts"] == spec
+
+
 def test_unapproved_config_kit_is_honored_with_notice(tmp_path: Path, monkeypatch):
     """A document-attached draft kit is still designed against (attach was the
     human gate; a default-kit fallback would trip LUMB0101 against the scene
@@ -1959,7 +2001,7 @@ def test_baseline_preflight_uses_config_brand_kit(tmp_path: Path, monkeypatch):
     seen_kits: list[str] = []
 
     class RecordingCoreClient(FakeCoreClient):
-        def preflight_scene(self, scene, brand_kit):
+        def preflight_scene(self, scene, brand_kit, brand_fonts=None):
             seen_kits.append(brand_kit["id"])
             return super().preflight_scene(scene, brand_kit)
 
@@ -3714,7 +3756,7 @@ class FakeSlotFixturePreflightCoreClient(FakeCoreClient):
             },
         }
 
-    def preflight_scene(self, scene, brand_kit):
+    def preflight_scene(self, scene, brand_kit, brand_fonts=None):
         return {
             "scene": scene,
             "diagnostics": [
@@ -5184,7 +5226,8 @@ def test_critic_preview_export_passes_asset_store_root(tmp_path: Path, monkeypat
 
     class RecordingCoreClient(FakeCoreClient):
         def export_preview(
-            self, scene, export_format="svg", page_ids=None, asset_store_root=None
+            self, scene, export_format="svg", page_ids=None, asset_store_root=None,
+            brand_fonts=None,
         ):
             captured["asset_store_root"] = asset_store_root
             return super().export_preview(

@@ -126,6 +126,28 @@ impl FontManager {
         .expect("bundled Inter faces must parse")
     }
 
+    /// The bundled deterministic set plus additional font faces (brand-kit
+    /// fonts read from the asset store). Faces whose bytes do not parse are
+    /// skipped and reported — the bundled fallback set must never be lost to
+    /// one bad kit font, so this constructor cannot fail.
+    pub fn bundled_with(extra: impl IntoIterator<Item = Vec<u8>>) -> (Self, Vec<FontLoadError>) {
+        let parser = FontMgr::new();
+        let mut all: Vec<Vec<u8>> = BUNDLED_FONTS.iter().map(|bytes| bytes.to_vec()).collect();
+        let mut errors = Vec::new();
+        for bytes in extra {
+            if parser.new_from_data(&bytes, None).is_some() {
+                all.push(bytes);
+            } else {
+                errors.push(FontLoadError {
+                    message: "brand font bytes did not parse as a typeface".to_owned(),
+                });
+            }
+        }
+        let manager = Self::from_bytes(all, DEFAULT_FONT_FAMILY)
+            .expect("bundled Inter faces must parse");
+        (manager, errors)
+    }
+
     /// Load every `.ttf`/`.otf` in `dir` (sorted by file name for
     /// deterministic registration order). The default fallback family must
     /// be among the loaded families.

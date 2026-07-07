@@ -43,6 +43,45 @@ export interface LoadCanvasKitOptions {
 
 let bundlePromise: Promise<CanvasKitBundle | null> | null = null;
 
+/** One brand-kit font face for the canvas: raw TTF/OTF bytes registered
+ * under the kit's declared family (paragraphs request that family after
+ * K1.5 type resolution). `key` dedupes registration across kit refetches. */
+export interface KitFontFace {
+  key: string;
+  family: string;
+  bytes: ArrayBuffer;
+}
+
+const registeredKitFaceKeys = new Set<string>();
+let pendingKitFaces: KitFontFace[] = [];
+let liveFontProvider: TypefaceFontProvider | null = null;
+
+/**
+ * K3: register brand-kit font faces into the shared font provider so canvas
+ * text shapes and measures in the kit's real faces instead of the CanvasKit
+ * default. Faces registered before the bundle initializes are queued and
+ * applied when the provider is created; duplicates (same `key`) are ignored.
+ * Returns true when at least one NEW face was applied to a live provider —
+ * the caller's signal to invalidate measurement/render memos.
+ */
+export function registerKitFontFaces(faces: KitFontFace[]): boolean {
+  const fresh = faces.filter((face) => !registeredKitFaceKeys.has(face.key));
+  for (const face of fresh) {
+    registeredKitFaceKeys.add(face.key);
+  }
+  if (fresh.length === 0) {
+    return false;
+  }
+  if (liveFontProvider) {
+    for (const face of fresh) {
+      liveFontProvider.registerFont(face.bytes, face.family);
+    }
+    return true;
+  }
+  pendingKitFaces.push(...fresh);
+  return false;
+}
+
 /**
  * Resolve the shared CanvasKit bundle (init + font), caching the promise so
  * the wasm instantiates exactly once per page. Concurrent callers share it.
@@ -56,6 +95,9 @@ export function loadCanvasKit(options: LoadCanvasKitOptions = {}): Promise<Canva
 /** Test-only: drop the cached singleton so a fresh load can be exercised. */
 export function resetCanvasKitForTests(): void {
   bundlePromise = null;
+  registeredKitFaceKeys.clear();
+  pendingKitFaces = [];
+  liveFontProvider = null;
 }
 
 async function initBundle(options: LoadCanvasKitOptions): Promise<CanvasKitBundle | null> {
@@ -73,6 +115,13 @@ async function initBundle(options: LoadCanvasKitOptions): Promise<CanvasKitBundl
   }
 
   const fontProvider = await registerFont(ck, fontUrl, fetchImpl);
+  if (fontProvider) {
+    liveFontProvider = fontProvider;
+    for (const face of pendingKitFaces) {
+      fontProvider.registerFont(face.bytes, face.family);
+    }
+    pendingKitFaces = [];
+  }
   return { ck, fontProvider };
 }
 

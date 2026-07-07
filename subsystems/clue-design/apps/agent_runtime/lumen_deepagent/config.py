@@ -35,6 +35,12 @@ class AgentRuntimeConfig:
     # logo nodes by asset id) with provenance rewritten to brand_guide. None or
     # empty → the kit has no placeable assets (e.g. styles-compiled kits).
     brand_kit_assets: dict | None = None
+    # K3: the kit FONT SPEC — {"store_root": str, "digests": [sha256...]} for
+    # the kit's font faces, resolved by the API from its asset library and
+    # passed BY VALUE. The core helper reads the bytes from the shared store
+    # and shapes text in the kit's real faces during preflight measurement
+    # and preview export. None → bundled fonts only (Inter fallback).
+    brand_fonts: dict | None = None
 
     @classmethod
     def from_env(cls, repo_root: Path | None = None) -> "AgentRuntimeConfig":

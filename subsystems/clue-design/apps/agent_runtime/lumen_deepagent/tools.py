@@ -1894,7 +1894,9 @@ class LumenDesignTools:
             brand_context = self._brand_context(source, brand_kit)
             if notice:
                 brand_context["notice"] = notice
-            response = self.core.preflight_scene(self.scene, brand_kit)
+            response = self.core.preflight_scene(
+                self.scene, brand_kit, brand_fonts=self.config.brand_fonts
+            )
         except CoreError as error:
             summary = PreflightSummary(
                 status=ToolStatus.error,
@@ -1975,7 +1977,9 @@ class LumenDesignTools:
             # against a different kit than the turn's own preflights would
             # make the (code, subject) diff misattribute brand diagnostics.
             _, brand_kit, _ = self._effective_brand_kit()
-            response = self.core.preflight_scene(self.scene, brand_kit)
+            response = self.core.preflight_scene(
+                self.scene, brand_kit, brand_fonts=self.config.brand_fonts
+            )
         except CoreError:
             # A baseline that cannot be computed is treated as empty — the
             # repair loop falls back to today's un-scoped behavior rather
@@ -2011,6 +2015,7 @@ class LumenDesignTools:
                 self.scene,
                 preview_format,
                 asset_store_root=str(self.config.effective_asset_store_root),
+                brand_fonts=self.config.brand_fonts,
             )
         except CoreError as error:
             self.latest_export_summary = None

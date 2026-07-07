@@ -4,7 +4,7 @@ import path from "node:path";
 import { gzipSync } from "node:zlib";
 import { beforeEach, describe, expect, it } from "vitest";
 import type { CanvasKit } from "canvaskit-wasm";
-import { loadCanvasKit, resetCanvasKitForTests } from "../loadCanvasKit";
+import { loadCanvasKit, registerKitFontFaces, resetCanvasKitForTests } from "../loadCanvasKit";
 
 /**
  * Wave 3 C0: the CanvasKit loader. CanvasKit runs in Node (CPU), so we init
@@ -83,6 +83,51 @@ describe.skipIf(!present)("CanvasKit loader (Wave 3 C0)", () => {
     expect(paragraph.getMaxIntrinsicWidth()).toBeGreaterThan(0);
     paragraph.delete();
     builder.delete();
+  });
+
+  it("K3: kit font faces registered before AND after init both shape paragraphs", async () => {
+    const init = await nodeInit();
+    const fontPath = path.resolve(__dirname, "../../../../public/fonts/InterVariable.ttf");
+    if (!existsSync(fontPath)) {
+      return; // font asset not fetched in this environment; skip silently
+    }
+    const fontBytes = readFileSync(fontPath);
+    const ab = fontBytes.buffer.slice(fontBytes.byteOffset, fontBytes.byteOffset + fontBytes.byteLength);
+    const fetchImpl = (async () =>
+      ({ ok: true, arrayBuffer: async () => ab }) as unknown as Response) as typeof fetch;
+
+    // Queued BEFORE the bundle exists: applied when the provider is created.
+    // (Registered under a kit family alias — resolution is by family string.)
+    expect(
+      registerKitFontFaces([{ key: "Aeonik@asset_a", family: "Aeonik", bytes: ab }])
+    ).toBe(false);
+    const bundle = await loadCanvasKit({ init, fetchImpl });
+    expect(bundle?.fontProvider).not.toBeNull();
+
+    const ck = bundle!.ck;
+    const layoutWidth = (family: string): number => {
+      const style = new ck.ParagraphStyle({ textStyle: { fontFamilies: [family], fontSize: 24 } });
+      const builder = ck.ParagraphBuilder.MakeFromFontProvider(style, bundle!.fontProvider!);
+      builder.addText("Brand type");
+      const paragraph = builder.build();
+      paragraph.layout(1000);
+      const width = paragraph.getMaxIntrinsicWidth();
+      paragraph.delete();
+      builder.delete();
+      return width;
+    };
+    expect(layoutWidth("Aeonik")).toBeGreaterThan(0);
+
+    // Registered AFTER init on the live provider → true (caller bumps memos).
+    expect(
+      registerKitFontFaces([{ key: "Source Sans 3@asset_b", family: "Source Sans 3", bytes: ab }])
+    ).toBe(true);
+    expect(layoutWidth("Source Sans 3")).toBeGreaterThan(0);
+
+    // Same key again → deduped, no memo churn.
+    expect(
+      registerKitFontFaces([{ key: "Source Sans 3@asset_b", family: "Source Sans 3", bytes: ab }])
+    ).toBe(false);
   });
 
   it("degrades to null when CanvasKit init fails (editor stays on Konva)", async () => {

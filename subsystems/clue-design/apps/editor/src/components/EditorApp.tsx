@@ -69,10 +69,12 @@ import {
   type BrandKitDetailPayload
 } from "@/engine/tokenColors";
 import {
+  notifyKitFontsChanged,
   setKitTokenMaps,
   subscribeTokenColors,
   tokenColorsGenerationSnapshot
 } from "@/engine/renderAdapter";
+import { loadKitFontFaces } from "@/engine/kitFonts";
 import { postTurnSuggestions } from "@/engine/agentSuggestions";
 import { mergeStickyDiagnostics } from "@/engine/diagnosticsPolicy";
 import { createEditQueue, type EnqueueOptions } from "@/engine/editQueue";
@@ -560,11 +562,22 @@ export default function EditorApp({
     let cancelled = false;
     const brandKitId = brandKitRefKey.slice(0, brandKitRefKey.lastIndexOf("@"));
     brandKitDetailFetcher(brandKitId)
-      .then((detail) => {
-        if (!cancelled) {
-          // K1.5: colors + typography roles + numbers in one install, so
-          // paint, type measurement, and radii all resolve from the kit.
-          setKitTokenMaps(buildKitTokenMaps(detail));
+      .then(async (detail) => {
+        if (cancelled) {
+          return;
+        }
+        // K1.5: colors + typography roles + numbers in one install, so
+        // paint, type measurement, and radii all resolve from the kit.
+        setKitTokenMaps(buildKitTokenMaps(detail));
+        // K3: the kit's font-face bytes into the CanvasKit provider — text
+        // shapes/measures in the real faces. The bump re-keys measurement
+        // and descriptor memos only when a NEW face actually registered.
+        const registered = await loadKitFontFaces(
+          { apiBaseUrl: editorApiBaseUrl() },
+          detail
+        );
+        if (registered && !cancelled) {
+          notifyKitFontsChanged();
         }
       })
       .catch(() => {

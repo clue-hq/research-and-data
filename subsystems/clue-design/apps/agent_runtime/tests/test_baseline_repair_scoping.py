@@ -49,7 +49,7 @@ class FakeBaselineErrorPreflightCoreClient(FakeCoreClient):
         super().__init__(repo_root)
         self.preflight_calls = 0
 
-    def preflight_scene(self, scene, brand_kit):
+    def preflight_scene(self, scene, brand_kit, brand_fonts=None):
         self.preflight_calls += 1
         return {
             "scene": scene,
@@ -80,7 +80,7 @@ class FakeBaselineErrorPlusIntroducedCoreClient(FakeCoreClient):
         self.introduced_error = "s(900,120)" not in source
         return super().compile_dsl_into_scene(scene, source, dsl_session=dsl_session)
 
-    def preflight_scene(self, scene, brand_kit):
+    def preflight_scene(self, scene, brand_kit, brand_fonts=None):
         self.preflight_calls += 1
         diagnostics = [dict(BASELINE_DIAGNOSTIC)]
         if self.introduced_error:

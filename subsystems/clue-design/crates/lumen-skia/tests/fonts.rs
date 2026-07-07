@@ -96,3 +96,74 @@ fn from_dir_rejects_missing_default_family() {
         .expect_err("unknown default family must fail closed");
     assert!(error.message.contains("Helvetica"));
 }
+
+// --- K3: bundled_with (brand-kit font faces) ------------------------------
+
+/// Inter-Regular bytes with every "Inter" inside the `name` table rewritten
+/// to "Xnter" — a same-length patch, so offsets stay valid — yielding a real
+/// parseable face whose intrinsic family differs from the bundled set.
+fn distinct_family_font_bytes() -> Vec<u8> {
+    let mut bytes = std::fs::read(repo_fonts_dir().join("Inter-Regular.ttf")).expect("font reads");
+    let num_tables = u16::from_be_bytes([bytes[4], bytes[5]]) as usize;
+    let (mut name_off, mut name_len) = (0usize, 0usize);
+    for i in 0..num_tables {
+        let rec = 12 + i * 16;
+        if &bytes[rec..rec + 4] == b"name" {
+            name_off = u32::from_be_bytes(bytes[rec + 8..rec + 12].try_into().unwrap()) as usize;
+            name_len = u32::from_be_bytes(bytes[rec + 12..rec + 16].try_into().unwrap()) as usize;
+        }
+    }
+    assert!(name_len > 0, "Inter-Regular must carry a name table");
+    let table = &mut bytes[name_off..name_off + name_len];
+    for pattern in [&b"Inter"[..], &[0, b'I', 0, b'n', 0, b't', 0, b'e', 0, b'r'][..]] {
+        let replacement: Vec<u8> = pattern
+            .iter()
+            .map(|&b| if b == b'I' { b'X' } else { b })
+            .collect();
+        let mut i = 0;
+        while i + pattern.len() <= table.len() {
+            if &table[i..i + pattern.len()] == pattern {
+                table[i..i + pattern.len()].copy_from_slice(&replacement);
+                i += pattern.len();
+            } else {
+                i += 1;
+            }
+        }
+    }
+    bytes
+}
+
+#[test]
+fn bundled_with_no_extras_matches_bundled() {
+    let (fonts, errors) = FontManager::bundled_with(Vec::<Vec<u8>>::new());
+    assert!(errors.is_empty());
+    assert_eq!(
+        fonts.family_weight_map(),
+        FontManager::bundled().family_weight_map()
+    );
+}
+
+#[test]
+fn bundled_with_registers_extra_family_resolvable_without_fallback() {
+    let (fonts, errors) = FontManager::bundled_with(vec![distinct_family_font_bytes()]);
+    assert!(errors.is_empty());
+    assert!(fonts.families().any(|family| family == "Xnter"));
+    let resolution = fonts.resolve_family("Xnter");
+    assert!(!resolution.fallback);
+    assert!(resolution.diagnostic().is_none());
+    let typeface = fonts.match_typeface("Xnter", 400).expect("extra face");
+    assert_eq!(typeface.family_name(), "Xnter");
+}
+
+#[test]
+fn bundled_with_skips_unparseable_bytes_and_keeps_bundled_set() {
+    let (fonts, errors) = FontManager::bundled_with(vec![
+        vec![0xDE, 0xAD, 0xBE, 0xEF],
+        distinct_family_font_bytes(),
+    ]);
+    assert_eq!(errors.len(), 1);
+    assert!(errors[0].message.contains("did not parse"));
+    assert_eq!(fonts.weights("Inter"), vec![400, 600, 700, 800]);
+    assert!(fonts.families().any(|family| family == "Xnter"));
+    assert_eq!(fonts.default_family(), DEFAULT_FONT_FAMILY);
+}

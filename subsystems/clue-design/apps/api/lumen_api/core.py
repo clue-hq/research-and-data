@@ -103,6 +103,7 @@ class CoreClient:
         scene: JsonObject,
         brand_kit: Optional[JsonObject],
         mode: Optional[JsonObject] = None,
+        brand_fonts: Optional[JsonObject] = None,
     ) -> JsonObject:
         return self._run(
             {
@@ -110,6 +111,7 @@ class CoreClient:
                 "scene": scene,
                 "brand_kit": brand_kit,
                 "mode": mode,
+                "brand_fonts": brand_fonts,
             }
         )
 
@@ -121,6 +123,7 @@ class CoreClient:
         profile: Optional[JsonObject] = None,
         raise_on_error: bool = True,
         asset_store_root: Optional[str] = None,
+        brand_fonts: Optional[JsonObject] = None,
     ) -> JsonObject:
         return self._run(
             {
@@ -130,6 +133,7 @@ class CoreClient:
                 "page_ids": page_ids or [],
                 "profile": profile,
                 "asset_store_root": asset_store_root,
+                "brand_fonts": brand_fonts,
             },
             raise_on_error=raise_on_error,
         )
@@ -345,8 +349,12 @@ class CoreClient:
             raise_on_error=raise_on_error,
         )
 
-    def layout_geometry(self, scene: JsonObject) -> JsonObject:
-        return self._run({"action": "layout_geometry", "scene": scene})
+    def layout_geometry(
+        self, scene: JsonObject, brand_fonts: Optional[JsonObject] = None
+    ) -> JsonObject:
+        return self._run(
+            {"action": "layout_geometry", "scene": scene, "brand_fonts": brand_fonts}
+        )
 
     def build_info(self) -> JsonObject:
         """Engine build info for the Track E version handshake."""

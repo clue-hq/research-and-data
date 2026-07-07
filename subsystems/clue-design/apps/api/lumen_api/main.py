@@ -1217,7 +1217,12 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
         try:
             source, brand_kit = choose_effective_brand(app.state.core, repo, document, payload)
             mode = choose_effective_brand_mode(document, brand_kit, payload.mode)
-            result = app.state.core.preflight_scene(document["scene"], brand_kit, mode)
+            result = app.state.core.preflight_scene(
+                document["scene"],
+                brand_kit,
+                mode,
+                brand_fonts=brand_kit_font_spec(repo, brand_kit, asset_store_root()),
+            )
         except CoreError as error:
             raise core_http_error(error) from error
 
@@ -1271,7 +1276,22 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
         )
 
     @app.post("/export-preview")
-    def export_preview(payload: ExportPreviewRequest) -> JsonObject:
+    def export_preview(
+        payload: ExportPreviewRequest,
+        repo: Repository = Depends(repository),
+    ) -> JsonObject:
+        # K3: a stateless export still shapes text with the scene's kit fonts
+        # — the scene ref is the only kit signal this route carries.
+        brand_fonts = None
+        scene_brand_ref = (payload.scene.get("meta") or {}).get("brand_kit")
+        if isinstance(scene_brand_ref, dict) and scene_brand_ref.get("id"):
+            try:
+                referenced = repo.require_brand_kit(
+                    str(scene_brand_ref["id"]), scene_brand_ref.get("version")
+                )["brand_kit"]
+                brand_fonts = brand_kit_font_spec(repo, referenced, asset_store_root())
+            except NotFoundError:
+                brand_fonts = None
         try:
             result = app.state.core.export_preview(
                 payload.scene,
@@ -1280,6 +1300,7 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
                 payload.profile,
                 raise_on_error=False,
                 asset_store_root=asset_store_root(),
+                brand_fonts=brand_fonts,
             )
         except CoreError as error:
             raise core_http_error(error) from error
@@ -1494,8 +1515,11 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
         try:
             source, brand_kit = choose_effective_brand(app.state.core, repo, document, payload)
             mode = choose_effective_brand_mode(document, brand_kit, payload.mode)
+            document_brand_fonts = brand_kit_font_spec(
+                repo, brand_kit, asset_store_root()
+            )
             preflight_result = app.state.core.preflight_scene(
-                document["scene"], brand_kit, mode
+                document["scene"], brand_kit, mode, brand_fonts=document_brand_fonts
             )
         except CoreError as error:
             raise core_http_error(error) from error
@@ -1559,6 +1583,7 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
                 profile,
                 raise_on_error=False,
                 asset_store_root=asset_store_root(),
+                brand_fonts=document_brand_fonts,
             )
         except CoreError as error:
             raise core_http_error(error) from error
@@ -1610,7 +1635,12 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
                 app.state.core, repo, payload.scene, payload
             )
             mode = choose_effective_brand_mode_for_scene(payload.scene, brand_kit, payload.mode)
-            result = app.state.core.preflight_scene(payload.scene, brand_kit, mode)
+            result = app.state.core.preflight_scene(
+                payload.scene,
+                brand_kit,
+                mode,
+                brand_fonts=brand_kit_font_spec(repo, brand_kit, asset_store_root()),
+            )
         except CoreError as error:
             raise core_http_error(error) from error
 
@@ -3802,8 +3832,8 @@ def run_agent_turn_preview(
             # with LUME0210 (asset bytes missing). LUMEN_AGENT_ASSET_STORE still
             # overrides explicitly.
             config = replace(config, asset_store_root=api_asset_store_root())
-        brand_kit, brand_kit_source, brand_kit_assets = resolve_agent_turn_brand_kit(
-            payload
+        brand_kit, brand_kit_source, brand_kit_assets, brand_fonts = (
+            resolve_agent_turn_brand_kit(payload)
         )
         if brand_kit is not None:
             # K0 (kit application): the document's attached kit rides the run
@@ -3811,12 +3841,14 @@ def run_agent_turn_preview(
             # the platform default — without this, an attached scene ref vs the
             # default kit trips LUMB0101 and token resolution short-circuits.
             # K2: the kit-asset manifest rides along so use_brand_asset can
-            # place the kit's logos/images.
+            # place the kit's logos/images. K3: the font spec rides along so
+            # preflight measurement and previews shape in the kit's faces.
             config = replace(
                 config,
                 brand_kit=brand_kit,
                 brand_kit_source=brand_kit_source,
                 brand_kit_assets=brand_kit_assets,
+                brand_fonts=brand_fonts,
             )
         prompt = editor_agent_prompt(payload)
         loop, tools = create_provider_quality_loop(
@@ -3862,38 +3894,44 @@ def api_asset_store_root() -> Path:
 
 def resolve_agent_turn_brand_kit(
     payload: AgentTurnPreviewRequest,
-) -> Tuple[Optional[JsonObject], Optional[str], Optional[JsonObject]]:
+) -> Tuple[
+    Optional[JsonObject], Optional[str], Optional[JsonObject], Optional[JsonObject]
+]:
     """The Brand Kit attached to the turn's document, loaded from the kit
     library so it can be passed BY VALUE into the runtime config (the runtime
     never reads the API database) — plus (K2) the kit-ASSET MANIFEST: the
     library asset records + usage guidance for the kit's logo variants and
-    brand images, so `use_brand_asset` can register them into the scene.
+    brand images, so `use_brand_asset` can register them into the scene —
+    plus (K3) the kit FONT SPEC ({store_root, digests}) so the runtime's
+    preflights and previews shape text in the kit's real font faces.
 
     Resolution failures never fail the turn: no scene ref, an unknown kit id,
-    or an unreadable database all return (None, None, None) and the runtime
-    falls back to the platform default kit — exactly the pre-K0 behavior. A
-    kit WITHOUT placeable assets (e.g. styles-compiled) gets an empty
-    manifest, not an error."""
+    or an unreadable database all return (None, None, None, None) and the
+    runtime falls back to the platform default kit — exactly the pre-K0
+    behavior. A kit WITHOUT placeable assets (e.g. styles-compiled) gets an
+    empty manifest, not an error; a kit without stored font faces gets a None
+    font spec (bundled fallback, exactly as before)."""
     scene = payload.scene if isinstance(payload.scene, dict) else None
     meta = scene.get("meta") if scene else None
     ref = meta.get("brand_kit") if isinstance(meta, dict) else None
     if not isinstance(ref, dict) or not ref.get("id"):
-        return None, None, None
+        return None, None, None, None
     database_path = Path(
         os.environ.get("LUMEN_API_DATABASE_PATH", "apps/api/lumen-api.sqlite3")
     )
     try:
         connection = connect(database_path)
     except Exception:
-        return None, None, None
+        return None, None, None, None
     try:
         repo = Repository(connection)
         record = repo.require_brand_kit(str(ref["id"]), ref.get("version"))
         brand_kit = record["brand_kit"]
         manifest = brand_kit_asset_manifest(repo, connection, brand_kit)
-        return brand_kit, "document", manifest
+        font_spec = brand_kit_font_spec(repo, brand_kit, str(api_asset_store_root()))
+        return brand_kit, "document", manifest, font_spec
     except Exception:
-        return None, None, None
+        return None, None, None, None
     finally:
         connection.close()
 
@@ -3942,6 +3980,44 @@ def brand_kit_asset_manifest(
                 entry[field] = described[field]
         manifest[asset_id] = entry
     return manifest
+
+
+def brand_kit_font_spec(
+    repo: Repository, brand_kit: Optional[JsonObject], store_root: str
+) -> Optional[JsonObject]:
+    """K3: {store_root, digests} for the kit's font faces, resolved from the
+    asset library. The helper reads the bytes from the shared store and
+    registers them alongside the bundled set, so preflight measurement and
+    export painting shape text in the kit's real faces. Missing records are
+    skipped — a partial font set beats a failed request, and the helper
+    reports any face it cannot load (LUMS0101)."""
+    if not isinstance(brand_kit, dict):
+        return None
+    fonts = (brand_kit.get("assets") or {}).get("fonts") or {}
+    digests: list[str] = []
+    for font in fonts.values():
+        if not isinstance(font, dict):
+            continue
+        for face in font.get("faces") or []:
+            if not (isinstance(face, dict) and face.get("asset_id")):
+                continue
+            try:
+                record = repo.require_asset_record(str(face["asset_id"]))
+            except Exception:
+                continue
+            asset = record.get("asset") or record
+            digest = (asset.get("media") or {}).get("digest") or {}
+            if (
+                str(digest.get("algorithm") or "").lower() == "sha256"
+                and digest.get("value")
+            ):
+                digests.append(str(digest["value"]))
+    if not digests:
+        return None
+    return {
+        "store_root": store_root,
+        "digests": list(dict.fromkeys(digests)),
+    }
 
 
 def agent_seed_scene(payload: AgentTurnPreviewRequest) -> Optional[JsonObject]:
