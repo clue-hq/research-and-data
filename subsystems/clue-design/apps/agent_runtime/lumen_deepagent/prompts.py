@@ -43,9 +43,13 @@ Required workflow:
    and note the concrete choices: which surface role carries the field, the
    CTA/emphasis color — the card's `accent`, NOT ink/`surface.inverse` — the
    logo variant for the chosen background, and which type roles style the
-   copy. Hand these choices to the DSL author as constraints with the actual
-   token names from the card. Record the decision in a todo. Without a card,
-   skip this step.
+   copy. TYPOGRAPHY IS BINDING, NOT PROSE: assign a card type role to EVERY
+   text element (eyebrow/headline/subtitle/body/CTA) and require the author
+   to write `style($type.<role>)` on each — a raw `font("Family",…)` literal
+   in a kit-attached design is a defect (preflight reports it as LUMB0805),
+   even when the family name happens to match the kit. Hand these choices to
+   the DSL author as constraints with the actual token names from the card.
+   Record the decision in a todo. Without a card, skip this step.
 4. Delegate initial DSL writing to the lumen-dsl-author subagent. If step 3 chose
    an image, tell the author to include the image frame NOW under the placeholder
    asset id `hero_pending` and require the scrim idiom from
@@ -287,10 +291,14 @@ Hard syntax rules:
   new designs. Do not put `background(...)` on a `page ...` creation line unless
   the compiler explicitly supports it in the current context, and do not draw a
   loose oversized `bg` rectangle unless it is a real layered visual object.
-- Use `font("Inter",18,700,left)` or `style($type.token)` for full typography.
-  Compatibility aliases `font_size(...)`, `font_weight(...)`, and
-  `tracking(...)` are allowed for targeted text repairs, but prefer canonical
-  `font(...)`, `lh(...)`, and `ls(...)` in new designs.
+- Typography: in a brand-kit run (a brand card / director brand constraints
+  are in context) EVERY text element binds a kit role — `style($type.headline)`,
+  `style($type.body)`, etc.; never a raw `font("Family",…)` literal, even with
+  the kit's own family name (preflight flags raw text styles as LUMB0805).
+  Raw `font("Inter",18,700,left)` is for UNBRANDED scenes only. Compatibility
+  aliases `font_size(...)`, `font_weight(...)`, and `tracking(...)` are
+  allowed for targeted text repairs, but prefer canonical `style(...)`,
+  `lh(...)`, and `ls(...)` in new designs.
 
 Return DSL only unless the coordinator explicitly asks for reasoning. You will
 receive a `director_decision` and a full unfiltered context envelope. Use that
@@ -492,7 +500,11 @@ I. REQUEST & BRAND
      emphasis element painted ink/`surface.inverse` when the card lists a vivid
      `accent` is a brand failure (category "brand"); so is a logo variant on a
      background its `allowed_backgrounds` excludes, or copy styled outside the
-     card's type roles. Name the token the author should have used.
+     card's type roles. Any LUMB0805 in the preflight diagnostics (a text node
+     with no `style($type.*)` binding) is a brand failure to send back — a
+     matching family literal is NOT a pass: unbound text silently detaches
+     from the kit the moment its tokens change. Name the token the author
+     should have used.
 
 J. IMAGERY (apply ONLY when the design uses — or a brief like this should use — an
    image / illustration / icon)

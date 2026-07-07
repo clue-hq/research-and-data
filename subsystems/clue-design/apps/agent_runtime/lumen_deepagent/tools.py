@@ -1916,6 +1916,24 @@ class LumenDesignTools:
 
         self._replace_scene_from_core_response(response, "preflight_design")
         diagnostics = diagnostics_from(response.get("diagnostics", []))
+        # K4: brand governance rides every preflight of a GENUINELY attached
+        # kit. Without this, the agent loop never sees LUMB0804/0805/0809/
+        # 0810 (raw paints, raw typography, logo misuse) — live round-2
+        # shipped 0/4 style_token bindings over a "clean" preflight because
+        # governance was a separate action nobody called. Platform-default
+        # runs stay ungoverned (no brand intent to enforce); advisory
+        # strictness: diagnostics steer the author and reviewer, a
+        # governance finding never fails the turn itself.
+        if brand_kit is not None and source not in (None, "platform_default"):
+            try:
+                governance = self.core.validate_scene_brand_governance(
+                    self.scene, brand_kit, strictness="advisory", raise_on_error=False
+                )
+                diagnostics = diagnostics + diagnostics_from(
+                    governance.get("diagnostics", [])
+                )
+            except CoreError:
+                pass
         preflight = response.get("preflight", {})
         brand_context = self._brand_context_from_scene_ref(brand_context)
         self.effective_brand_context = brand_context

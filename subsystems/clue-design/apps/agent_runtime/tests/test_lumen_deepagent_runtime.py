@@ -324,6 +324,13 @@ class FakeCoreClient:
             },
         }
 
+    def validate_scene_brand_governance(
+        self, scene, brand_kit, strictness="strict", raise_on_error=True
+    ):
+        # K4: the runtime merges governance diagnostics into every
+        # kit-attached preflight; the base fake reports a clean scene.
+        return {"ok": True, "diagnostics": []}
+
     def preflight_scene(self, scene, brand_kit, brand_fonts=None):
         # Faithful to the real engine (preflight.rs): the kit ref is attached
         # only when the scene has none; an existing ref is never overwritten.
@@ -1902,6 +1909,54 @@ def test_preflight_designs_against_config_brand_kit(tmp_path: Path, monkeypatch)
     assert tools.scene["meta"]["brand_kit"]["id"] == "brand_kit_insight"
     assert result["effective_brand"]["scene_ref_honored"] is True
     assert "notice" not in result["effective_brand"]
+
+
+def test_preflight_merges_brand_governance_diagnostics(tmp_path: Path, monkeypatch):
+    """K4: a kit-attached preflight ALSO runs brand governance (advisory) and
+    merges its diagnostics — LUMB0805 raw-typography and friends finally
+    reach the coordinator/reviewer loop instead of living in an action
+    nobody calls. Kitless runs never invoke governance."""
+    calls: list[str] = []
+
+    class GovernanceCoreClient(FakeCoreClient):
+        def validate_scene_brand_governance(
+            self, scene, brand_kit, strictness="strict", raise_on_error=True
+        ):
+            calls.append(strictness)
+            return {
+                "ok": True,
+                "diagnostics": [
+                    {
+                        "severity": "warning",
+                        "phase": "brand",
+                        "code": "LUMB0805",
+                        "message": "text node headline uses a raw text style in a brand-governed scene",
+                        "subject": "headline",
+                        "hint": "Bind style($type.headline) or another kit typography role.",
+                    }
+                ],
+            }
+
+    monkeypatch.setattr("lumen_deepagent.tools.CoreClient", GovernanceCoreClient)
+    tools = LumenDesignTools(
+        _config_with_kit(tmp_path, _insight_kit()), "Create a square ad"
+    )
+    tools.compile_dsl_block("page page_test")
+
+    result = json.loads(tools.preflight_design())
+
+    assert calls == ["advisory"]
+    codes = [d["code"] for d in result["preflight"]["diagnostics"]]
+    assert "LUMB0805" in codes
+
+    # Platform-default (no attached kit) → no brand intent → ungoverned.
+    calls.clear()
+    monkeypatch.setattr("lumen_deepagent.tools.CoreClient", GovernanceCoreClient)
+    kitless = LumenDesignTools(runtime_config(tmp_path), "Create a square ad")
+    kitless.compile_dsl_block("page page_test")
+    result = json.loads(kitless.preflight_design())
+    assert calls == []
+    assert result["preflight"]["brand_source"] == "platform_default"
 
 
 def test_config_brand_fonts_ride_preflight_and_preview(tmp_path: Path, monkeypatch):
