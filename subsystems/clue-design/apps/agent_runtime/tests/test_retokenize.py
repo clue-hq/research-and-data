@@ -149,3 +149,32 @@ def test_already_bound_nodes_are_left_alone() -> None:
         }
     }
     assert build_retokenize_operations(scene, _kit()) == []
+
+
+def test_logo_placement_inserts_page_overlay_when_kit_logo_missing() -> None:
+    from lumen_deepagent.retokenize import build_logo_placement_operations
+
+    kit = _kit()
+    kit["assets"]["logos"] = {
+        "mark": {"variants": [{"asset_id": "asset_mark", "name": "full_color"}]},
+        "primary": {"variants": [{"asset_id": "asset_lockup", "width": 474.0, "height": 71.0}]},
+    }
+    scene = {
+        "pages": {"p1": {"id": "p1", "size": {"width": 1080.0, "height": 1350.0}, "children": ["artboard"]}},
+        "nodes": {"artboard": {"kind": {"kind": "frame"}}},
+    }
+    ops = build_logo_placement_operations(scene, kit)
+    assert len(ops) == 1
+    op = ops[0]
+    assert op["kind"] == "insert_node"
+    assert op["parent"] == {"kind": "page", "id": "p1"}
+    node = op["node"]
+    assert node["kind"] == {"kind": "image", "asset_id": "asset_mark", "alt": "Brand logo"}
+    assert node["transform"]["x"] == node["transform"]["y"] > 0  # margin overlay
+
+    # Present logo (any kit variant) → no op; auto node already placed → no op.
+    scene["nodes"]["logo"] = {"kind": {"kind": "image", "asset_id": "asset_lockup"}}
+    assert build_logo_placement_operations(scene, kit) == []
+    del scene["nodes"]["logo"]
+    scene["nodes"]["brand_logo_auto"] = {"kind": {"kind": "frame"}}
+    assert build_logo_placement_operations(scene, kit) == []

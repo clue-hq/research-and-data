@@ -19,7 +19,7 @@ except Exception:  # pragma: no cover
     image_cache = None  # type: ignore[assignment]
 
 from .config import AgentRuntimeConfig
-from .retokenize import build_retokenize_operations
+from .retokenize import build_logo_placement_operations, build_retokenize_operations
 from .brand_card import build_brand_card
 from .knowledge import BRAND_APPLICATION_PATH, DIRECTIVES_PATH, read_task_knowledge
 from .schemas import (
@@ -1926,6 +1926,31 @@ class LumenDesignTools:
                     except CoreError:
                         # A rejected rebind never blocks the turn; preflight
                         # proceeds on the unmodified scene.
+                        pass
+                # Deterministic logo presence (same philosophy as the token
+                # rebind): authoring adoption is coin-flip and repair-scope
+                # constraints make instructions unactionable — so the loop
+                # PLACES the mark once, as a page overlay the agent may then
+                # move/restyle and the critic judges. K2 preflight
+                # auto-register upserts the record from the manifest.
+                placement_ops = build_logo_placement_operations(
+                    self.scene, brand_kit
+                )
+                if placement_ops:
+                    try:
+                        placed = self.core.apply_operations(
+                            self.scene, placement_ops
+                        )
+                        self._replace_scene_from_core_response(
+                            placed, "place_brand_logo", operations=placement_ops
+                        )
+                        self.record(
+                            "coordinator",
+                            "brand_logo_placed",
+                            output_summary="kit mark auto-placed (page overlay)",
+                            payload={"operation_count": len(placement_ops)},
+                        )
+                    except CoreError:
                         pass
             # K4: brand governance judges the AUTHORED scene — resolution
             # deliberately CONSUMES token bindings (resolution-once: the

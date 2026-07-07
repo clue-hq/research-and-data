@@ -309,3 +309,92 @@ def build_retokenize_operations(
                 {"kind": "update_node", "node_id": node_id, "patch": patch}
             )
     return operations
+
+
+# --- deterministic logo placement ------------------------------------------------
+
+
+def build_logo_placement_operations(
+    scene: JsonObject, brand_kit: JsonObject
+) -> list[JsonObject]:
+    """One deterministic `insert_node` placing the kit's mark when the scene
+    has none of the kit's logo assets (K4: authoring adoption measured at
+    coin-flip and repair-scope constraints make 'please add it' structurally
+    unactionable — sweep 3 traced ten delivered instructions to zero placed
+    logos). Placement is a page-level overlay at the top-left margin: it
+    never joins an auto-layout flow, so nothing reflows; the agent may move
+    or restyle it in later iterations like any node, and the critic judges
+    the result. The K2 preflight auto-register upserts the asset record."""
+    logos = (brand_kit.get("assets") or {}).get("logos") or {}
+    kit_ids: set[str] = set()
+    chosen: Optional[tuple[str, JsonObject]] = None
+    for slot in ("mark", "primary", "wordmark"):
+        for variant in (logos.get(slot) or {}).get("variants") or []:
+            if isinstance(variant, dict) and variant.get("asset_id"):
+                kit_ids.add(str(variant["asset_id"]))
+                if chosen is None:
+                    chosen = (str(variant["asset_id"]), variant)
+    for logo in logos.values():
+        for variant in (logo or {}).get("variants") or []:
+            if isinstance(variant, dict) and variant.get("asset_id"):
+                kit_ids.add(str(variant["asset_id"]))
+    if not kit_ids or chosen is None:
+        return []
+
+    nodes = scene.get("nodes") or {}
+    for node in nodes.values():
+        kind = (node or {}).get("kind")
+        if (
+            isinstance(kind, dict)
+            and kind.get("kind") == "image"
+            and str(kind.get("asset_id")) in kit_ids
+        ):
+            return []
+    if "brand_logo_auto" in nodes:
+        return []
+
+    pages = scene.get("pages") or {}
+    if not pages:
+        return []
+    page_id, page = next(iter(pages.items()))
+    size = page.get("size") or {}
+    page_w = float(size.get("width") or 1080.0)
+    page_h = float(size.get("height") or 1080.0)
+    margin = round(min(page_w, page_h) * 0.06)
+    height = max(48.0, round(min(page_w, page_h) * 0.05))
+    asset_id, variant = chosen
+    v_w, v_h = variant.get("width"), variant.get("height")
+    aspect = (float(v_w) / float(v_h)) if v_w and v_h else 1.0
+    width = round(height * aspect, 1)
+
+    node = {
+        "id": "brand_logo_auto",
+        "name": "Brand logo",
+        "kind": {"kind": "image", "asset_id": asset_id, "alt": "Brand logo"},
+        "transform": {
+            "x": float(margin), "y": float(margin), "rotation": 0.0,
+            "skew_x": 0.0, "skew_y": 0.0, "flip_x": False, "flip_y": False,
+        },
+        "size": {
+            "width": {"kind": "fixed", "value": float(width)},
+            "height": {"kind": "fixed", "value": float(height)},
+        },
+        "children": [],
+        "fills": [],
+        "strokes": [],
+        "corner": {"top_left": 0.0, "top_right": 0.0, "bottom_right": 0.0, "bottom_left": 0.0},
+        "opacity": 1.0,
+        "clip": False,
+        "layout": None,
+        "computed": None,
+        "locked": False,
+    }
+    children = page.get("children") or []
+    return [
+        {
+            "kind": "insert_node",
+            "parent": {"kind": "page", "id": page_id},
+            "index": len(children),
+            "node": node,
+        }
+    ]
