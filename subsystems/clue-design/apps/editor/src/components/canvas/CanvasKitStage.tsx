@@ -153,9 +153,33 @@ export function CanvasKitStage({ artboards, viewport }: CanvasKitStageProps) {
         : null;
     observer?.observe(element);
 
+    // The ResizeObserver only sees CSS-size changes — devicePixelRatio can
+    // change with NO size change (window dragged to another display, display
+    // scaling, browser zoom). Without this watcher the surface keeps the old
+    // density forever and every frame is CSS-stretched: a permanently blurry
+    // canvas while exports stay sharp. matchMedia is re-armed per value
+    // because a resolution query only fires when ITS OWN value stops holding.
+    let dprQuery: MediaQueryList | null = null;
+    const armDprWatch = () => {
+      if (typeof matchMedia !== "function") {
+        return;
+      }
+      dprQuery?.removeEventListener?.("change", onDprChange);
+      const dpr = typeof devicePixelRatio === "number" ? devicePixelRatio : 1;
+      dprQuery = matchMedia(`(resolution: ${dpr}dppx)`);
+      dprQuery.addEventListener?.("change", onDprChange);
+    };
+    const onDprChange = () => {
+      resizePendingRef.current = true;
+      invalidate();
+      armDprWatch();
+    };
+    armDprWatch();
+
     return () => {
       disposed = true;
       observer?.disconnect();
+      dprQuery?.removeEventListener?.("change", onDprChange);
       if (rafRef.current) {
         cancelAnimationFrame(rafRef.current);
         // Reset the guard: leaving the (now-cancelled) id here would make the
