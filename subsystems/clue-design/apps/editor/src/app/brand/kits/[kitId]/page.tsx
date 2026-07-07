@@ -7,8 +7,10 @@ import { editorApiBaseUrl } from "@/engine/editorConfig";
 import {
   fetchBrandKitDetailFull,
   setBrandKitApproval,
+  setBrandKitLogo,
   type BrandKitDetail
 } from "@/engine/brandHub";
+import { KitLogoPicker } from "@/components/brand/KitLogoPicker";
 import { KitIdentityHeader } from "@/components/brand/KitIdentityHeader";
 import { KitColorsSection } from "@/components/brand/KitColorsSection";
 import { KitTypographySection } from "@/components/brand/KitTypographySection";
@@ -51,6 +53,11 @@ export default function BrandKitDetailPage(): React.ReactElement {
   const [approvedOptimistic, setApprovedOptimistic] = useState<boolean | null>(null);
   const [approveBusy, setApproveBusy] = useState(false);
   const [approveError, setApproveError] = useState<string | null>(null);
+
+  // Human logo curation: which slot the picker is open for (null = closed).
+  const [logoPickerSlot, setLogoPickerSlot] = useState<string | null>(null);
+  const [logoBusy, setLogoBusy] = useState(false);
+  const [logoError, setLogoError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!kitId) return;
@@ -109,6 +116,31 @@ export default function BrandKitDetailPage(): React.ReactElement {
     }
   }
 
+  async function handleSelectLogo(assetId: string): Promise<void> {
+    if (!detail || logoBusy || !logoPickerSlot) return;
+    setLogoBusy(true);
+    setLogoError(null);
+    try {
+      await setBrandKitLogo({ apiBaseUrl: editorApiBaseUrl() }, detail.brandKit.id, {
+        assetId,
+        slot: logoPickerSlot as "primary" | "mark" | "wordmark"
+      });
+      // The selection published a NEW kit version — reload the whole detail.
+      const updated = await fetchBrandKitDetailFull(
+        { apiBaseUrl: editorApiBaseUrl() },
+        detail.brandKit.id
+      );
+      setDetail(updated);
+      setLogoPickerSlot(null);
+    } catch (cause) {
+      setLogoError(
+        cause instanceof Error ? cause.message : "Logo selection failed — try again."
+      );
+    } finally {
+      setLogoBusy(false);
+    }
+  }
+
   if (loadError) {
     return <p className="status-pill is-error kit-inline-error">{loadError}</p>;
   }
@@ -135,7 +167,26 @@ export default function BrandKitDetailPage(): React.ReactElement {
       />
       <KitColorsSection kitJson={detail.kitJson} darkColorway={darkColorway} />
       <KitTypographySection kitJson={detail.kitJson} />
-      <KitLogosSection kitJson={detail.kitJson} apiBaseUrl={apiBaseUrl} />
+      <KitLogosSection
+        kitJson={detail.kitJson}
+        apiBaseUrl={apiBaseUrl}
+        onChoose={(slot) => {
+          setLogoError(null);
+          setLogoPickerSlot(slot);
+        }}
+      />
+      {logoPickerSlot ? (
+        <section className="brand-section" aria-label="Choose logo">
+          {logoError ? <p className="status-pill is-error">{logoError}</p> : null}
+          <KitLogoPicker
+            apiBaseUrl={apiBaseUrl}
+            slot={logoPickerSlot}
+            busy={logoBusy}
+            onSelect={handleSelectLogo}
+            onCancel={() => setLogoPickerSlot(null)}
+          />
+        </section>
+      ) : null}
       <KitImagesSection kitJson={detail.kitJson} apiBaseUrl={apiBaseUrl} />
       <KitVoiceSection kitJson={detail.kitJson} ingestionReport={ingestionReport} />
       <KitIngestionReport ingestionReport={ingestionReport} />

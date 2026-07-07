@@ -34,16 +34,20 @@ function LogoThumb({
 }
 
 /** Section 4 — logo variants grouped by usage (primary / mark / wordmark),
- * reversed variants rendered on the ink backdrop. */
+ * reversed variants rendered on the ink backdrop. `onChoose` (when provided)
+ * renders the human-curation affordance: pick the slot's logo from the
+ * library when the scraper guessed wrong or found nothing. */
 export function KitLogosSection({
   kitJson,
-  apiBaseUrl
+  apiBaseUrl,
+  onChoose
 }: {
   kitJson: any;
   apiBaseUrl: string;
+  onChoose?: (slot: string) => void;
 }): React.ReactElement | null {
   const groups = readLogos(kitJson);
-  if (groups.length === 0) return null;
+  if (groups.length === 0 && !onChoose) return null;
 
   return (
     <section className="brand-section" aria-label="Logos">
@@ -63,8 +67,31 @@ export function KitLogosSection({
               />
             ))}
           </div>
+          {onChoose ? (
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              data-testid={`choose-logo-${group.usage}`}
+              onClick={() => onChoose(group.usage)}
+            >
+              Change {group.usage} logo
+            </button>
+          ) : null}
         </div>
       ))}
+      {groups.length === 0 && onChoose ? (
+        <div className="kit-logo-group">
+          <p className="eyebrow">No logo captured</p>
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm"
+            data-testid="choose-logo-primary"
+            onClick={() => onChoose("primary")}
+          >
+            Choose primary logo
+          </button>
+        </div>
+      ) : null}
     </section>
   );
 }

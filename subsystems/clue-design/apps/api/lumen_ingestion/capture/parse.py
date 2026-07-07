@@ -698,53 +698,249 @@ def _download_by_url(snapshot: SiteSnapshot, url: str) -> str | None:
     return None
 
 
-def _parse_dom(snapshot: SiteSnapshot, parsed: ParsedSite, base_url: str) -> None:
-    tree = HTMLParser(snapshot.html)
-    seen_logo_urls: set[str] = set()
+# --- primary-logo identification: multi-signal scoring ---------------------------
+#
+# No single heuristic survives the open web (live counterexample: the first two
+# header <img>s on insighthealth.ai were an App Store badge and a promo tile,
+# while the real lockup sat in a `class="nav_logo"` img the old first-2 cap
+# never reached). Every candidate is scored across independent signals and the
+# slot is filled from the top scorers ABOVE A THRESHOLD — a page with no
+# convincing candidate produces an EMPTY primary slot for the human to fill,
+# never a confident wrong guess. The score and matched signals ride the
+# locator into kit provenance for auditability.
+#
+# Signals not yet available from the static snapshot (viewport bounding box,
+# cross-page header consistency) need a rendered-capture extension — riders,
+# not part of this scorer.
 
-    # The site's OWN logo lives in header/nav/home-link chrome. A bare
-    # [class*=logo] selector would also sweep up client/press logo walls
-    # ("Trusted by" sections — live insighthealth.ai yields 50 of them), so
-    # candidates are position-restricted and capped: first 2 imgs + first
-    # inline svg in document order.
-    primary_img_candidates: list[ParsedAsset] = []
+_LOGO_CONTAINER_RE = re.compile(r"logo|brand|masthead|navbar-brand|site-logo", re.I)
+_LOGO_FILENAME_RE = re.compile(r"logo|brand.?mark|word.?mark|lock.?up", re.I)
+_JUNK_FILENAME_RE = re.compile(
+    r"app.?store|google.?play|play.?store|chrome|extension|badge|download"
+    r"|sponsor|award|partner|certified|appstore",
+    re.I,
+)
+
+#: Candidates scoring below this are not logos we believe in.
+_LOGO_SCORE_THRESHOLD = 2.5
+#: The primary slot carries at most this many scraped variants.
+_LOGO_MAX_VARIANTS = 2
+
+
+def _node_class_id(node) -> str:
+    attributes = node.attributes or {}
+    return f"{attributes.get('class') or ''} {attributes.get('id') or ''}"
+
+
+def _ancestor_container_match(node, depth: int = 5) -> bool:
+    current = node
+    for _ in range(depth):
+        if current is None:
+            return False
+        if _LOGO_CONTAINER_RE.search(_node_class_id(current)):
+            return True
+        current = current.parent
+    return False
+
+
+def _ancestor_home_link(node, base_url: str, depth: int = 5) -> bool:
+    root = base_url.rstrip("/")
+    current = node
+    for _ in range(depth):
+        if current is None:
+            return False
+        if current.tag == "a":
+            href = (current.attributes or {}).get("href") or ""
+            if href in ("/", root, f"{root}/"):
+                return True
+        current = current.parent
+    return False
+
+
+def _in_header_or_nav(node, depth: int = 8) -> bool:
+    current = node
+    for _ in range(depth):
+        if current is None:
+            return False
+        if current.tag in ("header", "nav"):
+            return True
+        current = current.parent
+    return False
+
+
+def _jsonld_organization_logos(tree, base_url: str) -> list[str]:
+    """Logo URLs DECLARED by the site via schema.org Organization JSON-LD —
+    an explicit statement, not an inference, hence the strongest signal."""
+    import json as _json
+
+    urls: list[str] = []
+
+    def visit(obj) -> None:
+        if isinstance(obj, list):
+            for item in obj:
+                visit(item)
+            return
+        if not isinstance(obj, dict):
+            return
+        types = obj.get("@type")
+        type_list = types if isinstance(types, list) else [types]
+        if any(isinstance(t, str) and "organization" in t.lower() for t in type_list):
+            logo = obj.get("logo")
+            if isinstance(logo, dict):
+                logo = logo.get("url")
+            if isinstance(logo, str) and logo:
+                urls.append(_absolutize(base_url, logo))
+        for value in obj.values():
+            if isinstance(value, (dict, list)):
+                visit(value)
+
+    for node in tree.css("script[type='application/ld+json']"):
+        try:
+            visit(_json.loads(node.text() or ""))
+        except Exception:
+            continue
+    return urls
+
+
+@dataclass
+class _LogoCandidate:
+    url: str | None  # None for inline SVG
+    node: object | None
+    inline_svg: str | None
+    order: int
+    score: float = 0.0
+    signals: list[str] = field(default_factory=list)
+    width: int | None = None
+    height: int | None = None
+
+    def add(self, points: float, signal: str) -> None:
+        self.score += points
+        self.signals.append(signal)
+
+
+def _score_candidate(candidate: _LogoCandidate, base_url: str, declared: set[str]) -> None:
+    node = candidate.node
+    url = candidate.url or ""
+    name = urlparse(url).path.rsplit("/", 1)[-1] if url else ""
+
+    if url and url in declared:
+        candidate.add(5.0, "jsonld-or-og-declared")
+    if node is not None:
+        if _ancestor_container_match(node):
+            candidate.add(2.0, "logo-class")
+        if _in_header_or_nav(node):
+            candidate.add(1.5, "header-nav")
+        if _ancestor_home_link(node, base_url):
+            candidate.add(1.5, "home-link")
+    if candidate.inline_svg is not None or url.lower().endswith(".svg"):
+        candidate.add(1.5, "svg")
+    if name and _LOGO_FILENAME_RE.search(name):
+        candidate.add(1.0, "filename")
+    if name and _JUNK_FILENAME_RE.search(name):
+        candidate.add(-2.5, "junk-filename")
+    width, height = candidate.width, candidate.height
+    if width and height and height > 0:
+        ratio = width / height
+        if height <= 120 and 1.2 <= ratio <= 8.0:
+            candidate.add(0.75, "lockup-aspect")
+        if width >= 800 or height >= 400:
+            candidate.add(-1.5, "hero-sized")
+
+
+def _parse_primary_logo_candidates(
+    snapshot: SiteSnapshot, tree, parsed: ParsedSite, base_url: str
+) -> None:
+    declared = set(_jsonld_organization_logos(tree, base_url))
+    og_logo = _meta_content(tree, "og:logo")
+    if og_logo:
+        declared.add(_absolutize(base_url, og_logo))
+
+    candidates: dict[str, _LogoCandidate] = {}
+    order = 0
+
+    def consider(url: str | None, node, inline_svg: str | None = None) -> None:
+        nonlocal order
+        key = url or f"inline-svg-{order}"
+        if url and url in candidates:
+            # Keep the best-placed occurrence of a repeated asset.
+            existing = candidates[url]
+            challenger = _LogoCandidate(
+                url=url, node=node, inline_svg=None, order=existing.order,
+                width=existing.width, height=existing.height,
+            )
+            _score_candidate(challenger, base_url, declared)
+            if challenger.score > existing.score:
+                candidates[url] = challenger
+            return
+        candidate = _LogoCandidate(
+            url=url,
+            node=node,
+            inline_svg=inline_svg,
+            order=order,
+            width=_int_attr(node, "width") if node is not None else None,
+            height=_int_attr(node, "height") if node is not None else None,
+        )
+        _score_candidate(candidate, base_url, declared)
+        candidates[key] = candidate
+        order += 1
+
+    # Pool: chrome-scoped imgs, logo-classed imgs anywhere in the document
+    # (catches `div.nav_logo` outside <header>), inline chrome SVGs, and the
+    # declared URLs themselves (which may not appear in any <img>).
     for node in tree.css("header img, nav img, a[href='/'] img"):
         src = node.attributes.get("src")
-        if not src:
-            continue
-        url = _absolutize(base_url, src)
-        if url in seen_logo_urls:
-            continue
-        seen_logo_urls.add(url)
-        primary_img_candidates.append(
-            ParsedAsset(
-                sha256=_download_by_url(snapshot, url),
-                source_url=url,
-                kind="logo",
-                usage_hint="primary",
-                width=_int_attr(node, "width"),
-                height=_int_attr(node, "height"),
-                locator="dom :: header img",
-            )
-        )
-    parsed.logos.extend(primary_img_candidates[:2])
-
+        if src:
+            consider(_absolutize(base_url, src), node)
+    for node in tree.css("img"):
+        src = node.attributes.get("src")
+        if src and _ancestor_container_match(node):
+            consider(_absolutize(base_url, src), node)
     for node in tree.css("header svg, nav svg, a[href='/'] svg"):
         markup = node.html or ""
-        if not markup:
-            continue
-        parsed.logos.append(
-            ParsedAsset(
-                sha256=None,
-                source_url=None,
-                kind="logo",
-                usage_hint="primary",
-                locator="dom :: inline svg",
+        if markup:
+            consider(None, node, inline_svg=markup)
+            break
+    for url in declared:
+        if url not in candidates:
+            consider(url, None)
+
+    ranked = sorted(
+        (c for c in candidates.values() if c.score >= _LOGO_SCORE_THRESHOLD),
+        key=lambda c: (-c.score, c.order),
+    )
+    for candidate in ranked[:_LOGO_MAX_VARIANTS]:
+        signals = "+".join(candidate.signals)
+        locator = f"dom :: logo-score {candidate.score:.1f} [{signals}]"
+        if candidate.inline_svg is not None:
+            parsed.logos.append(
+                ParsedAsset(
+                    sha256=None,
+                    source_url=None,
+                    kind="logo",
+                    usage_hint="primary",
+                    locator=locator,
+                )
             )
-        )
-        parsed._inline_svgs = getattr(parsed, "_inline_svgs", [])  # type: ignore[attr-defined]
-        parsed._inline_svgs.append(markup)  # type: ignore[attr-defined]
-        break
+            parsed._inline_svgs = getattr(parsed, "_inline_svgs", [])  # type: ignore[attr-defined]
+            parsed._inline_svgs.append(candidate.inline_svg)  # type: ignore[attr-defined]
+        else:
+            parsed.logos.append(
+                ParsedAsset(
+                    sha256=_download_by_url(snapshot, candidate.url or ""),
+                    source_url=candidate.url,
+                    kind="logo",
+                    usage_hint="primary",
+                    width=candidate.width,
+                    height=candidate.height,
+                    locator=locator,
+                )
+            )
+
+
+def _parse_dom(snapshot: SiteSnapshot, parsed: ParsedSite, base_url: str) -> None:
+    tree = HTMLParser(snapshot.html)
+
+    _parse_primary_logo_candidates(snapshot, tree, parsed, base_url)
 
     # apple-touch-icon → mark
     for node in tree.css("link[rel='apple-touch-icon']"):
@@ -760,20 +956,6 @@ def _parse_dom(snapshot: SiteSnapshot, parsed: ParsedSite, base_url: str) -> Non
                     locator="dom :: apple-touch-icon",
                 )
             )
-
-    # meta og:logo → logo
-    og_logo = _meta_content(tree, "og:logo")
-    if og_logo:
-        url = _absolutize(base_url, og_logo)
-        parsed.logos.append(
-            ParsedAsset(
-                sha256=_download_by_url(snapshot, url),
-                source_url=url,
-                kind="logo",
-                usage_hint="primary",
-                locator="dom :: og:logo",
-            )
-        )
 
     # og:image is an IMAGE (kind og_image), not a logo.
     og_image = _meta_content(tree, "og:image")

@@ -262,6 +262,16 @@ class SetBrandKitApprovalRequest(BaseModel):
     approval_status: Literal["approved", "draft"]
 
 
+class SetBrandKitLogoRequest(BaseModel):
+    """Human logo curation: promote a library asset into a kit logo slot.
+    Publishes a NEW kit version — the scraper proposes, the human disposes,
+    and the version history records both."""
+
+    asset_id: str
+    slot: Literal["primary", "mark", "wordmark"] = "primary"
+    color_mode: str = "full_color"
+
+
 class SetAssetDescriptionRequest(BaseModel):
     title: Optional[str] = None
     description: Optional[str] = None

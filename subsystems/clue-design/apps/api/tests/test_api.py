@@ -587,6 +587,60 @@ def test_brand_kit_font_faces_ride_preflight_as_store_digests(
     assert "LUMS0101" not in codes
 
 
+def test_set_brand_kit_logo_publishes_new_version_with_human_choice(
+    client: TestClient,
+) -> None:
+    """Human logo curation: POST /brand-kits/{id}/logo promotes a library
+    asset into the chosen slot as a NEW kit version — manual provenance,
+    approval state preserved, scraper's guess kept in history."""
+    compiled = client.post(
+        "/brand-kits/compile-styles",
+        json={
+            "source": valid_styles_source(),
+            "brand_kit_id": "brand_kit_insight_health",
+            "version": 4,
+            "name": "Insight Health",
+        },
+    )
+    assert compiled.status_code == 200, compiled.text
+    approved = client.post(
+        "/brand-kits/brand_kit_insight_health/approval",
+        json={"approval_status": "approved"},
+    )
+    assert approved.status_code == 200, approved.text
+
+    uploaded = upload_logo(client, label="The real lockup")
+    assert uploaded.status_code == 200, uploaded.text
+    asset_id = uploaded.json()["asset"]["id"]
+
+    chosen = client.post(
+        "/brand-kits/brand_kit_insight_health/logo",
+        json={"asset_id": asset_id, "slot": "primary"},
+    )
+    assert chosen.status_code == 200, chosen.text
+    kit = chosen.json()["brand_kit"]
+    assert kit["version"] == 5
+
+    detail = client.get("/brand-kits/brand_kit_insight_health").json()
+    kit_json = detail["brand_kit_json"]
+    assert kit_json["version"] == 5
+    # approval survives the curation version bump
+    assert kit_json["approval_status"] == "approved"
+    primary = kit_json["assets"]["logos"]["primary"]
+    assert [v["asset_id"] for v in primary["variants"]] == [asset_id]
+    assert primary["provenance"]["confidence"] == 1.0
+    assert primary["provenance"]["source"].startswith("manual :: human-selected")
+    # history keeps the prior version
+    assert client.get("/brand-kits/brand_kit_insight_health?version=4").status_code in (200, 404)
+
+    # unknown asset → 404, kit untouched
+    missing = client.post(
+        "/brand-kits/brand_kit_insight_health/logo",
+        json={"asset_id": "asset_ghost", "slot": "primary"},
+    )
+    assert missing.status_code == 404
+
+
 def test_ops_attached_brand_kit_preflights_via_scene_ref_and_heals_the_row(
     client: TestClient,
 ) -> None:

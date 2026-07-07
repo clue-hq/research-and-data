@@ -217,6 +217,53 @@ describe("BrandKitDetailPage", () => {
     expect(screen.getByText("Inter")).toBeTruthy();
   });
 
+  it("choosing a logo from the library POSTs the selection and reloads the kit", async () => {
+    let logoPost: { url: string; body: unknown } | null = null;
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes("/logo") && init?.method === "POST") {
+        logoPost = { url, body: JSON.parse(String(init.body)) };
+        return new Response(JSON.stringify({ brand_kit: listSummary({ version: 2 }) }), {
+          status: 200
+        });
+      }
+      if (url.includes("/assets?") || url.endsWith("/assets")) {
+        return new Response(
+          JSON.stringify({
+            assets: [
+              {
+                id: "asset_real_lockup",
+                kind: "logo",
+                label: "Real lockup",
+                status: "active",
+                media: {}
+              }
+            ]
+          }),
+          { status: 200 }
+        );
+      }
+      return new Response(JSON.stringify(detailPayload()), { status: 200 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<BrandKitDetailPage />);
+
+    await waitFor(() =>
+      expect(screen.getByTestId("choose-logo-primary")).toBeTruthy()
+    );
+    fireEvent.click(screen.getByTestId("choose-logo-primary"));
+
+    await waitFor(() => expect(screen.getByTestId("pick-asset_real_lockup")).toBeTruthy());
+    fireEvent.click(screen.getByTestId("pick-asset_real_lockup"));
+
+    await waitFor(() => expect(logoPost).not.toBeNull());
+    expect(logoPost!.url).toContain("/brand-kits/kit_insight/logo");
+    expect(logoPost!.body).toEqual({ asset_id: "asset_real_lockup", slot: "primary" });
+    // Picker closes after the reload lands.
+    await waitFor(() => expect(screen.queryByTestId("logo-picker")).toBeNull());
+  });
+
   it("approving issues a POST and flips the pill to approved", async () => {
     let approvalCalled = false;
     stubDetail(detailPayload(), () => {

@@ -458,3 +458,73 @@ def test_replay_static_validates_against_engine() -> None:
 
     # dark colorway captured from the prefers-color-scheme block
     assert result.ingestion_report["dark_colorway"] == "captured"
+
+
+# --------------------------------------------------------------------------- #
+# Multi-signal primary-logo scoring
+# --------------------------------------------------------------------------- #
+
+
+def _with_html(snapshot, html: str):
+    from lumen_ingestion.capture.snapshot import SiteSnapshot
+
+    return SiteSnapshot(**{**snapshot.model_dump(), "html": html})
+
+
+def test_logo_scoring_junk_badges_lose_to_classed_logo_outside_header() -> None:
+    """The live insighthealth.ai failure shape: header's first imgs are store
+    badges, the real lockup sits in a `class="nav_logo"` img the old first-2
+    cap never reached. The scorer must pick the classed lockup and drop the
+    badges (junk-filename penalty)."""
+    snapshot = load("insight_static")
+    html = """
+    <html><head><title>x</title></head><body>
+      <header>
+        <img src="/badges/Download_on_the_App_Store_Badge.svg">
+        <img src="/promo/download_chrome_extension_large.avif">
+      </header>
+      <div class="navbar_component">
+        <a href="/"><img class="nav_logo" src="/media/company-lockup.webp" width="474" height="71"></a>
+      </div>
+      <main></main>
+    </body></html>
+    """
+    parsed = parse_site(_with_html(snapshot, html))
+    primaries = [l for l in parsed.logos if l.usage_hint == "primary"]
+    assert [l.source_url for l in primaries] == ["https://www.insighthealth.ai/media/company-lockup.webp"]
+    assert "logo-class" in primaries[0].locator and "home-link" in primaries[0].locator
+
+
+def test_logo_scoring_jsonld_organization_declaration_wins() -> None:
+    """schema.org Organization JSON-LD is an explicit declaration — it must
+    outrank every DOM inference."""
+    snapshot = load("insight_static")
+    html = """
+    <html><head>
+      <script type="application/ld+json">
+        {"@context":"https://schema.org","@graph":[{"@type":"Organization",
+         "logo":{"@type":"ImageObject","url":"/brand/declared-logo.png"}}]}
+      </script>
+    </head><body>
+      <header><a href="/"><img src="/img/some-header-logo.svg"></a></header>
+      <main></main>
+    </body></html>
+    """
+    parsed = parse_site(_with_html(snapshot, html))
+    primaries = [l for l in parsed.logos if l.usage_hint == "primary"]
+    assert primaries[0].source_url == "https://www.insighthealth.ai/brand/declared-logo.png"
+    assert "jsonld-or-og-declared" in primaries[0].locator
+
+
+def test_logo_scoring_no_convincing_candidate_leaves_primary_empty() -> None:
+    """Below the confidence threshold the slot stays EMPTY for the human to
+    fill — an honest gap beats a confident wrong guess."""
+    snapshot = load("insight_static")
+    html = """
+    <html><head></head><body>
+      <div><img src="/photos/team-photo-1600.jpg" width="1600" height="900"></div>
+      <main></main>
+    </body></html>
+    """
+    parsed = parse_site(_with_html(snapshot, html))
+    assert [l for l in parsed.logos if l.usage_hint == "primary"] == []

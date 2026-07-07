@@ -144,6 +144,30 @@ export async function setBrandKitApproval(
   };
 }
 
+/** Human logo curation: promote a library asset into a kit logo slot. The
+ * API publishes a NEW kit version (manual provenance) — the scraper's guess
+ * stays in version history, the human's choice becomes current. */
+export async function setBrandKitLogo(
+  { apiBaseUrl, fetchImpl = fetch }: BrandHubOptions,
+  brandKitId: string,
+  selection: { assetId: string; slot?: "primary" | "mark" | "wordmark" }
+): Promise<void> {
+  const response = await fetchImpl(
+    new URL(`/brand-kits/${encodeURIComponent(brandKitId)}/logo`, apiBaseUrl),
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        asset_id: selection.assetId,
+        slot: selection.slot ?? "primary"
+      })
+    }
+  );
+  if (!response.ok) {
+    throw new Error(`brand kit logo selection failed (HTTP ${response.status})`);
+  }
+}
+
 /** The raw-bytes URL for an asset (`{base}/assets/{id}/bytes`) — the src for
  * logo/image thumbnails on the review page. */
 export function assetBytesUrl(apiBaseUrl: string, assetId: string): string {

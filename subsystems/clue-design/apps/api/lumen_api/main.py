@@ -82,6 +82,7 @@ from .models import (
     ReplaceSceneRequest,
     SetAssetDescriptionRequest,
     SetBrandKitApprovalRequest,
+    SetBrandKitLogoRequest,
     ValidateBrandKitRequest,
     ValidateDocumentBrandGovernanceRequest,
 )
@@ -637,6 +638,82 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
             approval_status=payload.approval_status,
         )
         return brand_kit_detail_dto(record)
+
+    @app.post("/brand-kits/{brand_kit_id}/logo")
+    def set_brand_kit_logo(
+        brand_kit_id: str,
+        payload: SetBrandKitLogoRequest,
+        repo: Repository = Depends(repository),
+    ) -> JsonObject:
+        """Human logo curation: promote a library asset into a logo slot of
+        the kit's latest version and publish it as a NEW version (manual
+        provenance, confidence 1.0). The scraper's guess stays in history;
+        the human's choice becomes current. Works for ANY kit — nothing here
+        is brand-specific."""
+        record = repo.require_brand_kit(brand_kit_id)
+        asset_record = repo.require_asset_record(payload.asset_id)
+        asset = asset_record.get("asset") or asset_record
+
+        brand_kit = json.loads(json.dumps(record["brand_kit"]))
+        assets = brand_kit.setdefault("assets", {}) or brand_kit["assets"]
+        logos = assets.setdefault("logos", {}) or assets["logos"]
+        slot = logos.get(payload.slot)
+        if not isinstance(slot, dict):
+            slot = {
+                "usage": payload.slot,
+                "min_size": 24.0,
+                "clearspace": None,
+                "allowed_backgrounds": [],
+                "license": None,
+            }
+        slot["variants"] = [
+            {
+                "asset_id": payload.asset_id,
+                "name": payload.color_mode,
+                "color_mode": payload.color_mode,
+                "width": None,
+                "height": None,
+            }
+        ]
+        slot["provenance"] = {
+            "confidence": 1.0,
+            "source": f"manual :: human-selected {asset.get('label') or payload.asset_id}",
+        }
+        logos[payload.slot] = slot
+        brand_kit["version"] = int(brand_kit.get("version") or 1) + 1
+
+        try:
+            validation = app.state.core.validate_brand_kit(
+                brand_kit, product_ready=False
+            )
+            brand_kit = validation["brand_kit"]
+            summary_response = app.state.core.summarize_brand_kit(
+                brand_kit, raise_on_error=False
+            )
+        except CoreError as error:
+            raise core_http_error(error) from error
+        diagnostics = summary_response.get("diagnostics") or validation.get(
+            "diagnostics", []
+        )
+        try:
+            created = repo.create_brand_kit(
+                brand_kit,
+                summary_response.get("brand_summary") or {},
+                diagnostics,
+                "manual",
+            )
+        except sqlite3.IntegrityError as error:
+            raise duplicate_brand_kit_error(brand_kit) from error
+        log_event(
+            api_logger,
+            logging.INFO,
+            "brand_kit_logo_set",
+            brand_kit_id=brand_kit_id,
+            slot=payload.slot,
+            asset_id=payload.asset_id,
+            version=brand_kit["version"],
+        )
+        return brand_kit_created_dto(created, diagnostics)
 
     @app.get("/brand-compatibility-reports/{report_id}")
     def get_brand_compatibility_report(
