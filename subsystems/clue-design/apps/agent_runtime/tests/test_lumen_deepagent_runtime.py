@@ -5365,3 +5365,46 @@ def test_phase_g_agent_tools_validate_and_preview_instances(tmp_path: Path):
     ]
     assert any(event["event"] == "binding_set_validated" for event in events)
     assert any(event["event"] == "instance_preview_derived" for event in events)
+
+
+def test_forced_logo_round_fires_once_when_kit_logo_missing(tmp_path: Path, monkeypatch):
+    """K4 logo-adoption gate: an acceptance over a logo-less scene on a kit
+    that PROVIDES logos yields exactly ONE placement round (measured 5/10
+    adoption in the sweep); a scene that places a kit logo never trips it."""
+    from lumen_deepagent.loop import LumenQualityLoop  # local import: heavy module
+
+    monkeypatch.setattr("lumen_deepagent.tools.CoreClient", FakeCoreClient)
+    kit = _insight_kit()
+    kit.setdefault("assets", {})["logos"] = {
+        "mark": {"variants": [{"asset_id": "asset_kit_mark", "name": "full_color"}]}
+    }
+    tools = LumenDesignTools(_config_with_kit(tmp_path, kit), "Create a square ad")
+    tools.compile_dsl_block("page page_test")
+
+    loop = LumenQualityLoop.__new__(LumenQualityLoop)
+    loop.tools = tools
+    loop.logo_repair_attempted = False
+
+    class _State:
+        current_iteration = 1
+    loop.state = _State()
+
+    assert loop._kit_logo_asset_ids() == {"asset_kit_mark"}
+    assert loop._should_force_logo_round() is True
+
+    forced = loop._forced_logo_critique(None)
+    assert forced.accepted is False
+    assert loop.logo_repair_attempted is True
+    assert "asset_kit_mark" in forced.issues[0].suggested_repair
+    # once only
+    assert loop._should_force_logo_round() is False
+
+    # A scene that places the kit logo never trips the gate.
+    loop2 = LumenQualityLoop.__new__(LumenQualityLoop)
+    loop2.tools = tools
+    loop2.logo_repair_attempted = False
+    loop2.state = _State()
+    tools.scene.setdefault("nodes", {})["logo"] = {
+        "kind": {"kind": "image", "asset_id": "asset_kit_mark"}
+    }
+    assert loop2._should_force_logo_round() is False

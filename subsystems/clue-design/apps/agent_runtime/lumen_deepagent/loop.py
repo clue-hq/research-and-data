@@ -325,6 +325,12 @@ class LumenQualityLoop:
         # regenerate) per run — mirrors the accommodation forced-round counter so
         # a pure-imagery critique can never wedge the loop on repeated repairs.
         self.imagery_repair_attempted = False
+        # K4 sweep finding: logo adoption measured 5/10 while typography and
+        # palette held at 0.96/1.00 — the pixel critic accepts logo-less
+        # drafts on kits that PROVIDE logo assets. One bounded placement
+        # round per run (a missing logo is one operation, unlike the 25-edit
+        # rebind that wedged run_bff3433f).
+        self.logo_repair_attempted = False
         # Latest imagery verdict from the PNG-render-seam gate (DET, + judge when a
         # key is configured), or None on scenes without generated/edited imagery.
         self.imagery_verdict: Optional[dict] = None
@@ -1106,6 +1112,12 @@ class LumenQualityLoop:
                 # bounded accommodation round; keep-best already ranked the
                 # accepted draft, so a failed round still returns it.
                 critique = self._forced_accommodation_critique(critique)
+            elif critique.accepted and self._should_force_logo_round():
+                # The critic accepted a logo-less draft on a kit that provides
+                # logo assets — the measured 5/10 adoption gap. One bounded
+                # placement round; a failed round still returns the accepted
+                # draft via keep-best.
+                critique = self._forced_logo_critique(critique)
             if critique.accepted:
                 iteration_record.stop_reason = StopReason.accepted
                 self.state.status = "accepted"
@@ -1471,6 +1483,93 @@ class LumenQualityLoop:
             "keep the node fully inside the artboard, and do not restyle, "
             "resize, delete, or reorder it."
         )
+
+    def _kit_logo_asset_ids(self) -> set:
+        """Asset ids of the attached kit's logo variants (empty when no kit
+        is genuinely attached — the platform default never reaches config)."""
+        kit = self.tools.config.brand_kit
+        if not isinstance(kit, dict):
+            return set()
+        ids = set()
+        for logo in ((kit.get("assets") or {}).get("logos") or {}).values():
+            if not isinstance(logo, dict):
+                continue
+            for variant in logo.get("variants") or []:
+                if isinstance(variant, dict) and variant.get("asset_id"):
+                    ids.add(str(variant["asset_id"]))
+        return ids
+
+    def _should_force_logo_round(self) -> bool:
+        """Whether an acceptance must yield to ONE logo-placement round.
+
+        The K4 sweep measured logo adoption at 5/10 with typography/palette
+        near-perfect: the pixel critic reliably accepts a brand-clean design
+        that simply never placed the kit's logo. When the kit provides logo
+        assets and the scene places none, the inventory fact outranks pixel
+        judgment — once. Bounded exactly like the accommodation round: at
+        most one forced round per run, only while an iteration remains, and
+        a failed round still returns the accepted draft via keep-best."""
+        logo_ids = self._kit_logo_asset_ids()
+        if not logo_ids or self.logo_repair_attempted:
+            return False
+        if self.state.current_iteration >= self.tools.config.max_iterations:
+            return False
+        nodes = (self.tools.scene or {}).get("nodes") or {}
+        for node in nodes.values():
+            kind = (node or {}).get("kind")
+            if (
+                isinstance(kind, dict)
+                and kind.get("kind") == "image"
+                and str(kind.get("asset_id")) in logo_ids
+            ):
+                return False
+        return True
+
+    def _forced_logo_critique(self, accepted: VisualCritique) -> VisualCritique:
+        """The synthetic rejection that drives the forced logo round."""
+        self.logo_repair_attempted = True
+        kit = self.tools.config.brand_kit or {}
+        logos = (kit.get("assets") or {}).get("logos") or {}
+        # Prefer the mark (smallest safe footprint) then the primary lockup.
+        suggestion = None
+        for slot in ("mark", "primary", "wordmark"):
+            for variant in (logos.get(slot) or {}).get("variants") or []:
+                if isinstance(variant, dict) and variant.get("asset_id"):
+                    suggestion = (slot, str(variant["asset_id"]))
+                    break
+            if suggestion:
+                break
+        slot_name, asset_id = suggestion or ("mark", sorted(self._kit_logo_asset_ids())[0])
+        repair = (
+            f"Place the Brand Kit's {slot_name} logo: add an `image asset({asset_id})` "
+            "element (the compiler auto-registers kit assets) in the header/top "
+            "region of the artboard, sized per the kit's logo rules "
+            "(min_size, variant appropriate to the background — see "
+            "brand-application). Do not restyle or move any other node."
+        )
+        forced = VisualCritique(
+            accepted=False,
+            summary=(
+                "Visual acceptance withheld for one logo-placement round: the "
+                "attached Brand Kit provides logo assets and this design places "
+                "none — brand presence is part of the brief."
+            ),
+            issues=[
+                VisualIssue(
+                    severity=DiagnosticSeverity.error,
+                    category="brand_fit",
+                    target=VisualTarget(node_id=None),
+                    message=(
+                        "Inventory fact: the attached kit provides logo assets "
+                        f"({', '.join(sorted(self._kit_logo_asset_ids()))}) and no "
+                        "image node in the scene references any of them."
+                    ),
+                    suggested_repair=repair,
+                )
+            ],
+            confidence=1.0,
+        )
+        return forced
 
     def _forced_accommodation_critique(self, accepted: VisualCritique) -> VisualCritique:
         """The synthetic rejection that drives the forced accommodation round."""
