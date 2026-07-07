@@ -13,6 +13,13 @@ from statistics import median
 from ..evidence import NumberSample
 
 _SPACE_SCALE = {
+    # Semantic steps: the styles compiler's vocabulary (two producers, one
+    # contract — same rule as the type.size ramp; probed 2026-07-07).
+    "space.xs": 4.0,
+    "space.sm": 8.0,
+    "space.md": 12.0,
+    "space.lg": 16.0,
+    "space.xl": 24.0,
     "space.0": 0.0,
     "space.1": 4.0,
     "space.2": 8.0,

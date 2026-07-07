@@ -1593,6 +1593,38 @@
             "modes": {}
           }
         },
+        "space.lg": {
+          "description": null,
+          "provenance": {
+            "confidence": 0.6,
+            "source": "derived:spacing-scale"
+          },
+          "role": "spacing",
+          "value": {
+            "default": {
+              "kind": "number",
+              "unit": "px",
+              "value": 16.0
+            },
+            "modes": {}
+          }
+        },
+        "space.md": {
+          "description": null,
+          "provenance": {
+            "confidence": 0.6,
+            "source": "derived:spacing-scale"
+          },
+          "role": "spacing",
+          "value": {
+            "default": {
+              "kind": "number",
+              "unit": "px",
+              "value": 12.0
+            },
+            "modes": {}
+          }
+        },
         "space.page.margin": {
           "description": null,
           "provenance": {
@@ -1621,6 +1653,22 @@
               "kind": "number",
               "unit": "px",
               "value": 32.0
+            },
+            "modes": {}
+          }
+        },
+        "space.sm": {
+          "description": null,
+          "provenance": {
+            "confidence": 0.6,
+            "source": "derived:spacing-scale"
+          },
+          "role": "spacing",
+          "value": {
+            "default": {
+              "kind": "number",
+              "unit": "px",
+              "value": 8.0
             },
             "modes": {}
           }
@@ -1669,6 +1717,38 @@
               "kind": "number",
               "unit": "px",
               "value": 8.0
+            },
+            "modes": {}
+          }
+        },
+        "space.xl": {
+          "description": null,
+          "provenance": {
+            "confidence": 0.6,
+            "source": "derived:spacing-scale"
+          },
+          "role": "spacing",
+          "value": {
+            "default": {
+              "kind": "number",
+              "unit": "px",
+              "value": 24.0
+            },
+            "modes": {}
+          }
+        },
+        "space.xs": {
+          "description": null,
+          "provenance": {
+            "confidence": 0.6,
+            "source": "derived:spacing-scale"
+          },
+          "role": "spacing",
+          "value": {
+            "default": {
+              "kind": "number",
+              "unit": "px",
+              "value": 4.0
             },
             "modes": {}
           }

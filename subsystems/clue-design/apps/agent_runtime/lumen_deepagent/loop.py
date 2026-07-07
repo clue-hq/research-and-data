@@ -871,6 +871,15 @@ class LumenQualityLoop:
             baseline_advisory = self._baseline_advisory(all_preflight_diagnostics)
             self.unaddressed_baseline_diagnostics = baseline_advisory
             introduced_summary = {**preflight_summary, "diagnostics": introduced_diagnostics}
+            # K4 NOTE (measured, do not re-add casually): hard-gating the
+            # clean-draft check on introduced LUMB08xx findings was tried
+            # live and WEDGED the run — 25 raw-token findings, five repair
+            # iterations, zero progress (run_bff3433f): the LLM repair path
+            # cannot incrementally rebind tokens today. Enforcement needs a
+            # DETERMINISTIC retokenization pass (map raw values to the kit
+            # tokens they equal) — until that exists, brand debt stays
+            # advisory here and is enforced via keep-best ranking, the
+            # reviewer's LUMB0805 rejection rule, and the fidelity eval.
             if tool_has_blocking_failure(introduced_summary) or has_blocking_diagnostics(
                 introduced_diagnostics
             ):
@@ -966,8 +975,18 @@ class LumenQualityLoop:
             # ride along as advisory — never re-checked here, never blocking.
 
             # Preflight passed: this draft is renderable AND valid — a strictly
-            # better keep-best candidate than a compile-only draft.
-            self._consider_best(stage="preflight_clean", critique=None)
+            # better keep-best candidate than a compile-only draft. Advisory
+            # brand-governance findings (LUMB08xx) count as debt so a draft
+            # that "cleaned up" by unbinding kit tokens never outranks one
+            # that kept them.
+            brand_debt = sum(
+                1
+                for d in all_preflight_diagnostics
+                if str(d.get("code") or "").startswith("LUMB08")
+            )
+            self._consider_best(
+                stage="preflight_clean", critique=None, brand_debt=brand_debt
+            )
 
             # Accommodation edits: measure turn-introduced crowding on this
             # laid-out draft BEFORE the critic runs, so the critic judges the
@@ -1077,7 +1096,9 @@ class LumenQualityLoop:
             iteration_record.critique = critique
             # Rank this fully-reviewed draft. The highest-scoring one is what we
             # hand back if no iteration is ever accepted.
-            self._consider_best(stage="preflight_clean", critique=critique)
+            self._consider_best(
+                stage="preflight_clean", critique=critique, brand_debt=brand_debt
+            )
             if critique.accepted and self._should_force_accommodation_round():
                 # The pixel critic accepted OVER an unresolved turn-introduced
                 # conflict. Swap in a synthetic rejection carrying the nudge
@@ -1692,12 +1713,16 @@ class LumenQualityLoop:
         return {}
 
     def _consider_best(
-        self, *, stage: str, critique: Optional[VisualCritique]
+        self, *, stage: str, critique: Optional[VisualCritique], brand_debt: int = 0
     ) -> None:
         """Update the keep-best snapshot if the live scene beats the incumbent.
 
         Ranking (higher wins): preflight-clean drafts dominate compile-only ones;
-        among equals, an accepted critique beats a rejected one, then the lower
+        among equals, an accepted critique beats a rejected one, then the LOWER
+        brand-governance debt (K4: count of advisory LUMB08xx on the draft —
+        without this term the loop launders a brand failure into the winning
+        draft by STRIPPING tokens until preflight has no errors; run_68496e56
+        shipped 0/4 style bindings exactly that way), then the lower
         severity-weighted issue penalty, then confidence — SIGNED by the verdict:
         the critic's confidence is in its own verdict, so among accepted drafts
         higher confidence wins, while among rejected drafts higher confidence
@@ -1720,6 +1745,7 @@ class LumenQualityLoop:
         rank = (
             1 if preflight_clean else 0,
             1 if accepted else 0,
+            -brand_debt,
             -issue_penalty,
             confidence if accepted else -confidence,
         )
@@ -3035,4 +3061,16 @@ def diagnostic_repair_intent(summary: dict) -> str:
         message = diagnostic.get("message") or ""
         repair = diagnostic.get("suggested_repair") or ""
         parts.append(f"{code} on {target}: {message} {repair}".strip())
-    return "repair targeted preflight diagnostics: " + " | ".join(parts)
+    intent = "repair targeted preflight diagnostics: " + " | ".join(parts)
+    codes = {str(d.get("code") or "") for d in diagnostics}
+    if "LUMB0301" in codes:
+        # K4 guardrail: run_68496e56 "repaired" undefined-token errors by
+        # stripping EVERY kit binding — errors gone, brand gone. Fixing an
+        # undefined token means removing only that token reference.
+        intent += (
+            " | RULE: fix LUMB0301 by removing ONLY the undefined token "
+            "reference (e.g. drop a font_size($type.size.*) the kit does not "
+            "define); NEVER remove style($type.*) bindings to silence "
+            "diagnostics — unbinding text is a brand regression (LUMB0805)."
+        )
+    return intent

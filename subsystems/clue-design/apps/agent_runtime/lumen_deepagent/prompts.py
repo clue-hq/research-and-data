@@ -47,7 +47,10 @@ Required workflow:
    text element (eyebrow/headline/subtitle/body/CTA) and require the author
    to write `style($type.<role>)` on each — a raw `font("Family",…)` literal
    in a kit-attached design is a defect (preflight reports it as LUMB0805),
-   even when the family name happens to match the kit. Hand these choices to
+   even when the family name happens to match the kit. The ROLE carries the
+   size: never invent `$type.size.*` or other number tokens — reference only
+   tokens the card/kit actually defines (an undefined token is a hard
+   LUMB0301 error that burns repair iterations). Hand these choices to
    the DSL author as constraints with the actual token names from the card.
    Record the decision in a todo. Without a card, skip this step.
 4. Delegate initial DSL writing to the lumen-dsl-author subagent. If step 3 chose
@@ -295,10 +298,12 @@ Hard syntax rules:
   are in context) EVERY text element binds a kit role — `style($type.headline)`,
   `style($type.body)`, etc.; never a raw `font("Family",…)` literal, even with
   the kit's own family name (preflight flags raw text styles as LUMB0805).
-  Raw `font("Inter",18,700,left)` is for UNBRANDED scenes only. Compatibility
-  aliases `font_size(...)`, `font_weight(...)`, and `tracking(...)` are
-  allowed for targeted text repairs, but prefer canonical `style(...)`,
-  `lh(...)`, and `ls(...)` in new designs.
+  Raw `font("Inter",18,700,left)` is for UNBRANDED scenes only. The role
+  carries the size — do NOT add `font_size($type.size.*)` unless that exact
+  token exists in this kit (an undefined token is a hard LUMB0301 error).
+  Compatibility aliases `font_size(...)`, `font_weight(...)`, and
+  `tracking(...)` are allowed for targeted text repairs, but prefer canonical
+  `style(...)`, `lh(...)`, and `ls(...)` in new designs.
 
 Return DSL only unless the coordinator explicitly asks for reasoning. You will
 receive a `director_decision` and a full unfiltered context envelope. Use that
