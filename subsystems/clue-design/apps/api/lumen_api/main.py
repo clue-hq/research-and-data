@@ -3985,19 +3985,23 @@ def brand_kit_asset_manifest(
 def brand_kit_font_spec(
     repo: Repository, brand_kit: Optional[JsonObject], store_root: str
 ) -> Optional[JsonObject]:
-    """K3: {store_root, digests} for the kit's font faces, resolved from the
-    asset library. The helper reads the bytes from the shared store and
-    registers them alongside the bundled set, so preflight measurement and
-    export painting shape text in the kit's real faces. Missing records are
+    """K3: {store_root, faces: [{digest, family}]} for the kit's font faces,
+    resolved from the asset library. The helper reads the bytes from the
+    shared store and registers each face under BOTH its intrinsic name and
+    the kit-DECLARED family — scenes request the declared name, which is
+    routinely a `@font-face` alias over the bytes' intrinsic name (kit
+    "Aeonik" over trial bytes named "Aeonik TRIAL"). Missing records are
     skipped — a partial font set beats a failed request, and the helper
     reports any face it cannot load (LUMS0101)."""
     if not isinstance(brand_kit, dict):
         return None
     fonts = (brand_kit.get("assets") or {}).get("fonts") or {}
-    digests: list[str] = []
+    faces: list[JsonObject] = []
+    seen: set[str] = set()
     for font in fonts.values():
         if not isinstance(font, dict):
             continue
+        family = font.get("family") if isinstance(font.get("family"), str) else None
         for face in font.get("faces") or []:
             if not (isinstance(face, dict) and face.get("asset_id")):
                 continue
@@ -4010,14 +4014,13 @@ def brand_kit_font_spec(
             if (
                 str(digest.get("algorithm") or "").lower() == "sha256"
                 and digest.get("value")
+                and str(digest["value"]) not in seen
             ):
-                digests.append(str(digest["value"]))
-    if not digests:
+                seen.add(str(digest["value"]))
+                faces.append({"digest": str(digest["value"]), "family": family})
+    if not faces:
         return None
-    return {
-        "store_root": store_root,
-        "digests": list(dict.fromkeys(digests)),
-    }
+    return {"store_root": store_root, "faces": faces}
 
 
 def agent_seed_scene(payload: AgentTurnPreviewRequest) -> Optional[JsonObject]:

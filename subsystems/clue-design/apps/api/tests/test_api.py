@@ -569,7 +569,7 @@ def test_brand_kit_font_faces_ride_preflight_as_store_digests(
     )
     assert kit is not None and source == "document"
     assert brand_fonts is not None
-    assert brand_fonts["digests"] == [font_digest]
+    assert brand_fonts["faces"] == [{"digest": font_digest, "family": "Source Sans 3"}]
     assert (Path(brand_fonts["store_root"]) / "sha256").exists()
 
     # Real engine round trip: the spec flows through /preflight-preview and

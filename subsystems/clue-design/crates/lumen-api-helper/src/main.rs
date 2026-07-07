@@ -33,13 +33,23 @@ mod store_resolver;
 use store_resolver::{StoreBackedResolver, LOCAL_STORE_PROVIDER};
 
 /// Brand-kit font faces for a request: sha256 digests of font assets in the
-/// shared content-addressed store. The caller (API / agent runtime) resolves
-/// kit `assets.fonts[*].faces[].asset_id` to digests; the helper only reads
-/// bytes — family and weight keying is intrinsic to the font bytes.
+/// shared content-addressed store, each with the kit-DECLARED family name.
+/// The caller (API / agent runtime) resolves kit
+/// `assets.fonts[*].faces[].asset_id` to digests. The declared family is the
+/// name scenes actually request, and it is routinely an alias over the
+/// bytes' intrinsic name (`@font-face` aliasing: kit "Aeonik" over trial
+/// bytes named "Aeonik TRIAL") — both must resolve.
 #[derive(Debug, Deserialize)]
 struct BrandFontsSpec {
     store_root: String,
-    digests: Vec<String>,
+    faces: Vec<BrandFontFaceSpec>,
+}
+
+#[derive(Debug, Deserialize)]
+struct BrandFontFaceSpec {
+    digest: String,
+    #[serde(default)]
+    family: Option<String>,
 }
 
 /// Build the request's font set: the bundled deterministic faces plus any
@@ -66,13 +76,13 @@ fn load_brand_fonts(spec: Option<&BrandFontsSpec>) -> (Arc<FontManager>, Vec<Dia
             ),
         );
     };
-    for digest in &spec.digests {
-        match digest_relative_path(digest) {
+    for face in &spec.faces {
+        match digest_relative_path(&face.digest) {
             Ok(relative_path) => match store.get(&relative_path) {
-                Ok(bytes) => faces.push(bytes),
-                Err(error) => unavailable(digest, error.to_string()),
+                Ok(bytes) => faces.push((bytes, face.family.clone())),
+                Err(error) => unavailable(&face.digest, error.to_string()),
             },
-            Err(error) => unavailable(digest, error.to_string()),
+            Err(error) => unavailable(&face.digest, error.to_string()),
         }
     }
     let (fonts, errors) = FontManager::bundled_with(faces);

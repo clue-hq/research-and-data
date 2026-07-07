@@ -135,7 +135,7 @@ fn distinct_family_font_bytes() -> Vec<u8> {
 
 #[test]
 fn bundled_with_no_extras_matches_bundled() {
-    let (fonts, errors) = FontManager::bundled_with(Vec::<Vec<u8>>::new());
+    let (fonts, errors) = FontManager::bundled_with(Vec::<(Vec<u8>, Option<String>)>::new());
     assert!(errors.is_empty());
     assert_eq!(
         fonts.family_weight_map(),
@@ -145,7 +145,7 @@ fn bundled_with_no_extras_matches_bundled() {
 
 #[test]
 fn bundled_with_registers_extra_family_resolvable_without_fallback() {
-    let (fonts, errors) = FontManager::bundled_with(vec![distinct_family_font_bytes()]);
+    let (fonts, errors) = FontManager::bundled_with(vec![(distinct_family_font_bytes(), None)]);
     assert!(errors.is_empty());
     assert!(fonts.families().any(|family| family == "Xnter"));
     let resolution = fonts.resolve_family("Xnter");
@@ -158,12 +158,29 @@ fn bundled_with_registers_extra_family_resolvable_without_fallback() {
 #[test]
 fn bundled_with_skips_unparseable_bytes_and_keeps_bundled_set() {
     let (fonts, errors) = FontManager::bundled_with(vec![
-        vec![0xDE, 0xAD, 0xBE, 0xEF],
-        distinct_family_font_bytes(),
+        (vec![0xDE, 0xAD, 0xBE, 0xEF], None),
+        (distinct_family_font_bytes(), None),
     ]);
     assert_eq!(errors.len(), 1);
     assert!(errors[0].message.contains("did not parse"));
     assert_eq!(fonts.weights("Inter"), vec![400, 600, 700, 800]);
     assert!(fonts.families().any(|family| family == "Xnter"));
     assert_eq!(fonts.default_family(), DEFAULT_FONT_FAMILY);
+}
+
+#[test]
+fn bundled_with_alias_resolves_the_kit_declared_family() {
+    // The web's @font-face aliasing: kit says "Aeonik", the trial bytes say
+    // "Aeonik TRIAL". Scenes request the DECLARED name — it must resolve
+    // without fallback, alongside the intrinsic name.
+    let bytes = std::fs::read(repo_fonts_dir().join("Inter-Regular.ttf")).expect("font reads");
+    let (fonts, errors) =
+        FontManager::bundled_with(vec![(bytes, Some("Aeonik".to_owned()))]);
+    assert!(errors.is_empty());
+    let resolution = fonts.resolve_family("Aeonik");
+    assert!(!resolution.fallback, "declared kit family must resolve");
+    assert!(resolution.diagnostic().is_none());
+    let typeface = fonts.match_typeface("Aeonik", 400).expect("aliased face");
+    // The matched face is the aliased bytes (intrinsic name Inter here).
+    assert_eq!(typeface.family_name(), "Inter");
 }

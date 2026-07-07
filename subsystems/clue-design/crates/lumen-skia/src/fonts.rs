@@ -44,10 +44,15 @@ impl fmt::Display for FontLoadError {
 impl std::error::Error for FontLoadError {}
 
 /// One loaded font face: raw bytes plus the metadata Skia parsed from them.
+/// `alias` is the caller-declared family (a brand kit's `font-family` name —
+/// e.g. "Aeonik" for bytes whose intrinsic name is "Aeonik TRIAL"): the web's
+/// `@font-face` aliasing is the norm, so scenes request the DECLARED name and
+/// the face must resolve under both.
 #[derive(Clone)]
 struct LoadedFace {
     bytes: Arc<Vec<u8>>,
     family: String,
+    alias: Option<String>,
     weight: i32,
 }
 
@@ -127,24 +132,43 @@ impl FontManager {
     }
 
     /// The bundled deterministic set plus additional font faces (brand-kit
-    /// fonts read from the asset store). Faces whose bytes do not parse are
-    /// skipped and reported — the bundled fallback set must never be lost to
-    /// one bad kit font, so this constructor cannot fail.
-    pub fn bundled_with(extra: impl IntoIterator<Item = Vec<u8>>) -> (Self, Vec<FontLoadError>) {
+    /// fonts read from the asset store), each with an optional DECLARED
+    /// family alias — the kit's `font-family` name, which is what scenes
+    /// request and is routinely different from the bytes' intrinsic name
+    /// (`@font-face` aliasing: "Aeonik" kit family over "Aeonik TRIAL"
+    /// bytes). Faces whose bytes do not parse are skipped and reported —
+    /// the bundled fallback set must never be lost to one bad kit font, so
+    /// this constructor cannot fail.
+    pub fn bundled_with(
+        extra: impl IntoIterator<Item = (Vec<u8>, Option<String>)>,
+    ) -> (Self, Vec<FontLoadError>) {
         let parser = FontMgr::new();
-        let mut all: Vec<Vec<u8>> = BUNDLED_FONTS.iter().map(|bytes| bytes.to_vec()).collect();
+        let mut manager = Self::bundled();
         let mut errors = Vec::new();
-        for bytes in extra {
-            if parser.new_from_data(&bytes, None).is_some() {
-                all.push(bytes);
-            } else {
+        for (bytes, alias) in extra {
+            let Some(typeface) = parser.new_from_data(&bytes, None) else {
                 errors.push(FontLoadError {
                     message: "brand font bytes did not parse as a typeface".to_owned(),
                 });
+                continue;
+            };
+            let family = typeface.family_name();
+            let weight = *typeface.font_style().weight();
+            manager.families.insert(family.clone());
+            let alias = alias.filter(|alias| !alias.is_empty() && *alias != family);
+            if let Some(alias) = &alias {
+                manager.families.insert(alias.clone());
             }
+            manager.faces.push(LoadedFace {
+                bytes: Arc::new(bytes),
+                family,
+                alias,
+                weight,
+            });
         }
-        let manager = Self::from_bytes(all, DEFAULT_FONT_FAMILY)
-            .expect("bundled Inter faces must parse");
+        // Fresh identity: the thread-local FontCollection cache keys on it,
+        // and this manager's face set differs from plain bundled().
+        manager.id = NEXT_MANAGER_ID.fetch_add(1, Ordering::Relaxed);
         (manager, errors)
     }
 
@@ -209,6 +233,7 @@ impl FontManager {
             faces.push(LoadedFace {
                 bytes: Arc::new(bytes),
                 family,
+                alias: None,
                 weight,
             });
         }
@@ -307,6 +332,9 @@ impl FontManager {
             let typeface = parser
                 .new_from_data(face.bytes.as_slice(), None)
                 .expect("bytes parsed at construction time");
+            if let Some(alias) = &face.alias {
+                provider.register_typeface(typeface.clone(), Some(alias.as_str()));
+            }
             provider.register_typeface(typeface, Some(face.family.as_str()));
         }
 
