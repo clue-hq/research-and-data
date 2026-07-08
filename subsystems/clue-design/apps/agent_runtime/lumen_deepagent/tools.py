@@ -70,6 +70,18 @@ CONTEXT_MAX_CRITIQUE_ISSUES = 12
 CONTEXT_MAX_SVG_SNIPPET = 4000
 CONTEXT_MAX_TEXT_LEN = 120
 
+# Slice 2 (Loop Vision): the Director receives thumbnails of the kit's assets so it
+# chooses imagery/logo placements by LOOKING (subject, contrast, baked text), not by
+# metadata alone. The reviewer receives the SOURCE thumbnails of the assets a scene
+# actually placed so it can verify each placement against its source. Both are capped
+# — only paths + small labels ride the context dicts; base64 is produced per call at
+# the model boundary (see providers), never accumulated in a persisted dict.
+CONTACT_SHEET_MAX = 6
+PLACED_PREVIEWS_MAX = 4
+# Raster mime types the vision APIs accept as a direct preview when no derived
+# thumbnail exists (an SVG has no raster preview → it is skipped, never a broken path).
+_PREVIEWABLE_MIME_TYPES = {"image/png", "image/jpeg", "image/webp", "image/gif"}
+
 # Diagnostic codes that indicate content does not fit its frame (text overflow)
 # or a layout cluster is mis-sized — surfaced as `overflow` in the preview
 # summary so the director sees them without the raw scene.
@@ -1191,6 +1203,42 @@ class LumenDesignTools:
             payload=payload,
         )
         return json.dumps(payload, indent=2)
+
+    def _asset_preview_path(
+        self, record: JsonObject
+    ) -> Optional[tuple[str, Optional[int], Optional[int]]]:
+        """Slice 2: resolve a kit-asset record to an ON-DISK preview the vision APIs
+        can read, returning (absolute_path, pixel_width, pixel_height) or None.
+
+        Prefer the derived 256px thumbnail (any source type gets one at ingest); else,
+        if the primary media is itself a raster the vision APIs accept, use that. An
+        SVG with no thumbnail has no usable raster preview → return None (the caller
+        skips it and counts it in `_omitted`). Refs are `sha256/<first2>/<digest>`
+        under the SAME asset-store root the tools already use for export/ingest —
+        resolved the one way (Path(effective_asset_store_root) / opaque_ref). Only the
+        path is returned; no bytes are read here (existence is checked at block-build
+        time in providers), so this stays cheap to call every curated context."""
+        media = record.get("media") or {}
+        store_root = Path(self.config.effective_asset_store_root)
+        thumbnail = media.get("thumbnail") or {}
+        thumb_ref = (thumbnail.get("location") or {}).get("opaque_ref")
+        if thumb_ref:
+            return (
+                str(store_root / thumb_ref),
+                thumbnail.get("pixel_width"),
+                thumbnail.get("pixel_height"),
+            )
+        mime = media.get("mime_type")
+        primary_ref = (media.get("location") or {}).get("opaque_ref")
+        if mime in _PREVIEWABLE_MIME_TYPES and primary_ref:
+            # Pixel dims for a raster/logo asset live in its own metadata block.
+            dims = record.get("raster") or record.get("logo") or {}
+            return (
+                str(store_root / primary_ref),
+                dims.get("pixel_width"),
+                dims.get("pixel_height"),
+            )
+        return None
 
     def _resolve_node_image_source(
         self, node_id: str
@@ -2421,6 +2469,14 @@ class LumenDesignTools:
             "iteration": self.iteration,
             "artifacts": artifacts,
         }
+        # Slice 2 D3: attach the SOURCE thumbnails of the kit assets this scene
+        # actually placed so the reviewer can verify each placement against its source
+        # (right mark/variant, undistorted, legible). Paths only — providers reads the
+        # bytes into vision blocks at the boundary. Present only for a kit-attached run
+        # whose scene places manifest assets that resolve to real previews.
+        placed_previews = self._placed_brand_asset_previews()
+        if placed_previews:
+            payload["placed_brand_asset_previews"] = placed_previews
         self.record(
             "coordinator",
             "critic_preview_loaded",
@@ -2708,7 +2764,8 @@ class LumenDesignTools:
         """
         diagnostics = self._latest_diagnostics_ranked(previous_feedback)
         target_ids = self._diagnostic_target_ids(diagnostics)
-        return {
+        contact_sheet, contact_sheet_omitted = self._brand_asset_contact_sheet()
+        context: JsonObject = {
             "run_id": self.run_id,
             "iteration": self.iteration,
             "user_request": user_request,
@@ -2737,8 +2794,112 @@ class LumenDesignTools:
             "brand_card": copy.deepcopy(self.brand_card),
             "gaps": copy.deepcopy(self.gaps[-CONTEXT_MAX_ATTEMPTS:]),
         }
+        # Slice 2: attach the kit-asset contact sheet (thumbnail PATHS + labels) so
+        # the Director can choose imagery/logo placements by LOOKING (providers turns
+        # each `preview_path` into a vision block at the boundary). Only present when
+        # the document has an attached kit whose assets resolve to real previews.
+        if contact_sheet:
+            context["brand_asset_contact_sheet"] = contact_sheet
+            if contact_sheet_omitted:
+                context["brand_asset_contact_sheet_omitted"] = contact_sheet_omitted
+            self.record(
+                "director",
+                "contact_sheet_attached",
+                output_summary=f"{len(contact_sheet)} asset previews",
+                payload={"asset_ids": [entry["asset_id"] for entry in contact_sheet]},
+            )
+        return context
 
     # -- Curated-context helpers (all bounded; no file re-reads, no nesting) --
+
+    def _brand_asset_contact_sheet(self) -> tuple[list[JsonObject], int]:
+        """Slice 2 D1: the Director's contact sheet — one entry per kit asset that
+        resolves to a real on-disk preview, capped at CONTACT_SHEET_MAX.
+
+        Order: logo assets first, then described images (a `title` means the ingest
+        pipeline described it → author-selectable), then the rest. Each entry carries
+        only PATHS + small strings — never base64 (bytes ride as vision blocks at the
+        model boundary). Assets with no usable raster preview (e.g. an SVG with no
+        thumbnail) are skipped and counted in the returned omitted total, so a broken
+        path never reaches the model."""
+        manifest = self.config.brand_kit_assets or {}
+        if not manifest:
+            return [], 0
+
+        def rank(item: tuple[str, JsonObject]) -> int:
+            _asset_id, entry = item
+            record = entry.get("record") or {}
+            if record.get("kind") == "logo":
+                return 0
+            return 1 if entry.get("title") else 2
+
+        ordered = sorted(manifest.items(), key=rank)
+        sheet: list[JsonObject] = []
+        omitted = 0
+        for asset_id, entry in ordered:
+            if not isinstance(entry, dict):
+                omitted += 1
+                continue
+            record = entry.get("record") or {}
+            resolved = self._asset_preview_path(record)
+            if resolved is None:
+                omitted += 1
+                continue
+            if len(sheet) >= CONTACT_SHEET_MAX:
+                omitted += 1
+                continue
+            preview_path, pixel_width, pixel_height = resolved
+            label = entry.get("title") or record.get("label") or asset_id
+            sheet_entry: JsonObject = {
+                "asset_id": asset_id,
+                "kind": "logo" if record.get("kind") == "logo" else "image",
+                "label": label,
+                "preview_path": preview_path,
+                "pixel_width": pixel_width,
+                "pixel_height": pixel_height,
+            }
+            usage = entry.get("usage")
+            if usage:
+                sheet_entry["usage_note"] = str(usage)[:120]
+            sheet.append(sheet_entry)
+        return sheet, omitted
+
+    def _placed_brand_asset_previews(self) -> list[JsonObject]:
+        """Slice 2 D3: the reviewer's source-asset comparison list — the intersection
+        of (image nodes in the CURRENT scene and their `asset_id`) with the kit
+        manifest, each resolved to its source thumbnail path, capped at
+        PLACED_PREVIEWS_MAX. Paths only, no base64. Non-kit imagery (generated heroes)
+        is excluded — this list exists to verify KIT placements against their source."""
+        manifest = self.config.brand_kit_assets or {}
+        if not manifest:
+            return []
+        previews: list[JsonObject] = []
+        seen: set[str] = set()
+        for node in (self.scene.get("nodes") or {}).values():
+            kind = node.get("kind") or {}
+            if kind.get("kind") != "image":
+                continue
+            asset_id = kind.get("asset_id")
+            if not asset_id or asset_id in seen or asset_id not in manifest:
+                continue
+            entry = manifest.get(asset_id) or {}
+            record = entry.get("record") or {}
+            resolved = self._asset_preview_path(record)
+            if resolved is None:
+                continue
+            seen.add(asset_id)
+            preview_path, _pw, _ph = resolved
+            label = entry.get("title") or record.get("label") or asset_id
+            previews.append(
+                {
+                    "asset_id": asset_id,
+                    "label": label,
+                    "preview_path": preview_path,
+                }
+            )
+            if len(previews) >= PLACED_PREVIEWS_MAX:
+                break
+        return previews
 
     def _latest_diagnostics_ranked(
         self, previous_feedback: list[JsonObject]

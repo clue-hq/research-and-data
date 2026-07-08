@@ -510,6 +510,14 @@ I. REQUEST & BRAND
      matching family literal is NOT a pass: unbound text silently detaches
      from the kit the moment its tokens change. Name the token the author
      should have used.
+   - SOURCE-ASSET VERIFICATION: when `placed_brand_asset_previews` is present,
+     the images attached AFTER the design preview are the SOURCE thumbnails of
+     the brand assets this scene placed, in that list's order. Verify each
+     placement against its source: it is the CORRECT asset, a variant suited to
+     the background it sits on (a reversed lockup on a dark field, a dark one on
+     light), rendered with NO distortion/stretch, and legible at its placed
+     size. A mismatch — wrong mark, wrong variant for the background, squashed or
+     upscaled — is a blocker-level "brand" issue targeting the placing node.
 
 J. IMAGERY (apply ONLY when the design uses — or a brief like this should use — an
    image / illustration / icon)

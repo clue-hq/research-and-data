@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import json
+import logging
 import re
 from pathlib import Path
 from typing import Any
@@ -25,6 +26,14 @@ follow a static diagnostic classifier. Errors outrank warnings. If the issue is
 composition, visual balance, parent/artboard overflow, or repeated failed local
 patches (see attempt_history), choose a structural rewrite mode instead of a tiny
 targeted patch.
+
+BRAND-ASSET THUMBNAILS: when a `brand_asset_contact_sheet` is attached, the images
+after the preview ARE the kit's assets (logos first, then imagery), one per entry in
+list order. Choose imagery and logo placements by LOOKING at them — the subject, the
+colors, any baked-in text, and their contrast against the CURRENT draft — not by the
+metadata alone. The label/usage_note is the index; the pixels are the judgment (e.g. a
+dark lockup will not read on a dark draft; a dashboard screenshot and a clinician photo
+serve different briefs).
 
 SEEDED CONTINUATION TURNS: when the report says `seeded_from_initial_scene: true`,
 the scene IS the user's live document — you are continuing it, not creating one.
@@ -59,8 +68,11 @@ class LangChainAgentDirector(AgentDirector):
                 "type": "text",
                 "text": (
                     "Choose the next Lumen design action mode from this curated "
-                    "situation report. The latest preview is attached as an image. "
-                    "Return AgentDirectorDecision JSON only.\n\n"
+                    "situation report. The latest preview is attached FIRST as an "
+                    "image, followed by the brand-asset thumbnails listed in "
+                    "`brand_asset_contact_sheet`, in that exact order — so you can "
+                    "match each attached thumbnail to its label/usage_note via the "
+                    "JSON. Return AgentDirectorDecision JSON only.\n\n"
                     f"{json.dumps(full_context, indent=2)}"
                 ),
             },
@@ -106,7 +118,13 @@ class LangChainDslAuthor(DslAuthor):
                     f"{json.dumps(payload, indent=2)}"
                 ),
             },
-            *image_blocks_from_context(request.full_context),
+            # The AUTHOR keeps the contact sheet's TEXT (labels + asset_ids it
+            # references in DSL) but not its image payload — the sheet's pixels are
+            # the DIRECTOR's judgment input (Slice 2 design), and the author call is
+            # the longest-context one in the loop (the K1 blow-up lesson).
+            *image_blocks_from_context(
+                request.full_context, include_contact_sheet=False
+            ),
         ]
         response = self.model.invoke(
             [
@@ -165,7 +183,13 @@ class LangChainVisualReviewer(VisualReviewer):
                     "Review this Lumen preview. Return a VisualCritique JSON "
                     "object. Reject visible clipping, wrong dimensions, weak "
                     "hierarchy, unreadable text, missing request requirements, "
-                    "or poor brand fit.\n\n"
+                    "or poor brand fit. After the design preview, the SOURCE "
+                    "thumbnails of any placed brand assets are attached in "
+                    "`placed_brand_asset_previews` order — verify each placement "
+                    "against its source: correct asset, a variant suited to the "
+                    "background it sits on, no distortion/stretch, legible at its "
+                    "placed size. A mismatch is a blocker targeting the placing "
+                    "node.\n\n"
                     f"{json.dumps(payload, indent=2)}"
                 ),
             },
@@ -264,6 +288,107 @@ def init_model(
     return init_chat_model(model, **kwargs)
 
 
+# Slice 2 D4: cache of the multimodal-capability probe, keyed by (base_url, model id).
+# Both outcomes are cached (passed / raised) so repeat turns in one process never
+# re-hit the network — the model is fixed for the life of a run.
+_IMAGE_INPUT_SUPPORT_CACHE: dict[tuple[str, str], bool] = {}
+
+
+def _openrouter_model_input_modalities(model_entry: dict) -> list[str] | None:
+    """Extract a model's input modalities from an OpenRouter `/models` entry,
+    handling BOTH observed shapes: `architecture.input_modalities` (a list) and
+    `architecture.modality` (a string like `text+image->text` or `text->text`).
+    Returns None when neither is present (the caller treats that as unknown)."""
+    architecture = model_entry.get("architecture") or {}
+    modalities = architecture.get("input_modalities")
+    if isinstance(modalities, list):
+        return [str(m).lower() for m in modalities]
+    modality = architecture.get("modality")
+    if isinstance(modality, str) and modality:
+        # `text+image+file->text` — the INPUT side is everything before `->`.
+        input_side = modality.split("->", 1)[0]
+        return [part.strip().lower() for part in input_side.split("+") if part.strip()]
+    return None
+
+
+def assert_model_supports_image_input(
+    model: str, *, base_url: str, api_key: str
+) -> None:
+    """Slice 2 D4: fail LOUDLY, BEFORE a run starts, if LUMEN_AGENT_MODEL is a
+    text-only model. The loop is structurally mandatory-multimodal (the Director and
+    visual reviewer attach images every turn); a text-only model instead authors,
+    then dies mid-turn at the reviewer with `404 No endpoints found that support
+    image input` — burning the paid authoring call. This probe moves that failure to
+    startup.
+
+    Only a POSITIVE "text-only" finding raises. A model missing from the list, a
+    non-OpenRouter gateway, or any network error must NEVER brick a run — those log a
+    warning and return (unknown ≠ text-only)."""
+    model_id = model[len("openai:") :] if model.startswith("openai:") else model
+    cache_key = (base_url, model_id)
+    if cache_key in _IMAGE_INPUT_SUPPORT_CACHE:
+        if not _IMAGE_INPUT_SUPPORT_CACHE[cache_key]:
+            _raise_text_only(model)
+        return
+
+    import httpx
+
+    try:
+        response = httpx.get(
+            f"{base_url}/models",
+            headers={"Authorization": f"Bearer {api_key}"},
+            timeout=10.0,
+        )
+        response.raise_for_status()
+        data = response.json().get("data") or []
+    except Exception as error:  # network down, non-OpenRouter gateway, bad JSON.
+        logging.getLogger(__name__).warning(
+            "Could not verify image-input support for model %r via %s/models (%s); "
+            "proceeding without the check — an unknown model must not brick a run.",
+            model,
+            base_url,
+            error,
+        )
+        return
+
+    entry = next((m for m in data if m.get("id") == model_id), None)
+    if entry is None:
+        logging.getLogger(__name__).warning(
+            "Model %r was not found in OpenRouter's model list; skipping the "
+            "image-input check (unknown, not text-only).",
+            model_id,
+        )
+        return
+
+    modalities = _openrouter_model_input_modalities(entry)
+    if modalities is None:
+        # Entry found but carries neither modality shape → UNKNOWN. Do not cache:
+        # caching False here would make the model pass on the first call and then
+        # brick every later call from the poisoned cache (unknown ≠ text-only).
+        logging.getLogger(__name__).warning(
+            "Model %r has no recognizable modality metadata in OpenRouter's list; "
+            "skipping the image-input check (unknown, not text-only).",
+            model_id,
+        )
+        return
+    supports_image = "image" in modalities
+    _IMAGE_INPUT_SUPPORT_CACHE[cache_key] = supports_image
+    if not supports_image:
+        _raise_text_only(model)
+
+
+def _raise_text_only(model: str) -> None:
+    raise ValueError(
+        f"LUMEN_AGENT_MODEL={model!r} is a TEXT-ONLY model, but the Lumen deep-agent "
+        "loop is mandatory-multimodal: the Director and the visual reviewer attach "
+        "images on every turn. Configured as-is, the run would author and then die "
+        "mid-turn at the reviewer with `404 No endpoints found that support image "
+        "input`, wasting the paid authoring call. Set LUMEN_AGENT_MODEL to a model "
+        "whose OpenRouter input modalities include `image` (e.g. a vision-capable "
+        "Claude/GPT/Gemini id)."
+    )
+
+
 def try_structured_model(model: Any, schema: type[VisualCritique]):
     try:
         return model.with_structured_output(schema)
@@ -303,6 +428,38 @@ def compact_preview_payload(preview_payload: dict) -> dict:
     return compact
 
 
+_PREVIEW_MIME_BY_SUFFIX = {
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".webp": "image/webp",
+    ".gif": "image/gif",
+}
+
+
+def _mime_from_path(path: str) -> str:
+    """Infer the vision mime type from a preview path's suffix (default PNG)."""
+    return _PREVIEW_MIME_BY_SUFFIX.get(Path(path).suffix.lower(), "image/png")
+
+
+def _asset_preview_block(preview_path: str) -> dict | None:
+    """Slice 2: read a kit-asset preview PATH into a base64 vision block at the model
+    boundary. Returns None (skip, do not raise) when the file is missing/unreadable —
+    the context dict only carries paths, so a stale path must never break the call."""
+    if not preview_path:
+        return None
+    try:
+        data = base64.b64encode(Path(preview_path).read_bytes()).decode("ascii")
+    except OSError:
+        return None
+    return {
+        "type": "image",
+        "source_type": "base64",
+        "mime_type": _mime_from_path(preview_path),
+        "data": data,
+    }
+
+
 def preview_image_blocks(preview_payload: dict) -> list[dict]:
     blocks: list[dict] = []
     for artifact in preview_payload.get("artifacts", []):
@@ -316,31 +473,58 @@ def preview_image_blocks(preview_payload: dict) -> list[dict]:
                 "data": artifact["base64"],
             }
         )
+    # Slice 2 D3: after the rendered-preview blocks, append the SOURCE thumbnails of
+    # the kit assets the scene placed (paths from `placed_brand_asset_previews`), so
+    # the critic verifies each placement against its source. Read at the boundary; a
+    # missing file is skipped, never fatal.
+    for entry in preview_payload.get("placed_brand_asset_previews", []) or []:
+        block = _asset_preview_block(entry.get("preview_path"))
+        if block is not None:
+            blocks.append(block)
     return blocks
 
 
-def image_blocks_from_context(full_context: dict) -> list[dict]:
+def image_blocks_from_context(
+    full_context: dict, *, include_contact_sheet: bool = True
+) -> list[dict]:
     """Read the LATEST preview PNG pointed to by the curated context and return it
     as a single image block. The base64 is produced here, at the model boundary,
     and never stored in the context dict — so it is sent exactly once per call and
     cannot pile up across iterations the way the old `preview_activity` list did.
+
+    `include_contact_sheet=False` is the AUTHOR's setting: it keeps the preview
+    block but skips the brand-asset thumbnails — the sheet's pixels are the
+    Director's judgment input, and the author call is the loop's longest-context
+    one (Slice 2 design; the sheet's TEXT still reaches the author via the JSON).
     """
+    blocks: list[dict] = []
     summary = (full_context or {}).get("preview_summary") or {}
     path = summary.get("png_path")
-    if not path:
-        return []
-    try:
-        data = base64.b64encode(Path(path).read_bytes()).decode("ascii")
-    except OSError:
-        return []
-    return [
-        {
-            "type": "image",
-            "source_type": "base64",
-            "mime_type": "image/png",
-            "data": data,
-        }
-    ]
+    if path:
+        try:
+            data = base64.b64encode(Path(path).read_bytes()).decode("ascii")
+        except OSError:
+            data = None
+        if data is not None:
+            blocks.append(
+                {
+                    "type": "image",
+                    "source_type": "base64",
+                    "mime_type": "image/png",
+                    "data": data,
+                }
+            )
+    # Slice 2 D2: after the preview, append one block per brand-asset contact-sheet
+    # entry, in the exact order the sheet lists them so the model can match blocks
+    # to labels via the JSON it already receives. Director-only: the author calls
+    # this with include_contact_sheet=False. Bytes are read from `preview_path` here
+    # at the boundary; a missing file is skipped without raising.
+    if include_contact_sheet:
+        for entry in (full_context or {}).get("brand_asset_contact_sheet", []) or []:
+            block = _asset_preview_block(entry.get("preview_path"))
+            if block is not None:
+                blocks.append(block)
+    return blocks
 
 
 def extract_dsl(text: str) -> str:

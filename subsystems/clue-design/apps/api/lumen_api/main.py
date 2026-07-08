@@ -4006,6 +4006,19 @@ def run_agent_turn_preview(
             # when the applied ops touched none of the targets. Prompt-only
             # delivery measured unenforceable (moda probe P1r2/P5r2).
             config = replace(config, turn_target_node_ids=turn_targets)
+        # Slice 2 D4: the loop is mandatory-multimodal (Director + reviewer attach
+        # images every turn). Fail LOUDLY here, before the run authors, if the
+        # configured model is text-only — otherwise the run dies mid-turn at the
+        # reviewer with `404 No endpoints found that support image input`, wasting the
+        # paid authoring call. Raised ValueError falls through this block's try/except
+        # to a clean agent_runtime.failed response. Unknown/network errors never raise.
+        from lumen_deepagent.providers import assert_model_supports_image_input
+
+        assert_model_supports_image_input(
+            config.model,
+            base_url=config.agent_base_url,
+            api_key=config.agent_api_key,
+        )
         prompt = editor_agent_prompt(payload)
         loop, tools = create_provider_quality_loop(
             prompt,

@@ -7,7 +7,10 @@ from pathlib import Path
 
 from .config import AgentRuntimeConfig
 from .factory import create_lumen_design_agent
-from .providers import create_provider_quality_loop
+from .providers import (
+    assert_model_supports_image_input,
+    create_provider_quality_loop,
+)
 
 
 def main() -> None:
@@ -47,6 +50,15 @@ def main() -> None:
             brand_kit=json.loads(args.brand_kit_file.read_text(encoding="utf-8")),
             brand_kit_source="file",
         )
+    # Slice 2 D4: before a live run starts, fail loudly if the configured model is
+    # text-only — the loop is mandatory-multimodal (Director + reviewer attach images
+    # every turn), so a text-only model dies mid-turn at the reviewer after burning
+    # the authoring call. Unknown model / network error never raises.
+    assert_model_supports_image_input(
+        config.model,
+        base_url=config.agent_base_url,
+        api_key=config.agent_api_key,
+    )
     if args.mode == "quality-loop":
         loop, tools = create_provider_quality_loop(args.prompt, config)
         result = loop.run(args.prompt)

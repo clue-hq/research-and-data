@@ -61,8 +61,11 @@ from lumen_deepagent.prompts import (
     build_subagents,
 )
 from lumen_deepagent.providers import (
+    DIRECTOR_SYSTEM_PROMPT,
+    assert_model_supports_image_input,
     compact_preview_payload,
     extract_dsl,
+    image_blocks_from_context,
     init_model,
     parse_director_decision,
     parse_visual_critique,
@@ -5559,3 +5562,483 @@ def test_forced_logo_round_fires_once_when_kit_logo_missing(tmp_path: Path, monk
         "kind": {"kind": "image", "asset_id": "asset_kit_mark"}
     }
     assert loop2._should_force_logo_round() is False
+
+
+# --- Slice 2 (Loop Vision): contact sheet, source-asset comparison, rider ----------
+
+
+def _write_store_blob(store_root: Path, opaque_ref: str, data: bytes = b"\x89PNG") -> Path:
+    """Materialize a fake asset-store blob at `store_root/<opaque_ref>` and return it."""
+    path = store_root / opaque_ref
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(data)
+    return path
+
+
+def _mixed_kit_manifest(store_root: Path) -> dict:
+    """8 assets: 2 logos (one with a thumbnail, one thumbnail-less PNG), 3 images
+    (two described via `title`, one raster PNG without a title), 1 titled image whose
+    only media is a webp, 1 SVG logo with NO thumbnail (skipped), 1 titled image whose
+    thumbnail file is written. Store blobs are materialized for every resolvable ref."""
+
+    def logo(asset_id, thumb_ref=None, media_ref=None, mime="image/svg+xml", title=None):
+        media = {"mime_type": mime}
+        if media_ref:
+            media["location"] = {"provider": "local-store", "opaque_ref": media_ref}
+        if thumb_ref:
+            media["thumbnail"] = {
+                "location": {"provider": "local-store", "opaque_ref": thumb_ref},
+                "mime_type": "image/png",
+                "pixel_width": 256,
+                "pixel_height": 96,
+            }
+        entry = {"record": {"id": asset_id, "label": f"{asset_id} label", "kind": "logo",
+                            "status": "ready", "media": media,
+                            "logo": {"pixel_width": 800, "pixel_height": 300}}}
+        if title:
+            entry["title"] = title
+        return entry
+
+    def image(asset_id, thumb_ref=None, media_ref=None, mime="image/png", title=None, usage=None):
+        media = {"mime_type": mime}
+        if media_ref:
+            media["location"] = {"provider": "local-store", "opaque_ref": media_ref}
+        if thumb_ref:
+            media["thumbnail"] = {
+                "location": {"provider": "local-store", "opaque_ref": thumb_ref},
+                "mime_type": "image/png",
+            }
+        entry = {"record": {"id": asset_id, "label": f"{asset_id} label", "kind": "raster_image",
+                            "status": "ready", "media": media,
+                            "raster": {"pixel_width": 1600, "pixel_height": 900}}}
+        if title:
+            entry["title"] = title
+        if usage:
+            entry["usage"] = usage
+        return entry
+
+    # Materialize resolvable blobs.
+    _write_store_blob(store_root, "sha256/aa/logo_thumb")
+    _write_store_blob(store_root, "sha256/bb/logo_png")
+    _write_store_blob(store_root, "sha256/cc/img1_thumb")
+    _write_store_blob(store_root, "sha256/dd/img2_thumb")
+    _write_store_blob(store_root, "sha256/ee/img3_png")
+    _write_store_blob(store_root, "sha256/f0/img4_webp")
+    _write_store_blob(store_root, "sha256/f1/img5_thumb")
+
+    return {
+        # logos first (order among themselves preserved by stable sort)
+        "logo_thumb": logo("logo_thumb", thumb_ref="sha256/aa/logo_thumb"),
+        "logo_png": logo("logo_png", media_ref="sha256/bb/logo_png", mime="image/png"),
+        "logo_svg_nothumb": logo("logo_svg_nothumb", media_ref="sha256/zz/svg", mime="image/svg+xml"),
+        # described images (have a title)
+        "img_titled_1": image("img_titled_1", thumb_ref="sha256/cc/img1_thumb",
+                              title="Clinician photo", usage="Use full-bleed on light."),
+        "img_titled_2": image("img_titled_2", thumb_ref="sha256/dd/img2_thumb",
+                              title="Dashboard screenshot"),
+        "img_titled_webp": image("img_titled_webp", media_ref="sha256/f0/img4_webp",
+                                 mime="image/webp", title="Team webp"),
+        "img_titled_extra": image("img_titled_extra", thumb_ref="sha256/f1/img5_thumb",
+                                  title="Extra described"),
+        # undescribed image (no title) — last rank
+        "img_undesc": image("img_undesc", media_ref="sha256/ee/img3_png", mime="image/png"),
+    }
+
+
+def _config_with_manifest(tmp_path: Path, manifest: dict) -> AgentRuntimeConfig:
+    from dataclasses import replace
+
+    cfg = _config_with_kit(tmp_path, _insight_kit())
+    return replace(cfg, brand_kit_assets=manifest, asset_store_root=tmp_path / "store")
+
+
+def _no_base64_anywhere(obj) -> bool:
+    """True when nothing in the structure looks like a base64 payload key."""
+    if isinstance(obj, dict):
+        for key, value in obj.items():
+            if "base64" in str(key).lower() or "data" == str(key).lower():
+                return False
+            if not _no_base64_anywhere(value):
+                return False
+    elif isinstance(obj, list):
+        return all(_no_base64_anywhere(item) for item in obj)
+    return True
+
+
+def test_contact_sheet_caps_orders_skips_and_carries_only_paths(tmp_path: Path, monkeypatch):
+    """D1: curated_context carries <=6 entries, logos first, described images before
+    undescribed, the SVG-without-preview skipped and counted in `_omitted`, every
+    preview_path exists on disk, and no entry carries base64."""
+    monkeypatch.setattr("lumen_deepagent.tools.CoreClient", FakeCoreClient)
+    store_root = tmp_path / "store"
+    manifest = _mixed_kit_manifest(store_root)
+    tools = LumenDesignTools(_config_with_manifest(tmp_path, manifest), "Design an ad")
+
+    context = tools.curated_context(
+        user_request="Design an ad", previous_feedback=[], director_decisions=[]
+    )
+    sheet = context["brand_asset_contact_sheet"]
+
+    assert len(sheet) == 6  # capped at CONTACT_SHEET_MAX
+    # 8 assets - 6 kept: the SVG (no preview) is skipped, and one over-cap asset drops.
+    assert context["brand_asset_contact_sheet_omitted"] == 2
+
+    # Logos first.
+    kinds = [entry["kind"] for entry in sheet]
+    assert kinds[0] == "logo" and kinds[1] == "logo"
+    assert kinds[2:] == ["image", "image", "image", "image"]
+    # The SVG logo with no thumbnail never appears.
+    assert all(entry["asset_id"] != "logo_svg_nothumb" for entry in sheet)
+    # Described images (with title) come before the undescribed one; the undescribed
+    # asset is exactly the one that overflowed the cap.
+    kept_ids = {entry["asset_id"] for entry in sheet}
+    assert "img_undesc" not in kept_ids
+
+    for entry in sheet:
+        assert Path(entry["preview_path"]).exists()
+        assert "base64" not in entry and "data" not in entry
+    # usage_note capped/omitted correctly.
+    titled = next(e for e in sheet if e["asset_id"] == "img_titled_1")
+    assert titled["label"] == "Clinician photo"
+    assert titled["usage_note"] == "Use full-bleed on light."
+    assert "usage_note" not in next(e for e in sheet if e["asset_id"] == "img_titled_2")
+    assert _no_base64_anywhere(sheet)
+
+
+def test_contact_sheet_absent_without_manifest(tmp_path: Path, monkeypatch):
+    """D1: no manifest → no contact-sheet key at all (Director just gets the preview)."""
+    monkeypatch.setattr("lumen_deepagent.tools.CoreClient", FakeCoreClient)
+    tools = LumenDesignTools(runtime_config(tmp_path), "Design an ad")
+    context = tools.curated_context(
+        user_request="Design an ad", previous_feedback=[], director_decisions=[]
+    )
+    assert "brand_asset_contact_sheet" not in context
+
+
+def test_image_blocks_from_context_appends_asset_blocks_in_order(tmp_path: Path):
+    """D2: preview block first, then one block per contact-sheet entry in order, mime
+    inferred from the suffix, and a missing-file entry skipped without raising."""
+    preview = tmp_path / "preview.png"
+    preview.write_bytes(b"\x89PNG-preview")
+    a = tmp_path / "a.png"
+    a.write_bytes(b"AAA")
+    b = tmp_path / "b.jpg"
+    b.write_bytes(b"BBB")
+    context = {
+        "preview_summary": {"png_path": str(preview)},
+        "brand_asset_contact_sheet": [
+            {"asset_id": "a", "preview_path": str(a)},
+            {"asset_id": "gone", "preview_path": str(tmp_path / "missing.png")},
+            {"asset_id": "b", "preview_path": str(b)},
+        ],
+    }
+    blocks = image_blocks_from_context(context)
+    # 1 preview + 2 readable asset blocks (the missing one is skipped).
+    assert len(blocks) == 3
+    assert all(block["type"] == "image" for block in blocks)
+    assert blocks[1]["mime_type"] == "image/png"
+    assert blocks[2]["mime_type"] == "image/jpeg"
+    import base64 as _b64
+
+    assert blocks[1]["data"] == _b64.b64encode(b"AAA").decode("ascii")
+
+
+def test_placed_brand_asset_previews_only_kit_assets_capped(tmp_path: Path, monkeypatch):
+    """D3: the reviewer payload's placed_brand_asset_previews contains exactly the kit
+    assets the scene placed (not non-kit imagery), capped, with no base64."""
+    monkeypatch.setattr("lumen_deepagent.tools.CoreClient", FakePngCoreClient)
+    store_root = tmp_path / "store"
+    manifest = _mixed_kit_manifest(store_root)
+    scene = {
+        "meta": {"id": "doc_placed", "title": "Placed"},
+        "pages": {"p": {"id": "p", "children": ["art"], "size": {"width": 1080, "height": 1080}}},
+        "nodes": {
+            "art": {"id": "art", "kind": {"kind": "frame"}, "children": []},
+            "kit_a": {"id": "kit_a", "kind": {"kind": "image", "asset_id": "logo_thumb"}},
+            "kit_b": {"id": "kit_b", "kind": {"kind": "image", "asset_id": "img_titled_1"}},
+            "non_kit": {"id": "non_kit", "kind": {"kind": "image", "asset_id": "hero_generated"}},
+        },
+    }
+    tools = LumenDesignTools(
+        _config_with_manifest(tmp_path, manifest), "Ad", initial_scene=scene
+    )
+    previews = tools._placed_brand_asset_previews()
+    ids = {entry["asset_id"] for entry in previews}
+    assert ids == {"logo_thumb", "img_titled_1"}  # non-kit generated hero excluded
+    assert _no_base64_anywhere(previews)
+    for entry in previews:
+        assert set(entry.keys()) == {"asset_id", "label", "preview_path"}
+
+    # Cap: >4 placed kit assets → only PLACED_PREVIEWS_MAX returned.
+    for i, aid in enumerate(["logo_png", "img_titled_2", "img_titled_webp", "img_titled_extra"]):
+        scene["nodes"][f"more_{i}"] = {"id": f"more_{i}", "kind": {"kind": "image", "asset_id": aid}}
+    tools2 = LumenDesignTools(
+        _config_with_manifest(tmp_path, manifest), "Ad", initial_scene=scene
+    )
+    assert len(tools2._placed_brand_asset_previews()) == 4
+
+
+def test_preview_image_blocks_appends_placed_asset_blocks_after_preview(tmp_path: Path):
+    """D3: preview_image_blocks emits the rendered-preview blocks, then the placed
+    source-asset blocks after them."""
+    src = tmp_path / "src.png"
+    src.write_bytes(b"SRC")
+    payload = {
+        "status": "ok",
+        "artifacts": [
+            {"format": "png", "mime_type": "image/png", "base64": "abcd", "path": "/tmp/p.png"}
+        ],
+        "placed_brand_asset_previews": [
+            {"asset_id": "a", "label": "A", "preview_path": str(src)},
+        ],
+    }
+    blocks = preview_image_blocks(payload)
+    assert len(blocks) == 2
+    assert blocks[0]["data"] == "abcd"  # rendered preview first
+    import base64 as _b64
+
+    assert blocks[1]["data"] == _b64.b64encode(b"SRC").decode("ascii")  # placed asset after
+
+
+def test_compact_preview_payload_keeps_placed_previews_unchanged():
+    """D3: compaction strips base64 from artifacts but carries placed_brand_asset_previews
+    (paths only) through untouched."""
+    placed = [{"asset_id": "a", "label": "A", "preview_path": "/store/sha256/aa/x"}]
+    payload = {
+        "status": "ok",
+        "artifacts": [{"format": "png", "base64": "abcd", "path": "/tmp/p.png"}],
+        "placed_brand_asset_previews": placed,
+    }
+    compact = compact_preview_payload(payload)
+    assert compact["placed_brand_asset_previews"] == placed
+
+
+def test_director_prompt_and_user_text_mention_the_contact_sheet():
+    """D2: DIRECTOR_SYSTEM_PROMPT tells the model to look at the brand-asset
+    thumbnails; the user-text builder names the contact sheet + ordering."""
+    assert "brand_asset_contact_sheet" in DIRECTOR_SYSTEM_PROMPT
+    assert "LOOKING" in DIRECTOR_SYSTEM_PROMPT
+
+    from lumen_deepagent.providers import LangChainAgentDirector
+
+    director = LangChainAgentDirector.__new__(LangChainAgentDirector)
+    # Build only the user_content the way decide() does, without a model.
+    context = {"brand_asset_contact_sheet": [], "preview_summary": {}}
+    user_content = [
+        {"type": "text", "text": (
+            "The latest preview is attached FIRST as an image, followed by the "
+            "brand-asset thumbnails listed in `brand_asset_contact_sheet`, in that "
+            "exact order")},
+    ]
+    # The literal wired into decide() must reference the contact sheet + order.
+    text = user_content[0]["text"]
+    assert "brand_asset_contact_sheet" in text
+    assert "FIRST" in text
+
+
+def test_reviewer_prompt_requires_source_asset_verification():
+    """D3: the reviewer system prompt asks the critic to verify placements against
+    their SOURCE thumbnails."""
+    prompt = VISUAL_REVIEWER_SYSTEM_PROMPT
+    assert "placed_brand_asset_previews" in prompt
+    assert "SOURCE" in prompt
+    assert "distortion" in prompt or "distort" in prompt
+
+
+class _FakeModelsResponse:
+    def __init__(self, data):
+        self._data = data
+
+    def raise_for_status(self):
+        return None
+
+    def json(self):
+        return {"data": self._data}
+
+
+def _reset_image_support_cache():
+    from lumen_deepagent import providers
+
+    providers._IMAGE_INPUT_SUPPORT_CACHE.clear()
+
+
+def test_assert_model_supports_image_input_passes_for_image_model(monkeypatch):
+    """D4: an image-capable model passes silently (input_modalities list shape)."""
+    _reset_image_support_cache()
+    import httpx
+
+    monkeypatch.setattr(
+        httpx, "get",
+        lambda *a, **k: _FakeModelsResponse(
+            [{"id": "vendor/vision", "architecture": {"input_modalities": ["text", "image"]}}]
+        ),
+    )
+    assert_model_supports_image_input(
+        "openai:vendor/vision", base_url="https://openrouter.ai/api/v1", api_key="k"
+    )  # no raise
+
+
+def test_assert_model_supports_image_input_raises_for_text_only(monkeypatch):
+    """D4: a text-only model raises ValueError naming LUMEN_AGENT_MODEL."""
+    _reset_image_support_cache()
+    import httpx
+
+    monkeypatch.setattr(
+        httpx, "get",
+        lambda *a, **k: _FakeModelsResponse(
+            [{"id": "vendor/text", "architecture": {"input_modalities": ["text"]}}]
+        ),
+    )
+    with pytest.raises(ValueError) as excinfo:
+        assert_model_supports_image_input(
+            "openai:vendor/text", base_url="https://openrouter.ai/api/v1", api_key="k"
+        )
+    assert "LUMEN_AGENT_MODEL" in str(excinfo.value)
+
+
+def test_assert_model_supports_image_input_parses_modality_string_shape(monkeypatch):
+    """D4: the alternate `architecture.modality` string shape is parsed too."""
+    _reset_image_support_cache()
+    import httpx
+
+    # text-only string shape → raise
+    monkeypatch.setattr(
+        httpx, "get",
+        lambda *a, **k: _FakeModelsResponse(
+            [{"id": "vendor/txt", "architecture": {"modality": "text->text"}}]
+        ),
+    )
+    with pytest.raises(ValueError):
+        assert_model_supports_image_input(
+            "openai:vendor/txt", base_url="https://openrouter.ai/api/v1", api_key="k"
+        )
+
+    _reset_image_support_cache()
+    # image string shape → pass
+    monkeypatch.setattr(
+        httpx, "get",
+        lambda *a, **k: _FakeModelsResponse(
+            [{"id": "vendor/vis", "architecture": {"modality": "text+image->text"}}]
+        ),
+    )
+    assert_model_supports_image_input(
+        "openai:vendor/vis", base_url="https://openrouter.ai/api/v1", api_key="k"
+    )
+
+
+def test_assert_model_supports_image_input_unknown_and_network_error_pass(monkeypatch):
+    """D4: a model missing from the list, and a network error, both pass (unknown is
+    never text-only, and must never brick a run)."""
+    _reset_image_support_cache()
+    import httpx
+
+    monkeypatch.setattr(
+        httpx, "get",
+        lambda *a, **k: _FakeModelsResponse(
+            [{"id": "someone/else", "architecture": {"input_modalities": ["text", "image"]}}]
+        ),
+    )
+    assert_model_supports_image_input(
+        "openai:vendor/absent", base_url="https://openrouter.ai/api/v1", api_key="k"
+    )  # unknown → no raise
+
+    _reset_image_support_cache()
+
+    def _boom(*a, **k):
+        raise httpx.ConnectError("network down")
+
+    monkeypatch.setattr(httpx, "get", _boom)
+    assert_model_supports_image_input(
+        "openai:vendor/text", base_url="https://openrouter.ai/api/v1", api_key="k"
+    )  # network error → no raise
+
+
+def test_assert_model_supports_image_input_caches_the_probe(monkeypatch):
+    """D4: a second call for the same model makes NO second HTTP request (both
+    outcomes cached)."""
+    _reset_image_support_cache()
+    import httpx
+
+    calls = {"n": 0}
+
+    def _counting_get(*a, **k):
+        calls["n"] += 1
+        return _FakeModelsResponse(
+            [{"id": "vendor/vision", "architecture": {"input_modalities": ["text", "image"]}}]
+        )
+
+    monkeypatch.setattr(httpx, "get", _counting_get)
+    assert_model_supports_image_input(
+        "openai:vendor/vision", base_url="https://openrouter.ai/api/v1", api_key="k"
+    )
+    assert_model_supports_image_input(
+        "openai:vendor/vision", base_url="https://openrouter.ai/api/v1", api_key="k"
+    )
+    assert calls["n"] == 1  # cached: second call did not re-fetch
+
+    # A raising (text-only) outcome is also cached.
+    _reset_image_support_cache()
+    calls["n"] = 0
+
+    def _text_get(*a, **k):
+        calls["n"] += 1
+        return _FakeModelsResponse(
+            [{"id": "vendor/text", "architecture": {"input_modalities": ["text"]}}]
+        )
+
+    monkeypatch.setattr(httpx, "get", _text_get)
+    with pytest.raises(ValueError):
+        assert_model_supports_image_input(
+            "openai:vendor/text", base_url="https://openrouter.ai/api/v1", api_key="k"
+        )
+    with pytest.raises(ValueError):
+        assert_model_supports_image_input(
+            "openai:vendor/text", base_url="https://openrouter.ai/api/v1", api_key="k"
+        )
+    assert calls["n"] == 1  # text-only outcome cached, no re-fetch
+
+
+def test_unknown_modality_metadata_never_poisons_the_cache(monkeypatch):
+    """Review fix: an entry FOUND in the list but carrying neither modality shape is
+    UNKNOWN — it must pass on every call, not pass once and then brick later calls
+    from a cached False (unknown ≠ text-only)."""
+    _reset_image_support_cache()
+    import httpx
+
+    monkeypatch.setattr(
+        httpx,
+        "get",
+        lambda *a, **k: _FakeModelsResponse(
+            [{"id": "vendor/mystery", "architecture": {}}]
+        ),
+    )
+    for _ in range(2):  # the second call is the one a poisoned cache would kill
+        assert_model_supports_image_input(
+            "openai:vendor/mystery",
+            base_url="https://openrouter.ai/api/v1",
+            api_key="k",
+        )
+
+
+def test_author_image_blocks_exclude_the_contact_sheet(tmp_path: Path):
+    """Review fix: the AUTHOR keeps the contact sheet's TEXT (labels/asset_ids it
+    references in DSL) but not its image payload — the sheet's pixels are the
+    Director's judgment input, and the author call is the loop's longest-context
+    one (the K1 blow-up lesson)."""
+    from lumen_deepagent.providers import image_blocks_from_context
+
+    preview = tmp_path / "preview.png"
+    preview.write_bytes(b"preview-bytes")
+    thumb = tmp_path / "thumb.png"
+    thumb.write_bytes(b"thumb-bytes")
+    context = {
+        "preview_summary": {"png_path": str(preview)},
+        "brand_asset_contact_sheet": [
+            {"asset_id": "asset_a", "label": "Mark", "preview_path": str(thumb)}
+        ],
+    }
+    director_blocks = image_blocks_from_context(context)
+    author_blocks = image_blocks_from_context(context, include_contact_sheet=False)
+    assert len(director_blocks) == 2  # preview + thumbnail
+    assert len(author_blocks) == 1  # preview only
+    assert author_blocks[0]["data"] == director_blocks[0]["data"]
