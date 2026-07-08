@@ -529,6 +529,7 @@ fn brand_kit_font_and_logo_refs_can_match_scene_assets() {
             provenance: None,
             title: None,
             description: None,
+            usage_note: None,
         },
     );
 

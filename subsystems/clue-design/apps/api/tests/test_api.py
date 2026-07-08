@@ -642,6 +642,76 @@ def test_set_brand_kit_logo_publishes_new_version_with_human_choice(
     assert missing.status_code == 404
 
 
+def test_describe_assets_backfill_republishes_kit_with_metadata(
+    client: TestClient,
+) -> None:
+    """Imagery slice 1 backfill: POST /brand-kits/{id}/describe-assets stamps
+    cached asset descriptions onto the kit's entries and publishes a NEW
+    version — descriptions are frozen into the kit JSON at publish, so
+    healing the library alone never reaches the agent's brand card. With no
+    describer configured (tests), the cache is the only source: cache-first
+    behavior is exactly what's under test."""
+    compiled = client.post(
+        "/brand-kits/compile-styles",
+        json={
+            "source": valid_styles_source(),
+            "brand_kit_id": "brand_kit_insight_health",
+            "version": 4,
+            "name": "Insight Health",
+        },
+    )
+    assert compiled.status_code == 200, compiled.text
+
+    uploaded = upload_logo(client, label="The real lockup")
+    assert uploaded.status_code == 200, uploaded.text
+    asset_id = uploaded.json()["asset"]["id"]
+    chosen = client.post(
+        "/brand-kits/brand_kit_insight_health/logo",
+        json={"asset_id": asset_id, "slot": "primary"},
+    )
+    assert chosen.status_code == 200, chosen.text  # kit v5, real asset in slot
+
+    # A human-authored library row is the cache the backfill stamps from.
+    described = client.put(
+        f"/assets/{asset_id}/description",
+        json={
+            "title": "Insight lockup",
+            "description": "Teal squares beside INSIGHT HEALTH text.",
+            "usage": "Use the reversed variant on dark surfaces.",
+            "tags": ["logo"],
+        },
+    )
+    assert described.status_code == 200, described.text
+
+    backfilled = client.post(
+        "/brand-kits/brand_kit_insight_health/describe-assets"
+    )
+    assert backfilled.status_code == 200, backfilled.text
+    payload = backfilled.json()
+    assert payload["published"] is True
+    assert payload["counts"]["cached"] >= 1
+
+    detail = client.get("/brand-kits/brand_kit_insight_health").json()
+    kit_json = detail["brand_kit_json"]
+    assert kit_json["version"] == 6
+    primary = kit_json["assets"]["logos"]["primary"]
+    assert primary["title"] == "Insight lockup"
+    assert primary["description"] == "Teal squares beside INSIGHT HEALTH text."
+    # usage guidance is its OWN field — never folded into description.
+    assert primary["usage_note"] == "Use the reversed variant on dark surfaces."
+
+    # Idempotence: nothing new to stamp → no no-op version published.
+    again = client.post("/brand-kits/brand_kit_insight_health/describe-assets")
+    assert again.status_code == 200, again.text
+    assert again.json()["published"] is False
+    assert (
+        client.get("/brand-kits/brand_kit_insight_health").json()["brand_kit_json"][
+            "version"
+        ]
+        == 6
+    )
+
+
 def test_ops_attached_brand_kit_preflights_via_scene_ref_and_heals_the_row(
     client: TestClient,
 ) -> None:

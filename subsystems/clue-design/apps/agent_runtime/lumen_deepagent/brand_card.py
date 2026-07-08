@@ -117,6 +117,10 @@ def _logo_inventory(logos: JsonObject) -> list[JsonObject]:
                 "allowed_backgrounds": list(logo.get("allowed_backgrounds") or [])[:4],
                 "min_size": logo.get("min_size"),
                 "title": logo.get("title"),
+                # Imagery slice 1: design-usage guidance is its OWN capped field
+                # (kit `usage_note`) — never folded into a description a cap
+                # can eat. Distinct from "usage", the slot kind above.
+                **_usage_note_field(logo),
             }
         )
     return inventory
@@ -138,11 +142,22 @@ def _image_inventory(images: JsonObject) -> list[JsonObject]:
         description = image.get("description")
         if isinstance(description, str) and description:
             entry["description"] = description[:160]
+        # Imagery slice 1: usage guidance rides as its own capped field so the
+        # description cap above can never eat it (the old " Usage: …" fold put
+        # it exactly where truncation bites first).
+        entry.update(_usage_note_field(image))
         tags = list(image.get("style_tags") or [])[:4]
         if tags:
             entry["style_tags"] = tags
         inventory.append(entry)
     return inventory
+
+
+def _usage_note_field(entry: JsonObject) -> JsonObject:
+    usage_note = entry.get("usage_note")
+    if isinstance(usage_note, str) and usage_note:
+        return {"usage_note": usage_note[:120]}
+    return {}
 
 
 def _brightest_accent(colors: JsonObject) -> Optional[JsonObject]:

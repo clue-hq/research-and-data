@@ -29,7 +29,6 @@ from py_lumen_config import settings
 from .evidence import BrandEvidence, ImageEvidence, LogoEvidence
 
 DEFAULT_TIMEOUT_S = 60.0
-BATCH_SIZE = 8
 PREVIEW_MAX_PX = 512
 
 
@@ -64,7 +63,12 @@ class AssetDescriber(Protocol):
 
 
 class NullDescriber:
-    """Deterministic no-op describer. The default everywhere; tests use this."""
+    """Deterministic no-op describer. The default everywhere; tests use this.
+
+    ``active = False`` tells the orchestrator to skip the miss pass entirely —
+    describe being OFF is not N per-asset failures."""
+
+    active = False
 
     def describe(self, items: list[DescribeItem]) -> list[DescribeResult | None]:
         return [None] * len(items)
@@ -193,16 +197,26 @@ def apply_descriptions(
     describer: AssetDescriber,
     resolve_bytes: Callable[[str], "tuple[bytes, str] | None"],
     reporter: Callable[[str, float], None],
+    rasterize_svg: Callable[[str], bytes | None] | None = None,
+    diagnostics: list[dict] | None = None,
 ) -> BrandEvidence:
     """Stamp title/description/usage_note/tags onto ``evidence`` logos+images.
 
-    Cache hits (any origin) stamp directly; misses with resolvable, previewable
-    bytes get ONE ``describer.describe`` call in batches of ≤ 8, are persisted
-    via ``put_ai``, then stamped. SVGs (no raster preview in v1) and describer
-    failures/None are skipped silently with an info diagnostic. Deterministic
-    with ``NullDescriber``.
+    Cache hits (any origin) stamp directly; each miss gets its OWN describe
+    call (one image per request — a timeout or malformed image costs exactly
+    one caption, never a batch; the ``asset_descriptions`` cache makes the
+    per-image latency a once-per-lifetime cost). SVGs raster through the
+    injected ``rasterize_svg`` seam (the engine renderer, in production).
+
+    Nothing is skipped silently: every miss that ends undescribed appends one
+    named warning to ``diagnostics`` (LUMI0803 describe failed, LUMI0804
+    preview unavailable, LUMI0805 bytes unresolvable), and the final reporter
+    call carries the described-N-of-M summary. An INACTIVE describer (Null, or
+    OpenRouter without the env gate/key) skips the miss pass entirely — off is
+    off, not N failures. Deterministic with ``NullDescriber``.
     """
     reporter("Describing your assets…", 0.80)
+    sink = diagnostics if diagnostics is not None else []
     store = DescriptionStore(connection)
     model = settings.lumen_ingestion_describe_model
 
@@ -227,46 +241,213 @@ def apply_descriptions(
     for asset_id, row in cached.items():
         _stamp(targets[asset_id], row)
 
-    # Misses that resolve to previewable bytes → describe.
-    items: list[DescribeItem] = []
-    for asset_id, entry in targets.items():
-        if asset_id in cached:
+    misses = [a for a in targets if a not in cached]
+    if not misses or not getattr(describer, "active", True):
+        reporter(
+            f"Asset descriptions: {len(cached)}/{len(targets)} cached"
+            + ("" if getattr(describer, "active", True) else " (describe disabled)"),
+            0.82,
+        )
+        return evidence
+
+    described = 0
+    failed = 0
+    for asset_id, preview in _previews(
+        misses, kinds, resolve_bytes, rasterize_svg, sink
+    ):
+        if preview is None:
+            failed += 1
             continue
+        item = DescribeItem(
+            asset_id=asset_id,
+            kind=kinds[asset_id],
+            image_b64=preview,
+            filename=None,
+            context=context,
+        )
+        result: DescribeResult | None
+        try:
+            results = describer.describe([item])
+            result = results[0] if results else None
+        except Exception as error:  # noqa: BLE001 - one asset must never sink the rest
+            _warn(
+                sink,
+                "LUMI0803",
+                f"asset description failed for {asset_id}: {error}",
+            )
+            failed += 1
+            continue
+        if result is None:
+            _warn(
+                sink,
+                "LUMI0803",
+                f"asset description returned nothing for {asset_id}",
+            )
+            failed += 1
+            continue
+        store.put_ai(result, model)
+        _stamp(targets[asset_id], _result_to_row(result))
+        described += 1
+
+    reporter(
+        f"Asset descriptions: {described + len(cached)}/{len(targets)} "
+        f"({described} new, {len(cached)} cached, {failed} failed)",
+        0.85,
+    )
+    return evidence
+
+
+def _previews(
+    misses: list[str],
+    kinds: dict[str, str],
+    resolve_bytes: Callable[[str], "tuple[bytes, str] | None"],
+    rasterize_svg: Callable[[str], bytes | None] | None,
+    sink: list[dict],
+):
+    """Yield (asset_id, preview_b64 | None) per miss, appending one named
+    diagnostic for every miss that cannot produce a preview."""
+    for asset_id in misses:
         resolved = resolve_bytes(asset_id)
         if resolved is None:
+            _warn(
+                sink,
+                "LUMI0805",
+                f"asset bytes unresolvable for {asset_id} — description skipped",
+            )
+            yield asset_id, None
             continue
         data, mime = resolved
         if mime == "image/svg+xml" or _is_svg_bytes(data):
-            # LUMI0804: svg preview unavailable — description skipped. A human can
-            # title it in the library UI (slice 4).
-            continue
+            raster = rasterize_svg(asset_id) if rasterize_svg is not None else None
+            if raster is None:
+                _warn(
+                    sink,
+                    "LUMI0804",
+                    f"svg preview unavailable for {asset_id} — description skipped",
+                )
+                yield asset_id, None
+                continue
+            data = raster
         preview = _downscale_preview(data)
         if preview is None:
-            continue
-        items.append(
-            DescribeItem(
-                asset_id=asset_id,
-                kind=kinds[asset_id],
-                image_b64=preview,
-                filename=None,
-                context=context,
+            _warn(
+                sink,
+                "LUMI0804",
+                f"preview downscale failed for {asset_id} — description skipped",
             )
-        )
-
-    for batch in _batched(items, BATCH_SIZE):
-        try:
-            results = describer.describe(batch)
-        except Exception:  # noqa: BLE001 - failure must never escape
-            # LUMI0803: asset description unavailable — skipped silently, evidence
-            # unchanged for this batch.
+            yield asset_id, None
             continue
-        for item, result in zip(batch, results):
-            if result is None:
-                continue
-            store.put_ai(result, model)
-            _stamp(targets[item.asset_id], _result_to_row(result))
+        yield asset_id, preview
 
-    return evidence
+
+def _warn(sink: list[dict], code: str, message: str) -> None:
+    sink.append({"code": code, "severity": "warning", "message": message})
+
+
+def describe_kit_assets(
+    brand_kit: dict,
+    *,
+    connection: sqlite3.Connection,
+    describer: AssetDescriber,
+    resolve_bytes: Callable[[str], "tuple[bytes, str] | None"],
+    rasterize_svg: Callable[[str], bytes | None] | None = None,
+    diagnostics: list[dict] | None = None,
+    brand_name: str | None = None,
+) -> dict:
+    """Backfill (imagery slice 1): stamp title/description/usage_note onto the
+    KIT's own logo/image entries — cache-first over ``asset_descriptions``,
+    one describe call per miss, same diagnostics contract as
+    ``apply_descriptions``. Mutates ``brand_kit`` in place and returns counts;
+    the caller republishes the kit as a NEW version, because descriptions are
+    frozen into the kit JSON at publish — healing the library alone never
+    reaches the agent's brand card."""
+    sink = diagnostics if diagnostics is not None else []
+    store = DescriptionStore(connection)
+    model = settings.lumen_ingestion_describe_model
+    assets = brand_kit.get("assets") or {}
+
+    # asset_id -> every kit entry it should stamp (an asset can sit in several
+    # slots), plus a kind per asset for the vision prompt.
+    targets: dict[str, list[dict]] = {}
+    kinds: dict[str, str] = {}
+    for logo in (assets.get("logos") or {}).values():
+        if not isinstance(logo, dict):
+            continue
+        variants = [v for v in (logo.get("variants") or []) if isinstance(v, dict)]
+        asset_id = str((variants[0] if variants else {}).get("asset_id") or "")
+        if asset_id:
+            targets.setdefault(asset_id, []).append(logo)
+            kinds[asset_id] = "logo"
+    for image in (assets.get("images") or {}).values():
+        if not isinstance(image, dict):
+            continue
+        asset_id = str(image.get("asset_id") or "")
+        if asset_id:
+            targets.setdefault(asset_id, []).append(image)
+            kinds.setdefault(asset_id, str(image.get("role") or "image"))
+
+    counts = {"total": len(targets), "cached": 0, "described": 0, "failed": 0}
+    if not targets:
+        return counts
+
+    cached = store.get_many(list(targets.keys()))
+    for asset_id, row in cached.items():
+        for entry in targets[asset_id]:
+            _stamp_kit_entry(entry, row)
+    counts["cached"] = len(cached)
+
+    misses = [a for a in targets if a not in cached]
+    if not misses or not getattr(describer, "active", True):
+        return counts
+
+    context = _context(brand_name, "backfill")
+    for asset_id, preview in _previews(
+        misses, kinds, resolve_bytes, rasterize_svg, sink
+    ):
+        if preview is None:
+            counts["failed"] += 1
+            continue
+        item = DescribeItem(
+            asset_id=asset_id,
+            kind=kinds[asset_id],
+            image_b64=preview,
+            filename=None,
+            context=context,
+        )
+        try:
+            results = describer.describe([item])
+            result = results[0] if results else None
+        except Exception as error:  # noqa: BLE001 - one asset must never sink the rest
+            _warn(sink, "LUMI0803", f"asset description failed for {asset_id}: {error}")
+            counts["failed"] += 1
+            continue
+        if result is None:
+            _warn(
+                sink,
+                "LUMI0803",
+                f"asset description returned nothing for {asset_id}",
+            )
+            counts["failed"] += 1
+            continue
+        store.put_ai(result, model)
+        row = _result_to_row(result)
+        for entry in targets[asset_id]:
+            _stamp_kit_entry(entry, row)
+        counts["described"] += 1
+
+    return counts
+
+
+def _stamp_kit_entry(entry: dict, row: dict) -> None:
+    """Stamp library metadata onto a kit logo/image entry. Absent values leave
+    the entry untouched (fields stay OMITTED, matching the Rust
+    skip_serializing_if on title/description/usage_note)."""
+    if row.get("title"):
+        entry["title"] = row["title"]
+    if row.get("description"):
+        entry["description"] = row["description"]
+    if row.get("usage"):
+        entry["usage_note"] = row["usage"]
 
 
 def _context(brand_name: str | None, source_kind: str | None) -> str:
@@ -292,11 +473,6 @@ def _result_to_row(result: DescribeResult) -> dict:
         "usage": result.usage,
         "tags": list(result.tags),
     }
-
-
-def _batched(items: list, size: int):
-    for start in range(0, len(items), size):
-        yield items[start : start + size]
 
 
 def _is_svg_bytes(data: bytes) -> bool:
@@ -339,6 +515,12 @@ class OpenRouterDescriber:
         self.model = settings.lumen_ingestion_describe_model
         self.base_url = settings.openrouter_base_url
         self.api_key = settings.openrouter_api_key
+
+    @property
+    def active(self) -> bool:
+        """Whether describe can actually run — gates the orchestrator's miss
+        pass so an un-keyed/disabled describer is OFF, not N failures."""
+        return bool(self.enabled and self.api_key)
 
     def describe(self, items: list[DescribeItem]) -> list[DescribeResult | None]:
         if not items:

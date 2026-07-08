@@ -136,6 +136,8 @@ class _ApplyDescriptionsCallable(Protocol):
         describer: Any,
         resolve_bytes: Callable[[str], "tuple[bytes, str] | None"],
         reporter: Callable[[str, float], None],
+        rasterize_svg: Callable[[str], "bytes | None"] | None = None,
+        diagnostics: list | None = None,
     ) -> Any: ...
 
 
@@ -174,6 +176,8 @@ def _default_apply_descriptions(
     describer: Any,
     resolve_bytes: Callable[[str], "tuple[bytes, str] | None"],
     reporter: Callable[[str, float], None],
+    rasterize_svg: Callable[[str], "bytes | None"] | None = None,
+    diagnostics: list | None = None,
 ) -> Any:
     """Lazily resolve Agent A's ``apply_descriptions`` and call it.
 
@@ -188,6 +192,8 @@ def _default_apply_descriptions(
         describer=describer,
         resolve_bytes=resolve_bytes,
         reporter=reporter,
+        rasterize_svg=rasterize_svg,
+        diagnostics=diagnostics,
     )
 
 
@@ -226,15 +232,17 @@ def _maybe_describe(
     reporter: Callable[[str, float], None],
     describer: Any | None = None,
     apply_descriptions: _ApplyDescriptionsCallable | None = None,
+    diagnostics: list | None = None,
 ) -> Any:
     """Stamp AI descriptions onto ``evidence`` — a guaranteed no-op when
     describe.py is absent or errors.
 
     Wraps the lazy ``apply_descriptions`` import in ``try/except ImportError``
     with a debug-level pass-through so the website + PDF suites stay green even
-    if Agent A's describe.py lands after this code. Any other unexpected error
-    is likewise swallowed (evidence returned unchanged) so a description-engine
-    hiccup never fails an otherwise-good ingest.
+    if Agent A's describe.py lands after this code. An unexpected error still
+    never fails the ingest, but it is no longer invisible: it lands in
+    ``diagnostics`` as a LUMI0803 warning (imagery slice 1 — the silent
+    describe failure cost the kit its entire image metadata once already).
     """
     apply = apply_descriptions or _default_apply_descriptions
     describer = describer if describer is not None else resolve_describer()
@@ -246,13 +254,126 @@ def _maybe_describe(
             describer=describer,
             resolve_bytes=resolve_bytes,
             reporter=reporter,
+            rasterize_svg=_make_rasterize_svg(repo, asset_store_root),
+            diagnostics=diagnostics,
         )
     except ImportError:
         logger.debug("describe.py unavailable; skipping description pass")
         return evidence
-    except Exception:  # never let the description engine fail the ingest
-        logger.debug("apply_descriptions failed; skipping", exc_info=True)
+    except Exception as error:  # never let the description engine fail the ingest
+        logger.warning("apply_descriptions failed; skipping", exc_info=True)
+        if diagnostics is not None:
+            diagnostics.append(
+                {
+                    "code": "LUMI0803",
+                    "severity": "warning",
+                    "message": f"asset description pass failed entirely: {error}",
+                }
+            )
         return evidence
+
+
+def _make_rasterize_svg(
+    repo: Repository, asset_store_root: str
+) -> Callable[[str], "bytes | None"]:
+    """Rasterize a stored SVG asset through the ENGINE renderer (imagery
+    slice 1): wrap the asset in a minimal one-image scene and export a PNG —
+    the same `skia_safe::svg::Dom` path production rendering uses, so the
+    describe preview shows exactly what a design would. Returns None on any
+    failure — the caller emits the LUMI0804 diagnostic."""
+
+    def rasterize(asset_id: str) -> "bytes | None":
+        try:
+            import base64 as _b64
+
+            from lumen_api.core import CoreClient
+
+            core = CoreClient()
+            record = repo.require_asset_record(asset_id)
+            asset = record.get("asset") or record
+            scene = core.new_scene("doc_svg_raster", "svg raster")
+            pages = list((scene.get("pages") or {}).keys())
+            if not pages:
+                return None
+            scene.setdefault("assets", {})[asset_id] = asset
+            core_result = core.apply_operations(
+                scene,
+                [
+                    {
+                        "kind": "insert_node",
+                        "parent": {"kind": "page", "id": pages[0]},
+                        "index": 0,
+                        "node": _raster_image_node(asset_id),
+                    }
+                ],
+            )
+            scene = core_result.get("scene") or scene
+            export = core.export_preview(
+                scene,
+                "png",
+                page_ids=[pages[0]],
+                raise_on_error=False,
+                asset_store_root=asset_store_root,
+            )
+            for artifact in (export.get("export") or {}).get("artifacts") or []:
+                encoded = artifact.get("bytes_base64")
+                if encoded:
+                    return _b64.b64decode(encoded)
+            return None
+        except Exception:  # noqa: BLE001 - raster failure is the caller's diagnostic
+            logger.debug("svg rasterization failed for %s", asset_id, exc_info=True)
+            return None
+
+    return rasterize
+
+
+# Public seam names for callers outside the pipeline (the /describe-assets
+# backfill route builds the same resolve/rasterize pair the ingest pass uses).
+def make_resolve_bytes(repo: Repository, asset_store_root: str):
+    return _make_resolve_bytes(repo, asset_store_root)
+
+
+def make_rasterize_svg(repo: Repository, asset_store_root: str):
+    return _make_rasterize_svg(repo, asset_store_root)
+
+
+def _raster_image_node(asset_id: str) -> dict:
+    """A minimal absolute-positioned image node filling the raster viewport."""
+    side = 512.0
+    return {
+        "id": "svg_raster_image",
+        "name": "svg raster image",
+        "kind": {"kind": "image", "asset_id": asset_id, "alt": None},
+        "children": [],
+        "fills": [],
+        "strokes": [],
+        "opacity": 1.0,
+        "clip": False,
+        "locked": False,
+        "layout": None,
+        "computed": None,
+        "position_mode": "absolute",
+        "absolute_box": {"x": 0.0, "y": 0.0, "width": side, "height": side},
+        "size": {
+            "width": {"kind": "fixed", "value": side},
+            "height": {"kind": "fixed", "value": side},
+        },
+        "transform": {
+            "x": 0.0,
+            "y": 0.0,
+            "rotation": 0.0,
+            "skew_x": 0.0,
+            "skew_y": 0.0,
+            "flip_x": False,
+            "flip_y": False,
+        },
+        "corner": {
+            "top_left": 0.0,
+            "top_right": 0.0,
+            "bottom_left": 0.0,
+            "bottom_right": 0.0,
+        },
+    }
 
 
 def _make_resolve_bytes(
@@ -358,6 +479,7 @@ def _ingest(
         outcome, core=core, store_root=asset_store_root, reporter=reporter
     )
 
+    describe_diagnostics: list = []
     evidence = _maybe_describe(
         evidence,
         connection=connection,
@@ -366,6 +488,7 @@ def _ingest(
         reporter=reporter,
         describer=describer,
         apply_descriptions=apply_descriptions,
+        diagnostics=describe_diagnostics,
     )
 
     # Persist DB asset records for everything the capture layer ingested so
@@ -412,6 +535,7 @@ def _ingest(
         result.diagnostics
         + _capture_diagnostics(outcome)
         + _validation_diagnostics(validation)
+        + describe_diagnostics
     )
 
     record = repo.create_brand_kit(validated_kit, summary, diagnostics, "website")
@@ -567,6 +691,7 @@ def _ingest_pdf(
 
     evidence = getattr(extraction, "evidence", extraction)
 
+    describe_diagnostics: list = []
     evidence = _maybe_describe(
         evidence,
         connection=connection,
@@ -575,6 +700,7 @@ def _ingest_pdf(
         reporter=reporter,
         describer=describer,
         apply_descriptions=apply_descriptions,
+        diagnostics=describe_diagnostics,
     )
 
     # Persist DB asset records for everything the capture layer ingested so
@@ -619,6 +745,7 @@ def _ingest_pdf(
         result.diagnostics
         + _pdf_extraction_diagnostics(extraction)
         + _validation_diagnostics(validation)
+        + describe_diagnostics
     )
 
     record = repo.create_brand_kit(validated_kit, summary, diagnostics, "pdf")
@@ -803,6 +930,7 @@ def _ingest_assets(
     else:
         evidence, analyze_diagnostics = analysis, []
 
+    describe_diagnostics: list = []
     evidence = _maybe_describe(
         evidence,
         connection=connection,
@@ -811,6 +939,7 @@ def _ingest_assets(
         reporter=reporter,
         describer=describer,
         apply_descriptions=apply_descriptions,
+        diagnostics=describe_diagnostics,
     )
 
     # Persist DB asset records for everything the capture layer ingested so
@@ -852,7 +981,10 @@ def _ingest_assets(
     summary["ingestion"] = result.ingestion_report
 
     diagnostics = (
-        result.diagnostics + analyze_diagnostics + _validation_diagnostics(validation)
+        result.diagnostics
+        + analyze_diagnostics
+        + _validation_diagnostics(validation)
+        + describe_diagnostics
     )
 
     record = repo.create_brand_kit(validated_kit, summary, diagnostics, "asset_upload")

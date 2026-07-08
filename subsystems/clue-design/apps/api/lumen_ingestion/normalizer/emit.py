@@ -254,12 +254,14 @@ class KitBuilder:
             # Description-engine metadata (slice 3): the primary variant carries
             # the title/description. Fields are OMITTED (not null) when absent so
             # pre-slice-3 golden snapshots stay byte-identical (matches the Rust
-            # skip_serializing_if on LogoAsset.title/description).
-            title, description = _asset_meta(group[0])
+            # skip_serializing_if on LogoAsset.title/description/usage_note).
+            title, description, usage_note = _asset_meta(group[0])
             if title is not None:
                 entry["title"] = title
             if description is not None:
                 entry["description"] = description
+            if usage_note is not None:
+                entry["usage_note"] = usage_note
             self.logos[key] = entry
 
         # asset tokens
@@ -287,8 +289,25 @@ class KitBuilder:
         }
 
     def add_images(self) -> None:
-        for index, image in enumerate(self.evidence.images, start=1):
+        # Imagery slice 1: dedup by asset_id — the same underlying image captured
+        # from several page locations must become ONE kit entry, not img.N ghosts
+        # (the live Insight Health kit carried one asset under four keys, diluting
+        # the agent's already-thin image inventory). First evidence entry wins;
+        # later duplicates only contribute their style tags.
+        emitted: dict[str, str] = {}
+        index = 0
+        for image in self.evidence.images:
+            existing_key = emitted.get(image.asset_id)
+            if existing_key is not None:
+                merged = _merge_style_tags(
+                    list(self.images[existing_key].get("style_tags") or []), image.tags
+                )
+                if merged:
+                    self.images[existing_key]["style_tags"] = merged
+                continue
+            index += 1
             key = f"img.{index}"
+            emitted[image.asset_id] = key
             entry = {
                 "asset_id": image.asset_id,
                 "role": image.kind_hint or "photo",
@@ -301,13 +320,16 @@ class KitBuilder:
                 "recolor_allowed": False,
                 "crop_allowed": True,
             }
-            # Description-engine metadata (slice 3): title/description OMITTED
-            # (not null) when absent so pre-slice-3 goldens stay byte-identical.
-            title, description = _asset_meta(image)
+            # Description-engine metadata (slice 3): title/description/usage_note
+            # OMITTED (not null) when absent so pre-slice-3 goldens stay
+            # byte-identical.
+            title, description, usage_note = _asset_meta(image)
             if title is not None:
                 entry["title"] = title
             if description is not None:
                 entry["description"] = description
+            if usage_note is not None:
+                entry["usage_note"] = usage_note
             self.images[key] = entry
 
     # --- aliases --------------------------------------------------------
@@ -383,18 +405,17 @@ class KitBuilder:
         }
 
 
-def _asset_meta(asset: "LogoEvidence | ImageEvidence") -> tuple[str | None, str | None]:
-    """Return (title, description) for a logo/image evidence entry, folding the
-    usage note into the description ("… Usage: …"). Either may be None so the
-    caller can OMIT the field entirely (matches the Rust skip_serializing_if)."""
-    title = asset.title
-    description = asset.description
-    usage_note = asset.usage_note
-    if description is not None and usage_note:
-        description = f"{description} Usage: {usage_note}"
-    elif description is None and usage_note:
-        description = f"Usage: {usage_note}"
-    return title, description
+def _asset_meta(
+    asset: "LogoEvidence | ImageEvidence",
+) -> tuple[str | None, str | None, str | None]:
+    """Return (title, description, usage_note) for a logo/image evidence entry.
+
+    usage_note is its OWN field (imagery slice 1) — the old "… Usage: …" fold
+    into description put the guidance exactly where downstream description caps
+    truncate first. Any may be None so the caller can OMIT the field entirely
+    (matches the Rust skip_serializing_if)."""
+    usage_note = asset.usage_note or None
+    return asset.title, asset.description, usage_note
 
 
 def _merge_style_tags(existing: list[str], tags: list[str]) -> list[str]:

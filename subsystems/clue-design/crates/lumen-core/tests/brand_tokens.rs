@@ -1751,6 +1751,7 @@ fn acme_brand_kit() -> BrandKit {
             provenance: None,
             title: None,
             description: None,
+            usage_note: None,
         },
     );
 

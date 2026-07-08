@@ -103,3 +103,50 @@ def test_kit_without_logos_scores_logo_axis_not_applicable() -> None:
     report = score_brand_fidelity(_scene(bound=True, place_logo=False), kit)
     assert report["scores"]["logo_adoption"] is None
     assert report["verdict"] == "ship"
+
+
+# --- Imagery slice 1: informational imagery_adoption axis --------------------
+
+
+def _kit_with_images() -> dict:
+    kit = _kit()
+    kit["assets"]["images"] = {
+        "img.1": {"asset_id": "asset_hero_photo", "role": "photo"},
+        # An image entry that aliases the LOGO asset must not count as imagery.
+        "img.2": {"asset_id": "asset_lockup", "role": "og_image"},
+    }
+    return kit
+
+
+def test_imagery_adoption_true_when_kit_image_placed() -> None:
+    scene = _scene(bound=True)
+    scene["nodes"]["hero"] = {
+        "kind": {"kind": "image", "asset_id": "asset_hero_photo"},
+        "fills": [],
+    }
+    report = score_brand_fidelity(scene, _kit_with_images())
+    assert report["scores"]["imagery_adoption"] is True
+    assert report["detail"]["kit_imagery_asset_ids"] == ["asset_hero_photo"]
+
+
+def test_imagery_adoption_false_is_informational_never_gating() -> None:
+    # The K4 lesson applied to itself: measure before gating. A brand-true
+    # scene with no kit imagery still SHIPS; the miss is a note, not a demerit.
+    report = score_brand_fidelity(_scene(bound=True), _kit_with_images())
+    assert report["scores"]["imagery_adoption"] is False
+    assert report["verdict"] == "ship"
+    assert any("brand images" in reason for reason in report["reasons"])
+
+
+def test_imagery_axis_not_applicable_without_kit_images() -> None:
+    report = score_brand_fidelity(_scene(bound=True), _kit())
+    assert report["scores"]["imagery_adoption"] is None
+
+
+def test_logo_assets_never_double_count_as_imagery() -> None:
+    # img.2 points at the lockup; with the hero photo removed, the only image
+    # entry left aliases a logo — the imagery axis must be n/a, not False.
+    kit = _kit_with_images()
+    del kit["assets"]["images"]["img.1"]
+    report = score_brand_fidelity(_scene(bound=True), kit)
+    assert report["scores"]["imagery_adoption"] is None

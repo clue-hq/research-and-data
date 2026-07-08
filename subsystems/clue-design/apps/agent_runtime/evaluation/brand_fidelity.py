@@ -89,6 +89,17 @@ def _kit_logo_asset_ids(brand_kit: JsonObject) -> set[str]:
     return ids
 
 
+def _kit_imagery_asset_ids(brand_kit: JsonObject) -> set[str]:
+    """Asset ids of the kit's brand IMAGES (assets.images — photos,
+    illustrations, mockups). The caller subtracts logo ids so a lockup that
+    also appears in the images map never double-counts."""
+    ids: set[str] = set()
+    for image in ((brand_kit.get("assets") or {}).get("images") or {}).values():
+        if isinstance(image, dict) and image.get("asset_id"):
+            ids.add(str(image["asset_id"]))
+    return ids
+
+
 def _paints(scene: JsonObject) -> list[JsonObject]:
     paints: list[JsonObject] = []
     for page in (scene.get("pages") or {}).values():
@@ -166,6 +177,16 @@ def score_brand_fidelity(scene: JsonObject, brand_kit: JsonObject) -> JsonObject
     if logo_ids:
         logo_adoption = bool(logo_ids & placed_asset_ids)
 
+    # Imagery slice 1: does the design use any of the kit's brand IMAGES
+    # (photos/illustrations/mockups — logo assets excluded)? Informational
+    # only, like accent_usage: whether THIS surface wants imagery at all is an
+    # archetype call (the decide table says imagery-NO for data/pricing), so a
+    # False must never gate. It exists to measure adoption across sweeps.
+    imagery_ids = _kit_imagery_asset_ids(brand_kit) - logo_ids
+    imagery_adoption: Optional[bool] = None
+    if imagery_ids:
+        imagery_adoption = bool(imagery_ids & placed_asset_ids)
+
     colors = (brand_kit.get("tokens") or {}).get("colors") or {}
     accent = _brightest_accent(colors)
     accent_hex = (accent or {}).get("value")
@@ -184,6 +205,7 @@ def score_brand_fidelity(scene: JsonObject, brand_kit: JsonObject) -> JsonObject
         "palette_adherence": (len(adhering) / len(paints)) if paints else None,
         "logo_adoption": logo_adoption,
         "accent_usage": accent_usage,
+        "imagery_adoption": imagery_adoption,
     }
 
     reasons: list[str] = []
@@ -219,6 +241,13 @@ def score_brand_fidelity(scene: JsonObject, brand_kit: JsonObject) -> JsonObject
         reasons.append(
             f"note: the kit accent {accent_hex} appears nowhere in the scene"
         )
+    if imagery_adoption is False:
+        # Informational only (measure before gating — the K4 lesson): the
+        # archetype legitimately decides against imagery on some surfaces.
+        reasons.append(
+            f"note: the kit provides {len(imagery_ids)} brand images but none "
+            "is placed in the scene"
+        )
     if not reasons:
         reasons.append("all brand-fidelity axes clean")
 
@@ -231,6 +260,7 @@ def score_brand_fidelity(scene: JsonObject, brand_kit: JsonObject) -> JsonObject
             "off_family_literals": off_family,
             "rogue_paint_values": rogue_values,
             "kit_logo_asset_ids": sorted(logo_ids),
+            "kit_imagery_asset_ids": sorted(imagery_ids),
             "placed_asset_ids": sorted(placed_asset_ids),
             "accent": accent,
         },

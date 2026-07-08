@@ -387,8 +387,10 @@ def test_ingest_assets_describer_hook_stamps_descriptions(
     seen: dict[str, Any] = {}
 
     def stub_apply_descriptions(
-        evidence, *, connection, describer, resolve_bytes, reporter
+        evidence, *, connection, describer, resolve_bytes, reporter, **_kwargs
     ):
+        # **_kwargs absorbs the imagery-slice-1 seam extensions
+        # (rasterize_svg, diagnostics) — this stub only asserts the hook fires.
         seen["called"] = True
         seen["describer"] = describer
         reporter("Describing your assets…", 0.80)

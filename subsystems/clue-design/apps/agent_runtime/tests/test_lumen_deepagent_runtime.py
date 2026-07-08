@@ -2258,6 +2258,46 @@ def test_brand_card_digests_kit_with_resolved_accent(tmp_path: Path):
     assert build_brand_card(None) is None
 
 
+def test_brand_card_carries_usage_note_as_its_own_capped_field():
+    """Imagery slice 1: kit usage_note rides the card as its own field —
+    the old ' Usage: …' fold into description sat exactly where the 160-char
+    description cap truncates first, so the guidance was routinely eaten."""
+    from lumen_deepagent.brand_card import build_brand_card
+
+    kit = {
+        "id": "brand_kit_usage",
+        "version": 1,
+        "assets": {
+            "logos": {
+                "primary": {
+                    "usage": "primary",
+                    "variants": [{"asset_id": "asset_logo", "name": "full_color"}],
+                    "usage_note": "Reversed variant on dark surfaces.",
+                }
+            },
+            "images": {
+                "img.1": {
+                    "asset_id": "asset_photo",
+                    "role": "photo",
+                    "description": "x" * 300,
+                    "usage_note": "y" * 300,
+                }
+            },
+        },
+    }
+    card = build_brand_card(kit, source="document")
+    assert card["logos"][0]["usage_note"] == "Reversed variant on dark surfaces."
+    image = card["images"][0]
+    # Both capped independently — the description cap can no longer eat the
+    # usage guidance.
+    assert image["description"] == "x" * 160
+    assert image["usage_note"] == "y" * 120
+    # Entries without a note omit the field (no null noise in the card).
+    kit["assets"]["images"]["img.1"].pop("usage_note")
+    card = build_brand_card(kit, source="document")
+    assert "usage_note" not in card["images"][0]
+
+
 def test_load_knowledge_injects_brand_card_and_decide_doc(tmp_path: Path, monkeypatch):
     """With a kit in config, load_knowledge force-loads brand-application.md
     and appends the card snippet; without a kit, neither happens."""

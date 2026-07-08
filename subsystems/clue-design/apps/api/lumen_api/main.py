@@ -709,6 +709,83 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
         )
         return brand_kit_created_dto(created, diagnostics)
 
+    @app.post("/brand-kits/{brand_kit_id}/describe-assets")
+    def describe_brand_kit_assets(
+        brand_kit_id: str, repo: Repository = Depends(repository)
+    ) -> JsonObject:
+        """Imagery slice 1 backfill: describe the latest kit version's
+        logo/image assets (cache-first — only misses cost a vision call) and,
+        when anything changed, publish a NEW kit version carrying the
+        metadata. The republish is load-bearing: descriptions are frozen into
+        the kit JSON at publish, so healing the ``asset_descriptions`` library
+        alone never reaches the agent's brand card. Generic for any kit."""
+        from lumen_ingestion.describe import describe_kit_assets
+        from lumen_ingestion.pipeline import (
+            make_rasterize_svg,
+            make_resolve_bytes,
+            resolve_describer,
+        )
+
+        record = repo.require_brand_kit(brand_kit_id)
+        brand_kit = json.loads(json.dumps(record["brand_kit"]))
+        before = json.dumps(brand_kit, sort_keys=True)
+        store_root = str(asset_store_root())
+        describe_diagnostics: list = []
+        counts = describe_kit_assets(
+            brand_kit,
+            connection=repo.connection,
+            describer=resolve_describer(),
+            resolve_bytes=make_resolve_bytes(repo, store_root),
+            rasterize_svg=make_rasterize_svg(repo, store_root),
+            diagnostics=describe_diagnostics,
+            brand_name=record.get("name"),
+        )
+        if json.dumps(brand_kit, sort_keys=True) == before:
+            # Nothing stamped (all failed, describe disabled, or already
+            # described) — publishing an identical version would be noise.
+            return {
+                "brand_kit_id": brand_kit_id,
+                "published": False,
+                "counts": counts,
+                "diagnostics": describe_diagnostics,
+            }
+        brand_kit["version"] = int(brand_kit.get("version") or 1) + 1
+        try:
+            validation = app.state.core.validate_brand_kit(
+                brand_kit, product_ready=False
+            )
+            brand_kit = validation["brand_kit"]
+            summary_response = app.state.core.summarize_brand_kit(
+                brand_kit, raise_on_error=False
+            )
+        except CoreError as error:
+            raise core_http_error(error) from error
+        diagnostics = (
+            summary_response.get("diagnostics")
+            or validation.get("diagnostics", [])
+        ) + describe_diagnostics
+        try:
+            created = repo.create_brand_kit(
+                brand_kit,
+                summary_response.get("brand_summary") or {},
+                diagnostics,
+                "manual",
+            )
+        except sqlite3.IntegrityError as error:
+            raise duplicate_brand_kit_error(brand_kit) from error
+        log_event(
+            api_logger,
+            logging.INFO,
+            "brand_kit_assets_described",
+            brand_kit_id=brand_kit_id,
+            version=brand_kit["version"],
+            **counts,
+        )
+        response = brand_kit_created_dto(created, diagnostics)
+        response["published"] = True
+        response["counts"] = counts
+        return response
+
     @app.get("/brand-compatibility-reports/{report_id}")
     def get_brand_compatibility_report(
         report_id: str, repo: Repository = Depends(repository)

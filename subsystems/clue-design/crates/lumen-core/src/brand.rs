@@ -1422,6 +1422,11 @@ pub struct LogoAsset {
     pub title: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
+    /// Design-usage guidance ("use on dark backgrounds…") — its own field so
+    /// downstream caps on `description` can never eat it (imagery slice 1).
+    /// Distinct from `usage: LogoUsage`, which is the slot kind.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub usage_note: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -1474,6 +1479,10 @@ pub struct BrandAsset {
     pub title: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
+    /// Design-usage guidance ("use on dark backgrounds…") — its own field so
+    /// downstream caps on `description` can never eat it (imagery slice 1).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub usage_note: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -2823,6 +2832,7 @@ fn generated_logo_assets(seed: &BrandSeed) -> BTreeMap<String, LogoAsset> {
                 }),
                 title: None,
                 description: None,
+                usage_note: None,
             });
     }
     logos
@@ -5451,6 +5461,7 @@ fn compile_logo_directive(name: &str, value: &str, kit: &mut BrandKit) -> Result
             provenance: None,
             title: None,
             description: None,
+            usage_note: None,
         },
     );
 
@@ -5603,6 +5614,7 @@ fn compile_brand_asset_directive(
             crop_allowed,
             title: None,
             description: None,
+            usage_note: None,
         },
     );
 
