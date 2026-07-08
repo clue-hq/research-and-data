@@ -40,14 +40,15 @@ failing line is dropped, later lines are discarded (cascade halt).
 
 ## Auto-recovery warnings (never silent)
 
-The parser recovers from two common LUMD0206 near-misses instead of halting, but
-it always says so with a warning. A warning is not an error — the block still
+The compiler recovers from a handful of common near-misses instead of halting,
+but it always says so with a warning. A warning is not an error — the block still
 compiles — but treat it as a lint: author the clean form next time.
 
 | Code | Meaning | What the parser did |
 |------|---------|---------------------|
 | `LUMD0259` | a bare known page id opened a top-level line (e.g. `page_x size(1080,1080,px)`) | normalized it to `#page:page_x …` and routed it through the page-modify path — write `#page:<page_id> …` explicitly |
 | `LUMD0260` | a leading prose/narration line preceded the first DSL line in the block | skipped it as narration — DSL blocks contain only DSL; do not narrate inside a block |
+| `LUMD0261` | a modify line swapped an image node to an asset the scene hasn't registered yet (e.g. `#hero_img asset(<kit id>)`) | swapped the leaf node's kind to that asset as a *dangling reference* (matching the declaration path) — the reference resolves when a brand kit or library registers the asset (auto-registered for kit assets); an unresolved reference warns `LUME0211` at export. A swap on a node *with children* does NOT degrade and still hard-fails |
 
 Bounds: `LUMD0260` skips at most 3 leading lines per block, and only when the
 block still yields real DSL. A 4th consecutive narration line, or a block that is

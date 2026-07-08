@@ -1881,11 +1881,73 @@ impl<'a> DslCompiler<'a> {
             EditTargetRef::Page(page_id) => Some(page_id.clone()),
             _ => None,
         };
-        let patch =
+        let mut patch =
             edit_patch_from_properties(self.scene, &target, &modification.properties, line)?;
+        // D1 — DSL-scoped graceful degradation for an image-asset SWAP to an
+        // asset the scene has not registered yet (a kit asset the runtime's K2
+        // auto-register will later heal). The declaration path already tolerates
+        // such a dangling reference at compile; the modify path lowers to
+        // PlaceAssetInNode, which hard-requires the record in `scene.assets` and
+        // so halts before the runtime can register it. Rather than fail, we
+        // strip the placement and reproduce the declaration's dangling-reference
+        // state ourselves — but ONLY for a childless (leaf) node, mirroring the
+        // placement path's leaf rule; a node with children keeps today's hard
+        // error by routing through `build_modify_operations` unchanged.
+        let mut dangling_swap: Option<(NodeId, AssetId)> = None;
+        if let (EditTargetRef::Node(node_id), EditPatch::Node(node_patch)) = (&target, &mut patch) {
+            if let OptionalFieldPatch::Set(asset_id) = &node_patch.image_asset_id {
+                if !self.scene.assets.contains_key(asset_id) {
+                    let has_children = self
+                        .scene
+                        .nodes
+                        .get(node_id)
+                        .map(|node| !node.children.is_empty())
+                        .unwrap_or(false);
+                    if !has_children {
+                        let node_id = node_id.clone();
+                        let asset_id = asset_id.clone();
+                        node_patch.image_asset_id = OptionalFieldPatch::Unchanged;
+                        dangling_swap = Some((node_id, asset_id));
+                    }
+                }
+            }
+        }
         let batch = build_modify_operations(self.scene, target, patch)
             .map_err(|error| edit_error_diag(line, &error))?;
         self.emit_edit_batch(line, batch.operations)?;
+        if let Some((node_id, asset_id)) = dangling_swap {
+            // Set the node's kind to Image with a fresh dangling reference and
+            // clear stale placement provenance — exactly the state a fresh
+            // `photo image asset(X)` declaration produces (alt None: the old
+            // alt described the previous image).
+            self.emit_operation(
+                line,
+                Operation::UpdateNode {
+                    node_id: node_id.clone(),
+                    patch: crate::NodePatch {
+                        kind: FieldPatch::Set(NodeKind::Image(ImageNode {
+                            asset_id: asset_id.clone(),
+                            alt: None,
+                        })),
+                        source_asset_id: OptionalFieldPatch::Clear,
+                        asset_placement: OptionalFieldPatch::Clear,
+                        ..crate::NodePatch::default()
+                    },
+                },
+            )?;
+            self.diagnostics.push(warning_diag(
+                line.line_number,
+                1,
+                line.raw.len().max(1),
+                "LUMD0261",
+                format!(
+                    "swapped image to unregistered asset {} as a dangling reference",
+                    asset_id
+                ),
+                "The reference resolves when a brand kit or library registers the asset \
+                 (auto-registered for kit assets); an unresolved reference warns LUME0211 at export.",
+            ));
+        }
         // Empty-page compose gap: a top-level `#page:<id>` modification opens
         // the page as a parent context exactly like a fresh `page` line, so
         // indented element lines under it APPEND to the existing page. Before

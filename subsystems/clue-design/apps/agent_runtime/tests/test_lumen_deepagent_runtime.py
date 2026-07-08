@@ -2503,6 +2503,58 @@ def test_inline_dsl_reference_to_kit_asset_auto_registers(
     assert len(upserts_after) == 1
 
 
+def test_d1_swapped_kit_asset_reference_auto_registers(tmp_path: Path, monkeypatch):
+    """Slice 2 D2: the DSL modify-path fix (D1) degrades a swap to an
+    unregistered kit asset into a dangling `kind.asset_id` reference with
+    placement provenance cleared — exactly the scene shape the declaration path
+    produces. The K2 auto-register scans image nodes by `kind.asset_id`, so a
+    D1-swapped node registers the record with brand_guide provenance at the
+    compile/preflight chokepoint, with NO runtime change, idempotently."""
+    monkeypatch.setattr("lumen_deepagent.tools.CoreClient", FakeCoreClient)
+    seeded = {
+        "meta": {"id": "doc_d1", "title": "Swapped hero"},
+        "pages": {"page_ad": {"id": "page_ad", "children": ["hero_img"]}},
+        "nodes": {
+            "hero_img": {
+                "id": "hero_img",
+                # D1 leaves the node as a bare Image kind with a dangling
+                # asset_id and no placement provenance (source_asset_id /
+                # asset_placement cleared, alt None).
+                "kind": {"kind": "image", "asset_id": "asset_logo_reversed"},
+                "children": [],
+            }
+        },
+        "assets": {},
+    }
+    tools = LumenDesignTools(
+        _config_with_kit_assets(tmp_path), "Swap the hero", initial_scene=seeded
+    )
+
+    tools.preflight_design()
+
+    upserts = [
+        op for op in tools.core.applied_operations if op.get("kind") == "upsert_asset"
+    ]
+    assert len(upserts) == 1
+    assert upserts[0]["asset"]["id"] == "asset_logo_reversed"
+    assert upserts[0]["asset"]["source"]["kind"] == "brand_guide"
+
+    trace_path = tools.config.trace_dir / tools.run_id / "trace.jsonl"
+    events = [
+        json.loads(line)["event"]
+        for line in trace_path.read_text(encoding="utf-8").splitlines()
+    ]
+    assert "brand_asset_registered" in events
+
+    # Idempotent: once the record is in the scene, nothing re-registers.
+    tools.scene.setdefault("assets", {})["asset_logo_reversed"] = upserts[0]["asset"]
+    tools.preflight_design()
+    upserts_after = [
+        op for op in tools.core.applied_operations if op.get("kind") == "upsert_asset"
+    ]
+    assert len(upserts_after) == 1
+
+
 def test_operations_ledger_carries_asset_tool_ops_for_accept(
     tmp_path: Path, monkeypatch
 ):
@@ -5776,6 +5828,64 @@ def test_placed_brand_asset_previews_only_kit_assets_capped(tmp_path: Path, monk
         _config_with_manifest(tmp_path, manifest), "Ad", initial_scene=scene
     )
     assert len(tools2._placed_brand_asset_previews()) == 4
+
+
+def _critic_preview_loaded_payload(tools) -> dict:
+    """Read the last critic_preview_loaded event's payload from the trace."""
+    trace_path = tools.config.trace_dir / tools.run_id / "trace.jsonl"
+    payload = None
+    for line in trace_path.read_text(encoding="utf-8").splitlines():
+        event = json.loads(line)
+        if event.get("event") == "critic_preview_loaded":
+            payload = event.get("payload")
+    assert payload is not None, "no critic_preview_loaded event was recorded"
+    return payload
+
+
+def test_critic_preview_loaded_records_zero_placed_previews(tmp_path: Path, monkeypatch):
+    """D3: a run that placed no kit assets records placed_brand_asset_previews == 0
+    on the critic_preview_loaded trace event."""
+    monkeypatch.setattr("lumen_deepagent.tools.CoreClient", FakeCoreClient)
+    tools = LumenDesignTools(runtime_config(tmp_path), "Create a square ad")
+    tools.compile_dsl_block("page page_test")
+    tools.export_preview()
+    tools.get_latest_preview_for_critique()
+
+    payload = _critic_preview_loaded_payload(tools)
+    assert payload["placed_brand_asset_previews"] == 0
+
+
+def test_critic_preview_loaded_records_placed_preview_count(tmp_path: Path, monkeypatch):
+    """D3: a scene that places manifest assets with real preview files records the
+    count of source thumbnails carried to the reviewer on critic_preview_loaded."""
+    monkeypatch.setattr("lumen_deepagent.tools.CoreClient", FakeCoreClient)
+    store_root = tmp_path / "store"
+    manifest = _mixed_kit_manifest(store_root)
+    scene = {
+        "meta": {"id": "doc_placed_trace", "title": "Placed"},
+        "pages": {
+            "page_test": {
+                "id": "page_test",
+                "children": ["kit_a", "kit_b"],
+                "size": {"width": 1080, "height": 1080},
+            }
+        },
+        "nodes": {
+            "kit_a": {"id": "kit_a", "kind": {"kind": "image", "asset_id": "logo_thumb"}},
+            "kit_b": {"id": "kit_b", "kind": {"kind": "image", "asset_id": "img_titled_1"}},
+        },
+    }
+    tools = LumenDesignTools(
+        _config_with_manifest(tmp_path, manifest), "Ad", initial_scene=scene
+    )
+    # Two kit assets with resolvable preview files are placed.
+    assert len(tools._placed_brand_asset_previews()) == 2
+
+    tools.export_preview()
+    tools.get_latest_preview_for_critique()
+
+    payload = _critic_preview_loaded_payload(tools)
+    assert payload["placed_brand_asset_previews"] == 2
 
 
 def test_preview_image_blocks_appends_placed_asset_blocks_after_preview(tmp_path: Path):

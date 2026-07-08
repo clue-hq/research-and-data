@@ -2484,6 +2484,11 @@ class LumenDesignTools:
             payload={
                 "artifact_count": len(artifacts),
                 "formats": [artifact.get("format") for artifact in artifacts],
+                # D3 observability: how many kit-asset source thumbnails rode
+                # along with the reviewer call (0 when the scene placed none).
+                # Lets live traces confirm the critic saw source imagery; the
+                # payload bytes themselves stay untraced by design.
+                "placed_brand_asset_previews": len(placed_previews),
             },
         )
         return json.dumps(payload, indent=2)

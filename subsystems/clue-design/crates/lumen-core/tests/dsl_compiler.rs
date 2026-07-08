@@ -2721,3 +2721,237 @@ fn lumd0206_narration_led_modification_only_repair_block_compiles() {
         "the modification after the narration must produce operations"
     );
 }
+
+// ---------------------------------------------------------------------------
+// Modify-path kit-asset swap (Slice 2 D1). A `#node ... asset(X)` line that
+// swaps an image node to an asset the scene has not registered yet used to
+// hard-fail (LUMD0900 → PlaceAssetInNode requires the record), even though the
+// declaration path tolerates the same dangling reference. D1 degrades the
+// modify path to declaration semantics for a LEAF node and warns LUMD0261.
+// ---------------------------------------------------------------------------
+
+/// A minimal REGISTERED raster asset record, decoded so the scene can carry it
+/// verbatim (mirrors assets_pipeline.rs `decode_asset`).
+fn registered_raster_asset(id: &str, label: &str) -> lumen_core::AssetRecord {
+    serde_json::from_str(&format!(
+        r#"{{
+            "id": "{id}",
+            "label": "{label}",
+            "kind": "raster_image",
+            "status": "ready",
+            "source": {{ "kind": "uploaded", "filename": "x.png", "uploaded_by": "t" }},
+            "media": {{ "mime_type": "image/png" }},
+            "raster": {{ "pixel_width": 1080, "pixel_height": 560 }}
+        }}"#
+    ))
+    .unwrap()
+}
+
+/// Base scene: page → `hero` frame → `hero_img` leaf image already carrying a
+/// DIFFERENT registered asset with populated placement provenance + alt, so a
+/// swap has real state to clear. The dashboard asset is NOT in scene.assets.
+fn seed_hero_scene() -> Scene {
+    let mut scene = Scene::new(lumen_core::DocumentId::from("doc_hero_swap"), "Hero");
+    let seed = compile_dsl_into_scene(
+        r#"
+page page_hero size(1080,560,px)
+  hero frame p(0,0) s(1080,560)
+    hero_img image asset(asset_existing_hero) p(0,0) s(1080,560)
+"#,
+        &mut scene,
+    );
+    assert_no_dsl_errors(&seed.compile_output.diagnostics);
+
+    // Register a DIFFERENT asset and place it into hero_img so the base node
+    // carries source_asset_id / asset_placement / alt (from the label).
+    scene
+        .apply_operation(Operation::UpsertAsset {
+            asset: registered_raster_asset("asset_existing_hero", "Old hero photo"),
+        })
+        .unwrap();
+    scene
+        .apply_operation(Operation::PlaceAssetInNode {
+            node_id: NodeId::from("hero_img"),
+            asset_id: lumen_core::AssetId::from("asset_existing_hero"),
+            placement: lumen_core::AssetPlacement::default(),
+        })
+        .unwrap();
+
+    // Precondition sanity: the base node has all three provenance signals.
+    let base = &scene.nodes[&NodeId::from("hero_img")];
+    assert!(base.source_asset_id.is_some());
+    assert!(base.asset_placement.is_some());
+    let NodeKind::Image(base_img) = &base.kind else {
+        panic!("expected image base node");
+    };
+    assert!(base_img.alt.is_some());
+    scene
+}
+
+const ITERATION_3_FIXTURE: &str = "\
+// heads-up: reworked the hero cluster and lower-half distribution — swapped the pillarboxed text-baked hero photo for the clean dashboard product image cover-filling the top band, and rebalanced the copy/logo/CTA into a fill-height centered footer region so the empty white void at the bottom is removed
+#hero p(0,0) s(1080,560) clip(true) fill($surface.inverse)
+#hero_img p(0,0) s(1080,560) asset(asset_ing_9394e96d3c08576a)";
+
+#[test]
+fn dsl_modify_swap_to_unregistered_kit_asset_degrades_to_dangling_reference() {
+    let mut scene = seed_hero_scene();
+
+    let output = compile_dsl_into_scene(ITERATION_3_FIXTURE, &mut scene);
+
+    // Compiles, no halt, real ops applied.
+    assert_no_dsl_errors(&output.compile_output.diagnostics);
+    assert!(output.compile_output.halted_at.is_none());
+    assert!(output.operation_error.is_none());
+    assert!(!output.compile_output.operations.is_empty());
+
+    // The swap warns LUMD0261 (never silent).
+    assert!(
+        output
+            .compile_output
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.diagnostic.code == "LUMD0261"),
+        "the unregistered swap must warn LUMD0261: {:#?}",
+        output.compile_output.diagnostics
+    );
+
+    // hero_img now references the dashboard asset as a dangling reference with
+    // alt cleared and stale placement provenance cleared.
+    let img_node = &scene.nodes[&NodeId::from("hero_img")];
+    let NodeKind::Image(image) = &img_node.kind else {
+        panic!("expected image kind after swap");
+    };
+    assert_eq!(image.asset_id.as_str(), "asset_ing_9394e96d3c08576a");
+    assert_eq!(image.alt, None);
+    assert_eq!(img_node.source_asset_id, None);
+    assert_eq!(img_node.asset_placement, None);
+    assert!(!scene.assets.contains_key(&lumen_core::AssetId::from(
+        "asset_ing_9394e96d3c08576a"
+    )));
+
+    // The `#hero` line's rest-of-patch (clip + fill) still applied to the frame.
+    let hero = &scene.nodes[&NodeId::from("hero")];
+    assert!(hero.clip);
+    assert!(!hero.fills.is_empty());
+}
+
+#[test]
+fn dsl_modify_swap_to_registered_asset_keeps_place_asset_in_node_route() {
+    let mut scene = seed_hero_scene();
+    // Register the target asset so the swap resolves to the placement route.
+    scene
+        .apply_operation(Operation::UpsertAsset {
+            asset: registered_raster_asset("asset_ing_9394e96d3c08576a", "Dashboard product"),
+        })
+        .unwrap();
+
+    let output = compile_dsl_into_scene(
+        "#hero_img p(0,0) s(1080,560) asset(asset_ing_9394e96d3c08576a)",
+        &mut scene,
+    );
+
+    assert_no_dsl_errors(&output.compile_output.diagnostics);
+    assert!(output.operation_error.is_none());
+
+    // No degradation warning for a registered target.
+    assert!(
+        !output
+            .compile_output
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.diagnostic.code == "LUMD0261"),
+        "a registered swap must NOT warn LUMD0261: {:#?}",
+        output.compile_output.diagnostics
+    );
+
+    // The op stream carries PlaceAssetInNode exactly as today.
+    assert!(
+        output
+            .compile_output
+            .operations
+            .iter()
+            .any(|operation| matches!(operation, Operation::PlaceAssetInNode { .. })),
+        "a registered swap keeps the PlaceAssetInNode route: {:#?}",
+        output.compile_output.operations
+    );
+
+    // Full placement semantics: provenance repopulated for the new asset.
+    let img_node = &scene.nodes[&NodeId::from("hero_img")];
+    assert_eq!(
+        img_node.source_asset_id,
+        Some(lumen_core::AssetId::from("asset_ing_9394e96d3c08576a"))
+    );
+    assert!(img_node.asset_placement.is_some());
+}
+
+#[test]
+fn dsl_modify_swap_on_node_with_children_still_errors() {
+    // A node WITH children keeps today's hard error — the leaf rule mirrors the
+    // placement path. `hero` (the frame) has a child, so swapping its image
+    // asset routes through build_modify_operations unchanged and fails.
+    let mut scene = seed_hero_scene();
+
+    let output = compile_dsl_into_scene(
+        "#hero p(0,0) s(1080,560) asset(asset_ing_9394e96d3c08576a)",
+        &mut scene,
+    );
+
+    // Today's behavior: the modify halts, no ops applied, error surfaced.
+    assert!(
+        output.compile_output.has_errors(),
+        "a swap on a node with children must still error: {:#?}",
+        output.compile_output.diagnostics
+    );
+    let error = output
+        .compile_output
+        .diagnostics
+        .iter()
+        .find(|diagnostic| diagnostic.diagnostic.severity == DiagnosticSeverity::Error)
+        .expect("expected a hard error");
+    // Pin today's error: LUMD0900 targeted-edit failure naming the missing asset.
+    assert_eq!(error.diagnostic.code, "LUMD0900");
+    assert!(
+        error
+            .diagnostic
+            .message
+            .contains("asset asset_ing_9394e96d3c08576a does not exist"),
+        "expected the missing-asset message, got: {}",
+        error.diagnostic.message
+    );
+    // No LUMD0261 for the children case — it never degrades.
+    assert!(!output
+        .compile_output
+        .diagnostics
+        .iter()
+        .any(|diagnostic| diagnostic.diagnostic.code == "LUMD0261"));
+}
+
+#[test]
+fn dsl_modify_swap_degraded_still_applies_rest_of_patch() {
+    // The degraded path must still land the other properties on the SAME line
+    // (size + clip), not only the kind swap.
+    let mut scene = seed_hero_scene();
+
+    let output = compile_dsl_into_scene(
+        "#hero_img s(640,360) clip(true) asset(asset_ing_9394e96d3c08576a)",
+        &mut scene,
+    );
+
+    assert_no_dsl_errors(&output.compile_output.diagnostics);
+    assert!(output
+        .compile_output
+        .diagnostics
+        .iter()
+        .any(|diagnostic| diagnostic.diagnostic.code == "LUMD0261"));
+
+    let img_node = &scene.nodes[&NodeId::from("hero_img")];
+    let NodeKind::Image(image) = &img_node.kind else {
+        panic!("expected image kind after swap");
+    };
+    assert_eq!(image.asset_id.as_str(), "asset_ing_9394e96d3c08576a");
+    // rest-of-patch: size + clip landed via the ordinary modify op.
+    assert!(img_node.clip);
+    assert_eq!(img_node.size.width, Dimension::Fixed(640.0));
+    assert_eq!(img_node.size.height, Dimension::Fixed(360.0));
+}
