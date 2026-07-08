@@ -87,5 +87,49 @@ export async function loadKitFontFaces(
   if (loaded.length === 0) {
     return false;
   }
+  // DOM leg: register the same bytes into document.fonts under the declared
+  // family so DOM-rendered surfaces (e.g. the Export Preview SVG, which
+  // references the family by NAME — the trial faces are non-embeddable so
+  // their bytes are never inlined) render kit type instead of a default
+  // serif. Purely local display of already-fetched bytes; it does not touch
+  // export/embedding. Failures are swallowed so the canvas leg is unaffected.
+  await registerKitFontFacesInDom(loaded);
   return registerKitFontFaces(loaded);
+}
+
+const registeredDomFaceKeys = new Set<string>();
+
+/** Test-only: forget which faces were registered into document.fonts so each
+ * case starts from a clean DOM registry. */
+export function resetKitDomFontsForTests(): void {
+  registeredDomFaceKeys.clear();
+}
+
+/** Feed already-fetched kit face bytes to the browser's DOM font registry
+ * (`document.fonts`). Keyed by the same `family@assetId` as the CanvasKit
+ * leg, so a kit refetch never double-adds a face. No-op (and never throws)
+ * where FontFace/document.fonts are unavailable (jsdom/tests). */
+async function registerKitFontFacesInDom(
+  faces: { key: string; family: string; bytes: ArrayBuffer }[]
+): Promise<void> {
+  if (typeof FontFace === "undefined" || typeof document === "undefined" || !document.fonts) {
+    return;
+  }
+  await Promise.all(
+    faces.map(async (face) => {
+      if (registeredDomFaceKeys.has(face.key)) {
+        return;
+      }
+      registeredDomFaceKeys.add(face.key);
+      try {
+        const fontFace = new FontFace(face.family, face.bytes);
+        await fontFace.load();
+        document.fonts.add(fontFace);
+      } catch (error) {
+        // A DOM font registration failure must not affect the canvas leg.
+        registeredDomFaceKeys.delete(face.key);
+        console.warn(`Failed to register kit font face "${face.family}" into document.fonts`, error);
+      }
+    })
+  );
 }
