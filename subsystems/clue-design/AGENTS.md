@@ -13,13 +13,13 @@ at build time**, and the editor refuses canvas editing when the stamps differ
 
 The trap: the API helper runs via `cargo run`, so it silently rebuilds itself at
 the CURRENT commit on its next call — but the editor wasm only changes when you
-rebuild it explicitly. If you rebuild the wasm during pre-commit testing and
-then commit, the wasm is stamped one commit behind and the handshake breaks,
-even though the sources are identical. This has burned live verification runs
-twice (2026-07-08 and 2026-07-09).
+rebuild it explicitly. Because both stamps are commit-based (NOT source-based),
+**any commit at all desynchronizes them** the moment the helper rebuilds — even
+a docs-only commit (proven live 2026-07-09: a commit touching only AGENTS.md
+broke the handshake). This has burned live verification runs three times.
 
-**The rule — after ANY commit that touches `crates/`, run, in this order, as
-the LAST step (post-commit, not before):**
+**The rule — after ANY commit (regardless of which files changed), run, in this
+order, as the LAST step (post-commit, not before):**
 
 ```bash
 bash scripts/build_wasm_core.sh
