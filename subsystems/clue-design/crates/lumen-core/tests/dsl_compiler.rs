@@ -2437,3 +2437,287 @@ fn node_edit_patch_wire_format_omits_absolute_box_when_unchanged() {
         "unchanged absolute_box must be omitted from the wire format: {json}"
     );
 }
+
+// ---------------------------------------------------------------------------
+// LUMD0206 double-trap compiler-ergonomics fixes (F1 / F2 / F3).
+//
+// A live agent run (run_5daea3965dd641bbba1c6e5e1241ef6a) burned three
+// iterations on a ship-grade design because the LUMD0206 halt was atomic and
+// its hint steered the model into a worse failure. The fixtures below are the
+// EXACT model output from iterations 001 and 002; they must now compile.
+// ---------------------------------------------------------------------------
+
+/// Iteration 001 verbatim: line 1 is model narration, everything after it is a
+/// complete, valid subtree targeting the existing empty page via `#page:`.
+const LUMD0206_ITER1: &str = concat!(
+    "page_custom_artboard is empty (zero nodes) — my canvas. I'll open with a `#page:` line and author the subtree. Split idiom: full-bleed product hero image top, brand band below carrying logo + copy + CTA. The hero image already has a baked-in label so text over it isn't needed; keep copy on the solid band (no scrim needed).\n",
+    "\n",
+    "#page:page_custom_artboard size(1080,1080,px)\n",
+    "  artboard al(v, x(s), g(0), pad(0)) p(0,0) s(fill,fill) fill($surface.page) clip(true)\n",
+    "    hero fr p(0,0) s(1080,560) clip(true) fill($surface.inverse)\n",
+    "      photo image asset(asset_ing_631ad93878fc572f) p(0,0) s(1080,560)\n",
+    "    band al(v, x(s), y(c), g($space.stack.default), pad(72,80)) p(0,0) s(1080,fill) fill($surface.brand)\n",
+    "      logo image asset(asset_bbd6b7b8e2f2) p(0,0) s(280,42)\n",
+    "      eyebrow text \"NOW AVAILABLE\" p(0,0) s(920,hug) style($type.eyebrow) fill($text.inverse) wrap_text(true) max_lines(1) slot(campaign.eyebrow)\n",
+    "      headline text \"Meet your AI documentation assistant.\" p(0,0) s(920,hug) style($type.headline) font_size($type.size.6xl) lh(1.05) fill($text.inverse) wrap_text(true) max_lines(2) slot(campaign.headline)\n",
+    "      subtitle text \"Scribe drafts your clinical notes automatically, so you can focus on patients.\" p(0,0) s(860,hug) style($type.body) font_size($type.size.lg) lh(1.4) fill($text.inverse) wrap_text(true) max_lines(3) slot(offer.primary_message)\n",
+    "      cta al(h, x(c), y(c), pad(18,40)) p(0,0) s(320,72) fill($surface.inverse) rd($radius.button)\n",
+    "        cta_text text \"Book a Demo\" p(0,0) s(fill,hug) align(center) style($type.cta) fill($text.inverse) max_lines(1) slot(campaign.cta)\n",
+    "  #slot:campaign.eyebrow sample(\"NOW AVAILABLE\") worst_case(\"NOW AVAILABLE\")\n",
+    "  #slot:campaign.headline sample(\"Meet your AI documentation assistant.\") worst_case(\"Meet your AI documentation assistant.\")\n",
+    "  #slot:offer.primary_message sample(\"Scribe drafts your clinical notes automatically, so you can focus on patients.\") worst_case(\"Scribe drafts your clinical notes automatically, so you can focus on patients.\")\n",
+    "  #slot:campaign.cta sample(\"Book a Demo\") worst_case(\"Book a Demo\")\n",
+);
+
+/// Iteration 002 verbatim: line 1 is a BARE `page_custom_artboard size(...)`
+/// opener — the narration was deleted along with the `#page:` prefix.
+const LUMD0206_ITER2: &str = concat!(
+    "page_custom_artboard size(1080,1080,px)\n",
+    "  artboard al(v, x(s), g(0), pad(0)) p(0,0) s(fill,fill) fill($surface.page) clip(true)\n",
+    "    hero fr p(0,0) s(1080,560) clip(true) fill($surface.inverse)\n",
+    "      photo image asset(asset_ing_631ad93878fc572f) p(0,0) s(1080,560)\n",
+    "    band al(v, x(s), y(c), g($space.stack.default), pad(72,80)) p(0,0) s(1080,fill) fill($surface.brand)\n",
+    "      logolock al(h, x(s), y(c), g(0), pad(16,24)) p(0,0) s(320,74) fill($surface.page) rd($radius.card)\n",
+    "        logo image asset(asset_bbd6b7b8e2f2) p(0,0) s(272,40)\n",
+    "      eyebrow text \"INTRODUCING\" p(0,0) s(920,hug) style($type.eyebrow) fill($text.inverse) wrap_text(true) max_lines(1) slot(campaign.eyebrow)\n",
+    "      headline text \"Meet your AI documentation assistant.\" p(0,0) s(920,hug) style($type.headline) font_size($type.size.5xl) lh(1.06) fill($text.inverse) wrap_text(true) max_lines(2) slot(campaign.headline)\n",
+    "      subtitle text \"Scribe drafts clinical notes automatically, so you can focus on patients.\" p(0,0) s(860,hug) style($type.body) font_size($type.size.lg) lh(1.4) fill($text.inverse) wrap_text(true) max_lines(3) slot(offer.primary_message)\n",
+    "      cta al(h, x(c), y(c), pad(18,40)) p(0,0) s(320,72) fill($surface.inverse) rd($radius.button)\n",
+    "        cta_text text \"Book a Demo\" p(0,0) s(fill,hug) align(center) style($type.cta) fill($text.inverse) max_lines(1) slot(campaign.cta)\n",
+    "  #slot:campaign.eyebrow sample(\"INTRODUCING\") worst_case(\"INTRODUCING\")\n",
+    "  #slot:campaign.headline sample(\"Meet your AI documentation assistant.\") worst_case(\"Meet your AI documentation assistant.\")\n",
+    "  #slot:offer.primary_message sample(\"Scribe drafts clinical notes automatically, so you can focus on patients.\") worst_case(\"Scribe drafts clinical notes automatically, so you can focus on patients.\")\n",
+    "  #slot:campaign.cta sample(\"Book a Demo\") worst_case(\"Book a Demo\")\n",
+);
+
+fn scene_with_empty_custom_artboard() -> Scene {
+    let mut scene = Scene::new(lumen_core::DocumentId::from("doc_ergo"), "Ergo");
+    let seed = compile_dsl_into_scene("page page_custom_artboard size(1080,1080,px)", &mut scene);
+    assert_no_dsl_errors(&seed.compile_output.diagnostics);
+    assert!(scene.pages[&PageId::from("page_custom_artboard")]
+        .children
+        .is_empty());
+    scene
+}
+
+fn assert_hero_and_logo_present(scene: &Scene) {
+    let photo = scene
+        .nodes
+        .get(&NodeId::from("photo"))
+        .expect("hero photo node must exist");
+    match &photo.kind {
+        NodeKind::Image(image) => assert_eq!(
+            image.asset_id,
+            lumen_core::AssetId::from("asset_ing_631ad93878fc572f")
+        ),
+        other => panic!("photo node must be an image, got {other:?}"),
+    }
+    let logo = scene
+        .nodes
+        .get(&NodeId::from("logo"))
+        .expect("logo node must exist");
+    match &logo.kind {
+        NodeKind::Image(image) => assert_eq!(
+            image.asset_id,
+            lumen_core::AssetId::from("asset_bbd6b7b8e2f2")
+        ),
+        other => panic!("logo node must be an image, got {other:?}"),
+    }
+}
+
+/// F2 — leading-narration tolerance. Iteration 001 opens with a prose line
+/// then a valid `#page:` subtree; the narration is skipped with a LUMD0260
+/// warning instead of halting, and the whole design lands.
+#[test]
+fn lumd0206_leading_narration_is_skipped_and_design_lands() {
+    let mut scene = scene_with_empty_custom_artboard();
+    let output = compile_dsl_into_scene(LUMD0206_ITER1, &mut scene);
+
+    assert_no_dsl_errors(&output.compile_output.diagnostics);
+    assert!(output.operation_error.is_none());
+    assert!(output.compile_output.halted_at.is_none());
+    assert!(
+        output
+            .compile_output
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.diagnostic.code == "LUMD0260"),
+        "the narration line must be reported as a LUMD0260 warning, not silently dropped: {:#?}",
+        output.compile_output.diagnostics
+    );
+    assert!(
+        !output.compile_output.operations.is_empty(),
+        "the valid subtree after the narration must produce operations"
+    );
+    assert_hero_and_logo_present(&scene);
+}
+
+/// F1 — bare known-page-id normalization. Iteration 002 opens with a bare
+/// `page_custom_artboard size(...)` line; it is rewritten into a `#page:`
+/// modification (LUMD0259) and routes through the empty-page compose path.
+#[test]
+fn lumd0206_bare_known_page_id_is_normalized_and_design_lands() {
+    let mut scene = scene_with_empty_custom_artboard();
+    let output = compile_dsl_into_scene(LUMD0206_ITER2, &mut scene);
+
+    assert_no_dsl_errors(&output.compile_output.diagnostics);
+    assert!(output.operation_error.is_none());
+    assert!(output.compile_output.halted_at.is_none());
+    assert!(
+        output
+            .compile_output
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.diagnostic.code == "LUMD0259"),
+        "the bare page reference must be reported as a LUMD0259 warning: {:#?}",
+        output.compile_output.diagnostics
+    );
+    assert!(!output.compile_output.operations.is_empty());
+    assert_hero_and_logo_present(&scene);
+}
+
+/// F1 precedence over F2: a leading bare KNOWN page id is normalized (LUMD0259),
+/// never skipped as narration (LUMD0260).
+#[test]
+fn lumd0206_f1_takes_precedence_over_f2_for_bare_known_page_id() {
+    let mut scene = scene_with_empty_custom_artboard();
+    let output =
+        compile_dsl_into_scene("page_custom_artboard size(1080,1080,px)", &mut scene);
+
+    let codes: Vec<&str> = output
+        .compile_output
+        .diagnostics
+        .iter()
+        .map(|diagnostic| diagnostic.diagnostic.code.as_str())
+        .collect();
+    assert!(
+        codes.contains(&"LUMD0259"),
+        "bare known page id must be normalized (F1): {codes:?}"
+    );
+    assert!(
+        !codes.contains(&"LUMD0260"),
+        "F1 must win over F2 — no narration skip: {codes:?}"
+    );
+    assert!(output.compile_output.halted_at.is_none());
+}
+
+/// F2 bounds: a block of 4+ narration-only lines (no structural line ever
+/// parses) halts with LUMD0206 exactly as before — zero operations, and the
+/// tentative skip warnings are dropped so it fails cleanly.
+#[test]
+fn lumd0206_four_narration_lines_still_halt() {
+    let garbage = concat!(
+        "this is the first line of prose I wrote\n",
+        "still explaining what I intend to do here\n",
+        "and yet more narration about the layout\n",
+        "one more sentence that is not DSL at all\n",
+    );
+    let output = compile_dsl(garbage);
+
+    assert_eq!(output.halted_at.as_ref().unwrap().code, "LUMD0206");
+    assert!(
+        output.operations.is_empty(),
+        "a pure-narration block must apply zero operations"
+    );
+    assert!(
+        !output
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.diagnostic.code == "LUMD0260"),
+        "a genuinely failing block must not leave warnings-instead-of-error: {:#?}",
+        output.diagnostics
+    );
+    assert!(output.has_errors());
+}
+
+/// The skip is leading-lines-only: an unknown-element line AFTER a structural
+/// line has parsed still halts with LUMD0206.
+#[test]
+fn lumd0206_mid_block_unknown_element_still_halts() {
+    let source = concat!(
+        "page page_a4\n",
+        "  hero fr p(0,0) s(400,400) fill($surface.brand)\n",
+        "  prose narration sneaking in after a real element\n",
+    );
+    let output = compile_dsl(source);
+
+    assert_eq!(output.halted_at.as_ref().unwrap().code, "LUMD0206");
+    assert!(
+        !output
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.diagnostic.code == "LUMD0260"),
+        "a mid-block failure must not be skipped as narration: {:#?}",
+        output.diagnostics
+    );
+}
+
+/// F3 — an UNKNOWN bare page id matches no known page, so it still fails
+/// LUMD0206, and the amended hint now points at the `#page:` form.
+#[test]
+fn lumd0206_unknown_bare_page_id_fails_with_amended_hint() {
+    let mut scene = scene_with_empty_custom_artboard();
+    let output = compile_dsl_into_scene("page_nonexistent size(1080,1080,px)", &mut scene);
+
+    let halt = output.compile_output.halted_at.as_ref().unwrap();
+    assert_eq!(halt.code, "LUMD0206");
+    let diagnostic = output
+        .compile_output
+        .diagnostics
+        .iter()
+        .find(|diagnostic| diagnostic.diagnostic.code == "LUMD0206")
+        .expect("LUMD0206 diagnostic must be present");
+    let hint = diagnostic
+        .diagnostic
+        .hint
+        .as_ref()
+        .expect("LUMD0206 must carry a hint");
+    assert!(
+        hint.contains("#page:<page_id>"),
+        "the amended hint must point at the #page: form: {hint}"
+    );
+}
+
+/// Review refinement: the garbage-block guard keys on "zero PARSED lines", not
+/// "zero structural lines" — a narration-led block of ONLY `#node prop(...)`
+/// modifications (the repair-iteration shape, the single most common narration
+/// leak site) must compile with the LUMD0260 warning, not die on the restored
+/// halt.
+#[test]
+fn lumd0206_narration_led_modification_only_repair_block_compiles() {
+    let mut scene = scene_with_empty_custom_artboard();
+    let seed = compile_dsl_into_scene(
+        concat!(
+            "#page:page_custom_artboard size(1080,1080,px)\n",
+            "  artboard al(v, x(s), g(0), pad(0)) p(0,0) s(fill,fill) clip(true)\n",
+            "    headline text \"Hello\" p(0,0) s(400,hug) font(\"Inter\",32,700,left)\n",
+        ),
+        &mut scene,
+    );
+    assert!(seed.compile_output.halted_at.is_none());
+
+    let repair = concat!(
+        "The headline overflows its band, so I will simply raise its size cap.\n",
+        "#headline font_size(48)\n",
+    );
+    let output = compile_dsl_into_scene(repair, &mut scene);
+
+    assert!(
+        output.compile_output.halted_at.is_none(),
+        "a narration-led modification-only repair block must compile: {:#?}",
+        output.compile_output.halted_at
+    );
+    assert!(
+        output
+            .compile_output
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.diagnostic.code == "LUMD0260"),
+        "the narration line must be reported, never silently dropped: {:#?}",
+        output.compile_output.diagnostics
+    );
+    assert!(
+        !output.compile_output.operations.is_empty(),
+        "the modification after the narration must produce operations"
+    );
+}

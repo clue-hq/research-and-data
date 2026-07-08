@@ -24,6 +24,7 @@ failing line is dropped, later lines are discarded (cascade halt).
 | Code | Meaning | Repair |
 |------|---------|--------|
 | `LUMA0200` | repair re-declared an existing page | emit a continuation / modify line, or use structured ops — never re-`page` |
+| `LUMD0206` | unknown element kind (often prose narration in a DSL block) | delete the line if it is narration; to target an existing page use `#page:<page_id> …`, not a bare page id |
 | `LUMD0207` | delete/parent/clone/replace/`parent()` syntax error | fix the directive args |
 | `LUMD0212` | unknown property name (e.g. `valign`) | remove it; there is no such property |
 | `LUMD0219` | invalid color (bare number, malformed) | use `#RRGGBB`/`#AARRGGBB`/`$token`/`oklch`/`rgb(a)` |
@@ -36,6 +37,22 @@ failing line is dropped, later lines are discarded (cascade halt).
 | `LUMD0403/0404/0405` | image/vector/instance missing required arg | add `asset(id)` / `path("…")` / `source(id)` |
 | `LUMD0901` | modify target does not exist | check the id with `inspect(view="page")`/`inspect(view="scene")` |
 | `LUMD0903` | property not valid for that modify target | use a property the target supports |
+
+## Auto-recovery warnings (never silent)
+
+The parser recovers from two common LUMD0206 near-misses instead of halting, but
+it always says so with a warning. A warning is not an error — the block still
+compiles — but treat it as a lint: author the clean form next time.
+
+| Code | Meaning | What the parser did |
+|------|---------|---------------------|
+| `LUMD0259` | a bare known page id opened a top-level line (e.g. `page_x size(1080,1080,px)`) | normalized it to `#page:page_x …` and routed it through the page-modify path — write `#page:<page_id> …` explicitly |
+| `LUMD0260` | a leading prose/narration line preceded the first DSL line in the block | skipped it as narration — DSL blocks contain only DSL; do not narrate inside a block |
+
+Bounds: `LUMD0260` skips at most 3 leading lines per block, and only when the
+block still yields real DSL. A 4th consecutive narration line, or a block that is
+*entirely* narration, halts with the original `LUMD0206` error — recovery never
+lets a pure-prose block "succeed" empty.
 
 ## Layout & fit (the usual cause of "won't accept")
 

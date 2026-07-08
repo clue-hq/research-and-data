@@ -131,11 +131,17 @@ impl DslCompileSession {
             .map(|slot| (slot.key.clone(), slot.id.clone()))
             .collect();
         emitted_slots.extend(snapshot.emitted_slots);
+        let known_page_ids = scene
+            .pages
+            .keys()
+            .map(|page_id| page_id.as_str().to_owned())
+            .collect();
         let mut session = Self {
             parser_context: DslParserContext {
                 seen_node_ids: snapshot.seen_node_ids,
                 previous_structural_depth: snapshot.previous_structural_depth,
                 previous_can_have_children: snapshot.previous_can_have_children,
+                known_page_ids,
             },
             scene,
             parent_stack: snapshot
@@ -210,6 +216,13 @@ impl DslCompileSession {
             .slots
             .values()
             .map(|slot| (slot.key.clone(), slot.id.clone()))
+            .collect();
+        // Keep the parser's known-page-id set fresh so a follow-up block can
+        // bare-reference a page created by an earlier block (F1 / LUMD0259).
+        self.parser_context.known_page_ids = scene
+            .pages
+            .keys()
+            .map(|page_id| page_id.as_str().to_owned())
             .collect();
         self.scene = scene;
         self.parent_stack
@@ -596,6 +609,14 @@ struct DslParserContext {
     seen_node_ids: BTreeSet<NodeId>,
     previous_structural_depth: Option<usize>,
     previous_can_have_children: bool,
+    /// Page ids that already exist in the scene. Populated from the scene at
+    /// session construction (and refreshed on scene sync). A leading line
+    /// whose first token equals one of these is a bare page reference —
+    /// normalized into a `#page:<id>` modification (F1 / LUMD0259) rather than
+    /// failing LUMD0206. The parser is otherwise scene-free; this is the same
+    /// established channel `seen_node_ids` uses to carry scene state across
+    /// block boundaries.
+    known_page_ids: BTreeSet<String>,
 }
 
 impl Default for DslParserContext {
@@ -604,6 +625,7 @@ impl Default for DslParserContext {
             seen_node_ids: BTreeSet::new(),
             previous_structural_depth: None,
             previous_can_have_children: true,
+            known_page_ids: BTreeSet::new(),
         }
     }
 }
@@ -614,6 +636,11 @@ impl DslParserContext {
             seen_node_ids: scene.nodes.keys().cloned().collect(),
             previous_structural_depth: None,
             previous_can_have_children: true,
+            known_page_ids: scene
+                .pages
+                .keys()
+                .map(|page_id| page_id.as_str().to_owned())
+                .collect(),
         }
     }
 
@@ -661,6 +688,17 @@ impl DslParser {
     fn parse_with_context(mut self) -> (DslParseOutput, DslParserContext) {
         let mut document = DslDocument::default();
 
+        // F2 bounds state (leading-narration tolerance). A leading line that
+        // fails LUMD0206 before ANY line has parsed successfully is skipped as
+        // narration with a LUMD0260 warning — at most 3 per block, and only if
+        // the block still yields at least one parsed line (structural OR
+        // modification: a narration-led repair block of `#node prop(...)` lines
+        // is the single most common leak site). `first_skipped_diag` holds the
+        // original LUMD0206 so a pure-garbage block restores the halt loudly.
+        let mut leading_skips: usize = 0;
+        let mut first_skipped_diag: Option<DslDiagnostic> = None;
+        const MAX_LEADING_SKIPS: usize = 3;
+
         for line in self.lines.clone() {
             let Some((indent, trimmed)) = self.parse_indent(&line) else {
                 break;
@@ -669,6 +707,86 @@ impl DslParser {
             let parsed = match self.parse_line(line.line_number, indent, trimmed) {
                 Ok(kind) => kind,
                 Err(diagnostic) => {
+                    // Compiler-ergonomics recovery for the LUMD0206 double-trap.
+                    // Every other parse error halts exactly as before.
+                    if diagnostic.diagnostic.code == "LUMD0206" && indent == 0 {
+                        let first_token = split_top_level_whitespace(trimmed)
+                            .into_iter()
+                            .next()
+                            .unwrap_or_default();
+
+                        // F1 — bare known-page-id normalization. Runs BEFORE
+                        // F2's narration skip. Rewrites `<id> <rest>` into a
+                        // `#page:<id> <rest>` modification so it routes through
+                        // the existing empty-page compose path, and warns
+                        // (LUMD0259) so the rewrite is never silent.
+                        if self.context.known_page_ids.contains(&first_token) {
+                            let rest = trimmed[first_token.len()..].trim_start();
+                            let rewritten = if rest.is_empty() {
+                                format!("#page:{first_token}")
+                            } else {
+                                format!("#page:{first_token} {rest}")
+                            };
+                            // The rewrite only holds when the rest of the line
+                            // is real page-modification DSL. Narration that
+                            // merely BEGINS with a page id (e.g. "page_x is
+                            // empty …") won't parse — fall through to F2's
+                            // narration skip rather than forcing a page edit.
+                            if let Ok(kind) = self.parse_modification(line.line_number, &rewritten) {
+                                self.diagnostics.push(warning_diag(
+                                    line.line_number,
+                                    1,
+                                    first_token.len(),
+                                    "LUMD0259",
+                                    format!(
+                                        "normalized bare page reference: `{trimmed}` was interpreted as `{rewritten}`"
+                                    ),
+                                    "Write page modifications as `#page:<page_id> …` explicitly.",
+                                ));
+                                let parsed_line = DslLine {
+                                    line_number: line.line_number,
+                                    indent,
+                                    raw: rewritten,
+                                    kind,
+                                };
+                                self.context.advance_with_line(&parsed_line);
+                                document.lines.push(parsed_line);
+                                continue;
+                            }
+                        }
+
+                        // F2 — leading-narration tolerance. A LUMD0206 line at
+                        // indent 0 before any structural line is skipped with a
+                        // LUMD0260 warning, up to 3 in a row. A 4th consecutive
+                        // failure halts with the original LUMD0206.
+                        if document.lines.is_empty() && leading_skips < MAX_LEADING_SKIPS {
+                            if first_skipped_diag.is_none() {
+                                first_skipped_diag = Some(diagnostic.clone());
+                            }
+                            leading_skips += 1;
+                            let preview: String = trimmed.chars().take(80).collect();
+                            self.diagnostics.push(warning_diag(
+                                line.line_number,
+                                1,
+                                trimmed.len().max(1),
+                                "LUMD0260",
+                                format!(
+                                    "leading line skipped as narration: {preview} — DSL blocks contain only DSL"
+                                ),
+                                "Remove prose from DSL blocks; author only DSL lines.",
+                            ));
+                            continue;
+                        }
+                    }
+                    // A block that skipped leading lines but then halts (e.g.
+                    // the 4th consecutive narration line, or a real error) is a
+                    // genuine failure: drop the tentative LUMD0260 skip warnings
+                    // so it fails cleanly with the halting error, exactly as a
+                    // pre-F2 block would have.
+                    if first_skipped_diag.is_some() {
+                        self.diagnostics
+                            .retain(|diag| diag.diagnostic.code != "LUMD0260");
+                    }
                     self.halt(diagnostic);
                     break;
                 }
@@ -724,6 +842,21 @@ impl DslParser {
             };
             self.context.advance_with_line(&parsed_line);
             document.lines.push(parsed_line);
+        }
+
+        // A block that skipped leading lines but yielded ZERO parsed lines of
+        // any kind is pure garbage: restore the halt with the first skipped
+        // line's original LUMD0206 so it fails loudly, never "succeeds" empty.
+        // (A narration-led block of ONLY `#node prop(...)` modifications — the
+        // repair-iteration shape — parses lines, so it compiles with the skip
+        // warning instead of dying here.) Drop the tentative skip warnings so
+        // the failure reads exactly as pre-F2.
+        if self.halted_at.is_none() && document.lines.is_empty() {
+            if let Some(diagnostic) = first_skipped_diag.take() {
+                self.diagnostics
+                    .retain(|diag| diag.diagnostic.code != "LUMD0260");
+                self.halt(diagnostic);
+            }
         }
 
         (
@@ -874,7 +1007,7 @@ impl DslParser {
                 tokens[0].len(),
                 "LUMD0206",
                 format!("unknown element kind in line: {trimmed}"),
-                "If this line is narration or explanation rather than an element, delete it — DSL blocks contain only DSL. Otherwise use frame/fr, group/gr, autolayout/al, rect/r, ellipse/e, line/l, text/t, image/img, vector/v, or instance.",
+                "If this line is narration or explanation rather than an element, delete it — DSL blocks contain only DSL. Otherwise use frame/fr, group/gr, autolayout/al, rect/r, ellipse/e, line/l, text/t, image/img, vector/v, or instance. To target an existing page use `#page:<page_id> …`.",
             ));
         };
 
