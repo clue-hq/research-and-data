@@ -81,6 +81,11 @@ class Settings(BaseSettings):
     lumen_agent_asset_store: Path | None = None  # None → <trace dir>/asset-store
     lumen_agent_base_url: str | None = None
     lumen_agent_api_key: str | None = None
+    # OpenRouter unified reasoning effort for every deep-agent LLM call
+    # ("low" | "medium" | "high"). Unset/blank → no reasoning field on the
+    # request (provider default: no extended thinking). Applied in init_model
+    # for whatever model id is configured — one mechanism for all models.
+    lumen_agent_reasoning: str | None = None
     # Read by langchain directly from os.environ; declared here for visibility.
     anthropic_api_key: str | None = None
 
@@ -92,6 +97,7 @@ class Settings(BaseSettings):
         "lumen_agent_asset_store",
         "lumen_agent_base_url",
         "lumen_agent_api_key",
+        "lumen_agent_reasoning",
         "anthropic_api_key",
         mode="before",
     )
@@ -101,6 +107,20 @@ class Settings(BaseSettings):
         if isinstance(value, str) and not value.strip():
             return None
         return value
+
+    @field_validator("lumen_agent_reasoning")
+    @classmethod
+    def _validate_reasoning_effort(cls, value: str | None) -> str | None:
+        """A typo'd effort must fail at startup, not silently no-op mid-run."""
+        if value is None:
+            return value
+        effort = value.strip().lower()
+        if effort not in {"low", "medium", "high"}:
+            raise ValueError(
+                "LUMEN_AGENT_REASONING must be one of low|medium|high (or unset "
+                f"for no reasoning field); got {value!r}"
+            )
+        return effort
 
     @field_validator("image_model_id", mode="before")
     @classmethod

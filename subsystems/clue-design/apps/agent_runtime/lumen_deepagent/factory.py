@@ -46,6 +46,7 @@ def create_lumen_design_agent(
         runtime_config.model,
         base_url=runtime_config.agent_base_url,
         api_key=runtime_config.agent_api_key,
+        reasoning=runtime_config.agent_reasoning,
     )
 
     agent = create_deep_agent(

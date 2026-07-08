@@ -40,9 +40,16 @@ Return only a structured AgentDirectorDecision.
 
 class LangChainAgentDirector(AgentDirector):
     def __init__(
-        self, model: str, *, base_url: str | None = None, api_key: str | None = None
+        self,
+        model: str,
+        *,
+        base_url: str | None = None,
+        api_key: str | None = None,
+        reasoning: str | None = None,
     ) -> None:
-        raw_model = init_model(model, base_url=base_url, api_key=api_key)
+        raw_model = init_model(
+            model, base_url=base_url, api_key=api_key, reasoning=reasoning
+        )
         self.structured_model = try_structured_model(raw_model, AgentDirectorDecision)
         self.raw_model = raw_model
 
@@ -74,9 +81,16 @@ class LangChainAgentDirector(AgentDirector):
 
 class LangChainDslAuthor(DslAuthor):
     def __init__(
-        self, model: str, *, base_url: str | None = None, api_key: str | None = None
+        self,
+        model: str,
+        *,
+        base_url: str | None = None,
+        api_key: str | None = None,
+        reasoning: str | None = None,
     ) -> None:
-        self.model = init_model(model, base_url=base_url, api_key=api_key)
+        self.model = init_model(
+            model, base_url=base_url, api_key=api_key, reasoning=reasoning
+        )
 
     def write_block(self, request: AuthoringBlockRequest) -> str:
         payload = request.model_dump(mode="json")
@@ -105,9 +119,16 @@ class LangChainDslAuthor(DslAuthor):
 
 class LangChainVisualReviewer(VisualReviewer):
     def __init__(
-        self, model: str, *, base_url: str | None = None, api_key: str | None = None
+        self,
+        model: str,
+        *,
+        base_url: str | None = None,
+        api_key: str | None = None,
+        reasoning: str | None = None,
     ) -> None:
-        raw_model = init_model(model, base_url=base_url, api_key=api_key)
+        raw_model = init_model(
+            model, base_url=base_url, api_key=api_key, reasoning=reasoning
+        )
         self.structured_model = try_structured_model(raw_model, VisualCritique)
         self.raw_model = raw_model
 
@@ -174,6 +195,7 @@ def create_provider_quality_loop(
     creds = {
         "base_url": getattr(config, "agent_base_url", None),
         "api_key": getattr(config, "agent_api_key", None),
+        "reasoning": getattr(config, "agent_reasoning", None),
     }
     return (
         LumenQualityLoop(
@@ -187,7 +209,11 @@ def create_provider_quality_loop(
 
 
 def init_model(
-    model: str, *, base_url: str | None = None, api_key: str | None = None
+    model: str,
+    *,
+    base_url: str | None = None,
+    api_key: str | None = None,
+    reasoning: str | None = None,
 ):
     """Build a deep-agent LLM bound to the OpenRouter gateway.
 
@@ -197,6 +223,12 @@ def init_model(
     OpenAI-compatible client. Any other shape is a misconfiguration and raises here,
     before a request goes out, rather than failing later as an opaque transport
     error (e.g. an Anthropic client aimed at the OpenRouter base URL that 404s).
+
+    `reasoning` ("low" | "medium" | "high") rides OpenRouter's unified
+    `reasoning: {effort}` request field — the gateway translates it for whatever
+    provider serves the model, so it is one mechanism for every model id, never a
+    per-vendor special case. None → no reasoning field on the request (provider
+    default: no extended thinking).
     """
     if not (base_url and api_key):
         raise ValueError(
@@ -212,6 +244,11 @@ def init_model(
             "'anthropic:' prefix builds the Anthropic client against the OpenRouter "
             "base URL and 404s."
         )
+    if reasoning is not None and reasoning not in {"low", "medium", "high"}:
+        raise ValueError(
+            "LUMEN_AGENT_REASONING must be one of low|medium|high (or unset for "
+            f"no reasoning field); got {reasoning!r}"
+        )
     try:
         from langchain.chat_models import init_chat_model
     except ImportError as error:
@@ -219,7 +256,12 @@ def init_model(
             "LangChain model dependencies are missing. Install apps/api/requirements.txt "
             "or add langchain and langchain-openai to the active environment."
         ) from error
-    return init_chat_model(model, base_url=base_url, api_key=api_key)
+    kwargs: dict = {"base_url": base_url, "api_key": api_key}
+    if reasoning is not None:
+        # OpenAI-compatible clients pass unknown top-level request fields via
+        # extra_body; OpenRouter reads `reasoning` from the request body.
+        kwargs["extra_body"] = {"reasoning": {"effort": reasoning}}
+    return init_chat_model(model, **kwargs)
 
 
 def try_structured_model(model: Any, schema: type[VisualCritique]):

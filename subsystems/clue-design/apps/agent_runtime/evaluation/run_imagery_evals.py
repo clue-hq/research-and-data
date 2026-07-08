@@ -324,6 +324,7 @@ def main() -> None:
                 args.model,
                 base_url=settings.lumen_agent_base_url,
                 api_key=settings.lumen_agent_api_key,
+                reasoning=settings.lumen_agent_reasoning,
             ),
             ImageryJudgeVerdict,
         )

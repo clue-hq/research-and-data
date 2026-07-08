@@ -839,6 +839,78 @@ def test_init_model_requires_openrouter_credentials():
     assert "OpenRouter" in str(excinfo.value)
 
 
+def test_init_model_rejects_invalid_reasoning_effort():
+    # A typo'd effort must fail loudly before any request goes out — a silently
+    # dropped reasoning field is the silent-failure class again.
+    with pytest.raises(ValueError) as excinfo:
+        init_model(
+            "openai:anthropic/claude-opus-4.8",
+            base_url="https://openrouter.ai/api/v1",
+            api_key="sk-test",
+            reasoning="maximum",
+        )
+    assert "LUMEN_AGENT_REASONING" in str(excinfo.value)
+
+
+def test_init_model_passes_reasoning_effort_via_extra_body(monkeypatch):
+    # OpenRouter's unified reasoning field rides extra_body on the
+    # OpenAI-compatible client — one mechanism for every model id.
+    captured: dict = {}
+
+    def fake_init_chat_model(model, **kwargs):
+        captured["model"] = model
+        captured.update(kwargs)
+        return object()
+
+    import langchain.chat_models
+
+    monkeypatch.setattr(langchain.chat_models, "init_chat_model", fake_init_chat_model)
+    init_model(
+        "openai:anthropic/claude-opus-4.8",
+        base_url="https://openrouter.ai/api/v1",
+        api_key="sk-test",
+        reasoning="medium",
+    )
+    assert captured["extra_body"] == {"reasoning": {"effort": "medium"}}
+
+
+def test_init_model_omits_reasoning_field_when_unset(monkeypatch):
+    # None → the request carries NO reasoning key at all (provider default),
+    # not an empty/None value that some gateways would reject.
+    captured: dict = {}
+
+    def fake_init_chat_model(model, **kwargs):
+        captured["model"] = model
+        captured.update(kwargs)
+        return object()
+
+    import langchain.chat_models
+
+    monkeypatch.setattr(langchain.chat_models, "init_chat_model", fake_init_chat_model)
+    init_model(
+        "openai:anthropic/claude-opus-4.8",
+        base_url="https://openrouter.ai/api/v1",
+        api_key="sk-test",
+    )
+    assert "extra_body" not in captured
+
+
+def test_settings_validate_reasoning_effort():
+    # The env seam itself fails at startup on a bad value, normalizes case, and
+    # treats blank as unset (matching the config module's blank-is-unset rule).
+    from py_lumen_config.config import Settings
+
+    assert (
+        Settings(_env_file=None, lumen_agent_reasoning="MEDIUM").lumen_agent_reasoning
+        == "medium"
+    )
+    assert Settings(_env_file=None, lumen_agent_reasoning="").lumen_agent_reasoning is None
+    assert Settings(_env_file=None).lumen_agent_reasoning is None
+    with pytest.raises(Exception) as excinfo:
+        Settings(_env_file=None, lumen_agent_reasoning="turbo")
+    assert "low|medium|high" in str(excinfo.value)
+
+
 def test_coordinator_prompt_wires_the_imagery_decide_generate_place_chain():
     # The coordinator must actively drive the imagery chain (decide -> generate ->
     # place -> scrim) rather than leave it to chance — otherwise the loop only ever

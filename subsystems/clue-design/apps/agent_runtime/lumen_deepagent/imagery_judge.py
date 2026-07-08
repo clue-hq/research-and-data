@@ -203,6 +203,7 @@ def _call_judge(
                 config.model,
                 base_url=getattr(config, "agent_base_url", None),
                 api_key=getattr(config, "agent_api_key", None),
+                reasoning=getattr(config, "agent_reasoning", None),
             ),
             ImageryJudgeVerdict,
         )
