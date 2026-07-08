@@ -7,7 +7,7 @@ use lumen_core::validation::validate_scene;
 use lumen_core::SharedTextMeasurer;
 use lumen_core::{
     batch_scope_violations, build_structured_edit_batch, compare_brand_kit_compatibility,
-    compile_dsl_into_scene_with_session, compile_styles_brand_kit, derive_instance,
+    compile_dsl_into_scene_with_session_and_protected, compile_styles_brand_kit, derive_instance,
     generate_brand_kit, layout_scene, platform_default_brand_kit, preflight_scene,
     summarize_brand_kit_for_authoring, validate_binding_set, validate_brand_kit,
     validate_brand_kit_product_ready, validate_scene_brand_governance, AssetDigest, AssetId,
@@ -15,8 +15,8 @@ use lumen_core::{
     AssetSource, AssetStatus, AssetThumbnail, BindingSet, BrandGovernanceStrictness, BrandKit,
     BrandKitId, BrandMode, BrandSeed, DerivationAssets, DeriveOptions, Diagnostic,
     DiagnosticSeverity, DocumentId, DslCompileSessionSnapshot, EditScope, EditScopeMode,
-    ExportAdapter, ExportFormat, ExportProfile, ExportPurpose, ExportRequest, Medium, Operation,
-    PageId, PdfIntent, PreflightOptions, RasterScale, Scene, ScopeViolation,
+    ExportAdapter, ExportFormat, ExportProfile, ExportPurpose, ExportRequest, Medium, NodeId,
+    Operation, PageId, PdfIntent, PreflightOptions, RasterScale, Scene, ScopeViolation,
     StructuredEditInstruction, TemplateRevisionId,
 };
 use lumen_export::LumenExportAdapter;
@@ -152,6 +152,10 @@ enum CoreRequest {
         source: String,
         #[serde(default)]
         dsl_session: Option<Value>,
+        /// Slice 3: seed-born / human node ids a `reconcile(...)` block must
+        /// KEEP when omitted (LUMD0262). Defaulted empty (pure declarative).
+        #[serde(default)]
+        protected_node_ids: Vec<String>,
     },
     PreflightScene {
         scene: Value,
@@ -851,13 +855,20 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
             scene,
             source,
             dsl_session,
+            protected_node_ids,
         } => {
             let mut scene = parse_scene(scene)?;
             let session = dsl_session
                 .map(serde_json::from_value::<DslCompileSessionSnapshot>)
                 .transpose()
                 .map_err(|error| core_error("helper.dsl_session", error.to_string()))?;
-            let result = compile_dsl_into_scene_with_session(&source, &mut scene, session);
+            let protected: std::collections::BTreeSet<NodeId> = protected_node_ids
+                .into_iter()
+                .map(NodeId::from)
+                .collect();
+            let result = compile_dsl_into_scene_with_session_and_protected(
+                &source, &mut scene, session, protected,
+            );
             let applied_operations = result
                 .operation_report
                 .as_ref()

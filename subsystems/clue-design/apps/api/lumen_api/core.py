@@ -90,15 +90,20 @@ class CoreClient:
         scene: JsonObject,
         source: str,
         dsl_session: Optional[JsonObject] = None,
+        protected_node_ids: Optional[list[str]] = None,
     ) -> JsonObject:
-        return self._run(
-            {
-                "action": "compile_dsl_into_scene",
-                "scene": scene,
-                "source": source,
-                "dsl_session": dsl_session,
-            }
-        )
+        request: JsonObject = {
+            "action": "compile_dsl_into_scene",
+            "scene": scene,
+            "source": source,
+            "dsl_session": dsl_session,
+        }
+        # Slice 3: seed-born / human node ids a reconcile block must KEEP when
+        # omitted. Omitted from the request when None so the helper defaults it
+        # empty (pure declarative). Phase B wires the runtime call site.
+        if protected_node_ids is not None:
+            request["protected_node_ids"] = protected_node_ids
+        return self._run(request)
 
     def preflight_scene(
         self,

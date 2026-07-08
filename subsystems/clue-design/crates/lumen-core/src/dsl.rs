@@ -60,11 +60,29 @@ pub fn compile_dsl_into_scene_with_session(
     scene: &mut Scene,
     session_snapshot: Option<DslCompileSessionSnapshot>,
 ) -> DslSceneCompileOutput {
+    compile_dsl_into_scene_with_session_and_protected(
+        source,
+        scene,
+        session_snapshot,
+        BTreeSet::new(),
+    )
+}
+
+/// Slice 3 protected-aware compile: `protected_node_ids` are seed-born / human
+/// nodes that a `reconcile(...)` block must KEEP when omitted (LUMD0262). All
+/// other behavior is identical to [`compile_dsl_into_scene_with_session`].
+pub fn compile_dsl_into_scene_with_session_and_protected(
+    source: &str,
+    scene: &mut Scene,
+    session_snapshot: Option<DslCompileSessionSnapshot>,
+    protected_node_ids: BTreeSet<NodeId>,
+) -> DslSceneCompileOutput {
     let mut session = session_snapshot
         .map(|snapshot| DslCompileSession::from_snapshot(scene.clone(), snapshot))
         .unwrap_or_else(|| DslCompileSession::new(scene.clone()));
     let previous_snapshot = session.snapshot();
-    let compile_output = session.compile_block(source);
+    let compile_output =
+        session.compile_block_with_options(source, None, protected_node_ids);
 
     if compile_output.has_errors() {
         return DslSceneCompileOutput {
@@ -170,6 +188,19 @@ impl DslCompileSession {
         source: &str,
         history: Option<&dyn DslHistoryAdapter>,
     ) -> DslCompileOutput {
+        self.compile_block_with_options(source, history, BTreeSet::new())
+    }
+
+    /// Compile a block with a caller-supplied `protected_node_ids` set (Slice
+    /// 3). Protected nodes omitted from a `reconcile(...)` block are KEPT
+    /// (LUMD0262) rather than removed. An empty set = pure declarative
+    /// semantics (unseeded runs).
+    pub fn compile_block_with_options(
+        &mut self,
+        source: &str,
+        history: Option<&dyn DslHistoryAdapter>,
+        protected_node_ids: BTreeSet<NodeId>,
+    ) -> DslCompileOutput {
         let starting_context = self.parser_context.clone();
         let (parse, parsed_context) =
             DslParser::new_with_context(source, starting_context.clone()).parse_with_context();
@@ -180,6 +211,7 @@ impl DslCompileSession {
             &mut self.parent_stack,
             &mut self.emitted_slots,
             history,
+            protected_node_ids,
         );
         let output = compiler.compile(parse.halted_at.clone());
 
@@ -555,6 +587,14 @@ pub enum DslDirective {
         target: NodeId,
         slot_policy: ReplaceSlotPolicy,
     },
+    /// Slice 3 declarative reconcile: `reconcile(container)` followed by an
+    /// indented block that is the container's FULL intended child subtree. The
+    /// staged elements never apply to the scene — they materialize into a
+    /// detached tree at close, the engine diffs it against the container's live
+    /// subtree, and only the minimal ops are emitted. Block form only.
+    Reconcile {
+        target: NodeId,
+    },
     Ungroup {
         target: NodeId,
         allow_layout: bool,
@@ -665,6 +705,13 @@ struct DslParser {
     diagnostics: Vec<DslDiagnostic>,
     halted_at: Option<DslHalt>,
     context: DslParserContext,
+    /// Slice 3: the indent of the currently open `reconcile(...)` directive, if
+    /// any. Element lines indented deeper than this belong to the reconcile
+    /// block, where re-emitting existing ids is the POINT — so the LUMD0401
+    /// duplicate-id halt is suspended for them (the block stages detached and
+    /// never reaches the scene). The block closes at the next line whose indent
+    /// is at or below the directive's.
+    reconcile_block_indent: Option<usize>,
 }
 
 impl DslParser {
@@ -677,6 +724,7 @@ impl DslParser {
             lines: normalized_lines(source),
             diagnostics: Vec::new(),
             halted_at: None,
+            reconcile_block_indent: None,
             context,
         }
     }
@@ -792,6 +840,26 @@ impl DslParser {
                 }
             };
 
+            // Slice 3: close an open reconcile block when a line dedents to or
+            // below the directive's indent, then open one when this line IS the
+            // reconcile directive. Inside the block (indent strictly greater),
+            // duplicate-id re-emission is legitimate and its LUMD0401 halt is
+            // suspended below.
+            if let Some(block_indent) = self.reconcile_block_indent {
+                if indent <= block_indent {
+                    self.reconcile_block_indent = None;
+                }
+            }
+            let inside_reconcile_block = self
+                .reconcile_block_indent
+                .is_some_and(|block_indent| indent > block_indent);
+            if matches!(
+                &parsed,
+                DslLineKind::Directive(DslDirective::Reconcile { .. })
+            ) {
+                self.reconcile_block_indent = Some(indent);
+            }
+
             let is_structural = matches!(parsed, DslLineKind::Page(_) | DslLineKind::Element(_));
             if is_structural {
                 if let Some(previous_depth) = self.context.previous_structural_depth {
@@ -820,7 +888,7 @@ impl DslParser {
                 }
 
                 if let DslLineKind::Element(element) = &parsed {
-                    if self.context.seen_node_ids.contains(&element.id) {
+                    if !inside_reconcile_block && self.context.seen_node_ids.contains(&element.id) {
                         self.halt(error_diag(
                             line.line_number,
                             1,
@@ -1248,6 +1316,24 @@ impl DslParser {
                     slot_policy,
                 }
             }
+            "reconcile" => {
+                // Block form only: exactly one container-id argument. An inline
+                // form (a second argument) is an error — the intended subtree is
+                // authored in the indented block.
+                if call.args.len() != 1 {
+                    return Err(error_diag(
+                        line_number,
+                        1,
+                        trimmed.len(),
+                        "LUMD0207",
+                        "reconcile(...) expects exactly one container id",
+                        "Use reconcile(container) followed by the container's full intended child subtree, indented.",
+                    ));
+                }
+                DslDirective::Reconcile {
+                    target: parse_node_id(&call.args[0], line_number, 1)?,
+                }
+            }
             "ungroup" => {
                 if call.args.is_empty() || call.args.len() > 2 {
                     return Err(error_diag(
@@ -1353,6 +1439,25 @@ struct ReplaceBlockState {
     stack_depth: usize,
 }
 
+/// Active reconcile block (Slice 3). Unlike `ReplaceBlockState`, the staged
+/// elements NEVER apply to the scene — they accumulate here (with their
+/// indents, so a detached tree can be rebuilt at close) and nested
+/// `delete(id)` directives are collected. At close the tree materializes, the
+/// engine diffs it against the container's live subtree, and only the minimal
+/// reconciler ops are emitted through the ordinary checked path.
+struct ReconcileBlockState {
+    /// The reconcile directive's own indent; the block closes when a line
+    /// dedents to or below it.
+    directive_indent: usize,
+    target: NodeId,
+    /// Staged `(indent, element)` pairs in source order — the intended child
+    /// subtree of the target, authored declaratively.
+    staged: Vec<(usize, DslElement)>,
+    /// Explicit `delete(id)` directives nested in the block (the human-content
+    /// deletion path stays explicit even under reconcile).
+    deletes: Vec<NodeId>,
+}
+
 struct DslCompiler<'a> {
     document: DslDocument,
     operations: Vec<Operation>,
@@ -1363,6 +1468,10 @@ struct DslCompiler<'a> {
     /// target the root or its descendants until a flat line ends the group.
     override_root: Option<NodeId>,
     replace_block: Option<ReplaceBlockState>,
+    reconcile_block: Option<ReconcileBlockState>,
+    /// Node ids the caller marks protected (seed-born / human): omitting them
+    /// from a reconcile block KEEPS them (LUMD0262) instead of removing.
+    protected_node_ids: BTreeSet<NodeId>,
     history: Option<&'a dyn DslHistoryAdapter>,
     scene: &'a mut Scene,
     parent_stack: &'a mut Vec<ParentFrame>,
@@ -1377,6 +1486,7 @@ impl<'a> DslCompiler<'a> {
         parent_stack: &'a mut Vec<ParentFrame>,
         emitted_slots: &'a mut BTreeMap<SlotKey, SlotId>,
         history: Option<&'a dyn DslHistoryAdapter>,
+        protected_node_ids: BTreeSet<NodeId>,
     ) -> Self {
         Self {
             document,
@@ -1386,6 +1496,8 @@ impl<'a> DslCompiler<'a> {
             checkpoint_label: None,
             override_root: None,
             replace_block: None,
+            reconcile_block: None,
+            protected_node_ids,
             history,
             scene,
             parent_stack,
@@ -1406,6 +1518,9 @@ impl<'a> DslCompiler<'a> {
 
             if let Err(diagnostic) = self.lower_line(&line) {
                 self.rollback_replace_block();
+                // A reconcile block stages detached (nothing applied), so an
+                // error just discards the staged buffer — no scene rollback.
+                self.reconcile_block = None;
                 self.halted_at = Some(DslHalt {
                     line: diagnostic.span.line,
                     code: diagnostic.diagnostic.code.clone(),
@@ -1417,6 +1532,15 @@ impl<'a> DslCompiler<'a> {
 
         if self.halted_at.is_none() && parse_halt.is_none() {
             if let Err(diagnostic) = self.finalize_replace_block(last_line_number, 1) {
+                self.halted_at = Some(DslHalt {
+                    line: diagnostic.span.line,
+                    code: diagnostic.diagnostic.code.clone(),
+                });
+                self.diagnostics.push(diagnostic);
+            }
+        }
+        if self.halted_at.is_none() && parse_halt.is_none() {
+            if let Err(diagnostic) = self.finalize_reconcile_block(last_line_number, 1) {
                 self.halted_at = Some(DslHalt {
                     line: diagnostic.span.line,
                     code: diagnostic.diagnostic.code.clone(),
@@ -1440,6 +1564,45 @@ impl<'a> DslCompiler<'a> {
         if line.indent == 0 {
             self.override_root = None;
             self.finalize_replace_block(line.line_number, line.raw.len().max(1))?;
+        }
+        // A reconcile block closes when a line dedents to or below the
+        // directive's indent (comments/checkpoints excluded — they carry no
+        // structural indent meaning). The closing line is then processed
+        // normally below.
+        if let Some(state) = &self.reconcile_block {
+            let closes = line.indent <= state.directive_indent
+                && !matches!(
+                    &line.kind,
+                    DslLineKind::Comment(_) | DslLineKind::Checkpoint(_)
+                );
+            if closes {
+                self.finalize_reconcile_block(line.line_number, line.raw.len().max(1))?;
+            }
+        }
+        // While a reconcile block is open, indented element / nested delete
+        // lines stage into it instead of applying to the scene.
+        if let Some(state) = &self.reconcile_block {
+            if line.indent > state.directive_indent {
+                match &line.kind {
+                    DslLineKind::Element(element) => {
+                        return self.stage_reconcile_element(line, element);
+                    }
+                    DslLineKind::Directive(DslDirective::Delete { target, .. }) => {
+                        return self.stage_reconcile_delete(line, target);
+                    }
+                    DslLineKind::Comment(_) | DslLineKind::Checkpoint(_) => {}
+                    _ => {
+                        return Err(error_diag(
+                            line.line_number,
+                            1,
+                            line.raw.len().max(1),
+                            "LUMD0264",
+                            "only element lines and delete(id) directives are allowed inside a reconcile block",
+                            "Author the container's full intended child subtree; use delete(id) to remove a protected node explicitly.",
+                        ));
+                    }
+                }
+            }
         }
         match &line.kind {
             DslLineKind::Comment(_) => Ok(()),
@@ -1777,6 +1940,40 @@ impl<'a> DslCompiler<'a> {
                 self.parent_stack.push(ParentFrame { indent: 0, parent });
                 Ok(())
             }
+            DslDirective::Reconcile { target } => {
+                // The target must exist and be a container (Frame/Group/
+                // AutoLayout) — else LUMD0264 with a container hint.
+                let node = self.scene.nodes.get(target).ok_or_else(|| {
+                    error_diag(
+                        line.line_number,
+                        1,
+                        line.raw.len().max(1),
+                        "LUMD0264",
+                        format!("reconcile target {} does not exist", target),
+                        reconcile_container_hint(self.scene),
+                    )
+                })?;
+                if !node.kind.can_have_children() {
+                    return Err(error_diag(
+                        line.line_number,
+                        1,
+                        line.raw.len().max(1),
+                        "LUMD0264",
+                        format!(
+                            "reconcile target {} is not a container (frame/group/autolayout)",
+                            target
+                        ),
+                        reconcile_container_hint(self.scene),
+                    ));
+                }
+                self.reconcile_block = Some(ReconcileBlockState {
+                    directive_indent: line.indent,
+                    target: target.clone(),
+                    staged: Vec::new(),
+                    deletes: Vec::new(),
+                });
+                Ok(())
+            }
             DslDirective::Ungroup {
                 target,
                 allow_layout,
@@ -2096,6 +2293,148 @@ impl<'a> DslCompiler<'a> {
         if let Some(state) = self.replace_block.take() {
             self.restore_replace_snapshot(state);
         }
+    }
+
+    /// Stage an element line inside an open reconcile block: record it (with
+    /// its indent) into the detached buffer. Nothing applies to the scene.
+    fn stage_reconcile_element(
+        &mut self,
+        _line: &DslLine,
+        element: &DslElement,
+    ) -> Result<(), DslDiagnostic> {
+        if let Some(state) = &mut self.reconcile_block {
+            state.staged.push((_line.indent, element.clone()));
+        }
+        Ok(())
+    }
+
+    /// Collect a nested `delete(id)` directive inside a reconcile block. Only
+    /// node targets are supported here (the human-content deletion path).
+    fn stage_reconcile_delete(
+        &mut self,
+        line: &DslLine,
+        target: &EditTargetRef,
+    ) -> Result<(), DslDiagnostic> {
+        let EditTargetRef::Node(node_id) = target else {
+            return Err(error_diag(
+                line.line_number,
+                1,
+                line.raw.len().max(1),
+                "LUMD0264",
+                "reconcile blocks only accept delete(node_id)",
+                "Use delete(node_id) to remove a node explicitly inside a reconcile block.",
+            ));
+        };
+        if let Some(state) = &mut self.reconcile_block {
+            state.deletes.push(node_id.clone());
+        }
+        Ok(())
+    }
+
+    /// Close an active reconcile block: materialize the staged elements into a
+    /// detached intended subtree, diff it against the container's live subtree,
+    /// honor nested explicit deletes, and emit the minimal ops through the
+    /// ordinary checked path. Nothing was ever applied to the scene during
+    /// staging, so on error we simply discard the buffer (no scene rollback).
+    fn finalize_reconcile_block(
+        &mut self,
+        line_number: usize,
+        length: usize,
+    ) -> Result<(), DslDiagnostic> {
+        let Some(state) = self.reconcile_block.take() else {
+            return Ok(());
+        };
+
+        // Materialize the staged (indent, element) list into a detached tree.
+        let intended =
+            materialize_reconcile_subtree(&state.staged, line_number, length)?;
+
+        // The protection set for THIS reconcile: the caller-supplied protected
+        // ids, MINUS any the block explicitly deletes (explicit delete beats
+        // protection — it is the deliberate human-content deletion path).
+        let mut protected = self.protected_node_ids.clone();
+        for deleted in &state.deletes {
+            protected.remove(deleted);
+        }
+        // An explicit delete of a node the intended tree does NOT re-emit is
+        // an omission from the block; with the node removed from `protected`,
+        // the reconciler's omit-delete removes it. A delete of a node the tree
+        // DOES re-emit is contradictory — reject it loudly rather than guess.
+        for deleted in &state.deletes {
+            if intended.nodes.contains_key(deleted) {
+                return Err(error_diag(
+                    line_number,
+                    1,
+                    length,
+                    "LUMD0264",
+                    format!(
+                        "reconcile block both re-emits and deletes node {}",
+                        deleted
+                    ),
+                    "Either re-emit the node to keep/update it, or delete(id) and omit it — not both.",
+                ));
+            }
+        }
+
+        let (operations, notes) = crate::reconcile::reconcile_subtree(
+            self.scene,
+            &state.target,
+            &intended,
+            &protected,
+        );
+
+        // Emit reconciler ops through the checked path (ledger/Accept unchanged).
+        let line = DslLine {
+            line_number,
+            indent: 0,
+            raw: format!("reconcile({})", state.target),
+            kind: DslLineKind::Comment(String::new()),
+        };
+        self.emit_edit_batch(&line, operations)?;
+
+        // Surface every note as a diagnostic — never silent.
+        for note in notes {
+            match note {
+                crate::reconcile::ReconcileNote::ProtectedKept(node_id) => {
+                    self.diagnostics.push(warning_diag(
+                        line_number,
+                        1,
+                        length,
+                        "LUMD0262",
+                        format!("protected node {} kept", node_id),
+                        "omission does not delete human content; use delete(<id>) explicitly.",
+                    ));
+                }
+                crate::reconcile::ReconcileNote::Summary {
+                    container,
+                    updated,
+                    inserted,
+                    removed,
+                    moved,
+                    kept_protected,
+                } => {
+                    self.diagnostics.push(DslDiagnostic {
+                        diagnostic: Diagnostic::advice(
+                            Phase::Dsl,
+                            "LUMD0263",
+                            format!(
+                                "reconciled {}: {} updated, {} inserted, {} removed, {} moved, {} kept-protected",
+                                container, updated, inserted, removed, moved, kept_protected
+                            ),
+                            None,
+                        ),
+                        span: SourceSpan {
+                            line: line_number,
+                            column: 1,
+                            length,
+                        },
+                    });
+                }
+            }
+        }
+
+        self.prune_parent_stack();
+        Ok(())
     }
 
     fn prune_parent_stack(&mut self) {
@@ -3924,6 +4263,99 @@ fn node_from_element(element: &DslElement, line_number: usize) -> Result<Node, D
     };
 
     Ok(Node::new(element.id.clone(), kind))
+}
+
+/// Materialize a reconcile block's staged `(indent, element)` list into a
+/// detached [`IntendedSubtree`]. Reuses `node_from_element` + `apply_properties`
+/// (the fresh-authoring materializer) so a staged element becomes the same
+/// `Node` it would as a fresh declaration; nesting is reconstructed from the
+/// indent ladder. Duplicate ids WITHIN the block are an error (the intended
+/// tree must be a well-formed tree, even though re-emitting LIVE ids is fine).
+fn materialize_reconcile_subtree(
+    staged: &[(usize, DslElement)],
+    line_number: usize,
+    length: usize,
+) -> Result<crate::reconcile::IntendedSubtree, DslDiagnostic> {
+    let mut nodes: BTreeMap<NodeId, Node> = BTreeMap::new();
+    let mut container_children: Vec<NodeId> = Vec::new();
+    // Stack of (indent, parent_id) — the open ancestor chain, mirroring the
+    // parent_stack mechanism the fresh-authoring path uses.
+    let mut stack: Vec<(usize, NodeId)> = Vec::new();
+
+    for (indent, element) in staged {
+        // A materialized node reuses the fresh-authoring builder.
+        let mut node = node_from_element(element, line_number)?;
+        let mut property_diagnostics = Vec::new();
+        apply_properties(
+            &mut node,
+            &element.properties,
+            line_number,
+            &mut property_diagnostics,
+        );
+        // Property diagnostics inside a reconcile block are surfaced by the
+        // caller path only when they are errors; a materialized node that
+        // failed to parse would have errored above, so warnings here are
+        // non-fatal metadata and intentionally dropped (mirrors the way the
+        // reconciler only needs the final field values).
+        let _ = property_diagnostics;
+
+        if nodes.contains_key(&element.id) {
+            return Err(error_diag(
+                line_number,
+                1,
+                length,
+                "LUMD0401",
+                format!("duplicate node id {} inside reconcile block", element.id),
+                "Each id may appear at most once in a reconcile block's intended subtree.",
+            ));
+        }
+
+        // Pop ancestors that are not shallower than this line.
+        while stack.last().is_some_and(|(pi, _)| *pi >= *indent) {
+            stack.pop();
+        }
+
+        match stack.last() {
+            Some((_, parent_id)) => {
+                if let Some(parent) = nodes.get_mut(parent_id) {
+                    parent.children.push(element.id.clone());
+                }
+            }
+            None => container_children.push(element.id.clone()),
+        }
+
+        let can_have_children = element.kind.can_have_children();
+        nodes.insert(element.id.clone(), node);
+        if can_have_children {
+            stack.push((*indent, element.id.clone()));
+        }
+    }
+
+    Ok(crate::reconcile::IntendedSubtree {
+        container_children,
+        nodes,
+    })
+}
+
+/// The container hint for LUMD0264: names the containers (Frame/Group/
+/// AutoLayout) that currently exist in the scene so the author can pick a
+/// valid reconcile target.
+fn reconcile_container_hint(scene: &Scene) -> String {
+    let mut containers: Vec<String> = scene
+        .nodes
+        .values()
+        .filter(|node| node.kind.can_have_children())
+        .map(|node| node.id.as_str().to_owned())
+        .collect();
+    containers.sort();
+    if containers.is_empty() {
+        "reconcile(target) needs an existing frame, group, or autolayout container; this scene has none.".to_owned()
+    } else {
+        format!(
+            "reconcile(target) needs a frame/group/autolayout; valid containers: {}.",
+            containers.join(", ")
+        )
+    }
 }
 
 fn property_asset_id(properties: &[DslProperty]) -> Option<AssetId> {

@@ -18,6 +18,7 @@ pub mod layout;
 pub mod operations;
 pub mod page_geometry;
 pub mod preflight;
+pub mod reconcile;
 pub mod render_contract;
 pub mod render_geometry;
 pub mod scene;
@@ -60,7 +61,8 @@ pub use brand::{
 };
 pub use diagnostics::{Diagnostic, DiagnosticSeverity, DiagnosticSubject, Phase};
 pub use dsl::{
-    compile_dsl, compile_dsl_into_scene, compile_dsl_into_scene_with_session, normalize_dsl,
+    compile_dsl, compile_dsl_into_scene, compile_dsl_into_scene_with_session,
+    compile_dsl_into_scene_with_session_and_protected, normalize_dsl,
     parse_dsl, slot_id_for_key, DslCompileOutput, DslCompileSession, DslCompileSessionSnapshot,
     DslDiagnostic, DslDimension, DslDirective, DslDocument, DslElement, DslElementKind, DslFill,
     DslFont, DslHalt, DslHistoryAdapter, DslLayoutAnchor, DslLayoutAxis, DslLine, DslLineKind,
@@ -108,6 +110,7 @@ pub use page_geometry::{
     POINTS_PER_INCH,
 };
 pub use preflight::{preflight_scene, PreflightOptions, PreflightResult};
+pub use reconcile::{reconcile_subtree, IntendedSubtree, ReconcileNote};
 pub use render_contract::{
     effect_features_for_node, effect_support_diagnostics, EffectFeature, EffectSupportLevel,
     RenderIntent, RenderManifest, RenderTarget, RendererAdapter, RendererEffectSupport,

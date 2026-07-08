@@ -1,10 +1,12 @@
 use lumen_core::validation::validate_scene;
 use lumen_core::{
-    compile_dsl, compile_dsl_into_scene, normalize_dsl, parse_dsl, Color, DiagnosticSeverity,
-    Dimension, DslCompileSession, DslLayoutAnchor, DslLayoutAxis, DslLineKind, DslProperty,
-    DslScalar, LayoutAnchor, NodeId, NodeKind, Operation, Orientation, PageId, PagePreset, Paint,
-    ParentRef, PhysicalUnit, Scene, SlotKey, TextDirection, TextWrap, Unit,
+    compile_dsl, compile_dsl_into_scene, compile_dsl_into_scene_with_session_and_protected,
+    normalize_dsl, parse_dsl, Color, DiagnosticSeverity, Dimension, DslCompileSession,
+    DslLayoutAnchor, DslLayoutAxis, DslLineKind, DslProperty, DslScalar, LayoutAnchor, NodeId,
+    NodeKind, Operation, Orientation, PageId, PagePreset, Paint, ParentRef, PhysicalUnit, Scene,
+    SlotKey, TextDirection, TextWrap, Unit,
 };
+use std::collections::BTreeSet;
 
 const VALID_BROCHURE: &str = include_str!("../fixtures/dsl/valid_brochure.lumen");
 const VALID_LANGUAGE_SURFACE: &str = include_str!("../fixtures/dsl/valid_language_surface.lumen");
@@ -2954,4 +2956,271 @@ fn dsl_modify_swap_degraded_still_applies_rest_of_patch() {
     assert!(img_node.clip);
     assert_eq!(img_node.size.width, Dimension::Fixed(640.0));
     assert_eq!(img_node.size.height, Dimension::Fixed(360.0));
+}
+
+// ---------------------------------------------------------------------------
+// Slice 3 — reconcile directive (tests 8-13 from the Phase A brief).
+// ---------------------------------------------------------------------------
+
+fn summary_diag<'a>(
+    diagnostics: &'a [lumen_core::DslDiagnostic],
+) -> Option<&'a lumen_core::DslDiagnostic> {
+    diagnostics
+        .iter()
+        .find(|diag| diag.diagnostic.code == "LUMD0263")
+}
+
+// Test 8 — P3r3's intent in reconcile form: a container `cta` holding an
+// agent-born `cta_text`; a reconcile block that omits `cta_text` and adds an
+// image + caption → remove + 2 inserts, compiles clean, LUMD0263 present.
+#[test]
+fn reconcile_p3r3_intent_removes_and_inserts() {
+    let mut scene = Scene::new(lumen_core::DocumentId::from("doc_reconcile_p3r3"), "P3r3");
+    let seed = compile_dsl_into_scene(
+        r#"
+page page_cta size(1080,1350,px)
+  cta al(v) p(0,0) s(320,72)
+    cta_text text "Book a Demo" p(0,0) s(320,40)
+"#,
+        &mut scene,
+    );
+    assert_no_dsl_errors(&seed.compile_output.diagnostics);
+
+    let reconcile = compile_dsl_into_scene(
+        r#"
+reconcile(cta)
+  cta_shot image asset(asset_ing_9394e96d3c08576a) p(0,0) s(320,220)
+  caption text "See it in action" p(0,0) s(320,40)
+"#,
+        &mut scene,
+    );
+    assert_no_dsl_errors(&reconcile.compile_output.diagnostics);
+    assert!(reconcile.operation_error.is_none());
+
+    // cta_text removed; the two new nodes present under cta, in order.
+    assert!(!scene.nodes.contains_key(&NodeId::from("cta_text")));
+    assert_eq!(
+        scene.nodes[&NodeId::from("cta")].children,
+        vec![NodeId::from("cta_shot"), NodeId::from("caption")]
+    );
+    let summary = summary_diag(&reconcile.compile_output.diagnostics)
+        .expect("LUMD0263 summary present");
+    assert!(summary.diagnostic.message.contains("1 removed"));
+    assert!(summary.diagnostic.message.contains("2 inserted"));
+}
+
+// Test 9 — P4r3's intent: reconcile over `main` re-emitting its existing
+// children (unchanged) plus a new testimonial text → exactly 1 InsertNode,
+// zero ops for the unchanged re-emitted children (id-reuse + suspended
+// duplicate-id checks in-block).
+#[test]
+fn reconcile_p4r3_intent_reuses_ids_and_inserts_one() {
+    let mut scene = Scene::new(lumen_core::DocumentId::from("doc_reconcile_p4r3"), "P4r3");
+    let seed = compile_dsl_into_scene(
+        r#"
+page page_main size(1080,1350,px)
+  main al(v) p(0,0) s(1080,900)
+    lead text "Lead copy" p(0,0) s(600,40)
+    body text "Body copy" p(0,0) s(600,120)
+"#,
+        &mut scene,
+    );
+    assert_no_dsl_errors(&seed.compile_output.diagnostics);
+
+    let reconcile = compile_dsl_into_scene(
+        r#"
+reconcile(main)
+  lead text "Lead copy" p(0,0) s(600,40)
+  body text "Body copy" p(0,0) s(600,120)
+  testimonial text "Loved by teams" p(0,0) s(600,60)
+"#,
+        &mut scene,
+    );
+    assert_no_dsl_errors(&reconcile.compile_output.diagnostics);
+    assert!(reconcile.operation_error.is_none());
+
+    // Exactly one InsertNode (testimonial); the re-emitted lead/body are
+    // field-identical → zero ops for them.
+    let inserts: Vec<&NodeId> = reconcile
+        .compile_output
+        .operations
+        .iter()
+        .filter_map(|op| match op {
+            Operation::InsertNode { node, .. } => Some(&node.id),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(inserts, vec![&NodeId::from("testimonial")]);
+    // No stray updates/removes/moves for the unchanged children.
+    assert_eq!(reconcile.compile_output.operations.len(), 1);
+    assert_eq!(
+        scene.nodes[&NodeId::from("main")].children,
+        vec![
+            NodeId::from("lead"),
+            NodeId::from("body"),
+            NodeId::from("testimonial")
+        ]
+    );
+}
+
+// Test 10 — same as 9 but the omitted node is protected → kept + LUMD0262
+// warning, no RemoveNode.
+#[test]
+fn reconcile_protected_omission_keeps_and_warns() {
+    let mut scene = Scene::new(
+        lumen_core::DocumentId::from("doc_reconcile_protected"),
+        "Protected",
+    );
+    let seed = compile_dsl_into_scene(
+        r#"
+page page_main size(1080,1350,px)
+  main al(v) p(0,0) s(1080,900)
+    lead text "Lead copy" p(0,0) s(600,40)
+    body text "Body copy" p(0,0) s(600,120)
+"#,
+        &mut scene,
+    );
+    assert_no_dsl_errors(&seed.compile_output.diagnostics);
+
+    // `body` is protected (seed-born / human). The reconcile omits it.
+    let mut protected = BTreeSet::new();
+    protected.insert(NodeId::from("body"));
+    let reconcile = compile_dsl_into_scene_with_session_and_protected(
+        r#"
+reconcile(main)
+  lead text "Lead copy" p(0,0) s(600,40)
+"#,
+        &mut scene,
+        None,
+        protected,
+    );
+    assert_no_dsl_errors(&reconcile.compile_output.diagnostics);
+    assert!(reconcile.operation_error.is_none());
+
+    // body kept, no removal op.
+    assert!(scene.nodes.contains_key(&NodeId::from("body")));
+    assert!(!reconcile.compile_output.operations.iter().any(|op| matches!(
+        op,
+        Operation::RemoveNode { node_id } if node_id == &NodeId::from("body")
+    )));
+    assert!(reconcile
+        .compile_output
+        .diagnostics
+        .iter()
+        .any(|diag| diag.diagnostic.code == "LUMD0262"
+            && diag.diagnostic.message.contains("body")));
+}
+
+// Test 11 — invalid targets → LUMD0264 with the container hint.
+#[test]
+fn reconcile_invalid_target_errors_with_container_hint() {
+    let mut scene = Scene::new(
+        lumen_core::DocumentId::from("doc_reconcile_bad_target"),
+        "BadTarget",
+    );
+    let seed = compile_dsl_into_scene(
+        r#"
+page page_main size(1080,1350,px)
+  main al(v) p(0,0) s(1080,900)
+    leaf text "leaf" p(0,0) s(600,40)
+"#,
+        &mut scene,
+    );
+    assert_no_dsl_errors(&seed.compile_output.diagnostics);
+
+    // Nonexistent target.
+    let missing = compile_dsl_into_scene("reconcile(nope)\n  x text \"x\" p(0,0) s(10,10)", &mut scene);
+    let missing_diag = missing
+        .compile_output
+        .diagnostics
+        .iter()
+        .find(|diag| diag.diagnostic.code == "LUMD0264")
+        .expect("LUMD0264 for missing target");
+    assert!(missing_diag
+        .diagnostic
+        .hint
+        .as_ref()
+        .unwrap()
+        .contains("main"));
+
+    // Leaf (text) target.
+    let leaf = compile_dsl_into_scene("reconcile(leaf)\n  x text \"x\" p(0,0) s(10,10)", &mut scene);
+    assert!(leaf
+        .compile_output
+        .diagnostics
+        .iter()
+        .any(|diag| diag.diagnostic.code == "LUMD0264"));
+}
+
+// Test 12 — a nested delete(protected_id) inside a reconcile block IS honored
+// (delete stays the human-content deletion path).
+#[test]
+fn reconcile_nested_delete_honors_explicit_removal_of_protected() {
+    let mut scene = Scene::new(
+        lumen_core::DocumentId::from("doc_reconcile_delete"),
+        "Delete",
+    );
+    let seed = compile_dsl_into_scene(
+        r#"
+page page_main size(1080,1350,px)
+  main al(v) p(0,0) s(1080,900)
+    lead text "Lead copy" p(0,0) s(600,40)
+    body text "Body copy" p(0,0) s(600,120)
+"#,
+        &mut scene,
+    );
+    assert_no_dsl_errors(&seed.compile_output.diagnostics);
+
+    // `body` is protected, but the block explicitly deletes it → removed.
+    let mut protected = BTreeSet::new();
+    protected.insert(NodeId::from("body"));
+    let reconcile = compile_dsl_into_scene_with_session_and_protected(
+        r#"
+reconcile(main)
+  lead text "Lead copy" p(0,0) s(600,40)
+  delete(body)
+"#,
+        &mut scene,
+        None,
+        protected,
+    );
+    assert_no_dsl_errors(&reconcile.compile_output.diagnostics);
+    assert!(reconcile.operation_error.is_none());
+    assert!(!scene.nodes.contains_key(&NodeId::from("body")));
+    // Explicit delete wins over protection: no LUMD0262 kept-warning for body.
+    assert!(!reconcile
+        .compile_output
+        .diagnostics
+        .iter()
+        .any(|diag| diag.diagnostic.code == "LUMD0262"));
+}
+
+// Test 13 — duplicate-id checks OUTSIDE a reconcile block are unchanged: a
+// plain block re-declaring an existing id still halts LUMD0401.
+#[test]
+fn duplicate_id_outside_reconcile_block_still_halts() {
+    let mut scene = Scene::new(lumen_core::DocumentId::from("doc_dupe"), "Dupe");
+    let seed = compile_dsl_into_scene(
+        r#"
+page page_main size(1080,1350,px)
+  main al(v) p(0,0) s(1080,900)
+    lead text "Lead copy" p(0,0) s(600,40)
+"#,
+        &mut scene,
+    );
+    assert_no_dsl_errors(&seed.compile_output.diagnostics);
+
+    // Re-declaring `lead` in a PLAIN continuation (no reconcile) still halts.
+    let dupe = compile_dsl_into_scene(
+        r#"
+#page:page_main
+  lead text "Duplicate" p(0,0) s(600,40)
+"#,
+        &mut scene,
+    );
+    assert!(dupe
+        .compile_output
+        .diagnostics
+        .iter()
+        .any(|diag| diag.diagnostic.code == "LUMD0401"));
 }
