@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import os
+from dataclasses import replace as dc_replace
 from pathlib import Path
 
 import pytest
@@ -644,6 +645,139 @@ def test_in_scope_critique_still_blocks_and_repairs(tmp_path: Path, monkeypatch)
     # never replays iteration-2 ops that are not part of the returned scene.
     assert result["ops_valid_through_iteration"] == 1
     assert "edit_scoped_acceptance" not in trace_events(config, tools.run_id)
+
+
+# --- Slice 2.5: declared-target gating of edit-scoped acceptance ------------------
+#
+# Moda-probe P1r2/P5r2 (measured live): the user chipped the target node, the
+# agent edited an UNRELATED node, the reviewer raised a 0.95-confidence blocker
+# on the requested node — and edit-scoped acceptance downgraded it to advisory
+# because the blocker's target was outside the (agent-chosen) edit scope. The
+# turn finalized "edit_applied" and offered Accept for an edit that did not do
+# what the user asked. These tests pin the two mechanism fixes.
+
+
+def test_blocker_on_declared_but_unedited_target_blocks_shortcut(
+    tmp_path: Path, monkeypatch
+):
+    # Two chips; the turn addresses one (headline) but the reviewer's blocker
+    # names the OTHER declared target (hero, untouched). Declared targets are
+    # always in scope — the shortcut must not fire.
+    monkeypatch.setattr("lumen_deepagent.tools.CoreClient", FakeSeededEditCoreClient)
+    config = dc_replace(
+        runtime_config(tmp_path, max_iterations=2),
+        turn_target_node_ids=["hero", "headline"],
+    )
+    tools = LumenDesignTools(config, "Edit both", initial_scene=seed_scene_dict())
+    author = ScriptedAuthor(['#headline text("Edited")', '#headline font_size(64)'])
+    reviewer = ScriptedReviewer(
+        [rejected_critique("hero", "the requested hero change was not made")]
+    )
+
+    result = LumenQualityLoop(tools, author, reviewer).run("Edit both")
+
+    assert len(author.requests) == 2  # it kept repairing instead of shortcutting
+    assert result["stop_reason"] != "edit_scoped_acceptance"
+    assert "edit_scoped_acceptance" not in trace_events(config, tools.run_id)
+
+
+def test_shortcut_withheld_when_no_declared_target_was_touched(
+    tmp_path: Path, monkeypatch
+):
+    # The chip names hero; the turn only edits headline; the critique's issue
+    # targets pre-existing content (band) that is out of every scope. The old
+    # behavior shortcuts ("no in-scope issues"); the guard now withholds the
+    # shortcut because the request was never addressed, and records why.
+    monkeypatch.setattr("lumen_deepagent.tools.CoreClient", FakeSeededEditCoreClient)
+    config = dc_replace(
+        runtime_config(tmp_path, max_iterations=2),
+        turn_target_node_ids=["hero"],
+    )
+    tools = LumenDesignTools(config, "Change the hero", initial_scene=seed_scene_dict())
+    author = ScriptedAuthor(['#headline text("Edited")', '#headline font_size(64)'])
+    reviewer = ScriptedReviewer(
+        [rejected_critique("band", "band feels cramped", severity="error")]
+    )
+
+    result = LumenQualityLoop(tools, author, reviewer).run("Change the hero")
+
+    assert result["stop_reason"] != "edit_scoped_acceptance"
+    events = trace_events(config, tools.run_id)
+    assert "edit_scoped_acceptance" not in events
+    assert "edit_scope_target_untouched" in events
+
+
+def test_shortcut_still_fires_when_declared_target_was_edited(
+    tmp_path: Path, monkeypatch
+):
+    # Regression: chip names headline, the turn edits headline, the critique's
+    # only issue targets untouched pre-existing content — the shortcut must
+    # keep working exactly as before the guard.
+    monkeypatch.setattr("lumen_deepagent.tools.CoreClient", FakeSeededEditCoreClient)
+    config = dc_replace(
+        runtime_config(tmp_path),
+        turn_target_node_ids=["headline"],
+    )
+    tools = LumenDesignTools(config, "Edit the headline", initial_scene=seed_scene_dict())
+    author = ScriptedAuthor(['#headline text("Edited")'])
+    reviewer = ScriptedReviewer(
+        [rejected_critique("hero", "hero image is a placeholder gradient")]
+    )
+
+    result = LumenQualityLoop(tools, author, reviewer).run("Edit the headline")
+
+    assert result["status"] == "edit_applied"
+    assert result["stop_reason"] == "edit_scoped_acceptance"
+    assert len(author.requests) == 1
+
+
+def test_editing_a_descendant_addresses_the_chipped_container(
+    tmp_path: Path, monkeypatch
+):
+    # Chip names the band CONTAINER; the turn edits its child kicker. That
+    # addresses the request (descendant scope) — the shortcut fires.
+    fake = type(
+        "FakeKickerEditCoreClient", (FakeSeededEditCoreClient,), {"edited_node_id": "kicker"}
+    )
+    monkeypatch.setattr("lumen_deepagent.tools.CoreClient", fake)
+    config = dc_replace(
+        runtime_config(tmp_path),
+        turn_target_node_ids=["band"],
+    )
+    tools = LumenDesignTools(config, "Edit the band", initial_scene=seed_scene_dict())
+    author = ScriptedAuthor(['#kicker text("Edited")'])
+    reviewer = ScriptedReviewer(
+        [rejected_critique("hero", "hero image is a placeholder gradient")]
+    )
+
+    result = LumenQualityLoop(tools, author, reviewer).run("Edit the band")
+
+    assert result["status"] == "edit_applied"
+    assert result["stop_reason"] == "edit_scoped_acceptance"
+
+
+def test_insert_into_chipped_container_counts_as_addressed(tmp_path: Path):
+    # Unit-level: _track_edited_ids records insert destinations (ParentRef
+    # {"kind":"node","id":...}) separately, and _declared_targets_addressed
+    # accepts an insert INTO the chipped container.
+    config = dc_replace(runtime_config(tmp_path), turn_target_node_ids=["band"])
+    tools = LumenDesignTools(config, "Add a badge", initial_scene=seed_scene_dict())
+    loop = LumenQualityLoop(tools, ScriptedAuthor([]), ScriptedReviewer([]))
+
+    loop._track_edited_ids(
+        [
+            {
+                "kind": "insert_node",
+                "parent": {"kind": "node", "id": "band"},
+                "index": 0,
+                "node": {"id": "badge_new"},
+            }
+        ]
+    )
+
+    assert "band" in loop.insert_parent_node_ids
+    assert "band" not in loop.edited_node_ids  # critique scope semantics unchanged
+    assert loop._declared_targets_addressed() is True
 
 
 class FakeBandEditCoreClient(FakeSeededEditCoreClient):

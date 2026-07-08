@@ -291,6 +291,11 @@ class LumenQualityLoop:
         # edit scope that edit-scoped acceptance judges critique issues against.
         self.edited_node_ids: set = set()
         self.edited_page_ids: set = set()
+        # Slice 2.5: parents that received an inserted node this run. Kept
+        # separate from edited_node_ids so the critique scope semantics stay
+        # unchanged — this set only feeds the declared-target "was the request
+        # addressed" test (inserting INTO the chipped container counts).
+        self.insert_parent_node_ids: set = set()
         # Agent-improvement follow-up 1 (baseline-diff repair scoping): errors
         # that already existed on the SEEDED scene before this turn touched it,
         # keyed by (code, subject) — see `_diagnostic_key`. Populated once at
@@ -1156,8 +1161,14 @@ class LumenQualityLoop:
                 # must be able to block, or the mechanism that protects edits
                 # from pre-existing complaints would wave through damage the
                 # edit itself caused.
+                # Slice 2.5: the user's chipped targets are ALWAYS in scope,
+                # touched or not — the measured P1r2/P5r2 failure was a
+                # reviewer blocker on the requested (untouched) node being
+                # "out of scope" by construction and downgraded to advisory.
                 scope_node_ids = (
-                    self._edited_scope_node_ids() | self._accommodation_scope_node_ids()
+                    self._edited_scope_node_ids()
+                    | self._accommodation_scope_node_ids()
+                    | self._declared_target_scope_node_ids()
                 )
                 in_scope_issues = [
                     issue
@@ -1166,7 +1177,33 @@ class LumenQualityLoop:
                     in {DiagnosticSeverity.blocker, DiagnosticSeverity.error}
                     and issue_in_edit_scope(issue, scope_node_ids, self.edited_page_ids)
                 ]
-                if not in_scope_issues:
+                # Slice 2.5: the shortcut also requires the applied ops to have
+                # plausibly ADDRESSED the chipped targets. A turn that edited
+                # only unrelated nodes must not finalize as "edit_applied" just
+                # because its unrelated op compiled clean — it falls through to
+                # ordinary review/repair instead (fail toward review, never
+                # toward silent accept). Full critic acceptance is unaffected.
+                targets_addressed = self._declared_targets_addressed()
+                if not targets_addressed:
+                    self.tools.record(
+                        "director",
+                        "edit_scope_target_untouched",
+                        output_summary=(
+                            "edit-scoped acceptance withheld: the turn's applied "
+                            "operations touched none of the user's declared "
+                            "target nodes; continuing repair"
+                        ),
+                        payload={
+                            "declared_target_node_ids": sorted(
+                                self._declared_target_node_ids()
+                            ),
+                            "edited_node_ids": sorted(self.edited_node_ids),
+                            "insert_parent_node_ids": sorted(
+                                self.insert_parent_node_ids
+                            ),
+                        },
+                    )
+                if not in_scope_issues and targets_addressed:
                     iteration_record.stop_reason = StopReason.edit_scoped_acceptance
                     self.state.status = "edit_applied"
                     self.state.stop_reason = StopReason.edit_scoped_acceptance
@@ -1322,6 +1359,19 @@ class LumenQualityLoop:
             page_id = op.get("page_id")
             if isinstance(page_id, str) and page_id:
                 self.edited_page_ids.add(page_id)
+            # Slice 2.5: an insert/move records its destination parent (ParentRef
+            # serializes as {"kind": "node"|"page", "id": ...}) so the declared-
+            # target test can count "inserted INTO the chipped container" as
+            # addressing the request. Deliberately NOT added to edited_node_ids —
+            # critique scope semantics stay as they were.
+            for parent_key in ("parent", "new_parent"):
+                parent = op.get(parent_key)
+                if (
+                    isinstance(parent, dict)
+                    and parent.get("kind") == "node"
+                    and isinstance(parent.get("id"), str)
+                ):
+                    self.insert_parent_node_ids.add(parent["id"])
 
     def _edited_scope_node_ids(self) -> set:
         """Edited node ids plus their CURRENT descendants.
@@ -1331,6 +1381,43 @@ class LumenQualityLoop:
         inclusion would let any pre-existing page-level complaint block every
         targeted edit — the exact failure edit-scoped acceptance removes)."""
         return self._with_descendants(set(self.edited_node_ids))
+
+    def _declared_target_node_ids(self) -> set:
+        """The node ids the human explicitly chipped for this turn (Slice 2.5).
+
+        Rides the run config BY VALUE from the editor payload. Empty set when
+        the turn has no declared targets (unchipped prompt, CLI brief)."""
+        targets = getattr(self.tools.config, "turn_target_node_ids", None) or []
+        return {t for t in targets if isinstance(t, str) and t}
+
+    def _declared_target_scope_node_ids(self) -> set:
+        """Declared targets plus their CURRENT descendants — the critique scope
+        a chipped request always owns, whether or not this turn touched it.
+
+        This is the P1r2/P5r2 hole: the agent edited an unrelated node, so the
+        reviewer's blocker on the REQUESTED node was out of edit scope by
+        construction and got downgraded to advisory. A blocker on what the user
+        pointed at must always be able to block the edit-scoped shortcut."""
+        targets = self._declared_target_node_ids()
+        return self._with_descendants(targets) if targets else set()
+
+    def _declared_targets_addressed(self) -> bool:
+        """True when this run's applied ops plausibly addressed the chipped
+        targets: an op touched a target or one of its descendants, or inserted
+        into a target (ParentRef). Deleting/replacing the target counts — the
+        remove op names it. When no targets are declared, trivially True.
+
+        Deliberately deterministic and permissive-downward: a miss here only
+        withholds the edit-scoped SHORTCUT (the run falls through to ordinary
+        review/repair); it never blocks a genuine whole-design acceptance,
+        because a request CAN be fulfilled without touching the chipped node
+        (e.g. "make this stand out" solved by dimming siblings) — that case is
+        the reviewer's call, not this guard's."""
+        target_scope = self._declared_target_scope_node_ids()
+        if not target_scope:
+            return True
+        touched = self.edited_node_ids | self.insert_parent_node_ids
+        return bool(touched & target_scope)
 
     def _introduced_diagnostics(self, diagnostics: list[dict]) -> list[dict]:
         """Diagnostics from THIS turn's gate that are NOT in the baseline.

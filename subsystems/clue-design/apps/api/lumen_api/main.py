@@ -3921,6 +3921,14 @@ def run_agent_turn_preview(
                 brand_kit_assets=brand_kit_assets,
                 brand_fonts=brand_fonts,
             )
+        turn_targets = editor_target_node_ids(payload)
+        if turn_targets:
+            # Slice 2.5: the chipped edit targets ride the run BY VALUE so the
+            # loop's edit-scoped acceptance can (a) treat blocking critique on
+            # a requested node as always in scope and (b) withhold the shortcut
+            # when the applied ops touched none of the targets. Prompt-only
+            # delivery measured unenforceable (moda probe P1r2/P5r2).
+            config = replace(config, turn_target_node_ids=turn_targets)
         prompt = editor_agent_prompt(payload)
         loop, tools = create_provider_quality_loop(
             prompt,

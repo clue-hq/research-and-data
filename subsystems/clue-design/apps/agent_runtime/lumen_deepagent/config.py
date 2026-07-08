@@ -44,6 +44,21 @@ class AgentRuntimeConfig:
     # and shapes text in the kit's real faces during preflight measurement
     # and preview export. None → bundled fonts only (Inter fallback).
     brand_fonts: dict | None = None
+    # Slice 2.5: the node ids the human explicitly chipped as this turn's edit
+    # targets, passed BY VALUE from the editor payload (same rule as brand_kit:
+    # the runtime never reads the API database). Edit-scoped acceptance treats
+    # blocking critique on these nodes as always in scope, and refuses the
+    # edit-scoped shortcut when the applied ops touched none of them — the
+    # measured P1r2/P5r2 failure was the agent editing an unrelated node while
+    # the reviewer's blocker on the requested target was "out of scope" by
+    # construction. None/empty → no declared targets, behavior unchanged.
+    turn_target_node_ids: list[str] | None = None
+    # OpenRouter unified reasoning effort ("low" | "medium" | "high") applied to
+    # every deep-agent LLM call via the one gateway constructor (init_model).
+    # None → the request carries no reasoning field (provider default, i.e.
+    # no extended thinking). One mechanism for all models — never a per-vendor
+    # special case.
+    agent_reasoning: str | None = None
 
     @classmethod
     def from_env(cls, repo_root: Path | None = None) -> "AgentRuntimeConfig":
@@ -57,6 +72,7 @@ class AgentRuntimeConfig:
             asset_store_root=settings.lumen_agent_asset_store,
             agent_base_url=settings.lumen_agent_base_url or "https://openrouter.ai/api/v1",
             agent_api_key=settings.lumen_agent_api_key,
+            agent_reasoning=settings.lumen_agent_reasoning,
         )
 
     @property
