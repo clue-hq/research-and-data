@@ -35,6 +35,7 @@ failing line is dropped, later lines are discarded (cascade halt).
 | `LUMD0301/0302/0304` | indentation / over-nesting / leaf-with-children | two spaces per level; only containers nest |
 | `LUMD0401` | duplicate node id | rename, or modify the existing node instead of re-declaring |
 | `LUMD0403/0404/0405` | image/vector/instance missing required arg | add `asset(id)` / `path("…")` / `source(id)` |
+| `LUMD0264` | `reconcile(target)` target missing or not a container | target a frame/group/autolayout node (the hint names the live containers); to fill an empty page use `#page:<page_id>` |
 | `LUMD0901` | modify target does not exist | check the id with `inspect(view="page")`/`inspect(view="scene")` |
 | `LUMD0903` | property not valid for that modify target | use a property the target supports |
 
@@ -49,6 +50,8 @@ compiles — but treat it as a lint: author the clean form next time.
 | `LUMD0259` | a bare known page id opened a top-level line (e.g. `page_x size(1080,1080,px)`) | normalized it to `#page:page_x …` and routed it through the page-modify path — write `#page:<page_id> …` explicitly |
 | `LUMD0260` | a leading prose/narration line preceded the first DSL line in the block | skipped it as narration — DSL blocks contain only DSL; do not narrate inside a block |
 | `LUMD0261` | a modify line swapped an image node to an asset the scene hasn't registered yet (e.g. `#hero_img asset(<kit id>)`) | swapped the leaf node's kind to that asset as a *dangling reference* (matching the declaration path) — the reference resolves when a brand kit or library registers the asset (auto-registered for kit assets); an unresolved reference warns `LUME0211` at export. A swap on a node *with children* does NOT degrade and still hard-fails |
+| `LUMD0262` | a `reconcile(...)` block OMITTED a protected (seed-born / human) node | KEPT the node rather than removing it — omission never deletes human content. To remove it, add an explicit `delete(<id>)` inside the block |
+| `LUMD0263` | a `reconcile(...)` block closed (info summary, never an error) | reports `N updated, N inserted, N removed, N moved, N kept-protected` for that container — the trace-visible record of what the diff applied |
 
 Bounds: `LUMD0260` skips at most 3 leading lines per block, and only when the
 block still yields real DSL. A 4th consecutive narration line, or a block that is

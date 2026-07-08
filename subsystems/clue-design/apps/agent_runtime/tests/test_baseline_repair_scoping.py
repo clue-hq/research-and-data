@@ -76,9 +76,13 @@ class FakeBaselineErrorPlusIntroducedCoreClient(FakeCoreClient):
         self.introduced_error = False
         self.preflight_calls = 0
 
-    def compile_dsl_into_scene(self, scene, source: str, dsl_session=None):
+    def compile_dsl_into_scene(
+        self, scene, source: str, dsl_session=None, protected_node_ids=None
+    ):
         self.introduced_error = "s(900,120)" not in source
-        return super().compile_dsl_into_scene(scene, source, dsl_session=dsl_session)
+        return super().compile_dsl_into_scene(
+            scene, source, dsl_session=dsl_session, protected_node_ids=protected_node_ids
+        )
 
     def preflight_scene(self, scene, brand_kit, brand_fonts=None):
         self.preflight_calls += 1

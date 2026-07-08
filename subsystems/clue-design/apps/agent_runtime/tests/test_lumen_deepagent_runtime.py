@@ -91,6 +91,8 @@ class FakeCoreClient:
         # Every operation list passed through apply_operations, in order, so tests
         # can assert on the exact placement/upsert ops the tools emit.
         self.applied_operations: list = []
+        # Slice 3 phase B: last protected_node_ids kwarg seen on a compile call.
+        self.last_protected_node_ids = None
 
     def new_scene(self, document_id: str, title: str):
         return {
@@ -101,7 +103,13 @@ class FakeCoreClient:
             "assets": {},
         }
 
-    def compile_dsl_into_scene(self, scene, source: str, dsl_session=None):
+    def compile_dsl_into_scene(
+        self, scene, source: str, dsl_session=None, protected_node_ids=None
+    ):
+        # Slice 3 phase B: record the protected-id kwarg the runtime passes so
+        # tests can assert the seed contract (None on fresh runs, the seed id
+        # set on seeded runs).
+        self.last_protected_node_ids = protected_node_ids
         updated = dict(scene)
         updated["pages"] = {
             "page_test": {
@@ -406,7 +414,7 @@ class FakeCompileErrorOnceCoreClient(FakeCoreClient):
         super().__init__(repo_root)
         self.compile_count = 0
 
-    def compile_dsl_into_scene(self, scene, source: str, dsl_session=None):
+    def compile_dsl_into_scene(self, scene, source: str, dsl_session=None, protected_node_ids=None):
         self.compile_count += 1
         if self.compile_count == 1:
             return {
@@ -428,11 +436,11 @@ class FakeCompileErrorOnceCoreClient(FakeCoreClient):
                     "session_snapshot": dsl_session,
                 },
             }
-        return super().compile_dsl_into_scene(scene, source, dsl_session=dsl_session)
+        return super().compile_dsl_into_scene(scene, source, dsl_session=dsl_session, protected_node_ids=protected_node_ids)
 
 
 class FakeHaltedCompileCoreClient(FakeCoreClient):
-    def compile_dsl_into_scene(self, scene, source: str, dsl_session=None):
+    def compile_dsl_into_scene(self, scene, source: str, dsl_session=None, protected_node_ids=None):
         return {
             "scene": scene,
             "applied_operations": 0,
@@ -493,9 +501,9 @@ class FakeAlwaysPreflightErrorCoreClient(FakeCoreClient):
         super().__init__(repo_root)
         self.compile_calls = 0
 
-    def compile_dsl_into_scene(self, scene, source: str, dsl_session=None):
+    def compile_dsl_into_scene(self, scene, source: str, dsl_session=None, protected_node_ids=None):
         self.compile_calls += 1
-        return super().compile_dsl_into_scene(scene, source, dsl_session=dsl_session)
+        return super().compile_dsl_into_scene(scene, source, dsl_session=dsl_session, protected_node_ids=protected_node_ids)
 
     def preflight_scene(self, scene, brand_kit, brand_fonts=None):
         return {
@@ -524,7 +532,7 @@ class FakeLayoutClusterPreflightCoreClient(FakeCoreClient):
         self.compile_calls = 0
         self.compile_sources = []
 
-    def compile_dsl_into_scene(self, scene, source: str, dsl_session=None):
+    def compile_dsl_into_scene(self, scene, source: str, dsl_session=None, protected_node_ids=None):
         self.compile_calls += 1
         self.compile_sources.append(source)
         return {
@@ -571,7 +579,7 @@ class FakeSurgicalCarryForwardCoreClient(FakeCoreClient):
         self.compile_calls = 0
         self.preflight_calls = 0
 
-    def compile_dsl_into_scene(self, scene, source: str, dsl_session=None):
+    def compile_dsl_into_scene(self, scene, source: str, dsl_session=None, protected_node_ids=None):
         self.compile_calls += 1
         if self.compile_calls == 2:
             return {
@@ -593,7 +601,7 @@ class FakeSurgicalCarryForwardCoreClient(FakeCoreClient):
                     "session_snapshot": None,
                 },
             }
-        return super().compile_dsl_into_scene(scene, source, dsl_session=dsl_session)
+        return super().compile_dsl_into_scene(scene, source, dsl_session=dsl_session, protected_node_ids=protected_node_ids)
 
     def preflight_scene(self, scene, brand_kit, brand_fonts=None):
         self.preflight_calls += 1
@@ -642,8 +650,8 @@ class FakePngCoreClient(FakeCoreClient):
 
 
 class FakeNonSquareCoreClient(FakeCoreClient):
-    def compile_dsl_into_scene(self, scene, source: str, dsl_session=None):
-        response = super().compile_dsl_into_scene(scene, source, dsl_session=dsl_session)
+    def compile_dsl_into_scene(self, scene, source: str, dsl_session=None, protected_node_ids=None):
+        response = super().compile_dsl_into_scene(scene, source, dsl_session=dsl_session, protected_node_ids=protected_node_ids)
         response["scene"]["pages"]["page_test"]["size"]["width"] = 1200.0
         response["scene"]["pages"]["page_test"]["size"]["height"] = 628.0
         return response
@@ -949,6 +957,30 @@ def test_author_prompt_defers_image_generation_to_the_coordinator():
     assert 'asset(action="generate_image")' in prompt
     assert "coordinator" in prompt
     assert "scrim" in prompt
+
+
+def test_author_prompt_teaches_reconcile_for_structural_inserts():
+    # Slice 3 phase B: the author must reach for reconcile(container) to add or
+    # restructure children, and must be told parent()/after() are NOT properties.
+    prompt = DSL_AUTHOR_SYSTEM_PROMPT
+    assert "reconcile(" in prompt
+    assert "STRUCTURAL INSERTS" in prompt
+    assert "as node properties" in prompt.lower()
+    assert "parent(...)" in prompt and "after(...)" in prompt
+
+
+def test_repair_skill_names_reconcile_as_the_add_restructure_actuator():
+    # The repair skill's actuator list must teach reconcile (replacing the old
+    # bare continuation form) and the protected-content contract.
+    repo_root = Path(__file__).resolve().parents[3]
+    skill = (
+        repo_root
+        / "apps/agent_runtime/knowledge_docs/skills/repair-design/SKILL.md"
+    ).read_text(encoding="utf-8")
+    assert "reconcile(" in skill
+    assert "Reconcile a container" in skill
+    assert "LUMD0262" in skill
+    assert "delete(<id>)" in skill
 
 
 def test_deepagents_factory_wires_full_phase_a_tool_surface(tmp_path: Path, monkeypatch):
@@ -2885,8 +2917,8 @@ class SourceEchoCoreClient(FakeCoreClient):
     """Compile fake whose scene records WHICH draft produced it, so keep-best
     tests can assert which iteration's scene the run finally returned."""
 
-    def compile_dsl_into_scene(self, scene, source: str, dsl_session=None):
-        result = super().compile_dsl_into_scene(scene, source, dsl_session)
+    def compile_dsl_into_scene(self, scene, source: str, dsl_session=None, protected_node_ids=None):
+        result = super().compile_dsl_into_scene(scene, source, dsl_session, protected_node_ids)
         result["scene"]["nodes"]["headline"]["kind"]["content"] = source
         return result
 
@@ -4001,7 +4033,7 @@ class FakeSlotFixturePreflightCoreClient(FakeCoreClient):
         self.compile_calls = 0
         self.compile_sources = []
 
-    def compile_dsl_into_scene(self, scene, source: str, dsl_session=None):
+    def compile_dsl_into_scene(self, scene, source: str, dsl_session=None, protected_node_ids=None):
         self.compile_calls += 1
         self.compile_sources.append(source)
         return {
@@ -4417,7 +4449,7 @@ class FakeSameHaltTwiceCoreClient(FakeCoreClient):
         super().__init__(repo_root)
         self.compile_calls = 0
 
-    def compile_dsl_into_scene(self, scene, source: str, dsl_session=None):
+    def compile_dsl_into_scene(self, scene, source: str, dsl_session=None, protected_node_ids=None):
         self.compile_calls += 1
         if self.compile_calls <= 2:
             return {
@@ -4442,7 +4474,7 @@ class FakeSameHaltTwiceCoreClient(FakeCoreClient):
                     "session_snapshot": None,
                 },
             }
-        return super().compile_dsl_into_scene(scene, source, dsl_session)
+        return super().compile_dsl_into_scene(scene, source, dsl_session, protected_node_ids)
 
 
 def test_repeated_same_code_halt_pins_ref_grammar_escalation(
@@ -4500,10 +4532,10 @@ class FakeDestructiveRepairCoreClient(FakeCoreClient):
         super().__init__(repo_root)
         self.compile_calls = 0
 
-    def compile_dsl_into_scene(self, scene, source: str, dsl_session=None):
+    def compile_dsl_into_scene(self, scene, source: str, dsl_session=None, protected_node_ids=None):
         self.compile_calls += 1
         if self.compile_calls == 1:
-            return super().compile_dsl_into_scene(scene, source, dsl_session=dsl_session)
+            return super().compile_dsl_into_scene(scene, source, dsl_session=dsl_session, protected_node_ids=protected_node_ids)
         wiped = dict(scene)
         wiped["pages"] = {}
         wiped["nodes"] = {}

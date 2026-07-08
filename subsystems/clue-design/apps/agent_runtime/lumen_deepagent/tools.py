@@ -176,6 +176,16 @@ class LumenDesignTools:
             self.scene = copy.deepcopy(initial_scene)
         else:
             self.scene = self.core.new_scene(self.run_id, "Agent-authored design")
+        # Slice 3 phase B: the human contract. On a seeded turn the seed scene's
+        # node ids are PROTECTED — a reconcile block that omits one keeps it
+        # (LUMD0262) rather than deleting human/seed content. Computed once here
+        # so every compile call carries the same frozen set; None on fresh runs
+        # yields pure declarative reconcile semantics.
+        self.protected_node_ids: Optional[list[str]] = (
+            sorted((initial_scene.get("nodes") or {}).keys())
+            if initial_scene is not None
+            else None
+        )
         self.prompt = prompt
         self.preview_paths: list[str] = []
         self.loaded_knowledge: list[JsonObject] = []
@@ -326,6 +336,7 @@ class LumenDesignTools:
                 self.scene,
                 source,
                 dsl_session=self.dsl_session,
+                protected_node_ids=self.protected_node_ids,
             )
         except CoreError as error:
             summary = CompileSummary(

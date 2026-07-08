@@ -142,6 +142,15 @@ SEEDED_CONTINUATION_RECIPE = (
     "ids): `replace(<node_id>)` + an indented single-root subtree, "
     "`clone(src,new_id,after:src)`, `parent(...)`, `before(...)`/`after(...)`, "
     "`delete(...)`.\n"
+    "- To ADD, REMOVE, or RESTRUCTURE elements INSIDE an existing container, "
+    "reconcile it: `reconcile(<container_id>)` then indent the container's full "
+    "intended child subtree — re-emit every KEPT child verbatim (same id, same "
+    "fields) alongside the ones you add or change; the engine diffs it to the "
+    "minimal ops (kept children cost nothing). NEVER write "
+    "`parent(...)`/`after(...)`/`before(...)` as node PROPERTIES and NEVER drop a "
+    "bare top-level element line into the scene (LUMD0402). Omitting an "
+    "agent-authored child removes it; omitting a seed-born/human child KEEPS it "
+    "(LUMD0262) — remove human content only with an explicit `delete(<id>)`.\n"
     "- New content gets NEW unique ids that collide with nothing in the scene "
     "AND nothing else in your own block — ids are document-global across pages, "
     "so multi-page additions need per-page suffixes (`_2`, `_a`, `_b`, ...). "
@@ -359,6 +368,15 @@ Repair rules:
   Do not write `#node al(...)` or `#node wrap(...)`: those are not valid node
   modify-line repairs. Page deletion, unrelated node deletion, unrelated
   slots/brand/assets, and whole-scene regeneration are still forbidden.
+- STRUCTURAL INSERTS / RESTRUCTURE: to add, remove, or reorder elements INSIDE an
+  existing container, reconcile it: `reconcile(<container_id>)` then indent the
+  container's full intended child subtree — re-emit every kept child VERBATIM
+  (same id, same fields) and add/rewrite the ones you're changing; the engine
+  diffs it to the minimal ops. NEVER write `parent(...)`/`after(...)`/`before(...)`
+  as node properties (they are standalone directives, not properties), and NEVER
+  drop a bare top-level element line into an existing scene (`LUMD0402`). Omitting
+  an agent-authored child removes it; omitting a seed-born/human child KEEPS it
+  (`LUMD0262`) — remove human content only with an explicit `delete(<id>)`.
 """
 
 

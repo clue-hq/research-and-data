@@ -300,7 +300,9 @@ class FakeReauthorHaltOnceCoreClient(FakeCoreClient):
         super().__init__(repo_root)
         self.compile_calls = 0
 
-    def compile_dsl_into_scene(self, scene, source: str, dsl_session=None):
+    def compile_dsl_into_scene(
+        self, scene, source: str, dsl_session=None, protected_node_ids=None
+    ):
         self.compile_calls += 1
         if self.compile_calls == 1:
             return {
@@ -325,7 +327,9 @@ class FakeReauthorHaltOnceCoreClient(FakeCoreClient):
                     "session_snapshot": None,
                 },
             }
-        return super().compile_dsl_into_scene(scene, source, dsl_session)
+        return super().compile_dsl_into_scene(
+            scene, source, dsl_session, protected_node_ids
+        )
 
 
 def test_reauthor_halt_is_rerouted_as_surgical_corrective_feedback(
@@ -541,7 +545,10 @@ class FakeSeededEditCoreClient(FakeCoreClient):
 
     edited_node_id = "headline"
 
-    def compile_dsl_into_scene(self, scene, source: str, dsl_session=None):
+    def compile_dsl_into_scene(
+        self, scene, source: str, dsl_session=None, protected_node_ids=None
+    ):
+        self.last_protected_node_ids = protected_node_ids
         updated = json.loads(json.dumps(scene))
         node = updated.get("nodes", {}).get(self.edited_node_id)
         if node is not None:
@@ -778,6 +785,94 @@ def test_insert_into_chipped_container_counts_as_addressed(tmp_path: Path):
     assert "band" in loop.insert_parent_node_ids
     assert "band" not in loop.edited_node_ids  # critique scope semantics unchanged
     assert loop._declared_targets_addressed() is True
+
+
+# --- Slice 3 phase B: protected-id passthrough + reconcile gating ----------------
+
+
+def test_seeded_turn_passes_seed_node_ids_as_protected(tmp_path: Path, monkeypatch):
+    # The human contract: on a seeded turn every compile call carries the seed
+    # scene's node ids as protected_node_ids so an omission cannot delete human
+    # content. The set is frozen at init from the seed scene.
+    monkeypatch.setattr("lumen_deepagent.tools.CoreClient", FakeSeededEditCoreClient)
+    tools = LumenDesignTools(
+        runtime_config(tmp_path), "Edit the headline", initial_scene=seed_scene_dict()
+    )
+    seed_ids = sorted(seed_scene_dict()["nodes"].keys())
+    assert tools.protected_node_ids == seed_ids
+
+    tools.compile_dsl_block('#headline text("Edited")')
+    assert tools.core.last_protected_node_ids == seed_ids
+
+
+def test_fresh_turn_passes_no_protected_ids(tmp_path: Path, monkeypatch):
+    # An unseeded run has no human content to protect — pure declarative
+    # reconcile semantics — so the compile call carries None.
+    monkeypatch.setattr("lumen_deepagent.tools.CoreClient", FakeCoreClient)
+    tools = LumenDesignTools(runtime_config(tmp_path), "Make a poster")
+    assert tools.protected_node_ids is None
+
+    tools.compile_dsl_block("page p size(1080,1080,px)")
+    assert tools.core.last_protected_node_ids is None
+
+
+class FakeReconcileChippedContainerCoreClient(FakeSeededEditCoreClient):
+    """A reconcile of `band` that inserts a new child into it — the ops the
+    engine diff would emit — so the loop's _track_edited_ids records `band` as an
+    insert destination (declared-target addressed)."""
+
+    def compile_dsl_into_scene(
+        self, scene, source: str, dsl_session=None, protected_node_ids=None
+    ):
+        updated = json.loads(json.dumps(scene))
+        updated["nodes"]["badge_new"] = {
+            "id": "badge_new",
+            "kind": {"kind": "text", "content": "NEW"},
+            "children": [],
+        }
+        updated["nodes"]["band"]["children"].append("badge_new")
+        return {
+            "scene": updated,
+            "applied_operations": 1,
+            "dsl": {
+                "compile_output": {
+                    "operations": [
+                        {
+                            "kind": "insert_node",
+                            "parent": {"kind": "node", "id": "band"},
+                            "index": 1,
+                            "node": {"id": "badge_new"},
+                        }
+                    ],
+                    "diagnostics": [],
+                },
+                "operation_error": None,
+                "session_snapshot": None,
+            },
+        }
+
+
+def test_reconcile_of_chipped_container_finalizes_via_edit_scope(
+    tmp_path: Path, monkeypatch
+):
+    # Chip names the band container; the turn reconciles it (inserting a child).
+    # The reconcile ops touch band, so _declared_targets_addressed is satisfied
+    # and a critique on untouched content accepts at edit scope.
+    monkeypatch.setattr(
+        "lumen_deepagent.tools.CoreClient", FakeReconcileChippedContainerCoreClient
+    )
+    config = dc_replace(runtime_config(tmp_path), turn_target_node_ids=["band"])
+    tools = LumenDesignTools(config, "Add a badge to the band", initial_scene=seed_scene_dict())
+    author = ScriptedAuthor(["reconcile(band)\n  badge_new text \"NEW\""])
+    reviewer = ScriptedReviewer(
+        [rejected_critique("hero", "hero image is a placeholder gradient")]
+    )
+
+    result = LumenQualityLoop(tools, author, reviewer).run("Add a badge to the band")
+
+    assert result["status"] == "edit_applied"
+    assert result["stop_reason"] == "edit_scoped_acceptance"
+    assert len(author.requests) == 1  # no round burned re-litigating scope
 
 
 class FakeBandEditCoreClient(FakeSeededEditCoreClient):

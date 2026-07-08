@@ -115,7 +115,9 @@ class FakeBadgeMoveCoreClient(FakeCoreClient):
     keeps the moved badge and optionally nudges `organizer` — subclasses hook
     `_apply_iteration` to vary iteration 2 behavior."""
 
-    def compile_dsl_into_scene(self, scene, source: str, dsl_session=None):
+    def compile_dsl_into_scene(
+        self, scene, source: str, dsl_session=None, protected_node_ids=None
+    ):
         self.compile_calls = getattr(self, "compile_calls", 0) + 1
         updated = json.loads(json.dumps(scene))
         if self.compile_calls == 1:

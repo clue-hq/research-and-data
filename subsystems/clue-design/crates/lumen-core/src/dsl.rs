@@ -1711,7 +1711,12 @@ impl<'a> DslCompiler<'a> {
                     line.raw.len().max(1),
                     "LUMD0402",
                     "node appears before or outside a page/container",
-                    "Create a top-level page(...) and indent nodes under it.",
+                    concat!(
+                        "Create a top-level page(...) and indent nodes under it. ",
+                        "To add elements inside an existing container use ",
+                        "`reconcile(<container>)` (indent the container's full intended ",
+                        "child subtree); to fill an empty page use `#page:<page_id>` then indent."
+                    ),
                 )
             })?;
 
@@ -4151,13 +4156,29 @@ fn parse_property_token(
         }
         "token" | "ds" | "color" => vec![DslProperty::Token(token.to_owned())],
         _ => {
+            // Slice 3 phase B: the exact grammar guesses that burned probe
+            // round 3. `parent`/`after`/`before`/`delete` are STANDALONE
+            // directives, never node properties — and the natural way to
+            // add/move/restructure children is a `reconcile(container)` block.
+            let hint = match call.name.as_str() {
+                "parent" | "after" | "before" | "delete" => concat!(
+                    "`parent`/`after`/`before`/`delete` are standalone directives, ",
+                    "not node properties. To add, move, or restructure elements inside ",
+                    "an existing container, reconcile it: `reconcile(<container>)` then ",
+                    "indent the container's full intended child subtree (re-emit kept ",
+                    "children verbatim). To re-home or reorder one node, use the ",
+                    "top-level `parent(id, parent:pid)` / `after(id, anchor)` directives; ",
+                    "to remove one, `delete(id)`."
+                ),
+                _ => "Unsupported constructs are errors in the DSL compiler, not silently ignored.",
+            };
             return Err(error_diag(
                 line_number,
                 column,
                 token.len(),
                 "LUMD0212",
                 format!("unknown property {}", call.name),
-                "Unsupported constructs are errors in the DSL compiler, not silently ignored.",
+                hint,
             ));
         }
     };
