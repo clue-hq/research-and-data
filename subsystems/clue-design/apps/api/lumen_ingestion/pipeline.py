@@ -23,6 +23,7 @@ from pathlib import Path
 from typing import Any, Awaitable, Callable, Optional, Protocol
 
 from lumen_api.database import Repository, connect
+from py_lumen_config import settings
 
 from .jobs import IngestionJobStore, StageReporter, run_ingestion_job
 from .normalizer import normalize_evidence
@@ -152,7 +153,7 @@ def resolve_describer() -> Any:
         logger.debug("describe.py unavailable; using inline null describer")
         return _InlineNullDescriber()
 
-    if os.environ.get("LUMEN_INGESTION_DESCRIBE") == "1":
+    if settings.lumen_ingestion_describe:
         return OpenRouterDescriber()
     return NullDescriber()
 

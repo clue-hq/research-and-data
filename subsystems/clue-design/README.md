@@ -96,7 +96,7 @@ If you ran setup without `--start`, start the backend API with:
 
 ```bash
 set -a; source .env; set +a
-PYTHONPATH=apps/api:apps/agent_runtime .venv/bin/python -m uvicorn lumen_api.main:app --host 127.0.0.1 --port 8000
+PYTHONPATH=.:apps/api:apps/agent_runtime .venv/bin/python -m uvicorn lumen_api.main:app --host 127.0.0.1 --port 8000
 ```
 
 In a second terminal, start the frontend editor with:

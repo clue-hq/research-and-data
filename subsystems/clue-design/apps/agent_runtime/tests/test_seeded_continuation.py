@@ -16,6 +16,7 @@ import os
 from pathlib import Path
 
 import pytest
+from py_lumen_config import settings
 
 from lumen_deepagent.config import AgentRuntimeConfig
 from lumen_deepagent.loop import (
@@ -132,6 +133,8 @@ def real_core():
     helper = REPO_ROOT / "target" / "debug" / "lumen-api-helper"
     if helper.exists():
         os.environ.setdefault("LUMEN_CORE_HELPER", str(helper))
+        if settings.lumen_core_helper is None:
+            settings.lumen_core_helper = str(helper)
     return CoreClient(repo_root=REPO_ROOT)
 
 

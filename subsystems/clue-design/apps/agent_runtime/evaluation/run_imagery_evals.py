@@ -25,7 +25,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import shutil
 import subprocess
 import sys
@@ -39,6 +38,8 @@ if str(_AGENT_ROOT) not in sys.path:
 _API_ROOT = _AGENT_ROOT.parent / "api"
 if str(_API_ROOT) not in sys.path:
     sys.path.insert(0, str(_API_ROOT))
+
+from py_lumen_config import settings  # noqa: E402
 
 from lumen_deepagent.imagery_judge import judge_imagery  # noqa: E402
 
@@ -321,8 +322,8 @@ def main() -> None:
         model = try_structured_model(
             init_model(
                 args.model,
-                base_url=os.environ.get("LUMEN_AGENT_BASE_URL", "").strip() or None,
-                api_key=os.environ.get("LUMEN_AGENT_API_KEY", "").strip() or None,
+                base_url=settings.lumen_agent_base_url,
+                api_key=settings.lumen_agent_api_key,
             ),
             ImageryJudgeVerdict,
         )

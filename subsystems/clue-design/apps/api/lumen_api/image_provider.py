@@ -19,10 +19,11 @@ Design:
 from __future__ import annotations
 
 import base64
-import os
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import List, Optional, Tuple
+
+from py_lumen_config import settings
 
 # Default id for the Python-side T2I provider. Anything else (qr, stub-image-v0,
 # …) continues to route to the Rust provider registry, untouched.
@@ -61,8 +62,8 @@ class ImageModelConfig:
 
     @classmethod
     def from_env(cls) -> "ImageModelConfig":
-        base_url = os.environ.get("IMAGE_MODEL_BASE_URL", "").strip()
-        api_key = os.environ.get("IMAGE_MODEL_API_KEY", "").strip()
+        base_url = settings.image_model_base_url.strip()
+        api_key = settings.image_model_api_key.strip()
         if not base_url or not api_key:
             raise ImageGenerationError(
                 "image_model.not_configured",
@@ -73,14 +74,14 @@ class ImageModelConfig:
         return cls(
             base_url=base_url,
             api_key=api_key,
-            model_id=os.environ.get("IMAGE_MODEL_ID", "default"),
-            timeout_s=_env_float("IMAGE_MODEL_TIMEOUT_S", DEFAULT_TIMEOUT_S),
-            max_retries=_env_int("IMAGE_MODEL_MAX_RETRIES", DEFAULT_MAX_RETRIES),
+            model_id=settings.image_model_id,
+            timeout_s=settings.image_model_timeout_s,
+            max_retries=settings.image_model_max_retries,
         )
 
 
 def provider_id() -> str:
-    return os.environ.get("IMAGE_MODEL_PROVIDER_ID", DEFAULT_PROVIDER_ID)
+    return settings.image_model_provider_id
 
 
 def is_image_model_provider(provider: str) -> bool:
@@ -90,20 +91,13 @@ def is_image_model_provider(provider: str) -> bool:
 
 
 def is_configured() -> bool:
-    return bool(
-        os.environ.get("IMAGE_MODEL_BASE_URL", "").strip()
-        and os.environ.get("IMAGE_MODEL_API_KEY", "").strip()
-    )
+    return settings.image_model_configured()
 
 
 def configured_model_id() -> str:
     """The text-to-image model id used for generation. Exposed for the generation
-    cache key + provenance without constructing the full config. Tolerates stray
-    surrounding quotes in a `.env` value."""
-    value = os.environ.get("IMAGE_MODEL_ID", "default").strip()
-    if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
-        value = value[1:-1]
-    return value or "default"
+    cache key + provenance without constructing the full config."""
+    return settings.image_model_id
 
 
 def generate(
@@ -370,8 +364,8 @@ def _invoke_model(
         "Content-Type": "application/json",
     }
     # Optional OpenRouter attribution headers (ranking only; harmless if unset).
-    referer = os.environ.get("IMAGE_MODEL_HTTP_REFERER")
-    title = os.environ.get("IMAGE_MODEL_APP_TITLE")
+    referer = settings.image_model_http_referer
+    title = settings.image_model_app_title
     if referer:
         headers["HTTP-Referer"] = referer
     if title:
@@ -475,17 +469,3 @@ def _generated_provenance(model_id: str, request_id: Optional[str]) -> dict:
         "confidence": None,
         "notes": notes,
     }
-
-
-def _env_float(name: str, default: float) -> float:
-    try:
-        return float(os.environ.get(name, default))
-    except (TypeError, ValueError):
-        return default
-
-
-def _env_int(name: str, default: int) -> int:
-    try:
-        return int(os.environ.get(name, default))
-    except (TypeError, ValueError):
-        return default

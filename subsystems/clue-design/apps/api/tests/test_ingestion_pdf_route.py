@@ -30,6 +30,7 @@ from lumen_ingestion.evidence import (
     RuleEvidence,
 )
 from lumen_ingestion.pipeline import run_pdf_ingestion
+from py_lumen_config import settings
 
 REFERENCE_ASSET_ID = "asset_ing_stubpdf00000000"
 
@@ -282,7 +283,7 @@ def test_ingest_pdf_rejects_unsupported_file(client: TestClient) -> None:
 def test_ingest_pdf_rejects_oversize(
     client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setenv("LUMEN_ASSET_MAX_BYTES", "1024")
+    monkeypatch.setattr(settings, "lumen_asset_max_bytes", 1024)
     big = PDF_HEADER + b"x" * 2048
     files = {"file": ("big.pdf", big, "application/pdf")}
     resp = client.post("/brand-kits/ingest/pdf", files=files)

@@ -11,6 +11,7 @@ from fastapi.testclient import TestClient
 
 from lumen_api import image_provider
 from lumen_api.main import agent_response_from_trace, create_app
+from py_lumen_config import settings
 
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -432,7 +433,7 @@ def test_resolve_agent_turn_brand_kit_passes_document_kit_by_value(
     )
     assert compiled.status_code == 200, compiled.text
 
-    monkeypatch.setenv("LUMEN_API_DATABASE_PATH", str(tmp_path / "api.sqlite3"))
+    monkeypatch.setattr(settings, "lumen_api_database_path", tmp_path / "api.sqlite3")
 
     scene = preflightable_scene()
     scene["meta"]["brand_kit"] = {"id": "brand_kit_insight_health", "version": 4}
@@ -558,7 +559,7 @@ def test_brand_kit_font_faces_ride_preflight_as_store_digests(
     )
     assert created.status_code == 200, created.text
 
-    monkeypatch.setenv("LUMEN_API_DATABASE_PATH", str(tmp_path / "api.sqlite3"))
+    monkeypatch.setattr(settings, "lumen_api_database_path", tmp_path / "api.sqlite3")
     scene = preflightable_scene()
     scene["meta"]["brand_kit"] = {
         "id": "brand_kit_insight_with_font",
@@ -2589,7 +2590,7 @@ def test_asset_upload_rejects_mime_mismatch(
 def test_asset_upload_enforces_size_limit(
     client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setenv("LUMEN_ASSET_MAX_BYTES", "16")
+    monkeypatch.setattr(settings, "lumen_asset_max_bytes", 16)
     response = upload_logo(client)
     assert response.status_code == 413, response.text
     assert store_files(tmp_path) == []
@@ -2901,13 +2902,8 @@ def test_generate_asset_image_model_not_configured_returns_clean_error(
 ) -> None:
     # With no model configured and no mock, the provider raises a typed error
     # that surfaces as a clean 503 (never a 500).
-    for var in (
-        "IMAGE_MODEL_BASE_URL",
-        "IMAGE_MODEL_API_KEY",
-        "IMAGE_MODEL_ID",
-        "IMAGE_MODEL_PROVIDER_ID",
-    ):
-        monkeypatch.delenv(var, raising=False)
+    monkeypatch.setattr(settings, "image_model_base_url", "")
+    monkeypatch.setattr(settings, "image_model_api_key", "")
     response = client.post(
         "/assets/generate",
         json={"provider": "image-gen-v1", "prompt": "anything"},
@@ -2923,9 +2919,9 @@ def test_image_provider_openrouter_chat_completion_shape(
     # modality; decode the data: URL from choices[0].message.images[0].
     import base64
 
-    monkeypatch.setenv("IMAGE_MODEL_BASE_URL", "https://openrouter.ai/api/v1")
-    monkeypatch.setenv("IMAGE_MODEL_API_KEY", "test-key")
-    monkeypatch.setenv("IMAGE_MODEL_ID", "test/image-model")
+    monkeypatch.setattr(settings, "image_model_base_url", "https://openrouter.ai/api/v1")
+    monkeypatch.setattr(settings, "image_model_api_key", "test-key")
+    monkeypatch.setattr(settings, "image_model_id", "test/image-model")
 
     png = _tiny_png(8, 8)
     data_url = "data:image/png;base64," + base64.b64encode(png).decode("ascii")
@@ -2963,9 +2959,9 @@ def test_image_provider_openrouter_chat_completion_shape(
 
 def test_image_provider_surfaces_no_image_response(monkeypatch: pytest.MonkeyPatch) -> None:
     # A text-only chat response (model refused / no image) -> typed error.
-    monkeypatch.setenv("IMAGE_MODEL_BASE_URL", "https://openrouter.ai/api/v1")
-    monkeypatch.setenv("IMAGE_MODEL_API_KEY", "test-key")
-    monkeypatch.setenv("IMAGE_MODEL_ID", "test/image-model")
+    monkeypatch.setattr(settings, "image_model_base_url", "https://openrouter.ai/api/v1")
+    monkeypatch.setattr(settings, "image_model_api_key", "test-key")
+    monkeypatch.setattr(settings, "image_model_id", "test/image-model")
 
     class _FakeResponse:
         status_code = 200
@@ -3234,9 +3230,9 @@ def test_image_provider_edit_builds_multimodal_content(
     # image_url part(s) first, the text instruction last.
     import base64
 
-    monkeypatch.setenv("IMAGE_MODEL_BASE_URL", "https://openrouter.ai/api/v1")
-    monkeypatch.setenv("IMAGE_MODEL_API_KEY", "test-key")
-    monkeypatch.setenv("IMAGE_MODEL_ID", "test/image-model")
+    monkeypatch.setattr(settings, "image_model_base_url", "https://openrouter.ai/api/v1")
+    monkeypatch.setattr(settings, "image_model_api_key", "test-key")
+    monkeypatch.setattr(settings, "image_model_id", "test/image-model")
 
     src_png = _tiny_png(8, 8)
     out_png = _tiny_png(8, 8, rgba=(9, 9, 9, 255))

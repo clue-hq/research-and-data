@@ -3,13 +3,14 @@ from __future__ import annotations
 import contextvars
 import json
 import logging
-import os
 import sys
 import time
 import traceback
 from datetime import UTC, datetime
 from typing import Any, Dict, Iterable, Optional
 from uuid import uuid4
+
+from py_lumen_config import settings
 
 
 JsonObject = Dict[str, Any]
@@ -62,7 +63,7 @@ def configure_structured_logging() -> None:
     if _LOGGING_CONFIGURED:
         return
 
-    level_name = os.environ.get("LUMEN_LOG_LEVEL", "INFO").upper()
+    level_name = settings.lumen_log_level.upper()
     level = getattr(logging, level_name, logging.INFO)
     handler = logging.StreamHandler(sys.stdout)
     handler.setFormatter(JsonLogFormatter())

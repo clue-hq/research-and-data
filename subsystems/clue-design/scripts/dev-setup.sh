@@ -156,7 +156,7 @@ backend() {
   echo "Backend: http://$HOST:$API_PORT"
   echo "Log: $BACKEND_LOG"
   echo "CORS origins: $LUMEN_API_CORS_ORIGINS"
-  PYTHONPATH=apps/api:apps/agent_runtime "$VENV_PYTHON" -m uvicorn lumen_api.main:app \
+  PYTHONPATH=.:apps/api:apps/agent_runtime "$VENV_PYTHON" -m uvicorn lumen_api.main:app \
     --host "$HOST" \
     --port "$API_PORT" \
     2>&1 | tee "$BACKEND_LOG"
@@ -178,7 +178,7 @@ up() {
     echo "backend already running on :$API_PORT — reusing it"
   else
     backend_env
-    PYTHONPATH=apps/api:apps/agent_runtime "$VENV_PYTHON" -m uvicorn lumen_api.main:app \
+    PYTHONPATH=.:apps/api:apps/agent_runtime "$VENV_PYTHON" -m uvicorn lumen_api.main:app \
       --host "$HOST" --port "$API_PORT" >"$BACKEND_LOG" 2>&1 &
     backend_pid=$!
     # shellcheck disable=SC2064
@@ -315,7 +315,7 @@ run_fixture() {
   echo "$prompt" > "$out_dir/prompt.txt"
   LUMEN_AGENT_TRACE_DIR="$FIXTURE_TRACE_DIR" \
   LUMEN_AGENT_MAX_ITERATIONS="$AGENT_MAX_ITERATIONS" \
-  PYTHONPATH=apps/api:apps/agent_runtime \
+  PYTHONPATH=.:apps/api:apps/agent_runtime \
     "$VENV_PYTHON" -m lumen_deepagent.cli --mode "$AGENT_MODE" "$prompt" \
     | tee "$output_json"
   run_id="$(extract_run_id "$output_json")"

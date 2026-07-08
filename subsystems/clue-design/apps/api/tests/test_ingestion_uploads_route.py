@@ -33,6 +33,7 @@ from lumen_ingestion.evidence import (
     NarrativeEvidence,
 )
 from lumen_ingestion.pipeline import run_asset_ingestion
+from py_lumen_config import settings
 
 # 1x1 minimal images so the route's magic sniff passes (§2).
 PNG_BYTES = (
@@ -272,7 +273,7 @@ def test_ingest_assets_too_many_files_422(client: TestClient) -> None:
 def test_ingest_assets_oversize_413(
     client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setenv("LUMEN_ASSET_MAX_BYTES", "256")
+    monkeypatch.setattr(settings, "lumen_asset_max_bytes", 256)
     big = PNG_BYTES + b"x" * 512
     resp = _post_assets(client, uploads=[("big.png", big, "image/png")])
     assert resp.status_code == 413, resp.text
@@ -422,6 +423,7 @@ def test_ingest_assets_null_describer_is_noop(
     """Default hook (no apply_descriptions injected, describe.py absent) is a
     guaranteed no-op pass-through — the kit persists with no descriptions and no
     error. Proves the website + PDF paths are safe too."""
+    monkeypatch.setattr(settings, "lumen_ingestion_describe", False)
     _install_stub_pipeline(monkeypatch, analyze=_good_analyze)
 
     post = _post_assets(client)

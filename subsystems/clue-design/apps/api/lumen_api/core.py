@@ -9,6 +9,8 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 from uuid import uuid4
 
+from py_lumen_config import settings
+
 from .observability import (
     current_request_id,
     diagnostic_summary,
@@ -439,7 +441,7 @@ class CoreClient:
         return response
 
     def _command(self) -> List[str]:
-        helper = os.environ.get("LUMEN_CORE_HELPER")
+        helper = settings.lumen_core_helper
         if helper:
             return [helper]
         return [

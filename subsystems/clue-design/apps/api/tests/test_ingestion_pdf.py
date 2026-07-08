@@ -72,9 +72,13 @@ def test_import_pulls_no_pdf_deps() -> None:
         "bad = [m for m in ('fitz','pymupdf','PIL','playwright') if m in sys.modules]; "
         "assert not bad, bad; print('clean')"
     )
+    api_root = Path(__file__).resolve().parents[1]
+    repo_root = Path(__file__).resolve().parents[3]
+    env = {**os.environ, "PYTHONPATH": os.pathsep.join([str(api_root), str(repo_root)])}
     result = subprocess.run(
         [sys.executable, "-c", script],
-        cwd=str(Path(__file__).resolve().parents[1]),
+        cwd=str(api_root),
+        env=env,
         capture_output=True,
         text=True,
     )

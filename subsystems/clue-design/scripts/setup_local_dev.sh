@@ -193,7 +193,7 @@ Setup complete.
 To start the backend API:
   cd "$ROOT_DIR"
   set -a; source .env; set +a
-  PYTHONPATH=apps/api:apps/agent_runtime .venv/bin/python -m uvicorn lumen_api.main:app --host 127.0.0.1 --port 8000
+  PYTHONPATH=.:apps/api:apps/agent_runtime .venv/bin/python -m uvicorn lumen_api.main:app --host 127.0.0.1 --port 8000
 
 To start the frontend editor in another terminal:
   cd "$ROOT_DIR"
@@ -217,7 +217,7 @@ start_servers() {
     # shellcheck disable=SC1091
     source "$ROOT_DIR/.env"
     set +a
-    PYTHONPATH=apps/api:apps/agent_runtime "$VENV_DIR/bin/python" -m uvicorn lumen_api.main:app --host 127.0.0.1 --port 8000
+    PYTHONPATH=.:apps/api:apps/agent_runtime "$VENV_DIR/bin/python" -m uvicorn lumen_api.main:app --host 127.0.0.1 --port 8000
   ) &
   local api_pid=$!
 

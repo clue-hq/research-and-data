@@ -16,12 +16,11 @@ explicitly passed.
 from __future__ import annotations
 
 import json
-import os
 from dataclasses import dataclass, field
 from typing import Protocol, runtime_checkable
 
-DEFAULT_VISION_MODEL = "anthropic/claude-sonnet-4.5"
-DEFAULT_BASE_URL = "https://openrouter.ai/api/v1"
+from py_lumen_config import settings
+
 DEFAULT_TIMEOUT_S = 60.0
 
 
@@ -60,10 +59,10 @@ class OpenRouterPdfVision:
     LUMEN_INGESTION_VISION=1. Never call the network in tests."""
 
     def __init__(self) -> None:
-        self.enabled = os.environ.get("LUMEN_INGESTION_VISION") == "1"
-        self.model = os.environ.get("LUMEN_INGESTION_VISION_MODEL", DEFAULT_VISION_MODEL)
-        self.base_url = os.environ.get("OPENROUTER_BASE_URL", DEFAULT_BASE_URL)
-        self.api_key = os.environ.get("OPENROUTER_API_KEY", "")
+        self.enabled = settings.lumen_ingestion_vision
+        self.model = settings.lumen_ingestion_vision_model
+        self.base_url = settings.openrouter_base_url
+        self.api_key = settings.openrouter_api_key
         self.diagnostics: list[dict] = []
 
     def review(self, pages: list[PageForVision]) -> PdfVisionResult | None:

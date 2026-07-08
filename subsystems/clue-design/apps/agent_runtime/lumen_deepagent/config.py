@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-import os
 from dataclasses import dataclass
 from pathlib import Path
+
+from py_lumen_config import settings
 
 
 @dataclass(frozen=True)
@@ -49,25 +50,13 @@ class AgentRuntimeConfig:
         root = repo_root or Path(__file__).resolve().parents[3]
         return cls(
             repo_root=root,
-            model=os.environ.get("LUMEN_AGENT_MODEL", "openai:anthropic/claude-opus-4.8"),
-            max_iterations=int(os.environ.get("LUMEN_AGENT_MAX_ITERATIONS", "5")),
-            preview_format=os.environ.get("LUMEN_AGENT_PREVIEW_FORMAT", "svg"),
-            trace_dir=Path(
-                os.environ.get(
-                    "LUMEN_AGENT_TRACE_DIR",
-                    str(root / ".lumen-runs"),
-                )
-            ),
-            asset_store_root=(
-                Path(os.environ["LUMEN_AGENT_ASSET_STORE"])
-                if os.environ.get("LUMEN_AGENT_ASSET_STORE")
-                else None
-            ),
-            agent_base_url=(
-                os.environ.get("LUMEN_AGENT_BASE_URL", "").strip()
-                or "https://openrouter.ai/api/v1"
-            ),
-            agent_api_key=(os.environ.get("LUMEN_AGENT_API_KEY", "").strip() or None),
+            model=settings.lumen_agent_model,
+            max_iterations=settings.lumen_agent_max_iterations,
+            preview_format=settings.lumen_agent_preview_format,
+            trace_dir=settings.lumen_agent_trace_dir or (root / ".lumen-runs"),
+            asset_store_root=settings.lumen_agent_asset_store,
+            agent_base_url=settings.lumen_agent_base_url or "https://openrouter.ai/api/v1",
+            agent_api_key=settings.lumen_agent_api_key,
         )
 
     @property

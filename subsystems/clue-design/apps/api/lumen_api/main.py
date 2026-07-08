@@ -93,6 +93,7 @@ from lumen_ingestion.pipeline import (
     run_pdf_ingestion,
     run_website_ingestion,
 )
+from py_lumen_config import settings
 
 from .observability import (
     REQUEST_ID_HEADER,
@@ -112,12 +113,7 @@ api_logger = logging.getLogger("lumen_api.api")
 
 
 def cors_origins() -> List[str]:
-    raw = os.environ.get(
-        "LUMEN_API_CORS_ORIGINS",
-        "http://127.0.0.1:3000,http://localhost:3000",
-    )
-    origins = [origin.strip() for origin in raw.split(",") if origin.strip()]
-    return origins or ["http://127.0.0.1:3000"]
+    return settings.cors_origins_list
 
 
 def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> FastAPI:
@@ -130,11 +126,9 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
         allow_methods=["*"],
         allow_headers=["*"],
     )
-    app.state.database_path = database_path or Path(
-        os.environ.get("LUMEN_API_DATABASE_PATH", "apps/api/lumen-api.sqlite3")
-    )
-    app.state.asset_store_root = Path(
-        os.environ.get("LUMEN_ASSET_STORE_ROOT")
+    app.state.database_path = database_path or settings.lumen_api_database_path
+    app.state.asset_store_root = (
+        settings.lumen_asset_store_root
         or app.state.database_path.parent / "asset-store"
     )
     app.state.core = CoreClient()
@@ -2984,7 +2978,7 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
         return candidate
 
     def asset_max_bytes() -> int:
-        return int(os.environ.get("LUMEN_ASSET_MAX_BYTES", str(10 * 1024 * 1024)))
+        return settings.lumen_asset_max_bytes
 
     @app.post("/asset-metadata")
     def create_asset_metadata(
@@ -3954,19 +3948,14 @@ def sse_frame(seq: int, event: str, data: Any) -> str:
 def ensure_agent_runtime_path(root: Path) -> None:
     agent_runtime_path = str(root / "apps" / "agent_runtime")
     api_path = str(root / "apps" / "api")
-    for path in [agent_runtime_path, api_path]:
+    for path in [agent_runtime_path, api_path, str(root)]:
         if path not in sys.path:
             sys.path.insert(0, path)
 
 
 def api_asset_store_root() -> Path:
     """The API's asset store root, resolved exactly as create_app resolves it."""
-    database_path = Path(
-        os.environ.get("LUMEN_API_DATABASE_PATH", "apps/api/lumen-api.sqlite3")
-    )
-    return Path(
-        os.environ.get("LUMEN_ASSET_STORE_ROOT") or database_path.parent / "asset-store"
-    )
+    return settings.effective_asset_store_root
 
 
 def resolve_agent_turn_brand_kit(
@@ -3993,9 +3982,7 @@ def resolve_agent_turn_brand_kit(
     ref = meta.get("brand_kit") if isinstance(meta, dict) else None
     if not isinstance(ref, dict) or not ref.get("id"):
         return None, None, None, None
-    database_path = Path(
-        os.environ.get("LUMEN_API_DATABASE_PATH", "apps/api/lumen-api.sqlite3")
-    )
+    database_path = settings.lumen_api_database_path
     try:
         connection = connect(database_path)
     except Exception:

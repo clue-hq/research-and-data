@@ -40,10 +40,11 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import sqlite3
 from pathlib import Path
 from typing import Any, Optional
+
+from py_lumen_config import settings
 
 from lumen_deepagent.brand_card import _brightest_accent, _resolve_color
 
@@ -254,9 +255,7 @@ def _kit_from_library(scene: JsonObject) -> Optional[JsonObject]:
     ref = (scene.get("meta") or {}).get("brand_kit")
     if not (isinstance(ref, dict) and ref.get("id")):
         return None
-    database_path = os.environ.get(
-        "LUMEN_API_DATABASE_PATH", "apps/api/lumen-api.sqlite3"
-    )
+    database_path = str(settings.lumen_api_database_path)
     try:
         connection = sqlite3.connect(database_path)
         connection.row_factory = sqlite3.Row

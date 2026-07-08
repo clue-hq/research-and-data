@@ -19,16 +19,15 @@ from __future__ import annotations
 
 import base64
 import json
-import os
 import sqlite3
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Callable, Protocol, runtime_checkable
 
+from py_lumen_config import settings
+
 from .evidence import BrandEvidence, ImageEvidence, LogoEvidence
 
-DEFAULT_DESCRIBE_MODEL = "anthropic/claude-sonnet-4.5"
-DEFAULT_BASE_URL = "https://openrouter.ai/api/v1"
 DEFAULT_TIMEOUT_S = 60.0
 BATCH_SIZE = 8
 PREVIEW_MAX_PX = 512
@@ -205,7 +204,7 @@ def apply_descriptions(
     """
     reporter("Describing your assets…", 0.80)
     store = DescriptionStore(connection)
-    model = os.environ.get("LUMEN_INGESTION_DESCRIBE_MODEL", DEFAULT_DESCRIBE_MODEL)
+    model = settings.lumen_ingestion_describe_model
 
     # asset_id -> evidence entry (logos + images). Both stamp identically.
     targets: dict[str, LogoEvidence | ImageEvidence] = {}
@@ -336,10 +335,10 @@ class OpenRouterDescriber:
     ``LUMEN_INGESTION_DESCRIBE=1``. Never call the network in tests."""
 
     def __init__(self) -> None:
-        self.enabled = os.environ.get("LUMEN_INGESTION_DESCRIBE") == "1"
-        self.model = os.environ.get("LUMEN_INGESTION_DESCRIBE_MODEL", DEFAULT_DESCRIBE_MODEL)
-        self.base_url = os.environ.get("OPENROUTER_BASE_URL", DEFAULT_BASE_URL)
-        self.api_key = os.environ.get("OPENROUTER_API_KEY", "")
+        self.enabled = settings.lumen_ingestion_describe
+        self.model = settings.lumen_ingestion_describe_model
+        self.base_url = settings.openrouter_base_url
+        self.api_key = settings.openrouter_api_key
 
     def describe(self, items: list[DescribeItem]) -> list[DescribeResult | None]:
         if not items:
