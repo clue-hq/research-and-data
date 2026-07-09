@@ -246,6 +246,26 @@ Residuals, both named:
   detach_to_freehand over muting a pin and duplicating it — never leave a
   human node invisible." Not added; awaiting user call (no-rails philosophy).
 
+## Tier-2 hygiene batch (2026-07-10, all SHIPPED)
+
+- **W-A `5302eb8` — content-hash engine stamp**: both build.rs stamp from a
+  sha256 of lumen-core src/**+Cargo.toml (shared hasher in
+  crates/build_support/engine_stamp.rs); AGENTS.md/CLAUDE.md rules narrowed to
+  "rebuild only when engine sources change"; live-proven post-commit with no
+  rebuild (HANDSHAKE OK, stamp a510a90cea24 both sides). Known drift point:
+  scripts/preflight_editor_wasm.mjs mirrors the hash closure in JS — widening
+  the hashed crate set requires touching both (fails safe: needless rebuild).
+- **W-B `eb0892c` — kit data chain**: republish re-runs the type-size ramp
+  emission idempotently (Insight kit LIVE v4→v5, all 13 $type.size.* tokens;
+  LUMB0301 class dead for legacy kits); LUMI0803 carries per-attempt HTTP
+  status/exception reason; SVG raster glue fixed (two bugs declined EVERY svg
+  — zero-page scene + wrong artifact key); play.svg captioned in v5.
+- **W-C `ee11f35` — riders**: RepoRootedFilesystemBackend (post-resolution
+  containment; escapes = model-facing errors; virtual_mode proven breaking for
+  our absolute-path prompts); per-model-call token usage telemetry
+  (`model_call_usage` trace events with per-role attribution) — the D3
+  context-growth watch has data from the next live run onward.
+
 ## Verified platform facts (2026-07-09)
 
 deepagents 0.6.12, langchain 1.3.11, langgraph 1.2.7, langchain-openai 1.3.3.
