@@ -68,7 +68,8 @@ def create_design_deepagent(
     """
     try:
         from deepagents import create_deep_agent
-        from deepagents.backends.filesystem import FilesystemBackend
+
+        from .fs_backend import RepoRootedFilesystemBackend
     except ImportError as error:
         raise RuntimeError(
             "DeepAgents runtime dependencies are missing. Install apps/api/requirements.txt "
@@ -83,7 +84,11 @@ def create_design_deepagent(
     workspace = scaffold_workspace(tools, prompt)
     workspace_str = str(workspace)
 
-    backend = FilesystemBackend(root_dir=str(runtime_config.repo_root))
+    # RIDER 1: repo-root-confined backend. Non-virtual mode keeps our
+    # host-absolute prompt paths working; the subclass rejects (as a model-facing
+    # error string, never a crash) any path resolving outside repo_root — closing
+    # the absolute/`..` escape the stock non-virtual backend leaves open.
+    backend = RepoRootedFilesystemBackend(root_dir=str(runtime_config.repo_root))
 
     from .llm import assert_all_role_models_support_image_input, init_model
 
@@ -111,9 +116,23 @@ def create_design_deepagent(
             _model_cache[model_id] = cached
         return cached
 
-    orchestrator_model = _model_for(runtime_config.orchestrator_model)
-    author_model = _model_for(runtime_config.author_model)
-    reviewer_model = _model_for(runtime_config.reviewer_model)
+    # RIDER 2: attach a per-role token-usage callback. Each role gets its OWN
+    # `.with_config(callbacks=[...])` wrapper even when the underlying model
+    # instance is shared (dedupe above), so the callback fires on the wrapper
+    # deepagents actually runs and the role IS cleanly attributable at the point
+    # of attachment. Capture is best-effort — a wiring or callback failure never
+    # blocks assembly or breaks a run (see usage_capture.attach_usage_capture).
+    from .usage_capture import attach_usage_capture
+
+    orchestrator_model = attach_usage_capture(
+        _model_for(runtime_config.orchestrator_model), tools, role="orchestrator"
+    )
+    author_model = attach_usage_capture(
+        _model_for(runtime_config.author_model), tools, role="author"
+    )
+    reviewer_model = attach_usage_capture(
+        _model_for(runtime_config.reviewer_model), tools, role="reviewer"
+    )
 
     view = make_view_tool(tools)
     render_preview = make_render_preview_tool(tools)

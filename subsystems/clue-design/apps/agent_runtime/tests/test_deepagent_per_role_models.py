@@ -134,8 +134,12 @@ def test_role_accessors_use_overrides():
 
 
 class _FakeFilesystemBackend:
-    def __init__(self, root_dir: str) -> None:
+    # Accept the RIDER-1 kwargs (RepoRootedFilesystemBackend subclasses this stub
+    # when deepagents is monkeypatched and forwards them to super().__init__).
+    def __init__(self, root_dir: str, virtual_mode=None, max_file_size_mb: int = 10) -> None:
         self.root_dir = root_dir
+        self.virtual_mode = virtual_mode
+        self.max_file_size_mb = max_file_size_mb
 
 
 class _FakeFilesystemPermission:
