@@ -3,7 +3,8 @@
 use crate::editing::{ExportProfileEditPatch, StackEntryEdit};
 use crate::scene::{BrandKitRef, ColorStop, Medium};
 use crate::{
-    build_archive_asset, build_clone_subtree, build_delete_export_profile, build_hard_delete_asset,
+    build_archive_asset, build_clone_subtree, build_delete_export_profile,
+    build_detach_to_freehand, build_hard_delete_asset,
     build_modify_operations, build_move_after, build_move_before, build_move_to_parent,
     build_replace_node, build_safe_delete, build_safe_delete_page, build_safe_delete_slot,
     build_ungroup, normalize_page_size, page_size_for_preset, resolve_edit_target, AssetEditPatch,
@@ -598,6 +599,14 @@ pub enum DslDirective {
     Ungroup {
         target: NodeId,
         allow_layout: bool,
+    },
+    /// D12: pin a managed node at its solved box (`position_mode: absolute`).
+    /// Detached nodes join the page-level freehand paint pass, which paints
+    /// after all in-flow content — so managed content can layer ABOVE a
+    /// pre-existing pinned human node (the P1r6 doppelganger class). Lowers to
+    /// the core `StructuredEditInstruction::DetachToFreehand` builder verbatim.
+    DetachToFreehand {
+        target: NodeId,
     },
     Undo {
         label: Option<String>,
@@ -1365,6 +1374,12 @@ impl DslParser {
                     allow_layout,
                 }
             }
+            "detach_to_freehand" => {
+                expect_arg_count(&call, 1, line_number)?;
+                DslDirective::DetachToFreehand {
+                    target: parse_node_id(&call.args[0], line_number, 1)?,
+                }
+            }
             "undo" => DslDirective::Undo {
                 label: call.args.first().map(|arg| unquote_lossy(arg)),
             },
@@ -1984,6 +1999,34 @@ impl<'a> DslCompiler<'a> {
                 allow_layout,
             } => {
                 let batch = build_ungroup(self.scene, target.clone(), *allow_layout)
+                    .map_err(|error| edit_error_diag(line, &error))?;
+                self.emit_edit_batch(line, batch.operations)?;
+                self.prune_parent_stack();
+                Ok(())
+            }
+            DslDirective::DetachToFreehand { target } => {
+                // An already-absolute/pinned target is a loud no-op, not a
+                // halt: the model asked for a state the scene already holds, so
+                // warn (LUMD0265) and emit nothing. An unknown id still falls
+                // through to the builder's TargetNotFound → the standard
+                // unknown-target diagnostic via `edit_error_diag`.
+                if let Some(node) = self.scene.nodes.get(target) {
+                    if node.position_mode == PositionMode::Absolute {
+                        self.diagnostics.push(warning_diag(
+                            line.line_number,
+                            1,
+                            line.raw.len().max(1),
+                            "LUMD0265",
+                            format!(
+                                "detach_to_freehand({}) is a no-op: node is already freehand (absolute/pinned)",
+                                target
+                            ),
+                            "Drop the directive — the node already paints in the page-level freehand pass. Use it only on a managed (solver-owned) node you need to layer above a pin.",
+                        ));
+                        return Ok(());
+                    }
+                }
+                let batch = build_detach_to_freehand(self.scene, target.clone())
                     .map_err(|error| edit_error_diag(line, &error))?;
                 self.emit_edit_batch(line, batch.operations)?;
                 self.prune_parent_stack();
@@ -4161,14 +4204,15 @@ fn parse_property_token(
             // directives, never node properties — and the natural way to
             // add/move/restructure children is a `reconcile(container)` block.
             let hint = match call.name.as_str() {
-                "parent" | "after" | "before" | "delete" => concat!(
-                    "`parent`/`after`/`before`/`delete` are standalone directives, ",
-                    "not node properties. To add, move, or restructure elements inside ",
+                "parent" | "after" | "before" | "delete" | "detach_to_freehand" => concat!(
+                    "`parent`/`after`/`before`/`delete`/`detach_to_freehand` are standalone ",
+                    "directives, not node properties. To add, move, or restructure elements inside ",
                     "an existing container, reconcile it: `reconcile(<container>)` then ",
                     "indent the container's full intended child subtree (re-emit kept ",
                     "children verbatim). To re-home or reorder one node, use the ",
                     "top-level `parent(id, parent:pid)` / `after(id, anchor)` directives; ",
-                    "to remove one, `delete(id)`."
+                    "to remove one, `delete(id)`; to pin one at its solved box so it ",
+                    "paints above a freehand human pin, `detach_to_freehand(id)`."
                 ),
                 _ => "Unsupported constructs are errors in the DSL compiler, not silently ignored.",
             };

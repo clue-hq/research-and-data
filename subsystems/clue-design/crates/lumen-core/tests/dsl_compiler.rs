@@ -3224,3 +3224,226 @@ page page_main size(1080,1350,px)
         .iter()
         .any(|diag| diag.diagnostic.code == "LUMD0401"));
 }
+
+// --- D12: detach_to_freehand(<node_id>) DSL directive ---
+//
+// The directive lowers to the core `StructuredEditInstruction::DetachToFreehand`
+// builder: it bakes a managed (solver-owned) node to `position_mode: absolute`
+// at its solved box, so the node joins the page-level freehand paint pass and
+// can layer ABOVE a pre-existing pinned human node (the P1r6 doppelganger
+// class, where sibling `after(...)` could not reorder managed content above a
+// pin because pins paint in a page-level pass after all in-flow content).
+
+/// A page with (in document order) a pinned human ellipse `human_ellipse_p1`
+/// followed by a MANAGED (solver-owned, `position_mode: managed`) mark rect
+/// `ellipse_mark`, both carrying solved `computed` geometry. This is the P1r6
+/// scenario: the human pin paints in the freehand pass, so the earlier-declared
+/// managed mark cannot appear on top of it until it, too, joins the pass.
+fn scene_p1r6_pin_then_managed_mark() -> Scene {
+    use lumen_core::{ComputedGeometry, Node, Page, PageSize};
+
+    let mut scene = Scene::new(lumen_core::DocumentId::from("doc_p1r6"), "P1r6");
+    scene
+        .apply_operation(Operation::AddPage {
+            page: Page {
+                id: PageId::from("page_a4"),
+                name: "Page".to_owned(),
+                size: PageSize {
+                    width: 1080.0,
+                    height: 1080.0,
+                    unit: Unit::Px,
+                    preset: Some(PagePreset::Custom),
+                    orientation: Orientation::Landscape,
+                    source: None,
+                    output: None,
+                },
+                children: Vec::new(),
+                bleed: None,
+                safe_area: None,
+                background: Vec::new(),
+            },
+        })
+        .unwrap();
+
+    // The human freehand pin (already absolute) is declared FIRST.
+    let pin_box = lumen_core::Rect {
+        x: 600.0,
+        y: 900.0,
+        width: 340.0,
+        height: 270.0,
+    };
+    let mut pin = Node::new(NodeId::from("human_ellipse_p1"), NodeKind::Ellipse);
+    pin.size = lumen_core::SizeSpec::fixed(pin_box.width, pin_box.height);
+    pin.position_mode = lumen_core::PositionMode::Absolute;
+    pin.absolute_box = Some(pin_box.clone());
+    pin.base_anchor = Some(pin_box.clone());
+    pin.computed = Some(ComputedGeometry {
+        layout_bounds: pin_box.clone(),
+        render_bounds: pin_box.clone(),
+    });
+    scene
+        .apply_operation(Operation::InsertNode {
+            parent: ParentRef::Page(PageId::from("page_a4")),
+            index: 0,
+            node: pin,
+        })
+        .unwrap();
+
+    // The managed mark is declared AFTER the pin, still solver-owned. It has
+    // solved geometry so `detach_to_freehand` can read its box.
+    let mark_box = lumen_core::Rect {
+        x: 690.0,
+        y: 955.0,
+        width: 160.0,
+        height: 160.0,
+    };
+    let mut mark = Node::new(NodeId::from("ellipse_mark"), NodeKind::Rect);
+    mark.size = lumen_core::SizeSpec::fixed(mark_box.width, mark_box.height);
+    mark.computed = Some(ComputedGeometry {
+        layout_bounds: mark_box.clone(),
+        render_bounds: mark_box.clone(),
+    });
+    scene
+        .apply_operation(Operation::InsertNode {
+            parent: ParentRef::Page(PageId::from("page_a4")),
+            index: 1,
+            node: mark,
+        })
+        .unwrap();
+
+    scene
+}
+
+#[test]
+fn detach_to_freehand_bakes_managed_node_to_absolute_at_solved_box() {
+    let mut scene = scene_p1r6_pin_then_managed_mark();
+    let solved = scene.nodes[&NodeId::from("ellipse_mark")]
+        .computed
+        .as_ref()
+        .unwrap()
+        .layout_bounds
+        .clone();
+    assert_eq!(
+        scene.nodes[&NodeId::from("ellipse_mark")].position_mode,
+        lumen_core::PositionMode::Managed,
+        "mark starts solver-owned"
+    );
+
+    let output = compile_dsl_into_scene("detach_to_freehand(ellipse_mark)", &mut scene);
+
+    assert_no_dsl_errors(&output.compile_output.diagnostics);
+    assert!(output.operation_error.is_none());
+
+    let mark = &scene.nodes[&NodeId::from("ellipse_mark")];
+    assert_eq!(
+        mark.position_mode,
+        lumen_core::PositionMode::Absolute,
+        "detach must bake the node absolute"
+    );
+    assert_eq!(
+        mark.absolute_box,
+        Some(solved.clone()),
+        "detach pins the node at its solved box"
+    );
+    assert_eq!(
+        mark.base_anchor,
+        Some(solved),
+        "detach records the solved box as the base anchor"
+    );
+}
+
+#[test]
+fn detach_to_freehand_lets_managed_mark_paint_after_pinned_human_node() {
+    // THE P1r6 scenario. Before detach the mark is solver-owned, so the
+    // freehand pass contains ONLY the human pin. After detach the mark joins
+    // the pass and — being later in document order — paints AFTER the pin, so
+    // it is visible on top (what `after(...)` could never achieve).
+    let mut scene = scene_p1r6_pin_then_managed_mark();
+
+    let before = lumen_core::pinned_paint_pass(&scene, &scene.pages[&PageId::from("page_a4")]);
+    assert_eq!(
+        before,
+        vec![NodeId::from("human_ellipse_p1")],
+        "only the human pin is in the freehand pass before detach"
+    );
+
+    let output = compile_dsl_into_scene("detach_to_freehand(ellipse_mark)", &mut scene);
+    assert_no_dsl_errors(&output.compile_output.diagnostics);
+    assert!(output.operation_error.is_none());
+
+    let after = lumen_core::pinned_paint_pass(&scene, &scene.pages[&PageId::from("page_a4")]);
+    assert_eq!(
+        after,
+        vec![
+            NodeId::from("human_ellipse_p1"),
+            NodeId::from("ellipse_mark"),
+        ],
+        "after detach the mark joins the freehand pass AFTER the pin (paints on top)"
+    );
+    // The pin's position in the pass is unchanged; the mark is strictly later,
+    // which is exactly the paint-order guarantee the directive exists to give.
+    let pin_index = after
+        .iter()
+        .position(|id| id == &NodeId::from("human_ellipse_p1"))
+        .unwrap();
+    let mark_index = after
+        .iter()
+        .position(|id| id == &NodeId::from("ellipse_mark"))
+        .unwrap();
+    assert!(
+        mark_index > pin_index,
+        "the detached mark must paint after the pre-existing pin"
+    );
+}
+
+#[test]
+fn detach_to_freehand_unknown_id_is_the_standard_unknown_target_diagnostic() {
+    let mut scene = scene_p1r6_pin_then_managed_mark();
+
+    let output = compile_dsl_into_scene("detach_to_freehand(ghost)", &mut scene);
+
+    // Unknown node id falls through to the core builder's TargetNotFound, which
+    // `edit_error_diag` reports as the standard LUMD0900 halt.
+    assert_eq!(
+        output.compile_output.halted_at.as_ref().unwrap().code,
+        "LUMD0900"
+    );
+    assert!(output
+        .compile_output
+        .diagnostics
+        .iter()
+        .any(|diag| diag.diagnostic.code == "LUMD0900"
+            && diag.diagnostic.message.contains("ghost")));
+}
+
+#[test]
+fn detach_to_freehand_on_already_pinned_node_is_a_loud_no_op_warning() {
+    let mut scene = scene_p1r6_pin_then_managed_mark();
+
+    let output = compile_dsl_into_scene("detach_to_freehand(human_ellipse_p1)", &mut scene);
+
+    // Already-absolute target is a loud no-op: a LUMD0265 WARNING, not a halt,
+    // and no operations are emitted.
+    assert!(
+        output.compile_output.halted_at.is_none(),
+        "already-pinned detach must not halt"
+    );
+    assert!(output.operation_error.is_none());
+    let warning = output
+        .compile_output
+        .diagnostics
+        .iter()
+        .find(|diag| diag.diagnostic.code == "LUMD0265")
+        .expect("LUMD0265 warning emitted");
+    assert_eq!(
+        warning.diagnostic.severity,
+        DiagnosticSeverity::Warning,
+        "the no-op is a warning, not an error"
+    );
+    assert!(output
+        .compile_output
+        .operations
+        .iter()
+        .all(|op| !matches!(op, Operation::UpdateNode { node_id, .. }
+            if node_id == &NodeId::from("human_ellipse_p1"))));
+}

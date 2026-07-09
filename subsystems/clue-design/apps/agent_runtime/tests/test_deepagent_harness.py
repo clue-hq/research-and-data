@@ -278,6 +278,14 @@ def test_author_prompt_drops_pipeline_output_and_halt_cap_language():
     assert "three times" not in author
 
 
+def test_author_prompt_teaches_detach_to_freehand_for_layering_above_pins():
+    # D12: the author must discover `detach_to_freehand(<id>)` as the way to
+    # paint managed content above a pinned human node (the P1r6 class).
+    author = build_author_prompt("/tmp/ws")
+    assert "detach_to_freehand(<its_id>)" in author
+    assert "paint ABOVE a pinned human node" in author
+
+
 def test_all_prompts_have_resource_map_and_workspace_path():
     ws = "/tmp/unique-workspace-xyz"
     for prompt in (

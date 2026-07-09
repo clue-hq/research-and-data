@@ -287,7 +287,12 @@ Repair rules:
   as node properties (they are standalone directives, not properties), and NEVER
   drop a bare top-level element line into an existing scene (`LUMD0402`). Omitting
   an agent-authored child removes it; omitting a seed-born/human child KEEPS it
-  (`LUMD0262`) — remove human content only with an explicit `delete(<id>)`."""
+  (`LUMD0262`) — remove human content only with an explicit `delete(<id>)`.
+  Content that must paint ABOVE a pinned human node is placed with
+  `detach_to_freehand(<its_id>)` after declaring it (detached nodes join the
+  freehand pass, where DOCUMENT ORDER decides stacking — if the human pin is
+  currently later in the tree, first reorder with `after(<its_id>, <pin_id>)`,
+  then detach)."""
 
 
 _AUTHOR_RESOURCE_MAP = """RESOURCES YOU HAVE
