@@ -59,6 +59,17 @@ class AgentRuntimeConfig:
     # no extended thinking). One mechanism for all models — never a per-vendor
     # special case.
     agent_reasoning: str | None = None
+    # D10(a): OPTIONAL output-token bound threaded into the single init_model
+    # gateway for every deep-agent LLM call. None → no max_tokens kwarg (today's
+    # behavior, byte-identical). Validated positive at config parse.
+    agent_max_tokens: int | None = None
+    # D10(c): OPTIONAL per-role model overrides. Each None → fall back to `model`
+    # (LUMEN_AGENT_MODEL). Read via the resolved accessors below so the harness
+    # never open-codes the fallback. Same "openai:<id>" contract, enforced by
+    # init_model when the harness builds each instance.
+    agent_model_orchestrator: str | None = None
+    agent_model_author: str | None = None
+    agent_model_reviewer: str | None = None
 
     @classmethod
     def from_env(cls, repo_root: Path | None = None) -> "AgentRuntimeConfig":
@@ -73,7 +84,26 @@ class AgentRuntimeConfig:
             agent_base_url=settings.lumen_agent_base_url or "https://openrouter.ai/api/v1",
             agent_api_key=settings.lumen_agent_api_key,
             agent_reasoning=settings.lumen_agent_reasoning,
+            agent_max_tokens=settings.lumen_agent_max_tokens,
+            agent_model_orchestrator=settings.lumen_agent_model_orchestrator,
+            agent_model_author=settings.lumen_agent_model_author,
+            agent_model_reviewer=settings.lumen_agent_model_reviewer,
         )
+
+    @property
+    def orchestrator_model(self) -> str:
+        """The orchestrator's model id, defaulting to LUMEN_AGENT_MODEL."""
+        return self.agent_model_orchestrator or self.model
+
+    @property
+    def author_model(self) -> str:
+        """The DSL-author subagent's model id, defaulting to LUMEN_AGENT_MODEL."""
+        return self.agent_model_author or self.model
+
+    @property
+    def reviewer_model(self) -> str:
+        """The visual-reviewer subagent's model id, defaulting to LUMEN_AGENT_MODEL."""
+        return self.agent_model_reviewer or self.model
 
     @property
     def effective_asset_store_root(self) -> Path:

@@ -64,23 +64,37 @@ class Settings(BaseSettings):
     openrouter_api_key: str = ""
     openrouter_base_url: str = "https://openrouter.ai/api/v1"
     lumen_ingestion_assist: bool = False
-    lumen_ingestion_assist_model: str = "anthropic/claude-sonnet-4.5"
+    lumen_ingestion_assist_model: str = "x-ai/grok-4.5"
     lumen_ingestion_vision: bool = False
-    lumen_ingestion_vision_model: str = "anthropic/claude-sonnet-4.5"
+    lumen_ingestion_vision_model: str = "x-ai/grok-4.5"
     lumen_ingestion_describe: bool = False
-    lumen_ingestion_describe_model: str = "anthropic/claude-sonnet-4.5"
+    lumen_ingestion_describe_model: str = "x-ai/grok-4.5"
 
     # --- Agent runtime (lumen_deepagent) ---
     # OpenRouter is the SOLE LLM gateway: the model id must be "openai:<id>" and
     # init_model errors without OpenRouter creds. Blank/unset base_url falls back
     # to the OpenRouter API URL in AgentRuntimeConfig.from_env.
-    lumen_agent_model: str = "openai:anthropic/claude-opus-4.8"
+    lumen_agent_model: str = "openai:x-ai/grok-4.5"
     lumen_agent_max_iterations: int = 5
     lumen_agent_preview_format: str = "svg"
     lumen_agent_trace_dir: Path | None = None  # None → <repo root>/.lumen-runs
     lumen_agent_asset_store: Path | None = None  # None → <trace dir>/asset-store
     lumen_agent_base_url: str | None = None
     lumen_agent_api_key: str | None = None
+    # D10(a) — an OPTIONAL output-token bound applied in the single init_model
+    # gateway to every deep-agent LLM call (damage-limitation against runaway
+    # generation, e.g. the grok-4.5 65k-completion LengthFinishReasonError).
+    # Unset → today's behavior, byte-identical (no max_tokens kwarg). A non-int
+    # or <=0 value fails LOUDLY at config parse. Recommend 16000 in .env.
+    lumen_agent_max_tokens: int | None = None
+    # D10(c) — OPTIONAL per-role model overrides. Each defaults to
+    # LUMEN_AGENT_MODEL when unset; the same "openai:<id>" contract is enforced
+    # by init_model. The harness builds up to three model instances (identical
+    # resolved ids share one) — orchestrator to create_deep_agent, author/
+    # reviewer into their subagent "model" keys.
+    lumen_agent_model_orchestrator: str | None = None
+    lumen_agent_model_author: str | None = None
+    lumen_agent_model_reviewer: str | None = None
     # OpenRouter unified reasoning effort for every deep-agent LLM call
     # ("low" | "medium" | "high"). Unset/blank → no reasoning field on the
     # request (provider default: no extended thinking). Applied in init_model
@@ -98,6 +112,10 @@ class Settings(BaseSettings):
         "lumen_agent_base_url",
         "lumen_agent_api_key",
         "lumen_agent_reasoning",
+        "lumen_agent_model_orchestrator",
+        "lumen_agent_model_author",
+        "lumen_agent_model_reviewer",
+        "lumen_agent_max_tokens",
         "anthropic_api_key",
         mode="before",
     )
@@ -121,6 +139,20 @@ class Settings(BaseSettings):
                 f"for no reasoning field); got {value!r}"
             )
         return effort
+
+    @field_validator("lumen_agent_max_tokens")
+    @classmethod
+    def _validate_max_tokens(cls, value: int | None) -> int | None:
+        """A junk or non-positive bound must fail at startup, not silently
+        disable itself (or, worse, cap generation at 0) mid-run."""
+        if value is None:
+            return value
+        if value <= 0:
+            raise ValueError(
+                "LUMEN_AGENT_MAX_TOKENS must be a positive integer (or unset for "
+                f"no output bound); got {value!r}"
+            )
+        return value
 
     @field_validator("image_model_id", mode="before")
     @classmethod

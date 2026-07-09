@@ -83,14 +83,35 @@ def create_design_deepagent(
 
     backend = FilesystemBackend(root_dir=str(runtime_config.repo_root))
 
-    from .llm import init_model
+    from .llm import assert_all_role_models_support_image_input, init_model
 
-    model = init_model(
-        runtime_config.model,
-        base_url=runtime_config.agent_base_url,
-        api_key=runtime_config.agent_api_key,
-        reasoning=runtime_config.agent_reasoning,
-    )
+    # D10(c): every distinct configured role model must accept image input — the
+    # loop is mandatory-multimodal for all three minds. Covering it HERE (not at
+    # each callsite) means CLI and API entry paths are both guarded, since both
+    # build through this factory. Loud only on a positive text-only finding.
+    assert_all_role_models_support_image_input(runtime_config)
+
+    # D10(a)+(c): build up to three model instances — one per role — bounded by
+    # the shared max_tokens. Identical resolved ids share a single instance
+    # (dedupe) so the common all-same-model config still builds exactly one.
+    _model_cache: dict[str, Any] = {}
+
+    def _model_for(model_id: str):
+        cached = _model_cache.get(model_id)
+        if cached is None:
+            cached = init_model(
+                model_id,
+                base_url=runtime_config.agent_base_url,
+                api_key=runtime_config.agent_api_key,
+                reasoning=runtime_config.agent_reasoning,
+                max_tokens=runtime_config.agent_max_tokens,
+            )
+            _model_cache[model_id] = cached
+        return cached
+
+    orchestrator_model = _model_for(runtime_config.orchestrator_model)
+    author_model = _model_for(runtime_config.author_model)
+    reviewer_model = _model_for(runtime_config.reviewer_model)
 
     view = make_view_tool(tools)
     render_preview = make_render_preview_tool(tools)
@@ -112,7 +133,7 @@ def create_design_deepagent(
                 "self-verifies, saves artifacts, and reports."
             ),
             "system_prompt": build_author_prompt(workspace_str),
-            "model": model,
+            "model": author_model,
             "tools": [
                 view,
                 tools.inspect,
@@ -131,7 +152,7 @@ def create_design_deepagent(
                 "writes it to the round directory."
             ),
             "system_prompt": build_reviewer_prompt(workspace_str),
-            "model": model,
+            "model": reviewer_model,
             "tools": [view, tools.inspect],
             "skills": reviewer_skills,
             "response_format": VisualCritique,
@@ -139,7 +160,7 @@ def create_design_deepagent(
     ]
 
     agent = create_deep_agent(
-        model=model,
+        model=orchestrator_model,
         backend=backend,
         state_schema=LumenTurnState,
         permissions=_filesystem_permissions(),

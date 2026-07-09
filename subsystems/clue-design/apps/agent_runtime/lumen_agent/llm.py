@@ -17,6 +17,7 @@ def init_model(
     base_url: str | None = None,
     api_key: str | None = None,
     reasoning: str | None = None,
+    max_tokens: int | None = None,
 ):
     """Build a deep-agent LLM bound to the OpenRouter gateway.
 
@@ -32,6 +33,12 @@ def init_model(
     provider serves the model, so it is one mechanism for every model id, never a
     per-vendor special case. None → no reasoning field on the request (provider
     default: no extended thinking).
+
+    `max_tokens` (D10a) is the OPTIONAL output-token bound. When set it is passed
+    straight to `init_chat_model`, which lands it on `ChatOpenAI.max_tokens`
+    (serialized as `max_completion_tokens` in the request) — one bound for every
+    model routed through this gateway, damage-limiting runaway generation. None →
+    no `max_tokens` kwarg on the model (today's behavior, byte-identical).
     """
     if not (base_url and api_key):
         raise ValueError(
@@ -64,6 +71,10 @@ def init_model(
         # OpenAI-compatible clients pass unknown top-level request fields via
         # extra_body; OpenRouter reads `reasoning` from the request body.
         kwargs["extra_body"] = {"reasoning": {"effort": reasoning}}
+    if max_tokens is not None:
+        # ChatOpenAI.max_tokens (langchain-openai 1.3.3) is the max-output-tokens
+        # field; it serializes to the request as `max_completion_tokens`.
+        kwargs["max_tokens"] = max_tokens
     return init_chat_model(model, **kwargs)
 
 
@@ -154,6 +165,31 @@ def assert_model_supports_image_input(
     _IMAGE_INPUT_SUPPORT_CACHE[cache_key] = supports_image
     if not supports_image:
         _raise_text_only(model)
+
+
+def assert_all_role_models_support_image_input(config: Any) -> None:
+    """D10(c) companion: run the text-only guard over EVERY distinct configured
+    role model (orchestrator / author / reviewer), not just LUMEN_AGENT_MODEL.
+
+    Per-role model overrides mean a text-only id can hide on any one role and
+    brick that mind mid-turn (all three attach images via `view`). Calling this
+    from `create_design_deepagent` covers every entry path — CLI and API — with
+    no per-callsite change, because both build the agent through the harness.
+
+    Each distinct id is checked once (the per-model probe also caches by
+    (base_url, id)); the loud "text-only" raise is unchanged, and unknown /
+    network-error findings still never brick a run.
+    """
+    for role_model in {
+        config.orchestrator_model,
+        config.author_model,
+        config.reviewer_model,
+    }:
+        assert_model_supports_image_input(
+            role_model,
+            base_url=config.agent_base_url,
+            api_key=config.agent_api_key,
+        )
 
 
 def _raise_text_only(model: str) -> None:
