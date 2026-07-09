@@ -3959,8 +3959,8 @@ def run_agent_turn_preview(
 ) -> JsonObject:
     ensure_agent_runtime_path(root)
     try:
-        from lumen_pipeline_archive.config import AgentRuntimeConfig
-        from lumen_pipeline_archive.providers import create_provider_quality_loop
+        from lumen_agent.config import AgentRuntimeConfig
+        from lumen_agent.harness import run_deepagent_turn
     except Exception as error:
         return failed_agent_turn_response(
             "agent_runtime.unavailable",
@@ -3971,6 +3971,8 @@ def run_agent_turn_preview(
     try:
         config = AgentRuntimeConfig.from_env(root)
         if payload.max_iterations is not None:
+            # v0 harness does not consume max_iterations (no Python-loop cap);
+            # kept set for config parity + offline/CLI paths that still read it.
             config = replace(config, max_iterations=payload.max_iterations)
         if payload.model:
             config = replace(config, model=payload.model)
@@ -4012,7 +4014,7 @@ def run_agent_turn_preview(
         # reviewer with `404 No endpoints found that support image input`, wasting the
         # paid authoring call. Raised ValueError falls through this block's try/except
         # to a clean agent_runtime.failed response. Unknown/network errors never raise.
-        from lumen_pipeline_archive.providers import assert_model_supports_image_input
+        from lumen_agent.llm import assert_model_supports_image_input
 
         assert_model_supports_image_input(
             config.model,
@@ -4020,13 +4022,12 @@ def run_agent_turn_preview(
             api_key=config.agent_api_key,
         )
         prompt = editor_agent_prompt(payload)
-        loop, tools = create_provider_quality_loop(
+        payload_result, tools = run_deepagent_turn(
             prompt,
             config,
             initial_scene=agent_seed_scene(payload),
             event_sink=event_sink,
         )
-        result = loop.run(prompt)
     except Exception as error:
         return failed_agent_turn_response(
             "agent_runtime.failed",
@@ -4034,7 +4035,7 @@ def run_agent_turn_preview(
             str(error),
         )
 
-    return agent_response_from_trace(result, tools.trace_dir, tools.scene)
+    return agent_response_from_trace(payload_result, tools.trace_dir, tools.scene)
 
 
 def sse_frame(seq: int, event: str, data: Any) -> str:

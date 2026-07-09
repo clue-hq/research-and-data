@@ -316,7 +316,7 @@ run_fixture() {
   LUMEN_AGENT_TRACE_DIR="$FIXTURE_TRACE_DIR" \
   LUMEN_AGENT_MAX_ITERATIONS="$AGENT_MAX_ITERATIONS" \
   PYTHONPATH=.:apps/api:apps/agent_runtime \
-    "$VENV_PYTHON" -m lumen_pipeline_archive.cli --mode "$AGENT_MODE" "$prompt" \
+    "$VENV_PYTHON" -m lumen_agent.cli "$prompt" \
     | tee "$output_json"
   run_id="$(extract_run_id "$output_json")"
   if [[ -z "$run_id" ]]; then
