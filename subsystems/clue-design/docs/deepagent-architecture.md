@@ -184,6 +184,26 @@ artifacts. No mind ever consumes another mind's paraphrase of an artifact.**
   absolute paths and `..` can bypass `root_dir` — the knowledge-docs write-deny
   holds, but a path-traversal guard is a future hardening item.
 
+## Moda probe round 6 (2026-07-09, grok-4.5 — first kit round on the deepagent)
+
+Evidence: `.context/deepagent-v0/probe-r6/`. **P2 (seed deletion): PASS
+end-to-end** (explicit remove_node ×2, reviewer accepted 0.92). **P3
+(delete+add, chipped): PASS end-to-end** (explicit delete + real kit product
+screenshot + caption; 15 ops incl. 11 unprompted accommodation re-fits).
+**P1 (logo in the human ellipse): honest FAIL at the finalize call — but the
+design itself was solved**: mark placed EXACTLY centered in the human ellipse
+(inspect + arithmetic; the round-5 blind-coordinate class is dead), the
+reviewer caught the z-cover, the author built the moda-style light plate.
+Residuals, both named:
+1. **grok-4.5 runaway generation** (65,569 completion tokens →
+   `LengthFinishReasonError`) on the orchestrator's finalize/structured call.
+   Fix fork pending user: bounded `max_tokens` in `init_model` /
+   tool-strategy structured output / per-role model choice.
+2. **Engine gap (pre-existing, now precisely named by the agent itself)**:
+   pinned-freehand nodes always paint last, so agent content cannot layer
+   over a pinned human node — needs a `detach_to_freehand`/z-order mechanism
+   (round-5 "cause B", documented in P1r6 round_3/author_report.md).
+
 ## Verified platform facts (2026-07-09)
 
 deepagents 0.6.12, langchain 1.3.11, langgraph 1.2.7, langchain-openai 1.3.3.
