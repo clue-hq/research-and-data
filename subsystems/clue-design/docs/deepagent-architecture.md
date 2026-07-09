@@ -174,6 +174,16 @@ artifacts. No mind ever consumes another mind's paraphrase of an artifact.**
   fields (`seeded`, `chip_target_node_ids`, `brand_kit_ref`, `artboard_id`,
   `turn_request`, `current_round`) are visible to all minds' tools.
 
+## Live proof + open hardening notes
+
+- **First live turn (2026-07-09, run_921ab92): ACCEPTED.** Full round protocol
+  exercised in the wild (direction.md → author 3-compile micro-loop → preflight
+  → render → reviewer view-and-compare → critique.json → index.md verdict line
+  → honest orchestrator finalize). Evidence: `.context/deepagent-v0/live-smoke-1/`.
+- Hardening note: deepagents `FilesystemBackend` in non-virtual mode warns that
+  absolute paths and `..` can bypass `root_dir` — the knowledge-docs write-deny
+  holds, but a path-traversal guard is a future hardening item.
+
 ## Verified platform facts (2026-07-09)
 
 deepagents 0.6.12, langchain 1.3.11, langgraph 1.2.7, langchain-openai 1.3.3.
