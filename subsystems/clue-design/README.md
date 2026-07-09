@@ -17,6 +17,11 @@ Reference material lives in `reference_docs/`.
 
 Workstream docs live in `docs/`, including `docs/dsl-compiler.md` for the current DSL grammar and lowering contract.
 
+**Agent architecture**: `docs/deepagent-architecture.md` is the binding decision
+ledger for the design-agent deepagent rebuild (mandate, glossary, decided/pending
+decisions, tool surface, context-transfer design). Update it in the same commit
+as any change it governs.
+
 ## Local Setup
 
 For a one-command local setup on macOS, open Terminal in the repo root and run:
