@@ -19,6 +19,8 @@ import json
 from pathlib import Path
 from typing import Any, Optional
 
+from langchain.agents.structured_output import ToolStrategy
+
 from .config import AgentRuntimeConfig
 from .models.schemas import VisualCritique
 from .models.state import CONSTITUTION_FIELDS, LumenTurnState
@@ -155,7 +157,18 @@ def create_design_deepagent(
             "model": reviewer_model,
             "tools": [view, tools.inspect],
             "skills": reviewer_skills,
-            "response_format": VisualCritique,
+            # D11 (docs/deepagent-architecture.md "Post-R6 decisions"): the
+            # reviewer's structured output goes through the TOOL strategy, not
+            # the provider/native one. Trigger: P1r7 died twice on
+            # `StructuredOutputValidationError ... Native structured output
+            # expected valid JSON for VisualCritique` — grok-4.5 via OpenRouter
+            # emits malformed JSON under native structured output. ToolStrategy
+            # extracts VisualCritique via a synthetic tool call, and its default
+            # `handle_errors=True` re-asks the model on a validation failure
+            # instead of failing the run. deepagents 0.6.12 passes this object
+            # straight through to `create_agent(..., response_format=...)`
+            # (middleware/subagents.py: create_sub_agent).
+            "response_format": ToolStrategy(VisualCritique),
         },
     ]
 

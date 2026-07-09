@@ -18,8 +18,10 @@ import types
 from pathlib import Path
 
 import pytest
+from langchain.agents.structured_output import ToolStrategy
 
 from lumen_agent import harness as harness_mod
+from lumen_agent.models.schemas import VisualCritique
 from lumen_agent.harness import (
     CONSTITUTION_FIELDS,
     LumenTurnState,
@@ -247,7 +249,23 @@ def test_tool_surfaces_are_exactly_the_ledger(tmp_path, monkeypatch):
     assert reviewer_tools == {"view", "inspect"}
 
     assert kwargs["name"] == "lumen-design-deepagent"
-    assert subagents["lumen-visual-reviewer"].get("response_format") is not None
+
+    # D11: the reviewer's structured output is wrapped in ToolStrategy (TOOL
+    # strategy), not handed raw to the provider/native path. This is the fix for
+    # P1r7 dying twice on `StructuredOutputValidationError ... Native structured
+    # output expected valid JSON for VisualCritique` (grok-4.5 via OpenRouter).
+    reviewer_format = subagents["lumen-visual-reviewer"].get("response_format")
+    assert isinstance(reviewer_format, ToolStrategy)
+    # The tool strategy carries the VisualCritique schema...
+    assert reviewer_format.schema is VisualCritique
+    # ...and keeps validation-retry on (default handle_errors=True), so a
+    # malformed tool call gets re-asked rather than crashing the run.
+    assert reviewer_format.handle_errors is True
+
+    # The orchestrator and author remain format-free — only the reviewer
+    # emits structured output.
+    assert "response_format" not in kwargs
+    assert "response_format" not in subagents["lumen-dsl-author"]
 
 
 # --- 4. prompt contract (D6) ------------------------------------------------

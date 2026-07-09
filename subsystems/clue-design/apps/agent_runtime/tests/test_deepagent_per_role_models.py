@@ -27,10 +27,25 @@ from lumen_agent.config import AgentRuntimeConfig
 # --- 1. py_lumen_config env parsing ----------------------------------------
 
 
+_D10_FIELDS = (
+    "lumen_agent_max_tokens",
+    "lumen_agent_model_orchestrator",
+    "lumen_agent_model_author",
+    "lumen_agent_model_reviewer",
+)
+
+
 def _settings(**overrides):
+    """Settings isolated from the developer's real environment/.env: the D10
+    fields under test default to blank (= unset) unless the test overrides
+    them. Without this, setting the knobs in the workspace .env (a normal,
+    supported thing to do) makes the defaults-unset tests fail — proven live
+    2026-07-10."""
     from py_lumen_config.config import Settings
 
-    return Settings(**overrides)
+    isolated = {field: "" for field in _D10_FIELDS}
+    isolated.update(overrides)
+    return Settings(**isolated)
 
 
 def test_max_tokens_defaults_unset():
