@@ -3959,8 +3959,8 @@ def run_agent_turn_preview(
 ) -> JsonObject:
     ensure_agent_runtime_path(root)
     try:
-        from lumen_deepagent.config import AgentRuntimeConfig
-        from lumen_deepagent.providers import create_provider_quality_loop
+        from lumen_pipeline_archive.config import AgentRuntimeConfig
+        from lumen_pipeline_archive.providers import create_provider_quality_loop
     except Exception as error:
         return failed_agent_turn_response(
             "agent_runtime.unavailable",
@@ -4012,7 +4012,7 @@ def run_agent_turn_preview(
         # reviewer with `404 No endpoints found that support image input`, wasting the
         # paid authoring call. Raised ValueError falls through this block's try/except
         # to a clean agent_runtime.failed response. Unknown/network errors never raise.
-        from lumen_deepagent.providers import assert_model_supports_image_input
+        from lumen_pipeline_archive.providers import assert_model_supports_image_input
 
         assert_model_supports_image_input(
             config.model,

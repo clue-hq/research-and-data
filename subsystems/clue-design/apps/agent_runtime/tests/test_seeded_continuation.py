@@ -19,23 +19,23 @@ from pathlib import Path
 import pytest
 from py_lumen_config import settings
 
-from lumen_deepagent.config import AgentRuntimeConfig
-from lumen_deepagent.loop import (
+from lumen_pipeline_archive.config import AgentRuntimeConfig
+from lumen_pipeline_archive.loop import (
     LumenQualityLoop,
     issue_in_edit_scope,
     reauthor_correction,
 )
-from lumen_deepagent.prompts import SEEDED_CONTINUATION_RECIPE
-from lumen_deepagent.schemas import (
+from lumen_pipeline_archive.prompts import SEEDED_CONTINUATION_RECIPE
+from lumen_pipeline_archive.schemas import (
     AgentActionMode,
     AgentDirectorDecision,
     VisualCritique,
     VisualIssue,
     VisualTarget,
 )
-from lumen_deepagent.tools import LumenDesignTools
+from lumen_pipeline_archive.tools import LumenDesignTools
 
-from test_lumen_deepagent_runtime import (
+from test_lumen_pipeline_archive_runtime import (
     FakeCoreClient,
     ScriptedAuthor,
     ScriptedReviewer,
@@ -212,7 +212,7 @@ def test_reauthoring_existing_id_rejects_the_whole_block_atomically(
 def test_seeded_new_artifact_is_coerced_to_targeted_patch(tmp_path: Path, monkeypatch):
     # The heuristic director's first decision (no feedback) is new_artifact —
     # on a seeded run the loop must coerce it and inject the continuation recipe.
-    monkeypatch.setattr("lumen_deepagent.tools.CoreClient", FakeCoreClient)
+    monkeypatch.setattr("lumen_pipeline_archive.tools.CoreClient", FakeCoreClient)
     config = runtime_config(tmp_path)
     tools = LumenDesignTools(config, "Edit the headline", initial_scene=seed_scene_dict())
     author = ScriptedAuthor(['#headline text("Hi")'])
@@ -230,7 +230,7 @@ def test_seeded_new_artifact_is_coerced_to_targeted_patch(tmp_path: Path, monkey
 
 
 def test_unseeded_run_is_not_coerced(tmp_path: Path, monkeypatch):
-    monkeypatch.setattr("lumen_deepagent.tools.CoreClient", FakeCoreClient)
+    monkeypatch.setattr("lumen_pipeline_archive.tools.CoreClient", FakeCoreClient)
     config = runtime_config(tmp_path)
     tools = LumenDesignTools(config, "Create a square ad")
     author = ScriptedAuthor(["page page_test"])
@@ -248,7 +248,7 @@ def test_unseeded_run_is_not_coerced(tmp_path: Path, monkeypatch):
 def test_seeded_full_page_rewrite_is_coerced_and_never_wipes(
     tmp_path: Path, monkeypatch
 ):
-    monkeypatch.setattr("lumen_deepagent.tools.CoreClient", FakeCoreClient)
+    monkeypatch.setattr("lumen_pipeline_archive.tools.CoreClient", FakeCoreClient)
     config = runtime_config(tmp_path)
     tools = LumenDesignTools(config, "Rebuild the page", initial_scene=seed_scene_dict())
     director = ScriptedDirector(
@@ -280,7 +280,7 @@ def test_seeded_full_page_rewrite_is_coerced_and_never_wipes(
 def test_start_fresh_rewrite_scene_is_refused_on_a_seeded_scene(
     tmp_path: Path, monkeypatch
 ):
-    monkeypatch.setattr("lumen_deepagent.tools.CoreClient", FakeCoreClient)
+    monkeypatch.setattr("lumen_pipeline_archive.tools.CoreClient", FakeCoreClient)
     config = runtime_config(tmp_path)
     tools = LumenDesignTools(config, "Edit", initial_scene=seed_scene_dict())
     before = json.dumps(tools.scene, sort_keys=True)
@@ -336,7 +336,7 @@ def test_reauthor_halt_is_rerouted_as_surgical_corrective_feedback(
     tmp_path: Path, monkeypatch
 ):
     monkeypatch.setattr(
-        "lumen_deepagent.tools.CoreClient", FakeReauthorHaltOnceCoreClient
+        "lumen_pipeline_archive.tools.CoreClient", FakeReauthorHaltOnceCoreClient
     )
     config = runtime_config(tmp_path)
     tools = LumenDesignTools(config, "Edit the headline", initial_scene=seed_scene_dict())
@@ -450,7 +450,7 @@ def test_within_block_duplicate_halt_is_not_pinned_surgical(
     # lines would target a node that does not exist (run_a0c54fab spent its
     # final iteration exactly that way).
     monkeypatch.setattr(
-        "lumen_deepagent.tools.CoreClient", FakeReauthorHaltOnceCoreClient
+        "lumen_pipeline_archive.tools.CoreClient", FakeReauthorHaltOnceCoreClient
     )
     config = runtime_config(tmp_path)
     tools = LumenDesignTools(config, "Create two variant pages")
@@ -592,7 +592,7 @@ def test_edit_scoped_acceptance_when_critique_targets_untouched_content(
 ):
     # The critique rejects — but its only issue targets `hero`, which this turn
     # never touched. The seeded turn accepts at edit scope on iteration 1.
-    monkeypatch.setattr("lumen_deepagent.tools.CoreClient", FakeSeededEditCoreClient)
+    monkeypatch.setattr("lumen_pipeline_archive.tools.CoreClient", FakeSeededEditCoreClient)
     config = runtime_config(tmp_path)
     tools = LumenDesignTools(config, "Edit the headline", initial_scene=seed_scene_dict())
     author = ScriptedAuthor(['#headline text("Edited")'])
@@ -616,7 +616,7 @@ def test_warning_on_edited_node_is_advisory_not_blocking(tmp_path: Path, monkeyp
     # A WARNING-severity critique issue on the edited node ("could dominate
     # more") is advisory by severity — it must not force extra repair rounds.
     # Only error/blocker issues in scope block. (Observed live in the 0b e2e.)
-    monkeypatch.setattr("lumen_deepagent.tools.CoreClient", FakeSeededEditCoreClient)
+    monkeypatch.setattr("lumen_pipeline_archive.tools.CoreClient", FakeSeededEditCoreClient)
     config = runtime_config(tmp_path)
     tools = LumenDesignTools(config, "Edit the headline", initial_scene=seed_scene_dict())
     author = ScriptedAuthor(['#headline text("Edited")'])
@@ -634,7 +634,7 @@ def test_warning_on_edited_node_is_advisory_not_blocking(tmp_path: Path, monkeyp
 def test_in_scope_critique_still_blocks_and_repairs(tmp_path: Path, monkeypatch):
     # The critique targets the EDITED node — the turn must keep repairing, and
     # at budget exhaustion the verified edit still reaches the editor.
-    monkeypatch.setattr("lumen_deepagent.tools.CoreClient", FakeSeededEditCoreClient)
+    monkeypatch.setattr("lumen_pipeline_archive.tools.CoreClient", FakeSeededEditCoreClient)
     config = runtime_config(tmp_path, max_iterations=2)
     tools = LumenDesignTools(config, "Edit the headline", initial_scene=seed_scene_dict())
     author = ScriptedAuthor(['#headline text("Edited")', '#headline font_size(64)'])
@@ -670,7 +670,7 @@ def test_blocker_on_declared_but_unedited_target_blocks_shortcut(
     # Two chips; the turn addresses one (headline) but the reviewer's blocker
     # names the OTHER declared target (hero, untouched). Declared targets are
     # always in scope — the shortcut must not fire.
-    monkeypatch.setattr("lumen_deepagent.tools.CoreClient", FakeSeededEditCoreClient)
+    monkeypatch.setattr("lumen_pipeline_archive.tools.CoreClient", FakeSeededEditCoreClient)
     config = dc_replace(
         runtime_config(tmp_path, max_iterations=2),
         turn_target_node_ids=["hero", "headline"],
@@ -695,7 +695,7 @@ def test_shortcut_withheld_when_no_declared_target_was_touched(
     # targets pre-existing content (band) that is out of every scope. The old
     # behavior shortcuts ("no in-scope issues"); the guard now withholds the
     # shortcut because the request was never addressed, and records why.
-    monkeypatch.setattr("lumen_deepagent.tools.CoreClient", FakeSeededEditCoreClient)
+    monkeypatch.setattr("lumen_pipeline_archive.tools.CoreClient", FakeSeededEditCoreClient)
     config = dc_replace(
         runtime_config(tmp_path, max_iterations=2),
         turn_target_node_ids=["hero"],
@@ -720,7 +720,7 @@ def test_shortcut_still_fires_when_declared_target_was_edited(
     # Regression: chip names headline, the turn edits headline, the critique's
     # only issue targets untouched pre-existing content — the shortcut must
     # keep working exactly as before the guard.
-    monkeypatch.setattr("lumen_deepagent.tools.CoreClient", FakeSeededEditCoreClient)
+    monkeypatch.setattr("lumen_pipeline_archive.tools.CoreClient", FakeSeededEditCoreClient)
     config = dc_replace(
         runtime_config(tmp_path),
         turn_target_node_ids=["headline"],
@@ -746,7 +746,7 @@ def test_editing_a_descendant_addresses_the_chipped_container(
     fake = type(
         "FakeKickerEditCoreClient", (FakeSeededEditCoreClient,), {"edited_node_id": "kicker"}
     )
-    monkeypatch.setattr("lumen_deepagent.tools.CoreClient", fake)
+    monkeypatch.setattr("lumen_pipeline_archive.tools.CoreClient", fake)
     config = dc_replace(
         runtime_config(tmp_path),
         turn_target_node_ids=["band"],
@@ -794,7 +794,7 @@ def test_seeded_turn_passes_seed_node_ids_as_protected(tmp_path: Path, monkeypat
     # The human contract: on a seeded turn every compile call carries the seed
     # scene's node ids as protected_node_ids so an omission cannot delete human
     # content. The set is frozen at init from the seed scene.
-    monkeypatch.setattr("lumen_deepagent.tools.CoreClient", FakeSeededEditCoreClient)
+    monkeypatch.setattr("lumen_pipeline_archive.tools.CoreClient", FakeSeededEditCoreClient)
     tools = LumenDesignTools(
         runtime_config(tmp_path), "Edit the headline", initial_scene=seed_scene_dict()
     )
@@ -808,7 +808,7 @@ def test_seeded_turn_passes_seed_node_ids_as_protected(tmp_path: Path, monkeypat
 def test_fresh_turn_passes_no_protected_ids(tmp_path: Path, monkeypatch):
     # An unseeded run has no human content to protect — pure declarative
     # reconcile semantics — so the compile call carries None.
-    monkeypatch.setattr("lumen_deepagent.tools.CoreClient", FakeCoreClient)
+    monkeypatch.setattr("lumen_pipeline_archive.tools.CoreClient", FakeCoreClient)
     tools = LumenDesignTools(runtime_config(tmp_path), "Make a poster")
     assert tools.protected_node_ids is None
 
@@ -859,7 +859,7 @@ def test_reconcile_of_chipped_container_finalizes_via_edit_scope(
     # The reconcile ops touch band, so _declared_targets_addressed is satisfied
     # and a critique on untouched content accepts at edit scope.
     monkeypatch.setattr(
-        "lumen_deepagent.tools.CoreClient", FakeReconcileChippedContainerCoreClient
+        "lumen_pipeline_archive.tools.CoreClient", FakeReconcileChippedContainerCoreClient
     )
     config = dc_replace(runtime_config(tmp_path), turn_target_node_ids=["band"])
     tools = LumenDesignTools(config, "Add a badge to the band", initial_scene=seed_scene_dict())
@@ -882,7 +882,7 @@ class FakeBandEditCoreClient(FakeSeededEditCoreClient):
 def test_descendants_of_edited_nodes_are_in_scope(tmp_path: Path, monkeypatch):
     # The turn edited `band`; the critique targets `kicker` (band's child).
     # Descendants are in scope, so this blocks instead of edit-scope accepting.
-    monkeypatch.setattr("lumen_deepagent.tools.CoreClient", FakeBandEditCoreClient)
+    monkeypatch.setattr("lumen_pipeline_archive.tools.CoreClient", FakeBandEditCoreClient)
     config = runtime_config(tmp_path, max_iterations=2)
     tools = LumenDesignTools(config, "Tighten the band", initial_scene=seed_scene_dict())
     author = ScriptedAuthor(["#band pad(24)", "#band pad(32)"])
@@ -969,7 +969,7 @@ def freehand_seed_scene() -> dict:
 
 
 def test_node_brief_exposes_freehand_fields_only_when_set(tmp_path: Path, monkeypatch):
-    monkeypatch.setattr("lumen_deepagent.tools.CoreClient", FakeCoreClient)
+    monkeypatch.setattr("lumen_pipeline_archive.tools.CoreClient", FakeCoreClient)
     tools = LumenDesignTools(
         runtime_config(tmp_path), "edit", initial_scene=freehand_seed_scene()
     )
@@ -1002,7 +1002,7 @@ def test_node_brief_exposes_freehand_fields_only_when_set(tmp_path: Path, monkey
 def test_scene_summary_surfaces_freehand_state_for_the_director(
     tmp_path: Path, monkeypatch
 ):
-    monkeypatch.setattr("lumen_deepagent.tools.CoreClient", FakeCoreClient)
+    monkeypatch.setattr("lumen_pipeline_archive.tools.CoreClient", FakeCoreClient)
     tools = LumenDesignTools(
         runtime_config(tmp_path), "edit", initial_scene=freehand_seed_scene()
     )
@@ -1020,7 +1020,7 @@ def test_scene_summary_surfaces_freehand_state_for_the_director(
 
 
 def test_query_geometry_shows_the_pin(tmp_path: Path, monkeypatch):
-    monkeypatch.setattr("lumen_deepagent.tools.CoreClient", FakeCoreClient)
+    monkeypatch.setattr("lumen_pipeline_archive.tools.CoreClient", FakeCoreClient)
     tools = LumenDesignTools(
         runtime_config(tmp_path), "edit", initial_scene=freehand_seed_scene()
     )
@@ -1057,11 +1057,11 @@ def test_shared_surface_contract_is_the_single_scoping_policy():
     # scoping rules (probe P1r4: the Director's invented "only node X /
     # byte-identical everything else" instructions made the correct solution
     # illegal while the recipe granted slack).
-    from lumen_deepagent.prompts import (
+    from lumen_pipeline_archive.prompts import (
         DSL_AUTHOR_SYSTEM_PROMPT,
         SHARED_SURFACE_CONTRACT,
     )
-    from lumen_deepagent.providers import DIRECTOR_SYSTEM_PROMPT
+    from lumen_pipeline_archive.providers import DIRECTOR_SYSTEM_PROMPT
 
     # The policy content: subject-not-fence, new-elements-always-legal, the
     # leaf-overlay pattern, announced collateral, explicit human deletes.

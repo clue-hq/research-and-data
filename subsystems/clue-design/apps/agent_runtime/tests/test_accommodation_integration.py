@@ -3,7 +3,7 @@
 
 `tests/test_accommodation.py` covers the detector (`turn_introduced_conflicts`)
 in isolation. This file drives the FULL `LumenQualityLoop` against a SEEDED
-scene with fakes, exercising the wiring in `lumen_deepagent/loop.py`:
+scene with fakes, exercising the wiring in `lumen_pipeline_archive/loop.py`:
 
   - `baseline_scene` capture in `run()` (deep-copied pre-first-edit geometry).
   - `_detect_accommodation_conflicts()` after the preflight-clean draft:
@@ -27,12 +27,12 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from lumen_deepagent.loop import LumenQualityLoop
-from lumen_deepagent.schemas import VisualCritique, VisualIssue, VisualTarget
+from lumen_pipeline_archive.loop import LumenQualityLoop
+from lumen_pipeline_archive.schemas import VisualCritique, VisualIssue, VisualTarget
 
-from test_lumen_deepagent_runtime import FakeCoreClient, ScriptedAuthor, ScriptedReviewer, runtime_config
+from test_lumen_pipeline_archive_runtime import FakeCoreClient, ScriptedAuthor, ScriptedReviewer, runtime_config
 from test_seeded_continuation import trace_events
-from lumen_deepagent.tools import LumenDesignTools
+from lumen_pipeline_archive.tools import LumenDesignTools
 
 
 def box(x: float, y: float, w: float, h: float) -> dict:
@@ -177,7 +177,7 @@ def test_conflict_detected_and_announced_when_reviewer_accepts(tmp_path: Path, m
     # max_iterations=1: no iteration remains, so the forced accommodation
     # round CANNOT run (never-wedge bound) — the acceptance stands and the
     # unresolved conflict is honestly announced instead.
-    monkeypatch.setattr("lumen_deepagent.tools.CoreClient", FakeBadgeMoveCoreClient)
+    monkeypatch.setattr("lumen_pipeline_archive.tools.CoreClient", FakeBadgeMoveCoreClient)
     config = runtime_config(tmp_path, max_iterations=1)
     tools = LumenDesignTools(
         config, "Move the badge", initial_scene=accommodation_seed_scene()
@@ -230,7 +230,7 @@ def test_accommodation_scope_expansion_blocks_on_crowded_neighbor(
     tmp_path: Path, monkeypatch
 ):
     monkeypatch.setattr(
-        "lumen_deepagent.tools.CoreClient", FakeBadgeMoveThenOrganizerNudgeCoreClient
+        "lumen_pipeline_archive.tools.CoreClient", FakeBadgeMoveThenOrganizerNudgeCoreClient
     )
     config = runtime_config(tmp_path, max_iterations=2)
     tools = LumenDesignTools(
@@ -289,7 +289,7 @@ def test_accommodation_scope_expansion_blocks_on_crowded_neighbor(
 def test_edit_scoped_acceptance_still_fires_for_unrelated_node(
     tmp_path: Path, monkeypatch
 ):
-    monkeypatch.setattr("lumen_deepagent.tools.CoreClient", FakeBadgeMoveCoreClient)
+    monkeypatch.setattr("lumen_pipeline_archive.tools.CoreClient", FakeBadgeMoveCoreClient)
     config = runtime_config(tmp_path)
     tools = LumenDesignTools(
         config, "Move the badge", initial_scene=accommodation_seed_scene()
@@ -342,7 +342,7 @@ def test_applied_nudge_is_announced_even_though_organizer_becomes_edited(
     tmp_path: Path, monkeypatch
 ):
     monkeypatch.setattr(
-        "lumen_deepagent.tools.CoreClient", FakeBadgeMoveThenOrganizerNudgeCoreClient
+        "lumen_pipeline_archive.tools.CoreClient", FakeBadgeMoveThenOrganizerNudgeCoreClient
     )
     config = runtime_config(tmp_path, max_iterations=2)
     tools = LumenDesignTools(
@@ -397,7 +397,7 @@ def test_applied_nudge_is_announced_even_though_organizer_becomes_edited(
 
 
 def test_unseeded_run_has_no_accommodation_payload(tmp_path: Path, monkeypatch):
-    monkeypatch.setattr("lumen_deepagent.tools.CoreClient", FakeCoreClient)
+    monkeypatch.setattr("lumen_pipeline_archive.tools.CoreClient", FakeCoreClient)
     config = runtime_config(tmp_path)
     tools = LumenDesignTools(config, "Create a square ad")
     author = ScriptedAuthor(["page page_test"])
@@ -426,7 +426,7 @@ def test_forced_accommodation_round_overrides_blind_acceptance(
     tmp_path: Path, monkeypatch
 ):
     monkeypatch.setattr(
-        "lumen_deepagent.tools.CoreClient", FakeBadgeMoveThenOrganizerNudgeCoreClient
+        "lumen_pipeline_archive.tools.CoreClient", FakeBadgeMoveThenOrganizerNudgeCoreClient
     )
     config = runtime_config(tmp_path, max_iterations=3)
     tools = LumenDesignTools(
@@ -480,7 +480,7 @@ def test_forced_accommodation_round_overrides_blind_acceptance(
 
 def test_unresolved_is_remeasured_on_the_restored_draft(tmp_path: Path, monkeypatch):
     monkeypatch.setattr(
-        "lumen_deepagent.tools.CoreClient", FakeBadgeMoveThenOrganizerNudgeCoreClient
+        "lumen_pipeline_archive.tools.CoreClient", FakeBadgeMoveThenOrganizerNudgeCoreClient
     )
     config = runtime_config(tmp_path, max_iterations=2)
     tools = LumenDesignTools(

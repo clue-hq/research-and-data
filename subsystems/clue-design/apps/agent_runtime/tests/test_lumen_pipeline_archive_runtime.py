@@ -20,9 +20,9 @@ except ImportError:  # pragma: no cover - dotenv is a dev/test dependency.
 if load_dotenv is not None:
     load_dotenv(Path(__file__).resolve().parents[3] / ".env", override=False)
 
-from lumen_deepagent.config import AgentRuntimeConfig
-from lumen_deepagent.eval_traces import summarize_trace_dir
-from lumen_deepagent.knowledge import (
+from lumen_pipeline_archive.config import AgentRuntimeConfig
+from lumen_pipeline_archive.eval_traces import summarize_trace_dir
+from lumen_pipeline_archive.knowledge import (
     DIRECTIVES_PATH,
     IMAGES_DECIDE_PATH,
     IMAGES_ICONS_PATH,
@@ -37,7 +37,7 @@ from lumen_deepagent.knowledge import (
     read_knowledge,
     read_task_knowledge,
 )
-from lumen_deepagent.loop import (
+from lumen_pipeline_archive.loop import (
     HeuristicAgentDirector,
     LumenQualityLoop,
     classify_diagnostics,
@@ -49,7 +49,7 @@ from lumen_deepagent.loop import (
     recompose_recipe_for_feedback,
     repair_is_surgical,
 )
-from lumen_deepagent.prompts import (
+from lumen_pipeline_archive.prompts import (
     COORDINATOR_SYSTEM_PROMPT,
     DSL_AUTHOR_SYSTEM_PROMPT,
     DSL_REF_GRAMMAR_ESCALATION,
@@ -60,7 +60,7 @@ from lumen_deepagent.prompts import (
     VISUAL_REVIEWER_SYSTEM_PROMPT,
     build_subagents,
 )
-from lumen_deepagent.providers import (
+from lumen_pipeline_archive.providers import (
     DIRECTOR_SYSTEM_PROMPT,
     assert_model_supports_image_input,
     compact_preview_payload,
@@ -72,7 +72,7 @@ from lumen_deepagent.providers import (
     preview_image_blocks,
 )
 from lumen_api.core import CoreError
-from lumen_deepagent.schemas import (
+from lumen_pipeline_archive.schemas import (
     AgentActionMode,
     AgentDirectorDecision,
     CritiqueCategory,
@@ -82,7 +82,7 @@ from lumen_deepagent.schemas import (
     VisualIssue,
     VisualTarget,
 )
-from lumen_deepagent.tools import LumenDesignTools, validate_preview_bytes
+from lumen_pipeline_archive.tools import LumenDesignTools, validate_preview_bytes
 
 
 class FakeCoreClient:
@@ -1005,9 +1005,9 @@ def test_deepagents_factory_wires_full_phase_a_tool_surface(tmp_path: Path, monk
     monkeypatch.setitem(sys.modules, "deepagents", deepagents_module)
     monkeypatch.setitem(sys.modules, "deepagents.backends", backends_module)
     monkeypatch.setitem(sys.modules, "deepagents.backends.filesystem", filesystem_module)
-    monkeypatch.setattr("lumen_deepagent.tools.CoreClient", FakeCoreClient)
+    monkeypatch.setattr("lumen_pipeline_archive.tools.CoreClient", FakeCoreClient)
 
-    from lumen_deepagent.factory import create_lumen_design_agent
+    from lumen_pipeline_archive.factory import create_lumen_design_agent
 
     agent, tools = create_lumen_design_agent("Create a square ad", runtime_config(tmp_path))
 
@@ -1241,7 +1241,7 @@ def test_directives_ref_grammar_is_pinned_for_seeded_turns(
     assert DIRECTIVES_PATH in {snippet.path for snippet in snippets}
 
     # And the tools wire the pin automatically for seeded scenes.
-    monkeypatch.setattr("lumen_deepagent.tools.CoreClient", FakeCoreClient)
+    monkeypatch.setattr("lumen_pipeline_archive.tools.CoreClient", FakeCoreClient)
     config = AgentRuntimeConfig(
         repo_root=repo_root,
         model="openai:anthropic/claude-opus-4.8",
@@ -1430,7 +1430,7 @@ def _poster_scene(*, asset_model="google/gemini-3-pro-image", with_scrim=True, a
 
 
 def test_imagery_checks_accept_a_clean_scrimmed_poster():
-    from lumen_deepagent.imagery_checks import score_scene
+    from lumen_pipeline_archive.imagery_checks import score_scene
 
     result = score_scene(_poster_scene(), expected_decision="photo")
     assert result["accept"] is True
@@ -1443,7 +1443,7 @@ def test_imagery_checks_accept_a_clean_scrimmed_poster():
 
 
 def test_imagery_checks_gate_on_placeholder_text_over_image_and_gratuitous():
-    from lumen_deepagent.imagery_checks import score_scene
+    from lumen_pipeline_archive.imagery_checks import score_scene
 
     # A solid-color stub placeholder shipped as final → hard gate.
     stub = score_scene(_poster_scene(asset_model="stub-image-v0"), expected_decision="photo")
@@ -1480,7 +1480,7 @@ class _FakeJudgeModel:
 
 
 def _perfect_verdict():
-    from lumen_deepagent.imagery_judge import ImageryJudgeVerdict
+    from lumen_pipeline_archive.imagery_judge import ImageryJudgeVerdict
 
     return ImageryJudgeVerdict(
         relevance=3, placeholder_real=3, aspect_fit=3, placement=3, legibility=3,
@@ -1489,7 +1489,7 @@ def _perfect_verdict():
 
 
 def test_imagery_judge_ships_a_clean_scrimmed_poster_with_a_good_verdict():
-    from lumen_deepagent.imagery_judge import judge_imagery
+    from lumen_pipeline_archive.imagery_judge import judge_imagery
 
     model = _FakeJudgeModel(_perfect_verdict())
     result = judge_imagery(
@@ -1506,7 +1506,7 @@ def test_imagery_judge_ships_a_clean_scrimmed_poster_with_a_good_verdict():
 
 
 def test_imagery_judge_skips_the_vision_call_on_a_correct_typographic_none_design():
-    from lumen_deepagent.imagery_judge import judge_imagery
+    from lumen_pipeline_archive.imagery_judge import judge_imagery
 
     type_only = {
         "pages": {"p": {"size": {"width": 1080, "height": 1080}}},
@@ -1523,7 +1523,7 @@ def test_imagery_judge_skips_the_vision_call_on_a_correct_typographic_none_desig
 
 
 def test_imagery_judge_det_gate_caps_a_perfect_verdict_to_redo():
-    from lumen_deepagent.imagery_judge import judge_imagery
+    from lumen_pipeline_archive.imagery_judge import judge_imagery
 
     # A perfect verdict cannot rescue a design whose text is unscrimmed over the image:
     # the DET legibility gate caps the axis at 1 and forces a redo.
@@ -1540,7 +1540,7 @@ def test_imagery_judge_det_gate_caps_a_perfect_verdict_to_redo():
 
 
 def test_imagery_judge_final_is_min_of_det_cap_and_judge():
-    from lumen_deepagent.imagery_judge import ImageryJudgeVerdict, judge_imagery
+    from lumen_pipeline_archive.imagery_judge import ImageryJudgeVerdict, judge_imagery
 
     # DET passes every gate (score 3), but the judge dislikes the theme (1) and the
     # composition/placement (2) → final theme is the judge's 1 → redo.
@@ -1597,7 +1597,7 @@ def test_imagery_judge_schema_emits_no_integer_bounds_and_clamps():
     # Same failure class as the VisualCritique confidence fix (d8eb4e7): ge/le on
     # ints emit JSON-schema minimum/maximum, which the Anthropic structured-output
     # path 400s on every judge call. Bounds live in a validator clamp instead.
-    from lumen_deepagent.imagery_judge import ImageryJudgeVerdict
+    from lumen_pipeline_archive.imagery_judge import ImageryJudgeVerdict
 
     text = json.dumps(ImageryJudgeVerdict.model_json_schema())
     assert '"minimum"' not in text and '"maximum"' not in text
@@ -1672,7 +1672,7 @@ def test_imagery_runner_diff_tags_reports_axis_and_tier_transition(tmp_path: Pat
 def test_tools_seed_scene_is_used_instead_of_new_scene(tmp_path: Path, monkeypatch):
     # Phase 0a: an initial_scene seeds the working scene (deep-copied), replaces
     # the new_scene call, and the seeding is recorded in the run trace.
-    monkeypatch.setattr("lumen_deepagent.tools.CoreClient", FakeCoreClient)
+    monkeypatch.setattr("lumen_pipeline_archive.tools.CoreClient", FakeCoreClient)
     seed = {
         "meta": {"id": "doc_live", "title": "Saved doc"},
         "pages": {"hero_poster": {"id": "hero_poster", "children": ["headline"]}},
@@ -1703,7 +1703,7 @@ def test_tools_seed_scene_is_used_instead_of_new_scene(tmp_path: Path, monkeypat
 
 
 def test_tools_without_seed_records_unseeded_run(tmp_path: Path, monkeypatch):
-    monkeypatch.setattr("lumen_deepagent.tools.CoreClient", FakeCoreClient)
+    monkeypatch.setattr("lumen_pipeline_archive.tools.CoreClient", FakeCoreClient)
     config = runtime_config(tmp_path)
     tools = LumenDesignTools(config, "Create a square ad")
 
@@ -1718,7 +1718,7 @@ def test_tools_without_seed_records_unseeded_run(tmp_path: Path, monkeypatch):
 def test_finalize_run_persists_the_full_final_scene_for_offline_scoring(tmp_path: Path, monkeypatch):
     # The imagery eval runner reads final_scene.json (the FULL scene, not just the
     # summary) to deterministically score imagery without re-running the agent.
-    monkeypatch.setattr("lumen_deepagent.tools.CoreClient", FakeCoreClient)
+    monkeypatch.setattr("lumen_pipeline_archive.tools.CoreClient", FakeCoreClient)
     config = runtime_config(tmp_path)
     tools = LumenDesignTools(config, "Create a square ad")
     tools.compile_dsl_block("page page_test")
@@ -1731,7 +1731,7 @@ def test_finalize_run_persists_the_full_final_scene_for_offline_scoring(tmp_path
 
 
 def test_quality_loop_passes_knowledge_excerpts_to_author(tmp_path: Path, monkeypatch):
-    monkeypatch.setattr("lumen_deepagent.tools.CoreClient", FakeCoreClient)
+    monkeypatch.setattr("lumen_pipeline_archive.tools.CoreClient", FakeCoreClient)
     paths = [
         "apps/agent_runtime/knowledge_docs/knowledge/lumen-dsl/grammar.md",
         "apps/agent_runtime/knowledge_docs/knowledge/design/layout-recipes.md",
@@ -1760,7 +1760,7 @@ def test_quality_loop_passes_knowledge_excerpts_to_author(tmp_path: Path, monkey
 
 
 def test_director_author_and_reviewer_receive_full_context(tmp_path: Path, monkeypatch):
-    monkeypatch.setattr("lumen_deepagent.tools.CoreClient", FakeCoreClient)
+    monkeypatch.setattr("lumen_pipeline_archive.tools.CoreClient", FakeCoreClient)
     tools = LumenDesignTools(
         runtime_config(tmp_path),
         'Create a square ad\n\nEditor context JSON:\n{"conversation_context":{"messages":[{"role":"user","content":"previous ask"}]}}',
@@ -1826,7 +1826,7 @@ def test_director_author_and_reviewer_receive_full_context(tmp_path: Path, monke
 def test_runtime_tools_update_scene_export_preview_and_write_trace(
     tmp_path: Path, monkeypatch
 ):
-    monkeypatch.setattr("lumen_deepagent.tools.CoreClient", FakeCoreClient)
+    monkeypatch.setattr("lumen_pipeline_archive.tools.CoreClient", FakeCoreClient)
     config = runtime_config(tmp_path)
     tools = LumenDesignTools(config, "Create a square ad")
 
@@ -1877,7 +1877,7 @@ def test_runtime_tools_update_scene_export_preview_and_write_trace(
 def test_structured_edit_tool_applies_core_generated_operations(
     tmp_path: Path, monkeypatch
 ):
-    monkeypatch.setattr("lumen_deepagent.tools.CoreClient", FakeCoreClient)
+    monkeypatch.setattr("lumen_pipeline_archive.tools.CoreClient", FakeCoreClient)
     tools = LumenDesignTools(runtime_config(tmp_path), "Move the headline down")
     tools.compile_dsl_block('page page_test\n  headline text "Plan" p(24,24) s(400,hug)')
 
@@ -1913,7 +1913,7 @@ def test_structured_edit_tool_applies_core_generated_operations(
 def test_structured_edit_strict_scope_rejection_records_verdict(
     tmp_path: Path, monkeypatch
 ):
-    monkeypatch.setattr("lumen_deepagent.tools.CoreClient", FakeCoreClient)
+    monkeypatch.setattr("lumen_pipeline_archive.tools.CoreClient", FakeCoreClient)
     tools = LumenDesignTools(runtime_config(tmp_path), "Repair the headline")
     tools.compile_dsl_block('page page_test\n  headline text "Plan" p(24,24) s(400,hug)')
 
@@ -1945,7 +1945,7 @@ def test_structured_edit_strict_scope_rejection_records_verdict(
 def test_structured_edit_in_scope_repair_records_scope_verdict(
     tmp_path: Path, monkeypatch
 ):
-    monkeypatch.setattr("lumen_deepagent.tools.CoreClient", FakeCoreClient)
+    monkeypatch.setattr("lumen_pipeline_archive.tools.CoreClient", FakeCoreClient)
     tools = LumenDesignTools(runtime_config(tmp_path), "Repair the headline")
     tools.compile_dsl_block('page page_test\n  headline text "Plan" p(24,24) s(400,hug)')
 
@@ -1978,7 +1978,7 @@ def test_structured_edit_in_scope_repair_records_scope_verdict(
 def test_preflight_and_final_trace_record_effective_brand_context(
     tmp_path: Path, monkeypatch
 ):
-    monkeypatch.setattr("lumen_deepagent.tools.CoreClient", FakeCoreClient)
+    monkeypatch.setattr("lumen_pipeline_archive.tools.CoreClient", FakeCoreClient)
     config = runtime_config(tmp_path)
     tools = LumenDesignTools(config, "Create a square ad")
     tools.compile_dsl_block("page page_test")
@@ -2042,7 +2042,7 @@ def _config_with_kit(tmp_path: Path, kit: dict) -> AgentRuntimeConfig:
 def test_preflight_designs_against_config_brand_kit(tmp_path: Path, monkeypatch):
     """K0: a kit passed by value in config (the document's attached kit) is what
     preflight actually runs against — not the platform default."""
-    monkeypatch.setattr("lumen_deepagent.tools.CoreClient", FakeCoreClient)
+    monkeypatch.setattr("lumen_pipeline_archive.tools.CoreClient", FakeCoreClient)
     tools = LumenDesignTools(
         _config_with_kit(tmp_path, _insight_kit()), "Create a square ad"
     )
@@ -2086,7 +2086,7 @@ def test_preflight_merges_brand_governance_diagnostics(tmp_path: Path, monkeypat
                 ],
             }
 
-    monkeypatch.setattr("lumen_deepagent.tools.CoreClient", GovernanceCoreClient)
+    monkeypatch.setattr("lumen_pipeline_archive.tools.CoreClient", GovernanceCoreClient)
     tools = LumenDesignTools(
         _config_with_kit(tmp_path, _insight_kit()), "Create a square ad"
     )
@@ -2100,7 +2100,7 @@ def test_preflight_merges_brand_governance_diagnostics(tmp_path: Path, monkeypat
 
     # Platform-default (no attached kit) → no brand intent → ungoverned.
     calls.clear()
-    monkeypatch.setattr("lumen_deepagent.tools.CoreClient", GovernanceCoreClient)
+    monkeypatch.setattr("lumen_pipeline_archive.tools.CoreClient", GovernanceCoreClient)
     kitless = LumenDesignTools(runtime_config(tmp_path), "Create a square ad")
     kitless.compile_dsl_block("page page_test")
     result = json.loads(kitless.preflight_design())
@@ -2133,7 +2133,7 @@ def test_config_brand_fonts_ride_preflight_and_preview(tmp_path: Path, monkeypat
             )
 
     spec = {"store_root": str(tmp_path / "asset-store"), "digests": ["a" * 64]}
-    monkeypatch.setattr("lumen_deepagent.tools.CoreClient", RecordingCoreClient)
+    monkeypatch.setattr("lumen_pipeline_archive.tools.CoreClient", RecordingCoreClient)
     tools = LumenDesignTools(
         replace(_config_with_kit(tmp_path, _insight_kit()), brand_fonts=spec),
         "Create a square ad",
@@ -2151,7 +2151,7 @@ def test_unapproved_config_kit_is_honored_with_notice(tmp_path: Path, monkeypatc
     """A document-attached draft kit is still designed against (attach was the
     human gate; a default-kit fallback would trip LUMB0101 against the scene
     ref) — but the effective-brand context carries the approval notice."""
-    monkeypatch.setattr("lumen_deepagent.tools.CoreClient", FakeCoreClient)
+    monkeypatch.setattr("lumen_pipeline_archive.tools.CoreClient", FakeCoreClient)
     tools = LumenDesignTools(
         _config_with_kit(tmp_path, _insight_kit(approval_status="draft")),
         "Create a square ad",
@@ -2173,7 +2173,7 @@ def test_brand_context_reports_scene_ref_mismatch_honestly(
     """Without a config kit, a seeded scene that references some other kit no
     longer masquerades as that kit in the effective-brand context: the context
     reports the kit preflight actually used plus the unhonored scene ref."""
-    monkeypatch.setattr("lumen_deepagent.tools.CoreClient", FakeCoreClient)
+    monkeypatch.setattr("lumen_pipeline_archive.tools.CoreClient", FakeCoreClient)
     seeded = {
         "meta": {
             "id": "doc_test",
@@ -2209,7 +2209,7 @@ def test_baseline_preflight_uses_config_brand_kit(tmp_path: Path, monkeypatch):
             seen_kits.append(brand_kit["id"])
             return super().preflight_scene(scene, brand_kit)
 
-    monkeypatch.setattr("lumen_deepagent.tools.CoreClient", RecordingCoreClient)
+    monkeypatch.setattr("lumen_pipeline_archive.tools.CoreClient", RecordingCoreClient)
     seeded = {
         "meta": {
             "id": "doc_test",
@@ -2279,7 +2279,7 @@ def test_brand_card_digests_kit_with_resolved_accent(tmp_path: Path):
     """K1: the card resolves role colors to hex (oklch via the engine's math),
     surfaces the brightest accent for the CTA rule, and inventories logos —
     capped, never the full kit JSON."""
-    from lumen_deepagent.brand_card import build_brand_card
+    from lumen_pipeline_archive.brand_card import build_brand_card
 
     card = build_brand_card(_insight_kit_with_tokens(), source="document")
 
@@ -2300,7 +2300,7 @@ def test_brand_card_carries_usage_note_as_its_own_capped_field():
     """Imagery slice 1: kit usage_note rides the card as its own field —
     the old ' Usage: …' fold into description sat exactly where the 160-char
     description cap truncates first, so the guidance was routinely eaten."""
-    from lumen_deepagent.brand_card import build_brand_card
+    from lumen_pipeline_archive.brand_card import build_brand_card
 
     kit = {
         "id": "brand_kit_usage",
@@ -2339,9 +2339,9 @@ def test_brand_card_carries_usage_note_as_its_own_capped_field():
 def test_load_knowledge_injects_brand_card_and_decide_doc(tmp_path: Path, monkeypatch):
     """With a kit in config, load_knowledge force-loads brand-application.md
     and appends the card snippet; without a kit, neither happens."""
-    from lumen_deepagent.knowledge import BRAND_APPLICATION_PATH
+    from lumen_pipeline_archive.knowledge import BRAND_APPLICATION_PATH
 
-    monkeypatch.setattr("lumen_deepagent.tools.CoreClient", FakeCoreClient)
+    monkeypatch.setattr("lumen_pipeline_archive.tools.CoreClient", FakeCoreClient)
     captured: dict = {}
 
     def fake_read_task_knowledge(root, query, extra_mandatory_paths=None):
@@ -2349,7 +2349,7 @@ def test_load_knowledge_injects_brand_card_and_decide_doc(tmp_path: Path, monkey
         return []
 
     monkeypatch.setattr(
-        "lumen_deepagent.tools.read_task_knowledge", fake_read_task_knowledge
+        "lumen_pipeline_archive.tools.read_task_knowledge", fake_read_task_knowledge
     )
 
     with_kit = LumenDesignTools(
@@ -2360,7 +2360,7 @@ def test_load_knowledge_injects_brand_card_and_decide_doc(tmp_path: Path, monkey
     # EVERY snippet must round-trip the KnowledgeSnippet schema — the quality
     # loop re-validates them, so a hand-rolled card dict kills the whole turn
     # (the K1 live proof failed exactly here: missing score/excerpt).
-    from lumen_deepagent.schemas import KnowledgeSnippet
+    from lumen_pipeline_archive.schemas import KnowledgeSnippet
 
     validated = [KnowledgeSnippet.model_validate(s) for s in payload["snippets"]]
     card_snippets = [s for s in validated if s.path.startswith("brand-kit:")]
@@ -2376,7 +2376,7 @@ def test_load_knowledge_injects_brand_card_and_decide_doc(tmp_path: Path, monkey
 
 
 def test_curated_context_carries_brand_card(tmp_path: Path, monkeypatch):
-    monkeypatch.setattr("lumen_deepagent.tools.CoreClient", FakeCoreClient)
+    monkeypatch.setattr("lumen_pipeline_archive.tools.CoreClient", FakeCoreClient)
     tools = LumenDesignTools(
         _config_with_kit(tmp_path, _insight_kit_with_tokens()), "Design an ad"
     )
@@ -2432,7 +2432,7 @@ def test_use_brand_asset_registers_with_brand_guide_provenance_and_places(
     """K2: the manifest record upserts VERBATIM under its ORIGINAL id (brand
     governance matches logo nodes by asset id) with only the scene copy's
     source rewritten to brand_guide, then places with fit contain."""
-    monkeypatch.setattr("lumen_deepagent.tools.CoreClient", FakeCoreClient)
+    monkeypatch.setattr("lumen_pipeline_archive.tools.CoreClient", FakeCoreClient)
     tools = LumenDesignTools(_config_with_kit_assets(tmp_path), "Brand ad")
 
     result = json.loads(
@@ -2474,7 +2474,7 @@ def test_use_brand_asset_registers_with_brand_guide_provenance_and_places(
 def test_use_brand_asset_honors_explicit_fit_and_plain_place_keeps_cover(
     tmp_path: Path, monkeypatch
 ):
-    monkeypatch.setattr("lumen_deepagent.tools.CoreClient", FakeCoreClient)
+    monkeypatch.setattr("lumen_pipeline_archive.tools.CoreClient", FakeCoreClient)
     tools = LumenDesignTools(_config_with_kit_assets(tmp_path), "Brand ad")
 
     tools.asset(
@@ -2503,7 +2503,7 @@ def test_inline_dsl_reference_to_kit_asset_auto_registers(
     (LUME0211). Any scene image node referencing a manifest asset the scene
     doesn't carry is auto-registered with brand_guide provenance at the
     compile/preflight chokepoints."""
-    monkeypatch.setattr("lumen_deepagent.tools.CoreClient", FakeCoreClient)
+    monkeypatch.setattr("lumen_pipeline_archive.tools.CoreClient", FakeCoreClient)
     seeded = {
         "meta": {"id": "doc_k2", "title": "Logo ad"},
         "pages": {"page_ad": {"id": "page_ad", "children": ["mark"]}},
@@ -2545,7 +2545,7 @@ def test_d1_swapped_kit_asset_reference_auto_registers(tmp_path: Path, monkeypat
     produces. The K2 auto-register scans image nodes by `kind.asset_id`, so a
     D1-swapped node registers the record with brand_guide provenance at the
     compile/preflight chokepoint, with NO runtime change, idempotently."""
-    monkeypatch.setattr("lumen_deepagent.tools.CoreClient", FakeCoreClient)
+    monkeypatch.setattr("lumen_pipeline_archive.tools.CoreClient", FakeCoreClient)
     seeded = {
         "meta": {"id": "doc_d1", "title": "Swapped hero"},
         "pages": {"page_ad": {"id": "page_ad", "children": ["hero_img"]}},
@@ -2598,7 +2598,7 @@ def test_operations_ledger_carries_asset_tool_ops_for_accept(
     auto-registered logo record vanished at accept (live-proven LUME0211).
     Every applied mutation now lands in operations_ledger.json, tagged with
     its iteration for the keep-best window."""
-    monkeypatch.setattr("lumen_deepagent.tools.CoreClient", FakeCoreClient)
+    monkeypatch.setattr("lumen_pipeline_archive.tools.CoreClient", FakeCoreClient)
     config = _config_with_kit_assets(tmp_path)
     tools = LumenDesignTools(config, "Brand ad")
 
@@ -2619,7 +2619,7 @@ def test_operations_ledger_carries_asset_tool_ops_for_accept(
 def test_use_brand_asset_unknown_id_errors_with_known_inventory(
     tmp_path: Path, monkeypatch
 ):
-    monkeypatch.setattr("lumen_deepagent.tools.CoreClient", FakeCoreClient)
+    monkeypatch.setattr("lumen_pipeline_archive.tools.CoreClient", FakeCoreClient)
     tools = LumenDesignTools(_config_with_kit_assets(tmp_path), "Brand ad")
 
     result = json.loads(
@@ -2643,7 +2643,7 @@ def test_use_brand_asset_unknown_id_errors_with_known_inventory(
 def test_compile_halt_location_is_preserved_as_repair_context(
     tmp_path: Path, monkeypatch
 ):
-    monkeypatch.setattr("lumen_deepagent.tools.CoreClient", FakeHaltedCompileCoreClient)
+    monkeypatch.setattr("lumen_pipeline_archive.tools.CoreClient", FakeHaltedCompileCoreClient)
     tools = LumenDesignTools(runtime_config(tmp_path), "Create a square ad")
 
     compile_result = json.loads(tools.compile_dsl_block("bad dsl"))
@@ -2670,7 +2670,7 @@ def test_preview_validation_rejects_unusable_artifacts():
 
 
 def test_invalid_preview_is_not_exposed_to_critic_payload(tmp_path: Path, monkeypatch):
-    monkeypatch.setattr("lumen_deepagent.tools.CoreClient", FakeInvalidPreviewCoreClient)
+    monkeypatch.setattr("lumen_pipeline_archive.tools.CoreClient", FakeInvalidPreviewCoreClient)
     tools = LumenDesignTools(runtime_config(tmp_path), "Create a square ad")
     tools.compile_dsl_block("page page_test")
 
@@ -2684,7 +2684,7 @@ def test_invalid_preview_is_not_exposed_to_critic_payload(tmp_path: Path, monkey
 
 
 def test_critic_preview_payload_requires_export_first(tmp_path: Path, monkeypatch):
-    monkeypatch.setattr("lumen_deepagent.tools.CoreClient", FakeCoreClient)
+    monkeypatch.setattr("lumen_pipeline_archive.tools.CoreClient", FakeCoreClient)
     tools = LumenDesignTools(runtime_config(tmp_path), "Create a square ad")
 
     payload = json.loads(tools.get_latest_preview_for_critique())
@@ -2696,7 +2696,7 @@ def test_critic_preview_payload_requires_export_first(tmp_path: Path, monkeypatc
 def test_preview_bundle_stores_canonical_svg_and_png_critic_preview(
     tmp_path: Path, monkeypatch
 ):
-    monkeypatch.setattr("lumen_deepagent.tools.CoreClient", FakePngCoreClient)
+    monkeypatch.setattr("lumen_pipeline_archive.tools.CoreClient", FakePngCoreClient)
     config = runtime_config(tmp_path)
     config = AgentRuntimeConfig(
         repo_root=config.repo_root,
@@ -2732,7 +2732,7 @@ def test_coordinator_preview_omits_png_base64_but_keeps_svg_and_dims(
     # coordinator exceeding the provider cap; the coordinator has no vision-block
     # path, so the bytes are pure bloat. The reviewer reviews from svg geometry;
     # the render stays on disk for the offline judge.
-    monkeypatch.setattr("lumen_deepagent.tools.CoreClient", FakePngCoreClient)
+    monkeypatch.setattr("lumen_pipeline_archive.tools.CoreClient", FakePngCoreClient)
     base = runtime_config(tmp_path)
     config = AgentRuntimeConfig(
         repo_root=base.repo_root, model=base.model,
@@ -2764,7 +2764,7 @@ def test_coordinator_preview_omits_png_base64_but_keeps_svg_and_dims(
 def test_debug_preview_bundle_writes_artifacts_without_exposing_critic_payload(
     tmp_path: Path, monkeypatch
 ):
-    monkeypatch.setattr("lumen_deepagent.tools.CoreClient", FakeCoreClient)
+    monkeypatch.setattr("lumen_pipeline_archive.tools.CoreClient", FakeCoreClient)
     config = runtime_config(tmp_path)
     tools = LumenDesignTools(config, "Create a square ad")
     tools.compile_dsl_block("page page_test")
@@ -2785,7 +2785,7 @@ def test_debug_preview_bundle_writes_artifacts_without_exposing_critic_payload(
 
 
 def test_runtime_persists_critique_repair_and_gap_records(tmp_path: Path, monkeypatch):
-    monkeypatch.setattr("lumen_deepagent.tools.CoreClient", FakeCoreClient)
+    monkeypatch.setattr("lumen_pipeline_archive.tools.CoreClient", FakeCoreClient)
     config = runtime_config(tmp_path)
     tools = LumenDesignTools(config, "Create a square ad")
     tools.compile_dsl_block("page page_test")
@@ -2854,7 +2854,7 @@ def test_runtime_persists_critique_repair_and_gap_records(tmp_path: Path, monkey
 
 
 def test_malformed_critique_fails_closed(tmp_path: Path, monkeypatch):
-    monkeypatch.setattr("lumen_deepagent.tools.CoreClient", FakeCoreClient)
+    monkeypatch.setattr("lumen_pipeline_archive.tools.CoreClient", FakeCoreClient)
     config = runtime_config(tmp_path)
     tools = LumenDesignTools(config, "Create a square ad")
 
@@ -2865,7 +2865,7 @@ def test_malformed_critique_fails_closed(tmp_path: Path, monkeypatch):
 
 
 def test_quality_loop_repairs_after_visual_rejection(tmp_path: Path, monkeypatch):
-    monkeypatch.setattr("lumen_deepagent.tools.CoreClient", FakeCoreClient)
+    monkeypatch.setattr("lumen_pipeline_archive.tools.CoreClient", FakeCoreClient)
     config = runtime_config(tmp_path, max_iterations=3)
     tools = LumenDesignTools(config, "Create a square LinkedIn ad")
     author = ScriptedAuthor(["page page_test", "#headline font(Inter,42,700,left)"])
@@ -2935,7 +2935,7 @@ def test_budget_exhaustion_returns_least_severe_draft_not_the_last(
     # error] at 0.90 (its badge landed entirely off-canvas). The old raw-count
     # + raw-confidence tiebreak proposed the later, invisible draft; severity
     # weighting and verdict-signed confidence must both prefer the earlier one.
-    monkeypatch.setattr("lumen_deepagent.tools.CoreClient", SourceEchoCoreClient)
+    monkeypatch.setattr("lumen_pipeline_archive.tools.CoreClient", SourceEchoCoreClient)
     config = runtime_config(tmp_path, max_iterations=2)
     tools = LumenDesignTools(config, "Move the headline to the bottom-left")
     # The repair block must reference the in-scene node: a stray ref would be
@@ -3006,7 +3006,7 @@ def test_budget_exhaustion_returns_least_severe_draft_not_the_last(
 def test_quality_loop_persists_reviewer_failures_as_critic_failed(
     tmp_path: Path, monkeypatch
 ):
-    monkeypatch.setattr("lumen_deepagent.tools.CoreClient", FakeCoreClient)
+    monkeypatch.setattr("lumen_pipeline_archive.tools.CoreClient", FakeCoreClient)
     config = runtime_config(tmp_path, max_iterations=3)
     tools = LumenDesignTools(config, "Create a square LinkedIn ad")
     author = ScriptedAuthor(["page page_test"])
@@ -3026,7 +3026,7 @@ def test_quality_loop_persists_reviewer_failures_as_critic_failed(
 
 
 def test_quality_loop_repairs_after_compile_failure(tmp_path: Path, monkeypatch):
-    monkeypatch.setattr("lumen_deepagent.tools.CoreClient", FakeCompileErrorOnceCoreClient)
+    monkeypatch.setattr("lumen_pipeline_archive.tools.CoreClient", FakeCompileErrorOnceCoreClient)
     config = runtime_config(tmp_path, max_iterations=3)
     tools = LumenDesignTools(config, "Create a square LinkedIn ad")
     author = ScriptedAuthor(["bad dsl", "page page_test"])
@@ -3051,7 +3051,7 @@ def test_quality_loop_repairs_after_compile_failure(tmp_path: Path, monkeypatch)
 def test_duplicate_page_repair_block_is_rejected_before_core_compile(
     tmp_path: Path, monkeypatch
 ):
-    monkeypatch.setattr("lumen_deepagent.tools.CoreClient", FakeCoreClient)
+    monkeypatch.setattr("lumen_pipeline_archive.tools.CoreClient", FakeCoreClient)
     tools = LumenDesignTools(runtime_config(tmp_path), "Create a square LinkedIn ad")
 
     first = json.loads(tools.compile_dsl_block("page page_test"))
@@ -3077,7 +3077,7 @@ def test_duplicate_page_repair_block_is_rejected_before_core_compile(
 
 
 def test_quality_loop_repairs_after_preflight_failure(tmp_path: Path, monkeypatch):
-    monkeypatch.setattr("lumen_deepagent.tools.CoreClient", FakePreflightErrorOnceCoreClient)
+    monkeypatch.setattr("lumen_pipeline_archive.tools.CoreClient", FakePreflightErrorOnceCoreClient)
     config = runtime_config(tmp_path, max_iterations=3)
     tools = LumenDesignTools(config, "Create a square LinkedIn ad")
     # A preflight error on a named node drives a SURGICAL repair: the author must
@@ -3139,7 +3139,7 @@ def test_targeted_overflow_repair_routes_to_structured_ops_despite_font_asset_wa
     # The preflight bundle for a text overflow also carries an unrelated
     # "font asset" warning. The bare word "asset" must NOT route a node-targeted
     # text-fit repair to the asset tool — it routes to structured_ops.
-    monkeypatch.setattr("lumen_deepagent.tools.CoreClient", FakeCoreClient)
+    monkeypatch.setattr("lumen_pipeline_archive.tools.CoreClient", FakeCoreClient)
     tools = LumenDesignTools(runtime_config(tmp_path), "Design an appointment card")
     intent = (
         "repair targeted preflight diagnostics: LUMV0903 on instruction: text node "
@@ -3895,7 +3895,7 @@ def test_layout_cluster_repair_request_carries_cluster_permissions_and_guard(
     tmp_path: Path, monkeypatch
 ):
     monkeypatch.setattr(
-        "lumen_deepagent.tools.CoreClient", FakeLayoutClusterPreflightCoreClient
+        "lumen_pipeline_archive.tools.CoreClient", FakeLayoutClusterPreflightCoreClient
     )
     config = runtime_config(tmp_path, max_iterations=3)
     tools = LumenDesignTools(config, "Create an A4 appointment card")
@@ -3949,7 +3949,7 @@ def test_layout_cluster_repair_request_carries_cluster_permissions_and_guard(
 
 def test_rejected_layout_cluster_repair_does_not_touch_scene(tmp_path: Path, monkeypatch):
     monkeypatch.setattr(
-        "lumen_deepagent.tools.CoreClient", FakeLayoutClusterPreflightCoreClient
+        "lumen_pipeline_archive.tools.CoreClient", FakeLayoutClusterPreflightCoreClient
     )
     config = runtime_config(tmp_path, max_iterations=2)
     tools = LumenDesignTools(config, "Create an A4 appointment card")
@@ -3982,7 +3982,7 @@ def test_partial_layout_cluster_repair_applies_valid_refs_and_skips_strays(
     # and the stray line is skipped, so the iteration makes progress instead of
     # being wasted (the old behavior rejected the whole block before compile).
     monkeypatch.setattr(
-        "lumen_deepagent.tools.CoreClient", FakeLayoutClusterPreflightCoreClient
+        "lumen_pipeline_archive.tools.CoreClient", FakeLayoutClusterPreflightCoreClient
     )
     config = runtime_config(tmp_path, max_iterations=2)
     tools = LumenDesignTools(config, "Create an A4 appointment card")
@@ -4077,7 +4077,7 @@ def test_slot_fixture_repair_permits_slot_modify_lines(tmp_path: Path, monkeypat
     # A slot-subject LUMV0800 routes to a slot_fixture repair; the #slot: fixture
     # edit (which the layout-cluster gate used to ban) is accepted and compiles.
     monkeypatch.setattr(
-        "lumen_deepagent.tools.CoreClient", FakeSlotFixturePreflightCoreClient
+        "lumen_pipeline_archive.tools.CoreClient", FakeSlotFixturePreflightCoreClient
     )
     config = runtime_config(tmp_path, max_iterations=2)
     tools = LumenDesignTools(config, "Create an A4 appointment card")
@@ -4111,7 +4111,7 @@ def test_slot_fixture_repair_rejects_destructive_block(tmp_path: Path, monkeypat
     # The slot_fixture gate is modify-only: a destructive reply (delete + re-page)
     # is rejected before compile, so the scene is never stripped.
     monkeypatch.setattr(
-        "lumen_deepagent.tools.CoreClient", FakeSlotFixturePreflightCoreClient
+        "lumen_pipeline_archive.tools.CoreClient", FakeSlotFixturePreflightCoreClient
     )
     config = runtime_config(tmp_path, max_iterations=2)
     tools = LumenDesignTools(config, "Create an A4 appointment card")
@@ -4145,7 +4145,7 @@ def test_surgical_repair_rejects_destructive_block_without_touching_scene(
     # answers with a destructive re-author (delete + re-page), the loop must
     # REJECT it before compile so the existing design is never stripped.
     monkeypatch.setattr(
-        "lumen_deepagent.tools.CoreClient", FakeAlwaysPreflightErrorCoreClient
+        "lumen_pipeline_archive.tools.CoreClient", FakeAlwaysPreflightErrorCoreClient
     )
     config = runtime_config(tmp_path, max_iterations=3)
     tools = LumenDesignTools(config, "Create a square LinkedIn ad")
@@ -4181,7 +4181,7 @@ def test_surgical_mode_carries_forward_through_compile_error(tmp_path: Path, mon
     # next destructive block is still rejected, even though the compile diagnostic
     # carried no node target.
     monkeypatch.setattr(
-        "lumen_deepagent.tools.CoreClient", FakeSurgicalCarryForwardCoreClient
+        "lumen_pipeline_archive.tools.CoreClient", FakeSurgicalCarryForwardCoreClient
     )
     config = runtime_config(tmp_path, max_iterations=4)
     tools = LumenDesignTools(config, "Create a square LinkedIn ad")
@@ -4222,7 +4222,7 @@ def test_director_structural_rewrite_overrides_stale_surgical_gate(
     # director's authority, rejected every authored rewrite before compile, and
     # spun the loop to max_iterations without ever attempting the structural fix.
     monkeypatch.setattr(
-        "lumen_deepagent.tools.CoreClient", FakeAlwaysPreflightErrorCoreClient
+        "lumen_pipeline_archive.tools.CoreClient", FakeAlwaysPreflightErrorCoreClient
     )
     config = runtime_config(tmp_path, max_iterations=2)
     tools = LumenDesignTools(config, "Create a square LinkedIn ad")
@@ -4275,7 +4275,7 @@ def test_curated_context_stays_bounded_across_iterations(tmp_path: Path, monkeyp
     # to the trace and read back in. The old `full_activity_context` grew ~17x per
     # iteration via recursive self-nesting; this asserts that growth is gone.
     monkeypatch.setattr(
-        "lumen_deepagent.tools.CoreClient", FakeAlwaysPreflightErrorCoreClient
+        "lumen_pipeline_archive.tools.CoreClient", FakeAlwaysPreflightErrorCoreClient
     )
     config = runtime_config(tmp_path, max_iterations=5)
     tools = LumenDesignTools(config, "Create a square LinkedIn ad")
@@ -4316,7 +4316,7 @@ def test_curated_context_stays_bounded_across_iterations(tmp_path: Path, monkeyp
 
 
 def test_quality_loop_stops_before_reviewer_on_invalid_preview(tmp_path: Path, monkeypatch):
-    monkeypatch.setattr("lumen_deepagent.tools.CoreClient", FakeInvalidPreviewCoreClient)
+    monkeypatch.setattr("lumen_pipeline_archive.tools.CoreClient", FakeInvalidPreviewCoreClient)
     config = runtime_config(tmp_path, max_iterations=3)
     tools = LumenDesignTools(config, "Create a square LinkedIn ad")
     author = ScriptedAuthor(["page page_test"])
@@ -4334,7 +4334,7 @@ def test_quality_loop_stops_before_reviewer_on_invalid_preview(tmp_path: Path, m
 def test_quality_loop_rejects_square_request_with_non_square_preview(
     tmp_path: Path, monkeypatch
 ):
-    monkeypatch.setattr("lumen_deepagent.tools.CoreClient", FakeNonSquareCoreClient)
+    monkeypatch.setattr("lumen_pipeline_archive.tools.CoreClient", FakeNonSquareCoreClient)
     config = runtime_config(tmp_path, max_iterations=3)
     tools = LumenDesignTools(config, "Create a 1:1 LinkedIn ad")
     author = ScriptedAuthor(["page page_test"])
@@ -4351,7 +4351,7 @@ def test_quality_loop_rejects_square_request_with_non_square_preview(
 
 
 def test_quality_loop_records_max_iteration_stop(tmp_path: Path, monkeypatch):
-    monkeypatch.setattr("lumen_deepagent.tools.CoreClient", FakeCoreClient)
+    monkeypatch.setattr("lumen_pipeline_archive.tools.CoreClient", FakeCoreClient)
     config = runtime_config(tmp_path, max_iterations=1)
     tools = LumenDesignTools(config, "Create a square LinkedIn ad")
     author = ScriptedAuthor(["page page_test"])
@@ -4389,7 +4389,7 @@ def test_identical_repeat_block_is_skipped_and_escalated(
     # budget with zero information gain. An identical block cannot change the
     # outcome, so the loop must skip the wasted compile/review, escalate the
     # standing feedback, and hand the NEXT attempt the strengthened instruction.
-    monkeypatch.setattr("lumen_deepagent.tools.CoreClient", FakeCoreClient)
+    monkeypatch.setattr("lumen_pipeline_archive.tools.CoreClient", FakeCoreClient)
     config = runtime_config(tmp_path, max_iterations=4)
     tools = LumenDesignTools(config, "Create a square LinkedIn ad")
     rejected_critique = VisualCritique(
@@ -4488,7 +4488,7 @@ def test_repeated_same_code_halt_pins_ref_grammar_escalation(
     # applied ops. On the second consecutive halt with the same code the loop
     # must pin the ref-grammar excerpt into the next author request.
     monkeypatch.setattr(
-        "lumen_deepagent.tools.CoreClient", FakeSameHaltTwiceCoreClient
+        "lumen_pipeline_archive.tools.CoreClient", FakeSameHaltTwiceCoreClient
     )
     config = runtime_config(tmp_path, max_iterations=3)
     tools = LumenDesignTools(config, "Edit the headline")
@@ -4575,7 +4575,7 @@ def test_failed_run_restores_best_compiled_scene_for_canvas_draft(
     scene so the editor renders it as a draft instead of an empty canvas (the
     `draft_scene` the API surfaces is `tools.scene`)."""
     monkeypatch.setattr(
-        "lumen_deepagent.tools.CoreClient", FakeDestructiveRepairCoreClient
+        "lumen_pipeline_archive.tools.CoreClient", FakeDestructiveRepairCoreClient
     )
     config = runtime_config(tmp_path, max_iterations=2)
     tools = LumenDesignTools(config, "Create a square LinkedIn ad")
@@ -4610,7 +4610,7 @@ def test_failed_run_restores_best_compiled_scene_for_canvas_draft(
 def test_brand_fit_critique_blocks_acceptance_and_drives_repair(
     tmp_path: Path, monkeypatch
 ):
-    monkeypatch.setattr("lumen_deepagent.tools.CoreClient", FakeCoreClient)
+    monkeypatch.setattr("lumen_pipeline_archive.tools.CoreClient", FakeCoreClient)
     config = runtime_config(tmp_path, max_iterations=2)
     tools = LumenDesignTools(config, "Create a brand-aligned LinkedIn ad")
     author = ScriptedAuthor(["page page_test", "headline text \"Branded repair\""])
@@ -4869,7 +4869,7 @@ def test_provider_preview_payload_omits_base64_from_text_and_emits_image_block()
     reason="live provider smoke requires LUMEN_AGENT_RUN_LIVE=1 and LUMEN_AGENT_API_KEY (OpenRouter)",
 )
 def test_live_provider_quality_loop_smoke(tmp_path: Path):
-    from lumen_deepagent.providers import create_provider_quality_loop
+    from lumen_pipeline_archive.providers import create_provider_quality_loop
 
     config = AgentRuntimeConfig.from_env(Path(__file__).resolve().parents[3])
     loop, _tools = create_provider_quality_loop(
@@ -4884,7 +4884,7 @@ def test_live_provider_quality_loop_smoke(tmp_path: Path):
 def test_generate_qr_tool_registers_asset_and_traces_provenance(
     tmp_path: Path, monkeypatch
 ):
-    monkeypatch.setattr("lumen_deepagent.tools.CoreClient", FakeCoreClient)
+    monkeypatch.setattr("lumen_pipeline_archive.tools.CoreClient", FakeCoreClient)
     tools = LumenDesignTools(runtime_config(tmp_path), "Create a mailer")
 
     result = json.loads(
@@ -4922,7 +4922,7 @@ def test_generate_qr_tool_registers_asset_and_traces_provenance(
 def test_generate_image_uses_configured_model_and_upserts_generated_asset(
     tmp_path: Path, monkeypatch
 ):
-    monkeypatch.setattr("lumen_deepagent.tools.CoreClient", FakeCoreClient)
+    monkeypatch.setattr("lumen_pipeline_archive.tools.CoreClient", FakeCoreClient)
     captured: dict = {}
 
     def fake_generate(**kwargs):
@@ -4936,7 +4936,7 @@ def test_generate_image_uses_configured_model_and_upserts_generated_asset(
         )
 
     stub = types.SimpleNamespace(is_configured=lambda: True, generate=fake_generate)
-    monkeypatch.setattr("lumen_deepagent.tools.image_provider", stub)
+    monkeypatch.setattr("lumen_pipeline_archive.tools.image_provider", stub)
 
     tools = LumenDesignTools(runtime_config(tmp_path), "Create a clinic ad")
     result = json.loads(
@@ -4964,13 +4964,13 @@ def test_generate_image_uses_configured_model_and_upserts_generated_asset(
 def test_generate_image_falls_back_to_placeholder_when_model_unconfigured(
     tmp_path: Path, monkeypatch
 ):
-    monkeypatch.setattr("lumen_deepagent.tools.CoreClient", FakeCoreClient)
+    monkeypatch.setattr("lumen_pipeline_archive.tools.CoreClient", FakeCoreClient)
 
     def fail_generate(**kwargs):  # must not be called when unconfigured
         raise AssertionError("model should not be called when unconfigured")
 
     stub = types.SimpleNamespace(is_configured=lambda: False, generate=fail_generate)
-    monkeypatch.setattr("lumen_deepagent.tools.image_provider", stub)
+    monkeypatch.setattr("lumen_pipeline_archive.tools.image_provider", stub)
 
     tools = LumenDesignTools(runtime_config(tmp_path), "Create a poster")
     result = json.loads(tools.generate_image("a serene mountain lake at dawn"))
@@ -4984,9 +4984,9 @@ def test_generate_image_falls_back_to_placeholder_when_model_unconfigured(
 
 
 def test_generate_image_derives_aspect_from_target_node(tmp_path: Path, monkeypatch):
-    monkeypatch.setattr("lumen_deepagent.tools.CoreClient", FakeCoreClient)
+    monkeypatch.setattr("lumen_pipeline_archive.tools.CoreClient", FakeCoreClient)
     stub = types.SimpleNamespace(is_configured=lambda: False, generate=lambda **k: None)
-    monkeypatch.setattr("lumen_deepagent.tools.image_provider", stub)
+    monkeypatch.setattr("lumen_pipeline_archive.tools.image_provider", stub)
 
     tools = LumenDesignTools(runtime_config(tmp_path), "Create a landscape hero")
     tools.scene["nodes"]["hero"] = {
@@ -5012,7 +5012,7 @@ def test_generate_image_survives_pageless_scene_and_guides_retry(
     # the tool and kill the whole run; now the tool returns a graceful error payload
     # that tells the coordinator to author the page and retry (cache makes it free).
     monkeypatch.setattr(
-        "lumen_deepagent.tools.CoreClient", FakePagelessUpsertCoreClient
+        "lumen_pipeline_archive.tools.CoreClient", FakePagelessUpsertCoreClient
     )
     tools = LumenDesignTools(runtime_config(tmp_path), "Create a social ad")
 
@@ -5034,7 +5034,7 @@ def test_generate_qr_survives_pageless_scene_and_guides_retry(
     tmp_path: Path, monkeypatch
 ):
     monkeypatch.setattr(
-        "lumen_deepagent.tools.CoreClient", FakePagelessUpsertCoreClient
+        "lumen_pipeline_archive.tools.CoreClient", FakePagelessUpsertCoreClient
     )
     tools = LumenDesignTools(runtime_config(tmp_path), "Create a mailer")
 
@@ -5055,7 +5055,7 @@ def test_generate_qr_survives_pageless_scene_and_guides_retry(
 def test_generate_image_caches_identical_model_requests(tmp_path: Path, monkeypatch):
     # Step 6: across loop iterations the same hero is requested repeatedly; the
     # cache re-uses the asset instead of re-paying the model.
-    monkeypatch.setattr("lumen_deepagent.tools.CoreClient", FakeCoreClient)
+    monkeypatch.setattr("lumen_pipeline_archive.tools.CoreClient", FakeCoreClient)
     calls = {"n": 0}
 
     def fake_generate(**kwargs):
@@ -5073,7 +5073,7 @@ def test_generate_image_caches_identical_model_requests(tmp_path: Path, monkeypa
         generate=fake_generate,
         configured_model_id=lambda: "test/image-model",
     )
-    monkeypatch.setattr("lumen_deepagent.tools.image_provider", stub)
+    monkeypatch.setattr("lumen_pipeline_archive.tools.image_provider", stub)
 
     tools = LumenDesignTools(runtime_config(tmp_path), "Create a clinic ad")
 
@@ -5091,7 +5091,7 @@ def test_generate_image_caches_identical_model_requests(tmp_path: Path, monkeypa
 
 
 def test_place_asset_in_node_emits_reversible_placement_op(tmp_path: Path, monkeypatch):
-    monkeypatch.setattr("lumen_deepagent.tools.CoreClient", FakeCoreClient)
+    monkeypatch.setattr("lumen_pipeline_archive.tools.CoreClient", FakeCoreClient)
     tools = LumenDesignTools(runtime_config(tmp_path), "Place a hero image")
 
     result = json.loads(
@@ -5113,7 +5113,7 @@ def test_place_asset_in_node_emits_reversible_placement_op(tmp_path: Path, monke
 
 
 def test_place_asset_in_slot_targets_the_slot(tmp_path: Path, monkeypatch):
-    monkeypatch.setattr("lumen_deepagent.tools.CoreClient", FakeCoreClient)
+    monkeypatch.setattr("lumen_pipeline_archive.tools.CoreClient", FakeCoreClient)
     tools = LumenDesignTools(runtime_config(tmp_path), "Place into a slot")
 
     result = json.loads(tools.place_asset_in_slot("slot_campaign_hero_image", "asset_img_abc"))
@@ -5132,9 +5132,9 @@ def test_asset_dispatcher_routes_actions_and_preserves_place_kinds(
     # Group B: the single `asset` tool fans out to generate_image / generate_qr / place,
     # and `place` MUST preserve the two distinct core op kinds (node vs slot) — the
     # critic-flagged invariant.
-    monkeypatch.setattr("lumen_deepagent.tools.CoreClient", FakeCoreClient)
+    monkeypatch.setattr("lumen_pipeline_archive.tools.CoreClient", FakeCoreClient)
     stub = types.SimpleNamespace(is_configured=lambda: False, generate=lambda **k: None)
-    monkeypatch.setattr("lumen_deepagent.tools.image_provider", stub)
+    monkeypatch.setattr("lumen_pipeline_archive.tools.image_provider", stub)
     tools = LumenDesignTools(runtime_config(tmp_path), "Create an ad with imagery")
 
     img = json.loads(tools.asset(action="generate_image", prompt="a serene mountain lake at dawn"))
@@ -5226,11 +5226,11 @@ def _edit_stub(monkeypatch, calls: dict):
         edit=fake_edit,
         configured_model_id=lambda: "test/image-model",
     )
-    monkeypatch.setattr("lumen_deepagent.tools.image_provider", stub)
+    monkeypatch.setattr("lumen_pipeline_archive.tools.image_provider", stub)
 
 
 def test_edit_image_edits_source_and_replaces_node_preserving_placement(tmp_path: Path, monkeypatch):
-    monkeypatch.setattr("lumen_deepagent.tools.CoreClient", FakeCoreClient)
+    monkeypatch.setattr("lumen_pipeline_archive.tools.CoreClient", FakeCoreClient)
     config = runtime_config(tmp_path)
     scene, source_digest = _seed_edit_scene(config.effective_asset_store_root)
     calls: dict = {}
@@ -5258,7 +5258,7 @@ def test_edit_image_edits_source_and_replaces_node_preserving_placement(tmp_path
 
 
 def test_edit_image_caches_identical_source_and_prompt(tmp_path: Path, monkeypatch):
-    monkeypatch.setattr("lumen_deepagent.tools.CoreClient", FakeCoreClient)
+    monkeypatch.setattr("lumen_pipeline_archive.tools.CoreClient", FakeCoreClient)
     config = runtime_config(tmp_path)
     scene, _ = _seed_edit_scene(config.effective_asset_store_root)
     calls: dict = {}
@@ -5277,7 +5277,7 @@ def test_edit_image_caches_identical_source_and_prompt(tmp_path: Path, monkeypat
 
 
 def test_edit_image_passes_remove_background_as_transparent(tmp_path: Path, monkeypatch):
-    monkeypatch.setattr("lumen_deepagent.tools.CoreClient", FakeCoreClient)
+    monkeypatch.setattr("lumen_pipeline_archive.tools.CoreClient", FakeCoreClient)
     config = runtime_config(tmp_path)
     scene, _ = _seed_edit_scene(config.effective_asset_store_root)
     calls: dict = {}
@@ -5290,7 +5290,7 @@ def test_edit_image_passes_remove_background_as_transparent(tmp_path: Path, monk
 
 
 def test_edit_image_graceful_error_on_non_image_node(tmp_path: Path, monkeypatch):
-    monkeypatch.setattr("lumen_deepagent.tools.CoreClient", FakeCoreClient)
+    monkeypatch.setattr("lumen_pipeline_archive.tools.CoreClient", FakeCoreClient)
     config = runtime_config(tmp_path)
     calls: dict = {}
     _edit_stub(monkeypatch, calls)
@@ -5313,7 +5313,7 @@ def test_edit_image_graceful_error_on_non_image_node(tmp_path: Path, monkeypatch
 
 
 def test_asset_dispatcher_accepts_edit_image(tmp_path: Path, monkeypatch):
-    monkeypatch.setattr("lumen_deepagent.tools.CoreClient", FakeCoreClient)
+    monkeypatch.setattr("lumen_pipeline_archive.tools.CoreClient", FakeCoreClient)
     config = runtime_config(tmp_path)
     scene, _ = _seed_edit_scene(config.effective_asset_store_root)
     calls: dict = {}
@@ -5334,7 +5334,7 @@ def test_asset_dispatcher_accepts_edit_image(tmp_path: Path, monkeypatch):
 def test_verify_imagery_det_only_without_key_and_vision_with_key(tmp_path: Path, monkeypatch):
     from dataclasses import replace
 
-    monkeypatch.setattr("lumen_deepagent.tools.CoreClient", FakeCoreClient)
+    monkeypatch.setattr("lumen_pipeline_archive.tools.CoreClient", FakeCoreClient)
     config = runtime_config(tmp_path)
     scene, _ = _seed_edit_scene(config.effective_asset_store_root)
 
@@ -5354,14 +5354,14 @@ def test_verify_imagery_det_only_without_key_and_vision_with_key(tmp_path: Path,
     png.write_bytes(b"\x89PNG rendered")
     fake_model = _FakeJudgeModel(_perfect_verdict())
 
-    from lumen_deepagent import imagery_judge as ij_mod
+    from lumen_pipeline_archive import imagery_judge as ij_mod
 
     real_judge = ij_mod.judge_imagery  # capture BEFORE patching to avoid recursion
 
     def judge_with_fake_model(scene, png_arg, brief, *, model=None, config=None):
         return real_judge(scene, png_arg, brief, model=fake_model)
 
-    monkeypatch.setattr("lumen_deepagent.imagery_judge.judge_imagery", judge_with_fake_model)
+    monkeypatch.setattr("lumen_pipeline_archive.imagery_judge.judge_imagery", judge_with_fake_model)
     keyed = json.loads(tools2.verify_imagery(expected_decision="photo", png_path=str(png)))
     assert keyed["status"] == "ok"
     assert keyed["judge_ran"] is True
@@ -5371,7 +5371,7 @@ def test_verify_imagery_det_only_without_key_and_vision_with_key(tmp_path: Path,
 def test_get_preview_for_review_appends_imagery_verdict_only_when_imagery_present(
     tmp_path: Path, monkeypatch
 ):
-    monkeypatch.setattr("lumen_deepagent.tools.CoreClient", FakeCoreClient)
+    monkeypatch.setattr("lumen_pipeline_archive.tools.CoreClient", FakeCoreClient)
     config = runtime_config(tmp_path)
     scene, _ = _seed_edit_scene(config.effective_asset_store_root)
     tools = LumenDesignTools(config, "Preview with imagery", initial_scene=scene)
@@ -5403,8 +5403,8 @@ def test_get_preview_for_review_appends_imagery_verdict_only_when_imagery_presen
 
 
 def test_loop_executes_one_imagery_repair_then_never_again(tmp_path: Path, monkeypatch):
-    from lumen_deepagent.loop import LumenQualityLoop
-    from lumen_deepagent.schemas import (
+    from lumen_pipeline_archive.loop import LumenQualityLoop
+    from lumen_pipeline_archive.schemas import (
         CritiqueCategory,
         DiagnosticSeverity,
         VisualCritique,
@@ -5412,7 +5412,7 @@ def test_loop_executes_one_imagery_repair_then_never_again(tmp_path: Path, monke
         VisualTarget,
     )
 
-    monkeypatch.setattr("lumen_deepagent.tools.CoreClient", FakeCoreClient)
+    monkeypatch.setattr("lumen_pipeline_archive.tools.CoreClient", FakeCoreClient)
     config = runtime_config(tmp_path)
     scene, _ = _seed_edit_scene(config.effective_asset_store_root)
     calls: dict = {}
@@ -5447,8 +5447,8 @@ def test_loop_executes_one_imagery_repair_then_never_again(tmp_path: Path, monke
 
 
 def test_loop_imagery_repair_skips_typographic_and_library_critiques(tmp_path: Path, monkeypatch):
-    from lumen_deepagent.loop import LumenQualityLoop
-    from lumen_deepagent.schemas import (
+    from lumen_pipeline_archive.loop import LumenQualityLoop
+    from lumen_pipeline_archive.schemas import (
         CritiqueCategory,
         DiagnosticSeverity,
         VisualCritique,
@@ -5456,7 +5456,7 @@ def test_loop_imagery_repair_skips_typographic_and_library_critiques(tmp_path: P
         VisualTarget,
     )
 
-    monkeypatch.setattr("lumen_deepagent.tools.CoreClient", FakeCoreClient)
+    monkeypatch.setattr("lumen_pipeline_archive.tools.CoreClient", FakeCoreClient)
     config = runtime_config(tmp_path)
     scene, _ = _seed_edit_scene(config.effective_asset_store_root)
     calls: dict = {}
@@ -5492,7 +5492,7 @@ def test_loop_imagery_repair_skips_typographic_and_library_critiques(tmp_path: P
 def test_inspect_dispatcher_routes_all_views(tmp_path: Path, monkeypatch):
     # Group A: the single `inspect` tool returns exactly what the former
     # summarize_*/query_* singletons returned, for every view.
-    monkeypatch.setattr("lumen_deepagent.tools.CoreClient", FakeCoreClient)
+    monkeypatch.setattr("lumen_pipeline_archive.tools.CoreClient", FakeCoreClient)
     tools = LumenDesignTools(runtime_config(tmp_path), "Inspect a scene")
     tools.compile_dsl_block("page page_test")
 
@@ -5530,7 +5530,7 @@ def test_critic_preview_export_passes_asset_store_root(tmp_path: Path, monkeypat
                 scene, export_format, page_ids, asset_store_root=asset_store_root
             )
 
-    monkeypatch.setattr("lumen_deepagent.tools.CoreClient", RecordingCoreClient)
+    monkeypatch.setattr("lumen_pipeline_archive.tools.CoreClient", RecordingCoreClient)
     tools = LumenDesignTools(runtime_config(tmp_path), "Create a square ad")
     tools.compile_dsl_block('page page_test\n  headline text "Plan" p(24,24) s(400,hug)')
     tools.export_preview()
@@ -5612,9 +5612,9 @@ def test_forced_logo_round_fires_once_when_kit_logo_missing(tmp_path: Path, monk
     """K4 logo-adoption gate: an acceptance over a logo-less scene on a kit
     that PROVIDES logos yields exactly ONE placement round (measured 5/10
     adoption in the sweep); a scene that places a kit logo never trips it."""
-    from lumen_deepagent.loop import LumenQualityLoop  # local import: heavy module
+    from lumen_pipeline_archive.loop import LumenQualityLoop  # local import: heavy module
 
-    monkeypatch.setattr("lumen_deepagent.tools.CoreClient", FakeCoreClient)
+    monkeypatch.setattr("lumen_pipeline_archive.tools.CoreClient", FakeCoreClient)
     kit = _insight_kit()
     kit.setdefault("assets", {})["logos"] = {
         "mark": {"variants": [{"asset_id": "asset_kit_mark", "name": "full_color"}]}
@@ -5756,7 +5756,7 @@ def test_contact_sheet_caps_orders_skips_and_carries_only_paths(tmp_path: Path, 
     """D1: curated_context carries <=6 entries, logos first, described images before
     undescribed, the SVG-without-preview skipped and counted in `_omitted`, every
     preview_path exists on disk, and no entry carries base64."""
-    monkeypatch.setattr("lumen_deepagent.tools.CoreClient", FakeCoreClient)
+    monkeypatch.setattr("lumen_pipeline_archive.tools.CoreClient", FakeCoreClient)
     store_root = tmp_path / "store"
     manifest = _mixed_kit_manifest(store_root)
     tools = LumenDesignTools(_config_with_manifest(tmp_path, manifest), "Design an ad")
@@ -5794,7 +5794,7 @@ def test_contact_sheet_caps_orders_skips_and_carries_only_paths(tmp_path: Path, 
 
 def test_contact_sheet_absent_without_manifest(tmp_path: Path, monkeypatch):
     """D1: no manifest → no contact-sheet key at all (Director just gets the preview)."""
-    monkeypatch.setattr("lumen_deepagent.tools.CoreClient", FakeCoreClient)
+    monkeypatch.setattr("lumen_pipeline_archive.tools.CoreClient", FakeCoreClient)
     tools = LumenDesignTools(runtime_config(tmp_path), "Design an ad")
     context = tools.curated_context(
         user_request="Design an ad", previous_feedback=[], director_decisions=[]
@@ -5833,7 +5833,7 @@ def test_image_blocks_from_context_appends_asset_blocks_in_order(tmp_path: Path)
 def test_placed_brand_asset_previews_only_kit_assets_capped(tmp_path: Path, monkeypatch):
     """D3: the reviewer payload's placed_brand_asset_previews contains exactly the kit
     assets the scene placed (not non-kit imagery), capped, with no base64."""
-    monkeypatch.setattr("lumen_deepagent.tools.CoreClient", FakePngCoreClient)
+    monkeypatch.setattr("lumen_pipeline_archive.tools.CoreClient", FakePngCoreClient)
     store_root = tmp_path / "store"
     manifest = _mixed_kit_manifest(store_root)
     scene = {
@@ -5880,7 +5880,7 @@ def _critic_preview_loaded_payload(tools) -> dict:
 def test_critic_preview_loaded_records_zero_placed_previews(tmp_path: Path, monkeypatch):
     """D3: a run that placed no kit assets records placed_brand_asset_previews == 0
     on the critic_preview_loaded trace event."""
-    monkeypatch.setattr("lumen_deepagent.tools.CoreClient", FakeCoreClient)
+    monkeypatch.setattr("lumen_pipeline_archive.tools.CoreClient", FakeCoreClient)
     tools = LumenDesignTools(runtime_config(tmp_path), "Create a square ad")
     tools.compile_dsl_block("page page_test")
     tools.export_preview()
@@ -5893,7 +5893,7 @@ def test_critic_preview_loaded_records_zero_placed_previews(tmp_path: Path, monk
 def test_critic_preview_loaded_records_placed_preview_count(tmp_path: Path, monkeypatch):
     """D3: a scene that places manifest assets with real preview files records the
     count of source thumbnails carried to the reviewer on critic_preview_loaded."""
-    monkeypatch.setattr("lumen_deepagent.tools.CoreClient", FakeCoreClient)
+    monkeypatch.setattr("lumen_pipeline_archive.tools.CoreClient", FakeCoreClient)
     store_root = tmp_path / "store"
     manifest = _mixed_kit_manifest(store_root)
     scene = {
@@ -5964,7 +5964,7 @@ def test_director_prompt_and_user_text_mention_the_contact_sheet():
     assert "brand_asset_contact_sheet" in DIRECTOR_SYSTEM_PROMPT
     assert "LOOKING" in DIRECTOR_SYSTEM_PROMPT
 
-    from lumen_deepagent.providers import LangChainAgentDirector
+    from lumen_pipeline_archive.providers import LangChainAgentDirector
 
     director = LangChainAgentDirector.__new__(LangChainAgentDirector)
     # Build only the user_content the way decide() does, without a model.
@@ -6002,7 +6002,7 @@ class _FakeModelsResponse:
 
 
 def _reset_image_support_cache():
-    from lumen_deepagent import providers
+    from lumen_pipeline_archive import providers
 
     providers._IMAGE_INPUT_SUPPORT_CACHE.clear()
 
@@ -6170,7 +6170,7 @@ def test_author_image_blocks_exclude_the_contact_sheet(tmp_path: Path):
     references in DSL) but not its image payload — the sheet's pixels are the
     Director's judgment input, and the author call is the loop's longest-context
     one (the K1 blow-up lesson)."""
-    from lumen_deepagent.providers import image_blocks_from_context
+    from lumen_pipeline_archive.providers import image_blocks_from_context
 
     preview = tmp_path / "preview.png"
     preview.write_bytes(b"preview-bytes")

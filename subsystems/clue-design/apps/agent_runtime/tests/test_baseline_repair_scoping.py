@@ -21,12 +21,12 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from lumen_deepagent.loop import LumenQualityLoop
-from lumen_deepagent.prompts import SEEDED_CONTINUATION_RECIPE
-from lumen_deepagent.schemas import VisualCritique
-from lumen_deepagent.tools import LumenDesignTools
+from lumen_pipeline_archive.loop import LumenQualityLoop
+from lumen_pipeline_archive.prompts import SEEDED_CONTINUATION_RECIPE
+from lumen_pipeline_archive.schemas import VisualCritique
+from lumen_pipeline_archive.tools import LumenDesignTools
 
-from test_lumen_deepagent_runtime import FakeCoreClient, ScriptedAuthor, ScriptedReviewer, runtime_config
+from test_lumen_pipeline_archive_runtime import FakeCoreClient, ScriptedAuthor, ScriptedReviewer, runtime_config
 from test_seeded_continuation import freehand_seed_scene, seed_scene_dict, trace_events
 
 
@@ -121,7 +121,7 @@ def test_baseline_error_present_and_turn_introduces_none_converges_on_iteration_
     iteration 1 as CLEAN (the baseline error is advisory, never blocking) and
     reach acceptance without spending a single repair iteration on it."""
     monkeypatch.setattr(
-        "lumen_deepagent.tools.CoreClient", FakeBaselineErrorPreflightCoreClient
+        "lumen_pipeline_archive.tools.CoreClient", FakeBaselineErrorPreflightCoreClient
     )
     config = runtime_config(tmp_path, max_iterations=3)
     tools = LumenDesignTools(
@@ -154,7 +154,7 @@ def test_turn_introduced_error_still_blocks_and_repairs(tmp_path: Path, monkeypa
     introduces must still gate the draft and drive a real repair — baseline
     scoping must not become a blanket amnesty for every error."""
     monkeypatch.setattr(
-        "lumen_deepagent.tools.CoreClient", FakeBaselineErrorPlusIntroducedCoreClient
+        "lumen_pipeline_archive.tools.CoreClient", FakeBaselineErrorPlusIntroducedCoreClient
     )
     config = runtime_config(tmp_path, max_iterations=3)
     tools = LumenDesignTools(
@@ -191,7 +191,7 @@ def test_unseeded_run_has_no_baseline_to_scope_against(tmp_path: Path, monkeypat
     must be a no-op (empty set, no extra preflight call at all) and every
     diagnostic on iteration 1 is, by definition, introduced."""
     monkeypatch.setattr(
-        "lumen_deepagent.tools.CoreClient", FakeBaselineErrorPreflightCoreClient
+        "lumen_pipeline_archive.tools.CoreClient", FakeBaselineErrorPreflightCoreClient
     )
     config = runtime_config(tmp_path, max_iterations=3)
     tools = LumenDesignTools(config, "Create a square ad")
@@ -216,7 +216,7 @@ def test_input_json_scene_summary_includes_freehand_block(tmp_path: Path, monkey
     construction, before any iteration runs) must carry the same freehand
     block (`free_containers` / `pinned_nodes` / note) that repair requests
     already see — reusing `_scene_summary()`, not a fork of it."""
-    monkeypatch.setattr("lumen_deepagent.tools.CoreClient", FakeCoreClient)
+    monkeypatch.setattr("lumen_pipeline_archive.tools.CoreClient", FakeCoreClient)
     tools = LumenDesignTools(
         runtime_config(tmp_path), "edit", initial_scene=freehand_seed_scene()
     )
@@ -230,7 +230,7 @@ def test_input_json_scene_summary_includes_freehand_block(tmp_path: Path, monkey
 
 
 def test_input_json_scene_summary_omits_freehand_when_none(tmp_path: Path, monkeypatch):
-    monkeypatch.setattr("lumen_deepagent.tools.CoreClient", FakeCoreClient)
+    monkeypatch.setattr("lumen_pipeline_archive.tools.CoreClient", FakeCoreClient)
     tools = LumenDesignTools(
         runtime_config(tmp_path), "edit", initial_scene=seed_scene_dict()
     )

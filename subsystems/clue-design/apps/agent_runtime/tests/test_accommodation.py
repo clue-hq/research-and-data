@@ -24,7 +24,7 @@ from __future__ import annotations
 
 from typing import Dict
 
-from lumen_deepagent.accommodation import (
+from lumen_pipeline_archive.accommodation import (
     CONFLICT_CLEARANCE_THRESHOLD,
     clearance,
     page_space_box,

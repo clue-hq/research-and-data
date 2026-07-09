@@ -1,6 +1,6 @@
 """K4 retokenization: deterministic literal→token binding on agent drafts."""
 
-from lumen_deepagent.retokenize import build_retokenize_operations
+from lumen_pipeline_archive.retokenize import build_retokenize_operations
 
 
 def _kit() -> dict:
@@ -152,7 +152,7 @@ def test_already_bound_nodes_are_left_alone() -> None:
 
 
 def test_logo_placement_inserts_page_overlay_when_kit_logo_missing() -> None:
-    from lumen_deepagent.retokenize import build_logo_placement_operations
+    from lumen_pipeline_archive.retokenize import build_logo_placement_operations
 
     kit = _kit()
     kit["assets"]["logos"] = {

@@ -53,6 +53,7 @@ stays in the codebase untouched (see D7).
 | D9 | **Author gets `view`** (brand-kit asset previews + draft preview), same as orchestrator and reviewer. Pull-based; its resource map notes that images cost context — view what the task needs | 2026-07-09 |
 | M5 | Cost/latency per turn is NOT a design constraint (user) | 2026-07-09 |
 | M6 | Acceptance eval: the moda probe scenarios (P1 ellipse-logo, P2 deletion, P3 delete+add) + the K4 brand-fidelity eval, run against the old loop as baseline | 2026-07-09 |
+| M8 | **Repository layout (reorg, user-directed)**: `apps/agent_runtime/lumen_agent/` is the LIVING deepagent package — `harness.py` (assembly+runner), `prompts.py`, `llm.py`, `workspace.py`, `config.py`, `models/` (state.py, schemas.py), `tools/` (substrate.py, view.py, render.py), plus copied support modules (brand_card, knowledge, retokenize, imagery_checks, imagery_judge). `apps/agent_runtime/lumen_pipeline_archive/` is the FROZEN old pipeline (renamed from `lumen_deepagent/`; see its README). **lumen_agent imports NOTHING from the archive — shared components are copies; fixes land in lumen_agent only.** Test fixtures for the living world: `tests/agent_fixtures.py` | 2026-07-09 |
 
 ### DECIDED 2026-07-09 (ratified by user; D7 amended)
 

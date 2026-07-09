@@ -1,0 +1,84 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+from pathlib import Path
+
+from py_lumen_config import settings
+
+
+@dataclass(frozen=True)
+class AgentRuntimeConfig:
+    repo_root: Path
+    model: str
+    max_iterations: int
+    preview_format: str
+    trace_dir: Path
+    asset_store_root: Path | None = None
+    # Agent LLM service. OpenRouter is the SOLE gateway for every LLM call — there
+    # is no native-provider fallback. `agent_base_url` defaults to the OpenRouter API
+    # and `model` must be an "openai:<openrouter-model-id>" value; `agent_api_key`
+    # (the OpenRouter key) is required. init_model enforces this and errors if either
+    # the creds or the "openai:" prefix is missing.
+    agent_base_url: str | None = "https://openrouter.ai/api/v1"
+    agent_api_key: str | None = None
+    # Brand Kit application (K0): the full kit JSON this run designs against,
+    # passed BY VALUE — the runtime never reads the API database. The API's
+    # agent-turn path resolves the document's attached kit; the CLI accepts
+    # --brand-kit-file. None → the platform default kit, exactly as before.
+    # `brand_kit_source` is the provenance label for the effective-brand trace
+    # ("document", "file", …).
+    brand_kit: dict | None = None
+    brand_kit_source: str | None = None
+    # K2: the kit-asset MANIFEST — {asset_id: {"record": <engine asset record>,
+    # "title"/"description"/"usage": str|None}} for the kit's logo variants and
+    # brand images, resolved by the API from its asset library and passed BY
+    # VALUE (same rule as brand_kit: the runtime never reads the API database).
+    # The records were engine-built at ingestion time; `use_brand_asset`
+    # upserts them into the scene verbatim (same id — brand governance matches
+    # logo nodes by asset id) with provenance rewritten to brand_guide. None or
+    # empty → the kit has no placeable assets (e.g. styles-compiled kits).
+    brand_kit_assets: dict | None = None
+    # K3: the kit FONT SPEC — {"store_root": str, "digests": [sha256...]} for
+    # the kit's font faces, resolved by the API from its asset library and
+    # passed BY VALUE. The core helper reads the bytes from the shared store
+    # and shapes text in the kit's real faces during preflight measurement
+    # and preview export. None → bundled fonts only (Inter fallback).
+    brand_fonts: dict | None = None
+    # Slice 2.5: the node ids the human explicitly chipped as this turn's edit
+    # targets, passed BY VALUE from the editor payload (same rule as brand_kit:
+    # the runtime never reads the API database). Edit-scoped acceptance treats
+    # blocking critique on these nodes as always in scope, and refuses the
+    # edit-scoped shortcut when the applied ops touched none of them — the
+    # measured P1r2/P5r2 failure was the agent editing an unrelated node while
+    # the reviewer's blocker on the requested target was "out of scope" by
+    # construction. None/empty → no declared targets, behavior unchanged.
+    turn_target_node_ids: list[str] | None = None
+    # OpenRouter unified reasoning effort ("low" | "medium" | "high") applied to
+    # every deep-agent LLM call via the one gateway constructor (init_model).
+    # None → the request carries no reasoning field (provider default, i.e.
+    # no extended thinking). One mechanism for all models — never a per-vendor
+    # special case.
+    agent_reasoning: str | None = None
+
+    @classmethod
+    def from_env(cls, repo_root: Path | None = None) -> "AgentRuntimeConfig":
+        root = repo_root or Path(__file__).resolve().parents[3]
+        return cls(
+            repo_root=root,
+            model=settings.lumen_agent_model,
+            max_iterations=settings.lumen_agent_max_iterations,
+            preview_format=settings.lumen_agent_preview_format,
+            trace_dir=settings.lumen_agent_trace_dir or (root / ".lumen-runs"),
+            asset_store_root=settings.lumen_agent_asset_store,
+            agent_base_url=settings.lumen_agent_base_url or "https://openrouter.ai/api/v1",
+            agent_api_key=settings.lumen_agent_api_key,
+            agent_reasoning=settings.lumen_agent_reasoning,
+        )
+
+    @property
+    def effective_asset_store_root(self) -> Path:
+        return self.asset_store_root or self.trace_dir / "asset-store"
+
+    @property
+    def skills_dir(self) -> Path:
+        return self.repo_root / "apps" / "agent_runtime" / "skills"

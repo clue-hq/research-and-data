@@ -46,7 +46,7 @@ from typing import Any, Optional
 
 from py_lumen_config import settings
 
-from lumen_deepagent.brand_card import _brightest_accent, _resolve_color
+from lumen_pipeline_archive.brand_card import _brightest_accent, _resolve_color
 
 JsonObject = dict[str, Any]
 

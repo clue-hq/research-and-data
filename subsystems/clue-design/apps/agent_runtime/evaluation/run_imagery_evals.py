@@ -14,7 +14,7 @@ Two ways to obtain a run to score:
     captured runs; reads each run's ``final_scene.json`` + PNG and scores it. No model
     calls unless ``--model`` is given (the JUDGE ceiling); without a model only the
     deterministic gates run.
-  • ``--run`` (live, costs credits) — invokes ``python -m lumen_deepagent.cli ...
+  • ``--run`` (live, costs credits) — invokes ``python -m lumen_pipeline_archive.cli ...
     --mode deepagent`` per brief, then scores the resulting trace dir.
 
 The scoring core (``score_run_dir``) and aggregation (``summarize``) are pure and
@@ -41,7 +41,7 @@ if str(_API_ROOT) not in sys.path:
 
 from py_lumen_config import settings  # noqa: E402
 
-from lumen_deepagent.imagery_judge import judge_imagery  # noqa: E402
+from lumen_pipeline_archive.imagery_judge import judge_imagery  # noqa: E402
 
 DEFAULT_BRIEFS = _AGENT_ROOT / "evaluation" / "imagery_fixtures" / "briefs.json"
 DEFAULT_PROMPTS = _AGENT_ROOT / "evaluation" / "fixture_prompts.json"
@@ -196,7 +196,7 @@ def run_brief_live(brief: Dict[str, Any], *, repo_root: Path, trace_root: Path, 
     """Invoke the agent CLI for one brief and return its trace dir. COSTS CREDITS and
     requires the model/image-model env to be configured. Returns None on failure."""
     cmd = [
-        sys.executable, "-m", "lumen_deepagent.cli", brief["prompt"],
+        sys.executable, "-m", "lumen_pipeline_archive.cli", brief["prompt"],
         "--mode", mode, "--repo-root", str(repo_root),
     ]
     env_note = f"[run] {brief['id']} ({brief['expected_decision']}) via --mode {mode}"
@@ -313,8 +313,8 @@ def main() -> None:
     config = None
     model = None
     if args.model:
-        from lumen_deepagent.imagery_judge import ImageryJudgeVerdict
-        from lumen_deepagent.providers import init_model, try_structured_model
+        from lumen_pipeline_archive.imagery_judge import ImageryJudgeVerdict
+        from lumen_pipeline_archive.providers import init_model, try_structured_model
 
         # Same routing contract as AgentRuntimeConfig.from_env: when the agent env
         # points at an OpenAI-compatible endpoint (e.g. OpenRouter), the judge must
