@@ -266,6 +266,37 @@ Residuals, both named:
   (`model_call_usage` trace events with per-role attribution) — the D3
   context-growth watch has data from the next live run onward.
 
+## M6 CLOSED (2026-07-10, round 9b) — the pipeline is formally retired
+
+Evidence: `.context/deepagent-v0/probe-r9b-sweep/`. Final stack (fc6a366,
+grok-4.5 all roles, max_tokens=20000, ToolStrategy, detach directive, kit v5
+re-attached per scenario and verified received).
+
+- **Sweep 3/3, all single-round, 141-259s, zero structured/length errors,
+  critiques accepted 0.90-0.95 with zero issues.** P1: human ellipse fully
+  UNTOUCHED, mark placed as sibling via `detach_to_freehand` (the ideal
+  mechanism, chosen naturally — detach adoption now 2 of 3 exposures),
+  exact-center geometry. P2: exactly the 2 named seed nodes removed
+  explicitly. P3: chipped CTA deleted + kit product screenshot in a
+  $surface.card frame + caption bound to $type.caption/$text.inverse.
+- **Fidelity read (the honest interpretation)**: all three score
+  verdict=redo on typography_binding=0.0 — this measures the SEED's legacy
+  debt (K3-era document, frozen literals predating retokenization), not the
+  turns: every axis is IDENTICAL to the seed's own baseline score except
+  P3's imagery_adoption which IMPROVED false→true; P1's "rogue paint" is the
+  human's own ellipse fill. Correct comparison for seeded edit-turns is
+  before-vs-after per scenario: ZERO degradation, one improvement. The K4
+  pipeline baseline (1.0/1.0/1.0) was fresh-authoring and is not the
+  comparable population.
+- **First token telemetry harvest (D3)**: author is the heavy mind — P1
+  author 1.65M input tokens over 21 calls (~78k/call; the ReAct micro-loop
+  re-sends history per tool step); orchestrator 350-570k; reviewer ~300k.
+  No action (cost unconstrained per user), recorded as the context-growth
+  baseline; prompt-caching/effort-tiering are the known levers if ever needed.
+- **Verdict: the archived pipeline never passed all three scenarios in any
+  round; the deepagent passes 3/3 in one round each with honest statuses.
+  M6 exit criterion met. The pipeline remains archived for history only.**
+
 ## Verified platform facts (2026-07-09)
 
 deepagents 0.6.12, langchain 1.3.11, langgraph 1.2.7, langchain-openai 1.3.3.
