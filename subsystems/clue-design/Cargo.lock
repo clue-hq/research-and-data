@@ -426,6 +426,7 @@ dependencies = [
  "lumen-wasm",
  "serde",
  "serde_json",
+ "sha2",
  "tempfile",
 ]
 
@@ -479,6 +480,7 @@ dependencies = [
  "lumen-core",
  "serde",
  "serde_json",
+ "sha2",
  "wasm-bindgen",
 ]
 

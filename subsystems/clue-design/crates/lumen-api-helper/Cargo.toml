@@ -13,6 +13,11 @@ lumen-skia = { path = "../lumen-skia" }
 serde.workspace = true
 serde_json.workspace = true
 
+[build-dependencies]
+# Content-hash of the shared engine sources for the W5 handshake stamp
+# (crates/build_support/engine_stamp.rs). Already in the workspace lockfile.
+sha2 = "0.10"
+
 [dev-dependencies]
 lumen-wasm = { path = "../lumen-wasm" }
 tempfile = "3"

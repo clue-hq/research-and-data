@@ -4,22 +4,25 @@ Rules in this file are hard-won from repeated live failures. They are not
 suggestions — every one of them exists because an agent (or the orchestrator)
 made the same mistake at least twice.
 
-## 1. Engine builds and the wasm handshake (the build-then-commit trap)
+## 1. Engine builds and the wasm handshake (now source-content-stamped)
 
 The engine (`crates/lumen-core`) runs in TWO places: the API's helper binary and
-the editor's in-browser wasm. Both carry a build stamp derived from **git HEAD
-at build time**, and the editor refuses canvas editing when the stamps differ
-("Canvas editing is disabled" banner).
+the editor's in-browser wasm. Both carry a build stamp, and the editor refuses
+canvas editing when the stamps differ ("Canvas editing is disabled" banner).
 
-The trap: the API helper runs via `cargo run`, so it silently rebuilds itself at
-the CURRENT commit on its next call — but the editor wasm only changes when you
-rebuild it explicitly. Because both stamps are commit-based (NOT source-based),
-**any commit at all desynchronizes them** the moment the helper rebuilds — even
-a docs-only commit (proven live 2026-07-09: a commit touching only AGENTS.md
-broke the handshake). This has burned live verification runs three times.
+**Class fix landed 2026-07-10:** the stamp is no longer git HEAD at build time —
+it is a **content hash of the shared engine sources** (`crates/lumen-core`'s
+`src/**/*.rs` + `Cargo.toml`, hashed by the single shared implementation in
+`crates/build_support/engine_stamp.rs` that both crates' `build.rs` `include!`).
+Identical sources ⇒ identical stamp, so **commits alone can no longer
+desynchronize the two sides.** The old trap (the API helper silently rebuilds at
+the current commit via `cargo run`, so ANY commit — even a docs-only one, proven
+live 2026-07-09 — broke the handshake) is dead: a docs-only commit leaves both
+stamps unchanged. This class of failure burned live verification runs three
+times before the fix.
 
-**The rule — after ANY commit (regardless of which files changed), run, in this
-order, as the LAST step (post-commit, not before):**
+**The rule — whenever ENGINE SOURCES change (anything under
+`crates/lumen-core/src/` or its `Cargo.toml`), run, as the LAST step:**
 
 ```bash
 bash scripts/build_wasm_core.sh
@@ -28,17 +31,15 @@ node scripts/verify_handshake.mjs   # must print "HANDSHAKE OK"
 # any open editor tab before browser work.
 ```
 
-Pre-commit wasm builds (for running the editor test suite) are fine — they just
-don't count: the post-commit rebuild must still happen.
+Commits that do NOT touch engine sources need no rebuild — the stamp is content-
+derived, not commit-derived. (When in doubt, the rebuild is cheap and idempotent:
+`build.rs` re-runs only when a hashed file actually changed.)
 
 Corollary for verification/browser runners: if you see the "Canvas editing is
 disabled" banner, STOP and report the two engine hashes from the banner —
-do not work around it, and do not assume a prior "HANDSHAKE OK" is still valid
-if a commit has happened since.
-
-(Backlog class-fix: stamp from a content hash of the crate sources instead of
-git HEAD, so identical sources can never mismatch regardless of commit
-choreography.)
+do not work around it. With content-stamping a mismatch means one side was built
+from different engine sources (usually a stale wasm artifact); rebuild the wasm
+and re-verify.
 
 ## 2. After API-side seeding, hard-refresh the editor
 

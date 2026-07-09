@@ -86,6 +86,13 @@ wasm_hash() {
   shasum -a 256 apps/editor/public/wasm/lumen_wasm_bg.wasm | awk '{print $1}'
 }
 
+# The engine_commit baked into the built browser WASM. This is a content hash
+# of the shared engine sources (not git HEAD), so it is the value the API
+# helper must match for the handshake to hold.
+engine_stamp() {
+  wasm_version | "$VENV_PYTHON" -c 'import json,sys; print(json.load(sys.stdin)["engine_commit"])'
+}
+
 verify_local() {
   cd "$ROOT_DIR"
   local head
@@ -202,11 +209,12 @@ up() {
   # The engine the API serves must be the engine the browser will load —
   # a reused stale backend would put the editor straight back into
   # server-only (uneditable) mode.
-  local api_commit
+  local api_commit engine_commit
   api_commit="$(curl -fsS "http://$HOST:$API_PORT/build-info" \
     | "$VENV_PYTHON" -c 'import json,sys; print(json.load(sys.stdin)["build_info"]["engine_commit"])')"
-  if [[ "$api_commit" != "$(git_head)" ]]; then
-    echo "ENGINE MISMATCH: backend on :$API_PORT serves $api_commit, checkout is $(git_head)." >&2
+  engine_commit="$(engine_stamp)"
+  if [[ "$api_commit" != "$engine_commit" ]]; then
+    echo "ENGINE MISMATCH: backend on :$API_PORT serves $api_commit, browser WASM engine is $engine_commit." >&2
     echo "Stop the stale backend (lsof -ti tcp:$API_PORT | xargs kill) and rerun: $(basename "$0") up" >&2
     exit 1
   fi

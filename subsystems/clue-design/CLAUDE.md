@@ -2,11 +2,12 @@
 
 Follow the operating rules in @AGENTS.md — they are binding, not advisory.
 
-The one that has burned us three times and must never be skipped: **after ANY
-commit — regardless of which files changed — rebuild the editor wasm and verify
-the handshake AS THE LAST STEP, post-commit** (`bash scripts/build_wasm_core.sh
-&& node scripts/verify_handshake.mjs` → must print HANDSHAKE OK), then restart
-the API if running and hard-refresh any open editor tab. Both engine stamps are
-git-HEAD-at-build-time (not source-based), and the API helper silently rebuilds
-itself at the new HEAD via cargo run — so even a docs-only commit breaks the
-handshake. Pre-commit builds don't count.
+The handshake rule (was: "after ANY commit"; class-fixed 2026-07-10): **whenever
+ENGINE SOURCES change (anything under `crates/lumen-core/src/` or its
+`Cargo.toml`), rebuild the editor wasm and verify the handshake** (`bash
+scripts/build_wasm_core.sh && node scripts/verify_handshake.mjs` → must print
+HANDSHAKE OK), then restart the API if running and hard-refresh any open editor
+tab. Both engine stamps are now a **content hash of the shared engine sources**
+(not git HEAD), so commits alone — docs-only or otherwise — can no longer
+desynchronize the editor wasm from the API helper. If the banner ever shows two
+different engine hashes, STOP and report them (see AGENTS.md §1 corollary).
