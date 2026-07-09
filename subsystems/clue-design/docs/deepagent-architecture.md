@@ -152,16 +152,26 @@ artifacts. No mind ever consumes another mind's paraphrase of an artifact.**
    Slice-1 describe chain) → `view` candidates → place by `asset_id` via DSL
    (K2 auto-registration heals references).
 
-## Spikes (before the architecture doc is finalized)
+## Spikes — ALL RESOLVED 2026-07-09 (scripts in .context/deepagent-spikes/)
 
-- **S1**: live OpenRouter test — do image blocks in tool results reach the
-  model? Decides D2 (a) vs (b).
-- **S2**: reviewer subagent with `response_format=VisualCritique` AND tools
-  over OpenRouter — re-verify the old "too many strict tools" trap on
-  deepagents 0.6.12 / langchain 1.3.11.
-- **S3**: do custom `state_schema` fields reach subagent context? If not,
-  constitution fields move to `state.json` in the workspace (same design,
-  different plumbing).
+- **S1 PASS (live)**: an image block inside a TOOL RESULT reaches
+  `anthropic/claude-opus-4.8` via OpenRouter (model correctly described the
+  image; user-message control also passed). **D2 resolves to mechanism (a):
+  `view` returns image blocks directly in its tool result.** No injection
+  middleware needed.
+- **S2 PASS (live)**: a subagent with `response_format=VisualCritique` AND its
+  own tools runs clean over OpenRouter on deepagents 0.6.12 / langchain
+  1.3.11 — the old Anthropic-native "too many strict tools" trap does not
+  reproduce. Finding: the structured object does NOT propagate into parent
+  state (`structured_response` is an excluded key) — therefore the reviewer
+  ALSO writes its critique JSON to `rounds/round_N/critique.json` itself
+  (it has filesystem tools) and returns it in its final text.
+- **S3 PASS (source-verified)**: `task()` copies the parent's FULL state into
+  the subagent minus only `{messages, todos, structured_response}` + declared
+  private keys (deepagents/middleware/subagents.py, `_EXCLUDED_STATE_KEYS`),
+  and subagent state updates flow back the same way. Custom constitution
+  fields (`seeded`, `chip_target_node_ids`, `brand_kit_ref`, `artboard_id`,
+  `turn_request`, `current_round`) are visible to all minds' tools.
 
 ## Verified platform facts (2026-07-09)
 
