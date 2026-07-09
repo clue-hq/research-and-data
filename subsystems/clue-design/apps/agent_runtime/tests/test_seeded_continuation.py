@@ -1049,22 +1049,42 @@ def test_seeded_recipe_carries_the_freehand_rules():
         assert phrase in SEEDED_CONTINUATION_RECIPE
 
 
-def test_seeded_recipe_carries_the_taste_first_policy():
-    # Taste-first edit policy (user-decided 2026-07-05, .context/agent-
-    # improvement/2026-07-05-taste-first-edit-policy.md): slight collateral
-    # adjustments freely (announced as `// collateral:` lines), big
-    # rearrangements only with a `// heads-up:` opener, unannounced changes
-    # forbidden, accommodation nudges remain the non-optional mechanical floor.
+def test_shared_surface_contract_is_the_single_scoping_policy():
+    # Prompt-layer redesign (user-decided 2026-07-09): the taste-first policy
+    # (2026-07-05) plus every scoping/ownership rule now lives in ONE statement
+    # — SHARED_SURFACE_CONTRACT — injected into BOTH the Director's and the
+    # author's system prompts, so the two minds can never hold contradictory
+    # scoping rules (probe P1r4: the Director's invented "only node X /
+    # byte-identical everything else" instructions made the correct solution
+    # illegal while the recipe granted slack).
+    from lumen_deepagent.prompts import (
+        DSL_AUTHOR_SYSTEM_PROMPT,
+        SHARED_SURFACE_CONTRACT,
+    )
+    from lumen_deepagent.providers import DIRECTOR_SYSTEM_PROMPT
+
+    # The policy content: subject-not-fence, new-elements-always-legal, the
+    # leaf-overlay pattern, announced collateral, explicit human deletes.
     for phrase in (
-        "YOU OWN THE COMPOSITION",
+        "never a fence",
+        "NEW elements are always in scope",
+        "new sibling",
         "// collateral:",
         "// heads-up:",
-        "UNANNOUNCED change",
-        "mechanical floor",
-        "meaningful intent, not an obstacle",
-        "BIG rearrangement",
+        "explicit `delete(<id>)`",
     ):
-        assert phrase in SEEDED_CONTINUATION_RECIPE, phrase
-    # The old strict-scope wording must be gone.
+        assert phrase in SHARED_SURFACE_CONTRACT, phrase
+    # One statement, both minds.
+    assert SHARED_SURFACE_CONTRACT in DSL_AUTHOR_SYSTEM_PROMPT
+    assert SHARED_SURFACE_CONTRACT in DIRECTOR_SYSTEM_PROMPT
+    # The Director may never re-invent strict scoping in its instructions.
+    assert '"only node X"' in DIRECTOR_SYSTEM_PROMPT
+    assert "byte-identical" in DIRECTOR_SYSTEM_PROMPT  # named as the forbidden phrasing
+    # The recipe keeps grammar only and defers policy to the contract; its old
+    # duplicate policy paragraph (and any strict-scope wording) is gone.
+    assert "SHARED-SURFACE CONTRACT" in SEEDED_CONTINUATION_RECIPE
+    assert "YOU OWN THE COMPOSITION" not in SEEDED_CONTINUATION_RECIPE
     assert "Touch ONLY what the request requires" not in SEEDED_CONTINUATION_RECIPE
     assert "move or resize it ONLY" not in SEEDED_CONTINUATION_RECIPE
+    # The mechanical floor (accommodation nudges) stays in the recipe.
+    assert "mechanical floor" in SEEDED_CONTINUATION_RECIPE

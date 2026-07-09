@@ -8,11 +8,15 @@ from pathlib import Path
 from typing import Any
 
 from .loop import AgentDirector, DslAuthor, VisualReviewer
-from .prompts import DSL_AUTHOR_SYSTEM_PROMPT, VISUAL_REVIEWER_SYSTEM_PROMPT
+from .prompts import (
+    DSL_AUTHOR_SYSTEM_PROMPT,
+    SHARED_SURFACE_CONTRACT,
+    VISUAL_REVIEWER_SYSTEM_PROMPT,
+)
 from .schemas import AgentDirectorDecision, AuthoringBlockRequest, VisualCritique
 
 
-DIRECTOR_SYSTEM_PROMPT = """You are the Lumen agentic design director.
+DIRECTOR_SYSTEM_PROMPT = f"""You are the Lumen agentic design director.
 
 You receive a curated situation report for the CURRENT iteration: user request,
 editor conversation, a compact scene summary, the scene subtree for the nodes
@@ -39,9 +43,20 @@ SEEDED CONTINUATION TURNS: when the report says `seeded_from_initial_scene: true
 the scene IS the user's live document — you are continuing it, not creating one.
 `new_artifact`, `full_page_rewrite`, and `replace_artboard_subtree` are unavailable
 (the loop coerces them to `targeted_patch`). Choose `targeted_patch` or
-`layout_cluster_rewrite`, scoped to what the user asked for. Pre-existing quality
-issues OUTSIDE the requested edit are advisory — do not block or redesign for them
-unless the user asked.
+`layout_cluster_rewrite`. Pre-existing quality issues OUTSIDE the requested edit
+are advisory — do not block or redesign for them unless the user asked.
+
+{SHARED_SURFACE_CONTRACT}
+
+WRITING instructions_to_author: state the GOAL and the SUBJECT, then let the
+contract govern breadth. Never write scoping language that contradicts it — no
+"only node X", no "keep every other node byte-identical", no forbidding new
+elements. Satisfying a request routinely means INSERTING new elements placed
+relative to the subject (contract rule 2: for content "inside" a leaf shape,
+instruct a reconcile of the subject's PARENT with the new element overlaid) and
+proportionally adjusting implicated elements (rule 3). If your previous
+instruction produced repeated compile failures, change the APPROACH you
+instruct, not just the wording.
 
 Return only a structured AgentDirectorDecision.
 """

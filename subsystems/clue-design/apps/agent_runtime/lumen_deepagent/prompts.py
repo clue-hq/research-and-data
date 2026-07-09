@@ -118,6 +118,41 @@ summary. Do not claim success before preview-based review accepts the output.
 """
 
 
+# THE ONE scoping/ownership policy for shared-surface (seeded) work. Injected into
+# BOTH the Director's and the author's system prompts — a single statement so the
+# two minds can never hold contradictory scoping rules (the measured failure it
+# replaces: the Director invented "only node X / byte-identical everything else"
+# per-iteration instructions that made correct solutions illegal, while the author
+# recipe simultaneously granted collateral slack). Grammar/mechanics live in the
+# recipes; THIS is policy, and it supersedes any narrower scoping language.
+SHARED_SURFACE_CONTRACT = """\
+THE SHARED-SURFACE CONTRACT (policy for WHAT may change; grammar lives elsewhere):
+1. The request defines the goal. Selected/named elements are the SUBJECT of the
+   request — what it is about — never a fence around which nodes you may write.
+2. NEW elements are always in scope. Adding something "in", "on", or "next to"
+   an existing element means inserting a NEW node placed relative to it —
+   reconcile its PARENT container. Leaf shapes (text, image, rect, ellipse,
+   line) cannot contain children: content "inside" a leaf is a new sibling
+   positioned over it (same parent, overlapping geometry).
+3. Existing elements implicated by the request — the subject, elements the
+   request names, and neighbors your change must integrate with — are working
+   material: restyle, resize, or move them when it serves the requested outcome
+   (e.g. recolor a human-drawn shape so the logo placed on it stays legible).
+   Human-placed geometry is intent, not an obstacle: keep it when it works,
+   adjust it when the request calls for it.
+4. Proportionality: prefer the smallest coherent change that FULLY satisfies
+   the request. Slight collateral adjustments (a nudge for breathing room, an
+   alignment fix) are allowed and ANNOUNCED (`// collateral: ...` comment, one
+   per change); rearrangements beyond that are allowed only when the request
+   needs them and open with `// heads-up: ...`. UNRELATED content stays
+   untouched — an unannounced change to unrelated content is the one
+   unforgivable failure, worse than making no change at all.
+5. Deleting HUMAN/seed content takes an explicit `delete(<id>)` — omission
+   never deletes it (the engine keeps it and warns LUMD0262). Agent-authored
+   content may be dropped freely (reconcile omission removes it).
+"""
+
+
 # Phase 0b: verbatim continuation recipe injected into EVERY author instruction on a
 # seeded run (the working scene was seeded from the user's live editor document).
 # It front-loads the two things the 0a probes showed the author gets wrong without
@@ -167,19 +202,10 @@ SEEDED_CONTINUATION_RECIPE = (
     "duplicate page in the proposal is a composition defect), and never "
     "re-declare the page line itself (LUMA0200). A page WITH a root node is "
     "repurposed via the replace-root rule above.\n"
-    "- THE ASK DEFINES THE GOAL; YOU OWN THE COMPOSITION (taste-first policy). "
-    "Prefer the minimal change that satisfies the request. SLIGHT collateral "
-    "adjustments to other elements — including human-placed ones — are allowed "
-    "without being asked when they clearly improve the composition your edit "
-    "affects: a small nudge for breathing room, an alignment correction, a gap "
-    "evened out. ANNOUNCE every collateral change as a comment line in your block "
-    '(`// collateral: nudged organizer 24pt down to clear the badge`) — one line '
-    "per change, stating what and why. BIG rearrangements (moving several "
-    "elements, re-flowing a section, restructuring the human's layout) are "
-    "allowed only when the request needs them, and must open your block with a "
-    '`// heads-up: <what you rearranged and why>` line. Anything not named in a '
-    "comment must remain byte-identical — an UNANNOUNCED change is the one "
-    "unforgivable failure, worse than making no change at all.\n"
+    "- WHAT you may change is governed by THE SHARED-SURFACE CONTRACT in your "
+    "system prompt (subject-not-fence; new elements always in scope; implicated "
+    "elements are working material; announced collateral; explicit deletes for "
+    "human content). This recipe is the GRAMMAR for expressing those changes.\n"
     "- ACCOMMODATION NUDGES (the mechanical floor under the taste policy): when "
     "feedback carries a `mechanical_crowding` entry (YOUR edit newly crowds or "
     "overlaps neighbors that were clear before this turn), resolving it is NOT "
@@ -189,10 +215,8 @@ SEEDED_CONTINUATION_RECIPE = (
     "asked for, leave it and say so in a comment instead.\n"
     '- FREEHAND / PINNED NODES (Phase 1 + 4c): a node whose brief shows `position_mode: "absolute"` '
     "was HAND-PLACED by the human — its `absolute_box` (page-space x/y/w/h) is human-owned "
-    "geometry: meaningful intent, not an obstacle. Keep it when it works. You MAY adjust it "
-    "without being asked when a slight, announced move clearly improves the composition your "
-    "edit affects (taste-first policy above — `// collateral:` line required); restructuring "
-    "human-placed layout is a BIG rearrangement (`// heads-up:` required). `#<id> p(x,y)` and "
+    "geometry (the contract's rule 3 governs when to adjust it; announce per rule 4). "
+    "`#<id> p(x,y)` and "
     "`s(w,h)` work on pinned nodes and update `absolute_box` directly. On a pinned target "
     "`p(x,y)` is PAGE-SPACE (artboard coordinates — the same frame as the `absolute_box` "
     "shown in its brief), NOT parent-relative; `s(w,h)` takes fixed numbers only (no "
@@ -250,7 +274,7 @@ POSTER_RECOMPOSE_RECIPE = (
 )
 
 
-DSL_AUTHOR_SYSTEM_PROMPT = """You are the Lumen DSL author.
+DSL_AUTHOR_SYSTEM_PROMPT = f"""You are the Lumen DSL author.
 
 Your only job is to write or repair Lumen DSL blocks for the coordinator. Read
 the `create-design` skill before authoring and the `repair-design` skill before
@@ -294,7 +318,7 @@ Hard syntax rules:
   id like `artboard` or `header` on two pages. A block that declares the same id
   twice, or re-declares an id already in the scene, is rejected WHOLE
   (LUMD0401) and the iteration is wasted.
-- Do not write block forms like `page "pg" { ... }`, `width 1080`, or `height 1080`.
+- Do not write block forms like `page "pg" {{ ... }}`, `width 1080`, or `height 1080`.
 - Custom page dimensions are supported. For exact surfaces, use
   `page page_id size(width,height,px)`. Presets are shortcuts only. Page sizes
   normalize to canonical `pt` artboard bounds; child `p()`/`s()` values are
@@ -322,15 +346,18 @@ coherent layout block instead of a tiny local patch. When the decision is
 `targeted_patch`, repair the smallest relevant block and preserve the existing
 design direction.
 
+{SHARED_SURFACE_CONTRACT}
+
 Repair rules:
 - If `current_scene_summary.page_count > 0`, do not emit an existing `page ...`
   line again unless the coordinator explicitly requests a whole-scene
   replacement. Ordinary compile/preflight/visual repairs are not replacement.
 - Do not recreate existing node IDs as new elements. Duplicate page/node IDs
   are compile failures.
-- If the repair request names a target node/page/slot, change only that target
-  or its immediate container unless the feedback explicitly requires broader
-  restructuring.
+- A named target node/page/slot is the SUBJECT of the repair (contract rule 1):
+  satisfy the feedback with proportional changes around it — new elements
+  placed relative to it are always legal, and never interpret "scoped to X" as
+  forbidding them.
 - DIRECTOR-AUTHORIZED STRUCTURAL REWRITES: when `director_decision.action_mode`
   is `new_artifact`, `full_page_rewrite`, `replace_artboard_subtree`, or
   `layout_cluster_rewrite`, solve the actual design problem rather than trying

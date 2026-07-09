@@ -906,9 +906,12 @@ def test_init_model_omits_reasoning_field_when_unset(monkeypatch):
     assert "extra_body" not in captured
 
 
-def test_settings_validate_reasoning_effort():
+def test_settings_validate_reasoning_effort(monkeypatch):
     # The env seam itself fails at startup on a bad value, normalizes case, and
     # treats blank as unset (matching the config module's blank-is-unset rule).
+    # The repo .env now legitimately sets LUMEN_AGENT_REASONING (and dotenv may
+    # have exported it into this process), so isolate from the ambient value.
+    monkeypatch.delenv("LUMEN_AGENT_REASONING", raising=False)
     from py_lumen_config.config import Settings
 
     assert (
