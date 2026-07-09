@@ -204,6 +204,48 @@ Residuals, both named:
    over a pinned human node — needs a `detach_to_freehand`/z-order mechanism
    (round-5 "cause B", documented in P1r6 round_3/author_report.md).
 
+## Post-R6 decisions (DECIDED by user 2026-07-09, after probe round 6)
+
+- **D10 — grok-runaway fixes: (a) + (c) now.** (a) `LUMEN_AGENT_MAX_TOKENS`
+  output bound in the single `init_model` gateway (damage-limitation + retry
+  enablement; one mechanism, all models). (c) per-role model choice:
+  `LUMEN_AGENT_MODEL_ORCHESTRATOR` / `_AUTHOR` / `_REVIEWER` env knobs, each
+  defaulting to `LUMEN_AGENT_MODEL`; per-subagent `model` in the harness.
+- **D11 — tool-strategy structured output is the REMEMBERED fallback**: not
+  implemented now; implement if a structured-output runaway/parse failure
+  recurs on any model.
+- **D12 — `detach_to_freehand(<node_id>)` becomes a DSL directive**, lowering
+  to the existing core `StructuredEditInstruction::DetachToFreehand`
+  (editing.rs:2780; builder already on the wire). This closes the P1r6
+  doppelganger workaround class (pinned-freehand pass paints last; agent
+  content could not layer over a pinned human node). **The cross-class
+  z-index redesign is the REMEMBERED alternative**: open that discussion only
+  if this incident class recurs after the directive ships.
+- **P0 policy note (user, verbatim in spirit)**: the deepagent has real
+  agency — do NOT add agent-side rails that prevent it from dealing with
+  human-added nodes; trust it to handle human edits rationally. Engine
+  contracts (explicit-delete for human content) remain; new protective
+  fences on the agent surface do not get added.
+
+## P1 rounds 7-8 (2026-07-10): the moda scenario PASSES end-to-end
+
+- **P1r7** (max_tokens=20000 + detach directive live): agent used the taught
+  recipe verbatim on first exposure (`detach_to_freehand(ellipse_mark)` +
+  `after(...)`) — no ghosting, mark layered above the REAL human ellipse.
+  Died at the reviewer's NATIVE structured output (`StructuredOutputValidationError`,
+  unterminated JSON; zero length errors — the bound worked). D11 trigger fired.
+- **D11 SHIPPED** (921308d): reviewer `response_format=ToolStrategy(VisualCritique)`,
+  validation-retry on. Review fix: per-role-model tests isolate D10 env fields.
+- **P1r8 = FIRST FULL END-TO-END PASS in 8 rounds** (evidence
+  `.context/deepagent-v0/probe-r8-p1/`): 16 ops applied, doc v1→17, reviewer
+  accepted 0.94/0 issues via ToolStrategy, zero structured/length errors,
+  mark at the exact ellipse center, collateral announced honestly, ~9.4 min.
+- **Open behavioral note (user to decide)**: r8's agent chose mute-pin +
+  managed duplicate plate over `detach_to_freehand` (r7 chose detach) — both
+  legal, ghosting disclosed. Candidate one-line teaching preference: "prefer
+  detach_to_freehand over muting a pin and duplicating it — never leave a
+  human node invisible." Not added; awaiting user call (no-rails philosophy).
+
 ## Verified platform facts (2026-07-09)
 
 deepagents 0.6.12, langchain 1.3.11, langgraph 1.2.7, langchain-openai 1.3.3.
