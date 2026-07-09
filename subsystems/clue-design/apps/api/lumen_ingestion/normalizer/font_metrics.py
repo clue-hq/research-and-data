@@ -167,3 +167,60 @@ def build_type_size_ramp(
             f"(factor {factor:.3f} = reference {reference_x_ratio():.3f} / brand {brand_x_ratio:.3f})"
         )
     return values, source
+
+
+def _kit_heading_x_ratio(brand_kit: JsonObject) -> Optional[float]:
+    """The x-height ratio the ramp should normalize against, read from the
+    kit's OWN measured font metrics — heading font (``fonts.brand``) first,
+    body font (``fonts.body``) as the fallback, mirroring how
+    ``normalize_evidence`` picks ``heading_metrics``. None when neither font
+    carries a measured ratio (→ identity ramp)."""
+    fonts = ((brand_kit.get("assets") or {}).get("fonts")) or {}
+    if not isinstance(fonts, dict):
+        return None
+    for key in ("brand", "body"):
+        font = fonts.get(key)
+        if not isinstance(font, dict):
+            continue
+        ratio = (font.get("metrics") or {}).get("x_height_ratio")
+        if isinstance(ratio, (int, float)) and ratio > 0:
+            return float(ratio)
+    return None
+
+
+def ensure_type_size_ramp(brand_kit: JsonObject) -> bool:
+    """Idempotently bake the platform ``type.size.*`` ramp into ``brand_kit``'s
+    number tokens, re-running the same ramp emission the normalizer performs at
+    ingestion (K4 rung 2). Legacy kits produced before that normalizer lack the
+    ramp entirely and die preflight LUMB0301 the moment a design references a
+    standard size token; the describe-backfill republish path is where they get
+    healed.
+
+    The emitted entries are byte-for-byte what ``KitBuilder.add_numbers`` would
+    write (same value/role/provenance shape, factor read from the kit's own font
+    metrics), so a kit that already carries an up-to-date ramp is left
+    untouched. Mutates ``brand_kit`` in place; returns True iff any token entry
+    changed."""
+    # Local import: emit.py imports evidence types; keeping it lazy avoids a
+    # heavier import chain for callers that only want the ramp constants.
+    from .emit import _confidence_for, _mode_value, _provenance
+
+    tokens = brand_kit.setdefault("tokens", {})
+    numbers = tokens.setdefault("numbers", {})
+    if not isinstance(numbers, dict):
+        return False
+
+    values, source = build_type_size_ramp(_kit_heading_x_ratio(brand_kit))
+    provenance = _provenance(source, _confidence_for("derived"))
+    changed = False
+    for path, number in values.items():
+        entry = {
+            "value": _mode_value(number, {}),
+            "role": "font_size",
+            "description": None,
+            "provenance": provenance,
+        }
+        if numbers.get(path) != entry:
+            numbers[path] = entry
+            changed = True
+    return changed

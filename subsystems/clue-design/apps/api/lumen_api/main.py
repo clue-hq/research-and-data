@@ -720,6 +720,7 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
         the kit JSON at publish, so healing the ``asset_descriptions`` library
         alone never reaches the agent's brand card. Generic for any kit."""
         from lumen_ingestion.describe import describe_kit_assets
+        from lumen_ingestion.normalizer.font_metrics import ensure_type_size_ramp
         from lumen_ingestion.pipeline import (
             make_rasterize_svg,
             make_resolve_bytes,
@@ -729,6 +730,12 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
         record = repo.require_brand_kit(brand_kit_id)
         brand_kit = json.loads(json.dumps(record["brand_kit"]))
         before = json.dumps(brand_kit, sort_keys=True)
+        # Re-run the normalizer's type-size ramp emission before publishing:
+        # kits produced before the ramp normalizer (K4 rung 2) lack $type.size.*
+        # and die preflight LUMB0301 on standard size tokens. Idempotent — a kit
+        # that already carries the up-to-date ramp is left byte-identical, so
+        # this alone never forces a no-op republish.
+        ensure_type_size_ramp(brand_kit)
         store_root = str(asset_store_root())
         describe_diagnostics: list = []
         counts = describe_kit_assets(

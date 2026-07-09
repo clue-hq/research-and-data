@@ -30,6 +30,10 @@ from .evidence import BrandEvidence, ImageEvidence, LogoEvidence
 
 DEFAULT_TIMEOUT_S = 60.0
 PREVIEW_MAX_PX = 512
+#: Cap on how much of an HTTP error body / exception message is threaded into a
+#: diagnostic — loud enough to name the cause, bounded so a giant HTML error
+#: page never floods the report.
+FAILURE_EXCERPT_MAX = 300
 
 
 def _default_now_iso() -> str:
@@ -281,7 +285,8 @@ def apply_descriptions(
             _warn(
                 sink,
                 "LUMI0803",
-                f"asset description returned nothing for {asset_id}",
+                f"asset description returned nothing for {asset_id}"
+                + _describe_failure_suffix(describer),
             )
             failed += 1
             continue
@@ -344,6 +349,17 @@ def _warn(sink: list[dict], code: str, message: str) -> None:
     sink.append({"code": code, "severity": "warning", "message": message})
 
 
+def _describe_failure_suffix(describer: "AssetDescriber") -> str:
+    """`: <reason>` when the describer recorded why its last call produced no
+    captions (HTTP status/body or exception), else empty. Lets the LUMI0803
+    'returned nothing' diagnostic carry the actual cause instead of a bare
+    'nothing'."""
+    reason = getattr(describer, "last_failure_reason", None)
+    if reason:
+        return f": {reason}"
+    return ""
+
+
 def describe_kit_assets(
     brand_kit: dict,
     *,
@@ -386,7 +402,15 @@ def describe_kit_assets(
             targets.setdefault(asset_id, []).append(image)
             kinds.setdefault(asset_id, str(image.get("role") or "image"))
 
-    counts = {"total": len(targets), "cached": 0, "described": 0, "failed": 0}
+    counts = {
+        "total": len(targets),
+        "cached": 0,
+        "described": 0,
+        "failed": 0,
+        # Per-asset failure reasons (asset_id -> why), so the job summary
+        # carries the cause of every LUMI0803, not just a count.
+        "failures": {},
+    }
     if not targets:
         return counts
 
@@ -418,15 +442,19 @@ def describe_kit_assets(
             results = describer.describe([item])
             result = results[0] if results else None
         except Exception as error:  # noqa: BLE001 - one asset must never sink the rest
-            _warn(sink, "LUMI0803", f"asset description failed for {asset_id}: {error}")
+            reason = f"{type(error).__name__}: {error}"[:FAILURE_EXCERPT_MAX]
+            _warn(sink, "LUMI0803", f"asset description failed for {asset_id}: {reason}")
+            counts["failures"][asset_id] = reason
             counts["failed"] += 1
             continue
         if result is None:
+            suffix = _describe_failure_suffix(describer)
             _warn(
                 sink,
                 "LUMI0803",
-                f"asset description returned nothing for {asset_id}",
+                f"asset description returned nothing for {asset_id}" + suffix,
             )
+            counts["failures"][asset_id] = suffix[2:] if suffix else "returned nothing"
             counts["failed"] += 1
             continue
         store.put_ai(result, model)
@@ -515,6 +543,11 @@ class OpenRouterDescriber:
         self.model = settings.lumen_ingestion_describe_model
         self.base_url = settings.openrouter_base_url
         self.api_key = settings.openrouter_api_key
+        #: Why the most recent ``describe`` call produced no captions (HTTP
+        #: status + body excerpt, or exception class + message). Set on every
+        #: call so the orchestrator can thread it into the LUMI0803 diagnostic;
+        #: None when the call succeeded.
+        self.last_failure_reason: str | None = None
 
     @property
     def active(self) -> bool:
@@ -523,6 +556,7 @@ class OpenRouterDescriber:
         return bool(self.enabled and self.api_key)
 
     def describe(self, items: list[DescribeItem]) -> list[DescribeResult | None]:
+        self.last_failure_reason = None
         if not items:
             return []
         if not self.enabled or not self.api_key:
@@ -589,17 +623,32 @@ class OpenRouterDescriber:
             "Content-Type": "application/json",
         }
         url = self.base_url.rstrip("/") + "/chat/completions"
-        for _ in range(2):
+        for attempt in range(2):
             try:
                 response = httpx.post(url, json=body, headers=headers, timeout=DEFAULT_TIMEOUT_S)
                 if response.status_code >= 400:
+                    excerpt = response.text[:FAILURE_EXCERPT_MAX]
+                    self.last_failure_reason = (
+                        f"HTTP {response.status_code} (attempt {attempt + 1}): {excerpt}"
+                    )
                     continue
                 raw = response.json()["choices"][0]["message"]["content"]
                 parsed = json.loads(raw)
                 if isinstance(parsed, dict):
                     parsed = parsed.get("descriptions") or parsed.get("items") or []
-                return parsed if isinstance(parsed, list) else None
-            except Exception:  # noqa: BLE001
+                if isinstance(parsed, list):
+                    self.last_failure_reason = None
+                    return parsed
+                self.last_failure_reason = (
+                    f"malformed response (attempt {attempt + 1}): expected a JSON array, "
+                    f"got {type(parsed).__name__}"
+                )
+                continue
+            except Exception as error:  # noqa: BLE001
+                message = str(error)[:FAILURE_EXCERPT_MAX]
+                self.last_failure_reason = (
+                    f"{type(error).__name__} (attempt {attempt + 1}): {message}"
+                )
                 continue
         return None
 

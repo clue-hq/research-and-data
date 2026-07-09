@@ -114,6 +114,19 @@ class _CountingNull:
         return [None] * len(items)
 
 
+class _ReasonedNull:
+    """A describer that returns nothing but records WHY (as OpenRouterDescriber
+    does), so the orchestrator can thread the reason into LUMI0803."""
+
+    active = True
+
+    def __init__(self, reason: str) -> None:
+        self.last_failure_reason = reason
+
+    def describe(self, items):
+        return [None] * len(items)
+
+
 # --------------------------------------------------------------------------- #
 # NullDescriber no-op
 # --------------------------------------------------------------------------- #
@@ -637,7 +650,13 @@ def test_describe_kit_assets_backfills_and_counts(tmp_path: Path) -> None:
         diagnostics=sink,
         brand_name="Backfill Brand",
     )
-    assert counts == {"total": 3, "cached": 1, "described": 2, "failed": 0}
+    assert counts == {
+        "total": 3,
+        "cached": 1,
+        "described": 2,
+        "failed": 0,
+        "failures": {},
+    }
     assert sink == []
     # Misses stamped from fresh describe results — usage_note its own field.
     logo = kit["assets"]["logos"]["primary"]
@@ -670,7 +689,13 @@ def test_describe_kit_assets_inactive_describer_only_stamps_cache(
         resolve_bytes=lambda aid: (_png_bytes(), "image/png"),
     )
     assert describer.calls == 0
-    assert counts == {"total": 3, "cached": 1, "described": 0, "failed": 0}
+    assert counts == {
+        "total": 3,
+        "cached": 1,
+        "described": 0,
+        "failed": 0,
+        "failures": {},
+    }
     assert kit["assets"]["images"]["img.2"]["title"] == "Existing title"
     assert "title" not in kit["assets"]["images"]["img.1"]
 
@@ -739,3 +764,125 @@ def test_import_pulls_no_pil_or_httpx() -> None:
     )
     assert result.returncode == 0, result.stderr
     assert "clean" in result.stdout
+
+
+# --------------------------------------------------------------------------- #
+# Describe failures carry the reason (LUMI0803 no longer says bare "nothing")
+# --------------------------------------------------------------------------- #
+
+
+def test_apply_diagnostic_carries_the_failure_reason(tmp_path: Path) -> None:
+    """When the describer records WHY it returned nothing, that reason is
+    threaded into the LUMI0803 diagnostic instead of a bare 'returned
+    nothing'."""
+    connection = _connection(tmp_path)
+    evidence = _evidence("asset_a")
+    reason = "HTTP 429 (attempt 2): rate limited by upstream"
+    sink: list[dict] = []
+    apply_descriptions(
+        evidence,
+        connection=connection,
+        describer=_ReasonedNull(reason),
+        resolve_bytes=lambda aid: (_png_bytes(), "image/png"),
+        reporter=_noop,
+        diagnostics=sink,
+    )
+    failures = [d for d in sink if d["code"] == "LUMI0803"]
+    assert len(failures) == 1
+    assert reason in failures[0]["message"]
+
+
+def test_backfill_summary_and_diagnostic_carry_the_reason(tmp_path: Path) -> None:
+    """The kit-backfill path threads the failure reason into BOTH the LUMI0803
+    diagnostic message AND the job summary (counts['failures'][asset_id])."""
+    from lumen_ingestion.describe import describe_kit_assets
+
+    connection = _connection(tmp_path)
+    kit = {
+        "assets": {
+            "logos": {
+                "primary": {"variants": [{"asset_id": "asset_logo"}]},
+            },
+            "images": {},
+        }
+    }
+    reason = "HTTP 500 (attempt 2): upstream boom"
+    sink: list[dict] = []
+    counts = describe_kit_assets(
+        kit,
+        connection=connection,
+        describer=_ReasonedNull(reason),
+        resolve_bytes=lambda aid: (_png_bytes(), "image/png"),
+        diagnostics=sink,
+    )
+    assert counts["failed"] == 1
+    assert counts["failures"] == {"asset_logo": reason}
+    failures = [d for d in sink if d["code"] == "LUMI0803"]
+    assert len(failures) == 1
+    assert reason in failures[0]["message"]
+
+
+def test_openrouter_invoke_captures_http_status_and_body(monkeypatch) -> None:
+    """OpenRouterDescriber._invoke records the HTTP status + a bounded body
+    excerpt on failure, so the reason is available to the orchestrator."""
+    from lumen_ingestion.describe import (
+        FAILURE_EXCERPT_MAX,
+        OpenRouterDescriber,
+    )
+
+    describer = OpenRouterDescriber()
+    describer.enabled = True
+    describer.api_key = "test-key"
+
+    class _Resp:
+        status_code = 503
+        text = "upstream unavailable " + "x" * 1000
+
+        def json(self):  # pragma: no cover - not reached on the 5xx path
+            return {}
+
+    def _fake_post(*args, **kwargs):
+        return _Resp()
+
+    import httpx
+
+    monkeypatch.setattr(httpx, "post", _fake_post)
+    item = DescribeItem(
+        asset_id="asset_a",
+        kind="logo",
+        image_b64="",
+        filename=None,
+        context="brand: X",
+    )
+    results = describer.describe([item])
+    assert results == [None]
+    assert describer.last_failure_reason is not None
+    assert "HTTP 503" in describer.last_failure_reason
+    assert "upstream unavailable" in describer.last_failure_reason
+    # Bounded: the excerpt never floods the diagnostic.
+    assert len(describer.last_failure_reason) <= FAILURE_EXCERPT_MAX + 40
+
+
+def test_openrouter_invoke_captures_exception(monkeypatch) -> None:
+    """A network exception is captured as class + message, not silently
+    swallowed into a bare None."""
+    from lumen_ingestion.describe import OpenRouterDescriber
+
+    describer = OpenRouterDescriber()
+    describer.enabled = True
+    describer.api_key = "test-key"
+
+    def _boom(*args, **kwargs):
+        raise ConnectionError("connection reset by peer")
+
+    import httpx
+
+    monkeypatch.setattr(httpx, "post", _boom)
+    item = DescribeItem(
+        asset_id="asset_a", kind="logo", image_b64="", filename=None, context="x"
+    )
+    results = describer.describe([item])
+    assert results == [None]
+    assert describer.last_failure_reason is not None
+    assert "ConnectionError" in describer.last_failure_reason
+    assert "connection reset by peer" in describer.last_failure_reason

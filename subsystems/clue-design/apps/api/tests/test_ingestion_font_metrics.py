@@ -13,6 +13,7 @@ from pathlib import Path
 from lumen_ingestion.normalizer.font_metrics import (
     TYPE_SIZE_REFERENCE_RAMP,
     build_type_size_ramp,
+    ensure_type_size_ramp,
     extract_font_metrics,
     reference_x_ratio,
 )
@@ -87,3 +88,90 @@ def test_trial_otf_subset_still_measures() -> None:
     metrics = extract_font_metrics(face.read_bytes())
     assert metrics is not None
     assert metrics.get("x_height_ratio", 0) > 0
+
+
+# --------------------------------------------------------------------------- #
+# ensure_type_size_ramp: republish-time re-normalization (the ramp gap)
+# --------------------------------------------------------------------------- #
+
+
+def test_ensure_ramp_backfills_a_kit_missing_type_size() -> None:
+    """A legacy kit produced before the ramp normalizer has empty numbers and
+    dies preflight LUMB0301. ensure_type_size_ramp bakes the full 13-step ramp
+    in — the identity ramp when no font metrics are present."""
+    kit = {"tokens": {"numbers": {}}, "assets": {"fonts": {}}}
+    changed = ensure_type_size_ramp(kit)
+    assert changed is True
+    numbers = kit["tokens"]["numbers"]
+    assert set(TYPE_SIZE_REFERENCE_RAMP) <= set(numbers)
+    md = numbers["type.size.md"]
+    assert md["role"] == "font_size"
+    assert md["value"]["default"] == {"kind": "number", "unit": "px", "value": 16.0}
+    assert md["value"]["modes"] == {}
+    assert "type-size-ramp" in md["provenance"]["source"]
+
+
+def test_ensure_ramp_is_idempotent_byte_identical() -> None:
+    """A kit that already carries the up-to-date ramp republishes byte-for-byte:
+    a second ensure call reports no change and leaves the tokens untouched."""
+    import copy
+
+    kit = {"tokens": {"numbers": {}}, "assets": {"fonts": {}}}
+    assert ensure_type_size_ramp(kit) is True
+    snapshot = copy.deepcopy(kit["tokens"]["numbers"])
+    assert ensure_type_size_ramp(kit) is False
+    assert kit["tokens"]["numbers"] == snapshot
+
+
+def test_ensure_ramp_matches_normalizer_output_exactly() -> None:
+    """The republish path must emit the SAME token entries the normalizer bakes
+    at ingestion — one vocabulary, one shape. Compare against a real
+    normalize_evidence pass so drift in either producer trips this test."""
+    import json
+
+    from lumen_ingestion import BrandEvidence, normalize_evidence
+
+    fixture = (
+        Path(__file__).parent
+        / "fixtures"
+        / "ingestion"
+        / "evidence_minimal.json"
+    )
+    evidence = BrandEvidence.model_validate(json.loads(fixture.read_text()))
+    result = normalize_evidence(
+        evidence,
+        brand_kit_id="brand_kit_ramp_test",
+        name="Ramp Test",
+        created_at="2026-07-10T00:00:00Z",
+    )
+    normalizer_ramp = {
+        path: entry
+        for path, entry in result.brand_kit["tokens"]["numbers"].items()
+        if path.startswith("type.size.")
+    }
+
+    kit = {"tokens": {"numbers": {}}, "assets": {"fonts": {}}}
+    ensure_type_size_ramp(kit)
+    republish_ramp = {
+        path: entry
+        for path, entry in kit["tokens"]["numbers"].items()
+        if path.startswith("type.size.")
+    }
+    assert republish_ramp == normalizer_ramp
+
+
+def test_ensure_ramp_reads_the_kits_own_font_metrics() -> None:
+    """When the kit carries measured font metrics, the factor comes from the
+    heading font's x-height ratio (fonts.brand) — same source the normalizer
+    uses. A small x-height scales the ramp up, just like build_type_size_ramp."""
+    kit = {
+        "tokens": {"numbers": {}},
+        "assets": {
+            "fonts": {"brand": {"family": "Small X", "metrics": {"x_height_ratio": 0.44}}}
+        },
+    }
+    ensure_type_size_ramp(kit)
+    md = kit["tokens"]["numbers"]["type.size.md"]["value"]["default"]["value"]
+    expected, _ = build_type_size_ramp(0.44)
+    assert md == expected["type.size.md"]["value"]
+    assert md > 16.0  # compensated upward

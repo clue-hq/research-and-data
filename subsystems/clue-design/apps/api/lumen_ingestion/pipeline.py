@@ -284,24 +284,26 @@ def _make_rasterize_svg(
 
     def rasterize(asset_id: str) -> "bytes | None":
         try:
-            import base64 as _b64
-
             from lumen_api.core import CoreClient
 
             core = CoreClient()
             record = repo.require_asset_record(asset_id)
             asset = record.get("asset") or record
+            # `new_scene` yields an empty scene with ZERO pages, so an
+            # export against it produced no artifact and every SVG declined
+            # (LUMI0804). Give the raster its own square page and insert the
+            # image into it — the same page+image shape production rendering
+            # uses.
+            page_id = "page_svg_raster"
             scene = core.new_scene("doc_svg_raster", "svg raster")
-            pages = list((scene.get("pages") or {}).keys())
-            if not pages:
-                return None
+            scene["pages"] = {page_id: _raster_page(page_id)}
             scene.setdefault("assets", {})[asset_id] = asset
             core_result = core.apply_operations(
                 scene,
                 [
                     {
                         "kind": "insert_node",
-                        "parent": {"kind": "page", "id": pages[0]},
+                        "parent": {"kind": "page", "id": page_id},
                         "index": 0,
                         "node": _raster_image_node(asset_id),
                     }
@@ -311,14 +313,17 @@ def _make_rasterize_svg(
             export = core.export_preview(
                 scene,
                 "png",
-                page_ids=[pages[0]],
+                page_ids=[page_id],
                 raise_on_error=False,
                 asset_store_root=asset_store_root,
             )
             for artifact in (export.get("export") or {}).get("artifacts") or []:
-                encoded = artifact.get("bytes_base64")
-                if encoded:
-                    return _b64.b64decode(encoded)
+                # The engine emits raw pixel bytes under `bytes` (a list of
+                # ints), never `bytes_base64` — reading the wrong key silently
+                # dropped every rasterized preview.
+                raw = artifact.get("bytes")
+                if raw:
+                    return bytes(raw)
             return None
         except Exception:  # noqa: BLE001 - raster failure is the caller's diagnostic
             logger.debug("svg rasterization failed for %s", asset_id, exc_info=True)
@@ -335,6 +340,27 @@ def make_resolve_bytes(repo: Repository, asset_store_root: str):
 
 def make_rasterize_svg(repo: Repository, asset_store_root: str):
     return _make_rasterize_svg(repo, asset_store_root)
+
+
+def _raster_page(page_id: str) -> dict:
+    """A minimal square page (canonical pt units) sized to the raster viewport,
+    so the SVG fills a 512×512 preview."""
+    side = 512.0
+    return {
+        "id": page_id,
+        "name": "svg raster",
+        "size": {
+            "width": side,
+            "height": side,
+            "unit": "pt",
+            "preset": None,
+            "orientation": "portrait",
+        },
+        "children": [],
+        "bleed": None,
+        "safe_area": None,
+        "background": [],
+    }
 
 
 def _raster_image_node(asset_id: str) -> dict:
