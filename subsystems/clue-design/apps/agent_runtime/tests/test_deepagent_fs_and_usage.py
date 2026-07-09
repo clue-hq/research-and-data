@@ -294,39 +294,81 @@ def test_extract_usage_from_llm_output_fallback():
     assert usage == {"input_tokens": 7, "output_tokens": 3, "total_tokens": 10}
 
 
-def test_attach_usage_capture_binds_callback_on_real_runnable():
-    """A runnable with `.with_config` gets the handler bound; the returned object
-    carries the handler in its config callbacks."""
-    from langchain_core.runnables import RunnableLambda
+def test_attach_usage_capture_returns_same_model_with_handler_on_callbacks():
+    """attach_usage_capture appends the handler to the model's OWN `.callbacks`
+    field and returns the SAME object (no RunnableBinding wrapper — that broke
+    deepagents' resolve_model, probe-r9). Verified against a REAL BaseChatModel."""
+    from langchain_core.language_models.fake_chat_models import FakeListChatModel
 
     tools = _FakeTools()
-    runnable = RunnableLambda(lambda x: x)
-    wrapped = attach_usage_capture(runnable, tools, role="orchestrator")
-    callbacks = (wrapped.config or {}).get("callbacks") or []
+    model = FakeListChatModel(responses=["hi"])
+    returned = attach_usage_capture(model, tools, role="orchestrator")
+    # Same object, same type — still a BaseChatModel (what resolve_model demands).
+    assert returned is model
+    callbacks = model.callbacks or []
     assert any(isinstance(cb, UsageCaptureHandler) for cb in callbacks)
 
 
-def test_attach_usage_capture_passes_through_object_without_with_config():
-    """A plain object (test sentinel) without `.with_config` is returned as-is so
-    assembly and dedupe-by-identity are never disturbed."""
+def test_attach_usage_capture_appends_never_replaces_existing_callbacks():
+    """A pre-existing callback on the model's `.callbacks` list survives — we
+    append, never replace."""
+    from langchain_core.callbacks import BaseCallbackHandler
+    from langchain_core.language_models.fake_chat_models import FakeListChatModel
+
+    class _Other(BaseCallbackHandler):
+        pass
+
+    other = _Other()
+    tools = _FakeTools()
+    model = FakeListChatModel(responses=["hi"], callbacks=[other])
+    attach_usage_capture(model, tools, role="author")
+    assert other in model.callbacks
+    assert any(isinstance(cb, UsageCaptureHandler) for cb in model.callbacks)
+
+
+def test_attach_usage_capture_passes_through_object_without_callbacks_field():
+    """A plain object (test sentinel) with no `callbacks` field is returned as-is
+    so assembly is never disturbed and no warning is raised."""
     tools = _FakeTools()
     sentinel = object()
     assert attach_usage_capture(sentinel, tools, role="author") is sentinel
+    assert tools.events == []
 
 
-def test_wired_handler_records_role_when_invoked_through_config():
-    """End-to-end within the callback machinery: invoking a RunnableLambda that
-    is a chat-model stand-in won't emit usage, so drive the handler through
-    LangChain's config-callback path with a manual on_llm_end to confirm the
-    attach wiring produces a usable handler carrying the role."""
+def test_attach_usage_capture_fires_on_real_invoke():
+    """The instance-level handler fires on a REAL model invoke (langchain_core
+    passes `self.callbacks` into CallbackManager.configure as local_callbacks),
+    so usage capture is wired end-to-end without any wrapper — the crux of the
+    fix. The fake model emits no usage_metadata, so we assert the handler's
+    on_llm_end ran by observing it processed the call (no event, since no usage),
+    which we confirm separately; here we prove the callback machinery reaches it
+    by using a handler that flags on_llm_end."""
+    from langchain_core.callbacks import BaseCallbackHandler
+    from langchain_core.language_models.fake_chat_models import FakeListChatModel
+
+    fired: list[str] = []
+
+    class _Flag(BaseCallbackHandler):
+        def on_llm_end(self, *a, **k):
+            fired.append("end")
+
+    model = FakeListChatModel(responses=["hi"])
+    model.callbacks = [_Flag()]
+    model.invoke("hello")
+    assert fired == ["end"]
+
+
+def test_wired_handler_records_role_on_the_instance():
+    """The handler appended to a real model's `.callbacks` carries the role and
+    records it when it fires (driven here via a manual on_llm_end since the fake
+    model emits no usage_metadata)."""
+    from langchain_core.language_models.fake_chat_models import FakeListChatModel
+
     tools = _FakeTools()
-    from langchain_core.runnables import RunnableLambda
-
-    wrapped = attach_usage_capture(RunnableLambda(lambda x: x), tools, role="reviewer")
+    model = FakeListChatModel(responses=["hi"])
+    attach_usage_capture(model, tools, role="reviewer")
     handler = next(
-        cb
-        for cb in (wrapped.config or {}).get("callbacks", [])
-        if isinstance(cb, UsageCaptureHandler)
+        cb for cb in model.callbacks if isinstance(cb, UsageCaptureHandler)
     )
     handler.on_llm_end(_llm_result_with_usage(total_tokens=200))
     assert tools.events[0]["payload"]["role"] == "reviewer"
@@ -339,9 +381,10 @@ def test_wired_handler_records_role_when_invoked_through_config():
 
 
 def test_harness_attaches_usage_capture_to_all_three_role_models(tmp_path, monkeypatch):
-    """create_design_deepagent must hand deepagents models whose config carries a
-    UsageCaptureHandler — one per role, with the role label — when the underlying
-    model supports `.with_config` (real chat models do)."""
+    """create_design_deepagent must hand deepagents models whose OWN `.callbacks`
+    field carries a UsageCaptureHandler — one per role, with the role label — using
+    REAL BaseChatModel instances (each role a SEPARATE instance, so instance-level
+    callbacks attribute cleanly and never cross-contaminate)."""
     import sys
     import types
 
@@ -373,13 +416,14 @@ def test_harness_attaches_usage_capture_to_all_three_role_models(tmp_path, monke
     monkeypatch.setitem(sys.modules, "deepagents.backends.filesystem", fsmod)
     monkeypatch.setattr("lumen_agent.tools.substrate.CoreClient", FakeCoreClient)
 
-    # A model stand-in that DOES support .with_config, like a real chat model, so
-    # attach_usage_capture actually binds the handler.
-    from langchain_core.runnables import RunnableLambda
+    # A REAL BaseChatModel per call, so attach_usage_capture appends the handler
+    # to its own `.callbacks` field. A fresh instance per call mirrors the harness
+    # contract (three roles → three instances).
+    from langchain_core.language_models.fake_chat_models import FakeListChatModel
 
     monkeypatch.setattr(
         "lumen_agent.llm.init_model",
-        lambda *a, **k: RunnableLambda(lambda x: x),
+        lambda *a, **k: FakeListChatModel(responses=["ok"]),
         raising=False,
     )
     monkeypatch.setattr(
@@ -394,10 +438,71 @@ def test_harness_attaches_usage_capture_to_all_three_role_models(tmp_path, monke
     kwargs = captured["kwargs"]
 
     def _roles_on(model):
-        callbacks = (getattr(model, "config", {}) or {}).get("callbacks") or []
+        callbacks = getattr(model, "callbacks", None) or []
         return {cb._role for cb in callbacks if isinstance(cb, UsageCaptureHandler)}
 
     assert _roles_on(kwargs["model"]) == {"orchestrator"}
     subs = {s["name"]: s for s in kwargs["subagents"]}
     assert _roles_on(subs["lumen-dsl-author"]["model"]) == {"author"}
     assert _roles_on(subs["lumen-visual-reviewer"]["model"]) == {"reviewer"}
+    # Three SEPARATE instances (no dedupe) — the orchestrator instance is not the
+    # author instance even though ids match, so their handlers never cross-fire.
+    assert kwargs["model"] is not subs["lumen-dsl-author"]["model"]
+    assert subs["lumen-dsl-author"]["model"] is not subs["lumen-visual-reviewer"]["model"]
+
+
+# ============================================================================
+# INTEGRATION-REGRESSION GUARD — probe-r9 CONSTRUCTION FAILURE
+# ============================================================================
+#
+# This is the test that WOULD HAVE CAUGHT the incident and must never regress.
+#
+# The bug: attach_usage_capture wrapped each role model via `.with_config(...)`,
+# producing a RunnableBinding. deepagents' `resolve_model` passes through only
+# `isinstance(model, BaseChatModel)`; a RunnableBinding is not one, so it fell to
+# the string-spec path where `get_provider_profile(spec)` does `spec.count(":")`
+# → `AttributeError('ChatOpenAI' object has no attribute 'count')`, killing EVERY
+# turn at construction in <20s. The other harness tests all STUB create_deep_agent,
+# so the wrapped object never met the real resolve_model — they were blind to it.
+#
+# This test runs the REAL deepagents (create_deep_agent + resolve_model), stubbing
+# ONLY init_model (to a real ChatOpenAI that opens no socket at construction) and
+# the multimodal probe (which would hit the network). If attach_usage_capture ever
+# returns a non-BaseChatModel again, resolve_model raises here and this fails.
+
+
+def test_real_deepagents_construction_does_not_raise(tmp_path, monkeypatch):
+    """Exercises the REAL deepagents resolve_model on exactly the model objects the
+    harness passes it. NO deepagents stub. Regression guard for the probe-r9
+    construction failure (RunnableBinding wrapper crashing get_provider_profile)."""
+    from langchain_openai import ChatOpenAI
+
+    from agent_fixtures import FakeCoreClient, runtime_config
+
+    monkeypatch.setattr("lumen_agent.tools.substrate.CoreClient", FakeCoreClient)
+
+    # A REAL ChatOpenAI per call: it is a BaseChatModel (what resolve_model demands)
+    # and opens NO socket at construction, so this stays fully offline. A fresh
+    # instance per call mirrors the harness's three-instances contract.
+    def _real_chat_model(*a, **k):
+        return ChatOpenAI(model="x", api_key="sk-test", base_url="http://localhost:1")
+
+    monkeypatch.setattr(
+        "lumen_agent.llm.init_model", _real_chat_model, raising=False
+    )
+    # The multimodal probe would hit OpenRouter over the network; no-op it. The
+    # regression under test is resolve_model, not the probe.
+    monkeypatch.setattr(
+        "lumen_agent.llm.assert_all_role_models_support_image_input",
+        lambda config: None,
+        raising=False,
+    )
+
+    from lumen_agent.harness import create_design_deepagent
+
+    # Must construct without raising — the whole point. Pre-fix this raised
+    # AttributeError('ChatOpenAI' object has no attribute 'count') inside
+    # deepagents.resolve_model.
+    agent, tools = create_design_deepagent("Make a poster", runtime_config(tmp_path))
+    assert agent is not None
+    assert tools is not None

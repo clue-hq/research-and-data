@@ -4,15 +4,18 @@ The D3 context-growth watch has had no data: run traces carried zero token-usage
 events. This is the smallest reliable capture — a LangChain callback handler that
 reads `usage_metadata` off each `on_llm_end` result and appends ONE trace event
 per model call via `LumenDesignTools.record`. It is attached to the three role
-model instances in the harness (`.with_config(callbacks=[...])`), so every
-orchestrator / author / reviewer generation logs its input/output/total tokens.
+model instances in the harness by appending the handler to each model's own
+declared `callbacks` field (NOT via `.with_config`, which returns a
+`RunnableBinding` that deepagents' `resolve_model` mishandles — see
+`attach_usage_capture`), so every orchestrator / author / reviewer generation
+logs its input/output/total tokens.
 
-Attribution: LangChain does not pass a stable role identifier into `on_llm_end`,
-and all three roles frequently share ONE deduped model instance, so we do NOT try
-to attribute an event to a role from inside the callback (that would need brittle
-run-tree plumbing the rider explicitly forbids). Events are recorded WITHOUT a
-`role`; the `role` key is present only when a handler is constructed for a single
-distinct model id (the deduped-to-one-model case), where it is unambiguous.
+Attribution: LangChain does not pass a stable role identifier into `on_llm_end`.
+Because instance-level callbacks fire only on THAT instance, per-role attribution
+is achieved by building ONE model instance per role (the harness makes three,
+even when the ids are identical) and tagging each with its role. A handler
+carries `role` when it backs a single role instance; the value is recorded on
+every event so the role IS cleanly attributable at the point of attachment.
 
 Robustness: the callback must NEVER break a run. Any failure while reading usage
 or recording is swallowed and reported once as a single `model_call_usage_warning`
@@ -77,9 +80,9 @@ class UsageCaptureHandler(BaseCallbackHandler):
 
     Args:
         tools: the `LumenDesignTools` whose `record(...)` writes the trace.
-        role: an optional role label recorded on each event. Set ONLY when this
-            handler backs a single unambiguous model id; left None otherwise so
-            we never mis-attribute a shared model instance.
+        role: an optional role label recorded on each event. Set per role since
+            each role now backs its OWN model instance (harness builds three), so
+            the label is unambiguous; left None only when no role is supplied.
     """
 
     def __init__(self, tools: Any, role: Optional[str] = None) -> None:
@@ -125,17 +128,64 @@ class UsageCaptureHandler(BaseCallbackHandler):
 
 
 def attach_usage_capture(model: Any, tools: Any, role: Optional[str] = None) -> Any:
-    """Return `model` with a `UsageCaptureHandler` bound as a config callback.
+    """Attach a `UsageCaptureHandler` to `model` IN PLACE and return the SAME object.
 
-    Falls back to the untouched model if the runnable does not support
-    `with_config` (a stub in tests, say) — capture is best-effort and must never
-    block agent assembly.
+    We append the handler to the model's own declared `callbacks` field rather
+    than wrapping it via `.with_config(...)`. `.with_config` produces a
+    `RunnableBinding`, which is NOT a `BaseChatModel`; deepagents' `resolve_model`
+    only passes `isinstance(model, BaseChatModel)` objects through untouched and
+    routes everything else down a string-spec path that calls `spec.count(":")` —
+    on a `RunnableBinding` that dies with `AttributeError('ChatOpenAI' object has
+    no attribute 'count')`, killing construction of every turn
+    (probe-r9: CONSTRUCTION-FAILURE-traceback.txt). Returning the same
+    `BaseChatModel` keeps the type deepagents demands.
+
+    `callbacks` is a declared pydantic field on `BaseLanguageModel`
+    (`langchain_core/language_models/base.py`: `callbacks: Callbacks =
+    Field(default=None, exclude=True)`), and `BaseChatModel.generate` passes it as
+    `local_callbacks` into `CallbackManager.configure(callbacks, self.callbacks,
+    ...)`, so an instance-level handler fires on every invoke of THAT instance
+    (verified live in langchain_core 1.4.8). Because the handler lives on the
+    instance — not on a shared config — per-role attribution requires one instance
+    per role (the harness builds three; see harness.py).
+
+    Robustness (never breaks a run): if the model has no writable `callbacks`
+    field (a stub/sentinel in tests, or a frozen model), we return it untouched
+    after a single warning path. We APPEND to any existing list — never replace —
+    so callbacks wired elsewhere survive.
     """
     handler = UsageCaptureHandler(tools, role=role)
-    with_config = getattr(model, "with_config", None)
-    if not callable(with_config):
+    if not hasattr(model, "callbacks"):
+        # Not a BaseChatModel (e.g. a test sentinel) — leave it untouched so
+        # assembly and any identity-based dedupe are undisturbed. No warning:
+        # this is an expected, benign shape, not a wiring failure.
         return model
     try:
-        return with_config(callbacks=[handler])
-    except Exception:  # noqa: BLE001 - never block assembly on a capture wiring failure
-        return model
+        existing = model.callbacks
+        if existing is None:
+            model.callbacks = [handler]
+        elif isinstance(existing, list):
+            existing.append(handler)
+        else:
+            # `Callbacks` may also be a BaseCallbackManager; wrapping that in a
+            # list here would drop its handlers. Add ours through its own API.
+            add_handler = getattr(existing, "add_handler", None)
+            if callable(add_handler):
+                add_handler(handler)
+            else:
+                model.callbacks = [existing, handler]
+    except Exception as error:  # noqa: BLE001 - never block assembly on wiring
+        # Readonly/frozen field or an unexpected shape: degrade to no capture,
+        # warn once through the tools trace, and hand back the untouched model.
+        try:
+            tools.record(
+                "model",
+                "model_call_usage_warning",
+                output_summary=(
+                    f"usage capture not wired ({role or 'unattributed'}): "
+                    f"{type(error).__name__}: {error}"
+                )[:500],
+            )
+        except Exception:  # noqa: BLE001 - even the warning must not raise
+            pass
+    return model

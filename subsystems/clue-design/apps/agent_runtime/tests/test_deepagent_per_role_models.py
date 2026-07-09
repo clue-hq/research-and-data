@@ -8,8 +8,11 @@ Covers:
 - py_lumen_config env parsing: LUMEN_AGENT_MAX_TOKENS (+ loud failure on junk /
   non-positive), the three per-role model vars, and their defaults.
 - AgentRuntimeConfig.from_env threading + resolved role accessors.
-- harness builds ONE init_model instance per DISTINCT resolved role id (dedupe),
-  wires the right id to each role, and threads max_tokens on every call.
+- harness builds EXACTLY THREE init_model instances — one per role, NEVER deduped
+  (per-role usage attribution rides instance-level callbacks, so a shared
+  instance would cross-attribute; see usage_capture.attach_usage_capture) — wires
+  the right id to each role, tags each role's model with a role-labelled
+  UsageCaptureHandler on `.callbacks`, and threads max_tokens on every call.
 - .env.example documents all four new vars.
 """
 
@@ -155,8 +158,11 @@ class _FakeDeepAgentState(dict):
 
 def _install_harness_stubs(monkeypatch, capture: dict):
     """Stub deepagents + init_model, capturing create_deep_agent kwargs and every
-    init_model call. init_model returns a sentinel keyed by model id so identity
-    reveals dedupe."""
+    init_model call. init_model returns a FRESH sentinel per call carrying a
+    writable `callbacks` field (like a real BaseChatModel), so per-instance role
+    tagging by attach_usage_capture is observable and per-call identity is
+    distinct (there is no dedupe to observe anymore — three roles → three
+    instances, always)."""
 
     def fake_create_deep_agent(**kwargs):
         capture["create_kwargs"] = kwargs
@@ -182,8 +188,11 @@ def _install_harness_stubs(monkeypatch, capture: dict):
 
     def fake_init_model(model, **kwargs):
         calls.append({"model": model, **kwargs})
-        # Distinct sentinel per model id so dedupe is observable by identity.
-        return types.SimpleNamespace(_role_model_id=model, _kwargs=kwargs)
+        # FRESH sentinel per call with a `callbacks` field (declared on real
+        # BaseChatModel) so attach_usage_capture appends its role-tagged handler.
+        return types.SimpleNamespace(
+            _role_model_id=model, _kwargs=kwargs, callbacks=None
+        )
 
     monkeypatch.setattr("lumen_agent.llm.init_model", fake_init_model, raising=False)
     # Neutralize the multimodal probe (it would try HTTP); the per-role coverage
@@ -199,7 +208,19 @@ def _subagent(create_kwargs, name):
     return next(s for s in create_kwargs["subagents"] if s["name"] == name)
 
 
-def test_harness_all_same_model_builds_one_instance(tmp_path, monkeypatch):
+def _roles_on(model):
+    """The set of role labels carried by UsageCaptureHandlers appended to a
+    sentinel model's `.callbacks` field."""
+    from lumen_agent.usage_capture import UsageCaptureHandler
+
+    callbacks = getattr(model, "callbacks", None) or []
+    return {cb._role for cb in callbacks if isinstance(cb, UsageCaptureHandler)}
+
+
+def test_harness_all_same_model_builds_three_instances(tmp_path, monkeypatch):
+    """All three roles resolve to the same id, yet the harness builds THREE
+    distinct instances (no dedupe) — one per role — because per-role usage
+    attribution rides instance-level callbacks."""
     capture: dict = {}
     _install_harness_stubs(monkeypatch, capture)
     from lumen_agent.harness import create_design_deepagent
@@ -207,17 +228,27 @@ def test_harness_all_same_model_builds_one_instance(tmp_path, monkeypatch):
     config = _config(repo_root=tmp_path, trace_dir=tmp_path / ".lumen-runs")
     create_design_deepagent("Make a poster", config)
 
-    # Exactly one init_model call: all three roles resolve to the same id.
-    assert len(capture["init_calls"]) == 1
-    assert capture["init_calls"][0]["model"] == "openai:default/model"
+    # THREE init_model calls, all for the same id (one per role, never deduped).
+    assert len(capture["init_calls"]) == 3
+    assert [c["model"] for c in capture["init_calls"]] == [
+        "openai:default/model",
+        "openai:default/model",
+        "openai:default/model",
+    ]
 
     ck = capture["create_kwargs"]
     orch = ck["model"]
     author = _subagent(ck, "lumen-dsl-author")["model"]
     reviewer = _subagent(ck, "lumen-visual-reviewer")["model"]
-    # Dedupe: identical resolved ids share ONE instance (same object).
-    assert orch is author is reviewer
-    assert orch._role_model_id == "openai:default/model"
+    # No dedupe: three DISTINCT objects even though the id is identical.
+    assert orch is not author
+    assert author is not reviewer
+    assert orch is not reviewer
+    assert orch._role_model_id == author._role_model_id == reviewer._role_model_id == "openai:default/model"
+    # Each role's instance carries ITS OWN role-tagged handler — cleanly attributed.
+    assert _roles_on(orch) == {"orchestrator"}
+    assert _roles_on(author) == {"author"}
+    assert _roles_on(reviewer) == {"reviewer"}
 
 
 def test_harness_distinct_role_models(tmp_path, monkeypatch):
@@ -244,14 +275,19 @@ def test_harness_distinct_role_models(tmp_path, monkeypatch):
         "openai:auth/y",
         "openai:rev/z",
     }
+    assert _roles_on(ck["model"]) == {"orchestrator"}
+    assert _roles_on(_subagent(ck, "lumen-dsl-author")["model"]) == {"author"}
+    assert _roles_on(_subagent(ck, "lumen-visual-reviewer")["model"]) == {"reviewer"}
 
 
-def test_harness_partial_override_dedupes_shared_default(tmp_path, monkeypatch):
+def test_harness_partial_override_still_builds_three_instances(tmp_path, monkeypatch):
+    """Only the orchestrator differs; author + reviewer share the default id — but
+    they still get SEPARATE instances (no dedupe), so their usage never
+    cross-attributes."""
     capture: dict = {}
     _install_harness_stubs(monkeypatch, capture)
     from lumen_agent.harness import create_design_deepagent
 
-    # Only the orchestrator differs; author + reviewer fall back to the default.
     config = _config(
         repo_root=tmp_path,
         trace_dir=tmp_path / ".lumen-runs",
@@ -263,10 +299,13 @@ def test_harness_partial_override_dedupes_shared_default(tmp_path, monkeypatch):
     author = _subagent(ck, "lumen-dsl-author")["model"]
     reviewer = _subagent(ck, "lumen-visual-reviewer")["model"]
     assert ck["model"]._role_model_id == "openai:orch/x"
-    assert author is reviewer  # shared default → one instance
-    assert author._role_model_id == "openai:default/model"
-    # Two distinct ids → two init_model calls (not three).
-    assert len(capture["init_calls"]) == 2
+    # Same resolved id, but DISTINCT instances (no dedupe).
+    assert author is not reviewer
+    assert author._role_model_id == reviewer._role_model_id == "openai:default/model"
+    # THREE init_model calls (one per role), never two.
+    assert len(capture["init_calls"]) == 3
+    assert _roles_on(author) == {"author"}
+    assert _roles_on(reviewer) == {"reviewer"}
 
 
 def test_harness_threads_max_tokens_on_every_call(tmp_path, monkeypatch):

@@ -98,40 +98,41 @@ def create_design_deepagent(
     # build through this factory. Loud only on a positive text-only finding.
     assert_all_role_models_support_image_input(runtime_config)
 
-    # D10(a)+(c): build up to three model instances — one per role — bounded by
-    # the shared max_tokens. Identical resolved ids share a single instance
-    # (dedupe) so the common all-same-model config still builds exactly one.
-    _model_cache: dict[str, Any] = {}
+    # D10(a)+(c): build EXACTLY three model instances — one per role — bounded by
+    # the shared max_tokens.
+    #
+    # No dedupe: per-role usage attribution is done by appending a role-tagged
+    # UsageCaptureHandler to each model's own instance-level `.callbacks` field
+    # (see usage_capture.attach_usage_capture). Instance-level callbacks fire on
+    # THAT instance only, so a SHARED instance across roles would cross-attribute
+    # every call to all three roles. Three separate instances of the same
+    # resolved id are therefore mandatory — and they cost nothing (construction
+    # is a thin client object; no network until invoke). This also replaces the
+    # earlier `.with_config` wrapper approach, which returned a RunnableBinding
+    # that deepagents' resolve_model mishandled and crashed construction on
+    # (probe-r9 CONSTRUCTION-FAILURE).
+    def _fresh_model(model_id: str):
+        return init_model(
+            model_id,
+            base_url=runtime_config.agent_base_url,
+            api_key=runtime_config.agent_api_key,
+            reasoning=runtime_config.agent_reasoning,
+            max_tokens=runtime_config.agent_max_tokens,
+        )
 
-    def _model_for(model_id: str):
-        cached = _model_cache.get(model_id)
-        if cached is None:
-            cached = init_model(
-                model_id,
-                base_url=runtime_config.agent_base_url,
-                api_key=runtime_config.agent_api_key,
-                reasoning=runtime_config.agent_reasoning,
-                max_tokens=runtime_config.agent_max_tokens,
-            )
-            _model_cache[model_id] = cached
-        return cached
-
-    # RIDER 2: attach a per-role token-usage callback. Each role gets its OWN
-    # `.with_config(callbacks=[...])` wrapper even when the underlying model
-    # instance is shared (dedupe above), so the callback fires on the wrapper
-    # deepagents actually runs and the role IS cleanly attributable at the point
-    # of attachment. Capture is best-effort — a wiring or callback failure never
-    # blocks assembly or breaks a run (see usage_capture.attach_usage_capture).
     from .usage_capture import attach_usage_capture
 
+    # Capture is best-effort — a wiring or callback failure never blocks assembly
+    # or breaks a run (see usage_capture.attach_usage_capture). attach_* mutates
+    # the model in place and returns the SAME BaseChatModel object.
     orchestrator_model = attach_usage_capture(
-        _model_for(runtime_config.orchestrator_model), tools, role="orchestrator"
+        _fresh_model(runtime_config.orchestrator_model), tools, role="orchestrator"
     )
     author_model = attach_usage_capture(
-        _model_for(runtime_config.author_model), tools, role="author"
+        _fresh_model(runtime_config.author_model), tools, role="author"
     )
     reviewer_model = attach_usage_capture(
-        _model_for(runtime_config.reviewer_model), tools, role="reviewer"
+        _fresh_model(runtime_config.reviewer_model), tools, role="reviewer"
     )
 
     view = make_view_tool(tools)
