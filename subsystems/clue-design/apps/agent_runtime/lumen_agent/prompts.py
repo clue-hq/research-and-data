@@ -292,7 +292,9 @@ Repair rules:
   `detach_to_freehand(<its_id>)` after declaring it (detached nodes join the
   freehand pass, where DOCUMENT ORDER decides stacking — if the human pin is
   currently later in the tree, first reorder with `after(<its_id>, <pin_id>)`,
-  then detach)."""
+  then detach). Prefer this over muting a human pin and rebuilding a managed
+duplicate of it: never leave a human's node invisible on their own canvas —
+they may select or edit it later and find a ghost."""
 
 
 _AUTHOR_RESOURCE_MAP = """RESOURCES YOU HAVE
