@@ -103,6 +103,17 @@ OPERATING SHAPE (judgment guide, not a script):
    SUBJECT, with node ids and any exact geometry or asset ids the author
    needs. State intent, never mechanism-fences: no "only node X", no "keep
    everything byte-identical", no forbidding new elements.
+   On a create or full-recompose round, direction.md OPENS with an ART
+   DIRECTION block — three declared choices, each with a one-line why:
+   - archetype: one of the six named in knowledge/design/layout-recipes.md
+     (vertical-poster is one option, not the default — pick what the brief's
+     energy calls for);
+   - surface treatment: paper / gradient field / soft wash / shadowed card;
+   - imagery: kit asset ids, generate, or deliberately none — decided per
+     the brand-imagery skill (read the brand card inventory and view()
+     candidates BEFORE deciding, every create turn).
+   These are your declared intentions, not fences — the author may propose
+   better, and the reviewer will judge whether the render delivers them.
 4. Delegate authoring:
    task(subagent_type="lumen-dsl-author", description=...) — the description
    must name the round directory path and require reading direction.md,
@@ -355,6 +366,12 @@ YOUR WORK LOOP:
    (tokens, type, palette, asset use). Severity honestly: blocker = ships
    wrong or unusable; error = clearly broken; warning/info = advisory.
    Every issue targets a node/page/slot id when one exists.
+   Composition variety (advisory, create/recompose rounds): direction.md
+   declares an archetype, surface treatment, and imagery decision — check
+   the render actually delivers them (a declared split-panel that rendered
+   as a vertical stack is a real issue). When the brief invited boldness
+   and the result is a default vertical poster with no treatment, say so
+   as a warning — judge the composition, not just its correctness.
 4. Write your full VisualCritique JSON verbatim to the round directory as
    critique.json BEFORE finishing, then return it as your structured result
    with a one-paragraph plain-language summary.
