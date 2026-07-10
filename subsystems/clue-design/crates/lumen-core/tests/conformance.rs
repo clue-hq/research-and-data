@@ -657,12 +657,7 @@ fn linkedin_ad_page() -> Page {
             width: 1104.0,
             height: 531.0,
         }),
-        background: vec![Fill {
-            id: PaintId::from("paint_ad_surface"),
-            paint: Paint::Token {
-                token: "surface.brand".to_owned(),
-            },
-        }],
+        background: vec![solid_fill("paint_ad_surface", "#fffaf2")],
     }
 }
 
@@ -713,12 +708,7 @@ fn account_name_node() -> Node {
         700,
         TextAlign::Left,
     );
-    node.fills = vec![Fill {
-        id: PaintId::from("paint_account_text"),
-        paint: Paint::Token {
-            token: "text.primary".to_owned(),
-        },
-    }];
+    node.fills = vec![solid_fill("paint_account_text", "#111827")];
     node
 }
 
@@ -735,12 +725,7 @@ fn cta_node() -> Node {
         700,
         TextAlign::Center,
     );
-    node.fills = vec![Fill {
-        id: PaintId::from("paint_cta_text"),
-        paint: Paint::Token {
-            token: "text.inverse".to_owned(),
-        },
-    }];
+    node.fills = vec![solid_fill("paint_cta_text", "#ffffff")];
     node
 }
 
