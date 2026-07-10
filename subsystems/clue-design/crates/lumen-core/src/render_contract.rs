@@ -81,6 +81,9 @@ pub enum EffectFeature {
     DropShadow,
     DropShadowSpread,
     LayeredShadows,
+    Glow,
+    LayerBlur,
+    InnerShadow,
 }
 
 impl EffectFeature {
@@ -96,6 +99,9 @@ impl EffectFeature {
             Self::DropShadow => "drop shadow",
             Self::DropShadowSpread => "drop shadow spread",
             Self::LayeredShadows => "layered drop shadows",
+            Self::Glow => "glow",
+            Self::LayerBlur => "layer blur",
+            Self::InnerShadow => "inner shadow",
         }
     }
 }
@@ -131,7 +137,12 @@ impl RendererEffectSupport {
             RenderTarget::KonvaScene => match feature {
                 EffectFeature::StrokeAlignment
                 | EffectFeature::DropShadowSpread
-                | EffectFeature::LayeredShadows => EffectSupportLevel::Approximate,
+                | EffectFeature::LayeredShadows
+                // Legacy Konva preview: blur/glow approximate the merged
+                // filter; inner shadow has no native Konva form.
+                | EffectFeature::Glow
+                | EffectFeature::LayerBlur => EffectSupportLevel::Approximate,
+                EffectFeature::InnerShadow => EffectSupportLevel::Unsupported,
                 _ => EffectSupportLevel::Native,
             },
             // PDF V0 is solid-paint-only: the first solid fill/stroke
@@ -146,7 +157,10 @@ impl RendererEffectSupport {
                 | EffectFeature::RadialGradientPaint
                 | EffectFeature::DropShadow
                 | EffectFeature::DropShadowSpread
-                | EffectFeature::LayeredShadows => EffectSupportLevel::Unsupported,
+                | EffectFeature::LayeredShadows
+                | EffectFeature::Glow
+                | EffectFeature::LayerBlur
+                | EffectFeature::InnerShadow => EffectSupportLevel::Unsupported,
             },
             // The Figma manifest is a structural sidecar, not a visual
             // render; it does not represent the effect surface.
@@ -204,17 +218,41 @@ pub fn effect_features_for_node(node: &Node) -> Vec<EffectFeature> {
     {
         features.push(EffectFeature::StrokeAlignment);
     }
-    if !node.effects.is_empty() {
+    let mut drop_shadows = 0usize;
+    let mut has_drop_shadow_spread = false;
+    let mut has_glow = false;
+    let mut has_layer_blur = false;
+    let mut has_inner_shadow = false;
+    for effect in &node.effects {
+        match &effect.kind {
+            EffectKind::DropShadow { spread, .. } => {
+                drop_shadows += 1;
+                if *spread != 0.0 {
+                    has_drop_shadow_spread = true;
+                }
+            }
+            EffectKind::Glow { .. } => has_glow = true,
+            EffectKind::LayerBlur { .. } => has_layer_blur = true,
+            EffectKind::InnerShadow { .. } => has_inner_shadow = true,
+        }
+    }
+    if drop_shadows > 0 {
         features.push(EffectFeature::DropShadow);
     }
-    if node.effects.iter().any(|effect| {
-        let EffectKind::DropShadow { spread, .. } = &effect.kind;
-        *spread != 0.0
-    }) {
+    if has_drop_shadow_spread {
         features.push(EffectFeature::DropShadowSpread);
     }
-    if node.effects.len() > 1 {
+    if drop_shadows > 1 {
         features.push(EffectFeature::LayeredShadows);
+    }
+    if has_glow {
+        features.push(EffectFeature::Glow);
+    }
+    if has_layer_blur {
+        features.push(EffectFeature::LayerBlur);
+    }
+    if has_inner_shadow {
+        features.push(EffectFeature::InnerShadow);
     }
     features
 }

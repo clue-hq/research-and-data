@@ -289,6 +289,13 @@ pub struct Node {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub asset_placement: Option<AssetPlacement>,
     pub clip: bool,
+    /// Declared intent that this node deliberately extends past the page/parent
+    /// bounds (a full-bleed wash). Purely a preflight signal: it downgrades the
+    /// off-canvas overflow errors (LUMV0800/LUMV0801) to warnings — it never
+    /// changes what is exported. Serde-defaulted and omitted when false so
+    /// pre-A4 scene JSON round-trips byte-identically (mirrors `effects`).
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub bleed: bool,
     pub layout: Option<AutoLayoutProps>,
     pub computed: Option<ComputedGeometry>,
     pub locked: bool,
@@ -357,6 +364,7 @@ impl Node {
             source_asset_id: None,
             asset_placement: None,
             clip: false,
+            bleed: false,
             layout: None,
             computed: None,
             locked: false,
@@ -694,6 +702,12 @@ fn is_enum_default<T: Default + PartialEq>(value: &T) -> bool {
     value == &T::default()
 }
 
+/// Serde helper: skip serializing a `bool` field that still holds `false`,
+/// keeping pre-A4 scene JSON byte-identical (used by `Node.bleed`).
+fn is_false(value: &bool) -> bool {
+    !*value
+}
+
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum StrokeCap {
@@ -729,13 +743,40 @@ pub struct Effect {
     pub kind: EffectKind,
 }
 
-/// V0 effect vocabulary: one outer drop shadow. The enum is deliberately
-/// open for later kinds (inner shadow, glow, blur, ...) which belong to
-/// effects-v1+.
+/// Effects v1 vocabulary: outer drop shadow, outer glow, layer blur, and
+/// inner shadow. The enum stays open (serde tag `kind`, snake_case) for later
+/// kinds (backdrop blur, inner glow, ...) which belong to effects-v2+.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum EffectKind {
     DropShadow {
+        color: Color,
+        opacity: f64,
+        x: f64,
+        y: f64,
+        blur: f64,
+        spread: f64,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        color_token: Option<String>,
+    },
+    /// Outer glow: zero-offset shadow semantics (dilate by `spread`, gaussian
+    /// `blur`, merged beneath the source). Inner glow is not in v1.
+    Glow {
+        color: Color,
+        opacity: f64,
+        blur: f64,
+        spread: f64,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        color_token: Option<String>,
+    },
+    /// Gaussian blur of the node's own rendering. Serde tag `layer_blur`
+    /// reserves `backdrop_blur` for a later effects wave.
+    LayerBlur {
+        radius: f64,
+    },
+    /// Inner shadow: drawn over the node's rendering and clipped to its alpha;
+    /// `spread` erodes the shape inward before the shadow is computed.
+    InnerShadow {
         color: Color,
         opacity: f64,
         x: f64,

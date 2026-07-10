@@ -595,6 +595,8 @@ pub struct NodeEditPatch {
     pub opacity: FieldPatch<f64>,
     pub opacity_token: OptionalFieldPatch<String>,
     pub clip: FieldPatch<bool>,
+    #[serde(skip_serializing_if = "FieldPatch::is_unchanged")]
+    pub bleed: FieldPatch<bool>,
     pub layout: OptionalFieldPatch<AutoLayoutProps>,
     pub source_asset_id: OptionalFieldPatch<AssetId>,
     pub asset_placement: OptionalFieldPatch<crate::assets::AssetPlacement>,
@@ -991,6 +993,7 @@ pub fn build_node_modify(
         source_asset_id: patch.source_asset_id,
         asset_placement: patch.asset_placement,
         clip: patch.clip,
+        bleed: patch.bleed,
         layout: patch.layout,
         computed: OptionalFieldPatch::Unchanged,
         locked: patch.locked,
@@ -2625,6 +2628,7 @@ fn node_patch_affects_render(patch: &NodePatch) -> bool {
         || !matches!(patch.source_asset_id, OptionalFieldPatch::Unchanged)
         || !matches!(patch.asset_placement, OptionalFieldPatch::Unchanged)
         || !matches!(patch.clip, FieldPatch::Unchanged)
+        || !matches!(patch.bleed, FieldPatch::Unchanged)
         || !matches!(patch.layout, OptionalFieldPatch::Unchanged)
         // Phase 1 freehand: pinning/unpinning or moving an absolute box moves
         // pixels, so stale computed geometry must be invalidated. Keep the TS

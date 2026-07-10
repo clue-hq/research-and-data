@@ -498,6 +498,47 @@ fn free_container_child_overflow_warns_despite_clip() {
 }
 
 #[test]
+fn declared_bleed_downgrades_page_overflow_to_warning() {
+    // A4: a managed node flagged bleed(true) washes past the artboard on
+    // purpose — LUMV0800 becomes a warning with the distinct bleed message.
+    // The same node without the flag keeps the hard error.
+    let mut scene = scene_with_canonical_page(300.0, 300.0);
+    let mut wash = rect("wash", 700.0, 900.0);
+    wash.bleed = true;
+    insert(&mut scene, ParentRef::Page(PageId::from("page")), wash);
+    insert(
+        &mut scene,
+        ParentRef::Page(PageId::from("page")),
+        rect("plain", 700.0, 900.0),
+    );
+
+    let diagnostics = validate_layout(&scene, LayoutOptions::default());
+
+    let bleed = diag_for(&diagnostics, "LUMV0800", "wash")
+        .expect("declared-bleed overflow still surfaces LUMV0800");
+    assert_eq!(
+        bleed.severity,
+        DiagnosticSeverity::Warning,
+        "declared bleed is advisory: {diagnostics:#?}"
+    );
+    assert!(
+        bleed
+            .hint
+            .as_deref()
+            .is_some_and(|hint| hint.contains("declared as bleed")),
+        "distinct bleed hint: {bleed:#?}"
+    );
+
+    let plain = diag_for(&diagnostics, "LUMV0800", "plain")
+        .expect("plain managed overflow keeps firing LUMV0800");
+    assert_eq!(
+        plain.severity,
+        DiagnosticSeverity::Error,
+        "an unflagged managed node still hard-errors: {diagnostics:#?}"
+    );
+}
+
+#[test]
 fn freehand_page_overflow_warns_while_managed_errors() {
     let mut scene = scene_with_canonical_page(300.0, 300.0);
     insert(

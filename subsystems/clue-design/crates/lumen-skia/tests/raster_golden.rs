@@ -12,7 +12,7 @@ use lumen_core::{
     PaintId, ParentRef, RasterScale, Scene, SizeSpec, TextAlign, TextNode, TextWrap, Transform,
     Unit,
 };
-use lumen_export::{FixtureAssetResolver, LumenExportAdapter, PageRasterizer};
+use lumen_export::{FixtureAssetResolver, LumenExportAdapter, PageRasterizer, SvgExportAdapter};
 use lumen_skia::{SkiaSceneRenderer, SkiaTextMeasurer};
 use skia_safe::{surfaces, Data, Image};
 use std::path::PathBuf;
@@ -20,6 +20,7 @@ use std::sync::Arc;
 
 const EFFECTS_CARD_FIXTURE: &str =
     include_str!("../../lumen-core/fixtures/effects/effects_card.json");
+const A4_EFFECTS_FIXTURE: &str = include_str!("../../lumen-core/fixtures/effects/a4_effects.json");
 const PHASE_E_ASSET_FIXTURE: &str =
     include_str!("../../lumen-core/fixtures/conformance/phase_e_asset_scene.json");
 const LOGO_PNG: &[u8] = include_bytes!("../../lumen-export/fixtures/assets/acme-logo-8x8-red.png");
@@ -345,6 +346,15 @@ fn golden_effects_card() {
 }
 
 #[test]
+fn golden_a4_effects() {
+    // A4 effects trio: glow + layer blur + inner shadow on a per-corner rect,
+    // plus a bleed(true) off-canvas wash the page clips.
+    let scene: Scene = serde_json::from_str(A4_EFFECTS_FIXTURE).expect("fixture parses");
+    let png = export_png(&skia_adapter(false), &scene, "page_a4_effects");
+    assert_golden("a4_effects", &png);
+}
+
+#[test]
 fn golden_text_wrap() {
     let scene = text_wrap_scene();
     let png = export_png(&skia_adapter(false), &scene, "page_text");
@@ -480,4 +490,116 @@ fn diff_report_resvg_vs_skia() {
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../docs/resvg-vs-skia-diff-a3.md");
     std::fs::write(&path, report).expect("report written");
     println!("report written to {path:?}");
+}
+
+/// A clean stacking scene (no bleed wash) for pixel-robust probes: a solid
+/// card with layer blur + glow + drop shadow + inner shadow on a white page.
+const STACKING_SCENE: &str = r##"{
+  "assets": {},
+  "export_profiles": [],
+  "meta": {"artifact_type": "card", "brand_kit": null, "id": "doc_stack",
+    "medium": "digital", "status": {"kind": "draft"}, "title": "Stack"},
+  "nodes": {
+    "card": {
+      "children": [], "clip": false, "computed": null,
+      "corner": {"bottom_left": 0.0, "bottom_right": 0.0, "top_left": 0.0, "top_right": 0.0},
+      "effects": [
+        {"id": "g", "kind": {"kind": "glow", "color": {"kind": "hex", "value": "#a020f0"},
+          "opacity": 0.95, "blur": 14.0, "spread": 6.0}},
+        {"id": "lb", "kind": {"kind": "layer_blur", "radius": 2.0}},
+        {"id": "ds", "kind": {"kind": "drop_shadow", "color": {"kind": "hex", "value": "#000000"},
+          "opacity": 0.5, "x": 0.0, "y": 14.0, "blur": 8.0, "spread": 0.0}},
+        {"id": "is", "kind": {"kind": "inner_shadow", "color": {"kind": "hex", "value": "#000000"},
+          "opacity": 0.85, "x": 0.0, "y": 12.0, "blur": 10.0, "spread": 0.0}}
+      ],
+      "fills": [{"id": "f", "paint": {"color": {"kind": "hex", "value": "#3366ff"}, "kind": "solid"}}],
+      "id": "card", "kind": {"kind": "rect"}, "layout": null, "locked": false, "name": null,
+      "opacity": 1.0,
+      "size": {"height": {"kind": "fixed", "value": 120.0}, "width": {"kind": "fixed", "value": 120.0}},
+      "strokes": [],
+      "transform": {"flip_x": false, "flip_y": false, "rotation": 0.0, "skew_x": 0.0, "skew_y": 0.0, "x": 90.0, "y": 80.0}
+    }
+  },
+  "pages": {
+    "page_stack": {
+      "background": [{"id": "bg", "paint": {"color": {"kind": "hex", "value": "#ffffff"}, "kind": "solid"}}],
+      "bleed": null, "children": ["card"], "id": "page_stack", "name": "Stack", "safe_area": null,
+      "size": {"height": 300.0, "orientation": "landscape", "preset": "custom", "unit": "px", "width": 300.0}
+    }
+  },
+  "schema_version": 1, "slots": {}
+}"##;
+
+fn luma(rgba: &Rgba, x: i32, y: i32) -> f64 {
+    let w = 300;
+    let o = ((y * w + x) * 4) as usize;
+    0.299 * rgba.pixels[o] as f64
+        + 0.587 * rgba.pixels[o + 1] as f64
+        + 0.114 * rgba.pixels[o + 2] as f64
+}
+
+#[test]
+fn effects_stacking_contract_agrees_svg_and_skia() {
+    // ONE scene exercising layer blur + glow + drop shadow + inner shadow.
+    // The D1 contract: source -> layer blurs -> shadow/glow beneath the
+    // blurred result -> inner shadows over it. This test pins that BOTH the
+    // SVG filter order and the Skia pixel stacking follow that order.
+    let scene: Scene = serde_json::from_str(STACKING_SCENE).expect("stacking scene parses");
+
+    // --- SVG side: filter primitives and merge nodes in D1 order. ---
+    let svg_result = SvgExportAdapter::new()
+        .export(
+            &scene,
+            &ExportRequest {
+                profile: ExportProfile {
+                    name: "svg".to_owned(),
+                    format: ExportFormat::Svg,
+                    pdf_intent: None,
+                    raster: None,
+                    include_bleed: false,
+                    embed_fonts: false,
+                },
+                page_ids: vec![PageId::from("page_stack")],
+                purpose: ExportPurpose::UserDownload,
+            },
+        )
+        .expect("svg export");
+    let svg = String::from_utf8(svg_result.artifacts[0].bytes.clone()).unwrap();
+    let lba = svg.find("result=\"lumen-lba-0\"").expect("blurred alpha");
+    let outer = svg.find("result=\"lumen-outer-0\"").expect("outer effect");
+    let inner = svg.find("result=\"lumen-inner-0\"").expect("inner effect");
+    let merge = svg.find("<feMerge>").expect("feMerge");
+    assert!(lba < outer && outer < inner && inner < merge, "SVG D1 order: {svg}");
+    let mb = &svg[merge..];
+    assert!(
+        mb.find("in=\"lumen-outer-0\"").unwrap()
+            < mb.find("in=\"lumen-lb-0\"").unwrap()
+            && mb.find("in=\"lumen-lb-0\"").unwrap() < mb.find("in=\"lumen-inner-0\"").unwrap(),
+        "SVG merge is outer -> base -> inner: {svg}"
+    );
+
+    // --- Skia side: pixel evidence the same order composed. ---
+    let png = export_png(&skia_adapter(false), &scene, "page_stack");
+    let rgba = decode_rgba(&png);
+    // Card box: x[90..210], y[80..200], center x=150.
+    // 1. Glow/shadow render BENEATH the card: a pixel just left of the card
+    //    (in the glow band) is tinted, not the plain white background.
+    let glow_band = luma(&rgba, 82, 140);
+    let far_bg = luma(&rgba, 10, 10);
+    assert!(
+        far_bg > 250.0,
+        "background stays white far from the card (luma {far_bg})"
+    );
+    assert!(
+        glow_band < far_bg - 8.0,
+        "glow/shadow renders beneath the card, tinting outside it (band {glow_band} vs bg {far_bg})"
+    );
+    // 2. Inner shadow renders OVER the card, clipped to it: with a +y offset it
+    //    darkens the TOP interior more than the bottom interior.
+    let top_interior = luma(&rgba, 150, 92);
+    let bottom_interior = luma(&rgba, 150, 188);
+    assert!(
+        top_interior < bottom_interior - 6.0,
+        "inner shadow darkens the top interior (top {top_interior} vs bottom {bottom_interior})"
+    );
 }

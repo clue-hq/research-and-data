@@ -120,6 +120,10 @@ pub struct NodePatch {
     #[serde(default)]
     pub asset_placement: OptionalFieldPatch<AssetPlacement>,
     pub clip: FieldPatch<bool>,
+    /// Declared bleed intent (A4). Skipped when unchanged so pinned pre-A4
+    /// operation fixtures stay byte-identical (mirrors `effects`).
+    #[serde(default, skip_serializing_if = "FieldPatch::is_unchanged")]
+    pub bleed: FieldPatch<bool>,
     pub layout: OptionalFieldPatch<AutoLayoutProps>,
     pub computed: OptionalFieldPatch<ComputedGeometry>,
     pub locked: FieldPatch<bool>,
@@ -630,6 +634,7 @@ impl Scene {
         apply_optional_patch(&mut node.source_asset_id, patch.source_asset_id);
         apply_optional_patch(&mut node.asset_placement, patch.asset_placement);
         apply_field_patch(&mut node.clip, patch.clip);
+        apply_field_patch(&mut node.bleed, patch.bleed);
         apply_optional_patch(&mut node.layout, patch.layout);
         apply_optional_patch(&mut node.computed, patch.computed);
         apply_field_patch(&mut node.locked, patch.locked);
@@ -1189,6 +1194,9 @@ impl Scene {
                 }
                 if !matches!(patch.clip, FieldPatch::Unchanged) {
                     inverse.clip = FieldPatch::Set(node.clip);
+                }
+                if !matches!(patch.bleed, FieldPatch::Unchanged) {
+                    inverse.bleed = FieldPatch::Set(node.bleed);
                 }
                 if !matches!(patch.layout, OptionalFieldPatch::Unchanged) {
                     inverse.layout = optional_restore(&node.layout);

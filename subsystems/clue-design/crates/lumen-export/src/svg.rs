@@ -316,21 +316,17 @@ impl<'a> SvgPageRenderer<'a> {
                     "<g{}{}{}{}>\n",
                     id_attrs, transform, opacity, filter
                 ));
-                let geometry = format!(
-                    "x=\"0\" y=\"0\" width=\"{}\" height=\"{}\"{}",
-                    fmt_num(width),
-                    fmt_num(height),
-                    corner_attrs(node, width, height)
-                );
+                let (shape, geometry) = rect_shape(node, width, height);
                 if stacked {
                     for layer in self.paint_layer_attrs(&node.fills, &node.strokes, Some(&node.id))
                     {
-                        self.body.push_str(&format!("<rect {geometry}{layer} />\n"));
+                        self.body
+                            .push_str(&format!("<{shape} {geometry}{layer} />\n"));
                     }
                 } else if !node.fills.is_empty() || !node.strokes.is_empty() {
                     let fill_attrs = self.paint_attrs(&node.fills, &node.strokes, Some(&node.id));
                     self.body
-                        .push_str(&format!("<rect {geometry}{fill_attrs} />\n"));
+                        .push_str(&format!("<{shape} {geometry}{fill_attrs} />\n"));
                 }
                 if let Some(clip_id) = clip_id {
                     self.body.push_str(&format!(
@@ -363,12 +359,7 @@ impl<'a> SvgPageRenderer<'a> {
                 self.body.push_str("</g>\n");
             }
             NodeKind::Rect => {
-                let geometry = format!(
-                    "x=\"0\" y=\"0\" width=\"{}\" height=\"{}\"{}",
-                    fmt_num(width),
-                    fmt_num(height),
-                    corner_attrs(node, width, height)
-                );
+                let (shape, geometry) = rect_shape(node, width, height);
                 if stacked {
                     self.body.push_str(&format!(
                         "<g{}{}{}{}>\n",
@@ -376,13 +367,15 @@ impl<'a> SvgPageRenderer<'a> {
                     ));
                     for layer in self.paint_layer_attrs(&node.fills, &node.strokes, Some(&node.id))
                     {
-                        self.body.push_str(&format!("<rect {geometry}{layer} />\n"));
+                        self.body
+                            .push_str(&format!("<{shape} {geometry}{layer} />\n"));
                     }
                     self.body.push_str("</g>\n");
                 } else {
                     let paint_attrs = self.paint_attrs(&node.fills, &node.strokes, Some(&node.id));
                     self.body.push_str(&format!(
-                        "<rect{} {}{}{}{} />\n",
+                        "<{}{} {}{}{}{} />\n",
+                        shape,
                         id_attrs,
                         geometry,
                         transform,
@@ -602,11 +595,9 @@ impl<'a> SvgPageRenderer<'a> {
             if let Some(crop) = focal_crop_geometry(node, record, width, height) {
                 let clip_id = format!("lumen-image-clip-{}", escape_attr(node.id.as_str()));
                 self.defs.push(format!(
-                    "<clipPath id=\"{}\"><rect x=\"0\" y=\"0\" width=\"{}\" height=\"{}\"{} /></clipPath>\n",
+                    "<clipPath id=\"{}\">{}</clipPath>\n",
                     clip_id,
-                    fmt_num(width),
-                    fmt_num(height),
-                    corner_attrs(node, width, height)
+                    clip_shape_element(node, width, height)
                 ));
                 self.body.push_str(&format!(
                     "<g{} clip-path=\"url(#{})\" data-lumen-asset-id=\"{}\" data-lumen-image-fit=\"focal-crop\"{}{}{}>\n<image x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" preserveAspectRatio=\"none\" href=\"{}\" />\n</g>\n",
@@ -742,6 +733,11 @@ impl<'a> SvgPageRenderer<'a> {
     }
 
     fn text_paint_attrs(&mut self, node: &Node) -> String {
+        // Text strokes are not a v1 capability, but dropping them silently
+        // violates the fail-loud doctrine — emit the advisory (A4, LUME0214).
+        if !node.strokes.is_empty() {
+            self.diagnostics.push(text_strokes_dropped_diag(node));
+        }
         if !node.fills.is_empty() {
             return self.paint_attrs(&node.fills, &[], Some(&node.id));
         }
@@ -865,26 +861,47 @@ impl<'a> SvgPageRenderer<'a> {
         attrs
     }
 
-    /// Register a deterministic `<filter>` for the node's drop-shadow stack
-    /// and return the `filter` attribute. The first effect in the stack
-    /// renders as the topmost shadow (CSS box-shadow convention).
+    /// Register a deterministic `<filter>` for the node's effect stack and
+    /// return the `filter` attribute. A pure drop-shadow stack keeps the exact
+    /// pre-A4 markup (feDropShadow / feMorphology fast paths). A stack that
+    /// mixes in glow, layer blur, or inner shadow uses the A4 general pipeline,
+    /// which honors the D1 stacking contract (source → layer blurs →
+    /// shadows/glows beneath the blurred result → inner shadows over it).
     fn effect_filter_attr(&mut self, node: &Node) -> String {
         if node.effects.is_empty() {
             return String::new();
         }
 
-        struct ResolvedShadow {
-            color: String,
-            opacity: f64,
-            x: f64,
-            y: f64,
-            blur: f64,
-            spread: f64,
-        }
+        let has_new = node.effects.iter().any(|effect| {
+            matches!(
+                effect.kind,
+                EffectKind::Glow { .. }
+                    | EffectKind::LayerBlur { .. }
+                    | EffectKind::InnerShadow { .. }
+            )
+        });
 
+        let body = if has_new {
+            self.general_effect_body(node)
+        } else {
+            self.drop_shadow_body(node)
+        };
+        let Some(body) = body else {
+            return String::new();
+        };
+
+        let filter_id = format!("lumen-effect-{}", escape_attr(node.id.as_str()));
+        self.defs.push(format!(
+            "<filter id=\"{filter_id}\" x=\"-50%\" y=\"-50%\" width=\"200%\" height=\"200%\">\n{body}</filter>\n"
+        ));
+        format!(" filter=\"url(#{filter_id})\"")
+    }
+
+    /// The pre-A4 drop-shadow-only filter body (byte-identical markup).
+    fn drop_shadow_body(&mut self, node: &Node) -> Option<String> {
         let mut shadows = Vec::new();
         for effect in &node.effects {
-            let EffectKind::DropShadow {
+            if let EffectKind::DropShadow {
                 color,
                 opacity,
                 x,
@@ -892,30 +909,28 @@ impl<'a> SvgPageRenderer<'a> {
                 blur,
                 spread,
                 ..
-            } = &effect.kind;
-            if let Color::Token { token } = color {
-                self.diagnostics
-                    .push(unresolved_token_diag(&node.id, token));
-                continue;
+            } = &effect.kind
+            {
+                if let Color::Token { token } = color {
+                    self.diagnostics.push(unresolved_token_diag(&node.id, token));
+                    continue;
+                }
+                shadows.push(ResolvedEffect {
+                    color: self.color_ref(color, Some(&node.id)),
+                    opacity: *opacity,
+                    x: *x,
+                    y: *y,
+                    blur: *blur,
+                    spread: *spread,
+                });
             }
-            shadows.push(ResolvedShadow {
-                color: self.color_ref(color, Some(&node.id)),
-                opacity: *opacity,
-                x: *x,
-                y: *y,
-                blur: *blur,
-                spread: *spread,
-            });
         }
         if shadows.is_empty() {
-            return String::new();
+            return None;
         }
 
-        let filter_id = format!("lumen-effect-{}", escape_attr(node.id.as_str()));
         let mut body = String::new();
         if shadows.iter().all(|shadow| shadow.spread == 0.0) {
-            // Chained feDropShadow keeps each later shadow underneath the
-            // accumulated result, so stack order is preserved.
             for shadow in &shadows {
                 body.push_str(&format!(
                     "<feDropShadow dx=\"{}\" dy=\"{}\" stdDeviation=\"{}\" flood-color=\"{}\" flood-opacity=\"{}\" />\n",
@@ -927,8 +942,6 @@ impl<'a> SvgPageRenderer<'a> {
                 ));
             }
         } else {
-            // Spread needs a morphology composite per shadow, merged with
-            // the source on top.
             for (index, shadow) in shadows.iter().enumerate() {
                 let blur_input = if shadow.spread != 0.0 {
                     body.push_str(&format!(
@@ -964,11 +977,208 @@ impl<'a> SvgPageRenderer<'a> {
             }
             body.push_str("<feMergeNode in=\"SourceGraphic\" />\n</feMerge>\n");
         }
+        Some(body)
+    }
 
-        self.defs.push(format!(
-            "<filter id=\"{filter_id}\" x=\"-50%\" y=\"-50%\" width=\"200%\" height=\"200%\">\n{body}</filter>\n"
-        ));
-        format!(" filter=\"url(#{filter_id})\"")
+    /// The A4 general pipeline body honoring the D1 stacking contract. Result
+    /// names are stable and deterministic. See the module-level parity test.
+    fn general_effect_body(&mut self, node: &Node) -> Option<String> {
+        let mut layer_blurs: Vec<f64> = Vec::new();
+        let mut outers: Vec<ResolvedEffect> = Vec::new();
+        let mut inners: Vec<ResolvedEffect> = Vec::new();
+        for effect in &node.effects {
+            match &effect.kind {
+                EffectKind::LayerBlur { radius } => layer_blurs.push(*radius),
+                EffectKind::DropShadow {
+                    color,
+                    opacity,
+                    x,
+                    y,
+                    blur,
+                    spread,
+                    ..
+                } => {
+                    if let Some(e) = self.resolve_effect(node, color, *opacity, *x, *y, *blur, *spread)
+                    {
+                        outers.push(e);
+                    }
+                }
+                EffectKind::Glow {
+                    color,
+                    opacity,
+                    blur,
+                    spread,
+                    ..
+                } => {
+                    if let Some(e) =
+                        self.resolve_effect(node, color, *opacity, 0.0, 0.0, *blur, *spread)
+                    {
+                        outers.push(e);
+                    }
+                }
+                EffectKind::InnerShadow {
+                    color,
+                    opacity,
+                    x,
+                    y,
+                    blur,
+                    spread,
+                    ..
+                } => {
+                    if let Some(e) = self.resolve_effect(node, color, *opacity, *x, *y, *blur, *spread)
+                    {
+                        inners.push(e);
+                    }
+                }
+            }
+        }
+
+        let mut body = String::new();
+
+        // 1. Blurred base graphic (and its alpha, for shadow/glow/inner geometry).
+        let mut base = "SourceGraphic".to_owned();
+        let mut base_alpha = "SourceAlpha".to_owned();
+        // The blurred-alpha chain feeds shadow/glow/inner geometry only; on a
+        // blur-only stack it must not be emitted — the filter's output is the
+        // LAST primitive's result, and a trailing alpha blur would replace the
+        // node with its black silhouette.
+        let needs_alpha = !outers.is_empty() || !inners.is_empty();
+        for (i, radius) in layer_blurs.iter().enumerate() {
+            let sigma = fmt_num(radius / 2.0);
+            if needs_alpha {
+                let next_alpha = format!("lumen-lba-{i}");
+                body.push_str(&format!(
+                    "<feGaussianBlur in=\"{base_alpha}\" stdDeviation=\"{sigma}\" result=\"{next_alpha}\" />\n"
+                ));
+                base_alpha = next_alpha;
+            }
+            let next = format!("lumen-lb-{i}");
+            body.push_str(&format!(
+                "<feGaussianBlur in=\"{base}\" stdDeviation=\"{sigma}\" result=\"{next}\" />\n"
+            ));
+            base = next;
+        }
+
+        // 2. Outer shadows/glows computed from the blurred alpha, beneath base.
+        let mut outer_results = Vec::new();
+        for (i, o) in outers.iter().enumerate() {
+            let spread_input = if o.spread != 0.0 {
+                let r = format!("lumen-ospread-{i}");
+                body.push_str(&format!(
+                    "<feMorphology in=\"{base_alpha}\" operator=\"{}\" radius=\"{}\" result=\"{r}\" />\n",
+                    if o.spread > 0.0 { "dilate" } else { "erode" },
+                    fmt_num(o.spread.abs())
+                ));
+                r
+            } else {
+                base_alpha.clone()
+            };
+            body.push_str(&format!(
+                "<feGaussianBlur in=\"{spread_input}\" stdDeviation=\"{}\" result=\"lumen-oblur-{i}\" />\n",
+                fmt_num(o.blur / 2.0)
+            ));
+            body.push_str(&format!(
+                "<feOffset in=\"lumen-oblur-{i}\" dx=\"{}\" dy=\"{}\" result=\"lumen-ooff-{i}\" />\n",
+                fmt_num(o.x),
+                fmt_num(o.y)
+            ));
+            body.push_str(&format!(
+                "<feFlood flood-color=\"{}\" flood-opacity=\"{}\" result=\"lumen-oflood-{i}\" />\n",
+                o.color,
+                fmt_num(o.opacity)
+            ));
+            body.push_str(&format!(
+                "<feComposite in=\"lumen-oflood-{i}\" in2=\"lumen-ooff-{i}\" operator=\"in\" result=\"lumen-outer-{i}\" />\n"
+            ));
+            outer_results.push(format!("lumen-outer-{i}"));
+        }
+
+        // 3. Inner shadows computed from the blurred alpha, over base, clipped
+        //    to base alpha. Spread erodes the shape inward first.
+        let mut inner_results = Vec::new();
+        for (i, s) in inners.iter().enumerate() {
+            let shape = if s.spread > 0.0 {
+                let r = format!("lumen-ispread-{i}");
+                body.push_str(&format!(
+                    "<feMorphology in=\"{base_alpha}\" operator=\"erode\" radius=\"{}\" result=\"{r}\" />\n",
+                    fmt_num(s.spread)
+                ));
+                r
+            } else {
+                base_alpha.clone()
+            };
+            body.push_str(&format!(
+                "<feOffset in=\"{shape}\" dx=\"{}\" dy=\"{}\" result=\"lumen-ioff-{i}\" />\n",
+                fmt_num(s.x),
+                fmt_num(s.y)
+            ));
+            body.push_str(&format!(
+                "<feGaussianBlur in=\"lumen-ioff-{i}\" stdDeviation=\"{}\" result=\"lumen-iblur-{i}\" />\n",
+                fmt_num(s.blur / 2.0)
+            ));
+            // Inside the shape but outside the offset/blurred alpha = the inner
+            // shadow ring; clip keeps it within the (blurred) base alpha.
+            body.push_str(&format!(
+                "<feComposite in=\"{base_alpha}\" in2=\"lumen-iblur-{i}\" operator=\"out\" result=\"lumen-iring-{i}\" />\n"
+            ));
+            body.push_str(&format!(
+                "<feFlood flood-color=\"{}\" flood-opacity=\"{}\" result=\"lumen-iflood-{i}\" />\n",
+                s.color,
+                fmt_num(s.opacity)
+            ));
+            body.push_str(&format!(
+                "<feComposite in=\"lumen-iflood-{i}\" in2=\"lumen-iring-{i}\" operator=\"in\" result=\"lumen-inner-{i}\" />\n"
+            ));
+            inner_results.push(format!("lumen-inner-{i}"));
+        }
+
+        // 4. Merge bottom-up: outers (first = topmost outer) beneath the
+        //    blurred base, inner shadows (first = topmost) over it.
+        if outer_results.is_empty() && inner_results.is_empty() {
+            // Nothing survived (e.g. every effect was a token-colored shadow
+            // that got skipped) and there was no layer blur: no filter at all.
+            if body.is_empty() {
+                return None;
+            }
+            // Layer-blur only: the last blur result is already the output.
+            return Some(body);
+        }
+        body.push_str("<feMerge>\n");
+        for result in outer_results.iter().rev() {
+            body.push_str(&format!("<feMergeNode in=\"{result}\" />\n"));
+        }
+        body.push_str(&format!("<feMergeNode in=\"{base}\" />\n"));
+        for result in inner_results.iter().rev() {
+            body.push_str(&format!("<feMergeNode in=\"{result}\" />\n"));
+        }
+        body.push_str("</feMerge>\n");
+        Some(body)
+    }
+
+    /// Resolve one shadow/glow/inner effect's paint; token colors emit the
+    /// unresolved-token diagnostic and are skipped (as the pre-A4 path did).
+    fn resolve_effect(
+        &mut self,
+        node: &Node,
+        color: &Color,
+        opacity: f64,
+        x: f64,
+        y: f64,
+        blur: f64,
+        spread: f64,
+    ) -> Option<ResolvedEffect> {
+        if let Color::Token { token } = color {
+            self.diagnostics.push(unresolved_token_diag(&node.id, token));
+            return None;
+        }
+        Some(ResolvedEffect {
+            color: self.color_ref(color, Some(&node.id)),
+            opacity,
+            x,
+            y,
+            blur,
+            spread,
+        })
     }
 
     fn paint_ref(&mut self, paint: &Paint, paint_id: &str, node_id: Option<&NodeId>) -> String {
@@ -1054,14 +1264,23 @@ impl<'a> SvgPageRenderer<'a> {
     fn clip_rect(&mut self, node: &Node, width: f64, height: f64) -> String {
         let clip_id = format!("lumen-clip-{}", escape_attr(node.id.as_str()));
         self.defs.push(format!(
-            "<clipPath id=\"{}\"><rect x=\"0\" y=\"0\" width=\"{}\" height=\"{}\"{} /></clipPath>\n",
+            "<clipPath id=\"{}\">{}</clipPath>\n",
             clip_id,
-            fmt_num(width),
-            fmt_num(height),
-            corner_attrs(node, width, height)
+            clip_shape_element(node, width, height)
         ));
         clip_id
     }
+}
+
+/// A resolved shadow/glow/inner-shadow ready for filter emission (paint
+/// already resolved to an SVG color string).
+struct ResolvedEffect {
+    color: String,
+    opacity: f64,
+    x: f64,
+    y: f64,
+    blur: f64,
+    spread: f64,
 }
 
 /// Explicit crop window for cover/crop placements with a focal point.
@@ -1338,6 +1557,98 @@ fn transform_attr(node: &Node, x: f64, y: f64) -> String {
     }
 }
 
+/// True when all four corner radii are equal (the plain-`rx` fast path).
+fn corners_uniform(node: &Node) -> bool {
+    node.corner.top_left == node.corner.top_right
+        && node.corner.top_left == node.corner.bottom_right
+        && node.corner.top_left == node.corner.bottom_left
+}
+
+/// CSS overlap-algorithm clamp: scale every radius down by the single factor
+/// that keeps each pair of adjacent radii within their shared side length.
+/// Generalizes the uniform `min(w/2, h/2)` clamp (which is the equal-radii
+/// special case). Returns `[tl, tr, br, bl]`.
+fn clamped_corners(node: &Node, width: f64, height: f64) -> [f64; 4] {
+    let c = &node.corner;
+    let mut radii = [
+        c.top_left.max(0.0),
+        c.top_right.max(0.0),
+        c.bottom_right.max(0.0),
+        c.bottom_left.max(0.0),
+    ];
+    let [tl, tr, br, bl] = radii;
+    // side length / sum of the two radii sharing that side.
+    let ratios = [
+        (width, tl + tr),   // top
+        (height, tr + br),  // right
+        (width, br + bl),   // bottom
+        (height, tl + bl),  // left
+    ];
+    let mut factor = 1.0_f64;
+    for (side, sum) in ratios {
+        if sum > 0.0 {
+            factor = factor.min(side / sum);
+        }
+    }
+    if factor < 1.0 {
+        for r in radii.iter_mut() {
+            *r *= factor;
+        }
+    }
+    radii
+}
+
+/// Rounded-rect `<path>` `d` with per-corner (circular) radii, clockwise from
+/// the top-left corner. A zero-radius corner degenerates to a lineto per SVG
+/// arc semantics. Origin is (0,0); size is `width`×`height`.
+fn rounded_rect_path(width: f64, height: f64, radii: [f64; 4]) -> String {
+    let [tl, tr, br, bl] = radii;
+    let n = |v: f64| fmt_num(v);
+    format!(
+        "M {} 0 L {} 0 A {} {} 0 0 1 {} {} L {} {} A {} {} 0 0 1 {} {} L {} {} A {} {} 0 0 1 {} {} L 0 {} A {} {} 0 0 1 {} 0 Z",
+        n(tl),
+        n(width - tr),
+        n(tr), n(tr), n(width), n(tr),
+        n(width), n(height - br),
+        n(br), n(br), n(width - br), n(height),
+        n(bl), n(height),
+        n(bl), n(bl), n(0.0), n(height - bl),
+        n(tl),
+        n(tl), n(tl), n(tl),
+    )
+}
+
+/// The inner element of a rounded-rect clipPath: a plain `<rect>` on the
+/// uniform fast path, a per-corner `<path>` when corners are mixed.
+fn clip_shape_element(node: &Node, width: f64, height: f64) -> String {
+    let (shape, geometry) = rect_shape(node, width, height);
+    format!("<{shape} {geometry} />")
+}
+
+/// Geometry for a rect-like body element: `("rect", attrs)` on the uniform
+/// fast path (keeps `rx`/`ry`), or `("path", d-attr)` when corners are mixed.
+fn rect_shape(node: &Node, width: f64, height: f64) -> (&'static str, String) {
+    if corners_uniform(node) {
+        (
+            "rect",
+            format!(
+                "x=\"0\" y=\"0\" width=\"{}\" height=\"{}\"{}",
+                fmt_num(width),
+                fmt_num(height),
+                corner_attrs(node, width, height)
+            ),
+        )
+    } else {
+        (
+            "path",
+            format!(
+                "d=\"{}\"",
+                rounded_rect_path(width, height, clamped_corners(node, width, height))
+            ),
+        )
+    }
+}
+
 fn corner_attrs(node: &Node, width: f64, height: f64) -> String {
     if node.corner.top_left == 0.0
         && node.corner.top_right == 0.0
@@ -1347,10 +1658,7 @@ fn corner_attrs(node: &Node, width: f64, height: f64) -> String {
         return String::new();
     }
 
-    if node.corner.top_left == node.corner.top_right
-        && node.corner.top_left == node.corner.bottom_right
-        && node.corner.top_left == node.corner.bottom_left
-    {
+    if corners_uniform(node) {
         // Clamp like Skia: an oversized radius saturates at half the SMALLER
         // dimension, keeping a stadium shape. Emitting the raw value lets the
         // SVG renderer clamp rx/ry per-axis independently (rx→w/2, ry→h/2),
@@ -1402,13 +1710,55 @@ where
     stops
         .iter()
         .map(|stop| {
-            format!(
-                "<stop offset=\"{}%\" stop-color=\"{}\" />\n",
-                fmt_num(stop.position * 100.0),
-                color(&stop.color)
-            )
+            let resolved = color(&stop.color);
+            // Max-compat alpha (A4): an 8-digit #RRGGBBAA stop splits into a
+            // 6-digit stop-color plus a stop-opacity, instead of relying on
+            // CSS Color-4-only 8-digit hex parsing.
+            let (stop_color, alpha) = split_hex_stop_alpha(&resolved);
+            match alpha {
+                Some(a) => format!(
+                    "<stop offset=\"{}%\" stop-color=\"{}\" stop-opacity=\"{}\" />\n",
+                    fmt_num(stop.position * 100.0),
+                    stop_color,
+                    fmt_num(a)
+                ),
+                None => format!(
+                    "<stop offset=\"{}%\" stop-color=\"{}\" />\n",
+                    fmt_num(stop.position * 100.0),
+                    stop_color
+                ),
+            }
         })
         .collect()
+}
+
+/// Split a resolved `#RRGGBBAA` color into `(#RRGGBB, Some(alpha 0..=1))`.
+/// Non-8-digit-hex colors (including oklch, which carries its own alpha)
+/// return `(color, None)` unchanged.
+fn split_hex_stop_alpha(resolved: &str) -> (String, Option<f64>) {
+    if let Some(hex) = resolved.strip_prefix('#') {
+        if hex.len() == 8 && hex.bytes().all(|b| b.is_ascii_hexdigit()) {
+            if let Ok(a) = u8::from_str_radix(&hex[6..8], 16) {
+                return (format!("#{}", &hex[0..6]), Some(a as f64 / 255.0));
+            }
+        }
+    }
+    (resolved.to_owned(), None)
+}
+
+/// Fail-loud advisory shared by SVG and the native rasterizer: a text node
+/// carries strokes, which are not rendered in effects-v1 (A4, LUME0214).
+pub fn text_strokes_dropped_diag(node: &Node) -> Diagnostic {
+    Diagnostic::warning(
+        Phase::Export,
+        "LUME0214",
+        format!(
+            "text node {} has strokes; text strokes are not rendered (deferred to Typography v1)",
+            node.id
+        ),
+        Some(DiagnosticSubject::Node(node.id.clone())),
+    )
+    .with_hint("Remove the text stroke or emulate it with a duplicate offset text layer until Typography v1 lands.")
 }
 
 fn unresolved_token_diag(node_id: &NodeId, token: &str) -> Diagnostic {

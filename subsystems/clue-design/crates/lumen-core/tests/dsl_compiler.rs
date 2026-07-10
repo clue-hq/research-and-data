@@ -727,15 +727,31 @@ fn svg_icon_lowers_to_a_vector_with_its_source_view_box() {
 }
 
 #[test]
-fn unsupported_paint_arguments_are_errors_not_silent_ignores() {
-    let output = parse_dsl(
+fn solid_opacity_argument_lowers_into_the_color_alpha() {
+    // A4 retires the LUMD0241 halt: `solid(color, opacity)` multiplies the
+    // opacity into the color's alpha at model-build time.
+    let mut scene = Scene::new(lumen_core::DocumentId::from("doc_solid"), "Solid");
+    let output = compile_dsl_into_scene(
         r#"
 page page_a4
   card frame p(0,0) s(100,100) fill(solid(#ffffff,o(0.5)))
 "#,
+        &mut scene,
     );
 
-    assert_eq!(output.halted_at.as_ref().unwrap().code, "LUMD0241");
+    assert_no_dsl_errors(&output.compile_output.diagnostics);
+    assert!(output.operation_error.is_none());
+    let card = &scene.nodes[&NodeId::from("card")];
+    assert_eq!(card.fills.len(), 1);
+    // 0.5 * 0xff = 127.5 -> rounds to 0x80.
+    assert_eq!(
+        card.fills[0].paint,
+        Paint::Solid {
+            color: Color::Hex {
+                value: "#ffffff80".to_owned()
+            }
+        }
+    );
 }
 
 #[test]
@@ -1747,7 +1763,10 @@ page page_square size(400,400,px)
         blur,
         spread,
         color_token,
-    } = &effect.kind;
+    } = &effect.kind
+    else {
+        panic!("expected drop shadow");
+    };
     assert_eq!(
         color,
         &Color::Hex {
@@ -1789,7 +1808,10 @@ page page_square size(400,400,px)
         blur,
         spread,
         ..
-    } = &card.effects[0].kind;
+    } = &card.effects[0].kind
+    else {
+        panic!("expected drop shadow");
+    };
     // The alpha rides in the color (input #AARRGGBB `#19000000` ~10% black,
     // normalized to canonical #RRGGBBAA); opacity stays the channel default.
     assert_eq!(
@@ -1835,7 +1857,10 @@ page page_square size(400,400,px)
     assert_eq!(card.effects.len(), 1);
     let lumen_core::EffectKind::DropShadow {
         color, x, y, blur, ..
-    } = &card.effects[0].kind;
+    } = &card.effects[0].kind
+    else {
+        panic!("expected drop shadow");
+    };
     assert_eq!(
         color,
         &Color::Hex {
@@ -1943,7 +1968,9 @@ page page_square size(400,400,px)
     assert!(update.operation_error.is_none());
     let card = &scene.nodes[&NodeId::from("card")];
     assert_eq!(card.effects.len(), 1);
-    let lumen_core::EffectKind::DropShadow { opacity, blur, .. } = &card.effects[0].kind;
+    let lumen_core::EffectKind::DropShadow { opacity, blur, .. } = &card.effects[0].kind else {
+        panic!("expected drop shadow");
+    };
     assert_eq!(*opacity, 0.3);
     assert_eq!(*blur, 32.0);
 
@@ -2043,7 +2070,10 @@ page page_square size(400,400,px)
     assert_no_dsl_errors(&output.compile_output.diagnostics);
     let lumen_core::EffectKind::DropShadow {
         color, color_token, ..
-    } = &scene.nodes[&NodeId::from("card")].effects[0].kind;
+    } = &scene.nodes[&NodeId::from("card")].effects[0].kind
+    else {
+        panic!("expected drop shadow");
+    };
     assert_eq!(
         color,
         &Color::Token {
@@ -3446,4 +3476,242 @@ fn detach_to_freehand_on_already_pinned_node_is_a_loud_no_op_warning() {
         .iter()
         .all(|op| !matches!(op, Operation::UpdateNode { node_id, .. }
             if node_id == &NodeId::from("human_ellipse_p1"))));
+}
+
+// ---------------------------------------------------------------------------
+// A4 grammar: glow / blur / inner_shadow, per-corner radius, solid opacity,
+// bleed intent + misplaced-form disambiguation.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn dsl_lowers_glow_blur_and_inner_shadow() {
+    let mut scene = Scene::new(lumen_core::DocumentId::from("doc_a4"), "A4");
+    let output = compile_dsl_into_scene(
+        r#"
+page page_a4
+  card r p(20,20) s(200,120) fill(#6d8bff) glow(#a855f7,o(0.8),blur(20),spread(4)) blur(3) inner_shadow(#101828,o(0.6),y(6),blur(10),spread(2))
+"#,
+        &mut scene,
+    );
+    assert_no_dsl_errors(&output.compile_output.diagnostics);
+    assert!(output.operation_error.is_none());
+
+    let card = &scene.nodes[&NodeId::from("card")];
+    assert_eq!(card.effects.len(), 3);
+    assert!(matches!(
+        card.effects[0].kind,
+        lumen_core::EffectKind::Glow { .. }
+    ));
+    assert!(matches!(
+        card.effects[1].kind,
+        lumen_core::EffectKind::LayerBlur { radius } if radius == 3.0
+    ));
+    assert!(matches!(
+        card.effects[2].kind,
+        lumen_core::EffectKind::InnerShadow { .. }
+    ));
+    // Auto ids are class-scoped and deterministic.
+    assert_eq!(card.effects[0].id, lumen_core::EffectId::from("effect_card_glow_1"));
+    assert_eq!(card.effects[1].id, lumen_core::EffectId::from("effect_card_blur_1"));
+    assert_eq!(
+        card.effects[2].id,
+        lumen_core::EffectId::from("effect_card_inner_shadow_1")
+    );
+}
+
+#[test]
+fn dsl_effect_upsert_and_remove_by_id() {
+    let mut scene = Scene::new(lumen_core::DocumentId::from("doc_a4u"), "A4");
+    compile_dsl_into_scene(
+        r#"
+page page_a4
+  card r p(20,20) s(200,120) fill(#ffffff) glow(halo,#a855f7,o(0.8),blur(20),spread(4))
+"#,
+        &mut scene,
+    );
+    // Upsert same id in place.
+    compile_dsl_into_scene("#card glow(halo,#22d3ee,o(0.5),blur(30),spread(2))", &mut scene);
+    let card = &scene.nodes[&NodeId::from("card")];
+    assert_eq!(card.effects.len(), 1);
+    let lumen_core::EffectKind::Glow { blur, .. } = &card.effects[0].kind else {
+        panic!("expected glow");
+    };
+    assert_eq!(*blur, 30.0);
+
+    // Remove by id.
+    compile_dsl_into_scene("#card remove_effect(halo)", &mut scene);
+    assert!(scene.nodes[&NodeId::from("card")].effects.is_empty());
+}
+
+#[test]
+fn dsl_blur_shorthand_and_named_radius() {
+    let mut scene = Scene::new(lumen_core::DocumentId::from("doc_blur"), "A4");
+    let out = compile_dsl_into_scene(
+        r#"
+page page_a4
+  card r p(0,0) s(100,100) fill(#ffffff) blur(12)
+"#,
+        &mut scene,
+    );
+    assert_no_dsl_errors(&out.compile_output.diagnostics);
+    assert!(matches!(
+        scene.nodes[&NodeId::from("card")].effects[0].kind,
+        lumen_core::EffectKind::LayerBlur { radius } if radius == 12.0
+    ));
+}
+
+#[test]
+fn dsl_glow_rejects_xy_offset() {
+    let output = parse_dsl(
+        r#"
+page page_a4
+  card r p(0,0) s(100,100) glow(#a855f7,x(4))
+"#,
+    );
+    assert_eq!(output.halted_at.as_ref().unwrap().code, "LUMD0266");
+}
+
+#[test]
+fn dsl_per_corner_radius_lowers_four_args() {
+    let mut scene = Scene::new(lumen_core::DocumentId::from("doc_rd"), "A4");
+    let out = compile_dsl_into_scene(
+        r#"
+page page_a4
+  card r p(0,0) s(200,120) fill(#ffffff) rd(40,4,40,4)
+"#,
+        &mut scene,
+    );
+    assert_no_dsl_errors(&out.compile_output.diagnostics);
+    let corner = &scene.nodes[&NodeId::from("card")].corner;
+    assert_eq!(corner.top_left, 40.0);
+    assert_eq!(corner.top_right, 4.0);
+    assert_eq!(corner.bottom_right, 40.0);
+    assert_eq!(corner.bottom_left, 4.0);
+}
+
+#[test]
+fn dsl_per_corner_radius_rejects_bad_arity() {
+    let output = parse_dsl(
+        r#"
+page page_a4
+  card r p(0,0) s(200,120) rd(40,4)
+"#,
+    );
+    assert_eq!(output.halted_at.as_ref().unwrap().code, "LUMD0230");
+}
+
+#[test]
+fn dsl_per_corner_radius_accepts_zero_corners() {
+    // Review-gate regression (A4, found by the K-A4 validation protocol):
+    // zero is a meaningful corner magnitude (a square corner) — the classic
+    // "round only the top" idiom must compile.
+    let mut scene = Scene::new(lumen_core::DocumentId::from("doc_rd0"), "A4");
+    let out = compile_dsl_into_scene(
+        r#"
+page page_a4
+  card r p(0,0) s(200,120) fill(#ffffff) rd(12,12,0,0)
+"#,
+        &mut scene,
+    );
+    assert_no_dsl_errors(&out.compile_output.diagnostics);
+    let corner = &scene.nodes[&NodeId::from("card")].corner;
+    assert_eq!(corner.top_left, 12.0);
+    assert_eq!(corner.top_right, 12.0);
+    assert_eq!(corner.bottom_right, 0.0);
+    assert_eq!(corner.bottom_left, 0.0);
+}
+
+#[test]
+fn dsl_per_corner_radius_rejects_negative_corners() {
+    let output = parse_dsl(
+        r#"
+page page_a4
+  card r p(0,0) s(200,120) rd(12,12,-4,0)
+"#,
+    );
+    assert_eq!(output.halted_at.as_ref().unwrap().code, "LUMD0255");
+}
+
+#[test]
+fn dsl_solid_opacity_composes_into_existing_alpha() {
+    // opacity multiplies into the color alpha: 0xff * 0.5 = 127.5 -> 0x80.
+    let mut scene = Scene::new(lumen_core::DocumentId::from("doc_solid8"), "A4");
+    let out = compile_dsl_into_scene(
+        r#"
+page page_a4
+  card r p(0,0) s(100,100) fill(solid(#ff0000,0.5))
+"#,
+        &mut scene,
+    );
+    assert_no_dsl_errors(&out.compile_output.diagnostics);
+    assert_eq!(
+        scene.nodes[&NodeId::from("card")].fills[0].paint,
+        Paint::Solid {
+            color: Color::Hex {
+                value: "#ff000080".to_owned()
+            }
+        }
+    );
+}
+
+#[test]
+fn dsl_solid_opacity_out_of_range_is_a_loud_error() {
+    let output = parse_dsl(
+        r#"
+page page_a4
+  card r p(0,0) s(100,100) fill(solid(#ff0000,1.4))
+"#,
+    );
+    assert_eq!(output.halted_at.as_ref().unwrap().code, "LUMD0270");
+}
+
+#[test]
+fn dsl_bleed_intent_sets_node_flag() {
+    let mut scene = Scene::new(lumen_core::DocumentId::from("doc_bleed"), "A4");
+    let out = compile_dsl_into_scene(
+        r#"
+page page_a4
+  wash r p(0,0) s(500,400) fill(#dbe6ff) bleed(true)
+"#,
+        &mut scene,
+    );
+    assert_no_dsl_errors(&out.compile_output.diagnostics);
+    assert!(scene.nodes[&NodeId::from("wash")].bleed);
+
+    // Modify path toggles it back off.
+    compile_dsl_into_scene("#wash bleed(false)", &mut scene);
+    assert!(!scene.nodes[&NodeId::from("wash")].bleed);
+}
+
+#[test]
+fn dsl_bleed_rect_on_node_is_disambiguated_loudly() {
+    // A 4-arg print-bleed rect on an element warns with LUMD0269 naming the
+    // per-node form, never silently ignored.
+    let mut scene = Scene::new(lumen_core::DocumentId::from("doc_bleed2"), "A4");
+    let out = compile_dsl_into_scene(
+        r#"
+page page_a4
+  wash r p(0,0) s(100,100) fill(#ffffff) bleed(0,0,120,120)
+"#,
+        &mut scene,
+    );
+    assert!(
+        out.compile_output
+            .diagnostics
+            .iter()
+            .any(|d| d.diagnostic.code == "LUMD0269"),
+        "bleed rect on a node is disambiguated: {:#?}",
+        out.compile_output.diagnostics
+    );
+}
+
+#[test]
+fn dsl_bleed_arity_error_names_both_forms() {
+    let output = parse_dsl(
+        r#"
+page page_a4
+  wash r p(0,0) s(100,100) bleed(1,2,3)
+"#,
+    );
+    assert_eq!(output.halted_at.as_ref().unwrap().code, "LUMD0269");
 }

@@ -855,6 +855,27 @@ impl<'a> LayoutEngine<'a> {
             return;
         }
 
+        // Declared-bleed carve-out (A4): a node the author flagged bleed(true)
+        // deliberately washes past the page — downgrade to a warning with a
+        // distinct message. Never silent: the warning always appears.
+        if self.is_declared_bleed(node_id) {
+            self.diagnostics.push(
+                Diagnostic::warning(
+                    Phase::Layout,
+                    "LUMV0800",
+                    format!(
+                        "node {} exceeds exportable bounds for page {}",
+                        node_id, page.id
+                    ),
+                    Some(DiagnosticSubject::Node(node_id.clone())),
+                )
+                .with_hint(
+                    "node off-canvas extent declared as bleed; content outside the page is not exported.",
+                ),
+            );
+            return;
+        }
+
         // Freehand clip policy (Phase 1b, user decision 2026-07-03):
         // freehand overflow is explicit intent, so it warns instead of
         // blocking — the canvas shows the true clipped consequence.
@@ -912,12 +933,15 @@ impl<'a> LayoutEngine<'a> {
             // the canvas shows the clipped result. Managed content keeps
             // the fail-closed error under a clipping parent.
             let freehand = self.is_freehand(node_id);
-            let severity = if !freehand && self.parent_clips(node_id) {
+            let declared_bleed = self.is_declared_bleed(node_id);
+            let severity = if !freehand && !declared_bleed && self.parent_clips(node_id) {
                 DiagnosticSeverity::Error
             } else {
                 DiagnosticSeverity::Warning
             };
-            let hint = if freehand {
+            let hint = if declared_bleed {
+                "node off-canvas extent declared as bleed; content outside the page is not exported."
+            } else if freehand {
                 "Freehand node extends beyond its parent; the overflow is cut off wherever the parent clips content."
             } else {
                 "Move, resize, wrap, or change the parent layout so the child fits."
@@ -962,6 +986,15 @@ impl<'a> LayoutEngine<'a> {
                 .unwrap_or(false),
             Some(crate::scene::ParentRef::Page(_)) | None => true,
         }
+    }
+
+    /// A node whose author declared `bleed(true)` — deliberate off-canvas
+    /// intent (A4). Per-node, never inherited.
+    fn is_declared_bleed(&self, node_id: &NodeId) -> bool {
+        self.scene
+            .nodes
+            .get(node_id)
+            .is_some_and(|node| node.bleed)
     }
 
     /// A node a human freehands directly: pinned Absolute, or a child of a

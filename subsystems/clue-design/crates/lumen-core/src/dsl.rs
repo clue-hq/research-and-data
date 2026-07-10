@@ -402,6 +402,13 @@ pub enum DslProperty {
     PageBackground(DslFill),
     Stroke(DslStroke),
     Shadow(DslShadow),
+    /// Outer glow — zero-offset shadow semantics (A4).
+    Glow(DslGlow),
+    /// Gaussian blur of the node's own rendering (A4).
+    Blur(DslBlur),
+    /// Inner shadow — same channel surface as `shadow(...)`, drawn over and
+    /// clipped to the node's alpha (A4).
+    InnerShadow(DslShadow),
     RemoveEffect(EffectId),
     Font(DslFont),
     FontSize(DslScalar),
@@ -436,7 +443,13 @@ pub enum DslProperty {
         anchor: DslLayoutAnchor,
     },
     SafeArea(Rect),
+    /// Page print-bleed rectangle: `bleed(x,y,width,height)` (4 args).
     Bleed(Rect),
+    /// Per-node declared bleed intent: `bleed(true|false)` (1 bool arg). A4.
+    BleedIntent(bool),
+    /// Per-corner radius `rd(tl,tr,br,bl)` (A4 LUMD0230 debt). The uniform
+    /// form `rd(r)` still lowers through `Radius`.
+    CornerRadius([f64; 4]),
     SlotLabel(String),
     SlotRequired(bool),
     SlotPlaceholder(String),
@@ -533,6 +546,26 @@ pub struct DslShadow {
     pub y: f64,
     pub blur: f64,
     pub spread: f64,
+}
+
+/// Outer glow surface of the grammar:
+/// `glow(id?,#color,o(0.8),blur(24),spread(4))`. Same channel style as
+/// `shadow(...)` but with no x/y offset (glow is centered).
+#[derive(Clone, Debug, PartialEq)]
+pub struct DslGlow {
+    pub id: Option<EffectId>,
+    pub color: Color,
+    pub opacity: f64,
+    pub blur: f64,
+    pub spread: f64,
+}
+
+/// Layer-blur surface of the grammar: `blur(id?,r(12))` or the one-arg
+/// shorthand `blur(12)`.
+#[derive(Clone, Debug, PartialEq)]
+pub struct DslBlur {
+    pub id: Option<EffectId>,
+    pub radius: f64,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -2938,6 +2971,9 @@ fn node_edit_patch_from_properties(
     let mut fill_index = 0;
     let mut stroke_index = 0;
     let mut shadow_index = 0;
+    let mut glow_index = 0;
+    let mut blur_index = 0;
+    let mut inner_shadow_index = 0;
     let mut text_patch = TextEditPatch::default();
     let mut has_text_patch = false;
 
@@ -3077,6 +3113,62 @@ fn node_edit_patch_from_properties(
                         index: None,
                     });
                 }
+            }
+            DslProperty::InnerShadow(shadow) => {
+                let id = shadow.id.clone().unwrap_or_else(|| {
+                    inner_shadow_index += 1;
+                    EffectId::from(format!("effect_{}_inner_shadow_{}", node_id, inner_shadow_index))
+                });
+                let effect = effect_from_dsl_inner_shadow(id.clone(), shadow);
+                if current.effects.iter().any(|existing| existing.id == id) {
+                    effect_edits.push(StackEntryEdit::Set { id, value: effect });
+                } else {
+                    effect_edits.push(StackEntryEdit::Add {
+                        entry: effect,
+                        index: None,
+                    });
+                }
+            }
+            DslProperty::Glow(glow) => {
+                let id = glow.id.clone().unwrap_or_else(|| {
+                    glow_index += 1;
+                    EffectId::from(format!("effect_{}_glow_{}", node_id, glow_index))
+                });
+                let effect = effect_from_dsl_glow(id.clone(), glow);
+                if current.effects.iter().any(|existing| existing.id == id) {
+                    effect_edits.push(StackEntryEdit::Set { id, value: effect });
+                } else {
+                    effect_edits.push(StackEntryEdit::Add {
+                        entry: effect,
+                        index: None,
+                    });
+                }
+            }
+            DslProperty::Blur(blur) => {
+                let id = blur.id.clone().unwrap_or_else(|| {
+                    blur_index += 1;
+                    EffectId::from(format!("effect_{}_blur_{}", node_id, blur_index))
+                });
+                let effect = effect_from_dsl_blur(id.clone(), blur);
+                if current.effects.iter().any(|existing| existing.id == id) {
+                    effect_edits.push(StackEntryEdit::Set { id, value: effect });
+                } else {
+                    effect_edits.push(StackEntryEdit::Add {
+                        entry: effect,
+                        index: None,
+                    });
+                }
+            }
+            DslProperty::BleedIntent(value) => {
+                patch.bleed = FieldPatch::Set(*value);
+            }
+            DslProperty::CornerRadius([tl, tr, br, bl]) => {
+                next_corner.top_left = *tl;
+                next_corner.top_right = *tr;
+                next_corner.bottom_right = *br;
+                next_corner.bottom_left = *bl;
+                next_corner.token = None;
+                corner_changed = true;
             }
             DslProperty::RemoveEffect(effect_id) => {
                 effect_edits.push(StackEntryEdit::Remove {
@@ -3244,10 +3336,22 @@ fn node_edit_patch_from_properties(
                 }
                 layout_changed = true;
             }
+            DslProperty::Bleed(_) => {
+                // Misplaced page print-bleed rect on a node target: name the
+                // per-node form (bleed(true)) explicitly rather than a generic
+                // "unsupported property" halt.
+                return Err(error_diag(
+                    line.line_number,
+                    1,
+                    line.raw.len().max(1),
+                    "LUMD0269",
+                    "bleed(x,y,width,height) is a page's print-bleed rectangle, not a node property",
+                    "For a node's declared off-canvas intent use bleed(true); set the print bleed on a #page:page_id modify line.",
+                ));
+            }
             DslProperty::PageSize(_)
             | DslProperty::PageBackground(_)
             | DslProperty::SafeArea(_)
-            | DslProperty::Bleed(_)
             | DslProperty::Slot(_)
             | DslProperty::SlotLabel(_)
             | DslProperty::SlotRequired(_)
@@ -3345,6 +3449,51 @@ fn effect_from_dsl_shadow(id: EffectId, shadow: &DslShadow) -> Effect {
     }
 }
 
+fn effect_from_dsl_inner_shadow(id: EffectId, shadow: &DslShadow) -> Effect {
+    let color_token = match &shadow.color {
+        Color::Token { token } => Some(token.clone()),
+        _ => None,
+    };
+    Effect {
+        id,
+        kind: EffectKind::InnerShadow {
+            color: shadow.color.clone(),
+            opacity: shadow.opacity,
+            x: shadow.x,
+            y: shadow.y,
+            blur: shadow.blur,
+            spread: shadow.spread,
+            color_token,
+        },
+    }
+}
+
+fn effect_from_dsl_glow(id: EffectId, glow: &DslGlow) -> Effect {
+    let color_token = match &glow.color {
+        Color::Token { token } => Some(token.clone()),
+        _ => None,
+    };
+    Effect {
+        id,
+        kind: EffectKind::Glow {
+            color: glow.color.clone(),
+            opacity: glow.opacity,
+            blur: glow.blur,
+            spread: glow.spread,
+            color_token,
+        },
+    }
+}
+
+fn effect_from_dsl_blur(id: EffectId, blur: &DslBlur) -> Effect {
+    Effect {
+        id,
+        kind: EffectKind::LayerBlur {
+            radius: blur.radius,
+        },
+    }
+}
+
 fn page_edit_patch_from_properties(
     properties: &[DslProperty],
     line: &DslLine,
@@ -3375,6 +3524,16 @@ fn page_edit_patch_from_properties(
             }
             DslProperty::SafeArea(rect) => patch.safe_area = OptionalFieldPatch::Set(rect.clone()),
             DslProperty::Bleed(rect) => patch.bleed = OptionalFieldPatch::Set(rect.clone()),
+            DslProperty::BleedIntent(_) => {
+                return Err(error_diag(
+                    line.line_number,
+                    1,
+                    line.raw.len().max(1),
+                    "LUMD0269",
+                    "bleed(true|false) is a per-node bleed intent, not a page property",
+                    "Set a page's print bleed with bleed(x,y,width,height); use bleed(true) on an element.",
+                ));
+            }
             _ => {
                 return Err(error_diag(
                     line.line_number,
@@ -3784,6 +3943,36 @@ fn parse_property_token(
                 token,
                 line_number,
                 column,
+                "LUMD0257",
+                "Use shadow(shadow_soft,#000000,o(0.18),x(0),y(8),blur(24),spread(0)).",
+                "shadow",
+            )?)]
+        }
+        "inner_shadow" => {
+            vec![DslProperty::InnerShadow(parse_shadow_property(
+                &call,
+                token,
+                line_number,
+                column,
+                "LUMD0268",
+                "Use inner_shadow(inner_soft,#000000,o(0.4),x(0),y(4),blur(8),spread(0)).",
+                "inner_shadow",
+            )?)]
+        }
+        "glow" => {
+            vec![DslProperty::Glow(parse_glow_property(
+                &call,
+                token,
+                line_number,
+                column,
+            )?)]
+        }
+        "blur" => {
+            vec![DslProperty::Blur(parse_blur_property(
+                &call,
+                token,
+                line_number,
+                column,
             )?)]
         }
         "remove_effect" => {
@@ -3978,12 +4167,38 @@ fn parse_property_token(
             )?)]
         }
         "rd" | "radius" => {
-            expect_arg_count(&call, 1, line_number)?;
-            vec![DslProperty::Radius(parse_scalar(
-                &call.args[0],
-                line_number,
-                column,
-            )?)]
+            // Uniform `rd(r)` (number or token) stays `Radius`; per-corner
+            // `rd(tl,tr,br,bl)` (CSS clockwise from top-left) lowers to
+            // `CornerRadius`. Any other arity is the generic LUMD0230.
+            match call.args.len() {
+                1 => vec![DslProperty::Radius(parse_scalar(
+                    &call.args[0],
+                    line_number,
+                    column,
+                )?)],
+                // Corners are magnitudes where zero is meaningful (a square
+                // corner) — e.g. rd(12,12,0,0) rounds only the top. Reject
+                // only negatives.
+                4 => vec![DslProperty::CornerRadius([
+                    parse_non_negative_f64(&call.args[0], line_number, column)?,
+                    parse_non_negative_f64(&call.args[1], line_number, column)?,
+                    parse_non_negative_f64(&call.args[2], line_number, column)?,
+                    parse_non_negative_f64(&call.args[3], line_number, column)?,
+                ])],
+                _ => {
+                    return Err(error_diag(
+                        line_number,
+                        1,
+                        call.name.len(),
+                        "LUMD0230",
+                        format!(
+                            "rd(...) expects 1 or 4 argument(s), got {}",
+                            call.args.len()
+                        ),
+                        "Use rd(8) for a uniform radius or rd(tl,tr,br,bl) for per-corner radii.",
+                    ));
+                }
+            }
         }
         "o" | "opacity" => {
             expect_arg_count(&call, 1, line_number)?;
@@ -4030,13 +4245,33 @@ fn parse_property_token(
             })]
         }
         "bleed" => {
-            expect_arg_count(&call, 4, line_number)?;
-            vec![DslProperty::Bleed(Rect {
-                x: parse_f64(&call.args[0], line_number, column)?,
-                y: parse_f64(&call.args[1], line_number, column)?,
-                width: parse_positive_f64(&call.args[2], line_number, column)?,
-                height: parse_positive_f64(&call.args[3], line_number, column)?,
-            })]
+            // The designer word `bleed` is deliberately shared: the 4-arg form
+            // is a page's print-bleed rectangle; the 1-arg bool is a per-node
+            // declared bleed intent (A4). Any other arity is LUMD0269 naming
+            // both forms.
+            match call.args.len() {
+                4 => vec![DslProperty::Bleed(Rect {
+                    x: parse_f64(&call.args[0], line_number, column)?,
+                    y: parse_f64(&call.args[1], line_number, column)?,
+                    width: parse_positive_f64(&call.args[2], line_number, column)?,
+                    height: parse_positive_f64(&call.args[3], line_number, column)?,
+                })],
+                1 => vec![DslProperty::BleedIntent(parse_bool(
+                    &call.args[0],
+                    line_number,
+                    column,
+                )?)],
+                _ => {
+                    return Err(error_diag(
+                        line_number,
+                        1,
+                        call.name.len(),
+                        "LUMD0269",
+                        format!("bleed(...) expects 1 or 4 argument(s), got {}", call.args.len()),
+                        "Use bleed(true) on a node for declared off-canvas intent, or bleed(x,y,width,height) on a page for the print-bleed rectangle.",
+                    ));
+                }
+            }
         }
         "g" | "gap" => {
             expect_arg_count(&call, 1, line_number)?;
@@ -4462,6 +4697,9 @@ fn apply_properties(
     let mut fill_index = 0;
     let mut stroke_index = 0;
     let mut shadow_index = 0;
+    let mut glow_index = 0;
+    let mut blur_index = 0;
+    let mut inner_shadow_index = 0;
 
     for property in properties {
         match property {
@@ -4532,6 +4770,40 @@ fn apply_properties(
                     EffectId::from(format!("effect_{}_shadow_{}", node.id, shadow_index))
                 });
                 node.effects.push(effect_from_dsl_shadow(id, shadow));
+            }
+            DslProperty::InnerShadow(shadow) => {
+                let id = shadow.id.clone().unwrap_or_else(|| {
+                    inner_shadow_index += 1;
+                    EffectId::from(format!(
+                        "effect_{}_inner_shadow_{}",
+                        node.id, inner_shadow_index
+                    ))
+                });
+                node.effects.push(effect_from_dsl_inner_shadow(id, shadow));
+            }
+            DslProperty::Glow(glow) => {
+                let id = glow.id.clone().unwrap_or_else(|| {
+                    glow_index += 1;
+                    EffectId::from(format!("effect_{}_glow_{}", node.id, glow_index))
+                });
+                node.effects.push(effect_from_dsl_glow(id, glow));
+            }
+            DslProperty::Blur(blur) => {
+                let id = blur.id.clone().unwrap_or_else(|| {
+                    blur_index += 1;
+                    EffectId::from(format!("effect_{}_blur_{}", node.id, blur_index))
+                });
+                node.effects.push(effect_from_dsl_blur(id, blur));
+            }
+            DslProperty::BleedIntent(value) => {
+                node.bleed = *value;
+            }
+            DslProperty::CornerRadius([tl, tr, br, bl]) => {
+                node.corner.top_left = *tl;
+                node.corner.top_right = *tr;
+                node.corner.bottom_right = *br;
+                node.corner.bottom_left = *bl;
+                node.corner.token = None;
             }
             DslProperty::RemoveEffect(_) => {
                 diagnostics.push(warning_diag(
@@ -4681,14 +4953,26 @@ fn apply_properties(
                 node.transform.flip_y = *y;
             }
             DslProperty::Clip(clip) => node.clip = *clip,
-            DslProperty::SafeArea(_) | DslProperty::Bleed(_) => {
+            DslProperty::Bleed(_) => {
+                // A 4-arg bleed rect is a page's print bleed; on an element the
+                // author meant the per-node intent bleed(true).
+                diagnostics.push(warning_diag(
+                    line_number,
+                    1,
+                    node.id.as_str().len(),
+                    "LUMD0269",
+                    "bleed(x,y,width,height) is a page's print-bleed rectangle, not a node property",
+                    "For a node's declared off-canvas intent use bleed(true); set the print bleed on a #page:page_id modify line.",
+                ));
+            }
+            DslProperty::SafeArea(_) => {
                 diagnostics.push(warning_diag(
                     line_number,
                     1,
                     node.id.as_str().len(),
                     "LUMD0612",
-                    "safe_area(...)/bleed(...) only apply to page modify targets",
-                    "Use these properties on #page:page_id modify lines.",
+                    "safe_area(...) only applies to page modify targets",
+                    "Use safe_area(...) on #page:page_id modify lines.",
                 ));
             }
             DslProperty::Gap(gap) => match gap {
@@ -5297,19 +5581,28 @@ fn parse_paint(source: &str, line_number: usize, column: usize) -> Result<Paint,
                 "Use solid(#ffffff).",
             ));
         }
-        if call.args.len() > 1 {
+        let color = parse_color(&call.args[0], line_number, column)?;
+        // `solid(color, opacity)` (A4, retires LUMD0241): the second arg —
+        // either a bare number `0.5` or a channel `o(0.5)` — multiplies into
+        // the color's alpha at model-build time. The canonical representation
+        // stays `Paint::Solid` with an #RRGGBBAA (or oklch) color, so no
+        // exporter changes are needed.
+        if call.args.len() == 2 {
+            let opacity = parse_solid_opacity(&call.args[1], line_number, column)?;
+            let color = compose_color_opacity(color, opacity, source, line_number, column)?;
+            return Ok(Paint::Solid { color });
+        }
+        if call.args.len() > 2 {
             return Err(error_diag(
                 line_number,
                 column,
                 source.len(),
-                "LUMD0241",
-                "solid(...) opacity arguments are parsed but not lowered by this workstream",
-                "Use #RRGGBBAA/#AARRGGBB-compatible assets after color semantics are finalized, or use node opacity o(...).",
+                "LUMD0270",
+                format!("solid(...) accepts a color and an optional opacity, got {} arguments", call.args.len()),
+                "Use solid(#ffffff) or solid(#ffffff,0.5).",
             ));
         }
-        return Ok(Paint::Solid {
-            color: parse_color(&call.args[0], line_number, column)?,
-        });
+        return Ok(Paint::Solid { color });
     }
 
     Ok(Paint::Solid {
@@ -6271,19 +6564,13 @@ fn parse_shadow_property(
     token: &str,
     line_number: usize,
     column: usize,
+    code: &'static str,
+    hint: &'static str,
+    keyword: &str,
 ) -> Result<DslShadow, DslDiagnostic> {
-    let shadow_error = |message: String| {
-        error_diag(
-            line_number,
-            column,
-            token.len(),
-            "LUMD0257",
-            message,
-            "Use shadow(shadow_soft,#000000,o(0.18),x(0),y(8),blur(24),spread(0)).",
-        )
-    };
+    let shadow_error = |message: String| error_diag(line_number, column, token.len(), code, message, hint);
     if call.args.is_empty() {
-        return Err(shadow_error("shadow(...) expects a color".to_owned()));
+        return Err(shadow_error(format!("{keyword}(...) expects a color")));
     }
 
     // Compatibility alias for the CSS `box-shadow` ordering models reach for out
@@ -6335,7 +6622,7 @@ fn parse_shadow_property(
     } else {
         let id = parse_effect_id(first, line_number, column)?;
         let color = args.next().ok_or_else(|| {
-            shadow_error("shadow(...) with an id still expects a color".to_owned())
+            shadow_error(format!("{keyword}(...) with an id still expects a color"))
         })?;
         (Some(id), parse_color(color, line_number, column)?)
     };
@@ -6351,7 +6638,7 @@ fn parse_shadow_property(
     };
     for arg in args {
         let Some(option) = parse_call(arg.trim()) else {
-            return Err(shadow_error(format!("unknown shadow argument {arg}")));
+            return Err(shadow_error(format!("unknown {keyword} argument {arg}")));
         };
         if option.args.len() != 1 {
             return Err(shadow_error(format!(
@@ -6367,11 +6654,132 @@ fn parse_shadow_property(
             "blur" => shadow.blur = value,
             "spread" => shadow.spread = value,
             other => {
-                return Err(shadow_error(format!("unknown shadow option {other}(...)")));
+                return Err(shadow_error(format!("unknown {keyword} option {other}(...)")));
             }
         }
     }
     Ok(shadow)
+}
+
+/// Outer glow parse — mirrors `parse_shadow_property` but rejects x/y offsets
+/// (a glow is centered). LUMD0266.
+fn parse_glow_property(
+    call: &Call,
+    token: &str,
+    line_number: usize,
+    column: usize,
+) -> Result<DslGlow, DslDiagnostic> {
+    const HINT: &str = "Use glow(glow_soft,#7c3aed,o(0.8),blur(24),spread(4)).";
+    let glow_error =
+        |message: String| error_diag(line_number, column, token.len(), "LUMD0266", message, HINT);
+    if call.args.is_empty() {
+        return Err(glow_error("glow(...) expects a color".to_owned()));
+    }
+
+    let mut args = call.args.iter();
+    let first = args.next().expect("non-empty checked above");
+    let (id, color) = if paint_like(first) {
+        (None, parse_color(first, line_number, column)?)
+    } else {
+        let id = parse_effect_id(first, line_number, column)?;
+        let color = args
+            .next()
+            .ok_or_else(|| glow_error("glow(...) with an id still expects a color".to_owned()))?;
+        (Some(id), parse_color(color, line_number, column)?)
+    };
+
+    let mut glow = DslGlow {
+        id,
+        color,
+        opacity: 1.0,
+        blur: 0.0,
+        spread: 0.0,
+    };
+    for arg in args {
+        let Some(option) = parse_call(arg.trim()) else {
+            return Err(glow_error(format!("unknown glow argument {arg}")));
+        };
+        if option.args.len() != 1 {
+            return Err(glow_error(format!(
+                "{}(...) expects exactly one numeric value",
+                option.name
+            )));
+        }
+        let value = parse_f64(&option.args[0], line_number, column)?;
+        match option.name.as_str() {
+            "o" | "opacity" => glow.opacity = value,
+            "blur" => glow.blur = value,
+            "spread" => glow.spread = value,
+            "x" | "y" => {
+                return Err(glow_error(
+                    "glow(...) has no x/y offset; a glow is centered — use shadow(...) for an offset shadow".to_owned(),
+                ));
+            }
+            other => {
+                return Err(glow_error(format!("unknown glow option {other}(...)")));
+            }
+        }
+    }
+    Ok(glow)
+}
+
+/// Layer-blur parse: `blur(id?,r(12))` or the one-arg shorthand `blur(12)`.
+/// LUMD0267.
+fn parse_blur_property(
+    call: &Call,
+    token: &str,
+    line_number: usize,
+    column: usize,
+) -> Result<DslBlur, DslDiagnostic> {
+    const HINT: &str = "Use blur(12) or blur(blur_soft,r(12)).";
+    let blur_error =
+        |message: String| error_diag(line_number, column, token.len(), "LUMD0267", message, HINT);
+    if call.args.is_empty() || call.args.len() > 2 {
+        return Err(blur_error(format!(
+            "blur(...) expects 1 or 2 arguments, got {}",
+            call.args.len()
+        )));
+    }
+
+    let mut args = call.args.iter().peekable();
+    let mut id: Option<EffectId> = None;
+    // A leading non-`r(...)`, non-numeric argument is a stable id.
+    let first = args.peek().expect("non-empty checked above");
+    let first_trimmed = first.trim();
+    let first_is_radius =
+        parse_call(first_trimmed).is_some_and(|c| c.name == "r" || c.name == "radius");
+    let first_is_number = parse_call(first_trimmed).is_none() && parse_f64(first, 0, 0).is_ok();
+    if !first_is_radius && !first_is_number {
+        id = Some(parse_effect_id(args.next().unwrap(), line_number, column)?);
+    }
+
+    let radius_arg = args
+        .next()
+        .ok_or_else(|| blur_error("blur(...) with an id still expects a radius".to_owned()))?;
+    let radius = match parse_call(radius_arg.trim()) {
+        Some(option) => {
+            if option.name != "r" && option.name != "radius" {
+                return Err(blur_error(format!(
+                    "unknown blur argument {}(...); use r(...)",
+                    option.name
+                )));
+            }
+            if option.args.len() != 1 {
+                return Err(blur_error(
+                    "r(...) expects exactly one numeric value".to_owned(),
+                ));
+            }
+            parse_f64(&option.args[0], line_number, column)?
+        }
+        None => parse_f64(radius_arg, line_number, column)?,
+    };
+    if args.next().is_some() {
+        return Err(blur_error(
+            "blur(...) accepts at most an id and a radius".to_owned(),
+        ));
+    }
+
+    Ok(DslBlur { id, radius })
 }
 
 fn parse_asset_id(
@@ -6429,6 +6837,27 @@ fn parse_positive_f64(
             "LUMD0255",
             "numeric value must be positive",
             "Use a positive decimal numeric value.",
+        ));
+    }
+    Ok(value)
+}
+
+/// Like `parse_positive_f64` but zero is allowed — for magnitudes where zero
+/// is meaningful (per-corner radii: a zero corner is a square corner).
+fn parse_non_negative_f64(
+    source: &str,
+    line_number: usize,
+    column: usize,
+) -> Result<f64, DslDiagnostic> {
+    let value = parse_f64(source, line_number, column)?;
+    if value < 0.0 {
+        return Err(error_diag(
+            line_number,
+            column,
+            source.len().max(1),
+            "LUMD0255",
+            "numeric value must be non-negative",
+            "Use a decimal numeric value of 0 or greater.",
         ));
     }
     Ok(value)
@@ -6551,6 +6980,111 @@ fn parse_usize(source: &str, line_number: usize, column: usize) -> Result<usize,
             "Use an insertion index such as 0 or 1.",
         )
     })
+}
+
+/// The opacity argument of `solid(color, opacity)` — a bare number `0.5` or a
+/// channel `o(0.5)`/`opacity(0.5)`.
+fn parse_solid_opacity(
+    source: &str,
+    line_number: usize,
+    column: usize,
+) -> Result<f64, DslDiagnostic> {
+    let trimmed = source.trim();
+    if let Some(call) = parse_call(trimmed) {
+        if (call.name == "o" || call.name == "opacity") && call.args.len() == 1 {
+            return parse_f64(&call.args[0], line_number, column);
+        }
+        return Err(error_diag(
+            line_number,
+            column,
+            source.len().max(1),
+            "LUMD0270",
+            format!("solid(...) opacity must be a number or o(...), got {trimmed}"),
+            "Use solid(#ffffff,0.5) or solid(#ffffff,o(0.5)).",
+        ));
+    }
+    parse_f64(source, line_number, column)
+}
+
+/// Multiply a fill opacity into a color's alpha at model-build time. Hex and
+/// oklch compose exactly; an unresolved token color cannot (loud LUMD0270).
+fn compose_color_opacity(
+    color: Color,
+    opacity: f64,
+    source: &str,
+    line_number: usize,
+    column: usize,
+) -> Result<Color, DslDiagnostic> {
+    if !(0.0..=1.0).contains(&opacity) {
+        return Err(error_diag(
+            line_number,
+            column,
+            source.len().max(1),
+            "LUMD0270",
+            format!("solid(...) opacity {opacity} is out of range 0..=1"),
+            "Use an opacity between 0 and 1, e.g. solid(#ffffff,0.5).",
+        ));
+    }
+    match color {
+        Color::Hex { value } => {
+            let (r, g, b, a) = parse_hex_rgba(&value).ok_or_else(|| {
+                error_diag(
+                    line_number,
+                    column,
+                    source.len().max(1),
+                    "LUMD0270",
+                    format!("solid(...) could not read hex color {value} to apply opacity"),
+                    "Use a #RGB, #RRGGBB, or #RRGGBBAA color with the opacity argument.",
+                )
+            })?;
+            let new_a = ((a as f64) * opacity).round().clamp(0.0, 255.0) as u8;
+            Ok(Color::Hex {
+                value: format!("#{r:02x}{g:02x}{b:02x}{new_a:02x}"),
+            })
+        }
+        Color::Oklch { l, c, h, alpha } => Ok(Color::Oklch {
+            l,
+            c,
+            h,
+            alpha: alpha * opacity,
+        }),
+        Color::Token { token } => Err(error_diag(
+            line_number,
+            column,
+            source.len().max(1),
+            "LUMD0270",
+            format!("solid(...) cannot apply opacity to unresolved token color {token}"),
+            "Bake the alpha into the token, or use a #RRGGBBAA color with solid(...).",
+        )),
+    }
+}
+
+/// Parse #RGB, #RGBA, #RRGGBB, #RRGGBBAA (leading '#' optional) into RGBA bytes.
+fn parse_hex_rgba(value: &str) -> Option<(u8, u8, u8, u8)> {
+    let hex = value.trim().trim_start_matches('#');
+    let h = |s: &str| u8::from_str_radix(s, 16).ok();
+    match hex.len() {
+        3 | 4 => {
+            let mut ch = hex.chars();
+            let d = |c: char| c.to_digit(16).map(|v| (v * 17) as u8);
+            let r = d(ch.next()?)?;
+            let g = d(ch.next()?)?;
+            let b = d(ch.next()?)?;
+            let a = match ch.next() {
+                Some(c) => d(c)?,
+                None => 255,
+            };
+            Some((r, g, b, a))
+        }
+        6 => Some((h(&hex[0..2])?, h(&hex[2..4])?, h(&hex[4..6])?, 255)),
+        8 => Some((
+            h(&hex[0..2])?,
+            h(&hex[2..4])?,
+            h(&hex[4..6])?,
+            h(&hex[6..8])?,
+        )),
+        _ => None,
+    }
 }
 
 fn parse_bool(source: &str, line_number: usize, column: usize) -> Result<bool, DslDiagnostic> {

@@ -25,8 +25,9 @@ use lumen_core::{
     TextNode, TextWrap,
 };
 use lumen_export::{
-    focal_crop_geometry, page_background_token_diagnostics, unresolved_brand_token_diagnostics,
-    AssetByteResolver, PageRasterizer, RasterizeError, RasterizedPage, ResolvedAssetBytes,
+    focal_crop_geometry, page_background_token_diagnostics, text_strokes_dropped_diag,
+    unresolved_brand_token_diagnostics, AssetByteResolver, PageRasterizer, RasterizeError,
+    RasterizedPage, ResolvedAssetBytes,
 };
 use skia_safe::canvas::SaveLayerRec;
 use skia_safe::textlayout::TextAlign as SkTextAlign;
@@ -240,7 +241,7 @@ impl<'a> PagePainter<'a> {
 
         // Group opacity + layered shadows ride one save_layer, matching the
         // SVG renderer's group-level opacity/filter attributes.
-        let shadow_filter = self.shadow_image_filter(node);
+        let shadow_filter = self.effect_image_filter(node);
         let needs_layer = node.opacity < 1.0 || shadow_filter.is_some();
         if needs_layer {
             let mut layer_paint = SkPaint::default();
@@ -393,6 +394,10 @@ impl<'a> PagePainter<'a> {
                 )
                 .with_hint("Stacked text fills are out of V0 scope; use a single text fill."),
             );
+        }
+        // Text strokes are dropped in v1, but never silently (A4, LUME0214).
+        if !node.strokes.is_empty() {
+            self.diagnostics.push(text_strokes_dropped_diag(node));
         }
 
         let foreground = match node.fills.first() {
@@ -705,14 +710,33 @@ impl<'a> PagePainter<'a> {
         }
     }
 
-    /// Layered drop shadows with spread as one merged image filter:
-    /// bottom-most shadow first, source graphic on top — the same stacking
-    /// the SVG renderer's feMerge produces (first effect = topmost shadow).
-    fn shadow_image_filter(&mut self, node: &Node) -> Option<ImageFilter> {
+    /// Build the node's effect stack as one image filter. A pure drop-shadow
+    /// stack keeps the exact pre-A4 merge; a stack with glow / layer blur /
+    /// inner shadow uses the A4 general pipeline honoring the D1 stacking
+    /// contract (matched to the SVG exporter, pinned by the parity test).
+    fn effect_image_filter(&mut self, node: &Node) -> Option<ImageFilter> {
         if node.effects.is_empty() {
             return None;
         }
+        let has_new = node.effects.iter().any(|effect| {
+            matches!(
+                effect.kind,
+                EffectKind::Glow { .. }
+                    | EffectKind::LayerBlur { .. }
+                    | EffectKind::InnerShadow { .. }
+            )
+        });
+        if has_new {
+            self.general_effect_filter(node)
+        } else {
+            self.drop_shadow_filter(node)
+        }
+    }
 
+    /// Layered drop shadows with spread as one merged image filter:
+    /// bottom-most shadow first, source graphic on top — the same stacking
+    /// the SVG renderer's feMerge produces (first effect = topmost shadow).
+    fn drop_shadow_filter(&mut self, node: &Node) -> Option<ImageFilter> {
         let mut shadow_filters = Vec::new();
         for effect in node.effects.iter().rev() {
             let EffectKind::DropShadow {
@@ -723,7 +747,10 @@ impl<'a> PagePainter<'a> {
                 blur,
                 spread,
                 ..
-            } = &effect.kind;
+            } = &effect.kind
+            else {
+                continue;
+            };
             let Some(base) = self.resolve_color(color, Some(&node.id)) else {
                 continue;
             };
@@ -753,6 +780,177 @@ impl<'a> PagePainter<'a> {
         // Source graphic on top.
         shadow_filters.push(None);
         image_filters::merge(shadow_filters, None)
+    }
+
+    /// A4 general pipeline. Source → layer blurs → outer shadows/glows beneath
+    /// the blurred result → inner shadows over it. Merge order matches the SVG
+    /// exporter's feMerge (outers reversed, base, inners reversed).
+    fn general_effect_filter(&mut self, node: &Node) -> Option<ImageFilter> {
+        // 1. Blurred base (None = the source graphic when there are no blurs).
+        let mut base: Option<ImageFilter> = None;
+        for effect in &node.effects {
+            if let EffectKind::LayerBlur { radius } = &effect.kind {
+                let sigma = (*radius as f32) / 2.0;
+                base = image_filters::blur((sigma, sigma), None, base, None);
+            }
+        }
+
+        // 2. Outer shadows/glows (vec order; first = topmost of the class).
+        let mut outers = Vec::new();
+        // 3. Inner shadows (vec order; first = topmost of the class).
+        let mut inners = Vec::new();
+        for effect in &node.effects {
+            match &effect.kind {
+                EffectKind::DropShadow {
+                    color,
+                    opacity,
+                    x,
+                    y,
+                    blur,
+                    spread,
+                    ..
+                } => {
+                    if let Some(f) =
+                        self.outer_effect_filter(node, color, *opacity, *x, *y, *blur, *spread, &base)
+                    {
+                        outers.push(f);
+                    }
+                }
+                EffectKind::Glow {
+                    color,
+                    opacity,
+                    blur,
+                    spread,
+                    ..
+                } => {
+                    if let Some(f) = self
+                        .outer_effect_filter(node, color, *opacity, 0.0, 0.0, *blur, *spread, &base)
+                    {
+                        outers.push(f);
+                    }
+                }
+                EffectKind::InnerShadow {
+                    color,
+                    opacity,
+                    x,
+                    y,
+                    blur,
+                    spread,
+                    ..
+                } => {
+                    if let Some(f) =
+                        self.inner_shadow_filter(node, color, *opacity, *x, *y, *blur, *spread, &base)
+                    {
+                        inners.push(f);
+                    }
+                }
+                EffectKind::LayerBlur { .. } => {}
+            }
+        }
+
+        if outers.is_empty() && inners.is_empty() {
+            // Layer-blur only.
+            return base;
+        }
+
+        // 4. Merge bottom-up: outers reversed (first outer topmost), the
+        //    blurred base, inner shadows reversed (first inner topmost).
+        let mut merge_list: Vec<Option<ImageFilter>> = Vec::new();
+        for f in outers.into_iter().rev() {
+            merge_list.push(Some(f));
+        }
+        merge_list.push(base);
+        for f in inners.into_iter().rev() {
+            merge_list.push(Some(f));
+        }
+        image_filters::merge(merge_list, None)
+    }
+
+    /// One outer shadow/glow: the shadow of the (blurred) base alpha, dilated
+    /// or eroded by spread, offset and blurred, colored. `drop_shadow_only`
+    /// yields only the shadow (not the source).
+    #[allow(clippy::too_many_arguments)]
+    fn outer_effect_filter(
+        &mut self,
+        node: &Node,
+        color: &Color,
+        opacity: f64,
+        x: f64,
+        y: f64,
+        blur: f64,
+        spread: f64,
+        base: &Option<ImageFilter>,
+    ) -> Option<ImageFilter> {
+        let resolved = self.resolve_color(color, Some(&node.id))?;
+        let shadow_color = Color4f::new(
+            resolved.r,
+            resolved.g,
+            resolved.b,
+            resolved.a * (opacity as f32),
+        );
+        let spread_input = if spread > 0.0 {
+            image_filters::dilate((spread as f32, spread as f32), base.clone(), None)
+        } else if spread < 0.0 {
+            image_filters::erode((-spread as f32, -spread as f32), base.clone(), None)
+        } else {
+            base.clone()
+        };
+        let sigma = (blur as f32) / 2.0;
+        image_filters::drop_shadow_only(
+            (x as f32, y as f32),
+            (sigma, sigma),
+            shadow_color.to_color(),
+            None,
+            spread_input,
+            None,
+        )
+    }
+
+    /// One inner shadow via the standard alpha-invert composite: the region
+    /// inside the (blurred) base alpha but outside the offset+blurred alpha,
+    /// recolored to the shadow color. Spread erodes the shape inward first.
+    #[allow(clippy::too_many_arguments)]
+    fn inner_shadow_filter(
+        &mut self,
+        node: &Node,
+        color: &Color,
+        opacity: f64,
+        x: f64,
+        y: f64,
+        blur: f64,
+        spread: f64,
+        base: &Option<ImageFilter>,
+    ) -> Option<ImageFilter> {
+        let resolved = self.resolve_color(color, Some(&node.id))?;
+        let shadow_color = Color4f::new(
+            resolved.r,
+            resolved.g,
+            resolved.b,
+            resolved.a * (opacity as f32),
+        );
+        // Shape eroded inward by spread.
+        let shape = if spread > 0.0 {
+            image_filters::erode((spread as f32, spread as f32), base.clone(), None)
+        } else {
+            base.clone()
+        };
+        // Offset then blur the (eroded) shape.
+        let offset = image_filters::offset((x as f32, y as f32), shape, None);
+        let sigma = (blur as f32) / 2.0;
+        let offset_blur = image_filters::blur((sigma, sigma), None, offset, None);
+        // ring = base SrcOut offset_blur = inside base but outside the shifted
+        // blurred alpha. blend(mode, background, foreground) computes
+        // foreground <mode> background, so foreground = base, background = ring.
+        let ring = image_filters::blend(
+            skia_safe::BlendMode::SrcOut,
+            offset_blur,
+            base.clone(),
+            None,
+        )?;
+        // Recolor the ring to the shadow color (SrcIn keeps the ring's alpha).
+        let color_filter =
+            skia_safe::color_filters::blend(shadow_color.to_color(), skia_safe::BlendMode::SrcIn)?;
+        image_filters::color_filter(color_filter, ring, None)
     }
 
     /// Resolve a fill paint to an SkPaint. A *specified* fill never silently
@@ -1060,17 +1258,39 @@ fn corner_rrect_for(rect: SkRect, corner: &CornerRadii, radius_delta: f32) -> RR
     let uniform = corner.top_left == corner.top_right
         && corner.top_left == corner.bottom_right
         && corner.top_left == corner.bottom_left;
-    let radius = if uniform { corner.top_left as f32 } else { 0.0 };
-    let radius = if radius > 0.0 {
-        (radius + radius_delta).max(0.0)
-    } else {
-        0.0
-    };
-    if radius <= 0.0 {
-        RRect::new_rect(rect)
-    } else {
-        RRect::new_rect_xy(rect, radius, radius)
+    if uniform {
+        let radius = corner.top_left as f32;
+        let radius = if radius > 0.0 {
+            (radius + radius_delta).max(0.0)
+        } else {
+            0.0
+        };
+        return if radius <= 0.0 {
+            RRect::new_rect(rect)
+        } else {
+            RRect::new_rect_xy(rect, radius, radius)
+        };
     }
+    // Per-corner radii (A4): Skia's `new_rect_radii` applies the CSS overlap
+    // clamp (proportional scale-down) natively, matching the SVG path's
+    // explicit clamp. Order is [upper-left, upper-right, lower-right,
+    // lower-left] — the same clockwise-from-top-left order as the DSL.
+    // A zero-radius corner stays square regardless of stroke-alignment delta,
+    // matching the uniform path above.
+    let apply = |r: f64| {
+        if r > 0.0 {
+            ((r as f32) + radius_delta).max(0.0)
+        } else {
+            0.0
+        }
+    };
+    let radii = [
+        Point::new(apply(corner.top_left), apply(corner.top_left)),
+        Point::new(apply(corner.top_right), apply(corner.top_right)),
+        Point::new(apply(corner.bottom_right), apply(corner.bottom_right)),
+        Point::new(apply(corner.bottom_left), apply(corner.bottom_left)),
+    ];
+    RRect::new_rect_radii(rect, &radii)
 }
 
 /// Native inside/outside stroke alignment for rect/ellipse geometry: the
