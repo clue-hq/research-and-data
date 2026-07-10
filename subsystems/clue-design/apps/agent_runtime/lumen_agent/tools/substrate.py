@@ -19,7 +19,11 @@ except Exception:  # pragma: no cover
     image_cache = None  # type: ignore[assignment]
 
 from ..config import AgentRuntimeConfig
-from ..retokenize import build_logo_placement_operations, build_retokenize_operations
+from ..retokenize import (
+    build_logo_placement_operations,
+    build_retokenize_operations,
+    scene_has_kit_logo,
+)
 from ..brand_card import build_brand_card
 from ..knowledge import BRAND_APPLICATION_PATH, DIRECTIVES_PATH, read_task_knowledge
 from ..models.schemas import (
@@ -207,6 +211,15 @@ class LumenDesignTools:
         self.dsl_session: Optional[JsonObject] = None
         self.latest_export_summary: Optional[JsonObject] = None
         self.latest_preview_bundle: Optional[JsonObject] = None
+        # Staleness contract (sweep A3): the scene-mutation count captured the
+        # last time a valid preview was rendered. `view("preview")` compares it
+        # against the current count so it never silently serves a render that
+        # predates a scene edit. None = nothing rendered yet.
+        self._preview_scene_version: Optional[int] = None
+        # Deterministic logo placement is PLACE-ONCE (sweep A3 re-injection fix):
+        # once a kit logo has been present (author-placed or our auto-overlay),
+        # a later removal is the author's choice and must be respected, not undone.
+        self._brand_logo_seen: bool = False
         # Agent-improvement follow-up 1: memoized pre-existing-diagnostics
         # baseline, populated on first access by `baseline_preflight_diagnostics`.
         # None means "not computed yet" (distinct from `[]`, "computed, clean").
@@ -1992,25 +2005,42 @@ class LumenDesignTools:
                 # PLACES the mark once, as a page overlay the agent may then
                 # move/restyle and the critic judges. K2 preflight
                 # auto-register upserts the record from the manifest.
-                placement_ops = build_logo_placement_operations(
-                    self.scene, brand_kit
-                )
-                if placement_ops:
-                    try:
-                        placed = self.core.apply_operations(
-                            self.scene, placement_ops
-                        )
-                        self._replace_scene_from_core_response(
-                            placed, "place_brand_logo", operations=placement_ops
-                        )
-                        self.record(
-                            "coordinator",
-                            "brand_logo_placed",
-                            output_summary="kit mark auto-placed (page overlay)",
-                            payload={"operation_count": len(placement_ops)},
-                        )
-                    except CoreError:
-                        pass
+                #
+                # PLACE-ONCE / respect-removal (sweep A3 re-injection fix): the
+                # earlier code re-ran `build_logo_placement_operations` on EVERY
+                # preflight, so any preflight where the scene TRANSIENTLY lacked
+                # a kit logo re-injected `brand_logo_auto` — even right after the
+                # author deleted it, or after a full recreate wiped the mark
+                # (A3 shipped a re-injected `brand_logo_auto` the author had
+                # explicitly removed). Root cause: the mechanism only asked "is
+                # a logo present NOW?", never "was one ever present and removed?"
+                # Fix: once a kit logo has been present (author-placed or our own
+                # overlay), remember it and never re-inject — a removal is the
+                # author's decision. We place at most once, when a logo has
+                # never been present in this run.
+                if scene_has_kit_logo(self.scene, brand_kit):
+                    self._brand_logo_seen = True
+                elif not self._brand_logo_seen:
+                    placement_ops = build_logo_placement_operations(
+                        self.scene, brand_kit
+                    )
+                    if placement_ops:
+                        try:
+                            placed = self.core.apply_operations(
+                                self.scene, placement_ops
+                            )
+                            self._replace_scene_from_core_response(
+                                placed, "place_brand_logo", operations=placement_ops
+                            )
+                            self._brand_logo_seen = True
+                            self.record(
+                                "coordinator",
+                                "brand_logo_placed",
+                                output_summary="kit mark auto-placed (page overlay)",
+                                payload={"operation_count": len(placement_ops)},
+                            )
+                        except CoreError:
+                            pass
             # K4: brand governance judges the AUTHORED scene — resolution
             # deliberately CONSUMES token bindings (resolution-once: the
             # resolved scene is fully literal, style_token = None), so any
@@ -2201,6 +2231,7 @@ class LumenDesignTools:
         if status == ToolStatus.ok:
             self.latest_export_summary = payload["export"]
             self.latest_preview_bundle = None
+            self._stamp_preview_rendered()
         else:
             self.latest_export_summary = None
             self.latest_preview_bundle = None
@@ -2282,6 +2313,7 @@ class LumenDesignTools:
         if not debug_only and payload["reviewer"]["status"] == ToolStatus.ok.value:
             self.latest_preview_bundle = payload["reviewer"]
             self.latest_export_summary = payload["reviewer"]
+            self._stamp_preview_rendered()
         else:
             self.latest_preview_bundle = None
             self.latest_export_summary = None
@@ -3276,6 +3308,20 @@ class LumenDesignTools:
         accommodation = (
             json.loads(accommodation_json) if accommodation_json.strip() else None
         )
+        # Finalize hygiene (sweep A1): leftover zero-children pages shipped in
+        # finals (e.g. an empty second artboard the author abandoned mid-run).
+        # Prune them through the core so the mutation rides the operations
+        # ledger — the editor's Accept replays that ledger, so a page dropped
+        # here is dropped on Accept too, not just cosmetically in final_scene.
+        # NEVER silently: the pruned ids are announced in the result summary.
+        # Never remove the last remaining page (a design must keep one page).
+        pruned_pages = self._prune_empty_pages()
+        if pruned_pages:
+            note = (
+                f"Pruned {len(pruned_pages)} empty page(s) with no children "
+                f"before finalizing: {', '.join(pruned_pages)}."
+            )
+            summary = f"{summary}\n{note}" if summary else note
         payload = {
             "run_id": self.run_id,
             "status": status,
@@ -3347,6 +3393,61 @@ class LumenDesignTools:
                 )
             except Exception:
                 pass
+
+    def _prune_empty_pages(self) -> list[str]:
+        """Remove pages that carry zero children from the working scene, via the
+        core `remove_page` op so the deletion rides the operations ledger (and
+        thus survives the editor's Accept replay). Returns the pruned page ids
+        (announced by finalize_run — never a silent drop). Keeps at least one
+        page: a design with a single empty page is left untouched so finals are
+        never page-less."""
+        if not isinstance(self.scene, dict):
+            return []
+        pages = self.scene.get("pages") or {}
+        empty_ids = [
+            page_id
+            for page_id, page in pages.items()
+            if isinstance(page, dict) and not (page.get("children") or [])
+        ]
+        if not empty_ids:
+            return []
+        # Never strip the scene down to zero pages.
+        if len(empty_ids) >= len(pages):
+            empty_ids = empty_ids[: len(pages) - 1]
+        if not empty_ids:
+            return []
+        operations = [
+            {"kind": "remove_page", "page_id": page_id} for page_id in empty_ids
+        ]
+        try:
+            response = self.core.apply_operations(self.scene, operations)
+        except CoreError:
+            # A rejected prune never blocks finalize; the empty page stays but
+            # the run still finalizes cleanly.
+            return []
+        self._replace_scene_from_core_response(
+            response, "prune_empty_pages", operations=operations
+        )
+        self.record(
+            "coordinator",
+            "empty_pages_pruned",
+            output_summary=f"pruned {len(empty_ids)} empty page(s)",
+            payload={"page_ids": empty_ids},
+        )
+        return empty_ids
+
+    def _scene_mutation_count(self) -> int:
+        """Monotonic count of applied scene mutations. `scene_update_sources`
+        grows on every `_replace_scene_from_core_response` and never on export,
+        so it is the cheapest honest 'has the scene changed since render?'
+        signal the staleness contract (view("preview")) needs."""
+        return len(self.scene_update_sources)
+
+    def _stamp_preview_rendered(self) -> None:
+        """Record the scene-mutation count at the moment a valid preview was
+        rendered. view("preview") refuses to serve the PNG once the scene has
+        been mutated past this stamp (sweep A3 stale-black-frame contract)."""
+        self._preview_scene_version = self._scene_mutation_count()
 
     def _replace_scene_from_core_response(
         self,

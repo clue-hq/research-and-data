@@ -314,17 +314,12 @@ def build_retokenize_operations(
 # --- deterministic logo placement ------------------------------------------------
 
 
-def build_logo_placement_operations(
-    scene: JsonObject, brand_kit: JsonObject
-) -> list[JsonObject]:
-    """One deterministic `insert_node` placing the kit's mark when the scene
-    has none of the kit's logo assets (K4: authoring adoption measured at
-    coin-flip and repair-scope constraints make 'please add it' structurally
-    unactionable — sweep 3 traced ten delivered instructions to zero placed
-    logos). Placement is a page-level overlay at the top-left margin: it
-    never joins an auto-layout flow, so nothing reflows; the agent may move
-    or restyle it in later iterations like any node, and the critic judges
-    the result. The K2 preflight auto-register upserts the asset record."""
+def _kit_logo_index(
+    brand_kit: JsonObject,
+) -> tuple[set[str], Optional[tuple[str, JsonObject]]]:
+    """Return (all kit logo asset ids, the preferred (id, variant) to place).
+    Preference order is mark → primary → wordmark; the full id set is used for
+    presence detection so ANY kit logo variant counts as 'a logo is present'."""
     logos = (brand_kit.get("assets") or {}).get("logos") or {}
     kit_ids: set[str] = set()
     chosen: Optional[tuple[str, JsonObject]] = None
@@ -338,9 +333,17 @@ def build_logo_placement_operations(
         for variant in (logo or {}).get("variants") or []:
             if isinstance(variant, dict) and variant.get("asset_id"):
                 kit_ids.add(str(variant["asset_id"]))
-    if not kit_ids or chosen is None:
-        return []
+    return kit_ids, chosen
 
+
+def scene_has_kit_logo(scene: JsonObject, brand_kit: JsonObject) -> bool:
+    """True when the scene already carries the brand mark — either an image node
+    bound to a kit logo asset (author-placed) OR our `brand_logo_auto` overlay.
+    The place-once caller uses this to remember a logo was present, so a later
+    removal is respected instead of undone on the next preflight."""
+    kit_ids, _ = _kit_logo_index(brand_kit)
+    if not kit_ids:
+        return False
     nodes = scene.get("nodes") or {}
     for node in nodes.values():
         kind = (node or {}).get("kind")
@@ -349,8 +352,30 @@ def build_logo_placement_operations(
             and kind.get("kind") == "image"
             and str(kind.get("asset_id")) in kit_ids
         ):
-            return []
-    if "brand_logo_auto" in nodes:
+            return True
+    return "brand_logo_auto" in nodes
+
+
+def build_logo_placement_operations(
+    scene: JsonObject, brand_kit: JsonObject
+) -> list[JsonObject]:
+    """One deterministic `insert_node` placing the kit's mark when the scene
+    has none of the kit's logo assets (K4: authoring adoption measured at
+    coin-flip and repair-scope constraints make 'please add it' structurally
+    unactionable — sweep 3 traced ten delivered instructions to zero placed
+    logos). Placement is a page-level overlay at the top-left margin: it
+    never joins an auto-layout flow, so nothing reflows; the agent may move
+    or restyle it in later iterations like any node, and the critic judges
+    the result. The K2 preflight auto-register upserts the asset record.
+
+    Presence-only: this returns [] whenever a logo is already present. The
+    PLACE-ONCE / respect-removal policy lives in the caller (it tracks whether
+    a logo was ever present), because this pure function cannot see run history.
+    """
+    kit_ids, chosen = _kit_logo_index(brand_kit)
+    if not kit_ids or chosen is None:
+        return []
+    if scene_has_kit_logo(scene, brand_kit):
         return []
 
     pages = scene.get("pages") or {}

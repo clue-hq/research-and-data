@@ -157,11 +157,16 @@ def test_workspace_scaffolding(tmp_path, monkeypatch):
 # --- 2. view tool structure -------------------------------------------------
 
 
-def _solid_png() -> bytes:
-    # 1x1 PNG (valid magic header is enough for base64 round-trip assertions).
-    return base64.b64decode(
-        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
-    )
+def _solid_png(size: int = 640) -> bytes:
+    # A realistic >=512px preview: at or above the vision-provider minimum it
+    # passes through view() unchanged, so exact-byte round-trip still holds.
+    import io as _io
+
+    from PIL import Image
+
+    buffer = _io.BytesIO()
+    Image.new("RGB", (size, size), (12, 34, 56)).save(buffer, format="PNG")
+    return buffer.getvalue()
 
 
 def test_view_preview_emits_text_and_image_blocks(tmp_path, monkeypatch):
@@ -175,7 +180,7 @@ def test_view_preview_emits_text_and_image_blocks(tmp_path, monkeypatch):
     # Point the substrate's latest export at the on-disk PNG.
     tools.latest_export_summary = {
         "status": "ok",
-        "artifacts": [{"format": "png", "path": str(png_path), "width": 4, "height": 4}],
+        "artifacts": [{"format": "png", "path": str(png_path), "width": 640, "height": 640}],
     }
 
     view = harness_mod.make_view_tool(tools)
