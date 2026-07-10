@@ -10,8 +10,11 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 from dataclasses import replace
 from pathlib import Path
+
+from py_lumen_obs import configure
 
 from .config import AgentRuntimeConfig
 from .harness import run_deepagent_turn
@@ -19,6 +22,17 @@ from .llm import assert_model_supports_image_input
 
 
 def main() -> None:
+    # Entrypoint logging (ratified decision 2): a CLI run defaults to debug — the
+    # human at the terminal wants every detail. We express that as an env DEFAULT
+    # (`setdefault`) rather than a hard `mode=debug` argument so an explicit
+    # `LUMEN_LOG_MODE` still wins (arg would override env; the env-default does
+    # not). configure() then resolves the mode from the env. The per-run
+    # `logs/run.jsonl` file handler is attached later, at the single seam that
+    # also serves API-triggered runs (run_deepagent_turn), because the run id —
+    # and therefore its log path — only exists once the substrate is built.
+    os.environ.setdefault("LUMEN_LOG_MODE", "debug")
+    configure()
+
     parser = argparse.ArgumentParser(description="Run the Lumen v0 deepagent for one turn.")
     parser.add_argument("prompt", help="User design request")
     parser.add_argument(

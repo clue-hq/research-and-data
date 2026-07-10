@@ -20,6 +20,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 from langchain.agents.structured_output import ToolStrategy
+from py_lumen_obs import configure, get_logger
 
 from .config import AgentRuntimeConfig
 from .models.schemas import VisualCritique
@@ -33,6 +34,8 @@ from .tools.render import make_render_preview_tool
 from .tools.substrate import LumenDesignTools
 from .tools.view import make_view_tool
 from .workspace import initial_turn_state, scaffold_workspace, workspace_root
+
+logger = get_logger("lumen_agent.harness")
 
 
 # --- assembly (§5) ----------------------------------------------------------
@@ -141,20 +144,23 @@ def create_design_deepagent(
             max_tokens=runtime_config.agent_max_tokens,
         )
 
+    from .trace_callbacks import attach_trace_callback
     from .usage_capture import attach_usage_capture
 
     # Capture is best-effort — a wiring or callback failure never blocks assembly
     # or breaks a run (see usage_capture.attach_usage_capture). attach_* mutates
-    # the model in place and returns the SAME BaseChatModel object.
-    orchestrator_model = attach_usage_capture(
-        _fresh_model(runtime_config.orchestrator_model), tools, role="orchestrator"
-    )
-    author_model = attach_usage_capture(
-        _fresh_model(runtime_config.author_model), tools, role="author"
-    )
-    reviewer_model = attach_usage_capture(
-        _fresh_model(runtime_config.reviewer_model), tools, role="reviewer"
-    )
+    # the model in place and returns the SAME BaseChatModel object. The trace
+    # callback (L3) rides the identical instance-level attachment so each role's
+    # generations emit a role-tagged message-trace stream to logs/run.jsonl.
+    def _instrument(model_id: str, role: str):
+        model = _fresh_model(model_id)
+        attach_usage_capture(model, tools, role=role)
+        attach_trace_callback(model, role=role)
+        return model
+
+    orchestrator_model = _instrument(runtime_config.orchestrator_model, "orchestrator")
+    author_model = _instrument(runtime_config.author_model, "author")
+    reviewer_model = _instrument(runtime_config.reviewer_model, "reviewer")
 
     view = make_view_tool(tools)
     render_preview = make_render_preview_tool(tools)
@@ -282,6 +288,19 @@ def run_deepagent_turn(
         event_sink=event_sink,
         clarification_already_requested=clarification_already_requested,
     )
+
+    # Per-run trace substrate (deliverables 2+3): attach THIS run's full-detail
+    # JSONL file handler. This is the single seam serving BOTH entry paths —
+    # the CLI (which already set the console mode) and API-triggered runs — so
+    # neither double-configures. `mode=None` keeps console verbosity env/default
+    # driven (CLI defaults debug via its setdefault; the server stays info); the
+    # run file is always untruncated JSON regardless of mode. The run id (and so
+    # its log path) only exists after the substrate built its run dir above, and
+    # run_id was already bound onto the ambient context there — every event from
+    # here on carries it. Kept forever, workspace-local (ratified decision 3).
+    run_log_path = tools.trace_dir / "logs" / "run.jsonl"
+    configure(run_log_path=run_log_path, mode=None)
+    logger.debug("run_log_attached", run_id=tools.run_id, run_log_path=str(run_log_path))
 
     tools.record(
         "coordinator",

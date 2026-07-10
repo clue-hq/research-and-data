@@ -6,10 +6,14 @@ import json
 from pathlib import Path
 from typing import Optional
 
+from py_lumen_obs import get_logger, log_span
+
 from ..paths import to_virtual
 from ..workspace import workspace_root
 from .substrate import LumenDesignTools
 from .view import _latest_preview_png
+
+logger = get_logger("lumen_agent.tools.render")
 
 def _current_round_dir(tools: LumenDesignTools, current_round: int) -> Optional[Path]:
     if not current_round:
@@ -102,6 +106,7 @@ def make_render_preview_tool(tools: LumenDesignTools):
 
         Requires preflight_design after any scene mutation — export refuses
         unresolved token paints."""
-        return _render_preview_text(tools)
+        with log_span("tool_render_preview", logger=logger):
+            return _render_preview_text(tools)
 
     return render_preview

@@ -8,8 +8,11 @@ nothing from the archive (share-by-copy directive, 2026-07-09).
 from __future__ import annotations
 
 import json
-import logging
 from typing import Any
+
+from py_lumen_obs import get_logger
+
+logger = get_logger("lumen_agent.llm")
 
 def init_model(
     model: str,
@@ -132,21 +135,19 @@ def assert_model_supports_image_input(
         response.raise_for_status()
         data = response.json().get("data") or []
     except Exception as error:  # network down, non-OpenRouter gateway, bad JSON.
-        logging.getLogger(__name__).warning(
-            "Could not verify image-input support for model %r via %s/models (%s); "
-            "proceeding without the check — an unknown model must not brick a run.",
-            model,
-            base_url,
-            error,
+        logger.warning(
+            "image_input_check_skipped_probe_failed",
+            model=model,
+            base_url=base_url,
+            error=str(error),
         )
         return
 
     entry = next((m for m in data if m.get("id") == model_id), None)
     if entry is None:
-        logging.getLogger(__name__).warning(
-            "Model %r was not found in OpenRouter's model list; skipping the "
-            "image-input check (unknown, not text-only).",
-            model_id,
+        logger.warning(
+            "image_input_check_skipped_model_not_found",
+            model=model_id,
         )
         return
 
@@ -155,10 +156,9 @@ def assert_model_supports_image_input(
         # Entry found but carries neither modality shape → UNKNOWN. Do not cache:
         # caching False here would make the model pass on the first call and then
         # brick every later call from the poisoned cache (unknown ≠ text-only).
-        logging.getLogger(__name__).warning(
-            "Model %r has no recognizable modality metadata in OpenRouter's list; "
-            "skipping the image-input check (unknown, not text-only).",
-            model_id,
+        logger.warning(
+            "image_input_check_skipped_no_modality_metadata",
+            model=model_id,
         )
         return
     supports_image = "image" in modalities

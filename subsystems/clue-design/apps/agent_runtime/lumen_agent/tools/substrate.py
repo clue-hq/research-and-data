@@ -2,9 +2,13 @@ from __future__ import annotations
 
 import base64
 import copy
+import functools
+import inspect
 import json
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
+
+from py_lumen_obs import bind_run_id, get_logger, log_span
 
 from lumen_api.core import CoreClient, CoreError
 
@@ -156,6 +160,76 @@ def _is_render_export_issue(diagnostics: list, previous_feedback: list) -> bool:
     return False
 
 
+_SUBSTRATE_LOG = get_logger("lumen_agent.substrate")
+
+
+def _tool_span(method):
+    """Wrap an agent-visible tool method body in a ``log_span`` (deliverable 5).
+
+    Every decorated tool emits ``tool_<name>_started`` / ``tool_<name>_completed``
+    (or ``tool_<name>_failed`` on an escaping exception), stamped with a duration
+    and a compact summary of the arguments the caller actually passed. Argument
+    VALUES ride whole — the shared obs chain redacts secrets/blobs and truncates
+    for the console while the run file keeps full detail, so nothing is
+    hand-truncated here. ``functools.wraps`` (which copies ``__wrapped__``,
+    ``__doc__`` and ``__annotations__``) keeps the method transparent to
+    LangChain's tool-schema introspection.
+    """
+    signature = inspect.signature(method)
+    span_name = f"tool_{method.__name__}"
+
+    @functools.wraps(method)
+    def wrapper(self, *args, **kwargs):
+        try:
+            bound = signature.bind(self, *args, **kwargs)
+            fields = {
+                name: value
+                for name, value in bound.arguments.items()
+                if name not in {"self", "logger"}
+            }
+        except TypeError:
+            fields = {}
+        with log_span(span_name, logger=self._obs_log, **fields):
+            return method(self, *args, **kwargs)
+
+    return wrapper
+
+
+class _CoreHelperProxy:
+    """Single-seam ``log_span`` wrapper around the core-helper client (deliverable 5).
+
+    The substrate reaches the core helper from ~25 call sites, but every one goes
+    through ``self.core`` — so wrapping the client ONCE here is the single place
+    the helper (a subprocess round-trip) is invoked. Each core method call emits a
+    ``helper_call`` span tagged with the action; a hung helper subprocess then
+    shows as a ``helper_call_started`` with no matching completion — the plan's
+    black-box hang forensic. (The API-side ``CoreClient._run`` keeps its own
+    ``core_helper_*`` events; this agent-runtime span measures the full round-trip
+    from the caller's vantage and is what L4 will unify.)
+
+    Non-callable attributes pass straight through unwrapped, so test fakes that
+    expose plain fields (``tools.core.applied_operations``) stay transparent.
+    """
+
+    def __init__(self, core: Any, logger: Any) -> None:
+        self._core = core
+        self._obs_log = logger
+
+    def __getattr__(self, name: str) -> Any:
+        # Reached only for names not found on the proxy itself (``_core`` /
+        # ``_obs_log`` resolve normally and never recurse here).
+        attr = getattr(self._core, name)
+        if not callable(attr):
+            return attr
+        obs_log = self._obs_log
+
+        def wrapped(*args: Any, **kwargs: Any) -> Any:
+            with log_span("helper_call", logger=obs_log, action=name):
+                return attr(*args, **kwargs)
+
+        return wrapped
+
+
 class LumenDesignTools:
     def __init__(
         self,
@@ -165,7 +239,15 @@ class LumenDesignTools:
         event_sink: Optional["EventSink"] = None,
     ) -> None:
         self.config = config
-        self.core = CoreClient(repo_root=config.repo_root)
+        # Obs logger for tool spans + the core-helper proxy. Context (run_id) is
+        # merged in per-event from contextvars, so one instance logger suffices.
+        self._obs_log = _SUBSTRATE_LOG
+        # The core-helper client, wrapped once so every helper subprocess call
+        # emits a `helper_call` span (deliverable 5). Transparent to callers and
+        # to test fakes' plain-field access (see _CoreHelperProxy).
+        self.core = _CoreHelperProxy(
+            CoreClient(repo_root=config.repo_root), self._obs_log
+        )
         # Optional progress hook: every recorded trace event is also handed to
         # this sink so a caller (the API's async turn) can persist it to a
         # durable store and stream it. None keeps the run purely file-traced.
@@ -176,6 +258,11 @@ class LumenDesignTools:
         self.iterations_dir = self.trace_dir / "iterations"
         self.trace_dir.mkdir(parents=True, exist_ok=True)
         self.iterations_dir.mkdir(parents=True, exist_ok=True)
+        # Bind run_id ONCE, at the moment the run dir exists (deliverable 4): from
+        # here on every obs event in this run's context carries it via
+        # merge_contextvars, so the CLI viewer and run.jsonl can group by run
+        # without threading the id through call sites.
+        bind_run_id(self.run_id)
         # Phase 0a: a caller (the editor's /agent/turn-preview) can seed the
         # working scene from the live canonical scene so targeted edits land on
         # existing NodeIds. Without a seed the run starts from a fresh scene.
@@ -317,6 +404,7 @@ class LumenDesignTools:
         )
         return json.dumps(payload, indent=2)
 
+    @_tool_span
     def compile_dsl_block(self, source: str) -> str:
         """Compile a Lumen DSL block and update the scene only from core output."""
         self.iteration += 1
@@ -1652,6 +1740,7 @@ class LumenDesignTools:
         payload.update(extra)
         return json.dumps(payload, indent=2)
 
+    @_tool_span
     def asset(
         self,
         action: str,
@@ -1813,6 +1902,7 @@ class LumenDesignTools:
             }
         return snapshot
 
+    @_tool_span
     def validate_binding_set(self, binding_set_json: str) -> str:
         """Validate a Phase G binding set (per-recipient values, links, and
         generated QR entries) against the current scene's slot contracts:
@@ -1968,6 +2058,7 @@ class LumenDesignTools:
         )
         return json.dumps(payload, indent=2)
 
+    @_tool_span
     def preflight_design(self) -> str:
         """Run canonical brand/token/layout preflight using the effective Brand Kit
         (the kit passed by value in config — the document's attached kit — or the
@@ -2775,6 +2866,7 @@ class LumenDesignTools:
         )
         return json.dumps(payload, indent=2)
 
+    @_tool_span
     def record_gap(
         self,
         area: str,
@@ -2837,6 +2929,7 @@ class LumenDesignTools:
             indent=2,
         )
 
+    @_tool_span
     def inspect(self, view: str, target: Optional[str] = None) -> str:
         """Read-only inspection of the in-memory scene. Pick `view`:
 
@@ -3363,6 +3456,7 @@ class LumenDesignTools:
             indent=2,
         )
 
+    @_tool_span
     def request_clarification(self, questions: List[Dict[str, Any]]) -> str:
         """Ask the user up to FOUR clarifying questions, then STOP — calling this
         ENDS THE TURN. Use it only as an OPENING MOVE on a genuinely
@@ -3456,6 +3550,7 @@ class LumenDesignTools:
                 lines.append(f"   If you don't care, I'll do: {default}")
         return "\n".join(lines)
 
+    @_tool_span
     def finalize_run(
         self,
         status: str,

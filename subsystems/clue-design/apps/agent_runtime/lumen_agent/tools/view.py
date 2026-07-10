@@ -7,8 +7,12 @@ import io
 from pathlib import Path
 from typing import Optional
 
+from py_lumen_obs import get_logger, log_span
+
 from ..paths import to_virtual
 from .substrate import LumenDesignTools
+
+logger = get_logger("lumen_agent.tools.view")
 
 
 # Grok-4.5 (and other vision providers) reject images whose short side is under
@@ -209,7 +213,8 @@ def make_view_tool(tools: LumenDesignTools):
         # any failure we return an honest error STRING as the tool result so the
         # agent can adapt and the loop continues.
         try:
-            return _view_content(tools, target)
+            with log_span("tool_view", logger=logger, target=target):
+                return _view_content(tools, target)
         except Exception as exc:  # noqa: BLE001 - deliberate turn-safety boundary
             try:
                 tools.record(

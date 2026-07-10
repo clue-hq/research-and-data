@@ -42,8 +42,11 @@ from __future__ import annotations
 from pathlib import Path
 
 from deepagents.backends.filesystem import FilesystemBackend
+from py_lumen_obs import get_logger
 
 from .paths import normalize_agent_key
+
+logger = get_logger("lumen_agent.fs_backend")
 
 
 class AgentWorkspaceBackend(FilesystemBackend):
@@ -83,7 +86,20 @@ class AgentWorkspaceBackend(FilesystemBackend):
         teaching error string instead of crashing the turn.
         """
         normalized = normalize_agent_key(key, self._workspace_root)
+        # Debug detail: `_resolve_path` is the ONE seam every file operation
+        # (read/write/edit/ls/grep/glob) funnels through, so logging the raw key,
+        # its normalized virtual form, and the resolution outcome here traces the
+        # backend's whole path activity without overriding each stock op. These
+        # are debug-level: absent from the info console, present in run.jsonl.
         try:
-            return super()._resolve_path(normalized)
+            resolved = super()._resolve_path(normalized)
         except ValueError:
+            logger.debug("fs_resolve_rejected", key=key, normalized_key=normalized)
             raise PermissionError(self._teaching_message(key)) from None
+        logger.debug(
+            "fs_resolve",
+            key=key,
+            normalized_key=normalized,
+            resolved=str(resolved),
+        )
+        return resolved

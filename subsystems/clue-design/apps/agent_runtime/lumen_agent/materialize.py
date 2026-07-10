@@ -18,11 +18,12 @@ same philosophy as the engine stamp): identical sources ⇒ no copy; changed sou
 from __future__ import annotations
 
 import hashlib
-import logging
 import shutil
 from pathlib import Path
 
-logger = logging.getLogger("lumen_agent.materialize")
+from py_lumen_obs import get_logger
+
+logger = get_logger("lumen_agent.materialize")
 
 # The authored knowledge tree lives beside the package (``apps/agent_runtime/
 # knowledge_docs``), resolved relative to THIS file so it is found regardless of
@@ -83,6 +84,14 @@ def materialize_agent_workspace(
     try:
         stamp = _content_stamp(source)
         if stamp_path.exists() and stamp_path.read_text(encoding="utf-8") == stamp:
+            # Decision (debug detail): announce the no-op sync decision so a run
+            # trace shows the materializer was consulted and found the workspace
+            # already current (distinct from a re-sync, which stays loud below).
+            logger.debug(
+                "materialize_stamp_hit",
+                stamp=stamp[:12],
+                workspace_root=str(workspace_root),
+            )
             return workspace_root
 
         # Stale or absent stamp: rebuild the derived trees from scratch so a removed
@@ -119,12 +128,14 @@ def materialize_agent_workspace(
         if (deepagent_dir / _SKILLS_SUBDIR).is_dir()
         else 0
     )
+    # The sync stays LOUD (warning) per this module's contract — a re-sync is a
+    # real event worth seeing. Structured fields replace the old %-format args
+    # (the shared obs chain renders event + fields, not printf-style templates).
     logger.warning(
-        "materialized agent workspace: synced knowledge_docs + %d skill(s) from %s "
-        "into %s (stamp %s)",
-        skill_count,
-        source,
-        workspace_root,
-        stamp[:12],
+        "materialized agent workspace",
+        skill_count=skill_count,
+        source=str(source),
+        workspace_root=str(workspace_root),
+        stamp=stamp[:12],
     )
     return workspace_root

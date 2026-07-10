@@ -6,7 +6,11 @@ import json
 from pathlib import Path
 from typing import Optional
 
+from py_lumen_obs import get_logger
+
 from .tools.substrate import LumenDesignTools
+
+logger = get_logger("lumen_agent.workspace")
 
 
 
@@ -80,5 +84,11 @@ def scaffold_workspace(tools: LumenDesignTools, prompt: str) -> Path:
         "One line per round: round number, verdict, and the one mistake the next "
         "round must not repeat.\n",
         encoding="utf-8",
+    )
+    logger.debug(
+        "workspace_scaffolded",
+        run_id=tools.run_id,
+        workspace=str(workspace),
+        seeded=tools.seeded_from_initial_scene,
     )
     return workspace
