@@ -339,10 +339,13 @@ diagnostic.
 - **Finalize hygiene**: zero-children pages pruned via ledger-riding
   remove_page ops, announced in the summary; brand_logo_auto is place-once +
   respect-removal (re-injection root cause: presence-only check per preflight).
-- **Follow-ups ledgered**: visual-regression fixture
-  `valid_multi_page_slots_agent_png_linkedin_ad` should carry resolved paints
-  (it is now a sentinel poster by design); Python-side ordering that can
-  render before token resolution (the "resolution-once" backlog item) is the
-  remaining half of the token-blackout story; editor test env lacks
-  canvaskit/wasm-core artifacts (26 pre-existing EditorApp test failures,
-  environmental).
+- **Follow-ups CLOSED 2026-07-10** (commits 055264d + 4ff9bae): export now
+  REFUSES unresolved token paints with the offending (node, token) pairs and
+  the run-preflight_design-first directive (refusal chosen over auto-resolve
+  to preserve resolution-once ordering: retokenize-on-authored-scene, the
+  authored_scene.json snapshot, governance); the multi-page-slots fixture is
+  de-tokenized (baseline is a real cream/teal design again; sentinel behavior
+  stays pinned by raster unit tests). API document export verified SAFE
+  (preflights before render); stateless /export-preview fails loud via
+  LUME0213. Remaining env note: editor test env lacks canvaskit/wasm-core
+  artifacts (26 pre-existing EditorApp test failures, environmental).
