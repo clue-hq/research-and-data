@@ -1,80 +1,30 @@
+"""API-side observability helpers layered on the shared ``py_lumen_obs`` module.
+
+All structlog configuration, formatting, redaction and the stdlib bridge live in
+``py_lumen_obs`` (the ONE place that configures logging). This module keeps only
+the API-specific pieces: the request-id header contract, business-shaped event
+summaries, and the thin ``log_event`` adapter that every route uses to emit the
+canonical structured events (``http_request_completed``, ``core_helper_*`` …)
+through the shared pipeline.
+
+``request_id`` is bound once per request into the obs contextvar by the HTTP
+middleware (``py_lumen_obs.bind_request_id``); it is no longer threaded through
+individual log calls — the ``merge_contextvars`` processor stamps it on every
+event. Secret/blob redaction is handled by the shared ``redact`` processor, so
+this module no longer carries its own formatter or redaction table.
+"""
 from __future__ import annotations
 
-import contextvars
-import json
-import logging
-import sys
 import time
-import traceback
-from datetime import UTC, datetime
 from typing import Any, Dict, Iterable, Optional
 from uuid import uuid4
 
-from py_lumen_config import settings
+import structlog
 
 
 JsonObject = Dict[str, Any]
 
 REQUEST_ID_HEADER = "x-request-id"
-_request_id: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar(
-    "lumen_request_id", default=None
-)
-_LOGGING_CONFIGURED = False
-
-SECRET_FIELD_PARTS = {
-    "api_key",
-    "apikey",
-    "authorization",
-    "auth",
-    "bearer",
-    "credential",
-    "password",
-    "secret",
-    "token",
-}
-
-
-class JsonLogFormatter(logging.Formatter):
-    def format(self, record: logging.LogRecord) -> str:
-        payload: JsonObject = {
-            "timestamp": datetime.fromtimestamp(record.created, UTC).isoformat(),
-            "level": record.levelname.lower(),
-            "logger": record.name,
-            "event": getattr(record, "lumen_event", record.getMessage()),
-            "message": record.getMessage(),
-        }
-
-        fields = getattr(record, "lumen_fields", None)
-        if isinstance(fields, dict):
-            payload.update(redact(fields))
-
-        if record.exc_info:
-            payload["exception"] = {
-                "type": record.exc_info[0].__name__ if record.exc_info[0] else None,
-                "message": str(record.exc_info[1]) if record.exc_info[1] else None,
-                "traceback": traceback.format_exception(*record.exc_info),
-            }
-
-        return json.dumps(payload, sort_keys=True, separators=(",", ":"))
-
-
-def configure_structured_logging() -> None:
-    global _LOGGING_CONFIGURED
-    if _LOGGING_CONFIGURED:
-        return
-
-    level_name = settings.lumen_log_level.upper()
-    level = getattr(logging, level_name, logging.INFO)
-    handler = logging.StreamHandler(sys.stdout)
-    handler.setFormatter(JsonLogFormatter())
-    setattr(handler, "_lumen_json_handler", True)
-
-    root = logging.getLogger()
-    if not any(getattr(existing, "_lumen_json_handler", False) for existing in root.handlers):
-        root.addHandler(handler)
-
-    logging.getLogger("lumen_api").setLevel(level)
-    _LOGGING_CONFIGURED = True
 
 
 def new_request_id() -> str:
@@ -82,15 +32,10 @@ def new_request_id() -> str:
 
 
 def current_request_id() -> Optional[str]:
-    return _request_id.get()
-
-
-def bind_request_id(request_id: str) -> contextvars.Token[Optional[str]]:
-    return _request_id.set(request_id)
-
-
-def reset_request_id(token: contextvars.Token[Optional[str]]) -> None:
-    _request_id.reset(token)
+    """The request_id bound into the ambient obs contextvar by the HTTP
+    middleware. Read here for the one non-logging consumer: forwarding it to the
+    core-helper subprocess env (``LUMEN_REQUEST_ID``)."""
+    return structlog.contextvars.get_contextvars().get("request_id")
 
 
 def duration_ms(start: float) -> float:
@@ -98,35 +43,21 @@ def duration_ms(start: float) -> float:
 
 
 def log_event(
-    logger: logging.Logger,
+    logger: Any,
     level: int,
     event: str,
     message: Optional[str] = None,
     **fields: Any,
 ) -> None:
-    request_id = current_request_id()
-    if request_id and "request_id" not in fields:
-        fields["request_id"] = request_id
-    logger.log(
-        level,
-        message or event,
-        extra={"lumen_event": event, "lumen_fields": fields},
-    )
+    """Emit a structured event through the shared obs pipeline.
 
-
-def redact(value: Any, key: Optional[str] = None) -> Any:
-    if key and is_secret_key(key):
-        return "[REDACTED]"
-    if isinstance(value, dict):
-        return {str(item_key): redact(item_value, str(item_key)) for item_key, item_value in value.items()}
-    if isinstance(value, list):
-        return [redact(item) for item in value]
-    return value
-
-
-def is_secret_key(key: str) -> bool:
-    normalized = key.lower().replace("-", "_")
-    return any(part in normalized for part in SECRET_FIELD_PARTS)
+    ``logger`` is an obs (structlog) logger from ``py_lumen_obs.get_logger``.
+    The event name is the structlog event; fields become event-dict keys. No
+    request_id is injected here — it rides the obs contextvar.
+    """
+    if message is not None and message != event:
+        fields.setdefault("message", message)
+    logger.log(level, event, **fields)
 
 
 def diagnostic_summary(diagnostics: Iterable[JsonObject]) -> JsonObject:

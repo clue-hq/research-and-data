@@ -24,14 +24,14 @@ provisioning script must keep working on bundled Inter alone.
 from __future__ import annotations
 
 import json
-import logging
 from pathlib import Path
 from typing import Any, Dict, Optional
 
 from py_lumen_config import settings
+from py_lumen_obs import get_logger
 
 JsonObject = Dict[str, Any]
-logger = logging.getLogger("lumen_api.font_library")
+logger = get_logger("lumen_api.font_library")
 
 _cache: dict = {"path": None, "mtime": None, "manifest": None}
 
@@ -55,10 +55,12 @@ def manifest() -> Optional[JsonObject]:
     except (OSError, json.JSONDecodeError) as error:
         # A present-but-broken manifest is a provisioning bug — say so once
         # rather than silently running library-less.
-        logger.warning("font library manifest unreadable at %s: %s", path, error)
+        logger.warning(
+            "font_library_manifest_unreadable", path=str(path), error=str(error)
+        )
         return None
     if not isinstance(parsed, dict) or not isinstance(parsed.get("families"), list):
-        logger.warning("font library manifest at %s has no families list", path)
+        logger.warning("font_library_manifest_no_families", path=str(path))
         return None
     _cache.update(path=path, mtime=mtime, manifest=parsed)
     return parsed
@@ -102,11 +104,11 @@ def library_font_spec() -> Optional[JsonObject]:
                 missing.append(str(family.get("family")))
     if missing:
         logger.warning(
-            "font library partially provisioned at %s — %d face(s) missing "
-            "(families: %s); run scripts/provision_font_library.py",
-            store_root,
-            len(missing),
-            ", ".join(sorted(set(missing))),
+            "font_library_partially_provisioned",
+            store_root=str(store_root),
+            missing_face_count=len(missing),
+            missing_families=sorted(set(missing)),
+            remedy="run scripts/provision_font_library.py",
         )
     spec = (
         {"store_root": str(store_root), "faces": faces} if faces else None

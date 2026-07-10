@@ -12,6 +12,8 @@ from fastapi.testclient import TestClient
 from lumen_api import image_provider
 from lumen_api.main import agent_response_from_trace, create_app
 from py_lumen_config import settings
+from py_lumen_obs import bind_request_id, get_logger, unbind_context
+from py_lumen_obs.testing import capture_events
 
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -1368,58 +1370,101 @@ def test_agent_turn_preview_allows_editor_cors_preflight(client: TestClient) -> 
     assert "POST" in response.headers["access-control-allow-methods"]
 
 
-def test_structured_request_logging_adds_request_id_header(
-    client: TestClient, caplog: pytest.LogCaptureFixture
-) -> None:
-    caplog.set_level(logging.INFO, logger="lumen_api.api")
-
-    response = client.get(
-        "/documents/missing_document",
-        headers={"x-request-id": "req_test_observability"},
-    )
+def test_structured_request_logging_adds_request_id_header(client: TestClient) -> None:
+    # request_id is bound ONCE into the obs contextvar by the middleware; the
+    # merge_contextvars processor then stamps it on http_request_completed —
+    # proving the contextvar (not a per-call kwarg) supplies it.
+    with capture_events(mode="info") as cap:
+        response = client.get(
+            "/documents/missing_document",
+            headers={"x-request-id": "req_test_observability"},
+        )
 
     assert response.status_code == 404
     assert response.headers["x-request-id"] == "req_test_observability"
-    completed = [
-        record
-        for record in caplog.records
-        if getattr(record, "lumen_event", None) == "http_request_completed"
-    ]
-    assert completed
-    fields = getattr(completed[-1], "lumen_fields")
-    assert fields["request_id"] == "req_test_observability"
-    assert fields["method"] == "GET"
-    assert fields["route"] == "/documents/{document_id}"
-    assert fields["status_code"] == 404
-    assert fields["duration_ms"] >= 0
+    completed = cap.first("http_request_completed")
+    assert completed is not None
+    assert completed["request_id"] == "req_test_observability"
+    assert completed["method"] == "GET"
+    assert completed["route"] == "/documents/{document_id}"
+    assert completed["status_code"] == 404
+    assert completed["duration_ms"] >= 0
 
 
-def test_core_helper_logging_records_runtime_summary(
-    client: TestClient, caplog: pytest.LogCaptureFixture
-) -> None:
-    caplog.set_level(logging.INFO, logger="lumen_api.core")
+def test_http_request_completed_event_shape_is_preserved(client: TestClient) -> None:
+    # The canonical event name + field set must survive the migration onto the
+    # shared obs pipeline unchanged.
+    with capture_events(mode="info") as cap:
+        client.get("/documents/missing_document", headers={"x-request-id": "req_shape"})
 
-    response = client.post(
-        "/export-preview",
-        headers={"x-request-id": "req_helper_observability"},
-        json={
-            "scene": minimal_scene(),
-            "format": "svg",
-            "page_ids": ["page_a4"],
-        },
-    )
+    completed = cap.first("http_request_completed")
+    assert completed is not None
+    assert completed["event"] == "http_request_completed"
+    assert completed["level"] == "info"
+    for key in (
+        "request_id",
+        "method",
+        "path",
+        "route",
+        "status_code",
+        "duration_ms",
+        "client_host",
+    ):
+        assert key in completed, f"missing preserved field: {key}"
+
+
+def test_request_id_from_contextvar_stamps_events() -> None:
+    # Bind directly (no request) and confirm any obs logger's event carries it.
+    with capture_events(mode="info") as cap:
+        bind_request_id("req_ctx_direct")
+        try:
+            get_logger("lumen_api.api").info("probe_event", widget="x")
+        finally:
+            unbind_context("request_id")
+
+    probe = cap.first("probe_event")
+    assert probe is not None
+    assert probe["request_id"] == "req_ctx_direct"
+    assert probe["widget"] == "x"
+
+
+def test_startup_configures_logging_once(tmp_path: Path) -> None:
+    root = logging.getLogger()
+
+    create_app(tmp_path / "once_a.sqlite3")
+    owned = [h for h in root.handlers if getattr(h, "_lumen_obs_handler", False)]
+    assert len(owned) == 1
+
+    # A second app build must NOT stack another root handler — configure is
+    # idempotent (it removes its own owned handlers first).
+    create_app(tmp_path / "once_b.sqlite3")
+    owned_again = [h for h in root.handlers if getattr(h, "_lumen_obs_handler", False)]
+    assert len(owned_again) == 1
+
+
+def test_core_helper_logging_records_runtime_summary(client: TestClient) -> None:
+    with capture_events(mode="info") as cap:
+        response = client.post(
+            "/export-preview",
+            headers={"x-request-id": "req_helper_observability"},
+            json={
+                "scene": minimal_scene(),
+                "format": "svg",
+                "page_ids": ["page_a4"],
+            },
+        )
 
     assert response.status_code == 200, response.text
-    events = {
-        getattr(record, "lumen_event", None): getattr(record, "lumen_fields")
-        for record in caplog.records
-    }
-    assert events["core_helper_started"]["request_id"] == "req_helper_observability"
-    assert events["core_helper_started"]["action"] == "export_preview"
-    assert events["core_helper_started"]["page_id_count"] == 1
-    assert events["core_helper_completed"]["ok"] is True
-    assert events["core_helper_completed"]["action"] == "export_preview"
-    assert events["core_helper_completed"]["diagnostic_count"] >= 0
+    started = cap.first("core_helper_started")
+    completed = cap.first("core_helper_completed")
+    assert started is not None and completed is not None
+    # request_id flows into the core-helper path via the same contextvar.
+    assert started["request_id"] == "req_helper_observability"
+    assert started["action"] == "export_preview"
+    assert started["page_id_count"] == 1
+    assert completed["ok"] is True
+    assert completed["action"] == "export_preview"
+    assert completed["diagnostic_count"] >= 0
 
 
 def test_agent_trace_response_returns_unapproved_draft_scene(tmp_path: Path) -> None:

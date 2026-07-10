@@ -10,6 +10,7 @@ import sqlite3
 import sys
 import threading
 import time
+from contextlib import asynccontextmanager
 from dataclasses import replace
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -95,22 +96,54 @@ from lumen_ingestion.pipeline import (
     run_website_ingestion,
 )
 from py_lumen_config import settings
+from py_lumen_obs import bind_request_id, configure, get_logger, unbind_context
 
 from .observability import (
     REQUEST_ID_HEADER,
     artifact_summary,
-    bind_request_id,
-    configure_structured_logging,
     diagnostic_summary,
     duration_ms,
     log_event,
     new_request_id,
-    reset_request_id,
 )
 
 
 JsonObject = Dict[str, Any]
-api_logger = logging.getLogger("lumen_api.api")
+api_logger = get_logger("lumen_api.api")
+
+
+def _bridge_uvicorn_loggers() -> None:
+    """Route uvicorn's own loggers through the shared obs stdlib bridge.
+
+    uvicorn installs private StreamHandlers on ``uvicorn`` / ``uvicorn.error`` /
+    ``uvicorn.access`` when the server boots; left alone they double-emit beside
+    the structured stream with their raw ``INFO:`` format. Clearing those
+    handlers and letting the loggers propagate to the root means every uvicorn
+    line flows through the same processor chain as everything else. Runs at
+    lifespan startup — AFTER uvicorn has configured its logging — so the clear
+    actually takes effect (doing it at import time would be a no-op).
+    """
+    for name in ("uvicorn", "uvicorn.error", "uvicorn.access"):
+        uvicorn_logger = logging.getLogger(name)
+        uvicorn_logger.handlers.clear()
+        uvicorn_logger.propagate = True
+
+
+_AGENT_RELEVANT_PREFIXES = ("/agent", "/documents")
+
+
+def _is_agent_relevant(path: str) -> bool:
+    return any(path == prefix or path.startswith(prefix + "/") for prefix in _AGENT_RELEVANT_PREFIXES)
+
+
+def _content_length(headers: Any) -> Optional[int]:
+    raw = headers.get("content-length")
+    if raw is None:
+        return None
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        return None
 
 
 def cors_origins() -> List[str]:
@@ -118,8 +151,20 @@ def cors_origins() -> List[str]:
 
 
 def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> FastAPI:
-    configure_structured_logging()
-    app = FastAPI(title="ABM Design Engine Persistence API")
+    # The ONE logging setup for the API: hand off to the shared obs module.
+    # mode/format come from the environment (LUMEN_LOG_MODE / LUMEN_LOG_FORMAT);
+    # nothing else in apps/api configures logging after this. Idempotent, so a
+    # second create_app (e.g. per-test) reinstalls a single owned handler.
+    configure(mode=None)
+
+    @asynccontextmanager
+    async def lifespan(_app: FastAPI):
+        # uvicorn has configured its own logging by the time lifespan startup
+        # runs; fold its loggers into the shared bridge so there is one stream.
+        _bridge_uvicorn_loggers()
+        yield
+
+    app = FastAPI(title="ABM Design Engine Persistence API", lifespan=lifespan)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=cors_origins(),
@@ -141,38 +186,60 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
     async def structured_request_logging(request: Request, call_next):
         request_id = request.headers.get(REQUEST_ID_HEADER) or new_request_id()
         request.state.request_id = request_id
-        token = bind_request_id(request_id)
+        # Bind once into the obs contextvar — every event for this request
+        # (here and in the core-helper path) is stamped with request_id by the
+        # merge_contextvars processor, so no call threads it explicitly.
+        bind_request_id(request_id)
         start = time.perf_counter()
         try:
-            response = await call_next(request)
-        except Exception:
+            try:
+                response = await call_next(request)
+            except Exception:
+                log_event(
+                    api_logger,
+                    logging.ERROR,
+                    "http_request_failed",
+                    method=request.method,
+                    path=request.url.path,
+                    duration_ms=duration_ms(start),
+                    client_host=request.client.host if request.client else None,
+                )
+                raise
+
+            response.headers[REQUEST_ID_HEADER] = request_id
+            route = request.scope.get("route")
+            elapsed = duration_ms(start)
             log_event(
                 api_logger,
-                logging.ERROR,
-                "http_request_failed",
+                logging.INFO,
+                "http_request_completed",
                 method=request.method,
                 path=request.url.path,
-                duration_ms=duration_ms(start),
+                route=getattr(route, "path", None),
+                status_code=response.status_code,
+                duration_ms=elapsed,
                 client_host=request.client.host if request.client else None,
             )
-            reset_request_id(token)
-            raise
-
-        response.headers[REQUEST_ID_HEADER] = request_id
-        route = request.scope.get("route")
-        log_event(
-            api_logger,
-            logging.INFO,
-            "http_request_completed",
-            method=request.method,
-            path=request.url.path,
-            route=getattr(route, "path", None),
-            status_code=response.status_code,
-            duration_ms=duration_ms(start),
-            client_host=request.client.host if request.client else None,
-        )
-        reset_request_id(token)
-        return response
+            # Debug-only request/response summary on agent-relevant routes.
+            # Sizes only — NEVER bodies/asset bytes (asset byte routes live under
+            # /assets/*, disjoint from these prefixes). Emitted at DEBUG so it
+            # only surfaces when LUMEN_LOG_MODE=debug.
+            if _is_agent_relevant(request.url.path):
+                log_event(
+                    api_logger,
+                    logging.DEBUG,
+                    "http_request_summary",
+                    method=request.method,
+                    path=request.url.path,
+                    route=getattr(route, "path", None),
+                    status_code=response.status_code,
+                    duration_ms=elapsed,
+                    request_bytes=_content_length(request.headers),
+                    response_bytes=_content_length(response.headers),
+                )
+            return response
+        finally:
+            unbind_context("request_id")
 
     @app.exception_handler(NotFoundError)
     def not_found_handler(_request: Request, error: NotFoundError) -> JSONResponse:

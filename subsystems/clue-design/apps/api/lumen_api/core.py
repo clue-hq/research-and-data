@@ -10,6 +10,7 @@ from typing import Any, Dict, List, Optional
 from uuid import uuid4
 
 from py_lumen_config import settings
+from py_lumen_obs import get_logger
 
 from .observability import (
     current_request_id,
@@ -21,8 +22,8 @@ from .observability import (
 
 
 JsonObject = Dict[str, Any]
-core_logger = logging.getLogger("lumen_api.core")
-helper_logger = logging.getLogger("lumen_api.core.helper")
+core_logger = get_logger("lumen_api.core")
+helper_logger = get_logger("lumen_api.core.helper")
 
 
 class CoreError(RuntimeError):
