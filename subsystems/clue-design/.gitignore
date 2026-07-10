@@ -12,6 +12,7 @@ __pycache__/
 # Committed dev default (API port for this workspace) — see the file's comment.
 !apps/editor/.env.development
 .lumen-runs/
+.deepagent-workspace/
 apps/api/*.sqlite3
 apps/editor/public/canvaskit/
 apps/editor/public/fonts/

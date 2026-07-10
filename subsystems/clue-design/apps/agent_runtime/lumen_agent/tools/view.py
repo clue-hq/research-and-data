@@ -7,6 +7,7 @@ import io
 from pathlib import Path
 from typing import Optional
 
+from ..paths import to_virtual
 from .substrate import LumenDesignTools
 
 
@@ -138,7 +139,10 @@ def _view_content(tools: LumenDesignTools, target: str) -> list[dict]:
             ]
             tools.record("agent", "view_called", input_summary=target, output_summary="preview_stale")
             return content
-        content = [_text_block(f"view: latest rendered preview ({png})"), _image_block(png)]
+        content = [
+            _text_block(f"view: latest rendered preview ({to_virtual(png, tools.config)})"),
+            _image_block(png),
+        ]
         tools.record("agent", "view_called", input_summary=target, output_summary=f"blocks={len(content)}")
         return content
 
@@ -171,7 +175,12 @@ def _view_content(tools: LumenDesignTools, target: str) -> list[dict]:
             ]
             tools.record("agent", "view_called", input_summary=target, output_summary="asset_missing_file")
             return content
-        content = [_text_block(f"view: source preview for asset {asset_id} ({path})"), _image_block(path)]
+        content = [
+            _text_block(
+                f"view: source preview for asset {asset_id} ({to_virtual(path, tools.config)})"
+            ),
+            _image_block(path),
+        ]
         tools.record("agent", "view_called", input_summary=target, output_summary=f"blocks={len(content)}")
         return content
 

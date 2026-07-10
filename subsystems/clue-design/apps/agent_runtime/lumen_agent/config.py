@@ -85,7 +85,16 @@ class AgentRuntimeConfig:
             model=settings.lumen_agent_model,
             max_iterations=settings.lumen_agent_max_iterations,
             preview_format=settings.lumen_agent_preview_format,
-            trace_dir=settings.lumen_agent_trace_dir or (root / ".lumen-runs"),
+            # W-isolation (D3): the run root now lives INSIDE the deepagent's
+            # isolated workspace. `trace_dir` IS the workspace root — substrate
+            # lands each run at `<workspace>/run_<id>`. Precedence: an explicit
+            # `lumen_agent_trace_dir` override wins (back-compat), else the new
+            # `lumen_agent_workspace_root` setting, else `<repo>/.deepagent-workspace`.
+            trace_dir=(
+                settings.lumen_agent_trace_dir
+                or settings.lumen_agent_workspace_root
+                or (root / ".deepagent-workspace")
+            ),
             asset_store_root=settings.lumen_agent_asset_store,
             agent_base_url=settings.lumen_agent_base_url or "https://openrouter.ai/api/v1",
             agent_api_key=settings.lumen_agent_api_key,
@@ -113,9 +122,15 @@ class AgentRuntimeConfig:
         return self.agent_model_reviewer or self.model
 
     @property
-    def effective_asset_store_root(self) -> Path:
-        return self.asset_store_root or self.trace_dir / "asset-store"
+    def workspace_root(self) -> Path:
+        """The deepagent's isolated workspace root (W-isolation, D3).
+
+        This IS `trace_dir`: the `virtual_mode` backend roots here, the
+        materializer syncs skills/knowledge here, and substrate lands each run at
+        `<workspace_root>/run_<id>`.
+        """
+        return self.trace_dir
 
     @property
-    def skills_dir(self) -> Path:
-        return self.repo_root / "apps" / "agent_runtime" / "skills"
+    def effective_asset_store_root(self) -> Path:
+        return self.asset_store_root or self.trace_dir / "asset-store"

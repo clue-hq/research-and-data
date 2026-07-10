@@ -399,3 +399,36 @@ found by the knowledge builder's mechanical validation protocol).
   {}, collect_scene_token_references skips node.effects, color_token unread —
   wiring is future work, recorded here so the façade isn't mistaken for a
   capability).
+
+## W-isolation: the deepagent's isolated virtual workspace (2026-07-11, gate verified)
+
+The deepagent now runs on ONE dedicated workspace (`<repo>/.deepagent-workspace`,
+`lumen_agent_workspace_root` overridable; old `lumen_agent_trace_dir` still wins
+for back-compat): `AgentWorkspaceBackend(FilesystemBackend, virtual_mode=True)`
+roots there, so the agent's `/` IS its workspace — `/.deepagent/` (AGENTS.md +
+skills), `/knowledge_docs/` (full synced copy), `/run_<id>/` (every run artifact:
+workspace, rounds, previews, iterations, trace.jsonl, final.json, ledger). The
+"path outside permitted root" class is retired: stock virtual mode re-anchors and
+contains (verified against deepagents 0.6.12 source), `paths.normalize_agent_key`
+forgives host-absolute/legacy forms (never collapsing `..` — a traversal can't be
+laundered into an escape), `to_virtual` renders tool-return paths in the model's
+namespace, and prompts speak only virtual paths with an explicit contract line.
+Skills/knowledge are materialized from the repo tree (single source of truth,
+never written back) behind a content-hash stamp — identical sources ⇒ 2ms no-op.
+The API seam is untouched: envelope/ledger/preview paths stay host-absolute
+(both suites green: agent-runtime 361, api 288).
+
+Two review-gate finds worth remembering:
+- **The old per-skill-dir `skills` wiring was a silent no-op.** SkillsMiddleware
+  treats each source as the PARENT of skill dirs (dir children with SKILL.md);
+  pointing it at a single skill dir loads NOTHING — so no skills ever loaded via
+  the middleware before this slice. The flat `/.deepagent/skills` parent now
+  loads all of them (progressive disclosure), both subagents.
+- **Bare-directory legacy forms** (`ls` on `.../knowledge_docs` with no trailing
+  slash — the exact live failure of 2026-07-10) needed their own normalization
+  case; marker-substring matching alone missed them. Regression-pinned.
+
+Behavior note: author/reviewer now see ALL skills via progressive disclosure
+(name+description until invoked) instead of the old per-role lists — the role
+prompts still name each role's primary skills. `.env`s carrying the old
+`LUMEN_AGENT_TRACE_DIR=.lumen-runs` default should unset it to get isolation.

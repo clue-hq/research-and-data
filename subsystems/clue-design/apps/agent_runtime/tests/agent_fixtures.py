@@ -326,7 +326,10 @@ def runtime_config(tmp_path: Path, max_iterations: int = 3) -> AgentRuntimeConfi
         model="openai:anthropic/claude-opus-4.8",
         max_iterations=max_iterations,
         preview_format="svg",
-        trace_dir=tmp_path / ".lumen-runs",
+        # W-isolation (D3): trace_dir IS the deepagent's isolated workspace root;
+        # substrate lands runs at `<workspace>/run_<id>` and the materializer syncs
+        # skills/knowledge here.
+        trace_dir=tmp_path / ".deepagent-workspace",
         agent_base_url="https://openrouter.ai/api/v1",
         agent_api_key="sk-test",
     )

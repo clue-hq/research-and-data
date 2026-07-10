@@ -26,6 +26,7 @@ from ..retokenize import (
 )
 from ..brand_card import build_brand_card
 from ..knowledge import BRAND_APPLICATION_PATH, DIRECTIVES_PATH, read_task_knowledge
+from ..paths import normalize_agent_key
 from pydantic import ValidationError
 
 from ..models.schemas import (
@@ -294,6 +295,16 @@ class LumenDesignTools:
                     category="brand",
                     selected_reason="attached_brand_kit",
                 ).model_dump(mode="json")
+            )
+        # W-isolation (D7): the read path stays repo-rooted (single source of
+        # truth), but the `path` metadata handed to the model is rewritten to the
+        # virtual namespace so it can re-read any excerpt via its filesystem tools
+        # (`apps/agent_runtime/knowledge_docs/…` → `/knowledge_docs/…`). Synthetic
+        # snippet ids (e.g. `brand-kit:<id>`) carry no filesystem path and pass
+        # through `normalize_agent_key` unchanged.
+        for snippet in payload["snippets"]:
+            snippet["path"] = normalize_agent_key(
+                snippet["path"], self.config.workspace_root
             )
         self.loaded_knowledge = payload["snippets"]
         self._write_json(self.trace_dir / "knowledge.json", payload)

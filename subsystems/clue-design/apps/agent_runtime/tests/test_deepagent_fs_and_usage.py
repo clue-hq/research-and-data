@@ -1,10 +1,11 @@
-"""RIDER 1 (filesystem escape hardening) + RIDER 2 (per-call token usage capture).
+"""W-isolation backend/normalization/materializer + RIDER 2 (usage capture).
 
-RIDER 1 exercises the REAL deepagents `FilesystemBackend` via our
-`RepoRootedFilesystemBackend` subclass — no stubbing — so the containment guard is
-proven against the actual resolution logic it wraps. Importing the backend at
-module top pins its parent to the real class at collection time (before any other
-test's deepagents stub runs).
+The W-isolation section exercises the REAL deepagents `FilesystemBackend` via our
+`AgentWorkspaceBackend` subclass (`virtual_mode=True`) — no stubbing — so the
+normalization + containment behavior is proven against the actual resolution logic
+it wraps. Importing the backend at module top pins its parent to the real class at
+collection time (before any other test's deepagents stub runs). It also unit-tests
+the pure `normalize_agent_key`/`to_virtual` helpers and the workspace materializer.
 
 RIDER 2 drives `UsageCaptureHandler.on_llm_end` with a stubbed `LLMResult` and a
 minimal fake tools object to prove one trace event is recorded per usage-bearing
@@ -15,11 +16,14 @@ propagates.
 from __future__ import annotations
 
 import json
+import types
 from pathlib import Path
 
 import pytest
 
-from lumen_agent.fs_backend import RepoRootedFilesystemBackend
+from lumen_agent.fs_backend import AgentWorkspaceBackend
+from lumen_agent.materialize import materialize_agent_workspace
+from lumen_agent.paths import host_to_virtual, normalize_agent_key, to_virtual
 from lumen_agent.usage_capture import (
     UsageCaptureHandler,
     _extract_usage,
@@ -28,145 +32,262 @@ from lumen_agent.usage_capture import (
 
 
 # ============================================================================
-# RIDER 1 — FilesystemBackend escape hardening
+# W-isolation — normalization helper (D1, pure function table)
+# ============================================================================
+
+_WS = "/ws/.deepagent-workspace"
+
+
+@pytest.mark.parametrize(
+    ("key", "expected"),
+    [
+        # host-absolute under the workspace root → tail under `/`
+        (f"{_WS}/run_x/workspace/brief.md", "/run_x/workspace/brief.md"),
+        (_WS, "/"),
+        # legacy knowledge_docs — bare, repo-absolute, and `/`-rooted forms
+        (
+            "apps/agent_runtime/knowledge_docs/skills/create-design/SKILL.md",
+            "/knowledge_docs/skills/create-design/SKILL.md",
+        ),
+        (
+            "/Users/x/havana/apps/agent_runtime/knowledge_docs/AGENT.md",
+            "/knowledge_docs/AGENT.md",
+        ),
+        (
+            "/apps/agent_runtime/knowledge_docs/knowledge/lumen-dsl/grammar.md",
+            "/knowledge_docs/knowledge/lumen-dsl/grammar.md",
+        ),
+        # gate-R regression: the BARE directory forms (no trailing slash) — an
+        # `ls` on the knowledge root was the live failure form of 2026-07-10
+        ("/apps/agent_runtime/knowledge_docs", "/knowledge_docs"),
+        ("apps/agent_runtime/knowledge_docs/", "/knowledge_docs"),
+        ("/Users/x/havana/apps/agent_runtime/knowledge_docs", "/knowledge_docs"),
+        ("/.lumen-runs", "/"),
+        (".lumen-runs/", "/"),
+        # legacy `.lumen-runs/` — bare, `/`-rooted, and host-embedded forms
+        (".lumen-runs/run_x/workspace/brief.md", "/run_x/workspace/brief.md"),
+        ("/.lumen-runs/run_x/f", "/run_x/f"),
+        ("/Users/x/havana/.lumen-runs/run_y/f", "/run_y/f"),
+        # plain virtual paths pass through unchanged
+        ("/run_x/workspace/rounds/round_1/direction.md", "/run_x/workspace/rounds/round_1/direction.md"),
+        ("/knowledge_docs/AGENT.md", "/knowledge_docs/AGENT.md"),
+        ("/.deepagent/skills/create-design/SKILL.md", "/.deepagent/skills/create-design/SKILL.md"),
+        # relative paths pass through unchanged
+        ("rounds/round_1/direction.md", "rounds/round_1/direction.md"),
+    ],
+)
+def test_normalize_agent_key_table(key, expected):
+    assert normalize_agent_key(key, _WS) == expected
+
+
+@pytest.mark.parametrize(
+    "key",
+    [
+        f"{_WS}/../../etc/passwd",  # host-absolute-under-ws with a climb
+        f"{_WS}/run_x/../../secret",
+        "../../etc/passwd",  # plain relative climb
+        "apps/agent_runtime/knowledge_docs/../../../etc/passwd",  # via the legacy marker
+    ],
+)
+def test_normalize_agent_key_never_manufactures_an_escape(key):
+    """A `..` climb must SURVIVE normalization (never be collapsed away), so the
+    backend's own traversal guard still rejects it."""
+    assert ".." in normalize_agent_key(key, _WS)
+
+
+# ============================================================================
+# W-isolation — to_virtual / host_to_virtual (D5)
+# ============================================================================
+
+
+def test_host_to_virtual_under_root(tmp_path):
+    root = tmp_path / "ws"
+    root.mkdir()
+    assert host_to_virtual(root / "run_1" / "preview.png", root) == "/run_1/preview.png"
+    assert host_to_virtual(root, root) == "/"
+
+
+def test_host_to_virtual_leaves_external_paths_untouched(tmp_path):
+    root = tmp_path / "ws"
+    root.mkdir()
+    external = tmp_path / "elsewhere" / "x.png"
+    assert host_to_virtual(external, root) == str(external)
+
+
+def test_to_virtual_uses_config_workspace_root(tmp_path):
+    root = tmp_path / "ws"
+    root.mkdir()
+    config = types.SimpleNamespace(workspace_root=root)
+    assert to_virtual(root / "run_9" / "iterations" / "1" / "preview.png", config) == (
+        "/run_9/iterations/1/preview.png"
+    )
+
+
+# ============================================================================
+# W-isolation — AgentWorkspaceBackend (real deepagents FilesystemBackend, virtual)
 # ============================================================================
 
 
 @pytest.fixture
-def rooted(tmp_path: Path):
-    """A repo-rooted backend over a tmp workspace seeded with one readable file
-    and a knowledge_docs subtree."""
-    (tmp_path / "workspace").mkdir()
-    (tmp_path / "workspace" / "brief.md").write_text("hello", encoding="utf-8")
-    kd = tmp_path / "apps" / "agent_runtime" / "knowledge_docs"
-    kd.mkdir(parents=True)
-    (kd / "skill.md").write_text("# skill", encoding="utf-8")
-    return tmp_path, RepoRootedFilesystemBackend(str(tmp_path))
+def ws_backend(tmp_path: Path):
+    """A virtual-mode backend rooted at a tmp workspace seeded with a run
+    workspace file, a materialized knowledge_docs file, and a skills dir."""
+    root = tmp_path
+    (root / "run_1" / "workspace").mkdir(parents=True)
+    (root / "run_1" / "workspace" / "brief.md").write_text("hello", encoding="utf-8")
+    (root / "knowledge_docs").mkdir()
+    (root / "knowledge_docs" / "grammar.md").write_text("# grammar", encoding="utf-8")
+    (root / ".deepagent" / "skills" / "create-design").mkdir(parents=True)
+    return root, AgentWorkspaceBackend(str(root))
 
 
-def test_workspace_read_and_write_still_work(rooted):
-    root, backend = rooted
-    # read an existing workspace file
-    result = backend.read(str(root / "workspace" / "brief.md"))
+def test_backend_is_virtual_mode(ws_backend):
+    _root, backend = ws_backend
+    assert backend.virtual_mode is True
+
+
+def test_read_write_edit_via_virtual_paths(ws_backend):
+    _root, backend = ws_backend
+    result = backend.read("/run_1/workspace/brief.md")
     assert result.error is None
     assert "hello" in (result.file_data or {}).get("content", "")
 
-    # write a new workspace file
-    target = root / "workspace" / "rounds" / "round-0" / "direction.md"
-    write = backend.write(str(target), "do the thing")
+    write = backend.write("/run_1/workspace/rounds/round_1/direction.md", "do the thing")
     assert write.error is None
-    assert target.read_text(encoding="utf-8") == "do the thing"
-
-    # edit it back
-    edit = backend.edit(str(target), "do the thing", "do it well")
-    assert edit.error is None
-    assert target.read_text(encoding="utf-8") == "do it well"
-
-
-def test_knowledge_docs_read_still_works(rooted):
-    root, backend = rooted
-    result = backend.read(
-        str(root / "apps" / "agent_runtime" / "knowledge_docs" / "skill.md")
+    edit = backend.edit(
+        "/run_1/workspace/rounds/round_1/direction.md", "do the thing", "do it well"
     )
+    assert edit.error is None
+
+
+def test_host_absolute_under_ws_is_normalized_and_served(ws_backend):
+    """A model-emitted HOST-absolute path under the workspace resolves (D1): the
+    prefix is stripped and the file is served."""
+    root, backend = ws_backend
+    result = backend.read(str(root / "run_1" / "workspace" / "brief.md"))
     assert result.error is None
-    assert "# skill" in (result.file_data or {}).get("content", "")
+    assert "hello" in (result.file_data or {}).get("content", "")
 
 
-def test_relative_dotdot_escape_rejected(rooted):
-    root, backend = rooted
-    result = backend.read("../../etc/hosts")
-    assert result.error is not None
-    assert "outside the permitted repository root" in result.error
+def test_legacy_knowledge_docs_path_is_normalized_and_served(ws_backend):
+    _root, backend = ws_backend
+    result = backend.read("apps/agent_runtime/knowledge_docs/grammar.md")
+    assert result.error is None
+    assert "# grammar" in (result.file_data or {}).get("content", "")
 
 
-def test_absolute_escape_read_rejected(rooted):
-    root, backend = rooted
+def test_absolute_outside_is_reanchored_not_escaped(ws_backend):
+    """`/etc/hosts` is re-anchored under the virtual root (contained), so it is
+    simply not-found — never a read of the real host file, never a crash."""
+    _root, backend = ws_backend
     result = backend.read("/etc/hosts")
     assert result.error is not None
-    assert "outside the permitted repository root" in result.error
+    assert "not found" in result.error.lower()
 
 
-def test_absolute_escape_write_rejected_and_no_file_created(rooted, tmp_path):
-    root, backend = rooted
-    victim = tmp_path.parent / "escape_victim_should_not_exist.txt"
-    result = backend.write(str(victim), "pwned")
+def test_dotdot_traversal_surfaces_clean_error(ws_backend):
+    """A `..` climb that reaches the backend surfaces a clean teaching error
+    (converted to PermissionError so read/write/edit never crash the turn)."""
+    _root, backend = ws_backend
+    result = backend.read("/run_1/../../secret")
     assert result.error is not None
-    assert "outside the permitted repository root" in result.error
-    assert not victim.exists()
+    assert "workspace root" in result.error
 
 
-def test_dotdot_climb_then_back_in_is_allowed(rooted):
-    """`workspace/../workspace/brief.md` resolves back INSIDE root — it must be
-    allowed (the guard rejects on the RESOLVED location, not on literal `..`)."""
-    root, backend = rooted
-    weird = str(root / "workspace" / ".." / "workspace" / "brief.md")
-    result = backend.read(weird)
-    assert result.error is None
-    assert "hello" in (result.file_data or {}).get("content", "")
-
-
-def test_symlink_pointing_outside_root_rejected(rooted, tmp_path):
-    """A traversal-free path (no `..`, absolute-under-root) whose target is a
-    symlink resolving OUTSIDE root must still be rejected."""
-    root, backend = rooted
-    outside = tmp_path.parent / "outside_secret.txt"
+def test_symlink_escape_surfaces_clean_error(ws_backend, tmp_path):
+    """A symlink INSIDE the workspace whose target resolves outside it is rejected
+    with a clean error (not an uncaught ValueError)."""
+    root, backend = ws_backend
+    outside = tmp_path.parent / "ws_outside_secret.txt"
     outside.write_text("secret", encoding="utf-8")
-    link = root / "workspace" / "link_to_secret.txt"
+    link = root / "run_1" / "link_to_secret.txt"
     link.symlink_to(outside)
-    result = backend.read(str(link))
+    result = backend.read("/run_1/link_to_secret.txt")
     assert result.error is not None
-    assert "outside the permitted repository root" in result.error
+    assert "workspace root" in result.error
 
 
-def test_ls_escape_rejected_but_inside_works(rooted):
-    root, backend = rooted
-    outside = backend.ls("/etc")
-    assert outside.error is not None
-    assert "outside the permitted repository root" in outside.error
+def test_write_deny_globs_target_the_readonly_virtual_trees():
+    """The harness denies writes to the two read-only virtual trees (D1)."""
+    from lumen_agent.harness import _filesystem_permissions
 
-    inside = backend.ls(str(root / "workspace"))
-    assert inside.error is None
-    names = {Path(e["path"]).name for e in (inside.entries or [])}
-    assert "brief.md" in names
-
-
-def test_download_escape_rejected_inside_ok(rooted):
-    root, backend = rooted
-    responses = backend.download_files(
-        ["/etc/hosts", str(root / "workspace" / "brief.md")]
-    )
-    by_name = {Path(r.path).name: r for r in responses}
-    assert by_name["hosts"].error is not None
-    assert by_name["hosts"].content is None
-    assert by_name["brief.md"].error is None
-    assert by_name["brief.md"].content == b"hello"
+    perms = _filesystem_permissions()
+    assert len(perms) == 1
+    perm = perms[0]
+    assert set(perm.paths) == {"/.deepagent/**", "/knowledge_docs/**"}
+    assert perm.operations == ["write"]
+    assert perm.mode == "deny"
 
 
-def test_upload_escape_rejected_inside_ok(rooted, tmp_path):
-    root, backend = rooted
-    victim = tmp_path.parent / "upload_escape_victim.txt"
-    ok = root / "workspace" / "uploaded.txt"
-    responses = backend.upload_files(
-        [(str(victim), b"pwned"), (str(ok), b"legit")]
-    )
-    by_name = {Path(r.path).name: r for r in responses}
-    assert by_name["upload_escape_victim.txt"].error is not None
-    assert by_name["uploaded.txt"].error is None
-    assert not victim.exists()
-    assert ok.read_text(encoding="utf-8") == "legit"
+# ============================================================================
+# W-isolation — materializer (D2)
+# ============================================================================
 
 
-def test_knowledge_docs_write_deny_still_expressible(rooted):
-    """The guard does not interfere with the harness's write-deny permission:
-    a write to a path UNDER root (knowledge_docs) is not rejected by the escape
-    guard itself — the deny is enforced by deepagents' permission layer, which is
-    orthogonal. Here we only confirm the guard permits the in-root path so the
-    permission layer can then adjudicate it."""
-    root, backend = rooted
-    target = root / "apps" / "agent_runtime" / "knowledge_docs" / "new_skill.md"
-    write = backend.write(str(target), "x")
-    # The backend itself allows it (in-root); the write-deny is a separate layer.
-    assert write.error is None
+def _source_tree(tmp_path: Path) -> Path:
+    src = tmp_path / "src_knowledge_docs"
+    (src / "skills" / "create-design").mkdir(parents=True)
+    (src / "skills" / "create-design" / "SKILL.md").write_text("skill", encoding="utf-8")
+    (src / "knowledge" / "lumen-dsl").mkdir(parents=True)
+    (src / "knowledge" / "lumen-dsl" / "grammar.md").write_text("g", encoding="utf-8")
+    (src / "AGENT.md").write_text("# agent doc", encoding="utf-8")
+    return src
+
+
+def test_materialize_syncs_skills_knowledge_and_agent_doc(tmp_path):
+    src = _source_tree(tmp_path)
+    ws = tmp_path / "ws"
+    config = types.SimpleNamespace(workspace_root=ws)
+
+    materialize_agent_workspace(config, source_knowledge_docs=src)
+
+    assert (ws / ".deepagent" / "AGENTS.md").read_text(encoding="utf-8") == "# agent doc"
+    assert (ws / ".deepagent" / "skills" / "create-design" / "SKILL.md").exists()
+    assert (ws / "knowledge_docs" / "knowledge" / "lumen-dsl" / "grammar.md").exists()
+    # The knowledge copy includes the skills subtree (intra-doc refs resolve).
+    assert (ws / "knowledge_docs" / "skills" / "create-design" / "SKILL.md").exists()
+    assert (ws / ".deepagent" / ".sync-stamp").exists()
+
+
+def test_materialize_is_idempotent_on_matching_stamp(tmp_path):
+    src = _source_tree(tmp_path)
+    ws = tmp_path / "ws"
+    config = types.SimpleNamespace(workspace_root=ws)
+
+    materialize_agent_workspace(config, source_knowledge_docs=src)
+    # A sentinel that would be wiped by a re-sync (which rebuilds `.deepagent`).
+    sentinel = ws / ".deepagent" / "sentinel.txt"
+    sentinel.write_text("keep", encoding="utf-8")
+
+    materialize_agent_workspace(config, source_knowledge_docs=src)
+    assert sentinel.exists(), "matching stamp must skip the re-sync"
+
+
+def test_materialize_resyncs_when_source_changes(tmp_path):
+    src = _source_tree(tmp_path)
+    ws = tmp_path / "ws"
+    config = types.SimpleNamespace(workspace_root=ws)
+
+    materialize_agent_workspace(config, source_knowledge_docs=src)
+    sentinel = ws / ".deepagent" / "sentinel.txt"
+    sentinel.write_text("keep", encoding="utf-8")
+
+    # Change the source: the stamp no longer matches → full re-sync (wipes sentinel).
+    (src / "skills" / "effects").mkdir(parents=True)
+    (src / "skills" / "effects" / "SKILL.md").write_text("fx", encoding="utf-8")
+
+    materialize_agent_workspace(config, source_knowledge_docs=src)
+    assert not sentinel.exists(), "changed source must trigger a full re-sync"
+    assert (ws / ".deepagent" / "skills" / "effects" / "SKILL.md").exists()
+
+
+def test_materialize_loud_failure_on_missing_source(tmp_path):
+    ws = tmp_path / "ws"
+    config = types.SimpleNamespace(workspace_root=ws)
+    with pytest.raises(RuntimeError, match="knowledge source tree missing"):
+        materialize_agent_workspace(
+            config, source_knowledge_docs=tmp_path / "does_not_exist"
+        )
 
 
 # ============================================================================

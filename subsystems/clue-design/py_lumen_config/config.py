@@ -80,7 +80,12 @@ class Settings(BaseSettings):
     lumen_agent_model: str = "openai:x-ai/grok-4.5"
     lumen_agent_max_iterations: int = 5
     lumen_agent_preview_format: str = "svg"
-    lumen_agent_trace_dir: Path | None = None  # None → <repo root>/.lumen-runs
+    # W-isolation (D3): the deepagent's isolated workspace root. None → the run
+    # root falls back to `lumen_agent_trace_dir` (explicit override) or
+    # `<repo root>/.deepagent-workspace`. `trace_dir` IS the workspace root; runs
+    # land at `<workspace>/run_<id>`.
+    lumen_agent_workspace_root: Path | None = None
+    lumen_agent_trace_dir: Path | None = None  # None → workspace_root / .deepagent-workspace
     lumen_agent_asset_store: Path | None = None  # None → <trace dir>/asset-store
     lumen_agent_base_url: str | None = None
     lumen_agent_api_key: str | None = None
@@ -116,6 +121,7 @@ class Settings(BaseSettings):
         "lumen_core_helper",
         "image_model_http_referer",
         "image_model_app_title",
+        "lumen_agent_workspace_root",
         "lumen_agent_trace_dir",
         "lumen_agent_asset_store",
         "lumen_agent_base_url",

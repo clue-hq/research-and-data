@@ -107,7 +107,7 @@ def _config(**overrides) -> AgentRuntimeConfig:
         model="openai:default/model",
         max_iterations=3,
         preview_format="svg",
-        trace_dir=Path("/tmp/repo/.lumen-runs"),
+        trace_dir=Path("/tmp/repo/.deepagent-workspace"),
         agent_base_url="https://openrouter.ai/api/v1",
         agent_api_key="sk-test",
     )
@@ -225,7 +225,7 @@ def test_harness_all_same_model_builds_three_instances(tmp_path, monkeypatch):
     _install_harness_stubs(monkeypatch, capture)
     from lumen_agent.harness import create_design_deepagent
 
-    config = _config(repo_root=tmp_path, trace_dir=tmp_path / ".lumen-runs")
+    config = _config(repo_root=tmp_path, trace_dir=tmp_path / ".deepagent-workspace")
     create_design_deepagent("Make a poster", config)
 
     # THREE init_model calls, all for the same id (one per role, never deduped).
@@ -258,7 +258,7 @@ def test_harness_distinct_role_models(tmp_path, monkeypatch):
 
     config = _config(
         repo_root=tmp_path,
-        trace_dir=tmp_path / ".lumen-runs",
+        trace_dir=tmp_path / ".deepagent-workspace",
         agent_model_orchestrator="openai:orch/x",
         agent_model_author="openai:auth/y",
         agent_model_reviewer="openai:rev/z",
@@ -290,7 +290,7 @@ def test_harness_partial_override_still_builds_three_instances(tmp_path, monkeyp
 
     config = _config(
         repo_root=tmp_path,
-        trace_dir=tmp_path / ".lumen-runs",
+        trace_dir=tmp_path / ".deepagent-workspace",
         agent_model_orchestrator="openai:orch/x",
     )
     create_design_deepagent("Make a poster", config)
@@ -315,7 +315,7 @@ def test_harness_threads_max_tokens_on_every_call(tmp_path, monkeypatch):
 
     config = _config(
         repo_root=tmp_path,
-        trace_dir=tmp_path / ".lumen-runs",
+        trace_dir=tmp_path / ".deepagent-workspace",
         agent_max_tokens=16000,
         agent_model_orchestrator="openai:orch/x",
         agent_model_author="openai:auth/y",
@@ -332,7 +332,7 @@ def test_harness_max_tokens_unset_passes_none(tmp_path, monkeypatch):
     _install_harness_stubs(monkeypatch, capture)
     from lumen_agent.harness import create_design_deepagent
 
-    config = _config(repo_root=tmp_path, trace_dir=tmp_path / ".lumen-runs")
+    config = _config(repo_root=tmp_path, trace_dir=tmp_path / ".deepagent-workspace")
     create_design_deepagent("Make a poster", config)
 
     for call in capture["init_calls"]:

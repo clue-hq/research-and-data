@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 from typing import Optional
 
+from ..paths import to_virtual
 from ..workspace import workspace_root
 from .substrate import LumenDesignTools
 from .view import _latest_preview_png
@@ -41,7 +42,9 @@ def _render_preview_text(tools: LumenDesignTools) -> str:
         dest_dir.mkdir(parents=True, exist_ok=True)
         dest = dest_dir / ("preview.png" if round_dir is not None else "latest.png")
         dest.write_bytes(png_path.read_bytes())
-        copied_to = str(dest)
+        # D5: the model reads its filesystem at virtual paths — surface the copied
+        # preview at the same virtual form it can re-open, not the host path.
+        copied_to = to_virtual(dest, tools.config)
 
     for artifact in artifacts:
         fmt = artifact.get("format")
@@ -49,7 +52,10 @@ def _render_preview_text(tools: LumenDesignTools) -> str:
         dims = ""
         if artifact.get("width") and artifact.get("height"):
             dims = f" {artifact['width']}x{artifact['height']}"
-        lines.append(f"- {fmt}{dims}: {path}")
+        # D5: artifact paths are host paths under the workspace; the model-facing
+        # summary shows their virtual form (the API envelope keeps host paths).
+        shown = to_virtual(path, tools.config) if path else path
+        lines.append(f"- {fmt}{dims}: {shown}")
     if copied_to:
         lines.append(f"- copied preview: {copied_to}")
 

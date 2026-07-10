@@ -155,11 +155,16 @@ asking about something derivable is a failure. At most 4 questions, each with a
 proposed default ("if you don't care, I'll do X"); calling the tool ENDS THE
 TURN (the user's next message answers it, and never re-ask what they answered).
 A specific brief or a chip-seeded edit turn gets ZERO questions — just design.
-Read apps/agent_runtime/knowledge_docs/skills/clarify-design-brief/SKILL.md for
+Read /.deepagent/skills/clarify-design-brief/SKILL.md for
 the decision-critical spec table and the protocol. If request_clarification is
 absent from your tools, this turn must not ask (a prior turn already did, or
 auto-defaults mode is on): apply the skill's defaults and record_gap each
 assumption instead.
+
+PATHS ARE WORKSPACE-ROOTED: every path you read or write is rooted at your
+workspace. Use `/`-rooted virtual paths (`{workspace}/...`, `/knowledge_docs/...`,
+`/.deepagent/skills/...`) or plain relative paths; host-absolute machine paths do
+not exist here.
 
 RESOURCES YOU HAVE
 - Tools: task (delegate to the author or reviewer), inspect (live scene
@@ -172,8 +177,8 @@ RESOURCES YOU HAVE
   state.json, previews/, rounds/round_N/{{direction.md, author_report.md,
   dsl.lumen, diagnostics.json, critique.json, preview.png}}, rounds/index.md.
 - Knowledge (read-only, read at will, any file, any time):
-  apps/agent_runtime/knowledge_docs/ — DSL reference, design conventions,
-  brand application rules, and the skills the subagents use.
+  /knowledge_docs/ — DSL reference, design conventions, brand application
+  rules, and the skills the subagents use.
 - Subagents: lumen-dsl-author (authors through the compiler; can inspect,
   view assets and the draft, compile, place assets, preflight; CANNOT render
   or accept), lumen-visual-reviewer (judges rendered pixels against request
@@ -331,14 +336,20 @@ _AUTHOR_RESOURCE_MAP = """RESOURCES YOU HAVE
   the filesystem (ls, read_file, write_file, edit_file).
 - Workspace (read-write): {workspace}/ — the round directories described in
   your work loop.
-- Knowledge (read-only, read at will): apps/agent_runtime/knowledge_docs/ —
-  the full DSL reference, design conventions, brand rules. When a compile
-  halts twice on the same code, go read the reference for that form instead
-  of guessing a third time.
-- Your skills: create-design, repair-design, brand-and-tokens, effects.
+- Knowledge (read-only, read at will): /knowledge_docs/ — the full DSL
+  reference, design conventions, brand rules. When a compile halts twice on
+  the same code, go read the reference for that form instead of guessing a
+  third time.
+- Your skills (read at /.deepagent/skills/): create-design, repair-design,
+  brand-and-tokens, effects are the ones primary to authoring.
 - You do NOT have: rendering (the orchestrator renders; you can view the
   last render), acceptance authority (the reviewer judges), or any scene
-  mutation outside compile_dsl_block/asset."""
+  mutation outside compile_dsl_block/asset.
+
+PATHS ARE WORKSPACE-ROOTED: every path you read or write is rooted at your
+workspace. Use `/`-rooted virtual paths (`{workspace}/...`, `/knowledge_docs/...`,
+`/.deepagent/skills/...`) or plain relative paths; host-absolute machine paths do
+not exist here."""
 
 
 # ---------------------------------------------------------------------------
@@ -380,10 +391,14 @@ RESOURCES YOU HAVE
 - Tools: view (pixels: "preview", "asset:<asset_id>"), inspect (exact
   geometry and scene structure), filesystem (ls, read_file, write_file).
 - Workspace: {workspace}/ (round directories); knowledge (read-only):
-  apps/agent_runtime/knowledge_docs/ including your visual-review skill.
+  /knowledge_docs/ and your visual-review skill at /.deepagent/skills/.
 - You do NOT have: editing tools of any kind, or the authority to modify
   the design. Your critique is your entire output — make it precise enough
-  to act on."""
+  to act on.
+
+PATHS ARE WORKSPACE-ROOTED: every path you read is rooted at your workspace. Use
+`/`-rooted virtual paths (`{workspace}/...`, `/knowledge_docs/...`) or plain
+relative paths; host-absolute machine paths do not exist here."""
 
 
 def build_orchestrator_prompt(workspace: str) -> str:

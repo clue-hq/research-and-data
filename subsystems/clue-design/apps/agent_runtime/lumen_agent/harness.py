@@ -39,19 +39,22 @@ from .workspace import initial_turn_state, scaffold_workspace, workspace_root
 
 
 def _filesystem_permissions():
-    """READ-ONLY on knowledge_docs/**, read-write everywhere else (workspace).
+    """READ-ONLY on the materialized skills + knowledge trees; read-write on the
+    run workspace.
 
-    The backend roots at repo_root (non-virtual mode), so the file tools operate
-    on host-absolute paths normalized to a leading slash — the permission pattern
-    matches that absolute form. A single `deny write` on the knowledge subtree is
-    the cleanest expression of "read at will, never mutate".
+    W-isolation (D1): the backend is `virtual_mode=True` rooted at the workspace,
+    so the file tools operate on VIRTUAL paths. The knowledge/skills copies live
+    at `/knowledge_docs/**` and `/.deepagent/**`; denying `write` there is the
+    cleanest expression of "read at will, never mutate". (These are derived copies
+    anyway — the repo tree is the source of truth and is never written back — so a
+    stray write could at worst dirty a copy the next materialize re-syncs.)
     """
     from deepagents import FilesystemPermission
 
     return [
         FilesystemPermission(
             operations=["write"],
-            paths=["/**/apps/agent_runtime/knowledge_docs/**"],
+            paths=["/.deepagent/**", "/knowledge_docs/**"],
             mode="deny",
         ),
     ]
@@ -78,7 +81,8 @@ def create_design_deepagent(
     try:
         from deepagents import create_deep_agent
 
-        from .fs_backend import RepoRootedFilesystemBackend
+        from .fs_backend import AgentWorkspaceBackend
+        from .materialize import materialize_agent_workspace
     except ImportError as error:
         raise RuntimeError(
             "DeepAgents runtime dependencies are missing. Install apps/api/requirements.txt "
@@ -86,18 +90,26 @@ def create_design_deepagent(
         ) from error
 
     runtime_config = config or AgentRuntimeConfig.from_env()
+
+    # W-isolation (D2): sync the repo's skills + knowledge into the isolated
+    # workspace BEFORE anything the model can touch. Loud RuntimeError on failure —
+    # never a silent half-workspace. Idempotent (content-stamp guarded).
+    materialize_agent_workspace(runtime_config)
+
     tools = LumenDesignTools(
         runtime_config, prompt, initial_scene=initial_scene, event_sink=event_sink
     )
 
-    workspace = scaffold_workspace(tools, prompt)
-    workspace_str = str(workspace)
+    scaffold_workspace(tools, prompt)
+    # W-isolation (D4): every path the model sees is workspace-virtual. The run
+    # workspace is `<workspace_root>/run_<id>/workspace` on the host, which the
+    # `virtual_mode` backend serves at `/run_<id>/workspace`.
+    workspace_str = f"/{tools.run_id}/workspace"
 
-    # RIDER 1: repo-root-confined backend. Non-virtual mode keeps our
-    # host-absolute prompt paths working; the subclass rejects (as a model-facing
-    # error string, never a crash) any path resolving outside repo_root — closing
-    # the absolute/`..` escape the stock non-virtual backend leaves open.
-    backend = RepoRootedFilesystemBackend(root_dir=str(runtime_config.repo_root))
+    # W-isolation (D1): virtual-mode backend rooted at the isolated workspace. The
+    # agent's `/` IS the workspace; absolute paths re-anchor under the root (no
+    # escape), and the subclass forgives stale host-absolute/legacy path forms.
+    backend = AgentWorkspaceBackend(root_dir=str(runtime_config.workspace_root))
 
     from .llm import assert_all_role_models_support_image_input, init_model
 
@@ -147,13 +159,19 @@ def create_design_deepagent(
     view = make_view_tool(tools)
     render_preview = make_render_preview_tool(tools)
 
-    author_skills = [
-        "apps/agent_runtime/knowledge_docs/skills/create-design",
-        "apps/agent_runtime/knowledge_docs/skills/repair-design",
-        "apps/agent_runtime/knowledge_docs/skills/brand-and-tokens",
-        "apps/agent_runtime/knowledge_docs/skills/effects",
-    ]
-    reviewer_skills = ["apps/agent_runtime/knowledge_docs/skills/visual-review"]
+    # W-isolation (D6): the `skills` param is a list of SOURCE dirs the
+    # SkillsMiddleware scans via `backend.ls(source)` — and it expects each source
+    # to be the PARENT of skill directories (it treats every dir CHILD that holds a
+    # SKILL.md as a skill). Verified against deepagents 0.6.12
+    # `middleware/skills.py:_list_skills_with_errors` (l.597 `backend.ls(source)`,
+    # l.607-620 dir-children-with-SKILL.md): pointing a source AT a single skill
+    # dir loads NOTHING (its SKILL.md is a file, not a dir child) — which is what
+    # the old per-skill-dir wiring silently did. The materialized tree is flat at
+    # `/.deepagent/skills/<name>/`, so the source is that parent; the backend reads
+    # the real copies while the model-visible reference stays virtual. All authored
+    # skills are progressively disclosed to both subagents (name+description only
+    # until invoked); each role's prompt still names the skills primary to it.
+    workspace_skills = ["/.deepagent/skills"]
 
     subagents = [
         {
@@ -173,7 +191,7 @@ def create_design_deepagent(
                 tools.validate_binding_set,
                 tools.preflight_design,
             ],
-            "skills": author_skills,
+            "skills": workspace_skills,
         },
         {
             "name": "lumen-visual-reviewer",
@@ -185,7 +203,7 @@ def create_design_deepagent(
             "system_prompt": build_reviewer_prompt(workspace_str),
             "model": reviewer_model,
             "tools": [view, tools.inspect],
-            "skills": reviewer_skills,
+            "skills": workspace_skills,
             # D11 (docs/deepagent-architecture.md "Post-R6 decisions"): the
             # reviewer's structured output goes through the TOOL strategy, not
             # the provider/native one. Trigger: P1r7 died twice on

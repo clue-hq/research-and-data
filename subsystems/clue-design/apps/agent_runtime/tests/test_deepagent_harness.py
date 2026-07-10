@@ -154,6 +154,55 @@ def test_workspace_scaffolding(tmp_path, monkeypatch):
     assert (workspace / "previews").is_dir()
 
 
+def test_prompts_receive_virtual_workspace_path(tmp_path, monkeypatch):
+    """W-isolation (D4): the harness hands the subagents/orchestrator the VIRTUAL
+    workspace string `/run_<id>/workspace`, never a host-absolute path."""
+    capture: dict = {}
+    _install_deepagents_stub(monkeypatch, capture)
+
+    _agent, tools = create_design_deepagent("Make a poster", runtime_config(tmp_path))
+    kwargs = capture["kwargs"]
+
+    virtual_ws = f"/{tools.run_id}/workspace"
+    assert virtual_ws in kwargs["system_prompt"]
+    # No host-absolute workspace path leaks into the prompt.
+    assert str(tools.trace_dir) not in kwargs["system_prompt"]
+    author = next(s for s in kwargs["subagents"] if s["name"] == "lumen-dsl-author")
+    assert virtual_ws in author["system_prompt"]
+
+
+def test_run_artifacts_land_under_isolated_workspace(tmp_path, monkeypatch):
+    """W-isolation (D9 acceptance #2): every produced artifact lands under
+    `<workspace_root>/run_<id>/`, the skills + knowledge trees are materialized,
+    and nothing is written outside the workspace root."""
+    capture: dict = {}
+    _install_deepagents_stub(monkeypatch, capture)  # invoke returns cleanly, no final.json
+
+    config = runtime_config(tmp_path)
+    payload, tools = run_deepagent_turn("Design a card", config)
+
+    ws_root = config.workspace_root
+    # The run root is <workspace_root>/run_<id>.
+    assert tools.trace_dir.parent == ws_root
+    assert tools.trace_dir.name == tools.run_id
+    assert tools.run_id.startswith("run_")
+
+    # Honest-failure artifacts all under the run root.
+    for name in ("final.json", "trace.jsonl", "input.json"):
+        assert (tools.trace_dir / name).exists()
+    assert (tools.trace_dir / "workspace" / "brief.md").exists()
+
+    # The materializer synced the read-only trees into the workspace.
+    assert (ws_root / ".deepagent" / "skills").is_dir()
+    assert (ws_root / "knowledge_docs").is_dir()
+    assert (ws_root / ".deepagent" / ".sync-stamp").exists()
+
+    # Nothing was written OUTSIDE the workspace root: the only top-level entries
+    # are the run dir and the materialized trees (+ any asset-store default).
+    allowed = {tools.run_id, ".deepagent", "knowledge_docs", "asset-store"}
+    assert {child.name for child in ws_root.iterdir()} <= allowed
+
+
 # --- 2. view tool structure -------------------------------------------------
 
 

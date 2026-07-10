@@ -1,28 +1,40 @@
-"""Repo-root-confined filesystem backend for the deepagent (RIDER 1).
+"""Isolated-workspace filesystem backend for the deepagent (W-isolation, D1).
 
-deepagents 0.6.12 `FilesystemBackend(root_dir=..., virtual_mode=False)` gives the
-model direct filesystem access: absolute paths (`/etc/passwd`) bypass `root_dir`
-entirely and relative `..` segments can climb out of it (the backend's own
-docstring warns of exactly this). We cannot flip `virtual_mode=True` to close the
-hole, because our prompts hand the model HOST-ABSOLUTE paths under the repo
-(`/…/clue-design/havana/apps/agent_runtime/knowledge_docs/…` and the run
-workspace) — under virtual mode those absolute paths are re-anchored onto
-`root_dir` as virtual paths (`_resolve_path` does `(cwd / vpath.lstrip("/"))`),
-so every real path 404s and the loop breaks.
+The deepagent gets ONE dedicated workspace directory and its backend is
+``FilesystemBackend(root_dir=<workspace>, virtual_mode=True)``: the agent's ``/``
+IS the workspace. This retires the whole "path outside permitted root" failure
+class — a ``/``-rooted path is now *correct*, and an absolute path is re-anchored
+under the root by stock virtual mode rather than escaping it.
 
-The minimal robust guard: keep the non-virtual legacy resolution (absolute paths
-as-is, relative under `root_dir`, symlink-loop detection) untouched, then add ONE
-containment check — the resolved real path must live inside `root_dir`. An escape
-is reported to the model as a clear error STRING (never an uncaught exception that
-crashes the run): the parent methods (`read`/`write`/`edit`/`ls`/`grep`/`glob`)
-already wrap `_resolve_path` in `except (OSError, RuntimeError)`, so raising an
-`OSError` there lands as a normal `*Result(error=...)`. `upload_files` /
-`download_files` classify by exception type, so we translate the escape into their
-response objects explicitly.
+WHAT STOCK ``virtual_mode=True`` ALREADY GUARANTEES (verified against deepagents
+0.6.12 ``backends/filesystem.py``):
+- ``_resolve_path`` (l.197-209) blocks ``..``/``~`` (ValueError), joins the key
+  under ``self.cwd`` (the resolved root), ``.resolve()``s it, and asserts
+  ``full.relative_to(self.cwd)`` — a symlink-safe containment check — then probes
+  for symlink loops. An absolute ``/etc/passwd`` becomes ``<root>/etc/passwd``
+  (contained, simply not-found); a ``..`` climb raises before it can escape.
+- The middleware ``validate_path`` (backends/utils.py l.499-504) rejects ``..`` as
+  a path COMPONENT before the backend is ever called, returning a clean
+  ToolMessage — so a traversal never reaches ``_resolve_path`` through the file
+  tools.
+- ``ls``/``grep``/``glob`` catch the containment ``ValueError`` gracefully;
+  ``upload_files``/``download_files`` classify it via
+  ``_map_exception_to_standard_error`` (l.1060) to ``INVALID_PATH``.
 
-Everything else — the read-only `knowledge_docs` write-deny, workspace read/write,
-the whole tool surface — is unchanged; this class only narrows WHICH paths the
-existing behaviors are allowed to touch.
+WHAT THIS SUBCLASS ADDS (only what stock does NOT provide):
+1. ``_normalize_key`` (D1, ``paths.normalize_agent_key``) — forgives host-absolute
+   and legacy path forms the model may still emit, mapping them to the correct
+   virtual path so they RESOLVE instead of re-anchoring to a dead location. Stock
+   has no equivalent; this is the subclass's reason to exist.
+2. A crash-free re-raise of the containment failure. Stock's ``read``/``write``/
+   ``edit`` catch only ``(OSError, RuntimeError)`` from ``_resolve_path`` (l.428,
+   483, 530) — NOT ``ValueError`` — so the one reachable containment ValueError (a
+   symlink INSIDE the workspace whose target resolves outside it, opened via
+   read/write/edit) would propagate and kill the turn. We convert it to
+   ``PermissionError`` (an ``OSError`` subclass caught by read/write/edit AND
+   still classified to ``INVALID_PATH`` by upload/download), carrying a message
+   that teaches the virtual form. We do NOT recompute containment — stock's check
+   stands; we only change the exception TYPE so every method handles it uniformly.
 """
 
 from __future__ import annotations
@@ -30,88 +42,48 @@ from __future__ import annotations
 from pathlib import Path
 
 from deepagents.backends.filesystem import FilesystemBackend
-from deepagents.backends.protocol import (
-    INVALID_PATH,
-    FileDownloadResponse,
-    FileUploadResponse,
-)
+
+from .paths import normalize_agent_key
 
 
-class RepoRootedFilesystemBackend(FilesystemBackend):
-    """`FilesystemBackend` that rejects any path resolving outside `root_dir`.
+class AgentWorkspaceBackend(FilesystemBackend):
+    """``FilesystemBackend`` rooted at the isolated workspace in ``virtual_mode``.
 
-    Constructed with `virtual_mode=False` so the model keeps using the real
-    host-absolute paths our prompts give it; the escape hole that mode leaves
-    open is closed by a post-resolution containment check.
+    The agent's ``/`` is the workspace root. ``_normalize_key`` forgives stale
+    host-absolute / legacy paths before stock resolution; stock virtual mode does
+    the containment. The lone gap stock leaves — an uncaught containment
+    ``ValueError`` in ``read``/``write``/``edit`` — is closed by re-raising it as a
+    teaching ``PermissionError``.
     """
 
     def __init__(self, root_dir: str | Path, max_file_size_mb: int = 10) -> None:
         super().__init__(
-            root_dir=root_dir, virtual_mode=False, max_file_size_mb=max_file_size_mb
+            root_dir=root_dir, virtual_mode=True, max_file_size_mb=max_file_size_mb
         )
+        # Stored from the constructor arg (not ``self.cwd``) so the class also works
+        # under the harness's stubbed ``FilesystemBackend``, which does not set cwd.
+        self._workspace_root = str(Path(root_dir))
 
-    def _escape_message(self, key: str) -> str:
+    def _teaching_message(self, key: str) -> str:
         return (
-            f"Path '{key}' is outside the permitted repository root "
-            f"({self.cwd}) and was rejected. Use an absolute path under the "
-            f"run workspace or the repo, and never '..' segments that climb "
-            f"above the root."
+            f"Path '{key}' resolves outside the workspace root and was rejected. "
+            "Paths are workspace-rooted: use a '/'-rooted virtual path "
+            "(e.g. /run_<id>/workspace/..., /knowledge_docs/..., "
+            "/.deepagent/skills/...) or a plain relative path; never a '..' "
+            "segment that climbs above the root."
         )
 
     def _resolve_path(self, key: str) -> Path:
-        """Resolve exactly as the parent does (absolute as-is, relative under
-        root, symlink-loop detection preserved), then reject any result whose
-        real location escapes `root_dir`.
+        """Normalize the key (D1) then resolve exactly as stock virtual mode does.
 
-        Containment is checked against the fully-resolved real path so that a
-        symlink pointing outside the root, or an absolute/`..` path, can't slip
-        through. Raises `OSError` on escape — the parent file methods catch that
-        and surface it to the model as a clean error string.
+        Stock performs the ``..`` block, the re-anchoring, the symlink-safe
+        containment assert, and the symlink-loop probe. We only forgive the key
+        first and, if stock's containment/traversal ``ValueError`` fires, re-raise
+        it as a ``PermissionError`` so read/write/edit surface it as a clean,
+        teaching error string instead of crashing the turn.
         """
-        resolved = super()._resolve_path(key)
+        normalized = normalize_agent_key(key, self._workspace_root)
         try:
-            resolved.resolve().relative_to(self.cwd)
+            return super()._resolve_path(normalized)
         except ValueError:
-            raise OSError(self._escape_message(key)) from None
-        return resolved
-
-    def upload_files(self, files):  # type: ignore[override]
-        """Reject out-of-root uploads with an INVALID_PATH response instead of
-        letting the escape raise (this method classifies by exception type and
-        re-raises unrecognized ones, so the guard is applied explicitly here)."""
-        responses = []
-        allowed: list[tuple[str, bytes]] = []
-        placeholders: dict[int, FileUploadResponse] = {}
-        for index, (path, content) in enumerate(files):
-            try:
-                self._resolve_path(path)
-            except OSError:
-                placeholders[index] = FileUploadResponse(path=path, error=INVALID_PATH)
-                continue
-            allowed.append((path, content))
-        allowed_responses = iter(super().upload_files(allowed)) if allowed else iter(())
-        for index in range(len(files)):
-            responses.append(placeholders.get(index) or next(allowed_responses))
-        return responses
-
-    def download_files(self, paths):  # type: ignore[override]
-        """Reject out-of-root downloads with an INVALID_PATH response instead of
-        letting the escape raise."""
-        responses = []
-        allowed: list[str] = []
-        placeholders: dict[int, FileDownloadResponse] = {}
-        for index, path in enumerate(paths):
-            try:
-                self._resolve_path(path)
-            except OSError:
-                placeholders[index] = FileDownloadResponse(
-                    path=path, content=None, error=INVALID_PATH
-                )
-                continue
-            allowed.append(path)
-        allowed_responses = (
-            iter(super().download_files(allowed)) if allowed else iter(())
-        )
-        for index in range(len(paths)):
-            responses.append(placeholders.get(index) or next(allowed_responses))
-        return responses
+            raise PermissionError(self._teaching_message(key)) from None
