@@ -21,7 +21,7 @@ one-pager. Use these as the ground truth for correct Lumen DSL syntax + token us
 
 ## Block index
 
-### `patterns.md` — full-artifact compositions (start here)
+### `patterns.md` — full-artifact compositions (proportion references; choose the archetype in `knowledge/design/layout-recipes` first)
 | Block | Use it for |
 |-------|-----------|
 | Social square ad (1080×1080) | A square social/display ad: one focal message + 3 proof stats + one CTA. |

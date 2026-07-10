@@ -15,13 +15,15 @@ brand-aligned artifact. This is the *first* pass only — fixing diagnostics is
    `knowledge/lumen-dsl/grammar` + `knowledge/lumen-dsl/text`
    + `knowledge/design/foundations` (the taste rubric — one dominant element,
    hero-size-per-surface, whitespace-as-margin, anti-cliché)
+   + `knowledge/design/layout-recipes` (**the archetype canon** — the six
+   composition skeletons you choose from FIRST)
    + `knowledge/design/artboard-frame-authoring` + the **vetted block catalog**
    (`knowledge/design/blocks/*` — pinned automatically)
    + `knowledge/images/decide` (whether the surface needs an image at all, and which
    mechanism) + `knowledge/design/font-library` (the always-loadable type voices);
    add `skills/brand-and-tokens` + the design-systems files when a Brand
    Kit is in play; `knowledge/images/prompts` + `knowledge/images/placement` when the
-   design uses imagery; `skills/effects` for shadows/special strokes/gradients.
+   design uses imagery; `skills/effects` for the exact shadow/stroke/gradient grammar.
 2. **Pin the surface.** Match the requested artifact exactly:
    `page story size(1080,1920,px)` for a story, `preset(a4,portrait)` for a
    one-pager. These commands normalize to canonical `pt` artboard layout bounds:
@@ -38,16 +40,32 @@ brand-aligned artifact. This is the *first* pass only — fixing diagnostics is
    weights, e.g. `font("Bricolage Grotesque",72,800,left)` for the hero,
    `font("Inter",17,400,left)` for support copy.
 
+## Choose the archetype first
+
+Before any DSL, pick the **composition archetype** that fits the brief from the
+canon in `knowledge/design/layout-recipes` — the six are vertical-poster,
+split-panel, numeral-hero, image-hero, banded, emblem. Each names the structural
+move (how the canvas divides, what dominates), the surface treatments that suit
+it, and the type voice. **Archetypes are skeletons — recompose, don't reskin.**
+Do NOT pick one shell and pour copy into its slots: choose the move that serves
+*this* message, then build it for *this* content. Defaulting every brief to the
+vertical poster is the single failure the canon exists to break — if the brief
+invites a photo, a dominant metric, or editorial rhythm, use the archetype that
+delivers it.
+
+Then declare, in your notes: the archetype, the surface treatment (solid paper /
+brand gradient field / soft radial wash / shadowed plate), and the imagery
+decision (kit asset / generate / deliberately none — see `knowledge/images/decide`).
+
 ## How to compose
 
-- **Start from the vetted block catalog** (`knowledge/design/blocks/`, loaded for
-  every design task). Pick the full-artifact composition in `blocks/patterns.md`
-  that matches the requested surface (social square / A4 / landscape / postcard) —
-  it is already correctly proportioned, spaced, and validator-passed. Swap copy
-  through its `#slot:` lines, and swap in component blocks (`layout.md`,
-  `actions.md`, `data-display.md`) as needed. **Do not invent proportions from
-  primitives** — that is what overcrowds layouts and fails preflight. See
-  `blocks/README.md` for the index, the shared token choices, and the content budget.
+- **Build the chosen archetype's skeleton** (`knowledge/design/layout-recipes`) and
+  fill it with the vetted component blocks (`knowledge/design/blocks/` — `layout.md`,
+  `actions.md`, `data-display.md`), which are already correctly proportioned and
+  validator-passed. **Do not invent proportions from primitives** — that is what
+  overcrowds layouts and fails preflight. See `blocks/README.md` for the index,
+  shared token choices, and the content budget. The archetype fixes the *structure*;
+  the blocks supply well-proportioned *parts* — neither is a copy-swap template.
 - **Respect the content budget** (`blocks/README.md`): headline 4–8 words /
   `max_lines(2)`, body 12–25 words / `max_lines(3)`, benefit title ≤4 words,
   benefit description ≤12 words; one CTA per section; never more than 3 benefits in
@@ -96,13 +114,22 @@ brand-aligned artifact. This is the *first* pass only — fixing diagnostics is
   For export-safe pages, put the background on a clipped root `artboard` frame
   with `fill(...)`. Do not put `background(...)` on a `page ...` creation line,
   and do not draw a loose oversized `bg` rectangle.
-- **Imagery + scrim.** Only add an image if the surface needs one (`knowledge/images/decide`).
-  Place it by filling a frame with `fit:cover` + a focal point (aspect from the frame,
-  never stretched). When text sits over an image, emit a scrim BENEATH the text — a
-  `r`/`fr` with `fill($surface.inverse) o($opacity.scrim)` and light `$text.inverse`
-  text — or move the text onto its own surface. See `knowledge/images/placement`.
-- **Shadows/strokes/gradients**: keep them tasteful and tokenized; see
-  `skills/effects`.
+- **Imagery decision, every turn.** Make an explicit imagery call — kit asset,
+  generate, or deliberately none — and record it (`skills/brand-imagery`; whether the
+  surface earns one: `knowledge/images/decide`). Kit-first: read the card's `images`
+  inventory and `view()` candidates before generating. Place by filling a frame with
+  `fit:cover` + a focal point (aspect from the frame, never stretched). When text sits
+  over an image, emit a scrim BENEATH the text — a `r`/`fr` with
+  `fill($surface.inverse) o($opacity.scrim)` and light `$text.inverse` text — or move
+  the text onto its own surface. See `knowledge/images/placement`.
+- **Surface treatments & effects are normal vocabulary, not decoration.** A
+  brand-derived gradient field (`fill(linear(angle, stop($c1,0), stop($c2,1)))`),
+  a soft radial wash bleeding off-canvas (`fill(radial(...))` on an oversized
+  clipped rect — the minimal-luxury look), a gradient text fill on a hero numeral,
+  a shadowed plate lifting a stat or emblem (`shadow(...)`) — all are first-class
+  moves. Derive the colors from the brand (never a stock blue→purple), keep them
+  tokenized in branded designs, and let the archetype tell you which treatment
+  suits it. Exact grammar: `skills/effects` (incl. the soft-wash recipe).
 - **Mark ABM slots** on every element a campaign would personalize:
   `slot(contact.full_name)`, `slot(account.logo)`, `slot(campaign.headline)`,
   `slot(offer.primary_message)`. Add `sample("…")`/`worst_case("…")` on text slots
@@ -118,10 +145,14 @@ label/value pairs + a paragraph into a small fixed card **will** overflow
 - If the content is dense, make the card taller rather than shrinking every box.
 - Prefer one `worst_case` fixture per text slot and eyeball that it still fits.
 
-## Skeleton
+## Skeleton — one of six
 
-The poster idiom: fixed-height root, hug header pinned top, a **`fill`-height `main`
-that centers the focal block**, hug footer pushed to the bottom — no dead bands.
+Below is the **vertical-poster** archetype: fixed-height root, hug header pinned
+top, a **`fill`-height `main` that centers the focal block**, hug footer pushed to
+the bottom — no dead bands. It is ONE of the six canon skeletons; the other five
+(split-panel, numeral-hero, image-hero, banded, emblem) live in
+`knowledge/design/layout-recipes`, each mechanically validated. Pick by the brief,
+not by habit.
 
 ```text
 page linkedin_square size(1080,1080,px)

@@ -71,6 +71,30 @@ chip r   s(120,120)  fill(radial(stop(#ffffff,0), stop(#0b3d2e,1)))
 - Each `stop(color, position)` has `position` in `0..1` and any color form. A bare
   number as a stop color → `LUMD0219`. See `knowledge/lumen-dsl/colors`.
 
+### The soft radial wash (minimal-luxury surface treatment)
+
+A radial gradient from a lighter brand tone at the center to a darker one at the
+edge reads as a lit field, not a flat fill. Stops accept `#RRGGBBAA` alpha, so you
+can fade a tint into a base surface:
+
+```text
+# light center bleeding into a dark brand field:
+field r p(0,0) s(1080,1080) fill(radial(stop(#177a5b,0), stop(#06231a,1)))
+# a translucent tint wash over an existing surface (alpha stops):
+wash r p(0,0) s(1080,1080) fill(radial(stop(#f5d02033,0), stop(#f5d02000,1)))
+```
+
+**Intentional bleed:** make the wash a **full-frame rect** (`s(1080,1080)` on a
+1080² root, exactly the frame size — never larger, an oversized rect trips the
+`LUMV0801` parent-bounds error). Because the gradient falloff then runs all the way
+to the canvas edges, the bright center reads as a spotlight bleeding off the
+surface rather than a contained circle floating in empty margin. This is the
+opposite of the cliché: NOT a small low-opacity circle drifting behind content
+(see `knowledge/design/foundations`), but a full-field treatment that shapes the
+whole surface. Reserve it for numeral-hero, image-hero, and emblem fields
+(`knowledge/design/layout-recipes`). Both snippets above compile clean, preflight
+clean, and render non-black.
+
 ## Not an alias — per-corner radius
 
 `rd(...)` is a **single uniform radius**. `rd(12,12,0,0)` (round only the top) is
