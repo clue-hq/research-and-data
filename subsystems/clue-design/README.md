@@ -122,6 +122,29 @@ Frontend URL:
 http://127.0.0.1:3000
 ```
 
+### Font Library (one-time per environment)
+
+The curated open-font library (27 OFL families) ships as a checked-in manifest
+(`apps/api/font-library/manifest.json`), but the font bytes are materialized
+per environment into the content-addressed asset store. After cloning (or when
+`--check` reports gaps), provision once:
+
+```bash
+# one-time: pinned sparse clone of google/fonts (pin = manifest provenance commit)
+git clone --depth 1 --filter=blob:none --sparse https://github.com/google/fonts.git .context/google-fonts
+git -C .context/google-fonts sparse-checkout set $(PYTHONPATH=apps/api .venv/bin/python -c "from lumen_ingestion.font_library import CURATED_FAMILIES; print(' '.join(f.directory for f in CURATED_FAMILIES))")
+
+PYTHONPATH=apps/api .venv/bin/python scripts/provision_font_library.py --fonts-repo .context/google-fonts
+
+# verify an environment against the checked-in manifest (no writes):
+.venv/bin/python scripts/provision_font_library.py --check
+```
+
+An unprovisioned environment degrades cleanly to bundled Inter — nothing
+errors, but library families in scenes fall back loudly (LUMS0100) at raster
+export. Details, curation editing, and the manifest/doc lockstep rules:
+`apps/api/font-library/README.md`.
+
 The core rule is that `crates/lumen-core` remains platform-independent. It must not depend on React, Konva, FastAPI, databases, S3, filesystem I/O, browser APIs, or WebGPU.
 
 Detailed workstream docs:
