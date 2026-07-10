@@ -349,3 +349,53 @@ diagnostic.
   (preflights before render); stateless /export-preview fails loud via
   LUME0213. Remaining env note: editor test env lacks canvaskit/wasm-core
   artifacts (26 pre-existing EditorApp test failures, environmental).
+
+## A4 Effects v1 (2026-07-10, gate-R verified)
+
+The engine's effect vocabulary grows from one kind to four — glow, layer blur,
+inner shadow join drop shadow — end-to-end (scene model, DSL, validation, SVG
+filters, Skia image-filters, CanvasKit editor canvas, render-contract honesty)
+plus the three ledgered debts. Three build agents (engine/editor/knowledge),
+every diff read + independently re-tested at the review gate; the gate itself
+caught and fixed four defects that survived the builders' green suites (SVG
+blur-only stacks output the blurred ALPHA — a black silhouette — by
+last-primitive semantics; the mixed-corner SVG path's left edge ran to
+height−tl producing an impossible arc; Skia rounded a zero corner under
+stroke-alignment delta where uniform kept it square; per-corner `rd` rejected
+literal 0 via parse_positive_f64, making "round only the top" uncompilable —
+found by the knowledge builder's mechanical validation protocol).
+
+- **D1 stacking contract** (pinned by an SVG↔Skia parity test with pixel
+  probes): source → layer blurs → shadows/glows computed FROM the blurred
+  alpha, merged beneath → inner shadows over, clipped to alpha. First effect
+  of each class = topmost of its class. Pure drop-shadow stacks keep
+  byte-identical pre-A4 markup/filters.
+- **DSL**: `glow(id?,#c,o(),blur(),spread())` (x/y rejected — LUMD0266),
+  `blur(12)`/`blur(id,r(12))` (LUMD0267), `inner_shadow(...)` mirrors shadow
+  (LUMD0268); `rd(tl,tr,br,bl)` per-corner (≥0, CSS clockwise; SVG emits a
+  <path>, Skia per-corner RRect, CSS overlap clamp both sides);
+  `solid(#hex,0.5)` lowers opacity into color alpha (LUMD0270; LUMD0241
+  retired); node `bleed(true)` declares off-canvas intent → LUMV0800/0801
+  downgrade to warnings (LUMD0269 disambiguates the two bleed forms).
+  LUMV0704: negative blur/radius/spread rejected.
+- **Fail-loud riders**: LUME0214 text-strokes-dropped advisory from BOTH
+  exporters; SVG gradient stops with alpha emit stop-opacity (max-compat);
+  PDF marks all new effects Unsupported → LUMX0002.
+- **Editor canvas is FAITHFUL, not approximate**: CanvasKit general pipeline
+  mirrors lumen-skia (inner shadow via erode→offset→blur→SrcOut→SrcIn recolor;
+  outer spread via MakeDilate/MakeErode — the design's "no dilate in
+  CanvasKit" premise was wrong, so the planned spread-approximation
+  diagnostic was deleted rather than shipped). Per-corner contour shared by
+  body + clip. spreadApproximated flag remains only on the legacy Konva view.
+- **Teaching**: effects SKILL rewritten (glow/blur/inner-shadow as core
+  vocabulary, taste rules ban clichéd uses not constructs), grammar +
+  diagnostics rows, numeral-hero glow variant + true-bleed soft-wash in the
+  archetype canon; 6/6 exemplars mechanically validated (compile → preflight →
+  render non-black) with evidence at `.context/next-wave/a4-teaching-evidence/`.
+- **Deferred with intent** (coverage audit at
+  `.context/next-wave/a4-effects-coverage.md`): blend modes, masks, backdrop
+  blur, pattern/image paints, color filters, conic/mesh/noise gradients, and
+  the effect-token façade (schema + ingestion evidence exist; ingestion emits
+  {}, collect_scene_token_references skips node.effects, color_token unread —
+  wiring is future work, recorded here so the façade isn't mistaken for a
+  capability).
