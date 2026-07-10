@@ -305,3 +305,44 @@ response_format, custom `state_schema`, `backend`, `CompiledSubAgent`,
 `FilesystemMiddleware` (+permissions), `SummarizationMiddleware`.
 langchain-openai transmits non-text content blocks in tool-role messages
 (provider acceptance untested — S1).
+
+## A0 suppressors + A1a loud measurement (2026-07-10, gate-R verified)
+
+Sweep-suppressor and hygiene slices shipped in one wave (5 reviewed build
+agents; every diff read + independently re-tested before commit). Details in
+`.context/next-wave/` slice notes. The class rule throughout: silent
+degradation becomes either correct behavior or a loud machine-readable
+diagnostic.
+
+- **LUME0213 (error)**: a specified paint that fails to resolve at raster
+  paints an opaque magenta sentinel — never silent black. Root cause of the
+  sweep's "black PNG" class: the rasterizer never resolves tokens; unresolved
+  paints were skipped over a transparent surface (flattens black; SVG's
+  fill="none" reads white — the SVG-fine/PNG-black asymmetry). Raster surface
+  now clears to WHITE paper; empty pages render white (A1 replay verified).
+- **Per-glyph font fallback** (deterministic, loaded faces only) + LUMS0103
+  warning naming substituted chars; tofu is structurally dead. LUMS0102
+  (warning): any layout/preflight/export pass measured without font shaping
+  announces itself; `TextMeasureOutput.diagnostics` channel also surfaces
+  LUMS0100 from measurement (closes the gap Track B independently found).
+  Wasm read-only preflight suppresses LUMS0102 (heuristic is its declared
+  mode; editor synthesizes EDITOR_HEURISTIC_MEASUREMENT + loud banner).
+- **LUMI0806 glyph-coverage audit** at ingestion + republish backfill; real
+  kit replay: Aeonik missing 41 required glyphs (not 3 — the subset is far
+  more aggressive than the sweep surfaced). Brand card carries font-gap notes
+  + image inventory raised to 16 with explicit truncation line.
+- **view() hardening**: sub-512px images upscaled before attach (+ thumbs.rs
+  producer floor 512), any view failure returns an honest error string —
+  provider rejections can no longer kill turns (A2 class dead). view("preview")
+  refuses stale renders (mutation-count stamp) instead of serving old frames
+  (A3 stale-black class dead).
+- **Finalize hygiene**: zero-children pages pruned via ledger-riding
+  remove_page ops, announced in the summary; brand_logo_auto is place-once +
+  respect-removal (re-injection root cause: presence-only check per preflight).
+- **Follow-ups ledgered**: visual-regression fixture
+  `valid_multi_page_slots_agent_png_linkedin_ad` should carry resolved paints
+  (it is now a sentinel poster by design); Python-side ordering that can
+  render before token resolution (the "resolution-once" backlog item) is the
+  remaining half of the token-blackout story; editor test env lacks
+  canvaskit/wasm-core artifacts (26 pre-existing EditorApp test failures,
+  environmental).
