@@ -30,8 +30,13 @@ failing line is dropped, later lines are discarded (cascade halt).
 | `LUMD0219` | invalid color (bare number, malformed) | use `#RRGGBB`/`#AARRGGBB`/`$token`/`oklch`/`rgb(a)` |
 | `LUMD0220` | `font(...)` arity | `font(family,size,weight,align)` or `font($type.x)` |
 | `LUMD0222` | padding arity | `pad(a)` / `pad(v,h)` / `pad(t,r,b,l)` |
-| `LUMD0230` | property arity mismatch (e.g. `rd(a,b,c,d)`) | match the expected arity; `rd` takes 1 |
-| `LUMD0255` | value must be positive (e.g. `max_lines(0)`) | use a positive value |
+| `LUMD0230` | property arity mismatch | match the expected arity; `rd` takes **1 or 4** (`rd(r)` uniform / `rd(tl,tr,br,bl)` per-corner) |
+| `LUMD0255` | value must be positive (e.g. `max_lines(0)`) or non-negative (a negative `rd` corner) | use a valid value; `0` IS a valid per-corner radius (square corner) |
+| `LUMD0266` | malformed `glow(...)` (e.g. an x/y offset) | `glow(id?,#color,o(),blur(),spread())` — a glow is centered; use `shadow` for an offset |
+| `LUMD0267` | malformed `blur(...)` | `blur(12)` or `blur(id?,r(12))` |
+| `LUMD0268` | malformed `inner_shadow(...)` | mirror `shadow`: `inner_shadow(id?,#color,o(),x(),y(),blur(),spread())` |
+| `LUMD0269` | `bleed(...)` wrong form/target | `bleed(true)` on a node (off-canvas intent) or `bleed(x,y,w,h)` on a page (print-bleed rect) |
+| `LUMD0270` | `solid(color,opacity)` out of range or token misuse | opacity in `0..=1`; bake alpha into a `$token`, or use `#RRGGBBAA` |
 | `LUMD0301/0302/0304` | indentation / over-nesting / leaf-with-children | two spaces per level; only containers nest |
 | `LUMD0401` | duplicate node id | rename, or modify the existing node instead of re-declaring |
 | `LUMD0403/0404/0405` | image/vector/instance missing required arg | add `asset(id)` / `path("…")` / `source(id)` |
@@ -75,6 +80,12 @@ These are measured with real text shaping — when fit fails, it genuinely doesn
 fit. Fix the *specific* node for ordinary text/slot overflow. For page/artboard
 bounds or parent-containment diagnostics, use `knowledge/loop/layout-cluster-repair`
 instead of repeatedly shrinking unrelated text nodes. Do not re-author the scene.
+
+`LUMV0801` (node exceeds parent bounds) **downgrades to a warning** on a node
+tagged `bleed(true)` — declared off-canvas intent, not a fix-me (see
+`skills/effects`; content outside the page is not exported). `LUME0214` is an
+export advisory: a **text** node's strokes are dropped (not rendered until
+Typography v1) — remove the stroke or emulate it with a duplicate offset text layer.
 
 ## Brand governance
 

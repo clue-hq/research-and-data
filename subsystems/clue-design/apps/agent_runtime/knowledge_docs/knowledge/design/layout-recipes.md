@@ -45,9 +45,14 @@ brand-derived (see `knowledge/design/foundations`, "Avoid the AI clichés"):
 - **Solid paper** — one flat brand surface. The quiet default; lets type carry.
 - **Brand gradient field** — `fill(linear(angle, stop($c1,0), stop($c2,1)))`
   between two *brand* colors (never a stock blue→purple). Directional energy.
-- **Soft radial wash** — `fill(radial(stop($c_light,0), stop($c_dark,1)))`, often
-  bleeding off-canvas (the rect is larger than the frame, clipped) so the light
-  center feels like a spotlight, not a decorative blob. The minimal-luxury look.
+- **Soft radial wash** — `fill(radial(stop($c_light,0), stop($c_dark,1)))` so the
+  light center feels like a spotlight, not a decorative blob. The minimal-luxury
+  look. Two ways to bleed it: a **full-frame rect** exactly the frame size (falloff
+  runs to the edges, no warning), or a genuinely **off-canvas shape tagged
+  `bleed(true)`** — an oversized/overhanging shape that declares its intent and
+  downgrades the `LUMV0801` overflow error to a warning (without the flag, an
+  oversized shape is a hard error). Use the off-canvas form when the geometry (an
+  ellipse, a rotated band) truly overhangs the edge; see `skills/effects`.
 - **Shadowed plate/card** — a rounded surface lifted off the field with
   `shadow(...)`. The emblem's home; also lifts a single stat or quote.
 
@@ -124,7 +129,13 @@ is deliberately quiet.
 
 - **Suits:** dark solid paper (numeral pops) or a soft wash. A **gradient text
   fill** on the numeral (`fill(linear(...))`) + optional shadow is the signature.
-  **Constructs:** display type, gradient text fill, `al(h)` caption sub-group.
+  On a **dark** field, a **glow** on the numeral is the moda "Living Type" move —
+  the number reads as lit, not printed. Add `glow(id, #warm, o(0.5), blur(56),
+  spread(2))` to the `numeral` line, pulling the halo color from the numeral's own
+  gradient (a warm halo under warm digits). Glow is focal — the ONE hero element,
+  never on the caption or on a light field (see `skills/effects`).
+  **Constructs:** display type, gradient text fill, glow on a dark field, `al(h)`
+  caption sub-group.
 - **Type:** an impact face for the numeral — **Archivo Black / Anton / Bricolage
   Grotesque** for no-kit; a kit display role otherwise. Keep the numeral short
   (`3.2s`, `99.99%`, `40M`) so it never overflows its box — check `font_gaps` in

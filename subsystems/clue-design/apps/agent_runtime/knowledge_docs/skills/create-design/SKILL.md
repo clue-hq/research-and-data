@@ -124,10 +124,11 @@ decision (kit asset / generate / deliberately none — see `knowledge/images/dec
   the text onto its own surface. See `knowledge/images/placement`.
 - **Surface treatments & effects are normal vocabulary, not decoration.** A
   brand-derived gradient field (`fill(linear(angle, stop($c1,0), stop($c2,1)))`),
-  a soft radial wash bleeding off-canvas (`fill(radial(...))` on an oversized
-  clipped rect — the minimal-luxury look), a gradient text fill on a hero numeral,
-  a shadowed plate lifting a stat or emblem (`shadow(...)`) — all are first-class
-  moves. Derive the colors from the brand (never a stock blue→purple), keep them
+  a soft radial wash (`fill(radial(...))` on a full-frame rect, or an off-canvas
+  shape tagged `bleed(true)` — the minimal-luxury look), a gradient text fill (and,
+  on a dark field, a `glow(...)`) on a hero numeral, a shadowed plate lifting a stat
+  or emblem (`shadow(...)`), an inset well (`inner_shadow(...)`), a blurred backdrop
+  orb (`blur(...)`) — all are first-class moves. Derive the colors from the brand (never a stock blue→purple), keep them
   tokenized in branded designs, and let the archetype tell you which treatment
   suits it. Exact grammar: `skills/effects` (incl. the soft-wash recipe).
 - **Mark ABM slots** on every element a campaign would personalize:

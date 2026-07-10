@@ -63,7 +63,8 @@ Geometry and box:
 |----------|-------|---------|
 | `p(x,y)` | 2 | position in canonical layout points (`pt`), local to the parent/artboard |
 | `s(w,h)` / `s(w,h,unit)` | 2–3 | size in canonical layout points; `w`/`h` are a number, `hug`, `fill`, `fill(weight)`, `fill:weight`, or `$token` |
-| `rd(r)` / `radius(r)` | **1** | uniform corner radius — **4-arg per-corner is NOT supported** (→ `LUMD0230`) |
+| `rd(r)` / `radius(r)` | **1 or 4** | `rd(r)` uniform (number or `$radius.*`); `rd(tl,tr,br,bl)` per-corner, CSS clockwise from top-left — corners are **≥ 0** (`0` = square corner; negative → `LUMD0255`), bad arity → `LUMD0230` |
+| `bleed(true\|false)` | 1 | node off-canvas intent; downgrades the `LUMV0801` overflow error to a warning (distinct from the 4-arg page print-bleed `bleed(x,y,w,h)`) — misuse → `LUMD0269` |
 | `o(a)` / `opacity(a)` | 1 | node opacity |
 | `rot(deg)` / `rotation(deg)` | 1 | rotation |
 | `sk(x,y)` / `skew(x,y)` | 2 | skew |
@@ -75,10 +76,14 @@ Paint and effects (see `colors.md` and `skills/effects`):
 | Property | Meaning |
 |----------|---------|
 | `fill(paint)` | single fill |
+| `fill(solid(#hex,0.5))` / `fill(solid(#hex,o(0.5)))` | fill with opacity multiplied into the color alpha (both arg orders; out-of-range/token misuse → `LUMD0270`) |
 | `f[(id,paint),(paint),…]` | ordered fill stack |
 | `background(paint)` / `bg(paint)` | page/container background |
-| `stroke(paint,width)` or extended `stroke(id?,paint,w(),dash(),cap(),join(),align())` | stroke |
-| `shadow(color,o(),x(),y(),blur(),spread())` or `shadow(x,y,blur[,spread],color)` | drop shadow |
+| `stroke(paint,width)` or extended `stroke(id?,paint,w(),dash(),cap(),join(),align())` | stroke (shape only; text strokes drop with `LUME0214`) |
+| `shadow(color,o(),x(),y(),blur(),spread())` or `shadow(x,y,blur[,spread],color)` | drop shadow (elevation) |
+| `glow(id?,#color,o(),blur(),spread())` | outer glow — centered, **no x/y** (`glow(...,x())` → `LUMD0266`) |
+| `blur(12)` or `blur(id?,r(12))` | layer blur of the node's own rendering (malformed → `LUMD0267`) |
+| `inner_shadow(id?,color,o(),x(),y(),blur(),spread())` | inset shadow, mirrors `shadow(...)` (malformed → `LUMD0268`) |
 
 Text (see `text.md`):
 

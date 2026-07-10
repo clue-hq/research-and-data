@@ -138,9 +138,11 @@ Each skill is a procedure for one job. Read the skill before doing that job.
    See `skills/repair-design`.
 5. **Colors** are `#RRGGBB`, `#AARRGGBB`, `$token`, `oklch(l,c,h,a)`, or CSS
    `rgb(...)` / `rgba(...)`. Never a bare number.
-6. **Shadows** take the color first (`shadow(#000,o(),x(),y(),blur(),spread())`)
-   or the CSS positional form (`shadow(x,y,blur[,spread],color)`). `rd(...)` is a
-   single uniform radius — per-corner `rd(a,b,c,d)` is not supported.
+6. **Effects** — `shadow` (color first, or CSS positional `shadow(x,y,blur[,spread],color)`),
+   `glow(id?,#color,o(),blur(),spread())` (outer glow, no x/y), `blur(12)` / `blur(id?,r(12))`
+   (layer blur), and `inner_shadow(...)` (mirrors `shadow`) all stack as addressable node
+   effects. `rd(...)` is uniform **or** per-corner `rd(tl,tr,br,bl)` (CSS clockwise, each
+   corner > 0). See `skills/effects`.
 7. **Brand-resolved values use tokens.** With an effective Brand Kit, prefer
    `$surface.*`, `$text.*`, `$type.*`, `$space.*`, `$radius.*`, `$stroke.width.*`,
    `logo.*`, `asset.*`. Do not repair off-brand output by swapping one raw value
