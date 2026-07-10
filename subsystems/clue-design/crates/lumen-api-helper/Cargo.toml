@@ -19,5 +19,6 @@ serde_json.workspace = true
 sha2 = "0.10"
 
 [dev-dependencies]
+base64 = "0.22"
 lumen-wasm = { path = "../lumen-wasm" }
 tempfile = "3"

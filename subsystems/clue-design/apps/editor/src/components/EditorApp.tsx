@@ -75,6 +75,7 @@ import {
   tokenColorsGenerationSnapshot
 } from "@/engine/renderAdapter";
 import { loadKitFontFaces } from "@/engine/kitFonts";
+import { loadLibraryFontFaces } from "@/engine/libraryFonts";
 import { postTurnSuggestions } from "@/engine/agentSuggestions";
 import { mergeStickyDiagnostics } from "@/engine/diagnosticsPolicy";
 import { createEditQueue, type EnqueueOptions } from "@/engine/editQueue";
@@ -588,6 +589,27 @@ export default function EditorApp({
       cancelled = true;
     };
   }, [brandKitRefKey, brandKitDetailFetcher]);
+
+  // Curated FONT LIBRARY leg: lazily register only the faces whose family the
+  // current scene references, mirroring the K3 kit-font leg above. The manifest
+  // is fetched once (module-cached, negatively cached when the API is down);
+  // the module-level dedup makes a re-run that references only already-loaded
+  // families a pure no-op (no network). Debounced so rapid scene edits don't
+  // thrash JSON.stringify — the trailing scene is the one that gets scanned.
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      loadLibraryFontFaces(scene, { apiBaseUrl: editorApiBaseUrl() })
+        .then((registered) => {
+          if (registered) {
+            notifyKitFontsChanged();
+          }
+        })
+        .catch(() => {
+          // API-down: leave the canvas on whatever fonts it already had.
+        });
+    }, 250);
+    return () => clearTimeout(timer);
+  }, [scene]);
 
   // The export + preflight leg (Validate/Export flows, their in-flight
   // flags and results) lives in useExportPreflight. Deps rebuilt per

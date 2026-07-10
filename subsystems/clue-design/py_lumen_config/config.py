@@ -44,6 +44,9 @@ class Settings(BaseSettings):
     lumen_api_cors_origins: str = "http://127.0.0.1:3000,http://localhost:3000"
     lumen_asset_store_root: Path | None = None  # None → <database dir>/asset-store
     lumen_asset_max_bytes: int = 10 * 1024 * 1024
+    # Curated font-library manifest (Track B). Generated + checked in by
+    # scripts/provision_font_library.py; missing file → library disabled.
+    lumen_font_library_manifest_path: Path = Path("apps/api/font-library/manifest.json")
     lumen_log_level: str = "INFO"  # resolved leniently: unknown names fall back to INFO
     # Prebuilt lumen-api-helper binary; None → `cargo run -p lumen-api-helper`.
     lumen_core_helper: str | None = None

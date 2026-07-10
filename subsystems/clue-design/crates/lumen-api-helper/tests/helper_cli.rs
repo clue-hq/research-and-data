@@ -1239,3 +1239,154 @@ fn derive_instance_export_skips_failed_instances() {
         "failed instances never produce artifacts"
     );
 }
+
+// --- Font library (Track B) -------------------------------------------------
+//
+// The library rides the same {store_root, faces:[{digest, family}]} spec as
+// brand fonts but loads LAZILY: a face's bytes are read only when its declared
+// family appears in the request's scene/kit JSON. These tests pin both halves
+// of that contract end-to-end through the binary: a referenced family shapes
+// without the LUMS0100 fallback, and an unreferenced face is never touched
+// (observable because a bogus digest only raises LUMS0101 once referenced).
+
+const LIBRARY_FONT_BYTES: &[u8] = include_bytes!("../../../fonts/Inter-SemiBold.ttf");
+const BOGUS_DIGEST: &str = "deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef";
+
+fn ingest_library_font(store_root: &str) -> String {
+    use base64::Engine as _;
+    let response = helper(json!({
+        "action": "ingest_asset",
+        "store_root": store_root,
+        "bytes_base64": base64::engine::general_purpose::STANDARD.encode(LIBRARY_FONT_BYTES),
+        "asset_id": "asset_font_lib_test_w600",
+        "label": "Test Grotesk SemiBold (font library)"
+    }));
+    assert_eq!(response["ok"], true, "{response:#?}");
+    response["asset"]["digest_value"]
+        .as_str()
+        .expect("ingest returns the digest")
+        .to_owned()
+}
+
+fn scene_with_family(family: &str) -> Value {
+    let mut scene = minimal_scene();
+    scene["nodes"]["node_contact_name"]["kind"]["font_family"] = json!(family);
+    scene
+}
+
+fn diagnostic_codes(response: &Value) -> Vec<String> {
+    response["diagnostics"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|diagnostic| diagnostic["code"].as_str().unwrap_or_default().to_owned())
+        .collect()
+}
+
+#[test]
+fn preflight_loads_scene_referenced_library_faces_cleanly() {
+    let store_dir = tempfile::tempdir().expect("tempdir");
+    let store_root = store_dir.path().to_string_lossy().to_string();
+    let digest = ingest_library_font(&store_root);
+
+    // NOTE: preflight cannot prove family RESOLUTION — the measurer seam
+    // drops FamilyResolution::diagnostic() today (the loud-text-measurer
+    // slice owns that). This pins what preflight can show: the referenced
+    // face's bytes load without LUMS0101. Resolution is proven by the PNG
+    // export test below, whose rasterizer does surface LUMS0100.
+    let with_library = helper(json!({
+        "action": "preflight_scene",
+        "scene": scene_with_family("Test Grotesk"),
+        "brand_kit": Value::Null,
+        "library_fonts": {
+            "store_root": store_root,
+            "faces": [{ "digest": digest, "family": "Test Grotesk" }]
+        }
+    }));
+    assert_eq!(with_library["ok"], true);
+    assert!(
+        !diagnostic_codes(&with_library).contains(&"LUMS0101".to_owned()),
+        "library face bytes must load cleanly at preflight: {with_library:#?}"
+    );
+}
+
+#[test]
+fn library_faces_load_only_when_the_scene_references_their_family() {
+    let store_dir = tempfile::tempdir().expect("tempdir");
+    let store_root = store_dir.path().to_string_lossy().to_string();
+    let digest = ingest_library_font(&store_root);
+    let library_fonts = json!({
+        "store_root": store_root,
+        "faces": [
+            { "digest": digest, "family": "Test Grotesk" },
+            { "digest": BOGUS_DIGEST, "family": "Unused Family" }
+        ]
+    });
+
+    // The bogus face's family is not referenced: its digest must never be
+    // read, so no LUMS0101 — the lazy filter is what this pins.
+    let unreferenced = helper(json!({
+        "action": "preflight_scene",
+        "scene": scene_with_family("Test Grotesk"),
+        "brand_kit": Value::Null,
+        "library_fonts": library_fonts
+    }));
+    assert_eq!(unreferenced["ok"], true);
+    assert!(
+        !diagnostic_codes(&unreferenced).contains(&"LUMS0101".to_owned()),
+        "unreferenced library face must not be loaded: {unreferenced:#?}"
+    );
+
+    // Once the scene references the family, the missing bytes surface loudly.
+    let referenced = helper(json!({
+        "action": "preflight_scene",
+        "scene": scene_with_family("Unused Family"),
+        "brand_kit": Value::Null,
+        "library_fonts": library_fonts
+    }));
+    assert_eq!(referenced["ok"], true);
+    assert!(
+        diagnostic_codes(&referenced).contains(&"LUMS0101".to_owned()),
+        "referenced-but-unreadable library face must warn: {referenced:#?}"
+    );
+}
+
+#[test]
+fn png_export_rasterizes_library_family_without_silent_fallback() {
+    let store_dir = tempfile::tempdir().expect("tempdir");
+    let store_root = store_dir.path().to_string_lossy().to_string();
+    let digest = ingest_library_font(&store_root);
+
+    // Control: without the library the family is unknown and the rasterizer
+    // reports the LUMS0100 fallback. The declared family deliberately
+    // differs from the bytes' intrinsic name ("Inter") — the K3 alias
+    // contract must hold for library faces too.
+    let without_library = helper(json!({
+        "action": "export_preview",
+        "scene": scene_with_family("Test Grotesk"),
+        "format": "png",
+        "page_ids": ["page_a4"]
+    }));
+    assert_eq!(without_library["ok"], true, "{without_library:#?}");
+    assert!(
+        diagnostic_codes(&without_library).contains(&"LUMS0100".to_owned()),
+        "unknown family must fall back loudly in raster export: {without_library:#?}"
+    );
+
+    let with_library = helper(json!({
+        "action": "export_preview",
+        "scene": scene_with_family("Test Grotesk"),
+        "format": "png",
+        "page_ids": ["page_a4"],
+        "library_fonts": {
+            "store_root": store_root,
+            "faces": [{ "digest": digest, "family": "Test Grotesk" }]
+        }
+    }));
+    assert_eq!(with_library["ok"], true, "{with_library:#?}");
+    let codes = diagnostic_codes(&with_library);
+    assert!(
+        !codes.contains(&"LUMS0100".to_owned()) && !codes.contains(&"LUMS0101".to_owned()),
+        "library family must rasterize without fallback: {with_library:#?}"
+    );
+}

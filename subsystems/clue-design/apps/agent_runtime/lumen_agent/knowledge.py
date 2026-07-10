@@ -29,6 +29,7 @@ PRIMARY_KNOWLEDGE_PATHS = [
     f"{KNOWLEDGE_DOCS_ROOT}/knowledge/design/artboard-frame-authoring.md",
     f"{KNOWLEDGE_DOCS_ROOT}/knowledge/design/layout-recipes.md",
     f"{KNOWLEDGE_DOCS_ROOT}/knowledge/design/typography-and-composition.md",
+    f"{KNOWLEDGE_DOCS_ROOT}/knowledge/design/font-library.md",
     f"{KNOWLEDGE_DOCS_ROOT}/knowledge/design/blocks/README.md",
     f"{KNOWLEDGE_DOCS_ROOT}/knowledge/design/blocks/patterns.md",
     f"{KNOWLEDGE_DOCS_ROOT}/knowledge/design/blocks/layout.md",
@@ -92,6 +93,13 @@ IMAGES_PROMPTS_PATH = f"{KNOWLEDGE_DOCS_ROOT}/knowledge/images/prompts.md"
 IMAGES_PLACEMENT_PATH = f"{KNOWLEDGE_DOCS_ROOT}/knowledge/images/placement.md"
 IMAGES_ICONS_PATH = f"{KNOWLEDGE_DOCS_ROOT}/knowledge/images/icons.md"
 
+# Track B: the curated always-loadable font inventory (generated from the
+# library manifest). Pinned for every design task for the same reason the
+# imagery decide guardrail is: the TYPE-VOICE decision must always be
+# considered — the archetype baseline sweep showed no-kit runs defaulting
+# everything to Inter because the alternatives were never in context.
+FONT_LIBRARY_PATH = f"{KNOWLEDGE_DOCS_ROOT}/knowledge/design/font-library.md"
+
 # The vetted block catalog: pre-proportioned, compile+preflight-validated blocks
 # the author ASSEMBLES (README index + full-artifact patterns + component blocks).
 # Pinned for every design task so the author composes vetted blocks instead of
@@ -116,6 +124,9 @@ FULL_DELIVERY_PATHS = {
     IMAGES_PROMPTS_PATH,
     IMAGES_PLACEMENT_PATH,
     IMAGES_ICONS_PATH,
+    # A windowed font inventory teaches a truncated library — half the
+    # families would simply not exist for the author.
+    FONT_LIBRARY_PATH,
     *BLOCK_CATALOG_PATHS,
 }
 # Query terms that mark an image-bearing task; when present, the imagery prompt-craft
@@ -325,6 +336,9 @@ def mandatory_task_paths(query: str) -> list[str]:
         # whether a surface needs an image (and route icon/shape/none correctly)
         # before composing — so it is pinned for every task.
         IMAGES_DECIDE_PATH,
+        # Same rationale for the type-voice decision: the font library must be
+        # in context for the author to choose anything beyond Inter.
+        FONT_LIBRARY_PATH,
         ARTBOARD_AUTHORING_PATH,
         *BLOCK_CATALOG_PATHS,
     ]

@@ -52,31 +52,46 @@ struct BrandFontFaceSpec {
     family: Option<String>,
 }
 
-/// Build the request's font set: the bundled deterministic faces plus any
-/// brand-kit faces readable from the store. Unreadable or unparseable faces
-/// degrade to warning diagnostics (LUMS0101) — a bad kit font must never
-/// take down shaping, and it must never fail silently either.
-fn load_brand_fonts(spec: Option<&BrandFontsSpec>) -> (Arc<FontManager>, Vec<Diagnostic>) {
-    let Some(spec) = spec else {
-        return (Arc::new(FontManager::bundled()), Vec::new());
-    };
+/// Read one spec's faces from the store into `faces`, degrading unreadable
+/// entries to LUMS0101 warnings. `family_filter` is the library-fonts lazy
+/// load: when set, a face loads only if its declared family appears in the
+/// request's scene/kit JSON — the library is ~27 families and a request
+/// typically uses two or three, so eager loading would read megabytes of
+/// unused bytes per helper call. Substring matching over the serialized
+/// request can only over-load (harmless), never under-load: scenes and kits
+/// reference families by their exact declared name.
+fn collect_font_faces(
+    spec: &BrandFontsSpec,
+    source_label: &str,
+    family_filter: Option<&str>,
+    seen_digests: &mut std::collections::HashSet<String>,
+    faces: &mut Vec<(Vec<u8>, Option<String>)>,
+    diagnostics: &mut Vec<Diagnostic>,
+) {
     let store = LocalAssetStore::new(&spec.store_root);
-    let mut faces = Vec::new();
-    let mut diagnostics = Vec::new();
     let mut unavailable = |digest: &str, detail: String| {
         diagnostics.push(
             Diagnostic::warning(
                 lumen_core::Phase::Layout,
                 "LUMS0101",
-                format!("brand font face sha256:{digest} is unavailable: {detail}"),
+                format!("{source_label} font face sha256:{digest} is unavailable: {detail}"),
                 None,
             )
             .with_hint(
-                "Text in this family shapes with the bundled fallback; re-ingest the kit font asset to restore fidelity.",
+                "Text in this family shapes with the bundled fallback; re-ingest the font asset to restore fidelity.",
             ),
         );
     };
     for face in &spec.faces {
+        if let Some(scan) = family_filter {
+            match face.family.as_deref() {
+                Some(family) if !family.is_empty() && scan.contains(family) => {}
+                _ => continue,
+            }
+        }
+        if !seen_digests.insert(face.digest.clone()) {
+            continue;
+        }
         match digest_relative_path(&face.digest) {
             Ok(relative_path) => match store.get(&relative_path) {
                 Ok(bytes) => faces.push((bytes, face.family.clone())),
@@ -85,9 +100,51 @@ fn load_brand_fonts(spec: Option<&BrandFontsSpec>) -> (Arc<FontManager>, Vec<Dia
             Err(error) => unavailable(&face.digest, error.to_string()),
         }
     }
+}
+
+/// Build the request's font set: the bundled deterministic faces, any
+/// brand-kit faces readable from the store, and the library faces whose
+/// family the request actually mentions (`family_scan` = the serialized
+/// scene + kit JSON). Unreadable or unparseable faces degrade to warning
+/// diagnostics (LUMS0101) — a bad font must never take down shaping, and it
+/// must never fail silently either.
+fn load_request_fonts(
+    brand: Option<&BrandFontsSpec>,
+    library: Option<&BrandFontsSpec>,
+    family_scan: &str,
+) -> (Arc<FontManager>, Vec<Diagnostic>) {
+    if brand.is_none() && library.is_none() {
+        return (Arc::new(FontManager::bundled()), Vec::new());
+    }
+    let mut faces = Vec::new();
+    let mut diagnostics = Vec::new();
+    let mut seen_digests = std::collections::HashSet::new();
+    if let Some(spec) = brand {
+        collect_font_faces(spec, "brand", None, &mut seen_digests, &mut faces, &mut diagnostics);
+    }
+    if let Some(spec) = library {
+        collect_font_faces(
+            spec,
+            "library",
+            Some(family_scan),
+            &mut seen_digests,
+            &mut faces,
+            &mut diagnostics,
+        );
+    }
     let (fonts, errors) = FontManager::bundled_with(faces);
     for error in errors {
-        unavailable("(parsed)", error.to_string());
+        diagnostics.push(
+            Diagnostic::warning(
+                lumen_core::Phase::Layout,
+                "LUMS0101",
+                format!("font face is unavailable: {error}"),
+                None,
+            )
+            .with_hint(
+                "Text in this family shapes with the bundled fallback; re-ingest the font asset to restore fidelity.",
+            ),
+        );
     }
     (Arc::new(fonts), diagnostics)
 }
@@ -164,6 +221,8 @@ enum CoreRequest {
         mode: Option<Value>,
         #[serde(default)]
         brand_fonts: Option<BrandFontsSpec>,
+        #[serde(default)]
+        library_fonts: Option<BrandFontsSpec>,
     },
     ExportPreview {
         scene: Value,
@@ -175,6 +234,8 @@ enum CoreRequest {
         asset_store_root: Option<String>,
         #[serde(default)]
         brand_fonts: Option<BrandFontsSpec>,
+        #[serde(default)]
+        library_fonts: Option<BrandFontsSpec>,
     },
     IngestAsset {
         store_root: String,
@@ -256,6 +317,8 @@ enum CoreRequest {
         scene: Value,
         #[serde(default)]
         brand_fonts: Option<BrandFontsSpec>,
+        #[serde(default)]
+        library_fonts: Option<BrandFontsSpec>,
     },
     ValidateBindingSet {
         scene: Value,
@@ -904,10 +967,16 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
             brand_kit,
             mode,
             brand_fonts,
+            library_fonts,
         } => {
+            let family_scan = match &brand_kit {
+                Some(kit) => format!("{scene}{kit}"),
+                None => scene.to_string(),
+            };
             let scene = parse_scene(scene)?;
             let brand_kit = brand_kit.map(parse_brand_kit).transpose()?;
-            let (fonts, font_diagnostics) = load_brand_fonts(brand_fonts.as_ref());
+            let (fonts, font_diagnostics) =
+                load_request_fonts(brand_fonts.as_ref(), library_fonts.as_ref(), &family_scan);
             let mut options = PreflightOptions::default();
             options.layout.measurer = Some(server_measurer_with(fonts));
             if let Some(mode) = mode {
@@ -949,7 +1018,9 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
             profile,
             asset_store_root,
             brand_fonts,
+            library_fonts,
         } => {
+            let family_scan = scene.to_string();
             let scene = parse_scene(scene)?;
             let profile = match profile {
                 Some(profile) => {
@@ -977,7 +1048,8 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                 page_ids: page_ids.into_iter().map(PageId::from).collect(),
                 purpose: ExportPurpose::AgentCritique,
             };
-            let (fonts, font_diagnostics) = load_brand_fonts(brand_fonts.as_ref());
+            let (fonts, font_diagnostics) =
+                load_request_fonts(brand_fonts.as_ref(), library_fonts.as_ref(), &family_scan);
             let adapter = server_export_adapter_with(
                 match asset_store_root {
                     Some(root) => {
@@ -1594,9 +1666,15 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                 build_info: None,
             })
         }
-        CoreRequest::LayoutGeometry { scene, brand_fonts } => {
+        CoreRequest::LayoutGeometry {
+            scene,
+            brand_fonts,
+            library_fonts,
+        } => {
+            let family_scan = scene.to_string();
             let scene = parse_scene(scene)?;
-            let (fonts, font_diagnostics) = load_brand_fonts(brand_fonts.as_ref());
+            let (fonts, font_diagnostics) =
+                load_request_fonts(brand_fonts.as_ref(), library_fonts.as_ref(), &family_scan);
             let result = layout_scene(
                 &scene,
                 lumen_core::LayoutOptions {

@@ -18,7 +18,8 @@ brand-aligned artifact. This is the *first* pass only — fixing diagnostics is
    + `knowledge/design/artboard-frame-authoring` + the **vetted block catalog**
    (`knowledge/design/blocks/*` — pinned automatically)
    + `knowledge/images/decide` (whether the surface needs an image at all, and which
-   mechanism); add `skills/brand-and-tokens` + the design-systems files when a Brand
+   mechanism) + `knowledge/design/font-library` (the always-loadable type voices);
+   add `skills/brand-and-tokens` + the design-systems files when a Brand
    Kit is in play; `knowledge/images/prompts` + `knowledge/images/placement` when the
    design uses imagery; `skills/effects` for shadows/special strokes/gradients.
 2. **Pin the surface.** Match the requested artifact exactly:
@@ -28,8 +29,14 @@ brand-aligned artifact. This is the *first* pass only — fixing diagnostics is
    social artboard is `1080 x 1080 pt`. Keep child coordinates artboard-local
    or parent-local. Never fake a square ad as a square frame inside an A4 page.
 3. **Decide branded vs neutral.** With an effective Brand Kit, use `$tokens`
-   (`$surface.*`, `$type.*`, `$space.*`, `$radius.*`). Without one, concrete hex /
-   `font("Inter",…)` values are fine.
+   (`$surface.*`, `$type.*`, `$space.*`, `$radius.*`). Without one, use concrete
+   hex values — and make a deliberate TYPE-VOICE call from the curated font
+   library (`knowledge/design/font-library`): pick a display voice + a workhorse
+   that match the brief's tone and name the choice in your notes. Defaulting
+   every no-kit surface to `font("Inter",…)` is a missed decision — Inter is the
+   fallback, not the voice. Library families load by exact name with listed
+   weights, e.g. `font("Bricolage Grotesque",72,800,left)` for the hero,
+   `font("Inter",17,400,left)` for support copy.
 
 ## How to compose
 

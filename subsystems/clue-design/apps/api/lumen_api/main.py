@@ -32,6 +32,7 @@ from fastapi.responses import JSONResponse, Response, StreamingResponse
 from . import image_cache, image_provider
 from .core import CoreClient, CoreError, has_error_diagnostics
 from .database import NotFoundError, Repository, connect, run_migrations, utc_now
+from .font_library import manifest as font_library_manifest
 from .dto import (
     brand_compatibility_dto,
     brand_governance_dto,
@@ -223,6 +224,17 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
             "schema_version": 1,
             "build_info": app.state.build_info,
         }
+
+    @app.get("/font-library")
+    def font_library() -> JsonObject:
+        """The curated font-library manifest (Track B): always-present
+        families with per-weight faces in the asset store, measured metrics,
+        and agent-facing tone/pairing notes. The editor loads faces for
+        families the open document references via `/assets/{id}/bytes`, the
+        same leg kit fonts ride. An unprovisioned environment gets an empty
+        library, not an error."""
+        parsed = font_library_manifest()
+        return parsed if parsed is not None else {"version": 1, "families": []}
 
     @app.post("/brand-kits")
     def create_brand_kit(

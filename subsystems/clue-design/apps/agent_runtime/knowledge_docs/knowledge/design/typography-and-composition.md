@@ -11,6 +11,9 @@ conservative:
 - Keep headline boxes wide enough for expected copy.
 - Prefer `style($type.headline)` and `style($type.body)` when a Brand Kit is
   available.
+- For a voice the kit does not cover — or any no-kit run — choose a family
+  from the curated font library (see `design/font-library.md`) with
+  `font("Family",size,weight,align)`; do not default everything to Inter.
 - Use `hug` height for text likely to wrap, or make fixed-height boxes large
   enough for measured line height.
 - Use `wrap_text(true)` on body copy and long headlines.

@@ -368,7 +368,23 @@ class CoreClient:
         response = self._run({"action": "build_info"})
         return response["build_info"]
 
+    # Every shaping action the helper accepts library fonts for. The spec is
+    # injected HERE, at the single helper gateway, rather than threaded
+    # through each call site: a forgotten site would silently shape library
+    # families with the Inter fallback (the LUMS0100 class of bug). Callers
+    # may still pass an explicit `library_fonts` (including None) to override.
+    _LIBRARY_FONT_ACTIONS = frozenset(
+        {"preflight_scene", "export_preview", "layout_geometry"}
+    )
+
     def _run(self, request: JsonObject, raise_on_error: bool = True) -> JsonObject:
+        if (
+            request.get("action") in self._LIBRARY_FONT_ACTIONS
+            and "library_fonts" not in request
+        ):
+            from .font_library import library_font_spec
+
+            request = {**request, "library_fonts": library_font_spec()}
         command = self._command()
         action = str(request.get("action") or "unknown")
         helper_call_id = f"core_{uuid4().hex}"
