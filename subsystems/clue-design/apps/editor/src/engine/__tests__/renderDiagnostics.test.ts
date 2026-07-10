@@ -207,6 +207,33 @@ describe("editor render diagnostics", () => {
       })
     ]);
   });
+
+  it("A4: effect spread emits NO approximation diagnostic — the canvas renders it faithfully", () => {
+    // Gate-R upgrade: outer-effect spread is rendered via MakeDilate/MakeErode
+    // (and inner-shadow spread via the erode recipe), so there is no divergence
+    // to declare. This pins the diagnostic's absence.
+    const scene = cloneScene();
+    const node = scene.nodes.node_contact_name;
+    node.effects = [
+      {
+        id: "fx_shadow",
+        kind: { kind: "drop_shadow", color: { kind: "hex", value: "#000000" }, opacity: 0.2, x: 0, y: 4, blur: 12, spread: 6 }
+      },
+      {
+        id: "fx_glow",
+        kind: { kind: "glow", color: { kind: "hex", value: "#256c70" }, opacity: 0.6, blur: 20, spread: 3 }
+      },
+      {
+        id: "fx_inner",
+        kind: { kind: "inner_shadow", color: { kind: "hex", value: "#000000" }, opacity: 0.5, x: 0, y: 2, blur: 6, spread: 4 }
+      }
+    ];
+
+    const diagnostics = editorRenderDiagnostics(scene, "page_a4");
+    expect(
+      diagnostics.some((diagnostic) => diagnostic.code === "EDITOR_RENDER_EFFECT_SPREAD_APPROXIMATION")
+    ).toBe(false);
+  });
 });
 
 function cloneScene(): Scene {

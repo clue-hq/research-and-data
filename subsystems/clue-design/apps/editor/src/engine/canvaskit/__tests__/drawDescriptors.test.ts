@@ -294,6 +294,56 @@ describe.skipIf(!present)("CanvasKit descriptor interpreter (Wave 3 C2)", () => 
     expect(rb).toBeGreaterThan(150); // focal x=1 → blue side visible
     expect(rr).toBeLessThan(100);
   });
+
+  // A4 Effects v1: the general effect pipeline draws glow / layer blur / inner
+  // shadow via CanvasKit image filters, mirroring the lumen-skia recipes.
+  it("draws an outer glow that bleeds color beyond the node box", () => {
+    const base = rect("r", 40, 20, 20, 20, "#000000");
+    const glow: Node = {
+      ...base,
+      effects: [{ id: "fx", kind: { kind: "glow", color: { kind: "hex", value: "#ff0000" }, opacity: 1, blur: 20, spread: 0 } }]
+    };
+    const withGlow = render(pxScene({ r: glow }, ["r"]), "page_a4", 100, 60);
+    const without = render(pxScene({ r: base }, ["r"]), "page_a4", 100, 60);
+
+    // A pixel 2px left of the box (box left edge x=40): white with no glow,
+    // reddened by the glow bleed with it.
+    expect(pixel(without, 38, 30, 100)).toEqual([255, 255, 255, 255]);
+    const [r1, g1, b1] = pixel(withGlow, 38, 30, 100);
+    expect(g1).toBeLessThan(255);
+    expect(b1).toBeLessThan(255);
+    expect(r1).toBeGreaterThan(g1); // red glow tint
+  });
+
+  it("blurs the node's own rendering with a layer blur", () => {
+    const base = rect("r", 40, 20, 20, 20, "#000000");
+    const blurred: Node = {
+      ...base,
+      effects: [{ id: "fx", kind: { kind: "layer_blur", radius: 12 } }]
+    };
+    const soft = render(pxScene({ r: blurred }, ["r"]), "page_a4", 100, 60);
+    const sharp = render(pxScene({ r: base }, ["r"]), "page_a4", 100, 60);
+
+    // Just outside the left edge: the sharp box leaves it white, the layer blur
+    // bleeds the black body across the boundary.
+    expect(pixel(sharp, 38, 30, 100)[0]).toBe(255);
+    expect(pixel(soft, 38, 30, 100)[0]).toBeLessThan(220);
+  });
+
+  it("draws an inner shadow darkening the node's inner edge", () => {
+    const node = rect("r", 20, 10, 60, 40, "#ffffff");
+    node.effects = [
+      { id: "fx", kind: { kind: "inner_shadow", color: { kind: "hex", value: "#000000" }, opacity: 1, x: 0, y: 0, blur: 10, spread: 0 } }
+    ];
+    const out = render(pxScene({ r: node }, ["r"]), "page_a4", 100, 60);
+
+    // Box x 20..80, y 10..50. The center stays near white; a pixel just inside
+    // the top edge is darkened by the inner shadow ring.
+    const center = pixel(out, 50, 30, 100)[0];
+    const edge = pixel(out, 50, 13, 100)[0];
+    expect(center).toBeGreaterThan(200);
+    expect(edge).toBeLessThan(center);
+  });
 });
 
 const SYSTEM_FONT = "/Library/Fonts/Arial Unicode.ttf";

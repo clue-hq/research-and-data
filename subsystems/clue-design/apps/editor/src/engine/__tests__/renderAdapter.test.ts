@@ -719,10 +719,10 @@ describe("render adapter", () => {
     expect(path.endsWith("Z")).toBe(true);
   });
 
-  it("squares a non-uniform corner contour (export has no per-corner radii)", () => {
+  it("emits a per-corner arc contour when corners differ (A4 per-corner radii)", () => {
     const scene = cloneScene();
     const page = scene.pages.page_a4;
-    const scale = unitScaleForTest(page.size.unit);
+    const s = unitScaleForTest(page.size.unit);
     const node: Node = {
       ...scene.nodes.node_contact_name,
       kind: { kind: "rect" },
@@ -732,9 +732,19 @@ describe("render adapter", () => {
     };
     scene.nodes[node.id] = node;
 
+    // E-A4 landed per-corner radii end-to-end (the SVG exporter now emits a
+    // per-corner arc <path>); the canvas contour mirrors it. The tl/br corners
+    // round; the zero tr/bl corners degenerate to zero-radius arcs (linetos).
     const path = nodeDescriptor(scene, node, page).contourPath!;
-    expect(path).toBe(`M0 0H${round3(100 * scale)}V${round3(60 * scale)}H0Z`);
-    expect(path).not.toContain("A");
+    const n = round3;
+    const w = 100 * s;
+    const h = 60 * s;
+    const r = 8 * s;
+    expect(path).toBe(
+      `M${n(r)} 0H${n(w)}A0 0 0 0 1 ${n(w)} 0V${n(h - r)}` +
+        `A${n(r)} ${n(r)} 0 0 1 ${n(w - r)} ${n(h)}H0A0 0 0 0 1 0 ${n(h)}` +
+        `V${n(r)}A${n(r)} ${n(r)} 0 0 1 ${n(r)} 0Z`
+    );
   });
 
   it("emits an ellipse contour from the rightmost point", () => {

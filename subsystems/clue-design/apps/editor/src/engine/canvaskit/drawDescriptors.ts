@@ -75,8 +75,8 @@ function drawNode(
     layerPaint.delete();
   }
 
-  // The shadow stack applies to this node's own body only.
-  const filter = shadowFilter(ck, d.allShadows);
+  // The effect stack applies to this node's own body only.
+  const filter = effectFilter(ck, d);
   if (filter) {
     const layerPaint = new ck.Paint();
     layerPaint.setImageFilter(filter);
@@ -466,10 +466,34 @@ function gradientShader(
   );
 }
 
+type ImageFilter = import("canvaskit-wasm").ImageFilter;
+
+/**
+ * Build the node's effect stack as one image filter, mirroring the engine's
+ * `effect_image_filter` branch: a pure drop-shadow stack keeps the exact
+ * pre-A4 chain (`shadowFilter`); a stack carrying any glow / layer blur /
+ * inner shadow uses the A4 general pipeline honoring the D1 stacking contract.
+ * Caller deletes the returned filter (the intermediate nodes are held by it).
+ */
+function effectFilter(ck: CanvasKit, d: RenderNodeDescriptor): ImageFilter | null {
+  if (d.effects.length === 0) {
+    return null;
+  }
+  // Spread needs the general pipeline too: the pre-A4 MakeDropShadow chain has
+  // no spread parameter, but MakeDilate/MakeErode give it faithfully there.
+  const needsGeneral = d.effects.some(
+    (effect) => effect.type !== "drop_shadow" || effect.spread !== 0
+  );
+  if (!needsGeneral) {
+    return shadowFilter(ck, d.allShadows);
+  }
+  return generalEffectFilter(ck, d.effects);
+}
+
 /** Chained drop shadows — first entry topmost — mirroring chained feDropShadow;
  * Skia sigma = SVG stdDeviation = blur/2. Caller deletes the returned filter. */
 function shadowFilter(ck: CanvasKit, shadows: RenderNodeDescriptor["allShadows"]) {
-  let filter: import("canvaskit-wasm").ImageFilter | null = null;
+  let filter: ImageFilter | null = null;
   for (const shadow of shadows) {
     const sigma = shadow.blur / 2;
     const color = parseColor(ck, shadow.color, shadow.opacity);
@@ -479,6 +503,169 @@ function shadowFilter(ck: CanvasKit, shadows: RenderNodeDescriptor["allShadows"]
     filter = ck.ImageFilter.MakeDropShadow(shadow.offsetX, shadow.offsetY, sigma, sigma, color, filter);
   }
   return filter;
+}
+
+/**
+ * A4 general effect pipeline, mirroring lumen-skia `general_effect_filter`
+ * (D1 stacking contract, matched to the SVG exporter):
+ *   source → layer blurs applied to the source → outer shadows/glows beneath
+ *   the blurred base → inner shadows over it, clipped to its alpha.
+ * CanvasKit has no `MakeMerge`, so the merge is folded with SrcOver blends
+ * (equivalent to Skia's union merge). Applied to a saveLayer over the body, so
+ * the "dynamic source" the null-input filters read is the node's own body.
+ */
+function generalEffectFilter(ck: CanvasKit, effects: RenderNodeDescriptor["effects"]): ImageFilter | null {
+  // 1. Blurred base (null = the source graphic when there are no layer blurs).
+  let base: ImageFilter | null = null;
+  for (const effect of effects) {
+    if (effect.type === "layer_blur") {
+      const sigma = effect.radius / 2;
+      base = ck.ImageFilter.MakeBlur(sigma, sigma, ck.TileMode.Decal, base);
+    }
+  }
+
+  // 2. Outer shadows/glows (declaration order; first = topmost of its class).
+  // 3. Inner shadows (declaration order; first = topmost of its class).
+  const outers: ImageFilter[] = [];
+  const inners: ImageFilter[] = [];
+  for (const effect of effects) {
+    if (effect.type === "drop_shadow") {
+      const f = outerEffectFilter(
+        ck,
+        effect.color,
+        effect.opacity,
+        effect.offsetX,
+        effect.offsetY,
+        effect.blur,
+        effect.spread,
+        base
+      );
+      if (f) {
+        outers.push(f);
+      }
+    } else if (effect.type === "glow") {
+      const f = outerEffectFilter(ck, effect.color, effect.opacity, 0, 0, effect.blur, effect.spread, base);
+      if (f) {
+        outers.push(f);
+      }
+    } else if (effect.type === "inner_shadow") {
+      const f = innerShadowFilter(
+        ck,
+        effect.color,
+        effect.opacity,
+        effect.offsetX,
+        effect.offsetY,
+        effect.blur,
+        effect.spread,
+        base
+      );
+      if (f) {
+        inners.push(f);
+      }
+    }
+    // layer_blur folded into `base` above.
+  }
+
+  if (outers.length === 0 && inners.length === 0) {
+    // Layer-blur only.
+    return base;
+  }
+
+  // 4. Merge bottom-up: outers reversed (first outer topmost), the blurred
+  //    base, inner shadows reversed (first inner topmost).
+  const mergeList: (ImageFilter | null)[] = [];
+  for (let i = outers.length - 1; i >= 0; i -= 1) {
+    mergeList.push(outers[i]);
+  }
+  mergeList.push(base);
+  for (let i = inners.length - 1; i >= 0; i -= 1) {
+    mergeList.push(inners[i]);
+  }
+  return mergeFilters(ck, mergeList);
+}
+
+/**
+ * One outer shadow/glow: `MakeDropShadowOnly` (shadow only, not the source)
+ * derived from the blurred base, sigma = blur/2, opacity folded into the color
+ * alpha. Spread is FAITHFUL — dilate/erode the base alpha first, byte-mirroring
+ * lumen-skia's `outer_effect_filter` (gate-R upgrade: the D7 "no dilate in
+ * CanvasKit" premise was wrong; MakeDilate/MakeErode exist in this build).
+ */
+function outerEffectFilter(
+  ck: CanvasKit,
+  css: string,
+  opacity: number,
+  offsetX: number,
+  offsetY: number,
+  blur: number,
+  spread: number,
+  base: ImageFilter | null
+): ImageFilter | null {
+  const color = parseColor(ck, css, opacity);
+  if (!color) {
+    return null;
+  }
+  const spreadInput =
+    spread > 0
+      ? ck.ImageFilter.MakeDilate(spread, spread, base)
+      : spread < 0
+        ? ck.ImageFilter.MakeErode(-spread, -spread, base)
+        : base;
+  const sigma = blur / 2;
+  return ck.ImageFilter.MakeDropShadowOnly(offsetX, offsetY, sigma, sigma, color, spreadInput);
+}
+
+/**
+ * One inner shadow via the standard alpha-invert composite, byte-mirroring
+ * lumen-skia `inner_shadow_filter`: erode the (blurred) base inward by spread,
+ * offset + blur it, take `base SrcOut offset_blur` (inside the base alpha but
+ * outside the shifted blurred alpha), then recolor that ring to the shadow
+ * color with a SrcIn color filter. Faithful — spread IS honored here (unlike
+ * outer spread), so no approximation diagnostic applies to inner shadows.
+ */
+function innerShadowFilter(
+  ck: CanvasKit,
+  css: string,
+  opacity: number,
+  offsetX: number,
+  offsetY: number,
+  blur: number,
+  spread: number,
+  base: ImageFilter | null
+): ImageFilter | null {
+  const color = parseColor(ck, css, opacity);
+  if (!color) {
+    return null;
+  }
+  // Shape eroded inward by spread.
+  const shape = spread > 0 ? ck.ImageFilter.MakeErode(spread, spread, base) : base;
+  // Offset then blur the (eroded) shape.
+  const offset = ck.ImageFilter.MakeOffset(offsetX, offsetY, shape);
+  const sigma = blur / 2;
+  const offsetBlur = ck.ImageFilter.MakeBlur(sigma, sigma, ck.TileMode.Decal, offset);
+  // ring = base SrcOut offset_blur. MakeBlend(mode, background, foreground)
+  // computes foreground <mode> background, so foreground = base, background =
+  // offset_blur — the same argument order as the Skia recipe.
+  const ring = ck.ImageFilter.MakeBlend(ck.BlendMode.SrcOut, offsetBlur, base);
+  // Recolor the ring to the shadow color (SrcIn keeps the ring's alpha).
+  const colorFilter = ck.ColorFilter.MakeBlend(color, ck.BlendMode.SrcIn);
+  const recolored = ck.ImageFilter.MakeColorFilter(colorFilter, ring);
+  colorFilter.delete();
+  return recolored;
+}
+
+/**
+ * Fold a bottom-to-top filter list into one via SrcOver blends — CanvasKit's
+ * stand-in for Skia's `merge` (which unions its inputs in order). A null entry
+ * is the dynamic source image (the node body); at most one entry (the unblurred
+ * base) is null.
+ */
+function mergeFilters(ck: CanvasKit, list: (ImageFilter | null)[]): ImageFilter | null {
+  let acc = list[0] ?? null;
+  for (let i = 1; i < list.length; i += 1) {
+    acc = ck.ImageFilter.MakeBlend(ck.BlendMode.SrcOver, acc, list[i]);
+  }
+  return acc;
 }
 
 function strokeCap(ck: CanvasKit, cap: string) {

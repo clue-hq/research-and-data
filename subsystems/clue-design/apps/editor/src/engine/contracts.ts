@@ -175,6 +175,13 @@ export interface Node {
   source_asset_id?: AssetId | null;
   asset_placement?: AssetPlacement | null;
   clip: boolean;
+  /**
+   * A4 (D5): declared intent that the node deliberately extends past the
+   * page/parent bounds (a full-bleed wash). Preflight-only signal — omitted by
+   * the Rust core when false. It never changes what is rendered/exported, so
+   * the canvas ignores it.
+   */
+  bleed?: boolean;
   layout: AutoLayoutProps | null;
   computed: ComputedGeometry | null;
   locked: boolean;
@@ -462,16 +469,46 @@ export interface Effect {
   kind: EffectKind;
 }
 
-export type EffectKind = {
-  kind: "drop_shadow";
-  color: Color;
-  opacity: number;
-  x: number;
-  y: number;
-  blur: number;
-  spread: number;
-  color_token?: string | null;
-};
+/**
+ * Effects v1 (A4): the open effect vocabulary, serde tag `kind`, snake_case —
+ * mirrors `crates/lumen-core/src/scene.rs` `EffectKind`.
+ * - `drop_shadow` / `inner_shadow`: offset + blur + spread shadow.
+ * - `glow`: zero-offset outer glow (dilate by spread, gaussian blur, beneath).
+ * - `layer_blur`: gaussian blur of the node's own rendering (`radius`).
+ */
+export type EffectKind =
+  | {
+      kind: "drop_shadow";
+      color: Color;
+      opacity: number;
+      x: number;
+      y: number;
+      blur: number;
+      spread: number;
+      color_token?: string | null;
+    }
+  | {
+      kind: "glow";
+      color: Color;
+      opacity: number;
+      blur: number;
+      spread: number;
+      color_token?: string | null;
+    }
+  | {
+      kind: "layer_blur";
+      radius: number;
+    }
+  | {
+      kind: "inner_shadow";
+      color: Color;
+      opacity: number;
+      x: number;
+      y: number;
+      blur: number;
+      spread: number;
+      color_token?: string | null;
+    };
 
 export type Paint =
   | {

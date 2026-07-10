@@ -70,6 +70,44 @@ export interface ShadowDescriptor {
   spreadApproximated: boolean;
 }
 
+/**
+ * A4 Effects v1: the full effect stack in declaration order (first entry =
+ * topmost of its class), resolved to canvas units and CSS colors — the input
+ * to the CanvasKit general effect pipeline (`drawDescriptors.generalEffectFilter`).
+ * Colors are CSS; opacity is a 0..1 multiplier the renderer folds into alpha.
+ * All lengths are already scaled into canvas units.
+ */
+export type EffectDescriptor =
+  | {
+      type: "drop_shadow";
+      color: string;
+      opacity: number;
+      offsetX: number;
+      offsetY: number;
+      blur: number;
+      spread: number;
+    }
+  | {
+      type: "glow";
+      color: string;
+      opacity: number;
+      blur: number;
+      spread: number;
+    }
+  | {
+      type: "layer_blur";
+      radius: number;
+    }
+  | {
+      type: "inner_shadow";
+      color: string;
+      opacity: number;
+      offsetX: number;
+      offsetY: number;
+      blur: number;
+      spread: number;
+    };
+
 export interface RenderPageDescriptor {
   id: string;
   name: string;
@@ -105,6 +143,14 @@ export interface RenderNodeDescriptor {
    * the Konva renderer ignores it.
    */
   allShadows: ShadowDescriptor[];
+  /**
+   * A4 Effects v1: the full effect stack (drop shadow, glow, layer blur, inner
+   * shadow) in declaration order. `allShadows` stays the drop-shadow-only view
+   * the Konva path and the pre-A4 CanvasKit shadow chain consume; the CanvasKit
+   * renderer switches to the general pipeline over `effects` when any advanced
+   * (glow / layer blur / inner shadow) entry is present.
+   */
+  effects: EffectDescriptor[];
   cornerRadius: number | [number, number, number, number];
   /**
    * Wave 3 C1: the node's outline as SVG path data in LOCAL space (origin
@@ -205,6 +251,7 @@ export function nodeDescriptor(
     shadow: shadows[0] ?? null,
     extraShadowCount: Math.max(0, shadows.length - 1),
     allShadows: shadows,
+    effects: effectDescriptors(node.effects ?? [], scale),
     cornerRadius:
       cornerToken !== null
         ? [cornerToken * scale, cornerToken * scale, cornerToken * scale, cornerToken * scale]
@@ -505,15 +552,75 @@ export function konvaShadowProps(shadow: ShadowDescriptor | null): Record<string
   };
 }
 
+/**
+ * Drop-shadow-only view of the effect stack (the Konva path renders one shadow
+ * per shape; the pre-A4 CanvasKit shadow chain consumes the whole list). Glow,
+ * layer blur, and inner shadow are NOT drop shadows and are filtered out here —
+ * they ride `effectDescriptors` and the CanvasKit general pipeline instead.
+ */
 function shadowDescriptors(effects: Effect[], scale: number): ShadowDescriptor[] {
-  return effects.map((effect) => ({
-    color: colorToCss(effect.kind.color),
-    opacity: effect.kind.opacity,
-    offsetX: effect.kind.x * scale,
-    offsetY: effect.kind.y * scale,
-    blur: effect.kind.blur * scale,
-    spreadApproximated: effect.kind.spread !== 0
-  }));
+  const shadows: ShadowDescriptor[] = [];
+  for (const effect of effects) {
+    if (effect.kind.kind !== "drop_shadow") {
+      continue;
+    }
+    shadows.push({
+      color: colorToCss(effect.kind.color),
+      opacity: effect.kind.opacity,
+      offsetX: effect.kind.x * scale,
+      offsetY: effect.kind.y * scale,
+      blur: effect.kind.blur * scale,
+      spreadApproximated: effect.kind.spread !== 0
+    });
+  }
+  return shadows;
+}
+
+/**
+ * A4: the full effect stack resolved into `EffectDescriptor`s in declaration
+ * order — colors to CSS, geometry into canvas units. Mirrors the engine's
+ * `EffectKind` variants one-to-one so the CanvasKit general pipeline can honor
+ * the D1 stacking contract.
+ */
+function effectDescriptors(effects: Effect[], scale: number): EffectDescriptor[] {
+  return effects.map((effect): EffectDescriptor => {
+    const kind = effect.kind;
+    switch (kind.kind) {
+      case "drop_shadow":
+        return {
+          type: "drop_shadow",
+          color: colorToCss(kind.color),
+          opacity: kind.opacity,
+          offsetX: kind.x * scale,
+          offsetY: kind.y * scale,
+          blur: kind.blur * scale,
+          spread: kind.spread * scale
+        };
+      case "glow":
+        return {
+          type: "glow",
+          color: colorToCss(kind.color),
+          opacity: kind.opacity,
+          blur: kind.blur * scale,
+          spread: kind.spread * scale
+        };
+      case "layer_blur":
+        return {
+          type: "layer_blur",
+          radius: kind.radius * scale
+        };
+      case "inner_shadow":
+        return {
+          type: "inner_shadow",
+          color: colorToCss(kind.color),
+          opacity: kind.opacity,
+          offsetX: kind.x * scale,
+          offsetY: kind.y * scale,
+          blur: kind.blur * scale,
+          spread: kind.spread * scale
+        };
+    }
+  });
 }
 
 function defaultFillForNode(node: Node): string {
@@ -594,27 +701,92 @@ export function contourPathForNode(
     case "group":
     case "auto_layout":
     case "image":
-      return rectContourPath(width, height, uniformCornerRadius(node, scale));
+      return rectBodyContourPath(node, width, height, scale);
     default:
       return null;
   }
 }
 
-/** The single corner radius (scaled) when all four are equal, else 0 — the
- * export squares non-uniform corners, so the parity contour does too. */
-function uniformCornerRadius(node: Node, scale: number): number {
+/**
+ * Rect-body outline honoring per-corner radii (A4 / D3). A resolved radius
+ * token or four equal corners take the uniform arc path; mixed corners take a
+ * per-corner arc `<path>` (CSS overlap-clamped), mirroring the SVG exporter's
+ * `rounded_rect_path` — so the canvas matches export AND a zero-radius corner
+ * stays square. Shared by body geometry and the image clip (both read
+ * `contourPath`).
+ */
+function rectBodyContourPath(node: Node, width: number, height: number, scale: number): string {
   // K1.5: a resolved radius token IS uniform by definition.
   if (node.corner.token) {
     const resolved = resolveTokenNumber(node.corner.token);
     if (resolved !== null) {
-      return resolved * scale;
+      return rectContourPath(width, height, resolved * scale);
     }
   }
   const { top_left, top_right, bottom_right, bottom_left } = node.corner;
   if (top_left === top_right && top_left === bottom_right && top_left === bottom_left) {
-    return top_left * scale;
+    return rectContourPath(width, height, top_left * scale);
   }
-  return 0;
+  const clamped = clampedCorners(
+    [top_left * scale, top_right * scale, bottom_right * scale, bottom_left * scale],
+    width,
+    height
+  );
+  return perCornerContourPath(width, height, clamped);
+}
+
+/**
+ * CSS overlap-algorithm clamp (mirrors the SVG exporter's `clamped_corners`):
+ * scale every radius down by the single factor that keeps each pair of adjacent
+ * radii within their shared side length. Returns `[tl, tr, br, bl]`.
+ */
+function clampedCorners(
+  radii: [number, number, number, number],
+  width: number,
+  height: number
+): [number, number, number, number] {
+  const [tl, tr, br, bl] = radii.map((r) => Math.max(0, r)) as [number, number, number, number];
+  const ratios: [number, number][] = [
+    [width, tl + tr], // top
+    [height, tr + br], // right
+    [width, br + bl], // bottom
+    [height, tl + bl] // left
+  ];
+  let factor = 1;
+  for (const [side, sum] of ratios) {
+    if (sum > 0) {
+      factor = Math.min(factor, side / sum);
+    }
+  }
+  if (factor < 1) {
+    return [tl * factor, tr * factor, br * factor, bl * factor];
+  }
+  return [tl, tr, br, bl];
+}
+
+/**
+ * Per-corner rounded-rect `<path>` `d`, clockwise from the top-left corner,
+ * byte-mirroring the SVG exporter's `rounded_rect_path`. A zero-radius corner
+ * degenerates to a lineto per SVG arc semantics.
+ */
+function perCornerContourPath(
+  width: number,
+  height: number,
+  radii: [number, number, number, number]
+): string {
+  const [tl, tr, br, bl] = radii;
+  const n = (value: number) => roundForScene(value);
+  return (
+    `M${n(tl)} 0` +
+    `H${n(width - tr)}` +
+    `A${n(tr)} ${n(tr)} 0 0 1 ${n(width)} ${n(tr)}` +
+    `V${n(height - br)}` +
+    `A${n(br)} ${n(br)} 0 0 1 ${n(width - br)} ${n(height)}` +
+    `H${n(bl)}` +
+    `A${n(bl)} ${n(bl)} 0 0 1 0 ${n(height - bl)}` +
+    `V${n(tl)}` +
+    `A${n(tl)} ${n(tl)} 0 0 1 ${n(tl)} 0Z`
+  );
 }
 
 function rectContourPath(width: number, height: number, radius: number): string {

@@ -90,6 +90,10 @@ function collectNodeDiagnostics(scene: Scene, node: Node, diagnostics: Diagnosti
       );
     }
   }
+  // A4 / D6 note: effect spread carries NO approximation diagnostic — the
+  // CanvasKit pipeline renders outer-effect spread faithfully via
+  // MakeDilate/MakeErode (gate-R upgrade; the D7 "no dilate in CanvasKit"
+  // premise was wrong) and inner-shadow spread via the erode recipe.
   if (numberTokenUnresolved(node.corner.token)) {
     diagnostics.push(
       diagnostic(
