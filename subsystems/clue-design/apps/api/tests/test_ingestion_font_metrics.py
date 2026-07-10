@@ -11,15 +11,37 @@ from __future__ import annotations
 from pathlib import Path
 
 from lumen_ingestion.normalizer.font_metrics import (
+    REQUIRED_GLYPHS,
     TYPE_SIZE_REFERENCE_RAMP,
     build_type_size_ramp,
+    ensure_glyph_coverage,
     ensure_type_size_ramp,
     extract_font_metrics,
+    glyph_gap_diagnostic,
+    missing_required_glyphs,
     reference_x_ratio,
 )
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 INTER = REPO_ROOT / "fonts" / "Inter-Regular.ttf"
+
+
+def _subset_font(dropped: str) -> bytes:
+    """A real Inter subset with ``dropped`` glyphs removed — the exact shape of
+    an ingested webfont subset (the site shipped only the glyphs it used)."""
+    from io import BytesIO
+
+    from fontTools import subset
+    from fontTools.ttLib import TTFont
+
+    keep = [ord(c) for c in REQUIRED_GLYPHS if c not in dropped]
+    font = TTFont(BytesIO(INTER.read_bytes()))
+    subsetter = subset.Subsetter()
+    subsetter.populate(unicodes=keep)
+    subsetter.subset(font)
+    buffer = BytesIO()
+    font.save(buffer)
+    return buffer.getvalue()
 
 
 def test_reference_ramp_matches_the_styles_compiler_table() -> None:
@@ -175,3 +197,155 @@ def test_ensure_ramp_reads_the_kits_own_font_metrics() -> None:
     expected, _ = build_type_size_ramp(0.44)
     assert md == expected["type.size.md"]["value"]
     assert md > 16.0  # compensated upward
+
+
+# --- glyph-coverage audit (subset webfonts silently drop glyphs) ---------------
+
+
+def test_required_glyphs_covers_the_promised_charset() -> None:
+    """The honesty floor: printable ASCII incl. / % + -, typographic essentials,
+    and currency marks — the exact set the docstring promises."""
+    for ch in "/%+-":
+        assert ch in REQUIRED_GLYPHS
+    for ch in "×–—‘’“”…•°":
+        assert ch in REQUIRED_GLYPHS
+    for ch in "$€£":
+        assert ch in REQUIRED_GLYPHS
+    # Full printable ASCII band is included.
+    assert all(chr(c) in REQUIRED_GLYPHS for c in range(0x20, 0x7F))
+    # De-duplicated ($ appears once even though it is ASCII + currency).
+    assert len(REQUIRED_GLYPHS) == len(set(REQUIRED_GLYPHS))
+
+
+def test_full_font_reports_no_missing_glyphs() -> None:
+    """Inter covers the whole required set — a complete face reports nothing and
+    stamps NO missing_glyphs key (skip-if-empty)."""
+    assert missing_required_glyphs(INTER.read_bytes()) == []
+    metrics = extract_font_metrics(INTER.read_bytes())
+    assert metrics is not None
+    assert "missing_glyphs" not in metrics
+
+
+def test_subset_font_reports_exactly_the_dropped_glyphs() -> None:
+    subset_bytes = _subset_font("/×—")
+    assert missing_required_glyphs(subset_bytes) == ["/", "×", "—"]
+
+
+def test_subset_metrics_stamps_missing_glyphs_in_charset_order() -> None:
+    """The audit rides the measured metrics block so it survives the typed
+    validation round trip; order follows REQUIRED_GLYPHS."""
+    metrics = extract_font_metrics(_subset_font("—/×"))
+    assert metrics is not None
+    assert metrics["missing_glyphs"] == ["/", "×", "—"]
+    # Real measured ratios still ride alongside.
+    assert "x_height_ratio" in metrics
+
+
+def test_missing_required_glyphs_tolerates_garbage_bytes() -> None:
+    """Advisory audit: unparseable bytes report no gap rather than crying wolf."""
+    assert missing_required_glyphs(b"not a font") == []
+
+
+def test_glyph_gap_diagnostic_is_a_named_advisory_warning() -> None:
+    diag = glyph_gap_diagnostic("Aeonik", ["/", "×", "—"])
+    assert diag["code"] == "LUMI0806"
+    assert diag["severity"] == "warning"
+    assert "Aeonik" in diag["message"]
+    for ch in ("/", "×", "—"):
+        assert ch in diag["message"]
+
+
+def test_normalize_evidence_emits_lumi0806_for_a_subset_face() -> None:
+    """Fresh-ingestion path: a gapped face lands a LUMI0806 warning in the
+    result diagnostics AND stamps fonts.*.metrics.missing_glyphs."""
+    import json
+
+    from lumen_ingestion import BrandEvidence, normalize_evidence
+
+    fixture = (
+        Path(__file__).parent / "fixtures" / "ingestion" / "evidence_website_insight.json"
+    )
+    evidence = BrandEvidence.model_validate(json.loads(fixture.read_text()))
+    family = evidence.fonts[0].family  # Aeonik
+    subset_bytes = _subset_font("/×—")
+
+    result = normalize_evidence(
+        evidence,
+        brand_kit_id="brand_kit_glyph_test",
+        name="Glyph Test",
+        created_at="2026-07-10T00:00:00Z",
+        font_metrics={family: extract_font_metrics(subset_bytes)},
+    )
+    codes = [d.get("code") for d in result.diagnostics]
+    assert "LUMI0806" in codes
+    fonts = result.brand_kit["assets"]["fonts"]
+    stamped = [
+        f["metrics"]["missing_glyphs"]
+        for f in fonts.values()
+        if f.get("family") == family and "missing_glyphs" in (f.get("metrics") or {})
+    ]
+    assert stamped and stamped[0] == ["/", "×", "—"]
+
+
+def test_ensure_glyph_coverage_backfills_missing_glyphs_on_republish() -> None:
+    """Republish backfill: a kit whose font face bytes are a subset gets
+    fonts.*.metrics.missing_glyphs stamped + a LUMI0806 diagnostic."""
+    subset_bytes = _subset_font("/×—")
+    kit = {
+        "assets": {
+            "fonts": {
+                "brand": {
+                    "family": "Aeonik",
+                    "faces": [{"asset_id": "asset_aeonik", "weight": 400}],
+                    "metrics": {"x_height_ratio": 0.5},
+                }
+            }
+        }
+    }
+
+    def resolve_bytes(asset_id: str):
+        return (subset_bytes, "font/ttf") if asset_id == "asset_aeonik" else None
+
+    diagnostics: list = []
+    changed = ensure_glyph_coverage(kit, resolve_bytes, diagnostics)
+    assert changed is True
+    assert kit["assets"]["fonts"]["brand"]["metrics"]["missing_glyphs"] == ["/", "×", "—"]
+    assert [d["code"] for d in diagnostics] == ["LUMI0806"]
+
+    # Idempotent: a second pass over an already-stamped kit changes nothing.
+    assert ensure_glyph_coverage(kit, resolve_bytes, None) is False
+
+
+def test_ensure_glyph_coverage_heals_when_font_gains_coverage() -> None:
+    """A stale missing_glyphs entry is removed once the face covers the set
+    (e.g. the full font is re-uploaded)."""
+    kit = {
+        "assets": {
+            "fonts": {
+                "brand": {
+                    "family": "Aeonik",
+                    "faces": [{"asset_id": "asset_full", "weight": 400}],
+                    "metrics": {"missing_glyphs": ["/", "×"]},
+                }
+            }
+        }
+    }
+
+    def resolve_bytes(asset_id: str):
+        return (INTER.read_bytes(), "font/ttf")
+
+    changed = ensure_glyph_coverage(kit, resolve_bytes, [])
+    assert changed is True
+    assert "missing_glyphs" not in kit["assets"]["fonts"]["brand"]["metrics"]
+
+
+def test_ensure_glyph_coverage_noop_when_bytes_unresolvable() -> None:
+    """No stored bytes → nothing to audit → no change, no diagnostic."""
+    kit = {
+        "assets": {
+            "fonts": {"brand": {"family": "Ghost", "faces": [{"asset_id": "gone"}]}}
+        }
+    }
+    diagnostics: list = []
+    assert ensure_glyph_coverage(kit, lambda _id: None, diagnostics) is False
+    assert diagnostics == []

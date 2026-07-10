@@ -22,11 +22,30 @@ from __future__ import annotations
 import logging
 from io import BytesIO
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 
 logger = logging.getLogger(__name__)
 
 JsonObject = dict[str, Any]
+
+#: The charset every ingested text face is expected to render. Ingested
+#: webfonts are frequently SUBSETS — the site shipped only the glyphs it used —
+#: so a brand font can silently lack a slash, an em-dash, or a multiplication
+#: sign, and copy that reaches for them renders fallback or tofu (the baseline
+#: sweep caught agents contorting copy — "one-tenth" — around a missing "/").
+#: This is the honesty floor: printable ASCII (letters, digits, and the
+#: arithmetic/punctuation set incl. / % + -), the typographic essentials a
+#: designer reaches for (× – — ' ' " " … • °), and the common currency marks
+#: ($ € £). The audit is ADVISORY — the kit stays usable; a later engine gains
+#: per-glyph fallback — so its job is pure visibility at the data layer.
+_ASCII_PRINTABLE = "".join(chr(c) for c in range(0x20, 0x7F))
+_TYPOGRAPHIC_ESSENTIALS = "×–—‘’“”…•°"
+_CURRENCY = "$€£"
+#: Ordered + de-duplicated ($ is already ASCII); the display order is the audit
+#: report order, so the diagnostics read left-to-right ASCII then symbols.
+REQUIRED_GLYPHS = "".join(
+    dict.fromkeys(_ASCII_PRINTABLE + _TYPOGRAPHIC_ESSENTIALS + _CURRENCY)
+)
 
 #: The styles compiler's platform ramp — the canonical `type.size.*`
 #: vocabulary, in reference-font (Inter) terms. Names are the contract shared
@@ -93,10 +112,122 @@ def extract_font_metrics(data: bytes) -> Optional[JsonObject]:
             metrics["ascender_ratio"] = round(float(hhea.ascender) / upm, 4)
             metrics["descender_ratio"] = round(float(hhea.descender) / upm, 4)
             metrics["line_gap_ratio"] = round(float(hhea.lineGap) / upm, 4)
+        # Glyph-coverage audit rides the same measured block (fonts.*.metrics)
+        # so it survives the typed validation round trip; skip-if-empty mirrors
+        # the title/description stamping convention.
+        missing = _missing_from_font(font)
+        if missing:
+            metrics["missing_glyphs"] = missing
         return metrics
     except Exception:
         logger.debug("font metrics extraction failed", exc_info=True)
         return None
+
+
+def _missing_from_font(font: Any) -> list[str]:
+    """The subset of ``REQUIRED_GLYPHS`` this face's cmap does NOT cover, in
+    charset order. Empty when the face is complete OR its cmap is unreadable —
+    the audit is advisory and must never cry wolf on a font it cannot inspect
+    (a symbol font with no Unicode cmap would otherwise report the whole set)."""
+    try:
+        cmap = font.getBestCmap()
+    except Exception:
+        return []
+    if not cmap:
+        return []
+    covered = set(cmap.keys())
+    return [ch for ch in REQUIRED_GLYPHS if ord(ch) not in covered]
+
+
+def missing_required_glyphs(data: bytes) -> list[str]:
+    """Glyph-coverage audit for one font face's bytes: the required chars its
+    cmap lacks (charset order), or empty when complete or unparseable. The
+    standalone entry point for the republish backfill, which re-audits from the
+    stored face bytes rather than the ingestion-time metrics."""
+    try:
+        from fontTools.ttLib import TTFont
+
+        font = TTFont(BytesIO(data), lazy=True)
+    except Exception:
+        return []
+    return _missing_from_font(font)
+
+
+def glyph_gap_diagnostic(family: Optional[str], missing: list[str]) -> JsonObject:
+    """One LUMI0806 advisory warning naming a face's missing glyphs. Severity is
+    ``warning`` on purpose: the kit is still publishable and usable — this is
+    visibility so the authoring agent chooses copy with open eyes, not a gate."""
+    return {
+        "code": "LUMI0806",
+        "severity": "warning",
+        "message": (
+            f"font '{family or 'unknown'}' is missing {len(missing)} required "
+            f"glyph(s): {' '.join(missing)} — copy using these characters renders "
+            f"a fallback face or tofu; pick alternatives or add a covering face"
+        ),
+    }
+
+
+def ensure_glyph_coverage(
+    brand_kit: JsonObject,
+    resolve_bytes: Callable[[str], "tuple[bytes, str] | None"],
+    diagnostics: Optional[list[dict]] = None,
+) -> bool:
+    """Idempotently audit each kit font face against ``REQUIRED_GLYPHS`` and
+    stamp ``fonts.<key>.metrics.missing_glyphs`` (skip-if-empty), appending one
+    LUMI0806 warning per gapped face to ``diagnostics``. The republish-path
+    backfill — mirrors ``ensure_type_size_ramp``'s shape so kits ingested before
+    the audit get stamped on republish without a full re-ingestion. Re-audits
+    from the stored face bytes via ``resolve_bytes``. Mutates ``brand_kit`` in
+    place; returns True iff any ``missing_glyphs`` entry changed (so an
+    already-audited kit forces no no-op republish)."""
+    fonts = ((brand_kit.get("assets") or {}).get("fonts")) or {}
+    if not isinstance(fonts, dict):
+        return False
+    changed = False
+    for font in fonts.values():
+        if not isinstance(font, dict):
+            continue
+        data = _first_readable_face_bytes(font, resolve_bytes)
+        if data is None:
+            continue
+        missing = missing_required_glyphs(data)
+        metrics = font.get("metrics")
+        if not isinstance(metrics, dict):
+            if not missing:
+                continue
+            metrics = {}
+            font["metrics"] = metrics
+        previous = metrics.get("missing_glyphs")
+        if missing:
+            if previous != missing:
+                metrics["missing_glyphs"] = missing
+                changed = True
+            if diagnostics is not None:
+                diagnostics.append(glyph_gap_diagnostic(font.get("family"), missing))
+        elif previous is not None:
+            # A face that gained coverage (e.g. re-uploaded full font) heals.
+            metrics.pop("missing_glyphs", None)
+            changed = True
+    return changed
+
+
+def _first_readable_face_bytes(
+    font: JsonObject, resolve_bytes: Callable[[str], "tuple[bytes, str] | None"]
+) -> Optional[bytes]:
+    """The bytes of the first face whose ``asset_id`` resolves — the same
+    representative-face convention ``_font_metrics_map`` uses when it measures
+    one face per family."""
+    for face in font.get("faces") or []:
+        if not isinstance(face, dict):
+            continue
+        asset_id = face.get("asset_id")
+        if not asset_id:
+            continue
+        resolved = resolve_bytes(asset_id)
+        if resolved:
+            return resolved[0]
+    return None
 
 
 def _glyph_x_height(font: Any) -> Optional[float]:

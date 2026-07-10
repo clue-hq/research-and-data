@@ -26,7 +26,7 @@ from .roles import (
     assign_light_roles,
     build_dark_colorway,
 )
-from .font_metrics import build_type_size_ramp
+from .font_metrics import build_type_size_ramp, glyph_gap_diagnostic
 from .scales import build_opacity, build_radii, build_spacing, build_strokes
 from .typography import build_type_styles, resolve_anchors
 
@@ -163,6 +163,13 @@ def normalize_evidence(
         measured = (font_metrics or {}).get(font_json.get("family"))
         if measured:
             font_json["metrics"] = measured
+            # Glyph-coverage audit is baked into the measured block by
+            # extract_font_metrics; surface a LUMI0806 advisory per gapped face.
+            missing = measured.get("missing_glyphs")
+            if missing:
+                diagnostics.append(
+                    glyph_gap_diagnostic(font_json.get("family"), missing)
+                )
 
     # Logos + images.
     if evidence.logos:

@@ -32,6 +32,15 @@ CARD_COLOR_ROLES = [
 ]
 CARD_TYPE_ROLES = ["type.display", "type.headline", "type.body", "type.cta", "type.eyebrow"]
 MAX_LIST = 8
+#: Images are the agent's visual MENU — it can only choose what it can see, and
+#: real kits carry ~13 image slots (Insight Health), well past the generic
+#: MAX_LIST=8. 16 covers realistic kits whole while still bounding worst-case
+#: card bloat; anything beyond it gets an explicit truncation line (no-silent-
+#: caps) rather than vanishing.
+MAX_IMAGE_LIST = 16
+#: How many missing glyphs a font-gap note spells out before summarizing the
+#: rest as "(+N more)" — keeps the note short on heavily-subset faces.
+MAX_GLYPHS_IN_NOTE = 16
 MAX_ALIAS_HOPS = 8
 
 
@@ -75,9 +84,39 @@ def build_brand_card(
         "logos": _logo_inventory(assets.get("logos") or {}),
         "images": _image_inventory(assets.get("images") or {}),
     }
+    # Font honesty: subset webfaces silently lack glyphs (× / — …). Surface the
+    # ingestion audit so the author chooses copy with open eyes. Omitted when no
+    # face reports a gap, and tolerant of old kits that predate the audit field.
+    font_gaps = _font_gaps(assets.get("fonts") or {})
+    if font_gaps:
+        card["font_gaps"] = font_gaps
     if notice:
         card["notice"] = notice
     return card
+
+
+def _font_gaps(fonts: JsonObject) -> list[str]:
+    """Short per-face glyph-coverage notes (e.g. 'Aeonik lacks: × / —') read
+    from ``fonts.<key>.metrics.missing_glyphs`` (stamped at ingestion). Empty
+    when no face carries the field — old kits and fully-covering fonts alike."""
+    notes: list[str] = []
+    if not isinstance(fonts, dict):
+        return notes
+    for font in fonts.values():
+        if not isinstance(font, dict):
+            continue
+        missing = (font.get("metrics") or {}).get("missing_glyphs")
+        if not isinstance(missing, list) or not missing:
+            continue
+        chars = [str(c) for c in missing]
+        if len(chars) > MAX_GLYPHS_IN_NOTE:
+            shown = " ".join(chars[:MAX_GLYPHS_IN_NOTE])
+            spelled = f"{shown} (+{len(chars) - MAX_GLYPHS_IN_NOTE} more)"
+        else:
+            spelled = " ".join(chars)
+        family = font.get("family") or "font"
+        notes.append(f"{family} lacks: {spelled}")
+    return notes
 
 
 def _type_roles(typography: JsonObject) -> JsonObject:
@@ -128,7 +167,8 @@ def _logo_inventory(logos: JsonObject) -> list[JsonObject]:
 
 def _image_inventory(images: JsonObject) -> list[JsonObject]:
     inventory = []
-    for image_id, image in list(images.items())[:MAX_LIST]:
+    items = list(images.items())
+    for image_id, image in items[:MAX_IMAGE_LIST]:
         if not isinstance(image, dict):
             continue
         entry: JsonObject = {
@@ -150,6 +190,13 @@ def _image_inventory(images: JsonObject) -> list[JsonObject]:
         if tags:
             entry["style_tags"] = tags
         inventory.append(entry)
+    # No-silent-caps: if the kit carries more image slots than the card shows,
+    # tell the agent explicitly rather than letting them vanish.
+    overflow = len(items) - MAX_IMAGE_LIST
+    if overflow > 0:
+        inventory.append(
+            {"note": f"{overflow} more asset(s) available — full manifest via the asset tool"}
+        )
     return inventory
 
 

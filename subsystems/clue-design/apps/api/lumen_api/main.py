@@ -732,7 +732,10 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
         the kit JSON at publish, so healing the ``asset_descriptions`` library
         alone never reaches the agent's brand card. Generic for any kit."""
         from lumen_ingestion.describe import describe_kit_assets
-        from lumen_ingestion.normalizer.font_metrics import ensure_type_size_ramp
+        from lumen_ingestion.normalizer.font_metrics import (
+            ensure_glyph_coverage,
+            ensure_type_size_ramp,
+        )
         from lumen_ingestion.pipeline import (
             make_rasterize_svg,
             make_resolve_bytes,
@@ -750,6 +753,15 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
         ensure_type_size_ramp(brand_kit)
         store_root = str(asset_store_root())
         describe_diagnostics: list = []
+        # Glyph-coverage audit backfill (same pattern as the ramp): kits ingested
+        # before the audit get fonts.*.metrics.missing_glyphs stamped from their
+        # stored face bytes, so the honesty note reaches the agent's brand card
+        # on republish without a full re-ingestion. Advisory LUMI0806 warnings.
+        ensure_glyph_coverage(
+            brand_kit,
+            make_resolve_bytes(repo, store_root),
+            describe_diagnostics,
+        )
         counts = describe_kit_assets(
             brand_kit,
             connection=repo.connection,
