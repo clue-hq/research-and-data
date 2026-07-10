@@ -17,6 +17,7 @@ import {
   EditableDocumentTitle,
   EditorModeSwitch,
   EngineDisabledBanner,
+  HeuristicMeasurementBanner,
   OperationHistoryPanel,
   topArtboardSizeLabel
 } from "./EditorChrome";
@@ -109,7 +110,11 @@ import {
   ungroupEdit,
   type StructuredEdit
 } from "@/engine/structuredEdits";
-import { editorRenderDiagnostics } from "@/engine/renderDiagnostics";
+import { editorRenderDiagnostics, heuristicMeasurementDiagnostic } from "@/engine/renderDiagnostics";
+import {
+  subscribeTextMeasurementStatus,
+  textMeasurementStatusSnapshot
+} from "@/engine/canvaskit/loadCanvasKit";
 import {
   canGroupNodes,
   canUngroupNode,
@@ -392,12 +397,34 @@ export default function EditorApp({
     tokenColorsGenerationSnapshot,
     tokenColorsGenerationSnapshot
   );
+  // Live text-measurement status (CanvasKit + font provider). When it reports
+  // `heuristic` the canvas is laying out text with an approximate measurer —
+  // a formerly-silent degradation we now surface loudly (banner + diagnostic).
+  const textMeasurementStatus = useSyncExternalStore(
+    subscribeTextMeasurementStatus,
+    textMeasurementStatusSnapshot,
+    () => "pending" as const
+  );
+  // Per-face kit-font load failures, surfaced from loadKitFontFaces (previously
+  // swallowed). Replaced wholesale on each kit fetch so they never accrete.
+  const [kitFontDiagnostics, setKitFontDiagnostics] = useState<Diagnostic[]>([]);
   const renderDiagnostics = useMemo(
-    () => editorRenderDiagnostics(scene, activePageId),
+    () => {
+      const base = editorRenderDiagnostics(scene, activePageId);
+      const heuristic = heuristicMeasurementDiagnostic(textMeasurementStatus);
+      // The measurement + kit-font signals are renderer state, not scene
+      // state; prepend them so the panels list them alongside the scene-derived
+      // approximations.
+      return [
+        ...(heuristic ? [heuristic] : []),
+        ...kitFontDiagnostics,
+        ...base
+      ];
+    },
     // eslint-disable-next-line react-hooks/exhaustive-deps -- tokenColorsGeneration
     // is deliberately a dep: the diagnostics consult the module-level map to
     // report only tokens actually on the heuristic fallback.
-    [activePageId, scene, tokenColorsGeneration]
+    [activePageId, scene, tokenColorsGeneration, textMeasurementStatus, kitFontDiagnostics]
   );
 
   useEffect(() => {
@@ -573,17 +600,30 @@ export default function EditorApp({
         // K3: the kit's font-face bytes into the CanvasKit provider — text
         // shapes/measures in the real faces. The bump re-keys measurement
         // and descriptor memos only when a NEW face actually registered.
+        // Per-face fetch misses (previously swallowed) collect into client
+        // diagnostics, replacing the prior kit's set so they never accrete.
+        const faceFailures: Diagnostic[] = [];
         const registered = await loadKitFontFaces(
-          { apiBaseUrl: editorApiBaseUrl() },
+          {
+            apiBaseUrl: editorApiBaseUrl(),
+            onFaceDiagnostic: (diagnostic) => faceFailures.push(diagnostic)
+          },
           detail
         );
+        if (!cancelled) {
+          setKitFontDiagnostics(faceFailures);
+        }
         if (registered && !cancelled) {
           notifyKitFontsChanged();
         }
       })
       .catch(() => {
         // API-down or kit not found: leave the canvas on whatever map (or
-        // heuristic) it already had rather than block rendering.
+        // heuristic) it already had rather than block rendering. Drop any
+        // prior kit's face-failure diagnostics so they don't go stale.
+        if (!cancelled) {
+          setKitFontDiagnostics([]);
+        }
       });
     return () => {
       cancelled = true;
@@ -1477,6 +1517,7 @@ export default function EditorApp({
           {engineDisabled ? (
             <EngineDisabledBanner reason={engineDisabled.reason} detail={engineDisabled.detail} />
           ) : null}
+          {textMeasurementStatus === "heuristic" ? <HeuristicMeasurementBanner /> : null}
           {isAgentRunning && !agentPreview ? (
             <div
               className="agent-designing-banner"

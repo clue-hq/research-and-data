@@ -2,7 +2,28 @@ import { afterEach, describe, expect, it } from "vitest";
 import { minimalScene } from "@/fixtures/minimalScene";
 import type { AssetRecord, Node, Scene } from "../contracts";
 import { setTokenColorMap } from "../renderAdapter";
-import { editorRenderDiagnostics } from "../renderDiagnostics";
+import { editorRenderDiagnostics, heuristicMeasurementDiagnostic } from "../renderDiagnostics";
+
+describe("heuristic measurement diagnostic", () => {
+  it("emits a loud EDITOR_HEURISTIC_MEASUREMENT error only when measurement is heuristic", () => {
+    const diagnostic = heuristicMeasurementDiagnostic("heuristic");
+    expect(diagnostic).not.toBeNull();
+    expect(diagnostic).toEqual(
+      expect.objectContaining({
+        severity: "error",
+        code: "EDITOR_HEURISTIC_MEASUREMENT",
+        subject: { kind: "document" }
+      })
+    );
+    expect(diagnostic?.message).toMatch(/measurement degraded/i);
+    expect(diagnostic?.message).toMatch(/font engine unavailable/i);
+  });
+
+  it("is silent while measurement is exact (skia) or not yet resolved (pending)", () => {
+    expect(heuristicMeasurementDiagnostic("skia")).toBeNull();
+    expect(heuristicMeasurementDiagnostic("pending")).toBeNull();
+  });
+});
 
 describe("editor render diagnostics", () => {
   afterEach(() => {

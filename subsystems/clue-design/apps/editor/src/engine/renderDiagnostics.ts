@@ -1,6 +1,36 @@
 import type { Color, Diagnostic, DiagnosticSubject, Dimension, Node, PageId, Paint, Scene } from "./contracts";
+import type { TextMeasurementStatus } from "./canvaskit/loadCanvasKit";
 import { resolveTokenNumber, tokenPaintResolves, tokenTextStyleResolves } from "./renderAdapter";
 import { flattenPageNodeIds } from "./sceneQueries";
+
+/**
+ * Loud, renderer-state (not scene) diagnostic: the on-canvas text-measurement
+ * path is degraded. When CanvasKit or its fonts fail to load there is no font
+ * provider, so the CanvasKit measure-then-inject pass never runs and the wasm
+ * engine silently keeps its heuristic measurer — text can misfit or vanish
+ * with no signal. Emitted whenever the live measurement status is `heuristic`;
+ * returns `null` while measurement is exact (`skia`) or not yet resolved
+ * (`pending`). Unlike the advisories below this reflects the live renderer, so
+ * the editor feeds it the status observed in `loadCanvasKit`.
+ */
+export function heuristicMeasurementDiagnostic(
+  status: TextMeasurementStatus
+): Diagnostic | null {
+  if (status !== "heuristic") {
+    return null;
+  }
+  return {
+    severity: "error",
+    phase: "validation",
+    code: "EDITOR_HEURISTIC_MEASUREMENT",
+    message:
+      "Text measurement degraded — canvas geometry is approximate (font engine unavailable). " +
+      "The CanvasKit text engine or its fonts failed to load, so on-canvas text is laid out with a " +
+      "heuristic estimate and may misfit or not appear as it will on export.",
+    subject: { kind: "document" },
+    hint: "Reload the editor; if it persists, rebuild CanvasKit/font assets (npm run build:canvaskit && npm run build:fonts) and hard-refresh. Use export preview as the fidelity baseline meanwhile."
+  };
+}
 
 /** K1.5: a number token (radius/stroke-width/opacity/size-step) that the kit
  * map resolves is genuinely previewed — no fallback to report. */

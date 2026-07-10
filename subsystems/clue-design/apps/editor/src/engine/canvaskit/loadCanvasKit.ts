@@ -43,6 +43,48 @@ export interface LoadCanvasKitOptions {
 
 let bundlePromise: Promise<CanvasKitBundle | null> | null = null;
 
+/**
+ * Live status of the on-canvas text-measurement path. The wasm engine uses a
+ * crude heuristic measurer until a CanvasKit measurement pass feeds it real
+ * SkParagraph metrics (see `skiaMeasurements`); that pass only runs when this
+ * bundle resolves WITH a `fontProvider`. So this is the single observable
+ * signal for "is canvas text geometry exact or approximate?":
+ *   - `pending`   — no CanvasKit load has resolved yet (initial / not mounted).
+ *   - `skia`      — CanvasKit + a font provider are live; measurement is exact.
+ *   - `heuristic` — CanvasKit failed to load, OR the font (Inter/kit faces)
+ *                   could not be fetched, so no provider exists and the engine
+ *                   stays on the heuristic measurer. Text geometry is degraded.
+ * The editor subscribes to this to raise a loud, always-on banner rather than
+ * silently laying out (and sometimes dropping) text.
+ */
+export type TextMeasurementStatus = "pending" | "skia" | "heuristic";
+
+let textMeasurementStatus: TextMeasurementStatus = "pending";
+const measurementStatusListeners = new Set<() => void>();
+
+function setTextMeasurementStatus(next: TextMeasurementStatus): void {
+  if (next === textMeasurementStatus) {
+    return;
+  }
+  textMeasurementStatus = next;
+  for (const listener of measurementStatusListeners) {
+    listener();
+  }
+}
+
+/** Subscribe to text-measurement-status changes (useSyncExternalStore). */
+export function subscribeTextMeasurementStatus(listener: () => void): () => void {
+  measurementStatusListeners.add(listener);
+  return () => {
+    measurementStatusListeners.delete(listener);
+  };
+}
+
+/** Current text-measurement status (useSyncExternalStore snapshot). */
+export function textMeasurementStatusSnapshot(): TextMeasurementStatus {
+  return textMeasurementStatus;
+}
+
 /** One brand-kit font face for the canvas: raw TTF/OTF bytes registered
  * under the kit's declared family (paragraphs request that family after
  * K1.5 type resolution). `key` dedupes registration across kit refetches. */
@@ -98,6 +140,7 @@ export function resetCanvasKitForTests(): void {
   registeredKitFaceKeys.clear();
   pendingKitFaces = [];
   liveFontProvider = null;
+  setTextMeasurementStatus("pending");
 }
 
 async function initBundle(options: LoadCanvasKitOptions): Promise<CanvasKitBundle | null> {
@@ -110,7 +153,9 @@ async function initBundle(options: LoadCanvasKitOptions): Promise<CanvasKitBundl
     const init = options.init ?? (await defaultInit());
     ck = await init({ locateFile: (file: string) => `${baseUrl}/${file}` });
   } catch {
-    // CanvasKit unavailable → the editor stays on Konva.
+    // CanvasKit unavailable → the editor stays on Konva, and the measurement
+    // pass can never run, so on-canvas text geometry is heuristic. Make it loud.
+    setTextMeasurementStatus("heuristic");
     return null;
   }
 
@@ -122,6 +167,10 @@ async function initBundle(options: LoadCanvasKitOptions): Promise<CanvasKitBundl
     }
     pendingKitFaces = [];
   }
+  // Without a font provider the measure-then-inject pass (skiaMeasurements)
+  // short-circuits and the engine keeps its heuristic measurer — a silent
+  // degradation until now. Record the real state for the editor to surface.
+  setTextMeasurementStatus(fontProvider ? "skia" : "heuristic");
   return { ck, fontProvider };
 }
 

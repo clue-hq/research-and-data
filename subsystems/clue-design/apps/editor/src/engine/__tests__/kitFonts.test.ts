@@ -61,6 +61,64 @@ describe("kitFonts (K3 canvas leg)", () => {
     ]);
   });
 
+  it("surfaces a client diagnostic for each face whose bytes fail to load (no longer silent)", async () => {
+    const bytes = new ArrayBuffer(8);
+    const fetchImpl = vi.fn(async (input: URL | RequestInfo) => {
+      const url = String(input);
+      if (url.endsWith("/assets/asset_bold/bytes")) {
+        return { ok: false, status: 404 } as Response; // fetched, missing
+      }
+      if (url.endsWith("/assets/asset_regular/bytes")) {
+        throw new TypeError("network down"); // threw
+      }
+      return { ok: true, arrayBuffer: async () => bytes } as unknown as Response;
+    }) as unknown as typeof fetch;
+
+    const diagnostics: unknown[] = [];
+    await loadKitFontFaces(
+      {
+        apiBaseUrl: "http://api.test",
+        fetchImpl,
+        onFaceDiagnostic: (diagnostic) => diagnostics.push(diagnostic)
+      },
+      KIT
+    );
+
+    // Both declared+stored faces failed → one diagnostic each, none swallowed.
+    expect(diagnostics).toHaveLength(2);
+    expect(diagnostics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          severity: "warning",
+          code: "EDITOR_KIT_FONT_FACE_UNAVAILABLE",
+          subject: { kind: "asset", id: "asset_bold" }
+        }),
+        expect.objectContaining({
+          code: "EDITOR_KIT_FONT_FACE_UNAVAILABLE",
+          subject: { kind: "asset", id: "asset_regular" }
+        })
+      ])
+    );
+  });
+
+  it("reports no face diagnostics when every stored face loads", async () => {
+    const bytes = new ArrayBuffer(8);
+    const fetchImpl = vi.fn(
+      async () => ({ ok: true, arrayBuffer: async () => bytes }) as unknown as Response
+    ) as unknown as typeof fetch;
+    const diagnostics: unknown[] = [];
+    const registered = await loadKitFontFaces(
+      {
+        apiBaseUrl: "http://api.test",
+        fetchImpl,
+        onFaceDiagnostic: (diagnostic) => diagnostics.push(diagnostic)
+      },
+      KIT
+    );
+    expect(registered).toBe(true);
+    expect(diagnostics).toEqual([]);
+  });
+
   it("resolves false without touching the provider when the kit has no stored faces", async () => {
     const fetchImpl = vi.fn() as unknown as typeof fetch;
     expect(

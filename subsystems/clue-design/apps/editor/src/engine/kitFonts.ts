@@ -1,4 +1,5 @@
 import type { BrandKitDetailPayload } from "./tokenColors";
+import type { Diagnostic } from "./contracts";
 import { registerKitFontFaces } from "./canvaskit/loadCanvasKit";
 
 /**
@@ -49,13 +50,34 @@ export function collectKitFontFaceRefs(
 export interface LoadKitFontFacesOptions {
   apiBaseUrl: string;
   fetchImpl?: typeof fetch;
+  /**
+   * Called once per kit face that could NOT be fetched/registered. Previously
+   * these failures were swallowed (the face was skipped and the canvas kept a
+   * fallback), so the client stayed silent while the server logs LUMS0101 for
+   * the same miss. The editor passes a sink that surfaces these as client
+   * diagnostics so the client/server asymmetry is closed.
+   */
+  onFaceDiagnostic?: (diagnostic: Diagnostic) => void;
+}
+
+/** Client mirror of the server's LUMS0101 per-face warning: a declared kit
+ * face whose bytes could not be loaded, so canvas/DOM text keeps a fallback. */
+function kitFontFaceDiagnostic(ref: KitFontFaceRef, reason: string): Diagnostic {
+  return {
+    severity: "warning",
+    phase: "brand",
+    code: "EDITOR_KIT_FONT_FACE_UNAVAILABLE",
+    message: `Brand Kit font “${ref.family}” face ${ref.assetId} could not be loaded (${reason}); canvas and preview keep a fallback face for it.`,
+    subject: { kind: "asset", id: ref.assetId },
+    hint: "Re-attach the Brand Kit or confirm the font asset is present in the asset store; export uses the same faces."
+  };
 }
 
 /** Fetch + register the kit's faces. Resolves true when at least one new
  * face landed in a live provider (the caller should then invalidate text
  * measurement/render memos). */
 export async function loadKitFontFaces(
-  { apiBaseUrl, fetchImpl }: LoadKitFontFacesOptions,
+  { apiBaseUrl, fetchImpl, onFaceDiagnostic }: LoadKitFontFacesOptions,
   kit: BrandKitDetailPayload | null | undefined
 ): Promise<boolean> {
   const refs = collectKitFontFaceRefs(kit);
@@ -74,11 +96,16 @@ export async function loadKitFontFaces(
           new URL(`/assets/${encodeURIComponent(ref.assetId)}/bytes`, apiBaseUrl)
         );
         if (!response.ok) {
+          // No longer silent: report the miss the same way the server does.
+          onFaceDiagnostic?.(kitFontFaceDiagnostic(ref, `HTTP ${response.status}`));
           return null;
         }
         const bytes = await response.arrayBuffer();
         return { key: `${ref.family}@${ref.assetId}`, family: ref.family, bytes };
-      } catch {
+      } catch (error) {
+        onFaceDiagnostic?.(
+          kitFontFaceDiagnostic(ref, error instanceof Error ? error.message : "fetch failed")
+        );
         return null;
       }
     })

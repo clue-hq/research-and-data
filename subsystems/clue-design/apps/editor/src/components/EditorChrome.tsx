@@ -253,3 +253,36 @@ export function EngineDisabledBanner({
     </div>
   );
 }
+
+/**
+ * Loud, persistent banner shown when the on-canvas text-measurement path is
+ * degraded — CanvasKit or its fonts failed to load, so the wasm engine falls
+ * back to a heuristic text measurer. Without it that failure was silent: text
+ * laid out with approximate geometry and could even vanish, with no signal.
+ * Reuses the engine-disabled banner styling (same alert affordance) so no new
+ * visual token is introduced.
+ */
+export function HeuristicMeasurementBanner() {
+  return (
+    <div
+      className="engine-disabled-banner"
+      role="alert"
+      data-testid="heuristic-measurement-banner"
+    >
+      <AlertTriangle aria-hidden size={18} className="engine-disabled-banner-icon" />
+      <div className="engine-disabled-banner-body">
+        <strong>Text measurement degraded</strong>
+        <span>
+          Canvas geometry is approximate (font engine unavailable). On-canvas text is laid out with
+          a heuristic estimate and may misfit or not appear as it will on export. Reload the editor;
+          if it persists, rebuild the CanvasKit and font assets, then hard-refresh (⌘⇧R).
+        </span>
+        <code>
+          <span className="engine-disabled-banner-cmd">npm run build:canvaskit</span>
+          {" · "}
+          <span className="engine-disabled-banner-cmd">npm run build:fonts</span>
+        </code>
+      </div>
+    </div>
+  );
+}
