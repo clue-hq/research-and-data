@@ -92,7 +92,10 @@ def make_render_preview_tool(tools: LumenDesignTools):
         """Render the current scene to a validated PNG (and canonical SVG) on disk
         and return a compact text summary: artifact paths, dimensions, validation
         status, and any export diagnostics. Seeing the pixels is view("preview")'s
-        job — this tool never returns image blocks."""
+        job — this tool never returns image blocks.
+
+        Requires preflight_design after any scene mutation — export refuses
+        unresolved token paints."""
         return _render_preview_text(tools)
 
     return render_preview

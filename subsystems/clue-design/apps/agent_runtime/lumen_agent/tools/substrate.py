@@ -2178,9 +2178,59 @@ class LumenDesignTools:
         )
         return diagnostics
 
+    def _unresolved_token_paint_refusal(self, requested_format: str) -> Optional[str]:
+        """Loud refusal (mirrors the view('preview') staleness contract): if the
+        working scene still carries token PAINTS, rendering now would paint the
+        engine's magenta LUME0213 sentinel. Token resolution happens canonically
+        in `preflight_design` (its ordered side effects — retokenize on the
+        authored scene, the `authored_scene.json` snapshot the fidelity eval
+        reads, governance — must not be skipped), so we REFUSE here instead of
+        auto-resolving. Returns the error-payload JSON string to hand back to the
+        model, or None when every paint is already resolved.
+        """
+        refs = _unresolved_paint_refs(self.scene)
+        if not refs:
+            return None
+        named = "; ".join(f"{owner} -> ${token}" for owner, token in refs[:6])
+        more = "" if len(refs) <= 6 else f" (+{len(refs) - 6} more)"
+        message = (
+            f"Export refused: {len(refs)} unresolved token paint(s) remain — "
+            f"rendering now would paint the magenta LUME0213 sentinel. Offending "
+            f"(node, token): {named}{more}. Run preflight_design first (resolution "
+            f"happens there), then re-render."
+        )
+        self.latest_export_summary = None
+        self.latest_preview_bundle = None
+        summary = ExportSummary(
+            status=ToolStatus.error,
+            requested_format=requested_format,
+            validation_errors=[message],
+        )
+        payload = {"export": _dump(summary)}
+        self._write_json(self._iteration_dir() / "export.json", payload)
+        self.record(
+            "coordinator",
+            "export_refused_unresolved_tokens",
+            output_summary=message,
+            payload={
+                "requested_format": requested_format,
+                "unresolved_paint_refs": [
+                    {"owner": owner, "token": token} for owner, token in refs
+                ],
+            },
+        )
+        return json.dumps(payload, indent=2)
+
     def export_preview(self, export_format: Optional[str] = None) -> str:
-        """Export and validate an SVG or PNG preview for visual critique."""
+        """Export and validate an SVG or PNG preview for visual critique.
+
+        Requires `preflight_design` after any scene mutation — export refuses
+        unresolved token paints (which would otherwise render the LUME0213
+        magenta sentinel)."""
         preview_format = (export_format or self.config.preview_format).lower()
+        refusal = self._unresolved_token_paint_refusal(preview_format)
+        if refusal is not None:
+            return refusal
         iteration_dir = self._iteration_dir()
         try:
             response = self.core.export_preview(
@@ -2265,9 +2315,34 @@ class LumenDesignTools:
         bundle is intentionally not exposed as a valid critic/final preview.
         Use this after preflight errors so humans and agents can inspect the
         broken visual without weakening the acceptance gate.
+
+        Requires `preflight_design` after any scene mutation — the bundle refuses
+        unresolved token paints (which would otherwise render the LUME0213
+        magenta sentinel) with an honest error before any engine render.
         """
-        canonical = json.loads(self.export_preview("svg"))
         desired_critic_format = (critic_format or self.config.preview_format).lower()
+        refusal = self._unresolved_token_paint_refusal(desired_critic_format)
+        if refusal is not None:
+            export_summary = json.loads(refusal).get("export", {})
+            validation_errors = export_summary.get("validation_errors", [])
+            bundle = {
+                "debug_only": debug_only,
+                "debug_reason": debug_reason,
+                "canonical": export_summary,
+                "critic": export_summary,
+                "reviewer": {
+                    "status": ToolStatus.error.value,
+                    "requested_format": desired_critic_format,
+                    "artifacts": [],
+                    "validation_errors": validation_errors,
+                    "diagnostics": [],
+                },
+            }
+            self.latest_preview_bundle = None
+            self.latest_export_summary = None
+            self._write_json(self._iteration_dir() / "preview_bundle.json", bundle)
+            return json.dumps(bundle, indent=2)
+        canonical = json.loads(self.export_preview("svg"))
         critic = canonical
         if desired_critic_format != "svg":
             critic = json.loads(self.export_preview(desired_critic_format))
@@ -4028,6 +4103,100 @@ def declared_page_id(stripped_line: str) -> Optional[str]:
         return None
     parts = stripped_line.split()
     return parts[1] if len(parts) > 1 else None
+
+
+def _paint_token_refs(paint: Any) -> List[str]:
+    """Every still-tokenized reference inside ONE serialized paint.
+
+    Paints are internally-tagged serde enums (see `crates/lumen-core/src/scene.rs`,
+    `Paint`/`Color`). A token survives resolution in three shapes:
+
+      * ``Paint::Token``           -> ``{"kind": "token", "token": "surface.brand"}``
+      * ``Paint::Solid`` over ``Color::Token``
+            -> ``{"kind": "solid", "color": {"kind": "token", "token": ...}}``
+      * gradient stops over ``Color::Token``
+            -> ``{"kind": "linear_gradient"|"radial_gradient",
+                   "stops": [{"color": {"kind": "token", ...}, "position": ...}]}``
+
+    Resolved paints (hex/oklch solids, literal-color gradient stops) yield ``[]``.
+    Anything malformed (non-dict, missing keys, non-string token) is tolerated
+    and simply contributes no refs — this scanner never raises.
+    """
+    if not isinstance(paint, dict):
+        return []
+    refs: List[str] = []
+
+    def _token_of(candidate: Any) -> Optional[str]:
+        if (
+            isinstance(candidate, dict)
+            and candidate.get("kind") == "token"
+            and isinstance(candidate.get("token"), str)
+            and candidate.get("token")
+        ):
+            return candidate["token"]
+        return None
+
+    direct = _token_of(paint)
+    if direct is not None:
+        refs.append(direct)
+    solid = _token_of(paint.get("color"))
+    if solid is not None:
+        refs.append(solid)
+    stops = paint.get("stops")
+    if isinstance(stops, list):
+        for stop in stops:
+            if not isinstance(stop, dict):
+                continue
+            stop_token = _token_of(stop.get("color"))
+            if stop_token is not None:
+                refs.append(stop_token)
+    return refs
+
+
+def _fill_list_token_refs(owner: str, entries: Any) -> List[tuple[str, str]]:
+    """Token refs from a list of Fill/Stroke dicts (both wrap a `paint`)."""
+    out: List[tuple[str, str]] = []
+    if not isinstance(entries, list):
+        return out
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        for token in _paint_token_refs(entry.get("paint")):
+            out.append((owner, token))
+    return out
+
+
+def _unresolved_paint_refs(scene: Any) -> List[tuple[str, str]]:
+    """Every still-tokenized PAINT in a serialized scene, as
+    ``(node_id_or_page, token_ref)`` pairs.
+
+    Covers page background fills, node fills, and node strokes. Text color lives
+    on the text node's `fills`, so text fills are covered by the node-fills sweep.
+    Non-paint tokens (spacing/size/opacity/typography bindings) are deliberately
+    ignored: they do not blacken a raster and are `preflight_design`'s own
+    diagnostics' concern — only paints trigger the engine's magenta LUME0213
+    sentinel at raster. Tolerant of malformed scenes/pages/nodes (never raises).
+    """
+    if not isinstance(scene, dict):
+        return []
+    refs: List[tuple[str, str]] = []
+    pages = scene.get("pages")
+    if isinstance(pages, dict):
+        for page_id, page in pages.items():
+            if not isinstance(page, dict):
+                continue
+            refs.extend(
+                _fill_list_token_refs(f"page:{page_id}", page.get("background"))
+            )
+    nodes = scene.get("nodes")
+    if isinstance(nodes, dict):
+        for node_id, node in nodes.items():
+            if not isinstance(node, dict):
+                continue
+            owner = str(node_id)
+            refs.extend(_fill_list_token_refs(owner, node.get("fills")))
+            refs.extend(_fill_list_token_refs(owner, node.get("strokes")))
+    return refs
 
 
 def _dump(model: Any) -> JsonObject:
