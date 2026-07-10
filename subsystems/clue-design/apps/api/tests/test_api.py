@@ -1166,6 +1166,69 @@ def test_agent_response_edit_applied_maps_to_proposed_with_advisory_diagnostics(
     assert advisory[0]["hint"] == "regenerate the hero"
 
 
+def test_agent_response_clarification_requested_round_trips(tmp_path) -> None:
+    # Brief clarification (honest turn outcome #3): the harness's
+    # clarification_requested envelope maps to an editor response that carries
+    # the questions and proposes NO operations — the turn asked, it did not
+    # author. Mirrors how run_deepagent_turn returns final.json verbatim.
+    from lumen_api.main import agent_response_from_trace
+
+    # An operations ledger from an earlier design is irrelevant to a
+    # clarification turn — the branch fires before any op scrape.
+    write_iteration_compile(
+        tmp_path, 1, [{"kind": "update_node", "node_id": "headline"}]
+    )
+    result = {
+        "run_id": "run_clarify",
+        "status": "clarification_requested",
+        "stop_reason": "clarification_requested",
+        "outcome": "clarification_requested",
+        "summary": "Before I design this, a couple of quick decisions...",
+        "clarification": {
+            "questions": [
+                {
+                    "id": "format",
+                    "question": "What surface is this for?",
+                    "why_it_matters": "It fixes the canvas size.",
+                    "options": ["Instagram square", "LinkedIn landscape"],
+                    "default": "an Instagram square (1080x1080)",
+                    "allow_freeform": True,
+                }
+            ]
+        },
+    }
+
+    response = agent_response_from_trace(result, tmp_path)
+
+    assert response["status"] == "clarification_requested"
+    assert response["stop_reason"] == "clarification_requested"
+    assert response["run_id"] == "run_clarify"
+    # The questions ride through intact.
+    questions = response["clarification"]["questions"]
+    assert len(questions) == 1
+    assert questions[0]["id"] == "format"
+    assert questions[0]["default"] == "an Instagram square (1080x1080)"
+    # Nothing to apply — asking is not authoring.
+    assert response["operations"] == []
+    assert response["artifacts"] == []
+    assert response["draft_scene"] is None
+
+
+def test_agent_turn_preview_request_accepts_previous_turn_outcome() -> None:
+    # The one-round-per-turn signal the editor echoes back rides on the request
+    # model (None by default; set to "clarification_requested" on the reply turn).
+    from lumen_api.models import AgentTurnPreviewRequest
+
+    default = AgentTurnPreviewRequest(prompt="x", scene={})
+    assert default.previous_turn_outcome is None
+    echoed = AgentTurnPreviewRequest(
+        prompt="Instagram square, lead with the benefit",
+        scene={},
+        previous_turn_outcome="clarification_requested",
+    )
+    assert echoed.previous_turn_outcome == "clarification_requested"
+
+
 def test_agent_response_completed_with_warnings_maps_to_proposed(tmp_path) -> None:
     # Agent-quality: a run that exhausts its repair budget holding a
     # preflight-clean best draft finalizes as `completed_with_warnings`. That

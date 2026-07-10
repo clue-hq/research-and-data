@@ -75,6 +75,39 @@ class VisualCritique(BaseModel):
         return min(1.0, max(0.0, value))
 
 
+class ClarificationQuestion(BaseModel):
+    """One brief-clarification question the orchestrator asks the user before
+    spending any authoring effort. Every question MUST carry a `default` — the
+    "if you don't care, I'll do X" fallback — so an unanswered question never
+    blocks the design (see the clarify-design-brief skill)."""
+
+    id: str
+    question: str
+    why_it_matters: str
+    options: List[str] = Field(default_factory=list)
+    default: str
+    allow_freeform: bool = True
+
+    @field_validator("id", "question", "why_it_matters", "default")
+    @classmethod
+    def _reject_blank(cls, value: str) -> str:
+        # A blank default is meaningless ("if you don't care, I'll do <blank>"),
+        # and an id/question/why with no content cannot be rendered — reject
+        # loudly at construction so the tool returns a machine-readable error the
+        # model can fix, never a silently-degraded question.
+        if not isinstance(value, str) or not value.strip():
+            raise ValueError("must be a non-empty string")
+        return value
+
+
+class ClarificationRequest(BaseModel):
+    """The `request_clarification` tool payload. At most FOUR questions, at least
+    one, each with a non-empty default — the design note's ratified cap
+    (one round per turn, max 4 questions, defaults not interrogation)."""
+
+    questions: List[ClarificationQuestion] = Field(min_length=1, max_length=4)
+
+
 class KnowledgeSnippet(BaseModel):
     path: str
     title: str

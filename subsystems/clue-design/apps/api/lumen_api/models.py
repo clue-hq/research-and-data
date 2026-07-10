@@ -122,6 +122,12 @@ class AgentTurnPreviewRequest(BaseModel):
     # Editor model picker: a runtime model id ("openai:<openrouter-id>" /
     # "anthropic:<id>"); None = the runtime's configured default.
     model: Optional[str] = None
+    # Brief clarification (one-round-per-turn guard): the honest outcome of the
+    # PREVIOUS turn on this document, echoed back by the editor. When it is
+    # "clarification_requested", the harness withholds the request_clarification
+    # tool this turn — the agent must design from the user's answer, never ask a
+    # second round. None/absent → an ordinary turn (the tool is available).
+    previous_turn_outcome: Optional[str] = None
 
 
 class SetAgentInstructionsRequest(BaseModel):

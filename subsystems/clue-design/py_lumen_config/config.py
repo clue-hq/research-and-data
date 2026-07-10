@@ -103,6 +103,12 @@ class Settings(BaseSettings):
     # request (provider default: no extended thinking). Applied in init_model
     # for whatever model id is configured — one mechanism for all models.
     lumen_agent_reasoning: str | None = None
+    # Brief-clarification headless/eval mode. When true, the orchestrator NEVER
+    # gets the `request_clarification` tool: it applies the clarify-design-brief
+    # skill's defaults and records each assumption via record_gap so results stay
+    # comparable across a sweep. Probes/sweeps set LUMEN_AGENT_AUTO_DEFAULTS=1;
+    # live editor runs leave it off so the agent can ask.
+    lumen_agent_auto_defaults: bool = False
     # Read by langchain directly from os.environ; declared here for visibility.
     anthropic_api_key: str | None = None
 

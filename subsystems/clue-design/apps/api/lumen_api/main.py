@@ -4053,11 +4053,18 @@ def run_agent_turn_preview(
             api_key=config.agent_api_key,
         )
         prompt = editor_agent_prompt(payload)
+        # One-round-per-turn: if the previous turn asked the user to clarify, the
+        # harness withholds request_clarification so this turn designs from the
+        # answer instead of asking again (structural, not a prompt nudge).
+        clarification_already_requested = (
+            payload.previous_turn_outcome == "clarification_requested"
+        )
         payload_result, tools = run_deepagent_turn(
             prompt,
             config,
             initial_scene=agent_seed_scene(payload),
             event_sink=event_sink,
+            clarification_already_requested=clarification_already_requested,
         )
     except Exception as error:
         return failed_agent_turn_response(
@@ -4322,6 +4329,31 @@ def scene_context_summary(scene: JsonObject) -> JsonObject:
 def agent_response_from_trace(
     result: JsonObject, trace_dir: Path, draft_scene: Optional[JsonObject] = None
 ) -> JsonObject:
+    # Honest turn outcome #3: the orchestrator asked the user to clarify the
+    # brief before authoring. No operations, no artifacts — the envelope carries
+    # the questions; the editor chat renders them (as text pre-R2, chips after).
+    if result.get("outcome") == "clarification_requested":
+        clarification = result.get("clarification")
+        if not isinstance(clarification, dict):
+            clarification = {"questions": []}
+        return {
+            "schema_version": 1,
+            "status": "clarification_requested",
+            "summary": result.get("summary")
+            or "The agent needs a few decisions before it designs this.",
+            "run_id": result.get("run_id"),
+            "trace_dir": str(trace_dir),
+            "preview_paths": [],
+            "dsl_blocks": [],
+            "operations": [],
+            "draft_scene": None,
+            "acceptance_scope": None,
+            "stop_reason": "clarification_requested",
+            "clarification": clarification,
+            "diagnostics": [],
+            "artifacts": [],
+        }
+
     operations: List[JsonObject] = []
     dsl_blocks: List[str] = []
     diagnostics: List[JsonObject] = []

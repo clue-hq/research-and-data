@@ -241,6 +241,10 @@ def test_tool_surfaces_are_exactly_the_ledger(tmp_path, monkeypatch):
         "inspect",
         "preflight_design",
         "record_gap",
+        # Brief clarification (opening-move only): present on a default turn —
+        # withheld under auto_defaults or after a prior clarification round (see
+        # test_clarification.py for the two absence cases).
+        "request_clarification",
         "finalize_run",
     }
 

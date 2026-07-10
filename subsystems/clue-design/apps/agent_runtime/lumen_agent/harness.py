@@ -62,9 +62,18 @@ def create_design_deepagent(
     config: AgentRuntimeConfig | None = None,
     initial_scene: dict | None = None,
     event_sink=None,
+    *,
+    clarification_already_requested: bool = False,
 ) -> tuple[Any, LumenDesignTools]:
     """Build the v0 deepagent + substrate. Mirrors
     factory.create_lumen_design_agent's signature so callers can swap.
+
+    `clarification_already_requested` is the STRUCTURAL one-round-per-turn guard:
+    when the PREVIOUS turn ended `clarification_requested`, this turn does NOT get
+    the `request_clarification` tool — the orchestrator must design from the
+    user's answer, recording any residual assumption via record_gap (never a
+    second question round). The API sets it from the turn request's
+    `previous_turn_outcome`.
     """
     try:
         from deepagents import create_deep_agent
@@ -192,19 +201,34 @@ def create_design_deepagent(
         },
     ]
 
+    orchestrator_tools = [
+        view,
+        render_preview,
+        tools.inspect,
+        tools.preflight_design,
+        tools.record_gap,
+        tools.finalize_run,
+    ]
+    # Brief clarification (opening-move only): the orchestrator may ask the user
+    # up to 4 questions on a genuinely under-specified brief. Two structural
+    # suppressors keep it honest and bounded, both decided BEFORE any LLM call:
+    #   1. auto_defaults (LUMEN_AGENT_AUTO_DEFAULTS=1) — headless/eval mode: apply
+    #      the skill's defaults + record_gap per assumption, never ask.
+    #   2. clarification_already_requested — the previous turn already asked;
+    #      one round per turn, so the tool is simply absent this turn.
+    # Tool-absence (not a prompt "please don't") is the enforcement: the model
+    # cannot ask what it cannot call. The clarify-design-brief skill carries the
+    # derive-first protocol and zero-question rules.
+    if not runtime_config.auto_defaults and not clarification_already_requested:
+        # Insert before finalize_run so the honest exits sit together at the tail.
+        orchestrator_tools.insert(len(orchestrator_tools) - 1, tools.request_clarification)
+
     agent = create_deep_agent(
         model=orchestrator_model,
         backend=backend,
         state_schema=LumenTurnState,
         permissions=_filesystem_permissions(),
-        tools=[
-            view,
-            render_preview,
-            tools.inspect,
-            tools.preflight_design,
-            tools.record_gap,
-            tools.finalize_run,
-        ],
+        tools=orchestrator_tools,
         system_prompt=build_orchestrator_prompt(workspace_str),
         subagents=subagents,
         name="lumen-design-deepagent",
@@ -220,15 +244,25 @@ def run_deepagent_turn(
     config: AgentRuntimeConfig | None = None,
     initial_scene: dict | None = None,
     event_sink=None,
+    *,
+    clarification_already_requested: bool = False,
 ) -> tuple[dict, LumenDesignTools]:
     """Create + invoke + guarantee an honest finalize payload.
 
-    Returns (finalize_payload_dict, tools). If the orchestrator finalized,
-    trust its `final.json`. If it never finalized (crash, recursion limit,
-    model error), finalize "failed" honestly here — never fabricate success.
+    Returns (finalize_payload_dict, tools). If the orchestrator finalized (or
+    requested clarification), trust its `final.json`. If it never finalized
+    (crash, recursion limit, model error), finalize "failed" honestly here —
+    never fabricate success.
+
+    `clarification_already_requested` rides through to the harness's structural
+    one-round-per-turn guard (see create_design_deepagent).
     """
     agent, tools = create_design_deepagent(
-        prompt, config=config, initial_scene=initial_scene, event_sink=event_sink
+        prompt,
+        config=config,
+        initial_scene=initial_scene,
+        event_sink=event_sink,
+        clarification_already_requested=clarification_already_requested,
     )
 
     tools.record(

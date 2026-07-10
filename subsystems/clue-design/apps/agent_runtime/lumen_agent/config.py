@@ -70,6 +70,12 @@ class AgentRuntimeConfig:
     agent_model_orchestrator: str | None = None
     agent_model_author: str | None = None
     agent_model_reviewer: str | None = None
+    # Brief-clarification headless/eval mode (LUMEN_AGENT_AUTO_DEFAULTS=1). When
+    # true, the harness does NOT register `request_clarification` on the
+    # orchestrator: it applies the skill's defaults and ledgers each assumption
+    # via record_gap. Probes/sweeps run with this ON so results stay comparable;
+    # live editor runs leave it OFF so the agent can ask a vague brief.
+    auto_defaults: bool = False
 
     @classmethod
     def from_env(cls, repo_root: Path | None = None) -> "AgentRuntimeConfig":
@@ -88,6 +94,7 @@ class AgentRuntimeConfig:
             agent_model_orchestrator=settings.lumen_agent_model_orchestrator,
             agent_model_author=settings.lumen_agent_model_author,
             agent_model_reviewer=settings.lumen_agent_model_reviewer,
+            auto_defaults=settings.lumen_agent_auto_defaults,
         )
 
     @property

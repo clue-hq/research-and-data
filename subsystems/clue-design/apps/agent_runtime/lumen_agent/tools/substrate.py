@@ -26,7 +26,10 @@ from ..retokenize import (
 )
 from ..brand_card import build_brand_card
 from ..knowledge import BRAND_APPLICATION_PATH, DIRECTIVES_PATH, read_task_knowledge
+from pydantic import ValidationError
+
 from ..models.schemas import (
+    ClarificationRequest,
     CompileSummary,
     DiagnosticSeverity,
     DiagnosticSummary,
@@ -3348,6 +3351,99 @@ class LumenDesignTools:
             },
             indent=2,
         )
+
+    def request_clarification(self, questions: List[Dict[str, Any]]) -> str:
+        """Ask the user up to FOUR clarifying questions, then STOP — calling this
+        ENDS THE TURN. Use it only as an OPENING MOVE on a genuinely
+        under-specified brief, before any authoring, rendering, or finalize
+        cost — never mid-design. Ask ONLY for decision-critical facts you cannot
+        derive from the prompt, conversation, document, or brand kit (asking
+        about something derivable is a failure). Read the clarify-design-brief
+        skill for the spec table and the derive-first protocol.
+
+        `questions` is a list of at most 4 objects, each:
+          - id: short stable key (e.g. "format", "message_focus")
+          - question: the question, in plain language
+          - why_it_matters: one line on why the answer changes the design
+          - options: optional list of suggested answers (chips)
+          - default: REQUIRED — the "if you don't care, I'll do X" fallback so
+            an unanswered question never blocks the design
+          - allow_freeform: whether a typed answer is accepted (default true)
+
+        After calling this, do NOT author, render, or finalize — the user's next
+        message answers the questions and that turn continues the design. Never
+        re-ask a question a previous turn already answered.
+        """
+        try:
+            request = ClarificationRequest(questions=questions)  # type: ignore[arg-type]
+        except ValidationError as error:
+            # House style: a bad payload is a machine-readable error the model can
+            # read and retry, never a raised exception that kills the turn.
+            return self._tool_error(
+                "clarification.invalid_payload",
+                "request_clarification payload is invalid. Provide 1-4 questions, "
+                "each with a non-empty `default` ('if you don't care, I'll do X').",
+                errors=[
+                    {
+                        "loc": list(item.get("loc", ())),
+                        "msg": item.get("msg", ""),
+                        "type": item.get("type", ""),
+                    }
+                    for item in error.errors()
+                ],
+            )
+        questions_payload = [q.model_dump(mode="json") for q in request.questions]
+        summary = self._render_clarification_text(questions_payload)
+        # Honest turn outcome #3 (sibling of finalize_run's accepted/failed/...):
+        # `clarification_requested`. Written to the SAME final.json the runner
+        # reads, so run_deepagent_turn returns it verbatim and the API renders a
+        # clarification envelope — no authoring, no operations, nothing applied.
+        payload = {
+            "run_id": self.run_id,
+            "status": "clarification_requested",
+            "stop_reason": "clarification_requested",
+            "outcome": "clarification_requested",
+            "summary": summary,
+            "clarification": {"questions": questions_payload},
+            "final_scene_summary": self._scene_summary(),
+            "effective_brand": self.effective_brand_context,
+            "preview_paths": self.preview_paths,
+            "gaps": self.gaps,
+            "seeded_from_initial_scene": self.seeded_from_initial_scene,
+        }
+        self._write_json(self.trace_dir / "final.json", payload)
+        self.record(
+            "coordinator",
+            "clarification_requested",
+            output_summary=f"asked {len(questions_payload)} clarifying question(s)",
+            payload=payload,
+        )
+        return json.dumps(payload, indent=2)
+
+    @staticmethod
+    def _render_clarification_text(questions: List[JsonObject]) -> str:
+        """A plain-text rendering of the questions for the editor chat surface.
+
+        Until the restyle R2 AI-Elements chat lands (option chips + freeform),
+        the envelope's `summary` is shown as text — so it must read as a natural
+        chat message, defaults-not-interrogation."""
+        lines = [
+            "Before I design this, a couple of quick decisions. Answer any of "
+            "them, or just say \"go with your defaults\" and I'll proceed:",
+            "",
+        ]
+        for index, question in enumerate(questions, start=1):
+            lines.append(f"{index}. {question.get('question', '')}")
+            why = question.get("why_it_matters")
+            if why:
+                lines.append(f"   Why it matters: {why}")
+            options = question.get("options") or []
+            if options:
+                lines.append(f"   Options: {' / '.join(str(o) for o in options)}")
+            default = question.get("default")
+            if default:
+                lines.append(f"   If you don't care, I'll do: {default}")
+        return "\n".join(lines)
 
     def finalize_run(
         self,
