@@ -432,3 +432,26 @@ Behavior note: author/reviewer now see ALL skills via progressive disclosure
 (name+description until invoked) instead of the old per-role lists — the role
 prompts still name each role's primary skills. `.env`s carrying the old
 `LUMEN_AGENT_TRACE_DIR=.lumen-runs` default should unset it to get isolation.
+
+## Observability: structlog + CLI message tracing (2026-07-11, gate verified)
+
+One shared module (`py_lumen_obs/`, commit 5cc24f7) owns ALL logging: the sole
+structlog.configure, stdlib bridge (uvicorn included), LUMEN_LOG_MODE
+info|debug, mode-independent redaction (secrets masked even in debug; base64 →
+placeholders; message content never redacted), per-handler truncation (console
+truncates, run-file never), contextvar binders, log_span, pytest capture.
+Adoption (d68bd1c): every run writes `run_<id>/logs/run.jsonl` (full detail,
+wired at run_deepagent_turn so CLI and API turns both get it); cli defaults
+debug; log_span on all agent-visible tools + a single _CoreHelperProxy seam —
+a hung helper/LLM call is now a `*_started` with no completion (hang
+forensics for the 2026-07-10 silent-hour class). TraceCallbackHandler per
+role (images placeholdered BEFORE logging since content is redaction-exempt)
++ `python -m lumen_agent.trace <run_id> [--follow|--full|--role]` renders the
+role-colored conversation timeline with token/duration totals (rich, ANSI
+fallback). API side (190887b): lumen_api's private formatter deleted,
+request_id is a contextvar, uvicorn bridged (only its two pre-lifespan boot
+lines stay raw), debug http_request_summary on /agent + /documents.
+Suites at gate: agent-runtime 411, api 291 (+3 new), zero regressions.
+Still open (awaiting user go): init_model timeout/retries + turn wall-clock
+watchdog — tracing makes hangs visible; the watchdog will make them
+fatal-fast.
