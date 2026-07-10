@@ -76,6 +76,17 @@ pub fn layout_scene(scene: &Scene, options: LayoutOptions) -> LayoutResult {
         .map(|measurer| measurer as &dyn TextMeasurer)
         .unwrap_or(&FALLBACK_MEASURER);
     let mut engine = LayoutEngine::new(scene, measurer);
+    // Loud, never-silent signal that this pass measured text without font
+    // shaping (LUMS0102): the heuristic measurer approximates glyph advances,
+    // so every text box, wrap, and overflow verdict below is geometry-
+    // approximate. Server paths inject a shaping (Skia) measurer, so they
+    // report `shaping() == true` and never emit this. Modeled on LUMS0101's
+    // "degraded but never silent" pattern.
+    if !measurer.shaping() {
+        engine
+            .diagnostics
+            .push(crate::text_measure::heuristic_measurement_diagnostic());
+    }
     engine.layout_pages();
     engine.validate_artboard_bounds();
     engine.validate_layout_anchors();
@@ -1041,6 +1052,21 @@ impl<'a> LayoutEngine<'a> {
             let measured = self.measurer.measure(
                 &TextMeasureInput::from_text_node(text).with_bounds(&geometry.layout_bounds),
             );
+            // Fold measurement-time font diagnostics (LUMS0100 whole-family
+            // fallback, LUMS0103 per-glyph substitution) into the layout
+            // result so missing fonts surface at preflight, not only at
+            // export. Re-subject them to this node (the measurer reports them
+            // document-scoped) so they match the render path's emission and
+            // dedupe against it.
+            for diagnostic in &measured.diagnostics {
+                let diagnostic = Diagnostic {
+                    subject: Some(DiagnosticSubject::Node(node.id.clone())),
+                    ..diagnostic.clone()
+                };
+                if !self.diagnostics.contains(&diagnostic) {
+                    self.diagnostics.push(diagnostic);
+                }
+            }
             // Freehand text-fit policy (Phase 1d, user decision): a human
             // resizing a pinned text box below its content is explicit
             // intent — the canvas shows the true truncation, so text-fit

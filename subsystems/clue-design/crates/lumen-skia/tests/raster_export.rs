@@ -5,9 +5,10 @@
 //! Phase E fixture).
 
 use lumen_core::{
-    Color, ComputedGeometry, DocumentId, ExportAdapter, ExportFormat, ExportProfile, ExportPurpose,
-    ExportRequest, Fill, Node, NodeId, NodeKind, Orientation, Page, PageId, PagePreset, PageSize,
-    Paint, PaintId, RasterScale, Rect, Scene, SizeSpec, TextNode, Transform, Unit,
+    Color, ComputedGeometry, DiagnosticSeverity, DocumentId, ExportAdapter, ExportFormat,
+    ExportProfile, ExportPurpose, ExportRequest, Fill, Node, NodeId, NodeKind, Orientation, Page,
+    PageId, PagePreset, PageSize, Paint, PaintId, RasterScale, Rect, Scene, SizeSpec, TextNode,
+    Transform, Unit,
 };
 use lumen_export::{FixtureAssetResolver, LumenExportAdapter};
 use lumen_skia::{FontManager, SkiaSceneRenderer, SkiaTextMeasurer};
@@ -364,4 +365,120 @@ fn png_artifacts_carry_sidecar_with_slot_keys() {
         .as_ref()
         .expect("sidecar present");
     assert!(sidecar.contains("\"contact.full_name\""));
+}
+
+/// A page with no children and no background must raster as blank white
+/// paper, never a black frame. Regression for the archetype-baseline-sweep
+/// "empty page rasterizes as a solid black 1080² frame" failure: the raster
+/// surface is now cleared to opaque white paper instead of transparent
+/// (which flattens to black in any viewer that composites onto black).
+#[test]
+fn empty_page_rasters_as_white_paper_not_black() {
+    let mut scene = Scene::new(DocumentId::from("doc_empty_page"), "Empty Page");
+    scene.pages.insert(
+        PageId::from("page_empty"),
+        Page {
+            id: PageId::from("page_empty"),
+            name: "Empty".to_owned(),
+            size: PageSize {
+                width: 128.0,
+                height: 128.0,
+                unit: Unit::Px,
+                preset: Some(PagePreset::Custom),
+                orientation: Orientation::Portrait,
+                source: None,
+                output: None,
+            },
+            children: vec![],
+            bleed: None,
+            safe_area: None,
+            background: vec![],
+        },
+    );
+
+    let result = composed_adapter(LumenExportAdapter::new())
+        .export(&scene, &png_request("page_empty"))
+        .expect("export");
+    let rgba = decode_rgba(&result.artifacts[0].bytes);
+
+    // Every corner and the center are opaque white — no black anywhere.
+    for (x, y) in [(0, 0), (127, 0), (0, 127), (127, 127), (64, 64)] {
+        assert_eq!(
+            rgba.pixel(x, y),
+            [255, 255, 255, 255],
+            "empty page pixel ({x},{y}) must be white paper"
+        );
+    }
+}
+
+/// A *specified* fill that cannot resolve (unresolved brand token) must paint
+/// the visible magenta sentinel AND raise the LUME0213 error — it must never
+/// silently vanish into a transparent (black-reading) hole. Regression for
+/// the "unresolved tokens paint black at raster" failure class.
+#[test]
+fn unresolved_token_fill_paints_visible_sentinel_and_errors() {
+    let mut scene = Scene::new(DocumentId::from("doc_token_fill"), "Token Fill");
+    scene.pages.insert(
+        PageId::from("page_square"),
+        // Note: empty background, so the artboard node fill is the only paper.
+        Page {
+            id: PageId::from("page_square"),
+            name: "Square".to_owned(),
+            size: PageSize {
+                width: 100.0,
+                height: 100.0,
+                unit: Unit::Px,
+                preset: Some(PagePreset::Custom),
+                orientation: Orientation::Portrait,
+                source: None,
+                output: None,
+            },
+            children: vec![NodeId::from("node_artboard")],
+            bleed: None,
+            safe_area: None,
+            background: vec![],
+        },
+    );
+    let mut node = Node::new(NodeId::from("node_artboard"), NodeKind::Rect);
+    node.size = SizeSpec::fixed(100.0, 100.0);
+    node.computed = Some(ComputedGeometry {
+        layout_bounds: Rect {
+            x: 0.0,
+            y: 0.0,
+            width: 100.0,
+            height: 100.0,
+        },
+        render_bounds: Rect {
+            x: 0.0,
+            y: 0.0,
+            width: 100.0,
+            height: 100.0,
+        },
+    });
+    node.fills = vec![Fill {
+        id: PaintId::from("paint_token_fill"),
+        paint: Paint::Solid {
+            color: Color::Token {
+                token: "$surface.page".to_owned(),
+            },
+        },
+    }];
+    scene.nodes.insert(node.id.clone(), node);
+
+    let result = composed_adapter(LumenExportAdapter::new())
+        .export(&scene, &png_request("page_square"))
+        .expect("export");
+    let rgba = decode_rgba(&result.artifacts[0].bytes);
+
+    // The artboard reads as the opaque magenta sentinel, not black/transparent.
+    assert_eq!(
+        rgba.pixel(50, 50),
+        [255, 0, 255, 255],
+        "unresolved fill must paint the visible magenta sentinel"
+    );
+
+    // ...and the loud LUME0213 error fires so the reviewer is never blinded.
+    let sentinel_error = result.diagnostics.iter().find(|d| d.code == "LUME0213");
+    let sentinel_error = sentinel_error.expect("LUME0213 error must be emitted");
+    assert_eq!(sentinel_error.severity, DiagnosticSeverity::Error);
 }

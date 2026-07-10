@@ -66,6 +66,17 @@ impl ExportAdapter for SvgExportAdapter {
         }
 
         let mut diagnostics = resolved.diagnostics;
+        // LUMS0102: this export shapes text with the heuristic fallback (no
+        // measurer injected, or a non-shaping one), so line breaks in the SVG
+        // markup are geometry-approximate. Emitted once per export; server
+        // paths inject SkiaTextMeasurer and never reach this branch.
+        if !self
+            .measurer
+            .as_deref()
+            .is_some_and(|measurer| measurer.shaping())
+        {
+            diagnostics.push(lumen_core::heuristic_measurement_diagnostic());
+        }
         let mut artifacts = Vec::new();
 
         for page_id in &resolved.page_ids {

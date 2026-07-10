@@ -25,6 +25,23 @@ use std::sync::Arc;
 /// Server-computed geometry stays authoritative for text-dependent layout.
 pub const TEXT_MEASUREMENT: &str = "heuristic";
 
+/// Drop the LUMS0102 "measured heuristically" notice from wasm read-only
+/// diagnostics. In the browser, heuristic measurement is the DECLARED,
+/// documented mode (`text_measurement: "heuristic"` rides every payload), and
+/// the editor already synthesizes its own loud client-side
+/// EDITOR_HEURISTIC_MEASUREMENT signal from that field. Surfacing LUMS0102 here
+/// too would double-report the identical fact. lumen-core still emits it — this
+/// suppression is scoped to the wasm boundary, where it is redundant, not to
+/// the diagnostic itself.
+fn without_heuristic_measurement_notice(
+    diagnostics: Vec<lumen_core::Diagnostic>,
+) -> Vec<lumen_core::Diagnostic> {
+    diagnostics
+        .into_iter()
+        .filter(|diagnostic| diagnostic.code != "LUMS0102")
+        .collect()
+}
+
 /// Version handshake payload (Track E Decision 4). The editor compares this
 /// against the API's build info and downgrades to server-only mode on any
 /// mismatch.
@@ -321,7 +338,7 @@ impl Engine {
         let result = layout_scene(&self.scene, LayoutOptions::default());
         json!({
             "geometry": result.geometry,
-            "diagnostics": result.diagnostics,
+            "diagnostics": without_heuristic_measurement_notice(result.diagnostics),
             "text_measurement": TEXT_MEASUREMENT,
         })
         .to_string()
@@ -334,7 +351,7 @@ impl Engine {
         let result = preflight_scene(self.scene.clone(), None, PreflightOptions::default());
         json!({
             "has_errors": result.has_errors(),
-            "diagnostics": result.diagnostics,
+            "diagnostics": without_heuristic_measurement_notice(result.diagnostics),
             "text_measurement": TEXT_MEASUREMENT,
         })
         .to_string()

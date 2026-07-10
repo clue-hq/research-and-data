@@ -28,6 +28,10 @@ fn skia_measurer() -> SharedTextMeasurer {
 }
 
 fn text_scene(width: f64) -> Scene {
+    text_scene_family(width, "Inter")
+}
+
+fn text_scene_family(width: f64, font_family: &str) -> Scene {
     let mut scene = Scene::new(DocumentId::from("doc_injection"), "Injection");
     let mut text_node = Node::new(
         NodeId::from("node_text"),
@@ -36,6 +40,7 @@ fn text_scene(width: f64) -> Scene {
             wrap: TextWrap::Wrap,
             font_size: 20.0,
             line_height: 1.5,
+            font_family: font_family.to_owned(),
             ..TextNode::default()
         }),
     );
@@ -96,6 +101,98 @@ fn layout_scene_uses_injected_measurer_for_text_validation() {
         has_code(&skia_result.diagnostics, "LUMV0903"),
         "Skia measurement must catch the wrap-induced overflow: {:?}",
         skia_result.diagnostics
+    );
+}
+
+#[test]
+fn heuristic_layout_emits_lums0102_and_skia_does_not() {
+    let scene = text_scene(BOX_WIDTH);
+
+    // Non-shaping (heuristic) measurement is loud: LUMS0102 fires so the
+    // approximate geometry is never silent.
+    let heuristic = layout_scene(&scene, LayoutOptions::default());
+    assert!(
+        has_code(&heuristic.diagnostics, "LUMS0102"),
+        "heuristic layout must warn LUMS0102: {:?}",
+        heuristic.diagnostics
+    );
+
+    // The server injects a shaping measurer: ZERO LUMS0102 (the Task 2.4
+    // regression invariant).
+    let skia = layout_scene(
+        &scene,
+        LayoutOptions {
+            measurer: Some(skia_measurer()),
+            ..Default::default()
+        },
+    );
+    assert!(
+        !has_code(&skia.diagnostics, "LUMS0102"),
+        "shaping layout must NOT warn LUMS0102: {:?}",
+        skia.diagnostics
+    );
+}
+
+#[test]
+fn skia_measurement_surfaces_lums0100_from_layout() {
+    // A missing font family must surface at layout/preflight (via measurement),
+    // not only at export. The heuristic has no font set, so it cannot see it.
+    let scene = text_scene_family(BOX_WIDTH, "Comic Sans MS");
+
+    let heuristic = layout_scene(&scene, LayoutOptions::default());
+    assert!(
+        !has_code(&heuristic.diagnostics, "LUMS0100"),
+        "heuristic cannot detect a missing font: {:?}",
+        heuristic.diagnostics
+    );
+
+    let skia = layout_scene(
+        &scene,
+        LayoutOptions {
+            measurer: Some(skia_measurer()),
+            ..Default::default()
+        },
+    );
+    assert!(
+        has_code(&skia.diagnostics, "LUMS0100"),
+        "Skia measurement must surface the whole-family fallback: {:?}",
+        skia.diagnostics
+    );
+}
+
+#[test]
+fn svg_export_emits_lums0102_only_without_a_shaping_measurer() {
+    let scene = text_scene(BOX_WIDTH);
+    let request = ExportRequest {
+        profile: ExportProfile {
+            name: "svg_lums0102".to_owned(),
+            format: ExportFormat::Svg,
+            pdf_intent: None,
+            raster: None,
+            include_bleed: false,
+            embed_fonts: false,
+        },
+        page_ids: vec![PageId::from("page_main")],
+        purpose: ExportPurpose::AgentCritique,
+    };
+
+    let heuristic = SvgExportAdapter::new()
+        .export(&scene, &request)
+        .expect("heuristic export");
+    assert!(
+        has_code(&heuristic.diagnostics, "LUMS0102"),
+        "heuristic SVG export must warn LUMS0102: {:?}",
+        heuristic.diagnostics
+    );
+
+    let skia = SvgExportAdapter::new()
+        .with_measurer(skia_measurer())
+        .export(&scene, &request)
+        .expect("skia export");
+    assert!(
+        !has_code(&skia.diagnostics, "LUMS0102"),
+        "shaping SVG export must NOT warn LUMS0102: {:?}",
+        skia.diagnostics
     );
 }
 

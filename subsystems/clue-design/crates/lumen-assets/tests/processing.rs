@@ -1,4 +1,7 @@
-use lumen_assets::{ingest, sanitize_svg, IngestRequest, THUMBNAIL_MAX_DIMENSION};
+use lumen_assets::{
+    derive_raster_thumbnail, ingest, sanitize_svg, IngestRequest, THUMBNAIL_MAX_DIMENSION,
+    THUMBNAIL_MIN_SHORT_DIMENSION,
+};
 use lumen_core::AssetKind;
 
 const LOGO_PNG: &[u8] = include_bytes!("../../lumen-export/fixtures/assets/acme-logo-8x8-red.png");
@@ -125,9 +128,43 @@ fn large_raster_gets_bounded_thumbnail() {
 }
 
 #[test]
-fn small_raster_thumbnail_keeps_original_size() {
+fn tiny_raster_thumbnail_upscales_to_vision_floor() {
+    // Intended behavior change: a degenerate 8×8 source (the exact kind that
+    // killed sweep run A2 at the vision provider) is upscaled at the PRODUCER
+    // so its short side meets the vision floor, nearest-neighbor so the icon
+    // pixels stay crisp. Aspect ratio (square) is preserved.
     let output = ingest(&IngestRequest::new(LOGO_PNG)).expect("ingest");
     let thumbnail = output.thumbnail.expect("thumbnail");
-    assert_eq!(thumbnail.pixel_width, 8);
-    assert_eq!(thumbnail.pixel_height, 8);
+    assert_eq!(thumbnail.pixel_width, THUMBNAIL_MIN_SHORT_DIMENSION);
+    assert_eq!(thumbnail.pixel_height, THUMBNAIL_MIN_SHORT_DIMENSION);
+    assert_eq!(
+        lumen_assets::sniff_mime(&thumbnail.bytes),
+        Some("image/png")
+    );
+}
+
+#[test]
+fn small_non_square_thumbnail_upscales_short_side_preserving_aspect() {
+    // 40×20: short side 20 → scaled ×(512/20)=25.6 so the short side hits the
+    // floor and the long side scales with it (aspect preserved).
+    let png = make_png(40, 20);
+    let thumbnail =
+        derive_raster_thumbnail(&png, THUMBNAIL_MAX_DIMENSION, THUMBNAIL_MIN_SHORT_DIMENSION)
+            .expect("thumbnail");
+    assert_eq!(thumbnail.pixel_height, THUMBNAIL_MIN_SHORT_DIMENSION);
+    // 40 * (512/20) = 1024.
+    assert_eq!(thumbnail.pixel_width, 1024);
+}
+
+#[test]
+fn large_raster_thumbnail_keeps_max_dimension_regime() {
+    // Regression guard: a source above the max still fit-downscales to the max
+    // bound and is NOT touched by the min-short-side floor (its short side may
+    // stay under the vision floor — the "normal" regime, unchanged).
+    let png = make_png(600, 400);
+    let thumbnail =
+        derive_raster_thumbnail(&png, THUMBNAIL_MAX_DIMENSION, THUMBNAIL_MIN_SHORT_DIMENSION)
+            .expect("thumbnail");
+    assert_eq!(thumbnail.pixel_width, 256);
+    assert!(thumbnail.pixel_height < THUMBNAIL_MIN_SHORT_DIMENSION);
 }

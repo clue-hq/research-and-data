@@ -1,5 +1,24 @@
-use crate::{Rect, TextDirection, TextNode, TextWrap};
+use crate::{Diagnostic, Phase, Rect, TextDirection, TextNode, TextWrap};
 use std::sync::Arc;
+
+/// The LUMS0102 warning: text was measured with a non-shaping (heuristic)
+/// measurer, so glyph geometry — box sizes, wrap points, overflow verdicts — is
+/// approximate. Emitted by the layout engine (folded into preflight) and by the
+/// SVG/PDF export markup paths whenever they fall back to the static heuristic;
+/// server paths inject a shaping measurer and never emit it. One shared
+/// constructor so every emission site is byte-identical (and dedupes cleanly).
+/// Modeled on LUMS0101's "degraded but never silent" pattern.
+pub fn heuristic_measurement_diagnostic() -> Diagnostic {
+    Diagnostic::warning(
+        Phase::Layout,
+        "LUMS0102",
+        "text measured heuristically — no font shaping; geometry is approximate".to_owned(),
+        None,
+    )
+    .with_hint(
+        "Inject a shaping text measurer (the server's SkiaTextMeasurer) for glyph-accurate line breaks, widths, and overflow verdicts; heuristic geometry can disagree with the rendered export.",
+    )
+}
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct TextMeasureInput {
@@ -30,6 +49,15 @@ pub struct TextMeasureOutput {
     pub overflow_x: bool,
     pub overflow_y: bool,
     pub exceeds_max_lines: bool,
+    /// Diagnostics produced *by measurement itself* — font-resolution
+    /// warnings a shaping measurer discovers while laying the text out
+    /// (LUMS0100 whole-family fallback, LUMS0103 per-glyph substitution).
+    /// The heuristic measurer has no font set, so it never populates this;
+    /// only `SkiaTextMeasurer` does. Callers (the layout engine) fold these
+    /// into their own diagnostics so missing fonts surface at preflight, not
+    /// only at export. Excluded from `measure_key` semantics: it is derived
+    /// output, not an input.
+    pub diagnostics: Vec<Diagnostic>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -44,6 +72,16 @@ pub struct TextLineBox {
 
 pub trait TextMeasurer: std::fmt::Debug {
     fn measure(&self, input: &TextMeasureInput) -> TextMeasureOutput;
+
+    /// Whether this measurer performs real font shaping — glyph-accurate line
+    /// breaking and metrics from loaded faces. `false` means the geometry is a
+    /// heuristic approximation (no font shaping), which the layout engine
+    /// surfaces as the LUMS0102 "measured heuristically" warning so degraded
+    /// geometry is never silent. Default `false`: a new measurer is treated as
+    /// non-shaping until it explicitly proves otherwise.
+    fn shaping(&self) -> bool {
+        false
+    }
 }
 
 /// Shared handle for injected measurers (Decision 5, Wave 1 Track A).
@@ -119,6 +157,17 @@ impl TextMeasurer for ProvidedTextMeasurer {
             output.height = height;
         }
         output
+    }
+
+    /// Non-shaping. It patches the overall width/height of *known* inputs with
+    /// editor-supplied CanvasKit metrics, but performs no shaping itself: per-
+    /// line boxes stay heuristic, and any input without a stored override is
+    /// pure heuristic. Reporting `true` would suppress the LUMS0102 warning
+    /// while the geometry is still approximate, so it is honestly `false`.
+    /// (Only used inside the wasm engine, where LUMS0102 is deduped against the
+    /// editor's own client-side EDITOR_HEURISTIC_MEASUREMENT signal anyway.)
+    fn shaping(&self) -> bool {
+        false
     }
 }
 
@@ -205,6 +254,9 @@ impl TextMeasurer for HeuristicTextMeasurer {
             overflow_x,
             overflow_y,
             exceeds_max_lines,
+            // The heuristic has no font set; font-resolution diagnostics are a
+            // shaping-measurer concern only.
+            diagnostics: Vec::new(),
         }
     }
 }

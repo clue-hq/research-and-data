@@ -1,7 +1,7 @@
 //! Slice A2 gates: SkParagraph measurement semantics, pinned BEFORE anything
 //! depends on them (risk-register item: line-height multiplier mapping).
 
-use lumen_core::{TextDirection, TextMeasureInput, TextMeasurer, TextWrap};
+use lumen_core::{TextDirection, TextMeasureInput, TextMeasureOutput, TextMeasurer, TextWrap};
 use lumen_skia::SkiaTextMeasurer;
 
 fn input(content: &str) -> TextMeasureInput {
@@ -221,7 +221,30 @@ fn missing_family_measures_identically_to_default_family() {
     let mut unknown = wrapped("fallback families shape deterministically", 150.0);
     unknown.font_family = "Comic Sans MS".to_owned();
     let known = wrapped("fallback families shape deterministically", 150.0);
-    assert_eq!(measurer.measure(&unknown), measurer.measure(&known));
+
+    let unknown_out = measurer.measure(&unknown);
+    let known_out = measurer.measure(&known);
+
+    // GEOMETRY is identical — the missing family shapes as the default family.
+    // Only the diagnostics channel differs (that is the point of surfacing the
+    // fallback), so compare everything except diagnostics.
+    assert_eq!(
+        TextMeasureOutput {
+            diagnostics: Vec::new(),
+            ..unknown_out.clone()
+        },
+        TextMeasureOutput {
+            diagnostics: Vec::new(),
+            ..known_out.clone()
+        }
+    );
+    // The missing family now reports its whole-family fallback (LUMS0100);
+    // the loaded family reports nothing.
+    assert!(unknown_out
+        .diagnostics
+        .iter()
+        .any(|diagnostic| diagnostic.code == "LUMS0100"));
+    assert!(known_out.diagnostics.is_empty());
 }
 
 #[test]

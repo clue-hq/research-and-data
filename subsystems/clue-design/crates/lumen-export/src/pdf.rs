@@ -42,6 +42,16 @@ impl ExportAdapter for PdfExportAdapter {
         }
 
         let mut diagnostics = resolved.diagnostics;
+        // LUMS0102: no shaping measurer injected (or a non-shaping one), so PDF
+        // line layout is geometry-approximate. Emitted once per export; server
+        // paths inject SkiaTextMeasurer and never reach this branch.
+        if !self
+            .measurer
+            .as_deref()
+            .is_some_and(|measurer| measurer.shaping())
+        {
+            diagnostics.push(lumen_core::heuristic_measurement_diagnostic());
+        }
         diagnostics.push(
             Diagnostic::warning(
                 Phase::Export,

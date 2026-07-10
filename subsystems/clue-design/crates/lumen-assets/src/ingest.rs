@@ -9,7 +9,10 @@
 use crate::mime::{default_kind_for_mime, mime_compatible, sniff_mime, MIME_SVG};
 use crate::probe::probe_raster;
 use crate::sanitize::sanitize_svg;
-use crate::thumbs::{derive_raster_thumbnail, ThumbnailArtifact, THUMBNAIL_MAX_DIMENSION};
+use crate::thumbs::{
+    derive_raster_thumbnail, ThumbnailArtifact, THUMBNAIL_MAX_DIMENSION,
+    THUMBNAIL_MIN_SHORT_DIMENSION,
+};
 use lumen_core::{AssetKind, Diagnostic, Phase, RasterAssetMetadata, VectorAssetMetadata};
 use std::error::Error;
 use std::fmt;
@@ -201,7 +204,11 @@ pub fn ingest(request: &IngestRequest) -> Result<IngestOutput, Box<IngestError>>
         match probe_raster(&bytes) {
             Some(metadata) => {
                 raster = Some(metadata);
-                thumbnail = derive_raster_thumbnail(&bytes, THUMBNAIL_MAX_DIMENSION);
+                thumbnail = derive_raster_thumbnail(
+                    &bytes,
+                    THUMBNAIL_MAX_DIMENSION,
+                    THUMBNAIL_MIN_SHORT_DIMENSION,
+                );
                 if thumbnail.is_none() {
                     diagnostics.push(Diagnostic::warning(
                         Phase::Validation,

@@ -15,14 +15,14 @@
 
 use crate::fonts::FontManager;
 use crate::measure::{
-    build_paragraph, default_foreground, normalize_content, ParagraphRequest,
+    build_paragraph, default_foreground, font_diagnostics, normalize_content, ParagraphRequest,
     UNBOUNDED_LAYOUT_WIDTH,
 };
 use lumen_core::{
     page_geometry, paints_out_of_tree, pinned_paint_pass, render_box_for_node, Color, CornerRadii,
-    Diagnostic, DiagnosticSubject,
-    EffectKind, ImageFitMode, ImageNode, Node, NodeId, NodeKind, Page, PageId, Paint, Phase, Scene,
-    Stroke, StrokeAlign, StrokeCap, StrokeJoin, TextAlign, TextNode, TextWrap,
+    Diagnostic, DiagnosticSubject, EffectKind, ImageFitMode, ImageNode, Node, NodeId, NodeKind,
+    Page, PageId, Paint, Phase, Scene, Stroke, StrokeAlign, StrokeCap, StrokeJoin, TextAlign,
+    TextNode, TextWrap,
 };
 use lumen_export::{
     focal_crop_geometry, page_background_token_diagnostics, unresolved_brand_token_diagnostics,
@@ -36,6 +36,17 @@ use skia_safe::{
     RRect, Rect as SkRect, SamplingOptions, Shader, TileMode,
 };
 use std::sync::Arc;
+
+/// Opaque magenta "missing paint" marker. Universally read as a rendering
+/// fault (the classic missing-texture color) and fully opaque so it can never
+/// itself read as black. Painted in place of any specified paint that fails to
+/// resolve at raster, alongside the LUME0213 error.
+const UNRESOLVED_PAINT_SENTINEL: Color4f = Color4f {
+    r: 1.0,
+    g: 0.0,
+    b: 1.0,
+    a: 1.0,
+};
 
 /// Direct scene rasterizer over the deterministic font set. Stateless apart
 /// from the shared `FontManager`; safe to share across threads.
@@ -97,7 +108,18 @@ impl PageRasterizer for SkiaSceneRenderer {
 
         {
             let canvas = surface.canvas();
-            canvas.clear(skia_safe::Color::TRANSPARENT);
+            // Opaque white "paper" default. A raster page is a physical
+            // artboard: every pixel not covered by a resolved paint must read
+            // as blank paper, never black. An unpainted premultiplied surface
+            // is alpha-0 (RGB 0), which flattens to solid black in any viewer
+            // or critic that composites onto black — the empty-page and
+            // collapsed-token "black PNG" class. The SVG exporter has no such
+            // trap because a transparent SVG shows the viewer's white page
+            // through; clearing to white gives the raster the same paper and
+            // matches the SVG's on-viewer appearance for an empty/uncovered
+            // page. Declared page backgrounds and node fills still paint on
+            // top, so nothing that resolves is affected.
+            canvas.clear(skia_safe::Color::WHITE);
             let geometry = page_geometry(page);
             canvas.scale((
                 width as f32 / geometry.layout.width.max(1.0) as f32,
@@ -135,14 +157,13 @@ impl<'a> PagePainter<'a> {
         let page_rect =
             SkRect::from_wh(geometry.layout.width as f32, geometry.layout.height as f32);
         for fill in &page.background {
-            if let Some(paint) = self.fill_paint(
+            let paint = self.fill_paint(
                 &fill.paint,
                 geometry.layout.width,
                 geometry.layout.height,
                 None,
-            ) {
-                canvas.draw_rect(page_rect, &paint);
-            }
+            );
+            canvas.draw_rect(page_rect, &paint);
         }
 
         for child_id in &page.children {
@@ -261,29 +282,21 @@ impl<'a> PagePainter<'a> {
             NodeKind::Ellipse => {
                 let rect = SkRect::from_wh(width as f32, height as f32);
                 for fill in &node.fills {
-                    if let Some(paint) = self.fill_paint(&fill.paint, width, height, Some(&node.id))
-                    {
-                        canvas.draw_oval(rect, &paint);
-                    }
+                    let paint = self.fill_paint(&fill.paint, width, height, Some(&node.id));
+                    canvas.draw_oval(rect, &paint);
                 }
                 for stroke in &node.strokes {
-                    if let Some(paint) =
-                        self.stroke_paint(stroke, width, height, Some(&node.id), true)
-                    {
-                        let oval = aligned_rect(rect, stroke);
-                        canvas.draw_oval(oval, &paint);
-                    }
+                    let paint = self.stroke_paint(stroke, width, height, Some(&node.id), true);
+                    let oval = aligned_rect(rect, stroke);
+                    canvas.draw_oval(oval, &paint);
                 }
             }
             NodeKind::Line(line) => {
                 let from = Point::new(0.0, 0.0);
                 let to = Point::new(line.x2 as f32, line.y2 as f32);
                 for stroke in &node.strokes {
-                    if let Some(paint) =
-                        self.stroke_paint(stroke, width, height, Some(&node.id), false)
-                    {
-                        canvas.draw_line(from, to, &paint);
-                    }
+                    let paint = self.stroke_paint(stroke, width, height, Some(&node.id), false);
+                    canvas.draw_line(from, to, &paint);
                 }
             }
             NodeKind::Vector(vector) => {
@@ -298,18 +311,12 @@ impl<'a> PagePainter<'a> {
                         canvas.concat(&matrix);
                     }
                     for fill in &node.fills {
-                        if let Some(paint) =
-                            self.fill_paint(&fill.paint, width, height, Some(&node.id))
-                        {
-                            canvas.draw_path(&path, &paint);
-                        }
+                        let paint = self.fill_paint(&fill.paint, width, height, Some(&node.id));
+                        canvas.draw_path(&path, &paint);
                     }
                     for stroke in &node.strokes {
-                        if let Some(paint) =
-                            self.stroke_paint(stroke, width, height, Some(&node.id), false)
-                        {
-                            canvas.draw_path(&path, &paint);
-                        }
+                        let paint = self.stroke_paint(stroke, width, height, Some(&node.id), false);
+                        canvas.draw_path(&path, &paint);
                     }
                     if scaled.is_some() {
                         canvas.restore();
@@ -354,17 +361,14 @@ impl<'a> PagePainter<'a> {
     fn paint_rect_geometry(&mut self, canvas: &Canvas, node: &Node, width: f64, height: f64) {
         let rect = SkRect::from_wh(width as f32, height as f32);
         for fill in &node.fills {
-            if let Some(paint) = self.fill_paint(&fill.paint, width, height, Some(&node.id)) {
-                canvas.draw_rrect(corner_rrect(node, width, height), &paint);
-            }
+            let paint = self.fill_paint(&fill.paint, width, height, Some(&node.id));
+            canvas.draw_rrect(corner_rrect(node, width, height), &paint);
         }
         for stroke in &node.strokes {
-            if let Some(paint) = self.stroke_paint(stroke, width, height, Some(&node.id), true) {
-                let stroke_rect = aligned_rect(rect, stroke);
-                let rrect =
-                    corner_rrect_for(stroke_rect, &node.corner, stroke_radius_delta(stroke));
-                canvas.draw_rrect(rrect, &paint);
-            }
+            let paint = self.stroke_paint(stroke, width, height, Some(&node.id), true);
+            let stroke_rect = aligned_rect(rect, stroke);
+            let rrect = corner_rrect_for(stroke_rect, &node.corner, stroke_radius_delta(stroke));
+            canvas.draw_rrect(rrect, &paint);
         }
     }
 
@@ -392,12 +396,10 @@ impl<'a> PagePainter<'a> {
         }
 
         let foreground = match node.fills.first() {
-            Some(fill) => match self.fill_paint(&fill.paint, width, height, Some(&node.id)) {
-                Some(paint) => paint,
-                // Unresolved token fill: diagnostic already emitted; skip
-                // painting (SVG renders fill="none").
-                None => return,
-            },
+            // A specified but unresolved text fill paints the sentinel (magenta
+            // glyphs) with the LUME0213 error rather than vanishing — invisible
+            // text hides the resolution bug just as a black page would.
+            Some(fill) => self.fill_paint(&fill.paint, width, height, Some(&node.id)),
             None => {
                 self.diagnostics.push(
                     Diagnostic::warning(
@@ -418,11 +420,17 @@ impl<'a> PagePainter<'a> {
         };
 
         let resolution = self.fonts.resolve_family(&text.font_family);
-        if let Some(diagnostic) = resolution.diagnostic() {
-            let diagnostic = Diagnostic {
-                subject: Some(DiagnosticSubject::Node(node.id.clone())),
-                ..diagnostic
-            };
+        let content = normalize_content(&text.content);
+        // Whole-family fallback (LUMS0100) and per-glyph substitution
+        // (LUMS0103), from the same font set + helper the measurer uses, so
+        // preflight (measurement) and this raster path report identically.
+        for diagnostic in font_diagnostics(
+            self.fonts,
+            &text.font_family,
+            text.font_weight as i32,
+            &content,
+            Some(DiagnosticSubject::Node(node.id.clone())),
+        ) {
             if !self.diagnostics.contains(&diagnostic) {
                 self.diagnostics.push(diagnostic);
             }
@@ -435,8 +443,6 @@ impl<'a> PagePainter<'a> {
             TextAlign::Center => SkTextAlign::Center,
             TextAlign::Right => SkTextAlign::Right,
         };
-
-        let content = normalize_content(&text.content);
         let request = ParagraphRequest {
             content: &content,
             font_family: &resolution.family,
@@ -749,18 +755,30 @@ impl<'a> PagePainter<'a> {
         image_filters::merge(shadow_filters, None)
     }
 
+    /// Resolve a fill paint to an SkPaint. A *specified* fill never silently
+    /// vanishes: when its source cannot resolve (unresolved token, unparseable
+    /// hex, or degenerate gradient) this substitutes the visible sentinel and
+    /// raises the loud LUME0213 error — the reviewer sees a wrong-but-obvious
+    /// magenta region instead of a black hole that hides the resolution bug.
     fn fill_paint(
         &mut self,
         paint: &Paint,
         width: f64,
         height: f64,
         node_id: Option<&NodeId>,
-    ) -> Option<SkPaint> {
+    ) -> SkPaint {
         let mut sk_paint = SkPaint::default();
         sk_paint.set_anti_alias(true);
         sk_paint.set_style(PaintStyle::Fill);
-        self.apply_paint_source(&mut sk_paint, paint, width, height, node_id)?;
-        Some(sk_paint)
+        if self
+            .apply_paint_source(&mut sk_paint, paint, width, height, node_id)
+            .is_none()
+        {
+            self.push_unresolved_paint_error(node_id, "fill");
+            sk_paint.set_color4f(UNRESOLVED_PAINT_SENTINEL, None);
+            sk_paint.set_shader(None);
+        }
+        sk_paint
     }
 
     /// Stroke paint mirroring SVG attributes: width, dash array, cap, join.
@@ -775,7 +793,7 @@ impl<'a> PagePainter<'a> {
         height: f64,
         node_id: Option<&NodeId>,
         alignment_native: bool,
-    ) -> Option<SkPaint> {
+    ) -> SkPaint {
         let mut sk_paint = SkPaint::default();
         sk_paint.set_anti_alias(true);
         sk_paint.set_style(PaintStyle::Stroke);
@@ -822,8 +840,18 @@ impl<'a> PagePainter<'a> {
             }
         }
 
-        self.apply_paint_source(&mut sk_paint, &stroke.paint, width, height, node_id)?;
-        Some(sk_paint)
+        if self
+            .apply_paint_source(&mut sk_paint, &stroke.paint, width, height, node_id)
+            .is_none()
+        {
+            // The stroke keeps its resolved width/dash/cap/join geometry but
+            // paints in the sentinel so an unresolved stroke source is loud,
+            // not invisible.
+            self.push_unresolved_paint_error(node_id, "stroke");
+            sk_paint.set_color4f(UNRESOLVED_PAINT_SENTINEL, None);
+            sk_paint.set_shader(None);
+        }
+        sk_paint
     }
 
     /// Solid color or gradient shader; `None` for unresolved tokens (with
@@ -944,6 +972,34 @@ impl<'a> PagePainter<'a> {
                 }
                 None
             }
+        }
+    }
+
+    /// Loud, error-severity alarm (LUME0213) raised whenever a specified
+    /// paint could not resolve and the sentinel was painted in its place. A
+    /// raster carrying a sentinel region is not a shippable artifact; the
+    /// error guarantees the reviewer/agent is told rather than silently
+    /// shown a black (or, post-paper-fix, blank) surface. LUME0206 still
+    /// records *which* token/hex failed; this code records that the failure
+    /// was substituted with a visible marker so the export is not final.
+    fn push_unresolved_paint_error(&mut self, node_id: Option<&NodeId>, context: &str) {
+        let subject = node_id.map(|id| DiagnosticSubject::Node(id.clone()));
+        let where_ = node_id
+            .map(|id| format!("node {id}"))
+            .unwrap_or_else(|| "page".to_owned());
+        let diagnostic = Diagnostic::error(
+            Phase::Export,
+            "LUME0213",
+            format!(
+                "{where_} {context} paint did not resolve at raster; painted a magenta sentinel so the failure is visible — this PNG is not shippable"
+            ),
+            subject,
+        )
+        .with_hint(
+            "Resolve the brand/token paint (run token resolution before export) or set an explicit color; see the paired LUME0206 for the specific token/hex that failed.",
+        );
+        if !self.diagnostics.contains(&diagnostic) {
+            self.diagnostics.push(diagnostic);
         }
     }
 

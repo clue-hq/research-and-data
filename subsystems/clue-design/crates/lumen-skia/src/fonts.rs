@@ -340,11 +340,82 @@ impl FontManager {
 
         let mut collection = FontCollection::new();
         let provider_mgr: FontMgr = provider.into();
-        collection.set_asset_font_manager(Some(provider_mgr));
-        // No default font manager and no fallback: resolution is exactly
-        // the registered byte-backed faces, nothing else.
-        collection.disable_font_fallback();
+        collection.set_asset_font_manager(Some(provider_mgr.clone()));
+        // Per-glyph fallback, kept DETERMINISTIC: the fallback font manager is
+        // the SAME byte-backed provider (never the system FontMgr), and the
+        // default fallback family is our loaded default. So a codepoint the
+        // resolved family lacks — the "/", "×", em-dash gaps a subsetted brand
+        // webfont exhibits — shapes from another loaded face (bundled Inter)
+        // instead of rendering .notdef tofu. Resolution of a *whole* family is
+        // still pre-decided by `resolve_family` before the shaper runs, so this
+        // only ever supplies missing GLYPHS, never a different family, and only
+        // from bytes this workspace embeds — the cross-runtime parity contract
+        // holds.
+        collection.set_default_font_manager(Some(provider_mgr), Some(self.default_family.as_str()));
+        collection.enable_font_fallback();
         collection
+    }
+
+    /// The characters in `content` that the resolved primary face for
+    /// `requested` (at `weight`) cannot supply — they map to `.notdef` in that
+    /// face — but which another loaded face *does* supply, so per-glyph
+    /// fallback substitutes for them (LUMS0103). Deterministic: it consults
+    /// only the loaded byte-backed faces through the same collection the shaper
+    /// uses. Whitespace and control characters are ignored (never tofu-worthy).
+    /// Order follows first appearance; duplicates are collapsed. A character no
+    /// loaded face covers is genuine tofu, not a substitution, and is excluded.
+    pub fn substituted_chars(&self, requested: &str, weight: i32, content: &str) -> Vec<char> {
+        let resolution = self.resolve_family(requested);
+        let style = skia_safe::FontStyle::new(
+            weight.into(),
+            skia_safe::font_style::Width::NORMAL,
+            skia_safe::font_style::Slant::Upright,
+        );
+        let Some(primary) = self.with_collection(|collection| {
+            collection
+                .find_typefaces(&[resolution.family.as_str()], style)
+                .into_iter()
+                .next()
+        }) else {
+            return Vec::new();
+        };
+
+        // Unique gap characters the resolved family cannot supply directly.
+        let mut seen = BTreeSet::new();
+        let mut candidates = Vec::new();
+        for ch in content.chars() {
+            if ch.is_control() || ch.is_whitespace() || !seen.insert(ch) {
+                continue;
+            }
+            if primary.unichar_to_glyph(ch as i32) == 0 {
+                candidates.push(ch);
+            }
+        }
+        if candidates.is_empty() {
+            return Vec::new();
+        }
+
+        // A real substitution only when some OTHER loaded face supplies the
+        // glyph — a char no loaded face covers is genuine tofu, not a
+        // substitution, and is excluded. Parse the loaded faces directly (the
+        // same byte-introspection `build_collection` uses) rather than the
+        // paragraph collection's fallback API, keeping this deterministic and
+        // within loaded bytes only. Only reached when the primary already
+        // lacks a glyph (rare), so the hot fully-covered path never parses.
+        let parser = FontMgr::new();
+        let faces: Vec<Typeface> = self
+            .faces
+            .iter()
+            .filter_map(|face| parser.new_from_data(face.bytes.as_slice(), None))
+            .collect();
+        candidates
+            .into_iter()
+            .filter(|ch| {
+                faces
+                    .iter()
+                    .any(|face| face.unichar_to_glyph(*ch as i32) != 0)
+            })
+            .collect()
     }
 
     /// Deduplicated grouping used by tests: family -> sorted weights.

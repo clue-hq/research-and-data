@@ -168,6 +168,38 @@ fn bundled_with_skips_unparseable_bytes_and_keeps_bundled_set() {
     assert_eq!(fonts.default_family(), DEFAULT_FONT_FAMILY);
 }
 
+// --- Per-glyph fallback (LUMS0103): subset webfont glyph gaps -------------
+
+/// Inter-Regular subset to only digits, ASCII letters, and space, renamed to
+/// the family "SubsetFace". It deliberately LACKS "/", "×", and "—" — the exact
+/// gaps a real subsetted brand webfont (Aeonik TRIAL) exhibits. Regenerate with
+/// `crates/lumen-skia/tests/fixtures/make_subset_face.py`.
+fn subset_face_bytes() -> Vec<u8> {
+    std::fs::read(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/subset-face.ttf"))
+        .expect("subset-face fixture reads")
+}
+
+#[test]
+fn substituted_chars_reports_glyphs_missing_from_the_resolved_family() {
+    let (fonts, errors) = FontManager::bundled_with(vec![(subset_face_bytes(), None)]);
+    assert!(errors.is_empty(), "{errors:?}");
+    // The subset face resolves as its own family (no whole-family fallback)...
+    let resolution = fonts.resolve_family("SubsetFace");
+    assert!(!resolution.fallback);
+    // ...but lacks these three glyphs, which the bundled Inter supplies.
+    let missing = fonts.substituted_chars("SubsetFace", 400, "1/10 ×2 —");
+    assert_eq!(missing, vec!['/', '×', '—']);
+}
+
+#[test]
+fn substituted_chars_is_empty_for_a_fully_covered_face() {
+    let fonts = FontManager::bundled();
+    // Bundled Inter covers "/", "×", and "—", so nothing is substituted.
+    assert!(fonts
+        .substituted_chars("Inter", 400, "1/10 ×2 —")
+        .is_empty());
+}
+
 #[test]
 fn bundled_with_alias_resolves_the_kit_declared_family() {
     // The web's @font-face aliasing: kit says "Aeonik", the trial bytes say
