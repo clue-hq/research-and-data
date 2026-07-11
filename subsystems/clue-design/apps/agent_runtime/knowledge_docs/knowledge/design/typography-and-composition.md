@@ -29,6 +29,40 @@ conservative:
 - Avoid placing text partially outside parent frames.
 - Use high contrast and simple hierarchy.
 
+### Typography v1 — case, decoration, ellipsis, spacing (taste first)
+
+These are now fully supported (compile → measure → render). Each is a scalpel, not
+a default — reach for it only when it earns the composition:
+
+- **Uppercase + wide tracking = an eyebrow/kicker, never body.** `case(upper)
+  tracking(180)` on a short label (`"field report"`, `"case study"`) reads as a
+  crisp section marker. Author the content in natural case and let `case(upper)`
+  do the work — the stored words stay editable. **Never all-caps a sentence or
+  paragraph**: caps destroy word-shape and slow reading. One tracked eyebrow per
+  design.
+- **Underline is one deliberate accent, not link styling.** Use `underline(true)`
+  on a *single* element — the classic is a text CTA ("Read the case study"). Never
+  underline headlines or body, never as blue-link decoration, and never more than
+  once per design. If everything is underlined, nothing is emphasized.
+- **Strike is for a semantic before/after** — a slashed old price next to the new
+  one (`strike(true)` on `"$1,200"` beside `"$690"`), a struck "sold out". Never
+  decorative; a strike always says "this was replaced/withdrawn".
+- **Truncation is layout honesty, not content editing.** `truncate(true)` (with
+  `max_lines(n)` or `wrap(false)`) ends the cut line with `…` for variable-length
+  or slot copy whose worst case you can't fully control. It does **not** silence
+  overflow — when copy is actually cut, layout still reports `LUMV0904`/`LUMV0903`.
+  Prefer **rewriting the copy to fit**; truncate is the graceful fallback, not a
+  way to cram. With no cut point it is inert and warns `LUMV0905`.
+- **Paragraph spacing vs line-height — keep them distinct.** `lh(...)` sets rhythm
+  *within* a paragraph (tight headlines `1.05`–`1.15`, relaxed body `1.3`–`1.45`);
+  `para_spacing(n)` adds air *between* stanzas split on `\n`. A multi-stanza body
+  is `lh(1.35) para_spacing(16)`. Do **not** fake stanza breaks with empty lines,
+  and do not inflate `lh` to stand in for paragraph gaps.
+- **Text strokes render as display-type outline.** A single solid `stroke(...)` on
+  a big display numeral/word (stroke behind fill) is an outline-type move for
+  posters — first solid stroke only. Keep it to hero display type; outlined body
+  copy is unreadable.
+
 Good text box patterns:
 
 ```text

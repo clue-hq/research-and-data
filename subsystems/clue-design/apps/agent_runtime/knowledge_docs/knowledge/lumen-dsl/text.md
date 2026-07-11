@@ -21,10 +21,43 @@ too small genuinely is.
 | `wrap_text(bool)` | `text_wrap` | enable wrapping |
 | `max_lines(n)` | `max` | cap line count (>0; else `LUMD0255`); overflow → `LUMV0904` |
 | `dir(ltr|rtl|auto)` | `direction` | base direction |
+| `case(upper\|lower\|title\|none)` | `text_transform` (also takes `uppercase`/`lowercase`) | display-time case transform; the stored content stays canonical; bad value → `LUMD0271` |
+| `underline(bool)` | — | underline decoration |
+| `strike(bool)` | `strikethrough` | strike-through decoration |
+| `truncate(bool)` | `ellipsis` | end the cut line with `…` when `max_lines`/`wrap(false)` clips; inert (warns `LUMV0905`) if the text can never be cut |
+| `para_spacing(n)` | `paragraph_spacing` | extra px of vertical gap at each `\n` paragraph break (≥ 0; negative → `LUMD0255`) |
 
 Canonical vs alias: prefer `font(...)` / `style($type.x)` / `lh(...)` / `ls(...)`
 in new designs. `font_size`/`font_weight`/`tracking` are compatibility aliases for
 *targeted text repairs* when a model has drifted into CSS/design-tool language.
+
+## Typography v1 — case, decoration, ellipsis, paragraph spacing
+
+- **Case is display-only.** `case(upper)` uppercases at render time; the stored
+  content string is never mutated, so a human editor still sees and edits the real
+  words. Values `upper`/`lower`/`title`/`none`; the alias `text_transform(...)`
+  additionally accepts `uppercase`/`lowercase`. Pair `case(upper)` with wide
+  `tracking(...)` for an eyebrow/kicker — never on body copy (see
+  `knowledge/design/typography-and-composition`).
+- **Text strokes now render** (the old `LUME0214` "deferred to Typography v1" drop
+  is retired). A `stroke(#hex,width)` on a text node draws a display-type outline —
+  stroke behind fill, the convention design tools use to outline type. **First
+  solid stroke only**: extra strokes, gradient stroke paint, and dashes on text
+  advise `LUME0215` and are ignored. PDF export still cannot render text
+  strokes/decoration — it degrades loudly (`LUME0421` decoration, `LUME0422`
+  stroke); export SVG/PNG when you need them.
+- **Single-line ellipsis** is `wrap_text(true) max_lines(1) truncate(true)` — the
+  one surviving line ends with `…` when the copy overflows. `truncate` needs a cut
+  point: with no `max_lines` and free wrapping it can never fire and warns
+  `LUMV0905`. Truncation is **layout honesty, not a silencer** — when the copy
+  actually gets cut, managed (agent-authored) text still reports the overflow
+  (`LUMV0904` / `LUMV0903`) as an error, so fit the copy or raise `max_lines`;
+  `truncate` is the graceful fallback for variable/slot content, not a way to cram
+  oversized copy.
+- **Paragraph spacing vs line-height.** `lh(...)` is rhythm *within* a paragraph;
+  `para_spacing(n)` adds air *between* stanzas split on `\n`. Use both for a
+  multi-stanza body (`lh(1.35) para_spacing(16)`); do not fake stanza gaps with
+  empty lines.
 
 `align(...)` is the horizontal alignment knob. Use it **standalone** alongside
 `style($type.x)` — the style token carries no alignment — to center a label without

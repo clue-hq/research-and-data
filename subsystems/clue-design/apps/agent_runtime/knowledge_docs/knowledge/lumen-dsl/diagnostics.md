@@ -37,6 +37,7 @@ failing line is dropped, later lines are discarded (cascade halt).
 | `LUMD0268` | malformed `inner_shadow(...)` | mirror `shadow`: `inner_shadow(id?,#color,o(),x(),y(),blur(),spread())` |
 | `LUMD0269` | `bleed(...)` wrong form/target | `bleed(true)` on a node (off-canvas intent) or `bleed(x,y,w,h)` on a page (print-bleed rect) |
 | `LUMD0270` | `solid(color,opacity)` out of range or token misuse | opacity in `0..=1`; bake alpha into a `$token`, or use `#RRGGBBAA` |
+| `LUMD0271` | unknown `case`/`text_transform` value | use `none`, `upper`/`uppercase`, `lower`/`lowercase`, or `title` |
 | `LUMD0301/0302/0304` | indentation / over-nesting / leaf-with-children | two spaces per level; only containers nest |
 | `LUMD0401` | duplicate node id | rename, or modify the existing node instead of re-declaring |
 | `LUMD0403/0404/0405` | image/vector/instance missing required arg | add `asset(id)` / `path("…")` / `source(id)` |
@@ -69,7 +70,8 @@ lets a pure-prose block "succeed" empty.
 |------|---------|--------|
 | `LUMV0902` | non-wrapping text overflows horizontally | `wrap_text(true)`, smaller style, or wider box |
 | `LUMV0903` | text node exceeds available height | `hug` height, taller box, fewer lines, or smaller font |
-| `LUMV0904` | text exceeds `max_lines` | raise `max_lines`, shorten copy, or enlarge the box |
+| `LUMV0904` | text exceeds `max_lines` | raise `max_lines`, shorten copy, or enlarge the box (still fires **with** `truncate` — the ellipsis renders but the cut is still diagnosed) |
+| `LUMV0905` | `truncate(true)` on freely wrapping text with no `max_lines` — the ellipsis can never fire | add `max_lines(n)` / `wrap(false)` to give it a cut point, or drop `truncate` |
 | `LUMV0810` | slot fixture overflows its text node | same box fixes, or set the slot overflow policy to `shrink_font`/`wrap` |
 | `LUMV0509` | text slot has no fit-validation fixtures (warning) | add `sample`/`worst_case` so fit is tested against real-length data |
 | `LUMV09xx page/artboard bounds` | node exceeds or starts outside the artboard | use a bounded `layout_cluster` repair on the diagnosed artboard/root/parent cluster |
@@ -83,9 +85,22 @@ instead of repeatedly shrinking unrelated text nodes. Do not re-author the scene
 
 `LUMV0801` (node exceeds parent bounds) **downgrades to a warning** on a node
 tagged `bleed(true)` — declared off-canvas intent, not a fix-me (see
-`skills/effects`; content outside the page is not exported). `LUME0214` is an
-export advisory: a **text** node's strokes are dropped (not rendered until
-Typography v1) — remove the stroke or emulate it with a duplicate offset text layer.
+`skills/effects`; content outside the page is not exported).
+
+## Typography v1 render/export advisories
+
+Text case/decoration/ellipsis/paragraph-spacing/strokes are supported (see
+`text.md`). What each surface can and cannot carry is diagnosed loudly, never
+dropped in silence:
+
+| Code | Meaning | Repair |
+|------|---------|--------|
+| `LUME0214` | **RETIRED** in Typography v1 — text strokes now render (single solid stroke, outline behind fill). No longer emitted. | none; a single solid text stroke is supported |
+| `LUME0215` | a text node has >1 stroke, a gradient stroke paint, or a dashed stroke — only the first **solid** stroke renders; the extras are ignored | use a single solid text stroke; gradient/dash/multi-stroke text outlines are out of scope |
+| `LUME0421` | PDF export cannot render text `underline`/`strike` | export SVG/PNG for text decoration, or drop it for the PDF |
+| `LUME0422` | PDF export cannot render a text stroke | export SVG/PNG for text strokes, or drop the stroke for the PDF |
+| `LUME0423` | PDF export renders only the first fill for a multi-fill text node | use a single text fill for PDF |
+| `LUMS0104` | the font family has no face at the requested weight; the shaper snapped to the nearest one (advisory — snapping is correct, the silence was the bug) | add a face at that weight to the `fonts/` set for exact fidelity, or pick a weight the family ships |
 
 ## Brand governance
 

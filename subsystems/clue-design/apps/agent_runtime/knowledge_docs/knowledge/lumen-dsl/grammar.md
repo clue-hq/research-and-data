@@ -79,7 +79,7 @@ Paint and effects (see `colors.md` and `skills/effects`):
 | `fill(solid(#hex,0.5))` / `fill(solid(#hex,o(0.5)))` | fill with opacity multiplied into the color alpha (both arg orders; out-of-range/token misuse → `LUMD0270`) |
 | `f[(id,paint),(paint),…]` | ordered fill stack |
 | `background(paint)` / `bg(paint)` | page/container background |
-| `stroke(paint,width)` or extended `stroke(id?,paint,w(),dash(),cap(),join(),align())` | stroke (shape only; text strokes drop with `LUME0214`) |
+| `stroke(paint,width)` or extended `stroke(id?,paint,w(),dash(),cap(),join(),align())` | stroke; on **text** it renders as a display-type outline (stroke behind fill, first **solid** stroke only — extras advise `LUME0215`; PDF can't, `LUME0422`) |
 | `shadow(color,o(),x(),y(),blur(),spread())` or `shadow(x,y,blur[,spread],color)` | drop shadow (elevation) |
 | `glow(id?,#color,o(),blur(),spread())` | outer glow — centered, **no x/y** (`glow(...,x())` → `LUMD0266`) |
 | `blur(12)` or `blur(id?,r(12))` | layer blur of the node's own rendering (malformed → `LUMD0267`) |
@@ -92,7 +92,11 @@ Text (see `text.md`):
 default size for big canvases — see `text.md`), `font_weight`, `style($type.x)`,
 `align(left|center|right|justify)`
 (standalone horizontal align; pairs with `style($type.x)`), `lh`, `ls`, `tracking`,
-`wrap_text(bool)`, `max_lines(n)`, `dir(ltr|rtl|auto)`.
+`wrap_text(bool)`, `max_lines(n)`, `dir(ltr|rtl|auto)`,
+`case(upper|lower|title|none)` (alias `text_transform`, also `uppercase`/`lowercase`;
+bad value → `LUMD0271`), `underline(bool)`, `strike(bool)` (alias `strikethrough`),
+`truncate(bool)` (alias `ellipsis`; inert with no cut point → `LUMV0905`),
+`para_spacing(n)` (alias `paragraph_spacing`; ≥ 0, negative → `LUMD0255`).
 
 Auto-layout (on `al` containers; see `layout.md`):
 

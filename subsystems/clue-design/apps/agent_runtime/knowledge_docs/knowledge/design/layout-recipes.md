@@ -71,7 +71,10 @@ dead band (see `foundations`, "Distribute the canvas").
   alignment spine, generous margin.
 - **Type:** a display voice for the headline (Fraunces / Bricolage Grotesque /
   Playfair for elegance) over Inter/Hanken body; a mono eyebrow (Space Mono)
-  reads as "field report", not a tinted pill.
+  reads as "field report", not a tinted pill. Set the eyebrow with `case(upper)
+  tracking(200)` (author the words in natural case — the transform is display-only,
+  the content stays editable); reserve uppercase + wide tracking for this one
+  kicker line, never the body.
 
 ```text
 page linkedin_square size(1080,1080,px)
@@ -80,7 +83,7 @@ page linkedin_square size(1080,1080,px)
       brand text "NORTHWIND" p(0,0) s(500,hug) font("Space Grotesk",22,700,left) fill(#0b3d2e) max_lines(1)
       tag text "FIELD REPORT" p(0,0) s(320,hug) font("Space Mono",15,400,right) fill(#6b7280) align(right) max_lines(1)
     main al(v,x(s),y(c),g(24),pad(0)) p(0,0) s(888,fill)
-      over text "GRID INTELLIGENCE" p(0,0) s(888,hug) font("Space Mono",16,400,left) fill(#c2410c) max_lines(1)
+      over text "grid intelligence" p(0,0) s(888,hug) font("Space Mono",16,400,left) fill(#c2410c) case(upper) tracking(200) max_lines(1)
       headline text "Every outage, mapped before it spreads." p(0,0) s(888,hug) font("Fraunces",76,600,left) fill(#0b3d2e) lh(1.03) wrap_text(true) max_lines(3)
       body text "Northwind watches ten thousand substations and routes crews to the fault in seconds." p(0,0) s(760,hug) font("Inter",21,400,left) fill(#374151) lh(1.4) wrap_text(true) max_lines(3)
     footer al(h,x(sb),y(c),g(16),pad(0)) p(0,0) s(888,hug)
@@ -164,7 +167,8 @@ so the scrim rule is non-negotiable (`knowledge/images/placement`).
   (`fill($surface.inverse)` / a dark hex) so brand type tokens resolve to LIGHT
   ink over the scrim, and the dark fill is the fallback if the image fails.
   **Constructs:** `fr` root, overlap by declaration order, scrim.
-- **Type:** a confident display headline in light ink; keep body short.
+- **Type:** a confident display headline in light ink; keep body short. Close with
+  at most **one** underlined text CTA (`underline(true)`) as the single accent.
 
 The `photo` here is a **radial-wash stand-in** so the skeleton validates without
 an asset store. In a real build, replace it with
@@ -179,7 +183,12 @@ page linkedin_square size(1080,1080,px)
       over text "CASE STUDY" p(0,0) s(880,hug) font("Space Mono",16,400,left) fill(#a7f3d0) max_lines(1)
       headline text "Calmer clinics, faster triage." p(0,0) s(880,hug) font("Fraunces",72,600,left) fill(#f4f1ea) lh(1.05) wrap_text(true) max_lines(3)
       body text "Meridian answered every after-hours call at Cedar Valley and cut readmissions by a third." p(0,0) s(820,hug) font("Inter",21,400,left) fill(#d1fae5) lh(1.4) wrap_text(true) max_lines(3)
+      cta_link text "Read the case study" p(0,0) s(880,hug) font("Inter",18,600,left) fill(#f4f1ea) underline(true) max_lines(1)
 ```
+
+The trailing `cta_link` is the **one** underlined accent — a text CTA in light ink,
+deliberate emphasis, not link-blue and not repeated. Underline exactly one element
+per design (a CTA, one word); never underline headlines or body copy.
 
 ### 5 — banded
 
@@ -235,6 +244,22 @@ page linkedin_square size(1080,1080,px)
       body text "Ten years of crews, storms, and substations — one platform that keeps the lights on." p(0,0) s(600,hug) align(center) font("Inter",19,400,center) fill(#374151) lh(1.4) wrap_text(true) max_lines(3)
       cta al(h,x(c),y(c),pad(16,32)) p(0,0) s(220,60) fill(#0b3d2e) rd(999)
         cta_text text "Meet Northwind" p(0,0) s(fill,hug) align(center) font("Inter",17,600,center) fill(#f4f1ea) max_lines(1)
+```
+
+## Fitting variable copy — truncation & stanza spacing
+
+When a card or slot carries **variable-length** body copy you can't fully control,
+arm `truncate(true)` alongside `max_lines(n)` so an overrun ends the last visible
+line with `…` instead of clipping mid-glyph. Truncation is layout **honesty**, not
+a licence to cram: if the copy actually gets cut, layout still reports the overflow
+(`LUMV0904`) — prefer rewriting the copy to fit, and keep `truncate` as the graceful
+fallback. For a multi-stanza body, keep line-height and paragraph air distinct:
+`lh(...)` inside a paragraph, `para_spacing(n)` between stanzas split on `\n`.
+
+```text
+card al(v,x(s),y(s),g(12),pad(40)) p(0,0) s(888,420) fill(#ffffff) rd(24)
+  title text "Field note" p(0,0) s(808,hug) font("Space Grotesk",26,700,left) fill(#0b3d2e) max_lines(1)
+  body text "Northwind watches ten thousand substations across four regions and routes the nearest crew to a developing fault within seconds, long before the outage can cascade into neighbouring feeders and take down the wider grid." p(0,0) s(808,hug) font("Inter",19,400,left) fill(#374151) lh(1.4) wrap_text(true) max_lines(3) truncate(true)
 ```
 
 ## Surfaces & presets (the page mechanics, orthogonal to archetype)
