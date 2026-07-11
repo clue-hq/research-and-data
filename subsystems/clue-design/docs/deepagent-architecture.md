@@ -529,3 +529,54 @@ Gates: workspace 0 fail · helper release · HANDSHAKE OK b5f0b3d093c1 ·
 agent-runtime 411 · api green · editor tsc + targeted · 6/6 exemplars VALID
 (two-color pixel-proven). A6 COMPLETE (A6a+A6b). NEXT: the full A5 re-sweep
 (SWEEP-SPEC verbatim vs the 1.22/3 baseline), then output-quality work.
+
+## Track A — A7a Vertical alignment (2026-07-11, gate verified)
+
+Text valign lands: `valign(top|center|bottom)` positions the text block
+inside its OWN Fixed/Fill-height box. D2: `center` canonical, NO aliases —
+the scene model already says Center for the vertical axis (LayoutAnchor via
+`y(c)`), so ONE word for "centered" across the grammar and the recorded
+`va(center)`/`valign` hallucination trap ceases to exist; `valign(middle)` →
+LUMD0275, arity → LUMD0230, wrong target → LUMD0607. D3: ONE shared formula
+`lumen_core::valign_offset` = `max(box_h − content_h, 0) × {0, .5, 1}` —
+clamped, so overflow degrades to a no-op and LUMV0903 fires unchanged; hug
+height = zero slack = silent no-op (D6: editor control disabled + tooltip).
+D4: valign is NOT a measurement input (absent from TextMeasureInput /
+measure_key / the TS bridge) — the wasm seam untouched. Serde: A6a additive
+pattern, absent = Top, old scenes byte-identical, SCHEMA_VERSION still 1.
+Painted on all raster paths (fast/stacked/spanned), SVG + PDF exporters,
+editor CanvasKit twins, TextSection select + TextToolbar icon group,
+TextEditOverlay computed paddingTop. Konva leg (test-only, frontend-practices
+§4) delegates to Konva's builtin verticalAlign — its real line layout beats a
+formula with no measurer; divergences documented in-code.
+
+Review-gate record: the adversarial round (two independent refuters) CONFIRMED
+one HIGH cross-backend bug post-green-suites — the A4/A6a/A6b pattern now four
+for four. Stacked path under a max_lines cut: the raster/CanvasKit pre-pass
+counted a trailing paragraph gap after the last painted paragraph;
+measure_stacked (SVG/PDF's measured.height) ends at the last visible line's
+bottom → export sat a FULL GAP lower than canvas/raster for bottom. Fixed:
+gap-BEFORE accumulation between consecutive painted paragraphs only, in
+render.rs AND drawDescriptors.ts; pinned by
+stacked_valign_bottom_with_max_lines_cut_excludes_the_trailing_gap and the
+rerunnable cross-backend gate (13 cells, PNG/SVG/PDF exact to 0.01px,
+.context/next-wave/a7a-gate-evidence/). Also fixed at review: the edit
+overlay's scrollHeight floor bug (clientHeight floor meant paddingTop stayed
+0 — zero-height read fix) and the Konva-leg no-op (formula had no content
+height there). Browser verification 8/8 (staircase, controls, D6 disabled
+state, overlay centering live, trailing-gap cell at box bottom). Found &
+recorded: a RUNNING local API on :8000 changes one EditorApp unit test's
+outcome via .env.local base URL — pre-existing test-hygiene quirk, not
+valign; the 26 canvaskit-ENOENT EditorApp/Wasm failures are the known jsdom
+baseline, byte-identical pre/post.
+
+Deferred (ledger): valign token channel; reconcile/DOM→scene CSS mapping
+(flex align-items → valign); heuristic-measurer export drift for
+center/bottom (pre-existing measurer-honesty seam — loud-measurer slice);
+f32 sub-pixel casts; control enabled on zero-slack Fixed boxes (dead knob).
+Gates: core 473 · skia/export/assets 193 · helper release · HANDSHAKE OK
+4d619841f3a8 · agent-runtime 411 · api 291 · editor tsc + vitest 716 (26
+known baseline) · parity gate PASS · browser 8/8. Design + as-built REVIEW
+AMENDMENTS: .context/next-wave/a7a-valign-design.md. NEXT: A7b italics
+(span rider + provisioning; 17/27 families have italic VFs in the pinned
+clone).
