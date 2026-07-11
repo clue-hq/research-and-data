@@ -8,6 +8,7 @@ const style: TextEditStyle = {
   fontWeight: 600,
   align: "left",
   valign: "top",
+  italic: false,
   lineHeight: 1.2,
   letterSpacing: 0,
   color: "#27231d"
@@ -71,6 +72,24 @@ describe("TextEditOverlay (Wave 3 C4)", () => {
     fireEvent.change(ta, { target: { value: "via shortcut" } });
     fireEvent.keyDown(ta, { key: "Enter", metaKey: true });
     expect(onCommit).toHaveBeenCalledWith("via shortcut");
+  });
+
+  it("applies font-style italic when the node is italic (A7b)", () => {
+    const { getByTestId, rerender } = render(
+      <TextEditOverlay {...base} onCommit={() => {}} onCancel={() => {}} />
+    );
+    const ta = getByTestId("text-edit-overlay") as HTMLTextAreaElement;
+    // Upright by default.
+    expect(ta.style.fontStyle).toBe("normal");
+    rerender(
+      <TextEditOverlay
+        {...base}
+        style={{ ...style, italic: true }}
+        onCommit={() => {}}
+        onCancel={() => {}}
+      />
+    );
+    expect(ta.style.fontStyle).toBe("italic");
   });
 
   it("rotates the overlay to match the node", () => {

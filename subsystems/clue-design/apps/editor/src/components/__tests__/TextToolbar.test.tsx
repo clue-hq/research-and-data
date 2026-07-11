@@ -146,6 +146,31 @@ describe("TextToolbar", () => {
     expect(center).toHaveAttribute("title", "No effect with hug height");
   });
 
+  it("reflects the node's italic state on the Italic button (A7b)", () => {
+    const { rerender } = render(<TextToolbar selectedNode={textNode()} onOperation={vi.fn()} />);
+    // Absent italic → not pressed.
+    expect(screen.getByLabelText("Italic")).toHaveAttribute("aria-pressed", "false");
+    rerender(<TextToolbar selectedNode={textNode({ italic: true })} onOperation={vi.fn()} />);
+    expect(screen.getByLabelText("Italic")).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByLabelText("Italic")).toHaveClass("active");
+  });
+
+  it("toggles italic via updateTextNode (A7b)", () => {
+    const node = textNode();
+    const onOperation = vi.fn<(operation: Operation) => void>();
+    const { rerender } = render(<TextToolbar selectedNode={node} onOperation={onOperation} />);
+
+    // Off → on.
+    fireEvent.click(screen.getByLabelText("Italic"));
+    expect(onOperation).toHaveBeenLastCalledWith(updateTextNode(node, { italic: true }));
+
+    // On → off (de-italicize).
+    const italicNode = textNode({ italic: true });
+    rerender(<TextToolbar selectedNode={italicNode} onOperation={onOperation} />);
+    fireEvent.click(screen.getByLabelText("Italic"));
+    expect(onOperation).toHaveBeenLastCalledWith(updateTextNode(italicNode, { italic: false }));
+  });
+
   it("passes brand tokens through to the swatch popover", () => {
     const brandTokens: BrandTokenCatalog = { text_tokens: ["text.primary"] };
     render(<TextToolbar selectedNode={textNode()} onOperation={vi.fn()} brandTokens={brandTokens} />);

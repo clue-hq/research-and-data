@@ -182,6 +182,10 @@ export interface RenderNodeDescriptor {
     textTransform: "none" | "uppercase" | "lowercase" | "title";
     underline: boolean;
     strikethrough: boolean;
+    /** A7b: block italic (always present; false default). Unlike the decoration
+     * flags it drives glyph geometry — the CanvasKit legs map it to a
+     * `fontStyle.slant`, and the measurer keys on it. */
+    italic: boolean;
     truncate: boolean;
     /** Extra vertical gap at each `\n` break, already scaled into canvas units. */
     paragraphSpacing: number;
@@ -227,6 +231,10 @@ export interface TextSpanDescriptor {
   fontWeight: number | null;
   underline: boolean | null;
   strikethrough: boolean | null;
+  /** A7b: override italic. `null` inherits the block; `false` de-italicizes the
+   * run (OVERRIDE merge, not union) — the painter/measurer resolve
+   * `span.italic ?? block.italic`, and `??` treats `null` as inherit. */
+  italic: boolean | null;
 }
 
 export interface ParentComputedOrigin {
@@ -312,6 +320,7 @@ export function nodeDescriptor(
       textTransform: node.kind.text_transform ?? "none",
       underline: node.kind.underline ?? false,
       strikethrough: node.kind.strikethrough ?? false,
+      italic: node.kind.italic ?? false,
       truncate: node.kind.truncate ?? false,
       paragraphSpacing: (node.kind.paragraph_spacing ?? 0) * scale
     };
@@ -325,7 +334,8 @@ export function nodeDescriptor(
         fill: span.fill ? paintToCss(span.fill) : null,
         fontWeight: span.font_weight ?? null,
         underline: span.underline ?? null,
-        strikethrough: span.strikethrough ?? null
+        strikethrough: span.strikethrough ?? null,
+        italic: span.italic ?? null
       }));
     }
   }

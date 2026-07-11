@@ -92,11 +92,58 @@ export interface KitFontFace {
   key: string;
   family: string;
   bytes: ArrayBuffer;
+  /** A7b: manifest/kit weight — used for DOM FontFace descriptors only. */
+  weight?: number;
+  /** A7b: "italic" | "normal" — drives the D2 synthesis gate (`hasItalicFace`)
+   * and the DOM FontFace descriptors. Absent = treated as upright. */
+  style?: string;
+}
+
+/**
+ * A7b (D5): the DOM `FontFace` descriptors for a face, derived from its manifest
+ * weight/style. Passing these makes italic and upright faces of one family
+ * register as DISTINCT `document.fonts` entries — without them both land at the
+ * default (family, normal, 400) and the browser picks one nondeterministically.
+ * `weight` is omitted when unknown (kit faces may lack it) so the browser keeps
+ * its own default instead of receiving an invalid `"undefined"`. Shared by both
+ * DOM registration legs (library + kit) so the collision fix stays in one place.
+ */
+export function fontFaceDescriptors(face: { weight?: number; style?: string }): FontFaceDescriptors {
+  const descriptors: FontFaceDescriptors = {
+    style: face.style === "italic" ? "italic" : "normal"
+  };
+  if (typeof face.weight === "number") {
+    descriptors.weight = String(face.weight);
+  }
+  return descriptors;
 }
 
 const registeredKitFaceKeys = new Set<string>();
 let pendingKitFaces: KitFontFace[] = [];
 let liveFontProvider: TypefaceFontProvider | null = null;
+// A7b D2 gate state: which families are registered at all, and which have a
+// REAL italic face. CanvasKit's paragraph layer applies a SYNTHETIC oblique
+// when asked for an unsatisfiable italic slant (same skparagraph behavior the
+// server gates against), so the paragraph builders request Italic only when
+// `hasItalicFace` says a real face exists. Kit faces that omit `style`
+// metadata under-report here (the editor then renders upright while the
+// byte-parsing server may find the italic) — a known, documented limitation.
+const registeredFamilies = new Set<string>([]);
+const italicFamilies = new Set<string>();
+
+/** A7b D2: whether requesting `Slant::Italic` for this family selects a real
+ * face. Unknown families mirror the server's fallback resolution (Inter). */
+export function hasItalicFace(family: string): boolean {
+  const resolved = registeredFamilies.has(family) ? family : "Inter";
+  return italicFamilies.has(resolved);
+}
+
+function trackFaceFamily(face: { family: string; style?: string }): void {
+  registeredFamilies.add(face.family);
+  if (face.style === "italic") {
+    italicFamilies.add(face.family);
+  }
+}
 
 /**
  * K3: register brand-kit font faces into the shared font provider so canvas
@@ -110,6 +157,7 @@ export function registerKitFontFaces(faces: KitFontFace[]): boolean {
   const fresh = faces.filter((face) => !registeredKitFaceKeys.has(face.key));
   for (const face of fresh) {
     registeredKitFaceKeys.add(face.key);
+    trackFaceFamily(face);
   }
   if (fresh.length === 0) {
     return false;
@@ -140,6 +188,8 @@ export function resetCanvasKitForTests(): void {
   registeredKitFaceKeys.clear();
   pendingKitFaces = [];
   liveFontProvider = null;
+  registeredFamilies.clear();
+  italicFamilies.clear();
   setTextMeasurementStatus("pending");
 }
 
@@ -203,6 +253,10 @@ async function registerFont(
     // a "Inter" request (the design system) and "Inter Variable" resolve.
     provider.registerFont(bytes, INTER_FAMILY);
     provider.registerFont(bytes, "Inter Variable");
+    // Bundled Inter is upright-only; library italics register via
+    // registerKitFontFaces with their manifest style.
+    registeredFamilies.add(INTER_FAMILY);
+    registeredFamilies.add("Inter Variable");
     return provider;
   } catch {
     return null;

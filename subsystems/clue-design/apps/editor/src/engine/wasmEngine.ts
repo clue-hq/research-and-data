@@ -71,6 +71,11 @@ export interface TextMeasurement {
   text_transform?: "none" | "uppercase" | "lowercase" | "title";
   truncate?: boolean;
   paragraph_spacing?: number;
+  /** A7b: block italic — a `measure_key` input (italic changes glyph advances),
+   * so a node using it MUST carry the flag or the engine's layout lookup misses
+   * and falls back to the heuristic. Optional so pre-A7b payloads deserialize
+   * unchanged (the engine's `ProvidedMeasurement.italic` is `#[serde(default)]`). */
+  italic?: boolean;
   /** A6b review fix: the raw node spans, matching the Rust `TextSpan` serde
    * shape. They enter the engine's `measure_key` (spans digest), so a spanned
    * node's override MUST carry them or the layout lookup misses and the node

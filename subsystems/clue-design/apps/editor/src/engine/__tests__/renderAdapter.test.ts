@@ -978,3 +978,41 @@ describe("A7a vertical alignment", () => {
     expect(nodeDescriptor(minimalScene, bottom, page).text?.valign).toBe("bottom");
   });
 });
+
+describe("A7b italic descriptor", () => {
+  const page = minimalScene.pages.page_a4;
+  const base = minimalScene.nodes.node_contact_name as Node;
+
+  it("carries block italic, defaulting to false when the node omits it", () => {
+    expect(nodeDescriptor(minimalScene, base, page).text?.italic).toBe(false);
+
+    const italicNode: Node = {
+      ...structuredClone(base),
+      kind: { ...structuredClone(base.kind), italic: true } as Node["kind"]
+    };
+    expect(nodeDescriptor(minimalScene, italicNode, page).text?.italic).toBe(true);
+  });
+
+  it("carries span italic verbatim — false preserved (override), absent → null (inherit)", () => {
+    const spanned: Node = {
+      ...structuredClone(base),
+      kind: {
+        ...structuredClone(base.kind),
+        italic: true,
+        spans: [
+          // Explicit de-italicize: false must survive as false, NOT collapse to
+          // null (the override merge `span.italic ?? block` depends on it).
+          { start: 0, end: 3, italic: false },
+          // Italic span inside an upright region.
+          { start: 4, end: 7, italic: true },
+          // No italic channel → inherit (null in descriptor form).
+          { start: 8, end: 11, font_weight: 700 }
+        ]
+      } as Node["kind"]
+    };
+    const spans = nodeDescriptor(minimalScene, spanned, page).text?.spans;
+    expect(spans?.[0].italic).toBe(false);
+    expect(spans?.[1].italic).toBe(true);
+    expect(spans?.[2].italic).toBeNull();
+  });
+});

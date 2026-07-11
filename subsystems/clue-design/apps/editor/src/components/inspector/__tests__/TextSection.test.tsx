@@ -50,3 +50,26 @@ describe("TextSection — A7a vertical alignment", () => {
     expect(screen.getByLabelText("V-Align")).toBeDisabled();
   });
 });
+
+describe("TextSection — A7b italic", () => {
+  it("binds the Italic toggle to the node's italic (defaulting off)", () => {
+    const { rerender } = render(<TextSection selectedNode={textNode()} onOperation={vi.fn()} />);
+    expect(screen.getByLabelText("Italic")).not.toBeChecked();
+    rerender(<TextSection selectedNode={textNode({ italic: true })} onOperation={vi.fn()} />);
+    expect(screen.getByLabelText("Italic")).toBeChecked();
+  });
+
+  it("dispatches updateTextNode toggling italic on change", () => {
+    const node = textNode();
+    const onOperation = vi.fn<(operation: Operation) => void>();
+    render(<TextSection selectedNode={node} onOperation={onOperation} />);
+
+    fireEvent.click(screen.getByLabelText("Italic"));
+    expect(onOperation).toHaveBeenLastCalledWith(updateTextNode(node, { italic: true }));
+  });
+
+  it("disables the Italic toggle on a locked node", () => {
+    render(<TextSection selectedNode={textNode({}, true)} onOperation={vi.fn()} />);
+    expect(screen.getByLabelText("Italic")).toBeDisabled();
+  });
+});

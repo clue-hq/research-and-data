@@ -139,4 +139,28 @@ describe.skipIf(!present)("SkParagraph measurement provider (Wave 3 C4)", () => 
     // does not, the metric is at least non-negative and present).
     expect(m.width).toBeGreaterThanOrEqual(lightWidth);
   });
+
+  // A7b: block italic is a `measure_key` input, so the record MUST carry it (a
+  // miss falls back to the heuristic). Span italic rides in the raw `spans`.
+  it("carries block italic in the record and echoes span italic verbatim", () => {
+    const scene = JSON.parse(JSON.stringify(minimalScene)) as Scene;
+    (scene.nodes.node_contact_name.kind as { font_family: string }).font_family = family;
+    // Spanless, upright default → italic false, present.
+    expect(skiaMeasurements(ck, fontMgr, scene)[0].italic).toBe(false);
+
+    // Block italic → record carries italic true.
+    (scene.nodes.node_contact_name.kind as { italic?: boolean }).italic = true;
+    expect(skiaMeasurements(ck, fontMgr, scene)[0].italic).toBe(true);
+
+    // A de-italicizing span in an italic block: the record echoes the raw spans
+    // (the digest key) with italic:false preserved for the override merge.
+    const deItalic: TextSpan = { start: 6, end: 12, italic: false };
+    const spanScene = JSON.parse(JSON.stringify(minimalScene)) as Scene;
+    spanScene.nodes = { t_spanned: spannedTextNode([deItalic]) };
+    (spanScene.nodes.t_spanned.kind as { italic?: boolean }).italic = true;
+    spanScene.pages.page_a4 = { ...spanScene.pages.page_a4, children: ["t_spanned"] };
+    const record = skiaMeasurements(ck, fontMgr, spanScene)[0];
+    expect(record.italic).toBe(true);
+    expect(record.spans).toEqual([deItalic]);
+  });
 });

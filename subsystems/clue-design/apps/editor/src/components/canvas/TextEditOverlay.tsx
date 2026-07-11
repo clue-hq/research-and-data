@@ -24,6 +24,9 @@ export interface TextEditStyle {
   /** A7a: vertical placement — drives a computed `paddingTop` so the textarea
    * visually matches the painted position for center/bottom text. */
   valign: "top" | "center" | "bottom";
+  /** A7b: block italic → the textarea's `font-style` so the edit surface matches
+   * the painted glyphs (block-level only; spans don't render in the overlay). */
+  italic: boolean;
   lineHeight: number;
   letterSpacing: number;
   color: string;
@@ -151,6 +154,7 @@ export function TextEditOverlay({
         fontFamily: style.fontFamily,
         fontSize: style.fontSize * zoom,
         fontWeight: style.fontWeight,
+        fontStyle: style.italic ? "italic" : "normal",
         textAlign: style.align === "justify" ? "justify" : style.align,
         lineHeight: String(style.lineHeight),
         letterSpacing: `${style.letterSpacing * zoom}px`,

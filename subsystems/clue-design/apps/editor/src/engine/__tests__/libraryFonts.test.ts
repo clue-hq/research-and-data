@@ -9,7 +9,10 @@ import {
 } from "../libraryFonts";
 import { registerKitFontFaces } from "../canvaskit/loadCanvasKit";
 
-vi.mock("../canvaskit/loadCanvasKit", () => ({
+vi.mock("../canvaskit/loadCanvasKit", async (importOriginal) => ({
+  // Keep the real `fontFaceDescriptors` (pure helper); only the provider
+  // registration is stubbed so the DOM leg can be exercised in isolation.
+  ...(await importOriginal<typeof import("../canvaskit/loadCanvasKit")>()),
   registerKitFontFaces: vi.fn(() => true)
 }));
 
@@ -86,9 +89,10 @@ describe("libraryFonts — manifest fetch", () => {
 describe("libraryFonts — scene-filtered ref collection", () => {
   it("collects faces only for families whose name appears in the scene JSON", () => {
     const sceneJson = JSON.stringify(SCENE);
+    // A7b: refs now carry the manifest weight/style for the DOM FontFace descriptors.
     expect(collectReferencedLibraryFaceRefs(LIBRARY, sceneJson)).toEqual([
-      { assetId: "asset_regular", family: "Aeonik" },
-      { assetId: "asset_bold", family: "Aeonik" }
+      { assetId: "asset_regular", family: "Aeonik", weight: 400, style: "normal" },
+      { assetId: "asset_bold", family: "Aeonik", weight: 700, style: "normal" }
     ]);
   });
 
@@ -100,9 +104,9 @@ describe("libraryFonts — scene-filtered ref collection", () => {
   it("collects across multiple referenced families", () => {
     const sceneJson = JSON.stringify({ a: "Aeonik", b: "Canela" });
     expect(collectReferencedLibraryFaceRefs(LIBRARY, sceneJson)).toEqual([
-      { assetId: "asset_regular", family: "Aeonik" },
-      { assetId: "asset_bold", family: "Aeonik" },
-      { assetId: "asset_canela", family: "Canela" }
+      { assetId: "asset_regular", family: "Aeonik", weight: 400, style: "normal" },
+      { assetId: "asset_bold", family: "Aeonik", weight: 700, style: "normal" },
+      { assetId: "asset_canela", family: "Canela", weight: 400, style: "normal" }
     ]);
   });
 });
@@ -129,8 +133,10 @@ describe("libraryFonts — canvas leg", () => {
     const registered = await loadLibraryFontFaces(SCENE, { apiBaseUrl: "http://api.test", fetchImpl });
 
     expect(registered).toBe(true);
+    // A7b: the fetched face carries weight/style (the CanvasKit leg ignores
+    // them; the DOM leg turns them into FontFace descriptors).
     expect(vi.mocked(registerKitFontFaces)).toHaveBeenCalledWith([
-      { key: "Aeonik@asset_regular", family: "Aeonik", bytes }
+      { key: "Aeonik@asset_regular", family: "Aeonik", bytes, weight: 400, style: "normal" }
     ]);
   });
 
@@ -198,15 +204,17 @@ describe("libraryFonts — DOM leg (document.fonts registration)", () => {
   const withDomFonts = async (fn: () => Promise<void>) => {
     const OriginalFontFace = (globalThis as { FontFace?: unknown }).FontFace;
     const originalDocument = (globalThis as { document?: unknown }).document;
-    const added: Array<{ family: string; bytes: ArrayBuffer }> = [];
+    const added: Array<{ family: string; bytes: ArrayBuffer; descriptors?: unknown }> = [];
     const loadCalls = { count: 0 };
 
     class MockFontFace {
       family: string;
       bytes: ArrayBuffer;
-      constructor(family: string, bytes: ArrayBuffer) {
+      descriptors?: unknown;
+      constructor(family: string, bytes: ArrayBuffer, descriptors?: unknown) {
         this.family = family;
         this.bytes = bytes;
+        this.descriptors = descriptors;
       }
       async load() {
         loadCalls.count += 1;
@@ -214,7 +222,9 @@ describe("libraryFonts — DOM leg (document.fonts registration)", () => {
       }
     }
 
-    const fontsAdd = vi.fn((face: MockFontFace) => added.push({ family: face.family, bytes: face.bytes }));
+    const fontsAdd = vi.fn((face: MockFontFace) =>
+      added.push({ family: face.family, bytes: face.bytes, descriptors: face.descriptors })
+    );
     (globalThis as Record<string, unknown>).FontFace = MockFontFace;
     (globalThis as Record<string, unknown>).document = { fonts: { add: fontsAdd } };
     try {
@@ -244,12 +254,47 @@ describe("libraryFonts — DOM leg (document.fonts registration)", () => {
       await loadLibraryFontFaces(SCENE, { apiBaseUrl: "http://api.test", fetchImpl: fetchOk() });
     });
     // Aeonik has two faces (regular + bold) → two document.fonts additions.
+    // A7b: each carries its weight/style descriptors (the D5 collision fix).
     expect(result.loadCalls.count).toBe(2);
     expect(result.added).toEqual([
-      { family: "Aeonik", bytes: expect.any(ArrayBuffer) },
-      { family: "Aeonik", bytes: expect.any(ArrayBuffer) }
+      { family: "Aeonik", bytes: expect.any(ArrayBuffer), descriptors: { style: "normal", weight: "400" } },
+      { family: "Aeonik", bytes: expect.any(ArrayBuffer), descriptors: { style: "normal", weight: "700" } }
     ]);
     expect(result.fontsAdd).toHaveBeenCalledTimes(2);
+  });
+
+  it("registers an italic face with style:italic descriptors (A7b D5 collision fix)", async () => {
+    const italicLibrary: FontLibrary = {
+      version: 1,
+      families: [
+        {
+          slug: "newsreader",
+          family: "Newsreader",
+          faces: [
+            { weight: 400, style: "normal", asset_id: "asset_upright" },
+            { weight: 400, style: "italic", asset_id: "asset_italic" }
+          ]
+        }
+      ]
+    };
+    const bytes = new ArrayBuffer(8);
+    const fetchImpl = vi.fn(async (input: URL | RequestInfo) => {
+      if (String(input).endsWith("/font-library")) {
+        return manifestResponse(italicLibrary);
+      }
+      return { ok: true, arrayBuffer: async () => bytes } as unknown as Response;
+    }) as unknown as typeof fetch;
+    const scene = { nodes: { t1: { font_family: "Newsreader" } } };
+
+    const result = await withDomFonts(async function () {
+      await loadLibraryFontFaces(scene, { apiBaseUrl: "http://api.test", fetchImpl });
+    });
+    // The upright and italic faces of ONE family register as distinct DOM faces
+    // — no collision at (family, normal, 400).
+    expect(result.added).toEqual([
+      { family: "Newsreader", bytes: expect.any(ArrayBuffer), descriptors: { style: "normal", weight: "400" } },
+      { family: "Newsreader", bytes: expect.any(ArrayBuffer), descriptors: { style: "italic", weight: "400" } }
+    ]);
   });
 
   it("is a clean no-op where FontFace is undefined (jsdom/node)", async () => {

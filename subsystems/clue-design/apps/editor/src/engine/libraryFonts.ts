@@ -1,4 +1,4 @@
-import { registerKitFontFaces } from "./canvaskit/loadCanvasKit";
+import { fontFaceDescriptors, registerKitFontFaces } from "./canvaskit/loadCanvasKit";
 
 /**
  * Curated FONT LIBRARY (canvas + DOM legs): fetch the shared library manifest
@@ -43,6 +43,13 @@ export interface FontLibrary {
 interface LibraryFontFaceRef {
   assetId: string;
   family: string;
+  /** A7b (D5): the manifest weight/style, threaded to the DOM `FontFace`
+   * descriptors so an italic face registers as (family, italic, weight) rather
+   * than colliding with the upright at the nondeterministic default
+   * (family, normal, 400). The CanvasKit leg ignores these (the provider
+   * disambiguates by the requested `fontStyle`). */
+  weight?: number;
+  style?: string;
 }
 
 export interface FontLibraryOptions {
@@ -105,7 +112,14 @@ export function collectReferencedLibraryFaceRefs(
     for (const face of faces) {
       const assetId = (face as { asset_id?: unknown } | null)?.asset_id;
       if (typeof assetId === "string" && assetId.length > 0) {
-        refs.push({ assetId, family: familyName });
+        const weight = (face as { weight?: unknown } | null)?.weight;
+        const style = (face as { style?: unknown } | null)?.style;
+        refs.push({
+          assetId,
+          family: familyName,
+          weight: typeof weight === "number" ? weight : undefined,
+          style: typeof style === "string" ? style : undefined
+        });
       }
     }
   }
@@ -152,7 +166,7 @@ export async function loadLibraryFontFaces(
           return null;
         }
         const bytes = await response.arrayBuffer();
-        return { key: `${ref.family}@${ref.assetId}`, family: ref.family, bytes };
+        return { key: `${ref.family}@${ref.assetId}`, family: ref.family, bytes, weight: ref.weight, style: ref.style };
       } catch {
         return null;
       }
@@ -191,7 +205,7 @@ export function resetFontLibraryForTests(): void {
  * so a re-run never double-adds a face. No-op (and never throws) where
  * FontFace/document.fonts are unavailable (jsdom/tests). */
 async function registerLibraryFontFacesInDom(
-  faces: { key: string; family: string; bytes: ArrayBuffer }[]
+  faces: { key: string; family: string; bytes: ArrayBuffer; weight?: number; style?: string }[]
 ): Promise<void> {
   if (typeof FontFace === "undefined" || typeof document === "undefined" || !document.fonts) {
     return;
@@ -203,7 +217,10 @@ async function registerLibraryFontFacesInDom(
       }
       registeredDomFaceKeys.add(face.key);
       try {
-        const fontFace = new FontFace(face.family, face.bytes);
+        // A7b (D5): pass the weight/style descriptors so italic and upright
+        // faces of one family register as distinct DOM faces instead of
+        // colliding nondeterministically at the (family, normal, 400) default.
+        const fontFace = new FontFace(face.family, face.bytes, fontFaceDescriptors(face));
         await fontFace.load();
         document.fonts.add(fontFace);
       } catch (error) {

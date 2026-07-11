@@ -196,6 +196,15 @@ export function TextSection({
             <label className="toggle-field">
               <input
                 type="checkbox"
+                checked={selectedNode.kind.italic ?? false}
+                disabled={selectedNode.locked}
+                onChange={(event) => onOperation(updateTextNode(selectedNode, { italic: event.target.checked }))}
+              />
+              Italic
+            </label>
+            <label className="toggle-field">
+              <input
+                type="checkbox"
                 checked={selectedNode.kind.underline ?? false}
                 disabled={selectedNode.locked}
                 onChange={(event) => onOperation(updateTextNode(selectedNode, { underline: event.target.checked }))}

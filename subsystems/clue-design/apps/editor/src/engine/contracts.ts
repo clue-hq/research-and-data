@@ -250,6 +250,11 @@ export interface TextNode {
   /** A6a D2: independent decoration flags (absent = false). */
   underline?: boolean;
   strikethrough?: boolean;
+  /** A7b D3: block-level italic. Unlike the decoration flags, italic changes
+   * glyph shapes and advances, so it is a MEASUREMENT input (joins the engine's
+   * `measure_key`). Absent = false, mirroring the engine's
+   * `#[serde(default, skip_serializing_if = is_false)] TextNode.italic`. */
+  italic?: boolean;
   /** A6a D3: opt-in "…" elision when max_lines/NoWrap cut content (absent = false). */
   truncate?: boolean;
   /** A6a D4: extra vertical px inserted at each `\n` break (absent/0 = today's
@@ -288,6 +293,11 @@ export interface TextSpan {
   underline?: boolean;
   /** Override strikethrough decoration; absent inherits the node. */
   strikethrough?: boolean;
+  /** A7b D1: override italic. Merge is OVERRIDE, not union (unlike underline):
+   * `span.italic.unwrap_or(block.italic)`, so `italic(false)` de-italicizes one
+   * run inside an italic block. Absent (None) inherits the node. Mirrors the
+   * engine's `#[serde(skip_serializing_if = "Option::is_none")] Option<bool>`. */
+  italic?: boolean;
 }
 
 export type TextAlign = "left" | "center" | "right" | "justify";

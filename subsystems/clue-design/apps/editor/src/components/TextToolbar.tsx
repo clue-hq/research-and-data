@@ -8,6 +8,7 @@ import {
   AlignVerticalJustifyCenter,
   AlignVerticalJustifyEnd,
   AlignVerticalJustifyStart,
+  Italic,
   Strikethrough,
   Underline
 } from "lucide-react";
@@ -141,6 +142,16 @@ export function TextToolbar({
         ))}
       </div>
       <div className="text-toolbar-align" role="group" aria-label="Text decoration">
+        <button
+          type="button"
+          className={text.italic ? "active" : undefined}
+          aria-label="Italic"
+          aria-pressed={text.italic ?? false}
+          disabled={disabled}
+          onClick={() => onOperation(updateTextNode(selectedNode, { italic: !text.italic }))}
+        >
+          <Italic aria-hidden size={14} />
+        </button>
         <button
           type="button"
           className={text.underline ? "active" : undefined}

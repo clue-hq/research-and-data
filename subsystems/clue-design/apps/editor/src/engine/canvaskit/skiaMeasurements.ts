@@ -1,6 +1,7 @@
 import type { CanvasKit, FontWeight, TypefaceFontProvider } from "canvaskit-wasm";
 import type { Scene, TextSpan } from "../contracts";
 import { resolvedTextFields } from "../renderAdapter";
+import { hasItalicFace } from "./loadCanvasKit";
 import { applyTextTransform, normalizeContentMapped, transformSegments } from "../textTransform";
 import type { TextMeasurement } from "../wasmEngine";
 
@@ -38,6 +39,7 @@ export function skiaMeasurements(ck: CanvasKit, fontProvider: TypefaceFontProvid
     const textTransform = t.text_transform ?? "none";
     const truncate = t.truncate ?? false;
     const paragraphSpacing = t.paragraph_spacing ?? 0;
+    const italic = t.italic ?? false;
     const spans = t.spans ?? [];
     const record: TextMeasurement = {
       content: t.content,
@@ -52,6 +54,10 @@ export function skiaMeasurements(ck: CanvasKit, fontProvider: TypefaceFontProvid
       text_transform: textTransform,
       truncate,
       paragraph_spacing: paragraphSpacing,
+      // A7b: block italic is a `measure_key` input (span italic rides in
+      // `spans`), so the record MUST carry it or the engine's layout lookup
+      // misses and falls back to the heuristic.
+      italic,
       width: 0,
       height: 0
     };
@@ -61,7 +67,7 @@ export function skiaMeasurements(ck: CanvasKit, fontProvider: TypefaceFontProvid
       // paragraph (review fix). NO paragraph-gap stacking when spans exist
       // (LUMV0907); the record carries the raw spans so the engine's spans-keyed
       // measure lookup hits instead of falling back to the heuristic.
-      const { width, height } = measureSpannedParagraph(ck, fontProvider, styled, spans, t.content, textTransform);
+      const { width, height } = measureSpannedParagraph(ck, fontProvider, styled, spans, t.content, textTransform, italic);
       record.spans = spans;
       record.width = width;
       record.height = height;
@@ -75,7 +81,8 @@ export function skiaMeasurements(ck: CanvasKit, fontProvider: TypefaceFontProvid
         fontSize: styled.fontSize,
         fontWeight: styled.fontWeight,
         lineHeight: styled.lineHeight,
-        letterSpacing: styled.letterSpacing
+        letterSpacing: styled.letterSpacing,
+        italic
       });
       // Paragraph spacing adds `gap` px at each `\n` break (unconstrained hug);
       // mirrors the measurer stacking each paragraph with the extra gap.
@@ -97,6 +104,10 @@ interface ParagraphInput {
   fontWeight: number;
   lineHeight: number;
   letterSpacing: number;
+  /** A7b: block italic — a shaping input (changes advances), so it enters the
+   * measured paragraph's `fontStyle.slant`. Optional (default upright) so the
+   * pre-A7b call sites need no change. */
+  italic?: boolean;
 }
 
 /** Unconstrained SkParagraph width/height for a text style. */
@@ -112,7 +123,14 @@ export function measureParagraph(
       // A6a D6.1: the exact numeric weight (no 4-bucket snap), matching the
       // painter and the server so measured widths and painted glyphs agree.
       // CanvasKit accepts a raw number here; the enum type is just the TS shape.
-      fontStyle: { weight: input.fontWeight as unknown as FontWeight },
+      // A7b: italic drives the slant — Skia snaps to upright natively when the
+      // provider carries no italic face (no synthetic slant), matching D2.
+      fontStyle: {
+        weight: input.fontWeight as unknown as FontWeight,
+        // A7b D2 gate: mirror the engine — Italic only when a real face exists,
+        // so measured widths reflect the same (upright) shaping the paint uses.
+        slant: input.italic && hasItalicFace(input.fontFamily) ? ck.FontSlant.Italic : ck.FontSlant.Upright
+      },
       heightMultiplier: input.lineHeight,
       letterSpacing: input.letterSpacing
     }
@@ -140,10 +158,11 @@ interface StyledTextFields {
  * A6b: unconstrained width/height of a spanned text node measured as ONE
  * segmented paragraph, mirroring lumen-skia `measure_spanned`. Span byte offsets
  * relocate onto the normalized string via the offset map, segments carry their
- * weight override (the ONLY per-run channel that changes measured geometry —
- * decoration and fill do not), and the paragraph is laid out with each segment's
- * style pushed so weight-driven width changes are captured. V0 measures
- * unconstrained (no `max_width`), matching the spanless path.
+ * weight AND italic overrides — the two per-run channels that change measured
+ * geometry (A7b made italic the second; decoration and fill do not) — and the
+ * paragraph is laid out with each segment's style pushed so the shaping-driven
+ * width changes are captured. V0 measures unconstrained (no `max_width`),
+ * matching the spanless path.
  */
 function measureSpannedParagraph(
   ck: CanvasKit,
@@ -151,8 +170,10 @@ function measureSpannedParagraph(
   styled: StyledTextFields,
   spans: TextSpan[],
   content: string,
-  textTransform: "none" | "uppercase" | "lowercase" | "title"
+  textTransform: "none" | "uppercase" | "lowercase" | "title",
+  blockItalic: boolean
 ): { width: number; height: number } {
+  const familyHasItalic = hasItalicFace(styled.fontFamily);
   const { normalized, map } = normalizeContentMapped(content);
   const normLen = map[map.length - 1];
   const boundaries: Array<[number, number]> = spans.map((span) => {
@@ -166,7 +187,11 @@ function measureSpannedParagraph(
     textStyle: {
       fontFamilies: [styled.fontFamily],
       fontSize: styled.fontSize,
-      fontStyle: { weight: styled.fontWeight as unknown as FontWeight },
+      fontStyle: {
+        weight: styled.fontWeight as unknown as FontWeight,
+        // A7b D2 gate: one family-level answer shared with every segment below.
+        slant: blockItalic && familyHasItalic ? ck.FontSlant.Italic : ck.FontSlant.Upright
+      },
       heightMultiplier: styled.lineHeight,
       letterSpacing: styled.letterSpacing
     }
@@ -175,11 +200,18 @@ function measureSpannedParagraph(
   for (const seg of core) {
     const span = seg.span !== null ? spans[seg.span] : undefined;
     const weight = span?.font_weight ?? styled.fontWeight;
+    // A7b: italic is OVERRIDE (`span.italic ?? block`) — must byte-mirror the
+    // engine's spanned measurer and the CanvasKit painter so measured widths
+    // and painted glyphs agree for a de-italicized run.
+    const italic = span?.italic ?? blockItalic;
     builder.pushStyle(
       new ck.TextStyle({
         fontFamilies: [styled.fontFamily],
         fontSize: styled.fontSize,
-        fontStyle: { weight: weight as unknown as FontWeight },
+        fontStyle: {
+          weight: weight as unknown as FontWeight,
+          slant: italic && familyHasItalic ? ck.FontSlant.Italic : ck.FontSlant.Upright
+        },
         heightMultiplier: styled.lineHeight,
         letterSpacing: styled.letterSpacing
       })

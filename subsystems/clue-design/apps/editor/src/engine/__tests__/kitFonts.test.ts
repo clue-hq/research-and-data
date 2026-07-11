@@ -3,7 +3,10 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { collectKitFontFaceRefs, loadKitFontFaces, resetKitDomFontsForTests } from "../kitFonts";
 import { registerKitFontFaces } from "../canvaskit/loadCanvasKit";
 
-vi.mock("../canvaskit/loadCanvasKit", () => ({
+vi.mock("../canvaskit/loadCanvasKit", async (importOriginal) => ({
+  // Keep the real `fontFaceDescriptors` (pure helper); only the provider
+  // registration is stubbed so the DOM leg can be exercised in isolation.
+  ...(await importOriginal<typeof import("../canvaskit/loadCanvasKit")>()),
   registerKitFontFaces: vi.fn(() => true)
 }));
 
@@ -32,9 +35,10 @@ describe("kitFonts (K3 canvas leg)", () => {
   });
 
   it("collects only faces with stored asset ids, tagged with the group family", () => {
+    // A7b: refs carry the kit-declared weight/style for the DOM FontFace descriptors.
     expect(collectKitFontFaceRefs(KIT)).toEqual([
-      { assetId: "asset_regular", family: "Aeonik" },
-      { assetId: "asset_bold", family: "Aeonik" }
+      { assetId: "asset_regular", family: "Aeonik", weight: 400, style: "normal" },
+      { assetId: "asset_bold", family: "Aeonik", weight: 700, style: "normal" }
     ]);
     expect(collectKitFontFaceRefs(null)).toEqual([]);
     expect(collectKitFontFaceRefs({ tokens: {} } as never)).toEqual([]);
@@ -57,7 +61,7 @@ describe("kitFonts (K3 canvas leg)", () => {
 
     expect(registered).toBe(true);
     expect(vi.mocked(registerKitFontFaces)).toHaveBeenCalledWith([
-      { key: "Aeonik@asset_regular", family: "Aeonik", bytes }
+      { key: "Aeonik@asset_regular", family: "Aeonik", bytes, weight: 400, style: "normal" }
     ]);
   });
 
@@ -145,15 +149,17 @@ describe("kitFonts (DOM leg — document.fonts registration)", () => {
   const withDomFonts = async (fn: () => Promise<void>) => {
     const OriginalFontFace = (globalThis as { FontFace?: unknown }).FontFace;
     const originalDocument = (globalThis as { document?: unknown }).document;
-    const added: Array<{ family: string; bytes: ArrayBuffer }> = [];
+    const added: Array<{ family: string; bytes: ArrayBuffer; descriptors?: unknown }> = [];
     const loadCalls = { count: 0 };
 
     class MockFontFace {
       family: string;
       bytes: ArrayBuffer;
-      constructor(family: string, bytes: ArrayBuffer) {
+      descriptors?: unknown;
+      constructor(family: string, bytes: ArrayBuffer, descriptors?: unknown) {
         this.family = family;
         this.bytes = bytes;
+        this.descriptors = descriptors;
       }
       async load() {
         loadCalls.count += 1;
@@ -161,7 +167,9 @@ describe("kitFonts (DOM leg — document.fonts registration)", () => {
       }
     }
 
-    const fontsAdd = vi.fn((face: MockFontFace) => added.push({ family: face.family, bytes: face.bytes }));
+    const fontsAdd = vi.fn((face: MockFontFace) =>
+      added.push({ family: face.family, bytes: face.bytes, descriptors: face.descriptors })
+    );
     (globalThis as Record<string, unknown>).FontFace = MockFontFace;
     (globalThis as Record<string, unknown>).document = { fonts: { add: fontsAdd } };
     try {
@@ -191,8 +199,36 @@ describe("kitFonts (DOM leg — document.fonts registration)", () => {
       await loadKitFontFaces({ apiBaseUrl: "http://api.test", fetchImpl: fetchOk() }, SINGLE_KIT);
     });
     expect(result.loadCalls.count).toBe(1);
-    expect(result.added).toEqual([{ family: "Aeonik", bytes: expect.any(ArrayBuffer) }]);
+    // A7b: a kit face without a declared weight yields a style-only descriptor
+    // (browser keeps its default weight rather than an invalid "undefined").
+    expect(result.added).toEqual([
+      { family: "Aeonik", bytes: expect.any(ArrayBuffer), descriptors: { style: "normal" } }
+    ]);
     expect(result.fontsAdd).toHaveBeenCalledTimes(1);
+  });
+
+  it("passes style:italic descriptors for an italic kit face (A7b D5 collision fix)", async () => {
+    const ITALIC_KIT = {
+      tokens: {},
+      assets: {
+        fonts: {
+          brand: {
+            family: "Newsreader",
+            faces: [
+              { weight: 400, style: "normal", asset_id: "asset_upright" },
+              { weight: 400, style: "italic", asset_id: "asset_italic" }
+            ]
+          }
+        }
+      }
+    } as never;
+    const result = await withDomFonts(async function () {
+      await loadKitFontFaces({ apiBaseUrl: "http://api.test", fetchImpl: fetchOk() }, ITALIC_KIT);
+    });
+    expect(result.added).toEqual([
+      { family: "Newsreader", bytes: expect.any(ArrayBuffer), descriptors: { style: "normal", weight: "400" } },
+      { family: "Newsreader", bytes: expect.any(ArrayBuffer), descriptors: { style: "italic", weight: "400" } }
+    ]);
   });
 
   it("is idempotent — a second load of the same face adds nothing new", async () => {

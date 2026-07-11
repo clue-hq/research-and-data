@@ -3,7 +3,7 @@ import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { beforeAll, describe, expect, it } from "vitest";
 import type { CanvasKit, Image, Surface, TypefaceFontProvider } from "canvaskit-wasm";
-import type { AssetRecord, Node, Scene } from "../../contracts";
+import type { AssetRecord, Node, Scene, TextSpan } from "../../contracts";
 import { minimalScene } from "@/fixtures/minimalScene";
 import { nodeDescriptor, pageDescriptor, type RenderPageDescriptor } from "../../renderAdapter";
 import { drawDescriptorTree, type DrawNode } from "../drawDescriptors";
@@ -521,5 +521,64 @@ describe.skipIf(!present || !existsSync(SYSTEM_FONT))("CanvasKit text rendering 
     // Both colors present: the base run is black, the span run is red.
     expect(blackGlyphs).toBeGreaterThan(20);
     expect(redGlyphs).toBeGreaterThan(20);
+  });
+
+  // A7b: exercise the italic slant plumbing through BOTH paragraph builders.
+  // The system test font carries no separate italic face, so Skia snaps to
+  // upright (D2 — no synthetic slant): the assertion is that the block-italic
+  // path AND the spanned per-run override path (an italic block with a
+  // de-italicizing span) both render glyphs without error. Real slant fidelity
+  // is the review gate's job (a provisioned italic face + gate.py/browser).
+  const italicScene = (spans?: TextSpan[]): Node => {
+    const base = JSON.parse(JSON.stringify(minimalScene.nodes.node_contact_name)) as Node;
+    return {
+      ...base,
+      id: "t",
+      kind: {
+        kind: "text",
+        content: "HELLO WORLD",
+        font_family: family,
+        font_size: 36,
+        font_weight: 400,
+        align: "left",
+        line_height: 1.2,
+        letter_spacing: 0,
+        wrap: "no_wrap",
+        direction: "ltr",
+        italic: true,
+        ...(spans ? { spans } : {})
+      },
+      fills: [{ id: "t_fill", paint: { kind: "solid", color: { kind: "hex", value: "#000000" } } }],
+      strokes: [],
+      transform: { ...base.transform, x: 0, y: 0 },
+      size: { width: { kind: "fixed", value: 400 }, height: { kind: "fixed", value: 50 } },
+      computed: {
+        layout_bounds: { x: 0, y: 0, width: 400, height: 50 },
+        render_bounds: { x: 0, y: 0, width: 400, height: 50 }
+      }
+    };
+  };
+
+  const darkGlyphCount = (node: Node): number => {
+    const pixels = render(pxScene({ t: node }, ["t"]), "page_a4", 400, 50, fontProvider);
+    let dark = 0;
+    for (let y = 5; y < 45; y++) {
+      for (let x = 0; x < 400; x++) {
+        if (pixel(pixels, x, y, 400)[0] < 80) {
+          dark++;
+        }
+      }
+    }
+    return dark;
+  };
+
+  it("renders a block-italic text node (slant plumbed to the base builder)", () => {
+    expect(darkGlyphCount(italicScene())).toBeGreaterThan(20);
+  });
+
+  it("renders an italic block with a de-italicizing span (override merge path)", () => {
+    // "WORLD" (bytes 6..11) carries italic:false inside the italic block — the
+    // spanned builder resolves `span.italic ?? block` per run and must render.
+    expect(darkGlyphCount(italicScene([{ start: 6, end: 11, italic: false }]))).toBeGreaterThan(20);
   });
 });

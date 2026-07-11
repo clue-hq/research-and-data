@@ -1,6 +1,6 @@
 import type { BrandKitDetailPayload } from "./tokenColors";
 import type { Diagnostic } from "./contracts";
-import { registerKitFontFaces } from "./canvaskit/loadCanvasKit";
+import { fontFaceDescriptors, registerKitFontFaces } from "./canvaskit/loadCanvasKit";
 
 /**
  * K3 (canvas leg): fetch the attached kit's font-face bytes from the asset
@@ -16,6 +16,13 @@ import { registerKitFontFaces } from "./canvaskit/loadCanvasKit";
 interface KitFontFaceRef {
   assetId: string;
   family: string;
+  /** A7b (D5): kit-declared weight/style, threaded to the DOM `FontFace`
+   * descriptors so a kit's italic face registers distinctly instead of
+   * colliding with its upright at the (family, normal, 400) default. Absent
+   * when the kit face omits them (the descriptors then keep the browser's
+   * defaults). The CanvasKit provider leg ignores these. */
+  weight?: number;
+  style?: string;
 }
 
 /** The kit's registrable faces: every `assets.fonts[*].faces[]` entry that
@@ -40,7 +47,14 @@ export function collectKitFontFaceRefs(
     for (const face of faces) {
       const assetId = (face as { asset_id?: unknown } | null)?.asset_id;
       if (typeof assetId === "string" && assetId.length > 0) {
-        refs.push({ assetId, family });
+        const weight = (face as { weight?: unknown } | null)?.weight;
+        const style = (face as { style?: unknown } | null)?.style;
+        refs.push({
+          assetId,
+          family,
+          weight: typeof weight === "number" ? weight : undefined,
+          style: typeof style === "string" ? style : undefined
+        });
       }
     }
   }
@@ -101,7 +115,7 @@ export async function loadKitFontFaces(
           return null;
         }
         const bytes = await response.arrayBuffer();
-        return { key: `${ref.family}@${ref.assetId}`, family: ref.family, bytes };
+        return { key: `${ref.family}@${ref.assetId}`, family: ref.family, bytes, weight: ref.weight, style: ref.style };
       } catch (error) {
         onFaceDiagnostic?.(
           kitFontFaceDiagnostic(ref, error instanceof Error ? error.message : "fetch failed")
@@ -137,7 +151,7 @@ export function resetKitDomFontsForTests(): void {
  * leg, so a kit refetch never double-adds a face. No-op (and never throws)
  * where FontFace/document.fonts are unavailable (jsdom/tests). */
 async function registerKitFontFacesInDom(
-  faces: { key: string; family: string; bytes: ArrayBuffer }[]
+  faces: { key: string; family: string; bytes: ArrayBuffer; weight?: number; style?: string }[]
 ): Promise<void> {
   if (typeof FontFace === "undefined" || typeof document === "undefined" || !document.fonts) {
     return;
@@ -149,7 +163,9 @@ async function registerKitFontFacesInDom(
       }
       registeredDomFaceKeys.add(face.key);
       try {
-        const fontFace = new FontFace(face.family, face.bytes);
+        // A7b (D5): weight/style descriptors so a kit's italic face registers
+        // distinctly from its upright instead of colliding at the default.
+        const fontFace = new FontFace(face.family, face.bytes, fontFaceDescriptors(face));
         await fontFace.load();
         document.fonts.add(fontFace);
       } catch (error) {

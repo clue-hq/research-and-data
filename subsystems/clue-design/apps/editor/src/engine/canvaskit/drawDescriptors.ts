@@ -4,6 +4,7 @@ import type { RenderNodeDescriptor, RenderPageDescriptor, TextSpanDescriptor } f
 import { valignOffset } from "../renderAdapter";
 import { applyTextTransform, normalizeContentMapped, transformSegments } from "../textTransform";
 import type { CanvasKitImageSource } from "./imageCache";
+import { hasItalicFace } from "./loadCanvasKit";
 
 /**
  * Wave 3 C2: the descriptor→CanvasKit interpreter.
@@ -551,7 +552,14 @@ function buildTextParagraph(
   const textStyle: Record<string, unknown> = {
     fontFamilies: [t.fontFamily],
     fontSize: t.fontSize,
-    fontStyle: { weight: t.fontWeight },
+    // A7b: italic joins weight as a shaping input. D2 gate (mirrors the
+    // engine's build_paragraph): request Italic only when a REAL italic face is
+    // registered — CanvasKit otherwise applies a synthetic oblique, which D2
+    // forbids (the node renders upright; LUMS0105 advises server-side).
+    fontStyle: {
+      weight: t.fontWeight,
+      slant: t.italic && hasItalicFace(t.fontFamily) ? ck.FontSlant.Italic : ck.FontSlant.Upright
+    },
     heightMultiplier: t.lineHeight,
     letterSpacing: t.letterSpacing
   };
@@ -596,6 +604,8 @@ interface SpannedSegment {
   weight: number;
   underline: boolean;
   strikethrough: boolean;
+  /** A7b: resolved per-run italic (OVERRIDE merge `span.italic ?? block`). */
+  italic: boolean;
   color: Float32Array;
 }
 
@@ -636,8 +646,12 @@ function drawSpannedText(
     // subtracts the node flag), mirroring the engine.
     const underline = t.underline || (span?.underline ?? false);
     const strikethrough = t.strikethrough || (span?.strikethrough ?? false);
+    // A7b: italic is OVERRIDE (not union) — `span.italic ?? block`, so
+    // `italic(false)` de-italicizes a run inside an italic block. `??` treats
+    // the descriptor's `null` (inherit) as nullish and keeps `false`.
+    const italic = span?.italic ?? t.italic;
     const color = span?.fill ? parseColor(ck, span.fill) ?? baseColor : baseColor;
-    return { text: seg.text, weight, underline, strikethrough, color };
+    return { text: seg.text, weight, underline, strikethrough, italic, color };
   });
 
   const maxLines = t.maxLines ?? undefined;
@@ -690,10 +704,16 @@ function buildSpannedParagraph(
   maxLines: number | undefined,
   strokePaint: Paint | null
 ): Paragraph {
+  // A7b D2 gate: one family-level answer for base + every segment (spans
+  // cannot change family), mirroring the engine's single gate per request.
+  const familyHasItalic = hasItalicFace(t.fontFamily);
   const baseTextStyle: Record<string, unknown> = {
     fontFamilies: [t.fontFamily],
     fontSize: t.fontSize,
-    fontStyle: { weight: t.fontWeight },
+    fontStyle: {
+      weight: t.fontWeight,
+      slant: t.italic && familyHasItalic ? ck.FontSlant.Italic : ck.FontSlant.Upright
+    },
     heightMultiplier: t.lineHeight,
     letterSpacing: t.letterSpacing
   };
@@ -714,7 +734,10 @@ function buildSpannedParagraph(
     const segStyle: Record<string, unknown> = {
       fontFamilies: [t.fontFamily],
       fontSize: t.fontSize,
-      fontStyle: { weight: seg.weight },
+      fontStyle: {
+        weight: seg.weight,
+        slant: seg.italic && familyHasItalic ? ck.FontSlant.Italic : ck.FontSlant.Upright
+      },
       heightMultiplier: t.lineHeight,
       letterSpacing: t.letterSpacing
     };
