@@ -3715,3 +3715,88 @@ page page_a4
     );
     assert_eq!(output.halted_at.as_ref().unwrap().code, "LUMD0269");
 }
+
+#[test]
+fn dsl_applies_a6_typography_keywords() {
+    let mut scene = Scene::new(lumen_core::DocumentId::from("doc_a6"), "A6");
+    let output = compile_dsl_into_scene(
+        r#"
+page page_a6 size(400,400,px)
+  eyebrow text "kicker" p(24,24) s(240,hug) case(upper) underline(true) strike(true) truncate(true) para_spacing(12) max_lines(2) wrap_text(true)
+"#,
+        &mut scene,
+    );
+    assert_no_dsl_errors(&output.compile_output.diagnostics);
+    assert!(output.operation_error.is_none());
+
+    let NodeKind::Text(text) = &scene.nodes[&NodeId::from("eyebrow")].kind else {
+        panic!("expected text node");
+    };
+    assert_eq!(text.text_transform, lumen_core::TextTransform::Uppercase);
+    assert!(text.underline);
+    assert!(text.strikethrough);
+    assert!(text.truncate);
+    assert_eq!(text.paragraph_spacing, 12.0);
+}
+
+#[test]
+fn dsl_a6_keyword_aliases_resolve() {
+    let mut scene = Scene::new(lumen_core::DocumentId::from("doc_a6_alias"), "A6");
+    let output = compile_dsl_into_scene(
+        r#"
+page page_a6 size(400,400,px)
+  lbl text "x" p(0,0) s(240,hug) text_transform(lowercase) strikethrough(true) ellipsis(true) paragraph_spacing(4)
+"#,
+        &mut scene,
+    );
+    assert_no_dsl_errors(&output.compile_output.diagnostics);
+    let NodeKind::Text(text) = &scene.nodes[&NodeId::from("lbl")].kind else {
+        panic!("expected text node");
+    };
+    assert_eq!(text.text_transform, lumen_core::TextTransform::Lowercase);
+    assert!(text.strikethrough);
+    assert!(text.truncate);
+    assert_eq!(text.paragraph_spacing, 4.0);
+}
+
+#[test]
+fn dsl_rejects_unknown_case_value_with_lumd0271() {
+    let mut scene = Scene::new(lumen_core::DocumentId::from("doc_a6_badcase"), "A6");
+    let output = compile_dsl_into_scene(
+        r#"
+page page_a6 size(400,400,px)
+  lbl text "x" p(0,0) s(240,hug) case(smallcaps)
+"#,
+        &mut scene,
+    );
+    assert!(
+        output
+            .compile_output
+            .diagnostics
+            .iter()
+            .any(|d| d.diagnostic.code == "LUMD0271"),
+        "{:#?}",
+        output.compile_output.diagnostics
+    );
+}
+
+#[test]
+fn dsl_rejects_negative_paragraph_spacing() {
+    let mut scene = Scene::new(lumen_core::DocumentId::from("doc_a6_negspacing"), "A6");
+    let output = compile_dsl_into_scene(
+        r#"
+page page_a6 size(400,400,px)
+  lbl text "x" p(0,0) s(240,hug) para_spacing(-3)
+"#,
+        &mut scene,
+    );
+    assert!(
+        output
+            .compile_output
+            .diagnostics
+            .iter()
+            .any(|d| d.diagnostic.code == "LUMD0255"),
+        "{:#?}",
+        output.compile_output.diagnostics
+    );
+}

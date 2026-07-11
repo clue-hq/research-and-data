@@ -266,6 +266,53 @@ impl<'a> PdfPageRenderer<'a> {
             }
             NodeKind::Text(text) => {
                 self.apply_text_fill(node);
+                // A6a D2/D5: PDF V0 renders neither text decoration nor text
+                // strokes, and paints the first fill only — degrade LOUDLY
+                // rather than silently, matching the SVG/Skia doctrine. (The D1
+                // case transform and D3/D4 ellipsis + paragraph spacing ride the
+                // measured lines PDF already consumes, so they need no advisory.)
+                if text.underline || text.strikethrough {
+                    self.diagnostics.push(
+                        Diagnostic::warning(
+                            Phase::Export,
+                            "LUME0421",
+                            format!(
+                                "text node {} requests underline/strikethrough; PDF export does not render text decoration",
+                                node.id
+                            ),
+                            Some(DiagnosticSubject::Node(node.id.clone())),
+                        )
+                        .with_hint("Export through SVG/PNG for text decoration, or remove it for PDF."),
+                    );
+                }
+                if !node.strokes.is_empty() {
+                    self.diagnostics.push(
+                        Diagnostic::warning(
+                            Phase::Export,
+                            "LUME0422",
+                            format!(
+                                "text node {} has a text stroke; PDF export does not render text strokes",
+                                node.id
+                            ),
+                            Some(DiagnosticSubject::Node(node.id.clone())),
+                        )
+                        .with_hint("Export through SVG/PNG for text strokes, or remove the stroke for PDF."),
+                    );
+                }
+                if node.fills.len() > 1 {
+                    self.diagnostics.push(
+                        Diagnostic::advice(
+                            Phase::Export,
+                            "LUME0423",
+                            format!(
+                                "text node {} has multiple fills; PDF export renders the first fill only for text",
+                                node.id
+                            ),
+                            Some(DiagnosticSubject::Node(node.id.clone())),
+                        )
+                        .with_hint("Stacked text fills are out of scope for PDF; use a single text fill."),
+                    );
+                }
                 let measured =
                     self.measurer
                         .measure(&TextMeasureInput::from_text_node(text).with_bounds(&Rect {
@@ -274,6 +321,17 @@ impl<'a> PdfPageRenderer<'a> {
                             width,
                             height,
                         }));
+                // R1 (audit fold): surface measurement-time font diagnostics
+                // (LUMS0100/0103/0104) on direct PDF exports too.
+                for diagnostic in &measured.diagnostics {
+                    let diagnostic = Diagnostic {
+                        subject: Some(DiagnosticSubject::Node(node.id.clone())),
+                        ..diagnostic.clone()
+                    };
+                    if !self.diagnostics.contains(&diagnostic) {
+                        self.diagnostics.push(diagnostic);
+                    }
+                }
                 if measured.overflow_x || measured.overflow_y || measured.exceeds_max_lines {
                     self.diagnostics.push(
                         Diagnostic::warning(

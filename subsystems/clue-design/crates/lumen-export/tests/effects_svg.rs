@@ -544,7 +544,9 @@ fn gradient_stop_alpha_emits_stop_opacity() {
 }
 
 #[test]
-fn text_strokes_emit_loud_advisory() {
+fn single_solid_text_stroke_renders_behind_the_fill() {
+    // A6a D5: LUME0214 RETIRED — a single solid text stroke now renders (behind
+    // the fill via paint-order), never dropped-with-advisory.
     let mut node = Node::new(NodeId::from("label"), NodeKind::Text(TextNode {
         content: "Bleed".to_owned(),
         ..TextNode::default()
@@ -557,11 +559,39 @@ fn text_strokes_emit_loud_advisory() {
     node.size = SizeSpec::fixed(200.0, 40.0);
     node.fills = vec![fill("text_fill", "#111827")];
     node.strokes = vec![Stroke::solid(PaintId::from("text_stroke"), solid("#ffffff"), 2.0)];
-    let (_svg, diagnostics) = render(&scene_with(node));
+    let (svg, diagnostics) = render(&scene_with(node));
     assert!(
-        diagnostics.iter().any(|d| d.code == "LUME0214"),
-        "text stroke advisory: {diagnostics:#?}"
+        !diagnostics.iter().any(|d| d.code == "LUME0214"),
+        "LUME0214 is retired and must not fire: {diagnostics:#?}"
     );
+    assert!(svg.contains("stroke=\"#ffffff\""), "{svg}");
+    assert!(svg.contains("stroke-width=\"2\""), "{svg}");
+    assert!(svg.contains("paint-order=\"stroke fill\""), "{svg}");
+}
+
+#[test]
+fn multi_and_dashed_text_strokes_advise_and_render_first_solid() {
+    // A6a D5: extras (>1 stroke, gradient, dash) reduce to LUME0215; the first
+    // solid stroke still renders.
+    let mut node = Node::new(NodeId::from("label"), NodeKind::Text(TextNode {
+        content: "Outline".to_owned(),
+        ..TextNode::default()
+    }));
+    node.transform = Transform { x: 8.0, y: 8.0, ..Transform::default() };
+    node.size = SizeSpec::fixed(200.0, 40.0);
+    node.fills = vec![fill("text_fill", "#111827")];
+    let mut dashed = Stroke::solid(PaintId::from("s1"), solid("#ff0000"), 3.0);
+    dashed.dash = Some(vec![4.0, 2.0]);
+    node.strokes = vec![
+        dashed,
+        Stroke::solid(PaintId::from("s2"), solid("#00ff00"), 1.0),
+    ];
+    let (svg, diagnostics) = render(&scene_with(node));
+    assert!(
+        diagnostics.iter().any(|d| d.code == "LUME0215"),
+        "multi/dash text stroke advisory: {diagnostics:#?}"
+    );
+    assert!(svg.contains("stroke=\"#ff0000\""), "first solid stroke renders: {svg}");
 }
 
 #[test]
@@ -605,5 +635,103 @@ fn per_corner_path_geometry_is_a_valid_clockwise_outline() {
     assert!(
         svg.contains("M 40 0 L 196 0 A 4 4 0 0 1 200 4 L 200 80 A 40 40 0 0 1 160 120 L 4 120 A 4 4 0 0 1 0 116 L 0 40 A 40 40 0 0 1 40 0 Z"),
         "full clockwise outline with correct left edge: {svg}"
+    );
+}
+
+fn a6_text_node(id: &str, kind: TextNode) -> Node {
+    let mut node = Node::new(NodeId::from(id), NodeKind::Text(kind));
+    node.transform = Transform { x: 16.0, y: 16.0, ..Transform::default() };
+    node.size = SizeSpec::fixed(240.0, 40.0);
+    node.fills = vec![fill("tf", "#111827")];
+    node
+}
+
+#[test]
+fn svg_emits_transformed_tspans_not_the_css_attribute() {
+    // A6a D1: the measured line text is the CASED string; SVG never leans on
+    // the CSS text-transform attribute.
+    let node = a6_text_node("t", TextNode {
+        content: "hello".to_owned(),
+        text_transform: lumen_core::TextTransform::Uppercase,
+        ..TextNode::default()
+    });
+    let (svg, _d) = render(&scene_with(node));
+    assert!(svg.contains(">HELLO</tspan>"), "{svg}");
+    assert!(!svg.contains("text-transform"), "must not emit the CSS attribute: {svg}");
+}
+
+#[test]
+fn svg_emits_text_decoration_attribute() {
+    let node = a6_text_node("t", TextNode {
+        content: "sale".to_owned(),
+        underline: true,
+        strikethrough: true,
+        ..TextNode::default()
+    });
+    let (svg, _d) = render(&scene_with(node));
+    assert!(svg.contains("text-decoration=\"underline line-through\""), "{svg}");
+
+    let underline_only = a6_text_node("u", TextNode {
+        content: "link".to_owned(),
+        underline: true,
+        ..TextNode::default()
+    });
+    let (svg2, _d) = render(&scene_with(underline_only));
+    assert!(svg2.contains("text-decoration=\"underline\""), "{svg2}");
+    assert!(!svg2.contains("line-through"), "{svg2}");
+}
+
+#[derive(Debug)]
+struct DiagnosticMeasurer;
+
+impl lumen_core::TextMeasurer for DiagnosticMeasurer {
+    fn measure(
+        &self,
+        input: &lumen_core::TextMeasureInput,
+    ) -> lumen_core::TextMeasureOutput {
+        let mut out = lumen_core::HeuristicTextMeasurer.measure(input);
+        out.diagnostics.push(lumen_core::Diagnostic::warning(
+            lumen_core::Phase::Layout,
+            "LUMS0100",
+            "fake whole-family fallback".to_owned(),
+            None,
+        ));
+        out
+    }
+    fn shaping(&self) -> bool {
+        true
+    }
+}
+
+#[test]
+fn svg_export_folds_measured_diagnostics_r1() {
+    // R1: a direct SVG export must surface the measurer's own diagnostics
+    // (LUMS0100/0103/0104) even with no preceding preflight.
+    use std::sync::Arc;
+    let node = a6_text_node("t", TextNode {
+        content: "copy".to_owned(),
+        ..TextNode::default()
+    });
+    let scene = scene_with(node);
+    let request = ExportRequest {
+        profile: ExportProfile {
+            name: "svg_preview".to_owned(),
+            format: ExportFormat::Svg,
+            pdf_intent: None,
+            raster: None,
+            include_bleed: false,
+            embed_fonts: false,
+        },
+        page_ids: vec![PageId::from("page_card")],
+        purpose: ExportPurpose::UserDownload,
+    };
+    let result = SvgExportAdapter::new()
+        .with_measurer(Arc::new(DiagnosticMeasurer))
+        .export(&scene, &request)
+        .expect("exports");
+    assert!(
+        result.diagnostics.iter().any(|d| d.code == "LUMS0100"),
+        "R1 fold missing: {:#?}",
+        result.diagnostics
     );
 }

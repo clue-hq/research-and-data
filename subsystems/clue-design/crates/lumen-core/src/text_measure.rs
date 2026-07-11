@@ -1,4 +1,5 @@
-use crate::{Diagnostic, Phase, Rect, TextDirection, TextNode, TextWrap};
+use crate::{Diagnostic, Phase, Rect, TextDirection, TextNode, TextTransform, TextWrap};
+use std::collections::HashSet;
 use std::sync::Arc;
 
 /// The LUMS0102 warning: text was measured with a non-shaping (heuristic)
@@ -37,6 +38,14 @@ pub struct TextMeasureInput {
     pub direction: TextDirection,
     pub max_width: Option<f64>,
     pub max_height: Option<f64>,
+    /// Display-time case transform (A6a D1). Applied by the measurer to each
+    /// hard line so the literal `\n` delimiters are never case-folded, and so
+    /// line boxes carry the cased strings the exporters emit.
+    pub text_transform: TextTransform,
+    /// Ellipsis truncation (A6a D3): the last visible cut line ends with "…".
+    pub truncate: bool,
+    /// Extra vertical gap (px) inserted at each `\n` paragraph break (A6a D4).
+    pub paragraph_spacing: f64,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -122,6 +131,9 @@ pub fn measure_key(input: &TextMeasureInput) -> String {
         format!("{:?}", input.direction),
         opt_f(input.max_width),
         opt_f(input.max_height),
+        format!("{:?}", input.text_transform),
+        input.truncate.to_string(),
+        format!("{:.3}", input.paragraph_spacing),
     ]
     .join("\u{1f}")
 }
@@ -185,6 +197,9 @@ impl TextMeasureInput {
             direction: text.direction.clone(),
             max_width: None,
             max_height: None,
+            text_transform: text.text_transform,
+            truncate: text.truncate,
+            paragraph_spacing: text.paragraph_spacing,
         }
     }
 
@@ -198,16 +213,37 @@ impl TextMeasureInput {
 impl TextMeasurer for HeuristicTextMeasurer {
     fn measure(&self, input: &TextMeasureInput) -> TextMeasureOutput {
         let line_height_px = line_height_px(input.font_size, input.line_height);
-        let hard_lines = input.content.split("\\n").flat_map(str::lines);
         let mut lines = Vec::new();
         let max_width = input.max_width.filter(|width| *width > 0.0);
+        // A6a D4: a positive, finite paragraph_spacing inserts extra vertical
+        // gap at each `\n` break. Zero (or non-finite) keeps the pre-A6a
+        // uniform stack byte-for-byte identical.
+        let paragraph_gap = input
+            .paragraph_spacing
+            .is_finite()
+            .then_some(input.paragraph_spacing)
+            .filter(|gap| *gap > 0.0)
+            .unwrap_or(0.0);
+        // Line index where each `\n`-delimited paragraph begins, so the stack
+        // loop knows where to inject the gap.
+        let mut paragraph_starts: HashSet<usize> = HashSet::new();
 
-        for hard_line in hard_lines {
+        for hard_line in input.content.split("\\n").flat_map(str::lines) {
+            paragraph_starts.insert(lines.len());
+            // A6a D1: transform per hard line — the literal "\n" delimiters are
+            // already consumed by the split, so case-folding can never corrupt
+            // them, and title-case restarts word boundaries at each line.
+            let transformed = input.text_transform.apply(hard_line);
             if matches!(input.wrap, TextWrap::Wrap) {
-                lines.extend(wrap_line(hard_line, input, max_width, line_height_px));
+                lines.extend(wrap_line(
+                    transformed.as_ref(),
+                    input,
+                    max_width,
+                    line_height_px,
+                ));
             } else {
                 lines.push(line_box(
-                    hard_line.to_owned(),
+                    transformed.into_owned(),
                     input,
                     lines.len(),
                     line_height_px,
@@ -216,6 +252,7 @@ impl TextMeasurer for HeuristicTextMeasurer {
         }
 
         if lines.is_empty() {
+            paragraph_starts.insert(0);
             lines.push(line_box(String::new(), input, 0, line_height_px));
         }
 
@@ -227,20 +264,60 @@ impl TextMeasurer for HeuristicTextMeasurer {
             lines.truncate(max_lines as usize);
         }
 
+        // Overflow reports the HONEST pre-elision geometry: the loss stays
+        // diagnosed even after the ellipsis makes it look intentional.
+        let pre_elide_width = lines.iter().map(|line| line.width).fold(0.0, f64::max);
+
+        // A6a D3 (review contract, mirrors the shaping measurer): Wrap mode —
+        // a max_lines cut elides the last visible line into the width bound.
+        // NoWrap mode — every line wider than the bound is elided at the
+        // bound, and a max_lines cut additionally marks the last visible line.
+        if input.truncate {
+            if matches!(input.wrap, TextWrap::Wrap) {
+                if exceeds_max_lines {
+                    if let Some(last) = lines.last_mut() {
+                        append_ellipsis(last, input, max_width);
+                    }
+                }
+            } else {
+                if let Some(bound) = max_width {
+                    for line in lines.iter_mut() {
+                        if line.width > bound {
+                            append_ellipsis(line, input, Some(bound));
+                        }
+                    }
+                }
+                if exceeds_max_lines {
+                    if let Some(last) = lines.last_mut() {
+                        if !last.text.ends_with('…') {
+                            append_ellipsis(last, input, None);
+                        }
+                    }
+                }
+            }
+        }
+
+        // Stack line boxes, adding the paragraph gap at each paragraph start
+        // after the first (gap == 0 reproduces `index * line_height_px`).
+        let mut cursor_y = 0.0;
         for (index, line) in lines.iter_mut().enumerate() {
-            line.y = index as f64 * line_height_px;
-            line.baseline = line.y + input.font_size;
+            if index > 0 && paragraph_gap > 0.0 && paragraph_starts.contains(&index) {
+                cursor_y += paragraph_gap;
+            }
+            line.y = cursor_y;
+            line.baseline = cursor_y + input.font_size;
+            cursor_y += line_height_px;
         }
 
         let measured_width = lines.iter().map(|line| line.width).fold(0.0, f64::max);
-        let measured_height = lines.len() as f64 * line_height_px;
+        let measured_height = cursor_y;
         let width = max_width
             .filter(|_| matches!(input.wrap, TextWrap::Wrap))
             .map(|max_width| measured_width.min(max_width))
             .unwrap_or(measured_width);
         let overflow_x = input
             .max_width
-            .is_some_and(|max_width| measured_width > max_width + f64::EPSILON);
+            .is_some_and(|max_width| pre_elide_width > max_width + f64::EPSILON);
         let overflow_y = input
             .max_height
             .is_some_and(|max_height| measured_height > max_height + f64::EPSILON);
@@ -319,6 +396,30 @@ fn wrap_line(
     lines
 }
 
+/// Append U+2026 to a cut line and re-account its estimated width, dropping
+/// trailing characters (before the ellipsis) until it fits the width bound.
+/// Heuristic precision is sufficient here — the shaping measurer uses
+/// SkParagraph's native ellipsis instead.
+fn append_ellipsis(line: &mut TextLineBox, input: &TextMeasureInput, max_width: Option<f64>) {
+    let mut chars: Vec<char> = line.text.chars().collect();
+    loop {
+        // Never leave trailing whitespace before the ellipsis ("word …").
+        while chars.last().is_some_and(|ch| ch.is_whitespace()) {
+            chars.pop();
+        }
+        let mut candidate: String = chars.iter().collect();
+        candidate.push('…');
+        let width = estimate_text_width(&candidate, input.font_size, input.letter_spacing);
+        let fits = max_width.is_none_or(|bound| width <= bound);
+        if fits || chars.is_empty() {
+            line.text = candidate;
+            line.width = width;
+            return;
+        }
+        chars.pop();
+    }
+}
+
 fn line_box(
     text: String,
     input: &TextMeasureInput,
@@ -353,6 +454,9 @@ mod provided_measurer_tests {
             direction: TextDirection::Ltr,
             max_width: None,
             max_height: None,
+            text_transform: TextTransform::None,
+            truncate: false,
+            paragraph_spacing: 0.0,
         }
     }
 
@@ -393,5 +497,77 @@ mod provided_measurer_tests {
         let mut bounded = input("Hello");
         bounded.max_width = Some(120.0);
         assert_ne!(measure_key(&base), measure_key(&bounded));
+    }
+}
+
+#[cfg(test)]
+mod a6_heuristic_tests {
+    use super::*;
+    use crate::{TextNode, TextTransform};
+
+    fn node(content: &str) -> TextNode {
+        TextNode {
+            content: content.to_owned(),
+            font_size: 20.0,
+            ..TextNode::default()
+        }
+    }
+
+    #[test]
+    fn uppercase_transform_widens_the_estimate_and_cases_line_text() {
+        let plain = HeuristicTextMeasurer.measure(&TextMeasureInput::from_text_node(&node("data")));
+        let upper_node = TextNode {
+            text_transform: TextTransform::Uppercase,
+            ..node("data")
+        };
+        let upper =
+            HeuristicTextMeasurer.measure(&TextMeasureInput::from_text_node(&upper_node));
+        assert_eq!(upper.lines[0].text, "DATA");
+        // Uppercase glyphs weigh more in the heuristic → strictly wider.
+        assert!(upper.width > plain.width, "{} !> {}", upper.width, plain.width);
+    }
+
+    #[test]
+    fn paragraph_spacing_zero_is_byte_identical_to_no_spacing() {
+        let mut spaced = TextMeasureInput::from_text_node(&node("alpha\\nbeta"));
+        let base = spaced.clone();
+        spaced.paragraph_spacing = 0.0;
+        assert_eq!(
+            HeuristicTextMeasurer.measure(&base),
+            HeuristicTextMeasurer.measure(&spaced)
+        );
+    }
+
+    #[test]
+    fn paragraph_spacing_adds_gap_between_paragraphs_only() {
+        let base = HeuristicTextMeasurer.measure(&TextMeasureInput::from_text_node(&node(
+            "alpha\\nbeta",
+        )));
+        let spaced_node = TextNode {
+            paragraph_spacing: 10.0,
+            ..node("alpha\\nbeta")
+        };
+        let spaced =
+            HeuristicTextMeasurer.measure(&TextMeasureInput::from_text_node(&spaced_node));
+        // First line unchanged; the second paragraph shifts down by the gap.
+        assert_eq!(spaced.lines[0].y, base.lines[0].y);
+        assert!((spaced.lines[1].y - base.lines[1].y - 10.0).abs() < 1e-9);
+        assert!((spaced.height - base.height - 10.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn truncate_appends_ellipsis_to_the_cut_line() {
+        let mut node = node("one\\ntwo\\nthree");
+        node.max_lines = Some(2);
+        node.truncate = true;
+        let out = HeuristicTextMeasurer.measure(&TextMeasureInput::from_text_node(&node));
+        assert_eq!(out.line_count, 2);
+        assert!(out.exceeds_max_lines);
+        assert!(out.lines[1].text.ends_with('…'), "{:?}", out.lines[1].text);
+
+        // Without truncate, no ellipsis.
+        node.truncate = false;
+        let plain = HeuristicTextMeasurer.measure(&TextMeasureInput::from_text_node(&node));
+        assert!(!plain.lines[1].text.contains('…'));
     }
 }

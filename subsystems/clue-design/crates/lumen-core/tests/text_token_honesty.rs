@@ -398,3 +398,38 @@ fn dsl_fill_stack_edit_clears_the_style_token() {
     assert_eq!(text.style_token, None);
     assert_eq!(text.font_size_token, Some("$type.size.5xl".to_owned()));
 }
+
+#[test]
+fn a6_typography_fields_apply_and_are_not_token_channels() {
+    // The five A6a fields flow through the edit patch, and — because none is a
+    // token channel — they never trip clear_stale_tokens: every binding survives.
+    let mut scene = scene_with_tokened_headline();
+    let batch = build_modify_operations(
+        &scene,
+        EditTargetRef::Node(NodeId::from("headline")),
+        EditPatch::Node(NodeEditPatch {
+            text: Some(TextEditPatch {
+                text_transform: FieldPatch::Set(lumen_core::TextTransform::Uppercase),
+                underline: FieldPatch::Set(true),
+                strikethrough: FieldPatch::Set(true),
+                truncate: FieldPatch::Set(true),
+                paragraph_spacing: FieldPatch::Set(8.0),
+                ..TextEditPatch::default()
+            }),
+            ..NodeEditPatch::default()
+        }),
+    )
+    .unwrap();
+    batch.apply_checked(&mut scene).unwrap();
+
+    let text = headline_text(&scene);
+    assert_eq!(text.text_transform, lumen_core::TextTransform::Uppercase);
+    assert!(text.underline);
+    assert!(text.strikethrough);
+    assert!(text.truncate);
+    assert_eq!(text.paragraph_spacing, 8.0);
+    // Not token channels → bindings untouched.
+    assert_eq!(text.style_token, Some("$type.h1".to_owned()));
+    assert_eq!(text.font_size_token, Some("$type.size.5xl".to_owned()));
+    assert_eq!(text.line_height_token, Some("$type.leading.tight".to_owned()));
+}

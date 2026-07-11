@@ -9,7 +9,7 @@ use crate::operations::{
 use crate::scene::{
     AutoLayoutProps, Color, CornerRadii, Dimension, Effect, ExplicitTextTokens, Fill, LayoutMode,
     Node, NodeKind, PageSize, Paint, ParentRef, PositionMode, Rect, Scene, SizeSpec, Stroke,
-    TextAlign, TextDirection, TextNode, TextWrap, Transform,
+    TextAlign, TextDirection, TextNode, TextTransform, TextWrap, Transform,
 };
 use crate::slots::Slot;
 use serde::{Deserialize, Serialize};
@@ -542,6 +542,13 @@ pub struct TextEditPatch {
     pub font_size_token: OptionalFieldPatch<String>,
     pub line_height_token: OptionalFieldPatch<String>,
     pub letter_spacing_token: OptionalFieldPatch<String>,
+    // A6a typography v1. None of these are token channels, so they never
+    // interact with `clear_stale_tokens`.
+    pub text_transform: FieldPatch<TextTransform>,
+    pub underline: FieldPatch<bool>,
+    pub strikethrough: FieldPatch<bool>,
+    pub truncate: FieldPatch<bool>,
+    pub paragraph_spacing: FieldPatch<f64>,
 }
 
 /// One targeted edit against a fill/stroke/effect stack entry, addressed by
@@ -2611,6 +2618,11 @@ fn apply_text_edit_patch(mut text: TextNode, patch: TextEditPatch) -> TextNode {
     apply_optional_patch(&mut text.font_size_token, patch.font_size_token);
     apply_optional_patch(&mut text.line_height_token, patch.line_height_token);
     apply_optional_patch(&mut text.letter_spacing_token, patch.letter_spacing_token);
+    apply_field_patch(&mut text.text_transform, patch.text_transform);
+    apply_field_patch(&mut text.underline, patch.underline);
+    apply_field_patch(&mut text.strikethrough, patch.strikethrough);
+    apply_field_patch(&mut text.truncate, patch.truncate);
+    apply_field_patch(&mut text.paragraph_spacing, patch.paragraph_spacing);
     text.clear_stale_tokens(&before, explicit);
     text
 }

@@ -424,6 +424,27 @@ pub struct TextNode {
     pub line_height_token: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub letter_spacing_token: Option<String>,
+    /// Display-time case transform (A6a D1). The `content` string is NEVER
+    /// mutated — every consumer calls [`TextNode::transformed_content`] before
+    /// shaping/measuring/emitting. Absent (`None`) leaves content verbatim, so
+    /// old scenes are bit-for-bit unchanged.
+    #[serde(default, skip_serializing_if = "is_enum_default")]
+    pub text_transform: TextTransform,
+    /// Underline decoration (A6a D2). Independent of `strikethrough`.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub underline: bool,
+    /// Strikethrough decoration (A6a D2). Independent of `underline`.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub strikethrough: bool,
+    /// Ellipsis truncation (A6a D3): when the measurer cuts lines (max_lines
+    /// exceeded, or NoWrap width overflow) the last visible line ends with
+    /// U+2026 "…". No effect when nothing is cut.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub truncate: bool,
+    /// Extra vertical gap (px) inserted at each `\n` paragraph break (A6a D4),
+    /// on top of the normal line advance. `0.0` is today's behavior, bit-for-bit.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub paragraph_spacing: f64,
 }
 
 impl Default for TextNode {
@@ -443,8 +464,66 @@ impl Default for TextNode {
             font_size_token: None,
             line_height_token: None,
             letter_spacing_token: None,
+            text_transform: TextTransform::None,
+            underline: false,
+            strikethrough: false,
+            truncate: false,
+            paragraph_spacing: 0.0,
         }
     }
+}
+
+/// Display-time case transform (A6a D1). Serialized snake_case like the
+/// sibling text enums.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TextTransform {
+    /// Content shapes verbatim (the default; absent in serialized old scenes).
+    #[default]
+    None,
+    Uppercase,
+    Lowercase,
+    /// Uppercase the first alphabetic char of each whitespace-separated word;
+    /// the rest of each word is left untouched.
+    Title,
+}
+
+impl TextTransform {
+    /// Apply the transform to a source string, Unicode-correctly. Returns
+    /// [`Cow::Borrowed`] for [`TextTransform::None`] so the common path never
+    /// allocates.
+    pub fn apply<'a>(&self, content: &'a str) -> std::borrow::Cow<'a, str> {
+        use std::borrow::Cow;
+        match self {
+            TextTransform::None => Cow::Borrowed(content),
+            TextTransform::Uppercase => Cow::Owned(content.to_uppercase()),
+            TextTransform::Lowercase => Cow::Owned(content.to_lowercase()),
+            TextTransform::Title => Cow::Owned(title_case(content)),
+        }
+    }
+}
+
+/// Title-case: uppercase the first alphabetic char of each whitespace-separated
+/// word, leaving the remainder of the word untouched. Whitespace runs are
+/// preserved verbatim so line/word structure is stable.
+fn title_case(content: &str) -> String {
+    let mut out = String::with_capacity(content.len());
+    let mut at_word_start = true;
+    for ch in content.chars() {
+        if ch.is_whitespace() {
+            at_word_start = true;
+            out.push(ch);
+        } else if at_word_start && ch.is_alphabetic() {
+            for upper in ch.to_uppercase() {
+                out.push(upper);
+            }
+            at_word_start = false;
+        } else {
+            out.push(ch);
+            at_word_start = false;
+        }
+    }
+    out
 }
 
 /// Which token bindings an edit explicitly authored. Explicit tokens are
@@ -465,6 +544,14 @@ impl TextNode {
     /// and optionally line-height/letter-spacing/color — is cleared when any
     /// of those channels changed. Tokens the edit itself authored survive,
     /// which is also how inverse operations restore bindings on undo.
+    /// The content string after the display-time case transform (A6a D1). The
+    /// single helper EVERY consumer — both measurers, SVG, Skia, PDF — calls
+    /// before shaping/measuring/emitting, so measure and render can never
+    /// disagree on the cased string. Never mutates `content`.
+    pub fn transformed_content(&self) -> std::borrow::Cow<'_, str> {
+        self.text_transform.apply(&self.content)
+    }
+
     pub fn clear_stale_tokens(&mut self, before: &TextNode, explicit: ExplicitTextTokens) {
         if !explicit.font_size && self.font_size != before.font_size {
             self.font_size_token = None;
@@ -708,6 +795,12 @@ fn is_false(value: &bool) -> bool {
     !*value
 }
 
+/// Serde helper: skip serializing an `f64` field that still holds `0.0`, so
+/// pre-A6a scenes serialize `paragraph_spacing`-free and stay byte-identical.
+fn is_zero(value: &f64) -> bool {
+    *value == 0.0
+}
+
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum StrokeCap {
@@ -845,4 +938,68 @@ pub struct Rect {
 pub struct ComputedGeometry {
     pub layout_bounds: Rect,
     pub render_bounds: Rect,
+}
+
+#[cfg(test)]
+mod a6_typography_tests {
+    use super::*;
+
+    #[test]
+    fn transformed_content_is_unicode_correct_and_never_mutates() {
+        let base = TextNode {
+            content: "hello WORLD ßtraße".to_owned(),
+            ..TextNode::default()
+        };
+        assert!(matches!(base.transformed_content(), std::borrow::Cow::Borrowed(_)));
+        assert_eq!(base.transformed_content(), "hello WORLD ßtraße");
+
+        let upper = TextNode { text_transform: TextTransform::Uppercase, ..base.clone() };
+        assert_eq!(upper.transformed_content(), "HELLO WORLD SSTRASSE");
+
+        let lower = TextNode { text_transform: TextTransform::Lowercase, ..base.clone() };
+        assert_eq!(lower.transformed_content(), "hello world ßtraße");
+
+        let title = TextNode {
+            content: "the quick brown-fox 3rd".to_owned(),
+            text_transform: TextTransform::Title,
+            ..TextNode::default()
+        };
+        // First alphabetic char of each whitespace word uppercased; the rest of
+        // the word (incl. the char after the hyphen) untouched; whitespace kept.
+        assert_eq!(title.transformed_content(), "The Quick Brown-fox 3rd");
+
+        // The stored content is never mutated by any transform.
+        assert_eq!(upper.content, "hello WORLD ßtraße");
+    }
+
+    #[test]
+    fn old_scene_json_deserializes_with_a6_defaults() {
+        // A pre-A6a text node carries none of the five new keys.
+        let json = r#"{
+            "content": "Legacy",
+            "font_family": "Inter",
+            "font_size": 16.0,
+            "font_weight": 400,
+            "align": "left"
+        }"#;
+        let node: TextNode = serde_json::from_str(json).expect("legacy text node deserializes");
+        assert_eq!(node.text_transform, TextTransform::None);
+        assert!(!node.underline);
+        assert!(!node.strikethrough);
+        assert!(!node.truncate);
+        assert_eq!(node.paragraph_spacing, 0.0);
+    }
+
+    #[test]
+    fn default_text_node_serializes_without_a6_keys() {
+        // Bit-for-bit: a default node must not emit the new fields, so existing
+        // golden scene JSON stays byte-identical.
+        let value = serde_json::to_value(TextNode::default()).expect("serializes");
+        let obj = value.as_object().expect("object");
+        assert!(!obj.contains_key("text_transform"));
+        assert!(!obj.contains_key("underline"));
+        assert!(!obj.contains_key("strikethrough"));
+        assert!(!obj.contains_key("truncate"));
+        assert!(!obj.contains_key("paragraph_spacing"));
+    }
 }

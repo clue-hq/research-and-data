@@ -467,6 +467,26 @@ impl<'a> SvgPageRenderer<'a> {
                             width,
                             height,
                         }));
+                // R1 (audit fold): surface measurement-time font diagnostics
+                // (LUMS0100/0103/0104) on direct exports too, re-subjected to
+                // this node and deduped against anything layout already folded.
+                for diagnostic in &measured.diagnostics {
+                    let diagnostic = Diagnostic {
+                        subject: Some(DiagnosticSubject::Node(node.id.clone())),
+                        ..diagnostic.clone()
+                    };
+                    if !self.diagnostics.contains(&diagnostic) {
+                        self.diagnostics.push(diagnostic);
+                    }
+                }
+                // A6a D2: underline/strike via the presentation attribute; the
+                // measured line text already carries the D1 case transform.
+                let decoration = match (text.underline, text.strikethrough) {
+                    (true, true) => " text-decoration=\"underline line-through\"",
+                    (true, false) => " text-decoration=\"underline\"",
+                    (false, true) => " text-decoration=\"line-through\"",
+                    (false, false) => "",
+                };
                 let tspans = measured
                     .lines
                     .iter()
@@ -494,7 +514,7 @@ impl<'a> SvgPageRenderer<'a> {
                     );
                 }
                 self.body.push_str(&format!(
-                    "<text{} x=\"{}\" y=\"{}\" font-family=\"{}\" font-size=\"{}\" font-weight=\"{}\" text-anchor=\"{}\" letter-spacing=\"{}\" direction=\"{}\"{}{}{}>{}</text>\n",
+                    "<text{} x=\"{}\" y=\"{}\" font-family=\"{}\" font-size=\"{}\" font-weight=\"{}\" text-anchor=\"{}\" letter-spacing=\"{}\" direction=\"{}\"{}{}{}{}>{}</text>\n",
                     id_attrs,
                     fmt_num(x),
                     fmt_num(text.font_size),
@@ -504,6 +524,7 @@ impl<'a> SvgPageRenderer<'a> {
                     anchor,
                     fmt_num(text.letter_spacing),
                     direction,
+                    decoration,
                     transform,
                     filter,
                     opacity_with_paint(opacity, paint_attrs),
@@ -733,31 +754,83 @@ impl<'a> SvgPageRenderer<'a> {
     }
 
     fn text_paint_attrs(&mut self, node: &Node) -> String {
-        // Text strokes are not a v1 capability, but dropping them silently
-        // violates the fail-loud doctrine — emit the advisory (A4, LUME0214).
-        if !node.strokes.is_empty() {
-            self.diagnostics.push(text_strokes_dropped_diag(node));
-        }
-        if !node.fills.is_empty() {
-            return self.paint_attrs(&node.fills, &[], Some(&node.id));
-        }
+        // A6a D5: the first solid text stroke renders behind the fill via
+        // `paint-order="stroke fill"`. First-stroke-only + solid-only; extras,
+        // gradient stroke paint, and dashes advise (LUME0215) and are dropped.
+        let stroke_attrs = self.text_stroke_attrs(node);
 
-        self.diagnostics.push(
-            Diagnostic::warning(
-                Phase::Export,
-                "LUME0207",
-                format!(
-                    "text node {} has no fill; SVG export used the default visible text fill",
-                    node.id
+        let fill_attrs = if !node.fills.is_empty() {
+            self.paint_attrs(&node.fills, &[], Some(&node.id))
+        } else {
+            self.diagnostics.push(
+                Diagnostic::warning(
+                    Phase::Export,
+                    "LUME0207",
+                    format!(
+                        "text node {} has no fill; SVG export used the default visible text fill",
+                        node.id
+                    ),
+                    Some(DiagnosticSubject::Node(node.id.clone())),
+                )
+                .with_hint(
+                    "Set an explicit text fill before final export if this fallback is not intended.",
                 ),
-                Some(DiagnosticSubject::Node(node.id.clone())),
-            )
-            .with_hint(
-                "Set an explicit text fill before final export if this fallback is not intended.",
-            ),
-        );
+            );
+            " fill=\"#000000\" data-lumen-default-fill=\"text\"".to_owned()
+        };
 
-        " fill=\"#000000\" data-lumen-default-fill=\"text\"".to_owned()
+        format!("{fill_attrs}{stroke_attrs}")
+    }
+
+    /// The SVG stroke attributes for the first solid text stroke, plus
+    /// `paint-order="stroke fill"`; empty when the node has no stroke. Advises
+    /// LUME0215 for the un-rendered extras (additional strokes, gradient stroke
+    /// paint, dashes).
+    fn text_stroke_attrs(&mut self, node: &Node) -> String {
+        let Some(stroke) = node.strokes.first() else {
+            return String::new();
+        };
+        let gradient_or_dash = matches!(
+            stroke.paint,
+            Paint::LinearGradient { .. } | Paint::RadialGradient { .. }
+        ) || stroke.dash.as_ref().is_some_and(|dash| !dash.is_empty());
+        if node.strokes.len() > 1 || gradient_or_dash {
+            self.diagnostics.push(
+                Diagnostic::advice(
+                    Phase::Export,
+                    "LUME0215",
+                    format!(
+                        "text node {} renders the first solid stroke only; extra strokes, gradient stroke paint, and dashes on text strokes are ignored",
+                        node.id
+                    ),
+                    Some(DiagnosticSubject::Node(node.id.clone())),
+                )
+                .with_hint("Use a single solid text stroke; gradient/dash/multi-stroke text outlines are out of Typography v1 scope."),
+            );
+        }
+        // Solid stroke color: the solid value, or the first stop of a gradient.
+        let resolved = match &stroke.paint {
+            Paint::Solid { color } => self.color_ref(color, Some(&node.id)),
+            Paint::LinearGradient { stops, .. } | Paint::RadialGradient { stops } => stops
+                .first()
+                .map(|stop| self.color_ref(&stop.color, Some(&node.id)))
+                .unwrap_or_else(|| "none".to_owned()),
+            Paint::Token { token } => {
+                self.diagnostics
+                    .push(unresolved_token_diag(&node.id, token));
+                "none".to_owned()
+            }
+        };
+        let (color, opacity) = split_hex_stop_alpha(&resolved);
+        let mut attrs = format!(
+            " stroke=\"{}\" stroke-width=\"{}\" paint-order=\"stroke fill\"",
+            color,
+            fmt_num(stroke.width)
+        );
+        if let Some(opacity) = opacity {
+            attrs.push_str(&format!(" stroke-opacity=\"{}\"", fmt_num(opacity)));
+        }
+        attrs
     }
 
     /// Combined attrs for the single-layer fast path (at most one fill and
@@ -1746,20 +1819,9 @@ fn split_hex_stop_alpha(resolved: &str) -> (String, Option<f64>) {
     (resolved.to_owned(), None)
 }
 
-/// Fail-loud advisory shared by SVG and the native rasterizer: a text node
-/// carries strokes, which are not rendered in effects-v1 (A4, LUME0214).
-pub fn text_strokes_dropped_diag(node: &Node) -> Diagnostic {
-    Diagnostic::warning(
-        Phase::Export,
-        "LUME0214",
-        format!(
-            "text node {} has strokes; text strokes are not rendered (deferred to Typography v1)",
-            node.id
-        ),
-        Some(DiagnosticSubject::Node(node.id.clone())),
-    )
-    .with_hint("Remove the text stroke or emulate it with a duplicate offset text layer until Typography v1 lands.")
-}
+// LUME0214 (text strokes dropped) RETIRED in A6a — text strokes now render
+// (see `text_stroke_attrs`). The code number stays allocated in the
+// diagnostics ledger as retired history; its emission sites are deleted.
 
 fn unresolved_token_diag(node_id: &NodeId, token: &str) -> Diagnostic {
     Diagnostic::warning(

@@ -13,7 +13,7 @@ use lumen_core::{
     build_structured_edit_batch, compile_dsl_into_scene_with_session, hit_stack, layout_scene,
     measure_key, preflight_scene, DslCompileSessionSnapshot, LayoutOptions, Operation, PageId,
     PreflightOptions, ProvidedTextMeasurer, Scene, SharedTextMeasurer, StructuredEditInstruction,
-    TextDirection, TextMeasureInput, TextWrap,
+    TextDirection, TextMeasureInput, TextTransform, TextWrap,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
@@ -71,6 +71,14 @@ struct ProvidedMeasurement {
     max_width: Option<f64>,
     #[serde(default)]
     max_height: Option<f64>,
+    // A6a: geometry-affecting typography fields; defaulted so pre-A6a editor
+    // payloads deserialize unchanged. The key must mirror the layout side.
+    #[serde(default)]
+    text_transform: TextTransform,
+    #[serde(default)]
+    truncate: bool,
+    #[serde(default)]
+    paragraph_spacing: f64,
     width: f64,
     height: f64,
 }
@@ -89,6 +97,9 @@ impl ProvidedMeasurement {
             direction: self.direction.clone(),
             max_width: self.max_width,
             max_height: self.max_height,
+            text_transform: self.text_transform,
+            truncate: self.truncate,
+            paragraph_spacing: self.paragraph_spacing,
         }
     }
 }

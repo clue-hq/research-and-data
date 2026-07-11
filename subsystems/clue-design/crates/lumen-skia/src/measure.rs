@@ -27,7 +27,7 @@ use lumen_core::{
 };
 use skia_safe::textlayout::{
     Paragraph, ParagraphBuilder, ParagraphStyle, TextAlign as SkTextAlign,
-    TextDirection as SkTextDirection, TextStyle,
+    TextDecoration, TextDirection as SkTextDirection, TextStyle,
 };
 use skia_safe::{Color as SkColor, FontStyle, Paint as SkPaint};
 
@@ -65,6 +65,15 @@ pub(crate) struct ParagraphRequest<'a> {
     /// Foreground paint for the glyphs (solid color for measurement;
     /// the renderer may pass gradient shaders).
     pub foreground: SkPaint,
+    /// A6a D2: underline decoration. Decoration inherits the foreground paint
+    /// (shader included) via `set_foreground_paint` — set inside
+    /// `build_paragraph` so measure and render agree by construction.
+    pub underline: bool,
+    /// A6a D2: strikethrough decoration.
+    pub strikethrough: bool,
+    /// A6a D3: request SkParagraph's native "…" ellipsis (max_lines cut or,
+    /// when laid out at the box width, NoWrap single-line overflow).
+    pub truncate: bool,
 }
 
 /// Mirror the heuristic's hard-break handling: literal `\n` sequences and
@@ -109,6 +118,25 @@ pub(crate) fn font_diagnostics(
             subject: subject.clone(),
             ..diagnostic
         });
+    } else if let Some(actual) = fonts.resolved_weight(&resolution.family, weight) {
+        // A6a D6.2: the family loaded, but it has no face at the requested
+        // weight, so the shaper snapped to the nearest one. Snapping is correct
+        // behavior; the silence was the bug. Advisory, only when the family
+        // itself resolved cleanly (a whole-family miss is already LUMS0100).
+        diagnostics.push(
+            Diagnostic::advice(
+                Phase::Layout,
+                "LUMS0104",
+                format!(
+                    "font family \"{}\" has no weight {}; shaping used its nearest face (weight {})",
+                    resolution.family, weight, actual
+                ),
+                subject.clone(),
+            )
+            .with_hint(
+                "Add a face at this weight to the fonts/ set for exact weight fidelity, or pick a weight the family ships.",
+            ),
+        );
     }
 
     let substituted = fonts.substituted_chars(requested_family, weight, content);
@@ -155,6 +183,19 @@ pub(crate) fn build_paragraph(request: &ParagraphRequest<'_>, fonts: &FontManage
             text_style.set_height(request.line_height as f32);
             text_style.set_height_override(true);
         }
+        // A6a D2: decoration union of the two flags. Color/thickness/position
+        // come from font metrics + the foreground paint (set below), so
+        // gradient-filled text decorates with the same shader natively.
+        if request.underline || request.strikethrough {
+            let mut decoration = TextDecoration::NO_DECORATION;
+            if request.underline {
+                decoration |= TextDecoration::UNDERLINE;
+            }
+            if request.strikethrough {
+                decoration |= TextDecoration::LINE_THROUGH;
+            }
+            text_style.set_decoration_type(decoration);
+        }
         text_style.set_foreground_paint(&request.foreground);
 
         let mut paragraph_style = ParagraphStyle::new();
@@ -166,9 +207,14 @@ pub(crate) fn build_paragraph(request: &ParagraphRequest<'_>, fonts: &FontManage
             LumenTextDirection::Ltr | LumenTextDirection::Auto => SkTextDirection::LTR,
         });
         if let Some(max_lines) = request.max_lines {
-            // Truncation without ellipsis (Decision: max_lines + ellipsis
-            // off); overflow surfaces as a diagnostic, never as silent "...".
             paragraph_style.set_max_lines(max_lines as usize);
+        }
+        // A6a D3: opt-in ellipsis. With max_lines it truncates the last kept
+        // line; with a bounded layout width and NoWrap it truncates the
+        // overflowing single line. Without `truncate`, the pre-A6a
+        // truncation-without-ellipsis contract holds byte-for-byte.
+        if request.truncate {
+            paragraph_style.set_ellipsis("…");
         }
 
         let mut builder = ParagraphBuilder::new(&paragraph_style, collection.clone());
@@ -197,13 +243,227 @@ impl SkiaTextMeasurer {
     pub fn fonts(&self) -> &Arc<FontManager> {
         &self.fonts
     }
+
+    /// A6a D4: measure `\n`-delimited paragraphs independently and stack them,
+    /// inserting `paragraph_gap` px of extra vertical space at each break.
+    /// `max_lines` counts TOTAL lines across paragraphs (cut mid-paragraph);
+    /// with `truncate` the ellipsis lands on the last visible line. Only
+    /// reached when the gap is positive AND the content actually breaks, so the
+    /// single-paragraph fast path stays byte-identical for every existing scene.
+    #[allow(clippy::too_many_arguments)]
+    fn measure_stacked(
+        &self,
+        input: &TextMeasureInput,
+        family: &str,
+        content: &str,
+        max_width: Option<f64>,
+        line_height_px: f64,
+        paragraph_gap: f64,
+        diagnostics: Vec<Diagnostic>,
+    ) -> TextMeasureOutput {
+        let layout_width = wrap_layout_width(&input.wrap, max_width) as f32;
+        let mut lines: Vec<TextLineBox> = Vec::new();
+        let mut cursor_y = 0.0f64;
+        for (index, paragraph_text) in content.split('\n').enumerate() {
+            if index > 0 {
+                cursor_y += paragraph_gap;
+            }
+            let mut paragraph = build_paragraph(
+                &ParagraphRequest {
+                    content: paragraph_text,
+                    font_family: family,
+                    font_size: input.font_size,
+                    font_weight: input.font_weight,
+                    line_height: input.line_height,
+                    letter_spacing: input.letter_spacing,
+                    // Per-paragraph shaping is unbounded on lines; total-line
+                    // truncation and the ellipsis are applied to the merged set.
+                    max_lines: None,
+                    direction: input.direction.clone(),
+                    align: SkTextAlign::Left,
+                    foreground: default_foreground(),
+                    underline: false,
+                    strikethrough: false,
+                    truncate: false,
+                },
+                &self.fonts,
+            );
+            paragraph.layout(layout_width);
+            let utf16_to_byte = utf16_byte_offsets(paragraph_text);
+            let paragraph_top = cursor_y;
+            for metrics in paragraph.get_line_metrics() {
+                let text = line_text(
+                    paragraph_text,
+                    &utf16_to_byte,
+                    metrics.start_index,
+                    metrics.end_excluding_whitespaces,
+                );
+                lines.push(TextLineBox {
+                    text,
+                    x: metrics.left,
+                    y: paragraph_top + (metrics.baseline - metrics.ascent),
+                    width: metrics.width,
+                    height: metrics.height,
+                    baseline: paragraph_top + metrics.baseline,
+                });
+            }
+            cursor_y += f64::from(paragraph.height());
+        }
+
+        let total_lines = lines.len();
+        let exceeds_max_lines = input
+            .max_lines
+            .is_some_and(|max_lines| total_lines > max_lines as usize);
+        if let Some(max_lines) = input.max_lines {
+            lines.truncate(max_lines as usize);
+        }
+        // A6a D3: elide the emitted line text exactly like the raster does.
+        if input.truncate {
+            self.apply_ellipsis(&mut lines, input, family, exceeds_max_lines, max_width);
+        }
+
+        let measured_width = lines.iter().map(|line| line.width).fold(0.0, f64::max);
+        // Height is the last visible line's bottom; the per-line y offsets
+        // already fold in the paragraph gaps.
+        let measured_height = lines
+            .last()
+            .map(|line| line.y + line.height)
+            .unwrap_or(0.0);
+        let width = max_width
+            .filter(|_| matches!(input.wrap, TextWrap::Wrap))
+            .map(|bound| measured_width.min(bound))
+            .unwrap_or(measured_width);
+
+        TextMeasureOutput {
+            width,
+            height: measured_height,
+            line_height_px,
+            line_count: lines.len() as u16,
+            overflow_x: input
+                .max_width
+                .is_some_and(|bound| measured_width > bound + OVERFLOW_EPSILON),
+            overflow_y: input
+                .max_height
+                .is_some_and(|bound| measured_height > bound + OVERFLOW_EPSILON),
+            exceeds_max_lines,
+            lines,
+            diagnostics,
+        }
+    }
+
+    /// A6a D3 (review contract): elide the emitted line text so SVG/PDF markup
+    /// matches the raster's native "…". Wrap mode: a max_lines cut refits the
+    /// last visible line into the width bound. NoWrap mode: every line wider
+    /// than the bound is elided at the bound (SkParagraph's per-line elision),
+    /// and a max_lines cut additionally marks the last visible line.
+    fn apply_ellipsis(
+        &self,
+        lines: &mut [TextLineBox],
+        input: &TextMeasureInput,
+        family: &str,
+        exceeds_max_lines: bool,
+        bound: Option<f64>,
+    ) {
+        if matches!(input.wrap, TextWrap::Wrap) {
+            if exceeds_max_lines {
+                if let Some(last) = lines.last_mut() {
+                    self.refit_with_ellipsis(last, input, family, bound);
+                }
+            }
+            return;
+        }
+        if let Some(bound_px) = bound {
+            for line in lines.iter_mut() {
+                if line.width > bound_px + OVERFLOW_EPSILON {
+                    self.refit_with_ellipsis(line, input, family, Some(bound_px));
+                }
+            }
+        }
+        if exceeds_max_lines {
+            if let Some(last) = lines.last_mut() {
+                if !last.text.ends_with('…') {
+                    last.text.push('…');
+                    last.width = self.line_width(family, input, &last.text);
+                }
+            }
+        }
+    }
+
+    /// Drop trailing characters (and trailing whitespace) until `text + "…"`
+    /// fits the bound, re-shaping through the real font set so the emitted
+    /// width is glyph-accurate. No bound → plain append.
+    fn refit_with_ellipsis(
+        &self,
+        line: &mut TextLineBox,
+        input: &TextMeasureInput,
+        family: &str,
+        bound: Option<f64>,
+    ) {
+        if line.text.ends_with('…') {
+            return;
+        }
+        let mut chars: Vec<char> = line.text.chars().collect();
+        loop {
+            while chars.last().is_some_and(|ch| ch.is_whitespace()) {
+                chars.pop();
+            }
+            let mut candidate: String = chars.iter().collect();
+            candidate.push('…');
+            let width = self.line_width(family, input, &candidate);
+            let fits = bound.is_none_or(|bound| width <= bound + OVERFLOW_EPSILON);
+            if fits || chars.is_empty() {
+                line.text = candidate;
+                line.width = width;
+                return;
+            }
+            // Proportional trim (at least one char) so long overflow lines
+            // converge in a few shaping passes instead of one char at a time.
+            let overshoot = bound
+                .map(|bound| ((width - bound) / width * chars.len() as f64).ceil() as usize)
+                .unwrap_or(1)
+                .clamp(1, chars.len());
+            chars.truncate(chars.len() - overshoot);
+        }
+    }
+
+    /// The shaped width of a single already-cased line, used to re-account the
+    /// stacked ellipsis line.
+    fn line_width(&self, family: &str, input: &TextMeasureInput, text: &str) -> f64 {
+        let mut paragraph = build_paragraph(
+            &ParagraphRequest {
+                content: text,
+                font_family: family,
+                font_size: input.font_size,
+                font_weight: input.font_weight,
+                line_height: input.line_height,
+                letter_spacing: input.letter_spacing,
+                max_lines: None,
+                direction: input.direction.clone(),
+                align: SkTextAlign::Left,
+                foreground: default_foreground(),
+                underline: false,
+                strikethrough: false,
+                truncate: false,
+            },
+            &self.fonts,
+        );
+        paragraph.layout(UNBOUNDED_LAYOUT_WIDTH as f32);
+        f64::from(paragraph.longest_line())
+    }
 }
 
 impl TextMeasurer for SkiaTextMeasurer {
     fn measure(&self, input: &TextMeasureInput) -> TextMeasureOutput {
         let line_height_px = line_height_px(input.font_size, input.line_height);
         let resolution = self.fonts.resolve_family(&input.font_family);
-        let content = normalize_content(&input.content);
+        // A6a D1: transform AFTER normalization — normalize converts the DSL's
+        // literal "\n" to a real newline (whitespace), so case-folding can
+        // never corrupt the line delimiters, and every line box carries the
+        // cased string the exporters emit.
+        let content = input
+            .text_transform
+            .apply(&normalize_content(&input.content))
+            .into_owned();
         let max_width = input.max_width.filter(|width| *width > 0.0);
         // Font-resolution diagnostics from the actual shaping font set —
         // document-scoped here; the layout engine re-subjects them to the node.
@@ -214,6 +474,27 @@ impl TextMeasurer for SkiaTextMeasurer {
             &content,
             None,
         );
+
+        // A6a D4: paragraph stacking is ACTIVE only when a positive, finite
+        // gap meets an actual `\n` break; otherwise the single-paragraph path
+        // below stays byte-identical to pre-A6a.
+        let paragraph_gap = input
+            .paragraph_spacing
+            .is_finite()
+            .then_some(input.paragraph_spacing)
+            .filter(|gap| *gap > 0.0)
+            .unwrap_or(0.0);
+        if paragraph_gap > 0.0 && content.contains('\n') {
+            return self.measure_stacked(
+                input,
+                &resolution.family,
+                &content,
+                max_width,
+                line_height_px,
+                paragraph_gap,
+                diagnostics,
+            );
+        }
 
         if content.is_empty() {
             // Mirror the heuristic: empty content still occupies one line.
@@ -240,6 +521,12 @@ impl TextMeasurer for SkiaTextMeasurer {
             };
         }
 
+        // Measurement reports HONEST geometry: no ellipsis injected here, so
+        // overflow_x / exceeds_max_lines stay byte-identical to pre-A6a. The
+        // renderer's raster path paints the native "…" via ParagraphRequest;
+        // for the SVG/PDF markup that consume `lines[].text`, the ellipsis is
+        // appended to the last visible line below (SkParagraph's line metrics
+        // index the ORIGINAL source and never surface the injected glyph).
         let mut paragraph = build_paragraph(
             &ParagraphRequest {
                 content: &content,
@@ -254,6 +541,11 @@ impl TextMeasurer for SkiaTextMeasurer {
                 // lines inside the box but never changes break positions.
                 align: SkTextAlign::Left,
                 foreground: default_foreground(),
+                // Decoration + ellipsis never change measured line geometry;
+                // only the renderer paints them.
+                underline: false,
+                strikethrough: false,
+                truncate: false,
             },
             &self.fonts,
         );
@@ -281,6 +573,26 @@ impl TextMeasurer for SkiaTextMeasurer {
 
         let measured_width = lines.iter().map(|line| line.width).fold(0.0, f64::max);
         let measured_height = f64::from(paragraph.height());
+        let overflow_x = input
+            .max_width
+            .is_some_and(|max_width| measured_width > max_width + OVERFLOW_EPSILON);
+        let exceeds_max_lines = paragraph.did_exceed_max_lines();
+
+        // A6a D3: mirror the raster ellipsis into the emitted line text when
+        // truncation actually cut content (a max_lines cut, or a NoWrap line
+        // that overflows its box), refitted into the bound so SVG/PDF markup
+        // matches the raster's native elision instead of overflowing it.
+        if input.truncate {
+            self.apply_ellipsis(
+                &mut lines,
+                input,
+                &resolution.family,
+                exceeds_max_lines,
+                max_width,
+            );
+        }
+
+        let measured_width = lines.iter().map(|line| line.width).fold(0.0, f64::max);
         let width = max_width
             .filter(|_| matches!(input.wrap, TextWrap::Wrap))
             .map(|max_width| measured_width.min(max_width))
@@ -291,13 +603,11 @@ impl TextMeasurer for SkiaTextMeasurer {
             height: measured_height,
             line_height_px,
             line_count: lines.len() as u16,
-            overflow_x: input
-                .max_width
-                .is_some_and(|max_width| measured_width > max_width + OVERFLOW_EPSILON),
+            overflow_x,
             overflow_y: input
                 .max_height
                 .is_some_and(|max_height| measured_height > max_height + OVERFLOW_EPSILON),
-            exceeds_max_lines: paragraph.did_exceed_max_lines(),
+            exceeds_max_lines,
             lines,
             diagnostics,
         }
@@ -371,6 +681,9 @@ mod glyph_fallback_tests {
             direction: LumenTextDirection::Ltr,
             max_width: None,
             max_height: None,
+            text_transform: lumen_core::TextTransform::None,
+            truncate: false,
+            paragraph_spacing: 0.0,
         }
     }
 
@@ -443,5 +756,54 @@ mod glyph_fallback_tests {
     #[test]
     fn shaping_flag_is_true_for_skia_measurer() {
         assert!(SkiaTextMeasurer::bundled().shaping());
+    }
+
+    #[test]
+    fn weight_substitution_emits_lums0104_advisory() {
+        // A6a D6.2: bundled Inter ships 400/600/700/800 — never 500. Requesting
+        // 500 snaps to a neighbor, which must now advise (LUMS0104), not stay
+        // silent. An exact weight the family ships (700) emits nothing.
+        let measurer = SkiaTextMeasurer::bundled();
+        let mut request = input("weight", "Inter");
+        request.font_weight = 500;
+        let out = measurer.measure(&request);
+        let lums0104 = out
+            .diagnostics
+            .iter()
+            .find(|d| d.code == "LUMS0104")
+            .unwrap_or_else(|| panic!("expected LUMS0104: {:?}", out.diagnostics));
+        assert!(lums0104.message.contains("Inter"));
+        assert!(lums0104.message.contains("500"));
+
+        request.font_weight = 700;
+        let exact = measurer.measure(&request);
+        assert!(
+            !exact.diagnostics.iter().any(|d| d.code == "LUMS0104"),
+            "exact weight must not advise: {:?}",
+            exact.diagnostics
+        );
+    }
+
+    #[test]
+    fn skia_paragraph_spacing_stacks_and_zero_is_unchanged() {
+        // A6a D4: a positive gap on multi-paragraph content adds height; the
+        // 0.0 path is byte-identical to a single hard-broken paragraph.
+        let measurer = SkiaTextMeasurer::bundled();
+        let base = measurer.measure(&input("alpha\\nbeta", "Inter"));
+
+        let mut spaced = input("alpha\\nbeta", "Inter");
+        spaced.paragraph_spacing = 12.0;
+        let out = measurer.measure(&spaced);
+        assert_eq!(out.line_count, 2);
+        assert!(
+            out.height > base.height + 11.0,
+            "stacked height {} must exceed base {} by ~gap",
+            out.height,
+            base.height
+        );
+
+        let mut zero = input("alpha\\nbeta", "Inter");
+        zero.paragraph_spacing = 0.0;
+        assert_eq!(measurer.measure(&zero), base);
     }
 }

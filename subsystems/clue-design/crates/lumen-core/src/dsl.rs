@@ -16,7 +16,7 @@ use crate::{
     PagePreset, PageSizeInput, Paint, PaintId, ParentRef, PdfIntent, Phase, PositionMode,
     RasterScale, Rect, RelativePlacement, ReplaceNodeRequest, ReplaceSlotPolicy, Scene, SizeSpec,
     Slot, SlotEditPatch, SlotId, SlotKey, Stroke, StrokeAlign, StrokeCap, StrokeJoin, TextAlign,
-    TextDirection, TextEditPatch, TextNode, TextWrap, Unit, VectorNode,
+    TextDirection, TextEditPatch, TextNode, TextTransform, TextWrap, Unit, VectorNode,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
@@ -435,6 +435,16 @@ pub enum DslProperty {
     Tracking(DslScalar),
     MaxLines(u16),
     TextDirection(TextDirection),
+    /// A6a D1: display-time case transform.
+    TextTransform(TextTransform),
+    /// A6a D2: underline decoration.
+    Underline(bool),
+    /// A6a D2: strikethrough decoration.
+    Strikethrough(bool),
+    /// A6a D3: ellipsis truncation.
+    Truncate(bool),
+    /// A6a D4: extra vertical gap (px) at each `\n` paragraph break.
+    ParagraphSpacing(f64),
     Grow(DslScalar),
     TextStyleToken(String),
     TextAlignment(TextAlign),
@@ -3259,6 +3269,26 @@ fn node_edit_patch_from_properties(
                 text_patch.direction = FieldPatch::Set(direction.clone());
                 has_text_patch = true;
             }
+            DslProperty::TextTransform(transform) => {
+                text_patch.text_transform = FieldPatch::Set(*transform);
+                has_text_patch = true;
+            }
+            DslProperty::Underline(on) => {
+                text_patch.underline = FieldPatch::Set(*on);
+                has_text_patch = true;
+            }
+            DslProperty::Strikethrough(on) => {
+                text_patch.strikethrough = FieldPatch::Set(*on);
+                has_text_patch = true;
+            }
+            DslProperty::Truncate(on) => {
+                text_patch.truncate = FieldPatch::Set(*on);
+                has_text_patch = true;
+            }
+            DslProperty::ParagraphSpacing(spacing) => {
+                text_patch.paragraph_spacing = FieldPatch::Set(*spacing);
+                has_text_patch = true;
+            }
             DslProperty::Asset(asset_id) => {
                 patch.image_asset_id = OptionalFieldPatch::Set(asset_id.clone());
             }
@@ -4073,6 +4103,49 @@ fn parse_property_token(
                 column,
             )?)]
         }
+        "case" | "text_transform" => {
+            expect_arg_count(&call, 1, line_number)?;
+            vec![DslProperty::TextTransform(parse_text_transform(
+                &call.args[0],
+                line_number,
+                column,
+            )?)]
+        }
+        "underline" => {
+            expect_arg_count(&call, 1, line_number)?;
+            vec![DslProperty::Underline(parse_bool(
+                &call.args[0],
+                line_number,
+                column,
+            )?)]
+        }
+        "strike" | "strikethrough" => {
+            expect_arg_count(&call, 1, line_number)?;
+            vec![DslProperty::Strikethrough(parse_bool(
+                &call.args[0],
+                line_number,
+                column,
+            )?)]
+        }
+        "truncate" | "ellipsis" => {
+            expect_arg_count(&call, 1, line_number)?;
+            vec![DslProperty::Truncate(parse_bool(
+                &call.args[0],
+                line_number,
+                column,
+            )?)]
+        }
+        "para_spacing" | "paragraph_spacing" => {
+            expect_arg_count(&call, 1, line_number)?;
+            // Non-negative px gap (0 allowed); finiteness is enforced by the
+            // LUMV0900 layout gate. Reuses the shared non-negative helper
+            // (LUMD0255) rather than a new negative-value code.
+            vec![DslProperty::ParagraphSpacing(parse_non_negative_f64(
+                &call.args[0],
+                line_number,
+                column,
+            )?)]
+        }
         "slot" => {
             expect_arg_count(&call, 1, line_number)?;
             vec![DslProperty::Slot(parse_slot_key(
@@ -4487,6 +4560,7 @@ fn node_from_element(element: &DslElement, line_number: usize) -> Result<Node, D
             font_size_token: None,
             line_height_token: None,
             letter_spacing_token: None,
+            ..TextNode::default()
         }),
         DslElementKind::Image { asset_id } => NodeKind::Image(ImageNode {
             asset_id: asset_id
@@ -5092,6 +5166,76 @@ fn apply_properties(
             DslProperty::TextDirection(direction) => {
                 if let NodeKind::Text(text) = &mut node.kind {
                     text.direction = direction.clone();
+                }
+            }
+            DslProperty::TextTransform(transform) => {
+                if let NodeKind::Text(text) = &mut node.kind {
+                    text.text_transform = *transform;
+                } else {
+                    diagnostics.push(warning_diag(
+                        line_number,
+                        1,
+                        node.id.as_str().len(),
+                        "LUMD0607",
+                        "case(...) only applies to text nodes",
+                        "Move case(upper|lower|title|none) to a text/t element.",
+                    ));
+                }
+            }
+            DslProperty::Underline(on) => {
+                if let NodeKind::Text(text) = &mut node.kind {
+                    text.underline = *on;
+                } else {
+                    diagnostics.push(warning_diag(
+                        line_number,
+                        1,
+                        node.id.as_str().len(),
+                        "LUMD0607",
+                        "underline(...) only applies to text nodes",
+                        "Move underline(true) to a text/t element.",
+                    ));
+                }
+            }
+            DslProperty::Strikethrough(on) => {
+                if let NodeKind::Text(text) = &mut node.kind {
+                    text.strikethrough = *on;
+                } else {
+                    diagnostics.push(warning_diag(
+                        line_number,
+                        1,
+                        node.id.as_str().len(),
+                        "LUMD0607",
+                        "strike(...) only applies to text nodes",
+                        "Move strike(true) to a text/t element.",
+                    ));
+                }
+            }
+            DslProperty::Truncate(on) => {
+                if let NodeKind::Text(text) = &mut node.kind {
+                    text.truncate = *on;
+                } else {
+                    diagnostics.push(warning_diag(
+                        line_number,
+                        1,
+                        node.id.as_str().len(),
+                        "LUMD0607",
+                        "truncate(...) only applies to text nodes",
+                        "Move truncate(true) to a text/t element.",
+                    ));
+                }
+            }
+            DslProperty::ParagraphSpacing(spacing) => {
+                if let NodeKind::Text(text) = &mut node.kind {
+                    text.paragraph_spacing = *spacing;
+                } else {
+                    diagnostics.push(warning_diag(
+                        line_number,
+                        1,
+                        node.id.as_str().len(),
+                        "LUMD0607",
+                        "para_spacing(...) only applies to text nodes",
+                        "Move para_spacing(n) to a text/t element.",
+                    ));
                 }
             }
             DslProperty::Grow(grow) => {
@@ -6154,6 +6298,28 @@ fn parse_text_direction(
         )),
     }
 }
+
+fn parse_text_transform(
+    source: &str,
+    line_number: usize,
+    column: usize,
+) -> Result<TextTransform, DslDiagnostic> {
+    match source.trim() {
+        "none" => Ok(TextTransform::None),
+        "upper" | "uppercase" => Ok(TextTransform::Uppercase),
+        "lower" | "lowercase" => Ok(TextTransform::Lowercase),
+        "title" => Ok(TextTransform::Title),
+        other => Err(error_diag(
+            line_number,
+            column,
+            other.len().max(1),
+            "LUMD0271",
+            format!("unknown text transform {other}"),
+            "Use none, upper|uppercase, lower|lowercase, or title.",
+        )),
+    }
+}
+
 
 #[derive(Clone, Debug)]
 struct Call {

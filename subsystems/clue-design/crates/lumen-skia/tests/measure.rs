@@ -1,7 +1,9 @@
 //! Slice A2 gates: SkParagraph measurement semantics, pinned BEFORE anything
 //! depends on them (risk-register item: line-height multiplier mapping).
 
-use lumen_core::{TextDirection, TextMeasureInput, TextMeasureOutput, TextMeasurer, TextWrap};
+use lumen_core::{
+    TextDirection, TextMeasureInput, TextMeasureOutput, TextMeasurer, TextTransform, TextWrap,
+};
 use lumen_skia::SkiaTextMeasurer;
 
 fn input(content: &str) -> TextMeasureInput {
@@ -17,6 +19,9 @@ fn input(content: &str) -> TextMeasureInput {
         direction: TextDirection::Ltr,
         max_width: None,
         max_height: None,
+        text_transform: TextTransform::None,
+        truncate: false,
+        paragraph_spacing: 0.0,
     }
 }
 
@@ -141,21 +146,41 @@ fn overflow_y_flags_against_max_height() {
 }
 
 #[test]
-fn max_lines_truncates_without_ellipsis_and_flags() {
+fn max_lines_truncates_without_ellipsis_by_default_and_with_ellipsis_when_truncate() {
+    // A6a D3: the pinned truncation-without-ellipsis contract holds OFF by
+    // default; setting `truncate` flips it to SkParagraph's native "…" on the
+    // last kept line. `exceeds_max_lines` stays truthful either way (truncation
+    // is still lossy and still diagnosed — it just looks intentional now).
     let measurer = SkiaTextMeasurer::bundled();
     let mut request = input("alpha\\nbeta\\ngamma");
     request.max_lines = Some(2);
+
+    // Default: no ellipsis.
     let output = measurer.measure(&request);
     assert_eq!(output.line_count, 2);
     assert_eq!(line_texts(&output), vec!["alpha", "beta"]);
     assert!(output.exceeds_max_lines);
     assert!(
         !output.lines.iter().any(|line| line.text.contains('…')),
-        "ellipsis is off by contract"
+        "ellipsis is off by default"
     );
 
+    // truncate on: the last kept line gains "…", still flagged as exceeding.
+    request.truncate = true;
+    let truncated = measurer.measure(&request);
+    assert_eq!(truncated.line_count, 2);
+    assert!(truncated.exceeds_max_lines);
+    assert!(
+        truncated.lines.iter().any(|line| line.text.contains('…')),
+        "truncate must append the ellipsis: {:?}",
+        line_texts(&truncated)
+    );
+
+    // Nothing to cut → no ellipsis even with truncate on.
     request.max_lines = Some(3);
-    assert!(!measurer.measure(&request).exceeds_max_lines);
+    let uncut = measurer.measure(&request);
+    assert!(!uncut.exceeds_max_lines);
+    assert!(!uncut.lines.iter().any(|line| line.text.contains('…')));
 }
 
 // Pinned divergence from the heuristic: Skia breaks words longer than the
@@ -292,4 +317,50 @@ fn shaping_catches_wraps_the_heuristic_misses() {
         "heuristic believes this fits one line"
     );
     assert!(skia.line_count > 1, "real shaping knows it wraps");
+}
+
+// A6a review gate: the ellipsized line text the measurer emits (consumed by
+// SVG/PDF markup) must fit the width bound — matching the raster's native
+// elision — never the full overflowing text with a "…" tacked on.
+
+#[test]
+fn truncated_line_text_is_refitted_to_the_width_bound() {
+    let measurer = SkiaTextMeasurer::bundled();
+
+    // NoWrap single-line overflow elide.
+    let mut nowrap = input("wide open spaces keep going");
+    nowrap.truncate = true;
+    nowrap.max_width = Some(100.0);
+    let out = measurer.measure(&nowrap);
+    let last = out.lines.last().expect("line");
+    assert!(last.text.ends_with('…'), "elided line: {:?}", last.text);
+    assert!(
+        last.width <= 100.0 + 0.5,
+        "emitted line width {} must fit the 100px bound (text {:?})",
+        last.width,
+        last.text
+    );
+    assert!(
+        last.text.chars().count()
+            < "wide open spaces keep going".chars().count() + 1,
+        "characters must be dropped to make room for the ellipsis: {:?}",
+        last.text
+    );
+
+    // Wrap + max_lines cut: the last kept line is full-width; adding "…"
+    // must drop characters, not overflow the bound.
+    let mut wrapped = input("wide open spaces keep going onward forever");
+    wrapped.wrap = TextWrap::Wrap;
+    wrapped.truncate = true;
+    wrapped.max_lines = Some(1);
+    wrapped.max_width = Some(120.0);
+    let out = measurer.measure(&wrapped);
+    let last = out.lines.last().expect("line");
+    assert!(last.text.ends_with('…'), "cut line: {:?}", last.text);
+    assert!(
+        last.width <= 120.0 + 0.5,
+        "emitted line width {} must fit the 120px bound (text {:?})",
+        last.width,
+        last.text
+    );
 }

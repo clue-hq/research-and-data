@@ -125,7 +125,8 @@ pub use scene::{
     LayoutAnchor, LayoutMode, LineNode, Medium, Node, NodeKind, Orientation, Page, PageOutputSize,
     PagePreset, PageSize, PageSizeSource, Paint, ParentRef, PhysicalPageSize, PhysicalUnit,
     PositionMode, RasterPageSize, Rect, Scene, SizeSpec, Stroke, StrokeAlign, StrokeCap,
-    StrokeJoin, TextAlign, TextDirection, TextNode, TextWrap, Transform, Unit, VectorNode,
+    StrokeJoin, TextAlign, TextDirection, TextNode, TextTransform, TextWrap, Transform, Unit,
+    VectorNode,
 };
 pub use slots::{
     BindingHint, Cardinality, ConditionalRule, ContentType, Editability, EmptyBehavior, FocalPoint,

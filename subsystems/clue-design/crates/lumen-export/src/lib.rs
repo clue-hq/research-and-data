@@ -20,8 +20,8 @@ pub use resolver::{
     AssetByteResolver, AssetResolveError, FixtureAssetResolver, ResolvedAssetBytes,
 };
 pub use svg::{
-    focal_crop_geometry, page_background_token_diagnostics, text_strokes_dropped_diag,
-    unresolved_brand_token_diagnostics, FocalCropGeometry, SvgExportAdapter,
+    focal_crop_geometry, page_background_token_diagnostics, unresolved_brand_token_diagnostics,
+    FocalCropGeometry, SvgExportAdapter,
 };
 
 use lumen_core::{

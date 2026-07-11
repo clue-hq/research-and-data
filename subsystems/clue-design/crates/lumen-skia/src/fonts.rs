@@ -325,6 +325,16 @@ impl FontManager {
         })
     }
 
+    /// The actual weight of the face the shaper resolves for `family` at the
+    /// requested `weight` (A6a D6.2). `Some(actual)` only when it differs from
+    /// the request — the silent within-family weight snap `find_typefaces`
+    /// performs — so callers can surface it as the LUMS0104 advisory. `None`
+    /// when the face matches exactly or no face resolves.
+    pub fn resolved_weight(&self, family: &str, weight: i32) -> Option<i32> {
+        let actual = *self.match_typeface(family, weight)?.font_style().weight();
+        (actual != weight).then_some(actual)
+    }
+
     fn build_collection(&self) -> FontCollection {
         let parser = FontMgr::new();
         let mut provider = TypefaceFontProvider::new();

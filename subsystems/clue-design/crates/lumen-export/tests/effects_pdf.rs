@@ -187,3 +187,100 @@ fn pdf_export_of_effect_scene_emits_lumx_verdicts_and_renders_supported_subset()
         "plain solid fill renders: {pdf}"
     );
 }
+
+fn text_scene(text: lumen_core::scene::TextNode, fills: Vec<Fill>, strokes: Vec<Stroke>) -> Scene {
+    let mut scene = Scene::new(DocumentId::from("doc_pdf_text"), "PDF Text");
+    let mut node = Node::new(NodeId::from("t"), NodeKind::Text(text));
+    node.transform = Transform { x: 24.0, y: 24.0, ..Transform::default() };
+    node.size = SizeSpec::fixed(200.0, 40.0);
+    node.fills = fills;
+    node.strokes = strokes;
+    scene
+        .apply_operations([
+            Operation::AddPage {
+                page: Page {
+                    id: PageId::from("page_card"),
+                    name: "Card".to_owned(),
+                    size: PageSize {
+                        width: 400.0,
+                        height: 300.0,
+                        unit: Unit::Px,
+                        preset: Some(PagePreset::Custom),
+                        orientation: Orientation::Landscape,
+                        source: None,
+                        output: None,
+                    },
+                    children: Vec::new(),
+                    bleed: None,
+                    safe_area: None,
+                    background: Vec::new(),
+                },
+            },
+            Operation::InsertNode {
+                parent: ParentRef::Page(PageId::from("page_card")),
+                index: 0,
+                node,
+            },
+        ])
+        .unwrap();
+    scene
+}
+
+fn pdf_diagnostics(scene: &Scene) -> Vec<lumen_core::Diagnostic> {
+    let request = ExportRequest {
+        profile: ExportProfile {
+            name: "pdf_preview".to_owned(),
+            format: ExportFormat::Pdf,
+            pdf_intent: None,
+            raster: None,
+            include_bleed: false,
+            embed_fonts: false,
+        },
+        page_ids: vec![PageId::from("page_card")],
+        purpose: ExportPurpose::UserDownload,
+    };
+    PdfExportAdapter::new().export(scene, &request).expect("exports").diagnostics
+}
+
+#[test]
+fn pdf_degrades_text_decoration_stroke_and_multi_fill_loudly() {
+    // A6a D2/D5: PDF renders none of these — but never silently.
+    let scene = text_scene(
+        lumen_core::scene::TextNode {
+            content: "Loud".to_owned(),
+            underline: true,
+            strikethrough: true,
+            ..lumen_core::scene::TextNode::default()
+        },
+        vec![
+            Fill { id: PaintId::from("f1"), paint: solid("#111827") },
+            Fill { id: PaintId::from("f2"), paint: solid("#256c70") },
+        ],
+        vec![Stroke::solid(PaintId::from("s"), solid("#ffffff"), 2.0)],
+    );
+    let diagnostics = pdf_diagnostics(&scene);
+    for code in ["LUME0421", "LUME0422", "LUME0423"] {
+        assert!(
+            diagnostics.iter().any(|d| d.code == code),
+            "missing {code}: {diagnostics:#?}"
+        );
+    }
+}
+
+#[test]
+fn pdf_clean_text_node_emits_no_a6_advisories() {
+    let scene = text_scene(
+        lumen_core::scene::TextNode {
+            content: "Clean".to_owned(),
+            text_transform: lumen_core::TextTransform::Uppercase,
+            paragraph_spacing: 4.0,
+            ..lumen_core::scene::TextNode::default()
+        },
+        vec![Fill { id: PaintId::from("f1"), paint: solid("#111827") }],
+        vec![],
+    );
+    let diagnostics = pdf_diagnostics(&scene);
+    for code in ["LUME0421", "LUME0422", "LUME0423"] {
+        assert!(!diagnostics.iter().any(|d| d.code == code), "{code} should not fire: {diagnostics:#?}");
+    }
+}

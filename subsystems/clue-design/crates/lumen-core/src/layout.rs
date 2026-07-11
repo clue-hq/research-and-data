@@ -1062,6 +1062,8 @@ impl<'a> LayoutEngine<'a> {
                 || !text.line_height.is_finite()
                 || text.line_height <= 0.0
                 || !text.letter_spacing.is_finite()
+                || !text.paragraph_spacing.is_finite()
+                || text.paragraph_spacing < 0.0
             {
                 self.diagnostics.push(Diagnostic::error(
                     Phase::Layout,
@@ -1070,6 +1072,29 @@ impl<'a> LayoutEngine<'a> {
                     Some(DiagnosticSubject::Node(node.id.clone())),
                 ));
                 continue;
+            }
+
+            // A6a D3: `truncate(true)` on freely-wrapping text with no
+            // max_lines can never fire — nothing ever cuts the copy. Teach,
+            // don't block (advisory), so the author knows the flag is inert.
+            if text.truncate
+                && text.max_lines.is_none()
+                && matches!(text.wrap, TextWrap::Wrap)
+            {
+                self.diagnostics.push(
+                    Diagnostic::warning(
+                        Phase::Layout,
+                        "LUMV0905",
+                        format!(
+                            "text node {} sets truncate but wraps freely with no max_lines; the ellipsis can never fire",
+                            node.id
+                        ),
+                        Some(DiagnosticSubject::Node(node.id.clone())),
+                    )
+                    .with_hint(
+                        "Set max_lines(n) or wrap(false) so truncation has a cut point, or drop truncate.",
+                    ),
+                );
             }
 
             if geometry.layout_bounds.width <= 0.0 || geometry.layout_bounds.height <= 0.0 {
@@ -1085,6 +1110,17 @@ impl<'a> LayoutEngine<'a> {
             let measured = self.measurer.measure(
                 &TextMeasureInput::from_text_node(text).with_bounds(&geometry.layout_bounds),
             );
+            // Taffy rounds computed geometry to whole pixels, so a hug box can
+            // legitimately sit up to half a pixel under the fractional measured
+            // height (e.g. stacked paragraph gaps or fractional line heights).
+            // A sub-pixel "overflow" is that rounding contract, not content
+            // loss — re-derive the overflow flags with the rounding tolerance
+            // so hug-sized text never trips a phantom LUMV0902/0903.
+            const ROUNDING_TOLERANCE: f64 = 0.5 + 0.01;
+            let overflow_x = measured.overflow_x
+                && measured.width > geometry.layout_bounds.width + ROUNDING_TOLERANCE;
+            let overflow_y = measured.overflow_y
+                && measured.height > geometry.layout_bounds.height + ROUNDING_TOLERANCE;
             // Fold measurement-time font diagnostics (LUMS0100 whole-family
             // fallback, LUMS0103 per-glyph substitution) into the layout
             // result so missing fonts surface at preflight, not only at
@@ -1130,14 +1166,14 @@ impl<'a> LayoutEngine<'a> {
                     "Increase max_lines, shorten the copy, or enlarge the text box.",
                 );
             }
-            if measured.overflow_x && matches!(text.wrap, TextWrap::NoWrap) {
+            if overflow_x && matches!(text.wrap, TextWrap::NoWrap) {
                 push(
                     "LUMV0902",
                     format!("non-wrapping text node {} overflows horizontally", node.id),
                     "Use wrap(true), s(fill,hug), a smaller style, or a wider text box.",
                 );
             }
-            if measured.overflow_y {
+            if overflow_y {
                 push(
                     "LUMV0903",
                     format!("text node {} exceeds available height", node.id),
@@ -1856,6 +1892,13 @@ fn text_fit(
         direction: crate::TextDirection::Ltr,
         max_width: Some(bounds.width.max(0.0)),
         max_height: Some(bounds.height.max(0.0)),
+        // The node's own case transform and paragraph spacing change the
+        // fixture's measured geometry, so fit validation must see them.
+        // Truncation is a lossy RESPONSE to overflow, not a fit input — keep
+        // it off so a too-long fixture still reports the true overflow.
+        text_transform: text.text_transform,
+        truncate: false,
+        paragraph_spacing: text.paragraph_spacing,
     });
 
     TextFit {

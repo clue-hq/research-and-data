@@ -278,3 +278,112 @@ fn svg_export_line_breaks_follow_injected_measurer() {
         "shaped export must wrap the wide text into multiple tspans"
     );
 }
+
+// A6a gate (K-A6 protocol finding): a hug-height text box with
+// paragraph_spacing must RESERVE the paragraph gaps — hug sizing and the
+// overflow_y check must count the same stacked height, else every hugged
+// multi-stanza body trips a false LUMV0903.
+#[test]
+fn hug_height_reserves_paragraph_spacing_gaps() {
+    let mut scene = Scene::new(DocumentId::from("doc_hug_para"), "Hug Para");
+    let mut text_node = Node::new(
+        NodeId::from("node_text"),
+        NodeKind::Text(TextNode {
+            content: "A.\\nB.\\nC.".to_owned(),
+            wrap: TextWrap::Wrap,
+            font_size: 20.0,
+            line_height: 1.35,
+            paragraph_spacing: 16.0,
+            max_lines: Some(6),
+            ..TextNode::default()
+        }),
+    );
+    text_node.size = SizeSpec {
+        width: lumen_core::Dimension::Fixed(400.0),
+        height: lumen_core::Dimension::Hug,
+    };
+    scene
+        .apply_operations([
+            Operation::AddPage {
+                page: Page {
+                    id: PageId::from("page_main"),
+                    name: "Main".to_owned(),
+                    size: PageSize {
+                        width: 800.0,
+                        height: 600.0,
+                        unit: Unit::Px,
+                        preset: Some(PagePreset::Custom),
+                        orientation: Orientation::Landscape,
+                        source: None,
+                        output: None,
+                    },
+                    children: Vec::new(),
+                    bleed: None,
+                    safe_area: None,
+                    background: Vec::new(),
+                },
+            },
+            Operation::InsertNode {
+                parent: ParentRef::Page(PageId::from("page_main")),
+                index: 0,
+                node: text_node,
+            },
+        ])
+        .expect("scene builds");
+
+    for (label, options) in [
+        ("heuristic", LayoutOptions::default()),
+        (
+            "skia",
+            LayoutOptions {
+                measurer: Some(skia_measurer()),
+                ..Default::default()
+            },
+        ),
+    ] {
+        let result = layout_scene(&scene, options);
+        assert!(
+            !has_code(&result.diagnostics, "LUMV0903"),
+            "{label}: hug height must include the paragraph gaps, got: {:?}",
+            result
+                .diagnostics
+                .iter()
+                .filter(|d| d.code.starts_with("LUMV09"))
+                .collect::<Vec<_>>()
+        );
+    }
+}
+
+// K-A6 evidence repro, verbatim DSL: hugged para_spacing body inside an
+// auto-layout stack must not trip a false LUMV0903.
+#[test]
+fn hugged_para_spacing_body_inside_autolayout_preflights_clean() {
+    let dsl = r#"page linkedin_square size(1080,1080,px)
+  artboard al(v,x(s),y(s),g(24),pad(96)) p(0,0) s(fill,fill) fill(#f4f1ea) clip(true)
+    body text "Northwind watches ten thousand substations.\nCrews reach the fault in seconds, not hours.\nThe grid stays up." p(0,0) s(760,hug) font("Inter",22,400,left) fill(#374151) lh(1.35) para_spacing(16) wrap_text(true) max_lines(6)
+"#;
+    let mut scene = Scene::new(DocumentId::from("doc_k_repro"), "K Repro");
+    let compile = lumen_core::compile_dsl_into_scene(dsl, &mut scene);
+    assert!(
+        compile
+            .compile_output
+            .diagnostics
+            .iter()
+            .all(|d| d.diagnostic.severity != lumen_core::DiagnosticSeverity::Error),
+        "compiles: {:?}",
+        compile.compile_output.diagnostics
+    );
+    let mut options = PreflightOptions::default();
+    options.layout.measurer = Some(skia_measurer());
+    let result = preflight_scene(scene, None, options);
+    let errors: Vec<_> = result
+        .diagnostics
+        .iter()
+        .filter(|d| d.code.starts_with("LUMV09"))
+        .collect();
+    assert!(
+        !has_code(&result.diagnostics, "LUMV0903"),
+        "hug must reserve paragraph gaps: {errors:?}"
+    );
+}
+

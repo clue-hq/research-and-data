@@ -84,6 +84,12 @@ pub enum EffectFeature {
     Glow,
     LayerBlur,
     InnerShadow,
+    /// A6a text features (D8).
+    TextStroke,
+    TextDecoration,
+    TextTransform,
+    TextEllipsis,
+    ParagraphSpacing,
 }
 
 impl EffectFeature {
@@ -102,6 +108,11 @@ impl EffectFeature {
             Self::Glow => "glow",
             Self::LayerBlur => "layer blur",
             Self::InnerShadow => "inner shadow",
+            Self::TextStroke => "text stroke",
+            Self::TextDecoration => "text underline/strikethrough",
+            Self::TextTransform => "text case transform",
+            Self::TextEllipsis => "text ellipsis truncation",
+            Self::ParagraphSpacing => "paragraph spacing",
         }
     }
 }
@@ -130,7 +141,16 @@ impl RendererEffectSupport {
             // PNG raster paints the scene directly through Skia (Wave 1
             // Track A); it matches the SVG verdicts, with stroke alignment
             // kept Approximate (native for rect/ellipse only).
-            RenderTarget::Svg | RenderTarget::Png { .. } => match feature {
+            // SVG text decoration is the CSS presentation attribute; its
+            // underline metrics vary slightly across viewers, so it is
+            // Approximate here (Native on the Skia raster). Every other text
+            // feature is Native on both.
+            RenderTarget::Svg => match feature {
+                EffectFeature::StrokeAlignment => EffectSupportLevel::Approximate,
+                EffectFeature::TextDecoration => EffectSupportLevel::Approximate,
+                _ => EffectSupportLevel::Native,
+            },
+            RenderTarget::Png { .. } => match feature {
                 EffectFeature::StrokeAlignment => EffectSupportLevel::Approximate,
                 _ => EffectSupportLevel::Native,
             },
@@ -142,7 +162,14 @@ impl RendererEffectSupport {
                 // filter; inner shadow has no native Konva form.
                 | EffectFeature::Glow
                 | EffectFeature::LayerBlur => EffectSupportLevel::Approximate,
-                EffectFeature::InnerShadow => EffectSupportLevel::Unsupported,
+                EffectFeature::InnerShadow
+                // A6a text features are not represented by the legacy Konva
+                // preview (no CanvasKit contract target in A6a — §9 debt).
+                | EffectFeature::TextStroke
+                | EffectFeature::TextDecoration
+                | EffectFeature::TextTransform
+                | EffectFeature::TextEllipsis
+                | EffectFeature::ParagraphSpacing => EffectSupportLevel::Unsupported,
                 _ => EffectSupportLevel::Native,
             },
             // PDF V0 is solid-paint-only: the first solid fill/stroke
@@ -160,7 +187,17 @@ impl RendererEffectSupport {
                 | EffectFeature::LayeredShadows
                 | EffectFeature::Glow
                 | EffectFeature::LayerBlur
-                | EffectFeature::InnerShadow => EffectSupportLevel::Unsupported,
+                | EffectFeature::InnerShadow
+                // PDF renders neither text strokes nor decoration (loud
+                // per-node advisories emitted at export, D2/D5).
+                | EffectFeature::TextStroke
+                | EffectFeature::TextDecoration => EffectSupportLevel::Unsupported,
+                // Case transform, ellipsis, and paragraph spacing are carried
+                // by the measured lines PDF already consumes — string-level /
+                // measurer-owned, so Native.
+                EffectFeature::TextTransform
+                | EffectFeature::TextEllipsis
+                | EffectFeature::ParagraphSpacing => EffectSupportLevel::Native,
             },
             // The Figma manifest is a structural sidecar, not a visual
             // render; it does not represent the effect surface.
@@ -253,6 +290,25 @@ pub fn effect_features_for_node(node: &Node) -> Vec<EffectFeature> {
     }
     if has_inner_shadow {
         features.push(EffectFeature::InnerShadow);
+    }
+    // A6a text features (D8): only text nodes carry them, and each fires from
+    // the authored property, in stable order after the shared effect surface.
+    if let crate::scene::NodeKind::Text(text) = &node.kind {
+        if !node.strokes.is_empty() {
+            features.push(EffectFeature::TextStroke);
+        }
+        if text.underline || text.strikethrough {
+            features.push(EffectFeature::TextDecoration);
+        }
+        if text.text_transform != crate::scene::TextTransform::None {
+            features.push(EffectFeature::TextTransform);
+        }
+        if text.truncate {
+            features.push(EffectFeature::TextEllipsis);
+        }
+        if text.paragraph_spacing > 0.0 {
+            features.push(EffectFeature::ParagraphSpacing);
+        }
     }
     features
 }

@@ -25,9 +25,8 @@ use lumen_core::{
     TextNode, TextWrap,
 };
 use lumen_export::{
-    focal_crop_geometry, page_background_token_diagnostics, text_strokes_dropped_diag,
-    unresolved_brand_token_diagnostics, AssetByteResolver, PageRasterizer, RasterizeError,
-    RasterizedPage, ResolvedAssetBytes,
+    focal_crop_geometry, page_background_token_diagnostics, unresolved_brand_token_diagnostics,
+    AssetByteResolver, PageRasterizer, RasterizeError, RasterizedPage, ResolvedAssetBytes,
 };
 use skia_safe::canvas::SaveLayerRec;
 use skia_safe::textlayout::TextAlign as SkTextAlign;
@@ -395,10 +394,10 @@ impl<'a> PagePainter<'a> {
                 .with_hint("Stacked text fills are out of V0 scope; use a single text fill."),
             );
         }
-        // Text strokes are dropped in v1, but never silently (A4, LUME0214).
-        if !node.strokes.is_empty() {
-            self.diagnostics.push(text_strokes_dropped_diag(node));
-        }
+        // A6a D5: text strokes now render (first solid stroke, drawn behind the
+        // fill). LUME0214 retired; multi/gradient/dash strokes advise via
+        // LUME0215 through `text_stroke_paint`.
+        let stroke_foreground = self.text_stroke_paint(node, width, height);
 
         let foreground = match node.fills.first() {
             // A specified but unresolved text fill paints the sentinel (magenta
@@ -425,10 +424,15 @@ impl<'a> PagePainter<'a> {
         };
 
         let resolution = self.fonts.resolve_family(&text.font_family);
-        let content = normalize_content(&text.content);
-        // Whole-family fallback (LUMS0100) and per-glyph substitution
-        // (LUMS0103), from the same font set + helper the measurer uses, so
-        // preflight (measurement) and this raster path report identically.
+        // A6a D1: transform after normalization (see the measurer for the
+        // literal-"\n" rationale) so painted glyphs match measured line boxes.
+        let content = text
+            .text_transform
+            .apply(&normalize_content(&text.content))
+            .into_owned();
+        // Whole-family fallback (LUMS0100), per-glyph substitution (LUMS0103),
+        // and weight substitution (LUMS0104), from the same font set + helper
+        // the measurer uses, so preflight and this raster path report identically.
         for diagnostic in font_diagnostics(
             self.fonts,
             &text.font_family,
@@ -448,44 +452,245 @@ impl<'a> PagePainter<'a> {
             TextAlign::Center => SkTextAlign::Center,
             TextAlign::Right => SkTextAlign::Right,
         };
-        let request = ParagraphRequest {
-            content: &content,
-            font_family: &resolution.family,
+
+        // A6a D4: paint per-paragraph at stacked offsets when a positive gap
+        // meets an actual break; otherwise the single-paragraph fast path is
+        // byte-identical to pre-A6a. `max_lines` is a TOTAL cap across the
+        // stack (review contract): each paragraph draws against the remaining
+        // line budget so the raster never paints lines the measured geometry
+        // (and the SVG markup) cut away.
+        let paragraph_gap = text
+            .paragraph_spacing
+            .is_finite()
+            .then_some(text.paragraph_spacing)
+            .filter(|gap| *gap > 0.0)
+            .unwrap_or(0.0);
+        if paragraph_gap > 0.0 && content.contains('\n') {
+            let mut cursor_y = 0.0f32;
+            let mut remaining = text.max_lines.map(usize::from);
+            let paragraphs: Vec<&str> = content.split('\n').collect();
+            let last = paragraphs.len().saturating_sub(1);
+            for (index, para) in paragraphs.iter().enumerate() {
+                if remaining == Some(0) {
+                    break;
+                }
+                // Resolve this paragraph's share of the total budget. When the
+                // cut lands exactly on a paragraph boundary with more content
+                // following, SkParagraph's native ellipsis cannot fire — carry
+                // the "…" in the text instead (the elision pass drops it again
+                // if it must make room).
+                let mut para_text = std::borrow::Cow::Borrowed(*para);
+                let para_max = match remaining {
+                    None => None,
+                    Some(budget) => {
+                        let natural = self.paragraph_line_count(para, &resolution.family, text, width);
+                        if natural < budget || (natural == budget && index == last) {
+                            None
+                        } else {
+                            if natural == budget && text.truncate {
+                                let mut owned = para.trim_end().to_owned();
+                                owned.push('…');
+                                para_text = std::borrow::Cow::Owned(owned);
+                            }
+                            Some(budget.min(u16::MAX as usize) as u16)
+                        }
+                    }
+                };
+                let (height, painted) = self.paint_text_paragraph(
+                    canvas,
+                    &para_text,
+                    &resolution.family,
+                    text,
+                    align,
+                    &foreground,
+                    stroke_foreground.as_ref(),
+                    width,
+                    cursor_y,
+                    para_max,
+                );
+                remaining = remaining.map(|budget| budget.saturating_sub(painted));
+                cursor_y += height;
+                if index != last {
+                    cursor_y += paragraph_gap as f32;
+                }
+            }
+        } else {
+            self.paint_text_paragraph(
+                canvas,
+                &content,
+                &resolution.family,
+                text,
+                align,
+                &foreground,
+                stroke_foreground.as_ref(),
+                width,
+                0.0,
+                text.max_lines,
+            );
+        }
+        let _ = height;
+    }
+
+    /// The natural (uncapped) line count of one paragraph at the same layout
+    /// width the paint pass uses, so the stacking loop can budget the total
+    /// `max_lines` cap across paragraphs exactly like the measurer does.
+    fn paragraph_line_count(
+        &self,
+        para: &str,
+        family: &str,
+        text: &TextNode,
+        box_width: f64,
+    ) -> usize {
+        let mut paragraph = build_paragraph(
+            &ParagraphRequest {
+                content: para,
+                font_family: family,
+                font_size: text.font_size,
+                font_weight: text.font_weight,
+                line_height: text.line_height,
+                letter_spacing: text.letter_spacing,
+                max_lines: None,
+                direction: text.direction.clone(),
+                align: SkTextAlign::Left,
+                foreground: SkPaint::default(),
+                underline: false,
+                strikethrough: false,
+                truncate: false,
+            },
+            self.fonts,
+        );
+        let layout_width = match text.wrap {
+            TextWrap::Wrap => box_width.max(0.0) as f32,
+            TextWrap::NoWrap => UNBOUNDED_LAYOUT_WIDTH as f32,
+        };
+        paragraph.layout(layout_width);
+        paragraph.line_number()
+    }
+
+    /// Paint one paragraph's glyphs (stroke pass behind the fill pass) at a
+    /// vertical offset, honoring wrap/alignment and A6a truncation. Returns the
+    /// laid-out paragraph height and painted line count so the stacking loop
+    /// can advance its cursor and spend its line budget.
+    #[allow(clippy::too_many_arguments)]
+    fn paint_text_paragraph(
+        &self,
+        canvas: &Canvas,
+        para: &str,
+        family: &str,
+        text: &TextNode,
+        align: SkTextAlign,
+        fill_foreground: &SkPaint,
+        stroke_foreground: Option<&SkPaint>,
+        box_width: f64,
+        y_offset: f32,
+        max_lines: Option<u16>,
+    ) -> (f32, usize) {
+        let make_request = |foreground: SkPaint| ParagraphRequest {
+            content: para,
+            font_family: family,
             font_size: text.font_size,
             font_weight: text.font_weight,
             line_height: text.line_height,
             letter_spacing: text.letter_spacing,
-            max_lines: text.max_lines,
+            max_lines,
             direction: text.direction.clone(),
             align,
             foreground,
+            underline: text.underline,
+            strikethrough: text.strikethrough,
+            truncate: text.truncate,
         };
-        let mut paragraph = build_paragraph(&request, self.fonts);
 
-        match text.wrap {
-            TextWrap::Wrap => {
-                // Same wrap width the measurer used for this box: breaks are
-                // bit-identical with measurement by construction.
-                paragraph.layout(width.max(0.0) as f32);
-                paragraph.paint(canvas, Point::new(0.0, 0.0));
-            }
-            TextWrap::NoWrap => {
-                // No soft wrapping: lay out unbounded to find the natural
-                // width, relayout snugly so alignment math stays in small
-                // coordinates, then place the block per alignment — the
-                // same per-line anchoring the SVG exporter emits.
-                paragraph.layout(UNBOUNDED_LAYOUT_WIDTH as f32);
-                let natural = paragraph.longest_line().ceil() + 2.0;
-                paragraph.layout(natural);
+        // Resolve the layout width + horizontal placement exactly as the
+        // single-paragraph path did (Wrap: box width at x=0; NoWrap: natural
+        // width placed per alignment), with the A6a NoWrap+truncate case laid
+        // out at the box width so SkParagraph's "…" fires.
+        let mut fill = build_paragraph(&make_request(fill_foreground.clone()), self.fonts);
+        let (layout_width, x) = match text.wrap {
+            TextWrap::Wrap => (box_width.max(0.0) as f32, 0.0f32),
+            TextWrap::NoWrap if text.truncate => {
+                let bound = box_width.max(0.0) as f32;
+                fill.layout(bound);
                 let x = match text.align {
                     TextAlign::Left | TextAlign::Justify => 0.0,
-                    TextAlign::Center => (width as f32 - natural) / 2.0,
-                    TextAlign::Right => width as f32 - natural,
+                    TextAlign::Center => (box_width as f32 - fill.longest_line()) / 2.0,
+                    TextAlign::Right => box_width as f32 - fill.longest_line(),
                 };
-                paragraph.paint(canvas, Point::new(x, 0.0));
+                (bound, x)
             }
+            TextWrap::NoWrap => {
+                fill.layout(UNBOUNDED_LAYOUT_WIDTH as f32);
+                let natural = fill.longest_line().ceil() + 2.0;
+                let x = match text.align {
+                    TextAlign::Left | TextAlign::Justify => 0.0,
+                    TextAlign::Center => (box_width as f32 - natural) / 2.0,
+                    TextAlign::Right => box_width as f32 - natural,
+                };
+                (natural, x)
+            }
+        };
+        fill.layout(layout_width);
+
+        // Stroke pass first (behind), then the fill glyphs — the display-type
+        // "paint-order: stroke fill" convention the SVG exporter emits.
+        if let Some(stroke) = stroke_foreground {
+            let mut stroke_paragraph = build_paragraph(&make_request(stroke.clone()), self.fonts);
+            stroke_paragraph.layout(layout_width);
+            stroke_paragraph.paint(canvas, Point::new(x, y_offset));
         }
-        let _ = height;
+        fill.paint(canvas, Point::new(x, y_offset));
+        (fill.height(), fill.line_number())
+    }
+
+    /// A6a D5: the first solid text stroke as a Skia stroke-style foreground
+    /// paint, drawn behind the fill glyphs. First-stroke-only + solid-only;
+    /// additional strokes, gradient stroke paint, and dash all reduce to the
+    /// LUME0215 advisory (the stroke still renders, from the first solid stop).
+    fn text_stroke_paint(&mut self, node: &Node, width: f64, height: f64) -> Option<SkPaint> {
+        let stroke = node.strokes.first()?;
+        let gradient_or_dash = matches!(
+            stroke.paint,
+            Paint::LinearGradient { .. } | Paint::RadialGradient { .. }
+        ) || stroke.dash.as_ref().is_some_and(|dash| !dash.is_empty());
+        if node.strokes.len() > 1 || gradient_or_dash {
+            self.diagnostics.push(
+                Diagnostic::advice(
+                    Phase::Export,
+                    "LUME0215",
+                    format!(
+                        "text node {} renders the first solid stroke only; extra strokes, gradient stroke paint, and dashes on text strokes are ignored",
+                        node.id
+                    ),
+                    Some(DiagnosticSubject::Node(node.id.clone())),
+                )
+                .with_hint("Use a single solid text stroke; gradient/dash/multi-stroke text outlines are out of Typography v1 scope."),
+            );
+        }
+
+        let color = match &stroke.paint {
+            Paint::Solid { color } => self.resolve_color(color, Some(&node.id)),
+            Paint::LinearGradient { stops, .. } | Paint::RadialGradient { stops } => {
+                stops.first().and_then(|stop| self.resolve_color(&stop.color, Some(&node.id)))
+            }
+            Paint::Token { token } => {
+                self.push_token_diag(&node.id, token);
+                None
+            }
+        };
+        let _ = (width, height);
+
+        let mut paint = SkPaint::default();
+        paint.set_anti_alias(true);
+        paint.set_style(PaintStyle::Stroke);
+        paint.set_stroke_width(stroke.width as f32);
+        match color {
+            Some(color) => paint.set_color4f(color, None),
+            None => {
+                self.push_unresolved_paint_error(Some(&node.id), "stroke");
+                paint.set_color4f(UNRESOLVED_PAINT_SENTINEL, None)
+            }
+        };
+        Some(paint)
     }
 
     fn paint_image(

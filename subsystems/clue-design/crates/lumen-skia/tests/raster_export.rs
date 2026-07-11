@@ -482,3 +482,118 @@ fn unresolved_token_fill_paints_visible_sentinel_and_errors() {
     let sentinel_error = sentinel_error.expect("LUME0213 error must be emitted");
     assert_eq!(sentinel_error.severity, DiagnosticSeverity::Error);
 }
+
+// A6a review gate: the raster and the measurer must agree on what text is
+// visible — the PNG may never paint lines the measured geometry (and thus the
+// SVG markup) cut away.
+
+fn dark_text_pixels_in_band(rgba: &Rgba, y0: i32, y1: i32) -> usize {
+    let mut count = 0;
+    for y in y0..y1 {
+        for x in 0..rgba.width as i32 {
+            let px = rgba.pixel(x, y);
+            if px[3] > 0 && px[0] < 120 && px[1] < 140 && px[2] < 160 {
+                count += 1;
+            }
+        }
+    }
+    count
+}
+
+fn a6_text_node(content: &str, text: TextNode) -> Node {
+    let mut node = Node::new(
+        NodeId::from("node_a6_text"),
+        NodeKind::Text(TextNode {
+            content: content.to_owned(),
+            font_family: "Inter".to_owned(),
+            font_size: 24.0,
+            line_height: 1.0,
+            font_weight: 400,
+            ..text
+        }),
+    );
+    node.transform = Transform {
+        x: 10.0,
+        y: 10.0,
+        ..Transform::default()
+    };
+    node.fills = vec![solid_fill("paint_a6_text", "#111827")];
+    node
+}
+
+#[test]
+fn stacked_paragraph_raster_honors_the_total_max_lines_cut() {
+    // paragraph_spacing > 0 with max_lines = 1: the measurer (and SVG) keep
+    // exactly one line; the raster must not paint paragraphs 2 and 3.
+    let mut scene = Scene::new(DocumentId::from("doc_a6_stack_cut"), "A6 Stack Cut");
+    scene.pages.insert(
+        PageId::from("page_square"),
+        custom_px_page("page_square", 300.0, 200.0, vec![NodeId::from("node_a6_text")]),
+    );
+    let mut node = a6_text_node(
+        "Alpha\nBeta\nGamma",
+        TextNode {
+            paragraph_spacing: 30.0,
+            max_lines: Some(1),
+            ..TextNode::default()
+        },
+    );
+    node.size = SizeSpec::fixed(280.0, 180.0);
+    scene.nodes.insert(node.id.clone(), node);
+
+    let result = composed_adapter(LumenExportAdapter::new())
+        .export(&scene, &png_request("page_square"))
+        .expect("export");
+    let rgba = decode_rgba(&result.artifacts[0].bytes);
+
+    // Line 1 ("Alpha") paints in its band...
+    assert!(
+        dark_text_pixels_in_band(&rgba, 10, 40) > 10,
+        "the first paragraph line must render"
+    );
+    // ...and NOTHING paints below it: max_lines=1 cut everything else.
+    let below = dark_text_pixels_in_band(&rgba, 60, 200);
+    assert_eq!(
+        below, 0,
+        "raster painted {below} text pixels below the max_lines cut — \
+         the PNG disagrees with the measured/SVG geometry"
+    );
+}
+
+#[test]
+fn nowrap_truncate_never_soft_wraps_the_raster() {
+    // NoWrap + truncate (no max_lines): truncation has nothing to cut, so the
+    // raster must keep the pre-A6a NoWrap behavior — one natural-width line —
+    // and never soft-wrap the text into the box width.
+    let mut scene = Scene::new(DocumentId::from("doc_a6_nowrap_trunc"), "A6 NoWrap Truncate");
+    scene.pages.insert(
+        PageId::from("page_square"),
+        custom_px_page("page_square", 300.0, 120.0, vec![NodeId::from("node_a6_text")]),
+    );
+    let mut node = a6_text_node(
+        "wide open spaces keep going",
+        TextNode {
+            truncate: true,
+            ..TextNode::default()
+        },
+    );
+    node.size = SizeSpec::fixed(100.0, 100.0);
+    scene.nodes.insert(node.id.clone(), node);
+
+    let result = composed_adapter(LumenExportAdapter::new())
+        .export(&scene, &png_request("page_square"))
+        .expect("export");
+    let rgba = decode_rgba(&result.artifacts[0].bytes);
+
+    assert!(
+        dark_text_pixels_in_band(&rgba, 10, 38) > 10,
+        "the single NoWrap line must render"
+    );
+    let wrapped = dark_text_pixels_in_band(&rgba, 44, 120);
+    assert_eq!(
+        wrapped, 0,
+        "raster painted {wrapped} text pixels below the first line — \
+         NoWrap text was soft-wrapped at the box width"
+    );
+}
+

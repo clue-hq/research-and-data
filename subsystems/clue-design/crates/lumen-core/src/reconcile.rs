@@ -490,6 +490,7 @@ mod tests {
                 font_size_token: None,
                 line_height_token: None,
                 letter_spacing_token: None,
+                ..TextNode::default()
             }),
         );
         node.size = SizeSpec::fixed(300.0, 40.0);
