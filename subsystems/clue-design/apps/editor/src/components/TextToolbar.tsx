@@ -1,7 +1,17 @@
 "use client";
 
-import { AlignCenter, AlignJustify, AlignLeft, AlignRight, Strikethrough, Underline } from "lucide-react";
-import type { BrandTokenCatalog, Node, Operation, TextAlign, TextTransform } from "@/engine/contracts";
+import {
+  AlignCenter,
+  AlignJustify,
+  AlignLeft,
+  AlignRight,
+  AlignVerticalJustifyCenter,
+  AlignVerticalJustifyEnd,
+  AlignVerticalJustifyStart,
+  Strikethrough,
+  Underline
+} from "lucide-react";
+import type { BrandTokenCatalog, Node, Operation, TextAlign, TextTransform, VerticalAlign } from "@/engine/contracts";
 import { updateNodeFills, updateTextNode } from "@/engine/operations";
 import { ColorSwatchControl } from "./ColorSwatchControl";
 
@@ -28,6 +38,12 @@ const ALIGN_OPTIONS: Array<{ value: TextAlign; label: string; Icon: typeof Align
   { value: "justify", label: "Justify", Icon: AlignJustify }
 ];
 
+const VALIGN_OPTIONS: Array<{ value: VerticalAlign; label: string; Icon: typeof AlignLeft }> = [
+  { value: "top", label: "Vertical align top", Icon: AlignVerticalJustifyStart },
+  { value: "center", label: "Vertical align center", Icon: AlignVerticalJustifyCenter },
+  { value: "bottom", label: "Vertical align bottom", Icon: AlignVerticalJustifyEnd }
+];
+
 export function TextToolbar({
   selectedNode,
   onOperation,
@@ -42,6 +58,10 @@ export function TextToolbar({
   }
   const text = selectedNode.kind;
   const disabled = selectedNode.locked;
+  // D6: valign is a no-op on a hug-height box (zero slack) — disable the group
+  // with an explanatory tooltip rather than offering a dead knob.
+  const hugHeight = selectedNode.size.height.kind === "hug";
+  const valign = text.valign ?? "top";
   const knownWeight = FONT_WEIGHTS.some((weight) => weight.value === text.font_weight);
 
   const commitNumber = (raw: string, apply: (value: number) => Operation) => {
@@ -99,6 +119,22 @@ export function TextToolbar({
             aria-pressed={text.align === value}
             disabled={disabled}
             onClick={() => onOperation(updateTextNode(selectedNode, { align: value }))}
+          >
+            <Icon aria-hidden size={14} />
+          </button>
+        ))}
+      </div>
+      <div className="text-toolbar-align" role="group" aria-label="Vertical alignment">
+        {VALIGN_OPTIONS.map(({ value, label, Icon }) => (
+          <button
+            key={value}
+            type="button"
+            className={valign === value ? "active" : undefined}
+            aria-label={label}
+            aria-pressed={valign === value}
+            disabled={disabled || hugHeight}
+            title={hugHeight ? "No effect with hug height" : undefined}
+            onClick={() => onOperation(updateTextNode(selectedNode, { valign: value }))}
           >
             <Icon aria-hidden size={14} />
           </button>

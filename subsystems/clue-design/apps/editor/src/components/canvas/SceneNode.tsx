@@ -274,7 +274,13 @@ function NodeBody({
         letterSpacing={descriptor.text.letterSpacing}
         wrap={descriptor.text.wrap === "wrap" ? "word" : "none"}
         ellipsis={descriptor.text.maxLines !== null}
-        verticalAlign="top"
+        // A7a: Konva is the TEST-ONLY jsdom leg (frontend-practices §4), and it
+        // has no measurer to feed the shared clamped formula — its built-in
+        // verticalAlign uses Konva's real line layout instead. Known, accepted
+        // divergences from D3 on this non-product leg: no overflow clamp
+        // (negative offset when content exceeds the box), and with max_lines
+        // the alignment bound is the capped rect, not the full box.
+        verticalAlign={descriptor.text.valign === "center" ? "middle" : descriptor.text.valign}
         stroke={selectionStroke ?? undefined}
         strokeWidth={selected ? 0.35 : 0}
       />

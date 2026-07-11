@@ -663,6 +663,7 @@ export function CanvasKitCanvas({
         fontSize: d.text.fontSize,
         fontWeight: d.text.fontWeight,
         align: d.text.align,
+        valign: d.text.valign,
         lineHeight: d.text.lineHeight,
         letterSpacing: d.text.letterSpacing,
         color: d.fill

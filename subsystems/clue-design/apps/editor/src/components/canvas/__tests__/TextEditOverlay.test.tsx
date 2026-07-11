@@ -7,6 +7,7 @@ const style: TextEditStyle = {
   fontSize: 18,
   fontWeight: 600,
   align: "left",
+  valign: "top",
   lineHeight: 1.2,
   letterSpacing: 0,
   color: "#27231d"

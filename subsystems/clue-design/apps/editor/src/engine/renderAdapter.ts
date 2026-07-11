@@ -13,7 +13,8 @@ import type {
   Stroke,
   StrokeCap,
   StrokeJoin,
-  Unit
+  Unit,
+  VerticalAlign
 } from "./contracts";
 import { isNodeLayoutManaged } from "./sceneQueries";
 import {
@@ -169,6 +170,9 @@ export interface RenderNodeDescriptor {
     fontSize: number;
     fontWeight: number;
     align: "left" | "center" | "right" | "justify";
+    /** A7a: vertical placement within the box; always present ("top" default).
+     * Consumed by {@link valignOffset} on both the CanvasKit and DOM legs. */
+    valign: "top" | "center" | "bottom";
     lineHeight: number;
     letterSpacing: number;
     maxLines: number | null;
@@ -299,6 +303,7 @@ export function nodeDescriptor(
       fontSize: styled.fontSize * scale,
       fontWeight: styled.fontWeight,
       align: node.kind.align,
+      valign: node.kind.valign ?? "top",
       lineHeight: styled.lineHeight,
       letterSpacing: styled.letterSpacing * scale,
       maxLines: node.kind.max_lines ?? null,
@@ -397,6 +402,19 @@ export function sizeFromCanvas(width: number, height: number, page: Page): SizeS
       value: sceneUnitFromCanvas(height, page)
     }
   };
+}
+
+/**
+ * A7a: the shared clamped valign formula — THE single source both editor legs
+ * (CanvasKit `drawDescriptors` fast/stacked/spanned + the Konva DOM leg) derive
+ * their vertical offset from, byte-mirroring the engine's `valign_offset`
+ * (`crates/lumen-core/src/scene.rs`): `max(box - content, 0) * factor`, factor
+ * top=0 / center=0.5 / bottom=1. Slack is clamped at zero so an overflowing box
+ * never paints above its top edge (valign degrades to a no-op).
+ */
+export function valignOffset(boxHeight: number, contentHeight: number, valign: VerticalAlign): number {
+  const factor = valign === "center" ? 0.5 : valign === "bottom" ? 1 : 0;
+  return Math.max(boxHeight - contentHeight, 0) * factor;
 }
 
 export function fixedSize(size: SizeSpec, scale = 1): { width: number; height: number } {

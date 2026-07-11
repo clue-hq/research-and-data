@@ -1,6 +1,7 @@
 import type { Canvas, CanvasKit, Paint, Paragraph, TypefaceFontProvider } from "canvaskit-wasm";
 import type { ImageFitMode } from "../contracts";
 import type { RenderNodeDescriptor, RenderPageDescriptor, TextSpanDescriptor } from "../renderAdapter";
+import { valignOffset } from "../renderAdapter";
 import { applyTextTransform, normalizeContentMapped, transformSegments } from "../textTransform";
 import type { CanvasKitImageSource } from "./imageCache";
 
@@ -316,7 +317,7 @@ function drawText(ck: CanvasKit, canvas: Canvas, d: RenderNodeDescriptor, fontPr
     // Fast path: transform the RAW content (identity for `none` → today's
     // bytes) and paint one paragraph honoring the total max_lines cap.
     const transformed = applyTextTransform(t.textTransform, t.content);
-    paintTextParagraph(ck, canvas, fontProvider, d, transformed, color, strokePaint, t.maxLines ?? undefined, 0);
+    paintTextParagraph(ck, canvas, fontProvider, d, transformed, color, strokePaint, t.maxLines ?? undefined, t.valign, 0);
   }
 
   strokePaint?.delete();
@@ -351,7 +352,16 @@ function paintStackedParagraphs(
   const t = d.text!;
   const paragraphs = content.split("\n");
   const last = paragraphs.length - 1;
-  let cursorY = 0;
+  // A7a: valign shifts the whole stack, so the total painted content height
+  // must be known BEFORE the paint loop. A measure pre-pass replays the SAME
+  // budget/elision resolution, accumulating gaps BETWEEN consecutive painted
+  // paragraphs only (gap-before, like the engine's `measure_stacked`) — a
+  // trailing gap after the last painted paragraph is not painted content, and
+  // counting it made this leg disagree with SVG/PDF export by a full gap under
+  // a `max_lines` cut (A7a adversarial-review Finding 1). Mirrors lumen-skia
+  // `paint_text`; at offset 0 the total equals the final `cursorY` exactly.
+  const plan: Array<{ text: string; max: number | undefined }> = [];
+  let totalHeight = 0;
   // null = unbounded (no max_lines).
   let remaining: number | null = t.maxLines ?? null;
   for (let index = 0; index < paragraphs.length; index += 1) {
@@ -371,24 +381,39 @@ function paintStackedParagraphs(
         paraMax = Math.min(remaining, 65535);
       }
     }
-    const { height, lineCount } = paintTextParagraph(
+    const { height, lineCount } = paragraphLayoutMetrics(ck, fontProvider, d, paraText, paraMax);
+    if (remaining !== null) {
+      remaining = Math.max(0, remaining - lineCount);
+    }
+    if (plan.length > 0) {
+      totalHeight += gap;
+    }
+    totalHeight += height;
+    plan.push({ text: paraText, max: paraMax });
+  }
+
+  // Seed the cursor with the block's valign offset; each paragraph then paints
+  // with per-paragraph valign `"top"` (the stack offset is already folded in).
+  let cursorY = valignOffset(d.height, totalHeight, t.valign);
+  for (let index = 0; index < plan.length; index += 1) {
+    // Gap-before, mirroring the pre-pass and the engine: gaps land between
+    // consecutive painted paragraphs only.
+    if (index > 0) {
+      cursorY += gap;
+    }
+    const { height } = paintTextParagraph(
       ck,
       canvas,
       fontProvider,
       d,
-      paraText,
+      plan[index].text,
       color,
       strokePaint,
-      paraMax,
+      plan[index].max,
+      "top",
       cursorY
     );
-    if (remaining !== null) {
-      remaining = Math.max(0, remaining - lineCount);
-    }
     cursorY += height;
-    if (index !== last) {
-      cursorY += gap;
-    }
   }
 }
 
@@ -409,6 +434,7 @@ function paintTextParagraph(
   color: Float32Array,
   strokePaint: Paint | null,
   maxLines: number | undefined,
+  valign: "top" | "center" | "bottom",
   yOffset: number
 ): { height: number; lineCount: number } {
   const t = d.text!;
@@ -433,13 +459,20 @@ function paintTextParagraph(
   }
   fill.layout(layoutWidth);
 
+  // A7a: shift within the box's vertical slack, mirroring lumen-skia
+  // `paint_text_paragraph`. `valign` is `"top"` on the stacked path (the stack
+  // seeds `yOffset` with the total-block offset instead), so this only adds a
+  // per-paragraph shift on the single-paragraph fast path.
+  const voff = valignOffset(d.height, fill.getHeight(), valign);
+  const y = yOffset + voff;
+
   if (strokePaint) {
     const stroke = buildTextParagraph(ck, fontProvider, t, content, maxLines, { paint: strokePaint });
     stroke.layout(layoutWidth);
-    canvas.drawParagraph(stroke, x, yOffset);
+    canvas.drawParagraph(stroke, x, y);
     stroke.delete();
   }
-  canvas.drawParagraph(fill, x, yOffset);
+  canvas.drawParagraph(fill, x, y);
   const height = fill.getHeight();
   const lineCount = fill.getLineMetrics().length;
   fill.delete();
@@ -461,6 +494,39 @@ function paragraphLineCount(
   const count = paragraph.getLineMetrics().length;
   paragraph.delete();
   return count;
+}
+
+/**
+ * A7a: measure one paragraph's laid-out height + painted line count using the
+ * SAME layout-width choice `paintTextParagraph` makes (height/line count are
+ * independent of the foreground paint and horizontal `x`), so the stacked-path
+ * valign pre-pass computes a total that matches the paint loop's cursor
+ * advancement exactly — the CanvasKit twin of lumen-skia `paragraph_layout_
+ * metrics`.
+ */
+function paragraphLayoutMetrics(
+  ck: CanvasKit,
+  fontProvider: TypefaceFontProvider,
+  d: RenderNodeDescriptor,
+  para: string,
+  maxLines: number | undefined
+): { height: number; lineCount: number } {
+  const t = d.text!;
+  const fill = buildTextParagraph(ck, fontProvider, t, para, maxLines, { color: ck.BLACK });
+  let layoutWidth: number;
+  if (t.wrap === "wrap") {
+    layoutWidth = Math.max(0, d.width);
+  } else if (t.truncate) {
+    layoutWidth = Math.max(0, d.width);
+  } else {
+    fill.layout(Number.MAX_SAFE_INTEGER);
+    layoutWidth = Math.ceil(fill.getLongestLine()) + 2;
+  }
+  fill.layout(layoutWidth);
+  const height = fill.getHeight();
+  const lineCount = fill.getLineMetrics().length;
+  fill.delete();
+  return { height, lineCount };
 }
 
 /**
@@ -596,13 +662,17 @@ function drawSpannedText(
   }
   fill.layout(layoutWidth);
 
+  // A7a: shift the segmented paragraph within the box's vertical slack,
+  // mirroring lumen-skia `paint_text_spanned`.
+  const voff = valignOffset(d.height, fill.getHeight(), t.valign);
+
   if (strokePaint) {
     const stroke = buildSpannedParagraph(ck, fontProvider, t, segments, maxLines, strokePaint);
     stroke.layout(layoutWidth);
-    canvas.drawParagraph(stroke, x, 0);
+    canvas.drawParagraph(stroke, x, voff);
     stroke.delete();
   }
-  canvas.drawParagraph(fill, x, 0);
+  canvas.drawParagraph(fill, x, voff);
   fill.delete();
 }
 

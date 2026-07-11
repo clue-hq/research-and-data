@@ -8,7 +8,8 @@ import type {
   TextAlign,
   TextDirection,
   TextTransform,
-  TextWrap
+  TextWrap,
+  VerticalAlign
 } from "@/engine/contracts";
 import { updateTextNode } from "@/engine/operations";
 import { NumberField, TokenSelect } from "./fields";
@@ -23,6 +24,9 @@ export function TextSection({
   brandTokens?: BrandTokenCatalog | null;
   onOperation: (operation: Operation) => void;
 }) {
+  // D6: valign has no effect on a hug-height box (zero vertical slack) — the
+  // control renders disabled with an explanatory tooltip rather than a dead knob.
+  const hugHeight = selectedNode.size.height.kind === "hug";
   return (
         <section className="inspector-section">
           <div className="section-heading">
@@ -80,6 +84,25 @@ export function TextSection({
                 <option value="center">Center</option>
                 <option value="right">Right</option>
                 <option value="justify">Justify</option>
+              </select>
+            </label>
+            <label className="field">
+              <span>V-Align</span>
+              <select
+                value={selectedNode.kind.valign ?? "top"}
+                disabled={selectedNode.locked || hugHeight}
+                title={hugHeight ? "No effect with hug height" : undefined}
+                onChange={(event) =>
+                  onOperation(
+                    updateTextNode(selectedNode, {
+                      valign: event.target.value as VerticalAlign
+                    })
+                  )
+                }
+              >
+                <option value="top">Top</option>
+                <option value="center">Center</option>
+                <option value="bottom">Bottom</option>
               </select>
             </label>
             <NumberField

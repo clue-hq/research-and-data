@@ -17,7 +17,8 @@ import {
   subscribeTokenColors,
   tokenColorsGenerationSnapshot,
   tokenPaintResolves,
-  tokenSwatchCss
+  tokenSwatchCss,
+  valignOffset
 } from "../renderAdapter";
 
 describe("render adapter", () => {
@@ -939,3 +940,41 @@ function unitScaleForTest(unit: Page["size"]["unit"]): number {
       return 96;
   }
 }
+
+describe("A7a vertical alignment", () => {
+  it("valignOffset applies the clamped-slack formula (top=0, center=0.5, bottom=1)", () => {
+    // Slack present: box (100) taller than content (40) → 60px of slack.
+    expect(valignOffset(100, 40, "top")).toBe(0);
+    expect(valignOffset(100, 40, "center")).toBe(30);
+    expect(valignOffset(100, 40, "bottom")).toBe(60);
+  });
+
+  it("valignOffset clamps overflow to a no-op (never paints above the top edge)", () => {
+    // Content taller than the box → negative slack clamps to 0 for every mode.
+    expect(valignOffset(40, 100, "top")).toBe(0);
+    expect(valignOffset(40, 100, "center")).toBe(0);
+    expect(valignOffset(40, 100, "bottom")).toBe(0);
+    // Exact fit → zero slack.
+    expect(valignOffset(40, 40, "bottom")).toBe(0);
+  });
+
+  it("the text descriptor carries valign, defaulting to \"top\" when the node omits it", () => {
+    const page = minimalScene.pages.page_a4;
+    const base = minimalScene.nodes.node_contact_name as Node;
+
+    const defaulted = nodeDescriptor(minimalScene, base, page);
+    expect(defaulted.text?.valign).toBe("top");
+
+    const centered: Node = {
+      ...structuredClone(base),
+      kind: { ...structuredClone(base.kind), valign: "center" } as Node["kind"]
+    };
+    expect(nodeDescriptor(minimalScene, centered, page).text?.valign).toBe("center");
+
+    const bottom: Node = {
+      ...structuredClone(base),
+      kind: { ...structuredClone(base.kind), valign: "bottom" } as Node["kind"]
+    };
+    expect(nodeDescriptor(minimalScene, bottom, page).text?.valign).toBe("bottom");
+  });
+});

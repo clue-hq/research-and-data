@@ -234,6 +234,11 @@ export interface TextNode {
   font_size: number;
   font_weight: number;
   align: TextAlign;
+  /** A7a: vertical placement within the box. Absent = `"top"`, mirroring the
+   * engine's `#[serde(default, skip_serializing_if = is_default)] VerticalAlign`
+   * (absent from JSON for top-aligned nodes). Only slack (box taller than
+   * measured content) is consumed; overflow clamps to a no-op. */
+  valign?: VerticalAlign;
   line_height?: number;
   letter_spacing?: number;
   max_lines?: number | null;
@@ -286,6 +291,11 @@ export interface TextSpan {
 }
 
 export type TextAlign = "left" | "center" | "right" | "justify";
+/** A7a: vertical placement of text within its own box. Mirrors the engine's
+ * `VerticalAlign` serde (snake_case values). Absent = `"top"`, matching the
+ * engine's `#[serde(default)] VerticalAlign::Top` (skip-serialized when Top, so
+ * the field is ABSENT from JSON for top-aligned nodes and old docs). */
+export type VerticalAlign = "top" | "center" | "bottom";
 export type TextWrap = "no_wrap" | "wrap";
 export type TextDirection = "ltr" | "rtl" | "auto";
 export type TextTransform = "none" | "uppercase" | "lowercase" | "title";
