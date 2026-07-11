@@ -274,6 +274,10 @@ export function CanvasKitCanvas({
           t.text_transform ?? "none",
           t.truncate ?? false,
           t.paragraph_spacing ?? 0,
+          // A6b: spans are measurement inputs (weight-span changes width, offsets
+          // change run geometry) and a paint input — re-measure + re-draw when
+          // they change. Serialized stably so the digest is deterministic.
+          t.spans && t.spans.length > 0 ? JSON.stringify(t.spans) : "_",
           // K1.5: kit type-role tokens are measurement inputs too — and the
           // maps' generation, so measurements re-run when the kit lands.
           t.style_token ?? "_",

@@ -250,11 +250,39 @@ export interface TextNode {
   /** A6a D4: extra vertical px inserted at each `\n` break (absent/0 = today's
    * uniform stack). Px units, like `letter_spacing`. */
   paragraph_spacing?: number;
+  /** A6b D1: rich-text spans — sub-ranges of `content` styled differently (the
+   * two-color headline). Byte offsets index the STORED `content` string, never
+   * the transformed one. Absent/empty = today's behavior, mirroring the engine's
+   * `#[serde(default, skip_serializing_if = "Vec::is_empty")]`. */
+  spans?: TextSpan[];
   style_token?: string | null;
   /** K1.5: mirrors engine TextNode.font_size_token (`font_size($type.size.*)`). */
   font_size_token?: string | null;
   line_height_token?: string | null;
   letter_spacing_token?: string | null;
+}
+
+/**
+ * A6b D1: one rich-text span — a sub-range of a {@link TextNode}'s `content`
+ * with override channels. Absent channels inherit the node. Mirrors the Rust
+ * `TextSpan` serde exactly (optional fields omitted when `None`) so the scene
+ * JSON round-trips byte-identically and the editor's measurement records can be
+ * fed back to the engine verbatim. Fill is `Solid` or `Token` only (gradient
+ * span fills are rejected at engine validation, LUMV0908).
+ */
+export interface TextSpan {
+  /** Byte offset into `content` where the run starts (inclusive). */
+  start: number;
+  /** Byte offset into `content` where the run ends (exclusive). */
+  end: number;
+  /** Override fill (Solid or Token only); absent inherits the node fill. */
+  fill?: Paint;
+  /** Override CSS font weight (100..900); absent inherits the node weight. */
+  font_weight?: number;
+  /** Override underline decoration; absent inherits the node. */
+  underline?: boolean;
+  /** Override strikethrough decoration; absent inherits the node. */
+  strikethrough?: boolean;
 }
 
 export type TextAlign = "left" | "center" | "right" | "justify";

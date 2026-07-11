@@ -11,7 +11,8 @@ import type {
   PageId,
   Scene,
   Slot,
-  SlotId
+  SlotId,
+  TextSpan
 } from "./contracts";
 import { editorApiBaseUrl } from "./editorConfig";
 import type { StructuredEdit } from "./structuredEdits";
@@ -70,6 +71,13 @@ export interface TextMeasurement {
   text_transform?: "none" | "uppercase" | "lowercase" | "title";
   truncate?: boolean;
   paragraph_spacing?: number;
+  /** A6b review fix: the raw node spans, matching the Rust `TextSpan` serde
+   * shape. They enter the engine's `measure_key` (spans digest), so a spanned
+   * node's override MUST carry them or the layout lookup misses and the node
+   * silently falls back to the heuristic (which does not soft-wrap spans).
+   * Omitted for spanless nodes (serde `#[serde(default)]` → empty), keeping
+   * pre-A6b payloads byte-identical. */
+  spans?: TextSpan[];
   width: number;
   height: number;
 }

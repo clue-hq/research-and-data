@@ -181,6 +181,11 @@ export interface RenderNodeDescriptor {
     truncate: boolean;
     /** Extra vertical gap at each `\n` break, already scaled into canvas units. */
     paragraphSpacing: number;
+    /** A6b: rich-text spans, present only when the node carries any. Offsets are
+     * the raw model BYTE offsets into `content` (the painter relocates them onto
+     * the normalized string); `fill` is already resolved to a CSS color (Solid
+     * or Token), `null` = inherit the node fill. */
+    spans?: TextSpanDescriptor[];
   };
   line?: {
     points: number[];
@@ -206,6 +211,18 @@ export interface RenderNodeDescriptor {
     /** Asset's natural width/height ratio (for cover/contain/focal math). */
     naturalAspectRatio: number | null;
   };
+}
+
+/** A6b: one rich-text span in render form. Offsets are the raw model BYTE
+ * offsets into `content`; `fill` is resolved to a CSS color (or `null` to
+ * inherit the node fill). Weight/decoration `null` inherit the node. */
+export interface TextSpanDescriptor {
+  start: number;
+  end: number;
+  fill: string | null;
+  fontWeight: number | null;
+  underline: boolean | null;
+  strikethrough: boolean | null;
 }
 
 export interface ParentComputedOrigin {
@@ -293,6 +310,19 @@ export function nodeDescriptor(
       truncate: node.kind.truncate ?? false,
       paragraphSpacing: (node.kind.paragraph_spacing ?? 0) * scale
     };
+    // A6b: resolve span fills to CSS here (Solid/Token → hex, mirroring the
+    // engine's fill resolution); offsets stay the raw model byte offsets so the
+    // painter can relocate them onto the normalized content.
+    if (node.kind.spans && node.kind.spans.length > 0) {
+      descriptor.text.spans = node.kind.spans.map((span) => ({
+        start: span.start,
+        end: span.end,
+        fill: span.fill ? paintToCss(span.fill) : null,
+        fontWeight: span.font_weight ?? null,
+        underline: span.underline ?? null,
+        strikethrough: span.strikethrough ?? null
+      }));
+    }
   }
 
   if (node.kind.kind === "line") {

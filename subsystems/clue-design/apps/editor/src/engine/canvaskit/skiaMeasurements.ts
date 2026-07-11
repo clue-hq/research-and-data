@@ -1,7 +1,7 @@
 import type { CanvasKit, FontWeight, TypefaceFontProvider } from "canvaskit-wasm";
-import type { Scene } from "../contracts";
+import type { Scene, TextSpan } from "../contracts";
 import { resolvedTextFields } from "../renderAdapter";
-import { applyTextTransform } from "../textTransform";
+import { applyTextTransform, normalizeContentMapped, transformSegments } from "../textTransform";
 import type { TextMeasurement } from "../wasmEngine";
 
 /**
@@ -38,23 +38,8 @@ export function skiaMeasurements(ck: CanvasKit, fontProvider: TypefaceFontProvid
     const textTransform = t.text_transform ?? "none";
     const truncate = t.truncate ?? false;
     const paragraphSpacing = t.paragraph_spacing ?? 0;
-    // Case transform changes glyph widths, so measure the TRANSFORMED string
-    // (the record's `content` key stays the literal, matching the node).
-    const measuredContent = applyTextTransform(textTransform, t.content);
-    const { width, height } = measureParagraph(ck, fontProvider, {
-      content: measuredContent,
-      fontFamily: styled.fontFamily,
-      fontSize: styled.fontSize,
-      fontWeight: styled.fontWeight,
-      lineHeight: styled.lineHeight,
-      letterSpacing: styled.letterSpacing
-    });
-    // Paragraph spacing adds `gap` px at each `\n` break (unconstrained hug);
-    // mirrors the measurer stacking each paragraph with the extra gap.
-    const gap = Number.isFinite(paragraphSpacing) && paragraphSpacing > 0 ? paragraphSpacing : 0;
-    const breakCount =
-      gap > 0 ? Math.max(0, measuredContent.replace(/\\n/g, "\n").split("\n").length - 1) : 0;
-    out.push({
+    const spans = t.spans ?? [];
+    const record: TextMeasurement = {
       content: t.content,
       font_family: t.font_family,
       font_size: t.font_size,
@@ -67,9 +52,40 @@ export function skiaMeasurements(ck: CanvasKit, fontProvider: TypefaceFontProvid
       text_transform: textTransform,
       truncate,
       paragraph_spacing: paragraphSpacing,
-      width,
-      height: height + breakCount * gap
-    });
+      width: 0,
+      height: 0
+    };
+    if (spans.length > 0) {
+      // A6b: spanned nodes measure ONE segmented paragraph — weight-span
+      // overrides change shaping widths, so the styles must be in the measured
+      // paragraph (review fix). NO paragraph-gap stacking when spans exist
+      // (LUMV0907); the record carries the raw spans so the engine's spans-keyed
+      // measure lookup hits instead of falling back to the heuristic.
+      const { width, height } = measureSpannedParagraph(ck, fontProvider, styled, spans, t.content, textTransform);
+      record.spans = spans;
+      record.width = width;
+      record.height = height;
+    } else {
+      // Case transform changes glyph widths, so measure the TRANSFORMED string
+      // (the record's `content` key stays the literal, matching the node).
+      const measuredContent = applyTextTransform(textTransform, t.content);
+      const { width, height } = measureParagraph(ck, fontProvider, {
+        content: measuredContent,
+        fontFamily: styled.fontFamily,
+        fontSize: styled.fontSize,
+        fontWeight: styled.fontWeight,
+        lineHeight: styled.lineHeight,
+        letterSpacing: styled.letterSpacing
+      });
+      // Paragraph spacing adds `gap` px at each `\n` break (unconstrained hug);
+      // mirrors the measurer stacking each paragraph with the extra gap.
+      const gap = Number.isFinite(paragraphSpacing) && paragraphSpacing > 0 ? paragraphSpacing : 0;
+      const breakCount =
+        gap > 0 ? Math.max(0, measuredContent.replace(/\\n/g, "\n").split("\n").length - 1) : 0;
+      record.width = width;
+      record.height = height + breakCount * gap;
+    }
+    out.push(record);
   }
   return out;
 }
@@ -103,6 +119,74 @@ export function measureParagraph(
   });
   const builder = ck.ParagraphBuilder.MakeFromFontProvider(style, fontProvider);
   builder.addText(input.content);
+  const paragraph = builder.build();
+  paragraph.layout(Number.MAX_SAFE_INTEGER);
+  const width = paragraph.getMaxIntrinsicWidth();
+  const height = paragraph.getHeight();
+  paragraph.delete();
+  builder.delete();
+  return { width: round(width), height: round(height) };
+}
+
+interface StyledTextFields {
+  fontFamily: string;
+  fontSize: number;
+  fontWeight: number;
+  lineHeight: number;
+  letterSpacing: number;
+}
+
+/**
+ * A6b: unconstrained width/height of a spanned text node measured as ONE
+ * segmented paragraph, mirroring lumen-skia `measure_spanned`. Span byte offsets
+ * relocate onto the normalized string via the offset map, segments carry their
+ * weight override (the ONLY per-run channel that changes measured geometry —
+ * decoration and fill do not), and the paragraph is laid out with each segment's
+ * style pushed so weight-driven width changes are captured. V0 measures
+ * unconstrained (no `max_width`), matching the spanless path.
+ */
+function measureSpannedParagraph(
+  ck: CanvasKit,
+  fontProvider: TypefaceFontProvider,
+  styled: StyledTextFields,
+  spans: TextSpan[],
+  content: string,
+  textTransform: "none" | "uppercase" | "lowercase" | "title"
+): { width: number; height: number } {
+  const { normalized, map } = normalizeContentMapped(content);
+  const normLen = map[map.length - 1];
+  const boundaries: Array<[number, number]> = spans.map((span) => {
+    const start = map[span.start] ?? normLen;
+    const end = map[span.end] ?? normLen;
+    return [Math.min(start, end), Math.max(start, end)];
+  });
+  const core = transformSegments(normalized, boundaries, textTransform);
+
+  const style = new ck.ParagraphStyle({
+    textStyle: {
+      fontFamilies: [styled.fontFamily],
+      fontSize: styled.fontSize,
+      fontStyle: { weight: styled.fontWeight as unknown as FontWeight },
+      heightMultiplier: styled.lineHeight,
+      letterSpacing: styled.letterSpacing
+    }
+  });
+  const builder = ck.ParagraphBuilder.MakeFromFontProvider(style, fontProvider);
+  for (const seg of core) {
+    const span = seg.span !== null ? spans[seg.span] : undefined;
+    const weight = span?.font_weight ?? styled.fontWeight;
+    builder.pushStyle(
+      new ck.TextStyle({
+        fontFamilies: [styled.fontFamily],
+        fontSize: styled.fontSize,
+        fontStyle: { weight: weight as unknown as FontWeight },
+        heightMultiplier: styled.lineHeight,
+        letterSpacing: styled.letterSpacing
+      })
+    );
+    builder.addText(seg.text);
+    builder.pop();
+  }
   const paragraph = builder.build();
   paragraph.layout(Number.MAX_SAFE_INTEGER);
   const width = paragraph.getMaxIntrinsicWidth();

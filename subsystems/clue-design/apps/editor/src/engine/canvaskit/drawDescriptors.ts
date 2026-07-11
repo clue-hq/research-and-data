@@ -1,7 +1,7 @@
 import type { Canvas, CanvasKit, Paint, Paragraph, TypefaceFontProvider } from "canvaskit-wasm";
 import type { ImageFitMode } from "../contracts";
-import type { RenderNodeDescriptor, RenderPageDescriptor } from "../renderAdapter";
-import { applyTextTransform } from "../textTransform";
+import type { RenderNodeDescriptor, RenderPageDescriptor, TextSpanDescriptor } from "../renderAdapter";
+import { applyTextTransform, normalizeContentMapped, transformSegments } from "../textTransform";
 import type { CanvasKitImageSource } from "./imageCache";
 
 /**
@@ -289,6 +289,18 @@ function drawText(ck: CanvasKit, canvas: Canvas, d: RenderNodeDescriptor, fontPr
   // here just as the engine advises them (LUME0215) and drops them.
   const strokePaint = textStrokePaint(ck, d);
 
+  // A6b D7: spanned text paints ONE segmented paragraph (per-run fill / weight /
+  // decoration; the stroke pass keeps per-run weight but the single stroke
+  // color). Reached only when spans exist, so the A6a paths below stay
+  // byte-identical. Spans are NOT composed with paragraph-gap stacking in v1 —
+  // the segmented paragraph hard-breaks on `\n` natively (LUMV0907), mirroring
+  // lumen-skia `paint_text_spanned`.
+  if (t.spans && t.spans.length > 0) {
+    drawSpannedText(ck, canvas, d, fontProvider, color, strokePaint);
+    strokePaint?.delete();
+    return;
+  }
+
   // A6a D4: split-and-stack only when a positive gap meets an actual break in
   // the normalized content; otherwise the single-paragraph path stays
   // byte-identical to pre-A6a for every existing scene (D1 case transform
@@ -506,6 +518,154 @@ function buildTextParagraph(
     bg.delete();
   }
   builder.addText(content);
+  const paragraph = builder.build();
+  builder.delete();
+  return paragraph;
+}
+
+/** A6b: one resolved styled run for the segmented paragraph — weight/decoration
+ * (node ∪ span) and the fill-pass color (span fill, else the node fill). */
+interface SpannedSegment {
+  text: string;
+  weight: number;
+  underline: boolean;
+  strikethrough: boolean;
+  color: Float32Array;
+}
+
+/**
+ * A6b D7: paint spanned text as ONE segmented paragraph, mirroring lumen-skia
+ * `paint_text_spanned`. Normalize with the offset map, relocate span byte
+ * offsets onto the normalized string, transform segments (stateful case), then
+ * build the fill paragraph (per-run color/weight/decoration ∪ node with
+ * decorationColor) and — when a text stroke exists — a stroke paragraph that
+ * keeps per-run WEIGHT but paints every run in the single stroke color. Layout
+ * arms (Wrap / NoWrap / NoWrap+truncate) match the A6a non-span path; there is
+ * NO paragraph-gap stacking (LUMV0907) and the block sits at y=0.
+ */
+function drawSpannedText(
+  ck: CanvasKit,
+  canvas: Canvas,
+  d: RenderNodeDescriptor,
+  fontProvider: TypefaceFontProvider,
+  baseColor: Float32Array,
+  strokePaint: Paint | null
+): void {
+  const t = d.text!;
+  const spans = t.spans as TextSpanDescriptor[];
+  const { normalized, map } = normalizeContentMapped(t.content);
+  // map's last entry is the normalized byte length — the out-of-range fallback,
+  // mirroring Rust's `map.get(span.start).unwrap_or(normalized.len())`.
+  const normLen = map[map.length - 1];
+  const boundaries: Array<[number, number]> = spans.map((span) => {
+    const start = map[span.start] ?? normLen;
+    const end = map[span.end] ?? normLen;
+    return [Math.min(start, end), Math.max(start, end)];
+  });
+  const core = transformSegments(normalized, boundaries, t.textTransform);
+  const segments: SpannedSegment[] = core.map((seg) => {
+    const span = seg.span !== null ? spans[seg.span] : undefined;
+    const weight = span?.fontWeight ?? t.fontWeight;
+    // Decoration is the union of node and span (span true adds; span never
+    // subtracts the node flag), mirroring the engine.
+    const underline = t.underline || (span?.underline ?? false);
+    const strikethrough = t.strikethrough || (span?.strikethrough ?? false);
+    const color = span?.fill ? parseColor(ck, span.fill) ?? baseColor : baseColor;
+    return { text: seg.text, weight, underline, strikethrough, color };
+  });
+
+  const maxLines = t.maxLines ?? undefined;
+  const fill = buildSpannedParagraph(ck, fontProvider, t, segments, maxLines, null);
+
+  let layoutWidth: number;
+  let x: number;
+  if (t.wrap === "wrap") {
+    layoutWidth = Math.max(0, d.width);
+    x = 0;
+  } else if (t.truncate) {
+    const bound = Math.max(0, d.width);
+    fill.layout(bound);
+    const longest = fill.getLongestLine();
+    x = t.align === "center" ? (d.width - longest) / 2 : t.align === "right" ? d.width - longest : 0;
+    layoutWidth = bound;
+  } else {
+    fill.layout(Number.MAX_SAFE_INTEGER);
+    const natural = Math.ceil(fill.getLongestLine()) + 2;
+    x = t.align === "center" ? (d.width - natural) / 2 : t.align === "right" ? d.width - natural : 0;
+    layoutWidth = natural;
+  }
+  fill.layout(layoutWidth);
+
+  if (strokePaint) {
+    const stroke = buildSpannedParagraph(ck, fontProvider, t, segments, maxLines, strokePaint);
+    stroke.layout(layoutWidth);
+    canvas.drawParagraph(stroke, x, 0);
+    stroke.delete();
+  }
+  canvas.drawParagraph(fill, x, 0);
+  fill.delete();
+}
+
+/**
+ * Build the segmented paragraph, mirroring lumen-skia `build_paragraph`'s
+ * `Some(segments)` branch: one base ParagraphStyle (align / maxLines / ellipsis)
+ * then a per-segment `pushStyle`/`pop` (or `pushPaintStyle` for the stroke pass)
+ * so weight overrides change shaping inside the measured/painted paragraph.
+ */
+function buildSpannedParagraph(
+  ck: CanvasKit,
+  fontProvider: TypefaceFontProvider,
+  t: NonNullable<RenderNodeDescriptor["text"]>,
+  segments: SpannedSegment[],
+  maxLines: number | undefined,
+  strokePaint: Paint | null
+): Paragraph {
+  const baseTextStyle: Record<string, unknown> = {
+    fontFamilies: [t.fontFamily],
+    fontSize: t.fontSize,
+    fontStyle: { weight: t.fontWeight },
+    heightMultiplier: t.lineHeight,
+    letterSpacing: t.letterSpacing
+  };
+  const style = new ck.ParagraphStyle({
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    textStyle: baseTextStyle as any,
+    textAlign: textAlign(ck, t.align),
+    maxLines: maxLines ?? undefined,
+    ellipsis: t.truncate ? "…" : undefined
+  });
+  const builder = ck.ParagraphBuilder.MakeFromFontProvider(style, fontProvider);
+  // A transparent background keeps `pushPaintStyle`'s bg from drawing a box.
+  const bg = strokePaint ? new ck.Paint() : null;
+  bg?.setColor(ck.Color4f(0, 0, 0, 0));
+  for (const seg of segments) {
+    const decoration =
+      (seg.underline ? ck.UnderlineDecoration : 0) | (seg.strikethrough ? ck.LineThroughDecoration : 0);
+    const segStyle: Record<string, unknown> = {
+      fontFamilies: [t.fontFamily],
+      fontSize: t.fontSize,
+      fontStyle: { weight: seg.weight },
+      heightMultiplier: t.lineHeight,
+      letterSpacing: t.letterSpacing
+    };
+    if (decoration) {
+      segStyle.decoration = decoration;
+    }
+    if (strokePaint) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      builder.pushPaintStyle(new ck.TextStyle(segStyle as any), strokePaint, bg!);
+    } else {
+      segStyle.color = seg.color;
+      if (decoration) {
+        segStyle.decorationColor = seg.color;
+      }
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      builder.pushStyle(new ck.TextStyle(segStyle as any));
+    }
+    builder.addText(seg.text);
+    builder.pop();
+  }
+  bg?.delete();
   const paragraph = builder.build();
   builder.delete();
   return paragraph;

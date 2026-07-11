@@ -473,4 +473,53 @@ describe.skipIf(!present || !existsSync(SYSTEM_FONT))("CanvasKit text rendering 
     expect(center).toBeGreaterThan(left);
     expect(right).toBeGreaterThan(center);
   });
+
+  // A6b D7: a span with a distinct fill paints a two-color headline — the base
+  // run keeps the node fill (black) and the span run paints its own color (red).
+  it("paints a two-color headline: base run node fill, span run span fill", () => {
+    const base = JSON.parse(JSON.stringify(minimalScene.nodes.node_contact_name)) as Node;
+    const text: Node = {
+      ...base,
+      id: "t",
+      kind: {
+        kind: "text",
+        content: "HELLO WORLD",
+        font_family: family,
+        font_size: 36,
+        font_weight: 700,
+        align: "left",
+        line_height: 1.2,
+        letter_spacing: 0,
+        wrap: "no_wrap",
+        direction: "ltr",
+        // "WORLD" (bytes 6..11) painted red; "HELLO " stays the node fill.
+        spans: [{ start: 6, end: 11, fill: { kind: "solid", color: { kind: "hex", value: "#ff0000" } } }]
+      },
+      fills: [{ id: "t_fill", paint: { kind: "solid", color: { kind: "hex", value: "#000000" } } }],
+      strokes: [],
+      transform: { ...base.transform, x: 0, y: 0 },
+      size: { width: { kind: "fixed", value: 400 }, height: { kind: "fixed", value: 50 } },
+      computed: {
+        layout_bounds: { x: 0, y: 0, width: 400, height: 50 },
+        render_bounds: { x: 0, y: 0, width: 400, height: 50 }
+      }
+    };
+    const pixels = render(pxScene({ t: text }, ["t"]), "page_a4", 400, 50, fontProvider);
+
+    let blackGlyphs = 0;
+    let redGlyphs = 0;
+    for (let y = 5; y < 45; y++) {
+      for (let x = 0; x < 400; x++) {
+        const [r, g, b] = pixel(pixels, x, y, 400);
+        if (r < 80 && g < 80 && b < 80) {
+          blackGlyphs++; // dark = base "HELLO" glyphs
+        } else if (r > 150 && g < 90 && b < 90) {
+          redGlyphs++; // red = span "WORLD" glyphs
+        }
+      }
+    }
+    // Both colors present: the base run is black, the span run is red.
+    expect(blackGlyphs).toBeGreaterThan(20);
+    expect(redGlyphs).toBeGreaterThan(20);
+  });
 });

@@ -514,6 +514,43 @@ describe.skipIf(!wasmArtifactPresent)("engine operation application (wasm)", () 
     });
   });
 
+  it("D4 span honesty holds on the whole-kind replace path: a content edit clears stale spans; undo restores them", () => {
+    // A6b D9 verification, review-gate fixed: the inspector's content control
+    // emits `updateTextNode(node, { content })` — a whole-kind
+    // `Operation::UpdateNode` Set. The engine's update_node now applies span
+    // honesty on that path too (operations.rs, beside clear_stale_tokens): a
+    // content change carrying the OLD spans forward unchanged clears them
+    // (stale byte offsets would silently mis-highlight the new string), and
+    // the inverse frame restores content AND spans on undo.
+    const scene = cloneScene();
+    const span = { start: 4, end: 9, fill: { kind: "solid", color: { kind: "hex", value: "#ff0000" } } };
+    (scene.nodes.node_contact_name.kind as { spans?: unknown }).spans = [span];
+    const engine = engineWith(scene);
+    // Precondition: the engine round-trips the authored spans.
+    expect((engine.scene.nodes.node_contact_name.kind as { spans?: unknown }).spans).toEqual([span]);
+
+    const before = engine.scene.nodes.node_contact_name;
+    const originalContent = (before.kind as { content: string }).content;
+
+    const edit = engine.applyOperations([
+      updateTextNode(before, { content: "Totally different headline" })
+    ]);
+    expect(edit.accepted).toBe(true);
+    const afterKind = engine.scene.nodes.node_contact_name.kind as { content: string; spans?: unknown };
+    expect(afterKind.content).toBe("Totally different headline");
+    // Stale spans cleared by the engine's whole-kind span honesty.
+    expect(afterKind.spans ?? []).toEqual([]);
+
+    // Undo restores the prior kind (content AND spans) via the inverse frame.
+    const inverse = edit.inverseOperations;
+    expect(inverse).toBeTruthy();
+    const undo = engine.applyOperations(inverse!);
+    expect(undo.accepted).toBe(true);
+    const restored = engine.scene.nodes.node_contact_name.kind as { content: string; spans?: unknown };
+    expect(restored.content).toBe(originalContent);
+    expect(restored.spans).toEqual([span]);
+  });
+
   it("upserts slots without reinterpreting slot semantics", () => {
     const scene = cloneScene();
     const engine = engineWith(scene);
