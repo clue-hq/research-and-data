@@ -496,3 +496,36 @@ raster/measure drift (rare, accepted). NEXT: A6b rich-text spans (two-color
 headline) as its own designed slice, then the A5 full re-sweep.
 Gates: cargo workspace 0 fail · helper release · HANDSHAKE OK fafdf01f4251 ·
 agent-runtime 411 · api 291 · editor tsc + targeted green.
+
+## Track A — A6b Rich-text spans (2026-07-11, gate verified)
+
+The two-color headline lands: `TextSpan` sub-ranges of one text node override
+fill / weight / underline / strike. DSL: `[[…]]` content markers + repeatable
+`span(fill(...), weight(...))` (COMMA-separated channels — the teaching
+protocol caught the space form failing); markers stay literal without span().
+Segmented SkParagraph measurement (push_style + get_rects_for_range run
+boxes), per-run SVG tspans at absolute x, PDF advises LUME0424, span fills
+join token resolution/governance. Diagnostics: LUMD0272/3/4, LUMV0906 (span
+shape, layout gate), LUMV0907 (spans+para_spacing gap not applied in v1 —
+loud), LUME0424. Editor renders parity (segmented CanvasKit paragraphs,
+span-keyed measurement records via the extended ProvidedMeasurement bridge);
+no span-authoring UI in v1.
+
+Review-gate record: ED-A6b's assigned investigation PROVED the D4 honesty gap
+live — the editor's whole-kind updateTextNode replace bypassed span clearing,
+carrying stale offsets onto new content. Fixed at the engine seam beside
+clear_stale_tokens (operations.rs): content change + unchanged spans = stale
+carry-forward, cleared; re-authored different spans survive; undo restores.
+Also fixed at review: the silent spans×para_spacing gap-drop (→LUMV0907), the
+bridge's hardcoded spans:[] (spanned nodes could never get editor-provided
+shaping), and the untested LUMV0906 gate emission. Teaching protocol catch
+count now: A4, A6a, A6b — three for three.
+
+Deferred (ledger): per-span family/size/ls/lh, nested spans, span gradients,
+span-authoring UI, spans on DSL modify lines (LUMD0903 route; ops carry span
+edits), spans×paragraph_spacing composition, heuristic soft-wrap of spanned
+text (LUMS0102-class approximation; editor now bridges real shaping).
+Gates: workspace 0 fail · helper release · HANDSHAKE OK b5f0b3d093c1 ·
+agent-runtime 411 · api green · editor tsc + targeted · 6/6 exemplars VALID
+(two-color pixel-proven). A6 COMPLETE (A6a+A6b). NEXT: the full A5 re-sweep
+(SWEEP-SPEC verbatim vs the 1.22/3 baseline), then output-quality work.
