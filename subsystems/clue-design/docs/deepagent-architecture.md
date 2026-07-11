@@ -580,3 +580,63 @@ known baseline) · parity gate PASS · browser 8/8. Design + as-built REVIEW
 AMENDMENTS: .context/next-wave/a7a-valign-design.md. NEXT: A7b italics
 (span rider + provisioning; 17/27 families have italic VFs in the pinned
 clone).
+
+## Track A — A7b Italics (2026-07-12, gate verified)
+
+Italics land end-to-end: block `italic(bool)` + span channel `italic(bool)`
+with OVERRIDE merge (`span.italic.unwrap_or(block)` — deliberately unlike the
+union-merged decorations; `span(italic(false))` de-italicizes a run inside an
+italic block, mirroring weight, the other geometry channel). Italic IS a
+measurement input (the second per-run geometry channel after weight): it
+joins `measure_key` + `spans_digest` + both measurers + the wasm
+ProvidedMeasurement bridge — pre-A7b editor payloads still hit their keys
+(serde defaults align both sides). Font resolution is byte-driven: LoadedFace
+parses slant at registration, `match_typeface(family, weight, italic)` +
+`resolved_slant` mirror the weight machinery; **LUMS0105** advisory (italic
+requested, family has no italic face, upright used) beside LUMS0104;
+**LUME0425** PDF loud-drop beside LUME0424. Library: 22 italic faces
+provisioned from the pinned clone (17 families; serif core 400/600-700 cuts,
+sans/slab/mono 400; display families have none — no sources), upright
+manifest entries byte-identical, `_w400i_` style-tokened asset ids,
+inventory doc gains an Italics column. Editor: CanvasKit slant on all
+paragraph builders, DOM FontFace descriptors (kills the (family,normal,400)
+collision), toolbar Italic button + inspector toggle, italic edit overlay,
+Konva combined font string.
+
+Review-gate record — the adversarial protocol is now FIVE for five (A4, A6a,
+A6b, A7a, A7b), and A7b's catch is the sharpest yet: **SkParagraph applies a
+SYNTHETIC oblique for an unsatisfiable italic slant** (it does not snap to
+upright like typeface-level matching), so a no-italic family rendered
+SHEARED glyphs on the server raster AND the editor canvas — violating the
+user-ratified no-synthetic rule and falsifying LUMS0105's message. Caught by
+the gate's twin cells (missing-italic vs upright pixel diff 0.0996 ≈ a real
+italic's 0.1075), independently suspected by the parity refuter on the SVG
+side. FIX: a face-availability synthesis gate at every style seam — engine
+`build_paragraph` (one gate covers base/stacked/segments), SVG emission via
+the new `TextMeasurer::has_italic_face` trait method, editor via
+registration-tracked `hasItalicFace()` — pinned by
+missing_italic_face_renders_upright_not_synthetic_oblique (0 differing
+pixels), svg_font_style_is_gated_on_a_real_italic_face, and gate cells
+r7/r8 (missing-italic diff now 0.0000). Also fixed at review: LUME0425
+false-positive on span(italic(false))-over-upright (condition == Some(true)
++ guard test). Refuters: no contract defects (serde, echo-loop, 7-site
+merge, split-name family keys, advisory composition all verified). Accepted
+residuals on record: kit faces lacking style metadata under-report the
+editor-side gate (renders upright there; kit-ingestion fast-follow);
+LUME0425 over-fires on a fully-de-italicized italic block (harmless,
+comment-honest); italic_weights not validated ⊆ weights (current data
+verified); heuristic measurer models no italic width delta (existing
+approximation class).
+
+Browser gate 7/7 (Lora italic live on toggle + overlay; Manrope stays
+upright on canvas while controls show intent — the honest split; span +
+de-italicize cells correct; no new console errors). Teaching: exemplar
+pixel-proven (3.28% diff vs upright-stripped), OVERRIDE seam + no-synthetic
+rule taught; the A6b "nothing that would reflow line metrics" span sentence
+amended. Gates: core 476 · skia/export/assets 208 · helper release ·
+HANDSHAKE OK 62e8e60efeb4 · agent-runtime 411 · api 296 · editor tsc +
+vitest 730 (26 known baseline) · 19-cell parity gate PASS · provisioning
+--check OK. Design + amendments: .context/next-wave/a7b-italics-design.md;
+evidence: a7b-teaching-evidence/ + a7a-gate-evidence/ (gate.py now covers
+valign + italics). NEXT: per-span metrics + VF axes stay parked; kit-style
+metadata fast-follow on record.
