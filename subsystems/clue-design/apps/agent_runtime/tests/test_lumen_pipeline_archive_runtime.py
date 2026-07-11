@@ -1164,8 +1164,9 @@ def test_grammar_and_text_refs_are_pinned_for_authoring():
     # Regression for the va()/divider hallucinations: a prompt whose words do NOT
     # overlap the grammar/text references (no "valign", "grammar", "node kind")
     # must still retrieve them. They are pinned regardless of ranker score, even at
-    # the default limit, so the author always has the valid node kinds and the
-    # "there is no valign" rule in context.
+    # the default limit, so the author always has the valid node kinds and the real
+    # text grammar (incl. `valign(top|center|bottom)`, added A7a — `va()` still does
+    # not exist) in context.
     repo_root = Path(__file__).resolve().parents[3]
 
     snippets = read_task_knowledge(

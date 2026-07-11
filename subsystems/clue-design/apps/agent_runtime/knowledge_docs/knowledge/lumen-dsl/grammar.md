@@ -91,7 +91,10 @@ Text (see `text.md`):
 `font_size(n)` or `font_size($type.size.x)` (step token overrides the role's
 default size for big canvases — see `text.md`), `font_weight`, `style($type.x)`,
 `align(left|center|right|justify)`
-(standalone horizontal align; pairs with `style($type.x)`), `lh`, `ls`, `tracking`,
+(standalone horizontal align; pairs with `style($type.x)`),
+`valign(top|center|bottom)` (vertical align of the block inside a fixed/fill-height
+text box — no-op on hug height; `center` not `middle`, bad value → `LUMD0275`),
+`lh`, `ls`, `tracking`,
 `wrap_text(bool)`, `max_lines(n)`, `dir(ltr|rtl|auto)`,
 `case(upper|lower|title|none)` (alias `text_transform`, also `uppercase`/`lowercase`;
 bad value → `LUMD0271`), `underline(bool)`, `strike(bool)` (alias `strikethrough`),

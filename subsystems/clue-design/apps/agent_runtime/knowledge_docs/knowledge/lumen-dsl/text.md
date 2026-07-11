@@ -13,6 +13,7 @@ too small genuinely is.
 | `font($type.x)` | — | one typography token (preferred when branded) |
 | `style($type.x)` | `text_style` | typography role token (preferred when branded) |
 | `align(left\|center\|right\|justify)` | `text_align` | horizontal alignment, standalone — pairs with `style($type.x)` (which carries no align) |
+| `valign(top\|center\|bottom)` | — | **vertical** alignment of the text block inside its OWN box — only bites when the box is taller than the copy (fixed/fill height); a no-op on hug height. `center`, never `middle`; bad value → `LUMD0275` |
 | `font_size(n)` / `font_size($type.size.x)` | `font-size` | size only — a raw number OR a size-step token (the token form is preferred; see below) |
 | `font_weight(n)` | `font-weight` | alias — weight only |
 | `lh(n)` | `line_height` | line height multiplier |
@@ -121,9 +122,56 @@ headline text "Every [[outage]], mapped before it spreads." s(888,hug) font("Fra
 resizing its box: e.g. a numeral in a circle chip or a CTA label is
 `style($type.cta) align(center)`. (It is also the 4th arg of `font(...)`.) To center
 a label in a chip/button, the box does NOT need to hug the glyph — `align(center)`
-centers the glyph within whatever width the box has. Vertical centering is an
-auto-layout `y(c)` on the parent plus a hug height on the label (see `layout.md`);
-there is no `valign`.
+centers the glyph within whatever width the box has.
+
+## `valign` — vertical alignment inside a text box (and the `y(c)` seam)
+
+`valign(top|center|bottom)` positions the text block **vertically inside the text
+node's own box**. It is the sibling of `align(...)`: `align` moves the glyphs
+left/right within the box, `valign` moves the whole block up/down within the box.
+Default is `top` (the historical behaviour), so existing scenes are untouched.
+
+**It only bites when the box has vertical slack** — i.e. a **fixed or fill height**
+that is taller than the measured copy. The offset is
+`max(box_height − content_height, 0) × {top:0, center:0.5, bottom:1}`, clamped at
+zero: on a **hug** height the box hugs the copy, there is no slack, and `valign` is
+a **silent no-op** — do not add it to hug-height text expecting a change. On an
+overflowing box the slack is also zero, so the text still paints from the top and
+`LUMV0903` fires exactly as before (valign never hides overflow).
+
+**When to reach for which — the seam:**
+
+- **`valign`** — you have *one text node* that already sits in a **fixed/fill-height
+  box** and want the copy vertically placed inside it: a split-panel or banded
+  layout where the band height is fixed, a badge/pill with a fixed box, a stat cell
+  of a fixed-height grid. No restructuring — the box already exists; you just say
+  where the copy sits in it.
+- **`y(c)`** (auto-layout, see `layout.md`) — you are **centering children inside a
+  container**. The container is an `al(...)` and `y(c)` distributes its children on
+  the cross/secondary axis. This is still the right tool for laying out a row of
+  chips, a centered button label, or any multi-child band.
+
+They are **not interchangeable and neither replaces the other**: `valign` is
+text-inside-its-own-box, `y(c)` is children-inside-a-container. If the box hugs its
+content, `valign` does nothing — restructure to an auto-layout with `y(c)`, or give
+the box a real height, whichever fits the design. Value is `center`, never `middle`
+(one word for "centered" across the grammar; `valign(middle)` → `LUMD0275`), and it
+takes exactly one argument (wrong arity → `LUMD0230`).
+
+**Exemplar — split-panel band, fixed-height text vertically centered:**
+
+```text
+artboard al(v,x(s),y(s)) p(0,0) s(fill,fill) fill(#f4f1ea) clip(true)
+  panel al(h,x(s),y(st)) p(0,0) s(1080,320) fill(#0b3d2e)
+    copy text "Every outage, mapped before it spreads." p(64,0) s(560,320) font("Fraunces",54,600,left) fill(#f4f1ea) lh(1.06) wrap_text(true) max_lines(3) valign(center)
+```
+
+The `copy` node has a **fixed 320px height** (matching the band) and a headline that
+measures well under 320px, so `valign(center)` vertically centers the copy in the
+band — no auto-layout wrapper needed on the text itself. Swap `valign(center)` for
+`valign(bottom)` to sit the copy on the band's baseline. (This exemplar is compiled
+clean through the engine — scene JSON carries `"valign": "center"` — and pinned in
+`.context/next-wave/a7a-teaching-evidence/`.)
 
 ## Type-size scale — pick the step for the surface
 

@@ -92,8 +92,9 @@ direction itself is wrong and the coordinator explicitly asked for a replacement
 
 **Compile (`LUMD…`)** — fix the exact failing token on the failing line. Earlier
 lines are already applied; emit only the corrected continuation/modify, not the
-whole block. (`valign` → remove it; bad color → a valid color form; `rd(a,b,c,d)`
-→ `rd(a)`.) See `knowledge/lumen-dsl/diagnostics`.
+whole block. (unknown property e.g. `z_index` → remove it; `valign(middle)` →
+`valign(center)`; bad color → a valid color form; `rd(a,b,c,d)` → `rd(a)`.) See
+`knowledge/lumen-dsl/diagnostics`.
 
 **Layout / fit (`LUMV0903`, `LUMV0810`, `LUMV0904`)** — the text genuinely doesn't
 fit (measurement is real). Pick the *smallest* targeted change on the named node:

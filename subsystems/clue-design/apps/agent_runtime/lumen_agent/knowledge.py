@@ -325,9 +325,11 @@ def mandatory_task_paths(query: str) -> list[str]:
     # selection only guarantees a single highest-scored lumen-dsl doc, and for
     # prompts whose words don't overlap the grammar (e.g. "patient appointment
     # card") the ranker drops grammar/text below the limit. Without them the author
-    # hallucinates unsupported syntax — `va(center)` (LUMD0212), a `divider` node
-    # kind (LUMD0206) — and wastes the first iteration. Both are PRIMARY paths, so
-    # they are always among the candidates this force-selects from.
+    # hallucinates unsupported syntax — a `va(center)` op (there is no `va()`;
+    # vertical align is `valign(top|center|bottom)`, a real text property as of A7a,
+    # but `va()` still is not → LUMD0212), a `divider` node kind (LUMD0206) — and
+    # wastes the first iteration. Both are PRIMARY paths, so they are always among
+    # the candidates this force-selects from.
     paths = [
         GRAMMAR_PATH,
         TEXT_PATH,

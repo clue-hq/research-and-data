@@ -15,7 +15,10 @@ conservative:
   from the curated font library (see `design/font-library.md`) with
   `font("Family",size,weight,align)`; do not default everything to Inter.
 - Use `hug` height for text likely to wrap, or make fixed-height boxes large
-  enough for measured line height.
+  enough for measured line height. When a text box has a **fixed/fill height**
+  (a banded or split-panel layout), use `valign(center|bottom)` to place the copy
+  vertically inside it; on hug height `valign` is a no-op (use auto-layout `y(c)`
+  to center children in a container instead) — see `lumen-dsl/text.md`.
 - Use `wrap_text(true)` on body copy and long headlines.
 - Use `max_lines(...)` on ad headlines and compact cards so overflow is
   diagnosed early.

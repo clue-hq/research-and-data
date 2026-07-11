@@ -26,7 +26,7 @@ failing line is dropped, later lines are discarded (cascade halt).
 | `LUMA0200` | repair re-declared an existing page | emit a continuation / modify line, or use structured ops — never re-`page` |
 | `LUMD0206` | unknown element kind (often prose narration in a DSL block) | delete the line if it is narration; to target an existing page use `#page:<page_id> …`, not a bare page id |
 | `LUMD0207` | delete/parent/clone/replace/`parent()` syntax error | fix the directive args |
-| `LUMD0212` | unknown property name (e.g. `valign`) | remove it; there is no such property |
+| `LUMD0212` | unknown property name (e.g. `z_index`, `overflow` — CSS habits with no DSL equivalent) | remove it; there is no such property |
 | `LUMD0219` | invalid color (bare number, malformed) | use `#RRGGBB`/`#AARRGGBB`/`$token`/`oklch`/`rgb(a)` |
 | `LUMD0220` | `font(...)` arity | `font(family,size,weight,align)` or `font($type.x)` |
 | `LUMD0222` | padding arity | `pad(a)` / `pad(v,h)` / `pad(t,r,b,l)` |
@@ -40,6 +40,7 @@ failing line is dropped, later lines are discarded (cascade halt).
 | `LUMD0271` | unknown `case`/`text_transform` value | use `none`, `upper`/`uppercase`, `lower`/`lowercase`, or `title` |
 | `LUMD0272` | malformed `[[…]]` rich-text span markers (nested `[[`, or an unclosed `[[`) | each run is one `[[…]]` range; runs cannot nest and every `[[` must close with `]]` (see `text.md`) |
 | `LUMD0273` | empty or malformed `span(...)` — `span()` with no channel, or a non-call channel | give at least one channel: `span(fill(#hex))`, `span(fill($token))`, `span(weight(700))`, `span(underline(true))`, `span(strike(true))`; multiple channels are **comma-separated** |
+| `LUMD0275` | unknown `valign(...)` value (e.g. `middle`) | use `top`, `center`, or `bottom` — `center`, never `middle`; no aliases |
 | `LUMD0301/0302/0304` | indentation / over-nesting / leaf-with-children | two spaces per level; only containers nest |
 | `LUMD0401` | duplicate node id | rename, or modify the existing node instead of re-declaring |
 | `LUMD0403/0404/0405` | image/vector/instance missing required arg | add `asset(id)` / `path("…")` / `source(id)` |

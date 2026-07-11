@@ -83,18 +83,33 @@ Anchor cheat-sheet:
 - `stretch` — only on the cross axis, and only when the container has definite
   space on that axis.
 
-## Vertical centering (there is no `valign`)
+## Vertical centering — `y(c)` for containers, `valign` for a text box
 
-Text supports only **horizontal** alignment — the 4th arg of
-`font(family,size,weight,align)` (`left`/`center`/`right`/`justify`). To vertically
-center text inside a band, make the band an auto-layout and use `y(c)`:
+Two tools, two jobs — pick by what you are centering:
 
-```text
-banner al(h, x(c), y(c), pad(0,24)) p(0,0) s(595,80) fill($surface.brand)
-  title text "Appointment Reminder" p(0,0) s(fill,hug) style($type.headline) font("Inter",22,700,center)
-```
+- **Centering children inside a container** → make the container an auto-layout and
+  use `y(c)`. This lays out the container's *children* on the cross axis:
 
-`valign(...)` / `text_align(...)` do not exist (→ `LUMD0212 unknown property`).
+  ```text
+  banner al(h, x(c), y(c), pad(0,24)) p(0,0) s(595,80) fill($surface.brand)
+    title text "Appointment Reminder" p(0,0) s(fill,hug) style($type.headline) font("Inter",22,700,center)
+  ```
+
+- **Centering the copy inside a single text node's own fixed/fill-height box** →
+  put `valign(top|center|bottom)` on the text node itself (see `text.md`). No
+  auto-layout wrapper needed:
+
+  ```text
+  band text "Appointment Reminder" p(0,0) s(595,80) style($type.headline) align(center) valign(center)
+  ```
+
+  `valign` only bites when the box has vertical slack (fixed/fill height taller than
+  the copy). On a **hug** height there is no slack and `valign` is a silent no-op —
+  reach for the auto-layout `y(c)` form instead, or give the box a real height.
+  `valign` never hides overflow (an overflowing box still emits `LUMV0903`).
+
+Value is `center`, never `middle` (`valign(middle)` → `LUMD0275`). `text_align(...)`
+is the alias for the **horizontal** `align(...)`, not a vertical knob.
 
 ## Backgrounds
 
