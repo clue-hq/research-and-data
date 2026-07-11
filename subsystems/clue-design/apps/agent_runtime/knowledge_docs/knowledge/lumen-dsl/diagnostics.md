@@ -38,6 +38,8 @@ failing line is dropped, later lines are discarded (cascade halt).
 | `LUMD0269` | `bleed(...)` wrong form/target | `bleed(true)` on a node (off-canvas intent) or `bleed(x,y,w,h)` on a page (print-bleed rect) |
 | `LUMD0270` | `solid(color,opacity)` out of range or token misuse | opacity in `0..=1`; bake alpha into a `$token`, or use `#RRGGBBAA` |
 | `LUMD0271` | unknown `case`/`text_transform` value | use `none`, `upper`/`uppercase`, `lower`/`lowercase`, or `title` |
+| `LUMD0272` | malformed `[[…]]` rich-text span markers (nested `[[`, or an unclosed `[[`) | each run is one `[[…]]` range; runs cannot nest and every `[[` must close with `]]` (see `text.md`) |
+| `LUMD0273` | empty or malformed `span(...)` — `span()` with no channel, or a non-call channel | give at least one channel: `span(fill(#hex))`, `span(fill($token))`, `span(weight(700))`, `span(underline(true))`, `span(strike(true))`; multiple channels are **comma-separated** |
 | `LUMD0301/0302/0304` | indentation / over-nesting / leaf-with-children | two spaces per level; only containers nest |
 | `LUMD0401` | duplicate node id | rename, or modify the existing node instead of re-declaring |
 | `LUMD0403/0404/0405` | image/vector/instance missing required arg | add `asset(id)` / `path("…")` / `source(id)` |
@@ -58,6 +60,7 @@ compiles — but treat it as a lint: author the clean form next time.
 | `LUMD0261` | a modify line swapped an image node to an asset the scene hasn't registered yet (e.g. `#hero_img asset(<kit id>)`) | swapped the leaf node's kind to that asset as a *dangling reference* (matching the declaration path) — the reference resolves when a brand kit or library registers the asset (auto-registered for kit assets); an unresolved reference warns `LUME0211` at export. A swap on a node *with children* does NOT degrade and still hard-fails |
 | `LUMD0262` | a `reconcile(...)` block OMITTED a protected (seed-born / human) node | KEPT the node rather than removing it — omission never deletes human content. To remove it, add an explicit `delete(<id>)` inside the block |
 | `LUMD0263` | a `reconcile(...)` block closed (info summary, never an error) | reports `N updated, N inserted, N removed, N moved, N kept-protected` for that container — the trace-visible record of what the diff applied |
+| `LUMD0274` | a spanned text node has a different number of `[[…]]` runs than `span()` properties | rendered anyway: surplus runs render base, surplus `span()` are ignored — author one `span()` per `[[…]]` run, in order |
 
 Bounds: `LUMD0260` skips at most 3 leading lines per block, and only when the
 block still yields real DSL. A 4th consecutive narration line, or a block that is
@@ -72,6 +75,8 @@ lets a pure-prose block "succeed" empty.
 | `LUMV0903` | text node exceeds available height | `hug` height, taller box, fewer lines, or smaller font |
 | `LUMV0904` | text exceeds `max_lines` | raise `max_lines`, shorten copy, or enlarge the box (still fires **with** `truncate` — the ellipsis renders but the cut is still diagnosed) |
 | `LUMV0905` | `truncate(true)` on freely wrapping text with no `max_lines` — the ellipsis can never fire | add `max_lines(n)` / `wrap(false)` to give it a cut point, or drop `truncate` |
+| `LUMV0906` | an ops-injected rich-text span is invalid — out of bounds, off a UTF-8 char boundary, `start >= end`, unsorted, overlapping, or gradient-filled | keep span offsets in-bounds, char-aligned, `start<end`, sorted, non-overlapping, and solid/token-filled. DSL-authored `[[…]]` spans are valid by construction; this fires only on ops |
+| `LUMV0907` | a text node combines rich-text spans with `paragraph_spacing` — the paragraph gap is **not** applied to spanned text in v1 (warning) | split the stanzas into separate text nodes, or drop the spans/`para_spacing` combination |
 | `LUMV0810` | slot fixture overflows its text node | same box fixes, or set the slot overflow policy to `shrink_font`/`wrap` |
 | `LUMV0509` | text slot has no fit-validation fixtures (warning) | add `sample`/`worst_case` so fit is tested against real-length data |
 | `LUMV09xx page/artboard bounds` | node exceeds or starts outside the artboard | use a bounded `layout_cluster` repair on the diagnosed artboard/root/parent cluster |
@@ -100,6 +105,7 @@ dropped in silence:
 | `LUME0421` | PDF export cannot render text `underline`/`strike` | export SVG/PNG for text decoration, or drop it for the PDF |
 | `LUME0422` | PDF export cannot render a text stroke | export SVG/PNG for text strokes, or drop the stroke for the PDF |
 | `LUME0423` | PDF export renders only the first fill for a multi-fill text node | use a single text fill for PDF |
+| `LUME0424` | PDF export cannot render rich-text spans — the base text renders complete, the per-run span styling (accent color/weight/decoration) does not | export SVG/PNG when a two-color/span headline must ship; or drop the spans for the PDF |
 | `LUMS0104` | the font family has no face at the requested weight; the shaper snapped to the nearest one (advisory — snapping is correct, the silence was the bug) | add a face at that weight to the `fonts/` set for exact fidelity, or pick a weight the family ships |
 
 ## Brand governance

@@ -96,7 +96,13 @@ default size for big canvases — see `text.md`), `font_weight`, `style($type.x)
 `case(upper|lower|title|none)` (alias `text_transform`, also `uppercase`/`lowercase`;
 bad value → `LUMD0271`), `underline(bool)`, `strike(bool)` (alias `strikethrough`),
 `truncate(bool)` (alias `ellipsis`; inert with no cut point → `LUMV0905`),
-`para_spacing(n)` (alias `paragraph_spacing`; ≥ 0, negative → `LUMD0255`).
+`para_spacing(n)` (alias `paragraph_spacing`; ≥ 0, negative → `LUMD0255`),
+`span(fill(#hex|$token), weight(n), underline(bool), strike(bool))` — style one
+`[[…]]` run of the content; **comma-separated channels**, repeatable (Nth `span()`
+→ Nth `[[…]]` run). Markers parse only when a `span()` is present; empty span() →
+`LUMD0273`, malformed markers → `LUMD0272`, run/span count mismatch → `LUMD0274`
+(warning). Create-line only — a `span()` on a `#node` modify line is `LUMD0903`
+(ops carry span edits). See `text.md`.
 
 Auto-layout (on `al` containers; see `layout.md`):
 

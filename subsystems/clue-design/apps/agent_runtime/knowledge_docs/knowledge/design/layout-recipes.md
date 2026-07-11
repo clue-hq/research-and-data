@@ -92,6 +92,20 @@ page linkedin_square size(1080,1080,px)
       url text "northwind.grid" p(0,0) s(300,hug) font("Space Mono",15,400,right) fill(#6b7280) align(right) max_lines(1)
 ```
 
+**Two-color headline (the moda span move).** Accent ONE phrase of the headline
+with a `[[…]]` run + `span(...)` — one accent per headline, never a rainbow. Raw
+hex when unbranded, a kit token when branded:
+
+```text
+# raw-hex accent (no kit)
+headline text "Every [[outage]], mapped before it spreads." p(0,0) s(888,hug) font("Fraunces",76,600,left) fill(#0b3d2e) lh(1.03) wrap_text(true) max_lines(3) span(fill(#e11d48), weight(800))
+# kit-token accent (branded — the token resolves at apply)
+headline text "Every [[outage]], mapped before it spreads." p(0,0) s(888,hug) style($type.headline) fill($text.primary) lh(1.03) wrap_text(true) max_lines(3) span(fill($accent.primary), weight(800))
+```
+
+Channels inside `span(...)` are **comma-separated**; drop the color for a
+weight-only emphasis (`span(weight(800))`). See `lumen-dsl/text.md`.
+
 ### 2 — split-panel
 
 `al(h)` root divides the canvas into a full-bleed **image column** and a
@@ -154,6 +168,13 @@ page linkedin_square size(1080,1080,px)
       capcol al(v,x(s),y(c),g(4),pad(0)) p(0,0) s(760,hug)
         cap_h text "Median first-response, last quarter" p(0,0) s(760,hug) font("Space Grotesk",24,600,left) fill(#f4f1ea) lh(1.15) wrap_text(true) max_lines(2)
         cap_b text "Across 40 million alerts, no on-call paged after midnight." p(0,0) s(760,hug) font("Inter",18,400,left) fill(#9ca3af) lh(1.4) wrap_text(true) max_lines(2)
+```
+
+An accent span in the **caption headline** ties the words to the numeral — pull the
+accent from the numeral's own warm gradient (a hex here, `$accent.*` when branded):
+
+```text
+cap_h text "Median [[first-response]], last quarter" p(0,0) s(760,hug) font("Space Grotesk",24,600,left) fill(#f4f1ea) lh(1.15) wrap_text(true) max_lines(2) span(fill(#f5a020), weight(800))
 ```
 
 ### 4 — image-hero

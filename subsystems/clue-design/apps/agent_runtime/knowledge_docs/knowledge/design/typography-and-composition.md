@@ -47,6 +47,20 @@ a default — reach for it only when it earns the composition:
 - **Strike is for a semantic before/after** — a slashed old price next to the new
   one (`strike(true)` on `"$1,200"` beside `"$690"`), a struck "sold out". Never
   decorative; a strike always says "this was replaced/withdrawn".
+- **The two-color headline is THE span move — one accented phrase per headline.**
+  Mark the phrase with `[[…]]` and give it a `span(...)`:
+  `headline text "Every [[outage]], mapped before it spreads." … span(fill(#e11d48), weight(800))`
+  colors and bolds one phrase against the node's ink — the moda editorial headline.
+  Pull the accent from **the kit palette** (`span(fill($accent.primary), weight(800))`)
+  when branded, a raw hex otherwise. Rules of restraint: **exactly one accent
+  phrase per headline** (two accents = no accent); **never rainbow-span** a line
+  into many colors; **never span body copy** — spans are a headline/display move,
+  not a way to highlight sentences. A **weight-only** span (`span(weight(800))`,
+  no color) bolds a single keyword when a color accent would be too loud. Underline
+  and strike spans follow the same single-accent discipline as their whole-node
+  forms above (one deliberate underline; a strike only for before/after). Spans are
+  headline-only for a reason: at body size the color shifts read as noise, not
+  emphasis.
 - **Truncation is layout honesty, not content editing.** `truncate(true)` (with
   `max_lines(n)` or `wrap(false)`) ends the cut line with `…` for variable-length
   or slot copy whose worst case you can't fully control. It does **not** silence
