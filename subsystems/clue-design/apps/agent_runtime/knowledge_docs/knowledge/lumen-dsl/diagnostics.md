@@ -107,7 +107,9 @@ dropped in silence:
 | `LUME0422` | PDF export cannot render a text stroke | export SVG/PNG for text strokes, or drop the stroke for the PDF |
 | `LUME0423` | PDF export renders only the first fill for a multi-fill text node | use a single text fill for PDF |
 | `LUME0424` | PDF export cannot render rich-text spans — the base text renders complete, the per-run span styling (accent color/weight/decoration) does not | export SVG/PNG when a two-color/span headline must ship; or drop the spans for the PDF |
+| `LUME0425` | PDF export cannot render `italic` (block or span) — the base text renders in the upright face, the slant is dropped (advisory, the sibling of `LUME0424`) | export SVG/PNG when italic emphasis must ship; or drop the italic for the PDF |
 | `LUMS0104` | the font family has no face at the requested weight; the shaper snapped to the nearest one (advisory — snapping is correct, the silence was the bug) | add a face at that weight to the `fonts/` set for exact fidelity, or pick a weight the family ships |
+| `LUMS0105` | the resolved family/weight has no **italic** face; the shaper rendered the **upright** face instead (advisory — no synthetic skew, snapping is correct; the silence would be the bug) | pick a family/weight that ships an italic cut (see `knowledge/design/font-library` Italics column), or drop the `italic` — display families have no italics by design |
 
 ## Brand governance
 

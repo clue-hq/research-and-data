@@ -25,9 +25,10 @@ too small genuinely is.
 | `case(upper\|lower\|title\|none)` | `text_transform` (also takes `uppercase`/`lowercase`) | display-time case transform; the stored content stays canonical; bad value → `LUMD0271` |
 | `underline(bool)` | — | underline decoration |
 | `strike(bool)` | `strikethrough` | strike-through decoration |
+| `italic(bool)` | — | italic styling — a **real metrics change** (the glyphs reshape and reflow, exactly like `font_weight`), **not** paint-only decoration. Renders italic **only where the family/weight ships an italic face**; otherwise the shaper snaps to upright and emits the advisory `LUMS0105` (no synthetic skew — see below and `knowledge/design/font-library` Italics column) |
 | `truncate(bool)` | `ellipsis` | end the cut line with `…` when `max_lines`/`wrap(false)` clips; inert (warns `LUMV0905`) if the text can never be cut |
 | `para_spacing(n)` | `paragraph_spacing` | extra px of vertical gap at each `\n` paragraph break (≥ 0; negative → `LUMD0255`) |
-| `span(fill(#hex\|$token), weight(n), underline(bool), strike(bool))` | — | style ONE `[[…]]` run of the content differently; **repeatable** — the Nth `span()` styles the Nth `[[…]]` run. Channels are **comma-separated**; give only the ones you want to override (each inherits the node otherwise). See "Rich-text spans" below |
+| `span(fill(#hex\|$token), weight(n), underline(bool), strike(bool), italic(bool))` | — | style ONE `[[…]]` run of the content differently; **repeatable** — the Nth `span()` styles the Nth `[[…]]` run. Channels are **comma-separated**; give only the ones you want to override (each inherits the node otherwise). Span `italic` **overrides** the node (span wins), so `span(italic(false))` de-italicizes one run inside an italic block. See "Rich-text spans" below |
 
 Canonical vs alias: prefer `font(...)` / `style($type.x)` / `lh(...)` / `ls(...)`
 in new designs. `font_size`/`font_weight`/`tracking` are compatibility aliases for
@@ -83,12 +84,23 @@ headline text "Every [[outage]], mapped before it spreads." s(888,hug) font("Fra
 
 - **Channels are comma-separated inside `span(...)`**: `fill(#hex)` or
   `fill($token)`, `weight(n)`, `underline(bool)`, `strike(bool)` (alias
-  `strikethrough`). Give only the channels you want to override — each unset
-  channel inherits the node. `span(weight(800))` bolds a keyword with no color
-  change; `span(fill($accent.primary))` recolors it with a kit token when branded.
+  `strikethrough`), `italic(bool)`. Give only the channels you want to override —
+  each unset channel inherits the node. `span(weight(800))` bolds a keyword with no
+  color change; `span(fill($accent.primary))` recolors it with a kit token when branded.
   **A single channel needs no comma; multiple channels DO** —
   `span(fill(#e11d48), weight(800))`, never `span(fill(#e11d48) weight(800))`
   (the space form mis-parses the color → `LUMD0219`).
+- **Span `italic` merges by OVERRIDE, not union** (unlike `underline`/`strike`,
+  which union with the node). The run's italic is `span.italic ?? node.italic` —
+  the span wins when set. This makes `italic(false)` the one span value where
+  **false is meaningful**: on an `italic(true)` block, `span(italic(false))`
+  renders that single run **upright** — the classic *italic pull-quote + upright
+  attribution* move (see the exemplar below). (Setting `italic(false)` in a span
+  on an upright block is simply a no-op.) Italic is a **metrics** channel like
+  `weight`: the spanned run reshapes and reflows, so an italic span/de-italic span
+  genuinely changes measured geometry — it is not paint-only like a color/decoration
+  span. Same no-synthetic rule as the block op: a run whose family/weight has no
+  italic face renders upright with `LUMS0105`.
 - **Repeat `span()` per run**, space-separated like any other properties:
   `… span(fill(#e11d48), weight(800)) span(weight(800)) span(underline(true))`
   styles three `[[…]]` runs in order.
@@ -100,8 +112,12 @@ headline text "Every [[outage]], mapped before it spreads." s(888,hug) font("Fra
 
 - Fill is **solid color or `$token` only** — no per-span gradients (a gradient
   span fill is rejected, `LUMV0906` on ops-injected spans).
-- **No per-span family, size, letter-spacing, or line-height** — a span changes
-  color / weight / underline / strike, nothing that would reflow line metrics.
+- **No per-span family, size, letter-spacing, or line-height.** A span changes
+  color / weight / underline / strike / **italic**. Two of those — **weight and
+  italic** — are metrics channels: they reshape the glyphs and so DO reflow the
+  spanned run's measured geometry (the shaper re-measures it). Fill, underline, and
+  strike remain paint-only. What a span cannot do is swap the *family*, *size*,
+  *letter-spacing*, or *line-height* of a run.
 - **`span()` only authors on a create line**, when the node is first written. It
   is **not** supported on a `#node` modify line (`LUMD0903`) — later span edits
   arrive as structured ops, which carry the spans directly.
@@ -116,6 +132,9 @@ headline text "Every [[outage]], mapped before it spreads." s(888,hug) font("Fra
 - **PDF export renders base text only** — spans present degrade loudly
   (`LUME0424` advisory); the words render complete, the accent styling does not.
   Export SVG/PNG when the two-color headline must ship.
+- **PDF cannot render italic either** — a block or span `italic` degrades loudly on
+  PDF export (`LUME0425` advisory, the sibling of `LUME0424`): the words render in the
+  upright face, the slant is dropped. Export SVG/PNG when italic emphasis must ship.
 
 `align(...)` is the horizontal alignment knob. Use it **standalone** alongside
 `style($type.x)` — the style token carries no alignment — to center a label without
@@ -172,6 +191,48 @@ band — no auto-layout wrapper needed on the text itself. Swap `valign(center)`
 `valign(bottom)` to sit the copy on the band's baseline. (This exemplar is compiled
 clean through the engine — scene JSON carries `"valign": "center"` — and pinned in
 `.context/next-wave/a7a-teaching-evidence/`.)
+
+## `italic` — editorial emphasis (and the OVERRIDE seam)
+
+`italic(bool)` slants the type. Unlike `underline`/`strike` (paint drawn over
+finished glyphs), italic **changes the glyphs themselves** — different letterforms,
+different advances — so it is a **measurement input on the geometry track with
+`font_weight`**: the compiler re-shapes and re-measures italic text, and a box that
+fit upright may need to be re-checked. Author it like `underline` (a block `bool`),
+but think of it like `weight`.
+
+**No synthetic italics — ever.** Italic renders only where the resolved
+family/weight actually ships an italic face. Ask for italic on a family/weight with
+none and the shaper snaps to the **upright** face and emits `LUMS0105` (an advisory,
+not an error — the render is legible, but your design intent was missed). There is
+no faux-skew fallback on any backend. **Which families carry italics is documented
+in `knowledge/design/font-library` (the Italics column)** — the serif core
+(Fraunces, Playfair Display, Lora, Source Serif 4, Newsreader, Instrument Serif) and
+a 400 cut of most sans/slab/mono workhorses have italics; the **display families
+have none by design**. Choose an italic-bearing family/weight rather than triggering
+the advisory.
+
+**Span `italic` overrides the block (span wins) — the one channel where `false`
+earns its keep.** On an `italic(true)` block, `span(italic(false))` renders that one
+run upright. This is the *italic pull-quote with an upright attribution* idiom: the
+whole quote leans in, the byline stands straight, from a single node.
+
+**Exemplar — Newsreader pull-quote, italic block + upright attribution via `span(italic(false))`:**
+
+```text
+artboard al(v,x(s),y(c),g(0),pad(96)) p(0,0) s(fill,fill) fill(#f4f1ea) clip(true)
+  quote text "“Every outage, mapped before it spreads.”\n[[— Northwind field report]]" s(888,hug) font("Newsreader",56,400,left) fill(#0b3d2e) lh(1.14) wrap_text(true) max_lines(6) italic(true) span(italic(false))
+```
+
+The `quote` node is `italic(true)`, so the quoted sentence renders in Newsreader's
+**italic** face; the `[[— Northwind field report]]` run carries `span(italic(false))`,
+which **overrides** the block back to upright for the byline alone. (Newsreader ships
+italic at 400/500 — see the font-library Italics column; a family with no italic cut
+would render the quote upright + `LUMS0105`.) This exemplar is compiled clean through
+the real engine — the scene JSON carries `"italic": true` on the block and
+`"italic": false` on the span — rendered with the library italic face, and pinned in
+`.context/next-wave/a7b-teaching-evidence/` (including a pixel-diff proof that the
+italic face is actually used vs. an upright-stripped render).
 
 ## Type-size scale — pick the step for the surface
 

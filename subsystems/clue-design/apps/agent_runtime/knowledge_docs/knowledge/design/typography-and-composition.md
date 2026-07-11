@@ -79,6 +79,16 @@ a default — reach for it only when it earns the composition:
   a big display numeral/word (stroke behind fill) is an outline-type move for
   posters — first solid stroke only. Keep it to hero display type; outlined body
   copy is unreadable.
+- **Italic is an editorial voice move, not a default.** `italic(true)` earns its
+  place on a **serif pull-quote** (Fraunces/Lora/Newsreader/Source Serif 4), on a
+  **caption or attribution**, or as **emphasis on a phrase inside body/subhead copy**
+  via a span (`span(italic(true))` on one `[[…]]` run). Sans italics are for *inline
+  emphasis only* — a leaning sans headline reads as a slide-deck accident. **Display
+  faces have no italic by design** — don't reach for it there and don't fake a slant;
+  ask for italic where there is no face and it renders upright + `LUMS0105`. And keep
+  **one emphasis system per canvas**: pair italic with the two-color span move only
+  sparingly — an italic phrase *or* an accent-color phrase, rarely both on the same
+  line.
 
 Good text box patterns:
 

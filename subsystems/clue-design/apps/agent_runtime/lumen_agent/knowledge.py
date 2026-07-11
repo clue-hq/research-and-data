@@ -65,7 +65,8 @@ LAYOUT_CLUSTER_REPAIR_PATH = (
     f"{KNOWLEDGE_DOCS_ROOT}/knowledge/loop/layout-cluster-repair.md"
 )
 # The DSL grammar (valid node kinds + property catalogue) and the text reference
-# (horizontal-only align — there is NO valign/text_align — plus wrap/max_lines).
+# (align + valign + italic as of A7a/A7b — text_align is the align alias —
+# plus wrap/max_lines).
 GRAMMAR_PATH = f"{KNOWLEDGE_DOCS_ROOT}/knowledge/lumen-dsl/grammar.md"
 TEXT_PATH = f"{KNOWLEDGE_DOCS_ROOT}/knowledge/lumen-dsl/text.md"
 # The modify/ref grammar (`#node_id` vs `#page:` vs `#slot:`, directives take
