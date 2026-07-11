@@ -313,6 +313,23 @@ impl<'a> PdfPageRenderer<'a> {
                         .with_hint("Stacked text fills are out of scope for PDF; use a single text fill."),
                     );
                 }
+                // A6b D7: PDF renders base text only — spans (per-run fill /
+                // weight / decoration) are not represented. The text content
+                // renders complete; only the span styling is dropped, loudly.
+                if !text.spans.is_empty() {
+                    self.diagnostics.push(
+                        Diagnostic::warning(
+                            Phase::Export,
+                            "LUME0424",
+                            format!(
+                                "text node {} has rich-text spans; PDF export renders the text without per-span styling",
+                                node.id
+                            ),
+                            Some(DiagnosticSubject::Node(node.id.clone())),
+                        )
+                        .with_hint("Export through SVG/PNG for two-color / weighted spans; PDF renders the full text in the base style."),
+                    );
+                }
                 let measured =
                     self.measurer
                         .measure(&TextMeasureInput::from_text_node(text).with_bounds(&Rect {

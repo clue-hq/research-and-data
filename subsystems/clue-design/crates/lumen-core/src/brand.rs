@@ -1709,6 +1709,31 @@ pub fn validate_scene_brand_governance(
                 );
             }
         }
+        // A6b D8: a span's raw (non-token) fill is un-governed exactly like a
+        // node fill — same LUMB0804 semantics.
+        if let NodeKind::Text(text) = &node.kind {
+            for (index, span) in text.spans.iter().enumerate() {
+                if let Some(paint) = &span.fill {
+                    if paint_is_bare(paint) {
+                        diagnostics.push(
+                            brand_governance_diag(
+                                severity_is_error,
+                                "LUMB0804",
+                                format!(
+                                    "node {} span {} fill uses a raw paint outside the Brand Kit",
+                                    node.id, index
+                                ),
+                                subject.clone(),
+                            )
+                            .with_hint(format!(
+                                "Use span(fill(${})) for the accent color.",
+                                suggested_fill_token(brand_kit, node)
+                            )),
+                        );
+                    }
+                }
+            }
+        }
         for stroke in &node.strokes {
             if paint_is_bare(&stroke.paint) || stroke.width_token.is_none() {
                 diagnostics.push(
@@ -2291,6 +2316,18 @@ pub fn collect_scene_token_references(scene: &Scene) -> Vec<SceneTokenReference>
                     "text font family",
                     &text.font_family,
                 );
+            }
+            // A6b D8: a span's token fill is a scene token reference, exactly
+            // like a node fill's.
+            for (index, span) in text.spans.iter().enumerate() {
+                if let Some(paint) = &span.fill {
+                    collect_paint_token_references(
+                        &mut references,
+                        subject.clone(),
+                        format!("span {index} fill paint"),
+                        paint,
+                    );
+                }
             }
         }
     }
@@ -3296,6 +3333,24 @@ impl<'a> TokenResolver<'a> {
                 }
             }
 
+            // A6b D8: a span's bare fill is un-governed in strict mode too.
+            if let NodeKind::Text(text) = &node.kind {
+                for (index, span) in text.spans.iter().enumerate() {
+                    if let Some(paint) = &span.fill {
+                        if paint_is_bare(paint) {
+                            self.diagnostics.push(node_brand_error(
+                                "LUMB0500",
+                                format!(
+                                    "node {} span {} fill uses a bare paint in token-strict mode",
+                                    node.id, index
+                                ),
+                                &node.id,
+                            ));
+                        }
+                    }
+                }
+            }
+
             for stroke in &node.strokes {
                 if paint_is_bare(&stroke.paint) || stroke.width_token.is_none() {
                     self.diagnostics.push(node_brand_error(
@@ -3496,6 +3551,14 @@ impl<'a> TokenResolver<'a> {
         }
 
         if let NodeKind::Text(text) = &mut node.kind {
+            // A6b D8: span fills resolve like node fills — a $token/solid-token
+            // span fill becomes Solid (bindings consumed by design); an
+            // unresolved span token keeps the loud sentinel path at raster.
+            for span in &mut text.spans {
+                if let Some(paint) = &mut span.fill {
+                    self.resolve_paint(paint, subject.clone());
+                }
+            }
             if let Some(token) = text.line_height_token.clone() {
                 if let Some(line_height) =
                     self.resolve_number_ref(&token, NumberDomain::Dimension, subject.clone())

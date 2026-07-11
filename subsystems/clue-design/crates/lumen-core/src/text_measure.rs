@@ -1,4 +1,5 @@
-use crate::{Diagnostic, Phase, Rect, TextDirection, TextNode, TextTransform, TextWrap};
+use crate::scene::{normalize_content_mapped, transform_segments};
+use crate::{Diagnostic, Phase, Rect, TextDirection, TextNode, TextSpan, TextTransform, TextWrap};
 use std::collections::HashSet;
 use std::sync::Arc;
 
@@ -46,6 +47,9 @@ pub struct TextMeasureInput {
     pub truncate: bool,
     /// Extra vertical gap (px) inserted at each `\n` paragraph break (A6a D4).
     pub paragraph_spacing: f64,
+    /// Rich-text spans (A6b D6). Empty ⇒ every measurer keeps its pre-A6b fast
+    /// path byte-for-byte; non-empty activates the segmented run path.
+    pub spans: Vec<TextSpan>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -77,6 +81,25 @@ pub struct TextLineBox {
     pub width: f64,
     pub height: f64,
     pub baseline: f64,
+    /// Rich-text runs (A6b D6): the styled sub-segments of this line, in visual
+    /// order, each with an `x`/`width` RELATIVE to the line's left edge and the
+    /// span it belongs to (`None` = base). EMPTY on the pre-A6b path (no spans),
+    /// where renderers emit the single-run `text` exactly as before — so a
+    /// spanless measurement is byte-identical to A6a. Internal only (never
+    /// serialized to the editor bridge).
+    pub runs: Vec<TextRunBox>,
+}
+
+/// One styled run within a [`TextLineBox`] (A6b D6). `x`/`width` are relative to
+/// the line's left edge (measurement lays out left-aligned; the renderer applies
+/// alignment to the whole line). `span` indexes the node's `spans`, or `None`
+/// for the base run.
+#[derive(Clone, Debug, PartialEq)]
+pub struct TextRunBox {
+    pub text: String,
+    pub x: f64,
+    pub width: f64,
+    pub span: Option<usize>,
 }
 
 pub trait TextMeasurer: std::fmt::Debug {
@@ -134,8 +157,34 @@ pub fn measure_key(input: &TextMeasureInput) -> String {
         format!("{:?}", input.text_transform),
         input.truncate.to_string(),
         format!("{:.3}", input.paragraph_spacing),
+        spans_digest(&input.spans),
     ]
     .join("\u{1f}")
+}
+
+/// A stable digest of the spans (A6b D6) for `measure_key`: identical spans
+/// produce identical keys, and any channel change re-keys the measurement.
+/// Empty spans digest to the empty string, so the pre-A6b key is unchanged
+/// for every existing (spanless) input.
+fn spans_digest(spans: &[TextSpan]) -> String {
+    if spans.is_empty() {
+        return String::new();
+    }
+    spans
+        .iter()
+        .map(|span| {
+            format!(
+                "{}:{}:{:?}:{:?}:{:?}:{:?}",
+                span.start,
+                span.end,
+                span.fill,
+                span.font_weight,
+                span.underline,
+                span.strikethrough
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\u{1e}")
 }
 
 /// A measurer that overrides width/height for known inputs with editor-supplied
@@ -200,6 +249,7 @@ impl TextMeasureInput {
             text_transform: text.text_transform,
             truncate: text.truncate,
             paragraph_spacing: text.paragraph_spacing,
+            spans: text.spans.clone(),
         }
     }
 
@@ -212,6 +262,11 @@ impl TextMeasureInput {
 
 impl TextMeasurer for HeuristicTextMeasurer {
     fn measure(&self, input: &TextMeasureInput) -> TextMeasureOutput {
+        // A6b D6: the segmented run path activates ONLY when spans exist, so
+        // every spanless measurement stays byte-identical to A6a below.
+        if !input.spans.is_empty() {
+            return measure_heuristic_spanned(input);
+        }
         let line_height_px = line_height_px(input.font_size, input.line_height);
         let mut lines = Vec::new();
         let max_width = input.max_width.filter(|width| *width > 0.0);
@@ -342,6 +397,150 @@ pub fn measure_text(input: &TextMeasureInput) -> TextMeasureOutput {
     HeuristicTextMeasurer.measure(input)
 }
 
+/// A6b D6: the heuristic measurer's spanned path. Normalizes content, remaps
+/// span offsets onto the normalized string, transforms segments (D5), and lays
+/// runs left-to-right per hard (`\n`) line. Weight is ignored (the heuristic
+/// already ignores family/weight); each run carries its `estimate_text_width`.
+///
+/// KNOWN APPROXIMATION (heuristic only, on the record): spanned text is not soft-
+/// wrapped here — each hard line becomes one measured line even in `Wrap` mode.
+/// The heuristic is already "geometry approximate" (LUMS0102); the server's Skia
+/// measurer performs true wrapping of spanned runs. Paragraph spacing is also not
+/// composed with spans (single-stack). These are v1 scope limits, reported.
+fn measure_heuristic_spanned(input: &TextMeasureInput) -> TextMeasureOutput {
+    let line_height_px = line_height_px(input.font_size, input.line_height);
+    let (normalized, map) = normalize_content_mapped(&input.content);
+    let boundaries: Vec<(usize, usize)> = input
+        .spans
+        .iter()
+        .map(|span| {
+            let start = map.get(span.start).copied().unwrap_or(normalized.len());
+            let end = map.get(span.end).copied().unwrap_or(normalized.len());
+            (start.min(end), start.max(end))
+        })
+        .collect();
+    let segments = transform_segments(&normalized, &boundaries, input.text_transform);
+
+    // Split into logical lines on `\n`, tagging each run with its span.
+    let mut logical: Vec<Vec<(String, Option<usize>)>> = vec![Vec::new()];
+    for segment in &segments {
+        for (index, part) in segment.text.split('\n').enumerate() {
+            if index > 0 {
+                logical.push(Vec::new());
+            }
+            if !part.is_empty() {
+                logical
+                    .last_mut()
+                    .expect("current line")
+                    .push((part.to_owned(), segment.span));
+            }
+        }
+    }
+
+    let mut lines: Vec<TextLineBox> = logical
+        .iter()
+        .map(|runs_data| {
+            let mut x = 0.0;
+            let mut runs = Vec::with_capacity(runs_data.len());
+            let mut text = String::new();
+            for (run_text, span) in runs_data {
+                let width = estimate_text_width(run_text, input.font_size, input.letter_spacing);
+                runs.push(TextRunBox {
+                    text: run_text.clone(),
+                    x,
+                    width,
+                    span: *span,
+                });
+                x += width;
+                text.push_str(run_text);
+            }
+            TextLineBox {
+                text,
+                x: 0.0,
+                y: 0.0,
+                width: x,
+                height: line_height_px,
+                baseline: 0.0,
+                runs,
+            }
+        })
+        .collect();
+
+    let original_line_count = lines.len();
+    let exceeds_max_lines = input
+        .max_lines
+        .is_some_and(|max_lines| original_line_count > max_lines as usize);
+    if let Some(max_lines) = input.max_lines {
+        lines.truncate(max_lines as usize);
+    }
+    let pre_elide_width = lines.iter().map(|line| line.width).fold(0.0, f64::max);
+
+    // A6b + A6a D3: a max_lines cut lands the ellipsis on the LAST run of the
+    // last visible line (NoWrap per-line width elision of spanned runs is a
+    // documented heuristic gap; the Skia path handles it).
+    if input.truncate && exceeds_max_lines {
+        if let Some(last) = lines.last_mut() {
+            append_ellipsis_to_last_run(last, input);
+        }
+    }
+
+    let mut cursor_y = 0.0;
+    for line in lines.iter_mut() {
+        line.y = cursor_y;
+        line.baseline = cursor_y + input.font_size;
+        cursor_y += line_height_px;
+    }
+
+    let measured_width = lines.iter().map(|line| line.width).fold(0.0, f64::max);
+    let measured_height = cursor_y;
+    let max_width = input.max_width.filter(|width| *width > 0.0);
+    let width = max_width
+        .filter(|_| matches!(input.wrap, TextWrap::Wrap))
+        .map(|bound| measured_width.min(bound))
+        .unwrap_or(measured_width);
+
+    TextMeasureOutput {
+        width,
+        height: measured_height,
+        line_height_px,
+        line_count: lines.len() as u16,
+        lines,
+        overflow_x: input
+            .max_width
+            .is_some_and(|bound| pre_elide_width > bound + f64::EPSILON),
+        overflow_y: input
+            .max_height
+            .is_some_and(|bound| measured_height > bound + f64::EPSILON),
+        exceeds_max_lines,
+        diagnostics: Vec::new(),
+    }
+}
+
+/// Append U+2026 to the last run of a line (A6b heuristic ellipsis) and
+/// re-account both the run width and the line width.
+fn append_ellipsis_to_last_run(line: &mut TextLineBox, input: &TextMeasureInput) {
+    if let Some(last) = line.runs.last_mut() {
+        if last.text.ends_with('…') {
+            return;
+        }
+        last.text.push('…');
+        let new_width = estimate_text_width(&last.text, input.font_size, input.letter_spacing);
+        let delta = new_width - last.width;
+        last.width = new_width;
+        line.width += delta;
+        line.text.push('…');
+    } else {
+        line.text.push('…');
+        line.runs.push(TextRunBox {
+            text: "…".to_owned(),
+            x: 0.0,
+            width: estimate_text_width("…", input.font_size, input.letter_spacing),
+            span: None,
+        });
+        line.width = line.runs[0].width;
+    }
+}
+
 pub fn line_height_px(font_size: f64, line_height: f64) -> f64 {
     font_size * line_height.max(0.1)
 }
@@ -434,6 +633,7 @@ fn line_box(
         y,
         height: line_height_px,
         baseline: y + input.font_size,
+        runs: Vec::new(),
     }
 }
 
@@ -457,6 +657,7 @@ mod provided_measurer_tests {
             text_transform: TextTransform::None,
             truncate: false,
             paragraph_spacing: 0.0,
+            spans: Vec::new(),
         }
     }
 

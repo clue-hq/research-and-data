@@ -445,6 +445,41 @@ pub struct TextNode {
     /// on top of the normal line advance. `0.0` is today's behavior, bit-for-bit.
     #[serde(default, skip_serializing_if = "is_zero")]
     pub paragraph_spacing: f64,
+    /// Rich-text spans (A6b D1): sub-ranges of `content` styled differently —
+    /// the two-color headline move. Byte offsets index the STORED `content`
+    /// string (never the transformed one). Validated (LUMV0906) before
+    /// measurement. Serde-defaulted and omitted when empty so pre-A6b scenes —
+    /// and every default node — round-trip byte-identically (mirrors `effects`),
+    /// and every measurer/renderer keeps its A6a fast path when `spans` is empty.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub spans: Vec<TextSpan>,
+}
+
+/// One rich-text span (A6b D1): a sub-range of a [`TextNode`]'s `content` with
+/// override channels. `None` channels inherit the node. Fill is restricted to
+/// `Solid` or `Token` — gradient span fills are rejected at validation
+/// (LUMV0908). A span whose every channel is `None` is legal but pointless
+/// (it renders base).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct TextSpan {
+    /// Byte offset into `content` where the run starts (inclusive),
+    /// char-boundary aligned.
+    pub start: usize,
+    /// Byte offset into `content` where the run ends (exclusive),
+    /// char-boundary aligned, `> start`.
+    pub end: usize,
+    /// Override fill — `Solid` or `Token` only (gradients rejected, D3).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fill: Option<Paint>,
+    /// Override font weight (CSS 100..900).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub font_weight: Option<u16>,
+    /// Override underline decoration.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub underline: Option<bool>,
+    /// Override strikethrough decoration.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub strikethrough: Option<bool>,
 }
 
 impl Default for TextNode {
@@ -469,6 +504,7 @@ impl Default for TextNode {
             strikethrough: false,
             truncate: false,
             paragraph_spacing: 0.0,
+            spans: Vec::new(),
         }
     }
 }
@@ -524,6 +560,229 @@ fn title_case(content: &str) -> String {
         }
     }
     out
+}
+
+/// One contiguous piece of transformed content (A6b D5/D6), tagged with the
+/// span it belongs to (`None` = base style). Concatenating every segment's
+/// `text` reproduces the fully transformed content, so a measurer can build
+/// one paragraph over the pieces and a renderer can style each run.
+#[derive(Clone, Debug, PartialEq)]
+pub struct SpanSegment {
+    pub text: String,
+    /// Index into the node's `spans`, or `None` for the base run.
+    pub span: Option<usize>,
+}
+
+/// Normalize raw text content — DSL literal `\n` and `\r\n` collapse to a real
+/// newline, a trailing newline is trimmed (`normalize_content` semantics) — AND
+/// build a raw-byte → normalized-byte offset map so span offsets that index the
+/// STORED content string (A6b D1) can be relocated onto the normalized string
+/// both measurers case-fold and shape. `map[i]` is the normalized offset of raw
+/// byte `i`, for every `i` in `0..=raw.len()`.
+pub fn normalize_content_mapped(raw: &str) -> (String, Vec<usize>) {
+    let mut out = String::with_capacity(raw.len());
+    let mut map = vec![0usize; raw.len() + 1];
+    let mut chars = raw.char_indices().peekable();
+    while let Some((idx, ch)) = chars.next() {
+        map[idx] = out.len();
+        // Literal "\n" (two chars) → one newline; the escaped 'n' collapses
+        // onto the newline offset.
+        if ch == '\\' {
+            if let Some((n_idx, 'n')) = chars.peek().copied() {
+                map[n_idx] = out.len();
+                out.push('\n');
+                chars.next();
+                continue;
+            }
+        }
+        // CRLF → one newline.
+        if ch == '\r' {
+            if let Some((n_idx, '\n')) = chars.peek().copied() {
+                map[n_idx] = out.len();
+                out.push('\n');
+                chars.next();
+                continue;
+            }
+        }
+        let start = out.len();
+        out.push(ch);
+        // Point any UTF-8 continuation bytes at the char's start (they are
+        // never span boundaries — validation requires char alignment).
+        for cont in (idx + 1)..(idx + ch.len_utf8()) {
+            map[cont] = start;
+        }
+    }
+    map[raw.len()] = out.len();
+
+    // Trim a trailing newline (mirrors `normalize_content`'s
+    // `trim_end_matches('\n')`) and clamp every mapped offset into the trim.
+    let trimmed_len = out.trim_end_matches('\n').len();
+    out.truncate(trimmed_len);
+    for offset in map.iter_mut() {
+        *offset = (*offset).min(trimmed_len);
+    }
+    (out, map)
+}
+
+/// Split `normalized` content at `boundaries` (already-normalized `(start,end)`
+/// span ranges, in order, non-overlapping) and apply `transform` to each piece
+/// with a STATEFUL title-case cursor that carries word-start state across
+/// segment boundaries (A6b D5) — a span starting mid-word never re-capitalizes.
+/// Uppercase/lowercase are per-char and safe regardless. The Nth boundary maps
+/// to `Some(N)`; gaps and the tail map to `None`.
+pub fn transform_segments(
+    normalized: &str,
+    boundaries: &[(usize, usize)],
+    transform: TextTransform,
+) -> Vec<SpanSegment> {
+    let mut pieces: Vec<(usize, usize, Option<usize>)> = Vec::new();
+    let mut cursor = 0usize;
+    for (index, (start, end)) in boundaries.iter().enumerate() {
+        let (start, end) = (*start, *end);
+        if start > cursor {
+            pieces.push((cursor, start, None));
+        }
+        if end > start {
+            pieces.push((start, end, Some(index)));
+        }
+        cursor = cursor.max(end);
+    }
+    if cursor < normalized.len() {
+        pieces.push((cursor, normalized.len(), None));
+    }
+
+    let mut at_word_start = true;
+    pieces
+        .into_iter()
+        .map(|(start, end, span)| {
+            let slice = normalized.get(start..end).unwrap_or("");
+            let text = transform_slice_stateful(slice, transform, &mut at_word_start);
+            SpanSegment { text, span }
+        })
+        .collect()
+}
+
+/// Case-transform one slice, threading the title-case word-start cursor so the
+/// caller can continue it across the next segment (A6b D5).
+fn transform_slice_stateful(
+    slice: &str,
+    transform: TextTransform,
+    at_word_start: &mut bool,
+) -> String {
+    match transform {
+        TextTransform::None => {
+            for ch in slice.chars() {
+                *at_word_start = ch.is_whitespace();
+            }
+            slice.to_owned()
+        }
+        TextTransform::Uppercase => {
+            for ch in slice.chars() {
+                *at_word_start = ch.is_whitespace();
+            }
+            slice.to_uppercase()
+        }
+        TextTransform::Lowercase => {
+            for ch in slice.chars() {
+                *at_word_start = ch.is_whitespace();
+            }
+            slice.to_lowercase()
+        }
+        TextTransform::Title => {
+            let mut out = String::with_capacity(slice.len());
+            for ch in slice.chars() {
+                if ch.is_whitespace() {
+                    *at_word_start = true;
+                    out.push(ch);
+                } else if *at_word_start && ch.is_alphabetic() {
+                    for upper in ch.to_uppercase() {
+                        out.push(upper);
+                    }
+                    *at_word_start = false;
+                } else {
+                    out.push(ch);
+                    *at_word_start = false;
+                }
+            }
+            out
+        }
+    }
+}
+
+/// One span validation failure (A6b D3): the offending span index and a
+/// human-readable reason. The layout gate turns each into a LUMV0906 error
+/// before measurement, so an ops-injected scene with invalid spans never
+/// reaches partial rendering.
+#[derive(Clone, Debug, PartialEq)]
+pub struct SpanValidationError {
+    pub index: usize,
+    pub reason: String,
+}
+
+/// Validate a node's spans against its `content` (A6b D3). Errors: a span that
+/// is out of bounds, has `start >= end`, starts or ends off a char boundary, is
+/// unsorted or overlaps its predecessor, or carries a gradient fill (Solid/Token
+/// only). Empty spans validate clean. DSL-authored spans are valid by
+/// construction; this gate exists for ops-injected spans.
+pub fn span_validation_errors(content: &str, spans: &[TextSpan]) -> Vec<SpanValidationError> {
+    let mut errors = Vec::new();
+    let len = content.len();
+    let mut prev_end: Option<usize> = None;
+    for (index, span) in spans.iter().enumerate() {
+        if span.start >= span.end {
+            errors.push(SpanValidationError {
+                index,
+                reason: format!(
+                    "start {} is not before end {} (empty or inverted range)",
+                    span.start, span.end
+                ),
+            });
+        }
+        if span.start > len || span.end > len {
+            errors.push(SpanValidationError {
+                index,
+                reason: format!(
+                    "range {}..{} is out of bounds for content of {} bytes",
+                    span.start, span.end, len
+                ),
+            });
+        } else {
+            if !content.is_char_boundary(span.start) {
+                errors.push(SpanValidationError {
+                    index,
+                    reason: format!("start {} is not on a UTF-8 char boundary", span.start),
+                });
+            }
+            if !content.is_char_boundary(span.end) {
+                errors.push(SpanValidationError {
+                    index,
+                    reason: format!("end {} is not on a UTF-8 char boundary", span.end),
+                });
+            }
+        }
+        if let Some(prev_end) = prev_end {
+            if span.start < prev_end {
+                errors.push(SpanValidationError {
+                    index,
+                    reason: format!(
+                        "start {} overlaps or is unsorted against the previous span ending at {}",
+                        span.start, prev_end
+                    ),
+                });
+            }
+        }
+        prev_end = Some(span.end.max(prev_end.unwrap_or(0)));
+        if matches!(
+            span.fill,
+            Some(Paint::LinearGradient { .. }) | Some(Paint::RadialGradient { .. })
+        ) {
+            errors.push(SpanValidationError {
+                index,
+                reason: "span fill must be a solid color or token, not a gradient".to_owned(),
+            });
+        }
+    }
+    errors
 }
 
 /// Which token bindings an edit explicitly authored. Explicit tokens are

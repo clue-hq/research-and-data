@@ -90,6 +90,8 @@ pub enum EffectFeature {
     TextTransform,
     TextEllipsis,
     ParagraphSpacing,
+    /// A6b rich-text spans (D7).
+    RichTextSpans,
 }
 
 impl EffectFeature {
@@ -113,6 +115,7 @@ impl EffectFeature {
             Self::TextTransform => "text case transform",
             Self::TextEllipsis => "text ellipsis truncation",
             Self::ParagraphSpacing => "paragraph spacing",
+            Self::RichTextSpans => "rich-text spans",
         }
     }
 }
@@ -169,7 +172,8 @@ impl RendererEffectSupport {
                 | EffectFeature::TextDecoration
                 | EffectFeature::TextTransform
                 | EffectFeature::TextEllipsis
-                | EffectFeature::ParagraphSpacing => EffectSupportLevel::Unsupported,
+                | EffectFeature::ParagraphSpacing
+                | EffectFeature::RichTextSpans => EffectSupportLevel::Unsupported,
                 _ => EffectSupportLevel::Native,
             },
             // PDF V0 is solid-paint-only: the first solid fill/stroke
@@ -191,7 +195,10 @@ impl RendererEffectSupport {
                 // PDF renders neither text strokes nor decoration (loud
                 // per-node advisories emitted at export, D2/D5).
                 | EffectFeature::TextStroke
-                | EffectFeature::TextDecoration => EffectSupportLevel::Unsupported,
+                | EffectFeature::TextDecoration
+                // PDF renders base text only; span styling degrades with a
+                // loud per-node advisory (LUME0424) at export, D7.
+                | EffectFeature::RichTextSpans => EffectSupportLevel::Unsupported,
                 // Case transform, ellipsis, and paragraph spacing are carried
                 // by the measured lines PDF already consumes — string-level /
                 // measurer-owned, so Native.
@@ -308,6 +315,10 @@ pub fn effect_features_for_node(node: &Node) -> Vec<EffectFeature> {
         }
         if text.paragraph_spacing > 0.0 {
             features.push(EffectFeature::ParagraphSpacing);
+        }
+        // A6b D7: detection is simply the presence of any span.
+        if !text.spans.is_empty() {
+            features.push(EffectFeature::RichTextSpans);
         }
     }
     features

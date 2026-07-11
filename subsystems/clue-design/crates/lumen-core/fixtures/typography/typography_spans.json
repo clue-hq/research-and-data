@@ -1,0 +1,205 @@
+{
+ "schema_version": 1,
+ "assets": {},
+ "export_profiles": [
+  {
+   "name": "agent_png",
+   "format": "png",
+   "pdf_intent": null,
+   "raster": {
+    "scale": 1.0,
+    "dpi": 96
+   },
+   "include_bleed": false,
+   "embed_fonts": false
+  }
+ ],
+ "meta": {
+  "id": "doc_typography_spans",
+  "title": "Rich-text spans showcase",
+  "artifact_type": "card",
+  "medium": "digital",
+  "brand_kit": null,
+  "status": {
+   "kind": "draft"
+  }
+ },
+ "nodes": {
+  "eyebrow": {
+   "id": "eyebrow",
+   "name": null,
+   "kind": {
+    "kind": "text",
+    "content": "incident intelligence",
+    "font_family": "Inter",
+    "font_size": 13.0,
+    "font_weight": 700,
+    "align": "left",
+    "text_transform": "uppercase",
+    "letter_spacing": 3.0
+   },
+   "transform": {
+    "x": 24.0,
+    "y": 24.0,
+    "rotation": 0.0,
+    "skew_x": 0.0,
+    "skew_y": 0.0,
+    "flip_x": false,
+    "flip_y": false
+   },
+   "size": {
+    "width": {
+     "kind": "fixed",
+     "value": 312.0
+    },
+    "height": {
+     "kind": "fixed",
+     "value": 20.0
+    }
+   },
+   "children": [],
+   "fills": [
+    {
+     "id": "f_eyebrow",
+     "paint": {
+      "kind": "solid",
+      "color": {
+       "kind": "hex",
+       "value": "#e11d48"
+      }
+     }
+    }
+   ],
+   "strokes": [],
+   "corner": {
+    "top_left": 0.0,
+    "top_right": 0.0,
+    "bottom_right": 0.0,
+    "bottom_left": 0.0
+   },
+   "opacity": 1.0,
+   "clip": false,
+   "layout": null,
+   "computed": null,
+   "locked": false
+  },
+  "headline": {
+   "id": "headline",
+   "name": null,
+   "kind": {
+    "kind": "text",
+    "content": "Every outage, mapped before it spreads.",
+    "font_family": "Inter",
+    "font_size": 30.0,
+    "font_weight": 600,
+    "align": "left",
+    "wrap": "wrap",
+    "line_height": 1.15,
+    "spans": [
+     {
+      "start": 6,
+      "end": 12,
+      "fill": {
+       "kind": "solid",
+       "color": {
+        "kind": "hex",
+        "value": "#e11d48"
+       }
+      }
+     },
+     {
+      "start": 14,
+      "end": 20,
+      "font_weight": 800
+     },
+     {
+      "start": 31,
+      "end": 38,
+      "underline": true
+     }
+    ]
+   },
+   "transform": {
+    "x": 24.0,
+    "y": 52.0,
+    "rotation": 0.0,
+    "skew_x": 0.0,
+    "skew_y": 0.0,
+    "flip_x": false,
+    "flip_y": false
+   },
+   "size": {
+    "width": {
+     "kind": "fixed",
+     "value": 312.0
+    },
+    "height": {
+     "kind": "fixed",
+     "value": 120.0
+    }
+   },
+   "children": [],
+   "fills": [
+    {
+     "id": "f_headline",
+     "paint": {
+      "kind": "solid",
+      "color": {
+       "kind": "hex",
+       "value": "#111827"
+      }
+     }
+    }
+   ],
+   "strokes": [],
+   "corner": {
+    "top_left": 0.0,
+    "top_right": 0.0,
+    "bottom_right": 0.0,
+    "bottom_left": 0.0
+   },
+   "opacity": 1.0,
+   "clip": false,
+   "layout": null,
+   "computed": null,
+   "locked": false
+  }
+ },
+ "pages": {
+  "page_spans": {
+   "id": "page_spans",
+   "name": "Rich-text spans",
+   "size": {
+    "width": 360.0,
+    "height": 200.0,
+    "unit": "px",
+    "preset": "custom",
+    "orientation": "landscape"
+   },
+   "bleed": null,
+   "safe_area": {
+    "x": 12.0,
+    "y": 12.0,
+    "width": 336.0,
+    "height": 176.0
+   },
+   "background": [
+    {
+     "id": "bg",
+     "paint": {
+      "kind": "solid",
+      "color": {
+       "kind": "hex",
+       "value": "#fbfbfd"
+      }
+     }
+    }
+   ],
+   "children": [
+    "eyebrow",
+    "headline"
+   ]
+  }
+ },
+ "slots": {}
+}

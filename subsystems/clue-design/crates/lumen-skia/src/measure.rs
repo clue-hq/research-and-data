@@ -22,12 +22,13 @@
 
 use crate::fonts::FontManager;
 use lumen_core::{
-    line_height_px, Diagnostic, DiagnosticSubject, Phase, TextDirection as LumenTextDirection,
-    TextLineBox, TextMeasureInput, TextMeasureOutput, TextMeasurer, TextWrap,
+    line_height_px, normalize_content_mapped, transform_segments, Diagnostic, DiagnosticSubject,
+    Phase, TextDirection as LumenTextDirection, TextLineBox, TextMeasureInput, TextMeasureOutput,
+    TextMeasurer, TextRunBox, TextWrap,
 };
 use skia_safe::textlayout::{
-    Paragraph, ParagraphBuilder, ParagraphStyle, TextAlign as SkTextAlign,
-    TextDecoration, TextDirection as SkTextDirection, TextStyle,
+    Paragraph, ParagraphBuilder, ParagraphStyle, RectHeightStyle, RectWidthStyle,
+    TextAlign as SkTextAlign, TextDecoration, TextDirection as SkTextDirection, TextStyle,
 };
 use skia_safe::{Color as SkColor, FontStyle, Paint as SkPaint};
 
@@ -74,6 +75,23 @@ pub(crate) struct ParagraphRequest<'a> {
     /// A6a D3: request SkParagraph's native "…" ellipsis (max_lines cut or,
     /// when laid out at the box width, NoWrap single-line overflow).
     pub truncate: bool,
+    /// A6b D6/D7: when `Some`, the paragraph is built from these per-run styled
+    /// segments (`push_style`/`pop` per segment) instead of the single
+    /// `content` + scalar-style path. `None` keeps the pre-A6b construction
+    /// byte-identical. The scalar `content`/`font_weight`/`underline`/
+    /// `strikethrough`/`foreground` fields are ignored when segments are set.
+    pub segments: Option<Vec<ParagraphSegment>>,
+}
+
+/// A6b: one styled run for the segmented `build_paragraph` path. Family, size,
+/// letter-spacing and line-height stay node-level (per-span variants are
+/// deferred); only weight, decoration, and foreground differ per run.
+pub(crate) struct ParagraphSegment {
+    pub text: String,
+    pub font_weight: u16,
+    pub underline: bool,
+    pub strikethrough: bool,
+    pub foreground: SkPaint,
 }
 
 /// Mirror the heuristic's hard-break handling: literal `\n` sequences and
@@ -169,37 +187,50 @@ pub(crate) fn font_diagnostics(
 /// (A2) and painting (A3): same style mapping, same font collection.
 pub(crate) fn build_paragraph(request: &ParagraphRequest<'_>, fonts: &FontManager) -> Paragraph {
     fonts.with_collection(|collection| {
-        let mut text_style = TextStyle::new();
-        text_style.set_font_families(&[request.font_family]);
-        text_style.set_font_size(request.font_size as f32);
-        text_style.set_font_style(FontStyle::new(
-            (request.font_weight as i32).into(),
-            skia_safe::font_style::Width::NORMAL,
-            skia_safe::font_style::Slant::Upright,
-        ));
-        text_style.set_letter_spacing(request.letter_spacing as f32);
-        if request.line_height > 0.0 {
-            // Our line-height multiplier model: line box = multiplier * size.
-            text_style.set_height(request.line_height as f32);
-            text_style.set_height_override(true);
-        }
-        // A6a D2: decoration union of the two flags. Color/thickness/position
-        // come from font metrics + the foreground paint (set below), so
-        // gradient-filled text decorates with the same shader natively.
-        if request.underline || request.strikethrough {
-            let mut decoration = TextDecoration::NO_DECORATION;
-            if request.underline {
-                decoration |= TextDecoration::UNDERLINE;
+        // One style factory for the base style and every A6b segment style, so
+        // family/size/letter-spacing/line-height are identical across runs and
+        // only weight/decoration/foreground vary.
+        let make_style = |font_weight: u16, underline: bool, strikethrough: bool, fg: &SkPaint| {
+            let mut text_style = TextStyle::new();
+            text_style.set_font_families(&[request.font_family]);
+            text_style.set_font_size(request.font_size as f32);
+            text_style.set_font_style(FontStyle::new(
+                (font_weight as i32).into(),
+                skia_safe::font_style::Width::NORMAL,
+                skia_safe::font_style::Slant::Upright,
+            ));
+            text_style.set_letter_spacing(request.letter_spacing as f32);
+            if request.line_height > 0.0 {
+                // Our line-height multiplier model: line box = multiplier * size.
+                text_style.set_height(request.line_height as f32);
+                text_style.set_height_override(true);
             }
-            if request.strikethrough {
-                decoration |= TextDecoration::LINE_THROUGH;
+            // A6a D2: decoration union of the two flags. Color/thickness/position
+            // come from font metrics + the foreground paint, so gradient-filled
+            // text decorates with the same shader natively.
+            if underline || strikethrough {
+                let mut decoration = TextDecoration::NO_DECORATION;
+                if underline {
+                    decoration |= TextDecoration::UNDERLINE;
+                }
+                if strikethrough {
+                    decoration |= TextDecoration::LINE_THROUGH;
+                }
+                text_style.set_decoration_type(decoration);
             }
-            text_style.set_decoration_type(decoration);
-        }
-        text_style.set_foreground_paint(&request.foreground);
+            text_style.set_foreground_paint(fg);
+            text_style
+        };
+
+        let base_style = make_style(
+            request.font_weight,
+            request.underline,
+            request.strikethrough,
+            &request.foreground,
+        );
 
         let mut paragraph_style = ParagraphStyle::new();
-        paragraph_style.set_text_style(&text_style);
+        paragraph_style.set_text_style(&base_style);
         paragraph_style.set_text_align(request.align);
         paragraph_style.set_text_direction(match request.direction {
             LumenTextDirection::Rtl => SkTextDirection::RTL,
@@ -218,7 +249,26 @@ pub(crate) fn build_paragraph(request: &ParagraphRequest<'_>, fonts: &FontManage
         }
 
         let mut builder = ParagraphBuilder::new(&paragraph_style, collection.clone());
-        builder.add_text(request.content);
+        match &request.segments {
+            // A6b: styled runs — push a per-segment style (weight/decoration/
+            // foreground) around each segment's text.
+            Some(segments) => {
+                for segment in segments {
+                    let style = make_style(
+                        segment.font_weight,
+                        segment.underline,
+                        segment.strikethrough,
+                        &segment.foreground,
+                    );
+                    builder.push_style(&style);
+                    builder.add_text(&segment.text);
+                    builder.pop();
+                }
+            }
+            None => {
+                builder.add_text(request.content);
+            }
+        }
         builder.build()
     })
 }
@@ -285,6 +335,7 @@ impl SkiaTextMeasurer {
                     underline: false,
                     strikethrough: false,
                     truncate: false,
+                    segments: None,
                 },
                 &self.fonts,
             );
@@ -305,6 +356,7 @@ impl SkiaTextMeasurer {
                     width: metrics.width,
                     height: metrics.height,
                     baseline: paragraph_top + metrics.baseline,
+                    runs: Vec::new(),
                 });
             }
             cursor_y += f64::from(paragraph.height());
@@ -444,11 +496,216 @@ impl SkiaTextMeasurer {
                 underline: false,
                 strikethrough: false,
                 truncate: false,
+                segments: None,
             },
             &self.fonts,
         );
         paragraph.layout(UNBOUNDED_LAYOUT_WIDTH as f32);
         f64::from(paragraph.longest_line())
+    }
+
+    /// A6b D6: measure spanned text as ONE segmented paragraph — weight-span
+    /// overrides change shaping widths, so the styles must be in the measured
+    /// paragraph. Per (line × segment) run boxes come from
+    /// `get_rects_for_range`; a run's `x`/`width` are relative to the line's
+    /// left edge (left-aligned layout), so the renderer can apply alignment to
+    /// the whole line without re-shifting runs.
+    fn measure_spanned(
+        &self,
+        input: &TextMeasureInput,
+        family: &str,
+        line_height_px: f64,
+        diagnostics: Vec<Diagnostic>,
+    ) -> TextMeasureOutput {
+        let (normalized, map) = normalize_content_mapped(&input.content);
+        let boundaries: Vec<(usize, usize)> = input
+            .spans
+            .iter()
+            .map(|span| {
+                let start = map.get(span.start).copied().unwrap_or(normalized.len());
+                let end = map.get(span.end).copied().unwrap_or(normalized.len());
+                (start.min(end), start.max(end))
+            })
+            .collect();
+        let core_segments = transform_segments(&normalized, &boundaries, input.text_transform);
+
+        // Concatenated transformed content + each segment's UTF-16 range in it
+        // (SkParagraph indices are UTF-16 code units) + the styled ParagraphSegments.
+        let mut concatenated = String::new();
+        let mut segment_ranges: Vec<(usize, usize, Option<usize>)> = Vec::new();
+        let mut para_segments: Vec<ParagraphSegment> = Vec::new();
+        let mut u16_cursor = 0usize;
+        for segment in &core_segments {
+            let seg_u16 = segment.text.encode_utf16().count();
+            segment_ranges.push((u16_cursor, u16_cursor + seg_u16, segment.span));
+            u16_cursor += seg_u16;
+            concatenated.push_str(&segment.text);
+            let weight = segment
+                .span
+                .and_then(|index| input.spans.get(index))
+                .and_then(|span| span.font_weight)
+                .unwrap_or(input.font_weight);
+            para_segments.push(ParagraphSegment {
+                text: segment.text.clone(),
+                font_weight: weight,
+                // Decoration never changes measured geometry (only paint).
+                underline: false,
+                strikethrough: false,
+                foreground: default_foreground(),
+            });
+        }
+
+        let max_width = input.max_width.filter(|width| *width > 0.0);
+        if concatenated.is_empty() {
+            let line = TextLineBox {
+                text: String::new(),
+                x: 0.0,
+                y: 0.0,
+                width: 0.0,
+                height: line_height_px,
+                baseline: input.font_size,
+                runs: Vec::new(),
+            };
+            return TextMeasureOutput {
+                width: 0.0,
+                height: line_height_px,
+                line_height_px,
+                line_count: 1,
+                lines: vec![line],
+                overflow_x: false,
+                overflow_y: input
+                    .max_height
+                    .is_some_and(|bound| line_height_px > bound + OVERFLOW_EPSILON),
+                exceeds_max_lines: false,
+                diagnostics,
+            };
+        }
+
+        let mut paragraph = build_paragraph(
+            &ParagraphRequest {
+                content: &concatenated,
+                font_family: family,
+                font_size: input.font_size,
+                font_weight: input.font_weight,
+                line_height: input.line_height,
+                letter_spacing: input.letter_spacing,
+                max_lines: input.max_lines,
+                direction: input.direction.clone(),
+                align: SkTextAlign::Left,
+                foreground: default_foreground(),
+                underline: false,
+                strikethrough: false,
+                truncate: false,
+                segments: Some(para_segments),
+            },
+            &self.fonts,
+        );
+        paragraph.layout(wrap_layout_width(&input.wrap, max_width) as f32);
+
+        let utf16_to_byte = utf16_byte_offsets(&concatenated);
+        let mut lines: Vec<TextLineBox> = Vec::new();
+        for metrics in paragraph.get_line_metrics() {
+            let line_start = metrics.start_index;
+            let line_end = metrics.end_excluding_whitespaces;
+            let text = line_text(&concatenated, &utf16_to_byte, line_start, line_end);
+            let mut runs: Vec<TextRunBox> = Vec::new();
+            for (seg_start, seg_end, span) in &segment_ranges {
+                let run_start = (*seg_start).max(line_start);
+                let run_end = (*seg_end).min(line_end);
+                if run_start >= run_end {
+                    continue;
+                }
+                let rects = paragraph.get_rects_for_range(
+                    run_start..run_end,
+                    RectHeightStyle::Tight,
+                    RectWidthStyle::Tight,
+                );
+                if rects.is_empty() {
+                    continue;
+                }
+                let mut left = f32::MAX;
+                let mut right = f32::MIN;
+                for text_box in &rects {
+                    left = left.min(text_box.rect.left);
+                    right = right.max(text_box.rect.right);
+                }
+                runs.push(TextRunBox {
+                    text: line_text(&concatenated, &utf16_to_byte, run_start, run_end),
+                    x: f64::from(left) - metrics.left,
+                    width: f64::from(right - left),
+                    span: *span,
+                });
+            }
+            runs.sort_by(|a, b| a.x.partial_cmp(&b.x).unwrap_or(std::cmp::Ordering::Equal));
+            lines.push(TextLineBox {
+                text,
+                x: metrics.left,
+                y: metrics.baseline - metrics.ascent,
+                width: metrics.width,
+                height: metrics.height,
+                baseline: metrics.baseline,
+                runs,
+            });
+        }
+
+        let exceeds_max_lines = paragraph.did_exceed_max_lines();
+        let mut measured_width = lines.iter().map(|line| line.width).fold(0.0, f64::max);
+        let overflow_x = input
+            .max_width
+            .is_some_and(|bound| measured_width > bound + OVERFLOW_EPSILON);
+
+        // A6b: land the ellipsis on the LAST run of the last visible line when
+        // truncation cut content (max_lines cut, or NoWrap overflow).
+        if input.truncate
+            && (exceeds_max_lines || (matches!(input.wrap, TextWrap::NoWrap) && overflow_x))
+        {
+            if let Some(last) = lines.last_mut() {
+                self.append_ellipsis_run(last, input, family);
+            }
+            measured_width = lines.iter().map(|line| line.width).fold(0.0, f64::max);
+        }
+
+        let measured_height = f64::from(paragraph.height());
+        let width = max_width
+            .filter(|_| matches!(input.wrap, TextWrap::Wrap))
+            .map(|bound| measured_width.min(bound))
+            .unwrap_or(measured_width);
+
+        TextMeasureOutput {
+            width,
+            height: measured_height,
+            line_height_px,
+            line_count: lines.len() as u16,
+            overflow_x,
+            overflow_y: input
+                .max_height
+                .is_some_and(|bound| measured_height > bound + OVERFLOW_EPSILON),
+            exceeds_max_lines,
+            lines,
+            diagnostics,
+        }
+    }
+
+    /// A6b: append U+2026 to the last run of a line and re-account its width
+    /// (sanity-level; the accurate per-run refit is deferred with spans+truncate).
+    fn append_ellipsis_run(&self, line: &mut TextLineBox, input: &TextMeasureInput, family: &str) {
+        let ellipsis_width = self.line_width(family, input, "…");
+        if let Some(last) = line.runs.last_mut() {
+            if last.text.ends_with('…') {
+                return;
+            }
+            last.text.push('…');
+            last.width += ellipsis_width;
+        } else {
+            line.runs.push(TextRunBox {
+                text: "…".to_owned(),
+                x: 0.0,
+                width: ellipsis_width,
+                span: None,
+            });
+        }
+        line.width += ellipsis_width;
+        line.text.push('…');
     }
 }
 
@@ -474,6 +731,15 @@ impl TextMeasurer for SkiaTextMeasurer {
             &content,
             None,
         );
+
+        // A6b D6: rich-text spans take the segmented run path (weight-span
+        // shaping changes widths, so styles must be in the measured paragraph).
+        // Only reached when spans exist, so the spanless paths below stay
+        // byte-identical to pre-A6b. (Paragraph stacking is not composed with
+        // spans in v1 — the segmented path hard-breaks on `\n` natively.)
+        if !input.spans.is_empty() {
+            return self.measure_spanned(input, &resolution.family, line_height_px, diagnostics);
+        }
 
         // A6a D4: paragraph stacking is ACTIVE only when a positive, finite
         // gap meets an actual `\n` break; otherwise the single-paragraph path
@@ -505,6 +771,7 @@ impl TextMeasurer for SkiaTextMeasurer {
                 width: 0.0,
                 height: line_height_px,
                 baseline: input.font_size,
+                runs: Vec::new(),
             };
             return TextMeasureOutput {
                 width: 0.0,
@@ -546,6 +813,7 @@ impl TextMeasurer for SkiaTextMeasurer {
                 underline: false,
                 strikethrough: false,
                 truncate: false,
+                segments: None,
             },
             &self.fonts,
         );
@@ -568,6 +836,7 @@ impl TextMeasurer for SkiaTextMeasurer {
                 width: metrics.width,
                 height: metrics.height,
                 baseline,
+                runs: Vec::new(),
             });
         }
 
@@ -684,6 +953,7 @@ mod glyph_fallback_tests {
             text_transform: lumen_core::TextTransform::None,
             truncate: false,
             paragraph_spacing: 0.0,
+            spans: Vec::new(),
         }
     }
 

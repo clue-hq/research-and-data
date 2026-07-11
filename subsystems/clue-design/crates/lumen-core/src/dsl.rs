@@ -16,7 +16,7 @@ use crate::{
     PagePreset, PageSizeInput, Paint, PaintId, ParentRef, PdfIntent, Phase, PositionMode,
     RasterScale, Rect, RelativePlacement, ReplaceNodeRequest, ReplaceSlotPolicy, Scene, SizeSpec,
     Slot, SlotEditPatch, SlotId, SlotKey, Stroke, StrokeAlign, StrokeCap, StrokeJoin, TextAlign,
-    TextDirection, TextEditPatch, TextNode, TextTransform, TextWrap, Unit, VectorNode,
+    TextDirection, TextEditPatch, TextNode, TextSpan, TextTransform, TextWrap, Unit, VectorNode,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
@@ -445,6 +445,8 @@ pub enum DslProperty {
     Truncate(bool),
     /// A6a D4: extra vertical gap (px) at each `\n` paragraph break.
     ParagraphSpacing(f64),
+    /// A6b D2: one `span(...)` property — the Nth styles the Nth `[[…]]` run.
+    Span(DslSpan),
     Grow(DslScalar),
     TextStyleToken(String),
     TextAlignment(TextAlign),
@@ -518,6 +520,17 @@ pub enum DslDimension {
 pub struct DslFill {
     pub id: Option<PaintId>,
     pub paint: Paint,
+}
+
+/// A6b D2: one parsed `span(...)` property — the override channels for the Nth
+/// `[[…]]` run. `None` channels inherit the node. Reconciled with the content
+/// markers in `apply_properties` once the final content is known.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct DslSpan {
+    pub fill: Option<Paint>,
+    pub font_weight: Option<u16>,
+    pub underline: Option<bool>,
+    pub strikethrough: Option<bool>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -3379,7 +3392,12 @@ fn node_edit_patch_from_properties(
                     "For a node's declared off-canvas intent use bleed(true); set the print bleed on a #page:page_id modify line.",
                 ));
             }
-            DslProperty::PageSize(_)
+            // A6b: span() authoring is a create-line feature (D2 reconciles the
+            // [[…]] content markers when the node is first materialized). On a
+            // modify line the content/marker relationship is ambiguous, so span
+            // editing via DSL modify is deferred (ops carry span edits directly).
+            DslProperty::Span(_)
+            | DslProperty::PageSize(_)
             | DslProperty::PageBackground(_)
             | DslProperty::SafeArea(_)
             | DslProperty::Slot(_)
@@ -4145,6 +4163,9 @@ fn parse_property_token(
                 line_number,
                 column,
             )?)]
+        }
+        "span" => {
+            vec![DslProperty::Span(parse_span(&call, line_number, column)?)]
         }
         "slot" => {
             expect_arg_count(&call, 1, line_number)?;
@@ -5305,6 +5326,9 @@ fn apply_properties(
                 ));
             }
             DslProperty::Slot(_) => {}
+            // A6b D2: span() properties are reconciled with the content markers
+            // in a post-pass below (once the final content is known).
+            DslProperty::Span(_) => {}
             DslProperty::TextAppend(_) | DslProperty::TextPrepend(_) => {
                 diagnostics.push(warning_diag(
                     line_number,
@@ -5334,6 +5358,11 @@ fn apply_properties(
             }
         }
     }
+
+    // A6b D2: reconcile [[…]] content markers with span() properties in a
+    // post-pass, so the marker strip sees the final content and the offsets
+    // are computed on the stored string. No span() ⇒ no-op (literal [[).
+    apply_text_spans(node, properties, line_number, diagnostics);
 }
 
 fn ensure_layout(node: &mut Node) -> &mut AutoLayoutProps {
@@ -6318,6 +6347,185 @@ fn parse_text_transform(
             "Use none, upper|uppercase, lower|lowercase, or title.",
         )),
     }
+}
+
+/// A6b D2: parse one `span(...)` property into its override channels. Args are
+/// nested calls: `fill(#hex)`/`fill($token)`, `weight(n)`, `underline(bool)`,
+/// `strike(bool)`. Empty `span()` is LUMD0273; an unknown nested call is
+/// LUMD0212 (the shared unknown-property code).
+fn parse_span(call: &Call, line_number: usize, column: usize) -> Result<DslSpan, DslDiagnostic> {
+    let has_arg = call.args.iter().any(|arg| !arg.trim().is_empty());
+    if !has_arg {
+        return Err(error_diag(
+            line_number,
+            column,
+            "span".len(),
+            "LUMD0273",
+            "span(...) needs at least one channel",
+            "Use span(fill(#hex)), span(fill($token)), span(weight(700)), span(underline(true)), or span(strike(true)).",
+        ));
+    }
+    let mut span = DslSpan::default();
+    for arg in &call.args {
+        let arg = arg.trim();
+        if arg.is_empty() {
+            continue;
+        }
+        let nested = parse_call(arg).ok_or_else(|| {
+            error_diag(
+                line_number,
+                column,
+                arg.len().max(1),
+                "LUMD0273",
+                format!("malformed span channel {arg}"),
+                "Each span channel is a call: fill(#hex), weight(700), underline(true), strike(true).",
+            )
+        })?;
+        match nested.name.as_str() {
+            "fill" => {
+                expect_arg_count(&nested, 1, line_number)?;
+                span.fill = Some(parse_paint(&nested.args[0], line_number, column)?);
+            }
+            "weight" => {
+                expect_arg_count(&nested, 1, line_number)?;
+                span.font_weight = Some(parse_u16(&nested.args[0], line_number, column)?);
+            }
+            "underline" => {
+                expect_arg_count(&nested, 1, line_number)?;
+                span.underline = Some(parse_bool(&nested.args[0], line_number, column)?);
+            }
+            "strike" | "strikethrough" => {
+                expect_arg_count(&nested, 1, line_number)?;
+                span.strikethrough = Some(parse_bool(&nested.args[0], line_number, column)?);
+            }
+            other => {
+                return Err(error_diag(
+                    line_number,
+                    column,
+                    other.len().max(1),
+                    "LUMD0212",
+                    format!("unknown span channel {other}(...)"),
+                    "Span channels are fill(...), weight(...), underline(...), strike(...).",
+                ));
+            }
+        }
+    }
+    Ok(span)
+}
+
+/// A6b D2: strip `[[…]]` run markers from `content`, returning the clean string
+/// and each run's byte range in it (in order). Nesting `[[` inside a run, or an
+/// unclosed `[[`, is a compile error (`Err`). Markers are only parsed by the
+/// caller when the element carries a `span(...)` property — without one, `[[`
+/// stays literal content.
+fn parse_span_markers(content: &str) -> Result<(String, Vec<(usize, usize)>), &'static str> {
+    let mut clean = String::with_capacity(content.len());
+    let mut runs: Vec<(usize, usize)> = Vec::new();
+    let mut run_start: Option<usize> = None;
+    let mut rest = content;
+    while !rest.is_empty() {
+        if let Some(after) = rest.strip_prefix("[[") {
+            if run_start.is_some() {
+                return Err("nested [[ inside a run");
+            }
+            run_start = Some(clean.len());
+            rest = after;
+        } else if run_start.is_some() && rest.starts_with("]]") {
+            let start = run_start.take().expect("run open");
+            runs.push((start, clean.len()));
+            rest = &rest["]]".len()..];
+        } else {
+            let ch = rest.chars().next().expect("non-empty");
+            clean.push(ch);
+            rest = &rest[ch.len_utf8()..];
+        }
+    }
+    if run_start.is_some() {
+        return Err("unclosed [[ marker");
+    }
+    Ok((clean, runs))
+}
+
+/// A6b D2: reconcile the `[[…]]` content markers with the parsed `span(...)`
+/// properties for a text node once its final content is known. Only runs when
+/// at least one `span()` is present, so existing scenes with literal `[[` are
+/// untouched. A run/span count mismatch is a LUMD0274 WARNING (authors
+/// iterate): surplus runs render base, surplus spans are ignored.
+fn apply_text_spans(
+    node: &mut Node,
+    properties: &[DslProperty],
+    line_number: usize,
+    diagnostics: &mut Vec<DslDiagnostic>,
+) {
+    let span_props: Vec<&DslSpan> = properties
+        .iter()
+        .filter_map(|property| match property {
+            DslProperty::Span(span) => Some(span),
+            _ => None,
+        })
+        .collect();
+    if span_props.is_empty() {
+        return;
+    }
+
+    let NodeKind::Text(text) = &mut node.kind else {
+        diagnostics.push(warning_diag(
+            line_number,
+            1,
+            node.id.as_str().len(),
+            "LUMD0607",
+            "span(...) only applies to text nodes",
+            "Move span(...) to a text/t element carrying [[…]] run markers.",
+        ));
+        return;
+    };
+
+    let (clean, runs) = match parse_span_markers(&text.content) {
+        Ok(result) => result,
+        Err(reason) => {
+            diagnostics.push(error_diag(
+                line_number,
+                1,
+                node.id.as_str().len(),
+                "LUMD0272",
+                format!("malformed [[…]] span markers: {reason}"),
+                "Each run is a single [[…]] range; runs cannot nest and every [[ must close with ]].",
+            ));
+            return;
+        }
+    };
+    text.content = clean;
+
+    if runs.len() != span_props.len() {
+        diagnostics.push(warning_diag(
+            line_number,
+            1,
+            node.id.as_str().len(),
+            "LUMD0274",
+            format!(
+                "text has {} [[…]] run(s) but {} span() propert(ies); surplus runs render base and surplus span() are ignored",
+                runs.len(),
+                span_props.len()
+            ),
+            "Author one span(...) per [[…]] run, in order.",
+        ));
+    }
+
+    let mut spans = Vec::new();
+    for (index, (start, end)) in runs.iter().enumerate() {
+        let Some(span_prop) = span_props.get(index) else {
+            break;
+        };
+        spans.push(TextSpan {
+            start: *start,
+            end: *end,
+            fill: span_prop.fill.clone(),
+            font_weight: span_prop.font_weight,
+            underline: span_prop.underline,
+            strikethrough: span_prop.strikethrough,
+        });
+    }
+    text.spans = spans;
 }
 
 

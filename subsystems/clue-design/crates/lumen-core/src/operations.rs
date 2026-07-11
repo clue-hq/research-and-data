@@ -617,6 +617,18 @@ impl Scene {
             if fills_changing && !explicit.style {
                 after.style_token = None;
             }
+            // A6b D4 span honesty on the whole-kind path (review fix): a kind
+            // replace that changes `content` while carrying the OLD spans
+            // forward unchanged would leave stale byte offsets silently
+            // mis-highlighting the new string. Identical spans on changed
+            // content are indistinguishable from a stale carry-forward, so
+            // honesty wins: they clear, exactly like clear_stale_tokens above.
+            // A write that re-authors DIFFERENT spans alongside the new
+            // content keeps them (and inverse operations restore cleared
+            // spans on undo).
+            if after.content != before.content && after.spans == before.spans {
+                after.spans.clear();
+            }
         }
         if fills_detach_style {
             if let NodeKind::Text(text) = &mut node.kind {

@@ -2,9 +2,99 @@
 //! depends on them (risk-register item: line-height multiplier mapping).
 
 use lumen_core::{
-    TextDirection, TextMeasureInput, TextMeasureOutput, TextMeasurer, TextTransform, TextWrap,
+    TextDirection, TextMeasureInput, TextMeasureOutput, TextMeasurer, TextSpan, TextTransform,
+    TextWrap,
 };
 use lumen_skia::SkiaTextMeasurer;
+
+/// A6b: a spanned input over the bundled font set.
+fn spanned_input(content: &str, spans: Vec<TextSpan>) -> TextMeasureInput {
+    let mut input = input(content);
+    input.spans = spans;
+    input
+}
+
+fn plain_span(start: usize, end: usize) -> TextSpan {
+    TextSpan {
+        start,
+        end,
+        fill: None,
+        font_weight: None,
+        underline: None,
+        strikethrough: None,
+    }
+}
+
+#[test]
+fn a6b_weight_span_changes_measured_width() {
+    // Bundled Inter ships 400 and 800. The SAME text at weight 800 shapes wider
+    // than at 400, so a weight-span must change the measured run/line width —
+    // proving styles reach the shaper (not just the renderer).
+    let measurer = SkiaTextMeasurer::bundled();
+    let base = measurer.measure(&spanned_input("HEAVY", vec![plain_span(0, 5)]));
+    let heavy = measurer.measure(&spanned_input(
+        "HEAVY",
+        vec![TextSpan {
+            font_weight: Some(800),
+            ..plain_span(0, 5)
+        }],
+    ));
+    assert!(
+        heavy.width > base.width,
+        "weight-800 span must widen the line: {} !> {}",
+        heavy.width,
+        base.width
+    );
+    // The span run itself is wider than the same run at base weight.
+    let base_run = base.lines[0].runs.last().unwrap();
+    let heavy_run = heavy.lines[0].runs.last().unwrap();
+    assert!(heavy_run.width > base_run.width);
+}
+
+#[test]
+fn a6b_runs_partition_the_line_with_ordered_x() {
+    let measurer = SkiaTextMeasurer::bundled();
+    // "Every outage" with "outage" [6,12) as a run.
+    let out = measurer.measure(&spanned_input("Every outage", vec![plain_span(6, 12)]));
+    let line = &out.lines[0];
+    assert!(line.runs.len() >= 2, "base + span runs: {:?}", line.runs);
+    let mut last_right = -1.0;
+    for run in &line.runs {
+        assert!(run.width > 0.0, "run has width: {:?}", run);
+        assert!(run.x >= last_right - 0.5, "runs ordered by x: {:?}", line.runs);
+        last_right = run.x + run.width;
+    }
+    // Exactly one run carries the span.
+    assert_eq!(line.runs.iter().filter(|r| r.span == Some(0)).count(), 1);
+    let span_run = line.runs.iter().find(|r| r.span == Some(0)).unwrap();
+    assert_eq!(span_run.text, "outage");
+    // The span run starts to the right of the base run (x > 0).
+    assert!(span_run.x > 0.0, "span run offset into the line: {:?}", span_run);
+}
+
+#[test]
+fn a6b_spanned_ellipsis_lands_on_last_run() {
+    let measurer = SkiaTextMeasurer::bundled();
+    let mut input = spanned_input("one two three four five six", vec![plain_span(0, 3)]);
+    input.wrap = TextWrap::NoWrap;
+    input.truncate = true;
+    input.max_width = Some(80.0);
+    let out = measurer.measure(&input);
+    let last_run = out.lines.last().unwrap().runs.last().expect("a run");
+    assert!(
+        last_run.text.ends_with('…'),
+        "ellipsis on last run: {:?}",
+        out.lines.last().unwrap().runs
+    );
+}
+
+#[test]
+fn a6b_spanless_measurement_emits_no_runs() {
+    // Regression: the spanless fast path is untouched (empty runs).
+    let measurer = SkiaTextMeasurer::bundled();
+    let out = measurer.measure(&input("plain text"));
+    assert!(out.lines.iter().all(|l| l.runs.is_empty()));
+}
 
 fn input(content: &str) -> TextMeasureInput {
     TextMeasureInput {
@@ -22,6 +112,7 @@ fn input(content: &str) -> TextMeasureInput {
         text_transform: TextTransform::None,
         truncate: false,
         paragraph_spacing: 0.0,
+        spans: Vec::new(),
     }
 }
 

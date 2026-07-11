@@ -9,7 +9,7 @@ use lumen_core::{
     build_modify_operations, Color, DocumentId, EditPatch, EditTargetRef, FieldPatch, Fill, Node,
     NodeEditPatch, NodeId, NodeKind, NodePatch, Operation, OptionalFieldPatch, Orientation, Page,
     PageId, PagePreset, PageSize, Paint, PaintId, ParentRef, Scene, SizeSpec, StackEntryEdit,
-    TextAlign, TextEditPatch, TextNode, Unit,
+    TextAlign, TextEditPatch, TextNode, TextSpan, Unit,
 };
 
 fn square_page() -> Page {
@@ -432,4 +432,181 @@ fn a6_typography_fields_apply_and_are_not_token_channels() {
     assert_eq!(text.style_token, Some("$type.h1".to_owned()));
     assert_eq!(text.font_size_token, Some("$type.size.5xl".to_owned()));
     assert_eq!(text.line_height_token, Some("$type.leading.tight".to_owned()));
+}
+
+// --- A6b D4: span honesty on content edits ---
+
+fn accent_span() -> TextSpan {
+    // "Healthcare paperwork" → accent the first word [0,10).
+    TextSpan {
+        start: 0,
+        end: 10,
+        fill: Some(Paint::Solid {
+            color: Color::Hex {
+                value: "#ff0000".to_owned(),
+            },
+        }),
+        font_weight: None,
+        underline: None,
+        strikethrough: None,
+    }
+}
+
+fn seed_span(scene: &mut Scene) {
+    scene
+        .apply_operation(kind_replace(scene, |text| {
+            text.spans = vec![accent_span()];
+        }))
+        .unwrap();
+}
+
+#[test]
+fn d4_content_edit_without_spans_clears_stale_spans() {
+    let mut scene = scene_with_tokened_headline();
+    seed_span(&mut scene);
+    assert_eq!(headline_text(&scene).spans.len(), 1);
+
+    // A content edit that does NOT re-author spans clears them (stale offsets).
+    let batch = build_modify_operations(
+        &scene,
+        EditTargetRef::Node(NodeId::from("headline")),
+        EditPatch::Node(NodeEditPatch {
+            text: Some(TextEditPatch {
+                content: FieldPatch::Set("Totally different copy".to_owned()),
+                ..TextEditPatch::default()
+            }),
+            ..NodeEditPatch::default()
+        }),
+    )
+    .unwrap();
+    batch.apply_checked(&mut scene).unwrap();
+
+    assert_eq!(headline_text(&scene).content, "Totally different copy");
+    assert!(
+        headline_text(&scene).spans.is_empty(),
+        "content edit must drop stale spans"
+    );
+}
+
+#[test]
+fn d4_content_edit_that_sets_spans_applies_both() {
+    let mut scene = scene_with_tokened_headline();
+    seed_span(&mut scene);
+
+    let replacement = TextSpan {
+        start: 0,
+        end: 3,
+        fill: None,
+        font_weight: Some(700),
+        underline: None,
+        strikethrough: None,
+    };
+    let batch = build_modify_operations(
+        &scene,
+        EditTargetRef::Node(NodeId::from("headline")),
+        EditPatch::Node(NodeEditPatch {
+            text: Some(TextEditPatch {
+                content: FieldPatch::Set("New headline copy".to_owned()),
+                spans: FieldPatch::Set(vec![replacement.clone()]),
+                ..TextEditPatch::default()
+            }),
+            ..NodeEditPatch::default()
+        }),
+    )
+    .unwrap();
+    batch.apply_checked(&mut scene).unwrap();
+
+    assert_eq!(headline_text(&scene).content, "New headline copy");
+    assert_eq!(headline_text(&scene).spans, vec![replacement]);
+}
+
+#[test]
+fn d4_non_content_edit_preserves_spans() {
+    let mut scene = scene_with_tokened_headline();
+    seed_span(&mut scene);
+
+    let batch = build_modify_operations(
+        &scene,
+        EditTargetRef::Node(NodeId::from("headline")),
+        EditPatch::Node(NodeEditPatch {
+            text: Some(TextEditPatch {
+                align: FieldPatch::Set(TextAlign::Center),
+                ..TextEditPatch::default()
+            }),
+            ..NodeEditPatch::default()
+        }),
+    )
+    .unwrap();
+    batch.apply_checked(&mut scene).unwrap();
+
+    // No content change → spans survive.
+    assert_eq!(headline_text(&scene).spans, vec![accent_span()]);
+}
+
+#[test]
+fn d4_undo_restores_cleared_spans() {
+    let mut scene = scene_with_tokened_headline();
+    seed_span(&mut scene);
+
+    let edit = kind_replace(&scene, |text| {
+        text.content = "Rewritten".to_owned();
+        text.spans.clear();
+    });
+    let inverses = scene
+        .invert_operations(std::slice::from_ref(&edit))
+        .unwrap()
+        .expect("update_node is invertible");
+
+    scene.apply_operation(edit).unwrap();
+    assert!(headline_text(&scene).spans.is_empty());
+
+    scene.apply_operations(inverses).unwrap();
+    // Undo restores the whole prior Text kind, spans included.
+    assert_eq!(headline_text(&scene).spans, vec![accent_span()]);
+    assert_eq!(headline_text(&scene).content, "Healthcare paperwork");
+}
+
+#[test]
+fn d4_whole_kind_content_replace_clears_stale_spans_too() {
+    // A6b D4 review fix: the editor's updateTextNode path (whole-kind Set,
+    // NOT TextEditPatch) must apply the same span honesty — a content change
+    // carrying the old spans forward unchanged clears them; a replace that
+    // re-authors DIFFERENT spans alongside the new content keeps them.
+    let mut scene = scene_with_tokened_headline();
+    seed_span(&mut scene);
+    assert_eq!(headline_text(&scene).spans.len(), 1);
+
+    scene
+        .apply_operation(kind_replace(&scene, |text| {
+            text.content = "Totally different copy".to_owned();
+        }))
+        .unwrap();
+    assert!(
+        headline_text(&scene).spans.is_empty(),
+        "whole-kind content replace must drop stale spans"
+    );
+
+    // Re-authoring different spans with the new content keeps them.
+    seed_span(&mut scene);
+    scene
+        .apply_operation(kind_replace(&scene, |text| {
+            text.content = "Fresh copy again".to_owned();
+            text.spans = vec![TextSpan {
+                start: 0,
+                end: 5,
+                fill: None,
+                font_weight: Some(700),
+                underline: None,
+                strikethrough: None,
+            }];
+        }))
+        .unwrap();
+    assert_eq!(headline_text(&scene).spans.len(), 1);
+    assert_eq!(headline_text(&scene).spans[0].end, 5);
+
+    // Non-content whole-kind edits keep spans untouched.
+    scene
+        .apply_operation(kind_replace(&scene, |text| text.font_size = 60.0))
+        .unwrap();
+    assert_eq!(headline_text(&scene).spans.len(), 1);
 }

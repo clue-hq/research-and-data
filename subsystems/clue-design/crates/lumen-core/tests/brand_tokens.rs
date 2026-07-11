@@ -10,7 +10,7 @@ use lumen_core::{
     FontLicense, FontStyle, ImageNode, LogoAsset, LogoColorMode, LogoUsage, LogoVariant, Medium,
     ModeValue, Node, NodeId, NodeKind, NumberToken, NumberTokenValue, NumberUnit, Operation,
     Orientation, Page, PageId, PagePreset, PageSize, Paint, PaintId, PreflightOptions, Rect, Scene,
-    SizeSpec, Stroke, TextAlign, TextNode, TokenAlias, TokenCatalog, TokenChangeKind,
+    SizeSpec, Stroke, TextAlign, TextNode, TextSpan, TokenAlias, TokenCatalog, TokenChangeKind,
     TokenResolutionOptions, TokenStrictness, TypographyToken, TypographyTokenValue, Unit,
 };
 use std::collections::BTreeMap;
@@ -580,6 +580,60 @@ fn resolver_materializes_scene_tokens_without_renderer_semantics() {
             color: Color::Hex { .. }
         }
     ));
+}
+
+#[test]
+fn a6b_span_token_fill_resolves_like_a_node_fill() {
+    // D8: a $token span fill joins the resolution walk exactly like a node
+    // fill — it materializes to a Solid, and its token reference is collected.
+    let brand_kit = acme_brand_kit();
+    let mut scene = tokenized_scene(&brand_kit);
+    {
+        let headline = scene.nodes.get_mut(&NodeId::from("node_headline")).unwrap();
+        let NodeKind::Text(text) = &mut headline.kind else {
+            panic!("expected text node");
+        };
+        text.content = "Brand headline".to_owned();
+        text.spans = vec![TextSpan {
+            start: 0,
+            end: 5,
+            fill: Some(Paint::Token {
+                token: "surface.brand".to_owned(),
+            }),
+            font_weight: None,
+            underline: None,
+            strikethrough: None,
+        }];
+    }
+
+    // The span's token is collected as a scene reference.
+    let references = collect_scene_token_references(&scene);
+    assert!(
+        references.iter().any(|r| r.token == "surface.brand"
+            && r.field.contains("span")),
+        "span fill token is collected: {references:#?}"
+    );
+
+    // Resolution materializes the span fill to a Solid hex (bindings consumed).
+    let report = resolve_scene_tokens(&scene, &brand_kit, &TokenResolutionOptions::default());
+    let headline = report
+        .scene
+        .nodes
+        .get(&NodeId::from("node_headline"))
+        .unwrap();
+    let NodeKind::Text(text) = &headline.kind else {
+        panic!("expected text node");
+    };
+    assert!(
+        matches!(
+            text.spans[0].fill,
+            Some(Paint::Solid {
+                color: Color::Hex { .. }
+            })
+        ),
+        "span fill resolved to Solid: {:?}",
+        text.spans[0].fill
+    );
 }
 
 #[test]

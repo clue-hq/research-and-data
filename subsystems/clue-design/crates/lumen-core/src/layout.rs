@@ -1097,6 +1097,55 @@ impl<'a> LayoutEngine<'a> {
                 );
             }
 
+            // A6b D3: reject invalid ops-injected spans BEFORE measurement so a
+            // scene with an out-of-bounds / overlapping / non-char-boundary /
+            // gradient-filled span never reaches partial rendering. DSL-authored
+            // spans are valid by construction; only the empty guard runs there.
+            if !text.spans.is_empty() {
+                let errors = crate::span_validation_errors(&text.content, &text.spans);
+                if !errors.is_empty() {
+                    for error in errors {
+                        self.diagnostics.push(
+                            Diagnostic::error(
+                                Phase::Layout,
+                                "LUMV0906",
+                                format!(
+                                    "text node {} has an invalid span (#{}): {}",
+                                    node.id, error.index, error.reason
+                                ),
+                                Some(DiagnosticSubject::Node(node.id.clone())),
+                            )
+                            .with_hint(
+                                "Span offsets index the content bytes: keep them in-bounds, char-aligned, start<end, sorted, non-overlapping, and solid/token-filled.",
+                            ),
+                        );
+                    }
+                    continue;
+                }
+                // A6b v1 limitation, loud not silent (review fix): the
+                // segmented span path hard-breaks on `\n` but does not apply
+                // the extra paragraph gap — authored paragraph_spacing is
+                // ignored on spanned text. Advise so the author knows.
+                if text.paragraph_spacing > 0.0
+                    && (text.content.contains('\n') || text.content.contains("\\n"))
+                {
+                    self.diagnostics.push(
+                        Diagnostic::warning(
+                            Phase::Layout,
+                            "LUMV0907",
+                            format!(
+                                "text node {} combines spans with paragraph_spacing; the paragraph gap is not applied to spanned text in v1",
+                                node.id
+                            ),
+                            Some(DiagnosticSubject::Node(node.id.clone())),
+                        )
+                        .with_hint(
+                            "Split the stanzas into separate text nodes, or drop the spans/para_spacing combination.",
+                        ),
+                    );
+                }
+            }
+
             if geometry.layout_bounds.width <= 0.0 || geometry.layout_bounds.height <= 0.0 {
                 self.diagnostics.push(Diagnostic::error(
                     Phase::Layout,
@@ -1899,6 +1948,9 @@ fn text_fit(
         text_transform: text.text_transform,
         truncate: false,
         paragraph_spacing: text.paragraph_spacing,
+        // Slot fixtures substitute a different string than node.content, so the
+        // node's span byte-offsets don't apply to the fixture — measure base.
+        spans: Vec::new(),
     });
 
     TextFit {

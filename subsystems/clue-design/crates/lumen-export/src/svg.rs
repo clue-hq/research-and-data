@@ -444,15 +444,28 @@ impl<'a> SvgPageRenderer<'a> {
             }
             NodeKind::Text(text) => {
                 let paint_attrs = self.text_paint_attrs(node);
-                let anchor = match text.align {
-                    TextAlign::Left | TextAlign::Justify => "start",
-                    TextAlign::Center => "middle",
-                    TextAlign::Right => "end",
+                // A6b D7: a spanned node emits one tspan PER RUN with an absolute
+                // precomputed x, so `text-anchor` must NOT re-shift the runs —
+                // anchor stays `start` and x is 0 on the <text> element. A
+                // spanless node keeps the pre-A6b anchor + single per-line tspan.
+                let spanned = !text.spans.is_empty();
+                let anchor = if spanned {
+                    "start"
+                } else {
+                    match text.align {
+                        TextAlign::Left | TextAlign::Justify => "start",
+                        TextAlign::Center => "middle",
+                        TextAlign::Right => "end",
+                    }
                 };
-                let x = match text.align {
-                    TextAlign::Left | TextAlign::Justify => 0.0,
-                    TextAlign::Center => width / 2.0,
-                    TextAlign::Right => width,
+                let x = if spanned {
+                    0.0
+                } else {
+                    match text.align {
+                        TextAlign::Left | TextAlign::Justify => 0.0,
+                        TextAlign::Center => width / 2.0,
+                        TextAlign::Right => width,
+                    }
                 };
                 let direction = match text.direction {
                     TextDirection::Ltr => "ltr",
@@ -487,18 +500,50 @@ impl<'a> SvgPageRenderer<'a> {
                     (false, true) => " text-decoration=\"line-through\"",
                     (false, false) => "",
                 };
-                let tspans = measured
-                    .lines
-                    .iter()
-                    .map(|line| {
-                        format!(
-                            "<tspan x=\"{}\" y=\"{}\">{}</tspan>",
-                            fmt_num(x),
-                            fmt_num(line.baseline),
-                            escape_text(&line.text)
-                        )
-                    })
-                    .collect::<String>();
+                // A6b D7: per-run tspans (absolute x within the line) when spans
+                // exist; otherwise the pre-A6b single-tspan-per-line markup.
+                let tspans = if spanned {
+                    measured
+                        .lines
+                        .iter()
+                        .map(|line| {
+                            // Runs carry x relative to the line's left edge; the
+                            // line's left edge depends on alignment (the whole
+                            // line is anchored, runs are absolutely placed in it).
+                            let line_left = match text.align {
+                                TextAlign::Left | TextAlign::Justify => 0.0,
+                                TextAlign::Center => (width - line.width) / 2.0,
+                                TextAlign::Right => width - line.width,
+                            };
+                            line.runs
+                                .iter()
+                                .map(|run| {
+                                    let run_attrs = self.text_run_attrs(node, text, run);
+                                    format!(
+                                        "<tspan x=\"{}\" y=\"{}\"{}>{}</tspan>",
+                                        fmt_num(line_left + run.x),
+                                        fmt_num(line.baseline),
+                                        run_attrs,
+                                        escape_text(&run.text)
+                                    )
+                                })
+                                .collect::<String>()
+                        })
+                        .collect::<String>()
+                } else {
+                    measured
+                        .lines
+                        .iter()
+                        .map(|line| {
+                            format!(
+                                "<tspan x=\"{}\" y=\"{}\">{}</tspan>",
+                                fmt_num(x),
+                                fmt_num(line.baseline),
+                                escape_text(&line.text)
+                            )
+                        })
+                        .collect::<String>()
+                };
                 if node.fills.len() > 1 {
                     self.diagnostics.push(
                         Diagnostic::advice(
@@ -780,6 +825,46 @@ impl<'a> SvgPageRenderer<'a> {
         };
 
         format!("{fill_attrs}{stroke_attrs}")
+    }
+
+    /// A6b D7: per-run SVG attrs — `fill`/`font-weight`/`text-decoration` only
+    /// when they differ from the node (base runs inherit the `<text>` attrs).
+    /// Decoration is the union node∪span. A base run (`span == None`) inherits
+    /// everything, so it emits no attrs.
+    fn text_run_attrs(
+        &mut self,
+        node: &Node,
+        text: &lumen_core::TextNode,
+        run: &lumen_core::TextRunBox,
+    ) -> String {
+        let Some(span) = run.span.and_then(|index| text.spans.get(index)) else {
+            return String::new();
+        };
+        let mut attrs = String::new();
+        if let Some(paint) = &span.fill {
+            // Span fills are Solid/Token only (gradients rejected at validation);
+            // resolve like a node fill. An unresolved token diagnoses + renders
+            // "none" through paint_ref, same as the node path.
+            let color = self.paint_ref(paint, &format!("{}-span-fill", node.id), Some(&node.id));
+            attrs.push_str(&format!(" fill=\"{color}\""));
+        }
+        if let Some(weight) = span.font_weight {
+            if weight != text.font_weight {
+                attrs.push_str(&format!(" font-weight=\"{weight}\""));
+            }
+        }
+        let run_underline = text.underline || span.underline.unwrap_or(false);
+        let run_strike = text.strikethrough || span.strikethrough.unwrap_or(false);
+        if (run_underline, run_strike) != (text.underline, text.strikethrough) {
+            let decoration = match (run_underline, run_strike) {
+                (true, true) => "underline line-through",
+                (true, false) => "underline",
+                (false, true) => "line-through",
+                (false, false) => "none",
+            };
+            attrs.push_str(&format!(" text-decoration=\"{decoration}\""));
+        }
+        attrs
     }
 
     /// The SVG stroke attributes for the first solid text stroke, plus

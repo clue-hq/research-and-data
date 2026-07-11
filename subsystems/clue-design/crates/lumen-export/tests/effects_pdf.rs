@@ -268,6 +268,32 @@ fn pdf_degrades_text_decoration_stroke_and_multi_fill_loudly() {
 }
 
 #[test]
+fn pdf_degrades_rich_text_spans_loudly() {
+    // A6b D7: PDF renders base text only; a spanned node advises (LUME0424).
+    let scene = text_scene(
+        lumen_core::scene::TextNode {
+            content: "one two".to_owned(),
+            spans: vec![lumen_core::TextSpan {
+                start: 4,
+                end: 7,
+                fill: Some(solid("#ff0000")),
+                font_weight: Some(800),
+                underline: None,
+                strikethrough: None,
+            }],
+            ..lumen_core::scene::TextNode::default()
+        },
+        vec![Fill { id: PaintId::from("f1"), paint: solid("#111827") }],
+        vec![],
+    );
+    let diagnostics = pdf_diagnostics(&scene);
+    assert!(
+        diagnostics.iter().any(|d| d.code == "LUME0424"),
+        "missing LUME0424: {diagnostics:#?}"
+    );
+}
+
+#[test]
 fn pdf_clean_text_node_emits_no_a6_advisories() {
     let scene = text_scene(
         lumen_core::scene::TextNode {
@@ -280,7 +306,7 @@ fn pdf_clean_text_node_emits_no_a6_advisories() {
         vec![],
     );
     let diagnostics = pdf_diagnostics(&scene);
-    for code in ["LUME0421", "LUME0422", "LUME0423"] {
+    for code in ["LUME0421", "LUME0422", "LUME0423", "LUME0424"] {
         assert!(!diagnostics.iter().any(|d| d.code == code), "{code} should not fire: {diagnostics:#?}");
     }
 }

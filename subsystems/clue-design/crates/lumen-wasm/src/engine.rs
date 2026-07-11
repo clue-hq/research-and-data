@@ -79,6 +79,12 @@ struct ProvidedMeasurement {
     truncate: bool,
     #[serde(default)]
     paragraph_spacing: f64,
+    /// A6b review fix: the bridge carries raw spans so the editor's
+    /// SkParagraph measurement can key spanned nodes — without this the
+    /// engine-side spans digest can never match and spanned text silently
+    /// falls back to the heuristic (which does not soft-wrap spans).
+    #[serde(default)]
+    spans: Vec<lumen_core::TextSpan>,
     width: f64,
     height: f64,
 }
@@ -100,6 +106,7 @@ impl ProvidedMeasurement {
             text_transform: self.text_transform,
             truncate: self.truncate,
             paragraph_spacing: self.paragraph_spacing,
+            spans: self.spans.clone(),
         }
     }
 }

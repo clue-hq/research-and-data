@@ -9,7 +9,7 @@ use crate::operations::{
 use crate::scene::{
     AutoLayoutProps, Color, CornerRadii, Dimension, Effect, ExplicitTextTokens, Fill, LayoutMode,
     Node, NodeKind, PageSize, Paint, ParentRef, PositionMode, Rect, Scene, SizeSpec, Stroke,
-    TextAlign, TextDirection, TextNode, TextTransform, TextWrap, Transform,
+    TextAlign, TextDirection, TextNode, TextSpan, TextTransform, TextWrap, Transform,
 };
 use crate::slots::Slot;
 use serde::{Deserialize, Serialize};
@@ -549,6 +549,12 @@ pub struct TextEditPatch {
     pub strikethrough: FieldPatch<bool>,
     pub truncate: FieldPatch<bool>,
     pub paragraph_spacing: FieldPatch<f64>,
+    /// A6b D4: rich-text spans. A patch that changes `content` without ALSO
+    /// setting `spans` CLEARS spans — stale byte offsets are silent corruption,
+    /// so a content edit that doesn't re-author its spans drops them (undo
+    /// restores the prior spans through the existing inverse mechanism). A patch
+    /// that sets both applies both.
+    pub spans: FieldPatch<Vec<TextSpan>>,
 }
 
 /// One targeted edit against a fill/stroke/effect stack entry, addressed by
@@ -2623,6 +2629,16 @@ fn apply_text_edit_patch(mut text: TextNode, patch: TextEditPatch) -> TextNode {
     apply_field_patch(&mut text.strikethrough, patch.strikethrough);
     apply_field_patch(&mut text.truncate, patch.truncate);
     apply_field_patch(&mut text.paragraph_spacing, patch.paragraph_spacing);
+    // A6b D4: span honesty. A patch that sets spans applies them; otherwise, a
+    // content change makes the existing spans' byte offsets stale garbage, so
+    // they are cleared (silent corruption forbidden). Undo restores them via
+    // the inverse patch, which sets `spans` from the pre-edit snapshot.
+    let content_changed = text.content != before.content;
+    match patch.spans {
+        FieldPatch::Set(spans) => text.spans = spans,
+        FieldPatch::Unchanged if content_changed => text.spans.clear(),
+        FieldPatch::Unchanged => {}
+    }
     text.clear_stale_tokens(&before, explicit);
     text
 }

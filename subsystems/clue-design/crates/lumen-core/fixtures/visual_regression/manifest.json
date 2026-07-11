@@ -31,6 +31,16 @@
       "purpose": "agent_critique",
       "baseline": "crates/lumen-core/fixtures/visual_regression/baselines/typography_v1_agent_png.png",
       "status": "active"
+    },
+    {
+      "id": "typography_spans_agent_png",
+      "scene_fixture": "crates/lumen-core/fixtures/typography/typography_spans.json",
+      "profile": "agent_png",
+      "format": "png",
+      "page_id": "page_spans",
+      "purpose": "agent_critique",
+      "baseline": "crates/lumen-core/fixtures/visual_regression/baselines/typography_spans_agent_png.png",
+      "status": "active"
     }
   ]
 }

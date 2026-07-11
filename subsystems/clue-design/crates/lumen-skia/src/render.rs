@@ -16,13 +16,13 @@
 use crate::fonts::FontManager;
 use crate::measure::{
     build_paragraph, default_foreground, font_diagnostics, normalize_content, ParagraphRequest,
-    UNBOUNDED_LAYOUT_WIDTH,
+    ParagraphSegment, UNBOUNDED_LAYOUT_WIDTH,
 };
 use lumen_core::{
-    page_geometry, paints_out_of_tree, pinned_paint_pass, render_box_for_node, Color, CornerRadii,
-    Diagnostic, DiagnosticSubject, EffectKind, ImageFitMode, ImageNode, Node, NodeId, NodeKind,
-    Page, PageId, Paint, Phase, Scene, Stroke, StrokeAlign, StrokeCap, StrokeJoin, TextAlign,
-    TextNode, TextWrap,
+    normalize_content_mapped, page_geometry, paints_out_of_tree, pinned_paint_pass,
+    render_box_for_node, transform_segments, Color, CornerRadii, Diagnostic, DiagnosticSubject,
+    EffectKind, ImageFitMode, ImageNode, Node, NodeId, NodeKind, Page, PageId, Paint, Phase, Scene,
+    Stroke, StrokeAlign, StrokeCap, StrokeJoin, TextAlign, TextNode, TextWrap,
 };
 use lumen_export::{
     focal_crop_geometry, page_background_token_diagnostics, unresolved_brand_token_diagnostics,
@@ -453,6 +453,27 @@ impl<'a> PagePainter<'a> {
             TextAlign::Right => SkTextAlign::Right,
         };
 
+        // A6b D7: spanned text paints one segmented paragraph (per-run fill /
+        // weight / decoration; stroke pass keeps per-run weight but the single
+        // stroke color). Only reached when spans exist, so the pre-A6b paths
+        // below stay byte-identical. (Spans are not composed with paragraph
+        // stacking in v1 — the segmented paragraph hard-breaks on `\n`.)
+        if !text.spans.is_empty() {
+            self.paint_text_spanned(
+                canvas,
+                node,
+                text,
+                &resolution.family,
+                align,
+                &foreground,
+                stroke_foreground.as_ref(),
+                width,
+                height,
+            );
+            let _ = height;
+            return;
+        }
+
         // A6a D4: paint per-paragraph at stacked offsets when a positive gap
         // meets an actual break; otherwise the single-paragraph fast path is
         // byte-identical to pre-A6a. `max_lines` is a TOTAL cap across the
@@ -556,6 +577,7 @@ impl<'a> PagePainter<'a> {
                 underline: false,
                 strikethrough: false,
                 truncate: false,
+                segments: None,
             },
             self.fonts,
         );
@@ -599,6 +621,7 @@ impl<'a> PagePainter<'a> {
             underline: text.underline,
             strikethrough: text.strikethrough,
             truncate: text.truncate,
+            segments: None,
         };
 
         // Resolve the layout width + horizontal placement exactly as the
@@ -640,6 +663,122 @@ impl<'a> PagePainter<'a> {
         }
         fill.paint(canvas, Point::new(x, y_offset));
         (fill.height(), fill.line_number())
+    }
+
+    /// A6b D7: paint spanned text as one segmented paragraph. Fill pass styles
+    /// each run with its resolved fill (span fill, else the node fill), weight
+    /// (span override, else node weight), and decoration (node ∪ span). The
+    /// stroke pass keeps per-run WEIGHT so the outline matches the filled glyph
+    /// shape, but paints every run in the single stroke color — span FILLS only
+    /// affect the fill pass (D7). Single-paragraph placement mirrors the A6a
+    /// non-span path (Wrap/NoWrap/NoWrap+truncate).
+    #[allow(clippy::too_many_arguments)]
+    fn paint_text_spanned(
+        &mut self,
+        canvas: &Canvas,
+        node: &Node,
+        text: &TextNode,
+        family: &str,
+        align: SkTextAlign,
+        base_fill: &SkPaint,
+        stroke_foreground: Option<&SkPaint>,
+        box_width: f64,
+        box_height: f64,
+    ) {
+        let (normalized, map) = normalize_content_mapped(&text.content);
+        let boundaries: Vec<(usize, usize)> = text
+            .spans
+            .iter()
+            .map(|span| {
+                let start = map.get(span.start).copied().unwrap_or(normalized.len());
+                let end = map.get(span.end).copied().unwrap_or(normalized.len());
+                (start.min(end), start.max(end))
+            })
+            .collect();
+        let core = transform_segments(&normalized, &boundaries, text.text_transform);
+
+        let mut fill_segments: Vec<ParagraphSegment> = Vec::new();
+        let mut stroke_segments: Vec<ParagraphSegment> = Vec::new();
+        for segment in &core {
+            let span = segment.span.and_then(|index| text.spans.get(index));
+            let weight = span.and_then(|span| span.font_weight).unwrap_or(text.font_weight);
+            let underline = text.underline || span.and_then(|span| span.underline).unwrap_or(false);
+            let strikethrough =
+                text.strikethrough || span.and_then(|span| span.strikethrough).unwrap_or(false);
+            // Span fill resolves like a node fill (D8): a $token span fill goes
+            // through fill_paint (sentinel + LUME0213 if unresolved); no span
+            // fill inherits the node's base fill paint.
+            let foreground = match span.and_then(|span| span.fill.as_ref()) {
+                Some(paint) => self.fill_paint(paint, box_width, box_height, Some(&node.id)),
+                None => base_fill.clone(),
+            };
+            fill_segments.push(ParagraphSegment {
+                text: segment.text.clone(),
+                font_weight: weight,
+                underline,
+                strikethrough,
+                foreground,
+            });
+            if let Some(stroke) = stroke_foreground {
+                stroke_segments.push(ParagraphSegment {
+                    text: segment.text.clone(),
+                    font_weight: weight,
+                    underline,
+                    strikethrough,
+                    foreground: stroke.clone(),
+                });
+            }
+        }
+
+        let make_request = |segments: Vec<ParagraphSegment>| ParagraphRequest {
+            content: "",
+            font_family: family,
+            font_size: text.font_size,
+            font_weight: text.font_weight,
+            line_height: text.line_height,
+            letter_spacing: text.letter_spacing,
+            max_lines: text.max_lines,
+            direction: text.direction.clone(),
+            align,
+            foreground: SkPaint::default(),
+            underline: false,
+            strikethrough: false,
+            truncate: text.truncate,
+            segments: Some(segments),
+        };
+
+        let mut fill = build_paragraph(&make_request(fill_segments), self.fonts);
+        let (layout_width, x) = match text.wrap {
+            TextWrap::Wrap => (box_width.max(0.0) as f32, 0.0f32),
+            TextWrap::NoWrap if text.truncate => {
+                let bound = box_width.max(0.0) as f32;
+                fill.layout(bound);
+                let x = match text.align {
+                    TextAlign::Left | TextAlign::Justify => 0.0,
+                    TextAlign::Center => (box_width as f32 - fill.longest_line()) / 2.0,
+                    TextAlign::Right => box_width as f32 - fill.longest_line(),
+                };
+                (bound, x)
+            }
+            TextWrap::NoWrap => {
+                fill.layout(UNBOUNDED_LAYOUT_WIDTH as f32);
+                let natural = fill.longest_line().ceil() + 2.0;
+                let x = match text.align {
+                    TextAlign::Left | TextAlign::Justify => 0.0,
+                    TextAlign::Center => (box_width as f32 - natural) / 2.0,
+                    TextAlign::Right => box_width as f32 - natural,
+                };
+                (natural, x)
+            }
+        };
+        fill.layout(layout_width);
+
+        if !stroke_segments.is_empty() {
+            let mut stroke_paragraph = build_paragraph(&make_request(stroke_segments), self.fonts);
+            stroke_paragraph.layout(layout_width);
+            stroke_paragraph.paint(canvas, Point::new(x, 0.0));
+        }
+        fill.paint(canvas, Point::new(x, 0.0));
     }
 
     /// A6a D5: the first solid text stroke as a Skia stroke-style foreground

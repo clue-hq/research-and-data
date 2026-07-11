@@ -124,9 +124,12 @@ pub use scene::{
     CornerRadii, Dimension, DocumentMeta, DocumentStatus, Effect, EffectKind, Fill, ImageNode,
     LayoutAnchor, LayoutMode, LineNode, Medium, Node, NodeKind, Orientation, Page, PageOutputSize,
     PagePreset, PageSize, PageSizeSource, Paint, ParentRef, PhysicalPageSize, PhysicalUnit,
-    PositionMode, RasterPageSize, Rect, Scene, SizeSpec, Stroke, StrokeAlign, StrokeCap,
-    StrokeJoin, TextAlign, TextDirection, TextNode, TextTransform, TextWrap, Transform, Unit,
-    VectorNode,
+    PositionMode, RasterPageSize, Rect, Scene, SizeSpec, SpanSegment, Stroke, StrokeAlign,
+    StrokeCap, StrokeJoin, TextAlign, TextDirection, TextNode, TextSpan, TextTransform, TextWrap,
+    Transform, Unit, VectorNode,
+};
+pub use scene::{
+    normalize_content_mapped, span_validation_errors, transform_segments, SpanValidationError,
 };
 pub use slots::{
     BindingHint, Cardinality, ConditionalRule, ContentType, Editability, EmptyBehavior, FocalPoint,
@@ -137,7 +140,7 @@ pub use snapshot::{SnapshotError, SnapshotResult};
 pub use text_measure::{
     estimate_text_width, heuristic_measurement_diagnostic, line_height_px, measure_key,
     measure_text, HeuristicTextMeasurer, ProvidedTextMeasurer, SharedTextMeasurer, TextLineBox,
-    TextMeasureInput, TextMeasureOutput, TextMeasurer,
+    TextMeasureInput, TextMeasureOutput, TextMeasurer, TextRunBox,
 };
 
 pub const SCHEMA_VERSION: u32 = 1;
