@@ -72,6 +72,11 @@ pub(crate) struct ParagraphRequest<'a> {
     pub underline: bool,
     /// A6a D2: strikethrough decoration.
     pub strikethrough: bool,
+    /// A7b D3: italic style. Unlike the decorations this changes the selected
+    /// face (`Slant::Italic`) and therefore glyph advances — a measurement
+    /// input, not paint-only. Ignored when `segments` are set (each segment
+    /// carries its own resolved italic).
+    pub italic: bool,
     /// A6a D3: request SkParagraph's native "…" ellipsis (max_lines cut or,
     /// when laid out at the box width, NoWrap single-line overflow).
     pub truncate: bool,
@@ -91,6 +96,9 @@ pub(crate) struct ParagraphSegment {
     pub font_weight: u16,
     pub underline: bool,
     pub strikethrough: bool,
+    /// A7b D3: per-run italic, resolved (`span.italic.unwrap_or(block)`) before
+    /// the segment is built — a measured geometry channel, like `font_weight`.
+    pub italic: bool,
     pub foreground: SkPaint,
 }
 
@@ -125,6 +133,7 @@ pub(crate) fn font_diagnostics(
     fonts: &FontManager,
     requested_family: &str,
     weight: i32,
+    italic: bool,
     content: &str,
     subject: Option<DiagnosticSubject>,
 ) -> Vec<Diagnostic> {
@@ -136,28 +145,50 @@ pub(crate) fn font_diagnostics(
             subject: subject.clone(),
             ..diagnostic
         });
-    } else if let Some(actual) = fonts.resolved_weight(&resolution.family, weight) {
+    } else {
         // A6a D6.2: the family loaded, but it has no face at the requested
         // weight, so the shaper snapped to the nearest one. Snapping is correct
         // behavior; the silence was the bug. Advisory, only when the family
         // itself resolved cleanly (a whole-family miss is already LUMS0100).
-        diagnostics.push(
-            Diagnostic::advice(
-                Phase::Layout,
-                "LUMS0104",
-                format!(
-                    "font family \"{}\" has no weight {}; shaping used its nearest face (weight {})",
-                    resolution.family, weight, actual
+        if let Some(actual) = fonts.resolved_weight(&resolution.family, weight, italic) {
+            diagnostics.push(
+                Diagnostic::advice(
+                    Phase::Layout,
+                    "LUMS0104",
+                    format!(
+                        "font family \"{}\" has no weight {}; shaping used its nearest face (weight {})",
+                        resolution.family, weight, actual
+                    ),
+                    subject.clone(),
+                )
+                .with_hint(
+                    "Add a face at this weight to the fonts/ set for exact weight fidelity, or pick a weight the family ships.",
                 ),
-                subject.clone(),
-            )
-            .with_hint(
-                "Add a face at this weight to the fonts/ set for exact weight fidelity, or pick a weight the family ships.",
-            ),
-        );
+            );
+        }
+        // A7b D2: italic requested but the family has no italic face, so the
+        // shaper snapped to the upright (no synthetic slant). Advisory mirror
+        // of LUMS0104, gated on the family resolving cleanly so a whole-family
+        // miss stays LUMS0100 only.
+        if italic && fonts.resolved_slant(&resolution.family, weight, italic) == Some(false) {
+            diagnostics.push(
+                Diagnostic::advice(
+                    Phase::Layout,
+                    "LUMS0105",
+                    format!(
+                        "font family \"{}\" has no italic face; shaping used its upright face",
+                        resolution.family
+                    ),
+                    subject.clone(),
+                )
+                .with_hint(
+                    "Add an italic face for this family to the fonts/ set, or pick a family that ships italics (no synthetic slant is applied).",
+                ),
+            );
+        }
     }
 
-    let substituted = fonts.substituted_chars(requested_family, weight, content);
+    let substituted = fonts.substituted_chars(requested_family, weight, italic, content);
     if !substituted.is_empty() {
         let chars = substituted
             .iter()
@@ -186,18 +217,33 @@ pub(crate) fn font_diagnostics(
 /// Build a laid-out paragraph. Single construction path for measurement
 /// (A2) and painting (A3): same style mapping, same font collection.
 pub(crate) fn build_paragraph(request: &ParagraphRequest<'_>, fonts: &FontManager) -> Paragraph {
+    // A7b D2 gate (adversarial-gate finding, pixel-proven): SkParagraph does
+    // NOT snap an unsatisfiable italic request to the upright — it applies a
+    // SYNTHETIC oblique (sheared glyphs), which D2 forbids. Request the italic
+    // slant only when the family actually has an italic face loaded; otherwise
+    // shape upright (today's behavior), with LUMS0105 advising the gap. One
+    // gate here covers every path — base, stacked, and A6b/A7b segments (spans
+    // cannot change family, so one family-level answer is correct per request).
+    let family_has_italic = fonts.has_italic_face(request.font_family);
     fonts.with_collection(|collection| {
         // One style factory for the base style and every A6b segment style, so
         // family/size/letter-spacing/line-height are identical across runs and
         // only weight/decoration/foreground vary.
-        let make_style = |font_weight: u16, underline: bool, strikethrough: bool, fg: &SkPaint| {
+        let make_style = |font_weight: u16, italic: bool, underline: bool, strikethrough: bool, fg: &SkPaint| {
+            let italic = italic && family_has_italic;
             let mut text_style = TextStyle::new();
             text_style.set_font_families(&[request.font_family]);
             text_style.set_font_size(request.font_size as f32);
+            // A7b D2/D3: italic selects the italic face via the FontStyle slant
+            // (the gate above guarantees a real face exists — no synthetic shear).
             text_style.set_font_style(FontStyle::new(
                 (font_weight as i32).into(),
                 skia_safe::font_style::Width::NORMAL,
-                skia_safe::font_style::Slant::Upright,
+                if italic {
+                    skia_safe::font_style::Slant::Italic
+                } else {
+                    skia_safe::font_style::Slant::Upright
+                },
             ));
             text_style.set_letter_spacing(request.letter_spacing as f32);
             if request.line_height > 0.0 {
@@ -224,6 +270,7 @@ pub(crate) fn build_paragraph(request: &ParagraphRequest<'_>, fonts: &FontManage
 
         let base_style = make_style(
             request.font_weight,
+            request.italic,
             request.underline,
             request.strikethrough,
             &request.foreground,
@@ -256,6 +303,7 @@ pub(crate) fn build_paragraph(request: &ParagraphRequest<'_>, fonts: &FontManage
                 for segment in segments {
                     let style = make_style(
                         segment.font_weight,
+                        segment.italic,
                         segment.underline,
                         segment.strikethrough,
                         &segment.foreground,
@@ -334,6 +382,9 @@ impl SkiaTextMeasurer {
                     foreground: default_foreground(),
                     underline: false,
                     strikethrough: false,
+                    // A7b D3: stacked-paragraph measurement honors block italic
+                    // (it changes advances); spans don't reach this path.
+                    italic: input.italic,
                     truncate: false,
                     segments: None,
                 },
@@ -495,6 +546,9 @@ impl SkiaTextMeasurer {
                 foreground: default_foreground(),
                 underline: false,
                 strikethrough: false,
+                // A7b D3: honor block italic so the re-accounted ellipsis line
+                // width matches the italic face's advances.
+                italic: input.italic,
                 truncate: false,
                 segments: None,
             },
@@ -545,9 +599,20 @@ impl SkiaTextMeasurer {
                 .and_then(|index| input.spans.get(index))
                 .and_then(|span| span.font_weight)
                 .unwrap_or(input.font_weight);
+            // A7b D3: italic resolves PER-RUN here — it is the SECOND channel
+            // (with weight) that changes measured geometry, so it must be
+            // resolved for the measured paragraph, not hardcoded. Override
+            // merge (D1): `span.italic.unwrap_or(block)`, so an italic(false)
+            // span de-italicizes its run inside an italic block.
+            let italic = segment
+                .span
+                .and_then(|index| input.spans.get(index))
+                .and_then(|span| span.italic)
+                .unwrap_or(input.italic);
             para_segments.push(ParagraphSegment {
                 text: segment.text.clone(),
                 font_weight: weight,
+                italic,
                 // Decoration never changes measured geometry (only paint).
                 underline: false,
                 strikethrough: false,
@@ -595,6 +660,9 @@ impl SkiaTextMeasurer {
                 foreground: default_foreground(),
                 underline: false,
                 strikethrough: false,
+                // Ignored when segments are set (each run carries its resolved
+                // italic); mirror the block value for honesty.
+                italic: input.italic,
                 truncate: false,
                 segments: Some(para_segments),
             },
@@ -728,6 +796,7 @@ impl TextMeasurer for SkiaTextMeasurer {
             &self.fonts,
             &input.font_family,
             input.font_weight as i32,
+            input.italic,
             &content,
             None,
         );
@@ -812,6 +881,9 @@ impl TextMeasurer for SkiaTextMeasurer {
                 // only the renderer paints them.
                 underline: false,
                 strikethrough: false,
+                // A7b D3: italic DOES change geometry (italic face advances), so
+                // the measured paragraph must carry it — unlike the decorations.
+                italic: input.italic,
                 truncate: false,
                 segments: None,
             },
@@ -886,6 +958,14 @@ impl TextMeasurer for SkiaTextMeasurer {
     fn shaping(&self) -> bool {
         true
     }
+
+    /// A7b D2: byte-driven truth from the loaded faces, post family-fallback —
+    /// the same answer `build_paragraph`'s synthesis gate uses, so exporters
+    /// and the raster agree on whether italic is renderable.
+    fn has_italic_face(&self, family: &str) -> bool {
+        let resolution = self.fonts.resolve_family(family);
+        self.fonts.has_italic_face(&resolution.family)
+    }
 }
 
 /// Byte offset for every UTF-16 code-unit offset of `content`, plus a final
@@ -943,6 +1023,7 @@ mod glyph_fallback_tests {
             font_family: family.to_owned(),
             font_size: 32.0,
             font_weight: 400,
+            italic: false,
             line_height: 1.2,
             letter_spacing: 0.0,
             wrap: TextWrap::NoWrap,
@@ -965,9 +1046,9 @@ mod glyph_fallback_tests {
         // fallback face (bundled Inter) maps it to a REAL, non-zero glyph — so
         // per-glyph fallback paints a glyph, never a tofu box.
         let subset_face = fonts
-            .match_typeface("SubsetFace", 400)
+            .match_typeface("SubsetFace", 400, false)
             .expect("subset face");
-        let fallback_face = fonts.match_typeface("Inter", 400).expect("inter face");
+        let fallback_face = fonts.match_typeface("Inter", 400, false).expect("inter face");
         for ch in ['/', '×', '—'] {
             assert_eq!(
                 subset_face.unichar_to_glyph(ch as i32),
@@ -983,7 +1064,7 @@ mod glyph_fallback_tests {
         // The coverage query — which build_paragraph shapes through the same
         // fallback-enabled collection — agrees on exactly that substituted set.
         assert_eq!(
-            fonts.substituted_chars("SubsetFace", 400, &normalize_content("1/10 ×2 —")),
+            fonts.substituted_chars("SubsetFace", 400, false, &normalize_content("1/10 ×2 —")),
             vec!['/', '×', '—']
         );
     }

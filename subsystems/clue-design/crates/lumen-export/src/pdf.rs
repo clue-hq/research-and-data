@@ -330,6 +330,34 @@ impl<'a> PdfPageRenderer<'a> {
                         .with_hint("Export through SVG/PNG for two-color / weighted spans; PDF renders the full text in the base style."),
                     );
                 }
+                // A7b D6: PDF has no font differentiation (single /F1 Helvetica),
+                // so italic — block-level OR any span override — cannot be
+                // represented. Sibling of LUME0424: the text renders complete but
+                // upright, loudly, never a silent divergence from SVG/PNG.
+                // Fires when the node requests italic anywhere: block-level,
+                // or any span(italic(true)). A span(italic(false)) on an
+                // upright block resolves fully upright — exactly what PDF
+                // produces — so it must not warn. Known accepted over-fire: a
+                // block-italic node whose spans de-italicize EVERY byte also
+                // resolves upright but still warns (a harmless advisory in a
+                // pathological authoring case; full coverage analysis is not
+                // worth the complexity).
+                let has_italic = text.italic
+                    || text.spans.iter().any(|span| span.italic == Some(true));
+                if has_italic {
+                    self.diagnostics.push(
+                        Diagnostic::warning(
+                            Phase::Export,
+                            "LUME0425",
+                            format!(
+                                "text node {} is italic; PDF export renders it upright (no italic face in the PDF font model)",
+                                node.id
+                            ),
+                            Some(DiagnosticSubject::Node(node.id.clone())),
+                        )
+                        .with_hint("Export through SVG/PNG for italic text; PDF renders the full text upright in the base style."),
+                    );
+                }
                 let measured =
                     self.measurer
                         .measure(&TextMeasureInput::from_text_node(text).with_bounds(&Rect {

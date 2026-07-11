@@ -603,6 +603,7 @@ fn a6b_span_token_fill_resolves_like_a_node_fill() {
             font_weight: None,
             underline: None,
             strikethrough: None,
+            italic: None,
         }];
     }
 

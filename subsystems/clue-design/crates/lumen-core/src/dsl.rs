@@ -442,6 +442,9 @@ pub enum DslProperty {
     Underline(bool),
     /// A6a D2: strikethrough decoration.
     Strikethrough(bool),
+    /// A7b D1: italic style. A geometry channel (measurement input), authored
+    /// like `Underline`.
+    Italic(bool),
     /// A6a D3: ellipsis truncation.
     Truncate(bool),
     /// A6a D4: extra vertical gap (px) at each `\n` paragraph break.
@@ -534,6 +537,9 @@ pub struct DslSpan {
     pub font_weight: Option<u16>,
     pub underline: Option<bool>,
     pub strikethrough: Option<bool>,
+    /// A7b D1: override italic. Merge is OVERRIDE (`unwrap_or(block)`), unlike
+    /// the union-merged decoration channels.
+    pub italic: Option<bool>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -3301,6 +3307,10 @@ fn node_edit_patch_from_properties(
                 text_patch.strikethrough = FieldPatch::Set(*on);
                 has_text_patch = true;
             }
+            DslProperty::Italic(on) => {
+                text_patch.italic = FieldPatch::Set(*on);
+                has_text_patch = true;
+            }
             DslProperty::Truncate(on) => {
                 text_patch.truncate = FieldPatch::Set(*on);
                 has_text_patch = true;
@@ -4158,6 +4168,14 @@ fn parse_property_token(
         "strike" | "strikethrough" => {
             expect_arg_count(&call, 1, line_number)?;
             vec![DslProperty::Strikethrough(parse_bool(
+                &call.args[0],
+                line_number,
+                column,
+            )?)]
+        }
+        "italic" => {
+            expect_arg_count(&call, 1, line_number)?;
+            vec![DslProperty::Italic(parse_bool(
                 &call.args[0],
                 line_number,
                 column,
@@ -5260,6 +5278,20 @@ fn apply_properties(
                         "LUMD0607",
                         "strike(...) only applies to text nodes",
                         "Move strike(true) to a text/t element.",
+                    ));
+                }
+            }
+            DslProperty::Italic(on) => {
+                if let NodeKind::Text(text) = &mut node.kind {
+                    text.italic = *on;
+                } else {
+                    diagnostics.push(warning_diag(
+                        line_number,
+                        1,
+                        node.id.as_str().len(),
+                        "LUMD0607",
+                        "italic(...) only applies to text nodes",
+                        "Move italic(true) to a text/t element.",
                     ));
                 }
             }
@@ -6414,7 +6446,7 @@ fn parse_span(call: &Call, line_number: usize, column: usize) -> Result<DslSpan,
             "span".len(),
             "LUMD0273",
             "span(...) needs at least one channel",
-            "Use span(fill(#hex)), span(fill($token)), span(weight(700)), span(underline(true)), or span(strike(true)).",
+            "Use span(fill(#hex)), span(fill($token)), span(weight(700)), span(underline(true)), span(strike(true)), or span(italic(true)).",
         ));
     }
     let mut span = DslSpan::default();
@@ -6430,7 +6462,7 @@ fn parse_span(call: &Call, line_number: usize, column: usize) -> Result<DslSpan,
                 arg.len().max(1),
                 "LUMD0273",
                 format!("malformed span channel {arg}"),
-                "Each span channel is a call: fill(#hex), weight(700), underline(true), strike(true).",
+                "Each span channel is a call: fill(#hex), weight(700), underline(true), strike(true), italic(true).",
             )
         })?;
         match nested.name.as_str() {
@@ -6450,6 +6482,10 @@ fn parse_span(call: &Call, line_number: usize, column: usize) -> Result<DslSpan,
                 expect_arg_count(&nested, 1, line_number)?;
                 span.strikethrough = Some(parse_bool(&nested.args[0], line_number, column)?);
             }
+            "italic" => {
+                expect_arg_count(&nested, 1, line_number)?;
+                span.italic = Some(parse_bool(&nested.args[0], line_number, column)?);
+            }
             other => {
                 return Err(error_diag(
                     line_number,
@@ -6457,7 +6493,7 @@ fn parse_span(call: &Call, line_number: usize, column: usize) -> Result<DslSpan,
                     other.len().max(1),
                     "LUMD0212",
                     format!("unknown span channel {other}(...)"),
-                    "Span channels are fill(...), weight(...), underline(...), strike(...).",
+                    "Span channels are fill(...), weight(...), underline(...), strike(...), italic(...).",
                 ));
             }
         }
@@ -6575,6 +6611,7 @@ fn apply_text_spans(
             font_weight: span_prop.font_weight,
             underline: span_prop.underline,
             strikethrough: span_prop.strikethrough,
+            italic: span_prop.italic,
         });
     }
     text.spans = spans;

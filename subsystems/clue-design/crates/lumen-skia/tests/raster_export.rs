@@ -720,6 +720,7 @@ fn spanned_path_valign_shifts_the_segmented_paragraph() {
                     font_weight: Some(800),
                     underline: None,
                     strikethrough: None,
+                    italic: None,
                 }],
                 ..TextNode::default()
             },
@@ -792,5 +793,201 @@ fn stacked_valign_bottom_with_max_lines_cut_excludes_the_trailing_gap() {
         lowest >= 185.0,
         "bottom-valigned cut stack must reach the box bottom (~200); \
          got lowest dark pixel {lowest} (a trailing-gap total would sit ~160)"
+    );
+}
+
+// ---- A7b block italic renders with the italic face -----------------------
+
+/// An export adapter whose shared FontManager carries the bundled set plus
+/// Instrument Serif upright + italic, so an italic request reaches a real
+/// italic face in BOTH the measurer and the rasterizer.
+fn instrument_adapter() -> LumenExportAdapter {
+    let dir =
+        std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
+    let upright = std::fs::read(dir.join("instrument-serif-regular.ttf"))
+        .expect("instrument-serif-regular fixture reads");
+    let italic = std::fs::read(dir.join("instrument-serif-italic.ttf"))
+        .expect("instrument-serif-italic fixture reads");
+    let (manager, errors) =
+        FontManager::bundled_with(vec![(upright, None), (italic, None)]);
+    assert!(errors.is_empty(), "{errors:?}");
+    let fonts = Arc::new(manager);
+    LumenExportAdapter::new()
+        .with_measurer(Arc::new(SkiaTextMeasurer::new(Arc::clone(&fonts))))
+        .with_rasterizer(Arc::new(SkiaSceneRenderer::new(fonts)))
+}
+
+fn render_instrument_italic(doc: &str, italic: bool) -> Rgba {
+    let mut node = Node::new(
+        NodeId::from("node_italic"),
+        NodeKind::Text(TextNode {
+            content: "Editorial voice".to_owned(),
+            font_family: "Instrument Serif".to_owned(),
+            font_size: 40.0,
+            line_height: 1.0,
+            font_weight: 400,
+            italic,
+            ..TextNode::default()
+        }),
+    );
+    node.transform = Transform {
+        x: 10.0,
+        y: 60.0,
+        ..Transform::default()
+    };
+    node.size = SizeSpec::fixed(380.0, 80.0);
+    node.fills = vec![solid_fill("paint_italic", "#111827")];
+
+    let mut scene = Scene::new(DocumentId::from(doc), "Italic");
+    scene.pages.insert(
+        PageId::from("page_square"),
+        custom_px_page("page_square", 400.0, 200.0, vec![node.id.clone()]),
+    );
+    scene.nodes.insert(node.id.clone(), node);
+    let result = instrument_adapter()
+        .export(&scene, &png_request("page_square"))
+        .expect("export");
+    decode_rgba(&result.artifacts[0].bytes)
+}
+
+fn dark_pixel_count(rgba: &Rgba) -> usize {
+    let mut count = 0;
+    for y in 0..rgba.height as i32 {
+        for x in 0..rgba.width as i32 {
+            let px = rgba.pixel(x, y);
+            if px[3] > 0 && px[0] < 120 && px[1] < 140 && px[2] < 160 {
+                count += 1;
+            }
+        }
+    }
+    count
+}
+
+#[test]
+fn block_italic_renders_different_pixels_than_upright() {
+    // With a real italic face loaded, painting the SAME content as italic
+    // shears/reshapes every glyph, so the raster differs from the upright one.
+    // A pixel-diff proves italic reached the shaper's face selection in render.
+    let upright = render_instrument_italic("doc_italic_upright", false);
+    let italic = render_instrument_italic("doc_italic_on", true);
+    assert_eq!((upright.width, upright.height), (italic.width, italic.height));
+
+    let upright_dark = dark_pixel_count(&upright);
+    let italic_dark = dark_pixel_count(&italic);
+    assert!(upright_dark > 100, "upright text must paint: {upright_dark}");
+    assert!(italic_dark > 100, "italic text must paint: {italic_dark}");
+
+    // Count positionally-differing pixels — italic glyph shapes land elsewhere.
+    let mut differing = 0usize;
+    for y in 0..upright.height {
+        for x in 0..upright.width {
+            if upright.pixel(x, y) != italic.pixel(x, y) {
+                differing += 1;
+            }
+        }
+    }
+    assert!(
+        differing > 200,
+        "block italic must change the raster vs upright, differing pixels = {differing}"
+    );
+}
+
+// ---- A7b D2 synthesis gate (adversarial-gate finding, pixel-proven) -------
+
+/// SkParagraph applies a SYNTHETIC oblique for an unsatisfiable italic slant;
+/// the D2 gate must refuse to request it, so a family with NO italic face
+/// renders byte-identical to the upright request (plus LUMS0105 advising).
+#[test]
+fn missing_italic_face_renders_upright_not_synthetic_oblique() {
+    let node = |italic: bool| {
+        let mut node = a6_text_node(
+            "Verdant fields",
+            TextNode {
+                italic,
+                ..TextNode::default()
+            },
+        );
+        node.transform.y = 0.0;
+        node.size = SizeSpec::fixed(280.0, 60.0);
+        node
+    };
+    // Bundled Inter has no italic face.
+    let italic = render_valign_scene("doc_it_gate_italic", node(true));
+    let upright = render_valign_scene("doc_it_gate_upright", node(false));
+    assert_eq!(
+        (italic.width, italic.height),
+        (upright.width, upright.height)
+    );
+    let differing = italic
+        .pixels
+        .iter()
+        .zip(upright.pixels.iter())
+        .filter(|(a, b)| a != b)
+        .count();
+    assert_eq!(
+        differing, 0,
+        "italic request with no italic face must render byte-identical to \
+         upright (no synthetic oblique); {differing} pixels differ"
+    );
+}
+// The real-italic-face counterpart is `block_italic_renders_different_pixels_
+// than_upright` above (instrument_adapter): the gate blocks only synthesis.
+
+/// A7b D2 gate, SVG side: `font-style="italic"` is emitted ONLY when the
+/// family has a real italic face (through the shaping measurer's
+/// `has_italic_face`) — otherwise the raster renders upright (LUMS0105) and an
+/// italic attr would make every SVG viewer synthesize the fake oblique the
+/// raster refused. Instrument Serif (real italic fixture) emits it; Inter
+/// (bundled, upright-only) must not.
+#[test]
+fn svg_font_style_is_gated_on_a_real_italic_face() {
+    let svg_request = ExportRequest {
+        profile: ExportProfile {
+            name: "svg_gate".to_owned(),
+            format: ExportFormat::Svg,
+            pdf_intent: None,
+            raster: None,
+            include_bleed: false,
+            embed_fonts: false,
+        },
+        page_ids: vec![PageId::from("page_square")],
+        purpose: ExportPurpose::AgentCritique,
+    };
+    let render = |family: &str, doc: &str| {
+        let mut node = Node::new(
+            NodeId::from("node_svg_it"),
+            NodeKind::Text(TextNode {
+                content: "Editorial voice".to_owned(),
+                font_family: family.to_owned(),
+                font_size: 40.0,
+                line_height: 1.0,
+                font_weight: 400,
+                italic: true,
+                ..TextNode::default()
+            }),
+        );
+        node.transform = Transform { x: 10.0, y: 60.0, ..Transform::default() };
+        node.size = SizeSpec::fixed(380.0, 80.0);
+        node.fills = vec![solid_fill("paint_svg_it", "#111827")];
+        let mut scene = Scene::new(DocumentId::from(doc), "SvgItalicGate");
+        scene.pages.insert(
+            PageId::from("page_square"),
+            custom_px_page("page_square", 400.0, 200.0, vec![node.id.clone()]),
+        );
+        scene.nodes.insert(node.id.clone(), node);
+        let result = instrument_adapter()
+            .export(&scene, &svg_request)
+            .expect("svg export");
+        String::from_utf8(result.artifacts[0].bytes.clone()).expect("utf8 svg")
+    };
+    let with_face = render("Instrument Serif", "doc_svg_it_face");
+    assert!(
+        with_face.contains("font-style=\"italic\""),
+        "a real italic face must emit font-style: {with_face}"
+    );
+    let without_face = render("Inter", "doc_svg_it_noface");
+    assert!(
+        !without_face.contains("font-style"),
+        "no italic face -> no font-style attr (the raster renders upright): {without_face}"
     );
 }

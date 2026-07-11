@@ -547,6 +547,10 @@ pub struct TextEditPatch {
     pub text_transform: FieldPatch<TextTransform>,
     pub underline: FieldPatch<bool>,
     pub strikethrough: FieldPatch<bool>,
+    /// A7b: italic style. A geometry channel (measurement input), but content
+    /// edits PRESERVE it — like `valign` and unlike `spans` (whose offsets go
+    /// stale). Not a token channel.
+    pub italic: FieldPatch<bool>,
     pub truncate: FieldPatch<bool>,
     pub paragraph_spacing: FieldPatch<f64>,
     /// A7a: vertical alignment within the box. Not a token channel, so it never
@@ -2630,6 +2634,7 @@ fn apply_text_edit_patch(mut text: TextNode, patch: TextEditPatch) -> TextNode {
     apply_field_patch(&mut text.text_transform, patch.text_transform);
     apply_field_patch(&mut text.underline, patch.underline);
     apply_field_patch(&mut text.strikethrough, patch.strikethrough);
+    apply_field_patch(&mut text.italic, patch.italic);
     apply_field_patch(&mut text.truncate, patch.truncate);
     apply_field_patch(&mut text.paragraph_spacing, patch.paragraph_spacing);
     apply_field_patch(&mut text.valign, patch.valign);

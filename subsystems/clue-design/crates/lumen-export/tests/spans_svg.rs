@@ -98,6 +98,7 @@ fn accent(start: usize, end: usize, fill: Option<Paint>, weight: Option<u16>) ->
         font_weight: weight,
         underline: None,
         strikethrough: None,
+        italic: None,
     }
 }
 
@@ -176,6 +177,7 @@ fn underline_span_emits_text_decoration_only_on_the_run() {
             font_weight: None,
             underline: Some(true),
             strikethrough: None,
+            italic: None,
         }],
         ..TextNode::default()
     };
@@ -183,6 +185,101 @@ fn underline_span_emits_text_decoration_only_on_the_run() {
     assert!(
         svg.contains("text-decoration=\"underline\""),
         "run decoration: {svg}"
+    );
+}
+
+#[test]
+fn block_italic_emits_font_style_on_the_text_element() {
+    // A7b D6: block-level italic surfaces as font-style="italic" on <text>.
+    let text = TextNode {
+        content: "editorial".to_owned(),
+        font_size: 20.0,
+        italic: true,
+        ..TextNode::default()
+    };
+    let (svg, _) = render(text_node("t", text, 600.0, TextAlign::Left));
+    assert!(
+        svg.contains("font-style=\"italic\""),
+        "block italic must emit font-style on <text>: {svg}"
+    );
+}
+
+#[test]
+fn italic_span_emits_font_style_only_on_the_run() {
+    // A7b D6: an italic span in an upright block emits font-style="italic" on
+    // its run (override merge). The block <text> carries no font-style.
+    let text = TextNode {
+        content: "plain fancy".to_owned(),
+        font_size: 20.0,
+        spans: vec![TextSpan {
+            start: 6,
+            end: 11,
+            fill: None,
+            font_weight: None,
+            underline: None,
+            strikethrough: None,
+            italic: Some(true),
+        }],
+        ..TextNode::default()
+    };
+    let (svg, _) = render(text_node("t", text, 600.0, TextAlign::Left));
+    assert!(
+        svg.contains("font-style=\"italic\""),
+        "italic span must emit run font-style: {svg}"
+    );
+    // Exactly one font-style occurrence (the run), not the block <text>.
+    assert_eq!(
+        svg.matches("font-style=").count(),
+        1,
+        "only the italic run carries font-style, not the block: {svg}"
+    );
+}
+
+#[test]
+fn de_italicizing_span_in_italic_block_emits_font_style_normal() {
+    // A7b D6: override merge — an italic(false) span inside an italic block
+    // de-italicizes its run, emitting font-style="normal"; the block <text>
+    // still carries font-style="italic".
+    let text = TextNode {
+        content: "all but one".to_owned(),
+        font_size: 20.0,
+        italic: true,
+        spans: vec![TextSpan {
+            start: 8,
+            end: 11,
+            fill: None,
+            font_weight: None,
+            underline: None,
+            strikethrough: None,
+            italic: Some(false),
+        }],
+        ..TextNode::default()
+    };
+    let (svg, _) = render(text_node("t", text, 600.0, TextAlign::Left));
+    assert!(
+        svg.contains("font-style=\"italic\""),
+        "block italic stays on <text>: {svg}"
+    );
+    assert!(
+        svg.contains("font-style=\"normal\""),
+        "de-italicized run emits font-style=normal: {svg}"
+    );
+}
+
+#[test]
+fn upright_text_emits_no_font_style_attr() {
+    // Byte-identical guard: nothing italic ⇒ no font-style attr anywhere
+    // (pre-A7b markup unchanged).
+    let text = TextNode {
+        content: "plain fancy".to_owned(),
+        font_size: 20.0,
+        spans: vec![accent(6, 11, None, Some(700))],
+        ..TextNode::default()
+    };
+    let (svg, _) = render(text_node("t", text, 600.0, TextAlign::Left));
+    assert!(
+        !svg.contains("font-style"),
+        "no italic anywhere ⇒ no font-style attr: {svg}"
     );
 }
 

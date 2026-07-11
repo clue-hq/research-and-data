@@ -280,6 +280,7 @@ fn pdf_degrades_rich_text_spans_loudly() {
                 font_weight: Some(800),
                 underline: None,
                 strikethrough: None,
+                italic: None,
             }],
             ..lumen_core::scene::TextNode::default()
         },
@@ -290,6 +291,73 @@ fn pdf_degrades_rich_text_spans_loudly() {
     assert!(
         diagnostics.iter().any(|d| d.code == "LUME0424"),
         "missing LUME0424: {diagnostics:#?}"
+    );
+}
+
+#[test]
+fn pdf_degrades_italic_loudly() {
+    // A7b D6: PDF has no italic face (single /F1 Helvetica), so italic text —
+    // block-level OR span-level — advises LUME0425 (sibling of LUME0424).
+    let block_italic = text_scene(
+        lumen_core::scene::TextNode {
+            content: "emphasis".to_owned(),
+            italic: true,
+            ..lumen_core::scene::TextNode::default()
+        },
+        vec![Fill { id: PaintId::from("f1"), paint: solid("#111827") }],
+        vec![],
+    );
+    let diagnostics = pdf_diagnostics(&block_italic);
+    assert!(
+        diagnostics.iter().any(|d| d.code == "LUME0425"),
+        "block italic missing LUME0425: {diagnostics:#?}"
+    );
+
+    // Span-level italic (no block italic) also fires the advisory.
+    let span_italic = text_scene(
+        lumen_core::scene::TextNode {
+            content: "one two".to_owned(),
+            spans: vec![lumen_core::TextSpan {
+                start: 4,
+                end: 7,
+                fill: None,
+                font_weight: None,
+                underline: None,
+                strikethrough: None,
+                italic: Some(true),
+            }],
+            ..lumen_core::scene::TextNode::default()
+        },
+        vec![Fill { id: PaintId::from("f1"), paint: solid("#111827") }],
+        vec![],
+    );
+    assert!(
+        pdf_diagnostics(&span_italic).iter().any(|d| d.code == "LUME0425"),
+        "span italic missing LUME0425"
+    );
+
+    // Review fix: span(italic(false)) on an UPRIGHT block resolves every run
+    // upright — exactly what PDF renders — so the advisory must NOT fire.
+    let span_de_italic = text_scene(
+        lumen_core::scene::TextNode {
+            content: "one two".to_owned(),
+            spans: vec![lumen_core::TextSpan {
+                start: 4,
+                end: 7,
+                fill: None,
+                font_weight: None,
+                underline: None,
+                strikethrough: None,
+                italic: Some(false),
+            }],
+            ..lumen_core::scene::TextNode::default()
+        },
+        vec![Fill { id: PaintId::from("f1"), paint: solid("#111827") }],
+        vec![],
+    );
+    assert!(
+        !pdf_diagnostics(&span_de_italic).iter().any(|d| d.code == "LUME0425"),
+        "italic(false) span on an upright block must not warn"
     );
 }
 
@@ -306,7 +374,7 @@ fn pdf_clean_text_node_emits_no_a6_advisories() {
         vec![],
     );
     let diagnostics = pdf_diagnostics(&scene);
-    for code in ["LUME0421", "LUME0422", "LUME0423", "LUME0424"] {
+    for code in ["LUME0421", "LUME0422", "LUME0423", "LUME0424", "LUME0425"] {
         assert!(!diagnostics.iter().any(|d| d.code == code), "{code} should not fire: {diagnostics:#?}");
     }
 }

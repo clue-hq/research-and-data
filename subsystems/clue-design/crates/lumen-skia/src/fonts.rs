@@ -54,6 +54,11 @@ struct LoadedFace {
     family: String,
     alias: Option<String>,
     weight: i32,
+    /// A7b: whether this face is an italic (or oblique) style, parsed from the
+    /// bytes' `font_style().slant()` at registration. Upright + italic faces of
+    /// one family register under the SAME family key; the requested `FontStyle`
+    /// slant disambiguates them at shape time (`match_typeface`).
+    italic: bool,
 }
 
 /// Outcome of resolving a requested font family against the loaded set.
@@ -154,6 +159,8 @@ impl FontManager {
             };
             let family = typeface.family_name();
             let weight = *typeface.font_style().weight();
+            let italic = typeface.font_style().slant()
+                != skia_safe::font_style::Slant::Upright;
             manager.families.insert(family.clone());
             let alias = alias.filter(|alias| !alias.is_empty() && *alias != family);
             if let Some(alias) = &alias {
@@ -164,6 +171,7 @@ impl FontManager {
                 family,
                 alias,
                 weight,
+                italic,
             });
         }
         // Fresh identity: the thread-local FontCollection cache keys on it,
@@ -229,12 +237,15 @@ impl FontManager {
                 })?;
             let family = typeface.family_name();
             let weight = *typeface.font_style().weight();
+            let italic = typeface.font_style().slant()
+                != skia_safe::font_style::Slant::Upright;
             families.insert(family.clone());
             faces.push(LoadedFace {
                 bytes: Arc::new(bytes),
                 family,
                 alias: None,
                 weight,
+                italic,
             });
         }
 
@@ -274,6 +285,17 @@ impl FontManager {
         weights
     }
 
+    /// A7b: whether `family` (or its alias) has at least one italic face loaded.
+    /// Reads the slant parsed at registration — the byte-driven source of truth
+    /// for whether requesting italic will find a real face or snap to upright
+    /// (LUMS0105). For diagnostics, teaching, and tests.
+    pub fn has_italic_face(&self, family: &str) -> bool {
+        self.faces.iter().any(|face| {
+            face.italic
+                && (face.family == family || face.alias.as_deref() == Some(family))
+        })
+    }
+
     /// Resolve a requested family against the loaded set. Missing families
     /// fall back to the default family — explicitly and deterministically —
     /// and the resolution carries the warning diagnostic for callers that
@@ -307,16 +329,22 @@ impl FontManager {
         })
     }
 
-    /// Match a typeface by family + weight through the same collection the
-    /// shaper uses. Returns `None` only if the fallback family itself has no
-    /// faces (impossible for a constructed manager).
-    pub fn match_typeface(&self, family: &str, weight: i32) -> Option<Typeface> {
+    /// Match a typeface by family + weight + slant through the same collection
+    /// the shaper uses. Returns `None` only if the fallback family itself has no
+    /// faces (impossible for a constructed manager). A7b: `italic` requests the
+    /// `Slant::Italic` face; with no italic face loaded Skia snaps to the
+    /// upright (the LUMS0105 advisory reports the snap).
+    pub fn match_typeface(&self, family: &str, weight: i32, italic: bool) -> Option<Typeface> {
         let resolution = self.resolve_family(family);
         self.with_collection(|collection| {
             let style = skia_safe::FontStyle::new(
                 weight.into(),
                 skia_safe::font_style::Width::NORMAL,
-                skia_safe::font_style::Slant::Upright,
+                if italic {
+                    skia_safe::font_style::Slant::Italic
+                } else {
+                    skia_safe::font_style::Slant::Upright
+                },
             );
             collection
                 .find_typefaces(&[resolution.family.as_str()], style)
@@ -326,13 +354,28 @@ impl FontManager {
     }
 
     /// The actual weight of the face the shaper resolves for `family` at the
-    /// requested `weight` (A6a D6.2). `Some(actual)` only when it differs from
-    /// the request — the silent within-family weight snap `find_typefaces`
-    /// performs — so callers can surface it as the LUMS0104 advisory. `None`
-    /// when the face matches exactly or no face resolves.
-    pub fn resolved_weight(&self, family: &str, weight: i32) -> Option<i32> {
-        let actual = *self.match_typeface(family, weight)?.font_style().weight();
+    /// requested `weight`/`italic` (A6a D6.2). `Some(actual)` only when it
+    /// differs from the request — the silent within-family weight snap
+    /// `find_typefaces` performs — so callers can surface it as the LUMS0104
+    /// advisory. `None` when the face matches exactly or no face resolves.
+    pub fn resolved_weight(&self, family: &str, weight: i32, italic: bool) -> Option<i32> {
+        let actual = *self
+            .match_typeface(family, weight, italic)?
+            .font_style()
+            .weight();
         (actual != weight).then_some(actual)
+    }
+
+    /// A7b D2: the actual slant of the face the shaper resolves for `family` at
+    /// the requested `weight`/`italic`. `Some(actual_is_italic)` only when it
+    /// differs from the requested slant — the silent italic→upright snap
+    /// `find_typefaces` performs when the family has no italic face — so callers
+    /// surface it as the LUMS0105 advisory. `None` when the slant matches or no
+    /// face resolves. Mirrors `resolved_weight`.
+    pub fn resolved_slant(&self, family: &str, weight: i32, italic: bool) -> Option<bool> {
+        let actual = self.match_typeface(family, weight, italic)?.font_style().slant()
+            != skia_safe::font_style::Slant::Upright;
+        (actual != italic).then_some(actual)
     }
 
     fn build_collection(&self) -> FontCollection {
@@ -374,12 +417,22 @@ impl FontManager {
     /// uses. Whitespace and control characters are ignored (never tofu-worthy).
     /// Order follows first appearance; duplicates are collapsed. A character no
     /// loaded face covers is genuine tofu, not a substitution, and is excluded.
-    pub fn substituted_chars(&self, requested: &str, weight: i32, content: &str) -> Vec<char> {
+    pub fn substituted_chars(
+        &self,
+        requested: &str,
+        weight: i32,
+        italic: bool,
+        content: &str,
+    ) -> Vec<char> {
         let resolution = self.resolve_family(requested);
         let style = skia_safe::FontStyle::new(
             weight.into(),
             skia_safe::font_style::Width::NORMAL,
-            skia_safe::font_style::Slant::Upright,
+            if italic {
+                skia_safe::font_style::Slant::Italic
+            } else {
+                skia_safe::font_style::Slant::Upright
+            },
         );
         let Some(primary) = self.with_collection(|collection| {
             collection

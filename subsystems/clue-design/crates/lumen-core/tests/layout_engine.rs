@@ -1187,6 +1187,7 @@ fn invalid_ops_injected_span_errors_lumv0906_at_the_gate() {
             font_weight: Some(800),
             underline: None,
             strikethrough: None,
+            italic: None,
         }];
     }
     insert(&mut scene, ParentRef::Page(PageId::from("page")), node);
@@ -1214,6 +1215,7 @@ fn spans_with_paragraph_spacing_advise_lumv0907() {
             font_weight: Some(800),
             underline: None,
             strikethrough: None,
+            italic: None,
         }];
     }
     insert(&mut scene, ParentRef::Page(PageId::from("page")), node);

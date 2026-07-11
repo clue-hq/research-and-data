@@ -22,6 +22,7 @@ fn plain_span(start: usize, end: usize) -> TextSpan {
         font_weight: None,
         underline: None,
         strikethrough: None,
+        italic: None,
     }
 }
 
@@ -102,6 +103,7 @@ fn input(content: &str) -> TextMeasureInput {
         font_family: "Inter".to_owned(),
         font_size: 20.0,
         font_weight: 400,
+        italic: false,
         line_height: 1.5,
         letter_spacing: 0.0,
         wrap: TextWrap::NoWrap,
@@ -453,5 +455,116 @@ fn truncated_line_text_is_refitted_to_the_width_bound() {
         "emitted line width {} must fit the 120px bound (text {:?})",
         last.width,
         last.text
+    );
+}
+
+// --- A7b: italic is a second measured-geometry channel (D3) ---------------
+
+/// A measurer over the bundled set PLUS Instrument Serif upright + italic
+/// (both weight 400, same family) so italic requests reach a real italic face.
+fn instrument_measurer() -> SkiaTextMeasurer {
+    use std::sync::Arc;
+    let dir =
+        std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
+    let upright = std::fs::read(dir.join("instrument-serif-regular.ttf"))
+        .expect("instrument-serif-regular fixture reads");
+    let italic = std::fs::read(dir.join("instrument-serif-italic.ttf"))
+        .expect("instrument-serif-italic fixture reads");
+    let (fonts, errors) = lumen_skia::FontManager::bundled_with(vec![
+        (upright, None),
+        (italic, None),
+    ]);
+    assert!(errors.is_empty(), "{errors:?}");
+    SkiaTextMeasurer::new(Arc::new(fonts))
+}
+
+fn instrument_input(content: &str, italic: bool) -> TextMeasureInput {
+    TextMeasureInput {
+        font_family: "Instrument Serif".to_owned(),
+        italic,
+        ..input(content)
+    }
+}
+
+#[test]
+fn block_italic_changes_measured_width() {
+    // With a real italic face loaded, the italic face's glyph advances differ
+    // from the upright's, so the SAME content measures a different width — the
+    // property that makes italic a measurement input (unlike the decorations).
+    let measurer = instrument_measurer();
+    let content = "The quick brown fox jumps over the lazy dog";
+    let upright = measurer.measure(&instrument_input(content, false));
+    let italic = measurer.measure(&instrument_input(content, true));
+    assert!(
+        (upright.width - italic.width).abs() > 0.5,
+        "italic must change measured width: upright {} vs italic {}",
+        upright.width,
+        italic.width
+    );
+}
+
+#[test]
+fn measure_key_changes_when_block_italic_flips() {
+    use lumen_core::measure_key;
+    let upright = instrument_input("emphasis", false);
+    let italic = instrument_input("emphasis", true);
+    assert_ne!(
+        measure_key(&upright),
+        measure_key(&italic),
+        "flipping block italic must re-key the measurement (stale-geometry guard)"
+    );
+}
+
+#[test]
+fn measure_key_spans_digest_includes_span_italic() {
+    use lumen_core::measure_key;
+    // Two inputs identical except a span's italic channel — the spans digest
+    // (and thus measure_key) must differ, or an italic span would reuse a
+    // stale upright measurement.
+    let plain = spanned_input("word", vec![plain_span(0, 4)]);
+    let italic_span = spanned_input(
+        "word",
+        vec![TextSpan {
+            italic: Some(true),
+            ..plain_span(0, 4)
+        }],
+    );
+    assert_ne!(
+        measure_key(&plain),
+        measure_key(&italic_span),
+        "span italic must enter spans_digest / measure_key"
+    );
+}
+
+#[test]
+fn italic_request_with_no_italic_face_emits_lums0105() {
+    // Bundled Inter has no italic face. Requesting italic snaps to the upright
+    // (no synthetic slant) and the measurer emits the LUMS0105 advisory.
+    let measurer = SkiaTextMeasurer::bundled();
+    let mut italic_input = input("no italics here");
+    italic_input.italic = true;
+    let out = measurer.measure(&italic_input);
+    let advisory = out
+        .diagnostics
+        .iter()
+        .find(|d| d.code == "LUMS0105")
+        .unwrap_or_else(|| panic!("expected LUMS0105: {:?}", out.diagnostics));
+    assert!(advisory.message.contains("Inter"));
+    assert!(advisory.message.contains("italic"));
+
+    // Upright request against the same family emits no italic advisory.
+    let upright = measurer.measure(&input("no italics here"));
+    assert!(!upright.diagnostics.iter().any(|d| d.code == "LUMS0105"));
+}
+
+#[test]
+fn italic_request_with_italic_face_emits_no_lums0105() {
+    // When the family DOES have an italic face, requesting italic is clean.
+    let measurer = instrument_measurer();
+    let out = measurer.measure(&instrument_input("clean italics", true));
+    assert!(
+        !out.diagnostics.iter().any(|d| d.code == "LUMS0105"),
+        "no advisory when the italic face exists: {:?}",
+        out.diagnostics
     );
 }

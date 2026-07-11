@@ -61,6 +61,10 @@ struct ProvidedMeasurement {
     font_family: String,
     font_size: f64,
     font_weight: u16,
+    // A7b: italic is a geometry input (selects the italic face). Defaulted so
+    // pre-A7b editor payloads deserialize unchanged; the key mirrors layout.
+    #[serde(default)]
+    italic: bool,
     line_height: f64,
     letter_spacing: f64,
     wrap: TextWrap,
@@ -96,6 +100,7 @@ impl ProvidedMeasurement {
             font_family: self.font_family.clone(),
             font_size: self.font_size,
             font_weight: self.font_weight,
+            italic: self.italic,
             line_height: self.line_height,
             letter_spacing: self.letter_spacing,
             wrap: self.wrap.clone(),

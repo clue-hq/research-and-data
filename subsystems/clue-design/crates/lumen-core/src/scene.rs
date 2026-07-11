@@ -436,6 +436,16 @@ pub struct TextNode {
     /// Strikethrough decoration (A6a D2). Independent of `underline`.
     #[serde(default, skip_serializing_if = "is_false")]
     pub strikethrough: bool,
+    /// Italic style (A7b D1). Unlike underline/strikethrough this is a
+    /// MEASUREMENT input — it selects the italic face (`Slant::Italic`), which
+    /// changes glyph shapes and advances, so it enters `measure_key` and both
+    /// measurers (like `font_weight`, unlike the decoration channels). No
+    /// synthetic slant: if the resolved family has no italic face the shaper
+    /// snaps to upright and emits the LUMS0105 advisory (D2). Serde-defaulted
+    /// and omitted when `false` so pre-A7b scenes — and every default node —
+    /// round-trip byte-identically.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub italic: bool,
     /// Ellipsis truncation (A6a D3): when the measurer cuts lines (max_lines
     /// exceeded, or NoWrap width overflow) the last visible line ends with
     /// U+2026 "…". No effect when nothing is cut.
@@ -488,6 +498,12 @@ pub struct TextSpan {
     /// Override strikethrough decoration.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub strikethrough: Option<bool>,
+    /// Override italic (A7b D1). Merge is OVERRIDE, not union like the
+    /// decoration channels: `span.italic.unwrap_or(node.italic)`, so
+    /// `italic(false)` de-italicizes one run inside an italic block. Measured
+    /// per-run (enters `spans_digest`), mirroring `font_weight`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub italic: Option<bool>,
 }
 
 impl Default for TextNode {
@@ -510,6 +526,7 @@ impl Default for TextNode {
             text_transform: TextTransform::None,
             underline: false,
             strikethrough: false,
+            italic: false,
             truncate: false,
             paragraph_spacing: 0.0,
             valign: VerticalAlign::Top,
@@ -1283,6 +1300,7 @@ mod a6_typography_tests {
         assert_eq!(node.text_transform, TextTransform::None);
         assert!(!node.underline);
         assert!(!node.strikethrough);
+        assert!(!node.italic);
         assert!(!node.truncate);
         assert_eq!(node.paragraph_spacing, 0.0);
         // A7a: a pre-valign node deserializes to Top.
@@ -1315,6 +1333,7 @@ mod a6_typography_tests {
         assert!(!obj.contains_key("text_transform"));
         assert!(!obj.contains_key("underline"));
         assert!(!obj.contains_key("strikethrough"));
+        assert!(!obj.contains_key("italic"));
         assert!(!obj.contains_key("truncate"));
         assert!(!obj.contains_key("paragraph_spacing"));
     }

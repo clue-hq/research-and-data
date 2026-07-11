@@ -32,6 +32,12 @@ pub struct TextMeasureInput {
     pub font_size: f64,
     /// Requested font weight (CSS-style 100..900).
     pub font_weight: u16,
+    /// Italic style (A7b D3). Unlike the decoration channels, italic selects a
+    /// different face (`Slant::Italic`) whose glyphs have different advances, so
+    /// it is a genuine measurement input — it joins `measure_key` and both
+    /// measurers (the heuristic one carries it but models no width delta, its
+    /// existing approximation honesty).
+    pub italic: bool,
     pub line_height: f64,
     pub letter_spacing: f64,
     pub wrap: TextWrap,
@@ -114,6 +120,16 @@ pub trait TextMeasurer: std::fmt::Debug {
     fn shaping(&self) -> bool {
         false
     }
+
+    /// A7b D2: whether the family (post-fallback-resolution) has a REAL italic
+    /// face loaded. Exporters gate `font-style="italic"` emission on this so an
+    /// artifact never asks its viewer to synthesize a fake oblique the raster
+    /// deliberately refuses to draw (the shaper renders such text upright +
+    /// LUMS0105). Default `true` for non-shaping measurers: with no face
+    /// knowledge, scene truth stands (those contexts render no pixels).
+    fn has_italic_face(&self, _family: &str) -> bool {
+        true
+    }
 }
 
 /// Shared handle for injected measurers (Decision 5, Wave 1 Track A).
@@ -147,6 +163,7 @@ pub fn measure_key(input: &TextMeasureInput) -> String {
         input.font_family.clone(),
         format!("{:.3}", input.font_size),
         input.font_weight.to_string(),
+        input.italic.to_string(),
         format!("{:.3}", input.line_height),
         format!("{:.3}", input.letter_spacing),
         format!("{:?}", input.wrap),
@@ -174,13 +191,14 @@ fn spans_digest(spans: &[TextSpan]) -> String {
         .iter()
         .map(|span| {
             format!(
-                "{}:{}:{:?}:{:?}:{:?}:{:?}",
+                "{}:{}:{:?}:{:?}:{:?}:{:?}:{:?}",
                 span.start,
                 span.end,
                 span.fill,
                 span.font_weight,
                 span.underline,
-                span.strikethrough
+                span.strikethrough,
+                span.italic
             )
         })
         .collect::<Vec<_>>()
@@ -239,6 +257,7 @@ impl TextMeasureInput {
             font_family: text.font_family.clone(),
             font_size: text.font_size,
             font_weight: text.font_weight,
+            italic: text.italic,
             line_height: text.line_height,
             letter_spacing: text.letter_spacing,
             wrap: text.wrap.clone(),
@@ -647,6 +666,7 @@ mod provided_measurer_tests {
             font_family: "Inter".to_owned(),
             font_size: 18.0,
             font_weight: 600,
+            italic: false,
             line_height: 1.2,
             letter_spacing: 0.0,
             wrap: TextWrap::NoWrap,

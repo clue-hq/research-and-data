@@ -438,6 +438,7 @@ impl<'a> PagePainter<'a> {
             self.fonts,
             &text.font_family,
             text.font_weight as i32,
+            text.italic,
             &content,
             Some(DiagnosticSubject::Node(node.id.clone())),
         ) {
@@ -597,6 +598,7 @@ impl<'a> PagePainter<'a> {
                 font_family: family,
                 font_size: text.font_size,
                 font_weight: text.font_weight,
+                italic: text.italic,
                 line_height: text.line_height,
                 letter_spacing: text.letter_spacing,
                 max_lines: None,
@@ -637,6 +639,7 @@ impl<'a> PagePainter<'a> {
                 font_family: family,
                 font_size: text.font_size,
                 font_weight: text.font_weight,
+                italic: text.italic,
                 line_height: text.line_height,
                 letter_spacing: text.letter_spacing,
                 max_lines,
@@ -687,6 +690,7 @@ impl<'a> PagePainter<'a> {
             font_family: family,
             font_size: text.font_size,
             font_weight: text.font_weight,
+            italic: text.italic,
             line_height: text.line_height,
             letter_spacing: text.letter_spacing,
             max_lines,
@@ -786,6 +790,13 @@ impl<'a> PagePainter<'a> {
             let underline = text.underline || span.and_then(|span| span.underline).unwrap_or(false);
             let strikethrough =
                 text.strikethrough || span.and_then(|span| span.strikethrough).unwrap_or(false);
+            // A7b D1: italic is an OVERRIDE merge, deliberately unlike the
+            // union-merged decorations above — italic is a geometry channel (it
+            // selects the face), so `italic(false)` on a span must be able to
+            // de-italicize its run inside an italic block. Mirrors weight. This
+            // resolution MUST match the measurer's per-run resolution byte-for-
+            // byte (measure.rs measure_spanned) or paint drifts from geometry.
+            let italic = span.and_then(|span| span.italic).unwrap_or(text.italic);
             // Span fill resolves like a node fill (D8): a $token span fill goes
             // through fill_paint (sentinel + LUME0213 if unresolved); no span
             // fill inherits the node's base fill paint.
@@ -796,6 +807,7 @@ impl<'a> PagePainter<'a> {
             fill_segments.push(ParagraphSegment {
                 text: segment.text.clone(),
                 font_weight: weight,
+                italic,
                 underline,
                 strikethrough,
                 foreground,
@@ -804,6 +816,7 @@ impl<'a> PagePainter<'a> {
                 stroke_segments.push(ParagraphSegment {
                     text: segment.text.clone(),
                     font_weight: weight,
+                    italic,
                     underline,
                     strikethrough,
                     foreground: stroke.clone(),
@@ -816,6 +829,9 @@ impl<'a> PagePainter<'a> {
             font_family: family,
             font_size: text.font_size,
             font_weight: text.font_weight,
+            // Ignored when segments are set (each run carries its resolved
+            // italic); mirror the block value for honesty.
+            italic: text.italic,
             line_height: text.line_height,
             letter_spacing: text.letter_spacing,
             max_lines: text.max_lines,

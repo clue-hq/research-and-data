@@ -505,6 +505,19 @@ impl<'a> SvgPageRenderer<'a> {
                     (false, true) => " text-decoration=\"line-through\"",
                     (false, false) => "",
                 };
+                // A7b D6: block-level italic via the presentation attribute.
+                // Absent when upright so pre-A7b markup is byte-identical.
+                // D2 gate (adversarial-gate finding): emitted only when a REAL
+                // italic face exists — otherwise the raster deliberately renders
+                // upright (LUMS0105) and an italic attr here would make every
+                // SVG viewer synthesize the fake oblique the raster refused.
+                let italic_renderable =
+                    text.italic && self.measurer.has_italic_face(&text.font_family);
+                let italic = if italic_renderable {
+                    " font-style=\"italic\""
+                } else {
+                    ""
+                };
                 // A6b D7: per-run tspans (absolute x within the line) when spans
                 // exist; otherwise the pre-A6b single-tspan-per-line markup.
                 let tspans = if spanned {
@@ -564,7 +577,7 @@ impl<'a> SvgPageRenderer<'a> {
                     );
                 }
                 self.body.push_str(&format!(
-                    "<text{} x=\"{}\" y=\"{}\" font-family=\"{}\" font-size=\"{}\" font-weight=\"{}\" text-anchor=\"{}\" letter-spacing=\"{}\" direction=\"{}\"{}{}{}{}>{}</text>\n",
+                    "<text{} x=\"{}\" y=\"{}\" font-family=\"{}\" font-size=\"{}\" font-weight=\"{}\" text-anchor=\"{}\" letter-spacing=\"{}\" direction=\"{}\"{}{}{}{}{}>{}</text>\n",
                     id_attrs,
                     fmt_num(x),
                     fmt_num(text.font_size),
@@ -575,6 +588,7 @@ impl<'a> SvgPageRenderer<'a> {
                     fmt_num(text.letter_spacing),
                     direction,
                     decoration,
+                    italic,
                     transform,
                     filter,
                     opacity_with_paint(opacity, paint_attrs),
@@ -868,6 +882,19 @@ impl<'a> SvgPageRenderer<'a> {
                 (false, false) => "none",
             };
             attrs.push_str(&format!(" text-decoration=\"{decoration}\""));
+        }
+        // A7b D6: per-run italic is an OVERRIDE (`span.italic.unwrap_or(block)`),
+        // unlike the union-merged decorations above. Emit `font-style` only when
+        // the run's resolved italic differs from the block — BOTH directions: an
+        // italic run in an upright block (`italic`) AND an upright run in an
+        // italic block via `italic(false)` (`normal`). D2 gate: with no real
+        // italic face EVERY run renders upright (the raster's synthesis gate),
+        // so both effective values collapse to upright and no attr is emitted.
+        let has_face = self.measurer.has_italic_face(&text.font_family);
+        let run_italic = span.italic.unwrap_or(text.italic) && has_face;
+        if run_italic != (text.italic && has_face) {
+            let style = if run_italic { "italic" } else { "normal" };
+            attrs.push_str(&format!(" font-style=\"{style}\""));
         }
         attrs
     }

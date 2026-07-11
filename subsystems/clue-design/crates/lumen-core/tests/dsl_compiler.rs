@@ -3815,6 +3815,57 @@ page page_a6 size(400,400,px)
 }
 
 #[test]
+fn dsl_italic_keyword_create_and_modify_lowering() {
+    // A7b: block italic(bool) on create sets TextNode.italic; a later modify
+    // line flips it (content edits elsewhere preserve it — geometry channel,
+    // like valign).
+    let mut scene = Scene::new(lumen_core::DocumentId::from("doc_italic"), "Italic");
+    let first = compile_dsl_into_scene(
+        r#"
+page page_a7 size(400,400,px)
+  quote text "Emphasis" p(24,24) s(240,hug) italic(true)
+"#,
+        &mut scene,
+    );
+    assert_no_dsl_errors(&first.compile_output.diagnostics);
+    let NodeKind::Text(text) = &scene.nodes[&NodeId::from("quote")].kind else {
+        panic!("expected text node");
+    };
+    assert!(text.italic, "create-time italic(true) sets the field");
+
+    // Modify path: flip it back off.
+    let second = compile_dsl_into_scene(r#"#quote italic(false)"#, &mut scene);
+    assert_no_dsl_errors(&second.compile_output.diagnostics);
+    assert!(second.operation_error.is_none());
+    let NodeKind::Text(text) = &scene.nodes[&NodeId::from("quote")].kind else {
+        panic!("expected text node");
+    };
+    assert!(!text.italic, "modify italic(false) clears the field");
+}
+
+#[test]
+fn dsl_italic_on_non_text_warns_lumd0607() {
+    // A7b: italic(...) on a non-text node warns LUMD0607 (underline mirror).
+    let mut scene = Scene::new(lumen_core::DocumentId::from("doc_italic_wrong"), "ItalicWrong");
+    let output = compile_dsl_into_scene(
+        r#"
+page page_a7 size(400,400,px)
+  box rect p(0,0) s(100,100) italic(true)
+"#,
+        &mut scene,
+    );
+    assert!(
+        output
+            .compile_output
+            .diagnostics
+            .iter()
+            .any(|d| d.diagnostic.code == "LUMD0607"),
+        "italic on a non-text node must warn LUMD0607: {:#?}",
+        output.compile_output.diagnostics
+    );
+}
+
+#[test]
 fn dsl_a6_keyword_aliases_resolve() {
     let mut scene = Scene::new(lumen_core::DocumentId::from("doc_a6_alias"), "A6");
     let output = compile_dsl_into_scene(

@@ -449,6 +449,7 @@ fn accent_span() -> TextSpan {
         font_weight: None,
         underline: None,
         strikethrough: None,
+        italic: None,
     }
 }
 
@@ -500,6 +501,7 @@ fn d4_content_edit_that_sets_spans_applies_both() {
         font_weight: Some(700),
         underline: None,
         strikethrough: None,
+        italic: None,
     };
     let batch = build_modify_operations(
         &scene,
@@ -598,6 +600,7 @@ fn d4_whole_kind_content_replace_clears_stale_spans_too() {
                 font_weight: Some(700),
                 underline: None,
                 strikethrough: None,
+                italic: None,
             }];
         }))
         .unwrap();

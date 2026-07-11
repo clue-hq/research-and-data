@@ -29,10 +29,10 @@ fn typeface_resolution_is_deterministic_per_weight() {
     let fonts = FontManager::bundled();
     for weight in [400, 600, 700, 800] {
         let first = fonts
-            .match_typeface("Inter", weight)
+            .match_typeface("Inter", weight, false)
             .unwrap_or_else(|| panic!("Inter weight {weight} resolves"));
         let second = fonts
-            .match_typeface("Inter", weight)
+            .match_typeface("Inter", weight, false)
             .unwrap_or_else(|| panic!("Inter weight {weight} resolves twice"));
         assert_eq!(first.family_name(), "Inter");
         assert_eq!(
@@ -51,8 +51,8 @@ fn typeface_resolution_is_deterministic_per_weight() {
 #[test]
 fn intermediate_weight_resolves_to_nearest_loaded_face_stably() {
     let fonts = FontManager::bundled();
-    let first = fonts.match_typeface("Inter", 500).expect("resolves");
-    let second = fonts.match_typeface("Inter", 500).expect("resolves");
+    let first = fonts.match_typeface("Inter", 500, false).expect("resolves");
+    let second = fonts.match_typeface("Inter", 500, false).expect("resolves");
     assert_eq!(first.unique_id(), second.unique_id());
     // The resolved face must be one of the loaded static weights.
     assert!(
@@ -77,7 +77,7 @@ fn missing_family_falls_back_to_default_with_warning_diagnostic() {
 
     // Matching still produces a usable typeface (the fallback family's).
     let typeface = fonts
-        .match_typeface("Comic Sans MS", 700)
+        .match_typeface("Comic Sans MS", 700, false)
         .expect("fallback face");
     assert_eq!(typeface.family_name(), "Inter");
 }
@@ -151,7 +151,7 @@ fn bundled_with_registers_extra_family_resolvable_without_fallback() {
     let resolution = fonts.resolve_family("Xnter");
     assert!(!resolution.fallback);
     assert!(resolution.diagnostic().is_none());
-    let typeface = fonts.match_typeface("Xnter", 400).expect("extra face");
+    let typeface = fonts.match_typeface("Xnter", 400, false).expect("extra face");
     assert_eq!(typeface.family_name(), "Xnter");
 }
 
@@ -187,7 +187,7 @@ fn substituted_chars_reports_glyphs_missing_from_the_resolved_family() {
     let resolution = fonts.resolve_family("SubsetFace");
     assert!(!resolution.fallback);
     // ...but lacks these three glyphs, which the bundled Inter supplies.
-    let missing = fonts.substituted_chars("SubsetFace", 400, "1/10 ×2 —");
+    let missing = fonts.substituted_chars("SubsetFace", 400, false, "1/10 ×2 —");
     assert_eq!(missing, vec!['/', '×', '—']);
 }
 
@@ -196,7 +196,7 @@ fn substituted_chars_is_empty_for_a_fully_covered_face() {
     let fonts = FontManager::bundled();
     // Bundled Inter covers "/", "×", and "—", so nothing is substituted.
     assert!(fonts
-        .substituted_chars("Inter", 400, "1/10 ×2 —")
+        .substituted_chars("Inter", 400, false, "1/10 ×2 —")
         .is_empty());
 }
 
@@ -212,7 +212,82 @@ fn bundled_with_alias_resolves_the_kit_declared_family() {
     let resolution = fonts.resolve_family("Aeonik");
     assert!(!resolution.fallback, "declared kit family must resolve");
     assert!(resolution.diagnostic().is_none());
-    let typeface = fonts.match_typeface("Aeonik", 400).expect("aliased face");
+    let typeface = fonts.match_typeface("Aeonik", 400, false).expect("aliased face");
     // The matched face is the aliased bytes (intrinsic name Inter here).
     assert_eq!(typeface.family_name(), "Inter");
+}
+
+// --- A7b: slant selection (upright + italic under one family) -------------
+
+/// Instrument Serif Regular + Italic — two STATIC faces (both weight 400) that
+/// share the family name "Instrument Serif". They register under the same
+/// family key; the requested `FontStyle` slant disambiguates them. Copied from
+/// the pinned google/fonts OFL clone.
+fn instrument_serif_faces() -> Vec<(Vec<u8>, Option<String>)> {
+    let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
+    let upright = std::fs::read(dir.join("instrument-serif-regular.ttf"))
+        .expect("instrument-serif-regular fixture reads");
+    let italic = std::fs::read(dir.join("instrument-serif-italic.ttf"))
+        .expect("instrument-serif-italic fixture reads");
+    vec![(upright, None), (italic, None)]
+}
+
+fn slant_is_italic(typeface: &skia_safe::Typeface) -> bool {
+    typeface.font_style().slant() != skia_safe::font_style::Slant::Upright
+}
+
+#[test]
+fn match_typeface_selects_italic_or_upright_face_by_slant() {
+    let (fonts, errors) = FontManager::bundled_with(instrument_serif_faces());
+    assert!(errors.is_empty(), "{errors:?}");
+    // Both faces registered under one family, and the family reports an italic.
+    let resolution = fonts.resolve_family("Instrument Serif");
+    assert!(!resolution.fallback, "italic family must resolve directly");
+    assert!(fonts.has_italic_face("Instrument Serif"));
+
+    let italic = fonts
+        .match_typeface("Instrument Serif", 400, true)
+        .expect("italic face resolves");
+    assert!(
+        slant_is_italic(&italic),
+        "italic=true must select the italic face, got {:?}",
+        italic.font_style().slant()
+    );
+
+    let upright = fonts
+        .match_typeface("Instrument Serif", 400, false)
+        .expect("upright face resolves");
+    assert!(
+        !slant_is_italic(&upright),
+        "italic=false must select the upright face, got {:?}",
+        upright.font_style().slant()
+    );
+
+    // No slant advisory when the requested slant is available in either direction.
+    assert!(fonts.resolved_slant("Instrument Serif", 400, true).is_none());
+    assert!(fonts.resolved_slant("Instrument Serif", 400, false).is_none());
+}
+
+#[test]
+fn requesting_italic_with_no_italic_face_snaps_to_upright_and_reports() {
+    // Bundled Inter ships only upright static faces (400/600/700/800).
+    let fonts = FontManager::bundled();
+    assert!(!fonts.has_italic_face("Inter"));
+
+    let face = fonts
+        .match_typeface("Inter", 400, true)
+        .expect("upright snap face resolves");
+    assert!(
+        !slant_is_italic(&face),
+        "no synthetic slant: the request must snap to the upright face"
+    );
+
+    // resolved_slant reports the snap (actual upright != requested italic).
+    assert_eq!(
+        fonts.resolved_slant("Inter", 400, true),
+        Some(false),
+        "the italic→upright snap must be reported for LUMS0105"
+    );
+    // Upright request against the same family never reports.
+    assert!(fonts.resolved_slant("Inter", 400, false).is_none());
 }

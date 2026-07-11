@@ -113,9 +113,31 @@ fn dsl_empty_span_errors() {
 
 #[test]
 fn dsl_unknown_span_channel_errors() {
+    // A7b: `italic` is now a real span channel, so the bogus-channel probe uses
+    // a name with no parse arm (verified: no `oblique` arm exists).
     let (_, diagnostics) =
-        compile("page p preset(a4,portrait)\n  head t(\"[[a]]\") span(italic(true))\n");
+        compile("page p preset(a4,portrait)\n  head t(\"[[a]]\") span(oblique(true))\n");
     assert!(codes(&diagnostics).contains(&"LUMD0212".to_owned()));
+}
+
+#[test]
+fn dsl_span_italic_channel_lowers_to_span_override() {
+    // A7b positive twin: span(italic(true)) is a valid channel that lowers to
+    // TextSpan.italic = Some(true) (override merge, resolved at measure/paint).
+    let (scene, diagnostics) =
+        compile("page p preset(a4,portrait)\n  head t(\"[[stressed]] plain\") span(italic(true))\n");
+    assert!(
+        !codes(&diagnostics).contains(&"LUMD0212".to_owned()),
+        "italic is a valid span channel: {diagnostics:?}"
+    );
+    let text = only_text(&scene);
+    assert_eq!(text.spans.len(), 1);
+    assert_eq!(text.spans[0].italic, Some(true));
+
+    // italic(false) de-italicizes a run (override, not union) — also valid.
+    let (scene, _) =
+        compile("page p preset(a4,portrait)\n  head t(\"[[plain]] rest\") span(italic(false))\n");
+    assert_eq!(only_text(&scene).spans[0].italic, Some(false));
 }
 
 #[test]
@@ -146,6 +168,7 @@ fn span(start: usize, end: usize) -> TextSpan {
         font_weight: None,
         underline: None,
         strikethrough: None,
+        italic: None,
     }
 }
 
@@ -189,6 +212,7 @@ fn d3_gradient_span_fill_is_rejected() {
         font_weight: None,
         underline: None,
         strikethrough: None,
+        italic: None,
     };
     let errors = span_validation_errors("hello", &[gradient]);
     assert!(errors.iter().any(|e| e.reason.contains("gradient")));
@@ -318,6 +342,7 @@ fn span_serde_roundtrips_and_skips_none_channels() {
             font_weight: Some(700),
             underline: None,
             strikethrough: None,
+            italic: None,
         }],
     );
     let value = serde_json::to_value(&node).unwrap();
