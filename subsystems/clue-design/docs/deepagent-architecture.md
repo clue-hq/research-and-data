@@ -455,3 +455,44 @@ Suites at gate: agent-runtime 411, api 291 (+3 new), zero regressions.
 Still open (awaiting user go): init_model timeout/retries + turn wall-clock
 watchdog — tracing makes hangs visible; the watchdog will make them
 fatal-fast.
+
+## Track A — A6a Typography v1 (2026-07-11, gate verified)
+
+Engine (see commit for the diagnostic map): `case/text_transform`, `underline`,
+`strike`, `truncate/ellipsis`, `para_spacing` land as serde-default TextNode
+fields — old scenes bit-identical — flowing DSL → both measurers → SVG/Skia/PDF
+under one contract; text strokes RENDER (LUME0214 retired; first-solid-only
+with LUME0215 for extras; PDF advises LUME0421/0422/0423 instead of silent
+drops); LUMS0104 surfaces the silent within-family weight snap; render
+contract gains the five text features; SVG/PDF exports fold measurer
+diagnostics (the reachable LUMS0100/0103 loss on direct exports is closed).
+Editor: CanvasKit byte-mirrors the engine recipes (transform twin fixture-
+pinned against Rust, decoration, native ellipsis, stacked paragraphs under a
+TOTAL max_lines budget, two-pass stroke), the 4-bucket weight snap is dead
+(exact numeric weight in paint + measure), and TextSection/TextToolbar expose
+the new controls. Teaching: taste-first vocabulary (tracked-caps eyebrow,
+single underline accent, semantic strike, truncation-as-honesty, lh vs
+para_spacing) with 10/10 exemplars compile→preflight→render validated.
+
+Review-gate record — four real bugs caught after green builder suites, all
+cross-backend divergence class: (1) raster painted lines the measurer/SVG cut
+under stacking+max_lines (pixel-proven); (2) elided line text overflowed its
+bound in markup while the raster elided natively (measurers now refit);
+(3) NoWrap+truncate meant three different things in three components (unified:
+per-line elide at the bound, pixel-probed as SkParagraph's native behavior);
+(4) taffy whole-pixel geometry vs fractional stacked heights fired a false
+LUMV0903 on every hugged para-spaced body — found by the K-A6 exemplar
+validation protocol, fixed as a rounding-tolerance in the layout overflow
+fold (a sub-pixel overflow is the rounding contract, not content loss).
+
+DEFERRED, on the record so schema is never mistaken for capability: variable-
+font axes (zero VF files server-side; the editor's InterVariable.ttf is an
+asymmetry, not a feature), italic (zero italic faces in the 104-face library;
+kit FontFace.style is written-never-read; Slant::Upright hardcoded ×3),
+vertical align, token channels for the new fields, slot
+OverflowPolicy::Ellipsis → node-truncate reconciliation, CanvasKit
+RenderTarget in the render contract, NoWrap+truncate+max_lines multi-hard-line
+raster/measure drift (rare, accepted). NEXT: A6b rich-text spans (two-color
+headline) as its own designed slice, then the A5 full re-sweep.
+Gates: cargo workspace 0 fail · helper release · HANDSHAKE OK fafdf01f4251 ·
+agent-runtime 411 · api 291 · editor tsc + targeted green.
