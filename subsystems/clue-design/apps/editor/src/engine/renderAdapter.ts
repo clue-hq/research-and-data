@@ -174,6 +174,13 @@ export interface RenderNodeDescriptor {
     maxLines: number | null;
     wrap: "no_wrap" | "wrap";
     direction: "ltr" | "rtl" | "auto";
+    /** A6a typography fields (defaults mirror the model). */
+    textTransform: "none" | "uppercase" | "lowercase" | "title";
+    underline: boolean;
+    strikethrough: boolean;
+    truncate: boolean;
+    /** Extra vertical gap at each `\n` break, already scaled into canvas units. */
+    paragraphSpacing: number;
   };
   line?: {
     points: number[];
@@ -279,7 +286,12 @@ export function nodeDescriptor(
       letterSpacing: styled.letterSpacing * scale,
       maxLines: node.kind.max_lines ?? null,
       wrap: node.kind.wrap ?? "no_wrap",
-      direction: node.kind.direction ?? "ltr"
+      direction: node.kind.direction ?? "ltr",
+      textTransform: node.kind.text_transform ?? "none",
+      underline: node.kind.underline ?? false,
+      strikethrough: node.kind.strikethrough ?? false,
+      truncate: node.kind.truncate ?? false,
+      paragraphSpacing: (node.kind.paragraph_spacing ?? 0) * scale
     };
   }
 

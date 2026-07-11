@@ -239,6 +239,17 @@ export interface TextNode {
   max_lines?: number | null;
   wrap?: TextWrap;
   direction?: TextDirection;
+  /** A6a D1: display-time case transform; `content` is never mutated. Absent =
+   * `"none"`, mirroring the engine's `#[serde(default)] TextTransform::None`. */
+  text_transform?: TextTransform;
+  /** A6a D2: independent decoration flags (absent = false). */
+  underline?: boolean;
+  strikethrough?: boolean;
+  /** A6a D3: opt-in "…" elision when max_lines/NoWrap cut content (absent = false). */
+  truncate?: boolean;
+  /** A6a D4: extra vertical px inserted at each `\n` break (absent/0 = today's
+   * uniform stack). Px units, like `letter_spacing`. */
+  paragraph_spacing?: number;
   style_token?: string | null;
   /** K1.5: mirrors engine TextNode.font_size_token (`font_size($type.size.*)`). */
   font_size_token?: string | null;
@@ -249,6 +260,7 @@ export interface TextNode {
 export type TextAlign = "left" | "center" | "right" | "justify";
 export type TextWrap = "no_wrap" | "wrap";
 export type TextDirection = "ltr" | "rtl" | "auto";
+export type TextTransform = "none" | "uppercase" | "lowercase" | "title";
 
 export interface ImageNode {
   asset_id: AssetId;

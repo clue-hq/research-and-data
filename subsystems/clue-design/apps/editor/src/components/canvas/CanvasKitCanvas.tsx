@@ -269,6 +269,11 @@ export function CanvasKitCanvas({
           t.wrap ?? "no_wrap",
           t.max_lines ?? "_",
           t.direction ?? "ltr",
+          // A6a: geometry-affecting typography fields re-measure on change
+          // (case changes width; paragraph spacing changes height).
+          t.text_transform ?? "none",
+          t.truncate ?? false,
+          t.paragraph_spacing ?? 0,
           // K1.5: kit type-role tokens are measurement inputs too — and the
           // maps' generation, so measurements re-run when the kit lands.
           t.style_token ?? "_",

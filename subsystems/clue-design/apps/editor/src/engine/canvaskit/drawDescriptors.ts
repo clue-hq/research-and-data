@@ -1,6 +1,7 @@
-import type { Canvas, CanvasKit, TypefaceFontProvider } from "canvaskit-wasm";
+import type { Canvas, CanvasKit, Paint, Paragraph, TypefaceFontProvider } from "canvaskit-wasm";
 import type { ImageFitMode } from "../contracts";
 import type { RenderNodeDescriptor, RenderPageDescriptor } from "../renderAdapter";
+import { applyTextTransform } from "../textTransform";
 import type { CanvasKitImageSource } from "./imageCache";
 
 /**
@@ -279,50 +280,265 @@ function drawText(ck: CanvasKit, canvas: Canvas, d: RenderNodeDescriptor, fontPr
   if (!fontProvider || !d.text) {
     return;
   }
+  const t = d.text;
   const color = parseColor(ck, d.fill) ?? ck.BLACK;
-  const style = new ck.ParagraphStyle({
-    textStyle: {
+
+  // A6a D5: the first solid text stroke becomes a stroke-style foreground paint
+  // drawn behind the fill glyphs (first-stroke-only, solid-only), mirroring
+  // lumen-skia `text_stroke_paint`. Extra/gradient/dash strokes are ignored
+  // here just as the engine advises them (LUME0215) and drops them.
+  const strokePaint = textStrokePaint(ck, d);
+
+  // A6a D4: split-and-stack only when a positive gap meets an actual break in
+  // the normalized content; otherwise the single-paragraph path stays
+  // byte-identical to pre-A6a for every existing scene (D1 case transform
+  // aside, which is identity for `none`).
+  const gap = Number.isFinite(t.paragraphSpacing) && t.paragraphSpacing > 0 ? t.paragraphSpacing : 0;
+  const normalizedRaw = normalizeTextContent(t.content);
+  if (gap > 0 && normalizedRaw.includes("\n")) {
+    // Engine order: normalize → transform → split (lumen-skia render.rs
+    // paint_text). `max_lines` is a TOTAL budget across the stacked paragraphs.
+    const transformed = applyTextTransform(t.textTransform, normalizedRaw);
+    paintStackedParagraphs(ck, canvas, fontProvider, d, transformed, color, strokePaint, gap);
+  } else {
+    // Fast path: transform the RAW content (identity for `none` → today's
+    // bytes) and paint one paragraph honoring the total max_lines cap.
+    const transformed = applyTextTransform(t.textTransform, t.content);
+    paintTextParagraph(ck, canvas, fontProvider, d, transformed, color, strokePaint, t.maxLines ?? undefined, 0);
+  }
+
+  strokePaint?.delete();
+}
+
+/** Port of lumen-skia/lumen-core `normalize_content`: literal "\n" and CRLF
+ * become real breaks, trailing breaks are trimmed. Used only to decide and
+ * drive the paragraph-spacing split so the editor matches the engine there;
+ * the single-paragraph fast path keeps drawing the raw content as before. */
+function normalizeTextContent(content: string): string {
+  return content.replace(/\\n/g, "\n").replace(/\r\n/g, "\n").replace(/\n+$/, "");
+}
+
+/**
+ * Paint the stacked `\n`-delimited paragraphs at accumulated offsets with
+ * `gap` px between them, mirroring lumen-skia `paint_text`: `max_lines` is a
+ * TOTAL cap across the stack — each paragraph draws against the remaining line
+ * budget, and when the cut lands exactly on a paragraph boundary with more
+ * content following, the "…" is carried in the text (SkParagraph's native
+ * ellipsis cannot fire there).
+ */
+function paintStackedParagraphs(
+  ck: CanvasKit,
+  canvas: Canvas,
+  fontProvider: TypefaceFontProvider,
+  d: RenderNodeDescriptor,
+  content: string,
+  color: Float32Array,
+  strokePaint: Paint | null,
+  gap: number
+): void {
+  const t = d.text!;
+  const paragraphs = content.split("\n");
+  const last = paragraphs.length - 1;
+  let cursorY = 0;
+  // null = unbounded (no max_lines).
+  let remaining: number | null = t.maxLines ?? null;
+  for (let index = 0; index < paragraphs.length; index += 1) {
+    if (remaining === 0) {
+      break;
+    }
+    let paraText = paragraphs[index];
+    let paraMax: number | undefined;
+    if (remaining !== null) {
+      const natural = paragraphLineCount(ck, fontProvider, d, paraText);
+      if (natural < remaining || (natural === remaining && index === last)) {
+        paraMax = undefined;
+      } else {
+        if (natural === remaining && t.truncate) {
+          paraText = `${paraText.replace(/\s+$/u, "")}…`;
+        }
+        paraMax = Math.min(remaining, 65535);
+      }
+    }
+    const { height, lineCount } = paintTextParagraph(
+      ck,
+      canvas,
+      fontProvider,
+      d,
+      paraText,
       color,
-      fontFamilies: [d.text.fontFamily],
-      fontSize: d.text.fontSize,
-      fontStyle: { weight: fontWeight(ck, d.text.fontWeight) },
-      heightMultiplier: d.text.lineHeight,
-      letterSpacing: d.text.letterSpacing
-    },
-    textAlign: textAlign(ck, d.text.align),
-    maxLines: d.text.maxLines ?? undefined
+      strokePaint,
+      paraMax,
+      cursorY
+    );
+    if (remaining !== null) {
+      remaining = Math.max(0, remaining - lineCount);
+    }
+    cursorY += height;
+    if (index !== last) {
+      cursorY += gap;
+    }
+  }
+}
+
+/**
+ * Paint one paragraph's glyphs (stroke pass behind, then fill) at a vertical
+ * offset, mirroring lumen-skia `paint_text_paragraph`: Wrap lays out at the box
+ * width (x=0); NoWrap+truncate lays out at the box width so SkParagraph's "…"
+ * fires, placed per alignment against the longest line; plain NoWrap lays out
+ * unbounded, snaps to the natural width, then places per alignment. Returns the
+ * laid-out height and line count so the stacking loop can advance + budget.
+ */
+function paintTextParagraph(
+  ck: CanvasKit,
+  canvas: Canvas,
+  fontProvider: TypefaceFontProvider,
+  d: RenderNodeDescriptor,
+  content: string,
+  color: Float32Array,
+  strokePaint: Paint | null,
+  maxLines: number | undefined,
+  yOffset: number
+): { height: number; lineCount: number } {
+  const t = d.text!;
+  const fill = buildTextParagraph(ck, fontProvider, t, content, maxLines, { color });
+
+  let layoutWidth: number;
+  let x: number;
+  if (t.wrap === "wrap") {
+    layoutWidth = Math.max(0, d.width);
+    x = 0;
+  } else if (t.truncate) {
+    const bound = Math.max(0, d.width);
+    fill.layout(bound);
+    const longest = fill.getLongestLine();
+    x = t.align === "center" ? (d.width - longest) / 2 : t.align === "right" ? d.width - longest : 0;
+    layoutWidth = bound;
+  } else {
+    fill.layout(Number.MAX_SAFE_INTEGER);
+    const natural = Math.ceil(fill.getLongestLine()) + 2;
+    x = t.align === "center" ? (d.width - natural) / 2 : t.align === "right" ? d.width - natural : 0;
+    layoutWidth = natural;
+  }
+  fill.layout(layoutWidth);
+
+  if (strokePaint) {
+    const stroke = buildTextParagraph(ck, fontProvider, t, content, maxLines, { paint: strokePaint });
+    stroke.layout(layoutWidth);
+    canvas.drawParagraph(stroke, x, yOffset);
+    stroke.delete();
+  }
+  canvas.drawParagraph(fill, x, yOffset);
+  const height = fill.getHeight();
+  const lineCount = fill.getLineMetrics().length;
+  fill.delete();
+  return { height, lineCount };
+}
+
+/** The natural (uncapped) line count of one paragraph at the same layout width
+ * the paint pass uses, so the stacking loop can budget the total `max_lines`
+ * cap exactly like the engine's `paragraph_line_count`. */
+function paragraphLineCount(
+  ck: CanvasKit,
+  fontProvider: TypefaceFontProvider,
+  d: RenderNodeDescriptor,
+  para: string
+): number {
+  const t = d.text!;
+  const paragraph = buildTextParagraph(ck, fontProvider, t, para, undefined, { color: ck.BLACK });
+  paragraph.layout(t.wrap === "wrap" ? Math.max(0, d.width) : Number.MAX_SAFE_INTEGER);
+  const count = paragraph.getLineMetrics().length;
+  paragraph.delete();
+  return count;
+}
+
+/**
+ * Build a laid-out-ready paragraph for one text run. `foreground` is either a
+ * solid fill color (the fill pass) or a stroke-style Paint (the D5 stroke pass,
+ * pushed via `pushPaintStyle` since CanvasKit `TextStyle` carries no Paint
+ * foreground in object form). Decoration (D2) is set on both passes so the
+ * outline traces the underline/strike too, matching the engine's shared
+ * `build_paragraph`. Weight is the EXACT numeric value (D6.1) — no bucketing.
+ */
+function buildTextParagraph(
+  ck: CanvasKit,
+  fontProvider: TypefaceFontProvider,
+  t: NonNullable<RenderNodeDescriptor["text"]>,
+  content: string,
+  maxLines: number | undefined,
+  foreground: { color: Float32Array } | { paint: Paint }
+): Paragraph {
+  const decoration =
+    (t.underline ? ck.UnderlineDecoration : 0) | (t.strikethrough ? ck.LineThroughDecoration : 0);
+  const isFill = "color" in foreground;
+  const textStyle: Record<string, unknown> = {
+    fontFamilies: [t.fontFamily],
+    fontSize: t.fontSize,
+    fontStyle: { weight: t.fontWeight },
+    heightMultiplier: t.lineHeight,
+    letterSpacing: t.letterSpacing
+  };
+  if (decoration) {
+    textStyle.decoration = decoration;
+  }
+  if (isFill) {
+    textStyle.color = foreground.color;
+    if (decoration) {
+      textStyle.decorationColor = foreground.color;
+    }
+  }
+  const style = new ck.ParagraphStyle({
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    textStyle: textStyle as any,
+    textAlign: textAlign(ck, t.align),
+    maxLines: maxLines ?? undefined,
+    // A6a D3: opt-in native "…" — fires on the max_lines cut, or on a bounded
+    // NoWrap line that overflows its box (laid out at the box width above).
+    ellipsis: t.truncate ? "…" : undefined
   });
   const builder = ck.ParagraphBuilder.MakeFromFontProvider(style, fontProvider);
-  builder.addText(d.text.content);
-  const paragraph = builder.build();
-  if (d.text.wrap === "wrap") {
-    // Wrapped text breaks at the node width — the same width the exporter
-    // (and the measurer) use, so line breaks are bit-faithful. Alignment
-    // resolves against this width, so it paints at the block origin.
-    paragraph.layout(d.width);
-    canvas.drawParagraph(paragraph, 0, 0);
-  } else {
-    // No-wrap text: mirror the Skia exporter's `paint_text` NoWrap arm
-    // exactly (lumen-skia/src/render.rs). Laying out at a near-infinite
-    // width and painting at x=0 works for LEFT alignment, but CENTER/RIGHT
-    // anchor the glyphs within that width — pushing them ~quadrillions of
-    // px off-canvas (the reported "centered button labels don't paint"
-    // bug). Instead: lay out unbounded to find the natural line width,
-    // relayout snugly so alignment math stays in small coordinates, then
-    // place the block per alignment against the real node width.
-    paragraph.layout(Number.MAX_SAFE_INTEGER);
-    const natural = Math.ceil(paragraph.getLongestLine()) + 2;
-    paragraph.layout(natural);
-    const x =
-      d.text.align === "center"
-        ? (d.width - natural) / 2
-        : d.text.align === "right"
-          ? d.width - natural
-          : 0;
-    canvas.drawParagraph(paragraph, x, 0);
+  if (!isFill) {
+    // Paint the glyphs with the stroke paint; a transparent background paint
+    // keeps `pushPaintStyle`'s bg from drawing a filled box behind the text.
+    const bg = new ck.Paint();
+    bg.setColor(ck.Color4f(0, 0, 0, 0));
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    builder.pushPaintStyle(new ck.TextStyle(textStyle as any), foreground.paint, bg);
+    bg.delete();
   }
-  paragraph.delete();
+  builder.addText(content);
+  const paragraph = builder.build();
   builder.delete();
+  return paragraph;
+}
+
+/**
+ * A6a D5: the first solid text stroke as a stroke-style Paint (first-stroke-only,
+ * solid-only). A gradient stroke takes its first stop's color; dash/caps/joins
+ * are ignored — the same reduction the engine's `text_stroke_paint` applies
+ * before advising LUME0215. Caller deletes the returned paint.
+ */
+function textStrokePaint(ck: CanvasKit, d: RenderNodeDescriptor): Paint | null {
+  const stroke = d.strokes[0];
+  if (!stroke) {
+    return null;
+  }
+  let color: Float32Array | null;
+  if (stroke.paint.kind === "solid") {
+    color = parseColor(ck, stroke.paint.color);
+  } else {
+    // First gradient stop is `[pos, css, ...]`; paint it solid.
+    const css = stroke.paint.colorStops[1];
+    color = typeof css === "string" ? parseColor(ck, css) : null;
+  }
+  if (!color) {
+    return null;
+  }
+  const paint = new ck.Paint();
+  paint.setAntiAlias(true);
+  paint.setStyle(ck.PaintStyle.Stroke);
+  paint.setStrokeWidth(stroke.width);
+  paint.setColor(color);
+  return paint;
 }
 
 function textAlign(ck: CanvasKit, align: "left" | "center" | "right" | "justify") {
@@ -330,13 +546,6 @@ function textAlign(ck: CanvasKit, align: "left" | "center" | "right" | "justify"
   if (align === "right") return ck.TextAlign.Right;
   if (align === "justify") return ck.TextAlign.Justify;
   return ck.TextAlign.Left;
-}
-
-function fontWeight(ck: CanvasKit, weight: number) {
-  if (weight >= 700) return ck.FontWeight.Bold;
-  if (weight >= 600) return ck.FontWeight.SemiBold;
-  if (weight >= 500) return ck.FontWeight.Medium;
-  return ck.FontWeight.Normal;
 }
 
 /** Fill + stroke a closed shape path (rect/ellipse/image box, or a vector). */

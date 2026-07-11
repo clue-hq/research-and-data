@@ -7,6 +7,7 @@ import type {
   Operation,
   TextAlign,
   TextDirection,
+  TextTransform,
   TextWrap
 } from "@/engine/contracts";
 import { updateTextNode } from "@/engine/operations";
@@ -131,6 +132,33 @@ export function TextSection({
                 <option value="auto">Auto</option>
               </select>
             </label>
+            <label className="field">
+              <span>Case</span>
+              <select
+                value={selectedNode.kind.text_transform ?? "none"}
+                disabled={selectedNode.locked}
+                onChange={(event) =>
+                  onOperation(
+                    updateTextNode(selectedNode, { text_transform: event.target.value as TextTransform })
+                  )
+                }
+              >
+                <option value="none">None</option>
+                <option value="uppercase">UPPER</option>
+                <option value="lowercase">lower</option>
+                <option value="title">Title</option>
+              </select>
+            </label>
+            <NumberField
+              label="Paragraph Spacing"
+              value={selectedNode.kind.paragraph_spacing ?? 0}
+              min={0}
+              step={1}
+              disabled={selectedNode.locked}
+              onCommit={(value) =>
+                onOperation(updateTextNode(selectedNode, { paragraph_spacing: Math.max(0, value) }))
+              }
+            />
             {brandTokens ? (
               <TokenSelect
                 label="Style Token"
@@ -140,6 +168,37 @@ export function TextSection({
                 onChange={(token) => onOperation(updateTextNode(selectedNode, { style_token: token || null }))}
               />
             ) : null}
+          </div>
+          <div className="field-grid two">
+            <label className="toggle-field">
+              <input
+                type="checkbox"
+                checked={selectedNode.kind.underline ?? false}
+                disabled={selectedNode.locked}
+                onChange={(event) => onOperation(updateTextNode(selectedNode, { underline: event.target.checked }))}
+              />
+              Underline
+            </label>
+            <label className="toggle-field">
+              <input
+                type="checkbox"
+                checked={selectedNode.kind.strikethrough ?? false}
+                disabled={selectedNode.locked}
+                onChange={(event) =>
+                  onOperation(updateTextNode(selectedNode, { strikethrough: event.target.checked }))
+                }
+              />
+              Strikethrough
+            </label>
+            <label className="toggle-field">
+              <input
+                type="checkbox"
+                checked={selectedNode.kind.truncate ?? false}
+                disabled={selectedNode.locked}
+                onChange={(event) => onOperation(updateTextNode(selectedNode, { truncate: event.target.checked }))}
+              />
+              Truncate
+            </label>
           </div>
         </section>
   );

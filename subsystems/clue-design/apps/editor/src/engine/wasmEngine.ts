@@ -64,6 +64,12 @@ export interface TextMeasurement {
   direction: "ltr" | "rtl" | "auto";
   max_width?: number;
   max_height?: number;
+  /** A6a: geometry-affecting typography fields. They enter the engine's
+   * `measure_key`, so an override for a node using them must carry them or the
+   * layout lookup misses. Optional so pre-A6a payloads deserialize unchanged. */
+  text_transform?: "none" | "uppercase" | "lowercase" | "title";
+  truncate?: boolean;
+  paragraph_spacing?: number;
   width: number;
   height: number;
 }

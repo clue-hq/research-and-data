@@ -1,6 +1,7 @@
-import type { CanvasKit, TypefaceFontProvider } from "canvaskit-wasm";
+import type { CanvasKit, FontWeight, TypefaceFontProvider } from "canvaskit-wasm";
 import type { Scene } from "../contracts";
 import { resolvedTextFields } from "../renderAdapter";
+import { applyTextTransform } from "../textTransform";
 import type { TextMeasurement } from "../wasmEngine";
 
 /**
@@ -31,14 +32,28 @@ export function skiaMeasurements(ck: CanvasKit, fontProvider: TypefaceFontProvid
     // measurement RECORD keeps the node's literal fields: that's the key the
     // engine matches on — only the measured extent reflects the resolution.
     const styled = resolvedTextFields(t);
+    // A6a: the geometry-affecting typography fields. They also enter the
+    // engine's `measure_key`, so the record MUST carry them or the layout
+    // lookup misses this override and falls back to the heuristic.
+    const textTransform = t.text_transform ?? "none";
+    const truncate = t.truncate ?? false;
+    const paragraphSpacing = t.paragraph_spacing ?? 0;
+    // Case transform changes glyph widths, so measure the TRANSFORMED string
+    // (the record's `content` key stays the literal, matching the node).
+    const measuredContent = applyTextTransform(textTransform, t.content);
     const { width, height } = measureParagraph(ck, fontProvider, {
-      content: t.content,
+      content: measuredContent,
       fontFamily: styled.fontFamily,
       fontSize: styled.fontSize,
       fontWeight: styled.fontWeight,
       lineHeight: styled.lineHeight,
       letterSpacing: styled.letterSpacing
     });
+    // Paragraph spacing adds `gap` px at each `\n` break (unconstrained hug);
+    // mirrors the measurer stacking each paragraph with the extra gap.
+    const gap = Number.isFinite(paragraphSpacing) && paragraphSpacing > 0 ? paragraphSpacing : 0;
+    const breakCount =
+      gap > 0 ? Math.max(0, measuredContent.replace(/\\n/g, "\n").split("\n").length - 1) : 0;
     out.push({
       content: t.content,
       font_family: t.font_family,
@@ -49,8 +64,11 @@ export function skiaMeasurements(ck: CanvasKit, fontProvider: TypefaceFontProvid
       wrap,
       max_lines: t.max_lines ?? null,
       direction,
+      text_transform: textTransform,
+      truncate,
+      paragraph_spacing: paragraphSpacing,
       width,
-      height
+      height: height + breakCount * gap
     });
   }
   return out;
@@ -75,7 +93,10 @@ export function measureParagraph(
     textStyle: {
       fontFamilies: [input.fontFamily],
       fontSize: input.fontSize,
-      fontStyle: { weight: fontWeight(ck, input.fontWeight) },
+      // A6a D6.1: the exact numeric weight (no 4-bucket snap), matching the
+      // painter and the server so measured widths and painted glyphs agree.
+      // CanvasKit accepts a raw number here; the enum type is just the TS shape.
+      fontStyle: { weight: input.fontWeight as unknown as FontWeight },
       heightMultiplier: input.lineHeight,
       letterSpacing: input.letterSpacing
     }
@@ -89,13 +110,6 @@ export function measureParagraph(
   paragraph.delete();
   builder.delete();
   return { width: round(width), height: round(height) };
-}
-
-function fontWeight(ck: CanvasKit, weight: number) {
-  if (weight >= 700) return ck.FontWeight.Bold;
-  if (weight >= 600) return ck.FontWeight.SemiBold;
-  if (weight >= 500) return ck.FontWeight.Medium;
-  return ck.FontWeight.Normal;
 }
 
 function round(value: number): number {

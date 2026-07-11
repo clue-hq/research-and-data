@@ -1,7 +1,7 @@
 "use client";
 
-import { AlignCenter, AlignJustify, AlignLeft, AlignRight } from "lucide-react";
-import type { BrandTokenCatalog, Node, Operation, TextAlign } from "@/engine/contracts";
+import { AlignCenter, AlignJustify, AlignLeft, AlignRight, Strikethrough, Underline } from "lucide-react";
+import type { BrandTokenCatalog, Node, Operation, TextAlign, TextTransform } from "@/engine/contracts";
 import { updateNodeFills, updateTextNode } from "@/engine/operations";
 import { ColorSwatchControl } from "./ColorSwatchControl";
 
@@ -104,6 +104,42 @@ export function TextToolbar({
           </button>
         ))}
       </div>
+      <div className="text-toolbar-align" role="group" aria-label="Text decoration">
+        <button
+          type="button"
+          className={text.underline ? "active" : undefined}
+          aria-label="Underline"
+          aria-pressed={text.underline ?? false}
+          disabled={disabled}
+          onClick={() => onOperation(updateTextNode(selectedNode, { underline: !text.underline }))}
+        >
+          <Underline aria-hidden size={14} />
+        </button>
+        <button
+          type="button"
+          className={text.strikethrough ? "active" : undefined}
+          aria-label="Strikethrough"
+          aria-pressed={text.strikethrough ?? false}
+          disabled={disabled}
+          onClick={() => onOperation(updateTextNode(selectedNode, { strikethrough: !text.strikethrough }))}
+        >
+          <Strikethrough aria-hidden size={14} />
+        </button>
+      </div>
+      <select
+        className="text-toolbar-weight"
+        aria-label="Text case"
+        value={text.text_transform ?? "none"}
+        disabled={disabled}
+        onChange={(event) =>
+          onOperation(updateTextNode(selectedNode, { text_transform: event.target.value as TextTransform }))
+        }
+      >
+        <option value="none">Case</option>
+        <option value="uppercase">UPPER</option>
+        <option value="lowercase">lower</option>
+        <option value="title">Title</option>
+      </select>
       <label className="text-toolbar-metric">
         <span aria-hidden>LH</span>
         <input
