@@ -10,7 +10,7 @@ use lumen_core::{
     ImageFitMode, ImageNode, Node, NodeId, NodeKind, Page, PageId, Paint, Phase, Rect, Scene,
     Stroke, StrokeAlign, StrokeCap, StrokeJoin, TextAlign, TextDirection, Unit,
 };
-use lumen_core::{HeuristicTextMeasurer, SharedTextMeasurer, TextMeasureInput, TextMeasurer};
+use lumen_core::{valign_offset, HeuristicTextMeasurer, SharedTextMeasurer, TextMeasureInput, TextMeasurer};
 use std::sync::Arc;
 
 /// Heuristic fallback used when no measurer is injected, preserving
@@ -492,6 +492,11 @@ impl<'a> SvgPageRenderer<'a> {
                         self.diagnostics.push(diagnostic);
                     }
                 }
+                // A7a: shift every line's baseline down by the clamped vertical
+                // slack (measured content height is THE total the raster path
+                // lays out; `valign_offset` clamps overflow to 0). One formula
+                // across all backends.
+                let valign_shift = valign_offset(height, measured.height, text.valign);
                 // A6a D2: underline/strike via the presentation attribute; the
                 // measured line text already carries the D1 case transform.
                 let decoration = match (text.underline, text.strikethrough) {
@@ -522,7 +527,7 @@ impl<'a> SvgPageRenderer<'a> {
                                     format!(
                                         "<tspan x=\"{}\" y=\"{}\"{}>{}</tspan>",
                                         fmt_num(line_left + run.x),
-                                        fmt_num(line.baseline),
+                                        fmt_num(line.baseline + valign_shift),
                                         run_attrs,
                                         escape_text(&run.text)
                                     )
@@ -538,7 +543,7 @@ impl<'a> SvgPageRenderer<'a> {
                             format!(
                                 "<tspan x=\"{}\" y=\"{}\">{}</tspan>",
                                 fmt_num(x),
-                                fmt_num(line.baseline),
+                                fmt_num(line.baseline + valign_shift),
                                 escape_text(&line.text)
                             )
                         })

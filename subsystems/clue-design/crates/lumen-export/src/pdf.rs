@@ -5,7 +5,7 @@ use lumen_core::{
     render_box_for_node, unit_to_points, AssetKind, Diagnostic, DiagnosticSubject, ExportAdapter,
     ExportArtifact, ExportError, ExportFormat, ExportRequest, ExportResult, Node, NodeId, NodeKind,
     Page, Paint, PdfIntent, Phase, Rect, RenderTarget, Scene, SharedTextMeasurer, TextAlign,
-    TextDirection, TextMeasureInput, TextMeasurer,
+    TextDirection, TextMeasureInput, TextMeasurer, valign_offset,
 };
 
 #[derive(Clone, Debug, Default)]
@@ -368,6 +368,10 @@ impl<'a> PdfPageRenderer<'a> {
                         .with_hint("Resize the text frame, reduce copy/font size, or run layout/text-fit repair before approving PDF output."),
                     );
                 }
+                // A7a: clamped vertical slack added in top-down page space
+                // BEFORE the pdf_y axis flip (same measured total + formula the
+                // raster/SVG paths use).
+                let valign_shift = valign_offset(height, measured.height, text.valign);
                 self.stream.push_str(&format!(
                     "BT /F1 {} Tf {} Tc\n",
                     fmt_num(text.font_size * self.scale),
@@ -382,7 +386,7 @@ impl<'a> PdfPageRenderer<'a> {
                     self.stream.push_str(&format!(
                         "1 0 0 1 {} {} Tm ({}) Tj\n",
                         fmt_num(self.pdf_x(text_x)),
-                        fmt_num(self.pdf_y(y + line.baseline)),
+                        fmt_num(self.pdf_y(y + valign_shift + line.baseline)),
                         escape_pdf_text(&line.text)
                     ));
                 }

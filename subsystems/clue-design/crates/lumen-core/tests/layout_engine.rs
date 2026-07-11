@@ -382,6 +382,39 @@ fn plain_text_overflow_is_diagnosed_without_slot() {
 }
 
 #[test]
+fn bottom_valign_overflowing_fixed_box_still_emits_vertical_overflow() {
+    // A7a D3: valign changes paint position only, never geometry. A bottom-
+    // aligned text node whose content overflows its Fixed-height box must still
+    // emit LUMV0903 — validation compares measured height vs bounds and never
+    // sees the paint offset.
+    let mut scene = scene_with_page(400.0, 300.0);
+    let mut node = text_node_with_font(
+        "overflow",
+        "Line one\nLine two\nLine three\nLine four\nLine five",
+        24.0,
+        24.0,
+        320.0,
+        30.0, // far too short for five wrapped/broken lines
+        24.0,
+    );
+    if let NodeKind::Text(text) = &mut node.kind {
+        text.valign = lumen_core::VerticalAlign::Bottom;
+        text.wrap = lumen_core::TextWrap::Wrap;
+    }
+    insert(&mut scene, ParentRef::Page(PageId::from("page")), node);
+
+    let result = layout_scene(
+        &scene,
+        lumen_core::LayoutOptions {
+            validate_slots: false,
+            ..Default::default()
+        },
+    );
+
+    assert!(has_code(&result.diagnostics, "LUMV0903"));
+}
+
+#[test]
 fn column_layout_positions_fixed_children() {
     let mut scene = scene_with_page(400.0, 300.0);
     insert(

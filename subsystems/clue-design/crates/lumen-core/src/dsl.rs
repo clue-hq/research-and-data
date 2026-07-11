@@ -17,6 +17,7 @@ use crate::{
     RasterScale, Rect, RelativePlacement, ReplaceNodeRequest, ReplaceSlotPolicy, Scene, SizeSpec,
     Slot, SlotEditPatch, SlotId, SlotKey, Stroke, StrokeAlign, StrokeCap, StrokeJoin, TextAlign,
     TextDirection, TextEditPatch, TextNode, TextSpan, TextTransform, TextWrap, Unit, VectorNode,
+    VerticalAlign,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
@@ -450,6 +451,8 @@ pub enum DslProperty {
     Grow(DslScalar),
     TextStyleToken(String),
     TextAlignment(TextAlign),
+    /// A7a: vertical alignment of text within its box.
+    VerticalAlignment(VerticalAlign),
     LayoutAnchor {
         axis: DslLayoutAxis,
         anchor: DslLayoutAnchor,
@@ -3233,6 +3236,10 @@ fn node_edit_patch_from_properties(
                 text_patch.align = FieldPatch::Set(align.clone());
                 has_text_patch = true;
             }
+            DslProperty::VerticalAlignment(valign) => {
+                text_patch.valign = FieldPatch::Set(*valign);
+                has_text_patch = true;
+            }
             DslProperty::LineHeight(line_height) => {
                 match line_height {
                     DslScalar::Number(line_height) => {
@@ -4067,6 +4074,17 @@ fn parse_property_token(
             // hug width — the robust way to center glyphs in chips/buttons/cells.
             expect_arg_count(&call, 1, line_number)?;
             vec![DslProperty::TextAlignment(parse_text_align(
+                &call.args[0],
+                line_number,
+                column,
+            )?)]
+        }
+        "valign" => {
+            // A7a: vertical alignment of text within its box. Single-arg,
+            // order-independent trailing op like `align(...)`. No aliases (D2) —
+            // `middle` or any non-{top|center|bottom} value fails loudly.
+            expect_arg_count(&call, 1, line_number)?;
+            vec![DslProperty::VerticalAlignment(parse_valign(
                 &call.args[0],
                 line_number,
                 column,
@@ -4985,6 +5003,20 @@ fn apply_properties(
                         "LUMD0607",
                         "align(...) only applies to text nodes",
                         "Move align(left|center|right|justify) to a text/t element.",
+                    ));
+                }
+            }
+            DslProperty::VerticalAlignment(valign) => {
+                if let NodeKind::Text(text) = &mut node.kind {
+                    text.valign = *valign;
+                } else {
+                    diagnostics.push(warning_diag(
+                        line_number,
+                        1,
+                        node.id.as_str().len(),
+                        "LUMD0607",
+                        "valign(...) only applies to text nodes",
+                        "Move valign(top|center|bottom) to a text/t element.",
                     ));
                 }
             }
@@ -6304,6 +6336,26 @@ fn parse_text_align(
             "LUMD0225",
             format!("unknown text alignment {other}"),
             "Use left, center, right, or justify.",
+        )),
+    }
+}
+
+fn parse_valign(
+    source: &str,
+    line_number: usize,
+    column: usize,
+) -> Result<VerticalAlign, DslDiagnostic> {
+    match source {
+        "top" => Ok(VerticalAlign::Top),
+        "center" => Ok(VerticalAlign::Center),
+        "bottom" => Ok(VerticalAlign::Bottom),
+        other => Err(error_diag(
+            line_number,
+            column,
+            other.len(),
+            "LUMD0275",
+            format!("unknown vertical alignment {other}"),
+            "valign takes top|center|bottom",
         )),
     }
 }

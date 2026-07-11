@@ -445,6 +445,14 @@ pub struct TextNode {
     /// on top of the normal line advance. `0.0` is today's behavior, bit-for-bit.
     #[serde(default, skip_serializing_if = "is_zero")]
     pub paragraph_spacing: f64,
+    /// Vertical alignment of the painted text within its own box (A7a D1/D3).
+    /// Positions text inside a Fixed/Fill-height box; a Hug box has zero slack
+    /// so it is a silent no-op (D6). Never a measurement input (D4) — it only
+    /// shifts paint position. Serde-defaulted and omitted when `Top` so pre-A7a
+    /// scenes — and every default node — deserialize to `Top` and re-serialize
+    /// byte-identically (mirrors `text_transform`).
+    #[serde(default, skip_serializing_if = "is_enum_default")]
+    pub valign: VerticalAlign,
     /// Rich-text spans (A6b D1): sub-ranges of `content` styled differently —
     /// the two-color headline move. Byte offsets index the STORED `content`
     /// string (never the transformed one). Validated (LUMV0906) before
@@ -504,6 +512,7 @@ impl Default for TextNode {
             strikethrough: false,
             truncate: false,
             paragraph_spacing: 0.0,
+            valign: VerticalAlign::Top,
             spans: Vec::new(),
         }
     }
@@ -839,6 +848,35 @@ pub enum TextAlign {
     Center,
     Right,
     Justify,
+}
+
+/// Vertical alignment of text within its box (A7a D2). Serialized snake_case
+/// like the sibling text enums. `Top` is the default (absent in serialized old
+/// scenes).
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum VerticalAlign {
+    #[default]
+    Top,
+    Center,
+    Bottom,
+}
+
+/// A7a D3: the single shared vertical-alignment formula. Slack (box height
+/// minus painted content height) is clamped at zero so an overflowing box
+/// never paints text above its top edge — valign degrades to a no-op and
+/// LUMV0903 (vertical overflow) fires unchanged, because validation compares
+/// measured height vs bounds and never sees this paint offset. Factor:
+/// top=0.0, center=0.5, bottom=1.0. EVERY paint site (skia fast/stacked/
+/// spanned, SVG, PDF, and the editor's CanvasKit + DOM legs) derives its
+/// offset from this one function so the eight backends cannot drift.
+pub fn valign_offset(box_height: f64, content_height: f64, valign: VerticalAlign) -> f64 {
+    let factor = match valign {
+        VerticalAlign::Top => 0.0,
+        VerticalAlign::Center => 0.5,
+        VerticalAlign::Bottom => 1.0,
+    };
+    (box_height - content_height).max(0.0) * factor
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -1247,6 +1285,25 @@ mod a6_typography_tests {
         assert!(!node.strikethrough);
         assert!(!node.truncate);
         assert_eq!(node.paragraph_spacing, 0.0);
+        // A7a: a pre-valign node deserializes to Top.
+        assert_eq!(node.valign, VerticalAlign::Top);
+    }
+
+    #[test]
+    fn default_text_node_serializes_without_valign_key() {
+        // A7a: a default (Top) valign must not emit a key, so golden scene JSON
+        // stays byte-identical; a non-default value round-trips.
+        let value = serde_json::to_value(TextNode::default()).expect("serializes");
+        assert!(!value.as_object().unwrap().contains_key("valign"));
+
+        let centered = TextNode {
+            valign: VerticalAlign::Center,
+            ..TextNode::default()
+        };
+        let value = serde_json::to_value(&centered).expect("serializes");
+        assert_eq!(value["valign"], serde_json::json!("center"));
+        let back: TextNode = serde_json::from_value(value).expect("round-trips");
+        assert_eq!(back.valign, VerticalAlign::Center);
     }
 
     #[test]

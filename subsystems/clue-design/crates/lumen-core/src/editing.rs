@@ -9,7 +9,7 @@ use crate::operations::{
 use crate::scene::{
     AutoLayoutProps, Color, CornerRadii, Dimension, Effect, ExplicitTextTokens, Fill, LayoutMode,
     Node, NodeKind, PageSize, Paint, ParentRef, PositionMode, Rect, Scene, SizeSpec, Stroke,
-    TextAlign, TextDirection, TextNode, TextSpan, TextTransform, TextWrap, Transform,
+    TextAlign, TextDirection, TextNode, TextSpan, TextTransform, TextWrap, Transform, VerticalAlign,
 };
 use crate::slots::Slot;
 use serde::{Deserialize, Serialize};
@@ -549,6 +549,9 @@ pub struct TextEditPatch {
     pub strikethrough: FieldPatch<bool>,
     pub truncate: FieldPatch<bool>,
     pub paragraph_spacing: FieldPatch<f64>,
+    /// A7a: vertical alignment within the box. Not a token channel, so it never
+    /// interacts with `clear_stale_tokens`.
+    pub valign: FieldPatch<VerticalAlign>,
     /// A6b D4: rich-text spans. A patch that changes `content` without ALSO
     /// setting `spans` CLEARS spans — stale byte offsets are silent corruption,
     /// so a content edit that doesn't re-author its spans drops them (undo
@@ -2629,6 +2632,7 @@ fn apply_text_edit_patch(mut text: TextNode, patch: TextEditPatch) -> TextNode {
     apply_field_patch(&mut text.strikethrough, patch.strikethrough);
     apply_field_patch(&mut text.truncate, patch.truncate);
     apply_field_patch(&mut text.paragraph_spacing, patch.paragraph_spacing);
+    apply_field_patch(&mut text.valign, patch.valign);
     // A6b D4: span honesty. A patch that sets spans applies them; otherwise, a
     // content change makes the existing spans' byte offsets stale garbage, so
     // they are cleared (silent corruption forbidden). Undo restores them via

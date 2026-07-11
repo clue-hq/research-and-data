@@ -4,7 +4,7 @@ use lumen_core::{
     normalize_dsl, parse_dsl, Color, DiagnosticSeverity, Dimension, DslCompileSession,
     DslLayoutAnchor, DslLayoutAxis, DslLineKind, DslProperty, DslScalar, LayoutAnchor, NodeId,
     NodeKind, Operation, Orientation, PageId, PagePreset, Paint, ParentRef, PhysicalUnit, Scene,
-    SlotKey, TextDirection, TextWrap, Unit,
+    SlotKey, TextDirection, TextWrap, Unit, VerticalAlign,
 };
 use std::collections::BTreeSet;
 
@@ -321,6 +321,81 @@ page page_square size(400,400,px)
     assert_eq!(text.font_weight, 700);
     assert!((text.letter_spacing - 3.6).abs() < 0.001);
     assert_eq!(text.wrap, TextWrap::NoWrap);
+}
+
+#[test]
+fn dsl_valign_lowers_to_text_node_on_create() {
+    let mut scene = Scene::new(lumen_core::DocumentId::from("doc_valign"), "Valign");
+    let output = compile_dsl_into_scene(
+        r#"
+page page_square size(400,400,px)
+  band text "Centered band" p(0,0) s(fill,200) align(center) valign(center)
+  footer text "Bottom" p(0,220) s(fill,120) valign(bottom)
+  top text "Top default" p(0,0) s(fill,80)
+"#,
+        &mut scene,
+    );
+
+    assert_no_dsl_errors(&output.compile_output.diagnostics);
+    assert!(output.operation_error.is_none());
+
+    let NodeKind::Text(band) = &scene.nodes[&NodeId::from("band")].kind else {
+        panic!("expected text node");
+    };
+    assert_eq!(band.valign, VerticalAlign::Center);
+    let NodeKind::Text(footer) = &scene.nodes[&NodeId::from("footer")].kind else {
+        panic!("expected text node");
+    };
+    assert_eq!(footer.valign, VerticalAlign::Bottom);
+    let NodeKind::Text(top) = &scene.nodes[&NodeId::from("top")].kind else {
+        panic!("expected text node");
+    };
+    assert_eq!(top.valign, VerticalAlign::Top);
+}
+
+#[test]
+fn dsl_modify_line_updates_valign() {
+    let mut scene = Scene::new(lumen_core::DocumentId::from("doc_valign_mod"), "ValignMod");
+    let first = compile_dsl_into_scene(
+        r#"
+page page_square size(400,400,px)
+  band text "Band" p(0,0) s(fill,200)
+"#,
+        &mut scene,
+    );
+    assert_no_dsl_errors(&first.compile_output.diagnostics);
+
+    let second = compile_dsl_into_scene(r#"#band valign(bottom)"#, &mut scene);
+    assert_no_dsl_errors(&second.compile_output.diagnostics);
+    assert!(second.operation_error.is_none());
+
+    let NodeKind::Text(band) = &scene.nodes[&NodeId::from("band")].kind else {
+        panic!("expected text node");
+    };
+    assert_eq!(band.valign, VerticalAlign::Bottom);
+}
+
+#[test]
+fn dsl_rejects_valign_middle_value_with_no_alias() {
+    // D2: no aliases — `middle` fails loudly with the standard value diagnostic.
+    let output = compile_dsl(
+        r#"
+page page_square size(400,400,px)
+  band text "Band" p(0,0) s(fill,200) valign(middle)
+"#,
+    );
+    assert_eq!(output.halted_at.as_ref().unwrap().code, "LUMD0275");
+}
+
+#[test]
+fn dsl_rejects_valign_wrong_arity() {
+    let output = compile_dsl(
+        r#"
+page page_square size(400,400,px)
+  band text "Band" p(0,0) s(fill,200) valign(top,center)
+"#,
+    );
+    assert_eq!(output.halted_at.as_ref().unwrap().code, "LUMD0230");
 }
 
 #[test]

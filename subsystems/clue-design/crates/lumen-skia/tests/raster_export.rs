@@ -8,7 +8,7 @@ use lumen_core::{
     Color, ComputedGeometry, DiagnosticSeverity, DocumentId, ExportAdapter, ExportFormat,
     ExportProfile, ExportPurpose, ExportRequest, Fill, Node, NodeId, NodeKind, Orientation, Page,
     PageId, PagePreset, PageSize, Paint, PaintId, RasterScale, Rect, Scene, SizeSpec, TextNode,
-    Transform, Unit,
+    TextSpan, Transform, Unit, VerticalAlign,
 };
 use lumen_export::{FixtureAssetResolver, LumenExportAdapter};
 use lumen_skia::{FontManager, SkiaSceneRenderer, SkiaTextMeasurer};
@@ -597,3 +597,200 @@ fn nowrap_truncate_never_soft_wraps_the_raster() {
     );
 }
 
+
+// ---- A7a vertical alignment (D3) -----------------------------------------
+
+/// Mean y of the dark text pixels — the vertical centroid of painted glyphs.
+/// Returns `None` when nothing dark was painted.
+fn dark_text_mean_y(rgba: &Rgba) -> Option<f64> {
+    let mut sum = 0.0f64;
+    let mut count = 0.0f64;
+    for y in 0..rgba.height as i32 {
+        for x in 0..rgba.width as i32 {
+            let px = rgba.pixel(x, y);
+            if px[3] > 0 && px[0] < 120 && px[1] < 140 && px[2] < 160 {
+                sum += f64::from(y);
+                count += 1.0;
+            }
+        }
+    }
+    (count > 0.0).then(|| sum / count)
+}
+
+/// Render one text node into a 300x200 page and return the decoded raster.
+fn render_valign_scene(doc: &str, node: Node) -> Rgba {
+    let mut scene = Scene::new(DocumentId::from(doc), "Valign");
+    scene.pages.insert(
+        PageId::from("page_square"),
+        custom_px_page("page_square", 300.0, 200.0, vec![node.id.clone()]),
+    );
+    scene.nodes.insert(node.id.clone(), node);
+    let result = composed_adapter(LumenExportAdapter::new())
+        .export(&scene, &png_request("page_square"))
+        .expect("export");
+    decode_rgba(&result.artifacts[0].bytes)
+}
+
+/// A single short line in a tall Fixed-height box at page top, given valign.
+fn valign_fast_node(valign: VerticalAlign) -> Node {
+    let mut node = a6_text_node(
+        "Hi",
+        TextNode {
+            valign,
+            ..TextNode::default()
+        },
+    );
+    node.transform.y = 0.0;
+    node.size = SizeSpec::fixed(280.0, 200.0);
+    node
+}
+
+#[test]
+fn fast_path_valign_shifts_the_line_down_the_box() {
+    // top < center < bottom: the same short line paints progressively lower as
+    // valign moves through the box's vertical slack.
+    let top = dark_text_mean_y(&render_valign_scene(
+        "doc_valign_top",
+        valign_fast_node(VerticalAlign::Top),
+    ))
+    .expect("top text paints");
+    let center = dark_text_mean_y(&render_valign_scene(
+        "doc_valign_center",
+        valign_fast_node(VerticalAlign::Center),
+    ))
+    .expect("center text paints");
+    let bottom = dark_text_mean_y(&render_valign_scene(
+        "doc_valign_bottom",
+        valign_fast_node(VerticalAlign::Bottom),
+    ))
+    .expect("bottom text paints");
+
+    assert!(top < 40.0, "top-aligned line should sit near the box top, got {top}");
+    assert!(
+        (center - 100.0).abs() < 30.0,
+        "center-aligned line should sit near the box middle (~100), got {center}"
+    );
+    assert!(
+        bottom > 160.0,
+        "bottom-aligned line should sit near the box bottom (~200), got {bottom}"
+    );
+    assert!(
+        top < center && center < bottom,
+        "valign ordering violated: top={top} center={center} bottom={bottom}"
+    );
+}
+
+#[test]
+fn stacked_path_valign_shifts_the_whole_stack() {
+    // paragraph_spacing > 0 with a \n break exercises the stacked path; center
+    // must push the entire two-paragraph stack down vs top.
+    let stacked = |doc: &str, valign: VerticalAlign| -> f64 {
+        let mut node = a6_text_node(
+            "Alpha\nBeta",
+            TextNode {
+                paragraph_spacing: 24.0,
+                valign,
+                ..TextNode::default()
+            },
+        );
+        node.transform.y = 0.0;
+        node.size = SizeSpec::fixed(280.0, 200.0);
+        dark_text_mean_y(&render_valign_scene(doc, node)).expect("stack paints")
+    };
+    let top = stacked("doc_valign_stack_top", VerticalAlign::Top);
+    let center = stacked("doc_valign_stack_center", VerticalAlign::Center);
+    assert!(
+        center > top + 20.0,
+        "center stack should sit well below the top stack: top={top} center={center}"
+    );
+}
+
+#[test]
+fn spanned_path_valign_shifts_the_segmented_paragraph() {
+    // A span activates the segmented paragraph path; valign must shift it too.
+    let spanned = |doc: &str, valign: VerticalAlign| -> f64 {
+        let mut node = a6_text_node(
+            "AB",
+            TextNode {
+                valign,
+                spans: vec![TextSpan {
+                    start: 0,
+                    end: 1,
+                    fill: None,
+                    font_weight: Some(800),
+                    underline: None,
+                    strikethrough: None,
+                }],
+                ..TextNode::default()
+            },
+        );
+        node.transform.y = 0.0;
+        node.size = SizeSpec::fixed(280.0, 200.0);
+        dark_text_mean_y(&render_valign_scene(doc, node)).expect("span paints")
+    };
+    let top = spanned("doc_valign_span_top", VerticalAlign::Top);
+    let bottom = spanned("doc_valign_span_bottom", VerticalAlign::Bottom);
+    assert!(
+        bottom > top + 40.0,
+        "bottom-aligned spanned text should sit far below top: top={top} bottom={bottom}"
+    );
+}
+
+#[test]
+fn valign_offset_clamps_to_zero_when_content_overflows() {
+    // D3: an overflowing box has no slack, so bottom valign is a no-op — text
+    // still paints from the box top, never shifted above or below it.
+    let mut node = a6_text_node(
+        "Hi",
+        TextNode {
+            valign: VerticalAlign::Bottom,
+            ..TextNode::default()
+        },
+    );
+    node.transform.y = 0.0;
+    node.size = SizeSpec::fixed(280.0, 18.0); // shorter than the ~24px line
+    let rgba = render_valign_scene("doc_valign_overflow", node);
+    let mean = dark_text_mean_y(&rgba).expect("overflowing text still paints");
+    assert!(
+        mean < 30.0,
+        "overflow-clamped bottom valign must paint from the top (offset 0), got {mean}"
+    );
+}
+
+#[test]
+fn stacked_valign_bottom_with_max_lines_cut_excludes_the_trailing_gap() {
+    // A7a adversarial-review Finding 1: paragraph_spacing > 0 with a max_lines
+    // cut that drops trailing paragraphs. The painted content is Alpha (24px)
+    // + gap (40px) + Beta (24px) = 88px in a 200px box, so bottom valign must
+    // put the glyph bottoms at ~200. Counting a trailing gap after Beta (the
+    // pre-fix behavior) inflated the total to 128px and left the text a full
+    // gap (40px) higher than SVG/PDF, whose measured.height is the last
+    // visible line's bottom.
+    let mut node = a6_text_node(
+        "Alpha\nBeta\nGamma",
+        TextNode {
+            paragraph_spacing: 40.0,
+            max_lines: Some(2),
+            valign: VerticalAlign::Bottom,
+            ..TextNode::default()
+        },
+    );
+    node.transform.y = 0.0;
+    node.size = SizeSpec::fixed(280.0, 200.0);
+    let rgba = render_valign_scene("doc_valign_stack_cut", node);
+    let mut lowest = None;
+    for y in 0..rgba.height as i32 {
+        for x in 0..rgba.width as i32 {
+            let px = rgba.pixel(x, y);
+            if px[3] > 0 && px[0] < 120 && px[1] < 140 && px[2] < 160 {
+                lowest = Some(y);
+            }
+        }
+    }
+    let lowest = f64::from(lowest.expect("stacked text paints"));
+    assert!(
+        lowest >= 185.0,
+        "bottom-valigned cut stack must reach the box bottom (~200); \
+         got lowest dark pixel {lowest} (a trailing-gap total would sit ~160)"
+    );
+}

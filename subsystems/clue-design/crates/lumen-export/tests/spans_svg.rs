@@ -6,7 +6,7 @@ use lumen_core::{
     estimate_text_width, Color, DocumentId, ExportAdapter, ExportFormat, ExportProfile,
     ExportPurpose, ExportRequest, Fill, Node, NodeId, NodeKind, Operation, Orientation, Page,
     PageId, PagePreset, PageSize, Paint, PaintId, ParentRef, Scene, SizeSpec, TextAlign, TextSpan,
-    Unit,
+    Unit, VerticalAlign,
 };
 use lumen_export::SvgExportAdapter;
 
@@ -197,4 +197,47 @@ fn spanless_text_keeps_single_tspan_and_alignment_anchor() {
     let (svg, _) = render(text_node("t", text, 600.0, TextAlign::Center));
     assert!(svg.contains("text-anchor=\"middle\""), "{svg}");
     assert_eq!(svg.matches("<tspan").count(), 1, "{svg}");
+}
+
+/// Extract the `y` of the first `<tspan>` in the markup.
+fn first_tspan_y(svg: &str) -> f64 {
+    let tspan = svg.split("<tspan").nth(1).expect("a tspan");
+    let after = tspan.split("y=\"").nth(1).expect("y attr");
+    let value = after.split('"').next().expect("y value");
+    value.parse().expect("y is numeric")
+}
+
+#[test]
+fn valign_shifts_baseline_by_clamped_slack_on_a_fixed_height_box() {
+    // A7a D3: the single-line node lives in a 60px-high Fixed box. `center`
+    // shifts the baseline down by exactly half the vertical slack, `bottom` by
+    // the full slack, and `top` leaves it unchanged. Deterministic heuristic
+    // measurer ⇒ the ratio is exact.
+    let node = |valign: VerticalAlign| {
+        text_node(
+            "t",
+            TextNode {
+                content: "one line".to_owned(),
+                font_size: 20.0,
+                valign,
+                ..TextNode::default()
+            },
+            600.0,
+            TextAlign::Left,
+        )
+    };
+    let (top_svg, _) = render(node(VerticalAlign::Top));
+    let (center_svg, _) = render(node(VerticalAlign::Center));
+    let (bottom_svg, _) = render(node(VerticalAlign::Bottom));
+    let top = first_tspan_y(&top_svg);
+    let center = first_tspan_y(&center_svg);
+    let bottom = first_tspan_y(&bottom_svg);
+
+    assert!(center > top, "center baseline must sit below top: {top} vs {center}");
+    assert!(bottom > center, "bottom baseline must sit below center: {center} vs {bottom}");
+    // center offset is exactly half the bottom offset (both from the same slack).
+    assert!(
+        ((center - top) * 2.0 - (bottom - top)).abs() < 0.001,
+        "center shift must be half the bottom shift: top={top} center={center} bottom={bottom}"
+    );
 }

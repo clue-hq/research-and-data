@@ -20,9 +20,10 @@ use crate::measure::{
 };
 use lumen_core::{
     normalize_content_mapped, page_geometry, paints_out_of_tree, pinned_paint_pass,
-    render_box_for_node, transform_segments, Color, CornerRadii, Diagnostic, DiagnosticSubject,
-    EffectKind, ImageFitMode, ImageNode, Node, NodeId, NodeKind, Page, PageId, Paint, Phase, Scene,
-    Stroke, StrokeAlign, StrokeCap, StrokeJoin, TextAlign, TextNode, TextWrap,
+    render_box_for_node, transform_segments, valign_offset, Color, CornerRadii, Diagnostic,
+    DiagnosticSubject, EffectKind, ImageFitMode, ImageNode, Node, NodeId, NodeKind, Page, PageId,
+    Paint, Phase, Scene, Stroke, StrokeAlign, StrokeCap, StrokeJoin, TextAlign, TextNode, TextWrap,
+    VerticalAlign,
 };
 use lumen_export::{
     focal_crop_geometry, page_background_token_diagnostics, unresolved_brand_token_diagnostics,
@@ -470,7 +471,6 @@ impl<'a> PagePainter<'a> {
                 width,
                 height,
             );
-            let _ = height;
             return;
         }
 
@@ -487,10 +487,22 @@ impl<'a> PagePainter<'a> {
             .filter(|gap| *gap > 0.0)
             .unwrap_or(0.0);
         if paragraph_gap > 0.0 && content.contains('\n') {
-            let mut cursor_y = 0.0f32;
-            let mut remaining = text.max_lines.map(usize::from);
+            // A7a: valign shifts the whole stack, so the total painted content
+            // height must be known BEFORE the paint loop. A measure pre-pass
+            // replays the SAME budget/elision resolution, accumulating gaps
+            // BETWEEN consecutive painted paragraphs only (gap-before, like
+            // `measure_stacked`) — a trailing gap after the last painted
+            // paragraph is not painted content, and counting it made raster/
+            // CanvasKit disagree with SVG/PDF (whose `measured.height` is the
+            // last visible line's bottom) by a full gap under a `max_lines`
+            // cut (A7a adversarial-review Finding 1). The loop then seeds
+            // `cursor_y` with the offset; at offset 0 the total equals the
+            // final cursor exactly.
             let paragraphs: Vec<&str> = content.split('\n').collect();
             let last = paragraphs.len().saturating_sub(1);
+            let mut plan: Vec<(std::borrow::Cow<str>, Option<u16>)> = Vec::new();
+            let mut total_height = 0.0f32;
+            let mut remaining = text.max_lines.map(usize::from);
             for (index, para) in paragraphs.iter().enumerate() {
                 if remaining == Some(0) {
                     break;
@@ -517,23 +529,39 @@ impl<'a> PagePainter<'a> {
                         }
                     }
                 };
-                let (height, painted) = self.paint_text_paragraph(
+                let (para_height, painted) =
+                    self.paragraph_layout_metrics(&para_text, &resolution.family, text, width, para_max);
+                remaining = remaining.map(|budget| budget.saturating_sub(painted));
+                if !plan.is_empty() {
+                    total_height += paragraph_gap as f32;
+                }
+                total_height += para_height;
+                plan.push((para_text, para_max));
+            }
+            let mut cursor_y = valign_offset(height, total_height as f64, text.valign) as f32;
+            for (index, (para_text, para_max)) in plan.iter().enumerate() {
+                // Gap-before, mirroring the pre-pass and `measure_stacked`:
+                // gaps land between consecutive painted paragraphs only.
+                if index > 0 {
+                    cursor_y += paragraph_gap as f32;
+                }
+                // Per-paragraph valign is `Top` (offset 0) — the stack offset is
+                // already folded into the seeded `cursor_y`.
+                let (para_height, _) = self.paint_text_paragraph(
                     canvas,
-                    &para_text,
+                    para_text,
                     &resolution.family,
                     text,
                     align,
                     &foreground,
                     stroke_foreground.as_ref(),
                     width,
+                    height,
+                    VerticalAlign::Top,
                     cursor_y,
-                    para_max,
+                    *para_max,
                 );
-                remaining = remaining.map(|budget| budget.saturating_sub(painted));
-                cursor_y += height;
-                if index != last {
-                    cursor_y += paragraph_gap as f32;
-                }
+                cursor_y += para_height;
             }
         } else {
             self.paint_text_paragraph(
@@ -545,11 +573,12 @@ impl<'a> PagePainter<'a> {
                 &foreground,
                 stroke_foreground.as_ref(),
                 width,
+                height,
+                text.valign,
                 0.0,
                 text.max_lines,
             );
         }
-        let _ = height;
     }
 
     /// The natural (uncapped) line count of one paragraph at the same layout
@@ -589,6 +618,50 @@ impl<'a> PagePainter<'a> {
         paragraph.line_number()
     }
 
+    /// A7a: measure one paragraph's laid-out height + painted line count using
+    /// the SAME layout-width choice `paint_text_paragraph` makes (height and
+    /// line count are independent of the foreground paint and horizontal `x`),
+    /// so the stacked-path valign pre-pass computes a total that matches the
+    /// paint loop's cursor advancement byte-for-byte.
+    fn paragraph_layout_metrics(
+        &self,
+        para: &str,
+        family: &str,
+        text: &TextNode,
+        box_width: f64,
+        max_lines: Option<u16>,
+    ) -> (f32, usize) {
+        let mut fill = build_paragraph(
+            &ParagraphRequest {
+                content: para,
+                font_family: family,
+                font_size: text.font_size,
+                font_weight: text.font_weight,
+                line_height: text.line_height,
+                letter_spacing: text.letter_spacing,
+                max_lines,
+                direction: text.direction.clone(),
+                align: SkTextAlign::Left,
+                foreground: SkPaint::default(),
+                underline: text.underline,
+                strikethrough: text.strikethrough,
+                truncate: text.truncate,
+                segments: None,
+            },
+            self.fonts,
+        );
+        let layout_width = match text.wrap {
+            TextWrap::Wrap => box_width.max(0.0) as f32,
+            TextWrap::NoWrap if text.truncate => box_width.max(0.0) as f32,
+            TextWrap::NoWrap => {
+                fill.layout(UNBOUNDED_LAYOUT_WIDTH as f32);
+                fill.longest_line().ceil() + 2.0
+            }
+        };
+        fill.layout(layout_width);
+        (fill.height(), fill.line_number())
+    }
+
     /// Paint one paragraph's glyphs (stroke pass behind the fill pass) at a
     /// vertical offset, honoring wrap/alignment and A6a truncation. Returns the
     /// laid-out paragraph height and painted line count so the stacking loop
@@ -604,6 +677,8 @@ impl<'a> PagePainter<'a> {
         fill_foreground: &SkPaint,
         stroke_foreground: Option<&SkPaint>,
         box_width: f64,
+        box_height: f64,
+        valign: VerticalAlign,
         y_offset: f32,
         max_lines: Option<u16>,
     ) -> (f32, usize) {
@@ -654,14 +729,20 @@ impl<'a> PagePainter<'a> {
         };
         fill.layout(layout_width);
 
+        // A7a: shift within the box's vertical slack. `valign` is `Top` on the
+        // stacked path (the stack seeds `cursor_y` with the offset instead), so
+        // this only adds a per-paragraph shift on the single-paragraph fast path.
+        let voff = valign_offset(box_height, fill.height() as f64, valign) as f32;
+        let y = y_offset + voff;
+
         // Stroke pass first (behind), then the fill glyphs — the display-type
         // "paint-order: stroke fill" convention the SVG exporter emits.
         if let Some(stroke) = stroke_foreground {
             let mut stroke_paragraph = build_paragraph(&make_request(stroke.clone()), self.fonts);
             stroke_paragraph.layout(layout_width);
-            stroke_paragraph.paint(canvas, Point::new(x, y_offset));
+            stroke_paragraph.paint(canvas, Point::new(x, y));
         }
-        fill.paint(canvas, Point::new(x, y_offset));
+        fill.paint(canvas, Point::new(x, y));
         (fill.height(), fill.line_number())
     }
 
@@ -773,12 +854,15 @@ impl<'a> PagePainter<'a> {
         };
         fill.layout(layout_width);
 
+        // A7a: shift the segmented paragraph within the box's vertical slack.
+        let voff = valign_offset(box_height, fill.height() as f64, text.valign) as f32;
+
         if !stroke_segments.is_empty() {
             let mut stroke_paragraph = build_paragraph(&make_request(stroke_segments), self.fonts);
             stroke_paragraph.layout(layout_width);
-            stroke_paragraph.paint(canvas, Point::new(x, 0.0));
+            stroke_paragraph.paint(canvas, Point::new(x, voff));
         }
-        fill.paint(canvas, Point::new(x, 0.0));
+        fill.paint(canvas, Point::new(x, voff));
     }
 
     /// A6a D5: the first solid text stroke as a Skia stroke-style foreground

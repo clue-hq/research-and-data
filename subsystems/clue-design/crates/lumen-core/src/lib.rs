@@ -126,10 +126,11 @@ pub use scene::{
     PagePreset, PageSize, PageSizeSource, Paint, ParentRef, PhysicalPageSize, PhysicalUnit,
     PositionMode, RasterPageSize, Rect, Scene, SizeSpec, SpanSegment, Stroke, StrokeAlign,
     StrokeCap, StrokeJoin, TextAlign, TextDirection, TextNode, TextSpan, TextTransform, TextWrap,
-    Transform, Unit, VectorNode,
+    Transform, Unit, VectorNode, VerticalAlign,
 };
 pub use scene::{
-    normalize_content_mapped, span_validation_errors, transform_segments, SpanValidationError,
+    normalize_content_mapped, span_validation_errors, transform_segments, valign_offset,
+    SpanValidationError,
 };
 pub use slots::{
     BindingHint, Cardinality, ConditionalRule, ContentType, Editability, EmptyBehavior, FocalPoint,
