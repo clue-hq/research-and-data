@@ -25,56 +25,60 @@ Rules:
   dash, smart quotes); families missing arrow glyphs are flagged in notes.
 - Pair one display voice with one workhorse; two display faces on a canvas
   fight each other.
+- **Italics exist only for the families and weights in the Italics column** —
+  the display faces have none. Asking for italic on a family/weight with no
+  italic face renders upright and emits an advisory (LUMS0105); choose an
+  emphasis role from a family that lists the italic weight you need.
 
 
 ## Workhorse sans
 
-| Family | Weights | Tone | Use |
-|---|---|---|---|
-| Inter | 400, 500, 600, 700, 800 | neutral, ui, systematic | The default voice; pairs with any display or serif face. Also the engine's bundled fallback — using it is never a risk. |
-| DM Sans | 400, 500, 600, 700, 800 | geometric, friendly, startup | Rounded geometry; pairs well with Fraunces or Playfair Display. |
-| Manrope | 400, 500, 600, 700, 800 | modern, semi-geometric, tech | Crisp product voice; pairs with Newsreader for editorial contrast. |
-| Sora | 400, 500, 600, 700, 800 | techy, futuristic, product | Wide techy counters; strong for SaaS and AI subjects. No arrow glyphs. |
-| Space Grotesk | 400, 500, 600, 700 | quirky-grotesque, tech-editorial, distinctive | Distinctive at display sizes; body text works but keep it short. |
-| Plus Jakarta Sans | 400, 500, 600, 700, 800 | warm-geometric, contemporary, brandable | Warm geometric; a safe modern default when Inter feels too plain. |
-| Outfit | 400, 500, 600, 700, 800 | clean-geometric, minimal, display-friendly | Geometric enough to carry headlines on minimal layouts. |
-| Work Sans | 400, 500, 600, 700, 800 | workhorse, neutral-warm, editorial | Quiet editorial workhorse; pairs with Lora or Source Serif 4. |
-| Archivo | 400, 500, 600, 700, 800 | grotesque, sturdy, poster-capable | Sturdy grotesque; use Archivo Black for full-impact posters. |
-| Hanken Grotesk | 400, 500, 600, 700, 800 | humanist, calm, readable | Humanist and calm; good for healthcare, finance, trust subjects. |
+| Family | Weights | Italics | Tone | Use |
+|---|---|---|---|---|
+| Inter | 400, 500, 600, 700, 800 | 400 | neutral, ui, systematic | The default voice; pairs with any display or serif face. Also the engine's bundled fallback — using it is never a risk. |
+| DM Sans | 400, 500, 600, 700, 800 | 400 | geometric, friendly, startup | Rounded geometry; pairs well with Fraunces or Playfair Display. |
+| Manrope | 400, 500, 600, 700, 800 | — | modern, semi-geometric, tech | Crisp product voice; pairs with Newsreader for editorial contrast. |
+| Sora | 400, 500, 600, 700, 800 | — | techy, futuristic, product | Wide techy counters; strong for SaaS and AI subjects. No arrow glyphs. |
+| Space Grotesk | 400, 500, 600, 700 | — | quirky-grotesque, tech-editorial, distinctive | Distinctive at display sizes; body text works but keep it short. |
+| Plus Jakarta Sans | 400, 500, 600, 700, 800 | 400 | warm-geometric, contemporary, brandable | Warm geometric; a safe modern default when Inter feels too plain. |
+| Outfit | 400, 500, 600, 700, 800 | — | clean-geometric, minimal, display-friendly | Geometric enough to carry headlines on minimal layouts. |
+| Work Sans | 400, 500, 600, 700, 800 | 400 | workhorse, neutral-warm, editorial | Quiet editorial workhorse; pairs with Lora or Source Serif 4. |
+| Archivo | 400, 500, 600, 700, 800 | 400 | grotesque, sturdy, poster-capable | Sturdy grotesque; use Archivo Black for full-impact posters. |
+| Hanken Grotesk | 400, 500, 600, 700, 800 | 400 | humanist, calm, readable | Humanist and calm; good for healthcare, finance, trust subjects. |
 
 ## Serif
 
-| Family | Weights | Tone | Use |
-|---|---|---|---|
-| Fraunces | 400, 500, 600, 700, 900 | display-serif, expressive, warm, editorial | Soft old-style display serif; hero headlines over DM Sans or Inter body. No arrow glyphs. |
-| Playfair Display | 400, 500, 600, 700, 800 | high-contrast, elegant, luxury | High-contrast elegance; luxury and fashion headlines, never body. |
-| Lora | 400, 500, 600, 700 | readable-serif, calm, body | Calm text serif; body copy under a grotesque display face. No arrow glyphs. |
-| Source Serif 4 | 400, 500, 600, 700, 800 | sturdy-serif, editorial, body | Sturdy editorial serif; long copy and pull-quotes. |
-| Newsreader | 400, 500, 600, 700, 800 | news-editorial, refined, text | Refined news voice; pairs with Manrope or Archivo. No arrow glyphs. |
-| Instrument Serif | 400 | display-serif, fashionable, condensed-elegant | Single-weight display serif with a fashionable, condensed elegance. One weight only (400) — scale with size, not weight. No arrow glyphs. |
+| Family | Weights | Italics | Tone | Use |
+|---|---|---|---|---|
+| Fraunces | 400, 500, 600, 700, 900 | 400, 600 | display-serif, expressive, warm, editorial | Soft old-style display serif; hero headlines over DM Sans or Inter body. No arrow glyphs. |
+| Playfair Display | 400, 500, 600, 700, 800 | 400 | high-contrast, elegant, luxury | High-contrast elegance; luxury and fashion headlines, never body. |
+| Lora | 400, 500, 600, 700 | 400, 700 | readable-serif, calm, body | Calm text serif; body copy under a grotesque display face. No arrow glyphs. |
+| Source Serif 4 | 400, 500, 600, 700, 800 | 400, 600 | sturdy-serif, editorial, body | Sturdy editorial serif; long copy and pull-quotes. |
+| Newsreader | 400, 500, 600, 700, 800 | 400, 500 | news-editorial, refined, text | Refined news voice; pairs with Manrope or Archivo. No arrow glyphs. |
+| Instrument Serif | 400 | 400 | display-serif, fashionable, condensed-elegant | Single-weight display serif with a fashionable, condensed elegance. One weight only (400) — scale with size, not weight. No arrow glyphs. |
 
 ## Slab
 
-| Family | Weights | Tone | Use |
-|---|---|---|---|
-| Zilla Slab | 400, 500, 600, 700 | slab, friendly-technical | Friendly technical slab; developer and maker subjects. |
-| Bitter | 400, 500, 600, 700, 800 | slab, contemporary, readable | Contemporary readable slab; headlines and body both work. |
+| Family | Weights | Italics | Tone | Use |
+|---|---|---|---|---|
+| Zilla Slab | 400, 500, 600, 700 | 400 | slab, friendly-technical | Friendly technical slab; developer and maker subjects. |
+| Bitter | 400, 500, 600, 700, 800 | 400, 700 | slab, contemporary, readable | Contemporary readable slab; headlines and body both work. |
 
 ## Mono
 
-| Family | Weights | Tone | Use |
-|---|---|---|---|
-| JetBrains Mono | 400, 700 | code, technical | Code voice; terminal snippets, specs, dev-tool ads. |
-| IBM Plex Mono | 400, 500, 600, 700 | code, technical-corporate | Corporate-technical mono; data, engineering, enterprise subjects. |
-| Space Mono | 400, 700 | retro-tech, display-mono, quirky | Quirky retro mono; eyebrow labels and display accents, not long copy. |
+| Family | Weights | Italics | Tone | Use |
+|---|---|---|---|---|
+| JetBrains Mono | 400, 700 | 400 | code, technical | Code voice; terminal snippets, specs, dev-tool ads. |
+| IBM Plex Mono | 400, 500, 600, 700 | 400 | code, technical-corporate | Corporate-technical mono; data, engineering, enterprise subjects. |
+| Space Mono | 400, 700 | 400 | retro-tech, display-mono, quirky | Quirky retro mono; eyebrow labels and display accents, not long copy. |
 
 ## Display / impact
 
-| Family | Weights | Tone | Use |
-|---|---|---|---|
-| Anton | 400 | condensed-impact, poster, loud | Condensed poster impact; huge single-word headlines. One weight; designed for large sizes and tight leading. |
-| Bebas Neue | 400 | condensed-caps, classic-ad, tall | The classic tall-caps ad face; all-caps headlines only. Caps-only design — lowercase input renders as small caps. No arrow glyphs. |
-| Archivo Black | 400 | heavy-impact, poster, grotesque | Maximum-weight grotesque; short shouting headlines. One weight (visually ~900); the display cut of Archivo. |
-| Bricolage Grotesque | 400, 600, 700, 800 | characterful-grotesque, editorial-punch | Characterful grotesque with editorial punch; headlines and stats. |
-| Unbounded | 400, 700, 800 | wide-futuristic, crypto-tech | Wide futuristic display; web3/AI/frontier-tech subjects. |
-| Syne | 400, 700, 800 | art-house, wide-display, distinctive | Art-house wide display; culture, studios, portfolio subjects. |
+| Family | Weights | Italics | Tone | Use |
+|---|---|---|---|---|
+| Anton | 400 | — | condensed-impact, poster, loud | Condensed poster impact; huge single-word headlines. One weight; designed for large sizes and tight leading. |
+| Bebas Neue | 400 | — | condensed-caps, classic-ad, tall | The classic tall-caps ad face; all-caps headlines only. Caps-only design — lowercase input renders as small caps. No arrow glyphs. |
+| Archivo Black | 400 | — | heavy-impact, poster, grotesque | Maximum-weight grotesque; short shouting headlines. One weight (visually ~900); the display cut of Archivo. |
+| Bricolage Grotesque | 400, 600, 700, 800 | — | characterful-grotesque, editorial-punch | Characterful grotesque with editorial punch; headlines and stats. |
+| Unbounded | 400, 700, 800 | — | wide-futuristic, crypto-tech | Wide futuristic display; web3/AI/frontier-tech subjects. |
+| Syne | 400, 700, 800 | — | art-house, wide-display, distinctive | Art-house wide display; culture, studios, portfolio subjects. |

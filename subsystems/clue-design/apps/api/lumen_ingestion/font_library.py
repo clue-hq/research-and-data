@@ -70,6 +70,12 @@ class CuratedFamily:
     tone: tuple  # agent-facing tone tags
     pairing: str  # one-line pairing hint
     notes: str = ""  # extra agent-facing guidance (caps-only faces etc.)
+    #: Curated numeric weights that also get an ITALIC face (A7b). Empty for
+    #: families with no italic source (all display faces + a few sans). Each
+    #: weight here must appear in `weights` too and lie inside the italic
+    #: source's wght range; a MaterializedFace(style="italic") is produced per
+    #: entry, after the upright faces.
+    italic_weights: tuple = ()
 
 
 CURATED_FAMILIES: List[CuratedFamily] = [
@@ -79,11 +85,13 @@ CURATED_FAMILIES: List[CuratedFamily] = [
         ("neutral", "ui", "systematic"),
         "The default voice; pairs with any display or serif face.",
         "Also the engine's bundled fallback — using it is never a risk.",
+        italic_weights=(400,),
     ),
     CuratedFamily(
         "dm-sans", "DM Sans", "ofl/dmsans", "sans", (400, 500, 600, 700, 800),
         ("geometric", "friendly", "startup"),
         "Rounded geometry; pairs well with Fraunces or Playfair Display.",
+        italic_weights=(400,),
     ),
     CuratedFamily(
         "manrope", "Manrope", "ofl/manrope", "sans", (400, 500, 600, 700, 800),
@@ -106,6 +114,7 @@ CURATED_FAMILIES: List[CuratedFamily] = [
         (400, 500, 600, 700, 800),
         ("warm-geometric", "contemporary", "brandable"),
         "Warm geometric; a safe modern default when Inter feels too plain.",
+        italic_weights=(400,),
     ),
     CuratedFamily(
         "outfit", "Outfit", "ofl/outfit", "sans", (400, 500, 600, 700, 800),
@@ -116,46 +125,54 @@ CURATED_FAMILIES: List[CuratedFamily] = [
         "work-sans", "Work Sans", "ofl/worksans", "sans", (400, 500, 600, 700, 800),
         ("workhorse", "neutral-warm", "editorial"),
         "Quiet editorial workhorse; pairs with Lora or Source Serif 4.",
+        italic_weights=(400,),
     ),
     CuratedFamily(
         "archivo", "Archivo", "ofl/archivo", "sans", (400, 500, 600, 700, 800),
         ("grotesque", "sturdy", "poster-capable"),
         "Sturdy grotesque; use Archivo Black for full-impact posters.",
+        italic_weights=(400,),
     ),
     CuratedFamily(
         "hanken-grotesk", "Hanken Grotesk", "ofl/hankengrotesk", "sans",
         (400, 500, 600, 700, 800),
         ("humanist", "calm", "readable"),
         "Humanist and calm; good for healthcare, finance, trust subjects.",
+        italic_weights=(400,),
     ),
     # --- Serif --------------------------------------------------------------
     CuratedFamily(
         "fraunces", "Fraunces", "ofl/fraunces", "serif", (400, 500, 600, 700, 900),
         ("display-serif", "expressive", "warm", "editorial"),
         "Soft old-style display serif; hero headlines over DM Sans or Inter body.",
+        italic_weights=(400, 600),
     ),
     CuratedFamily(
         "playfair-display", "Playfair Display", "ofl/playfairdisplay", "serif",
         (400, 500, 600, 700, 800),
         ("high-contrast", "elegant", "luxury"),
         "High-contrast elegance; luxury and fashion headlines, never body.",
+        italic_weights=(400,),
     ),
     CuratedFamily(
         "lora", "Lora", "ofl/lora", "serif", (400, 500, 600, 700),
         ("readable-serif", "calm", "body"),
         "Calm text serif; body copy under a grotesque display face.",
+        italic_weights=(400, 700),
     ),
     CuratedFamily(
         "source-serif-4", "Source Serif 4", "ofl/sourceserif4", "serif",
         (400, 500, 600, 700, 800),
         ("sturdy-serif", "editorial", "body"),
         "Sturdy editorial serif; long copy and pull-quotes.",
+        italic_weights=(400, 600),
     ),
     CuratedFamily(
         "newsreader", "Newsreader", "ofl/newsreader", "serif",
         (400, 500, 600, 700, 800),
         ("news-editorial", "refined", "text"),
         "Refined news voice; pairs with Manrope or Archivo.",
+        italic_weights=(400, 500),
     ),
     CuratedFamily(
         "instrument-serif", "Instrument Serif", "ofl/instrumentserif", "serif",
@@ -163,33 +180,39 @@ CURATED_FAMILIES: List[CuratedFamily] = [
         ("display-serif", "fashionable", "condensed-elegant"),
         "Single-weight display serif with a fashionable, condensed elegance.",
         "One weight only (400) — scale with size, not weight.",
+        italic_weights=(400,),
     ),
     # --- Slab ---------------------------------------------------------------
     CuratedFamily(
         "zilla-slab", "Zilla Slab", "ofl/zillaslab", "slab", (400, 500, 600, 700),
         ("slab", "friendly-technical"),
         "Friendly technical slab; developer and maker subjects.",
+        italic_weights=(400,),
     ),
     CuratedFamily(
         "bitter", "Bitter", "ofl/bitter", "slab", (400, 500, 600, 700, 800),
         ("slab", "contemporary", "readable"),
         "Contemporary readable slab; headlines and body both work.",
+        italic_weights=(400, 700),
     ),
     # --- Mono ---------------------------------------------------------------
     CuratedFamily(
         "jetbrains-mono", "JetBrains Mono", "ofl/jetbrainsmono", "mono", (400, 700),
         ("code", "technical"),
         "Code voice; terminal snippets, specs, dev-tool ads.",
+        italic_weights=(400,),
     ),
     CuratedFamily(
         "ibm-plex-mono", "IBM Plex Mono", "ofl/ibmplexmono", "mono", (400, 500, 600, 700),
         ("code", "technical-corporate"),
         "Corporate-technical mono; data, engineering, enterprise subjects.",
+        italic_weights=(400,),
     ),
     CuratedFamily(
         "space-mono", "Space Mono", "ofl/spacemono", "mono", (400, 700),
         ("retro-tech", "display-mono", "quirky"),
         "Quirky retro mono; eyebrow labels and display accents, not long copy.",
+        italic_weights=(400,),
     ),
     # --- Display / impact ---------------------------------------------------
     CuratedFamily(
@@ -282,10 +305,23 @@ def _ttfont(data: bytes):
 
 def _find_variable_source(directory: Path, family: str) -> Optional[Path]:
     """The upright variable TTF, e.g. ``Fraunces[SOFT,WONK,opsz,wght].ttf``.
-    Italic variable sources (``-Italic[...]``) are deliberately not curated
-    in v1 — scene text has no italic control yet."""
+    The bracket glob matches ``[`` immediately after the compact family name,
+    so it deliberately EXCLUDES the italic sibling ``{compact}-Italic[...].ttf``
+    (the ``-Italic`` breaks the ``[`` adjacency) — see ``_find_italic_source``."""
     compact = family.replace(" ", "")
     candidates = sorted(directory.glob(f"{compact}[[]*wght*[]].ttf"))
+    return candidates[0] if candidates else None
+
+
+def _find_italic_source(directory: Path, family: str) -> Optional[Path]:
+    """The italic variable TTF (A7b), e.g.
+    ``Fraunces-Italic[SOFT,WONK,opsz,wght].ttf`` or ``Lora-Italic[wght].ttf``.
+    Same ``[...wght...]`` bracket shape as the upright source but gated on the
+    ``-Italic`` infix; ``_instance_bytes`` pins every non-wght axis (incl.
+    Archivo's ``wdth``) to its fvar default, so the same instancer path
+    produces a static italic face per curated weight."""
+    compact = family.replace(" ", "")
+    candidates = sorted(directory.glob(f"{compact}-Italic[[]*wght*[]].ttf"))
     return candidates[0] if candidates else None
 
 
@@ -295,6 +331,26 @@ def _find_static_source(directory: Path, family: str, weight: int) -> Optional[P
     if name is None:
         return None
     path = directory / f"{compact}-{name}.ttf"
+    return path if path.is_file() else None
+
+
+def _find_static_italic_source(
+    directory: Path, family: str, weight: int
+) -> Optional[Path]:
+    """Static italic face for families with no italic VF (instrument-serif,
+    zilla-slab, ibm-plex-mono, space-mono). Google names weight-400 italics
+    ``{compact}-Italic.ttf`` and heavier ones ``{compact}-{Weight}Italic.ttf``
+    (e.g. ``ZillaSlab-BoldItalic.ttf``). Verified against the pinned clone: all
+    four curate weight 400 only, so ``{compact}-Italic.ttf`` is the real file;
+    the weighted form is coded for completeness."""
+    compact = family.replace(" ", "")
+    if weight == 400:
+        path = directory / f"{compact}-Italic.ttf"
+        return path if path.is_file() else None
+    name = WEIGHT_NAMES.get(weight)
+    if name is None:
+        return None
+    path = directory / f"{compact}-{name}Italic.ttf"
     return path if path.is_file() else None
 
 
@@ -349,6 +405,7 @@ def materialize_family(
     if not directory.is_dir():
         raise FontLibraryError(f"{curated.family}: missing {directory}")
 
+    compact = curated.family.replace(" ", "")
     variable_source = _find_variable_source(directory, curated.family)
     faces: List[MaterializedFace] = []
     for weight in curated.weights:
@@ -356,7 +413,7 @@ def materialize_family(
             data = _instance_bytes(
                 variable_source.read_bytes(), weight, curated.family
             )
-            stem = f"{curated.family.replace(' ', '')}-{WEIGHT_NAMES[weight]}"
+            stem = f"{compact}-{WEIGHT_NAMES[weight]}"
         else:
             static = _find_static_source(directory, curated.family, weight)
             if static is None:
@@ -372,6 +429,30 @@ def materialize_family(
             )
         )
 
+    # A7b: italic faces, after the uprights. VF italic sources are instanced
+    # per curated weight (same instancer path as uprights, non-wght axes pinned
+    # to fvar defaults); static-only families read the matching -Italic file.
+    italic_variable_source = _find_italic_source(directory, curated.family)
+    for weight in curated.italic_weights:
+        if italic_variable_source is not None:
+            data = _instance_bytes(
+                italic_variable_source.read_bytes(), weight, curated.family
+            )
+        else:
+            static = _find_static_italic_source(directory, curated.family, weight)
+            if static is None:
+                raise FontLibraryError(
+                    f"{curated.family}: no italic file for weight {weight} "
+                    f"and no italic variable source in {directory}"
+                )
+            data = static.read_bytes()
+        stem = f"{compact}-{WEIGHT_NAMES[weight]}Italic"
+        faces.append(
+            MaterializedFace(
+                weight=weight, style="italic", bytes_=data, filename=f"{stem}.ttf"
+            )
+        )
+
     coverage = glyph_coverage(_ttfont(faces[0].bytes_).getBestCmap())
     if not coverage["required_ok"]:
         missing = ", ".join(
@@ -381,6 +462,21 @@ def materialize_family(
             f"{curated.family}: missing required glyphs: {missing} — "
             "a library face that would ship tofu cannot be provisioned"
         )
+    # The glyph-coverage gate applies to the first italic face too — a tofu
+    # italic (e.g. an emphasis face lacking the em-dash) must fail loudly, not
+    # ship. Manifest records the upright coverage; the italic gate is guard-only.
+    first_italic = next((f for f in faces if f.style == "italic"), None)
+    if first_italic is not None:
+        italic_coverage = glyph_coverage(_ttfont(first_italic.bytes_).getBestCmap())
+        if not italic_coverage["required_ok"]:
+            missing = ", ".join(
+                f"U+{ord(ch):04X} {ch!r}"
+                for ch in italic_coverage["missing_required"]
+            )
+            raise FontLibraryError(
+                f"{curated.family} (italic): missing required glyphs: {missing} — "
+                "a library face that would ship tofu cannot be provisioned"
+            )
     return faces, coverage
 
 
@@ -401,9 +497,13 @@ _LICENSE_RECORD = {
 }
 
 
-def face_asset_id(slug: str, weight: int, digest: str) -> str:
-    """Deterministic: same bytes => same id => idempotent re-provisioning."""
-    return f"asset_font_lib_{slug.replace('-', '_')}_w{weight}_{digest[:12]}"
+def face_asset_id(slug: str, weight: int, digest: str, style: str = "normal") -> str:
+    """Deterministic: same bytes => same id => idempotent re-provisioning.
+    Italic faces carry an ``i`` after the weight (``..._w400i_<digest>``) so
+    the id is legible and cannot collide with the upright of the same weight;
+    upright ids are unchanged (no suffix), keeping every pre-A7b id stable."""
+    suffix = "i" if style == "italic" else ""
+    return f"asset_font_lib_{slug.replace('-', '_')}_w{weight}{suffix}_{digest[:12]}"
 
 
 def provision_family(
@@ -421,12 +521,13 @@ def provision_family(
     `create_record` is Repository.create_asset_record."""
     manifest_faces: List[JsonObject] = []
     for face in faces:
-        asset_id = face_asset_id(curated.slug, face.weight, face.digest)
+        asset_id = face_asset_id(curated.slug, face.weight, face.digest, face.style)
+        style_label = " Italic" if face.style == "italic" else ""
         response = ingest(
             store_root=store_root,
             bytes_base64=base64.b64encode(face.bytes_).decode("ascii"),
             asset_id=asset_id,
-            label=f"{curated.family} {WEIGHT_NAMES[face.weight]} (font library)",
+            label=f"{curated.family} {WEIGHT_NAMES[face.weight]}{style_label} (font library)",
             declared_mime_type="font/ttf",
             filename=face.filename,
             kind="font",
@@ -551,6 +652,10 @@ Rules:
   dash, smart quotes); families missing arrow glyphs are flagged in notes.
 - Pair one display voice with one workhorse; two display faces on a canvas
   fight each other.
+- **Italics exist only for the families and weights in the Italics column** —
+  the display faces have none. Asking for italic on a family/weight with no
+  italic face renders upright and emits an advisory (LUMS0105); choose an
+  emphasis role from a family that lists the italic weight you need.
 """
 
 
@@ -571,10 +676,22 @@ def render_agent_inventory(manifest: JsonObject) -> str:
         if not families:
             continue
         lines.append(f"\n## {titles[category]}\n")
-        lines.append("| Family | Weights | Tone | Use |")
-        lines.append("|---|---|---|---|")
+        lines.append("| Family | Weights | Italics | Tone | Use |")
+        lines.append("|---|---|---|---|---|")
         for family in families:
-            weights = ", ".join(str(face["weight"]) for face in family["faces"])
+            # Filter to upright faces — italic faces reuse curated weights, so
+            # counting them here would double-list every italic weight.
+            weights = ", ".join(
+                str(face["weight"])
+                for face in family["faces"]
+                if face.get("style", "normal") == "normal"
+            )
+            italic_weights = [
+                str(face["weight"])
+                for face in family["faces"]
+                if face.get("style") == "italic"
+            ]
+            italics = ", ".join(italic_weights) if italic_weights else "—"
             tone = ", ".join(family.get("tone") or [])
             use = str(family.get("pairing") or "")
             notes = str(family.get("notes") or "")
@@ -587,7 +704,9 @@ def render_agent_inventory(manifest: JsonObject) -> str:
             )
             if details:
                 use = f"{use} {details}".strip()
-            lines.append(f"| {family['family']} | {weights} | {tone} | {use} |")
+            lines.append(
+                f"| {family['family']} | {weights} | {italics} | {tone} | {use} |"
+            )
     return "\n".join(lines) + "\n"
 
 

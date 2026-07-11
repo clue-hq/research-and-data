@@ -69,6 +69,93 @@ def test_face_asset_id_is_deterministic_and_slug_safe() -> None:
     assert face_asset_id("dm-sans", 700, digest).startswith("asset_font_lib_dm_sans_w700_")
 
 
+def test_face_asset_id_italic_carries_style_token_without_disturbing_uprights() -> None:
+    # A7b: italic ids get a `w<weight>i` token; upright ids are byte-identical
+    # to pre-A7b (default style="normal", no suffix), so the existing manifest
+    # entries never churn.
+    digest = "cd" * 32
+    upright = face_asset_id("fraunces", 400, digest)
+    italic = face_asset_id("fraunces", 400, digest, "italic")
+    assert upright == face_asset_id("fraunces", 400, digest, "normal")
+    assert upright.startswith("asset_font_lib_fraunces_w400_")
+    assert italic.startswith("asset_font_lib_fraunces_w400i_")
+    assert upright != italic
+
+
+def test_curated_italics_are_a_subset_of_curated_weights() -> None:
+    # An italic weight must have an upright twin (loading + measure resolve the
+    # upright first); an italic outside `weights` could not resolve a base face.
+    for family in CURATED_FAMILIES:
+        assert set(family.italic_weights) <= set(family.weights), family.slug
+        assert list(family.italic_weights) == sorted(set(family.italic_weights)), (
+            family.slug
+        )
+
+
+def test_checked_in_manifest_ships_the_curated_italic_faces() -> None:
+    """22 italic faces (D4), each stamped style='italic' with an `i` asset id
+    and a full-length digest — and the upright count is preserved."""
+    manifest = json.loads(CHECKED_IN_MANIFEST.read_text())
+    by_slug = {f["slug"]: f for f in manifest["families"]}
+    italic_total = 0
+    for curated in CURATED_FAMILIES:
+        entry = by_slug[curated.slug]
+        italic = [f for f in entry["faces"] if f.get("style") == "italic"]
+        assert [f["weight"] for f in italic] == list(curated.italic_weights), curated.slug
+        for face in italic:
+            italic_total += 1
+            assert face["style"] == "italic"
+            assert f"_w{face['weight']}i_" in face["asset_id"], face["asset_id"]
+            assert len(face["digest"]) == 64
+    assert italic_total == 22
+
+
+def test_agent_inventory_has_italics_column() -> None:
+    manifest = json.loads(CHECKED_IN_MANIFEST.read_text())
+    doc = render_agent_inventory(manifest)
+    assert "| Family | Weights | Italics | Tone | Use |" in doc
+    # A family with italics lists its italic weights; the preamble addresses
+    # italics + the missing-face advisory.
+    assert "italic" in doc.lower()
+    assert "LUMS0105" in doc
+    # Fraunces carries 400 + 600 italics; its row must show both.
+    fraunces_row = next(
+        line for line in doc.splitlines() if line.startswith("| Fraunces |")
+    )
+    assert "400, 600" in fraunces_row
+    # Display faces carry no italics — the em-dash placeholder appears.
+    anton_row = next(line for line in doc.splitlines() if line.startswith("| Anton |"))
+    assert "| — |" in anton_row
+
+
+def test_agent_inventory_weights_column_excludes_italics() -> None:
+    # The Weights column must count upright faces only; italic faces reuse
+    # curated weights, so an unfiltered column would double-list them.
+    manifest = {
+        "families": [
+            {
+                "slug": "x",
+                "family": "X",
+                "category": "serif",
+                "tone": ["t"],
+                "pairing": "p",
+                "faces": [
+                    {"weight": 400, "style": "normal"},
+                    {"weight": 700, "style": "normal"},
+                    {"weight": 400, "style": "italic"},
+                ],
+            }
+        ]
+    }
+    row = next(
+        line
+        for line in render_agent_inventory(manifest).splitlines()
+        if line.startswith("| X |")
+    )
+    # Weights: "400, 700" (uprights), Italics: "400".
+    assert "| X | 400, 700 | 400 |" in row
+
+
 def test_instance_bytes_rejects_static_sources() -> None:
     with pytest.raises(FontLibraryError, match="expected a variable source"):
         _instance_bytes(INTER_REGULAR.read_bytes(), 400, "Inter")
@@ -266,7 +353,15 @@ def test_checked_in_manifest_matches_curation() -> None:
     for curated in CURATED_FAMILIES:
         entry = by_slug[curated.slug]
         assert entry["family"] == curated.family
-        assert [face["weight"] for face in entry["faces"]] == list(curated.weights)
+        upright = [f for f in entry["faces"] if f.get("style", "normal") == "normal"]
+        italic = [f for f in entry["faces"] if f.get("style") == "italic"]
+        assert [face["weight"] for face in upright] == list(curated.weights)
+        # A7b: italic faces (if any) follow the uprights and match the curation.
+        assert [face["weight"] for face in italic] == list(curated.italic_weights)
+        assert all(f.get("style") == "italic" for f in italic)
+        # Uprights precede italics in face order.
+        styles = [f.get("style", "normal") for f in entry["faces"]]
+        assert styles == sorted(styles, key=lambda s: s == "italic")
         assert entry["glyph_coverage"]["required_ok"] is True
         for face in entry["faces"]:
             assert len(face["digest"]) == 64

@@ -72,6 +72,13 @@
           "asset_id": "asset_font_lib_inter_w800_1b83fbee6581",
           "digest": "1b83fbee6581d2cb16719178df9e79c9a37c2472431e7a787931dbf8d22bc8cf",
           "byte_length": 343964
+        },
+        {
+          "weight": 400,
+          "style": "italic",
+          "asset_id": "asset_font_lib_inter_w400i_fcc07e6566f9",
+          "digest": "fcc07e6566f9bc31376030fa52e8fee9e7b5e606be90a15e155f5d568aada02e",
+          "byte_length": 344784
         }
       ]
     },
@@ -139,6 +146,13 @@
           "asset_id": "asset_font_lib_dm_sans_w800_19e61e4ad8d7",
           "digest": "19e61e4ad8d79d0a84a8331862f802ef704b5ae9f042679c17cd549012a3cfd9",
           "byte_length": 56824
+        },
+        {
+          "weight": 400,
+          "style": "italic",
+          "asset_id": "asset_font_lib_dm_sans_w400i_e098b527a887",
+          "digest": "e098b527a8871927068b9ea9c68082de94072bf143deab8f6961fe2a71ab0a48",
+          "byte_length": 61184
         }
       ]
     },
@@ -403,6 +417,13 @@
           "asset_id": "asset_font_lib_plus_jakarta_sans_w800_54d107269dd2",
           "digest": "54d107269dd2ec76240f50944c60c4e29fdc52ae0ec92e88324169592fbe5c1b",
           "byte_length": 96444
+        },
+        {
+          "weight": 400,
+          "style": "italic",
+          "asset_id": "asset_font_lib_plus_jakarta_sans_w400i_922c339943df",
+          "digest": "922c339943df1a2363af78ad7de255878da539dc2167eb92d21a1eb2d1c31a04",
+          "byte_length": 100188
         }
       ]
     },
@@ -537,6 +558,13 @@
           "asset_id": "asset_font_lib_work_sans_w800_3308161296da",
           "digest": "3308161296da7f9de9bf2b025ac9cfa823e4af3c117dcf6cec484eb10c4736b9",
           "byte_length": 193208
+        },
+        {
+          "weight": 400,
+          "style": "italic",
+          "asset_id": "asset_font_lib_work_sans_w400i_1eadc8245bfe",
+          "digest": "1eadc8245bfe50875cbd4d3eac9615d9591c69e4cbdd401e1197c933b751df6a",
+          "byte_length": 176372
         }
       ]
     },
@@ -604,6 +632,13 @@
           "asset_id": "asset_font_lib_archivo_w800_0fe3c8e16990",
           "digest": "0fe3c8e16990c158e934d5c2d300c12fa7a03829f4965831d1c5f11037d5eab5",
           "byte_length": 121364
+        },
+        {
+          "weight": 400,
+          "style": "italic",
+          "asset_id": "asset_font_lib_archivo_w400i_d76857587180",
+          "digest": "d76857587180d99c1af8c4e27a4cdf11cb0a6399ecc6ff845a63903a2aa7d63e",
+          "byte_length": 133740
         }
       ]
     },
@@ -671,6 +706,13 @@
           "asset_id": "asset_font_lib_hanken_grotesk_w800_088e9db08401",
           "digest": "088e9db0840111c3fe02f7f90359e5f5609a7689e25d6ae5083c0e9d72deb385",
           "byte_length": 67800
+        },
+        {
+          "weight": 400,
+          "style": "italic",
+          "asset_id": "asset_font_lib_hanken_grotesk_w400i_26800c6922f4",
+          "digest": "26800c6922f48766c3697c8211d0497dd472d268bbe6d4699a837a9bc6705605",
+          "byte_length": 70808
         }
       ]
     },
@@ -742,6 +784,20 @@
           "asset_id": "asset_font_lib_fraunces_w900_a5d8ddfb9518",
           "digest": "a5d8ddfb9518943d5a4beb47e7e0bd2279136b9a4774c30cdf1b540c21295132",
           "byte_length": 73064
+        },
+        {
+          "weight": 400,
+          "style": "italic",
+          "asset_id": "asset_font_lib_fraunces_w400i_225effcd2e92",
+          "digest": "225effcd2e9237444076fa79ddc083f1487f0c48ea0d9a25f67972991c03af27",
+          "byte_length": 89008
+        },
+        {
+          "weight": 600,
+          "style": "italic",
+          "asset_id": "asset_font_lib_fraunces_w600i_57da413c029e",
+          "digest": "57da413c029ef4590ac28b15d74f999937510c4d7dca844649ddb0279d0daf3d",
+          "byte_length": 89044
         }
       ]
     },
@@ -809,6 +865,13 @@
           "asset_id": "asset_font_lib_playfair_display_w800_8dd8132ea895",
           "digest": "8dd8132ea895dce96b52e96bc3cd173841566dd40b1d921df98282558f9d1256",
           "byte_length": 194836
+        },
+        {
+          "weight": 400,
+          "style": "italic",
+          "asset_id": "asset_font_lib_playfair_display_w400i_dd91cf01265f",
+          "digest": "dd91cf01265f8d163040b5323246081af9f1bf6f726aebcdbcf458ca1f934d65",
+          "byte_length": 177848
         }
       ]
     },
@@ -872,6 +935,20 @@
           "asset_id": "asset_font_lib_lora_w700_4f074bde6dd4",
           "digest": "4f074bde6dd4ce7f4dbb3a82e526da007377ca53b7c6639357539ac8f343ea39",
           "byte_length": 134944
+        },
+        {
+          "weight": 400,
+          "style": "italic",
+          "asset_id": "asset_font_lib_lora_w400i_808b803568d9",
+          "digest": "808b803568d9fbbb8be88575c0958d7f6f99e58b97fbac7cda00275be30a79e2",
+          "byte_length": 140864
+        },
+        {
+          "weight": 700,
+          "style": "italic",
+          "asset_id": "asset_font_lib_lora_w700i_880ff21e8f3e",
+          "digest": "880ff21e8f3eebcf3c3f71c79274b9c0d1cb52f2bab5559e1559488ac49b0b04",
+          "byte_length": 141500
         }
       ]
     },
@@ -939,6 +1016,20 @@
           "asset_id": "asset_font_lib_source_serif_4_w800_0528a97372a6",
           "digest": "0528a97372a6143ac512220abfd91d7f6df2bc8f6e657b9e0a667463c75d98f2",
           "byte_length": 330516
+        },
+        {
+          "weight": 400,
+          "style": "italic",
+          "asset_id": "asset_font_lib_source_serif_4_w400i_a4168c4dc475",
+          "digest": "a4168c4dc4751a02055a3870286bc84ed9eaff4ecb93d99f567e29c8b03047d8",
+          "byte_length": 207592
+        },
+        {
+          "weight": 600,
+          "style": "italic",
+          "asset_id": "asset_font_lib_source_serif_4_w600i_37cd9f56737e",
+          "digest": "37cd9f56737e8331d137a2d2a3045085b4978a3e0d4ae60b6660d4b1d3de897e",
+          "byte_length": 207708
         }
       ]
     },
@@ -1009,6 +1100,20 @@
           "asset_id": "asset_font_lib_newsreader_w800_45eefff9a515",
           "digest": "45eefff9a5155554d27f39ffbc1f244f864d5cd7d9887e3bb2619da07f8ebd4a",
           "byte_length": 118444
+        },
+        {
+          "weight": 400,
+          "style": "italic",
+          "asset_id": "asset_font_lib_newsreader_w400i_f33d69a331fb",
+          "digest": "f33d69a331fb31a6f56394b28c335503e293ca26df42a046b09d7a3df082400c",
+          "byte_length": 129024
+        },
+        {
+          "weight": 500,
+          "style": "italic",
+          "asset_id": "asset_font_lib_newsreader_w500i_ca41fa2d9c89",
+          "digest": "ca41fa2d9c898bba3e15ccd52b5131709360e06de7f741cdc77dbdea1f64b133",
+          "byte_length": 130740
         }
       ]
     },
@@ -1052,6 +1157,13 @@
           "asset_id": "asset_font_lib_instrument_serif_w400_498efd461f6d",
           "digest": "498efd461f6ddfcb7a111bf9a565709d2085d48201d501ead960d93e84ffbb88",
           "byte_length": 70012
+        },
+        {
+          "weight": 400,
+          "style": "italic",
+          "asset_id": "asset_font_lib_instrument_serif_w400i_08939b8bdf53",
+          "digest": "08939b8bdf534afec24ae0ef5e03f948940cd9a8fe08e7fecbad040e62327385",
+          "byte_length": 71592
         }
       ]
     },
@@ -1111,6 +1223,13 @@
           "asset_id": "asset_font_lib_zilla_slab_w700_4ec3a04a4eef",
           "digest": "4ec3a04a4eef37074b42ef542e4d874e13646668cfe65256e0bf100441cf8719",
           "byte_length": 273044
+        },
+        {
+          "weight": 400,
+          "style": "italic",
+          "asset_id": "asset_font_lib_zilla_slab_w400i_ff0cd7a2f0db",
+          "digest": "ff0cd7a2f0db59d017d51b4ed9003f58bf21ae218ab2a965aa3bc1dd894c152b",
+          "byte_length": 277732
         }
       ]
     },
@@ -1178,6 +1297,20 @@
           "asset_id": "asset_font_lib_bitter_w800_d5bc976188ea",
           "digest": "d5bc976188ea4750560b9b7a54494f8b9de7ed1d30ebebdc3921b59e504cdc30",
           "byte_length": 202408
+        },
+        {
+          "weight": 400,
+          "style": "italic",
+          "asset_id": "asset_font_lib_bitter_w400i_8c04845da3de",
+          "digest": "8c04845da3deef9105ea342d74f7b2c969568b93624223d86fe72853febbf2b2",
+          "byte_length": 194464
+        },
+        {
+          "weight": 700,
+          "style": "italic",
+          "asset_id": "asset_font_lib_bitter_w700i_66ed745b32e7",
+          "digest": "66ed745b32e7dd13e4b41c3fe21c53b7335d6d853fb71c1c08013848b0e6c664",
+          "byte_length": 194364
         }
       ]
     },
@@ -1223,6 +1356,13 @@
           "asset_id": "asset_font_lib_jetbrains_mono_w700_c41be9b91540",
           "digest": "c41be9b91540dd0ddbf7743527225c9438848c6741b537b1d31579bfd9351046",
           "byte_length": 115108
+        },
+        {
+          "weight": 400,
+          "style": "italic",
+          "asset_id": "asset_font_lib_jetbrains_mono_w400i_b614905b93e8",
+          "digest": "b614905b93e87cfb83934f3ccdb37bfdcf29104eae786e1c6eb0b4f5d0b24238",
+          "byte_length": 117964
         }
       ]
     },
@@ -1282,6 +1422,13 @@
           "asset_id": "asset_font_lib_ibm_plex_mono_w700_ac27abd6450a",
           "digest": "ac27abd6450a64dd94467580a02fe6235156d5b92f2926ebbc8e7489df64e0be",
           "byte_length": 137784
+        },
+        {
+          "weight": 400,
+          "style": "italic",
+          "asset_id": "asset_font_lib_ibm_plex_mono_w400i_3362fc791b06",
+          "digest": "3362fc791b0652193328b862c1c5f23a789bc7288b1617fa63302f88689a2a34",
+          "byte_length": 143920
         }
       ]
     },
@@ -1328,6 +1475,13 @@
           "asset_id": "asset_font_lib_space_mono_w700_405e73d41afb",
           "digest": "405e73d41afb7e5906efce206a326af5c956f38e255f35421c260e861e599c59",
           "byte_length": 98232
+        },
+        {
+          "weight": 400,
+          "style": "italic",
+          "asset_id": "asset_font_lib_space_mono_w400i_eca264c8690a",
+          "digest": "eca264c8690a91fe837d19a6badf2d88961610c4c8aafcb196526192a9f258c5",
+          "byte_length": 121396
         }
       ]
     },
