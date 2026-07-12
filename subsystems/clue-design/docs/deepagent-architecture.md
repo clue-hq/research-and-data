@@ -640,3 +640,73 @@ vitest 730 (26 known baseline) · 19-cell parity gate PASS · provisioning
 evidence: a7b-teaching-evidence/ + a7a-gate-evidence/ (gate.py now covers
 valign + italics). NEXT: per-span metrics + VF axes stay parked; kit-style
 metadata fast-follow on record.
+## RC — Reference-conditioned design (roadmap A7; 2026-07-12, acceptance-gated)
+
+The rec-2 capability lands: user-attached reference images ride the turn as
+first-class inputs, all three minds see the pixels, and the loop is judged —
+deterministically — against them. Channel: paperclip + thumbnail chips in the
+chat composer (uploads via POST /assets, tags reference/chat-attachment; kind
+is engine-classified — AssetKind has no reference variant, tags carry it),
+`reference_asset_ids` (≤4) on the turn request → resolved BY VALUE into
+`config.reference_assets` (contract frozen in config.py: always-raster
+preview_digest — SVGs engine-rasterized at resolve, atomic content-addressed
+writes — dominant colors, advisory describe text, attachment order; unknown
+id / too-many / broken preview = hard 422 at the route boundary). Runtime:
+`view("reference:<n>")` for orchestrator/author/reviewer; scaffold writes
+references.md (metadata only, loudly non-load-bearing); the DIRECTOR writes
+reference-brief.md from pixels (no one-shot captioner — cheap perception IS
+the rec-2 failure), naming defining qualities on open-ended axes
+(IMAGE-TYPE-AGNOSTIC per user amendment: a type poster, a product photo and
+a wash have different defining qualities — perceive what is there);
+reviewer fills VisualCritique.reference_fidelity (0-3 + reasons +
+regressed_to_house_style); fidelity ≤1 blocks. No-references turns are
+byte-identical to pre-RC (prompts pinned against git-HEAD bytes; scaffold
+pinned; state.json gains only the neutral empty field).
+
+Review-gate record — the adversarial protocol is now SIX for six, and this
+round's finds were textbook survive-green-suites defects: (1) the LIVE
+/agent/turns route swallowed the reference 422s (run row created before
+validation; worker catch-all → generic "crashed"; only the sync route tests
+exercise honored them) — fixed: resolve in the handler before create_run,
+manifest rides into the worker; pinned end-to-end. (2) The editor queue
+dropped/cross-mixed references (queued messages carried no snapshot; drain
+read the live set the prior turn's success-clear had wiped) — fixed:
+enqueue-time snapshot owns the attachments, id-scoped success-clear; pinned
+by two queue-lifecycle tests. (3) THE central risk, confirmed: the fidelity
+gate was vacuously bypassable (Optional reference_fidelity omitted →
+"never accept while ≤1" true by vacuity = the moda rubber-stamp reborn) —
+fixed at BOTH levels per the root-cause rule: a deterministic finalize_run
+guard (accepted + references requires explicit score ≥2, actionable refusal
+otherwise; the tool-level twin of the edit-scoped acceptance refusal) + the
+prompt gate naming omission itself a blocker; five finalize tests pin it.
+(4) The AUTHOR — the mind that can bake injected text into the canvas — was
+the only one missing the injection-scoping line; fixed. Minors: raster
+missing-blob now 422s like the SVG branch; the deliberate
+LUMEN_AGENT_ASSET_STORE override exception documented.
+
+ACCEPTANCE GATE (the rec-2 test, live, 3-for-3 browser turns on grok-4.5):
+(1) two soft-wash references + moda's exact prompt → reference-brief.md
+named the true qualities (oversized dissolving orbs, diagonal counterweight,
+low-chroma sage/sand, "never scattered small blobs, never confetti");
+round-1 fidelity 2 ("adopts the language without matching the atmospheric
+strength") BLOCKED acceptance and drove round 2 → fidelity 3, accepted;
+final render IS the reference vocabulary. (2) Generality (user amendment
+proven): a brutalist type-poster reference → brief perceived a completely
+different vocabulary (monumental caps, hard mechanical edges, black voids,
+single lime bar) → output transferred the STRUCTURE to new meetup content,
+fidelity 3. (3) Control turn without references: no RC files, normal
+behavior, attachments note absent. moda's rec-2 failure (palette-only
+reduction → house blobs → "no problems detected") is now structurally
+impossible to rubber-stamp: the reviewer must look, must score, and
+finalize refuses without it. Evidence: .context/next-wave/rc-gate-evidence/
+(refs + 10 browser screenshots + run ids b07a4fa9/6a09edd0/900e110e).
+
+Observed residuals (recorded, not RC): clarification tool payload rejection
+advisory on the control turn (pre-existing class); the stale-wasm banner at
+gate start (rebuilt per AGENTS.md §1, HANDSHAKE OK before any turn).
+RC2 decision point deferred: image-gen conditioning via the edit path,
+DET∧JUDGE palette composite, A8 multi-concept interplay, attachment-library
+curation. Design + as-built amendments:
+.context/next-wave/rc-reference-conditioned-design.md.
+Gates: api 299 · agent-runtime 430 · editor tsc + vitest 731 (26 known
+baseline) · acceptance 3/3.
