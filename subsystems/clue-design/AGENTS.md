@@ -35,11 +35,30 @@ Commits that do NOT touch engine sources need no rebuild — the stamp is conten
 derived, not commit-derived. (When in doubt, the rebuild is cheap and idempotent:
 `build.rs` re-runs only when a hashed file actually changed.)
 
+**Stamp scope caveat (found live 2026-07-13, print-W3 browser verification):**
+the stamp hashes ONLY `crates/lumen-core`. A stale `lumen-api-helper` binary
+built before changes to `crates/lumen-export` / `crates/lumen-skia` / the helper
+itself **passes the handshake while serving old export behavior** (a helper
+predating the print-ready report looked "in sync" and silently omitted it). The
+handshake guarantees canvas-editing parity, NOT export-pipeline freshness. So:
+after any change under `crates/` beyond lumen-core, rebuild the helper
+(`cargo build -p lumen-api-helper --release`) and restart anything holding a
+`LUMEN_CORE_HELPER` path — the handshake will not catch this for you.
+(Class-fix candidate on the print-track backlog: extend the content hash to the
+helper's full crate graph, or add a helper-freshness preflight to the API.)
+
 Corollary for verification/browser runners: if you see the "Canvas editing is
 disabled" banner, STOP and report the two engine hashes from the banner —
 do not work around it. With content-stamping a mismatch means one side was built
 from different engine sources (usually a stale wasm artifact); rebuild the wasm
-and re-verify.
+and re-verify. **Second known cause (2026-07-13): the same banner appears when
+the editor cannot reach the API at all — e.g. CORS.** The API's default
+allowlist covers only `localhost:3000`; an editor served on any other port
+(parallel-workspace verification runs use 3100+) must start the API with
+`LUMEN_API_CORS_ORIGINS` including that origin. Before diagnosing a stamp
+mismatch, check the browser console for CORS/"Failed to fetch" errors — if the
+banner shows no hashes or the console shows fetch failures, it's connectivity,
+not the engine.
 
 ## 2. After API-side seeding, hard-refresh the editor
 

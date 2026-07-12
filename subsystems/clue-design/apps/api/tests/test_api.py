@@ -2056,6 +2056,61 @@ def test_export_preview_route_reports_print_pdf_bleed_dimensions(
     assert "LUME0411" not in diagnostic_codes
     assert "LUME0412" not in diagnostic_codes
 
+    # Print W6: the print-ready report must SURVIVE the API compaction —
+    # compact_export_result once rebuilt the payload without it and the
+    # editor's report block silently never rendered (browser-verify find).
+    report = payload["export"]["print_ready"]
+    assert report["ruleset"] == "print-ready-v1"
+    assert report["status"] in {"pass", "warn", "fail"}
+    assert any(rule["id"] == "edge_art_reaches_bleed" for rule in report["rules"])
+
+
+def test_export_preview_route_honors_include_marks(client: TestClient) -> None:
+    """Print W2r: include_marks must survive profile normalization — the
+    MediaBox grows by the 14pt mark margin per side around the bleed."""
+    scene = minimal_scene()
+    scene["pages"]["page_a4"]["size"] = {
+        "width": 1080,
+        "height": 1080,
+        "unit": "px",
+        "preset": "custom",
+        "orientation": "portrait",
+    }
+    scene["pages"]["page_a4"]["bleed"] = {
+        "x": -18,
+        "y": -18,
+        "width": 1116,
+        "height": 1116,
+    }
+
+    response = client.post(
+        "/export-preview",
+        json={
+            "scene": scene,
+            "format": "pdf",
+            "page_ids": ["page_a4"],
+            "profile": {
+                "name": "print_pdf_marks",
+                "format": "pdf",
+                "pdf_intent": "print",
+                "raster": None,
+                "include_bleed": True,
+                "embed_fonts": True,
+                "include_marks": True,
+            },
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    artifact = payload["export"]["artifacts"][0]
+    assert artifact["dimensions"] == {
+        "width": 1144.0,
+        "height": 1144.0,
+        "unit": "pt",
+        "source": "pdf_media_box",
+    }
+
 
 def test_styles_brand_kit_persists_validates_and_lists_versions(
     client: TestClient,

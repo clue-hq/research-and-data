@@ -3811,6 +3811,9 @@ def normalize_export_profile(profile: JsonObject) -> JsonObject:
         "raster": profile.get("raster"),
         "include_bleed": bool(profile.get("include_bleed", False)),
         "embed_fonts": bool(profile.get("embed_fonts", False)),
+        # Print W2/W3: crop marks ride the profile; dropping the flag here
+        # silently downgraded marked exports (browser-verify finding).
+        "include_marks": bool(profile.get("include_marks", False)),
     }
 
 
@@ -3864,7 +3867,7 @@ def document_export_response(
 
 
 def compact_export_result(export: JsonObject) -> JsonObject:
-    return {
+    compact = {
         "artifacts": [
             compact_export_artifact(artifact)
             for artifact in export.get("artifacts", [])
@@ -3872,6 +3875,12 @@ def compact_export_result(export: JsonObject) -> JsonObject:
         ],
         "diagnostics": export.get("diagnostics", []),
     }
+    # Print W6: the print-ready preflight report rides print-intent PDF
+    # exports; the editor renders it and the agent loop reads it. Rebuilding
+    # the payload without it silently hid the report (browser-verify finding).
+    if export.get("print_ready") is not None:
+        compact["print_ready"] = export["print_ready"]
+    return compact
 
 
 def compact_export_artifact(artifact: JsonObject) -> JsonObject:
