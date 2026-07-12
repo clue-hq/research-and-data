@@ -5,6 +5,7 @@ import copy
 import functools
 import inspect
 import json
+import threading
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
@@ -260,6 +261,12 @@ class LumenDesignTools:
         # this sink so a caller (the API's async turn) can persist it to a
         # durable store and stream it. None keeps the run purely file-traced.
         self.event_sink = event_sink
+        # Batched read-only tool calls (deepagent-latency L2) now run on
+        # langgraph's ToolNode thread pool, so `record` can be invoked from
+        # concurrent threads. This lock serializes the whole record body (jsonl
+        # append + event_sink push) so trace lines never interleave and in-process
+        # event order stays deterministic.
+        self._record_lock = threading.Lock()
         self.run_id = new_run_id()
         self.iteration = 0
         self.trace_dir = config.trace_dir / self.run_id
@@ -3762,26 +3769,31 @@ class LumenDesignTools:
             payload=payload or {},
         )
         path = self.trace_dir / "trace.jsonl"
-        with path.open("a", encoding="utf-8") as handle:
-            handle.write(trace.model_dump_json() + "\n")
-        if self.event_sink is not None:
-            # Progress streaming is best-effort: a sink failure must never
-            # abort the design run (the file trace above is the source of
-            # truth). Keep the payload lightweight — the checklist needs the
-            # event name + summaries, not the full per-iteration payload.
-            try:
-                self.event_sink(
-                    event,
-                    {
-                        "actor": actor,
-                        "iteration": self.iteration,
-                        "input_summary": input_summary,
-                        "output_summary": output_summary,
-                        "diagnostic_count": len(diagnostics or []),
-                    },
-                )
-            except Exception:
-                pass
+        # Serialize the whole record body under one lock (L2 thread-safety):
+        # batched reads call this from concurrent ToolNode threads, so the jsonl
+        # append and the event_sink push must never interleave with another
+        # thread's. The lock is process-local; the file append is O(one line).
+        with self._record_lock:
+            with path.open("a", encoding="utf-8") as handle:
+                handle.write(trace.model_dump_json() + "\n")
+            if self.event_sink is not None:
+                # Progress streaming is best-effort: a sink failure must never
+                # abort the design run (the file trace above is the source of
+                # truth). Keep the payload lightweight — the checklist needs the
+                # event name + summaries, not the full per-iteration payload.
+                try:
+                    self.event_sink(
+                        event,
+                        {
+                            "actor": actor,
+                            "iteration": self.iteration,
+                            "input_summary": input_summary,
+                            "output_summary": output_summary,
+                            "diagnostic_count": len(diagnostics or []),
+                        },
+                    )
+                except Exception:
+                    pass
 
     def _prune_empty_pages(self) -> list[str]:
         """Remove pages that carry zero children from the working scene, via the
