@@ -1057,6 +1057,7 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                     embed_fonts: true,
                     include_marks: false,
                 imposition: None,
+                proof: false,
                 },
             };
             let request = ExportRequest {
@@ -2064,6 +2065,7 @@ fn export_instance_artifacts(
                     embed_fonts: false,
                     include_marks: false,
                 imposition: None,
+                proof: false,
                 };
                 let request = ExportRequest {
                     profile,
@@ -2107,6 +2109,7 @@ fn export_instance_artifacts(
                         embed_fonts: false,
                         include_marks: false,
                     imposition: None,
+                    proof: false,
                     },
                     page_ids: page_ids.clone(),
                     purpose: ExportPurpose::BulkRender,
@@ -2122,6 +2125,7 @@ fn export_instance_artifacts(
                             dpi,
                             false,
                             false,
+                            None,
                             Some(resolver.as_ref()),
                         ) {
                             Ok(flattened) => {

@@ -75,23 +75,27 @@ pub fn page_boxes_for(page: &Page, include_bleed: bool) -> PageBoxes {
 pub const MARK_MARGIN_PT: f64 = 14.0;
 pub const MARK_GAP_PT: f64 = 3.0;
 
-/// The mark margin a request implies: crop marks require both the marks
+/// The print margin a request implies: crop marks require both the marks
 /// flag and bleed (marks indicate the trim line relative to the bleed
 /// workflow; a marks request without bleed is a no-op, declared upstream).
-pub fn marks_margin_pt(request: &lumen_core::ExportRequest) -> f64 {
-    if request.profile.include_marks && request.profile.include_bleed {
+/// Proof mode (W7) always gets the margin — its slug and control strip
+/// live there, bleed or not.
+pub fn print_margin_pt(request: &lumen_core::ExportRequest) -> f64 {
+    let marks = request.profile.include_marks && request.profile.include_bleed;
+    if marks || request.profile.proof {
         MARK_MARGIN_PT
     } else {
         0.0
     }
 }
 
-/// [`page_boxes_for`] plus a symmetric mark margin outside the bleed:
-/// MediaBox grows by the margin, BleedBox/TrimBox shift inward by it. A
-/// margin on a bleed-less page is ignored (mirrors the render region).
+/// [`page_boxes_for`] plus a symmetric print margin outside the page box
+/// (bleed when applicable, trim otherwise — proof mode uses the margin on
+/// bleed-less pages too): MediaBox grows by the margin, BleedBox/TrimBox
+/// shift inward by it.
 pub fn page_boxes_with_margin(page: &Page, include_bleed: bool, margin_pt: f64) -> PageBoxes {
     let base = page_boxes_for(page, include_bleed);
-    if margin_pt <= 0.0 || !(include_bleed && page.bleed.is_some()) {
+    if margin_pt <= 0.0 {
         return base;
     }
     let shift = |rect: [f64; 4]| {
@@ -123,7 +127,7 @@ fn box_array(values: [f64; 4]) -> Object {
 /// count — a mismatch is a caller bug and errors loudly rather than
 /// shipping a half-boxed print file.
 pub fn apply_print_boxes(bytes: &[u8], boxes: &[PageBoxes]) -> Result<Vec<u8>, String> {
-    finalize_print_pdf(bytes, boxes, false)
+    finalize_print_pdf(bytes, boxes, None)
 }
 
 /// One-pass print finalization: exact page boxes always; with `pdfx`, the
@@ -134,7 +138,7 @@ pub fn apply_print_boxes(bytes: &[u8], boxes: &[PageBoxes]) -> Result<Vec<u8>, S
 pub fn finalize_print_pdf(
     bytes: &[u8],
     boxes: &[PageBoxes],
-    pdfx: bool,
+    pdfx_title: Option<&str>,
 ) -> Result<Vec<u8>, String> {
     let mut document =
         Document::load_mem(bytes).map_err(|error| format!("PDF parse failed: {error}"))?;
@@ -157,8 +161,8 @@ pub fn finalize_print_pdf(
         page_dict.set("BleedBox", box_array(page_boxes.bleed));
     }
 
-    if pdfx {
-        apply_pdfx_declarations(&mut document)?;
+    if let Some(title) = pdfx_title {
+        apply_pdfx_declarations(&mut document, title)?;
     }
 
     let mut output = Vec::new();
@@ -168,15 +172,31 @@ pub fn finalize_print_pdf(
     Ok(output)
 }
 
-fn apply_pdfx_declarations(document: &mut Document) -> Result<(), String> {
+fn apply_pdfx_declarations(document: &mut Document, title: &str) -> Result<(), String> {
     document.version = "1.6".to_owned();
 
-    // Document ID: deterministic content-derived id (FNV-1a over the ICC +
-    // object count — stable across runs, unique enough per document shape).
-    let id_seed = fnv1a(SRGB_ICC) ^ (document.objects.len() as u64);
+    // Document ID: deterministic content-derived id (FNV-1a over the ICC,
+    // the title, and object count — stable across runs, unique enough per
+    // document shape).
+    let id_seed = fnv1a(SRGB_ICC) ^ fnv1a(title.as_bytes()) ^ (document.objects.len() as u64);
 
-    // Info dictionary: Trapped + the deterministic dates PDF/X requires.
+    // File identifiers: REQUIRED by every PDF/X part (ISO 15930; surfaced
+    // by veraPDF's structural pass 2026-07-13 — the one A-profile failure
+    // that was also an X failure). Deterministic, permanent == changing
+    // for a first-generation file.
+    let id_bytes = format!("{id_seed:016x}{:016x}", id_seed.rotate_left(32)).into_bytes();
+    document.trailer.set(
+        "ID",
+        Object::Array(vec![
+            Object::String(id_bytes.clone(), lopdf::StringFormat::Hexadecimal),
+            Object::String(id_bytes, lopdf::StringFormat::Hexadecimal),
+        ]),
+    );
+
+    // Info dictionary: Title + Trapped + the deterministic dates PDF/X
+    // requires.
     let info = dictionary! {
+        "Title" => Object::string_literal(title),
         "Producer" => Object::string_literal("Lumen/Skia-PDF"),
         "CreationDate" => Object::string_literal(DETERMINISTIC_DATE_PDF),
         "ModDate" => Object::string_literal(DETERMINISTIC_DATE_PDF),
@@ -212,7 +232,9 @@ fn apply_pdfx_declarations(document: &mut Document) -> Result<(), String> {
     xmlns:pdfxid="http://www.npes.org/pdfx/ns/id/"
     xmlns:xmp="http://ns.adobe.com/xap/1.0/"
     xmlns:xmpMM="http://ns.adobe.com/xap/1.0/mm/"
-    xmlns:pdf="http://ns.adobe.com/pdf/1.3/">
+    xmlns:pdf="http://ns.adobe.com/pdf/1.3/"
+    xmlns:dc="http://purl.org/dc/elements/1.1/">
+   <dc:title><rdf:Alt><rdf:li xml:lang="x-default">{title}</rdf:li></rdf:Alt></dc:title>
    <pdfxid:GTS_PDFXVersion>PDF/X-4</pdfxid:GTS_PDFXVersion>
    <pdf:Producer>Lumen/Skia-PDF</pdf:Producer>
    <pdf:Trapped>False</pdf:Trapped>
@@ -225,6 +247,7 @@ fn apply_pdfx_declarations(document: &mut Document) -> Result<(), String> {
 </x:xmpmeta>
 <?xpacket end="w"?>"#,
         bom = '\u{FEFF}',
+        title = xml_escape(title),
         date = DETERMINISTIC_DATE_XMP,
         id = id_seed,
     );
@@ -248,6 +271,13 @@ fn apply_pdfx_declarations(document: &mut Document) -> Result<(), String> {
     );
     catalog.set("Metadata", Object::Reference(metadata_id));
     Ok(())
+}
+
+fn xml_escape(value: &str) -> String {
+    value
+        .replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
 }
 
 fn fnv1a(bytes: &[u8]) -> u64 {

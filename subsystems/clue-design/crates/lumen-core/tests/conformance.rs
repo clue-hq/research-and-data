@@ -889,6 +889,7 @@ fn print_pdf_profile() -> ExportProfile {
         embed_fonts: true,
     include_marks: false,
     imposition: None,
+    proof: false,
     }
 }
 
@@ -905,6 +906,7 @@ fn agent_png_profile() -> ExportProfile {
         embed_fonts: false,
     include_marks: false,
     imposition: None,
+    proof: false,
     }
 }
 

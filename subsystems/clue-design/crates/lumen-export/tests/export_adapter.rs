@@ -27,6 +27,7 @@ fn export_profile(format: ExportFormat) -> ExportProfile {
         embed_fonts: true,
     include_marks: false,
     imposition: None,
+    proof: false,
     }
 }
 
@@ -194,40 +195,6 @@ fn custom_px_page(id: &str, width: f64, height: f64, children: Vec<NodeId>) -> P
     }
 }
 
-fn scene_with_computed_rect() -> Scene {
-    let mut scene = Scene::new(DocumentId::from("doc_computed_export"), "Computed Export");
-    scene.pages.insert(
-        PageId::from("page_square"),
-        square_px_page("page_square", vec![NodeId::from("node_computed_rect")]),
-    );
-
-    let mut node = Node::new(NodeId::from("node_computed_rect"), NodeKind::Rect);
-    node.size = SizeSpec::fixed(1.0, 1.0);
-    node.computed = Some(ComputedGeometry {
-        layout_bounds: Rect {
-            x: 20.0,
-            y: 30.0,
-            width: 10.0,
-            height: 10.0,
-        },
-        render_bounds: Rect {
-            x: 20.0,
-            y: 30.0,
-            width: 10.0,
-            height: 10.0,
-        },
-    });
-    node.fills = vec![Fill {
-        id: PaintId::from("paint_computed_rect"),
-        paint: Paint::Solid {
-            color: Color::Hex {
-                value: "#ff0000".to_owned(),
-            },
-        },
-    }];
-    scene.nodes.insert(node.id.clone(), node);
-    scene
-}
 
 fn scene_with_slot() -> Scene {
     let mut scene = Scene::new(DocumentId::from("doc_export"), "Export Demo");
@@ -775,34 +742,11 @@ fn svg_export_warns_on_all_unresolved_brand_token_carriers() {
     }
 }
 
-#[test]
-fn early_pdf_export_returns_pdf_artifact_and_font_diagnostics() {
-    let adapter = LumenExportAdapter::new();
-    let scene = scene_with_slot();
-    let result = adapter
-        .export(
-            &scene,
-            &request(ExportFormat::Pdf, vec![PageId::from("page_a")]),
-        )
-        .unwrap();
-
-    assert_eq!(result.artifacts.len(), 1);
-    assert_eq!(result.artifacts[0].mime_type, "application/pdf");
-    assert!(result.artifacts[0].bytes.starts_with(b"%PDF-1.4"));
-    assert!(result.artifacts[0]
-        .sidecar_json
-        .as_ref()
-        .unwrap()
-        .contains("\"slot_key\": \"contact.full_name\""));
-    assert!(result
-        .diagnostics
-        .iter()
-        .any(|diagnostic| diagnostic.code == "LUME0402"));
-}
 
 #[test]
 fn print_pdf_profile_preserves_custom_size_profile_and_sidecar_metadata() {
-    let adapter = LumenExportAdapter::new();
+    let adapter = LumenExportAdapter::new()
+        .with_pdf_renderer(std::sync::Arc::new(RecordingPdfRenderer::default()));
     let mut scene = scene_with_slot();
     add_page_b_slot(&mut scene);
     scene.pages.insert(
@@ -829,6 +773,7 @@ fn print_pdf_profile_preserves_custom_size_profile_and_sidecar_metadata() {
             embed_fonts: true,
         include_marks: false,
         imposition: None,
+        proof: false,
         },
         page_ids: vec![PageId::from("page_a"), PageId::from("page_square_custom")],
         purpose: ExportPurpose::UserDownload,
@@ -841,25 +786,11 @@ fn print_pdf_profile_preserves_custom_size_profile_and_sidecar_metadata() {
     assert!(result
         .diagnostics
         .iter()
-        .any(|diagnostic| diagnostic.code == "LUME0401"));
-    assert!(result
-        .diagnostics
-        .iter()
-        .any(|diagnostic| diagnostic.code == "LUME0402"));
-    assert!(result
-        .diagnostics
-        .iter()
         .any(|diagnostic| diagnostic.code == "LUME0411"));
     assert!(result
         .diagnostics
         .iter()
         .any(|diagnostic| diagnostic.code == "LUME0412"));
-
-    let pdf = std::str::from_utf8(&result.artifacts[0].bytes).unwrap();
-    assert!(
-        pdf.contains("/MediaBox [0 0 1080 1080]"),
-        "PDF should preserve custom page dimensions instead of falling back to a preset: {pdf}"
-    );
 
     let sidecar: Value =
         serde_json::from_str(result.artifacts[0].sidecar_json.as_ref().unwrap()).unwrap();
@@ -884,75 +815,11 @@ fn print_pdf_profile_preserves_custom_size_profile_and_sidecar_metadata() {
         .any(|slot| slot["slot_key"] == "contact.page_b_full_name"));
 }
 
-#[test]
-fn print_pdf_include_bleed_expands_media_box_and_offsets_trim_content() {
-    let adapter = LumenExportAdapter::new();
-    let mut scene = Scene::new(DocumentId::from("doc_pdf_bleed"), "PDF Bleed");
-    let mut page = custom_px_page(
-        "page_square_bleed",
-        1080.0,
-        1080.0,
-        vec![NodeId::from("node_trim_rect")],
-    );
-    page.bleed = Some(Rect {
-        x: -18.0,
-        y: -18.0,
-        width: 1116.0,
-        height: 1116.0,
-    });
-    page.safe_area = Some(Rect {
-        x: 72.0,
-        y: 72.0,
-        width: 936.0,
-        height: 936.0,
-    });
-    scene.pages.insert(PageId::from("page_square_bleed"), page);
-    scene.nodes.insert(NodeId::from("node_trim_rect"), {
-        let mut node = rect_node("node_trim_rect");
-        node.transform = Transform::default();
-        node.size = SizeSpec::fixed(100.0, 100.0);
-        node
-    });
-
-    let result = adapter
-        .export(
-            &scene,
-            &ExportRequest {
-                profile: ExportProfile {
-                    name: "print_pdf_with_bleed".to_owned(),
-                    format: ExportFormat::Pdf,
-                    pdf_intent: Some(PdfIntent::Print),
-                    raster: None,
-                    include_bleed: true,
-                    embed_fonts: false,
-                include_marks: false,
-                imposition: None,
-                },
-                page_ids: vec![PageId::from("page_square_bleed")],
-                purpose: ExportPurpose::UserDownload,
-            },
-        )
-        .unwrap();
-
-    let pdf = std::str::from_utf8(&result.artifacts[0].bytes).unwrap();
-    assert!(pdf.contains("/MediaBox [0 0 1116 1116]"), "{pdf}");
-    assert!(
-        pdf.contains("18 998 100 100 re B\n"),
-        "trim content should be offset into the bleed-expanded PDF page: {pdf}"
-    );
-    assert!(
-        result
-            .diagnostics
-            .iter()
-            .all(|diagnostic| diagnostic.code != "LUME0411" && diagnostic.code != "LUME0412"),
-        "{:#?}",
-        result.diagnostics
-    );
-}
 
 #[test]
 fn print_pdf_warns_for_explicit_multi_page_and_mixed_page_sizes() {
-    let adapter = LumenExportAdapter::new();
+    let adapter = LumenExportAdapter::new()
+        .with_pdf_renderer(std::sync::Arc::new(RecordingPdfRenderer::default()));
     let mut scene = Scene::new(DocumentId::from("doc_pdf_pagination"), "PDF Pagination");
 
     let mut square = custom_px_page("page_square", 1080.0, 1080.0, Vec::new());
@@ -985,6 +852,7 @@ fn print_pdf_warns_for_explicit_multi_page_and_mixed_page_sizes() {
                     embed_fonts: false,
                 include_marks: false,
                 imposition: None,
+                proof: false,
                 },
                 page_ids: vec![PageId::from("page_square"), PageId::from("page_wide")],
                 purpose: ExportPurpose::UserDownload,
@@ -1005,8 +873,9 @@ fn print_pdf_warns_for_explicit_multi_page_and_mixed_page_sizes() {
 }
 
 #[test]
-fn print_pdf_warns_for_text_shaping_and_image_dpi_gaps() {
-    let adapter = LumenExportAdapter::new();
+fn print_pdf_warns_for_image_dpi_gaps() {
+    let adapter = LumenExportAdapter::new()
+        .with_pdf_renderer(std::sync::Arc::new(RecordingPdfRenderer::default()));
     let mut scene = Scene::new(
         DocumentId::from("doc_pdf_print_guardrails"),
         "PDF Print Guardrails",
@@ -1073,6 +942,7 @@ fn print_pdf_warns_for_text_shaping_and_image_dpi_gaps() {
                     embed_fonts: false,
                 include_marks: false,
                 imposition: None,
+                proof: false,
                 },
                 page_ids: vec![PageId::from("page_print_guardrails")],
                 purpose: ExportPurpose::UserDownload,
@@ -1080,7 +950,11 @@ fn print_pdf_warns_for_text_shaping_and_image_dpi_gaps() {
         )
         .unwrap();
 
-    for expected in ["LUME0413", "LUME0414", "LUME0415", "LUME0416"] {
+    // LUME0413/0414 (bidi + non-Latin coverage) retired with the early
+    // vector writer: the Skia renderers shape bidi and embed real fonts,
+    // with fallbacks declared as LUMS010x. The image-DPI metadata checks
+    // are paint-independent and remain.
+    for expected in ["LUME0415", "LUME0416"] {
         assert!(
             result
                 .diagnostics
@@ -1094,7 +968,8 @@ fn print_pdf_warns_for_text_shaping_and_image_dpi_gaps() {
 
 #[test]
 fn print_pdf_warns_when_required_slot_node_is_outside_safe_area() {
-    let adapter = LumenExportAdapter::new();
+    let adapter = LumenExportAdapter::new()
+        .with_pdf_renderer(std::sync::Arc::new(RecordingPdfRenderer::default()));
     let mut scene = Scene::new(
         DocumentId::from("doc_pdf_slot_safe_area"),
         "PDF Slot Safe Area",
@@ -1141,6 +1016,7 @@ fn print_pdf_warns_when_required_slot_node_is_outside_safe_area() {
                     embed_fonts: false,
                 include_marks: false,
                 imposition: None,
+                proof: false,
                 },
                 page_ids: vec![PageId::from("page_slot_safe_area")],
                 purpose: ExportPurpose::UserDownload,
@@ -1159,136 +1035,10 @@ fn print_pdf_warns_when_required_slot_node_is_outside_safe_area() {
     );
 }
 
-#[test]
-fn early_pdf_export_uses_computed_xy_for_layouted_nodes() {
-    let adapter = LumenExportAdapter::new();
-    let scene = scene_with_computed_rect();
-    let result = adapter
-        .export(
-            &scene,
-            &request(ExportFormat::Pdf, vec![PageId::from("page_square")]),
-        )
-        .unwrap();
 
-    let pdf = std::str::from_utf8(&result.artifacts[0].bytes).unwrap();
-    assert!(pdf.contains("20 60 10 10 re f\n"), "{pdf}");
-}
 
-#[test]
-fn early_pdf_export_paints_page_background() {
-    let adapter = LumenExportAdapter::new();
-    let mut scene = scene_with_slot();
-    scene
-        .pages
-        .get_mut(&PageId::from("page_a"))
-        .unwrap()
-        .background = vec![Fill {
-        id: PaintId::from("paint_page_bg_brand"),
-        paint: Paint::Solid {
-            color: Color::Hex {
-                value: "#abcdef".to_owned(),
-            },
-        },
-    }];
 
-    let result = adapter
-        .export(
-            &scene,
-            &request(ExportFormat::Pdf, vec![PageId::from("page_a")]),
-        )
-        .unwrap();
 
-    let pdf = std::str::from_utf8(&result.artifacts[0].bytes).unwrap();
-    assert!(pdf.contains("0.6706 0.8039 0.9373 rg\n"));
-    assert!(pdf.contains("0 0 595.2756 841.8898 re f\n"));
-}
-
-#[test]
-fn early_pdf_export_preserves_text_fill_color() {
-    let adapter = LumenExportAdapter::new();
-    let scene = scene_with_slot();
-
-    let result = adapter
-        .export(
-            &scene,
-            &request(ExportFormat::Pdf, vec![PageId::from("page_a")]),
-        )
-        .unwrap();
-
-    let pdf = std::str::from_utf8(&result.artifacts[0].bytes).unwrap();
-    assert!(pdf.contains("0.0706 0.2039 0.3373 rg\nBT /F1"));
-}
-
-#[test]
-fn early_pdf_export_uses_measured_text_lines() {
-    let adapter = LumenExportAdapter::new();
-    let mut scene = Scene::new(DocumentId::from("doc_pdf_text"), "PDF Text");
-    scene.pages.insert(
-        PageId::from("page_square"),
-        square_px_page("page_square", vec![NodeId::from("node_text")]),
-    );
-    let mut node = text_node(
-        "node_text",
-        "AI phone agents help neurosurgeons focus on surgery",
-    );
-    node.size = SizeSpec::fixed(110.0, 120.0);
-    if let NodeKind::Text(text) = &mut node.kind {
-        text.font_size = 20.0;
-        text.line_height = 1.1;
-        text.wrap = lumen_core::TextWrap::Wrap;
-    }
-    scene.nodes.insert(NodeId::from("node_text"), node);
-
-    let result = adapter
-        .export(
-            &scene,
-            &request(ExportFormat::Pdf, vec![PageId::from("page_square")]),
-        )
-        .unwrap();
-
-    let pdf = std::str::from_utf8(&result.artifacts[0].bytes).unwrap();
-    assert!(pdf.matches(" Tj\n").count() > 1, "{pdf}");
-}
-
-#[test]
-fn pdf_export_warns_when_text_overflows_render_box() {
-    let adapter = LumenExportAdapter::new();
-    let mut scene = Scene::new(
-        DocumentId::from("doc_pdf_text_overflow"),
-        "PDF Text Overflow",
-    );
-    scene.pages.insert(
-        PageId::from("page_square"),
-        square_px_page("page_square", vec![NodeId::from("node_text")]),
-    );
-    let mut node = text_node(
-        "node_text",
-        "A very long headline that cannot fit in the tiny PDF text frame",
-    );
-    node.size = SizeSpec::fixed(48.0, 18.0);
-    if let NodeKind::Text(text) = &mut node.kind {
-        text.font_size = 18.0;
-        text.wrap = lumen_core::TextWrap::NoWrap;
-        text.max_lines = Some(1);
-    }
-    scene.nodes.insert(NodeId::from("node_text"), node);
-
-    let result = adapter
-        .export(
-            &scene,
-            &request(ExportFormat::Pdf, vec![PageId::from("page_square")]),
-        )
-        .unwrap();
-
-    assert!(
-        result.diagnostics.iter().any(|diagnostic| {
-            diagnostic.code == "LUME0418"
-                && diagnostic.subject == Some(DiagnosticSubject::Node(NodeId::from("node_text")))
-        }),
-        "{:#?}",
-        result.diagnostics
-    );
-}
 
 #[test]
 fn svg_export_diagnoses_tokenized_page_backgrounds() {
@@ -1318,41 +1068,7 @@ fn svg_export_diagnoses_tokenized_page_backgrounds() {
         .any(|diagnostic| diagnostic.code == "LUME0208"));
 }
 
-#[test]
-fn early_pdf_export_renders_stroke_only_rectangles() {
-    let adapter = LumenExportAdapter::new();
-    let mut scene = scene_with_slot();
-    let badge = scene.nodes.get_mut(&NodeId::from("node_badge")).unwrap();
-    badge.fills.clear();
-    badge.strokes[0].width = 2.0;
 
-    let result = adapter
-        .export(
-            &scene,
-            &request(ExportFormat::Pdf, vec![PageId::from("page_a")]),
-        )
-        .unwrap();
-
-    let pdf = std::str::from_utf8(&result.artifacts[0].bytes).unwrap();
-    assert!(pdf.contains("5.6693 w\n"));
-    assert!(pdf.contains(" re S\n"));
-}
-
-#[test]
-fn early_pdf_export_renders_fill_and_stroke_rectangles() {
-    let adapter = LumenExportAdapter::new();
-    let scene = scene_with_slot();
-
-    let result = adapter
-        .export(
-            &scene,
-            &request(ExportFormat::Pdf, vec![PageId::from("page_a")]),
-        )
-        .unwrap();
-
-    let pdf = std::str::from_utf8(&result.artifacts[0].bytes).unwrap();
-    assert!(pdf.contains(" re B\n"));
-}
 
 #[test]
 fn per_page_sidecar_filters_slots_to_exported_nodes() {
@@ -1395,6 +1111,7 @@ fn svg_all_pages_sidecars_preserve_profile_and_page_specific_slot_mappings() {
             embed_fonts: false,
         include_marks: false,
         imposition: None,
+        proof: false,
         },
         page_ids: Vec::new(),
         purpose: ExportPurpose::UserDownload,
@@ -1488,25 +1205,11 @@ fn phase_f_manifest_page_sizes_export_with_canonical_dimensions() {
             case.id
         );
 
-        let pdf_result = adapter
-            .export(
-                &scene,
-                &request(ExportFormat::Pdf, vec![case.page_id.clone()]),
-            )
-            .unwrap();
-        let pdf = std::str::from_utf8(&pdf_result.artifacts[0].bytes).unwrap();
-        let media_box = parse_pdf_media_box(pdf);
-        let scale = unit_to_points_for_test(&case.unit);
-        assert_close(
-            media_box[2],
-            case.width * scale,
-            &format!("{} pdf width", case.id),
-        );
-        assert_close(
-            media_box[3],
-            case.height * scale,
-            &format!("{} pdf height", case.id),
-        );
+        // PDF dimension conformance for these cases is pinned where the
+        // PDF is actually produced now: pdf_boxes unit tests (exact box
+        // math), lumen-skia's adapter tests, and the API dimension
+        // regression (test_api.py) — the portable crate no longer renders
+        // PDFs itself (D5).
     }
 }
 
@@ -1617,24 +1320,7 @@ fn parse_svg_view_box(svg: &str) -> [f64; 4] {
     [values[0], values[1], values[2], values[3]]
 }
 
-fn parse_pdf_media_box(pdf: &str) -> [f64; 4] {
-    let start = pdf.find("/MediaBox [").unwrap() + "/MediaBox [".len();
-    let end = start + pdf[start..].find(']').unwrap();
-    let values = pdf[start..end]
-        .split_whitespace()
-        .map(|value| value.parse::<f64>().unwrap())
-        .collect::<Vec<_>>();
-    [values[0], values[1], values[2], values[3]]
-}
 
-fn unit_to_points_for_test(unit: &Unit) -> f64 {
-    match unit {
-        Unit::Pt => 1.0,
-        Unit::Px => 1.0,
-        Unit::Mm => 72.0 / 25.4,
-        Unit::In => 72.0,
-    }
-}
 
 fn assert_close(actual: f64, expected: f64, label: &str) {
     assert!(
@@ -1692,6 +1378,21 @@ fn oversized_corner_radius_exports_as_a_stadium_not_an_ellipse() {
         "expected the Skia-matching clamped radius, got: {svg}"
     );
     assert!(!svg.contains("rx=\"9999\""), "raw oversized radius leaked");
+}
+
+#[test]
+fn pdf_export_without_renderer_fails_loudly() {
+    // D5: the early hand-rolled vector writer is deleted; an adapter
+    // without an injected renderer is a composition bug, same as PNG.
+    let adapter = LumenExportAdapter::new();
+    let scene = scene_with_slot();
+    let error = adapter
+        .export(
+            &scene,
+            &request(ExportFormat::Pdf, vec![PageId::from("page_a")]),
+        )
+        .unwrap_err();
+    assert_eq!(error.code, "export.pdf_renderer_missing");
 }
 
 // ---------------------------------------------------------------------------
@@ -1864,6 +1565,7 @@ fn flattened_pdf_honors_profile_dpi_bleed_flag_and_print_guardrails() {
                     embed_fonts: true,
                 include_marks: false,
                 imposition: None,
+                proof: false,
                 },
                 page_ids: vec![PageId::from("page_a")],
                 purpose: ExportPurpose::UserDownload,
@@ -1908,6 +1610,7 @@ fn flattener_failure_maps_to_export_error_with_diagnostics() {
                     embed_fonts: true,
                 include_marks: false,
                 imposition: None,
+                proof: false,
                 },
                 page_ids: vec![PageId::from("page_a")],
                 purpose: ExportPurpose::UserDownload,

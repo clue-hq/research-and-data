@@ -36,6 +36,7 @@ fn print_pdf_profile() -> ExportProfile {
         embed_fonts: true,
     include_marks: false,
     imposition: None,
+    proof: false,
     }
 }
 

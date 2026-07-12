@@ -100,6 +100,7 @@ impl Default for AgentLoopOptions {
             embed_fonts: true,
         include_marks: false,
         imposition: None,
+        proof: false,
         }
     }
 }

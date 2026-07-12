@@ -224,6 +224,9 @@ function ExportControls({
       {profile && printFeatureEnabled && profile.format === "pdf" ? (
         <BookletField profile={profile} onChange={(nextProfile) => updateState({ draftProfile: nextProfile })} />
       ) : null}
+      {profile && printFeatureEnabled && profile.format === "pdf" ? (
+        <ProofField profile={profile} onChange={(nextProfile) => updateState({ draftProfile: nextProfile })} />
+      ) : null}
       <button
         type="button"
         disabled={!profile || selectedPageIds.length === 0 || isExporting}
@@ -317,6 +320,37 @@ function BookletField({
   );
 }
 
+function ProofField({
+  profile,
+  onChange
+}: {
+  profile: ExportProfile;
+  onChange: (profile: ExportProfile) => void;
+}) {
+  return (
+    <label className="toggle-field" data-role="proof-export">
+      <input
+        type="checkbox"
+        checked={Boolean(profile.proof)}
+        onChange={(event) =>
+          onChange(
+            normalizeProfile({
+              ...profile,
+              proof: event.target.checked ? true : undefined
+            })
+          )
+        }
+      />
+      Proof export (marks + slug + control strip)
+      {profile.proof ? (
+        <small className="muted" data-role="proof-note">
+          Not for production runs (LUME0431).
+        </small>
+      ) : null}
+    </label>
+  );
+}
+
 export function formatPatch(format: ExportProfile["format"], profile: ExportProfile): Partial<ExportProfile> {
   if (format === "png") {
     return {
@@ -329,14 +363,15 @@ export function formatPatch(format: ExportProfile["format"], profile: ExportProf
       include_bleed: false,
       include_marks: false,
       imposition: undefined,
+      proof: undefined,
       embed_fonts: false
     };
   }
   if (format === "pdf") {
-    // Preserve include_bleed / include_marks / embed_fonts / imposition across
-    // the switch — they are the print controls and only PDF exposes them, so
-    // clearing them here would silently drop the user's choice every time they
-    // toggle format.
+    // Preserve include_bleed / include_marks / embed_fonts / imposition / proof
+    // across the switch — they are the print controls and only PDF exposes them,
+    // so clearing them here would silently drop the user's choice every time
+    // they toggle format.
     return {
       format,
       raster: null,
@@ -350,20 +385,24 @@ export function formatPatch(format: ExportProfile["format"], profile: ExportProf
     include_bleed: false,
     include_marks: false,
     imposition: undefined,
+    proof: undefined,
     embed_fonts: false
   };
 }
 
 export function normalizeProfile(profile: ExportProfile): ExportProfile {
-  // Booklet imposition is a print/PDF-only concern; strip it for any other
-  // format so it never rides along on a raster or plain vector export.
+  // Booklet imposition and proof mode are print/PDF-only concerns; strip them
+  // for any other format so they never ride along on a raster or plain vector
+  // export.
   const imposition = profile.format === "pdf" ? profile.imposition : undefined;
+  const proof = profile.format === "pdf" ? profile.proof : undefined;
   if (profile.format !== "png") {
     // SVG/PDF: keep include_bleed / include_marks / embed_fonts as set.
     return {
       ...profile,
       raster: null,
-      imposition
+      imposition,
+      proof
     };
   }
   return {
@@ -378,6 +417,7 @@ export function normalizeProfile(profile: ExportProfile): ExportProfile {
     include_bleed: false,
     include_marks: false,
     imposition,
+    proof,
     embed_fonts: false
   };
 }

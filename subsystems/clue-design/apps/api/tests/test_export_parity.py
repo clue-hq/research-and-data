@@ -439,3 +439,73 @@ def test_booklet_sheet_halves_match_reader_pages(
                 f"[{renderer}] side {side_index} slot {slot} should carry reader "
                 f"page {reader_number}: {ratio:.2%} mismatch"
             )
+
+
+def test_verapdf_structural_validation_of_print_pdf(
+    core: CoreClient, tmp_path
+) -> None:
+    """PDF/X-4 structural regression via veraPDF (skips when not installed).
+
+    veraPDF validates PDF/A, not PDF/X, so this is NOT a conformance pass —
+    full ISO 15930-7 validation needs a commercial tool (callas pdfToolbox;
+    ruled out for now by D4). What this pins: the file parses completely
+    (jobEndStatus normal) and the only PDF/A-4 rule failures are the five
+    known NOT-APPLICABLE-to-X classes (PDF-2.0 header, A-4's no-Info rules,
+    the PDF/A ID schema, DeviceRGB-vs-PDF/A-intent). Any NEW failure class
+    is a structural regression. The one A-failure that WAS also an X
+    failure (missing trailer /ID, 6.1.3#1) is fixed and must stay fixed.
+    """
+    import shutil
+    import subprocess
+
+    verapdf = shutil.which("verapdf")
+    if not verapdf:
+        pytest.skip("veraPDF not installed")
+
+    scene = build_scene(core, EDGE_BLEED_DSL)
+    response = core.export_preview(
+        scene,
+        export_format="pdf",
+        profile={
+            "name": "print_pdf",
+            "format": "pdf",
+            "pdf_intent": "print",
+            "raster": {"scale": 1.0, "dpi": 300},
+            "include_bleed": True,
+            "embed_fonts": True,
+        },
+    )
+    pdf_bytes = bytes(
+        int(value) & 0xFF
+        for value in response["export"]["artifacts"][0]["bytes"]
+    )
+    pdf_path = tmp_path / "print.pdf"
+    pdf_path.write_bytes(pdf_bytes)
+
+    result = subprocess.run(
+        [verapdf, "-f", "4", str(pdf_path)], capture_output=True, text=True
+    )
+    report = result.stdout
+    assert 'jobEndStatus="normal"' in report, "veraPDF could not parse the PDF"
+
+    import re
+
+    failed = {
+        (match.group(1), match.group(2))
+        for match in re.finditer(
+            r'clause="([^"]+)" testNumber="(\d+)" status="failed"', report
+        )
+    }
+    not_applicable_to_x = {
+        ("6.1.2", "1"),      # A-4 wants a PDF-2.0 header; X-4 wants <= 1.6
+        ("6.1.3", "4"),      # A-4 forbids the Info dict; X-4 requires it
+        ("6.1.3", "5"),      # ditto (Info contents)
+        ("6.7.3", "1"),      # PDF/A Identification schema; we claim pdfxid
+        ("6.2.4.3", "2"),    # DeviceRGB vs PDF/A OutputIntent; ours is GTS_PDFX
+    }
+    unexpected = failed - not_applicable_to_x
+    assert not unexpected, (
+        f"new structural failure classes (regression): {sorted(unexpected)}"
+    )
+    # Trailer /ID (6.1.3#1) is required by PDF/X and must stay fixed.
+    assert ("6.1.3", "1") not in failed, "trailer /ID regressed — required by PDF/X"

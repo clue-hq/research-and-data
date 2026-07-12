@@ -96,6 +96,11 @@ pub struct PdfRenderOptions {
     /// Print W4: render 2-up duplex saddle-stitch sheets instead of
     /// reader-order pages.
     pub booklet: bool,
+    /// Print W7: proof mode — Some(label) draws marks, a slug line
+    /// ("label · page n/N · PROOF — not for production"), and an sRGB
+    /// control strip in a margin around every page. The label carries
+    /// document + profile identity; the renderer appends page numbering.
+    pub proof_label: Option<String>,
 }
 
 pub trait ScenePdfRenderer: fmt::Debug + Send + Sync {

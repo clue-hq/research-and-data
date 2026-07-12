@@ -47,6 +47,12 @@ pub struct ExportProfile {
     /// Unknown values fail loudly at export. Serialized only when set.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub imposition: Option<String>,
+    /// Print W7: proof-export mode — a margin with crop marks, a slug line
+    /// (document · profile · page n/N · PROOF), and an sRGB control strip.
+    /// For the soft-proof/contract-proof workflow; never for production
+    /// runs. Serialized only when true (schema-compat contract).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub proof: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]

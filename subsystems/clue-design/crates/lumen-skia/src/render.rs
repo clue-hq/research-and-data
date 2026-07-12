@@ -122,7 +122,7 @@ impl SkiaSceneRenderer {
         width_px: u32,
         height_px: u32,
         resolver: Option<&dyn AssetByteResolver>,
-        marks: Option<&CropMarks>,
+        overlay: Option<&PrintOverlay>,
     ) -> Result<RasterizedPage, RasterizeError> {
         let page = scene.pages.get(page_id).ok_or_else(|| {
             RasterizeError::new(
@@ -152,7 +152,7 @@ impl SkiaSceneRenderer {
             width as f32,
             height as f32,
             resolver,
-            marks,
+            overlay,
         );
 
         let image = surface.image_snapshot();
@@ -191,7 +191,7 @@ impl SkiaSceneRenderer {
         target_width: f32,
         target_height: f32,
         resolver: Option<&dyn AssetByteResolver>,
-        marks: Option<&CropMarks>,
+        overlay: Option<&PrintOverlay>,
     ) -> Vec<Diagnostic> {
         let mut painter = PagePainter {
             scene,
@@ -209,9 +209,10 @@ impl SkiaSceneRenderer {
             target_height / region.height.max(1.0) as f32,
         ));
         canvas.translate((-region.x as f32, -region.y as f32));
-        // Content paints only inside the bleed area (the marks margin must
-        // stay ink-free apart from the marks themselves).
-        if let Some(marks) = marks {
+        // Content paints only inside the bleed area (the print margin must
+        // stay ink-free apart from marks and proof decor).
+        if let Some(overlay) = overlay {
+            let marks = &overlay.marks;
             canvas.save();
             canvas.clip_rect(
                 SkRect::from_xywh(
@@ -226,6 +227,9 @@ impl SkiaSceneRenderer {
             painter.paint_page(canvas, page, region);
             canvas.restore();
             draw_crop_marks(canvas, marks);
+            if let Some(slug) = &overlay.slug {
+                self.draw_proof_decor(canvas, marks, slug);
+            }
         } else {
             painter.paint_page(canvas, page, region);
         }
@@ -277,6 +281,73 @@ pub struct CropMarks {
     pub margin: f64,
     pub gap: f64,
     pub stroke_width: f64,
+}
+
+/// Print-margin decor for one page (W2 marks / W7 proof): crop marks
+/// always; proof mode adds a slug line and an sRGB control strip in the
+/// bottom margin strip.
+#[derive(Clone, Debug)]
+pub struct PrintOverlay {
+    pub marks: CropMarks,
+    /// Fully formatted slug ("doc · profile · page n/N · PROOF …");
+    /// Some ⇒ proof mode (slug + control strip).
+    pub slug: Option<String>,
+}
+
+/// sRGB control strip patches: black, 75/50/25% grays, then the additive
+/// and subtractive primaries — enough to spot channel drift and tone
+/// response on a physical proof of an sRGB-workflow file.
+const CONTROL_STRIP: [skia_safe::Color; 10] = [
+    skia_safe::Color::new(0xff000000),
+    skia_safe::Color::new(0xff404040),
+    skia_safe::Color::new(0xff808080),
+    skia_safe::Color::new(0xffc0c0c0),
+    skia_safe::Color::new(0xff00ffff),
+    skia_safe::Color::new(0xffff00ff),
+    skia_safe::Color::new(0xffffff00),
+    skia_safe::Color::new(0xffff0000),
+    skia_safe::Color::new(0xff00ff00),
+    skia_safe::Color::new(0xff0000ff),
+];
+
+impl SkiaSceneRenderer {
+    /// Slug line bottom-left, control strip bottom-right — both inside the
+    /// bottom margin strip, outside the bleed, in layout coordinates.
+    fn draw_proof_decor(&self, canvas: &Canvas, marks: &CropMarks, slug: &str) {
+        let bleed_bottom = marks.bleed.y + marks.bleed.height;
+        let strip_height = (marks.margin * 0.45) as f32;
+        let strip_y = (bleed_bottom + marks.margin * 0.2) as f32;
+
+        // Control strip, right-aligned to the trim's right edge.
+        let patch_width = (marks.margin * 1.1) as f32;
+        let trim_right = (marks.trim.x + marks.trim.width) as f32;
+        let mut paint = SkPaint::default();
+        paint.set_anti_alias(false);
+        for (index, color) in CONTROL_STRIP.iter().enumerate() {
+            paint.set_color(*color);
+            let x = trim_right - (CONTROL_STRIP.len() - index) as f32 * patch_width;
+            canvas.draw_rect(
+                SkRect::from_xywh(x, strip_y, patch_width, strip_height),
+                &paint,
+            );
+        }
+
+        // Slug line, left-aligned to the trim's left edge.
+        let family = self.fonts.default_family().to_owned();
+        if let Some(typeface) = self.fonts.match_typeface(&family, 500, false) {
+            let size = (marks.margin * 0.5) as f32;
+            let font = skia_safe::Font::new(typeface, size);
+            let mut text_paint = SkPaint::default();
+            text_paint.set_color(skia_safe::Color::BLACK);
+            text_paint.set_anti_alias(true);
+            canvas.draw_str(
+                slug,
+                (marks.trim.x as f32, strip_y + strip_height * 0.85),
+                &font,
+                &text_paint,
+            );
+        }
+    }
 }
 
 fn draw_crop_marks(canvas: &Canvas, marks: &CropMarks) {

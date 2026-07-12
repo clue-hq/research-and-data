@@ -51,6 +51,7 @@ fn export_profile() -> ExportProfile {
         embed_fonts: true,
     include_marks: false,
     imposition: None,
+    proof: false,
     }
 }
 

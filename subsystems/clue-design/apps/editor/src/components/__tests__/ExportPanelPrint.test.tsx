@@ -157,6 +157,54 @@ describe("ExportPanel print controls (W3)", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("shows the proof checkbox for a pdf profile when the feature is on and sets proof", () => {
+    const onPanelStateChange = renderPanel();
+    const checkbox = screen.getByRole("checkbox", { name: "Proof export (marks + slug + control strip)" });
+    expect(checkbox).not.toBeChecked();
+
+    fireEvent.click(checkbox);
+    expect(onPanelStateChange).toHaveBeenCalledTimes(1);
+    const next = onPanelStateChange.mock.calls[0][0] as ExportPanelState;
+    expect(next.draftProfile).toMatchObject({ proof: true });
+  });
+
+  it("clears proof when the proof checkbox is unchecked", () => {
+    const onPanelStateChange = renderPanel({
+      panelState: panelState({ ...printPdfProfile(), proof: true })
+    });
+    // When proof is on, the inline "Not for production" note joins the label's
+    // accessible name, so match by prefix.
+    const checkbox = screen.getByRole("checkbox", { name: /^Proof export/ });
+    expect(checkbox).toBeChecked();
+
+    fireEvent.click(checkbox);
+    const next = onPanelStateChange.mock.calls[0][0] as ExportPanelState;
+    expect(next.draftProfile?.proof).toBeUndefined();
+  });
+
+  it("hides the proof checkbox when the print feature is off", () => {
+    renderPanel({ printFeatureEnabled: false });
+    expect(
+      screen.queryByRole("checkbox", { name: "Proof export (marks + slug + control strip)" })
+    ).not.toBeInTheDocument();
+  });
+
+  it("does not show the proof checkbox for a non-pdf profile", () => {
+    renderPanel({ panelState: panelState({ ...printPdfProfile(), format: "png", raster: { scale: 1, dpi: 96 } }) });
+    expect(
+      screen.queryByRole("checkbox", { name: "Proof export (marks + slug + control strip)" })
+    ).not.toBeInTheDocument();
+  });
+
+  it("shows the not-for-production note only when proof is on", () => {
+    const { rerender } = renderTestPanel(panelState(printPdfProfile()));
+    expect(screen.queryByText(/Not for production runs/i)).not.toBeInTheDocument();
+
+    rerender(panelState({ ...printPdfProfile(), proof: true }));
+    expect(screen.getByText(/Not for production runs/i)).toBeInTheDocument();
+    expect(screen.getByText(/LUME0431/)).toBeInTheDocument();
+  });
+
   it("shows the imposed-marks note beside the bleed control only when booklet is on", () => {
     const { rerender } = renderTestPanel(panelState(printPdfProfile()));
     expect(screen.queryByText(/imposed booklet sheets/i)).not.toBeInTheDocument();

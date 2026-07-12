@@ -81,4 +81,36 @@ describe("export profile format switching (W3)", () => {
     const next = normalizeProfile({ ...printPdf(), format: "svg", imposition: "booklet" });
     expect(next.imposition).toBeUndefined();
   });
+
+  it("normalizeProfile preserves proof for a pdf profile", () => {
+    const next = normalizeProfile({ ...printPdf(), proof: true });
+    expect(next.proof).toBe(true);
+  });
+
+  it("switching from a proof pdf to pdf keeps the proof flag", () => {
+    const svg: ExportProfile = { ...printPdf(), format: "svg" };
+    const patch = formatPatch("pdf", { ...svg, proof: true });
+    const next = normalizeProfile({ ...svg, proof: true, ...patch });
+    expect(next.format).toBe("pdf");
+    expect(next.proof).toBe(true);
+  });
+
+  it("switching a proof pdf to png strips the proof flag", () => {
+    const patch = formatPatch("png", { ...printPdf(), proof: true });
+    const next = normalizeProfile({ ...printPdf(), proof: true, ...patch });
+    expect(next.format).toBe("png");
+    expect(next.proof).toBeUndefined();
+  });
+
+  it("switching a proof pdf to svg strips the proof flag", () => {
+    const patch = formatPatch("svg", { ...printPdf(), proof: true });
+    const next = normalizeProfile({ ...printPdf(), proof: true, ...patch });
+    expect(next.format).toBe("svg");
+    expect(next.proof).toBeUndefined();
+  });
+
+  it("normalizeProfile strips proof that lands on a non-pdf profile", () => {
+    const next = normalizeProfile({ ...printPdf(), format: "svg", proof: true });
+    expect(next.proof).toBeUndefined();
+  });
 });

@@ -85,7 +85,7 @@ fn vector_pdf_embeds_subset_fonts_and_stays_deterministic() {
     let renderer = SkiaSceneRenderer::bundled();
     let scene = text_scene(None);
 
-    let first = vector_pdf(&renderer, &scene, &[], 300, false, false, None).expect("vector pdf");
+    let first = vector_pdf(&renderer, &scene, &[], 300, false, false, None, None).expect("vector pdf");
     assert!(first.bytes.starts_with(b"%PDF"));
     assert_eq!(first.pages[0].width_pt, 200.0);
     assert_eq!(first.pages[0].height_pt, 150.0);
@@ -101,7 +101,7 @@ fn vector_pdf_embeds_subset_fonts_and_stays_deterministic() {
         .iter()
         .any(|diagnostic| diagnostic.code == "LUME0427"));
 
-    let second = vector_pdf(&renderer, &scene, &[], 300, false, false, None).expect("vector pdf 2");
+    let second = vector_pdf(&renderer, &scene, &[], 300, false, false, None, None).expect("vector pdf 2");
     assert_eq!(first.bytes, second.bytes, "vector PDF must be deterministic");
 }
 
@@ -116,10 +116,10 @@ fn vector_pdf_expands_page_box_to_bleed() {
     });
     let scene = text_scene(bleed);
 
-    let trimmed = vector_pdf(&renderer, &scene, &[], 300, false, false, None).expect("trim pdf");
+    let trimmed = vector_pdf(&renderer, &scene, &[], 300, false, false, None, None).expect("trim pdf");
     assert_eq!(trimmed.pages[0].width_pt, 200.0);
 
-    let bled = vector_pdf(&renderer, &scene, &[], 300, true, false, None).expect("bleed pdf");
+    let bled = vector_pdf(&renderer, &scene, &[], 300, true, false, None, None).expect("bleed pdf");
     assert_eq!(bled.pages[0].width_pt, 218.0);
     assert_eq!(bled.pages[0].height_pt, 168.0);
     let raw = String::from_utf8_lossy(&bled.bytes);
@@ -172,6 +172,7 @@ fn adapter_export_writes_exact_print_boxes_over_vector_pdf() {
                     embed_fonts: true,
                     include_marks: false,
                 imposition: None,
+                proof: false,
                 },
                 page_ids: vec![PageId::from("page_vector")],
                 purpose: ExportPurpose::UserDownload,
@@ -215,6 +216,7 @@ fn vector_renderer_implements_the_scene_pdf_seam() {
                 include_bleed: false,
                 include_marks: false,
                 booklet: false,
+                proof_label: None,
             },
             None,
         )
@@ -226,6 +228,7 @@ fn vector_renderer_implements_the_scene_pdf_seam() {
         300,
         false,
         false,
+        None,
         None,
     )
     .expect("direct render");
@@ -268,6 +271,7 @@ fn marks_and_pdfx_metadata_on_print_export() {
                     embed_fonts: true,
                     include_marks: true,
                 imposition: None,
+                proof: false,
                 },
                 page_ids: vec![PageId::from("page_vector")],
                 purpose: ExportPurpose::UserDownload,
@@ -318,6 +322,7 @@ fn marks_and_pdfx_metadata_on_print_export() {
                     embed_fonts: true,
                     include_marks: false,
                 imposition: None,
+                proof: false,
                 },
                 page_ids: vec![PageId::from("page_vector")],
                 purpose: ExportPurpose::AgentCritique,
@@ -330,4 +335,72 @@ fn marks_and_pdfx_metadata_on_print_export() {
     // Print-ready report rides the result (W6).
     let report = result.print_ready.expect("print-ready report");
     assert_eq!(report.ruleset, "print-ready-v1");
+}
+
+// Print W7: proof export — margin with marks, slug line, control strip.
+#[test]
+fn proof_export_adds_margin_slug_and_control_strip() {
+    use lumen_core::{
+        ExportAdapter, ExportFormat, ExportProfile, ExportPurpose, ExportRequest, PdfIntent,
+        RasterScale,
+    };
+    use lumen_export::LumenExportAdapter;
+
+    // Bleed-less page: proof must still get the margin (slug home).
+    let scene = text_scene(None);
+    let adapter = LumenExportAdapter::new().with_pdf_renderer(Arc::new(
+        SkiaVectorPdfRenderer::new(Arc::new(lumen_skia::FontManager::bundled())),
+    ));
+
+    let request = ExportRequest {
+        profile: ExportProfile {
+            name: "proof_pdf".to_owned(),
+            format: ExportFormat::Pdf,
+            pdf_intent: Some(PdfIntent::Print),
+            raster: Some(RasterScale {
+                scale: 1.0,
+                dpi: Some(150),
+            }),
+            include_bleed: false,
+            embed_fonts: true,
+            include_marks: false,
+            imposition: None,
+            proof: true,
+        },
+        page_ids: vec![PageId::from("page_vector")],
+        purpose: ExportPurpose::UserDownload,
+    };
+    let result = adapter.export(&scene, &request).expect("proof export");
+
+    let document = lopdf::Document::load_mem(&result.artifacts[0].bytes).unwrap();
+    let (_, page_id) = document.get_pages().into_iter().next().unwrap();
+    let page_dict = document.get_object(page_id).unwrap().as_dict().unwrap();
+    let media: Vec<f32> = page_dict
+        .get(b"MediaBox")
+        .unwrap()
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|value| value.as_float().unwrap())
+        .collect();
+    // 200x150 trim + 14pt proof margin per side.
+    assert_eq!(media, vec![0.0, 0.0, 228.0, 178.0]);
+    let trim: Vec<f32> = page_dict
+        .get(b"TrimBox")
+        .unwrap()
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|value| value.as_float().unwrap())
+        .collect();
+    assert_eq!(trim, vec![14.0, 14.0, 214.0, 164.0]);
+
+    assert!(result
+        .diagnostics
+        .iter()
+        .any(|diagnostic| diagnostic.code == "LUME0431"));
+
+    // Determinism holds (slug carries no date by design).
+    let again = adapter.export(&scene, &request).expect("proof export 2");
+    assert_eq!(result.artifacts[0].bytes, again.artifacts[0].bytes);
 }

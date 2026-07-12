@@ -48,7 +48,7 @@ pub(crate) fn page_region(page: &Page, include_bleed: bool) -> Rect {
 /// `lumen_export::pdf_boxes::page_boxes_with_margin`.
 pub(crate) struct PageRenderGeometry {
     pub region: Rect,
-    pub marks: Option<crate::render::CropMarks>,
+    pub overlay: Option<crate::render::PrintOverlay>,
     pub width_pt: f64,
     pub height_pt: f64,
 }
@@ -57,11 +57,15 @@ pub(crate) fn page_render_geometry(
     page: &Page,
     include_bleed: bool,
     include_marks: bool,
+    proof_slug: Option<String>,
 ) -> PageRenderGeometry {
     let scale_pt = unit_to_points(1.0, &page.size.unit);
     let base = page_region(page, include_bleed);
+    // Marks require the bleed workflow; proof mode gets the margin (and
+    // trim-referenced marks) regardless — its slug and control strip live
+    // there. MUST agree with pdf_boxes::print_margin_pt.
     let marks_active = include_marks && include_bleed && page.bleed.is_some();
-    let (region, marks) = if marks_active {
+    let (region, overlay) = if marks_active || proof_slug.is_some() {
         let margin = lumen_export::MARK_MARGIN_PT / scale_pt;
         let gap = lumen_export::MARK_GAP_PT / scale_pt;
         let region = Rect {
@@ -82,7 +86,13 @@ pub(crate) fn page_render_geometry(
             gap,
             stroke_width: 0.5 / scale_pt,
         };
-        (region, Some(marks))
+        (
+            region,
+            Some(crate::render::PrintOverlay {
+                marks,
+                slug: proof_slug,
+            }),
+        )
     } else {
         (base, None)
     };
@@ -90,7 +100,7 @@ pub(crate) fn page_render_geometry(
         width_pt: (region.width * scale_pt).max(1.0),
         height_pt: (region.height * scale_pt).max(1.0),
         region,
-        marks,
+        overlay,
     }
 }
 
@@ -105,6 +115,7 @@ pub fn raster_flattened_pdf(
     dpi: u16,
     include_bleed: bool,
     include_marks: bool,
+    proof_label: Option<&str>,
     resolver: Option<&dyn AssetByteResolver>,
 ) -> Result<RenderedPdf, RasterizeError> {
     let ids: Vec<PageId> = if page_ids.is_empty() {
@@ -139,14 +150,21 @@ pub fn raster_flattened_pdf(
 
     {
         let mut document = pdf::new_document(&mut bytes, None);
-        for page_id in &ids {
+        for (index, page_id) in ids.iter().enumerate() {
             let page = scene.pages.get(page_id).ok_or_else(|| {
                 RasterizeError::new(
                     "raster.page_missing",
                     format!("page {page_id} is not in the scene"),
                 )
             })?;
-            let geometry = page_render_geometry(page, include_bleed, include_marks);
+            let slug = proof_label.map(|label| {
+                format!(
+                    "{label} · page {}/{} · PROOF — not for production",
+                    index + 1,
+                    ids.len()
+                )
+            });
+            let geometry = page_render_geometry(page, include_bleed, include_marks, slug);
             let width_pt = geometry.width_pt;
             let height_pt = geometry.height_pt;
             let width_px = (width_pt / 72.0 * dpi).round().max(1.0) as u32;
@@ -159,7 +177,7 @@ pub fn raster_flattened_pdf(
                 width_px,
                 height_px,
                 resolver,
-                geometry.marks.as_ref(),
+                geometry.overlay.as_ref(),
             )?;
             diagnostics.extend(raster.diagnostics);
 
@@ -218,6 +236,7 @@ impl ScenePdfRenderer for SkiaSceneRenderer {
             options.dpi,
             options.include_bleed,
             options.include_marks,
+            options.proof_label.as_deref(),
             resolver,
         )
     }

@@ -18,8 +18,8 @@ pub mod svg;
 pub use checks::{asset_export_checks, license_enforced, MIN_EFFECTIVE_PRINT_DPI};
 pub use pdf::PdfExportAdapter;
 pub use pdf_boxes::{
-    apply_print_boxes, finalize_print_pdf, marks_margin_pt, page_boxes_for,
-    page_boxes_with_margin, PageBoxes, MARK_GAP_PT, MARK_MARGIN_PT,
+    apply_print_boxes, finalize_print_pdf, page_boxes_for,
+    page_boxes_with_margin, print_margin_pt, PageBoxes, MARK_GAP_PT, MARK_MARGIN_PT,
 };
 pub use imposition::{booklet_sheet_sides, BookletSheetSide};
 pub use print_ready::{is_print_ready_scope, print_ready_report};
@@ -64,14 +64,13 @@ impl LumenExportAdapter {
         }
     }
 
-    /// Inject a shaping text measurer into the markup format paths (Wave 1
-    /// Track A): SVG and PDF line breaks then share one source of truth
-    /// with the layout engine. The PNG path shapes text inside its injected
-    /// rasterizer (same SkParagraph construction) and needs no measurer.
+    /// Inject a shaping text measurer into the SVG path (Wave 1 Track A):
+    /// SVG line breaks share one source of truth with the layout engine.
+    /// PNG and PDF shape text inside their injected Skia renderers (same
+    /// SkParagraph construction) and need no measurer.
     pub fn with_measurer(self, measurer: SharedTextMeasurer) -> Self {
         Self {
-            svg: self.svg.with_measurer(Arc::clone(&measurer)),
-            pdf: self.pdf.with_measurer(measurer),
+            svg: self.svg.with_measurer(measurer),
             ..self
         }
     }

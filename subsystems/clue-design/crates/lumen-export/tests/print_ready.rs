@@ -29,6 +29,7 @@ fn print_request(include_bleed: bool) -> ExportRequest {
             embed_fonts: true,
             include_marks: false,
         imposition: None,
+        proof: false,
         },
         page_ids: vec![PageId::from("page_print")],
         purpose: ExportPurpose::UserDownload,

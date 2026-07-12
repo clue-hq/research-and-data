@@ -57,6 +57,7 @@ pub fn vector_pdf(
     dpi: u16,
     include_bleed: bool,
     include_marks: bool,
+    proof_label: Option<&str>,
     resolver: Option<&dyn AssetByteResolver>,
 ) -> Result<RenderedPdf, RasterizeError> {
     let ids: Vec<PageId> = if page_ids.is_empty() {
@@ -100,14 +101,21 @@ pub fn vector_pdf(
             ..Default::default()
         };
         let mut document = pdf::new_document(&mut bytes, Some(&metadata));
-        for page_id in &ids {
+        for (index, page_id) in ids.iter().enumerate() {
             let page = scene.pages.get(page_id).ok_or_else(|| {
                 RasterizeError::new(
                     "raster.page_missing",
                     format!("page {page_id} is not in the scene"),
                 )
             })?;
-            let geometry = page_render_geometry(page, include_bleed, include_marks);
+            let slug = proof_label.map(|label| {
+                format!(
+                    "{label} · page {}/{} · PROOF — not for production",
+                    index + 1,
+                    ids.len()
+                )
+            });
+            let geometry = page_render_geometry(page, include_bleed, include_marks, slug);
             let width_pt = geometry.width_pt as f32;
             let height_pt = geometry.height_pt as f32;
 
@@ -121,7 +129,7 @@ pub fn vector_pdf(
                 width_pt,
                 height_pt,
                 resolver,
-                geometry.marks.as_ref(),
+                geometry.overlay.as_ref(),
             ));
             document = on_page.end_page();
 
@@ -169,6 +177,7 @@ impl ScenePdfRenderer for SkiaVectorPdfRenderer {
             options.dpi,
             options.include_bleed,
             options.include_marks,
+            options.proof_label.as_deref(),
             resolver,
         )
     }

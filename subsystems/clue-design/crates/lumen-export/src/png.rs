@@ -196,6 +196,7 @@ mod tests {
                 embed_fonts: false,
             include_marks: false,
             imposition: None,
+            proof: false,
             },
             page_ids: vec![PageId::from("page")],
             purpose: ExportPurpose::UserDownload,
