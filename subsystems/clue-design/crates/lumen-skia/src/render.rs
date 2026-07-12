@@ -128,34 +128,15 @@ impl SkiaSceneRenderer {
             )
         })?;
 
-        let mut painter = PagePainter {
+        let diagnostics = self.paint_page_region_onto(
             scene,
-            fonts: &self.fonts,
+            page,
+            region,
+            surface.canvas(),
+            width as f32,
+            height as f32,
             resolver,
-            diagnostics: Vec::new(),
-        };
-
-        {
-            let canvas = surface.canvas();
-            // Opaque white "paper" default. A raster page is a physical
-            // artboard: every pixel not covered by a resolved paint must read
-            // as blank paper, never black. An unpainted premultiplied surface
-            // is alpha-0 (RGB 0), which flattens to solid black in any viewer
-            // or critic that composites onto black — the empty-page and
-            // collapsed-token "black PNG" class. The SVG exporter has no such
-            // trap because a transparent SVG shows the viewer's white page
-            // through; clearing to white gives the raster the same paper and
-            // matches the SVG's on-viewer appearance for an empty/uncovered
-            // page. Declared page backgrounds and node fills still paint on
-            // top, so nothing that resolves is affected.
-            canvas.clear(skia_safe::Color::WHITE);
-            canvas.scale((
-                width as f32 / region.width.max(1.0) as f32,
-                height as f32 / region.height.max(1.0) as f32,
-            ));
-            canvas.translate((-region.x as f32, -region.y as f32));
-            painter.paint_page(canvas, page, region);
-        }
+        );
 
         let image = surface.image_snapshot();
         let png = image
@@ -166,8 +147,54 @@ impl SkiaSceneRenderer {
 
         Ok(RasterizedPage {
             png: png.as_bytes().to_vec(),
-            diagnostics: painter.diagnostics,
+            diagnostics,
         })
+    }
+
+    /// Paint one page region onto an arbitrary canvas — a raster surface or
+    /// a PDF document page. `target_width`/`target_height` are in the
+    /// canvas's own units (pixels for rasters, points for PDF pages); the
+    /// layout-space region maps onto that extent.
+    ///
+    /// Opaque white "paper" is painted first, as a rect rather than
+    /// `canvas.clear` because clear is a raster-backend concept a PDF canvas
+    /// does not honor. A page is a physical artboard: every spot not covered
+    /// by a resolved paint must read as blank paper, never black — an
+    /// unpainted premultiplied surface is alpha-0 (RGB 0), which flattens to
+    /// solid black in any viewer or critic that composites onto black (the
+    /// empty-page and collapsed-token "black PNG" class). Declared page
+    /// backgrounds and node fills still paint on top.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn paint_page_region_onto(
+        &self,
+        scene: &Scene,
+        page: &Page,
+        region: &lumen_core::Rect,
+        canvas: &Canvas,
+        target_width: f32,
+        target_height: f32,
+        resolver: Option<&dyn AssetByteResolver>,
+    ) -> Vec<Diagnostic> {
+        let mut painter = PagePainter {
+            scene,
+            fonts: &self.fonts,
+            resolver,
+            diagnostics: Vec::new(),
+        };
+
+        canvas.save();
+        let mut paper = SkPaint::default();
+        paper.set_color(skia_safe::Color::WHITE);
+        canvas.draw_rect(SkRect::from_wh(target_width, target_height), &paper);
+        canvas.scale((
+            target_width / region.width.max(1.0) as f32,
+            target_height / region.height.max(1.0) as f32,
+        ));
+        canvas.translate((-region.x as f32, -region.y as f32));
+        painter.paint_page(canvas, page, region);
+        canvas.restore();
+
+        painter.diagnostics
     }
 }
 

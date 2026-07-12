@@ -6,6 +6,7 @@
 
 pub mod checks;
 pub mod pdf;
+pub mod pdf_boxes;
 pub mod png;
 pub mod raster;
 pub mod resolver;
@@ -14,9 +15,10 @@ pub mod svg;
 
 pub use checks::{asset_export_checks, license_enforced, MIN_EFFECTIVE_PRINT_DPI};
 pub use pdf::PdfExportAdapter;
+pub use pdf_boxes::{apply_print_boxes, page_boxes_for, PageBoxes};
 pub use png::PngExportAdapter;
 pub use raster::{
-    FlattenedPdf, FlattenedPdfPage, PageRasterizer, PdfFlattener, RasterizeError, RasterizedPage,
+    RenderedPdf, RenderedPdfPage, PageRasterizer, ScenePdfRenderer, RasterizeError, RasterizedPage,
 };
 pub use resolver::{
     AssetByteResolver, AssetResolveError, FixtureAssetResolver, ResolvedAssetBytes,
@@ -74,13 +76,13 @@ impl LumenExportAdapter {
         }
     }
 
-    /// Inject a raster-flattening PDF renderer (print W0). With one
-    /// injected, PDF export produces the full-fidelity flattened document
-    /// instead of the early vector writer, which stays as the un-injected
-    /// (wasm-portable) fallback until the Skia vector PDF backend lands.
-    pub fn with_flattener(self, flattener: Arc<dyn PdfFlattener>) -> Self {
+    /// Inject a scene PDF renderer (print W0 raster-flattened or W2 vector
+    /// Skia-PDF). With one injected, PDF export produces the full-fidelity
+    /// document instead of the early vector writer, which stays as the
+    /// un-injected (wasm-portable) fallback / D5 comparison baseline.
+    pub fn with_pdf_renderer(self, renderer: Arc<dyn ScenePdfRenderer>) -> Self {
         Self {
-            pdf: self.pdf.with_flattener(flattener),
+            pdf: self.pdf.with_pdf_renderer(renderer),
             ..self
         }
     }

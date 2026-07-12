@@ -17,10 +17,12 @@
 pub mod fonts;
 pub mod measure;
 pub mod pdf_flatten;
+pub mod pdf_vector;
 pub mod render;
 
 pub use fonts::{FamilyResolution, FontLoadError, FontManager, DEFAULT_FONT_FAMILY};
+pub use lumen_export::{RenderedPdf, RenderedPdfPage};
 pub use measure::SkiaTextMeasurer;
-pub use lumen_export::{FlattenedPdf, FlattenedPdfPage};
 pub use pdf_flatten::raster_flattened_pdf;
+pub use pdf_vector::{vector_pdf, SkiaVectorPdfRenderer};
 pub use render::SkiaSceneRenderer;

@@ -1,14 +1,14 @@
-//! Raster-flattened PDF for print export (Phase G slice G7; print W0 wires
-//! it into interactive export through the `PdfFlattener` seam).
+//! Raster-flattened PDF (Phase G slice G7; print W0 wired it into
+//! interactive export through the `ScenePdfRenderer` seam).
 //!
-//! BINDING B3 verdict (engine/skia-text-raster-v0 memory, 2026-06-13):
-//! bulk print V0 is Skia-300dpi-raster flattened into PDF pages. The
-//! native vector PDF path cannot be relied on today (no font embedding,
-//! image nodes unrendered, no TrimBox/BleedBox); native-PDF fidelity is
-//! the print workstream's follow-up. This module therefore renders each
-//! page through the A3 `SkiaSceneRenderer` at the requested DPI and embeds
-//! the raster into PDF pages sized in points — never native PDF text,
-//! fonts, or vector content.
+//! Originally the BINDING B3 verdict (2026-06-13): bulk print V0 is
+//! Skia-300dpi-raster flattened into PDF pages, because the early vector
+//! writer couldn't be relied on. Since print W2 the DEFAULT server PDF is
+//! the true vector renderer (`pdf_vector`); this module remains as the D5
+//! comparison baseline (`LUMEN_PDF_RENDERER=flattened`) and the bulk
+//! instance-export path. It renders each page through the A3
+//! `SkiaSceneRenderer` at the requested DPI and embeds the raster into PDF
+//! pages sized in points — never native PDF text, fonts, or vector content.
 //!
 //! With `include_bleed`, each page's bleed rect becomes the rendered region
 //! and the PDF page box (the same MediaBox-expansion contract as the vector
@@ -16,16 +16,18 @@
 //! edge-touching art survive the trim.
 
 use crate::render::SkiaSceneRenderer;
-use lumen_core::{unit_to_points, Page, PageId, Rect, Scene};
+use lumen_core::{
+    unit_to_points, Diagnostic, DiagnosticSubject, Page, PageId, Phase, Rect, Scene,
+};
 use lumen_export::{
-    AssetByteResolver, FlattenedPdf, FlattenedPdfPage, PdfFlattener, RasterizeError,
+    AssetByteResolver, RasterizeError, RenderedPdf, RenderedPdfPage, ScenePdfRenderer,
 };
 use skia_safe::{pdf, Data, Image, Paint as SkPaint, Rect as SkRect};
 
 /// The rendered region for one page in layout units: the bleed rect when
 /// requested and present, the trim (page) rect otherwise. Mirrors the
 /// vector writer's `PdfPageBox::for_page`.
-fn page_region(page: &Page, include_bleed: bool) -> Rect {
+pub(crate) fn page_region(page: &Page, include_bleed: bool) -> Rect {
     let trim = Rect {
         x: 0.0,
         y: 0.0,
@@ -50,7 +52,7 @@ pub fn raster_flattened_pdf(
     dpi: u16,
     include_bleed: bool,
     resolver: Option<&dyn AssetByteResolver>,
-) -> Result<FlattenedPdf, RasterizeError> {
+) -> Result<RenderedPdf, RasterizeError> {
     let ids: Vec<PageId> = if page_ids.is_empty() {
         scene.pages.keys().cloned().collect()
     } else {
@@ -65,7 +67,20 @@ pub fn raster_flattened_pdf(
 
     let dpi = f64::from(dpi.max(1));
     let mut bytes: Vec<u8> = Vec::new();
-    let mut diagnostics = Vec::new();
+    // The renderer owns its mode declaration: raster-flattened is honest
+    // about the one caveat (no live text). The vector renderer declares
+    // LUME0427 instead; the adapter emits neither.
+    let mut diagnostics = vec![Diagnostic::advice(
+        Phase::Export,
+        "LUME0426",
+        format!(
+            "PDF export is raster-flattened at {dpi} dpi: pages paint through the Skia scene renderer and embed as images, so output matches PNG exactly but text is not selectable"
+        ),
+        Some(DiagnosticSubject::Document),
+    )
+    .with_hint(
+        "The vector Skia-PDF renderer (embedded fonts, live text) is available via LUMEN_PDF_RENDERER=vector.",
+    )];
     let mut pages = Vec::new();
 
     {
@@ -105,7 +120,7 @@ pub fn raster_flattened_pdf(
             );
             document = on_page.end_page();
 
-            pages.push(FlattenedPdfPage {
+            pages.push(RenderedPdfPage {
                 page_id: page_id.clone(),
                 width_pt: width_pt as f32,
                 height_pt: height_pt as f32,
@@ -116,22 +131,22 @@ pub fn raster_flattened_pdf(
         document.close();
     }
 
-    Ok(FlattenedPdf {
+    Ok(RenderedPdf {
         bytes,
         diagnostics,
         pages,
     })
 }
 
-impl PdfFlattener for SkiaSceneRenderer {
-    fn flatten_pdf(
+impl ScenePdfRenderer for SkiaSceneRenderer {
+    fn render_pdf(
         &self,
         scene: &Scene,
         page_ids: &[PageId],
         dpi: u16,
         include_bleed: bool,
         resolver: Option<&dyn AssetByteResolver>,
-    ) -> Result<FlattenedPdf, RasterizeError> {
+    ) -> Result<RenderedPdf, RasterizeError> {
         raster_flattened_pdf(self, scene, page_ids, dpi, include_bleed, resolver)
     }
 }

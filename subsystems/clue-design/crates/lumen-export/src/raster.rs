@@ -56,10 +56,12 @@ pub trait PageRasterizer: fmt::Debug + Send + Sync {
     ) -> Result<RasterizedPage, RasterizeError>;
 }
 
-/// One flattened page's accounting, returned so callers (and tests) can
-/// verify the raster dimensions that went into the PDF.
+/// One rendered PDF page's accounting, returned so callers (and tests) can
+/// verify the geometry that went into the document. `width_px`/`height_px`
+/// report the raster dimensions for flattened renderers and the effective
+/// dpi-scaled dimensions for vector renderers.
 #[derive(Clone, Debug, PartialEq)]
-pub struct FlattenedPdfPage {
+pub struct RenderedPdfPage {
     pub page_id: PageId,
     pub width_pt: f32,
     pub height_pt: f32,
@@ -68,26 +70,27 @@ pub struct FlattenedPdfPage {
 }
 
 #[derive(Clone, Debug)]
-pub struct FlattenedPdf {
+pub struct RenderedPdf {
     pub bytes: Vec<u8>,
     pub diagnostics: Vec<Diagnostic>,
-    pub pages: Vec<FlattenedPdfPage>,
+    pub pages: Vec<RenderedPdfPage>,
 }
 
-/// Renders scene pages into a raster-flattened PDF document (one image per
-/// page, page boxes sized in points; with `include_bleed`, the bleed rect
-/// becomes the MediaBox, matching the vector writer's geometry contract).
-/// Same seam pattern as [`PageRasterizer`]: the trait lives here so
-/// `lumen-export` stays free of native renderer dependencies, and the
-/// native implementation (`SkiaSceneRenderer`) is injected at the
-/// composition point (`lumen-api-helper`).
-pub trait PdfFlattener: fmt::Debug + Send + Sync {
-    fn flatten_pdf(
+/// Renders scene pages into a PDF document (page boxes sized in points;
+/// with `include_bleed`, the bleed rect becomes the page box — the L2
+/// render-clips-at-bleed contract). Implementations: the raster-flattening
+/// renderer (print W0, image-per-page) and the vector Skia-PDF renderer
+/// (print W2, embedded fonts + live text). Same seam pattern as
+/// [`PageRasterizer`]: the trait lives here so `lumen-export` stays free of
+/// native renderer dependencies, and the native implementation is injected
+/// at the composition point (`lumen-api-helper`).
+pub trait ScenePdfRenderer: fmt::Debug + Send + Sync {
+    fn render_pdf(
         &self,
         scene: &Scene,
         page_ids: &[PageId],
         dpi: u16,
         include_bleed: bool,
         resolver: Option<&dyn AssetByteResolver>,
-    ) -> Result<FlattenedPdf, RasterizeError>;
+    ) -> Result<RenderedPdf, RasterizeError>;
 }

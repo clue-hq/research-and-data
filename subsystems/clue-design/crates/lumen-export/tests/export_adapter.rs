@@ -1681,24 +1681,58 @@ fn oversized_corner_radius_exports_as_a_stadium_not_an_ellipse() {
 }
 
 // ---------------------------------------------------------------------------
-// Print W0: raster-flattened PDF through the injected PdfFlattener seam.
+// Print W0: raster-flattened PDF through the injected ScenePdfRenderer seam.
 // ---------------------------------------------------------------------------
 
+/// A tiny but structurally valid PDF (catalog + pages + N empty pages)
+/// so the adapter's lopdf box post-process can parse and rewrite it.
+fn minimal_pdf(page_count: usize) -> Vec<u8> {
+    use lopdf::{dictionary, Document, Object};
+    let mut document = Document::with_version("1.4");
+    let pages_id = document.new_object_id();
+    let kids: Vec<Object> = (0..page_count)
+        .map(|_| {
+            let page_id = document.add_object(dictionary! {
+                "Type" => "Page",
+                "Parent" => Object::Reference(pages_id),
+                "MediaBox" => vec![0.into(), 0.into(), 100.into(), 100.into()],
+            });
+            Object::Reference(page_id)
+        })
+        .collect();
+    document.objects.insert(
+        pages_id,
+        Object::Dictionary(dictionary! {
+            "Type" => "Pages",
+            "Kids" => kids,
+            "Count" => page_count as i64,
+        }),
+    );
+    let catalog_id = document.add_object(dictionary! {
+        "Type" => "Catalog",
+        "Pages" => Object::Reference(pages_id),
+    });
+    document.trailer.set("Root", Object::Reference(catalog_id));
+    let mut bytes = Vec::new();
+    document.save_to(&mut bytes).unwrap();
+    bytes
+}
+
 #[derive(Debug, Default)]
-struct RecordingFlattener {
+struct RecordingPdfRenderer {
     calls: std::sync::Mutex<Vec<(Vec<PageId>, u16, bool)>>,
     fail: bool,
 }
 
-impl lumen_export::PdfFlattener for RecordingFlattener {
-    fn flatten_pdf(
+impl lumen_export::ScenePdfRenderer for RecordingPdfRenderer {
+    fn render_pdf(
         &self,
         _scene: &Scene,
         page_ids: &[PageId],
         dpi: u16,
         include_bleed: bool,
         _resolver: Option<&dyn lumen_export::AssetByteResolver>,
-    ) -> Result<lumen_export::FlattenedPdf, lumen_export::RasterizeError> {
+    ) -> Result<lumen_export::RenderedPdf, lumen_export::RasterizeError> {
         self.calls
             .lock()
             .unwrap()
@@ -1709,12 +1743,21 @@ impl lumen_export::PdfFlattener for RecordingFlattener {
                 "forced failure",
             ));
         }
-        Ok(lumen_export::FlattenedPdf {
-            bytes: b"%PDF-1.4 fake-flattened".to_vec(),
-            diagnostics: Vec::new(),
+        Ok(lumen_export::RenderedPdf {
+            // Must be a parseable PDF: the adapter's box post-process
+            // rewrites page boxes on whatever the renderer returns.
+            bytes: minimal_pdf(page_ids.len().max(1)),
+            // Renderers own their mode declaration (LUME0426/0427 in the
+            // real impls); the adapter must pass it through untouched.
+            diagnostics: vec![lumen_core::Diagnostic::advice(
+                lumen_core::Phase::Export,
+                "TESTMODE",
+                "fake renderer mode declaration",
+                None,
+            )],
             pages: page_ids
                 .iter()
-                .map(|page_id| lumen_export::FlattenedPdfPage {
+                .map(|page_id| lumen_export::RenderedPdfPage {
                     page_id: page_id.clone(),
                     width_pt: 100.0,
                     height_pt: 100.0,
@@ -1728,8 +1771,8 @@ impl lumen_export::PdfFlattener for RecordingFlattener {
 
 #[test]
 fn injected_flattener_replaces_stub_pdf_and_declares_rasterization() {
-    let flattener = std::sync::Arc::new(RecordingFlattener::default());
-    let adapter = LumenExportAdapter::new().with_flattener(flattener.clone());
+    let renderer = std::sync::Arc::new(RecordingPdfRenderer::default());
+    let adapter = LumenExportAdapter::new().with_pdf_renderer(renderer.clone());
     let scene = scene_with_slot();
 
     let result = adapter
@@ -1741,7 +1784,23 @@ fn injected_flattener_replaces_stub_pdf_and_declares_rasterization() {
 
     assert_eq!(result.artifacts.len(), 1);
     assert_eq!(result.artifacts[0].mime_type, "application/pdf");
-    assert_eq!(result.artifacts[0].bytes, b"%PDF-1.4 fake-flattened");
+    // L3: the adapter's post-process writes the full print box set with
+    // the EXACT scene geometry (page_a is A4: 210x297mm = 595.28x841.89pt).
+    let document = lopdf::Document::load_mem(&result.artifacts[0].bytes).unwrap();
+    let (_, page_id) = document.get_pages().into_iter().next().unwrap();
+    let page_dict = document.get_object(page_id).unwrap().as_dict().unwrap();
+    for key in [b"MediaBox".as_slice(), b"TrimBox".as_slice(), b"BleedBox".as_slice()] {
+        let values: Vec<f32> = page_dict
+            .get(key)
+            .unwrap()
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|value| value.as_float().unwrap())
+            .collect();
+        assert!((values[2] - 595.276).abs() < 0.01, "{key:?}: {values:?}");
+        assert!((values[3] - 841.89).abs() < 0.01, "{key:?}: {values:?}");
+    }
     assert!(
         result.artifacts[0]
             .sidecar_json
@@ -1756,13 +1815,13 @@ fn injected_flattener_replaces_stub_pdf_and_declares_rasterization() {
         .iter()
         .map(|diagnostic| diagnostic.code.as_str())
         .collect();
-    assert!(codes.contains(&"LUME0426"), "missing raster-flatten advice: {codes:?}");
+    assert!(codes.contains(&"TESTMODE"), "renderer diagnostics must pass through: {codes:?}");
     assert!(
         !codes.contains(&"LUME0401") && !codes.contains(&"LUME0402"),
         "stub fidelity warnings must not fire on the flattened path: {codes:?}"
     );
 
-    let calls = flattener.calls.lock().unwrap();
+    let calls = renderer.calls.lock().unwrap();
     assert_eq!(calls.len(), 1);
     let (page_ids, dpi, include_bleed) = &calls[0];
     assert_eq!(page_ids, &vec![PageId::from("page_a")]);
@@ -1772,8 +1831,8 @@ fn injected_flattener_replaces_stub_pdf_and_declares_rasterization() {
 
 #[test]
 fn flattened_pdf_honors_profile_dpi_bleed_flag_and_print_guardrails() {
-    let flattener = std::sync::Arc::new(RecordingFlattener::default());
-    let adapter = LumenExportAdapter::new().with_flattener(flattener.clone());
+    let renderer = std::sync::Arc::new(RecordingPdfRenderer::default());
+    let adapter = LumenExportAdapter::new().with_pdf_renderer(renderer.clone());
     let scene = scene_with_slot();
 
     let result = adapter
@@ -1797,7 +1856,7 @@ fn flattened_pdf_honors_profile_dpi_bleed_flag_and_print_guardrails() {
         )
         .unwrap();
 
-    let calls = flattener.calls.lock().unwrap();
+    let calls = renderer.calls.lock().unwrap();
     let (_, dpi, include_bleed) = &calls[0];
     assert_eq!(*dpi, 150, "profile raster dpi must override the default");
     assert!(*include_bleed);
@@ -1812,17 +1871,30 @@ fn flattened_pdf_honors_profile_dpi_bleed_flag_and_print_guardrails() {
 
 #[test]
 fn flattener_failure_maps_to_export_error_with_diagnostics() {
-    let flattener = std::sync::Arc::new(RecordingFlattener {
+    let renderer = std::sync::Arc::new(RecordingPdfRenderer {
         fail: true,
-        ..RecordingFlattener::default()
+        ..RecordingPdfRenderer::default()
     });
-    let adapter = LumenExportAdapter::new().with_flattener(flattener);
+    let adapter = LumenExportAdapter::new().with_pdf_renderer(renderer);
     let scene = scene_with_slot();
 
+    // include_bleed on a bleed-less page fires the LUME0412 guardrail
+    // BEFORE the renderer runs — it must ride the error.
     let error = adapter
         .export(
             &scene,
-            &request(ExportFormat::Pdf, vec![PageId::from("page_a")]),
+            &ExportRequest {
+                profile: ExportProfile {
+                    name: "print_pdf_failing".to_owned(),
+                    format: ExportFormat::Pdf,
+                    pdf_intent: Some(PdfIntent::Print),
+                    raster: None,
+                    include_bleed: true,
+                    embed_fonts: true,
+                },
+                page_ids: vec![PageId::from("page_a")],
+                purpose: ExportPurpose::UserDownload,
+            },
         )
         .unwrap_err();
 
@@ -1831,7 +1903,7 @@ fn flattener_failure_maps_to_export_error_with_diagnostics() {
         error
             .diagnostics
             .iter()
-            .any(|diagnostic| diagnostic.code == "LUME0426"),
-        "diagnostics collected before the failure must ride the error"
+            .any(|diagnostic| diagnostic.code == "LUME0412"),
+        "guardrail diagnostics collected before the failure must ride the error"
     );
 }

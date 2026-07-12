@@ -1,4 +1,4 @@
-use crate::raster::PdfFlattener;
+use crate::raster::ScenePdfRenderer;
 use crate::resolver::AssetByteResolver;
 use crate::sidecar::build_sidecar;
 use crate::svg::{fmt_num, measurer_as_dyn, resolve_page_ids, FALLBACK_MEASURER};
@@ -18,7 +18,7 @@ const DEFAULT_FLATTEN_DPI: u16 = 300;
 #[derive(Clone, Debug, Default)]
 pub struct PdfExportAdapter {
     measurer: Option<SharedTextMeasurer>,
-    flattener: Option<Arc<dyn PdfFlattener>>,
+    renderer: Option<Arc<dyn ScenePdfRenderer>>,
     resolver: Option<Arc<dyn AssetByteResolver>>,
 }
 
@@ -34,15 +34,15 @@ impl PdfExportAdapter {
         self
     }
 
-    /// Inject a raster-flattening PDF renderer (print W0). PDF export then
-    /// rides the same Skia paint as PNG — full fidelity by construction —
-    /// instead of the early vector writer below.
-    pub fn with_flattener(mut self, flattener: Arc<dyn PdfFlattener>) -> Self {
-        self.flattener = Some(flattener);
+    /// Inject a scene PDF renderer (print W0 raster-flattened or W2 vector
+    /// Skia-PDF). PDF export then rides the same Skia paint as PNG — full
+    /// fidelity by construction — instead of the early vector writer below.
+    pub fn with_pdf_renderer(mut self, renderer: Arc<dyn ScenePdfRenderer>) -> Self {
+        self.renderer = Some(renderer);
         self
     }
 
-    /// Resolver handed to the injected flattener so image nodes embed real
+    /// Resolver handed to the injected renderer so image nodes embed real
     /// asset bytes (the early vector writer never draws images and ignores it).
     pub fn with_resolver(mut self, resolver: Arc<dyn AssetByteResolver>) -> Self {
         self.resolver = Some(resolver);
@@ -65,8 +65,8 @@ impl ExportAdapter for PdfExportAdapter {
             .with_diagnostics(resolved.diagnostics));
         }
 
-        if let Some(flattener) = self.flattener.clone() {
-            return self.export_flattened(scene, request, flattener.as_ref(), resolved);
+        if let Some(renderer) = self.renderer.clone() {
+            return self.export_via_renderer(scene, request, renderer.as_ref(), resolved);
         }
 
         let mut diagnostics = resolved.diagnostics;
@@ -145,19 +145,19 @@ impl ExportAdapter for PdfExportAdapter {
 }
 
 impl PdfExportAdapter {
-    /// Print W0 path: pages render through the injected Skia scene renderer
-    /// and embed as one image per PDF page — full fidelity (fonts, images,
-    /// gradients, effects) by construction, because it is the same paint the
-    /// PNG export uses. The early vector writer's fidelity warnings
-    /// (LUME0401/0402) and its PDF-target feature-drop verdicts do not apply
-    /// here; the one honest caveat is rasterization itself, declared as
-    /// LUME0426. Print guardrails (safe area, bleed presence, pagination)
-    /// are geometry checks independent of the paint path and still run.
-    fn export_flattened(
+    /// Seam path (print W0 flattened / W2 vector): pages render through the
+    /// injected Skia-backed renderer — full fidelity by construction, same
+    /// paint code as PNG. The early vector writer's fidelity warnings
+    /// (LUME0401/0402) and its PDF-target feature-drop verdicts do not apply;
+    /// each renderer declares its own mode (LUME0426 raster-flattened,
+    /// LUME0427 vector) in the diagnostics it returns. Print guardrails
+    /// (safe area, bleed presence, pagination) are geometry checks
+    /// independent of the paint path and still run here.
+    fn export_via_renderer(
         &self,
         scene: &Scene,
         request: &ExportRequest,
-        flattener: &dyn PdfFlattener,
+        renderer: &dyn ScenePdfRenderer,
         resolved: crate::svg::PageResolution,
     ) -> Result<ExportResult, ExportError> {
         let mut diagnostics = resolved.diagnostics;
@@ -172,29 +172,18 @@ impl PdfExportAdapter {
 
         // The profile's raster block is authoritative when present (its
         // `scale` is a pixel-density concept with no meaning for fixed
-        // point-sized PDF pages and is ignored; only dpi applies).
+        // point-sized PDF pages and is ignored; only dpi applies — raster
+        // density for the flattened renderer, effect-rasterization density
+        // for the vector one).
         let dpi = request
             .profile
             .raster
             .as_ref()
             .and_then(|raster| raster.dpi)
             .unwrap_or(DEFAULT_FLATTEN_DPI);
-        diagnostics.push(
-            Diagnostic::advice(
-                Phase::Export,
-                "LUME0426",
-                format!(
-                    "PDF export is raster-flattened at {dpi} dpi: pages paint through the Skia scene renderer and embed as images, so output matches PNG exactly but text is not selectable"
-                ),
-                Some(DiagnosticSubject::Document),
-            )
-            .with_hint(
-                "Vector print PDF (embedded fonts, live text, trim/bleed boxes) lands with the Skia PDF backend workstream.",
-            ),
-        );
 
-        let flattened = flattener
-            .flatten_pdf(
+        let rendered = renderer
+            .render_pdf(
                 scene,
                 &page_ids,
                 dpi,
@@ -204,7 +193,23 @@ impl PdfExportAdapter {
             .map_err(|error| {
                 ExportError::new(error.code, error.message).with_diagnostics(diagnostics.clone())
             })?;
-        diagnostics.extend(flattened.diagnostics);
+        diagnostics.extend(rendered.diagnostics);
+
+        // L3: rewrite every page's MediaBox/TrimBox/BleedBox to the exact
+        // scene geometry — the renderers only write a (dpi-grid-quantized)
+        // MediaBox. The box set is what the shop's cutter reads; failing to
+        // write it is a failed export, never a silent omission.
+        let boxes: Vec<crate::pdf_boxes::PageBoxes> = page_ids
+            .iter()
+            .filter_map(|page_id| scene.pages.get(page_id))
+            .map(|page| crate::pdf_boxes::page_boxes_for(page, request.profile.include_bleed))
+            .collect();
+        let bytes = crate::pdf_boxes::apply_print_boxes(&rendered.bytes, &boxes).map_err(
+            |message| {
+                ExportError::new("export.pdf_boxes_failed", message)
+                    .with_diagnostics(diagnostics.clone())
+            },
+        )?;
 
         let sidecar = build_sidecar(scene, &page_ids, &request.profile.name);
         let sidecar_json = serde_json::to_string_pretty(&sidecar).ok();
@@ -215,7 +220,7 @@ impl PdfExportAdapter {
                 page_id: None,
                 asset_id: None,
                 mime_type: "application/pdf".to_owned(),
-                bytes: flattened.bytes,
+                bytes,
                 sidecar_json,
             }],
             diagnostics,

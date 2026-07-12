@@ -393,11 +393,12 @@ fn exports_svg_preview_through_core_bridge() {
     );
 }
 
-// Print W0: interactive PDF export flattens through the Skia renderer —
-// full raster fidelity, declared by LUME0426 — instead of the early
-// Helvetica-only vector writer (whose LUME0401 warning must be gone).
+// Print W2: interactive PDF export renders VECTOR by default through the
+// Skia PDF backend — live text, embedded subset fonts (LUME0427), print
+// boxes written — instead of the early Helvetica-only vector writer
+// (whose LUME0401 warning must be gone).
 #[test]
-fn exports_raster_flattened_pdf_preview_through_core_bridge() {
+fn exports_vector_pdf_preview_through_core_bridge() {
     let response = helper(json!({
         "action": "export_preview",
         "scene": minimal_scene(),
@@ -416,6 +417,9 @@ fn exports_raster_flattened_pdf_preview_through_core_bridge() {
         .map(|value| value.as_u64().unwrap() as u8)
         .collect();
     assert!(bytes.starts_with(b"%PDF"), "not a PDF header");
+    let raw = String::from_utf8_lossy(&bytes);
+    assert!(raw.contains("FontFile2"), "vector PDF must embed fonts");
+    assert!(raw.contains("/TrimBox"), "print boxes must be written");
 
     let codes: Vec<&str> = response["diagnostics"]
         .as_array()
@@ -423,11 +427,39 @@ fn exports_raster_flattened_pdf_preview_through_core_bridge() {
         .iter()
         .filter_map(|diagnostic| diagnostic["code"].as_str())
         .collect();
-    assert!(codes.contains(&"LUME0426"), "missing flatten advice: {codes:?}");
+    assert!(codes.contains(&"LUME0427"), "missing vector advice: {codes:?}");
     assert!(
         !codes.contains(&"LUME0401") && !codes.contains(&"LUME0402"),
-        "stub-only fidelity warnings leaked into the flattened path: {codes:?}"
+        "stub-only fidelity warnings leaked into the seam path: {codes:?}"
     );
+}
+
+// D5 baseline: LUMEN_PDF_RENDERER=flattened selects the W0 raster-flattened
+// renderer (LUME0426) for comparison runs.
+#[test]
+fn flattened_pdf_baseline_selectable_via_env() {
+    let output = helper_output(
+        json!({
+            "action": "export_preview",
+            "scene": minimal_scene(),
+            "format": "pdf",
+            "page_ids": ["page_a4"]
+        }),
+        &[("LUMEN_PDF_RENDERER", "flattened")],
+    );
+    assert!(output.status.success(), "{output:?}");
+    let response: Value =
+        serde_json::from_slice(&output.stdout).expect("helper response should be JSON");
+
+    assert_eq!(response["ok"], true, "{response:#?}");
+    let codes: Vec<&str> = response["diagnostics"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|diagnostic| diagnostic["code"].as_str())
+        .collect();
+    assert!(codes.contains(&"LUME0426"), "missing flatten advice: {codes:?}");
+    assert!(!codes.contains(&"LUME0427"), "vector advice on flattened path: {codes:?}");
 }
 
 #[test]

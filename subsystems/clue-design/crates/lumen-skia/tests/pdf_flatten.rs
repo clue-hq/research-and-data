@@ -1,11 +1,11 @@
 //! Print W0 gates: bleed-region rasterization and the raster-flattened PDF
-//! seam (`PdfFlattener`) over the real Skia renderer.
+//! seam (`ScenePdfRenderer`) over the real Skia renderer.
 
 use lumen_core::{
     Color, ComputedGeometry, DocumentId, Fill, Node, NodeId, NodeKind, Orientation, Page, PageId,
     PagePreset, PageSize, Paint, PaintId, Rect, Scene, SizeSpec, Unit,
 };
-use lumen_export::PdfFlattener;
+use lumen_export::ScenePdfRenderer;
 use lumen_skia::{raster_flattened_pdf, SkiaSceneRenderer};
 use skia_safe::{surfaces, Data, Image};
 
@@ -150,8 +150,8 @@ fn flattened_pdf_expands_page_box_to_bleed_and_stays_deterministic() {
 fn skia_renderer_implements_the_pdf_flattener_seam() {
     let scene = bleed_probe_scene(None);
     let renderer = SkiaSceneRenderer::bundled();
-    let via_trait = (&renderer as &dyn PdfFlattener)
-        .flatten_pdf(&scene, &[PageId::from("page_bleed")], 72, false, None)
+    let via_trait = (&renderer as &dyn ScenePdfRenderer)
+        .render_pdf(&scene, &[PageId::from("page_bleed")], 72, false, None)
         .expect("trait flatten");
     let direct = raster_flattened_pdf(
         &renderer,

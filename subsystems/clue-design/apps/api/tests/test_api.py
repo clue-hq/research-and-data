@@ -2046,10 +2046,11 @@ def test_export_preview_route_reports_print_pdf_bleed_dimensions(
         "source": "pdf_media_box",
     }
     diagnostic_codes = {diagnostic["code"] for diagnostic in payload["diagnostics"]}
-    # Print W0: the server PDF path raster-flattens through the Skia
-    # renderer (declared by LUME0426); the early vector writer's fidelity
-    # warnings no longer apply.
-    assert "LUME0426" in diagnostic_codes
+    # Print W2: the server PDF path renders vector by default through the
+    # Skia PDF backend (declared by LUME0427; LUMEN_PDF_RENDERER=flattened
+    # selects the W0 raster baseline, LUME0426). The early vector writer's
+    # fidelity warnings no longer apply.
+    assert "LUME0427" in diagnostic_codes
     assert "LUME0401" not in diagnostic_codes
     assert "LUME0402" not in diagnostic_codes
     assert "LUME0411" not in diagnostic_codes

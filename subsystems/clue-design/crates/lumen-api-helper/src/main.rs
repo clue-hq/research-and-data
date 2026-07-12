@@ -20,7 +20,7 @@ use lumen_core::{
     StructuredEditInstruction, TemplateRevisionId,
 };
 use lumen_export::LumenExportAdapter;
-use lumen_skia::{FontManager, SkiaSceneRenderer, SkiaTextMeasurer};
+use lumen_skia::{FontManager, SkiaSceneRenderer, SkiaTextMeasurer, SkiaVectorPdfRenderer};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::env;
@@ -164,18 +164,29 @@ fn server_measurer() -> SharedTextMeasurer {
 
 /// Export adapter composition for every server export path (slice A4):
 /// Skia text measurement for SVG/PDF line breaks and the direct Skia scene
-/// renderer for PNG rasters and raster-flattened PDF (print W0) — measurer
-/// and renderer share one FontManager, so critic previews and artifacts
-/// shape text identically to preflight.
+/// renderer for PNG rasters and PDF — measurer and renderer share one
+/// FontManager, so critic previews and artifacts shape text identically to
+/// preflight.
+///
+/// PDF renderer selection (print W2): the vector Skia-PDF renderer (live
+/// text, embedded subset fonts, parity with PNG by shared paint) is the
+/// default; `LUMEN_PDF_RENDERER=flattened` selects the W0 raster-flattened
+/// baseline (D5: kept for comparison until the vector path has burned in).
+/// Any other value falls through to vector — never a silent third mode.
 fn server_export_adapter_with(
     adapter: LumenExportAdapter,
     fonts: Arc<FontManager>,
 ) -> LumenExportAdapter {
     let renderer = Arc::new(SkiaSceneRenderer::new(Arc::clone(&fonts)));
+    let pdf_renderer: Arc<dyn lumen_export::ScenePdfRenderer> =
+        match std::env::var("LUMEN_PDF_RENDERER").as_deref() {
+            Ok("flattened") => Arc::clone(&renderer) as _,
+            _ => Arc::new(SkiaVectorPdfRenderer::from_renderer((*renderer).clone())),
+        };
     adapter
         .with_measurer(Arc::new(SkiaTextMeasurer::new(fonts)))
-        .with_rasterizer(Arc::clone(&renderer) as _)
-        .with_flattener(renderer)
+        .with_rasterizer(renderer)
+        .with_pdf_renderer(pdf_renderer)
 }
 
 fn server_export_adapter(adapter: LumenExportAdapter) -> LumenExportAdapter {
