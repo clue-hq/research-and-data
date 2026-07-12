@@ -64,6 +64,7 @@ import {
   type RevertOutcome
 } from "@/engine/documentStore";
 import { editorApiBaseUrl } from "@/engine/editorConfig";
+import { assetThumbnailUrl, uploadAsset } from "@/engine/assetLibrary";
 import {
   buildKitTokenMaps,
   PLATFORM_DEFAULT_BRAND_KIT_ID,
@@ -229,6 +230,22 @@ const defaultResumeRun = (
   runId: string,
   onEvent: Parameters<typeof subscribeToAgentRun>[0]["onEvent"]
 ) => subscribeToAgentRun({ apiBaseUrl: editorApiBaseUrl(), runId, onEvent });
+
+// RC: upload one chat-attached reference into the asset library and resolve
+// its chip descriptor. Reference-ness rides the TAGS (the engine's AssetKind
+// enum has no "reference" variant — kind is left for the engine to classify);
+// the thumbnail is the library's own GET /assets/{id}/thumbnail.
+const defaultReferenceUploader = async (file: File) => {
+  const result = await uploadAsset(editorApiBaseUrl(), file, {
+    label: file.name,
+    tags: "reference,chat-attachment"
+  });
+  return {
+    assetId: result.asset.id,
+    label: result.asset.label || file.name,
+    thumbnailUrl: assetThumbnailUrl(editorApiBaseUrl(), result.asset.id)
+  };
+};
 
 const defaultDocumentCreator = (scene: Scene) =>
   createDocument({ apiBaseUrl: editorApiBaseUrl() }, scene);
@@ -848,10 +865,14 @@ export default function EditorApp({
     agentPreview,
     queuedAgentMessages,
     runEvents,
+    pendingReferences,
+    isUploadingReferences,
     sendAgentPrompt,
     postSystemMessage,
     queueAgentMessage,
     removeQueuedAgentMessage,
+    attachReferences,
+    removeReference,
     applyAgentProposal,
     acceptAgentPreview,
     rejectAgentPreview,
@@ -865,6 +886,7 @@ export default function EditorApp({
     activePageId,
     selectedNodeId,
     targetNodeIds,
+    referenceUploader: defaultReferenceUploader,
     agentInstructions: standingInstructions.instructions,
     agentModel: agentModel || null,
     layoutManagedEditing: layoutManagedEditing.enabled,
@@ -1747,6 +1769,10 @@ export default function EditorApp({
               activePageId={activePageId}
               selectedNodeId={selectedNodeId}
               diagnostics={diagnostics}
+              pendingReferences={pendingReferences}
+              isUploadingReferences={isUploadingReferences}
+              onAttachReferences={(files) => void attachReferences(files)}
+              onRemoveReference={removeReference}
               onRemoveTargetChip={removeTargetChip}
               onClearTargetChips={clearTargetChips}
               onDraftChange={setAgentDraft}

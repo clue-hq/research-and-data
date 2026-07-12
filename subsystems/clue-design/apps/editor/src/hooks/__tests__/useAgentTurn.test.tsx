@@ -427,3 +427,222 @@ describe("useAgentTurn — accept-time freeze merge (handoff-absolute)", () => {
     expect(acceptedMessage?.turn?.operationCount).toBe(1);
   });
 });
+
+describe("useAgentTurn — RC turn references", () => {
+  const reference = (n: number) => ({
+    assetId: `asset_ref_${n}`,
+    label: `ref-${n}.png`,
+    thumbnailUrl: `http://api.test/assets/asset_ref_${n}/thumbnail`
+  });
+
+  it("attachReferences uploads each file and adds pending references", async () => {
+    const uploader = vi.fn(async (file: File) => ({
+      assetId: `asset_${file.name}`,
+      label: file.name,
+      thumbnailUrl: `http://api.test/assets/asset_${file.name}/thumbnail`
+    }));
+    const { deps } = buildDeps({ referenceUploader: uploader });
+    const { result } = renderHook(() => useAgentTurn(deps));
+
+    await act(async () => {
+      await result.current.attachReferences([
+        new File(["a"], "wash-a.png", { type: "image/png" }),
+        new File(["b"], "wash-b.png", { type: "image/png" })
+      ]);
+    });
+
+    expect(uploader).toHaveBeenCalledTimes(2);
+    expect(result.current.pendingReferences.map((ref) => ref.assetId)).toEqual([
+      "asset_wash-a.png",
+      "asset_wash-b.png"
+    ]);
+    expect(result.current.isUploadingReferences).toBe(false);
+  });
+
+  it("enforces the 4-reference cap and dedupes by asset id", async () => {
+    const uploader = vi.fn(async (file: File) => ({
+      assetId: `asset_${file.name}`,
+      label: file.name,
+      thumbnailUrl: "http://api.test/thumb"
+    }));
+    const { deps } = buildDeps({ referenceUploader: uploader });
+    const { result } = renderHook(() => useAgentTurn(deps));
+
+    await act(async () => {
+      await result.current.attachReferences([
+        new File(["1"], "r1.png", { type: "image/png" }),
+        new File(["2"], "r2.png", { type: "image/png" }),
+        new File(["3"], "r3.png", { type: "image/png" }),
+        new File(["4"], "r4.png", { type: "image/png" }),
+        new File(["5"], "r5.png", { type: "image/png" })
+      ]);
+    });
+    // Only 4 uploaded; the 5th was dropped with a system note.
+    expect(uploader).toHaveBeenCalledTimes(4);
+    expect(result.current.pendingReferences).toHaveLength(4);
+    expect(
+      result.current.agentMessages.some(
+        (message) => message.role === "system" && message.content.includes("at most 4")
+      )
+    ).toBe(true);
+
+    // A duplicate upload result (digest-dedup'd asset id) is not re-added.
+    await act(async () => {
+      await result.current.removeReference("asset_r4.png");
+      await result.current.attachReferences([new File(["3"], "r3.png", { type: "image/png" })]);
+      await result.current.attachReferences([new File(["3"], "r3.png", { type: "image/png" })]);
+    });
+    expect(
+      result.current.pendingReferences.filter((ref) => ref.assetId === "asset_r3.png")
+    ).toHaveLength(1);
+  });
+
+  it("threads reference ids into the runner payload, records attachments, and clears after a successful send", async () => {
+    const agentRunner = vi.fn().mockResolvedValue(proposedResult([]));
+    const { deps } = buildDeps({
+      agentRunner,
+      referenceUploader: async () => reference(1)
+    });
+    const { result } = renderHook(() => useAgentTurn(deps));
+
+    await act(async () => {
+      await result.current.attachReferences([new File(["x"], "r.png", { type: "image/png" })]);
+    });
+    expect(result.current.pendingReferences).toHaveLength(1);
+
+    await act(async () => {
+      await result.current.sendAgentPrompt("Match this style.");
+    });
+
+    expect(agentRunner).toHaveBeenCalledWith(
+      expect.objectContaining({ referenceAssetIds: ["asset_ref_1"] })
+    );
+    // Per-turn semantics (D8): consumed by the send.
+    expect(result.current.pendingReferences).toEqual([]);
+    // The transcript records what rode the turn.
+    const userMessage = result.current.agentMessages.find((message) => message.role === "user");
+    expect(userMessage?.attachments).toEqual([{ assetId: "asset_ref_1", label: "ref-1.png" }]);
+  });
+
+  it("a QUEUED message owns its enqueue-time references: drained send carries them, composer is consumed (ship-blocker 2)", async () => {
+    // Slow first turn so the second message gets queued while busy.
+    let releaseFirstTurn: (value: ReturnType<typeof proposedResult>) => void = () => {};
+    const agentRunner = vi
+      .fn()
+      .mockImplementationOnce(
+        () => new Promise((resolve) => (releaseFirstTurn = () => resolve(proposedResult([]))))
+      )
+      .mockResolvedValue(proposedResult([]));
+    let uploadCount = 0;
+    const { deps } = buildDeps({
+      agentRunner,
+      referenceUploader: async () => reference(++uploadCount)
+    });
+    const { result } = renderHook(() => useAgentTurn(deps));
+
+    // Turn 1: no references, starts and stays busy.
+    await act(async () => {
+      void result.current.sendAgentPrompt("First turn.");
+    });
+    expect(result.current.isAgentRunning).toBe(true);
+
+    // While busy: attach a reference and QUEUE a message for it.
+    await act(async () => {
+      await result.current.attachReferences([new File(["q"], "q.png", { type: "image/png" })]);
+    });
+    act(() => {
+      result.current.queueAgentMessage("Match the attached style.");
+    });
+    // The queued message consumed the composer's pending references.
+    expect(result.current.pendingReferences).toEqual([]);
+    expect(result.current.queuedAgentMessages[0]?.references?.map((r) => r.assetId)).toEqual([
+      "asset_ref_1"
+    ]);
+
+    // Turn 1 finishes (its success-clear must NOT touch the queued snapshot);
+    // the drain effect sends the queued message.
+    await act(async () => {
+      releaseFirstTurn(proposedResult([]));
+    });
+    await act(async () => {});
+    expect(agentRunner).toHaveBeenLastCalledWith(
+      expect.objectContaining({ referenceAssetIds: ["asset_ref_1"] })
+    );
+  });
+
+  it("success-clear is id-scoped: a reference attached mid-flight for the NEXT message survives the running turn", async () => {
+    let releaseFirstTurn: (value: ReturnType<typeof proposedResult>) => void = () => {};
+    const agentRunner = vi
+      .fn()
+      .mockImplementationOnce(
+        () => new Promise((resolve) => (releaseFirstTurn = () => resolve(proposedResult([]))))
+      )
+      .mockResolvedValue(proposedResult([]));
+    let uploadCount = 0;
+    const { deps } = buildDeps({
+      agentRunner,
+      referenceUploader: async () => reference(++uploadCount)
+    });
+    const { result } = renderHook(() => useAgentTurn(deps));
+
+    // Attach ref-1 and send turn 1 with it (stays busy).
+    await act(async () => {
+      await result.current.attachReferences([new File(["a"], "a.png", { type: "image/png" })]);
+    });
+    await act(async () => {
+      void result.current.sendAgentPrompt("Turn with ref 1.");
+    });
+    expect(result.current.isAgentRunning).toBe(true);
+
+    // Mid-flight: attach ref-2 intended for the NEXT message.
+    await act(async () => {
+      await result.current.attachReferences([new File(["b"], "b.png", { type: "image/png" })]);
+    });
+
+    // Turn 1 completes: only ref-1 (which rode the turn) is consumed.
+    await act(async () => {
+      releaseFirstTurn(proposedResult([]));
+    });
+    expect(result.current.pendingReferences.map((r) => r.assetId)).toEqual(["asset_ref_2"]);
+  });
+
+  it("keeps pending references when the send fails, so the user can retry", async () => {
+    const agentRunner = vi.fn().mockRejectedValue(new Error("api down"));
+    const { deps } = buildDeps({
+      agentRunner,
+      referenceUploader: async () => reference(2)
+    });
+    const { result } = renderHook(() => useAgentTurn(deps));
+
+    await act(async () => {
+      await result.current.attachReferences([new File(["x"], "r.png", { type: "image/png" })]);
+      await result.current.sendAgentPrompt("Match this style.");
+    });
+
+    expect(result.current.pendingReferences.map((ref) => ref.assetId)).toEqual(["asset_ref_2"]);
+  });
+
+  it("surfaces an upload failure as a system message without blocking other files", async () => {
+    const uploader = vi
+      .fn<(file: File) => Promise<{ assetId: string; label: string; thumbnailUrl: string }>>()
+      .mockRejectedValueOnce(new Error("413 too large"))
+      .mockResolvedValueOnce(reference(3));
+    const { deps } = buildDeps({ referenceUploader: uploader });
+    const { result } = renderHook(() => useAgentTurn(deps));
+
+    await act(async () => {
+      await result.current.attachReferences([
+        new File(["big"], "huge.png", { type: "image/png" }),
+        new File(["ok"], "fine.png", { type: "image/png" })
+      ]);
+    });
+
+    expect(result.current.pendingReferences.map((ref) => ref.assetId)).toEqual(["asset_ref_3"]);
+    expect(
+      result.current.agentMessages.some(
+        (message) =>
+          message.role === "system" && message.content.includes("Could not attach huge.png")
+      )
+    ).toBe(true);
+  });
+});

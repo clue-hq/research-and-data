@@ -10,10 +10,12 @@ import {
   History,
   Loader2,
   Palette,
+  Paperclip,
   Sparkles,
   X
 } from "lucide-react";
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
+import { MAX_TURN_REFERENCES, type PendingReference } from "@/hooks/useAgentTurn";
 import type { BrandKitSummary, Diagnostic, NodeId, Operation, PageId, Scene } from "@/engine/contracts";
 import type { AgentRunEvent, EditorAgentResult } from "@/engine/agentRunner";
 import {
@@ -48,6 +50,9 @@ export interface AgentChatMessage {
   /** Present on the "Accepted N changes" message of an accepted turn —
    * renders the Compare | Revert row beneath it. */
   turn?: AcceptedTurnRecord;
+  /** RC: the references that rode this user turn — recorded so the transcript
+   * shows what was attached (optional-metadata pattern, like `turn`). */
+  attachments?: Array<{ assetId: string; label: string }>;
 }
 
 /** Phase 2a (Moda's queue): a message typed while the editor is busy —
@@ -55,6 +60,12 @@ export interface AgentChatMessage {
 export interface QueuedAgentMessage {
   id: string;
   content: string;
+  /** RC (adversarial-gate ship-blocker 2): the references SNAPSHOTTED at
+   * enqueue time. A queued message owns the attachments that were pending when
+   * the user submitted it — reading the live pending set at drain time instead
+   * dropped them (wiped by the prior turn's success-clear) or mixed in a later
+   * message's attachments. */
+  references?: { assetId: string; label: string; thumbnailUrl: string }[];
 }
 
 export interface AgentChatPanelProps {
@@ -91,6 +102,13 @@ export interface AgentChatPanelProps {
   activePageId: PageId | null;
   selectedNodeId: NodeId | null;
   diagnostics: Diagnostic[];
+  /** RC: references attached for the next turn (thumbnail chips above the
+   * composer), whether an upload is in flight, and the attach/remove
+   * callbacks. All presentational — state lives in useAgentTurn. */
+  pendingReferences?: PendingReference[];
+  isUploadingReferences?: boolean;
+  onAttachReferences?: (files: File[]) => void;
+  onRemoveReference?: (assetId: string) => void;
   onRemoveTargetChip: (id: NodeId) => void;
   onClearTargetChips: () => void;
   onDraftChange: (value: string) => void;
@@ -133,6 +151,10 @@ export function AgentChatPanel({
   activePageId,
   selectedNodeId,
   diagnostics,
+  pendingReferences = [],
+  isUploadingReferences = false,
+  onAttachReferences,
+  onRemoveReference,
   onRemoveTargetChip,
   onClearTargetChips,
   onDraftChange,
@@ -251,6 +273,12 @@ export function AgentChatPanel({
             <article key={message.id} className={`agent-message ${message.role}`}>
               <span>{message.role === "user" ? "You" : message.role === "agent" ? "Agent" : "System"}</span>
               <p>{message.content}</p>
+              {message.attachments && message.attachments.length > 0 ? (
+                <p className="muted" aria-label="Turn attachments">
+                  <Paperclip aria-hidden size={11} />{" "}
+                  {message.attachments.map((attachment) => attachment.label).join(", ")}
+                </p>
+              ) : null}
               {message.turn ? (
                 <TurnActionsRow
                   turn={message.turn}
@@ -322,6 +350,42 @@ export function AgentChatPanel({
                 >
                   <X aria-hidden size={12} />
                 </button>
+              </span>
+            ))}
+          </div>
+        </div>
+      ) : null}
+      {pendingReferences.length > 0 ? (
+        <div className="agent-target-chips" aria-label="Turn references">
+          <span className="agent-target-chips-label">
+            <Paperclip aria-hidden size={12} />
+            {pendingReferences.length === 1
+              ? "1 reference for the next turn"
+              : `${pendingReferences.length} references for the next turn`}
+          </span>
+          <div className="agent-target-chip-row">
+            {pendingReferences.map((reference) => (
+              <span
+                key={reference.assetId}
+                className="agent-target-chip"
+                title={reference.assetId}
+              >
+                <img
+                  src={reference.thumbnailUrl}
+                  alt={reference.label}
+                  width={20}
+                  height={20}
+                />
+                <span className="agent-target-chip-name">{reference.label}</span>
+                {onRemoveReference ? (
+                  <button
+                    type="button"
+                    aria-label={`Remove reference: ${reference.label}`}
+                    onClick={() => onRemoveReference(reference.assetId)}
+                  >
+                    <X aria-hidden size={12} />
+                  </button>
+                ) : null}
               </span>
             ))}
           </div>
@@ -423,6 +487,14 @@ export function AgentChatPanel({
           />
           <div className="agent-composer-row">
             <div className="agent-composer-chips">
+              {onAttachReferences ? (
+                <ReferenceAttachButton
+                  disabled={isUploadingReferences || pendingReferences.length >= MAX_TURN_REFERENCES}
+                  uploading={isUploadingReferences}
+                  atCap={pendingReferences.length >= MAX_TURN_REFERENCES}
+                  onFiles={onAttachReferences}
+                />
+              ) : null}
               {onAttachBrandKit ? (
                 <ComposerChip
                   label={attachedKit?.name ?? "Brandkit"}
@@ -469,6 +541,69 @@ export function AgentChatPanel({
         </div>
       </form>
     </section>
+  );
+}
+
+/** RC (D8): the accept list for reference attachments — the asset-upload
+ * raster formats plus SVG (rasterized server-side at turn resolve). */
+const REFERENCE_ACCEPT = "image/png,image/jpeg,image/webp,image/gif,image/svg+xml";
+
+/**
+ * RC: the composer paperclip — a chip-row button wrapping a hidden multi-file
+ * input. Presentational: file selection fires onFiles; upload state and the
+ * ≤4 cap live in useAgentTurn (the button only reflects them).
+ */
+function ReferenceAttachButton({
+  disabled,
+  uploading,
+  atCap,
+  onFiles
+}: {
+  disabled: boolean;
+  uploading: boolean;
+  atCap: boolean;
+  onFiles: (files: File[]) => void;
+}) {
+  const inputRef = useRef<HTMLInputElement | null>(null);
+  const title = uploading
+    ? "Uploading references…"
+    : atCap
+      ? `A turn carries at most ${MAX_TURN_REFERENCES} references — remove one to add another.`
+      : "Attach reference images for the next turn";
+  return (
+    <>
+      <button
+        type="button"
+        className="composer-chip"
+        aria-label="Attach references"
+        title={title}
+        disabled={disabled}
+        onClick={() => inputRef.current?.click()}
+      >
+        {uploading ? (
+          <Loader2 aria-hidden size={13} className="agent-checklist-spinner" />
+        ) : (
+          <Paperclip aria-hidden size={13} />
+        )}
+      </button>
+      <input
+        ref={inputRef}
+        type="file"
+        accept={REFERENCE_ACCEPT}
+        multiple
+        hidden
+        aria-hidden
+        tabIndex={-1}
+        onChange={(event) => {
+          const files = Array.from(event.target.files ?? []);
+          // Reset so re-picking the same file fires change again.
+          event.target.value = "";
+          if (files.length > 0) {
+            onFiles(files);
+          }
+        }}
+      />
+    </>
   );
 }
 

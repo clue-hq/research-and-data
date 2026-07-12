@@ -70,6 +70,19 @@ export const agentTurnRunningDiagnostic = (): Diagnostic => ({
 
 /** Phase 0c ephemeral preview: the proposed turn applied to the live scene,
  * with the base kept for Reject and the Before/After toggle. */
+/** RC: one user-attached reference for the next turn — the uploaded library
+ * asset id, a human label, and a thumbnail URL (GET /assets/{id}/thumbnail).
+ * Per-turn context: cleared after each successful send. */
+export interface PendingReference {
+  assetId: string;
+  label: string;
+  thumbnailUrl: string;
+}
+
+/** RC: the maximum references a single turn carries — mirrors the runtime's
+ * PLACED_PREVIEWS_MAX and the API cap (D1); more dilutes vision context. */
+export const MAX_TURN_REFERENCES = 4;
+
 export interface AgentPreviewState {
   operations: Operation[];
   /** Engine-computed inverse of the previewed batch, captured at apply time
@@ -91,6 +104,11 @@ export interface UseAgentTurnDeps {
   selectedNodeId: NodeId | null;
   /** 2c: the chipped edit targets sent with each turn. */
   targetNodeIds: NodeId[];
+  /** RC: uploads one attached file to the asset library and resolves its
+   * reference descriptor (id + label + thumbnail url). Injected so the hook
+   * stays testable (tests mock it); EditorApp wires the real uploadAsset +
+   * thumbnail URL. Absent → the attach affordance is inert. */
+  referenceUploader?: (file: File) => Promise<PendingReference>;
   /** 2e: the document's standing instructions sent with each turn. */
   agentInstructions: string | null;
   /** Model override sent with each turn (null = runtime default). */
@@ -174,6 +192,7 @@ export function useAgentTurn(deps: UseAgentTurnDeps) {
     activePageId,
     selectedNodeId,
     targetNodeIds,
+    referenceUploader,
     agentInstructions,
     agentModel,
     layoutManagedEditing,
@@ -211,6 +230,10 @@ export function useAgentTurn(deps: UseAgentTurnDeps) {
   // pending wait here and drain one per idle transition — each drained turn
   // seeds from the scene as it is at drain time, not at enqueue time.
   const [queuedAgentMessages, setQueuedAgentMessages] = useState<QueuedAgentMessage[]>([]);
+  // RC: references the user attached for the NEXT turn. Per-turn context —
+  // threaded into the runner call and cleared after each successful send.
+  const [pendingReferences, setPendingReferences] = useState<PendingReference[]>([]);
+  const [isUploadingReferences, setIsUploadingReferences] = useState(false);
 
   // Merge one streamed run event into the checklist state. Replay (EventSource
   // reconnect, or resume-on-mount) re-sends events, so dedupe by seq; the
@@ -313,7 +336,10 @@ export function useAgentTurn(deps: UseAgentTurnDeps) {
     ]);
   };
 
-  const sendAgentPrompt = async (prompt: string) => {
+  const sendAgentPrompt = async (
+    prompt: string,
+    referencesOverride?: PendingReference[]
+  ) => {
     const trimmedPrompt = prompt.trim();
     if (!trimmedPrompt || isAgentRunning) {
       return;
@@ -324,6 +350,14 @@ export function useAgentTurn(deps: UseAgentTurnDeps) {
     }
 
     const seedScene = scene;
+    // RC: snapshot the references riding THIS turn before any async work, so a
+    // reference added mid-flight never leaks into an in-flight send. A QUEUED
+    // message passes its enqueue-time snapshot as the override (ship-blocker 2:
+    // reading the live pending set at drain time dropped or mixed attachments);
+    // a composer send reads the live pending set.
+    const fromQueue = referencesOverride !== undefined;
+    const turnReferences = fromQueue ? referencesOverride : pendingReferences;
+    const referenceAssetIds = turnReferences.map((reference) => reference.assetId);
     setAgentDraft("");
     setAgentProposal(null);
     setRunEvents([]);
@@ -333,7 +367,16 @@ export function useAgentTurn(deps: UseAgentTurnDeps) {
       {
         id: uniqueChatMessageId("user"),
         role: "user",
-        content: trimmedPrompt
+        content: trimmedPrompt,
+        // RC: record what rode the turn so the transcript shows the attachments
+        // (optional-metadata pattern, like `turn` on accepted messages).
+        attachments:
+          turnReferences.length > 0
+            ? turnReferences.map((reference) => ({
+                assetId: reference.assetId,
+                label: reference.label
+              }))
+            : undefined
       }
     ]);
 
@@ -344,12 +387,24 @@ export function useAgentTurn(deps: UseAgentTurnDeps) {
         documentId: activeDocumentId ?? undefined,
         activePageId,
         targetNodeIds,
+        referenceAssetIds,
         agentInstructions,
         model: agentModel ?? null,
         diagnostics,
         onEvent: handleRunEvent
       });
       handleTurnResult(result, seedScene);
+      // RC per-turn semantics (D8): references are consumed by a successful
+      // send. On error they stay so the user can retry without re-attaching.
+      // Clear ONLY the ids that rode this turn (ship-blocker 2: a blanket []
+      // wiped attachments the user added mid-flight for their NEXT message);
+      // a queued send owns its snapshot and never touches the live pending set.
+      if (!fromQueue) {
+        const sentIds = new Set(turnReferences.map((reference) => reference.assetId));
+        setPendingReferences((current) =>
+          current.filter((reference) => !sentIds.has(reference.assetId))
+        );
+      }
     } catch (error) {
       handleTurnError(error);
     } finally {
@@ -372,15 +427,80 @@ export function useAgentTurn(deps: UseAgentTurnDeps) {
     if (!trimmed) {
       return;
     }
+    // RC (ship-blocker 2): the queued message OWNS the attachments pending at
+    // enqueue time — snapshot them onto the message and consume them from the
+    // composer, so the running turn's success-clear can never drop them and a
+    // later message's attachments can never mix in.
+    const references = pendingReferences;
+    if (references.length > 0) {
+      setPendingReferences([]);
+    }
     setQueuedAgentMessages((queue) => [
       ...queue,
-      { id: uniqueChatMessageId("user"), content: trimmed }
+      {
+        id: uniqueChatMessageId("user"),
+        content: trimmed,
+        references: references.length > 0 ? references : undefined
+      }
     ]);
   };
 
   const removeQueuedAgentMessage = (id: string) => {
     setQueuedAgentMessages((queue) => queue.filter((message) => message.id !== id));
   };
+
+  /** RC: upload each attached file (via the injected uploader) and add it to
+   * the pending references, honoring the ≤4 cap and de-duping by asset id.
+   * Files past the cap are dropped with a system note; an upload failure is
+   * surfaced but never blocks the others. */
+  const attachReferences = async (files: File[]) => {
+    if (!referenceUploader || files.length === 0) {
+      return;
+    }
+    const room = MAX_TURN_REFERENCES - pendingReferences.length;
+    if (room <= 0) {
+      postSystemMessage(
+        `You can attach at most ${MAX_TURN_REFERENCES} references per turn — remove one to add another.`
+      );
+      return;
+    }
+    const accepted = files.slice(0, room);
+    if (accepted.length < files.length) {
+      postSystemMessage(
+        `Only ${accepted.length} of ${files.length} files were attached — a turn carries at most ${MAX_TURN_REFERENCES} references.`
+      );
+    }
+    setIsUploadingReferences(true);
+    try {
+      for (const file of accepted) {
+        try {
+          const reference = await referenceUploader(file);
+          setPendingReferences((current) =>
+            current.length >= MAX_TURN_REFERENCES ||
+            current.some((existing) => existing.assetId === reference.assetId)
+              ? current
+              : [...current, reference]
+          );
+        } catch (error) {
+          postSystemMessage(
+            `Could not attach ${file.name}: ${
+              error instanceof Error ? error.message : "upload failed"
+            }`
+          );
+        }
+      }
+    } finally {
+      setIsUploadingReferences(false);
+    }
+  };
+
+  const removeReference = (assetId: string) => {
+    setPendingReferences((current) =>
+      current.filter((reference) => reference.assetId !== assetId)
+    );
+  };
+
+  const clearReferences = () => setPendingReferences([]);
 
   // Drain the queue one message per idle transition: a turn must have
   // settled AND its review been resolved (Accept or Reject both count — the
@@ -392,7 +512,7 @@ export function useAgentTurn(deps: UseAgentTurnDeps) {
     }
     const [next, ...rest] = queuedAgentMessages;
     setQueuedAgentMessages(rest);
-    void sendAgentPrompt(next.content);
+    void sendAgentPrompt(next.content, next.references ?? []);
     // sendAgentPrompt is re-created per render; keying the effect on it would
     // drain the whole queue in one burst instead of one per idle transition.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -748,10 +868,15 @@ export function useAgentTurn(deps: UseAgentTurnDeps) {
     agentPreview,
     queuedAgentMessages,
     runEvents,
+    pendingReferences,
+    isUploadingReferences,
     sendAgentPrompt,
     postSystemMessage,
     queueAgentMessage,
     removeQueuedAgentMessage,
+    attachReferences,
+    removeReference,
+    clearReferences,
     applyAgentProposal,
     acceptAgentPreview,
     rejectAgentPreview,

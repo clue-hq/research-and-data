@@ -58,6 +58,7 @@ describe("streaming agent runner", () => {
       scene: minimalScene,
       documentId: undefined,
       activePageId: "page_a4",
+      referenceAssetIds: ["asset_ref_a"],
       diagnostics: [],
       onEvent: (event) => events.push(event)
     });
@@ -65,6 +66,9 @@ describe("streaming agent runner", () => {
     // Let the POST resolve and the subscription open.
     await vi.waitFor(() => expect(source).not.toBeNull());
     expect(fetchMock.mock.calls[0][0].toString()).toContain("/agent/turns");
+    // RC: the async-turn POST carries the turn's reference asset ids.
+    const [, requestInit] = fetchMock.mock.calls[0] as unknown as [URL, RequestInit];
+    expect(JSON.parse(requestInit.body as string).reference_asset_ids).toEqual(["asset_ref_a"]);
     expect(source!.url).toContain("/agent/runs/run_stream_1/events");
     // The synthetic run_started frame carries the run id for reload-resume.
     expect(events.find((event) => event.type === "run_started")?.data.run_id).toBe("run_stream_1");

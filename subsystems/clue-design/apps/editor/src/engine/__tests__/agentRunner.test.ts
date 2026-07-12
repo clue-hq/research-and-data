@@ -81,12 +81,37 @@ describe("agent runner", () => {
           document_id: "doc_agent",
           active_page_id: "page_a4",
           target_node_ids: ["node_contact_name"],
+          reference_asset_ids: [],
           agent_instructions: null,
           model: null,
           diagnostics: []
         })
       })
     );
+  });
+
+  it("RC: carries the turn's reference asset ids in the request body", async () => {
+    const fetchMock = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({ status: "failed", summary: "n/a", operations: [], diagnostics: [] }),
+          { status: 200, headers: { "content-type": "application/json" } }
+        )
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const runner = createApiAgentRunner({ apiBaseUrl: "http://localhost:8000" });
+
+    await runner({
+      prompt: "Match these references",
+      scene: minimalScene,
+      activePageId: "page_a4",
+      referenceAssetIds: ["asset_ref_a", "asset_ref_b"],
+      diagnostics: []
+    });
+
+    const [, requestInit] = fetchMock.mock.calls[0] as unknown as [URL, RequestInit];
+    const body = JSON.parse(requestInit.body as string);
+    expect(body.reference_asset_ids).toEqual(["asset_ref_a", "asset_ref_b"]);
   });
 
   it("fails closed on invalid agent payloads", () => {

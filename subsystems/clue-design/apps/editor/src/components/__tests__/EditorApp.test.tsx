@@ -737,6 +737,8 @@ describe.skipIf(!wasmArtifactPresent)("EditorApp", () => {
       activePageId: "page_a4",
       // 2c: the selected node becomes a chipped edit target.
       targetNodeIds: ["node_contact_name"],
+      // RC: no references attached on this turn.
+      referenceAssetIds: [],
       // 2e: standing instructions ride every turn (none set here).
       agentInstructions: null,
       model: null,

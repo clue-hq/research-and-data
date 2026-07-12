@@ -26,6 +26,10 @@ export interface EditorAgentRequest {
   /** 2c: the chipped edit targets. Sent as target_node_ids; the server scopes
    * the compensating edit to them and keeps every other node byte-identical. */
   targetNodeIds?: NodeId[];
+  /** RC: the library asset ids the user attached as visual references for THIS
+   * turn. Sent as reference_asset_ids; the server resolves them into the run's
+   * reference manifest by value. Per-turn context — cleared after each send. */
+  referenceAssetIds?: string[];
   /** 2e: the document's standing instructions, folded into every turn. */
   agentInstructions?: string | null;
   /** Model override for this turn (runtime id, e.g. "openai:anthropic/...").
@@ -100,6 +104,7 @@ export function createApiAgentRunner({ apiBaseUrl }: ApiAgentRunnerOptions): Edi
     documentId,
     activePageId,
     targetNodeIds,
+    referenceAssetIds,
     agentInstructions,
     model,
     diagnostics
@@ -115,6 +120,7 @@ export function createApiAgentRunner({ apiBaseUrl }: ApiAgentRunnerOptions): Edi
         document_id: documentId ?? null,
         active_page_id: activePageId,
         target_node_ids: targetNodeIds ?? [],
+        reference_asset_ids: referenceAssetIds ?? [],
         agent_instructions: agentInstructions ?? null,
         model: model ?? null,
         diagnostics
@@ -151,6 +157,7 @@ export function createStreamingAgentRunner({
     documentId,
     activePageId,
     targetNodeIds,
+    referenceAssetIds,
     agentInstructions,
     model,
     diagnostics,
@@ -165,6 +172,7 @@ export function createStreamingAgentRunner({
         document_id: documentId ?? null,
         active_page_id: activePageId,
         target_node_ids: targetNodeIds ?? [],
+        reference_asset_ids: referenceAssetIds ?? [],
         agent_instructions: agentInstructions ?? null,
         model: model ?? null,
         diagnostics

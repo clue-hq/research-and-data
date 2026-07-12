@@ -307,3 +307,158 @@ describe("AgentChatPanel turn actions (2d)", () => {
     expect(queryByText("Revert…")).toBeNull();
   });
 });
+
+/** RC: shared render helper for the reference-attachment surface. */
+function renderReferencesPanel(
+  overrides: Partial<Parameters<typeof AgentChatPanel>[0]> = {}
+) {
+  return render(
+    <AgentChatPanel
+      messages={[]}
+      draft=""
+      isRunning={false}
+      proposal={null}
+      pendingReview={false}
+      queuedMessages={[]}
+      runEvents={[]}
+      targetChips={[]}
+      compareView={null}
+      invalidCheckpoints={new Set<string>()}
+      isReverting={false}
+      suggestions={[]}
+      standingInstructions={noopInstructions}
+      activePageId="page_a4"
+      selectedNodeId={null}
+      diagnostics={[]}
+      onRemoveTargetChip={() => {}}
+      onClearTargetChips={() => {}}
+      onDraftChange={() => {}}
+      onSend={() => {}}
+      onQueueMessage={() => {}}
+      onRemoveQueuedMessage={() => {}}
+      onApplyProposal={() => {}}
+      onAcceptProposal={() => {}}
+      onRejectProposal={() => {}}
+      onCompareTurn={() => {}}
+      onExitCompare={() => {}}
+      onRevertTurn={() => {}}
+      {...overrides}
+    />
+  );
+}
+
+function pendingReference(n: number) {
+  return {
+    assetId: `asset_ref_${n}`,
+    label: `wash-${n}.png`,
+    thumbnailUrl: `http://api.test/assets/asset_ref_${n}/thumbnail`
+  };
+}
+
+describe("AgentChatPanel — RC reference attachments", () => {
+  it("renders the attach button only when the shell wires onAttachReferences", () => {
+    const { queryByLabelText, rerender } = renderReferencesPanel();
+    expect(queryByLabelText("Attach references")).toBeNull();
+    rerender(
+      <AgentChatPanel
+        messages={[]}
+        draft=""
+        isRunning={false}
+        proposal={null}
+        pendingReview={false}
+        queuedMessages={[]}
+        runEvents={[]}
+        targetChips={[]}
+        compareView={null}
+        invalidCheckpoints={new Set<string>()}
+        isReverting={false}
+        suggestions={[]}
+        standingInstructions={noopInstructions}
+        activePageId="page_a4"
+        selectedNodeId={null}
+        diagnostics={[]}
+        onAttachReferences={() => {}}
+        onRemoveTargetChip={() => {}}
+        onClearTargetChips={() => {}}
+        onDraftChange={() => {}}
+        onSend={() => {}}
+        onQueueMessage={() => {}}
+        onRemoveQueuedMessage={() => {}}
+        onApplyProposal={() => {}}
+        onAcceptProposal={() => {}}
+        onRejectProposal={() => {}}
+        onCompareTurn={() => {}}
+        onExitCompare={() => {}}
+        onRevertTurn={() => {}}
+      />
+    );
+    expect(queryByLabelText("Attach references")).not.toBeNull();
+  });
+
+  it("fires onAttachReferences with the picked files and resets the input", () => {
+    const onAttachReferences = vi.fn();
+    const { getByLabelText, container } = renderReferencesPanel({ onAttachReferences });
+    const input = container.querySelector('input[type="file"]') as HTMLInputElement;
+    expect(input).not.toBeNull();
+    expect(input.accept).toBe("image/png,image/jpeg,image/webp,image/gif,image/svg+xml");
+    expect(input.multiple).toBe(true);
+    expect(getByLabelText("Attach references")).toBeEnabled();
+
+    const file = new File(["x"], "wash.png", { type: "image/png" });
+    fireEvent.change(input, { target: { files: [file] } });
+    expect(onAttachReferences).toHaveBeenCalledTimes(1);
+    expect(onAttachReferences.mock.calls[0][0]).toEqual([file]);
+    expect(input.value).toBe("");
+  });
+
+  it("renders pending references as removable thumbnail chips", () => {
+    const onRemoveReference = vi.fn();
+    const { getByLabelText, getByText, getByAltText } = renderReferencesPanel({
+      onAttachReferences: () => {},
+      onRemoveReference,
+      pendingReferences: [pendingReference(1), pendingReference(2)]
+    });
+    expect(getByText("2 references for the next turn")).toBeInTheDocument();
+    const thumbnail = getByAltText("wash-1.png") as HTMLImageElement;
+    expect(thumbnail.src).toBe("http://api.test/assets/asset_ref_1/thumbnail");
+    fireEvent.click(getByLabelText("Remove reference: wash-2.png"));
+    expect(onRemoveReference).toHaveBeenCalledWith("asset_ref_2");
+  });
+
+  it("disables the attach button at the 4-reference cap with an explanatory title", () => {
+    const { getByLabelText } = renderReferencesPanel({
+      onAttachReferences: () => {},
+      onRemoveReference: () => {},
+      pendingReferences: [1, 2, 3, 4].map(pendingReference)
+    });
+    const button = getByLabelText("Attach references");
+    expect(button).toBeDisabled();
+    expect(button.getAttribute("title")).toContain("at most 4 references");
+  });
+
+  it("shows a loading state while uploads are in flight", () => {
+    const { getByLabelText } = renderReferencesPanel({
+      onAttachReferences: () => {},
+      isUploadingReferences: true
+    });
+    const button = getByLabelText("Attach references");
+    expect(button).toBeDisabled();
+    expect(button.getAttribute("title")).toContain("Uploading");
+  });
+
+  it("shows a user message's attachments in the transcript", () => {
+    const messages: AgentChatMessage[] = [
+      {
+        id: "user_1",
+        role: "user",
+        content: "Match these washes.",
+        attachments: [
+          { assetId: "asset_ref_1", label: "wash-1.png" },
+          { assetId: "asset_ref_2", label: "wash-2.png" }
+        ]
+      }
+    ];
+    const { getByLabelText } = renderReferencesPanel({ messages });
+    expect(getByLabelText("Turn attachments").textContent).toContain("wash-1.png, wash-2.png");
+  });
+});
