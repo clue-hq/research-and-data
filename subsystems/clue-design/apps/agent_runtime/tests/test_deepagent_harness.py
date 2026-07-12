@@ -454,6 +454,56 @@ def test_runner_honest_failure_on_invoke_exception(tmp_path, monkeypatch):
     assert "RuntimeError" in trace
 
 
+def test_runner_honest_failure_on_api_timeout_error(tmp_path, monkeypatch):
+    """L3/D3: an exhausted-retry straggler surfaces as openai.APITimeoutError out of
+    agent.invoke (nothing in langchain/deepagents catches it). The runner's broad
+    catch must route it into the EXISTING honest failed-finalize path — a failed
+    final.json + a trace event recording the exception CLASS + message — never a
+    silent thread crash and never a fabricated success. This pins the specific
+    timeout-exception path the watchdog introduces."""
+    import httpx
+    import openai
+
+    capture: dict = {}
+
+    def fake_create_deep_agent(**kwargs):
+        capture["kwargs"] = kwargs
+
+        def _timeout(*a, **k):
+            # Exactly what the OpenAI SDK propagates after max_retries is exhausted.
+            raise openai.APITimeoutError(request=httpx.Request("POST", "https://openrouter.ai/api/v1/chat/completions"))
+
+        return types.SimpleNamespace(invoke=_timeout, kwargs=kwargs)
+
+    module = types.ModuleType("deepagents")
+    module.create_deep_agent = fake_create_deep_agent
+    module.FilesystemPermission = _FakeFilesystemPermission
+    module.DeepAgentState = _FakeDeepAgentState
+    backends_module = types.ModuleType("deepagents.backends")
+    filesystem_module = types.ModuleType("deepagents.backends.filesystem")
+    filesystem_module.FilesystemBackend = _FakeFilesystemBackend
+    monkeypatch.setitem(sys.modules, "deepagents", module)
+    monkeypatch.setitem(sys.modules, "deepagents.backends", backends_module)
+    monkeypatch.setitem(sys.modules, "deepagents.backends.filesystem", filesystem_module)
+    monkeypatch.setattr("lumen_agent.tools.substrate.CoreClient", FakeCoreClient)
+    monkeypatch.setattr("lumen_agent.llm.init_model", lambda *a, **k: object())
+
+    # Must NOT raise: the runner returns an honest failed payload instead.
+    payload, tools = run_deepagent_turn("Design a card", runtime_config(tmp_path))
+
+    assert payload["status"] == "failed"
+    assert payload["stop_reason"] == "orchestrator_did_not_finalize"
+    final_path = tools.trace_dir / "final.json"
+    assert final_path.exists()
+    # The exception CLASS name + message are recorded verbatim in the trace.
+    trace = (tools.trace_dir / "trace.jsonl").read_text(encoding="utf-8")
+    assert "APITimeoutError" in trace
+    assert "deepagent_turn_exception" in trace
+    # The class + message also ride into the finalize detail (summary), so the
+    # API worker sees a structured failure, not an opaque crash.
+    assert "APITimeoutError" in payload["summary"]
+
+
 def test_runner_honest_failure_when_agent_never_finalizes(tmp_path, monkeypatch):
     capture: dict = {}
     _install_deepagents_stub(monkeypatch, capture)  # invoke returns cleanly, no final.json

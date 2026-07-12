@@ -84,6 +84,15 @@ class AgentRuntimeConfig:
     # gateway for every deep-agent LLM call. None → no max_tokens kwarg (today's
     # behavior, byte-identical). Validated positive at config parse.
     agent_max_tokens: int | None = None
+    # L1 (cache locality): OpenRouter provider `sort` preference threaded into
+    # init_model for every deep-agent LLM call — `sort` pins one provider replica
+    # (disables load-balancing) so the append-only ReAct prefix stays cache-warm.
+    # None → no `provider` field on the request (byte-identical to pre-L1).
+    agent_provider_sort: str | None = "latency"
+    # L3 (straggler watchdog): per-request timeout in SECONDS threaded into
+    # init_model for every deep-agent LLM call (installs `timeout` + `max_retries=2`
+    # on the ChatOpenAI client). None → no timeout/retry kwargs (today's behavior).
+    agent_llm_timeout_s: float | None = 60.0
     # D10(c): OPTIONAL per-role model overrides. Each None → fall back to `model`
     # (LUMEN_AGENT_MODEL). Read via the resolved accessors below so the harness
     # never open-codes the fallback. Same "openai:<id>" contract, enforced by
@@ -121,6 +130,8 @@ class AgentRuntimeConfig:
             agent_api_key=settings.lumen_agent_api_key,
             agent_reasoning=settings.lumen_agent_reasoning,
             agent_max_tokens=settings.lumen_agent_max_tokens,
+            agent_provider_sort=settings.lumen_agent_provider_sort,
+            agent_llm_timeout_s=settings.lumen_agent_llm_timeout_s,
             agent_model_orchestrator=settings.lumen_agent_model_orchestrator,
             agent_model_author=settings.lumen_agent_model_author,
             agent_model_reviewer=settings.lumen_agent_model_reviewer,
