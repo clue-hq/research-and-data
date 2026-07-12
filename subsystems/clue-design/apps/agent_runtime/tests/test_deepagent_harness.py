@@ -379,6 +379,20 @@ def test_all_prompts_have_resource_map_and_workspace_path():
         assert ws in prompt
 
 
+def test_orchestrator_teaches_unchanged_scene_reuse():
+    """L4b (deepagent-latency): when render_preview reports the scene is
+    byte-identical to the last render, the orchestrator acts on the existing
+    critique instead of re-delegating a full review — the ONLY exception being a
+    reviewer re-run to fill a required field (e.g. reference_fidelity after a
+    REFUSED finalize). Pinned so the additive teaching cannot silently drop."""
+    orch = build_orchestrator_prompt("/tmp/ws-unchanged")
+    assert "UNCHANGED-SCENE GUARD" in orch
+    assert "do NOT re-delegate a full" in orch
+    assert "REFUSED finalize_run demands" in orch
+    # It must NOT contradict the batching rule (task stays never-batch).
+    assert "never one at a time" in orch
+
+
 def test_all_prompts_carry_batching_rule_and_never_batch_list():
     """L2 (deepagent-latency): every role learns to batch independent read-only
     lookups AND the never-batch exclusion list, so writes / render / preflight /

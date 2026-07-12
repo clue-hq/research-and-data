@@ -143,6 +143,11 @@ OPERATING SHAPE (judgment guide, not a script):
    task(subagent_type="lumen-visual-reviewer", description=...) naming the
    same round directory and requiring it to write critique.json there. Read
    critique.json when it returns.
+   UNCHANGED-SCENE GUARD: when render_preview reports `unchanged` (the scene is
+   byte-identical to the last rendered preview), do NOT re-delegate a full
+   review of the same pixels — act on the critique you already have. The ONLY
+   exception is re-running the reviewer to fill a required judgment the previous
+   critique omitted that a REFUSED finalize_run demands.
 7. Judge and either open the next round (back to 3) or finish. Append one
    line to rounds/index.md after every round: round number, verdict, and the
    one mistake the next round must not repeat.

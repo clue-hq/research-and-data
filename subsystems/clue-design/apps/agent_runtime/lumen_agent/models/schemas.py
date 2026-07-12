@@ -173,6 +173,10 @@ class PreviewArtifact(BaseModel):
     critic_input_path: Optional[str] = None
     valid: bool = True
     validation_errors: List[str] = Field(default_factory=list)
+    # L4a raster guard: loud, NON-blocking advisories (e.g. a near-uniform PNG
+    # that is suspicious but could be a legitimate minimalist design). Distinct
+    # from validation_errors, which flip the artifact invalid and block review.
+    warnings: List[str] = Field(default_factory=list)
 
 
 class KnowledgeLoadResult(BaseModel):
