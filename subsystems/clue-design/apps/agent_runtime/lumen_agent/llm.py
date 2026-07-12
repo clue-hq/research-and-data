@@ -70,10 +70,18 @@ def init_model(
             "or add langchain and langchain-openai to the active environment."
         ) from error
     kwargs: dict = {"base_url": base_url, "api_key": api_key}
+    # L0 (latency trace enrichment): ask OpenRouter to include full usage
+    # accounting in the response so the cached-prefill breakdown
+    # (`prompt_tokens_details.cached_tokens` → usage_metadata.input_token_details.
+    # cache_read) is reported when the provider caches. This is measurement-only:
+    # it changes ONLY the returned usage object, never generation. OpenAI-
+    # compatible clients pass unknown top-level request fields via extra_body;
+    # OpenRouter reads `usage` from the request body.
+    extra_body: dict = {"usage": {"include": True}}
     if reasoning is not None:
-        # OpenAI-compatible clients pass unknown top-level request fields via
-        # extra_body; OpenRouter reads `reasoning` from the request body.
-        kwargs["extra_body"] = {"reasoning": {"effort": reasoning}}
+        # OpenRouter reads the unified `reasoning` field from the request body.
+        extra_body["reasoning"] = {"effort": reasoning}
+    kwargs["extra_body"] = extra_body
     if max_tokens is not None:
         # ChatOpenAI.max_tokens (langchain-openai 1.3.3) is the max-output-tokens
         # field; it serializes to the request as `max_completion_tokens`.

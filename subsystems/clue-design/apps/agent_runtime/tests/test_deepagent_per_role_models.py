@@ -417,6 +417,57 @@ def test_init_model_omits_max_tokens_when_unset(monkeypatch):
     assert "max_tokens" not in captured["kwargs"]
 
 
+# --- 6. init_model requests OpenRouter usage accounting (L0) ----------------
+
+
+def test_init_model_always_includes_usage_accounting(monkeypatch):
+    """L0: extra_body carries `usage: {include: True}` unconditionally so the
+    cached-prefill token breakdown surfaces in the response (measurement-only)."""
+    from lumen_agent import llm as llm_mod
+
+    captured: dict = {}
+
+    def fake_init_chat_model(model, **kwargs):
+        captured["kwargs"] = kwargs
+        return object()
+
+    fake_lc = types.ModuleType("langchain.chat_models")
+    fake_lc.init_chat_model = fake_init_chat_model
+    monkeypatch.setitem(sys.modules, "langchain.chat_models", fake_lc)
+
+    llm_mod.init_model(
+        "openai:x/y", base_url="https://openrouter.ai/api/v1", api_key="sk-test"
+    )
+    assert captured["kwargs"]["extra_body"] == {"usage": {"include": True}}
+
+
+def test_init_model_usage_accounting_rides_alongside_reasoning(monkeypatch):
+    """The usage-include and the reasoning field coexist in extra_body — neither
+    clobbers the other."""
+    from lumen_agent import llm as llm_mod
+
+    captured: dict = {}
+
+    def fake_init_chat_model(model, **kwargs):
+        captured["kwargs"] = kwargs
+        return object()
+
+    fake_lc = types.ModuleType("langchain.chat_models")
+    fake_lc.init_chat_model = fake_init_chat_model
+    monkeypatch.setitem(sys.modules, "langchain.chat_models", fake_lc)
+
+    llm_mod.init_model(
+        "openai:x/y",
+        base_url="https://openrouter.ai/api/v1",
+        api_key="sk-test",
+        reasoning="medium",
+    )
+    assert captured["kwargs"]["extra_body"] == {
+        "usage": {"include": True},
+        "reasoning": {"effort": "medium"},
+    }
+
+
 # --- 6. .env.example documents all four new vars ---------------------------
 
 

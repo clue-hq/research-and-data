@@ -415,6 +415,122 @@ def test_extract_usage_from_llm_output_fallback():
     assert usage == {"input_tokens": 7, "output_tokens": 3, "total_tokens": 10}
 
 
+# ------------------------------------------------------------------ #
+# L0 (latency trace enrichment) — cached/reasoning + duration + model id
+# ------------------------------------------------------------------ #
+
+
+def test_extract_usage_reads_cached_and_reasoning_from_usage_metadata():
+    """usage_metadata's provider-normalized detail sub-dicts surface as
+    `cached_input_tokens` (input_token_details.cache_read) and
+    `reasoning_output_tokens` (output_token_details.reasoning)."""
+    usage = {
+        "input_tokens": 100,
+        "output_tokens": 40,
+        "total_tokens": 140,
+        "input_token_details": {"cache_read": 80},
+        "output_token_details": {"reasoning": 12},
+    }
+    result = _extract_usage(_FakeUsageResult(usage))
+    assert result["cached_input_tokens"] == 80
+    assert result["reasoning_output_tokens"] == 12
+    assert result["input_tokens"] == 100
+
+
+def test_extract_usage_reads_cached_and_reasoning_from_llm_output_raw():
+    """OpenRouter/OpenAI raw usage nests the breakdowns under `*_tokens_details`
+    (`prompt_tokens_details.cached_tokens`, `completion_tokens_details.
+    reasoning_tokens`)."""
+    from langchain_core.outputs import LLMResult
+
+    result = LLMResult(
+        generations=[[]],
+        llm_output={
+            "token_usage": {
+                "prompt_tokens": 200,
+                "completion_tokens": 60,
+                "total_tokens": 260,
+                "prompt_tokens_details": {"cached_tokens": 150},
+                "completion_tokens_details": {"reasoning_tokens": 25},
+            }
+        },
+    )
+    usage = _extract_usage(result)
+    assert usage["cached_input_tokens"] == 150
+    assert usage["reasoning_output_tokens"] == 25
+
+
+def test_extract_usage_omits_cached_and_reasoning_when_absent():
+    """No detail sub-dicts ⇒ the keys are OMITTED, never null/zero — preserving the
+    payload's 'omit rather than null' convention."""
+    usage = _extract_usage(_llm_result_with_usage())
+    assert "cached_input_tokens" not in usage
+    assert "reasoning_output_tokens" not in usage
+
+
+def test_on_llm_end_records_duration_from_start_end_pairing():
+    """duration_ms is the wall-clock between the matching on_*_start and on_llm_end
+    for the same run_id (a float ms)."""
+    tools = _FakeTools()
+    handler = UsageCaptureHandler(tools, role="author")
+    handler.on_chat_model_start({}, [[]], run_id="r1")
+    handler.on_llm_end(_llm_result_with_usage(), run_id="r1")
+
+    payload = tools.events[0]["payload"]
+    assert "duration_ms" in payload
+    assert isinstance(payload["duration_ms"], float)
+    assert payload["duration_ms"] >= 0.0
+
+
+def test_on_llm_end_omits_duration_when_no_start_seen():
+    """Without a paired start (unknown run_id), duration_ms is omitted, not zero."""
+    tools = _FakeTools()
+    handler = UsageCaptureHandler(tools, role="author")
+    handler.on_llm_end(_llm_result_with_usage(), run_id="never-started")
+    assert "duration_ms" not in tools.events[0]["payload"]
+
+
+def test_on_llm_end_records_model_id_from_response_llm_output():
+    """model_id is the slug the completion reports it was served by."""
+    from langchain_core.outputs import LLMResult
+
+    tools = _FakeTools()
+    handler = UsageCaptureHandler(tools, role="reviewer")
+    result = LLMResult(
+        generations=[[]],
+        llm_output={
+            "model_name": "x-ai/grok-4.5",
+            "token_usage": {"prompt_tokens": 5, "completion_tokens": 2},
+        },
+    )
+    handler.on_llm_end(result, run_id="r2")
+    assert tools.events[0]["payload"]["model_id"] == "x-ai/grok-4.5"
+
+
+def test_on_llm_end_falls_back_to_start_model_id_when_response_omits_it():
+    """When the completion carries no slug, the id captured at on_*_start (from the
+    serialized kwargs / metadata) backstops model_id."""
+    tools = _FakeTools()
+    handler = UsageCaptureHandler(tools, role="orchestrator")
+    handler.on_chat_model_start(
+        {"kwargs": {"model": "anthropic/claude-opus-4.8"}}, [[]], run_id="r3"
+    )
+    # _FakeUsageResult has llm_output=None → no slug in the response.
+    handler.on_llm_end(
+        _FakeUsageResult({"input_tokens": 3, "output_tokens": 1, "total_tokens": 4}),
+        run_id="r3",
+    )
+    assert tools.events[0]["payload"]["model_id"] == "anthropic/claude-opus-4.8"
+
+
+def test_on_llm_end_omits_model_id_when_undiscoverable():
+    """No slug anywhere ⇒ model_id is omitted rather than a placeholder string."""
+    tools = _FakeTools()
+    handler = UsageCaptureHandler(tools, role="author")
+    handler.on_llm_end(_llm_result_with_usage(), run_id="r4")
+    assert "model_id" not in tools.events[0]["payload"]
+
+
 def test_attach_usage_capture_returns_same_model_with_handler_on_callbacks():
     """attach_usage_capture appends the handler to the model's OWN `.callbacks`
     field and returns the SAME object (no RunnableBinding wrapper — that broke
