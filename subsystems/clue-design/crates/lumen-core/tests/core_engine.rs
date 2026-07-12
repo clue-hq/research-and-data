@@ -33,6 +33,7 @@ fn print_pdf_profile() -> ExportProfile {
         raster: None,
         include_bleed: true,
         embed_fonts: true,
+    include_marks: false,
     }
 }
 

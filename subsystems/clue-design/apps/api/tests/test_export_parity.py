@@ -70,13 +70,14 @@ page page_parity
     ),
     (
         "gradient_opacity",
-        # Page background set via scene mutation below — the DSL page line
-        # accepts only preset/size (bad properties drop the page silently;
-        # recorded in the print-export backlog 2026-07-12).
+        # Page background authored the way the agent does it: a #page:
+        # modify line (the page HEADER accepts only preset/size — anything
+        # else is a loud LUMD0204).
         """
 page page_parity
   band rect p(0,340) s(1080,220) fill(linear(90, stop(#f59e0b,0), stop(#dc2626,1)))
   ghost rect p(120,120) s(360,160) fill(#ffffff) o(0.5)
+#page:page_parity bg(linear(135, stop(#0f172a,0), stop(#334155,1)))
 """,
         False,
         None,
@@ -104,31 +105,14 @@ page page_two
 """
 
 # L2 fixture: 12pt symmetric bleed, background and an edge-touching band
-# that extend past trim to the bleed line. Page bleed/background are set
-# via scene mutation (see gradient_opacity note).
+# that extend past trim to the bleed line — authored end-to-end in the
+# real DSL (page geometry via the #page: modify line, the agent's route).
 EDGE_BLEED_DSL = """
 page page_parity size(1080,1080,px)
   band rect p(-12,880) s(1104,140) fill(#f59e0b) bleed(true)
   label text "Edge to bleed" p(80,120) s(500,80) font("Inter",36,700,left) fill(#ffffff)
+#page:page_parity bg(#12355b) bleed(-12,-12,1104,1104) safe_area(60,60,960,960)
 """
-
-
-def page_background(page: dict, hex_value: str) -> None:
-    page["background"] = [
-        {
-            "id": "paint_page_bg",
-            "paint": {"kind": "solid", "color": {"kind": "hex", "value": hex_value}},
-        }
-    ]
-
-
-def page_bleed(page: dict, offset: float) -> None:
-    page["bleed"] = {
-        "x": -offset,
-        "y": -offset,
-        "width": page["size"]["width"] + 2 * offset,
-        "height": page["size"]["height"] + 2 * offset,
-    }
 
 
 @pytest.fixture(scope="module")
@@ -136,22 +120,21 @@ def core() -> CoreClient:
     return CoreClient()
 
 
-def build_scene(core: CoreClient, dsl: str, mutate_page=None) -> dict:
+def build_scene(core: CoreClient, dsl: str) -> dict:
     fresh = core.new_scene("doc_export_parity", "Export parity fixture")
     compiled = core.compile_dsl_into_scene(fresh, dsl)
+    # DSL compile diagnostics live under dsl.compile_output, NOT the
+    # top-level diagnostics key (a halted compile is otherwise easy to
+    # misread as a silent drop).
+    compile_output = (compiled.get("dsl") or {}).get("compile_output") or {}
     errors = [
-        diagnostic
-        for diagnostic in compiled.get("diagnostics") or []
-        if diagnostic.get("severity") == "error"
+        entry
+        for entry in compile_output.get("diagnostics") or []
+        if entry.get("diagnostic", {}).get("severity") == "error"
     ]
     assert not errors, f"fixture DSL must compile clean: {errors}"
     scene = compiled["scene"]
-    # Guard against the silent page-drop class: a page line with a bad
-    # property vanishes without a diagnostic (observed live 2026-07-12).
-    assert scene["pages"], "fixture compiled to zero pages — check page-line properties"
-    if mutate_page is not None:
-        for page in scene["pages"].values():
-            mutate_page(page)
+    assert scene["pages"], "fixture compiled to zero pages"
     return scene
 
 
@@ -267,10 +250,7 @@ def test_pdf_matches_png_truth(
         f for f in FIXTURES if f[0] == fixture
     )
     monkeypatch.setenv("LUMEN_PDF_RENDERER", renderer)
-    mutate = None
-    if name == "gradient_opacity":
-        mutate = lambda page: page_background(page, "#0f172a")  # noqa: E731
-    scene = build_scene(core, dsl, mutate)
+    scene = build_scene(core, dsl)
 
     png_bytes, _ = export_bytes(core, scene, "png", include_bleed=False)
     pdf_bytes, pdf_diagnostics = export_bytes(
@@ -334,12 +314,7 @@ def test_edge_bleed_chain_l2_l3(
     bleed line must survive into the PDF past the trim (L2), and the box
     set must declare trim inside bleed exactly (L3)."""
     monkeypatch.setenv("LUMEN_PDF_RENDERER", renderer)
-
-    def mutate(page: dict) -> None:
-        page_background(page, "#12355b")
-        page_bleed(page, 12.0)
-
-    scene = build_scene(core, EDGE_BLEED_DSL, mutate)
+    scene = build_scene(core, EDGE_BLEED_DSL)
 
     pdf_bytes, _ = export_bytes(core, scene, "pdf", include_bleed=True, dpi=300)
     document = fitz.open(stream=pdf_bytes, filetype="pdf")

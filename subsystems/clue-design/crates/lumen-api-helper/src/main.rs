@@ -1055,6 +1055,7 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                     }),
                     include_bleed: false,
                     embed_fonts: true,
+                    include_marks: false,
                 },
             };
             let request = ExportRequest {
@@ -2060,6 +2061,7 @@ fn export_instance_artifacts(
                     }),
                     include_bleed: false,
                     embed_fonts: false,
+                    include_marks: false,
                 };
                 let request = ExportRequest {
                     profile,
@@ -2101,6 +2103,7 @@ fn export_instance_artifacts(
                         raster: None,
                         include_bleed: false,
                         embed_fonts: false,
+                        include_marks: false,
                     },
                     page_ids: page_ids.clone(),
                     purpose: ExportPurpose::BulkRender,
@@ -2115,14 +2118,37 @@ fn export_instance_artifacts(
                             &page_ids,
                             dpi,
                             false,
+                            false,
                             Some(resolver.as_ref()),
                         ) {
                             Ok(flattened) => {
                                 diagnostics.extend(flattened.diagnostics);
+                                // W6/L4 hard gate: a failed print-ready
+                                // report blocks the bulk artifact — one bad
+                                // instance fails loudly instead of joining
+                                // a 400-copy run.
+                                let report = lumen_export::print_ready_report(
+                                    scene,
+                                    &page_ids,
+                                    &check_request,
+                                    &diagnostics,
+                                );
+                                if report.failed() {
+                                    artifacts.push(json!({
+                                        "format": "pdf",
+                                        "error": {
+                                            "code": "export.print_not_ready",
+                                            "message": "print-ready preflight failed; see print_ready report",
+                                        },
+                                        "print_ready": to_value(&report)?,
+                                    }));
+                                    continue;
+                                }
                                 let stored = store
                                     .put(&flattened.bytes)
                                     .map_err(|error| core_error(error.code, error.message))?;
                                 artifacts.push(json!({
+                                    "print_ready": to_value(&report)?,
                                     "format": "pdf",
                                     "page_id": null,
                                     "mime_type": "application/pdf",

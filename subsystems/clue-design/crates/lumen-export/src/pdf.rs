@@ -140,6 +140,7 @@ impl ExportAdapter for PdfExportAdapter {
                 sidecar_json,
             }],
             diagnostics,
+            print_ready: None,
         })
     }
 }
@@ -188,6 +189,7 @@ impl PdfExportAdapter {
                 &page_ids,
                 dpi,
                 request.profile.include_bleed,
+                request.profile.include_marks,
                 self.resolver.as_deref(),
             )
             .map_err(|error| {
@@ -198,13 +200,23 @@ impl PdfExportAdapter {
         // L3: rewrite every page's MediaBox/TrimBox/BleedBox to the exact
         // scene geometry — the renderers only write a (dpi-grid-quantized)
         // MediaBox. The box set is what the shop's cutter reads; failing to
-        // write it is a failed export, never a silent omission.
+        // write it is a failed export, never a silent omission. Print
+        // intent additionally gets the PDF/X-4 declaration set (sRGB
+        // OutputIntent, XMP version claim, Trapped, deterministic dates).
+        let marks_margin = crate::pdf_boxes::marks_margin_pt(request);
         let boxes: Vec<crate::pdf_boxes::PageBoxes> = page_ids
             .iter()
             .filter_map(|page_id| scene.pages.get(page_id))
-            .map(|page| crate::pdf_boxes::page_boxes_for(page, request.profile.include_bleed))
+            .map(|page| {
+                crate::pdf_boxes::page_boxes_with_margin(
+                    page,
+                    request.profile.include_bleed,
+                    marks_margin,
+                )
+            })
             .collect();
-        let bytes = crate::pdf_boxes::apply_print_boxes(&rendered.bytes, &boxes).map_err(
+        let pdfx = matches!(request.profile.pdf_intent, Some(PdfIntent::Print));
+        let bytes = crate::pdf_boxes::finalize_print_pdf(&rendered.bytes, &boxes, pdfx).map_err(
             |message| {
                 ExportError::new("export.pdf_boxes_failed", message)
                     .with_diagnostics(diagnostics.clone())
@@ -213,6 +225,13 @@ impl PdfExportAdapter {
 
         let sidecar = build_sidecar(scene, &page_ids, &request.profile.name);
         let sidecar_json = serde_json::to_string_pretty(&sidecar).ok();
+
+        // W6/L4: print-intent exports carry the structured preflight
+        // verdict; the bulk path hard-fails on it, the editor and agent
+        // loop surface it.
+        let print_ready = crate::print_ready::is_print_ready_scope(request).then(|| {
+            crate::print_ready::print_ready_report(scene, &page_ids, request, &diagnostics)
+        });
 
         Ok(ExportResult {
             artifacts: vec![ExportArtifact {
@@ -224,6 +243,7 @@ impl PdfExportAdapter {
                 sidecar_json,
             }],
             diagnostics,
+            print_ready,
         })
     }
 }

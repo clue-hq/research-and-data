@@ -8,6 +8,7 @@ pub mod checks;
 pub mod pdf;
 pub mod pdf_boxes;
 pub mod png;
+pub mod print_ready;
 pub mod raster;
 pub mod resolver;
 pub mod sidecar;
@@ -15,7 +16,11 @@ pub mod svg;
 
 pub use checks::{asset_export_checks, license_enforced, MIN_EFFECTIVE_PRINT_DPI};
 pub use pdf::PdfExportAdapter;
-pub use pdf_boxes::{apply_print_boxes, page_boxes_for, PageBoxes};
+pub use pdf_boxes::{
+    apply_print_boxes, finalize_print_pdf, marks_margin_pt, page_boxes_for,
+    page_boxes_with_margin, PageBoxes, MARK_GAP_PT, MARK_MARGIN_PT,
+};
+pub use print_ready::{is_print_ready_scope, print_ready_report};
 pub use png::PngExportAdapter;
 pub use raster::{
     RenderedPdf, RenderedPdfPage, PageRasterizer, ScenePdfRenderer, RasterizeError, RasterizedPage,
@@ -148,5 +153,6 @@ fn figma_manifest_export(
             sidecar_json: None,
         }],
         diagnostics,
+        print_ready: None,
     })
 }

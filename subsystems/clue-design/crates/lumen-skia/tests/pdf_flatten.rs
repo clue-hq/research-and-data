@@ -132,17 +132,17 @@ fn flattened_pdf_expands_page_box_to_bleed_and_stays_deterministic() {
     // The engine maps Px 1:1 to pt (unit_to_points): trim 100px = 100pt,
     // bleed box 112px = 112pt — the same MediaBox contract as the vector
     // writer's PdfPageBox::for_page.
-    let trimmed = raster_flattened_pdf(&renderer, &scene, &[], 72, false, None).expect("trim pdf");
+    let trimmed = raster_flattened_pdf(&renderer, &scene, &[], 72, false, false, None).expect("trim pdf");
     assert_eq!(trimmed.pages[0].width_pt, 100.0);
     assert_eq!(trimmed.pages[0].width_px, 100);
 
-    let bled = raster_flattened_pdf(&renderer, &scene, &[], 72, true, None).expect("bleed pdf");
+    let bled = raster_flattened_pdf(&renderer, &scene, &[], 72, true, false, None).expect("bleed pdf");
     assert!(bled.bytes.starts_with(b"%PDF"));
     assert_eq!(bled.pages[0].width_pt, 112.0);
     assert_eq!(bled.pages[0].height_pt, 112.0);
     assert_eq!(bled.pages[0].width_px, 112);
 
-    let again = raster_flattened_pdf(&renderer, &scene, &[], 72, true, None).expect("bleed pdf 2");
+    let again = raster_flattened_pdf(&renderer, &scene, &[], 72, true, false, None).expect("bleed pdf 2");
     assert_eq!(bled.bytes, again.bytes, "flattened PDF must be deterministic");
 }
 
@@ -151,13 +151,14 @@ fn skia_renderer_implements_the_pdf_flattener_seam() {
     let scene = bleed_probe_scene(None);
     let renderer = SkiaSceneRenderer::bundled();
     let via_trait = (&renderer as &dyn ScenePdfRenderer)
-        .render_pdf(&scene, &[PageId::from("page_bleed")], 72, false, None)
+        .render_pdf(&scene, &[PageId::from("page_bleed")], 72, false, false, None)
         .expect("trait flatten");
     let direct = raster_flattened_pdf(
         &renderer,
         &scene,
         &[PageId::from("page_bleed")],
         72,
+        false,
         false,
         None,
     )

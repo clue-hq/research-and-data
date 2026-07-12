@@ -85,7 +85,7 @@ fn vector_pdf_embeds_subset_fonts_and_stays_deterministic() {
     let renderer = SkiaSceneRenderer::bundled();
     let scene = text_scene(None);
 
-    let first = vector_pdf(&renderer, &scene, &[], 300, false, None).expect("vector pdf");
+    let first = vector_pdf(&renderer, &scene, &[], 300, false, false, None).expect("vector pdf");
     assert!(first.bytes.starts_with(b"%PDF"));
     assert_eq!(first.pages[0].width_pt, 200.0);
     assert_eq!(first.pages[0].height_pt, 150.0);
@@ -101,7 +101,7 @@ fn vector_pdf_embeds_subset_fonts_and_stays_deterministic() {
         .iter()
         .any(|diagnostic| diagnostic.code == "LUME0427"));
 
-    let second = vector_pdf(&renderer, &scene, &[], 300, false, None).expect("vector pdf 2");
+    let second = vector_pdf(&renderer, &scene, &[], 300, false, false, None).expect("vector pdf 2");
     assert_eq!(first.bytes, second.bytes, "vector PDF must be deterministic");
 }
 
@@ -116,10 +116,10 @@ fn vector_pdf_expands_page_box_to_bleed() {
     });
     let scene = text_scene(bleed);
 
-    let trimmed = vector_pdf(&renderer, &scene, &[], 300, false, None).expect("trim pdf");
+    let trimmed = vector_pdf(&renderer, &scene, &[], 300, false, false, None).expect("trim pdf");
     assert_eq!(trimmed.pages[0].width_pt, 200.0);
 
-    let bled = vector_pdf(&renderer, &scene, &[], 300, true, None).expect("bleed pdf");
+    let bled = vector_pdf(&renderer, &scene, &[], 300, true, false, None).expect("bleed pdf");
     assert_eq!(bled.pages[0].width_pt, 218.0);
     assert_eq!(bled.pages[0].height_pt, 168.0);
     let raw = String::from_utf8_lossy(&bled.bytes);
@@ -170,6 +170,7 @@ fn adapter_export_writes_exact_print_boxes_over_vector_pdf() {
                     }),
                     include_bleed: true,
                     embed_fonts: true,
+                    include_marks: false,
                 },
                 page_ids: vec![PageId::from("page_vector")],
                 purpose: ExportPurpose::UserDownload,
@@ -205,7 +206,7 @@ fn adapter_export_writes_exact_print_boxes_over_vector_pdf() {
 fn vector_renderer_implements_the_scene_pdf_seam() {
     let scene = text_scene(None);
     let via_seam = SkiaVectorPdfRenderer::new(Arc::new(lumen_skia::FontManager::bundled()))
-        .render_pdf(&scene, &[PageId::from("page_vector")], 300, false, None)
+        .render_pdf(&scene, &[PageId::from("page_vector")], 300, false, false, None)
         .expect("seam render");
     let direct = vector_pdf(
         &SkiaSceneRenderer::bundled(),
@@ -213,8 +214,107 @@ fn vector_renderer_implements_the_scene_pdf_seam() {
         &[PageId::from("page_vector")],
         300,
         false,
+        false,
         None,
     )
     .expect("direct render");
     assert_eq!(via_seam.bytes, direct.bytes);
+}
+
+// Print W2r: crop marks + PDF/X-4 declarations through the real adapter.
+#[test]
+fn marks_and_pdfx_metadata_on_print_export() {
+    use lumen_core::{
+        ExportAdapter, ExportFormat, ExportProfile, ExportPurpose, ExportRequest, PdfIntent,
+        RasterScale,
+    };
+    use lumen_export::LumenExportAdapter;
+
+    let bleed = Some(Rect {
+        x: -9.0,
+        y: -9.0,
+        width: 218.0,
+        height: 168.0,
+    });
+    let scene = text_scene(bleed);
+    let adapter = LumenExportAdapter::new().with_pdf_renderer(Arc::new(
+        SkiaVectorPdfRenderer::new(Arc::new(lumen_skia::FontManager::bundled())),
+    ));
+
+    let result = adapter
+        .export(
+            &scene,
+            &ExportRequest {
+                profile: ExportProfile {
+                    name: "print_pdf_marks".to_owned(),
+                    format: ExportFormat::Pdf,
+                    pdf_intent: Some(PdfIntent::Print),
+                    raster: Some(RasterScale {
+                        scale: 1.0,
+                        dpi: Some(300),
+                    }),
+                    include_bleed: true,
+                    embed_fonts: true,
+                    include_marks: true,
+                },
+                page_ids: vec![PageId::from("page_vector")],
+                purpose: ExportPurpose::UserDownload,
+            },
+        )
+        .expect("marks export");
+
+    let bytes = &result.artifacts[0].bytes;
+    let document = lopdf::Document::load_mem(bytes).unwrap();
+    let (_, page_id) = document.get_pages().into_iter().next().unwrap();
+    let page_dict = document.get_object(page_id).unwrap().as_dict().unwrap();
+    let boxes = |key: &[u8]| -> Vec<f32> {
+        page_dict
+            .get(key)
+            .unwrap()
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|value| value.as_float().unwrap())
+            .collect()
+    };
+    // 14pt mark margin outside the 218x168 bleed: media grows by 28,
+    // bleed/trim shift inward by 14.
+    assert_eq!(boxes(b"MediaBox"), vec![0.0, 0.0, 246.0, 196.0]);
+    assert_eq!(boxes(b"BleedBox"), vec![14.0, 14.0, 232.0, 182.0]);
+    assert_eq!(boxes(b"TrimBox"), vec![23.0, 23.0, 223.0, 173.0]);
+
+    // PDF/X-4 declarations: version, OutputIntent with embedded ICC, XMP
+    // claim, Trapped, deterministic dates.
+    let raw = String::from_utf8_lossy(bytes);
+    assert!(raw.starts_with("%PDF-1.6"), "X-4 wants PDF 1.6");
+    assert!(raw.contains("GTS_PDFX"), "OutputIntent missing");
+    assert!(raw.contains("sRGB IEC61966-2.1"), "output condition missing");
+    assert!(raw.contains("PDF/X-4"), "XMP version claim missing");
+    assert!(raw.contains("D:20260101000000Z"), "deterministic date missing");
+
+    // Preview intent gets boxes but NOT the X-4 declaration set.
+    let preview = adapter
+        .export(
+            &scene,
+            &ExportRequest {
+                profile: ExportProfile {
+                    name: "preview_pdf".to_owned(),
+                    format: ExportFormat::Pdf,
+                    pdf_intent: Some(PdfIntent::Preview),
+                    raster: None,
+                    include_bleed: false,
+                    embed_fonts: true,
+                    include_marks: false,
+                },
+                page_ids: vec![PageId::from("page_vector")],
+                purpose: ExportPurpose::AgentCritique,
+            },
+        )
+        .expect("preview export");
+    let preview_raw = String::from_utf8_lossy(&preview.artifacts[0].bytes);
+    assert!(!preview_raw.contains("GTS_PDFX"), "preview must stay lean");
+
+    // Print-ready report rides the result (W6).
+    let report = result.print_ready.expect("print-ready report");
+    assert_eq!(report.ruleset, "print-ready-v1");
 }

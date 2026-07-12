@@ -209,6 +209,7 @@ fn scene_with_effect_card(profile_format: ExportFormat) -> Scene {
         raster: None,
         include_bleed: false,
         embed_fonts: false,
+    include_marks: false,
     });
     scene
 }

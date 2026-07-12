@@ -101,6 +101,7 @@ impl ExportAdapter for PngExportAdapter {
         Ok(ExportResult {
             artifacts,
             diagnostics,
+            print_ready: None,
         })
     }
 }
@@ -193,6 +194,7 @@ mod tests {
                 raster,
                 include_bleed: false,
                 embed_fonts: false,
+            include_marks: false,
             },
             page_ids: vec![PageId::from("page")],
             purpose: ExportPurpose::UserDownload,

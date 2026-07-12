@@ -91,7 +91,10 @@ instead of repeatedly shrinking unrelated text nodes. Do not re-author the scene
 
 `LUMV0801` (node exceeds parent bounds) **downgrades to a warning** on a node
 tagged `bleed(true)` — declared off-canvas intent, not a fix-me (see
-`skills/effects`; content outside the page is not exported).
+`skills/effects`). Export semantics: on digital exports content outside the
+page is not exported; on PRINT exports with bleed, content inside the page's
+bleed box IS exported — edge-touching print art is REQUIRED to extend there
+(see `knowledge/export/print-geometry`).
 
 ## Typography v1 render/export advisories
 

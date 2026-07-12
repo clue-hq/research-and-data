@@ -16,11 +16,9 @@
 //! post-process in `lumen-export`, not here.
 
 use crate::fonts::FontManager;
-use crate::pdf_flatten::page_region;
+use crate::pdf_flatten::page_render_geometry;
 use crate::render::SkiaSceneRenderer;
-use lumen_core::{
-    unit_to_points, Diagnostic, DiagnosticSubject, PageId, Phase, Scene,
-};
+use lumen_core::{Diagnostic, DiagnosticSubject, PageId, Phase, Scene};
 use lumen_export::{
     AssetByteResolver, RasterizeError, RenderedPdf, RenderedPdfPage, ScenePdfRenderer,
 };
@@ -58,6 +56,7 @@ pub fn vector_pdf(
     page_ids: &[PageId],
     dpi: u16,
     include_bleed: bool,
+    include_marks: bool,
     resolver: Option<&dyn AssetByteResolver>,
 ) -> Result<RenderedPdf, RasterizeError> {
     let ids: Vec<PageId> = if page_ids.is_empty() {
@@ -108,15 +107,21 @@ pub fn vector_pdf(
                     format!("page {page_id} is not in the scene"),
                 )
             })?;
-            let region = page_region(page, include_bleed);
-            let scale_pt = unit_to_points(1.0, &page.size.unit);
-            let width_pt = (region.width * scale_pt).max(1.0) as f32;
-            let height_pt = (region.height * scale_pt).max(1.0) as f32;
+            let geometry = page_render_geometry(page, include_bleed, include_marks);
+            let width_pt = geometry.width_pt as f32;
+            let height_pt = geometry.height_pt as f32;
 
             let mut on_page = document.begin_page((width_pt, height_pt), None);
             let canvas = on_page.canvas();
             diagnostics.extend(renderer.paint_page_region_onto(
-                scene, page, &region, canvas, width_pt, height_pt, resolver,
+                scene,
+                page,
+                &geometry.region,
+                canvas,
+                width_pt,
+                height_pt,
+                resolver,
+                geometry.marks.as_ref(),
             ));
             document = on_page.end_page();
 
@@ -147,8 +152,17 @@ impl ScenePdfRenderer for SkiaVectorPdfRenderer {
         page_ids: &[PageId],
         dpi: u16,
         include_bleed: bool,
+        include_marks: bool,
         resolver: Option<&dyn AssetByteResolver>,
     ) -> Result<RenderedPdf, RasterizeError> {
-        vector_pdf(&self.renderer, scene, page_ids, dpi, include_bleed, resolver)
+        vector_pdf(
+            &self.renderer,
+            scene,
+            page_ids,
+            dpi,
+            include_bleed,
+            include_marks,
+            resolver,
+        )
     }
 }

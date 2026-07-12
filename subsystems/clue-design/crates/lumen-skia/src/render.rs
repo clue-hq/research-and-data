@@ -108,6 +108,22 @@ impl SkiaSceneRenderer {
         height_px: u32,
         resolver: Option<&dyn AssetByteResolver>,
     ) -> Result<RasterizedPage, RasterizeError> {
+        self.rasterize_page_region_with(scene, page_id, region, width_px, height_px, resolver, None)
+    }
+
+    /// [`Self::rasterize_page_region`] plus optional crop marks (print
+    /// W2/W3): the flattened PDF path rasterizes marks into the page image.
+    #[allow(clippy::too_many_arguments)]
+    pub fn rasterize_page_region_with(
+        &self,
+        scene: &Scene,
+        page_id: &PageId,
+        region: &lumen_core::Rect,
+        width_px: u32,
+        height_px: u32,
+        resolver: Option<&dyn AssetByteResolver>,
+        marks: Option<&CropMarks>,
+    ) -> Result<RasterizedPage, RasterizeError> {
         let page = scene.pages.get(page_id).ok_or_else(|| {
             RasterizeError::new(
                 "raster.page_missing",
@@ -136,6 +152,7 @@ impl SkiaSceneRenderer {
             width as f32,
             height as f32,
             resolver,
+            marks,
         );
 
         let image = surface.image_snapshot();
@@ -174,6 +191,7 @@ impl SkiaSceneRenderer {
         target_width: f32,
         target_height: f32,
         resolver: Option<&dyn AssetByteResolver>,
+        marks: Option<&CropMarks>,
     ) -> Vec<Diagnostic> {
         let mut painter = PagePainter {
             scene,
@@ -191,10 +209,77 @@ impl SkiaSceneRenderer {
             target_height / region.height.max(1.0) as f32,
         ));
         canvas.translate((-region.x as f32, -region.y as f32));
-        painter.paint_page(canvas, page, region);
+        // Content paints only inside the bleed area (the marks margin must
+        // stay ink-free apart from the marks themselves).
+        if let Some(marks) = marks {
+            canvas.save();
+            canvas.clip_rect(
+                SkRect::from_xywh(
+                    marks.bleed.x as f32,
+                    marks.bleed.y as f32,
+                    marks.bleed.width as f32,
+                    marks.bleed.height as f32,
+                ),
+                skia_safe::ClipOp::Intersect,
+                true,
+            );
+            painter.paint_page(canvas, page, region);
+            canvas.restore();
+            draw_crop_marks(canvas, marks);
+        } else {
+            painter.paint_page(canvas, page, region);
+        }
         canvas.restore();
 
         painter.diagnostics
+    }
+}
+
+/// Crop-mark geometry in layout coordinates (print W2/W3): `trim` is the
+/// cut line, `bleed` the ink boundary; marks draw OUTSIDE the bleed, from
+/// `gap` beyond it out to `margin` beyond it, aligned with the trim edges.
+#[derive(Clone, Debug)]
+pub struct CropMarks {
+    pub trim: lumen_core::Rect,
+    pub bleed: lumen_core::Rect,
+    pub margin: f64,
+    pub gap: f64,
+    pub stroke_width: f64,
+}
+
+fn draw_crop_marks(canvas: &Canvas, marks: &CropMarks) {
+    let mut paint = SkPaint::default();
+    paint.set_color(skia_safe::Color::BLACK);
+    paint.set_style(PaintStyle::Stroke);
+    paint.set_stroke_width(marks.stroke_width as f32);
+    paint.set_anti_alias(true);
+
+    let trim = &marks.trim;
+    let bleed = &marks.bleed;
+    let trim_right = trim.x + trim.width;
+    let trim_bottom = trim.y + trim.height;
+    let bleed_right = bleed.x + bleed.width;
+    let bleed_bottom = bleed.y + bleed.height;
+
+    // Horizontal segments (aligned with trim top/bottom, outside left/right
+    // bleed edges) and vertical segments (aligned with trim left/right,
+    // outside top/bottom bleed edges) — two marks per corner, eight total.
+    let segments: [((f64, f64), (f64, f64)); 8] = [
+        ((bleed.x - marks.margin, trim.y), (bleed.x - marks.gap, trim.y)),
+        ((bleed_right + marks.gap, trim.y), (bleed_right + marks.margin, trim.y)),
+        ((bleed.x - marks.margin, trim_bottom), (bleed.x - marks.gap, trim_bottom)),
+        ((bleed_right + marks.gap, trim_bottom), (bleed_right + marks.margin, trim_bottom)),
+        ((trim.x, bleed.y - marks.margin), (trim.x, bleed.y - marks.gap)),
+        ((trim.x, bleed_bottom + marks.gap), (trim.x, bleed_bottom + marks.margin)),
+        ((trim_right, bleed.y - marks.margin), (trim_right, bleed.y - marks.gap)),
+        ((trim_right, bleed_bottom + marks.gap), (trim_right, bleed_bottom + marks.margin)),
+    ];
+    for ((x0, y0), (x1, y1)) in segments {
+        canvas.draw_line(
+            Point::new(x0 as f32, y0 as f32),
+            Point::new(x1 as f32, y1 as f32),
+            &paint,
+        );
     }
 }
 

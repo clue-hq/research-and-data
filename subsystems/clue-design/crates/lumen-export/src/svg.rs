@@ -112,6 +112,7 @@ impl ExportAdapter for SvgExportAdapter {
         Ok(ExportResult {
             artifacts,
             diagnostics,
+            print_ready: None,
         })
     }
 }

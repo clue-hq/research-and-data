@@ -14,7 +14,10 @@ use lumen_core::{
 };
 
 /// Effective DPI below this threshold on a print export is flagged.
-pub const MIN_EFFECTIVE_PRINT_DPI: f64 = 150.0;
+/// Raised 150 → 300 with print W6: 150 was a screen-era floor; production
+/// print expects 300, and the print-ready report treats LUME0220 as a
+/// warning rule.
+pub const MIN_EFFECTIVE_PRINT_DPI: f64 = 300.0;
 const CSS_PX_PER_INCH: f64 = 96.0;
 
 /// Run asset export checks over every page in the request scope.

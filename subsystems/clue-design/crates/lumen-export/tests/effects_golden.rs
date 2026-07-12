@@ -107,6 +107,7 @@ fn render_svg(scene: &Scene) -> String {
             raster: None,
             include_bleed: false,
             embed_fonts: false,
+        include_marks: false,
         },
         page_ids: vec![PageId::from("page_card")],
         purpose: ExportPurpose::UserDownload,

@@ -86,7 +86,7 @@ pub use editing::{
 };
 pub use export_contract::{
     ExportAdapter, ExportArtifact, ExportError, ExportFormat, ExportProfile, ExportPurpose,
-    ExportRequest, ExportResult, PdfIntent, RasterScale,
+    ExportRequest, ExportResult, PdfIntent, PrintReadyReport, PrintReadyRule, RasterScale,
 };
 pub use hit_test::{hit_stack, hit_test};
 pub use ids::{

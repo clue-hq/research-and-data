@@ -91,6 +91,7 @@ pub trait ScenePdfRenderer: fmt::Debug + Send + Sync {
         page_ids: &[PageId],
         dpi: u16,
         include_bleed: bool,
+        include_marks: bool,
         resolver: Option<&dyn AssetByteResolver>,
     ) -> Result<RenderedPdf, RasterizeError>;
 }

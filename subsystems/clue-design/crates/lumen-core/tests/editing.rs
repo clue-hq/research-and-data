@@ -918,6 +918,7 @@ fn export_profile_delete_requires_a_surviving_profile() {
         raster: None,
         include_bleed: true,
         embed_fonts: true,
+    include_marks: false,
     });
 
     // Only profile: protected.
@@ -932,6 +933,7 @@ fn export_profile_delete_requires_a_surviving_profile() {
         raster: None,
         include_bleed: false,
         embed_fonts: false,
+    include_marks: false,
     });
 
     // Replacement must exist and differ.

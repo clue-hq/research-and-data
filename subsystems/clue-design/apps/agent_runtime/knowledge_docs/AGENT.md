@@ -84,6 +84,7 @@ Over-load, never under-load. The reference files are short and precise. Load
 | **Brand governance / off-brand diagnostics** | + `knowledge/design-systems/brand-validation` + `knowledge/design-systems/modes` |
 | **Logos / brand imagery** | + `knowledge/design-systems/logo-and-assets` + `knowledge/assets/asset-placement` |
 | **Shadows, special strokes, gradients** | `skills/effects` + `knowledge/lumen-dsl/colors` |
+| **Print document** (physical page preset, brochure/flyer/poster, print export) | + `knowledge/export/print-geometry` (bleed/trim/safe authoring via `#page:` lines; the print-ready rules a bulk run gates on) |
 | **Text-heavy / overflow risk** | `knowledge/design/typography-and-composition` + `knowledge/lumen-dsl/text` |
 | **Deciding which tool/function to call** | `skills/tools` |
 | **Per-surface layout skeleton** (reference) | `knowledge/design/layout-recipes` — conservative per-surface starting structures; the validator-passed `knowledge/design/blocks/patterns` is the production source, prefer it |

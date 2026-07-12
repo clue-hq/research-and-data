@@ -26,7 +26,7 @@ use skia_safe::{pdf, Data, Image, Paint as SkPaint, Rect as SkRect};
 
 /// The rendered region for one page in layout units: the bleed rect when
 /// requested and present, the trim (page) rect otherwise. Mirrors the
-/// vector writer's `PdfPageBox::for_page`.
+/// exact-box contract in `lumen_export::pdf_boxes`.
 pub(crate) fn page_region(page: &Page, include_bleed: bool) -> Rect {
     let trim = Rect {
         x: 0.0,
@@ -41,6 +41,59 @@ pub(crate) fn page_region(page: &Page, include_bleed: bool) -> Rect {
     }
 }
 
+/// Everything a PDF page render needs: the full render region (bleed,
+/// plus the marks margin when marks apply), the crop-mark geometry, and
+/// the page box in points. Shared by the flattened and vector renderers so
+/// their geometry can never drift — and it MUST agree with
+/// `lumen_export::pdf_boxes::page_boxes_with_margin`.
+pub(crate) struct PageRenderGeometry {
+    pub region: Rect,
+    pub marks: Option<crate::render::CropMarks>,
+    pub width_pt: f64,
+    pub height_pt: f64,
+}
+
+pub(crate) fn page_render_geometry(
+    page: &Page,
+    include_bleed: bool,
+    include_marks: bool,
+) -> PageRenderGeometry {
+    let scale_pt = unit_to_points(1.0, &page.size.unit);
+    let base = page_region(page, include_bleed);
+    let marks_active = include_marks && include_bleed && page.bleed.is_some();
+    let (region, marks) = if marks_active {
+        let margin = lumen_export::MARK_MARGIN_PT / scale_pt;
+        let gap = lumen_export::MARK_GAP_PT / scale_pt;
+        let region = Rect {
+            x: base.x - margin,
+            y: base.y - margin,
+            width: base.width + 2.0 * margin,
+            height: base.height + 2.0 * margin,
+        };
+        let marks = crate::render::CropMarks {
+            trim: Rect {
+                x: 0.0,
+                y: 0.0,
+                width: page.size.width,
+                height: page.size.height,
+            },
+            bleed: base.clone(),
+            margin,
+            gap,
+            stroke_width: 0.5 / scale_pt,
+        };
+        (region, Some(marks))
+    } else {
+        (base, None)
+    };
+    PageRenderGeometry {
+        width_pt: (region.width * scale_pt).max(1.0),
+        height_pt: (region.height * scale_pt).max(1.0),
+        region,
+        marks,
+    }
+}
+
 /// Render the requested pages at `dpi` through the scene rasterizer and
 /// flatten them into a PDF document (one image XObject per page, page
 /// boxes sized in points). Deterministic: no timestamps or random ids are
@@ -51,6 +104,7 @@ pub fn raster_flattened_pdf(
     page_ids: &[PageId],
     dpi: u16,
     include_bleed: bool,
+    include_marks: bool,
     resolver: Option<&dyn AssetByteResolver>,
 ) -> Result<RenderedPdf, RasterizeError> {
     let ids: Vec<PageId> = if page_ids.is_empty() {
@@ -92,15 +146,21 @@ pub fn raster_flattened_pdf(
                     format!("page {page_id} is not in the scene"),
                 )
             })?;
-            let region = page_region(page, include_bleed);
-            let scale_pt = unit_to_points(1.0, &page.size.unit);
-            let width_pt = (region.width * scale_pt).max(1.0);
-            let height_pt = (region.height * scale_pt).max(1.0);
+            let geometry = page_render_geometry(page, include_bleed, include_marks);
+            let width_pt = geometry.width_pt;
+            let height_pt = geometry.height_pt;
             let width_px = (width_pt / 72.0 * dpi).round().max(1.0) as u32;
             let height_px = (height_pt / 72.0 * dpi).round().max(1.0) as u32;
 
-            let raster = renderer
-                .rasterize_page_region(scene, page_id, &region, width_px, height_px, resolver)?;
+            let raster = renderer.rasterize_page_region_with(
+                scene,
+                page_id,
+                &geometry.region,
+                width_px,
+                height_px,
+                resolver,
+                geometry.marks.as_ref(),
+            )?;
             diagnostics.extend(raster.diagnostics);
 
             let image = Image::from_encoded(Data::new_copy(&raster.png)).ok_or_else(|| {
@@ -145,8 +205,17 @@ impl ScenePdfRenderer for SkiaSceneRenderer {
         page_ids: &[PageId],
         dpi: u16,
         include_bleed: bool,
+        include_marks: bool,
         resolver: Option<&dyn AssetByteResolver>,
     ) -> Result<RenderedPdf, RasterizeError> {
-        raster_flattened_pdf(self, scene, page_ids, dpi, include_bleed, resolver)
+        raster_flattened_pdf(
+            self,
+            scene,
+            page_ids,
+            dpi,
+            include_bleed,
+            include_marks,
+            resolver,
+        )
     }
 }
