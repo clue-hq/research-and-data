@@ -5,9 +5,14 @@ shape — finding → probe → build → measurement. Numbers over adjectives;
 caveats and failures recorded as prominently as wins. See the *Maintenance
 protocol* at the end before you append.
 
-**Status as of 2026-07-12:** Tier 0+1 shipped and acceptance-measured
-(commits `0a8458d` → `7b0fc24` → `7a83450` → `5e28d5a`, ledger `c128d57`).
-Tier 2 parked pending evidence.
+**Status as of 2026-07-13:** Tier 0+1 shipped, acceptance-measured, **and
+sweep-verified** across 7 briefs (commits `0a8458d` → `7b0fc24` → `7a83450` →
+`5e28d5a`, ledger `c128d57`; sweep on HEAD `4d32241`). The sweep confirmed
+**quality parity** with the A5 baseline (5 SHIP / 2 TWEAK / 0 REDO, 7/7 brief
+satisfaction, 7/7 accepted) and hit the **~3-minute target on every 1-round
+turn (3:28–3:58)**. Honest tail: 3-round turns still run 11–14 min — that is the
+review machinery working, and the remaining frontier is author micro-round
+count, not per-call latency. Tier 2 parked pending evidence.
 
 ---
 
@@ -345,6 +350,139 @@ now mostly cached away; the wall is dominated by the number of author
 micro-rounds (41 in the sample). Reducing *unnecessary* round-trips — without
 touching the compile-repair loop that produces quality — is where the next
 minutes live.
+
+---
+
+## Post-tier sweep: 7 briefs, timed end-to-end (2026-07-12/13)
+
+The acceptance section carried its own warning in bold: *one turn is a sample,
+not a proof.* This section is the follow-up that turns the sample into a
+distribution — 7 real turns, timed on the exact clock the user asked for, with
+the quality output judged against a pre-tier baseline. It records both what held
+(quality parity, the target met on short turns) and what did not close (an
+un-triggered watchdog, an amber quality flag that took a trace check to clear).
+
+**Setup.** The A5 re-sweep's **verbatim 7 briefs** (`PROMPT_A/B/C` in
+`.context/deepagent-v0/a5-resweep/driver.py`, ORDER `A1 B1 C1 A2 B2 C2 A3` — 3
+launch-ads, 2 webinar-invites, 2 customer-quotes), same kit
+(`brand_kit_ing_60eae5eb…` v5), same model (`openai:x-ai/grok-4.5`, all three
+roles), same empty-doc seeding. A **fresh server built from HEAD `4d32241`** on
+`:8011` (the `:8000` and `:8010` servers untouched). The one deliberate route
+change from A5: driven through the **sync** `POST /agent/turn-preview` rather
+than async `turns` + poll, so **END-TO-END = `t_received − t_sent`** — a single
+monotonic clock around one HTTP request per turn, which is the true
+first-input→final-output wall time the user asked to see. Full facts:
+`.context/latency-probes/tier1-sweep/SWEEP-RUNS.md` (+ `briefs.json`,
+`metrics.json`); quality: `SWEEP-JUDGING.md`.
+
+**Timing.**
+
+| turn | brief | END-TO-END | calls | s/call | cached % | batches | rounds | guard events |
+|---|---|---|---|---|---|---|---|---|
+| A1 | launch-ad | **3:58** | 35 | 6.79 | 88.1 | 4 | 1 | none |
+| B1 | webinar | **13:12** | 98 | 8.08 | 89.7 | 10 | 3 | none |
+| C1 | quote | **3:32** | 37 | 5.74 | 89.2 | 3 | 1 | none |
+| A2 | launch-ad | **9:07** | 85 | 6.43 | 88.6 | 5 | 2 | none |
+| B2 | webinar | **11:17** | 85 | 7.96 | 90.1 | 8 | 3 | 1 call >60s, **watchdog did NOT fire** |
+| C2 | quote | **3:28** | 32 | 6.49 | 85.9 | 5 | 1 | none |
+| A3 | launch-ad | **13:47** | 122 | 6.78 | 89.1 | 6 | 3 | `export_refused_unresolved_tokens` (self-corrected) |
+
+Aggregates: **median END-TO-END 9:07**, range **3:28–13:47**, total 58:20 for
+494 calls. **7/7 succeeded** (HTTP 200, reviewer-accepted `status=proposed`);
+**zero failures, zero retries, zero timeouts.** Cached **89.0% overall**, tight
+per-turn band **85.9–90.1%** — L1 holds turn-after-turn, not just on the
+happy-path acceptance sample (which read 93.1%). Of **27.63M input tokens**,
+24.60M were served from cache and only **3.03M were billed as uncached
+prefill**; 303K output. L0 fields (`duration_ms`/`model_id`/
+`cached_input_tokens`) present on **494/494** calls. **Call count is the wall
+driver: Pearson r(calls, e2e) = 0.978** — the plan's r=0.944 reproduced tighter.
+**41 multi-read batches** fired across all 7 turns (3–10 each; max batch 4),
+heaviest on the asset-heavy webinar briefs (B1 = 10, B2 = 8) — the load-test the
+acceptance turn's 2 batches could not provide. Trace-wall (first→last
+`trace.jsonl` event) agreed with END-TO-END within ~1.5s on every turn, so the
+HTTP/serialization overhead is a rounding error and the agent loop is the whole
+latency.
+
+**The bimodal reading — rounds, not per-call latency, own the wall.** Turn wall
+splits cleanly by reviewer-round count, not brief class: the three **1-round**
+turns finished **3:28–3:58 — AT the ~3-minute target**; the three **3-round**
+turns ran **11:17–13:47**. Per-call cost is now mostly cached away, so what's
+left is the count of author micro-rounds (a 3-round A3 = 122 calls). Those extra
+rounds are the quality machinery — the compile-repair and fidelity-review loops
+explicitly ruled off-limits at the top of this doc. So the honest frontier is
+**not** per-call latency or less review; it is **author micro-round count**
+(first-compile success), the same "call count is the real next lever" conclusion
+the acceptance section reached, now confirmed across a 7-turn distribution.
+
+**The guards ran in production, exactly as designed.** On A3 the L4-adjacent
+`export_refused_unresolved_tokens` fired on a render carrying **5 unresolved
+token paints** (which would have painted the magenta `LUME0213` sentinel) — the
+coordinator refused, the agent self-corrected the tokens, and the turn shipped.
+That is the **wasted-round class dying in production**: instead of a black/magenta
+frame reaching the reviewer and burning a re-review round (the exact L4
+motivating bug), the guard caught it pre-review and the agent fixed it inline.
+Elsewhere the L4 guards were silent by correctness: `unchanged_rerender_recorded`
+**0/7**, raster sentinel warnings **0**, `validation_error` **0** — the black-PNG
+class did not recur.
+
+**Quality vs the A5 baseline — parity, with one honest flag.** Fable vision
+judged the 7 shipped renders on the A5 rubric verbatim
+(`archetype-baseline-sweep/SWEEP-SPEC.md`). Result: **5 SHIP / 2 TWEAK / 0
+REDO**, **7/7 brief satisfaction**, **7/7 accepted** — matching A5's 7/7 with
+zero REDO. Craft was in places *richer* than baseline: two-color **headline**
+spans on C1 and C2 (A5's spans were body-only) and B1's authored stat-tile
+module. Distinctiveness scored **2.33/3 vs baseline 2.56** — a single-class
+swing: both quote runs (C1, C2) converged on typography-only posters (neither
+picked up the clinician portrait A5 used in its C2), so C-class fell 3.0→2.0
+while A rose and B held. The judge reads this as within run-to-run noise for a
+2-sample class (whether one run selects a raster portrait is a coin-flip-scale
+decision), not a Tier-1 attributable regression. Mechanical blemishes: **1 (B2)
+vs A5's 0** — B2's ingested product-card raster cover-fit leaked orphan
+baked-text fragments ("ne", "ct.") that shipped **unrepaired**, where A5's C2 hit
+the identical cover-fit class but *repaired it before accept*.
+
+**The B2 amber flag — and its trace-level refutation.** The judge flagged B2
+correctly and prominently: the miss lands on the exact review path Tier-1
+touched, so "a guard suppressed a pixel re-review of the card region" is a
+coherent mechanism, and the judge (rightly) declined to stamp neutrality without
+a trace check. We ran that check on
+`run_d14e3e8d888d46c385f9dc103e8c2972/trace.jsonl`, and it **refutes the
+mechanism**: **zero L4 guard events fired in B2** — no `unchanged_rerender_recorded`,
+no raster warnings, no refusals. The event timeline shows the card was
+placed/re-placed **three times** (18:03, 18:08, 18:10 cycles), each with a fresh
+render → fresh `view` calls → a **full reviewer pass after every placement**. The
+reviewer *saw* the frame three times and missed the fragments each time. This is
+a **stochastic reviewer miss on a pre-existing ingested-raster baked-text class**
+(the same cover-fit class the A5 baseline hit in its own C2), not a Tier-1
+behavior change. Bottom line: **no evidence of a Tier-1 quality regression**; the
+B2 blemish is a pre-existing class the baseline happened to catch and this run
+happened to miss.
+
+**Honest flags kept prominent:**
+
+- **s/call regressed vs acceptance — same code.** This sweep's per-turn s/call
+  band was **5.7–8.1** (mean-of-turns 6.9) against the acceptance sample's
+  **4.98**. The code is identical; the acceptance turn ran at 20:49, this sweep
+  22:59–23:58. Provider-load variance and heavier multi-round turns are both
+  plausible and **not separable** from a sample of 1 vs 7. Per-call p50 stayed
+  healthy (2.7–4.2s); the band is dragged by stragglers on the heavy briefs.
+- **The watchdog did NOT fire on a 66.8s call (B2).** One author call ran
+  66,816ms — past the configured 60s `agent_llm_timeout_s` — and completed
+  normally with no timeout/retry event. This is the **first live observation of a
+  >60s call on the upgraded stack**, and the guard designed for exactly this case
+  did not catch it. Working hypothesis: the SDK `request_timeout` bounds
+  per-attempt **socket-read silence**, not total call duration, so a call that
+  keeps streaming (or receives gateway keep-alives) can exceed 60s wall without
+  ever tripping a read-idle timeout. **Logged as an open follow-up — the watchdog
+  semantics need a dedicated probe** before we trust the 60s bound.
+- **The judge's re-run recommendation is still open.** A B/C-class re-run (×2)
+  to see whether the C-class typographic convergence and the non-logo-imagery
+  drop (2/7 → 1/7) reproduce or wash out as noise has **not** been done. Until it
+  is, the C-class dip is *read as* noise but not *proven* to be.
+
+Gates unchanged from the tier (no code touched by the sweep): the sweep is a
+measurement run, not a slice. No engine sources involved, so no wasm/handshake
+implications.
 
 ---
 
