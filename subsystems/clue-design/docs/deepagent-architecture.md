@@ -743,3 +743,50 @@ default busy watercolor vs the references' soft-orb vocabulary
 (.context/next-wave/rc-gate-evidence/imagegen/). Gates: api 309 ·
 agent-runtime 434 · zero regressions. RC2 items 2-4 stay parked
 (DET∧JUDGE palette, A8 interplay, attachment curation).
+
+## Latency Tier 0+1 — L0 enrichment · L1 cache pinning · L2 batched reads · L3 watchdog · L4 raster/re-review guards (2026-07-12, acceptance-measured)
+
+Diagnosis first (three-explorer evidence, .context/next-wave/
+deepagent-latency-analysis.md): LLM inference is 93–97% of turn wall-clock
+(tools 4–5%), wall ≈ call-count × ~7.2s (r=0.944), and each turn re-sent
+3.2M–12.9M input tokens COLD (53–128× the output) — no prompt caching, no
+per-call timeout, one tool call per completion, plus two runs that burned
+whole rounds re-reviewing a black-raster frame. Quality was ruled invariant:
+no round caps, no weaker models, no skipped verification anywhere in the tier.
+
+The four slices (`0a8458d` → `7b0fc24` → `7a83450` → `5e28d5a`): **L0** —
+`model_call_usage` gains duration_ms, served model_id, cached/reasoning token
+counts (+ OpenRouter `usage:{include:true}`); every later claim is measured
+against these fields. **L1** — OpenRouter `provider:{sort:"latency"}` pins one
+xAI replica; probe-proven 2/8 → 8/8 cache hits on a byte-identical 30K prefix
+(sort ALONE suffices; allow_fallbacks kept). The append-only-history
+cache-stability invariant is documented in harness.py — L5-style pruning must
+append, never mutate. **L3** — per-call timeout 60s + max_retries=2 (both
+blank-disable); exhausted retries land in the pre-existing honest
+failed-finalize path (now pinned by test). **L2** — batching teaching in all
+three role prompts (read-only view/inspect/read_file fan in ONE response;
+never-batch list: task, compile, render, preflight, asset, writes) after a
+live probe showed grok-4.5 emits 6 reads in one completion 3/3; langgraph
+executes batches concurrently with deterministic result order (cache-safe);
+`record()` gained a lock for the now-concurrent tool threads. **L4** — the
+PNG-black class was already root-cause-dead (925bdec white-clear+magenta
+sentinel, 055264d token-paint refusal; investigator reproduced the old bug
+and proved the fix live); the residual hole is closed: ≥99% sentinel pixels
+⇒ hard validation_error (frame never reaches review as ok), ≥99% near-uniform
+⇒ loud NON-blocking warning (minimalist designs stay legal). Unchanged-scene
+re-renders surface a deterministic `unchanged` fact + trace event and the
+orchestrator is taught to reuse the standing critique — advisory, not a hard
+block, so the RC anti-rubber-stamp REFUSED→re-review path cannot deadlock.
+
+ACCEPTANCE (one live turn, fresh server from HEAD; sample-not-proof):
+93.1% cached prefill (author 95%; a 132K-token call paid ~2.7K uncached);
+uncached input 0.22M vs 3.15M total; 4.98 s/call mean, p50 invoke 3.35s;
+zero >60s stragglers; guards clean; enrichment on 60/60 calls. Wall was
+4.98 min at 60 calls — call-count variance, the known #1 driver, not a
+per-call regression (a stale-server control run of the same brief: 36 calls,
+3.32 min, 0% cached). OPERATIONAL TRAP the acceptance surfaced: a
+long-running API serves pre-tier code — restart the API after pulling these
+commits or none of this fires. Tier 2 (L5 context pruning, L6 image
+downscale, L7 per-role reasoning) stays parked pending drift evidence and
+calibration A/Bs. Gates: runtime 474 · api 309 · zero regressions; no engine
+sources touched (no wasm/handshake implications).
