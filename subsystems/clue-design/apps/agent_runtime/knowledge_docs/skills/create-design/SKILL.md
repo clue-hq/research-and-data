@@ -57,6 +57,43 @@ Then declare, in your notes: the archetype, the surface treatment (solid paper /
 brand gradient field / soft radial wash / shadowed plate), and the imagery
 decision (kit asset / generate / deliberately none — see `knowledge/images/decide`).
 
+## Working from references (when the user attached them)
+
+When the run has references, `reference-brief.md` exists in the workspace (the
+Director wrote it by looking at every reference). **Read it FIRST — before you
+choose an archetype or treatment.** References can be ANY kind of image: a photo,
+an illustration, a busy poster, a typography specimen, a 3D render, a screenshot,
+a texture. There is no default "what a reference looks like."
+
+The discipline is the same whatever the image class:
+
+1. **Adopt the DEFINING qualities the brief names — not just the palette.** The
+   brief states the qualities that actually define these references: form
+   vocabulary, edge character, density, palette role, texture, mood, composition
+   rhythm. Build the design so those qualities are visible in the render. If the
+   references are a brutalist type poster, the defining quality might be raw
+   scale, tight tracking and hard left rag; if a soft atmospheric field, it might
+   be low saturation and edges that fade to nothing; if a product photo, it might
+   be a specific light and negative-space rhythm. Perceive what is THERE.
+2. **`view("reference:<n>")` the sources** and judge the match by looking, never
+   from metadata.
+3. **Never regress to house vocabulary.** The single failure this section exists
+   to break: reducing a reference to a couple of hex values and then composing in
+   the loop's *default* style — the vertical-poster reflex, the eyebrow pill, the
+   confetti blob. The moda rec-2 case is the canon example: soft-wash references
+   were reduced to a palette and the output came back as scattered hard-edged
+   blobs in the house style ("no problems detected" — because nobody checked
+   fidelity). That is ONE instance of a general trap; the trap is *palette-only
+   reduction*, and it applies to every image class, not just washes or gradients.
+4. **The brief still governs, and the kit still owns identity.** The user's prompt
+   overrides any incidental quality of a reference. And where a reference conflicts
+   with the brand kit, the KIT wins on identity — colors, fonts, logo — while the
+   reference supplies composition and mood. `reference-brief.md` says which is
+   which for this turn; follow it.
+
+The reviewer will judge `reference_fidelity` against these same qualities, so a
+design that ignored them will not pass.
+
 ## How to compose
 
 - **Build the chosen archetype's skeleton** (`knowledge/design/layout-recipes`) and

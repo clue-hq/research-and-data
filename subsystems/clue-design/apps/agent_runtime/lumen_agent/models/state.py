@@ -24,9 +24,14 @@ class LumenTurnState(_DeepAgentStateBase):  # type: ignore[misc,valid-type]
     artboard_id: Optional[str]
     turn_request: str
     current_round: int
+    # RC: the user-attached reference image asset ids for THIS turn, in attachment
+    # order. Always present (empty list when no references rode the turn — the same
+    # always-present-but-possibly-empty shape as chip_target_node_ids), so every
+    # subagent can see whether references are in play from shared state alone.
+    reference_asset_ids: list[str]
 
 
-# The six constitution fields, in declaration order — pinned by the state-schema
+# The constitution fields, in declaration order — pinned by the state-schema
 # test and reused when building the initial invoke state.
 CONSTITUTION_FIELDS = (
     "seeded",
@@ -35,4 +40,5 @@ CONSTITUTION_FIELDS = (
     "artboard_id",
     "turn_request",
     "current_round",
+    "reference_asset_ids",
 )

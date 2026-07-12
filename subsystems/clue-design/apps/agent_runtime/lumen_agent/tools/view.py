@@ -51,6 +51,23 @@ def _asset_manifest_ids(tools: LumenDesignTools) -> list[str]:
     return sorted(manifest.keys())
 
 
+def _reference_entries(tools: LumenDesignTools) -> list[tuple[int, str, dict]]:
+    """The turn's references as (1-based index, asset_id, entry), order-sorted.
+
+    `config.reference_assets` is the by-value RC manifest (see config.py). The
+    `order` field is the 0-based user attachment order; the view/docs surface
+    speaks 1-based (`reference:1` = the first attachment). None/empty → []."""
+    manifest = tools.config.reference_assets or {}
+    ordered = sorted(
+        manifest.items(), key=lambda kv: ((kv[1] or {}).get("order", 0), kv[0])
+    )
+    return [(i + 1, asset_id, entry or {}) for i, (asset_id, entry) in enumerate(ordered)]
+
+
+def _reference_target_labels(tools: LumenDesignTools) -> list[str]:
+    return [f"reference:{i}" for (i, _aid, _e) in _reference_entries(tools)]
+
+
 def _normalize_image_bytes(raw: bytes) -> tuple[bytes, str]:
     """Return (bytes, mime) for `raw`, upscaling to `_VISION_MIN_PX` on the short
     side when either dimension is below the vision-provider minimum.
@@ -188,9 +205,61 @@ def _view_content(tools: LumenDesignTools, target: str) -> list[dict]:
         tools.record("agent", "view_called", input_summary=target, output_summary=f"blocks={len(content)}")
         return content
 
+    if target.startswith("reference:"):
+        ref = target[len("reference:"):]
+        entries = _reference_entries(tools)
+        match = None
+        # 1-based index (`reference:1` = first attachment) or exact asset id.
+        if ref.isdigit():
+            wanted = int(ref)
+            match = next((e for e in entries if e[0] == wanted), None)
+        if match is None:
+            match = next((e for e in entries if e[1] == ref), None)
+        if match is None:
+            content = [
+                _text_block(
+                    f"view: unknown reference {ref!r}. "
+                    f"Available references: {_reference_target_labels(tools)}"
+                )
+            ]
+            tools.record("agent", "view_called", input_summary=target, output_summary="reference_unknown")
+            return content
+        index, asset_id, entry = match
+        digest = entry.get("preview_digest")
+        path = None
+        if digest:
+            store_root = Path(tools.config.effective_asset_store_root)
+            path = store_root / "sha256" / digest[:2] / digest
+        if path is None or not path.exists():
+            content = [
+                _text_block(
+                    f"view: reference {index} ({asset_id}) preview bytes are missing. "
+                    f"Available references: {_reference_target_labels(tools)}"
+                )
+            ]
+            tools.record("agent", "view_called", input_summary=target, output_summary="reference_missing_file")
+            return content
+        label = entry.get("title") or asset_id
+        content = [
+            _text_block(
+                f"view: reference {index} — {label} "
+                f"({to_virtual(path, tools.config)})"
+            ),
+            _image_block(path),
+        ]
+        tools.record("agent", "view_called", input_summary=target, output_summary=f"blocks={len(content)}")
+        return content
+
+    # Invalid target. Advertise the reference form ONLY when references rode this
+    # turn — never tease an empty target family (no-op guarantee: a no-reference
+    # turn's error string is byte-identical to before RC).
+    if tools.config.reference_assets:
+        targets = "\"preview\", \"asset:<asset_id>\", or \"reference:<n>\""
+    else:
+        targets = "\"preview\" or \"asset:<asset_id>\""
     content = [
         _text_block(
-            f"view: unknown target {target!r}. Use \"preview\" or \"asset:<asset_id>\". "
+            f"view: unknown target {target!r}. Use {targets}. "
             f"Available asset ids: {_asset_manifest_ids(tools)}"
         )
     ]

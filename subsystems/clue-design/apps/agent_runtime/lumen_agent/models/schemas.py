@@ -55,6 +55,28 @@ class VisualIssue(BaseModel):
     suggested_repair: str
 
 
+class ReferenceFidelity(BaseModel):
+    """RC (D5): the reviewer's judgment of whether the rendered design looks like
+    what the user ATTACHED as references — the twin of the kit-source compare, run
+    only when reference-brief.md exists. `score` is 0-3 (3 = adopts the references'
+    defining qualities; 0 = ignored them). `regressed_to_house_style` names the
+    rec-2 failure class explicitly: the design fell back to the loop's default
+    vocabulary instead of the references' qualities (palette-only reduction is one
+    instance). Absent (None on VisualCritique) when the turn has no references."""
+
+    # No ge/le bounds for the SAME reason as `confidence` below: JSON-schema
+    # minimum/maximum breaks the Anthropic structured-output path. Clamp in a
+    # validator instead (validators never surface in the emitted schema).
+    score: int = Field(default=0)
+    reasons: str = ""
+    regressed_to_house_style: bool = False
+
+    @field_validator("score")
+    @classmethod
+    def _clamp_score(cls, value: int) -> int:
+        return min(3, max(0, int(value)))
+
+
 class VisualCritique(BaseModel):
     accepted: bool
     summary: str
@@ -68,6 +90,10 @@ class VisualCritique(BaseModel):
     # Accept. Clamp in a validator instead; validators never surface in
     # the emitted schema.
     confidence: float = Field(default=0.0)
+    # RC (D5): the reference-fidelity axis. Default None keeps critique.json
+    # BACKWARD-COMPATIBLE — every pre-RC critique (no references) validates
+    # unchanged and every existing consumer that ignores the field is unaffected.
+    reference_fidelity: Optional[ReferenceFidelity] = None
 
     @field_validator("confidence")
     @classmethod

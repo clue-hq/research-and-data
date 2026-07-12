@@ -9,6 +9,7 @@ from typing import Optional
 from py_lumen_obs import get_logger
 
 from .tools.substrate import LumenDesignTools
+from .tools.view import _reference_entries
 
 logger = get_logger("lumen_agent.workspace")
 
@@ -56,7 +57,67 @@ def initial_turn_state(tools: LumenDesignTools, prompt: str) -> dict:
         "artboard_id": _first_page_id(tools),
         "turn_request": prompt,
         "current_round": 0,
+        # RC: attachment-ordered reference ids (empty list when none rode this turn).
+        "reference_asset_ids": [aid for (_i, aid, _e) in _reference_entries(tools)],
     }
+
+
+def _reference_record_label(record: dict) -> str:
+    """A human-facing filename/label for a reference, dug out of the engine asset
+    record defensively (the record shape is API-owned; RC only CONSUMES it). Falls
+    back to an em dash so the table never renders a bare `None`."""
+    if not isinstance(record, dict):
+        return "—"
+    provenance = record.get("provenance") or {}
+    for value in (
+        record.get("label"),
+        record.get("name"),
+        record.get("filename"),
+        provenance.get("source_label"),
+        provenance.get("filename"),
+    ):
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return "—"
+
+
+def _render_references_md(tools: LumenDesignTools) -> str:
+    """The mechanical reference metadata table (D4). One row per reference IN
+    ORDER; advisory describe text clearly marked. This file is METADATA ONLY — the
+    pixels are seen via view("reference:<n>"), and the DIRECTOR (not this scaffold)
+    writes reference-brief.md by perceiving them."""
+    entries = _reference_entries(tools)
+    lines: list[str] = [
+        f"# References — run {tools.run_id}",
+        "",
+        f"The user attached {len(entries)} reference image(s) to THIS turn. The rows "
+        "below are metadata only — an index, never the pixels.",
+        "",
+        "- To SEE a reference, call `view(\"reference:<n>\")` (1-based, matching the "
+        "index column) — judge by looking, never from this metadata.",
+        "- `reference-brief.md` does not exist yet: the Design Director MUST write it "
+        "(by viewing every reference) BEFORE round 1. This table does not describe "
+        "the references — it only lists them.",
+        "- Any `advisory title/description` below is optional describe-chain text; it "
+        "is NOT load-bearing and is frequently absent — never trust it over the pixels.",
+        "",
+        "| # | asset_id | label / filename | mime | dims | dominant colors | advisory title | advisory description |",
+        "|---|----------|------------------|------|------|-----------------|----------------|----------------------|",
+    ]
+    for index, asset_id, entry in entries:
+        record = entry.get("record") or {}
+        width, height = entry.get("width"), entry.get("height")
+        dims = f"{width}×{height}" if width and height else "—"
+        colors = ", ".join(entry.get("dominant_colors") or []) or "—"
+        title = (entry.get("title") or "—").replace("|", "\\|").replace("\n", " ")
+        description = (entry.get("description") or "—").replace("|", "\\|").replace("\n", " ")
+        label = _reference_record_label(record).replace("|", "\\|")
+        mime = entry.get("mime_type") or "—"
+        lines.append(
+            f"| {index} | {asset_id} | {label} | {mime} | {dims} | {colors} | {title} | {description} |"
+        )
+    lines.append("")
+    return "\n".join(lines)
 
 
 def scaffold_workspace(tools: LumenDesignTools, prompt: str) -> Path:
@@ -78,6 +139,14 @@ def scaffold_workspace(tools: LumenDesignTools, prompt: str) -> Path:
     (workspace / "state.json").write_text(
         json.dumps(initial_turn_state(tools, prompt), indent=2), encoding="utf-8"
     )
+
+    # RC: references.md ONLY when references rode the turn. No references → this
+    # file never appears and reference-brief.md is never mentioned anywhere — the
+    # scaffold is byte-identical to a pre-RC turn (pinned by test).
+    if tools.config.reference_assets:
+        (workspace / "references.md").write_text(
+            _render_references_md(tools), encoding="utf-8"
+        )
 
     (rounds / "index.md").write_text(
         f"# Rounds — run {tools.run_id}\n\n"

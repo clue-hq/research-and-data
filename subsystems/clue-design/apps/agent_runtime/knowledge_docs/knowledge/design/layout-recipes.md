@@ -53,6 +53,17 @@ brand-derived (see `knowledge/design/foundations`, "Avoid the AI clichés"):
   downgrades the `LUMV0801` overflow error to a warning (without the flag, an
   oversized shape is a hard error). Use the off-canvas form when the geometry (an
   ellipse, a rotated band) truly overhangs the edge; see `skills/effects`.
+  - **Alpha stops are the blur-free wash — the engine's native soft-edge move.**
+    Fade a colored stop to a *transparent* stop of the same colour and the falloff
+    is soft with NO blur pass and no cost: `fill(radial(stop(#ff2a6f97,0),
+    stop(#002a6f97,1)))` (8-digit input is `#AARRGGBB` — `#ff…` opaque center,
+    `#00…` fully transparent edge; see `knowledge/lumen-dsl/colors`). Linear reads
+    the same: `fill(linear(160, stop(#ff2a6f97,0), stop(#002a6f97,1)))`. Layer one
+    such wash over a solid ground for an atmospheric, low-saturation field; keep the
+    composition SPARSE (one wash, one focal cluster) — the restraint IS the look.
+    Reach for this before ever hand-placing hard-edged decorative shapes: a wash
+    that fades to transparent is depth; a scattered pale ellipse is confetti (see
+    `knowledge/design/foundations`, "Avoid the AI clichés").
 - **Shadowed plate/card** — a rounded surface lifted off the field with
   `shadow(...)`. The emblem's home; also lifts a single stat or quote.
 

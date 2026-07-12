@@ -165,6 +165,11 @@ def create_design_deepagent(
     view = make_view_tool(tools)
     render_preview = make_render_preview_tool(tools)
 
+    # RC (D4/D5): references rode this turn → the orchestrator/author/reviewer
+    # prompts gain their reference blocks. No references → every build_* call is a
+    # no-op and the three prompts are byte-identical to a pre-RC turn.
+    has_references = bool(runtime_config.reference_assets)
+
     # W-isolation (D6): the `skills` param is a list of SOURCE dirs the
     # SkillsMiddleware scans via `backend.ls(source)` — and it expects each source
     # to be the PARENT of skill directories (it treats every dir CHILD that holds a
@@ -187,7 +192,7 @@ def create_design_deepagent(
                 "Give it a round directory containing direction.md; it authors, "
                 "self-verifies, saves artifacts, and reports."
             ),
-            "system_prompt": build_author_prompt(workspace_str),
+            "system_prompt": build_author_prompt(workspace_str, has_references=has_references),
             "model": author_model,
             "tools": [
                 view,
@@ -206,7 +211,7 @@ def create_design_deepagent(
                 "kit's real assets. Returns a structured VisualCritique and "
                 "writes it to the round directory."
             ),
-            "system_prompt": build_reviewer_prompt(workspace_str),
+            "system_prompt": build_reviewer_prompt(workspace_str, has_references=has_references),
             "model": reviewer_model,
             "tools": [view, tools.inspect],
             "skills": workspace_skills,
@@ -253,7 +258,7 @@ def create_design_deepagent(
         state_schema=LumenTurnState,
         permissions=_filesystem_permissions(),
         tools=orchestrator_tools,
-        system_prompt=build_orchestrator_prompt(workspace_str),
+        system_prompt=build_orchestrator_prompt(workspace_str, has_references=has_references),
         subagents=subagents,
         name="lumen-design-deepagent",
     )

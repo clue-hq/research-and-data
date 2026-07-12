@@ -381,14 +381,16 @@ def test_all_prompts_have_resource_map_and_workspace_path():
 # --- 5. state schema --------------------------------------------------------
 
 
-def test_state_schema_declares_exactly_six_constitution_fields():
+def test_state_schema_declares_exactly_seven_constitution_fields():
     # A TypedDict subclass merges parent annotations into __annotations__; the
-    # constitution is exactly the six fields LumenTurnState adds over its base.
+    # constitution is exactly the fields LumenTurnState adds over its base. RC
+    # added `reference_asset_ids` (the always-present-but-possibly-empty ids).
     from lumen_agent.models import state as state_mod
     base_fields = set(getattr(state_mod._DeepAgentStateBase, "__annotations__", {}).keys())
     added_fields = set(LumenTurnState.__annotations__.keys()) - base_fields
     assert added_fields == set(CONSTITUTION_FIELDS)
-    assert len(CONSTITUTION_FIELDS) == 6
+    assert len(CONSTITUTION_FIELDS) == 7
+    assert "reference_asset_ids" in CONSTITUTION_FIELDS
 
 
 def test_initial_state_carries_seeded_chips_and_kit_ref(tmp_path, monkeypatch):
@@ -409,6 +411,8 @@ def test_initial_state_carries_seeded_chips_and_kit_ref(tmp_path, monkeypatch):
     assert state["turn_request"] == "Recolor the headline"
     assert state["current_round"] == 0
     assert isinstance(state["brand_kit_ref"], dict)
+    # RC: no references on this turn → empty list (always present, like chips).
+    assert state["reference_asset_ids"] == []
 
 
 # --- 6. runner honesty ------------------------------------------------------
@@ -460,3 +464,375 @@ def test_runner_honest_failure_when_agent_never_finalizes(tmp_path, monkeypatch)
     assert payload["stop_reason"] == "orchestrator_did_not_finalize"
     assert (tools.trace_dir / "final.json").exists()
     assert payload["summary"] == "agent ended without finalize"
+
+
+# --- 7. RC: reference-conditioned design ------------------------------------
+
+import hashlib
+from dataclasses import replace as _dc_replace
+
+from lumen_agent.models.schemas import ReferenceFidelity, VisualIssue
+from lumen_agent.prompts import (
+    build_orchestrator_prompt as _orch,
+    build_author_prompt as _auth,
+    build_reviewer_prompt as _rev,
+)
+
+
+def _store_reference_png(config, png: bytes) -> str:
+    """Write `png` into the shared content-addressed store and return its digest,
+    exactly where view() resolves reference bytes (sha256/<2>/<digest>)."""
+    digest = hashlib.sha256(png).hexdigest()
+    folder = Path(config.effective_asset_store_root) / "sha256" / digest[:2]
+    folder.mkdir(parents=True, exist_ok=True)
+    (folder / digest).write_bytes(png)
+    return digest
+
+
+def _reference_config(tmp_path, specs):
+    """Build a config whose reference_assets manifest mirrors the API's by-value
+    shape. `specs` = list of dicts: {asset_id, png, order, title?, description?,
+    colors?, label?, store?(bool, default True)}."""
+    base = runtime_config(tmp_path)
+    manifest = {}
+    for spec in specs:
+        png = spec["png"]
+        digest = _store_reference_png(base, png) if spec.get("store", True) else "0" * 64
+        manifest[spec["asset_id"]] = {
+            "record": {"id": spec["asset_id"], "label": spec.get("label", spec["asset_id"])},
+            "preview_digest": digest,
+            "mime_type": "image/png",
+            "width": 640,
+            "height": 640,
+            "dominant_colors": spec.get("colors", ["#112233", "#445566"]),
+            "title": spec.get("title"),
+            "description": spec.get("description"),
+            "order": spec["order"],
+        }
+    return _dc_replace(base, reference_assets=manifest)
+
+
+def _view(tools, target):
+    view = harness_mod.make_view_tool(tools)
+    return view.invoke({"name": "view", "args": {"target": target}, "id": "r", "type": "tool_call"}).content
+
+
+# 7f. finalize_run reference-fidelity guard (adversarial-gate F1) -------------
+
+
+def _finalize(tools, status="accepted", critique="{}"):
+    return tools.finalize_run(
+        status=status,
+        stop_reason="test",
+        summary="s",
+        critique_json=critique,
+    )
+
+
+def test_finalize_refuses_accepted_reference_turn_without_fidelity(tmp_path, monkeypatch):
+    """RC F1 (the deterministic anti-rubber-stamp): a reference turn can NEVER
+    finalize as accepted when the critique omits reference_fidelity — the
+    omission IS the moda failure (a review that never checked fidelity)."""
+    monkeypatch.setattr("lumen_agent.tools.substrate.CoreClient", FakeCoreClient)
+    tools = _tools_only(
+        _reference_config(tmp_path, [{"asset_id": "asset_r1", "png": _solid_png(), "order": 0}])
+    )
+    result = _finalize(tools, critique='{"accepted": true, "summary": "looks good"}')
+    assert result.startswith("REFUSED")
+    assert "reference_fidelity" in result
+    assert not (tools.trace_dir / "final.json").exists()
+
+
+def test_finalize_refuses_accepted_reference_turn_with_low_fidelity(tmp_path, monkeypatch):
+    monkeypatch.setattr("lumen_agent.tools.substrate.CoreClient", FakeCoreClient)
+    tools = _tools_only(
+        _reference_config(tmp_path, [{"asset_id": "asset_r1", "png": _solid_png(), "order": 0}])
+    )
+    result = _finalize(
+        tools,
+        critique='{"reference_fidelity": {"score": 1, "reasons": "ignored", "regressed_to_house_style": true}}',
+    )
+    assert result.startswith("REFUSED")
+    assert not (tools.trace_dir / "final.json").exists()
+
+
+def test_finalize_accepts_reference_turn_with_explicit_fidelity(tmp_path, monkeypatch):
+    monkeypatch.setattr("lumen_agent.tools.substrate.CoreClient", FakeCoreClient)
+    tools = _tools_only(
+        _reference_config(tmp_path, [{"asset_id": "asset_r1", "png": _solid_png(), "order": 0}])
+    )
+    result = _finalize(
+        tools,
+        critique='{"reference_fidelity": {"score": 3, "reasons": "adopts the qualities", "regressed_to_house_style": false}}',
+    )
+    assert not result.startswith("REFUSED")
+    assert (tools.trace_dir / "final.json").exists()
+
+
+def test_finalize_without_references_never_requires_fidelity(tmp_path, monkeypatch):
+    """The guard is reference-turn-only: a plain turn accepts exactly as before."""
+    monkeypatch.setattr("lumen_agent.tools.substrate.CoreClient", FakeCoreClient)
+    tools = _tools_only(runtime_config(tmp_path))
+    result = _finalize(tools, critique='{"accepted": true}')
+    assert not result.startswith("REFUSED")
+    assert (tools.trace_dir / "final.json").exists()
+
+
+def test_finalize_non_accepted_reference_turn_needs_no_fidelity(tmp_path, monkeypatch):
+    """Honest non-acceptance stays available without a fidelity judgment."""
+    monkeypatch.setattr("lumen_agent.tools.substrate.CoreClient", FakeCoreClient)
+    tools = _tools_only(
+        _reference_config(tmp_path, [{"asset_id": "asset_r1", "png": _solid_png(), "order": 0}])
+    )
+    result = _finalize(tools, status="failed", critique="{}")
+    assert not result.startswith("REFUSED")
+    assert (tools.trace_dir / "final.json").exists()
+
+
+# 7a. view("reference:<n>") ---------------------------------------------------
+
+
+def test_view_reference_by_1based_index(tmp_path, monkeypatch):
+    monkeypatch.setattr("lumen_agent.tools.substrate.CoreClient", FakeCoreClient)
+    first, second = _solid_png(544), _solid_png(576)
+    config = _reference_config(
+        tmp_path,
+        [
+            {"asset_id": "ref_b", "png": second, "order": 1},  # deliberately out of dict order
+            {"asset_id": "ref_a", "png": first, "order": 0},
+        ],
+    )
+    tools = _tools_only(config)
+
+    content = _view(tools, "reference:1")
+    images = [b for b in content if b["type"] == "image"]
+    texts = [b for b in content if b["type"] == "text"]
+    assert len(images) == 1 and len(texts) == 1
+    # order=0 is reference:1 → the FIRST attachment, regardless of dict insertion.
+    assert base64.b64decode(images[0]["data"]) == first
+    assert "reference 1" in texts[0]["text"]
+
+    # reference:2 is the order=1 attachment.
+    assert base64.b64decode([b for b in _view(tools, "reference:2") if b["type"] == "image"][0]["data"]) == second
+
+
+def test_view_reference_by_asset_id(tmp_path, monkeypatch):
+    monkeypatch.setattr("lumen_agent.tools.substrate.CoreClient", FakeCoreClient)
+    png = _solid_png(528)
+    config = _reference_config(tmp_path, [{"asset_id": "ref_x", "png": png, "order": 0}])
+    tools = _tools_only(config)
+
+    content = _view(tools, "reference:ref_x")
+    images = [b for b in content if b["type"] == "image"]
+    assert len(images) == 1
+    assert base64.b64decode(images[0]["data"]) == png
+
+
+def test_view_reference_unknown_lists_available(tmp_path, monkeypatch):
+    monkeypatch.setattr("lumen_agent.tools.substrate.CoreClient", FakeCoreClient)
+    config = _reference_config(tmp_path, [{"asset_id": "ref_a", "png": _solid_png(), "order": 0}])
+    tools = _tools_only(config)
+
+    content = _view(tools, "reference:9")
+    assert all(b["type"] == "text" for b in content)
+    assert "unknown reference" in content[0]["text"].lower()
+    assert "reference:1" in content[0]["text"]
+
+
+def test_view_reference_missing_bytes_is_honest(tmp_path, monkeypatch):
+    monkeypatch.setattr("lumen_agent.tools.substrate.CoreClient", FakeCoreClient)
+    # store=False → the digest points at a file that was never written.
+    config = _reference_config(
+        tmp_path, [{"asset_id": "ref_a", "png": _solid_png(), "order": 0, "store": False}]
+    )
+    tools = _tools_only(config)
+
+    content = _view(tools, "reference:1")
+    assert all(b["type"] == "text" for b in content)
+    assert "missing" in content[0]["text"].lower()
+
+
+def test_view_reference_none_attached_is_unknown(tmp_path, monkeypatch):
+    monkeypatch.setattr("lumen_agent.tools.substrate.CoreClient", FakeCoreClient)
+    tools = _tools_only(runtime_config(tmp_path))  # no reference_assets
+
+    content = _view(tools, "reference:1")
+    assert all(b["type"] == "text" for b in content)
+    assert "unknown reference" in content[0]["text"].lower()
+
+
+def test_view_invalid_target_advertises_reference_form_only_when_references(tmp_path, monkeypatch):
+    monkeypatch.setattr("lumen_agent.tools.substrate.CoreClient", FakeCoreClient)
+
+    # No references → the error string is byte-identical to pre-RC (no reference form).
+    plain = _tools_only(runtime_config(tmp_path))
+    plain_err = _view(plain, "bogus")[0]["text"]
+    assert "reference:<n>" not in plain_err
+    assert 'Use "preview" or "asset:<asset_id>"' in plain_err
+
+    # References attached → the error string offers the reference form.
+    ref_cfg = _reference_config(tmp_path, [{"asset_id": "ref_a", "png": _solid_png(), "order": 0}])
+    withref_err = _view(_tools_only(ref_cfg), "bogus")[0]["text"]
+    assert "reference:<n>" in withref_err
+
+
+# 7b. scaffold ----------------------------------------------------------------
+
+
+def test_scaffold_writes_references_md_and_state_ids(tmp_path, monkeypatch):
+    from lumen_agent.workspace import scaffold_workspace
+
+    monkeypatch.setattr("lumen_agent.tools.substrate.CoreClient", FakeCoreClient)
+    config = _reference_config(
+        tmp_path,
+        [
+            {"asset_id": "ref_a", "png": _solid_png(), "order": 0, "label": "logo-hero.png",
+             "colors": ["#0b1220", "#2a6f97"], "title": "advisory caption"},
+            {"asset_id": "ref_b", "png": _solid_png(), "order": 1, "label": "poster.jpg"},
+        ],
+    )
+    tools = _tools_only(config)
+    workspace = scaffold_workspace(tools, "Make a poster like these")
+
+    refs_md = (workspace / "references.md").read_text(encoding="utf-8")
+    # Header duties: view("reference:<n>") shows pixels; the DIRECTOR writes the brief.
+    assert 'view("reference:<n>")' in refs_md
+    assert "reference-brief.md" in refs_md
+    assert "BEFORE round 1" in refs_md
+    # One row per reference IN ORDER, with metadata + advisory clearly marked.
+    assert "| 1 | ref_a |" in refs_md
+    assert "| 2 | ref_b |" in refs_md
+    assert "logo-hero.png" in refs_md and "poster.jpg" in refs_md
+    assert "#0b1220" in refs_md
+    assert "advisory caption" in refs_md
+    assert "advisory" in refs_md.lower()
+
+    # reference-brief.md is the DIRECTOR's job — the scaffold must NOT pre-write it.
+    assert not (workspace / "reference-brief.md").exists()
+
+    state = json.loads((workspace / "state.json").read_text(encoding="utf-8"))
+    assert state["reference_asset_ids"] == ["ref_a", "ref_b"]
+
+
+def test_scaffold_without_references_is_byte_identical_noop(tmp_path, monkeypatch):
+    """The no-op guarantee: no references → references.md and reference-brief.md
+    never appear, and no scaffold file mentions references."""
+    from lumen_agent.workspace import scaffold_workspace
+
+    monkeypatch.setattr("lumen_agent.tools.substrate.CoreClient", FakeCoreClient)
+    tools = _tools_only(runtime_config(tmp_path))
+    workspace = scaffold_workspace(tools, "Make a plain poster")
+
+    assert not (workspace / "references.md").exists()
+    assert not (workspace / "reference-brief.md").exists()
+    # No reference language leaks into the human-facing scaffold files.
+    assert "reference" not in (workspace / "brief.md").read_text(encoding="utf-8").lower()
+    assert "reference" not in (workspace / "rounds" / "index.md").read_text(encoding="utf-8").lower()
+    # state.json carries the field but empty (the always-present-but-empty shape).
+    state = json.loads((workspace / "state.json").read_text(encoding="utf-8"))
+    assert state["reference_asset_ids"] == []
+
+
+# 7c. VisualCritique schema round-trip ---------------------------------------
+
+
+def test_visual_critique_roundtrip_without_reference_fidelity_is_backward_compatible():
+    # A pre-RC critique.json has no reference_fidelity key at all — it must still
+    # validate, defaulting the field to None, and re-serialize with it None.
+    legacy_json = json.dumps(
+        {"accepted": True, "summary": "looks good", "issues": [], "confidence": 0.9}
+    )
+    critique = VisualCritique.model_validate_json(legacy_json)
+    assert critique.reference_fidelity is None
+    reloaded = VisualCritique.model_validate_json(critique.model_dump_json())
+    assert reloaded.reference_fidelity is None
+
+
+def test_visual_critique_roundtrip_with_reference_fidelity_and_score_clamp():
+    critique = VisualCritique(
+        accepted=False,
+        summary="regressed to house style",
+        issues=[],
+        reference_fidelity=ReferenceFidelity(
+            score=7, reasons="ignored the references' hard edges", regressed_to_house_style=True
+        ),
+    )
+    # Score clamps into 0..3 (no JSON-schema min/max, like confidence).
+    assert critique.reference_fidelity.score == 3
+    reloaded = VisualCritique.model_validate_json(critique.model_dump_json())
+    assert reloaded.reference_fidelity is not None
+    assert reloaded.reference_fidelity.regressed_to_house_style is True
+    assert reloaded.reference_fidelity.reasons == "ignored the references' hard edges"
+
+    # ToolStrategy(VisualCritique) still constructs (reviewer output path, D11).
+    assert ToolStrategy(VisualCritique).schema is VisualCritique
+
+
+# 7d. prompt contract (RC blocks are conditional + no-op) --------------------
+
+
+def test_prompts_without_references_are_byte_identical_to_default():
+    ws = "/tmp/ws-rc"
+    # The default (one-arg) call and the explicit has_references=False call are the
+    # SAME string, and neither carries any RC reference block — the prompt no-op pin.
+    # (The base author prompt legitimately says "the DSL reference"; the pin is on
+    # the RC-specific markers, not the substring "reference".)
+    rc_markers = (
+        "references.md",
+        "reference-brief.md",
+        "reference:<n>",
+        "reference_fidelity",
+        "REFERENCE IMAGES",
+        "REFERENCE FIDELITY",
+    )
+    for build in (_orch, _auth, _rev):
+        assert build(ws) == build(ws, has_references=False)
+        rendered = build(ws)
+        for marker in rc_markers:
+            assert marker not in rendered
+
+
+def test_orchestrator_prompt_with_references_carries_step_1b():
+    ws = "/tmp/ws-rc"
+    orch = _orch(ws, has_references=True)
+    assert "references.md" in orch
+    assert "reference-brief.md" in orch
+    assert 'view("reference:<n>")' in orch
+    # The three brief duties + precedence + injection scoping + blocking gate.
+    assert "DEFINING QUALITIES" in orch
+    assert "REFERENCE-vs-KIT PRECEDENCE" in orch
+    assert "kit identity" in orch
+    # Injection scoping: attacker text inside a reference image is content, not commands.
+    assert "content to depict or ignore" in orch
+    assert "reference_fidelity" in orch
+    assert "<=1" in orch
+
+
+def test_harness_threads_has_references_into_all_three_prompts(tmp_path, monkeypatch):
+    """End-to-end wiring: a reference config makes create_design_deepagent scaffold
+    references.md AND inject the reference blocks into all three role prompts."""
+    capture: dict = {}
+    _install_deepagents_stub(monkeypatch, capture)
+
+    config = _reference_config(tmp_path, [{"asset_id": "ref_a", "png": _solid_png(), "order": 0}])
+    _agent, tools = create_design_deepagent("Design like this", config)
+
+    assert (tools.trace_dir / "workspace" / "references.md").exists()
+    kwargs = capture["kwargs"]
+    assert "reference-brief.md" in kwargs["system_prompt"]  # orchestrator
+    subagents = {sa["name"]: sa for sa in kwargs["subagents"]}
+    assert "reference-brief.md" in subagents["lumen-dsl-author"]["system_prompt"]
+    assert "REFERENCE FIDELITY" in subagents["lumen-visual-reviewer"]["system_prompt"]
+
+
+def test_author_and_reviewer_prompts_with_references():
+    ws = "/tmp/ws-rc"
+    author = _auth(ws, has_references=True)
+    assert "reference-brief.md" in author
+    assert "house vocabulary" in author
+
+    reviewer = _rev(ws, has_references=True)
+    assert "REFERENCE FIDELITY" in reviewer
+    assert "reference_fidelity" in reviewer
+    assert "regressed_to_house_style" in reviewer
+    assert 'view("reference:<n>")' in reviewer

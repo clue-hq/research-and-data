@@ -53,6 +53,27 @@ class AgentRuntimeConfig:
     # the reviewer's blocker on the requested target was "out of scope" by
     # construction. None/empty → no declared targets, behavior unchanged.
     turn_target_node_ids: list[str] | None = None
+    # RC (reference-conditioned design): the user-attached reference images for
+    # THIS turn, resolved by the API from its asset library and passed BY VALUE
+    # (same rule as brand_kit_assets: the runtime never reads the API database).
+    # Shape — THE contract both sides build against:
+    #   {asset_id: {
+    #     "record": <engine asset record, verbatim from the library>,
+    #     "preview_digest": str,   # sha256 of a RASTER (png/jpg/webp) in the
+    #                              # shared store — SVG references are
+    #                              # pre-rasterized by the API at resolve time,
+    #                              # so the runtime only ever handles rasters
+    #     "mime_type": str,
+    #     "width": int | None, "height": int | None,
+    #     "dominant_colors": [str, ...],   # <=6 hex, API-computed
+    #     "title": str | None, "description": str | None,  # advisory describe
+    #                              # text when present — NEVER load-bearing
+    #     "order": int,            # 0-based user attachment order
+    #   }}
+    # References are per-turn context (transient intent), not document state.
+    # None/empty -> no references; every RC step is a no-op and the turn is
+    # byte-identical to today.
+    reference_assets: dict | None = None
     # OpenRouter unified reasoning effort ("low" | "medium" | "high") applied to
     # every deep-agent LLM call via the one gateway constructor (init_model).
     # None → the request carries no reasoning field (provider default, i.e.

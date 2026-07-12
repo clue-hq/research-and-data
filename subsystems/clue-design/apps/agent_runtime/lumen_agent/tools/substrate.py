@@ -3576,6 +3576,37 @@ class LumenDesignTools:
         unseeded run or a run with no unaddressed baseline issues.
         """
         critique = json.loads(critique_json) if critique_json.strip() else {}
+        # RC (D5; adversarial-gate F1 — the deterministic anti-rubber-stamp
+        # guard, the tool-level twin of the edit-scoped acceptance refusal):
+        # a REFERENCE turn can never finalize as "accepted" without an explicit
+        # reviewer fidelity judgment of >= 2. A critique that OMITS
+        # reference_fidelity is exactly the moda failure RC exists to kill — a
+        # review pass that never asked "does this look like what the user
+        # attached?" — so the omission itself refuses the finalize. The
+        # orchestrator gets an actionable refusal string and must re-run the
+        # reviewer (or finalize honestly as not-accepted).
+        if status == "accepted" and (self.config.reference_assets or {}):
+            fidelity = (critique or {}).get("reference_fidelity") or {}
+            score = fidelity.get("score")
+            if not isinstance(score, int) or score <= 1:
+                reason = (
+                    "no reference_fidelity judgment in the critique"
+                    if not fidelity
+                    else f"reference_fidelity score is {score!r}"
+                )
+                self.record(
+                    "coordinator",
+                    "finalize_refused_reference_fidelity",
+                    output_summary=reason,
+                )
+                return (
+                    "REFUSED: this turn has user-attached references, and a run "
+                    f"cannot finalize as accepted with {reason}. Send the "
+                    "reviewer back for an explicit reference_fidelity judgment "
+                    "(view each reference:<n> against the preview); accept only "
+                    "at score >= 2, or finalize honestly with a non-accepted "
+                    "status."
+                )
         baseline_advisory = (
             json.loads(baseline_advisory_json) if baseline_advisory_json.strip() else None
         )
