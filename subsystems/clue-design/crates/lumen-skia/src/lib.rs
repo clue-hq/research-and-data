@@ -21,5 +21,6 @@ pub mod render;
 
 pub use fonts::{FamilyResolution, FontLoadError, FontManager, DEFAULT_FONT_FAMILY};
 pub use measure::SkiaTextMeasurer;
-pub use pdf_flatten::{raster_flattened_pdf, FlattenedPdf, FlattenedPdfPage};
+pub use lumen_export::{FlattenedPdf, FlattenedPdfPage};
+pub use pdf_flatten::raster_flattened_pdf;
 pub use render::SkiaSceneRenderer;

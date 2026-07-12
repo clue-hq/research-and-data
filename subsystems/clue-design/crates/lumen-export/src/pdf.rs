@@ -1,3 +1,5 @@
+use crate::raster::PdfFlattener;
+use crate::resolver::AssetByteResolver;
 use crate::sidecar::build_sidecar;
 use crate::svg::{fmt_num, measurer_as_dyn, resolve_page_ids, FALLBACK_MEASURER};
 use lumen_core::{
@@ -7,10 +9,17 @@ use lumen_core::{
     Page, Paint, PdfIntent, Phase, Rect, RenderTarget, Scene, SharedTextMeasurer, TextAlign,
     TextDirection, TextMeasureInput, TextMeasurer, valign_offset,
 };
+use std::sync::Arc;
+
+/// Raster density for flattened PDF pages when the export profile does not
+/// request one — the BINDING B3 print default (300 dpi).
+const DEFAULT_FLATTEN_DPI: u16 = 300;
 
 #[derive(Clone, Debug, Default)]
 pub struct PdfExportAdapter {
     measurer: Option<SharedTextMeasurer>,
+    flattener: Option<Arc<dyn PdfFlattener>>,
+    resolver: Option<Arc<dyn AssetByteResolver>>,
 }
 
 impl PdfExportAdapter {
@@ -22,6 +31,21 @@ impl PdfExportAdapter {
     /// diagnostics and line layout agree with layout-engine measurement.
     pub fn with_measurer(mut self, measurer: SharedTextMeasurer) -> Self {
         self.measurer = Some(measurer);
+        self
+    }
+
+    /// Inject a raster-flattening PDF renderer (print W0). PDF export then
+    /// rides the same Skia paint as PNG — full fidelity by construction —
+    /// instead of the early vector writer below.
+    pub fn with_flattener(mut self, flattener: Arc<dyn PdfFlattener>) -> Self {
+        self.flattener = Some(flattener);
+        self
+    }
+
+    /// Resolver handed to the injected flattener so image nodes embed real
+    /// asset bytes (the early vector writer never draws images and ignores it).
+    pub fn with_resolver(mut self, resolver: Arc<dyn AssetByteResolver>) -> Self {
+        self.resolver = Some(resolver);
         self
     }
 }
@@ -39,6 +63,10 @@ impl ExportAdapter for PdfExportAdapter {
                 "export request references missing pages",
             )
             .with_diagnostics(resolved.diagnostics));
+        }
+
+        if let Some(flattener) = self.flattener.clone() {
+            return self.export_flattened(scene, request, flattener.as_ref(), resolved);
         }
 
         let mut diagnostics = resolved.diagnostics;
@@ -109,6 +137,85 @@ impl ExportAdapter for PdfExportAdapter {
                 asset_id: None,
                 mime_type: "application/pdf".to_owned(),
                 bytes: writer.finish(),
+                sidecar_json,
+            }],
+            diagnostics,
+        })
+    }
+}
+
+impl PdfExportAdapter {
+    /// Print W0 path: pages render through the injected Skia scene renderer
+    /// and embed as one image per PDF page — full fidelity (fonts, images,
+    /// gradients, effects) by construction, because it is the same paint the
+    /// PNG export uses. The early vector writer's fidelity warnings
+    /// (LUME0401/0402) and its PDF-target feature-drop verdicts do not apply
+    /// here; the one honest caveat is rasterization itself, declared as
+    /// LUME0426. Print guardrails (safe area, bleed presence, pagination)
+    /// are geometry checks independent of the paint path and still run.
+    fn export_flattened(
+        &self,
+        scene: &Scene,
+        request: &ExportRequest,
+        flattener: &dyn PdfFlattener,
+        resolved: crate::svg::PageResolution,
+    ) -> Result<ExportResult, ExportError> {
+        let mut diagnostics = resolved.diagnostics;
+        let page_ids = resolved.page_ids;
+
+        diagnostics.extend(print_document_guardrails(scene, &page_ids, request));
+        for page_id in &page_ids {
+            if let Some(page) = scene.pages.get(page_id) {
+                diagnostics.extend(print_page_guardrails(scene, page, request));
+            }
+        }
+
+        // The profile's raster block is authoritative when present (its
+        // `scale` is a pixel-density concept with no meaning for fixed
+        // point-sized PDF pages and is ignored; only dpi applies).
+        let dpi = request
+            .profile
+            .raster
+            .as_ref()
+            .and_then(|raster| raster.dpi)
+            .unwrap_or(DEFAULT_FLATTEN_DPI);
+        diagnostics.push(
+            Diagnostic::advice(
+                Phase::Export,
+                "LUME0426",
+                format!(
+                    "PDF export is raster-flattened at {dpi} dpi: pages paint through the Skia scene renderer and embed as images, so output matches PNG exactly but text is not selectable"
+                ),
+                Some(DiagnosticSubject::Document),
+            )
+            .with_hint(
+                "Vector print PDF (embedded fonts, live text, trim/bleed boxes) lands with the Skia PDF backend workstream.",
+            ),
+        );
+
+        let flattened = flattener
+            .flatten_pdf(
+                scene,
+                &page_ids,
+                dpi,
+                request.profile.include_bleed,
+                self.resolver.as_deref(),
+            )
+            .map_err(|error| {
+                ExportError::new(error.code, error.message).with_diagnostics(diagnostics.clone())
+            })?;
+        diagnostics.extend(flattened.diagnostics);
+
+        let sidecar = build_sidecar(scene, &page_ids, &request.profile.name);
+        let sidecar_json = serde_json::to_string_pretty(&sidecar).ok();
+
+        Ok(ExportResult {
+            artifacts: vec![ExportArtifact {
+                format: ExportFormat::Pdf,
+                page_id: None,
+                asset_id: None,
+                mime_type: "application/pdf".to_owned(),
+                bytes: flattened.bytes,
                 sidecar_json,
             }],
             diagnostics,

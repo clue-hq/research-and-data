@@ -164,15 +164,18 @@ fn server_measurer() -> SharedTextMeasurer {
 
 /// Export adapter composition for every server export path (slice A4):
 /// Skia text measurement for SVG/PDF line breaks and the direct Skia scene
-/// rasterizer for PNG — measurer and renderer share one FontManager, so
-/// critic previews and artifacts shape text identically to preflight.
+/// renderer for PNG rasters and raster-flattened PDF (print W0) — measurer
+/// and renderer share one FontManager, so critic previews and artifacts
+/// shape text identically to preflight.
 fn server_export_adapter_with(
     adapter: LumenExportAdapter,
     fonts: Arc<FontManager>,
 ) -> LumenExportAdapter {
+    let renderer = Arc::new(SkiaSceneRenderer::new(Arc::clone(&fonts)));
     adapter
-        .with_measurer(Arc::new(SkiaTextMeasurer::new(Arc::clone(&fonts))))
-        .with_rasterizer(Arc::new(SkiaSceneRenderer::new(fonts)))
+        .with_measurer(Arc::new(SkiaTextMeasurer::new(fonts)))
+        .with_rasterizer(Arc::clone(&renderer) as _)
+        .with_flattener(renderer)
 }
 
 fn server_export_adapter(adapter: LumenExportAdapter) -> LumenExportAdapter {
@@ -2100,6 +2103,7 @@ fn export_instance_artifacts(
                             scene,
                             &page_ids,
                             dpi,
+                            false,
                             Some(resolver.as_ref()),
                         ) {
                             Ok(flattened) => {

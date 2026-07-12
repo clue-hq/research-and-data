@@ -15,7 +15,9 @@ pub mod svg;
 pub use checks::{asset_export_checks, license_enforced, MIN_EFFECTIVE_PRINT_DPI};
 pub use pdf::PdfExportAdapter;
 pub use png::PngExportAdapter;
-pub use raster::{PageRasterizer, RasterizeError, RasterizedPage};
+pub use raster::{
+    FlattenedPdf, FlattenedPdfPage, PageRasterizer, PdfFlattener, RasterizeError, RasterizedPage,
+};
 pub use resolver::{
     AssetByteResolver, AssetResolveError, FixtureAssetResolver, ResolvedAssetBytes,
 };
@@ -42,14 +44,13 @@ impl LumenExportAdapter {
         Self::default()
     }
 
-    /// Build an export adapter whose SVG and PNG paths embed real asset
-    /// bytes through the given resolver. PDF asset embedding is a
-    /// follow-up; its print preflight already validates asset metadata.
+    /// Build an export adapter whose SVG, PNG, and flattened-PDF paths
+    /// embed real asset bytes through the given resolver.
     pub fn with_resolver(resolver: Arc<dyn AssetByteResolver>) -> Self {
         Self {
             svg: SvgExportAdapter::with_resolver(Arc::clone(&resolver)),
-            png: PngExportAdapter::with_resolver(resolver),
-            pdf: PdfExportAdapter::new(),
+            png: PngExportAdapter::with_resolver(Arc::clone(&resolver)),
+            pdf: PdfExportAdapter::new().with_resolver(resolver),
         }
     }
 
@@ -69,6 +70,17 @@ impl LumenExportAdapter {
     pub fn with_rasterizer(self, rasterizer: Arc<dyn PageRasterizer>) -> Self {
         Self {
             png: self.png.with_rasterizer(rasterizer),
+            ..self
+        }
+    }
+
+    /// Inject a raster-flattening PDF renderer (print W0). With one
+    /// injected, PDF export produces the full-fidelity flattened document
+    /// instead of the early vector writer, which stays as the un-injected
+    /// (wasm-portable) fallback until the Skia vector PDF backend lands.
+    pub fn with_flattener(self, flattener: Arc<dyn PdfFlattener>) -> Self {
+        Self {
+            pdf: self.pdf.with_flattener(flattener),
             ..self
         }
     }

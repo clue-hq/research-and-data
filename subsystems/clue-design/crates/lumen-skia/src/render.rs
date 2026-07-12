@@ -86,6 +86,34 @@ impl PageRasterizer for SkiaSceneRenderer {
                 format!("page {page_id} is not in the scene"),
             )
         })?;
+        let region = page_geometry(page).layout;
+        self.rasterize_page_region(scene, page_id, &region, width_px, height_px, resolver)
+    }
+}
+
+impl SkiaSceneRenderer {
+    /// Rasterize an arbitrary page-space region (layout units) at the given
+    /// pixel size. The region may extend beyond the page rect — the bleed
+    /// box for print export is the motivating case — in which case page
+    /// background fills paint across the whole region (full-bleed
+    /// semantics, matching the vector PDF writer's bleed MediaBox fill) and
+    /// content nodes paint at their page-space positions, so edge-touching
+    /// art that extends past trim is included.
+    pub fn rasterize_page_region(
+        &self,
+        scene: &Scene,
+        page_id: &PageId,
+        region: &lumen_core::Rect,
+        width_px: u32,
+        height_px: u32,
+        resolver: Option<&dyn AssetByteResolver>,
+    ) -> Result<RasterizedPage, RasterizeError> {
+        let page = scene.pages.get(page_id).ok_or_else(|| {
+            RasterizeError::new(
+                "raster.page_missing",
+                format!("page {page_id} is not in the scene"),
+            )
+        })?;
 
         let width = i32::try_from(width_px.max(1))
             .map_err(|_| RasterizeError::new("raster.size_invalid", "raster width exceeds i32"))?;
@@ -121,12 +149,12 @@ impl PageRasterizer for SkiaSceneRenderer {
             // page. Declared page backgrounds and node fills still paint on
             // top, so nothing that resolves is affected.
             canvas.clear(skia_safe::Color::WHITE);
-            let geometry = page_geometry(page);
             canvas.scale((
-                width as f32 / geometry.layout.width.max(1.0) as f32,
-                height as f32 / geometry.layout.height.max(1.0) as f32,
+                width as f32 / region.width.max(1.0) as f32,
+                height as f32 / region.height.max(1.0) as f32,
             ));
-            painter.paint_page(canvas, page);
+            canvas.translate((-region.x as f32, -region.y as f32));
+            painter.paint_page(canvas, page, region);
         }
 
         let image = surface.image_snapshot();
@@ -151,12 +179,20 @@ struct PagePainter<'a> {
 }
 
 impl<'a> PagePainter<'a> {
-    fn paint_page(&mut self, canvas: &Canvas, page: &Page) {
+    fn paint_page(&mut self, canvas: &Canvas, page: &Page, background_region: &lumen_core::Rect) {
         self.diagnostics
             .extend(page_background_token_diagnostics(page));
         let geometry = page_geometry(page);
-        let page_rect =
-            SkRect::from_wh(geometry.layout.width as f32, geometry.layout.height as f32);
+        // Background fills cover the whole requested region (= the page rect
+        // for plain rasters, the bleed box for print regions). Gradient
+        // geometry stays sized to the page, so the bleed margin continues
+        // the edge colors instead of rescaling the ramp.
+        let background_rect = SkRect::from_xywh(
+            background_region.x as f32,
+            background_region.y as f32,
+            background_region.width as f32,
+            background_region.height as f32,
+        );
         for fill in &page.background {
             let paint = self.fill_paint(
                 &fill.paint,
@@ -164,7 +200,7 @@ impl<'a> PagePainter<'a> {
                 geometry.layout.height,
                 None,
             );
-            canvas.draw_rect(page_rect, &paint);
+            canvas.draw_rect(background_rect, &paint);
         }
 
         for child_id in &page.children {

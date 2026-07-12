@@ -103,11 +103,12 @@ dropped in silence:
 |------|---------|--------|
 | `LUME0214` | **RETIRED** in Typography v1 — text strokes now render (single solid stroke, outline behind fill). No longer emitted. | none; a single solid text stroke is supported |
 | `LUME0215` | a text node has >1 stroke, a gradient stroke paint, or a dashed stroke — only the first **solid** stroke renders; the extras are ignored | use a single solid text stroke; gradient/dash/multi-stroke text outlines are out of scope |
-| `LUME0421` | PDF export cannot render text `underline`/`strike` | export SVG/PNG for text decoration, or drop it for the PDF |
-| `LUME0422` | PDF export cannot render a text stroke | export SVG/PNG for text strokes, or drop the stroke for the PDF |
-| `LUME0423` | PDF export renders only the first fill for a multi-fill text node | use a single text fill for PDF |
-| `LUME0424` | PDF export cannot render rich-text spans — the base text renders complete, the per-run span styling (accent color/weight/decoration) does not | export SVG/PNG when a two-color/span headline must ship; or drop the spans for the PDF |
-| `LUME0425` | PDF export cannot render `italic` (block or span) — the base text renders in the upright face, the slant is dropped (advisory, the sibling of `LUME0424`) | export SVG/PNG when italic emphasis must ship; or drop the italic for the PDF |
+| `LUME0421` | **legacy-stub only** (see `LUME0426` note below) — PDF export cannot render text `underline`/`strike` | not emitted on server exports; if seen, export SVG/PNG for text decoration |
+| `LUME0422` | **legacy-stub only** — PDF export cannot render a text stroke | not emitted on server exports; if seen, export SVG/PNG for text strokes |
+| `LUME0423` | **legacy-stub only** — PDF export renders only the first fill for a multi-fill text node | not emitted on server exports; if seen, use a single text fill for PDF |
+| `LUME0424` | **legacy-stub only** — PDF export cannot render rich-text spans | not emitted on server exports; if seen, export SVG/PNG for span styling |
+| `LUME0425` | **legacy-stub only** — PDF export cannot render `italic` (block or span) | not emitted on server exports; if seen, export SVG/PNG for italics |
+| `LUME0426` | server PDF export is **raster-flattened** (print W0): pages paint through the same Skia renderer as PNG and embed as images, so effects/gradients/spans/italics/images all render at full fidelity — the one caveat is that text is not selectable in the PDF (advisory, always emitted on server PDF exports) | none — this is the expected mode; do NOT avoid PDF for spans/effects anymore. The `LUME0421`–`LUME0425` limitations apply only to the legacy portable vector writer, which server exports no longer use |
 | `LUMS0104` | the font family has no face at the requested weight; the shaper snapped to the nearest one (advisory — snapping is correct, the silence was the bug) | add a face at that weight to the `fonts/` set for exact fidelity, or pick a weight the family ships |
 | `LUMS0105` | the resolved family/weight has no **italic** face; the shaper rendered the **upright** face instead (advisory — no synthetic skew, snapping is correct; the silence would be the bug) | pick a family/weight that ships an italic cut (see `knowledge/design/font-library` Italics column), or drop the `italic` — display families have no italics by design |
 

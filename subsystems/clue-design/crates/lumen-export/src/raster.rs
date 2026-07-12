@@ -55,3 +55,39 @@ pub trait PageRasterizer: fmt::Debug + Send + Sync {
         resolver: Option<&dyn AssetByteResolver>,
     ) -> Result<RasterizedPage, RasterizeError>;
 }
+
+/// One flattened page's accounting, returned so callers (and tests) can
+/// verify the raster dimensions that went into the PDF.
+#[derive(Clone, Debug, PartialEq)]
+pub struct FlattenedPdfPage {
+    pub page_id: PageId,
+    pub width_pt: f32,
+    pub height_pt: f32,
+    pub width_px: u32,
+    pub height_px: u32,
+}
+
+#[derive(Clone, Debug)]
+pub struct FlattenedPdf {
+    pub bytes: Vec<u8>,
+    pub diagnostics: Vec<Diagnostic>,
+    pub pages: Vec<FlattenedPdfPage>,
+}
+
+/// Renders scene pages into a raster-flattened PDF document (one image per
+/// page, page boxes sized in points; with `include_bleed`, the bleed rect
+/// becomes the MediaBox, matching the vector writer's geometry contract).
+/// Same seam pattern as [`PageRasterizer`]: the trait lives here so
+/// `lumen-export` stays free of native renderer dependencies, and the
+/// native implementation (`SkiaSceneRenderer`) is injected at the
+/// composition point (`lumen-api-helper`).
+pub trait PdfFlattener: fmt::Debug + Send + Sync {
+    fn flatten_pdf(
+        &self,
+        scene: &Scene,
+        page_ids: &[PageId],
+        dpi: u16,
+        include_bleed: bool,
+        resolver: Option<&dyn AssetByteResolver>,
+    ) -> Result<FlattenedPdf, RasterizeError>;
+}

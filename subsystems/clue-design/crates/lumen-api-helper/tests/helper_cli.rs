@@ -393,6 +393,43 @@ fn exports_svg_preview_through_core_bridge() {
     );
 }
 
+// Print W0: interactive PDF export flattens through the Skia renderer —
+// full raster fidelity, declared by LUME0426 — instead of the early
+// Helvetica-only vector writer (whose LUME0401 warning must be gone).
+#[test]
+fn exports_raster_flattened_pdf_preview_through_core_bridge() {
+    let response = helper(json!({
+        "action": "export_preview",
+        "scene": minimal_scene(),
+        "format": "pdf",
+        "page_ids": ["page_a4"]
+    }));
+
+    assert_eq!(response["ok"], true, "{response:#?}");
+    let artifact = &response["export"]["artifacts"][0];
+    assert_eq!(artifact["format"], "pdf");
+    assert_eq!(artifact["mime_type"], "application/pdf");
+    let bytes: Vec<u8> = artifact["bytes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|value| value.as_u64().unwrap() as u8)
+        .collect();
+    assert!(bytes.starts_with(b"%PDF"), "not a PDF header");
+
+    let codes: Vec<&str> = response["diagnostics"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|diagnostic| diagnostic["code"].as_str())
+        .collect();
+    assert!(codes.contains(&"LUME0426"), "missing flatten advice: {codes:?}");
+    assert!(
+        !codes.contains(&"LUME0401") && !codes.contains(&"LUME0402"),
+        "stub-only fidelity warnings leaked into the flattened path: {codes:?}"
+    );
+}
+
 #[test]
 fn rejects_invalid_operation_batch_without_scene() {
     let response = helper(json!({
