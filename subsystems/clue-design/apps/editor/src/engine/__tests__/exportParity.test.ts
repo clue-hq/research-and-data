@@ -428,7 +428,8 @@ function exportResult(pageId: string, viewBox: string, text?: string): EditorExp
           slot_keys: []
         }
       }
-    ]
+    ],
+    printReady: null
   };
 }
 
@@ -481,7 +482,8 @@ function nonSvgExportResult(
           slot_keys: []
         }
       }
-    ]
+    ],
+    printReady: null
   };
 }
 

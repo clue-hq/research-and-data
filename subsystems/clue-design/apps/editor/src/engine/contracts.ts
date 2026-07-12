@@ -777,6 +777,13 @@ export interface ExportProfile {
   pdf_intent: "preview" | "print" | null;
   raster: RasterScale | null;
   include_bleed: boolean;
+  /** Print workstream W3: emit crop/registration marks (print-intent PDF).
+   * The server understands this field (serde default false); the editor sends
+   * it on every profile it constructs. Optional to mirror the wire contract —
+   * the Rust core round-trips ExportProfile and, until it carries the field,
+   * an absent value must not be a type error (a `null`/absent is treated as
+   * false everywhere the editor reads it). */
+  include_marks?: boolean;
   embed_fonts: boolean;
 }
 

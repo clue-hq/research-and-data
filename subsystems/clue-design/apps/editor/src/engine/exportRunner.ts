@@ -42,6 +42,23 @@ export interface EditorExportResult {
   status: "ok" | "failed";
   diagnostics: Diagnostic[];
   artifacts: EditorExportArtifact[];
+  /** Print workstream W3: the server's print-preflight report, present only
+   * for print-intent PDF exports (null otherwise). */
+  printReady: PrintReadyReport | null;
+}
+
+export type PrintReadyStatus = "pass" | "warn" | "fail";
+
+export interface PrintReadyRule {
+  id: string;
+  status: PrintReadyStatus;
+  detail: string;
+}
+
+export interface PrintReadyReport {
+  ruleset: string;
+  status: PrintReadyStatus;
+  rules: PrintReadyRule[];
 }
 
 export type EditorExportRunner = (
@@ -115,6 +132,7 @@ export function defaultEditorExportProfile(): ExportProfile {
     pdf_intent: "preview",
     raster: null,
     include_bleed: false,
+    include_marks: false,
     embed_fonts: false
   };
 }
@@ -131,6 +149,7 @@ export function builtInExportProfiles(): ExportProfile[] {
         dpi: 96
       },
       include_bleed: false,
+      include_marks: false,
       embed_fonts: false
     },
     {
@@ -139,6 +158,7 @@ export function builtInExportProfiles(): ExportProfile[] {
       pdf_intent: "preview",
       raster: null,
       include_bleed: false,
+      include_marks: false,
       embed_fonts: false
     },
     {
@@ -150,6 +170,7 @@ export function builtInExportProfiles(): ExportProfile[] {
         dpi: 300
       },
       include_bleed: false,
+      include_marks: false,
       embed_fonts: false
     },
     {
@@ -158,6 +179,7 @@ export function builtInExportProfiles(): ExportProfile[] {
       pdf_intent: "print",
       raster: null,
       include_bleed: true,
+      include_marks: true,
       embed_fonts: true
     }
   ];
@@ -179,7 +201,8 @@ function exportResultFromUnknown(payload: unknown): EditorExportResult {
     return {
       status: "failed",
       diagnostics: [exportDiagnostic("EDITOR_EXPORT_INVALID_RESPONSE", "Export API returned a non-object response.")],
-      artifacts: []
+      artifacts: [],
+      printReady: null
     };
   }
 
@@ -189,8 +212,37 @@ function exportResultFromUnknown(payload: unknown): EditorExportResult {
     diagnostics: diagnosticsFromUnknown(payload),
     artifacts: Array.isArray(exportPayload.artifacts)
       ? exportPayload.artifacts.flatMap(artifactFromUnknown)
-      : []
+      : [],
+    printReady: printReadyFromUnknown(exportPayload.print_ready)
   };
+}
+
+function printReadyFromUnknown(value: unknown): PrintReadyReport | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+  return {
+    ruleset: typeof value.ruleset === "string" ? value.ruleset : "unknown",
+    status: printReadyStatus(value.status),
+    rules: Array.isArray(value.rules) ? value.rules.flatMap(printReadyRuleFromUnknown) : []
+  };
+}
+
+function printReadyRuleFromUnknown(value: unknown): PrintReadyRule[] {
+  if (!isRecord(value)) {
+    return [];
+  }
+  return [
+    {
+      id: typeof value.id === "string" ? value.id : "unknown",
+      status: printReadyStatus(value.status),
+      detail: typeof value.detail === "string" ? value.detail : ""
+    }
+  ];
+}
+
+function printReadyStatus(value: unknown): PrintReadyStatus {
+  return value === "pass" || value === "warn" || value === "fail" ? value : "warn";
 }
 
 function artifactFromUnknown(value: unknown): EditorExportArtifact[] {

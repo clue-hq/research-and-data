@@ -38,6 +38,12 @@ export interface CanvasKitArtboard {
   nodes: DrawNode[];
   workspaceRect: Rect;
   isActive: boolean;
+  /** Print workstream W3: the page's bleed rect in descriptor space, relative
+   * to the page top-left (negative origin — art extends past trim). Present
+   * only when the print feature is on and the page defines a bleed; content is
+   * then clipped to this box instead of the trim box so bleed art stays
+   * visible up to the bleed line. */
+  bleed?: Rect | null;
 }
 
 export function CanvasKitStage({ artboards, viewport }: CanvasKitStageProps) {
@@ -74,7 +80,7 @@ export function CanvasKitStage({ artboards, viewport }: CanvasKitStageProps) {
     canvas.save();
     const dpr = typeof devicePixelRatio === "number" ? devicePixelRatio : 1;
     canvas.scale(dpr, dpr);
-    canvas.clear(parseColor(ck, "#3b3f46") ?? ck.Color4f(0.231, 0.247, 0.275, 1));
+    canvas.clear(workspaceCanvasColor(ck));
     canvas.translate(current.viewport.pan.x, current.viewport.pan.y);
     canvas.scale(current.viewport.zoom, current.viewport.zoom);
     for (const artboard of current.artboards) {
@@ -201,6 +207,14 @@ export function CanvasKitStage({ artboards, viewport }: CanvasKitStageProps) {
   return <canvas ref={canvasRef} style={{ width: "100%", height: "100%", display: "block" }} />;
 }
 
+function workspaceCanvasColor(ck: CanvasKit): Float32Array {
+  const css =
+    typeof document !== "undefined"
+      ? getComputedStyle(document.documentElement).getPropertyValue("--bg-canvas").trim()
+      : "";
+  return parseColor(ck, css || "#f5f5f5") ?? ck.Color4f(0.961, 0.961, 0.961, 1);
+}
+
 function drawArtboard(
   ck: CanvasKit,
   canvas: import("canvaskit-wasm").Canvas,
@@ -215,7 +229,18 @@ function drawArtboard(
 
   canvas.save();
   canvas.translate(rect.x, rect.y);
-  canvas.clipRect(ck.LTRBRect(0, 0, artboard.page.width, artboard.page.height), ck.ClipOp.Intersect, true);
+  // Clip content to the bleed box when the print feature supplies one (art
+  // extends past trim, visible up to the bleed line); otherwise clip at trim
+  // exactly as before. The bleed origin is negative, so this widens the clip.
+  const clip = artboard.bleed
+    ? ck.LTRBRect(
+        artboard.bleed.x,
+        artboard.bleed.y,
+        artboard.bleed.x + artboard.bleed.width,
+        artboard.bleed.y + artboard.bleed.height
+      )
+    : ck.LTRBRect(0, 0, artboard.page.width, artboard.page.height);
+  canvas.clipRect(clip, ck.ClipOp.Intersect, true);
   drawDescriptorTree(ck, canvas, artboard.page, artboard.nodes, fontProvider, images);
   canvas.restore();
 

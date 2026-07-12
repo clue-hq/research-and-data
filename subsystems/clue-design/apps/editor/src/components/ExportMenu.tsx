@@ -145,6 +145,7 @@ function profileForChoices(
         pdf_intent: null,
         raster: { scale: pngScale, dpi: 96 * pngScale },
         include_bleed: false,
+        include_marks: false,
         embed_fonts: false
       };
     case "svg":
@@ -154,6 +155,7 @@ function profileForChoices(
         pdf_intent: null,
         raster: null,
         include_bleed: false,
+        include_marks: false,
         embed_fonts: false
       };
     case "pdf":
@@ -163,6 +165,7 @@ function profileForChoices(
         pdf_intent: pdfIntent,
         raster: null,
         include_bleed: pdfIntent === "print",
+        include_marks: pdfIntent === "print",
         embed_fonts: true
       };
   }

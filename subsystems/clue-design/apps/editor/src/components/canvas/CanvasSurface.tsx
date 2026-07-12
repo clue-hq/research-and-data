@@ -494,7 +494,7 @@ function WorkspaceBackdrop({
         y={(0 - viewport.pan.y) / viewport.zoom}
         width={viewportSize.width / viewport.zoom}
         height={viewportSize.height / viewport.zoom}
-        fill="#3b3f46"
+        fill="#f5f5f5"
       />
       <Rect
         x={model.bounds.x}

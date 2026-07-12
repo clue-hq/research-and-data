@@ -1,10 +1,11 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Download, Eye } from "lucide-react";
+import { Download, Eye, Printer } from "lucide-react";
 import type { ExportProfile, PageId, Scene } from "@/engine/contracts";
-import type { EditorExportArtifact, EditorExportResult } from "@/engine/exportRunner";
+import type { EditorExportArtifact, EditorExportResult, PrintReadyReport } from "@/engine/exportRunner";
 import { exportProfilesForScene } from "@/engine/exportRunner";
+import { printReadyNotableRules, printReadyPill, shouldShowPrintNudge } from "@/engine/printReadiness";
 import { downloadDataUrl } from "./exportArtifactActions";
 
 interface ExportPanelProps {
@@ -17,6 +18,9 @@ interface ExportPanelProps {
   onRemoveProfile: (name: string) => void;
   panelState?: ExportPanelState;
   onPanelStateChange?: (state: ExportPanelState) => void;
+  /** Print workstream W3 master toggle: gates the bleed/marks control and the
+   * print-readiness surfacing. Off by default — the panel behaves as today. */
+  printFeatureEnabled?: boolean;
 }
 
 export type ExportScope = "active" | "all";
@@ -34,10 +38,23 @@ export function ExportPanel({
   isExporting,
   onExport,
   panelState,
-  onPanelStateChange
+  onPanelStateChange,
+  printFeatureEnabled = false
 }: ExportPanelProps) {
   const profiles = exportProfilesForScene(scene);
   const pages = Object.values(scene.pages);
+  const activePage = activePageId ? scene.pages[activePageId] ?? null : null;
+  const [nudgeDismissed, setNudgeDismissed] = useState(false);
+
+  const selectedProfile = panelState?.draftProfile ?? profiles.find((p) => p.name === panelState?.profileName) ?? null;
+  const showNudge =
+    !nudgeDismissed &&
+    shouldShowPrintNudge({
+      printFeatureEnabled,
+      profile: selectedProfile,
+      activePage,
+      hasExportResult: exportResult !== null
+    });
 
   return (
     <section className="inspector-section">
@@ -54,6 +71,7 @@ export function ExportPanel({
         onExport={onExport}
         panelState={panelState}
         onPanelStateChange={onPanelStateChange}
+        printFeatureEnabled={printFeatureEnabled}
       />
       {exportResult ? (
         <div className="export-summary" aria-live="polite">
@@ -65,11 +83,52 @@ export function ExportPanel({
           ) : (
             <span>No artifact generated.</span>
           )}
+          {printFeatureEnabled && exportResult.printReady ? (
+            <PrintReadyBlock report={exportResult.printReady} />
+          ) : null}
+          {showNudge ? <PrintNudge onDismiss={() => setNudgeDismissed(true)} /> : null}
         </div>
       ) : pages.length === 0 ? (
         <p className="muted">Add an artboard before exporting.</p>
       ) : null}
     </section>
+  );
+}
+
+function PrintReadyBlock({ report }: { report: PrintReadyReport }) {
+  const pill = printReadyPill(report);
+  const notable = printReadyNotableRules(report);
+  return (
+    <div className="print-ready" data-role="print-ready" data-status={report.status}>
+      <div className="print-ready-head">
+        <span className={`print-ready-pill ${pill.tone}`} data-role="print-ready-pill">
+          {pill.label}
+        </span>
+        <small className="muted">{report.ruleset}</small>
+      </div>
+      {notable.length > 0 ? (
+        <ul className="print-ready-rules">
+          {notable.map((rule) => (
+            <li key={rule.id} data-role="print-ready-rule" data-rule-status={rule.status}>
+              <span className={`print-ready-rule-dot ${rule.status}`} aria-hidden />
+              <span className="print-ready-rule-detail">{rule.detail || rule.id}</span>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+    </div>
+  );
+}
+
+function PrintNudge({ onDismiss }: { onDismiss: () => void }) {
+  return (
+    <div className="print-nudge" data-role="print-nudge" role="note">
+      <Printer aria-hidden size={14} />
+      <span>Enable “Print &amp; bleed” to add a bleed margin and crop marks to this print PDF.</span>
+      <button type="button" className="print-nudge-dismiss" aria-label="Dismiss print hint" onClick={onDismiss}>
+        Dismiss
+      </button>
+    </div>
   );
 }
 
@@ -81,7 +140,8 @@ function ExportControls({
   isExporting,
   onExport,
   panelState,
-  onPanelStateChange
+  onPanelStateChange,
+  printFeatureEnabled
 }: {
   scene: Scene;
   profiles: ExportProfile[];
@@ -91,6 +151,7 @@ function ExportControls({
   onExport: (profile: ExportProfile, pageIds: PageId[]) => void;
   panelState?: ExportPanelState;
   onPanelStateChange?: (state: ExportPanelState) => void;
+  printFeatureEnabled: boolean;
 }) {
   const [uncontrolledState, setUncontrolledState] = useState<ExportPanelState>(() => ({
     profileName: profiles[0]?.name ?? "",
@@ -151,6 +212,9 @@ function ExportControls({
         </select>
       </label>
       {profile ? <ExportFormatField profile={profile} onChange={(nextProfile) => updateState({ draftProfile: nextProfile })} /> : null}
+      {profile && printFeatureEnabled && profile.format === "pdf" ? (
+        <PrintBleedField profile={profile} onChange={(nextProfile) => updateState({ draftProfile: nextProfile })} />
+      ) : null}
       <button
         type="button"
         disabled={!profile || selectedPageIds.length === 0 || isExporting}
@@ -186,7 +250,34 @@ function ExportFormatField({
   );
 }
 
-function formatPatch(format: ExportProfile["format"], profile: ExportProfile): Partial<ExportProfile> {
+function PrintBleedField({
+  profile,
+  onChange
+}: {
+  profile: ExportProfile;
+  onChange: (profile: ExportProfile) => void;
+}) {
+  return (
+    <label className="toggle-field" data-role="include-bleed-marks">
+      <input
+        type="checkbox"
+        checked={Boolean(profile.include_bleed && profile.include_marks)}
+        onChange={(event) =>
+          onChange(
+            normalizeProfile({
+              ...profile,
+              include_bleed: event.target.checked,
+              include_marks: event.target.checked
+            })
+          )
+        }
+      />
+      Include bleed + crop marks
+    </label>
+  );
+}
+
+export function formatPatch(format: ExportProfile["format"], profile: ExportProfile): Partial<ExportProfile> {
   if (format === "png") {
     return {
       format,
@@ -196,10 +287,14 @@ function formatPatch(format: ExportProfile["format"], profile: ExportProfile): P
       },
       pdf_intent: null,
       include_bleed: false,
+      include_marks: false,
       embed_fonts: false
     };
   }
   if (format === "pdf") {
+    // Preserve include_bleed / include_marks / embed_fonts across the switch —
+    // they are the print controls and only PDF exposes them, so clearing them
+    // here would silently drop the user's choice every time they toggle format.
     return {
       format,
       raster: null,
@@ -211,12 +306,14 @@ function formatPatch(format: ExportProfile["format"], profile: ExportProfile): P
     raster: null,
     pdf_intent: null,
     include_bleed: false,
+    include_marks: false,
     embed_fonts: false
   };
 }
 
-function normalizeProfile(profile: ExportProfile): ExportProfile {
+export function normalizeProfile(profile: ExportProfile): ExportProfile {
   if (profile.format !== "png") {
+    // SVG/PDF: keep include_bleed / include_marks / embed_fonts as set.
     return {
       ...profile,
       raster: null
@@ -232,6 +329,7 @@ function normalizeProfile(profile: ExportProfile): ExportProfile {
     },
     pdf_intent: null,
     include_bleed: false,
+    include_marks: false,
     embed_fonts: false
   };
 }

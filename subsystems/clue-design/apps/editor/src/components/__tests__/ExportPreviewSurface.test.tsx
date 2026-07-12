@@ -93,6 +93,7 @@ function exportResult(format: "svg" | "png", dataUrl: string): EditorExportResul
         sidecar_summary: null
       }
     ],
-    diagnostics: []
+    diagnostics: [],
+    printReady: null
   };
 }

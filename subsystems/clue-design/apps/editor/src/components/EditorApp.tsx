@@ -100,9 +100,12 @@ import {
   updateDocumentBrand,
   updateDocumentTitle,
   updateNodeTransform,
+  updatePageBleed,
+  updatePageSafeArea,
   upsertExportProfile
 } from "@/engine/operations";
 import { normalizePageSize } from "@/engine/pageGeometry";
+import { printBleedRect, printSafeAreaRect } from "@/engine/printBleed";
 import {
   groupEdit,
   mintGroupId,
@@ -135,6 +138,7 @@ import {
 import { useAgentInstructions } from "@/hooks/useAgentInstructions";
 import { useLayoutManagedEditing } from "@/hooks/useLayoutManagedEditing";
 import { useMarginGuides } from "@/hooks/useMarginGuides";
+import { usePrintFeature } from "@/hooks/usePrintFeature";
 import { useBrandChecks } from "@/hooks/useBrandChecks";
 import { useTurnNotification } from "@/hooks/useTurnNotification";
 import { useDocumentSync, type EditQueueFactory } from "@/hooks/useDocumentSync";
@@ -800,6 +804,11 @@ export default function EditorApp({
   // safe-area/bleed guides on the canvas.
   const marginGuides = useMarginGuides();
 
+  // Master view preference (not per-document): the "Print & bleed" feature.
+  // Off by default; gates the trim guide, bleed-extent clip, print presets,
+  // and the export bleed/marks + print-readiness surfacing.
+  const printFeature = usePrintFeature();
+
   /**
    * Shared post-apply bookkeeping for operations that are already applied to
    * the engine: undo frame, history, persistence. Used by the direct edit path
@@ -1303,7 +1312,13 @@ export default function EditorApp({
     setSelectedNodeId(null);
   };
 
-  const createCustomPage = (input: { name: string; width: number; height: number; unit: Page["size"]["unit"] }) => {
+  const createCustomPage = (input: {
+    name: string;
+    width: number;
+    height: number;
+    unit: Page["size"]["unit"];
+    print?: boolean;
+  }) => {
     const page: Page = {
       id: uniquePageId(scene, input),
       name: input.name,
@@ -1313,9 +1328,19 @@ export default function EditorApp({
       safe_area: null,
       background: []
     };
-    applyOperation(addPage(page));
-    setActivePageId(page.id);
-    setSelectedNodeId(null);
+    // Print presets seed a 3mm bleed + 5mm safe-area default (only while the
+    // print feature is on) — set through the operation builders in the same
+    // atomic batch as the page insert, never by mutating the page literal.
+    // Existing pages are untouched; the inspector fields remain the override.
+    const operations = [addPage(page)];
+    if (input.print && printFeature.printFeatureEnabled) {
+      operations.push(updatePageBleed(page, printBleedRect(page.size)));
+      operations.push(updatePageSafeArea(page, printSafeAreaRect(page.size)));
+    }
+    applyOperations(operations, () => {
+      setActivePageId(page.id);
+      setSelectedNodeId(null);
+    });
   };
 
   const duplicatePageInEditor = (pageId: PageId) => {
@@ -1521,6 +1546,7 @@ export default function EditorApp({
             scene={scene}
             activePageId={activePageId}
             diagnostics={diagnostics}
+            printFeatureEnabled={printFeature.printFeatureEnabled}
             onSelectPage={selectPage}
             onAddCustomPage={createCustomPage}
             onDuplicatePage={duplicatePageInEditor}
@@ -1725,6 +1751,8 @@ export default function EditorApp({
                 layoutManagedEditing={layoutManagedEditing.enabled}
                 showMarginGuides={marginGuides.showMarginGuides}
                 onToggleMarginGuides={marginGuides.toggleMarginGuides}
+                printFeatureEnabled={printFeature.printFeatureEnabled}
+                onTogglePrintFeature={printFeature.togglePrintFeature}
               />
             </>
           )}
@@ -1823,6 +1851,7 @@ export default function EditorApp({
               onRemoveProfile={(name) => applyOperation(removeExportProfile(name))}
               panelState={exportPanelState}
               onPanelStateChange={setExportPanelState}
+              printFeatureEnabled={printFeature.printFeatureEnabled}
             />
           ) : editorPanelMode === "diagnostics" ? (
             <>
