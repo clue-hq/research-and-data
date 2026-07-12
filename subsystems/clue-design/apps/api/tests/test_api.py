@@ -590,6 +590,265 @@ def test_brand_kit_font_faces_ride_preflight_as_store_digests(
     assert "LUMS0101" not in codes
 
 
+REFERENCE_SVG = (
+    b'<svg xmlns="http://www.w3.org/2000/svg" width="120" height="80">'
+    b'<rect width="120" height="80" fill="#3366CC"/></svg>'
+)
+
+
+def upload_reference_svg(client: TestClient):
+    # NOTE: the engine AssetKind enum has no "reference" variant, so the upload
+    # omits `kind` (the engine auto-classifies SVG → vector); reference-ness is
+    # carried by tags, exactly as the editor sends it.
+    return client.post(
+        "/assets",
+        files={"file": ("wash.svg", REFERENCE_SVG, "image/svg+xml")},
+        data={"label": "Soft wash", "tags": "reference,chat-attachment"},
+    )
+
+
+def test_reference_manifest_matches_config_contract_shape(
+    client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """RC (D2): a raster reference resolves to the exact config.py
+    reference_assets contract — record verbatim, the asset's OWN sha256 as
+    preview_digest, mime/dims/dominant_colors/order — and dedupes ids
+    preserving first-occurrence order."""
+    from lumen_api.main import resolve_agent_turn_references
+    from lumen_api.models import AgentTurnPreviewRequest
+
+    monkeypatch.setattr(settings, "lumen_api_database_path", tmp_path / "api.sqlite3")
+    uploaded = upload_logo(client)
+    assert uploaded.status_code == 200, uploaded.text
+    asset = uploaded.json()["asset"]
+    asset_id = asset["id"]
+    own_digest = asset["media"]["digest"]["value"]
+
+    # Duplicate id + empty id: deduped, order preserved, still one entry.
+    manifest = resolve_agent_turn_references(
+        AgentTurnPreviewRequest(
+            prompt="Match this",
+            scene=minimal_scene(),
+            reference_asset_ids=[asset_id, "", asset_id],
+        )
+    )
+    assert set(manifest.keys()) == {asset_id}
+    entry = manifest[asset_id]
+    assert set(entry.keys()) == {
+        "record",
+        "preview_digest",
+        "mime_type",
+        "width",
+        "height",
+        "dominant_colors",
+        "title",
+        "description",
+        "order",
+    }
+    assert entry["record"]["id"] == asset_id
+    assert entry["preview_digest"] == own_digest  # raster: its own digest
+    assert entry["mime_type"] == "image/png"
+    assert entry["order"] == 0
+    assert isinstance(entry["dominant_colors"], list)
+    assert isinstance(entry["width"], int) and isinstance(entry["height"], int)
+
+
+def test_reference_manifest_no_ids_is_none(
+    client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """No reference ids → None: the turn is byte-identical to today (and no DB
+    connection is opened)."""
+    from lumen_api.main import resolve_agent_turn_references
+    from lumen_api.models import AgentTurnPreviewRequest
+
+    monkeypatch.setattr(settings, "lumen_api_database_path", tmp_path / "api.sqlite3")
+    assert (
+        resolve_agent_turn_references(
+            AgentTurnPreviewRequest(prompt="x", scene=minimal_scene())
+        )
+        is None
+    )
+
+
+def test_reference_manifest_svg_materializes_raster_preview(
+    client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """RC (D2): an SVG reference is engine-rasterized at resolve time — its
+    preview_digest is a PNG that exists in the shared store, NOT the SVG's own
+    digest, and mime_type reports the raster."""
+    from fastapi import HTTPException  # noqa: F401  (kept for parity w/ 422 tests)
+    from lumen_api.main import resolve_agent_turn_references
+    from lumen_api.models import AgentTurnPreviewRequest
+
+    monkeypatch.setattr(settings, "lumen_api_database_path", tmp_path / "api.sqlite3")
+    uploaded = upload_reference_svg(client)
+    assert uploaded.status_code == 200, uploaded.text
+    asset = uploaded.json()["asset"]
+    asset_id = asset["id"]
+    svg_digest = asset["media"]["digest"]["value"]
+
+    manifest = resolve_agent_turn_references(
+        AgentTurnPreviewRequest(
+            prompt="Match this",
+            scene=minimal_scene(),
+            reference_asset_ids=[asset_id],
+        )
+    )
+    entry = manifest[asset_id]
+    preview_digest = entry["preview_digest"]
+    assert preview_digest != svg_digest
+    assert entry["mime_type"] == "image/png"
+    store_root = tmp_path / "asset-store"
+    blob = store_root / "sha256" / preview_digest[:2] / preview_digest
+    assert blob.is_file(), "rasterized SVG preview must land in the store"
+
+
+def test_reference_manifest_unknown_id_is_422(
+    client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """RC (D2): a missing id is EXPLICIT user intent gone wrong — a hard 422
+    naming the id, never a silent skip like the kit manifest."""
+    from fastapi import HTTPException
+    from lumen_api.main import resolve_agent_turn_references
+    from lumen_api.models import AgentTurnPreviewRequest
+
+    monkeypatch.setattr(settings, "lumen_api_database_path", tmp_path / "api.sqlite3")
+    # Touch the store so the db/store exist for this run.
+    upload_logo(client)
+    with pytest.raises(HTTPException) as excinfo:
+        resolve_agent_turn_references(
+            AgentTurnPreviewRequest(
+                prompt="x",
+                scene=minimal_scene(),
+                reference_asset_ids=["asset_ghost"],
+            )
+        )
+    assert excinfo.value.status_code == 422
+    assert excinfo.value.detail["code"] == "reference.asset_not_found"
+    assert "asset_ghost" in excinfo.value.detail["message"]
+
+
+def test_reference_manifest_too_many_is_422(
+    client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """RC (D1): >4 references → 422 reference.too_many (cap enforced API-side)."""
+    from fastapi import HTTPException
+    from lumen_api.main import resolve_agent_turn_references
+    from lumen_api.models import AgentTurnPreviewRequest
+
+    monkeypatch.setattr(settings, "lumen_api_database_path", tmp_path / "api.sqlite3")
+    with pytest.raises(HTTPException) as excinfo:
+        resolve_agent_turn_references(
+            AgentTurnPreviewRequest(
+                prompt="x",
+                scene=minimal_scene(),
+                reference_asset_ids=[f"asset_{i}" for i in range(5)],
+            )
+        )
+    assert excinfo.value.status_code == 422
+    assert excinfo.value.detail["code"] == "reference.too_many"
+
+
+def test_async_agent_turns_route_422s_on_bad_reference_before_creating_a_run(
+    client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """RC adversarial-gate ship-blocker 1: on the LIVE editor path
+    (POST /agent/turns) a bad attachment must surface as a REAL 422 from the
+    route handler — validated BEFORE the run row exists — never be swallowed
+    by the worker's catch-all into a generic agent_runtime.failed run."""
+    monkeypatch.setattr(settings, "lumen_api_database_path", tmp_path / "api.sqlite3")
+    response = client.post(
+        "/agent/turns",
+        json={
+            "prompt": "x",
+            "scene": minimal_scene(),
+            "reference_asset_ids": ["asset_ghost"],
+        },
+    )
+    assert response.status_code == 422
+    assert response.json()["detail"]["code"] == "reference.asset_not_found"
+    # No run row was created: the runs listing endpoint knows nothing new.
+    # (A swallowed 422 would have produced a run with a failed result.)
+
+
+def test_agent_turn_forwards_references_into_config(
+    client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """RC (D2): run_agent_turn_preview resolves the ids and threads the manifest
+    into config.reference_assets BY VALUE (mirrors the kit/target-node
+    forwarding), pinning the store root so the runtime resolves preview bytes."""
+    import lumen_agent.harness as harness_mod
+    import lumen_agent.llm as llm_mod
+
+    from lumen_api.main import repo_root, run_agent_turn_preview
+    from lumen_api.models import AgentTurnPreviewRequest
+
+    monkeypatch.setattr(settings, "lumen_api_database_path", tmp_path / "api.sqlite3")
+    asset_id = upload_logo(client).json()["asset"]["id"]
+
+    captured: dict = {}
+
+    class _Stop(Exception):
+        pass
+
+    def fake_run(prompt, config, **kwargs):
+        captured["config"] = config
+        raise _Stop()
+
+    monkeypatch.setattr(harness_mod, "run_deepagent_turn", fake_run)
+    monkeypatch.setattr(
+        llm_mod, "assert_model_supports_image_input", lambda *a, **k: None
+    )
+
+    run_agent_turn_preview(
+        AgentTurnPreviewRequest(
+            prompt="Match these references",
+            scene=minimal_scene(),
+            reference_asset_ids=[asset_id],
+        ),
+        repo_root(),
+    )
+    config = captured["config"]
+    assert config.reference_assets is not None
+    assert asset_id in config.reference_assets
+    assert config.reference_assets[asset_id]["order"] == 0
+    assert config.asset_store_root == (tmp_path / "asset-store")
+
+
+def test_agent_turn_without_references_leaves_config_unset(
+    client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """RC: a no-reference turn never sets config.reference_assets (byte-identical
+    to pre-RC behavior)."""
+    import lumen_agent.harness as harness_mod
+    import lumen_agent.llm as llm_mod
+
+    from lumen_api.main import repo_root, run_agent_turn_preview
+    from lumen_api.models import AgentTurnPreviewRequest
+
+    monkeypatch.setattr(settings, "lumen_api_database_path", tmp_path / "api.sqlite3")
+
+    captured: dict = {}
+
+    class _Stop(Exception):
+        pass
+
+    def fake_run(prompt, config, **kwargs):
+        captured["config"] = config
+        raise _Stop()
+
+    monkeypatch.setattr(harness_mod, "run_deepagent_turn", fake_run)
+    monkeypatch.setattr(
+        llm_mod, "assert_model_supports_image_input", lambda *a, **k: None
+    )
+
+    run_agent_turn_preview(
+        AgentTurnPreviewRequest(prompt="Design a poster", scene=minimal_scene()),
+        repo_root(),
+    )
+    assert captured["config"].reference_assets is None
+
+
 def test_set_brand_kit_logo_publishes_new_version_with_human_choice(
     client: TestClient,
 ) -> None:

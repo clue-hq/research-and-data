@@ -1609,6 +1609,15 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
         # run-event store (via the loop's event_sink) and writes the final
         # result on completion; the editor subscribes over SSE. The synchronous
         # /agent/turn-preview stays as-is for tests, CLI, and fixtures.
+        #
+        # RC (adversarial-gate ship-blocker 1): validate + resolve reference
+        # attachments HERE, before the run row exists — inside the worker the
+        # catch-all would swallow the resolver's 422s into a generic
+        # agent_runtime.failed and the client would never see
+        # reference.asset_not_found / too_many / preview_unavailable. The
+        # resolved manifest rides into the worker so SVG rasterization is not
+        # paid twice.
+        resolved_reference_assets = resolve_agent_turn_references(payload)
         run_id = f"run_{uuid4().hex}"
         repo.create_run(run_id, payload.document_id)
         root = repo_root()
@@ -1629,7 +1638,12 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
                     if override is not None:
                         response = override(payload, root)
                     else:
-                        response = run_agent_turn_preview(payload, root, event_sink=sink)
+                        response = run_agent_turn_preview(
+                            payload,
+                            root,
+                            event_sink=sink,
+                            resolved_reference_assets=resolved_reference_assets,
+                        )
                     status = (
                         "failed"
                         if response.get("status") in ("failed", "error")
@@ -4052,8 +4066,18 @@ def repo_root() -> Path:
     return Path(__file__).resolve().parents[3]
 
 
+#: Sentinel distinguishing "caller did not resolve references" from a resolved
+#: None (= no references). The async route resolves BEFORE creating its run row
+#: so the 422 reaches the client; it then passes the manifest here to avoid
+#: resolving (and rasterizing SVGs) twice.
+_REFERENCES_UNRESOLVED = object()
+
+
 def run_agent_turn_preview(
-    payload: AgentTurnPreviewRequest, root: Path, event_sink=None
+    payload: AgentTurnPreviewRequest,
+    root: Path,
+    event_sink=None,
+    resolved_reference_assets=_REFERENCES_UNRESOLVED,
 ) -> JsonObject:
     ensure_agent_runtime_path(root)
     try:
@@ -4065,6 +4089,19 @@ def run_agent_turn_preview(
             "Agent runtime dependencies are not available to the API process.",
             str(error),
         )
+
+    # RC: resolve the turn's reference attachments into a by-value manifest
+    # BEFORE the main try/except. A bad attachment (unknown id, >4, broken
+    # preview) is explicit user intent (D2) and must surface as a real 422 to
+    # the client, never be folded into an agent_runtime.failed response — so
+    # the resolver's HTTPExceptions propagate past this function. The async
+    # /agent/turns route resolves in its HANDLER (before the run row exists —
+    # a worker-thread 422 would be swallowed by its catch-all; adversarial-gate
+    # ship-blocker 1) and hands the manifest in via resolved_reference_assets.
+    if resolved_reference_assets is _REFERENCES_UNRESOLVED:
+        reference_assets = resolve_agent_turn_references(payload)
+    else:
+        reference_assets = resolved_reference_assets
 
     try:
         config = AgentRuntimeConfig.from_env(root)
@@ -4106,6 +4143,23 @@ def run_agent_turn_preview(
             # when the applied ops touched none of the targets. Prompt-only
             # delivery measured unenforceable (moda probe P1r2/P5r2).
             config = replace(config, turn_target_node_ids=turn_targets)
+        if reference_assets:
+            # RC (reference-conditioned design): the user-attached references
+            # ride the run BY VALUE so all three minds can view("reference:<n>")
+            # them (same rule as brand_kit_assets — the runtime never reads the
+            # API database). The store root is pinned to the API's store so the
+            # runtime resolves the (possibly SVG-rasterized) preview bytes.
+            # DELIBERATE exception (channel refuter, minor 2): this overrides an
+            # explicit LUMEN_AGENT_ASSET_STORE for reference turns — the resolver
+            # wrote the previews into the API store, so pointing anywhere else
+            # would blind view("reference:<n>"). Normal deployments share one
+            # store; a split-store operator loses the env override only on turns
+            # that attach references.
+            config = replace(
+                config,
+                reference_assets=reference_assets,
+                asset_store_root=api_asset_store_root(),
+            )
         # Slice 2 D4: the loop is mandatory-multimodal (Director + reviewer attach
         # images every turn). Fail LOUDLY here, before the run authors, if the
         # configured model is text-only — otherwise the run dies mid-turn at the
@@ -4248,6 +4302,207 @@ def brand_kit_asset_manifest(
                 entry[field] = described[field]
         manifest[asset_id] = entry
     return manifest
+
+
+# RC (reference-conditioned design) resolve constants.
+REFERENCE_ASSETS_MAX = 4  # mirrors PLACED_PREVIEWS_MAX; more dilutes vision context (D1)
+
+
+def resolve_agent_turn_references(
+    payload: AgentTurnPreviewRequest,
+) -> Optional[JsonObject]:
+    """RC (D2): the user-attached references for THIS turn, resolved from the
+    asset library into a by-value manifest so the runtime never reads the API
+    database. Empty ids → None (the turn is byte-identical to today). Unlike the
+    brand-kit manifest, a bad attachment is EXPLICIT user intent and fails
+    LOUDLY with a 422 (unknown id / too many / broken preview) rather than a
+    silent skip — a reference the user picked but the loop never saw is a worse
+    failure than a rejected request."""
+    raw = payload.reference_asset_ids or []
+    # De-dupe preserving first-occurrence order (the attachment order the user
+    # sees in the composer), dropping empties.
+    asset_ids: List[str] = []
+    seen: set[str] = set()
+    for asset_id in raw:
+        if asset_id and asset_id not in seen:
+            seen.add(asset_id)
+            asset_ids.append(asset_id)
+    if not asset_ids:
+        return None
+    if len(asset_ids) > REFERENCE_ASSETS_MAX:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "reference.too_many",
+                "message": (
+                    f"a turn accepts at most {REFERENCE_ASSETS_MAX} reference "
+                    f"attachments, got {len(asset_ids)}"
+                ),
+                "diagnostics": [],
+            },
+        )
+    store_root = str(api_asset_store_root())
+    connection = connect(settings.lumen_api_database_path)
+    try:
+        repo = Repository(connection)
+        return reference_asset_manifest(repo, connection, asset_ids, store_root)
+    finally:
+        connection.close()
+
+
+def reference_asset_manifest(
+    repo: Repository,
+    connection,
+    asset_ids: List[str],
+    store_root: str,
+) -> JsonObject:
+    """RC (D2): {asset_id: {record, preview_digest, mime_type, width, height,
+    dominant_colors, title, description, order}} — EXACTLY the config.py
+    reference_assets contract. Records come back VERBATIM from the library. A
+    missing id is a hard 422 (never a silent skip — references are explicit
+    user intent). SVG references are engine-rasterized to a 512px PNG written
+    into the shared content-addressed store AT RESOLVE TIME, so the runtime
+    only ever handles raster previews; a rasterize failure is a 422 (LUMI0804-
+    class spirit — a broken preview on an explicit attachment fails the
+    request, never degrades). dominant_colors/title/description are advisory."""
+    import hashlib
+    import io
+
+    from PIL import Image
+
+    from lumen_ingestion.capture.uploads import _dominant_colors
+    from lumen_ingestion.pipeline import make_rasterize_svg
+
+    try:
+        descriptions = DescriptionStore(connection).get_many(asset_ids)
+    except Exception:
+        descriptions = {}
+
+    rasterize_svg = make_rasterize_svg(repo, store_root)
+    manifest: JsonObject = {}
+    for order, asset_id in enumerate(asset_ids):
+        try:
+            stored = repo.require_asset_record(asset_id)
+        except Exception:
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "code": "reference.asset_not_found",
+                    "message": f"reference asset {asset_id} is not in the library",
+                    "diagnostics": [],
+                },
+            )
+        record = stored.get("asset") or stored
+        media = record.get("media") or {}
+        mime_type = media.get("mime_type")
+        is_svg = mime_type == "image/svg+xml" or record.get("kind") == "vector"
+
+        if is_svg:
+            png_bytes = rasterize_svg(asset_id)
+            if not png_bytes:
+                raise HTTPException(
+                    status_code=422,
+                    detail={
+                        "code": "reference.preview_unavailable",
+                        "message": (
+                            f"reference asset {asset_id} could not be rasterized to a preview"
+                        ),
+                        "diagnostics": [],
+                    },
+                )
+            preview_bytes = png_bytes
+            preview_digest = hashlib.sha256(png_bytes).hexdigest()
+            blob_path = (
+                Path(store_root) / "sha256" / preview_digest[:2] / preview_digest
+            )
+            if not blob_path.is_file():
+                # Atomic write (review fix): a content-addressed blob must never
+                # be observable half-written — a crash mid-write would park
+                # corrupt bytes at a valid digest path forever. Write a tmp
+                # sibling and rename into place (os.replace is atomic on POSIX).
+                blob_path.parent.mkdir(parents=True, exist_ok=True)
+                tmp_path = blob_path.with_name(f".{preview_digest}.tmp-{os.getpid()}")
+                tmp_path.write_bytes(png_bytes)
+                os.replace(tmp_path, blob_path)
+        else:
+            digest = (media.get("digest") or {}).get("value")
+            if not digest:
+                raise HTTPException(
+                    status_code=422,
+                    detail={
+                        "code": "reference.preview_unavailable",
+                        "message": (
+                            f"reference asset {asset_id} has no stored raster digest"
+                        ),
+                        "diagnostics": [],
+                    },
+                )
+            preview_digest = str(digest)
+            blob_path = Path(store_root) / "sha256" / preview_digest[:2] / preview_digest
+            # Review fix (channel refuter, minor 1): a raster reference whose
+            # store blob is gone fails HERE like the SVG branch does — D2 says
+            # boundary 422, never a silent mid-run degrade to a pixel-less view.
+            if not blob_path.is_file():
+                raise HTTPException(
+                    status_code=422,
+                    detail={
+                        "code": "reference.preview_unavailable",
+                        "message": (
+                            f"reference asset {asset_id} bytes are missing from "
+                            "the asset store"
+                        ),
+                        "diagnostics": [],
+                    },
+                )
+            preview_bytes = blob_path.read_bytes()
+
+        # dominant_colors is advisory: an empty list on any failure never blocks.
+        dominant_colors: List[str] = []
+        if preview_bytes:
+            try:
+                image = Image.open(io.BytesIO(preview_bytes)).convert("RGBA")
+                dominant_colors = _dominant_colors(image)
+            except Exception:
+                dominant_colors = []
+
+        width, height = _reference_dimensions(record)
+        entry: JsonObject = {
+            "record": record,
+            "preview_digest": preview_digest,
+            "mime_type": "image/png" if is_svg else mime_type,
+            "width": width,
+            "height": height,
+            "dominant_colors": dominant_colors,
+            "title": None,
+            "description": None,
+            "order": order,
+        }
+        described = descriptions.get(asset_id) or {}
+        for field in ("title", "description"):
+            if described.get(field):
+                entry[field] = described[field]
+        manifest[asset_id] = entry
+    return manifest
+
+
+def _reference_dimensions(record: JsonObject) -> Tuple[Optional[int], Optional[int]]:
+    """Pixel dimensions from a library asset record's kind-specific metadata,
+    where present — raster/logo carry pixel_width/pixel_height, vectors carry
+    float width/height. None when the record declares no intrinsic size."""
+    for key in ("raster", "logo"):
+        meta = record.get(key)
+        if isinstance(meta, dict):
+            width = meta.get("pixel_width")
+            height = meta.get("pixel_height")
+            if width is not None and height is not None:
+                return int(width), int(height)
+    vector = record.get("vector")
+    if isinstance(vector, dict):
+        width = vector.get("width")
+        height = vector.get("height")
+        if width is not None and height is not None:
+            return int(width), int(height)
+    return None, None
 
 
 def brand_kit_font_spec(

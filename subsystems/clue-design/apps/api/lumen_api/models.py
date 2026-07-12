@@ -114,6 +114,12 @@ class AgentTurnPreviewRequest(BaseModel):
     # (The singular selected_node_id back-compat field was dropped after its
     # one-release window; legacy senders' extra key is ignored by pydantic.)
     target_node_ids: List[str] = Field(default_factory=list)
+    # RC (reference-conditioned design): the library asset ids the human
+    # attached to THIS turn as visual references. Per-turn context, not
+    # document state (D1) — mirrors GenerateAssetRequest.reference_asset_ids.
+    # run_agent_turn_preview resolves these into config.reference_assets BY
+    # VALUE (the runtime never reads the API database). Empty → no references.
+    reference_asset_ids: List[str] = Field(default_factory=list)
     diagnostics: List[JsonObject] = Field(default_factory=list)
     # 2e: the document's standing agent instructions, sent by the editor with
     # every turn and folded into the prompt context.
