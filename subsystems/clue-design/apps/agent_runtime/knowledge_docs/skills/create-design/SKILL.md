@@ -76,7 +76,10 @@ The discipline is the same whatever the image class:
    be low saturation and edges that fade to nothing; if a product photo, it might
    be a specific light and negative-space rhythm. Perceive what is THERE.
 2. **`view("reference:<n>")` the sources** and judge the match by looking, never
-   from metadata.
+   from metadata. When you `generate_image` this turn, the references are fed to
+   the model as automatic style conditioning — you do NOT need to describe their
+   look in the prompt (that's redundant); prompt the subject and let the attached
+   references carry the style.
 3. **Never regress to house vocabulary.** The single failure this section exists
    to break: reducing a reference to a couple of hex values and then composing in
    the loop's *default* style — the vertical-poster reflex, the eyebrow pill, the

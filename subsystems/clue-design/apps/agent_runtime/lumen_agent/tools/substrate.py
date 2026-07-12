@@ -94,6 +94,14 @@ PLACED_PREVIEWS_MAX = 4
 # thumbnail exists (an SVG has no raster preview → it is skipped, never a broken path).
 _PREVIEWABLE_MIME_TYPES = {"image/png", "image/jpeg", "image/webp", "image/gif"}
 
+
+def blob_path_for_digest(store_root: Any, digest: str) -> Path:
+    """The content-addressed store path for a sha256 digest:
+    `<store_root>/sha256/<first2>/<digest>`. The ONE place this layout is spelled
+    out for digest→path resolution (view's reference preview + the runtime's
+    reference-conditioning both call it)."""
+    return Path(store_root) / "sha256" / digest[:2] / digest
+
 # Diagnostic codes that indicate content does not fit its frame (text overflow)
 # or a layout cluster is mis-sized — surfaced as `overflow` in the preview
 # summary so the director sees them without the raw scene.
@@ -794,16 +802,21 @@ class LumenDesignTools:
         brand_notes: Optional[List[str]] = None,
         transparent_background: bool = False,
         label: Optional[str] = None,
+        condition_on_references: bool = True,
     ) -> str:
         """Generate a raster image asset from a text prompt and register it in the
         scene. Pass target_node_id (or target_slot_id) so the aspect ratio is
         derived from that frame's geometry — generated images are cropped to fill,
         never stretched. Uses the configured text-to-image model (image-gen-v1)
         when available, otherwise a deterministic placeholder so the design still
-        composes offline. The scene must already contain a page/artboard (author
-        the layout first) or registration fails with a retryable error. Returns
-        the asset_id; place it with place_asset_in_node / place_asset_in_slot
-        (a generated image is not auto-placed)."""
+        composes offline. When this turn has attached reference images, generated
+        imagery is AUTOMATICALLY conditioned on them (their palette/texture/mood
+        anchor the style) — describe the SUBJECT in the prompt, not the reference
+        style. Set condition_on_references=false only when the brief demands imagery
+        that deliberately diverges from the references. The scene must already
+        contain a page/artboard (author the layout first) or registration fails with
+        a retryable error. Returns the asset_id; place it with place_asset_in_node /
+        place_asset_in_slot (a generated image is not auto-placed)."""
         asset_id = f"asset_img_{self.run_id[:8]}_{len(self.scene.get('assets', {}))}"
         width, height, aspect_ratio = self._image_constraints(
             target_node_id, target_slot_id, width, height, aspect_ratio
@@ -820,6 +833,7 @@ class LumenDesignTools:
             aspect_ratio=aspect_ratio,
             brand_notes=notes,
             transparent_background=transparent_background,
+            condition_on_references=condition_on_references,
         )
         diagnostics = diagnostics_from(raw_diagnostics)
         if record is None:
@@ -1062,6 +1076,45 @@ class LumenDesignTools:
             "action='use_brand_asset' requires `node_id` or `slot_id`.",
         )
 
+    def _collect_reference_previews(
+        self, condition_on_references: bool, diagnostics: List[JsonObject]
+    ) -> tuple[Optional[List[tuple]], Optional[List[str]]]:
+        """The turn's reference attachment previews as order-sorted
+        (bytes, mime) pairs + their pixel digests, for style-conditioning a
+        generation. Returns (None, None) when there are no references or the
+        caller opted out (byte-identical to a plain generation). A reference
+        whose store blob went missing mid-run is SKIPPED with a recorded warning
+        (never a hard fail — the 422 boundary guarded turn start); its digest is
+        dropped from the key too, so the cached asset matches what was actually
+        conditioned on."""
+        manifest = self.config.reference_assets or {}
+        if not condition_on_references or not manifest:
+            return None, None
+        ordered = sorted(
+            manifest.items(), key=lambda kv: ((kv[1] or {}).get("order", 0), kv[0])
+        )
+        store_root = self.config.effective_asset_store_root
+        images: List[tuple] = []
+        digests: List[str] = []
+        for asset_id, entry in ordered:
+            entry = entry or {}
+            digest = entry.get("preview_digest")
+            path = blob_path_for_digest(store_root, digest) if digest else None
+            if path is None or not path.is_file():
+                self.record(
+                    "agent",
+                    "reference_preview_missing",
+                    input_summary=asset_id,
+                    output_summary=(
+                        f"reference {asset_id} preview bytes missing "
+                        f"({digest or 'no digest'}); skipped conditioning on it"
+                    ),
+                )
+                continue
+            images.append((path.read_bytes(), entry.get("mime_type") or "image/png"))
+            digests.append(digest)
+        return (images or None), (digests or None)
+
     def _produce_image_asset(
         self,
         *,
@@ -1073,16 +1126,27 @@ class LumenDesignTools:
         aspect_ratio: Optional[str],
         brand_notes: List[str],
         transparent_background: bool,
+        condition_on_references: bool = True,
     ) -> tuple[Optional[JsonObject], JsonObject, List[JsonObject], Optional[tuple]]:
         """Produce + ingest one image asset record. Prefers the configured T2I
         model; on a missing config or any model/ingest failure it falls back to the
         deterministic stub provider (with a warning) so the design loop never
-        dead-ends on imagery. Returns (record, meta, raw_diagnostics, error)."""
+        dead-ends on imagery. When this turn carries reference attachments and
+        `condition_on_references` is set, the reference previews ride the model
+        call as STYLE anchors (and key the cache on their pixel digests). Returns
+        (record, meta, raw_diagnostics, error)."""
         diagnostics: List[JsonObject] = []
 
         # 1) Real text-to-image model, when configured.
         if image_provider is not None and image_provider.is_configured():
             store_root = str(self.config.effective_asset_store_root)
+            # Reference-conditioned generation: resolve the turn's attachment
+            # preview bytes (order-sorted) so the style rides the model call and
+            # the cache keys on their pixel digests. No references / opt-out →
+            # (None, None) and the request is byte-identical to a plain generation.
+            reference_images, reference_digests = self._collect_reference_previews(
+                condition_on_references, diagnostics
+            )
             # Generation cache: re-use the asset an identical earlier request
             # produced (the loop re-requests the same hero each iteration) instead
             # of re-paying the model. Checked BEFORE the provider call.
@@ -1097,6 +1161,7 @@ class LumenDesignTools:
                     brand_notes=brand_notes,
                     aspect_ratio=aspect_ratio,
                     transparent_background=transparent_background or None,
+                    reference_digests=reference_digests,
                 )
                 cached = image_cache.lookup(store_root, cache_key)
                 if cached:
@@ -1114,8 +1179,17 @@ class LumenDesignTools:
                     brand_notes=brand_notes,
                     aspect_ratio=aspect_ratio,
                     transparent_background=transparent_background or None,
+                    reference_images=reference_images,
                     request_id=asset_id,
                 )
+                if reference_digests:
+                    # Honest provenance: the ingested asset records which reference
+                    # pixels conditioned it.
+                    notes = result.provenance.setdefault("notes", [])
+                    notes.append(
+                        f"reference-conditioned on {len(reference_digests)} "
+                        f"attachment(s): {', '.join(reference_digests)}"
+                    )
                 ingest = self.core.ingest_asset(
                     store_root=store_root,
                     bytes_base64=base64.b64encode(result.image_bytes).decode("ascii"),
@@ -1143,10 +1217,17 @@ class LumenDesignTools:
                 )
             except Exception as error:  # noqa: BLE001 - degrade to a placeholder, never crash the loop
                 code = getattr(error, "code", error.__class__.__name__)
+                # RC2-1 honesty (refuter note): a placeholder is inherently
+                # UNCONDITIONED — when this generation was reference-conditioned,
+                # say the conditioning was lost, not just that a placeholder ran.
+                conditioning_note = (
+                    " (reference conditioning lost)" if reference_digests else ""
+                )
                 diagnostics.append(
                     _image_warning(
                         "LUMA0710",
-                        f"text-to-image model unavailable ({code}); used a placeholder image",
+                        f"text-to-image model unavailable ({code}); used a "
+                        f"placeholder image{conditioning_note}",
                     )
                 )
         elif image_provider is not None:

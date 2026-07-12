@@ -68,6 +68,12 @@ When the kit lacks a needed photographic image:
 4. **Generate onto the target frame** — `asset(action="generate_image",
    target_node_id=<frame>, prompt=…, brand_notes=…, alt=…)`. The aspect comes from
    the frame's geometry; compose for any overlay (negative space in the lower third).
+   - **Turn references ride as image conditioning, automatically.** If the user
+     attached reference images this turn, generation is style-conditioned on them by
+     default (palette/texture/mood/edge) — `brand_notes` stays the *prose* channel and
+     the prompt stays about the subject; don't restate the reference style in words.
+     Only pass `condition_on_references=false` when the brief wants imagery that
+     deliberately diverges from the references.
 5. **Place + scrim** per `knowledge/images/placement`: text over a photo ALWAYS gets
    a scrim beneath it, and a full-bleed-photo artboard is a **dark** surface so brand
    type tokens resolve to light ink.

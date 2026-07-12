@@ -32,6 +32,16 @@ DEFAULT_MIME = "image/png"
 DEFAULT_TIMEOUT_S = 60.0
 DEFAULT_MAX_RETRIES = 2
 
+# Framing prepended to the instruction when reference images ride a GENERATION
+# (not an edit). Reference images are STYLE anchors, not source pixels to modify,
+# so the model is told explicitly to synthesize a NEW image rather than copy or
+# edit the attachments (edit's "modify THIS image" semantics are the opposite).
+STYLE_REFERENCE_FRAMING = (
+    "The attached image(s) are STYLE REFERENCES only — match their visual style "
+    "(palette, texture, mood, edge character) but generate a NEW image; do not "
+    "copy, crop, or edit them."
+)
+
 
 class ImageGenerationError(Exception):
     """Typed failure so the route can return a clean HTTP error + diagnostic
@@ -110,6 +120,7 @@ def generate(
     image_size: Optional[str] = None,
     transparent_background: Optional[bool] = None,
     reference_asset_ids: Optional[List[str]] = None,
+    reference_images: Optional[List[Tuple[bytes, str]]] = None,
     request_id: Optional[str] = None,
 ) -> ImageGenerationResult:
     """Generate one raster image. Provider-agnostic orchestration:
@@ -118,8 +129,12 @@ def generate(
 
     `aspect_ratio` ("16:9") + `image_size` ("1k"/"2k"/"4k") translate to concrete
     width/height when explicit dimensions are absent (a 1:1 frame is never stretched
-    into 16:9). `reference_asset_ids` lands now for forward-compat; reference-image
-    *use* is Slice 1. Raises `ImageGenerationError` (typed) on misconfiguration or
+    into 16:9). `reference_asset_ids` stays accepted — the caller (API route) resolves
+    those ids into `reference_images`, the bytes channel: (bytes, mime) pairs that ride
+    the model call as STYLE references (multimodal content, images first then the
+    instruction, framed so the model synthesizes a NEW image rather than editing the
+    attachments). No references → the request body is byte-identical to a bare
+    text-to-image call. Raises `ImageGenerationError` (typed) on misconfiguration or
     provider failure. This is the function the route calls and tests patch.
     """
     if not (prompt or "").strip():
@@ -139,6 +154,7 @@ def generate(
         aspect_ratio=aspect_ratio,
         image_size=image_size,
         transparent_background=transparent_background,
+        reference_images=reference_images or None,
     )
     return ImageGenerationResult(
         image_bytes=image_bytes,
@@ -259,6 +275,24 @@ def _compose_prompt(prompt: str, brand_notes: List[str]) -> str:
     return prompt
 
 
+def _image_content_parts(images: List[Tuple[bytes, str]]) -> List[dict]:
+    """OpenAI-style multimodal `image_url` parts (base64 data: URLs), one per
+    (bytes, mime) pair, in order. Shared by the edit (source) and reference-
+    conditioned generation paths so both build byte-identical image parts."""
+    return [
+        {
+            "type": "image_url",
+            "image_url": {
+                "url": "data:"
+                + (mime or DEFAULT_MIME)
+                + ";base64,"
+                + base64.b64encode(image_bytes).decode("ascii")
+            },
+        }
+        for image_bytes, mime in images
+    ]
+
+
 # --- adapter seam (the only vendor-specific code) --------------------------
 
 def _invoke_with_retries(
@@ -271,6 +305,7 @@ def _invoke_with_retries(
     image_size: Optional[str],
     transparent_background: Optional[bool],
     source_images: Optional[List[Tuple[bytes, str]]] = None,
+    reference_images: Optional[List[Tuple[bytes, str]]] = None,
 ) -> Tuple[bytes, str]:
     last_error: Optional[Exception] = None
     for attempt in range(config.max_retries + 1):
@@ -284,6 +319,7 @@ def _invoke_with_retries(
                 image_size=image_size,
                 transparent_background=transparent_background,
                 source_images=source_images,
+                reference_images=reference_images,
             )
         except ImageGenerationError:
             raise  # typed/terminal — don't retry config or decode errors
@@ -306,6 +342,7 @@ def _invoke_model(
     image_size: Optional[str],
     transparent_background: Optional[bool],
     source_images: Optional[List[Tuple[bytes, str]]] = None,
+    reference_images: Optional[List[Tuple[bytes, str]]] = None,
 ) -> Tuple[bytes, str]:
     """ADAPTER SEAM — OpenRouter (raw HTTP).
 
@@ -334,22 +371,20 @@ def _invoke_model(
     # Image EDIT: source images ride the same chat-completions call as
     # OpenAI-style multimodal content parts (base64 data: URLs) ahead of the
     # instruction text; the model returns the edited image the same way a
-    # generation does. Plain generation keeps the bare-string content.
+    # generation does. Reference-conditioned GENERATION uses the same content
+    # shape — reference images first, then the instruction — but prefixes an
+    # explicit "these are STYLE references, make a NEW image" framing so the
+    # model does not treat them as pixels to edit. Plain generation (no source,
+    # no references) keeps the bare-string content, byte-identical to before.
     if source_images:
         content: object = [
-            *(
-                {
-                    "type": "image_url",
-                    "image_url": {
-                        "url": "data:"
-                        + (mime or DEFAULT_MIME)
-                        + ";base64,"
-                        + base64.b64encode(image_bytes).decode("ascii")
-                    },
-                }
-                for image_bytes, mime in source_images
-            ),
+            *_image_content_parts(source_images),
             {"type": "text", "text": user_prompt},
+        ]
+    elif reference_images:
+        content = [
+            *_image_content_parts(reference_images),
+            {"type": "text", "text": f"{STYLE_REFERENCE_FRAMING}\n\n{user_prompt}"},
         ]
     else:
         content = user_prompt

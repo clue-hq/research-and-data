@@ -676,6 +676,157 @@ def test_view_invalid_target_advertises_reference_form_only_when_references(tmp_
     assert "reference:<n>" in withref_err
 
 
+# 7g. RC2 reference-conditioned generation (D-RC2.4) --------------------------
+
+
+def _install_image_model(monkeypatch, captured, provenance):
+    """Install a configured T2I stub on the deepagent substrate module that
+    captures generate()'s kwargs and returns a ready image; `provenance` is the
+    exact dict the substrate stamps in place, so the test can read the notes back."""
+    def fake_generate(**kwargs):
+        captured.update(kwargs)
+        return types.SimpleNamespace(
+            image_bytes=b"\x89PNG-generated-bytes",
+            mime_type="image/png",
+            model="test/image-model",
+            provenance=provenance,
+            license={"name": "generated_commercial_use", "allow_export": True},
+        )
+
+    stub = types.SimpleNamespace(
+        is_configured=lambda: True,
+        configured_model_id=lambda: "test/image-model",
+        generate=fake_generate,
+    )
+    monkeypatch.setattr("lumen_agent.tools.substrate.image_provider", stub)
+
+
+def test_generate_image_conditions_on_references(tmp_path, monkeypatch):
+    """D-RC2.4: with references attached, generate_image feeds their order-sorted
+    preview bytes on the provider's reference_images channel, keys the cache on
+    their pixel digests, and stamps honest reference-conditioned provenance."""
+    monkeypatch.setattr("lumen_agent.tools.substrate.CoreClient", FakeCoreClient)
+    from lumen_agent.tools import substrate as sub
+
+    png_a, png_b = _solid_png(544), _solid_png(576)
+    dig_a, dig_b = hashlib.sha256(png_a).hexdigest(), hashlib.sha256(png_b).hexdigest()
+    config = _reference_config(
+        tmp_path,
+        [
+            {"asset_id": "ref_b", "png": png_b, "order": 1},  # dict order != attach order
+            {"asset_id": "ref_a", "png": png_a, "order": 0},
+        ],
+    )
+    captured: dict = {}
+    prov = {"created_by": "agent", "source_label": "image generation", "notes": []}
+    _install_image_model(monkeypatch, captured, prov)
+
+    tools = _tools_only(config, prompt="hero")
+    result = json.loads(tools.generate_image("a calm clinic reception"))
+    assert result["image"]["status"] == "ok"
+    assert result["image"]["mode"] == "model"
+
+    # Order-sorted by attachment order (order 0 first), regardless of dict order.
+    assert captured["reference_images"] == [(png_a, "image/png"), (png_b, "image/png")]
+    # Honest provenance names the conditioning digests.
+    note = prov["notes"][-1]
+    assert "reference-conditioned on 2 attachment(s)" in note
+    assert dig_a in note and dig_b in note
+    # The cache was keyed on the reference PIXEL digests.
+    key = sub.image_cache.generation_key(
+        prompt="a calm clinic reception",
+        model="test/image-model",
+        brand_notes=[],
+        reference_digests=[dig_a, dig_b],
+    )
+    assert sub.image_cache.lookup(str(config.effective_asset_store_root), key) is not None
+
+
+def test_generate_image_condition_on_references_false_skips(tmp_path, monkeypatch):
+    """D-RC2.1 opt-out: condition_on_references=false suppresses conditioning even
+    with references attached — no reference_images, no reference-conditioned note."""
+    monkeypatch.setattr("lumen_agent.tools.substrate.CoreClient", FakeCoreClient)
+    config = _reference_config(
+        tmp_path, [{"asset_id": "ref_a", "png": _solid_png(544), "order": 0}]
+    )
+    captured: dict = {}
+    prov = {"created_by": "agent", "source_label": "image generation", "notes": []}
+    _install_image_model(monkeypatch, captured, prov)
+
+    tools = _tools_only(config, prompt="hero")
+    result = json.loads(
+        tools.generate_image("a calm clinic reception", condition_on_references=False)
+    )
+    assert result["image"]["status"] == "ok"
+    assert captured["reference_images"] is None
+    assert not any("reference-conditioned" in n for n in prov["notes"])
+
+
+def test_generate_image_without_references_byte_identical_call(tmp_path, monkeypatch):
+    """No references → the provider call is byte-identical to pre-RC2: every kwarg
+    pinned, reference_images None (no new behavior on the plain path)."""
+    monkeypatch.setattr("lumen_agent.tools.substrate.CoreClient", FakeCoreClient)
+    captured: dict = {}
+    prov = {"created_by": "agent", "source_label": "image generation", "notes": []}
+    _install_image_model(monkeypatch, captured, prov)
+
+    tools = _tools_only(runtime_config(tmp_path), prompt="hero")
+    tools.generate_image("a serene mountain lake at dawn", brand_notes=["deep navy"])
+    assert captured.pop("request_id").startswith("asset_img_")
+    assert captured == {
+        "prompt": "a serene mountain lake at dawn",
+        "width": None,
+        "height": None,
+        "brand_notes": ["deep navy"],
+        "aspect_ratio": None,
+        "transparent_background": None,
+        "reference_images": None,
+    }
+    assert not any("reference-conditioned" in n for n in prov["notes"])
+
+
+def test_generate_image_missing_reference_blob_skipped_not_fatal(tmp_path, monkeypatch):
+    """D-RC2.4: a reference whose store blob is gone mid-run is SKIPPED with a
+    recorded warning (never a hard fail) — the remaining reference still
+    conditions, generation still succeeds, and the key drops the missing digest."""
+    monkeypatch.setattr("lumen_agent.tools.substrate.CoreClient", FakeCoreClient)
+    from lumen_agent.tools import substrate as sub
+
+    present_png = _solid_png(544)
+    present_dig = hashlib.sha256(present_png).hexdigest()
+    config = _reference_config(
+        tmp_path,
+        [
+            {"asset_id": "ref_ok", "png": present_png, "order": 0},
+            {"asset_id": "ref_gone", "png": _solid_png(576), "order": 1, "store": False},
+        ],
+    )
+    captured: dict = {}
+    prov = {"created_by": "agent", "source_label": "image generation", "notes": []}
+    _install_image_model(monkeypatch, captured, prov)
+
+    tools = _tools_only(config, prompt="hero")
+    result = json.loads(tools.generate_image("a calm clinic reception"))
+    assert result["image"]["status"] == "ok"  # never dead-ends on a missing blob
+
+    # Only the present reference conditions; the missing one is dropped everywhere.
+    assert captured["reference_images"] == [(present_png, "image/png")]
+    assert "reference-conditioned on 1 attachment(s)" in prov["notes"][-1]
+    assert present_dig in prov["notes"][-1]
+    key = sub.image_cache.generation_key(
+        prompt="a calm clinic reception",
+        model="test/image-model",
+        brand_notes=[],
+        reference_digests=[present_dig],
+    )
+    assert sub.image_cache.lookup(str(config.effective_asset_store_root), key) is not None
+
+    # The skip was recorded (honest trace, not a silent drop).
+    trace = (tools.trace_dir / "trace.jsonl").read_text(encoding="utf-8")
+    assert "reference_preview_missing" in trace
+    assert "ref_gone" in trace
+
+
 # 7b. scaffold ----------------------------------------------------------------
 
 

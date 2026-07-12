@@ -46,6 +46,13 @@ Write them as one or two natural sentences, not a comma list. Prose beats keywor
   read cleanly (see `knowledge/images/placement`).
 - **Aspect comes from the frame, not the prompt.** `asset(action="generate_image")` derives
   the aspect ratio from the target node's geometry — don't hardcode a ratio that fights the frame.
+- **References condition generation automatically.** When the turn has attached
+  reference images, `generate_image` conditions the model on them by default — their
+  palette/texture/mood/edge-character arrive as a STYLE anchor (alongside
+  `brand_notes`, the prose channel). So keep the prompt about the **subject**; do
+  *not* describe the reference's style in words — it's redundant and can fight the
+  pixels. Opt out with `condition_on_references=false` only when the brief deliberately
+  wants imagery that diverges from the references.
 
 ## Per-use-case templates
 

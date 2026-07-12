@@ -43,6 +43,7 @@ def generation_key(
     image_size: Optional[str] = None,
     transparent_background: Optional[bool] = None,
     reference_asset_ids: Optional[List[str]] = None,
+    reference_digests: Optional[List[str]] = None,
     source_digest: Optional[str] = None,
 ) -> str:
     """Stable hash of the generation request — the cache key. Anything that
@@ -60,6 +61,12 @@ def generation_key(
         "transparent_background": bool(transparent_background) if transparent_background is not None else None,
         "reference_asset_ids": sorted(reference_asset_ids or []),
     }
+    # Only present when reference-conditioned, so plain-generation keys (and the
+    # existing cache) are unchanged. Reference PIXEL digests are the content key —
+    # ids alone can't tell two different attachments apart, and they align the
+    # runtime and route paths on the same truth.
+    if reference_digests:
+        payload["reference_digests"] = sorted(reference_digests)
     # Only present for EDITS, so plain-generation keys (and the existing cache)
     # are unchanged. Edits MUST key on the source pixels — editing asset A then
     # asset B with the same instruction would otherwise return A's result.

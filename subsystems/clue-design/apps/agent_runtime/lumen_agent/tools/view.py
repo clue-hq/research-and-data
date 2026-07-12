@@ -10,7 +10,7 @@ from typing import Optional
 from py_lumen_obs import get_logger, log_span
 
 from ..paths import to_virtual
-from .substrate import LumenDesignTools
+from .substrate import LumenDesignTools, blob_path_for_digest
 
 logger = get_logger("lumen_agent.tools.view")
 
@@ -228,8 +228,7 @@ def _view_content(tools: LumenDesignTools, target: str) -> list[dict]:
         digest = entry.get("preview_digest")
         path = None
         if digest:
-            store_root = Path(tools.config.effective_asset_store_root)
-            path = store_root / "sha256" / digest[:2] / digest
+            path = blob_path_for_digest(tools.config.effective_asset_store_root, digest)
         if path is None or not path.exists():
             content = [
                 _text_block(

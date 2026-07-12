@@ -710,3 +710,36 @@ curation. Design + as-built amendments:
 .context/next-wave/rc-reference-conditioned-design.md.
 Gates: api 299 · agent-runtime 430 · editor tsc + vitest 731 (26 known
 baseline) · acceptance 3/3.
+
+## RC2 item-1 — Reference-conditioned image generation (2026-07-12, live-proven)
+
+The lying field dies: `generate()` gains the real bytes channel
+(`reference_images`, multimodal references-first-instruction-last with an
+explicit STYLE-REFERENCES-generate-NEW framing; `edit()` untouched — its
+"modify THIS image" semantics are the opposite), and `/assets/generate`
+resolves its previously-inert `reference_asset_ids` through the RC manifest
+machinery (same hard 422s, same SVG rasterize). The deepagent's
+`generate_image` auto-conditions on the turn's references
+(`condition_on_references=true` default — forgetting is the rec-2 failure
+mode; opt-out for briefs that deliberately diverge), resolving order-sorted
+preview bytes runtime-side (the by-value manifest; a mid-run-missing blob is
+skipped WITH its digest so the cache key matches what actually conditioned),
+stamping honest provenance ("reference-conditioned on N attachment(s): …").
+Cache keys gain `reference_digests` (sorted, only-when-truthy — pre-RC2 keys
+byte-identical, hand-proven). Teaching: subject in the prompt, style from
+references + brand_notes; never re-describe the reference style in prose.
+
+Refuter round: NO blockers. Top suspicion (stale-cache poisoning — pre-RC2
+inert-field entries with ids in the key but unconditioned pixels) REFUTED by
+hand-built hash proof: a conditioned request always carries digests, so its
+key diverges from every inert-era entry. Verified clean: no-references
+byte-identity both paths, images/digests desync impossible (one loop),
+edit isolation both levels, route/runtime 422+order parity, dead
+both-set provider branch harmless. One honesty fix applied from the round:
+the stub-fallback warning names "(reference conditioning lost)" when a
+conditioned generation degrades. LIVE PROOF (gemini-3-pro-image): same
+wellness-texture prompt plain vs conditioned on the wash references —
+default busy watercolor vs the references' soft-orb vocabulary
+(.context/next-wave/rc-gate-evidence/imagegen/). Gates: api 309 ·
+agent-runtime 434 · zero regressions. RC2 items 2-4 stay parked
+(DET∧JUDGE palette, A8 interplay, attachment curation).

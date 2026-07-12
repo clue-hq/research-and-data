@@ -2760,6 +2760,21 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
                 source_images = [
                     (blob_path.read_bytes(), source_media.get("mime_type") or "image/png")
                 ]
+            # RC (D-RC2.5): reference-conditioned GENERATION — resolve the
+            # request's reference_asset_ids into real bytes (the field was inert
+            # before) so the editor's generate flow conditions on attached style
+            # references. Only on the pure-generation path (an edit already rides
+            # its source pixels). Empty ids → None → byte-identical to today.
+            reference_images: Optional[list] = None
+            reference_digests: Optional[List[str]] = None
+            if source_images is None:
+                ref_ids = _dedupe_and_cap_reference_ids(payload.reference_asset_ids)
+                if ref_ids:
+                    reference_images, reference_digests = (
+                        resolve_reference_images_for_generate(
+                            repo, ref_ids, asset_store_root()
+                        )
+                    )
             # Generation cache: re-use the asset produced by an identical earlier
             # request instead of re-paying the model (the byte-digest store dedup
             # only fires AFTER the paid, non-deterministic call). Checked BEFORE the
@@ -2774,6 +2789,7 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
                 image_size=payload.image_size,
                 transparent_background=payload.transparent_background,
                 reference_asset_ids=payload.reference_asset_ids,
+                reference_digests=reference_digests,
                 source_digest=source_digest,
             )
             cached_record = image_cache.lookup(asset_store_root(), cache_key)
@@ -2818,6 +2834,7 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
                         image_size=payload.image_size,
                         transparent_background=payload.transparent_background,
                         reference_asset_ids=payload.reference_asset_ids,
+                        reference_images=reference_images,
                         request_id=asset_id,
                     )
             except image_provider.ImageGenerationError as error:
@@ -4308,27 +4325,17 @@ def brand_kit_asset_manifest(
 REFERENCE_ASSETS_MAX = 4  # mirrors PLACED_PREVIEWS_MAX; more dilutes vision context (D1)
 
 
-def resolve_agent_turn_references(
-    payload: AgentTurnPreviewRequest,
-) -> Optional[JsonObject]:
-    """RC (D2): the user-attached references for THIS turn, resolved from the
-    asset library into a by-value manifest so the runtime never reads the API
-    database. Empty ids → None (the turn is byte-identical to today). Unlike the
-    brand-kit manifest, a bad attachment is EXPLICIT user intent and fails
-    LOUDLY with a 422 (unknown id / too many / broken preview) rather than a
-    silent skip — a reference the user picked but the loop never saw is a worse
-    failure than a rejected request."""
-    raw = payload.reference_asset_ids or []
-    # De-dupe preserving first-occurrence order (the attachment order the user
-    # sees in the composer), dropping empties.
+def _dedupe_and_cap_reference_ids(raw: Optional[List[str]]) -> List[str]:
+    """De-dupe reference ids preserving first-occurrence order (the attachment
+    order the user sees in the composer), drop empties, and enforce the per-turn
+    cap with the RC 422. Shared by the agent-turn resolver and the
+    /assets/generate route so both reject the same bad attachments identically."""
     asset_ids: List[str] = []
     seen: set[str] = set()
-    for asset_id in raw:
+    for asset_id in raw or []:
         if asset_id and asset_id not in seen:
             seen.add(asset_id)
             asset_ids.append(asset_id)
-    if not asset_ids:
-        return None
     if len(asset_ids) > REFERENCE_ASSETS_MAX:
         raise HTTPException(
             status_code=422,
@@ -4341,6 +4348,41 @@ def resolve_agent_turn_references(
                 "diagnostics": [],
             },
         )
+    return asset_ids
+
+
+def resolve_reference_images_for_generate(
+    repo: Repository, asset_ids: List[str], store_root: str
+) -> Tuple[List[Tuple[bytes, str]], List[str]]:
+    """RC (D-RC2.5): resolve already-deduped+capped reference ids into order-
+    sorted (bytes, mime) reference images + their preview digests, via the SAME
+    RC manifest machinery the agent turn uses — same hard 422s (unknown id /
+    broken preview) and the same SVG rasterize. The manifest guarantees each
+    preview blob exists (it 422s otherwise), so the bytes read is safe."""
+    manifest = reference_asset_manifest(repo, repo.connection, asset_ids, store_root)
+    images: List[Tuple[bytes, str]] = []
+    digests: List[str] = []
+    for entry in sorted(manifest.values(), key=lambda e: e.get("order", 0)):
+        digest = entry["preview_digest"]
+        blob = Path(store_root) / "sha256" / digest[:2] / digest
+        images.append((blob.read_bytes(), entry.get("mime_type") or "image/png"))
+        digests.append(digest)
+    return images, digests
+
+
+def resolve_agent_turn_references(
+    payload: AgentTurnPreviewRequest,
+) -> Optional[JsonObject]:
+    """RC (D2): the user-attached references for THIS turn, resolved from the
+    asset library into a by-value manifest so the runtime never reads the API
+    database. Empty ids → None (the turn is byte-identical to today). Unlike the
+    brand-kit manifest, a bad attachment is EXPLICIT user intent and fails
+    LOUDLY with a 422 (unknown id / too many / broken preview) rather than a
+    silent skip — a reference the user picked but the loop never saw is a worse
+    failure than a rejected request."""
+    asset_ids = _dedupe_and_cap_reference_ids(payload.reference_asset_ids)
+    if not asset_ids:
+        return None
     store_root = str(api_asset_store_root())
     connection = connect(settings.lumen_api_database_path)
     try:

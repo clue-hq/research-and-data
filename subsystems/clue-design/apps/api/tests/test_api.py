@@ -3476,7 +3476,13 @@ def test_resolve_dimensions_translates_aspect_ratio_and_size_tier() -> None:
 def test_generate_asset_image_model_forwards_aspect_size_and_references(
     client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # Step 7: the route threads aspect_ratio / image_size / reference_asset_ids to the provider.
+    # Step 7 + RC2 D-RC2.5: the route threads aspect_ratio / image_size to the
+    # provider AND resolves reference_asset_ids FOR REAL — the once-inert field now
+    # lands the reference PIXELS on the provider's reference_images channel (bytes
+    # read from the store), while the ids stay passed through too.
+    ref_rgba = (12, 200, 90, 255)
+    ref = _upload_source_raster(client, rgba=ref_rgba, label="style-ref")
+    ref_png = _tiny_png(8, 8, rgba=ref_rgba)
     captured: dict = {}
 
     def fake_generate(**kwargs) -> image_provider.ImageGenerationResult:
@@ -3497,13 +3503,15 @@ def test_generate_asset_image_model_forwards_aspect_size_and_references(
             "prompt": "a hero photograph",
             "aspect_ratio": "16:9",
             "image_size": "2k",
-            "reference_asset_ids": ["asset_ref_a"],
+            "reference_asset_ids": [ref["id"]],
         },
     )
     assert response.status_code == 200, response.text
     assert captured["aspect_ratio"] == "16:9"
     assert captured["image_size"] == "2k"
-    assert captured["reference_asset_ids"] == ["asset_ref_a"]
+    assert captured["reference_asset_ids"] == [ref["id"]]
+    # The real resolution: the reference's stored pixels ride the bytes channel.
+    assert captured["reference_images"] == [(ref_png, "image/png")]
 
 
 def _upload_source_raster(
@@ -3705,6 +3713,192 @@ def test_image_provider_edit_builds_multimodal_content(
     assert content[-1]["type"] == "text"
     assert "remove the background completely" in content[-1]["text"]
     assert "transparent background" in content[-1]["text"]
+
+
+def test_image_provider_generate_builds_reference_conditioned_content(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # RC2 D-RC2.2: reference_images turn a GENERATION into OpenAI-style multimodal
+    # content — reference image part(s) FIRST, the instruction LAST, prefixed with
+    # the fixed STYLE-REFERENCE framing (make a NEW image, don't edit these).
+    import base64
+
+    monkeypatch.setattr(settings, "image_model_base_url", "https://openrouter.ai/api/v1")
+    monkeypatch.setattr(settings, "image_model_api_key", "test-key")
+    monkeypatch.setattr(settings, "image_model_id", "test/image-model")
+
+    ref_a = _tiny_png(8, 8, rgba=(200, 40, 40, 255))
+    ref_b = _tiny_png(8, 8, rgba=(40, 40, 200, 255))
+    out_png = _tiny_png(8, 8, rgba=(9, 9, 9, 255))
+    out_url = "data:image/png;base64," + base64.b64encode(out_png).decode("ascii")
+    captured: dict = {}
+
+    class _FakeResponse:
+        status_code = 200
+        headers = {"content-type": "application/json"}
+
+        def json(self) -> dict:
+            return {"choices": [{"message": {"images": [{"image_url": {"url": out_url}}]}}]}
+
+    def fake_post(url, json=None, headers=None, timeout=None):
+        captured.update(url=url, json=json, headers=headers)
+        return _FakeResponse()
+
+    monkeypatch.setattr("httpx.post", fake_post)
+
+    result = image_provider.generate(
+        prompt="a focused surgeon in an operating theatre",
+        brand_notes=["calm clinical confidence"],
+        aspect_ratio="16:9",
+        reference_images=[(ref_a, "image/png"), (ref_b, "image/png")],
+    )
+    assert result.image_bytes == out_png
+
+    content = captured["json"]["messages"][0]["content"]
+    assert isinstance(content, list)
+    # References first, in order; instruction last.
+    assert content[0]["type"] == "image_url"
+    assert content[0]["image_url"]["url"] == (
+        "data:image/png;base64," + base64.b64encode(ref_a).decode("ascii")
+    )
+    assert content[1]["image_url"]["url"] == (
+        "data:image/png;base64," + base64.b64encode(ref_b).decode("ascii")
+    )
+    assert content[-1]["type"] == "text"
+    text = content[-1]["text"]
+    assert image_provider.STYLE_REFERENCE_FRAMING in text
+    assert "STYLE REFERENCES only" in text
+    # The composed prompt (subject + brand notes) and the aspect hint still ride the
+    # instruction, AFTER the framing.
+    assert "a focused surgeon" in text
+    assert "calm clinical confidence" in text
+    assert "aspect ratio 16:9" in text
+    assert text.index(image_provider.STYLE_REFERENCE_FRAMING) < text.index("a focused surgeon")
+
+
+def test_image_provider_generate_without_references_is_bare_string(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # No-references path stays BYTE-IDENTICAL: bare-string content (no multimodal
+    # list), exactly the request a plain text-to-image call has always made.
+    import base64
+
+    monkeypatch.setattr(settings, "image_model_base_url", "https://openrouter.ai/api/v1")
+    monkeypatch.setattr(settings, "image_model_api_key", "test-key")
+    monkeypatch.setattr(settings, "image_model_id", "test/image-model")
+
+    out_png = _tiny_png(8, 8, rgba=(1, 2, 3, 255))
+    out_url = "data:image/png;base64," + base64.b64encode(out_png).decode("ascii")
+    captured: dict = {}
+
+    class _FakeResponse:
+        status_code = 200
+        headers = {"content-type": "application/json"}
+
+        def json(self) -> dict:
+            return {"choices": [{"message": {"images": [{"image_url": {"url": out_url}}]}}]}
+
+    def fake_post(url, json=None, headers=None, timeout=None):
+        captured.update(json=json)
+        return _FakeResponse()
+
+    monkeypatch.setattr("httpx.post", fake_post)
+
+    image_provider.generate(prompt="a quiet mountain lake at dawn", aspect_ratio="16:9")
+    content = captured["json"]["messages"][0]["content"]
+    assert content == "a quiet mountain lake at dawn\n\n(Render with aspect ratio 16:9.)"
+
+
+def test_generation_key_reference_digests(client: TestClient) -> None:
+    # RC2 D-RC2.3: reference_digests participate only when truthy (existing keys
+    # byte-identical), order-insensitively.
+    from lumen_api import image_cache
+
+    base = image_cache.generation_key(prompt="a hero", model="m")
+    # No digests / empty list -> identical to the pre-RC2 key (byte-compatible).
+    assert image_cache.generation_key(prompt="a hero", model="m", reference_digests=None) == base
+    assert image_cache.generation_key(prompt="a hero", model="m", reference_digests=[]) == base
+    # Truthy digests change the key, and their order does not matter.
+    with_refs = image_cache.generation_key(prompt="a hero", model="m", reference_digests=["b", "a"])
+    assert with_refs != base
+    assert with_refs == image_cache.generation_key(
+        prompt="a hero", model="m", reference_digests=["a", "b"]
+    )
+    # Different reference pixels -> different key.
+    assert with_refs != image_cache.generation_key(
+        prompt="a hero", model="m", reference_digests=["a", "c"]
+    )
+
+
+def test_generate_asset_route_422s_on_unknown_reference(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # RC2 D-RC2.5: the route resolves references for real, so an unknown id fails
+    # with the RC manifest's hard 422 (the field is no longer inert) — the model is
+    # never called.
+    def fail_generate(**kwargs):  # pragma: no cover - guard
+        raise AssertionError("generate must not run when a reference id is bad")
+
+    monkeypatch.setattr(image_provider, "generate", fail_generate)
+    response = client.post(
+        "/assets/generate",
+        json={
+            "provider": "image-gen-v1",
+            "prompt": "a hero photograph",
+            "reference_asset_ids": ["asset_ghost"],
+        },
+    )
+    assert response.status_code == 422, response.text
+    assert response.json()["detail"]["code"] == "reference.asset_not_found"
+
+
+def test_generate_asset_reference_cache_keys_on_pixel_digests(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # RC2 D-RC2.3 at the route: the same (prompt, reference) is a cache HIT; the SAME
+    # prompt with a DIFFERENT reference is a MISS (digests are in the key).
+    ref_a = _upload_source_raster(client, rgba=(200, 40, 40, 255), label="ref-a")
+    ref_b = _upload_source_raster(client, rgba=(40, 40, 200, 255), label="ref-b")
+    calls = {"n": 0}
+
+    def fake_generate(**kwargs) -> image_provider.ImageGenerationResult:
+        calls["n"] += 1
+        return image_provider.ImageGenerationResult(
+            image_bytes=_tiny_png(8, 8, rgba=(7, 7, 7, 255)),
+            mime_type="image/png",
+            model="mock-image-model",
+            provenance={"created_by": "agent", "source_label": "image generation", "notes": []},
+            license={"name": "generated_commercial_use", "allow_export": True},
+        )
+
+    monkeypatch.setattr(image_provider, "generate", fake_generate)
+    prompt = "a calm hero field"
+
+    first = client.post(
+        "/assets/generate",
+        json={"provider": "image-gen-v1", "prompt": prompt, "reference_asset_ids": [ref_a["id"]]},
+    )
+    assert first.status_code == 200, first.text
+    assert calls["n"] == 1
+    assert first.json()["deduplicated"] is False
+
+    # Different reference pixels, identical prompt -> MISS.
+    second = client.post(
+        "/assets/generate",
+        json={"provider": "image-gen-v1", "prompt": prompt, "reference_asset_ids": [ref_b["id"]]},
+    )
+    assert second.status_code == 200, second.text
+    assert calls["n"] == 2, "a different reference with the same prompt must not hit the cache"
+
+    # Repeat of the first (prompt, reference) -> HIT (model not re-called).
+    repeat = client.post(
+        "/assets/generate",
+        json={"provider": "image-gen-v1", "prompt": prompt, "reference_asset_ids": [ref_a["id"]]},
+    )
+    assert repeat.status_code == 200, repeat.text
+    assert calls["n"] == 2, "an identical (prompt, reference) generation must hit the cache"
+    assert repeat.json()["deduplicated"] is True
+    assert repeat.json()["asset"]["id"] == first.json()["asset"]["id"]
 
 
 def test_mailer_carries_scannable_qr_through_export(client: TestClient) -> None:
