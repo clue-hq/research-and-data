@@ -60,3 +60,15 @@ bulk runs. Author to pass it:
 - Digital-only surfaces (social ads, LinkedIn) need NONE of this: no
   bleed, no safe area beyond taste margins. Do not add print geometry to
   digital documents.
+
+## Multi-page print artifacts (brochures, booklets)
+
+**Always author READER-ORDER single pages** (page 1, 2, 3, 4 …), each a
+normal page at the finished trim size. Never author printer spreads,
+2-up sheets, or fold arrangements — imposition (arranging pages onto
+press sheets, e.g. a 4-pager onto one duplex 8×12 sheet folded to 4
+pages) is a downstream EXPORT transform (`imposition: "booklet"` on the
+export profile), never an authoring concern. A brochure request means N
+reader pages; the export pipeline handles the folding math (front [N|1],
+back [2|3], blanks padded to a multiple of 4, declared LUME0428).
+Booklet imposition requires one uniform trim size across pages.

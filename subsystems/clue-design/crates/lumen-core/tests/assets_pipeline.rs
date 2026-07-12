@@ -50,6 +50,7 @@ fn export_profile() -> ExportProfile {
         include_bleed: true,
         embed_fonts: true,
     include_marks: false,
+    imposition: None,
     }
 }
 

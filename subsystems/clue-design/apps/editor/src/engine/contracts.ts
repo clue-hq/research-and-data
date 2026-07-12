@@ -784,6 +784,12 @@ export interface ExportProfile {
    * an absent value must not be a type error (a `null`/absent is treated as
    * false everywhere the editor reads it). */
   include_marks?: boolean;
+  /** Print workstream W4: optional booklet (2-up saddle-stitch) imposition.
+   * Reader-order pages stay the DEFAULT deliverable (product decision D2);
+   * booklet is an opt-in mode. Optional to mirror the wire contract — the
+   * server omits it when absent (serde) and only recognizes "booklet", so an
+   * absent value must round-trip through the core as none, not a type error. */
+  imposition?: "booklet";
   embed_fonts: boolean;
 }
 

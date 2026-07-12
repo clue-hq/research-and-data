@@ -199,6 +199,7 @@ fn render_svg(scene: &Scene) -> String {
             include_bleed: false,
             embed_fonts: false,
         include_marks: false,
+        imposition: None,
         },
         page_ids: vec![PageId::from("page_hero")],
         purpose: ExportPurpose::UserDownload,

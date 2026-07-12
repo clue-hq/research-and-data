@@ -41,6 +41,12 @@ pub struct ExportProfile {
     /// fixtures stay byte-identical (the schema-compat contract).
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub include_marks: bool,
+    /// Print W4 (D2): optional imposition mode for PDF exports. Reader-order
+    /// single pages stay the default deliverable; `"booklet"` arranges pages
+    /// 2-up onto duplex saddle-stitch sheets (front [N,1], back [2,3], …).
+    /// Unknown values fail loudly at export. Serialized only when set.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub imposition: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]

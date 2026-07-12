@@ -151,7 +151,17 @@ fn skia_renderer_implements_the_pdf_flattener_seam() {
     let scene = bleed_probe_scene(None);
     let renderer = SkiaSceneRenderer::bundled();
     let via_trait = (&renderer as &dyn ScenePdfRenderer)
-        .render_pdf(&scene, &[PageId::from("page_bleed")], 72, false, false, None)
+        .render_pdf(
+            &scene,
+            &[PageId::from("page_bleed")],
+            &lumen_export::PdfRenderOptions {
+                dpi: 72,
+                include_bleed: false,
+                include_marks: false,
+                booklet: false,
+            },
+            None,
+        )
         .expect("trait flatten");
     let direct = raster_flattened_pdf(
         &renderer,

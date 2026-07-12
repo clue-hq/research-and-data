@@ -183,15 +183,32 @@ impl PdfExportAdapter {
             .and_then(|raster| raster.dpi)
             .unwrap_or(DEFAULT_FLATTEN_DPI);
 
+        // Print W4 (D2): reader-order pages are the default deliverable;
+        // "booklet" is the one recognized imposition mode. Unknown modes
+        // fail loudly — never a silently different arrangement.
+        let booklet = match request.profile.imposition.as_deref() {
+            None => false,
+            Some("booklet") => true,
+            Some(other) => {
+                return Err(ExportError::new(
+                    "export.imposition_unknown",
+                    format!("unknown imposition mode {other:?}; supported: \"booklet\""),
+                )
+                .with_diagnostics(diagnostics));
+            }
+        };
+        if booklet {
+            diagnostics.extend(booklet_scope_diagnostics(scene, &page_ids, request)?);
+        }
+
+        let options = crate::raster::PdfRenderOptions {
+            dpi,
+            include_bleed: request.profile.include_bleed && !booklet,
+            include_marks: request.profile.include_marks && !booklet,
+            booklet,
+        };
         let rendered = renderer
-            .render_pdf(
-                scene,
-                &page_ids,
-                dpi,
-                request.profile.include_bleed,
-                request.profile.include_marks,
-                self.resolver.as_deref(),
-            )
+            .render_pdf(scene, &page_ids, &options, self.resolver.as_deref())
             .map_err(|error| {
                 ExportError::new(error.code, error.message).with_diagnostics(diagnostics.clone())
             })?;
@@ -203,18 +220,35 @@ impl PdfExportAdapter {
         // write it is a failed export, never a silent omission. Print
         // intent additionally gets the PDF/X-4 declaration set (sRGB
         // OutputIntent, XMP version claim, Trapped, deterministic dates).
-        let marks_margin = crate::pdf_boxes::marks_margin_pt(request);
-        let boxes: Vec<crate::pdf_boxes::PageBoxes> = page_ids
-            .iter()
-            .filter_map(|page_id| scene.pages.get(page_id))
-            .map(|page| {
-                crate::pdf_boxes::page_boxes_with_margin(
-                    page,
-                    request.profile.include_bleed,
-                    marks_margin,
-                )
-            })
-            .collect();
+        // Imposed sheets don't map to scene pages: their exact geometry is
+        // the renderer's per-sheet accounting (trim = bleed = sheet).
+        let boxes: Vec<crate::pdf_boxes::PageBoxes> = if booklet {
+            rendered
+                .pages
+                .iter()
+                .map(|sheet| {
+                    let media = [0.0, 0.0, f64::from(sheet.width_pt), f64::from(sheet.height_pt)];
+                    crate::pdf_boxes::PageBoxes {
+                        media,
+                        trim: media,
+                        bleed: media,
+                    }
+                })
+                .collect()
+        } else {
+            let marks_margin = crate::pdf_boxes::marks_margin_pt(request);
+            page_ids
+                .iter()
+                .filter_map(|page_id| scene.pages.get(page_id))
+                .map(|page| {
+                    crate::pdf_boxes::page_boxes_with_margin(
+                        page,
+                        request.profile.include_bleed,
+                        marks_margin,
+                    )
+                })
+                .collect()
+        };
         let pdfx = matches!(request.profile.pdf_intent, Some(PdfIntent::Print));
         let bytes = crate::pdf_boxes::finalize_print_pdf(&rendered.bytes, &boxes, pdfx).map_err(
             |message| {
@@ -246,6 +280,67 @@ impl PdfExportAdapter {
             print_ready,
         })
     }
+}
+
+/// Print W4: booklet-scoped validation + declarations. Imposition needs a
+/// uniform trim size (a folded stack with mixed leaf sizes is nonsense —
+/// hard error), and v1 deliberately renders trim-only sheets (no bleed, no
+/// marks, creep 0) — declared, never silent.
+fn booklet_scope_diagnostics(
+    scene: &Scene,
+    page_ids: &[lumen_core::PageId],
+    request: &ExportRequest,
+) -> Result<Vec<Diagnostic>, ExportError> {
+    let pages: Vec<&Page> = page_ids
+        .iter()
+        .filter_map(|page_id| scene.pages.get(page_id))
+        .collect();
+    if let Some(first) = pages.first() {
+        let (first_width, first_height) = page_size_points(first);
+        for page in pages.iter().skip(1) {
+            let (width, height) = page_size_points(page);
+            if (width - first_width).abs() > f64::EPSILON
+                || (height - first_height).abs() > f64::EPSILON
+            {
+                return Err(ExportError::new(
+                    "export.imposition_mixed_sizes",
+                    format!(
+                        "booklet imposition requires one uniform trim size; page {} is {width:.2}x{height:.2}pt but page {} is {first_width:.2}x{first_height:.2}pt",
+                        page.id, first.id
+                    ),
+                ));
+            }
+        }
+    }
+
+    let (sides, padding) = crate::imposition::booklet_sheet_sides(page_ids.len());
+    let mut diagnostics = vec![Diagnostic::advice(
+        Phase::Export,
+        "LUME0428",
+        format!(
+            "booklet imposition: {} reader page(s){} arranged onto {} duplex sheet side(s), 2-up saddle-stitch (front [N|1], back [2|N-1]); print duplex, turning the sheet about its vertical axis, then fold and stitch",
+            page_ids.len(),
+            if padding > 0 {
+                format!(" (+{padding} trailing blank(s) to reach a multiple of 4)")
+            } else {
+                String::new()
+            },
+            sides.len(),
+        ),
+        Some(DiagnosticSubject::Document),
+    )];
+    if request.profile.include_bleed || request.profile.include_marks {
+        diagnostics.push(
+            Diagnostic::advice(
+                Phase::Export,
+                "LUME0430",
+                "booklet v1 imposes trim-only sheets: per-page bleed and crop marks are skipped (self-print fold workflow); creep is 0",
+                Some(DiagnosticSubject::Document),
+            )
+            .with_hint("For shop-cut output with bleed and marks, export reader-order pages instead — most shops impose themselves (D2)."),
+        );
+    }
+    Ok(diagnostics)
 }
 
 struct PdfPageRenderer<'a> {

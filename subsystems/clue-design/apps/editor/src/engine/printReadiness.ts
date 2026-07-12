@@ -50,3 +50,15 @@ export function shouldShowPrintNudge({
   }
   return profile.format === "pdf" && profile.pdf_intent === "print" && activePage.bleed === null;
 }
+
+/** Server rule id declared when bleed/crop marks are requested on an imposed
+ * (booklet) sheet: imposition wins and the marks are skipped on the imposed
+ * sheet. Surfaced as an advisory note beside the bleed/marks control, never a
+ * block — the user's bleed/marks choice is preserved for non-imposed output. */
+export const IMPOSED_MARKS_SKIPPED_RULE = "LUME0430";
+
+/** Whether the profile requests booklet imposition. The single source of truth
+ * for the booklet policy so the export panel component stays presentation-only. */
+export function hasBookletImposition(profile: ExportProfile | null): boolean {
+  return profile?.imposition === "booklet";
+}

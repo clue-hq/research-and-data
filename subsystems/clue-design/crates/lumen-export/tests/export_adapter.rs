@@ -26,6 +26,7 @@ fn export_profile(format: ExportFormat) -> ExportProfile {
         include_bleed: false,
         embed_fonts: true,
     include_marks: false,
+    imposition: None,
     }
 }
 
@@ -827,6 +828,7 @@ fn print_pdf_profile_preserves_custom_size_profile_and_sidecar_metadata() {
             include_bleed: true,
             embed_fonts: true,
         include_marks: false,
+        imposition: None,
         },
         page_ids: vec![PageId::from("page_a"), PageId::from("page_square_custom")],
         purpose: ExportPurpose::UserDownload,
@@ -924,6 +926,7 @@ fn print_pdf_include_bleed_expands_media_box_and_offsets_trim_content() {
                     include_bleed: true,
                     embed_fonts: false,
                 include_marks: false,
+                imposition: None,
                 },
                 page_ids: vec![PageId::from("page_square_bleed")],
                 purpose: ExportPurpose::UserDownload,
@@ -981,6 +984,7 @@ fn print_pdf_warns_for_explicit_multi_page_and_mixed_page_sizes() {
                     include_bleed: false,
                     embed_fonts: false,
                 include_marks: false,
+                imposition: None,
                 },
                 page_ids: vec![PageId::from("page_square"), PageId::from("page_wide")],
                 purpose: ExportPurpose::UserDownload,
@@ -1068,6 +1072,7 @@ fn print_pdf_warns_for_text_shaping_and_image_dpi_gaps() {
                     include_bleed: false,
                     embed_fonts: false,
                 include_marks: false,
+                imposition: None,
                 },
                 page_ids: vec![PageId::from("page_print_guardrails")],
                 purpose: ExportPurpose::UserDownload,
@@ -1135,6 +1140,7 @@ fn print_pdf_warns_when_required_slot_node_is_outside_safe_area() {
                     include_bleed: false,
                     embed_fonts: false,
                 include_marks: false,
+                imposition: None,
                 },
                 page_ids: vec![PageId::from("page_slot_safe_area")],
                 purpose: ExportPurpose::UserDownload,
@@ -1388,6 +1394,7 @@ fn svg_all_pages_sidecars_preserve_profile_and_page_specific_slot_mappings() {
             include_bleed: false,
             embed_fonts: false,
         include_marks: false,
+        imposition: None,
         },
         page_ids: Vec::new(),
         purpose: ExportPurpose::UserDownload,
@@ -1736,15 +1743,13 @@ impl lumen_export::ScenePdfRenderer for RecordingPdfRenderer {
         &self,
         _scene: &Scene,
         page_ids: &[PageId],
-        dpi: u16,
-        include_bleed: bool,
-        _include_marks: bool,
+        options: &lumen_export::PdfRenderOptions,
         _resolver: Option<&dyn lumen_export::AssetByteResolver>,
     ) -> Result<lumen_export::RenderedPdf, lumen_export::RasterizeError> {
         self.calls
             .lock()
             .unwrap()
-            .push((page_ids.to_vec(), dpi, include_bleed));
+            .push((page_ids.to_vec(), options.dpi, options.include_bleed));
         if self.fail {
             return Err(lumen_export::RasterizeError::new(
                 "raster.page_missing",
@@ -1858,6 +1863,7 @@ fn flattened_pdf_honors_profile_dpi_bleed_flag_and_print_guardrails() {
                     include_bleed: true,
                     embed_fonts: true,
                 include_marks: false,
+                imposition: None,
                 },
                 page_ids: vec![PageId::from("page_a")],
                 purpose: ExportPurpose::UserDownload,
@@ -1901,6 +1907,7 @@ fn flattener_failure_maps_to_export_error_with_diagnostics() {
                     include_bleed: true,
                     embed_fonts: true,
                 include_marks: false,
+                imposition: None,
                 },
                 page_ids: vec![PageId::from("page_a")],
                 purpose: ExportPurpose::UserDownload,

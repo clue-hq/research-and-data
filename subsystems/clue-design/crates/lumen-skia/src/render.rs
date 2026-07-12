@@ -235,6 +235,38 @@ impl SkiaSceneRenderer {
     }
 }
 
+impl SkiaSceneRenderer {
+    /// Paint one page's trim content into a slot rect on an existing canvas
+    /// (print W4 imposition): clip to the slot, map the page's layout space
+    /// onto it, paint. No paper fill — the sheet painter owns the paper.
+    pub(crate) fn paint_page_in_slot(
+        &self,
+        scene: &Scene,
+        page: &Page,
+        canvas: &Canvas,
+        slot: SkRect,
+        resolver: Option<&dyn AssetByteResolver>,
+    ) -> Vec<Diagnostic> {
+        let region = page_geometry(page).layout;
+        let mut painter = PagePainter {
+            scene,
+            fonts: &self.fonts,
+            resolver,
+            diagnostics: Vec::new(),
+        };
+        canvas.save();
+        canvas.clip_rect(slot, skia_safe::ClipOp::Intersect, true);
+        canvas.translate((slot.left, slot.top));
+        canvas.scale((
+            slot.width() / region.width.max(1.0) as f32,
+            slot.height() / region.height.max(1.0) as f32,
+        ));
+        painter.paint_page(canvas, page, &region);
+        canvas.restore();
+        painter.diagnostics
+    }
+}
+
 /// Crop-mark geometry in layout coordinates (print W2/W3): `trim` is the
 /// cut line, `bleed` the ink boundary; marks draw OUTSIDE the bleed, from
 /// `gap` beyond it out to `margin` beyond it, aligned with the trim edges.

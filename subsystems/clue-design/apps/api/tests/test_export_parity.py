@@ -346,3 +346,96 @@ def test_edge_bleed_chain_l2_l3(
     # renders in display order (y down from top-left), so the layout-bottom
     # band sits near the image bottom.
     assert sample(550, 1098)[:3] != white, f"[{renderer}] bottom bleed strip is blank"
+
+
+BOOKLET_DSL = """
+page page_1 size(400,300,pt)
+  label1 text "One" p(40,40) s(150,50) font("Inter",28,700,left) fill(#ffffff)
+page page_2 size(400,300,pt)
+  label2 text "Two" p(40,40) s(150,50) font("Inter",28,700,left) fill(#ffffff)
+page page_3 size(400,300,pt)
+  label3 text "Three" p(40,40) s(150,50) font("Inter",28,700,left) fill(#ffffff)
+page page_4 size(400,300,pt)
+  label4 text "Four" p(40,40) s(150,50) font("Inter",28,700,left) fill(#111827)
+#page:page_1 bg(#dc2626)
+#page:page_2 bg(#16a34a)
+#page:page_3 bg(#2563eb)
+#page:page_4 bg(#f59e0b)
+"""
+
+
+@pytest.mark.parametrize("renderer", ["vector", "flattened"])
+def test_booklet_sheet_halves_match_reader_pages(
+    core: CoreClient, monkeypatch: pytest.MonkeyPatch, renderer: str
+) -> None:
+    """Print W4: the imposed booklet is a pure rearrangement — every sheet
+    half must pixel-match its reader page. 4 pages → 1 duplex sheet:
+    front [4|1], back [2|3]."""
+    monkeypatch.setenv("LUMEN_PDF_RENDERER", renderer)
+    scene = build_scene(core, BOOKLET_DSL)
+
+    response = core.export_preview(
+        scene,
+        export_format="pdf",
+        profile={
+            "name": "booklet_pdf",
+            "format": "pdf",
+            "pdf_intent": "print",
+            "raster": {"scale": 1.0, "dpi": 150},
+            "include_bleed": False,
+            "embed_fonts": True,
+            "imposition": "booklet",
+        },
+    )
+    artifacts = response["export"]["artifacts"]
+    pdf_bytes = bytes(int(value) & 0xFF for value in artifacts[0]["bytes"])
+    codes = {
+        diagnostic["code"]
+        for diagnostic in (response.get("diagnostics") or [])
+        + (response["export"].get("diagnostics") or [])
+    }
+    assert "LUME0428" in codes, f"imposition advice missing: {sorted(codes)}"
+
+    document = fitz.open(stream=pdf_bytes, filetype="pdf")
+    assert document.page_count == 2
+    for page in document:
+        assert page.rect.width == pytest.approx(800.0, abs=0.01)
+        assert page.rect.height == pytest.approx(300.0, abs=0.01)
+
+    # side index -> (left reader page, right reader page), 1-based.
+    arrangement = {0: (4, 1), 1: (2, 3)}
+    for side_index, (left_page, right_page) in arrangement.items():
+        sheet = document[side_index]
+        zoom = 2.0
+        sheet_pixmap = rgb_pixmap(
+            sheet.get_pixmap(matrix=fitz.Matrix(zoom, zoom), alpha=False)
+        )
+        for slot, reader_number in [(0, left_page), (1, right_page)]:
+            reader = core.export_preview(
+                scene,
+                export_format="png",
+                page_ids=[f"page_{reader_number}"],
+                profile={
+                    "name": "parity_png",
+                    "format": "png",
+                    "pdf_intent": None,
+                    "raster": {"scale": 1.0, "dpi": None},
+                    "include_bleed": False,
+                    "embed_fonts": True,
+                },
+            )
+            png_bytes = bytes(
+                int(value) & 0xFF
+                for value in reader["export"]["artifacts"][0]["bytes"]
+            )
+            png_pixmap = rgb_pixmap(fitz.Pixmap(png_bytes))
+            ratio = mismatch_ratio(
+                png_pixmap,
+                sheet_pixmap,
+                lambda u, v, slot=slot: ((slot + u) / 2.0, v),
+                steps=80,
+            )
+            assert ratio <= 0.02, (
+                f"[{renderer}] side {side_index} slot {slot} should carry reader "
+                f"page {reader_number}: {ratio:.2%} mismatch"
+            )

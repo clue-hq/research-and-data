@@ -1434,6 +1434,7 @@ fn export_profile_modify_line_lowers_to_upsert_profile() {
         include_bleed: false,
         embed_fonts: false,
     include_marks: false,
+    imposition: None,
     });
 
     let output = compile_dsl_into_scene(

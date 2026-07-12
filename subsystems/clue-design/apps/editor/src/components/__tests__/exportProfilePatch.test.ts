@@ -49,4 +49,36 @@ describe("export profile format switching (W3)", () => {
     expect(next.include_bleed).toBe(false);
     expect(next.include_marks).toBe(false);
   });
+
+  it("normalizeProfile preserves imposition for a pdf profile", () => {
+    const next = normalizeProfile({ ...printPdf(), imposition: "booklet" });
+    expect(next.imposition).toBe("booklet");
+  });
+
+  it("switching from a booklet pdf to pdf keeps the imposition", () => {
+    const svg: ExportProfile = { ...printPdf(), format: "svg" };
+    const patch = formatPatch("pdf", { ...svg, imposition: "booklet" });
+    const next = normalizeProfile({ ...svg, imposition: "booklet", ...patch });
+    expect(next.format).toBe("pdf");
+    expect(next.imposition).toBe("booklet");
+  });
+
+  it("switching a booklet pdf to png strips the imposition", () => {
+    const patch = formatPatch("png", { ...printPdf(), imposition: "booklet" });
+    const next = normalizeProfile({ ...printPdf(), imposition: "booklet", ...patch });
+    expect(next.format).toBe("png");
+    expect(next.imposition).toBeUndefined();
+  });
+
+  it("switching a booklet pdf to svg strips the imposition", () => {
+    const patch = formatPatch("svg", { ...printPdf(), imposition: "booklet" });
+    const next = normalizeProfile({ ...printPdf(), imposition: "booklet", ...patch });
+    expect(next.format).toBe("svg");
+    expect(next.imposition).toBeUndefined();
+  });
+
+  it("normalizeProfile strips imposition that lands on a non-pdf profile", () => {
+    const next = normalizeProfile({ ...printPdf(), format: "svg", imposition: "booklet" });
+    expect(next.imposition).toBeUndefined();
+  });
 });

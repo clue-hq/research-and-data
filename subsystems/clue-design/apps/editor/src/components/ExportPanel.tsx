@@ -5,7 +5,13 @@ import { Download, Eye, Printer } from "lucide-react";
 import type { ExportProfile, PageId, Scene } from "@/engine/contracts";
 import type { EditorExportArtifact, EditorExportResult, PrintReadyReport } from "@/engine/exportRunner";
 import { exportProfilesForScene } from "@/engine/exportRunner";
-import { printReadyNotableRules, printReadyPill, shouldShowPrintNudge } from "@/engine/printReadiness";
+import {
+  hasBookletImposition,
+  IMPOSED_MARKS_SKIPPED_RULE,
+  printReadyNotableRules,
+  printReadyPill,
+  shouldShowPrintNudge
+} from "@/engine/printReadiness";
 import { downloadDataUrl } from "./exportArtifactActions";
 
 interface ExportPanelProps {
@@ -215,6 +221,9 @@ function ExportControls({
       {profile && printFeatureEnabled && profile.format === "pdf" ? (
         <PrintBleedField profile={profile} onChange={(nextProfile) => updateState({ draftProfile: nextProfile })} />
       ) : null}
+      {profile && printFeatureEnabled && profile.format === "pdf" ? (
+        <BookletField profile={profile} onChange={(nextProfile) => updateState({ draftProfile: nextProfile })} />
+      ) : null}
       <button
         type="button"
         disabled={!profile || selectedPageIds.length === 0 || isExporting}
@@ -273,6 +282,37 @@ function PrintBleedField({
         }
       />
       Include bleed + crop marks
+      {hasBookletImposition(profile) ? (
+        <small className="muted" data-role="imposed-marks-note">
+          Skipped on imposed booklet sheets ({IMPOSED_MARKS_SKIPPED_RULE}).
+        </small>
+      ) : null}
+    </label>
+  );
+}
+
+function BookletField({
+  profile,
+  onChange
+}: {
+  profile: ExportProfile;
+  onChange: (profile: ExportProfile) => void;
+}) {
+  return (
+    <label className="toggle-field" data-role="booklet-imposition">
+      <input
+        type="checkbox"
+        checked={hasBookletImposition(profile)}
+        onChange={(event) =>
+          onChange(
+            normalizeProfile({
+              ...profile,
+              imposition: event.target.checked ? "booklet" : undefined
+            })
+          )
+        }
+      />
+      Booklet imposition (2-up saddle-stitch)
     </label>
   );
 }
@@ -288,13 +328,15 @@ export function formatPatch(format: ExportProfile["format"], profile: ExportProf
       pdf_intent: null,
       include_bleed: false,
       include_marks: false,
+      imposition: undefined,
       embed_fonts: false
     };
   }
   if (format === "pdf") {
-    // Preserve include_bleed / include_marks / embed_fonts across the switch —
-    // they are the print controls and only PDF exposes them, so clearing them
-    // here would silently drop the user's choice every time they toggle format.
+    // Preserve include_bleed / include_marks / embed_fonts / imposition across
+    // the switch — they are the print controls and only PDF exposes them, so
+    // clearing them here would silently drop the user's choice every time they
+    // toggle format.
     return {
       format,
       raster: null,
@@ -307,16 +349,21 @@ export function formatPatch(format: ExportProfile["format"], profile: ExportProf
     pdf_intent: null,
     include_bleed: false,
     include_marks: false,
+    imposition: undefined,
     embed_fonts: false
   };
 }
 
 export function normalizeProfile(profile: ExportProfile): ExportProfile {
+  // Booklet imposition is a print/PDF-only concern; strip it for any other
+  // format so it never rides along on a raster or plain vector export.
+  const imposition = profile.format === "pdf" ? profile.imposition : undefined;
   if (profile.format !== "png") {
     // SVG/PDF: keep include_bleed / include_marks / embed_fonts as set.
     return {
       ...profile,
-      raster: null
+      raster: null,
+      imposition
     };
   }
   return {
@@ -330,6 +377,7 @@ export function normalizeProfile(profile: ExportProfile): ExportProfile {
     pdf_intent: null,
     include_bleed: false,
     include_marks: false,
+    imposition,
     embed_fonts: false
   };
 }

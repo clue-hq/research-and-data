@@ -150,18 +150,25 @@ impl ScenePdfRenderer for SkiaVectorPdfRenderer {
         &self,
         scene: &Scene,
         page_ids: &[PageId],
-        dpi: u16,
-        include_bleed: bool,
-        include_marks: bool,
+        options: &lumen_export::PdfRenderOptions,
         resolver: Option<&dyn AssetByteResolver>,
     ) -> Result<RenderedPdf, RasterizeError> {
+        if options.booklet {
+            return crate::pdf_impose::vector_booklet_pdf(
+                &self.renderer,
+                scene,
+                page_ids,
+                options.dpi,
+                resolver,
+            );
+        }
         vector_pdf(
             &self.renderer,
             scene,
             page_ids,
-            dpi,
-            include_bleed,
-            include_marks,
+            options.dpi,
+            options.include_bleed,
+            options.include_marks,
             resolver,
         )
     }

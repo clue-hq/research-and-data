@@ -1056,6 +1056,7 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                     include_bleed: false,
                     embed_fonts: true,
                     include_marks: false,
+                imposition: None,
                 },
             };
             let request = ExportRequest {
@@ -2062,6 +2063,7 @@ fn export_instance_artifacts(
                     include_bleed: false,
                     embed_fonts: false,
                     include_marks: false,
+                imposition: None,
                 };
                 let request = ExportRequest {
                     profile,
@@ -2104,6 +2106,7 @@ fn export_instance_artifacts(
                         include_bleed: false,
                         embed_fonts: false,
                         include_marks: false,
+                    imposition: None,
                     },
                     page_ids: page_ids.clone(),
                     purpose: ExportPurpose::BulkRender,

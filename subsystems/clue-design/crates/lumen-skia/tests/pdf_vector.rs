@@ -171,6 +171,7 @@ fn adapter_export_writes_exact_print_boxes_over_vector_pdf() {
                     include_bleed: true,
                     embed_fonts: true,
                     include_marks: false,
+                imposition: None,
                 },
                 page_ids: vec![PageId::from("page_vector")],
                 purpose: ExportPurpose::UserDownload,
@@ -206,7 +207,17 @@ fn adapter_export_writes_exact_print_boxes_over_vector_pdf() {
 fn vector_renderer_implements_the_scene_pdf_seam() {
     let scene = text_scene(None);
     let via_seam = SkiaVectorPdfRenderer::new(Arc::new(lumen_skia::FontManager::bundled()))
-        .render_pdf(&scene, &[PageId::from("page_vector")], 300, false, false, None)
+        .render_pdf(
+            &scene,
+            &[PageId::from("page_vector")],
+            &lumen_export::PdfRenderOptions {
+                dpi: 300,
+                include_bleed: false,
+                include_marks: false,
+                booklet: false,
+            },
+            None,
+        )
         .expect("seam render");
     let direct = vector_pdf(
         &SkiaSceneRenderer::bundled(),
@@ -256,6 +267,7 @@ fn marks_and_pdfx_metadata_on_print_export() {
                     include_bleed: true,
                     embed_fonts: true,
                     include_marks: true,
+                imposition: None,
                 },
                 page_ids: vec![PageId::from("page_vector")],
                 purpose: ExportPurpose::UserDownload,
@@ -305,6 +317,7 @@ fn marks_and_pdfx_metadata_on_print_export() {
                     include_bleed: false,
                     embed_fonts: true,
                     include_marks: false,
+                imposition: None,
                 },
                 page_ids: vec![PageId::from("page_vector")],
                 purpose: ExportPurpose::AgentCritique,

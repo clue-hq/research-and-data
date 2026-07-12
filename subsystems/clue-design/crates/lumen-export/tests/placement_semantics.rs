@@ -131,6 +131,7 @@ fn svg_request(purpose: ExportPurpose, pdf_intent: Option<PdfIntent>) -> ExportR
             include_bleed: false,
             embed_fonts: true,
         include_marks: false,
+        imposition: None,
         },
         page_ids: vec![PageId::from("page_1")],
         purpose,

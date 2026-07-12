@@ -5,6 +5,7 @@
 //! storage.
 
 pub mod checks;
+pub mod imposition;
 pub mod pdf;
 pub mod pdf_boxes;
 pub mod png;
@@ -20,10 +21,12 @@ pub use pdf_boxes::{
     apply_print_boxes, finalize_print_pdf, marks_margin_pt, page_boxes_for,
     page_boxes_with_margin, PageBoxes, MARK_GAP_PT, MARK_MARGIN_PT,
 };
+pub use imposition::{booklet_sheet_sides, BookletSheetSide};
 pub use print_ready::{is_print_ready_scope, print_ready_report};
 pub use png::PngExportAdapter;
 pub use raster::{
-    RenderedPdf, RenderedPdfPage, PageRasterizer, ScenePdfRenderer, RasterizeError, RasterizedPage,
+    PageRasterizer, PdfRenderOptions, RasterizeError, RasterizedPage, RenderedPdf, RenderedPdfPage,
+    ScenePdfRenderer,
 };
 pub use resolver::{
     AssetByteResolver, AssetResolveError, FixtureAssetResolver, ResolvedAssetBytes,

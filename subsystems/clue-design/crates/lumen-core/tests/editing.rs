@@ -919,6 +919,7 @@ fn export_profile_delete_requires_a_surviving_profile() {
         include_bleed: true,
         embed_fonts: true,
     include_marks: false,
+    imposition: None,
     });
 
     // Only profile: protected.
@@ -934,6 +935,7 @@ fn export_profile_delete_requires_a_surviving_profile() {
         include_bleed: false,
         embed_fonts: false,
     include_marks: false,
+    imposition: None,
     });
 
     // Replacement must exist and differ.

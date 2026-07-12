@@ -888,6 +888,7 @@ fn print_pdf_profile() -> ExportProfile {
         include_bleed: true,
         embed_fonts: true,
     include_marks: false,
+    imposition: None,
     }
 }
 
@@ -903,6 +904,7 @@ fn agent_png_profile() -> ExportProfile {
         include_bleed: false,
         embed_fonts: false,
     include_marks: false,
+    imposition: None,
     }
 }
 

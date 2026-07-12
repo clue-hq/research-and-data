@@ -84,14 +84,26 @@ pub struct RenderedPdf {
 /// [`PageRasterizer`]: the trait lives here so `lumen-export` stays free of
 /// native renderer dependencies, and the native implementation is injected
 /// at the composition point (`lumen-api-helper`).
+/// Render options for a PDF export, resolved from the profile by the
+/// adapter (one struct instead of a growing positional-bool list).
+#[derive(Clone, Debug)]
+pub struct PdfRenderOptions {
+    /// Raster density (flattened renderer) / effect-rasterization density
+    /// (vector renderer).
+    pub dpi: u16,
+    pub include_bleed: bool,
+    pub include_marks: bool,
+    /// Print W4: render 2-up duplex saddle-stitch sheets instead of
+    /// reader-order pages.
+    pub booklet: bool,
+}
+
 pub trait ScenePdfRenderer: fmt::Debug + Send + Sync {
     fn render_pdf(
         &self,
         scene: &Scene,
         page_ids: &[PageId],
-        dpi: u16,
-        include_bleed: bool,
-        include_marks: bool,
+        options: &PdfRenderOptions,
         resolver: Option<&dyn AssetByteResolver>,
     ) -> Result<RenderedPdf, RasterizeError>;
 }

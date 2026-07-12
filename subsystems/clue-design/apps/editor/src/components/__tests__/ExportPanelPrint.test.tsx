@@ -119,4 +119,84 @@ describe("ExportPanel print controls (W3)", () => {
     renderPanel({ exportResult: okResult(null) });
     expect(screen.queryByRole("note")).not.toBeInTheDocument();
   });
+
+  it("shows the booklet checkbox for a pdf profile when the feature is on and sets imposition", () => {
+    const onPanelStateChange = renderPanel();
+    const checkbox = screen.getByRole("checkbox", { name: "Booklet imposition (2-up saddle-stitch)" });
+    expect(checkbox).not.toBeChecked();
+
+    fireEvent.click(checkbox);
+    expect(onPanelStateChange).toHaveBeenCalledTimes(1);
+    const next = onPanelStateChange.mock.calls[0][0] as ExportPanelState;
+    expect(next.draftProfile).toMatchObject({ imposition: "booklet" });
+  });
+
+  it("clears imposition when the booklet checkbox is unchecked", () => {
+    const onPanelStateChange = renderPanel({
+      panelState: panelState({ ...printPdfProfile(), imposition: "booklet" })
+    });
+    const checkbox = screen.getByRole("checkbox", { name: "Booklet imposition (2-up saddle-stitch)" });
+    expect(checkbox).toBeChecked();
+
+    fireEvent.click(checkbox);
+    const next = onPanelStateChange.mock.calls[0][0] as ExportPanelState;
+    expect(next.draftProfile?.imposition).toBeUndefined();
+  });
+
+  it("hides the booklet checkbox when the print feature is off", () => {
+    renderPanel({ printFeatureEnabled: false });
+    expect(
+      screen.queryByRole("checkbox", { name: "Booklet imposition (2-up saddle-stitch)" })
+    ).not.toBeInTheDocument();
+  });
+
+  it("does not show the booklet checkbox for a non-pdf profile", () => {
+    renderPanel({ panelState: panelState({ ...printPdfProfile(), format: "png", raster: { scale: 1, dpi: 96 } }) });
+    expect(
+      screen.queryByRole("checkbox", { name: "Booklet imposition (2-up saddle-stitch)" })
+    ).not.toBeInTheDocument();
+  });
+
+  it("shows the imposed-marks note beside the bleed control only when booklet is on", () => {
+    const { rerender } = renderTestPanel(panelState(printPdfProfile()));
+    expect(screen.queryByText(/imposed booklet sheets/i)).not.toBeInTheDocument();
+
+    rerender(panelState({ ...printPdfProfile(), imposition: "booklet" }));
+    expect(screen.getByText(/imposed booklet sheets/i)).toBeInTheDocument();
+    expect(screen.getByText(/LUME0430/)).toBeInTheDocument();
+  });
 });
+
+function renderTestPanel(state: ExportPanelState) {
+  const view = render(
+    <ExportPanel
+      scene={minimalScene}
+      activePageId="page_a4"
+      exportResult={null}
+      isExporting={false}
+      onExport={() => {}}
+      onSaveProfile={() => {}}
+      onRemoveProfile={() => {}}
+      panelState={state}
+      onPanelStateChange={() => {}}
+      printFeatureEnabled
+    />
+  );
+  return {
+    rerender: (next: ExportPanelState) =>
+      view.rerender(
+        <ExportPanel
+          scene={minimalScene}
+          activePageId="page_a4"
+          exportResult={null}
+          isExporting={false}
+          onExport={() => {}}
+          onSaveProfile={() => {}}
+          onRemoveProfile={() => {}}
+          panelState={next}
+          onPanelStateChange={() => {}}
+          printFeatureEnabled
+        />
+      )
+  };
+}

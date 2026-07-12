@@ -99,6 +99,7 @@ impl Default for AgentLoopOptions {
             include_bleed: false,
             embed_fonts: true,
         include_marks: false,
+        imposition: None,
         }
     }
 }
