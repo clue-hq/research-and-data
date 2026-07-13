@@ -541,6 +541,16 @@ class LumenDesignTools:
             ),
             diagnostics=[diag.model_dump(mode="json") for diag in diagnostics],
             payload=payload,
+            # Live-design-streaming S0: only a CLEAN compile's applied ops ride
+            # the sink to the canvas — the same gate that decides whether they
+            # ride the proposal ledger above. A blocking-diagnostic (or rejected/
+            # failed) compile streams nothing to the canvas: the user never
+            # watches a draft that got refused (D1).
+            sink_extra=(
+                {"operations": compile_output.get("operations", [])}
+                if summary.status == ToolStatus.ok
+                else None
+            ),
         )
         return json.dumps(payload, indent=2)
 
@@ -1421,6 +1431,11 @@ class LumenDesignTools:
             output_summary=f"placed {asset_id} into {target_id} (fit={fit})",
             diagnostics=[diag.model_dump(mode="json") for diag in diagnostics],
             payload=payload,
+            # Live-design-streaming S0: the placement's applied op — the same
+            # single op logged to the proposal ledger via
+            # `_replace_scene_from_core_response(..., [operation])` above — rides
+            # the sink so the canvas can render the asset dropping into its node.
+            sink_extra={"operations": [operation]},
         )
         return json.dumps(payload, indent=2)
 
@@ -3801,6 +3816,7 @@ class LumenDesignTools:
         output_summary: Optional[str] = None,
         diagnostics: Optional[List[JsonObject]] = None,
         payload: Optional[JsonObject] = None,
+        sink_extra: Optional[JsonObject] = None,
     ) -> None:
         trace = LumenRunTraceEvent(
             run_id=self.run_id,
@@ -3823,19 +3839,24 @@ class LumenDesignTools:
             if self.event_sink is not None:
                 # Progress streaming is best-effort: a sink failure must never
                 # abort the design run (the file trace above is the source of
-                # truth). Keep the payload lightweight — the checklist needs the
-                # event name + summaries, not the full per-iteration payload.
+                # truth). Keep the base payload lightweight — the checklist needs
+                # the event name + summaries, not the full per-iteration payload.
+                # `sink_extra` is an OPT-IN channel merged on top of the five
+                # summary fields (live-design-streaming S0): authoring mutations
+                # that want the client to render the build as it happens pass
+                # their applied `operations` here. It rides the sink push only —
+                # never the trace above, which already carries the full payload.
                 try:
-                    self.event_sink(
-                        event,
-                        {
-                            "actor": actor,
-                            "iteration": self.iteration,
-                            "input_summary": input_summary,
-                            "output_summary": output_summary,
-                            "diagnostic_count": len(diagnostics or []),
-                        },
-                    )
+                    push: JsonObject = {
+                        "actor": actor,
+                        "iteration": self.iteration,
+                        "input_summary": input_summary,
+                        "output_summary": output_summary,
+                        "diagnostic_count": len(diagnostics or []),
+                    }
+                    if sink_extra:
+                        push.update(sink_extra)
+                    self.event_sink(event, push)
                 except Exception:
                     pass
 

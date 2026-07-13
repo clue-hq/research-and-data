@@ -1326,6 +1326,55 @@ def test_agent_run_events_stream_replays_then_done(client: TestClient) -> None:
     assert "event: done" in resumed
 
 
+def test_run_event_enriched_with_operations_round_trips_and_streams(
+    client: TestClient,
+) -> None:
+    # Live-design-streaming S0 (D1/D2): the sink stores whatever dict it is
+    # handed (append_run_event → data_json) untouched, so an authoring event
+    # enriched with its applied `operations` list round-trips through the
+    # run_events row AND rides the SSE progress frame the editor consumes.
+    from lumen_api.database import Repository, connect
+
+    connection = connect(client.app.state.database_path)
+    repo = Repository(connection)
+    repo.create_run("run_ops", "doc_ops")
+    enriched = {
+        "actor": "dsl-author",
+        "iteration": 1,
+        "input_summary": "page Hero",
+        "output_summary": "2 operations; 0 DSL diagnostics",
+        "diagnostic_count": 0,
+        "operations": [
+            {"kind": "add_page", "page_id": "page_hero"},
+            {"kind": "insert_node", "node_id": "headline", "parent_id": "page_hero"},
+        ],
+    }
+    repo.append_run_event("run_ops", "dsl_compiled", enriched)
+
+    # (e-i) the durable row round-trips the enriched dict verbatim.
+    rows = repo.list_run_events("run_ops", after_seq=0)
+    assert rows[-1]["data"] == enriched
+    repo.set_run_result("run_ops", "succeeded", {"status": "proposed"})
+    repo.append_run_event("run_ops", "result", {"status": "proposed"})
+    connection.close()
+
+    # (e-ii) the SSE progress frame carries the operations to the client.
+    body = client.get("/agent/runs/run_ops/events").text
+    assert "event: progress" in body
+    assert "dsl_compiled" in body
+    assert "add_page" in body and "page_hero" in body
+    assert "insert_node" in body
+
+
+def test_run_events_sse_cadence_constants_pinned() -> None:
+    # D2: poll fast (250ms) so authoring batches land promptly; keepalive slow
+    # (~1s) so a quiet run does not spam a comment every poll.
+    from lumen_api import main as api_main
+
+    assert api_main._RUN_EVENTS_SSE_POLL_INTERVAL_SECONDS == 0.25
+    assert api_main._RUN_EVENTS_SSE_KEEPALIVE_INTERVAL_SECONDS == 1.0
+
+
 def write_iteration_compile(trace_dir, index: int, operations: list) -> None:
     iteration_dir = trace_dir / "iterations" / f"{index:03d}"
     iteration_dir.mkdir(parents=True, exist_ok=True)

@@ -131,6 +131,14 @@ def _bridge_uvicorn_loggers() -> None:
 
 _AGENT_RELEVANT_PREFIXES = ("/agent", "/documents")
 
+# Run-events SSE idle cadence (live-design-streaming D2). Poll the durable
+# run_events table fast so authoring batches (compile/asset-placement ops) land
+# on the canvas promptly; emit the keepalive comment slowly so a quiet run does
+# not spam a comment every poll. Keepalive fires once every
+# ~ceil(KEEPALIVE / POLL) idle polls. Replay semantics are unchanged.
+_RUN_EVENTS_SSE_POLL_INTERVAL_SECONDS = 0.25
+_RUN_EVENTS_SSE_KEEPALIVE_INTERVAL_SECONDS = 1.0
+
 
 def _is_agent_relevant(path: str) -> bool:
     return any(path == prefix or path.startswith(prefix + "/") for prefix in _AGENT_RELEVANT_PREFIXES)
@@ -1731,6 +1739,16 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
         async def event_stream():
             last_seq = start_seq
             yield "retry: 1000\n\n"
+            # Emit the keepalive comment only once every ~1s of idle polling
+            # even though we poll every 250ms (D2: poll fast, keepalive slow).
+            polls_per_keepalive = max(
+                1,
+                round(
+                    _RUN_EVENTS_SSE_KEEPALIVE_INTERVAL_SECONDS
+                    / _RUN_EVENTS_SSE_POLL_INTERVAL_SECONDS
+                ),
+            )
+            idle_polls = 0
             while True:
                 if await request.is_disconnected():
                     return
@@ -1749,8 +1767,12 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
                     if current and current["status"] in ("succeeded", "failed"):
                         yield sse_frame(last_seq, "done", current.get("result"))
                         return
-                    yield ": keepalive\n\n"
-                    await asyncio.sleep(1.0)
+                    if idle_polls % polls_per_keepalive == 0:
+                        yield ": keepalive\n\n"
+                    idle_polls += 1
+                    await asyncio.sleep(_RUN_EVENTS_SSE_POLL_INTERVAL_SECONDS)
+                else:
+                    idle_polls = 0
 
         return StreamingResponse(
             event_stream(),
