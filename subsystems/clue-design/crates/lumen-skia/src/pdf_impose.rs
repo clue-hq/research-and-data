@@ -162,6 +162,11 @@ pub fn flattened_booklet_pdf(
             let height_pt = layout.sheet_height_pt;
             let width_px = (width_pt / 72.0 * dpi_f).round().max(1.0) as i32;
             let height_px = (height_pt / 72.0 * dpi_f).round().max(1.0) as i32;
+            lumen_export::ensure_raster_within_budget(
+                width_px as u32,
+                height_px as u32,
+                "rasterizing imposed booklet sheet",
+            )?;
             let mut surface =
                 surfaces::raster_n32_premul((width_px, height_px)).ok_or_else(|| {
                     RasterizeError::new(

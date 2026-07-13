@@ -131,6 +131,12 @@ impl SkiaSceneRenderer {
             )
         })?;
 
+        lumen_export::ensure_raster_within_budget(
+            width_px,
+            height_px,
+            &format!("rasterizing page {page_id}"),
+        )?;
+
         let width = i32::try_from(width_px.max(1))
             .map_err(|_| RasterizeError::new("raster.size_invalid", "raster width exceeds i32"))?;
         let height = i32::try_from(height_px.max(1))

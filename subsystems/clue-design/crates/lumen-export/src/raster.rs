@@ -41,6 +41,59 @@ impl fmt::Display for RasterizeError {
 
 impl Error for RasterizeError {}
 
+/// Hard ceiling for any single raster surface an export may allocate.
+/// 150 MP ≈ a 600 MB RGBA buffer — comfortably above every supported
+/// preset combination (A2 @ 300 dpi ≈ 35 MP, A4 @ 300 dpi @ 4× ≈ 139 MP)
+/// while keeping a runaway scale × dpi profile from OOMing the helper.
+pub const MAX_RASTER_PIXELS: u64 = 150_000_000;
+
+/// Fail closed when a requested raster exceeds [`MAX_RASTER_PIXELS`].
+/// Every surface-allocating path (PNG export, flattened PDF pages,
+/// imposed booklet sheets) checks this before allocating, so no profile
+/// — UI-, agent-, or API-authored — can request an unbounded pixel
+/// buffer.
+pub fn ensure_raster_within_budget(
+    width_px: u32,
+    height_px: u32,
+    context: &str,
+) -> Result<(), RasterizeError> {
+    let pixels = u64::from(width_px) * u64::from(height_px);
+    if pixels > MAX_RASTER_PIXELS {
+        return Err(RasterizeError::new(
+            "raster.budget_exceeded",
+            format!(
+                "{context} would rasterize {width_px}x{height_px} px (~{} MP), above the {} MP export ceiling — lower the profile's raster scale or dpi",
+                pixels / 1_000_000,
+                MAX_RASTER_PIXELS / 1_000_000
+            ),
+        ));
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{ensure_raster_within_budget, MAX_RASTER_PIXELS};
+
+    #[test]
+    fn budget_allows_up_to_the_ceiling() {
+        // 12247^2 = 149,988,... just under 150 MP.
+        assert!(ensure_raster_within_budget(12_247, 12_247, "test").is_ok());
+        assert!(ensure_raster_within_budget(1, u32::MAX, "test").is_err());
+    }
+
+    #[test]
+    fn budget_rejects_above_the_ceiling_with_actionable_message() {
+        // A4 @ 300 dpi @ 5x: the motivating OOM case.
+        let error = ensure_raster_within_budget(12_400, 17_540, "PNG export of page p1")
+            .expect_err("218 MP must exceed the budget");
+        assert_eq!(error.code, "raster.budget_exceeded");
+        assert!(error.message.contains("12400x17540"));
+        assert!(error.message.contains("lower the profile's raster scale or dpi"));
+        assert!(u64::from(12_400_u32) * u64::from(17_540_u32) > MAX_RASTER_PIXELS);
+    }
+}
+
 /// Paints one scene page directly to pixels. Implementations consume the
 /// same computed geometry the SVG exporter consumes; text must be laid out
 /// by the same shaping source injected for measurement (single source of

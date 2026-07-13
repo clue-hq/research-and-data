@@ -1,4 +1,4 @@
-import type { Diagnostic, DiagnosticSubject, ExportProfile, PageId, Scene } from "./contracts";
+import type { Diagnostic, DiagnosticSubject, ExportProfile, Page, PageId, RasterScale, Scene } from "./contracts";
 
 export interface EditorExportRequest {
   scene: Scene;
@@ -183,6 +183,53 @@ export function builtInExportProfiles(): ExportProfile[] {
       embed_fonts: true
     }
   ];
+}
+
+/** Server-side raster ceiling (`MAX_RASTER_PIXELS` in lumen-export): exports
+ * above this fail with `export.raster_budget_exceeded`. Mirrored so the panel
+ * can warn before the round trip. */
+export const MAX_RASTER_PIXELS = 150_000_000;
+
+/** Mirrors the server's `page_pixel_size` (crates/lumen-export/src/png.rs) so
+ * the export panel can show the PNG output size for a scale choice. The
+ * server remains the authority; this is a display estimate. */
+export function estimatePngPixelSize(
+  page: Page,
+  raster: RasterScale | null
+): { width: number; height: number } {
+  const scale = raster?.scale ?? 1;
+  const toPixels = (width: number, height: number) => ({
+    width: Math.max(1, Math.round(width * scale)),
+    height: Math.max(1, Math.round(height * scale))
+  });
+  if (page.size.unit === "pt") {
+    if (!raster && page.size.output?.raster) {
+      const hint = page.size.output.raster;
+      return { width: Math.max(1, hint.width_px), height: Math.max(1, hint.height_px) };
+    }
+    const physical = page.size.output?.physical;
+    const dpi = raster?.dpi ?? null;
+    if (physical && dpi) {
+      const widthIn = physical.unit === "mm" ? physical.width / 25.4 : physical.width;
+      const heightIn = physical.unit === "mm" ? physical.height / 25.4 : physical.height;
+      return toPixels(widthIn * dpi, heightIn * dpi);
+    }
+    return toPixels(page.size.width, page.size.height);
+  }
+  const dpi = raster?.dpi ?? 96;
+  const inches = (value: number) => {
+    switch (page.size.unit) {
+      case "mm":
+        return value / 25.4;
+      case "in":
+        return value;
+      case "px":
+        return value / dpi;
+      default:
+        return value / 72;
+    }
+  };
+  return toPixels(inches(page.size.width) * dpi, inches(page.size.height) * dpi);
 }
 
 export function exportProfilesForScene(scene: Scene): ExportProfile[] {

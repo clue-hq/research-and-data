@@ -386,6 +386,51 @@ fn png_export_without_rasterizer_fails_closed() {
 }
 
 #[test]
+fn png_export_over_raster_budget_fails_before_rasterizing() {
+    // A4 @ 300 dpi @ 5x is ~218 MP (~870 MB RGBA) — above the raster
+    // budget. The guard must fire before any rasterization work, so a
+    // rasterizer that panics on use proves the ordering.
+    #[derive(Debug)]
+    struct PanickingRasterizer;
+    impl lumen_export::PageRasterizer for PanickingRasterizer {
+        fn rasterize_page(
+            &self,
+            _scene: &Scene,
+            _page_id: &PageId,
+            _width_px: u32,
+            _height_px: u32,
+            _resolver: Option<&dyn lumen_export::AssetByteResolver>,
+        ) -> Result<lumen_export::RasterizedPage, lumen_export::RasterizeError> {
+            panic!("raster budget guard must fire before rasterization");
+        }
+    }
+
+    let adapter =
+        LumenExportAdapter::new().with_rasterizer(std::sync::Arc::new(PanickingRasterizer));
+    let scene = scene_with_slot();
+    let request = ExportRequest {
+        profile: ExportProfile {
+            raster: Some(RasterScale {
+                scale: 5.0,
+                dpi: Some(300),
+            }),
+            ..export_profile(ExportFormat::Png)
+        },
+        page_ids: vec![PageId::from("page_a")],
+        purpose: ExportPurpose::UserDownload,
+    };
+    let error = adapter
+        .export(&scene, &request)
+        .expect_err("218 MP raster must exceed the export budget");
+    assert_eq!(error.code, "export.raster_budget_exceeded");
+    assert!(
+        error.message.contains("lower the profile's raster scale or dpi"),
+        "{}",
+        error.message
+    );
+}
+
+#[test]
 fn svg_export_uses_computed_xy_for_layouted_children() {
     let adapter = LumenExportAdapter::new();
     let mut scene = scene_with_slot();

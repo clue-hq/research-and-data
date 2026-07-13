@@ -2,9 +2,9 @@
 
 import { useMemo, useState } from "react";
 import { Download, Eye, Printer } from "lucide-react";
-import type { ExportProfile, PageId, Scene } from "@/engine/contracts";
+import type { ExportProfile, Page, PageId, Scene } from "@/engine/contracts";
 import type { EditorExportArtifact, EditorExportResult, PrintReadyReport } from "@/engine/exportRunner";
-import { exportProfilesForScene } from "@/engine/exportRunner";
+import { estimatePngPixelSize, exportProfilesForScene, MAX_RASTER_PIXELS } from "@/engine/exportRunner";
 import {
   hasBookletImposition,
   IMPOSED_MARKS_SKIPPED_RULE,
@@ -188,7 +188,7 @@ function ExportControls({
     return [...profiles, profile];
   }, [profile, profiles]);
   const selectedPageIds = state.scope === "all" ? pageIds : activePageId ? [activePageId] : [];
-  void scene;
+  const activePage = activePageId ? scene.pages[activePageId] ?? null : null;
   return (
     <div className="export-controls">
       <label className="field">
@@ -218,6 +218,13 @@ function ExportControls({
         </select>
       </label>
       {profile ? <ExportFormatField profile={profile} onChange={(nextProfile) => updateState({ draftProfile: nextProfile })} /> : null}
+      {profile && profile.format === "png" ? (
+        <RasterScaleField
+          profile={profile}
+          activePage={activePage}
+          onChange={(nextProfile) => updateState({ draftProfile: nextProfile })}
+        />
+      ) : null}
       {profile && printFeatureEnabled && profile.format === "pdf" ? (
         <PrintBleedField profile={profile} onChange={(nextProfile) => updateState({ draftProfile: nextProfile })} />
       ) : null}
@@ -258,6 +265,59 @@ function ExportFormatField({
         <option value="png">PNG</option>
         <option value="pdf">PDF</option>
       </select>
+    </label>
+  );
+}
+
+/** PNG output-scale presets (Figma convention). A saved profile with a
+ * non-preset scale still renders — its value joins the options so the
+ * select always shows the truth. */
+export const RASTER_SCALE_PRESETS = [0.5, 0.75, 1, 1.5, 2, 3, 4];
+
+function RasterScaleField({
+  profile,
+  activePage,
+  onChange
+}: {
+  profile: ExportProfile;
+  activePage: Page | null;
+  onChange: (profile: ExportProfile) => void;
+}) {
+  const scale = profile.raster?.scale ?? 1;
+  const options = RASTER_SCALE_PRESETS.includes(scale)
+    ? RASTER_SCALE_PRESETS
+    : [...RASTER_SCALE_PRESETS, scale].sort((a, b) => a - b);
+  const estimate = activePage ? estimatePngPixelSize(activePage, profile.raster) : null;
+  const overBudget = estimate ? estimate.width * estimate.height > MAX_RASTER_PIXELS : false;
+  return (
+    <label className="field" data-role="raster-scale">
+      <span>Size</span>
+      <select
+        value={String(scale)}
+        onChange={(event) =>
+          onChange(
+            normalizeProfile({
+              ...profile,
+              raster: {
+                scale: Number(event.target.value),
+                dpi: profile.raster?.dpi ?? 96
+              }
+            })
+          )
+        }
+      >
+        {options.map((preset) => (
+          <option key={preset} value={String(preset)}>
+            {preset}x
+          </option>
+        ))}
+      </select>
+      {estimate ? (
+        <small className="muted" data-role="raster-scale-size">
+          {estimate.width} × {estimate.height} px
+          {overBudget ? " — exceeds the 150 MP export limit" : ""}
+        </small>
+      ) : null}
     </label>
   );
 }

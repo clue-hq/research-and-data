@@ -2112,6 +2112,80 @@ def test_export_preview_route_honors_include_marks(client: TestClient) -> None:
     }
 
 
+def png_scale_profile(scale: float) -> JsonObject:
+    return {
+        "name": f"png_{scale}x",
+        "format": "png",
+        "pdf_intent": None,
+        "raster": {"scale": scale, "dpi": 96},
+        "include_bleed": False,
+        "embed_fonts": False,
+    }
+
+
+def test_export_preview_route_scales_png_with_raster_scale(client: TestClient) -> None:
+    """raster.scale must survive profile normalization end-to-end: the PNG's
+    own IHDR dimensions scale by the profile multiplier (px pages get the
+    figma-style 1x/2x/... semantics)."""
+    scene = minimal_scene()
+    scene["pages"]["page_a4"]["size"] = {
+        "width": 1080,
+        "height": 1080,
+        "unit": "px",
+        "preset": "custom",
+        "orientation": "portrait",
+    }
+
+    for scale, expected in ((1.0, 1080), (2.0, 2160)):
+        response = client.post(
+            "/export-preview",
+            json={
+                "scene": scene,
+                "format": "png",
+                "page_ids": ["page_a4"],
+                "profile": png_scale_profile(scale),
+            },
+        )
+        assert response.status_code == 200, response.text
+        payload = response.json()
+        assert payload["status"] == "ok", payload["diagnostics"]
+        artifact = payload["export"]["artifacts"][0]
+        assert artifact["dimensions"] == {
+            "width": expected,
+            "height": expected,
+            "unit": "px",
+            "source": "png_ihdr",
+        }
+
+
+def test_export_preview_route_fails_raster_over_budget(client: TestClient) -> None:
+    """The engine raster budget (150 MP) fails loudly through the API: a
+    runaway scale x dpi profile must never OOM the helper silently."""
+    scene = minimal_scene()
+    scene["pages"]["page_a4"]["size"] = {
+        "width": 1080,
+        "height": 1080,
+        "unit": "px",
+        "preset": "custom",
+        "orientation": "portrait",
+    }
+
+    response = client.post(
+        "/export-preview",
+        json={
+            "scene": scene,
+            "format": "png",
+            "page_ids": ["page_a4"],
+            "profile": png_scale_profile(40.0),
+        },
+    )
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["status"] == "failed"
+    codes = {diagnostic["code"] for diagnostic in payload["diagnostics"]}
+    assert "export.raster_budget_exceeded" in codes, codes
+
+
 def test_styles_brand_kit_persists_validates_and_lists_versions(
     client: TestClient,
 ) -> None:

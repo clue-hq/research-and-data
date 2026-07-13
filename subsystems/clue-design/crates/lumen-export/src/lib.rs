@@ -25,8 +25,8 @@ pub use imposition::{booklet_sheet_sides, BookletSheetSide};
 pub use print_ready::{is_print_ready_scope, print_ready_report};
 pub use png::PngExportAdapter;
 pub use raster::{
-    PageRasterizer, PdfRenderOptions, RasterizeError, RasterizedPage, RenderedPdf, RenderedPdfPage,
-    ScenePdfRenderer,
+    ensure_raster_within_budget, PageRasterizer, PdfRenderOptions, RasterizeError, RasterizedPage,
+    RenderedPdf, RenderedPdfPage, ScenePdfRenderer, MAX_RASTER_PIXELS,
 };
 pub use resolver::{
     AssetByteResolver, AssetResolveError, FixtureAssetResolver, ResolvedAssetBytes,
