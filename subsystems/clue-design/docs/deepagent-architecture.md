@@ -790,3 +790,52 @@ commits or none of this fires. Tier 2 (L5 context pruning, L6 image
 downscale, L7 per-role reasoning) stays parked pending drift evidence and
 calibration A/Bs. Gates: runtime 474 · api 309 · zero regressions; no engine
 sources touched (no wasm/handshake implications).
+
+## Live design streaming — moda-parity build theater (2026-07-13, live-verified)
+
+The turn becomes watchable: silent planning (checklist + lock pill, canvas
+untouched) → structure-first artboard placeholders → element-by-element
+materialization with a create-flash + gliding design cursor (Cursor accent,
+SVG-overlay only — zero wasm-paint changes) → narrated banner substatus →
+viewport auto-follow (user pan/zoom wins, permanently per run) → review
+phase → unlock into the unchanged Before/After gate. Design doc:
+.context/next-wave/live-design-streaming-design.md (D1–D8, from frame-by-
+frame study of the moda/brilliant recordings; the element-by-element feel is
+client-side theater over per-compile ops batches — perceived latency, zero
+agent-latency cost by construction).
+
+Four slices + a fix round (`6220c76` S0 server: clean-compile/asset ops ride
+the existing durable run-events SSE pipe — the exact ledgered list, so
+streamed == what Accept replays; refused drafts stream nothing; 250ms poll →
+`0069e09` S1 editor core: progressive engine apply from an arm-time base,
+terminal reconcile resets to base BEFORE the canonical previewAgentProposal
+(streamed state can never leak into Accept; pinned) → `8f6a92b` S2 theater:
+paced pump (~100ms/op, 5s per-batch cap, new-batch fast-forward), reveal
+chrome, auto-follow, all CSS in new agentStreaming.css — six parked restyle
+files untouched by construction → `5a039f1` fix round).
+
+Adversarial protocol went 7-for-7: two independent refuters over the full
+diff CONFIRMED a HIGH behind green suites — the reload-mid-run path settled
+against the live (streamed) scene, so a failed-draft resume pushed the
+half-built streamed scene into durable undo history. Class-fixed: the
+pre-turn seed is captured explicitly at arm time and every settle path
+consumes it (closure-staleness class dead, refuter repro flips fail→pass).
+Also from the round: fit-buttons latch the auto-follow override,
+prefers-reduced-motion support, mid-run doc-sync fallback pinned to the
+seed, one-connection SSE polls, dangling-reveal cleanup.
+
+LIVE PROOF (fresh servers from HEAD, real grok-4.5 turns, evidence
+.context/streaming-verify/01–12): planning-silence + edit-lock PASS;
+element-by-element streaming with live layer-tree fill PASS (flash/cursor
+DOM-asserted 80×); substatus PASS; auto-follow PASS (user-wins proven by
+code + unit test; toolbar staging limited the live check); paint cost p95
+9.3ms / 0 long-tasks during the fastest cadence (refuter F4 closed);
+reconcile integrity PASS (streamed state pixel-consistent with the canonical
+After); Accept persists through reload; reload-mid-run re-attaches, settles,
+and undo restores ONLY canonical state (the fixed HIGH, proven live).
+Verifier also caught + fixed a stale-wasm handshake before browser work
+(rebuild → HANDSHAKE OK). Known tuning residual: reveal pacing reads
+brisker than moda's cadence — a taste knob (REVEAL_CADENCE_MS/cap), not a
+correctness item. Gates: runtime 479 · api 311 · editor streaming suites
+78/78 + tsc/lint clean; full-suite editor failures byte-identical to the
+known environmental baseline.
