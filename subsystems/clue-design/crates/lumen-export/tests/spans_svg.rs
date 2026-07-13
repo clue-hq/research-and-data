@@ -84,6 +84,7 @@ fn render(node: Node) -> (String, Vec<lumen_core::Diagnostic>) {
         include_marks: false,
         imposition: None,
         proof: false,
+        color: None,
         },
         page_ids: vec![PageId::from("page_spans")],
         purpose: ExportPurpose::UserDownload,

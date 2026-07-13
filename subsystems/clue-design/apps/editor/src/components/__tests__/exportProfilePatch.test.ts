@@ -113,4 +113,33 @@ describe("export profile format switching (W3)", () => {
     const next = normalizeProfile({ ...printPdf(), format: "svg", proof: true });
     expect(next.proof).toBeUndefined();
   });
+
+  it("normalizeProfile preserves color:cmyk for a print-intent pdf", () => {
+    const next = normalizeProfile({ ...printPdf(), color: "cmyk" });
+    expect(next.color).toBe("cmyk");
+  });
+
+  it("normalizeProfile strips color when a cmyk pdf flips to preview intent", () => {
+    const next = normalizeProfile({ ...printPdf(), pdf_intent: "preview", color: "cmyk" });
+    expect(next.color).toBeUndefined();
+  });
+
+  it("switching a cmyk pdf to png strips the color field", () => {
+    const patch = formatPatch("png", { ...printPdf(), color: "cmyk" });
+    const next = normalizeProfile({ ...printPdf(), color: "cmyk", ...patch });
+    expect(next.format).toBe("png");
+    expect(next.color).toBeUndefined();
+  });
+
+  it("switching a cmyk pdf to svg strips the color field", () => {
+    const patch = formatPatch("svg", { ...printPdf(), color: "cmyk" });
+    const next = normalizeProfile({ ...printPdf(), color: "cmyk", ...patch });
+    expect(next.format).toBe("svg");
+    expect(next.color).toBeUndefined();
+  });
+
+  it("normalizeProfile strips color that lands on a non-pdf profile", () => {
+    const next = normalizeProfile({ ...printPdf(), format: "svg", color: "cmyk" });
+    expect(next.color).toBeUndefined();
+  });
 });

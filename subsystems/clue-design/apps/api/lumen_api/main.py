@@ -3804,7 +3804,7 @@ def default_export_profile(export_format: str) -> JsonObject:
 
 def normalize_export_profile(profile: JsonObject) -> JsonObject:
     export_format = str(profile.get("format") or "svg")
-    return {
+    normalized = {
         "name": str(profile.get("name") or f"{export_format}_document_export"),
         "format": export_format,
         "pdf_intent": profile.get("pdf_intent"),
@@ -3815,6 +3815,18 @@ def normalize_export_profile(profile: JsonObject) -> JsonObject:
         # silently downgraded marked exports (browser-verify finding).
         "include_marks": bool(profile.get("include_marks", False)),
     }
+    # Optional print controls (W4 imposition, W7 proof, W5 CMYK color):
+    # this whitelist rebuild silently dropped imposition/proof for saved
+    # document profiles — the same defect class as the include_marks find
+    # above. Present-only passthrough keeps the engine's "absent = off"
+    # serialization contract.
+    if profile.get("imposition") is not None:
+        normalized["imposition"] = profile.get("imposition")
+    if profile.get("proof"):
+        normalized["proof"] = True
+    if profile.get("color") is not None:
+        normalized["color"] = profile.get("color")
+    return normalized
 
 
 def preflight_operation_list(preflight: JsonObject) -> List[JsonObject]:

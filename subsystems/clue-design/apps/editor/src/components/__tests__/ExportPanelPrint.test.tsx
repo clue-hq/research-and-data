@@ -205,6 +205,50 @@ describe("ExportPanel print controls (W3)", () => {
     expect(screen.getByText(/LUME0431/)).toBeInTheDocument();
   });
 
+  it("shows the CMYK checkbox for a print-intent pdf and writes color:cmyk when toggled on", () => {
+    const onPanelStateChange = renderPanel();
+    const checkbox = screen.getByRole("checkbox", { name: "CMYK for offset press (print intent only)" });
+    expect(checkbox).not.toBeChecked();
+
+    fireEvent.click(checkbox);
+    expect(onPanelStateChange).toHaveBeenCalledTimes(1);
+    const next = onPanelStateChange.mock.calls[0][0] as ExportPanelState;
+    expect(next.draftProfile).toMatchObject({ color: "cmyk" });
+  });
+
+  it("clears color when the CMYK checkbox is unchecked", () => {
+    const onPanelStateChange = renderPanel({
+      panelState: panelState({ ...printPdfProfile(), color: "cmyk" })
+    });
+    const checkbox = screen.getByRole("checkbox", { name: "CMYK for offset press (print intent only)" });
+    expect(checkbox).toBeChecked();
+
+    fireEvent.click(checkbox);
+    const next = onPanelStateChange.mock.calls[0][0] as ExportPanelState;
+    expect(next.draftProfile?.color).toBeUndefined();
+  });
+
+  it("hides the CMYK checkbox for a preview-intent pdf", () => {
+    renderPanel({ panelState: panelState({ ...printPdfProfile(), pdf_intent: "preview" }) });
+    expect(
+      screen.queryByRole("checkbox", { name: "CMYK for offset press (print intent only)" })
+    ).not.toBeInTheDocument();
+  });
+
+  it("hides the CMYK checkbox when the print feature is off", () => {
+    renderPanel({ printFeatureEnabled: false });
+    expect(
+      screen.queryByRole("checkbox", { name: "CMYK for offset press (print intent only)" })
+    ).not.toBeInTheDocument();
+  });
+
+  it("does not show the CMYK checkbox for a non-pdf profile", () => {
+    renderPanel({ panelState: panelState({ ...printPdfProfile(), format: "png", raster: { scale: 1, dpi: 96 } }) });
+    expect(
+      screen.queryByRole("checkbox", { name: "CMYK for offset press (print intent only)" })
+    ).not.toBeInTheDocument();
+  });
+
   it("shows the imposed-marks note beside the bleed control only when booklet is on", () => {
     const { rerender } = renderTestPanel(panelState(printPdfProfile()));
     expect(screen.queryByText(/imposed booklet sheets/i)).not.toBeInTheDocument();

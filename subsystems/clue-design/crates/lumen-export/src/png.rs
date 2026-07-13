@@ -205,6 +205,7 @@ mod tests {
             include_marks: false,
             imposition: None,
             proof: false,
+            color: None,
             },
             page_ids: vec![PageId::from("page")],
             purpose: ExportPurpose::UserDownload,

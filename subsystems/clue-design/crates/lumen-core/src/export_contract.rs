@@ -53,6 +53,15 @@ pub struct ExportProfile {
     /// runs. Serialized only when true (schema-compat contract).
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub proof: bool,
+    /// Print W5 stage B: output color conversion. `Some("cmyk")` converts
+    /// the rendered PDF to DeviceCMYK through a target press ICC profile
+    /// (Ghostscript post-process, black text/vector preserved as pure K).
+    /// Only valid on print-intent PDF profiles — electronic-distribution
+    /// PDFs stay sRGB; any other combination fails loudly at export.
+    /// `None` (default) = today's sRGB passthrough. Serialized only when
+    /// set (schema-compat contract).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub color: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]

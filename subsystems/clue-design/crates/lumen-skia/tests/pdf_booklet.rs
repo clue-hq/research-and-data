@@ -94,6 +94,7 @@ fn booklet_request(page_count: usize) -> ExportRequest {
             include_marks: true,
             imposition: Some("booklet".to_owned()),
             proof: false,
+            color: None,
         },
         page_ids: (0..page_count)
             .map(|index| PageId::from(format!("page_{}", index + 1)))

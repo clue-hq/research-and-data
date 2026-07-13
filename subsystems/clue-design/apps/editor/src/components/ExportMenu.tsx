@@ -37,6 +37,7 @@ export function ExportMenu({
   const [scope, setScope] = useState<ExportMenuScope>(pageCount > 1 ? "all" : "active");
   const [pngScale, setPngScale] = useState<1 | 2>(2);
   const [pdfIntent, setPdfIntent] = useState<"preview" | "print">("preview");
+  const [pdfColor, setPdfColor] = useState<"srgb" | "cmyk">("srgb");
   const rootRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -44,7 +45,7 @@ export function ExportMenu({
   }, []);
 
   const download = () => {
-    onDownload(profileForChoices(format, pngScale, pdfIntent), scope);
+    onDownload(profileForChoices(format, pngScale, pdfIntent, pdfColor), scope);
   };
 
   return (
@@ -106,12 +107,31 @@ export function ExportMenu({
           <span>Intent</span>
           <select
             value={pdfIntent}
-            onChange={(event) =>
-              setPdfIntent(event.target.value === "print" ? "print" : "preview")
-            }
+            onChange={(event) => {
+              const nextIntent = event.target.value === "print" ? "print" : "preview";
+              setPdfIntent(nextIntent);
+              // CMYK is a print-only server concern (export.cmyk_requires_print_intent);
+              // flipping back to preview must drop it so we never emit an invalid combo.
+              if (nextIntent !== "print") {
+                setPdfColor("srgb");
+              }
+            }}
           >
             <option value="preview">Digital (preview)</option>
             <option value="print">Print (bleed, embedded fonts)</option>
+          </select>
+        </label>
+      ) : null}
+
+      {format === "pdf" && pdfIntent === "print" ? (
+        <label className="export-menu-field">
+          <span>Color</span>
+          <select
+            value={pdfColor}
+            onChange={(event) => setPdfColor(event.target.value === "cmyk" ? "cmyk" : "srgb")}
+          >
+            <option value="srgb">sRGB (digital press)</option>
+            <option value="cmyk">CMYK (offset press)</option>
           </select>
         </label>
       ) : null}
@@ -135,7 +155,8 @@ export function ExportMenu({
 function profileForChoices(
   format: ExportFormat,
   pngScale: 1 | 2,
-  pdfIntent: "preview" | "print"
+  pdfIntent: "preview" | "print",
+  pdfColor: "srgb" | "cmyk"
 ): ExportProfile {
   switch (format) {
     case "png":
@@ -166,6 +187,9 @@ function profileForChoices(
         raster: null,
         include_bleed: pdfIntent === "print",
         include_marks: pdfIntent === "print",
+        // CMYK is print-intent-only; emit the field solely on print PDFs, and
+        // only when the user chose it — sRGB is the default and emits nothing.
+        ...(pdfIntent === "print" && pdfColor === "cmyk" ? { color: "cmyk" } : {}),
         embed_fonts: true
       };
   }

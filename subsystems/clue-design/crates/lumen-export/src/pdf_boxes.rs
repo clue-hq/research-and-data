@@ -122,6 +122,15 @@ fn box_array(values: [f64; 4]) -> Object {
     Object::Array(values.iter().map(|value| Object::Real(*value as f32)).collect())
 }
 
+/// PDF/X declaration inputs for [`finalize_print_pdf`]. The output intent
+/// defaults to the embedded sRGB profile (the honest description of the
+/// RGB pipeline); a CMYK-converted export carries the press target it was
+/// actually separated for instead (print W5 stage B).
+pub struct PdfxDeclarations<'a> {
+    pub title: &'a str,
+    pub cmyk: Option<&'a crate::cmyk::CmykTarget>,
+}
+
 /// Rewrite every page's MediaBox/TrimBox/BleedBox to the given exact
 /// geometry. `boxes` must be in document page order and match the page
 /// count — a mismatch is a caller bug and errors loudly rather than
@@ -131,14 +140,15 @@ pub fn apply_print_boxes(bytes: &[u8], boxes: &[PageBoxes]) -> Result<Vec<u8>, S
 }
 
 /// One-pass print finalization: exact page boxes always; with `pdfx`, the
-/// PDF/X-4 declaration set — sRGB OutputIntent (GTS_PDFX), XMP metadata
+/// PDF/X-4 declaration set — OutputIntent (GTS_PDFX; sRGB, or the CMYK
+/// press profile a converted export was separated for), XMP metadata
 /// with GTS_PDFXVersion, Trapped/False, deterministic CreationDate, and
 /// PDF version 1.6. The conformance target is declared, not externally
 /// validated (veraPDF integration is a plan follow-up).
 pub fn finalize_print_pdf(
     bytes: &[u8],
     boxes: &[PageBoxes],
-    pdfx_title: Option<&str>,
+    pdfx: Option<PdfxDeclarations<'_>>,
 ) -> Result<Vec<u8>, String> {
     let mut document =
         Document::load_mem(bytes).map_err(|error| format!("PDF parse failed: {error}"))?;
@@ -161,8 +171,8 @@ pub fn finalize_print_pdf(
         page_dict.set("BleedBox", box_array(page_boxes.bleed));
     }
 
-    if let Some(title) = pdfx_title {
-        apply_pdfx_declarations(&mut document, title)?;
+    if let Some(declarations) = pdfx {
+        apply_pdfx_declarations(&mut document, &declarations)?;
     }
 
     let mut output = Vec::new();
@@ -172,13 +182,31 @@ pub fn finalize_print_pdf(
     Ok(output)
 }
 
-fn apply_pdfx_declarations(document: &mut Document, title: &str) -> Result<(), String> {
+fn apply_pdfx_declarations(
+    document: &mut Document,
+    declarations: &PdfxDeclarations<'_>,
+) -> Result<(), String> {
+    let title = declarations.title;
     document.version = "1.6".to_owned();
+
+    // The output intent this file is honest about: the sRGB pipeline
+    // profile, or — after the W5 CMYK stage — the press profile the
+    // colors were actually separated for.
+    let (icc_bytes, icc_components, condition): (&[u8], i64, &str) = match declarations.cmyk {
+        Some(target) => (&target.icc, 4, target.identifier.as_str()),
+        None => (SRGB_ICC, 3, "sRGB IEC61966-2.1"),
+    };
+
+    // A converted file arrives with Ghostscript's own Info/Metadata/
+    // OutputIntents. We own those contracts (deterministic dates, exact
+    // intent); replacing the references would leave the old objects as
+    // orphans carrying whatever gs wrote — delete them outright.
+    strip_document_metadata(document);
 
     // Document ID: deterministic content-derived id (FNV-1a over the ICC,
     // the title, and object count — stable across runs, unique enough per
     // document shape).
-    let id_seed = fnv1a(SRGB_ICC) ^ fnv1a(title.as_bytes()) ^ (document.objects.len() as u64);
+    let id_seed = fnv1a(icc_bytes) ^ fnv1a(title.as_bytes()) ^ (document.objects.len() as u64);
 
     // File identifiers: REQUIRED by every PDF/X part (ISO 15930; surfaced
     // by veraPDF's structural pass 2026-07-13 — the one A-profile failure
@@ -207,17 +235,17 @@ fn apply_pdfx_declarations(document: &mut Document, title: &str) -> Result<(), S
         .trailer
         .set("Info", Object::Reference(info_id));
 
-    // OutputIntent with the embedded sRGB profile.
+    // OutputIntent with the embedded profile the file was produced for.
     let icc_stream = Stream::new(
-        dictionary! { "N" => Object::Integer(3) },
-        SRGB_ICC.to_vec(),
+        dictionary! { "N" => Object::Integer(icc_components) },
+        icc_bytes.to_vec(),
     );
     let icc_id = document.add_object(Object::Stream(icc_stream));
     let intent = dictionary! {
         "Type" => Object::Name(b"OutputIntent".to_vec()),
         "S" => Object::Name(b"GTS_PDFX".to_vec()),
-        "OutputConditionIdentifier" => Object::string_literal("sRGB IEC61966-2.1"),
-        "Info" => Object::string_literal("sRGB IEC61966-2.1"),
+        "OutputConditionIdentifier" => Object::string_literal(condition),
+        "Info" => Object::string_literal(condition),
         "RegistryName" => Object::string_literal("http://www.color.org"),
         "DestOutputProfile" => Object::Reference(icc_id),
     };
@@ -271,6 +299,48 @@ fn apply_pdfx_declarations(document: &mut Document, title: &str) -> Result<(), S
     );
     catalog.set("Metadata", Object::Reference(metadata_id));
     Ok(())
+}
+
+/// Delete any pre-existing Info dictionary, XMP metadata stream, and
+/// OutputIntents (both the references and the referenced objects). The
+/// finalize pass writes its own deterministic set; leaving the old
+/// objects orphaned would carry nondeterministic bytes (Ghostscript
+/// stamps dates and instance UUIDs) into the saved file.
+fn strip_document_metadata(document: &mut Document) {
+    let mut stale: Vec<lopdf::ObjectId> = Vec::new();
+    if let Ok(&Object::Reference(info_id)) = document.trailer.get(b"Info") {
+        stale.push(info_id);
+        document.trailer.remove(b"Info");
+    }
+    if let Ok(catalog) = document.catalog() {
+        if let Ok(&Object::Reference(metadata_id)) = catalog.get(b"Metadata") {
+            stale.push(metadata_id);
+        }
+        if let Ok(intents) = catalog.get(b"OutputIntents") {
+            if let Ok(intents) = intents.as_array() {
+                for intent in intents {
+                    if let Object::Reference(intent_id) = intent {
+                        stale.push(*intent_id);
+                        // The intent's embedded profile stream goes too.
+                        if let Ok(Object::Dictionary(dict)) = document.get_object(*intent_id) {
+                            if let Ok(&Object::Reference(profile_id)) =
+                                dict.get(b"DestOutputProfile")
+                            {
+                                stale.push(profile_id);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    if let Ok(catalog) = document.catalog_mut() {
+        catalog.remove(b"Metadata");
+        catalog.remove(b"OutputIntents");
+    }
+    for object_id in stale {
+        document.objects.remove(&object_id);
+    }
 }
 
 fn xml_escape(value: &str) -> String {

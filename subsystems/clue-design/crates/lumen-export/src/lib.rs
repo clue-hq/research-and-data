@@ -5,6 +5,7 @@
 //! storage.
 
 pub mod checks;
+pub mod cmyk;
 pub mod imposition;
 pub mod pdf;
 pub mod pdf_boxes;
@@ -16,10 +17,12 @@ pub mod sidecar;
 pub mod svg;
 
 pub use checks::{asset_export_checks, license_enforced, MIN_EFFECTIVE_PRINT_DPI};
+pub use cmyk::{cmyk_target_for, convert_pdf_to_cmyk, CmykTarget};
 pub use pdf::PdfExportAdapter;
 pub use pdf_boxes::{
     apply_print_boxes, finalize_print_pdf, page_boxes_for,
-    page_boxes_with_margin, print_margin_pt, PageBoxes, MARK_GAP_PT, MARK_MARGIN_PT,
+    page_boxes_with_margin, print_margin_pt, PageBoxes, PdfxDeclarations,
+    MARK_GAP_PT, MARK_MARGIN_PT,
 };
 pub use imposition::{booklet_sheet_sides, BookletSheetSide};
 pub use print_ready::{is_print_ready_scope, print_ready_report};

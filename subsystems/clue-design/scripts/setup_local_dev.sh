@@ -162,6 +162,13 @@ setup_node() {
   fi
 }
 
+setup_print_tools() {
+  # Print W5 stage B: CMYK PDF export shells out to Ghostscript on the
+  # server side (color:"cmyk" on print-intent profiles). Exports without
+  # it fail loudly with export.cmyk_unavailable.
+  install_with_brew_if_missing gs ghostscript "Ghostscript"
+}
+
 setup_rust() {
   if ! command -v cargo >/dev/null 2>&1 || ! command -v rustc >/dev/null 2>&1; then
     is_macos || fail "Rust is missing. Automatic Rust installation is only supported on macOS."
@@ -253,6 +260,7 @@ log "Setting up Lumen design engine at $ROOT_DIR"
 ensure_env_file
 setup_python
 setup_node
+setup_print_tools
 setup_rust
 verify_setup
 print_next_steps

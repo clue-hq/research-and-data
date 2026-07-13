@@ -52,6 +52,7 @@ fn export_profile() -> ExportProfile {
     include_marks: false,
     imposition: None,
     proof: false,
+    color: None,
     }
 }
 

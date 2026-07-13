@@ -890,6 +890,7 @@ fn print_pdf_profile() -> ExportProfile {
     include_marks: false,
     imposition: None,
     proof: false,
+    color: None,
     }
 }
 
@@ -907,6 +908,7 @@ fn agent_png_profile() -> ExportProfile {
     include_marks: false,
     imposition: None,
     proof: false,
+    color: None,
     }
 }
 

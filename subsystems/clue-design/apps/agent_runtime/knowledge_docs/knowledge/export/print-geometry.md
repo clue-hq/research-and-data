@@ -72,3 +72,22 @@ export profile), never an authoring concern. A brochure request means N
 reader pages; the export pipeline handles the folding math (front [N|1],
 back [2|3], blanks padded to a multiple of 4, declared LUME0428).
 Booklet imposition requires one uniform trim size across pages.
+
+## CMYK for offset press (print W5 stage B)
+
+Print-intent PDF profiles may add `"color": "cmyk"`: the export pipeline
+separates the file to DeviceCMYK through a press ICC profile
+(Ghostscript post-process; declared LUME0432, OutputIntent names the
+target condition). Rules:
+
+- **Print intent only.** `color: "cmyk"` on a preview-intent (digital
+  distribution) PDF is a hard export error
+  (`export.cmyk_requires_print_intent`) — electronic PDFs stay sRGB.
+  Never set it unless the user's brief is an offset/press-critical run;
+  digital presses handle the default sRGB PDF/X-4 fine.
+- **Black stays crisp automatically.** Achromatic paints (pure #000
+  text, hairline rules, neutral grays) separate to the K plate only —
+  never author 4-color "black" text workarounds.
+- **Rich black panels**: author a near-black fill (e.g. `#0a0a0f`) when
+  a large dark panel should print as a deep rich black; the ICC builds
+  the CMYK mix. Pure #000 fills stay K-only by design.

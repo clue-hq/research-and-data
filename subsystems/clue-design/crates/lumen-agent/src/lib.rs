@@ -98,9 +98,6 @@ impl Default for AgentLoopOptions {
             }),
             include_bleed: false,
             embed_fonts: true,
-        include_marks: false,
-        imposition: None,
-        proof: false,
         }
     }
 }
@@ -1504,6 +1501,10 @@ fn critique_export_request(options: &AgentLoopOptions, page_ids: Vec<PageId>) ->
             },
             include_bleed: options.include_bleed,
             embed_fonts: options.embed_fonts,
+            include_marks: false,
+            imposition: None,
+            proof: false,
+            color: None,
         },
         page_ids,
         purpose: ExportPurpose::AgentCritique,

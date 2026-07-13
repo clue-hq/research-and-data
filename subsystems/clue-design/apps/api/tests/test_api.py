@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import base64
 import copy
 import json
 import logging
+import shutil
 from pathlib import Path
 from typing import Optional
 
@@ -2110,6 +2112,102 @@ def test_export_preview_route_honors_include_marks(client: TestClient) -> None:
         "unit": "pt",
         "source": "pdf_media_box",
     }
+
+
+def test_normalize_export_profile_keeps_optional_print_controls() -> None:
+    """Print W5: the profile whitelist rebuild must pass imposition/proof/
+    color through — dropping them here silently downgraded saved document
+    profiles (same defect class as the include_marks browser-verify find)."""
+    from lumen_api.main import normalize_export_profile
+
+    normalized = normalize_export_profile(
+        {
+            "name": "offset_press_pdf",
+            "format": "pdf",
+            "pdf_intent": "print",
+            "include_bleed": True,
+            "embed_fonts": True,
+            "include_marks": True,
+            "imposition": "booklet",
+            "proof": True,
+            "color": "cmyk",
+        }
+    )
+    assert normalized["imposition"] == "booklet"
+    assert normalized["proof"] is True
+    assert normalized["color"] == "cmyk"
+
+    plain = normalize_export_profile({"name": "digital_pdf", "format": "pdf"})
+    assert "imposition" not in plain
+    assert "proof" not in plain
+    assert "color" not in plain
+
+
+def cmyk_print_profile() -> JsonObject:
+    return {
+        "name": "print_pdf_cmyk",
+        "format": "pdf",
+        "pdf_intent": "print",
+        "raster": None,
+        "include_bleed": False,
+        "embed_fonts": True,
+        "include_marks": False,
+        "color": "cmyk",
+    }
+
+
+@pytest.mark.skipif(shutil.which("gs") is None, reason="ghostscript not installed")
+def test_export_preview_route_converts_print_pdf_to_cmyk(client: TestClient) -> None:
+    """Print W5 stage B: color:"cmyk" on a print-intent profile converts the
+    PDF through Ghostscript — the export declares the conversion (LUME0432)
+    and the OutputIntent names the press profile, not sRGB."""
+    scene = minimal_scene()
+    response = client.post(
+        "/export-preview",
+        json={
+            "scene": scene,
+            "format": "pdf",
+            "page_ids": ["page_a4"],
+            "profile": cmyk_print_profile(),
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["status"] == "ok", payload["diagnostics"]
+    codes = {item["code"] for item in payload["export"]["diagnostics"]}
+    assert "LUME0432" in codes
+    assert payload["export"]["print_ready"] is not None
+
+    artifact = payload["export"]["artifacts"][0]
+    header, encoded = artifact["data_url"].split(",", 1)
+    assert header == "data:application/pdf;base64"
+    pdf_bytes = base64.b64decode(encoded)
+    assert b"GTS_PDFX" in pdf_bytes
+    assert b"sRGB IEC61966-2.1" not in pdf_bytes, "CMYK export must not claim an sRGB intent"
+
+
+def test_export_preview_route_rejects_cmyk_on_digital_pdf(client: TestClient) -> None:
+    """CMYK conversion is print-only: an electronic-distribution (preview
+    intent) PDF requesting it fails loudly, never silently converts."""
+    scene = minimal_scene()
+    profile = cmyk_print_profile()
+    profile["pdf_intent"] = "preview"
+    response = client.post(
+        "/export-preview",
+        json={
+            "scene": scene,
+            "format": "pdf",
+            "page_ids": ["page_a4"],
+            "profile": profile,
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["status"] == "failed"
+    codes = {item["code"] for item in payload["diagnostics"]}
+    assert "export.cmyk_requires_print_intent" in codes
 
 
 def png_scale_profile(scale: float) -> JsonObject:

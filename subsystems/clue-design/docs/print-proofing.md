@@ -44,3 +44,18 @@ Guaranteed by machine: geometry (trim/bleed/safe boxes), the no-color-cutoff
 chain, embedded fonts, PDF/X-4 declarations, deterministic output.
 Not guaranteed: how ink behaves on a given stock, press color drift, fold
 tolerance. That's what the physical proof is for.
+
+## CMYK for offset runs (print W5 stage B)
+
+For an offset shop that demands CMYK delivery, export with **print intent
++ CMYK (offset press)** — the pipeline separates the vector PDF through a
+press ICC profile via Ghostscript and the OutputIntent names the exact
+condition. Set `LUMEN_CMYK_ICC` on the API host to the shop's profile
+(e.g. ISO Coated v2 / FOGRA39 from eci.org); without it the conversion
+uses Ghostscript's default CMYK profile, which is fine for proofs but a
+characterized shop profile is the right choice for brand-critical color.
+Black text and rules separate to pure K automatically (no fuzzy 4-color
+black); a large panel meant to print as *rich* black should be authored
+near-black (e.g. `#0a0a0f`), since pure `#000` deliberately stays K-only.
+Electronic-distribution (digital-intent) PDFs never convert — they stay
+sRGB by design.

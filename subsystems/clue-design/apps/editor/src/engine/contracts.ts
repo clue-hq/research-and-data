@@ -797,6 +797,15 @@ export interface ExportProfile {
    * server omits it when false (serde), so an absent value round-trips through
    * the core as false, not a type error. */
   proof?: boolean;
+  /** Print workstream W5 stage B: color pipeline. When "cmyk", the server
+   * converts the PDF to a CMYK color space via Ghostscript for offset presses;
+   * absent/null leaves the sRGB (digital-press) default. The server accepts
+   * this ONLY on format="pdf" profiles with pdf_intent="print" — any other
+   * combination is a hard export error (export.cmyk_requires_print_intent), so
+   * the editor must only ever emit it on print-intent PDF profiles. Optional to
+   * mirror the wire contract — the server omits it when absent (serde), so an
+   * absent value round-trips through the core as none, not a type error. */
+  color?: string | null;
   embed_fonts: boolean;
 }
 

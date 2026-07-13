@@ -1058,6 +1058,7 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                     include_marks: false,
                 imposition: None,
                 proof: false,
+                color: None,
                 },
             };
             let request = ExportRequest {
@@ -2066,6 +2067,7 @@ fn export_instance_artifacts(
                     include_marks: false,
                 imposition: None,
                 proof: false,
+                color: None,
                 };
                 let request = ExportRequest {
                     profile,
@@ -2110,6 +2112,7 @@ fn export_instance_artifacts(
                         include_marks: false,
                     imposition: None,
                     proof: false,
+                    color: None,
                     },
                     page_ids: page_ids.clone(),
                     purpose: ExportPurpose::BulkRender,

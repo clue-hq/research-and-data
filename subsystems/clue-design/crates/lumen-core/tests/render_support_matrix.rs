@@ -212,6 +212,7 @@ fn scene_with_effect_card(profile_format: ExportFormat) -> Scene {
     include_marks: false,
     imposition: None,
     proof: false,
+    color: None,
     });
     scene
 }

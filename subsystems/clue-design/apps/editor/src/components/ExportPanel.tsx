@@ -234,6 +234,9 @@ function ExportControls({
       {profile && printFeatureEnabled && profile.format === "pdf" ? (
         <ProofField profile={profile} onChange={(nextProfile) => updateState({ draftProfile: nextProfile })} />
       ) : null}
+      {profile && printFeatureEnabled && profile.format === "pdf" && profile.pdf_intent === "print" ? (
+        <CmykField profile={profile} onChange={(nextProfile) => updateState({ draftProfile: nextProfile })} />
+      ) : null}
       <button
         type="button"
         disabled={!profile || selectedPageIds.length === 0 || isExporting}
@@ -411,6 +414,32 @@ function ProofField({
   );
 }
 
+function CmykField({
+  profile,
+  onChange
+}: {
+  profile: ExportProfile;
+  onChange: (profile: ExportProfile) => void;
+}) {
+  return (
+    <label className="toggle-field" data-role="cmyk-color">
+      <input
+        type="checkbox"
+        checked={profile.color === "cmyk"}
+        onChange={(event) =>
+          onChange(
+            normalizeProfile({
+              ...profile,
+              color: event.target.checked ? "cmyk" : undefined
+            })
+          )
+        }
+      />
+      CMYK for offset press (print intent only)
+    </label>
+  );
+}
+
 export function formatPatch(format: ExportProfile["format"], profile: ExportProfile): Partial<ExportProfile> {
   if (format === "png") {
     return {
@@ -424,6 +453,7 @@ export function formatPatch(format: ExportProfile["format"], profile: ExportProf
       include_marks: false,
       imposition: undefined,
       proof: undefined,
+      color: undefined,
       embed_fonts: false
     };
   }
@@ -446,6 +476,7 @@ export function formatPatch(format: ExportProfile["format"], profile: ExportProf
     include_marks: false,
     imposition: undefined,
     proof: undefined,
+    color: undefined,
     embed_fonts: false
   };
 }
@@ -456,13 +487,18 @@ export function normalizeProfile(profile: ExportProfile): ExportProfile {
   // export.
   const imposition = profile.format === "pdf" ? profile.imposition : undefined;
   const proof = profile.format === "pdf" ? profile.proof : undefined;
+  // CMYK is valid ONLY on print-intent PDFs (export.cmyk_requires_print_intent);
+  // strip it for any other format and for preview-intent PDFs so the editor can
+  // never emit an invalid combination.
+  const color = profile.format === "pdf" && profile.pdf_intent === "print" ? profile.color : undefined;
   if (profile.format !== "png") {
     // SVG/PDF: keep include_bleed / include_marks / embed_fonts as set.
     return {
       ...profile,
       raster: null,
       imposition,
-      proof
+      proof,
+      color
     };
   }
   return {
@@ -478,6 +514,7 @@ export function normalizeProfile(profile: ExportProfile): ExportProfile {
     include_marks: false,
     imposition,
     proof,
+    color,
     embed_fonts: false
   };
 }

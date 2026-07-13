@@ -127,6 +127,27 @@ impl PdfExportAdapter {
             diagnostics.extend(booklet_scope_diagnostics(scene, &page_ids, request)?);
         }
 
+        // Print W5 stage B: resolve the CMYK conversion target up front —
+        // the print-intent gate, the Ghostscript binary, and the target
+        // ICC all fail loudly here, before any rendering work. Electronic
+        // (preview-intent) PDFs can never reach the conversion.
+        let cmyk_target = crate::cmyk::cmyk_target_for(request)
+            .map_err(|error| error.with_diagnostics(diagnostics.clone()))?;
+        if let Some(target) = &cmyk_target {
+            diagnostics.push(
+                Diagnostic::advice(
+                    Phase::Export,
+                    "LUME0432",
+                    format!(
+                        "CMYK conversion (Ghostscript): colors separated for \"{}\"; black text and vector art preserved as pure K",
+                        target.identifier
+                    ),
+                    Some(DiagnosticSubject::Document),
+                )
+                .with_hint("Pure #000 stays K-only (crisp on press). For a rich-black panel, author a near-black fill (e.g. #0a0a0f) so the ICC builds a CMYK mix. Set LUMEN_CMYK_ICC to your shop's profile (e.g. FOGRA39) for brand-critical work."),
+            );
+        }
+
         // Print W7: proof mode decorates every page with marks, a slug
         // line, and an sRGB control strip in a margin — a physical-proof
         // artifact, never a production file. Imposed sheets skip it in v1.
@@ -198,9 +219,22 @@ impl PdfExportAdapter {
                 })
                 .collect()
         };
-        let pdfx_title = matches!(request.profile.pdf_intent, Some(PdfIntent::Print))
-            .then(|| scene.meta.title.as_str());
-        let bytes = crate::pdf_boxes::finalize_print_pdf(&rendered.bytes, &boxes, pdfx_title).map_err(
+        // W5 stage B: color conversion runs between render and finalize,
+        // so the finalize pass owns the box/metadata contract on the
+        // converted bytes (Ghostscript does not preserve either reliably)
+        // and the OutputIntent names the press profile actually used.
+        let rendered_bytes = match &cmyk_target {
+            Some(target) => crate::cmyk::convert_pdf_to_cmyk(&rendered.bytes, target)
+                .map_err(|error| error.with_diagnostics(diagnostics.clone()))?,
+            None => rendered.bytes,
+        };
+        let pdfx = matches!(request.profile.pdf_intent, Some(PdfIntent::Print)).then(|| {
+            crate::pdf_boxes::PdfxDeclarations {
+                title: scene.meta.title.as_str(),
+                cmyk: cmyk_target.as_ref(),
+            }
+        });
+        let bytes = crate::pdf_boxes::finalize_print_pdf(&rendered_bytes, &boxes, pdfx).map_err(
             |message| {
                 ExportError::new("export.pdf_boxes_failed", message)
                     .with_diagnostics(diagnostics.clone())
