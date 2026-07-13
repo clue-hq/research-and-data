@@ -1,5 +1,5 @@
 import { act, renderHook, waitFor } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { minimalScene } from "@/fixtures/minimalScene";
 import type { AgentRunEvent, EditorAgentResult, EditorAgentRunner } from "@/engine/agentRunner";
 import type { Operation, Scene } from "@/engine/contracts";
@@ -647,12 +647,28 @@ describe("useAgentTurn — RC turn references", () => {
   });
 });
 
-describe("useAgentTurn — live design streaming (D3)", () => {
-  // A streamed batch is an ordinary op; `id` is a marker the fake engine joins
-  // into scene.meta.title so cumulative application is observable. `boom` makes
-  // the engine throw, standing in for a batch the engine rejects. `stream_marker`
-  // is a kind previewAgentProposal's page picker ignores (no parent access).
-  const streamOp = (id: string) => ({ kind: "stream_marker", id }) as unknown as Operation;
+describe("useAgentTurn — live design streaming reveal theater (S2)", () => {
+  // S2 replaces S1's apply-whole-batch with a paced pump, so these tests drive
+  // fake timers and advance them to flush reveal-steps.
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    vi.runOnlyPendingTimers();
+    vi.useRealTimers();
+  });
+
+  // A reveal-step is a VISUAL op (`insert_node`) so `stepsFromOps` gives one step
+  // per op; `id` is a marker the fake engine joins into scene.meta.title so
+  // cumulative application is observable. `boom` makes the engine throw.
+  const insertOp = (id: string) =>
+    ({
+      kind: "insert_node",
+      id,
+      node: { id: `node_${id}` },
+      parent: { kind: "page", id: "page_a4" },
+      index: 0
+    }) as unknown as Operation;
 
   /** An engine that records every applyOperations call and builds scene.meta.title
    * by appending each op's marker cumulatively — so "streamed cumulatively" and
@@ -694,6 +710,45 @@ describe("useAgentTurn — live design streaming (D3)", () => {
     };
   }
 
+  /** An engine that materializes each inserted node WITH computed layout bounds,
+   * so `currentReveal.bounds` (read off the applied scene) is observable. */
+  function createRevealMetadataEngine(
+    bounds: { x: number; y: number; width: number; height: number }
+  ): OptimisticEnginePort {
+    let scene: Scene = cloneScene();
+    return {
+      kind: "wasm",
+      get scene() {
+        return scene;
+      },
+      version: { schema_version: 1, engine_commit: "test", text_measurement: "heuristic" },
+      reset(next: Scene) {
+        scene = next;
+      },
+      applyOperations(operations: Operation[]): EngineApplyOutcome {
+        const nodes = { ...scene.nodes };
+        for (const op of operations) {
+          const nodeId = (op as unknown as { node?: { id?: string } }).node?.id;
+          if (nodeId) {
+            nodes[nodeId] = {
+              ...(nodes[nodeId] ?? {}),
+              id: nodeId,
+              computed: { layout_bounds: bounds, render_bounds: bounds }
+            } as unknown as Scene["nodes"][string];
+          }
+        }
+        scene = { ...scene, nodes };
+        return {
+          accepted: true,
+          scene,
+          diagnostics: [],
+          inverseOperations: [],
+          appliedOperations: operations.length
+        };
+      }
+    };
+  }
+
   /** A runner that captures the hook's onEvent so the test drives batches, and
    * hands back a promise the test settles (resolve = done, reject = failure). */
   function controllableRunner() {
@@ -721,8 +776,13 @@ describe("useAgentTurn — live design streaming (D3)", () => {
     data: { iteration: 1, operations } as AgentRunEvent["data"]
   });
 
-  it("(a) a progress event carrying operations updates the scene (engine applies the batch, setScene gets the result)", async () => {
-    const op1 = streamOp("n1");
+  const tick = (ms: number) => {
+    act(() => {
+      vi.advanceTimersByTime(ms);
+    });
+  };
+
+  it("(a) the pump paces a batch one reveal-step at a time on the ~100ms cadence (N ops → N setScene over time, deduping replays)", async () => {
     const ctl = controllableRunner();
     const engine = createStreamEngine();
     const { deps } = buildDeps({ agentRunner: ctl.runner, engineRef: { current: engine } });
@@ -733,59 +793,64 @@ describe("useAgentTurn — live design streaming (D3)", () => {
       void result.current.sendAgentPrompt("build");
     });
     act(() => {
-      ctl.emit(compileEvent(1, [op1]));
+      ctl.emit(compileEvent(1, [insertOp("n1"), insertOp("n2"), insertOp("n3")]));
     });
-
-    expect(engine.applyLog).toContainEqual([op1]);
-    const scenes = setSceneMock.mock.calls.map((call) => call[0] as Scene);
-    expect(scenes.some((scene) => scene?.meta?.title === "n1")).toBe(true);
-  });
-
-  it("(b) applies batches cumulatively in seq order, exposes streaming status, and ignores a duplicate seq", async () => {
-    const op1 = streamOp("n1");
-    const op2 = streamOp("n2");
-    const ctl = controllableRunner();
-    const engine = createStreamEngine();
-    const { deps } = buildDeps({ agentRunner: ctl.runner, engineRef: { current: engine } });
-    const { result } = renderHook(() => useAgentTurn(deps));
-
-    await act(async () => {
-      void result.current.sendAgentPrompt("build");
-    });
-    expect(result.current.agentStream.active).toBe(true);
-
+    // A duplicate/replayed seq enqueues nothing.
     act(() => {
-      ctl.emit(compileEvent(1, [op1]));
+      ctl.emit(compileEvent(1, [insertOp("n1"), insertOp("n2"), insertOp("n3")]));
     });
+
+    // Paced from the start: nothing applies until the first tick.
+    expect(engine.applyLog.length).toBe(0);
+    tick(50);
+    expect(engine.applyLog.length).toBe(0); // cadence honored — no step at 50ms
+    tick(50);
+    expect(engine.applyLog).toEqual([[insertOp("n1")]]);
+    tick(100);
+    expect(engine.applyLog.length).toBe(2);
+    tick(100);
+    expect(engine.applyLog).toEqual([[insertOp("n1")], [insertOp("n2")], [insertOp("n3")]]);
+    expect(engine.scene.meta.title).toBe("n1,n2,n3");
+
+    const streamTitles = setSceneMock.mock.calls
+      .map((call) => (call[0] as Scene)?.meta?.title)
+      .filter((title) => title === "n1" || title === "n1,n2" || title === "n1,n2,n3");
+    expect(streamTitles).toEqual(["n1", "n1,n2", "n1,n2,n3"]);
     expect(result.current.agentStream).toMatchObject({
       active: true,
       lastAppliedSeq: 1,
-      batchesApplied: 1,
-      brokenStream: false
+      batchesApplied: 3,
+      brokenStream: false,
+      revealQueueLength: 0
     });
-    expect(result.current.agentStream.latestBatch).toEqual({ seq: 1, operations: [op1] });
-
-    act(() => {
-      ctl.emit(compileEvent(2, [op2]));
-    });
-    // A replayed (duplicate) seq must not re-apply.
-    act(() => {
-      ctl.emit(compileEvent(2, [op2]));
-    });
-
-    expect(result.current.agentStream.lastAppliedSeq).toBe(2);
-    expect(result.current.agentStream.batchesApplied).toBe(2);
-    expect(engine.scene.meta.title).toBe("n1,n2");
-    expect(engine.applyLog).toEqual([[op1], [op2]]);
-
-    await act(async () => {
-      ctl.resolve(proposedResult([op1, op2]));
-    });
-    // Status returns to idle once the turn settles.
-    expect(result.current.agentStream.active).toBe(false);
   });
 
-  it("(c) malformed or absent operations apply nothing and never crash the stream", async () => {
+  it("(b) the per-batch duration cap compresses the pace so a large batch fits MAX_BATCH_REVEAL_MS", async () => {
+    const ctl = controllableRunner();
+    const engine = createStreamEngine();
+    const { deps } = buildDeps({ agentRunner: ctl.runner, engineRef: { current: engine } });
+    const { result } = renderHook(() => useAgentTurn(deps));
+
+    await act(async () => {
+      void result.current.sendAgentPrompt("build");
+    });
+    // 100 steps × 100ms would be 10s (> 5s cap) → pace compresses to 50ms/step.
+    const ops = Array.from({ length: 100 }, (_, index) => insertOp(`n${index}`));
+    act(() => {
+      ctl.emit(compileEvent(1, ops));
+    });
+
+    tick(49);
+    expect(engine.applyLog.length).toBe(0); // interval is 50ms, not 100
+    tick(1);
+    expect(engine.applyLog.length).toBe(1);
+    // The whole batch drains within the cap.
+    tick(50 * 99);
+    expect(engine.applyLog.length).toBe(100);
+    expect(result.current.agentStream.batchesApplied).toBe(100);
+  });
+
+  it("(c) a new batch arriving mid-reveal fast-forwards the pending backlog in one apply, then paces the new batch", async () => {
     const ctl = controllableRunner();
     const engine = createStreamEngine();
     const { deps } = buildDeps({ agentRunner: ctl.runner, engineRef: { current: engine } });
@@ -795,67 +860,25 @@ describe("useAgentTurn — live design streaming (D3)", () => {
       void result.current.sendAgentPrompt("build");
     });
     act(() => {
-      ctl.emit(compileEvent(1, "not-an-array"));
+      ctl.emit(compileEvent(1, [insertOp("n1"), insertOp("n2"), insertOp("n3")]));
     });
-    act(() => {
-      ctl.emit(compileEvent(2, [42, "x", null]));
-    });
-    act(() => {
-      ctl.emit(compileEvent(3, []));
-    });
+    tick(100); // n1 applied; n2 + n3 still queued
+    expect(engine.scene.meta.title).toBe("n1");
 
-    expect(engine.applyLog).toEqual([]);
-    expect(result.current.agentStream).toMatchObject({
-      active: true,
-      batchesApplied: 0,
-      brokenStream: false
+    // A newer batch arrives while the backlog is pending → drain it instantly.
+    act(() => {
+      ctl.emit(compileEvent(2, [insertOp("n4")]));
     });
+    expect(engine.scene.meta.title).toBe("n1,n2,n3"); // backlog fast-forwarded (no tick)
+    // The drain was ONE apply of the remaining ops, not two paced ticks.
+    expect(engine.applyLog).toEqual([[insertOp("n1")], [insertOp("n2"), insertOp("n3")]]);
+
+    tick(100); // now the new batch paces
+    expect(engine.scene.meta.title).toBe("n1,n2,n3,n4");
   });
 
-  it("(d) a batch the engine throws on marks the stream broken, skips later batches, and the turn still completes", async () => {
-    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
-    const op1 = streamOp("n1");
-    const boom = streamOp("boom");
-    const op3 = streamOp("n3");
-    const ctl = controllableRunner();
-    const engine = createStreamEngine();
-    const { deps } = buildDeps({ agentRunner: ctl.runner, engineRef: { current: engine } });
-    const { result } = renderHook(() => useAgentTurn(deps));
-
-    await act(async () => {
-      void result.current.sendAgentPrompt("build");
-    });
-    act(() => {
-      ctl.emit(compileEvent(1, [op1]));
-    });
-    act(() => {
-      ctl.emit(compileEvent(2, [boom]));
-    });
-    act(() => {
-      ctl.emit(compileEvent(3, [op3]));
-    });
-
-    expect(result.current.agentStream.brokenStream).toBe(true);
-    expect(result.current.agentStream.batchesApplied).toBe(1);
-    expect(consoleError).toHaveBeenCalled();
-    // The rejected batch was attempted; the later one was never applied.
-    expect(engine.applyLog).toEqual([[op1], [boom]]);
-
-    // Streaming never breaks the turn: the canonical proposal still previews,
-    // reconciled from base (title "n1,n3"), not from the broken streamed scene.
-    await act(async () => {
-      ctl.resolve(proposedResult([op1, op3]));
-    });
-    expect(result.current.agentPreview).not.toBeNull();
-    expect(result.current.agentPreview?.previewScene.meta.title).toBe("n1,n3");
-    consoleError.mockRestore();
-  });
-
-  it("(e) done: a streamed run reconciles to the SAME preview as a non-streamed run (invariant, catches engine-state leakage)", async () => {
-    const op1 = streamOp("n1");
-    const op2 = streamOp("n2");
-
-    // Streamed run: both batches arrive before the terminal `done`.
+  it("(d) done mid-reveal cancels the pump and reconciles to the SAME canonical preview as a non-streamed run (invariant)", async () => {
+    // Streamed run: resolve while a reveal-step is STILL queued (mid-reveal).
     const streamed = controllableRunner();
     const streamEngine = createStreamEngine();
     const { deps: depsA } = buildDeps({
@@ -867,19 +890,16 @@ describe("useAgentTurn — live design streaming (D3)", () => {
       void resultA.current.sendAgentPrompt("build");
     });
     act(() => {
-      streamed.emit(compileEvent(1, [op1]));
+      streamed.emit(compileEvent(1, [insertOp("n1"), insertOp("n2")]));
     });
-    act(() => {
-      streamed.emit(compileEvent(2, [op2]));
-    });
-    // Mid-stream the engine holds the cumulative build.
-    expect(streamEngine.scene.meta.title).toBe("n1,n2");
+    tick(100); // only n1 revealed; n2 still queued behind the pump
+    expect(streamEngine.scene.meta.title).toBe("n1");
     await act(async () => {
-      streamed.resolve(proposedResult([op1, op2]));
+      streamed.resolve(proposedResult([insertOp("n1"), insertOp("n2")]));
     });
     const streamedPreviewTitle = resultA.current.agentPreview?.previewScene.meta.title;
 
-    // Non-streamed run: identical canonical proposal, zero batches.
+    // Non-streamed run: identical canonical proposal, zero streamed batches.
     const plain = controllableRunner();
     const plainEngine = createStreamEngine();
     const { deps: depsB } = buildDeps({
@@ -891,20 +911,76 @@ describe("useAgentTurn — live design streaming (D3)", () => {
       void resultB.current.sendAgentPrompt("build");
     });
     await act(async () => {
-      plain.resolve(proposedResult([op1, op2]));
+      plain.resolve(proposedResult([insertOp("n1"), insertOp("n2")]));
     });
     const plainPreviewTitle = resultB.current.agentPreview?.previewScene.meta.title;
 
     expect(streamedPreviewTitle).toBe("n1,n2");
-    expect(plainPreviewTitle).toBe("n1,n2");
     expect(streamedPreviewTitle).toBe(plainPreviewTitle);
-    // The previewed base is the true pre-turn base (title ""), never a streamed
-    // scene — the leakage a naive engine reuse would introduce.
+    // The previewed base is the true pre-turn base (title ""), never a partial
+    // streamed scene — the leakage a naive engine reuse would introduce.
     expect(resultA.current.agentPreview?.baseScene.meta.title).toBe("");
+    // The pump is dead — no stray tick mutates the reconciled scene.
+    tick(500);
+    expect(resultA.current.agentStream.active).toBe(false);
   });
 
-  it("(f) a failed run restores the pre-turn base like Reject (replaceScene with the base scene)", async () => {
-    const op1 = streamOp("n1");
+  it("(e) a step the engine throws on keeps S1's broken semantics (stop applying, hold last good, still previews canonical)", async () => {
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+    const ctl = controllableRunner();
+    const engine = createStreamEngine();
+    const { deps } = buildDeps({ agentRunner: ctl.runner, engineRef: { current: engine } });
+    const { result } = renderHook(() => useAgentTurn(deps));
+
+    await act(async () => {
+      void result.current.sendAgentPrompt("build");
+    });
+    act(() => {
+      ctl.emit(compileEvent(1, [insertOp("n1"), insertOp("boom"), insertOp("n3")]));
+    });
+    tick(100); // n1
+    tick(100); // boom → throws → stream broken, pump cancelled
+    tick(100); // n3 must NOT apply
+
+    expect(result.current.agentStream.brokenStream).toBe(true);
+    expect(result.current.agentStream.batchesApplied).toBe(1);
+    expect(consoleError).toHaveBeenCalled();
+    expect(engine.applyLog).toEqual([[insertOp("n1")], [insertOp("boom")]]);
+
+    // Streaming never breaks the turn: the canonical proposal still previews,
+    // reconciled from base (title "n1,n3"), not the broken streamed scene.
+    await act(async () => {
+      ctl.resolve(proposedResult([insertOp("n1"), insertOp("n3")]));
+    });
+    expect(result.current.agentPreview?.previewScene.meta.title).toBe("n1,n3");
+    consoleError.mockRestore();
+  });
+
+  it("(f) each reveal-step exposes metadata: the node id, its page, its kind, and its computed bounds", async () => {
+    const bounds = { x: 24, y: 32, width: 180, height: 30 };
+    const ctl = controllableRunner();
+    const engine = createRevealMetadataEngine(bounds);
+    const { deps } = buildDeps({ agentRunner: ctl.runner, engineRef: { current: engine } });
+    const { result } = renderHook(() => useAgentTurn(deps));
+
+    await act(async () => {
+      void result.current.sendAgentPrompt("build");
+    });
+    act(() => {
+      ctl.emit(compileEvent(3, [insertOp("n1")]));
+    });
+    tick(100);
+
+    expect(result.current.agentStream.currentReveal).toEqual({
+      seq: 3,
+      kind: "insert_node",
+      nodeId: "node_n1",
+      pageId: "page_a4",
+      bounds
+    });
+  });
+
+  it("(g) a failed run mid-reveal cancels the pump and restores the pre-turn base like Reject (replaceScene with base)", async () => {
     const ctl = controllableRunner();
     const engine = createStreamEngine();
     const { deps } = buildDeps({ agentRunner: ctl.runner, engineRef: { current: engine } });
@@ -915,23 +991,26 @@ describe("useAgentTurn — live design streaming (D3)", () => {
       void result.current.sendAgentPrompt("build");
     });
     act(() => {
-      ctl.emit(compileEvent(1, [op1]));
+      ctl.emit(compileEvent(1, [insertOp("n1"), insertOp("n2")]));
     });
+    tick(100); // n1 applied; n2 still queued
     expect(engine.scene.meta.title).toBe("n1");
 
     await act(async () => {
       ctl.reject(new Error("agent exploded"));
     });
 
-    // The base captured before the first streamed op (title "") was restored.
     const restored = replaceSceneMock.mock.calls
       .map((call) => call[0] as Scene)
       .find((scene) => scene?.meta?.title === "");
     expect(restored).toBeDefined();
     expect(result.current.agentStream.active).toBe(false);
+    // The cancelled pump never fires again.
+    tick(500);
+    expect(engine.scene.meta.title).toBe("n1");
   });
 
-  it("(g) checklist events without operations populate runEvents and never touch the scene", async () => {
+  it("(h) checklist events without operations populate runEvents and never touch the scene", async () => {
     const ctl = controllableRunner();
     const engine = createStreamEngine();
     const { deps } = buildDeps({ agentRunner: ctl.runner, engineRef: { current: engine } });
@@ -949,6 +1028,7 @@ describe("useAgentTurn — live design streaming (D3)", () => {
     act(() => {
       ctl.emit({ seq: 2, type: "preflight_completed", data: { iteration: 1 } });
     });
+    tick(200);
 
     expect(setSceneMock.mock.calls.length).toBe(setSceneCallsBefore);
     expect(engine.applyLog).toEqual([]);

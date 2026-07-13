@@ -14,11 +14,12 @@ import type {
   NodeId,
   Operation,
   PageId,
+  Rect,
   Scene
 } from "@/engine/contracts";
 import { defaultEditorExportProfile, type EditorExportResult } from "@/engine/exportRunner";
 import type { EditorPreflightResult } from "@/engine/preflightRunner";
-import { firstPageId } from "@/engine/sceneQueries";
+import { firstPageId, pageIdForNode } from "@/engine/sceneQueries";
 import { loadCanvasKit } from "@/engine/canvaskit/loadCanvasKit";
 import { skiaMeasurements } from "@/engine/canvaskit/skiaMeasurements";
 import {
@@ -103,22 +104,45 @@ export interface AgentStreamBatch {
   operations: Operation[];
 }
 
+/** S2 reveal metadata: the one element (or artboard) most recently materialized
+ * by the pump, in the terms the SVG chrome + viewport auto-follow need. `bounds`
+ * is the node's `computed.layout_bounds` in SCENE units (the wiring layer scales
+ * by the page's unitScale and offsets by the artboard rect to reach workspace
+ * space); it is null for an `add_page` placeholder (the whole artboard flashes).*/
+export interface AgentStreamReveal {
+  /** The run-event seq the revealed op rode in on. */
+  seq: number;
+  /** The revealed op's kind (`insert_node`, `add_page`, …) — drives chrome copy.*/
+  kind: string;
+  /** The materialized node, or null for a page placeholder / silent step. */
+  nodeId: NodeId | null;
+  /** The page the reveal belongs to (drives viewport auto-follow). */
+  pageId: PageId | null;
+  /** Scene-unit layout bounds of the revealed node; null for a page/silent step.*/
+  bounds: Rect | null;
+}
+
 /** Live-design-streaming: the minimal streaming status the hook exposes so the
  * S2 theater can sequence reveals and draw chrome without re-plumbing. Small
  * and derived; the canonical proposal (not this) is what Accept ever persists. */
 export interface AgentStreamStatus {
   /** A run is in flight and progressively applying streamed batches. */
   active: boolean;
-  /** The highest run-event seq whose batch was applied (seq-dedup guard). */
+  /** The highest run-event seq whose reveal-step was applied (seq-dedup guard).*/
   lastAppliedSeq: number;
-  /** How many batches were successfully applied this run. */
+  /** How many reveal-steps were successfully applied this run (one visual op per
+   * paced step; a fast-forwarded backlog counts each drained step). */
   batchesApplied: number;
   /** An applyOperations failure stopped further streamed application; the
    * canvas holds the last good streamed scene and waits for the terminal
    * reconcile. Never breaks the turn or the final proposal. */
   brokenStream: boolean;
-  /** The most recently applied batch (ops + seq), or null before the first. */
+  /** The most recently applied step (ops + seq), or null before the first. */
   latestBatch: AgentStreamBatch | null;
+  /** S2: the element/artboard just revealed, for the SVG chrome + auto-follow.*/
+  currentReveal: AgentStreamReveal | null;
+  /** S2: reveal-steps still queued behind the pump (0 = caught up / idle). */
+  revealQueueLength: number;
 }
 
 const idleAgentStreamStatus = (): AgentStreamStatus => ({
@@ -126,8 +150,79 @@ const idleAgentStreamStatus = (): AgentStreamStatus => ({
   lastAppliedSeq: 0,
   batchesApplied: 0,
   brokenStream: false,
-  latestBatch: null
+  latestBatch: null,
+  currentReveal: null,
+  revealQueueLength: 0
 });
+
+/** S2 pump cadence: one reveal-step every ~100 ms (moda-parity element-by-
+ * element materialization), but never let a single streamed batch's reveal
+ * take longer than the cap — a large batch compresses its per-step pace to fit
+ * (per-batch duration cap, not a fixed cadence). */
+const REVEAL_CADENCE_MS = 100;
+const MAX_BATCH_REVEAL_MS = 5000;
+
+/** A single paced reveal-step: the ops applied together this beat (a run of
+ * silent non-visual ops folded onto the one visual op so there are no dead
+ * beats) and the visual op that drives the chrome (null = a silent step). */
+interface RevealStep {
+  seq: number;
+  ops: Operation[];
+  visualOp: Operation | null;
+}
+
+/** Structure-first reveal granularity: an `add_page` lands as an artboard
+ * placeholder and an `insert_node` materializes one element — both are visual
+ * beats. Everything else (asset upserts, slot writes, …) applies silently WITH
+ * the next visual step. */
+const isVisualRevealOp = (op: Operation): boolean =>
+  op.kind === "add_page" || op.kind === "insert_node";
+
+/** Split a streamed batch's ops into paced reveal-steps: each visual op closes a
+ * step, carrying any preceding non-visual ops as its silent prefix; trailing
+ * non-visual ops fold onto the last step (or form one silent step if the batch
+ * has no visual op at all) so the pump never ticks on an empty beat. */
+function stepsFromOps(seq: number, ops: Operation[]): RevealStep[] {
+  const steps: RevealStep[] = [];
+  let pending: Operation[] = [];
+  for (const op of ops) {
+    pending.push(op);
+    if (isVisualRevealOp(op)) {
+      steps.push({ seq, ops: pending, visualOp: op });
+      pending = [];
+    }
+  }
+  if (pending.length > 0) {
+    if (steps.length > 0) {
+      steps[steps.length - 1].ops.push(...pending);
+    } else {
+      steps.push({ seq, ops: pending, visualOp: null });
+    }
+  }
+  return steps;
+}
+
+/** Derive the chrome/auto-follow metadata for a revealed step from the scene it
+ * produced. `add_page` → the new page (whole-artboard flash, no node bounds);
+ * `insert_node` → the materialized node + its computed bounds + owning page. */
+function revealFromStep(step: RevealStep, scene: Scene): AgentStreamReveal {
+  const op = step.visualOp;
+  if (op?.kind === "add_page") {
+    return { seq: step.seq, kind: op.kind, nodeId: null, pageId: op.page.id, bounds: null };
+  }
+  if (op?.kind === "insert_node") {
+    const nodeId = op.node?.id ?? null;
+    const pageId =
+      op.parent.kind === "page"
+        ? op.parent.id
+        : nodeId
+          ? pageIdForNode(scene, nodeId)
+          : null;
+    const bounds = nodeId ? scene.nodes[nodeId]?.computed?.layout_bounds ?? null : null;
+    return { seq: step.seq, kind: op.kind, nodeId, pageId, bounds };
+  }
+  return { seq: step.seq, kind: op?.kind ?? "silent", nodeId: null, pageId: null, bounds: null };
+}
 
 export interface UseAgentTurnDeps {
   agentRunner: EditorAgentRunner;
@@ -257,48 +352,140 @@ export function useAgentTurn(deps: UseAgentTurnDeps) {
   // reads. Mirrors the synchronous working state in streamRef (below).
   const [agentStream, setAgentStream] = useState<AgentStreamStatus>(idleAgentStreamStatus);
   // The synchronous working copy of the stream, mutated in-place inside the SSE
-  // event callback: cumulative application needs a monotonic lastAppliedSeq and
-  // a single captured base scene read/written without waiting for a React
-  // re-render. `baseScene` is captured ONCE (at the first streamed batch) and is
-  // what the terminal reconcile / failure-restore return the engine to.
+  // event callback + the pump tick: cumulative application needs a monotonic
+  // seq guard and a single captured base scene read/written without waiting for
+  // a React re-render. `baseScene` is captured ONCE (before the first streamed
+  // apply) and is what the terminal reconcile / failure-restore return the
+  // engine to. `queue` holds the paced reveal-steps; `timer` is the single
+  // setTimeout chain (D4.5: no rAF — the canvas repaints itself per setScene).
   const streamRef = useRef<{
     active: boolean;
     baseScene: Scene | null;
+    lastEnqueuedSeq: number;
     lastAppliedSeq: number;
-    batchesApplied: number;
+    stepsApplied: number;
     broken: boolean;
+    queue: RevealStep[];
+    cadenceMs: number;
+    timer: ReturnType<typeof setTimeout> | null;
   } | null>(null);
 
-  // Arm the stream at run start: a fresh run applies batches from a base scene
-  // captured lazily on the first batch. Called by the live send and the reload
-  // resume path alike.
+  const cancelPump = () => {
+    const stream = streamRef.current;
+    if (stream?.timer != null) {
+      clearTimeout(stream.timer);
+      stream.timer = null;
+    }
+  };
+
+  // Arm the stream at run start: a fresh run paces batches from a base scene
+  // captured lazily on the first reveal-step. Called by the live send and the
+  // reload resume path alike.
   const armStream = () => {
+    cancelPump();
     streamRef.current = {
       active: true,
       baseScene: null,
+      lastEnqueuedSeq: 0,
       lastAppliedSeq: 0,
-      batchesApplied: 0,
-      broken: false
+      stepsApplied: 0,
+      broken: false,
+      queue: [],
+      cadenceMs: REVEAL_CADENCE_MS,
+      timer: null
     };
     setAgentStream({ ...idleAgentStreamStatus(), active: true });
   };
 
   const markStreamBroken = () => {
+    cancelPump();
     const stream = streamRef.current;
     if (stream) {
       stream.broken = true;
+      stream.queue = [];
     }
-    setAgentStream((status) => ({ ...status, brokenStream: true }));
+    setAgentStream((status) => ({ ...status, brokenStream: true, revealQueueLength: 0 }));
   };
 
-  // Progressive apply (D3): a streamed batch is applied cumulatively to the
-  // engine and mirrored onto the React scene, exactly like the preview seam.
-  // Idempotent against seq-dedup (only strictly-newer seqs apply, so replayed
-  // events on reconnect are no-ops). A failed apply is SWALLOWED loudly: the
-  // stream is marked broken, later batches are skipped, and the canvas holds
-  // the last good streamed scene until the terminal reconcile replaces it.
-  // Streaming can never break the turn or the final proposal.
-  const applyStreamedBatch = (event: AgentRunEvent) => {
+  // Apply one reveal-step's ops cumulatively to the engine and mirror the result
+  // onto the React scene (exactly the preview seam). A failed apply is SWALLOWED
+  // loudly: the stream is marked broken, later steps are dropped, and the canvas
+  // holds the last good streamed scene until the terminal reconcile replaces it.
+  // Streaming can never break the turn or the final proposal. Returns false if
+  // the apply broke (caller stops), true otherwise.
+  const applyRevealStep = (step: RevealStep): boolean => {
+    const stream = streamRef.current;
+    const engine = engineRef.current;
+    if (!stream || !engine) {
+      return false;
+    }
+    if (stream.baseScene === null) {
+      stream.baseScene = engine.scene;
+    }
+    try {
+      const applied = engine.applyOperations(step.ops);
+      if (!applied.accepted) {
+        // eslint-disable-next-line no-console
+        console.error(
+          "[agent-stream] streamed step rejected by the engine; stream marked broken",
+          applied.message ?? applied.code
+        );
+        markStreamBroken();
+        return false;
+      }
+      stream.lastAppliedSeq = step.seq;
+      stream.stepsApplied += 1;
+      const reveal = revealFromStep(step, applied.scene);
+      setScene(applied.scene);
+      setAgentStream((status) => ({
+        ...status,
+        lastAppliedSeq: step.seq,
+        batchesApplied: status.batchesApplied + 1,
+        latestBatch: { seq: step.seq, operations: step.ops },
+        currentReveal: reveal,
+        revealQueueLength: stream.queue.length
+      }));
+      return true;
+    } catch (error) {
+      // eslint-disable-next-line no-console
+      console.error("[agent-stream] applyOperations threw on a streamed step; stream marked broken", error);
+      markStreamBroken();
+      return false;
+    }
+  };
+
+  // The pump (D4.1): apply the head reveal-step, then schedule the next on the
+  // current cadence. One timer chain, cancellable; it halts on an empty queue,
+  // a broken apply, or a torn-down stream.
+  const scheduleNextRevealStep = () => {
+    const stream = streamRef.current;
+    if (!stream || !stream.active || stream.broken || stream.timer != null) {
+      return;
+    }
+    if (stream.queue.length === 0) {
+      return;
+    }
+    stream.timer = setTimeout(() => {
+      const current = streamRef.current;
+      if (!current || !current.active || current.broken) {
+        return;
+      }
+      current.timer = null;
+      const step = current.queue.shift();
+      if (step && !applyRevealStep(step)) {
+        return;
+      }
+      scheduleNextRevealStep();
+    }, stream.cadenceMs);
+  };
+
+  // Enqueue a streamed batch (D4.1): its ops become paced reveal-steps. When a
+  // NEW batch arrives while a backlog is still pending, fast-forward — drain the
+  // whole backlog in ONE cumulative apply (no visible catch-up crawl), then pace
+  // the new batch. Replayed-on-reconnect events therefore fast-forward for free.
+  // The per-batch duration cap compresses the pace so a large batch still
+  // finishes within MAX_BATCH_REVEAL_MS.
+  const enqueueStreamedBatch = (event: AgentRunEvent) => {
     const stream = streamRef.current;
     if (!stream || !stream.active || stream.broken) {
       return;
@@ -307,54 +494,60 @@ export function useAgentTurn(deps: UseAgentTurnDeps) {
     if (!operations) {
       return;
     }
-    if (event.seq <= stream.lastAppliedSeq) {
+    if (event.seq <= stream.lastEnqueuedSeq) {
       return;
     }
+    stream.lastEnqueuedSeq = event.seq;
     const engine = engineRef.current;
     if (!engine) {
       // Server-only mode has no local engine to render onto; the terminal
       // proposal still arrives on `done` and applies through the normal path.
       return;
     }
-    if (stream.baseScene === null) {
-      stream.baseScene = engine.scene;
-    }
-    try {
-      const applied = engine.applyOperations(operations);
-      if (!applied.accepted) {
-        // eslint-disable-next-line no-console
-        console.error(
-          "[agent-stream] streamed batch rejected by the engine; stream marked broken",
-          applied.message ?? applied.code
-        );
-        markStreamBroken();
+    // Fast-forward any pending backlog from earlier batches as a single apply.
+    if (stream.queue.length > 0) {
+      cancelPump();
+      const backlog = stream.queue;
+      stream.queue = [];
+      const drained: Operation[] = [];
+      let lastStep: RevealStep | null = null;
+      for (const pending of backlog) {
+        drained.push(...pending.ops);
+        if (pending.visualOp) {
+          lastStep = pending;
+        }
+      }
+      const flushSeq = backlog[backlog.length - 1]?.seq ?? stream.lastAppliedSeq;
+      if (
+        !applyRevealStep({
+          seq: flushSeq,
+          ops: drained,
+          visualOp: lastStep?.visualOp ?? null
+        })
+      ) {
         return;
       }
-      stream.lastAppliedSeq = event.seq;
-      stream.batchesApplied += 1;
-      setScene(applied.scene);
-      setAgentStream((status) => ({
-        ...status,
-        lastAppliedSeq: event.seq,
-        batchesApplied: status.batchesApplied + 1,
-        latestBatch: { seq: event.seq, operations }
-      }));
-    } catch (error) {
-      // eslint-disable-next-line no-console
-      console.error("[agent-stream] applyOperations threw on a streamed batch; stream marked broken", error);
-      markStreamBroken();
     }
+    const steps = stepsFromOps(event.seq, operations);
+    if (steps.length === 0) {
+      return;
+    }
+    stream.queue = steps;
+    stream.cadenceMs = Math.min(REVEAL_CADENCE_MS, MAX_BATCH_REVEAL_MS / steps.length);
+    setAgentStream((status) => ({ ...status, revealQueueLength: steps.length }));
+    scheduleNextRevealStep();
   };
 
-  // Terminal reconcile (D3, the invariant): before the canonical proposal is
-  // previewed, discard the ephemeral stream by resetting the engine to the
-  // pre-turn base. previewAgentProposal reads `engine.scene` as its base and
+  // Terminal reconcile (D3, the invariant): cancel the pump, drop any pending
+  // reveal-steps, and discard the ephemeral stream by resetting the engine to
+  // the pre-turn base. previewAgentProposal reads `engine.scene` as its base and
   // applies the canonical ops from there, so the streamed engine state can
   // NEVER leak into the preview — a streamed run reconciles byte-identically to
   // a non-streamed one. `setScene(base)` covers the rare path where nothing
   // repaints after (an unchanged-seed failure); the proposed/draft paths
   // setScene their own result immediately after and win the batched update.
   const reconcileStreamToBase = () => {
+    cancelPump();
     const stream = streamRef.current;
     if (stream?.baseScene) {
       engineRef.current?.reset(stream.baseScene);
@@ -364,10 +557,12 @@ export function useAgentTurn(deps: UseAgentTurnDeps) {
     setAgentStream(idleAgentStreamStatus());
   };
 
-  // Failure path: restore the pre-turn base exactly like Reject (replaceScene
-  // resets the engine AND the scene), so a run that streamed some progress then
-  // failed never leaves a half-built design masquerading as the result.
+  // Failure path: cancel the pump, drop pending steps, and restore the pre-turn
+  // base exactly like Reject (replaceScene resets the engine AND the scene), so
+  // a run that streamed some progress then failed never leaves a half-built
+  // design masquerading as the result.
   const restoreStreamBaseOnFailure = () => {
+    cancelPump();
     const stream = streamRef.current;
     if (stream?.baseScene) {
       replaceScene(stream.baseScene);
@@ -375,6 +570,9 @@ export function useAgentTurn(deps: UseAgentTurnDeps) {
     streamRef.current = null;
     setAgentStream(idleAgentStreamStatus());
   };
+
+  // A mid-run unmount must not leak the pump's timer.
+  useEffect(() => () => cancelPump(), []);
   const [agentMessages, setAgentMessages] = useState<AgentChatMessage[]>([]);
   const [agentProposal, setAgentProposal] = useState<EditorAgentResult | null>(null);
   // Phase 0c (Moda pattern): a proposed agent turn is applied to the live scene
@@ -398,9 +596,10 @@ export function useAgentTurn(deps: UseAgentTurnDeps) {
     if (typeof event.data.run_id === "string") {
       writeActiveRun(event.data.run_id);
     }
-    // Live-design-streaming (D3): render the design as it is built. Events that
-    // carry no operations (checklist ticks) fall through untouched.
-    applyStreamedBatch(event);
+    // Live-design-streaming (D3/S2): pace the design's element-by-element
+    // reveal. Events that carry no operations (checklist ticks) fall through
+    // untouched.
+    enqueueStreamedBatch(event);
     setRunEvents((events) => {
       if (events.some((existing) => existing.seq === event.seq && existing.type === event.type)) {
         return events;

@@ -2,6 +2,7 @@
 
 import { useMemo } from "react";
 import type { Diagnostic, NodeId, Operation, PageId, Scene } from "@/engine/contracts";
+import type { AgentStreamReveal } from "@/hooks/useAgentTurn";
 import type { StructuredEdit } from "@/engine/structuredEdits";
 import type { OptimisticEnginePort } from "@/engine/wasmEngine";
 import { canvasKitFlagEnabled } from "@/engine/wasmEngine";
@@ -61,6 +62,10 @@ export interface EditorCanvasProps {
   showMarginGuides?: boolean;
   /** Phase 4d, CanvasKit-only: toggles `showMarginGuides`. */
   onToggleMarginGuides?: () => void;
+  /** Live-design-streaming S2, CanvasKit-only: the element/artboard the pump is
+   * currently revealing — drives the SVG build-theater chrome + viewport
+   * auto-follow. Null when no run is streaming (and on the Konva fallback). */
+  agentReveal?: AgentStreamReveal | null;
 }
 
 export function EditorCanvas(props: EditorCanvasProps) {

@@ -865,6 +865,7 @@ export default function EditorApp({
     agentPreview,
     queuedAgentMessages,
     runEvents,
+    agentStream,
     pendingReferences,
     isUploadingReferences,
     sendAgentPrompt,
@@ -1547,6 +1548,30 @@ export default function EditorApp({
               data-testid="agent-designing-banner"
             >
               <span>Agent is designing — please wait to edit</span>
+              {agentStream.currentReveal
+                ? (() => {
+                    const reveal = agentStream.currentReveal;
+                    const pageNumber = reveal.pageId
+                      ? Object.keys(scene.pages).indexOf(reveal.pageId) + 1
+                      : 0;
+                    const label =
+                      reveal.kind === "add_page"
+                        ? pageNumber > 0
+                          ? `adding page ${pageNumber}…`
+                          : "adding a page…"
+                        : pageNumber > 0
+                          ? `building page ${pageNumber}…`
+                          : "placing elements…";
+                    return (
+                      <span
+                        className="agent-designing-substatus"
+                        data-testid="agent-designing-substatus"
+                      >
+                        {label}
+                      </span>
+                    );
+                  })()
+                : null}
               <span className="agent-designing-dots" aria-hidden>
                 <i />
                 <i />
@@ -1725,6 +1750,7 @@ export default function EditorApp({
                 layoutManagedEditing={layoutManagedEditing.enabled}
                 showMarginGuides={marginGuides.showMarginGuides}
                 onToggleMarginGuides={marginGuides.toggleMarginGuides}
+                agentReveal={agentStream.currentReveal}
               />
             </>
           )}

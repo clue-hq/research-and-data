@@ -612,6 +612,83 @@ function stackManagedTwoChildScene(): Scene {
   return next;
 }
 
+describe("(g) S2 reveal-theater viewport auto-follow", () => {
+  function twoPageScene(): Scene {
+    const next = JSON.parse(JSON.stringify(minimalScene)) as Scene;
+    next.pages.page_b = {
+      ...(JSON.parse(JSON.stringify(next.pages.page_a4)) as Scene["pages"]["page_a4"]),
+      id: "page_b",
+      name: "Page B",
+      children: []
+    };
+    return next;
+  }
+
+  const reveal = (pageId: string, seq: number) => ({
+    seq,
+    kind: "insert_node",
+    nodeId: null,
+    pageId,
+    bounds: null
+  });
+
+  function renderFollow(agentReveal: ReturnType<typeof reveal>) {
+    const twoPage = twoPageScene();
+    const onWorkspaceViewportChange = vi.fn();
+    const onWorkspaceFitTargetChange = vi.fn();
+    const commonProps = {
+      activePageId: "page_a4" as const,
+      selectedNodeId: null,
+      onSelectNode: () => {},
+      onOperations: () => {},
+      engine: null,
+      diagnostics: [],
+      workspaceModel: createWorkspaceModel(twoPage, "page_a4", []),
+      workspaceViewport: defaultWorkspaceViewport(),
+      onWorkspaceViewportChange,
+      workspaceTool: "select" as const,
+      onWorkspaceToolChange: () => {},
+      workspaceFitTarget: "manual" as const,
+      onWorkspaceFitTargetChange
+    };
+    const utils = render(
+      <CanvasKitCanvas scene={twoPage} {...commonProps} agentReveal={agentReveal} />
+    );
+    // The built-in pan-clamp effect passes a FUNCTION updater; only auto-follow
+    // passes a viewport OBJECT. Count the object calls to isolate the follow.
+    const fitCount = () =>
+      onWorkspaceViewportChange.mock.calls.filter((call) => typeof call[0] !== "function").length;
+    const rerenderFollow = (nextReveal: ReturnType<typeof reveal>) =>
+      utils.rerender(
+        <CanvasKitCanvas scene={twoPage} {...commonProps} agentReveal={nextReveal} />
+      );
+    return { ...utils, fitCount, rerenderFollow };
+  }
+
+  it("fits the viewport on the first reveal and on each page change, but not within the same page", () => {
+    const { fitCount, rerenderFollow } = renderFollow(reveal("page_a4", 1));
+    expect(fitCount()).toBe(1); // first reveal → fit page_a4
+
+    rerenderFollow(reveal("page_a4", 2)); // same page, next element → no re-fit
+    expect(fitCount()).toBe(1);
+
+    rerenderFollow(reveal("page_b", 3)); // page change → fit page_b
+    expect(fitCount()).toBe(2);
+  });
+
+  it("is suppressed permanently for the run once the user pans (user wins)", () => {
+    const { container, fitCount, rerenderFollow } = renderFollow(reveal("page_a4", 1));
+    expect(fitCount()).toBe(1);
+
+    // The user pans mid-run — auto-follow must never fire again this run.
+    const layer = container.querySelector('[data-testid="canvaskit-interaction-layer"]')!;
+    fireEvent.wheel(layer, { deltaY: 120 });
+
+    rerenderFollow(reveal("page_b", 2)); // page change that would normally fit
+    expect(fitCount()).toBe(1); // suppressed — user override latched
+  });
+});
+
 function renderCanvasKit({
   scene: canvasScene = scene,
   selectedNodeId,

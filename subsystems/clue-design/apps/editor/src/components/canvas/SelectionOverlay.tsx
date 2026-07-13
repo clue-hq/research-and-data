@@ -76,6 +76,21 @@ export interface SelectionOverlayProps {
    * page). Either rect may itself be null. Page guides, not selection
    * chrome — rendered independent of `selection`. */
   marginGuides?: { safeArea: Box | null; bleed: Box | null } | null;
+  /** Live-design-streaming S2: the create-flash + design-cursor chrome for the
+   * element the agent just revealed, already mapped to SCREEN px by the host
+   * (computed in workspace space so it stays correct across pages). Ephemeral;
+   * pure DOM/SVG so it never triggers a wasm repaint. Null when nothing is
+   * streaming. */
+  reveal?: {
+    /** The reveal's run-event seq — keys the flash so each reveal restarts it.*/
+    seq: number;
+    /** The revealed node/artboard box, in screen px. */
+    flashBox: { x: number; y: number; width: number; height: number };
+    /** Where the design cursor glides to (screen px); CSS transitions it. */
+    cursor: { x: number; y: number };
+    /** The cursor's status chip copy ("designing…"). */
+    label: string;
+  } | null;
 }
 
 export function SelectionOverlay({
@@ -97,7 +112,8 @@ export function SelectionOverlay({
   focal = null,
   onFocalChange,
   insertionIndicator = null,
-  marginGuides = null
+  marginGuides = null,
+  reveal = null
 }: SelectionOverlayProps) {
   const toScreen = (p: { x: number; y: number }) => ({
     x: pageOrigin.x + p.x * zoom,
@@ -249,7 +265,51 @@ export function SelectionOverlay({
       {insertionIndicator ? (
         <InsertionIndicatorLine indicator={insertionIndicator} toScreen={toScreen} />
       ) : null}
+
+      {reveal ? <RevealChrome reveal={reveal} /> : null}
     </svg>
+  );
+}
+
+/**
+ * Live-design-streaming S2 build theater: a create-flash outline that lands on
+ * the newly-revealed node and fades (CSS keyframe), plus a design cursor glyph
+ * that glides between reveals (CSS transition on transform). Geometry is already
+ * SCREEN px (mapped by the host), so it renders directly with no toScreen. The
+ * flash is keyed on the reveal seq so each new reveal remounts it and restarts
+ * the fade; the cursor is NOT keyed so it persists and animates its transform.
+ */
+function RevealChrome({
+  reveal
+}: {
+  reveal: NonNullable<SelectionOverlayProps["reveal"]>;
+}) {
+  return (
+    <g data-role="agent-reveal" style={{ pointerEvents: "none" }}>
+      <rect
+        key={reveal.seq}
+        data-role="agent-reveal-flash"
+        className="agent-reveal-flash"
+        x={reveal.flashBox.x}
+        y={reveal.flashBox.y}
+        width={reveal.flashBox.width}
+        height={reveal.flashBox.height}
+        rx={4}
+      />
+      <g
+        data-role="agent-reveal-cursor"
+        className="agent-reveal-cursor"
+        style={{ transform: `translate(${reveal.cursor.x}px, ${reveal.cursor.y}px)` }}
+      >
+        <polygon className="agent-reveal-cursor-glyph" points="0,0 0,15 4,11 7,18 10,17 7,10 12,10" />
+        <g className="agent-reveal-cursor-chip" transform="translate(15, 5)">
+          <rect className="agent-reveal-cursor-chip-bg" x={0} y={0} width={74} height={18} rx={9} />
+          <text className="agent-reveal-cursor-chip-text" x={10} y={13}>
+            {reveal.label}
+          </text>
+        </g>
+      </g>
+    </g>
   );
 }
 
