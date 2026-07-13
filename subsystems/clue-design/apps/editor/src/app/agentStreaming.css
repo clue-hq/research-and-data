@@ -70,3 +70,22 @@
   font-size: var(--text-body-sm);
   font-weight: 500;
 }
+
+/* A11y — prefers-reduced-motion (no vitest CSS-assert idiom in this repo, so
+ * this media block + comment is the guarantee; verified by reading, not a test).
+ * Keep the chrome fully INFORMATIVE (the accent outline + cursor still mark the
+ * reveal) but kill all motion: the flash becomes a static outline that appears
+ * with the reveal and disappears when the next reveal remounts it (no keyframed
+ * fade, no pulsing stroke), and the cursor JUMPS to each reveal instead of
+ * gliding. */
+@media (prefers-reduced-motion: reduce) {
+  .agent-reveal-flash {
+    animation: none;
+    opacity: 1;
+    stroke-width: 2;
+  }
+
+  .agent-reveal-cursor {
+    transition: none;
+  }
+}

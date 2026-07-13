@@ -1,8 +1,10 @@
-import { act, renderHook, waitFor } from "@testing-library/react";
+import { act, render, renderHook, waitFor } from "@testing-library/react";
+import { useRef, useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { minimalScene } from "@/fixtures/minimalScene";
 import type { AgentRunEvent, EditorAgentResult, EditorAgentRunner } from "@/engine/agentRunner";
 import type { Operation, Scene } from "@/engine/contracts";
+import type { EditorHistoryFrame } from "@/hooks/useEditHistory";
 import type {
   EngineApplyOutcome,
   EngineStructuredEditOutcome,
@@ -819,7 +821,7 @@ describe("useAgentTurn — live design streaming reveal theater (S2)", () => {
     expect(result.current.agentStream).toMatchObject({
       active: true,
       lastAppliedSeq: 1,
-      batchesApplied: 3,
+      stepsApplied: 3,
       brokenStream: false,
       revealQueueLength: 0
     });
@@ -847,7 +849,7 @@ describe("useAgentTurn — live design streaming reveal theater (S2)", () => {
     // The whole batch drains within the cap.
     tick(50 * 99);
     expect(engine.applyLog.length).toBe(100);
-    expect(result.current.agentStream.batchesApplied).toBe(100);
+    expect(result.current.agentStream.stepsApplied).toBe(100);
   });
 
   it("(c) a new batch arriving mid-reveal fast-forwards the pending backlog in one apply, then paces the new batch", async () => {
@@ -943,7 +945,7 @@ describe("useAgentTurn — live design streaming reveal theater (S2)", () => {
     tick(100); // n3 must NOT apply
 
     expect(result.current.agentStream.brokenStream).toBe(true);
-    expect(result.current.agentStream.batchesApplied).toBe(1);
+    expect(result.current.agentStream.stepsApplied).toBe(1);
     expect(consoleError).toHaveBeenCalled();
     expect(engine.applyLog).toEqual([[insertOp("n1")], [insertOp("boom")]]);
 
@@ -1033,6 +1035,220 @@ describe("useAgentTurn — live design streaming reveal theater (S2)", () => {
     expect(setSceneMock.mock.calls.length).toBe(setSceneCallsBefore);
     expect(engine.applyLog).toEqual([]);
     expect(result.current.runEvents.map((event) => event.seq)).toEqual([1, 2]);
-    expect(result.current.agentStream).toMatchObject({ active: true, batchesApplied: 0 });
+    expect(result.current.agentStream).toMatchObject({ active: true, stepsApplied: 0 });
+  });
+});
+
+/**
+ * Regression (adversarial-review divergence seam): the reload-RESUME settle
+ * path must consume the EXPLICIT pre-turn seed (turnSeedRef, armed on mount),
+ * never closure `scene` — which progressive streaming has since mutated to the
+ * half-built streamed scene. Two failures shared one root cause:
+ *   (1) `showAgentDraftScene` pushed an undo frame capturing the STREAMED scene
+ *       (undo history is durable → "nothing streamed is ever persisted" broke);
+ *   (2) `draftIsUnchangedSeed` compared the draft against the STREAMED scene,
+ *       suppressing the honest unchanged-seed message.
+ * Both are pinned here against the same resume harness the refuter used.
+ */
+describe("useAgentTurn — resume-path settles against the explicit pre-turn seed", () => {
+  const streamMarkerOp = (id: string) =>
+    ({
+      kind: "insert_node",
+      id,
+      node: { id: `node_${id}` },
+      parent: { kind: "page", id: "page_a4" },
+      index: 0
+    }) as unknown as Operation;
+
+  const streamCompileEvent = (seq: number, operations: unknown): AgentRunEvent => ({
+    seq,
+    type: "dsl_compiled",
+    data: { iteration: 1, operations } as AgentRunEvent["data"]
+  });
+
+  /** An engine that CONCATENATES inserted markers into meta.title, so the live
+   * scene visibly diverges from the seed as streamed steps apply. */
+  function titleStreamEngine(): OptimisticEnginePort {
+    const start = { ...cloneScene(), meta: { ...cloneScene().meta, title: "" } };
+    let scene: Scene = start;
+    return {
+      kind: "wasm",
+      get scene() {
+        return scene;
+      },
+      version: { schema_version: 1, engine_commit: "test", text_measurement: "heuristic" },
+      reset(next: Scene) {
+        scene = next;
+      },
+      applyOperations(operations: Operation[]): EngineApplyOutcome {
+        const markers = operations.map((op) => (op as unknown as { id?: string }).id ?? op.kind);
+        const prev = scene.meta.title ? scene.meta.title.split(",") : [];
+        scene = { ...scene, meta: { ...scene.meta, title: [...prev, ...markers].join(",") } };
+        return { accepted: true, scene, diagnostics: [], inverseOperations: [], appliedOperations: operations.length };
+      }
+    } as OptimisticEnginePort;
+  }
+
+  function controllableResume() {
+    let captured: ((event: AgentRunEvent) => void) | undefined;
+    let resolveRun!: (result: EditorAgentResult) => void;
+    const resumeRun: NonNullable<UseAgentTurnDeps["resumeRun"]> = (_runId, onEvent) => {
+      captured = onEvent;
+      return new Promise<EditorAgentResult>((resolve) => {
+        resolveRun = resolve;
+      });
+    };
+    return {
+      resumeRun,
+      emit: (event: AgentRunEvent) => captured?.(event),
+      resolve: (result: EditorAgentResult) => resolveRun(result)
+    };
+  }
+
+  function failedWithDraft(draftTitle: string): EditorAgentResult {
+    const draft = { ...cloneScene(), meta: { ...cloneScene().meta, title: draftTitle } };
+    return {
+      status: "failed",
+      summary: "Run failed, draft available.",
+      dsl_blocks: [],
+      operations: [],
+      draft_scene: draft,
+      stop_reason: "quality_loop_exhausted",
+      acceptance_scope: null,
+      diagnostics: [],
+      trace: { run_id: "run_resume", trace_dir: null, preview_paths: [] },
+      artifacts: []
+    };
+  }
+
+  type HookApi = ReturnType<typeof useAgentTurn>;
+
+  /** Holds `scene` in real state so the hook's progressive setScene mutates the
+   * deps.scene it re-renders with — exactly like EditorApp. Captures the hook's
+   * return + the pushed undo frames for assertions. */
+  function ResumeHarness(props: {
+    engine: OptimisticEnginePort;
+    resume: ReturnType<typeof controllableResume>;
+    capture: { hook: HookApi | null; undoFrames: EditorHistoryFrame[] };
+  }) {
+    const [scene, setScene] = useState<Scene>(() => ({
+      ...cloneScene(),
+      meta: { ...cloneScene().meta, title: "" }
+    }));
+    const undoRef = useRef<EditorHistoryFrame[]>([]);
+    props.capture.hook = useAgentTurn({
+      agentRunner: (() => {}) as unknown as UseAgentTurnDeps["agentRunner"],
+      engineRef: { current: props.engine },
+      scene,
+      activeDocumentId: "doc_1",
+      activePageId: "page_a4",
+      selectedNodeId: null,
+      targetNodeIds: [],
+      agentInstructions: null,
+      layoutManagedEditing: false,
+      acceptBakeRunner: async () => null,
+      diagnostics: [],
+      setDiagnostics: () => {},
+      setScene: (updater) =>
+        setScene((current) =>
+          typeof updater === "function" ? (updater as (s: Scene) => Scene)(current) : updater
+        ),
+      replaceScene: (next) => setScene(next),
+      setActivePageId: () => {},
+      setSelectedNodeId: () => {},
+      setUndoStack: (updater) => {
+        const next =
+          typeof updater === "function"
+            ? (updater as (s: EditorHistoryFrame[]) => EditorHistoryFrame[])(undoRef.current)
+            : updater;
+        undoRef.current = next;
+        props.capture.undoFrames.length = 0;
+        props.capture.undoFrames.push(...next);
+      },
+      setRedoStack: () => {},
+      setBrandCompatibilityReport: () => {},
+      setPreflightResult: () => {},
+      setExportResult: () => {},
+      setWorkspaceMode: () => {},
+      commitAppliedOperations: () => "persisted",
+      runExportForScene: async () => {},
+      applyOperations: () => {},
+      resumeRun: props.resume.resumeRun
+    });
+    return null;
+  }
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    window.sessionStorage.setItem("lumen.activeAgentRun", "run_resume");
+  });
+  afterEach(() => {
+    vi.runOnlyPendingTimers();
+    vi.useRealTimers();
+    window.sessionStorage.clear();
+  });
+
+  it("(1) the draft undo frame captures the true pre-turn base, not the streamed scene", async () => {
+    const engine = titleStreamEngine();
+    const resume = controllableResume();
+    const capture = { hook: null as HookApi | null, undoFrames: [] as EditorHistoryFrame[] };
+
+    await act(async () => {
+      render(<ResumeHarness engine={engine} resume={resume} capture={capture} />);
+    });
+    // A streamed batch arrives on replay and the pump applies it, mutating the
+    // React `scene` to the half-built "n1".
+    act(() => {
+      resume.emit(streamCompileEvent(1, [streamMarkerOp("n1")]));
+    });
+    act(() => {
+      vi.advanceTimersByTime(200);
+    });
+    expect(engine.scene.meta.title).toBe("n1");
+
+    // The run finishes FAILED with an inspectable, changed draft.
+    await act(async () => {
+      resume.resolve(failedWithDraft("DRAFT"));
+      await Promise.resolve();
+    });
+
+    expect(capture.undoFrames).toHaveLength(1);
+    // The frame's scene is the pre-turn base (title ""), never the streamed "n1".
+    expect(capture.undoFrames[0].scene.meta.title).toBe("");
+  });
+
+  it("(2) an unchanged-seed draft is detected on resume even after streaming mutated the scene", async () => {
+    const engine = titleStreamEngine();
+    const resume = controllableResume();
+    const capture = { hook: null as HookApi | null, undoFrames: [] as EditorHistoryFrame[] };
+
+    await act(async () => {
+      render(<ResumeHarness engine={engine} resume={resume} capture={capture} />);
+    });
+    act(() => {
+      resume.emit(streamCompileEvent(1, [streamMarkerOp("n1")]));
+    });
+    act(() => {
+      vi.advanceTimersByTime(200);
+    });
+    expect(engine.scene.meta.title).toBe("n1"); // streamed away from the seed
+
+    // The draft equals the PRE-TURN seed (title "") — nothing ever applied.
+    await act(async () => {
+      resume.resolve(failedWithDraft(""));
+      await Promise.resolve();
+    });
+
+    // Honest unchanged-seed handling: the draft is nulled (no "draft visible"
+    // on an unchanged canvas) and the system explains it — proving the compare
+    // ran against the seed, not the streamed "n1" (which would read as changed).
+    expect(capture.hook?.agentProposal?.draft_scene).toBeNull();
+    expect(
+      capture.hook?.agentMessages.some((message) =>
+        message.content.includes("could not produce any applicable changes")
+      )
+    ).toBe(true);
+    // No draft undo frame is pushed for an unchanged seed.
+    expect(capture.undoFrames).toHaveLength(0);
   });
 });

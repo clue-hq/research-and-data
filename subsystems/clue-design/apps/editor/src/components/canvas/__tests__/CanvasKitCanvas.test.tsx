@@ -687,6 +687,20 @@ describe("(g) S2 reveal-theater viewport auto-follow", () => {
     rerenderFollow(reveal("page_b", 2)); // page change that would normally fit
     expect(fitCount()).toBe(1); // suppressed — user override latched
   });
+
+  it("is suppressed permanently for the run once the user clicks a Fit button (user wins)", () => {
+    const { fitCount, rerenderFollow } = renderFollow(reveal("page_a4", 1));
+    expect(fitCount()).toBe(1); // first reveal → fit page_a4
+
+    // A Fit-button click mid-run is an explicit manual viewport action (D4:
+    // "user wins"); it must latch the override exactly like wheel/pan. The
+    // click itself fits (count grows to 2), but the NEXT page reveal must not.
+    fireEvent.click(screen.getByRole("button", { name: "Fit current artboard" }));
+    expect(fitCount()).toBe(2);
+
+    rerenderFollow(reveal("page_b", 2)); // page change that would normally fit
+    expect(fitCount()).toBe(2); // suppressed — the fit click latched the override
+  });
 });
 
 function renderCanvasKit({

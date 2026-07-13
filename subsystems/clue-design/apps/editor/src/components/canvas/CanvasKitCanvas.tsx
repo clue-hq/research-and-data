@@ -803,6 +803,11 @@ export function CanvasKitCanvas({
   });
 
   const fitWorkspace = (target: "current" | "all") => {
+    // S2: a Fit-button click during a streamed run is a manual viewport action —
+    // it takes over from reveal auto-follow permanently for that run (user
+    // wins), exactly like zoomBy / wheel / hand-pan. Without this latch the next
+    // artboard reveal would yank the viewport off the artboard the user just fit.
+    userOverrodeFollowRef.current = true;
     const rect = target === "current" && activeArtboard ? activeArtboard.workspaceRect : workspaceModel.bounds;
     onWorkspaceFitTargetChange(target);
     onWorkspaceViewportChange(fitWorkspaceRectToViewport({ viewport, rect }));

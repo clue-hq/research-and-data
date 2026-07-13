@@ -1714,10 +1714,23 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
             finally:
                 store.connection.close()
 
-        def read_events(after_seq: int) -> List[JsonObject]:
+        def poll_once(
+            after_seq: int,
+        ) -> tuple[List[JsonObject], Optional[JsonObject]]:
+            # One SQLite connection per poll iteration: read the new events and,
+            # only when the caller needs it (an idle poll, or a terminal event
+            # just arrived), the run row — reusing the SAME Repository instead of
+            # opening a second connection for a separate read_run. Replay
+            # semantics are unchanged: events still drive `last_seq`, and the run
+            # row supplies the terminal result exactly as before.
             store = Repository(connect(database_path))
             try:
-                return store.list_run_events(run_id, after_seq=after_seq)
+                events = store.list_run_events(run_id, after_seq=after_seq)
+                needs_run = (not events) or any(
+                    event["type"] in ("result", "error") for event in events
+                )
+                run = store.get_run(run_id) if needs_run else None
+                return events, run
             finally:
                 store.connection.close()
 
@@ -1752,20 +1765,18 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
             while True:
                 if await request.is_disconnected():
                     return
-                events = await asyncio.to_thread(read_events, last_seq)
+                events, run = await asyncio.to_thread(poll_once, last_seq)
                 for event in events:
                     last_seq = event["seq"]
                     if event["type"] in ("result", "error"):
-                        current = await asyncio.to_thread(read_run)
-                        yield sse_frame(event["seq"], "done", (current or {}).get("result"))
+                        yield sse_frame(event["seq"], "done", (run or {}).get("result"))
                         return
                     yield sse_frame(event["seq"], "progress", event)
                 if not events:
-                    current = await asyncio.to_thread(read_run)
                     # Terminal with no terminal event yet (defensive): the run
                     # finished but the marker append lost the race — close out.
-                    if current and current["status"] in ("succeeded", "failed"):
-                        yield sse_frame(last_seq, "done", current.get("result"))
+                    if run and run["status"] in ("succeeded", "failed"):
+                        yield sse_frame(last_seq, "done", run.get("result"))
                         return
                     if idle_polls % polls_per_keepalive == 0:
                         yield ": keepalive\n\n"

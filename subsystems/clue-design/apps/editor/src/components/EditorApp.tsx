@@ -866,6 +866,7 @@ export default function EditorApp({
     queuedAgentMessages,
     runEvents,
     agentStream,
+    turnSeedRef,
     pendingReferences,
     isUploadingReferences,
     sendAgentPrompt,
@@ -909,8 +910,13 @@ export default function EditorApp({
   });
   // Keep the reconcile baseline in step with the pending preview (see the
   // ref's declaration above useDocumentSync). Render-body assignment is the
-  // established ref-mirror pattern here (activeDocumentIdRef et al.).
-  previewBaseSceneRef.current = agentPreview?.baseScene ?? null;
+  // established ref-mirror pattern here (activeDocumentIdRef et al.). While a
+  // turn is STREAMING, the engine holds the ephemeral half-built scene, so a
+  // pre-run edit-queue batch draining mid-stream would reconcile against it and
+  // could clobber history — pin the baseline to the turn's pre-turn seed
+  // instead (streaming and a pending preview never overlap).
+  previewBaseSceneRef.current =
+    agentPreview?.baseScene ?? (agentStream.active ? turnSeedRef.current : null);
 
   // 2e notify-when-done: a turn that settles while the agent panel is
   // closed raises a click-to-open toast (no browser Notification API).

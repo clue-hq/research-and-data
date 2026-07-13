@@ -132,7 +132,7 @@ export interface AgentStreamStatus {
   lastAppliedSeq: number;
   /** How many reveal-steps were successfully applied this run (one visual op per
    * paced step; a fast-forwarded backlog counts each drained step). */
-  batchesApplied: number;
+  stepsApplied: number;
   /** An applyOperations failure stopped further streamed application; the
    * canvas holds the last good streamed scene and waits for the terminal
    * reconcile. Never breaks the turn or the final proposal. */
@@ -148,7 +148,7 @@ export interface AgentStreamStatus {
 const idleAgentStreamStatus = (): AgentStreamStatus => ({
   active: false,
   lastAppliedSeq: 0,
-  batchesApplied: 0,
+  stepsApplied: 0,
   brokenStream: false,
   latestBatch: null,
   currentReveal: null,
@@ -211,7 +211,12 @@ function revealFromStep(step: RevealStep, scene: Scene): AgentStreamReveal {
     return { seq: step.seq, kind: op.kind, nodeId: null, pageId: op.page.id, bounds: null };
   }
   if (op?.kind === "insert_node") {
-    const nodeId = op.node?.id ?? null;
+    // A later op folded onto this step can remove the just-inserted node (an
+    // insert+delete that lands in one paced step). Only reveal a node that
+    // actually survives into the applied scene — otherwise the chrome would
+    // point at a node that no longer exists (a dangling reveal).
+    const insertedId = op.node?.id ?? null;
+    const nodeId = insertedId && scene.nodes[insertedId] ? insertedId : null;
     const pageId =
       op.parent.kind === "page"
         ? op.parent.id
@@ -370,6 +375,16 @@ export function useAgentTurn(deps: UseAgentTurnDeps) {
     timer: ReturnType<typeof setTimeout> | null;
   } | null>(null);
 
+  // The pre-turn seed scene, captured EXPLICITLY at arm time — before any
+  // streamed apply mutates the live scene. Every settle path (live send AND
+  // reload resume) reads THIS, never closure/ref `scene` (which streaming has
+  // since mutated). Kills the staleness class the resume path fell into: an
+  // undo frame that captured the half-built streamed scene, and an
+  // unchanged-seed check that compared the draft against the streamed scene.
+  // Held until the next armStream overwrites it (never nulled on settle, since
+  // handleTurnResult reads it AFTER reconcileStreamToBase runs).
+  const turnSeedRef = useRef<Scene | null>(null);
+
   const cancelPump = () => {
     const stream = streamRef.current;
     if (stream?.timer != null) {
@@ -383,6 +398,10 @@ export function useAgentTurn(deps: UseAgentTurnDeps) {
   // reload resume path alike.
   const armStream = () => {
     cancelPump();
+    // Capture the pre-turn seed NOW — nothing streamed yet, so the engine's
+    // scene (or the React scene) is the honest base for both the live send and
+    // the reload-resume path (this mount's `scene` is the pre-turn base).
+    turnSeedRef.current = engineRef.current?.scene ?? scene;
     streamRef.current = {
       active: true,
       baseScene: null,
@@ -440,7 +459,7 @@ export function useAgentTurn(deps: UseAgentTurnDeps) {
       setAgentStream((status) => ({
         ...status,
         lastAppliedSeq: step.seq,
-        batchesApplied: status.batchesApplied + 1,
+        stepsApplied: status.stepsApplied + 1,
         latestBatch: { seq: step.seq, operations: step.ops },
         currentReveal: reveal,
         revealQueueLength: stream.queue.length
@@ -610,9 +629,14 @@ export function useAgentTurn(deps: UseAgentTurnDeps) {
 
   // Turn-settled bookkeeping, shared by the live send path and the reload
   // resume path: surface the proposal/draft, post the chat messages, and (for
-  // a proposed turn) drop into the reviewable preview. `seedScene` is the scene
-  // the turn was seeded from — used only to detect the unchanged-seed case.
-  const handleTurnResult = (result: EditorAgentResult, seedScene: Scene) => {
+  // a proposed turn) drop into the reviewable preview. The seed is the scene
+  // the turn was ARMED from (turnSeedRef, captured before any streamed apply) —
+  // NOT closure/ref `scene`, which progressive streaming has since mutated.
+  // Both the unchanged-seed check and the draft's undo frame read this seed, so
+  // the resume path can no longer compare against — or persist — the streamed
+  // scene.
+  const handleTurnResult = (result: EditorAgentResult) => {
+    const seedScene = turnSeedRef.current ?? scene;
     // Live-design-streaming (D3): the streamed build is ephemeral. Reset the
     // engine to the pre-turn base BEFORE the canonical preview so the streamed
     // state can never leak into what Accept applies (the reconcile invariant).
@@ -629,7 +653,7 @@ export function useAgentTurn(deps: UseAgentTurnDeps) {
       draftIsUnchangedSeed ? { ...result, draft_scene: null } : result
     );
     if (result.status === "failed" && result.draft_scene && !draftIsUnchangedSeed) {
-      showAgentDraftScene(result);
+      showAgentDraftScene(result, seedScene);
     }
     setAgentMessages((messages) => [
       ...messages,
@@ -714,7 +738,6 @@ export function useAgentTurn(deps: UseAgentTurnDeps) {
       return;
     }
 
-    const seedScene = scene;
     // RC: snapshot the references riding THIS turn before any async work, so a
     // reference added mid-flight never leaks into an in-flight send. A QUEUED
     // message passes its enqueue-time snapshot as the override (ship-blocker 2:
@@ -759,7 +782,7 @@ export function useAgentTurn(deps: UseAgentTurnDeps) {
         diagnostics,
         onEvent: handleRunEvent
       });
-      handleTurnResult(result, seedScene);
+      handleTurnResult(result);
       // RC per-turn semantics (D8): references are consumed by a successful
       // send. On error they stay so the user can retry without re-attaching.
       // Clear ONLY the ids that rode this turn (ship-blocker 2: a blanket []
@@ -888,15 +911,14 @@ export function useAgentTurn(deps: UseAgentTurnDeps) {
   // reload. If one was in flight, rejoin its SSE stream — replaying the
   // checklist and then either streaming live ticks or settling immediately if
   // it finished while we were away. Refs keep the mount-only effect calling
-  // the latest handlers (which close over the current scene) without re-firing.
+  // the latest handlers without re-firing; the pre-turn seed those handlers
+  // settle against comes from turnSeedRef (armed on mount), not closure state.
   const handleRunEventRef = useRef(handleRunEvent);
   handleRunEventRef.current = handleRunEvent;
   const handleTurnResultRef = useRef(handleTurnResult);
   handleTurnResultRef.current = handleTurnResult;
   const handleTurnErrorRef = useRef(handleTurnError);
   handleTurnErrorRef.current = handleTurnError;
-  const sceneRef = useRef(scene);
-  sceneRef.current = scene;
 
   useEffect(() => {
     if (!resumeRun) {
@@ -913,7 +935,7 @@ export function useAgentTurn(deps: UseAgentTurnDeps) {
     armStream();
     setIsAgentRunning(true);
     void resumeRun(runId, (event) => handleRunEventRef.current(event))
-      .then((result) => handleTurnResultRef.current(result, sceneRef.current))
+      .then((result) => handleTurnResultRef.current(result))
       .catch((error) => handleTurnErrorRef.current(error))
       .finally(() => {
         setIsAgentRunning(false);
@@ -923,12 +945,15 @@ export function useAgentTurn(deps: UseAgentTurnDeps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const showAgentDraftScene = (result: EditorAgentResult) => {
+  const showAgentDraftScene = (result: EditorAgentResult, seedScene: Scene) => {
     if (!result.draft_scene) {
       return;
     }
     const draftScene = result.draft_scene;
-    const draftPageId = agentDraftPageId(scene, draftScene, activePageId);
+    // Compare the draft's pages against the pre-turn SEED, not closure `scene`
+    // (which streaming mutated on the resume path) — otherwise a "new" draft
+    // page could be misclassified against a half-built streamed scene.
+    const draftPageId = agentDraftPageId(seedScene, draftScene, activePageId);
     const draftDiagnostic: Diagnostic = {
       severity: "warning",
       phase: "validation",
@@ -943,7 +968,11 @@ export function useAgentTurn(deps: UseAgentTurnDeps) {
     setUndoStack((stack) => [
       ...stack.slice(-49),
       {
-        scene,
+        // The undo frame must capture the true PRE-TURN base (the seed), never
+        // the streamed scene: undo history is durable, and "nothing streamed is
+        // ever persisted" (D3). On the resume path closure `scene` is the
+        // half-built streamed scene — the seed is the honest base.
+        scene: seedScene,
         operations: [],
         inverseOperations: null,
         persisted: false
@@ -1238,6 +1267,11 @@ export function useAgentTurn(deps: UseAgentTurnDeps) {
     queuedAgentMessages,
     runEvents,
     agentStream,
+    /** The scene the in-flight turn was armed from (its pre-turn seed), or null
+     * once no stream is active. EditorApp threads this into
+     * previewBaseSceneRef so a pre-run edit-queue batch draining MID-STREAM
+     * reconciles against the honest base, not the streamed scene. */
+    turnSeedRef,
     pendingReferences,
     isUploadingReferences,
     sendAgentPrompt,
