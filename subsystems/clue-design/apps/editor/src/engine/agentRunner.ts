@@ -246,6 +246,26 @@ export function subscribeToAgentRun({
   });
 }
 
+/**
+ * Live-design-streaming (D3): a progress event for a clean `dsl_compiled` /
+ * `asset_placed` carries the compile's applied `operations` — the exact
+ * canonical list the proposal ledger records, so the streamed batch is
+ * byte-identical to what Accept later replays. Non-mutating events (checklist
+ * ticks) and refused drafts carry none.
+ *
+ * Strict-but-tolerant by contract: absent or malformed operations return null
+ * (the caller applies nothing), never throw. An empty list is treated as "no
+ * batch" so a checklist event behaves exactly as before.
+ */
+export function operationsFromRunEvent(event: AgentRunEvent): Operation[] | null {
+  const raw = event.data.operations;
+  if (!Array.isArray(raw)) {
+    return null;
+  }
+  const operations = raw.filter(isRecord) as unknown as Operation[];
+  return operations.length > 0 ? operations : null;
+}
+
 function runEventFromUnknown(raw: string): AgentRunEvent | null {
   try {
     const parsed = JSON.parse(raw);

@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState, type Dispatch, type SetStateAction } from "react";
 import type { AgentChatMessage, QueuedAgentMessage } from "@/components/AgentChatPanel";
 import type { EditorHistoryFrame } from "@/hooks/useEditHistory";
-import type {
-  AgentRunEvent,
-  EditorAgentResult,
-  EditorAgentRunner
+import {
+  operationsFromRunEvent,
+  type AgentRunEvent,
+  type EditorAgentResult,
+  type EditorAgentRunner
 } from "@/engine/agentRunner";
 import type {
   BrandCompatibilityReport,
@@ -94,6 +95,39 @@ export interface AgentPreviewState {
   baseSelectedNodeId: NodeId | null;
   view: "before" | "after";
 }
+
+/** Live-design-streaming (D3/D5): one streamed ops batch — the operations that
+ * rode a single clean compile, with the run-event seq they arrived on. */
+export interface AgentStreamBatch {
+  seq: number;
+  operations: Operation[];
+}
+
+/** Live-design-streaming: the minimal streaming status the hook exposes so the
+ * S2 theater can sequence reveals and draw chrome without re-plumbing. Small
+ * and derived; the canonical proposal (not this) is what Accept ever persists. */
+export interface AgentStreamStatus {
+  /** A run is in flight and progressively applying streamed batches. */
+  active: boolean;
+  /** The highest run-event seq whose batch was applied (seq-dedup guard). */
+  lastAppliedSeq: number;
+  /** How many batches were successfully applied this run. */
+  batchesApplied: number;
+  /** An applyOperations failure stopped further streamed application; the
+   * canvas holds the last good streamed scene and waits for the terminal
+   * reconcile. Never breaks the turn or the final proposal. */
+  brokenStream: boolean;
+  /** The most recently applied batch (ops + seq), or null before the first. */
+  latestBatch: AgentStreamBatch | null;
+}
+
+const idleAgentStreamStatus = (): AgentStreamStatus => ({
+  active: false,
+  lastAppliedSeq: 0,
+  batchesApplied: 0,
+  brokenStream: false,
+  latestBatch: null
+});
 
 export interface UseAgentTurnDeps {
   agentRunner: EditorAgentRunner;
@@ -219,6 +253,128 @@ export function useAgentTurn(deps: UseAgentTurnDeps) {
   const [agentDraft, setAgentDraft] = useState("");
   // 2b show-work: the live run-event stream feeding the Moda plan checklist.
   const [runEvents, setRunEvents] = useState<AgentRunEvent[]>([]);
+  // Live-design-streaming (D3): the exposed streaming status the S2 theater
+  // reads. Mirrors the synchronous working state in streamRef (below).
+  const [agentStream, setAgentStream] = useState<AgentStreamStatus>(idleAgentStreamStatus);
+  // The synchronous working copy of the stream, mutated in-place inside the SSE
+  // event callback: cumulative application needs a monotonic lastAppliedSeq and
+  // a single captured base scene read/written without waiting for a React
+  // re-render. `baseScene` is captured ONCE (at the first streamed batch) and is
+  // what the terminal reconcile / failure-restore return the engine to.
+  const streamRef = useRef<{
+    active: boolean;
+    baseScene: Scene | null;
+    lastAppliedSeq: number;
+    batchesApplied: number;
+    broken: boolean;
+  } | null>(null);
+
+  // Arm the stream at run start: a fresh run applies batches from a base scene
+  // captured lazily on the first batch. Called by the live send and the reload
+  // resume path alike.
+  const armStream = () => {
+    streamRef.current = {
+      active: true,
+      baseScene: null,
+      lastAppliedSeq: 0,
+      batchesApplied: 0,
+      broken: false
+    };
+    setAgentStream({ ...idleAgentStreamStatus(), active: true });
+  };
+
+  const markStreamBroken = () => {
+    const stream = streamRef.current;
+    if (stream) {
+      stream.broken = true;
+    }
+    setAgentStream((status) => ({ ...status, brokenStream: true }));
+  };
+
+  // Progressive apply (D3): a streamed batch is applied cumulatively to the
+  // engine and mirrored onto the React scene, exactly like the preview seam.
+  // Idempotent against seq-dedup (only strictly-newer seqs apply, so replayed
+  // events on reconnect are no-ops). A failed apply is SWALLOWED loudly: the
+  // stream is marked broken, later batches are skipped, and the canvas holds
+  // the last good streamed scene until the terminal reconcile replaces it.
+  // Streaming can never break the turn or the final proposal.
+  const applyStreamedBatch = (event: AgentRunEvent) => {
+    const stream = streamRef.current;
+    if (!stream || !stream.active || stream.broken) {
+      return;
+    }
+    const operations = operationsFromRunEvent(event);
+    if (!operations) {
+      return;
+    }
+    if (event.seq <= stream.lastAppliedSeq) {
+      return;
+    }
+    const engine = engineRef.current;
+    if (!engine) {
+      // Server-only mode has no local engine to render onto; the terminal
+      // proposal still arrives on `done` and applies through the normal path.
+      return;
+    }
+    if (stream.baseScene === null) {
+      stream.baseScene = engine.scene;
+    }
+    try {
+      const applied = engine.applyOperations(operations);
+      if (!applied.accepted) {
+        // eslint-disable-next-line no-console
+        console.error(
+          "[agent-stream] streamed batch rejected by the engine; stream marked broken",
+          applied.message ?? applied.code
+        );
+        markStreamBroken();
+        return;
+      }
+      stream.lastAppliedSeq = event.seq;
+      stream.batchesApplied += 1;
+      setScene(applied.scene);
+      setAgentStream((status) => ({
+        ...status,
+        lastAppliedSeq: event.seq,
+        batchesApplied: status.batchesApplied + 1,
+        latestBatch: { seq: event.seq, operations }
+      }));
+    } catch (error) {
+      // eslint-disable-next-line no-console
+      console.error("[agent-stream] applyOperations threw on a streamed batch; stream marked broken", error);
+      markStreamBroken();
+    }
+  };
+
+  // Terminal reconcile (D3, the invariant): before the canonical proposal is
+  // previewed, discard the ephemeral stream by resetting the engine to the
+  // pre-turn base. previewAgentProposal reads `engine.scene` as its base and
+  // applies the canonical ops from there, so the streamed engine state can
+  // NEVER leak into the preview — a streamed run reconciles byte-identically to
+  // a non-streamed one. `setScene(base)` covers the rare path where nothing
+  // repaints after (an unchanged-seed failure); the proposed/draft paths
+  // setScene their own result immediately after and win the batched update.
+  const reconcileStreamToBase = () => {
+    const stream = streamRef.current;
+    if (stream?.baseScene) {
+      engineRef.current?.reset(stream.baseScene);
+      setScene(stream.baseScene);
+    }
+    streamRef.current = null;
+    setAgentStream(idleAgentStreamStatus());
+  };
+
+  // Failure path: restore the pre-turn base exactly like Reject (replaceScene
+  // resets the engine AND the scene), so a run that streamed some progress then
+  // failed never leaves a half-built design masquerading as the result.
+  const restoreStreamBaseOnFailure = () => {
+    const stream = streamRef.current;
+    if (stream?.baseScene) {
+      replaceScene(stream.baseScene);
+    }
+    streamRef.current = null;
+    setAgentStream(idleAgentStreamStatus());
+  };
   const [agentMessages, setAgentMessages] = useState<AgentChatMessage[]>([]);
   const [agentProposal, setAgentProposal] = useState<EditorAgentResult | null>(null);
   // Phase 0c (Moda pattern): a proposed agent turn is applied to the live scene
@@ -242,6 +398,9 @@ export function useAgentTurn(deps: UseAgentTurnDeps) {
     if (typeof event.data.run_id === "string") {
       writeActiveRun(event.data.run_id);
     }
+    // Live-design-streaming (D3): render the design as it is built. Events that
+    // carry no operations (checklist ticks) fall through untouched.
+    applyStreamedBatch(event);
     setRunEvents((events) => {
       if (events.some((existing) => existing.seq === event.seq && existing.type === event.type)) {
         return events;
@@ -255,6 +414,10 @@ export function useAgentTurn(deps: UseAgentTurnDeps) {
   // a proposed turn) drop into the reviewable preview. `seedScene` is the scene
   // the turn was seeded from — used only to detect the unchanged-seed case.
   const handleTurnResult = (result: EditorAgentResult, seedScene: Scene) => {
+    // Live-design-streaming (D3): the streamed build is ephemeral. Reset the
+    // engine to the pre-turn base BEFORE the canonical preview so the streamed
+    // state can never leak into what Accept applies (the reconcile invariant).
+    reconcileStreamToBase();
     // A failed run can hand back a "draft" that is just the untouched seed
     // (every authored block was rejected — nothing ever applied). Claiming
     // "draft visible" for an unchanged design reads as a broken canvas;
@@ -300,6 +463,9 @@ export function useAgentTurn(deps: UseAgentTurnDeps) {
   };
 
   const handleTurnError = (error: unknown) => {
+    // Live-design-streaming (D3/D7): a failed run restores the pre-turn base
+    // exactly like Reject — the stream never masks a failure as progress.
+    restoreStreamBaseOnFailure();
     const message = error instanceof Error ? error.message : "Agent request failed.";
     const diagnostic: Diagnostic = {
       severity: "error",
@@ -361,6 +527,7 @@ export function useAgentTurn(deps: UseAgentTurnDeps) {
     setAgentDraft("");
     setAgentProposal(null);
     setRunEvents([]);
+    armStream();
     setIsAgentRunning(true);
     setAgentMessages((messages) => [
       ...messages,
@@ -542,6 +709,9 @@ export function useAgentTurn(deps: UseAgentTurnDeps) {
     }
     setRunEvents([]);
     setAgentProposal(null);
+    // Mid-run reload: SSE replay delivers every missed batch in order, so the
+    // same cumulative apply path fast-forwards the build (S2 animates it).
+    armStream();
     setIsAgentRunning(true);
     void resumeRun(runId, (event) => handleRunEventRef.current(event))
       .then((result) => handleTurnResultRef.current(result, sceneRef.current))
@@ -868,6 +1038,7 @@ export function useAgentTurn(deps: UseAgentTurnDeps) {
     agentPreview,
     queuedAgentMessages,
     runEvents,
+    agentStream,
     pendingReferences,
     isUploadingReferences,
     sendAgentPrompt,
