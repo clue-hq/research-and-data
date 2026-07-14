@@ -4,7 +4,7 @@ import type { RenderNodeDescriptor, RenderPageDescriptor, TextSpanDescriptor } f
 import { valignOffset } from "../renderAdapter";
 import { applyTextTransform, normalizeContentMapped, transformSegments } from "../textTransform";
 import type { CanvasKitImageSource } from "./imageCache";
-import { hasItalicFace } from "./loadCanvasKit";
+import { hasItalicFace, resolveFontFamilies } from "./loadCanvasKit";
 
 /**
  * Wave 3 C2: the descriptor→CanvasKit interpreter.
@@ -549,16 +549,20 @@ function buildTextParagraph(
   const decoration =
     (t.underline ? ck.UnderlineDecoration : 0) | (t.strikethrough ? ck.LineThroughDecoration : 0);
   const isFill = "color" in foreground;
+  // A7b: italic joins weight as a shaping input. D2 gate (mirrors the
+  // engine's build_paragraph): request Italic only when a REAL italic face is
+  // registered — CanvasKit otherwise applies a synthetic oblique, which D2
+  // forbids (the node renders upright; LUMS0105 advises server-side).
+  const italic = t.italic && hasItalicFace(t.fontFamily);
   const textStyle: Record<string, unknown> = {
-    fontFamilies: [t.fontFamily],
+    // CanvasKit's provider does no style matching, so the chain leads with
+    // the style-qualified alias of the face this (weight, italic) selects —
+    // the editor-side twin of the server's CSS3 face matching.
+    fontFamilies: resolveFontFamilies(t.fontFamily, t.fontWeight, italic),
     fontSize: t.fontSize,
-    // A7b: italic joins weight as a shaping input. D2 gate (mirrors the
-    // engine's build_paragraph): request Italic only when a REAL italic face is
-    // registered — CanvasKit otherwise applies a synthetic oblique, which D2
-    // forbids (the node renders upright; LUMS0105 advises server-side).
     fontStyle: {
       weight: t.fontWeight,
-      slant: t.italic && hasItalicFace(t.fontFamily) ? ck.FontSlant.Italic : ck.FontSlant.Upright
+      slant: italic ? ck.FontSlant.Italic : ck.FontSlant.Upright
     },
     heightMultiplier: t.lineHeight,
     letterSpacing: t.letterSpacing
@@ -707,12 +711,13 @@ function buildSpannedParagraph(
   // A7b D2 gate: one family-level answer for base + every segment (spans
   // cannot change family), mirroring the engine's single gate per request.
   const familyHasItalic = hasItalicFace(t.fontFamily);
+  const baseItalic = t.italic && familyHasItalic;
   const baseTextStyle: Record<string, unknown> = {
-    fontFamilies: [t.fontFamily],
+    fontFamilies: resolveFontFamilies(t.fontFamily, t.fontWeight, baseItalic),
     fontSize: t.fontSize,
     fontStyle: {
       weight: t.fontWeight,
-      slant: t.italic && familyHasItalic ? ck.FontSlant.Italic : ck.FontSlant.Upright
+      slant: baseItalic ? ck.FontSlant.Italic : ck.FontSlant.Upright
     },
     heightMultiplier: t.lineHeight,
     letterSpacing: t.letterSpacing
@@ -731,12 +736,13 @@ function buildSpannedParagraph(
   for (const seg of segments) {
     const decoration =
       (seg.underline ? ck.UnderlineDecoration : 0) | (seg.strikethrough ? ck.LineThroughDecoration : 0);
+    const segItalic = seg.italic && familyHasItalic;
     const segStyle: Record<string, unknown> = {
-      fontFamilies: [t.fontFamily],
+      fontFamilies: resolveFontFamilies(t.fontFamily, seg.weight, segItalic),
       fontSize: t.fontSize,
       fontStyle: {
         weight: seg.weight,
-        slant: seg.italic && familyHasItalic ? ck.FontSlant.Italic : ck.FontSlant.Upright
+        slant: segItalic ? ck.FontSlant.Italic : ck.FontSlant.Upright
       },
       heightMultiplier: t.lineHeight,
       letterSpacing: t.letterSpacing

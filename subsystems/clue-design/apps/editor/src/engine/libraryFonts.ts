@@ -1,4 +1,5 @@
 import { fontFaceDescriptors, registerKitFontFaces } from "./canvaskit/loadCanvasKit";
+import { effectiveFaceMeta } from "./canvaskit/fontFaces";
 
 /**
  * Curated FONT LIBRARY (canvas + DOM legs): fetch the shared library manifest
@@ -43,11 +44,12 @@ export interface FontLibrary {
 interface LibraryFontFaceRef {
   assetId: string;
   family: string;
-  /** A7b (D5): the manifest weight/style, threaded to the DOM `FontFace`
-   * descriptors so an italic face registers as (family, italic, weight) rather
-   * than colliding with the upright at the nondeterministic default
-   * (family, normal, 400). The CanvasKit leg ignores these (the provider
-   * disambiguates by the requested `fontStyle`). */
+  /** A7b (D5): the manifest weight/style. Fallback metadata for BOTH legs —
+   * the face's byte-parsed OS/2 meta wins when it parses (server truth): the
+   * CanvasKit leg keys its style-qualified alias on it, and the DOM leg's
+   * `FontFace` descriptors register (family, style, weight) distinctly
+   * instead of colliding at the nondeterministic (family, normal, 400)
+   * default. */
   weight?: number;
   style?: string;
 }
@@ -220,7 +222,14 @@ async function registerLibraryFontFacesInDom(
         // A7b (D5): pass the weight/style descriptors so italic and upright
         // faces of one family register as distinct DOM faces instead of
         // colliding nondeterministically at the (family, normal, 400) default.
-        const fontFace = new FontFace(face.family, face.bytes, fontFaceDescriptors(face));
+        // Byte-parsed meta wins over the manifest (same rule as the canvas
+        // leg), so the DOM face carries the weight the server will match.
+        const meta = effectiveFaceMeta(face);
+        const fontFace = new FontFace(
+          face.family,
+          face.bytes,
+          fontFaceDescriptors({ weight: meta.weight, style: meta.italic ? "italic" : "normal" })
+        );
         await fontFace.load();
         document.fonts.add(fontFace);
       } catch (error) {

@@ -199,10 +199,12 @@ describe("kitFonts (DOM leg — document.fonts registration)", () => {
       await loadKitFontFaces({ apiBaseUrl: "http://api.test", fetchImpl: fetchOk() }, SINGLE_KIT);
     });
     expect(result.loadCalls.count).toBe(1);
-    // A7b: a kit face without a declared weight yields a style-only descriptor
-    // (browser keeps its default weight rather than an invalid "undefined").
+    // A kit face without a declared weight (and unparseable bytes in this
+    // fixture) registers at the explicit 400 default — the same effective
+    // weight the browser would assume, but deterministic and identical to
+    // the CanvasKit leg's face registry.
     expect(result.added).toEqual([
-      { family: "Aeonik", bytes: expect.any(ArrayBuffer), descriptors: { style: "normal" } }
+      { family: "Aeonik", bytes: expect.any(ArrayBuffer), descriptors: { style: "normal", weight: "400" } }
     ]);
     expect(result.fontsAdd).toHaveBeenCalledTimes(1);
   });
