@@ -8,10 +8,6 @@ import type { WorkspaceViewport } from "@/engine/workspaceViewport";
 import { drawDescriptorTree, parseColor, type DrawNode } from "@/engine/canvaskit/drawDescriptors";
 import { CanvasKitImageCache, type CanvasKitImageSource } from "@/engine/canvaskit/imageCache";
 import { loadCanvasKit } from "@/engine/canvaskit/loadCanvasKit";
-import { assetBytesUrl } from "@/engine/assetLibrary";
-import { editorApiBaseUrl } from "@/engine/editorConfig";
-
-const API_BASE_URL = editorApiBaseUrl();
 
 /**
  * Wave 3 C2: the imperative CanvasKit render surface. Replaces react-konva's
@@ -31,6 +27,12 @@ const API_BASE_URL = editorApiBaseUrl();
 export interface CanvasKitStageProps {
   artboards: CanvasKitArtboard[];
   viewport: WorkspaceViewport;
+  /** Bytes URL for an image node's asset id, resolved by the owner from the
+   * SCENE's asset record (content digest → `/asset-store/{digest}`) — the
+   * same source of truth server exports resolve from. Required: resolution
+   * policy (including its registry fallback) lives in ONE place,
+   * `sceneAssetBytesUrl`, not split across layers. */
+  resolveAssetUrl: (assetId: string) => string;
 }
 
 export interface CanvasKitArtboard {
@@ -46,7 +48,7 @@ export interface CanvasKitArtboard {
   bleed?: Rect | null;
 }
 
-export function CanvasKitStage({ artboards, viewport }: CanvasKitStageProps) {
+export function CanvasKitStage({ artboards, viewport, resolveAssetUrl }: CanvasKitStageProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const ckRef = useRef<CanvasKit | null>(null);
   const fontRef = useRef<TypefaceFontProvider | null>(null);
@@ -60,8 +62,8 @@ export function CanvasKitStage({ artboards, viewport }: CanvasKitStageProps) {
   // blank stage (the resize-flicker bug).
   const resizePendingRef = useRef(false);
   const remakeSurfaceRef = useRef<(() => void) | null>(null);
-  const propsRef = useRef({ artboards, viewport });
-  propsRef.current = { artboards, viewport };
+  const propsRef = useRef({ artboards, viewport, resolveAssetUrl });
+  propsRef.current = { artboards, viewport, resolveAssetUrl };
 
   // One draw pass; scheduled at most once per frame, only while dirty.
   const flush = () => {
@@ -134,7 +136,10 @@ export function CanvasKitStage({ artboards, viewport }: CanvasKitStageProps) {
       // Bridges async asset bytes into the synchronous draw loop: a decode
       // landing re-renders the frame with real image pixels (Step 2 / E0.1).
       imagesRef.current = new CanvasKitImageCache(bundle.ck, {
-        resolveUrl: (assetId) => assetBytesUrl(API_BASE_URL, assetId),
+        // Read through propsRef so resolution always sees the LATEST scene:
+        // the cache re-attempts a failed asset when its resolved URL changes
+        // (e.g. the record's digest arrives with a later scene).
+        resolveUrl: (assetId) => propsRef.current.resolveAssetUrl(assetId),
         onLoad: invalidate
       });
       makeSurface(bundle.ck);

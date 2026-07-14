@@ -45,6 +45,8 @@ import {
   type ParentComputedOrigin
 } from "@/engine/renderAdapter";
 import { loadCanvasKit } from "@/engine/canvaskit/loadCanvasKit";
+import { sceneAssetBytesUrl } from "@/engine/assetLibrary";
+import { editorApiBaseUrl } from "@/engine/editorConfig";
 import { skiaMeasurements } from "@/engine/canvaskit/skiaMeasurements";
 import type { Box } from "@/engine/transformerMath";
 import { nodePatch, set, updateTextNode } from "@/engine/operations";
@@ -759,7 +761,15 @@ export function CanvasKitCanvas({
 
   return (
     <section className="canvas-shell workspace-canvas-shell" ref={containerRef} style={{ position: "relative" }}>
-      <CanvasKitStage artboards={artboards} viewport={workspaceViewport} />
+      <CanvasKitStage
+        artboards={artboards}
+        viewport={workspaceViewport}
+        // Image bytes resolve from the SCENE's asset record (content digest),
+        // the same source of truth server exports use — a generated asset
+        // renders on canvas whether or not anything registered it in the
+        // asset library.
+        resolveAssetUrl={(assetId) => sceneAssetBytesUrl(editorApiBaseUrl(), scene.assets, assetId)}
+      />
       <CanvasKitArtboardLabels workspaceModel={workspaceModel} viewport={workspaceViewport} />
       <div className="workspace-context-bar">
         <span className="workspace-context-label">{activeArtboard?.label ?? "No artboard"}</span>

@@ -28,7 +28,7 @@ from fastapi import (
     UploadFile,
 )
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, Response, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
 
 from . import image_cache, image_provider
 from .core import CoreClient, CoreError, has_error_diagnostics
@@ -88,6 +88,7 @@ from .models import (
     ValidateBrandKitRequest,
     ValidateDocumentBrandGovernanceRequest,
 )
+from lumen_ingestion.capture.uploads import sniff_mime
 from lumen_ingestion.describe import DescriptionStore
 from lumen_ingestion.jobs import IngestionJobStore
 from lumen_ingestion.pipeline import (
@@ -684,6 +685,34 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
     def get_latest_brand_kit(
         brand_kit_id: str, repo: Repository = Depends(repository)
     ) -> JsonObject:
+        # The platform default kit is the ENGINE's builtin, not an ingested
+        # kit — it has no registry row by definition. Serve it from the
+        # engine (with `ensure_platform_color_tokens` backfilled), because
+        # the editor's canvas token resolution fetches this id for kit-less
+        # documents to mirror server-side resolution; a 404 here silently
+        # dropped the canvas to its string heuristic — token colors then
+        # diverged from every export. The response goes through the SAME
+        # detail DTO as ingested kits (a synthesized record), so every
+        # consumer sees one envelope shape.
+        if brand_kit_id == "brand_kit_platform_default":
+            kit = app.state.core.platform_default_brand_kit()
+            detail = brand_kit_detail_dto(
+                {
+                    "brand_kit_id": brand_kit_id,
+                    "version": 0,
+                    "name": kit.get("name") or "Platform default",
+                    "approval_status": "approved",
+                    "product_ready": True,
+                    "source": "builtin",
+                    "brand_kit": kit,
+                    "brand_summary": {},
+                    "diagnostics": [],
+                    "created_at": None,
+                    "updated_at": None,
+                }
+            )
+            detail["builtin"] = True
+            return detail
         return brand_kit_detail_dto(repo.require_brand_kit(brand_kit_id))
 
     @app.get("/brand-kits/{brand_kit_id}/versions/{version}")
@@ -3152,6 +3181,38 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
             )
         media_type = media.get("mime_type") or "application/octet-stream"
         return Response(content=path.read_bytes(), media_type=media_type)
+
+    @app.get("/asset-store/{digest}")
+    def get_asset_store_bytes(digest: str) -> Response:
+        """Content-addressed byte serving. The editor canvas resolves image
+        pixels from the SAME source of truth server exports use — the scene's
+        asset record digest — so a scene-borne asset renders regardless of
+        registry state (the registry-backed `/assets/{id}/bytes` 404s for any
+        asset whose producer never registered it, which is how generated
+        imagery vanished from the canvas while every export carried it).
+        Content addressing makes the response immutable, hence the aggressive
+        cache header; the strict hex gate also makes path traversal
+        unexpressible (the path is built from validated hex, never client
+        text)."""
+        if not re.fullmatch(r"[0-9a-f]{64}", digest):
+            raise HTTPException(
+                status_code=404, detail="not a sha256 content digest"
+            )
+        # The store layout has ONE owner: resolve through the same helper
+        # every opaque_ref-based route uses.
+        path = resolve_store_path(f"sha256/{digest[:2]}/{digest}")
+        if not path.is_file():
+            raise HTTPException(
+                status_code=404,
+                detail=f"no stored bytes for digest {digest}",
+            )
+        with path.open("rb") as handle:
+            head = handle.read(512)
+        return FileResponse(
+            path,
+            media_type=sniff_mime(head) or "application/octet-stream",
+            headers={"Cache-Control": "public, max-age=31536000, immutable"},
+        )
 
     @app.get("/assets/{asset_id}/thumbnail")
     def get_asset_thumbnail(

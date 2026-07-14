@@ -82,6 +82,41 @@ describe("CanvasKitImageCache", () => {
     expect(fetcher).not.toHaveBeenCalled();
   });
 
+  it("re-attempts a failed asset when its resolved url CHANGES (new information)", async () => {
+    // A later scene can supply the record's digest, flipping resolution from
+    // the registry endpoint to the content-addressed one — that (and only
+    // that) unfreezes a memoized failure. Same url → stays failed forever.
+    const image = fakeImage();
+    let url = "/assets/a/bytes";
+    const fetcher = vi.fn(async (requested: string) => {
+      if (requested === "/assets/a/bytes") {
+        throw new Error("404");
+      }
+      return new ArrayBuffer(8);
+    });
+    const onLoad = vi.fn();
+    const cache = new CanvasKitImageCache(fakeCk(() => image), {
+      resolveUrl: () => url,
+      onLoad,
+      fetcher
+    });
+
+    expect(cache.get("a")).toBeNull();
+    await flush();
+    // Failed on the registry url; identical resolution never retries.
+    expect(cache.get("a")).toBeNull();
+    await flush();
+    expect(fetcher).toHaveBeenCalledTimes(1);
+
+    // The scene now carries a digest: resolution changes → one re-attempt.
+    url = "/asset-store/da2488f9";
+    expect(cache.get("a")).toBeNull();
+    await flush();
+    expect(cache.get("a")).toBe(image);
+    expect(fetcher).toHaveBeenCalledTimes(2);
+    expect(onLoad).toHaveBeenCalledTimes(1);
+  });
+
   it("invalidate() forces a re-fetch on the next lookup", async () => {
     const fetcher = vi.fn(async () => new ArrayBuffer(8));
     const cache = new CanvasKitImageCache(fakeCk(() => fakeImage()), {
