@@ -6,6 +6,7 @@
 
 pub mod checks;
 pub mod cmyk;
+pub mod fonts;
 pub mod imposition;
 pub mod pdf;
 pub mod pdf_boxes;
@@ -18,6 +19,7 @@ pub mod svg;
 
 pub use checks::{asset_export_checks, license_enforced, MIN_EFFECTIVE_PRINT_DPI};
 pub use cmyk::{cmyk_target_for, convert_pdf_to_cmyk, CmykTarget};
+pub use fonts::{EmbeddedFontFace, FontEmbedError, FontFaceResolver, FontUsage};
 pub use pdf::PdfExportAdapter;
 pub use pdf_boxes::{
     apply_print_boxes, finalize_print_pdf, page_boxes_for,
@@ -93,6 +95,18 @@ impl LumenExportAdapter {
     pub fn with_pdf_renderer(self, renderer: Arc<dyn ScenePdfRenderer>) -> Self {
         Self {
             pdf: self.pdf.with_pdf_renderer(renderer),
+            ..self
+        }
+    }
+
+    /// Inject a font-face resolver into the SVG path: `embed_fonts`
+    /// profiles then embed the exact face bytes the raster painted with as
+    /// `@font-face` data URIs (subset to the used characters), so the SVG
+    /// renders identically on machines without the fonts installed. PNG and
+    /// PDF embed inside their injected Skia renderers and need none.
+    pub fn with_font_resolver(self, resolver: Arc<dyn FontFaceResolver>) -> Self {
+        Self {
+            svg: self.svg.with_font_resolver(resolver),
             ..self
         }
     }

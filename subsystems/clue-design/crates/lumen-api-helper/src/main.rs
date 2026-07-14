@@ -20,7 +20,9 @@ use lumen_core::{
     StructuredEditInstruction, TemplateRevisionId,
 };
 use lumen_export::LumenExportAdapter;
-use lumen_skia::{FontManager, SkiaSceneRenderer, SkiaTextMeasurer, SkiaVectorPdfRenderer};
+use lumen_skia::{
+    FontManager, SkiaFontFaceResolver, SkiaSceneRenderer, SkiaTextMeasurer, SkiaVectorPdfRenderer,
+};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::env;
@@ -184,9 +186,13 @@ fn server_export_adapter_with(
             _ => Arc::new(SkiaVectorPdfRenderer::from_renderer((*renderer).clone())),
         };
     adapter
-        .with_measurer(Arc::new(SkiaTextMeasurer::new(fonts)))
+        .with_measurer(Arc::new(SkiaTextMeasurer::new(Arc::clone(&fonts))))
         .with_rasterizer(renderer)
         .with_pdf_renderer(pdf_renderer)
+        // SVG font embedding shares the same FontManager as measurement and
+        // paint: the embedded @font-face bytes are the faces that shaped and
+        // painted — parity by construction.
+        .with_font_resolver(Arc::new(SkiaFontFaceResolver::new(fonts)))
 }
 
 fn server_export_adapter(adapter: LumenExportAdapter) -> LumenExportAdapter {
@@ -2063,7 +2069,11 @@ fn export_instance_artifacts(
                         dpi: Some(dpi),
                     }),
                     include_bleed: false,
-                    embed_fonts: false,
+                    // SVG embeds fonts — instance previews render as images,
+                    // which cannot reach document fonts, and a resolver is
+                    // always wired here (name-only would warn LUME0216 into
+                    // the editor UI). Meaningless for PNG.
+                    embed_fonts: format == "svg",
                     include_marks: false,
                 imposition: None,
                 proof: false,
@@ -2119,7 +2129,16 @@ fn export_instance_artifacts(
                 };
                 match adapter.export(scene, &check_request) {
                     Ok(check_result) => {
-                        diagnostics.extend(check_result.diagnostics);
+                        // LUME0216 (viewer-font dependency) is about the SVG
+                        // artifact's portability; these SVG bytes are
+                        // discarded — only the checks matter — so the
+                        // warning would be noise about a file nobody gets.
+                        diagnostics.extend(
+                            check_result
+                                .diagnostics
+                                .into_iter()
+                                .filter(|diagnostic| diagnostic.code != "LUME0216"),
+                        );
                         let renderer = SkiaSceneRenderer::bundled();
                         match lumen_skia::raster_flattened_pdf(
                             &renderer,

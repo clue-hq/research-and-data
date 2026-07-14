@@ -133,7 +133,10 @@ export function defaultEditorExportProfile(): ExportProfile {
     raster: null,
     include_bleed: false,
     include_marks: false,
-    embed_fonts: false
+    // SVG embeds fonts by default: without @font-face payloads the file
+    // (and the panel's SVG preview, which renders as an image and cannot
+    // reach document fonts) depends on viewer-installed fonts.
+    embed_fonts: true
   };
 }
 

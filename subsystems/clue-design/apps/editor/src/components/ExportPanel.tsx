@@ -477,7 +477,9 @@ export function formatPatch(format: ExportProfile["format"], profile: ExportProf
     imposition: undefined,
     proof: undefined,
     color: undefined,
-    embed_fonts: false
+    // SVG: fonts embed by default (@font-face subsets) so the export does
+    // not depend on viewer-installed fonts.
+    embed_fonts: true
   };
 }
 

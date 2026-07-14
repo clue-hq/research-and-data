@@ -68,7 +68,9 @@ PUTs, kit publishes) is invisible to an already-open editor tab. Hard-refresh
 
 ## 3. Full-suite gates for engine changes
 
-A change under `crates/` is not done until, in order: `cargo test -p lumen-core`
+A change under `crates/` is not done until, in order: `cargo test --workspace`
+(widened from `-p lumen-core` 2026-07-15: the narrow gate let `lumen-agent`
+sit broken at HEAD for five commits — P4 audit finding)
 → `cargo build -p lumen-api-helper --release` → wasm rebuild + handshake →
 `pytest apps/agent_runtime/tests` → `pytest apps/api/tests`
 (`PYTHONPATH=.:apps/api:apps/agent_runtime`, `.venv/bin/python`). Zero

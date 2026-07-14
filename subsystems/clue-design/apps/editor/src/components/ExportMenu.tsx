@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Download } from "lucide-react";
 import type { ExportProfile } from "@/engine/contracts";
+import { RASTER_SCALE_PRESETS } from "./ExportPanel";
 
 /**
  * The topbar Export popover (moda's export card, Cursor skin): pick a file
@@ -35,7 +36,7 @@ export function ExportMenu({
 }) {
   const [format, setFormat] = useState<ExportFormat>("png");
   const [scope, setScope] = useState<ExportMenuScope>(pageCount > 1 ? "all" : "active");
-  const [pngScale, setPngScale] = useState<1 | 2>(2);
+  const [pngScale, setPngScale] = useState<number>(2);
   const [pdfIntent, setPdfIntent] = useState<"preview" | "print">("preview");
   const [pdfColor, setPdfColor] = useState<"srgb" | "cmyk">("srgb");
   const rootRef = useRef<HTMLDivElement | null>(null);
@@ -94,10 +95,16 @@ export function ExportMenu({
           <span>Size</span>
           <select
             value={pngScale}
-            onChange={(event) => setPngScale(Number(event.target.value) === 2 ? 2 : 1)}
+            onChange={(event) => {
+              const next = Number(event.target.value);
+              setPngScale(RASTER_SCALE_PRESETS.includes(next) ? next : 2);
+            }}
           >
-            <option value={1}>1× (96 DPI)</option>
-            <option value={2}>2× (192 DPI)</option>
+            {RASTER_SCALE_PRESETS.map((scale) => (
+              <option key={scale} value={scale}>
+                {scale}× ({Math.round(96 * scale)} DPI)
+              </option>
+            ))}
           </select>
         </label>
       ) : null}
@@ -154,7 +161,7 @@ export function ExportMenu({
 
 function profileForChoices(
   format: ExportFormat,
-  pngScale: 1 | 2,
+  pngScale: number,
   pdfIntent: "preview" | "print",
   pdfColor: "srgb" | "cmyk"
 ): ExportProfile {
@@ -177,7 +184,9 @@ function profileForChoices(
         raster: null,
         include_bleed: false,
         include_marks: false,
-        embed_fonts: false
+        // Fonts embed as @font-face subsets so the downloaded SVG renders
+        // identically on machines without the design's fonts installed.
+        embed_fonts: true
       };
     case "pdf":
       return {

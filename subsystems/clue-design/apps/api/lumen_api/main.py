@@ -3797,20 +3797,25 @@ def default_export_profile(export_format: str) -> JsonObject:
             "pdf_intent": "preview" if export_format == "pdf" else None,
             "raster": {"scale": 1, "dpi": 96} if export_format == "png" else None,
             "include_bleed": False,
-            "embed_fonts": False,
+            "embed_fonts": export_format in ("svg", "pdf"),
         }
     )
 
 
 def normalize_export_profile(profile: JsonObject) -> JsonObject:
     export_format = str(profile.get("format") or "svg")
+    # embed_fonts defaults ON for the formats where it means something:
+    # SVG (@font-face subsets — a name-only SVG depends on viewer-installed
+    # fonts) and PDF (the vector renderer always embeds). Only an explicit
+    # false opts out. PNG has no font payload; default off.
+    embed_default = export_format in ("svg", "pdf")
     normalized = {
         "name": str(profile.get("name") or f"{export_format}_document_export"),
         "format": export_format,
         "pdf_intent": profile.get("pdf_intent"),
         "raster": profile.get("raster"),
         "include_bleed": bool(profile.get("include_bleed", False)),
-        "embed_fonts": bool(profile.get("embed_fonts", False)),
+        "embed_fonts": bool(profile.get("embed_fonts", embed_default)),
         # Print W2/W3: crop marks ride the profile; dropping the flag here
         # silently downgraded marked exports (browser-verify finding).
         "include_marks": bool(profile.get("include_marks", False)),

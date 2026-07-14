@@ -12,10 +12,10 @@ fonts, absent gradients, lost spans) shift whole regions and blow far past
 the thresholds — that is the regression this harness exists to catch, the
 way gradients and effects silently vanished from the old vector stub.
 
-The SVG axis is deferred and declared in .context/print-export/PLAN.md:
-faithful SVG rasterization needs a browser engine; SVG parity remains
-covered by the editor-side exportParity checks until a headless-chromium
-lane exists.
+The SVG axis (deferred at W1) is now covered by the headless-Chromium lane
+at the bottom of this file: the exported SVG — with the painter's font
+faces embedded as @font-face subsets — is rasterized in Chromium at the
+PNG truth's pixel size and ink-diffed against it.
 """
 
 from __future__ import annotations
@@ -172,17 +172,22 @@ def rgb_pixmap(pixmap: fitz.Pixmap) -> fitz.Pixmap:
     return pixmap
 
 
-def mismatch_ratio(
+def sampled_mismatch(
     png_pixmap: fitz.Pixmap,
-    pdf_pixmap: fitz.Pixmap,
+    other_pixmap: fitz.Pixmap,
     map_point: Callable[[float, float], tuple[float, float]],
-    steps: int = 120,
-    channel_tolerance: int = 16,
-    window: int = 3,
-) -> float:
-    """Neighborhood-tolerant sampled diff: a PNG sample passes if ANY pdf
-    pixel within a small window matches — absorbs antialiasing differences
-    between rasterizers while whole-region drift still fails loudly."""
+    steps: int,
+    channel_tolerance: int,
+    window: int,
+    ink_threshold: Optional[int] = None,
+) -> tuple[float, int]:
+    """Neighborhood-tolerant sampled diff — the ONE diff core both lanes
+    share: a PNG sample passes if ANY pixel of the other raster within a
+    small window matches, absorbing antialiasing differences between
+    rasterizers while whole-region drift still fails loudly. With
+    `ink_threshold` set, only samples where either raster has ink are
+    counted (text pixels are the signal on a mostly-white page). Returns
+    (mismatch ratio over counted samples, counted sample count)."""
     total = 0
     mismatched = 0
     for iy in range(1, steps):
@@ -192,16 +197,23 @@ def mismatch_ratio(
                 int(u * (png_pixmap.width - 1)), int(v * (png_pixmap.height - 1))
             )
             tx, ty = map_point(u, v)
-            px = int(tx * (pdf_pixmap.width - 1))
-            py = int(ty * (pdf_pixmap.height - 1))
+            px = int(tx * (other_pixmap.width - 1))
+            py = int(ty * (other_pixmap.height - 1))
+            if ink_threshold is not None:
+                other_px = other_pixmap.pixel(px, py)
+                if (
+                    min(png_px[:3]) >= ink_threshold
+                    and min(other_px[:3]) >= ink_threshold
+                ):
+                    continue
             best = 255
             for dy in range(-window, window + 1):
                 for dx in range(-window, window + 1):
-                    qx = min(max(px + dx, 0), pdf_pixmap.width - 1)
-                    qy = min(max(py + dy, 0), pdf_pixmap.height - 1)
-                    pdf_px = pdf_pixmap.pixel(qx, qy)
+                    qx = min(max(px + dx, 0), other_pixmap.width - 1)
+                    qy = min(max(py + dy, 0), other_pixmap.height - 1)
+                    other = other_pixmap.pixel(qx, qy)
                     delta = max(
-                        abs(a - b) for a, b in zip(png_px[:3], pdf_px[:3])
+                        abs(a - b) for a, b in zip(png_px[:3], other[:3])
                     )
                     best = min(best, delta)
                     if best <= channel_tolerance:
@@ -211,7 +223,21 @@ def mismatch_ratio(
             total += 1
             if best > channel_tolerance:
                 mismatched += 1
-    return mismatched / total
+    return (mismatched / total if total else 0.0, total)
+
+
+def mismatch_ratio(
+    png_pixmap: fitz.Pixmap,
+    pdf_pixmap: fitz.Pixmap,
+    map_point: Callable[[float, float], tuple[float, float]],
+    steps: int = 120,
+    channel_tolerance: int = 16,
+    window: int = 3,
+) -> float:
+    ratio, _ = sampled_mismatch(
+        png_pixmap, pdf_pixmap, map_point, steps, channel_tolerance, window
+    )
+    return ratio
 
 
 def assert_pdf_matches_png(
@@ -509,3 +535,147 @@ def test_verapdf_structural_validation_of_print_pdf(
     )
     # Trailer /ID (6.1.3#1) is required by PDF/X and must stay fixed.
     assert ("6.1.3", "1") not in failed, "trailer /ID regressed — required by PDF/X"
+
+
+
+# ---------------------------------------------------------------------------
+# SVG axis (deferred at W1, closed by the font-embedding work): the exported
+# SVG — with the painter's font faces embedded as @font-face subsets — is
+# rasterized in headless Chromium at the PNG truth's pixel size and diffed
+# over INK samples only (text pixels are the signal; the mostly-white page
+# would otherwise dilute a wrong-font regression below any threshold).
+# Chromium and Skia both shape with HarfBuzz over the same embedded bytes,
+# so genuine drift is sub-pixel; a missing/substituted font multiplies the
+# ink mismatch (probed live: 3.7%/7.7% embedded vs ~25% with @font-face
+# stripped — the threshold sits in the middle of that gap).
+
+SVG_FIXTURES = ["typography", "spans_italic"]
+SVG_MAX_INK_RATIO = 0.15
+SVG_MIN_INK_SAMPLES = 200
+
+
+def rasterize_svg_chromium(svg_bytes: bytes, width: int, height: int) -> bytes:
+    """Screenshot the SVG in headless Chromium at exactly width x height CSS
+    pixels. The root element's width/height are set through the DOM after
+    load (a pt-sized page otherwise renders at 96/72 px per pt) — purely a
+    raster-resolution choice, like passing dpi to a rasterizer; the viewBox
+    and all geometry stay untouched, and nothing depends on the exporter's
+    byte-level attribute layout. Skips (never fails) when Playwright or its
+    Chromium build is absent."""
+    try:
+        from playwright.sync_api import sync_playwright
+    except ImportError:
+        pytest.skip("playwright not installed")
+
+    import base64
+
+    url = "data:image/svg+xml;base64," + base64.b64encode(svg_bytes).decode("ascii")
+    with sync_playwright() as playwright:
+        try:
+            browser = playwright.chromium.launch()
+        except Exception as error:  # missing browser build — environment, not product
+            pytest.skip(f"chromium unavailable: {error}")
+        try:
+            page = browser.new_page(
+                viewport={"width": width, "height": height},
+                device_scale_factor=1,
+            )
+            page.goto(url)
+            page.evaluate(
+                "([w, h]) => {"
+                " const svg = document.documentElement;"
+                " svg.setAttribute('width', w + 'px');"
+                " svg.setAttribute('height', h + 'px'); }",
+                [width, height],
+            )
+            # @font-face data URIs decode asynchronously; text paints with
+            # them only after the font faces resolve.
+            page.evaluate("() => document.fonts ? document.fonts.ready : 0")
+            return page.screenshot(
+                clip={"x": 0, "y": 0, "width": width, "height": height}
+            )
+        finally:
+            browser.close()
+
+
+def ink_mismatch_ratio(
+    png_pixmap: fitz.Pixmap,
+    svg_pixmap: fitz.Pixmap,
+) -> tuple[float, int]:
+    """The SVG lane's diff: the shared sampled core, ink-restricted.
+    Constants deliberately differ from the PDF lane — calibrated live
+    against embedded (~4-8%) vs @font-face-stripped (~25%) renders."""
+    return sampled_mismatch(
+        png_pixmap,
+        svg_pixmap,
+        lambda u, v: (u, v),
+        steps=240,
+        channel_tolerance=32,
+        window=2,
+        ink_threshold=240,
+    )
+
+
+@pytest.mark.parametrize("fixture", SVG_FIXTURES)
+def test_svg_matches_png_truth(core: CoreClient, fixture: str) -> None:
+    name, dsl, _include_bleed, _expected_text, _max_ratio = next(
+        f for f in FIXTURES if f[0] == fixture
+    )
+    scene = build_scene(core, dsl)
+
+    png_bytes, _ = export_bytes(core, scene, "png", include_bleed=False)
+    svg_bytes, svg_diagnostics = export_bytes(core, scene, "svg", include_bleed=False)
+
+    # The embedding contract: fonts are IN the file and the viewer-font
+    # dependency warning is gone.
+    svg_text = svg_bytes.decode("utf-8")
+    assert "@font-face" in svg_text, f"[{name}] SVG must embed fonts"
+    codes = {diagnostic["code"] for diagnostic in svg_diagnostics}
+    assert "LUME0216" not in codes, f"[{name}] embedded SVG still warns: {codes}"
+
+    png_pixmap = rgb_pixmap(fitz.Pixmap(png_bytes))
+    shot = rasterize_svg_chromium(svg_bytes, png_pixmap.width, png_pixmap.height)
+    svg_pixmap = rgb_pixmap(fitz.Pixmap(shot))
+
+    ratio, ink_samples = ink_mismatch_ratio(png_pixmap, svg_pixmap)
+    assert ink_samples >= SVG_MIN_INK_SAMPLES, (
+        f"[{name}/svg] too little ink to compare ({ink_samples} samples) — "
+        "a blank render would pass vacuously"
+    )
+    assert ratio <= SVG_MAX_INK_RATIO, (
+        f"[{name}/svg] browser-rendered SVG diverges from PNG truth over ink: "
+        f"{ratio:.2%} of {ink_samples} ink samples mismatch "
+        f"(allowed {SVG_MAX_INK_RATIO:.2%})"
+    )
+
+
+def test_svg_without_embedding_warns_viewer_font_dependency(core: CoreClient) -> None:
+    """embed_fonts=false is the declared name-only state: the export must
+    carry the LUME0216 viewer-font dependency warning naming the families."""
+    name, dsl, _include_bleed, _expected_text, _max_ratio = next(
+        f for f in FIXTURES if f[0] == "typography"
+    )
+    scene = build_scene(core, dsl)
+    response = core.export_preview(
+        scene,
+        export_format="svg",
+        profile={
+            "name": "parity_svg_no_embed",
+            "format": "svg",
+            "pdf_intent": None,
+            "raster": None,
+            "include_bleed": False,
+            "embed_fonts": False,
+        },
+    )
+    svg = bytes(
+        int(value) & 0xFF for value in response["export"]["artifacts"][0]["bytes"]
+    ).decode("utf-8")
+    assert "@font-face" not in svg
+    diagnostics = list(response.get("diagnostics") or [])
+    diagnostics.extend(response["export"].get("diagnostics") or [])
+    warning = next(
+        (d for d in diagnostics if d["code"] == "LUME0216"), None
+    )
+    assert warning is not None, f"LUME0216 missing: {sorted(d['code'] for d in diagnostics)}"
+    assert "Inter" in warning["message"]

@@ -14,6 +14,7 @@
 //! - `raster_flattened_pdf` (slice G7): bulk print V0 per the B3 verdict —
 //!   Skia raster pages flattened into PDF, never native-PDF text or fonts.
 
+pub mod embed;
 pub mod fonts;
 pub mod measure;
 pub mod pdf_flatten;
@@ -21,6 +22,7 @@ pub mod pdf_impose;
 pub mod pdf_vector;
 pub mod render;
 
+pub use embed::SkiaFontFaceResolver;
 pub use fonts::{FamilyResolution, FontLoadError, FontManager, DEFAULT_FONT_FAMILY};
 pub use lumen_export::{RenderedPdf, RenderedPdfPage};
 pub use measure::SkiaTextMeasurer;
