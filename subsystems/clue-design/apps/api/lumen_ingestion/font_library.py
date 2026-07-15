@@ -354,10 +354,108 @@ def _find_static_italic_source(
     return path if path.is_file() else None
 
 
-def _instance_bytes(source: bytes, weight: int, family: str) -> bytes:
+#: OpenType fsSelection bits rewritten per instanced style (all other bits —
+#: USE_TYPO_METRICS, WWS, … — are preserved from the source).
+_FS_ITALIC = 0x0001
+_FS_BOLD = 0x0020
+_FS_REGULAR = 0x0040
+
+
+def _static_instance_names(family: str, weight: int, italic: bool) -> Dict[int, str]:
+    """The name records a static instance of `family` at `weight`/`italic`
+    must carry, keyed by nameID. This is the naming scheme Google's own static
+    files ship (verified against the pinned clone, e.g. ZillaSlab-Medium.ttf):
+
+    * 16/17 (typographic family/subfamily) carry the real style — present only
+      when the face is NOT one of the four RIBBI styles, where they would be
+      redundant with 1/2 (absent nameID 16 falls back to 1, which IS the plain
+      family for RIBBI faces — the server FontManager's `family_name()` keeps
+      resolving every face of a family to the same key either way);
+    * 1/2 (legacy family/subfamily) are style-linked: nameID 2 may only say
+      Regular/Bold/Italic/Bold Italic, so non-RIBBI styles fold their weight
+      name into nameID 1;
+    * 6 (PostScript) is what PDF font lists and print-shop preflights display —
+      the reason this rewrite exists.
+
+    fontTools' own `updateFontNames=True` cannot do this: it names instances
+    from each font's STAT table, which on this library leaves optical-size
+    pollution ("96pt ExtraBold" for every Bricolage weight, "9pt" on DM Sans
+    and Fraunces) and hard-fails on Newsreader (no STAT value for the opsz
+    default). Names here derive from the curation table instead — the same
+    truth that names the files and asset labels."""
+    weight_name = WEIGHT_NAMES[weight]
+    if italic:
+        subfamily = "Italic" if weight == 400 else f"{weight_name} Italic"
+    else:
+        subfamily = weight_name
+    ribbi = {
+        (400, False): "Regular",
+        (700, False): "Bold",
+        (400, True): "Italic",
+        (700, True): "Bold Italic",
+    }.get((weight, italic))
+    compact = family.replace(" ", "")
+    names = {
+        4: f"{family} {subfamily}",
+        6: f"{compact}-{subfamily.replace(' ', '')}",
+    }
+    if ribbi is not None:
+        names[1] = family
+        names[2] = ribbi
+    else:
+        names[1] = f"{family} {weight_name}"
+        names[2] = "Italic" if italic else "Regular"
+        names[16] = family
+        names[17] = subfamily
+    return names
+
+
+def _rename_static_instance(font, family: str, weight: int, italic: bool) -> None:
+    """Rewrite the name table and RIBBI style bits of a freshly instanced
+    static face. `instancer.instantiateVariableFont` pins the axes and updates
+    OS/2.usWeightClass but leaves the variable source's name records behind —
+    every instanced Hanken weight shipped calling itself "Regular" and every
+    Bricolage weight "96pt ExtraBold", which is what PDF font lists (and a
+    print shop's preflight) read. Deterministic: same inputs => same records
+    => stable digests."""
+    names = _static_instance_names(family, weight, italic)
+    table = font["name"]
+    # Stale variable-font leftovers: 3 (unique id) is rebuilt below; 25
+    # (variations PostScript prefix) is meaningless in a static; 16/17 must
+    # not survive from the source when the instance is a RIBBI face.
+    for name_id in (1, 2, 3, 4, 6, 16, 17, 25):
+        table.removeNames(nameID=name_id)
+    vendor = (getattr(font["OS/2"], "achVendID", "") or "").strip() or "UKWN"
+    names[3] = f"{font['head'].fontRevision:.3f};{vendor};{names[6]}"
+    for name_id, value in sorted(names.items()):
+        table.setName(value, name_id, 3, 1, 0x409)  # windows, unicode BMP, en-US
+        table.setName(value, name_id, 1, 0, 0)  # mac, roman — all values ASCII
+    # RIBBI bits, spec-consistent with the rewritten names (the instancer left
+    # every 700 face flagged REGULAR): Bold is weight 700 exactly — other
+    # weights express boldness through usWeightClass, which is what both
+    # renderers match on.
+    os2, head = font["OS/2"], font["head"]
+    selection = os2.fsSelection & ~(_FS_ITALIC | _FS_BOLD | _FS_REGULAR)
+    mac_style = head.macStyle & ~0b11
+    if italic:
+        selection |= _FS_ITALIC
+        mac_style |= 0b10
+    if weight == 700:
+        selection |= _FS_BOLD
+        mac_style |= 0b01
+    if not italic and weight != 700:
+        selection |= _FS_REGULAR
+    os2.fsSelection = selection
+    head.macStyle = mac_style
+
+
+def _instance_bytes(
+    source: bytes, weight: int, family: str, italic: bool = False
+) -> bytes:
     """Pin wght to `weight` and every other fvar axis to its default,
     producing a fully static face. instancer updates OS/2.usWeightClass, which
-    is what the server FontManager matches on."""
+    is what the server FontManager matches on; the name table and RIBBI bits
+    are rewritten to describe the instance (see `_rename_static_instance`)."""
     from fontTools.varLib import instancer
 
     font = _ttfont(source)
@@ -378,6 +476,7 @@ def _instance_bytes(source: bytes, weight: int, family: str) -> bytes:
         for tag, axis in axes.items()
     }
     static = instancer.instantiateVariableFont(font, pins, inplace=False)
+    _rename_static_instance(static, family, weight, italic)
     buffer = io.BytesIO()
     static.save(buffer)
     return buffer.getvalue()
@@ -436,7 +535,8 @@ def materialize_family(
     for weight in curated.italic_weights:
         if italic_variable_source is not None:
             data = _instance_bytes(
-                italic_variable_source.read_bytes(), weight, curated.family
+                italic_variable_source.read_bytes(), weight, curated.family,
+                italic=True,
             )
         else:
             static = _find_static_italic_source(directory, curated.family, weight)
