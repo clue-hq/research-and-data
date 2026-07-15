@@ -206,19 +206,61 @@ impl PdfExportAdapter {
                 })
                 .collect()
         } else {
-            let marks_margin = crate::pdf_boxes::print_margin_pt(request);
+            // Margin is a PER-PAGE decision (marks need the page's bleed
+            // rect; a mixed document gets different boxes per page) — the
+            // same `print_margin_for_page` the renderer sizes its canvas
+            // with, so painted and declared geometry agree by construction.
             page_ids
                 .iter()
                 .filter_map(|page_id| scene.pages.get(page_id))
                 .map(|page| {
+                    let margin = crate::pdf_boxes::print_margin_for_page(
+                        page,
+                        request.profile.include_bleed,
+                        request.profile.include_marks,
+                        request.profile.proof,
+                    );
                     crate::pdf_boxes::page_boxes_with_margin(
                         page,
                         request.profile.include_bleed,
-                        marks_margin,
+                        margin,
                     )
                 })
                 .collect()
         };
+
+        // Tripwire: the canvas the renderer painted and the boxes we are
+        // about to declare must describe the same page. A mismatch means
+        // the two sides of the print-geometry contract diverged — that
+        // file would carry a TrimBox cutting into the art (shipped live
+        // 2026-07-15 as a phantom 14pt margin), so it is never emitted.
+        if rendered.pages.len() != boxes.len() {
+            return Err(ExportError::new(
+                "export.pdf_geometry_mismatch",
+                format!(
+                    "renderer painted {} page(s) but {} box set(s) were computed",
+                    rendered.pages.len(),
+                    boxes.len()
+                ),
+            )
+            .with_diagnostics(diagnostics.clone()));
+        }
+        for (rendered_page, page_boxes) in rendered.pages.iter().zip(&boxes) {
+            let media_width = page_boxes.media[2] - page_boxes.media[0];
+            let media_height = page_boxes.media[3] - page_boxes.media[1];
+            if (f64::from(rendered_page.width_pt) - media_width).abs() > 0.01
+                || (f64::from(rendered_page.height_pt) - media_height).abs() > 0.01
+            {
+                return Err(ExportError::new(
+                    "export.pdf_geometry_mismatch",
+                    format!(
+                        "page {} painted at {:.2}x{:.2}pt but its MediaBox would declare {media_width:.2}x{media_height:.2}pt — renderer and box finalizer disagree on print geometry",
+                        rendered_page.page_id, rendered_page.width_pt, rendered_page.height_pt
+                    ),
+                )
+                .with_diagnostics(diagnostics.clone()));
+            }
+        }
         // W5 stage B: color conversion runs between render and finalize,
         // so the finalize pass owns the box/metadata contract on the
         // converted bytes (Ghostscript does not preserve either reliably)

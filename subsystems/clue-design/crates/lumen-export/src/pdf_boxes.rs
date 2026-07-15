@@ -75,14 +75,28 @@ pub fn page_boxes_for(page: &Page, include_bleed: bool) -> PageBoxes {
 pub const MARK_MARGIN_PT: f64 = 14.0;
 pub const MARK_GAP_PT: f64 = 3.0;
 
-/// The print margin a request implies: crop marks require both the marks
-/// flag and bleed (marks indicate the trim line relative to the bleed
-/// workflow; a marks request without bleed is a no-op, declared upstream).
-/// Proof mode (W7) always gets the margin — its slug and control strip
-/// live there, bleed or not.
-pub fn print_margin_pt(request: &lumen_core::ExportRequest) -> f64 {
-    let marks = request.profile.include_marks && request.profile.include_bleed;
-    if marks || request.profile.proof {
+/// The print margin THIS PAGE gets — the single source of truth consumed
+/// by BOTH the renderer (canvas size + mark strokes) and the box
+/// finalizer. Crop marks require the marks+bleed flags AND an actual
+/// bleed rect on the page: marks indicate the trim line relative to the
+/// bleed workflow, so a bleed-less page has nothing to mark — it renders
+/// and declares plain trim geometry (LUME0412 + the print-ready
+/// bleed_present rule flag the gap). Proof mode (W7) always gets the
+/// margin — its slug and control strip are trim-referenced, bleed or not.
+///
+/// History: this predicate used to exist twice (here flag-only, in the
+/// renderer with the bleed-rect condition). The disagreement shipped
+/// self-contradictory PDFs — trim-size canvas inside margin-grown boxes,
+/// TrimBox cutting 14pt into the art (found live 2026-07-15). The
+/// adapter now also hard-fails on any painted-vs-declared size mismatch.
+pub fn print_margin_for_page(
+    page: &Page,
+    include_bleed: bool,
+    include_marks: bool,
+    proof: bool,
+) -> f64 {
+    let marks = include_marks && include_bleed && page.bleed.is_some();
+    if marks || proof {
         MARK_MARGIN_PT
     } else {
         0.0
@@ -357,4 +371,63 @@ fn fnv1a(bytes: &[u8]) -> u64 {
         hash = hash.wrapping_mul(0x1000_0000_01b3);
     }
     hash
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{print_margin_for_page, MARK_MARGIN_PT};
+    use lumen_core::{Orientation, Page, PageId, PagePreset, PageSize, Rect, Unit};
+
+    fn page(bleed: Option<Rect>) -> Page {
+        Page {
+            id: PageId::from("page_margin"),
+            name: "Margin".to_owned(),
+            size: PageSize {
+                width: 200.0,
+                height: 150.0,
+                unit: Unit::Pt,
+                preset: Some(PagePreset::Custom),
+                orientation: Orientation::Landscape,
+                source: None,
+                output: None,
+            },
+            children: Vec::new(),
+            bleed,
+            safe_area: None,
+            background: Vec::new(),
+        }
+    }
+
+    fn bleed() -> Option<Rect> {
+        Some(Rect {
+            x: -9.0,
+            y: -9.0,
+            width: 218.0,
+            height: 168.0,
+        })
+    }
+
+    // The full truth table of the ONE margin predicate both the renderer
+    // and the box finalizer consume. Marks need flags AND a page bleed
+    // rect; proof always gets the margin.
+    #[test]
+    fn margin_truth_table() {
+        let cases: &[(Option<Rect>, bool, bool, bool, f64)] = &[
+            (bleed(), true, true, false, MARK_MARGIN_PT), // full marks workflow
+            (None, true, true, false, 0.0),               // the 2026-07-15 bug case
+            (bleed(), false, true, false, 0.0),           // marks without bleed flag
+            (bleed(), true, false, false, 0.0),           // bleed without marks
+            (None, false, false, false, 0.0),             // plain export
+            (None, false, false, true, MARK_MARGIN_PT),   // proof: margin, bleed or not
+            (bleed(), true, true, true, MARK_MARGIN_PT),  // proof + marks
+        ];
+        for (bleed, include_bleed, include_marks, proof, expected) in cases {
+            assert_eq!(
+                print_margin_for_page(&page(bleed.clone()), *include_bleed, *include_marks, *proof),
+                *expected,
+                "bleed={:?} include_bleed={include_bleed} include_marks={include_marks} proof={proof}",
+                bleed.is_some(),
+            );
+        }
+    }
 }

@@ -2114,6 +2114,58 @@ def test_export_preview_route_honors_include_marks(client: TestClient) -> None:
     }
 
 
+def test_export_preview_marks_on_bleedless_page_keep_exact_trim_geometry(
+    client: TestClient,
+) -> None:
+    """The 2026-07-15 phantom-margin bug, pinned end-to-end: a print export
+    with bleed+marks flags against a page WITHOUT a bleed rect must produce
+    plain trim-size geometry — previously the box finalizer grew the
+    MediaBox by the 14pt mark margin while the renderer painted a trim-size
+    canvas, shipping a TrimBox that cut into the art."""
+    scene = minimal_scene()
+    scene["pages"]["page_a4"]["size"] = {
+        "width": 1080,
+        "height": 1350,
+        "unit": "px",
+        "preset": "custom",
+        "orientation": "portrait",
+    }
+    assert scene["pages"]["page_a4"].get("bleed") is None
+
+    response = client.post(
+        "/export-preview",
+        json={
+            "scene": scene,
+            "format": "pdf",
+            "page_ids": ["page_a4"],
+            "profile": {
+                "name": "print_pdf_marks_no_bleed",
+                "format": "pdf",
+                "pdf_intent": "print",
+                "raster": None,
+                "include_bleed": True,
+                "embed_fonts": True,
+                "include_marks": True,
+            },
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["status"] == "ok", payload["diagnostics"]
+    artifact = payload["export"]["artifacts"][0]
+    # Exactly the trim size — no phantom 14pt margin.
+    assert artifact["dimensions"] == {
+        "width": 1080.0,
+        "height": 1350.0,
+        "unit": "pt",
+        "source": "pdf_media_box",
+    }
+    # The gap stays loud: the missing-bleed warning rides the export.
+    codes = {item["code"] for item in payload["export"]["diagnostics"]}
+    assert "LUME0412" in codes
+
+
 def test_normalize_export_profile_keeps_optional_print_controls() -> None:
     """Print W5: the profile whitelist rebuild must pass imposition/proof/
     color through — dropping them here silently downgraded saved document

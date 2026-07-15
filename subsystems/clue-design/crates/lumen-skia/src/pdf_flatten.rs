@@ -61,12 +61,20 @@ pub(crate) fn page_render_geometry(
 ) -> PageRenderGeometry {
     let scale_pt = unit_to_points(1.0, &page.size.unit);
     let base = page_region(page, include_bleed);
-    // Marks require the bleed workflow; proof mode gets the margin (and
-    // trim-referenced marks) regardless — its slug and control strip live
-    // there. MUST agree with pdf_boxes::print_margin_pt.
-    let marks_active = include_marks && include_bleed && page.bleed.is_some();
-    let (region, overlay) = if marks_active || proof_slug.is_some() {
-        let margin = lumen_export::MARK_MARGIN_PT / scale_pt;
+    // The margin decision is lumen-export's `print_margin_for_page` — the
+    // SAME function the adapter computes the declared boxes from, so the
+    // painted canvas and the box set agree by construction (the adapter
+    // additionally hard-fails the export on any size mismatch). The old
+    // duplicated predicate here diverged from the box side on bleed-less
+    // pages and shipped self-contradictory PDFs (2026-07-15).
+    let margin_pt = lumen_export::print_margin_for_page(
+        page,
+        include_bleed,
+        include_marks,
+        proof_slug.is_some(),
+    );
+    let (region, overlay) = if margin_pt > 0.0 {
+        let margin = margin_pt / scale_pt;
         let gap = lumen_export::MARK_GAP_PT / scale_pt;
         let region = Rect {
             x: base.x - margin,

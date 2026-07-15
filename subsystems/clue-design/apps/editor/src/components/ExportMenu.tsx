@@ -2,14 +2,17 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Download } from "lucide-react";
-import type { ExportProfile } from "@/engine/contracts";
+import type { ExportProfile, Page, PageId } from "@/engine/contracts";
+import { bleedlessPrintPages } from "@/engine/printReadiness";
 import { RASTER_SCALE_PRESETS } from "./ExportPanel";
 
 /**
  * The topbar Export popover (moda's export card, Cursor skin): pick a file
  * type, page scope, and a per-format quality option, then Download. Purely
  * presentational — choices compose an ExportProfile and go out through
- * `onDownload`; whether/how the export runs is the shell's decision.
+ * `onDownload`; whether/how the export runs is the shell's decision. The
+ * print-bleed predicate (which artboards would lose crop marks) lives in
+ * engine/printReadiness, not inline here.
  */
 
 type ExportFormat = "png" | "svg" | "pdf";
@@ -22,31 +25,42 @@ const FORMAT_COPY: Record<ExportFormat, { label: string; description: string }> 
 };
 
 export function ExportMenu({
-  pageCount,
-  activePageName,
+  pages,
+  activePageId,
   isExporting,
   onDownload,
   onClose
 }: {
-  pageCount: number;
-  activePageName: string | null;
+  pages: readonly Page[];
+  activePageId: PageId | null;
   isExporting: boolean;
   onDownload: (profile: ExportProfile, scope: ExportMenuScope) => void;
   onClose: () => void;
 }) {
+  const pageCount = pages.length;
+  const activePage = pages.find((page) => page.id === activePageId) ?? null;
+  const activePageName = activePage?.name ?? null;
+
   const [format, setFormat] = useState<ExportFormat>("png");
   const [scope, setScope] = useState<ExportMenuScope>(pageCount > 1 ? "all" : "active");
   const [pngScale, setPngScale] = useState<number>(2);
   const [pdfIntent, setPdfIntent] = useState<"preview" | "print">("preview");
   const [pdfColor, setPdfColor] = useState<"srgb" | "cmyk">("srgb");
+  // Print bleed + crop marks: on for print PDFs (preserves the prior hardcoded
+  // behavior) until the user opts out. Only surfaced for print-intent PDFs.
+  const [includePrintMarks, setIncludePrintMarks] = useState(true);
   const rootRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     rootRef.current?.querySelector("select")?.focus();
   }, []);
 
+  const isPrintPdf = format === "pdf" && pdfIntent === "print";
+  const scopedPages = scope === "all" ? [...pages] : activePage ? [activePage] : [];
+  const bleedlessPages = bleedlessPrintPages({ format, pdfIntent, pages: scopedPages });
+
   const download = () => {
-    onDownload(profileForChoices(format, pngScale, pdfIntent, pdfColor), scope);
+    onDownload(profileForChoices(format, pngScale, pdfIntent, pdfColor, includePrintMarks), scope);
   };
 
   return (
@@ -130,6 +144,17 @@ export function ExportMenu({
         </label>
       ) : null}
 
+      {isPrintPdf ? (
+        <label className="toggle-field" data-role="include-bleed-marks">
+          <input
+            type="checkbox"
+            checked={includePrintMarks}
+            onChange={(event) => setIncludePrintMarks(event.target.checked)}
+          />
+          Include bleed + crop marks
+        </label>
+      ) : null}
+
       {format === "pdf" && pdfIntent === "print" ? (
         <label className="export-menu-field">
           <span>Color</span>
@@ -141,6 +166,17 @@ export function ExportMenu({
             <option value="cmyk">CMYK (offset press)</option>
           </select>
         </label>
+      ) : null}
+
+      {isPrintPdf && includePrintMarks && bleedlessPages.length > 0 ? (
+        <p className="export-menu-hint" data-role="export-menu-bleed-note" role="note">
+          {bleedlessPages.length === scopedPages.length
+            ? scopedPages.length === 1
+              ? "This artboard has no bleed area — bleed and crop marks will be skipped."
+              : "These artboards have no bleed area — bleed and crop marks will be skipped."
+            : `${bleedlessPages.length} of ${scopedPages.length} artboards have no bleed area — bleed and crop marks will be skipped for them.`}{" "}
+          Enable “Print &amp; bleed” in the canvas toolbar to add print defaults first.
+        </p>
       ) : null}
 
       <button
@@ -163,7 +199,8 @@ function profileForChoices(
   format: ExportFormat,
   pngScale: number,
   pdfIntent: "preview" | "print",
-  pdfColor: "srgb" | "cmyk"
+  pdfColor: "srgb" | "cmyk",
+  includePrintMarks: boolean
 ): ExportProfile {
   switch (format) {
     case "png":
@@ -188,18 +225,23 @@ function profileForChoices(
         // identically on machines without the design's fonts installed.
         embed_fonts: true
       };
-    case "pdf":
+    case "pdf": {
+      // Bleed + crop marks are a coupled print-PDF pair (same coupling as the
+      // export panel's checkbox): only print intent exposes them, and only when
+      // the user leaves them enabled. Any other combination emits neither.
+      const wantsPrintMarks = pdfIntent === "print" && includePrintMarks;
       return {
         name: `topbar_pdf_${pdfIntent}`,
         format: "pdf",
         pdf_intent: pdfIntent,
         raster: null,
-        include_bleed: pdfIntent === "print",
-        include_marks: pdfIntent === "print",
+        include_bleed: wantsPrintMarks,
+        include_marks: wantsPrintMarks,
         // CMYK is print-intent-only; emit the field solely on print PDFs, and
         // only when the user chose it — sRGB is the default and emits nothing.
         ...(pdfIntent === "print" && pdfColor === "cmyk" ? { color: "cmyk" } : {}),
         embed_fonts: true
       };
+    }
   }
 }

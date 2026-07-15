@@ -408,3 +408,72 @@ fn proof_export_adds_margin_slug_and_control_strip() {
     let again = adapter.export(&scene, &request).expect("proof export 2");
     assert_eq!(result.artifacts[0].bytes, again.artifacts[0].bytes);
 }
+
+/// The live 2026-07-15 phantom-margin bug, pinned through the REAL vector
+/// renderer: a print export with bleed+marks flags against a page that has
+/// NO bleed rect must paint and declare plain trim geometry — identical
+/// boxes, no margin, no TrimBox offset. (The adapter's geometry tripwire
+/// fails the export outright if renderer and finalizer ever disagree
+/// again.)
+#[test]
+fn bleedless_page_with_marks_request_keeps_exact_trim_geometry() {
+    use lumen_core::{
+        ExportAdapter, ExportFormat, ExportProfile, ExportPurpose, ExportRequest, PdfIntent,
+        RasterScale,
+    };
+    use lumen_export::LumenExportAdapter;
+
+    let scene = text_scene(None); // 200x150pt, bleed: None
+    let adapter = LumenExportAdapter::new().with_pdf_renderer(Arc::new(
+        SkiaVectorPdfRenderer::new(Arc::new(lumen_skia::FontManager::bundled())),
+    ));
+
+    let result = adapter
+        .export(
+            &scene,
+            &ExportRequest {
+                profile: ExportProfile {
+                    name: "print_pdf_marks_no_bleed".to_owned(),
+                    format: ExportFormat::Pdf,
+                    pdf_intent: Some(PdfIntent::Print),
+                    raster: Some(RasterScale {
+                        scale: 1.0,
+                        dpi: Some(300),
+                    }),
+                    include_bleed: true,
+                    embed_fonts: true,
+                    include_marks: true,
+                    imposition: None,
+                    proof: false,
+                    color: None,
+                },
+                page_ids: vec![PageId::from("page_vector")],
+                purpose: ExportPurpose::UserDownload,
+            },
+        )
+        .expect("bleed-less marks export must degrade cleanly, not corrupt");
+
+    let document = lopdf::Document::load_mem(&result.artifacts[0].bytes).unwrap();
+    let (_, page_id) = document.get_pages().into_iter().next().unwrap();
+    let page_dict = document.get_object(page_id).unwrap().as_dict().unwrap();
+    let boxes = |key: &[u8]| -> Vec<f32> {
+        page_dict
+            .get(key)
+            .unwrap()
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|value| value.as_float().unwrap())
+            .collect()
+    };
+    // No phantom margin anywhere: all three boxes are the plain trim.
+    assert_eq!(boxes(b"MediaBox"), vec![0.0, 0.0, 200.0, 150.0]);
+    assert_eq!(boxes(b"TrimBox"), vec![0.0, 0.0, 200.0, 150.0]);
+    assert_eq!(boxes(b"BleedBox"), vec![0.0, 0.0, 200.0, 150.0]);
+
+    // The gap stays loud: missing-bleed warning rides the export.
+    assert!(result
+        .diagnostics
+        .iter()
+        .any(|diagnostic| diagnostic.code == "LUME0412"));
+}

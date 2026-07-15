@@ -1488,12 +1488,15 @@ fn minimal_pdf(page_count: usize) -> Vec<u8> {
 struct RecordingPdfRenderer {
     calls: std::sync::Mutex<Vec<(Vec<PageId>, u16, bool)>>,
     fail: bool,
+    /// Deliberately misreport painted page sizes — exercises the
+    /// adapter's painted-vs-declared geometry tripwire.
+    lie_about_geometry: bool,
 }
 
 impl lumen_export::ScenePdfRenderer for RecordingPdfRenderer {
     fn render_pdf(
         &self,
-        _scene: &Scene,
+        scene: &Scene,
         page_ids: &[PageId],
         options: &lumen_export::PdfRenderOptions,
         _resolver: Option<&dyn lumen_export::AssetByteResolver>,
@@ -1520,14 +1523,40 @@ impl lumen_export::ScenePdfRenderer for RecordingPdfRenderer {
                 "fake renderer mode declaration",
                 None,
             )],
+            // The seam contract: pages report the geometry that was
+            // actually painted. The adapter verifies this against the
+            // declared boxes, so the fake computes it the same way the
+            // real renderers do (page box + per-page print margin).
             pages: page_ids
                 .iter()
-                .map(|page_id| lumen_export::RenderedPdfPage {
-                    page_id: page_id.clone(),
-                    width_pt: 100.0,
-                    height_pt: 100.0,
-                    width_px: 400,
-                    height_px: 400,
+                .map(|page_id| {
+                    let (width_pt, height_pt) = if self.lie_about_geometry {
+                        (100.0, 100.0)
+                    } else {
+                        let page = scene.pages.get(page_id).expect("fake renders known pages");
+                        let margin = lumen_export::print_margin_for_page(
+                            page,
+                            options.include_bleed,
+                            options.include_marks,
+                            options.proof_label.is_some(),
+                        );
+                        let boxes = lumen_export::page_boxes_with_margin(
+                            page,
+                            options.include_bleed,
+                            margin,
+                        );
+                        (
+                            (boxes.media[2] - boxes.media[0]) as f32,
+                            (boxes.media[3] - boxes.media[1]) as f32,
+                        )
+                    };
+                    lumen_export::RenderedPdfPage {
+                        page_id: page_id.clone(),
+                        width_pt,
+                        height_pt,
+                        width_px: 400,
+                        height_px: 400,
+                    }
                 })
                 .collect(),
         })
@@ -1678,5 +1707,162 @@ fn flattener_failure_maps_to_export_error_with_diagnostics() {
             .iter()
             .any(|diagnostic| diagnostic.code == "LUME0412"),
         "guardrail diagnostics collected before the failure must ride the error"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Print-geometry contract: the per-page margin predicate and the
+// painted-vs-declared tripwire (the 2026-07-15 phantom-margin bug class).
+// ---------------------------------------------------------------------------
+
+fn print_marks_profile(name: &str) -> ExportProfile {
+    ExportProfile {
+        name: name.to_owned(),
+        format: ExportFormat::Pdf,
+        pdf_intent: Some(PdfIntent::Print),
+        raster: None,
+        include_bleed: true,
+        embed_fonts: true,
+        include_marks: true,
+        imposition: None,
+        proof: false,
+        color: None,
+    }
+}
+
+fn page_boxes_of(bytes: &[u8]) -> Vec<[Vec<f32>; 3]> {
+    let document = lopdf::Document::load_mem(bytes).unwrap();
+    document
+        .get_pages()
+        .into_iter()
+        .map(|(_, page_id)| {
+            let dict = document.get_object(page_id).unwrap().as_dict().unwrap();
+            let read = |key: &[u8]| -> Vec<f32> {
+                dict.get(key)
+                    .unwrap()
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(|value| value.as_float().unwrap())
+                    .collect()
+            };
+            [read(b"MediaBox"), read(b"TrimBox"), read(b"BleedBox")]
+        })
+        .collect()
+}
+
+fn assert_box(actual: &[f32], expected: [f64; 4], label: &str) {
+    for (index, (a, e)) in actual.iter().zip(expected).enumerate() {
+        assert!(
+            (f64::from(*a) - e).abs() < 0.02,
+            "{label}[{index}]: expected {e:.3}, got {a:.3}"
+        );
+    }
+}
+
+/// The live 2026-07-15 bug: a marks request against a bleed-less page must
+/// degrade to plain, HONEST trim geometry — no phantom margin, no TrimBox
+/// cutting into the art — with LUME0412 still flagging the gap.
+#[test]
+fn print_marks_on_bleedless_page_degrade_to_exact_trim_boxes() {
+    let adapter = LumenExportAdapter::new()
+        .with_pdf_renderer(std::sync::Arc::new(RecordingPdfRenderer::default()));
+    let scene = scene_with_slot();
+
+    let result = adapter
+        .export(
+            &scene,
+            &ExportRequest {
+                profile: print_marks_profile("print_pdf_marks_no_bleed"),
+                page_ids: vec![PageId::from("page_a")],
+                purpose: ExportPurpose::UserDownload,
+            },
+        )
+        .expect("bleed-less marks export degrades, never corrupts");
+
+    // A4: 210x297mm = 595.276x841.890pt. All three boxes identical — the
+    // page has nothing to bleed, so nothing may claim a margin.
+    let boxes = page_boxes_of(&result.artifacts[0].bytes);
+    let a4 = [0.0, 0.0, 595.276, 841.890];
+    assert_box(&boxes[0][0], a4, "MediaBox");
+    assert_box(&boxes[0][1], a4, "TrimBox");
+    assert_box(&boxes[0][2], a4, "BleedBox");
+
+    assert!(
+        result
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == "LUME0412"),
+        "the missing-bleed warning must still fire"
+    );
+}
+
+/// Margin is a PER-PAGE decision: a mixed document gets the marks margin
+/// only on pages that actually carry a bleed rect.
+#[test]
+fn print_margin_is_per_page_in_mixed_documents() {
+    let adapter = LumenExportAdapter::new()
+        .with_pdf_renderer(std::sync::Arc::new(RecordingPdfRenderer::default()));
+    let mut scene = scene_with_slot();
+    // page_a gets a 3mm bleed; page_b stays bleed-less.
+    scene.pages.get_mut(&PageId::from("page_a")).unwrap().bleed = Some(Rect {
+        x: -3.0,
+        y: -3.0,
+        width: 216.0,
+        height: 303.0,
+    });
+
+    let result = adapter
+        .export(
+            &scene,
+            &ExportRequest {
+                profile: print_marks_profile("print_pdf_marks_mixed"),
+                page_ids: vec![PageId::from("page_a"), PageId::from("page_b")],
+                purpose: ExportPurpose::UserDownload,
+            },
+        )
+        .expect("mixed-bleed export");
+
+    let boxes = page_boxes_of(&result.artifacts[0].bytes);
+    // page_a: bleed 216x303mm = 612.284x858.898pt, +14pt margin per side;
+    // trim sits 3mm+14pt inside.
+    assert_box(&boxes[0][0], [0.0, 0.0, 640.284, 886.898], "page_a MediaBox");
+    assert_box(
+        &boxes[0][1],
+        [22.504, 22.504, 617.780, 864.394],
+        "page_a TrimBox",
+    );
+    assert_box(&boxes[0][2], [14.0, 14.0, 626.284, 872.898], "page_a BleedBox");
+    // page_b: plain trim, no margin.
+    let a4 = [0.0, 0.0, 595.276, 841.890];
+    assert_box(&boxes[1][0], a4, "page_b MediaBox");
+    assert_box(&boxes[1][1], a4, "page_b TrimBox");
+}
+
+/// The tripwire: a renderer whose painted page size disagrees with the
+/// declared boxes is a geometry-contract violation — the export fails
+/// loudly instead of shipping a file whose TrimBox miscuts the art.
+#[test]
+fn geometry_tripwire_rejects_renderer_box_disagreement() {
+    let adapter = LumenExportAdapter::new().with_pdf_renderer(std::sync::Arc::new(
+        RecordingPdfRenderer {
+            lie_about_geometry: true,
+            ..RecordingPdfRenderer::default()
+        },
+    ));
+    let scene = scene_with_slot();
+
+    let error = adapter
+        .export(
+            &scene,
+            &request(ExportFormat::Pdf, vec![PageId::from("page_a")]),
+        )
+        .unwrap_err();
+
+    assert_eq!(error.code, "export.pdf_geometry_mismatch");
+    assert!(
+        error.message.contains("page_a"),
+        "the offending page is named: {}",
+        error.message
     );
 }

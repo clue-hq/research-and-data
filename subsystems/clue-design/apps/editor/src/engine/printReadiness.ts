@@ -1,4 +1,4 @@
-import type { ExportProfile, Page } from "./contracts";
+import type { Diagnostic, ExportProfile, Page } from "./contracts";
 import type { PrintReadyReport, PrintReadyStatus } from "./exportRunner";
 
 /**
@@ -49,6 +49,52 @@ export function shouldShowPrintNudge({
     return false;
   }
   return profile.format === "pdf" && profile.pdf_intent === "print" && activePage.bleed === null;
+}
+
+/**
+ * The artboards in an export scope that would silently lose bleed + crop marks:
+ * a print-intent PDF request against a page with no bleed rect. The server skips
+ * the marks and emits LUME0412 for exactly these pages, so the topbar popover
+ * warns about them BEFORE the export runs. Returns [] for any non-print or
+ * non-PDF request (bleed/marks are print-PDF-only), so a non-empty result means
+ * "show the nudge". Same `page.bleed === null` predicate as `shouldShowPrintNudge`
+ * — kept here as the single source so the visual components stay policy-free.
+ */
+export function bleedlessPrintPages({
+  format,
+  pdfIntent,
+  pages
+}: {
+  format: ExportProfile["format"];
+  pdfIntent: "preview" | "print";
+  pages: readonly Page[];
+}): Page[] {
+  if (format !== "pdf" || pdfIntent !== "print") {
+    return [];
+  }
+  return pages.filter((page) => page.bleed === null);
+}
+
+/**
+ * The print-readiness report's non-pass rules as editor diagnostics, so a
+ * topbar export that came back warn/fail lights the always-visible diagnostics
+ * alert pill instead of vanishing (the silent topbar path clears export
+ * diagnostics on success). Empty for a clean/absent report. `fail` rules are
+ * errors (they light the pill); `warn` rules are warnings (visible in the
+ * Diagnostics panel). The server rule id is the diagnostic code.
+ */
+export function printReadyDiagnostics(report: PrintReadyReport | null): Diagnostic[] {
+  if (!report || report.status === "pass") {
+    return [];
+  }
+  return printReadyNotableRules(report).map((rule) => ({
+    severity: rule.status === "fail" ? "error" : "warning",
+    phase: "export",
+    code: rule.id,
+    message: rule.detail || `Print-readiness rule ${rule.id} did not pass.`,
+    subject: { kind: "document" },
+    hint: "Enable “Print & bleed” and add a bleed area to the artboard, then re-export for a print-ready PDF."
+  }));
 }
 
 /** Server rule id declared when bleed/crop marks are requested on an imposed

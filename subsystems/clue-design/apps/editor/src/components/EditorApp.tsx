@@ -36,6 +36,7 @@ import appMark from "../app/icon.svg";
 import { ExportMenu } from "./ExportMenu";
 import { VersionHistoryDialog } from "./HistoryPanel";
 import { downloadDataUrl } from "./exportArtifactActions";
+import { printReadyDiagnostics } from "@/engine/printReadiness";
 import { emptyScene } from "@/fixtures/emptyScene";
 import type { BrandCompatibilityRunner } from "@/engine/brandCompatibility";
 import type { BrandGovernanceRunner } from "@/engine/brandGovernance";
@@ -713,6 +714,14 @@ export default function EditorApp({
     if (exportResult.status === "ok") {
       for (const artifact of exportResult.artifacts) {
         downloadDataUrl(artifact.data_url, artifact.filename);
+      }
+      // The silent topbar path clears export diagnostics on success, so a
+      // print-intent PDF that came back warn/fail (e.g. bleed_present + LUME0412
+      // on an artboard with no bleed rect) would otherwise vanish. Surface those
+      // rules through the always-visible diagnostics alert pill.
+      const printDiagnostics = printReadyDiagnostics(exportResult.printReady);
+      if (printDiagnostics.length > 0) {
+        setDiagnostics(printDiagnostics);
       }
     }
   }, [exportResult]);
@@ -1478,8 +1487,8 @@ export default function EditorApp({
               </button>
               {isExportMenuOpen ? (
                 <ExportMenu
-                  pageCount={Object.keys(scene.pages).length}
-                  activePageName={activePage?.name ?? null}
+                  pages={Object.values(scene.pages)}
+                  activePageId={activePageId}
                   isExporting={isExporting}
                   onDownload={(profile, scope) => {
                     setIsExportMenuOpen(false);

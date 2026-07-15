@@ -23,7 +23,7 @@ pub use fonts::{EmbeddedFontFace, FontEmbedError, FontFaceResolver, FontUsage};
 pub use pdf::PdfExportAdapter;
 pub use pdf_boxes::{
     apply_print_boxes, finalize_print_pdf, page_boxes_for,
-    page_boxes_with_margin, print_margin_pt, PageBoxes, PdfxDeclarations,
+    page_boxes_with_margin, print_margin_for_page, PageBoxes, PdfxDeclarations,
     MARK_GAP_PT, MARK_MARGIN_PT,
 };
 pub use imposition::{booklet_sheet_sides, BookletSheetSide};
