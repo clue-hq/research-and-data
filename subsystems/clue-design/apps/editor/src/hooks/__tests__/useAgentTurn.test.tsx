@@ -784,7 +784,23 @@ describe("useAgentTurn — live design streaming reveal theater (S2)", () => {
     });
   };
 
-  it("(a) the pump paces a batch one reveal-step at a time on the ~100ms cadence (N ops → N setScene over time, deduping replays)", async () => {
+  // S2.1 uncompressed per-step timeline for a bounds-less insert (the stream
+  // engine sets no computed bounds, so drawMs falls back to ADD_PAGE_DRAW_MS):
+  //   firstLead 120 → runStep (engine applies, content HELD) → +travel(200)
+  //   +draw(300) = materialize@+500 (held setScene fires) → +pause(120) → next.
+  const FIRST_LEAD = 120;
+  const TRAVEL = 200;
+  const DRAW = 300; // ADD_PAGE_DRAW_MS fallback for bounds-less inserts
+  const PAUSE = 120;
+  const APPLY_TO_MATERIALIZE = TRAVEL + DRAW; // 500
+  const STEP_ADVANCE = APPLY_TO_MATERIALIZE + PAUSE; // 620
+
+  const streamTitlesFrom = (setSceneMock: ReturnType<typeof vi.fn>) =>
+    setSceneMock.mock.calls
+      .map((call) => (call[0] as Scene)?.meta?.title)
+      .filter((title) => typeof title === "string" && /^n1(,n\d+)*$/.test(title as string));
+
+  it("(a) the pump paces one element at a time, holding the content until the box finishes drawing (deduping replays)", async () => {
     const ctl = controllableRunner();
     const engine = createStreamEngine();
     const { deps } = buildDeps({ agentRunner: ctl.runner, engineRef: { current: engine } });
@@ -802,22 +818,27 @@ describe("useAgentTurn — live design streaming reveal theater (S2)", () => {
       ctl.emit(compileEvent(1, [insertOp("n1"), insertOp("n2"), insertOp("n3")]));
     });
 
-    // Paced from the start: nothing applies until the first tick.
+    // Paced from the start: nothing applies until the first lead elapses.
     expect(engine.applyLog.length).toBe(0);
-    tick(50);
-    expect(engine.applyLog.length).toBe(0); // cadence honored — no step at 50ms
-    tick(50);
+    tick(FIRST_LEAD - 1);
+    expect(engine.applyLog.length).toBe(0);
+    tick(1); // firstLead → step 1 applies to the ENGINE (ahead of display)…
     expect(engine.applyLog).toEqual([[insertOp("n1")]]);
-    tick(100);
+    expect(engine.scene.meta.title).toBe("n1");
+    // …but the content is HELD: the display has not yet been shown "n1".
+    expect(streamTitlesFrom(setSceneMock)).toEqual([]);
+
+    tick(APPLY_TO_MATERIALIZE); // box finishes drawing → held setScene fires
+    expect(streamTitlesFrom(setSceneMock)).toEqual(["n1"]);
+
+    tick(PAUSE); // step 2 applies
     expect(engine.applyLog.length).toBe(2);
-    tick(100);
+    tick(APPLY_TO_MATERIALIZE);
+    tick(PAUSE); // step 3 applies
+    tick(APPLY_TO_MATERIALIZE);
     expect(engine.applyLog).toEqual([[insertOp("n1")], [insertOp("n2")], [insertOp("n3")]]);
     expect(engine.scene.meta.title).toBe("n1,n2,n3");
-
-    const streamTitles = setSceneMock.mock.calls
-      .map((call) => (call[0] as Scene)?.meta?.title)
-      .filter((title) => title === "n1" || title === "n1,n2" || title === "n1,n2,n3");
-    expect(streamTitles).toEqual(["n1", "n1,n2", "n1,n2,n3"]);
+    expect(streamTitlesFrom(setSceneMock)).toEqual(["n1", "n1,n2", "n1,n2,n3"]);
     expect(result.current.agentStream).toMatchObject({
       active: true,
       lastAppliedSeq: 1,
@@ -827,29 +848,43 @@ describe("useAgentTurn — live design streaming reveal theater (S2)", () => {
     });
   });
 
-  it("(b) the per-batch duration cap compresses the pace so a large batch fits MAX_BATCH_REVEAL_MS", async () => {
+  it("(b) a large batch compresses to fit the cap, but never below the 250ms/element floor", async () => {
+    // 40 elements uncompressed ≈ 40 × 620 ≈ 24.8s (> 15s cap): the pace
+    // compresses so the whole batch drains within the cap.
     const ctl = controllableRunner();
     const engine = createStreamEngine();
     const { deps } = buildDeps({ agentRunner: ctl.runner, engineRef: { current: engine } });
     const { result } = renderHook(() => useAgentTurn(deps));
-
     await act(async () => {
       void result.current.sendAgentPrompt("build");
     });
-    // 100 steps × 100ms would be 10s (> 5s cap) → pace compresses to 50ms/step.
-    const ops = Array.from({ length: 100 }, (_, index) => insertOp(`n${index}`));
     act(() => {
-      ctl.emit(compileEvent(1, ops));
+      ctl.emit(compileEvent(1, Array.from({ length: 40 }, (_, i) => insertOp(`n${i}`))));
     });
+    // Compressed: the first element applies well before the uncompressed 120ms
+    // first-lead, and the whole batch drains within MAX_BATCH_REVEAL_MS.
+    tick(60);
+    expect(engine.applyLog.length).toBeGreaterThanOrEqual(1);
+    tick(15000);
+    expect(engine.applyLog.length).toBe(40);
+    expect(result.current.agentStream.stepsApplied).toBe(40);
 
-    tick(49);
-    expect(engine.applyLog.length).toBe(0); // interval is 50ms, not 100
-    tick(1);
-    expect(engine.applyLog.length).toBe(1);
-    // The whole batch drains within the cap.
-    tick(50 * 99);
-    expect(engine.applyLog.length).toBe(100);
-    expect(result.current.agentStream.stepsApplied).toBe(100);
+    // The floor holds: 200 elements CANNOT be over-compressed into the cap —
+    // each element still takes at least ~250ms, so the batch overruns the cap.
+    const ctl2 = controllableRunner();
+    const engine2 = createStreamEngine();
+    const { deps: deps2 } = buildDeps({ agentRunner: ctl2.runner, engineRef: { current: engine2 } });
+    const { result: result2 } = renderHook(() => useAgentTurn(deps2));
+    await act(async () => {
+      void result2.current.sendAgentPrompt("build");
+    });
+    act(() => {
+      ctl2.emit(compileEvent(1, Array.from({ length: 200 }, (_, i) => insertOp(`m${i}`))));
+    });
+    tick(15000);
+    expect(engine2.applyLog.length).toBeLessThan(200); // floor kept it from fitting
+    tick(60000);
+    expect(engine2.applyLog.length).toBe(200); // …but it still fully drains
   });
 
   it("(c) a new batch arriving mid-reveal fast-forwards the pending backlog in one apply, then paces the new batch", async () => {
@@ -864,7 +899,7 @@ describe("useAgentTurn — live design streaming reveal theater (S2)", () => {
     act(() => {
       ctl.emit(compileEvent(1, [insertOp("n1"), insertOp("n2"), insertOp("n3")]));
     });
-    tick(100); // n1 applied; n2 + n3 still queued
+    tick(FIRST_LEAD); // n1 applied to the engine; n2 + n3 still queued
     expect(engine.scene.meta.title).toBe("n1");
 
     // A newer batch arrives while the backlog is pending → drain it instantly.
@@ -875,7 +910,7 @@ describe("useAgentTurn — live design streaming reveal theater (S2)", () => {
     // The drain was ONE apply of the remaining ops, not two paced ticks.
     expect(engine.applyLog).toEqual([[insertOp("n1")], [insertOp("n2"), insertOp("n3")]]);
 
-    tick(100); // now the new batch paces
+    tick(FIRST_LEAD + APPLY_TO_MATERIALIZE); // now the new batch paces
     expect(engine.scene.meta.title).toBe("n1,n2,n3,n4");
   });
 
@@ -894,7 +929,7 @@ describe("useAgentTurn — live design streaming reveal theater (S2)", () => {
     act(() => {
       streamed.emit(compileEvent(1, [insertOp("n1"), insertOp("n2")]));
     });
-    tick(100); // only n1 revealed; n2 still queued behind the pump
+    tick(FIRST_LEAD); // n1 applied to the engine; n2 still queued behind the pump
     expect(streamEngine.scene.meta.title).toBe("n1");
     await act(async () => {
       streamed.resolve(proposedResult([insertOp("n1"), insertOp("n2")]));
@@ -940,9 +975,9 @@ describe("useAgentTurn — live design streaming reveal theater (S2)", () => {
     act(() => {
       ctl.emit(compileEvent(1, [insertOp("n1"), insertOp("boom"), insertOp("n3")]));
     });
-    tick(100); // n1
-    tick(100); // boom → throws → stream broken, pump cancelled
-    tick(100); // n3 must NOT apply
+    tick(FIRST_LEAD); // n1 applies
+    tick(STEP_ADVANCE); // materialize n1, then boom applies → throws → stream broken
+    tick(STEP_ADVANCE); // n3 must NOT apply (pump cancelled)
 
     expect(result.current.agentStream.brokenStream).toBe(true);
     expect(result.current.agentStream.stepsApplied).toBe(1);
@@ -958,7 +993,7 @@ describe("useAgentTurn — live design streaming reveal theater (S2)", () => {
     consoleError.mockRestore();
   });
 
-  it("(f) each reveal-step exposes metadata: the node id, its page, its kind, and its computed bounds", async () => {
+  it("(f) each reveal-step exposes metadata (node id, page, kind, computed bounds) plus the phase timing", async () => {
     const bounds = { x: 24, y: 32, width: 180, height: 30 };
     const ctl = controllableRunner();
     const engine = createRevealMetadataEngine(bounds);
@@ -971,15 +1006,64 @@ describe("useAgentTurn — live design streaming reveal theater (S2)", () => {
     act(() => {
       ctl.emit(compileEvent(3, [insertOp("n1")]));
     });
-    tick(100);
+    tick(FIRST_LEAD); // step applies + publishes the reveal
 
-    expect(result.current.agentStream.currentReveal).toEqual({
+    const reveal = result.current.agentStream.currentReveal;
+    expect(reveal).toMatchObject({
       seq: 3,
       kind: "insert_node",
       nodeId: "node_n1",
       pageId: "page_a4",
-      bounds
+      bounds,
+      reducedMotion: false
     });
+    // Uncompressed single step: travel + fade are the nominal constants; the
+    // draw scales with the box diagonal into the [DRAW_MIN, DRAW_MAX] band.
+    expect(reveal?.travelMs).toBe(200);
+    expect(reveal?.materializeFadeMs).toBe(250);
+    expect(reveal?.drawMs).toBeGreaterThanOrEqual(250);
+    expect(reveal?.drawMs).toBeLessThanOrEqual(500);
+  });
+
+  it("(f2) an add_page step materializes IMMEDIATELY (the artboard IS the placeholder) while insert_node steps stay held through their draw; the reveal carries its label", async () => {
+    // Review fix (S2.1): a held page has no artboard in the DISPLAYED scene for
+    // the chrome to anchor to, so pages must land instantly with the outline
+    // drawing over them — only node content is held back.
+    const addPageOp = {
+      kind: "add_page",
+      page: { id: "page_new" }
+    } as unknown as Operation;
+    const ctl = controllableRunner();
+    const engine = createStreamEngine();
+    const { deps } = buildDeps({ agentRunner: ctl.runner, engineRef: { current: engine } });
+    const setSceneMock = deps.setScene as unknown as ReturnType<typeof vi.fn>;
+    const { result } = renderHook(() => useAgentTurn(deps));
+
+    await act(async () => {
+      void result.current.sendAgentPrompt("build");
+    });
+    act(() => {
+      ctl.emit(compileEvent(1, [addPageOp, insertOp("n1")]));
+    });
+
+    // streamTitlesFrom filters to insert-marker chains, so this test reads the
+    // raw title sequence (add_page markers included) directly.
+    const allTitles = () =>
+      setSceneMock.mock.calls
+        .map((call) => (call[0] as Scene)?.meta?.title)
+        .filter((title): title is string => typeof title === "string" && title.length > 0);
+
+    tick(FIRST_LEAD); // step 1 (add_page) applies…
+    // …and materializes IMMEDIATELY (no hold): the artboard placeholder is on
+    // the displayed scene while its whole-artboard outline draws over it.
+    expect(allTitles()).toEqual(["add_page"]);
+    expect(result.current.agentStream.currentReveal?.label).toBe("artboard");
+
+    tick(STEP_ADVANCE); // add_page draw+pause elapse → step 2 (insert n1) applies
+    // The node step is HELD — nothing new displayed until its box finishes.
+    expect(allTitles()).toEqual(["add_page"]);
+    tick(APPLY_TO_MATERIALIZE); // n1's box completes → held content lands
+    expect(allTitles()).toEqual(["add_page", "add_page,n1"]);
   });
 
   it("(g) a failed run mid-reveal cancels the pump and restores the pre-turn base like Reject (replaceScene with base)", async () => {
@@ -995,7 +1079,7 @@ describe("useAgentTurn — live design streaming reveal theater (S2)", () => {
     act(() => {
       ctl.emit(compileEvent(1, [insertOp("n1"), insertOp("n2")]));
     });
-    tick(100); // n1 applied; n2 still queued
+    tick(FIRST_LEAD); // n1 applied to the engine; n2 still queued
     expect(engine.scene.meta.title).toBe("n1");
 
     await act(async () => {
@@ -1008,7 +1092,7 @@ describe("useAgentTurn — live design streaming reveal theater (S2)", () => {
     expect(restored).toBeDefined();
     expect(result.current.agentStream.active).toBe(false);
     // The cancelled pump never fires again.
-    tick(500);
+    tick(1000);
     expect(engine.scene.meta.title).toBe("n1");
   });
 
@@ -1036,6 +1120,47 @@ describe("useAgentTurn — live design streaming reveal theater (S2)", () => {
     expect(engine.applyLog).toEqual([]);
     expect(result.current.runEvents.map((event) => event.seq)).toEqual([1, 2]);
     expect(result.current.agentStream).toMatchObject({ active: true, stepsApplied: 0 });
+  });
+
+  it("(i) done arriving DURING the draw phase (engine applied, setScene HELD) reconciles to the canonical preview with no streamed frame shown after", async () => {
+    // The display-lags-engine window: the step's ops are applied to the engine
+    // but its held setScene has NOT fired yet. A `done` landing here must never
+    // leak that un-materialized streamed frame — it reconciles from base.
+    const ctl = controllableRunner();
+    const engine = createStreamEngine();
+    const { deps } = buildDeps({ agentRunner: ctl.runner, engineRef: { current: engine } });
+    const setSceneMock = deps.setScene as unknown as ReturnType<typeof vi.fn>;
+    const { result } = renderHook(() => useAgentTurn(deps));
+
+    await act(async () => {
+      void result.current.sendAgentPrompt("build");
+    });
+    act(() => {
+      ctl.emit(compileEvent(1, [insertOp("n1")]));
+    });
+    // Advance INTO the draw phase: the engine has applied "n1", but we are before
+    // materialize (FIRST_LEAD < now < FIRST_LEAD + APPLY_TO_MATERIALIZE).
+    tick(FIRST_LEAD + 100);
+    expect(engine.scene.meta.title).toBe("n1"); // engine ran ahead
+    // The held content was NOT shown to the display yet.
+    expect(streamTitlesFrom(setSceneMock)).toEqual([]);
+
+    // `done` lands mid-draw → reconcile to the canonical proposal from base.
+    await act(async () => {
+      ctl.resolve(proposedResult([insertOp("n1")]));
+    });
+    expect(result.current.agentPreview?.previewScene.meta.title).toBe("n1");
+    expect(result.current.agentPreview?.baseScene.meta.title).toBe("");
+    // The single "n1" frame the display ever sees is the CANONICAL preview
+    // (applied from base), not the held streamed frame.
+    const n1FramesAfterDone = streamTitlesFrom(setSceneMock).filter((title) => title === "n1").length;
+    expect(n1FramesAfterDone).toBe(1);
+
+    // The stale materialize timer never fires: advancing past its due time adds
+    // no second streamed frame after done.
+    tick(APPLY_TO_MATERIALIZE + PAUSE + 1000);
+    expect(streamTitlesFrom(setSceneMock).filter((title) => title === "n1").length).toBe(1);
+    expect(result.current.agentStream.active).toBe(false);
   });
 });
 

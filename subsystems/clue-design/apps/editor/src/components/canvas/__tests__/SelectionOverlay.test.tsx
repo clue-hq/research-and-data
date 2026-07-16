@@ -1,5 +1,5 @@
-import { render } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { act, render } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { SelectionOverlay, focalFromScreenPoint } from "../SelectionOverlay";
 
 const pageOrigin = { x: 100, y: 50 };
@@ -242,50 +242,131 @@ describe("SelectionOverlay (Wave 3 C3d)", () => {
     expect(Number(dot.getAttribute("cy"))).toBeCloseTo(pageOrigin.y + 40, 6);
   });
 
-  it("(h) renders the reveal create-flash + design cursor for a streamed reveal state", () => {
-    const { container, rerender } = render(
-      <SelectionOverlay
-        selection={null}
-        pageOrigin={pageOrigin}
-        zoom={1}
-        reveal={{
-          seq: 5,
-          flashBox: { x: 120, y: 90, width: 200, height: 60 },
-          cursor: { x: 120, y: 90 },
-          label: "designing…"
-        }}
-      />
-    );
-    // The flash lands on the revealed node's screen box (no toScreen — already px).
-    const flash = container.querySelector('[data-role="agent-reveal-flash"]')!;
-    expect(flash).not.toBeNull();
-    expect(Number(flash.getAttribute("x"))).toBe(120);
-    expect(Number(flash.getAttribute("width"))).toBe(200);
-    // The cursor glyph + status chip render and the chip carries the copy.
-    const cursor = container.querySelector('[data-role="agent-reveal-cursor"]')!;
-    expect(cursor).not.toBeNull();
-    expect((cursor as HTMLElement).style.transform).toContain("translate(120px, 90px)");
-    expect(container.querySelector(".agent-reveal-cursor-glyph")).not.toBeNull();
-    expect(container.querySelector(".agent-reveal-cursor-chip-text")?.textContent).toBe("designing…");
+  describe("(h) draw-the-box reveal chrome (S2.1)", () => {
+    afterEach(() => {
+      vi.useRealTimers();
+    });
 
-    // A next reveal moves the cursor (glide target updates) — same element, no
-    // selection ever drawn (reveal chrome is independent of selection).
-    rerender(
-      <SelectionOverlay
-        selection={null}
-        pageOrigin={pageOrigin}
-        zoom={1}
-        reveal={{
-          seq: 6,
-          flashBox: { x: 300, y: 200, width: 100, height: 40 },
-          cursor: { x: 300, y: 200 },
-          label: "designing…"
-        }}
-      />
-    );
-    const movedCursor = container.querySelector('[data-role="agent-reveal-cursor"]')!;
-    expect((movedCursor as HTMLElement).style.transform).toContain("translate(300px, 200px)");
-    expect(container.querySelector('[data-role="selection-box"]')).toBeNull();
+    const cornerReveal = (seq: number, overrides = {}) => ({
+      seq,
+      flashBox: { x: 120, y: 90, width: 200, height: 60 },
+      label: "text · headline",
+      drawMode: "corner" as const,
+      travelMs: 200,
+      drawMs: 300,
+      materializeFadeMs: 250,
+      reducedMotion: false,
+      cursorFrom: null,
+      ...overrides
+    });
+
+    it("draws the outline top-left→bottom-right, riding the cursor to BR, then fades after materialize", () => {
+      vi.useFakeTimers();
+      const { container } = render(
+        <SelectionOverlay selection={null} pageOrigin={pageOrigin} zoom={1} reveal={cornerReveal(5)} />
+      );
+      const group = () => container.querySelector('[data-role="agent-reveal"]') as HTMLElement;
+      const box = () => container.querySelector('[data-role="agent-reveal-box"]') as HTMLElement;
+      const cursor = () => container.querySelector('[data-role="agent-reveal-cursor"]') as HTMLElement;
+
+      // The box lands on the revealed node's screen box (already px — no toScreen).
+      expect(Number(box().getAttribute("x"))).toBe(120);
+      expect(Number(box().getAttribute("width"))).toBe(200);
+      // The per-element draw/fade durations feed CSS as vars on the group.
+      expect(group().style.getPropertyValue("--reveal-draw-ms")).toBe("300ms");
+      expect(group().style.getPropertyValue("--reveal-fade-ms")).toBe("250ms");
+      // The label chip names the element.
+      expect(container.querySelector(".agent-reveal-label-text")?.textContent).toBe("text · headline");
+      expect(container.querySelector(".agent-reveal-cursor-glyph")).not.toBeNull();
+
+      // travel stage: box collapsed (not drawn), cursor at the top-left.
+      expect(group().getAttribute("data-stage")).toBe("travel");
+      expect(box().classList.contains("is-drawn")).toBe(false);
+      act(() => {
+        vi.advanceTimersByTime(1); // the mount "glide" tick fires
+      });
+      expect(cursor().style.getPropertyValue("--reveal-cursor-x")).toBe("120px");
+      expect(cursor().style.getPropertyValue("--reveal-cursor-ms")).toBe("200ms");
+
+      // draw stage: box drags to full (is-drawn), cursor rides the bottom-right.
+      act(() => {
+        vi.advanceTimersByTime(200);
+      });
+      expect(group().getAttribute("data-stage")).toBe("draw");
+      expect(box().classList.contains("is-drawn")).toBe(true);
+      expect(box().classList.contains("is-fading")).toBe(false);
+      expect(cursor().style.getPropertyValue("--reveal-cursor-x")).toBe("320px"); // 120 + 200
+      expect(cursor().style.getPropertyValue("--reveal-cursor-y")).toBe("150px"); // 90 + 60
+      expect(cursor().style.getPropertyValue("--reveal-cursor-ms")).toBe("300ms");
+
+      // materialize stage: the outline fades once the content has landed.
+      act(() => {
+        vi.advanceTimersByTime(300);
+      });
+      expect(group().getAttribute("data-stage")).toBe("materialize");
+      expect(box().classList.contains("is-fading")).toBe(true);
+      // Never draws a selection box — reveal chrome is independent of selection.
+      expect(container.querySelector('[data-role="selection-box"]')).toBeNull();
+    });
+
+    it("keys the chrome on seq so a new reveal restarts the draw machine", () => {
+      vi.useFakeTimers();
+      const { container, rerender } = render(
+        <SelectionOverlay selection={null} pageOrigin={pageOrigin} zoom={1} reveal={cornerReveal(5)} />
+      );
+      act(() => {
+        vi.advanceTimersByTime(600); // first reveal fully materialized
+      });
+      expect(
+        container.querySelector('[data-role="agent-reveal"]')?.getAttribute("data-stage")
+      ).toBe("materialize");
+
+      rerender(
+        <SelectionOverlay
+          selection={null}
+          pageOrigin={pageOrigin}
+          zoom={1}
+          reveal={cornerReveal(6, { flashBox: { x: 300, y: 200, width: 100, height: 40 } })}
+        />
+      );
+      // The seq-keyed remount restarts at travel for the new element.
+      expect(
+        container.querySelector('[data-role="agent-reveal"]')?.getAttribute("data-stage")
+      ).toBe("travel");
+    });
+
+    it("an add_page reveal renders a whole-artboard outline with no corner cursor", () => {
+      vi.useFakeTimers();
+      const { container } = render(
+        <SelectionOverlay
+          selection={null}
+          pageOrigin={pageOrigin}
+          zoom={1}
+          reveal={cornerReveal(7, { drawMode: "artboard", label: "artboard · Page 1" })}
+        />
+      );
+      const box = container.querySelector('[data-role="agent-reveal-box"]') as HTMLElement;
+      expect(box.classList.contains("is-artboard")).toBe(true);
+      expect(box.classList.contains("is-corner")).toBe(false);
+      // No corner-drag cursor for a whole-artboard placeholder.
+      expect(container.querySelector('[data-role="agent-reveal-cursor"]')).toBeNull();
+    });
+
+    it("reduced motion renders a static outline with no travel/draw stages", () => {
+      const { container } = render(
+        <SelectionOverlay
+          selection={null}
+          pageOrigin={pageOrigin}
+          zoom={1}
+          reveal={cornerReveal(8, { reducedMotion: true })}
+        />
+      );
+      const group = container.querySelector('[data-role="agent-reveal"]') as HTMLElement;
+      const box = container.querySelector('[data-role="agent-reveal-box"]') as HTMLElement;
+      // No animated stages: straight to the settled, static outline.
+      expect(group.getAttribute("data-stage")).toBe("materialize");
+      expect(box.classList.contains("is-static")).toBe(true);
+    });
   });
 
   it("renders no reveal chrome when reveal is null", () => {

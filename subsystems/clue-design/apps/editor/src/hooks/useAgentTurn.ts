@@ -13,6 +13,7 @@ import type {
   ExportProfile,
   NodeId,
   Operation,
+  Page,
   PageId,
   Rect,
   Scene
@@ -120,6 +121,22 @@ export interface AgentStreamReveal {
   pageId: PageId | null;
   /** Scene-unit layout bounds of the revealed node; null for a page/silent step.*/
   bounds: Rect | null;
+  /** The label-chip copy ("text · headline"), derived from the APPLIED scene at
+   * publish time — the displayed scene lags the engine during the draw window
+   * (the S2.1 hold-back), so a display-side lookup would not find the node. */
+  label: string;
+  /** S2.1 draw-the-box choreography timing (ms) for THIS reveal, already
+   * compression- and reduced-motion-adjusted by the pump: the cursor travels to
+   * the corner over `travelMs`, the accent outline is dragged out to the full
+   * bbox over `drawMs`, then the content materializes and the outline fades over
+   * `materializeFadeMs`. The pump holds `setScene` until `travelMs + drawMs`
+   * elapse, so the content lands exactly when the box finishes drawing. */
+  travelMs: number;
+  drawMs: number;
+  materializeFadeMs: number;
+  /** prefers-reduced-motion for the run: the chrome renders a static outline
+   * (no travel/draw animation) and the pump collapses to one fast beat. */
+  reducedMotion: boolean;
 }
 
 /** Live-design-streaming: the minimal streaming status the hook exposes so the
@@ -155,12 +172,102 @@ const idleAgentStreamStatus = (): AgentStreamStatus => ({
   revealQueueLength: 0
 });
 
-/** S2 pump cadence: one reveal-step every ~100 ms (moda-parity element-by-
- * element materialization), but never let a single streamed batch's reveal
- * take longer than the cap — a large batch compresses its per-step pace to fit
- * (per-batch duration cap, not a fixed cadence). */
-const REVEAL_CADENCE_MS = 100;
-const MAX_BATCH_REVEAL_MS = 5000;
+/** S2.1 draw-the-box choreography (moda-parity calm cadence). Per element the
+ * cursor travels to the top-left, an accent outline is dragged out to the
+ * element's full bbox, then the content materializes inside it and the outline
+ * fades — ~0.7–0.9 s per element uncompressed. */
+const TRAVEL_MS = 200; // cursor glide to the new element's corner
+const DRAW_MIN_MS = 250; // a small chip
+const DRAW_MAX_MS = 500; // a full-width hero (scaled by box diagonal, below)
+const ADD_PAGE_DRAW_MS = 300; // whole-artboard placeholder outline (no corner-drag)
+const MATERIALIZE_FADE_MS = 250; // outline fade after the content lands (CSS)
+const INTER_STEP_PAUSE_MS = 120; // calm gap between elements
+/** Per-batch duration cap: when steps × per-step exceeds it, the per-element
+ * pace compresses proportionally — but never below MIN_STEP_TOTAL_MS per element
+ * (and the draw is never dropped entirely). The new-batch fast-forward still
+ * bypasses the theater wholesale. */
+const MAX_BATCH_REVEAL_MS = 15000;
+const MIN_STEP_TOTAL_MS = 250;
+/** prefers-reduced-motion: collapse travel+draw to one fast beat with no
+ * animated chrome (the CSS renders a static outline). */
+const REDUCED_MOTION_STEP_MS = 80;
+
+/** Read the OS reduced-motion preference once per run (armStream). Defensive
+ * around SSR / stubbed environments — a missing matchMedia means full motion. */
+const prefersReducedMotion = (): boolean => {
+  try {
+    return (
+      typeof window !== "undefined" &&
+      typeof window.matchMedia === "function" &&
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches
+    );
+  } catch {
+    return false;
+  }
+};
+
+/** The reveal draw duration scales with the element's footprint: a small chip
+ * (short diagonal relative to the page) draws in ~DRAW_MIN_MS, a full-bleed hero
+ * in ~DRAW_MAX_MS. `add_page` placeholders (and any node whose bounds/page are
+ * unknown) use a fixed whole-artboard beat. Bounds and `page.size` share the
+ * pre-unitScale page-unit space, so the ratio is zoom-independent. */
+function drawMsForReveal(kind: string, bounds: Rect | null, page: Page | undefined): number {
+  if (kind === "add_page" || !bounds || !page) {
+    return ADD_PAGE_DRAW_MS;
+  }
+  const pageDiagonal = Math.hypot(page.size.width, page.size.height);
+  const boxDiagonal = Math.hypot(bounds.width, bounds.height);
+  const fraction = pageDiagonal > 0 ? Math.min(1, boxDiagonal / pageDiagonal) : 0;
+  return DRAW_MIN_MS + (DRAW_MAX_MS - DRAW_MIN_MS) * fraction;
+}
+
+/** The per-step phase timing, after batch compression and the reduced-motion
+ * collapse. `pauseMs` is the calm gap before the NEXT step (not carried in the
+ * reveal — the chrome only needs travel/draw/fade). */
+interface RevealTiming {
+  travelMs: number;
+  drawMs: number;
+  pauseMs: number;
+  materializeFadeMs: number;
+}
+
+function revealTiming(
+  kind: string,
+  bounds: Rect | null,
+  page: Page | undefined,
+  compression: number,
+  reducedMotion: boolean
+): RevealTiming {
+  if (reducedMotion) {
+    // One fast beat, no chrome animation; the draw still exists (never zero).
+    return { travelMs: 0, drawMs: REDUCED_MOTION_STEP_MS, pauseMs: 0, materializeFadeMs: 0 };
+  }
+  let travelMs = TRAVEL_MS * compression;
+  let drawMs = drawMsForReveal(kind, bounds, page) * compression;
+  let pauseMs = INTER_STEP_PAUSE_MS * compression;
+  let materializeFadeMs = MATERIALIZE_FADE_MS * compression;
+  // Floor: never reveal an element faster than MIN_STEP_TOTAL_MS total (and so
+  // never drop the draw) — if compression pushed the step under the floor, scale
+  // the whole step back up proportionally.
+  const total = travelMs + drawMs + pauseMs;
+  if (total > 0 && total < MIN_STEP_TOTAL_MS) {
+    const boost = MIN_STEP_TOTAL_MS / total;
+    travelMs *= boost;
+    drawMs *= boost;
+    pauseMs *= boost;
+    materializeFadeMs *= boost;
+  }
+  return { travelMs, drawMs, pauseMs, materializeFadeMs };
+}
+
+/** The batch-wide compression factor: if pacing every step at its worst-case
+ * nominal duration would overrun the cap, shrink every step by this factor so
+ * the whole batch fits MAX_BATCH_REVEAL_MS (the per-step floor still applies). */
+function batchCompression(stepCount: number): number {
+  const nominalPerStep = TRAVEL_MS + DRAW_MAX_MS + INTER_STEP_PAUSE_MS;
+  const totalNominal = stepCount * nominalPerStep;
+  return totalNominal > MAX_BATCH_REVEAL_MS ? MAX_BATCH_REVEAL_MS / totalNominal : 1;
+}
 
 /** A single paced reveal-step: the ops applied together this beat (a run of
  * silent non-visual ops folded onto the one visual op so there are no dead
@@ -202,13 +309,32 @@ function stepsFromOps(seq: number, ops: Operation[]): RevealStep[] {
   return steps;
 }
 
-/** Derive the chrome/auto-follow metadata for a revealed step from the scene it
+/** The geometry half of a reveal (kind + node/page + bounds + label), before
+ * the pump attaches the phase timing. */
+type RevealGeometry = Pick<
+  AgentStreamReveal,
+  "seq" | "kind" | "nodeId" | "pageId" | "bounds" | "label"
+>;
+
+/** Trim an id-ish suffix ("numeral_a" → "numeral") and cap the length so the
+ * reveal label chip stays compact. */
+function prettyRevealName(raw: string): string {
+  const stripped = raw.replace(/_[a-z0-9]+$/i, "");
+  const name = stripped.length > 0 ? stripped : raw;
+  return name.length > 18 ? `${name.slice(0, 17)}…` : name;
+}
+
+/** Derive the chrome/auto-follow geometry for a revealed step from the scene it
  * produced. `add_page` → the new page (whole-artboard flash, no node bounds);
- * `insert_node` → the materialized node + its computed bounds + owning page. */
-function revealFromStep(step: RevealStep, scene: Scene): AgentStreamReveal {
+ * `insert_node` → the materialized node + its computed bounds + owning page.
+ * The label is derived HERE, from the applied scene — the displayed scene lags
+ * the engine during the draw window, so it cannot answer this lookup. */
+function revealFromStep(step: RevealStep, scene: Scene): RevealGeometry {
   const op = step.visualOp;
   if (op?.kind === "add_page") {
-    return { seq: step.seq, kind: op.kind, nodeId: null, pageId: op.page.id, bounds: null };
+    const pageName = scene.pages[op.page.id]?.name ?? "";
+    const label = pageName ? `artboard · ${prettyRevealName(pageName)}` : "artboard";
+    return { seq: step.seq, kind: op.kind, nodeId: null, pageId: op.page.id, bounds: null, label };
   }
   if (op?.kind === "insert_node") {
     // A later op folded onto this step can remove the just-inserted node (an
@@ -224,9 +350,27 @@ function revealFromStep(step: RevealStep, scene: Scene): AgentStreamReveal {
           ? pageIdForNode(scene, nodeId)
           : null;
     const bounds = nodeId ? scene.nodes[nodeId]?.computed?.layout_bounds ?? null : null;
-    return { seq: step.seq, kind: op.kind, nodeId, pageId, bounds };
+    const node = nodeId ? scene.nodes[nodeId] : undefined;
+    // Defensive reads: the label is chrome copy, never worth breaking a stream
+    // over — a node missing kind/name (possible on partial scenes) degrades to
+    // a generic label instead of throwing inside the pump's apply path.
+    const label = node
+      ? (() => {
+          const kindName = node.kind?.kind ?? "element";
+          const name = prettyRevealName(node.name ?? nodeId ?? "");
+          return name ? `${kindName} · ${name}` : kindName;
+        })()
+      : "designing…";
+    return { seq: step.seq, kind: op.kind, nodeId, pageId, bounds, label };
   }
-  return { seq: step.seq, kind: op?.kind ?? "silent", nodeId: null, pageId: null, bounds: null };
+  return {
+    seq: step.seq,
+    kind: op?.kind ?? "silent",
+    nodeId: null,
+    pageId: null,
+    bounds: null,
+    label: "designing…"
+  };
 }
 
 export interface UseAgentTurnDeps {
@@ -371,7 +515,10 @@ export function useAgentTurn(deps: UseAgentTurnDeps) {
     stepsApplied: number;
     broken: boolean;
     queue: RevealStep[];
-    cadenceMs: number;
+    /** Batch-wide pace compression (1 = uncompressed); set per enqueued batch. */
+    compression: number;
+    /** OS reduced-motion preference, read once at arm time. */
+    reducedMotion: boolean;
     timer: ReturnType<typeof setTimeout> | null;
   } | null>(null);
 
@@ -410,7 +557,8 @@ export function useAgentTurn(deps: UseAgentTurnDeps) {
       stepsApplied: 0,
       broken: false,
       queue: [],
-      cadenceMs: REVEAL_CADENCE_MS,
+      compression: 1,
+      reducedMotion: prefersReducedMotion(),
       timer: null
     };
     setAgentStream({ ...idleAgentStreamStatus(), active: true });
@@ -426,17 +574,21 @@ export function useAgentTurn(deps: UseAgentTurnDeps) {
     setAgentStream((status) => ({ ...status, brokenStream: true, revealQueueLength: 0 }));
   };
 
-  // Apply one reveal-step's ops cumulatively to the engine and mirror the result
-  // onto the React scene (exactly the preview seam). A failed apply is SWALLOWED
-  // loudly: the stream is marked broken, later steps are dropped, and the canvas
-  // holds the last good streamed scene until the terminal reconcile replaces it.
-  // Streaming can never break the turn or the final proposal. Returns false if
-  // the apply broke (caller stops), true otherwise.
-  const applyRevealStep = (step: RevealStep): boolean => {
+  // S2.1 inversion: apply a reveal-step's ops to the ENGINE ahead of the display
+  // (`engine.applyOperations`) and read the new node's bounds off the applied
+  // scene, WITHOUT `setScene` — the pump holds the content until the draw-the-box
+  // choreography completes. A failed apply is SWALLOWED loudly: the stream is
+  // marked broken and later steps drop; the canvas holds the last good streamed
+  // scene until the terminal reconcile. Streaming can never break the turn or the
+  // final proposal. Returns the applied scene + the reveal (geometry + phase
+  // timing) + the raw timing (for the pump's own hold/pace), or null if it broke.
+  const applyStepToEngine = (
+    step: RevealStep
+  ): { scene: Scene; reveal: AgentStreamReveal; timing: RevealTiming } | null => {
     const stream = streamRef.current;
     const engine = engineRef.current;
     if (!stream || !engine) {
-      return false;
+      return null;
     }
     if (stream.baseScene === null) {
       stream.baseScene = engine.scene;
@@ -450,33 +602,119 @@ export function useAgentTurn(deps: UseAgentTurnDeps) {
           applied.message ?? applied.code
         );
         markStreamBroken();
-        return false;
+        return null;
       }
       stream.lastAppliedSeq = step.seq;
       stream.stepsApplied += 1;
-      const reveal = revealFromStep(step, applied.scene);
-      setScene(applied.scene);
-      setAgentStream((status) => ({
-        ...status,
-        lastAppliedSeq: step.seq,
-        stepsApplied: status.stepsApplied + 1,
-        latestBatch: { seq: step.seq, operations: step.ops },
-        currentReveal: reveal,
-        revealQueueLength: stream.queue.length
-      }));
-      return true;
+      const geometry = revealFromStep(step, applied.scene);
+      const page = geometry.pageId ? applied.scene.pages[geometry.pageId] : undefined;
+      const timing = revealTiming(
+        geometry.kind,
+        geometry.bounds,
+        page,
+        stream.compression,
+        stream.reducedMotion
+      );
+      const reveal: AgentStreamReveal = {
+        ...geometry,
+        travelMs: timing.travelMs,
+        drawMs: timing.drawMs,
+        materializeFadeMs: timing.materializeFadeMs,
+        reducedMotion: stream.reducedMotion
+      };
+      return { scene: applied.scene, reveal, timing };
     } catch (error) {
       // eslint-disable-next-line no-console
       console.error("[agent-stream] applyOperations threw on a streamed step; stream marked broken", error);
       markStreamBroken();
-      return false;
+      return null;
     }
   };
 
-  // The pump (D4.1): apply the head reveal-step, then schedule the next on the
-  // current cadence. One timer chain, cancellable; it halts on an empty queue,
-  // a broken apply, or a torn-down stream.
-  const scheduleNextRevealStep = () => {
+  // Publish the reveal onto the exposed streaming status (the chrome + auto-follow
+  // read this). Mirrors the synchronous streamRef bookkeeping applyStepToEngine
+  // already advanced.
+  const commitRevealState = (reveal: AgentStreamReveal, ops: Operation[], seq: number) => {
+    const stream = streamRef.current;
+    setAgentStream((status) => ({
+      ...status,
+      lastAppliedSeq: seq,
+      stepsApplied: status.stepsApplied + 1,
+      latestBatch: { seq, operations: ops },
+      currentReveal: reveal,
+      revealQueueLength: stream?.queue.length ?? 0
+    }));
+  };
+
+  // Fast-forward apply: engine-apply AND materialize (`setScene`) immediately, no
+  // theater. Used to drain a backlog in one shot when a newer batch arrives.
+  const applyImmediate = (step: RevealStep): boolean => {
+    const applied = applyStepToEngine(step);
+    if (!applied) {
+      return false;
+    }
+    setScene(applied.scene);
+    commitRevealState(applied.reveal, step.ops, step.seq);
+    return true;
+  };
+
+  // The pump (S2.1 draw-the-box): pop the head step, apply its ops to the engine
+  // AHEAD of the display, publish the reveal (the chrome starts travel→draw) and
+  // HOLD the content. At travelMs+drawMs the held `setScene` fires — the content
+  // materializes inside the just-drawn box; the outline then fades (CSS) while the
+  // next step starts after the inter-step pause. Exactly one active timer at any
+  // moment (stream.timer), so cancellation (reconcile / failure / fast-forward)
+  // stays a single clearTimeout — and a `done` that lands DURING the draw phase
+  // (engine applied, held setScene not yet fired) cancels here and reconciles to
+  // the canonical preview with no streamed frame shown after.
+  const runRevealStep = () => {
+    const stream = streamRef.current;
+    if (!stream || !stream.active || stream.broken) {
+      return;
+    }
+    const step = stream.queue.shift();
+    if (!step) {
+      return;
+    }
+    const applied = applyStepToEngine(step);
+    if (!applied) {
+      return;
+    }
+    // The corner-drag hold-back applies only to NODES. An `add_page` (or a
+    // silent step) materializes IMMEDIATELY — the empty artboard IS the
+    // placeholder (moda's structure-first beat), and the whole-artboard outline
+    // draws OVER it. Holding a page back would also leave its chrome with
+    // nothing to anchor to: the overlay maps reveals through the DISPLAYED
+    // scene's artboard rects, and a held page is not in the displayed scene
+    // yet. (A node's page, by contrast, always materialized in an earlier step,
+    // so node reveals — even bounds-less ones — anchor fine while held.)
+    const holdContent = applied.reveal.kind === "insert_node";
+    if (!holdContent) {
+      setScene(applied.scene);
+    }
+    // Publish the reveal (chrome begins travel+draw); node content stays hidden
+    // until the box finishes drawing.
+    commitRevealState(applied.reveal, step.ops, step.seq);
+    const drawDone = applied.timing.travelMs + applied.timing.drawMs;
+    stream.timer = setTimeout(() => {
+      const current = streamRef.current;
+      if (!current || !current.active || current.broken) {
+        return;
+      }
+      current.timer = null;
+      if (holdContent) {
+        // The box finished drawing — materialize the held content.
+        setScene(applied.scene);
+      }
+      // Calm cadence: the next element starts after the inter-step pause.
+      scheduleNextRevealStep(applied.timing.pauseMs);
+    }, drawDone);
+  };
+
+  // Schedule the next reveal-step to BEGIN after `leadMs` (the previous step's
+  // inter-step pause, or the batch's initial lead). One timer chain, cancellable;
+  // it halts on an empty queue, a broken apply, or a torn-down stream.
+  const scheduleNextRevealStep = (leadMs: number) => {
     const stream = streamRef.current;
     if (!stream || !stream.active || stream.broken || stream.timer != null) {
       return;
@@ -490,12 +728,8 @@ export function useAgentTurn(deps: UseAgentTurnDeps) {
         return;
       }
       current.timer = null;
-      const step = current.queue.shift();
-      if (step && !applyRevealStep(step)) {
-        return;
-      }
-      scheduleNextRevealStep();
-    }, stream.cadenceMs);
+      runRevealStep();
+    }, leadMs);
   };
 
   // Enqueue a streamed batch (D4.1): its ops become paced reveal-steps. When a
@@ -523,7 +757,11 @@ export function useAgentTurn(deps: UseAgentTurnDeps) {
       // proposal still arrives on `done` and applies through the normal path.
       return;
     }
-    // Fast-forward any pending backlog from earlier batches as a single apply.
+    // Fast-forward any pending backlog from earlier batches as a single apply
+    // (materialized immediately, no theater). A step already popped and applied
+    // to the engine but still mid-draw (its held setScene not yet fired) is
+    // covered too: its ops are in the engine, so this cumulative setScene shows
+    // them — no held content is lost.
     if (stream.queue.length > 0) {
       cancelPump();
       const backlog = stream.queue;
@@ -538,7 +776,7 @@ export function useAgentTurn(deps: UseAgentTurnDeps) {
       }
       const flushSeq = backlog[backlog.length - 1]?.seq ?? stream.lastAppliedSeq;
       if (
-        !applyRevealStep({
+        !applyImmediate({
           seq: flushSeq,
           ops: drained,
           visualOp: lastStep?.visualOp ?? null
@@ -552,9 +790,12 @@ export function useAgentTurn(deps: UseAgentTurnDeps) {
       return;
     }
     stream.queue = steps;
-    stream.cadenceMs = Math.min(REVEAL_CADENCE_MS, MAX_BATCH_REVEAL_MS / steps.length);
+    stream.compression = batchCompression(steps.length);
     setAgentStream((status) => ({ ...status, revealQueueLength: steps.length }));
-    scheduleNextRevealStep();
+    // Kick off the pump: the first element begins after one inter-step pause
+    // (0 under reduced motion), then each subsequent step self-schedules.
+    const firstLead = stream.reducedMotion ? 0 : INTER_STEP_PAUSE_MS * stream.compression;
+    scheduleNextRevealStep(firstLead);
   };
 
   // Terminal reconcile (D3, the invariant): cancel the pump, drop any pending

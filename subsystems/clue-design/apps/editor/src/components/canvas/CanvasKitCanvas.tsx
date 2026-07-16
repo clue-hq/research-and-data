@@ -188,6 +188,9 @@ export function CanvasKitCanvas({
   // rest of that run.
   const followedRevealPageRef = useRef<PageId | null>(null);
   const userOverrodeFollowRef = useRef(false);
+  // S2.1 draw-the-box: the previous reveal's bottom-right corner (screen px), so
+  // the design cursor glides in from where it left off. Reset when the run ends.
+  const lastRevealCornerRef = useRef<{ x: number; y: number } | null>(null);
 
   const page = getPage(scene, activePageId);
   const pageView = page ? pageDescriptor(page) : null;
@@ -538,10 +541,29 @@ export function CanvasKitCanvas({
     return {
       seq: agentReveal.seq,
       flashBox,
-      cursor: { x: flashBox.x, y: flashBox.y },
-      label: "designing…"
+      // The label rides the reveal itself (derived from the APPLIED scene at
+      // publish time) — the displayed scene lags the engine during the draw
+      // window, so a lookup here would not find the node yet.
+      label: agentReveal.label || "designing…",
+      drawMode: (agentReveal.kind === "add_page" ? "artboard" : "corner") as "artboard" | "corner",
+      travelMs: agentReveal.travelMs,
+      drawMs: agentReveal.drawMs,
+      materializeFadeMs: agentReveal.materializeFadeMs,
+      reducedMotion: agentReveal.reducedMotion,
+      cursorFrom: lastRevealCornerRef.current
     };
   }, [agentReveal, workspaceModel, workspaceViewport, scene, unitScale]);
+
+  // S2.1: remember this reveal's bottom-right corner so the NEXT reveal's cursor
+  // glides in from it; reset when the run's reveal stream ends.
+  useEffect(() => {
+    lastRevealCornerRef.current = revealChrome
+      ? {
+          x: revealChrome.flashBox.x + revealChrome.flashBox.width,
+          y: revealChrome.flashBox.y + revealChrome.flashBox.height
+        }
+      : null;
+  }, [revealChrome]);
 
   const pressTargetFor = useCallback(
     (descriptorPoint: { x: number; y: number }): PressTarget => {

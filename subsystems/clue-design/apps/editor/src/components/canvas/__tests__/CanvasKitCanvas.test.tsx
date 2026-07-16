@@ -28,7 +28,8 @@ vi.mock("../SelectionOverlay", () => ({
     showRotateHandle,
     guides,
     insertionIndicator,
-    marginGuides
+    marginGuides,
+    reveal
   }: {
     hover: unknown;
     slotKeys: string[];
@@ -39,6 +40,7 @@ vi.mock("../SelectionOverlay", () => ({
     guides?: unknown[];
     insertionIndicator?: { axis: string; position: number; from: number; to: number } | null;
     marginGuides?: { safeArea: unknown; bleed: unknown } | null;
+    reveal?: { drawMode: string; label: string } | null;
   }) => (
     <div
       data-testid="selection-overlay"
@@ -50,6 +52,8 @@ vi.mock("../SelectionOverlay", () => ({
       data-show-rotate-handle={showRotateHandle ? "yes" : "no"}
       data-guides-count={(guides ?? []).length}
       data-indicator={insertionIndicator ? JSON.stringify(insertionIndicator) : ""}
+      data-reveal-draw-mode={reveal?.drawMode ?? ""}
+      data-reveal-label={reveal?.label ?? ""}
     >
       {marginGuides?.safeArea ? <div data-role="margin-guide-safe-area" /> : null}
       {marginGuides?.bleed ? <div data-role="margin-guide-bleed" /> : null}
@@ -629,7 +633,12 @@ describe("(g) S2 reveal-theater viewport auto-follow", () => {
     kind: "insert_node",
     nodeId: null,
     pageId,
-    bounds: null
+    bounds: null,
+    label: "designing…",
+    travelMs: 200,
+    drawMs: 300,
+    materializeFadeMs: 250,
+    reducedMotion: false
   });
 
   function renderFollow(agentReveal: ReturnType<typeof reveal>) {
@@ -700,6 +709,71 @@ describe("(g) S2 reveal-theater viewport auto-follow", () => {
 
     rerenderFollow(reveal("page_b", 2)); // page change that would normally fit
     expect(fitCount()).toBe(2); // suppressed — the fit click latched the override
+  });
+});
+
+describe("(h) S2.1 reveal-chrome mapping", () => {
+  const renderReveal = (agentReveal: {
+    seq: number;
+    kind: string;
+    nodeId: string | null;
+    pageId: string;
+    bounds: null;
+    label: string;
+  }) =>
+    render(
+      <CanvasKitCanvas
+        scene={minimalScene}
+        activePageId="page_a4"
+        selectedNodeId={null}
+        onSelectNode={() => {}}
+        onOperations={() => {}}
+        engine={null}
+        diagnostics={[]}
+        workspaceModel={createWorkspaceModel(minimalScene, "page_a4", [])}
+        workspaceViewport={defaultWorkspaceViewport()}
+        onWorkspaceViewportChange={() => {}}
+        workspaceTool="select"
+        onWorkspaceToolChange={() => {}}
+        workspaceFitTarget="manual"
+        onWorkspaceFitTargetChange={() => {}}
+        agentReveal={{
+          ...agentReveal,
+          travelMs: 200,
+          drawMs: 300,
+          materializeFadeMs: 250,
+          reducedMotion: false
+        }}
+      />
+    );
+
+  it("maps an insert_node reveal to a corner-drag box and passes the reveal's OWN label through", () => {
+    renderReveal({
+      seq: 1,
+      kind: "insert_node",
+      nodeId: "node_contact_name",
+      pageId: "page_a4",
+      bounds: null,
+      label: "text · Contact Name"
+    });
+    const overlay = screen.getByTestId("selection-overlay");
+    expect(overlay).toHaveAttribute("data-reveal-draw-mode", "corner");
+    // Review fix (S2.1): the label rides the reveal (derived from the APPLIED
+    // scene at publish time) — the displayed scene lags the engine during the
+    // draw window, so the mapping layer must NOT look the node up itself.
+    expect(overlay).toHaveAttribute("data-reveal-label", "text · Contact Name");
+  });
+
+  it("maps an add_page reveal to a whole-artboard placeholder", () => {
+    renderReveal({
+      seq: 2,
+      kind: "add_page",
+      nodeId: null,
+      pageId: "page_a4",
+      bounds: null,
+      label: "artboard · A4"
+    });
+    expect(screen.getByTestId("selection-overlay")).toHaveAttribute("data-reveal-draw-mode", "artboard");
   });
 });
 
