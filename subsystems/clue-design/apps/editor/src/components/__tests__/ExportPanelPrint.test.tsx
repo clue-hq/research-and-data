@@ -66,25 +66,54 @@ function renderPanel(overrides: Partial<Parameters<typeof ExportPanel>[0]> = {})
 }
 
 describe("ExportPanel print controls (W3)", () => {
-  it("hides the bleed/marks checkbox when the print feature is off", () => {
+  it("hides the print-finish select when the print feature is off", () => {
     renderPanel({ printFeatureEnabled: false });
-    expect(screen.queryByRole("checkbox", { name: "Include bleed + crop marks" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("combobox", { name: /Bleed & marks/ })).not.toBeInTheDocument();
   });
 
-  it("shows the checkbox for a pdf profile when the feature is on and toggles both flags", () => {
+  it("shows the finish select for a pdf profile and 'bleed + marks' sets both flags", () => {
     const onPanelStateChange = renderPanel();
-    const checkbox = screen.getByRole("checkbox", { name: "Include bleed + crop marks" });
-    expect(checkbox).not.toBeChecked();
+    const select = screen.getByRole("combobox", { name: /Bleed & marks/ }) as HTMLSelectElement;
+    expect(select.value).toBe("none");
 
-    fireEvent.click(checkbox);
+    fireEvent.change(select, { target: { value: "bleed_marks" } });
     expect(onPanelStateChange).toHaveBeenCalledTimes(1);
     const next = onPanelStateChange.mock.calls[0][0] as ExportPanelState;
     expect(next.draftProfile).toMatchObject({ include_bleed: true, include_marks: true });
   });
 
-  it("does not show the checkbox for a non-pdf profile", () => {
+  it("'bleed only' sets include_bleed without include_marks", () => {
+    const onPanelStateChange = renderPanel();
+    fireEvent.change(screen.getByRole("combobox", { name: /Bleed & marks/ }), {
+      target: { value: "bleed" }
+    });
+    const next = onPanelStateChange.mock.calls[0][0] as ExportPanelState;
+    expect(next.draftProfile).toMatchObject({ include_bleed: true, include_marks: false });
+  });
+
+  it("'none' clears both flags", () => {
+    const onPanelStateChange = renderPanel({
+      panelState: panelState({ ...printPdfProfile(), include_bleed: true, include_marks: true })
+    });
+    const select = screen.getByRole("combobox", { name: /Bleed & marks/ }) as HTMLSelectElement;
+    expect(select.value).toBe("bleed_marks");
+
+    fireEvent.change(select, { target: { value: "none" } });
+    const next = onPanelStateChange.mock.calls[0][0] as ExportPanelState;
+    expect(next.draftProfile).toMatchObject({ include_bleed: false, include_marks: false });
+  });
+
+  it("a bleed-only saved profile round-trips: the select reads 'bleed'", () => {
+    renderPanel({
+      panelState: panelState({ ...printPdfProfile(), include_bleed: true, include_marks: false })
+    });
+    const select = screen.getByRole("combobox", { name: /Bleed & marks/ }) as HTMLSelectElement;
+    expect(select.value).toBe("bleed");
+  });
+
+  it("does not show the finish select for a non-pdf profile", () => {
     renderPanel({ panelState: panelState({ ...printPdfProfile(), format: "png", raster: { scale: 1, dpi: 96 } }) });
-    expect(screen.queryByRole("checkbox", { name: "Include bleed + crop marks" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("combobox", { name: /Bleed & marks/ })).not.toBeInTheDocument();
   });
 
   it("renders the print-ready block with the status pill and notable rules", () => {

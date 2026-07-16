@@ -3,7 +3,12 @@
 import { useEffect, useRef, useState } from "react";
 import { Download } from "lucide-react";
 import type { ExportProfile, Page, PageId } from "@/engine/contracts";
-import { bleedlessPrintPages } from "@/engine/printReadiness";
+import {
+  bleedlessPrintPages,
+  PRINT_FINISH_OPTIONS,
+  printFinishFlags,
+  type PrintFinish
+} from "@/engine/printReadiness";
 import { RASTER_SCALE_PRESETS } from "./ExportPanel";
 
 /**
@@ -46,9 +51,10 @@ export function ExportMenu({
   const [pngScale, setPngScale] = useState<number>(2);
   const [pdfIntent, setPdfIntent] = useState<"preview" | "print">("preview");
   const [pdfColor, setPdfColor] = useState<"srgb" | "cmyk">("srgb");
-  // Print bleed + crop marks: on for print PDFs (preserves the prior hardcoded
-  // behavior) until the user opts out. Only surfaced for print-intent PDFs.
-  const [includePrintMarks, setIncludePrintMarks] = useState(true);
+  // Print finishing: bleed + crop marks by default for print PDFs (preserves
+  // the prior hardcoded behavior); "bleed only" hands the shop an unmarked
+  // bleed-extended file; "none" ships trim-only. Print-intent PDFs only.
+  const [printFinish, setPrintFinish] = useState<PrintFinish>("bleed_marks");
   const rootRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -60,7 +66,7 @@ export function ExportMenu({
   const bleedlessPages = bleedlessPrintPages({ format, pdfIntent, pages: scopedPages });
 
   const download = () => {
-    onDownload(profileForChoices(format, pngScale, pdfIntent, pdfColor, includePrintMarks), scope);
+    onDownload(profileForChoices(format, pngScale, pdfIntent, pdfColor, printFinish), scope);
   };
 
   return (
@@ -145,13 +151,18 @@ export function ExportMenu({
       ) : null}
 
       {isPrintPdf ? (
-        <label className="toggle-field" data-role="include-bleed-marks">
-          <input
-            type="checkbox"
-            checked={includePrintMarks}
-            onChange={(event) => setIncludePrintMarks(event.target.checked)}
-          />
-          Include bleed + crop marks
+        <label className="export-menu-field" data-role="print-finish">
+          <span>Bleed &amp; marks</span>
+          <select
+            value={printFinish}
+            onChange={(event) => setPrintFinish(event.target.value as PrintFinish)}
+          >
+            {PRINT_FINISH_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
         </label>
       ) : null}
 
@@ -168,7 +179,7 @@ export function ExportMenu({
         </label>
       ) : null}
 
-      {isPrintPdf && includePrintMarks && bleedlessPages.length > 0 ? (
+      {isPrintPdf && printFinish !== "none" && bleedlessPages.length > 0 ? (
         <p className="export-menu-hint" data-role="export-menu-bleed-note" role="note">
           {bleedlessPages.length === scopedPages.length
             ? scopedPages.length === 1
@@ -200,7 +211,7 @@ function profileForChoices(
   pngScale: number,
   pdfIntent: "preview" | "print",
   pdfColor: "srgb" | "cmyk",
-  includePrintMarks: boolean
+  printFinish: PrintFinish
 ): ExportProfile {
   switch (format) {
     case "png":
@@ -226,17 +237,15 @@ function profileForChoices(
         embed_fonts: true
       };
     case "pdf": {
-      // Bleed + crop marks are a coupled print-PDF pair (same coupling as the
-      // export panel's checkbox): only print intent exposes them, and only when
-      // the user leaves them enabled. Any other combination emits neither.
-      const wantsPrintMarks = pdfIntent === "print" && includePrintMarks;
+      // Bleed and crop marks are independent flags but only print intent
+      // exposes the finish control; preview PDFs always emit neither.
+      const finish = pdfIntent === "print" ? printFinish : "none";
       return {
         name: `topbar_pdf_${pdfIntent}`,
         format: "pdf",
         pdf_intent: pdfIntent,
         raster: null,
-        include_bleed: wantsPrintMarks,
-        include_marks: wantsPrintMarks,
+        ...printFinishFlags(finish),
         // CMYK is print-intent-only; emit the field solely on print PDFs, and
         // only when the user chose it — sRGB is the default and emits nothing.
         ...(pdfIntent === "print" && pdfColor === "cmyk" ? { color: "cmyk" } : {}),

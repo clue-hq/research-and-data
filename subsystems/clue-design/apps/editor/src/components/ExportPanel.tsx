@@ -8,9 +8,13 @@ import { estimatePngPixelSize, exportProfilesForScene, MAX_RASTER_PIXELS } from 
 import {
   hasBookletImposition,
   IMPOSED_MARKS_SKIPPED_RULE,
+  PRINT_FINISH_OPTIONS,
+  printFinishFlags,
+  printFinishForProfile,
   printReadyNotableRules,
   printReadyPill,
-  shouldShowPrintNudge
+  shouldShowPrintNudge,
+  type PrintFinish
 } from "@/engine/printReadiness";
 import { downloadDataUrl } from "./exportArtifactActions";
 
@@ -226,7 +230,7 @@ function ExportControls({
         />
       ) : null}
       {profile && printFeatureEnabled && profile.format === "pdf" ? (
-        <PrintBleedField profile={profile} onChange={(nextProfile) => updateState({ draftProfile: nextProfile })} />
+        <PrintFinishField profile={profile} onChange={(nextProfile) => updateState({ draftProfile: nextProfile })} />
       ) : null}
       {profile && printFeatureEnabled && profile.format === "pdf" ? (
         <BookletField profile={profile} onChange={(nextProfile) => updateState({ draftProfile: nextProfile })} />
@@ -325,7 +329,7 @@ function RasterScaleField({
   );
 }
 
-function PrintBleedField({
+function PrintFinishField({
   profile,
   onChange
 }: {
@@ -333,21 +337,25 @@ function PrintBleedField({
   onChange: (profile: ExportProfile) => void;
 }) {
   return (
-    <label className="toggle-field" data-role="include-bleed-marks">
-      <input
-        type="checkbox"
-        checked={Boolean(profile.include_bleed && profile.include_marks)}
+    <label className="field" data-role="print-finish">
+      <span>Bleed &amp; marks</span>
+      <select
+        value={printFinishForProfile(profile)}
         onChange={(event) =>
           onChange(
             normalizeProfile({
               ...profile,
-              include_bleed: event.target.checked,
-              include_marks: event.target.checked
+              ...printFinishFlags(event.target.value as PrintFinish)
             })
           )
         }
-      />
-      Include bleed + crop marks
+      >
+        {PRINT_FINISH_OPTIONS.map((option) => (
+          <option key={option.value} value={option.value}>
+            {option.label}
+          </option>
+        ))}
+      </select>
       {hasBookletImposition(profile) ? (
         <small className="muted" data-role="imposed-marks-note">
           Skipped on imposed booklet sheets ({IMPOSED_MARKS_SKIPPED_RULE}).

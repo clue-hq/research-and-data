@@ -97,6 +97,43 @@ export function printReadyDiagnostics(report: PrintReadyReport | null): Diagnost
   }));
 }
 
+/**
+ * The print-finishing choice a PDF profile can carry, as one enum so the
+ * invalid pair (crop marks without bleed — a silent server no-op, the mark
+ * geometry is anchored to the bleed rect) is unrepresentable in the UI:
+ * - "none":        trim-only PDF, no bleed box, no marks.
+ * - "bleed":       art extends into the bleed area; the shop cuts without
+ *                  our marks (digital cutters / shop-imposed marks).
+ * - "bleed_marks": full prepress — bleed plus trim + bleed crop marks.
+ */
+export type PrintFinish = "none" | "bleed" | "bleed_marks";
+
+/** The finish a profile's flag pair encodes. `include_marks` without
+ * `include_bleed` normalizes to "none" — the server renders nothing for it. */
+export function printFinishForProfile(
+  profile: Pick<ExportProfile, "include_bleed" | "include_marks">
+): PrintFinish {
+  if (!profile.include_bleed) {
+    return "none";
+  }
+  return profile.include_marks ? "bleed_marks" : "bleed";
+}
+
+/** The wire-contract flag pair for a finish — the single source both export
+ * surfaces (inspector panel + topbar popover) compose profiles from. */
+export function printFinishFlags(finish: PrintFinish): Pick<ExportProfile, "include_bleed" | "include_marks"> {
+  return {
+    include_bleed: finish !== "none",
+    include_marks: finish === "bleed_marks"
+  };
+}
+
+export const PRINT_FINISH_OPTIONS: ReadonlyArray<{ value: PrintFinish; label: string }> = [
+  { value: "bleed_marks", label: "Bleed + crop marks" },
+  { value: "bleed", label: "Bleed only (no marks)" },
+  { value: "none", label: "None (trim only)" }
+];
+
 /** Server rule id declared when bleed/crop marks are requested on an imposed
  * (booklet) sheet: imposition wins and the marks are skipped on the imposed
  * sheet. Surfaced as an advisory note beside the bleed/marks control, never a

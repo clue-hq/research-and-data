@@ -92,31 +92,31 @@ describe("ExportMenu (topbar export popover)", () => {
     expect(profile.embed_fonts).toBe(true);
   });
 
-  describe("bleed + crop marks control", () => {
+  describe("print finish (bleed & marks) control", () => {
     it("is hidden for PNG, SVG, and preview-intent PDF", () => {
       renderMenu();
       // PNG (default)
-      expect(screen.queryByRole("checkbox", { name: /bleed/i })).toBeNull();
+      expect(screen.queryByRole("combobox", { name: /Bleed & marks/ })).toBeNull();
       // SVG
       fireEvent.change(screen.getByRole("combobox", { name: /File type/ }), {
         target: { value: "svg" }
       });
-      expect(screen.queryByRole("checkbox", { name: /bleed/i })).toBeNull();
+      expect(screen.queryByRole("combobox", { name: /Bleed & marks/ })).toBeNull();
       // PDF, preview intent
       fireEvent.change(screen.getByRole("combobox", { name: /File type/ }), {
         target: { value: "pdf" }
       });
-      expect(screen.queryByRole("checkbox", { name: /bleed/i })).toBeNull();
+      expect(screen.queryByRole("combobox", { name: /Bleed & marks/ })).toBeNull();
     });
 
-    it("is shown and checked by default for print-intent PDF", () => {
+    it("is shown with bleed + crop marks selected by default for print-intent PDF", () => {
       renderMenu();
       selectPrintPdf();
-      const checkbox = screen.getByRole("checkbox", { name: /bleed/i }) as HTMLInputElement;
-      expect(checkbox.checked).toBe(true);
+      const select = screen.getByRole("combobox", { name: /Bleed & marks/ }) as HTMLSelectElement;
+      expect(select.value).toBe("bleed_marks");
     });
 
-    it("checked print PDF emits include_bleed + include_marks", () => {
+    it("default finish emits include_bleed + include_marks", () => {
       const onDownload = renderMenu();
       selectPrintPdf();
       fireEvent.click(screen.getByRole("button", { name: /Download/ }));
@@ -127,10 +127,24 @@ describe("ExportMenu (topbar export popover)", () => {
       expect(profile.include_marks).toBe(true);
     });
 
-    it("unchecking drops both include_bleed and include_marks", () => {
+    it("bleed-only finish emits include_bleed without include_marks", () => {
       const onDownload = renderMenu();
       selectPrintPdf();
-      fireEvent.click(screen.getByRole("checkbox", { name: /bleed/i }));
+      fireEvent.change(screen.getByRole("combobox", { name: /Bleed & marks/ }), {
+        target: { value: "bleed" }
+      });
+      fireEvent.click(screen.getByRole("button", { name: /Download/ }));
+      const [profile] = onDownload.mock.calls[0];
+      expect(profile.include_bleed).toBe(true);
+      expect(profile.include_marks).toBe(false);
+    });
+
+    it("finish 'none' drops both include_bleed and include_marks", () => {
+      const onDownload = renderMenu();
+      selectPrintPdf();
+      fireEvent.change(screen.getByRole("combobox", { name: /Bleed & marks/ }), {
+        target: { value: "none" }
+      });
       fireEvent.click(screen.getByRole("button", { name: /Download/ }));
       const [profile] = onDownload.mock.calls[0];
       expect(profile.include_bleed).toBe(false);
