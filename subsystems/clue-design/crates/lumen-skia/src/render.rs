@@ -363,6 +363,18 @@ fn draw_crop_marks(canvas: &Canvas, marks: &CropMarks) {
     paint.set_stroke_width(marks.stroke_width as f32);
     paint.set_anti_alias(true);
 
+    for ((x0, y0), (x1, y1)) in crop_mark_segments(marks) {
+        canvas.draw_line(
+            Point::new(x0 as f32, y0 as f32),
+            Point::new(x1 as f32, y1 as f32),
+            &paint,
+        );
+    }
+}
+
+/// The mark strokes for one page, in layout coordinates. Pure geometry so
+/// the mark set is testable without rasterizing.
+pub(crate) fn crop_mark_segments(marks: &CropMarks) -> Vec<((f64, f64), (f64, f64))> {
     let trim = &marks.trim;
     let bleed = &marks.bleed;
     let trim_right = trim.x + trim.width;
@@ -370,10 +382,11 @@ fn draw_crop_marks(canvas: &Canvas, marks: &CropMarks) {
     let bleed_right = bleed.x + bleed.width;
     let bleed_bottom = bleed.y + bleed.height;
 
-    // Horizontal segments (aligned with trim top/bottom, outside left/right
-    // bleed edges) and vertical segments (aligned with trim left/right,
-    // outside top/bottom bleed edges) — two marks per corner, eight total.
-    let segments: [((f64, f64), (f64, f64)); 8] = [
+    // Trim (crop) marks: horizontal segments aligned with trim top/bottom
+    // outside the left/right bleed edges, vertical segments aligned with
+    // trim left/right outside the top/bottom bleed edges — two marks per
+    // corner, eight total.
+    let mut segments: Vec<((f64, f64), (f64, f64))> = vec![
         ((bleed.x - marks.margin, trim.y), (bleed.x - marks.gap, trim.y)),
         ((bleed_right + marks.gap, trim.y), (bleed_right + marks.margin, trim.y)),
         ((bleed.x - marks.margin, trim_bottom), (bleed.x - marks.gap, trim_bottom)),
@@ -383,13 +396,29 @@ fn draw_crop_marks(canvas: &Canvas, marks: &CropMarks) {
         ((trim_right, bleed.y - marks.margin), (trim_right, bleed.y - marks.gap)),
         ((trim_right, bleed_bottom + marks.gap), (trim_right, bleed_bottom + marks.margin)),
     ];
-    for ((x0, y0), (x1, y1)) in segments {
-        canvas.draw_line(
-            Point::new(x0 as f32, y0 as f32),
-            Point::new(x1 as f32, y1 as f32),
-            &paint,
-        );
+    // Bleed marks (prepress convention, e.g. InDesign "Include Bleed
+    // Marks"): the same tick shape aligned with the BLEED edges, so the
+    // operator sees both boundaries. Only meaningful when the bleed box
+    // actually differs from the trim (proof mode on a bleed-less page has
+    // bleed == trim — a second identical set would just thicken the crop
+    // marks).
+    let has_distinct_bleed = (bleed.x - trim.x).abs() > f64::EPSILON
+        || (bleed.y - trim.y).abs() > f64::EPSILON
+        || (bleed.width - trim.width).abs() > f64::EPSILON
+        || (bleed.height - trim.height).abs() > f64::EPSILON;
+    if has_distinct_bleed {
+        segments.extend([
+            ((bleed.x - marks.margin, bleed.y), (bleed.x - marks.gap, bleed.y)),
+            ((bleed_right + marks.gap, bleed.y), (bleed_right + marks.margin, bleed.y)),
+            ((bleed.x - marks.margin, bleed_bottom), (bleed.x - marks.gap, bleed_bottom)),
+            ((bleed_right + marks.gap, bleed_bottom), (bleed_right + marks.margin, bleed_bottom)),
+            ((bleed.x, bleed.y - marks.margin), (bleed.x, bleed.y - marks.gap)),
+            ((bleed.x, bleed_bottom + marks.gap), (bleed.x, bleed_bottom + marks.margin)),
+            ((bleed_right, bleed.y - marks.margin), (bleed_right, bleed.y - marks.gap)),
+            ((bleed_right, bleed_bottom + marks.gap), (bleed_right, bleed_bottom + marks.margin)),
+        ]);
     }
+    segments
 }
 
 struct PagePainter<'a> {
@@ -2077,4 +2106,56 @@ fn linear_to_srgb(linear: f64) -> f32 {
         1.055 * clamped.powf(1.0 / 2.4) - 0.055
     };
     srgb as f32
+}
+
+#[cfg(test)]
+mod crop_mark_tests {
+    use super::{crop_mark_segments, CropMarks};
+    use lumen_core::Rect;
+
+    fn marks(bleed: Rect) -> CropMarks {
+        CropMarks {
+            trim: Rect {
+                x: 0.0,
+                y: 0.0,
+                width: 200.0,
+                height: 150.0,
+            },
+            bleed,
+            margin: 14.0,
+            gap: 3.0,
+            stroke_width: 0.5,
+        }
+    }
+
+    #[test]
+    fn distinct_bleed_gets_trim_and_bleed_mark_sets() {
+        let segments = crop_mark_segments(&marks(Rect {
+            x: -9.0,
+            y: -9.0,
+            width: 218.0,
+            height: 168.0,
+        }));
+        // 8 trim-aligned + 8 bleed-aligned ticks.
+        assert_eq!(segments.len(), 16);
+        // A bleed-aligned horizontal tick sits at the bleed's top edge
+        // (y = -9), running through the margin left of the bleed box.
+        assert!(segments.contains(&(((-9.0 - 14.0), -9.0), ((-9.0 - 3.0), -9.0))));
+        // A trim-aligned vertical tick sits at the trim's left edge (x = 0),
+        // above the bleed box.
+        assert!(segments.contains(&((0.0, (-9.0 - 14.0)), (0.0, (-9.0 - 3.0)))));
+    }
+
+    #[test]
+    fn coincident_bleed_draws_only_the_trim_set() {
+        // Proof mode on a bleed-less page: bleed == trim; a second identical
+        // set would just double-stroke the crop marks.
+        let segments = crop_mark_segments(&marks(Rect {
+            x: 0.0,
+            y: 0.0,
+            width: 200.0,
+            height: 150.0,
+        }));
+        assert_eq!(segments.len(), 8);
+    }
 }
