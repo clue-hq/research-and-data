@@ -777,6 +777,35 @@ export interface ExportProfile {
   pdf_intent: "preview" | "print" | null;
   raster: RasterScale | null;
   include_bleed: boolean;
+  /** Print workstream W3: emit crop/registration marks (print-intent PDF).
+   * The server understands this field (serde default false); the editor sends
+   * it on every profile it constructs. Optional to mirror the wire contract —
+   * the Rust core round-trips ExportProfile and, until it carries the field,
+   * an absent value must not be a type error (a `null`/absent is treated as
+   * false everywhere the editor reads it). */
+  include_marks?: boolean;
+  /** Print workstream W4: optional booklet (2-up saddle-stitch) imposition.
+   * Reader-order pages stay the DEFAULT deliverable (product decision D2);
+   * booklet is an opt-in mode. Optional to mirror the wire contract — the
+   * server omits it when absent (serde) and only recognizes "booklet", so an
+   * absent value must round-trip through the core as none, not a type error. */
+  imposition?: "booklet";
+  /** Print workstream W7: proof export — a margin with crop marks, a slug line
+   * (doc · profile · page n/N · "PROOF — not for production") and an sRGB
+   * control strip, for the physical-proof workflow, never a production run.
+   * The server declares LUME0431. Optional to mirror the wire contract — the
+   * server omits it when false (serde), so an absent value round-trips through
+   * the core as false, not a type error. */
+  proof?: boolean;
+  /** Print workstream W5 stage B: color pipeline. When "cmyk", the server
+   * converts the PDF to a CMYK color space via Ghostscript for offset presses;
+   * absent/null leaves the sRGB (digital-press) default. The server accepts
+   * this ONLY on format="pdf" profiles with pdf_intent="print" — any other
+   * combination is a hard export error (export.cmyk_requires_print_intent), so
+   * the editor must only ever emit it on print-intent PDF profiles. Optional to
+   * mirror the wire contract — the server omits it when absent (serde), so an
+   * absent value round-trips through the core as none, not a type error. */
+  color?: string | null;
   embed_fonts: boolean;
 }
 

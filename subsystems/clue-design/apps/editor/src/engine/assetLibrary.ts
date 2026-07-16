@@ -224,6 +224,35 @@ export function assetBytesUrl(apiBaseUrl: string, assetId: string): string {
   return new URL(`/assets/${assetId}/bytes`, apiBaseUrl).toString();
 }
 
+const SHA256_HEX = /^[0-9a-f]{64}$/;
+
+/** Content-addressed bytes URL (`/asset-store/{digest}`) — immutable,
+ * cache-friendly, and independent of the asset REGISTRY. */
+export function assetStoreBytesUrl(apiBaseUrl: string, digestValue: string): string {
+  return new URL(`/asset-store/${digestValue}`, apiBaseUrl).toString();
+}
+
+/**
+ * Resolve an asset's bytes URL from the SCENE's own record — the same source
+ * of truth server exports resolve from. An asset any producer put into the
+ * scene (the deepagent's generated imagery, edits, QR codes) is servable by
+ * its content digest even when nothing registered it in the asset library.
+ * Records without a usable sha256 digest — and asset ids the scene does not
+ * carry at all (dangling references) — fall back to the registry endpoint,
+ * which stays the last word on whether such an asset exists.
+ */
+export function sceneAssetBytesUrl(
+  apiBaseUrl: string,
+  assets: Record<string, AssetRecord> | undefined,
+  assetId: string
+): string {
+  const digest = assets?.[assetId]?.media?.digest;
+  if (digest && digest.algorithm === "sha256" && SHA256_HEX.test(digest.value)) {
+    return assetStoreBytesUrl(apiBaseUrl, digest.value);
+  }
+  return assetBytesUrl(apiBaseUrl, assetId);
+}
+
 /**
  * Canonical placement: register the library record on the document, then
  * place it into the target node. Replacing an image re-runs the same pair

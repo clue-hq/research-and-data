@@ -2102,6 +2102,7 @@ class LumenDesignTools:
                 store_root=store_root,
                 export_formats=[export_format],
                 export_dpi=96,
+                brand_fonts=self.config.brand_fonts,
             )
         except CoreError as error:
             payload = {

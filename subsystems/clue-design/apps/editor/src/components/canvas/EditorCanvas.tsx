@@ -62,6 +62,11 @@ export interface EditorCanvasProps {
   showMarginGuides?: boolean;
   /** Phase 4d, CanvasKit-only: toggles `showMarginGuides`. */
   onToggleMarginGuides?: () => void;
+  /** Print workstream W3, CanvasKit-only: master "Print & bleed" toggle
+   * (trim guide, bleed-extent clip, print toolbar affordances). */
+  printFeatureEnabled?: boolean;
+  /** Print workstream W3, CanvasKit-only: toggles `printFeatureEnabled`. */
+  onTogglePrintFeature?: () => void;
   /** Live-design-streaming S2, CanvasKit-only: the element/artboard the pump is
    * currently revealing — drives the SVG build-theater chrome + viewport
    * auto-follow. Null when no run is streaming (and on the Konva fallback). */

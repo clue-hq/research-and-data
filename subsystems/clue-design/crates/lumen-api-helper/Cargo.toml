@@ -20,5 +20,8 @@ sha2 = "0.10"
 
 [dev-dependencies]
 base64 = "0.22"
+# Box-structure assertions on bulk print PDFs (already in the workspace
+# lockfile via lumen-export).
+lopdf = "0.36"
 lumen-wasm = { path = "../lumen-wasm" }
 tempfile = "3"

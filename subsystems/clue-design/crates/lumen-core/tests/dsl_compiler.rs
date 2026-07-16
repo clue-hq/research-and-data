@@ -1433,6 +1433,10 @@ fn export_profile_modify_line_lowers_to_upsert_profile() {
         raster: None,
         include_bleed: false,
         embed_fonts: false,
+    include_marks: false,
+    imposition: None,
+    proof: false,
+    color: None,
     });
 
     let output = compile_dsl_into_scene(

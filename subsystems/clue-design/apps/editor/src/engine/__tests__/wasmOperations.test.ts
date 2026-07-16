@@ -102,6 +102,9 @@ const printPdfProfile = {
   pdf_intent: "print" as const,
   raster: null,
   include_bleed: true,
+  // include_marks is intentionally omitted: the Rust core round-trips this
+  // profile and does not yet carry the field, so asserting it here would test
+  // the (separate) crates change rather than the editor operation path.
   embed_fonts: true
 };
 

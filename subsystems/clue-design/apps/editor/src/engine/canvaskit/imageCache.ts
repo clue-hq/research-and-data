@@ -12,7 +12,10 @@ import type { CanvasKit, Image } from "canvaskit-wasm";
  *
  * One fetch per asset id: entries are memoized as loading / ready / failed, so a
  * 404 or decode failure never retries in a tight redraw loop (the placeholder
- * stays). Status-driven re-fetch on regenerate/replace is Step 5.
+ * stays). A failed entry remembers the URL it failed on and re-attempts ONCE
+ * whenever resolution produces a DIFFERENT url — new information (a scene
+ * update carrying the record's digest, a base-url change), not a hot loop.
+ * Status-driven re-fetch on regenerate/replace is Step 5.
  */
 
 /** What the descriptor interpreter needs: a synchronous decoded-image lookup. */
@@ -20,7 +23,10 @@ export interface CanvasKitImageSource {
   get(assetId: string): Image | null;
 }
 
-type Entry = { state: "loading" } | { state: "ready"; image: Image } | { state: "failed" };
+type Entry =
+  | { state: "loading" }
+  | { state: "ready"; image: Image }
+  | { state: "failed"; url: string | null };
 
 export interface CanvasKitImageCacheOptions {
   /** Build the bytes URL for an asset id (`/assets/{id}/bytes`); null = unfetchable. */
@@ -57,7 +63,20 @@ export class CanvasKitImageCache implements CanvasKitImageSource {
   get(assetId: string): Image | null {
     const entry = this.entries.get(assetId);
     if (entry) {
-      return entry.state === "ready" ? entry.image : null;
+      if (entry.state === "ready") {
+        return entry.image;
+      }
+      if (entry.state === "failed") {
+        // Re-attempt only on NEW INFORMATION: the resolved URL changed since
+        // the failure (a later scene supplied the record's digest). Same URL
+        // → stay failed; a redraw loop never becomes a retry storm.
+        const url = this.resolveUrl(assetId);
+        if (url !== entry.url) {
+          this.entries.set(assetId, { state: "loading" });
+          void this.load(assetId);
+        }
+      }
+      return null;
     }
     // First request for this id: memoize as loading and fetch once.
     this.entries.set(assetId, { state: "loading" });
@@ -68,7 +87,7 @@ export class CanvasKitImageCache implements CanvasKitImageSource {
   private async load(assetId: string): Promise<void> {
     const url = this.resolveUrl(assetId);
     if (!url) {
-      this.entries.set(assetId, { state: "failed" });
+      this.entries.set(assetId, { state: "failed", url });
       return;
     }
     try {
@@ -78,14 +97,14 @@ export class CanvasKitImageCache implements CanvasKitImageSource {
       }
       const image = this.ck.MakeImageFromEncoded(new Uint8Array(buffer));
       if (!image) {
-        this.entries.set(assetId, { state: "failed" });
+        this.entries.set(assetId, { state: "failed", url });
         return;
       }
       this.entries.set(assetId, { state: "ready", image });
       this.onLoad?.();
     } catch {
       if (!this.disposed) {
-        this.entries.set(assetId, { state: "failed" });
+        this.entries.set(assetId, { state: "failed", url });
       }
     }
   }

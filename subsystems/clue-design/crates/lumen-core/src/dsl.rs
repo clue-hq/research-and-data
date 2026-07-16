@@ -1,7 +1,7 @@
 #![allow(clippy::result_large_err)]
 
 use crate::editing::{ExportProfileEditPatch, StackEntryEdit};
-use crate::scene::{BrandKitRef, ColorStop, Medium};
+use crate::scene::{parse_hex_rgba, BrandKitRef, ColorStop, Medium};
 use crate::{
     build_archive_asset, build_clone_subtree, build_delete_export_profile,
     build_detach_to_freehand, build_hard_delete_asset,
@@ -7519,34 +7519,6 @@ fn compose_color_opacity(
             format!("solid(...) cannot apply opacity to unresolved token color {token}"),
             "Bake the alpha into the token, or use a #RRGGBBAA color with solid(...).",
         )),
-    }
-}
-
-/// Parse #RGB, #RGBA, #RRGGBB, #RRGGBBAA (leading '#' optional) into RGBA bytes.
-fn parse_hex_rgba(value: &str) -> Option<(u8, u8, u8, u8)> {
-    let hex = value.trim().trim_start_matches('#');
-    let h = |s: &str| u8::from_str_radix(s, 16).ok();
-    match hex.len() {
-        3 | 4 => {
-            let mut ch = hex.chars();
-            let d = |c: char| c.to_digit(16).map(|v| (v * 17) as u8);
-            let r = d(ch.next()?)?;
-            let g = d(ch.next()?)?;
-            let b = d(ch.next()?)?;
-            let a = match ch.next() {
-                Some(c) => d(c)?,
-                None => 255,
-            };
-            Some((r, g, b, a))
-        }
-        6 => Some((h(&hex[0..2])?, h(&hex[2..4])?, h(&hex[4..6])?, 255)),
-        8 => Some((
-            h(&hex[0..2])?,
-            h(&hex[2..4])?,
-            h(&hex[4..6])?,
-            h(&hex[6..8])?,
-        )),
-        _ => None,
     }
 }
 

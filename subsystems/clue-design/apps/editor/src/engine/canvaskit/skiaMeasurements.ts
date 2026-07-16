@@ -1,7 +1,7 @@
 import type { CanvasKit, FontWeight, TypefaceFontProvider } from "canvaskit-wasm";
 import type { Scene, TextSpan } from "../contracts";
 import { resolvedTextFields } from "../renderAdapter";
-import { hasItalicFace } from "./loadCanvasKit";
+import { hasItalicFace, resolveFontFamilies } from "./loadCanvasKit";
 import { applyTextTransform, normalizeContentMapped, transformSegments } from "../textTransform";
 import type { TextMeasurement } from "../wasmEngine";
 
@@ -116,20 +116,22 @@ export function measureParagraph(
   fontProvider: TypefaceFontProvider,
   input: ParagraphInput
 ): { width: number; height: number } {
+  // A7b D2 gate: mirror the engine — Italic only when a real face exists,
+  // so measured widths reflect the same (upright) shaping the paint uses.
+  const italic = (input.italic ?? false) && hasItalicFace(input.fontFamily);
   const style = new ck.ParagraphStyle({
     textStyle: {
-      fontFamilies: [input.fontFamily],
+      // Alias-first chain: face selection is the editor's (CanvasKit's
+      // provider ignores fontStyle), so measurement resolves the SAME face
+      // the painter and the server do.
+      fontFamilies: resolveFontFamilies(input.fontFamily, input.fontWeight, italic),
       fontSize: input.fontSize,
       // A6a D6.1: the exact numeric weight (no 4-bucket snap), matching the
       // painter and the server so measured widths and painted glyphs agree.
       // CanvasKit accepts a raw number here; the enum type is just the TS shape.
-      // A7b: italic drives the slant — Skia snaps to upright natively when the
-      // provider carries no italic face (no synthetic slant), matching D2.
       fontStyle: {
         weight: input.fontWeight as unknown as FontWeight,
-        // A7b D2 gate: mirror the engine — Italic only when a real face exists,
-        // so measured widths reflect the same (upright) shaping the paint uses.
-        slant: input.italic && hasItalicFace(input.fontFamily) ? ck.FontSlant.Italic : ck.FontSlant.Upright
+        slant: italic ? ck.FontSlant.Italic : ck.FontSlant.Upright
       },
       heightMultiplier: input.lineHeight,
       letterSpacing: input.letterSpacing
@@ -183,14 +185,15 @@ function measureSpannedParagraph(
   });
   const core = transformSegments(normalized, boundaries, textTransform);
 
+  // A7b D2 gate: one family-level answer shared with every segment below.
+  const baseItalic = blockItalic && familyHasItalic;
   const style = new ck.ParagraphStyle({
     textStyle: {
-      fontFamilies: [styled.fontFamily],
+      fontFamilies: resolveFontFamilies(styled.fontFamily, styled.fontWeight, baseItalic),
       fontSize: styled.fontSize,
       fontStyle: {
         weight: styled.fontWeight as unknown as FontWeight,
-        // A7b D2 gate: one family-level answer shared with every segment below.
-        slant: blockItalic && familyHasItalic ? ck.FontSlant.Italic : ck.FontSlant.Upright
+        slant: baseItalic ? ck.FontSlant.Italic : ck.FontSlant.Upright
       },
       heightMultiplier: styled.lineHeight,
       letterSpacing: styled.letterSpacing
@@ -203,14 +206,14 @@ function measureSpannedParagraph(
     // A7b: italic is OVERRIDE (`span.italic ?? block`) — must byte-mirror the
     // engine's spanned measurer and the CanvasKit painter so measured widths
     // and painted glyphs agree for a de-italicized run.
-    const italic = span?.italic ?? blockItalic;
+    const italic = (span?.italic ?? blockItalic) && familyHasItalic;
     builder.pushStyle(
       new ck.TextStyle({
-        fontFamilies: [styled.fontFamily],
+        fontFamilies: resolveFontFamilies(styled.fontFamily, weight, italic),
         fontSize: styled.fontSize,
         fontStyle: {
           weight: weight as unknown as FontWeight,
-          slant: italic && familyHasItalic ? ck.FontSlant.Italic : ck.FontSlant.Upright
+          slant: italic ? ck.FontSlant.Italic : ck.FontSlant.Upright
         },
         heightMultiplier: styled.lineHeight,
         letterSpacing: styled.letterSpacing

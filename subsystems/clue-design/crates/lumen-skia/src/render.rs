@@ -86,6 +86,56 @@ impl PageRasterizer for SkiaSceneRenderer {
                 format!("page {page_id} is not in the scene"),
             )
         })?;
+        let region = page_geometry(page).layout;
+        self.rasterize_page_region(scene, page_id, &region, width_px, height_px, resolver)
+    }
+}
+
+impl SkiaSceneRenderer {
+    /// Rasterize an arbitrary page-space region (layout units) at the given
+    /// pixel size. The region may extend beyond the page rect — the bleed
+    /// box for print export is the motivating case — in which case page
+    /// background fills paint across the whole region (full-bleed
+    /// semantics, matching the vector PDF writer's bleed MediaBox fill) and
+    /// content nodes paint at their page-space positions, so edge-touching
+    /// art that extends past trim is included.
+    pub fn rasterize_page_region(
+        &self,
+        scene: &Scene,
+        page_id: &PageId,
+        region: &lumen_core::Rect,
+        width_px: u32,
+        height_px: u32,
+        resolver: Option<&dyn AssetByteResolver>,
+    ) -> Result<RasterizedPage, RasterizeError> {
+        self.rasterize_page_region_with(scene, page_id, region, width_px, height_px, resolver, None)
+    }
+
+    /// [`Self::rasterize_page_region`] plus optional crop marks (print
+    /// W2/W3): the flattened PDF path rasterizes marks into the page image.
+    #[allow(clippy::too_many_arguments)]
+    pub fn rasterize_page_region_with(
+        &self,
+        scene: &Scene,
+        page_id: &PageId,
+        region: &lumen_core::Rect,
+        width_px: u32,
+        height_px: u32,
+        resolver: Option<&dyn AssetByteResolver>,
+        overlay: Option<&PrintOverlay>,
+    ) -> Result<RasterizedPage, RasterizeError> {
+        let page = scene.pages.get(page_id).ok_or_else(|| {
+            RasterizeError::new(
+                "raster.page_missing",
+                format!("page {page_id} is not in the scene"),
+            )
+        })?;
+
+        lumen_export::ensure_raster_within_budget(
+            width_px,
+            height_px,
+            &format!("rasterizing page {page_id}"),
+        )?;
 
         let width = i32::try_from(width_px.max(1))
             .map_err(|_| RasterizeError::new("raster.size_invalid", "raster width exceeds i32"))?;
@@ -100,34 +150,16 @@ impl PageRasterizer for SkiaSceneRenderer {
             )
         })?;
 
-        let mut painter = PagePainter {
+        let diagnostics = self.paint_page_region_onto(
             scene,
-            fonts: &self.fonts,
+            page,
+            region,
+            surface.canvas(),
+            width as f32,
+            height as f32,
             resolver,
-            diagnostics: Vec::new(),
-        };
-
-        {
-            let canvas = surface.canvas();
-            // Opaque white "paper" default. A raster page is a physical
-            // artboard: every pixel not covered by a resolved paint must read
-            // as blank paper, never black. An unpainted premultiplied surface
-            // is alpha-0 (RGB 0), which flattens to solid black in any viewer
-            // or critic that composites onto black — the empty-page and
-            // collapsed-token "black PNG" class. The SVG exporter has no such
-            // trap because a transparent SVG shows the viewer's white page
-            // through; clearing to white gives the raster the same paper and
-            // matches the SVG's on-viewer appearance for an empty/uncovered
-            // page. Declared page backgrounds and node fills still paint on
-            // top, so nothing that resolves is affected.
-            canvas.clear(skia_safe::Color::WHITE);
-            let geometry = page_geometry(page);
-            canvas.scale((
-                width as f32 / geometry.layout.width.max(1.0) as f32,
-                height as f32 / geometry.layout.height.max(1.0) as f32,
-            ));
-            painter.paint_page(canvas, page);
-        }
+            overlay,
+        );
 
         let image = surface.image_snapshot();
         let png = image
@@ -138,9 +170,255 @@ impl PageRasterizer for SkiaSceneRenderer {
 
         Ok(RasterizedPage {
             png: png.as_bytes().to_vec(),
-            diagnostics: painter.diagnostics,
+            diagnostics,
         })
     }
+
+    /// Paint one page region onto an arbitrary canvas — a raster surface or
+    /// a PDF document page. `target_width`/`target_height` are in the
+    /// canvas's own units (pixels for rasters, points for PDF pages); the
+    /// layout-space region maps onto that extent.
+    ///
+    /// Opaque white "paper" is painted first, as a rect rather than
+    /// `canvas.clear` because clear is a raster-backend concept a PDF canvas
+    /// does not honor. A page is a physical artboard: every spot not covered
+    /// by a resolved paint must read as blank paper, never black — an
+    /// unpainted premultiplied surface is alpha-0 (RGB 0), which flattens to
+    /// solid black in any viewer or critic that composites onto black (the
+    /// empty-page and collapsed-token "black PNG" class). Declared page
+    /// backgrounds and node fills still paint on top.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn paint_page_region_onto(
+        &self,
+        scene: &Scene,
+        page: &Page,
+        region: &lumen_core::Rect,
+        canvas: &Canvas,
+        target_width: f32,
+        target_height: f32,
+        resolver: Option<&dyn AssetByteResolver>,
+        overlay: Option<&PrintOverlay>,
+    ) -> Vec<Diagnostic> {
+        let mut painter = PagePainter {
+            scene,
+            fonts: &self.fonts,
+            resolver,
+            diagnostics: Vec::new(),
+        };
+
+        canvas.save();
+        let mut paper = SkPaint::default();
+        paper.set_color(skia_safe::Color::WHITE);
+        canvas.draw_rect(SkRect::from_wh(target_width, target_height), &paper);
+        canvas.scale((
+            target_width / region.width.max(1.0) as f32,
+            target_height / region.height.max(1.0) as f32,
+        ));
+        canvas.translate((-region.x as f32, -region.y as f32));
+        // Content paints only inside the bleed area (the print margin must
+        // stay ink-free apart from marks and proof decor).
+        if let Some(overlay) = overlay {
+            let marks = &overlay.marks;
+            canvas.save();
+            canvas.clip_rect(
+                SkRect::from_xywh(
+                    marks.bleed.x as f32,
+                    marks.bleed.y as f32,
+                    marks.bleed.width as f32,
+                    marks.bleed.height as f32,
+                ),
+                skia_safe::ClipOp::Intersect,
+                true,
+            );
+            painter.paint_page(canvas, page, region);
+            canvas.restore();
+            draw_crop_marks(canvas, marks);
+            if let Some(slug) = &overlay.slug {
+                self.draw_proof_decor(canvas, marks, slug);
+            }
+        } else {
+            painter.paint_page(canvas, page, region);
+        }
+        canvas.restore();
+
+        painter.diagnostics
+    }
+}
+
+impl SkiaSceneRenderer {
+    /// Paint one page's trim content into a slot rect on an existing canvas
+    /// (print W4 imposition): clip to the slot, map the page's layout space
+    /// onto it, paint. No paper fill — the sheet painter owns the paper.
+    pub(crate) fn paint_page_in_slot(
+        &self,
+        scene: &Scene,
+        page: &Page,
+        canvas: &Canvas,
+        slot: SkRect,
+        resolver: Option<&dyn AssetByteResolver>,
+    ) -> Vec<Diagnostic> {
+        let region = page_geometry(page).layout;
+        let mut painter = PagePainter {
+            scene,
+            fonts: &self.fonts,
+            resolver,
+            diagnostics: Vec::new(),
+        };
+        canvas.save();
+        canvas.clip_rect(slot, skia_safe::ClipOp::Intersect, true);
+        canvas.translate((slot.left, slot.top));
+        canvas.scale((
+            slot.width() / region.width.max(1.0) as f32,
+            slot.height() / region.height.max(1.0) as f32,
+        ));
+        painter.paint_page(canvas, page, &region);
+        canvas.restore();
+        painter.diagnostics
+    }
+}
+
+/// Crop-mark geometry in layout coordinates (print W2/W3): `trim` is the
+/// cut line, `bleed` the ink boundary; marks draw OUTSIDE the bleed, from
+/// `gap` beyond it out to `margin` beyond it, aligned with the trim edges.
+#[derive(Clone, Debug)]
+pub struct CropMarks {
+    pub trim: lumen_core::Rect,
+    pub bleed: lumen_core::Rect,
+    pub margin: f64,
+    pub gap: f64,
+    pub stroke_width: f64,
+}
+
+/// Print-margin decor for one page (W2 marks / W7 proof): crop marks
+/// always; proof mode adds a slug line and an sRGB control strip in the
+/// bottom margin strip.
+#[derive(Clone, Debug)]
+pub struct PrintOverlay {
+    pub marks: CropMarks,
+    /// Fully formatted slug ("doc · profile · page n/N · PROOF …");
+    /// Some ⇒ proof mode (slug + control strip).
+    pub slug: Option<String>,
+}
+
+/// sRGB control strip patches: black, 75/50/25% grays, then the additive
+/// and subtractive primaries — enough to spot channel drift and tone
+/// response on a physical proof of an sRGB-workflow file.
+const CONTROL_STRIP: [skia_safe::Color; 10] = [
+    skia_safe::Color::new(0xff000000),
+    skia_safe::Color::new(0xff404040),
+    skia_safe::Color::new(0xff808080),
+    skia_safe::Color::new(0xffc0c0c0),
+    skia_safe::Color::new(0xff00ffff),
+    skia_safe::Color::new(0xffff00ff),
+    skia_safe::Color::new(0xffffff00),
+    skia_safe::Color::new(0xffff0000),
+    skia_safe::Color::new(0xff00ff00),
+    skia_safe::Color::new(0xff0000ff),
+];
+
+impl SkiaSceneRenderer {
+    /// Slug line bottom-left, control strip bottom-right — both inside the
+    /// bottom margin strip, outside the bleed, in layout coordinates.
+    fn draw_proof_decor(&self, canvas: &Canvas, marks: &CropMarks, slug: &str) {
+        let bleed_bottom = marks.bleed.y + marks.bleed.height;
+        let strip_height = (marks.margin * 0.45) as f32;
+        let strip_y = (bleed_bottom + marks.margin * 0.2) as f32;
+
+        // Control strip, right-aligned to the trim's right edge.
+        let patch_width = (marks.margin * 1.1) as f32;
+        let trim_right = (marks.trim.x + marks.trim.width) as f32;
+        let mut paint = SkPaint::default();
+        paint.set_anti_alias(false);
+        for (index, color) in CONTROL_STRIP.iter().enumerate() {
+            paint.set_color(*color);
+            let x = trim_right - (CONTROL_STRIP.len() - index) as f32 * patch_width;
+            canvas.draw_rect(
+                SkRect::from_xywh(x, strip_y, patch_width, strip_height),
+                &paint,
+            );
+        }
+
+        // Slug line, left-aligned to the trim's left edge.
+        let family = self.fonts.default_family().to_owned();
+        if let Some(typeface) = self.fonts.match_typeface(&family, 500, false) {
+            let size = (marks.margin * 0.5) as f32;
+            let font = skia_safe::Font::new(typeface, size);
+            let mut text_paint = SkPaint::default();
+            text_paint.set_color(skia_safe::Color::BLACK);
+            text_paint.set_anti_alias(true);
+            canvas.draw_str(
+                slug,
+                (marks.trim.x as f32, strip_y + strip_height * 0.85),
+                &font,
+                &text_paint,
+            );
+        }
+    }
+}
+
+fn draw_crop_marks(canvas: &Canvas, marks: &CropMarks) {
+    let mut paint = SkPaint::default();
+    paint.set_color(skia_safe::Color::BLACK);
+    paint.set_style(PaintStyle::Stroke);
+    paint.set_stroke_width(marks.stroke_width as f32);
+    paint.set_anti_alias(true);
+
+    for ((x0, y0), (x1, y1)) in crop_mark_segments(marks) {
+        canvas.draw_line(
+            Point::new(x0 as f32, y0 as f32),
+            Point::new(x1 as f32, y1 as f32),
+            &paint,
+        );
+    }
+}
+
+/// The mark strokes for one page, in layout coordinates. Pure geometry so
+/// the mark set is testable without rasterizing.
+pub(crate) fn crop_mark_segments(marks: &CropMarks) -> Vec<((f64, f64), (f64, f64))> {
+    let trim = &marks.trim;
+    let bleed = &marks.bleed;
+    let trim_right = trim.x + trim.width;
+    let trim_bottom = trim.y + trim.height;
+    let bleed_right = bleed.x + bleed.width;
+    let bleed_bottom = bleed.y + bleed.height;
+
+    // Trim (crop) marks: horizontal segments aligned with trim top/bottom
+    // outside the left/right bleed edges, vertical segments aligned with
+    // trim left/right outside the top/bottom bleed edges — two marks per
+    // corner, eight total.
+    let mut segments: Vec<((f64, f64), (f64, f64))> = vec![
+        ((bleed.x - marks.margin, trim.y), (bleed.x - marks.gap, trim.y)),
+        ((bleed_right + marks.gap, trim.y), (bleed_right + marks.margin, trim.y)),
+        ((bleed.x - marks.margin, trim_bottom), (bleed.x - marks.gap, trim_bottom)),
+        ((bleed_right + marks.gap, trim_bottom), (bleed_right + marks.margin, trim_bottom)),
+        ((trim.x, bleed.y - marks.margin), (trim.x, bleed.y - marks.gap)),
+        ((trim.x, bleed_bottom + marks.gap), (trim.x, bleed_bottom + marks.margin)),
+        ((trim_right, bleed.y - marks.margin), (trim_right, bleed.y - marks.gap)),
+        ((trim_right, bleed_bottom + marks.gap), (trim_right, bleed_bottom + marks.margin)),
+    ];
+    // Bleed marks (prepress convention, e.g. InDesign "Include Bleed
+    // Marks"): the same tick shape aligned with the BLEED edges, so the
+    // operator sees both boundaries. Only meaningful when the bleed box
+    // actually differs from the trim (proof mode on a bleed-less page has
+    // bleed == trim — a second identical set would just thicken the crop
+    // marks).
+    let has_distinct_bleed = (bleed.x - trim.x).abs() > f64::EPSILON
+        || (bleed.y - trim.y).abs() > f64::EPSILON
+        || (bleed.width - trim.width).abs() > f64::EPSILON
+        || (bleed.height - trim.height).abs() > f64::EPSILON;
+    if has_distinct_bleed {
+        segments.extend([
+            ((bleed.x - marks.margin, bleed.y), (bleed.x - marks.gap, bleed.y)),
+            ((bleed_right + marks.gap, bleed.y), (bleed_right + marks.margin, bleed.y)),
+            ((bleed.x - marks.margin, bleed_bottom), (bleed.x - marks.gap, bleed_bottom)),
+            ((bleed_right + marks.gap, bleed_bottom), (bleed_right + marks.margin, bleed_bottom)),
+            ((bleed.x, bleed.y - marks.margin), (bleed.x, bleed.y - marks.gap)),
+            ((bleed.x, bleed_bottom + marks.gap), (bleed.x, bleed_bottom + marks.margin)),
+            ((bleed_right, bleed.y - marks.margin), (bleed_right, bleed.y - marks.gap)),
+            ((bleed_right, bleed_bottom + marks.gap), (bleed_right, bleed_bottom + marks.margin)),
+        ]);
+    }
+    segments
 }
 
 struct PagePainter<'a> {
@@ -151,12 +429,20 @@ struct PagePainter<'a> {
 }
 
 impl<'a> PagePainter<'a> {
-    fn paint_page(&mut self, canvas: &Canvas, page: &Page) {
+    fn paint_page(&mut self, canvas: &Canvas, page: &Page, background_region: &lumen_core::Rect) {
         self.diagnostics
             .extend(page_background_token_diagnostics(page));
         let geometry = page_geometry(page);
-        let page_rect =
-            SkRect::from_wh(geometry.layout.width as f32, geometry.layout.height as f32);
+        // Background fills cover the whole requested region (= the page rect
+        // for plain rasters, the bleed box for print regions). Gradient
+        // geometry stays sized to the page, so the bleed margin continues
+        // the edge colors instead of rescaling the ramp.
+        let background_rect = SkRect::from_xywh(
+            background_region.x as f32,
+            background_region.y as f32,
+            background_region.width as f32,
+            background_region.height as f32,
+        );
         for fill in &page.background {
             let paint = self.fill_paint(
                 &fill.paint,
@@ -164,7 +450,7 @@ impl<'a> PagePainter<'a> {
                 geometry.layout.height,
                 None,
             );
-            canvas.draw_rect(page_rect, &paint);
+            canvas.draw_rect(background_rect, &paint);
         }
 
         for child_id in &page.children {
@@ -1820,4 +2106,56 @@ fn linear_to_srgb(linear: f64) -> f32 {
         1.055 * clamped.powf(1.0 / 2.4) - 0.055
     };
     srgb as f32
+}
+
+#[cfg(test)]
+mod crop_mark_tests {
+    use super::{crop_mark_segments, CropMarks};
+    use lumen_core::Rect;
+
+    fn marks(bleed: Rect) -> CropMarks {
+        CropMarks {
+            trim: Rect {
+                x: 0.0,
+                y: 0.0,
+                width: 200.0,
+                height: 150.0,
+            },
+            bleed,
+            margin: 14.0,
+            gap: 3.0,
+            stroke_width: 0.5,
+        }
+    }
+
+    #[test]
+    fn distinct_bleed_gets_trim_and_bleed_mark_sets() {
+        let segments = crop_mark_segments(&marks(Rect {
+            x: -9.0,
+            y: -9.0,
+            width: 218.0,
+            height: 168.0,
+        }));
+        // 8 trim-aligned + 8 bleed-aligned ticks.
+        assert_eq!(segments.len(), 16);
+        // A bleed-aligned horizontal tick sits at the bleed's top edge
+        // (y = -9), running through the margin left of the bleed box.
+        assert!(segments.contains(&(((-9.0 - 14.0), -9.0), ((-9.0 - 3.0), -9.0))));
+        // A trim-aligned vertical tick sits at the trim's left edge (x = 0),
+        // above the bleed box.
+        assert!(segments.contains(&((0.0, (-9.0 - 14.0)), (0.0, (-9.0 - 3.0)))));
+    }
+
+    #[test]
+    fn coincident_bleed_draws_only_the_trim_set() {
+        // Proof mode on a bleed-less page: bleed == trim; a second identical
+        // set would just double-stroke the crop marks.
+        let segments = crop_mark_segments(&marks(Rect {
+            x: 0.0,
+            y: 0.0,
+            width: 200.0,
+            height: 150.0,
+        }));
+        assert_eq!(segments.len(), 8);
+    }
 }

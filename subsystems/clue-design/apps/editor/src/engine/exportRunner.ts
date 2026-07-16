@@ -1,4 +1,4 @@
-import type { Diagnostic, DiagnosticSubject, ExportProfile, PageId, Scene } from "./contracts";
+import type { Diagnostic, DiagnosticSubject, ExportProfile, Page, PageId, RasterScale, Scene } from "./contracts";
 
 export interface EditorExportRequest {
   scene: Scene;
@@ -42,6 +42,23 @@ export interface EditorExportResult {
   status: "ok" | "failed";
   diagnostics: Diagnostic[];
   artifacts: EditorExportArtifact[];
+  /** Print workstream W3: the server's print-preflight report, present only
+   * for print-intent PDF exports (null otherwise). */
+  printReady: PrintReadyReport | null;
+}
+
+export type PrintReadyStatus = "pass" | "warn" | "fail";
+
+export interface PrintReadyRule {
+  id: string;
+  status: PrintReadyStatus;
+  detail: string;
+}
+
+export interface PrintReadyReport {
+  ruleset: string;
+  status: PrintReadyStatus;
+  rules: PrintReadyRule[];
 }
 
 export type EditorExportRunner = (
@@ -115,7 +132,11 @@ export function defaultEditorExportProfile(): ExportProfile {
     pdf_intent: "preview",
     raster: null,
     include_bleed: false,
-    embed_fonts: false
+    include_marks: false,
+    // SVG embeds fonts by default: without @font-face payloads the file
+    // (and the panel's SVG preview, which renders as an image and cannot
+    // reach document fonts) depends on viewer-installed fonts.
+    embed_fonts: true
   };
 }
 
@@ -131,6 +152,7 @@ export function builtInExportProfiles(): ExportProfile[] {
         dpi: 96
       },
       include_bleed: false,
+      include_marks: false,
       embed_fonts: false
     },
     {
@@ -139,6 +161,7 @@ export function builtInExportProfiles(): ExportProfile[] {
       pdf_intent: "preview",
       raster: null,
       include_bleed: false,
+      include_marks: false,
       embed_fonts: false
     },
     {
@@ -150,6 +173,7 @@ export function builtInExportProfiles(): ExportProfile[] {
         dpi: 300
       },
       include_bleed: false,
+      include_marks: false,
       embed_fonts: false
     },
     {
@@ -158,9 +182,57 @@ export function builtInExportProfiles(): ExportProfile[] {
       pdf_intent: "print",
       raster: null,
       include_bleed: true,
+      include_marks: true,
       embed_fonts: true
     }
   ];
+}
+
+/** Server-side raster ceiling (`MAX_RASTER_PIXELS` in lumen-export): exports
+ * above this fail with `export.raster_budget_exceeded`. Mirrored so the panel
+ * can warn before the round trip. */
+export const MAX_RASTER_PIXELS = 150_000_000;
+
+/** Mirrors the server's `page_pixel_size` (crates/lumen-export/src/png.rs) so
+ * the export panel can show the PNG output size for a scale choice. The
+ * server remains the authority; this is a display estimate. */
+export function estimatePngPixelSize(
+  page: Page,
+  raster: RasterScale | null
+): { width: number; height: number } {
+  const scale = raster?.scale ?? 1;
+  const toPixels = (width: number, height: number) => ({
+    width: Math.max(1, Math.round(width * scale)),
+    height: Math.max(1, Math.round(height * scale))
+  });
+  if (page.size.unit === "pt") {
+    if (!raster && page.size.output?.raster) {
+      const hint = page.size.output.raster;
+      return { width: Math.max(1, hint.width_px), height: Math.max(1, hint.height_px) };
+    }
+    const physical = page.size.output?.physical;
+    const dpi = raster?.dpi ?? null;
+    if (physical && dpi) {
+      const widthIn = physical.unit === "mm" ? physical.width / 25.4 : physical.width;
+      const heightIn = physical.unit === "mm" ? physical.height / 25.4 : physical.height;
+      return toPixels(widthIn * dpi, heightIn * dpi);
+    }
+    return toPixels(page.size.width, page.size.height);
+  }
+  const dpi = raster?.dpi ?? 96;
+  const inches = (value: number) => {
+    switch (page.size.unit) {
+      case "mm":
+        return value / 25.4;
+      case "in":
+        return value;
+      case "px":
+        return value / dpi;
+      default:
+        return value / 72;
+    }
+  };
+  return toPixels(inches(page.size.width) * dpi, inches(page.size.height) * dpi);
 }
 
 export function exportProfilesForScene(scene: Scene): ExportProfile[] {
@@ -179,7 +251,8 @@ function exportResultFromUnknown(payload: unknown): EditorExportResult {
     return {
       status: "failed",
       diagnostics: [exportDiagnostic("EDITOR_EXPORT_INVALID_RESPONSE", "Export API returned a non-object response.")],
-      artifacts: []
+      artifacts: [],
+      printReady: null
     };
   }
 
@@ -189,8 +262,37 @@ function exportResultFromUnknown(payload: unknown): EditorExportResult {
     diagnostics: diagnosticsFromUnknown(payload),
     artifacts: Array.isArray(exportPayload.artifacts)
       ? exportPayload.artifacts.flatMap(artifactFromUnknown)
-      : []
+      : [],
+    printReady: printReadyFromUnknown(exportPayload.print_ready)
   };
+}
+
+function printReadyFromUnknown(value: unknown): PrintReadyReport | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+  return {
+    ruleset: typeof value.ruleset === "string" ? value.ruleset : "unknown",
+    status: printReadyStatus(value.status),
+    rules: Array.isArray(value.rules) ? value.rules.flatMap(printReadyRuleFromUnknown) : []
+  };
+}
+
+function printReadyRuleFromUnknown(value: unknown): PrintReadyRule[] {
+  if (!isRecord(value)) {
+    return [];
+  }
+  return [
+    {
+      id: typeof value.id === "string" ? value.id : "unknown",
+      status: printReadyStatus(value.status),
+      detail: typeof value.detail === "string" ? value.detail : ""
+    }
+  ];
+}
+
+function printReadyStatus(value: unknown): PrintReadyStatus {
+  return value === "pass" || value === "warn" || value === "fail" ? value : "warn";
 }
 
 function artifactFromUnknown(value: unknown): EditorExportArtifact[] {

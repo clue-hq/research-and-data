@@ -49,16 +49,16 @@ impl std::error::Error for FontLoadError {}
 /// `@font-face` aliasing is the norm, so scenes request the DECLARED name and
 /// the face must resolve under both.
 #[derive(Clone)]
-struct LoadedFace {
-    bytes: Arc<Vec<u8>>,
-    family: String,
-    alias: Option<String>,
-    weight: i32,
+pub(crate) struct LoadedFace {
+    pub(crate) bytes: Arc<Vec<u8>>,
+    pub(crate) family: String,
+    pub(crate) alias: Option<String>,
+    pub(crate) weight: i32,
     /// A7b: whether this face is an italic (or oblique) style, parsed from the
     /// bytes' `font_style().slant()` at registration. Upright + italic faces of
     /// one family register under the SAME family key; the requested `FontStyle`
     /// slant disambiguates them at shape time (`match_typeface`).
-    italic: bool,
+    pub(crate) italic: bool,
 }
 
 /// Outcome of resolving a requested font family against the loaded set.
@@ -479,6 +479,55 @@ impl FontManager {
                     .any(|face| face.unichar_to_glyph(*ch as i32) != 0)
             })
             .collect()
+    }
+
+    /// The loaded faces in registration order — the deterministic scan
+    /// order per-glyph fallback uses when the default family cannot supply
+    /// a character. For the SVG font embedder (same crate) only.
+    pub(crate) fn loaded_faces(&self) -> &[LoadedFace] {
+        &self.faces
+    }
+
+    /// The loaded bytes behind the face `match_typeface` resolves for this
+    /// request, with the face's actual identity (intrinsic family, weight,
+    /// slant). SVG font embedding ships exactly these bytes, so the SVG
+    /// viewer renders the face the painter used — parity by construction.
+    /// `None` only when no face resolves at all (an unconstructable
+    /// manager) or when the matched typeface cannot be traced back to a
+    /// loaded face — both invariant breaches the caller must fail loudly on.
+    pub fn matched_face_bytes(
+        &self,
+        family: &str,
+        weight: i32,
+        italic: bool,
+    ) -> Option<(Arc<Vec<u8>>, String, i32, bool)> {
+        let resolution = self.resolve_family(family);
+        let typeface = self.match_typeface(family, weight, italic)?;
+        let actual_weight = *typeface.font_style().weight();
+        let actual_italic =
+            typeface.font_style().slant() != skia_safe::font_style::Slant::Upright;
+        // Trace back within the faces registered under the RESOLVED family
+        // (intrinsic name or declared alias) — the same candidate set
+        // `find_typefaces` matched among. Matching on intrinsic name alone
+        // would confuse an aliased face with a same-named face from another
+        // registration (e.g. a kit font whose bytes share the intrinsic
+        // family of a bundled face).
+        self.faces
+            .iter()
+            .find(|face| {
+                (face.family == resolution.family
+                    || face.alias.as_deref() == Some(resolution.family.as_str()))
+                    && face.weight == actual_weight
+                    && face.italic == actual_italic
+            })
+            .map(|face| {
+                (
+                    Arc::clone(&face.bytes),
+                    face.family.clone(),
+                    actual_weight,
+                    actual_italic,
+                )
+            })
     }
 
     /// Deduplicated grouping used by tests: family -> sorted weights.

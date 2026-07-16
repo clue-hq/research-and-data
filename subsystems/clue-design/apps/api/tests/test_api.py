@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import base64
 import copy
 import json
 import logging
+import shutil
 from pathlib import Path
 from typing import Optional
 
@@ -2095,10 +2097,322 @@ def test_export_preview_route_reports_print_pdf_bleed_dimensions(
         "source": "pdf_media_box",
     }
     diagnostic_codes = {diagnostic["code"] for diagnostic in payload["diagnostics"]}
-    assert "LUME0401" in diagnostic_codes
-    assert "LUME0402" in diagnostic_codes
+    # Print W2: the server PDF path renders vector by default through the
+    # Skia PDF backend (declared by LUME0427; LUMEN_PDF_RENDERER=flattened
+    # selects the W0 raster baseline, LUME0426). The early vector writer's
+    # fidelity warnings no longer apply.
+    assert "LUME0427" in diagnostic_codes
+    assert "LUME0401" not in diagnostic_codes
+    assert "LUME0402" not in diagnostic_codes
     assert "LUME0411" not in diagnostic_codes
     assert "LUME0412" not in diagnostic_codes
+
+    # Print W6: the print-ready report must SURVIVE the API compaction —
+    # compact_export_result once rebuilt the payload without it and the
+    # editor's report block silently never rendered (browser-verify find).
+    report = payload["export"]["print_ready"]
+    assert report["ruleset"] == "print-ready-v1"
+    assert report["status"] in {"pass", "warn", "fail"}
+    assert any(rule["id"] == "edge_art_reaches_bleed" for rule in report["rules"])
+
+
+def test_export_preview_route_honors_include_marks(client: TestClient) -> None:
+    """Print W2r: include_marks must survive profile normalization — the
+    MediaBox grows by the 14pt mark margin per side around the bleed."""
+    scene = minimal_scene()
+    scene["pages"]["page_a4"]["size"] = {
+        "width": 1080,
+        "height": 1080,
+        "unit": "px",
+        "preset": "custom",
+        "orientation": "portrait",
+    }
+    scene["pages"]["page_a4"]["bleed"] = {
+        "x": -18,
+        "y": -18,
+        "width": 1116,
+        "height": 1116,
+    }
+
+    response = client.post(
+        "/export-preview",
+        json={
+            "scene": scene,
+            "format": "pdf",
+            "page_ids": ["page_a4"],
+            "profile": {
+                "name": "print_pdf_marks",
+                "format": "pdf",
+                "pdf_intent": "print",
+                "raster": None,
+                "include_bleed": True,
+                "embed_fonts": True,
+                "include_marks": True,
+            },
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    artifact = payload["export"]["artifacts"][0]
+    assert artifact["dimensions"] == {
+        "width": 1144.0,
+        "height": 1144.0,
+        "unit": "pt",
+        "source": "pdf_media_box",
+    }
+
+
+def test_export_preview_marks_on_bleedless_page_keep_exact_trim_geometry(
+    client: TestClient,
+) -> None:
+    """The 2026-07-15 phantom-margin bug, pinned end-to-end: a print export
+    with bleed+marks flags against a page WITHOUT a bleed rect must produce
+    plain trim-size geometry — previously the box finalizer grew the
+    MediaBox by the 14pt mark margin while the renderer painted a trim-size
+    canvas, shipping a TrimBox that cut into the art."""
+    scene = minimal_scene()
+    scene["pages"]["page_a4"]["size"] = {
+        "width": 1080,
+        "height": 1350,
+        "unit": "px",
+        "preset": "custom",
+        "orientation": "portrait",
+    }
+    assert scene["pages"]["page_a4"].get("bleed") is None
+
+    response = client.post(
+        "/export-preview",
+        json={
+            "scene": scene,
+            "format": "pdf",
+            "page_ids": ["page_a4"],
+            "profile": {
+                "name": "print_pdf_marks_no_bleed",
+                "format": "pdf",
+                "pdf_intent": "print",
+                "raster": None,
+                "include_bleed": True,
+                "embed_fonts": True,
+                "include_marks": True,
+            },
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["status"] == "ok", payload["diagnostics"]
+    artifact = payload["export"]["artifacts"][0]
+    # Exactly the trim size — no phantom 14pt margin.
+    assert artifact["dimensions"] == {
+        "width": 1080.0,
+        "height": 1350.0,
+        "unit": "pt",
+        "source": "pdf_media_box",
+    }
+    # The gap stays loud: the missing-bleed warning rides the export.
+    codes = {item["code"] for item in payload["export"]["diagnostics"]}
+    assert "LUME0412" in codes
+
+
+def test_normalize_export_profile_keeps_optional_print_controls() -> None:
+    """Print W5: the profile whitelist rebuild must pass imposition/proof/
+    color through — dropping them here silently downgraded saved document
+    profiles (same defect class as the include_marks browser-verify find)."""
+    from lumen_api.main import normalize_export_profile
+
+    normalized = normalize_export_profile(
+        {
+            "name": "offset_press_pdf",
+            "format": "pdf",
+            "pdf_intent": "print",
+            "include_bleed": True,
+            "embed_fonts": True,
+            "include_marks": True,
+            "imposition": "booklet",
+            "proof": True,
+            "color": "cmyk",
+        }
+    )
+    assert normalized["imposition"] == "booklet"
+    assert normalized["proof"] is True
+    assert normalized["color"] == "cmyk"
+
+    plain = normalize_export_profile({"name": "digital_pdf", "format": "pdf"})
+    assert "imposition" not in plain
+    assert "proof" not in plain
+    assert "color" not in plain
+
+
+def cmyk_print_profile() -> JsonObject:
+    return {
+        "name": "print_pdf_cmyk",
+        "format": "pdf",
+        "pdf_intent": "print",
+        "raster": None,
+        "include_bleed": False,
+        "embed_fonts": True,
+        "include_marks": False,
+        "color": "cmyk",
+    }
+
+
+@pytest.mark.skipif(shutil.which("gs") is None, reason="ghostscript not installed")
+def test_export_preview_route_converts_print_pdf_to_cmyk(client: TestClient) -> None:
+    """Print W5 stage B: color:"cmyk" on a print-intent profile converts the
+    PDF through Ghostscript — the export declares the conversion (LUME0432)
+    and the OutputIntent names the press profile, not sRGB."""
+    scene = minimal_scene()
+    response = client.post(
+        "/export-preview",
+        json={
+            "scene": scene,
+            "format": "pdf",
+            "page_ids": ["page_a4"],
+            "profile": cmyk_print_profile(),
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["status"] == "ok", payload["diagnostics"]
+    codes = {item["code"] for item in payload["export"]["diagnostics"]}
+    assert "LUME0432" in codes
+    assert payload["export"]["print_ready"] is not None
+
+    artifact = payload["export"]["artifacts"][0]
+    header, encoded = artifact["data_url"].split(",", 1)
+    assert header == "data:application/pdf;base64"
+    pdf_bytes = base64.b64decode(encoded)
+    assert b"GTS_PDFX" in pdf_bytes
+    assert b"sRGB IEC61966-2.1" not in pdf_bytes, "CMYK export must not claim an sRGB intent"
+
+
+@pytest.mark.skipif(shutil.which("gs") is None, reason="ghostscript not installed")
+def test_document_export_via_saved_cmyk_profile(client: TestClient) -> None:
+    """The saved-profile blind spot: every other CMYK test uses an ad-hoc
+    inline profile — the exact gap that let the normalize whitelist silently
+    drop imposition/proof for weeks. This drives CMYK through a profile
+    SAVED in the document (name-resolved), end to end."""
+    scene = preflightable_scene()
+    scene["export_profiles"] = [cmyk_print_profile()]
+    document = create_document(client, scene)
+
+    response = client.post(
+        f"/documents/{document['id']}/export",
+        json={"profile_name": "print_pdf_cmyk", "page_ids": ["page_a4"]},
+    )
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["status"] == "ok", payload["diagnostics"]
+    # The saved profile survived normalization with its color intact.
+    assert payload["profile"]["color"] == "cmyk"
+
+    artifact = payload["export"]["artifacts"][0]
+    header, encoded = artifact["data_url"].split(",", 1)
+    assert header == "data:application/pdf;base64"
+    pdf_bytes = base64.b64decode(encoded)
+    assert b"GTS_PDFX" in pdf_bytes
+    assert b"sRGB IEC61966-2.1" not in pdf_bytes, (
+        "CMYK export must not claim an sRGB intent"
+    )
+
+
+def test_export_preview_route_rejects_cmyk_on_digital_pdf(client: TestClient) -> None:
+    """CMYK conversion is print-only: an electronic-distribution (preview
+    intent) PDF requesting it fails loudly, never silently converts."""
+    scene = minimal_scene()
+    profile = cmyk_print_profile()
+    profile["pdf_intent"] = "preview"
+    response = client.post(
+        "/export-preview",
+        json={
+            "scene": scene,
+            "format": "pdf",
+            "page_ids": ["page_a4"],
+            "profile": profile,
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["status"] == "failed"
+    codes = {item["code"] for item in payload["diagnostics"]}
+    assert "export.cmyk_requires_print_intent" in codes
+
+
+def png_scale_profile(scale: float) -> JsonObject:
+    return {
+        "name": f"png_{scale}x",
+        "format": "png",
+        "pdf_intent": None,
+        "raster": {"scale": scale, "dpi": 96},
+        "include_bleed": False,
+        "embed_fonts": False,
+    }
+
+
+def test_export_preview_route_scales_png_with_raster_scale(client: TestClient) -> None:
+    """raster.scale must survive profile normalization end-to-end: the PNG's
+    own IHDR dimensions scale by the profile multiplier (px pages get the
+    figma-style 1x/2x/... semantics)."""
+    scene = minimal_scene()
+    scene["pages"]["page_a4"]["size"] = {
+        "width": 1080,
+        "height": 1080,
+        "unit": "px",
+        "preset": "custom",
+        "orientation": "portrait",
+    }
+
+    for scale, expected in ((1.0, 1080), (2.0, 2160)):
+        response = client.post(
+            "/export-preview",
+            json={
+                "scene": scene,
+                "format": "png",
+                "page_ids": ["page_a4"],
+                "profile": png_scale_profile(scale),
+            },
+        )
+        assert response.status_code == 200, response.text
+        payload = response.json()
+        assert payload["status"] == "ok", payload["diagnostics"]
+        artifact = payload["export"]["artifacts"][0]
+        assert artifact["dimensions"] == {
+            "width": expected,
+            "height": expected,
+            "unit": "px",
+            "source": "png_ihdr",
+        }
+
+
+def test_export_preview_route_fails_raster_over_budget(client: TestClient) -> None:
+    """The engine raster budget (150 MP) fails loudly through the API: a
+    runaway scale x dpi profile must never OOM the helper silently."""
+    scene = minimal_scene()
+    scene["pages"]["page_a4"]["size"] = {
+        "width": 1080,
+        "height": 1080,
+        "unit": "px",
+        "preset": "custom",
+        "orientation": "portrait",
+    }
+
+    response = client.post(
+        "/export-preview",
+        json={
+            "scene": scene,
+            "format": "png",
+            "page_ids": ["page_a4"],
+            "profile": png_scale_profile(40.0),
+        },
+    )
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["status"] == "failed"
+    codes = {diagnostic["code"] for diagnostic in payload["diagnostics"]}
+    assert "export.raster_budget_exceeded" in codes, codes
 
 
 def test_styles_brand_kit_persists_validates_and_lists_versions(
@@ -4448,6 +4762,178 @@ def test_instance_batch_processes_chunks_with_resumable_cursor(
     loaded = client.get(f"/batches/{batch['batch_id']}")
     assert loaded.status_code == 200
     assert loaded.json()["status"] == "completed"
+
+
+PRINT_RUN_PROFILE = {
+    "name": "print_run",
+    "format": "pdf",
+    "pdf_intent": "print",
+    "raster": None,
+    "include_bleed": True,
+    "include_marks": True,
+    "embed_fonts": True,
+}
+
+
+def finalize_mailer_revision_with_saved_profile(client: TestClient) -> str:
+    """Mailer revision whose scene carries a saved print profile — the
+    'set up once, reuse forever' shape bulk runs resolve by name."""
+    document_id = "doc_g8_mailer"
+    scene = mailer_revision_scene_draft(document_id)
+    scene["export_profiles"] = [dict(PRINT_RUN_PROFILE)]
+    created = client.post(
+        "/documents", json={"document_id": document_id, "scene": scene}
+    )
+    assert created.status_code == 200, created.text
+    finalized = client.post(
+        f"/documents/{document_id}/finalize",
+        json={"template_revision_id": "tmpl_mailer_v1"},
+    )
+    assert finalized.status_code == 200, finalized.text
+    return "tmpl_mailer_v1"
+
+
+def test_instance_derivation_with_saved_print_profile(client: TestClient) -> None:
+    # A saved document profile drives the bulk artifact through the same
+    # print pipeline as an interactive download: bleed, marks, print boxes,
+    # embedded fonts, and the print-ready report.
+    revision_id = finalize_mailer_revision_with_saved_profile(client)
+    logo = upload_logo_asset(client)
+    binding_set_id = stored_binding(client, "nominal", logo["id"])
+
+    response = client.post(
+        f"/template-revisions/{revision_id}/instances",
+        json={
+            "binding_set_id": binding_set_id,
+            "export_profile_name": "print_run",
+        },
+    )
+    assert response.status_code == 200, response.text
+    instance = response.json()
+    assert instance["status"] == "derived"
+    pdfs = [a for a in instance["artifacts"] if a["format"] == "pdf"]
+    assert len(pdfs) == 1, instance["artifacts"]
+    pdf = pdfs[0]
+    assert pdf["profile_name"] == "print_run"
+    assert pdf.get("error") is None, pdf
+    assert pdf["print_ready"]["status"] != "fail"
+
+    store_root = str(client.app.state.asset_store_root)
+    pdf_bytes = (Path(store_root) / pdf["relative_path"]).read_bytes()
+    assert pdf_bytes.startswith(b"%PDF-")
+    assert b"/TrimBox" in pdf_bytes, "print finalize expected"
+    assert b"FontFile2" in pdf_bytes, "embedded subset fonts expected"
+
+
+def test_instance_derivation_rejects_bad_profile_requests(
+    client: TestClient,
+) -> None:
+    revision_id = finalize_mailer_revision_with_saved_profile(client)
+    logo = upload_logo_asset(client)
+    binding_set_id = stored_binding(client, "nominal", logo["id"])
+
+    both = client.post(
+        f"/template-revisions/{revision_id}/instances",
+        json={
+            "binding_set_id": binding_set_id,
+            "export_profile": dict(PRINT_RUN_PROFILE),
+            "export_profile_name": "print_run",
+        },
+    )
+    assert both.status_code == 422
+    assert both.json()["detail"]["code"] == "export_profile.ambiguous_source"
+
+    unknown = client.post(
+        f"/template-revisions/{revision_id}/instances",
+        json={"binding_set_id": binding_set_id, "export_profile_name": "ghost"},
+    )
+    assert unknown.status_code == 422
+    assert unknown.json()["detail"]["code"] == "export_profile.not_found"
+
+    formatless = client.post(
+        f"/template-revisions/{revision_id}/instances",
+        json={
+            "binding_set_id": binding_set_id,
+            "export_profile": {"name": "mystery", "include_bleed": True},
+        },
+    )
+    assert formatless.status_code == 422
+    assert formatless.json()["detail"]["code"] == "export_profile.format_required"
+
+
+def test_batch_with_print_profile_persists_profile_and_error_codes(
+    client: TestClient,
+) -> None:
+    revision_id = finalize_mailer_revision(client)
+    logo = upload_logo_asset(client)
+    ids = [
+        stored_binding(client, "nominal", logo["id"]),
+        stored_binding(client, "worst_case", logo["id"]),
+    ]
+
+    response = client.post(
+        f"/template-revisions/{revision_id}/batches",
+        json={
+            "binding_set_ids": ids,
+            "export_formats": [],
+            "export_profile": dict(PRINT_RUN_PROFILE),
+            "chunk_size": 2,
+        },
+    )
+    assert response.status_code == 200, response.text
+    batch = response.json()
+    assert batch["status"] == "completed"
+    assert batch["export_profile"]["name"] == "print_run"
+
+    by_binding = {entry["binding_set_id"]: entry for entry in batch["manifest"]}
+    derived = by_binding["bind_acme_dr_sharma"]
+    assert derived["status"] == "derived"
+    assert derived["error_codes"] == []
+    pdf = next(a for a in derived["artifacts"] if a["format"] == "pdf")
+    assert pdf["profile_name"] == "print_run"
+    assert pdf["print_ready"]["status"] != "fail"
+
+    # The failed derivation names its why directly in the manifest.
+    failed = by_binding["bind_meridian_dr_whitmore"]
+    assert failed["status"] == "failed"
+    assert failed["error_codes"], "failed instances must surface error codes"
+
+    # The profile survives persistence (resume reads it from the row).
+    loaded = client.get(f"/batches/{batch['batch_id']}").json()
+    assert loaded["export_profile"]["name"] == "print_run"
+
+
+def test_batch_with_bleed_profile_fails_fast_on_bleedless_template(
+    client: TestClient,
+) -> None:
+    # Fail-fast at copy zero: a bleed-requesting profile against a template
+    # with no bleed geometry would print-not-ready EVERY instance.
+    document_id = "doc_g8_mailer"
+    scene = mailer_revision_scene_draft(document_id)
+    scene["pages"]["page_mailer"]["bleed"] = None
+    created = client.post(
+        "/documents", json={"document_id": document_id, "scene": scene}
+    )
+    assert created.status_code == 200, created.text
+    assert (
+        client.post(
+            f"/documents/{document_id}/finalize",
+            json={"template_revision_id": "tmpl_mailer_v1"},
+        ).status_code
+        == 200
+    )
+    logo = upload_logo_asset(client)
+    binding_set_id = stored_binding(client, "nominal", logo["id"])
+
+    response = client.post(
+        "/template-revisions/tmpl_mailer_v1/batches",
+        json={
+            "binding_set_ids": [binding_set_id],
+            "export_profile": dict(PRINT_RUN_PROFILE),
+        },
+    )
+    assert response.status_code == 422, response.text
+    assert response.json()["detail"]["code"] == "batch.template_not_print_ready"
 
 
 def test_batch_rejects_unknown_or_mismatched_binding_sets(

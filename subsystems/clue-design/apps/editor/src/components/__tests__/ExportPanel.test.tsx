@@ -75,6 +75,7 @@ function exportResult(): EditorExportResult {
         }
       }
     ],
-    diagnostics: []
+    diagnostics: [],
+    printReady: null
   };
 }

@@ -5,17 +5,34 @@
 //! storage.
 
 pub mod checks;
+pub mod cmyk;
+pub mod fonts;
+pub mod imposition;
 pub mod pdf;
+pub mod pdf_boxes;
 pub mod png;
+pub mod print_ready;
 pub mod raster;
 pub mod resolver;
 pub mod sidecar;
 pub mod svg;
 
 pub use checks::{asset_export_checks, license_enforced, MIN_EFFECTIVE_PRINT_DPI};
+pub use cmyk::{cmyk_target_for, convert_pdf_to_cmyk, CmykTarget};
+pub use fonts::{EmbeddedFontFace, FontEmbedError, FontFaceResolver, FontUsage};
 pub use pdf::PdfExportAdapter;
+pub use pdf_boxes::{
+    apply_print_boxes, finalize_print_pdf, page_boxes_for,
+    page_boxes_with_margin, print_margin_for_page, PageBoxes, PdfxDeclarations,
+    MARK_GAP_PT, MARK_MARGIN_PT,
+};
+pub use imposition::{booklet_sheet_sides, BookletSheetSide};
+pub use print_ready::{is_print_ready_scope, print_ready_report};
 pub use png::PngExportAdapter;
-pub use raster::{PageRasterizer, RasterizeError, RasterizedPage};
+pub use raster::{
+    ensure_raster_within_budget, PageRasterizer, PdfRenderOptions, RasterizeError, RasterizedPage,
+    RenderedPdf, RenderedPdfPage, ScenePdfRenderer, MAX_RASTER_PIXELS,
+};
 pub use resolver::{
     AssetByteResolver, AssetResolveError, FixtureAssetResolver, ResolvedAssetBytes,
 };
@@ -42,25 +59,23 @@ impl LumenExportAdapter {
         Self::default()
     }
 
-    /// Build an export adapter whose SVG and PNG paths embed real asset
-    /// bytes through the given resolver. PDF asset embedding is a
-    /// follow-up; its print preflight already validates asset metadata.
+    /// Build an export adapter whose SVG, PNG, and flattened-PDF paths
+    /// embed real asset bytes through the given resolver.
     pub fn with_resolver(resolver: Arc<dyn AssetByteResolver>) -> Self {
         Self {
             svg: SvgExportAdapter::with_resolver(Arc::clone(&resolver)),
-            png: PngExportAdapter::with_resolver(resolver),
-            pdf: PdfExportAdapter::new(),
+            png: PngExportAdapter::with_resolver(Arc::clone(&resolver)),
+            pdf: PdfExportAdapter::new().with_resolver(resolver),
         }
     }
 
-    /// Inject a shaping text measurer into the markup format paths (Wave 1
-    /// Track A): SVG and PDF line breaks then share one source of truth
-    /// with the layout engine. The PNG path shapes text inside its injected
-    /// rasterizer (same SkParagraph construction) and needs no measurer.
+    /// Inject a shaping text measurer into the SVG path (Wave 1 Track A):
+    /// SVG line breaks share one source of truth with the layout engine.
+    /// PNG and PDF shape text inside their injected Skia renderers (same
+    /// SkParagraph construction) and need no measurer.
     pub fn with_measurer(self, measurer: SharedTextMeasurer) -> Self {
         Self {
-            svg: self.svg.with_measurer(Arc::clone(&measurer)),
-            pdf: self.pdf.with_measurer(measurer),
+            svg: self.svg.with_measurer(measurer),
             ..self
         }
     }
@@ -69,6 +84,29 @@ impl LumenExportAdapter {
     pub fn with_rasterizer(self, rasterizer: Arc<dyn PageRasterizer>) -> Self {
         Self {
             png: self.png.with_rasterizer(rasterizer),
+            ..self
+        }
+    }
+
+    /// Inject a scene PDF renderer (print W0 raster-flattened or W2 vector
+    /// Skia-PDF). With one injected, PDF export produces the full-fidelity
+    /// document instead of the early vector writer, which stays as the
+    /// un-injected (wasm-portable) fallback / D5 comparison baseline.
+    pub fn with_pdf_renderer(self, renderer: Arc<dyn ScenePdfRenderer>) -> Self {
+        Self {
+            pdf: self.pdf.with_pdf_renderer(renderer),
+            ..self
+        }
+    }
+
+    /// Inject a font-face resolver into the SVG path: `embed_fonts`
+    /// profiles then embed the exact face bytes the raster painted with as
+    /// `@font-face` data URIs (subset to the used characters), so the SVG
+    /// renders identically on machines without the fonts installed. PNG and
+    /// PDF embed inside their injected Skia renderers and need none.
+    pub fn with_font_resolver(self, resolver: Arc<dyn FontFaceResolver>) -> Self {
+        Self {
+            svg: self.svg.with_font_resolver(resolver),
             ..self
         }
     }
@@ -134,5 +172,6 @@ fn figma_manifest_export(
             sidecar_json: None,
         }],
         diagnostics,
+        print_ready: None,
     })
 }

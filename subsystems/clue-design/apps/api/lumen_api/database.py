@@ -22,6 +22,38 @@ class NotFoundError(KeyError):
         return f"{self.resource_type} {self.resource_id} was not found"
 
 
+# The ONE `assets`-table column list + row builder: create_asset_record
+# (canonical upsert) and register_scene_assets (scene promotion) both write
+# through these, so a schema addition cannot silently diverge between the
+# two write paths.
+ASSET_ROW_COLUMNS = (
+    "asset_id, label, kind, status, mime_type, digest_algorithm,"
+    " digest_value, byte_length, filename, tags_json, record_json,"
+    " created_at, updated_at"
+)
+ASSET_ROW_PLACEHOLDERS = ",".join("?" for _ in ASSET_ROW_COLUMNS.split(","))
+
+
+def asset_row_values(record: "JsonObject", now: str) -> tuple:
+    media = record.get("media") or {}
+    digest = media.get("digest") or {}
+    return (
+        record["id"],
+        record.get("label") or "",
+        record.get("kind") or "other",
+        record.get("status") or "ready",
+        media.get("mime_type"),
+        digest.get("algorithm"),
+        digest.get("value"),
+        media.get("byte_length"),
+        media.get("filename"),
+        encode(record.get("tags") or []),
+        encode(record),
+        now,
+        now,
+    )
+
+
 def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -56,6 +88,9 @@ def run_migrations(database_path: Path) -> None:
         # Per-document advanced opt-out (0/1): when set, the editor skips the
         # handoff-absolute freeze seams so agent auto-layout stays live.
         ensure_column(connection, "documents", "layout_managed_editing", "INTEGER")
+        # Bulk print controls: the resolved export profile a batch runs with
+        # (NULL = format-default artifacts, the pre-profile behavior).
+        ensure_column(connection, "instance_batches", "export_profile_json", "TEXT")
         backfill_edit_envelopes(connection)
 
 
@@ -342,7 +377,105 @@ class Repository:
                 ),
             )
             self.store_diagnostics(document_id, "structural", diagnostics, commit=False)
+            self.register_scene_assets(scene, commit=False)
         return self.require_document(document_id)
+
+    def register_scene_assets(self, scene: JsonObject, commit: bool = True) -> int:
+        """Registry promotion for every locally stored asset the scene
+        carries. Every scene-persist path funnels through this, so an asset
+        any producer put into a scene (the deepagent's generated imagery,
+        edits, QR codes) is servable through the registry-backed endpoints
+        and visible in the asset library — the instance-derivation path's
+        "generated assets become first-class library records" promotion,
+        generalized to all scenes.
+
+        Two write modes, both curation-safe:
+        - UNSEEN asset id → insert the full row.
+        - EXISTING id whose scene digest DIFFERS → refresh only the
+          byte-identity columns (mime/digest/length/filename and the
+          record's media block), so regenerate-in-place keeps the registry
+          serving the CURRENT pixels. Curated columns (label, kind, status,
+          tags) are never touched by a scene write.
+
+        Returns the number of rows written."""
+        assets = scene.get("assets")
+        if not isinstance(assets, dict) or not assets:
+            return 0
+        candidates: Dict[str, JsonObject] = {}
+        for asset_id, record in assets.items():
+            if not isinstance(record, dict):
+                continue
+            # Engine invariant: scene.assets keys by the record's own id.
+            # A mismatched entry is malformed — never fabricate a registry
+            # row under a key the record itself does not claim.
+            if record.get("id") != asset_id:
+                continue
+            media = record.get("media") or {}
+            location = media.get("location") or {}
+            if location.get("provider") != "local-store" or not location.get("opaque_ref"):
+                continue
+            candidates[str(asset_id)] = record
+        if not candidates:
+            return 0
+        # Chunked lookup: scenes can carry arbitrarily many assets, and this
+        # runs inside the document-save transaction — exceeding SQLite's
+        # host-parameter limit here would roll back the user's save.
+        existing: Dict[str, Tuple[Optional[str], str]] = {}
+        ids = list(candidates)
+        for start in range(0, len(ids), 500):
+            chunk = ids[start : start + 500]
+            placeholders = ",".join("?" for _ in chunk)
+            for row in self.connection.execute(
+                f"SELECT asset_id, digest_value, record_json FROM assets"
+                f" WHERE asset_id IN ({placeholders})",
+                tuple(chunk),
+            ):
+                existing[row[0]] = (row[1], row[2])
+        now = utc_now()
+        written = 0
+        for asset_id, record in candidates.items():
+            media = record.get("media") or {}
+            digest = media.get("digest") or {}
+            if asset_id not in existing:
+                cursor = self.connection.execute(
+                    f"INSERT OR IGNORE INTO assets ({ASSET_ROW_COLUMNS})"
+                    f" VALUES ({ASSET_ROW_PLACEHOLDERS})",
+                    asset_row_values(record, now),
+                )
+                written += max(cursor.rowcount, 0)
+                continue
+            stored_digest, stored_record_json = existing[asset_id]
+            new_digest = digest.get("value")
+            if not new_digest or new_digest == stored_digest:
+                continue
+            # Regenerate-in-place: refresh byte identity, preserve curation.
+            # record_json is patched (media block only), not replaced — the
+            # stored record may carry curated fields a scene write must not
+            # clobber.
+            stored_record = decode(stored_record_json)
+            stored_record["media"] = media
+            cursor = self.connection.execute(
+                """
+                UPDATE assets
+                SET mime_type = ?, digest_algorithm = ?, digest_value = ?,
+                    byte_length = ?, filename = ?, record_json = ?, updated_at = ?
+                WHERE asset_id = ?
+                """,
+                (
+                    media.get("mime_type"),
+                    digest.get("algorithm"),
+                    new_digest,
+                    media.get("byte_length"),
+                    media.get("filename"),
+                    encode(stored_record),
+                    now,
+                    asset_id,
+                ),
+            )
+            written += max(cursor.rowcount, 0)
+        if commit:
+            self.connection.commit()
+        return written
 
     def update_document_state(
         self,
@@ -466,6 +599,7 @@ class Repository:
                 commit=False,
             )
             self.store_diagnostics(document_id, diagnostic_kind, diagnostics, commit=False)
+            self.register_scene_assets(scene, commit=False)
         return self.require_document(document_id)
 
     def append_operations(
@@ -826,17 +960,10 @@ class Repository:
         return asset_from_row(row)
 
     def create_asset_record(self, record: JsonObject) -> JsonObject:
-        now = utc_now()
-        media = record.get("media") or {}
-        digest = media.get("digest") or {}
         self.connection.execute(
-            """
-            INSERT INTO assets (
-              asset_id, label, kind, status, mime_type, digest_algorithm,
-              digest_value, byte_length, filename, tags_json, record_json,
-              created_at, updated_at
-            )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            f"""
+            INSERT INTO assets ({ASSET_ROW_COLUMNS})
+            VALUES ({ASSET_ROW_PLACEHOLDERS})
             ON CONFLICT(asset_id) DO UPDATE SET
               label = excluded.label,
               kind = excluded.kind,
@@ -850,21 +977,7 @@ class Repository:
               record_json = excluded.record_json,
               updated_at = excluded.updated_at
             """,
-            (
-                record["id"],
-                record.get("label") or "",
-                record.get("kind") or "other",
-                record.get("status") or "ready",
-                media.get("mime_type"),
-                digest.get("algorithm"),
-                digest.get("value"),
-                media.get("byte_length"),
-                media.get("filename"),
-                encode(record.get("tags") or []),
-                encode(record),
-                now,
-                now,
-            ),
+            asset_row_values(record, utc_now()),
         )
         self.connection.commit()
         return self.require_asset_record(record["id"])
@@ -1097,10 +1210,11 @@ class Repository:
             """
             INSERT INTO instance_batches (
               batch_id, template_revision_id, status, binding_set_ids_json,
-              export_formats_json, chunk_size, cursor, counts_json,
-              manifest_json, diagnostics_json, created_at, updated_at
+              export_formats_json, export_profile_json, chunk_size, cursor,
+              counts_json, manifest_json, diagnostics_json, created_at,
+              updated_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 batch["batch_id"],
@@ -1108,6 +1222,7 @@ class Repository:
                 batch["status"],
                 encode(batch["binding_set_ids"]),
                 encode(batch["export_formats"]),
+                encode_optional(batch.get("export_profile")),
                 batch["chunk_size"],
                 batch["cursor"],
                 encode(batch.get("counts", {})),
@@ -1474,6 +1589,7 @@ def batch_from_row(row: sqlite3.Row) -> JsonObject:
         "status": row["status"],
         "binding_set_ids": decode(row["binding_set_ids_json"]),
         "export_formats": decode(row["export_formats_json"]),
+        "export_profile": decode_optional(row["export_profile_json"]),
         "chunk_size": row["chunk_size"],
         "cursor": row["cursor"],
         "counts": decode(row["counts_json"]),

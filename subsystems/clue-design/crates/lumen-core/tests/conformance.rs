@@ -353,6 +353,7 @@ impl ExportAdapter for MockExportAdapter {
         Ok(ExportResult {
             artifacts,
             diagnostics,
+            print_ready: None,
         })
     }
 }
@@ -886,6 +887,10 @@ fn print_pdf_profile() -> ExportProfile {
         raster: None,
         include_bleed: true,
         embed_fonts: true,
+    include_marks: false,
+    imposition: None,
+    proof: false,
+    color: None,
     }
 }
 
@@ -900,6 +905,10 @@ fn agent_png_profile() -> ExportProfile {
         }),
         include_bleed: false,
         embed_fonts: false,
+    include_marks: false,
+    imposition: None,
+    proof: false,
+    color: None,
     }
 }
 

@@ -16,7 +16,10 @@ from lumen_ingestion.font_library import (
     CURATED_FAMILIES,
     REQUIRED_GLYPHS,
     FontLibraryError,
+    _find_italic_source,
+    _find_variable_source,
     _instance_bytes,
+    _static_instance_names,
     _ttfont,
     face_asset_id,
     glyph_coverage,
@@ -26,6 +29,7 @@ from lumen_ingestion.font_library import (
 REPO_ROOT = Path(__file__).resolve().parents[3]
 INTER_REGULAR = REPO_ROOT / "fonts" / "Inter-Regular.ttf"
 CHECKED_IN_MANIFEST = REPO_ROOT / "apps" / "api" / "font-library" / "manifest.json"
+GOOGLE_FONTS_REPO = REPO_ROOT / ".context" / "google-fonts"
 
 
 # --- provisioning helpers ---------------------------------------------------
@@ -159,6 +163,116 @@ def test_agent_inventory_weights_column_excludes_italics() -> None:
 def test_instance_bytes_rejects_static_sources() -> None:
     with pytest.raises(FontLibraryError, match="expected a variable source"):
         _instance_bytes(INTER_REGULAR.read_bytes(), 400, "Inter")
+
+
+# --- static-instance name hygiene ---------------------------------------------
+# instancer.instantiateVariableFont leaves the variable source's name records
+# behind: every Hanken weight shipped calling itself "Regular" and every
+# Bricolage weight "96pt ExtraBold" — which is what PDF font lists (and a print
+# shop's preflight) display for the embedded face.
+
+
+def test_static_instance_names_ribbi_faces_use_style_linked_records() -> None:
+    # The four RIBBI styles carry the style in nameID 2 and omit 16/17.
+    for weight, italic, subfamily, ps in (
+        (400, False, "Regular", "HankenGrotesk-Regular"),
+        (700, False, "Bold", "HankenGrotesk-Bold"),
+        (400, True, "Italic", "HankenGrotesk-Italic"),
+        (700, True, "Bold Italic", "HankenGrotesk-BoldItalic"),
+    ):
+        names = _static_instance_names("Hanken Grotesk", weight, italic)
+        assert names[1] == "Hanken Grotesk"
+        assert names[2] == subfamily
+        assert names[4] == f"Hanken Grotesk {subfamily}"
+        assert names[6] == ps
+        assert 16 not in names and 17 not in names
+
+
+def test_static_instance_names_non_ribbi_faces_carry_typographic_records() -> None:
+    names = _static_instance_names("Bricolage Grotesque", 800, False)
+    assert names[1] == "Bricolage Grotesque ExtraBold"
+    assert names[2] == "Regular"
+    assert names[4] == "Bricolage Grotesque ExtraBold"
+    assert names[6] == "BricolageGrotesque-ExtraBold"
+    assert names[16] == "Bricolage Grotesque"
+    assert names[17] == "ExtraBold"
+
+    italic = _static_instance_names("Fraunces", 600, True)
+    assert italic[1] == "Fraunces SemiBold"
+    assert italic[2] == "Italic"
+    assert italic[6] == "Fraunces-SemiBoldItalic"
+    assert italic[17] == "SemiBold Italic"
+
+
+needs_fonts_repo = pytest.mark.skipif(
+    not GOOGLE_FONTS_REPO.is_dir(),
+    reason="pinned google-fonts clone not present (.context/google-fonts)",
+)
+
+
+def _instanced_font(family_slug: str, weight: int, italic: bool = False):
+    curated = next(f for f in CURATED_FAMILIES if f.slug == family_slug)
+    directory = GOOGLE_FONTS_REPO / curated.directory
+    finder = _find_italic_source if italic else _find_variable_source
+    source = finder(directory, curated.family)
+    assert source is not None, f"no variable source for {family_slug}"
+    return _ttfont(
+        _instance_bytes(source.read_bytes(), weight, curated.family, italic=italic)
+    ), curated.family
+
+
+@needs_fonts_repo
+def test_instanced_faces_are_named_after_their_instance() -> None:
+    # The two live offenders: Hanken 700 said "Regular", Bricolage 800 said
+    # "96pt ExtraBold" (with the same lie at 400/600/700).
+    font, _ = _instanced_font("hanken-grotesk", 700)
+    name = font["name"]
+    assert name.getDebugName(1) == "Hanken Grotesk"
+    assert name.getDebugName(2) == "Bold"
+    assert name.getDebugName(4) == "Hanken Grotesk Bold"
+    assert name.getDebugName(6) == "HankenGrotesk-Bold"
+    assert name.getDebugName(16) is None and name.getDebugName(17) is None
+    assert name.getDebugName(25) is None  # variations PS prefix must not survive
+    assert font["OS/2"].fsSelection & 0x0020  # BOLD
+    assert not font["OS/2"].fsSelection & 0x0040  # not REGULAR
+    assert font["head"].macStyle == 0b01
+
+    font, _ = _instanced_font("bricolage-grotesque", 800)
+    name = font["name"]
+    assert name.getDebugName(1) == "Bricolage Grotesque ExtraBold"
+    assert name.getDebugName(2) == "Regular"
+    assert name.getDebugName(6) == "BricolageGrotesque-ExtraBold"
+    assert name.getDebugName(16) == "Bricolage Grotesque"
+    assert name.getDebugName(17) == "ExtraBold"
+    assert "96pt" not in (name.getDebugName(3) or "")
+    assert font["OS/2"].fsSelection & 0x0040  # REGULAR (boldness is usWeightClass)
+    assert font["OS/2"].usWeightClass == 800
+
+
+@needs_fonts_repo
+def test_instanced_italic_faces_carry_italic_names_and_bits() -> None:
+    font, _ = _instanced_font("hanken-grotesk", 400, italic=True)
+    name = font["name"]
+    assert name.getDebugName(1) == "Hanken Grotesk"
+    assert name.getDebugName(2) == "Italic"
+    assert name.getDebugName(6) == "HankenGrotesk-Italic"
+    assert font["OS/2"].fsSelection & 0x0001  # ITALIC
+    assert font["head"].macStyle == 0b10
+
+    font, _ = _instanced_font("fraunces", 600, italic=True)
+    name = font["name"]
+    assert name.getDebugName(1) == "Fraunces SemiBold"
+    assert name.getDebugName(2) == "Italic"
+    assert name.getDebugName(6) == "Fraunces-SemiBoldItalic"
+    assert name.getDebugName(17) == "SemiBold Italic"
+
+
+@needs_fonts_repo
+def test_instancing_preserves_use_typo_metrics_bit() -> None:
+    # The rewrite owns only the RIBBI bits; USE_TYPO_METRICS (bit 7) comes
+    # from the source and changing it would shift line metrics everywhere.
+    font, _ = _instanced_font("hanken-grotesk", 400)
+    assert font["OS/2"].fsSelection & 0x0080
 
 
 # --- runtime manifest access -------------------------------------------------
@@ -300,6 +414,22 @@ def test_core_client_injects_library_fonts_into_shaping_actions(
     core.preflight_scene({"nodes": {}}, None)
     injected = captured["request"]["library_fonts"]
     assert injected["faces"] == [{"digest": "c" * 64, "family": "DM Sans"}]
+
+    # derive_instance shapes and renders bulk artifacts: it MUST receive the
+    # library spec (its omission was the silent-Inter bulk-export bug), and
+    # the brand_fonts passthrough must survive alongside the injection.
+    core.derive_instance(
+        {"nodes": {}},
+        {"binding_set_id": "bind_test"},
+        brand_fonts={"store_root": "/tmp/store", "faces": []},
+    )
+    assert captured["request"]["library_fonts"]["faces"] == [
+        {"digest": "c" * 64, "family": "DM Sans"}
+    ]
+    assert captured["request"]["brand_fonts"] == {
+        "store_root": "/tmp/store",
+        "faces": [],
+    }
 
     # Non-shaping actions are untouched.
     core.validate_scene({"nodes": {}})

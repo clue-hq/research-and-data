@@ -55,7 +55,12 @@ export function WorstCasePreviewPanel({
         Derives this template with every slot at its worst-case content.
         Read-only: fixes belong on the template, never on instances.
       </p>
-      <button type="button" disabled={busy} onClick={() => void renderPreview()}>
+      <button
+        type="button"
+        className="brand-check-button"
+        disabled={busy}
+        onClick={() => void renderPreview()}
+      >
         {busy ? "Deriving…" : "Render worst case"}
       </button>
       {error ? <p className="muted worst-case-error">{error}</p> : null}

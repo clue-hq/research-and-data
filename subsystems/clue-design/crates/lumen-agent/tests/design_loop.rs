@@ -54,6 +54,7 @@ impl ExportAdapter for MockExportAdapter {
                 }]
             }),
             diagnostics: self.diagnostics.clone(),
+            print_ready: None,
         })
     }
 }

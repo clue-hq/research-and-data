@@ -127,6 +127,42 @@ describe("SelectionOverlay (Wave 3 C3d)", () => {
     expect(Number(bleed.getAttribute("height"))).toBeCloseTo(303 * 2, 6);
   });
 
+  it("W3: renders the trim (page-box) guide when marginGuides carries one, colored via the trim token", () => {
+    const { container } = render(
+      <SelectionOverlay
+        selection={null}
+        pageOrigin={pageOrigin}
+        zoom={2}
+        marginGuides={{
+          safeArea: { x: 12, y: 12, width: 186, height: 273 },
+          bleed: { x: -3, y: -3, width: 216, height: 303 },
+          trim: { x: 0, y: 0, width: 210, height: 297 }
+        }}
+      />
+    );
+    const trim = container.querySelector('[data-role="margin-guide-trim"]')!;
+    expect(trim).not.toBeNull();
+    expect(Number(trim.getAttribute("x"))).toBeCloseTo(pageOrigin.x + 0 * 2, 6);
+    expect(Number(trim.getAttribute("width"))).toBeCloseTo(210 * 2, 6);
+    expect(trim.getAttribute("stroke")).toBe("var(--guide-trim)");
+    // Safe-area + bleed now read their tokens too.
+    expect(container.querySelector('[data-role="margin-guide-safe-area"]')?.getAttribute("stroke")).toBe("var(--guide-safe)");
+    expect(container.querySelector('[data-role="margin-guide-bleed"]')?.getAttribute("stroke")).toBe("var(--guide-bleed)");
+  });
+
+  it("W3: omits the trim guide when marginGuides has no trim (print feature off)", () => {
+    const { container } = render(
+      <SelectionOverlay
+        selection={null}
+        pageOrigin={pageOrigin}
+        zoom={1}
+        marginGuides={{ safeArea: { x: 12, y: 12, width: 186, height: 273 }, bleed: null }}
+      />
+    );
+    expect(container.querySelector('[data-role="margin-guide-trim"]')).toBeNull();
+    expect(container.querySelector('[data-role="margin-guide-safe-area"]')).not.toBeNull();
+  });
+
   it("4d: renders neither margin guide when marginGuides is null", () => {
     const { container } = render(<SelectionOverlay selection={null} pageOrigin={pageOrigin} zoom={1} marginGuides={null} />);
     expect(container.querySelector('[data-role="margin-guide-safe-area"]')).toBeNull();

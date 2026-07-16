@@ -1,3 +1,4 @@
+use crate::fonts::{FontFaceResolver, FontUsage};
 use crate::resolver::{AssetByteResolver, ResolvedAssetBytes};
 use crate::sidecar::{build_sidecar, node_output_id, page_output_id};
 use base64::engine::general_purpose::STANDARD as BASE64;
@@ -11,6 +12,7 @@ use lumen_core::{
     Stroke, StrokeAlign, StrokeCap, StrokeJoin, TextAlign, TextDirection, Unit,
 };
 use lumen_core::{valign_offset, HeuristicTextMeasurer, SharedTextMeasurer, TextMeasureInput, TextMeasurer};
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
 /// Heuristic fallback used when no measurer is injected, preserving
@@ -21,6 +23,7 @@ pub(crate) static FALLBACK_MEASURER: HeuristicTextMeasurer = HeuristicTextMeasur
 pub struct SvgExportAdapter {
     resolver: Option<Arc<dyn AssetByteResolver>>,
     measurer: Option<SharedTextMeasurer>,
+    font_resolver: Option<Arc<dyn FontFaceResolver>>,
 }
 
 impl SvgExportAdapter {
@@ -32,6 +35,7 @@ impl SvgExportAdapter {
         Self {
             resolver: Some(resolver),
             measurer: None,
+            font_resolver: None,
         }
     }
 
@@ -40,6 +44,16 @@ impl SvgExportAdapter {
     /// layout engine used.
     pub fn with_measurer(mut self, measurer: SharedTextMeasurer) -> Self {
         self.measurer = Some(measurer);
+        self
+    }
+
+    /// Inject a font-face resolver: `embed_fonts` profiles then embed the
+    /// exact face bytes the raster path painted with as `@font-face` data
+    /// URIs, so the SVG renders identically on machines without the fonts
+    /// installed. Without one, embedding is impossible and every export
+    /// carries the LUME0216 viewer-font dependency warning.
+    pub fn with_font_resolver(mut self, resolver: Arc<dyn FontFaceResolver>) -> Self {
+        self.font_resolver = Some(resolver);
         self
     }
 }
@@ -92,7 +106,9 @@ impl ExportAdapter for SvgExportAdapter {
                 page,
                 self.resolver.as_deref(),
                 self.measurer.as_deref().map(measurer_as_dyn),
-            );
+                self.font_resolver.as_deref(),
+                request.profile.embed_fonts,
+            )?;
             diagnostics.extend(page_diagnostics);
 
             let sidecar =
@@ -112,6 +128,7 @@ impl ExportAdapter for SvgExportAdapter {
         Ok(ExportResult {
             artifacts,
             diagnostics,
+            print_ready: None,
         })
     }
 }
@@ -125,10 +142,13 @@ pub(crate) fn render_page_svg(
     page: &Page,
     resolver: Option<&dyn AssetByteResolver>,
     measurer: Option<&dyn TextMeasurer>,
-) -> (String, Vec<Diagnostic>) {
-    let mut renderer = SvgPageRenderer::new(scene, page, resolver, measurer);
-    let svg = renderer.render_page();
-    (svg, renderer.diagnostics)
+    font_resolver: Option<&dyn FontFaceResolver>,
+    embed_fonts: bool,
+) -> Result<(String, Vec<Diagnostic>), ExportError> {
+    let mut renderer =
+        SvgPageRenderer::new(scene, page, resolver, measurer, font_resolver, embed_fonts);
+    let svg = renderer.render_page()?;
+    Ok((svg, renderer.diagnostics))
 }
 
 pub fn resolve_page_ids(scene: &Scene, requested: &[PageId]) -> PageResolution {
@@ -165,6 +185,15 @@ struct SvgPageRenderer<'a> {
     page: &'a Page,
     resolver: Option<&'a dyn AssetByteResolver>,
     measurer: &'a dyn TextMeasurer,
+    font_resolver: Option<&'a dyn FontFaceResolver>,
+    embed_fonts: bool,
+    /// The resolver's deterministic fallback family, resolved once per
+    /// render (constant for the export); `None` without a resolver.
+    fallback_family: Option<String>,
+    /// (requested family, weight, italic) → characters rendered with it,
+    /// collected while emitting text nodes. Feeds `@font-face` embedding
+    /// when active and the LUME0216 viewer-font warning when not.
+    font_usage: BTreeMap<(String, i32, bool), BTreeSet<char>>,
     defs: Vec<String>,
     body: String,
     diagnostics: Vec<Diagnostic>,
@@ -176,19 +205,31 @@ impl<'a> SvgPageRenderer<'a> {
         page: &'a Page,
         resolver: Option<&'a dyn AssetByteResolver>,
         measurer: Option<&'a dyn TextMeasurer>,
+        font_resolver: Option<&'a dyn FontFaceResolver>,
+        embed_fonts: bool,
     ) -> Self {
         Self {
             scene,
             page,
             resolver,
             measurer: measurer.unwrap_or(&FALLBACK_MEASURER),
+            font_resolver,
+            embed_fonts,
+            fallback_family: font_resolver.map(|fonts| fonts.fallback_family()),
+            font_usage: BTreeMap::new(),
             defs: Vec::new(),
             body: String::new(),
             diagnostics: Vec::new(),
         }
     }
 
-    fn render_page(&mut self) -> String {
+    /// Whether this render embeds fonts: the profile asked for it AND a
+    /// resolver is injected. Both name-only states diagnose via LUME0216.
+    fn embedding_active(&self) -> bool {
+        self.embed_fonts && self.font_resolver.is_some()
+    }
+
+    fn render_page(&mut self) -> Result<String, ExportError> {
         let dimensions = page_dimensions(self.page);
 
         self.body.push_str(&format!(
@@ -235,13 +276,15 @@ impl<'a> SvgPageRenderer<'a> {
 
         self.body.push_str("</g>\n");
 
-        let defs = if self.defs.is_empty() {
+        let font_style = self.font_face_style_def()?;
+        let defs_content = format!("{}{}", font_style, self.defs.join(""));
+        let defs = if defs_content.is_empty() {
             String::new()
         } else {
-            format!("<defs>\n{}</defs>\n", self.defs.join(""))
+            format!("<defs>\n{}</defs>\n", defs_content)
         };
 
-        format!(
+        Ok(format!(
             "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{}{}\" height=\"{}{}\" viewBox=\"0 0 {} {}\" data-lumen-document-id=\"{}\" data-lumen-page-id=\"{}\">\n{}{}{}</svg>\n",
             fmt_num(dimensions.attr_width),
             dimensions.unit_suffix,
@@ -254,7 +297,142 @@ impl<'a> SvgPageRenderer<'a> {
             defs,
             self.body,
             ""
-        )
+        ))
+    }
+
+    /// The `@font-face` style def embedding every face this page's text
+    /// used (the exact bytes the raster painted with, subset by the
+    /// resolver), or — in either declared name-only state — the LUME0216
+    /// viewer-font dependency warning and no def. Resolution failures are
+    /// fatal: the export never silently ships a file whose fidelity
+    /// depends on which machine opens it when embedding was requested.
+    fn font_face_style_def(&mut self) -> Result<String, ExportError> {
+        if self.font_usage.is_empty() {
+            return Ok(String::new());
+        }
+        if !self.embedding_active() {
+            self.push_viewer_font_warning();
+            return Ok(String::new());
+        }
+        let resolver = self
+            .font_resolver
+            .expect("embedding_active() checked the resolver");
+        // Empty-family normalization is the RESOLVER's contract (an empty
+        // requested family resolves to its fallback family) — one owner, so
+        // the css_family in the emitted rules and the attr chain cannot
+        // drift. Usages pass through as collected.
+        let usages = self
+            .font_usage
+            .iter()
+            .map(|((family, weight, italic), chars)| FontUsage {
+                family: family.clone(),
+                weight: *weight,
+                italic: *italic,
+                chars: chars.clone(),
+            })
+            .collect::<Vec<_>>();
+        let faces = resolver.resolve_embeds(&usages).map_err(|error| {
+            ExportError::new(
+                error.code,
+                format!(
+                    "SVG font embedding failed for page {}: {}",
+                    self.page.id, error.message
+                ),
+            )
+        })?;
+        if faces.is_empty() {
+            return Err(ExportError::new(
+                "export.font_embed_empty",
+                format!(
+                    "font resolver returned no faces for page {} despite {} font usage(s) — refusing to ship a name-only SVG from an embedding export",
+                    self.page.id,
+                    usages.len()
+                ),
+            ));
+        }
+        let mut css = String::new();
+        for face in &faces {
+            let format_hint = match face.mime_type.as_str() {
+                "font/ttf" => " format(\"truetype\")",
+                "font/otf" => " format(\"opentype\")",
+                _ => "",
+            };
+            let unicode_range = face
+                .unicode_range
+                .as_ref()
+                .map(|range| format!(" unicode-range: {};", range))
+                .unwrap_or_default();
+            css.push_str(&format!(
+                "@font-face {{ font-family: {}; font-weight: {}; font-style: {};{} src: url(\"data:{};base64,{}\"){}; }}\n",
+                css_string(&face.css_family),
+                face.weight,
+                if face.italic { "italic" } else { "normal" },
+                unicode_range,
+                face.mime_type,
+                BASE64.encode(&face.bytes),
+                format_hint
+            ));
+        }
+        // XML-escape the CSS text content; conforming SVG parsers decode
+        // entities before the CSS parser runs.
+        Ok(format!(
+            "<style type=\"text/css\">\n{}</style>\n",
+            escape_text(&css)
+        ))
+    }
+
+    /// Record that rendered text used `family` at `weight`/`italic` for
+    /// `content`'s characters. Control characters never need glyphs;
+    /// whitespace does (space advances come from the font).
+    fn record_font_usage(&mut self, family: &str, weight: i32, italic: bool, content: &str) {
+        let chars: BTreeSet<char> = content.chars().filter(|ch| !ch.is_control()).collect();
+        if chars.is_empty() {
+            return;
+        }
+        self.font_usage
+            .entry((family.trim().to_owned(), weight, italic))
+            .or_default()
+            .extend(chars);
+    }
+
+    /// LUME0216: this SVG references fonts by name only, so faithful
+    /// rendering depends on the fonts being installed on the viewing
+    /// machine. Emitted for both declared name-only states — the profile
+    /// opting out (`embed_fonts=false`) and a portable consumer with no
+    /// font resolver injected — never for the embedding path.
+    fn push_viewer_font_warning(&mut self) {
+        let families = self
+            .font_usage
+            .keys()
+            .map(|(family, _, _)| family.trim())
+            .filter(|family| !family.is_empty())
+            .collect::<BTreeSet<_>>();
+        if families.is_empty() {
+            // Only default-family text: the emitted markup already carries
+            // the generic fallback chain, nothing viewer-specific to name.
+            return;
+        }
+        let cause = if self.embed_fonts {
+            "no font resolver is configured on this export path"
+        } else {
+            "the export profile disables font embedding (embed_fonts=false)"
+        };
+        self.diagnostics.push(
+            Diagnostic::warning(
+                Phase::Export,
+                "LUME0216",
+                format!(
+                    "SVG for page {} references fonts by name only ({}); faithful rendering requires these fonts installed on every viewing machine: {}",
+                    self.page.id,
+                    cause,
+                    families.into_iter().collect::<Vec<_>>().join(", ")
+                ),
+                Some(DiagnosticSubject::Page(self.page.id.clone())),
+            )
+            .with_hint(
+                "Export with embed_fonts enabled (server exports embed automatically) or install the listed fonts on every machine that will open this SVG.",
+            ),
+        );
     }
 
     /// Pinned nodes never render inside their parent's tree — see
@@ -518,6 +696,40 @@ impl<'a> SvgPageRenderer<'a> {
                 } else {
                     ""
                 };
+                // Font-embedding usage: record every (family, weight, italic)
+                // this node renders with, and the characters it rendered —
+                // per span run when spanned (weight/italic overrides select
+                // different faces), per line otherwise. Mirrors exactly the
+                // face-selection inputs `text_run_attrs` emits as markup.
+                if spanned {
+                    for line in &measured.lines {
+                        for run in &line.runs {
+                            let span = run.span.and_then(|index| text.spans.get(index));
+                            let weight = span
+                                .and_then(|span| span.font_weight)
+                                .unwrap_or(text.font_weight);
+                            let run_italic = span
+                                .and_then(|span| span.italic)
+                                .unwrap_or(text.italic)
+                                && self.measurer.has_italic_face(&text.font_family);
+                            self.record_font_usage(
+                                &text.font_family,
+                                i32::from(weight),
+                                run_italic,
+                                &run.text,
+                            );
+                        }
+                    }
+                } else {
+                    for line in &measured.lines {
+                        self.record_font_usage(
+                            &text.font_family,
+                            i32::from(text.font_weight),
+                            italic_renderable,
+                            &line.text,
+                        );
+                    }
+                }
                 // A6b D7: per-run tspans (absolute x within the line) when spans
                 // exist; otherwise the pre-A6b single-tspan-per-line markup.
                 let tspans = if spanned {
@@ -576,12 +788,26 @@ impl<'a> SvgPageRenderer<'a> {
                         .with_hint("Stacked text fills are out of V0 scope; use a single text fill."),
                     );
                 }
+                // Embedding exports emit a quoted two-family chain — the
+                // requested family plus the deterministic fallback — routing
+                // per-glyph gaps to the same embedded fallback faces the
+                // raster used. Name-only exports keep the historical
+                // unquoted markup byte-identical.
+                let family_attr = if self.embedding_active() {
+                    let fallback = self
+                        .fallback_family
+                        .as_deref()
+                        .expect("embedding_active() implies a resolver");
+                    embedded_font_family_attr(&text.font_family, fallback)
+                } else {
+                    svg_font_family(&text.font_family)
+                };
                 self.body.push_str(&format!(
                     "<text{} x=\"{}\" y=\"{}\" font-family=\"{}\" font-size=\"{}\" font-weight=\"{}\" text-anchor=\"{}\" letter-spacing=\"{}\" direction=\"{}\"{}{}{}{}{}>{}</text>\n",
                     id_attrs,
                     fmt_num(x),
                     fmt_num(text.font_size),
-                    escape_attr(&svg_font_family(&text.font_family)),
+                    escape_attr(&family_attr),
                     fmt_num(text.font_size),
                     text.font_weight,
                     anchor,
@@ -1868,6 +2094,51 @@ fn corner_attrs(node: &Node, width: f64, height: f64) -> String {
 
 fn opacity_with_paint(opacity: String, paint_attrs: String) -> String {
     format!("{}{}", opacity, paint_attrs)
+}
+
+/// The `font-family` attribute value for an embedding export: the requested
+/// family plus the deterministic fallback family, each CSS-quoted so names
+/// with spaces, leading digits, or commas parse as ONE family and match the
+/// embedded `@font-face` rules exactly. (XML escaping of the attribute
+/// happens separately via `escape_attr`.)
+fn embedded_font_family_attr(family: &str, fallback: &str) -> String {
+    let trimmed = family.trim();
+    if trimmed.is_empty() || trimmed == fallback {
+        return css_escaped(fallback, '\'');
+    }
+    format!(
+        "{}, {}",
+        css_escaped(trimmed, '\''),
+        css_escaped(fallback, '\'')
+    )
+}
+
+/// Double-quoted CSS string for `@font-face` descriptors.
+fn css_string(name: &str) -> String {
+    css_escaped(name, '"')
+}
+
+/// A CSS string literal with the given quote character: backslashes, the
+/// quote itself, and control characters (raw newlines are invalid in CSS
+/// strings) are escaped.
+fn css_escaped(name: &str, quote: char) -> String {
+    let mut out = String::with_capacity(name.len() + 2);
+    out.push(quote);
+    for ch in name.chars() {
+        match ch {
+            '\\' => out.push_str("\\\\"),
+            c if c == quote => {
+                out.push('\\');
+                out.push(c);
+            }
+            c if (c as u32) < 0x20 => {
+                out.push_str(&format!("\\{:x} ", c as u32));
+            }
+            c => out.push(c),
+        }
+    }
+    out.push(quote);
+    out
 }
 
 fn svg_font_family(family: &str) -> String {

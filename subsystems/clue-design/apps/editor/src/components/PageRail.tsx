@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Copy, FileText, Plus, Trash2 } from "lucide-react";
+import { ChevronRight, Copy, FileText, Plus, Trash2 } from "lucide-react";
 import type { Diagnostic, PageId, Scene, Unit } from "@/engine/contracts";
 import { listPages } from "@/engine/sceneQueries";
 import { createWorkspaceModel } from "@/engine/workspaceLayout";
@@ -10,6 +10,9 @@ interface PageRailProps {
   scene: Scene;
   activePageId: PageId | null;
   diagnostics?: Diagnostic[];
+  /** Print workstream W3: when on, the print presets (A4 / US Letter) appear
+   * and pages created from them seed a bleed + safe-area default. */
+  printFeatureEnabled?: boolean;
   onSelectPage: (pageId: PageId) => void;
   onAddCustomPage: (input: CustomPageInput) => void;
   onDuplicatePage: (pageId: PageId) => void;
@@ -21,9 +24,14 @@ export interface CustomPageInput {
   width: number;
   height: number;
   unit: Unit;
+  /** Marks a page created from a print preset — the host applies bleed/safe
+   * defaults (only while the print feature is on). */
+  print?: boolean;
 }
 
-const quickSizes: Array<Pick<CustomPageInput, "name" | "width" | "height" | "unit">> = [
+type QuickSize = Pick<CustomPageInput, "name" | "width" | "height" | "unit"> & { print?: boolean };
+
+const quickSizes: QuickSize[] = [
   {
     name: "Square Ad",
     width: 1080,
@@ -50,10 +58,30 @@ const quickSizes: Array<Pick<CustomPageInput, "name" | "width" | "height" | "uni
   }
 ];
 
+/** Print-only presets — physical page sizes that carry commercial-print
+ * bleed/safe defaults when created. Shown only when the print feature is on. */
+const printQuickSizes: QuickSize[] = [
+  {
+    name: "A4 print",
+    width: 210,
+    height: 297,
+    unit: "mm",
+    print: true
+  },
+  {
+    name: "US Letter print",
+    width: 8.5,
+    height: 11,
+    unit: "in",
+    print: true
+  }
+];
+
 export function PageRail({
   scene,
   activePageId,
   diagnostics = [],
+  printFeatureEnabled = false,
   onSelectPage,
   onAddCustomPage,
   onDuplicatePage,
@@ -63,8 +91,13 @@ export function PageRail({
   const [width, setWidth] = useState(1080);
   const [height, setHeight] = useState(1080);
   const [unit, setUnit] = useState<Unit>("px");
-  // Figma-style rail: the creator is a disclosure behind the header's +.
-  // null = "not touched yet" → open only while the document has no pages.
+  // Tracks whether the current draft came from a print preset (so its bleed/
+  // safe defaults apply on Add). Any manual field edit clears it — the draft
+  // is no longer a pristine print preset.
+  const [pendingPrint, setPendingPrint] = useState(false);
+  const availableQuickSizes = printFeatureEnabled ? [...quickSizes, ...printQuickSizes] : quickSizes;
+  // Collapsible add-artboard form: null = untouched → open only when the
+  // document has no pages yet.
   const [creatorToggled, setCreatorToggled] = useState<boolean | null>(null);
   const pages = listPages(scene);
   const creatorOpen = creatorToggled ?? pages.length === 0;
@@ -82,7 +115,8 @@ export function PageRail({
       name: name.trim() || `${width} x ${height} ${unit}`,
       width,
       height,
-      unit
+      unit,
+      print: pendingPrint
     });
   };
 
@@ -93,16 +127,6 @@ export function PageRail({
           <FileText aria-hidden size={16} />
           Pages
         </div>
-        <button
-          type="button"
-          className="page-rail-add"
-          aria-label="New artboard"
-          title="New artboard"
-          aria-expanded={creatorOpen}
-          onClick={() => setCreatorToggled(!creatorOpen)}
-        >
-          <Plus aria-hidden size={14} />
-        </button>
       </div>
       {pages.length > 0 ? (
         <ul className="page-list">
@@ -117,7 +141,7 @@ export function PageRail({
                   onClick={() => onSelectPage(page.id)}
                 >
                   <span className="page-row-title">
-                    {page.name}
+                    <span className="page-row-name">{page.name}</span>
                     {artboard ? <DiagnosticDot summary={artboard.diagnosticsSummary} /> : null}
                   </span>
                   <small className="visually-hidden">{pageSizeLabel(page)}</small>
@@ -147,67 +171,100 @@ export function PageRail({
       ) : (
         <p className="muted page-list-empty">No artboards yet.</p>
       )}
-      {creatorOpen ? (
-      <div className="custom-page-creator" aria-label="Create custom artboard">
-        <label>
-          Name
-          <input aria-label="Custom artboard name" value={name} onChange={(event) => setName(event.target.value)} />
-        </label>
-        <div className="compact-grid">
-          <div className="compact-field">
-            <span>W</span>
-            <input
-              aria-label="Custom artboard width"
-              type="number"
-              min={1}
-              step={unit === "px" || unit === "pt" ? 1 : 0.1}
-              value={width}
-              onChange={(event) => setWidth(Number(event.target.value))}
-            />
-          </div>
-          <div className="compact-field">
-            <span>H</span>
-            <input
-              aria-label="Custom artboard height"
-              type="number"
-              min={1}
-              step={unit === "px" || unit === "pt" ? 1 : 0.1}
-              value={height}
-              onChange={(event) => setHeight(Number(event.target.value))}
-            />
-          </div>
-          <div className="compact-field">
-            <span>Unit</span>
-            <select aria-label="Custom artboard unit" value={unit} onChange={(event) => setUnit(event.target.value as Unit)}>
-              <option value="pt">pt</option>
-              <option value="px">px</option>
-              <option value="mm">mm</option>
-              <option value="in">in</option>
-            </select>
-          </div>
-        </div>
-        <div className="quick-size-list" aria-label="Common custom sizes">
-          {quickSizes.map((size) => (
-            <button
-              key={`${size.name}-${size.width}-${size.height}-${size.unit}`}
-              type="button"
-              onClick={() => {
-                setName(size.name);
-                setWidth(size.width);
-                setHeight(size.height);
-                setUnit(size.unit);
-              }}
-            >
-              {size.width}x{size.height}
-            </button>
-          ))}
-        </div>
-        <button type="button" className="secondary-action" onClick={addPage} disabled={!canAdd}>
-          <Plus aria-hidden size={15} />
+      <section className="custom-page-creator-section" aria-label="Add artboard">
+        <button
+          type="button"
+          className="custom-page-creator-toggle"
+          aria-expanded={creatorOpen}
+          onClick={() => setCreatorToggled(!creatorOpen)}
+        >
+          <ChevronRight aria-hidden size={14} className="custom-page-creator-chevron" />
           Add artboard
         </button>
-      </div>
-      ) : null}
+        {creatorOpen ? (
+          <div className="custom-page-creator">
+            <label>
+              Name
+              <input
+                aria-label="Custom artboard name"
+                value={name}
+                onChange={(event) => {
+                  setName(event.target.value);
+                  setPendingPrint(false);
+                }}
+              />
+            </label>
+            <div className="compact-grid">
+              <div className="compact-field">
+                <span>W</span>
+                <input
+                  aria-label="Custom artboard width"
+                  type="number"
+                  min={1}
+                  step={unit === "px" || unit === "pt" ? 1 : 0.1}
+                  value={width}
+                  onChange={(event) => {
+                    setWidth(Number(event.target.value));
+                    setPendingPrint(false);
+                  }}
+                />
+              </div>
+              <div className="compact-field">
+                <span>H</span>
+                <input
+                  aria-label="Custom artboard height"
+                  type="number"
+                  min={1}
+                  step={unit === "px" || unit === "pt" ? 1 : 0.1}
+                  value={height}
+                  onChange={(event) => {
+                    setHeight(Number(event.target.value));
+                    setPendingPrint(false);
+                  }}
+                />
+              </div>
+              <div className="compact-field">
+                <span>Unit</span>
+                <select
+                  aria-label="Custom artboard unit"
+                  value={unit}
+                  onChange={(event) => {
+                    setUnit(event.target.value as Unit);
+                    setPendingPrint(false);
+                  }}
+                >
+                  <option value="pt">pt</option>
+                  <option value="px">px</option>
+                  <option value="mm">mm</option>
+                  <option value="in">in</option>
+                </select>
+              </div>
+            </div>
+            <div className="quick-size-list" aria-label="Common custom sizes">
+              {availableQuickSizes.map((size) => (
+                <button
+                  key={`${size.name}-${size.width}-${size.height}-${size.unit}`}
+                  type="button"
+                  title={size.name}
+                  onClick={() => {
+                    setName(size.name);
+                    setWidth(size.width);
+                    setHeight(size.height);
+                    setUnit(size.unit);
+                    setPendingPrint(size.print ?? false);
+                  }}
+                >
+                  {size.print ? size.name : `${size.width}x${size.height}`}
+                </button>
+              ))}
+            </div>
+            <button type="button" className="secondary-action" onClick={addPage} disabled={!canAdd}>
+              <Plus aria-hidden size={15} />
+              Add artboard
+            </button>
+          </div>
+        ) : null}
+      </section>
     </nav>
   );
 }

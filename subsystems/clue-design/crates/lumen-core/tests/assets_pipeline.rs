@@ -49,6 +49,10 @@ fn export_profile() -> ExportProfile {
         raster: None,
         include_bleed: true,
         embed_fonts: true,
+    include_marks: false,
+    imposition: None,
+    proof: false,
+    color: None,
     }
 }
 
