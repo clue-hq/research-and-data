@@ -49,6 +49,7 @@ import type {
   BrandKitSummary,
   Diagnostic,
   DiagnosticSubject,
+  ExportProfile,
   NodeId,
   Operation,
   Page,
@@ -385,9 +386,6 @@ export default function EditorApp({
   const [isExportMenuOpen, setIsExportMenuOpen] = useState(false);
   const [isVersionHistoryOpen, setIsVersionHistoryOpen] = useState(false);
   const exportMenuAnchorRef = useRef<HTMLDivElement | null>(null);
-  // Set when an export was started from the topbar menu: its artifacts
-  // download directly (moda's Download) instead of opening the Export panel.
-  const downloadAfterExportRef = useRef(false);
   // Model override for agent turns ("" = runtime default).
   const [agentModel, setAgentModel] = useState("");
   // Workspace chrome (panel mode, workspace mode, viewport/tool, sidebar
@@ -706,25 +704,29 @@ export default function EditorApp({
 
   // Topbar export menu: exports it started download their artifacts directly
   // (moda's Download button) instead of routing through the Export panel.
-  useEffect(() => {
-    if (!downloadAfterExportRef.current || !exportResult) {
+  // Scoped to the awaited result of THIS call — never ambient state, which
+  // leaked the download intent onto the next panel export when a request
+  // aborted (no page selected, network error).
+  const downloadTopbarExport = async (profile: ExportProfile, pageIds: PageId[]) => {
+    const result = await runExportForScene(scene, profile, pageIds, {
+      openPreviewTab: false,
+      focusExportPanel: false
+    });
+    if (!result || result.status !== "ok") {
       return;
     }
-    downloadAfterExportRef.current = false;
-    if (exportResult.status === "ok") {
-      for (const artifact of exportResult.artifacts) {
-        downloadDataUrl(artifact.data_url, artifact.filename);
-      }
-      // The silent topbar path clears export diagnostics on success, so a
-      // print-intent PDF that came back warn/fail (e.g. bleed_present + LUME0412
-      // on an artboard with no bleed rect) would otherwise vanish. Surface those
-      // rules through the always-visible diagnostics alert pill.
-      const printDiagnostics = printReadyDiagnostics(exportResult.printReady);
-      if (printDiagnostics.length > 0) {
-        setDiagnostics(printDiagnostics);
-      }
+    for (const artifact of result.artifacts) {
+      downloadDataUrl(artifact.data_url, artifact.filename);
     }
-  }, [exportResult]);
+    // The silent topbar path clears export diagnostics on success, so a
+    // print-intent PDF that came back warn/fail (e.g. bleed_present + LUME0412
+    // on an artboard with no bleed rect) would otherwise vanish. Surface those
+    // rules through the always-visible diagnostics alert pill.
+    const printDiagnostics = printReadyDiagnostics(result.printReady);
+    if (printDiagnostics.length > 0) {
+      setDiagnostics(printDiagnostics);
+    }
+  };
 
   // Close the export popover on any click outside its anchor.
   useEffect(() => {
@@ -1492,17 +1494,13 @@ export default function EditorApp({
                   isExporting={isExporting}
                   onDownload={(profile, scope) => {
                     setIsExportMenuOpen(false);
-                    downloadAfterExportRef.current = true;
                     const pageIds =
                       scope === "all"
                         ? Object.values(scene.pages).map((page) => page.id)
                         : activePageId
                           ? [activePageId]
                           : [];
-                    void runExportForScene(scene, profile, pageIds, {
-                      openPreviewTab: false,
-                      focusExportPanel: false
-                    });
+                    void downloadTopbarExport(profile, pageIds);
                   }}
                   onClose={() => setIsExportMenuOpen(false)}
                 />

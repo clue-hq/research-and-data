@@ -415,6 +415,22 @@ def test_core_client_injects_library_fonts_into_shaping_actions(
     injected = captured["request"]["library_fonts"]
     assert injected["faces"] == [{"digest": "c" * 64, "family": "DM Sans"}]
 
+    # derive_instance shapes and renders bulk artifacts: it MUST receive the
+    # library spec (its omission was the silent-Inter bulk-export bug), and
+    # the brand_fonts passthrough must survive alongside the injection.
+    core.derive_instance(
+        {"nodes": {}},
+        {"binding_set_id": "bind_test"},
+        brand_fonts={"store_root": "/tmp/store", "faces": []},
+    )
+    assert captured["request"]["library_fonts"]["faces"] == [
+        {"digest": "c" * 64, "family": "DM Sans"}
+    ]
+    assert captured["request"]["brand_fonts"] == {
+        "store_root": "/tmp/store",
+        "faces": [],
+    }
+
     # Non-shaping actions are untouched.
     core.validate_scene({"nodes": {}})
     assert "library_fonts" not in captured["request"]

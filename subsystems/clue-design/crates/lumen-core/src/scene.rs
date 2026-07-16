@@ -1218,6 +1218,68 @@ pub enum Color {
     Oklch { l: f64, c: f64, h: f64, alpha: f64 },
 }
 
+/// Parse a CSS-style hex color (`#RGB`, `#RGBA`, `#RRGGBB`, `#RRGGBBAA`,
+/// leading `#` optional) into RGBA bytes. The single hex-literal parser for
+/// the whole engine — DSL literals and paint predicates both resolve
+/// through here.
+pub fn parse_hex_rgba(value: &str) -> Option<(u8, u8, u8, u8)> {
+    let hex = value.trim().trim_start_matches('#');
+    let h = |s: &str| u8::from_str_radix(s, 16).ok();
+    match hex.len() {
+        3 | 4 => {
+            let mut ch = hex.chars();
+            let d = |c: char| c.to_digit(16).map(|v| (v * 17) as u8);
+            let r = d(ch.next()?)?;
+            let g = d(ch.next()?)?;
+            let b = d(ch.next()?)?;
+            let a = match ch.next() {
+                Some(c) => d(c)?,
+                None => 255,
+            };
+            Some((r, g, b, a))
+        }
+        6 => Some((h(&hex[0..2])?, h(&hex[2..4])?, h(&hex[4..6])?, 255)),
+        8 => Some((
+            h(&hex[0..2])?,
+            h(&hex[2..4])?,
+            h(&hex[4..6])?,
+            h(&hex[6..8])?,
+        )),
+        _ => None,
+    }
+}
+
+impl Color {
+    /// Whether this color PROVABLY carries full alpha. Unresolved tokens and
+    /// unparseable hex return `false` — callers that gate print guarantees on
+    /// opacity must never treat an unknown as opaque.
+    pub fn is_opaque(&self) -> bool {
+        match self {
+            Color::Hex { value } => {
+                parse_hex_rgba(value).is_some_and(|(_, _, _, alpha)| alpha == 255)
+            }
+            Color::Token { .. } => false,
+            Color::Oklch { alpha, .. } => *alpha >= 1.0,
+        }
+    }
+}
+
+impl Paint {
+    /// Whether this paint PROVABLY covers its region with full alpha:
+    /// an opaque solid, or a gradient whose every stop is opaque.
+    /// Token paints and empty gradients return `false` (not provably
+    /// opaque), never `true`-by-assumption.
+    pub fn is_provably_opaque(&self) -> bool {
+        match self {
+            Paint::Solid { color } => color.is_opaque(),
+            Paint::LinearGradient { stops, .. } | Paint::RadialGradient { stops } => {
+                !stops.is_empty() && stops.iter().all(|stop| stop.color.is_opaque())
+            }
+            Paint::Token { .. } => false,
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct CornerRadii {
     pub top_left: f64,

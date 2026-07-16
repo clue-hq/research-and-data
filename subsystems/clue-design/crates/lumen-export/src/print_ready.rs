@@ -12,8 +12,8 @@
 //! re-derives what the pipeline already knows.
 
 use lumen_core::{
-    render_box_for_node, Diagnostic, ExportRequest, Node, NodeId, NodeKind, Page, PdfIntent,
-    PrintReadyReport, PrintReadyRule, Rect, Scene,
+    render_box_for_node, Color, Diagnostic, ExportRequest, Node, NodeId, NodeKind, Page, Paint,
+    PdfIntent, PrintReadyReport, PrintReadyRule, Rect, Scene,
 };
 
 /// Distance (layout units ≈ pt) within which an art edge counts as
@@ -154,13 +154,28 @@ fn bleed_present_rule(pages: &[&Page], request: &ExportRequest) -> PrintReadyRul
 /// L4 rule 2 — the mechanical form of chain link L1: any filled node
 /// touching a trim edge must extend to the bleed line on that side, or the
 /// cut will expose paper. Only evaluated on pages that have a bleed rect.
+///
+/// Page-background awareness: `page.background` fills paint across the
+/// whole bleed region by design (the engine's full-bleed mechanism — see
+/// `PagePainter::paint_page`), so on a page whose background PROVABLY inks
+/// the bleed strip, a mis-cut exposes background ink, never paper —
+/// trim-flush nodes are not a paper-exposure risk there and the per-node
+/// check is skipped. "Provably inks" = fully opaque AND actually lays ink:
+/// pure white is zero ink in subtractive printing (paper-equivalent), so an
+/// opaque white background earns no waiver. Absent, translucent, white, or
+/// unresolved-token backgrounds keep the strict per-node rule.
 fn edge_art_rule(scene: &Scene, pages: &[&Page]) -> PrintReadyRule {
     let mut violations: Vec<String> = Vec::new();
     let mut evaluated = false;
+    let mut background_covered = 0usize;
 
     for page in pages {
         let Some(bleed) = &page.bleed else { continue };
         evaluated = true;
+        if page_background_inks_bleed(page) {
+            background_covered += 1;
+            continue;
+        }
         let trim = Rect {
             x: 0.0,
             y: 0.0,
@@ -186,11 +201,14 @@ fn edge_art_rule(scene: &Scene, pages: &[&Page]) -> PrintReadyRule {
         );
     }
     if violations.is_empty() {
-        rule(
-            "edge_art_reaches_bleed",
-            PASS,
-            "every trim-touching fill extends to the bleed line".to_owned(),
-        )
+        let detail = if background_covered > 0 {
+            format!(
+                "every trim-touching fill extends to the bleed line ({background_covered} page(s) inked across the bleed by an opaque page background)"
+            )
+        } else {
+            "every trim-touching fill extends to the bleed line".to_owned()
+        };
+        rule("edge_art_reaches_bleed", PASS, detail)
     } else {
         rule(
             "edge_art_reaches_bleed",
@@ -200,6 +218,43 @@ fn edge_art_rule(scene: &Scene, pages: &[&Page]) -> PrintReadyRule {
                 violations.join("; ")
             ),
         )
+    }
+}
+
+/// Whether the page's background stack provably inks the whole bleed region:
+/// at least one background fill is provably opaque AND provably lays ink
+/// everywhere. Fills paint in order across the full region, so one such
+/// layer anywhere in the stack guarantees ink under everything above it.
+fn page_background_inks_bleed(page: &Page) -> bool {
+    page.background
+        .iter()
+        .any(|fill| paint_provably_inks(&fill.paint))
+}
+
+/// A paint provably inks its region when it is provably opaque and none of
+/// its colors is pure white — white lays zero ink on an offset press, so a
+/// white region is paper-equivalent for cutting-tolerance purposes.
+/// Unresolved tokens are never provable.
+fn paint_provably_inks(paint: &Paint) -> bool {
+    if !paint.is_provably_opaque() {
+        return false;
+    }
+    match paint {
+        Paint::Solid { color } => color_lays_ink(color),
+        Paint::LinearGradient { stops, .. } | Paint::RadialGradient { stops } => {
+            stops.iter().all(|stop| color_lays_ink(&stop.color))
+        }
+        Paint::Token { .. } => false,
+    }
+}
+
+fn color_lays_ink(color: &Color) -> bool {
+    match color {
+        Color::Hex { value } => lumen_core::scene::parse_hex_rgba(value)
+            .is_some_and(|(r, g, b, _)| !(r == 255 && g == 255 && b == 255)),
+        // Oklch white is L=1 at zero chroma.
+        Color::Oklch { l, c, .. } => !(*l >= 1.0 && *c <= f64::EPSILON),
+        Color::Token { .. } => false,
     }
 }
 

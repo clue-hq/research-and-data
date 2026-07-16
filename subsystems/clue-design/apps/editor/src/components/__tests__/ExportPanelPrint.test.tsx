@@ -249,6 +249,30 @@ describe("ExportPanel print controls (W3)", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("strips color:cmyk when proof is turned on — the strip stays sRGB", () => {
+    // proof + cmyk is a hard server error (export.cmyk_proof_conflict); the
+    // panel must never compose the pair. Proof wins.
+    const onPanelStateChange = renderPanel({
+      panelState: panelState({ ...printPdfProfile(), color: "cmyk" })
+    });
+    fireEvent.click(
+      screen.getByRole("checkbox", { name: /Proof export/ })
+    );
+    const next = onPanelStateChange.mock.calls[0][0] as ExportPanelState;
+    expect(next.draftProfile?.proof).toBe(true);
+    expect(next.draftProfile?.color).toBeUndefined();
+  });
+
+  it("disables the CMYK checkbox while proof is on and explains why", () => {
+    renderPanel({
+      panelState: panelState({ ...printPdfProfile(), proof: true })
+    });
+    expect(
+      screen.getByRole("checkbox", { name: /CMYK for offset press/ })
+    ).toBeDisabled();
+    expect(screen.getByText(/control strip stays sRGB/)).toBeInTheDocument();
+  });
+
   it("shows the imposed-marks note beside the bleed control only when booklet is on", () => {
     const { rerender } = renderTestPanel(panelState(printPdfProfile()));
     expect(screen.queryByText(/imposed booklet sheets/i)).not.toBeInTheDocument();

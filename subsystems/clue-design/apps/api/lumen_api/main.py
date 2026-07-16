@@ -1557,16 +1557,7 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
     ) -> JsonObject:
         # K3: a stateless export still shapes text with the scene's kit fonts
         # — the scene ref is the only kit signal this route carries.
-        brand_fonts = None
-        scene_brand_ref = (payload.scene.get("meta") or {}).get("brand_kit")
-        if isinstance(scene_brand_ref, dict) and scene_brand_ref.get("id"):
-            try:
-                referenced = repo.require_brand_kit(
-                    str(scene_brand_ref["id"]), scene_brand_ref.get("version")
-                )["brand_kit"]
-                brand_fonts = brand_kit_font_spec(repo, referenced, asset_store_root())
-            except NotFoundError:
-                brand_fonts = None
+        brand_fonts = scene_brand_fonts(repo, payload.scene, asset_store_root())
         try:
             result = app.state.core.export_preview(
                 payload.scene,
@@ -2149,6 +2140,9 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
             store_root=asset_store_root(),
             export_formats=export_formats,
             export_dpi=export_dpi,
+            # Bulk runs shape with the template's kit faces — without this
+            # every instance silently substituted bundled Inter.
+            brand_fonts=scene_brand_fonts(repo, revision["scene"], asset_store_root()),
             raise_on_error=False,
         )
 
@@ -2497,7 +2491,9 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
         return repo.require_batch(batch_id)
 
     @app.post("/instances/preview")
-    def preview_instance(payload: InstancePreviewRequest) -> JsonObject:
+    def preview_instance(
+        payload: InstancePreviewRequest, repo: Repository = Depends(repository)
+    ) -> JsonObject:
         """Stateless worst-case/instance preview (slice G9): derive a
         binding set against an inline scene (treated as a finalized
         snapshot) and return the rendered artifact plus the fit report.
@@ -2526,6 +2522,7 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
                 store_root=asset_store_root(),
                 export_formats=[export_format],
                 export_dpi=96,
+                brand_fonts=scene_brand_fonts(repo, scene, asset_store_root()),
                 raise_on_error=False,
             )
         except CoreError as error:
@@ -4632,6 +4629,28 @@ def _reference_dimensions(record: JsonObject) -> Tuple[Optional[int], Optional[i
         if width is not None and height is not None:
             return int(width), int(height)
     return None, None
+
+
+def scene_brand_fonts(
+    repo: Repository, scene: Optional[JsonObject], store_root: str
+) -> Optional[JsonObject]:
+    """K3 for stateless/scene-only paths: resolve the scene's own brand-kit
+    reference (`meta.brand_kit`) to its font spec so shaping uses the kit's
+    real faces. A scene without a resolvable kit reference shapes with the
+    library + bundled set (the helper still reports substituted families via
+    LUMS0100)."""
+    if not isinstance(scene, dict):
+        return None
+    scene_brand_ref = (scene.get("meta") or {}).get("brand_kit")
+    if not (isinstance(scene_brand_ref, dict) and scene_brand_ref.get("id")):
+        return None
+    try:
+        referenced = repo.require_brand_kit(
+            str(scene_brand_ref["id"]), scene_brand_ref.get("version")
+        )["brand_kit"]
+    except NotFoundError:
+        return None
+    return brand_kit_font_spec(repo, referenced, store_root)
 
 
 def brand_kit_font_spec(

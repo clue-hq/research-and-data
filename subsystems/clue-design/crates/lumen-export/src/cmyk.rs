@@ -70,6 +70,17 @@ pub fn cmyk_target_for(request: &ExportRequest) -> Result<Option<CmykTarget>, Ex
             "CMYK conversion applies only to print-intent PDF exports; electronic-distribution PDFs stay sRGB",
         ));
     }
+    // Proof exports overlay an sRGB control strip and advertise it via
+    // LUME0431; running that artifact through the CMYK conversion would
+    // flatten the strip's neutral patches to K-only while the file still
+    // claims an sRGB strip — a proof that lies to the press operator.
+    // Hard error, never a silent partial conversion.
+    if request.profile.proof {
+        return Err(ExportError::new(
+            "export.cmyk_proof_conflict",
+            "proof exports carry an sRGB control strip (LUME0431) that CMYK conversion would falsify; export the proof without color:\"cmyk\", and convert the production file separately",
+        ));
+    }
 
     let gs_bin = resolve_ghostscript()?;
     let icc_path = resolve_target_icc(&gs_bin)?;
@@ -242,7 +253,12 @@ fn normalize_achromatic_rgb(bytes: &[u8]) -> Result<Vec<u8>, ExportError> {
             ExportError::new("export.cmyk_failed", format!("content stream parse: {error}"))
         })?;
         let mut changed = false;
+        let mut has_inline_image = false;
         for operation in &mut content.operations {
+            if operation.operator == "BI" {
+                has_inline_image = true;
+                continue;
+            }
             let gray_operator = match operation.operator.as_str() {
                 "rg" => "g",
                 "RG" => "G",
@@ -263,6 +279,22 @@ fn normalize_achromatic_rgb(bytes: &[u8]) -> Result<Vec<u8>, ExportError> {
             }
         }
         if changed {
+            // lopdf parses an inline image (`BI … ID … EI`) into a "BI"
+            // operation whose operand is a raw stream object, and its
+            // `Content::encode` writes that operand back as
+            // `<<dict>> stream…endstream` — malformed content, a silently
+            // corrupt PDF. Skia's PDF backend emits image XObjects, never
+            // inline images, so this is untriggered today; if a producer
+            // change ever emits one into a stream we must rewrite, fail
+            // loudly instead of shipping the corruption. Streams with an
+            // inline image but no achromatic paint are left byte-untouched
+            // and stay safe.
+            if has_inline_image {
+                return Err(ExportError::new(
+                    "export.cmyk_failed",
+                    "content stream contains an inline image (BI…EI) alongside achromatic paint; the pre-conversion rewrite cannot round-trip inline images — re-author the image as an XObject or export without color:\"cmyk\"",
+                ));
+            }
             let encoded = content.encode().map_err(|error| {
                 ExportError::new("export.cmyk_failed", format!("content stream encode: {error}"))
             })?;
@@ -485,6 +517,82 @@ mod tests {
         let error =
             cmyk_target_for(&pdf_request(Some("rgb"), Some(PdfIntent::Print))).unwrap_err();
         assert_eq!(error.code, "export.color_unknown");
+    }
+
+    #[test]
+    fn cmyk_on_proof_profile_is_rejected() {
+        let mut request = pdf_request(Some("cmyk"), Some(PdfIntent::Print));
+        request.profile.proof = true;
+        let error = cmyk_target_for(&request).unwrap_err();
+        assert_eq!(error.code, "export.cmyk_proof_conflict");
+    }
+
+    /// Minimal one-page PDF whose page content stream is exactly `content`.
+    fn pdf_with_content(content: &[u8]) -> Vec<u8> {
+        use lopdf::{dictionary, Document, Object, Stream};
+        let mut document = Document::with_version("1.6");
+        let pages_id = document.new_object_id();
+        // The production path reads streams via decompressed_content(),
+        // which requires a Filter entry — mirror Skia's FlateDecode output.
+        // compress() only engages when it saves ≥19 bytes, so pad the tiny
+        // fixture content with whitespace (insignificant in content syntax).
+        let mut padded = content.to_vec();
+        padded.extend_from_slice(&[b'\n'; 512]);
+        let mut stream = Stream::new(dictionary! {}, padded);
+        stream.compress().expect("fixture stream compresses");
+        assert!(
+            stream.dict.has(b"Filter"),
+            "fixture stream must carry a Filter like production output"
+        );
+        let content_id = document.add_object(stream);
+        let page_id = document.add_object(dictionary! {
+            "Type" => "Page",
+            "Parent" => pages_id,
+            "MediaBox" => vec![0.into(), 0.into(), 100.into(), 100.into()],
+            "Contents" => content_id,
+        });
+        document.objects.insert(
+            pages_id,
+            Object::Dictionary(dictionary! {
+                "Type" => "Pages",
+                "Kids" => vec![page_id.into()],
+                "Count" => 1,
+            }),
+        );
+        let catalog_id = document.add_object(dictionary! {
+            "Type" => "Catalog",
+            "Pages" => pages_id,
+        });
+        document.trailer.set("Root", catalog_id);
+        let mut bytes = Vec::new();
+        document.save_to(&mut bytes).expect("fixture PDF serializes");
+        bytes
+    }
+
+    const INLINE_IMAGE: &[u8] = b"BI /W 1 /H 1 /CS /Gray /BPC 8 ID x EI";
+
+    #[test]
+    fn achromatic_rewrite_bails_loudly_on_inline_image() {
+        // An inline image sharing a stream with achromatic paint would be
+        // corrupted by lopdf's re-encode — the rewrite must refuse.
+        let content = [INLINE_IMAGE, b"\n0 0 0 rg 0 0 10 10 re f"].concat();
+        let error = normalize_achromatic_rgb(&pdf_with_content(&content)).unwrap_err();
+        assert_eq!(error.code, "export.cmyk_failed");
+        assert!(
+            error.message.contains("inline image"),
+            "error should name the inline image: {}",
+            error.message
+        );
+    }
+
+    #[test]
+    fn inline_image_without_achromatic_paint_passes_through() {
+        // No achromatic paint → the stream is never re-encoded, so the
+        // inline image survives byte-identical and the rewrite succeeds.
+        let content = [INLINE_IMAGE, b"\n1 0 0 rg 0 0 10 10 re f"].concat();
+        let output = normalize_achromatic_rgb(&pdf_with_content(&content))
+            .expect("untouched inline-image stream round-trips");
+        assert!(!output.is_empty());
     }
 
     #[test]

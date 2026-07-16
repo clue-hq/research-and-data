@@ -252,6 +252,7 @@ class CoreClient:
         store_root: Optional[str] = None,
         export_formats: Optional[List[str]] = None,
         export_dpi: Optional[int] = None,
+        brand_fonts: Optional[JsonObject] = None,
         raise_on_error: bool = False,
     ) -> JsonObject:
         return self._run(
@@ -263,6 +264,7 @@ class CoreClient:
                 "store_root": store_root,
                 "export_formats": export_formats or [],
                 "export_dpi": export_dpi,
+                "brand_fonts": brand_fonts,
             },
             raise_on_error=raise_on_error,
         )
@@ -375,7 +377,7 @@ class CoreClient:
     # families with the Inter fallback (the LUMS0100 class of bug). Callers
     # may still pass an explicit `library_fonts` (including None) to override.
     _LIBRARY_FONT_ACTIONS = frozenset(
-        {"preflight_scene", "export_preview", "layout_geometry"}
+        {"preflight_scene", "export_preview", "layout_geometry", "derive_instance"}
     )
 
     def _run(self, request: JsonObject, raise_on_error: bool = True) -> JsonObject:

@@ -100,10 +100,26 @@ fn text_node(id: &str, x: f64, y: f64, width: f64, height: f64) -> Node {
 }
 
 /// 200×150pt page with optional bleed/safe rects and the given children.
+/// White page background — opaque but ink-free, so it earns no
+/// edge_art_reaches_bleed waiver.
 fn print_scene(
     bleed: Option<Rect>,
     safe_area: Option<Rect>,
     nodes: Vec<Node>,
+) -> Scene {
+    print_scene_with_background(
+        bleed,
+        safe_area,
+        nodes,
+        vec![solid_fill("paint_page_bg", "#ffffff")],
+    )
+}
+
+fn print_scene_with_background(
+    bleed: Option<Rect>,
+    safe_area: Option<Rect>,
+    nodes: Vec<Node>,
+    background: Vec<Fill>,
 ) -> Scene {
     let mut scene = Scene::new(DocumentId::from("doc_print_ready"), "Print ready");
     scene.pages.insert(
@@ -123,7 +139,7 @@ fn print_scene(
             children: nodes.iter().map(|node| node.id.clone()).collect(),
             bleed,
             safe_area,
-            background: vec![solid_fill("paint_page_bg", "#ffffff")],
+            background,
         },
     );
     for node in nodes {
@@ -215,6 +231,116 @@ fn full_bleed_wash_and_interior_art_pass() {
     assert_eq!(rule_status(&report, "text_in_safe_area"), "pass");
     assert_eq!(rule_status(&report, "bleed_present"), "pass");
     assert_eq!(report.status, "pass", "{report:#?}");
+}
+
+#[test]
+fn trim_flush_art_passes_when_opaque_background_inks_bleed() {
+    // The engine's designed full-bleed mechanism: an opaque non-white
+    // page background paints across the whole bleed region, so a mis-cut
+    // exposes background ink, never paper — the trim-flush node is fine.
+    let scene = print_scene_with_background(
+        Some(bleed_rect()),
+        Some(safe_rect()),
+        vec![rect_node("node_wash", 0.0, 0.0, 200.0, 150.0)],
+        vec![solid_fill("paint_page_bg", "#0d2f39")],
+    );
+    let pages = vec![PageId::from("page_print")];
+    let report = print_ready_report(&scene, &pages, &print_request(true), &[]);
+    assert_eq!(rule_status(&report, "edge_art_reaches_bleed"), "pass");
+    let detail = &report
+        .rules
+        .iter()
+        .find(|rule| rule.id == "edge_art_reaches_bleed")
+        .unwrap()
+        .detail;
+    assert!(detail.contains("page background"), "{detail}");
+}
+
+#[test]
+fn opaque_gradient_background_also_earns_the_waiver() {
+    let scene = print_scene_with_background(
+        Some(bleed_rect()),
+        Some(safe_rect()),
+        vec![rect_node("node_wash", 0.0, 0.0, 200.0, 150.0)],
+        vec![Fill {
+            id: PaintId::from("paint_page_bg"),
+            paint: Paint::RadialGradient {
+                stops: vec![
+                    lumen_core::ColorStop {
+                        color: Color::Hex {
+                            value: "#0d2f39".to_owned(),
+                        },
+                        position: 0.0,
+                    },
+                    lumen_core::ColorStop {
+                        color: Color::Hex {
+                            value: "#12355b".to_owned(),
+                        },
+                        position: 1.0,
+                    },
+                ],
+            },
+        }],
+    );
+    let pages = vec![PageId::from("page_print")];
+    let report = print_ready_report(&scene, &pages, &print_request(true), &[]);
+    assert_eq!(rule_status(&report, "edge_art_reaches_bleed"), "pass");
+}
+
+#[test]
+fn translucent_or_unresolved_background_keeps_the_strict_rule() {
+    let pages = vec![PageId::from("page_print")];
+
+    // Semi-transparent teal: not provably opaque — no waiver.
+    let scene = print_scene_with_background(
+        Some(bleed_rect()),
+        Some(safe_rect()),
+        vec![rect_node("node_wash", 0.0, 0.0, 200.0, 150.0)],
+        vec![solid_fill("paint_page_bg", "#0d2f39cc")],
+    );
+    let report = print_ready_report(&scene, &pages, &print_request(true), &[]);
+    assert_eq!(rule_status(&report, "edge_art_reaches_bleed"), "fail");
+
+    // Unresolved token paint: never provable — no waiver.
+    let scene = print_scene_with_background(
+        Some(bleed_rect()),
+        Some(safe_rect()),
+        vec![rect_node("node_wash", 0.0, 0.0, 200.0, 150.0)],
+        vec![Fill {
+            id: PaintId::from("paint_page_bg"),
+            paint: Paint::Token {
+                token: "surface.page".to_owned(),
+            },
+        }],
+    );
+    let report = print_ready_report(&scene, &pages, &print_request(true), &[]);
+    assert_eq!(rule_status(&report, "edge_art_reaches_bleed"), "fail");
+
+    // Empty background: nothing inks the bleed — no waiver.
+    let scene = print_scene_with_background(
+        Some(bleed_rect()),
+        Some(safe_rect()),
+        vec![rect_node("node_wash", 0.0, 0.0, 200.0, 150.0)],
+        Vec::new(),
+    );
+    let report = print_ready_report(&scene, &pages, &print_request(true), &[]);
+    assert_eq!(rule_status(&report, "edge_art_reaches_bleed"), "fail");
+}
+
+#[test]
+fn opaque_white_background_is_paper_equivalent_no_waiver() {
+    // White lays zero ink on press: an opaque white background must NOT
+    // waive the rule (this is also the shared fixture's default, so the
+    // long-standing edge_touching_art_short_of_bleed_fails pin stands).
+    let scene = print_scene_with_background(
+        Some(bleed_rect()),
+        Some(safe_rect()),
+        vec![rect_node("node_wash", 0.0, 0.0, 200.0, 150.0)],
+        vec![solid_fill("paint_page_bg", "#ffffff")],
+    );
+    let pages = vec![PageId::from("page_print")];
+    let report = print_ready_report(&scene, &pages, &print_request(true), &[]);
+    assert_eq!(rule_status(&report, "edge_art_reaches_bleed"), "fail");
 }
 
 #[test]

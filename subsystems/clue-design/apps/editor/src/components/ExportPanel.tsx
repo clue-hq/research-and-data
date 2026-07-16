@@ -421,11 +421,16 @@ function CmykField({
   profile: ExportProfile;
   onChange: (profile: ExportProfile) => void;
 }) {
+  // Proof exports carry an sRGB control strip that a CMYK conversion would
+  // falsify (export.cmyk_proof_conflict); the two are mutually exclusive
+  // and proof wins — normalizeProfile drops color while proof is on.
+  const proofActive = Boolean(profile.proof);
   return (
     <label className="toggle-field" data-role="cmyk-color">
       <input
         type="checkbox"
         checked={profile.color === "cmyk"}
+        disabled={proofActive}
         onChange={(event) =>
           onChange(
             normalizeProfile({
@@ -436,6 +441,11 @@ function CmykField({
         }
       />
       CMYK for offset press (print intent only)
+      {proofActive ? (
+        <small className="muted" data-role="cmyk-proof-note">
+          Unavailable with proof export — the proof&apos;s control strip stays sRGB.
+        </small>
+      ) : null}
     </label>
   );
 }
@@ -489,10 +499,14 @@ export function normalizeProfile(profile: ExportProfile): ExportProfile {
   // export.
   const imposition = profile.format === "pdf" ? profile.imposition : undefined;
   const proof = profile.format === "pdf" ? profile.proof : undefined;
-  // CMYK is valid ONLY on print-intent PDFs (export.cmyk_requires_print_intent);
-  // strip it for any other format and for preview-intent PDFs so the editor can
-  // never emit an invalid combination.
-  const color = profile.format === "pdf" && profile.pdf_intent === "print" ? profile.color : undefined;
+  // CMYK is valid ONLY on print-intent PDFs (export.cmyk_requires_print_intent)
+  // and never on proof exports (export.cmyk_proof_conflict — the proof's sRGB
+  // control strip would be falsified by the conversion); strip it for any
+  // other combination so the editor can never emit an invalid request.
+  const color =
+    profile.format === "pdf" && profile.pdf_intent === "print" && !proof
+      ? profile.color
+      : undefined;
   if (profile.format !== "png") {
     // SVG/PDF: keep include_bleed / include_marks / embed_fonts as set.
     return {

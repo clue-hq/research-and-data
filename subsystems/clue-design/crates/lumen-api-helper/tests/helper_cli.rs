@@ -1459,3 +1459,48 @@ fn png_export_rasterizes_library_family_without_silent_fallback() {
         "library family must rasterize without fallback: {with_library:#?}"
     );
 }
+
+#[test]
+fn derive_instance_shapes_and_renders_with_request_fonts() {
+    // The bulk/instance path was the one shaping action with NO font
+    // fields: every personalized artifact silently rendered in bundled
+    // Inter regardless of the template's typography. This pins the seam
+    // end-to-end: derive + PNG artifact render must consume the request's
+    // font spec exactly like preflight/export_preview do.
+    let store_dir = tempfile::tempdir().expect("tempdir");
+    let store_root = store_dir.path().to_string_lossy().to_string();
+    let digest = ingest_library_font(&store_root);
+
+    let mut scene = mailer_revision();
+    scene["nodes"]["node_headline"]["kind"]["font_family"] = json!("Test Grotesk");
+
+    // Control: without a font spec the artifact render falls back loudly.
+    let mut request = derive_request(&store_root);
+    request["scene"] = scene.clone();
+    request["export_formats"] = json!(["png"]);
+    let without_fonts = helper(request.clone());
+    assert_eq!(without_fonts["ok"], true, "{without_fonts:#?}");
+    assert!(
+        diagnostic_codes(&without_fonts).contains(&"LUMS0100".to_owned()),
+        "unknown family must fall back loudly in the instance artifact render: {without_fonts:#?}"
+    );
+
+    // With the library spec the same derivation renders the real face.
+    request["library_fonts"] = json!({
+        "store_root": store_root,
+        "faces": [{ "digest": digest, "family": "Test Grotesk" }]
+    });
+    let with_fonts = helper(request);
+    assert_eq!(with_fonts["ok"], true, "{with_fonts:#?}");
+    let codes = diagnostic_codes(&with_fonts);
+    assert!(
+        !codes.contains(&"LUMS0100".to_owned()) && !codes.contains(&"LUMS0101".to_owned()),
+        "instance artifacts must shape and render with the request fonts: {with_fonts:#?}"
+    );
+    assert!(
+        with_fonts["instance"]["artifacts"]
+            .as_array()
+            .is_some_and(|artifacts| !artifacts.is_empty()),
+        "the run must actually produce artifacts: {with_fonts:#?}"
+    );
+}

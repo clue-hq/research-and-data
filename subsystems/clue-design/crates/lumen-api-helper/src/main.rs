@@ -160,10 +160,6 @@ fn server_measurer_with(fonts: Arc<FontManager>) -> SharedTextMeasurer {
     Arc::new(SkiaTextMeasurer::new(fonts))
 }
 
-fn server_measurer() -> SharedTextMeasurer {
-    server_measurer_with(Arc::new(FontManager::bundled()))
-}
-
 /// Export adapter composition for every server export path (slice A4):
 /// Skia text measurement for SVG/PDF line breaks and the direct Skia scene
 /// renderer for PNG rasters and PDF — measurer and renderer share one
@@ -194,10 +190,10 @@ fn server_export_adapter_with(
         // painted — parity by construction.
         .with_font_resolver(Arc::new(SkiaFontFaceResolver::new(fonts)))
 }
-
-fn server_export_adapter(adapter: LumenExportAdapter) -> LumenExportAdapter {
-    server_export_adapter_with(adapter, Arc::new(FontManager::bundled()))
-}
+// NOTE: there is deliberately no fonts-defaulted variant of the measurer or
+// adapter builders — every call site must state its font set explicitly.
+// The bundled-Inter defaults were how derive_instance silently shipped
+// wrong-typeface bulk runs.
 
 #[derive(Debug, Deserialize)]
 #[serde(tag = "action", rename_all = "snake_case")]
@@ -357,6 +353,14 @@ enum CoreRequest {
         export_formats: Vec<String>,
         #[serde(default)]
         export_dpi: Option<u16>,
+        /// Kit + library faces for shaping and artifact rendering. Without
+        /// these every instance shapes with bundled Inter — the silent
+        /// substitution that made bulk runs lie about the template's
+        /// typography.
+        #[serde(default)]
+        brand_fonts: Option<BrandFontsSpec>,
+        #[serde(default)]
+        library_fonts: Option<BrandFontsSpec>,
     },
     BuildInfo,
 }
@@ -1768,9 +1772,17 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
             store_root,
             export_formats,
             export_dpi,
+            brand_fonts,
+            library_fonts,
         } => {
+            // The template's families live in the revision scene; binding
+            // sets substitute content, never typography — so the scene JSON
+            // alone is the family scan.
+            let family_scan = scene.to_string();
             let scene = parse_scene(scene)?;
             let binding = parse_binding_set(binding_set)?;
+            let (fonts, font_diagnostics) =
+                load_request_fonts(brand_fonts.as_ref(), library_fonts.as_ref(), &family_scan);
 
             let mut assets = DerivationAssets::default();
             for value in asset_records {
@@ -1916,11 +1928,12 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                 &binding,
                 &assets,
                 &DeriveOptions {
-                    measurer: Some(server_measurer()),
+                    measurer: Some(server_measurer_with(Arc::clone(&fonts))),
                 },
             );
 
             let mut diagnostics = derived.diagnostics.clone();
+            diagnostics.extend(font_diagnostics);
             let mut artifacts: Vec<Value> = Vec::new();
             let mut export_skipped = false;
             if !export_formats.is_empty() {
@@ -1940,6 +1953,7 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                         &export_formats,
                         export_dpi.unwrap_or(300),
                         &store_root,
+                        Arc::clone(&fonts),
                         &mut diagnostics,
                     )?;
                 }
@@ -2036,13 +2050,19 @@ fn export_instance_artifacts(
     formats: &[String],
     dpi: u16,
     store_root: &str,
+    fonts: Arc<FontManager>,
     diagnostics: &mut Vec<Diagnostic>,
 ) -> Result<Vec<Value>, CoreError> {
     let store = LocalAssetStore::new(store_root);
     let resolver = Arc::new(StoreBackedResolver::new(store_root.to_owned()));
-    let adapter = server_export_adapter(LumenExportAdapter::with_resolver(
-        Arc::clone(&resolver) as Arc<dyn lumen_export::AssetByteResolver>
-    ));
+    // Same font set that shaped the derivation: measurement, paint, and
+    // embedding all resolve the template's real faces, not bundled Inter.
+    let adapter = server_export_adapter_with(
+        LumenExportAdapter::with_resolver(
+            Arc::clone(&resolver) as Arc<dyn lumen_export::AssetByteResolver>
+        ),
+        Arc::clone(&fonts),
+    );
     let page_ids: Vec<PageId> = scene.pages.keys().cloned().collect();
     let mut artifacts = Vec::new();
 
@@ -2139,7 +2159,7 @@ fn export_instance_artifacts(
                                 .into_iter()
                                 .filter(|diagnostic| diagnostic.code != "LUME0216"),
                         );
-                        let renderer = SkiaSceneRenderer::bundled();
+                        let renderer = SkiaSceneRenderer::new(Arc::clone(&fonts));
                         match lumen_skia::raster_flattened_pdf(
                             &renderer,
                             scene,

@@ -139,11 +139,13 @@ export interface UseAgentTurnDeps {
     persistOptions?: { checkpoint?: string },
     inverseOperations?: Operation[] | null
   ) => "persisted" | "creation-seed" | "local-only";
+  // The agent turn only awaits completion; the export result (returned for
+  // callers like the topbar download flow) is ignored here.
   runExportForScene: (
     sceneForExport: Scene,
     profile: ExportProfile,
     pageIds: PageId[]
-  ) => Promise<void>;
+  ) => Promise<unknown>;
   applyOperations: (operations: Operation[], onAccepted?: (scene: Scene) => void) => void;
   /** 2b: rejoin an in-flight run's SSE stream after a tab reload (resume). The
    * run keeps executing server-side; this replays its events and resolves with

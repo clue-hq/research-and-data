@@ -120,7 +120,8 @@ pub use render_geometry::{
     node_render_size, paints_out_of_tree, pinned_paint_pass, render_box_for_node, RenderBox,
 };
 pub use scene::{
-    AutoLayoutDirection, AutoLayoutNode, AutoLayoutProps, BrandKitRef, Color, ComputedGeometry,
+    AutoLayoutDirection, AutoLayoutNode, AutoLayoutProps, BrandKitRef, Color, ColorStop,
+    ComputedGeometry,
     CornerRadii, Dimension, DocumentMeta, DocumentStatus, Effect, EffectKind, Fill, ImageNode,
     LayoutAnchor, LayoutMode, LineNode, Medium, Node, NodeKind, Orientation, Page, PageOutputSize,
     PagePreset, PageSize, PageSizeSource, Paint, ParentRef, PhysicalPageSize, PhysicalUnit,
