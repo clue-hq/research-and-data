@@ -381,7 +381,9 @@ _AUTHOR_RESOURCE_MAP = """RESOURCES YOU HAVE
   the same code, go read the reference for that form instead of guessing a
   third time.
 - Your skills (read at /.deepagent/skills/): create-design, repair-design,
-  brand-and-tokens, effects are the ones primary to authoring.
+  brand-and-tokens, effects are the ones primary to authoring;
+  print-bleed-marks when the user asks for bleed/crop marks baked into the
+  design itself (press-sheet transform, normal export).
 - You do NOT have: rendering (the orchestrator renders; you can view the
   last render), acceptance authority (the reviewer judges), or any scene
   mutation outside compile_dsl_block/asset.

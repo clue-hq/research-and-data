@@ -56,7 +56,12 @@ bulk runs. Author to pass it:
   clipped.
 - The server PDF is vector (LUME0427): live text, embedded fonts; crop
   marks and TrimBox/BleedBox are added by the export pipeline — never
-  author marks as scene content.
+  author marks as scene content on a page using THIS metadata route.
+  ONE exception exists: when the user explicitly asks for bleed/crop
+  marks baked into the design itself (a normal export should already be
+  the press sheet), use `skills/print-bleed-marks` — that route bakes
+  the sheet into scene content and keeps this page metadata UNSET. The
+  two routes are mutually exclusive per page.
 - Digital-only surfaces (social ads, LinkedIn) need NONE of this: no
   bleed, no safe area beyond taste margins. Do not add print geometry to
   digital documents.
