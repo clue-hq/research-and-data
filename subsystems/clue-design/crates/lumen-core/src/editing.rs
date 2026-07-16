@@ -669,6 +669,12 @@ pub struct AssetEditPatch {
 /// Sparse patch over an existing export profile. Missing fields default to
 /// unchanged; the patch lowers to `UpsertExportProfile` with the merged
 /// profile.
+///
+/// This struct is a hand-written mirror of [`ExportProfile`]'s shape — the
+/// completeness test in this module fails whenever the profile grows a
+/// field the patch cannot express (the drift bit three times: this struct
+/// missed four print features, and the API normalize whitelist dropped
+/// `include_marks` and then `imposition`/`proof`).
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct ExportProfileEditPatch {
@@ -677,6 +683,10 @@ pub struct ExportProfileEditPatch {
     pub raster: OptionalFieldPatch<RasterScale>,
     pub include_bleed: FieldPatch<bool>,
     pub embed_fonts: FieldPatch<bool>,
+    pub include_marks: FieldPatch<bool>,
+    pub imposition: OptionalFieldPatch<String>,
+    pub proof: FieldPatch<bool>,
+    pub color: OptionalFieldPatch<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -924,6 +934,10 @@ pub fn build_export_profile_modify(
     apply_optional_patch(&mut profile.raster, patch.raster);
     apply_field_patch(&mut profile.include_bleed, patch.include_bleed);
     apply_field_patch(&mut profile.embed_fonts, patch.embed_fonts);
+    apply_field_patch(&mut profile.include_marks, patch.include_marks);
+    apply_optional_patch(&mut profile.imposition, patch.imposition);
+    apply_field_patch(&mut profile.proof, patch.proof);
+    apply_optional_patch(&mut profile.color, patch.color);
 
     EditBatch::new(
         vec![Operation::UpsertExportProfile { profile }],

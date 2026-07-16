@@ -2239,6 +2239,36 @@ def test_export_preview_route_converts_print_pdf_to_cmyk(client: TestClient) -> 
     assert b"sRGB IEC61966-2.1" not in pdf_bytes, "CMYK export must not claim an sRGB intent"
 
 
+@pytest.mark.skipif(shutil.which("gs") is None, reason="ghostscript not installed")
+def test_document_export_via_saved_cmyk_profile(client: TestClient) -> None:
+    """The saved-profile blind spot: every other CMYK test uses an ad-hoc
+    inline profile — the exact gap that let the normalize whitelist silently
+    drop imposition/proof for weeks. This drives CMYK through a profile
+    SAVED in the document (name-resolved), end to end."""
+    scene = preflightable_scene()
+    scene["export_profiles"] = [cmyk_print_profile()]
+    document = create_document(client, scene)
+
+    response = client.post(
+        f"/documents/{document['id']}/export",
+        json={"profile_name": "print_pdf_cmyk", "page_ids": ["page_a4"]},
+    )
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["status"] == "ok", payload["diagnostics"]
+    # The saved profile survived normalization with its color intact.
+    assert payload["profile"]["color"] == "cmyk"
+
+    artifact = payload["export"]["artifacts"][0]
+    header, encoded = artifact["data_url"].split(",", 1)
+    assert header == "data:application/pdf;base64"
+    pdf_bytes = base64.b64decode(encoded)
+    assert b"GTS_PDFX" in pdf_bytes
+    assert b"sRGB IEC61966-2.1" not in pdf_bytes, (
+        "CMYK export must not claim an sRGB intent"
+    )
+
+
 def test_export_preview_route_rejects_cmyk_on_digital_pdf(client: TestClient) -> None:
     """CMYK conversion is print-only: an electronic-distribution (preview
     intent) PDF requesting it fails loudly, never silently converts."""
@@ -4683,6 +4713,178 @@ def test_instance_batch_processes_chunks_with_resumable_cursor(
     loaded = client.get(f"/batches/{batch['batch_id']}")
     assert loaded.status_code == 200
     assert loaded.json()["status"] == "completed"
+
+
+PRINT_RUN_PROFILE = {
+    "name": "print_run",
+    "format": "pdf",
+    "pdf_intent": "print",
+    "raster": None,
+    "include_bleed": True,
+    "include_marks": True,
+    "embed_fonts": True,
+}
+
+
+def finalize_mailer_revision_with_saved_profile(client: TestClient) -> str:
+    """Mailer revision whose scene carries a saved print profile — the
+    'set up once, reuse forever' shape bulk runs resolve by name."""
+    document_id = "doc_g8_mailer"
+    scene = mailer_revision_scene_draft(document_id)
+    scene["export_profiles"] = [dict(PRINT_RUN_PROFILE)]
+    created = client.post(
+        "/documents", json={"document_id": document_id, "scene": scene}
+    )
+    assert created.status_code == 200, created.text
+    finalized = client.post(
+        f"/documents/{document_id}/finalize",
+        json={"template_revision_id": "tmpl_mailer_v1"},
+    )
+    assert finalized.status_code == 200, finalized.text
+    return "tmpl_mailer_v1"
+
+
+def test_instance_derivation_with_saved_print_profile(client: TestClient) -> None:
+    # A saved document profile drives the bulk artifact through the same
+    # print pipeline as an interactive download: bleed, marks, print boxes,
+    # embedded fonts, and the print-ready report.
+    revision_id = finalize_mailer_revision_with_saved_profile(client)
+    logo = upload_logo_asset(client)
+    binding_set_id = stored_binding(client, "nominal", logo["id"])
+
+    response = client.post(
+        f"/template-revisions/{revision_id}/instances",
+        json={
+            "binding_set_id": binding_set_id,
+            "export_profile_name": "print_run",
+        },
+    )
+    assert response.status_code == 200, response.text
+    instance = response.json()
+    assert instance["status"] == "derived"
+    pdfs = [a for a in instance["artifacts"] if a["format"] == "pdf"]
+    assert len(pdfs) == 1, instance["artifacts"]
+    pdf = pdfs[0]
+    assert pdf["profile_name"] == "print_run"
+    assert pdf.get("error") is None, pdf
+    assert pdf["print_ready"]["status"] != "fail"
+
+    store_root = str(client.app.state.asset_store_root)
+    pdf_bytes = (Path(store_root) / pdf["relative_path"]).read_bytes()
+    assert pdf_bytes.startswith(b"%PDF-")
+    assert b"/TrimBox" in pdf_bytes, "print finalize expected"
+    assert b"FontFile2" in pdf_bytes, "embedded subset fonts expected"
+
+
+def test_instance_derivation_rejects_bad_profile_requests(
+    client: TestClient,
+) -> None:
+    revision_id = finalize_mailer_revision_with_saved_profile(client)
+    logo = upload_logo_asset(client)
+    binding_set_id = stored_binding(client, "nominal", logo["id"])
+
+    both = client.post(
+        f"/template-revisions/{revision_id}/instances",
+        json={
+            "binding_set_id": binding_set_id,
+            "export_profile": dict(PRINT_RUN_PROFILE),
+            "export_profile_name": "print_run",
+        },
+    )
+    assert both.status_code == 422
+    assert both.json()["detail"]["code"] == "export_profile.ambiguous_source"
+
+    unknown = client.post(
+        f"/template-revisions/{revision_id}/instances",
+        json={"binding_set_id": binding_set_id, "export_profile_name": "ghost"},
+    )
+    assert unknown.status_code == 422
+    assert unknown.json()["detail"]["code"] == "export_profile.not_found"
+
+    formatless = client.post(
+        f"/template-revisions/{revision_id}/instances",
+        json={
+            "binding_set_id": binding_set_id,
+            "export_profile": {"name": "mystery", "include_bleed": True},
+        },
+    )
+    assert formatless.status_code == 422
+    assert formatless.json()["detail"]["code"] == "export_profile.format_required"
+
+
+def test_batch_with_print_profile_persists_profile_and_error_codes(
+    client: TestClient,
+) -> None:
+    revision_id = finalize_mailer_revision(client)
+    logo = upload_logo_asset(client)
+    ids = [
+        stored_binding(client, "nominal", logo["id"]),
+        stored_binding(client, "worst_case", logo["id"]),
+    ]
+
+    response = client.post(
+        f"/template-revisions/{revision_id}/batches",
+        json={
+            "binding_set_ids": ids,
+            "export_formats": [],
+            "export_profile": dict(PRINT_RUN_PROFILE),
+            "chunk_size": 2,
+        },
+    )
+    assert response.status_code == 200, response.text
+    batch = response.json()
+    assert batch["status"] == "completed"
+    assert batch["export_profile"]["name"] == "print_run"
+
+    by_binding = {entry["binding_set_id"]: entry for entry in batch["manifest"]}
+    derived = by_binding["bind_acme_dr_sharma"]
+    assert derived["status"] == "derived"
+    assert derived["error_codes"] == []
+    pdf = next(a for a in derived["artifacts"] if a["format"] == "pdf")
+    assert pdf["profile_name"] == "print_run"
+    assert pdf["print_ready"]["status"] != "fail"
+
+    # The failed derivation names its why directly in the manifest.
+    failed = by_binding["bind_meridian_dr_whitmore"]
+    assert failed["status"] == "failed"
+    assert failed["error_codes"], "failed instances must surface error codes"
+
+    # The profile survives persistence (resume reads it from the row).
+    loaded = client.get(f"/batches/{batch['batch_id']}").json()
+    assert loaded["export_profile"]["name"] == "print_run"
+
+
+def test_batch_with_bleed_profile_fails_fast_on_bleedless_template(
+    client: TestClient,
+) -> None:
+    # Fail-fast at copy zero: a bleed-requesting profile against a template
+    # with no bleed geometry would print-not-ready EVERY instance.
+    document_id = "doc_g8_mailer"
+    scene = mailer_revision_scene_draft(document_id)
+    scene["pages"]["page_mailer"]["bleed"] = None
+    created = client.post(
+        "/documents", json={"document_id": document_id, "scene": scene}
+    )
+    assert created.status_code == 200, created.text
+    assert (
+        client.post(
+            f"/documents/{document_id}/finalize",
+            json={"template_revision_id": "tmpl_mailer_v1"},
+        ).status_code
+        == 200
+    )
+    logo = upload_logo_asset(client)
+    binding_set_id = stored_binding(client, "nominal", logo["id"])
+
+    response = client.post(
+        "/template-revisions/tmpl_mailer_v1/batches",
+        json={
+            "binding_set_ids": [binding_set_id],
+            "export_profile": dict(PRINT_RUN_PROFILE),
+        },
+    )
+    assert response.status_code == 422, response.text
+    assert response.json()["detail"]["code"] == "batch.template_not_print_ready"
 
 
 def test_batch_rejects_unknown_or_mismatched_binding_sets(

@@ -252,6 +252,7 @@ class CoreClient:
         store_root: Optional[str] = None,
         export_formats: Optional[List[str]] = None,
         export_dpi: Optional[int] = None,
+        export_profile: Optional[JsonObject] = None,
         brand_fonts: Optional[JsonObject] = None,
         raise_on_error: bool = False,
     ) -> JsonObject:
@@ -264,6 +265,7 @@ class CoreClient:
                 "store_root": store_root,
                 "export_formats": export_formats or [],
                 "export_dpi": export_dpi,
+                "export_profile": export_profile,
                 "brand_fonts": brand_fonts,
             },
             raise_on_error=raise_on_error,

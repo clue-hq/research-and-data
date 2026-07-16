@@ -2128,6 +2128,7 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
         export_formats: list,
         export_dpi: Optional[int],
         batch_id: Optional[str] = None,
+        export_profile: Optional[JsonObject] = None,
     ) -> JsonObject:
         revision_id = revision["template_revision_id"]
         binding_set_id = binding.get("binding_set_id") or new_id("bind")
@@ -2140,6 +2141,7 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
             store_root=asset_store_root(),
             export_formats=export_formats,
             export_dpi=export_dpi,
+            export_profile=export_profile,
             # Bulk runs shape with the template's kit faces — without this
             # every instance silently substituted bundled Inter.
             brand_fonts=scene_brand_fonts(repo, revision["scene"], asset_store_root()),
@@ -2333,6 +2335,9 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
             binding,
             payload.export_formats,
             payload.export_dpi,
+            export_profile=resolve_saved_or_inline_profile(
+                revision["scene"], payload.export_profile, payload.export_profile_name
+            ),
         )
         log_event(
             api_logger,
@@ -2371,6 +2376,26 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
 
     BATCH_EXPORT_DPI = 300
 
+    def _instance_error_codes(instance: JsonObject) -> List[str]:
+        """Per-instance failure codes for the batch manifest: artifact-level
+        errors (e.g. export.print_not_ready) plus error-severity diagnostics
+        of failed derivations, de-duplicated in first-seen order."""
+        codes: List[str] = []
+        for artifact in instance.get("artifacts", []):
+            error = artifact.get("error")
+            if isinstance(error, dict) and error.get("code"):
+                codes.append(str(error["code"]))
+        if instance.get("status") == "failed":
+            for diagnostic in instance.get("diagnostics", []):
+                if (
+                    isinstance(diagnostic, dict)
+                    and diagnostic.get("severity") == "error"
+                    and diagnostic.get("code")
+                ):
+                    codes.append(str(diagnostic["code"]))
+        seen: set = set()
+        return [code for code in codes if not (code in seen or seen.add(code))]
+
     def _process_batch(
         repo: Repository, revision: JsonObject, batch: JsonObject
     ) -> JsonObject:
@@ -2400,6 +2425,7 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
                     batch["export_formats"],
                     BATCH_EXPORT_DPI,
                     batch_id=batch["batch_id"],
+                    export_profile=batch.get("export_profile"),
                 )
                 counts["derived" if instance["status"] == "derived" else "failed"] += 1
                 fit_status = instance["fit_status"]
@@ -2412,6 +2438,9 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
                         "status": instance["status"],
                         "fit_status": fit_status,
                         "artifacts": instance.get("artifacts", []),
+                        # A failed instance's why was previously buried in the
+                        # instance row; the manifest names it directly.
+                        "error_codes": _instance_error_codes(instance),
                     }
                 )
             cursor = chunk_end
@@ -2449,6 +2478,35 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
                         ),
                     },
                 )
+        export_profile = resolve_saved_or_inline_profile(
+            revision["scene"], payload.export_profile, payload.export_profile_name
+        )
+        # Fail-fast template preflight: a bleed-requesting print profile
+        # against a template with no bleed geometry would gate EVERY
+        # instance (export.print_not_ready) — kill the run at copy zero,
+        # before deriving anything.
+        if (
+            export_profile
+            and export_profile.get("format") == "pdf"
+            and export_profile.get("include_bleed")
+        ):
+            missing = [
+                page_id
+                for page_id, page in (revision["scene"].get("pages") or {}).items()
+                if not isinstance(page, dict) or not page.get("bleed")
+            ]
+            if missing:
+                raise HTTPException(
+                    status_code=422,
+                    detail={
+                        "code": "batch.template_not_print_ready",
+                        "message": (
+                            "export profile requests bleed but page(s) "
+                            f"{', '.join(missing)} have no bleed rect — add print "
+                            "geometry to the template before running a batch"
+                        ),
+                    },
+                )
         chunk_size = max(1, payload.chunk_size)
         batch = repo.create_batch(
             {
@@ -2457,6 +2515,7 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
                 "status": "running",
                 "binding_set_ids": payload.binding_set_ids,
                 "export_formats": payload.export_formats,
+                "export_profile": export_profile,
                 "chunk_size": chunk_size,
                 "cursor": 0,
             }
@@ -3814,11 +3873,18 @@ def diagnostics_from_helper_error(error: Any) -> List[JsonObject]:
     ]
 
 
-def resolve_document_export_profile(
+def resolve_saved_or_inline_profile(
     scene: JsonObject,
-    payload: ExportDocumentRequest,
-) -> JsonObject:
-    if payload.profile is not None and payload.profile_name:
+    profile: Optional[JsonObject],
+    profile_name: Optional[str],
+    default_format: Optional[str] = None,
+) -> Optional[JsonObject]:
+    """The one profile-resolution contract, shared by document exports and
+    the bulk instance/batch paths: an inline profile and a saved-profile
+    name are mutually exclusive; names resolve against the scene's
+    `export_profiles` and miss loudly. Returns None when neither is given —
+    the caller owns its own default."""
+    if profile is not None and profile_name:
         raise HTTPException(
             status_code=422,
             detail={
@@ -3826,24 +3892,48 @@ def resolve_document_export_profile(
                 "message": "provide either profile or profile_name, not both",
             },
         )
-    if payload.profile is not None:
-        profile = dict(payload.profile)
-        profile.setdefault("format", payload.format)
-        profile.setdefault("name", f"{profile['format']}_document_export")
-        return normalize_export_profile(profile)
+    if profile is not None:
+        resolved = dict(profile)
+        if default_format is not None:
+            resolved.setdefault("format", default_format)
+        if not resolved.get("format"):
+            # Callers without a format context (bulk instance/batch paths)
+            # must say what they want — normalize's svg default would
+            # silently misroute a print profile.
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "code": "export_profile.format_required",
+                    "message": "inline export profile must declare a format",
+                },
+            )
+        resolved.setdefault("name", f"{resolved['format']}_document_export")
+        return normalize_export_profile(resolved)
 
-    if payload.profile_name:
-        for profile in scene.get("export_profiles", []):
-            if isinstance(profile, dict) and profile.get("name") == payload.profile_name:
-                return normalize_export_profile(dict(profile))
+    if profile_name:
+        for saved in scene.get("export_profiles", []):
+            if isinstance(saved, dict) and saved.get("name") == profile_name:
+                return normalize_export_profile(dict(saved))
         raise HTTPException(
             status_code=422,
             detail={
                 "code": "export_profile.not_found",
-                "message": f"document has no saved export profile named {payload.profile_name}",
+                "message": f"document has no saved export profile named {profile_name}",
             },
         )
 
+    return None
+
+
+def resolve_document_export_profile(
+    scene: JsonObject,
+    payload: ExportDocumentRequest,
+) -> JsonObject:
+    resolved = resolve_saved_or_inline_profile(
+        scene, payload.profile, payload.profile_name, default_format=payload.format
+    )
+    if resolved is not None:
+        return resolved
     return default_export_profile(payload.format)
 
 

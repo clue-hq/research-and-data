@@ -374,6 +374,69 @@ def test_edge_bleed_chain_l2_l3(
     assert sample(550, 1098)[:3] != white, f"[{renderer}] bottom bleed strip is blank"
 
 
+def test_marks_mode_pdf_strokes_trim_and_bleed_ticks(core: CoreClient) -> None:
+    """The marks coverage gap: tick GEOMETRY is unit-pinned in Rust, but
+    until now nothing rendered a marks-mode export and asserted INK — a
+    regression that computes perfect coordinates yet never strokes them
+    (paint order, clip, alpha) passed every suite. Fixture geometry:
+    1080pt trim, 12pt bleed, 14pt mark margin → MediaBox 1132, trim line
+    26pt in, bleed line 14pt in. Every corner carries BOTH tick sets
+    (trim + bleed = 16 segments), floating in the ink-free margin."""
+    scene = build_scene(core, EDGE_BLEED_DSL)
+    response = core.export_preview(
+        scene,
+        export_format="pdf",
+        profile={
+            "name": "parity_pdf_marks",
+            "format": "pdf",
+            "pdf_intent": "print",
+            "raster": None,
+            "include_bleed": True,
+            "include_marks": True,
+            "embed_fonts": True,
+        },
+    )
+    artifacts = response["export"]["artifacts"]
+    assert artifacts, f"no artifacts: {response.get('diagnostics') or []}"
+    pdf_bytes = bytes(int(value) & 0xFF for value in artifacts[0]["bytes"])
+
+    document = fitz.open(stream=pdf_bytes, filetype="pdf")
+    page = document[0]
+    assert page.mediabox.width == pytest.approx(1132, abs=0.01)
+    assert page.trimbox.width == pytest.approx(1080, abs=0.01)
+
+    # 4 px/pt so the 0.5pt hairline ticks land solidly.
+    pixmap = rgb_pixmap(page.get_pixmap(dpi=288, alpha=False))
+    scale = pixmap.width / page.rect.width
+
+    def darkest(x0: float, y0: float, x1: float, y1: float) -> int:
+        values = []
+        for py in range(int(y0 * scale), int(y1 * scale) + 1):
+            for px in range(int(x0 * scale), int(x1 * scale) + 1):
+                r, g, b = pixmap.pixel(px, py)[:3]
+                values.append((r + g + b) // 3)
+        return min(values)
+
+    size = 1132.0
+    trim_line, bleed_line = 26.0, 14.0
+    # Ticks run outward through the margin band 2..11pt from the MediaBox
+    # edge (3pt gap after the bleed line, ~11pt long).
+    near = (2.0, 10.0)
+    far = (size - 10.0, size - 2.0)
+    for line, label in ((trim_line, "trim"), (bleed_line, "bleed")):
+        for position in (line, size - line):
+            for band in (near, far):
+                assert (
+                    darkest(position - 1.5, band[0], position + 1.5, band[1]) < 160
+                ), f"missing vertical {label} tick at x={position}, y≈{band}"
+                assert (
+                    darkest(band[0], position - 1.5, band[1], position + 1.5) < 160
+                ), f"missing horizontal {label} tick at y={position}, x≈{band}"
+
+    # The margin between corners stays ink-free — ticks, not a frame.
+    assert darkest(500.0, 2.0, 632.0, 10.0) > 235, "stray ink in the mark margin"
+
+
 BOOKLET_DSL = """
 page page_1 size(400,300,pt)
   label1 text "One" p(40,40) s(150,50) font("Inter",28,700,left) fill(#ffffff)

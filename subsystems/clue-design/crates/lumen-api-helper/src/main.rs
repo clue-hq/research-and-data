@@ -361,6 +361,13 @@ enum CoreRequest {
         brand_fonts: Option<BrandFontsSpec>,
         #[serde(default)]
         library_fonts: Option<BrandFontsSpec>,
+        /// Full ExportProfile driving the bulk artifact for its format
+        /// (print controls: bleed, marks, proof, imposition, CMYK, raster
+        /// scale). Replaces the built-in default profile of the same
+        /// format; other formats in `export_formats` keep their defaults.
+        /// Malformed profiles fail loudly (`profile.invalid`).
+        #[serde(default)]
+        export_profile: Option<Value>,
     },
     BuildInfo,
 }
@@ -1774,6 +1781,7 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
             export_dpi,
             brand_fonts,
             library_fonts,
+            export_profile,
         } => {
             // The template's families live in the revision scene; binding
             // sets substitute content, never typography — so the scene JSON
@@ -1781,6 +1789,15 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
             let family_scan = scene.to_string();
             let scene = parse_scene(scene)?;
             let binding = parse_binding_set(binding_set)?;
+            let export_profile: Option<ExportProfile> = export_profile
+                .map(serde_json::from_value)
+                .transpose()
+                .map_err(|error| {
+                    core_error(
+                        "profile.invalid",
+                        format!("invalid export profile payload: {error}"),
+                    )
+                })?;
             let (fonts, font_diagnostics) =
                 load_request_fonts(brand_fonts.as_ref(), library_fonts.as_ref(), &family_scan);
 
@@ -1936,7 +1953,7 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
             diagnostics.extend(font_diagnostics);
             let mut artifacts: Vec<Value> = Vec::new();
             let mut export_skipped = false;
-            if !export_formats.is_empty() {
+            if !export_formats.is_empty() || export_profile.is_some() {
                 if derived.has_errors() {
                     // Failed instances never produce artifacts; the fit
                     // report and diagnostics carry the why.
@@ -1952,6 +1969,7 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                         &derived.scene,
                         &export_formats,
                         export_dpi.unwrap_or(300),
+                        export_profile,
                         &store_root,
                         Arc::clone(&fonts),
                         &mut diagnostics,
@@ -2049,6 +2067,7 @@ fn export_instance_artifacts(
     scene: &Scene,
     formats: &[String],
     dpi: u16,
+    custom_profile: Option<ExportProfile>,
     store_root: &str,
     fonts: Arc<FontManager>,
     diagnostics: &mut Vec<Diagnostic>,
@@ -2073,169 +2092,144 @@ fn export_instance_artifacts(
         }));
     };
 
+    // Every artifact runs through the ONE export pipeline (adapter.export)
+    // that interactive downloads use — bulk inherits vector PDF, bleed,
+    // marks, proof, imposition, CMYK, X-4 finalize, the geometry tripwire,
+    // and the print-ready report by construction. `formats` requests the
+    // built-in default profiles; `custom_profile` (a full ExportProfile
+    // from the request, usually a saved document profile resolved by the
+    // API) replaces the default for its own format.
+    let mut profiles: Vec<ExportProfile> = Vec::new();
     for format in formats {
-        match format.as_str() {
-            "svg" | "png" => {
-                let profile = ExportProfile {
-                    name: format!("instance_{format}"),
-                    format: if format == "svg" {
-                        ExportFormat::Svg
-                    } else {
-                        ExportFormat::Png
-                    },
-                    pdf_intent: None,
-                    raster: (format == "png").then_some(RasterScale {
-                        scale: 1.0,
-                        dpi: Some(dpi),
-                    }),
-                    include_bleed: false,
-                    // SVG embeds fonts — instance previews render as images,
-                    // which cannot reach document fonts, and a resolver is
-                    // always wired here (name-only would warn LUME0216 into
-                    // the editor UI). Meaningless for PNG.
-                    embed_fonts: format == "svg",
-                    include_marks: false,
+        let profile = match format.as_str() {
+            "svg" => ExportProfile {
+                name: "instance_svg".to_owned(),
+                format: ExportFormat::Svg,
+                pdf_intent: None,
+                raster: None,
+                include_bleed: false,
+                // SVG embeds fonts — instance previews render as images,
+                // which cannot reach document fonts, and a resolver is
+                // always wired here (name-only would warn LUME0216 into
+                // the editor UI).
+                embed_fonts: true,
+                include_marks: false,
                 imposition: None,
                 proof: false,
                 color: None,
-                };
-                let request = ExportRequest {
-                    profile,
-                    page_ids: page_ids.clone(),
-                    purpose: ExportPurpose::BulkRender,
-                };
-                match adapter.export(scene, &request) {
-                    Ok(result) => {
-                        diagnostics.extend(result.diagnostics);
-                        for artifact in result.artifacts {
-                            let stored = store
-                                .put(&artifact.bytes)
-                                .map_err(|error| core_error(error.code, error.message))?;
-                            artifacts.push(json!({
-                                "format": format,
-                                "page_id": artifact.page_id,
-                                "mime_type": artifact.mime_type,
-                                "byte_length": stored.byte_length,
-                                "digest_value": stored.digest_value,
-                                "relative_path": stored.relative_path,
-                                "deduplicated": stored.deduplicated,
-                            }));
-                        }
-                    }
-                    Err(error) => {
-                        diagnostics.extend(error.diagnostics.clone());
-                        push_error(&mut artifacts, format, error.code, &error.message);
+            },
+            "png" => ExportProfile {
+                name: "instance_png".to_owned(),
+                format: ExportFormat::Png,
+                pdf_intent: None,
+                raster: Some(RasterScale {
+                    scale: 1.0,
+                    dpi: Some(dpi),
+                }),
+                include_bleed: false,
+                embed_fonts: false,
+                include_marks: false,
+                imposition: None,
+                proof: false,
+                color: None,
+            },
+            // Default PDF = the same vector print-intent deliverable an
+            // interactive print download produces (live text, embedded
+            // fonts, X-4). The W0-era raster-flattened default is gone —
+            // flattened mode remains reachable only via the global
+            // LUMEN_PDF_RENDERER=flattened comparison baseline.
+            "pdf" => ExportProfile {
+                name: "instance_pdf".to_owned(),
+                format: ExportFormat::Pdf,
+                pdf_intent: Some(PdfIntent::Print),
+                raster: None,
+                include_bleed: false,
+                embed_fonts: true,
+                include_marks: false,
+                imposition: None,
+                proof: false,
+                color: None,
+            },
+            other => {
+                push_error(
+                    &mut artifacts,
+                    other,
+                    "export.unknown_format",
+                    "instance export supports svg, png, and pdf",
+                );
+                continue;
+            }
+        };
+        // The custom profile owns its format; drop the default for it.
+        if custom_profile
+            .as_ref()
+            .is_some_and(|custom| custom.format == profile.format)
+        {
+            continue;
+        }
+        profiles.push(profile);
+    }
+    if let Some(custom) = custom_profile {
+        profiles.push(custom);
+    }
+
+    for profile in profiles {
+        let format_label = match profile.format {
+            ExportFormat::Svg => "svg",
+            ExportFormat::Png => "png",
+            ExportFormat::Pdf => "pdf",
+            ExportFormat::FigmaManifest => "figma_manifest",
+        };
+        let profile_name = profile.name.clone();
+        let request = ExportRequest {
+            profile,
+            page_ids: page_ids.clone(),
+            purpose: ExportPurpose::BulkRender,
+        };
+        match adapter.export(scene, &request) {
+            Ok(result) => {
+                diagnostics.extend(result.diagnostics);
+                // W6/L4 hard gate, now against the REAL request: a failed
+                // print-ready report blocks the bulk artifact — one bad
+                // instance fails loudly instead of joining a 400-copy run.
+                if let Some(report) = &result.print_ready {
+                    if report.failed() {
+                        artifacts.push(json!({
+                            "format": format_label,
+                            "profile_name": profile_name,
+                            "error": {
+                                "code": "export.print_not_ready",
+                                "message": "print-ready preflight failed; see print_ready report",
+                            },
+                            "print_ready": to_value(report)?,
+                        }));
+                        continue;
                     }
                 }
-            }
-            "pdf" => {
-                // Checks first (license enforcement, print DPI, logo safe
-                // area) through the adapter; the SVG bytes are discarded.
-                let check_request = ExportRequest {
-                    profile: ExportProfile {
-                        name: "instance_pdf_checks".to_owned(),
-                        format: ExportFormat::Svg,
-                        pdf_intent: Some(PdfIntent::Print),
-                        raster: None,
-                        include_bleed: false,
-                        embed_fonts: false,
-                        include_marks: false,
-                    imposition: None,
-                    proof: false,
-                    color: None,
-                    },
-                    page_ids: page_ids.clone(),
-                    purpose: ExportPurpose::BulkRender,
-                };
-                match adapter.export(scene, &check_request) {
-                    Ok(check_result) => {
-                        // LUME0216 (viewer-font dependency) is about the SVG
-                        // artifact's portability; these SVG bytes are
-                        // discarded — only the checks matter — so the
-                        // warning would be noise about a file nobody gets.
-                        diagnostics.extend(
-                            check_result
-                                .diagnostics
-                                .into_iter()
-                                .filter(|diagnostic| diagnostic.code != "LUME0216"),
-                        );
-                        let renderer = SkiaSceneRenderer::new(Arc::clone(&fonts));
-                        match lumen_skia::raster_flattened_pdf(
-                            &renderer,
-                            scene,
-                            &page_ids,
-                            dpi,
-                            false,
-                            false,
-                            None,
-                            Some(resolver.as_ref()),
-                        ) {
-                            Ok(flattened) => {
-                                diagnostics.extend(flattened.diagnostics);
-                                // W6/L4 hard gate: a failed print-ready
-                                // report blocks the bulk artifact — one bad
-                                // instance fails loudly instead of joining
-                                // a 400-copy run.
-                                let report = lumen_export::print_ready_report(
-                                    scene,
-                                    &page_ids,
-                                    &check_request,
-                                    &diagnostics,
-                                );
-                                if report.failed() {
-                                    artifacts.push(json!({
-                                        "format": "pdf",
-                                        "error": {
-                                            "code": "export.print_not_ready",
-                                            "message": "print-ready preflight failed; see print_ready report",
-                                        },
-                                        "print_ready": to_value(&report)?,
-                                    }));
-                                    continue;
-                                }
-                                let stored = store
-                                    .put(&flattened.bytes)
-                                    .map_err(|error| core_error(error.code, error.message))?;
-                                artifacts.push(json!({
-                                    "print_ready": to_value(&report)?,
-                                    "format": "pdf",
-                                    "page_id": null,
-                                    "mime_type": "application/pdf",
-                                    "byte_length": stored.byte_length,
-                                    "digest_value": stored.digest_value,
-                                    "relative_path": stored.relative_path,
-                                    "deduplicated": stored.deduplicated,
-                                    "flattened_raster_dpi": dpi,
-                                    "pages": flattened
-                                        .pages
-                                        .iter()
-                                        .map(|page| json!({
-                                            "page_id": page.page_id,
-                                            "width_pt": page.width_pt,
-                                            "height_pt": page.height_pt,
-                                            "width_px": page.width_px,
-                                            "height_px": page.height_px,
-                                        }))
-                                        .collect::<Vec<_>>(),
-                                }));
-                            }
-                            Err(error) => {
-                                push_error(&mut artifacts, "pdf", error.code, &error.message)
-                            }
-                        }
+                for artifact in result.artifacts {
+                    let stored = store
+                        .put(&artifact.bytes)
+                        .map_err(|error| core_error(error.code, error.message))?;
+                    let mut row = json!({
+                        "format": format_label,
+                        "profile_name": profile_name,
+                        "page_id": artifact.page_id,
+                        "mime_type": artifact.mime_type,
+                        "byte_length": stored.byte_length,
+                        "digest_value": stored.digest_value,
+                        "relative_path": stored.relative_path,
+                        "deduplicated": stored.deduplicated,
+                    });
+                    if let Some(report) = &result.print_ready {
+                        row["print_ready"] = to_value(report)?;
                     }
-                    Err(error) => {
-                        diagnostics.extend(error.diagnostics.clone());
-                        push_error(&mut artifacts, "pdf", error.code, &error.message);
-                    }
+                    artifacts.push(row);
                 }
             }
-            other => push_error(
-                &mut artifacts,
-                other,
-                "export.unknown_format",
-                "instance export supports svg, png, and pdf",
-            ),
+            Err(error) => {
+                diagnostics.extend(error.diagnostics.clone());
+                push_error(&mut artifacts, format_label, error.code, &error.message);
+            }
         }
     }
 

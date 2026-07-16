@@ -968,6 +968,114 @@ fn export_profile_delete_requires_a_surviving_profile() {
     assert!(working.export_profile("print_pdf").is_some());
 }
 
+#[test]
+fn export_profile_patch_carries_the_print_fields() {
+    // The sparse patch was frozen before the print track and silently
+    // couldn't express include_marks/imposition/proof/color — the ops path
+    // (agent, saved bulk profiles) could never persist a print setup.
+    let mut scene = scene_with_ad();
+    scene.export_profiles.push(lumen_core::ExportProfile {
+        name: "print_pdf".to_owned(),
+        format: lumen_core::ExportFormat::Pdf,
+        pdf_intent: Some(lumen_core::PdfIntent::Print),
+        raster: None,
+        include_bleed: false,
+        embed_fonts: true,
+        include_marks: false,
+        imposition: None,
+        proof: false,
+        color: None,
+    });
+
+    let patch: lumen_core::ExportProfileEditPatch = serde_json::from_value(serde_json::json!({
+        "include_bleed": { "kind": "set", "value": true },
+        "include_marks": { "kind": "set", "value": true },
+        "imposition": { "kind": "set", "value": "booklet" },
+        "proof": { "kind": "set", "value": true },
+        "color": { "kind": "set", "value": "cmyk" }
+    }))
+    .expect("print-field patch parses from the wire format");
+
+    let batch =
+        lumen_core::build_export_profile_modify(&scene, "print_pdf".to_owned(), patch).unwrap();
+    let mut working = scene.clone();
+    batch.apply_checked(&mut working).unwrap();
+    let merged = working.export_profile("print_pdf").unwrap();
+    assert!(merged.include_bleed);
+    assert!(merged.include_marks);
+    assert_eq!(merged.imposition.as_deref(), Some("booklet"));
+    assert!(merged.proof);
+    assert_eq!(merged.color.as_deref(), Some("cmyk"));
+    // Untouched fields survive the merge.
+    assert_eq!(merged.format, lumen_core::ExportFormat::Pdf);
+    assert!(merged.embed_fonts);
+
+    // Clearing works for the optional print fields.
+    let clear: lumen_core::ExportProfileEditPatch = serde_json::from_value(serde_json::json!({
+        "imposition": { "kind": "clear" },
+        "color": { "kind": "clear" },
+        "proof": { "kind": "set", "value": false }
+    }))
+    .unwrap();
+    let batch =
+        lumen_core::build_export_profile_modify(&working, "print_pdf".to_owned(), clear).unwrap();
+    batch.apply_checked(&mut working).unwrap();
+    let cleared = working.export_profile("print_pdf").unwrap();
+    assert_eq!(cleared.imposition, None);
+    assert_eq!(cleared.color, None);
+    assert!(!cleared.proof);
+    assert!(cleared.include_marks, "unrelated print field survives");
+}
+
+#[test]
+fn export_profile_patch_stays_complete_against_the_profile_shape() {
+    // Drift killer: this is the THIRD hand-mirrored copy of ExportProfile's
+    // shape to go stale (patch here, the API normalize whitelist twice). If
+    // ExportProfile grows a field the patch can't express, this fails at
+    // the moment of the change, not months later in an audit.
+    let profile = lumen_core::ExportProfile {
+        name: "shape_probe".to_owned(),
+        format: lumen_core::ExportFormat::Pdf,
+        pdf_intent: Some(lumen_core::PdfIntent::Print),
+        raster: Some(lumen_core::RasterScale {
+            scale: 2.0,
+            dpi: Some(300),
+        }),
+        include_bleed: true,
+        embed_fonts: true,
+        include_marks: true,
+        imposition: Some("booklet".to_owned()),
+        proof: true,
+        color: Some("cmyk".to_owned()),
+    };
+    let profile_keys: std::collections::BTreeSet<String> = serde_json::to_value(&profile)
+        .unwrap()
+        .as_object()
+        .unwrap()
+        .keys()
+        .cloned()
+        .collect();
+
+    let patch_keys: std::collections::BTreeSet<String> =
+        serde_json::to_value(lumen_core::ExportProfileEditPatch::default())
+            .unwrap()
+            .as_object()
+            .unwrap()
+            .keys()
+            .cloned()
+            .collect();
+
+    // `name` is the patch's addressing key (#export:name), never patched.
+    let expected: std::collections::BTreeSet<String> = profile_keys
+        .into_iter()
+        .filter(|key| key != "name")
+        .collect();
+    assert_eq!(
+        patch_keys, expected,
+        "ExportProfileEditPatch no longer mirrors ExportProfile — add the missing field(s) to the patch, the merge in build_export_profile_modify, and the API normalize whitelist"
+    );
+}
+
 // --- Effects Contract V0, slice X2: per-entry stack edits ---
 
 fn shadow(id: &str, blur: f64) -> Effect {

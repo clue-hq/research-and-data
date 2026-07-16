@@ -88,6 +88,9 @@ def run_migrations(database_path: Path) -> None:
         # Per-document advanced opt-out (0/1): when set, the editor skips the
         # handoff-absolute freeze seams so agent auto-layout stays live.
         ensure_column(connection, "documents", "layout_managed_editing", "INTEGER")
+        # Bulk print controls: the resolved export profile a batch runs with
+        # (NULL = format-default artifacts, the pre-profile behavior).
+        ensure_column(connection, "instance_batches", "export_profile_json", "TEXT")
         backfill_edit_envelopes(connection)
 
 
@@ -1207,10 +1210,11 @@ class Repository:
             """
             INSERT INTO instance_batches (
               batch_id, template_revision_id, status, binding_set_ids_json,
-              export_formats_json, chunk_size, cursor, counts_json,
-              manifest_json, diagnostics_json, created_at, updated_at
+              export_formats_json, export_profile_json, chunk_size, cursor,
+              counts_json, manifest_json, diagnostics_json, created_at,
+              updated_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 batch["batch_id"],
@@ -1218,6 +1222,7 @@ class Repository:
                 batch["status"],
                 encode(batch["binding_set_ids"]),
                 encode(batch["export_formats"]),
+                encode_optional(batch.get("export_profile")),
                 batch["chunk_size"],
                 batch["cursor"],
                 encode(batch.get("counts", {})),
@@ -1584,6 +1589,7 @@ def batch_from_row(row: sqlite3.Row) -> JsonObject:
         "status": row["status"],
         "binding_set_ids": decode(row["binding_set_ids_json"]),
         "export_formats": decode(row["export_formats_json"]),
+        "export_profile": decode_optional(row["export_profile_json"]),
         "chunk_size": row["chunk_size"],
         "cursor": row["cursor"],
         "counts": decode(row["counts_json"]),

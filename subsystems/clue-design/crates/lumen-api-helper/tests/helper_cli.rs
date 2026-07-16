@@ -1253,21 +1253,37 @@ fn derive_instance_bulk_export_stores_artifacts_per_the_b3_verdict() {
         );
     }
 
-    // PDF follows the B3 verdict: raster-flattened pages at 300dpi, DL
-    // mailer 210x105mm => 595.3x297.6pt => 2480x1240px.
+    // Bulk PDF = the SAME vector print-intent deliverable interactive
+    // downloads produce (adapter pipeline: live text, embedded fonts, X-4,
+    // print-ready report). The W0-era "B3" raster-flattened default is
+    // superseded; flattened remains only as the LUMEN_PDF_RENDERER
+    // comparison baseline.
     let pdf = artifacts
         .iter()
         .find(|artifact| artifact["format"] == "pdf")
         .expect("pdf artifact");
-    assert_eq!(pdf["flattened_raster_dpi"], 300);
-    let page = &pdf["pages"][0];
-    assert_eq!(page["width_px"], 2480, "{page:#?}");
-    assert_eq!(page["height_px"], 1240, "{page:#?}");
+    assert_eq!(pdf["profile_name"], "instance_pdf", "{pdf:#?}");
+    assert!(pdf["page_id"].is_null(), "one document artifact: {pdf:#?}");
+    let report = &pdf["print_ready"];
+    assert!(
+        report["rules"].is_array(),
+        "print-intent bulk PDF carries the print-ready report: {pdf:#?}"
+    );
+    assert_ne!(report["status"], "fail", "{report:#?}");
     let pdf_path = store_dir
         .path()
         .join(pdf["relative_path"].as_str().unwrap());
     let pdf_bytes = std::fs::read(&pdf_path).expect("pdf bytes");
     assert!(pdf_bytes.starts_with(b"%PDF-"), "stored bytes are a PDF");
+    // Vector path with live text: subset fonts are embedded (FontFile2)
+    // and the print finalize declared a TrimBox — neither existed in the
+    // raster-flattened output.
+    let haystack = String::from_utf8_lossy(&pdf_bytes);
+    assert!(
+        haystack.contains("FontFile2"),
+        "embedded subset fonts expected in the vector bulk PDF"
+    );
+    assert!(haystack.contains("/TrimBox"), "print finalize expected");
 
     // Determinism: re-deriving and re-exporting produces identical digests
     // for every artifact (the store reports dedup hits).
@@ -1282,6 +1298,183 @@ fn derive_instance_bulk_export_stores_artifacts_per_the_b3_verdict() {
         );
         assert_eq!(b["deduplicated"], true, "{b:#?}");
     }
+}
+
+/// Read a PDF box from the first page (values in pt).
+fn pdf_page_box(bytes: &[u8], key: &str) -> (f64, f64, f64, f64) {
+    let document = lopdf::Document::load_mem(bytes).expect("artifact parses as PDF");
+    let (_, page_id) = document.get_pages().into_iter().next().expect("a page");
+    let page = document.get_dictionary(page_id).expect("page dict");
+    let values: Vec<f64> = page
+        .get(key.as_bytes())
+        .unwrap_or_else(|_| panic!("page carries {key}"))
+        .as_array()
+        .expect("box array")
+        .iter()
+        .map(|value| value.as_float().expect("box number") as f64)
+        .collect();
+    (values[0], values[1], values[2], values[3])
+}
+
+#[test]
+fn derive_instance_print_profile_drives_the_full_print_pipeline() {
+    // The whole point of the bulk print slice: a saved/inline print profile
+    // (bleed + marks) produces the SAME press-ready deliverable through the
+    // same adapter pipeline as an interactive download — grown MediaBox for
+    // the mark margin, BleedBox inside it, TrimBox at the finished size.
+    let store_dir = tempfile::tempdir().expect("tempdir");
+    let store_root = store_dir.path().to_string_lossy().to_string();
+
+    let mut request = derive_request(&store_root);
+    // export_formats requests a pdf too: the custom profile must OWN the
+    // pdf artifact (exactly one, not a default duplicate).
+    request["export_formats"] = json!(["pdf"]);
+    request["export_profile"] = json!({
+        "name": "print_run",
+        "format": "pdf",
+        "pdf_intent": "print",
+        "raster": null,
+        "include_bleed": true,
+        "include_marks": true,
+        "embed_fonts": true
+    });
+
+    let response = helper(request);
+    assert_eq!(response["ok"], true, "{response:#?}");
+    let artifacts = response["instance"]["artifacts"].as_array().unwrap();
+    let pdfs: Vec<&Value> = artifacts
+        .iter()
+        .filter(|artifact| artifact["format"] == "pdf")
+        .collect();
+    assert_eq!(pdfs.len(), 1, "custom profile owns the pdf: {artifacts:#?}");
+    let pdf = pdfs[0];
+    assert_eq!(pdf["profile_name"], "print_run", "{pdf:#?}");
+    assert!(pdf.get("error").is_none(), "{pdf:#?}");
+    assert_ne!(pdf["print_ready"]["status"], "fail", "{pdf:#?}");
+
+    let bytes = std::fs::read(
+        store_dir
+            .path()
+            .join(pdf["relative_path"].as_str().unwrap()),
+    )
+    .expect("pdf bytes");
+
+    // DL mailer: trim 210x105mm = 595.28x297.64pt, bleed 3mm, marks
+    // margin 14pt. MediaBox = bleed + 2*14pt; boxes strictly nested.
+    let media = pdf_page_box(&bytes, "MediaBox");
+    let bleed = pdf_page_box(&bytes, "BleedBox");
+    let trim = pdf_page_box(&bytes, "TrimBox");
+    let width = |b: (f64, f64, f64, f64)| b.2 - b.0;
+    let height = |b: (f64, f64, f64, f64)| b.3 - b.1;
+    assert!((width(trim) - 595.28).abs() < 0.1, "trim width {trim:?}");
+    assert!((height(trim) - 297.64).abs() < 0.1, "trim height {trim:?}");
+    let mm3 = 3.0 * 72.0 / 25.4;
+    assert!(
+        (width(bleed) - (width(trim) + 2.0 * mm3)).abs() < 0.1,
+        "bleed box = trim + 3mm each side: {bleed:?}"
+    );
+    assert!(
+        (width(media) - (width(bleed) + 28.0)).abs() < 0.1,
+        "media box = bleed + 14pt mark margin each side: {media:?}"
+    );
+    assert!(
+        (height(media) - (height(bleed) + 28.0)).abs() < 0.1,
+        "media box = bleed + 14pt mark margin each side: {media:?}"
+    );
+}
+
+#[test]
+fn derive_instance_print_profile_gate_blocks_unready_templates() {
+    // include_bleed requested against a bleed-less template: bleed_present
+    // FAILs and the bulk gate must block the artifact — one bad template
+    // fails loudly instead of printing a 400-copy run with no cutting
+    // tolerance.
+    let store_dir = tempfile::tempdir().expect("tempdir");
+    let store_root = store_dir.path().to_string_lossy().to_string();
+
+    let mut request = derive_request(&store_root);
+    request["scene"]["pages"]["page_mailer"]["bleed"] = Value::Null;
+    request["export_profile"] = json!({
+        "name": "print_run",
+        "format": "pdf",
+        "pdf_intent": "print",
+        "raster": null,
+        "include_bleed": true,
+        "include_marks": true,
+        "embed_fonts": true
+    });
+
+    let response = helper(request);
+    assert_eq!(response["ok"], true, "{response:#?}");
+    let artifacts = response["instance"]["artifacts"].as_array().unwrap();
+    let pdf = artifacts
+        .iter()
+        .find(|artifact| artifact["format"] == "pdf")
+        .expect("pdf row");
+    assert_eq!(pdf["error"]["code"], "export.print_not_ready", "{pdf:#?}");
+    assert_eq!(pdf["print_ready"]["status"], "fail", "{pdf:#?}");
+    assert!(
+        pdf.get("relative_path").is_none(),
+        "gated artifacts must not be stored: {pdf:#?}"
+    );
+}
+
+#[test]
+fn derive_instance_png_profile_controls_resolution() {
+    // "Various PNG export resolutions" for bulk: a custom png profile's
+    // raster scale/dpi drives the artifact pixels. DL mailer at 150dpi
+    // scale 2 => 210mm = 8.2677in * 150 * 2 = 2480px wide, 1240px tall.
+    let store_dir = tempfile::tempdir().expect("tempdir");
+    let store_root = store_dir.path().to_string_lossy().to_string();
+
+    let mut request = derive_request(&store_root);
+    request["export_profile"] = json!({
+        "name": "instance_png_2x",
+        "format": "png",
+        "pdf_intent": null,
+        "raster": { "scale": 2.0, "dpi": 150 },
+        "include_bleed": false,
+        "embed_fonts": false
+    });
+
+    let response = helper(request);
+    assert_eq!(response["ok"], true, "{response:#?}");
+    let artifacts = response["instance"]["artifacts"].as_array().unwrap();
+    let png = artifacts
+        .iter()
+        .find(|artifact| artifact["format"] == "png")
+        .expect("png row");
+    assert_eq!(png["profile_name"], "instance_png_2x");
+    let bytes = std::fs::read(
+        store_dir
+            .path()
+            .join(png["relative_path"].as_str().unwrap()),
+    )
+    .expect("png bytes");
+    // IHDR: width/height as big-endian u32 at offsets 16/20.
+    let dimension = |offset: usize| {
+        u32::from_be_bytes([
+            bytes[offset],
+            bytes[offset + 1],
+            bytes[offset + 2],
+            bytes[offset + 3],
+        ])
+    };
+    assert_eq!(dimension(16), 2480, "png width");
+    assert_eq!(dimension(20), 1240, "png height");
+}
+
+#[test]
+fn derive_instance_rejects_malformed_export_profiles() {
+    let store_dir = tempfile::tempdir().expect("tempdir");
+    let store_root = store_dir.path().to_string_lossy().to_string();
+
+    let mut request = derive_request(&store_root);
+    request["export_profile"] = json!({ "format": "pdf", "name": 7 });
+
+    let response = helper(request);
+    assert_eq!(response["ok"], false, "{response:#?}");
+    assert_eq!(response["error"]["code"], "profile.invalid", "{response:#?}");
 }
 
 #[test]
