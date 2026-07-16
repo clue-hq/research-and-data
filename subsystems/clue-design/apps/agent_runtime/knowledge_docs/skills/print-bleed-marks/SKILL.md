@@ -42,9 +42,12 @@ g = 3pt   gap between the bleed line and each tick (ink-free safety)
 
 ```
 ┌────────────────────────────── sheet = old artboard + 2t per axis ──┐
-│  mark margin (m) — masked PAPER WHITE, holds the 8 ticks           │
-│  ┌─────────────── bleed line ────────────────┐                     │
-│  │  bleed strip (b) — edge art EXTENDS here  │                     │
+│  mark margin (m) — masked PAPER WHITE                              │
+│  ┌─────────────── bleed line ────────────────┐   the 8 ticks run   │
+│  │  bleed strip (b) — edge art EXTENDS here  │   from the sheet    │
+│  │                                           │   edge ACROSS both  │
+│  │                                           │   zones, over the   │
+│  │                                           │   extended art      │
 │  │  ┌──────────── trim line ─────────────┐   │                     │
 │  │  │  the original design, unchanged,   │   │                     │
 │  │  │  shifted by (+t, +t)               │   │                     │
@@ -137,12 +140,19 @@ z-position is exactly right for both groups, in this order:
 - **`print_margin_mask`** — four white rects covering the outer 9pt strips.
   This is what guarantees a paper-white mark margin no matter what the page
   bg or any overshooting art does beneath it.
-- **`crop_marks`** — 8 ticks, pure black `#000000` (never a brand token — this
-  is registration ink for the cutter), 1pt thick, 6pt long (m − g), centered
-  on the trim coordinates (18 − 0.5 = 17.5), entirely inside the margin,
-  never crossing the bleed line. Declared last so nothing can cover a tick.
+- **`crop_marks`** — 8 ticks, each drawn as a PAIR: a 3pt-wide white halo
+  underlay, then a 1pt pure-black `#000000` core on top (never a brand token —
+  this is registration ink for the cutter). Each tick runs from the sheet edge
+  INWARD across the margin AND the bleed strip, stopping 3pt short of the trim
+  line (length t − g = 15pt), centered on its trim coordinate (18 − 0.5 = 17.5
+  for the core, 18 − 1.5 = 16.5 for the halo). The halo is what keeps the mark
+  visible ON TOP of art extended through the bleed — a bare black tick vanishes
+  on a dark wash or photo. The 3pt stand-off from the trim line keeps mark ink
+  off the finished piece under normal cut tolerance. Declared last so nothing
+  can cover a tick.
 
-With sheet Wc×Hc = (W+36)×(H+36) and trim `[18,18,W,H]`:
+With sheet Wc×Hc = (W+36)×(H+36) and trim `[18,18,W,H]` (halo first, core
+second — declaration order is z-order):
 
 ```text
 #page:page_1
@@ -152,22 +162,33 @@ With sheet Wc×Hc = (W+36)×(H+36) and trim `[18,18,W,H]`:
     pm_left   r p(0,0)      s(9,Hc) fill(#ffffff)
     pm_right  r p(Wc-9,0)   s(9,Hc) fill(#ffffff)
   crop_marks gr p(0,0) s(Wc,Hc)
-    cm_top_l    r p(17.5,0)       s(1,6) fill(#000000)
-    cm_top_r    r p(W+17.5,0)     s(1,6) fill(#000000)
-    cm_bottom_l r p(17.5,Hc-6)    s(1,6) fill(#000000)
-    cm_bottom_r r p(W+17.5,Hc-6)  s(1,6) fill(#000000)
-    cm_left_t   r p(0,17.5)       s(6,1) fill(#000000)
-    cm_left_b   r p(0,H+17.5)     s(6,1) fill(#000000)
-    cm_right_t  r p(Wc-6,17.5)    s(6,1) fill(#000000)
-    cm_right_b  r p(Wc-6,H+17.5)  s(6,1) fill(#000000)
+    cmh_top_l    r p(16.5,0)       s(3,15) fill(#ffffff)
+    cm_top_l     r p(17.5,0)       s(1,15) fill(#000000)
+    cmh_top_r    r p(W+16.5,0)     s(3,15) fill(#ffffff)
+    cm_top_r     r p(W+17.5,0)     s(1,15) fill(#000000)
+    cmh_bottom_l r p(16.5,Hc-15)   s(3,15) fill(#ffffff)
+    cm_bottom_l  r p(17.5,Hc-15)   s(1,15) fill(#000000)
+    cmh_bottom_r r p(W+16.5,Hc-15) s(3,15) fill(#ffffff)
+    cm_bottom_r  r p(W+17.5,Hc-15) s(1,15) fill(#000000)
+    cmh_left_t   r p(0,16.5)       s(15,3) fill(#ffffff)
+    cm_left_t    r p(0,17.5)       s(15,1) fill(#000000)
+    cmh_left_b   r p(0,H+16.5)     s(15,3) fill(#ffffff)
+    cm_left_b    r p(0,H+17.5)     s(15,1) fill(#000000)
+    cmh_right_t  r p(Wc-15,16.5)   s(15,3) fill(#ffffff)
+    cm_right_t   r p(Wc-15,17.5)   s(15,1) fill(#000000)
+    cmh_right_b  r p(Wc-15,H+16.5) s(15,3) fill(#ffffff)
+    cm_right_b   r p(Wc-15,H+17.5) s(15,1) fill(#000000)
 ```
 
 ### 5. Verify — the same discipline as any authoring round
 
 - Re-`inspect`: sheet size correct; every former edge-toucher now reaches the
   bleed line `[9,9,W+18,H+18]` on its touched sides; only the mask and ticks
-  live in the margin; ticks at exactly the trim coordinates; page `bleed`
-  metadata still unset.
+  live in the margin; each tick centered on its trim coordinate, halo under
+  core, stopping 3pt short of the trim line; page `bleed` metadata still unset.
+- Where a tick crosses extended art (the bleed strip), confirm on the preview
+  that the black core reads clearly on the white halo — that overlap is the
+  point: the marks must be visible ON the design's extended background.
 - `preflight_design` — must stay clean.
 - Nothing INTERIOR moved relative to the design (only the uniform +18 shift).
 
@@ -200,15 +221,27 @@ compiles clean and a plain PDF export ships the finished sheet:
     pm_left r p(0,0) s(9,1116) fill(#ffffff)
     pm_right r p(1107,0) s(9,1116) fill(#ffffff)
   crop_marks gr p(0,0) s(1116,1116)
-    cm_top_l r p(17.5,0) s(1,6) fill(#000000)
-    cm_top_r r p(1097.5,0) s(1,6) fill(#000000)
-    cm_bottom_l r p(17.5,1110) s(1,6) fill(#000000)
-    cm_bottom_r r p(1097.5,1110) s(1,6) fill(#000000)
-    cm_left_t r p(0,17.5) s(6,1) fill(#000000)
-    cm_left_b r p(0,1097.5) s(6,1) fill(#000000)
-    cm_right_t r p(1110,17.5) s(6,1) fill(#000000)
-    cm_right_b r p(1110,1097.5) s(6,1) fill(#000000)
+    cmh_top_l r p(16.5,0) s(3,15) fill(#ffffff)
+    cm_top_l r p(17.5,0) s(1,15) fill(#000000)
+    cmh_top_r r p(1096.5,0) s(3,15) fill(#ffffff)
+    cm_top_r r p(1097.5,0) s(1,15) fill(#000000)
+    cmh_bottom_l r p(16.5,1101) s(3,15) fill(#ffffff)
+    cm_bottom_l r p(17.5,1101) s(1,15) fill(#000000)
+    cmh_bottom_r r p(1096.5,1101) s(3,15) fill(#ffffff)
+    cm_bottom_r r p(1097.5,1101) s(1,15) fill(#000000)
+    cmh_left_t r p(0,16.5) s(15,3) fill(#ffffff)
+    cm_left_t r p(0,17.5) s(15,1) fill(#000000)
+    cmh_left_b r p(0,1096.5) s(15,3) fill(#ffffff)
+    cm_left_b r p(0,1097.5) s(15,1) fill(#000000)
+    cmh_right_t r p(1101,16.5) s(15,3) fill(#ffffff)
+    cm_right_t r p(1101,17.5) s(15,1) fill(#000000)
+    cmh_right_b r p(1101,1096.5) s(15,3) fill(#ffffff)
+    cm_right_b r p(1101,1097.5) s(15,1) fill(#000000)
 ```
+
+The ticks deliberately CROSS the bleed strip: over the extended `top_bar`
+orange, `cm_top_l`/`cm_top_r` read as black-on-white-halo marks sitting on the
+art — visible proof on the canvas of exactly where the cut lands.
 
 For a NEW design requested with baked marks: author the design normally at
 trim size first (skills/create-design), then apply this transform as a final
@@ -222,8 +255,10 @@ pass — never design directly on sheet coordinates.
 | Planning a z-BOTTOM insertion | Impossible: continuations append at z-top, and a same-parent `parent(..., index:0)` reorder is currently a silent no-op. Never plan one — extend the EXISTING bottom wash in place; the margin mask makes z-order of new nodes irrelevant. |
 | Page bg inks the margin | It does — and the `print_margin_mask` whitens it. Never skip the mask. |
 | `s(fill,…)` top-level nodes | Pin to explicit sizes BEFORE growing the page. |
-| Marks in a brand color | `#000000` only. |
+| Marks in a brand color | `#000000` core only. |
 | Marks under art | Mask group, then marks group, declared LAST. |
+| Bare black ticks over dark art | Always the halo pair (3pt white under 1pt black) — a naked tick disappears on a dark wash or photo in the bleed strip. |
+| Tick touching/entering the trim area | Ticks stop 3pt short of the trim line (length 15pt from the sheet edge) — mark ink on the finished piece is a print defect. |
 | Stretching photos | Grow the clipped frame; cover-fit re-crops. Never distort the image. |
 | Un-doing later | Reversal is by hand: delete `print_margin_mask` + `crop_marks`, shrink the page, shift children back, re-trim extended art. Keep the node ids stable (`pm_*`, `cm_*`) so removal is surgical. |
 | Digital-only surfaces | Never bake print furniture into a social/ad design the user didn't ask to print. |
