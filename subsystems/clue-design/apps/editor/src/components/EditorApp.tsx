@@ -36,6 +36,7 @@ import appMark from "../app/icon.svg";
 import { ExportMenu } from "./ExportMenu";
 import { VersionHistoryDialog } from "./HistoryPanel";
 import { downloadDataUrl } from "./exportArtifactActions";
+import { printReadyDiagnostics } from "@/engine/printReadiness";
 import { emptyScene } from "@/fixtures/emptyScene";
 import type { BrandCompatibilityRunner } from "@/engine/brandCompatibility";
 import type { BrandGovernanceRunner } from "@/engine/brandGovernance";
@@ -48,6 +49,7 @@ import type {
   BrandKitSummary,
   Diagnostic,
   DiagnosticSubject,
+  ExportProfile,
   NodeId,
   Operation,
   Page,
@@ -100,9 +102,12 @@ import {
   updateDocumentBrand,
   updateDocumentTitle,
   updateNodeTransform,
+  updatePageBleed,
+  updatePageSafeArea,
   upsertExportProfile
 } from "@/engine/operations";
 import { normalizePageSize } from "@/engine/pageGeometry";
+import { printBleedRect, printSafeAreaRect } from "@/engine/printBleed";
 import {
   groupEdit,
   mintGroupId,
@@ -135,6 +140,7 @@ import {
 import { useAgentInstructions } from "@/hooks/useAgentInstructions";
 import { useLayoutManagedEditing } from "@/hooks/useLayoutManagedEditing";
 import { useMarginGuides } from "@/hooks/useMarginGuides";
+import { usePrintFeature } from "@/hooks/usePrintFeature";
 import { useBrandChecks } from "@/hooks/useBrandChecks";
 import { useTurnNotification } from "@/hooks/useTurnNotification";
 import { useDocumentSync, type EditQueueFactory } from "@/hooks/useDocumentSync";
@@ -380,9 +386,6 @@ export default function EditorApp({
   const [isExportMenuOpen, setIsExportMenuOpen] = useState(false);
   const [isVersionHistoryOpen, setIsVersionHistoryOpen] = useState(false);
   const exportMenuAnchorRef = useRef<HTMLDivElement | null>(null);
-  // Set when an export was started from the topbar menu: its artifacts
-  // download directly (moda's Download) instead of opening the Export panel.
-  const downloadAfterExportRef = useRef(false);
   // Model override for agent turns ("" = runtime default).
   const [agentModel, setAgentModel] = useState("");
   // Workspace chrome (panel mode, workspace mode, viewport/tool, sidebar
@@ -701,17 +704,29 @@ export default function EditorApp({
 
   // Topbar export menu: exports it started download their artifacts directly
   // (moda's Download button) instead of routing through the Export panel.
-  useEffect(() => {
-    if (!downloadAfterExportRef.current || !exportResult) {
+  // Scoped to the awaited result of THIS call — never ambient state, which
+  // leaked the download intent onto the next panel export when a request
+  // aborted (no page selected, network error).
+  const downloadTopbarExport = async (profile: ExportProfile, pageIds: PageId[]) => {
+    const result = await runExportForScene(scene, profile, pageIds, {
+      openPreviewTab: false,
+      focusExportPanel: false
+    });
+    if (!result || result.status !== "ok") {
       return;
     }
-    downloadAfterExportRef.current = false;
-    if (exportResult.status === "ok") {
-      for (const artifact of exportResult.artifacts) {
-        downloadDataUrl(artifact.data_url, artifact.filename);
-      }
+    for (const artifact of result.artifacts) {
+      downloadDataUrl(artifact.data_url, artifact.filename);
     }
-  }, [exportResult]);
+    // The silent topbar path clears export diagnostics on success, so a
+    // print-intent PDF that came back warn/fail (e.g. bleed_present + LUME0412
+    // on an artboard with no bleed rect) would otherwise vanish. Surface those
+    // rules through the always-visible diagnostics alert pill.
+    const printDiagnostics = printReadyDiagnostics(result.printReady);
+    if (printDiagnostics.length > 0) {
+      setDiagnostics(printDiagnostics);
+    }
+  };
 
   // Close the export popover on any click outside its anchor.
   useEffect(() => {
@@ -799,6 +814,11 @@ export default function EditorApp({
   // View preference (not per-document): renders the active page's
   // safe-area/bleed guides on the canvas.
   const marginGuides = useMarginGuides();
+
+  // Master view preference (not per-document): the "Print & bleed" feature.
+  // Off by default; gates the trim guide, bleed-extent clip, print presets,
+  // and the export bleed/marks + print-readiness surfacing.
+  const printFeature = usePrintFeature();
 
   /**
    * Shared post-apply bookkeeping for operations that are already applied to
@@ -1310,7 +1330,13 @@ export default function EditorApp({
     setSelectedNodeId(null);
   };
 
-  const createCustomPage = (input: { name: string; width: number; height: number; unit: Page["size"]["unit"] }) => {
+  const createCustomPage = (input: {
+    name: string;
+    width: number;
+    height: number;
+    unit: Page["size"]["unit"];
+    print?: boolean;
+  }) => {
     const page: Page = {
       id: uniquePageId(scene, input),
       name: input.name,
@@ -1320,9 +1346,19 @@ export default function EditorApp({
       safe_area: null,
       background: []
     };
-    applyOperation(addPage(page));
-    setActivePageId(page.id);
-    setSelectedNodeId(null);
+    // Print presets seed a 3mm bleed + 5mm safe-area default (only while the
+    // print feature is on) — set through the operation builders in the same
+    // atomic batch as the page insert, never by mutating the page literal.
+    // Existing pages are untouched; the inspector fields remain the override.
+    const operations = [addPage(page)];
+    if (input.print && printFeature.printFeatureEnabled) {
+      operations.push(updatePageBleed(page, printBleedRect(page.size)));
+      operations.push(updatePageSafeArea(page, printSafeAreaRect(page.size)));
+    }
+    applyOperations(operations, () => {
+      setActivePageId(page.id);
+      setSelectedNodeId(null);
+    });
   };
 
   const duplicatePageInEditor = (pageId: PageId) => {
@@ -1460,22 +1496,18 @@ export default function EditorApp({
               </button>
               {isExportMenuOpen ? (
                 <ExportMenu
-                  pageCount={Object.keys(scene.pages).length}
-                  activePageName={activePage?.name ?? null}
+                  pages={Object.values(scene.pages)}
+                  activePageId={activePageId}
                   isExporting={isExporting}
                   onDownload={(profile, scope) => {
                     setIsExportMenuOpen(false);
-                    downloadAfterExportRef.current = true;
                     const pageIds =
                       scope === "all"
                         ? Object.values(scene.pages).map((page) => page.id)
                         : activePageId
                           ? [activePageId]
                           : [];
-                    void runExportForScene(scene, profile, pageIds, {
-                      openPreviewTab: false,
-                      focusExportPanel: false
-                    });
+                    void downloadTopbarExport(profile, pageIds);
                   }}
                   onClose={() => setIsExportMenuOpen(false)}
                 />
@@ -1528,6 +1560,7 @@ export default function EditorApp({
             scene={scene}
             activePageId={activePageId}
             diagnostics={diagnostics}
+            printFeatureEnabled={printFeature.printFeatureEnabled}
             onSelectPage={selectPage}
             onAddCustomPage={createCustomPage}
             onDuplicatePage={duplicatePageInEditor}
@@ -1756,6 +1789,8 @@ export default function EditorApp({
                 layoutManagedEditing={layoutManagedEditing.enabled}
                 showMarginGuides={marginGuides.showMarginGuides}
                 onToggleMarginGuides={marginGuides.toggleMarginGuides}
+                printFeatureEnabled={printFeature.printFeatureEnabled}
+                onTogglePrintFeature={printFeature.togglePrintFeature}
                 agentReveal={agentStream.currentReveal}
               />
             </>
@@ -1855,6 +1890,7 @@ export default function EditorApp({
               onRemoveProfile={(name) => applyOperation(removeExportProfile(name))}
               panelState={exportPanelState}
               onPanelStateChange={setExportPanelState}
+              printFeatureEnabled={printFeature.printFeatureEnabled}
             />
           ) : editorPanelMode === "diagnostics" ? (
             <>

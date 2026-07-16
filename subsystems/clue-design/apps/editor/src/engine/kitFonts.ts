@@ -1,6 +1,7 @@
 import type { BrandKitDetailPayload } from "./tokenColors";
 import type { Diagnostic } from "./contracts";
 import { fontFaceDescriptors, registerKitFontFaces } from "./canvaskit/loadCanvasKit";
+import { effectiveFaceMeta } from "./canvaskit/fontFaces";
 
 /**
  * K3 (canvas leg): fetch the attached kit's font-face bytes from the asset
@@ -16,11 +17,11 @@ import { fontFaceDescriptors, registerKitFontFaces } from "./canvaskit/loadCanva
 interface KitFontFaceRef {
   assetId: string;
   family: string;
-  /** A7b (D5): kit-declared weight/style, threaded to the DOM `FontFace`
-   * descriptors so a kit's italic face registers distinctly instead of
-   * colliding with its upright at the (family, normal, 400) default. Absent
-   * when the kit face omits them (the descriptors then keep the browser's
-   * defaults). The CanvasKit provider leg ignores these. */
+  /** A7b (D5): kit-declared weight/style. Fallback metadata for BOTH legs —
+   * the face's byte-parsed OS/2 meta wins when it parses (server truth): the
+   * CanvasKit leg keys its style-qualified alias on it, and the DOM leg's
+   * `FontFace` descriptors register the face distinctly instead of colliding
+   * at the (family, normal, 400) default. */
   weight?: number;
   style?: string;
 }
@@ -165,7 +166,14 @@ async function registerKitFontFacesInDom(
       try {
         // A7b (D5): weight/style descriptors so a kit's italic face registers
         // distinctly from its upright instead of colliding at the default.
-        const fontFace = new FontFace(face.family, face.bytes, fontFaceDescriptors(face));
+        // Byte-parsed meta wins over the kit's declared fields (same rule as
+        // the canvas leg), so DOM faces carry the weight the server matches.
+        const meta = effectiveFaceMeta(face);
+        const fontFace = new FontFace(
+          face.family,
+          face.bytes,
+          fontFaceDescriptors({ weight: meta.weight, style: meta.italic ? "italic" : "normal" })
+        );
         await fontFace.load();
         document.fonts.add(fontFace);
       } catch (error) {

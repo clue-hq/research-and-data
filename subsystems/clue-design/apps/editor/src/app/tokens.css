@@ -27,6 +27,7 @@
 :root {
   /* -- substance: paper + ink (DESIGN.md §3.1) ---------------------------- */
   --bg-app: #f7f7f4;            /* paper */
+  --bg-canvas: #f5f5f5;         /* workspace surface behind artboards */
   --bg-card: #f2f1ed;           /* paper.elevated / card */
   --bg-card-01: #f0efeb;
   --bg-chip: #ebeae5;           /* card.02 */
@@ -124,6 +125,13 @@
 
   /* -- focus (the one shadow-class exception) -------------------------------- */
   --focus-ring: 0 0 0 2px var(--bg-white), 0 0 0 4px var(--accent);
+
+  /* -- print guides (W3): trim = red cut line, bleed = blue outer boundary,
+        safe = teal inner margin. The one canvas-chrome color set that must NOT
+        be an ink rung — print guides are conventional signal colors. --------- */
+  --guide-trim: #e5484d;
+  --guide-bleed: #4c8dff;
+  --guide-safe: #256c70;
 
 }
 

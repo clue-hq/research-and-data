@@ -84,6 +84,8 @@ Over-load, never under-load. The reference files are short and precise. Load
 | **Brand governance / off-brand diagnostics** | + `knowledge/design-systems/brand-validation` + `knowledge/design-systems/modes` |
 | **Logos / brand imagery** | + `knowledge/design-systems/logo-and-assets` + `knowledge/assets/asset-placement` |
 | **Shadows, special strokes, gradients** | `skills/effects` + `knowledge/lumen-dsl/colors` |
+| **Print document** (physical page preset, brochure/flyer/poster, print export) | + `knowledge/export/print-geometry` (bleed/trim/safe authoring via `#page:` lines; the print-ready rules a bulk run gates on) |
+| **Baked bleed & crop marks** (user says "add bleed marks" / wants marks visible ON the design / print-ready via a NORMAL export) | `skills/print-bleed-marks` + `knowledge/export/print-geometry` (route choice — metadata vs baked are mutually exclusive per page) |
 | **Text-heavy / overflow risk** | `knowledge/design/typography-and-composition` + `knowledge/lumen-dsl/text` |
 | **Deciding which tool/function to call** | `skills/tools` |
 | **Per-surface layout skeleton** (reference) | `knowledge/design/layout-recipes` — conservative per-surface starting structures; the validator-passed `knowledge/design/blocks/patterns` is the production source, prefer it |
@@ -113,6 +115,7 @@ Each skill is a procedure for one job. Read the skill before doing that job.
 | **Effects** | Shadows, special strokes (dash/cap/join/align), gradients | `skills/effects/SKILL.md` |
 | **Tools & functions** | Choosing the right tool/function for the step you're on | `skills/tools/SKILL.md` |
 | **Visual review** | Judging a rendered preview as a user-facing artifact | `skills/visual-review/SKILL.md` |
+| **Print bleed & marks (baked)** | The user asks for bleed/crop marks baked into the design itself — grow the sheet, extend edge art through the bleed, draw trim ticks as nodes | `skills/print-bleed-marks/SKILL.md` |
 
 ---
 

@@ -38,7 +38,7 @@ vi.mock("../SelectionOverlay", () => ({
     showRotateHandle?: boolean;
     guides?: unknown[];
     insertionIndicator?: { axis: string; position: number; from: number; to: number } | null;
-    marginGuides?: { safeArea: unknown; bleed: unknown } | null;
+    marginGuides?: { safeArea: unknown; bleed: unknown; trim?: unknown } | null;
   }) => (
     <div
       data-testid="selection-overlay"
@@ -53,6 +53,7 @@ vi.mock("../SelectionOverlay", () => ({
     >
       {marginGuides?.safeArea ? <div data-role="margin-guide-safe-area" /> : null}
       {marginGuides?.bleed ? <div data-role="margin-guide-bleed" /> : null}
+      {marginGuides?.trim ? <div data-role="margin-guide-trim" /> : null}
     </div>
   )
 }));
@@ -170,6 +171,46 @@ describe("CanvasKitCanvas polish chrome wiring", () => {
       const overlay = screen.getByTestId("selection-overlay");
       expect(overlay.querySelector('[data-role="margin-guide-safe-area"]')).toBeNull();
       expect(overlay.querySelector('[data-role="margin-guide-bleed"]')).toBeNull();
+    });
+  });
+
+  describe("W3: Print & bleed", () => {
+    it("renders the Print & bleed toggle button, reflecting aria-pressed", () => {
+      const onTogglePrintFeature = vi.fn();
+      renderCanvasKit({ selectedNodeId: null, printFeatureEnabled: false, onTogglePrintFeature });
+
+      const button = screen.getByRole("button", { name: "Print & bleed" });
+      expect(button).toHaveAttribute("aria-pressed", "false");
+      fireEvent.click(button);
+      expect(onTogglePrintFeature).toHaveBeenCalledTimes(1);
+    });
+
+    it("marks the Print & bleed toggle active when the feature is on", () => {
+      renderCanvasKit({ selectedNodeId: null, printFeatureEnabled: true });
+      const button = screen.getByRole("button", { name: "Print & bleed" });
+      expect(button).toHaveAttribute("aria-pressed", "true");
+      expect(button.className).toContain("active");
+    });
+
+    it("emits a trim guide only when the print feature is on and margins are shown", () => {
+      renderCanvasKit({ selectedNodeId: null, showMarginGuides: true, printFeatureEnabled: true });
+      const overlay = screen.getByTestId("selection-overlay");
+      expect(overlay.querySelector('[data-role="margin-guide-trim"]')).not.toBeNull();
+      // safe-area still shows; the fixture page has no bleed rect.
+      expect(overlay.querySelector('[data-role="margin-guide-safe-area"]')).not.toBeNull();
+    });
+
+    it("does not emit a trim guide when the print feature is off (margins unchanged)", () => {
+      renderCanvasKit({ selectedNodeId: null, showMarginGuides: true, printFeatureEnabled: false });
+      const overlay = screen.getByTestId("selection-overlay");
+      expect(overlay.querySelector('[data-role="margin-guide-trim"]')).toBeNull();
+      expect(overlay.querySelector('[data-role="margin-guide-safe-area"]')).not.toBeNull();
+    });
+
+    it("does not emit a trim guide when margins are hidden even with the feature on", () => {
+      renderCanvasKit({ selectedNodeId: null, showMarginGuides: false, printFeatureEnabled: true });
+      const overlay = screen.getByTestId("selection-overlay");
+      expect(overlay.querySelector('[data-role="margin-guide-trim"]')).toBeNull();
     });
   });
 
@@ -713,7 +754,9 @@ function renderCanvasKit({
   onStructuredEdit,
   layoutManagedEditing,
   showMarginGuides,
-  onToggleMarginGuides
+  onToggleMarginGuides,
+  printFeatureEnabled,
+  onTogglePrintFeature
 }: {
   scene?: Scene;
   selectedNodeId: string | null;
@@ -725,6 +768,8 @@ function renderCanvasKit({
   layoutManagedEditing?: boolean;
   showMarginGuides?: boolean;
   onToggleMarginGuides?: () => void;
+  printFeatureEnabled?: boolean;
+  onTogglePrintFeature?: () => void;
 }) {
   return render(
     <CanvasKitCanvas
@@ -747,6 +792,8 @@ function renderCanvasKit({
       layoutManagedEditing={layoutManagedEditing}
       showMarginGuides={showMarginGuides}
       onToggleMarginGuides={onToggleMarginGuides}
+      printFeatureEnabled={printFeatureEnabled}
+      onTogglePrintFeature={onTogglePrintFeature}
     />
   );
 }

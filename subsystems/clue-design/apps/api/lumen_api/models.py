@@ -187,12 +187,21 @@ class DeriveInstanceRequest(BaseModel):
     binding_set: Optional[JsonObject] = None
     export_formats: List[str] = Field(default_factory=list)
     export_dpi: Optional[int] = None
+    # Bulk print controls: a full export profile (inline) or the name of a
+    # profile saved in the revision scene's export_profiles. Mutually
+    # exclusive; the profile owns the artifact for its format (bleed, marks,
+    # proof, imposition, CMYK, raster scale) via the same adapter pipeline
+    # interactive exports use.
+    export_profile: Optional[JsonObject] = None
+    export_profile_name: Optional[str] = None
 
 
 class CreateInstanceBatchRequest(BaseModel):
     binding_set_ids: List[str]
     export_formats: List[str] = Field(default_factory=lambda: ["svg", "png"])
     chunk_size: int = 10
+    export_profile: Optional[JsonObject] = None
+    export_profile_name: Optional[str] = None
 
 
 class InstancePreviewRequest(BaseModel):

@@ -129,12 +129,11 @@ headline text "Every [[outage]], mapped before it spreads." s(888,hug) font("Fra
   spanned node with `\n` stanzas and `para_spacing(n)` still hard-breaks the line
   but skips the extra paragraph gap. Split the stanzas into **separate** text
   nodes if you need both the spans and the gap.
-- **PDF export renders base text only** — spans present degrade loudly
-  (`LUME0424` advisory); the words render complete, the accent styling does not.
-  Export SVG/PNG when the two-color headline must ship.
-- **PDF cannot render italic either** — a block or span `italic` degrades loudly on
-  PDF export (`LUME0425` advisory, the sibling of `LUME0424`): the words render in the
-  upright face, the slant is dropped. Export SVG/PNG when italic emphasis must ship.
+- **PDF export renders spans and italics at full fidelity** (print W2): the server
+  PDF is vector by default — live selectable text with embedded subset fonts,
+  same Skia paint as PNG (`LUME0427` advisory). The old `LUME0424`/`LUME0425`
+  span/italic drop advisories apply only to the legacy portable vector writer,
+  which server exports no longer use — do NOT avoid PDF for spans or italics.
 
 `align(...)` is the horizontal alignment knob. Use it **standalone** alongside
 `style($type.x)` — the style token carries no alignment — to center a label without

@@ -97,7 +97,8 @@ function result(status: EditorExportResult["status"]): EditorExportResult {
   return {
     status,
     diagnostics: [],
-    artifacts: status === "ok" ? [artifact()] : []
+    artifacts: status === "ok" ? [artifact()] : [],
+    printReady: null
   };
 }
 

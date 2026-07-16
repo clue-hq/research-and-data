@@ -91,7 +91,10 @@ instead of repeatedly shrinking unrelated text nodes. Do not re-author the scene
 
 `LUMV0801` (node exceeds parent bounds) **downgrades to a warning** on a node
 tagged `bleed(true)` — declared off-canvas intent, not a fix-me (see
-`skills/effects`; content outside the page is not exported).
+`skills/effects`). Export semantics: on digital exports content outside the
+page is not exported; on PRINT exports with bleed, content inside the page's
+bleed box IS exported — edge-touching print art is REQUIRED to extend there
+(see `knowledge/export/print-geometry`).
 
 ## Typography v1 render/export advisories
 
@@ -103,11 +106,11 @@ dropped in silence:
 |------|---------|--------|
 | `LUME0214` | **RETIRED** in Typography v1 — text strokes now render (single solid stroke, outline behind fill). No longer emitted. | none; a single solid text stroke is supported |
 | `LUME0215` | a text node has >1 stroke, a gradient stroke paint, or a dashed stroke — only the first **solid** stroke renders; the extras are ignored | use a single solid text stroke; gradient/dash/multi-stroke text outlines are out of scope |
-| `LUME0421` | PDF export cannot render text `underline`/`strike` | export SVG/PNG for text decoration, or drop it for the PDF |
-| `LUME0422` | PDF export cannot render a text stroke | export SVG/PNG for text strokes, or drop the stroke for the PDF |
-| `LUME0423` | PDF export renders only the first fill for a multi-fill text node | use a single text fill for PDF |
-| `LUME0424` | PDF export cannot render rich-text spans — the base text renders complete, the per-run span styling (accent color/weight/decoration) does not | export SVG/PNG when a two-color/span headline must ship; or drop the spans for the PDF |
-| `LUME0425` | PDF export cannot render `italic` (block or span) — the base text renders in the upright face, the slant is dropped (advisory, the sibling of `LUME0424`) | export SVG/PNG when italic emphasis must ship; or drop the italic for the PDF |
+| `LUME0216` | the SVG export references fonts **by name only** (profile set `embed_fonts: false`, or the export path has no font resolver): faithful rendering depends on the listed fonts being installed on every viewing machine — substitution also corrupts spacing, because line breaks and span positions are baked as absolute coordinates | export with `embed_fonts` enabled (the server default for SVG: the painter's faces embed as `@font-face` subsets), or accept the viewer-font dependency deliberately |
+| `LUME0421`–`LUME0425` | **RETIRED** (2026-07-13) — these declared the early hand-rolled PDF writer's text limitations (decoration/stroke/multi-fill/spans/italic). That writer is deleted; the vector Skia PDF renders all of these. Never emitted | none — PDF is full-fidelity for text features |
+| `LUME0426` | server PDF export ran the **raster-flattened baseline** (`LUMEN_PDF_RENDERER=flattened`): pages paint through the same Skia renderer as PNG and embed as images — full fidelity, but text is not selectable (advisory) | none — comparison-baseline mode only; the default is the vector renderer (`LUME0427`) |
+| `LUME0431` | **proof export** (profile `proof: true`): crop marks, slug line, and sRGB control strip drawn in a page margin — a physical-proof artifact, NEVER for production runs (advisory; see docs/print-proofing.md) | none — expected in the proofing workflow; export without `proof` for the production file |
+| `LUME0427` | server PDF export is **vector** (Skia PDF backend, the default): live selectable text with embedded subset fonts, vector shapes and gradients; effects PDF cannot express (blur, shadow) rasterize locally at the profile dpi (advisory, always emitted on server PDF exports) | none — this is the expected mode; do NOT avoid PDF for spans/effects/italics. The `LUME0421`–`LUME0425` limitations apply only to the legacy portable vector writer, which server exports no longer use |
 | `LUMS0104` | the font family has no face at the requested weight; the shaper snapped to the nearest one (advisory — snapping is correct, the silence was the bug) | add a face at that weight to the `fonts/` set for exact fidelity, or pick a weight the family ships |
 | `LUMS0105` | the resolved family/weight has no **italic** face; the shaper rendered the **upright** face instead (advisory — no synthetic skew, snapping is correct; the silence would be the bug) | pick a family/weight that ships an italic cut (see `knowledge/design/font-library` Italics column), or drop the `italic` — display families have no italics by design |
 

@@ -94,6 +94,17 @@ without inspecting the rendered PNG.
 }
 ```
 
+## Baked print sheets are not clutter
+
+When the request asked for print bleed / crop marks baked into the design
+(`skills/print-bleed-marks`), the preview legitimately shows: a paper-white
+outer margin, artwork running past the trim line into a bleed strip, and
+eight small black corner ticks. Do NOT flag these as stray artifacts, broken
+margins, or misalignment — judge instead that (a) the ticks sit at the four
+corners in the white margin only, (b) edge art reaches the bleed line with no
+white slivers between art and bleed line on touched edges, and (c) the inner
+design (inside the trim line) still passes the normal rubric.
+
 ## Review style
 
 Be specific and **target-bound**. The coordinator passes your findings verbatim to

@@ -1,0 +1,145 @@
+import { describe, expect, it } from "vitest";
+import type { ExportProfile } from "@/engine/contracts";
+import { formatPatch, normalizeProfile } from "../ExportPanel";
+
+function printPdf(): ExportProfile {
+  return {
+    name: "print_pdf",
+    format: "pdf",
+    pdf_intent: "print",
+    raster: null,
+    include_bleed: true,
+    include_marks: true,
+    embed_fonts: true
+  };
+}
+
+describe("export profile format switching (W3)", () => {
+  it("switching to pdf preserves include_bleed / include_marks / embed_fonts", () => {
+    const svg: ExportProfile = { ...printPdf(), format: "svg" };
+    const patch = formatPatch("pdf", svg);
+    const next = normalizeProfile({ ...svg, ...patch });
+    expect(next.format).toBe("pdf");
+    expect(next.include_bleed).toBe(true);
+    expect(next.include_marks).toBe(true);
+    expect(next.embed_fonts).toBe(true);
+    expect(next.raster).toBeNull();
+  });
+
+  it("normalizeProfile keeps include_bleed / include_marks for a pdf profile", () => {
+    const next = normalizeProfile(printPdf());
+    expect(next.include_bleed).toBe(true);
+    expect(next.include_marks).toBe(true);
+  });
+
+  it("switching to png clears the print controls (bleed/marks/fonts off)", () => {
+    const patch = formatPatch("png", printPdf());
+    const next = normalizeProfile({ ...printPdf(), ...patch });
+    expect(next.format).toBe("png");
+    expect(next.include_bleed).toBe(false);
+    expect(next.include_marks).toBe(false);
+    expect(next.embed_fonts).toBe(false);
+    expect(next.raster).not.toBeNull();
+  });
+
+  it("switching to svg clears the print controls", () => {
+    const patch = formatPatch("svg", printPdf());
+    const next = normalizeProfile({ ...printPdf(), ...patch });
+    expect(next.format).toBe("svg");
+    expect(next.include_bleed).toBe(false);
+    expect(next.include_marks).toBe(false);
+  });
+
+  it("normalizeProfile preserves imposition for a pdf profile", () => {
+    const next = normalizeProfile({ ...printPdf(), imposition: "booklet" });
+    expect(next.imposition).toBe("booklet");
+  });
+
+  it("switching from a booklet pdf to pdf keeps the imposition", () => {
+    const svg: ExportProfile = { ...printPdf(), format: "svg" };
+    const patch = formatPatch("pdf", { ...svg, imposition: "booklet" });
+    const next = normalizeProfile({ ...svg, imposition: "booklet", ...patch });
+    expect(next.format).toBe("pdf");
+    expect(next.imposition).toBe("booklet");
+  });
+
+  it("switching a booklet pdf to png strips the imposition", () => {
+    const patch = formatPatch("png", { ...printPdf(), imposition: "booklet" });
+    const next = normalizeProfile({ ...printPdf(), imposition: "booklet", ...patch });
+    expect(next.format).toBe("png");
+    expect(next.imposition).toBeUndefined();
+  });
+
+  it("switching a booklet pdf to svg strips the imposition", () => {
+    const patch = formatPatch("svg", { ...printPdf(), imposition: "booklet" });
+    const next = normalizeProfile({ ...printPdf(), imposition: "booklet", ...patch });
+    expect(next.format).toBe("svg");
+    expect(next.imposition).toBeUndefined();
+  });
+
+  it("normalizeProfile strips imposition that lands on a non-pdf profile", () => {
+    const next = normalizeProfile({ ...printPdf(), format: "svg", imposition: "booklet" });
+    expect(next.imposition).toBeUndefined();
+  });
+
+  it("normalizeProfile preserves proof for a pdf profile", () => {
+    const next = normalizeProfile({ ...printPdf(), proof: true });
+    expect(next.proof).toBe(true);
+  });
+
+  it("switching from a proof pdf to pdf keeps the proof flag", () => {
+    const svg: ExportProfile = { ...printPdf(), format: "svg" };
+    const patch = formatPatch("pdf", { ...svg, proof: true });
+    const next = normalizeProfile({ ...svg, proof: true, ...patch });
+    expect(next.format).toBe("pdf");
+    expect(next.proof).toBe(true);
+  });
+
+  it("switching a proof pdf to png strips the proof flag", () => {
+    const patch = formatPatch("png", { ...printPdf(), proof: true });
+    const next = normalizeProfile({ ...printPdf(), proof: true, ...patch });
+    expect(next.format).toBe("png");
+    expect(next.proof).toBeUndefined();
+  });
+
+  it("switching a proof pdf to svg strips the proof flag", () => {
+    const patch = formatPatch("svg", { ...printPdf(), proof: true });
+    const next = normalizeProfile({ ...printPdf(), proof: true, ...patch });
+    expect(next.format).toBe("svg");
+    expect(next.proof).toBeUndefined();
+  });
+
+  it("normalizeProfile strips proof that lands on a non-pdf profile", () => {
+    const next = normalizeProfile({ ...printPdf(), format: "svg", proof: true });
+    expect(next.proof).toBeUndefined();
+  });
+
+  it("normalizeProfile preserves color:cmyk for a print-intent pdf", () => {
+    const next = normalizeProfile({ ...printPdf(), color: "cmyk" });
+    expect(next.color).toBe("cmyk");
+  });
+
+  it("normalizeProfile strips color when a cmyk pdf flips to preview intent", () => {
+    const next = normalizeProfile({ ...printPdf(), pdf_intent: "preview", color: "cmyk" });
+    expect(next.color).toBeUndefined();
+  });
+
+  it("switching a cmyk pdf to png strips the color field", () => {
+    const patch = formatPatch("png", { ...printPdf(), color: "cmyk" });
+    const next = normalizeProfile({ ...printPdf(), color: "cmyk", ...patch });
+    expect(next.format).toBe("png");
+    expect(next.color).toBeUndefined();
+  });
+
+  it("switching a cmyk pdf to svg strips the color field", () => {
+    const patch = formatPatch("svg", { ...printPdf(), color: "cmyk" });
+    const next = normalizeProfile({ ...printPdf(), color: "cmyk", ...patch });
+    expect(next.format).toBe("svg");
+    expect(next.color).toBeUndefined();
+  });
+
+  it("normalizeProfile strips color that lands on a non-pdf profile", () => {
+    const next = normalizeProfile({ ...printPdf(), format: "svg", color: "cmyk" });
+    expect(next.color).toBeUndefined();
+  });
+});

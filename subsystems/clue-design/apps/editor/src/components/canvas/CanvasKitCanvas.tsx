@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
-import { Download, Frame, Hand, LocateFixed, Maximize2, Minus, MousePointer2, Plus, Scan } from "lucide-react";
+import { Download, Frame, Hand, LocateFixed, Maximize2, Minus, MousePointer2, Plus, Printer, Scan } from "lucide-react";
 import type { Diagnostic, NodeId, Operation, PageId, Rect, Scene } from "@/engine/contracts";
 import type { OptimisticEnginePort } from "@/engine/wasmEngine";
 import { artboardAtWorkspacePoint, type WorkspaceModel } from "@/engine/workspaceLayout";
@@ -45,6 +45,8 @@ import {
   type ParentComputedOrigin
 } from "@/engine/renderAdapter";
 import { loadCanvasKit } from "@/engine/canvaskit/loadCanvasKit";
+import { sceneAssetBytesUrl } from "@/engine/assetLibrary";
+import { editorApiBaseUrl } from "@/engine/editorConfig";
 import { skiaMeasurements } from "@/engine/canvaskit/skiaMeasurements";
 import type { Box } from "@/engine/transformerMath";
 import { nodePatch, set, updateTextNode } from "@/engine/operations";
@@ -124,6 +126,12 @@ export interface CanvasKitCanvasProps {
    * disabled-less but inert (no-op click) — callers always pass it in
    * practice, same convention as the other toolbar callbacks. */
   onToggleMarginGuides?: () => void;
+  /** Print workstream W3 master toggle (view preference). When on, the trim
+   * guide, the bleed-extent content clip, and the print toolbar affordances
+   * activate. Off by default — the canvas behaves exactly as today. */
+  printFeatureEnabled?: boolean;
+  /** Toggles `printFeatureEnabled`. */
+  onTogglePrintFeature?: () => void;
   /** Live-design-streaming S2: the element/artboard the pump is currently
    * revealing (null when idle). Drives the SVG create-flash + design cursor and
    * the viewport auto-follow. Pure presentation of an ephemeral streamed state
@@ -161,6 +169,8 @@ export function CanvasKitCanvas({
   layoutManagedEditing = false,
   showMarginGuides = false,
   onToggleMarginGuides,
+  printFeatureEnabled = false,
+  onTogglePrintFeature,
   agentReveal = null
 }: CanvasKitCanvasProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -218,9 +228,14 @@ export function CanvasKitCanvas({
     if (!showMarginGuides || !page) return null;
     return {
       safeArea: descriptorRect(page.safe_area, unitScale),
-      bleed: descriptorRect(page.bleed, unitScale)
+      bleed: descriptorRect(page.bleed, unitScale),
+      // W3: the trim (cut) line is the page box itself, shown only when the
+      // print feature is on. Safe-area/bleed keep their existing behavior.
+      trim: printFeatureEnabled
+        ? descriptorRect({ x: 0, y: 0, width: page.size.width, height: page.size.height }, unitScale)
+        : null
     };
-  }, [page, showMarginGuides, unitScale]);
+  }, [page, showMarginGuides, unitScale, printFeatureEnabled]);
 
   useEffect(() => {
     const element = containerRef.current;
@@ -410,10 +425,15 @@ export function CanvasKitCanvas({
         if (!currentPage) {
           return null;
         }
+        const scale = pageDescriptor(currentPage).unitScale;
         return {
           page: pageDescriptor(currentPage),
           workspaceRect: artboard.workspaceRect,
           isActive: artboard.isActive,
+          // W3: widen the content clip to the bleed box (descriptor space) so
+          // art past trim stays visible up to the bleed line. Print-gated;
+          // null keeps the trim clip exactly as before.
+          bleed: printFeatureEnabled ? descriptorRect(currentPage.bleed, scale) : null,
           nodes: [
             ...(currentPage.children
               .filter((nodeId) => !isNodePinned(scene, nodeId))
@@ -427,11 +447,12 @@ export function CanvasKitCanvas({
       page: ReturnType<typeof pageDescriptor>;
       workspaceRect: { x: number; y: number; width: number; height: number };
       isActive: boolean;
+      bleed: Box | null;
       nodes: DrawNode[];
     }>;
     // eslint-disable-next-line react-hooks/exhaustive-deps -- tokenColorsGeneration
     // is deliberately a dep: descriptors read the module-level token map.
-  }, [scene, preview, workspaceModel.artboards, tokenColorsGeneration]);
+  }, [scene, preview, workspaceModel.artboards, tokenColorsGeneration, printFeatureEnabled]);
 
   const selectionBox = useMemo<{ box: Box; rotation: number; nodeId: NodeId } | null>(() => {
     if (!selectedNodeId) return null;
@@ -828,7 +849,15 @@ export function CanvasKitCanvas({
 
   return (
     <section className="canvas-shell workspace-canvas-shell" ref={containerRef} style={{ position: "relative" }}>
-      <CanvasKitStage artboards={artboards} viewport={workspaceViewport} />
+      <CanvasKitStage
+        artboards={artboards}
+        viewport={workspaceViewport}
+        // Image bytes resolve from the SCENE's asset record (content digest),
+        // the same source of truth server exports use — a generated asset
+        // renders on canvas whether or not anything registered it in the
+        // asset library.
+        resolveAssetUrl={(assetId) => sceneAssetBytesUrl(editorApiBaseUrl(), scene.assets, assetId)}
+      />
       <CanvasKitArtboardLabels workspaceModel={workspaceModel} viewport={workspaceViewport} />
       <div className="workspace-context-bar">
         <span className="workspace-context-label">{activeArtboard?.label ?? "No artboard"}</span>
@@ -893,6 +922,16 @@ export function CanvasKitCanvas({
           onClick={onToggleMarginGuides}
         >
           <Frame aria-hidden size={16} />
+        </button>
+        <button
+          type="button"
+          className={printFeatureEnabled ? "active" : undefined}
+          aria-label="Print & bleed"
+          aria-pressed={printFeatureEnabled}
+          title="Print & bleed"
+          onClick={onTogglePrintFeature}
+        >
+          <Printer aria-hidden size={16} />
         </button>
         <button type="button" aria-label="Open diagnostics panel" title="Open diagnostics panel" onClick={onOpenDiagnostics}>
           <Scan aria-hidden size={16} />

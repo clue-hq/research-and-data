@@ -74,8 +74,9 @@ export interface SelectionOverlayProps {
   /** Phase 4d: the active page's safe-area/bleed rects, in descriptor space
    * (null when the "Show margins" toggle is off or there is no active
    * page). Either rect may itself be null. Page guides, not selection
-   * chrome — rendered independent of `selection`. */
-  marginGuides?: { safeArea: Box | null; bleed: Box | null } | null;
+   * chrome — rendered independent of `selection`. W3 adds `trim` (the page
+   * box / cut line), emitted only when the print feature is on. */
+  marginGuides?: { safeArea: Box | null; bleed: Box | null; trim?: Box | null } | null;
   /** Live-design-streaming S2: the create-flash + design-cursor chrome for the
    * element the agent just revealed, already mapped to SCREEN px by the host
    * (computed in workspace space so it stays correct across pages). Ephemeral;
@@ -131,11 +132,15 @@ export function SelectionOverlay({
       style={{ position: "absolute", inset: 0, pointerEvents: "none", overflow: "visible" }}
     >
       {marginGuides?.safeArea ? (
-        <MarginGuideRect box={marginGuides.safeArea} toScreen={toScreen} zoom={zoom} role="margin-guide-safe-area" stroke={SNAP_GUIDE_COLOR} />
+        <MarginGuideRect box={marginGuides.safeArea} toScreen={toScreen} zoom={zoom} role="margin-guide-safe-area" stroke="var(--guide-safe)" />
       ) : null}
 
       {marginGuides?.bleed ? (
-        <MarginGuideRect box={marginGuides.bleed} toScreen={toScreen} zoom={zoom} role="margin-guide-bleed" stroke="#e5484d" />
+        <MarginGuideRect box={marginGuides.bleed} toScreen={toScreen} zoom={zoom} role="margin-guide-bleed" stroke="var(--guide-bleed)" />
+      ) : null}
+
+      {marginGuides?.trim ? (
+        <MarginGuideRect box={marginGuides.trim} toScreen={toScreen} zoom={zoom} role="margin-guide-trim" stroke="var(--guide-trim)" />
       ) : null}
 
       {containerChildren.map((child, index) => {

@@ -74,6 +74,14 @@ impl ExportAdapter for PngExportAdapter {
             };
 
             let (width, height) = page_pixel_size(page, request);
+            crate::raster::ensure_raster_within_budget(
+                width,
+                height,
+                &format!("PNG export of page {page_id}"),
+            )
+            .map_err(|error| {
+                ExportError::new("export.raster_budget_exceeded", error.message)
+            })?;
             let rasterized = rasterizer
                 .rasterize_page(scene, page_id, width, height, self.resolver.as_deref())
                 .map_err(|error| {
@@ -101,6 +109,7 @@ impl ExportAdapter for PngExportAdapter {
         Ok(ExportResult {
             artifacts,
             diagnostics,
+            print_ready: None,
         })
     }
 }
@@ -193,6 +202,10 @@ mod tests {
                 raster,
                 include_bleed: false,
                 embed_fonts: false,
+            include_marks: false,
+            imposition: None,
+            proof: false,
+            color: None,
             },
             page_ids: vec![PageId::from("page")],
             purpose: ExportPurpose::UserDownload,

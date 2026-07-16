@@ -28,7 +28,7 @@ from fastapi import (
     UploadFile,
 )
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, Response, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
 
 from . import image_cache, image_provider
 from .core import CoreClient, CoreError, has_error_diagnostics
@@ -88,6 +88,7 @@ from .models import (
     ValidateBrandKitRequest,
     ValidateDocumentBrandGovernanceRequest,
 )
+from lumen_ingestion.capture.uploads import sniff_mime
 from lumen_ingestion.describe import DescriptionStore
 from lumen_ingestion.jobs import IngestionJobStore
 from lumen_ingestion.pipeline import (
@@ -692,6 +693,34 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
     def get_latest_brand_kit(
         brand_kit_id: str, repo: Repository = Depends(repository)
     ) -> JsonObject:
+        # The platform default kit is the ENGINE's builtin, not an ingested
+        # kit — it has no registry row by definition. Serve it from the
+        # engine (with `ensure_platform_color_tokens` backfilled), because
+        # the editor's canvas token resolution fetches this id for kit-less
+        # documents to mirror server-side resolution; a 404 here silently
+        # dropped the canvas to its string heuristic — token colors then
+        # diverged from every export. The response goes through the SAME
+        # detail DTO as ingested kits (a synthesized record), so every
+        # consumer sees one envelope shape.
+        if brand_kit_id == "brand_kit_platform_default":
+            kit = app.state.core.platform_default_brand_kit()
+            detail = brand_kit_detail_dto(
+                {
+                    "brand_kit_id": brand_kit_id,
+                    "version": 0,
+                    "name": kit.get("name") or "Platform default",
+                    "approval_status": "approved",
+                    "product_ready": True,
+                    "source": "builtin",
+                    "brand_kit": kit,
+                    "brand_summary": {},
+                    "diagnostics": [],
+                    "created_at": None,
+                    "updated_at": None,
+                }
+            )
+            detail["builtin"] = True
+            return detail
         return brand_kit_detail_dto(repo.require_brand_kit(brand_kit_id))
 
     @app.get("/brand-kits/{brand_kit_id}/versions/{version}")
@@ -1536,16 +1565,7 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
     ) -> JsonObject:
         # K3: a stateless export still shapes text with the scene's kit fonts
         # — the scene ref is the only kit signal this route carries.
-        brand_fonts = None
-        scene_brand_ref = (payload.scene.get("meta") or {}).get("brand_kit")
-        if isinstance(scene_brand_ref, dict) and scene_brand_ref.get("id"):
-            try:
-                referenced = repo.require_brand_kit(
-                    str(scene_brand_ref["id"]), scene_brand_ref.get("version")
-                )["brand_kit"]
-                brand_fonts = brand_kit_font_spec(repo, referenced, asset_store_root())
-            except NotFoundError:
-                brand_fonts = None
+        brand_fonts = scene_brand_fonts(repo, payload.scene, asset_store_root())
         try:
             result = app.state.core.export_preview(
                 payload.scene,
@@ -2141,6 +2161,7 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
         export_formats: list,
         export_dpi: Optional[int],
         batch_id: Optional[str] = None,
+        export_profile: Optional[JsonObject] = None,
     ) -> JsonObject:
         revision_id = revision["template_revision_id"]
         binding_set_id = binding.get("binding_set_id") or new_id("bind")
@@ -2153,6 +2174,10 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
             store_root=asset_store_root(),
             export_formats=export_formats,
             export_dpi=export_dpi,
+            export_profile=export_profile,
+            # Bulk runs shape with the template's kit faces — without this
+            # every instance silently substituted bundled Inter.
+            brand_fonts=scene_brand_fonts(repo, revision["scene"], asset_store_root()),
             raise_on_error=False,
         )
 
@@ -2343,6 +2368,9 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
             binding,
             payload.export_formats,
             payload.export_dpi,
+            export_profile=resolve_saved_or_inline_profile(
+                revision["scene"], payload.export_profile, payload.export_profile_name
+            ),
         )
         log_event(
             api_logger,
@@ -2381,6 +2409,26 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
 
     BATCH_EXPORT_DPI = 300
 
+    def _instance_error_codes(instance: JsonObject) -> List[str]:
+        """Per-instance failure codes for the batch manifest: artifact-level
+        errors (e.g. export.print_not_ready) plus error-severity diagnostics
+        of failed derivations, de-duplicated in first-seen order."""
+        codes: List[str] = []
+        for artifact in instance.get("artifacts", []):
+            error = artifact.get("error")
+            if isinstance(error, dict) and error.get("code"):
+                codes.append(str(error["code"]))
+        if instance.get("status") == "failed":
+            for diagnostic in instance.get("diagnostics", []):
+                if (
+                    isinstance(diagnostic, dict)
+                    and diagnostic.get("severity") == "error"
+                    and diagnostic.get("code")
+                ):
+                    codes.append(str(diagnostic["code"]))
+        seen: set = set()
+        return [code for code in codes if not (code in seen or seen.add(code))]
+
     def _process_batch(
         repo: Repository, revision: JsonObject, batch: JsonObject
     ) -> JsonObject:
@@ -2410,6 +2458,7 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
                     batch["export_formats"],
                     BATCH_EXPORT_DPI,
                     batch_id=batch["batch_id"],
+                    export_profile=batch.get("export_profile"),
                 )
                 counts["derived" if instance["status"] == "derived" else "failed"] += 1
                 fit_status = instance["fit_status"]
@@ -2422,6 +2471,9 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
                         "status": instance["status"],
                         "fit_status": fit_status,
                         "artifacts": instance.get("artifacts", []),
+                        # A failed instance's why was previously buried in the
+                        # instance row; the manifest names it directly.
+                        "error_codes": _instance_error_codes(instance),
                     }
                 )
             cursor = chunk_end
@@ -2459,6 +2511,35 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
                         ),
                     },
                 )
+        export_profile = resolve_saved_or_inline_profile(
+            revision["scene"], payload.export_profile, payload.export_profile_name
+        )
+        # Fail-fast template preflight: a bleed-requesting print profile
+        # against a template with no bleed geometry would gate EVERY
+        # instance (export.print_not_ready) — kill the run at copy zero,
+        # before deriving anything.
+        if (
+            export_profile
+            and export_profile.get("format") == "pdf"
+            and export_profile.get("include_bleed")
+        ):
+            missing = [
+                page_id
+                for page_id, page in (revision["scene"].get("pages") or {}).items()
+                if not isinstance(page, dict) or not page.get("bleed")
+            ]
+            if missing:
+                raise HTTPException(
+                    status_code=422,
+                    detail={
+                        "code": "batch.template_not_print_ready",
+                        "message": (
+                            "export profile requests bleed but page(s) "
+                            f"{', '.join(missing)} have no bleed rect — add print "
+                            "geometry to the template before running a batch"
+                        ),
+                    },
+                )
         chunk_size = max(1, payload.chunk_size)
         batch = repo.create_batch(
             {
@@ -2467,6 +2548,7 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
                 "status": "running",
                 "binding_set_ids": payload.binding_set_ids,
                 "export_formats": payload.export_formats,
+                "export_profile": export_profile,
                 "chunk_size": chunk_size,
                 "cursor": 0,
             }
@@ -2501,7 +2583,9 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
         return repo.require_batch(batch_id)
 
     @app.post("/instances/preview")
-    def preview_instance(payload: InstancePreviewRequest) -> JsonObject:
+    def preview_instance(
+        payload: InstancePreviewRequest, repo: Repository = Depends(repository)
+    ) -> JsonObject:
         """Stateless worst-case/instance preview (slice G9): derive a
         binding set against an inline scene (treated as a finalized
         snapshot) and return the rendered artifact plus the fit report.
@@ -2530,6 +2614,7 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
                 store_root=asset_store_root(),
                 export_formats=[export_format],
                 export_dpi=96,
+                brand_fonts=scene_brand_fonts(repo, scene, asset_store_root()),
                 raise_on_error=False,
             )
         except CoreError as error:
@@ -3186,6 +3271,38 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
         media_type = media.get("mime_type") or "application/octet-stream"
         return Response(content=path.read_bytes(), media_type=media_type)
 
+    @app.get("/asset-store/{digest}")
+    def get_asset_store_bytes(digest: str) -> Response:
+        """Content-addressed byte serving. The editor canvas resolves image
+        pixels from the SAME source of truth server exports use — the scene's
+        asset record digest — so a scene-borne asset renders regardless of
+        registry state (the registry-backed `/assets/{id}/bytes` 404s for any
+        asset whose producer never registered it, which is how generated
+        imagery vanished from the canvas while every export carried it).
+        Content addressing makes the response immutable, hence the aggressive
+        cache header; the strict hex gate also makes path traversal
+        unexpressible (the path is built from validated hex, never client
+        text)."""
+        if not re.fullmatch(r"[0-9a-f]{64}", digest):
+            raise HTTPException(
+                status_code=404, detail="not a sha256 content digest"
+            )
+        # The store layout has ONE owner: resolve through the same helper
+        # every opaque_ref-based route uses.
+        path = resolve_store_path(f"sha256/{digest[:2]}/{digest}")
+        if not path.is_file():
+            raise HTTPException(
+                status_code=404,
+                detail=f"no stored bytes for digest {digest}",
+            )
+        with path.open("rb") as handle:
+            head = handle.read(512)
+        return FileResponse(
+            path,
+            media_type=sniff_mime(head) or "application/octet-stream",
+            headers={"Cache-Control": "public, max-age=31536000, immutable"},
+        )
+
     @app.get("/assets/{asset_id}/thumbnail")
     def get_asset_thumbnail(
         asset_id: str,
@@ -3789,11 +3906,18 @@ def diagnostics_from_helper_error(error: Any) -> List[JsonObject]:
     ]
 
 
-def resolve_document_export_profile(
+def resolve_saved_or_inline_profile(
     scene: JsonObject,
-    payload: ExportDocumentRequest,
-) -> JsonObject:
-    if payload.profile is not None and payload.profile_name:
+    profile: Optional[JsonObject],
+    profile_name: Optional[str],
+    default_format: Optional[str] = None,
+) -> Optional[JsonObject]:
+    """The one profile-resolution contract, shared by document exports and
+    the bulk instance/batch paths: an inline profile and a saved-profile
+    name are mutually exclusive; names resolve against the scene's
+    `export_profiles` and miss loudly. Returns None when neither is given —
+    the caller owns its own default."""
+    if profile is not None and profile_name:
         raise HTTPException(
             status_code=422,
             detail={
@@ -3801,24 +3925,48 @@ def resolve_document_export_profile(
                 "message": "provide either profile or profile_name, not both",
             },
         )
-    if payload.profile is not None:
-        profile = dict(payload.profile)
-        profile.setdefault("format", payload.format)
-        profile.setdefault("name", f"{profile['format']}_document_export")
-        return normalize_export_profile(profile)
+    if profile is not None:
+        resolved = dict(profile)
+        if default_format is not None:
+            resolved.setdefault("format", default_format)
+        if not resolved.get("format"):
+            # Callers without a format context (bulk instance/batch paths)
+            # must say what they want — normalize's svg default would
+            # silently misroute a print profile.
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "code": "export_profile.format_required",
+                    "message": "inline export profile must declare a format",
+                },
+            )
+        resolved.setdefault("name", f"{resolved['format']}_document_export")
+        return normalize_export_profile(resolved)
 
-    if payload.profile_name:
-        for profile in scene.get("export_profiles", []):
-            if isinstance(profile, dict) and profile.get("name") == payload.profile_name:
-                return normalize_export_profile(dict(profile))
+    if profile_name:
+        for saved in scene.get("export_profiles", []):
+            if isinstance(saved, dict) and saved.get("name") == profile_name:
+                return normalize_export_profile(dict(saved))
         raise HTTPException(
             status_code=422,
             detail={
                 "code": "export_profile.not_found",
-                "message": f"document has no saved export profile named {payload.profile_name}",
+                "message": f"document has no saved export profile named {profile_name}",
             },
         )
 
+    return None
+
+
+def resolve_document_export_profile(
+    scene: JsonObject,
+    payload: ExportDocumentRequest,
+) -> JsonObject:
+    resolved = resolve_saved_or_inline_profile(
+        scene, payload.profile, payload.profile_name, default_format=payload.format
+    )
+    if resolved is not None:
+        return resolved
     return default_export_profile(payload.format)
 
 
@@ -3830,21 +3978,41 @@ def default_export_profile(export_format: str) -> JsonObject:
             "pdf_intent": "preview" if export_format == "pdf" else None,
             "raster": {"scale": 1, "dpi": 96} if export_format == "png" else None,
             "include_bleed": False,
-            "embed_fonts": False,
+            "embed_fonts": export_format in ("svg", "pdf"),
         }
     )
 
 
 def normalize_export_profile(profile: JsonObject) -> JsonObject:
     export_format = str(profile.get("format") or "svg")
-    return {
+    # embed_fonts defaults ON for the formats where it means something:
+    # SVG (@font-face subsets — a name-only SVG depends on viewer-installed
+    # fonts) and PDF (the vector renderer always embeds). Only an explicit
+    # false opts out. PNG has no font payload; default off.
+    embed_default = export_format in ("svg", "pdf")
+    normalized = {
         "name": str(profile.get("name") or f"{export_format}_document_export"),
         "format": export_format,
         "pdf_intent": profile.get("pdf_intent"),
         "raster": profile.get("raster"),
         "include_bleed": bool(profile.get("include_bleed", False)),
-        "embed_fonts": bool(profile.get("embed_fonts", False)),
+        "embed_fonts": bool(profile.get("embed_fonts", embed_default)),
+        # Print W2/W3: crop marks ride the profile; dropping the flag here
+        # silently downgraded marked exports (browser-verify finding).
+        "include_marks": bool(profile.get("include_marks", False)),
     }
+    # Optional print controls (W4 imposition, W7 proof, W5 CMYK color):
+    # this whitelist rebuild silently dropped imposition/proof for saved
+    # document profiles — the same defect class as the include_marks find
+    # above. Present-only passthrough keeps the engine's "absent = off"
+    # serialization contract.
+    if profile.get("imposition") is not None:
+        normalized["imposition"] = profile.get("imposition")
+    if profile.get("proof"):
+        normalized["proof"] = True
+    if profile.get("color") is not None:
+        normalized["color"] = profile.get("color")
+    return normalized
 
 
 def preflight_operation_list(preflight: JsonObject) -> List[JsonObject]:
@@ -3897,7 +4065,7 @@ def document_export_response(
 
 
 def compact_export_result(export: JsonObject) -> JsonObject:
-    return {
+    compact = {
         "artifacts": [
             compact_export_artifact(artifact)
             for artifact in export.get("artifacts", [])
@@ -3905,6 +4073,12 @@ def compact_export_result(export: JsonObject) -> JsonObject:
         ],
         "diagnostics": export.get("diagnostics", []),
     }
+    # Print W6: the print-ready preflight report rides print-intent PDF
+    # exports; the editor renders it and the agent loop reads it. Rebuilding
+    # the payload without it silently hid the report (browser-verify finding).
+    if export.get("print_ready") is not None:
+        compact["print_ready"] = export["print_ready"]
+    return compact
 
 
 def compact_export_artifact(artifact: JsonObject) -> JsonObject:
@@ -4578,6 +4752,28 @@ def _reference_dimensions(record: JsonObject) -> Tuple[Optional[int], Optional[i
         if width is not None and height is not None:
             return int(width), int(height)
     return None, None
+
+
+def scene_brand_fonts(
+    repo: Repository, scene: Optional[JsonObject], store_root: str
+) -> Optional[JsonObject]:
+    """K3 for stateless/scene-only paths: resolve the scene's own brand-kit
+    reference (`meta.brand_kit`) to its font spec so shaping uses the kit's
+    real faces. A scene without a resolvable kit reference shapes with the
+    library + bundled set (the helper still reports substituted families via
+    LUMS0100)."""
+    if not isinstance(scene, dict):
+        return None
+    scene_brand_ref = (scene.get("meta") or {}).get("brand_kit")
+    if not (isinstance(scene_brand_ref, dict) and scene_brand_ref.get("id")):
+        return None
+    try:
+        referenced = repo.require_brand_kit(
+            str(scene_brand_ref["id"]), scene_brand_ref.get("version")
+        )["brand_kit"]
+    except NotFoundError:
+        return None
+    return brand_kit_font_spec(repo, referenced, store_root)
 
 
 def brand_kit_font_spec(
