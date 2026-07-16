@@ -1,8 +1,10 @@
-import { act, renderHook, waitFor } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { act, render, renderHook, waitFor } from "@testing-library/react";
+import { useRef, useState } from "react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { minimalScene } from "@/fixtures/minimalScene";
-import type { EditorAgentResult, EditorAgentRunner } from "@/engine/agentRunner";
+import type { AgentRunEvent, EditorAgentResult, EditorAgentRunner } from "@/engine/agentRunner";
 import type { Operation, Scene } from "@/engine/contracts";
+import type { EditorHistoryFrame } from "@/hooks/useEditHistory";
 import type {
   EngineApplyOutcome,
   EngineStructuredEditOutcome,
@@ -644,5 +646,609 @@ describe("useAgentTurn — RC turn references", () => {
           message.role === "system" && message.content.includes("Could not attach huge.png")
       )
     ).toBe(true);
+  });
+});
+
+describe("useAgentTurn — live design streaming reveal theater (S2)", () => {
+  // S2 replaces S1's apply-whole-batch with a paced pump, so these tests drive
+  // fake timers and advance them to flush reveal-steps.
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    vi.runOnlyPendingTimers();
+    vi.useRealTimers();
+  });
+
+  // A reveal-step is a VISUAL op (`insert_node`) so `stepsFromOps` gives one step
+  // per op; `id` is a marker the fake engine joins into scene.meta.title so
+  // cumulative application is observable. `boom` makes the engine throw.
+  const insertOp = (id: string) =>
+    ({
+      kind: "insert_node",
+      id,
+      node: { id: `node_${id}` },
+      parent: { kind: "page", id: "page_a4" },
+      index: 0
+    }) as unknown as Operation;
+
+  /** An engine that records every applyOperations call and builds scene.meta.title
+   * by appending each op's marker cumulatively — so "streamed cumulatively" and
+   * "canonical from base" produce the SAME title iff no state leaks. */
+  function createStreamEngine(): OptimisticEnginePort & { applyLog: Operation[][] } {
+    const start = cloneScene();
+    start.meta = { ...start.meta, title: "" };
+    let scene: Scene = start;
+    const applyLog: Operation[][] = [];
+    return {
+      kind: "wasm",
+      applyLog,
+      get scene() {
+        return scene;
+      },
+      version: { schema_version: 1, engine_commit: "test", text_measurement: "heuristic" },
+      reset(next: Scene) {
+        scene = next;
+      },
+      applyOperations(operations: Operation[]): EngineApplyOutcome {
+        applyLog.push(operations);
+        const markers = operations.map((op) => {
+          const id = (op as unknown as { id?: string }).id;
+          if (id === "boom") {
+            throw new Error("engine boom");
+          }
+          return id ?? op.kind;
+        });
+        const prev = scene.meta.title ? scene.meta.title.split(",") : [];
+        scene = { ...scene, meta: { ...scene.meta, title: [...prev, ...markers].join(",") } };
+        return {
+          accepted: true,
+          scene,
+          diagnostics: [],
+          inverseOperations: [],
+          appliedOperations: operations.length
+        };
+      }
+    };
+  }
+
+  /** An engine that materializes each inserted node WITH computed layout bounds,
+   * so `currentReveal.bounds` (read off the applied scene) is observable. */
+  function createRevealMetadataEngine(
+    bounds: { x: number; y: number; width: number; height: number }
+  ): OptimisticEnginePort {
+    let scene: Scene = cloneScene();
+    return {
+      kind: "wasm",
+      get scene() {
+        return scene;
+      },
+      version: { schema_version: 1, engine_commit: "test", text_measurement: "heuristic" },
+      reset(next: Scene) {
+        scene = next;
+      },
+      applyOperations(operations: Operation[]): EngineApplyOutcome {
+        const nodes = { ...scene.nodes };
+        for (const op of operations) {
+          const nodeId = (op as unknown as { node?: { id?: string } }).node?.id;
+          if (nodeId) {
+            nodes[nodeId] = {
+              ...(nodes[nodeId] ?? {}),
+              id: nodeId,
+              computed: { layout_bounds: bounds, render_bounds: bounds }
+            } as unknown as Scene["nodes"][string];
+          }
+        }
+        scene = { ...scene, nodes };
+        return {
+          accepted: true,
+          scene,
+          diagnostics: [],
+          inverseOperations: [],
+          appliedOperations: operations.length
+        };
+      }
+    };
+  }
+
+  /** A runner that captures the hook's onEvent so the test drives batches, and
+   * hands back a promise the test settles (resolve = done, reject = failure). */
+  function controllableRunner() {
+    let capturedOnEvent: ((event: AgentRunEvent) => void) | undefined;
+    let resolveRun!: (result: EditorAgentResult) => void;
+    let rejectRun!: (error: unknown) => void;
+    const runner = vi.fn((request: { onEvent?: (event: AgentRunEvent) => void }) => {
+      capturedOnEvent = request.onEvent;
+      return new Promise<EditorAgentResult>((resolve, reject) => {
+        resolveRun = resolve;
+        rejectRun = reject;
+      });
+    }) as unknown as EditorAgentRunner;
+    return {
+      runner,
+      emit: (event: AgentRunEvent) => capturedOnEvent?.(event),
+      resolve: (result: EditorAgentResult) => resolveRun(result),
+      reject: (error: unknown) => rejectRun(error)
+    };
+  }
+
+  const compileEvent = (seq: number, operations: unknown): AgentRunEvent => ({
+    seq,
+    type: "dsl_compiled",
+    data: { iteration: 1, operations } as AgentRunEvent["data"]
+  });
+
+  const tick = (ms: number) => {
+    act(() => {
+      vi.advanceTimersByTime(ms);
+    });
+  };
+
+  it("(a) the pump paces a batch one reveal-step at a time on the ~100ms cadence (N ops → N setScene over time, deduping replays)", async () => {
+    const ctl = controllableRunner();
+    const engine = createStreamEngine();
+    const { deps } = buildDeps({ agentRunner: ctl.runner, engineRef: { current: engine } });
+    const setSceneMock = deps.setScene as unknown as ReturnType<typeof vi.fn>;
+    const { result } = renderHook(() => useAgentTurn(deps));
+
+    await act(async () => {
+      void result.current.sendAgentPrompt("build");
+    });
+    act(() => {
+      ctl.emit(compileEvent(1, [insertOp("n1"), insertOp("n2"), insertOp("n3")]));
+    });
+    // A duplicate/replayed seq enqueues nothing.
+    act(() => {
+      ctl.emit(compileEvent(1, [insertOp("n1"), insertOp("n2"), insertOp("n3")]));
+    });
+
+    // Paced from the start: nothing applies until the first tick.
+    expect(engine.applyLog.length).toBe(0);
+    tick(50);
+    expect(engine.applyLog.length).toBe(0); // cadence honored — no step at 50ms
+    tick(50);
+    expect(engine.applyLog).toEqual([[insertOp("n1")]]);
+    tick(100);
+    expect(engine.applyLog.length).toBe(2);
+    tick(100);
+    expect(engine.applyLog).toEqual([[insertOp("n1")], [insertOp("n2")], [insertOp("n3")]]);
+    expect(engine.scene.meta.title).toBe("n1,n2,n3");
+
+    const streamTitles = setSceneMock.mock.calls
+      .map((call) => (call[0] as Scene)?.meta?.title)
+      .filter((title) => title === "n1" || title === "n1,n2" || title === "n1,n2,n3");
+    expect(streamTitles).toEqual(["n1", "n1,n2", "n1,n2,n3"]);
+    expect(result.current.agentStream).toMatchObject({
+      active: true,
+      lastAppliedSeq: 1,
+      stepsApplied: 3,
+      brokenStream: false,
+      revealQueueLength: 0
+    });
+  });
+
+  it("(b) the per-batch duration cap compresses the pace so a large batch fits MAX_BATCH_REVEAL_MS", async () => {
+    const ctl = controllableRunner();
+    const engine = createStreamEngine();
+    const { deps } = buildDeps({ agentRunner: ctl.runner, engineRef: { current: engine } });
+    const { result } = renderHook(() => useAgentTurn(deps));
+
+    await act(async () => {
+      void result.current.sendAgentPrompt("build");
+    });
+    // 100 steps × 100ms would be 10s (> 5s cap) → pace compresses to 50ms/step.
+    const ops = Array.from({ length: 100 }, (_, index) => insertOp(`n${index}`));
+    act(() => {
+      ctl.emit(compileEvent(1, ops));
+    });
+
+    tick(49);
+    expect(engine.applyLog.length).toBe(0); // interval is 50ms, not 100
+    tick(1);
+    expect(engine.applyLog.length).toBe(1);
+    // The whole batch drains within the cap.
+    tick(50 * 99);
+    expect(engine.applyLog.length).toBe(100);
+    expect(result.current.agentStream.stepsApplied).toBe(100);
+  });
+
+  it("(c) a new batch arriving mid-reveal fast-forwards the pending backlog in one apply, then paces the new batch", async () => {
+    const ctl = controllableRunner();
+    const engine = createStreamEngine();
+    const { deps } = buildDeps({ agentRunner: ctl.runner, engineRef: { current: engine } });
+    const { result } = renderHook(() => useAgentTurn(deps));
+
+    await act(async () => {
+      void result.current.sendAgentPrompt("build");
+    });
+    act(() => {
+      ctl.emit(compileEvent(1, [insertOp("n1"), insertOp("n2"), insertOp("n3")]));
+    });
+    tick(100); // n1 applied; n2 + n3 still queued
+    expect(engine.scene.meta.title).toBe("n1");
+
+    // A newer batch arrives while the backlog is pending → drain it instantly.
+    act(() => {
+      ctl.emit(compileEvent(2, [insertOp("n4")]));
+    });
+    expect(engine.scene.meta.title).toBe("n1,n2,n3"); // backlog fast-forwarded (no tick)
+    // The drain was ONE apply of the remaining ops, not two paced ticks.
+    expect(engine.applyLog).toEqual([[insertOp("n1")], [insertOp("n2"), insertOp("n3")]]);
+
+    tick(100); // now the new batch paces
+    expect(engine.scene.meta.title).toBe("n1,n2,n3,n4");
+  });
+
+  it("(d) done mid-reveal cancels the pump and reconciles to the SAME canonical preview as a non-streamed run (invariant)", async () => {
+    // Streamed run: resolve while a reveal-step is STILL queued (mid-reveal).
+    const streamed = controllableRunner();
+    const streamEngine = createStreamEngine();
+    const { deps: depsA } = buildDeps({
+      agentRunner: streamed.runner,
+      engineRef: { current: streamEngine }
+    });
+    const { result: resultA } = renderHook(() => useAgentTurn(depsA));
+    await act(async () => {
+      void resultA.current.sendAgentPrompt("build");
+    });
+    act(() => {
+      streamed.emit(compileEvent(1, [insertOp("n1"), insertOp("n2")]));
+    });
+    tick(100); // only n1 revealed; n2 still queued behind the pump
+    expect(streamEngine.scene.meta.title).toBe("n1");
+    await act(async () => {
+      streamed.resolve(proposedResult([insertOp("n1"), insertOp("n2")]));
+    });
+    const streamedPreviewTitle = resultA.current.agentPreview?.previewScene.meta.title;
+
+    // Non-streamed run: identical canonical proposal, zero streamed batches.
+    const plain = controllableRunner();
+    const plainEngine = createStreamEngine();
+    const { deps: depsB } = buildDeps({
+      agentRunner: plain.runner,
+      engineRef: { current: plainEngine }
+    });
+    const { result: resultB } = renderHook(() => useAgentTurn(depsB));
+    await act(async () => {
+      void resultB.current.sendAgentPrompt("build");
+    });
+    await act(async () => {
+      plain.resolve(proposedResult([insertOp("n1"), insertOp("n2")]));
+    });
+    const plainPreviewTitle = resultB.current.agentPreview?.previewScene.meta.title;
+
+    expect(streamedPreviewTitle).toBe("n1,n2");
+    expect(streamedPreviewTitle).toBe(plainPreviewTitle);
+    // The previewed base is the true pre-turn base (title ""), never a partial
+    // streamed scene — the leakage a naive engine reuse would introduce.
+    expect(resultA.current.agentPreview?.baseScene.meta.title).toBe("");
+    // The pump is dead — no stray tick mutates the reconciled scene.
+    tick(500);
+    expect(resultA.current.agentStream.active).toBe(false);
+  });
+
+  it("(e) a step the engine throws on keeps S1's broken semantics (stop applying, hold last good, still previews canonical)", async () => {
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+    const ctl = controllableRunner();
+    const engine = createStreamEngine();
+    const { deps } = buildDeps({ agentRunner: ctl.runner, engineRef: { current: engine } });
+    const { result } = renderHook(() => useAgentTurn(deps));
+
+    await act(async () => {
+      void result.current.sendAgentPrompt("build");
+    });
+    act(() => {
+      ctl.emit(compileEvent(1, [insertOp("n1"), insertOp("boom"), insertOp("n3")]));
+    });
+    tick(100); // n1
+    tick(100); // boom → throws → stream broken, pump cancelled
+    tick(100); // n3 must NOT apply
+
+    expect(result.current.agentStream.brokenStream).toBe(true);
+    expect(result.current.agentStream.stepsApplied).toBe(1);
+    expect(consoleError).toHaveBeenCalled();
+    expect(engine.applyLog).toEqual([[insertOp("n1")], [insertOp("boom")]]);
+
+    // Streaming never breaks the turn: the canonical proposal still previews,
+    // reconciled from base (title "n1,n3"), not the broken streamed scene.
+    await act(async () => {
+      ctl.resolve(proposedResult([insertOp("n1"), insertOp("n3")]));
+    });
+    expect(result.current.agentPreview?.previewScene.meta.title).toBe("n1,n3");
+    consoleError.mockRestore();
+  });
+
+  it("(f) each reveal-step exposes metadata: the node id, its page, its kind, and its computed bounds", async () => {
+    const bounds = { x: 24, y: 32, width: 180, height: 30 };
+    const ctl = controllableRunner();
+    const engine = createRevealMetadataEngine(bounds);
+    const { deps } = buildDeps({ agentRunner: ctl.runner, engineRef: { current: engine } });
+    const { result } = renderHook(() => useAgentTurn(deps));
+
+    await act(async () => {
+      void result.current.sendAgentPrompt("build");
+    });
+    act(() => {
+      ctl.emit(compileEvent(3, [insertOp("n1")]));
+    });
+    tick(100);
+
+    expect(result.current.agentStream.currentReveal).toEqual({
+      seq: 3,
+      kind: "insert_node",
+      nodeId: "node_n1",
+      pageId: "page_a4",
+      bounds
+    });
+  });
+
+  it("(g) a failed run mid-reveal cancels the pump and restores the pre-turn base like Reject (replaceScene with base)", async () => {
+    const ctl = controllableRunner();
+    const engine = createStreamEngine();
+    const { deps } = buildDeps({ agentRunner: ctl.runner, engineRef: { current: engine } });
+    const replaceSceneMock = deps.replaceScene as unknown as ReturnType<typeof vi.fn>;
+    const { result } = renderHook(() => useAgentTurn(deps));
+
+    await act(async () => {
+      void result.current.sendAgentPrompt("build");
+    });
+    act(() => {
+      ctl.emit(compileEvent(1, [insertOp("n1"), insertOp("n2")]));
+    });
+    tick(100); // n1 applied; n2 still queued
+    expect(engine.scene.meta.title).toBe("n1");
+
+    await act(async () => {
+      ctl.reject(new Error("agent exploded"));
+    });
+
+    const restored = replaceSceneMock.mock.calls
+      .map((call) => call[0] as Scene)
+      .find((scene) => scene?.meta?.title === "");
+    expect(restored).toBeDefined();
+    expect(result.current.agentStream.active).toBe(false);
+    // The cancelled pump never fires again.
+    tick(500);
+    expect(engine.scene.meta.title).toBe("n1");
+  });
+
+  it("(h) checklist events without operations populate runEvents and never touch the scene", async () => {
+    const ctl = controllableRunner();
+    const engine = createStreamEngine();
+    const { deps } = buildDeps({ agentRunner: ctl.runner, engineRef: { current: engine } });
+    const setSceneMock = deps.setScene as unknown as ReturnType<typeof vi.fn>;
+    const { result } = renderHook(() => useAgentTurn(deps));
+
+    await act(async () => {
+      void result.current.sendAgentPrompt("build");
+    });
+    const setSceneCallsBefore = setSceneMock.mock.calls.length;
+
+    act(() => {
+      ctl.emit({ seq: 1, type: "run_started", data: { run_id: "run_1" } });
+    });
+    act(() => {
+      ctl.emit({ seq: 2, type: "preflight_completed", data: { iteration: 1 } });
+    });
+    tick(200);
+
+    expect(setSceneMock.mock.calls.length).toBe(setSceneCallsBefore);
+    expect(engine.applyLog).toEqual([]);
+    expect(result.current.runEvents.map((event) => event.seq)).toEqual([1, 2]);
+    expect(result.current.agentStream).toMatchObject({ active: true, stepsApplied: 0 });
+  });
+});
+
+/**
+ * Regression (adversarial-review divergence seam): the reload-RESUME settle
+ * path must consume the EXPLICIT pre-turn seed (turnSeedRef, armed on mount),
+ * never closure `scene` — which progressive streaming has since mutated to the
+ * half-built streamed scene. Two failures shared one root cause:
+ *   (1) `showAgentDraftScene` pushed an undo frame capturing the STREAMED scene
+ *       (undo history is durable → "nothing streamed is ever persisted" broke);
+ *   (2) `draftIsUnchangedSeed` compared the draft against the STREAMED scene,
+ *       suppressing the honest unchanged-seed message.
+ * Both are pinned here against the same resume harness the refuter used.
+ */
+describe("useAgentTurn — resume-path settles against the explicit pre-turn seed", () => {
+  const streamMarkerOp = (id: string) =>
+    ({
+      kind: "insert_node",
+      id,
+      node: { id: `node_${id}` },
+      parent: { kind: "page", id: "page_a4" },
+      index: 0
+    }) as unknown as Operation;
+
+  const streamCompileEvent = (seq: number, operations: unknown): AgentRunEvent => ({
+    seq,
+    type: "dsl_compiled",
+    data: { iteration: 1, operations } as AgentRunEvent["data"]
+  });
+
+  /** An engine that CONCATENATES inserted markers into meta.title, so the live
+   * scene visibly diverges from the seed as streamed steps apply. */
+  function titleStreamEngine(): OptimisticEnginePort {
+    const start = { ...cloneScene(), meta: { ...cloneScene().meta, title: "" } };
+    let scene: Scene = start;
+    return {
+      kind: "wasm",
+      get scene() {
+        return scene;
+      },
+      version: { schema_version: 1, engine_commit: "test", text_measurement: "heuristic" },
+      reset(next: Scene) {
+        scene = next;
+      },
+      applyOperations(operations: Operation[]): EngineApplyOutcome {
+        const markers = operations.map((op) => (op as unknown as { id?: string }).id ?? op.kind);
+        const prev = scene.meta.title ? scene.meta.title.split(",") : [];
+        scene = { ...scene, meta: { ...scene.meta, title: [...prev, ...markers].join(",") } };
+        return { accepted: true, scene, diagnostics: [], inverseOperations: [], appliedOperations: operations.length };
+      }
+    } as OptimisticEnginePort;
+  }
+
+  function controllableResume() {
+    let captured: ((event: AgentRunEvent) => void) | undefined;
+    let resolveRun!: (result: EditorAgentResult) => void;
+    const resumeRun: NonNullable<UseAgentTurnDeps["resumeRun"]> = (_runId, onEvent) => {
+      captured = onEvent;
+      return new Promise<EditorAgentResult>((resolve) => {
+        resolveRun = resolve;
+      });
+    };
+    return {
+      resumeRun,
+      emit: (event: AgentRunEvent) => captured?.(event),
+      resolve: (result: EditorAgentResult) => resolveRun(result)
+    };
+  }
+
+  function failedWithDraft(draftTitle: string): EditorAgentResult {
+    const draft = { ...cloneScene(), meta: { ...cloneScene().meta, title: draftTitle } };
+    return {
+      status: "failed",
+      summary: "Run failed, draft available.",
+      dsl_blocks: [],
+      operations: [],
+      draft_scene: draft,
+      stop_reason: "quality_loop_exhausted",
+      acceptance_scope: null,
+      diagnostics: [],
+      trace: { run_id: "run_resume", trace_dir: null, preview_paths: [] },
+      artifacts: []
+    };
+  }
+
+  type HookApi = ReturnType<typeof useAgentTurn>;
+
+  /** Holds `scene` in real state so the hook's progressive setScene mutates the
+   * deps.scene it re-renders with — exactly like EditorApp. Captures the hook's
+   * return + the pushed undo frames for assertions. */
+  function ResumeHarness(props: {
+    engine: OptimisticEnginePort;
+    resume: ReturnType<typeof controllableResume>;
+    capture: { hook: HookApi | null; undoFrames: EditorHistoryFrame[] };
+  }) {
+    const [scene, setScene] = useState<Scene>(() => ({
+      ...cloneScene(),
+      meta: { ...cloneScene().meta, title: "" }
+    }));
+    const undoRef = useRef<EditorHistoryFrame[]>([]);
+    props.capture.hook = useAgentTurn({
+      agentRunner: (() => {}) as unknown as UseAgentTurnDeps["agentRunner"],
+      engineRef: { current: props.engine },
+      scene,
+      activeDocumentId: "doc_1",
+      activePageId: "page_a4",
+      selectedNodeId: null,
+      targetNodeIds: [],
+      agentInstructions: null,
+      layoutManagedEditing: false,
+      acceptBakeRunner: async () => null,
+      diagnostics: [],
+      setDiagnostics: () => {},
+      setScene: (updater) =>
+        setScene((current) =>
+          typeof updater === "function" ? (updater as (s: Scene) => Scene)(current) : updater
+        ),
+      replaceScene: (next) => setScene(next),
+      setActivePageId: () => {},
+      setSelectedNodeId: () => {},
+      setUndoStack: (updater) => {
+        const next =
+          typeof updater === "function"
+            ? (updater as (s: EditorHistoryFrame[]) => EditorHistoryFrame[])(undoRef.current)
+            : updater;
+        undoRef.current = next;
+        props.capture.undoFrames.length = 0;
+        props.capture.undoFrames.push(...next);
+      },
+      setRedoStack: () => {},
+      setBrandCompatibilityReport: () => {},
+      setPreflightResult: () => {},
+      setExportResult: () => {},
+      setWorkspaceMode: () => {},
+      commitAppliedOperations: () => "persisted",
+      runExportForScene: async () => {},
+      applyOperations: () => {},
+      resumeRun: props.resume.resumeRun
+    });
+    return null;
+  }
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    window.sessionStorage.setItem("lumen.activeAgentRun", "run_resume");
+  });
+  afterEach(() => {
+    vi.runOnlyPendingTimers();
+    vi.useRealTimers();
+    window.sessionStorage.clear();
+  });
+
+  it("(1) the draft undo frame captures the true pre-turn base, not the streamed scene", async () => {
+    const engine = titleStreamEngine();
+    const resume = controllableResume();
+    const capture = { hook: null as HookApi | null, undoFrames: [] as EditorHistoryFrame[] };
+
+    await act(async () => {
+      render(<ResumeHarness engine={engine} resume={resume} capture={capture} />);
+    });
+    // A streamed batch arrives on replay and the pump applies it, mutating the
+    // React `scene` to the half-built "n1".
+    act(() => {
+      resume.emit(streamCompileEvent(1, [streamMarkerOp("n1")]));
+    });
+    act(() => {
+      vi.advanceTimersByTime(200);
+    });
+    expect(engine.scene.meta.title).toBe("n1");
+
+    // The run finishes FAILED with an inspectable, changed draft.
+    await act(async () => {
+      resume.resolve(failedWithDraft("DRAFT"));
+      await Promise.resolve();
+    });
+
+    expect(capture.undoFrames).toHaveLength(1);
+    // The frame's scene is the pre-turn base (title ""), never the streamed "n1".
+    expect(capture.undoFrames[0].scene.meta.title).toBe("");
+  });
+
+  it("(2) an unchanged-seed draft is detected on resume even after streaming mutated the scene", async () => {
+    const engine = titleStreamEngine();
+    const resume = controllableResume();
+    const capture = { hook: null as HookApi | null, undoFrames: [] as EditorHistoryFrame[] };
+
+    await act(async () => {
+      render(<ResumeHarness engine={engine} resume={resume} capture={capture} />);
+    });
+    act(() => {
+      resume.emit(streamCompileEvent(1, [streamMarkerOp("n1")]));
+    });
+    act(() => {
+      vi.advanceTimersByTime(200);
+    });
+    expect(engine.scene.meta.title).toBe("n1"); // streamed away from the seed
+
+    // The draft equals the PRE-TURN seed (title "") — nothing ever applied.
+    await act(async () => {
+      resume.resolve(failedWithDraft(""));
+      await Promise.resolve();
+    });
+
+    // Honest unchanged-seed handling: the draft is nulled (no "draft visible"
+    // on an unchanged canvas) and the system explains it — proving the compare
+    // ran against the seed, not the streamed "n1" (which would read as changed).
+    expect(capture.hook?.agentProposal?.draft_scene).toBeNull();
+    expect(
+      capture.hook?.agentMessages.some((message) =>
+        message.content.includes("could not produce any applicable changes")
+      )
+    ).toBe(true);
+    // No draft undo frame is pushed for an unchanged seed.
+    expect(capture.undoFrames).toHaveLength(0);
   });
 });

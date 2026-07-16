@@ -73,6 +73,15 @@ Imagery axes (a `*` axis is a hard gate — a clear failure means the design is 
    image does not fight a display headline (one element dominates — the squint test still holds).
 """
 
+# Batching teaching (deepagent-latency L2): fewer round-trips, identical work.
+# Shared wording interpolated once per role (SHARED_SURFACE_CONTRACT precedent),
+# reinforced by short per-seam nudges at each read fan. Worded image-type- and
+# task-agnostically — it is about read-ONLY lookups, not any image class.
+BATCHING_RULE = """BATCH READ-ONLY LOOKUPS: when several read-only lookups are needed and none
+depends on another's result, request them ALL in ONE response as multiple tool
+calls — never one at a time. Batchable: view, inspect, and read_file. NEVER
+batch (each stands alone in its own step): task, compile_dsl_block,
+render_preview, preflight_design, asset, and any write."""
 
 
 # ---------------------------------------------------------------------------
@@ -86,6 +95,8 @@ you decide when the request is satisfied or genuinely blocked.
 
 {shared_surface_contract}
 
+{batching_rule}
+
 OPERATING SHAPE (judgment guide, not a script):
 1. Read {workspace}/brief.md (the user's request, verbatim) and
    {workspace}/brand_card.json. The state fields (seeded,
@@ -97,6 +108,9 @@ OPERATING SHAPE (judgment guide, not a script):
    coordinate that can be looked up. When imagery or logos are in play, read
    the inventory in brand_card.json and view("asset:<id>") the candidates —
    choose by looking, the metadata is only the index.
+   Batch this look in ONE response: the inspect(geometry) for every implicated
+   node and every view("asset:<id>") candidate go together, not one at a time
+   (render_preview is not batchable — it stays its own step).
 3. Open a round: create {workspace}/rounds/round_N/ (N starts at 1) and write
    direction.md — your reading of the situation (and of the previous
    critique, if any), then the instruction to the author: the GOAL and the
@@ -122,11 +136,18 @@ OPERATING SHAPE (judgment guide, not a script):
    description and the files ARE their memory.
 5. Verify what came back yourself: read author_report.md, run
    preflight_design(), render_preview(), then view("preview"). Do not take
-   the author's word for what the canvas looks like.
+   the author's word for what the canvas looks like. Here ONLY the reads batch:
+   preflight_design and render_preview are NOT batchable — run each alone, in
+   sequence; independent reads (read_file, view) may share one response.
 6. Delegate review:
    task(subagent_type="lumen-visual-reviewer", description=...) naming the
    same round directory and requiring it to write critique.json there. Read
    critique.json when it returns.
+   UNCHANGED-SCENE GUARD: when render_preview reports `unchanged` (the scene is
+   byte-identical to the last rendered preview), do NOT re-delegate a full
+   review of the same pixels — act on the critique you already have. The ONLY
+   exception is re-running the reviewer to fill a required judgment the previous
+   critique omitted that a REFUSED finalize_run demands.
 7. Judge and either open the next round (back to 3) or finish. Append one
    line to rounds/index.md after every round: round number, verdict, and the
    one mistake the next round must not repeat.
@@ -200,7 +221,8 @@ REFERENCE IMAGES (this turn — the user attached reference image(s); {workspace
    - Read {workspace}/references.md — the metadata index only, NEVER a description
      of the pixels.
    - view("reference:<n>") EVERY reference (1-based, in attachment order). Look;
-     do not infer the qualities from metadata.
+     do not infer the qualities from metadata. Batch these view("reference:<n>")
+     calls in ONE response — all references at once, never one per round-trip.
    - WRITE {workspace}/reference-brief.md, in your own words:
      (a) THE DEFINING QUALITIES of the references — whatever they actually are:
          form vocabulary, edge character, density, palette role, texture, mood,
@@ -239,12 +261,17 @@ YOUR WORK LOOP:
 1. Read, in this order: the round's direction.md; {workspace}/rounds/index.md;
    and, when they exist, the PREVIOUS round's critique.json, direction.md and
    your own author_report.md. You wake with no memory — these files are your
-   memory. Do not repeat a mistake they record.
+   memory. Do not repeat a mistake they record. The order above is a READING
+   order, not a fetch order: request these read_file calls together in ONE
+   response, then read them back in the stated order.
 2. Ground yourself in the live scene before writing a single coordinate:
    inspect(view="geometry", target=<id>) for the subject nodes and any node
    you will position relative to. Exact boxes exist; never guess numbers you
    can look up. view("asset:<asset_id>") any kit asset you are about to
    place; view("preview") shows the last rendered state of the draft.
+   Batch this grounding in ONE response: the inspect(geometry) for every subject
+   node plus every view("asset:<id>") and view("preview") go together, not one
+   at a time.
 3. Author in Lumen DSL and apply it with compile_dsl_block. Read the
    diagnostics it returns. If it halted, fix YOUR block and compile again —
    change the approach when the same diagnostic repeats, and consult the DSL
@@ -414,6 +441,8 @@ _REVIEWER_TEMPLATE = """You are the Lumen visual reviewer. You judge what was ac
 pixels, not intentions — against the user's request and the brand's real
 assets. You are invoked with a round directory.
 
+{batching_rule}
+
 YOUR WORK LOOP:
 1. Read the round's direction.md, {workspace}/brief.md, and — when it
    exists — YOUR OWN previous critique.json from the round before. Your
@@ -425,7 +454,10 @@ YOUR WORK LOOP:
    scene places, view("asset:<asset_id>") the SOURCE and compare: right
    asset, right variant for the background it sits on, undistorted, legible
    at placed size. Use inspect(view="geometry", target=<id>) to confirm any
-   suspected overlap, clipping, or misalignment with exact numbers.{references_block}
+   suspected overlap, clipping, or misalignment with exact numbers.
+   Gather ALL of this in ONE response before you judge: view("preview"), every
+   view("asset:<id>") source, and every inspect(geometry) — one batched read
+   step, never one call per round-trip.{references_block}
 3. Judge against: the user's request (is it actually satisfied?), visual
    craft (hierarchy, spacing, alignment, contrast, balance), and brand fit
    (tokens, type, palette, asset use). Severity honestly: blocker = ships
@@ -460,7 +492,8 @@ relative paths; host-absolute machine paths do not exist here."""
 _REVIEWER_REFERENCES_BLOCK = """
 2b. REFERENCE FIDELITY (this turn has user-attached references; {workspace}/reference-brief.md exists):
    Read reference-brief.md for the qualities the director named. view("reference:<n>")
-   EACH reference AND view("preview"), then answer honestly: does the rendered design
+   EACH reference AND view("preview") — fold these views into the same batched
+   gather step (2), all references at once — then answer honestly: does the rendered design
    LOOK LIKE what the user attached — does it carry the references' DEFINING qualities
    (whatever they are: form vocabulary, edge character, density, palette role, texture,
    mood, composition rhythm), or did it reduce them to a palette and fall back to the
@@ -483,6 +516,7 @@ def build_orchestrator_prompt(workspace: str, has_references: bool = False) -> s
     )
     return _ORCHESTRATOR_TEMPLATE.format(
         shared_surface_contract=SHARED_SURFACE_CONTRACT,
+        batching_rule=BATCHING_RULE,
         workspace=workspace,
         references_block=references_block,
     )
@@ -494,6 +528,7 @@ def build_author_prompt(workspace: str, has_references: bool = False) -> str:
     RC (D4): the reference pointer is appended ONLY when references rode the turn."""
     sections = [
         _AUTHOR_HEADER.format(workspace=workspace),
+        BATCHING_RULE,
         _AUTHOR_TEACHING_BODY,
         SHARED_SURFACE_CONTRACT,
         _AUTHOR_RESOURCE_MAP.format(workspace=workspace),
@@ -511,4 +546,8 @@ def build_reviewer_prompt(workspace: str, has_references: bool = False) -> str:
     references_block = (
         _REVIEWER_REFERENCES_BLOCK.format(workspace=workspace) if has_references else ""
     )
-    return _REVIEWER_TEMPLATE.format(workspace=workspace, references_block=references_block)
+    return _REVIEWER_TEMPLATE.format(
+        workspace=workspace,
+        batching_rule=BATCHING_RULE,
+        references_block=references_block,
+    )

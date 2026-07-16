@@ -1,0 +1,91 @@
+/*
+ * Live-design-streaming S2 — the reveal-theater chrome.
+ *
+ * Parked-file strategy (design D6): every streaming style lives HERE, in a
+ * dedicated sheet imported beside styles.css from the app entry, so the parked
+ * shell CSS (styles.css / tokens.css) is never touched. All values COMPOSE the
+ * existing token layer (var(--...) from tokens.css) — no new tokens, no raw
+ * near-duplicates of a token's value.
+ *
+ * The chrome is pure DOM/SVG in the selection overlay, so it never triggers a
+ * wasm repaint: the create-flash fades via a keyframe, the design cursor glides
+ * via a transform transition.
+ */
+
+/* The create-flash: an accent outline that lands on the just-revealed node and
+ * fades out. Keyed on the reveal seq in the overlay, so each new reveal remounts
+ * this element and restarts the animation from the top. */
+.agent-reveal-flash {
+  fill: var(--accent-wash);
+  stroke: var(--accent);
+  stroke-width: 2;
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: agent-reveal-flash-fade 600ms var(--ease-out) forwards;
+}
+
+@keyframes agent-reveal-flash-fade {
+  0% {
+    opacity: 0;
+    stroke-width: 3;
+  }
+  25% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    stroke-width: 1;
+  }
+}
+
+/* The design cursor: a small glyph + a status chip that glides from the previous
+ * reveal's box to the next. The transition on `transform` is what animates the
+ * glide between reveals (the overlay updates the translate on each step). */
+.agent-reveal-cursor {
+  transition: transform var(--duration-slow) var(--ease-spring);
+}
+
+.agent-reveal-cursor-glyph {
+  fill: var(--accent);
+  stroke: var(--bg-white);
+  stroke-width: 1;
+  stroke-linejoin: round;
+}
+
+.agent-reveal-cursor-chip-bg {
+  fill: var(--accent);
+  opacity: 0.94;
+}
+
+.agent-reveal-cursor-chip-text {
+  fill: var(--btn-primary-text);
+  font-family: var(--font-sans);
+  font-size: var(--text-caption);
+  font-weight: 600;
+}
+
+/* D5 copy: the state-aware second line under the "Agent is designing" banner. */
+.agent-designing-substatus {
+  color: var(--text-muted);
+  font-size: var(--text-body-sm);
+  font-weight: 500;
+}
+
+/* A11y — prefers-reduced-motion (no vitest CSS-assert idiom in this repo, so
+ * this media block + comment is the guarantee; verified by reading, not a test).
+ * Keep the chrome fully INFORMATIVE (the accent outline + cursor still mark the
+ * reveal) but kill all motion: the flash becomes a static outline that appears
+ * with the reveal and disappears when the next reveal remounts it (no keyframed
+ * fade, no pulsing stroke), and the cursor JUMPS to each reveal instead of
+ * gliding. */
+@media (prefers-reduced-motion: reduce) {
+  .agent-reveal-flash {
+    animation: none;
+    opacity: 1;
+    stroke-width: 2;
+  }
+
+  .agent-reveal-cursor {
+    transition: none;
+  }
+}

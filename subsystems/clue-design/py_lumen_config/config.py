@@ -108,6 +108,23 @@ class Settings(BaseSettings):
     # request (provider default: no extended thinking). Applied in init_model
     # for whatever model id is configured — one mechanism for all models.
     lumen_agent_reasoning: str | None = None
+    # L1 (latency: cache locality) — OpenRouter provider `sort` preference applied
+    # to every deep-agent LLM call. `sort` DISABLES OpenRouter's load-balancing and
+    # pins one provider replica, which is the cache-locality lever: a byte-identical
+    # 30K prefix scattered across xAI replicas hit cache 2/8 on default routing but
+    # 8/8 with sort="latency" (probe-proven 2026-07-12). Default "latency"; blank/
+    # unset → NO provider field on the request (byte-identical to pre-L1). Valid
+    # OpenRouter values are latency|throughput|price, but this is not enum-validated
+    # here — an unknown value is forwarded and OpenRouter rejects it loudly.
+    lumen_agent_provider_sort: str | None = "latency"
+    # L3 (latency: straggler watchdog) — per-request timeout in SECONDS applied to
+    # every deep-agent LLM call. Installs `timeout` + `max_retries=2` on the
+    # ChatOpenAI client, which the OpenAI SDK uses to retry a timed-out request
+    # (exponential backoff) then propagate openai.APITimeoutError. Kills the 60–97s
+    # real-trace stragglers; do NOT go below 60 (even fully-cached calls spike to
+    # ~28s). Default 60.0; blank/unset → NO timeout/retry kwargs (today's behavior).
+    # A non-positive value fails loudly at startup.
+    lumen_agent_llm_timeout_s: float | None = 60.0
     # Brief-clarification headless/eval mode. When true, the orchestrator NEVER
     # gets the `request_clarification` tool: it applies the clarify-design-brief
     # skill's defaults and records each assumption via record_gap so results stay
@@ -127,6 +144,8 @@ class Settings(BaseSettings):
         "lumen_agent_base_url",
         "lumen_agent_api_key",
         "lumen_agent_reasoning",
+        "lumen_agent_provider_sort",
+        "lumen_agent_llm_timeout_s",
         "lumen_agent_model_orchestrator",
         "lumen_agent_model_author",
         "lumen_agent_model_reviewer",
@@ -166,6 +185,20 @@ class Settings(BaseSettings):
             raise ValueError(
                 "LUMEN_AGENT_MAX_TOKENS must be a positive integer (or unset for "
                 f"no output bound); got {value!r}"
+            )
+        return value
+
+    @field_validator("lumen_agent_llm_timeout_s")
+    @classmethod
+    def _validate_llm_timeout(cls, value: float | None) -> float | None:
+        """A junk or non-positive timeout must fail at startup, not silently
+        disable itself (or cap every call at 0s) mid-run."""
+        if value is None:
+            return value
+        if value <= 0:
+            raise ValueError(
+                "LUMEN_AGENT_LLM_TIMEOUT_S must be a positive number of seconds "
+                f"(or unset for no per-call timeout); got {value!r}"
             )
         return value
 

@@ -135,6 +135,18 @@ def create_design_deepagent(
     # earlier `.with_config` wrapper approach, which returned a RunnableBinding
     # that deepagents' resolve_model mishandled and crashed construction on
     # (probe-r9 CONSTRUCTION-FAILURE).
+    # CACHE-STABILITY INVARIANT (L1 — future work MUST respect this):
+    # OpenRouter/xAI prefix caching gives the append-only ReAct history a
+    # ~95% cached prefill from the 2nd call on, BUT only because the message
+    # prefix stays byte-stable within a turn. The system prompt is assembled
+    # ONCE here (static per turn) and every subsequent step only APPENDS to the
+    # message list. Any in-place edit or re-ordering of an earlier message
+    # (e.g. rewriting resolved compile diagnostics, or interleaving a new image
+    # into the author's cached text prefix) invalidates the cache from the edit
+    # point onward and forfeits that ~95% saving (probe-proven 2026-07-12).
+    # When pruning history (L5) or batching reviewer image views (L2) land,
+    # prune by APPENDING a summary — never by mutating history already sent.
+    # `provider_sort` (below) pins one replica so this cache is actually reused.
     def _fresh_model(model_id: str):
         return init_model(
             model_id,
@@ -142,6 +154,8 @@ def create_design_deepagent(
             api_key=runtime_config.agent_api_key,
             reasoning=runtime_config.agent_reasoning,
             max_tokens=runtime_config.agent_max_tokens,
+            provider_sort=runtime_config.agent_provider_sort,
+            timeout_s=runtime_config.agent_llm_timeout_s,
         )
 
     from .trace_callbacks import attach_trace_callback

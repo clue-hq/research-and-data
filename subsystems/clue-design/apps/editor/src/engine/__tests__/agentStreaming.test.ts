@@ -2,10 +2,12 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { minimalScene } from "@/fixtures/minimalScene";
 import {
   createStreamingAgentRunner,
+  operationsFromRunEvent,
   subscribeToAgentRun,
   type AgentRunEvent,
   type EventSourceLike
 } from "../agentRunner";
+import type { Operation } from "../contracts";
 import { agentChecklist, agentEventLabel } from "../agentChecklist";
 
 afterEach(() => {
@@ -100,6 +102,39 @@ describe("streaming agent runner", () => {
     const result = await promise;
     expect(result.status).toBe("failed");
     expect(source.closed).toBe(true);
+  });
+});
+
+describe("operationsFromRunEvent (live-design-streaming accessor)", () => {
+  const withData = (data: Record<string, unknown>): AgentRunEvent => ({
+    seq: 1,
+    type: "dsl_compiled",
+    data
+  });
+
+  it("returns the applied operations when a compile event carries them", () => {
+    const operations = [
+      { kind: "add_page", page_id: "page_hero" },
+      { kind: "insert_node", node_id: "headline", parent_id: "page_hero" }
+    ] as unknown as Operation[];
+    expect(operationsFromRunEvent(withData({ iteration: 1, operations }))).toEqual(operations);
+  });
+
+  it("returns null for a checklist event that carries no operations", () => {
+    expect(operationsFromRunEvent(withData({ iteration: 1 }))).toBeNull();
+  });
+
+  it("is tolerant: absent / non-array / all-malformed operations return null, never throw", () => {
+    expect(operationsFromRunEvent(withData({ operations: undefined }))).toBeNull();
+    expect(operationsFromRunEvent(withData({ operations: "nope" }))).toBeNull();
+    expect(operationsFromRunEvent(withData({ operations: [] }))).toBeNull();
+    // Non-record entries are dropped; an all-malformed list collapses to null.
+    expect(operationsFromRunEvent(withData({ operations: [42, "x", null] }))).toBeNull();
+  });
+
+  it("keeps only the record entries when a list is partially malformed", () => {
+    const kept = { kind: "insert_node", node_id: "n1" };
+    expect(operationsFromRunEvent(withData({ operations: [kept, 7, "bad"] }))).toEqual([kept]);
   });
 });
 

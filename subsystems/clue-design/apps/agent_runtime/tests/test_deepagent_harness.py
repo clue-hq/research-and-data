@@ -14,6 +14,7 @@ from __future__ import annotations
 import base64
 import json
 import sys
+import threading
 import types
 from pathlib import Path
 
@@ -33,7 +34,7 @@ from lumen_agent.prompts import (
     build_orchestrator_prompt,
     build_reviewer_prompt,
 )
-from lumen_agent.prompts import SHARED_SURFACE_CONTRACT
+from lumen_agent.prompts import BATCHING_RULE, SHARED_SURFACE_CONTRACT
 from lumen_agent.tools.substrate import LumenDesignTools
 
 from agent_fixtures import FakeCoreClient, runtime_config
@@ -378,6 +379,104 @@ def test_all_prompts_have_resource_map_and_workspace_path():
         assert ws in prompt
 
 
+def test_orchestrator_teaches_unchanged_scene_reuse():
+    """L4b (deepagent-latency): when render_preview reports the scene is
+    byte-identical to the last render, the orchestrator acts on the existing
+    critique instead of re-delegating a full review — the ONLY exception being a
+    reviewer re-run to fill a required field (e.g. reference_fidelity after a
+    REFUSED finalize). Pinned so the additive teaching cannot silently drop."""
+    orch = build_orchestrator_prompt("/tmp/ws-unchanged")
+    assert "UNCHANGED-SCENE GUARD" in orch
+    assert "do NOT re-delegate a full" in orch
+    assert "REFUSED finalize_run demands" in orch
+    # It must NOT contradict the batching rule (task stays never-batch).
+    assert "never one at a time" in orch
+
+
+def test_all_prompts_carry_batching_rule_and_never_batch_list():
+    """L2 (deepagent-latency): every role learns to batch independent read-only
+    lookups AND the never-batch exclusion list, so writes / render / preflight /
+    task stay one-at-a-time. Pinned across all three roles."""
+    ws = "/tmp/ws-batch"
+    prompts = {
+        "orchestrator": build_orchestrator_prompt(ws),
+        "author": build_author_prompt(ws),
+        "reviewer": build_reviewer_prompt(ws),
+    }
+    for role, prompt in prompts.items():
+        # The shared rule body is present verbatim, exactly once per role.
+        assert prompt.count(BATCHING_RULE) == 1, role
+        # The crisp rule teaches batching independent read-only lookups.
+        assert "BATCH READ-ONLY LOOKUPS" in prompt, role
+        assert "in ONE response" in prompt, role
+        assert "never one at a time" in prompt, role
+        # The never-batch exclusion list — every tool that must stay alone.
+        for excluded in (
+            "task",
+            "compile_dsl_block",
+            "render_preview",
+            "preflight_design",
+            "asset",
+            "any write",
+        ):
+            assert excluded in prompt, f"{role} missing never-batch {excluded!r}"
+
+
+def test_orchestrator_verify_step_keeps_preflight_and_render_sequential():
+    """L2: at the orchestrator verify step ONLY the reads batch — preflight_design
+    and render_preview must be taught as explicitly NOT batchable."""
+    orch = build_orchestrator_prompt("/tmp/ws-verify")
+    assert "preflight_design and render_preview are NOT batchable" in orch
+
+
+def test_record_is_thread_safe_under_concurrent_batched_reads(tmp_path, monkeypatch):
+    """L2 thread-safety: batched read-only tool calls run on langgraph's ToolNode
+    thread pool, so `record` is now invoked from concurrent threads. The lock must
+    keep trace.jsonl a valid, complete JSONL file (no interleaved/torn lines) and
+    the event_sink must receive every event exactly once."""
+    # Seed a scene so construction never touches the real core helper.
+    tools = _tools_only(runtime_config(tmp_path), initial_scene=seeded_scene())
+    n = 200
+    sink_events: list = []
+    sink_lock = threading.Lock()
+
+    def sink(event, payload):
+        # Append under the record lock in production; here we guard our own list
+        # so the test's assertion on the sink is itself race-free.
+        with sink_lock:
+            sink_events.append((event, payload))
+
+    tools.event_sink = sink
+
+    trace_path = tools.trace_dir / "trace.jsonl"
+    # Construction may already have recorded events (e.g. run_started); count them
+    # so the assertion targets only the N events this test drives concurrently.
+    baseline = len(
+        [ln for ln in trace_path.read_text(encoding="utf-8").splitlines() if ln.strip()]
+    ) if trace_path.exists() else 0
+
+    barrier = threading.Barrier(n)
+
+    def worker(i: int) -> None:
+        barrier.wait()  # maximize contention: all threads hit record together
+        tools.record(actor="tester", event=f"evt_{i}", input_summary=str(i))
+
+    threads = [threading.Thread(target=worker, args=(i,)) for i in range(n)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    raw = trace_path.read_text(encoding="utf-8")
+    lines = [ln for ln in raw.splitlines() if ln.strip()]
+    assert len(lines) == baseline + n
+    parsed = [json.loads(ln) for ln in lines]  # every line is intact JSON
+    events = {p["event"] for p in parsed}
+    assert {f"evt_{i}" for i in range(n)}.issubset(events)
+    # The best-effort sink saw every event exactly once, no drops from a torn push.
+    assert {e for e, _ in sink_events} == {f"evt_{i}" for i in range(n)}
+
+
 # --- 5. state schema --------------------------------------------------------
 
 
@@ -452,6 +551,56 @@ def test_runner_honest_failure_on_invoke_exception(tmp_path, monkeypatch):
     trace = (tools.trace_dir / "trace.jsonl").read_text(encoding="utf-8")
     assert "model exploded mid-turn" in trace
     assert "RuntimeError" in trace
+
+
+def test_runner_honest_failure_on_api_timeout_error(tmp_path, monkeypatch):
+    """L3/D3: an exhausted-retry straggler surfaces as openai.APITimeoutError out of
+    agent.invoke (nothing in langchain/deepagents catches it). The runner's broad
+    catch must route it into the EXISTING honest failed-finalize path — a failed
+    final.json + a trace event recording the exception CLASS + message — never a
+    silent thread crash and never a fabricated success. This pins the specific
+    timeout-exception path the watchdog introduces."""
+    import httpx
+    import openai
+
+    capture: dict = {}
+
+    def fake_create_deep_agent(**kwargs):
+        capture["kwargs"] = kwargs
+
+        def _timeout(*a, **k):
+            # Exactly what the OpenAI SDK propagates after max_retries is exhausted.
+            raise openai.APITimeoutError(request=httpx.Request("POST", "https://openrouter.ai/api/v1/chat/completions"))
+
+        return types.SimpleNamespace(invoke=_timeout, kwargs=kwargs)
+
+    module = types.ModuleType("deepagents")
+    module.create_deep_agent = fake_create_deep_agent
+    module.FilesystemPermission = _FakeFilesystemPermission
+    module.DeepAgentState = _FakeDeepAgentState
+    backends_module = types.ModuleType("deepagents.backends")
+    filesystem_module = types.ModuleType("deepagents.backends.filesystem")
+    filesystem_module.FilesystemBackend = _FakeFilesystemBackend
+    monkeypatch.setitem(sys.modules, "deepagents", module)
+    monkeypatch.setitem(sys.modules, "deepagents.backends", backends_module)
+    monkeypatch.setitem(sys.modules, "deepagents.backends.filesystem", filesystem_module)
+    monkeypatch.setattr("lumen_agent.tools.substrate.CoreClient", FakeCoreClient)
+    monkeypatch.setattr("lumen_agent.llm.init_model", lambda *a, **k: object())
+
+    # Must NOT raise: the runner returns an honest failed payload instead.
+    payload, tools = run_deepagent_turn("Design a card", runtime_config(tmp_path))
+
+    assert payload["status"] == "failed"
+    assert payload["stop_reason"] == "orchestrator_did_not_finalize"
+    final_path = tools.trace_dir / "final.json"
+    assert final_path.exists()
+    # The exception CLASS name + message are recorded verbatim in the trace.
+    trace = (tools.trace_dir / "trace.jsonl").read_text(encoding="utf-8")
+    assert "APITimeoutError" in trace
+    assert "deepagent_turn_exception" in trace
+    # The class + message also ride into the finalize detail (summary), so the
+    # API worker sees a structured failure, not an opaque crash.
+    assert "APITimeoutError" in payload["summary"]
 
 
 def test_runner_honest_failure_when_agent_never_finalizes(tmp_path, monkeypatch):

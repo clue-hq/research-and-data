@@ -885,6 +885,8 @@ export default function EditorApp({
     agentPreview,
     queuedAgentMessages,
     runEvents,
+    agentStream,
+    turnSeedRef,
     pendingReferences,
     isUploadingReferences,
     sendAgentPrompt,
@@ -928,8 +930,13 @@ export default function EditorApp({
   });
   // Keep the reconcile baseline in step with the pending preview (see the
   // ref's declaration above useDocumentSync). Render-body assignment is the
-  // established ref-mirror pattern here (activeDocumentIdRef et al.).
-  previewBaseSceneRef.current = agentPreview?.baseScene ?? null;
+  // established ref-mirror pattern here (activeDocumentIdRef et al.). While a
+  // turn is STREAMING, the engine holds the ephemeral half-built scene, so a
+  // pre-run edit-queue batch draining mid-stream would reconcile against it and
+  // could clobber history — pin the baseline to the turn's pre-turn seed
+  // instead (streaming and a pending preview never overlap).
+  previewBaseSceneRef.current =
+    agentPreview?.baseScene ?? (agentStream.active ? turnSeedRef.current : null);
 
   // 2e notify-when-done: a turn that settles while the agent panel is
   // closed raises a click-to-open toast (no browser Notification API).
@@ -1580,6 +1587,30 @@ export default function EditorApp({
               data-testid="agent-designing-banner"
             >
               <span>Agent is designing — please wait to edit</span>
+              {agentStream.currentReveal
+                ? (() => {
+                    const reveal = agentStream.currentReveal;
+                    const pageNumber = reveal.pageId
+                      ? Object.keys(scene.pages).indexOf(reveal.pageId) + 1
+                      : 0;
+                    const label =
+                      reveal.kind === "add_page"
+                        ? pageNumber > 0
+                          ? `adding page ${pageNumber}…`
+                          : "adding a page…"
+                        : pageNumber > 0
+                          ? `building page ${pageNumber}…`
+                          : "placing elements…";
+                    return (
+                      <span
+                        className="agent-designing-substatus"
+                        data-testid="agent-designing-substatus"
+                      >
+                        {label}
+                      </span>
+                    );
+                  })()
+                : null}
               <span className="agent-designing-dots" aria-hidden>
                 <i />
                 <i />
@@ -1760,6 +1791,7 @@ export default function EditorApp({
                 onToggleMarginGuides={marginGuides.toggleMarginGuides}
                 printFeatureEnabled={printFeature.printFeatureEnabled}
                 onTogglePrintFeature={printFeature.togglePrintFeature}
+                agentReveal={agentStream.currentReveal}
               />
             </>
           )}

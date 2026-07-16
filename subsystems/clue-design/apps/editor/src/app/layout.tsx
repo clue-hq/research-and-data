@@ -4,6 +4,9 @@ import type { Metadata } from "next";
 import "./tailwind.css";
 import "./tokens.css";
 import "./styles.css";
+// Live-design-streaming S2 chrome — a dedicated sheet so the parked shell CSS
+// (styles.css) stays untouched. Consumes existing tokens only.
+import "./agentStreaming.css";
 
 export const metadata: Metadata = {
   title: "ABM Design Editor",

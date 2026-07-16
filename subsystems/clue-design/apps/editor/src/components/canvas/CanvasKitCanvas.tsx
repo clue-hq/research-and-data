@@ -63,6 +63,7 @@ import {
   type WorkspaceViewport
 } from "@/engine/workspaceViewport";
 import type { WorkspaceViewportUpdater } from "./EditorCanvas";
+import type { AgentStreamReveal } from "@/hooks/useAgentTurn";
 import { CanvasKitStage } from "./CanvasKitStage";
 import { SelectionOverlay } from "./SelectionOverlay";
 import { TextEditOverlay } from "./TextEditOverlay";
@@ -131,6 +132,11 @@ export interface CanvasKitCanvasProps {
   printFeatureEnabled?: boolean;
   /** Toggles `printFeatureEnabled`. */
   onTogglePrintFeature?: () => void;
+  /** Live-design-streaming S2: the element/artboard the pump is currently
+   * revealing (null when idle). Drives the SVG create-flash + design cursor and
+   * the viewport auto-follow. Pure presentation of an ephemeral streamed state
+   * — never a mutation source. */
+  agentReveal?: AgentStreamReveal | null;
 }
 
 interface Preview {
@@ -164,7 +170,8 @@ export function CanvasKitCanvas({
   showMarginGuides = false,
   onToggleMarginGuides,
   printFeatureEnabled = false,
-  onTogglePrintFeature
+  onTogglePrintFeature,
+  agentReveal = null
 }: CanvasKitCanvasProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const stateRef = useRef<GestureState>(initialGestureState);
@@ -185,6 +192,12 @@ export function CanvasKitCanvas({
   const [marquee, setMarquee] = useState<Box | null>(null);
   const [editingNodeId, setEditingNodeId] = useState<NodeId | null>(null);
   const [hoverNodeId, setHoverNodeId] = useState<NodeId | null>(null);
+  // S2 viewport auto-follow: the page the reveal theater last fit the viewport
+  // to (so we only re-fit on a page CHANGE), and a per-run latch that suppresses
+  // auto-follow the instant the user pans/zooms — user wins, permanently for the
+  // rest of that run.
+  const followedRevealPageRef = useRef<PageId | null>(null);
+  const userOverrodeFollowRef = useRef(false);
 
   const page = getPage(scene, activePageId);
   const pageView = page ? pageDescriptor(page) : null;
@@ -251,6 +264,34 @@ export function CanvasKitCanvas({
       clampWorkspacePanToKeepVisible(current, workspaceModel.bounds, viewport)
     );
   }, [onWorkspaceViewportChange, viewport, workspaceModel.bounds]);
+
+  // S2 viewport auto-follow: as the reveal theater moves onto a NEW artboard,
+  // fit the viewport to it (moda's "pan to the artboard under construction").
+  // Fitting sets `manual` so the built-in fit effect above stops competing; the
+  // follow itself is authoritative until the user takes over. When the run's
+  // reveal stream ends (agentReveal → null), the latch + memory reset for the
+  // next run. `userOverrodeFollowRef` is set only by real pointer/wheel input.
+  useEffect(() => {
+    if (!agentReveal) {
+      followedRevealPageRef.current = null;
+      userOverrodeFollowRef.current = false;
+      return;
+    }
+    if (userOverrodeFollowRef.current) {
+      return;
+    }
+    const pageId = agentReveal.pageId;
+    if (!pageId || pageId === followedRevealPageRef.current) {
+      return;
+    }
+    const artboard = workspaceModel.artboards.find((entry) => entry.pageId === pageId);
+    if (!artboard) {
+      return;
+    }
+    followedRevealPageRef.current = pageId;
+    onWorkspaceFitTargetChange("manual");
+    onWorkspaceViewportChange(fitWorkspaceRectToViewport({ viewport, rect: artboard.workspaceRect }));
+  }, [agentReveal, workspaceModel, viewport, onWorkspaceViewportChange, onWorkspaceFitTargetChange]);
 
   // K0.5/K1.5: the brand-kit token maps load asynchronously and usually land
   // AFTER the first paint; descriptors AND text measurements built before
@@ -482,6 +523,46 @@ export function CanvasKitCanvas({
       .map((id) => boxForNode(id))
       .filter((entry): entry is { box: Box; rotation: number } => entry !== null);
   }, [selectedNodeIds, selectedNodeId, boxForNode]);
+
+  // S2 reveal chrome: map the currently-revealed node/artboard to SCREEN px so
+  // the overlay draws the create-flash + design cursor directly (workspace space
+  // = artboard origin + node bounds × unitScale; screen = pan + workspace ×
+  // zoom). Working in workspace space keeps the chrome correct even when the
+  // reveal lands on a page other than the active one. `add_page` reveals (no
+  // node bounds) flash the whole artboard placeholder.
+  const revealChrome = useMemo(() => {
+    if (!agentReveal || !agentReveal.pageId) {
+      return null;
+    }
+    const artboard = workspaceModel.artboards.find((entry) => entry.pageId === agentReveal.pageId);
+    if (!artboard) {
+      return null;
+    }
+    let workspaceBox = artboard.workspaceRect;
+    if (agentReveal.nodeId && agentReveal.bounds) {
+      const revealPage = scene.pages[agentReveal.pageId];
+      const revealScale = revealPage ? pageDescriptor(revealPage).unitScale : unitScale;
+      workspaceBox = {
+        x: artboard.workspaceRect.x + agentReveal.bounds.x * revealScale,
+        y: artboard.workspaceRect.y + agentReveal.bounds.y * revealScale,
+        width: agentReveal.bounds.width * revealScale,
+        height: agentReveal.bounds.height * revealScale
+      };
+    }
+    const { pan, zoom: viewZoom } = workspaceViewport;
+    const flashBox = {
+      x: pan.x + workspaceBox.x * viewZoom,
+      y: pan.y + workspaceBox.y * viewZoom,
+      width: workspaceBox.width * viewZoom,
+      height: workspaceBox.height * viewZoom
+    };
+    return {
+      seq: agentReveal.seq,
+      flashBox,
+      cursor: { x: flashBox.x, y: flashBox.y },
+      label: "designing…"
+    };
+  }, [agentReveal, workspaceModel, workspaceViewport, scene, unitScale]);
 
   const pressTargetFor = useCallback(
     (descriptorPoint: { x: number; y: number }): PressTarget => {
@@ -743,12 +824,19 @@ export function CanvasKitCanvas({
   });
 
   const fitWorkspace = (target: "current" | "all") => {
+    // S2: a Fit-button click during a streamed run is a manual viewport action —
+    // it takes over from reveal auto-follow permanently for that run (user
+    // wins), exactly like zoomBy / wheel / hand-pan. Without this latch the next
+    // artboard reveal would yank the viewport off the artboard the user just fit.
+    userOverrodeFollowRef.current = true;
     const rect = target === "current" && activeArtboard ? activeArtboard.workspaceRect : workspaceModel.bounds;
     onWorkspaceFitTargetChange(target);
     onWorkspaceViewportChange(fitWorkspaceRectToViewport({ viewport, rect }));
   };
 
   const zoomBy = (delta: number) => {
+    // S2: toolbar zoom is user input too — it overrides reveal auto-follow.
+    userOverrodeFollowRef.current = true;
     onWorkspaceFitTargetChange("manual");
     onWorkspaceViewportChange((current) =>
       zoomWorkspaceViewportAtPoint(
@@ -858,6 +946,9 @@ export function CanvasKitCanvas({
         onWheel={(event) => {
           event.preventDefault();
           const screenPoint = screenPointFromEvent(event, containerRef.current);
+          // S2: a manual pan/zoom during a streamed run takes over from
+          // viewport auto-follow, permanently for that run (user wins).
+          userOverrodeFollowRef.current = true;
           onWorkspaceFitTargetChange("manual");
           if (event.ctrlKey || event.metaKey) {
             onWorkspaceViewportChange((current) =>
@@ -889,6 +980,8 @@ export function CanvasKitCanvas({
               y: screenPoint.y,
               pan: workspaceViewport.pan
             };
+            // S2: hand-tool pan overrides reveal auto-follow for this run.
+            userOverrodeFollowRef.current = true;
             onWorkspaceFitTargetChange("manual");
             try {
               event.currentTarget.setPointerCapture(event.pointerId);
@@ -1081,6 +1174,7 @@ export function CanvasKitCanvas({
           onFocalChange={commitFocalPoint}
           insertionIndicator={editingNodeId ? null : descriptorIndicator(reorderTarget?.indicator ?? null, unitScale)}
           marginGuides={marginGuides}
+          reveal={revealChrome}
         />
         {editing ? (
           <TextEditOverlay

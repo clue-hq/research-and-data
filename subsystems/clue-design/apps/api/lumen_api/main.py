@@ -132,6 +132,14 @@ def _bridge_uvicorn_loggers() -> None:
 
 _AGENT_RELEVANT_PREFIXES = ("/agent", "/documents")
 
+# Run-events SSE idle cadence (live-design-streaming D2). Poll the durable
+# run_events table fast so authoring batches (compile/asset-placement ops) land
+# on the canvas promptly; emit the keepalive comment slowly so a quiet run does
+# not spam a comment every poll. Keepalive fires once every
+# ~ceil(KEEPALIVE / POLL) idle polls. Replay semantics are unchanged.
+_RUN_EVENTS_SSE_POLL_INTERVAL_SECONDS = 0.25
+_RUN_EVENTS_SSE_KEEPALIVE_INTERVAL_SECONDS = 1.0
+
 
 def _is_agent_relevant(path: str) -> bool:
     return any(path == prefix or path.startswith(prefix + "/") for prefix in _AGENT_RELEVANT_PREFIXES)
@@ -1726,10 +1734,23 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
             finally:
                 store.connection.close()
 
-        def read_events(after_seq: int) -> List[JsonObject]:
+        def poll_once(
+            after_seq: int,
+        ) -> tuple[List[JsonObject], Optional[JsonObject]]:
+            # One SQLite connection per poll iteration: read the new events and,
+            # only when the caller needs it (an idle poll, or a terminal event
+            # just arrived), the run row — reusing the SAME Repository instead of
+            # opening a second connection for a separate read_run. Replay
+            # semantics are unchanged: events still drive `last_seq`, and the run
+            # row supplies the terminal result exactly as before.
             store = Repository(connect(database_path))
             try:
-                return store.list_run_events(run_id, after_seq=after_seq)
+                events = store.list_run_events(run_id, after_seq=after_seq)
+                needs_run = (not events) or any(
+                    event["type"] in ("result", "error") for event in events
+                )
+                run = store.get_run(run_id) if needs_run else None
+                return events, run
             finally:
                 store.connection.close()
 
@@ -1751,26 +1772,38 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
         async def event_stream():
             last_seq = start_seq
             yield "retry: 1000\n\n"
+            # Emit the keepalive comment only once every ~1s of idle polling
+            # even though we poll every 250ms (D2: poll fast, keepalive slow).
+            polls_per_keepalive = max(
+                1,
+                round(
+                    _RUN_EVENTS_SSE_KEEPALIVE_INTERVAL_SECONDS
+                    / _RUN_EVENTS_SSE_POLL_INTERVAL_SECONDS
+                ),
+            )
+            idle_polls = 0
             while True:
                 if await request.is_disconnected():
                     return
-                events = await asyncio.to_thread(read_events, last_seq)
+                events, run = await asyncio.to_thread(poll_once, last_seq)
                 for event in events:
                     last_seq = event["seq"]
                     if event["type"] in ("result", "error"):
-                        current = await asyncio.to_thread(read_run)
-                        yield sse_frame(event["seq"], "done", (current or {}).get("result"))
+                        yield sse_frame(event["seq"], "done", (run or {}).get("result"))
                         return
                     yield sse_frame(event["seq"], "progress", event)
                 if not events:
-                    current = await asyncio.to_thread(read_run)
                     # Terminal with no terminal event yet (defensive): the run
                     # finished but the marker append lost the race — close out.
-                    if current and current["status"] in ("succeeded", "failed"):
-                        yield sse_frame(last_seq, "done", current.get("result"))
+                    if run and run["status"] in ("succeeded", "failed"):
+                        yield sse_frame(last_seq, "done", run.get("result"))
                         return
-                    yield ": keepalive\n\n"
-                    await asyncio.sleep(1.0)
+                    if idle_polls % polls_per_keepalive == 0:
+                        yield ": keepalive\n\n"
+                    idle_polls += 1
+                    await asyncio.sleep(_RUN_EVENTS_SSE_POLL_INTERVAL_SECONDS)
+                else:
+                    idle_polls = 0
 
         return StreamingResponse(
             event_stream(),

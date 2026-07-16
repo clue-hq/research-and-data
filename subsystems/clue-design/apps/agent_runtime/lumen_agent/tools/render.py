@@ -75,6 +75,22 @@ def _render_preview_text(tools: LumenDesignTools) -> str:
         lines.append("VALIDATION ERRORS:")
         for err in validation_errors:
             lines.append(f"  - {err}")
+    # L4a: loud non-blocking raster advisories (e.g. a near-uniform PNG) ride the
+    # artifact; surface them where the orchestrator actually reads.
+    raster_warnings = [
+        warning
+        for artifact in artifacts
+        for warning in (artifact.get("warnings") or [])
+    ]
+    if raster_warnings:
+        lines.append("WARNINGS:")
+        for warning in raster_warnings:
+            lines.append(f"  - {warning}")
+    # L4b: the unchanged-scene fact — the orchestrator should act on the existing
+    # critique instead of re-delegating a full review of identical pixels.
+    unchanged = payload.get("unchanged")
+    if unchanged:
+        lines.append(unchanged)
     return "\n".join(lines)
 
 

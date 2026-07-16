@@ -277,6 +277,59 @@ describe("SelectionOverlay (Wave 3 C3d)", () => {
     expect(Number(dot.getAttribute("cx"))).toBeCloseTo(pageOrigin.x + 50, 6);
     expect(Number(dot.getAttribute("cy"))).toBeCloseTo(pageOrigin.y + 40, 6);
   });
+
+  it("(h) renders the reveal create-flash + design cursor for a streamed reveal state", () => {
+    const { container, rerender } = render(
+      <SelectionOverlay
+        selection={null}
+        pageOrigin={pageOrigin}
+        zoom={1}
+        reveal={{
+          seq: 5,
+          flashBox: { x: 120, y: 90, width: 200, height: 60 },
+          cursor: { x: 120, y: 90 },
+          label: "designing…"
+        }}
+      />
+    );
+    // The flash lands on the revealed node's screen box (no toScreen — already px).
+    const flash = container.querySelector('[data-role="agent-reveal-flash"]')!;
+    expect(flash).not.toBeNull();
+    expect(Number(flash.getAttribute("x"))).toBe(120);
+    expect(Number(flash.getAttribute("width"))).toBe(200);
+    // The cursor glyph + status chip render and the chip carries the copy.
+    const cursor = container.querySelector('[data-role="agent-reveal-cursor"]')!;
+    expect(cursor).not.toBeNull();
+    expect((cursor as HTMLElement).style.transform).toContain("translate(120px, 90px)");
+    expect(container.querySelector(".agent-reveal-cursor-glyph")).not.toBeNull();
+    expect(container.querySelector(".agent-reveal-cursor-chip-text")?.textContent).toBe("designing…");
+
+    // A next reveal moves the cursor (glide target updates) — same element, no
+    // selection ever drawn (reveal chrome is independent of selection).
+    rerender(
+      <SelectionOverlay
+        selection={null}
+        pageOrigin={pageOrigin}
+        zoom={1}
+        reveal={{
+          seq: 6,
+          flashBox: { x: 300, y: 200, width: 100, height: 40 },
+          cursor: { x: 300, y: 200 },
+          label: "designing…"
+        }}
+      />
+    );
+    const movedCursor = container.querySelector('[data-role="agent-reveal-cursor"]')!;
+    expect((movedCursor as HTMLElement).style.transform).toContain("translate(300px, 200px)");
+    expect(container.querySelector('[data-role="selection-box"]')).toBeNull();
+  });
+
+  it("renders no reveal chrome when reveal is null", () => {
+    const { container } = render(
+      <SelectionOverlay selection={null} pageOrigin={pageOrigin} zoom={1} reveal={null} />
+    );
+    expect(container.querySelector('[data-role="agent-reveal"]')).toBeNull();
+  });
 });
 
 describe("focalFromScreenPoint", () => {

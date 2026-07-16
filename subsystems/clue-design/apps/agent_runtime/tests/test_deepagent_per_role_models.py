@@ -417,6 +417,57 @@ def test_init_model_omits_max_tokens_when_unset(monkeypatch):
     assert "max_tokens" not in captured["kwargs"]
 
 
+# --- 6. init_model requests OpenRouter usage accounting (L0) ----------------
+
+
+def test_init_model_always_includes_usage_accounting(monkeypatch):
+    """L0: extra_body carries `usage: {include: True}` unconditionally so the
+    cached-prefill token breakdown surfaces in the response (measurement-only)."""
+    from lumen_agent import llm as llm_mod
+
+    captured: dict = {}
+
+    def fake_init_chat_model(model, **kwargs):
+        captured["kwargs"] = kwargs
+        return object()
+
+    fake_lc = types.ModuleType("langchain.chat_models")
+    fake_lc.init_chat_model = fake_init_chat_model
+    monkeypatch.setitem(sys.modules, "langchain.chat_models", fake_lc)
+
+    llm_mod.init_model(
+        "openai:x/y", base_url="https://openrouter.ai/api/v1", api_key="sk-test"
+    )
+    assert captured["kwargs"]["extra_body"] == {"usage": {"include": True}}
+
+
+def test_init_model_usage_accounting_rides_alongside_reasoning(monkeypatch):
+    """The usage-include and the reasoning field coexist in extra_body — neither
+    clobbers the other."""
+    from lumen_agent import llm as llm_mod
+
+    captured: dict = {}
+
+    def fake_init_chat_model(model, **kwargs):
+        captured["kwargs"] = kwargs
+        return object()
+
+    fake_lc = types.ModuleType("langchain.chat_models")
+    fake_lc.init_chat_model = fake_init_chat_model
+    monkeypatch.setitem(sys.modules, "langchain.chat_models", fake_lc)
+
+    llm_mod.init_model(
+        "openai:x/y",
+        base_url="https://openrouter.ai/api/v1",
+        api_key="sk-test",
+        reasoning="medium",
+    )
+    assert captured["kwargs"]["extra_body"] == {
+        "usage": {"include": True},
+        "reasoning": {"effort": "medium"},
+    }
+
+
 # --- 6. .env.example documents all four new vars ---------------------------
 
 
@@ -430,3 +481,190 @@ def test_env_example_documents_new_vars():
         "LUMEN_AGENT_MODEL_REVIEWER",
     ):
         assert var in text, f"{var} missing from .env.example"
+
+
+# --- 7. L1/L3 latency: provider sort + per-call watchdog -------------------
+
+
+def test_env_example_documents_l1_l3_vars():
+    repo_root = Path(__file__).resolve().parents[3]
+    text = (repo_root / ".env.example").read_text(encoding="utf-8")
+    for var in ("LUMEN_AGENT_PROVIDER_SORT", "LUMEN_AGENT_LLM_TIMEOUT_S"):
+        assert var in text, f"{var} missing from .env.example"
+
+
+def test_provider_sort_and_timeout_defaults_are_ratified():
+    """The ratified defaults live on the field declarations (env-independent):
+    provider_sort='latency' (cache locality on) and llm_timeout_s=60.0 (watchdog
+    on). Read from model_fields so a developer's .env can't perturb the assertion."""
+    from py_lumen_config.config import Settings
+
+    fields = Settings.model_fields
+    assert fields["lumen_agent_provider_sort"].default == "latency"
+    assert fields["lumen_agent_llm_timeout_s"].default == 60.0
+
+
+def test_provider_sort_blank_is_unset():
+    assert _settings(lumen_agent_provider_sort="").lumen_agent_provider_sort is None
+
+
+def test_provider_sort_parses_when_set():
+    assert (
+        _settings(lumen_agent_provider_sort="throughput").lumen_agent_provider_sort
+        == "throughput"
+    )
+
+
+def test_llm_timeout_blank_is_unset():
+    assert _settings(lumen_agent_llm_timeout_s="").lumen_agent_llm_timeout_s is None
+
+
+def test_llm_timeout_valid_parses_to_float():
+    assert _settings(lumen_agent_llm_timeout_s="90").lumen_agent_llm_timeout_s == 90.0
+
+
+@pytest.mark.parametrize("junk", ["abc", "0", "-5"])
+def test_llm_timeout_junk_fails_loudly(junk):
+    with pytest.raises(Exception):
+        _settings(lumen_agent_llm_timeout_s=junk)
+
+
+def test_config_defaults_carry_provider_sort_and_timeout():
+    """AgentRuntimeConfig's own dataclass defaults mirror the ratified settings so
+    a config built without overrides is L1/L3-on (env-independent)."""
+    c = _config()
+    assert c.agent_provider_sort == "latency"
+    assert c.agent_llm_timeout_s == 60.0
+
+
+def test_harness_threads_provider_sort_and_timeout_on_every_call(tmp_path, monkeypatch):
+    """The harness passes agent_provider_sort + agent_llm_timeout_s into init_model
+    for all three role instances."""
+    capture: dict = {}
+    _install_harness_stubs(monkeypatch, capture)
+    from lumen_agent.harness import create_design_deepagent
+
+    config = _config(
+        repo_root=tmp_path,
+        trace_dir=tmp_path / ".deepagent-workspace",
+        agent_provider_sort="latency",
+        agent_llm_timeout_s=45.0,
+    )
+    create_design_deepagent("Make a poster", config)
+
+    assert len(capture["init_calls"]) == 3
+    for call in capture["init_calls"]:
+        assert call["provider_sort"] == "latency"
+        assert call["timeout_s"] == 45.0
+
+
+def test_harness_threads_disabled_l1_l3_as_none(tmp_path, monkeypatch):
+    """provider_sort=None / llm_timeout_s=None flow through as None (disabled)."""
+    capture: dict = {}
+    _install_harness_stubs(monkeypatch, capture)
+    from lumen_agent.harness import create_design_deepagent
+
+    config = _config(
+        repo_root=tmp_path,
+        trace_dir=tmp_path / ".deepagent-workspace",
+        agent_provider_sort=None,
+        agent_llm_timeout_s=None,
+    )
+    create_design_deepagent("Make a poster", config)
+
+    for call in capture["init_calls"]:
+        assert call["provider_sort"] is None
+        assert call["timeout_s"] is None
+
+
+# --- 8. init_model: provider field (L1) + watchdog kwargs (L3) --------------
+
+
+def _capture_init_chat_model(monkeypatch) -> dict:
+    """Stub init_chat_model and return a dict that fills with the captured
+    (model, kwargs) on the next init_model call."""
+    from lumen_agent import llm as llm_mod  # noqa: F401 (import side: patch target)
+
+    captured: dict = {}
+
+    def fake_init_chat_model(model, **kwargs):
+        captured["model"] = model
+        captured["kwargs"] = kwargs
+        return object()
+
+    fake_lc = types.ModuleType("langchain.chat_models")
+    fake_lc.init_chat_model = fake_init_chat_model
+    monkeypatch.setitem(sys.modules, "langchain.chat_models", fake_lc)
+    return captured
+
+
+def test_init_model_includes_provider_when_sort_set(monkeypatch):
+    from lumen_agent import llm as llm_mod
+
+    captured = _capture_init_chat_model(monkeypatch)
+    llm_mod.init_model(
+        "openai:x/y",
+        base_url="https://openrouter.ai/api/v1",
+        api_key="sk-test",
+        provider_sort="latency",
+    )
+    assert captured["kwargs"]["extra_body"]["provider"] == {"sort": "latency"}
+
+
+def test_init_model_omits_provider_when_sort_none(monkeypatch):
+    """Default (no provider_sort) → no `provider` field; extra_body byte-identical
+    to pre-L1 (usage-only)."""
+    from lumen_agent import llm as llm_mod
+
+    captured = _capture_init_chat_model(monkeypatch)
+    llm_mod.init_model(
+        "openai:x/y", base_url="https://openrouter.ai/api/v1", api_key="sk-test"
+    )
+    assert captured["kwargs"]["extra_body"] == {"usage": {"include": True}}
+
+
+def test_init_model_provider_merges_with_usage_and_reasoning(monkeypatch):
+    """The provider field COEXISTS with usage + reasoning in extra_body — it merges,
+    never clobbers (commit 0a8458d's usage:{include} + reasoning must survive)."""
+    from lumen_agent import llm as llm_mod
+
+    captured = _capture_init_chat_model(monkeypatch)
+    llm_mod.init_model(
+        "openai:x/y",
+        base_url="https://openrouter.ai/api/v1",
+        api_key="sk-test",
+        reasoning="medium",
+        provider_sort="latency",
+    )
+    assert captured["kwargs"]["extra_body"] == {
+        "usage": {"include": True},
+        "reasoning": {"effort": "medium"},
+        "provider": {"sort": "latency"},
+    }
+
+
+def test_init_model_sets_timeout_and_retries_when_set(monkeypatch):
+    from lumen_agent import llm as llm_mod
+
+    captured = _capture_init_chat_model(monkeypatch)
+    llm_mod.init_model(
+        "openai:x/y",
+        base_url="https://openrouter.ai/api/v1",
+        api_key="sk-test",
+        timeout_s=60.0,
+    )
+    assert captured["kwargs"]["timeout"] == 60.0
+    assert captured["kwargs"]["max_retries"] == 2
+
+
+def test_init_model_omits_timeout_and_retries_when_none(monkeypatch):
+    """Default (no timeout_s) → neither `timeout` nor `max_retries` kwarg (today's
+    behavior, byte-identical)."""
+    from lumen_agent import llm as llm_mod
+
+    captured = _capture_init_chat_model(monkeypatch)
+    llm_mod.init_model(
+        "openai:x/y", base_url="https://openrouter.ai/api/v1", api_key="sk-test"
+    )
+    assert "timeout" not in captured["kwargs"]
+    assert "max_retries" not in captured["kwargs"]

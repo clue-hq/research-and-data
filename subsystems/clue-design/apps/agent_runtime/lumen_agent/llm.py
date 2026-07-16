@@ -21,6 +21,8 @@ def init_model(
     api_key: str | None = None,
     reasoning: str | None = None,
     max_tokens: int | None = None,
+    provider_sort: str | None = None,
+    timeout_s: float | None = None,
 ):
     """Build a deep-agent LLM bound to the OpenRouter gateway.
 
@@ -42,6 +44,20 @@ def init_model(
     (serialized as `max_completion_tokens` in the request) — one bound for every
     model routed through this gateway, damage-limiting runaway generation. None →
     no `max_tokens` kwarg on the model (today's behavior, byte-identical).
+
+    `provider_sort` (L1, cache locality) is the OpenRouter provider `sort`
+    preference. When set it rides `extra_body["provider"] = {"sort": <value>}` and
+    MERGES alongside the usage/reasoning fields (never clobbering them). `sort`
+    disables OpenRouter's load-balancing and pins one provider replica, keeping the
+    append-only ReAct prefix cache-warm (probe-proven 2/8 → 8/8 cache hits). None →
+    no `provider` field on the request (byte-identical to pre-L1).
+
+    `timeout_s` (L3, straggler watchdog) is the OPTIONAL per-request timeout in
+    seconds. When set it installs BOTH `timeout` (ChatOpenAI.request_timeout, passed
+    to the OpenAI SDK client) and `max_retries=2` (explicit = SDK default) — the SDK
+    retries a timed-out request with exponential backoff, then propagates
+    openai.APITimeoutError. It kills the 60–97s stragglers without touching genuine
+    calls. None → neither kwarg (today's behavior, byte-identical).
     """
     if not (base_url and api_key):
         raise ValueError(
@@ -70,14 +86,37 @@ def init_model(
             "or add langchain and langchain-openai to the active environment."
         ) from error
     kwargs: dict = {"base_url": base_url, "api_key": api_key}
+    # L0 (latency trace enrichment): ask OpenRouter to include full usage
+    # accounting in the response so the cached-prefill breakdown
+    # (`prompt_tokens_details.cached_tokens` → usage_metadata.input_token_details.
+    # cache_read) is reported when the provider caches. This is measurement-only:
+    # it changes ONLY the returned usage object, never generation. OpenAI-
+    # compatible clients pass unknown top-level request fields via extra_body;
+    # OpenRouter reads `usage` from the request body.
+    extra_body: dict = {"usage": {"include": True}}
     if reasoning is not None:
-        # OpenAI-compatible clients pass unknown top-level request fields via
-        # extra_body; OpenRouter reads `reasoning` from the request body.
-        kwargs["extra_body"] = {"reasoning": {"effort": reasoning}}
+        # OpenRouter reads the unified `reasoning` field from the request body.
+        extra_body["reasoning"] = {"effort": reasoning}
+    if provider_sort is not None:
+        # L1 (cache locality): OpenRouter reads `provider` prefs from the request
+        # body. This MERGES into extra_body alongside usage/reasoning — never
+        # clobbers them. `sort` alone pins one replica (we deliberately do NOT set
+        # allow_fallbacks:false: sort already disables load-balancing, and keeping
+        # fallbacks means a dead replica degrades to a cache miss, not a failed turn).
+        extra_body["provider"] = {"sort": provider_sort}
+    kwargs["extra_body"] = extra_body
     if max_tokens is not None:
         # ChatOpenAI.max_tokens (langchain-openai 1.3.3) is the max-output-tokens
         # field; it serializes to the request as `max_completion_tokens`.
         kwargs["max_tokens"] = max_tokens
+    if timeout_s is not None:
+        # L3 (straggler watchdog): ChatOpenAI.request_timeout (alias `timeout`) and
+        # max_retries pass straight into the OpenAI SDK client. The SDK retries a
+        # timed-out request (exponential backoff) then raises openai.APITimeoutError.
+        # Both are installed together so "timeout unset" stays byte-identical to
+        # today; max_retries is fixed at 2 (explicit = the SDK default).
+        kwargs["timeout"] = timeout_s
+        kwargs["max_retries"] = 2
     return init_chat_model(model, **kwargs)
 
 

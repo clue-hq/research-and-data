@@ -4,7 +4,9 @@ import base64
 import copy
 import functools
 import inspect
+import io
 import json
+import threading
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
@@ -260,6 +262,12 @@ class LumenDesignTools:
         # this sink so a caller (the API's async turn) can persist it to a
         # durable store and stream it. None keeps the run purely file-traced.
         self.event_sink = event_sink
+        # Batched read-only tool calls (deepagent-latency L2) now run on
+        # langgraph's ToolNode thread pool, so `record` can be invoked from
+        # concurrent threads. This lock serializes the whole record body (jsonl
+        # append + event_sink push) so trace lines never interleave and in-process
+        # event order stays deterministic.
+        self._record_lock = threading.Lock()
         self.run_id = new_run_id()
         self.iteration = 0
         self.trace_dir = config.trace_dir / self.run_id
@@ -315,6 +323,11 @@ class LumenDesignTools:
         # against the current count so it never silently serves a render that
         # predates a scene edit. None = nothing rendered yet.
         self._preview_scene_version: Optional[int] = None
+        # L4b unchanged-scene re-review guard: the iteration at which the last
+        # valid preview was rendered, stamped alongside _preview_scene_version.
+        # None = nothing rendered yet. Names "round N" in the unchanged fact
+        # export_preview_bundle surfaces when re-rendering byte-identical pixels.
+        self._preview_rendered_iteration: Optional[int] = None
         # Deterministic logo placement is PLACE-ONCE (sweep A3 re-injection fix):
         # once a kit logo has been present (author-placed or our auto-overlay),
         # a later removal is the author's choice and must be respected, not undone.
@@ -528,6 +541,16 @@ class LumenDesignTools:
             ),
             diagnostics=[diag.model_dump(mode="json") for diag in diagnostics],
             payload=payload,
+            # Live-design-streaming S0: only a CLEAN compile's applied ops ride
+            # the sink to the canvas — the same gate that decides whether they
+            # ride the proposal ledger above. A blocking-diagnostic (or rejected/
+            # failed) compile streams nothing to the canvas: the user never
+            # watches a draft that got refused (D1).
+            sink_extra=(
+                {"operations": compile_output.get("operations", [])}
+                if summary.status == ToolStatus.ok
+                else None
+            ),
         )
         return json.dumps(payload, indent=2)
 
@@ -1408,6 +1431,11 @@ class LumenDesignTools:
             output_summary=f"placed {asset_id} into {target_id} (fit={fit})",
             diagnostics=[diag.model_dump(mode="json") for diag in diagnostics],
             payload=payload,
+            # Live-design-streaming S0: the placement's applied op — the same
+            # single op logged to the proposal ledger via
+            # `_replace_scene_from_core_response(..., [operation])` above — rides
+            # the sink so the canvas can render the asset dropping into its node.
+            sink_extra={"operations": [operation]},
         )
         return json.dumps(payload, indent=2)
 
@@ -2507,6 +2535,12 @@ class LumenDesignTools:
         unresolved token paints (which would otherwise render the LUME0213
         magenta sentinel) with an honest error before any engine render.
         """
+        # L4b: capture the previous valid render's scene-version/iteration BEFORE
+        # the inner export_preview calls re-stamp them, so we can tell whether
+        # this successful export re-renders byte-identical pixels (no mutation
+        # since the last render → re-reviewing yields no new information).
+        prev_preview_version = self._preview_scene_version
+        prev_preview_iteration = self._preview_rendered_iteration
         desired_critic_format = (critic_format or self.config.preview_format).lower()
         refusal = self._unresolved_token_paint_refusal(desired_critic_format)
         if refusal is not None:
@@ -2607,6 +2641,38 @@ class LumenDesignTools:
                 ],
             },
         )
+        # L4b unchanged-scene re-review guard (deterministic FACT + teaching, NOT
+        # a hard block — a hard refusal would deadlock the RC anti-rubber-stamp
+        # guard, which legitimately forces a re-render of the SAME scene). When
+        # this valid export re-renders pixels byte-identical to the last one (no
+        # scene mutation since), surface the fact so the orchestrator can act on
+        # the existing critique instead of burning an author+reviewer round.
+        if (
+            not debug_only
+            and payload["reviewer"]["status"] == ToolStatus.ok.value
+            and prev_preview_version is not None
+            and self._scene_mutation_count() == prev_preview_version
+        ):
+            render_label = (
+                f"the previous render (iteration {prev_preview_iteration})"
+                if prev_preview_iteration is not None
+                else "the previous render"
+            )
+            unchanged_note = (
+                "unchanged: the scene is identical to the previously rendered "
+                f"preview (no mutations since {render_label}); "
+                "re-reviewing identical pixels yields no new information."
+            )
+            payload["unchanged"] = unchanged_note
+            self.record(
+                "coordinator",
+                "unchanged_rerender_recorded",
+                output_summary=unchanged_note,
+                payload={
+                    "previous_render_iteration": prev_preview_iteration,
+                    "scene_mutation_count": self._scene_mutation_count(),
+                },
+            )
         return json.dumps(payload, indent=2)
 
     def get_latest_preview_for_critique(self, max_svg_chars: int = 40000) -> str:
@@ -3751,6 +3817,7 @@ class LumenDesignTools:
         output_summary: Optional[str] = None,
         diagnostics: Optional[List[JsonObject]] = None,
         payload: Optional[JsonObject] = None,
+        sink_extra: Optional[JsonObject] = None,
     ) -> None:
         trace = LumenRunTraceEvent(
             run_id=self.run_id,
@@ -3763,26 +3830,36 @@ class LumenDesignTools:
             payload=payload or {},
         )
         path = self.trace_dir / "trace.jsonl"
-        with path.open("a", encoding="utf-8") as handle:
-            handle.write(trace.model_dump_json() + "\n")
-        if self.event_sink is not None:
-            # Progress streaming is best-effort: a sink failure must never
-            # abort the design run (the file trace above is the source of
-            # truth). Keep the payload lightweight — the checklist needs the
-            # event name + summaries, not the full per-iteration payload.
-            try:
-                self.event_sink(
-                    event,
-                    {
+        # Serialize the whole record body under one lock (L2 thread-safety):
+        # batched reads call this from concurrent ToolNode threads, so the jsonl
+        # append and the event_sink push must never interleave with another
+        # thread's. The lock is process-local; the file append is O(one line).
+        with self._record_lock:
+            with path.open("a", encoding="utf-8") as handle:
+                handle.write(trace.model_dump_json() + "\n")
+            if self.event_sink is not None:
+                # Progress streaming is best-effort: a sink failure must never
+                # abort the design run (the file trace above is the source of
+                # truth). Keep the base payload lightweight — the checklist needs
+                # the event name + summaries, not the full per-iteration payload.
+                # `sink_extra` is an OPT-IN channel merged on top of the five
+                # summary fields (live-design-streaming S0): authoring mutations
+                # that want the client to render the build as it happens pass
+                # their applied `operations` here. It rides the sink push only —
+                # never the trace above, which already carries the full payload.
+                try:
+                    push: JsonObject = {
                         "actor": actor,
                         "iteration": self.iteration,
                         "input_summary": input_summary,
                         "output_summary": output_summary,
                         "diagnostic_count": len(diagnostics or []),
-                    },
-                )
-            except Exception:
-                pass
+                    }
+                    if sink_extra:
+                        push.update(sink_extra)
+                    self.event_sink(event, push)
+                except Exception:
+                    pass
 
     def _prune_empty_pages(self) -> list[str]:
         """Remove pages that carry zero children from the working scene, via the
@@ -3838,6 +3915,7 @@ class LumenDesignTools:
         rendered. view("preview") refuses to serve the PNG once the scene has
         been mutated past this stamp (sweep A3 stale-black-frame contract)."""
         self._preview_scene_version = self._scene_mutation_count()
+        self._preview_rendered_iteration = self.iteration
 
     def _replace_scene_from_core_response(
         self,
@@ -3908,6 +3986,17 @@ class LumenDesignTools:
                 artifact_format,
                 requested_format,
             )
+            warnings: list[str] = []
+            # L4a: decode PNG pixels once and net a sentinel/uniform frame that
+            # slipped the token-paint refusal. Hard sentinel error flips the
+            # artifact invalid (→ export status error); near-uniform is a loud
+            # non-blocking warning. The guard never raises.
+            if artifact_format == "png":
+                sentinel_error, uniform_warning = _png_uniformity_guard(raw_bytes)
+                if sentinel_error:
+                    validation_errors = [*validation_errors, sentinel_error]
+                if uniform_warning:
+                    warnings.append(uniform_warning)
             artifacts.append(
                 PreviewArtifact(
                     format=artifact_format,
@@ -3921,6 +4010,7 @@ class LumenDesignTools:
                     critic_input_path=str(path),
                     valid=not validation_errors,
                     validation_errors=validation_errors,
+                    warnings=warnings,
                 )
             )
         return artifacts
@@ -4150,6 +4240,90 @@ class LumenDesignTools:
     def _write_json(self, path: Path, payload: JsonObject) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+
+
+# L4a raster-guard thresholds (deepagent-latency wasted-round elimination). The
+# PNG-black bug class is root-cause-fixed at the engine (white clear + magenta
+# UNRESOLVED_PAINT_SENTINEL + LUME0213); this guard is the last-mile net for a
+# sentinel frame that slips through as an OK export (the token-paint refusal does
+# not cover unparseable hex or a degenerate gradient that fails only at raster).
+_MAGENTA_SENTINEL = (255, 0, 255)  # LUME0213 unresolved-paint fill
+_SENTINEL_TOLERANCE = 4  # tiny per-channel tolerance around the sentinel rgb
+_UNIFORM_FRACTION = 0.99  # >=99% of pixels ⇒ sentinel-hard / uniform-warning
+_UNIFORM_DELTA = 6  # per-channel band around the modal color for near-uniform
+_GUARD_THUMB_PX = 64  # downsample longest side before counting — decode is cheap
+
+
+def _png_uniformity_guard(raw_bytes: bytes) -> tuple[Optional[str], Optional[str]]:
+    """Inspect PNG pixels for the magenta unresolved-paint sentinel and for a
+    near-uniform frame. Returns ``(hard_error, warning)`` — at most one is set:
+
+    - ``hard_error`` (non-None) when >=99% of pixels are the magenta LUME0213
+      sentinel within a tiny tolerance. The caller appends it to
+      ``validation_errors``, which flips the artifact invalid and the export
+      status to error — the frame never reaches review as ok.
+    - ``warning`` (non-None) when >=99% of pixels sit within a small delta of the
+      modal color (near-uniform anything). Loud but NON-blocking: a legitimate
+      minimalist design can be near-uniform, so blocking on a heuristic would
+      harm quality. The magenta sentinel alone is engineered and unambiguous —
+      hence the asymmetry.
+
+    NEVER raises (turn-safety): any decode failure degrades to ``(None, None)``.
+    Counting runs on a <=64px thumbnail, so the decode cost is negligible.
+    """
+    try:
+        from PIL import Image
+
+        with Image.open(io.BytesIO(raw_bytes)) as image:
+            image.load()
+            rgb = image.convert("RGB")
+            # NEAREST keeps real pixel colors (no blended new colors) while
+            # shrinking the count set to at most _GUARD_THUMB_PX**2.
+            rgb.thumbnail((_GUARD_THUMB_PX, _GUARD_THUMB_PX), Image.NEAREST)
+            pixels = list(rgb.getdata())
+    except Exception:
+        return None, None
+
+    total = len(pixels)
+    if total == 0:
+        return None, None
+
+    sr, sg, sb = _MAGENTA_SENTINEL
+    sentinel_hits = sum(
+        1
+        for r, g, b in pixels
+        if abs(r - sr) <= _SENTINEL_TOLERANCE
+        and abs(g - sg) <= _SENTINEL_TOLERANCE
+        and abs(b - sb) <= _SENTINEL_TOLERANCE
+    )
+    if sentinel_hits / total >= _UNIFORM_FRACTION:
+        pct = 100.0 * sentinel_hits / total
+        return (
+            f"raster invalid: {pct:.1f}% of the PNG is the magenta LUME0213 "
+            "unresolved-paint sentinel — a paint failed to resolve at raster. "
+            "Fix the offending fill (see diagnostics) / run preflight_design, "
+            "then re-render. This frame is not reviewable.",
+            None,
+        )
+
+    from collections import Counter
+
+    (mr, mg, mb), _modal_count = Counter(pixels).most_common(1)[0]
+    near_modal = sum(
+        1
+        for r, g, b in pixels
+        if abs(r - mr) <= _UNIFORM_DELTA
+        and abs(g - mg) <= _UNIFORM_DELTA
+        and abs(b - mb) <= _UNIFORM_DELTA
+    )
+    if near_modal / total >= _UNIFORM_FRACTION:
+        pct = 100.0 * near_modal / total
+        return (
+            None,
+            f"raster suspicious: ~{pct:.1f}% of the PNG is one uniform color "
+            f"rgb({mr},{mg},{mb}) — verify this is intentional before reviewing.",
+        )
+    return None, None
 
 
 def validate_preview_bytes(

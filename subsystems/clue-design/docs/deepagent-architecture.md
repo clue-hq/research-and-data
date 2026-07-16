@@ -743,3 +743,99 @@ default busy watercolor vs the references' soft-orb vocabulary
 (.context/next-wave/rc-gate-evidence/imagegen/). Gates: api 309 ·
 agent-runtime 434 · zero regressions. RC2 items 2-4 stay parked
 (DET∧JUDGE palette, A8 interplay, attachment curation).
+
+## Latency Tier 0+1 — L0 enrichment · L1 cache pinning · L2 batched reads · L3 watchdog · L4 raster/re-review guards (2026-07-12, acceptance-measured)
+
+Diagnosis first (three-explorer evidence, .context/next-wave/
+deepagent-latency-analysis.md): LLM inference is 93–97% of turn wall-clock
+(tools 4–5%), wall ≈ call-count × ~7.2s (r=0.944), and each turn re-sent
+3.2M–12.9M input tokens COLD (53–128× the output) — no prompt caching, no
+per-call timeout, one tool call per completion, plus two runs that burned
+whole rounds re-reviewing a black-raster frame. Quality was ruled invariant:
+no round caps, no weaker models, no skipped verification anywhere in the tier.
+
+The four slices (`0a8458d` → `7b0fc24` → `7a83450` → `5e28d5a`): **L0** —
+`model_call_usage` gains duration_ms, served model_id, cached/reasoning token
+counts (+ OpenRouter `usage:{include:true}`); every later claim is measured
+against these fields. **L1** — OpenRouter `provider:{sort:"latency"}` pins one
+xAI replica; probe-proven 2/8 → 8/8 cache hits on a byte-identical 30K prefix
+(sort ALONE suffices; allow_fallbacks kept). The append-only-history
+cache-stability invariant is documented in harness.py — L5-style pruning must
+append, never mutate. **L3** — per-call timeout 60s + max_retries=2 (both
+blank-disable); exhausted retries land in the pre-existing honest
+failed-finalize path (now pinned by test). **L2** — batching teaching in all
+three role prompts (read-only view/inspect/read_file fan in ONE response;
+never-batch list: task, compile, render, preflight, asset, writes) after a
+live probe showed grok-4.5 emits 6 reads in one completion 3/3; langgraph
+executes batches concurrently with deterministic result order (cache-safe);
+`record()` gained a lock for the now-concurrent tool threads. **L4** — the
+PNG-black class was already root-cause-dead (925bdec white-clear+magenta
+sentinel, 055264d token-paint refusal; investigator reproduced the old bug
+and proved the fix live); the residual hole is closed: ≥99% sentinel pixels
+⇒ hard validation_error (frame never reaches review as ok), ≥99% near-uniform
+⇒ loud NON-blocking warning (minimalist designs stay legal). Unchanged-scene
+re-renders surface a deterministic `unchanged` fact + trace event and the
+orchestrator is taught to reuse the standing critique — advisory, not a hard
+block, so the RC anti-rubber-stamp REFUSED→re-review path cannot deadlock.
+
+ACCEPTANCE (one live turn, fresh server from HEAD; sample-not-proof):
+93.1% cached prefill (author 95%; a 132K-token call paid ~2.7K uncached);
+uncached input 0.22M vs 3.15M total; 4.98 s/call mean, p50 invoke 3.35s;
+zero >60s stragglers; guards clean; enrichment on 60/60 calls. Wall was
+4.98 min at 60 calls — call-count variance, the known #1 driver, not a
+per-call regression (a stale-server control run of the same brief: 36 calls,
+3.32 min, 0% cached). OPERATIONAL TRAP the acceptance surfaced: a
+long-running API serves pre-tier code — restart the API after pulling these
+commits or none of this fires. Tier 2 (L5 context pruning, L6 image
+downscale, L7 per-role reasoning) stays parked pending drift evidence and
+calibration A/Bs. Gates: runtime 474 · api 309 · zero regressions; no engine
+sources touched (no wasm/handshake implications).
+
+## Live design streaming — moda-parity build theater (2026-07-13, live-verified)
+
+The turn becomes watchable: silent planning (checklist + lock pill, canvas
+untouched) → structure-first artboard placeholders → element-by-element
+materialization with a create-flash + gliding design cursor (Cursor accent,
+SVG-overlay only — zero wasm-paint changes) → narrated banner substatus →
+viewport auto-follow (user pan/zoom wins, permanently per run) → review
+phase → unlock into the unchanged Before/After gate. Design doc:
+.context/next-wave/live-design-streaming-design.md (D1–D8, from frame-by-
+frame study of the moda/brilliant recordings; the element-by-element feel is
+client-side theater over per-compile ops batches — perceived latency, zero
+agent-latency cost by construction).
+
+Four slices + a fix round (`6220c76` S0 server: clean-compile/asset ops ride
+the existing durable run-events SSE pipe — the exact ledgered list, so
+streamed == what Accept replays; refused drafts stream nothing; 250ms poll →
+`0069e09` S1 editor core: progressive engine apply from an arm-time base,
+terminal reconcile resets to base BEFORE the canonical previewAgentProposal
+(streamed state can never leak into Accept; pinned) → `8f6a92b` S2 theater:
+paced pump (~100ms/op, 5s per-batch cap, new-batch fast-forward), reveal
+chrome, auto-follow, all CSS in new agentStreaming.css — six parked restyle
+files untouched by construction → `5a039f1` fix round).
+
+Adversarial protocol went 7-for-7: two independent refuters over the full
+diff CONFIRMED a HIGH behind green suites — the reload-mid-run path settled
+against the live (streamed) scene, so a failed-draft resume pushed the
+half-built streamed scene into durable undo history. Class-fixed: the
+pre-turn seed is captured explicitly at arm time and every settle path
+consumes it (closure-staleness class dead, refuter repro flips fail→pass).
+Also from the round: fit-buttons latch the auto-follow override,
+prefers-reduced-motion support, mid-run doc-sync fallback pinned to the
+seed, one-connection SSE polls, dangling-reveal cleanup.
+
+LIVE PROOF (fresh servers from HEAD, real grok-4.5 turns, evidence
+.context/streaming-verify/01–12): planning-silence + edit-lock PASS;
+element-by-element streaming with live layer-tree fill PASS (flash/cursor
+DOM-asserted 80×); substatus PASS; auto-follow PASS (user-wins proven by
+code + unit test; toolbar staging limited the live check); paint cost p95
+9.3ms / 0 long-tasks during the fastest cadence (refuter F4 closed);
+reconcile integrity PASS (streamed state pixel-consistent with the canonical
+After); Accept persists through reload; reload-mid-run re-attaches, settles,
+and undo restores ONLY canonical state (the fixed HIGH, proven live).
+Verifier also caught + fixed a stale-wasm handshake before browser work
+(rebuild → HANDSHAKE OK). Known tuning residual: reveal pacing reads
+brisker than moda's cadence — a taste knob (REVEAL_CADENCE_MS/cap), not a
+correctness item. Gates: runtime 479 · api 311 · editor streaming suites
+78/78 + tsc/lint clean; full-suite editor failures byte-identical to the
+known environmental baseline.
