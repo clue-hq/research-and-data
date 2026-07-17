@@ -1,6 +1,7 @@
 # Phase A — Restructure, Spine & the workspace_id Rename (execution spec)
 
-> **Status: PLAN FOR FOUNDER REVIEW** (2026-07-17). Executes Doc R phases R0–R2 plus the
+> **Status: EXECUTED** (2026-07-17; plan approved same day — see the deferral ledger in
+> `_memory/2026-07-17-harness-era-code-mapping.md` for the items that left Phase A). Executes Doc R phases R0–R2 plus the
 > founder-ruled spine + `workspace_id` rename (2026-07-17 rulings). Branch:
 > `platform/workspace-restructure-v0` (Doc R §6). Local commits only; no push. Every step ends
 > with green `make check`; A3/A4 additionally end with green `make db-smoke` on a clean DB.
@@ -14,7 +15,7 @@
 
 - One distribution `clue-research` (hatchling, `src/clue_research`, 23 packages), no uv
   workspace; 12 import-linter contracts live in root `pyproject.toml`; alembic env imports
-  `clue_db`, hand-written reversible migrations, one head.
+  the db seam (pre-move: `clue_research.db`), hand-written reversible migrations, one head.
 - `make check` currently **fails**: 15 ruff errors — 1 × I001 in the uncommitted Settings slice
   (`config/__init__.py`), ~14 × E501 overlong docstrings in committed code (`identity/resolve.py`,
   `profiling/account.py`, `icp/source_profile.py`, …) — the last two commits landed ungated.
