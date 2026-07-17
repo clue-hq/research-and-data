@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 
-from clue_research.obs import RedactingFilter, get_logger
+from clue_obs.otel import RedactingFilter, get_logger
 
 
 def _record(msg: str, args: object) -> logging.LogRecord:

@@ -32,6 +32,7 @@ from clue_core import (
     new_entity_id,
     new_run_id,
 )
+from clue_obs.otel import SPAN_COMPLIANCE_JURISDICTION, InMemorySink, collect_spans
 from clue_research.claimstore import current_value, insert_claim
 from clue_research.claimstore.registry import _validate_payload
 from clue_research.claimstore.tenancy import TenantScope
@@ -50,7 +51,6 @@ from clue_research.compliance.jurisdiction import (
     _confidence,
 )
 from clue_research.identity import insert_account_entity, insert_contact_entity, stamp_reuse
-from clue_research.obs import SPAN_COMPLIANCE_JURISDICTION, InMemorySink, collect_spans
 
 from .conftest import rollback_conn, run_async
 

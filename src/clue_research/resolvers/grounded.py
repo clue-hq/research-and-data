@@ -68,7 +68,7 @@ from clue_core import (
     serialize_value_json,
     to_value_json,
 )
-from clue_research.obs import (
+from clue_obs.otel import (
     ATTR_COST_CENTS,
     ATTR_ENTITY_ID,
     ATTR_FIELD_KEY,

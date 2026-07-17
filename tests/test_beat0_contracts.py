@@ -58,7 +58,7 @@ from clue_core import (
     new_run_id,
     phase_key,
 )
-from clue_research.obs.spans import CAMPAIGN_PHASES
+from clue_obs.otel.spans import CAMPAIGN_PHASES
 
 _NOW = datetime(2026, 6, 20, tzinfo=UTC)
 

@@ -22,8 +22,8 @@ from pydantic import JsonValue
 
 from clue_core import CampaignPhase, PhaseContext, PhaseResult, PhaseStatus
 from clue_db import transaction
+from clue_obs.otel import ATTR_CLIENT_ID, apply_attributes, traced_step
 from clue_research.icp import compile_field_plan, get_icp_version
-from clue_research.obs import ATTR_CLIENT_ID, apply_attributes, traced_step
 from clue_research.stage0.icp_estimate import EstimateInputs, estimate_campaign
 
 

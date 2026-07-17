@@ -46,6 +46,14 @@ from clue_core import (
     VerificationStatus,
 )
 from clue_db import ConnFactory, connection
+from clue_obs.otel import (
+    METRIC_CONTACT_CLAIMS_TOTAL,
+    METRIC_CONTACT_STRONG_BINDING,
+    METRIC_TIER4_PASSED,
+    METRIC_TIER4_TOTAL,
+    InMemorySink,
+    record_verification_health,
+)
 from clue_research.claimstore import TenantScope, claims_for_runs
 from clue_research.discovery_scoring import CoverageReport as _DiscoveryCoverageReport
 from clue_research.durable import (
@@ -55,14 +63,6 @@ from clue_research.durable import (
     get_checkpoint,
     list_account_runs,
     project_spend,
-)
-from clue_research.obs import (
-    METRIC_CONTACT_CLAIMS_TOTAL,
-    METRIC_CONTACT_STRONG_BINDING,
-    METRIC_TIER4_PASSED,
-    METRIC_TIER4_TOTAL,
-    InMemorySink,
-    record_verification_health,
 )
 from clue_research.review import (
     CampaignStateReader,

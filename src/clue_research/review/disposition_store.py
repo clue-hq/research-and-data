@@ -44,6 +44,7 @@ from clue_core import (
 )
 from clue_core.review import ReviewActionOutcome
 from clue_db import ConnFactory, transaction
+from clue_obs.otel import MetricSink, get_metric_sink
 from clue_research.claimstore import TenantScope, claims_by_ids
 from clue_research.identity import (
     DEFAULT_DISPOSITION_POLICY,
@@ -52,7 +53,6 @@ from clue_research.identity import (
     resolve_many,
     surviving_id,
 )
-from clue_research.obs import MetricSink, get_metric_sink
 from clue_research.review.disposition import (
     METRIC_DISPOSITIONS,
     METRIC_DISPOSITIONS_REJECTED,

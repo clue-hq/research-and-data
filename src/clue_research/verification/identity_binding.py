@@ -75,9 +75,7 @@ from clue_core import (
 )
 from clue_core.entity import AccountEntity
 from clue_db import ConnFactory, transaction
-from clue_research.claimstore import record_verification
-from clue_research.identity import get_account, get_contact
-from clue_research.obs import (
+from clue_obs.otel import (
     ATTR_CACHE_HIT,
     ATTR_ENTITY_ID,
     ATTR_FIELD_KEY,
@@ -89,6 +87,8 @@ from clue_research.obs import (
     get_metric_sink,
     traced_step,
 )
+from clue_research.claimstore import record_verification
+from clue_research.identity import get_account, get_contact
 
 _log = get_logger(__name__)
 

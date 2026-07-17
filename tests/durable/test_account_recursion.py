@@ -15,6 +15,7 @@ from langgraph.checkpoint.memory import InMemorySaver
 
 from clue_config import RecursionPolicy, TierRecursionCaps
 from clue_core import new_campaign_run_id, new_entity_id
+from clue_obs.otel import collect_spans
 from clue_research.durable import (
     AccountResearchGraph,
     AccountRunStatus,
@@ -22,7 +23,6 @@ from clue_research.durable import (
     ResearchPlan,
     WorkerRegistry,
 )
-from clue_research.obs import collect_spans
 from tests.db.conftest import run_async
 from tests.durable.conftest import FakeAccountRunStore, StubAspectWorker
 

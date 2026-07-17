@@ -37,6 +37,15 @@ from clue_core import (
     UtcDatetime,
 )
 from clue_db import ConnFactory
+from clue_obs.otel import (
+    ATTR_CAMPAIGN_RUN_ID,
+    ATTR_CLIENT_ID,
+    ATTR_ENTITY_ID,
+    MetricSink,
+    apply_attributes,
+    get_metric_sink,
+    traced_step,
+)
 from clue_research.narrative.handoff import AssembledHandoff, HandoffAssembler
 from clue_research.narrative.handoff_events import (
     HandoffEvent,
@@ -51,15 +60,6 @@ from clue_research.narrative.handoff_store import (
 from clue_research.narrative.health import VerificationHealth
 from clue_research.narrative.publisher import HandoffPublisher, OutboxHandoffPublisher
 from clue_research.narrative.readiness import HandoffReadinessReader
-from clue_research.obs import (
-    ATTR_CAMPAIGN_RUN_ID,
-    ATTR_CLIENT_ID,
-    ATTR_ENTITY_ID,
-    MetricSink,
-    apply_attributes,
-    get_metric_sink,
-    traced_step,
-)
 
 # The served ``account_handoff`` contract version (M12.3). Bump the MINOR for an additive change (a
 # new optional field), the MAJOR only for a breaking one; a pinned consumer reads the field off

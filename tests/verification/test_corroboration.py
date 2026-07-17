@@ -36,6 +36,7 @@ from clue_core import (
     new_entity_id,
     new_run_id,
 )
+from clue_obs.otel import InMemorySink
 from clue_research.claimstore import (
     ALL_TENANTS,
     CorroborationConfig,
@@ -47,7 +48,6 @@ from clue_research.claimstore import (
     register_field,
 )
 from clue_research.identity import insert_account_entity
-from clue_research.obs import InMemorySink
 from clue_research.verification import (
     CorroborationPolicy,
     Corroborator,

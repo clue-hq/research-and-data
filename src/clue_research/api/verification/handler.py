@@ -58,9 +58,9 @@ from clue_core import (
 )
 from clue_core.compliance import UseGate
 from clue_core.verification import FaithfulnessJudge
+from clue_obs.otel import MetricSink
 from clue_research.claimstore import TenantScope
 from clue_research.durable import AccountSpec
-from clue_research.obs import MetricSink
 from clue_research.synthesis import record_synthesis_health
 
 # Personal-hook field-class prefix (conventions §3): the use gate (M10.3) governs exactly these.

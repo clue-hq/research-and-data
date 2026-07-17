@@ -40,6 +40,7 @@ from clue_core import (
     account_claim,
     new_run_id,
 )
+from clue_obs.otel import ATTR_CLIENT_ID, ATTR_ENTITY_ID, apply_attributes, traced_step
 from clue_research.claimstore import insert_claim
 from clue_research.icp import (
     RubricEntry,
@@ -55,7 +56,6 @@ from clue_research.icp import (
     validate_rubric,
 )
 from clue_research.identity import stamp_reuse
-from clue_research.obs import ATTR_CLIENT_ID, ATTR_ENTITY_ID, apply_attributes, traced_step
 from clue_research.stage0.icp_estimate import EstimateInputs, estimate_campaign
 from clue_research.stage0.icp_fields import ICP_CONFIRM_DIFF, load_icp_feedback_pack
 from clue_research.stage0.icp_types import (

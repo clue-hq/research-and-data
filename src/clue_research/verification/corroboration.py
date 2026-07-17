@@ -56,13 +56,7 @@ from clue_core import (
 from clue_core import values_agree as _core_values_agree
 from clue_core.field import FieldKey
 from clue_db import ConnFactory, transaction
-from clue_research.claimstore import (
-    TenantScope,
-    claims_for,
-    get_corroboration_config,
-    record_verification,
-)
-from clue_research.obs import (
+from clue_obs.otel import (
     ATTR_ENTITY_ID,
     ATTR_ENTITY_TYPE,
     ATTR_FIELD_KEY,
@@ -73,6 +67,12 @@ from clue_research.obs import (
     apply_attributes,
     get_metric_sink,
     traced_step,
+)
+from clue_research.claimstore import (
+    TenantScope,
+    claims_for,
+    get_corroboration_config,
+    record_verification,
 )
 
 # Verification-health metrics (Doc C §6). M9-local metric name strings (the shared sink accepts any

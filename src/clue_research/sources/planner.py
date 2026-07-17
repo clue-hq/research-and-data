@@ -43,8 +43,7 @@ from clue_core import (
     ResearchMode,
     Role,
 )
-from clue_research.icp import ResolvedSourceProfile, SourceWeight
-from clue_research.obs import (
+from clue_obs.otel import (
     ATTR_FIELD_KEY,
     ATTR_ICP_ID,
     ATTR_N_SOURCES,
@@ -53,6 +52,7 @@ from clue_research.obs import (
     apply_attributes,
     traced_step,
 )
+from clue_research.icp import ResolvedSourceProfile, SourceWeight
 from clue_research.sources.source_profile import (
     AllowedSource,
     resolve_allowed_set,

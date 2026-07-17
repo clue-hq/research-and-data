@@ -3,7 +3,7 @@
 A :class:`RedactingFilter` scrubs every log record's message and string arguments through the
 ``config`` redaction helper, so a secret-shaped value (a key, a DSN with credentials, an opaque
 token) never reaches a log line — the log half of "no secret/raw-source-excerpt ever escapes"
-(the span half lives in :mod:`clue_research.obs.attributes`). Non-string args are passed through
+(the span half lives in :mod:`clue_obs.otel.attributes`). Non-string args are passed through
 untouched so ``%d``/``%f`` formatting still works.
 """
 

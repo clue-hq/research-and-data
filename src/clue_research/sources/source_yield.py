@@ -8,7 +8,7 @@ profiles (``source_profile`` / ``source_profile_override``) from the aggregate, 
 config seam (so the learning loop is a config writer, not an engine change).
 
 Name note: this is the **DB telemetry writer** (the ``source_yield`` table). It is distinct from
-:func:`clue_research.obs.record_source_yield`, the M0.5 in-memory *metrics counter* keyed by source;
+:func:`clue_obs.otel.record_source_yield`, the M0.5 in-memory *metrics counter* keyed by source;
 the two are complementary — the counter is a live dashboard signal, this is the durable, queryable
 substrate the reweight reads. M4.6 writes the table; the obs counter stays a metrics emitter.
 """

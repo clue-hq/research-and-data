@@ -62,6 +62,17 @@ from clue_core import (
 )
 from clue_core.retrieval import ClientKnowledgeChunk, ClientKnowledgeRetriever
 from clue_db import ConnFactory, transaction
+from clue_obs.otel import (
+    ATTR_CLIENT_ID,
+    ATTR_COST_CENTS,
+    ATTR_ENTITY_ID,
+    ATTR_MODEL,
+    MetricSink,
+    apply_attributes,
+    get_logger,
+    get_metric_sink,
+    traced_step,
+)
 from clue_research.claimstore import (
     TenantScope,
     claims_for,
@@ -82,17 +93,6 @@ from clue_research.narrative.prompts import (
 from clue_research.narrative.reuse import NARRATIVE_REUSE_POLICY
 from clue_research.narrative.seams import CommitteeContact, CommitteeReader
 from clue_research.narrative.support import write_claim_support
-from clue_research.obs import (
-    ATTR_CLIENT_ID,
-    ATTR_COST_CENTS,
-    ATTR_ENTITY_ID,
-    ATTR_MODEL,
-    MetricSink,
-    apply_attributes,
-    get_logger,
-    get_metric_sink,
-    traced_step,
-)
 
 _log = get_logger(__name__)
 

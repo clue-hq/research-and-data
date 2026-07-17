@@ -37,6 +37,12 @@ from clue_core import (
     new_entity_id,
     new_run_id,
 )
+from clue_obs.otel import (
+    SPAN_COMPLIANCE_USE_GATE,
+    SPAN_VERIFICATION_FAITHFULNESS_JUDGE,
+    InMemorySink,
+    collect_spans,
+)
 from clue_research.api.composition import VERIFICATION_GATE_ORDER
 from clue_research.claimstore import insert_claim
 from clue_research.compliance import (
@@ -52,12 +58,6 @@ from clue_research.compliance.use_gate import (
     METRIC_USE_GATE_USABLE,
 )
 from clue_research.identity import insert_account_entity, insert_contact_entity, stamp_reuse
-from clue_research.obs import (
-    SPAN_COMPLIANCE_USE_GATE,
-    SPAN_VERIFICATION_FAITHFULNESS_JUDGE,
-    InMemorySink,
-    collect_spans,
-)
 
 from .conftest import rollback_conn, run_async
 

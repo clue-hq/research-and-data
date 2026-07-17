@@ -57,15 +57,7 @@ from clue_core import (
     UnitInterval,
 )
 from clue_db import ConnFactory, transaction
-from clue_research.claimstore import (
-    TenantScope,
-    claims_for,
-    current_value,
-    supersede_claims,
-)
-from clue_research.compliance.fields import CONTACT_JURISDICTION
-from clue_research.identity import get_account, get_contact, stamp_reuse
-from clue_research.obs import (
+from clue_obs.otel import (
     ATTR_CLIENT_ID,
     ATTR_ENTITY_ID,
     ATTR_ENTITY_TYPE,
@@ -75,6 +67,14 @@ from clue_research.obs import (
     get_metric_sink,
     traced_step,
 )
+from clue_research.claimstore import (
+    TenantScope,
+    claims_for,
+    current_value,
+    supersede_claims,
+)
+from clue_research.compliance.fields import CONTACT_JURISDICTION
+from clue_research.identity import get_account, get_contact, stamp_reuse
 
 # --- M10-local metric names (mirrors M9's "milestone-local metric" pattern) -------------------
 METRIC_JURISDICTION_RESOLVED = "research.compliance.jurisdiction.resolved"

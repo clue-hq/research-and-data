@@ -23,8 +23,8 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_config.gateway import DEFAULT_GATEWAY_CONFIG
 from clue_core import Persona, decode_jsonb
+from clue_obs.otel import get_logger
 from clue_research.narrative.prompts import PROMPT_VERSION, PROMPTS
-from clue_research.obs import get_logger
 
 _log = get_logger(__name__)
 

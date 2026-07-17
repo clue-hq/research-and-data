@@ -35,9 +35,9 @@ from clue_core import (
     new_entity_id,
     new_run_id,
 )
+from clue_obs.otel import ATTR_COST_CENTS, resolve_span
+from clue_obs.otel.testing import collect_spans
 from clue_research.claimstore import ALL_TENANTS, claims_for, register_field
-from clue_research.obs import ATTR_COST_CENTS, resolve_span
-from clue_research.obs.testing import collect_spans
 from clue_research.resolvers import (
     DeterministicResolver,
     HttpEnrichmentBackend,

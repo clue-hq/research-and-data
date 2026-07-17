@@ -16,7 +16,7 @@ from clue_core import (
     new_entity_id,
     new_run_id,
 )
-from clue_research.obs.metrics import METRIC_TIER4_PASSED, METRIC_TIER4_TOTAL, InMemorySink
+from clue_obs.otel.metrics import METRIC_TIER4_PASSED, METRIC_TIER4_TOTAL, InMemorySink
 from clue_research.synthesis import record_synthesis_health
 
 _PAIN = "account.operational_pain"

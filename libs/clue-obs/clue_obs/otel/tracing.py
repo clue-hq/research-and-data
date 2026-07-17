@@ -20,7 +20,7 @@ from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import ConsoleSpanExporter, SimpleSpanProcessor, SpanExporter
 from opentelemetry.trace import Span, Tracer
 
-from clue_research.obs.attributes import safe_attributes
+from clue_obs.otel.attributes import safe_attributes
 
 _INSTRUMENTATION = "clue_research"
 
@@ -70,7 +70,7 @@ def apply_attributes(span: Span, attrs: Mapping[str, object]) -> None:
 
     The post-hoc analogue of :func:`traced_step`'s open-time handling, for attributes only known
     after the step runs (e.g. a gateway call's token usage / cost). Routes through
-    :func:`~clue_research.obs.attributes.safe_attributes` so *every* attribute — whenever set —
+    :func:`~clue_obs.otel.attributes.safe_attributes` so *every* attribute — whenever set —
     passes the one redaction chokepoint, never a second ad-hoc path.
     """
     for key, value in safe_attributes(attrs).items():

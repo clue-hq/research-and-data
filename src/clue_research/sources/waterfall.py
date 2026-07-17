@@ -44,9 +44,7 @@ from clue_core import (
     first_confident_claim,
     revalidate_with,
 )
-from clue_research.claimstore import PUBLIC_ONLY, TenantScope, claims_for, insert_claim
-from clue_research.identity import DEFAULT_REUSE_POLICY, ReusePolicy, stamp_reuse
-from clue_research.obs import (
+from clue_obs.otel import (
     ATTR_COST_CENTS,
     ATTR_ENTITY_ID,
     ATTR_FIELD_KEY,
@@ -58,6 +56,8 @@ from clue_research.obs import (
     resolve_span,
     traced_step,
 )
+from clue_research.claimstore import PUBLIC_ONLY, TenantScope, claims_for, insert_claim
+from clue_research.identity import DEFAULT_REUSE_POLICY, ReusePolicy, stamp_reuse
 from clue_research.sources.registry import NoResolverBoundError, get_resolver, get_source
 from clue_research.sources.thresholds import DEFAULT_CONFIDENCE_THRESHOLDS, ConfidenceThresholds
 

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from clue_research.obs import (
+from clue_obs.otel import (
     CAMPAIGN_PHASES,
     SPAN_COMPLIANCE_USE_GATE,
     SPAN_VERIFICATION_CORROBORATION,
@@ -14,7 +14,7 @@ from clue_research.obs import (
     phase_span,
     resolve_span,
 )
-from clue_research.obs.spans import SPAN_VERIFICATION_IDENTITY_BINDING
+from clue_obs.otel.spans import SPAN_VERIFICATION_IDENTITY_BINDING
 
 
 def test_faithfulness_judge_and_use_gate_are_distinct_spans() -> None:

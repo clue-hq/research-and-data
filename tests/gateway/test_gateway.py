@@ -18,6 +18,7 @@ from pydantic import SecretStr
 from clue_config import ConfigOverlay, GatewayConfig, ModelPrice, get_config
 from clue_config.loader import OverlayStore
 from clue_core import Completion, EmbeddingResult, LLMGateway, Message, Role, TokenUsage
+from clue_obs.otel import SPAN_LLM_GATEWAY_CALL, collect_spans
 from clue_research.gateway import (
     GatewayError,
     OpenRouterGateway,
@@ -25,7 +26,6 @@ from clue_research.gateway import (
     TracingGateway,
     build_gateway,
 )
-from clue_research.obs import SPAN_LLM_GATEWAY_CALL, collect_spans
 
 # --- fixtures ---------------------------------------------------------------
 

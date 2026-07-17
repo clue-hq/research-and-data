@@ -35,6 +35,7 @@ from clue_core.compliance import UseDecision
 from clue_core.enums import JudgeVerdict, UseReason
 from clue_core.gateway import Completion, Message
 from clue_core.verification import JudgeResult
+from clue_obs.otel.metrics import METRIC_TIER4_TOTAL, InMemorySink
 from clue_research.api.verification import (
     VerificationPhaseHandler,
     build_verification_phase_handler,
@@ -47,7 +48,6 @@ from clue_research.api.verification.handler import (
 )
 from clue_research.claimstore import TenantScope
 from clue_research.durable import AccountSpec, PhaseHandlerRegistry
-from clue_research.obs.metrics import METRIC_TIER4_TOTAL, InMemorySink
 
 _PAIN = "account.operational_pain"
 _MOVES = "account.strategic_moves"

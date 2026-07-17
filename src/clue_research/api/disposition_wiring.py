@@ -26,7 +26,7 @@ from __future__ import annotations
 
 from clue_core.review import ReviewDispositionEmitter
 from clue_db import ConnFactory, transaction
-from clue_research.obs import MetricSink
+from clue_obs.otel import MetricSink
 from clue_research.review.disposition_store import DispositionStore, ReviewDispositionEmitterImpl
 
 
