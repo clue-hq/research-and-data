@@ -2,7 +2,8 @@
 
 > **Audience:** non-technical founder / business stakeholder  
 > **Status:** discussion brief, not final implementation spec  
-> **Purpose:** translate the research-platform discussion into product requirements, rationale, and a high-level technical shape.
+> **Purpose:** translate the research-platform discussion into product requirements, rationale, and a high-level technical shape.  
+> **Updated 2026-07-11:** the node-canvas surface is retired in favor of the agent workspace — see §12.
 
 ## 1. Executive summary
 
@@ -15,7 +16,7 @@ For the research subsystem, this means:
 - Keep the current foundation: evidence-backed claims, source provenance, identity resolution, verification, compliance, and cost controls.
 - Expose research capabilities as reusable tools instead of locking them into one fixed stage order.
 - Let the agent plan, ask questions, inspect progress, rerun parts of the work, and loop on research gaps.
-- Journal every run as a repeatable graph so good workflows can be reused, audited, and represented in a node-based interface.
+- Journal every run as a repeatable graph so good workflows can be reused, audited, and rerun from readable run views and a recipe library.
 - Give users readable research outputs, not just database rows: briefs, dossiers, coverage notes, and source-backed reasoning.
 
 The key principle is:
@@ -50,7 +51,7 @@ That is why a harness model is the right product shape:
 - The platform owns high-quality domain tools.
 - The agent understands the user's goal and composes those tools.
 - Skills and recipes make the composition repeatable.
-- A visual node graph helps users understand and rerun the workflow.
+- Readable run views and a recipe library help users understand and rerun the workflow.
 
 ## 3. What requirements this design satisfies
 
@@ -206,7 +207,7 @@ The design satisfies this through:
 
 The chat agent becomes the user's window into the run, not the thing doing all the work itself.
 
-### Requirement 12: Repeatability and node-based workflows
+### Requirement 12: Repeatability — recipes and run history
 
 If an agent produces a great process once, the platform should be able to rerun that process.
 
@@ -214,7 +215,7 @@ The design satisfies this with:
 
 - A run graph journal: every tool invocation is recorded with parameters and versions.
 - Recipes: saved, parameterized workflows that can be rerun.
-- A node canvas: a visual representation of the workflow, its tools, and live status.
+- Run views: a readable representation of each run — its steps, tools, and live status — plus a recipe library for pin and rerun.
 
 The promise is not bit-identical LLM output. The promise is **outcome-reproducibility**: the same process, same pinned configs, same rules, same gates, and auditable outputs.
 
@@ -343,7 +344,7 @@ It includes:
 - Run graphs.
 - Recipes.
 - Pinned versions of prompts, skills, source profiles, and ICPs.
-- Node-based workflow views.
+- Run views and a recipe library.
 
 Why it exists: agency alone is not enough. Enterprise workflows need repeatability, auditability, and the ability to rerun a successful process.
 
@@ -445,7 +446,7 @@ This is not a promise of identical replay. The same recipe can rerun the same pr
 
 ### Workflow surface
 
-- Node graph of the run.
+- Readable run view: steps, tools, live status.
 - Saved recipes.
 - Pin and rerun.
 - Compare runs over time.
@@ -488,7 +489,7 @@ Generate readable, cited account dossiers and derived insights from verified cla
 
 1. **How much preliminary recon should happen before commitment?** Recommended: enough to create a strong opening brief, but with a small hard cost cap.
 2. **How should captured facts appear in the UI?** Recommended: implicit capture with visible "noted" moments and a batch confirmation step, not constant per-fact confirmation.
-3. **How much workflow editing should users get in V1?** Recommended: agent authors the graph; user pins, reruns, and adjusts parameters first. Free-form graph authoring can come later.
+3. **How much workflow editing should users get in V1?** Recommended: the agent authors the workflow; the user pins, reruns, and adjusts parameters first. Free-form workflow authoring can come later.
 4. **What source approval posture should we use?** Recommended: auto-allow lower-trust public sources with audit; require human approval for high-trust source tiers and personal/sensitive fields.
 5. **What should the default canary size be?** Recommended: run the top group first, verify health, then open the fleet.
 6. **Where should the deep agent live long-term?** Recommended: incubate near the research subsystem first, but design the toolbelt so the broader platform can consume it later.
@@ -506,3 +507,30 @@ That gives the product the three things it needs at once:
 - **Flexibility:** teams can work in the order that matches their real ABM process.
 - **Trust:** facts are evidence-backed and governed.
 - **Repeatability:** successful workflows become recipes, not one-off agent luck.
+
+## 12. Update (2026-07-11): the agent workspace, not a node canvas
+
+Earlier drafts of this brief described a node-based canvas as the way users would see and rerun
+workflows. That surface is retired. The reason is simple: our building blocks are not dumb steps
+that need wiring — they are specialist agents that make decisions inside their own domain. You do
+not wire agents on a canvas; you talk to an orchestrator that consults them.
+
+What the user sees instead:
+
+- **An agent library.** Each part of ABM ships as a specialist agent with its own profile page:
+  what it is for, the skills it follows, the tools it may use, the model it runs on, how
+  autonomous it is allowed to be, and when the main agent may call on it. The v1 roster is fixed
+  (research, content, design, review, and the main Head-of-ABM agent); users tune profiles rather
+  than build agents from scratch.
+- **One main agent.** The Head-of-ABM agent is the user's end-to-end companion: it strategizes the
+  campaign, delegates to the specialists, and reports back. Delegation is governed: budgets are
+  scoped, human approval points stay human, and every hand-off is recorded.
+- **Shared screens.** Every campaign, run, account list, and artifact has a screen, and anything
+  an agent can do there, a human can do manually too — same rules, same audit trail. The agent
+  sidebar sits next to the work, not instead of it.
+- **Runs and recipes instead of a canvas.** Every run is still journaled and repeatable. Users
+  browse run history, watch live activity, and pin good runs as recipes to rerun — through
+  readable run views rather than a node editor.
+
+Nothing under the hood changed: claims, verification, budgets, compliance, and memory work exactly
+as described above. This update changes the face of the product, not its bones.
